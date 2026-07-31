@@ -4,8 +4,8 @@
 |---|---|
 | slug | `clinician-attributed-context` |
 | 创建日期 | 2026-07-30 |
-| 当前阶段 | S3 规划 |
-| 状态 | defining |
+| 当前阶段 | S4 研发任务分解 |
+| 状态 | building |
 | 负责 | Codex |
 | 反馈环 | backend deploy |
 
@@ -66,7 +66,7 @@
 ## S3 · 规划
 
 - 设计：`docs/plans/2026-07-30-clinician-attributed-context-design.md`
-- 实施计划：待生成。
+- 实施计划：`docs/plans/2026-07-30-clinician-attributed-context.md`
 - 分阶段：意图帧 → Agent 写工具与回执 → 上下文召回 → 回归与安全验证。
 - 反馈环路由：后端改动，验证通过后走 backend deploy；无 Mobile OTA。
 
@@ -83,7 +83,12 @@
 
 ## S4 · 研发任务分解
 
-- 待实施计划生成后填写。
+- T1：意图帧与 fast-record 防误判（原句 + 普通症状守恒测试）。
+- T2：模型可见工具、Kernel registry、回执契约与 capability policy。
+- T3：owner-scoped 写入 adapter、校验、回滚与敏感日志测试。
+- T4：完整上下文中的来源标记召回、长度限制与 cache invalidation。
+- T5：提示词契约与原始截图语句端到端 streaming 回归。
+- T6：system map 生成、集成 Gate、独立 G4 安全评审与 Dossier 证据。
 - 并发检查：已完成。
 
 ## S5 · 实现
@@ -126,4 +131,3 @@
 ## S8 · 沉淀
 
 - 待实现后判断是否需同步 Agent 行为文档或 system map 生成物。
-
