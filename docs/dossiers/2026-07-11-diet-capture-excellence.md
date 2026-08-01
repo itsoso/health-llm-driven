@@ -4,8 +4,8 @@
 |---|---|
 | slug | `diet-capture-excellence` |
 | 创建日期 | 2026-07-11 |
-| 当前阶段 | S5 实现完成，G3 CI 待验 |
-| 状态 | verification_pending |
+| 当前阶段 | G3/G4 已通过，G5 部署待验 |
+| 状态 | deploy_pending |
 | 负责 | Codex |
 | 反馈环 | Backend pytest / Mobile Jest + TypeScript / Simulator / backend deploy / EAS TestFlight + production OTA |
 
@@ -19,8 +19,8 @@
   - 设计：[`docs/plans/2026-08-01-xiaohongshu-diet-share-card-design.md`](../plans/2026-08-01-xiaohongshu-diet-share-card-design.md)。
   - 实施：[`docs/plans/2026-08-01-xiaohongshu-diet-share-card.md`](../plans/2026-08-01-xiaohongshu-diet-share-card.md)。
   - 安全 Gate：`privacy_sensitive`；原始 `DietRecord` 照片不可变，编辑与合成仅在本地副本完成，第一版不做自动 QR/条码识别。
-  - 回退阶段：S3/S5；需重跑 G3/G4/G5/G6。当前为实现中，不把新分享流程记为已上线。
-  - 本轮 Gate：G3=`PENDING`、G4=`PASS`、G5=`PENDING`、G6=`PENDING`；旧分享流程的测试、部署和上线证据只作为 Correction 前历史基线。
+  - 回退阶段：S3/S5；需重跑 G3/G4/G5/G6。当前实现与集成闸已完成，但不把新分享流程记为已上线。
+  - 本轮 Gate：G3=`PASS`、G4=`PASS`、G5=`PENDING`、G6=`PENDING`；旧分享流程的测试、部署和上线证据只作为 Correction 前历史基线。
   - Run Ledger：`docs/_generated/harness-runs/7779bb67a50d.jsonl`（本地运行证据，不提交）。
   - 用户确认：☑
 
@@ -150,7 +150,7 @@
 - T5.9 最终回归（2026-07-28）：合并最新主干后恢复链路、目标约束和完成状态 `119 passed`，Agent 核心 `452 passed`，Runtime API、并发、reconcile 与断流恢复 `224 passed / 3 skipped`，完整恢复测试文件 `25 passed`；真实模型闸门 `invariants 12/12`、`health_agent_core 50/50`、`orchestrator 5/5` 通过，Orchestrator 平均分 `0.94`、无 regression。实际模型为 `MiniMax-M2.5`，原始 JSON 仅保存在本机 `/tmp/agent-write-recovery-live-eval.json`，不提交模型回答或健康正文。
 - T6.1 实现：聊天卡与饮食记录页统一进入 `DietShareComposer`；已确认且 owner-accessible 的照片先在本地编辑副本中完成缩放裁剪、90° 旋转、撤销/重做/重置和不透明隐私涂抹，再只捕获一次 `1080x1440` PNG。完整预览、保存和系统分享复用该 URI；关闭或重试时按 session generation 隔离异步回调并幂等清理捕获、物化和编辑临时文件。无照片、照片加载失败或捕获失败时不生成 metric-only 海报，仅保留重试或去标识正文分享。
 - T6.1 本地回归（2026-08-01）：Mobile 全量 `287 suites / 2256 passed / 1 skipped`；分享、编辑、隐私、聊天、饮食入口与遥测 focused `9 suites / 221 passed`；TypeScript、Expo lint、设计令牌闸均通过，raw hex 从基线 `599` 降为 `596`。Backend 事件契约与观测回归在真实 PostgreSQL 上 `96 passed`。iOS dismissed 与原生可识别的取消单列 `cancelled`；Android `expo-sharing` 无法区分完成与取消，因此不伪造终态。移动端独立分享白名单和 Backend schema 均拒绝其他饮食指标、任意错误码、`image_uri`、食物正文、记录 ID 与热量等私有字段。
-- T6.1 首次主干 CI run `30701763933` 在 `backend-test-agent-i-z` 命中 3 个确定性失败；上一主干 run `30682409732` 已有完全相同的 `3 failed / 658 passed / 3 skipped`，与分享实现无关。根因是 `bc48f7288` 将权威饮水 Goal 的 `target_date` 写入 `record_date` 后，旧测试仍构造无日期 Goal 或依赖运行当天。修复只同步测试契约：单元夹具显式指定 `target_date`，集成用例固定 Turn Snapshot 时钟并断言规范日期。原 3 项先复现 RED，修复后 `3/3`、两份完整测试文件 `31/31`，与 GitHub 同参数的 `agent-i-z` 分片 `661 passed / 3 skipped`；G3 仍须等待修复提交后的主干 CI，不以本地结果替代。
+- T6.1 首次主干 CI run `30701763933` 在 `backend-test-agent-i-z` 命中 3 个确定性失败；上一主干 run `30682409732` 已有完全相同的 `3 failed / 658 passed / 3 skipped`，与分享实现无关。根因是 `bc48f7288` 将权威饮水 Goal 的 `target_date` 写入 `record_date` 后，旧测试仍构造无日期 Goal 或依赖运行当天。修复只同步测试契约：单元夹具显式指定 `target_date`，集成用例固定 Turn Snapshot 时钟并断言规范日期。原 3 项先复现 RED，修复后 `3/3`、两份完整测试文件 `31/31`，与 GitHub 同参数的 `agent-i-z` 分片 `661 passed / 3 skipped`。修复提交 `cdce103f4` 的主干 CI run `30702837145` 最终 `SUCCESS`，44/44 作业完成且 0 失败，目标分片和 Backend tests enforcement 均通过。
 - T5.2 首次 CI run `29164922239` 中 type drift 在补齐 Frontend 生成类型后通过，但 Linux `a-b` 分片连续两次远超历史绿灯的 4 分 23 秒，并在 `test_agent_health_manage.py` 与 `test_agent_intervention_cycle_tool.py` 边界失去输出；该边界组合本机 `30/30` 通过，`c-d` 重跑也在 3 分 36 秒通过。判定为既有进程级顺序污染而非饮食断言回归，将 86 个 `a-b` 测试文件拆为非 Agent、`agent_[a-h]`、`agent_[i-z]` 三个互斥进程；文件覆盖校验为 `86 -> 86`、差集 0。
 - T5.2 CI run `29166225719` 验证上述三个新分片分别在 3 分 2 秒、2 分 15 秒和 1 分 24 秒通过；同轮旧 `t[f-z]+u` 分片在 69% 处进入 `test_twin_builder.py` 后冻结，并被 20 分钟上限终止，其他 16 个作业均通过。本机同命令 `392/392` 在 31.23 秒通过；据逐用例日志将其拆为 `t[f-v]`、`t[w-z]`、`u` 三个干净进程，原 24 个文件覆盖校验仍为 `24 -> 24`、差集 0。
 - T5.2 CI run `29166933157` 中 `t[f-v]`、`t[w-z]`、`u` 已分别在 1 分 44 秒、1 分 25 秒和 1 分 28 秒通过；唯一剩余的旧 `s` 大分片进入 `test_schedule_into_agenda.py` 后失去输出，其他 18 个作业均通过。本机同一 643 项命令也在该模块首个用例后停住，但该模块单跑 `8/8`、与前一模块配对 `26/26`、`s[c-k]` 分组 `55/55` 均通过，确认是更长前序造成的进程状态污染；将 58 个 `s` 文件拆为 `s[a-b]`、`s[c-k]`、`s[l-z]`，覆盖校验为 `58 -> 58`、差集 0。
@@ -158,7 +158,7 @@
 - T5.2 最终 Linux 权威闸门：GitHub Actions run `29168150924` SUCCESS；18 个后端测试分片、backend quality、最终 Backend tests enforcement、type drift、Frontend、Mobile 与 macOS 全部通过，head commit 为 `c6d3d3f4942fee7a1f92730f33d9326d600be4c0`。
 - Linux 全仓权威闸门：GitHub Actions run `29163241845` SUCCESS；frontend、Mobile、macOS、type drift、backend quality、10 个后端测试分片及最终 backend enforcement 全部通过。
 - **2026-08-01 Correction 前历史裁决：PASS**。
-- **本轮 G3 裁决：PENDING**。本地实现与回归已通过；仍须以提交后的主干 CI 作为集成权威闸门，不能只凭本地测试进入部署。
+- **本轮 G3 裁决：PASS**。修复提交 `cdce103f4` 的 GitHub Actions run `30702837145` 为 `SUCCESS`，44/44 作业完成且 0 失败；本地同构分片和主干集成权威闸证据一致。
 
 ## G4 · 安全闸
 
