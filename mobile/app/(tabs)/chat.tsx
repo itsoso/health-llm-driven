@@ -928,6 +928,7 @@ export default function ChatScreen() {
           : 'active' as const,
         retryable: !!(
           activeTurn.recoverable
+          && activeTurn.retryMode
           && retryableTextMessage
           && !isStreaming
           && (activeTurn.phase === 'failed' || activeTurn.phase === 'interrupted')
@@ -949,8 +950,11 @@ export default function ChatScreen() {
     [messages],
   );
   const retryLastTextTurn = () => {
-    if (!retryableTextMessage || isStreaming) return;
-    void sendMessage(retryableTextMessage.content, null);
+    if (!retryableTextMessage || !activeTurn.retryMode || isStreaming) return;
+    void sendMessage(
+      activeTurn.retryMode === 'retry_source' ? '重试' : retryableTextMessage.content,
+      null,
+    );
   };
 
   return (

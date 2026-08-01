@@ -4,7 +4,7 @@
 |---|---|
 | slug | `record-write-outcome-reliability` |
 | 创建日期 | 2026-07-31 |
-| 当前阶段 | S4 需求分解 |
+| 当前阶段 | S5 实现 |
 | 状态 | building |
 | 负责 | Codex |
 | 反馈环 | Backend deploy + Mobile OTA + production smoke |
@@ -93,10 +93,10 @@
 
 - 跨端 API 契约: additive `tool_result` outcome facts; existing `done.turn_outcome/recovery_action` becomes Mobile authority.
 - 任务表:
-  - [ ] T1 deterministic water amount/date and persistence regression.
-  - [ ] T2 backend typed write outcome event and terminal retry classification.
-  - [ ] T3 Mobile parser and non-terminal tool result state.
-  - [ ] T4 Mobile retry-source action and no-retry uncertain state.
+  - [x] T1 deterministic water amount/date and persistence regression.
+  - [x] T2 backend typed write outcome event and terminal retry classification.
+  - [x] T3 Mobile parser and non-terminal tool result state.
+  - [x] T4 Mobile retry-source action and no-retry uncertain state.
   - [ ] T5 integrated verification, safety review, deployment, production validation.
 - 并发检查: isolated worktree from `origin/main`; dirty local main untouched. ☑
 
@@ -104,19 +104,37 @@
 
 - 分支: `codex/fix-record-write-outcome`
 - commit: pending
+- 已实现:
+  - exact historical water phrase compiles to one date-bound write and persists that date;
+  - write `tool_result` exposes content-free typed outcome facts;
+  - missing receipt becomes authoritative non-retryable reconciliation outcome;
+  - Mobile waits for `done`/history authority and distinguishes recovery eligibility from user retry authority;
+  - accepted transport loss remains durable for server recovery without exposing blind resubmit;
+  - active backend `retry_source_turn` sends `重试`, never the original health-write text.
 
 ## G3 · 测试闸
 
-- 集成闸: pending
-- main CI 真实色: pending
-- capstone review: pending
-- **裁决**: pending
+- 集成闸:
+  - backend approved-scope integration: `295 passed, 7 warnings`;
+  - Mobile full Jest: `282 suites passed; 2192 passed, 1 skipped`; TypeScript and Expo lint exit 0;
+  - changed backend files Ruff: `All checks passed`;
+  - `scripts/validate.py -v`: doc-drift + dossier-consistency PASS; repository-wide Ruff remains report-only with pre-existing debt.
+- supplemental backend full-suite attempt: collected 9458 tests, but the local run stopped producing progress near 2% and was terminated after about 10 minutes; the adjacent suspected file `test_agenda_snooze.py` then passed 11/11 with a 30-second per-test timeout. This extra attempt is not the approved integration command and is not represented as passed.
+- main CI 真实色: baseline `b8164308f` CI run `30568696841` completed `success`; this change's CI is a delivery prerequisite after push.
+- capstone review: local independent diff review completed; one recovery/retry coupling issue found, covered red→green, and fixed before this verdict.
+- **裁决**: PASS for the approved integration scope; main-branch CI remains a delivery prerequisite.
 
 ## G4 · 安全闸
 
 - 触发: health write path and retry semantics.
-- 评审: independent safety/code review required after commit.
-- **裁决**: pending
+- 评审:
+  - uncertain/dispatched writes never expose a resubmit action;
+  - user retry requires an explicit retry mode, with `retry_source` authorized by backend terminal metadata;
+  - accepted transport interruption preserves server reconciliation without granting resubmit;
+  - outcome SSE fields contain no raw health values;
+  - persistence remains scoped by the existing current `user_id`; no schema or autonomy change;
+  - production row `#705` remains untouched.
+- **裁决**: PASS
 
 ## S6 · 部署
 

@@ -472,6 +472,7 @@ describe('ChatScreen', () => {
     mockActiveTurn = {
       phase: 'failed',
       recoverable: true,
+      retryMode: 'resubmit',
       label: '网络中断，已保留内容',
       errorCode: 'stream_request_failed',
       turnId: 'turn-current',
@@ -482,6 +483,43 @@ describe('ChatScreen', () => {
     expect(getByText('网络中断，已保留内容')).toBeTruthy();
     fireEvent.press(getByLabelText('重试上一轮'));
     await waitFor(() => expect(mockSendMessage).toHaveBeenCalledWith('查询今天饮食', null));
+  });
+
+  it('uses the server retry command instead of resubmitting a write request', async () => {
+    mockMessages = [{
+      id: 'u-write', role: 'user', content: '记录喝水 1200 毫升', sourceTurnId: 'turn-write',
+    }];
+    mockActiveTurn = {
+      phase: 'failed',
+      recoverable: true,
+      retryMode: 'retry_source',
+      label: '本轮未执行，可以安全重试',
+      errorCode: 'write_without_tool',
+      turnId: 'turn-write',
+    };
+
+    const view = render(<ChatScreen />);
+    fireEvent.press(view.getByLabelText('重试上一轮'));
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledWith('重试', null));
+    expect(mockSendMessage).not.toHaveBeenCalledWith('记录喝水 1200 毫升', null);
+  });
+
+  it('does not expose retry while an accepted turn is only awaiting server recovery', () => {
+    mockMessages = [{
+      id: 'u-recovering', role: 'user', content: '记录喝水 1200 毫升', sourceTurnId: 'turn-recovering',
+    }];
+    mockActiveTurn = {
+      phase: 'interrupted',
+      recoverable: true,
+      label: '连接中断，正在从服务端恢复',
+      errorCode: 'stream_transport_interrupted',
+      turnId: 'turn-recovering',
+    };
+
+    const view = render(<ChatScreen />);
+
+    expect(view.queryByLabelText('重试上一轮')).toBeNull();
   });
 
   it('queues structured health continuation while another turn is streaming', () => {

@@ -1433,6 +1433,7 @@ describe('useChatEngine', () => {
       phase: 'interrupted',
       recoverable: true,
     });
+    expect(result.current.activeTurn.retryMode).toBeUndefined();
     expect(result.current.messages.find(message => message.role === 'assistant')).toMatchObject({
       completionStatus: 'interrupted',
       content: expect.stringContaining('已保留已接收内容'),
@@ -1477,6 +1478,7 @@ describe('useChatEngine', () => {
       phase: 'interrupted',
       recoverable: true,
     });
+    expect(result.current.activeTurn.retryMode).toBeUndefined();
     expect(result.current.messages.filter(message => message.cardType)).toHaveLength(0);
   });
 
@@ -1795,7 +1797,7 @@ describe('useChatEngine', () => {
         hadWrite: true,
         writeVerified: false,
         errorCode: 'write_receipt_missing_identity',
-        recoverable: true,
+        recoverable: false,
       });
     });
   });
@@ -1837,7 +1839,7 @@ describe('useChatEngine', () => {
       expect(result.current.activeTurn).toMatchObject({
         phase: 'interrupted',
         errorCode: 'stream_interrupted',
-        recoverable: true,
+        recoverable: false,
       });
     });
     const terminalCalls = mockEmitClientEvent.mock.calls.filter(
@@ -2425,6 +2427,7 @@ describe('useChatEngine', () => {
         phase: 'interrupted',
         recoverable: true,
       });
+      expect(result.current.activeTurn.retryMode).toBeUndefined();
     });
 
     await act(async () => {
@@ -2501,6 +2504,7 @@ describe('useChatEngine', () => {
         phase: 'interrupted',
         recoverable: true,
       });
+      expect(result.current.activeTurn.retryMode).toBeUndefined();
     });
 
     await act(async () => {

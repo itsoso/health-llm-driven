@@ -55,6 +55,7 @@ WATER_SIGNALS = ("喝水", "饮水", "补水")
 WATER_AMOUNT_RE = re.compile(
     r"(?:喝水|饮水|补水)"
     r"(?:了)?(?:约|大约|差不多)?"
+    r"(?:[^，。！？!?]{0,20}?)"
     r"(?P<amount>\d+(?:\.\d+)?(?:十|百|千|万)?|半|"
     r"[零〇一二两三四五六七八九十百千万点]+)"
     r"(?P<unit>毫升|ml|升|l)",
@@ -272,7 +273,7 @@ def _compile_simple_health_record_goal(
         operation="create",
         target_date=(
             _target_date(text, context, ())
-            if record_type == "diet"
+            if record_type in {"diet", "water"}
             else context.current_time.date().isoformat()
         ),
         target_meal_types=target_meal_types,

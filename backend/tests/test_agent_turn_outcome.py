@@ -45,6 +45,20 @@ def test_tool_failure_is_retryable_and_keeps_refusal_metric_false():
     assert result["refusal_detected"] is False
 
 
+def test_unverified_write_requires_reconciliation_and_is_never_retryable():
+    result = classify_agent_turn_outcome(
+        completion_status="error",
+        final_text="本次记录请求的状态暂时无法确认。",
+        tool_failure_tools=["health_record"],
+        write_reconciliation_required=True,
+    )
+
+    assert result["category"] == "write_reconciliation_required"
+    assert result["reason_code"] == "missing_receipt"
+    assert result["retryable"] is False
+    assert result["refusal_detected"] is False
+
+
 def test_confirmation_is_distinct_from_failure():
     result = classify_agent_turn_outcome(
         completion_status="complete",

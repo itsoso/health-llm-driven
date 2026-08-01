@@ -257,6 +257,54 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('parses an uncertain write as a reconciliation state instead of a generic outage', async () => {
+    const iter = streamChat('昨天喝水很多 补充记录 1200 毫升');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText =
+      'data: {"event":"tool_result","data":{"tool":"health_record","success":false,"write_attempted":true,"write_completed":false,"write_outcome":"uncertain","dispatch_started":true,"resubmit_safe":false,"error_code":"missing_receipt"}}\n\n';
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toEqual({
+      value: expect.objectContaining({
+        type: 'tool',
+        toolName: 'health_record',
+        toolSuccess: false,
+        writeOutcome: 'uncertain',
+        dispatchStarted: true,
+        resubmitSafe: false,
+        errorCode: 'missing_receipt',
+        thought: '记录状态需要核对',
+      }),
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
+  it('parses only an active retry-source recovery action as terminal retryable', async () => {
+    const iter = streamChat('记录喝水 1200 毫升');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText =
+      'data: {"event":"done","data":{"conversation_id":42,"message_id":99,"completion_status":"error","turn_outcome":{"category":"action_not_executed","reason_code":"write_without_tool","retryable":true},"recovery_action":{"type":"retry_source_turn","status":"active"}}}\n\n';
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toEqual({
+      value: expect.objectContaining({
+        type: 'done',
+        terminalRetryable: true,
+        retryMode: 'retry_source',
+        terminalErrorCode: 'write_without_tool',
+      }),
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
   it('distinguishes health-manage queries from writes at tool-call time', async () => {
     const queryIter = streamChat('查询饮食');
     const queryEvent = queryIter.next();

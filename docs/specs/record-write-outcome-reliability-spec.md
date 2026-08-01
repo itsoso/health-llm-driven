@@ -84,7 +84,7 @@ events:
   tool_result:
     additive_fields: [write_outcome, dispatch_started, resubmit_safe, error_code]
   done:
-    existing_authority: [completion_status, turn_outcome, recovery_action, write_recovery]
+    existing_authority: [completion_status, turn_outcome, recovery_action]
 models: no schema changes
 fields:
   record_date: user-owned ISO date carried into water persistence and receipt
@@ -125,6 +125,10 @@ Then the turn is non-retryable and no generic Retry button is shown
 Given the backend exposes an active retry_source_turn action
 When the user taps Retry
 Then Mobile sends the retry confirmation path instead of resubmitting the original write as a new turn
+
+Given the backend accepted a turn but the Mobile stream was interrupted
+When the client is waiting for history reconciliation
+Then the turn remains recoverable in storage but no user resubmit action is exposed
 ```
 
 ## 12. Verification Plan

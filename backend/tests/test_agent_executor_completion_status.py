@@ -1385,7 +1385,74 @@ async def test_agent_stream_finishes_pure_record_turn_from_tool_result(db, auth_
     # 食材名/宏量由结构化卡承载,不再复述进文本(founder 截图的多段墙已收敛)。
     assert "已记录晚餐。" in rendered
     assert "牛肉饭" not in rendered  # 食材不再进文本
+    tool_result = next(
+        event["data"] for event in events if event.get("event") == "tool_result"
+    )
+    assert tool_result["write_outcome"] == "verified"
+    assert tool_result["dispatch_started"] is True
+    assert tool_result["resubmit_safe"] is False
+    assert tool_result["error_code"] is None
     assert events[-1]["event"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_marks_missing_write_receipt_non_retryable(
+    db, auth_user_and_headers
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+
+    async def fake_call_llm(messages, tools):
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": "call_uncertain_water",
+                "type": "function",
+                "function": {
+                    "name": "health_record",
+                    "arguments": json.dumps({
+                        "record_type": "water",
+                        "data": {"amount": 1200},
+                    }),
+                },
+            }],
+        }
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        assert tool_name == "health_record"
+        return json.dumps({
+            "status": "uncertain",
+            "error_code": "missing_receipt",
+            "dispatch_started": True,
+        })
+
+    executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录喝水 1200 毫升",
+            user_auth_token="test-token",
+        )
+    ]
+
+    tool_result = next(
+        event["data"] for event in events if event.get("event") == "tool_result"
+    )
+    assert tool_result["write_outcome"] == "uncertain"
+    assert tool_result["dispatch_started"] is True
+    assert tool_result["resubmit_safe"] is False
+    assert tool_result["error_code"] == "missing_receipt"
+
+    done = next(event["data"] for event in events if event.get("event") == "done")
+    assert done["turn_outcome"]["category"] == "write_reconciliation_required"
+    assert done["turn_outcome"]["reason_code"] == "missing_receipt"
+    assert done["turn_outcome"]["retryable"] is False
+    assert "recovery_action" not in done
 
 
 @pytest.mark.asyncio

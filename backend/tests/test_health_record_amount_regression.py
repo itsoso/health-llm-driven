@@ -5,8 +5,9 @@
 修法: 把 data['amount'] 改成 data.get('amount').
 """
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from unittest.mock import AsyncMock, patch
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -176,6 +177,49 @@ async def test_water_record_persists_exact_amount_with_verified_receipt(db):
     assert receipt["resource_type"] == "water_record"
     assert record.user_id == 1
     assert record.amount_ml == 1000
+
+
+@pytest.mark.asyncio
+async def test_water_record_persists_historical_date_with_verified_receipt(db):
+    from app.services.agent_executor import (
+        AgentExecutor,
+        _write_receipt_from_tool_result,
+    )
+    from app.models.daily_health import WaterIntake
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._agent_kernel_reference_now = lambda: datetime(
+        2026,
+        7,
+        17,
+        9,
+        57,
+        tzinfo=ZoneInfo("Asia/Shanghai"),
+    )
+    args = {
+        "record_type": "water",
+        "data": {
+            "amount": 1200,
+            "record_date": "2026-07-16",
+            "confirmed": True,
+        },
+        "confirmed": True,
+    }
+
+    result = await executor._execute_tool(
+        tool_name="health_record",
+        args_raw=json.dumps(args),
+        user_token=None,
+    )
+
+    payload = json.loads(result)
+    record = db.query(WaterIntake).filter(WaterIntake.id == payload["record_id"]).one()
+    receipt = _write_receipt_from_tool_result("health_record", args, result)
+    assert record.record_date.isoformat() == "2026-07-16"
+    assert payload["record_date"] == "2026-07-16"
+    assert receipt is not None
+    assert receipt["date"] == "2026-07-16"
 
 
 @pytest.mark.asyncio

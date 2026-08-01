@@ -2881,6 +2881,23 @@ def _write_checkpoint_status_after_dispatch(
     return classify_write_execution(result, receipt=receipt).status
 
 
+def _write_outcome_event_fields(
+    result: Any,
+    receipt: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Expose the write state machine without asking clients to parse prose."""
+    outcome = classify_write_execution(result, receipt=receipt)
+    return {
+        "write_outcome": outcome.status,
+        "dispatch_started": outcome.dispatch_started,
+        "resubmit_safe": bool(
+            outcome.dispatch_started is False
+            and outcome.status in {"rejected", "failed"}
+        ),
+        "error_code": outcome.error_code,
+    }
+
+
 def _write_operation_fingerprint(
     tool_name: str,
     parsed_args: Dict[str, Any],
@@ -6047,13 +6064,19 @@ def _simple_record_goal_arguments(
     if goal.target_record_type == "water":
         try:
             amount_ml = int(values["amount_ml"])
+            canonical_date = date.fromisoformat(
+                str(goal.target_date or "").strip()
+            ).isoformat()
         except (KeyError, TypeError, ValueError):
             return None
         if not 1 <= amount_ml <= 5000:
             return None
         return {
             "record_type": "water",
-            "data": {"amount": amount_ml},
+            "data": {
+                "amount": amount_ml,
+                "record_date": canonical_date,
+            },
         }
     if goal.target_record_type == "symptom":
         body_part = str(values.get("body_part") or "").strip()
@@ -8711,6 +8734,9 @@ class AgentExecutor:
                                         write_receipts.append(receipt)
                             else:
                                 receipt = None
+                            tool_event_data.update(
+                                _write_outcome_event_fields(result, receipt)
+                            )
                             if write_attempted and not replayed_write:
                                 checkpoint_status = _write_checkpoint_status_after_dispatch(
                                     result,
@@ -11284,6 +11310,12 @@ class AgentExecutor:
                                         write_receipts.append(receipt)
                             else:
                                 receipt = None
+                            tool_event_data.update(
+                                _write_outcome_event_fields(
+                                    result_for_record_card,
+                                    receipt,
+                                )
+                            )
                             if write_attempted and not replayed_write:
                                 checkpoint_status = _write_checkpoint_status_after_dispatch(
                                     result_for_record_card,
@@ -12217,6 +12249,7 @@ class AgentExecutor:
             write_receipts=write_receipts,
             record_intent_no_tool=record_intent_no_tool,
             destructive_or_sync_no_tool=destructive_or_sync_no_tool,
+            write_reconciliation_required=bool(unverified_write_operations),
         )
         kernel_snapshot = self._agent_kernel_snapshot
         health_write_requested = bool(
@@ -17785,6 +17818,21 @@ class AgentExecutor:
             from app.services.water_service import create_water_intake
 
             recorded_at = self._agent_kernel_reference_now()
+            raw_record_date = str(data.get("record_date") or "").strip()
+            if raw_record_date:
+                try:
+                    target_record_date = date.fromisoformat(raw_record_date)
+                except ValueError:
+                    return local_write_rejection(
+                        "water_record_date_invalid",
+                        message="饮水记录日期无效。",
+                        recovery_guidance="请使用 YYYY-MM-DD 或今天、昨天等明确日期。",
+                    )
+                recorded_at = recorded_at.replace(
+                    year=target_record_date.year,
+                    month=target_record_date.month,
+                    day=target_record_date.day,
+                )
             record = create_water_intake(
                 self.db,
                 user_id=self._current_user_id,

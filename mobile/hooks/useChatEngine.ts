@@ -781,7 +781,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
   const reconcileActiveTurnFromServer = useCallback((id: number, msgs: any[]) => {
     const current = activeTurnRef.current;
-    if (!current.turnId || !current.recoverable) return;
+    if (!current.turnId || current.phase === 'completed') return;
     if (current.conversationId && current.conversationId !== id) return;
 
     const assistant = assistantMessageForTurn(msgs, current.turnId);
@@ -796,6 +796,13 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     }
 
     const completionStatus = assistant?.meta?.completion_status;
+    const turnOutcome = assistant?.meta?.turn_outcome;
+    const recoveryAction = assistant?.meta?.recovery_action;
+    const recoveredRetryable = Boolean(
+      turnOutcome?.retryable === true
+      && recoveryAction?.type === 'retry_source_turn'
+      && recoveryAction?.status === 'active'
+    );
     const recoveredReceipts = normalizeWriteReceipts(assistant?.meta?.write_receipts) || [];
     const recoveredWrite = recoveredReceipts.length > 0;
     const missingWriteReceipt = current.hadWrite && !recoveredWrite;
@@ -813,7 +820,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       ? 'stream_interrupted'
       : missingWriteReceipt
         ? 'write_receipt_missing_identity'
-        : undefined;
+        : typeof turnOutcome?.reason_code === 'string'
+          ? turnOutcome.reason_code
+          : undefined;
     dispatchAgentTurn({
       type: 'recover',
       serverStatus: recoveredStatus,
@@ -822,6 +831,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       errorCode: recoveredErrorCode,
       hadWrite: current.hadWrite || recoveredWrite,
       writeVerified: recoveredWrite ? true : (current.hadWrite ? false : current.writeVerified),
+      recoverable: !missingWriteReceipt && recoveredRetryable,
+      retryMode: !missingWriteReceipt && recoveredRetryable ? 'retry_source' : undefined,
       at: Date.now(),
     });
     emitAgentTurnTerminal(
@@ -1398,15 +1409,13 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         const needsReconciliation = reconciledStatus.status === 'reconciliation_required';
         const label = needsReconciliation
           ? '记录状态需要核对，请先查看现有记录。'
-          : reconciledStatus.retryable
-            ? '本轮处理未完成，可以重试。'
-            : '本轮处理未完成，请先核对现有记录。';
+          : '本轮处理未完成，请先核对现有记录。';
         dispatchAgentTurn({
           type: 'fail',
           at: Date.now(),
           errorCode: reconciledStatus.errorCode || reconciledStatus.status,
           label,
-          recoverable: reconciledStatus.retryable && !needsReconciliation,
+          recoverable: false,
         });
         emitAgentTerminal(
           'failed',
@@ -1428,6 +1437,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           at: Date.now(),
           errorCode: reconciledStatus.errorCode || 'run_cancelled',
           label,
+          recoverable: false,
         });
         emitAgentTerminal(
           'interrupted',
@@ -1451,6 +1461,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           at: Date.now(),
           errorCode: 'stream_transport_interrupted',
           label: STREAM_RECOVERY_NOTICE,
+          // Keep the accepted turn durable for history reconciliation, but do
+          // not grant a user resubmit action. retryMode was cleared at accept.
+          recoverable: true,
         });
         emitAgentTerminal('interrupted', 'stream_transport_interrupted');
       } else {
@@ -1632,7 +1645,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               if (typeof evt.toolSuccess === 'boolean') {
                 const writes = evt.writeAttempted
                   ?? (evt.toolName === 'health_record' && evt.writeCompleted !== false);
-              const toolSucceeded = evt.toolSuccess && (!writes || evt.writeCompleted === true);
+              const toolSucceeded = evt.writeOutcome
+                ? evt.writeOutcome === 'verified'
+                : evt.toolSuccess && (!writes || evt.writeCompleted === true);
               dispatchAgentTurn({
                 type: 'tool_finished',
                 at: Date.now(),
@@ -1640,7 +1655,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
                 writes,
                 success: toolSucceeded,
                 receiptVerified: writes ? evt.receipt?.verified === true : undefined,
-                errorCode: toolSucceeded ? undefined : 'tool_failed',
+                writeOutcome: evt.writeOutcome,
+                errorCode: toolSucceeded ? undefined : (evt.errorCode ?? 'tool_failed'),
                 label: evt.thought,
               });
               if (writes && toolSucceeded && evt.receipt?.verified === true) {
@@ -1653,12 +1669,17 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               if (writes) {
                 const verified = toolSucceeded && evt.receipt?.verified === true;
                 void emitClientEvent('write_receipt_terminal', {
-                  phase: verified ? 'verified' : (toolSucceeded ? 'unverified' : 'failed'),
+                  phase: verified
+                    ? 'verified'
+                    : evt.writeOutcome === 'uncertain'
+                      ? 'unverified'
+                      : 'failed',
                   duration_bucket: durationBucket(writeToolStartedAt.get(evt.toolName) ?? turnStartedAt),
                   action_type: evt.toolName,
                   verified,
                   ...(!verified ? {
-                    error_code: toolSucceeded ? 'write_receipt_missing_identity' : 'tool_failed',
+                    error_code: evt.errorCode
+                      ?? (toolSucceeded ? 'write_receipt_missing_identity' : 'tool_failed'),
                   } : {}),
                 });
               }
@@ -1747,6 +1768,23 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             completionStatus: effectiveCompletionStatus,
             conversationId: evt.conversationId,
             messageId: evt.messageId,
+            retryable: evt.terminalRetryable === true || (
+              evt.terminalRetryable === undefined
+              && (
+                evt.requestPersisted === false
+                || (!acceptedByServer && !doneProvesPersistence)
+              )
+            ),
+            retryMode: evt.retryMode ?? (
+              evt.terminalRetryable === undefined
+              && (
+                evt.requestPersisted === false
+                || (!acceptedByServer && !doneProvesPersistence)
+              )
+                ? 'resubmit'
+                : undefined
+            ),
+            errorCode: evt.terminalErrorCode,
           });
           if (terminalTurn.phase === 'failed') {
             emitAgentTerminal('failed', terminalTurn.errorCode || 'agent_turn_failed');
@@ -1859,7 +1897,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             at: Date.now(),
             errorCode: 'stream_error_event',
             label: sanitizeChatErrorMessage(evt.content, '请求出错，请稍后再试'),
-            recoverable: true,
+            recoverable: !acceptedByServer,
           });
           emitAgentTerminal('failed', 'stream_error_event');
           flushTokenBuffer();
@@ -1921,13 +1959,18 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       }
       settleAcceptance(false);
       dispatchAgentTurn(isAbort
-        ? { type: 'interrupt', at: Date.now(), errorCode: 'stream_aborted' }
+        ? {
+            type: 'interrupt',
+            at: Date.now(),
+            errorCode: 'stream_aborted',
+            recoverable: !acceptedByServer,
+          }
         : {
             type: 'fail',
             at: Date.now(),
             errorCode: 'stream_request_failed',
             label: sanitizeChatErrorMessage(err?.message, '请求失败'),
-            recoverable: true,
+            recoverable: !acceptedByServer,
           });
       emitAgentTerminal(
         isAbort ? 'interrupted' : 'failed',
