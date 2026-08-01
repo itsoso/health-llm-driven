@@ -265,6 +265,7 @@ CLINICIAN_PROVIDER_TERMS = (
 CLINICIAN_REPORT_PREDICATES = (
     "告诉我",
     "告诉",
+    "告知",
     "表示",
     "认为",
     "诊断",

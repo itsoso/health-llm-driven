@@ -227,6 +227,48 @@
     "content": "先休息"
   },
   {
+    "id": "doctor_alt_notification_context",
+    "text": "大夫告知是臀肌无力导致腰痛",
+    "kind": "clinician_context",
+    "reason_code": "clinician_report",
+    "provider": "大夫",
+    "content": "臀肌无力导致腰痛"
+  },
+  {
+    "id": "doctor_notification_context",
+    "text": "医生告知是臀肌无力导致腰痛",
+    "kind": "clinician_context",
+    "reason_code": "clinician_report",
+    "provider": "医生",
+    "content": "臀肌无力导致腰痛"
+  },
+  {
+    "id": "doctor_notification_diagnosis_question",
+    "text": "大夫告知的诊断靠谱吗？",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_question",
+    "provider": "大夫",
+    "content": "的诊断靠谱吗"
+  },
+  {
+    "id": "notification_inside_explicit_write_is_valid",
+    "text": "请记录医生意见：医生告知是臀肌无力导致腰痛",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "医生告知是臀肌无力导致腰痛",
+    "command": "请记录医生意见"
+  },
+  {
+    "id": "notification_report_before_explicit_write_is_valid",
+    "text": "医生告知是臀肌无力导致腰痛。请记录医生诊断：臀肌无力导致腰痛",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write_after_report",
+    "provider": "医生",
+    "content": "臀肌无力导致腰痛",
+    "command": "请记录医生诊断"
+  },
+  {
     "id": "attending_doctor_context",
     "text": "主治医生判断是腰肌代偿",
     "kind": "clinician_context",
