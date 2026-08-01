@@ -1,0 +1,222 @@
+[
+  {
+    "id": "explicit_doctor_diagnosis_write",
+    "text": "请记录医生诊断：臀肌无力导致腰肌代偿",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "臀肌无力导致腰肌代偿",
+    "command": "请记录医生诊断"
+  },
+  {
+    "id": "explicit_doctor_opinion_write",
+    "text": "保存医生意见：建议减少负重训练",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "建议减少负重训练",
+    "command": "保存医生意见"
+  },
+  {
+    "id": "explicit_write_after_hard_boundary",
+    "text": "医生说是臀肌无力。请记录医生诊断：臀肌无力导致腰痛",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write_after_report",
+    "provider": "医生",
+    "content": "臀肌无力导致腰痛",
+    "command": "请记录医生诊断"
+  },
+  {
+    "id": "mixed_report_before_explicit_write",
+    "text": "医生说需要删除旧记录，提醒我复查。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "clinician_question_before_explicit_write",
+    "text": "医生说臀肌无力应该怎么办？请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "screenshot_bare_doctor_diagnosis",
+    "text": "医生诊断是大腿和臀部肌肉无力导致腰肌代偿进而导致腰肌痛",
+    "kind": "clinician_context",
+    "reason_code": "clinician_report",
+    "provider": "医生",
+    "content": "大腿和臀部肌肉无力导致腰肌代偿进而导致腰肌痛"
+  },
+  {
+    "id": "doctor_report_question",
+    "text": "医生说腰痛是臀肌无力导致的吗？",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_question",
+    "provider": "医生",
+    "content": "腰痛是臀肌无力导致的吗"
+  },
+  {
+    "id": "objectless_followup_write",
+    "text": "医生说是臀肌无力，帮我记录一下",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "soft_boundary_followup",
+    "provider": "医生",
+    "content": "臀肌无力，帮我记录一下"
+  },
+  {
+    "id": "report_then_save_record_noun",
+    "text": "医生建议休息然后请保存诊断记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "休息然后请保存诊断记录"
+  },
+  {
+    "id": "report_delete_and_reminder",
+    "text": "医生说需要删除旧记录，提醒我明天复查",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "soft_boundary_followup",
+    "provider": "医生",
+    "content": "需要删除旧记录，提醒我明天复查"
+  },
+  {
+    "id": "write_with_extra_coordinated_action",
+    "text": "请记录医生诊断：臀肌无力，然后提醒我复查",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力，然后提醒我复查"
+  },
+  {
+    "id": "write_with_comma_extra_action",
+    "text": "请记录医生诊断：臀肌无力，删除旧记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力，删除旧记录"
+  },
+  {
+    "id": "write_without_content",
+    "text": "请记录医生诊断",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "feedback_write_missing_content",
+    "provider": "医生"
+  },
+  {
+    "id": "view_doctor_record_stays_legacy",
+    "text": "查看医生诊断记录",
+    "kind": "none",
+    "reason_code": "legacy_clinician_record_operation",
+    "provider": "医生"
+  },
+  {
+    "id": "delete_doctor_record_stays_legacy",
+    "text": "删除医生诊断记录",
+    "kind": "none",
+    "reason_code": "legacy_clinician_record_operation",
+    "provider": "医生"
+  },
+  {
+    "id": "record_noun_question_stays_legacy",
+    "text": "医生诊断记录里写了什么？",
+    "kind": "none",
+    "reason_code": "legacy_clinician_record_operation",
+    "provider": "医生"
+  },
+  {
+    "id": "physician_context",
+    "text": "医师认为需要减少负重",
+    "kind": "clinician_context",
+    "reason_code": "clinician_report",
+    "provider": "医师",
+    "content": "需要减少负重"
+  },
+  {
+    "id": "doctor_alt_context",
+    "text": "大夫建议先休息",
+    "kind": "clinician_context",
+    "reason_code": "clinician_report",
+    "provider": "大夫",
+    "content": "先休息"
+  },
+  {
+    "id": "attending_doctor_context",
+    "text": "主治医生判断是腰肌代偿",
+    "kind": "clinician_context",
+    "reason_code": "clinician_report",
+    "provider": "主治医生",
+    "content": "腰肌代偿"
+  },
+  {
+    "id": "rehab_therapist_context",
+    "text": "康复师说核心力量不足",
+    "kind": "clinician_context",
+    "reason_code": "clinician_report",
+    "provider": "康复师",
+    "content": "核心力量不足"
+  },
+  {
+    "id": "physical_therapist_context",
+    "text": "物理治疗师认为臀肌无力",
+    "kind": "clinician_context",
+    "reason_code": "clinician_report",
+    "provider": "物理治疗师",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "physical_therapist_consultation",
+    "text": "我想咨询物理治疗师的意见",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_consultation",
+    "provider": "物理治疗师",
+    "content": "的意见"
+  },
+  {
+    "id": "provider_variant_explicit_write",
+    "text": "录入康复师反馈：建议每天做臀桥",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "康复师",
+    "content": "建议每天做臀桥",
+    "command": "录入康复师反馈"
+  },
+  {
+    "id": "ascii_colon_explicit_write",
+    "text": "写入主治医生结论:暂时减少负重",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "主治医生",
+    "content": "暂时减少负重",
+    "command": "写入主治医生结论"
+  },
+  {
+    "id": "comma_is_not_authorization_boundary",
+    "text": "医生说是臀肌无力，请记录医生诊断：臀肌无力导致腰痛",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "soft_boundary_followup",
+    "provider": "医生",
+    "content": "臀肌无力，请记录医生诊断：臀肌无力导致腰痛"
+  },
+  {
+    "id": "unknown_provider_mention",
+    "text": "医生预约在明天",
+    "kind": "none",
+    "reason_code": "no_clinician_report",
+    "provider": "医生"
+  },
+  {
+    "id": "ordinary_health_text",
+    "text": "今天腰痛6分",
+    "kind": "none",
+    "reason_code": "no_clinician_signal"
+  },
+  {
+    "id": "ordinary_record_command",
+    "text": "记录今天腰痛6分",
+    "kind": "none",
+    "reason_code": "no_clinician_signal"
+  }
+]
