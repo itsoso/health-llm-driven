@@ -165,6 +165,38 @@ def test_clinician_attribution_is_not_extracted_as_a_self_symptom():
         assert ae._extract_clear_symptom_record(message) is None, message
 
 
+def test_every_clinician_guard_kind_stays_out_of_fast_record_choke_points():
+    import app.services.agent_executor as ae
+
+    messages = (
+        "医生诊断是大腿和臀部肌肉无力导致腰肌代偿进而导致腰肌痛",
+        "医生认为是臀肌无力导致腰痛，我该怎么处理？",
+        "请记录医生诊断：臀肌无力导致腰肌代偿",
+        "请记录医生诊断：臀肌无力并删除旧记录",
+    )
+
+    for message in messages:
+        assert ae._extract_clear_symptom_record(message) is None, message
+        assert (
+            ae._build_deterministic_symptom_tool_call(
+                message,
+                write_receipts=(),
+            )
+            is None
+        ), message
+        prefer_fast_record = ae._has_fast_record_write_intent(message)
+        assert prefer_fast_record is False, message
+        assert (
+            _should_force_record_tool_choice(
+                prefer_fast_record,
+                _FIRST_ROUND,
+                _TOOLS,
+                True,
+            )
+            is False
+        ), message
+
+
 def test_negation_blocks_recovered_textual_record_authorization():
     """弱模型把 health_record 吐成文本时,「别记录」也不授权恢复执行(绕 fast-path 的第二道门)。"""
     import app.services.agent_executor as ae

@@ -65,10 +65,8 @@ from app.services.agent_write_outcome import (
     write_result_declares_non_success,
 )
 from app.services.dynamic_card_persistence import cards_for_persistence
-from app.services.utterance_intent_classifier import (
-    CLINICIAN_ATTRIBUTION_MARKERS,
-    classify_agent_utterance,
-)
+from app.services.clinician_provenance_guard import classify_clinician_turn
+from app.services.utterance_intent_classifier import classify_agent_utterance
 from app.utils.number_format import format_card_numbers
 from app.services.agent_kernel.context import (
     build_turn_snapshot,
@@ -5739,7 +5737,6 @@ _SYMPTOM_NON_SELF_MARKERS = (
     "阿姨",
     "患者",
     "病人",
-    *CLINICIAN_ATTRIBUTION_MARKERS,
     "报告",
     "病历",
     "附件",
@@ -5861,6 +5858,8 @@ def _extract_clear_symptom_record(message: Any) -> Optional[Dict[str, str]]:
     """
     raw = str(message or "").strip()
     if not raw:
+        return None
+    if classify_clinician_turn(raw).kind != "none":
         return None
     intent = classify_agent_utterance(raw)
     if not (
@@ -6747,13 +6746,18 @@ def _model_tool_result_content(
     )
 
 def _needs_reliable_tool_model(message: Optional[str]) -> bool:
-    """破坏性(删/改/撤销)或同步意图 → 工具决策必须用强模型(fast 模型不可靠,生产实证)。
-
-    先排除**分析/建议**语境:"综合分析…我该怎么**调整**""**更新**一下认知"里的 调整/更新/修改
-    是建议动词、不是记录级删改,不该被判成破坏性(否则误伤分析轮的工具决策快路由)。分析类
-    本就走强模型答正文,工具决策轮该保留既有 fast 优化。真正的记录级删改("删除早餐""修改
-    早餐内容")不含分析词,不受影响。"""
+    """Whether intent classification requires the reliable tool model."""
     return classify_agent_utterance(message).requires_reliable_tool_model
+
+
+def _has_destructive_or_sync_intent(message: Optional[str]) -> bool:
+    """Return true only for an authorized mutation/sync write frame."""
+    intent = classify_agent_utterance(message)
+    return bool(
+        intent.is_write
+        and intent.primary == "mutate"
+        and intent.operation in {"update", "delete", "sync"}
+    )
 
 
 def _is_fast_eligible_turn(
@@ -9476,9 +9480,8 @@ class AgentExecutor:
             ).get("consumed_fraction")
         )
         write_action_requested = bool(
-            self._prefer_fast_record_model
-            or partial_diet_correction_requested
-            or _needs_reliable_tool_model(message or "")
+            partial_diet_correction_requested
+            or classify_agent_utterance(message or "").is_write
         )
         # 合成轮关思考门(2026-07-17, founder「列出胃药」实测合成轮 qwen3.7-max 思考 23–47s):
         # reasoning 模型(qwen3.7-max)的思考阶段对**简单查询/列表**是纯浪费。判据复用
@@ -11838,7 +11841,10 @@ class AgentExecutor:
                                 "暂时没有修改。请补充实际吃了什么或具体热量。"
                             )
                         streamed_to_client = False
-                    elif _needs_reliable_tool_model(message or "") and tool_executed_count == 0:
+                    elif (
+                        _has_destructive_or_sync_intent(message or "")
+                        and tool_executed_count == 0
+                    ):
                         # 破坏性/同步意图但 0 工具执行 = 动作未执行 → 诚实覆盖(加层不减层)。
                         final_text = _destructive_or_sync_not_performed_message(message)
                         streamed_to_client = False
@@ -11982,7 +11988,7 @@ class AgentExecutor:
         destructive_or_sync_no_tool = bool(
             health_evidence_turn is None
             and not record_intent_no_tool
-            and _needs_reliable_tool_model(message or "")
+            and _has_destructive_or_sync_intent(message or "")
             and tool_executed_count == 0
         )
         if record_intent_no_tool:

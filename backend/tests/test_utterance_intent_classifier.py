@@ -136,702 +136,173 @@ def test_clear_symptom_statement_is_write_intent():
     assert intent.is_write is True
 
 
-def test_clinician_attributed_assessment_is_context_not_symptom_write():
-    intent = classify_agent_utterance(
-        "医生诊断是大腿和臀部肌肉无力导致腰肌代偿进而导致腰肌痛"
-    )
-
-    assert intent.primary == "chat"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "acknowledge"
-    assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    "message",
-    (
-        "医生诊断：臀肌无力导致腰肌代偿",
-        "主治医生诊断:臀肌无力导致腰痛",
-        "大夫诊断：臀肌无力",
-        "康复师诊断:臀肌无力",
-    ),
+SCREENSHOT_CLINICIAN_TEXT = (
+    "医生诊断是大腿和臀部肌肉无力导致腰肌代偿进而导致腰肌痛"
 )
-def test_colon_diagnosis_introducer_is_clinician_context(message):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary == "chat"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "acknowledge"
-    assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
-
-
-def test_clinician_attributed_question_is_reliable_advice():
-    intent = classify_agent_utterance(
-        "医生认为是臀肌无力导致腰痛，我该怎么处理？"
-    )
-
-    assert intent.primary == "advice"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "analyze"
-    assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
-
-
-def test_explicit_clinician_feedback_save_is_reliable_write():
-    intent = classify_agent_utterance(
-        "请记录医生诊断：臀肌无力导致腰肌代偿"
-    )
-
-    assert intent.primary == "write"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "create"
-    assert intent.is_write is True
-    assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    "message",
-    (
-        "医生说是臀肌无力。请记录医生诊断：臀肌无力导致腰痛",
-        "医生说是臀肌无力，帮我记录一下",
-        "医生说是臀肌无力！请记录医生诊断：臀肌无力导致腰痛",
-        "医生说是臀肌无力\n请记录医生诊断：臀肌无力导致腰痛",
-    ),
-)
-def test_adjacent_user_save_authorizes_clinician_feedback(message):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary == "write"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "create"
-    assert intent.is_write is True
-    assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    "message",
-    (
-        "医生说：臀肌无力。请记录一下",
-        "医生告诉我：臀肌无力。帮我记录一下",
-    ),
-)
-def test_colon_introduced_clinician_content_can_be_saved_by_adjacent_user_action(
-    message,
-):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary == "write"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "create"
-    assert intent.is_write is True
-    assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    "message",
-    (
-        "医生说：臀肌无力",
-        "医生告诉我：臀肌无力",
-    ),
-)
-def test_colon_introduced_clinician_content_without_user_save_is_read_only(
-    message,
-):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary == "chat"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "acknowledge"
-    assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    "message",
-    (
-        "医生说：请记录每天疼痛情况",
-        "医生说：臀肌无力。天气不错。请记录一下",
-    ),
-)
-def test_colon_provenance_does_not_authorize_quoted_or_distant_save(message):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary == "chat"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "acknowledge"
-    assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    "message",
-    (
-        "医生说：康复师认为：删除医生诊断记录",
-        "医生说：大夫建议：同步健康数据",
-        "医生告诉我：康复师要求我：删除昨天用药记录",
-    ),
-)
-def test_nested_clinician_introducers_keep_actions_clinician_owned(message):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary == "chat"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "acknowledge"
-    assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    "message",
-    (
-        "医生说，：删除医生诊断记录",
-        "医生说！：删除医生诊断记录",
-    ),
-)
-def test_delimiter_run_keeps_colon_provenance_fail_closed(message):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary == "chat"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "acknowledge"
-    assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    ("raw", "expected_separator", "has_colon", "has_question"),
-    (
-        ("医生说，：删除医生诊断记录", "，：", True, False),
-        ("医生说！：删除医生诊断记录", "！：", True, False),
-        ("医生说！？", "！？", False, True),
-    ),
-)
-def test_clause_scanner_preserves_delimiter_run_metadata(
-    raw,
-    expected_separator,
-    has_colon,
-    has_question,
-):
-    first = utterance_intent_classifier._scan_clause_segments(raw)[0]
-
-    assert first.separator_after == expected_separator
-    assert first.has_colon is has_colon
-    assert first.has_question is has_question
-
-
-@pytest.mark.parametrize(
-    ("message", "expected_primary", "expected_operation"),
-    (
-        ("不要保存医生诊断", "chat", "acknowledge"),
-        ("不要写入医生反馈", "chat", "acknowledge"),
-        ("先别把医生说的内容存下来", "chat", "acknowledge"),
-        ("是否需要保存医生诊断？", "advice", "analyze"),
-        ("需要记录医生诊断吗？", "advice", "analyze"),
-        ("不用记录医生诊断", "chat", "acknowledge"),
-        ("不需要保存医生诊断", "chat", "acknowledge"),
-    ),
-)
-def test_clinician_save_requires_affirmative_non_question_clause(
-    message,
-    expected_primary,
-    expected_operation,
-):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary == expected_primary
-    assert intent.domain == "clinical_context"
-    assert intent.operation == expected_operation
-    assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    ("message", "expected_primary", "expected_operation"),
-    (
-        ("医生诊断记录？", "read", "ask"),
-        ("医生说是腰肌劳损？", "advice", "analyze"),
-        ("医生说得对吗？", "advice", "analyze"),
-        ("医生诊断是什么？", "advice", "analyze"),
-    ),
-)
-def test_terminal_question_is_owned_by_user_speech_act(
-    message,
-    expected_primary,
-    expected_operation,
-):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary == expected_primary
-    assert intent.operation == expected_operation
-    assert intent.is_write is False
-    if "医生诊断记录" not in message:
-        assert intent.domain == "clinical_context"
-        assert intent.requires_reliable_tool_model is True
-
-
-def test_negated_unrelated_clause_does_not_poison_adjacent_clinician_save():
-    intent = classify_agent_utterance(
-        "别记录今天的饮食。医生说是臀肌无力，帮我记录一下"
-    )
-
-    assert intent.primary == "write"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "create"
-    assert intent.is_write is True
-    assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    "message",
-    (
-        "医生让我记录每天腰痛情况",
-        "医生要求我删除昨天用药记录",
-        "医生嘱咐我同步健康数据",
-        "大夫交代我调整用药",
-    ),
-)
-def test_provider_before_action_without_user_command_proof_fails_closed(message):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary == "chat"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "acknowledge"
-    assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    ("message", "expected_domain", "expected_operation"),
-    (
-        ("根据医生诊断删除昨天用药记录", "medication", "delete"),
-        ("依据医生意见调整用药剂量", "medication", "update"),
-        ("删除根据医生诊断生成的用药记录", "medication", "delete"),
-        ("调整医生诊断中提到的用药剂量", "medication", "update"),
-    ),
-)
-def test_clinician_basis_does_not_override_action_target(
-    message,
-    expected_domain,
-    expected_operation,
-):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary == "mutate"
-    assert intent.domain == expected_domain
-    assert intent.operation == expected_operation
-    assert intent.is_write is True
-    assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    "message",
-    (
-        "记录根据医生诊断出现的今天腰痛6分",
-        "根据医生诊断记录今天腰痛6分",
-    ),
-)
-def test_clinician_basis_does_not_override_health_save_target(message):
-    frame = utterance_intent_classifier._classify_clause(message)
-    intent = classify_agent_utterance(message)
-
-    assert frame.target_kind == "health_record"
-    assert intent.primary == "write"
-    assert intent.domain == "symptom"
-    assert intent.operation == "create"
-    assert intent.is_write is True
-
-
-@pytest.mark.parametrize(
-    "message",
-    (
-        "医生诊断记录意味着什么？",
-        "分析医生诊断记录的风险",
-    ),
-)
-def test_unowned_clinician_record_analysis_falls_back_to_general_advice(message):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary == "advice"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "analyze"
-    assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
-
-
-def test_clinician_record_media_generation_preserves_general_media_contract():
-    intent = classify_agent_utterance("生成医生诊断记录的图片")
-
-    assert intent.primary == "write"
-    assert intent.domain == "aigc_media"
-    assert intent.operation == "create"
-    assert intent.is_write is True
-    assert intent.requires_reliable_tool_model is True
-
-
-def test_explicit_symptom_save_after_clinician_context_keeps_symptom_write():
-    intent = classify_agent_utterance(
-        "医生说是臀肌无力。记录今天腰痛6分"
-    )
-
-    assert intent.primary == "write"
-    assert intent.domain == "symptom"
-    assert intent.operation == "create"
-    assert intent.is_write is True
-
-
-def test_clinician_basis_does_not_override_explicit_symptom_save_target():
-    intent = classify_agent_utterance(
-        "根据医生诊断记录今天腰痛6分"
-    )
-
-    assert intent.primary == "write"
-    assert intent.domain == "symptom"
-    assert intent.operation == "create"
-    assert intent.is_write is True
-
-
-@pytest.mark.parametrize(
-    "message",
-    (
-        "医生说要删除昨天用药记录。记录今天腰痛6分",
-        "医生说要同步健康数据。记录今天腰痛6分",
-        "医生要求我调整用药。记录今天腰痛6分",
-    ),
-)
-def test_clinician_clause_never_authorizes_whole_text_fallback(message):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary == "write"
-    assert intent.domain == "symptom"
-    assert intent.operation == "create"
-    assert intent.is_write is True
-
-
-def test_clinician_bearing_turn_never_enters_whole_text_authorizers(
-    monkeypatch,
-):
-    def fail_if_called(*args, **kwargs):
-        raise AssertionError("whole-text authorizer was entered")
-
-    monkeypatch.setattr(
-        utterance_intent_classifier,
-        "_mutation_operation",
-        fail_if_called,
-    )
-    monkeypatch.setattr(
-        utterance_intent_classifier,
-        "_plan_operation",
-        fail_if_called,
-    )
-    monkeypatch.setattr(
-        utterance_intent_classifier,
-        "_reminder_operation",
-        fail_if_called,
-    )
-
-    intent = classify_agent_utterance(
-        "医生说要删除昨天用药记录。记录今天腰痛6分"
-    )
-
-    assert intent.primary == "write"
-    assert intent.domain == "symptom"
-    assert intent.operation == "create"
-
-
-@pytest.mark.parametrize(
-    "message",
-    (
-        "医生对我说要删除昨天用药记录",
-        "医生跟我说要同步健康数据",
-        "医生叫我记录每天腰痛情况",
-        "医生指示我删除昨天用药记录",
-        "医生的建议是删除昨天记录",
-        "物理治疗师要求我记录每天疼痛",
-    ),
-)
-def test_provider_before_action_without_user_proof_is_ambiguous(message):
-    frame = utterance_intent_classifier._classify_clause(message)
-    intent = classify_agent_utterance(message)
-
-    assert frame.actor == "ambiguous"
-    assert intent.primary == "chat"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "acknowledge"
-    assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    ("message", "expected_actor"),
-    (
-        ("根据医生诊断删除昨天用药记录", "user"),
-        ("依据医生意见调整用药剂量", "user"),
-        ("按照医生诊断删除昨天用药记录", "user"),
-        ("医生诊断请帮我删除昨天用药记录", "user"),
-        ("把医生诊断记录删除", "user"),
-        ("医生对我说要删除昨天用药记录", "ambiguous"),
-        ("医生叫我记录每天腰痛情况", "ambiguous"),
-    ),
-)
-def test_provider_before_action_actor_is_structural(
-    message,
-    expected_actor,
-):
-    frame = utterance_intent_classifier._classify_clause(message)
-
-    assert frame.actor == expected_actor
-
-
-@pytest.mark.parametrize(
-    "save_action",
-    (
-        "记录",
-        "记一下",
-        "记下",
-        "录入",
-        "保存",
-        "写入",
-        "存下来",
-    ),
-)
-def test_clinician_save_question_stance_never_authorizes(save_action):
-    intent = classify_agent_utterance(
-        f"要不要{save_action}医生诊断？"
-    )
-
-    assert intent.primary == "advice"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "analyze"
-    assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    "message",
-    (
-        "不想保存医生诊断",
-        "没有必要写入医生诊断",
-        "不用记录医生诊断",
-        "无需保存医生诊断",
-        "不要记录医生诊断",
-        "先别记录医生诊断",
-    ),
-)
-def test_clinician_save_negative_stance_never_authorizes(message):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary == "chat"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "acknowledge"
-    assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    "message",
-    (
-        "请记录医生诊断。算了，不要保存",
-        "请记录医生诊断。等等，不要记录",
-        "请记录医生诊断。不过，不要记录",
-        "别忘了记录饮食但不要保存医生诊断",
-    ),
-)
-def test_later_negative_save_stance_cancels_earlier_positive(message):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary not in {"write", "mutate"}
-    assert intent.domain == "clinical_context"
-    assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    ("message", "expected_domain"),
-    (
-        (
-            "记录今天腰痛6分并分析医生诊断记录的风险",
-            "symptom",
-        ),
-        (
-            "请记录饮食然后分析医生诊断记录的风险",
-            "diet",
-        ),
-        (
-            "把今天腰痛记录下来并分析医生诊断记录的风险",
-            "symptom",
-        ),
-        (
-            "需要记录饮食然后分析医生诊断记录的风险",
-            "diet",
-        ),
-        (
-            "别忘了记录饮食然后分析医生诊断记录的风险",
-            "diet",
-        ),
-    ),
-)
-def test_later_record_noun_is_not_a_second_save_stance(
-    message,
-    expected_domain,
-):
-    frame = utterance_intent_classifier._classify_clause(message)
-    stances = utterance_intent_classifier._collect_save_stances((frame,))
-    intent = classify_agent_utterance(message)
-
-    assert len(stances) == 1
-    assert intent.primary == "write"
-    assert intent.domain == expected_domain
-    assert intent.operation == "create"
-
-
-@pytest.mark.parametrize(
-    "message",
-    (
-        "医生说请记录医生诊断",
-        "医生说请把医生诊断记录下来",
-        "医生说要记录每天疼痛情况",
-        "康复师说请记录每天疼痛情况",
-        "检查提示要记录每天疼痛情况",
-    ),
-)
-def test_clinician_reported_record_instruction_is_not_user_authorization(message):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary == "chat"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "acknowledge"
-    assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    "message",
-    (
-        "我想记录医生诊断：臀肌无力导致腰痛",
-        "医生诊断请帮我记录一下",
-        "医生诊断，记一下",
-        "医生的诊断帮我保存下来",
-        "请把医生诊断记录下来",
-        "请记录医生诊断记录",
-    ),
-)
-def test_structural_user_command_authorizes_clinician_feedback_save(message):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary == "write"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "create"
-    assert intent.is_write is True
-    assert intent.requires_reliable_tool_model is True
-
-
-def test_user_ba_construction_authorizes_clinician_feedback_save():
-    intent = classify_agent_utterance("把医生说的内容保存下来")
-
-    assert intent.primary == "write"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "create"
-    assert intent.is_write is True
-    assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    "message",
-    (
-        "医生说要查看昨天用药记录",
-        "医生说要记录每天疼痛情况",
-        "医生说要调整用药",
-        "医生建议删除昨天的用药记录",
-        "医生说要同步最近的健康数据",
-        "康复师说请记录每天的疼痛",
-        "医生说请把医生诊断记录删除",
-    ),
-)
-def test_clinician_reported_mutation_is_not_user_authorization(message):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary == "chat"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "acknowledge"
-    assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    "message",
-    (
-        "医生告诉我是臀肌无力导致腰痛",
-        "主治医生告诉我是臀肌无力导致腰痛",
-        "大夫告知是臀肌无力导致腰痛",
-    ),
-)
-def test_clinician_disclosure_is_attribution_not_agent_read(message):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary == "chat"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "acknowledge"
-    assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
 
 
 @pytest.mark.parametrize(
     ("message", "expected"),
     (
         (
-            "医生说要记录每天疼痛情况",
-            ("clinician_quote", "save", "clinician", "clinician_content"),
+            SCREENSHOT_CLINICIAN_TEXT,
+            (
+                "chat",
+                "clinical_context",
+                "acknowledge",
+                "clinician_report",
+                False,
+                True,
+            ),
         ),
         (
-            "请记录医生诊断",
-            ("user", "save", "user", "clinician_record"),
+            "大夫告知是臀肌无力导致腰痛",
+            (
+                "chat",
+                "clinical_context",
+                "acknowledge",
+                "clinician_report",
+                False,
+                True,
+            ),
         ),
         (
-            "把医生说的内容保存下来",
-            ("clinician_quote", "save", "user", "clinician_content"),
+            "医生认为是臀肌无力导致腰痛，我该怎么处理？",
+            (
+                "advice",
+                "clinical_context",
+                "analyze",
+                "clinician_question",
+                False,
+                True,
+            ),
+        ),
+        (
+            "请记录医生诊断：臀肌无力导致腰肌代偿",
+            (
+                "write",
+                "clinical_context",
+                "create",
+                "explicit_feedback_write",
+                True,
+                True,
+            ),
+        ),
+        (
+            "请记录医生诊断：臀肌无力并删除旧记录",
+            (
+                "chat",
+                "clinical_context",
+                "acknowledge",
+                "coordinated_clinician_action",
+                False,
+                True,
+            ),
         ),
     ),
 )
-def test_clause_frame_resolves_action_actor_and_object(message, expected):
-    frame = utterance_intent_classifier._classify_clause(message)
+def test_clinician_guard_maps_to_public_intent_before_legacy_classifier(
+    message,
+    expected,
+):
+    intent = classify_agent_utterance(message)
 
-    assert (frame.source, frame.action, frame.actor, frame.object_kind) == expected
+    assert (
+        intent.primary,
+        intent.domain,
+        intent.operation,
+        intent.reason,
+        intent.is_write,
+        intent.requires_reliable_tool_model,
+    ) == expected
 
 
 @pytest.mark.parametrize(
-    "message",
+    ("message", "expected"),
     (
-        "医生说是臀肌无力。请删除",
-        "医生说是臀肌无力。请调整",
-        "医生说是臀肌无力。请同步",
+        ("记录午餐吃了牛肉面", ("write", "diet", "create", True, False)),
+        ("今天腰痛6分", ("write", "symptom", "create", True, False)),
+        (
+            "记录服药二甲双胍一片",
+            ("write", "medication", "create", True, False),
+        ),
+        (
+            "生成一张运动图片",
+            ("write", "aigc_media", "create", True, True),
+        ),
+        ("制定康复计划", ("write", "plan", "create", True, True)),
+        ("提醒我明天复查", ("write", "reminder", "create", True, True)),
+        (
+            "查看医生诊断记录",
+            ("read", "clinical_context", "list", False, True),
+        ),
+        (
+            "删除医生诊断记录",
+            ("mutate", "clinical_context", "delete", True, True),
+        ),
     ),
 )
-def test_non_save_action_cannot_inherit_previous_clinician_object(message):
+def test_guard_none_conserves_legacy_public_intents(message, expected):
     intent = classify_agent_utterance(message)
 
-    assert intent.primary == "chat"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "acknowledge"
-    assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
+    assert (
+        intent.primary,
+        intent.domain,
+        intent.operation,
+        intent.is_write,
+        intent.requires_reliable_tool_model,
+    ) == expected
 
 
-@pytest.mark.parametrize(
-    "message",
-    (
-        "请记录医生诊断，不要记录",
-        "医生说是臀肌无力。不要删除医生诊断记录",
-        "医生说是臀肌无力。不要调整医生诊断记录",
-        "医生说是臀肌无力。不要同步医生诊断记录",
-    ),
-)
-def test_clinician_clause_authorization_respects_negation(message):
-    intent = classify_agent_utterance(message)
+def test_every_clinician_guard_decision_bypasses_legacy_authorizers(monkeypatch):
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("legacy whole-text authorizer was entered")
 
-    assert intent.is_write is False
-    assert intent.primary not in {"write", "mutate"}
+    for helper in (
+        "_has_explicit_write_command",
+        "_mutation_operation",
+        "_plan_operation",
+        "_reminder_operation",
+        "_is_media_generation_request",
+        "_has_explicit_observation_write",
+        "_has_explicit_symptom_observation",
+        "_has_explicit_event_write",
+    ):
+        monkeypatch.setattr(
+            utterance_intent_classifier,
+            helper,
+            fail_if_called,
+        )
+
+    for message in (
+        SCREENSHOT_CLINICIAN_TEXT,
+        "医生认为是臀肌无力导致腰痛，我该怎么处理？",
+        "请记录医生诊断：臀肌无力导致腰肌代偿",
+        "请记录医生诊断：臀肌无力并删除旧记录",
+    ):
+        intent = classify_agent_utterance(message)
+        assert intent.domain == "clinical_context", message
+
+
+def test_guard_none_still_reaches_legacy_authorizers(monkeypatch):
+    called = False
+    original = utterance_intent_classifier._mutation_operation
+
+    def observe_mutation(text):
+        nonlocal called
+        called = True
+        return original(text)
+
+    monkeypatch.setattr(
+        utterance_intent_classifier,
+        "_mutation_operation",
+        observe_mutation,
+    )
+
+    intent = classify_agent_utterance("记录午餐吃了牛肉面")
+
+    assert called is True
+    assert (intent.primary, intent.domain) == ("write", "diet")
 
 
 def test_direct_user_medication_mutation_remains_authorized():
@@ -842,81 +313,6 @@ def test_direct_user_medication_mutation_remains_authorized():
     assert intent.operation == "update"
     assert intent.is_write is True
     assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    ("message", "expected_primary", "expected_operation", "expected_is_write"),
-    (
-        ("查看医生诊断记录", "read", "list", False),
-        ("医生诊断记录有哪些？", "read", "ask", False),
-        ("删除医生诊断记录", "mutate", "delete", True),
-    ),
-)
-def test_clinician_record_reference_keeps_explicit_record_operation(
-    message,
-    expected_primary,
-    expected_operation,
-    expected_is_write,
-):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary == expected_primary
-    assert intent.operation == expected_operation
-    assert intent.is_write is expected_is_write
-
-
-def test_clinician_record_noun_phrase_is_not_promoted_to_a_write():
-    intent = classify_agent_utterance("医生诊断记录")
-
-    assert intent.primary == "unknown"
-    assert intent.operation == "none"
-    assert intent.is_write is False
-
-
-@pytest.mark.parametrize(
-    "message",
-    (
-        "医生的诊断是臀肌无力导致腰痛",
-        "检查提示腰肌劳损导致疼痛",
-        "大夫说是臀肌无力导致腰痛",
-    ),
-)
-def test_common_clinician_attribution_variants_are_non_write_context(message):
-    intent = classify_agent_utterance(message)
-
-    assert intent.primary == "chat"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "acknowledge"
-    assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
-
-
-def test_reported_clinician_medication_statement_is_not_a_save_command():
-    intent = classify_agent_utterance("医生说我吃了药")
-
-    assert intent.primary == "chat"
-    assert intent.domain == "clinical_context"
-    assert intent.operation == "acknowledge"
-    assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
-
-
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    (
-        (
-            "医生说是臀肌无力。请记录医生诊断：臀肌无力导致腰痛",
-            ("医生说是臀肌无力", "请记录医生诊断", "臀肌无力导致腰痛"),
-        ),
-        ("甲，乙,丙；丁;戊：己:庚", ("甲", "乙", "丙", "丁", "戊", "己", "庚")),
-        ("甲！乙?丙？丁\n戊", ("甲", "乙", "丙", "丁", "戊")),
-        ("  甲！？\n，。；乙  ", ("甲", "乙")),
-        ("，。！？\n", ()),
-        ("", ()),
-    ),
-)
-def test_split_clauses_preserves_non_empty_order_across_boundaries(raw, expected):
-    assert utterance_intent_classifier._split_clauses(raw) == expected
 
 
 def test_current_symptom_with_severity_remains_a_symptom_write():

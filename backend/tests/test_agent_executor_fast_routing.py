@@ -352,6 +352,46 @@ async def test_analysis_turn_keeps_quality_model(db, auth_user_and_headers, monk
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    (
+        "医生诊断是大腿和臀部肌肉无力导致腰肌代偿进而导致腰肌痛",
+        "医生认为是臀肌无力导致腰痛，我该怎么处理？",
+        "请记录医生诊断：臀肌无力导致腰肌代偿",
+        "请记录医生诊断：臀肌无力并删除旧记录",
+    ),
+)
+async def test_clinician_turns_never_select_fast_record_or_needs_detail_reply(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    message,
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    provider = _FakeProvider("qwen3.7-plus")
+
+    _stub_registry_fast(monkeypatch)
+    _wire_common(executor, monkeypatch, lambda model_id: _FakeProvider(model_id))
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_user",
+        lambda uid, db, **kwargs: provider,
+    )
+
+    events = await _run(executor, message, user_id=user.id)
+    done = events[-1]["data"]
+    emitted_text = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+    assert executor._prefer_fast_record_model is False
+    assert done["record_intent_no_tool"] is False
+    assert emitted_text == "OK"
+
+
+@pytest.mark.asyncio
 async def test_explicit_model_override_is_honored(db, auth_user_and_headers, monkeypatch):
     """(d) Explicit _request_model_id (UI pick) → honored, not overridden by fast route."""
     user, _ = auth_user_and_headers
