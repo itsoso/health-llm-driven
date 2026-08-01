@@ -1484,15 +1484,15 @@
   {
     "id": "user_instructs_doctor_role_reversal",
     "text": "我让医生记录每天腰痛情况",
-    "kind": "none",
-    "reason_code": "no_clinician_report",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "unresolved_clinician_action",
     "provider": "医生"
   },
   {
     "id": "family_instructs_doctor_role_reversal",
     "text": "家属叫医生记录每天腰痛情况",
-    "kind": "none",
-    "reason_code": "no_clinician_report",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "unresolved_clinician_action",
     "provider": "医生"
   },
   {
@@ -1551,10 +1551,199 @@
     "reason_code": "no_clinician_signal"
   },
   {
-    "id": "negated_write_without_feedback_object_stays_outside_guard",
+    "id": "negated_write_without_feedback_object_is_fail_closed",
     "text": "不要保存医生午餐",
-    "kind": "none",
-    "reason_code": "no_clinician_report",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "unresolved_clinician_action",
+    "provider": "医生"
+  },
+  {
+    "id": "give_doctor_record_role_reversal",
+    "text": "给医生记录每天腰痛情况",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "unresolved_clinician_action",
+    "provider": "医生"
+  },
+  {
+    "id": "ask_doctor_to_record_role_reversal",
+    "text": "请医生记录每天腰痛情况",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "unresolved_clinician_action",
+    "provider": "医生"
+  },
+  {
+    "id": "patient_requires_doctor_to_record_role_reversal",
+    "text": "患者要求医生记录每天腰痛情况",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "unresolved_clinician_action",
+    "provider": "医生"
+  },
+  {
+    "id": "doctor_requires_patient_to_record_instruction",
+    "text": "医生要求患者记录每天腰痛情况",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_instruction",
+    "provider": "医生",
+    "content": "记录每天腰痛情况"
+  },
+  {
+    "id": "doctor_tells_me_to_record_instruction",
+    "text": "医生告诉我记录每天腰痛情况",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_instruction",
+    "provider": "医生",
+    "content": "记录每天腰痛情况"
+  },
+  {
+    "id": "doctor_exhorts_you_to_record_instruction",
+    "text": "医生嘱咐你记录每天腰痛情况",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_instruction",
+    "provider": "医生",
+    "content": "记录每天腰痛情况"
+  },
+  {
+    "id": "doctor_reports_nested_instruction",
+    "text": "医生说让我记录每天腰痛情况",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_instruction",
+    "provider": "医生",
+    "content": "记录每天腰痛情况"
+  },
+  {
+    "id": "doctor_tells_me_nested_instruction",
+    "text": "医生告诉我让我记录每天腰痛情况",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_instruction",
+    "provider": "医生",
+    "content": "记录每天腰痛情况"
+  },
+  {
+    "id": "doctor_requires_direct_action_instruction",
+    "text": "医生要求记录每天腰痛情况",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_instruction",
+    "provider": "医生",
+    "content": "记录每天腰痛情况"
+  },
+  {
+    "id": "doctor_says_command_instruction",
+    "text": "医生说请记录每天腰痛情况",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_instruction",
+    "provider": "医生",
+    "content": "记录每天腰痛情况"
+  },
+  {
+    "id": "post_report_nested_instruction_blocks_write",
+    "text": "医生说让我记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "post_report_patient_instruction_blocks_write",
+    "text": "医生要求患者记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "post_report_tell_instruction_blocks_write",
+    "text": "医生告诉我记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "post_report_you_instruction_blocks_write",
+    "text": "医生嘱咐你记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "post_report_outer_recipient_instruction_blocks_write",
+    "text": "医生告诉我让我记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "post_report_direct_action_instruction_blocks_write",
+    "text": "医生要求记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "post_report_command_instruction_blocks_write",
+    "text": "医生说请记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "temporarily_prefixed_negated_clinician_write",
+    "text": "请暂时不要保存医生诊断",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "negated_clinician_action",
+    "provider": "医生"
+  },
+  {
+    "id": "now_prefixed_negated_clinician_write",
+    "text": "请现在不要保存医生诊断",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "negated_clinician_action",
+    "provider": "医生"
+  },
+  {
+    "id": "first_prefixed_negated_clinician_write",
+    "text": "请先不要保存医生诊断",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "negated_clinician_action",
+    "provider": "医生"
+  },
+  {
+    "id": "again_wrapped_negated_clinician_write",
+    "text": "请不要再保存医生诊断",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "negated_clinician_action",
+    "provider": "医生"
+  },
+  {
+    "id": "help_me_wrapped_negated_clinician_write",
+    "text": "请不要帮我保存医生诊断",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "negated_clinician_action",
+    "provider": "医生"
+  },
+  {
+    "id": "immediately_wrapped_negated_clinician_write",
+    "text": "请不要立即保存医生诊断",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "negated_clinician_action",
+    "provider": "医生"
+  },
+  {
+    "id": "negated_write_with_wrong_measurement_object",
+    "text": "不要写入医生体重",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "unresolved_clinician_action",
+    "provider": "医生"
+  },
+  {
+    "id": "conflicting_double_negation_is_fail_closed",
+    "text": "不要不保存医生诊断",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "unresolved_clinician_action",
     "provider": "医生"
   }
 ]

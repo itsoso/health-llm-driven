@@ -102,6 +102,8 @@ _LOCAL_ADVICE_PREDICATES = tuple(
 _LOCAL_ADVICE_MODIFIERS = ("如果需要", "必要时", "可酌情")
 # Local morphology only: bare 让/叫 must not become global report predicates.
 _CLINICIAN_INSTRUCTION_PREDICATES = ("交代", "要求", "嘱咐", "让", "叫")
+_CLINICIAN_INSTRUCTION_REPORT_BRIDGES = ("告诉", "说")
+_CLINICIAN_INSTRUCTION_RECIPIENTS = ("患者", "病人", "家属", "我", "你")
 _CLINICIAN_PROVIDER_OBJECT_MARKERS = ("请教", "对", "向", "给", "问", "让")
 _LOCAL_ADVICE_CLAUSE_BOUNDARIES = tuple(
     dict.fromkeys((*_SOFT_BOUNDARIES, *_HARD_BOUNDARIES, "：", ":"))
@@ -148,6 +150,9 @@ _LEGACY_CLINICIAN_OBJECT_SUFFIXES = (
     "文档",
     "档案",
 )
+_PRE_NEGATION_MODIFIERS = ("暂时", "现在", "先")
+_POST_NEGATION_WRAPPERS = ("帮我", "立即", "再")
+_NONREPORT_RECORD_SUFFIXES = ("报告知情同意记录",)
 _REASONS_BY_KIND: dict[DecisionKind, frozenset[str]] = {
     "none": frozenset(
         {
@@ -174,6 +179,7 @@ _REASONS_BY_KIND: dict[DecisionKind, frozenset[str]] = {
             "feedback_write_missing_content",
             "feedback_write_question",
             "negated_clinician_action",
+            "unresolved_clinician_action",
         }
     ),
 }
@@ -707,14 +713,37 @@ def _parse_write_segment(
     if prefix is not None:
         position = _skip_spaces(raw, prefix[0].end, segment.end)
 
+    negation_position = position
+    modifier = _starts_with_term(
+        raw,
+        _PRE_NEGATION_MODIFIERS,
+        position=negation_position,
+        end=segment.end,
+    )
+    if modifier is not None:
+        negation_position = _skip_spaces(
+            raw,
+            modifier[0].end,
+            segment.end,
+        )
     negation = _starts_with_term(
         raw,
         CLAUSE_ACTION_NEGATIONS,
-        position=position,
+        position=negation_position,
         end=segment.end,
     )
     if negation is not None:
         position = _skip_spaces(raw, negation[0].end, segment.end)
+        while True:
+            wrapper = _starts_with_term(
+                raw,
+                _POST_NEGATION_WRAPPERS,
+                position=position,
+                end=segment.end,
+            )
+            if wrapper is None:
+                break
+            position = _skip_spaces(raw, wrapper[0].end, segment.end)
 
     root = _starts_with_term(
         raw,
@@ -935,6 +964,52 @@ def _find_instruction(
     segment: _Span,
     segment_index: int,
 ) -> _Instruction | None:
+    def consume_recipient(position: int) -> tuple[int, bool]:
+        recipient_match = _starts_with_term(
+            raw,
+            _CLINICIAN_INSTRUCTION_RECIPIENTS,
+            position=position,
+            end=segment.end,
+        )
+        if recipient_match is None:
+            return position, False
+        return (
+            _skip_spaces(raw, recipient_match[0].end, segment.end),
+            True,
+        )
+
+    def instruction_content(
+        position: int,
+        *,
+        require_action_root: bool,
+    ) -> _Span | None:
+        command_prefix = _starts_with_term(
+            raw,
+            CLINICIAN_STRICT_COMMAND_PREFIXES,
+            position=position,
+            end=segment.end,
+        )
+        if command_prefix is not None:
+            position = _skip_spaces(
+                raw,
+                command_prefix[0].end,
+                segment.end,
+            )
+        content = _trim(raw, position, segment.end)
+        if (
+            content.start >= content.end
+            or not _content_is_substantive(raw, content)
+        ):
+            return None
+        if require_action_root and _starts_with_term(
+            raw,
+            _DENY_ONLY_ACTION_ROOTS,
+            position=content.start,
+            end=content.end,
+        ) is None:
+            return None
+        return content
+
     for provider, _ in _provider_matches(raw, segment):
         if not _provider_is_clause_head(
             raw,
@@ -949,20 +1024,64 @@ def _find_instruction(
             position=position,
             end=segment.end,
         )
-        if predicate_match is None:
+        if predicate_match is not None:
+            predicate, _ = predicate_match
+            content_start = _skip_spaces(
+                raw,
+                predicate.end,
+                segment.end,
+            )
+            content_start, has_recipient = consume_recipient(content_start)
+            content = instruction_content(
+                content_start,
+                require_action_root=not has_recipient,
+            )
+            if content is None:
+                continue
+            return _Instruction(
+                segment_index=segment_index,
+                provider=provider,
+                predicate=predicate,
+                content=content,
+            )
+
+        bridge_match = _starts_with_term(
+            raw,
+            _CLINICIAN_INSTRUCTION_REPORT_BRIDGES,
+            position=position,
+            end=segment.end,
+        )
+        if bridge_match is None:
             continue
-        predicate, _ = predicate_match
-        recipient_start = _skip_spaces(raw, predicate.end, segment.end)
-        if (
-            recipient_start >= segment.end
-            or raw[recipient_start] != "我"
-        ):
-            continue
-        content = _trim(raw, recipient_start + 1, segment.end)
-        if (
-            content.start >= content.end
-            or not _content_is_substantive(raw, content)
-        ):
+        bridge, _ = bridge_match
+        content_start = _skip_spaces(raw, bridge.end, segment.end)
+        content_start, has_outer_recipient = consume_recipient(content_start)
+        nested_predicate_match = _starts_with_term(
+            raw,
+            _CLINICIAN_INSTRUCTION_PREDICATES,
+            position=content_start,
+            end=segment.end,
+        )
+        predicate = bridge
+        require_action_root = True
+        if nested_predicate_match is not None:
+            predicate, _ = nested_predicate_match
+            content_start = _skip_spaces(
+                raw,
+                predicate.end,
+                segment.end,
+            )
+            content_start, has_inner_recipient = consume_recipient(
+                content_start
+            )
+            require_action_root = not (
+                has_outer_recipient or has_inner_recipient
+            )
+        content = instruction_content(
+            content_start,
+            require_action_root=require_action_root,
+        )
+        if content is None:
             continue
         return _Instruction(
             segment_index=segment_index,
@@ -1140,6 +1259,67 @@ def _standalone_record_noun_shape(
     return provider, False
 
 
+def _standalone_nonreport_record_noun_provider(
+    raw: str,
+    segments: tuple[_Span, ...],
+) -> _Span | None:
+    """Preserve narrow legacy noun shapes rejected by report parsing."""
+
+    if len(segments) != 1:
+        return None
+    segment = segments[0]
+    provider_match = _first_provider(raw, segment)
+    if provider_match is None:
+        return None
+    provider, _ = provider_match
+    prefix = _trim(raw, segment.start, provider.start)
+    if not _prefix_is_legacy_record_operation(raw, prefix):
+        return None
+
+    position = _skip_spaces(raw, provider.end, segment.end)
+    if position < segment.end and raw[position] == "的":
+        position = _skip_spaces(raw, position + 1, segment.end)
+
+    notification = _starts_with_term(
+        raw,
+        ("告知",),
+        position=position,
+        end=segment.end,
+    )
+    if notification is not None:
+        noun_start = _skip_spaces(raw, notification[0].end, segment.end)
+        if noun_start < segment.end and raw[noun_start] == "的":
+            noun_start = _skip_spaces(raw, noun_start + 1, segment.end)
+        noun = _starts_with_term(
+            raw,
+            _NOTIFICATION_NOUN_CONTINUATIONS,
+            position=noun_start,
+            end=segment.end,
+        )
+        if (
+            noun is not None
+            and _trim(raw, noun[0].end, segment.end).start >= segment.end
+        ):
+            return provider
+
+    suffix = _starts_with_term(
+        raw,
+        _NONREPORT_RECORD_SUFFIXES,
+        position=position,
+        end=segment.end,
+    )
+    if (
+        suffix is not None
+        and _trim(raw, suffix[0].end, segment.end).start >= segment.end
+    ):
+        return provider
+    return None
+
+
+def _turn_contains_deny_only_action(raw: str) -> bool:
+    return any(root in raw for root in _DENY_ONLY_ACTION_ROOTS)
+
+
 def _decision(
     raw: str,
     *,
@@ -1232,6 +1412,17 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
                     else "legacy_clinician_record_operation"
                 ),
                 provider=legacy_provider,
+            )
+        nonreport_record_provider = _standalone_nonreport_record_noun_provider(
+            raw,
+            segments,
+        )
+        if nonreport_record_provider is not None:
+            return _decision(
+                raw,
+                kind="none",
+                reason_code="no_clinician_report",
+                provider=nonreport_record_provider,
             )
 
     if len(candidates) > 1:
@@ -1396,6 +1587,13 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
             reason_code="clinician_consultation",
             provider=first_provider,
             content=content if content.start < content.end else None,
+        )
+    if _turn_contains_deny_only_action(raw):
+        return _decision(
+            raw,
+            kind="ambiguous_clinician_action",
+            reason_code="unresolved_clinician_action",
+            provider=first_provider,
         )
     if _contains_question(raw):
         return _decision(

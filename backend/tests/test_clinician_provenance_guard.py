@@ -190,8 +190,8 @@ def test_role_reversed_instructions_do_not_make_clinician_the_agent(text):
 
     decision = guard.classify_clinician_turn(text)
 
-    assert decision.kind == "none"
-    assert decision.reason_code == "no_clinician_report"
+    assert decision.kind == "ambiguous_clinician_action"
+    assert decision.reason_code == "unresolved_clinician_action"
     assert decision.authorizes_feedback_write is False
     assert decision.content_start is None
     assert decision.content_end is None
@@ -206,6 +206,49 @@ def test_bare_instruction_verbs_do_not_join_global_report_predicates():
 
     assert "让" not in lexicon.CLINICIAN_REPORT_PREDICATES
     assert "叫" not in lexicon.CLINICIAN_REPORT_PREDICATES
+
+
+_FAIL_CLOSED_3C_IDS = frozenset(
+    {
+        "user_instructs_doctor_role_reversal",
+        "family_instructs_doctor_role_reversal",
+        "give_doctor_record_role_reversal",
+        "ask_doctor_to_record_role_reversal",
+        "patient_requires_doctor_to_record_role_reversal",
+        "post_report_nested_instruction_blocks_write",
+        "post_report_patient_instruction_blocks_write",
+        "post_report_tell_instruction_blocks_write",
+        "post_report_you_instruction_blocks_write",
+        "post_report_outer_recipient_instruction_blocks_write",
+        "post_report_direct_action_instruction_blocks_write",
+        "post_report_command_instruction_blocks_write",
+        "temporarily_prefixed_negated_clinician_write",
+        "now_prefixed_negated_clinician_write",
+        "first_prefixed_negated_clinician_write",
+        "again_wrapped_negated_clinician_write",
+        "help_me_wrapped_negated_clinician_write",
+        "immediately_wrapped_negated_clinician_write",
+        "negated_write_without_feedback_object_is_fail_closed",
+        "negated_write_with_wrong_measurement_object",
+        "conflicting_double_negation_is_fail_closed",
+    }
+)
+
+
+@pytest.mark.parametrize(
+    "case",
+    tuple(case for case in _cases() if case["id"] in _FAIL_CLOSED_3C_IDS),
+    ids=lambda row: row["id"],
+)
+def test_fail_closed_clinician_actions_never_authorize_or_expose_command(case):
+    guard = _module()
+
+    decision = guard.classify_clinician_turn(case["text"])
+
+    assert decision.kind != "explicit_doctor_feedback_write"
+    assert decision.authorizes_feedback_write is False
+    assert decision.command_start is None
+    assert decision.command_end is None
 
 
 def test_non_writes_never_expose_an_authorizing_command_span():
@@ -285,6 +328,7 @@ def test_guard_deny_roots_cover_shared_legacy_action_lexicon():
         ("none", "coordinated_clinician_action"),
         ("clinician_context", "clinician_instruction"),
         ("clinician_advice", "negated_clinician_action"),
+        ("none", "unresolved_clinician_action"),
     ),
 )
 def test_decision_rejects_invalid_kind_reason_combinations(
