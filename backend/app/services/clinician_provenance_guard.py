@@ -98,6 +98,7 @@ _LOCAL_ADVICE_PREDICATES = tuple(
     for predicate in CLINICIAN_REPORT_PREDICATES
     if predicate in {"建议", "嘱咐", "要求"}
 )
+_LOCAL_ADVICE_MODIFIERS = ("如果需要", "必要时", "可酌情")
 _MEDICAL_ADVICE_TARGETS = (
     "训练",
     "运动",
@@ -461,6 +462,23 @@ def _skip_local_advice_fillers(raw: str, position: int, end: int) -> int:
     return position
 
 
+def _skip_optional_local_advice_modifier(
+    raw: str,
+    position: int,
+    end: int,
+) -> int:
+    position = _skip_local_advice_fillers(raw, position, end)
+    modifier = _starts_with_term(
+        raw,
+        _LOCAL_ADVICE_MODIFIERS,
+        position=position,
+        end=end,
+    )
+    if modifier is None:
+        return position
+    return _skip_local_advice_fillers(raw, modifier[0].end, end)
+
+
 def _is_locally_proven_clinician_advice(
     raw: str,
     *,
@@ -484,7 +502,7 @@ def _is_locally_proven_clinician_advice(
         )
         if predicate is None:
             continue
-        position = _skip_local_advice_fillers(
+        position = _skip_optional_local_advice_modifier(
             raw,
             predicate[0].end,
             action_start,
@@ -492,17 +510,25 @@ def _is_locally_proven_clinician_advice(
         if position == action_start:
             return True
 
-    for predicate in _LOCAL_ADVICE_PREDICATES:
-        predicate_start = action_start - len(predicate)
-        if (
-            predicate_start < local_start
-            or raw[predicate_start:action_start] != predicate
-        ):
-            continue
+    position = _skip_local_advice_fillers(raw, span.start, action_start)
+    predicate = _starts_with_term(
+        raw,
+        _LOCAL_ADVICE_PREDICATES,
+        position=position,
+        end=action_start,
+    )
+    if predicate is not None:
+        position = _skip_optional_local_advice_modifier(
+            raw,
+            predicate[0].end,
+            action_start,
+        )
         target_window = raw[
             action_start + len(root) : min(span.end, action_start + len(root) + 12)
         ]
-        if any(target in target_window for target in _MEDICAL_ADVICE_TARGETS):
+        if position == action_start and any(
+            target in target_window for target in _MEDICAL_ADVICE_TARGETS
+        ):
             return True
     return False
 

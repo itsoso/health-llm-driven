@@ -904,6 +904,108 @@
     "provider": "主治医生"
   },
   {
+    "id": "patient_advice_does_not_exempt_destructive_root",
+    "text": "请记录医生意见：患者建议删除训练记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "患者建议删除训练记录"
+  },
+  {
+    "id": "later_patient_advice_does_not_inherit_doctor_provider",
+    "text": "请记录医生意见：医生建议先休息患者建议删除训练记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "医生建议先休息患者建议删除训练记录"
+  },
+  {
+    "id": "later_patient_requirement_does_not_inherit_doctor_report",
+    "text": "请记录医生意见：医生说先休息患者要求删除训练动作",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "医生说先休息患者要求删除训练动作"
+  },
+  {
+    "id": "later_patient_instruction_does_not_inherit_doctor_advice",
+    "text": "请记录医生意见：医生建议先休息患者嘱咐撤销康复计划",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "医生建议先休息患者嘱咐撤销康复计划"
+  },
+  {
+    "id": "family_advice_does_not_exempt_destructive_root",
+    "text": "请记录医生意见：家属建议清掉康复计划",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "家属建议清掉康复计划"
+  },
+  {
+    "id": "coach_requirement_does_not_exempt_destructive_root",
+    "text": "请记录医生意见：教练要求删除训练记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "教练要求删除训练记录"
+  },
+  {
+    "id": "doctor_advice_allows_necessary_modifier_before_adjustment",
+    "text": "请记录医生意见：医生建议必要时调整训练强度",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "医生建议必要时调整训练强度",
+    "command": "请记录医生意见"
+  },
+  {
+    "id": "doctor_advice_allows_necessary_modifier_before_delete",
+    "text": "请记录医生意见：医生建议必要时删除不合适的训练动作",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "医生建议必要时删除不合适的训练动作",
+    "command": "请记录医生意见"
+  },
+  {
+    "id": "therapist_instruction_allows_necessary_modifier_before_revoke",
+    "text": "请记录康复师意见：康复师嘱咐必要时撤销高负荷训练计划",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "康复师",
+    "content": "康复师嘱咐必要时撤销高负荷训练计划",
+    "command": "请记录康复师意见"
+  },
+  {
+    "id": "anchored_providerless_advice_allows_necessary_modifier",
+    "text": "请记录医生意见：建议必要时更正训练姿势",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "建议必要时更正训练姿势",
+    "command": "请记录医生意见"
+  },
+  {
+    "id": "anchored_providerless_advice_allows_if_needed_modifier",
+    "text": "请记录医生意见：，​ 建议如果需要更正训练姿势",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "建议如果需要更正训练姿势",
+    "command": "请记录医生意见"
+  },
+  {
+    "id": "anchored_providerless_advice_allows_discretionary_modifier",
+    "text": "请记录医生意见：建议可酌情调整训练强度",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "建议可酌情调整训练强度",
+    "command": "请记录医生意见"
+  },
+  {
     "id": "unknown_provider_mention",
     "text": "医生预约在明天",
     "kind": "none",
