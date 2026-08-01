@@ -5,6 +5,7 @@ import * as Sharing from 'expo-sharing';
 import api from '../../services/api';
 
 import {
+  materializeImageForLocalUse,
   shareImage,
   shareAgentSelection,
   shareLocalImage,
@@ -275,6 +276,102 @@ describe('shareImage', () => {
       { idempotent: true },
     );
     expect(Sharing.shareAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe('materializeImageForLocalUse', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (FileSystem.downloadAsync as jest.Mock).mockImplementation(
+      async (_sourceUri: string, localUri: string) => ({ uri: localUri, status: 200 }),
+    );
+  });
+
+  it('downloads a protected HTTPS image with headers and returns explicit cleanup', async () => {
+    const materialized = await materializeImageForLocalUse(
+      'https://health.executor.life/api/v1/upload/files/chat/705/meal.jpg?signature=signed',
+      {
+        headers: { Authorization: 'Bearer token' },
+        cacheKey: 'diet-705',
+      },
+    );
+
+    expect(FileSystem.downloadAsync).toHaveBeenCalledWith(
+      'https://health.executor.life/api/v1/upload/files/chat/705/meal.jpg?signature=signed',
+      expect.stringMatching(/^file:\/\/\/cache\/reva-local-image-[a-z0-9]+\.jpg$/),
+      { headers: { Authorization: 'Bearer token' } },
+    );
+    const localUri = (FileSystem.downloadAsync as jest.Mock).mock.calls[0][1] as string;
+    expect(localUri).not.toContain('diet-705');
+    expect(localUri).not.toContain('/705/');
+    expect(materialized.uri).toBe(localUri);
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalled();
+
+    await materialized.cleanup();
+
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(
+      localUri,
+      { idempotent: true },
+    );
+  });
+
+  it('cleans up a partial download and throws for a non-success status', async () => {
+    (FileSystem.downloadAsync as jest.Mock).mockResolvedValueOnce({
+      uri: 'file:///cache/reva-local-image-broken.jpg',
+      status: 403,
+    });
+
+    await expect(materializeImageForLocalUse(
+      'https://health.executor.life/private/meal.jpg?secret=do-not-log',
+      { cacheKey: 'broken' },
+    )).rejects.toThrow('image_materialization_download_failed');
+
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(
+      'file:///cache/reva-local-image-broken.jpg',
+      { idempotent: true },
+    );
+  });
+
+  it('cleans up the planned partial file when download throws', async () => {
+    (FileSystem.downloadAsync as jest.Mock).mockRejectedValueOnce(new Error('connection reset'));
+
+    await expect(materializeImageForLocalUse(
+      'https://health.executor.life/private/meal.png?secret=do-not-log',
+      { cacheKey: 'interrupted' },
+    )).rejects.toThrow('image_materialization_download_failed');
+
+    const localUri = (FileSystem.downloadAsync as jest.Mock).mock.calls[0][1] as string;
+    expect(localUri).not.toContain('interrupted');
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(
+      localUri,
+      { idempotent: true },
+    );
+  });
+
+  it('returns a local file URI with noop cleanup and no filesystem copy', async () => {
+    const materialized = await materializeImageForLocalUse('file:///tmp/diet-card.jpg');
+
+    expect(materialized.uri).toBe('file:///tmp/diet-card.jpg');
+    expect(FileSystem.downloadAsync).not.toHaveBeenCalled();
+
+    await materialized.cleanup();
+
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalled();
+  });
+
+  it('returns a bare absolute path unchanged with noop cleanup', async () => {
+    const materialized = await materializeImageForLocalUse('/private/tmp/diet-card.jpg');
+
+    expect(materialized.uri).toBe('/private/tmp/diet-card.jpg');
+    await materialized.cleanup();
+    expect(FileSystem.downloadAsync).not.toHaveBeenCalled();
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalled();
+  });
+
+  it('rejects empty and unsupported URIs without exposing the input', async () => {
+    await expect(materializeImageForLocalUse('')).rejects.toThrow('image_materialization_uri_missing');
+    await expect(materializeImageForLocalUse('content://private/photo.jpg'))
+      .rejects.toThrow('image_materialization_requires_file_or_https');
   });
 });
 
