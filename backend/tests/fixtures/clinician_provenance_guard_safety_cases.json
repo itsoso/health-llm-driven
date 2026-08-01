@@ -206,8 +206,8 @@
   {
     "id": "record_noun_question_stays_legacy",
     "text": "医生诊断记录里写了什么？",
-    "kind": "clinician_advice",
-    "reason_code": "clinician_question",
+    "kind": "none",
+    "reason_code": "legacy_clinician_record_operation",
     "provider": "医生"
   },
   {
@@ -487,6 +487,227 @@
     "text": "删除医生档案",
     "kind": "none",
     "reason_code": "legacy_clinician_record_operation",
+    "provider": "医生"
+  },
+  {
+    "id": "write_then_delete_with_zai_connector",
+    "text": "请记录医生诊断：臀肌无力再删除旧记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力再删除旧记录"
+  },
+  {
+    "id": "write_then_delete_with_hai_connector",
+    "text": "请记录医生诊断：臀肌无力还删除旧记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力还删除旧记录"
+  },
+  {
+    "id": "write_then_delete_with_joiner_and_modal",
+    "text": "请记录医生诊断：臀肌无力并要删除旧记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力并要删除旧记录"
+  },
+  {
+    "id": "write_then_delete_with_whitespace_boundary",
+    "text": "请记录医生诊断：臀肌无力 删除旧记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力 删除旧记录"
+  },
+  {
+    "id": "write_then_legacy_revoke_action",
+    "text": "请记录医生诊断：臀肌无力并撤销旧记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力并撤销旧记录"
+  },
+  {
+    "id": "write_then_legacy_clear_action",
+    "text": "请记录医生诊断：臀肌无力且清掉旧记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力且清掉旧记录"
+  },
+  {
+    "id": "write_then_correction_with_wrappers",
+    "text": "请记录医生诊断：臀肌无力另外想更正旧记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力另外想更正旧记录"
+  },
+  {
+    "id": "write_then_refresh_with_wrappers",
+    "text": "请记录医生诊断：臀肌无力还要刷新数据",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力还要刷新数据"
+  },
+  {
+    "id": "write_then_clear_with_default_ignorable_boundary",
+    "text": "请记录医生诊断：臀肌无力​请清掉旧记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力​请清掉旧记录"
+  },
+  {
+    "id": "write_then_plan_action_from_legacy_lexicon",
+    "text": "请记录医生诊断：臀肌无力并制定复查计划",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力并制定复查计划"
+  },
+  {
+    "id": "write_then_media_action_from_legacy_lexicon",
+    "text": "请记录医生诊断：臀肌无力另外制作图片",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力另外制作图片"
+  },
+  {
+    "id": "report_revoke_blocks_hard_boundary_write",
+    "text": "医生说臀肌无力并撤销它。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "compatibility_question_mark_is_nonwrite",
+    "text": "请记录医生诊断：腰肌劳损﹖",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "feedback_write_question",
+    "provider": "医生",
+    "content": "腰肌劳损"
+  },
+  {
+    "id": "arabic_question_mark_is_nonwrite",
+    "text": "请记录医生诊断：腰肌劳损؟",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "feedback_write_question",
+    "provider": "医生",
+    "content": "腰肌劳损"
+  },
+  {
+    "id": "vertical_question_mark_is_nonwrite",
+    "text": "请记录医生诊断：腰肌劳损︖",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "feedback_write_question",
+    "provider": "医生",
+    "content": "腰肌劳损"
+  },
+  {
+    "id": "unicode_named_question_mark_is_nonwrite",
+    "text": "请记录医生诊断：腰肌劳损⸮",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "feedback_write_question",
+    "provider": "医生",
+    "content": "腰肌劳损"
+  },
+  {
+    "id": "report_then_plain_context_segment",
+    "text": "医生说是臀肌无力。今天先休息。",
+    "kind": "clinician_context",
+    "reason_code": "clinician_report",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "report_then_advice_question_segment",
+    "text": "医生说是臀肌无力。我应该怎么办？",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_question",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "report_then_credibility_question_segment",
+    "text": "医生说是臀肌无力。这个判断靠谱吗？",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_question",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "multiple_pure_clinician_report_segments",
+    "text": "医生说是臀肌无力。康复师建议减少负重。",
+    "kind": "clinician_context",
+    "reason_code": "clinician_report",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "record_noun_natural_read_stays_legacy",
+    "text": "查看医生诊断书里写了什么？",
+    "kind": "none",
+    "reason_code": "legacy_clinician_record_operation",
+    "provider": "医生"
+  },
+  {
+    "id": "record_document_question_stays_legacy",
+    "text": "医生诊断文档包含哪些内容？",
+    "kind": "none",
+    "reason_code": "legacy_clinician_record_operation",
+    "provider": "医生"
+  },
+  {
+    "id": "report_plus_record_noun_read_is_ambiguous",
+    "text": "医生说是臀肌无力。查看医生诊断书里写了什么？",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "medical_adjustment_inside_explicit_feedback_is_valid",
+    "text": "请记录医生意见：医生建议：调整训练强度",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "医生建议：调整训练强度",
+    "command": "请记录医生意见"
+  },
+  {
+    "id": "medical_adjustment_report_before_write_is_valid",
+    "text": "医生建议调整训练计划。请记录医生意见：建议调整训练计划",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write_after_report",
+    "provider": "医生",
+    "content": "建议调整训练计划",
+    "command": "请记录医生意见"
+  },
+  {
+    "id": "parenthesized_placeholder_is_not_content",
+    "text": "请记录医生诊断：（待补充）",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "feedback_write_missing_content",
+    "provider": "医生"
+  },
+  {
+    "id": "bracketed_ignorable_placeholder_is_not_content",
+    "text": "请记录医生诊断：【​待填写​】",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "feedback_write_missing_content",
+    "provider": "医生"
+  },
+  {
+    "id": "symbol_wrapped_placeholder_is_not_content",
+    "text": "请记录医生诊断：★待补充★",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "feedback_write_missing_content",
     "provider": "医生"
   },
   {

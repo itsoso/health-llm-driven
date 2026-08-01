@@ -11,6 +11,7 @@ from typing import Literal, TypeAlias
 import unicodedata
 
 from app.services.utterance_intent_lexicon import (
+    CLINICIAN_CONTEXT_WRITE_ACTIONS,
     CLINICIAN_CONSULTATION_TERMS,
     CLINICIAN_FEEDBACK_OBJECT_NOUNS,
     CLINICIAN_FEEDBACK_WRITE_ROOTS,
@@ -18,7 +19,15 @@ from app.services.utterance_intent_lexicon import (
     CLINICIAN_REPORT_NOUN_CONTINUATIONS,
     CLINICIAN_REPORT_PREDICATES,
     CLINICIAN_STRICT_COMMAND_PREFIXES,
+    MEDIA_CREATE_ACTIONS,
+    MUTATE_ACTIONS,
+    PLAN_CREATE_ACTIONS,
+    PLAN_UPDATE_ACTIONS,
     QUESTION_SIGNALS,
+    READ_ACTIONS,
+    REMINDER_CREATE_ACTIONS,
+    WRITE_ACTIONS,
+    WRITE_COMMAND_PREFIXES,
 )
 
 __all__ = ("ClinicianTurnDecision", "classify_clinician_turn")
@@ -31,7 +40,7 @@ DecisionKind: TypeAlias = Literal[
     "ambiguous_clinician_action",
 ]
 
-_HARD_BOUNDARIES = frozenset("。；;！？!?\n")
+_HARD_BOUNDARIES = frozenset("。；;！!\n")
 _SOFT_BOUNDARIES = ("，", ",")
 _ACTION_JOINER_SUFFIXES = (
     "与此同时",
@@ -46,30 +55,61 @@ _ACTION_JOINER_SUFFIXES = (
     "但是",
     "可是",
     "不过",
+    "另外",
+    "再",
+    "还",
 )
 _ACTION_JOINER_CHARS = frozenset("且和与及并但")
-# These roots only invalidate a previously proven feedback-write envelope.
-# They are never used to authorize or classify general user actions.
-_WRITE_ENVELOPE_BLOCKED_ROOTS = (
-    "删除",
-    "删掉",
-    "移除",
-    "修改",
-    "调整",
-    "更新",
-    "同步",
-    "提醒",
-    "保存",
+_MUTATION_ACTION_ROOTS = tuple(
+    root
+    for roots in MUTATE_ACTIONS.values()
+    for root in roots
+)
+# Deny-only union: these existing legacy roots can close an otherwise proven
+# feedback-write envelope, but can never authorize or classify a general act.
+_DENY_ONLY_ACTION_ROOTS = tuple(
+    dict.fromkeys(
+        (
+            *READ_ACTIONS,
+            *WRITE_ACTIONS,
+            *_MUTATION_ACTION_ROOTS,
+            *REMINDER_CREATE_ACTIONS,
+            *PLAN_CREATE_ACTIONS,
+            *PLAN_UPDATE_ACTIONS,
+            *MEDIA_CREATE_ACTIONS,
+            *CLINICIAN_CONTEXT_WRITE_ACTIONS,
+        )
+    )
+)
+_ACTION_PREFIX_WRAPPERS = tuple(
+    sorted(
+        {
+            *WRITE_COMMAND_PREFIXES,
+            *CLINICIAN_STRICT_COMMAND_PREFIXES,
+            "还",
+            "另外",
+        },
+        key=lambda term: (-len(term), term),
+    )
+)
+_DIRECT_DESTRUCTIVE_ROOTS = tuple(
+    dict.fromkeys(
+        (
+            *MUTATE_ACTIONS["delete"],
+            "更正",
+            "修正",
+            *MUTATE_ACTIONS["sync"],
+        )
+    )
+)
+_MUTATION_TARGET_HINTS = (
     "记录",
-    "录入",
-    "写入",
-    "创建",
-    "设置",
-    "生成",
-    "制定",
-    "安排",
-    "制作",
-    "渲染",
+    "数据",
+    "文档",
+    "档案",
+    "报告",
+    "计划项",
+    "提醒",
 )
 _REPORT_FILLERS = frozenset(" 是为：:，,")
 _CONTENT_SEPARATORS = frozenset("：:,，")
@@ -77,7 +117,6 @@ _CONTENT_PLACEHOLDERS = frozenset(
     {"待补充", "待填写", "暂无", "未知", "不详", "无", "NA", "N/A"}
 )
 _NON_HUMAN_PROVIDER_PREFIXES = ("宠物", "动物", "兽")
-_LEGACY_OPERATION_ROOTS = ("查看", "查询", "删除", "删掉", "移除")
 _LEGACY_CLINICIAN_OBJECT_SUFFIXES = (
     "诊断记录",
     "诊断报告",
@@ -227,6 +266,16 @@ def _is_ignorable(char: str) -> bool:
     return char.isspace() or unicodedata.category(char) == "Cf"
 
 
+def _is_question_punctuation(char: str) -> bool:
+    compatible = unicodedata.normalize("NFKC", char)
+    if "?" in compatible:
+        return True
+    return (
+        unicodedata.category(char).startswith("P")
+        and "QUESTION MARK" in unicodedata.name(char, "")
+    )
+
+
 def _trim(raw: str, start: int, end: int) -> _Span:
     while start < end and _is_ignorable(raw[start]):
         start += 1
@@ -239,7 +288,7 @@ def _segments(raw: str) -> tuple[_Span, ...]:
     spans: list[_Span] = []
     start = 0
     for position, char in enumerate(raw):
-        if char not in _HARD_BOUNDARIES:
+        if char not in _HARD_BOUNDARIES and not _is_question_punctuation(char):
             continue
         span = _trim(raw, start, position)
         if span.start < span.end:
@@ -340,20 +389,46 @@ def _strip_ignorable_end(raw: str, start: int, end: int) -> int:
     return end
 
 
+def _strip_action_wrappers_from_end(
+    raw: str,
+    *,
+    start: int,
+    end: int,
+) -> tuple[int, bool, bool]:
+    position = end
+    saw_wrapper = False
+    saw_gap = False
+    while position > start:
+        gap_end = position
+        position = _strip_ignorable_end(raw, start, position)
+        saw_gap = saw_gap or position < gap_end
+        matched = next(
+            (
+                wrapper
+                for wrapper in _ACTION_PREFIX_WRAPPERS
+                if position - len(wrapper) >= start
+                and raw[position - len(wrapper) : position] == wrapper
+            ),
+            None,
+        )
+        if matched is None:
+            break
+        position -= len(matched)
+        saw_wrapper = True
+    return position, saw_wrapper, saw_gap
+
+
 def _second_action_prefix_kind(
     raw: str,
     *,
     span_start: int,
     action_start: int,
 ) -> Literal["soft", "coordinated"] | None:
-    prefix_end = _strip_ignorable_end(raw, span_start, action_start)
-    polite_found = False
-    for polite in CLINICIAN_STRICT_COMMAND_PREFIXES:
-        polite_start = prefix_end - len(polite)
-        if polite_start >= span_start and raw[polite_start:prefix_end] == polite:
-            prefix_end = _strip_ignorable_end(raw, span_start, polite_start)
-            polite_found = True
-            break
+    prefix_end, wrapper_found, gap_found = _strip_action_wrappers_from_end(
+        raw,
+        start=span_start,
+        end=action_start,
+    )
     if prefix_end <= span_start:
         return None
     prefix = raw[span_start:prefix_end]
@@ -365,7 +440,7 @@ def _second_action_prefix_kind(
     last_char = raw[prefix_end - 1]
     if unicodedata.category(last_char).startswith("P"):
         return "soft" if last_char in "，," else "coordinated"
-    if polite_found:
+    if wrapper_found or gap_found:
         return "coordinated"
     if last_char in _ACTION_JOINER_CHARS:
         return "coordinated"
@@ -374,19 +449,75 @@ def _second_action_prefix_kind(
     return None
 
 
+def _is_direct_destructive_action(
+    raw: str,
+    *,
+    span: _Span,
+    action_start: int,
+    root: str,
+) -> bool:
+    if root not in _DIRECT_DESTRUCTIVE_ROOTS:
+        return False
+    prefix_end, wrapper_found, _ = _strip_action_wrappers_from_end(
+        raw,
+        start=span.start,
+        end=action_start,
+    )
+    if prefix_end > span.start:
+        return False
+    if root in MUTATE_ACTIONS["delete"]:
+        return action_start == span.start or wrapper_found
+    suffix = raw[action_start + len(root) : span.end]
+    return (
+        action_start == span.start or wrapper_found
+    ) and any(target in suffix for target in _MUTATION_TARGET_HINTS)
+
+
+def _is_nested_medical_adjustment(
+    raw: str,
+    span: _Span,
+    *,
+    action_start: int,
+    root: str,
+) -> bool:
+    if root != "调整":
+        return False
+    report = _find_report(raw, span, -1)
+    return (
+        report is not None
+        and report.content is not None
+        and report.content.start <= action_start < report.content.end
+    )
+
+
 def _second_action_kind(
     raw: str,
     span: _Span,
 ) -> Literal["soft", "coordinated"] | None:
     best: tuple[int, Literal["soft", "coordinated"]] | None = None
-    for root in _WRITE_ENVELOPE_BLOCKED_ROOTS:
+    for root in _DENY_ONLY_ACTION_ROOTS:
         position = raw.find(root, span.start, span.end)
         while position >= 0:
+            if _is_nested_medical_adjustment(
+                raw,
+                span,
+                action_start=position,
+                root=root,
+            ):
+                position = raw.find(root, position + len(root), span.end)
+                continue
             kind = _second_action_prefix_kind(
                 raw,
                 span_start=span.start,
                 action_start=position,
             )
+            if kind is None and _is_direct_destructive_action(
+                raw,
+                span=span,
+                action_start=position,
+                root=root,
+            ):
+                kind = "coordinated"
             if kind is not None and (best is None or position < best[0]):
                 best = (position, kind)
             position = raw.find(root, position + len(root), span.end)
@@ -405,8 +536,23 @@ def _consume_content_prefix(raw: str, position: int, end: int) -> int:
 
 def _content_is_substantive(raw: str, content: _Span) -> bool:
     text = raw[content.start : content.end]
-    normalized = "".join(char for char in text if not _is_ignorable(char))
-    normalized = normalized.strip("：:,，。.!！?？、;；")
+    normalized = unicodedata.normalize(
+        "NFKC",
+        "".join(char for char in text if not _is_ignorable(char)),
+    )
+    start = 0
+    end = len(normalized)
+    while (
+        start < end
+        and unicodedata.category(normalized[start])[0] in {"P", "S", "Z"}
+    ):
+        start += 1
+    while (
+        end > start
+        and unicodedata.category(normalized[end - 1])[0] in {"P", "S", "Z"}
+    ):
+        end -= 1
+    normalized = normalized[start:end]
     if not normalized or normalized.upper() in _CONTENT_PLACEHOLDERS:
         return False
     if normalized in CLINICIAN_REPORT_NOUN_CONTINUATIONS:
@@ -577,15 +723,19 @@ def _find_report(
 
 
 def _contains_question(raw: str) -> bool:
-    return any(signal in raw for signal in QUESTION_SIGNALS)
+    compatible = unicodedata.normalize("NFKC", raw)
+    return (
+        any(signal in compatible for signal in QUESTION_SIGNALS)
+        or any(_is_question_punctuation(char) for char in raw)
+    )
 
 
 def _span_is_question(raw: str, span: _Span) -> bool:
     text = raw[span.start : span.end]
     return (
-        any(signal in text for signal in QUESTION_SIGNALS)
+        _contains_question(text)
         or span.end < len(raw)
-        and raw[span.end] in "？?"
+        and _is_question_punctuation(raw[span.end])
     )
 
 
@@ -598,38 +748,101 @@ def _report_followup_kind(
     return _second_action_kind(raw, report.content)
 
 
-def _report_contains_blocked_root(raw: str, report: _Report) -> bool:
+def _report_has_soft_followup(raw: str, report: _Report) -> bool:
     if report.content is None:
         return False
-    text = raw[report.content.start : report.content.end]
-    return any(root in text for root in _WRITE_ENVELOPE_BLOCKED_ROOTS)
+    for root in _DENY_ONLY_ACTION_ROOTS:
+        position = raw.find(root, report.content.start, report.content.end)
+        while position >= 0:
+            if _second_action_prefix_kind(
+                raw,
+                span_start=report.content.start,
+                action_start=position,
+            ) == "soft":
+                return True
+            position = raw.find(
+                root,
+                position + len(root),
+                report.content.end,
+            )
+    return False
 
 
-def _standalone_legacy_provider(
+def _segment_starts_with_action(raw: str, segment: _Span) -> bool:
+    position = _skip_spaces(raw, segment.start, segment.end)
+    while position < segment.end:
+        wrapper = _starts_with_term(
+            raw,
+            _ACTION_PREFIX_WRAPPERS,
+            position=position,
+            end=segment.end,
+        )
+        if wrapper is None:
+            break
+        position = _skip_spaces(raw, wrapper[0].end, segment.end)
+    return _starts_with_term(
+        raw,
+        _DENY_ONLY_ACTION_ROOTS,
+        position=position,
+        end=segment.end,
+    ) is not None
+
+
+def _turn_has_extra_action(
     raw: str,
     segments: tuple[_Span, ...],
-) -> _Span | None:
+    reports: tuple[_Report, ...],
+) -> bool:
+    report_indexes = {report.segment_index for report in reports}
+    if any(_report_followup_kind(raw, report) is not None for report in reports):
+        return True
+    return any(
+        index not in report_indexes
+        and _segment_starts_with_action(raw, segment)
+        for index, segment in enumerate(segments)
+    )
+
+
+def _prefix_is_legacy_record_operation(raw: str, prefix: _Span) -> bool:
+    if prefix.start >= prefix.end:
+        return True
+    position = prefix.start
+    while position < prefix.end:
+        wrapper = _starts_with_term(
+            raw,
+            _ACTION_PREFIX_WRAPPERS,
+            position=position,
+            end=prefix.end,
+        )
+        if wrapper is None:
+            break
+        position = _skip_spaces(raw, wrapper[0].end, prefix.end)
+    operation = _starts_with_term(
+        raw,
+        (*READ_ACTIONS, *MUTATE_ACTIONS["delete"]),
+        position=position,
+        end=prefix.end,
+    )
+    return (
+        operation is not None
+        and _skip_spaces(raw, operation[0].end, prefix.end) == prefix.end
+    )
+
+
+def _standalone_record_noun_shape(
+    raw: str,
+    segments: tuple[_Span, ...],
+) -> tuple[_Span, bool] | None:
     if len(segments) != 1:
         return None
     segment = segments[0]
-    root = _starts_with_term(
-        raw,
-        _LEGACY_OPERATION_ROOTS,
-        position=segment.start,
-        end=segment.end,
-    )
-    if root is None:
-        return None
-    position = _skip_spaces(raw, root[0].end, segment.end)
-    provider_match = _starts_with_term(
-        raw,
-        CLINICIAN_PROVIDER_TERMS,
-        position=position,
-        end=segment.end,
-    )
+    provider_match = _first_provider(raw, segment)
     if provider_match is None:
         return None
     provider, _ = provider_match
+    prefix = _trim(raw, segment.start, provider.start)
+    if not _prefix_is_legacy_record_operation(raw, prefix):
+        return None
     position = _skip_spaces(raw, provider.end, segment.end)
     object_match = _starts_with_term(
         raw,
@@ -640,9 +853,14 @@ def _standalone_legacy_provider(
     if object_match is None:
         return None
     object_span, _ = object_match
-    if _skip_spaces(raw, object_span.end, segment.end) != segment.end:
+    tail = _trim(raw, object_span.end, segment.end)
+    if tail.start >= tail.end:
+        return provider, False
+    if _segment_starts_with_action(raw, tail):
+        return provider, True
+    if not _contains_question(raw):
         return None
-    return provider
+    return provider, False
 
 
 def _decision(
@@ -708,14 +926,24 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
         if (report := _find_report(raw, segment, index)) is not None
     )
 
-    legacy_provider = _standalone_legacy_provider(raw, segments)
-    if legacy_provider is not None:
-        return _decision(
-            raw,
-            kind="none",
-            reason_code="legacy_clinician_record_operation",
-            provider=legacy_provider,
-        )
+    if not candidates and not reports:
+        record_noun_shape = _standalone_record_noun_shape(raw, segments)
+        if record_noun_shape is not None:
+            legacy_provider, has_extra_action = record_noun_shape
+            return _decision(
+                raw,
+                kind=(
+                    "ambiguous_clinician_action"
+                    if has_extra_action
+                    else "none"
+                ),
+                reason_code=(
+                    "coordinated_clinician_action"
+                    if has_extra_action
+                    else "legacy_clinician_record_operation"
+                ),
+                provider=legacy_provider,
+            )
 
     if len(candidates) > 1:
         return _ambiguous_candidate(
@@ -764,14 +992,9 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
         ):
             preceding_report = preceding_reports[0]
             followup_kind = _report_followup_kind(raw, preceding_report)
-            contains_blocked_root = _report_contains_blocked_root(
-                raw,
-                preceding_report,
-            )
             if (
                 _span_is_question(raw, segments[0])
                 or followup_kind is not None
-                or contains_blocked_root
             ):
                 return _ambiguous_candidate(
                     raw,
@@ -779,7 +1002,6 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
                     reason_code=(
                         "soft_boundary_followup"
                         if followup_kind == "soft"
-                        and not contains_blocked_root
                         else "coordinated_clinician_action"
                     ),
                 )
@@ -799,14 +1021,24 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
 
     if reports:
         report = reports[0]
-        if len(segments) > 1:
-            followup_kind = _report_followup_kind(raw, report)
+        if _turn_has_extra_action(raw, segments, reports):
+            followup_kind = next(
+                (
+                    kind
+                    for item in reports
+                    if (kind := _report_followup_kind(raw, item)) is not None
+                ),
+                None,
+            )
+            has_soft_followup = any(
+                _report_has_soft_followup(raw, item) for item in reports
+            )
             return _decision(
                 raw,
                 kind="ambiguous_clinician_action",
                 reason_code=(
                     "soft_boundary_followup"
-                    if followup_kind == "soft"
+                    if followup_kind == "soft" or has_soft_followup
                     else "coordinated_clinician_action"
                 ),
                 provider=report.provider,
@@ -817,23 +1049,6 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
                 raw,
                 kind="clinician_advice",
                 reason_code="clinician_question",
-                provider=report.provider,
-                content=report.content,
-            )
-        followup_kind = _report_followup_kind(raw, report)
-        if followup_kind == "soft":
-            return _decision(
-                raw,
-                kind="ambiguous_clinician_action",
-                reason_code="soft_boundary_followup",
-                provider=report.provider,
-                content=report.content,
-            )
-        if followup_kind == "coordinated":
-            return _decision(
-                raw,
-                kind="ambiguous_clinician_action",
-                reason_code="coordinated_clinician_action",
                 provider=report.provider,
                 content=report.content,
             )

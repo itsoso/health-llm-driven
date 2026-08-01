@@ -129,6 +129,29 @@ def test_guard_does_not_grow_a_general_action_taxonomy():
         assert forbidden not in source
 
 
+def test_guard_deny_roots_cover_shared_legacy_action_lexicon():
+    guard = _module()
+    lexicon = importlib.import_module(
+        "app.services.utterance_intent_lexicon"
+    )
+    expected = {
+        *lexicon.READ_ACTIONS,
+        *lexicon.WRITE_ACTIONS,
+        *lexicon.MEDIA_CREATE_ACTIONS,
+        *lexicon.PLAN_CREATE_ACTIONS,
+        *lexicon.PLAN_UPDATE_ACTIONS,
+        *lexicon.REMINDER_CREATE_ACTIONS,
+        *lexicon.CLINICIAN_CONTEXT_WRITE_ACTIONS,
+        *(
+            root
+            for roots in lexicon.MUTATE_ACTIONS.values()
+            for root in roots
+        ),
+    }
+
+    assert expected <= set(guard._DENY_ONLY_ACTION_ROOTS)
+
+
 @pytest.mark.parametrize(
     ("kind", "reason_code"),
     (
