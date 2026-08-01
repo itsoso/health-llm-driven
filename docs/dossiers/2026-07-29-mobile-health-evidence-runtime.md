@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-health-evidence-runtime` |
 | 创建日期 | 2026-07-29 |
-| 当前阶段 | replacement exact-SHA CI（POSIX awk portability correction） |
-| 状态 | prod=`98e27869...`、base flag=false、durable runtime=true、四服务 active；activation terminal marker 成功但 lease/stage 保留，POSIX awk proof 修复进入 replacement CI 前继续阻断部署/OTA |
+| 当前阶段 | production activation terminal adoption cleanup |
+| 状态 | prod=`98e27869...`、base flag=false、durable runtime=true、四服务 active；POSIX awk proof 修复的 replacement exact-SHA CI 已全绿，原 lease/stage adoption cleanup 前继续阻断新部署/OTA |
 | 负责 | product owner + Codex |
 | 反馈环 | backend/Web → 受控 activation → semantic smoke → Mobile OTA → 跨端对照 |
 
@@ -485,7 +485,12 @@
       修复仅同步 synthetic fixture/测试，并让 exact meal update 分支只作用于
       `operation=update`；新增 meal create scorer 回归。scorer + synthesis gate
       57/57、offline gate 12/12 + 50/50 + 12/12 + 9/9、Ruff 与 diff check 通过；
-      replacement commit 与第二轮 exact-SHA CI 待完成，生产仍保持不变。
+      replacement commit `acc910fd9` 已完成。第二轮 CI run `30708645359` 首次按
+      设计被 live-change gate 拒绝；固定 synthetic live eval 使用 MiniMax-M2.5
+      真实通过 orchestrator 5/5（平均 0.96、无 regression），其余 12/12、50/50、
+      12/12、9/9。设置一次性 repo variable 后同一 run attempt 2 为 44/44
+      success；变量随即删除，按名称复证 not found。production adoption cleanup
+      仍待执行，生产保持不变。
   - 回退阶段: G5/G6 → S5/G3/G4；lease/stage 保留，禁止并发 activation、
     rollback、部署或 OTA。
 

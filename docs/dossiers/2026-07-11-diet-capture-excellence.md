@@ -4,8 +4,8 @@
 |---|---|
 | slug | `diet-capture-excellence` |
 | 创建日期 | 2026-07-11 |
-| 当前阶段 | G3/G4 已通过，G5 被既有 release lease 阻断 |
-| 状态 | deploy_blocked_pending_release_proof_ci |
+| 当前阶段 | G3/G4 已通过，G5 等待既有 release lease 官方 cleanup |
+| 状态 | deploy_blocked_pending_release_adoption_cleanup |
 | 负责 | Codex |
 | 反馈环 | Backend pytest / Mobile Jest + TypeScript / Simulator / backend deploy / EAS TestFlight + production OTA |
 
@@ -212,7 +212,9 @@
   awk 不接受多行 `exit(...)` 而 fail closed。现场 lease/stage 完整保留，四服务
   active，未重启 activation，也未继续本功能部署或 OTA。修复已通过新增 RED→GREEN
   行为测试、目标机只读 probe、定向 5/5 与完整 release-invariants 308/308；新的
-  exact-SHA 主干 CI 及原 stage adoption cleanup 仍待完成。详见
+  exact-SHA 主干 CI run `30708645359` attempt 2 已 44/44 success，live LLM
+  orchestrator 5/5（平均 0.96、无 regression），一次性确认变量已删除；原 stage
+  adoption cleanup 仍待完成。详见
   [`mobile-health-evidence-runtime`](2026-07-29-mobile-health-evidence-runtime.md)。
 - **本轮 G5 裁决：PENDING / BLOCKED BY RELEASE LEASE**。须先完成上述 proof CI 与
   官方 adoption cleanup，再从干净主干部署 Backend、发布 production OTA 并执行
