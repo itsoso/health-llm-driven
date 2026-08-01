@@ -107,10 +107,11 @@ describe('dietShareImageEdit', () => {
 
   it('rotates clockwise in 90 degree steps and wraps to zero', () => {
     const initial = initialDietShareImageEdit();
-    const at90 = rotateDietShareImage(initial);
-    const at180 = rotateDietShareImage(at90);
-    const at270 = rotateDietShareImage(at180);
-    const atZero = rotateDietShareImage(at270);
+    const source = { width: 1600, height: 1200 };
+    const at90 = rotateDietShareImage(initial, source);
+    const at180 = rotateDietShareImage(at90, source);
+    const at270 = rotateDietShareImage(at180, source);
+    const atZero = rotateDietShareImage(at270, source);
 
     expect([at90.rotation, at180.rotation, at270.rotation, atZero.rotation]).toEqual([
       90,
@@ -131,13 +132,13 @@ describe('dietShareImageEdit', () => {
       }],
     };
 
-    const rotated = rotateDietShareImage(initial);
+    const rotated = rotateDietShareImage(initial, { width: 1600, height: 1200 });
 
     expect(rotated).toEqual({
-      crop: { x: 0.4, y: 0.1, width: 0.4, height: 0.4 },
+      crop: { x: 0.4, y: 0.1875, width: 0.4, height: 0.4 },
       rotation: 90,
       redactions: [{
-        points: [{ x: 0.8, y: 0.1 }, { x: 0.65, y: 0.25 }],
+        points: [{ x: 0.8, y: 0.275 }, { x: 0.65, y: 0.359375 }],
         width: 0.06,
       }],
     });
@@ -145,29 +146,20 @@ describe('dietShareImageEdit', () => {
     expect(initial.redactions[0]?.points[0]).toEqual({ x: 0.1, y: 0.2 });
   });
 
-  it('returns crop and privacy coordinates to their origin after four rotations', () => {
+  it('maps a visible point through source pixels rather than a square shortcut', () => {
     const initial = {
       ...initialDietShareImageEdit(),
-      crop: { x: 0.13, y: 0.27, width: 0.31, height: 0.31 },
       redactions: [{
-        points: [{ x: 0.04, y: 0.91 }, { x: 0.22, y: 0.73 }],
+        points: [{ x: 0.1, y: 0.1 }, { x: 0.2, y: 0.2 }],
         width: 0.08,
       }],
     };
 
-    const result = rotateDietShareImage(
-      rotateDietShareImage(rotateDietShareImage(rotateDietShareImage(initial))),
-    );
+    const result = rotateDietShareImage(initial, { width: 1600, height: 1200 });
 
-    expect(result.rotation).toBe(0);
-    expect(result.crop.x).toBeCloseTo(initial.crop.x);
-    expect(result.crop.y).toBeCloseTo(initial.crop.y);
-    expect(result.crop.width).toBeCloseTo(initial.crop.width);
-    expect(result.crop.height).toBeCloseTo(initial.crop.height);
-    result.redactions[0]?.points.forEach((point, index) => {
-      expect(point.x).toBeCloseTo(initial.redactions[0]!.points[index]!.x);
-      expect(point.y).toBeCloseTo(initial.redactions[0]!.points[index]!.y);
-    });
+    expect(result.crop).toEqual({ x: 0, y: 0, width: 1, height: 1 });
+    expect(result.redactions[0]?.points[0]?.x).toBeCloseTo(0.9);
+    expect(result.redactions[0]?.points[0]?.y).toBeCloseTo(0.275);
   });
 
   it('reset restores a fresh identity state exactly', () => {
@@ -177,7 +169,7 @@ describe('dietShareImageEdit', () => {
         y: 0.2,
         width: 0.7,
         height: 0.6,
-      })),
+      }), { width: 1600, height: 1200 }),
       {
         points: [{ x: 0.2, y: 0.2 }, { x: 0.8, y: 0.8 }],
         width: 0.06,

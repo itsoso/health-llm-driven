@@ -68,12 +68,28 @@ function imageSourceIdentity(source: ImageSourcePropType | undefined): string {
   if (source == null) return 'none';
   if (typeof source === 'number') return `asset:${source}`;
   if (Array.isArray(source)) return source.map(imageSourceIdentity).join('|');
-  const candidate = source as { uri?: string; width?: number; height?: number; scale?: number };
+  const candidate = source as {
+    uri?: string;
+    width?: number;
+    height?: number;
+    scale?: number;
+    headers?: Record<string, string>;
+  };
+  const headerMaterial = Object.entries(candidate.headers ?? {})
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, value]) => `${name}:${value}`)
+    .join('\n');
+  let headerFingerprint = 2166136261;
+  for (let index = 0; index < headerMaterial.length; index += 1) {
+    headerFingerprint ^= headerMaterial.charCodeAt(index);
+    headerFingerprint = Math.imul(headerFingerprint, 16777619);
+  }
   return JSON.stringify({
     uri: candidate.uri ?? '',
     width: candidate.width ?? null,
     height: candidate.height ?? null,
     scale: candidate.scale ?? null,
+    headerFingerprint: (headerFingerprint >>> 0).toString(36),
   });
 }
 
@@ -1160,15 +1176,13 @@ const styles = StyleSheet.create({
   },
   posterPhotoFrame: {
     width: '100%',
-    height: '55%',
-    position: 'relative',
+    height: '100%',
+    position: 'absolute',
     overflow: 'hidden',
     backgroundColor: '#D8C7AD',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(102, 75, 44, 0.24)',
-    alignItems: 'center',
   },
   posterPhotoMedia: {
+    width: '100%',
     height: '100%',
     aspectRatio: 3 / 4,
     position: 'relative',
@@ -1218,6 +1232,10 @@ const styles = StyleSheet.create({
     textShadowRadius: 3,
   },
   posterCopy: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     height: '45%',
     paddingHorizontal: 20,
     paddingTop: 10,

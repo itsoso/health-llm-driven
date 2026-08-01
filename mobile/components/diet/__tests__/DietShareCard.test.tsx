@@ -127,9 +127,11 @@ describe('DietShareCard Xiaohongshu poster', () => {
     const view = renderCard();
     const photoFrameStyle = StyleSheet.flatten(view.getByTestId('diet-share-photo-frame').props.style);
 
-    expect(photoFrameStyle.height).toBe('55%');
+    expect(photoFrameStyle.height).toBe('100%');
     const mediaStyle = StyleSheet.flatten(view.getByTestId('diet-share-photo-media').props.style);
     expect(mediaStyle.aspectRatio).toBe(3 / 4);
+    expect(mediaStyle.width).toBe('100%');
+    expect(mediaStyle.height).toBe('100%');
     expect(view.getByTestId('diet-share-image').props).toEqual(expect.objectContaining({
       source: imageSource,
       contentFit: 'contain',
@@ -199,6 +201,8 @@ describe('DietShareCard Xiaohongshu poster', () => {
     const copyStyle = StyleSheet.flatten(view.getByTestId('diet-share-poster-copy').props.style);
     expect(copyStyle).toEqual(expect.objectContaining({
       height: '45%',
+      position: 'absolute',
+      bottom: 0,
       paddingTop: 10,
       paddingBottom: 10,
       gap: 4,
@@ -423,6 +427,33 @@ describe('DietShareSheet image and text behavior', () => {
     expect(view.getByRole('button', { name: '发小红书' })).not.toBeDisabled();
   });
 
+  it('treats refreshed auth headers as a new protected-image generation', () => {
+    const uri = 'https://health.executor.life/private/meal.jpg';
+    const sourceA = { uri, headers: { Authorization: 'Bearer token-a' } };
+    const sourceB = { uri, headers: { Authorization: 'Bearer token-b' } };
+    const view = renderSheet({ imageSource: sourceA });
+    const oldImage = view.getByTestId('diet-share-image');
+
+    view.rerender(
+      <DietShareSheet
+        visible
+        record={record}
+        dateLabel="7月11日"
+        imageSource={sourceB}
+        onClose={view.onClose}
+        onShareFeedback={view.onShareFeedback}
+        onShareTerminal={view.onShareTerminal}
+      />,
+    );
+    fireEvent(oldImage, 'load');
+    expect(view.getByRole('button', { name: '发小红书' })).toBeDisabled();
+
+    fireEvent(view.getByTestId('diet-share-image'), 'load');
+    expect(view.getByRole('button', { name: '发小红书' })).not.toBeDisabled();
+    fireEvent(oldImage, 'error', { error: 'stale token request' });
+    expect(view.getByRole('button', { name: '发小红书' })).not.toBeDisabled();
+  });
+
   it('recovers from a timed-out source when a replacement photo loads', () => {
     jest.useFakeTimers();
     try {
@@ -460,6 +491,23 @@ describe('DietShareSheet image and text behavior', () => {
 
     expect(caption).not.toMatch(/900\s*kcal|蛋白质\s*36g|碳水\s*103g|脂肪\s*42g/i);
     expect(view.queryByText('下一餐补蛋白质 30g，少吃 300 kcal')).toBeNull();
+  });
+
+  it('treats user-corrected nutrition as confirmed across poster, sheet and caption', async () => {
+    const confirmed = { ...record, source: 'user_corrected', ai_confidence: 0.42 };
+    const view = renderSheet({ record: confirmed });
+
+    expect(view.getByText('高清 3:4 图片 · 微信与小红书')).toBeTruthy();
+    expect(view.getByText('营养数据已由用户确认')).toBeTruthy();
+    const caption = buildDietShareCaption(confirmed, '7月11日');
+    expect(caption).toContain('热量 900 kcal');
+    expect(caption).toContain('营养数据: 手动核对');
+
+    fireEvent.press(view.getByRole('button', { name: '复制小红书文案' }));
+    await waitFor(() => expect(view.onShareFeedback).toHaveBeenCalledWith(expect.objectContaining({
+      title: '小红书文案已复制',
+      tone: 'success',
+    })));
   });
 
   it('does not construct or capture a metric-only image when no photo is available', () => {

@@ -30,6 +30,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   addDietShareRedaction,
+  baseDietShareCropForPoster,
+  effectiveDietShareImageSize,
   initialDietShareImageEdit,
   resetDietShareImageEdit,
   rotateDietShareImage,
@@ -237,27 +239,11 @@ function validSize(width: number, height: number): Size | null {
   return { width, height };
 }
 
-function effectiveSize(source: Size, rotation: DietShareImageEdit['rotation']): Size {
-  return rotation === 90 || rotation === 270
-    ? { width: source.height, height: source.width }
-    : source;
-}
-
-function baseCropForPoster(source: Size): { x: number; y: number; width: number; height: number } {
-  const sourceRatio = source.width / source.height;
-  if (sourceRatio > VIEWPORT_ASPECT_RATIO) {
-    const width = source.height * VIEWPORT_ASPECT_RATIO;
-    return { x: (source.width - width) / 2, y: 0, width, height: source.height };
-  }
-  const height = source.width / VIEWPORT_ASPECT_RATIO;
-  return { x: 0, y: (source.height - height) / 2, width: source.width, height };
-}
-
 function pixelCrop(
   source: Size,
   crop: DietShareImageEdit['crop'],
 ): { originX: number; originY: number; width: number; height: number } {
-  const base = baseCropForPoster(source);
+  const base = baseDietShareCropForPoster(source);
   const normalized = normalizedSquareCrop(crop);
   const exactX = base.x + normalized.x * base.width;
   const exactY = base.y + normalized.y * base.height;
@@ -281,8 +267,8 @@ function previewImageLayout(
   crop: DietShareImageEdit['crop'],
   viewport: Size,
 ): { position: 'absolute'; width: number; height: number; left: number; top: number } {
-  const effective = effectiveSize(source, rotation);
-  const base = baseCropForPoster(effective);
+  const effective = effectiveDietShareImageSize(source, rotation);
+  const base = baseDietShareCropForPoster(effective);
   const normalized = normalizedSquareCrop(crop);
   const visibleCrop = {
     x: base.x + normalized.x * base.width,
@@ -680,7 +666,7 @@ export function DietShareImageEditor({
     const operationGeneration = operationGenerationRef.current + 1;
     operationGenerationRef.current = operationGeneration;
     const edit = cloneEdit(currentEdit);
-    const rotatedSize = effectiveSize(sourceSize, edit.rotation);
+    const rotatedSize = effectiveDietShareImageSize(sourceSize, edit.rotation);
     const crop = pixelCrop(rotatedSize, edit.crop);
     const actions: Action[] = [];
     if (edit.rotation !== 0) actions.push({ rotate: edit.rotation });
@@ -875,7 +861,10 @@ export function DietShareImageEditor({
           <ToolbarButton
             label="顺时针旋转照片"
             disabled={!canEdit}
-            onPress={() => dispatch({ type: 'commit', edit: rotateDietShareImage(history.current) })}
+            onPress={() => {
+              if (!sourceSize) return;
+              dispatch({ type: 'commit', edit: rotateDietShareImage(history.current, sourceSize) });
+            }}
           />
           <ToolbarButton
             label="隐私涂抹"
