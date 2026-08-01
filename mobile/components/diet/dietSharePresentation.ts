@@ -31,7 +31,6 @@ export type DietSharePresentation = {
 export type DietShareRecord = Pick<
   DietRecord,
   | 'id'
-  | 'record_date'
   | 'meal_type'
   | 'food_items'
   | 'source'
@@ -178,9 +177,28 @@ export function buildDietSharePresentation(record: DietShareRecord): DietSharePr
 export function normalizePrivateDietPhotoUri(value: unknown): string | undefined {
   const raw = text(value);
   if (!raw) return undefined;
-  if (/^https?:\/\//i.test(raw)) return raw;
-  const origin = BASE_URL.replace(/\/api\/?$/i, '');
-  return `${origin}${raw.startsWith('/') ? raw : `/${raw}`}`;
+  try {
+    const trustedBase = new URL(BASE_URL);
+    if (
+      (trustedBase.protocol !== 'https:' && trustedBase.protocol !== 'http:')
+      || trustedBase.username
+      || trustedBase.password
+    ) {
+      return undefined;
+    }
+    const resolved = new URL(raw, `${trustedBase.origin}/`);
+    if (
+      resolved.origin !== trustedBase.origin
+      || resolved.protocol !== trustedBase.protocol
+      || resolved.username
+      || resolved.password
+    ) {
+      return undefined;
+    }
+    return resolved.toString();
+  } catch {
+    return undefined;
+  }
 }
 
 export function privateDietPhotoUris(data: DietPhotoCardData): string[] {
@@ -211,25 +229,30 @@ export function buildChatDietShareInput(
   cardData: Record<string, unknown>,
   receipt?: ChatDietReceipt | null,
 ): ChatDietShareInput {
-  if (
-    cardData.recorded !== true
-    || receipt?.status !== 'verified'
-    || receipt.resourceType !== 'diet_record'
-  ) {
+  const cardHasRecordId = cardData.record_id !== undefined && cardData.record_id !== null;
+  const cardRecordId = persistedRecordId(cardData.record_id);
+  let recordId: number;
+
+  if (receipt?.status === 'verified' && receipt.resourceType === 'diet_record') {
+    const receiptRecordId = persistedRecordId(receipt.resourceId);
+    if (
+      receiptRecordId == null
+      || (cardHasRecordId && (cardRecordId == null || cardRecordId !== receiptRecordId))
+    ) {
+      return { available: false, reason: 'record_missing' };
+    }
+    recordId = receiptRecordId;
+  } else if (receipt == null && cardData.recorded === true) {
+    if (cardRecordId == null) return { available: false, reason: 'record_missing' };
+    recordId = cardRecordId;
+  } else {
     return { available: false, reason: 'unverified' };
   }
 
-  const receiptRecordId = persistedRecordId(receipt.resourceId);
-  const cardRecordId = persistedRecordId(cardData.record_id);
-  const recordDate = text(cardData.record_date);
   const mealType = mealTypeValue(cardData.meal_type);
   const foodItems = foodText(cardData.food_items);
   if (
-    receiptRecordId == null
-    || cardRecordId == null
-    || receiptRecordId !== cardRecordId
-    || !recordDate
-    || !mealType
+    !mealType
     || !foodItems
   ) {
     return { available: false, reason: 'record_missing' };
@@ -240,8 +263,7 @@ export function buildChatDietShareInput(
   if (!photoUri) return { available: false, reason: 'photo_missing' };
 
   const record: DietShareRecord = {
-    id: cardRecordId,
-    record_date: recordDate,
+    id: recordId,
     meal_type: mealType,
     food_items: foodItems,
     source: text(cardData.source) ?? null,
