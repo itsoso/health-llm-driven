@@ -92,6 +92,16 @@ def test_decision_is_frozen_and_only_explicit_kind_authorizes():
         "家属向医生告知病情",
         "医生的广告知名度很高",
         "查看医生报告知情同意记录",
+        "医生告知的记录",
+        "医生告知的报告",
+        "医生的告知内容",
+        "医生的告知事项",
+        "医生的告知信息",
+        "医生的告知结果",
+        "医生的告知证明",
+        "医生的告知通知",
+        "医生的告知单",
+        "医生告知 ​的内容",
     ),
 )
 def test_false_notification_shapes_are_not_clinician_reports(text):
@@ -107,6 +117,8 @@ def test_false_notification_shapes_are_not_clinician_reports(text):
         decision.provider_start,
         decision.provider_end,
     ) == "医生"
+    assert decision.content_start is None
+    assert decision.content_end is None
     assert decision.command_start is None
     assert decision.command_end is None
 
@@ -116,7 +128,7 @@ def test_false_notification_shapes_are_not_clinician_reports(text):
     (
         ("大夫告知是臀肌无力导致腰痛", "大夫", "臀肌无力导致腰痛"),
         ("医生告知是臀肌无力导致腰痛", "医生", "臀肌无力导致腰痛"),
-        ("大夫告知的诊断靠谱吗？", "大夫", "的诊断靠谱吗"),
+        ("医生告知臀肌无力", "医生", "臀肌无力"),
     ),
 )
 def test_notification_reports_pin_provider_and_predicate_spans(
@@ -136,6 +148,26 @@ def test_notification_reports_pin_provider_and_predicate_spans(
     assert text[predicate.start : predicate.end] == "告知"
     assert report.content is not None
     assert text[report.content.start : report.content.end] == content
+
+
+def test_notification_diagnosis_question_is_advice_not_a_report():
+    guard = _module()
+    text = "大夫告知的诊断靠谱吗？"
+    segment = guard._segments(text)[0]
+
+    assert guard._find_report(text, segment, 0) is None
+    decision = guard.classify_clinician_turn(text)
+    assert decision.kind == "clinician_advice"
+    assert decision.reason_code == "clinician_question"
+    assert _slice(
+        decision.raw,
+        decision.provider_start,
+        decision.provider_end,
+    ) == "大夫"
+    assert decision.content_start is None
+    assert decision.content_end is None
+    assert decision.command_start is None
+    assert decision.command_end is None
 
 
 def test_non_writes_never_expose_an_authorizing_command_span():

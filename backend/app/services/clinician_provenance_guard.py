@@ -774,6 +774,31 @@ def _predicate_is_record_noun(
     ) is not None
 
 
+def _notification_attribution_is_nominalized(
+    raw: str,
+    *,
+    surface: str,
+    provider: _Span,
+    predicate: _Span,
+    segment_end: int,
+) -> bool:
+    if surface != "告知":
+        return False
+
+    possessive_start = _skip_spaces(raw, provider.end, predicate.start)
+    if possessive_start < predicate.start and raw[possessive_start] == "的":
+        possessive_end = _skip_spaces(
+            raw,
+            possessive_start + 1,
+            predicate.start,
+        )
+        if possessive_end == predicate.start:
+            return True
+
+    relation_start = _skip_spaces(raw, predicate.end, segment_end)
+    return relation_start < segment_end and raw[relation_start] == "的"
+
+
 def _find_report(
     raw: str,
     segment: _Span,
@@ -813,6 +838,13 @@ def _find_report(
                 predicate_candidate.start,
             )
             == predicate_candidate.start
+            and not _notification_attribution_is_nominalized(
+                raw,
+                surface=surface,
+                provider=match,
+                predicate=predicate_candidate,
+                segment_end=segment.end,
+            )
         )
         if not local_providers:
             continue

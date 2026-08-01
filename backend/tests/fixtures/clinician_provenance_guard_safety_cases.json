@@ -243,12 +243,19 @@
     "content": "臀肌无力导致腰痛"
   },
   {
+    "id": "doctor_notification_without_copula_context",
+    "text": "医生告知臀肌无力",
+    "kind": "clinician_context",
+    "reason_code": "clinician_report",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
     "id": "doctor_notification_diagnosis_question",
     "text": "大夫告知的诊断靠谱吗？",
     "kind": "clinician_advice",
     "reason_code": "clinician_question",
-    "provider": "大夫",
-    "content": "的诊断靠谱吗"
+    "provider": "大夫"
   },
   {
     "id": "notification_inside_explicit_write_is_valid",
@@ -267,6 +274,86 @@
     "provider": "医生",
     "content": "臀肌无力导致腰痛",
     "command": "请记录医生诊断"
+  },
+  {
+    "id": "notification_relative_record_does_not_authorize_later_write",
+    "text": "医生告知的记录。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "notification_relative_report_does_not_authorize_later_write",
+    "text": "医生告知的报告。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "provider_possessive_notification_content_does_not_authorize",
+    "text": "医生的告知内容。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "provider_possessive_notification_matter_does_not_authorize",
+    "text": "医生的告知事项。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "provider_possessive_notification_information_does_not_authorize",
+    "text": "医生的告知信息。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "provider_possessive_notification_result_does_not_authorize",
+    "text": "医生的告知结果。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "provider_possessive_notification_proof_does_not_authorize",
+    "text": "医生的告知证明。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "provider_possessive_notification_notice_does_not_authorize",
+    "text": "医生的告知通知。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "provider_possessive_notification_form_does_not_authorize",
+    "text": "医生的告知单。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "spaced_notification_relative_does_not_authorize_later_write",
+    "text": "医生告知 ​的内容。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
   },
   {
     "id": "notify_record_read_does_not_authorize_later_write",
