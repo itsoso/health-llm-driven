@@ -103,7 +103,9 @@
 ## S5 · 实现
 
 - 分支: `codex/fix-record-write-outcome`
-- commit: pending
+- commits:
+  - `5a9a1e81f` — approved spec, dossier, and implementation plan;
+  - `bc48f7288` — backend/Mobile implementation and regression coverage.
 - 已实现:
   - exact historical water phrase compiles to one date-bound write and persists that date;
   - write `tool_result` exposes content-free typed outcome facts;
