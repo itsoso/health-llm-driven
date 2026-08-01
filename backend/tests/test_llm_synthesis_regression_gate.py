@@ -103,19 +103,19 @@ def test_historical_golden_trace_can_refine_execution_postconditions(monkeypatch
     assert report["status"] == "passed"
     assert captured_expected == [
         {
-            "goal_kind": "write",
+            "goal_kind": "simple_health_record",
             "domain": "diet",
             "operation": "create",
             "target_date": "2026-07-17",
-            "target_meal_types": [],
+            "target_meal_types": ["lunch"],
             "target_record_type": "diet",
             "target_values": {
-                "meal_type": "snack",
+                "meal_type": "lunch",
                 "food_items": "一个水蜜桃",
             },
             "requires_lookup": False,
             "requires_verification": True,
-            "prohibited_operations": [],
+            "prohibited_operations": ["update", "delete"],
             "clarification": False,
         }
     ]

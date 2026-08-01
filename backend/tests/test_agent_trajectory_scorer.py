@@ -300,6 +300,81 @@ def test_score_trajectory_passes_simple_health_record_with_verified_readback():
     assert scored["dimensions"]["readback"] == 1
 
 
+def test_score_trajectory_passes_meal_create_with_target_meal_type():
+    case = {
+        "id": "fruit_record_explicit_observation",
+        "expected": {
+            "goal_kind": "simple_health_record",
+            "domain": "diet",
+            "operation": "create",
+            "target_date": "2026-07-17",
+            "target_record_type": "diet",
+            "target_values": {"meal_type": "lunch", "food_items": "一个水蜜桃"},
+            "target_meal_types": ["lunch"],
+            "requires_lookup": False,
+            "requires_verification": True,
+            "prohibited_operations": ["update", "delete"],
+            "clarification": False,
+        },
+    }
+    trace = {
+        "case_id": case["id"],
+        "candidate_id": "candidate-fruit",
+        "client_turn_id": "turn-fruit-peach",
+        "goal": {
+            "kind": "simple_health_record",
+            "domain": "diet",
+            "operation": "create",
+            "target_date": "2026-07-17",
+            "target_meal_types": ["lunch"],
+        },
+        "tool_calls": [
+            {
+                "name": "health_record",
+                "args": {
+                    "record_type": "diet",
+                    "operation": "create",
+                    "data": {
+                        "date": "2026-07-17",
+                        "meal_type": "lunch",
+                        "food_items": "一个水蜜桃",
+                    },
+                },
+                "receipt": {
+                    "status": "verified",
+                    "verified": True,
+                    "record_id": 601,
+                    "resource_type": "diet_record",
+                    "date": "2026-07-17",
+                    "meal_type": "lunch",
+                },
+            },
+            {
+                "name": "health_manage",
+                "args": {
+                    "record_type": "diet",
+                    "operation": "list",
+                    "date": "2026-07-17",
+                },
+                "result": [
+                    {
+                        "id": 601,
+                        "date": "2026-07-17",
+                        "meal_type": "lunch",
+                        "food_items": "一个水蜜桃",
+                    }
+                ],
+            },
+        ],
+        "final": {"claims_complete": True},
+    }
+
+    scored = score_trajectory(case, trace)
+
+    assert scored["passed"] is True
+    assert scored["hard_failures"] == []
+
+
 def test_score_trajectory_accepts_a_production_shaped_write_receipt():
     from app.services.agent_executor import _write_receipt_from_tool_result
 

@@ -50,7 +50,7 @@ cases:
     expected_contract:
       target_record_type: diet
       target_values:
-        meal_type: snack
+        meal_type: lunch
         food_items: 一个水蜜桃
       requires_verification: true
     expected:
@@ -60,11 +60,11 @@ cases:
       candidate_id: golden
       client_turn_id: turn-fruit-peach
       goal:
-        kind: write
+        kind: simple_health_record
         domain: diet
         operation: create
         target_date: "2026-07-17"
-        target_meal_types: []
+        target_meal_types: [lunch]
       tool_calls:
         - name: health_record
           args:
@@ -72,7 +72,7 @@ cases:
             operation: create
             data:
               date: "2026-07-17"
-              meal_type: snack
+              meal_type: lunch
               food_items: 一个水蜜桃
           receipt:
             status: verified
@@ -88,7 +88,7 @@ cases:
           result:
             - id: 601
               date: "2026-07-17"
-              meal_type: snack
+              meal_type: lunch
               food_items: 一个水蜜桃
       final:
         claims_complete: true

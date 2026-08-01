@@ -478,6 +478,14 @@
       `bash -n`、Ruff 与 diff check 均通过；
     - replacement exact-SHA CI、原 lease adoption terminal cleanup 仍待完成；CI
       全绿前禁止第三次 production adoption，cleanup 成功前禁止新部署或 OTA。
+    - replacement commit `df5d89846` 的 CI run `30708368603` 首轮
+      `backend-quality` REJECT：前序 Agent runtime 主干提交把显式水果记录的编译
+      契约更新为 `simple_health_record/lunch`，但历史 golden、合并契约测试及 scorer
+      仍保留 `write/snack`，且 scorer 错把含 `target_meal_types` 的 create 当成 update。
+      修复仅同步 synthetic fixture/测试，并让 exact meal update 分支只作用于
+      `operation=update`；新增 meal create scorer 回归。scorer + synthesis gate
+      57/57、offline gate 12/12 + 50/50 + 12/12 + 9/9、Ruff 与 diff check 通过；
+      replacement commit 与第二轮 exact-SHA CI 待完成，生产仍保持不变。
   - 回退阶段: G5/G6 → S5/G3/G4；lease/stage 保留，禁止并发 activation、
     rollback、部署或 OTA。
 
