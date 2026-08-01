@@ -4,6 +4,7 @@
 Claude 综合, 单条 assistant 消息落库, done 事件 mode=multi_model。
 """
 import json
+from datetime import UTC, datetime
 
 import pytest
 
@@ -250,6 +251,16 @@ async def test_multi_model_advice_recovers_when_lead_selects_write_tool(
 async def test_multi_model_simple_record_stops_after_verified_receipt(
     db, auth_user_and_headers, monkeypatch
 ):
+    from app.services.agent_kernel.context import build_turn_snapshot
+
+    def build_snapshot_with_fixed_clock(*args, **kwargs):
+        kwargs["now_utc"] = datetime(2026, 7, 26, 4, 0, tzinfo=UTC)
+        return build_turn_snapshot(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.build_turn_snapshot",
+        build_snapshot_with_fixed_clock,
+    )
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
@@ -309,7 +320,7 @@ async def test_multi_model_simple_record_stops_after_verified_receipt(
         "health_record",
         {
             "record_type": "water",
-            "data": {"amount": 500},
+            "data": {"amount": 500, "record_date": "2026-07-26"},
         },
     )]
     rendered = "".join(

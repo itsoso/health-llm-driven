@@ -29,6 +29,7 @@ def test_water_goal_replaces_model_amount_and_record_type_with_goal_payload():
         kind="simple_health_record",
         domain="water",
         operation="create",
+        target_date="2026-07-26",
         target_record_type="water",
         target_values=(("amount_ml", "500"),),
         requires_verification=True,
@@ -53,7 +54,7 @@ def test_water_goal_replaces_model_amount_and_record_type_with_goal_payload():
     assert function["name"] == "health_record"
     assert json.loads(function["arguments"]) == {
         "record_type": "water",
-        "data": {"amount": 500},
+        "data": {"amount": 500, "record_date": "2026-07-26"},
     }
 
 
@@ -487,6 +488,7 @@ def test_equivalent_model_writes_share_one_canonical_fingerprint():
         kind="simple_health_record",
         domain="water",
         operation="create",
+        target_date="2026-07-26",
         target_record_type="water",
         target_values=(("amount_ml", "500"),),
         requires_verification=True,
@@ -512,6 +514,7 @@ def test_equivalent_model_writes_share_one_canonical_fingerprint():
     ]
 
     assert parsed[0] == parsed[1]
+    assert parsed[0]["data"]["record_date"] == "2026-07-26"
     assert (
         _write_operation_fingerprint("health_record", parsed[0])
         == _write_operation_fingerprint("health_record", parsed[1])
