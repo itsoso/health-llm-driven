@@ -157,6 +157,12 @@ function latestAnimatedStyle(): any {
   return factory();
 }
 
+function performPinch(scale: number) {
+  runGesture('pinch', 'onBegin');
+  runGesture('pinch', 'onUpdate', { scale });
+  runGesture('pinch', 'onFinalize');
+}
+
 describe('DietShareImageEditor', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -291,6 +297,92 @@ describe('DietShareImageEditor', () => {
       [{ crop: { originX: 0, originY: 800, width: 600, height: 800 } }],
       { compress: 0.95, format: 'jpeg' },
     );
+  });
+
+  it('enforces an absolute crop floor across repeated 8x pinches and exports a useful pixel crop', async () => {
+    const view = renderEditor();
+    layoutEditor(view, 390, 844);
+    loadPhoto(view);
+    const initialImageStyle = StyleSheet.flatten(view.getByTestId('diet-share-editor-image').props.style);
+
+    performPinch(8);
+    performPinch(8);
+
+    const boundedImageStyle = StyleSheet.flatten(view.getByTestId('diet-share-editor-image').props.style);
+    expect(boundedImageStyle.width).toBeCloseTo(initialImageStyle.width * 8);
+    expect(boundedImageStyle.width).toBeLessThan(initialImageStyle.width * 8.01);
+    fireEvent.press(view.getByRole('button', { name: '完成图片编辑' }));
+
+    await waitFor(() => expect(view.onComplete).toHaveBeenCalledTimes(1));
+    expect(view.onComplete.mock.calls[0][0].crop).toEqual({
+      x: 0.4375,
+      y: 0.4375,
+      width: 0.125,
+      height: 0.125,
+    });
+    expect(mockManipulateAsync).toHaveBeenCalledWith(
+      SOURCE_URI,
+      [{ crop: { originX: 525, originY: 700, width: 150, height: 200 } }],
+      { compress: 0.95, format: 'jpeg' },
+    );
+  });
+
+  it('allows a reverse pinch to enlarge a cropped view back to identity without exceeding it', async () => {
+    const view = renderEditor({
+      initialEdit: {
+        ...initialDietShareImageEdit(),
+        crop: { x: 0.4375, y: 0.4375, width: 0.125, height: 0.125 },
+      },
+    });
+    layoutEditor(view, 390, 844);
+    loadPhoto(view);
+
+    performPinch(0.01);
+    fireEvent.press(view.getByRole('button', { name: '完成图片编辑' }));
+
+    await waitFor(() => expect(view.onComplete).toHaveBeenCalledTimes(1));
+    expect(view.onComplete.mock.calls[0][0].crop).toEqual({
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+    });
+  });
+
+  it('commits simultaneous pan and pinch only after the last gesture finalizes', () => {
+    const view = renderEditor();
+    layoutEditor(view, 390, 844);
+    loadPhoto(view);
+    const initialImageStyle = StyleSheet.flatten(view.getByTestId('diet-share-editor-image').props.style);
+
+    runGesture('pinch', 'onBegin');
+    runGesture('pan', 'onBegin');
+    runGesture('pinch', 'onUpdate', { scale: 2 });
+    runGesture('pan', 'onUpdate', { translationX: 100, translationY: -100 });
+    runGesture('pinch', 'onFinalize');
+
+    expect(view.getByRole('button', { name: '撤销图片编辑' })).toBeDisabled();
+    expect(latestAnimatedStyle().transform).toEqual(expect.arrayContaining([
+      { scale: 2 },
+      { translateX: 100 },
+      { translateY: -100 },
+    ]));
+
+    runGesture('pan', 'onUpdate', { translationX: 140, translationY: -120 });
+    expect(latestAnimatedStyle().transform).toEqual(expect.arrayContaining([
+      { scale: 2 },
+      { translateX: 140 },
+      { translateY: -120 },
+    ]));
+    runGesture('pan', 'onFinalize');
+
+    expect(view.getByRole('button', { name: '撤销图片编辑' })).not.toBeDisabled();
+    const committedImageStyle = StyleSheet.flatten(view.getByTestId('diet-share-editor-image').props.style);
+    expect(committedImageStyle.width).toBeCloseTo(initialImageStyle.width * 2);
+    fireEvent.press(view.getByRole('button', { name: '撤销图片编辑' }));
+    const undoneImageStyle = StyleSheet.flatten(view.getByTestId('diet-share-editor-image').props.style);
+    expect(undoneImageStyle.width).toBeCloseTo(initialImageStyle.width);
+    expect(view.getByRole('button', { name: '撤销图片编辑' })).toBeDisabled();
   });
 
   it('supports rotation and privacy-stroke history, then resets crop, rotation, and strokes', async () => {
@@ -462,6 +554,41 @@ describe('DietShareImageEditor', () => {
     expect(console.warn).toHaveBeenCalledWith('[DietShareImageEditor] image manipulation failed');
   });
 
+  it('ignores stale load and error events after a source switch and exports with the new dimensions', async () => {
+    const view = renderEditor();
+    const oldImage = view.getByTestId('diet-share-editor-image');
+    const oldOnLoad = oldImage.props.onLoad;
+    const oldOnError = oldImage.props.onError;
+
+    view.rerender(
+      <DietShareImageEditor
+        visible
+        sourceUri="file:///private/new-source.jpg"
+        onComplete={view.onComplete}
+        onCancel={view.onCancel}
+      />,
+    );
+    expect(view.getByText('正在加载照片…')).toBeTruthy();
+    act(() => oldOnLoad({ source: { width: 1200, height: 1600 } }));
+    expect(view.getByText('正在加载照片…')).toBeTruthy();
+    expect(view.getByRole('button', { name: '完成图片编辑' })).toBeDisabled();
+
+    const newImage = view.getByTestId('diet-share-editor-image');
+    act(() => newImage.props.onLoad({ source: { width: 2000, height: 1000 } }));
+    expect(view.getByRole('button', { name: '完成图片编辑' })).not.toBeDisabled();
+    act(() => oldOnError());
+    expect(view.queryByText('照片加载失败')).toBeNull();
+    expect(view.getByRole('button', { name: '完成图片编辑' })).not.toBeDisabled();
+
+    fireEvent.press(view.getByRole('button', { name: '完成图片编辑' }));
+    await waitFor(() => expect(view.onComplete).toHaveBeenCalledTimes(1));
+    expect(mockManipulateAsync).toHaveBeenCalledWith(
+      'file:///private/new-source.jpg',
+      [{ crop: { originX: 625, originY: 0, width: 750, height: 1000 } }],
+      { compress: 0.95, format: 'jpeg' },
+    );
+  });
+
   it('makes applying terminal against cancel and system back, then completes exactly once', async () => {
     let resolveManipulation: ((value: { uri: string; width: number; height: number }) => void) | undefined;
     mockManipulateAsync.mockImplementationOnce(() => new Promise(resolve => {
@@ -577,5 +704,21 @@ describe('DietShareImageEditor', () => {
     expect(view.getByRole('button', { name: '取消图片编辑' })).not.toBeDisabled();
     expect(view.getByRole('button', { name: '顺时针旋转照片' })).not.toBeDisabled();
     expect(view.getByRole('button', { name: '完成图片编辑' })).not.toBeDisabled();
+  });
+
+  it('provides 44-point toolbar targets and exposes privacy mode as a selected toggle', () => {
+    const view = renderEditor();
+    layoutEditor(view, 390, 844);
+    loadPhoto(view);
+    const privacy = view.getByRole('button', { name: '隐私涂抹' });
+    const beforeStyle = StyleSheet.flatten(privacy.props.style);
+
+    expect(beforeStyle.minHeight).toBeGreaterThanOrEqual(44);
+    expect(privacy).toHaveAccessibilityState({ selected: false });
+    fireEvent.press(privacy);
+
+    const selected = view.getByRole('button', { name: '隐私涂抹' });
+    expect(selected).toHaveAccessibilityState({ selected: true });
+    expect(StyleSheet.flatten(selected.props.style).backgroundColor).not.toBe(beforeStyle.backgroundColor);
   });
 });
