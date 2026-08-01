@@ -99,9 +99,18 @@ _LOCAL_ADVICE_PREDICATES = tuple(
     if predicate in {"建议", "嘱咐", "要求"}
 )
 _LOCAL_ADVICE_MODIFIERS = ("如果需要", "必要时", "可酌情")
-_LOCAL_ADVICE_OBJECT_MARKERS = ("请教", "对", "向", "给", "问", "让")
+_CLINICIAN_PROVIDER_OBJECT_MARKERS = ("请教", "对", "向", "给", "问", "让")
 _LOCAL_ADVICE_CLAUSE_BOUNDARIES = tuple(
     dict.fromkeys((*_SOFT_BOUNDARIES, *_HARD_BOUNDARIES, "：", ":"))
+)
+_NOTIFICATION_NOUN_CONTINUATIONS = (
+    "记录",
+    "报告",
+    "书",
+    "文档",
+    "档案",
+    "清单",
+    "列表",
 )
 _MEDICAL_ADVICE_TARGETS = (
     "训练",
@@ -269,6 +278,7 @@ class _WriteCandidate:
 class _Report:
     segment_index: int
     provider: _Span
+    predicate: _Span
     content: _Span | None
 
 
@@ -483,7 +493,7 @@ def _skip_optional_local_advice_modifier(
     return _skip_local_advice_fillers(raw, modifier[0].end, end)
 
 
-def _local_advice_provider_is_clause_head(
+def _provider_is_clause_head(
     raw: str,
     *,
     span: _Span,
@@ -506,7 +516,7 @@ def _local_advice_provider_is_clause_head(
     if any(
         raw[max(scope_start, marker_end - len(marker)) : marker_end]
         == marker
-        for marker in _LOCAL_ADVICE_OBJECT_MARKERS
+        for marker in _CLINICIAN_PROVIDER_OBJECT_MARKERS
     ):
         return False
 
@@ -542,7 +552,7 @@ def _is_locally_proven_clinician_advice(
     local_start = max(0, action_start - 24)
     local_span = _Span(local_start, action_start)
     for provider, _ in reversed(_provider_matches(raw, local_span)):
-        if not _local_advice_provider_is_clause_head(
+        if not _provider_is_clause_head(
             raw,
             span=span,
             provider=provider,
@@ -746,12 +756,19 @@ def _predicate_is_record_noun(
     predicate_end: int,
     segment_end: int,
 ) -> bool:
-    if predicate != "诊断":
+    continuations = (
+        CLINICIAN_REPORT_NOUN_CONTINUATIONS
+        if predicate == "诊断"
+        else _NOTIFICATION_NOUN_CONTINUATIONS
+        if predicate == "告知"
+        else ()
+    )
+    if not continuations:
         return False
     position = _skip_spaces(raw, predicate_end, segment_end)
     return _starts_with_term(
         raw,
-        CLINICIAN_REPORT_NOUN_CONTINUATIONS,
+        continuations,
         position=position,
         end=segment_end,
     ) is not None
@@ -781,19 +798,21 @@ def _find_report(
     provider: _Span | None = None
     predicate: _Span | None = None
     for predicate_candidate, surface in predicates:
-        clause_start = segment.start
-        for boundary in _SOFT_BOUNDARIES:
-            boundary_position = raw.rfind(
-                boundary,
-                segment.start,
-                predicate_candidate.start,
-            )
-            clause_start = max(clause_start, boundary_position + 1)
         local_providers = tuple(
             match
             for match, _ in providers
-            if clause_start <= match.start
-            and match.end <= predicate_candidate.start
+            if match.end <= predicate_candidate.start
+            and _provider_is_clause_head(
+                raw,
+                span=segment,
+                provider=match,
+            )
+            and _skip_local_advice_fillers(
+                raw,
+                match.end,
+                predicate_candidate.start,
+            )
+            == predicate_candidate.start
         )
         if not local_providers:
             continue
@@ -820,6 +839,7 @@ def _find_report(
     return _Report(
         segment_index=segment_index,
         provider=provider,
+        predicate=predicate,
         content=content if content.start < content.end else None,
     )
 
@@ -890,6 +910,21 @@ def _segment_starts_with_action(raw: str, segment: _Span) -> bool:
     ) is not None
 
 
+def _report_has_prefix_action(
+    raw: str,
+    segment: _Span,
+    report: _Report,
+) -> bool:
+    prefix = _trim(raw, segment.start, report.provider.start)
+    return (
+        prefix.start < prefix.end
+        and (
+            _segment_starts_with_action(raw, prefix)
+            or _second_action_kind(raw, prefix) is not None
+        )
+    )
+
+
 def _turn_has_extra_action(
     raw: str,
     segments: tuple[_Span, ...],
@@ -897,6 +932,15 @@ def _turn_has_extra_action(
 ) -> bool:
     report_indexes = {report.segment_index for report in reports}
     if any(_report_followup_kind(raw, report) is not None for report in reports):
+        return True
+    if any(
+        _report_has_prefix_action(
+            raw,
+            segments[report.segment_index],
+            report,
+        )
+        for report in reports
+    ):
         return True
     return any(
         index not in report_indexes
@@ -1096,9 +1140,15 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
         ):
             preceding_report = preceding_reports[0]
             followup_kind = _report_followup_kind(raw, preceding_report)
+            prefix_action = _report_has_prefix_action(
+                raw,
+                segments[preceding_report.segment_index],
+                preceding_report,
+            )
             if (
                 _span_is_question(raw, segments[0])
                 or followup_kind is not None
+                or prefix_action
             ):
                 return _ambiguous_candidate(
                     raw,

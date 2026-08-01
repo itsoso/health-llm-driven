@@ -84,6 +84,60 @@ def test_decision_is_frozen_and_only_explicit_kind_authorizes():
     assert context.authorizes_feedback_write is False
 
 
+@pytest.mark.parametrize(
+    "text",
+    (
+        "查看医生告知记录",
+        "医生告知记录",
+        "家属向医生告知病情",
+        "医生的广告知名度很高",
+        "查看医生报告知情同意记录",
+    ),
+)
+def test_false_notification_shapes_are_not_clinician_reports(text):
+    guard = _module()
+    segment = guard._Span(0, len(text))
+
+    assert guard._find_report(text, segment, 0) is None
+    decision = guard.classify_clinician_turn(text)
+    assert decision.kind == "none"
+    assert decision.authorizes_feedback_write is False
+    assert _slice(
+        decision.raw,
+        decision.provider_start,
+        decision.provider_end,
+    ) == "医生"
+    assert decision.command_start is None
+    assert decision.command_end is None
+
+
+@pytest.mark.parametrize(
+    ("text", "provider", "content"),
+    (
+        ("大夫告知是臀肌无力导致腰痛", "大夫", "臀肌无力导致腰痛"),
+        ("医生告知是臀肌无力导致腰痛", "医生", "臀肌无力导致腰痛"),
+        ("大夫告知的诊断靠谱吗？", "大夫", "的诊断靠谱吗"),
+    ),
+)
+def test_notification_reports_pin_provider_and_predicate_spans(
+    text,
+    provider,
+    content,
+):
+    guard = _module()
+    segment = guard._segments(text)[0]
+
+    report = guard._find_report(text, segment, 0)
+
+    assert report is not None
+    assert text[report.provider.start : report.provider.end] == provider
+    predicate = getattr(report, "predicate", None)
+    assert predicate is not None
+    assert text[predicate.start : predicate.end] == "告知"
+    assert report.content is not None
+    assert text[report.content.start : report.content.end] == content
+
+
 def test_non_writes_never_expose_an_authorizing_command_span():
     guard = _module()
 

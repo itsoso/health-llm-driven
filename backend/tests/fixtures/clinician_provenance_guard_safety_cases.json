@@ -269,6 +269,129 @@
     "command": "请记录医生诊断"
   },
   {
+    "id": "notify_record_read_does_not_authorize_later_write",
+    "text": "查看医生告知记录。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "notify_record_read_is_not_a_report",
+    "text": "查看医生告知记录",
+    "kind": "none",
+    "reason_code": "no_clinician_report",
+    "provider": "医生"
+  },
+  {
+    "id": "bare_notify_record_does_not_authorize_later_write",
+    "text": "医生告知记录。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "bare_notify_record_is_not_a_report",
+    "text": "医生告知记录",
+    "kind": "none",
+    "reason_code": "no_clinician_report",
+    "provider": "医生"
+  },
+  {
+    "id": "family_notification_does_not_authorize_later_write",
+    "text": "家属向医生告知病情。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "family_notification_is_not_a_clinician_report",
+    "text": "家属向医生告知病情",
+    "kind": "none",
+    "reason_code": "no_clinician_report",
+    "provider": "医生"
+  },
+  {
+    "id": "advertising_word_does_not_authorize_later_write",
+    "text": "医生的广告知名度很高。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "advertising_word_is_not_a_clinician_report",
+    "text": "医生的广告知名度很高",
+    "kind": "none",
+    "reason_code": "no_clinician_report",
+    "provider": "医生"
+  },
+  {
+    "id": "informed_consent_word_does_not_authorize_later_write",
+    "text": "查看医生报告知情同意记录。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "informed_consent_word_is_not_a_clinician_report",
+    "text": "查看医生报告知情同意记录",
+    "kind": "none",
+    "reason_code": "no_clinician_report",
+    "provider": "医生"
+  },
+  {
+    "id": "read_before_notification_report_does_not_authorize_later_write",
+    "text": "查看旧记录，医生告知是臀肌无力。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "read_before_notification_report_is_ambiguous",
+    "text": "查看旧记录，医生告知是臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "embedded_read_before_notification_does_not_authorize_later_write",
+    "text": "今天先查看旧记录，医生告知是臀肌无力。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "embedded_read_before_notification_report_is_ambiguous",
+    "text": "今天先查看旧记录，医生告知是臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "delete_before_notification_report_does_not_authorize_later_write",
+    "text": "删除旧记录，医生告知是臀肌无力。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "record_before_notification_report_does_not_authorize_later_write",
+    "text": "记录一下，医生告知是臀肌无力。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
     "id": "attending_doctor_context",
     "text": "主治医生判断是腰肌代偿",
     "kind": "clinician_context",
