@@ -4,14 +4,24 @@
 |---|---|
 | slug | `diet-capture-excellence` |
 | 创建日期 | 2026-07-11 |
-| 当前阶段 | S7 上线验证 |
-| 状态 | device_validation_pending |
+| 当前阶段 | S5 实现 |
+| 状态 | building |
 | 负责 | Codex |
 | 反馈环 | Backend pytest / Mobile Jest + TypeScript / Simulator / backend deploy / EAS TestFlight + production OTA |
 
 ## Correct Course
 
-- [ ] Correction Block
+- [x] Correction Block
+  - 日期：2026-08-01。
+  - 触发：用户确认小红书分享卡必须包含拍摄照片，并可在分享前完成基础图片编辑与隐私涂抹。
+  - 旧基线：受保护餐食照片 5 秒未加载时，分享流程退化为完整 metric-only 海报并继续图片分享。
+  - 新基线：已确认且 owner-accessible 的原始餐食照片先进入本地 3:4 编辑器，支持裁剪、90° 旋转和不透明隐私涂抹；完成后生成一次 `1080x1440` PNG，由完整预览、保存和系统分享复用同一个 rendered URI。照片缺失或加载失败时不生成图片海报，只提供重试或分享正文。
+  - 设计：[`docs/plans/2026-08-01-xiaohongshu-diet-share-card-design.md`](../plans/2026-08-01-xiaohongshu-diet-share-card-design.md)。
+  - 实施：[`docs/plans/2026-08-01-xiaohongshu-diet-share-card.md`](../plans/2026-08-01-xiaohongshu-diet-share-card.md)。
+  - 安全 Gate：`privacy_sensitive`；原始 `DietRecord` 照片不可变，编辑与合成仅在本地副本完成，第一版不做自动 QR/条码识别。
+  - 回退阶段：S3/S5；需重跑 G3/G4/G5/G6。当前为实现中，不把新分享流程记为已上线。
+  - Run Ledger：`docs/_generated/harness-runs/7779bb67a50d.jsonl`（本地运行证据，不提交）。
+  - 用户确认：☑
 
 ## S0 · 用户需求（逐字）
 
@@ -87,6 +97,7 @@
 - [x] T5.8 图片消息首个 SSE 确认前断流时，以 `client_turn_id` 核对 Runtime 持久化状态并恢复同一回合（backend deploy + OTA）
 - [x] T5.9 失败写入的源消息恢复绑定：用户紧邻回复“重试/需要”时恢复原文字与图片，保留新回合幂等检查点；不确定写入禁止重放（backend deploy）
 - [ ] T6 模拟器视觉、真机微信/小红书、生产数据闭环验收
+- [ ] T6.1 小红书照片必需的本地 3:4 编辑器、裁剪/90° 旋转/隐私涂抹、完整海报预览，以及预览/保存/分享单一 rendered URI 复用（OTA；Run Ledger：`docs/_generated/harness-runs/7779bb67a50d.jsonl`）
 - Agent Native 验收约束：每个新增 Mobile 饮食入口都必须证明三件事：Agent 可引用 pending draft 或 confirmed DietRecord；确认成功必须有 `diet_record_id` 回执；用户能在小巴对话里继续追问、修正或查看全天影响。
 - 并发检查：2026-07-11 `origin/main` 与当前干净集成 worktree 一致；原始用户工作区不纳入暂存。
 

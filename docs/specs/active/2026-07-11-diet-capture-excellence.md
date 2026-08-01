@@ -2,7 +2,7 @@
 
 > Status: active
 > Owner: Codex
-> Updated: 2026-07-19
+> Updated: 2026-08-01
 > Related PRD/PDD: `docs/prd/2026-07-11-diet-capture-excellence.md`
 > Related code: `backend/app/api/diet.py`, `backend/app/services/ai/food_recognition.py`, `mobile/app/diet.tsx`
 
@@ -46,6 +46,7 @@ RequirementAdmission:
 
 - No automatic save outside the qualified chat-photo policy or automatic social post.
 - No WeChat private SDK.
+- No first-version automatic QR or barcode detection; privacy redaction is an explicit local user action.
 - No medical diagnosis or exact calorie claim from an unconstrained image.
 - No broad sleep/workout redesign in this feature.
 
@@ -70,7 +71,7 @@ camera/library/text/voice -> candidate foods -> deterministic calibration
 
 | Surface | Responsibility | Contract |
 |---|---|---|
-| Mobile | Capture, explain, correct, confirm and share | Never show persisted success without record id; no standalone analysis path detached from Xiaoba |
+| Mobile | Capture, explain, correct, confirm and share | Never show persisted success without record id; no standalone analysis path detached from Xiaoba; a confirmed meal with an owner-accessible photo opens a local 3:4 editor with crop, 90-degree rotation and opaque privacy redaction before full poster preview; preview, save and system share reuse one rendered URI |
 | Agent Conversation | Preserve context, follow up, compare against today/yesterday and suggest next action | Must consume confirmed DietRecord facts or pending draft context, not unconfirmed guesses as truth |
 | Backend | Sanitize, calibrate, persist and measure | Owner isolation and idempotency required |
 | Watch/Rokid | Reuse structured draft later | No automatic write |
@@ -162,9 +163,17 @@ Given a confirmed meal
 When the user taps share
 Then an exact 1080x1440 privacy-safe image opens in the iOS system share sheet after its meal image is ready
 
-Given a protected meal image never finishes loading
-When five seconds elapse in the share preview
-Then the card switches to a complete metric layout and sharing remains available
+Given a confirmed meal has an owner-accessible photo
+When the user opens the Xiaohongshu share composer
+Then the original meal photo is loaded into a local 3:4 editor before poster preview
+
+Given the meal photo is absent or cannot be loaded
+When the user requests an image share
+Then no image poster is generated and the UI offers retry or share text
+
+Given the user adds a privacy-redaction stroke
+When the 1080x1440 PNG is generated
+Then the exported pixels contain the opaque redaction and the original DietRecord photo is unchanged
 
 Given a 4032x3024 camera image on a binary with expo-image-manipulator
 When the camera returns the local image URI
@@ -238,3 +247,4 @@ Deploy backend additive response fields and the photo-asset migration before cli
 | 2026-07-12 | Separate nutrient calibration from portion truth | Prevent table matches and model confidence from implying measured-photo precision |
 | 2026-07-12 | Add a single-photo library path and idle-only capture controls | Make fallback actionable without duplicate pipelines or overlapping concurrent capture UI |
 | 2026-07-19 | Add constrained contextual chat-photo auto capture and `DietPhotoAsset` ledger | Remove routine meal logging friction without turning analysis, low-confidence or out-of-window images into silent health writes |
+| 2026-08-01 | Require an editable meal photo for the Xiaohongshu poster | Replace the metric-only fallback with local crop, rotation, opaque redaction and one-render preview/save/share reuse |
