@@ -107,7 +107,20 @@ export function updateDietShareCrop(
 
 export function rotateDietShareImage(state: DietShareImageEdit): DietShareImageEdit {
   const rotation = ((state.rotation + 90) % 360) as DietShareImageEdit['rotation'];
-  return { ...state, rotation };
+  const crop = {
+    x: clampNormalized(1 - state.crop.y - state.crop.height),
+    y: clampNormalized(state.crop.x),
+    width: state.crop.height,
+    height: state.crop.width,
+  };
+  const redactions = state.redactions.map(redaction => ({
+    ...redaction,
+    points: redaction.points.map(point => ({
+      x: clampNormalized(1 - point.y),
+      y: clampNormalized(point.x),
+    })),
+  }));
+  return { ...state, crop, rotation, redactions };
 }
 
 export function resetDietShareImageEdit(

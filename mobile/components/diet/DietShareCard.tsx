@@ -64,6 +64,19 @@ type ShareResult =
 type ShareReviewTone = 'none' | 'estimate' | 'low-confidence';
 type ShareInFlight = ShareTarget | 'library';
 
+function imageSourceIdentity(source: ImageSourcePropType | undefined): string {
+  if (source == null) return 'none';
+  if (typeof source === 'number') return `asset:${source}`;
+  if (Array.isArray(source)) return source.map(imageSourceIdentity).join('|');
+  const candidate = source as { uri?: string; width?: number; height?: number; scale?: number };
+  return JSON.stringify({
+    uri: candidate.uri ?? '',
+    width: candidate.width ?? null,
+    height: candidate.height ?? null,
+    scale: candidate.scale ?? null,
+  });
+}
+
 export function dietShareCaptureDimensions(
   platform = Platform.OS,
   pixelRatio = PixelRatio.get(),
@@ -496,18 +509,20 @@ export default function DietShareCard({
   return (
     <View testID="diet-share-poster" style={styles.card}>
       <View testID="diet-share-photo-frame" style={styles.posterPhotoFrame}>
-        <Image
-          testID="diet-share-image"
-          source={imageSource}
-          style={styles.posterPhoto}
-          contentFit="cover"
-          cachePolicy="memory-disk"
-          priority="high"
-          onLoad={onImageReady}
-          onError={onImageError}
-        />
-        <DietPrivacyRedactionOverlay redactions={redactions} />
-        <View style={styles.posterPhotoShade} pointerEvents="none" />
+        <View testID="diet-share-photo-media" style={styles.posterPhotoMedia}>
+          <Image
+            testID="diet-share-image"
+            source={imageSource}
+            style={styles.posterPhoto}
+            contentFit="contain"
+            cachePolicy="memory-disk"
+            priority="high"
+            onLoad={onImageReady}
+            onError={onImageError}
+          />
+          <DietPrivacyRedactionOverlay redactions={redactions} />
+          <View style={styles.posterPhotoShade} pointerEvents="none" />
+        </View>
         <View style={styles.posterPhotoMeta} pointerEvents="none">
           <View style={styles.posterMealBadge}>
             <Text style={styles.posterMealBadgeText}>{presentation.mealLabel}</Text>
@@ -516,13 +531,13 @@ export default function DietShareCard({
         </View>
       </View>
 
-      <View style={styles.posterCopy}>
+      <View testID="diet-share-poster-copy" style={styles.posterCopy}>
         <View style={styles.posterRuleRow}>
           <View style={styles.posterRuleLong} />
           <View style={styles.posterRuleShort} />
         </View>
-        <Text style={styles.posterHeadline} numberOfLines={2}>{presentation.headline}</Text>
-        <Text style={styles.posterFoodLine} numberOfLines={3}>{presentation.foodLine}</Text>
+        <Text testID="diet-share-headline" style={styles.posterHeadline} numberOfLines={1}>{presentation.headline}</Text>
+        <Text testID="diet-share-food-line" style={styles.posterFoodLine} numberOfLines={2}>{presentation.foodLine}</Text>
 
         <View style={styles.posterNutrition}>
           {macroLines.map(line => (
@@ -604,13 +619,25 @@ export function DietShareSheet({
   onShareTerminal,
 }: DietShareSheetProps) {
   const cardRef = useRef<View>(null);
+  const sharingRef = useRef(false);
+  const imageRequestRef = useRef({ key: '', generation: 0 });
+  const imageRequestKey = visible ? imageSourceIdentity(imageSource) : 'inactive';
+  if (imageRequestRef.current.key !== imageRequestKey) {
+    imageRequestRef.current = {
+      key: imageRequestKey,
+      generation: imageRequestRef.current.generation + 1,
+    };
+  }
+  const imageRequestGeneration = imageRequestRef.current.generation;
   const [sharingAction, setSharingAction] = useState<ShareInFlight | null>(null);
-  const [imageReady, setImageReady] = useState(false);
-  const [imageTimedOut, setImageTimedOut] = useState(false);
+  const [imageReadyGeneration, setImageReadyGeneration] = useState<number | null>(null);
+  const [imageTimedOutGeneration, setImageTimedOutGeneration] = useState<number | null>(null);
   const [copiedCaption, setCopiedCaption] = useState<'moments' | 'xiaohongshu' | null>(null);
   const [shareResult, setShareResult] = useState<ShareResult | null>(null);
   const sharing = sharingAction !== null;
   const hasPhoto = Boolean(imageSource);
+  const imageReady = imageReadyGeneration === imageRequestGeneration;
+  const imageTimedOut = imageTimedOutGeneration === imageRequestGeneration;
   const imageCaptureAvailable = hasPhoto && imageReady && !imageTimedOut;
   const shareHasPhoto = imageCaptureAvailable;
   const lowConfidenceShare = isLowConfidenceDietShare(record);
@@ -681,19 +708,20 @@ export function DietShareSheet({
       : '已复制小红书文案';
 
   React.useEffect(() => {
-    setImageReady(false);
-    setImageTimedOut(false);
+    setImageReadyGeneration(null);
+    setImageTimedOutGeneration(null);
     setCopiedCaption(null);
     setShareResult(null);
-  }, [imageSource, visible]);
+  }, [imageRequestKey]);
 
   React.useEffect(() => {
     if (!visible || !imageSource || imageReady) return undefined;
     const timeout = setTimeout(() => {
-      setImageTimedOut(true);
+      if (imageRequestGeneration !== imageRequestRef.current.generation) return;
+      setImageTimedOutGeneration(imageRequestGeneration);
     }, DIET_SHARE_IMAGE_TIMEOUT_MS);
     return () => clearTimeout(timeout);
-  }, [imageReady, imageSource, visible]);
+  }, [imageReady, imageRequestGeneration, imageRequestKey, imageSource, visible]);
 
   const shareTextFallback = async (target: ShareTarget = 'generic') => {
     await Share.share({
@@ -754,7 +782,8 @@ export function DietShareSheet({
   };
 
   const handleShare = async (target: ShareTarget = 'generic') => {
-    if (sharing || !imageCaptureAvailable || !cardRef.current) return;
+    if (sharingRef.current || !imageCaptureAvailable || !cardRef.current) return;
+    sharingRef.current = true;
     const startedAt = Date.now();
     let captureUri: string | null = null;
     setSharingAction(target);
@@ -821,12 +850,14 @@ export function DietShareSheet({
           // Temporary-file cleanup is best effort after the system share promise settles.
         }
       }
+      sharingRef.current = false;
       setSharingAction(null);
     }
   };
 
   const handleSaveToLibrary = async () => {
-    if (sharing || !imageCaptureAvailable || !cardRef.current) return;
+    if (sharingRef.current || !imageCaptureAvailable || !cardRef.current) return;
+    sharingRef.current = true;
     const startedAt = Date.now();
     let captureUri: string | null = null;
     setSharingAction('library');
@@ -879,6 +910,7 @@ export function DietShareSheet({
           // Temporary-file cleanup is best effort after the image is saved.
         }
       }
+      sharingRef.current = false;
       setSharingAction(null);
     }
   };
@@ -912,17 +944,20 @@ export function DietShareSheet({
             {imageSource ? (
               <View ref={cardRef} collapsable={false} style={styles.captureSurface}>
                 <DietShareCard
+                  key={imageRequestGeneration}
                   record={record}
                   dateLabel={dateLabel}
                   imageSource={imageSource}
                   redactions={redactions}
                   onImageReady={() => {
-                    setImageTimedOut(false);
-                    setImageReady(true);
+                    if (imageRequestGeneration !== imageRequestRef.current.generation) return;
+                    setImageTimedOutGeneration(null);
+                    setImageReadyGeneration(imageRequestGeneration);
                   }}
                   onImageError={() => {
-                    setImageReady(false);
-                    setImageTimedOut(true);
+                    if (imageRequestGeneration !== imageRequestRef.current.generation) return;
+                    setImageReadyGeneration(null);
+                    setImageTimedOutGeneration(imageRequestGeneration);
                   }}
                 />
               </View>
@@ -1131,6 +1166,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#D8C7AD',
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(102, 75, 44, 0.24)',
+    alignItems: 'center',
+  },
+  posterPhotoMedia: {
+    height: '100%',
+    aspectRatio: 3 / 4,
+    position: 'relative',
+    overflow: 'hidden',
+    backgroundColor: '#D8C7AD',
   },
   posterPhoto: {
     ...StyleSheet.absoluteFillObject,
@@ -1177,9 +1220,9 @@ const styles = StyleSheet.create({
   posterCopy: {
     height: '45%',
     paddingHorizontal: 20,
-    paddingTop: 15,
-    paddingBottom: 13,
-    gap: 7,
+    paddingTop: 10,
+    paddingBottom: 10,
+    gap: 4,
     backgroundColor: '#F7EAD7',
   },
   posterRuleRow: {
@@ -1218,10 +1261,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   posterNutrition: {
-    paddingTop: 7,
+    paddingTop: 4,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(104, 76, 48, 0.2)',
-    gap: 3,
+    gap: 1,
   },
   posterMacroLine: {
     fontFamily: revaFonts.mono,

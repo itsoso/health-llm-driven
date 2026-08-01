@@ -1,6 +1,7 @@
 import React from 'react';
-import { PixelRatio, Share, StyleSheet } from 'react-native';
+import { PixelRatio, Share, StyleSheet, Text } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import * as Sharing from 'expo-sharing';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 
 const mockCaptureRef = jest.fn().mockResolvedValue('file:///meal-share.png');
@@ -94,9 +95,31 @@ function renderCard(overrides: Partial<React.ComponentProps<typeof DietShareCard
   );
 }
 
+function renderSheet(overrides: Partial<React.ComponentProps<typeof DietShareSheet>> = {}) {
+  const onClose = jest.fn();
+  const onShareFeedback = jest.fn();
+  const onShareTerminal = jest.fn();
+  const view = render(
+    <DietShareSheet
+      visible
+      record={record}
+      dateLabel="7月11日"
+      imageSource={imageSource}
+      onClose={onClose}
+      onShareFeedback={onShareFeedback}
+      onShareTerminal={onShareTerminal}
+      {...overrides}
+    />,
+  );
+  return { ...view, onClose, onShareFeedback, onShareTerminal };
+}
+
 describe('DietShareCard Xiaohongshu poster', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCaptureRef.mockResolvedValue('file:///meal-share.png');
+    mockRequestPermissionsAsync.mockResolvedValue({ status: 'granted', granted: true });
+    (Sharing.isAvailableAsync as jest.Mock).mockResolvedValue(true);
     jest.spyOn(Share, 'share').mockResolvedValue({ action: Share.sharedAction });
   });
 
@@ -105,9 +128,11 @@ describe('DietShareCard Xiaohongshu poster', () => {
     const photoFrameStyle = StyleSheet.flatten(view.getByTestId('diet-share-photo-frame').props.style);
 
     expect(photoFrameStyle.height).toBe('55%');
+    const mediaStyle = StyleSheet.flatten(view.getByTestId('diet-share-photo-media').props.style);
+    expect(mediaStyle.aspectRatio).toBe(3 / 4);
     expect(view.getByTestId('diet-share-image').props).toEqual(expect.objectContaining({
       source: imageSource,
-      contentFit: 'cover',
+      contentFit: 'contain',
     }));
     expect(view.getByText('7月11日')).toBeTruthy();
     expect(view.getByText('午餐')).toBeTruthy();
@@ -154,6 +179,44 @@ describe('DietShareCard Xiaohongshu poster', () => {
     expect(view.getAllByTestId('diet-share-next-action')).toHaveLength(1);
   });
 
+  it('caps long public copy to a deterministic 45% layout budget', () => {
+    const view = renderCard({
+      record: {
+        ...record,
+        calories: 420,
+        protein: 38,
+        fat: 9,
+        fiber: 8,
+        food_items: '超长餐食名称、第二份餐食、第三份餐食、第四份餐食、第五份餐食、第六份餐食',
+        health_tips: '下一餐按全天营养目标补足优质蛋白质和两种不同颜色的蔬菜',
+      },
+    });
+
+    expect(view.getByTestId('diet-share-headline').props.numberOfLines).toBe(1);
+    expect(view.getByTestId('diet-share-food-line').props.numberOfLines).toBe(2);
+    expect(view.getAllByTestId(/^diet-share-tag-/)).toHaveLength(3);
+    expect(view.getByTestId('diet-share-next-action').findByType(Text).props.numberOfLines).toBe(1);
+    const copyStyle = StyleSheet.flatten(view.getByTestId('diet-share-poster-copy').props.style);
+    expect(copyStyle).toEqual(expect.objectContaining({
+      height: '45%',
+      paddingTop: 10,
+      paddingBottom: 10,
+      gap: 4,
+    }));
+    // At the 330x440 in-sheet preview: 178pt inner height versus a 165pt
+    // worst-case line budget (rule, headline, food, macros, tags and footer).
+    expect(165).toBeLessThanOrEqual(440 * 0.45 - copyStyle.paddingTop - copyStyle.paddingBottom);
+  });
+
+  it('renders partial nutrition without placeholder dashes', () => {
+    const view = renderCard({
+      record: { ...record, calories: 520, protein: null, carbs: null, fat: null },
+    });
+
+    expect(view.getByText('约 520 kcal')).toBeTruthy();
+    expect(view.queryByText(/--/)).toBeNull();
+  });
+
   it('hides every exact nutrition value when image recognition confidence is low', () => {
     const lowConfidenceRecord = { ...record, source: 'photo', ai_confidence: 0.42 };
     const { getByText, queryByText } = renderCard({ record: lowConfidenceRecord });
@@ -181,10 +244,12 @@ describe('DietShareCard Xiaohongshu poster', () => {
     const photo = view.getByTestId('diet-share-image');
     const overlay = view.getByTestId('diet-share-privacy-overlay');
     const photoFrame = view.getByTestId('diet-share-photo-frame');
+    const photoMedia = view.getByTestId('diet-share-photo-media');
     const captureTree = view.getByTestId('diet-share-poster');
 
-    expect(within(photoFrame).getByTestId('diet-share-image')).toBe(photo);
-    expect(within(photoFrame).getByTestId('diet-share-privacy-overlay')).toBe(overlay);
+    expect(within(photoMedia).getByTestId('diet-share-image')).toBe(photo);
+    expect(within(photoMedia).getByTestId('diet-share-privacy-overlay')).toBe(overlay);
+    expect(within(photoFrame).getByTestId('diet-share-photo-media')).toBe(photoMedia);
     expect(within(captureTree).getByTestId('diet-share-photo-frame')).toBe(photoFrame);
   });
 });
@@ -192,6 +257,9 @@ describe('DietShareCard Xiaohongshu poster', () => {
 describe('DietShareSheet image and text behavior', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCaptureRef.mockResolvedValue('file:///meal-share.png');
+    mockRequestPermissionsAsync.mockResolvedValue({ status: 'granted', granted: true });
+    (Sharing.isAvailableAsync as jest.Mock).mockResolvedValue(true);
     jest.spyOn(Share, 'share').mockResolvedValue({ action: Share.sharedAction });
   });
 
@@ -222,6 +290,176 @@ describe('DietShareSheet image and text behavior', () => {
       mimeType: 'image/png',
       UTI: 'public.png',
     }));
+    await waitFor(() => expect(mockReleaseCapture).toHaveBeenCalledWith('file:///meal-share.png'));
+  });
+
+  it('falls back to caption without capture when native image sharing is unavailable', async () => {
+    (Sharing.isAvailableAsync as jest.Mock).mockResolvedValueOnce(false);
+    const view = renderSheet();
+    fireEvent(view.getByTestId('diet-share-image'), 'load');
+    fireEvent.press(view.getByRole('button', { name: '发小红书' }));
+
+    await waitFor(() => expect(Share.share).toHaveBeenCalledTimes(1));
+    expect(mockCaptureRef).not.toHaveBeenCalled();
+    expect(view.onShareFeedback).toHaveBeenCalledWith(expect.objectContaining({
+      result: { target: 'xiaohongshu', kind: 'caption_fallback' },
+    }));
+    expect(view.onShareTerminal).toHaveBeenCalledWith({
+      phase: 'completed',
+      duration_ms: expect.any(Number),
+      has_photo: false,
+      share_target: 'xiaohongshu',
+    });
+  });
+
+  it('reports capture failure as a caption fallback and releases no missing file', async () => {
+    mockCaptureRef.mockRejectedValueOnce(new Error('capture failed'));
+    const view = renderSheet();
+    fireEvent(view.getByTestId('diet-share-image'), 'load');
+    fireEvent.press(view.getByRole('button', { name: '发小红书' }));
+
+    await waitFor(() => expect(Share.share).toHaveBeenCalledTimes(1));
+    expect(view.onShareFeedback).toHaveBeenCalledWith(expect.objectContaining({
+      result: { target: 'xiaohongshu', kind: 'caption_fallback' },
+    }));
+    expect(view.onShareTerminal).toHaveBeenCalledWith({
+      phase: 'failed',
+      duration_ms: expect.any(Number),
+      has_photo: false,
+      share_target: 'xiaohongshu',
+      error_code: 'image_share_fell_back_to_caption',
+    });
+    expect(mockReleaseCapture).not.toHaveBeenCalled();
+  });
+
+  it('does not capture or save when photo-library permission is denied', async () => {
+    mockRequestPermissionsAsync.mockResolvedValueOnce({ status: 'denied', granted: false });
+    const view = renderSheet();
+    fireEvent(view.getByTestId('diet-share-image'), 'load');
+    fireEvent.press(view.getByRole('button', { name: '保存饮食图片到相册' }));
+
+    await waitFor(() => expect(view.onShareTerminal).toHaveBeenCalledWith(expect.objectContaining({
+      phase: 'failed',
+      error_code: 'photo_library_permission_denied',
+    })));
+    expect(mockCaptureRef).not.toHaveBeenCalled();
+    expect(mockSaveToLibraryAsync).not.toHaveBeenCalled();
+  });
+
+  it('saves the captured PNG and releases the temporary file', async () => {
+    const view = renderSheet();
+    fireEvent(view.getByTestId('diet-share-image'), 'load');
+    fireEvent.press(view.getByRole('button', { name: '保存饮食图片到相册' }));
+
+    await waitFor(() => expect(mockSaveToLibraryAsync).toHaveBeenCalledWith('file:///meal-share.png'));
+    expect(view.onShareFeedback).toHaveBeenCalledWith(expect.objectContaining({
+      result: { target: 'generic', kind: 'saved_to_library' },
+    }));
+    expect(mockReleaseCapture).toHaveBeenCalledWith('file:///meal-share.png');
+  });
+
+  it('keeps save and platform progress labels isolated', async () => {
+    let resolvePermission!: (permission: { status: string; granted: boolean }) => void;
+    mockRequestPermissionsAsync.mockImplementationOnce(() => new Promise(resolve => {
+      resolvePermission = resolve;
+    }));
+    const saveView = renderSheet();
+    fireEvent(saveView.getByTestId('diet-share-image'), 'load');
+    fireEvent.press(saveView.getByRole('button', { name: '保存饮食图片到相册' }));
+    expect(saveView.getByText('存图中')).toBeTruthy();
+    expect(saveView.queryByText('生成小红书图中')).toBeNull();
+    resolvePermission({ status: 'denied', granted: false });
+    await waitFor(() => expect(saveView.onShareTerminal).toHaveBeenCalled());
+
+    let resolveCapture!: (uri: string) => void;
+    mockCaptureRef.mockImplementationOnce(() => new Promise(resolve => { resolveCapture = resolve; }));
+    const platformView = renderSheet();
+    fireEvent(platformView.getByTestId('diet-share-image'), 'load');
+    fireEvent.press(platformView.getByRole('button', { name: '发小红书' }));
+    expect(platformView.getByText('生成小红书图中')).toBeTruthy();
+    expect(platformView.queryByText('存图中')).toBeNull();
+    await waitFor(() => expect(mockCaptureRef).toHaveBeenCalled());
+    resolveCapture('file:///meal-share.png');
+    await waitFor(() => expect(mockShareAsync).toHaveBeenCalled());
+  });
+
+  it('prevents a second synchronous share from creating another capture', async () => {
+    let finishCapture!: (uri: string) => void;
+    mockCaptureRef.mockImplementationOnce(() => new Promise(resolve => { finishCapture = resolve; }));
+    const view = renderSheet();
+    fireEvent(view.getByTestId('diet-share-image'), 'load');
+    const shareButton = view.getByRole('button', { name: '发小红书' });
+
+    fireEvent.press(shareButton);
+    fireEvent.press(shareButton);
+    await waitFor(() => expect(mockCaptureRef).toHaveBeenCalledTimes(1));
+    finishCapture('file:///meal-share.png');
+    await waitFor(() => expect(mockShareAsync).toHaveBeenCalledTimes(1));
+  });
+
+  it('ignores late image callbacks from the previous source generation', () => {
+    const sourceA = { uri: 'file:///private/a.jpg' };
+    const sourceB = { uri: 'file:///private/b.jpg' };
+    const view = renderSheet({ imageSource: sourceA });
+    const oldImage = view.getByTestId('diet-share-image');
+
+    view.rerender(
+      <DietShareSheet
+        visible
+        record={record}
+        dateLabel="7月11日"
+        imageSource={sourceB}
+        onClose={view.onClose}
+        onShareFeedback={view.onShareFeedback}
+        onShareTerminal={view.onShareTerminal}
+      />,
+    );
+    fireEvent(oldImage, 'load');
+
+    expect(view.getByRole('button', { name: '发小红书' })).toBeDisabled();
+    fireEvent(view.getByTestId('diet-share-image'), 'load');
+    expect(view.getByRole('button', { name: '发小红书' })).not.toBeDisabled();
+    fireEvent(oldImage, 'error', { error: 'late A error' });
+    expect(view.getByRole('button', { name: '发小红书' })).not.toBeDisabled();
+  });
+
+  it('recovers from a timed-out source when a replacement photo loads', () => {
+    jest.useFakeTimers();
+    try {
+      const view = renderSheet({ imageSource: { uri: 'file:///private/a.jpg' } });
+      act(() => jest.advanceTimersByTime(DIET_SHARE_IMAGE_TIMEOUT_MS));
+      expect(view.getByText('照片加载失败，请重试或改为分享正文')).toBeTruthy();
+
+      view.rerender(
+        <DietShareSheet
+          visible
+          record={record}
+          dateLabel="7月11日"
+          imageSource={{ uri: 'file:///private/b.jpg' }}
+          onClose={view.onClose}
+          onShareFeedback={view.onShareFeedback}
+          onShareTerminal={view.onShareTerminal}
+        />,
+      );
+      fireEvent(view.getByTestId('diet-share-image'), 'load');
+      expect(view.queryByText('照片加载失败，请重试或改为分享正文')).toBeNull();
+      expect(view.getByRole('button', { name: '发小红书' })).not.toBeDisabled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps low-confidence poster and caption free of exact nutrition claims', () => {
+    const lowConfidence = {
+      ...record,
+      ai_confidence: 0.42,
+      health_tips: '下一餐补蛋白质 30g，少吃 300 kcal',
+    };
+    const view = renderSheet({ record: lowConfidence });
+    const caption = buildDietShareCaption(lowConfidence, '7月11日');
+
+    expect(caption).not.toMatch(/900\s*kcal|蛋白质\s*36g|碳水\s*103g|脂肪\s*42g/i);
+    expect(view.queryByText('下一餐补蛋白质 30g，少吃 300 kcal')).toBeNull();
   });
 
   it('does not construct or capture a metric-only image when no photo is available', () => {

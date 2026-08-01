@@ -73,6 +73,26 @@ describe('buildDietSharePresentation', () => {
     expect(view.macroLines).toEqual(['营养待核对']);
     expect(JSON.stringify(view)).not.toContain('900');
   });
+
+  it('does not leak exact nutrition from health tips on a low-confidence poster', () => {
+    const view = buildDietSharePresentation(photoRecord({
+      ai_confidence: 0.42,
+      health_tips: '下一餐补蛋白质 30g，少吃 300 kcal',
+    }));
+
+    expect(view.nextAction).toBeUndefined();
+    expect(JSON.stringify(view)).not.toMatch(/30g|300\s*kcal/i);
+  });
+
+  it('keeps user-corrected nutrition public even when stale AI confidence is low', () => {
+    const view = buildDietSharePresentation(photoRecord({
+      source: 'user_corrected',
+      ai_confidence: 0.42,
+    }));
+
+    expect(view.macroLines).toContain('约 900 kcal · 蛋白质 36g');
+    expect(view.disclosure).toBe('营养数据已由用户确认');
+  });
 });
 
 describe('buildChatDietShareInput', () => {

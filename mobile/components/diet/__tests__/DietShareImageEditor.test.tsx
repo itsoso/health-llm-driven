@@ -526,6 +526,29 @@ describe('DietShareImageEditor', () => {
     }]);
   });
 
+  it('rotates an existing off-centre privacy stroke with the photo before export', async () => {
+    const view = renderEditor();
+    loadPhoto(view);
+    drawPrivacyStroke(view);
+
+    fireEvent.press(view.getByRole('button', { name: '顺时针旋转照片' }));
+
+    expect(view.getAllByTestId('Path')[0].props.d).toBe('M 270 40 L 135 240 L 75 320');
+    fireEvent.press(view.getByRole('button', { name: '完成图片编辑' }));
+    await waitFor(() => expect(view.onComplete).toHaveBeenCalledTimes(1));
+    const [redaction] = view.onComplete.mock.calls[0][0].redactions;
+    expect(redaction?.width).toBe(0.06);
+    expect(redaction?.points).toHaveLength(3);
+    [
+      { x: 0.9, y: 0.1 },
+      { x: 0.45, y: 0.6 },
+      { x: 0.25, y: 0.8 },
+    ].forEach((expected, index) => {
+      expect(redaction?.points[index]?.x).toBeCloseTo(expected.x);
+      expect(redaction?.points[index]?.y).toBeCloseTo(expected.y);
+    });
+  });
+
   it('fails loudly when the runtime cannot edit and keeps the original photo visible', async () => {
     mockManipulatorAvailable = false;
     const view = renderEditor();

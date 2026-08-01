@@ -162,7 +162,9 @@ function buildDisclosure(record: DietShareRecord): string {
 
 export function buildDietSharePresentation(record: DietShareRecord): DietSharePresentation {
   const mealLabel = MEAL_LABELS[record.meal_type] ?? '餐食';
-  const nextAction = text(record.health_tips);
+  // Low-confidence AI copy may contain exact macro/calorie targets even when the
+  // structured nutrition fields are hidden. Omit it until the meal is reviewed.
+  const nextAction = isLowConfidence(record) ? undefined : text(record.health_tips);
   return {
     mealLabel,
     headline: buildHeadline(record, mealLabel),
