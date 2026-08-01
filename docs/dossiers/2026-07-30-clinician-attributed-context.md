@@ -72,6 +72,23 @@
     不由实现常量生成的固定安全语料。
   - 裁决：G2 仍 PASS，产品语义、显式写入和 fail-closed 边界不变；
     Task 1B v3 必须重新通过 fresh spec + fresh quality 双审。
+- [x] Correction Block 5
+  - 触发：Task 1B v3 最终通过规格闸，但 fresh quality review 仍报告
+    4 Critical / 3 Important；通用中文授权 parser 再次出现 scope、后置
+    stance、协调继承、target 跨段污染和性能计量盲区。
+  - 证据：`医生建议休息然后请保存诊断记录` 被授权 user write；
+    `删除用药记录是否合适`、`查看删除和保存的诊断记录`、
+    `请删除或不保存用药记录` 仍产生可授权动作；无关 provider/target
+    还能污染前一动作。
+  - 根因：产品只需要安全识别医生转述和一个明确写能力，却试图构建通用
+    中文动作授权语法；其语言覆盖、安全证明和维护成本远超需求。
+  - 回退决策：停止 Task 1B 通用 ActionEvidence 路线，不再修 parser；删除
+    未上线的 parser 和 evidence-only 词典，回到最小端到端产品边界。
+  - 新方案：`ClinicianProvenanceGuard` 只判断医生来源、建议问题和窄格式的
+    `记录/保存 + 医生诊断/意见/反馈/结论 + 非空内容`；裸转述只理解，
+    混合/歧义操作全部非写并提示拆分；非医生输入继续走 legacy classifier。
+  - 用户裁决：2026-08-01 批准窄授权、强理解方案及复杂混合操作 fail-closed。
+  - 新设计：`docs/plans/2026-08-01-clinician-provenance-guard-design.md`。
 
 ## S0 · 用户需求（逐字）
 
@@ -125,9 +142,10 @@
 
 ## S3 · 规划
 
-- 设计：`docs/plans/2026-07-30-clinician-attributed-context-design.md`
+- 当前设计：`docs/plans/2026-08-01-clinician-provenance-guard-design.md`
+- 历史设计：`docs/plans/2026-07-30-clinician-attributed-context-design.md`
 - 实施计划：`docs/plans/2026-07-30-clinician-attributed-context.md`
-- T1 替换计划：`docs/plans/2026-07-31-clinician-action-evidence.md`
+- 已废止的 T1 parser 计划：`docs/plans/2026-07-31-clinician-action-evidence.md`
 - 分阶段：意图帧 → Agent 写工具与回执 → 上下文召回 → 回归与安全验证。
 - 反馈环路由：后端改动，验证通过后走 backend deploy；无 Mobile OTA。
 
@@ -135,21 +153,22 @@
 
 - 评审方式：Codex challenge
 - 已焊进设计的硬约束：
-  - action-occurrence actor/provenance 判定先于全句
-    read/write/mutation keyword。
+  - clinician provenance guard 先于全句 read/write/mutation keyword。
   - clinician-bearing 输入绝不回 raw whole-text authorizer。
+  - 只有窄格式的 clinician-feedback save envelope 可以产生写意图；复杂混合
+    动作统一 fail-closed 并提示拆分。
   - 保存必须有显式写意图并产生可验证回执。
   - 上下文标明“用户转述的医生意见”，禁止把来源升级成系统诊断。
   - 不新增表、不迁移、不自动变更 HealthProblem。
 - 待拍板分叉：无。
-- **裁决**：PASS（2026-07-31 第二次重新裁决）—— 用户已批准
-  ActionEvidence 重构及持久化语义。
+- **裁决**：PASS（2026-08-01 第三次重新裁决）—— 用户已批准窄授权
+  provenance guard；持久化、来源标记和安全边界不变。
 
 ## S4 · 研发任务分解
 
-- T1：ActionEvidence 解析、每动作主体与目标归属、统一 stance reducer、
-  fast-record 防误判（原句 + 多主体属性矩阵 + quoted action
-  fail-closed）。
+- T1：删除未上线的通用 ActionEvidence parser；实现窄
+  ClinicianProvenanceGuard、显式 feedback save envelope、legacy 分类器与
+  fast-record choke point 接入。
 - T2：模型可见工具、Kernel registry、回执契约与 capability policy。
 - T3：owner-scoped 写入 adapter、校验、回滚与敏感日志测试。
 - T4：完整上下文中的来源标记召回、长度限制与 cache invalidation。

@@ -1,5 +1,10 @@
 # Clinician-Attributed Context Design
 
+> Superseded for clinician-turn authorization by
+> `docs/plans/2026-08-01-clinician-provenance-guard-design.md`. This document
+> remains as the historical design record for the shared persistence, context
+> and prompt boundaries.
+
 ## Goal
 
 Make XiaoBa understand clinician diagnoses and assessments as provenance-bearing
