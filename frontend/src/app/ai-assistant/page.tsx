@@ -482,6 +482,9 @@ function AIAssistantInner() {
             // 2026-05-14 #4: 可解释性 sources
             sources_used: Array.isArray(data.sources_used) ? data.sources_used : undefined,
             tools_used: Array.isArray(data.tools_used) ? data.tools_used : undefined,
+            completion_status: typeof data.completion_status === 'string'
+              ? data.completion_status
+              : undefined,
           };
           setMessages(prev => prev.map((message) => {
             let next = message.id === tempAssistantId ? {
@@ -1110,6 +1113,7 @@ function restoreWebConversationMessages(rawMessages: any[]): ChatMessage[] {
       perf: meta.perf,
       sources_used: meta.sources_used,
       tools_used: meta.tools_used,
+      completion_status: meta.completion_status,
       ...(serverCard ? {
         card_type: serverCard.type,
         card_data: serverCard.data,

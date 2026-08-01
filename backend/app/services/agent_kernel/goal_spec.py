@@ -254,7 +254,10 @@ def _compile_simple_health_record_goal(
         record_type = "symptom"
         target_values = tuple(symptom_target.items())
     elif intent.domain == "diet":
-        diet_target = _simple_diet_target(envelope.text)
+        diet_target = _simple_diet_target(
+            envelope.text,
+            local_hour=context.current_time.hour,
+        )
         if diet_target is None:
             return None
         record_type = "diet"
@@ -457,8 +460,19 @@ def _simple_symptom_target(text: str) -> dict[str, str] | None:
     return None
 
 
-def _simple_diet_target(text: str) -> dict[str, str] | None:
-    """Extract one explicit meal and its user-owned food description."""
+def _simple_diet_target(
+    text: str,
+    *,
+    local_hour: int,
+) -> dict[str, str] | None:
+    """Extract one meal and its user-owned food description.
+
+    An explicit meal label remains authoritative.  When the current turn is
+    already an unambiguous ``diet/create`` intent, ordinary phrases such as
+    ``记录吃了一个桃子`` may omit that label; reuse the product's established
+    local-time meal inference instead of falling back to an unbounded model
+    write.
+    """
     raw = str(text or "").strip()
     if not raw:
         return None
@@ -469,15 +483,25 @@ def _simple_diet_target(text: str) -> dict[str, str] | None:
             start = raw.find(signal)
             if start >= 0:
                 meal_matches.append((start, start + len(signal), meal_type))
-    if not meal_matches:
-        return None
+    if meal_matches:
+        meal_types = {match[2] for match in meal_matches}
+        if len(meal_types) != 1:
+            return None
+        _, meal_end, meal_type = min(meal_matches, key=lambda item: item[0])
+        foods = raw[meal_end:]
+    else:
+        match = re.search(
+            r"(?:记录(?:一下)?|记下|打卡|帮我记录)?\s*"
+            r"(?:我)?\s*(?:(?:刚才|刚刚|已经|今天)\s*)?"
+            r"(?:吃了|吃的是|吃|点了)\s*(?P<foods>.+)",
+            raw,
+        )
+        if match is None:
+            return None
+        foods = match.group("foods")
+        from app.services.diet_voice_parser import infer_meal_type
 
-    meal_types = {match[2] for match in meal_matches}
-    if len(meal_types) != 1:
-        return None
-
-    _, meal_end, meal_type = min(meal_matches, key=lambda item: item[0])
-    foods = raw[meal_end:]
+        meal_type = infer_meal_type(raw, local_hour)
     foods = re.sub(
         r"^[\s，,。.!！；;：:]*(?:我)?"
         r"(?:(?:刚才|刚刚|已经)?(?:吃了|吃的是|吃|有)|是)?"

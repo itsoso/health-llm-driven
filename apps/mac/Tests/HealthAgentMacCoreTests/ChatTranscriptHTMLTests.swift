@@ -274,6 +274,16 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertTrue(html.contains(">health_record<"))
     }
 
+    func testMetaFooterLabelsToolsAsAttemptedWhenTurnFailed() {
+        let html = ChatTranscriptHTML.metaFooterHTML(
+            model: nil, elapsedMs: nil, llmRounds: nil,
+            sourcesUsed: [], toolsUsed: ["health_record"],
+            completionStatus: "error"
+        )
+        XCTAssertTrue(html.contains("尝试调用 Skill"))
+        XCTAssertFalse(html.contains(">调用 Skill<"))
+    }
+
     func testMetaFooterRendersTokenUsage() {
         let usage = LLMUsageProfile(
             calls: 2,

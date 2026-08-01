@@ -4,7 +4,7 @@
 |---|---|
 | slug | `runtime-write-circuit-recovery` |
 | 创建日期 | 2026-08-01 |
-| 当前阶段 | S4 分解 |
+| 当前阶段 | G4 安全评审 |
 | 状态 | building |
 | 负责 | Codex |
 | 反馈环 | Backend deploy + Mac/Mobile/Web targeted verification |
@@ -89,31 +89,43 @@
 
 - 跨端 API 契约: additive `turn_outcome.category=service_unavailable`; `tools_used` 保持兼容。
 - 任务表:
-  - [ ] T1 裸饮食短句的 deterministic goal + 餐次推断。
-  - [ ] T2 pre-dispatch Runtime block 一次终止 + typed outcome。
-  - [ ] T3 单 reconciliation 用户级隔离 + 阈值升级全局。
-  - [ ] T4 receipt/pending 驱动草稿压制。
-  - [ ] T5 Mac/Mobile/Web 失败轮显示“尝试调用 Skill”。
-  - [ ] T6 集成测试、安全复核、提交推送。
+  - [x] T1 裸饮食短句的 deterministic goal + 餐次推断。
+  - [x] T2 pre-dispatch Runtime block 一次终止 + typed outcome。
+  - [x] T3 单 reconciliation 用户级隔离 + 阈值升级全局。
+  - [x] T4 receipt/pending 驱动草稿压制。
+  - [x] T5 Mac/Mobile/Web 失败轮显示“尝试调用 Skill”。
+  - [x] T6 集成测试、静态检查、提交前 producer review。
   - [ ] T7 exact-generation 恢复、部署、生产原句验证。
 - 并发检查: `git fetch origin main` + open PR checked；无相同作用域 PR。隔离 worktree 基于 `7b277ed0f`。☑
 
 ## S5 · 实现
 
 - 分支: `codex/runtime-write-circuit-recovery`
-- commits: pending
+- 实现结果:
+  - 两条锚点短句均编译为单一 `simple_health_record(diet/create)`；无餐次时复用本地小时推断。
+  - `runtime_control_unavailable + dispatch_started=false` 成为单次 deterministic error terminal，不再进入后续 LLM 轮次。
+  - 单一 reconciliation owner 仅隔离自身；达到配置的 distinct-user 阈值才升级全局暂停；所有放行仍创建 managed Run。
+  - intake 卡片压制只接受 verified receipt / server-owned pending intent，不再采信 `tools_used` 尝试事实。
+  - Mac/Mobile/Web 错误或中断回合显示“尝试调用 Skill”；Web 历史与 live SSE 均贯通 `completion_status`。
+- commits: 实现 commit 待本地评审落盘。
 
 ## G3 · 测试闸
 
-- 集成闸: pending
-- main CI 真实色: pending
-- Codex capstone: pending
-- **裁决**: pending
+- Backend 集成闸: 294 passed / 3 skipped；skip 为 SQLite 环境不执行的 PostgreSQL row-lock 用例。
+- Client: Mobile 90 passed + TypeScript PASS；Web 24 passed + TypeScript PASS；Mac ChatTranscriptHTML 50 passed。
+- 静态/治理: Ruff `F821,F822,E9` PASS；doc drift PASS；dossier consistency PASS；`git diff --check` PASS。
+- main CI 真实色: 推送后复核。
+- **裁决**: 本地 PASS；远端 CI 待推送后闭环。
 
 ## G4 · 安全闸
 
 - 触发: health write path, Runtime control, retry semantics, owner isolation。
-- 评审: pending
+- producer review:
+  - 未决 owner fail-closed；未命中 scope 的暂停原因仍全局 fail-closed。
+  - scoped admission 只查询 content-free `user_id/status`，且必须经 coordinator 创建 managed Run。
+  - 不 replay、不自动 retry、不改未决健康记录；只有 verified receipt 可声明持久化成功。
+  - `tools_used` 保持尝试事实，UI 由终态降级表述；错误回合不开放社交分享。
+- reviewer: 提交后按 `requesting-code-review` 执行。
 - **裁决**: pending
 
 ## S6 · 部署

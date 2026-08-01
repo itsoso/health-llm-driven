@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 
@@ -319,6 +320,41 @@ def test_simple_diet_goal_binds_explicit_meal_and_foods_from_current_turn():
     assert "5个虾100克大黄鱼200克哈密瓜" in prompt
     assert "只创建 1 条 diet" in prompt
     assert "calories/protein/carbs/fat/fiber" in prompt
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录吃了一个桃子",
+        "记录加餐，我吃了一个桃子",
+    ),
+)
+def test_simple_diet_goal_infers_local_meal_for_anchor_peach_phrases(message):
+    context = replace(
+        ExecutionContext.for_test(user_id=1, channel="mobile"),
+        current_time=ExecutionContext.for_test(
+            user_id=1,
+            channel="mobile",
+        ).current_time.replace(hour=21, minute=5),
+    )
+    envelope = AgentEnvelope(user_id=1, channel="mobile", text=message)
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind == "simple_health_record"
+    assert goal.domain == "diet"
+    assert goal.operation == "create"
+    assert goal.target_record_type == "diet"
+    assert goal.target_meal_types == ("snack",)
+    assert dict(goal.target_values) == {
+        "meal_type": "snack",
+        "food_items": "一个桃子",
+    }
 
 
 def test_simple_diet_goal_uses_user_owned_relative_date():

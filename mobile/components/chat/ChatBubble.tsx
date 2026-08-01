@@ -211,6 +211,7 @@ function ChatBubbleInner({
       llmUsage: item.llmUsage,
       sourcesUsed: item.sourcesUsed,
       toolsUsed: item.toolsUsed,
+      completionStatus: item.completionStatus,
       perf: item.perf,
     }),
     [
@@ -221,6 +222,7 @@ function ChatBubbleInner({
       item.llmUsage,
       item.sourcesUsed,
       item.toolsUsed,
+      item.completionStatus,
       item.perf,
     ],
   );
@@ -1187,13 +1189,16 @@ function ChatBubbleInner({
             {cardSafetyAlerts.length > 0 ? <MedicationSafetyAdvisory alerts={cardSafetyAlerts} /> : null}
             {cardReceiptPersistenceWarning ? <WriteReceiptPersistenceWarning /> : null}
             {!item.streaming
-              && item.completionStatus !== 'interrupted'
-              && item.completionStatus !== 'error'
-              && assistantTextForActions ? (
+              && assistantTextForActions
+              && (
+                (item.completionStatus !== 'interrupted' && item.completionStatus !== 'error')
+                || transparency.visible
+              ) ? (
               <AssistantUtilityPanel
                 profile={transparency}
                 sources={item.sourcesUsed}
                 thinkingSteps={thinkingSteps}
+                sharingEnabled={item.completionStatus !== 'interrupted' && item.completionStatus !== 'error'}
                 onOpenMemory={() => router.push('/memory')}
                 onShareWeChat={() => { void handleShare('wechat'); }}
                 onShareXiaohongshu={() => { void handleShare('xiaohongshu'); }}
@@ -2879,6 +2884,7 @@ function AssistantUtilityPanel({
   profile,
   sources,
   thinkingSteps,
+  sharingEnabled,
   onOpenMemory,
   onShareWeChat,
   onShareXiaohongshu,
@@ -2888,6 +2894,7 @@ function AssistantUtilityPanel({
   profile: AgentTransparencyProfile;
   sources?: readonly string[];
   thinkingSteps: readonly string[];
+  sharingEnabled: boolean;
   onOpenMemory: () => void;
   onShareWeChat: () => void;
   onShareXiaohongshu: () => void;
@@ -2932,25 +2939,29 @@ function AssistantUtilityPanel({
             <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={13} color={C.ink3} />
           </Pressable>
         ) : <View style={styles.assistantUtilitySpacer} />}
-        <View style={styles.assistantUtilityDivider} />
-        <Pressable
-          onPress={onShareWeChat}
-          accessibilityRole="button"
-          accessibilityLabel="微信分享这条回复"
-          style={({ pressed }) => [styles.assistantUtilityShare, pressed && styles.actionBtnPressed]}
-        >
-          <SocialBrandIcon brand="wechat" size={15} />
-          <Text style={txt.assistantUtilityShare}>微信</Text>
-        </Pressable>
-        <Pressable
-          onPress={onShareXiaohongshu}
-          accessibilityRole="button"
-          accessibilityLabel="小红书分享这条回复"
-          style={({ pressed }) => [styles.assistantUtilityShare, pressed && styles.actionBtnPressed]}
-        >
-          <SocialBrandIcon brand="xiaohongshu" size={15} />
-          <Text style={txt.assistantUtilityShare}>小红书</Text>
-        </Pressable>
+        {sharingEnabled ? (
+          <>
+            <View style={styles.assistantUtilityDivider} />
+            <Pressable
+              onPress={onShareWeChat}
+              accessibilityRole="button"
+              accessibilityLabel="微信分享这条回复"
+              style={({ pressed }) => [styles.assistantUtilityShare, pressed && styles.actionBtnPressed]}
+            >
+              <SocialBrandIcon brand="wechat" size={15} />
+              <Text style={txt.assistantUtilityShare}>微信</Text>
+            </Pressable>
+            <Pressable
+              onPress={onShareXiaohongshu}
+              accessibilityRole="button"
+              accessibilityLabel="小红书分享这条回复"
+              style={({ pressed }) => [styles.assistantUtilityShare, pressed && styles.actionBtnPressed]}
+            >
+              <SocialBrandIcon brand="xiaohongshu" size={15} />
+              <Text style={txt.assistantUtilityShare}>小红书</Text>
+            </Pressable>
+          </>
+        ) : null}
         <Pressable
           onPress={onCopy}
           accessibilityRole="button"
@@ -3036,7 +3047,7 @@ function AssistantUtilityPanel({
           ) : null}
           {profile.tools.length > 0 ? (
             <View style={styles.transparencyRow}>
-              <Text style={txt.transparencyLabel}>调用 Skill</Text>
+              <Text style={txt.transparencyLabel}>{profile.toolLabel}</Text>
               <View style={[styles.transparencyChipRow, { flex: 1 }]}>
                 {profile.tools.map(tool => (
                   <View key={tool} style={styles.transparencyChip}>

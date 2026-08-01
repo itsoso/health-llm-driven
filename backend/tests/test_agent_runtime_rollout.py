@@ -69,6 +69,23 @@ def _runtime_row(
     return run
 
 
+def _other_user(db, *, suffix: str):
+    from app.models.user import User
+
+    user = User(
+        email=f"runtime-{suffix}@example.com",
+        username=f"runtime-{suffix}",
+        hashed_password="hashed_password",
+        is_active=True,
+        is_approved=True,
+        name=f"Runtime {suffix}",
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 def test_stable_canary_bucket_is_deterministic_and_bounded():
     from app.services.agent_runtime_rollout import stable_canary_bucket
 
@@ -333,6 +350,134 @@ def test_pause_bypasses_new_admission_and_is_audited_once(
     assert events[0].action == "pause"
     assert events[0].actor_kind == "admin"
     assert events[0].actor_user_id == user.id
+
+
+def test_reconciliation_pause_blocks_affected_user_but_admits_unrelated_user(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.models.agent_runtime import AgentRun
+    from app.services.agent_runtime_rollout import AgentRuntimeRolloutService
+
+    affected_user, _headers = auth_user_and_headers
+    unrelated_user = _other_user(db, suffix="unrelated")
+    now = datetime.now(UTC)
+    _configure(monkeypatch, mode="enforce")
+    monkeypatch.setattr(
+        settings,
+        "agent_runtime_reconciliation_global_pause_threshold",
+        2,
+        raising=False,
+    )
+    _runtime_row(
+        db,
+        user_id=affected_user.id,
+        suffix="scoped-reconciliation",
+        status="reconciliation_required",
+        error_code="write_reconciliation_required",
+        now=now,
+    )
+    rollout = AgentRuntimeRolloutService(db)
+    rollout.evaluate_and_maybe_pause(now=now)
+
+    affected = rollout.admit_run(
+        run_id="run-affected-after-reconciliation",
+        attempt_id="attempt-affected-after-reconciliation",
+        user_id=affected_user.id,
+        conversation_id=None,
+        client_turn_id="turn-affected-after-reconciliation",
+        origin="test",
+        deadline_at=None,
+    )
+    unrelated = rollout.admit_run(
+        run_id="run-unrelated-after-reconciliation",
+        attempt_id="attempt-unrelated-after-reconciliation",
+        user_id=unrelated_user.id,
+        conversation_id=None,
+        client_turn_id="turn-unrelated-after-reconciliation",
+        origin="test",
+        deadline_at=None,
+    )
+
+    assert affected.admission is None
+    assert affected.reason == "circuit_paused"
+    assert unrelated.admission is not None
+    assert unrelated.reason == "scoped_reconciliation_admission"
+    admitted = db.query(AgentRun).filter_by(
+        run_id="run-unrelated-after-reconciliation"
+    ).one()
+    assert admitted.user_id == unrelated_user.id
+
+
+def test_reconciliation_pause_becomes_global_at_configured_user_threshold(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.services.agent_runtime_rollout import AgentRuntimeRolloutService
+
+    affected_user, _headers = auth_user_and_headers
+    unrelated_user = _other_user(db, suffix="global-threshold")
+    now = datetime.now(UTC)
+    _configure(monkeypatch, mode="enforce")
+    monkeypatch.setattr(
+        settings,
+        "agent_runtime_reconciliation_global_pause_threshold",
+        1,
+        raising=False,
+    )
+    _runtime_row(
+        db,
+        user_id=affected_user.id,
+        suffix="global-reconciliation",
+        status="reconciliation_required",
+        error_code="write_reconciliation_required",
+        now=now,
+    )
+    rollout = AgentRuntimeRolloutService(db)
+    rollout.evaluate_and_maybe_pause(now=now)
+
+    decision = rollout.admission_decision(unrelated_user.id)
+
+    assert decision.managed is False
+    assert decision.reason == "circuit_paused"
+
+
+@pytest.mark.parametrize("invalid_threshold", [0, -1])
+def test_reconciliation_pause_rejects_invalid_global_threshold(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    invalid_threshold,
+):
+    from app.services.agent_runtime_rollout import (
+        AgentRuntimeRolloutService,
+        RolloutConfigurationError,
+    )
+
+    affected_user, _headers = auth_user_and_headers
+    now = datetime.now(UTC)
+    _configure(monkeypatch, mode="enforce")
+    monkeypatch.setattr(
+        settings,
+        "agent_runtime_reconciliation_global_pause_threshold",
+        invalid_threshold,
+        raising=False,
+    )
+    _runtime_row(
+        db,
+        user_id=affected_user.id,
+        suffix=f"invalid-threshold-{invalid_threshold}",
+        status="reconciliation_required",
+        error_code="write_reconciliation_required",
+        now=now,
+    )
+    rollout = AgentRuntimeRolloutService(db)
+    rollout.evaluate_and_maybe_pause(now=now)
+
+    with pytest.raises(RolloutConfigurationError, match="reconciliation_global"):
+        rollout.admission_decision(affected_user.id)
 
 
 @pytest.mark.parametrize(

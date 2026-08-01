@@ -285,6 +285,7 @@ public enum ChatTranscriptHTML {
         llmRounds: Int?,
         sourcesUsed: [String],
         toolsUsed: [String],
+        completionStatus: String? = nil,
         perf: MessagePerf? = nil,
         llmUsage: LLMUsageProfile? = nil
     ) -> String {
@@ -352,9 +353,12 @@ public enum ChatTranscriptHTML {
         // Skills:chip 样式,横排。
         let tools = toolsUsed.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
         if !tools.isEmpty {
+            let toolLabel = completionStatus == "error" || completionStatus == "interrupted"
+                ? "尝试调用 Skill"
+                : "调用 Skill"
             let chips = tools.map { "<span class=\"meta-chip\">\(escape($0))</span>" }.joined()
             sections.append(
-                "<div class=\"meta-tools\"><span class=\"meta-tools-label\">调用 Skill</span>\(chips)</div>"
+                "<div class=\"meta-tools\"><span class=\"meta-tools-label\">\(toolLabel)</span>\(chips)</div>"
             )
         }
 

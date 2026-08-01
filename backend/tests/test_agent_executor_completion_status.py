@@ -1456,6 +1456,93 @@ async def test_agent_stream_marks_missing_write_receipt_non_retryable(
 
 
 @pytest.mark.asyncio
+async def test_agent_stream_runtime_control_block_is_one_attempt_terminal(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    dispatched = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{
+                    "id": "call_blocked_peach",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "diet",
+                            "data": {
+                                "meal_type": "snack",
+                                "food_items": "一个桃子",
+                                "calories": 60,
+                                "protein": 1,
+                                "carbs": 15,
+                                "fat": 0.2,
+                                "fiber": 2,
+                            },
+                        }, ensure_ascii=False),
+                    },
+                }],
+            }
+        return {
+            "content": "请补充要记录的类型和值。",
+            "finish_reason": "stop",
+        }
+
+    async def fail_if_dispatched(request, user_token):
+        dispatched.append((request, user_token))
+        raise AssertionError("pre-dispatch Runtime block must not reach adapter")
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_dispatch_tool_request", fail_if_dispatched)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录加餐，我吃了一个桃子",
+            user_auth_token="test-token",
+            runtime_write_block_reason="circuit_paused",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    tool_results = [
+        event["data"] for event in events if event.get("event") == "tool_result"
+    ]
+    done = next(event["data"] for event in events if event.get("event") == "done")
+
+    assert llm_calls == 1
+    assert dispatched == []
+    assert len(tool_results) == 1
+    assert tool_results[0]["tool"] == "health_record"
+    assert tool_results[0]["write_outcome"] == "failed"
+    assert tool_results[0]["dispatch_started"] is False
+    assert tool_results[0]["error_code"] == "runtime_control_unavailable"
+    assert "保护性暂停" in rendered
+    assert "这次没有写入" in rendered
+    assert "补充要记录" not in rendered
+    assert done["completion_status"] == "error"
+    assert done["record_intent_no_tool"] is False
+    assert done["turn_outcome"]["category"] == "service_unavailable"
+    assert done["turn_outcome"]["reason_code"] == "runtime_control_unavailable"
+    assert done["turn_outcome"]["retryable"] is False
+    assert "recovery_action" not in done
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_reports_tools_used_in_done_and_meta(db, auth_user_and_headers):
     """done 事件 + 持久化 meta 都暴露本轮调用过的工具名 (tools_used), 供 mac/mobile 展示。"""
     user, _headers = auth_user_and_headers

@@ -53,6 +53,7 @@ export interface AgentTransparencyInput {
   llmUsage?: LlmUsageProfileLike | null;
   sourcesUsed?: string[] | null;
   toolsUsed?: string[] | null;
+  completionStatus?: string | null;
   perf?: AgentPerfProfileLike | null;
 }
 
@@ -80,6 +81,7 @@ export interface AgentTransparencyProfile {
   rounds: AgentTransparencyRow[];
   sources: string[];
   tools: string[];
+  toolLabel: '调用 Skill' | '尝试调用 Skill';
 }
 
 const STAGE_LABELS: Array<[string, string]> = [
@@ -268,6 +270,10 @@ export function buildAgentTransparency(input: AgentTransparencyInput): AgentTran
 
   const sources = uniqueClean(input.sourcesUsed);
   const tools = uniqueClean(input.toolsUsed);
+  const toolLabel = input.completionStatus === 'error'
+    || input.completionStatus === 'interrupted'
+    ? '尝试调用 Skill'
+    : '调用 Skill';
   const tokenLine = buildTokenLine(input.llmUsage);
   const costLine = buildCostLine(input.llmUsage);
   const errorLine = buildErrorLine(input.llmUsage);
@@ -289,5 +295,6 @@ export function buildAgentTransparency(input: AgentTransparencyInput): AgentTran
     rounds,
     sources,
     tools,
+    toolLabel,
   };
 }

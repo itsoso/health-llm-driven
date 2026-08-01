@@ -74,6 +74,7 @@ def classify_agent_turn_outcome(
     record_intent_no_tool: bool = False,
     destructive_or_sync_no_tool: bool = False,
     write_reconciliation_required: bool = False,
+    runtime_control_unavailable: bool = False,
 ) -> dict[str, Any]:
     """Return a stable, content-free outcome payload for ``done.meta``.
 
@@ -90,6 +91,16 @@ def classify_agent_turn_outcome(
         return {
             "category": "write_reconciliation_required",
             "reason_code": "missing_receipt",
+            "retryable": False,
+            "refusal_detected": False,
+            "capability_block_count": len(blocks),
+            "tool_failure_count": len(failures),
+            "confirmation_required": False,
+        }
+    if runtime_control_unavailable:
+        return {
+            "category": "service_unavailable",
+            "reason_code": "runtime_control_unavailable",
             "retryable": False,
             "refusal_detected": False,
             "capability_block_count": len(blocks),

@@ -2598,6 +2598,20 @@ def _unverified_write_message(verified_receipts: Optional[List[Dict[str, Any]]] 
     )
 
 
+def _runtime_control_unavailable_message(
+    verified_receipts: Optional[List[Dict[str, Any]]] = None,
+) -> str:
+    """Explain a proven pre-dispatch control block without model reinterpretation."""
+    blocked = (
+        "记录服务当前处于保护性暂停状态，这次没有写入，"
+        "也没有发送到数据服务。系统正在核对写入链路状态；"
+        "服务恢复后，请重新提交这条记录。"
+    )
+    if not verified_receipts:
+        return blocked
+    return f"本轮已有 {len(verified_receipts)} 项记录取得写入回执。\n\n{blocked}"
+
+
 class _UnverifiedWriteResult(RuntimeError):
     pass
 
@@ -10172,6 +10186,7 @@ class AgentExecutor:
         goal_verification_result: Any = None
         goal_lookup_completed = False
         goal_allowed_record_ids: set[str] = set()
+        runtime_control_terminal = False
         # 本轮 agent 实际调用过的工具/Skill 名, 去重、按首次调用顺序。供 mac/mobile
         # 展示"调用了哪些 Skills"。与 sources_used (引用了哪些数据源) 独立。
         tools_used: List[str] = []
@@ -11310,12 +11325,18 @@ class AgentExecutor:
                                         write_receipts.append(receipt)
                             else:
                                 receipt = None
-                            tool_event_data.update(
-                                _write_outcome_event_fields(
-                                    result_for_record_card,
-                                    receipt,
-                                )
+                            write_outcome_fields = _write_outcome_event_fields(
+                                result_for_record_card,
+                                receipt,
                             )
+                            tool_event_data.update(write_outcome_fields)
+                            if (
+                                write_attempted
+                                and write_outcome_fields.get("error_code")
+                                == "runtime_control_unavailable"
+                                and write_outcome_fields.get("dispatch_started") is False
+                            ):
+                                runtime_control_terminal = True
                             if write_attempted and not replayed_write:
                                 checkpoint_status = _write_checkpoint_status_after_dispatch(
                                     result_for_record_card,
@@ -11489,6 +11510,8 @@ class AgentExecutor:
                                         "descriptor": safety_card,
                                     },
                                 }
+                        if runtime_control_terminal:
+                            break
 
                     medication_confirmation_card = getattr(
                         self,
@@ -11516,6 +11539,20 @@ class AgentExecutor:
                         "tool_exec_ms": _round_tool_exec_ms,
                         "tools": list(_round_tool_names),
                     })
+
+                    if runtime_control_terminal:
+                        final_finish_reason = "error"
+                        terminal_text = _runtime_control_unavailable_message(
+                            write_receipts
+                        )
+                        if not health_advice_buffered:
+                            for i in range(0, len(terminal_text), 20):
+                                yield {
+                                    "event": "token",
+                                    "data": {"content": terminal_text[i:i + 20]},
+                                }
+                        full_reply += terminal_text
+                        break
 
                     if unverified_write_operations:
                         final_finish_reason = "error"
@@ -12006,6 +12043,7 @@ class AgentExecutor:
             and not write_receipts
             and not self._agent_kernel_pending_confirmation_tools
             and not last_recoverable_write_rejection
+            and not runtime_control_terminal
         )
         # 破坏性/同步意图从 fast-record 集排除后(留强模型),其 0-工具 缺口在此补上,
         # 与 record_intent_no_tool 加层不减层(不与之重叠:record 集已被上面判掉)。
@@ -12250,6 +12288,7 @@ class AgentExecutor:
             record_intent_no_tool=record_intent_no_tool,
             destructive_or_sync_no_tool=destructive_or_sync_no_tool,
             write_reconciliation_required=bool(unverified_write_operations),
+            runtime_control_unavailable=runtime_control_terminal,
         )
         kernel_snapshot = self._agent_kernel_snapshot
         health_write_requested = bool(

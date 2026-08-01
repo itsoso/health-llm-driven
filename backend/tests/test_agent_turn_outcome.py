@@ -45,6 +45,20 @@ def test_tool_failure_is_retryable_and_keeps_refusal_metric_false():
     assert result["refusal_detected"] is False
 
 
+def test_runtime_control_unavailable_is_terminal_and_not_immediately_retryable():
+    result = classify_agent_turn_outcome(
+        completion_status="error",
+        final_text="记录服务当前处于保护性暂停状态，这次没有写入。",
+        tool_failure_tools=["health_record"],
+        runtime_control_unavailable=True,
+    )
+
+    assert result["category"] == "service_unavailable"
+    assert result["reason_code"] == "runtime_control_unavailable"
+    assert result["retryable"] is False
+    assert result["refusal_detected"] is False
+
+
 def test_unverified_write_requires_reconciliation_and_is_never_retryable():
     result = classify_agent_turn_outcome(
         completion_status="error",

@@ -446,6 +446,7 @@ function areMessageRowEqual(prev: MessageRowProps, next: MessageRowProps): boole
     a.perf === b.perf &&
     a.sources_used === b.sources_used &&
     a.tools_used === b.tools_used &&
+    a.completion_status === b.completion_status &&
     prev.done === next.done &&
     prev.copied === next.copied &&
     prev.canSelectForShare === next.canSelectForShare &&
@@ -548,6 +549,7 @@ function AssistantTransparencyPanel({ msg }: { msg: ChatMessage }) {
         llmUsage: msg.llm_usage,
         sourcesUsed: msg.sources_used,
         toolsUsed: msg.tools_used,
+        completionStatus: msg.completion_status,
         perf: msg.perf,
       }),
     [
@@ -558,6 +560,7 @@ function AssistantTransparencyPanel({ msg }: { msg: ChatMessage }) {
       msg.llm_usage,
       msg.sources_used,
       msg.tools_used,
+      msg.completion_status,
       msg.perf,
     ],
   );
@@ -611,7 +614,7 @@ function AssistantTransparencyPanel({ msg }: { msg: ChatMessage }) {
             )}
             {profile.tools.length > 0 && (
               <div className="grid grid-cols-[4.5rem_1fr] gap-2">
-                <span className="text-[#948F80]">调用 Skill</span>
+                <span className="text-[#948F80]">{profile.toolLabel}</span>
                 <div className="flex flex-wrap gap-1.5">
                   {profile.tools.map(tool => (
                     <span key={tool} className="rounded-full border border-[#E5E1D5] bg-[#F0EDE4] px-2 py-0.5 font-mono text-[10.5px] text-[#6B665A]">

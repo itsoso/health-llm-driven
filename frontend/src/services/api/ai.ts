@@ -67,6 +67,8 @@ export interface ChatMessage {
   sources_used?: string[];
   /** 本轮调用的 Skill / 工具名, 与 sources_used 独立. */
   tools_used?: string[];
+  /** 服务端终态；错误/中断回合里的 tools_used 仅表示尝试调用。 */
+  completion_status?: 'complete' | 'interrupted' | 'error' | 'unknown';
 }
 
 export interface LlmUsageCall {
