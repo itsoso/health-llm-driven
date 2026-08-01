@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-health-evidence-runtime` |
 | 创建日期 | 2026-07-29 |
-| 当前阶段 | replacement exact-SHA CI |
-| 状态 | prod=`98e27869...`、base flag=false、durable runtime=true、四服务 active；activation terminal marker 成功但 lease/stage 保留，proof 修复前 OTA 阻断 |
+| 当前阶段 | replacement exact-SHA CI（POSIX awk portability correction） |
+| 状态 | prod=`98e27869...`、base flag=false、durable runtime=true、四服务 active；activation terminal marker 成功但 lease/stage 保留，POSIX awk proof 修复进入 replacement CI 前继续阻断部署/OTA |
 | 负责 | product owner + Codex |
 | 反馈环 | backend/Web → 受控 activation → semantic smoke → Mobile OTA → 跨端对照 |
 
@@ -464,6 +464,20 @@
       release-invariants 307/307 通过；fresh mutation test-contract review 与
       release-security review 均 GO（P0=0、P1=0、P2=0）。replacement exact-SHA
       CI、原 lease adoption terminal proof 与 cleanup 尚待完成。
+  - 2026-08-01 adoption correction:
+    - 在上述 argv 修复已进入主干后，第一次 preflight-only adoption 已用原 token、
+      原 label 与原 immutable stage 完成只读现场匹配；正式 adoption 没有重新启动
+      activation，已到达 exact-SHA/process-env proof，但目标机 POSIX awk 拒绝
+      `END { exit(\n condition\n) }` 的多行语法，终态继续 fail closed；
+    - 两次尝试均保留原 lease/stage，未并发部署、回滚或 OTA；四服务仍 active，
+      durable runtime 仍为 true，生产 Git 仍为 exact SHA 且 clean；
+    - 根因进一步收敛为 process flag proof 的 awk 可移植性。新增测试直接从
+      `deploy.sh` 提取同一 awk program 并交给系统 awk 执行，修复前以相同语法错误
+      RED；实现仅把 `exit(...)` 改为单行表达式，GREEN；目标机只读 awk probe
+      exit 0，定向 adoption/proof 5/5、完整七文件 release-invariants 308/308、
+      `bash -n`、Ruff 与 diff check 均通过；
+    - replacement exact-SHA CI、原 lease adoption terminal cleanup 仍待完成；CI
+      全绿前禁止第三次 production adoption，cleanup 成功前禁止新部署或 OTA。
   - 回退阶段: G5/G6 → S5/G3/G4；lease/stage 保留，禁止并发 activation、
     rollback、部署或 OTA。
 
@@ -846,6 +860,10 @@
   断连租约、生产文件系统 `sync -f`/`mv -fT`/目录 fsync 与 rollback 终态证明在
   recovery 路径已通过；isolated-Git 候选仍须重新 backend deploy（规范化
   ownership 并 stage 新 runner）后再跑 activation G5。
+- activation terminal adoption: BLOCK —— argv 修复后的 adoption 没有重新启动
+  activation，但目标机 POSIX awk 拒绝 process flag proof 的多行 `exit(...)`；
+  lease/stage 按 fail-closed 契约保留。单行修复本地 release-invariants 308/308，
+  replacement exact-SHA CI 与原 stage cleanup 尚未完成。
 - **裁决**:☐ PASS ☒ BLOCK → 候选回 S5/G3/G4；旧版本恢复 PASS
 
 ## S7 · 上线验证

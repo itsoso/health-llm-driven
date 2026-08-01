@@ -3672,9 +3672,7 @@ verify_process_environment() {
                         canonical += 1
                     }
                     END {
-                        exit(
-                            assignments == 1 && canonical == 1 ? 0 : 1
-                        )
+                        exit(assignments == 1 && canonical == 1 ? 0 : 1)
                     }
                 '
         done <"$procs_file"

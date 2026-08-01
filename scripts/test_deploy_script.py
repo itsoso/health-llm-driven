@@ -2341,6 +2341,34 @@ def test_activation_proof_derives_space_bearing_markers_on_remote_side():
     assert "exit 2" in invalid_body
 
 
+def test_activation_process_flag_awk_executes_on_posix_awk():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    proof_start = script.index("prove_health_evidence_activation_state() {")
+    proof_end = script.index(
+        "prove_health_evidence_activation_not_launched() {", proof_start
+    )
+    proof = script[proof_start:proof_end]
+    process_start = proof.index("verify_process_environment() {")
+    process_end = proof.index("\nverify_repo_revision\n", process_start)
+    process_proof = proof[process_start:process_end]
+    awk_program_match = re.search(
+        r'awk -v expected="\$expected" \'(?P<program>.*?)\n\s*\'',
+        process_proof,
+        re.DOTALL,
+    )
+
+    assert awk_program_match is not None
+    result = subprocess.run(
+        ["awk", "-v", "expected=true", awk_program_match.group("program")],
+        input="HEALTH_EVIDENCE_RUNTIME_ENABLED=true\n",
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_activation_proof_marker_checks_are_byte_exact(tmp_path: Path):
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
     start = script.index("prove_health_evidence_activation_state() {")

@@ -4,8 +4,8 @@
 |---|---|
 | slug | `diet-capture-excellence` |
 | 创建日期 | 2026-07-11 |
-| 当前阶段 | G3/G4 已通过，G5 部署待验 |
-| 状态 | deploy_pending |
+| 当前阶段 | G3/G4 已通过，G5 被既有 release lease 阻断 |
+| 状态 | deploy_blocked_pending_release_proof_ci |
 | 负责 | Codex |
 | 反馈环 | Backend pytest / Mobile Jest + TypeScript / Simulator / backend deploy / EAS TestFlight + production OTA |
 
@@ -206,7 +206,17 @@
 - T5.8 增量部署健康分 `60/60 PASS`，skills manifest 本地/线上均为 22；公网 `/api/v1/health` 返回 `healthy`，API running、PostgreSQL/Redis/Celery connected。
 - T5.9 主干 CI run `30416635659` 全绿，包含 Agent Runtime PostgreSQL 语义、真实模型回归、Backend 全分片、Frontend、Mobile、Mac 与类型漂移闸门；一次性真实模型授权变量已在 CI 结束后删除。部署后健康分 `60/60 PASS`，skills manifest 本地/线上均为 22；正确生产入口 `https://health.executor.life/api/v1/health` 经正式域名 SNI 返回 HTTP 200，API running、PostgreSQL/Redis/Celery connected。
 - **2026-08-01 Correction 前历史裁决：PASS**。
-- **本轮 G5 裁决：PENDING**。可编辑小红书分享流程尚未通过主干 CI、production OTA 发布和发布后健康验证。
+- 2026-08-01 本轮首次 backend deploy 在任何 checkout、migration 或服务 mutation
+  前被既有 `deploy:health-evidence` release lease 阻断。只读核查确认该 lease
+  对应已成功的数据面 activation；控制面 terminal proof/cleanup 因目标机 POSIX
+  awk 不接受多行 `exit(...)` 而 fail closed。现场 lease/stage 完整保留，四服务
+  active，未重启 activation，也未继续本功能部署或 OTA。修复已通过新增 RED→GREEN
+  行为测试、目标机只读 probe、定向 5/5 与完整 release-invariants 308/308；新的
+  exact-SHA 主干 CI 及原 stage adoption cleanup 仍待完成。详见
+  [`mobile-health-evidence-runtime`](2026-07-29-mobile-health-evidence-runtime.md)。
+- **本轮 G5 裁决：PENDING / BLOCKED BY RELEASE LEASE**。须先完成上述 proof CI 与
+  官方 adoption cleanup，再从干净主干部署 Backend、发布 production OTA 并执行
+  发布后健康验证；不得手工删除锁或绕过证明。
 
 ## S7 · 上线验证（2026-08-01 Correction 前历史基线）
 
