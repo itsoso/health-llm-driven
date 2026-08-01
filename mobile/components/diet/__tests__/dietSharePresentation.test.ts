@@ -29,6 +29,8 @@ function photoRecord(overrides: Partial<DietRecord> = {}): DietRecord {
 
 const cardData: Record<string, unknown> = {
   recorded: true,
+  record_id: 705,
+  record_date: '2026-08-01',
   meal_type: 'breakfast',
   food_items: '猪柳蛋麦满分 + 脆香油条 + 大杯豆乳',
   source: 'chat_photo',
@@ -75,11 +77,19 @@ describe('buildDietSharePresentation', () => {
 
 describe('buildChatDietShareInput', () => {
   it('adapts only a verified recorded chat card with a photo', () => {
-    expect(buildChatDietShareInput(cardData, verifiedReceipt)).toMatchObject({
+    const input = buildChatDietShareInput(cardData, verifiedReceipt);
+
+    expect(input).toMatchObject({
       available: true,
-      record: { id: 705, meal_type: 'breakfast' },
+      record: {
+        id: 705,
+        record_date: '2026-08-01',
+        meal_type: 'breakfast',
+        food_items: '猪柳蛋麦满分 + 脆香油条 + 大杯豆乳',
+      },
       photoUri: 'https://health.executor.life/api/v1/upload/files/diet/12/breakfast.jpg?signature=signed',
     });
+    if (input.available) expect(input.record).not.toHaveProperty('user_id');
   });
 
   it('rejects a card without a verified diet receipt', () => {
@@ -96,6 +106,16 @@ describe('buildChatDietShareInput', () => {
     });
   });
 
+  it.each([
+    ['false', { ...cardData, recorded: false }],
+    ['missing', Object.fromEntries(Object.entries(cardData).filter(([key]) => key !== 'recorded'))],
+  ])('rejects a card when recorded is %s', (_case, candidate) => {
+    expect(buildChatDietShareInput(candidate, verifiedReceipt)).toEqual({
+      available: false,
+      reason: 'unverified',
+    });
+  });
+
   it('rejects a verified card without an accessible photo', () => {
     const { photo_url: _photoUrl, ...withoutPhoto } = cardData;
 
@@ -106,10 +126,33 @@ describe('buildChatDietShareInput', () => {
   });
 
   it('rejects a verified photo card without a persisted record identity', () => {
+    const { record_id: _recordId, ...withoutRecordId } = cardData;
+    expect(buildChatDietShareInput(withoutRecordId, verifiedReceipt)).toEqual({
+      available: false,
+      reason: 'record_missing',
+    });
     expect(buildChatDietShareInput(cardData, {
       ...verifiedReceipt,
       resourceId: '',
     })).toEqual({
+      available: false,
+      reason: 'record_missing',
+    });
+  });
+
+  it('rejects a card whose persisted identity differs from the receipt', () => {
+    expect(buildChatDietShareInput({ ...cardData, record_id: 706 }, verifiedReceipt)).toEqual({
+      available: false,
+      reason: 'record_missing',
+    });
+  });
+
+  it.each([
+    ['record_date', { ...cardData, record_date: '' }],
+    ['food_items', { ...cardData, food_items: '   ' }],
+    ['meal_type', { ...cardData, meal_type: 'brunch' }],
+  ])('rejects a persisted projection with invalid %s', (_field, candidate) => {
+    expect(buildChatDietShareInput(candidate, verifiedReceipt)).toEqual({
       available: false,
       reason: 'record_missing',
     });

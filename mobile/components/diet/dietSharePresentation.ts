@@ -22,8 +22,32 @@ export type DietSharePresentation = {
   disclosure: string;
 };
 
+/**
+ * Public-poster projection of a persisted diet record.
+ *
+ * Chat cards intentionally do not expose `user_id`; requiring a full
+ * `DietRecord` here would force the adapter to invent private business data.
+ */
+export type DietShareRecord = Pick<
+  DietRecord,
+  | 'id'
+  | 'record_date'
+  | 'meal_type'
+  | 'food_items'
+  | 'source'
+  | 'calories'
+  | 'protein'
+  | 'carbs'
+  | 'fat'
+  | 'fiber'
+  | 'image_url'
+  | 'image_urls'
+  | 'health_tips'
+  | 'ai_confidence'
+>;
+
 export type ChatDietShareInput =
-  | { available: true; record: DietRecord; photoUri: string }
+  | { available: true; record: DietShareRecord; photoUri: string }
   | { available: false; reason: 'unverified' | 'photo_missing' | 'record_missing' };
 
 type ChatDietReceipt = {
@@ -66,19 +90,19 @@ function nullableNumber(value: unknown): number | null {
   return numberValue(value) ?? null;
 }
 
-function mealTypeValue(value: unknown): MealType {
+function mealTypeValue(value: unknown): MealType | undefined {
   const raw = text(value);
-  return raw && raw in MEAL_LABELS ? raw as MealType : 'snack';
+  return raw && raw in MEAL_LABELS ? raw as MealType : undefined;
 }
 
-function normalizedConfidence(record: DietRecord): number | null {
+function normalizedConfidence(record: DietShareRecord): number | null {
   const value = record.ai_confidence;
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
   const normalized = value > 1 ? value / 100 : value;
   return normalized >= 0 && normalized <= 1 ? normalized : null;
 }
 
-function isLowConfidence(record: DietRecord): boolean {
+function isLowConfidence(record: DietShareRecord): boolean {
   if (record.source && MANUALLY_CONFIRMED_SOURCES.has(record.source)) return false;
   const confidence = normalizedConfidence(record);
   return confidence != null && confidence < LOW_CONFIDENCE_THRESHOLD;
@@ -90,7 +114,7 @@ function metric(value: number | null): string | null {
     : null;
 }
 
-function buildMacroLines(record: DietRecord): string[] {
+function buildMacroLines(record: DietShareRecord): string[] {
   if (isLowConfidence(record)) return ['营养待核对'];
 
   const calories = metric(record.calories);
@@ -109,7 +133,7 @@ function buildMacroLines(record: DietRecord): string[] {
   return lines.length > 0 ? lines : ['营养估算中'];
 }
 
-function buildTags(record: DietRecord): string[] {
+function buildTags(record: DietShareRecord): string[] {
   if (isLowConfidence(record)) return ['待核对'];
   const tags: string[] = [];
   if (typeof record.protein === 'number' && record.protein >= 30) tags.push('高蛋白');
@@ -119,7 +143,7 @@ function buildTags(record: DietRecord): string[] {
   return tags.slice(0, 3);
 }
 
-function buildHeadline(record: DietRecord, mealLabel: string): string {
+function buildHeadline(record: DietShareRecord, mealLabel: string): string {
   if (isLowConfidence(record)) return '待核对的一餐';
   if (typeof record.calories === 'number' && record.calories >= 700) {
     return `今天的${mealLabel}，能量很足`;
@@ -130,14 +154,14 @@ function buildHeadline(record: DietRecord, mealLabel: string): string {
   return `今天的${mealLabel}，认真吃好`;
 }
 
-function buildDisclosure(record: DietRecord): string {
+function buildDisclosure(record: DietShareRecord): string {
   if (isLowConfidence(record)) return '营养待核对';
   if (record.source && MANUALLY_CONFIRMED_SOURCES.has(record.source)) return '营养数据已由用户确认';
   if (record.source?.includes('photo') || record.source?.includes('image')) return '营养由图片估算';
   return '营养数据为估算值';
 }
 
-export function buildDietSharePresentation(record: DietRecord): DietSharePresentation {
+export function buildDietSharePresentation(record: DietShareRecord): DietSharePresentation {
   const mealLabel = MEAL_LABELS[record.meal_type] ?? '餐食';
   const nextAction = text(record.health_tips);
   return {
@@ -178,44 +202,57 @@ function firstSuggestion(value: unknown): string | undefined {
   return value.map(text).find((item): item is string => Boolean(item));
 }
 
-function persistedRecordId(receipt: ChatDietReceipt): number | null {
-  const value = numberValue(receipt.resourceId);
-  return value != null && Number.isInteger(value) && value > 0 ? value : null;
+function persistedRecordId(value: unknown): number | null {
+  const parsed = numberValue(value);
+  return parsed != null && Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 export function buildChatDietShareInput(
   cardData: Record<string, unknown>,
   receipt?: ChatDietReceipt | null,
 ): ChatDietShareInput {
-  if (receipt?.status !== 'verified' || receipt.resourceType !== 'diet_record') {
+  if (
+    cardData.recorded !== true
+    || receipt?.status !== 'verified'
+    || receipt.resourceType !== 'diet_record'
+  ) {
     return { available: false, reason: 'unverified' };
   }
 
-  const recordId = persistedRecordId(receipt);
-  if (recordId == null) return { available: false, reason: 'record_missing' };
+  const receiptRecordId = persistedRecordId(receipt.resourceId);
+  const cardRecordId = persistedRecordId(cardData.record_id);
+  const recordDate = text(cardData.record_date);
+  const mealType = mealTypeValue(cardData.meal_type);
+  const foodItems = foodText(cardData.food_items);
+  if (
+    receiptRecordId == null
+    || cardRecordId == null
+    || receiptRecordId !== cardRecordId
+    || !recordDate
+    || !mealType
+    || !foodItems
+  ) {
+    return { available: false, reason: 'record_missing' };
+  }
 
   const photoUris = privateDietPhotoUris(cardData);
   const photoUri = photoUris[0];
   if (!photoUri) return { available: false, reason: 'photo_missing' };
 
-  const record: DietRecord = {
-    id: recordId,
-    user_id: numberValue(cardData.user_id) ?? 0,
-    record_date: text(cardData.record_date) ?? '',
-    meal_type: mealTypeValue(cardData.meal_type),
-    food_items: foodText(cardData.food_items),
+  const record: DietShareRecord = {
+    id: cardRecordId,
+    record_date: recordDate,
+    meal_type: mealType,
+    food_items: foodItems,
     source: text(cardData.source) ?? null,
     calories: nullableNumber(cardData.calories),
     protein: nullableNumber(cardData.protein),
     carbs: nullableNumber(cardData.carbs),
     fat: nullableNumber(cardData.fat),
     fiber: nullableNumber(cardData.fiber),
-    alcohol_units: nullableNumber(cardData.alcohol_units),
     image_url: photoUri,
     image_urls: photoUris,
-    notes: text(cardData.notes) ?? null,
     health_tips: text(cardData.health_tips) ?? firstSuggestion(cardData.suggestions) ?? null,
-    ai_recognized: nullableNumber(cardData.ai_recognized),
     ai_confidence: nullableNumber(cardData.ai_confidence ?? cardData.confidence),
   };
   return { available: true, record, photoUri };
