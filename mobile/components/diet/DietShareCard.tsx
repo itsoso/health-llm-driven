@@ -1171,7 +1171,7 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     aspectRatio: 3 / 4,
-    backgroundColor: '#F7EAD7',
+    backgroundColor: C.paper2,
     overflow: 'hidden',
   },
   posterPhotoFrame: {
@@ -1179,7 +1179,7 @@ const styles = StyleSheet.create({
     height: '100%',
     position: 'absolute',
     overflow: 'hidden',
-    backgroundColor: '#D8C7AD',
+    backgroundColor: C.lineStrong,
   },
   posterPhotoMedia: {
     width: '100%',
@@ -1187,7 +1187,7 @@ const styles = StyleSheet.create({
     aspectRatio: 3 / 4,
     position: 'relative',
     overflow: 'hidden',
-    backgroundColor: '#D8C7AD',
+    backgroundColor: C.lineStrong,
   },
   posterPhoto: {
     ...StyleSheet.absoluteFillObject,
@@ -1218,14 +1218,14 @@ const styles = StyleSheet.create({
   posterMealBadgeText: {
     fontFamily: revaFonts.sans,
     fontSize: 11,
-    color: '#5D422A',
+    color: C.ink2,
     fontWeight: '900',
     letterSpacing: 1.2,
   },
   posterDate: {
     fontFamily: revaFonts.mono,
     fontSize: 10,
-    color: '#FFF8ED',
+    color: C.surface2,
     fontWeight: '800',
     textShadowColor: 'rgba(43, 29, 15, 0.55)',
     textShadowOffset: { width: 0, height: 1 },
@@ -1241,7 +1241,7 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 10,
     gap: 4,
-    backgroundColor: '#F7EAD7',
+    backgroundColor: C.paper2,
   },
   posterRuleRow: {
     flexDirection: 'row',
@@ -1254,20 +1254,20 @@ const styles = StyleSheet.create({
     height: 3,
     borderRadius: 2,
     borderCurve: 'continuous',
-    backgroundColor: '#C8753D',
+    backgroundColor: revaSemantic.caution.fg,
   },
   posterRuleShort: {
     width: 7,
     height: 3,
     borderRadius: 2,
     borderCurve: 'continuous',
-    backgroundColor: '#52755D',
+    backgroundColor: C.green600,
   },
   posterHeadline: {
     fontFamily: revaFonts.sans,
     fontSize: 20,
     lineHeight: 25,
-    color: '#35271E',
+    color: C.ink1,
     fontWeight: '900',
     letterSpacing: 0.2,
   },
@@ -1275,7 +1275,7 @@ const styles = StyleSheet.create({
     fontFamily: revaFonts.sans,
     fontSize: 11.5,
     lineHeight: 16,
-    color: '#725E4D',
+    color: C.ink2,
     fontWeight: '700',
   },
   posterNutrition: {
@@ -1288,7 +1288,7 @@ const styles = StyleSheet.create({
     fontFamily: revaFonts.mono,
     fontSize: 12,
     lineHeight: 16,
-    color: '#45362B',
+    color: C.ink1,
     fontWeight: '700',
   },
   posterTagRow: {
@@ -1309,7 +1309,7 @@ const styles = StyleSheet.create({
   posterTagText: {
     fontFamily: revaFonts.sans,
     fontSize: 9.5,
-    color: '#47664F',
+    color: C.green700,
     fontWeight: '900',
   },
   posterFooter: {
@@ -1331,21 +1331,21 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#C8753D',
+    backgroundColor: revaSemantic.caution.fg,
   },
   posterNextActionText: {
     flexShrink: 1,
     fontFamily: revaFonts.sans,
     fontSize: 9.5,
     lineHeight: 13,
-    color: '#5E4A3A',
+    color: C.ink2,
     fontWeight: '800',
   },
   posterDisclosure: {
     fontFamily: revaFonts.sans,
     fontSize: 8.5,
     lineHeight: 12,
-    color: '#8C7764',
+    color: C.ink3,
     fontWeight: '700',
     textAlign: 'right',
   },
@@ -1363,7 +1363,7 @@ const styles = StyleSheet.create({
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#52755D',
+    backgroundColor: C.green600,
   },
   posterFooterMarkLine: {
     position: 'absolute',

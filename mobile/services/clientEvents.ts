@@ -60,9 +60,14 @@ const RELIABILITY_PHASES = {
 const DIET_CAPTURE_PHASES = {
   diet_photo_recognition_terminal: new Set(['completed', 'failed', 'cancelled']),
   diet_photo_confirmation_terminal: new Set(['completed', 'failed']),
-  diet_share_terminal: new Set(['completed', 'failed']),
+  diet_share_terminal: new Set(['completed', 'failed', 'cancelled']),
 } as const;
 const DIET_SHARE_TARGETS = new Set(['generic', 'wechat', 'xiaohongshu']);
+const DIET_SHARE_ERROR_CODES = new Set([
+  'poster_render_failed',
+  'poster_save_failed',
+  'poster_share_failed',
+]);
 const AIGC_MEDIA_KINDS = new Set(['image', 'video']);
 const AIGC_SHARE_TARGETS = new Set(['wechat', 'xiaohongshu']);
 const APP_UPDATE_PHASES = {
@@ -195,6 +200,19 @@ export function sanitizeClientEventMeta(
     const sanitized: Record<string, unknown> = {};
     if (phase) sanitized.phase = phase;
     if (durationMs !== undefined) sanitized.duration_ms = durationMs;
+    if (name === 'diet_share_terminal') {
+      if (typeof meta.has_photo === 'boolean') sanitized.has_photo = meta.has_photo;
+      if (typeof meta.share_target === 'string' && DIET_SHARE_TARGETS.has(meta.share_target)) {
+        sanitized.share_target = meta.share_target;
+      }
+      if (
+        typeof meta.error_code === 'string'
+        && DIET_SHARE_ERROR_CODES.has(meta.error_code)
+      ) {
+        sanitized.error_code = meta.error_code;
+      }
+      return sanitized;
+    }
     const serverTotalMs = numberInRange(meta.server_total_ms, 300_000);
     if (serverTotalMs !== undefined) sanitized.server_total_ms = serverTotalMs;
     if (name === 'diet_photo_recognition_terminal') {
@@ -212,13 +230,6 @@ export function sanitizeClientEventMeta(
       sanitized.corrected = meta.corrected;
     }
     if (typeof meta.has_photo === 'boolean') sanitized.has_photo = meta.has_photo;
-    if (
-      name === 'diet_share_terminal'
-      && typeof meta.share_target === 'string'
-      && DIET_SHARE_TARGETS.has(meta.share_target)
-    ) {
-      sanitized.share_target = meta.share_target;
-    }
     if (typeof meta.error_code === 'string' && SAFE_TOKEN.test(meta.error_code)) {
       sanitized.error_code = meta.error_code;
     }

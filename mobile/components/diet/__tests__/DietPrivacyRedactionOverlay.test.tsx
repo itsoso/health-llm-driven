@@ -2,10 +2,11 @@ import React from 'react';
 import { StyleSheet } from 'react-native';
 import { render } from '@testing-library/react-native';
 
+import { revaColors as C } from '../../../constants/revaTheme';
 import { DietPrivacyRedactionOverlay } from '../DietPrivacyRedactionOverlay';
 
 describe('DietPrivacyRedactionOverlay', () => {
-  it('maps normalized points to fully opaque round black SVG paths', () => {
+  it('maps normalized points to fully opaque round dark-ink SVG paths', () => {
     const view = render(
       <DietPrivacyRedactionOverlay
         redactions={[{
@@ -16,10 +17,11 @@ describe('DietPrivacyRedactionOverlay', () => {
     );
     const path = view.getByTestId('Path');
 
+    expect(C.ink1).toMatch(/^#[0-9A-Fa-f]{6}$/);
     expect(path.props).toEqual(expect.objectContaining({
       d: 'M 0.1 0.2 L 0.5 0.6 L 0.9 0.8',
       fill: 'none',
-      stroke: '#000000',
+      stroke: C.ink1,
       strokeOpacity: 1,
       strokeWidth: 0.06,
       strokeLinecap: 'round',

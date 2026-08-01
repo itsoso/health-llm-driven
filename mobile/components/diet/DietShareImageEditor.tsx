@@ -28,6 +28,8 @@ import Animated, {
 import Svg, { Path } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { revaColors as C } from '../../constants/revaTheme';
+
 import {
   addDietShareRedaction,
   baseDietShareCropForPoster,
@@ -818,7 +820,7 @@ export function DietShareImageEditor({
                     testID={`diet-share-redaction-path-${index}`}
                     d={pathForRedaction(redaction, viewportSize)}
                     fill="none"
-                    stroke="#000000"
+                    stroke={C.ink1}
                     strokeOpacity={1}
                     strokeWidth={redaction.width * Math.min(viewportSize.width, viewportSize.height)}
                     strokeLinecap="round"
@@ -830,13 +832,13 @@ export function DietShareImageEditor({
 
             {phase === 'loading' ? (
               <View style={styles.statusOverlay}>
-                <ActivityIndicator color="#FFFFFF" />
+                <ActivityIndicator color={C.greenOn} />
                 <Text style={styles.statusText}>正在加载照片…</Text>
               </View>
             ) : null}
             {phase === 'applying' ? (
               <View style={styles.statusOverlay}>
-                <ActivityIndicator color="#FFFFFF" />
+                <ActivityIndicator color={C.greenOn} />
                 <Text style={styles.statusText}>正在应用图片编辑…</Text>
               </View>
             ) : null}
@@ -913,7 +915,7 @@ export function DietShareImageEditor({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#171817',
+    backgroundColor: C.focusBg,
   },
   header: {
     minHeight: 52,
@@ -928,7 +930,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerButtonText: {
-    color: '#F5F5F2',
+    color: C.focusInk1,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -936,12 +938,12 @@ const styles = StyleSheet.create({
     width: 64,
   },
   title: {
-    color: '#FFFFFF',
+    color: C.greenOn,
     fontSize: 16,
     fontWeight: '700',
   },
   privacyReminder: {
-    color: '#D9DBD7',
+    color: C.focusInk2,
     fontSize: 13,
     lineHeight: 19,
     paddingHorizontal: 20,
@@ -962,7 +964,7 @@ const styles = StyleSheet.create({
     aspectRatio: VIEWPORT_ASPECT_RATIO,
     flexShrink: 1,
     overflow: 'hidden',
-    backgroundColor: '#2A2C2A',
+    backgroundColor: C.focusBg2,
     borderRadius: 18,
     borderCurve: 'continuous',
   },
@@ -983,7 +985,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.42)',
   },
   statusText: {
-    color: '#FFFFFF',
+    color: C.greenOn,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -996,13 +998,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.62)',
   },
   failureTitle: {
-    color: '#FFFFFF',
+    color: C.greenOn,
     fontSize: 16,
     fontWeight: '700',
     textAlign: 'center',
   },
   failureDetail: {
-    color: '#E2E3E0',
+    color: C.focusInk1,
     fontSize: 13,
     lineHeight: 19,
     textAlign: 'center',
@@ -1013,12 +1015,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F5F5F2',
+    backgroundColor: C.focusInk1,
     borderRadius: 21,
     borderCurve: 'continuous',
   },
   retryButtonText: {
-    color: '#171817',
+    color: C.focusBg,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -1037,15 +1039,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#303330',
+    backgroundColor: C.focusBg2,
     borderRadius: 18,
     borderCurve: 'continuous',
   },
   toolbarButtonSelected: {
-    backgroundColor: '#1E5F4A',
+    backgroundColor: C.green700,
   },
   toolbarButtonText: {
-    color: '#F2F3EF',
+    color: C.greenOn,
     fontSize: 12,
     fontWeight: '600',
   },
@@ -1059,12 +1061,12 @@ const styles = StyleSheet.create({
     minHeight: 50,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#238B68',
+    backgroundColor: C.green500,
     borderRadius: 25,
     borderCurve: 'continuous',
   },
   completeButtonText: {
-    color: '#FFFFFF',
+    color: C.greenOn,
     fontSize: 16,
     fontWeight: '700',
   },

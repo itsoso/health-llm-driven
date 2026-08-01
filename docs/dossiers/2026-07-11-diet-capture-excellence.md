@@ -4,8 +4,8 @@
 |---|---|
 | slug | `diet-capture-excellence` |
 | 创建日期 | 2026-07-11 |
-| 当前阶段 | S5 实现 |
-| 状态 | building |
+| 当前阶段 | S5 实现完成，G3 CI 待验 |
+| 状态 | verification_pending |
 | 负责 | Codex |
 | 反馈环 | Backend pytest / Mobile Jest + TypeScript / Simulator / backend deploy / EAS TestFlight + production OTA |
 
@@ -20,7 +20,7 @@
   - 实施：[`docs/plans/2026-08-01-xiaohongshu-diet-share-card.md`](../plans/2026-08-01-xiaohongshu-diet-share-card.md)。
   - 安全 Gate：`privacy_sensitive`；原始 `DietRecord` 照片不可变，编辑与合成仅在本地副本完成，第一版不做自动 QR/条码识别。
   - 回退阶段：S3/S5；需重跑 G3/G4/G5/G6。当前为实现中，不把新分享流程记为已上线。
-  - 本轮 Gate：G3=`PENDING`、G4=`PENDING`、G5=`PENDING`、G6=`PENDING`；旧分享流程的测试、部署和上线证据只作为 Correction 前历史基线。
+  - 本轮 Gate：G3=`PENDING`、G4=`PASS`、G5=`PENDING`、G6=`PENDING`；旧分享流程的测试、部署和上线证据只作为 Correction 前历史基线。
   - Run Ledger：`docs/_generated/harness-runs/7779bb67a50d.jsonl`（本地运行证据，不提交）。
   - 用户确认：☑
 
@@ -98,7 +98,7 @@
 - [x] T5.8 图片消息首个 SSE 确认前断流时，以 `client_turn_id` 核对 Runtime 持久化状态并恢复同一回合（backend deploy + OTA）
 - [x] T5.9 失败写入的源消息恢复绑定：用户紧邻回复“重试/需要”时恢复原文字与图片，保留新回合幂等检查点；不确定写入禁止重放（backend deploy）
 - [ ] T6 模拟器视觉、真机微信/小红书、生产数据闭环验收
-- [ ] T6.1 小红书照片必需的本地 3:4 编辑器、裁剪与缩放/90° 旋转/撤销/重做/重置/手动不透明隐私涂抹、完整海报预览，以及预览/保存/分享单一 rendered URI 复用（OTA；Run Ledger：`docs/_generated/harness-runs/7779bb67a50d.jsonl`）
+- [x] T6.1 小红书照片必需的本地 3:4 编辑器、裁剪与缩放/90° 旋转/撤销/重做/重置/手动不透明隐私涂抹、完整海报预览，以及预览/保存/分享单一 rendered URI 复用（实现完成，待主干 CI、OTA 与真机目标应用验收；Run Ledger：`docs/_generated/harness-runs/7779bb67a50d.jsonl`）
 - Agent Native 验收约束：每个新增 Mobile 饮食入口都必须证明三件事：Agent 可引用 pending draft 或 confirmed DietRecord；确认成功必须有 `diet_record_id` 回执；用户能在小巴对话里继续追问、修正或查看全天影响。
 - 并发检查：2026-07-11 `origin/main` 与当前干净集成 worktree 一致；原始用户工作区不纳入暂存。
 
@@ -148,6 +148,8 @@
 - T5.8 RED/GREEN：先以 `网络请求失败 (status: 200)` 且首个 SSE 持久化事件未到达复现客户端误判，RED 证明状态核对从未调用；新增 Runtime 状态接口后，Backend owner isolation、无正文响应及“图片占位消息/部分回复不得提前确认” `3/3` 通过，Runtime API/Service 扩展回归 `65/65` 通过。Mobile 覆盖异常断流、clean close、服务端图片 URI 恢复、部分回复保持运行和不可重试终态映射，相关输入、图片草稿、聊天流和恢复回归 `164/164` 通过；TypeScript、OpenAPI 双端生成类型、目标 ESLint（0 error）与 Python Ruff 均通过。
 - T5.9 RED/GREEN：先复现失败助手询问是否重试后，用户回复“需要”只把两个字送入新 Run，原始饮食文本、营养和图片全部丢失；新增内容最小化 `retry_source_turn` 绑定后，恢复链路、目标约束和完成状态 `113/113` 通过，Agent 核心回归 `451/451` 通过，Runtime API、并发、reconcile 与断流恢复 `224 passed / 3 skipped`。测试覆盖 owner/conversation scope、紧邻顺序、重试的重试、客户端同 Turn 接管、原图片复用不重复上传、已验证/不确定写入禁止重放，以及含明确营养数值时保留营养但不误拆“牛肉和风沙拉”等完整菜名。
 - T5.9 最终回归（2026-07-28）：合并最新主干后恢复链路、目标约束和完成状态 `119 passed`，Agent 核心 `452 passed`，Runtime API、并发、reconcile 与断流恢复 `224 passed / 3 skipped`，完整恢复测试文件 `25 passed`；真实模型闸门 `invariants 12/12`、`health_agent_core 50/50`、`orchestrator 5/5` 通过，Orchestrator 平均分 `0.94`、无 regression。实际模型为 `MiniMax-M2.5`，原始 JSON 仅保存在本机 `/tmp/agent-write-recovery-live-eval.json`，不提交模型回答或健康正文。
+- T6.1 实现：聊天卡与饮食记录页统一进入 `DietShareComposer`；已确认且 owner-accessible 的照片先在本地编辑副本中完成缩放裁剪、90° 旋转、撤销/重做/重置和不透明隐私涂抹，再只捕获一次 `1080x1440` PNG。完整预览、保存和系统分享复用该 URI；关闭或重试时按 session generation 隔离异步回调并幂等清理捕获、物化和编辑临时文件。无照片、照片加载失败或捕获失败时不生成 metric-only 海报，仅保留重试或去标识正文分享。
+- T6.1 本地回归（2026-08-01）：Mobile 全量 `287 suites / 2256 passed / 1 skipped`；分享、编辑、隐私、聊天、饮食入口与遥测 focused `9 suites / 221 passed`；TypeScript、Expo lint、设计令牌闸均通过，raw hex 从基线 `599` 降为 `596`。Backend 事件契约与观测回归在真实 PostgreSQL 上 `96 passed`。iOS dismissed 与原生可识别的取消单列 `cancelled`；Android `expo-sharing` 无法区分完成与取消，因此不伪造终态。移动端独立分享白名单和 Backend schema 均拒绝其他饮食指标、任意错误码、`image_uri`、食物正文、记录 ID 与热量等私有字段。
 - T5.2 首次 CI run `29164922239` 中 type drift 在补齐 Frontend 生成类型后通过，但 Linux `a-b` 分片连续两次远超历史绿灯的 4 分 23 秒，并在 `test_agent_health_manage.py` 与 `test_agent_intervention_cycle_tool.py` 边界失去输出；该边界组合本机 `30/30` 通过，`c-d` 重跑也在 3 分 36 秒通过。判定为既有进程级顺序污染而非饮食断言回归，将 86 个 `a-b` 测试文件拆为非 Agent、`agent_[a-h]`、`agent_[i-z]` 三个互斥进程；文件覆盖校验为 `86 -> 86`、差集 0。
 - T5.2 CI run `29166225719` 验证上述三个新分片分别在 3 分 2 秒、2 分 15 秒和 1 分 24 秒通过；同轮旧 `t[f-z]+u` 分片在 69% 处进入 `test_twin_builder.py` 后冻结，并被 20 分钟上限终止，其他 16 个作业均通过。本机同命令 `392/392` 在 31.23 秒通过；据逐用例日志将其拆为 `t[f-v]`、`t[w-z]`、`u` 三个干净进程，原 24 个文件覆盖校验仍为 `24 -> 24`、差集 0。
 - T5.2 CI run `29166933157` 中 `t[f-v]`、`t[w-z]`、`u` 已分别在 1 分 44 秒、1 分 25 秒和 1 分 28 秒通过；唯一剩余的旧 `s` 大分片进入 `test_schedule_into_agenda.py` 后失去输出，其他 18 个作业均通过。本机同一 643 项命令也在该模块首个用例后停住，但该模块单跑 `8/8`、与前一模块配对 `26/26`、`s[c-k]` 分组 `55/55` 均通过，确认是更长前序造成的进程状态污染；将 58 个 `s` 文件拆为 `s[a-b]`、`s[c-k]`、`s[l-z]`，覆盖校验为 `58 -> 58`、差集 0。
@@ -155,7 +157,7 @@
 - T5.2 最终 Linux 权威闸门：GitHub Actions run `29168150924` SUCCESS；18 个后端测试分片、backend quality、最终 Backend tests enforcement、type drift、Frontend、Mobile 与 macOS 全部通过，head commit 为 `c6d3d3f4942fee7a1f92730f33d9326d600be4c0`。
 - Linux 全仓权威闸门：GitHub Actions run `29163241845` SUCCESS；frontend、Mobile、macOS、type drift、backend quality、10 个后端测试分片及最终 backend enforcement 全部通过。
 - **2026-08-01 Correction 前历史裁决：PASS**。
-- **本轮 G3 裁决：PENDING**。待 T6.1 实现后完成编辑器、海报单次渲染、分享失败边界、Mobile 全量测试与主干 CI。
+- **本轮 G3 裁决：PENDING**。本地实现与回归已通过；仍须以提交后的主干 CI 作为集成权威闸门，不能只凭本地测试进入部署。
 
 ## G4 · 安全闸
 
@@ -164,9 +166,11 @@
 - 触发：健康数据写入、AI 营养估算、私有图片和社交分享。
 - 已落实：owner scope、确认/取消/清理行锁、真实 PostgreSQL 竞态证明、确认幂等、取消后正文擦除、草稿与正式记录图片失败可重试、SecureStore 用户隔离且非阻断、恢复前服务端 token 终态校验、编辑时 Mobile/Backend 双层 provenance 清理、分享前显式操作、分享产物去身份化和临时文件释放。
 - T5.9 安全复核：恢复控制面只保存 source/root/trigger message id 和原因码，不保存健康正文、工具参数或图片内容；源消息和图片读取强制 owner scope；仅明确 retryable 且没有回执、没有 `in_flight/uncertain/verified` 检查点时提供动作。恢复 Run 使用新的 client turn 写入检查点和幂等身份，原图片只作为 owner-scoped 媒体来源复用。
+- T6.1 自动化安全证据：原始 `DietRecord` 与原照片只读，所有编辑作用于本地副本；涂抹 SVG 与导出叠层均锁定 `strokeOpacity=1`、圆头与圆角；低置信视觉结果隐藏精确宏量值和个性化建议；海报不渲染用户名、内部 ID、照片 URI、来源 token 或置信度；所有临时资源关闭/重试时 exact-once 清理。分享终态遥测只含 phase、duration、has_photo、枚举 target 与错误码，客户端和 Backend 双层白名单拒绝健康正文及标识符。
+- T6.1 最终双重独立复核：规格审查与代码质量/安全审查在修复分享遥测字段夹带、自由错误码夹带、平台终态矩阵和不透明颜色约束后再次检查，均未发现 Critical、Important 或 Minor；定向复核分别验证 Mobile、Backend PostgreSQL、TypeScript、设计令牌与 diff hygiene。
 - 同一独立审查代理连续五轮核对；最后一轮未发现 P0/P1/P2。
 - **2026-08-01 Correction 前历史裁决：PASS**。
-- **本轮 G4 裁决：PENDING**。待验证不透明隐私涂抹进入导出像素、原始 `DietRecord` 照片不变、临时文件清理和遥测不含敏感内容。
+- **本轮 G4 裁决：PASS**。自动化安全证据与双重独立评审均通过；真机导出像素与目标应用接收不冒充安全代码审查证据，继续归 G6 验收。
 
 ## S6 · 部署（2026-08-01 Correction 前历史基线）
 

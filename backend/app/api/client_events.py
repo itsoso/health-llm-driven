@@ -177,9 +177,12 @@ _DIET_CAPTURE_EVENT_SCHEMAS = {
             "phase", "duration_ms", "has_photo", "share_target", "error_code",
         }),
         "required": frozenset({"phase", "duration_ms", "has_photo"}),
-        "phases": frozenset({"completed", "failed"}),
+        "phases": frozenset({"completed", "failed", "cancelled"}),
     },
 }
+_DIET_SHARE_ERROR_CODES = frozenset({
+    "poster_render_failed", "poster_save_failed", "poster_share_failed",
+})
 _AIGC_ENGAGEMENT_EVENT_SCHEMAS = {
     "aigc_media_played": {
         "allowed": frozenset({"media_kind"}),
@@ -441,10 +444,15 @@ class EventIn(BaseModel):
             if share_target is not None and share_target not in _DIET_SHARE_TARGETS:
                 raise ValueError("invalid diet share target")
         error_code = self.meta.get("error_code")
-        if error_code is not None and (
-            not isinstance(error_code, str) or _SAFE_TOKEN.fullmatch(error_code) is None
-        ):
-            raise ValueError("invalid diet capture event error_code")
+        if error_code is not None:
+            if self.event_name == "diet_share_terminal":
+                if (
+                    not isinstance(error_code, str)
+                    or error_code not in _DIET_SHARE_ERROR_CODES
+                ):
+                    raise ValueError("invalid diet share error_code")
+            elif not isinstance(error_code, str) or _SAFE_TOKEN.fullmatch(error_code) is None:
+                raise ValueError("invalid diet capture event error_code")
         return self
 
 

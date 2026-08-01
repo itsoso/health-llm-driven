@@ -371,6 +371,57 @@ describe('client reliability events', () => {
     expect(sanitizeClientEventMeta('chat_message_sent', meta)).toBe(meta);
   });
 
+  it('keeps diet share terminal telemetry bounded and strips private meal data', () => {
+    expect(sanitizeClientEventMeta('diet_share_terminal', {
+      phase: 'completed',
+      duration_ms: 1200,
+      has_photo: true,
+      share_target: 'xiaohongshu',
+      image_uri: 'file:///private/photo.png',
+      food_items: 'private meal',
+      record_id: 88,
+      calories: 520,
+      server_total_ms: 800,
+      food_count: 3,
+      table_calibrated_count: 2,
+      verified: true,
+      corrected: true,
+      error_code: 'beef_salad',
+    })).toEqual({
+      phase: 'completed',
+      duration_ms: 1200,
+      has_photo: true,
+      share_target: 'xiaohongshu',
+    });
+
+    expect(sanitizeClientEventMeta('diet_share_terminal', {
+      phase: 'failed',
+      duration_ms: 1300,
+      has_photo: true,
+      share_target: 'generic',
+      error_code: 'poster_share_failed',
+    })).toEqual({
+      phase: 'failed',
+      duration_ms: 1300,
+      has_photo: true,
+      share_target: 'generic',
+      error_code: 'poster_share_failed',
+    });
+
+    expect(sanitizeClientEventMeta('diet_share_terminal', {
+      phase: 'cancelled',
+      duration_ms: 900,
+      has_photo: true,
+      share_target: 'generic',
+      image_uri: 'file:///private/cancelled.png',
+    })).toEqual({
+      phase: 'cancelled',
+      duration_ms: 900,
+      has_photo: true,
+      share_target: 'generic',
+    });
+  });
+
   it('keeps AIGC engagement telemetry content-free and identifier-free', () => {
     expect(sanitizeClientEventMeta('aigc_media_shared', {
       phase: 'completed',

@@ -2,6 +2,8 @@ import React from 'react';
 import { Alert, StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
+import { revaColors as C } from '../../../constants/revaTheme';
+
 const mockManipulateAsync = jest.fn();
 let mockManipulatorAvailable = true;
 const mockGestureHandlers: Record<'pan' | 'pinch', Record<string, (event?: any) => void>> = {
@@ -507,8 +509,9 @@ describe('DietShareImageEditor', () => {
 
     // Global SVG host mock exposes native Path nodes under their element name.
     const path = view.getAllByTestId('Path')[0];
+    expect(C.ink1).toMatch(/^#[0-9A-Fa-f]{6}$/);
     expect(path.props).toEqual(expect.objectContaining({
-      stroke: '#000000',
+      stroke: C.ink1,
       strokeOpacity: 1,
       strokeLinecap: 'round',
       strokeLinejoin: 'round',

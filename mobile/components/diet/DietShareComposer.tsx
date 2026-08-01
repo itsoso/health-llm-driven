@@ -16,6 +16,7 @@ import * as Sharing from 'expo-sharing';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef, releaseCapture } from 'react-native-view-shot';
 
+import { revaColors as C } from '../../constants/revaTheme';
 import { materializeImageForLocalUse } from '../../utils/share';
 import DietShareCard, { dietShareCaptureDimensions } from './DietShareCard';
 import {
@@ -46,11 +47,11 @@ type ShareFeedback = {
 };
 
 type ShareTerminal = {
-  phase: 'completed' | 'failed';
+  phase: 'completed' | 'failed' | 'cancelled';
   duration_ms: number;
   has_photo: boolean;
   share_target?: 'generic';
-  error_code?: string;
+  error_code?: 'poster_render_failed' | 'poster_save_failed' | 'poster_share_failed';
 };
 
 export type DietShareComposerProps = {
@@ -444,7 +445,15 @@ export function DietShareComposer({
           { dialogTitle: '分享饮食海报' },
         );
         if (sessionGenerationRef.current !== generation) return;
-        if (result.action === Share.dismissedAction) return;
+        if (result.action === Share.dismissedAction) {
+          onShareTerminal?.({
+            phase: 'cancelled',
+            duration_ms: Date.now() - startedAt,
+            has_photo: true,
+            share_target: 'generic',
+          });
+          return;
+        }
         onShareTerminal?.({
           phase: 'completed',
           duration_ms: Date.now() - startedAt,
@@ -463,7 +472,16 @@ export function DietShareComposer({
         // a false success when the native boundary cannot distinguish them.
       }
     } catch (error) {
-      if (sessionGenerationRef.current !== generation || isNativeShareCancellation(error)) return;
+      if (sessionGenerationRef.current !== generation) return;
+      if (isNativeShareCancellation(error)) {
+        onShareTerminal?.({
+          phase: 'cancelled',
+          duration_ms: Date.now() - startedAt,
+          has_photo: true,
+          share_target: 'generic',
+        });
+        return;
+      }
       onShareTerminal?.({
         phase: 'failed',
         duration_ms: Date.now() - startedAt,
@@ -532,7 +550,7 @@ export function DietShareComposer({
               />
             </View>
             <View style={styles.renderingStatus} pointerEvents="none">
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator color={C.greenOn} />
               <Text style={styles.renderingText}>正在生成海报…</Text>
             </View>
           </View>
@@ -608,15 +626,15 @@ export function DietShareComposer({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#F7EAD7', padding: 18 },
+  root: { flex: 1, backgroundColor: C.paper2, padding: 18 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  title: { fontSize: 20, fontWeight: '900', color: '#35271E' },
+  title: { fontSize: 20, fontWeight: '900', color: C.ink1 },
   closeButton: { paddingHorizontal: 12, paddingVertical: 8 },
-  closeText: { color: '#52755D', fontWeight: '800' },
+  closeText: { color: C.green600, fontWeight: '800' },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 28 },
-  statusText: { color: '#725E4D', fontWeight: '700' },
-  failureTitle: { fontSize: 19, color: '#35271E', fontWeight: '900' },
-  failureDetail: { color: '#725E4D', lineHeight: 20, textAlign: 'center' },
+  statusText: { color: C.ink2, fontWeight: '700' },
+  failureTitle: { fontSize: 19, color: C.ink1, fontWeight: '900' },
+  failureDetail: { color: C.ink2, lineHeight: 20, textAlign: 'center' },
   renderingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   posterSurface: { width: '92%', maxWidth: 360, aspectRatio: 3 / 4 },
   renderingStatus: {
@@ -626,9 +644,9 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: 'rgba(38, 29, 22, 0.42)',
   },
-  renderingText: { color: '#FFFFFF', fontWeight: '900' },
+  renderingText: { color: C.greenOn, fontWeight: '900' },
   previewArea: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 },
-  previewImage: { width: '92%', maxWidth: 360, aspectRatio: 3 / 4, backgroundColor: '#E6D5BC' },
+  previewImage: { width: '92%', maxWidth: 360, aspectRatio: 3 / 4, backgroundColor: C.lineStrong },
   actionRow: { width: '100%', flexDirection: 'row', gap: 10 },
   primaryAction: {
     minHeight: 46,
@@ -637,9 +655,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#52755D',
+    backgroundColor: C.green600,
   },
-  primaryActionText: { color: '#FFFFFF', fontWeight: '900' },
+  primaryActionText: { color: C.greenOn, fontWeight: '900' },
   secondaryAction: {
     flex: 1,
     minHeight: 46,
@@ -647,9 +665,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#9D866E',
-    backgroundColor: '#FFF8ED',
+    borderColor: C.lineStrong,
+    backgroundColor: C.surface2,
   },
-  secondaryActionText: { color: '#5E4A3A', fontWeight: '900' },
-  textAction: { padding: 8, color: '#52755D', fontWeight: '800' },
+  secondaryActionText: { color: C.ink2, fontWeight: '900' },
+  textAction: { padding: 8, color: C.green600, fontWeight: '800' },
 });

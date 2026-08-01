@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
+import { revaColors as C } from '../../constants/revaTheme';
 import type { DietShareRedaction, NormalizedPoint } from './dietShareImageEdit';
 
 export type DietPrivacyRedactionOverlayProps = {
@@ -49,7 +50,7 @@ export function DietPrivacyRedactionOverlay({ redactions }: DietPrivacyRedaction
             testID={`diet-share-poster-redaction-${index}`}
             d={dietPrivacyRedactionPath(redaction.points)}
             fill="none"
-            stroke="#000000"
+            stroke={C.ink1}
             strokeOpacity={1}
             strokeWidth={redaction.width}
             strokeLinecap="round"

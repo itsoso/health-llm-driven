@@ -232,6 +232,7 @@ describe('DietShareComposer', () => {
     expect(mockShareAsync).not.toHaveBeenCalled();
     expect(Alert.alert).not.toHaveBeenCalledWith('分享失败', expect.anything());
     expect(onShareFeedback).not.toHaveBeenCalledWith(expect.objectContaining({ tone: 'warning' }));
+    expect(onShareTerminal).toHaveBeenCalledWith(expect.objectContaining({ phase: 'cancelled' }));
     expect(onShareTerminal).not.toHaveBeenCalledWith(expect.objectContaining({ phase: 'completed' }));
   });
 
@@ -277,6 +278,32 @@ describe('DietShareComposer', () => {
       .toEqual({ uri: 'file:///cache/retried-poster.png' }));
     expect(mockMaterializeImageForLocalUse).toHaveBeenCalledTimes(1);
     expect(mockEditedCleanup).not.toHaveBeenCalled();
+  });
+
+  it('emits exactly one completed terminal for an observable iOS share', async () => {
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: 'ios' });
+    (Share.share as jest.Mock).mockResolvedValueOnce({ action: Share.sharedAction });
+    const onShareTerminal = jest.fn();
+    const view = renderComposer({ onShareTerminal });
+    await reachPreview(view);
+
+    fireEvent.press(view.getByRole('button', { name: '分享饮食海报' }));
+
+    await waitFor(() => expect(onShareTerminal).toHaveBeenCalledTimes(1));
+    expect(onShareTerminal).toHaveBeenCalledWith(expect.objectContaining({ phase: 'completed' }));
+  });
+
+  it('does not invent a terminal when Android sharing resolves without an outcome', async () => {
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: 'android' });
+    const onShareTerminal = jest.fn();
+    const view = renderComposer({ onShareTerminal });
+    await reachPreview(view);
+
+    fireEvent.press(view.getByRole('button', { name: '分享饮食海报' }));
+
+    await waitFor(() => expect(mockShareAsync).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(view.queryByText('分享中…')).toBeNull());
+    expect(onShareTerminal).not.toHaveBeenCalled();
   });
 
   it('blocks synchronous duplicate share actions', async () => {
@@ -421,7 +448,7 @@ describe('DietShareComposer', () => {
     await waitFor(() => expect(mockShareAsync).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(view.queryByText('分享中…')).toBeNull());
     expect(Alert.alert).not.toHaveBeenCalledWith('分享失败', expect.anything());
-    expect(onShareTerminal).not.toHaveBeenCalled();
+    expect(onShareTerminal).toHaveBeenCalledWith(expect.objectContaining({ phase: 'cancelled' }));
   });
 
   it('releases captured, edited, and materialized resources exactly once on close', async () => {
