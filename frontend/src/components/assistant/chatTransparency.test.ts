@@ -69,6 +69,19 @@ describe('chatTransparency', () => {
     expect(profile.toolLabel).toBe('尝试调用 Skill');
   });
 
+  it('labels tools as attempted for an explicit unknown status but preserves legacy rows', () => {
+    const unknown = buildAgentTransparency({
+      toolsUsed: ['health_record'],
+      completionStatus: 'unknown',
+    });
+    const legacy = buildAgentTransparency({
+      toolsUsed: ['health_record'],
+    });
+
+    expect(unknown.toolLabel).toBe('尝试调用 Skill');
+    expect(legacy.toolLabel).toBe('调用 Skill');
+  });
+
   it('shows sub-cent RMB costs without false zeroes or extra decimals', () => {
     const profile = buildAgentTransparency({
       elapsedMs: 900,

@@ -110,7 +110,10 @@ the previous global fail-closed behavior.
 
 - The change touches health writes but not medical advice.
 - Owner isolation remains enforced by the existing Runtime and record queries.
-- Admission scope queries only user/run/status metadata, not health values or tool arguments.
+- Admission scope queries only the durable generation/ack counters plus content-free
+  reconciliation event and owner metadata, not health values or tool arguments.
+- Acknowledged historical owners and already resolved Runs do not count toward a later
+  incident; an incomplete event ledger cannot prove scope and remains globally fail-closed.
 - Uncertain writes remain non-retryable and require reconciliation.
 - Runtime-control failure is pre-dispatch and must state that no write was sent.
 - Existing audit and rollout event records remain authoritative.
@@ -135,9 +138,21 @@ Given a write is blocked by a paused Runtime before dispatch
 When the Agent receives runtime_control_unavailable
 Then it stops after that tool result and emits completion_status error with service_unavailable
 
-Given one user owns one unresolved reconciliation and the systemic threshold is not reached
+Given one user owns one currently unacknowledged reconciliation and the systemic threshold is not reached
 When an unrelated user starts a write turn
 Then that user receives a managed Runtime run and can reach the normal receipt path
+
+Given older reconciliation owners were acknowledged before the current incident
+When admission derives the current reconciliation scope
+Then those historical owners are excluded from the systemic threshold
+
+Given a reconciliation event is current but its Run has already been resolved
+When admission derives the current reconciliation scope
+Then that Run owner is excluded from isolation and the systemic threshold
+
+Given the reconciliation event ledger disagrees with the durable generation
+When any user starts a write turn
+Then the circuit remains globally fail-closed
 
 Given the reconciliation threshold is reached or the circuit pause is manual/systemic
 When any managed user starts a write turn

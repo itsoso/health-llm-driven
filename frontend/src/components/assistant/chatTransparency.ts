@@ -270,8 +270,8 @@ export function buildAgentTransparency(input: AgentTransparencyInput): AgentTran
 
   const sources = uniqueClean(input.sourcesUsed);
   const tools = uniqueClean(input.toolsUsed);
-  const toolLabel = input.completionStatus === 'error'
-    || input.completionStatus === 'interrupted'
+  const toolLabel = input.completionStatus != null
+    && input.completionStatus !== 'complete'
     ? '尝试调用 Skill'
     : '调用 Skill';
   const tokenLine = buildTokenLine(input.llmUsage);

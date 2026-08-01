@@ -146,8 +146,12 @@ PYTHONDONTWRITEBYTECODE=1 /Users/liqiuhua/work/personal/health-llm-driven/backen
 **Step 3: Implement admission-time scoping**
 
 - Add `agent_runtime_reconciliation_global_pause_threshold` with default `2` and bounds.
-- While holding the rollout-state lock, count unresolved `AgentRun` rows by status and test
-  whether the current user owns one.
+- While holding the rollout-state lock, derive the unacknowledged count from
+  `reconciliation_generation - reconciliation_acknowledged_generation`, then select that
+  many newest content-free `run.reconciliation_required` events whose Runs still have
+  `status=reconciliation_required`, and select their owners.
+- Exclude acknowledged historical and already resolved owners; if total event count and
+  durable generation do not agree, keep the circuit globally fail-closed.
 - Only apply this exception when `state.reason_code == "reconciliation_detected"`.
 - Below threshold, create the unrelated user's run through the normal coordinator in the
   same locked admission transaction.

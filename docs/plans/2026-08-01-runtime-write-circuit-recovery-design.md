@@ -76,11 +76,14 @@ evidence shows the admission-time scope policy is insufficient.
 ### D. Keep the durable global event, scope admission, and terminalize the typed block
 
 Chosen. The existing singleton continues to record and expose the incident. Admission
-consults unresolved Runtime runs: below the systemic threshold, only users owning an
-unresolved reconciliation are blocked; unrelated users still receive managed Runtime runs.
-At or above the threshold, or for any non-reconciliation pause reason, the global block
-remains. The Executor turns a pre-dispatch control rejection into one deterministic terminal
-outcome.
+derives the current unresolved window from the durable generation-minus-acknowledgment
+delta, the newest content-free reconciliation events, and the Runs that still require
+reconciliation. Below the systemic threshold, only users owning an unresolved
+reconciliation in that current window are blocked; acknowledged historical and already
+resolved owners are excluded, and unrelated users still receive managed Runtime runs.
+At or above the threshold, for any non-reconciliation pause reason, or when the event ledger
+cannot prove the generation window, the global block remains. The Executor turns a
+pre-dispatch control rejection into one deterministic terminal outcome.
 
 This is the smallest safe change that reduces blast radius without bypassing the durable
 Runtime or introducing a production migration during recovery.
@@ -118,12 +121,19 @@ goal fact; nutrition estimation and the verified receipt gate remain unchanged.
 
 ### Runtime admission scope
 
-Add a bounded configuration value for the number of unresolved reconciliation users/runs
-that escalates to a global block. While the state reason is `reconciliation_detected`:
+Add a bounded configuration value for the number of currently unacknowledged
+reconciliation owners that escalates to a global block. While the state reason is
+`reconciliation_detected`:
 
-- affected user with an unresolved reconciliation: block writes;
+- affected user with a still-unresolved reconciliation in the
+  generation-minus-acknowledgment event window: block writes;
 - unrelated user below threshold: create a normal managed run;
 - threshold reached: block globally.
+
+The event ledger is content-free. A generation/event-count mismatch cannot establish a
+trustworthy window and therefore remains globally fail-closed. Acknowledged historical or
+already resolved Runs may retain their audit event without contaminating future incident
+scope.
 
 The check executes while holding the existing rollout-state lock, so circuit admission and
 run creation remain linearized. No raw operation payload is queried.
@@ -155,8 +165,9 @@ Draft-card suppression is derived from verified `write_receipts`, explicit exist
 or server-owned pending confirmations. A mere attempted `health_record` name is not enough.
 
 The historical `tools_used` field stays backward compatible, but clients label it
-“尝试调用 Skill” whenever the terminal completion status is not complete. Successful turns
-keep “调用 Skill”. No new client API field is required.
+“尝试调用 Skill” for any explicit non-complete terminal state. Successful turns keep
+“调用 Skill”, and legacy rows without a status retain their existing presentation. No new
+client API field is required.
 
 ### Operations
 

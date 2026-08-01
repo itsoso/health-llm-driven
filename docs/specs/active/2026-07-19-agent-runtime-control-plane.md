@@ -132,8 +132,18 @@ managed admission when any of these conditions is true within the configured win
    sample is reached.
 
 Evaluation persists aggregate counters only. Repeated evaluations while paused do not
-append duplicate pause events. The system never automatically resumes; an administrator
-must inspect the aggregate snapshot and resume explicitly.
+append duplicate pause events. A `reconciliation_detected` pause derives its current scope
+from `reconciliation_generation - reconciliation_acknowledged_generation` and the newest
+content-free `run.reconciliation_required` events whose Runs still require reconciliation.
+It isolates only unresolved owners in that unacknowledged window while the number of
+distinct affected owners remains below
+`agent_runtime_reconciliation_global_pause_threshold` (default `2`); acknowledged
+historical owners and already resolved Runs are excluded. Unrelated users are still admitted
+through the normal managed Run transaction; they never fall back to an unmanaged write path. Reaching the
+threshold restores a global pause. A generation/event-ledger mismatch, manual pause,
+system failure rate, stale lease, or an unavailable control-plane query remains global
+fail-closed. The system never automatically resumes; an administrator must inspect the
+aggregate snapshot and resume explicitly.
 Manual resume acknowledges only the monotonic reconciliation generation that the
 operator actually reviewed. The API requires
 `expected_reconciliation_generation`, and the locked state must still match it;
@@ -159,7 +169,8 @@ resume or evaluation.
 1. Stable canary selection is deterministic, bounded and allowlist-first.
 2. Invalid modes, percentages, allowlists, windows and thresholds fail explicitly.
 3. Concurrent first pause creates one state transition and one audit event.
-4. Recovery of an uncertain write produces reconciliation and automatically pauses.
+4. Recovery of an uncertain write produces reconciliation, pauses its owner, and admits
+   unrelated users only through managed Runtime below the systemic owner threshold.
 5. A circuit read failure leaves the database session usable and bypasses managed
    admission for that request.
 6. PostgreSQL and SQLite enforce finite control values and non-negative counts.

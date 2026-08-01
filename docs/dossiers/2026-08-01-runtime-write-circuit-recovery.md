@@ -4,20 +4,20 @@
 |---|---|
 | slug | `runtime-write-circuit-recovery` |
 | 创建日期 | 2026-08-01 |
-| 当前阶段 | G4 安全评审 |
+| 当前阶段 | S6 部署准备 |
 | 状态 | building |
 | 负责 | Codex |
 | 反馈环 | Backend deploy + Mac/Mobile/Web targeted verification |
 
 ## Correct Course
 
-- [ ] Correction Block
-  - 触发:
-  - 旧基线:
-  - 新基线:
-  - 回退阶段:
-  - 需重跑 Gate:
-  - 用户确认:☐
+- [x] Correction Block
+  - 触发: producer review 发现已确认历史 reconciliation owner 会污染新 scope，且已解决但未 ack 的 Run 仍会被计入。
+  - 旧基线: 按所有 `status=reconciliation_required` 历史 Run 取 owner。
+  - 新基线: generation-ack 当前事件 window ∩ 仍为 reconciliation-required 的 Run；事件账本不一致全局 fail-closed。
+  - 回退阶段: S4 / S5。
+  - 需重跑 Gate: G3 + G4。
+  - 用户确认:☑（不改变已确认的分阶段恢复边界，仅收紧 owner scope）
 
 ## S0 · 用户需求（逐字）
 
@@ -104,15 +104,15 @@
 - 实现结果:
   - 两条锚点短句均编译为单一 `simple_health_record(diet/create)`；无餐次时复用本地小时推断。
   - `runtime_control_unavailable + dispatch_started=false` 成为单次 deterministic error terminal，不再进入后续 LLM 轮次。
-  - 单一 reconciliation owner 仅隔离自身；达到配置的 distinct-user 阈值才升级全局暂停；所有放行仍创建 managed Run。
+  - 当前未确认 reconciliation window 仅隔离仍未解决的 owner；已确认历史 owner 与已解决 Run 不污染新 scope；达到配置的 distinct-user 阈值才升级全局暂停；事件账本不一致时保持全局 fail-closed；所有放行仍创建 managed Run。
   - intake 卡片压制只接受 verified receipt / server-owned pending intent，不再采信 `tools_used` 尝试事实。
   - Mac/Mobile/Web 错误或中断回合显示“尝试调用 Skill”；Web 历史与 live SSE 均贯通 `completion_status`。
-- commits: 实现 commit 待本地评审落盘。
+- commits: `ddf474ddf` + producer-review correction commit（提交后记录）。
 
 ## G3 · 测试闸
 
-- Backend 集成闸: 294 passed / 3 skipped；skip 为 SQLite 环境不执行的 PostgreSQL row-lock 用例。
-- Client: Mobile 90 passed + TypeScript PASS；Web 24 passed + TypeScript PASS；Mac ChatTranscriptHTML 50 passed。
+- Backend 集成闸: 297 passed / 3 skipped；skip 为 SQLite 环境不执行的 PostgreSQL row-lock 用例。
+- Client: Mobile targeted 17 passed + TypeScript PASS；Web targeted 25 passed + TypeScript PASS；Mac ChatTranscriptHTML 51 passed。
 - 静态/治理: Ruff `F821,F822,E9` PASS；doc drift PASS；dossier consistency PASS；`git diff --check` PASS。
 - main CI 真实色: 推送后复核。
 - **裁决**: 本地 PASS；远端 CI 待推送后闭环。
@@ -122,11 +122,12 @@
 - 触发: health write path, Runtime control, retry semantics, owner isolation。
 - producer review:
   - 未决 owner fail-closed；未命中 scope 的暂停原因仍全局 fail-closed。
-  - scoped admission 只查询 content-free `user_id/status`，且必须经 coordinator 创建 managed Run。
+  - scoped admission 只查询 generation/ack 与 content-free reconciliation event/status/owner；历史已确认 owner 与已解决 Run 被排除，账本不一致全局 fail-closed，且放行必须经 coordinator 创建 managed Run。
   - 不 replay、不自动 retry、不改未决健康记录；只有 verified receipt 可声明持久化成功。
   - `tools_used` 保持尝试事实，UI 由终态降级表述；错误回合不开放社交分享。
-- reviewer: 提交后按 `requesting-code-review` 执行。
-- **裁决**: pending
+- reviewer: independent producer review；Critical 0、Important 0（历史 scope 与 unknown 透明度问题均已修复并回归）。
+- 上线兼容 Gate: 必须先验证 production content-free event count 与 durable generation 一致；不一致则按设计继续全局 fail-closed，不得宣称 scoped recovery。
+- **裁决**: PASS
 
 ## S6 · 部署
 

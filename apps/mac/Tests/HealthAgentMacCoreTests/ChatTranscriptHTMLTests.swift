@@ -284,6 +284,21 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertFalse(html.contains(">调用 Skill<"))
     }
 
+    func testMetaFooterLabelsUnknownAsAttemptedButPreservesLegacyRows() {
+        let unknown = ChatTranscriptHTML.metaFooterHTML(
+            model: nil, elapsedMs: nil, llmRounds: nil,
+            sourcesUsed: [], toolsUsed: ["health_record"],
+            completionStatus: "unknown"
+        )
+        let legacy = ChatTranscriptHTML.metaFooterHTML(
+            model: nil, elapsedMs: nil, llmRounds: nil,
+            sourcesUsed: [], toolsUsed: ["health_record"]
+        )
+
+        XCTAssertTrue(unknown.contains("尝试调用 Skill"))
+        XCTAssertTrue(legacy.contains(">调用 Skill<"))
+    }
+
     func testMetaFooterRendersTokenUsage() {
         let usage = LLMUsageProfile(
             calls: 2,

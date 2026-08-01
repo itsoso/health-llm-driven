@@ -353,7 +353,7 @@ public enum ChatTranscriptHTML {
         // Skills:chip 样式,横排。
         let tools = toolsUsed.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
         if !tools.isEmpty {
-            let toolLabel = completionStatus == "error" || completionStatus == "interrupted"
+            let toolLabel = completionStatus != nil && completionStatus != "complete"
                 ? "尝试调用 Skill"
                 : "调用 Skill"
             let chips = tools.map { "<span class=\"meta-chip\">\(escape($0))</span>" }.joined()

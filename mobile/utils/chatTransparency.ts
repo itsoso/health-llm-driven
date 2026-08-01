@@ -290,8 +290,8 @@ export function buildAgentTransparency(input: AgentTransparencyInput): AgentTran
 
   const sources = uniqueClean(input.sourcesUsed);
   const tools = uniqueClean(input.toolsUsed);
-  const toolLabel = input.completionStatus === 'error'
-    || input.completionStatus === 'interrupted'
+  const toolLabel = input.completionStatus != null
+    && input.completionStatus !== 'complete'
     ? '尝试调用 Skill'
     : '调用 Skill';
   // 去重在映射之后:不同 reason 可能映射同一中文标签(如 stream/chat failed)。

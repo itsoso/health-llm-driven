@@ -18,6 +18,7 @@ from app.models.agent_runtime import (
     AgentRuntimeRolloutState,
     AgentRun,
     AgentRunAttempt,
+    AgentRunEvent,
     AgentToolOperation,
 )
 
@@ -768,8 +769,46 @@ class AgentRuntimeRolloutService:
             return RuntimeAdmissionDecision(False, "circuit_paused")
 
         threshold = _reconciliation_global_pause_threshold()
+        unacknowledged = max(
+            0,
+            int(state.reconciliation_generation)
+            - int(state.reconciliation_acknowledged_generation),
+        )
+        if unacknowledged == 0:
+            return RuntimeAdmissionDecision(
+                True,
+                "scoped_reconciliation_admission",
+            )
+        total_reconciliation_events = int(
+            self.db.query(func.count(AgentRunEvent.id))
+            .filter(AgentRunEvent.event_name == "run.reconciliation_required")
+            .scalar()
+            or 0
+        )
+        if total_reconciliation_events != int(state.reconciliation_generation):
+            logger.error(
+                "Agent Runtime reconciliation generation and event ledger disagree; "
+                "keeping global pause"
+            )
+            return RuntimeAdmissionDecision(False, "circuit_paused")
+
+        # Generation allocation and this event are committed in the same
+        # state-row-locked transaction. Descending event IDs therefore match
+        # descending reconciliation generations. If retention ever breaks that
+        # invariant, the count check above keeps admission globally fail-closed.
+        recent_reconciliations = (
+            self.db.query(AgentRunEvent.run_id.label("run_id"))
+            .filter(AgentRunEvent.event_name == "run.reconciliation_required")
+            .order_by(AgentRunEvent.id.desc())
+            .limit(unacknowledged)
+            .subquery()
+        )
         rows = (
             self.db.query(AgentRun.user_id)
+            .join(
+                recent_reconciliations,
+                recent_reconciliations.c.run_id == AgentRun.run_id,
+            )
             .filter(AgentRun.status == "reconciliation_required")
             .distinct()
             .limit(threshold)
