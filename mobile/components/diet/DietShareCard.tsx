@@ -2,7 +2,6 @@ import React, { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   ImageSourcePropType,
   Modal,
   PixelRatio,
@@ -13,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
@@ -32,6 +32,12 @@ import {
 import type { DietRecord } from '../../services/diet';
 import { SocialBrandIcon } from '../common/SocialBrandIcon';
 import { MACRO_HUES } from '../chat/cards/mealCardVisuals';
+import { DietPrivacyRedactionOverlay } from './DietPrivacyRedactionOverlay';
+import type { DietShareRedaction } from './dietShareImageEdit';
+import {
+  buildDietSharePresentation,
+  type DietShareRecord,
+} from './dietSharePresentation';
 
 const MEAL_LABEL: Record<string, string> = {
   breakfast: '早餐',
@@ -76,10 +82,6 @@ function hasMetric(value: number | null | undefined): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
-function hasAnyMacro(record: DietRecord): boolean {
-  return [record.protein, record.carbs, record.fat].some(hasMetric);
-}
-
 function isNutritionComplete(record: DietRecord): boolean {
   return [record.calories, record.protein, record.carbs, record.fat].every(hasMetric);
 }
@@ -115,11 +117,6 @@ export function buildDietShareHighlights(record: DietRecord): string[] {
   if (typeof record.fiber === 'number' && record.fiber >= 5) tags.push('含纤维');
   if (typeof record.calories === 'number' && record.calories <= 450) tags.push('轻负担');
   return tags.slice(0, 3);
-}
-
-function buildDietShareStatusLine(highlights: string[]): string {
-  if (highlights.length === 0) return '今日状态：认真记录';
-  return `今日状态：${highlights.join(' · ')}`;
 }
 
 export function buildDietShareBalance(record: DietRecord): { score: number | null; label: string } {
@@ -198,55 +195,6 @@ function isAiEstimatedNutritionSource(source?: string | null): boolean {
   return !source || source === 'ai_estimate' || source === 'photo';
 }
 
-function buildDietShareConfidenceUi(record: DietRecord): { percent: number; detail: string; tone: 'warning' | 'neutral' } | null {
-  if (isManuallyConfirmedNutritionSource(record.source)) return null;
-  const percent = normalizedAiConfidence(record.ai_confidence);
-  if (percent == null) return null;
-  if (percent < DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD) {
-    return {
-      percent,
-      detail: '发布前建议核对食物和份量',
-      tone: 'warning',
-    };
-  }
-  if (percent < 80) {
-    return {
-      percent,
-      detail: '建议复盘时留意份量',
-      tone: 'neutral',
-    };
-  }
-  return {
-    percent,
-    detail: isAiEstimatedNutritionSource(record.source) ? '识别结果较稳定' : '识别结果已确认',
-    tone: 'neutral',
-  };
-}
-
-function buildDietShareConfirmBadge(record: DietRecord): { primary: string; secondary: string; tone: 'confirmed' | 'estimate' | 'caution' } {
-  if (isManuallyConfirmedNutritionSource(record.source)) {
-    return { primary: '已确认', secondary: '可分享', tone: 'confirmed' };
-  }
-  const percent = normalizedAiConfidence(record.ai_confidence);
-  if (percent != null && percent < DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD) {
-    return { primary: '待核对', secondary: '谨慎分享', tone: 'caution' };
-  }
-  if (isAiEstimatedNutritionSource(record.source)) {
-    return { primary: '智能估算', secondary: '可复盘', tone: 'estimate' };
-  }
-  return { primary: '已确认', secondary: '可分享', tone: 'confirmed' };
-}
-
-function buildDietShareFooterSecondary(record: DietRecord): string {
-  if (isManuallyConfirmedNutritionSource(record.source)) return '营养数据以本次确认记录为准';
-  const percent = normalizedAiConfidence(record.ai_confidence);
-  if (percent != null && percent < DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD) return '识别待核对，发布前确认食物和份量';
-  if (!hasAnyNutritionMetric(record)) return '营养回填后用于复盘';
-  if (!isNutritionComplete(record)) return '部分营养回填后用于复盘';
-  if (isAiEstimatedNutritionSource(record.source)) return '智能估算用于复盘，核对后更准确';
-  return '营养数据以本次确认记录为准';
-}
-
 function isLowConfidenceDietShare(record: DietRecord): boolean {
   if (isManuallyConfirmedNutritionSource(record.source)) return false;
   const percent = normalizedAiConfidence(record.ai_confidence);
@@ -278,13 +226,13 @@ function buildDietShareMacroLine(record: DietRecord, style: 'compact' | 'sentenc
     : allParts.join(' · ');
 }
 
-const SHARE_MACRO_DEFS: Array<{
+const SHARE_MACRO_DEFS: {
   key: MacroSegmentKey;
   field: 'protein' | 'carbs' | 'fat';
   label: string;
   kcalPerGram: number;
   color: string;
-}> = [
+}[] = [
   { key: 'protein', field: 'protein', label: '蛋白', kcalPerGram: 4, color: MACRO_HUES.protein },
   { key: 'carbs', field: 'carbs', label: '碳水', kcalPerGram: 4, color: MACRO_HUES.carbs },
   { key: 'fat', field: 'fat', label: '脂肪', kcalPerGram: 9, color: MACRO_HUES.fat },
@@ -524,253 +472,90 @@ function publishHintForShareResult(result: ShareResult, reviewTone: ShareReviewT
 }
 
 export type DietShareCardProps = {
-  record: DietRecord;
+  record: DietShareRecord;
   dateLabel: string;
-  imageSource?: ImageSourcePropType;
+  imageSource: ImageSourcePropType;
+  redactions?: DietShareRedaction[];
   onImageReady?: () => void;
-  forceImageFallback?: boolean;
+  onImageError?: () => void;
 };
 
 export default function DietShareCard({
   record,
   dateLabel,
   imageSource,
+  redactions = [],
   onImageReady,
-  forceImageFallback = false,
+  onImageError,
 }: DietShareCardProps) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const showImage = Boolean(imageSource) && !imageFailed && !forceImageFallback;
-  const calories = metric(record.calories);
-  const hasCalories = hasMetric(record.calories);
-  const hasMacros = hasAnyMacro(record);
-  const lowConfidenceShare = isLowConfidenceDietShare(record);
-  const sourceLabel = nutritionSourceLabel(record.source);
-  const headline = buildDietShareHeadline(record);
-  const highlights = buildDietShareHighlights(record);
-  const statusLine = buildDietShareStatusLine(highlights);
-  const balance = buildDietShareBalance(record);
-  const macroSegments = buildDietShareMacroSegments(record);
-  const confidence = buildDietShareConfidenceUi(record);
-  const confirmBadge = buildDietShareConfirmBadge(record);
+  const presentation = buildDietSharePresentation(record);
+  const tags = presentation.tags.slice(0, 3);
+  const macroLines = presentation.macroLines.slice(0, 2);
+  const showDisclosure = !macroLines.includes(presentation.disclosure);
 
   return (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <View style={styles.brandMark}>
-          <Ionicons name="sparkles" size={15} color={C.greenBright} />
-        </View>
-        <Text style={styles.brand}>小巴 / 今日饮食</Text>
-        <View style={[
-          styles.confirmBadge,
-          confirmBadge.tone === 'estimate' && styles.confirmBadgeEstimate,
-          confirmBadge.tone === 'caution' && styles.confirmBadgeCaution,
-        ]}>
-          <Text style={[
-            styles.confirmBadgePrimary,
-            confirmBadge.tone === 'estimate' && styles.confirmBadgePrimaryEstimate,
-            confirmBadge.tone === 'caution' && styles.confirmBadgePrimaryCaution,
-          ]}>
-            {confirmBadge.primary}
-          </Text>
-          <Text style={styles.confirmBadgeSecondary}>{confirmBadge.secondary}</Text>
-        </View>
-        <Text style={styles.date}>{dateLabel}</Text>
-      </View>
-
-      {showImage ? (
+    <View testID="diet-share-poster" style={styles.card}>
+      <View testID="diet-share-photo-frame" style={styles.posterPhotoFrame}>
         <Image
           testID="diet-share-image"
           source={imageSource}
-          style={styles.mealImage}
-          resizeMode="cover"
+          style={styles.posterPhoto}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          priority="high"
           onLoad={onImageReady}
-          onError={() => {
-            setImageFailed(true);
-            onImageReady?.();
-          }}
+          onError={onImageError}
         />
-      ) : (
-        <View style={styles.metricHero}>
-          <View>
-            <Text style={styles.heroLabel}>{MEAL_LABEL[record.meal_type] ?? '餐食'}能量</Text>
-            {hasCalories && !lowConfidenceShare ? (
-              <View style={styles.heroMetricRow}>
-                <Text style={styles.heroMetric}>{calories}</Text>
-                <Text style={styles.heroUnit}>kcal</Text>
+        <DietPrivacyRedactionOverlay redactions={redactions} />
+        <View style={styles.posterPhotoShade} pointerEvents="none" />
+        <View style={styles.posterPhotoMeta} pointerEvents="none">
+          <View style={styles.posterMealBadge}>
+            <Text style={styles.posterMealBadgeText}>{presentation.mealLabel}</Text>
+          </View>
+          <Text style={styles.posterDate}>{dateLabel}</Text>
+        </View>
+      </View>
+
+      <View style={styles.posterCopy}>
+        <View style={styles.posterRuleRow}>
+          <View style={styles.posterRuleLong} />
+          <View style={styles.posterRuleShort} />
+        </View>
+        <Text style={styles.posterHeadline} numberOfLines={2}>{presentation.headline}</Text>
+        <Text style={styles.posterFoodLine} numberOfLines={3}>{presentation.foodLine}</Text>
+
+        <View style={styles.posterNutrition}>
+          {macroLines.map(line => (
+            <Text key={line} style={styles.posterMacroLine} numberOfLines={1}>{line}</Text>
+          ))}
+        </View>
+
+        {tags.length > 0 ? (
+          <View style={styles.posterTagRow}>
+            {tags.map((tag, index) => (
+              <View key={`${tag}:${index}`} testID={`diet-share-tag-${index}`} style={styles.posterTag}>
+                <Text style={styles.posterTagText}>{tag}</Text>
               </View>
-            ) : (
-              <Text style={styles.pendingHeroMetric}>{lowConfidenceShare ? '营养待核对' : hasMacros ? '热量估算中' : '营养估算中'}</Text>
-            )}
-          </View>
-          <View style={styles.heroBars}>
-            <View style={[styles.heroBar, { backgroundColor: '#F26945', width: '92%' }]} />
-            <View style={[styles.heroBar, { backgroundColor: C.blue500, width: '68%' }]} />
-            <View style={[styles.heroBar, { backgroundColor: C.greenBright, width: '46%' }]} />
-          </View>
-        </View>
-      )}
-
-      <View style={styles.cardBody}>
-        <View style={styles.storyRow}>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.storyTitle}>{headline}</Text>
-            <Text style={styles.foods} numberOfLines={3}>{record.food_items}</Text>
-            {highlights.length > 0 ? (
-              <View style={styles.highlightRow}>
-                {highlights.map((tag) => (
-                  <View key={tag} style={styles.highlightPill}>
-                    <Text style={styles.highlightText}>{tag}</Text>
-                  </View>
-                ))}
-              </View>
-            ) : null}
-            <Text style={styles.statusLine}>{statusLine}</Text>
-          </View>
-          {showImage ? (
-            <View style={styles.calorieAside}>
-              {hasCalories && !lowConfidenceShare ? (
-                <>
-                  <Text style={styles.calorieAsideValue}>{calories}</Text>
-                  <Text style={styles.calorieAsideUnit}>kcal</Text>
-                </>
-              ) : (
-                <Text style={styles.calorieAsidePending}>{hasMacros ? '热量估算中' : '营养估算中'}</Text>
-              )}
-            </View>
-          ) : null}
-        </View>
-
-        {hasMacros && !lowConfidenceShare ? (
-          <View style={styles.macroSection}>
-            <View style={styles.macroGrid}>
-              <ShareMacro label="蛋白质" value={hasMetric(record.protein) ? `${metric(record.protein)}g` : '估算中'} color={MACRO_HUES.protein} />
-              <ShareMacro label="碳水" value={hasMetric(record.carbs) ? `${metric(record.carbs)}g` : '估算中'} color={MACRO_HUES.carbs} />
-              <ShareMacro label="脂肪" value={hasMetric(record.fat) ? `${metric(record.fat, 1)}g` : '估算中'} color={MACRO_HUES.fat} />
-            </View>
-            {macroSegments.length > 0 ? (
-              <View style={styles.macroStructure}>
-                <View style={styles.macroStructureHeader}>
-                  <Text style={styles.macroStructureTitle}>能量结构</Text>
-                  <Text style={styles.macroStructureMeta}>按三大营养热量占比</Text>
-                </View>
-                <View style={styles.macroStructureTrack}>
-                  {macroSegments.map((segment, index) => (
-                    <View
-                      key={segment.key}
-                      style={[
-                        styles.macroStructureFill,
-                        {
-                          flexGrow: Math.max(segment.percent, 6),
-                          backgroundColor: segment.color,
-                          marginRight: index < macroSegments.length - 1 ? 1 : 0,
-                        },
-                      ]}
-                    />
-                  ))}
-                </View>
-                <View style={styles.macroStructureLegend}>
-                  {macroSegments.map((segment) => (
-                    <View key={segment.key} style={styles.macroStructureLegendItem}>
-                      <View style={[styles.macroStructureDot, { backgroundColor: segment.color }]} />
-                      <Text style={styles.macroStructureLegendText}>
-                        {segment.label} {segment.percent}%
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ) : null}
-          </View>
-        ) : (
-          <View style={styles.pendingMacroPanel}>
-            <Text style={styles.pendingMacroTitle}>{lowConfidenceShare ? '营养估算待核对' : '营养估算中'}</Text>
-            <Text style={styles.pendingMacroText}>
-              {lowConfidenceShare
-                ? '确认后再显示热量和三大营养'
-                : '确认记录已保存，热量和三大营养会回填后用于复盘。'}
-            </Text>
-          </View>
-        )}
-
-        <View style={styles.balancePanel}>
-          <View style={styles.balanceCopy}>
-            <Text style={styles.balanceLabel}>均衡度</Text>
-            <Text style={styles.balanceTitle}>{balance.label}</Text>
-          </View>
-          <View style={styles.balanceScoreWrap}>
-            {balance.score == null ? (
-              <Text style={styles.balancePending}>{lowConfidenceShare ? '待核对' : '待回填'}</Text>
-            ) : (
-              <>
-                <Text style={styles.balanceScore}>{balance.score}</Text>
-                <View style={styles.balanceTrack}>
-                  <View style={[styles.balanceFill, { width: `${balance.score}%` }]} />
-                </View>
-              </>
-            )}
-          </View>
-        </View>
-
-        <View style={styles.sourceRow}>
-          <Ionicons
-            name={sourceLabel === '智能估算' ? 'scan-outline' : 'shield-checkmark-outline'}
-            size={14}
-            color={sourceLabel === '智能估算' ? revaSemantic.caution.fg : C.green600}
-          />
-          <Text style={[
-            styles.sourceText,
-            { color: sourceLabel === '智能估算' ? revaSemantic.caution.fg : C.green600 },
-          ]}>{sourceLabel}</Text>
-          {record.fiber != null && !lowConfidenceShare ? <Text style={styles.fiberText}>膳食纤维 {metric(record.fiber, 1)}g</Text> : null}
-        </View>
-
-        {confidence ? (
-          <View style={[
-            styles.confidencePanel,
-            confidence.tone === 'warning' && styles.confidencePanelWarning,
-          ]}>
-            <View style={styles.confidencePrimaryRow}>
-              <Ionicons
-                name={confidence.tone === 'warning' ? 'alert-circle-outline' : 'checkmark-circle-outline'}
-                size={13}
-                color={confidence.tone === 'warning' ? revaSemantic.caution.fg : C.green600}
-              />
-              <Text style={[
-                styles.confidencePrimary,
-                confidence.tone === 'warning' && styles.confidencePrimaryWarning,
-              ]}>
-                识别置信度 {confidence.percent}%
-              </Text>
-            </View>
-            <Text style={styles.confidenceDetail}>{confidence.detail}</Text>
+            ))}
           </View>
         ) : null}
 
-        <View style={styles.lifestylePanel}>
-          <View style={styles.lifestyleIcon}>
-            <Ionicons name="leaf-outline" size={13} color={C.green600} />
-          </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.lifestyleTitle}>不是节食，是把身体照顾得更有章法</Text>
-            <Text style={styles.lifestyleMeta}>不含体重 / 用户 ID / 私密健康数据</Text>
+        <View style={styles.posterFooter}>
+          {presentation.nextAction ? (
+            <View testID="diet-share-next-action" style={styles.posterNextAction}>
+              <View style={styles.posterNextActionDot} />
+              <Text style={styles.posterNextActionText} numberOfLines={1}>{presentation.nextAction}</Text>
+            </View>
+          ) : <View />}
+          {showDisclosure ? (
+            <Text style={styles.posterDisclosure}>{presentation.disclosure}</Text>
+          ) : null}
+          <View style={styles.posterFooterMark}>
+            <View style={styles.posterFooterMarkDot} />
+            <View style={styles.posterFooterMarkLine} />
           </View>
         </View>
       </View>
-
-      <View style={styles.cardFooter}>
-        <Text style={styles.footerPrimary}>认真记录，也认真生活</Text>
-        <Text style={styles.footerSecondary}>{buildDietShareFooterSecondary(record)}</Text>
-      </View>
-    </View>
-  );
-}
-
-function ShareMacro({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <View style={styles.macroItem}>
-      <View style={[styles.macroAccent, { backgroundColor: color }]} />
-      <Text style={styles.macroValue}>{value}</Text>
-      <Text style={styles.macroLabel}>{label}</Text>
     </View>
   );
 }
@@ -784,7 +569,11 @@ function ShareReadyItem({ icon, label }: { icon: React.ComponentProps<typeof Ion
   );
 }
 
-export type DietShareSheetProps = DietShareCardProps & {
+export type DietShareSheetProps = {
+  record: DietRecord;
+  dateLabel: string;
+  imageSource?: ImageSourcePropType;
+  redactions?: DietShareRedaction[];
   visible: boolean;
   onClose: () => void;
   onAskReva?: () => void;
@@ -808,6 +597,7 @@ export function DietShareSheet({
   record,
   dateLabel,
   imageSource,
+  redactions = [],
   onClose,
   onAskReva,
   onShareFeedback,
@@ -815,12 +605,14 @@ export function DietShareSheet({
 }: DietShareSheetProps) {
   const cardRef = useRef<View>(null);
   const [sharingAction, setSharingAction] = useState<ShareInFlight | null>(null);
-  const [imageReady, setImageReady] = useState(!imageSource);
+  const [imageReady, setImageReady] = useState(false);
   const [imageTimedOut, setImageTimedOut] = useState(false);
   const [copiedCaption, setCopiedCaption] = useState<'moments' | 'xiaohongshu' | null>(null);
   const [shareResult, setShareResult] = useState<ShareResult | null>(null);
   const sharing = sharingAction !== null;
-  const shareHasPhoto = Boolean(imageSource) && !imageTimedOut;
+  const hasPhoto = Boolean(imageSource);
+  const imageCaptureAvailable = hasPhoto && imageReady && !imageTimedOut;
+  const shareHasPhoto = imageCaptureAvailable;
   const lowConfidenceShare = isLowConfidenceDietShare(record);
   const estimatedShare = isAiEstimatedNutritionSource(record.source);
   const shareReviewTone: ShareReviewTone = lowConfidenceShare ? 'low-confidence' : estimatedShare ? 'estimate' : 'none';
@@ -889,7 +681,7 @@ export function DietShareSheet({
       : '已复制小红书文案';
 
   React.useEffect(() => {
-    setImageReady(!imageSource);
+    setImageReady(false);
     setImageTimedOut(false);
     setCopiedCaption(null);
     setShareResult(null);
@@ -899,7 +691,6 @@ export function DietShareSheet({
     if (!visible || !imageSource || imageReady) return undefined;
     const timeout = setTimeout(() => {
       setImageTimedOut(true);
-      setImageReady(true);
     }, DIET_SHARE_IMAGE_TIMEOUT_MS);
     return () => clearTimeout(timeout);
   }, [imageReady, imageSource, visible]);
@@ -963,7 +754,7 @@ export function DietShareSheet({
   };
 
   const handleShare = async (target: ShareTarget = 'generic') => {
-    if (sharing || !imageReady || !cardRef.current) return;
+    if (sharing || !imageCaptureAvailable || !cardRef.current) return;
     const startedAt = Date.now();
     let captureUri: string | null = null;
     setSharingAction(target);
@@ -1035,7 +826,7 @@ export function DietShareSheet({
   };
 
   const handleSaveToLibrary = async () => {
-    if (sharing || !imageReady || !cardRef.current) return;
+    if (sharing || !imageCaptureAvailable || !cardRef.current) return;
     const startedAt = Date.now();
     let captureUri: string | null = null;
     setSharingAction('library');
@@ -1118,22 +909,47 @@ export function DietShareSheet({
           </View>
 
           <View style={styles.previewFrame}>
-            <View ref={cardRef} collapsable={false} style={styles.captureSurface}>
-              <DietShareCard
-                record={record}
-                dateLabel={dateLabel}
-                imageSource={imageSource}
-                onImageReady={() => setImageReady(true)}
-                forceImageFallback={imageTimedOut}
-              />
-            </View>
+            {imageSource ? (
+              <View ref={cardRef} collapsable={false} style={styles.captureSurface}>
+                <DietShareCard
+                  record={record}
+                  dateLabel={dateLabel}
+                  imageSource={imageSource}
+                  redactions={redactions}
+                  onImageReady={() => {
+                    setImageTimedOut(false);
+                    setImageReady(true);
+                  }}
+                  onImageError={() => {
+                    setImageReady(false);
+                    setImageTimedOut(true);
+                  }}
+                />
+              </View>
+            ) : (
+              <View style={styles.photoUnavailablePanel}>
+                <Ionicons name="image-outline" size={28} color={C.ink3} />
+                <Text style={styles.photoUnavailableTitle}>没有可编辑的餐食照片，当前只能分享正文</Text>
+                <Text style={styles.photoUnavailableDetail}>返回餐食记录补充照片，或复制下方文案。</Text>
+              </View>
+            )}
           </View>
+
+          {imageTimedOut ? (
+            <View style={styles.photoErrorStrip}>
+              <Ionicons name="alert-circle-outline" size={15} color={revaSemantic.caution.fg} />
+              <Text style={styles.photoErrorText}>照片加载失败，请重试或改为分享正文</Text>
+            </View>
+          ) : null}
 
           <View
             style={styles.shareReadyStrip}
             accessibilityLabel={lowConfidenceShare ? '核对素材已准备完成' : '分享素材已准备完成'}
           >
-            <ShareReadyItem icon="image-outline" label={lowConfidenceShare ? '3:4 核对图' : '3:4 高清图'} />
+            <ShareReadyItem
+              icon="image-outline"
+              label={!hasPhoto || imageTimedOut ? '图片暂不可用' : lowConfidenceShare ? '3:4 核对图' : '3:4 高清图'}
+            />
             <ShareReadyItem
               icon="chatbubble-ellipses-outline"
               label={momentsReadyLabel}
@@ -1146,9 +962,9 @@ export function DietShareSheet({
 
           <View style={styles.platformShareRow}>
             <TouchableOpacity
-              style={[styles.platformShareButton, styles.wechatShareButton, (sharing || !imageReady) && styles.shareButtonDisabled]}
+              style={[styles.platformShareButton, styles.wechatShareButton, (sharing || !imageCaptureAvailable) && styles.shareButtonDisabled]}
               onPress={() => handleShare('wechat')}
-              disabled={sharing || !imageReady}
+              disabled={sharing || !imageCaptureAvailable}
               activeOpacity={0.84}
               accessibilityRole="button"
               accessibilityLabel={wechatShareA11yLabel}
@@ -1160,9 +976,9 @@ export function DietShareSheet({
               </View>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.platformShareButton, styles.xhsShareButton, (sharing || !imageReady) && styles.shareButtonDisabled]}
+              style={[styles.platformShareButton, styles.xhsShareButton, (sharing || !imageCaptureAvailable) && styles.shareButtonDisabled]}
               onPress={() => handleShare('xiaohongshu')}
-              disabled={sharing || !imageReady}
+              disabled={sharing || !imageCaptureAvailable}
               activeOpacity={0.84}
               accessibilityRole="button"
               accessibilityLabel={xhsShareLabel}
@@ -1222,42 +1038,46 @@ export function DietShareSheet({
           ) : null}
 
           <TouchableOpacity
-            style={[styles.saveLibraryButton, (sharing || !imageReady) && styles.shareButtonDisabled]}
+            style={[styles.saveLibraryButton, (sharing || !imageCaptureAvailable) && styles.shareButtonDisabled]}
             onPress={handleSaveToLibrary}
-            disabled={sharing || !imageReady}
+            disabled={sharing || !imageCaptureAvailable}
             activeOpacity={0.84}
             accessibilityRole="button"
             accessibilityLabel="保存饮食图片到相册"
           >
-            {sharingAction === 'library' || !imageReady ? (
+            {sharingAction === 'library' || (hasPhoto && !imageReady && !imageTimedOut) ? (
               <ActivityIndicator size="small" color={C.green600} />
             ) : (
-              <Ionicons name="download-outline" size={19} color={C.green600} />
+              <Ionicons name={imageCaptureAvailable ? 'download-outline' : 'image-outline'} size={19} color={C.green600} />
             )}
             <View style={styles.shareButtonCopy}>
-              <Text style={styles.saveLibraryButtonText}>{!imageReady ? '图片加载中' : sharingAction === 'library' ? '存图中' : saveLibraryLabel}</Text>
-              {!sharing && imageReady ? (
+              <Text style={styles.saveLibraryButtonText}>
+                {!hasPhoto || imageTimedOut ? '图片暂不可用' : !imageReady ? '图片加载中' : sharingAction === 'library' ? '存图中' : saveLibraryLabel}
+              </Text>
+              {!sharing && imageCaptureAvailable ? (
                 <Text style={styles.saveLibraryButtonHint}>{saveLibraryHint}</Text>
               ) : null}
             </View>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.shareButton, (sharing || !imageReady) && styles.shareButtonDisabled]}
+            style={[styles.shareButton, (sharing || !imageCaptureAvailable) && styles.shareButtonDisabled]}
             onPress={() => handleShare('generic')}
-            disabled={sharing || !imageReady}
+            disabled={sharing || !imageCaptureAvailable}
             activeOpacity={0.84}
             accessibilityRole="button"
             accessibilityLabel="保存或分享饮食图片"
           >
-            {sharingAction === 'generic' || !imageReady ? (
+            {sharingAction === 'generic' || (hasPhoto && !imageReady && !imageTimedOut) ? (
               <ActivityIndicator size="small" color={C.greenOn} />
             ) : (
-              <Ionicons name="share-outline" size={19} color={C.greenOn} />
+              <Ionicons name={imageCaptureAvailable ? 'share-outline' : 'document-text-outline'} size={19} color={C.greenOn} />
             )}
             <View style={styles.shareButtonCopy}>
-              <Text style={styles.shareButtonText}>{!imageReady ? '图片加载中' : sharingAction === 'generic' ? '生成中' : genericShareLabel}</Text>
-              {!sharing && imageReady ? (
+              <Text style={styles.shareButtonText}>
+                {!hasPhoto || imageTimedOut ? '请使用下方正文分享' : !imageReady ? '图片加载中' : sharingAction === 'generic' ? '生成中' : genericShareLabel}
+              </Text>
+              {!sharing && imageCaptureAvailable ? (
                 <Text style={styles.shareButtonHint}>{genericShareHint}</Text>
               ) : null}
             </View>
@@ -1300,8 +1120,196 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     aspectRatio: 3 / 4,
-    backgroundColor: C.surface,
+    backgroundColor: '#F7EAD7',
     overflow: 'hidden',
+  },
+  posterPhotoFrame: {
+    width: '100%',
+    height: '55%',
+    position: 'relative',
+    overflow: 'hidden',
+    backgroundColor: '#D8C7AD',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(102, 75, 44, 0.24)',
+  },
+  posterPhoto: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  posterPhotoShade: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(44, 31, 18, 0.06)',
+  },
+  posterPhotoMeta: {
+    position: 'absolute',
+    top: 14,
+    left: 15,
+    right: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  posterMealBadge: {
+    minHeight: 26,
+    paddingHorizontal: 11,
+    justifyContent: 'center',
+    borderRadius: 13,
+    borderCurve: 'continuous',
+    backgroundColor: 'rgba(250, 243, 231, 0.92)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(99, 70, 40, 0.28)',
+  },
+  posterMealBadgeText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    color: '#5D422A',
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
+  posterDate: {
+    fontFamily: revaFonts.mono,
+    fontSize: 10,
+    color: '#FFF8ED',
+    fontWeight: '800',
+    textShadowColor: 'rgba(43, 29, 15, 0.55)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  posterCopy: {
+    height: '45%',
+    paddingHorizontal: 20,
+    paddingTop: 15,
+    paddingBottom: 13,
+    gap: 7,
+    backgroundColor: '#F7EAD7',
+  },
+  posterRuleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    height: 3,
+  },
+  posterRuleLong: {
+    width: 34,
+    height: 3,
+    borderRadius: 2,
+    borderCurve: 'continuous',
+    backgroundColor: '#C8753D',
+  },
+  posterRuleShort: {
+    width: 7,
+    height: 3,
+    borderRadius: 2,
+    borderCurve: 'continuous',
+    backgroundColor: '#52755D',
+  },
+  posterHeadline: {
+    fontFamily: revaFonts.sans,
+    fontSize: 20,
+    lineHeight: 25,
+    color: '#35271E',
+    fontWeight: '900',
+    letterSpacing: 0.2,
+  },
+  posterFoodLine: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11.5,
+    lineHeight: 16,
+    color: '#725E4D',
+    fontWeight: '700',
+  },
+  posterNutrition: {
+    paddingTop: 7,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(104, 76, 48, 0.2)',
+    gap: 3,
+  },
+  posterMacroLine: {
+    fontFamily: revaFonts.mono,
+    fontSize: 12,
+    lineHeight: 16,
+    color: '#45362B',
+    fontWeight: '700',
+  },
+  posterTagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  posterTag: {
+    minHeight: 21,
+    borderRadius: 11,
+    borderCurve: 'continuous',
+    justifyContent: 'center',
+    paddingHorizontal: 9,
+    backgroundColor: 'rgba(255, 250, 240, 0.72)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(82, 117, 93, 0.3)',
+  },
+  posterTagText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 9.5,
+    color: '#47664F',
+    fontWeight: '900',
+  },
+  posterFooter: {
+    marginTop: 'auto',
+    minHeight: 27,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 9,
+  },
+  posterNextAction: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  posterNextActionDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#C8753D',
+  },
+  posterNextActionText: {
+    flexShrink: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 9.5,
+    lineHeight: 13,
+    color: '#5E4A3A',
+    fontWeight: '800',
+  },
+  posterDisclosure: {
+    fontFamily: revaFonts.sans,
+    fontSize: 8.5,
+    lineHeight: 12,
+    color: '#8C7764',
+    fontWeight: '700',
+    textAlign: 'right',
+  },
+  posterFooterMark: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderCurve: 'continuous',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(82, 117, 93, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  posterFooterMarkDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#52755D',
+  },
+  posterFooterMarkLine: {
+    position: 'absolute',
+    width: 9,
+    height: 1,
+    backgroundColor: 'rgba(82, 117, 93, 0.58)',
+    transform: [{ rotate: '-35deg' }],
   },
   cardHeader: {
     height: 48,
@@ -1583,6 +1591,51 @@ const styles = StyleSheet.create({
     ...revaShadows.md,
   },
   captureSurface: { width: '100%', height: '100%', backgroundColor: C.surface },
+  photoUnavailablePanel: {
+    flex: 1,
+    paddingHorizontal: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 9,
+    backgroundColor: '#F7EAD7',
+  },
+  photoUnavailableTitle: {
+    fontFamily: revaFonts.sans,
+    fontSize: 14,
+    lineHeight: 20,
+    color: C.ink2,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  photoUnavailableDetail: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    lineHeight: 16,
+    color: C.ink3,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  photoErrorStrip: {
+    width: '100%',
+    minHeight: 34,
+    marginTop: revaSpacing.s2,
+    paddingHorizontal: 10,
+    borderRadius: revaRadii.sm,
+    borderCurve: 'continuous',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: revaSemantic.caution.bg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: revaSemantic.caution.line,
+  },
+  photoErrorText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    color: revaSemantic.caution.fg,
+    fontWeight: '800',
+  },
   shareReadyStrip: {
     width: '100%',
     minHeight: 38,
