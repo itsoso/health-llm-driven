@@ -269,6 +269,7 @@ CLINICIAN_REPORT_PREDICATES = (
     "认为",
     "诊断",
     "判断",
+    "评估",
     "建议",
     "要求",
     "嘱咐",

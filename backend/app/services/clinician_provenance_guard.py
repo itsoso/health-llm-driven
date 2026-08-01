@@ -32,14 +32,49 @@ DecisionKind: TypeAlias = Literal[
 
 _HARD_BOUNDARIES = frozenset("。；;！？!?\n")
 _SOFT_BOUNDARIES = ("，", ",")
-_COORDINATION_CUES = (
+_ACTION_CONNECTORS = (
+    "，然后",
+    ",然后",
+    "，随后",
+    ",随后",
+    "，接着",
+    ",接着",
+    "，顺便",
+    ",顺便",
     "然后",
     "随后",
     "接着",
     "顺便",
-    "同时还",
-    "并且请",
-    "再请",
+    "同时",
+    "以及",
+    "并且",
+    "并",
+    "，",
+    ",",
+)
+_COORDINATION_CONNECTORS = tuple(
+    connector
+    for connector in _ACTION_CONNECTORS
+    if connector not in _SOFT_BOUNDARIES
+)
+# These roots only invalidate a previously proven feedback-write envelope.
+# They are never used to authorize or classify general user actions.
+_WRITE_ENVELOPE_BLOCKED_ROOTS = (
+    "删除",
+    "删掉",
+    "移除",
+    "修改",
+    "调整",
+    "更新",
+    "同步",
+    "提醒",
+    "保存",
+    "记录",
+    "录入",
+    "写入",
+    "创建",
+    "设置",
+    "生成",
 )
 _REPORT_FILLERS = frozenset(" 是为：:，,")
 
@@ -229,9 +264,50 @@ def _match_feedback_object(
     return provider, _Span(provider.start, noun.end)
 
 
-def _has_coordination_ambiguity(raw: str, span: _Span) -> bool:
-    text = raw[span.start : span.end]
-    return any(cue in text for cue in (*_SOFT_BOUNDARIES, *_COORDINATION_CUES))
+def _tail_starts_with(
+    raw: str,
+    *,
+    position: int,
+    end: int,
+    terms: tuple[str, ...],
+    allow_polite_prefix: bool,
+) -> bool:
+    position = _skip_spaces(raw, position, end)
+    if allow_polite_prefix:
+        prefix = _starts_with_term(
+            raw,
+            CLINICIAN_STRICT_COMMAND_PREFIXES,
+            position=position,
+            end=end,
+        )
+        if prefix is not None:
+            position = _skip_spaces(raw, prefix[0].end, end)
+    return _starts_with_term(
+        raw,
+        terms,
+        position=position,
+        end=end,
+    ) is not None
+
+
+def _has_envelope_mixed_action(raw: str, span: _Span) -> bool:
+    for connector in _ACTION_CONNECTORS:
+        position = raw.find(connector, span.start, span.end)
+        while position >= 0:
+            if _tail_starts_with(
+                raw,
+                position=position + len(connector),
+                end=span.end,
+                terms=_WRITE_ENVELOPE_BLOCKED_ROOTS,
+                allow_polite_prefix=True,
+            ):
+                return True
+            position = raw.find(
+                connector,
+                position + len(connector),
+                span.end,
+            )
+    return False
 
 
 def _parse_write_segment(
@@ -267,17 +343,11 @@ def _parse_write_segment(
         return None
     provider, feedback_object = object_match
     position = _skip_spaces(raw, feedback_object.end, segment.end)
-    if position >= segment.end or raw[position] not in "：:":
-        return _WriteCandidate(
-            segment_index=segment_index,
-            provider=provider,
-            content=None,
-            command=None,
-            status="missing_content",
-        )
-
-    command = _trim(raw, segment.start, position)
-    content = _trim(raw, position + 1, segment.end)
+    command = _trim(raw, segment.start, feedback_object.end)
+    if position < segment.end and raw[position] in "：:":
+        content = _trim(raw, position + 1, segment.end)
+    else:
+        content = _trim(raw, position, segment.end)
     if content.start >= content.end:
         return _WriteCandidate(
             segment_index=segment_index,
@@ -286,7 +356,7 @@ def _parse_write_segment(
             command=None,
             status="missing_content",
         )
-    if _has_coordination_ambiguity(raw, content):
+    if _has_envelope_mixed_action(raw, content):
         return _WriteCandidate(
             segment_index=segment_index,
             provider=provider,
@@ -373,11 +443,48 @@ def _span_is_question(raw: str, span: _Span) -> bool:
     )
 
 
-def _has_soft_followup(raw: str, report: _Report) -> bool:
+def _has_report_followup(
+    raw: str,
+    report: _Report,
+    connectors: tuple[str, ...],
+) -> bool:
     if report.content is None:
         return False
-    content = raw[report.content.start : report.content.end]
-    return any(boundary in content for boundary in _SOFT_BOUNDARIES)
+    for connector in connectors:
+        position = raw.find(
+            connector,
+            report.content.start,
+            report.content.end,
+        )
+        while position >= 0:
+            if _tail_starts_with(
+                raw,
+                position=position + len(connector),
+                end=report.content.end,
+                terms=("提醒我",),
+                allow_polite_prefix=True,
+            ) or _tail_starts_with(
+                raw,
+                position=position + len(connector),
+                end=report.content.end,
+                terms=CLINICIAN_STRICT_COMMAND_PREFIXES,
+                allow_polite_prefix=False,
+            ):
+                return True
+            position = raw.find(
+                connector,
+                position + len(connector),
+                report.content.end,
+            )
+    return False
+
+
+def _has_soft_followup(raw: str, report: _Report) -> bool:
+    return _has_report_followup(raw, report, _SOFT_BOUNDARIES)
+
+
+def _has_coordinated_followup(raw: str, report: _Report) -> bool:
+    return _has_report_followup(raw, report, _COORDINATION_CONNECTORS)
 
 
 def _has_legacy_clinician_record(raw: str) -> bool:
@@ -502,11 +609,7 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
             if (
                 _span_is_question(raw, segments[0])
                 or _has_soft_followup(raw, preceding_report)
-                or preceding_report.content
-                and _has_coordination_ambiguity(
-                    raw,
-                    preceding_report.content,
-                )
+                or _has_coordinated_followup(raw, preceding_report)
             ):
                 return _ambiguous_candidate(
                     raw,
@@ -545,7 +648,7 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
                 provider=report.provider,
                 content=report.content,
             )
-        if report.content and _has_coordination_ambiguity(raw, report.content):
+        if _has_coordinated_followup(raw, report):
             return _decision(
                 raw,
                 kind="ambiguous_clinician_action",

@@ -18,8 +18,35 @@
     "command": "保存医生意见"
   },
   {
+    "id": "explicit_diagnosis_write_without_colon",
+    "text": "请记录医生诊断臀肌无力",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "臀肌无力",
+    "command": "请记录医生诊断"
+  },
+  {
+    "id": "explicit_opinion_write_without_colon",
+    "text": "保存医生意见建议减少负重训练",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "建议减少负重训练",
+    "command": "保存医生意见"
+  },
+  {
     "id": "explicit_write_after_hard_boundary",
     "text": "医生说是臀肌无力。请记录医生诊断：臀肌无力导致腰痛",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write_after_report",
+    "provider": "医生",
+    "content": "臀肌无力导致腰痛",
+    "command": "请记录医生诊断"
+  },
+  {
+    "id": "explicit_write_without_colon_after_hard_boundary",
+    "text": "医生说是臀肌无力。请记录医生诊断臀肌无力导致腰痛",
     "kind": "explicit_doctor_feedback_write",
     "reason_code": "explicit_feedback_write_after_report",
     "provider": "医生",
@@ -49,6 +76,30 @@
     "reason_code": "clinician_report",
     "provider": "医生",
     "content": "大腿和臀部肌肉无力导致腰肌代偿进而导致腰肌痛"
+  },
+  {
+    "id": "doctor_diagnosis_with_medical_comma",
+    "text": "医生诊断是臀肌无力，导致腰肌代偿",
+    "kind": "clinician_context",
+    "reason_code": "clinician_report",
+    "provider": "医生",
+    "content": "臀肌无力，导致腰肌代偿"
+  },
+  {
+    "id": "doctor_assessment_context",
+    "text": "医生评估是腰肌劳损",
+    "kind": "clinician_context",
+    "reason_code": "clinician_report",
+    "provider": "医生",
+    "content": "腰肌劳损"
+  },
+  {
+    "id": "therapist_assessment_context",
+    "text": "物理治疗师评估是臀肌力量不足",
+    "kind": "clinician_context",
+    "reason_code": "clinician_report",
+    "provider": "物理治疗师",
+    "content": "臀肌力量不足"
   },
   {
     "id": "doctor_report_question",
@@ -97,6 +148,39 @@
     "reason_code": "coordinated_clinician_action",
     "provider": "医生",
     "content": "臀肌无力，删除旧记录"
+  },
+  {
+    "id": "write_with_medical_comma",
+    "text": "请记录医生诊断：臀肌无力，伴腰肌代偿",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "臀肌无力，伴腰肌代偿",
+    "command": "请记录医生诊断"
+  },
+  {
+    "id": "write_with_and_delete_action",
+    "text": "请记录医生诊断：臀肌无力并删除旧记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力并删除旧记录"
+  },
+  {
+    "id": "write_with_simultaneous_reminder_action",
+    "text": "请记录医生意见：建议休息同时提醒我明天复查",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "建议休息同时提醒我明天复查"
+  },
+  {
+    "id": "write_with_and_save_diet_action",
+    "text": "写入医生反馈：减少负重以及保存午餐",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "减少负重以及保存午餐"
   },
   {
     "id": "write_without_content",
