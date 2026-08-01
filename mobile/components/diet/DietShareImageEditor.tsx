@@ -78,10 +78,19 @@ try {
   ImageManipulator = null;
 }
 
-const AnimatedImage = Animated.createAnimatedComponent(Image);
 const VIEWPORT_ASPECT_RATIO = 3 / 4;
 const DEFAULT_BRUSH_WIDTH = 0.06;
 const JPEG_COMPRESSION = 0.95;
+const MAX_GESTURE_SCALE = 8;
+const EDITOR_HORIZONTAL_PADDING = 32;
+const EDITOR_FIXED_VERTICAL_SPACE = 250;
+
+type GestureConstraint = {
+  scale: number;
+  translateX: number;
+  translateY: number;
+  crop: DietShareImageEdit['crop'];
+};
 
 function cloneEdit(edit: DietShareImageEdit): DietShareImageEdit {
   return {
@@ -98,15 +107,89 @@ function sameEdit(left: DietShareImageEdit, right: DietShareImageEdit): boolean 
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function normalizedSquareCrop(crop: DietShareImageEdit['crop']): DietShareImageEdit['crop'] {
+  if (
+    !Number.isFinite(crop.x)
+    || !Number.isFinite(crop.y)
+    || !Number.isFinite(crop.width)
+    || !Number.isFinite(crop.height)
+    || crop.width <= 0
+    || crop.height <= 0
+  ) {
+    return { x: 0, y: 0, width: 1, height: 1 };
+  }
+  const size = Math.min(1, crop.width, crop.height);
+  return {
+    x: Math.min(1 - size, Math.max(0, crop.x)),
+    y: Math.min(1 - size, Math.max(0, crop.y)),
+    width: size,
+    height: size,
+  };
+}
+
+function normalizeEditorEdit(edit: DietShareImageEdit): DietShareImageEdit {
+  return {
+    ...cloneEdit(edit),
+    crop: normalizedSquareCrop(edit.crop),
+  };
+}
+
+export function constrainDietShareGesture(
+  edit: DietShareImageEdit,
+  viewport: Size,
+  requestedScale: number,
+  requestedTranslateX: number,
+  requestedTranslateY: number,
+): GestureConstraint {
+  'worklet';
+  const rawWidth = Number.isFinite(edit.crop.width) ? edit.crop.width : 1;
+  const rawHeight = Number.isFinite(edit.crop.height) ? edit.crop.height : 1;
+  const size = Math.min(1, Math.max(0.001, rawWidth, 0), Math.max(0.001, rawHeight, 0));
+  const x = Math.min(1 - size, Math.max(0, Number.isFinite(edit.crop.x) ? edit.crop.x : 0));
+  const y = Math.min(1 - size, Math.max(0, Number.isFinite(edit.crop.y) ? edit.crop.y : 0));
+  const scale = Math.min(
+    MAX_GESTURE_SCALE,
+    Math.max(1, Number.isFinite(requestedScale) ? requestedScale : 1),
+  );
+  const nextSize = size / scale;
+  const inset = (size - nextSize) / 2;
+  const safeWidth = Math.max(1, viewport.width);
+  const safeHeight = Math.max(1, viewport.height);
+  const minTranslateX = -safeWidth * (1 - nextSize - x - inset) / nextSize;
+  const maxTranslateX = safeWidth * (x + inset) / nextSize;
+  const minTranslateY = -safeHeight * (1 - nextSize - y - inset) / nextSize;
+  const maxTranslateY = safeHeight * (y + inset) / nextSize;
+  const translateX = Math.min(
+    maxTranslateX,
+    Math.max(minTranslateX, Number.isFinite(requestedTranslateX) ? requestedTranslateX : 0),
+  );
+  const translateY = Math.min(
+    maxTranslateY,
+    Math.max(minTranslateY, Number.isFinite(requestedTranslateY) ? requestedTranslateY : 0),
+  );
+  return {
+    scale,
+    translateX,
+    translateY,
+    crop: {
+      x: x + inset - (translateX / safeWidth) * nextSize,
+      y: y + inset - (translateY / safeHeight) * nextSize,
+      width: nextSize,
+      height: nextSize,
+    },
+  };
+}
+
 function historyReducer(state: EditHistory, action: HistoryAction): EditHistory {
   if (action.type === 'replace') {
-    return { past: [], current: cloneEdit(action.edit), future: [] };
+    return { past: [], current: normalizeEditorEdit(action.edit), future: [] };
   }
   if (action.type === 'commit') {
-    if (sameEdit(state.current, action.edit)) return state;
+    const edit = normalizeEditorEdit(action.edit);
+    if (sameEdit(state.current, edit)) return state;
     return {
       past: [...state.past, state.current],
-      current: cloneEdit(action.edit),
+      current: edit,
       future: [],
     };
   }
@@ -167,10 +250,11 @@ function pixelCrop(
   crop: DietShareImageEdit['crop'],
 ): { originX: number; originY: number; width: number; height: number } {
   const base = baseCropForPoster(source);
-  const exactX = base.x + crop.x * base.width;
-  const exactY = base.y + crop.y * base.height;
-  const exactRight = exactX + crop.width * base.width;
-  const exactBottom = exactY + crop.height * base.height;
+  const normalized = normalizedSquareCrop(crop);
+  const exactX = base.x + normalized.x * base.width;
+  const exactY = base.y + normalized.y * base.height;
+  const exactRight = exactX + normalized.width * base.width;
+  const exactBottom = exactY + normalized.height * base.height;
   const originX = Math.min(source.width - 1, Math.max(0, Math.floor(exactX)));
   const originY = Math.min(source.height - 1, Math.max(0, Math.floor(exactY)));
   const right = Math.min(source.width, Math.max(originX + 1, Math.ceil(exactRight)));
@@ -180,6 +264,37 @@ function pixelCrop(
     originY,
     width: right - originX,
     height: bottom - originY,
+  };
+}
+
+function previewImageLayout(
+  source: Size,
+  rotation: DietShareImageEdit['rotation'],
+  crop: DietShareImageEdit['crop'],
+  viewport: Size,
+): { position: 'absolute'; width: number; height: number; left: number; top: number } {
+  const effective = effectiveSize(source, rotation);
+  const base = baseCropForPoster(effective);
+  const normalized = normalizedSquareCrop(crop);
+  const visibleCrop = {
+    x: base.x + normalized.x * base.width,
+    y: base.y + normalized.y * base.height,
+    width: base.width * normalized.width,
+    height: base.height * normalized.height,
+  };
+  const pixelScale = viewport.width / visibleCrop.width;
+  const cropCenterX = visibleCrop.x + visibleCrop.width / 2;
+  const cropCenterY = visibleCrop.y + visibleCrop.height / 2;
+  const imageCenterX = viewport.width / 2 - (cropCenterX - effective.width / 2) * pixelScale;
+  const imageCenterY = viewport.height / 2 - (cropCenterY - effective.height / 2) * pixelScale;
+  const width = source.width * pixelScale;
+  const height = source.height * pixelScale;
+  return {
+    position: 'absolute',
+    width,
+    height,
+    left: imageCenterX - width / 2,
+    top: imageCenterY - height / 2,
   };
 }
 
@@ -235,29 +350,36 @@ export function DietShareImageEditor({
   onComplete,
   onCancel,
 }: DietShareImageEditorProps) {
-  const startingEdit = initialEdit ?? initialDietShareImageEdit();
+  const startingEdit = normalizeEditorEdit(initialEdit ?? initialDietShareImageEdit());
   const initialEditKey = JSON.stringify(startingEdit);
   const [history, dispatch] = useReducer(historyReducer, {
     past: [],
-    current: cloneEdit(startingEdit),
+    current: startingEdit,
     future: [],
   });
   const [phase, setPhase] = useState<EditorPhase>('loading');
   const [failureKind, setFailureKind] = useState<FailureKind | null>(null);
   const [sourceSize, setSourceSize] = useState<Size | null>(null);
   const [viewportSize, setViewportSize] = useState<Size>({ width: 1, height: 1 });
+  const [rootSize, setRootSize] = useState<Size | null>(null);
   const [privacyMode, setPrivacyMode] = useState(false);
   const [imageKey, setImageKey] = useState(0);
   const strokeRef = useRef<NormalizedPoint[]>([]);
   const applyingRef = useRef(false);
+  const operationGenerationRef = useRef(0);
+  const visibleRef = useRef(visible);
   const gestureScale = useSharedValue(1);
   const gestureTranslateX = useSharedValue(0);
   const gestureTranslateY = useSharedValue(0);
+  const requestedTranslateX = useSharedValue(0);
+  const requestedTranslateY = useSharedValue(0);
   const gestureCommitted = useSharedValue(false);
   const currentEdit = history.current;
+  visibleRef.current = visible;
 
   useEffect(() => {
     if (!visible) return;
+    operationGenerationRef.current += 1;
     dispatch({ type: 'replace', edit: startingEdit });
     setPhase('loading');
     setFailureKind(null);
@@ -267,39 +389,54 @@ export function DietShareImageEditor({
     gestureScale.set(1);
     gestureTranslateX.set(0);
     gestureTranslateY.set(0);
+    requestedTranslateX.set(0);
+    requestedTranslateY.set(0);
     gestureCommitted.set(false);
   // startingEdit is represented by the stable serialization so object identity cannot reset edits.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, sourceUri, initialEditKey]);
 
+  useEffect(() => () => {
+    visibleRef.current = false;
+    operationGenerationRef.current += 1;
+  }, []);
+
   const hasChanges = !sameEdit(currentEdit, initialDietShareImageEdit());
   const canEdit = phase === 'ready';
 
   const commitGestureCrop = useCallback((scale: number, translateX: number, translateY: number) => {
-    if (!Number.isFinite(scale) || scale <= 0) return;
-    const current = currentEdit;
-    const nextWidth = current.crop.width / Math.max(1, scale);
-    const nextHeight = current.crop.height / Math.max(1, scale);
-    const next = updateDietShareCrop(current, {
-      x: current.crop.x + (current.crop.width - nextWidth) / 2
-        - (translateX / viewportSize.width) * nextWidth,
-      y: current.crop.y + (current.crop.height - nextHeight) / 2
-        - (translateY / viewportSize.height) * nextHeight,
-      width: nextWidth,
-      height: nextHeight,
-    });
+    const constrained = constrainDietShareGesture(
+      currentEdit,
+      viewportSize,
+      scale,
+      translateX,
+      translateY,
+    );
+    const next = updateDietShareCrop(currentEdit, constrained.crop);
     dispatch({ type: 'commit', edit: next });
-  }, [currentEdit, viewportSize.height, viewportSize.width]);
+  }, [currentEdit, viewportSize]);
 
   const panGesture = useMemo(() => Gesture.Pan()
     .onBegin(() => {
       gestureCommitted.set(false);
+      requestedTranslateX.set(0);
+      requestedTranslateY.set(0);
       gestureTranslateX.set(0);
       gestureTranslateY.set(0);
     })
     .onUpdate((event) => {
-      gestureTranslateX.set(event.translationX);
-      gestureTranslateY.set(event.translationY);
+      requestedTranslateX.set(event.translationX);
+      requestedTranslateY.set(event.translationY);
+      const constrained = constrainDietShareGesture(
+        currentEdit,
+        viewportSize,
+        gestureScale.get(),
+        requestedTranslateX.get(),
+        requestedTranslateY.get(),
+      );
+      gestureScale.set(constrained.scale);
+      gestureTranslateX.set(constrained.translateX);
+      gestureTranslateY.set(constrained.translateY);
     })
     .onFinalize(() => {
       if (!gestureCommitted.get()) {
@@ -313,15 +450,40 @@ export function DietShareImageEditor({
       gestureScale.set(1);
       gestureTranslateX.set(0);
       gestureTranslateY.set(0);
-    }), [commitGestureCrop, gestureCommitted, gestureScale, gestureTranslateX, gestureTranslateY]);
+      requestedTranslateX.set(0);
+      requestedTranslateY.set(0);
+    }), [
+      commitGestureCrop,
+      currentEdit,
+      gestureCommitted,
+      gestureScale,
+      gestureTranslateX,
+      gestureTranslateY,
+      requestedTranslateX,
+      requestedTranslateY,
+      viewportSize,
+    ]);
 
   const pinchGesture = useMemo(() => Gesture.Pinch()
     .onBegin(() => {
       gestureCommitted.set(false);
       gestureScale.set(1);
+      requestedTranslateX.set(0);
+      requestedTranslateY.set(0);
+      gestureTranslateX.set(0);
+      gestureTranslateY.set(0);
     })
     .onUpdate((event) => {
-      gestureScale.set(Math.max(1, event.scale));
+      const constrained = constrainDietShareGesture(
+        currentEdit,
+        viewportSize,
+        event.scale,
+        requestedTranslateX.get(),
+        requestedTranslateY.get(),
+      );
+      gestureScale.set(constrained.scale);
+      gestureTranslateX.set(constrained.translateX);
+      gestureTranslateY.set(constrained.translateY);
     })
     .onFinalize(() => {
       if (!gestureCommitted.get()) {
@@ -335,38 +497,51 @@ export function DietShareImageEditor({
       gestureScale.set(1);
       gestureTranslateX.set(0);
       gestureTranslateY.set(0);
-    }), [commitGestureCrop, gestureCommitted, gestureScale, gestureTranslateX, gestureTranslateY]);
+      requestedTranslateX.set(0);
+      requestedTranslateY.set(0);
+    }), [
+      commitGestureCrop,
+      currentEdit,
+      gestureCommitted,
+      gestureScale,
+      gestureTranslateX,
+      gestureTranslateY,
+      requestedTranslateX,
+      requestedTranslateY,
+      viewportSize,
+    ]);
 
   const composedGesture = useMemo(
     () => Gesture.Simultaneous(panGesture, pinchGesture),
     [panGesture, pinchGesture],
   );
 
-  const animatedImageStyle = useAnimatedStyle(() => ({
+  const animatedGestureStyle = useAnimatedStyle(() => ({
     opacity: phase === 'failed' ? 0.72 : 1,
     transform: [
-      { rotate: `${currentEdit.rotation}deg` },
-      { scale: gestureScale.get() },
       { translateX: gestureTranslateX.get() },
       { translateY: gestureTranslateY.get() },
+      { scale: gestureScale.get() },
     ],
   }));
 
   const imageLayoutStyle = useMemo(() => {
     if (!sourceSize) return styles.imageFill;
-    const effective = effectiveSize(sourceSize, currentEdit.rotation);
-    const coverScale = Math.max(
-      viewportSize.width / effective.width,
-      viewportSize.height / effective.height,
+    return previewImageLayout(
+      sourceSize,
+      currentEdit.rotation,
+      currentEdit.crop,
+      viewportSize,
     );
-    return {
-      position: 'absolute' as const,
-      width: sourceSize.width * coverScale,
-      height: sourceSize.height * coverScale,
-      left: (viewportSize.width - sourceSize.width * coverScale) / 2,
-      top: (viewportSize.height - sourceSize.height * coverScale) / 2,
-    };
-  }, [currentEdit.rotation, sourceSize, viewportSize.height, viewportSize.width]);
+  }, [currentEdit.crop, currentEdit.rotation, sourceSize, viewportSize]);
+
+  const viewportFrame = useMemo(() => {
+    if (!rootSize) return null;
+    const availableWidth = Math.max(1, rootSize.width - EDITOR_HORIZONTAL_PADDING);
+    const availableHeight = Math.max(1, rootSize.height - EDITOR_FIXED_VERTICAL_SPACE);
+    const width = Math.min(430, availableWidth, availableHeight * VIEWPORT_ASPECT_RATIO);
+    return { width, height: width / VIEWPORT_ASPECT_RATIO };
+  }, [rootSize]);
 
   const onPhotoLoad = useCallback((event: ImageLoadEventData) => {
     const nextSize = validSize(event.source.width, event.source.height);
@@ -386,6 +561,15 @@ export function DietShareImageEditor({
     if (!next) return;
     setViewportSize(previous => (
       previous.width === next.width && previous.height === next.height ? previous : next
+    ));
+  }, []);
+
+  const onRootLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    const next = validSize(width, height);
+    if (!next) return;
+    setRootSize(previous => (
+      previous?.width === next.width && previous?.height === next.height ? previous : next
     ));
   }, []);
 
@@ -420,6 +604,7 @@ export function DietShareImageEditor({
   }, [currentEdit, viewportSize]);
 
   const requestCancel = useCallback(() => {
+    if (phase === 'applying') return;
     if (!hasChanges) {
       onCancel();
       return;
@@ -432,7 +617,7 @@ export function DietShareImageEditor({
         { text: '丢弃编辑', style: 'destructive', onPress: onCancel },
       ],
     );
-  }, [hasChanges, onCancel]);
+  }, [hasChanges, onCancel, phase]);
 
   const retry = useCallback(() => {
     setFailureKind(null);
@@ -457,6 +642,8 @@ export function DietShareImageEditor({
     }
 
     setPhase('applying');
+    const operationGeneration = operationGenerationRef.current + 1;
+    operationGenerationRef.current = operationGeneration;
     const edit = cloneEdit(currentEdit);
     const rotatedSize = effectiveSize(sourceSize, edit.rotation);
     const crop = pixelCrop(rotatedSize, edit.crop);
@@ -471,6 +658,16 @@ export function DietShareImageEditor({
       });
       const outputUri = result.uri;
       if (!outputUri) throw new Error('image_edit_result_missing');
+      if (
+        operationGeneration !== operationGenerationRef.current
+        || !visibleRef.current
+      ) {
+        applyingRef.current = false;
+        if (outputUri !== sourceUri) {
+          await FileSystem.deleteAsync(outputUri, { idempotent: true });
+        }
+        return;
+      }
       onComplete({
         ...edit,
         editedUri: outputUri,
@@ -480,6 +677,10 @@ export function DietShareImageEditor({
       });
     } catch {
       applyingRef.current = false;
+      if (
+        operationGeneration !== operationGenerationRef.current
+        || !visibleRef.current
+      ) return;
       setFailureKind('manipulation');
       setPhase('failed');
       // URI, food and record identifiers must never enter editor diagnostics.
@@ -506,13 +707,19 @@ export function DietShareImageEditor({
       presentationStyle="fullScreen"
       onRequestClose={requestCancel}
     >
-      <SafeAreaView testID="diet-share-editor-root" style={styles.root}>
+      <SafeAreaView testID="diet-share-editor-root" onLayout={onRootLayout} style={styles.root}>
         <View style={styles.header}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="取消图片编辑"
-            onPress={requestCancel}
-            style={({ pressed }) => [styles.headerButton, pressed ? styles.buttonPressed : null]}
+            accessibilityState={{ disabled: phase === 'applying' }}
+            disabled={phase === 'applying'}
+            onPress={phase === 'applying' ? undefined : requestCancel}
+            style={({ pressed }) => [
+              styles.headerButton,
+              pressed ? styles.buttonPressed : null,
+              phase === 'applying' ? styles.buttonDisabled : null,
+            ]}
           >
             <Text style={styles.headerButtonText}>取消</Text>
           </Pressable>
@@ -530,23 +737,31 @@ export function DietShareImageEditor({
               text: `旋转 ${history.current.rotation} 度，隐私涂抹 ${history.current.redactions.length} 条`,
             }}
             onLayout={onViewportLayout}
-            style={styles.viewport}
+            style={[styles.viewport, viewportFrame]}
           >
             <GestureDetector gesture={composedGesture}>
-              <AnimatedImage
-                key={`${sourceUri}:${imageKey}`}
-                testID="diet-share-editor-image"
-                source={{ uri: sourceUri }}
-                contentFit="fill"
-                cachePolicy="memory-disk"
-                onLoad={onPhotoLoad}
-                onError={() => {
-                  if (phase === 'applying') return;
-                  setFailureKind('load');
-                  setPhase('failed');
-                }}
-                style={[imageLayoutStyle, animatedImageStyle]}
-              />
+              <Animated.View
+                testID="diet-share-editor-transform"
+                style={[styles.imageTransformLayer, animatedGestureStyle]}
+              >
+                <Image
+                  key={`${sourceUri}:${imageKey}`}
+                  testID="diet-share-editor-image"
+                  source={{ uri: sourceUri }}
+                  contentFit="fill"
+                  cachePolicy="memory-disk"
+                  onLoad={onPhotoLoad}
+                  onError={() => {
+                    if (phase === 'applying') return;
+                    setFailureKind('load');
+                    setPhase('failed');
+                  }}
+                  style={[
+                    imageLayoutStyle,
+                    { transform: [{ rotate: `${currentEdit.rotation}deg` }] },
+                  ]}
+                />
+              </Animated.View>
             </GestureDetector>
 
             <View
@@ -712,6 +927,9 @@ const styles = StyleSheet.create({
     borderCurve: 'continuous',
   },
   imageFill: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  imageTransformLayer: {
     ...StyleSheet.absoluteFillObject,
   },
   privacyCanvas: {

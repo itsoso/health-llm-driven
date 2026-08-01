@@ -4,6 +4,11 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockManipulateAsync = jest.fn();
 let mockManipulatorAvailable = true;
+const mockGestureHandlers: Record<'pan' | 'pinch', Record<string, (event?: any) => void>> = {
+  pan: {},
+  pinch: {},
+};
+const mockAnimatedStyleFactories: (() => any)[] = [];
 
 jest.mock('expo-image-manipulator', () => ({
   get manipulateAsync() {
@@ -20,8 +25,8 @@ jest.mock('expo-file-system/legacy', () => ({
 }));
 
 jest.mock('expo-image', () => {
-  const ReactModule = require('react');
-  const { View } = require('react-native');
+  const ReactModule: any = jest.requireActual('react');
+  const { View }: any = jest.requireActual('react-native');
   return {
     Image: ReactModule.forwardRef((props: unknown, ref: unknown) => (
       ReactModule.createElement(View, { ...(props as object), ref })
@@ -30,9 +35,9 @@ jest.mock('expo-image', () => {
 });
 
 jest.mock('react-native-reanimated', () => {
-  const ReactModule = require('react');
-  const RN = require('react-native');
-  const createAnimatedComponent = (Component: React.ComponentType<unknown>) => (
+  const ReactModule: any = jest.requireActual('react');
+  const RN: any = jest.requireActual('react-native');
+  const createAnimatedComponent = (Component: any) => (
     ReactModule.forwardRef((props: unknown, ref: unknown) => (
       ReactModule.createElement(Component, { ...(props as object), ref })
     ))
@@ -51,33 +56,43 @@ jest.mock('react-native-reanimated', () => {
         set: (next: unknown) => { value = next; },
       };
     },
-    useAnimatedStyle: (factory: () => unknown) => factory(),
+    useAnimatedStyle: (factory: () => unknown) => {
+      mockAnimatedStyleFactories.push(factory);
+      return factory();
+    },
     runOnJS: (fn: (...args: unknown[]) => unknown) => fn,
   };
 });
 
 jest.mock('react-native-gesture-handler', () => {
-  const chain = () => {
+  const chain = (kind: 'pan' | 'pinch') => {
     const gesture: Record<string, jest.Mock> = {};
     ['onBegin', 'onUpdate', 'onFinalize'].forEach((name) => {
-      gesture[name] = jest.fn(() => gesture);
+      gesture[name] = jest.fn((handler: (event?: any) => void) => {
+        mockGestureHandlers[kind][name] = handler;
+        return gesture;
+      });
     });
     return gesture;
   };
   return {
     Gesture: {
-      Pan: chain,
-      Pinch: chain,
+      Pan: () => chain('pan'),
+      Pinch: () => chain('pinch'),
       Simultaneous: (...gestures: unknown[]) => gestures,
     },
     GestureDetector: ({ children }: { children: React.ReactNode }) => children,
   };
 });
 
+// Mocks must be registered before the native-backed component is loaded.
+// eslint-disable-next-line import/first
 import {
+  constrainDietShareGesture,
   DietShareImageEditor,
   type DietShareImageEditorResult,
 } from '../DietShareImageEditor';
+// eslint-disable-next-line import/first
 import { initialDietShareImageEdit } from '../dietShareImageEdit';
 
 const SOURCE_URI = 'file:///private/meal.jpg';
@@ -102,6 +117,19 @@ function loadPhoto(view: ReturnType<typeof renderEditor>, size = SOURCE_SIZE) {
   fireEvent(view.getByTestId('diet-share-editor-image'), 'load', { source: size });
 }
 
+function layoutEditor(view: ReturnType<typeof renderEditor>, width: number, height: number) {
+  fireEvent(view.getByTestId('diet-share-editor-root'), 'layout', {
+    nativeEvent: { layout: { x: 0, y: 0, width, height } },
+  });
+  const viewportStyle = StyleSheet.flatten(view.getByTestId('diet-share-editor-viewport').props.style);
+  fireEvent(view.getByTestId('diet-share-editor-viewport'), 'layout', {
+    nativeEvent: {
+      layout: { x: 0, y: 0, width: viewportStyle.width, height: viewportStyle.height },
+    },
+  });
+  return viewportStyle;
+}
+
 function drawPrivacyStroke(view: ReturnType<typeof renderEditor>) {
   fireEvent.press(view.getByRole('button', { name: '隐私涂抹' }));
   const canvas = view.getByTestId('diet-share-privacy-canvas');
@@ -113,9 +141,28 @@ function drawPrivacyStroke(view: ReturnType<typeof renderEditor>) {
   fireEvent(canvas, 'responderRelease', { nativeEvent: { locationX: 240, locationY: 300 } });
 }
 
+function runGesture(
+  kind: 'pan' | 'pinch',
+  phase: 'onBegin' | 'onUpdate' | 'onFinalize',
+  event: Record<string, number> = {},
+) {
+  const handler = mockGestureHandlers[kind][phase];
+  if (!handler) throw new Error(`missing ${kind}.${phase} gesture handler`);
+  act(() => handler(event));
+}
+
+function latestAnimatedStyle(): any {
+  const factory = mockAnimatedStyleFactories[mockAnimatedStyleFactories.length - 1];
+  if (!factory) throw new Error('missing animated style factory');
+  return factory();
+}
+
 describe('DietShareImageEditor', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGestureHandlers.pan = {};
+    mockGestureHandlers.pinch = {};
+    mockAnimatedStyleFactories.length = 0;
     mockManipulatorAvailable = true;
     mockManipulateAsync.mockResolvedValue({
       uri: 'file:///cache/edited-meal.jpg',
@@ -171,6 +218,78 @@ describe('DietShareImageEditor', () => {
     expect(mockDeleteAsync).toHaveBeenCalledWith(
       'file:///cache/edited-meal.jpg',
       { idempotent: true },
+    );
+  });
+
+  it('normalizes a non-square initial crop instead of stretching the 3:4 preview', async () => {
+    const view = renderEditor({
+      initialEdit: {
+        ...initialDietShareImageEdit(),
+        crop: { x: 0.1, y: 0.2, width: 0.75, height: 0.7 },
+      },
+    });
+    layoutEditor(view, 390, 844);
+    loadPhoto(view);
+
+    const imageStyle = StyleSheet.flatten(view.getByTestId('diet-share-editor-image').props.style);
+    expect(imageStyle.width / imageStyle.height).toBeCloseTo(SOURCE_SIZE.width / SOURCE_SIZE.height);
+    fireEvent.press(view.getByRole('button', { name: '完成图片编辑' }));
+
+    await waitFor(() => expect(view.onComplete).toHaveBeenCalledTimes(1));
+    expect(view.onComplete.mock.calls[0][0].crop).toEqual({
+      x: 0.1,
+      y: 0.2,
+      width: 0.7,
+      height: 0.7,
+    });
+  });
+
+  it('clamps live pan, commits pinch plus pan, and keeps preview and export on the same crop', async () => {
+    const view = renderEditor();
+    const viewportStyle = layoutEditor(view, 390, 844);
+    loadPhoto(view);
+    const initialImageStyle = StyleSheet.flatten(view.getByTestId('diet-share-editor-image').props.style);
+
+    runGesture('pinch', 'onBegin');
+    runGesture('pinch', 'onUpdate', { scale: 2 });
+    runGesture('pan', 'onBegin');
+    runGesture('pan', 'onUpdate', { translationX: 99_999, translationY: -99_999 });
+
+    const expected = constrainDietShareGesture(
+      initialDietShareImageEdit(),
+      { width: viewportStyle.width, height: viewportStyle.height },
+      2,
+      99_999,
+      -99_999,
+    );
+    const liveTransform = latestAnimatedStyle().transform;
+    expect(liveTransform).toEqual(expect.arrayContaining([
+      { scale: expected.scale },
+      { translateX: expected.translateX },
+      { translateY: expected.translateY },
+    ]));
+    expect(expected.translateX).toBeLessThan(99_999);
+    expect(expected.translateY).toBeGreaterThan(-99_999);
+
+    runGesture('pan', 'onFinalize');
+    runGesture('pinch', 'onFinalize');
+
+    const committedImageStyle = StyleSheet.flatten(view.getByTestId('diet-share-editor-image').props.style);
+    expect(committedImageStyle.width).toBeCloseTo(initialImageStyle.width * 2);
+    expect(committedImageStyle.width / committedImageStyle.height).toBeCloseTo(
+      SOURCE_SIZE.width / SOURCE_SIZE.height,
+    );
+    expect(view.getByLabelText('图片编辑状态')).toHaveAccessibilityValue({
+      text: '旋转 0 度，隐私涂抹 0 条',
+    });
+
+    fireEvent.press(view.getByRole('button', { name: '完成图片编辑' }));
+    await waitFor(() => expect(view.onComplete).toHaveBeenCalledTimes(1));
+    expect(view.onComplete.mock.calls[0][0].crop).toEqual(expected.crop);
+    expect(mockManipulateAsync).toHaveBeenCalledWith(
+      SOURCE_URI,
+      [{ crop: { originX: 0, originY: 800, width: 600, height: 800 } }],
+      { compress: 0.95, format: 'jpeg' },
     );
   });
 
@@ -289,7 +408,7 @@ describe('DietShareImageEditor', () => {
     expect(console.warn).toHaveBeenCalledWith('[DietShareImageEditor] image manipulation failed');
   });
 
-  it('models loading, ready, applying, and image-load failure without duplicate completion', async () => {
+  it('makes applying terminal against cancel and system back, then completes exactly once', async () => {
     let resolveManipulation: ((value: { uri: string; width: number; height: number }) => void) | undefined;
     mockManipulateAsync.mockImplementationOnce(() => new Promise(resolve => {
       resolveManipulation = resolve;
@@ -302,37 +421,47 @@ describe('DietShareImageEditor', () => {
     expect(view.getByText('正在加载照片…')).toBeTruthy();
     loadPhoto(view);
 
+    fireEvent.press(view.getByRole('button', { name: '顺时针旋转照片' }));
     fireEvent.press(view.getByRole('button', { name: '完成图片编辑' }));
     expect(view.getByText('正在应用图片编辑…')).toBeTruthy();
     expect(view.getByRole('button', { name: '完成图片编辑' })).toBeDisabled();
+    expect(view.getByRole('button', { name: '取消图片编辑' })).toBeDisabled();
+    fireEvent.press(view.getByRole('button', { name: '取消图片编辑' }));
+    fireEvent(view.getByTestId('diet-share-image-editor-modal'), 'requestClose');
     fireEvent.press(view.getByRole('button', { name: '完成图片编辑' }));
     expect(mockManipulateAsync).toHaveBeenCalledTimes(1);
+    expect(view.onCancel).not.toHaveBeenCalled();
+    expect(Alert.alert).not.toHaveBeenCalled();
 
     await act(async () => {
       resolveManipulation?.({ uri: 'file:///cache/final.jpg', width: 1200, height: 1600 });
     });
     await waitFor(() => expect(view.onComplete).toHaveBeenCalledTimes(1));
+    expect(view.onCancel).not.toHaveBeenCalled();
   });
 
   it.each([
     { width: 390, height: 844 },
     { width: 430, height: 932 },
-  ])('keeps the 3:4 viewport and fixed controls reachable at $width x $height', ({ width, height }) => {
+  ])('computes a numeric 3:4 viewport with ready controls at $width x $height', ({ width, height }) => {
     const view = renderEditor();
-    fireEvent(view.getByTestId('diet-share-editor-root'), 'layout', {
-      nativeEvent: { layout: { x: 0, y: 0, width, height } },
-    });
+    layoutEditor(view, width, height);
+    loadPhoto(view);
 
     const rootStyle = StyleSheet.flatten(view.getByTestId('diet-share-editor-root').props.style);
     const viewportStyle = StyleSheet.flatten(view.getByTestId('diet-share-editor-viewport').props.style);
     const toolbarStyle = StyleSheet.flatten(view.getByTestId('diet-share-editor-toolbar').props.style);
     const actionsStyle = StyleSheet.flatten(view.getByTestId('diet-share-editor-actions').props.style);
     expect(rootStyle.flex).toBe(1);
-    expect(viewportStyle.aspectRatio).toBe(3 / 4);
-    expect(viewportStyle.flexShrink).toBe(1);
+    expect(typeof viewportStyle.width).toBe('number');
+    expect(typeof viewportStyle.height).toBe('number');
+    expect(viewportStyle.width / viewportStyle.height).toBeCloseTo(3 / 4);
+    expect(viewportStyle.width).toBeLessThanOrEqual(width - 32);
+    expect(viewportStyle.height).toBeLessThan(height);
     expect(toolbarStyle.flexShrink).toBe(0);
     expect(actionsStyle.flexShrink).toBe(0);
-    expect(view.getByRole('button', { name: '取消图片编辑' })).toBeTruthy();
-    expect(view.getByRole('button', { name: '完成图片编辑' })).toBeTruthy();
+    expect(view.getByRole('button', { name: '取消图片编辑' })).not.toBeDisabled();
+    expect(view.getByRole('button', { name: '顺时针旋转照片' })).not.toBeDisabled();
+    expect(view.getByRole('button', { name: '完成图片编辑' })).not.toBeDisabled();
   });
 });
