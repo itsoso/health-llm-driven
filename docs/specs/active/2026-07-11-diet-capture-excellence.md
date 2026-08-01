@@ -159,9 +159,9 @@ Given a user changes a recognized food identity but leaves its old macros untouc
 When the draft or confirmed record is saved
 Then stale macros and AI provenance are cleared while non-nutrition-only edits preserve existing provenance
 
-Given a confirmed meal
-When the user taps share
-Then an exact 1080x1440 privacy-safe image opens in the iOS system share sheet after its meal image is ready
+Given a user has completed local editing of the owner-accessible meal photo
+When the user confirms the full poster preview and opens system sharing
+Then the iOS system share sheet receives the same 1080x1440 rendered URI shown in that user-reviewed preview
 
 Given a confirmed meal has an owner-accessible photo
 When the user opens the Xiaohongshu share composer

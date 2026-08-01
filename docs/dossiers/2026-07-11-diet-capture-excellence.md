@@ -20,6 +20,7 @@
   - 实施：[`docs/plans/2026-08-01-xiaohongshu-diet-share-card.md`](../plans/2026-08-01-xiaohongshu-diet-share-card.md)。
   - 安全 Gate：`privacy_sensitive`；原始 `DietRecord` 照片不可变，编辑与合成仅在本地副本完成，第一版不做自动 QR/条码识别。
   - 回退阶段：S3/S5；需重跑 G3/G4/G5/G6。当前为实现中，不把新分享流程记为已上线。
+  - 本轮 Gate：G3=`PENDING`、G4=`PENDING`、G5=`PENDING`、G6=`PENDING`；旧分享流程的测试、部署和上线证据只作为 Correction 前历史基线。
   - Run Ledger：`docs/_generated/harness-runs/7779bb67a50d.jsonl`（本地运行证据，不提交）。
   - 用户确认：☑
 
@@ -106,7 +107,7 @@
 - T1：明确克重且命中审核食物表时覆盖模型营养值；只有数据层 `calibration_names` 显式批准的身份可覆盖，部分表字段采用 `mixed` 来源，“鸡肉/鸡蛋/豆腐”等泛化名称保留视觉估算并提示核对。商业多模态模型收到食物语境或 Mobile 默认纯图片提示时也必须先经过同一清洗与校准链路；普通视觉降级描述明确禁止作为饮食写入参数。
 - T2：确认卡展示逐项食物、份量、热量、置信度、营养表/视觉估算来源，低置信或未校准份量提示核对。
 - T3：识别成功返回 owner-scoped `photo_draft_token`，确认不再重复上传 Base64；确认、取消和过期清理用行锁串行化，成功确认后由 DietRecord 接管图片并删除草稿行，取消/过期擦除识别正文且在图片删除成功后删行，删除失败保留最小重试句柄并显式报错。正式记录删除采用可恢复 tombstone，每日任务按数据库引用恢复或物理删除。Mobile 以用户隔离的 SecureStore 保存 24 小时紧凑快照，不保存 Base64 或无界模型正文，进程重启后可恢复并继续确认或取消；缓存写入失败不阻断服务端确认，App 启动即执行过期物理清理。
-- T4：新增固定 3:4 饮食故事卡；iOS 以 point/PixelRatio、Android 以 bitmap pixel 分别请求，模拟器实测输出 1080x1440 PNG。等待受保护图片加载，5 秒无终态自动使用指标版卡片；图片或原生捕获不可用时降级为不含私有 URL/标识的文本系统分享，系统分享结束后释放临时 PNG。分享图不含用户名或其他健康数据。
+- T4（2026-08-01 Correction 前历史基线）：新增固定 3:4 饮食故事卡；iOS 以 point/PixelRatio、Android 以 bitmap pixel 分别请求，模拟器实测输出 1080x1440 PNG。等待受保护图片加载，5 秒无终态自动使用指标版卡片；图片或原生捕获不可用时降级为不含私有 URL/标识的文本系统分享，系统分享结束后释放临时 PNG。分享图不含用户名或其他健康数据。该 metric-only fallback 已被本轮 Correction 替代，不是当前实现目标。
 - T5：新增无正文的识别/确认/分享终态事件，观测聚合直接输出各阶段样本数、失败数、p50、p95；识别响应另带 vision/calibration/photo_draft/total 分段耗时。
 - 上线前复核发现生产 `food_items` 为空，原校准迁移只能更新既有行，导致营养表校准在生产无法命中。标准部署现于受控迁移后幂等执行 `seed_food_nutrition.py`，并以测试锁定 6 项审核食物、6 项营养值和严格 `calibration_names`，不允许泛化“鸡肉”进入鸡胸肉校准范围。
 - T5.1：相机不再直接生成 12MP 原图 Base64；饮食与聊天共用 OTA-safe 图片承重工具，最长边限制 1568px、JPEG q0.7 且不放大小图，并在识别/草稿持久化后清理临时编码文件。相机返回后显示“正在优化照片”，完成后才开始上传识别；埋点新增无正文的端侧准备耗时、压缩后字节数和确认纠错标记。观察看板只以 completed 样本计算 p50/p95，同时单列 attempts、failures、cancelled 和 correction rate，避免把取景和取消时间当成模型时延。
@@ -119,6 +120,8 @@
 - T5.8：iOS 在 App 切换、弱网或上传大图时可能先收到 XHR `onerror(status=200)` 或 SSE 正常关闭，首个 `request_persisted` 事件却尚未抵达设备；旧客户端把传输断开等同于业务拒绝，错误保留草稿并显示“发送失败”，用户重试后存在重复记录风险。Backend 新增 owner-scoped、无健康正文的回合状态查询，只返回 Run、持久化、会话和重试控制元数据；图片上传前创建的消息占位行不构成成功回执，只有 Runtime 绑定了 source message 才返回 `request_persisted=true`，部分 assistant checkpoint 也必须有 `client_turn_finalized=true` 才算最终回复。Mobile 在首个确认前断流时以原 `client_turn_id` 做最多约 1 秒的短暂核对；权威确认后清理草稿并从持久化历史恢复服务端图片和最终回复，失败、取消或待核对 Run 则映射为对应终态而不是继续显示“处理中”。无法取得权威状态时仍保持 fail closed，不会凭 HTTP 200 猜测成功。
 
 ## G3 · 测试闸
+
+> 以下测试证据属于 2026-08-01 Correction 前的历史基线，不证明本轮可编辑小红书分享流程已完成。
 
 - 最新 focused backend regression：179 passed、1 PostgreSQL-only test skipped；同一并发测试在本机真实 PostgreSQL 运行 1 passed，覆盖 confirm/confirm、confirm/cancel、confirm/purge、cancel/purge。
 - 合并最新主干后 full Mobile regression：233 suites、1625 passed；最终整改 focused regression：40 passed；TypeScript check passed。
@@ -151,16 +154,21 @@
 - T5.2 CI run `29167500244` 验证三个新 `s` 分片分别在 1 分 22 秒、1 分 32 秒和 3 分 34 秒通过；唯一剩余的旧 `n-r` 大分片超过 16 分钟无输出，其他 20 个作业均通过。本机同一 808 项命令也在 `protocol` 区域后停止输出，而独立 `p` 分片 `239/239` 在 69.61 秒通过；将原 87 个文件拆为 `n-o`、`p`、`q-r` 三个进程，文件覆盖校验为 `87 -> 87`、差集 0。
 - T5.2 最终 Linux 权威闸门：GitHub Actions run `29168150924` SUCCESS；18 个后端测试分片、backend quality、最终 Backend tests enforcement、type drift、Frontend、Mobile 与 macOS 全部通过，head commit 为 `c6d3d3f4942fee7a1f92730f33d9326d600be4c0`。
 - Linux 全仓权威闸门：GitHub Actions run `29163241845` SUCCESS；frontend、Mobile、macOS、type drift、backend quality、10 个后端测试分片及最终 backend enforcement 全部通过。
+- **2026-08-01 Correction 前历史裁决：PASS**。
+- **本轮 G3 裁决：PENDING**。待 T6.1 实现后完成编辑器、海报单次渲染、分享失败边界、Mobile 全量测试与主干 CI。
 
 ## G4 · 安全闸
+
+> 以下安全证据与 PASS 裁决属于 2026-08-01 Correction 前的历史基线。
 
 - 触发：健康数据写入、AI 营养估算、私有图片和社交分享。
 - 已落实：owner scope、确认/取消/清理行锁、真实 PostgreSQL 竞态证明、确认幂等、取消后正文擦除、草稿与正式记录图片失败可重试、SecureStore 用户隔离且非阻断、恢复前服务端 token 终态校验、编辑时 Mobile/Backend 双层 provenance 清理、分享前显式操作、分享产物去身份化和临时文件释放。
 - T5.9 安全复核：恢复控制面只保存 source/root/trigger message id 和原因码，不保存健康正文、工具参数或图片内容；源消息和图片读取强制 owner scope；仅明确 retryable 且没有回执、没有 `in_flight/uncertain/verified` 检查点时提供动作。恢复 Run 使用新的 client turn 写入检查点和幂等身份，原图片只作为 owner-scoped 媒体来源复用。
 - 同一独立审查代理连续五轮核对；最后一轮未发现 P0/P1/P2。
-- **裁决：PASS**。
+- **2026-08-01 Correction 前历史裁决：PASS**。
+- **本轮 G4 裁决：PENDING**。待验证不透明隐私涂抹进入导出像素、原始 `DietRecord` 照片不变、临时文件清理和遥测不含敏感内容。
 
-## S6 · 部署
+## S6 · 部署（2026-08-01 Correction 前历史基线）
 
 - 路由：backend deploy -> type sync -> TestFlight。因新增原生分享依赖，本版本不向缺少该模块的旧二进制发送 OTA。
 - Backend 已从干净的 `origin/main` 完成第三次增量部署；最终生产 commit 为 `612de0bc54aa0b83f25ee4a116a0b161bc08820d`。
@@ -180,7 +188,7 @@
 - T5.8 production OTA：runtime `1.3.2`，update group `d1c14bea-b018-4e28-a0b0-5a7352986ed0`，iOS update `019fa439-1a11-79ce-9b93-65c0a5011016`；发布脚本复核 channel=`production`、commit=`b2ee0ec6c19ebf79fd227cf97a3050cc0b7b226a`、active group/update 与发布结果一致。
 - T5.9 Backend 已从干净且与 `origin/main` 一致的部署副本通过 `./deploy.sh -b` 发布；恢复逻辑代码提交为 `6c2b1c48`，生产 Git HEAD 为 `4bd96fa62a75da8a8b06aee8ccc76764bcf205f7`，本轮无新 migration。部署前备份为 `/var/backups/health-app/database/health_db_2026-07-29_10-32-43_309421.sql.gz`，41 MB、权限 `0600`，force-RLS 数据段、234 表恢复演练与站外加密归档哈希/HMAC 校验通过。该变更为纯 Backend，不发布 Mobile OTA。
 
-## G5 · 部署健康闸
+## G5 · 部署健康闸（2026-08-01 Correction 前历史基线）
 
 - 生产受控迁移状态正常：`20260711_200000_create_diet_photo_drafts` 与 `20260711_201000_add_food_calibration_names` 已应用，本轮无重复迁移。
 - 部署内营养目录 seed 明确输出 `6 food_items, 6 food_nutrients`；部署后只读 SQL 复核为 6/6，豆腐校准名仅 `北豆腐/老豆腐`，鸡胸肉校准名不含泛化“鸡肉”。
@@ -192,9 +200,10 @@
 - T5.7 增量部署后 `health-backend`、`celery-worker`、`celery-beat` 均正常，部署健康分 `60/60 PASS`；公网 `/api/v1/health` 返回 API running、PostgreSQL/Redis/Celery connected。公网 skills manifest 的 HTTP/2 请求出现可恢复传输告警，HTTP/1.1 已验证可读取有效 manifest，不影响 Backend 健康闸。
 - T5.8 增量部署健康分 `60/60 PASS`，skills manifest 本地/线上均为 22；公网 `/api/v1/health` 返回 `healthy`，API running、PostgreSQL/Redis/Celery connected。
 - T5.9 主干 CI run `30416635659` 全绿，包含 Agent Runtime PostgreSQL 语义、真实模型回归、Backend 全分片、Frontend、Mobile、Mac 与类型漂移闸门；一次性真实模型授权变量已在 CI 结束后删除。部署后健康分 `60/60 PASS`，skills manifest 本地/线上均为 22；正确生产入口 `https://health.executor.life/api/v1/health` 经正式域名 SNI 返回 HTTP 200，API running、PostgreSQL/Redis/Celery connected。
-- **裁决：PASS**。
+- **2026-08-01 Correction 前历史裁决：PASS**。
+- **本轮 G5 裁决：PENDING**。可编辑小红书分享流程尚未通过主干 CI、production OTA 发布和发布后健康验证。
 
-## S7 · 上线验证
+## S7 · 上线验证（2026-08-01 Correction 前历史基线）
 
 - iPhone 17 Pro 模拟器已验证照片确认、固定 1080x1440 分享图、系统分享面板与无重叠布局。
 - Backend 生产迁移、营养目录、服务状态和公网健康检查已验证。
@@ -208,10 +217,11 @@
 - T5.9 失败写入恢复已部署至生产 Backend。自动化与真实模型回归已证明窄确认短语可以在同一用户、同一会话、紧邻顺序且没有已验证或不确定写入时恢复原文字与图片，并为新 Run 使用新的幂等身份；仍需在真机生产会话中人为触发一次可重试失败并完成“重试/需要”闭环，作为最终终端证据。
 - 待真机验证：相机实拍 -> 识别 -> 修正 -> 确认单次写入，以及分享图分别投递微信和小红书。
 
-## G6 · 验证闸
+## G6 · 验证闸（2026-08-01 Correction 前历史基线）
 
 - 模拟器与生产后端验证通过；T5.9 生产部署与公网健康已通过，真机失败写入恢复及目标应用投递尚缺终端证据。
-- **裁决：PENDING**。保持 `device_validation_pending`，不进入完成态。
+- **2026-08-01 Correction 前历史裁决：PENDING**。当时状态为 `device_validation_pending`，不进入完成态。
+- **本轮 G6 裁决：PENDING**。待真机验证照片编辑、用户审阅完整预览、保存与小红书系统分享均复用同一 `1080x1440` rendered URI，且照片失败不生成 metric-only 海报。
 
 ## S8 · 沉淀
 
