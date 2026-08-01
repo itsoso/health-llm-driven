@@ -92,24 +92,29 @@ _ACTION_PREFIX_WRAPPERS = tuple(
         key=lambda term: (-len(term), term),
     )
 )
-_DIRECT_DESTRUCTIVE_ROOTS = tuple(
-    dict.fromkeys(
-        (
-            *MUTATE_ACTIONS["delete"],
-            "更正",
-            "修正",
-            *MUTATE_ACTIONS["sync"],
-        )
-    )
+_HIGH_RISK_MUTATION_ROOTS = _MUTATION_ACTION_ROOTS
+_LOCAL_ADVICE_PREDICATES = tuple(
+    predicate
+    for predicate in CLINICIAN_REPORT_PREDICATES
+    if predicate in {"建议", "嘱咐", "要求"}
 )
-_MUTATION_TARGET_HINTS = (
-    "记录",
-    "数据",
-    "文档",
-    "档案",
-    "报告",
-    "计划项",
-    "提醒",
+_MEDICAL_ADVICE_TARGETS = (
+    "训练",
+    "运动",
+    "锻炼",
+    "负重",
+    "姿势",
+    "动作",
+    "康复",
+    "肌肉",
+    "关节",
+    "症状",
+    "剂量",
+    "疗程",
+    "复查",
+)
+_GUARD_QUESTION_SIGNALS = tuple(
+    dict.fromkeys((*QUESTION_SIGNALS, "会不会", "能不能", "会否"))
 )
 _REPORT_FILLERS = frozenset(" 是为：:，,")
 _CONTENT_SEPARATORS = frozenset("：:,，")
@@ -270,10 +275,7 @@ def _is_question_punctuation(char: str) -> bool:
     compatible = unicodedata.normalize("NFKC", char)
     if "?" in compatible:
         return True
-    return (
-        unicodedata.category(char).startswith("P")
-        and "QUESTION MARK" in unicodedata.name(char, "")
-    )
+    return "QUESTION MARK" in unicodedata.name(char, "")
 
 
 def _trim(raw: str, start: int, end: int) -> _Span:
@@ -449,45 +451,60 @@ def _second_action_prefix_kind(
     return None
 
 
-def _is_direct_destructive_action(
+def _skip_local_advice_fillers(raw: str, position: int, end: int) -> int:
+    while position < end:
+        char = raw[position]
+        if _is_ignorable(char) or char in "的：:,，":
+            position += 1
+            continue
+        break
+    return position
+
+
+def _is_locally_proven_clinician_advice(
     raw: str,
     *,
     span: _Span,
     action_start: int,
     root: str,
 ) -> bool:
-    if root not in _DIRECT_DESTRUCTIVE_ROOTS:
-        return False
-    prefix_end, wrapper_found, _ = _strip_action_wrappers_from_end(
-        raw,
-        start=span.start,
-        end=action_start,
-    )
-    if prefix_end > span.start:
-        return False
-    if root in MUTATE_ACTIONS["delete"]:
-        return action_start == span.start or wrapper_found
-    suffix = raw[action_start + len(root) : span.end]
-    return (
-        action_start == span.start or wrapper_found
-    ) and any(target in suffix for target in _MUTATION_TARGET_HINTS)
+    local_start = max(0, action_start - 24)
+    local_span = _Span(local_start, action_start)
+    for provider, _ in reversed(_provider_matches(raw, local_span)):
+        position = _skip_local_advice_fillers(
+            raw,
+            provider.end,
+            action_start,
+        )
+        predicate = _starts_with_term(
+            raw,
+            _LOCAL_ADVICE_PREDICATES,
+            position=position,
+            end=action_start,
+        )
+        if predicate is None:
+            continue
+        position = _skip_local_advice_fillers(
+            raw,
+            predicate[0].end,
+            action_start,
+        )
+        if position == action_start:
+            return True
 
-
-def _is_nested_medical_adjustment(
-    raw: str,
-    span: _Span,
-    *,
-    action_start: int,
-    root: str,
-) -> bool:
-    if root != "调整":
-        return False
-    report = _find_report(raw, span, -1)
-    return (
-        report is not None
-        and report.content is not None
-        and report.content.start <= action_start < report.content.end
-    )
+    for predicate in _LOCAL_ADVICE_PREDICATES:
+        predicate_start = action_start - len(predicate)
+        if (
+            predicate_start < local_start
+            or raw[predicate_start:action_start] != predicate
+        ):
+            continue
+        target_window = raw[
+            action_start + len(root) : min(span.end, action_start + len(root) + 12)
+        ]
+        if any(target in target_window for target in _MEDICAL_ADVICE_TARGETS):
+            return True
+    return False
 
 
 def _second_action_kind(
@@ -498,26 +515,26 @@ def _second_action_kind(
     for root in _DENY_ONLY_ACTION_ROOTS:
         position = raw.find(root, span.start, span.end)
         while position >= 0:
-            if _is_nested_medical_adjustment(
-                raw,
-                span,
-                action_start=position,
-                root=root,
-            ):
-                position = raw.find(root, position + len(root), span.end)
-                continue
-            kind = _second_action_prefix_kind(
-                raw,
-                span_start=span.start,
-                action_start=position,
-            )
-            if kind is None and _is_direct_destructive_action(
-                raw,
-                span=span,
-                action_start=position,
-                root=root,
-            ):
-                kind = "coordinated"
+            if root in _HIGH_RISK_MUTATION_ROOTS:
+                if _is_locally_proven_clinician_advice(
+                    raw,
+                    span=span,
+                    action_start=position,
+                    root=root,
+                ):
+                    position = raw.find(
+                        root,
+                        position + len(root),
+                        span.end,
+                    )
+                    continue
+                kind: Literal["soft", "coordinated"] | None = "coordinated"
+            else:
+                kind = _second_action_prefix_kind(
+                    raw,
+                    span_start=span.start,
+                    action_start=position,
+                )
             if kind is not None and (best is None or position < best[0]):
                 best = (position, kind)
             position = raw.find(root, position + len(root), span.end)
@@ -725,7 +742,7 @@ def _find_report(
 def _contains_question(raw: str) -> bool:
     compatible = unicodedata.normalize("NFKC", raw)
     return (
-        any(signal in compatible for signal in QUESTION_SIGNALS)
+        any(signal in compatible for signal in _GUARD_QUESTION_SIGNALS)
         or any(_is_question_punctuation(char) for char in raw)
     )
 
@@ -844,6 +861,8 @@ def _standalone_record_noun_shape(
     if not _prefix_is_legacy_record_operation(raw, prefix):
         return None
     position = _skip_spaces(raw, provider.end, segment.end)
+    if position < segment.end and raw[position] == "的":
+        position = _skip_spaces(raw, position + 1, segment.end)
     object_match = _starts_with_term(
         raw,
         _LEGACY_CLINICIAN_OBJECT_SUFFIXES,

@@ -711,6 +711,199 @@
     "provider": "医生"
   },
   {
+    "id": "destructive_root_after_you_is_blocked",
+    "text": "请记录医生诊断：臀肌无力又删除旧记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力又删除旧记录"
+  },
+  {
+    "id": "destructive_root_after_ye_is_blocked",
+    "text": "请记录医生诊断：臀肌无力也删除旧记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力也删除旧记录"
+  },
+  {
+    "id": "destructive_root_after_ling_is_blocked",
+    "text": "请记录医生诊断：臀肌无力另删除旧记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力另删除旧记录"
+  },
+  {
+    "id": "destructive_root_after_should_is_blocked",
+    "text": "请记录医生诊断：臀肌无力应该删除旧记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力应该删除旧记录"
+  },
+  {
+    "id": "destructive_root_after_must_is_blocked",
+    "text": "请记录医生诊断：臀肌无力必须删除旧记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力必须删除旧记录"
+  },
+  {
+    "id": "report_revoke_after_unknown_joiner_blocks_write",
+    "text": "医生说臀肌无力又撤销它。请记录医生诊断：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "臀肌无力"
+  },
+  {
+    "id": "earlier_clinician_advice_does_not_exempt_later_delete",
+    "text": "请记录医生意见：医生建议先休息患者删除旧记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "医生建议先休息患者删除旧记录"
+  },
+  {
+    "id": "earlier_clinician_advice_does_not_exempt_later_correction",
+    "text": "请记录医生意见：医生建议先休息患者必须更正旧记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "医生建议先休息患者必须更正旧记录"
+  },
+  {
+    "id": "earlier_clinician_report_does_not_exempt_later_refresh",
+    "text": "请记录医生意见：医生说臀肌无力患者也刷新数据",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "医生说臀肌无力患者也刷新数据"
+  },
+  {
+    "id": "tight_doctor_advice_can_contain_delete_root",
+    "text": "请记录医生意见：医生建议删除不合适的训练动作",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "医生建议删除不合适的训练动作",
+    "command": "请记录医生意见"
+  },
+  {
+    "id": "tight_therapist_instruction_can_contain_revoke_root",
+    "text": "请记录康复师意见：康复师嘱咐撤销高负荷训练计划",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "康复师",
+    "content": "康复师嘱咐撤销高负荷训练计划",
+    "command": "请记录康复师意见"
+  },
+  {
+    "id": "advice_with_medical_target_can_contain_correction_root",
+    "text": "请记录医生意见：建议更正训练姿势",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "建议更正训练姿势",
+    "command": "请记录医生意见"
+  },
+  {
+    "id": "advice_with_medical_target_can_contain_clear_root",
+    "text": "请记录医生意见：建议清掉错误训练动作",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "建议清掉错误训练动作",
+    "command": "请记录医生意见"
+  },
+  {
+    "id": "black_question_mark_ornament_is_nonwrite",
+    "text": "请记录医生诊断：腰肌劳损❓",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "feedback_write_question",
+    "provider": "医生",
+    "content": "腰肌劳损"
+  },
+  {
+    "id": "white_question_mark_ornament_is_nonwrite",
+    "text": "请记录医生诊断：腰肌劳损❔",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "feedback_write_question",
+    "provider": "医生",
+    "content": "腰肌劳损"
+  },
+  {
+    "id": "huibuhui_question_shape_is_nonwrite",
+    "text": "请记录医生诊断会不会是腰肌劳损",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "feedback_write_question",
+    "provider": "医生",
+    "content": "会不会是腰肌劳损"
+  },
+  {
+    "id": "nengbuneng_question_shape_is_nonwrite",
+    "text": "请记录医生诊断能不能确定为腰肌劳损",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "feedback_write_question",
+    "provider": "医生",
+    "content": "能不能确定为腰肌劳损"
+  },
+  {
+    "id": "kebukeyi_question_shape_is_nonwrite",
+    "text": "请记录医生诊断可不可以算腰肌劳损",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "feedback_write_question",
+    "provider": "医生",
+    "content": "可不可以算腰肌劳损"
+  },
+  {
+    "id": "youmeiyou_question_shape_is_nonwrite",
+    "text": "请记录医生诊断有没有腰肌劳损",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "feedback_write_question",
+    "provider": "医生",
+    "content": "有没有腰肌劳损"
+  },
+  {
+    "id": "nengfou_question_shape_is_nonwrite",
+    "text": "请记录医生诊断能否确定腰肌劳损",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "feedback_write_question",
+    "provider": "医生",
+    "content": "能否确定腰肌劳损"
+  },
+  {
+    "id": "huifou_question_shape_is_nonwrite",
+    "text": "请记录医生诊断会否是腰肌劳损",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "feedback_write_question",
+    "provider": "医生",
+    "content": "会否是腰肌劳损"
+  },
+  {
+    "id": "possessive_doctor_record_question_stays_legacy",
+    "text": "医生的诊断记录里写了什么？",
+    "kind": "none",
+    "reason_code": "legacy_clinician_record_operation",
+    "provider": "医生"
+  },
+  {
+    "id": "possessive_attending_report_question_stays_legacy",
+    "text": "主治医生的诊断报告包含哪些内容？",
+    "kind": "none",
+    "reason_code": "legacy_clinician_record_operation",
+    "provider": "主治医生"
+  },
+  {
+    "id": "spaced_possessive_record_question_stays_legacy",
+    "text": "主治医生 的 诊断报告包含哪些内容？",
+    "kind": "none",
+    "reason_code": "legacy_clinician_record_operation",
+    "provider": "主治医生"
+  },
+  {
     "id": "unknown_provider_mention",
     "text": "医生预约在明天",
     "kind": "none",
