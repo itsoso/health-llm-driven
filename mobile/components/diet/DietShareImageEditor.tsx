@@ -368,6 +368,7 @@ export function DietShareImageEditor({
   const applyingRef = useRef(false);
   const operationGenerationRef = useRef(0);
   const visibleRef = useRef(visible);
+  const baselineEditRef = useRef(startingEdit);
   const gestureScale = useSharedValue(1);
   const gestureTranslateX = useSharedValue(0);
   const gestureTranslateY = useSharedValue(0);
@@ -380,6 +381,7 @@ export function DietShareImageEditor({
   useEffect(() => {
     if (!visible) return;
     operationGenerationRef.current += 1;
+    baselineEditRef.current = startingEdit;
     dispatch({ type: 'replace', edit: startingEdit });
     setPhase('loading');
     setFailureKind(null);
@@ -401,7 +403,7 @@ export function DietShareImageEditor({
     operationGenerationRef.current += 1;
   }, []);
 
-  const hasChanges = !sameEdit(currentEdit, initialDietShareImageEdit());
+  const hasChanges = !sameEdit(currentEdit, baselineEditRef.current);
   const canEdit = phase === 'ready';
 
   const commitGestureCrop = useCallback((scale: number, translateX: number, translateY: number) => {
@@ -664,7 +666,12 @@ export function DietShareImageEditor({
       ) {
         applyingRef.current = false;
         if (outputUri !== sourceUri) {
-          await FileSystem.deleteAsync(outputUri, { idempotent: true });
+          try {
+            await FileSystem.deleteAsync(outputUri, { idempotent: true });
+          } catch {
+            // Never include a local path or source identifier in stale-operation logs.
+            console.warn('[DietShareImageEditor] stale edit cleanup failed');
+          }
         }
         return;
       }

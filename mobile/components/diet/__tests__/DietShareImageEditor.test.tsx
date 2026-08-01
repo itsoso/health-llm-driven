@@ -354,6 +354,60 @@ describe('DietShareImageEditor', () => {
     expect(unchanged.onCancel).toHaveBeenCalledTimes(1);
   });
 
+  it('uses the normalized session input as the clean baseline across rebuilt props and source changes', () => {
+    const baseline = {
+      ...initialDietShareImageEdit(),
+      crop: { x: 0.1, y: 0.2, width: 0.75, height: 0.7 },
+      rotation: 90 as const,
+    };
+    const view = renderEditor({ initialEdit: baseline });
+    loadPhoto(view);
+
+    fireEvent.press(view.getByRole('button', { name: '取消图片编辑' }));
+    expect(view.onCancel).toHaveBeenCalledTimes(1);
+    expect(Alert.alert).not.toHaveBeenCalled();
+
+    view.onCancel.mockClear();
+    view.rerender(
+      <DietShareImageEditor
+        visible
+        sourceUri={SOURCE_URI}
+        initialEdit={{ ...baseline, crop: { ...baseline.crop } }}
+        onComplete={view.onComplete}
+        onCancel={view.onCancel}
+      />,
+    );
+    fireEvent(view.getByTestId('diet-share-image-editor-modal'), 'requestClose');
+    expect(view.onCancel).toHaveBeenCalledTimes(1);
+    expect(Alert.alert).not.toHaveBeenCalled();
+
+    view.onCancel.mockClear();
+    fireEvent.press(view.getByRole('button', { name: '顺时针旋转照片' }));
+    fireEvent(view.getByTestId('diet-share-image-editor-modal'), 'requestClose');
+    expect(view.onCancel).not.toHaveBeenCalled();
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+
+    (Alert.alert as jest.Mock).mockClear();
+    const nextBaseline = {
+      ...initialDietShareImageEdit(),
+      crop: { x: 0.2, y: 0.15, width: 0.6, height: 0.6 },
+      rotation: 270 as const,
+    };
+    view.rerender(
+      <DietShareImageEditor
+        visible
+        sourceUri="file:///private/other-meal.jpg"
+        initialEdit={nextBaseline}
+        onComplete={view.onComplete}
+        onCancel={view.onCancel}
+      />,
+    );
+    loadPhoto(view);
+    fireEvent.press(view.getByRole('button', { name: '取消图片编辑' }));
+    expect(view.onCancel).toHaveBeenCalledTimes(1);
+    expect(Alert.alert).not.toHaveBeenCalled();
+  });
+
   it('keeps a fully opaque round privacy stroke in the completion result', async () => {
     const view = renderEditor();
     loadPhoto(view);
@@ -437,6 +491,66 @@ describe('DietShareImageEditor', () => {
       resolveManipulation?.({ uri: 'file:///cache/final.jpg', width: 1200, height: 1600 });
     });
     await waitFor(() => expect(view.onComplete).toHaveBeenCalledTimes(1));
+    expect(view.onCancel).not.toHaveBeenCalled();
+  });
+
+  it('cleans a stale output and suppresses callbacks when the editor becomes hidden mid-apply', async () => {
+    let resolveManipulation: ((value: { uri: string; width: number; height: number }) => void) | undefined;
+    mockManipulateAsync.mockImplementationOnce(() => new Promise(resolve => {
+      resolveManipulation = resolve;
+    }));
+    const view = renderEditor();
+    loadPhoto(view);
+    fireEvent.press(view.getByRole('button', { name: '完成图片编辑' }));
+
+    view.rerender(
+      <DietShareImageEditor
+        visible={false}
+        sourceUri={SOURCE_URI}
+        onComplete={view.onComplete}
+        onCancel={view.onCancel}
+      />,
+    );
+    await act(async () => {
+      resolveManipulation?.({ uri: 'file:///cache/stale-editor-output.jpg', width: 1200, height: 1600 });
+    });
+
+    await waitFor(() => expect(mockDeleteAsync).toHaveBeenCalledWith(
+      'file:///cache/stale-editor-output.jpg',
+      { idempotent: true },
+    ));
+    expect(mockDeleteAsync).not.toHaveBeenCalledWith(SOURCE_URI, expect.anything());
+    expect(view.onComplete).not.toHaveBeenCalled();
+    expect(view.onCancel).not.toHaveBeenCalled();
+  });
+
+  it('warns without a URI when stale-output cleanup fails after hiding', async () => {
+    let resolveManipulation: ((value: { uri: string; width: number; height: number }) => void) | undefined;
+    mockManipulateAsync.mockImplementationOnce(() => new Promise(resolve => {
+      resolveManipulation = resolve;
+    }));
+    mockDeleteAsync.mockRejectedValueOnce(new Error('private stale path'));
+    const view = renderEditor();
+    loadPhoto(view);
+    fireEvent.press(view.getByRole('button', { name: '完成图片编辑' }));
+    view.rerender(
+      <DietShareImageEditor
+        visible={false}
+        sourceUri={SOURCE_URI}
+        onComplete={view.onComplete}
+        onCancel={view.onCancel}
+      />,
+    );
+
+    await act(async () => {
+      resolveManipulation?.({ uri: 'file:///cache/secret-stale-output.jpg', width: 1200, height: 1600 });
+    });
+
+    await waitFor(() => expect(console.warn).toHaveBeenCalledWith(
+      '[DietShareImageEditor] stale edit cleanup failed',
+    ));
+    expect(String((console.warn as jest.Mock).mock.calls[0])).not.toContain('secret-stale-output');
+    expect(view.onComplete).not.toHaveBeenCalled();
     expect(view.onCancel).not.toHaveBeenCalled();
   });
 
