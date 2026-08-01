@@ -140,6 +140,44 @@ SCREENSHOT_CLINICIAN_TEXT = (
     "医生诊断是大腿和臀部肌肉无力导致腰肌代偿进而导致腰肌痛"
 )
 
+CLINICIAN_INSTRUCTION_MESSAGES = (
+    "医生让我记录每天腰痛情况",
+    "医生叫我记录每天腰痛情况",
+    "大夫交代我记录每天腰痛情况",
+)
+
+CLINICIAN_ROLE_REVERSAL_MESSAGES = (
+    "我让医生记录每天腰痛情况",
+    "家属叫医生记录每天腰痛情况",
+)
+
+CLINICIAN_POST_REPORT_INSTRUCTION_MESSAGES = (
+    "医生说让我记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "医生告诉我记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "医生嘱咐你记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "医生告诉我让我记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "医生要求记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "医生说请记录每天腰痛情况。请记录医生诊断：臀肌无力",
+)
+
+CLINICIAN_NEGATED_WRITE_CASES = (
+    ("不要保存医生诊断", "negated_clinician_action"),
+    ("不要写入医生反馈", "negated_clinician_action"),
+    ("不需要保存医生诊断", "negated_clinician_action"),
+    ("请先不要保存医生诊断", "negated_clinician_action"),
+    ("请不要再保存医生诊断", "negated_clinician_action"),
+    ("请不要帮我保存医生诊断", "negated_clinician_action"),
+    ("不要写入医生体重", "unresolved_clinician_action"),
+    ("不要不保存医生诊断", "unresolved_clinician_action"),
+)
+
+CLINICIAN_FALLBACK_NONWRITE_MESSAGES = (
+    *CLINICIAN_INSTRUCTION_MESSAGES,
+    *CLINICIAN_ROLE_REVERSAL_MESSAGES,
+    *CLINICIAN_POST_REPORT_INSTRUCTION_MESSAGES,
+    *(message for message, _reason in CLINICIAN_NEGATED_WRITE_CASES),
+)
+
 
 @pytest.mark.parametrize(
     ("message", "expected"),
@@ -217,6 +255,93 @@ def test_clinician_guard_maps_to_public_intent_before_legacy_classifier(
     ) == expected
 
 
+@pytest.mark.parametrize("message", CLINICIAN_INSTRUCTION_MESSAGES)
+def test_clinician_instructions_are_reliable_nonwrite_advice(message):
+    intent = classify_agent_utterance(message)
+
+    assert (
+        intent.primary,
+        intent.domain,
+        intent.operation,
+        intent.reason,
+        intent.is_write,
+        intent.requires_reliable_tool_model,
+    ) == (
+        "advice",
+        "clinical_context",
+        "analyze",
+        "clinician_instruction",
+        False,
+        True,
+    )
+
+
+@pytest.mark.parametrize("message", CLINICIAN_ROLE_REVERSAL_MESSAGES)
+def test_clinician_role_reversals_fail_closed_as_reliable_chat(message):
+    intent = classify_agent_utterance(message)
+
+    assert (
+        intent.primary,
+        intent.domain,
+        intent.operation,
+        intent.reason,
+        intent.is_write,
+        intent.requires_reliable_tool_model,
+    ) == (
+        "chat",
+        "clinical_context",
+        "acknowledge",
+        "unresolved_clinician_action",
+        False,
+        True,
+    )
+
+
+@pytest.mark.parametrize("message", CLINICIAN_POST_REPORT_INSTRUCTION_MESSAGES)
+def test_clinician_instruction_then_explicit_write_fails_closed(message):
+    intent = classify_agent_utterance(message)
+
+    assert (
+        intent.primary,
+        intent.domain,
+        intent.operation,
+        intent.reason,
+        intent.is_write,
+        intent.requires_reliable_tool_model,
+    ) == (
+        "chat",
+        "clinical_context",
+        "acknowledge",
+        "coordinated_clinician_action",
+        False,
+        True,
+    )
+
+
+@pytest.mark.parametrize(("message", "expected_reason"), CLINICIAN_NEGATED_WRITE_CASES)
+def test_negated_clinician_writes_fail_closed_without_record_recovery(
+    message,
+    expected_reason,
+):
+    intent = classify_agent_utterance(message)
+
+    assert (
+        intent.primary,
+        intent.domain,
+        intent.operation,
+        intent.reason,
+        intent.is_write,
+        intent.requires_reliable_tool_model,
+    ) == (
+        "chat",
+        "clinical_context",
+        "acknowledge",
+        expected_reason,
+        False,
+        True,
+    )
+
+
 @pytest.mark.parametrize(
     ("message", "expected"),
     (
@@ -279,30 +404,54 @@ def test_every_clinician_guard_decision_bypasses_legacy_authorizers(monkeypatch)
         "医生认为是臀肌无力导致腰痛，我该怎么处理？",
         "请记录医生诊断：臀肌无力导致腰肌代偿",
         "请记录医生诊断：臀肌无力并删除旧记录",
+        *CLINICIAN_FALLBACK_NONWRITE_MESSAGES,
     ):
         intent = classify_agent_utterance(message)
         assert intent.domain == "clinical_context", message
 
 
-def test_guard_none_still_reaches_legacy_authorizers(monkeypatch):
+@pytest.mark.parametrize(
+    ("helper_name", "message", "expected"),
+    (
+        (
+            "_has_explicit_write_command",
+            "记录午餐吃了牛肉面",
+            ("write", "diet"),
+        ),
+        ("_mutation_operation", "删除午餐记录", ("mutate", "diet")),
+        ("_plan_operation", "制定康复计划", ("write", "plan")),
+        ("_reminder_operation", "提醒我明天复查", ("write", "reminder")),
+        (
+            "_is_media_generation_request",
+            "生成一张运动图片",
+            ("write", "aigc_media"),
+        ),
+    ),
+)
+def test_guard_none_still_reaches_legacy_authorizers(
+    monkeypatch,
+    helper_name,
+    message,
+    expected,
+):
     called = False
-    original = utterance_intent_classifier._mutation_operation
+    original = getattr(utterance_intent_classifier, helper_name)
 
-    def observe_mutation(text):
+    def observe_authorizer(*args, **kwargs):
         nonlocal called
         called = True
-        return original(text)
+        return original(*args, **kwargs)
 
     monkeypatch.setattr(
         utterance_intent_classifier,
-        "_mutation_operation",
-        observe_mutation,
+        helper_name,
+        observe_authorizer,
     )
 
-    intent = classify_agent_utterance("记录午餐吃了牛肉面")
+    intent = classify_agent_utterance(message)
 
     assert called is True
-    assert (intent.primary, intent.domain) == ("write", "diet")
+    assert (intent.primary, intent.domain) == expected
 
 
 def test_direct_user_medication_mutation_remains_authorized():

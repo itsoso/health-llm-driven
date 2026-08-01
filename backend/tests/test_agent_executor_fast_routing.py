@@ -351,6 +351,29 @@ async def test_analysis_turn_keeps_quality_model(db, auth_user_and_headers, monk
     assert done["model"] == "qwen3.7-plus"  # answered by the default/quality model
 
 
+CLINICIAN_FALLBACK_NONWRITE_MESSAGES = (
+    "医生让我记录每天腰痛情况",
+    "医生叫我记录每天腰痛情况",
+    "大夫交代我记录每天腰痛情况",
+    "我让医生记录每天腰痛情况",
+    "家属叫医生记录每天腰痛情况",
+    "医生说让我记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "医生告诉我记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "医生嘱咐你记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "医生告诉我让我记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "医生要求记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "医生说请记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "不要保存医生诊断",
+    "不要写入医生反馈",
+    "不需要保存医生诊断",
+    "请先不要保存医生诊断",
+    "请不要再保存医生诊断",
+    "请不要帮我保存医生诊断",
+    "不要写入医生体重",
+    "不要不保存医生诊断",
+)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "message",
@@ -359,6 +382,7 @@ async def test_analysis_turn_keeps_quality_model(db, auth_user_and_headers, monk
         "医生认为是臀肌无力导致腰痛，我该怎么处理？",
         "请记录医生诊断：臀肌无力导致腰肌代偿",
         "请记录医生诊断：臀肌无力并删除旧记录",
+        *CLINICIAN_FALLBACK_NONWRITE_MESSAGES,
     ),
 )
 async def test_clinician_turns_never_select_fast_record_or_needs_detail_reply(

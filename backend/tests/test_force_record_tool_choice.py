@@ -27,6 +27,28 @@ _LATER_ROUND = _FIRST_ROUND + [
     {"role": "tool", "content": '{"id": 1}'},
 ]
 
+CLINICIAN_FALLBACK_NONWRITE_MESSAGES = (
+    "医生让我记录每天腰痛情况",
+    "医生叫我记录每天腰痛情况",
+    "大夫交代我记录每天腰痛情况",
+    "我让医生记录每天腰痛情况",
+    "家属叫医生记录每天腰痛情况",
+    "医生说让我记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "医生告诉我记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "医生嘱咐你记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "医生告诉我让我记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "医生要求记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "医生说请记录每天腰痛情况。请记录医生诊断：臀肌无力",
+    "不要保存医生诊断",
+    "不要写入医生反馈",
+    "不需要保存医生诊断",
+    "请先不要保存医生诊断",
+    "请不要再保存医生诊断",
+    "请不要帮我保存医生诊断",
+    "不要写入医生体重",
+    "不要不保存医生诊断",
+)
+
 
 def test_forces_on_first_round_verified_model():
     assert _should_force_record_tool_choice(True, _FIRST_ROUND, _TOOLS, True) is True
@@ -186,6 +208,40 @@ def test_every_clinician_guard_kind_stays_out_of_fast_record_choke_points():
         ), message
         prefer_fast_record = ae._has_fast_record_write_intent(message)
         assert prefer_fast_record is False, message
+        assert (
+            _should_force_record_tool_choice(
+                prefer_fast_record,
+                _FIRST_ROUND,
+                _TOOLS,
+                True,
+            )
+            is False
+        ), message
+
+
+def test_clinician_fallback_cases_disable_every_fast_write_path():
+    import app.services.agent_executor as ae
+
+    for message in CLINICIAN_FALLBACK_NONWRITE_MESSAGES:
+        assert ae._extract_clear_symptom_record(message) is None, message
+        assert (
+            ae._build_deterministic_symptom_tool_call(
+                message,
+                write_receipts=(),
+            )
+            is None
+        ), message
+        prefer_fast_record = ae._has_fast_record_write_intent(message)
+        assert prefer_fast_record is False, message
+        assert ae._has_explicit_text_record_intent(message) is False, message
+        assert (
+            ae._is_fast_eligible_turn(
+                message,
+                has_images=False,
+                has_file=False,
+            )
+            is False
+        ), message
         assert (
             _should_force_record_tool_choice(
                 prefer_fast_record,
