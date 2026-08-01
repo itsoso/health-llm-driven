@@ -1424,5 +1424,137 @@
     "text": "记录今天腰痛6分",
     "kind": "none",
     "reason_code": "no_clinician_signal"
+  },
+  {
+    "id": "doctor_let_me_record_instruction",
+    "text": "医生让我记录每天腰痛情况",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_instruction",
+    "provider": "医生",
+    "content": "记录每天腰痛情况"
+  },
+  {
+    "id": "doctor_told_me_to_record_instruction",
+    "text": "医生叫我记录每天腰痛情况",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_instruction",
+    "provider": "医生",
+    "content": "记录每天腰痛情况"
+  },
+  {
+    "id": "doctor_handed_down_record_instruction",
+    "text": "大夫交代我记录每天腰痛情况",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_instruction",
+    "provider": "大夫",
+    "content": "记录每天腰痛情况"
+  },
+  {
+    "id": "doctor_required_me_to_record_instruction",
+    "text": "医生要求我记录每天腰痛情况",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_instruction",
+    "provider": "医生",
+    "content": "记录每天腰痛情况"
+  },
+  {
+    "id": "doctor_exhorted_me_to_record_instruction",
+    "text": "医生嘱咐我记录每天腰痛情况",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_instruction",
+    "provider": "医生",
+    "content": "记录每天腰痛情况"
+  },
+  {
+    "id": "doctor_instruction_with_ignorable_gaps",
+    "text": "医生 ​让⁠我 ​记录每天腰痛情况",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_instruction",
+    "provider": "医生",
+    "content": "记录每天腰痛情况"
+  },
+  {
+    "id": "doctor_instruction_question_stays_advice",
+    "text": "医生让我记录每天腰痛情况？",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_question",
+    "provider": "医生",
+    "content": "记录每天腰痛情况"
+  },
+  {
+    "id": "user_instructs_doctor_role_reversal",
+    "text": "我让医生记录每天腰痛情况",
+    "kind": "none",
+    "reason_code": "no_clinician_report",
+    "provider": "医生"
+  },
+  {
+    "id": "family_instructs_doctor_role_reversal",
+    "text": "家属叫医生记录每天腰痛情况",
+    "kind": "none",
+    "reason_code": "no_clinician_report",
+    "provider": "医生"
+  },
+  {
+    "id": "negated_save_doctor_diagnosis",
+    "text": "不要保存医生诊断",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "negated_clinician_action",
+    "provider": "医生"
+  },
+  {
+    "id": "negated_write_doctor_feedback",
+    "text": "不要写入医生反馈",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "negated_clinician_action",
+    "provider": "医生"
+  },
+  {
+    "id": "not_needed_save_doctor_diagnosis",
+    "text": "不需要保存医生诊断",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "negated_clinician_action",
+    "provider": "医生"
+  },
+  {
+    "id": "do_not_save_doctor_diagnosis",
+    "text": "别保存医生诊断",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "negated_clinician_action",
+    "provider": "医生"
+  },
+  {
+    "id": "no_need_save_doctor_diagnosis",
+    "text": "不用保存医生诊断",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "negated_clinician_action",
+    "provider": "医生"
+  },
+  {
+    "id": "unnecessary_save_doctor_diagnosis",
+    "text": "无需保存医生诊断",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "negated_clinician_action",
+    "provider": "医生"
+  },
+  {
+    "id": "strict_prefix_before_negated_clinician_write",
+    "text": "请不要保存医生诊断",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "negated_clinician_action",
+    "provider": "医生"
+  },
+  {
+    "id": "negated_non_clinician_write_stays_outside_guard",
+    "text": "不要保存午餐",
+    "kind": "none",
+    "reason_code": "no_clinician_signal"
+  },
+  {
+    "id": "negated_write_without_feedback_object_stays_outside_guard",
+    "text": "不要保存医生午餐",
+    "kind": "none",
+    "reason_code": "no_clinician_report",
+    "provider": "医生"
   }
 ]

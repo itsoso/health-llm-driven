@@ -178,6 +178,36 @@ def test_notification_diagnosis_question_is_advice_not_a_report():
     assert decision.command_end is None
 
 
+@pytest.mark.parametrize(
+    "text",
+    (
+        "我让医生记录每天腰痛情况",
+        "家属叫医生记录每天腰痛情况",
+    ),
+)
+def test_role_reversed_instructions_do_not_make_clinician_the_agent(text):
+    guard = _module()
+
+    decision = guard.classify_clinician_turn(text)
+
+    assert decision.kind == "none"
+    assert decision.reason_code == "no_clinician_report"
+    assert decision.authorizes_feedback_write is False
+    assert decision.content_start is None
+    assert decision.content_end is None
+    assert decision.command_start is None
+    assert decision.command_end is None
+
+
+def test_bare_instruction_verbs_do_not_join_global_report_predicates():
+    lexicon = importlib.import_module(
+        "app.services.utterance_intent_lexicon"
+    )
+
+    assert "让" not in lexicon.CLINICIAN_REPORT_PREDICATES
+    assert "叫" not in lexicon.CLINICIAN_REPORT_PREDICATES
+
+
 def test_non_writes_never_expose_an_authorizing_command_span():
     guard = _module()
 
@@ -253,6 +283,8 @@ def test_guard_deny_roots_cover_shared_legacy_action_lexicon():
         ("explicit_doctor_feedback_write", "clinician_report"),
         ("clinician_context", "explicit_feedback_write"),
         ("none", "coordinated_clinician_action"),
+        ("clinician_context", "clinician_instruction"),
+        ("clinician_advice", "negated_clinician_action"),
     ),
 )
 def test_decision_rejects_invalid_kind_reason_combinations(

@@ -11,6 +11,7 @@ from typing import Literal, TypeAlias
 import unicodedata
 
 from app.services.utterance_intent_lexicon import (
+    CLAUSE_ACTION_NEGATIONS,
     CLINICIAN_CONTEXT_WRITE_ACTIONS,
     CLINICIAN_CONSULTATION_TERMS,
     CLINICIAN_FEEDBACK_OBJECT_NOUNS,
@@ -99,6 +100,8 @@ _LOCAL_ADVICE_PREDICATES = tuple(
     if predicate in {"建议", "嘱咐", "要求"}
 )
 _LOCAL_ADVICE_MODIFIERS = ("如果需要", "必要时", "可酌情")
+# Local morphology only: bare 让/叫 must not become global report predicates.
+_CLINICIAN_INSTRUCTION_PREDICATES = ("交代", "要求", "嘱咐", "让", "叫")
 _CLINICIAN_PROVIDER_OBJECT_MARKERS = ("请教", "对", "向", "给", "问", "让")
 _LOCAL_ADVICE_CLAUSE_BOUNDARIES = tuple(
     dict.fromkeys((*_SOFT_BOUNDARIES, *_HARD_BOUNDARIES, "：", ":"))
@@ -155,7 +158,11 @@ _REASONS_BY_KIND: dict[DecisionKind, frozenset[str]] = {
     ),
     "clinician_context": frozenset({"clinician_report"}),
     "clinician_advice": frozenset(
-        {"clinician_question", "clinician_consultation"}
+        {
+            "clinician_question",
+            "clinician_consultation",
+            "clinician_instruction",
+        }
     ),
     "explicit_doctor_feedback_write": frozenset(
         {"explicit_feedback_write", "explicit_feedback_write_after_report"}
@@ -166,6 +173,7 @@ _REASONS_BY_KIND: dict[DecisionKind, frozenset[str]] = {
             "coordinated_clinician_action",
             "feedback_write_missing_content",
             "feedback_write_question",
+            "negated_clinician_action",
         }
     ),
 }
@@ -271,6 +279,7 @@ class _WriteCandidate:
         "missing_content",
         "coordinated",
         "question",
+        "negated",
     ]
 
 
@@ -280,6 +289,14 @@ class _Report:
     provider: _Span
     predicate: _Span
     content: _Span | None
+
+
+@dataclass(frozen=True)
+class _Instruction:
+    segment_index: int
+    provider: _Span
+    predicate: _Span
+    content: _Span
 
 
 def _is_ignorable(char: str) -> bool:
@@ -690,6 +707,15 @@ def _parse_write_segment(
     if prefix is not None:
         position = _skip_spaces(raw, prefix[0].end, segment.end)
 
+    negation = _starts_with_term(
+        raw,
+        CLAUSE_ACTION_NEGATIONS,
+        position=position,
+        end=segment.end,
+    )
+    if negation is not None:
+        position = _skip_spaces(raw, negation[0].end, segment.end)
+
     root = _starts_with_term(
         raw,
         CLINICIAN_FEEDBACK_WRITE_ROOTS,
@@ -714,6 +740,19 @@ def _parse_write_segment(
     )
     command = _trim(raw, segment.start, feedback_object.end)
     content = _trim(raw, position, segment.end)
+    if negation is not None:
+        return _WriteCandidate(
+            segment_index=segment_index,
+            provider=provider,
+            content=(
+                content
+                if content.start < content.end
+                and _content_is_substantive(raw, content)
+                else None
+            ),
+            command=None,
+            status="negated",
+        )
     if (
         content.start >= content.end
         or not _content_is_substantive(raw, content)
@@ -889,6 +928,49 @@ def _find_report(
         predicate=predicate,
         content=content if content.start < content.end else None,
     )
+
+
+def _find_instruction(
+    raw: str,
+    segment: _Span,
+    segment_index: int,
+) -> _Instruction | None:
+    for provider, _ in _provider_matches(raw, segment):
+        if not _provider_is_clause_head(
+            raw,
+            span=segment,
+            provider=provider,
+        ):
+            continue
+        position = _skip_spaces(raw, provider.end, segment.end)
+        predicate_match = _starts_with_term(
+            raw,
+            _CLINICIAN_INSTRUCTION_PREDICATES,
+            position=position,
+            end=segment.end,
+        )
+        if predicate_match is None:
+            continue
+        predicate, _ = predicate_match
+        recipient_start = _skip_spaces(raw, predicate.end, segment.end)
+        if (
+            recipient_start >= segment.end
+            or raw[recipient_start] != "我"
+        ):
+            continue
+        content = _trim(raw, recipient_start + 1, segment.end)
+        if (
+            content.start >= content.end
+            or not _content_is_substantive(raw, content)
+        ):
+            continue
+        return _Instruction(
+            segment_index=segment_index,
+            provider=provider,
+            predicate=predicate,
+            content=content,
+        )
+    return None
 
 
 def _contains_question(raw: str) -> bool:
@@ -1115,9 +1197,21 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
         if (candidate := _parse_write_segment(raw, segment, index))
         is not None
     )
+    instructions = tuple(
+        instruction
+        for index, segment in enumerate(segments)
+        if (
+            instruction := _find_instruction(raw, segment, index)
+        )
+        is not None
+    )
+    instruction_indexes = {
+        instruction.segment_index for instruction in instructions
+    }
     reports = tuple(
         report
         for index, segment in enumerate(segments)
+        if index not in instruction_indexes
         if (report := _find_report(raw, segment, index)) is not None
     )
 
@@ -1148,6 +1242,12 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
         )
     if candidates:
         candidate = candidates[0]
+        if candidate.status == "negated":
+            return _ambiguous_candidate(
+                raw,
+                candidate,
+                reason_code="negated_clinician_action",
+            )
         if candidate.status == "missing_content":
             return _ambiguous_candidate(
                 raw,
@@ -1218,6 +1318,33 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
             raw,
             candidate,
             reason_code="coordinated_clinician_action",
+        )
+
+    if instructions:
+        instruction = instructions[0]
+        if (
+            len(instructions) > 1
+            or len(segments) > 1
+            or reports
+            or _second_action_kind(raw, instruction.content) is not None
+        ):
+            return _decision(
+                raw,
+                kind="ambiguous_clinician_action",
+                reason_code="coordinated_clinician_action",
+                provider=instruction.provider,
+                content=instruction.content,
+            )
+        return _decision(
+            raw,
+            kind="clinician_advice",
+            reason_code=(
+                "clinician_question"
+                if _contains_question(raw)
+                else "clinician_instruction"
+            ),
+            provider=instruction.provider,
+            content=instruction.content,
         )
 
     if reports:
