@@ -2,7 +2,7 @@ import { Platform, Share } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import api from '../services/api';
+import api, { BASE_URL } from '../services/api';
 
 interface SharePlainTextOptions {
   title?: string;
@@ -184,7 +184,11 @@ async function downloadImageToCache(
       ? await FileSystem.downloadAsync(sourceUri, localUri, { headers })
       : await FileSystem.downloadAsync(sourceUri, localUri);
   } catch (error) {
-    await FileSystem.deleteAsync(localUri, { idempotent: true }).catch(() => {});
+    try {
+      await FileSystem.deleteAsync(localUri, { idempotent: true });
+    } catch {
+      throw new Error(`${statusErrorCode}_cleanup_failed`);
+    }
     if (preserveDownloadError) throw error;
     throw new Error(statusErrorCode);
   }
@@ -192,7 +196,11 @@ async function downloadImageToCache(
   const downloadedUri = download.uri || localUri;
   const status = typeof download.status === 'number' ? download.status : 200;
   if (status < 200 || status >= 300) {
-    await FileSystem.deleteAsync(downloadedUri, { idempotent: true }).catch(() => {});
+    try {
+      await FileSystem.deleteAsync(downloadedUri, { idempotent: true });
+    } catch {
+      throw new Error(`${statusErrorCode}_cleanup_failed`);
+    }
     throw new Error(statusErrorCode);
   }
 
@@ -267,14 +275,42 @@ function safeCacheKey(value: string | undefined): string {
   return normalized.slice(0, 64) || String(Date.now());
 }
 
-function opaqueCacheKey(value: string | undefined): string {
-  const normalized = safeCacheKey(value);
+let localImageArtifactSequence = 0;
+
+function nextOpaqueCacheKey(value: string | undefined): string {
+  localImageArtifactSequence += 1;
+  const nonce = `${Date.now().toString(36)}${localImageArtifactSequence.toString(36)}`;
+  const normalized = `${safeCacheKey(value)}-${nonce}`;
   let hash = 2166136261;
   for (let index = 0; index < normalized.length; index += 1) {
     hash ^= normalized.charCodeAt(index);
     hash = Math.imul(hash, 16777619);
   }
-  return `k${(hash >>> 0).toString(16).padStart(8, '0')}`;
+  return `k${(hash >>> 0).toString(16).padStart(8, '0')}${nonce}`;
+}
+
+function assertMaterializeImageRemoteAllowed(
+  sourceUrl: URL,
+  headers: Record<string, string> | undefined,
+): void {
+  if (sourceUrl.username || sourceUrl.password) {
+    throw new Error('image_materialization_url_credentials_forbidden');
+  }
+  if (!headers || Object.keys(headers).length === 0) return;
+
+  let trustedUrl: URL;
+  try {
+    trustedUrl = new URL(BASE_URL);
+  } catch {
+    throw new Error('image_materialization_headers_untrusted_origin');
+  }
+  if (
+    trustedUrl.username
+    || trustedUrl.password
+    || sourceUrl.origin !== trustedUrl.origin
+  ) {
+    throw new Error('image_materialization_headers_untrusted_origin');
+  }
 }
 
 export async function materializeImageForLocalUse(
@@ -290,12 +326,19 @@ export async function materializeImageForLocalUse(
   if (!/^https:\/\//i.test(sourceUri)) {
     throw new Error('image_materialization_requires_file_or_https');
   }
+  let sourceUrl: URL;
+  try {
+    sourceUrl = new URL(sourceUri);
+  } catch {
+    throw new Error('image_materialization_uri_invalid');
+  }
+  assertMaterializeImageRemoteAllowed(sourceUrl, options.headers);
   if (!FileSystem.cacheDirectory) {
     throw new Error('image_materialization_cache_unavailable');
   }
 
   const format = imageFormat(sourceUri);
-  const localUri = `${FileSystem.cacheDirectory}reva-local-image-${opaqueCacheKey(options.cacheKey)}.${format.extension}`;
+  const localUri = `${FileSystem.cacheDirectory}reva-local-image-${nextOpaqueCacheKey(options.cacheKey)}.${format.extension}`;
   return downloadImageToCache(
     sourceUri,
     localUri,
