@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
 import { DietRecordAdjustEditor } from './RecordQualityCard';
 import { MEAL_ICONS, MACRO_HUES, MacroBar, IngredientChips } from './mealCardVisuals';
+import { privateDietPhotoUris } from '../../diet/dietSharePresentation';
 import type {
   CardRenderOptions,
   CardSpec,
@@ -22,7 +23,6 @@ import type {
   ChatCardActionRuntimeState,
 } from './types';
 import { revaColors as C, revaFonts, revaRadii, revaSemantic } from '../../../constants/revaTheme';
-import { BASE_URL } from '../../../services/api';
 
 // 饮食类目 accent (橙) = 「是饮食卡」装饰色, 保留字面量 (= legacy orange/tintOrange).
 const DIET_ACCENT = '#C97A2E';
@@ -198,30 +198,6 @@ function sourceLabel(value: unknown): string | undefined {
   return `来源: ${SOURCE_LABELS[source] || source}`;
 }
 
-function privatePhotoUri(value: unknown): string | undefined {
-  const raw = text(value);
-  if (!raw) return undefined;
-  if (/^https?:\/\//i.test(raw)) return raw;
-  const origin = BASE_URL.replace(/\/api\/?$/i, '');
-  return `${origin}${raw.startsWith('/') ? raw : `/${raw}`}`;
-}
-
-function privatePhotoUris(data: DietDraftData): string[] {
-  const values = Array.isArray(data.photo_urls)
-    ? data.photo_urls
-    : [data.photo_url];
-  const uris: string[] = [];
-  const seen = new Set<string>();
-  values.forEach((value) => {
-    const uri = privatePhotoUri(value);
-    if (uri && !seen.has(uri)) {
-      seen.add(uri);
-      uris.push(uri);
-    }
-  });
-  return uris;
-}
-
 function isPhotoSource(value: unknown): boolean {
   const source = text(value)?.toLowerCase();
   return Boolean(source && (source.includes('photo') || source.includes('image') || source.includes('vision')));
@@ -299,7 +275,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   );
   const boundary = boundaryText(data);
   const editHint = editHintText(data);
-  const photoUris = React.useMemo(() => privatePhotoUris(data), [data]);
+  const photoUris = React.useMemo(() => privateDietPhotoUris(data), [data]);
   const [galleryVisible, setGalleryVisible] = React.useState(false);
   const [failedPhotoUris, setFailedPhotoUris] = React.useState<Set<string>>(() => new Set());
   const currentFailedPhotoUris = React.useMemo(
