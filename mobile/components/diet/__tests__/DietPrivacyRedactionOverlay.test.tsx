@@ -27,14 +27,13 @@ describe('DietPrivacyRedactionOverlay', () => {
     }));
   });
 
-  it('does not render empty, non-finite, out-of-range, zero-width, or stationary strokes', () => {
+  it('does not render empty, non-finite, zero-width, or stationary strokes', () => {
     const view = render(
       <DietPrivacyRedactionOverlay
         redactions={[
           { points: [], width: 0.06 },
           { points: [{ x: 0.2, y: 0.2 }], width: 0.06 },
           { points: [{ x: 0.2, y: 0.2 }, { x: Number.NaN, y: 0.4 }], width: 0.06 },
-          { points: [{ x: -0.2, y: 0.2 }, { x: 0.4, y: 0.4 }], width: 0.06 },
           { points: [{ x: 0.2, y: 0.2 }, { x: 0.4, y: 0.4 }], width: 0 },
           { points: [{ x: 0.2, y: 0.2 }, { x: 0.2, y: 0.2 }], width: 0.06 },
         ]}
@@ -42,6 +41,21 @@ describe('DietPrivacyRedactionOverlay', () => {
     );
 
     expect(view.queryAllByTestId('Path')).toHaveLength(0);
+  });
+
+  it('keeps finite canonical points outside the viewport for lossless rotations', () => {
+    const view = render(
+      <DietPrivacyRedactionOverlay
+        redactions={[{
+          points: [{ x: 1.2, y: 0.1 }, { x: 0.8, y: 0.4 }],
+          width: 0.06,
+        }]}
+      />,
+    );
+
+    expect(view.getByTestId('Path').props.d).toBe('M 1.2 0.1 L 0.8 0.4');
+    expect(StyleSheet.flatten(view.getByTestId('diet-share-privacy-overlay').props.style).overflow)
+      .toBe('hidden');
   });
 
   it('is an absolute non-interactive overlay', () => {

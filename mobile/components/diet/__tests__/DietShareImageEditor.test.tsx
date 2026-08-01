@@ -540,7 +540,7 @@ describe('DietShareImageEditor', () => {
     expect(redaction?.width).toBe(0.06);
     expect(redaction?.points).toHaveLength(3);
     [
-      { x: 1, y: 0.1 },
+      { x: 1.211111, y: 0.1 },
       { x: 0.411111, y: 0.6 },
       { x: 0.055556, y: 0.8 },
     ].forEach((expected, index) => {

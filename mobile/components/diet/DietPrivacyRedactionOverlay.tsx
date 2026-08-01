@@ -8,20 +8,16 @@ export type DietPrivacyRedactionOverlayProps = {
   redactions: DietShareRedaction[];
 };
 
-function isNormalizedPoint(point: NormalizedPoint): boolean {
+function isFinitePoint(point: NormalizedPoint): boolean {
   return Number.isFinite(point.x)
-    && Number.isFinite(point.y)
-    && point.x >= 0
-    && point.x <= 1
-    && point.y >= 0
-    && point.y <= 1;
+    && Number.isFinite(point.y);
 }
 
 function isDrawableRedaction(redaction: DietShareRedaction): boolean {
   if (
     !Array.isArray(redaction.points)
     || redaction.points.length < 2
-    || !redaction.points.every(isNormalizedPoint)
+    || !redaction.points.every(isFinitePoint)
     || !Number.isFinite(redaction.width)
     || redaction.width <= 0
     || redaction.width > 1
@@ -68,5 +64,6 @@ export function DietPrivacyRedactionOverlay({ redactions }: DietPrivacyRedaction
 const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
   },
 });

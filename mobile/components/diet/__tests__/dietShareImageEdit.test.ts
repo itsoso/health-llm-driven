@@ -162,6 +162,30 @@ describe('dietShareImageEdit', () => {
     expect(result.redactions[0]?.points[0]?.y).toBeCloseTo(0.275);
   });
 
+  it('preserves canonical privacy points outside a portrait rotation crop', () => {
+    const source = { width: 1200, height: 1600 };
+    const initial = {
+      ...initialDietShareImageEdit(),
+      redactions: [{
+        points: [{ x: 0.1, y: 0.1 }, { x: 0.2, y: 0.2 }],
+        width: 0.08,
+      }],
+    };
+
+    const at90 = rotateDietShareImage(initial, source);
+    expect(at90.redactions[0]?.points[0]?.x).toBeGreaterThan(1);
+    const atZero = rotateDietShareImage(
+      rotateDietShareImage(rotateDietShareImage(at90, source), source),
+      source,
+    );
+
+    expect(atZero.rotation).toBe(0);
+    atZero.redactions[0]?.points.forEach((point, index) => {
+      expect(point.x).toBeCloseTo(initial.redactions[0]!.points[index]!.x);
+      expect(point.y).toBeCloseTo(initial.redactions[0]!.points[index]!.y);
+    });
+  });
+
   it('reset restores a fresh identity state exactly', () => {
     const edited = addDietShareRedaction(
       rotateDietShareImage(updateDietShareCrop(initialDietShareImageEdit(), {

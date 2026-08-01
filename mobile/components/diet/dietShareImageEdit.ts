@@ -200,8 +200,10 @@ export function rotateDietShareImage(
       const rotatedX = oldEffective.height - sourceY;
       const rotatedY = sourceX;
       return {
-        x: clampNormalized((rotatedX - nextX) / nextWidth),
-        y: clampNormalized((rotatedY - nextY) / nextHeight),
+        // Keep finite canonical coordinates outside the current viewport.
+        // The SVG clips them for display; retaining them makes later rotations lossless.
+        x: (rotatedX - nextX) / nextWidth,
+        y: (rotatedY - nextY) / nextHeight,
       };
     }),
   }));
