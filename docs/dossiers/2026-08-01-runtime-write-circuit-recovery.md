@@ -4,8 +4,8 @@
 |---|---|
 | slug | `runtime-write-circuit-recovery` |
 | 创建日期 | 2026-08-01 |
-| 当前阶段 | S3 规划 |
-| 状态 | defining |
+| 当前阶段 | S4 分解 |
+| 状态 | building |
 | 负责 | Codex |
 | 反馈环 | Backend deploy + Mac/Mobile/Web targeted verification |
 
@@ -70,7 +70,7 @@
 ## S3 · 规划
 
 - 设计: `docs/plans/2026-08-01-runtime-write-circuit-recovery-design.md`
-- 实施: 待设计基线提交后生成。
+- 实施: `docs/plans/2026-08-01-runtime-write-circuit-recovery.md`。
 - 分阶段 + 反馈环路由: Backend TDD → client wording → integration/safety → circuit ack → backend deploy → prod exact-phrase smoke。
 - 长杆: 作用域放行必须保留 managed Runtime，不得退化成 unmanaged write。
 
