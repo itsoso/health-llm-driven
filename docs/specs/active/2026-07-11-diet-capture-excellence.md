@@ -8,7 +8,7 @@
 
 ## 1. Decision
 
-Build one explainable, idempotent meal-capture pipeline and a privacy-safe 3:4 image share artifact. A user-originated chat food photo may be saved automatically only when structured vision evidence is high-confidence and the user's local time is within a normal meal window; every other candidate remains an editable, current-page confirmation.
+Build one explainable, idempotent meal-capture pipeline and a 3:4 image share artifact whose privacy redactions are manually applied and reviewed by the user. A user-originated chat food photo may be saved automatically only when structured vision evidence is high-confidence and the user's local time is within a normal meal window; every other candidate remains an editable, current-page confirmation.
 
 This feature is an Agent Native, Mobile First capture path. Camera, library, text and voice are input modalities for the same Xiaoba conversation chain, not separate product silos. A valid implementation must leave the Agent with enough confirmed context to explain the meal, answer follow-up questions, update daily progress and propose the next action.
 
@@ -64,14 +64,14 @@ RequirementAdmission:
 camera/library/text/voice -> candidate foods -> deterministic calibration
   -> qualified chat food photo + local meal window + high confidence -> verified DietRecord receipt
   -> every other food candidate -> visible draft -> user corrects or confirms -> idempotent DietRecord receipt
-  -> optional privacy-safe image render -> system share sheet
+  -> optional user-redacted and user-reviewed image render -> system share sheet
 ```
 
 ## 7. Surface Contract
 
 | Surface | Responsibility | Contract |
 |---|---|---|
-| Mobile | Capture, explain, correct, confirm and share | Never show persisted success without record id; no standalone analysis path detached from Xiaoba; a confirmed meal with an owner-accessible photo opens a local 3:4 editor with crop, 90-degree rotation and opaque privacy redaction before full poster preview; preview, save and system share reuse one rendered URI |
+| Mobile | Capture, explain, correct, confirm and share | Never show persisted success without record id; no standalone analysis path detached from Xiaoba; a confirmed meal with an owner-accessible photo opens a local 3:4 editor with crop and zoom, 90-degree rotation, undo, redo, reset and manual opaque privacy redaction before full poster preview; preview, save and system share reuse one rendered URI |
 | Agent Conversation | Preserve context, follow up, compare against today/yesterday and suggest next action | Must consume confirmed DietRecord facts or pending draft context, not unconfirmed guesses as truth |
 | Backend | Sanitize, calibrate, persist and measure | Owner isolation and idempotency required |
 | Watch/Rokid | Reuse structured draft later | No automatic write |
@@ -165,7 +165,7 @@ Then the iOS system share sheet receives the same 1080x1440 rendered URI shown i
 
 Given a confirmed meal has an owner-accessible photo
 When the user opens the Xiaohongshu share composer
-Then the original meal photo is loaded into a local 3:4 editor before poster preview
+Then the original meal photo is loaded into a local 3:4 editor with crop and zoom, 90-degree rotation, undo, redo, reset and manual opaque privacy redaction before poster preview
 
 Given the meal photo is absent or cannot be loaded
 When the user requests an image share
@@ -247,4 +247,4 @@ Deploy backend additive response fields and the photo-asset migration before cli
 | 2026-07-12 | Separate nutrient calibration from portion truth | Prevent table matches and model confidence from implying measured-photo precision |
 | 2026-07-12 | Add a single-photo library path and idle-only capture controls | Make fallback actionable without duplicate pipelines or overlapping concurrent capture UI |
 | 2026-07-19 | Add constrained contextual chat-photo auto capture and `DietPhotoAsset` ledger | Remove routine meal logging friction without turning analysis, low-confidence or out-of-window images into silent health writes |
-| 2026-08-01 | Require an editable meal photo for the Xiaohongshu poster | Replace the metric-only fallback with local crop, rotation, opaque redaction and one-render preview/save/share reuse |
+| 2026-08-01 | Require an editable meal photo for the Xiaohongshu poster | Replace the metric-only fallback with local crop and zoom, rotation, undo/redo/reset, manual opaque redaction and one-render preview/save/share reuse |
