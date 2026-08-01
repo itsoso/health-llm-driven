@@ -46,6 +46,7 @@ export function addDietShareRedaction(
     || redaction.points.length < 2
     || !redaction.points.every(isFinitePoint)
     || !Number.isFinite(redaction.width)
+    || redaction.width <= 0
   ) {
     return state;
   }

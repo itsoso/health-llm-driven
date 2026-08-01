@@ -41,7 +41,7 @@ describe('dietShareImageEdit', () => {
     const initial = initialDietShareImageEdit();
     const points = [{ x: 0.1, y: 0.2 }, { x: 0.8, y: 0.9 }];
 
-    const tooThin = addDietShareRedaction(initial, { points, width: 0 });
+    const tooThin = addDietShareRedaction(initial, { points, width: 0.0001 });
     const tooWide = addDietShareRedaction(initial, { points, width: 2 });
 
     expect(tooThin.redactions[0]?.width).toBeGreaterThan(0);
@@ -61,10 +61,13 @@ describe('dietShareImageEdit', () => {
       points: [{ x: 0.1, y: 0.2 }, { x: Number.NaN, y: 0.3 }],
       width: 0.06,
     })).toBe(initial);
-    expect(addDietShareRedaction(initial, {
-      points: [{ x: 0.1, y: 0.2 }, { x: 0.3, y: 0.4 }],
-      width: Number.POSITIVE_INFINITY,
-    })).toBe(initial);
+    const drawablePoints = [{ x: 0.1, y: 0.2 }, { x: 0.3, y: 0.4 }];
+    [0, -0.01, Number.NaN, Number.POSITIVE_INFINITY].forEach(width => {
+      expect(addDietShareRedaction(initial, {
+        points: drawablePoints,
+        width,
+      })).toBe(initial);
+    });
   });
 
   it('clamps crop coordinates while preserving positive in-bounds dimensions immutably', () => {
