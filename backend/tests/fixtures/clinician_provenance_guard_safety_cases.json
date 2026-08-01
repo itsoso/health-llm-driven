@@ -952,6 +952,105 @@
     "content": "教练要求删除训练记录"
   },
   {
+    "id": "patient_addressing_doctor_does_not_prove_doctor_advice",
+    "text": "请记录医生意见：患者对医生建议删除训练记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "患者对医生建议删除训练记录"
+  },
+  {
+    "id": "family_addressing_doctor_does_not_prove_doctor_advice",
+    "text": "请记录医生意见：家属向医生建议清掉康复计划",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "家属向医生建议清掉康复计划"
+  },
+  {
+    "id": "coach_addressing_therapist_does_not_prove_therapist_advice",
+    "text": "请记录康复师意见：教练向康复师建议撤销训练计划",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "康复师",
+    "content": "教练向康复师建议撤销训练计划"
+  },
+  {
+    "id": "patient_giving_doctor_advice_does_not_prove_doctor_advice",
+    "text": "请记录医生意见：患者给医生建议删除训练记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "患者给医生建议删除训练记录"
+  },
+  {
+    "id": "family_asking_doctor_advice_does_not_prove_doctor_advice",
+    "text": "请记录医生意见：家属问医生建议清掉康复计划",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "家属问医生建议清掉康复计划"
+  },
+  {
+    "id": "coach_making_therapist_advise_does_not_prove_therapist_advice",
+    "text": "请记录康复师意见：教练让康复师建议撤销训练计划",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "康复师",
+    "content": "教练让康复师建议撤销训练计划"
+  },
+  {
+    "id": "patient_consulting_doctor_does_not_prove_doctor_advice",
+    "text": "请记录医生意见：患者请教医生建议删除训练记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "患者请教医生建议删除训练记录"
+  },
+  {
+    "id": "object_marker_after_clause_boundary_still_blocks_advice_proof",
+    "text": "请记录医生意见：患者先说明情况，对医生建议删除训练记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "患者先说明情况，对医生建议删除训练记录"
+  },
+  {
+    "id": "object_marker_after_colon_boundary_still_blocks_advice_proof",
+    "text": "请记录医生意见：患者先说明情况：向医生建议删除训练记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "患者先说明情况：向医生建议删除训练记录"
+  },
+  {
+    "id": "doctor_advice_after_colon_boundary_is_locally_proven",
+    "text": "请记录医生意见：患者先说明情况：医生建议必要时删除不合适动作",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "患者先说明情况：医生建议必要时删除不合适动作",
+    "command": "请记录医生意见"
+  },
+  {
+    "id": "doctor_advice_after_clause_boundary_is_locally_proven",
+    "text": "请记录医生意见：患者先说明情况，医生建议必要时删除不合适动作",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "患者先说明情况，医生建议必要时删除不合适动作",
+    "command": "请记录医生意见"
+  },
+  {
+    "id": "doctor_advice_at_content_start_without_target_prefix_is_valid",
+    "text": "请记录医生意见：医生建议必要时删除不合适动作",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "医生建议必要时删除不合适动作",
+    "command": "请记录医生意见"
+  },
+  {
     "id": "doctor_advice_allows_necessary_modifier_before_adjustment",
     "text": "请记录医生意见：医生建议必要时调整训练强度",
     "kind": "explicit_doctor_feedback_write",

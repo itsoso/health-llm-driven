@@ -99,6 +99,10 @@ _LOCAL_ADVICE_PREDICATES = tuple(
     if predicate in {"建议", "嘱咐", "要求"}
 )
 _LOCAL_ADVICE_MODIFIERS = ("如果需要", "必要时", "可酌情")
+_LOCAL_ADVICE_OBJECT_MARKERS = ("请教", "对", "向", "给", "问", "让")
+_LOCAL_ADVICE_CLAUSE_BOUNDARIES = tuple(
+    dict.fromkeys((*_SOFT_BOUNDARIES, *_HARD_BOUNDARIES, "：", ":"))
+)
 _MEDICAL_ADVICE_TARGETS = (
     "训练",
     "运动",
@@ -479,6 +483,55 @@ def _skip_optional_local_advice_modifier(
     return _skip_local_advice_fillers(raw, modifier[0].end, end)
 
 
+def _local_advice_provider_is_clause_head(
+    raw: str,
+    *,
+    span: _Span,
+    provider: _Span,
+) -> bool:
+    scope_start = span.start
+    if provider.start < scope_start:
+        scope_start = max(
+            raw.rfind(boundary, 0, provider.start) + 1
+            for boundary in _HARD_BOUNDARIES
+        )
+
+    marker_end = provider.start
+    while marker_end > scope_start:
+        char = raw[marker_end - 1]
+        if _is_ignorable(char) or char in "：:,，":
+            marker_end -= 1
+            continue
+        break
+    if any(
+        raw[max(scope_start, marker_end - len(marker)) : marker_end]
+        == marker
+        for marker in _LOCAL_ADVICE_OBJECT_MARKERS
+    ):
+        return False
+
+    content_head = _skip_local_advice_fillers(
+        raw,
+        scope_start,
+        provider.start,
+    )
+    if content_head == provider.start:
+        return True
+
+    boundary_start = max(
+        raw.rfind(boundary, scope_start, provider.start)
+        for boundary in _LOCAL_ADVICE_CLAUSE_BOUNDARIES
+    )
+    if boundary_start < scope_start:
+        return False
+    clause_head = _skip_local_advice_fillers(
+        raw,
+        boundary_start + 1,
+        provider.start,
+    )
+    return clause_head == provider.start
+
+
 def _is_locally_proven_clinician_advice(
     raw: str,
     *,
@@ -489,6 +542,12 @@ def _is_locally_proven_clinician_advice(
     local_start = max(0, action_start - 24)
     local_span = _Span(local_start, action_start)
     for provider, _ in reversed(_provider_matches(raw, local_span)):
+        if not _local_advice_provider_is_clause_head(
+            raw,
+            span=span,
+            provider=provider,
+        ):
+            continue
         position = _skip_local_advice_fillers(
             raw,
             provider.end,
