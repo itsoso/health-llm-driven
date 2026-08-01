@@ -14,6 +14,7 @@ const mockSaveCardActionReceipt = jest.fn().mockResolvedValue(undefined);
 const mockSaveChatImageToLibrary = jest.fn().mockResolvedValue(undefined);
 const mockShareLocalImage = jest.fn().mockResolvedValue(undefined);
 const mockCreateInterventionDraft = jest.fn().mockResolvedValue({ id: 88 });
+const mockDietShareComposer = jest.fn();
 const mockAlert = jest.spyOn(Alert, 'alert');
 const mockCaptureRefCalls: { testID?: string; options: unknown }[] = [];
 let mockCaptureRefResult = 'file:///tmp/diet-card.png';
@@ -108,6 +109,16 @@ jest.mock('../../../services/chatImageSave', () => ({
 jest.mock('../../../services/actionCards', () => ({
   createInterventionDraft: (...args: any[]) => mockCreateInterventionDraft(...args),
 }));
+jest.mock('../../diet/DietShareComposer', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return {
+    DietShareComposer: (props: any) => {
+      mockDietShareComposer(props);
+      return <View testID="mock-diet-share-composer" />;
+    },
+  };
+});
 
 const ChatBubble = require('../ChatBubble').default;
 const { dispatchChatCardAction } = require('../../../services/chatCardActions');
@@ -158,6 +169,7 @@ describe('ChatBubble structured summary', () => {
     mockSaveChatImageToLibrary.mockResolvedValue(undefined);
     mockShareLocalImage.mockReset();
     mockShareLocalImage.mockResolvedValue(undefined);
+    mockDietShareComposer.mockClear();
     mockCreateInterventionDraft.mockReset();
     mockCreateInterventionDraft.mockResolvedValue({ id: 88 });
     mockAlert.mockImplementation((_title, _message, buttons) => {
@@ -700,7 +712,7 @@ ${sectionTitle}
     });
   });
 
-  it('shares a card-only diet draft as a polished meal note', async () => {
+  it('opens the editable composer instead of capturing the operational diet card', async () => {
     sharePlainText.mockResolvedValueOnce(undefined);
     renderCard.mockReturnValue(__mockCard);
     const qc = new QueryClient();
@@ -719,16 +731,17 @@ ${sectionTitle}
         carbs: 70,
         fat: 17,
         suggestions: ['晚餐优先补 40g 蛋白'],
+        photo_url: '/api/v1/upload/files/diet/1/lunch.jpg',
       },
     };
 
     const { getByLabelText, getByTestId, queryByText } = render(
       <QueryClientProvider client={qc}>
-        <ChatBubble item={message} />
+        <ChatBubble item={message} imageAuthToken="secret-token" />
       </QueryClientProvider>,
     );
 
-    expect(getByTestId('assistant-card-capture-frame')).toBeTruthy();
+    expect(queryByText('保存图片')).toBeNull();
     expect(getByTestId('assistant-card-share-actions')).toBeTruthy();
     expect(queryByText('截图可直接发微信 / 小红书')).toBeNull();
 
@@ -736,30 +749,18 @@ ${sectionTitle}
       flexDirection: 'row',
       flexWrap: 'wrap',
     });
-    expect(getByLabelText('保存卡片图片')).toBeTruthy();
-    expect(getByLabelText('分享卡片图片')).toBeTruthy();
+    expect(getByLabelText('编辑分享图')).toBeTruthy();
     expect(getByLabelText('分享卡片正文')).toBeTruthy();
-    fireEvent.press(getByLabelText('保存卡片图片'));
-
-    await waitFor(() => {
-      expect(mockCaptureRefCalls).toHaveLength(1);
-      expect(mockSaveChatImageToLibrary).toHaveBeenCalledWith({ uri: 'file:///tmp/diet-card.png' });
-      expect(mockToastShow).toHaveBeenCalledWith('已保存到照片', 'success');
-    });
-    expect(mockCaptureRefCalls[0]).toEqual({
-      testID: 'assistant-card-capture-frame',
-      options: {
-        format: 'png',
-        quality: 1,
-        result: 'tmpfile',
+    fireEvent.press(getByLabelText('编辑分享图'));
+    expect(mockCaptureRefCalls).toHaveLength(0);
+    expect(getByTestId('mock-diet-share-composer')).toBeTruthy();
+    expect(mockDietShareComposer).toHaveBeenLastCalledWith(expect.objectContaining({
+      record: expect.objectContaining({ id: 770, meal_type: 'lunch' }),
+      photoSource: {
+        uri: 'https://health.executor.life/api/v1/upload/files/diet/1/lunch.jpg',
+        headers: { Authorization: 'Bearer secret-token' },
       },
-    });
-
-    fireEvent.press(getByLabelText('分享卡片图片'));
-    await waitFor(() => {
-      expect(mockCaptureRefCalls).toHaveLength(2);
-      expect(mockShareLocalImage).toHaveBeenCalledWith('file:///tmp/diet-card.png');
-    });
+    }));
 
     fireEvent.press(getByLabelText('分享卡片正文'));
 
@@ -1783,7 +1784,7 @@ ${sectionTitle}
     });
   });
 
-  it('keeps recorded diet screenshot actions visible after history reload without a write receipt', () => {
+  it('keeps text sharing but disables image editing when a restored record has no accessible photo', () => {
     renderCard.mockImplementationOnce(() => {
       const { Text } = require('react-native');
       return <Text>午餐已记录</Text>;
@@ -1806,15 +1807,62 @@ ${sectionTitle}
       writeReceipts: [],
     };
 
-    const { getByText, getByLabelText } = render(
+    const { getByText, getByLabelText, queryByLabelText } = render(
       <QueryClientProvider client={qc}>
         <ChatBubble item={message} />
       </QueryClientProvider>,
     );
 
     expect(getByText('午餐已记录')).toBeTruthy();
-    expect(getByLabelText('分享卡片图片')).toBeTruthy();
-    expect(getByLabelText('保存卡片图片')).toBeTruthy();
+    expect(getByLabelText('编辑分享图')).toHaveAccessibilityState({ disabled: true });
+    expect(getByLabelText('编辑分享图').props.accessibilityHint).toBe('需要这餐的可用照片才能编辑分享图');
+    expect(getByText('没有可用餐食照片，仅支持分享正文')).toBeTruthy();
+    expect(getByLabelText('分享卡片正文')).toBeTruthy();
+    expect(queryByLabelText('分享卡片图片')).toBeNull();
+  });
+
+  it('does not expose exact nutrition or AI advice in low-confidence diet share text', async () => {
+    sharePlainText.mockResolvedValueOnce(undefined);
+    renderCard.mockImplementationOnce(() => {
+      const { Text } = require('react-native');
+      return <Text>晚餐已记录</Text>;
+    });
+    const qc = new QueryClient();
+    const message = {
+      id: 'diet-low-confidence-share',
+      role: 'assistant' as const,
+      content: '',
+      timestamp: Date.now(),
+      cardType: 'diet_draft',
+      cardData: {
+        recorded: true,
+        record_id: 991,
+        meal_type: 'dinner',
+        food_items: '一份不确定的晚餐',
+        calories: 987,
+        protein: 43,
+        carbs: 101,
+        fat: 35,
+        ai_confidence: 0.42,
+        suggestions: ['下一餐精确补充 37g 蛋白质'],
+      },
+      writeReceipts: [],
+    };
+
+    const { getByLabelText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.press(getByLabelText('分享卡片正文'));
+    await waitFor(() => expect(sharePlainText).toHaveBeenCalledTimes(1));
+    const payload = sharePlainText.mock.calls[0][0];
+    expect(payload.message).toContain('营养待核对');
+    expect(payload.message).not.toContain('987');
+    expect(payload.message).not.toContain('43g');
+    expect(payload.message).not.toContain('101');
+    expect(payload.message).not.toContain('37g');
   });
 
   it('shows nutrition estimation feedback after confirming an incomplete diet card', async () => {

@@ -533,7 +533,7 @@ export default function DietShareCard({
             contentFit="contain"
             cachePolicy="memory-disk"
             priority="high"
-            onLoad={onImageReady}
+            onDisplay={onImageReady}
             onError={onImageError}
           />
           <DietPrivacyRedactionOverlay redactions={redactions} />

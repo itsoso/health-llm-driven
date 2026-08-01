@@ -243,6 +243,18 @@ describe('DietShareCard Xiaohongshu poster', () => {
     expect(view.queryByTestId('diet-share-metric-fallback')).toBeNull();
   });
 
+  it('declares the poster photo ready only after expo-image displays its pixels', () => {
+    const onImageReady = jest.fn();
+    const view = renderCard({ onImageReady });
+    const image = view.getByTestId('diet-share-image');
+
+    fireEvent(image, 'load');
+    expect(onImageReady).not.toHaveBeenCalled();
+
+    fireEvent(image, 'display');
+    expect(onImageReady).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the privacy overlay immediately above the image in the same capture tree', () => {
     const view = renderCard();
     const photo = view.getByTestId('diet-share-image');
@@ -278,7 +290,7 @@ describe('DietShareSheet image and text behavior', () => {
         onClose={jest.fn()}
       />,
     );
-    fireEvent(view.getByTestId('diet-share-image'), 'load');
+    fireEvent(view.getByTestId('diet-share-image'), 'display');
     fireEvent.press(view.getByRole('button', { name: '发小红书' }));
 
     await waitFor(() => expect(mockCaptureRef).toHaveBeenCalledWith(
@@ -300,7 +312,7 @@ describe('DietShareSheet image and text behavior', () => {
   it('falls back to caption without capture when native image sharing is unavailable', async () => {
     (Sharing.isAvailableAsync as jest.Mock).mockResolvedValueOnce(false);
     const view = renderSheet();
-    fireEvent(view.getByTestId('diet-share-image'), 'load');
+    fireEvent(view.getByTestId('diet-share-image'), 'display');
     fireEvent.press(view.getByRole('button', { name: '发小红书' }));
 
     await waitFor(() => expect(Share.share).toHaveBeenCalledTimes(1));
@@ -319,7 +331,7 @@ describe('DietShareSheet image and text behavior', () => {
   it('reports capture failure as a caption fallback and releases no missing file', async () => {
     mockCaptureRef.mockRejectedValueOnce(new Error('capture failed'));
     const view = renderSheet();
-    fireEvent(view.getByTestId('diet-share-image'), 'load');
+    fireEvent(view.getByTestId('diet-share-image'), 'display');
     fireEvent.press(view.getByRole('button', { name: '发小红书' }));
 
     await waitFor(() => expect(Share.share).toHaveBeenCalledTimes(1));
@@ -339,7 +351,7 @@ describe('DietShareSheet image and text behavior', () => {
   it('does not capture or save when photo-library permission is denied', async () => {
     mockRequestPermissionsAsync.mockResolvedValueOnce({ status: 'denied', granted: false });
     const view = renderSheet();
-    fireEvent(view.getByTestId('diet-share-image'), 'load');
+    fireEvent(view.getByTestId('diet-share-image'), 'display');
     fireEvent.press(view.getByRole('button', { name: '保存饮食图片到相册' }));
 
     await waitFor(() => expect(view.onShareTerminal).toHaveBeenCalledWith(expect.objectContaining({
@@ -352,7 +364,7 @@ describe('DietShareSheet image and text behavior', () => {
 
   it('saves the captured PNG and releases the temporary file', async () => {
     const view = renderSheet();
-    fireEvent(view.getByTestId('diet-share-image'), 'load');
+    fireEvent(view.getByTestId('diet-share-image'), 'display');
     fireEvent.press(view.getByRole('button', { name: '保存饮食图片到相册' }));
 
     await waitFor(() => expect(mockSaveToLibraryAsync).toHaveBeenCalledWith('file:///meal-share.png'));
@@ -368,7 +380,7 @@ describe('DietShareSheet image and text behavior', () => {
       resolvePermission = resolve;
     }));
     const saveView = renderSheet();
-    fireEvent(saveView.getByTestId('diet-share-image'), 'load');
+    fireEvent(saveView.getByTestId('diet-share-image'), 'display');
     fireEvent.press(saveView.getByRole('button', { name: '保存饮食图片到相册' }));
     expect(saveView.getByText('存图中')).toBeTruthy();
     expect(saveView.queryByText('生成小红书图中')).toBeNull();
@@ -378,7 +390,7 @@ describe('DietShareSheet image and text behavior', () => {
     let resolveCapture!: (uri: string) => void;
     mockCaptureRef.mockImplementationOnce(() => new Promise(resolve => { resolveCapture = resolve; }));
     const platformView = renderSheet();
-    fireEvent(platformView.getByTestId('diet-share-image'), 'load');
+    fireEvent(platformView.getByTestId('diet-share-image'), 'display');
     fireEvent.press(platformView.getByRole('button', { name: '发小红书' }));
     expect(platformView.getByText('生成小红书图中')).toBeTruthy();
     expect(platformView.queryByText('存图中')).toBeNull();
@@ -391,7 +403,7 @@ describe('DietShareSheet image and text behavior', () => {
     let finishCapture!: (uri: string) => void;
     mockCaptureRef.mockImplementationOnce(() => new Promise(resolve => { finishCapture = resolve; }));
     const view = renderSheet();
-    fireEvent(view.getByTestId('diet-share-image'), 'load');
+    fireEvent(view.getByTestId('diet-share-image'), 'display');
     const shareButton = view.getByRole('button', { name: '发小红书' });
 
     fireEvent.press(shareButton);
@@ -421,7 +433,7 @@ describe('DietShareSheet image and text behavior', () => {
     fireEvent(oldImage, 'load');
 
     expect(view.getByRole('button', { name: '发小红书' })).toBeDisabled();
-    fireEvent(view.getByTestId('diet-share-image'), 'load');
+    fireEvent(view.getByTestId('diet-share-image'), 'display');
     expect(view.getByRole('button', { name: '发小红书' })).not.toBeDisabled();
     fireEvent(oldImage, 'error', { error: 'late A error' });
     expect(view.getByRole('button', { name: '发小红书' })).not.toBeDisabled();
@@ -448,7 +460,7 @@ describe('DietShareSheet image and text behavior', () => {
     fireEvent(oldImage, 'load');
     expect(view.getByRole('button', { name: '发小红书' })).toBeDisabled();
 
-    fireEvent(view.getByTestId('diet-share-image'), 'load');
+    fireEvent(view.getByTestId('diet-share-image'), 'display');
     expect(view.getByRole('button', { name: '发小红书' })).not.toBeDisabled();
     fireEvent(oldImage, 'error', { error: 'stale token request' });
     expect(view.getByRole('button', { name: '发小红书' })).not.toBeDisabled();
@@ -472,7 +484,7 @@ describe('DietShareSheet image and text behavior', () => {
           onShareTerminal={view.onShareTerminal}
         />,
       );
-      fireEvent(view.getByTestId('diet-share-image'), 'load');
+      fireEvent(view.getByTestId('diet-share-image'), 'display');
       expect(view.queryByText('照片加载失败，请重试或改为分享正文')).toBeNull();
       expect(view.getByRole('button', { name: '发小红书' })).not.toBeDisabled();
     } finally {
