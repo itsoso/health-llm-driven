@@ -307,6 +307,10 @@ CLINICIAN_CONSULTATION_TERMS = (
 CLINICIAN_REPORT_NOUN_CONTINUATIONS = (
     "记录",
     "报告",
+    "诊断书",
+    "书",
+    "文档",
+    "档案",
     "结果",
     "证明",
     "清单",

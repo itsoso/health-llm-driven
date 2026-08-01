@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
+import unicodedata
 
 from app.services.utterance_intent_lexicon import (
     CLINICIAN_CONSULTATION_TERMS,
@@ -32,15 +33,9 @@ DecisionKind: TypeAlias = Literal[
 
 _HARD_BOUNDARIES = frozenset("。；;！？!?\n")
 _SOFT_BOUNDARIES = ("，", ",")
-_ACTION_CONNECTORS = (
-    "，然后",
-    ",然后",
-    "，随后",
-    ",随后",
-    "，接着",
-    ",接着",
-    "，顺便",
-    ",顺便",
+_ACTION_JOINER_SUFFIXES = (
+    "与此同时",
+    "除此之外",
     "然后",
     "随后",
     "接着",
@@ -48,15 +43,11 @@ _ACTION_CONNECTORS = (
     "同时",
     "以及",
     "并且",
-    "并",
-    "，",
-    ",",
+    "但是",
+    "可是",
+    "不过",
 )
-_COORDINATION_CONNECTORS = tuple(
-    connector
-    for connector in _ACTION_CONNECTORS
-    if connector not in _SOFT_BOUNDARIES
-)
+_ACTION_JOINER_CHARS = frozenset("且和与及并但")
 # These roots only invalidate a previously proven feedback-write envelope.
 # They are never used to authorize or classify general user actions.
 _WRITE_ENVELOPE_BLOCKED_ROOTS = (
@@ -75,8 +66,51 @@ _WRITE_ENVELOPE_BLOCKED_ROOTS = (
     "创建",
     "设置",
     "生成",
+    "制定",
+    "安排",
+    "制作",
+    "渲染",
 )
 _REPORT_FILLERS = frozenset(" 是为：:，,")
+_CONTENT_SEPARATORS = frozenset("：:,，")
+_CONTENT_PLACEHOLDERS = frozenset(
+    {"待补充", "待填写", "暂无", "未知", "不详", "无", "NA", "N/A"}
+)
+_NON_HUMAN_PROVIDER_PREFIXES = ("宠物", "动物", "兽")
+_LEGACY_OPERATION_ROOTS = ("查看", "查询", "删除", "删掉", "移除")
+_LEGACY_CLINICIAN_OBJECT_SUFFIXES = (
+    "诊断记录",
+    "诊断报告",
+    "诊断书",
+    "诊断文档",
+    "诊断档案",
+    "文档",
+    "档案",
+)
+_REASONS_BY_KIND: dict[DecisionKind, frozenset[str]] = {
+    "none": frozenset(
+        {
+            "no_clinician_signal",
+            "no_clinician_report",
+            "legacy_clinician_record_operation",
+        }
+    ),
+    "clinician_context": frozenset({"clinician_report"}),
+    "clinician_advice": frozenset(
+        {"clinician_question", "clinician_consultation"}
+    ),
+    "explicit_doctor_feedback_write": frozenset(
+        {"explicit_feedback_write", "explicit_feedback_write_after_report"}
+    ),
+    "ambiguous_clinician_action": frozenset(
+        {
+            "soft_boundary_followup",
+            "coordinated_clinician_action",
+            "feedback_write_missing_content",
+            "feedback_write_question",
+        }
+    ),
+}
 
 
 def _validate_optional_span(
@@ -107,6 +141,13 @@ class ClinicianTurnDecision:
     reason_code: str
 
     def __post_init__(self) -> None:
+        allowed_reasons = _REASONS_BY_KIND.get(self.kind)
+        if allowed_reasons is None:
+            raise ValueError(f"unknown decision kind: {self.kind}")
+        if self.reason_code not in allowed_reasons:
+            raise ValueError(
+                f"reason {self.reason_code!r} is invalid for kind {self.kind!r}"
+            )
         _validate_optional_span(
             self.raw,
             self.provider_start,
@@ -132,8 +173,23 @@ class ClinicianTurnDecision:
                 or self.command_start is None
             ):
                 raise ValueError("explicit feedback writes require all raw spans")
+            if not (
+                self.command_start
+                <= self.provider_start
+                < self.provider_end
+                <= self.command_end
+            ):
+                raise ValueError("provider span must be contained by command span")
+            if self.command_end > self.content_start:
+                raise ValueError("command span must precede content span")
         elif self.command_start is not None or self.command_end is not None:
             raise ValueError("non-writes cannot expose an authorizing command")
+        if (
+            self.provider_end is not None
+            and self.content_start is not None
+            and self.provider_end > self.content_start
+        ):
+            raise ValueError("provider span must precede content span")
 
     @property
     def authorizes_feedback_write(self) -> bool:
@@ -152,7 +208,12 @@ class _WriteCandidate:
     provider: _Span
     content: _Span | None
     command: _Span | None
-    status: Literal["valid", "missing_content", "coordinated"]
+    status: Literal[
+        "valid",
+        "missing_content",
+        "coordinated",
+        "question",
+    ]
 
 
 @dataclass(frozen=True)
@@ -162,10 +223,14 @@ class _Report:
     content: _Span | None
 
 
+def _is_ignorable(char: str) -> bool:
+    return char.isspace() or unicodedata.category(char) == "Cf"
+
+
 def _trim(raw: str, start: int, end: int) -> _Span:
-    while start < end and raw[start].isspace():
+    while start < end and _is_ignorable(raw[start]):
         start += 1
-    while end > start and raw[end - 1].isspace():
+    while end > start and _is_ignorable(raw[end - 1]):
         end -= 1
     return _Span(start, end)
 
@@ -186,38 +251,43 @@ def _segments(raw: str) -> tuple[_Span, ...]:
     return tuple(spans)
 
 
-def _find_first(
-    raw: str,
-    terms: tuple[str, ...],
-    *,
-    start: int,
-    end: int,
-) -> tuple[_Span, str] | None:
-    best: tuple[int, int, str] | None = None
-    for term in terms:
-        position = raw.find(term, start, end)
-        if position < 0:
-            continue
-        candidate = (position, -len(term), term)
-        if best is None or candidate < best:
-            best = candidate
-    if best is None:
-        return None
-    position, negative_length, term = best
-    return _Span(position, position - negative_length), term
-
-
 def _first_provider(raw: str, span: _Span) -> tuple[_Span, str] | None:
-    return _find_first(
-        raw,
-        CLINICIAN_PROVIDER_TERMS,
-        start=span.start,
-        end=span.end,
-    )
+    matches = _provider_matches(raw, span)
+    return matches[0] if matches else None
+
+
+def _has_nonhuman_provider_prefix(raw: str, position: int) -> bool:
+    for prefix in _NON_HUMAN_PROVIDER_PREFIXES:
+        start = position - len(prefix)
+        if start >= 0 and raw[start:position] == prefix:
+            return True
+    return False
+
+
+def _provider_matches(
+    raw: str,
+    span: _Span,
+) -> tuple[tuple[_Span, str], ...]:
+    candidates: list[tuple[_Span, str]] = []
+    for term in CLINICIAN_PROVIDER_TERMS:
+        position = raw.find(term, span.start, span.end)
+        while position >= 0:
+            if not _has_nonhuman_provider_prefix(raw, position):
+                candidates.append(
+                    (_Span(position, position + len(term)), term)
+                )
+            position = raw.find(term, position + len(term), span.end)
+    candidates.sort(key=lambda item: (item[0].start, -len(item[1])))
+    matches: list[tuple[_Span, str]] = []
+    for candidate in candidates:
+        if matches and candidate[0].start < matches[-1][0].end:
+            continue
+        matches.append(candidate)
+    return tuple(matches)
 
 
 def _skip_spaces(raw: str, position: int, end: int) -> int:
-    while position < end and raw[position].isspace():
+    while position < end and _is_ignorable(raw[position]):
         position += 1
     return position
 
@@ -264,50 +334,87 @@ def _match_feedback_object(
     return provider, _Span(provider.start, noun.end)
 
 
-def _tail_starts_with(
+def _strip_ignorable_end(raw: str, start: int, end: int) -> int:
+    while end > start and _is_ignorable(raw[end - 1]):
+        end -= 1
+    return end
+
+
+def _second_action_prefix_kind(
     raw: str,
     *,
-    position: int,
-    end: int,
-    terms: tuple[str, ...],
-    allow_polite_prefix: bool,
-) -> bool:
-    position = _skip_spaces(raw, position, end)
-    if allow_polite_prefix:
-        prefix = _starts_with_term(
-            raw,
-            CLINICIAN_STRICT_COMMAND_PREFIXES,
-            position=position,
-            end=end,
-        )
-        if prefix is not None:
-            position = _skip_spaces(raw, prefix[0].end, end)
-    return _starts_with_term(
-        raw,
-        terms,
-        position=position,
-        end=end,
-    ) is not None
+    span_start: int,
+    action_start: int,
+) -> Literal["soft", "coordinated"] | None:
+    prefix_end = _strip_ignorable_end(raw, span_start, action_start)
+    polite_found = False
+    for polite in CLINICIAN_STRICT_COMMAND_PREFIXES:
+        polite_start = prefix_end - len(polite)
+        if polite_start >= span_start and raw[polite_start:prefix_end] == polite:
+            prefix_end = _strip_ignorable_end(raw, span_start, polite_start)
+            polite_found = True
+            break
+    if prefix_end <= span_start:
+        return None
+    prefix = raw[span_start:prefix_end]
+    if not any(
+        unicodedata.category(char)[0] in {"L", "N"}
+        for char in prefix
+    ):
+        return None
+    last_char = raw[prefix_end - 1]
+    if unicodedata.category(last_char).startswith("P"):
+        return "soft" if last_char in "，," else "coordinated"
+    if polite_found:
+        return "coordinated"
+    if last_char in _ACTION_JOINER_CHARS:
+        return "coordinated"
+    if any(prefix.endswith(joiner) for joiner in _ACTION_JOINER_SUFFIXES):
+        return "coordinated"
+    return None
 
 
-def _has_envelope_mixed_action(raw: str, span: _Span) -> bool:
-    for connector in _ACTION_CONNECTORS:
-        position = raw.find(connector, span.start, span.end)
+def _second_action_kind(
+    raw: str,
+    span: _Span,
+) -> Literal["soft", "coordinated"] | None:
+    best: tuple[int, Literal["soft", "coordinated"]] | None = None
+    for root in _WRITE_ENVELOPE_BLOCKED_ROOTS:
+        position = raw.find(root, span.start, span.end)
         while position >= 0:
-            if _tail_starts_with(
+            kind = _second_action_prefix_kind(
                 raw,
-                position=position + len(connector),
-                end=span.end,
-                terms=_WRITE_ENVELOPE_BLOCKED_ROOTS,
-                allow_polite_prefix=True,
-            ):
-                return True
-            position = raw.find(
-                connector,
-                position + len(connector),
-                span.end,
+                span_start=span.start,
+                action_start=position,
             )
-    return False
+            if kind is not None and (best is None or position < best[0]):
+                best = (position, kind)
+            position = raw.find(root, position + len(root), span.end)
+    return best[1] if best else None
+
+
+def _consume_content_prefix(raw: str, position: int, end: int) -> int:
+    while position < end:
+        char = raw[position]
+        if _is_ignorable(char) or char in _CONTENT_SEPARATORS:
+            position += 1
+            continue
+        break
+    return position
+
+
+def _content_is_substantive(raw: str, content: _Span) -> bool:
+    text = raw[content.start : content.end]
+    normalized = "".join(char for char in text if not _is_ignorable(char))
+    normalized = normalized.strip("：:,，。.!！?？、;；")
+    if not normalized or normalized.upper() in _CONTENT_PLACEHOLDERS:
+        return False
+    if normalized in CLINICIAN_REPORT_NOUN_CONTINUATIONS:
+        return False
+    return any(
+        unicodedata.category(char)[0] in {"L", "N"}
+        for char in normalized
+    )
 
 
 def _parse_write_segment(
@@ -342,13 +449,17 @@ def _parse_write_segment(
     if object_match is None:
         return None
     provider, feedback_object = object_match
-    position = _skip_spaces(raw, feedback_object.end, segment.end)
+    position = _consume_content_prefix(
+        raw,
+        feedback_object.end,
+        segment.end,
+    )
     command = _trim(raw, segment.start, feedback_object.end)
-    if position < segment.end and raw[position] in "：:":
-        content = _trim(raw, position + 1, segment.end)
-    else:
-        content = _trim(raw, position, segment.end)
-    if content.start >= content.end:
+    content = _trim(raw, position, segment.end)
+    if (
+        content.start >= content.end
+        or not _content_is_substantive(raw, content)
+    ):
         return _WriteCandidate(
             segment_index=segment_index,
             provider=provider,
@@ -356,7 +467,15 @@ def _parse_write_segment(
             command=None,
             status="missing_content",
         )
-    if _has_envelope_mixed_action(raw, content):
+    if _span_is_question(raw, segment):
+        return _WriteCandidate(
+            segment_index=segment_index,
+            provider=provider,
+            content=content,
+            command=None,
+            status="question",
+        )
+    if _second_action_kind(raw, content) is not None:
         return _WriteCandidate(
             segment_index=segment_index,
             provider=provider,
@@ -395,25 +514,52 @@ def _find_report(
     segment: _Span,
     segment_index: int,
 ) -> _Report | None:
-    provider_match = _first_provider(raw, segment)
-    if provider_match is None:
+    providers = _provider_matches(raw, segment)
+    if not providers:
         return None
-    provider, _ = provider_match
-    predicate_match = _find_first(
-        raw,
-        CLINICIAN_REPORT_PREDICATES,
-        start=provider.end,
-        end=segment.end,
-    )
-    if predicate_match is None:
-        return None
-    predicate, surface = predicate_match
-    if _predicate_is_record_noun(
-        raw,
-        surface,
-        predicate.end,
-        segment.end,
-    ):
+    predicates: list[tuple[_Span, str]] = []
+    for surface in CLINICIAN_REPORT_PREDICATES:
+        position = raw.find(surface, segment.start, segment.end)
+        while position >= 0:
+            predicates.append(
+                (_Span(position, position + len(surface)), surface)
+            )
+            position = raw.find(
+                surface,
+                position + len(surface),
+                segment.end,
+            )
+    predicates.sort(key=lambda item: (item[0].start, -len(item[1])))
+    provider: _Span | None = None
+    predicate: _Span | None = None
+    for predicate_candidate, surface in predicates:
+        clause_start = segment.start
+        for boundary in _SOFT_BOUNDARIES:
+            boundary_position = raw.rfind(
+                boundary,
+                segment.start,
+                predicate_candidate.start,
+            )
+            clause_start = max(clause_start, boundary_position + 1)
+        local_providers = tuple(
+            match
+            for match, _ in providers
+            if clause_start <= match.start
+            and match.end <= predicate_candidate.start
+        )
+        if not local_providers:
+            continue
+        if _predicate_is_record_noun(
+            raw,
+            surface,
+            predicate_candidate.end,
+            segment.end,
+        ):
+            continue
+        provider = local_providers[-1]
+        predicate = predicate_candidate
+        break
+    if provider is None or predicate is None:
         return None
 
     content_start = predicate.end
@@ -443,56 +589,60 @@ def _span_is_question(raw: str, span: _Span) -> bool:
     )
 
 
-def _has_report_followup(
+def _report_followup_kind(
     raw: str,
     report: _Report,
-    connectors: tuple[str, ...],
-) -> bool:
+) -> Literal["soft", "coordinated"] | None:
+    if report.content is None:
+        return None
+    return _second_action_kind(raw, report.content)
+
+
+def _report_contains_blocked_root(raw: str, report: _Report) -> bool:
     if report.content is None:
         return False
-    for connector in connectors:
-        position = raw.find(
-            connector,
-            report.content.start,
-            report.content.end,
-        )
-        while position >= 0:
-            if _tail_starts_with(
-                raw,
-                position=position + len(connector),
-                end=report.content.end,
-                terms=("提醒我",),
-                allow_polite_prefix=True,
-            ) or _tail_starts_with(
-                raw,
-                position=position + len(connector),
-                end=report.content.end,
-                terms=CLINICIAN_STRICT_COMMAND_PREFIXES,
-                allow_polite_prefix=False,
-            ):
-                return True
-            position = raw.find(
-                connector,
-                position + len(connector),
-                report.content.end,
-            )
-    return False
+    text = raw[report.content.start : report.content.end]
+    return any(root in text for root in _WRITE_ENVELOPE_BLOCKED_ROOTS)
 
 
-def _has_soft_followup(raw: str, report: _Report) -> bool:
-    return _has_report_followup(raw, report, _SOFT_BOUNDARIES)
-
-
-def _has_coordinated_followup(raw: str, report: _Report) -> bool:
-    return _has_report_followup(raw, report, _COORDINATION_CONNECTORS)
-
-
-def _has_legacy_clinician_record(raw: str) -> bool:
-    for provider in CLINICIAN_PROVIDER_TERMS:
-        for noun in CLINICIAN_FEEDBACK_OBJECT_NOUNS:
-            if f"{provider}{noun}记录" in raw:
-                return True
-    return False
+def _standalone_legacy_provider(
+    raw: str,
+    segments: tuple[_Span, ...],
+) -> _Span | None:
+    if len(segments) != 1:
+        return None
+    segment = segments[0]
+    root = _starts_with_term(
+        raw,
+        _LEGACY_OPERATION_ROOTS,
+        position=segment.start,
+        end=segment.end,
+    )
+    if root is None:
+        return None
+    position = _skip_spaces(raw, root[0].end, segment.end)
+    provider_match = _starts_with_term(
+        raw,
+        CLINICIAN_PROVIDER_TERMS,
+        position=position,
+        end=segment.end,
+    )
+    if provider_match is None:
+        return None
+    provider, _ = provider_match
+    position = _skip_spaces(raw, provider.end, segment.end)
+    object_match = _starts_with_term(
+        raw,
+        _LEGACY_CLINICIAN_OBJECT_SUFFIXES,
+        position=position,
+        end=segment.end,
+    )
+    if object_match is None:
+        return None
+    object_span, _ = object_match
+    if _skip_spaces(raw, object_span.end, segment.end) != segment.end:
+        return None
+    return provider
 
 
 def _decision(
@@ -558,12 +708,13 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
         if (report := _find_report(raw, segment, index)) is not None
     )
 
-    if _has_legacy_clinician_record(raw):
+    legacy_provider = _standalone_legacy_provider(raw, segments)
+    if legacy_provider is not None:
         return _decision(
             raw,
             kind="none",
             reason_code="legacy_clinician_record_operation",
-            provider=first_provider,
+            provider=legacy_provider,
         )
 
     if len(candidates) > 1:
@@ -579,6 +730,12 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
                 raw,
                 candidate,
                 reason_code="feedback_write_missing_content",
+            )
+        if candidate.status == "question":
+            return _ambiguous_candidate(
+                raw,
+                candidate,
+                reason_code="feedback_write_question",
             )
         if candidate.status == "coordinated":
             return _ambiguous_candidate(
@@ -606,15 +763,25 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
             and len(preceding_reports) == 1
         ):
             preceding_report = preceding_reports[0]
+            followup_kind = _report_followup_kind(raw, preceding_report)
+            contains_blocked_root = _report_contains_blocked_root(
+                raw,
+                preceding_report,
+            )
             if (
                 _span_is_question(raw, segments[0])
-                or _has_soft_followup(raw, preceding_report)
-                or _has_coordinated_followup(raw, preceding_report)
+                or followup_kind is not None
+                or contains_blocked_root
             ):
                 return _ambiguous_candidate(
                     raw,
                     candidate,
-                    reason_code="coordinated_clinician_action",
+                    reason_code=(
+                        "soft_boundary_followup"
+                        if followup_kind == "soft"
+                        and not contains_blocked_root
+                        else "coordinated_clinician_action"
+                    ),
                 )
             return _decision(
                 raw,
@@ -632,6 +799,19 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
 
     if reports:
         report = reports[0]
+        if len(segments) > 1:
+            followup_kind = _report_followup_kind(raw, report)
+            return _decision(
+                raw,
+                kind="ambiguous_clinician_action",
+                reason_code=(
+                    "soft_boundary_followup"
+                    if followup_kind == "soft"
+                    else "coordinated_clinician_action"
+                ),
+                provider=report.provider,
+                content=report.content,
+            )
         if _contains_question(raw):
             return _decision(
                 raw,
@@ -640,7 +820,8 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
                 provider=report.provider,
                 content=report.content,
             )
-        if _has_soft_followup(raw, report):
+        followup_kind = _report_followup_kind(raw, report)
+        if followup_kind == "soft":
             return _decision(
                 raw,
                 kind="ambiguous_clinician_action",
@@ -648,7 +829,7 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
                 provider=report.provider,
                 content=report.content,
             )
-        if _has_coordinated_followup(raw, report):
+        if followup_kind == "coordinated":
             return _decision(
                 raw,
                 kind="ambiguous_clinician_action",

@@ -127,3 +127,73 @@ def test_guard_does_not_grow_a_general_action_taxonomy():
         "media_actions",
     ):
         assert forbidden not in source
+
+
+@pytest.mark.parametrize(
+    ("kind", "reason_code"),
+    (
+        ("unknown", "no_clinician_signal"),
+        ("explicit_doctor_feedback_write", "clinician_report"),
+        ("clinician_context", "explicit_feedback_write"),
+        ("none", "coordinated_clinician_action"),
+    ),
+)
+def test_decision_rejects_invalid_kind_reason_combinations(
+    kind,
+    reason_code,
+):
+    guard = _module()
+
+    with pytest.raises(ValueError, match="kind|reason"):
+        guard.ClinicianTurnDecision(
+            raw="",
+            kind=kind,
+            provider_start=None,
+            provider_end=None,
+            content_start=None,
+            content_end=None,
+            command_start=None,
+            command_end=None,
+            reason_code=reason_code,
+        )
+
+
+@pytest.mark.parametrize(
+    "offsets",
+    (
+        {
+            "provider_start": 8,
+            "provider_end": 10,
+            "content_start": 12,
+            "content_end": 16,
+            "command_start": 0,
+            "command_end": 7,
+        },
+        {
+            "provider_start": 3,
+            "provider_end": 5,
+            "content_start": 0,
+            "content_end": 2,
+            "command_start": 2,
+            "command_end": 7,
+        },
+        {
+            "provider_start": 3,
+            "provider_end": 5,
+            "content_start": 4,
+            "content_end": 8,
+            "command_start": 0,
+            "command_end": 7,
+        },
+    ),
+)
+def test_explicit_decision_rejects_invalid_span_relationships(offsets):
+    guard = _module()
+
+    with pytest.raises(ValueError, match="provider|command|content|span"):
+        guard.ClinicianTurnDecision(
+            raw="请记录医生诊断：臀肌无力",
+            kind="explicit_doctor_feedback_write",
+            reason_code="explicit_feedback_write",
+            **offsets,
+        )
