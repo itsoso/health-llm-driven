@@ -243,6 +243,38 @@
     "content": "臀肌无力导致腰痛"
   },
   {
+    "id": "doctor_notification_de_copula_context",
+    "text": "医生告知的是臀肌无力导致腰痛",
+    "kind": "clinician_context",
+    "reason_code": "clinician_report",
+    "provider": "医生",
+    "content": "臀肌无力导致腰痛"
+  },
+  {
+    "id": "doctor_alt_notification_de_copula_context",
+    "text": "大夫告知的为腰肌劳损",
+    "kind": "clinician_context",
+    "reason_code": "clinician_report",
+    "provider": "大夫",
+    "content": "腰肌劳损"
+  },
+  {
+    "id": "doctor_notification_de_copula_ignorable_context",
+    "text": "医生告知 ​的 ⁠是 ​臀肌无力导致腰痛",
+    "kind": "clinician_context",
+    "reason_code": "clinician_report",
+    "provider": "医生",
+    "content": "臀肌无力导致腰痛"
+  },
+  {
+    "id": "doctor_alt_notification_de_copula_ignorable_context",
+    "text": "大夫告知⁠的 ​为⁠ 腰肌劳损",
+    "kind": "clinician_context",
+    "reason_code": "clinician_report",
+    "provider": "大夫",
+    "content": "腰肌劳损"
+  },
+  {
     "id": "doctor_notification_without_copula_context",
     "text": "医生告知臀肌无力",
     "kind": "clinician_context",
@@ -273,6 +305,24 @@
     "reason_code": "explicit_feedback_write_after_report",
     "provider": "医生",
     "content": "臀肌无力导致腰痛",
+    "command": "请记录医生诊断"
+  },
+  {
+    "id": "notification_de_copula_report_before_explicit_write_is_valid",
+    "text": "医生告知的是臀肌无力导致腰痛。请记录医生诊断：臀肌无力导致腰痛",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write_after_report",
+    "provider": "医生",
+    "content": "臀肌无力导致腰痛",
+    "command": "请记录医生诊断"
+  },
+  {
+    "id": "notification_de_wei_report_before_explicit_write_is_valid",
+    "text": "大夫告知的为腰肌劳损。请记录医生诊断：腰肌劳损",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write_after_report",
+    "provider": "医生",
+    "content": "腰肌劳损",
     "command": "请记录医生诊断"
   },
   {

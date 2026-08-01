@@ -774,16 +774,16 @@ def _predicate_is_record_noun(
     ) is not None
 
 
-def _notification_attribution_is_nominalized(
+def _notification_report_content_start(
     raw: str,
     *,
     surface: str,
     provider: _Span,
     predicate: _Span,
     segment_end: int,
-) -> bool:
+) -> int | None:
     if surface != "告知":
-        return False
+        return predicate.end
 
     possessive_start = _skip_spaces(raw, provider.end, predicate.start)
     if possessive_start < predicate.start and raw[possessive_start] == "的":
@@ -793,10 +793,19 @@ def _notification_attribution_is_nominalized(
             predicate.start,
         )
         if possessive_end == predicate.start:
-            return True
+            return None
 
     relation_start = _skip_spaces(raw, predicate.end, segment_end)
-    return relation_start < segment_end and raw[relation_start] == "的"
+    if relation_start >= segment_end or raw[relation_start] != "的":
+        return predicate.end
+
+    copula_start = _skip_spaces(raw, relation_start + 1, segment_end)
+    if (
+        copula_start >= segment_end
+        or raw[copula_start] not in {"是", "为"}
+    ):
+        return None
+    return copula_start + 1
 
 
 def _find_report(
@@ -822,9 +831,10 @@ def _find_report(
     predicates.sort(key=lambda item: (item[0].start, -len(item[1])))
     provider: _Span | None = None
     predicate: _Span | None = None
+    report_content_start: int | None = None
     for predicate_candidate, surface in predicates:
         local_providers = tuple(
-            match
+            (match, content_start)
             for match, _ in providers
             if match.end <= predicate_candidate.start
             and _provider_is_clause_head(
@@ -838,13 +848,14 @@ def _find_report(
                 predicate_candidate.start,
             )
             == predicate_candidate.start
-            and not _notification_attribution_is_nominalized(
+            if (content_start := _notification_report_content_start(
                 raw,
                 surface=surface,
                 provider=match,
                 predicate=predicate_candidate,
                 segment_end=segment.end,
-            )
+            ))
+            is not None
         )
         if not local_providers:
             continue
@@ -855,13 +866,17 @@ def _find_report(
             segment.end,
         ):
             continue
-        provider = local_providers[-1]
+        provider, report_content_start = local_providers[-1]
         predicate = predicate_candidate
         break
-    if provider is None or predicate is None:
+    if (
+        provider is None
+        or predicate is None
+        or report_content_start is None
+    ):
         return None
 
-    content_start = predicate.end
+    content_start = report_content_start
     while (
         content_start < segment.end
         and raw[content_start] in _REPORT_FILLERS
