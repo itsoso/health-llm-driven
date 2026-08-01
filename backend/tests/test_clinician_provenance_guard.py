@@ -234,6 +234,85 @@ _FAIL_CLOSED_3C_IDS = frozenset(
     }
 )
 
+_OBFUSCATED_CLINICIAN_ACTION_IDS = frozenset(
+    {
+        "split_provider_in_negated_write",
+        "split_write_root_in_negated_write",
+        "split_provider_in_instruction",
+        "split_write_root_in_explicit_feedback",
+        "fullwidth_space_split_provider",
+        "word_joiner_split_provider",
+        "fullwidth_space_split_write_root",
+        "word_joiner_split_write_root",
+        "zero_width_space_split_feedback_object",
+        "fullwidth_space_split_feedback_object",
+        "duplicated_provider_does_not_mask_split_provider",
+        "duplicated_root_does_not_mask_split_root",
+        "duplicated_object_does_not_mask_split_object",
+    }
+)
+
+_CLINICIAN_BASIS_CONTROL_IDS = frozenset(
+    {
+        "diagnosis_basis_delete_control",
+        "opinion_basis_update_control",
+        "advice_basis_sync_control",
+        "spaced_clinician_basis_control",
+        "conjoined_dates_remain_a_single_basis_target",
+        "conjoined_nouns_remain_a_single_basis_target",
+        "conjoined_objects_remain_a_single_basis_target",
+        "comorbidity_record_remains_a_basis_target",
+        "gender_record_remains_a_basis_target",
+        "immune_plan_remains_a_basis_target",
+        "invalid_record_remains_a_basis_target",
+        "meal_remains_a_basis_target",
+        "weight_remains_a_basis_target",
+        "health_data_record_remains_a_basis_target",
+        "medication_info_record_remains_a_basis_target",
+        "exercise_goal_record_remains_a_basis_target",
+        "heart_rate_remains_a_basis_target",
+        "medication_remains_a_basis_target",
+        "dose_adjustment_record_remains_a_basis_target",
+        "immune_plan_execution_record_remains_a_basis_target",
+        "merged_record_remains_a_basis_target",
+    }
+)
+
+_INVALID_CLINICIAN_BASIS_IDS = frozenset(
+    {
+        "negated_clinician_basis_is_not_released",
+        "second_subject_clinician_basis_is_not_released",
+        "coordinated_clinician_basis_is_not_released",
+        "empty_target_clinician_basis_is_not_released",
+        "unable_suffix_clinician_basis_is_not_released",
+        "cannot_suffix_clinician_basis_is_not_released",
+        "prohibited_suffix_clinician_basis_is_not_released",
+        "avoid_suffix_clinician_basis_is_not_released",
+        "unknown_coordinated_verb_basis_is_not_released",
+        "not_yet_authorized_basis_is_not_released",
+        "not_allowed_basis_is_not_released",
+        "not_possible_basis_is_not_released",
+        "not_viable_basis_is_not_released",
+        "without_permission_basis_is_not_released",
+        "must_not_execute_basis_is_not_released",
+        "should_not_execute_basis_is_not_released",
+        "stop_medication_coordination_basis_is_not_released",
+        "reduce_dose_coordination_basis_is_not_released",
+        "switch_medication_coordination_basis_is_not_released",
+        "weak_and_stop_medication_basis_is_not_released",
+        "weak_with_reduce_dose_basis_is_not_released",
+        "weak_also_switch_medication_basis_is_not_released",
+        "weak_and_abort_medication_basis_is_not_released",
+        "refuse_execution_basis_is_not_released",
+        "void_basis_is_not_released",
+        "known_second_root_basis_is_not_released",
+        "noun_terminated_stop_plan_basis_is_not_released",
+        "noun_terminated_keep_backup_basis_is_not_released",
+        "noun_terminated_refusal_plan_basis_is_not_released",
+        "unanchored_clinician_advice_is_not_basis_control",
+    }
+)
+
 
 @pytest.mark.parametrize(
     "case",
@@ -249,6 +328,77 @@ def test_fail_closed_clinician_actions_never_authorize_or_expose_command(case):
     assert decision.authorizes_feedback_write is False
     assert decision.command_start is None
     assert decision.command_end is None
+
+
+@pytest.mark.parametrize(
+    "case",
+    tuple(
+        case
+        for case in _cases()
+        if case["id"] in _OBFUSCATED_CLINICIAN_ACTION_IDS
+    ),
+    ids=lambda row: row["id"],
+)
+def test_obfuscated_clinician_actions_fail_closed_without_raw_spans(case):
+    guard = _module()
+
+    decision = guard.classify_clinician_turn(case["text"])
+
+    assert decision.kind == "ambiguous_clinician_action"
+    assert decision.reason_code == "obfuscated_clinician_action"
+    assert decision.authorizes_feedback_write is False
+    assert decision.provider_start is decision.provider_end is None
+    assert decision.content_start is decision.content_end is None
+    assert decision.command_start is decision.command_end is None
+
+
+@pytest.mark.parametrize(
+    "case",
+    tuple(
+        case
+        for case in _cases()
+        if case["id"] in _CLINICIAN_BASIS_CONTROL_IDS
+    ),
+    ids=lambda row: row["id"],
+)
+def test_clinician_basis_controls_reach_legacy_mutation(case):
+    guard = _module()
+    classifier = importlib.import_module(
+        "app.services.utterance_intent_classifier"
+    )
+
+    decision = guard.classify_clinician_turn(case["text"])
+    intent = classifier.classify_agent_utterance(case["text"])
+
+    assert decision.kind == "none"
+    assert decision.reason_code == "clinician_basis_user_action"
+    assert decision.authorizes_feedback_write is False
+    assert intent.primary == "mutate"
+    assert intent.operation == case["public_operation"]
+    assert intent.is_write is True
+
+
+@pytest.mark.parametrize(
+    "case",
+    tuple(
+        case
+        for case in _cases()
+        if case["id"] in _INVALID_CLINICIAN_BASIS_IDS
+    ),
+    ids=lambda row: row["id"],
+)
+def test_invalid_clinician_basis_shapes_are_never_released(case):
+    guard = _module()
+    classifier = importlib.import_module(
+        "app.services.utterance_intent_classifier"
+    )
+
+    decision = guard.classify_clinician_turn(case["text"])
+    intent = classifier.classify_agent_utterance(case["text"])
+
+    assert decision.reason_code != "clinician_basis_user_action"
+    assert decision.authorizes_feedback_write is False
+    assert intent.is_write is False
 
 
 def test_non_writes_never_expose_an_authorizing_command_span():
@@ -329,6 +479,8 @@ def test_guard_deny_roots_cover_shared_legacy_action_lexicon():
         ("clinician_context", "clinician_instruction"),
         ("clinician_advice", "negated_clinician_action"),
         ("none", "unresolved_clinician_action"),
+        ("clinician_context", "clinician_basis_user_action"),
+        ("none", "obfuscated_clinician_action"),
     ),
 )
 def test_decision_rejects_invalid_kind_reason_combinations(
