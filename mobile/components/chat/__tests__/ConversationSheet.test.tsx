@@ -13,7 +13,7 @@ const baseProps = {
   onDeleteConversation: jest.fn(),
 };
 
-describe('ConversationSheet pinning', () => {
+describe('ConversationSheet canonical server order', () => {
   it('renames a conversation title inline', async () => {
     const onRenameConversation = jest.fn().mockResolvedValue(undefined);
     const conversations = [
@@ -37,7 +37,7 @@ describe('ConversationSheet pinning', () => {
     });
   });
 
-  it('pins per-day briefings to top sorted by updated_at desc', () => {
+  it('preserves backend order instead of applying Mobile-only briefing pinning', () => {
     const conversations = [
       // 一条普通的、updated_at 最新的对话
       { id: 391, title: '记录饮食', created_at: '2026-04-25T18:02:00Z', updated_at: '2026-04-25T18:04:00Z' },
@@ -62,18 +62,17 @@ describe('ConversationSheet pinning', () => {
     );
     const labels = rows.map((r: any) => r.props.accessibilityLabel);
 
-    // 简报应在最前 4 条 (4-25, 4-21, 4-16, 03-31 按 updated_at desc)
-    expect(labels[0]).toBe('对话: 每日健康简报 · 04-25');
-    expect(labels[1]).toBe('对话: 每日健康简报 · 04-21');
-    expect(labels[2]).toBe('对话: 每日健康简报 · 04-16');
-    expect(labels[3]).toBe('对话: 每日健康简报 ');
-    // 周报紧随其后
-    expect(labels[4]).toBe('对话: 每周健康周报 · w17');
-    // 普通对话在末尾
-    expect(labels[5]).toBe('对话: 记录饮食');
+    expect(labels).toEqual([
+      '对话: 记录饮食',
+      '对话: 每日健康简报 · 04-16',
+      '对话: 每日健康简报 · 04-25',
+      '对话: 每日健康简报 · 04-21',
+      '对话: 每周健康周报 · w17',
+      '对话: 每日健康简报 ',
+    ]);
   });
 
-  it('falls back to created_at if updated_at missing', () => {
+  it('does not locally re-sort entries when updated_at is missing', () => {
     const conversations = [
       { id: 1, title: '每日健康简报 · 04-20', created_at: '2026-04-20T01:00:00Z' },
       { id: 2, title: '每日健康简报 · 04-25', created_at: '2026-04-25T01:00:00Z' },
@@ -87,8 +86,8 @@ describe('ConversationSheet pinning', () => {
       typeof n.props.accessibilityLabel === 'string' &&
       n.props.accessibilityLabel.startsWith('对话:')
     );
-    expect(rows[0].props.accessibilityLabel).toBe('对话: 每日健康简报 · 04-25');
-    expect(rows[1].props.accessibilityLabel).toBe('对话: 每日健康简报 · 04-20');
+    expect(rows[0].props.accessibilityLabel).toBe('对话: 每日健康简报 · 04-20');
+    expect(rows[1].props.accessibilityLabel).toBe('对话: 每日健康简报 · 04-25');
   });
 
   it('invokes onSelectConversation with the row id', () => {

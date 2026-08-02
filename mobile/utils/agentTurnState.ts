@@ -8,6 +8,8 @@ export type AgentTurnPhase =
   | 'failed'
   | 'interrupted';
 
+export type AgentRetryMode = 'resubmit' | 'retry_source';
+
 export interface AgentTurnState {
   version: 1;
   phase: AgentTurnPhase;
@@ -19,6 +21,7 @@ export interface AgentTurnState {
   updatedAt?: number;
   label?: string;
   errorCode?: string;
+  retryMode?: AgentRetryMode;
   recoverable: boolean;
   hadWrite: boolean;
   writeVerified?: boolean;
@@ -37,6 +40,7 @@ export type AgentTurnEvent =
       writes?: boolean;
       success: boolean;
       receiptVerified?: boolean;
+      writeOutcome?: 'verified' | 'rejected' | 'failed' | 'uncertain';
       errorCode?: string;
       label?: string;
     }
@@ -46,9 +50,12 @@ export type AgentTurnEvent =
       completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
       conversationId?: number;
       messageId?: number;
+      retryable?: boolean;
+      retryMode?: AgentRetryMode;
+      errorCode?: string;
     }
   | { type: 'fail'; at: number; errorCode: string; label?: string; recoverable?: boolean }
-  | { type: 'interrupt'; at: number; errorCode?: string; label?: string }
+  | { type: 'interrupt'; at: number; errorCode?: string; label?: string; recoverable?: boolean }
   | {
       type: 'recover';
       at: number;
@@ -59,6 +66,8 @@ export type AgentTurnEvent =
       label?: string;
       hadWrite?: boolean;
       writeVerified?: boolean;
+      recoverable?: boolean;
+      retryMode?: AgentRetryMode;
     }
   | { type: 'reset' };
 
@@ -93,6 +102,7 @@ export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): A
       updatedAt: event.at,
       label: event.label,
       recoverable: true,
+      retryMode: 'resubmit',
       hadWrite: false,
     };
   }
@@ -108,6 +118,7 @@ export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): A
         label: event.label ?? state.label,
         errorCode: undefined,
         recoverable: true,
+        retryMode: undefined,
       };
     case 'status':
       return {
@@ -131,11 +142,12 @@ export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): A
       if (!event.success && event.writes) {
         return {
           ...state,
-          phase: 'failed',
+          phase: 'verifying',
           updatedAt: event.at,
           label: event.label,
           errorCode: event.errorCode ?? 'tool_failed',
-          recoverable: true,
+          recoverable: false,
+          retryMode: undefined,
           hadWrite,
           writeVerified: event.writes ? false : state.writeVerified,
         };
@@ -154,11 +166,12 @@ export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): A
       if (event.writes && event.receiptVerified === false) {
         return {
           ...state,
-          phase: 'failed',
+          phase: 'verifying',
           updatedAt: event.at,
           label: event.label,
-          errorCode: 'write_receipt_missing_identity',
-          recoverable: true,
+          errorCode: event.errorCode ?? 'write_receipt_missing_identity',
+          recoverable: false,
+          retryMode: undefined,
           hadWrite: true,
           writeVerified: false,
         };
@@ -169,7 +182,8 @@ export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): A
         updatedAt: event.at,
         label: event.label ?? state.label,
         errorCode: undefined,
-        recoverable: true,
+        recoverable: event.writes ? false : true,
+        retryMode: event.writes ? undefined : state.retryMode,
         hadWrite,
         writeVerified: event.writes && event.receiptVerified === true ? true : state.writeVerified,
       };
@@ -182,8 +196,9 @@ export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): A
           conversationId: event.conversationId ?? state.conversationId,
           messageId: event.messageId ?? state.messageId,
           updatedAt: event.at,
-          errorCode: 'stream_interrupted',
-          recoverable: true,
+          errorCode: event.errorCode ?? state.errorCode ?? 'stream_interrupted',
+          recoverable: event.retryable === true,
+          retryMode: event.retryable === true ? event.retryMode : undefined,
         };
       }
       if (event.completionStatus === 'error') {
@@ -193,8 +208,9 @@ export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): A
           conversationId: event.conversationId ?? state.conversationId,
           messageId: event.messageId ?? state.messageId,
           updatedAt: event.at,
-          errorCode: 'stream_error',
-          recoverable: true,
+          errorCode: event.errorCode ?? state.errorCode ?? 'stream_error',
+          recoverable: event.retryable === true,
+          retryMode: event.retryable === true ? event.retryMode : undefined,
         };
       }
       if (state.hadWrite && state.writeVerified !== true) {
@@ -205,8 +221,9 @@ export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): A
           messageId: event.messageId ?? state.messageId,
           updatedAt: event.at,
           label: undefined,
-          errorCode: 'write_receipt_missing_identity',
-          recoverable: true,
+          errorCode: state.errorCode ?? 'write_receipt_missing_identity',
+          recoverable: false,
+          retryMode: undefined,
           writeVerified: false,
         };
       }
@@ -219,6 +236,7 @@ export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): A
         label: undefined,
         errorCode: undefined,
         recoverable: false,
+        retryMode: undefined,
       };
     case 'fail':
       return {
@@ -228,6 +246,9 @@ export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): A
         label: event.label,
         errorCode: event.errorCode,
         recoverable: event.recoverable ?? true,
+        retryMode: (event.recoverable ?? true)
+          ? (state.retryMode ?? 'resubmit')
+          : undefined,
       };
     case 'interrupt':
       return {
@@ -236,9 +257,13 @@ export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): A
         updatedAt: event.at,
         label: event.label,
         errorCode: event.errorCode ?? 'stream_interrupted',
-        recoverable: true,
+        recoverable: event.recoverable ?? true,
+        retryMode: (event.recoverable ?? true) ? state.retryMode : undefined,
       };
-    case 'recover':
+    case 'recover': {
+      const recoveredIsRunning = event.serverStatus === 'running';
+      const recoveredIsCompleted = event.serverStatus === 'completed';
+      const recoveredIsRetryable = event.recoverable === true;
       return {
         ...state,
         phase: event.serverStatus === 'completed'
@@ -257,9 +282,15 @@ export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): A
           : event.serverStatus === 'interrupted'
             ? (event.errorCode ?? 'stream_interrupted')
             : undefined,
-        recoverable: event.serverStatus !== 'completed',
+        recoverable: recoveredIsRunning
+          ? true
+          : recoveredIsCompleted
+            ? false
+            : recoveredIsRetryable,
+        retryMode: recoveredIsRetryable ? event.retryMode : undefined,
         hadWrite: event.hadWrite ?? state.hadWrite,
         writeVerified: event.writeVerified ?? state.writeVerified,
       };
+    }
   }
 }

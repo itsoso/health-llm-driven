@@ -22,6 +22,13 @@ import sys
 import time
 import os
 
+# Executing this file as ``python scripts/system_health_score.py`` makes
+# ``backend/scripts`` the first import root, so production-only ``app.*``
+# checks would otherwise fail even though the application is installed.
+_BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _BACKEND_ROOT not in sys.path:
+    sys.path.insert(0, _BACKEND_ROOT)
+
 # 快速失败阈值（低于此分数应触发回滚）
 # The deployment contract uses 35 as the minimum score.  Keep this constant
 # aligned with the dossier/G5 gate instead of exposing a different threshold
@@ -215,54 +222,84 @@ def score_error_rate_from_logs() -> dict:
 
 def score_agent_runtime_circuit(session_factory=None) -> dict:
     """Fail the release gate when the Agent write circuit is paused."""
-    db = None
-    owns_session = session_factory is None
-    try:
-        from app.services.agent_runtime_rollout import runtime_control_enabled
+    max_attempts = 3
+    retry_delay_seconds = 0.1
+    factory = session_factory
 
-        if not runtime_control_enabled():
+    for attempt in range(1, max_attempts + 1):
+        db = None
+        failure = None
+        result = None
+        try:
+            from app.services.agent_runtime_rollout import runtime_control_enabled
+
+            if not runtime_control_enabled():
+                result = {
+                    "score": 0,
+                    "detail": "disabled",
+                    "healthy": True,
+                }
+            else:
+                from app.models.agent_runtime import AgentRuntimeRolloutState
+
+                if factory is None:
+                    from app.database import SessionLocal
+
+                    factory = SessionLocal
+                db = factory()
+                state = db.query(AgentRuntimeRolloutState).filter_by(id=1).first()
+                if state is None:
+                    result = {
+                        "score": 0,
+                        "detail": "not_initialized",
+                        "healthy": True,
+                    }
+                else:
+                    status = str(state.status or "").strip().lower()
+                    reason = str(state.reason_code or "none").strip().lower()
+                    generation = int(state.reconciliation_generation or 0)
+                    acknowledged = int(
+                        state.reconciliation_acknowledged_generation or 0
+                    )
+                    result = {
+                        "score": 0,
+                        "detail": (
+                            f"{status}:{reason}:generation={generation}:"
+                            f"ack={acknowledged}"
+                        ),
+                        "healthy": (
+                            status == "active" and generation == acknowledged
+                        ),
+                    }
+        except Exception as exc:
+            failure = exc
+        finally:
+            if db is not None:
+                try:
+                    db.close()
+                except Exception as close_exc:
+                    # A successfully observed paused/mismatched circuit remains
+                    # an authoritative hard failure and must not be retried.
+                    # Every other close failure is infrastructure uncertainty:
+                    # fold it into the same bounded, content-free retry path.
+                    if result is None or result.get("healthy") is not False:
+                        if failure is None:
+                            failure = close_exc
+                        result = None
+
+        if result is not None:
+            return result
+        if attempt == max_attempts:
             return {
                 "score": 0,
-                "detail": "disabled",
-                "healthy": True,
+                "detail": (
+                    f"unavailable:{type(failure).__name__}:attempts={attempt}"
+                ),
+                "healthy": False,
             }
+        time.sleep(retry_delay_seconds)
 
-        from app.models.agent_runtime import AgentRuntimeRolloutState
-
-        if session_factory is None:
-            from app.database import SessionLocal
-
-            session_factory = SessionLocal
-        db = session_factory()
-        state = db.query(AgentRuntimeRolloutState).filter_by(id=1).first()
-        if state is None:
-            return {
-                "score": 0,
-                "detail": "not_initialized",
-                "healthy": True,
-            }
-        status = str(state.status or "").strip().lower()
-        reason = str(state.reason_code or "none").strip().lower()
-        generation = int(state.reconciliation_generation or 0)
-        acknowledged = int(
-            state.reconciliation_acknowledged_generation or 0
-        )
-        return {
-            "score": 0,
-            "detail": (
-                f"{status}:{reason}:generation={generation}:ack={acknowledged}"
-            ),
-            "healthy": status == "active" and generation == acknowledged,
-        }
-    except Exception as exc:
-        return {
-            "score": 0,
-            "detail": f"unavailable:{type(exc).__name__}",
-            "healthy": False,
-        }
-    finally:
-        if owns_session and db is not None:
-            db.close()
+    raise AssertionError("unreachable")
 
 
 # ============================================================

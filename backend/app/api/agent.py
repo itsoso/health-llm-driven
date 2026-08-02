@@ -322,6 +322,28 @@ def _pending_intake_suppressions(data: dict | None) -> set[str]:
     return suppress
 
 
+def _verified_intake_suppressions(data: dict | None) -> set[str]:
+    """Suppress an intake projection only after durable receipt verification."""
+    if not isinstance(data, dict):
+        return set()
+    receipts = data.get("write_receipts")
+    if not isinstance(receipts, list):
+        return set()
+    kind_by_resource_type = {
+        "diet_record": "diet",
+        "medication_log": "medication",
+        "supplement_log": "supplement",
+    }
+    return {
+        kind
+        for receipt in receipts
+        if isinstance(receipt, dict)
+        and receipt.get("verified") is True
+        and receipt.get("status") == "verified"
+        and (kind := kind_by_resource_type.get(receipt.get("resource_type")))
+    }
+
+
 def _persist_done_cards(db: Session, message_id: int | None, cards: list) -> bool:
     """Persist cards appended by the API wrapper into AgentMessage.meta.
 
@@ -1820,10 +1842,9 @@ async def agent_stream(
                                 suppress = set(suppress) | _pending_intake_suppressions(
                                     done_data
                                 )
-                                if "health_record" in (done_data.get("tools_used") or []):
-                                    suppress = set(suppress) | {
-                                        "medication", "supplement", "diet",
-                                    }
+                                suppress = set(suppress) | _verified_intake_suppressions(
+                                    done_data
+                                )
                                 # 分析轮(LLM 正文已自带表格/多段分析)压掉冗余单日快照卡
                                 suppress_snapshots = _answer_owns_its_visualization(
                                     "".join(full_text_buf),

@@ -267,6 +267,9 @@ class Settings(BaseSettings):
     agent_runtime_rollout_window_minutes: int = 15
     agent_runtime_rollout_min_terminal_runs: int = 20
     agent_runtime_rollout_failure_rate_percent: int = 10
+    # One uncertain write isolates only its owner. Multiple affected users are
+    # treated as systemic evidence and restore the global pause boundary.
+    agent_runtime_reconciliation_global_pause_threshold: int = 2
     # Runtime P2 worker control. These values are used in canary/enforce mode.
     agent_runtime_lease_seconds: int = 90
     agent_runtime_heartbeat_seconds: int = 20

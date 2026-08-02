@@ -946,6 +946,19 @@ def test_reliability_terminal_events_reject_invalid_contract(
         "has_photo": True,
         "share_target": "xiaohongshu",
     }),
+    ("diet_share_terminal", {
+        "phase": "cancelled",
+        "duration_ms": 540,
+        "has_photo": True,
+        "share_target": "generic",
+    }),
+    ("diet_share_terminal", {
+        "phase": "failed",
+        "duration_ms": 800,
+        "has_photo": True,
+        "share_target": "generic",
+        "error_code": "poster_share_failed",
+    }),
 ])
 def test_diet_capture_events_accept_only_numeric_privacy_safe_metrics(
     client, db, auth_user_and_headers, event_name, meta
@@ -966,6 +979,12 @@ def test_diet_capture_events_accept_only_numeric_privacy_safe_metrics(
 @pytest.mark.parametrize("meta", [
     {"phase": "completed", "duration_ms": 920, "has_photo": True, "share_target": "wechat-private"},
     {"phase": "completed", "duration_ms": 920, "has_photo": True, "share_target": "xiaohongshu", "caption": "private meal"},
+    {"phase": "completed", "duration_ms": 920, "has_photo": True, "share_target": "generic",
+     "image_uri": "file:///private/photo.png", "food_items": "private meal", "record_id": 88, "calories": 520},
+    {"phase": "failed", "duration_ms": 920, "has_photo": True, "share_target": "generic",
+     "error_code": "record_88"},
+    {"phase": "failed", "duration_ms": 920, "has_photo": True, "share_target": "generic",
+     "error_code": "beef_salad"},
 ])
 def test_diet_share_events_reject_invalid_or_private_target_meta(
     client, auth_user_and_headers, meta

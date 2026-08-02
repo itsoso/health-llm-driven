@@ -274,6 +274,34 @@ jobs:
           path: /tmp/system_kb_eval_metrics.json
           if-no-files-found: ignore
 
+  release-invariants:
+    name: release-invariants
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install release-test dependencies
+        working-directory: backend
+        run: |
+          pip install --require-hashes -r requirements.lock
+          pip install -r requirements-dev.txt
+
+      - name: Run deployment and rollback invariants
+        run: >-
+          python -m pytest -q --no-cov --tb=short --maxfail=1
+          scripts/test_deploy_script.py
+          scripts/test_health_evidence_activation_runner.py
+          scripts/test_release_lock.py
+          scripts/test_release_rollback.py
+          scripts/test_infrastructure_security.py
+          scripts/test_runtime_state_release_transaction.py
+          scripts/test_release_ci_contract.py
+
   agent-runtime-postgres:
     name: agent-runtime-postgres
     runs-on: ubuntu-latest
@@ -365,18 +393,23 @@ jobs:
 
   backend-tests:
     runs-on: ubuntu-latest
-    needs: [backend-test-shards, backend-quality, agent-runtime-postgres]
+    needs:
+      - backend-test-shards
+      - backend-quality
+      - release-invariants
+      - agent-runtime-postgres
     if: ${{ always() }}
     steps:
       - name: Enforce backend test and quality gates
         env:
           TEST_SHARDS: ${{ needs.backend-test-shards.result }}
           QUALITY_GATES: ${{ needs.backend-quality.result }}
+          RELEASE_INVARIANTS: ${{ needs.release-invariants.result }}
           RUNTIME_POSTGRES: ${{ needs.agent-runtime-postgres.result }}
         run: |
-          printf 'backend gates: test-shards=%s quality=%s runtime-postgres=%s\n' \
-            "$TEST_SHARDS" "$QUALITY_GATES" "$RUNTIME_POSTGRES"
-          if [[ "$TEST_SHARDS" != success || "$QUALITY_GATES" != success || "$RUNTIME_POSTGRES" != success ]]; then
+          printf 'backend gates: test-shards=%s quality=%s release=%s runtime-postgres=%s\n' \
+            "$TEST_SHARDS" "$QUALITY_GATES" "$RELEASE_INVARIANTS" "$RUNTIME_POSTGRES"
+          if [[ "$TEST_SHARDS" != success || "$QUALITY_GATES" != success || "$RELEASE_INVARIANTS" != success || "$RUNTIME_POSTGRES" != success ]]; then
             exit 1
           fi
 
@@ -465,6 +498,21 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Exercise release shell contracts with macOS Bash 3
+        run: |
+          /bin/bash --version
+          /bin/bash -n deploy.sh backend/scripts/activate_health_evidence_runtime.sh backend/scripts/rollback_release.sh
+          python -m pip install -r backend/requirements-dev.txt
+          python -m pytest -q --no-cov --tb=short --maxfail=1 \
+            scripts/test_deploy_script.py::test_repository_trust_normalization_makes_tracked_seeds_readable_not_writable \
+            scripts/test_deploy_script.py::test_deactivation_proof_rejects_restart_of_only_celery_beat \
+            scripts/test_health_evidence_activation_runner.py::test_activation_restart_during_stability_window_recovers_to_guard \
+            scripts/test_release_rollback.py::test_release_rollback_restart_window_never_claims_success
 
       - name: Build (swift build)
         working-directory: apps/mac

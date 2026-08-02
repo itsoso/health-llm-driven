@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, TextStyle, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, TextStyle, Alert, ActivityIndicator, Share, Modal } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,7 +16,8 @@ import type { ImagePickerAsset } from 'expo-image-picker';
 import MealForm from '../components/diet/MealForm';
 import DietFAB from '../components/diet/DietFAB';
 import FrequentFoodsRow from '../components/diet/FrequentFoodsRow';
-import { DietShareSheet } from '../components/diet/DietShareCard';
+import { buildDietShareCaption } from '../components/diet/DietShareCard';
+import { DietShareComposer } from '../components/diet/DietShareComposer';
 import { useToast } from '../hooks/useToast';
 import { useAuth } from '../hooks/useAuth';
 import {
@@ -49,6 +50,10 @@ import type { PreparedUploadImage } from '../utils/imageUpload';
 const MEAL_LABEL: Record<string, string> = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' };
 const VALID_MEAL_TYPES = new Set(['breakfast', 'lunch', 'dinner', 'snack']);
 const EMPTY_MEALS: DietRecord[] = [];
+
+function dietShareDateLabel(record: DietRecord): string {
+  return `${record.record_date.replace(/-/g, '.')} · ${MEAL_LABEL[record.meal_type] ?? '餐食'}`;
+}
 
 type DietRouteParams = {
   capture?: string | string[];
@@ -462,6 +467,8 @@ export default function DietScreen() {
   const [quickDraftSaving, setQuickDraftSaving] = useState(false);
   const [shareRecord, setShareRecord] = useState<DietRecord | null>(null);
   const [shareImageUriOverride, setShareImageUriOverride] = useState<string | null>(null);
+  const [fallbackTextShareBusy, setFallbackTextShareBusy] = useState(false);
+  const fallbackTextShareBusyRef = useRef(false);
   const shareRecordParamConsumedRef = useRef<string | null>(null);
   const [photoDraftRestoreReady, setPhotoDraftRestoreReady] = useState(false);
   const quickDraftSavingRef = useRef(false);
@@ -1187,6 +1194,22 @@ export default function DietScreen() {
       authToken,
     )
     : undefined;
+  const handleFallbackTextShare = useCallback(async () => {
+    if (!shareRecord || fallbackTextShareBusyRef.current) return;
+    fallbackTextShareBusyRef.current = true;
+    setFallbackTextShareBusy(true);
+    try {
+      await Share.share({
+        title: '分享饮食记录',
+        message: buildDietShareCaption(shareRecord, dietShareDateLabel(shareRecord)),
+      });
+    } catch {
+      toast.show('正文分享失败，请稍后重试', 'error');
+    } finally {
+      fallbackTextShareBusyRef.current = false;
+      setFallbackTextShareBusy(false);
+    }
+  }, [shareRecord, toast]);
 
   const handleChatDiet = useCallback(() => {
     if (!daily) return;
@@ -1433,15 +1456,21 @@ export default function DietScreen() {
       {showDietFab ? (
         <DietFAB onPhoto={handlePhoto} onLibrary={handlePhotoLibrary} onText={handleText} onVoice={handleVoiceText} />
       ) : null}
-      {shareRecord ? (
-        <DietShareSheet
+      {shareRecord && shareImageSource ? (
+        <DietShareComposer
           visible
           record={shareRecord}
-          dateLabel={`${shareRecord.record_date.replace(/-/g, '.')} · ${MEAL_LABEL[shareRecord.meal_type] ?? '餐食'}`}
-          imageSource={shareImageSource}
+          dateLabel={dietShareDateLabel(shareRecord)}
+          photoSource={shareImageSource}
           onClose={() => {
             setShareRecord(null);
             setShareImageUriOverride(null);
+          }}
+          onShareText={async () => {
+            await Share.share({
+              title: '分享饮食记录',
+              message: buildDietShareCaption(shareRecord, dietShareDateLabel(shareRecord)),
+            });
           }}
           onAskReva={() => handleAskRevaFromShare(shareRecord)}
           onShareTerminal={(meta) => {
@@ -1451,6 +1480,49 @@ export default function DietScreen() {
             toast.show(hint.title, hint.tone === 'success' ? 'success' : 'error');
           }}
         />
+      ) : null}
+      {shareRecord && !shareImageSource && !authLoading ? (
+        <Modal
+          visible
+          transparent
+          animationType="fade"
+          onRequestClose={() => {
+            if (fallbackTextShareBusyRef.current) return;
+            setShareRecord(null);
+            setShareImageUriOverride(null);
+          }}
+        >
+          <View style={styles.textShareBackdrop}>
+            <View style={styles.textShareCard} testID="diet-share-text-fallback">
+              <View style={styles.textShareIcon}>
+                <Ionicons name="document-text-outline" size={22} color={C.green600} />
+              </View>
+              <Text style={styles.textShareTitle}>这条记录没有可用照片</Text>
+              <Text style={styles.textShareDetail}>无法生成图片海报，但仍可分享完整的饮食正文。</Text>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="分享饮食正文"
+                disabled={fallbackTextShareBusy}
+                style={styles.textSharePrimary}
+                onPress={() => { void handleFallbackTextShare(); }}
+              >
+                <Text style={styles.textSharePrimaryText}>{fallbackTextShareBusy ? '分享中…' : '分享正文'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="关闭正文分享提示"
+                disabled={fallbackTextShareBusy}
+                style={styles.textShareSecondary}
+                onPress={() => {
+                  setShareRecord(null);
+                  setShareImageUriOverride(null);
+                }}
+              >
+                <Text style={styles.textShareSecondaryText}>稍后再说</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       ) : null}
     </SafeAreaView>
   );
@@ -2052,6 +2124,61 @@ const styles = StyleSheet.create({
     width: 32, height: 32, borderRadius: 16,
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: C.green50,
+  },
+  textShareBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    backgroundColor: 'rgba(31, 24, 19, 0.42)',
+  },
+  textShareCard: {
+    alignItems: 'center',
+    gap: 12,
+    padding: 22,
+    borderRadius: revaRadii.xl,
+    backgroundColor: C.paper,
+  },
+  textShareIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.green50,
+  },
+  textShareTitle: {
+    fontFamily: revaFonts.sans,
+    fontSize: 18,
+    fontWeight: '900',
+    color: C.ink1,
+  },
+  textShareDetail: {
+    fontFamily: revaFonts.sans,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    color: C.ink3,
+  },
+  textSharePrimary: {
+    width: '100%',
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: revaRadii.md,
+    backgroundColor: C.green600,
+  },
+  textSharePrimaryText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 14,
+    fontWeight: '900',
+    color: C.greenOn,
+  },
+  textShareSecondary: { paddingHorizontal: 16, paddingVertical: 8 },
+  textShareSecondaryText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 13,
+    fontWeight: '800',
+    color: C.ink3,
   },
   quickIcon: {
     width: 32, height: 32, borderRadius: 16,

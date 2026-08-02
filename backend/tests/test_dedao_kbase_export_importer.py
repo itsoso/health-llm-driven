@@ -267,6 +267,57 @@ def test_dedao_kbase_online_sync_task_writes_draft_artifacts_and_audit(tmp_path,
     assert audit.diff["source_commit"] == "abc1234"
 
 
+def test_scheduled_legacy_export_uses_dedicated_review_workspace(
+    tmp_path,
+    monkeypatch,
+):
+    from app.config import settings
+    from app.tasks import system_knowledge_lifecycle as lifecycle
+
+    review_workspace = tmp_path / "review-workspace"
+    canonical = tmp_path / "canonical-seed"
+    captured: dict = {}
+
+    class _SessionScope:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    def _sync(db, **kwargs):
+        captured.update(kwargs)
+        return {
+            "status": "draft_written",
+            "artifact_dir": str(kwargs["artifact_dir"]),
+        }
+
+    monkeypatch.setattr(
+        settings,
+        "dedao_kbase_review_artifact_dir",
+        str(review_workspace),
+    )
+    monkeypatch.setattr(settings, "system_kb_artifact_dir", str(canonical))
+    monkeypatch.setattr(settings, "dedao_kbase_release_base_url", None)
+    monkeypatch.setattr(
+        settings,
+        "dedao_kbase_export_url",
+        "https://kbase.example.test/export",
+    )
+    monkeypatch.setattr(lifecycle, "SessionLocal", _SessionScope)
+    monkeypatch.setattr(
+        lifecycle,
+        "sync_dedao_kbase_export_draft_once",
+        _sync,
+    )
+
+    result = lifecycle.sync_dedao_kbase_export_draft.run()
+
+    assert result["status"] == "draft_written"
+    assert captured["artifact_dir"] == review_workspace.resolve()
+    assert captured["artifact_dir"] != canonical.resolve()
+
+
 def _export_handler(export_body: bytes):
     class ExportHandler(BaseHTTPRequestHandler):
         def do_GET(self):

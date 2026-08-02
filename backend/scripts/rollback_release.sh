@@ -21,12 +21,16 @@ STAGED_REVIEW_MANIFEST="$SCRIPT_DIR/review_manifest.json"
 STAGED_HASH_MANIFEST="$SCRIPT_DIR/staged.sha256"
 SCHEMA_PROBE="$SCRIPT_DIR/verify_runtime_schema_compatibility.py"
 KB_QUARANTINE="$SCRIPT_DIR/quarantine_runtime_only_kb.py"
+RUNTIME_STATE_RUNNER="$SCRIPT_DIR/runtime_state_release_transaction.py"
+STAGED_BACKEND_ENV_ROLLBACK="$SCRIPT_DIR/backend.env.rollback"
+STAGED_BACKEND_ENV_CANDIDATE="$SCRIPT_DIR/backend.env.candidate"
 HEALTH_EVIDENCE_DURABLE_STATE_DIR="${HEALTH_EVIDENCE_DURABLE_STATE_DIR:-/var/lib/reva-health-evidence-runtime}"
 HEALTH_EVIDENCE_RUNTIME_STATE_DIR="${HEALTH_EVIDENCE_RUNTIME_STATE_DIR:-/run/reva-health-evidence-activation}"
 HEALTH_EVIDENCE_SYSTEMD_RUNTIME_DIR="${HEALTH_EVIDENCE_SYSTEMD_RUNTIME_DIR:-/run/systemd/system}"
 BACKEND_SOCKET="health-backend.socket"
 WRITER_SERVICES=(health-backend celery-worker celery-beat)
 SERVICES=("$BACKEND_SOCKET" "${WRITER_SERVICES[@]}")
+SERVICE_STABILITY_SECONDS=7
 REQUIRED_STAGED_ARTIFACTS=(
     backup_db.sh
     verify_backup_restore.sh
@@ -35,7 +39,13 @@ REQUIRED_STAGED_ARTIFACTS=(
     activate_health_evidence_runtime.sh
     verify_runtime_schema_compatibility.py
     quarantine_runtime_only_kb.py
+    runtime_state_release_transaction.py
     review_manifest.json
+    health-backend-runtime-state.conf
+    celery-worker-runtime-state.conf
+    celery-beat-runtime-state.conf
+    backend.env.rollback
+    backend.env.candidate
 )
 
 if [ ! -d "$REPO_PATH/.git" ] && [ ! -f "$REPO_PATH/.git" ]; then
@@ -55,8 +65,26 @@ if ! [[ "$REMOTE_RELEASE_LOCK_TOKEN" =~ ^[A-Za-z0-9._:-]+$ ]]; then
     exit 1
 fi
 assert_release_lock() {
+    test -d "$REMOTE_RELEASE_LOCK_DIR"
+    test ! -L "$REMOTE_RELEASE_LOCK_DIR"
+    test "$(stat -c '%U:%G:%a' "$REMOTE_RELEASE_LOCK_DIR")" = \
+        "root:root:700"
+    test -f "$REMOTE_RELEASE_LOCK_DIR/token"
+    test ! -L "$REMOTE_RELEASE_LOCK_DIR/token"
     test -r "$REMOTE_RELEASE_LOCK_DIR/token"
-    test "$(cat "$REMOTE_RELEASE_LOCK_DIR/token")" = "$REMOTE_RELEASE_LOCK_TOKEN"
+    test "$(stat -c '%U:%G:%a' "$REMOTE_RELEASE_LOCK_DIR/token")" = \
+        "root:root:600"
+    test "$(stat -c '%h' "$REMOTE_RELEASE_LOCK_DIR/token")" = "1"
+    cmp -s "$REMOTE_RELEASE_LOCK_DIR/token" \
+        <(printf '%s\n' "$REMOTE_RELEASE_LOCK_TOKEN")
+    test -f "$REMOTE_RELEASE_LOCK_DIR/stage"
+    test ! -L "$REMOTE_RELEASE_LOCK_DIR/stage"
+    test -r "$REMOTE_RELEASE_LOCK_DIR/stage"
+    test "$(stat -c '%U:%G:%a' "$REMOTE_RELEASE_LOCK_DIR/stage")" = \
+        "root:root:600"
+    test "$(stat -c '%h' "$REMOTE_RELEASE_LOCK_DIR/stage")" = "1"
+    cmp -s "$REMOTE_RELEASE_LOCK_DIR/stage" \
+        <(printf '%s\n' "$SCRIPT_DIR")
 }
 safe_absolute_path() {
     local value="$1"
@@ -72,8 +100,42 @@ if ! [[ "$HEALTH_ATTEMPTS" =~ ^[1-9][0-9]*$ ]]; then
     echo "ROLLBACK_HEALTH_ATTEMPTS 必须是正整数" >&2
     exit 1
 fi
+safe_absolute_path "$SCRIPT_DIR"
+test -d "$SCRIPT_DIR"
+test ! -L "$SCRIPT_DIR"
+test "$(stat -c '%U:%G:%a' "$SCRIPT_DIR")" = "root:root:700"
+test -f "$STAGED_HASH_MANIFEST"
+test ! -L "$STAGED_HASH_MANIFEST"
 test -r "$STAGED_HASH_MANIFEST"
+test "$(stat -c '%U:%G:%a' "$STAGED_HASH_MANIFEST")" = "root:root:400"
+shopt -s nullglob dotglob
+stage_entry_count=0
+for entry in "$SCRIPT_DIR"/*; do
+    name="${entry##*/}"
+    allowed=0
+    if [ "$name" = "staged.sha256" ]; then
+        allowed=1
+    else
+        for artifact in "${REQUIRED_STAGED_ARTIFACTS[@]}"; do
+            if [ "$name" = "$artifact" ]; then
+                allowed=1
+                break
+            fi
+        done
+    fi
+    if [ "$allowed" != "1" ]; then
+        echo "unknown immutable rollback artifact: $name" >&2
+        exit 1
+    fi
+    test -f "$entry"
+    test ! -L "$entry"
+    stage_entry_count=$((stage_entry_count + 1))
+done
+shopt -u nullglob dotglob
+test "$stage_entry_count" -eq "$((${#REQUIRED_STAGED_ARTIFACTS[@]} + 1))"
 for artifact in "${REQUIRED_STAGED_ARTIFACTS[@]}"; do
+    test -f "$SCRIPT_DIR/$artifact"
+    test ! -L "$SCRIPT_DIR/$artifact"
     test -r "$SCRIPT_DIR/$artifact"
     awk -v expected="$artifact" '
         $2 == expected &&
@@ -88,7 +150,7 @@ test "$(awk 'NF {count += 1} END {print count + 0}' "$STAGED_HASH_MANIFEST")" \
     -eq "${#REQUIRED_STAGED_ARTIFACTS[@]}"
 (
     cd "$SCRIPT_DIR"
-    sha256sum -c "$STAGED_HASH_MANIFEST" >/dev/null
+    sha256sum --strict -c "$STAGED_HASH_MANIFEST" >/dev/null
 )
 test -r "$STAGED_REVIEW_MANIFEST"
 safe_absolute_path "$HEALTH_EVIDENCE_DURABLE_STATE_DIR"
@@ -149,6 +211,94 @@ verify_process_environment_false() {
     done
 }
 
+verify_services_stable() {
+    local phase
+    local service
+    local active_state
+    local sub_state
+    local result
+    local main_pid
+    local restart_count
+    local enter_timestamp
+    local process_index
+    local stable_main_pid=()
+    local stable_restart_count=()
+    local stable_enter_timestamp=()
+    local stable_socket_sub_state=""
+
+    for phase in record compare; do
+        process_index=0
+        for service in "${SERVICES[@]}"; do
+            active_state="$(
+                systemctl show "$service" --property=ActiveState --value \
+                    2>/dev/null
+            )"
+            sub_state="$(
+                systemctl show "$service" --property=SubState --value \
+                    2>/dev/null
+            )"
+            result="$(
+                systemctl show "$service" --property=Result --value \
+                    2>/dev/null
+            )"
+            test "$active_state" = "active"
+            test "$result" = "success"
+            if [ "$service" = "$BACKEND_SOCKET" ]; then
+                # systemd 249 uses "running" for an active bound socket;
+                # newer releases may use "listening". Require one of those
+                # ready states and require it to stay unchanged across the
+                # complete stability window.
+                case "$sub_state" in
+                    listening|running) ;;
+                    *) return 1 ;;
+                esac
+                if [ "$phase" = "record" ]; then
+                    stable_socket_sub_state="$sub_state"
+                else
+                    test "$sub_state" = "$stable_socket_sub_state"
+                fi
+                continue
+            fi
+            test "$sub_state" = "running"
+            main_pid="$(
+                systemctl show "$service" --property=MainPID --value \
+                    2>/dev/null
+            )"
+            restart_count="$(
+                systemctl show "$service" --property=NRestarts --value \
+                    2>/dev/null
+            )"
+            enter_timestamp="$(
+                systemctl show "$service" \
+                    --property=ActiveEnterTimestampMonotonic --value \
+                    2>/dev/null
+            )"
+            [[ "$main_pid" =~ ^[1-9][0-9]*$ ]]
+            [ "$main_pid" -gt 1 ]
+            [[ "$restart_count" =~ ^[0-9]+$ ]]
+            [[ "$enter_timestamp" =~ ^[1-9][0-9]*$ ]]
+            if [ "$phase" = "record" ]; then
+                stable_main_pid[$process_index]="$main_pid"
+                stable_restart_count[$process_index]="$restart_count"
+                stable_enter_timestamp[$process_index]="$enter_timestamp"
+            else
+                test "$main_pid" = \
+                    "${stable_main_pid[$process_index]}"
+                test "$restart_count" = \
+                    "${stable_restart_count[$process_index]}"
+                test "$enter_timestamp" = \
+                    "${stable_enter_timestamp[$process_index]}"
+            fi
+            process_index=$((process_index + 1))
+        done
+        if [ "$phase" = "record" ]; then
+            assert_release_lock
+            sleep "$SERVICE_STABILITY_SECONDS"
+            assert_release_lock
+        fi
+    done
+}
+
 ROLLBACK_VERIFIED=0
 SERVICES_TOUCHED=0
 force_services_inactive() {
@@ -205,6 +355,81 @@ verify_health_evidence_base_guard() {
                 exit(assignments == 1 && canonical == 1 ? 0 : 1)
             }
         ' "$target_env"
+}
+
+select_release_env_for_runtime_result() {
+    local runtime_state_result="$1"
+    local target_env="$REPO_PATH/backend/.env"
+    local target_dir="$REPO_PATH/backend"
+    local target_tmp="$target_dir/.env.rollback-release.tmp"
+
+    test -d "$target_dir"
+    test ! -L "$target_dir"
+    test -f "$target_env"
+    test ! -L "$target_env"
+    test -f "$STAGED_BACKEND_ENV_ROLLBACK"
+    test ! -L "$STAGED_BACKEND_ENV_ROLLBACK"
+    test -f "$STAGED_BACKEND_ENV_CANDIDATE"
+    test ! -L "$STAGED_BACKEND_ENV_CANDIDATE"
+    case "$runtime_state_result" in
+        restored)
+            # Runtime files, code, systemd units, and configuration must move
+            # back as one preimage. The snapshot keeps all old values while
+            # normalizing the safety flag to the unique explicit false form.
+            rm -f -- "$target_tmp"
+            umask 077
+            if ! awk '
+                    /^[[:space:]]*(export[[:space:]]+)?HEALTH_EVIDENCE_RUNTIME_ENABLED[[:space:]]*=/ {
+                        assignments += 1
+                        if ($0 == "HEALTH_EVIDENCE_RUNTIME_ENABLED=false") {
+                            canonical += 1
+                            print "HEALTH_EVIDENCE_RUNTIME_ENABLED=false"
+                            next
+                        }
+                        invalid = 1
+                        next
+                    }
+                    { print }
+                    END {
+                        if (assignments > 1 || invalid == 1 || canonical > 1) {
+                            exit 1
+                        }
+                        if (assignments == 0) {
+                            print "HEALTH_EVIDENCE_RUNTIME_ENABLED=false"
+                        }
+                    }
+                ' "$STAGED_BACKEND_ENV_ROLLBACK" >"$target_tmp"; then
+                rm -f -- "$target_tmp"
+                return 1
+            fi
+            if ! chown root:health-app "$target_tmp" ||
+                ! chmod 0640 "$target_tmp" ||
+                ! sync -f "$target_tmp" ||
+                ! mv -fT -- "$target_tmp" "$target_env"; then
+                rm -f -- "$target_tmp"
+                return 1
+            fi
+            if ! sync -f "$target_dir"; then
+                return 1
+            fi
+            verify_health_evidence_base_guard
+            ;;
+        candidate-retained)
+            # The transaction has already crossed the candidate floor. Never
+            # reintroduce old paths or secrets in that branch.
+            test -f "$target_env"
+            test ! -L "$target_env"
+            verify_health_evidence_base_guard
+            cmp -s "$STAGED_BACKEND_ENV_CANDIDATE" "$target_env"
+            ;;
+        *)
+            echo "未知 runtime state restore result" >&2
+            return 1
+            ;;
+    esac
+    test -f "$target_env"
+    test ! -L "$target_env"
+    test "$(stat -c '%U:%G:%a' "$target_env")" = "root:health-app:640"
 }
 
 revoke_health_evidence_authorization() {
@@ -271,6 +496,29 @@ git checkout -B main "$ROLLBACK_COMMIT"
 test "$(git rev-parse HEAD)" = "$ROLLBACK_COMMIT"
 assert_release_lock
 
+runtime_state_output="$(
+    /usr/bin/python3 -I "$RUNTIME_STATE_RUNNER" \
+        restore "$ROLLBACK_COMMIT" \
+        "$REMOTE_RELEASE_LOCK_DIR" \
+        "$REMOTE_RELEASE_LOCK_TOKEN"
+)"
+echo "$runtime_state_output"
+case "$runtime_state_output" in
+    *"RUNTIME_STATE_TRANSACTION_OK command=restore result=restored"*)
+        runtime_state_result="restored"
+        ;;
+    *"RUNTIME_STATE_TRANSACTION_OK command=restore result=candidate-retained"*)
+        runtime_state_result="candidate-retained"
+        ;;
+    *)
+        echo "runtime state restore 缺少精确成功证明" >&2
+        exit 1
+        ;;
+esac
+assert_release_lock
+select_release_env_for_runtime_result "$runtime_state_result"
+assert_release_lock
+
 backend/venv/bin/pip install --require-hashes -r backend/requirements.lock -q
 (
     cd backend
@@ -310,13 +558,60 @@ if [ "$AUTH_STATUS" != "401" ]; then
     exit 1
 fi
 
-systemctl is-active --quiet health-backend
-systemctl is-active --quiet "$BACKEND_SOCKET"
-systemctl is-active --quiet celery-worker
-systemctl is-active --quiet celery-beat
+verify_services_stable
 verify_process_environment_false
+verify_services_stable
 
 test "$(git rev-parse HEAD)" = "$ROLLBACK_COMMIT"
 assert_release_lock
+if [ "$runtime_state_result" = "restored" ]; then
+    runtime_terminal_output="$(
+        /usr/bin/python3 -I "$RUNTIME_STATE_RUNNER" \
+            release-gate "$ROLLBACK_COMMIT" \
+            "$REMOTE_RELEASE_LOCK_DIR" \
+            "$REMOTE_RELEASE_LOCK_TOKEN"
+    )"
+    echo "$runtime_terminal_output"
+    case "$runtime_terminal_output" in
+        *"RUNTIME_STATE_TRANSACTION_OK command=release-gate result=RESTORE_FINALIZED"*)
+            ;;
+        *)
+            echo "runtime state old release-gate 缺少精确成功证明" >&2
+            exit 1
+            ;;
+    esac
+else
+    runtime_commit_output="$(
+        /usr/bin/python3 -I "$RUNTIME_STATE_RUNNER" \
+            commit "$ROLLBACK_COMMIT" \
+            "$REMOTE_RELEASE_LOCK_DIR" \
+            "$REMOTE_RELEASE_LOCK_TOKEN"
+    )"
+    echo "$runtime_commit_output"
+    case "$runtime_commit_output" in
+        *"RUNTIME_STATE_TRANSACTION_OK command=commit result=COMMITTED"*)
+            ;;
+        *)
+            echo "runtime state candidate commit 缺少精确成功证明" >&2
+            exit 1
+            ;;
+    esac
+    runtime_terminal_output="$(
+        /usr/bin/python3 -I "$RUNTIME_STATE_RUNNER" \
+            finalize "$ROLLBACK_COMMIT" \
+            "$REMOTE_RELEASE_LOCK_DIR" \
+            "$REMOTE_RELEASE_LOCK_TOKEN"
+    )"
+    echo "$runtime_terminal_output"
+    case "$runtime_terminal_output" in
+        *"RUNTIME_STATE_TRANSACTION_OK command=finalize result=finalized"*)
+            ;;
+        *)
+            echo "runtime state candidate finalize 缺少精确成功证明" >&2
+            exit 1
+            ;;
+    esac
+fi
+assert_release_lock
 ROLLBACK_VERIFIED=1
-echo "ROLLBACK_OK commit=$ROLLBACK_COMMIT kb_quarantine=passed schema_probe=passed auth_probe=passed services=active process_flag=false"
+echo "ROLLBACK_OK commit=$ROLLBACK_COMMIT kb_quarantine=passed schema_probe=passed auth_probe=passed services=active process_flag=false runtime_state=$runtime_state_result"

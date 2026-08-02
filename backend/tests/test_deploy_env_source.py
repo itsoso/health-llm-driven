@@ -7,7 +7,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 def test_deploy_script_uses_root_env_as_single_source():
     deploy_script = (REPO_ROOT / "deploy.sh").read_text()
 
-    assert 'ENV_FILE="$SCRIPT_DIR/.env"' in deploy_script
+    assert 'ENV_FILE="${DEPLOY_ENV_FILE:-$SCRIPT_DIR/.env}"' in deploy_script
     assert ".env-online" not in deploy_script
 
 
@@ -31,11 +31,22 @@ def test_gitignore_only_ignores_root_env_file():
 
 def test_deploy_script_backs_up_remote_env_before_syncing():
     deploy_script = (REPO_ROOT / "deploy.sh").read_text()
+    sync_start = deploy_script.index("sync_env() {")
+    sync_end = deploy_script.index("# 去激活事务", sync_start)
+    sync_env = deploy_script[sync_start:sync_end]
+    upload_start = deploy_script.index("upload_backend_env_file() {")
+    upload_end = deploy_script.index("validate_env_sync_safety() {", upload_start)
+    upload_env = deploy_script[upload_start:upload_end]
 
     assert "backup_remote_env()" in deploy_script
     assert 'ENV_BACKUP_DIR="$REMOTE_BACKUP_ROOT/env"' in deploy_script
     assert 'cp -p .env "$ENV_BACKUP_DIR/.env.${BACKUP_TS}"' in deploy_script
-    assert deploy_script.index("backup_remote_env") < deploy_script.index("scp \"$TEMP_ENV\"")
+    assert sync_env.index("backup_remote_env") < sync_env.index(
+        'upload_backend_env_file "$ENV_FILE"'
+    )
+    assert 'upload_path="${REMOTE_BACKEND_ENV_CANDIDATE}.upload"' in upload_env
+    assert 'scp "$temp_env" "$SERVER:$upload_path"' in upload_env
+    assert '"$REMOTE_BACKEND_ENV_CANDIDATE"' in upload_env
 
 
 def test_deploy_bundle_uses_a_unique_remote_path_and_cleans_it_up():
@@ -51,27 +62,69 @@ def test_deploy_bundle_uses_a_unique_remote_path_and_cleans_it_up():
     assert '"$SERVER:/tmp/health-app-deploy.bundle"' not in deploy_script
 
 
-def test_backend_deploy_seeds_curated_food_nutrition_before_restart():
+def test_backend_deploy_activates_kb_only_after_guard_restart_and_contract():
     deploy_script = (REPO_ROOT / "deploy.sh").read_text()
     deploy_start = deploy_script.index("deploy_backend() {")
     deploy_end = deploy_script.index("# 查看服务状态", deploy_start)
     deploy_backend = deploy_script[deploy_start:deploy_end]
 
     migrations = deploy_backend.index("python scripts/apply_managed_migrations.py")
+    guard_restart = deploy_backend.index("systemctl restart health-backend")
+    guard_contract = deploy_backend.index('verify_runtime_only_kb_contract "guard"')
+    rollback_floor = deploy_backend.index('ROLLBACK_COMMIT="$DEPLOY_EXPECTED_SHA"')
     food_seed = deploy_backend.index("python scripts/seed_food_nutrition.py")
-    restart = deploy_backend.index("systemctl restart health-backend")
+    phase0_seed = deploy_backend.index("python scripts/seed_system_kb_phase0.py")
+    v2_import = deploy_backend.index("python scripts/import_system_kb_v2_artifacts.py")
+    # A resumed, already-finalized transaction has an earlier read-only staged
+    # contract recheck. This ordering assertion is specifically about the
+    # post-import activation gate, so anchor the search after the importer.
+    staged_contract = deploy_backend.index(
+        'verify_runtime_only_kb_contract "staged"', v2_import
+    )
 
-    assert migrations < food_seed < restart
+    assert (
+        migrations
+        < guard_restart
+        < guard_contract
+        < rollback_floor
+        < food_seed
+        < phase0_seed
+        < v2_import
+        < staged_contract
+    )
 
 
-def test_env_only_restart_refreshes_backend_and_celery_processes():
+def test_env_only_deactivation_refreshes_and_proves_all_backend_processes_false():
     deploy_script = (REPO_ROOT / "deploy.sh").read_text()
-    restart_start = deploy_script.index("restart_services() {")
-    restart_end = deploy_script.index("# 推送代码到 GitHub", restart_start)
-    restart_services = deploy_script[restart_start:restart_end]
+    main_start = deploy_script.index("main() {")
+    env_start = deploy_script.index('"env")', main_start)
+    env_end = deploy_script.index(";;", env_start)
+    env_branch = deploy_script[env_start:env_end]
+    transaction_start = deploy_script.index(
+        "run_health_evidence_deactivation_transaction() {"
+    )
+    transaction_end = deploy_script.index(
+        "prove_health_evidence_deactivated_state() {", transaction_start
+    )
+    transaction = deploy_script[transaction_start:transaction_end]
+    mutation = transaction[transaction.index("mutation_started=1") :]
 
-    assert "systemctl restart health-backend" in restart_services
-    assert "systemctl restart celery-worker celery-beat" in restart_services
+    assert env_branch.index("sync_env") < env_branch.index(
+        "deactivate_health_evidence_runtime_before_mutation"
+    )
+    for unit in (
+        "health-backend.socket",
+        "health-backend.service",
+        "celery-worker.service",
+        "celery-beat.service",
+    ):
+        assert unit in transaction
+    assert (
+        mutation.index("stop_and_prove_services_inactive")
+        < mutation.index("remove_runtime_authorization")
+        < mutation.index('systemctl start "$unit"')
+        < mutation.index("verify_process_environment_false")
+    )
 
 
 def test_secret_management_docs_cover_remote_env_backup_and_long_term_plan():

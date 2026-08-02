@@ -2,6 +2,7 @@ import React from 'react';
 import { View } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { revaColors as C } from '../../constants/revaTheme';
 
 /**
  * Phase 5 (2026-07-03): Agent-native shell. 移除底部 Tab Bar, 小巴(chat) 成为主屏
@@ -32,7 +33,7 @@ export default function TabLayout() {
         initialRouteName="chat"
         // 无底部 Tab Bar：二级屏靠 chat 里的入口 + 各自顶部「返回小巴」导航。
         tabBar={() => null}
-        screenOptions={{ headerShown: false }}
+        screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: C.paper } }}
       >
         {/* index = 纯 Redirect → chat (expo-router "/" 永远落 index, 见 index.tsx 注释)。 */}
         <Tabs.Screen name="index" options={createTabScreenOptions('index')} />

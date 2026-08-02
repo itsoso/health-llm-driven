@@ -822,11 +822,15 @@ async def test_legacy_finalized_error_without_write_metadata_still_replays(
 
     done = next(event for event in events if event.get("event") == "done")
     assert done["data"].get("replayed") is True
-    assert "旧版本失败回复" in "".join(
+    visible = "".join(
         event["data"].get("content", "")
         for event in events
         if event.get("event") == "token"
     )
+    assert "旧版本失败回复" not in visible
+    assert "未经过当前健康安全校验" in visible
+    assert done["data"]["health_evidence_replay_sanitized"] is True
+    assert done["data"]["cards"] == []
 
 
 @pytest.mark.parametrize(

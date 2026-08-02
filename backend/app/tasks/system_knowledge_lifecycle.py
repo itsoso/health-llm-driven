@@ -1094,9 +1094,9 @@ def sync_dedao_kbase_export_draft() -> dict[str, Any]:
     """
     logger.info("[dedao_kbase_export_sync] start")
     canonical_artifact_dir = _default_system_kb_artifact_dir()
+    artifact_dir = _dedao_kbase_review_artifact_dir()
     with SessionLocal() as db:
         if settings.dedao_kbase_release_base_url:
-            artifact_dir = _dedao_kbase_review_artifact_dir()
             result = sync_dedao_kbase_releases_draft_once(
                 db,
                 base_url=settings.dedao_kbase_release_base_url,
@@ -1108,7 +1108,6 @@ def sync_dedao_kbase_export_draft() -> dict[str, Any]:
                 limit=settings.dedao_kbase_release_batch_size,
             )
         else:
-            artifact_dir = canonical_artifact_dir
             result = sync_dedao_kbase_export_draft_once(
                 db,
                 export_url=settings.dedao_kbase_export_url,

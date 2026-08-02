@@ -11,7 +11,6 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
 import { setAudioModeAsync } from 'expo-audio';
-import { captureRef } from 'react-native-view-shot';
 import Markdown from 'react-native-markdown-display';
 import { getCardActionRuntimeGroupKey, getCardActionRuntimeKey, renderCard } from './cards';
 import { createMdStylesChat } from '../../constants/markdownStyles';
@@ -38,16 +37,20 @@ import { useToast } from '../../hooks/useToast';
 import { SocialBrandIcon } from '../common/SocialBrandIcon';
 import {
   shareImage,
-  shareLocalImage,
   sharePlainCaption,
   sharePlainText,
 } from '../../utils/share';
 import { buildAiShareMessage, buildXiaohongshuShareMessage } from '../../utils/aiShareText';
 import { buildChatImageSource } from '../../utils/chatImageSource';
+import { saveChatImageToLibrary } from '../../services/chatImageSave';
 import { containsMarkdownTable, preprocessMarkdownTables } from '../../utils/markdownTables';
 import { prepareSafeMarkdown, safeMarkdownIt } from '../../utils/safeMarkdown';
 import { extractRevaUiBlocks } from '../../utils/revaUiBlocks';
-import { saveChatImageToLibrary } from '../../services/chatImageSave';
+import { DietShareComposer } from '../diet/DietShareComposer';
+import {
+  buildChatDietShareInput,
+  buildDietSharePresentation,
+} from '../diet/dietSharePresentation';
 import type { MedicationSafetyAlert } from '../../services/medications';
 import InterventionDraftSheet from '../actions/InterventionDraftSheet';
 import { createInterventionDraft } from '../../services/actionCards';
@@ -109,6 +112,7 @@ function ChatBubbleInner({
   const [showActions, setShowActions] = useState(false);  // 长按显示操作
   const [showShareActions, setShowShareActions] = useState(false);
   const [showCardActions, setShowCardActions] = useState(false);
+  const [dietShareComposerOpen, setDietShareComposerOpen] = useState(false);
   const [timeRevealed, setTimeRevealed] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -122,7 +126,6 @@ function ChatBubbleInner({
   const [todayPlanDraft, setTodayPlanDraft] = useState<InterventionDraft | null>(null);
   const [savingTodayPlan, setSavingTodayPlan] = useState(false);
   const cardActionLocksRef = useRef(new Set<string>());
-  const cardFrameRef = useRef<View | null>(null);
   const speechTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechActiveRef = useRef(false);
   const speechHandleRef = useRef<SpeakHandle | null>(null);
@@ -208,6 +211,7 @@ function ChatBubbleInner({
       llmUsage: item.llmUsage,
       sourcesUsed: item.sourcesUsed,
       toolsUsed: item.toolsUsed,
+      completionStatus: item.completionStatus,
       perf: item.perf,
     }),
     [
@@ -218,6 +222,7 @@ function ChatBubbleInner({
       item.llmUsage,
       item.sourcesUsed,
       item.toolsUsed,
+      item.completionStatus,
       item.perf,
     ],
   );
@@ -599,36 +604,6 @@ function ChatBubbleInner({
       await sharePlainText(cardSharePayload);
     } catch { /* 用户取消分享也会走这里, 不打扰 */ }
   }, [cardSharePayload]);
-  const captureCardScreenshot = useCallback(async () => {
-    if (!cardFrameRef.current) return;
-    return captureRef(cardFrameRef.current, {
-      format: 'png',
-      quality: 1,
-      result: 'tmpfile',
-    });
-  }, []);
-  const handleSaveCardScreenshot = useCallback(async () => {
-    try { Haptics.selectionAsync(); } catch {}
-    try {
-      const uri = await captureCardScreenshot();
-      if (!uri) return;
-      await saveChatImageToLibrary({ uri });
-      toast.show('已保存到照片', 'success');
-    } catch {
-      toast.show('保存截图失败，请稍后重试', 'error');
-    }
-  }, [captureCardScreenshot, toast]);
-  const handleShareCardImage = useCallback(async (target: 'wechat' | 'xiaohongshu' | 'more' = 'more') => {
-    try { Haptics.selectionAsync(); } catch {}
-    try {
-      const uri = await captureCardScreenshot();
-      if (!uri) return;
-      await shareLocalImage(uri);
-    } catch {
-      const targetName = target === 'wechat' ? '微信' : target === 'xiaohongshu' ? '小红书' : '图片';
-      toast.show(`分享${targetName}失败，请稍后重试`, 'error');
-    }
-  }, [captureCardScreenshot, toast]);
   const openCardActions = useCallback(() => {
     if (!cardSharePayload || selectionMode) return;
     try { Haptics.selectionAsync(); } catch {}
@@ -643,6 +618,13 @@ function ChatBubbleInner({
     cardDataRecord?.recorded === true
     || latestWriteReceipt?.status === 'verified'
   );
+  const chatDietShareInput = item.cardType === 'diet_draft' && cardDataRecord
+    ? buildChatDietShareInput(cardDataRecord, latestWriteReceipt)
+    : null;
+  const chatDietPhotoSource = chatDietShareInput?.available
+    ? buildChatImageSource(chatDietShareInput.photoUri, imageAuthToken)
+    : undefined;
+  const canEditDietShare = Boolean(chatDietShareInput?.available && chatDietPhotoSource);
   const renderedCardData = item.cardType === 'medication_draft' && cardDataRecord
     ? { ...cardDataRecord, ...(cardDecisionStatus ? { decision_status: cardDecisionStatus } : {}) }
     : item.cardData;
@@ -700,7 +682,7 @@ function ChatBubbleInner({
     );
     if (rendered) {
       const cardContents = (
-        <View ref={cardFrameRef} testID="assistant-card-capture-frame" collapsable={false}>
+        <View testID="assistant-card-content-frame">
           {rendered}
           {visibleWriteReceipts.map(receipt => (
             <WriteReceiptLine key={receipt.operationId} receipt={receipt} />
@@ -710,79 +692,101 @@ function ChatBubbleInner({
         </View>
       );
       return (
-        <View style={[styles.msgRow, styles.msgRowAI]}>
-          <View testID="assistant-card-frame" style={styles.cardFrame}>
-            {hasNestedCardInteraction ? (
-              <View
-                testID={hasEmbeddedCardEditor
-                  ? 'assistant-editable-card-interaction-surface'
-                  : 'assistant-actionable-card-interaction-surface'}
-                accessibilityRole="summary"
-                accessibilityLabel={hasEmbeddedCardEditor ? '可编辑健康卡片' : '可操作健康卡片'}
-              >
-                {cardContents}
-              </View>
-            ) : (
-              <Pressable
-                testID="assistant-card-interaction-surface"
-                onPress={revealMessageTime}
-                onLongPress={openCardActions}
-                delayLongPress={350}
-                accessibilityRole="summary"
-                accessibilityLabel={cardSharePayload ? '长按卡片打开分享操作' : '健康卡片'}
-              >
-                {cardContents}
-              </Pressable>
-            )}
-            {showMessageTime ? <MessageTime label={sentTimeShort} isUser={false} /> : null}
-            {(showCardActions || isRecordedDietCard) && cardSharePayload && !selectionMode ? (
-              <View testID="assistant-card-share-actions" style={styles.cardShareActions}>
-                <Pressable
-                  onPress={handleSaveCardScreenshot}
-                  hitSlop={6}
-                  accessibilityRole="button"
-                  accessibilityLabel="保存卡片图片"
-                  style={({ pressed }) => [styles.cardSaveButton, pressed && styles.actionBtnPressed]}
+        <>
+          <View style={[styles.msgRow, styles.msgRowAI]}>
+            <View testID="assistant-card-frame" style={styles.cardFrame}>
+              {hasNestedCardInteraction ? (
+                <View
+                  testID={hasEmbeddedCardEditor
+                    ? 'assistant-editable-card-interaction-surface'
+                    : 'assistant-actionable-card-interaction-surface'}
+                  accessibilityRole="summary"
+                  accessibilityLabel={hasEmbeddedCardEditor ? '可编辑健康卡片' : '可操作健康卡片'}
                 >
-                  <Ionicons name="image-outline" size={13} color={C.ink3} />
-                  <Text style={txt.cardSaveButton}>保存图片</Text>
-                </Pressable>
+                  {cardContents}
+                </View>
+              ) : (
                 <Pressable
-                  onPress={() => handleShareCardImage('more')}
-                  hitSlop={6}
-                  accessibilityRole="button"
-                  accessibilityLabel="分享卡片图片"
-                  style={({ pressed }) => [styles.cardShareButton, pressed && styles.actionBtnPressed]}
+                  testID="assistant-card-interaction-surface"
+                  onPress={revealMessageTime}
+                  onLongPress={openCardActions}
+                  delayLongPress={350}
+                  accessibilityRole="summary"
+                  accessibilityLabel={cardSharePayload ? '长按卡片打开分享操作' : '健康卡片'}
                 >
-                  <Ionicons name="share-social-outline" size={13} color={C.green700} />
-                  <Text style={txt.cardShareButton}>分享图片</Text>
+                  {cardContents}
                 </Pressable>
-                <Pressable
-                  onPress={handleCardShare}
-                  hitSlop={6}
-                  accessibilityRole="button"
-                  accessibilityLabel="分享卡片正文"
-                  style={({ pressed }) => [styles.cardShareButton, pressed && styles.actionBtnPressed]}
-                >
-                  <Ionicons name="document-text-outline" size={13} color={C.green700} />
-                  <Text style={txt.cardShareButton}>分享正文</Text>
-                </Pressable>
-                {!isRecordedDietCard ? (
+              )}
+              {showMessageTime ? <MessageTime label={sentTimeShort} isUser={false} /> : null}
+              {(showCardActions || isRecordedDietCard) && cardSharePayload && !selectionMode ? (
+                <View testID="assistant-card-share-actions" style={styles.cardShareActions}>
+                  {isRecordedDietCard ? (
+                    <Pressable
+                      onPress={() => {
+                        if (canEditDietShare) setDietShareComposerOpen(true);
+                      }}
+                      disabled={!canEditDietShare}
+                      hitSlop={6}
+                      accessibilityRole="button"
+                      accessibilityLabel="编辑分享图"
+                      accessibilityHint={!canEditDietShare ? '需要这餐的可用照片才能编辑分享图' : undefined}
+                      accessibilityState={{ disabled: !canEditDietShare }}
+                      style={({ pressed }) => [
+                        styles.cardSaveButton,
+                        !canEditDietShare && styles.actionBtnDisabled,
+                        pressed && styles.actionBtnPressed,
+                      ]}
+                    >
+                      <Ionicons name="create-outline" size={13} color={C.ink3} />
+                      <Text style={txt.cardSaveButton}>编辑分享图</Text>
+                    </Pressable>
+                  ) : null}
                   <Pressable
-                    onPress={() => setShowCardActions(false)}
+                    onPress={handleCardShare}
                     hitSlop={6}
                     accessibilityRole="button"
-                    accessibilityLabel="收起卡片操作"
-                    style={({ pressed }) => [styles.cardSaveButton, pressed && styles.actionBtnPressed]}
+                    accessibilityLabel="分享卡片正文"
+                    style={({ pressed }) => [styles.cardShareButton, pressed && styles.actionBtnPressed]}
                   >
-                    <Ionicons name="close" size={13} color={C.ink3} />
-                    <Text style={txt.cardSaveButton}>收起</Text>
+                    <Ionicons name="document-text-outline" size={13} color={C.green700} />
+                    <Text style={txt.cardShareButton}>分享正文</Text>
                   </Pressable>
-                ) : null}
-              </View>
-            ) : null}
+                  {!isRecordedDietCard ? (
+                    <Pressable
+                      onPress={() => setShowCardActions(false)}
+                      hitSlop={6}
+                      accessibilityRole="button"
+                      accessibilityLabel="收起卡片操作"
+                      style={({ pressed }) => [styles.cardSaveButton, pressed && styles.actionBtnPressed]}
+                    >
+                      <Ionicons name="close" size={13} color={C.ink3} />
+                      <Text style={txt.cardSaveButton}>收起</Text>
+                    </Pressable>
+                  ) : null}
+                  {isRecordedDietCard && !canEditDietShare ? (
+                    <Text style={txt.cardShareUnavailableHint}>没有可用餐食照片，仅支持分享正文</Text>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
           </View>
-        </View>
+          {dietShareComposerOpen && chatDietShareInput?.available && chatDietPhotoSource ? (
+            <DietShareComposer
+              visible
+              record={chatDietShareInput.record}
+              dateLabel={`今日 · ${buildDietSharePresentation(chatDietShareInput.record).mealLabel}`}
+              photoSource={chatDietPhotoSource}
+              onClose={() => setDietShareComposerOpen(false)}
+              onShareText={handleCardShare}
+              onShareFeedback={(feedback) => {
+                toast.show(feedback.title, feedback.tone === 'success' ? 'success' : 'error');
+              }}
+              onShareTerminal={(meta) => {
+                void emitClientEvent('diet_share_terminal', meta);
+              }}
+            />
+          ) : null}
+        </>
       );
     }
   }
@@ -1185,13 +1189,16 @@ function ChatBubbleInner({
             {cardSafetyAlerts.length > 0 ? <MedicationSafetyAdvisory alerts={cardSafetyAlerts} /> : null}
             {cardReceiptPersistenceWarning ? <WriteReceiptPersistenceWarning /> : null}
             {!item.streaming
-              && item.completionStatus !== 'interrupted'
-              && item.completionStatus !== 'error'
-              && assistantTextForActions ? (
+              && assistantTextForActions
+              && (
+                (item.completionStatus !== 'interrupted' && item.completionStatus !== 'error')
+                || transparency.visible
+              ) ? (
               <AssistantUtilityPanel
                 profile={transparency}
                 sources={item.sourcesUsed}
                 thinkingSteps={thinkingSteps}
+                sharingEnabled={item.completionStatus !== 'interrupted' && item.completionStatus !== 'error'}
                 onOpenMemory={() => router.push('/memory')}
                 onShareWeChat={() => { void handleShare('wechat'); }}
                 onShareXiaohongshu={() => { void handleShare('xiaohongshu'); }}
@@ -1380,18 +1387,30 @@ function buildDietDraftSharePayload(data: Record<string, unknown>): { title: str
   const suggestions = Array.isArray(data.suggestions)
     ? data.suggestions.map(cardText).filter((item): item is string => Boolean(item))
     : [];
+  const source = cardText(data.source);
+  const rawConfidence = cardNumber(data.ai_confidence ?? data.confidence);
+  const confidence = rawConfidence != null && rawConfidence > 1 ? rawConfidence / 100 : rawConfidence;
+  const lowConfidence = source !== 'manual'
+    && source !== 'user_corrected'
+    && confidence != null
+    && confidence >= 0
+    && confidence < 0.7;
 
   const lines = ['今日饮食打卡', '今天这餐被小巴认真记下来了', ''];
   lines.push(food ? `${meal} · ${food}` : meal);
 
-  const macroParts = [
-    calories != null ? `${Math.round(calories)} kcal` : null,
-    protein != null ? `蛋白 ${Math.round(protein)}g` : null,
-    carbs != null ? `碳水 ${Math.round(carbs)}g` : null,
-    fat != null ? `脂肪 ${Math.round(fat)}g` : null,
-  ].filter(Boolean);
-  if (macroParts.length > 0) lines.push('', '营养概览', macroParts.join(' · '));
-  if (suggestions[0]) lines.push('', '今日策略', `下一步：${suggestions[0]}`);
+  if (lowConfidence) {
+    lines.push('', '营养待核对');
+  } else {
+    const macroParts = [
+      calories != null ? `${Math.round(calories)} kcal` : null,
+      protein != null ? `蛋白 ${Math.round(protein)}g` : null,
+      carbs != null ? `碳水 ${Math.round(carbs)}g` : null,
+      fat != null ? `脂肪 ${Math.round(fat)}g` : null,
+    ].filter(Boolean);
+    if (macroParts.length > 0) lines.push('', '营养概览', macroParts.join(' · '));
+    if (suggestions[0]) lines.push('', '今日策略', `下一步：${suggestions[0]}`);
+  }
   lines.push('', '#小红书饮食日记 #朋友圈打卡 #小巴', '', '— 小巴');
 
   return {
@@ -2574,6 +2593,7 @@ const styles = StyleSheet.create({
   actionBtnOnUser: {
     backgroundColor: 'rgba(255,255,255,0.92)',
   },
+  actionBtnDisabled: { opacity: 0.45 },
   actionBtnPressed: { opacity: 0.82 },
   assistantUtilityPanel: {
     alignSelf: 'stretch',
@@ -2726,6 +2746,7 @@ const txt = {
   assistantUtilityThought: { flex: 1, fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 17, fontWeight: '700', color: C.ink2 } as TextStyle,
   cardShareButton: { fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 15, fontWeight: '900', color: C.green700 } as TextStyle,
   cardSaveButton: { fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 15, fontWeight: '900', color: C.ink3 } as TextStyle,
+  cardShareUnavailableHint: { width: '100%', fontFamily: revaFonts.sans, fontSize: 10.5, lineHeight: 15, color: C.ink3 } as TextStyle,
   fallback: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 20, color: C.ink2, fontStyle: 'italic' } as TextStyle,
   transparencyTitle: { flex: 1, fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 16, fontWeight: '800', color: C.ink2 } as TextStyle,
   transparencyLabel: { width: 64, fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 16, color: C.ink3 } as TextStyle,
@@ -2863,6 +2884,7 @@ function AssistantUtilityPanel({
   profile,
   sources,
   thinkingSteps,
+  sharingEnabled,
   onOpenMemory,
   onShareWeChat,
   onShareXiaohongshu,
@@ -2872,6 +2894,7 @@ function AssistantUtilityPanel({
   profile: AgentTransparencyProfile;
   sources?: readonly string[];
   thinkingSteps: readonly string[];
+  sharingEnabled: boolean;
   onOpenMemory: () => void;
   onShareWeChat: () => void;
   onShareXiaohongshu: () => void;
@@ -2916,25 +2939,29 @@ function AssistantUtilityPanel({
             <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={13} color={C.ink3} />
           </Pressable>
         ) : <View style={styles.assistantUtilitySpacer} />}
-        <View style={styles.assistantUtilityDivider} />
-        <Pressable
-          onPress={onShareWeChat}
-          accessibilityRole="button"
-          accessibilityLabel="微信分享这条回复"
-          style={({ pressed }) => [styles.assistantUtilityShare, pressed && styles.actionBtnPressed]}
-        >
-          <SocialBrandIcon brand="wechat" size={15} />
-          <Text style={txt.assistantUtilityShare}>微信</Text>
-        </Pressable>
-        <Pressable
-          onPress={onShareXiaohongshu}
-          accessibilityRole="button"
-          accessibilityLabel="小红书分享这条回复"
-          style={({ pressed }) => [styles.assistantUtilityShare, pressed && styles.actionBtnPressed]}
-        >
-          <SocialBrandIcon brand="xiaohongshu" size={15} />
-          <Text style={txt.assistantUtilityShare}>小红书</Text>
-        </Pressable>
+        {sharingEnabled ? (
+          <>
+            <View style={styles.assistantUtilityDivider} />
+            <Pressable
+              onPress={onShareWeChat}
+              accessibilityRole="button"
+              accessibilityLabel="微信分享这条回复"
+              style={({ pressed }) => [styles.assistantUtilityShare, pressed && styles.actionBtnPressed]}
+            >
+              <SocialBrandIcon brand="wechat" size={15} />
+              <Text style={txt.assistantUtilityShare}>微信</Text>
+            </Pressable>
+            <Pressable
+              onPress={onShareXiaohongshu}
+              accessibilityRole="button"
+              accessibilityLabel="小红书分享这条回复"
+              style={({ pressed }) => [styles.assistantUtilityShare, pressed && styles.actionBtnPressed]}
+            >
+              <SocialBrandIcon brand="xiaohongshu" size={15} />
+              <Text style={txt.assistantUtilityShare}>小红书</Text>
+            </Pressable>
+          </>
+        ) : null}
         <Pressable
           onPress={onCopy}
           accessibilityRole="button"
@@ -3020,7 +3047,7 @@ function AssistantUtilityPanel({
           ) : null}
           {profile.tools.length > 0 ? (
             <View style={styles.transparencyRow}>
-              <Text style={txt.transparencyLabel}>调用 Skill</Text>
+              <Text style={txt.transparencyLabel}>{profile.toolLabel}</Text>
               <View style={[styles.transparencyChipRow, { flex: 1 }]}>
                 {profile.tools.map(tool => (
                   <View key={tool} style={styles.transparencyChip}>

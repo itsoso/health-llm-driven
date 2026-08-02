@@ -5,6 +5,7 @@ import * as Sharing from 'expo-sharing';
 import api from '../../services/api';
 
 import {
+  materializeImageForLocalUse,
   shareImage,
   shareAgentSelection,
   shareLocalImage,
@@ -30,6 +31,7 @@ jest.mock('expo-file-system/legacy', () => ({
 
 jest.mock('../../services/api', () => ({
   __esModule: true,
+  BASE_URL: 'https://health.executor.life/api',
   default: {
     post: jest.fn().mockResolvedValue({
       data: {
@@ -275,6 +277,183 @@ describe('shareImage', () => {
       { idempotent: true },
     );
     expect(Sharing.shareAsync).not.toHaveBeenCalled();
+  });
+
+  it('reports both image download and cleanup failure without exposing a path', async () => {
+    (FileSystem.downloadAsync as jest.Mock).mockRejectedValueOnce(new Error('connection reset'));
+    (FileSystem.deleteAsync as jest.Mock).mockRejectedValueOnce(new Error('private path unavailable'));
+
+    await expect(shareImage(
+      'https://health.executor.life/private/result.png?secret=do-not-expose',
+      { target: 'wechat', cacheKey: 'broken-image' },
+    )).rejects.toThrow(/^image_share_download_failed_cleanup_failed$/);
+
+    expect(Sharing.shareAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe('materializeImageForLocalUse', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (FileSystem.downloadAsync as jest.Mock).mockImplementation(
+      async (_sourceUri: string, localUri: string) => ({ uri: localUri, status: 200 }),
+    );
+  });
+
+  it('downloads a protected HTTPS image with headers and returns explicit cleanup', async () => {
+    const materialized = await materializeImageForLocalUse(
+      'https://health.executor.life/api/v1/upload/files/chat/705/meal.jpg?signature=signed',
+      {
+        headers: { Authorization: 'Bearer token' },
+        cacheKey: 'diet-705',
+      },
+    );
+
+    expect(FileSystem.downloadAsync).toHaveBeenCalledWith(
+      'https://health.executor.life/api/v1/upload/files/chat/705/meal.jpg?signature=signed',
+      expect.stringMatching(/^file:\/\/\/cache\/reva-local-image-[a-z0-9]+\.jpg$/),
+      { headers: { Authorization: 'Bearer token' } },
+    );
+    const localUri = (FileSystem.downloadAsync as jest.Mock).mock.calls[0][1] as string;
+    expect(localUri).not.toContain('diet-705');
+    expect(localUri).not.toContain('/705/');
+    expect(materialized.uri).toBe(localUri);
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalled();
+
+    await materialized.cleanup();
+
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(
+      localUri,
+      { idempotent: true },
+    );
+  });
+
+  it('rejects authentication headers for an external origin before downloading', async () => {
+    await expect(materializeImageForLocalUse(
+      'https://cdn.example.invalid/private/meal.jpg',
+      { headers: { Authorization: 'Bearer token' }, cacheKey: 'diet-705' },
+    )).rejects.toThrow(/^image_materialization_headers_untrusted_origin$/);
+
+    expect(FileSystem.downloadAsync).not.toHaveBeenCalled();
+  });
+
+  it('rejects URL userinfo before downloading even without headers', async () => {
+    await expect(materializeImageForLocalUse(
+      'https://user:password@health.executor.life/private/meal.jpg',
+    )).rejects.toThrow(/^image_materialization_url_credentials_forbidden$/);
+
+    expect(FileSystem.downloadAsync).not.toHaveBeenCalled();
+  });
+
+  it('creates isolated artifacts for concurrent calls with the same cache key', async () => {
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+    try {
+      const [first, second] = await Promise.all([
+        materializeImageForLocalUse(
+          'https://health.executor.life/public/meal.jpg',
+          { cacheKey: 'diet-705' },
+        ),
+        materializeImageForLocalUse(
+          'https://health.executor.life/public/meal.jpg',
+          { cacheKey: 'diet-705' },
+        ),
+      ]);
+
+      expect(first.uri).not.toBe(second.uri);
+      expect(first.uri).not.toContain('diet-705');
+      expect(second.uri).not.toContain('diet-705');
+
+      await first.cleanup();
+      await second.cleanup();
+
+      expect(FileSystem.deleteAsync).toHaveBeenCalledWith(first.uri, { idempotent: true });
+      expect(FileSystem.deleteAsync).toHaveBeenCalledWith(second.uri, { idempotent: true });
+      expect(FileSystem.deleteAsync).toHaveBeenCalledTimes(2);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('cleans up a partial download and throws for a non-success status', async () => {
+    (FileSystem.downloadAsync as jest.Mock).mockResolvedValueOnce({
+      uri: 'file:///cache/reva-local-image-broken.jpg',
+      status: 403,
+    });
+
+    await expect(materializeImageForLocalUse(
+      'https://health.executor.life/private/meal.jpg?secret=do-not-log',
+      { cacheKey: 'broken' },
+    )).rejects.toThrow('image_materialization_download_failed');
+
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(
+      'file:///cache/reva-local-image-broken.jpg',
+      { idempotent: true },
+    );
+  });
+
+  it('cleans up the planned partial file when download throws', async () => {
+    (FileSystem.downloadAsync as jest.Mock).mockRejectedValueOnce(new Error('connection reset'));
+
+    await expect(materializeImageForLocalUse(
+      'https://health.executor.life/private/meal.png?secret=do-not-log',
+      { cacheKey: 'interrupted' },
+    )).rejects.toThrow('image_materialization_download_failed');
+
+    const localUri = (FileSystem.downloadAsync as jest.Mock).mock.calls[0][1] as string;
+    expect(localUri).not.toContain('interrupted');
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(
+      localUri,
+      { idempotent: true },
+    );
+  });
+
+  it('reports both download and cleanup failure when a thrown download leaves an undeletable partial', async () => {
+    (FileSystem.downloadAsync as jest.Mock).mockRejectedValueOnce(new Error('connection reset'));
+    (FileSystem.deleteAsync as jest.Mock).mockRejectedValueOnce(new Error('private path unavailable'));
+
+    await expect(materializeImageForLocalUse(
+      'https://health.executor.life/private/meal.png?secret=do-not-expose',
+      { cacheKey: 'download-and-cleanup-fail' },
+    )).rejects.toThrow(/^image_materialization_download_failed_cleanup_failed$/);
+  });
+
+  it('reports both status and cleanup failure when a non-success download cannot be removed', async () => {
+    (FileSystem.downloadAsync as jest.Mock).mockResolvedValueOnce({
+      uri: 'file:///cache/non-success-partial.jpg',
+      status: 503,
+    });
+    (FileSystem.deleteAsync as jest.Mock).mockRejectedValueOnce(new Error('private path unavailable'));
+
+    await expect(materializeImageForLocalUse(
+      'https://health.executor.life/private/meal.jpg?secret=do-not-expose',
+      { cacheKey: 'status-and-cleanup-fail' },
+    )).rejects.toThrow(/^image_materialization_download_failed_cleanup_failed$/);
+  });
+
+  it('returns a local file URI with noop cleanup and no filesystem copy', async () => {
+    const materialized = await materializeImageForLocalUse('file:///tmp/diet-card.jpg');
+
+    expect(materialized.uri).toBe('file:///tmp/diet-card.jpg');
+    expect(FileSystem.downloadAsync).not.toHaveBeenCalled();
+
+    await materialized.cleanup();
+
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalled();
+  });
+
+  it('returns a bare absolute path unchanged with noop cleanup', async () => {
+    const materialized = await materializeImageForLocalUse('/private/tmp/diet-card.jpg');
+
+    expect(materialized.uri).toBe('/private/tmp/diet-card.jpg');
+    await materialized.cleanup();
+    expect(FileSystem.downloadAsync).not.toHaveBeenCalled();
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalled();
+  });
+
+  it('rejects empty and unsupported URIs without exposing the input', async () => {
+    await expect(materializeImageForLocalUse('')).rejects.toThrow('image_materialization_uri_missing');
+    await expect(materializeImageForLocalUse('content://private/photo.jpg'))
+      .rejects.toThrow('image_materialization_requires_file_or_https');
   });
 });
 

@@ -120,6 +120,7 @@ _KNOWN_ERROR_CODES = frozenset(
         "reconciliation_grace_period",
         "unsupported_reconciliation_resource",
         "operation_timestamp_missing",
+        "runtime_control_unavailable",
         "aigc_media_turn_disallows_health_write",
         "ambiguous_intent_requires_clarification",
         "manage_write_without_mutate_intent",

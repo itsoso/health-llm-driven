@@ -127,6 +127,10 @@ export interface StreamEvent {
   toolSuccess?: boolean;
   writeAttempted?: boolean;
   writeCompleted?: boolean;
+  writeOutcome?: 'verified' | 'rejected' | 'failed' | 'uncertain';
+  dispatchStarted?: boolean;
+  resubmitSafe?: boolean;
+  errorCode?: string;
   receipt?: WriteReceipt;
   // I Phase 2: health_record 时附 record_type + record_data 让前端能 sniff 录入摘要
   recordType?: string;
@@ -144,6 +148,9 @@ export interface StreamEvent {
   // 2026-06-12: 本轮调用的 Skill / 工具名 (后端 done.tools_used; 去重保序, 空 [])
   toolsUsed?: string[];
   completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
+  terminalRetryable?: boolean;
+  terminalErrorCode?: string;
+  retryMode?: 'retry_source';
   // SSE done 事件里的动态卡片，由 useChatEngine 交给 card registry 渲染。
   // health_evidence_manifest 以 health_evidence card.data 为 Mobile 唯一展示投影，
   // 不再复制一份可漂移的 UI 状态。
@@ -451,6 +458,20 @@ export async function* streamChat(
           ? parsed.data.write_attempted
           : undefined;
         const receipt = normalizeWriteReceipt(parsed.data?.receipt);
+        const writeOutcome = ['verified', 'rejected', 'failed', 'uncertain'].includes(
+          parsed.data?.write_outcome,
+        )
+          ? parsed.data.write_outcome as StreamEvent['writeOutcome']
+          : undefined;
+        const writeThought = writeOutcome === 'verified'
+          ? `已取得${label}`
+          : writeOutcome === 'rejected'
+            ? '记录信息需要补充'
+            : writeOutcome === 'uncertain'
+              ? '记录状态需要核对'
+              : writeOutcome === 'failed'
+                ? '记录未完成'
+                : undefined;
         // 工具结果是回合内的中间状态，失败后 Agent 仍可能纠正参数并重试成功。
         // 不把临时失败写进永久正文；整轮失败由后端终态文本或 error 事件呈现。
         return {
@@ -460,8 +481,18 @@ export async function* streamChat(
           toolSuccess: ok,
           ...(typeof writeAttempted === 'boolean' ? { writeAttempted } : {}),
           ...(typeof writeCompleted === 'boolean' ? { writeCompleted } : {}),
+          ...(writeOutcome ? { writeOutcome } : {}),
+          ...(typeof parsed.data?.dispatch_started === 'boolean'
+            ? { dispatchStarted: parsed.data.dispatch_started }
+            : {}),
+          ...(typeof parsed.data?.resubmit_safe === 'boolean'
+            ? { resubmitSafe: parsed.data.resubmit_safe }
+            : {}),
+          ...(typeof parsed.data?.error_code === 'string'
+            ? { errorCode: parsed.data.error_code }
+            : {}),
           ...(receipt ? { receipt } : {}),
-          thought: ok ? `已取得${label}` : `${label}暂时不可用`,
+          thought: writeThought ?? (ok ? `已取得${label}` : `${label}暂时不可用`),
           // I Phase 2: health_record 时后端附 record_type + record_data, 前端 sniff 录入摘要
           recordType: parsed.data?.record_type,
           recordData: parsed.data?.record_data,
@@ -508,6 +539,13 @@ export async function* streamChat(
           parsed.data?.write_receipts,
           parsed.data?.safety_alerts,
         );
+        const turnOutcome = parsed.data?.turn_outcome;
+        const recoveryAction = parsed.data?.recovery_action;
+        const retrySourceActive = Boolean(
+          turnOutcome?.retryable === true
+          && recoveryAction?.type === 'retry_source_turn'
+          && recoveryAction?.status === 'active'
+        );
         return {
           type: 'done',
           conversationId: parsed.data?.conversation_id,
@@ -525,6 +563,13 @@ export async function* streamChat(
           sourcesUsed: Array.isArray(parsed.data?.sources_used) ? parsed.data.sources_used : undefined,
           toolsUsed: Array.isArray(parsed.data?.tools_used) ? parsed.data.tools_used : undefined,
           completionStatus: parsed.data?.completion_status,
+          ...(typeof turnOutcome?.reason_code === 'string'
+            ? { terminalErrorCode: turnOutcome.reason_code }
+            : {}),
+          ...(turnOutcome && typeof turnOutcome === 'object'
+            ? { terminalRetryable: retrySourceActive }
+            : {}),
+          ...(retrySourceActive ? { retryMode: 'retry_source' as const } : {}),
           thinkingSteps: normalizeThinkingSteps(parsed.data?.thinking_steps),
           cards: Array.isArray(parsed.data?.cards) ? parsed.data.cards : undefined,
           writeReceipts: writeReceipts?.length ? writeReceipts : undefined,
@@ -631,7 +676,7 @@ export async function getConversationsPage({
 }
 
 /**
- * 兼容旧调用方 (voice-chat / useChatEngine 的 briefing 探测) — 取第一页 items。
+ * 兼容旧调用方 (voice-chat / useChatEngine 的最近会话探测) — 取第一页 items。
  * 失败时返回空数组 (保持历史行为: 这些调用方不处理异常)。
  */
 export async function getConversations(titleLike?: string): Promise<Conversation[]> {

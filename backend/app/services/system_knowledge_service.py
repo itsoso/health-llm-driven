@@ -4195,19 +4195,18 @@ def _configured_system_kb_artifact_dir(
 ) -> Path:
     if workspace not in {"release", "agent_package"}:
         raise ValueError(f"invalid dedao-kbase review workspace: {workspace}")
-    if settings.dedao_kbase_review_artifact_dir:
-        root = Path(settings.dedao_kbase_review_artifact_dir)
-    elif settings.system_kb_artifact_dir:
-        root = Path(settings.system_kb_artifact_dir)
-    else:
-        root = Path(__file__).resolve().parents[2] / "data" / "system_kb_v2_seed"
+    configured = (
+        settings.dedao_kbase_review_artifact_dir or ""
+    ).strip()
+    if not configured:
+        raise ValueError(
+            "DEDAO_KBASE_REVIEW_ARTIFACT_DIR is required for "
+            "the dedao-kbase review workspace"
+        )
+    root = Path(configured)
     release_root = root.expanduser().resolve()
     if workspace == "release":
         return release_root
-    if not settings.dedao_kbase_review_artifact_dir:
-        raise ValueError(
-            "DEDAO_KBASE_REVIEW_ARTIFACT_DIR is required for the Agent Package review workspace"
-        )
 
     agent_root = release_root / "agent-packages"
     resolved_agent_root = agent_root.resolve()

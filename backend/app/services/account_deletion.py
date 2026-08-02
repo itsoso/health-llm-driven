@@ -5,7 +5,6 @@ import hashlib
 import json
 import logging
 import re
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy import MetaData, Table, func, inspect, or_, select
@@ -15,6 +14,7 @@ from sqlalchemy.sql import and_, not_
 from app.database import Base
 from app.models.user import User
 from app.utils.redis_cache import get_redis_client
+from app.utils.runtime_data import upload_dir
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ _PRIVACY_AUDIT_ACTIONS = {
     "account_deletion_requested",
     "account_deletion_status_updated",
 }
-_UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads"
+_UPLOAD_ROOT = upload_dir()
 
 
 def _table(db: Session, table_name: str) -> Table:

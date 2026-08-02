@@ -9,6 +9,8 @@ import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
+from app.utils.runtime_data import runtime_data_path
+
 logger = logging.getLogger(__name__)
 
 # 尝试导入 chromadb
@@ -38,10 +40,14 @@ class VectorStoreService:
 
     def __init__(
         self,
-        persist_directory: str = "./data/knowledge_base",
+        persist_directory: Optional[str] = None,
         collection_name: str = "health_knowledge"
     ):
-        self.persist_directory = persist_directory
+        self.persist_directory = (
+            persist_directory
+            if persist_directory is not None
+            else str(runtime_data_path("knowledge_base"))
+        )
         self.collection_name = collection_name
         self.client = None
         self.collection = None

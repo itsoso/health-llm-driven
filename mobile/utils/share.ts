@@ -2,7 +2,7 @@ import { Platform, Share } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import api from '../services/api';
+import api, { BASE_URL } from '../services/api';
 
 interface SharePlainTextOptions {
   title?: string;
@@ -133,6 +133,16 @@ interface ImageFormat {
   uti: string;
 }
 
+interface MaterializeImageOptions {
+  headers?: Record<string, string>;
+  cacheKey?: string;
+}
+
+interface MaterializedImage {
+  uri: string;
+  cleanup: () => Promise<void>;
+}
+
 function imageFormat(uri: string, requestedMimeType?: string): ImageFormat {
   const mimeType = String(requestedMimeType || '').trim().toLowerCase();
   if (mimeType === 'image/png') return { extension: 'png', mimeType, uti: 'public.png' };
@@ -161,6 +171,45 @@ function imageDialogTitle(target?: ImageShareTarget): string {
   return '分享图片';
 }
 
+async function downloadImageToCache(
+  sourceUri: string,
+  localUri: string,
+  headers: Record<string, string> | undefined,
+  statusErrorCode: string,
+  preserveDownloadError: boolean,
+): Promise<MaterializedImage> {
+  let download;
+  try {
+    download = headers
+      ? await FileSystem.downloadAsync(sourceUri, localUri, { headers })
+      : await FileSystem.downloadAsync(sourceUri, localUri);
+  } catch (error) {
+    try {
+      await FileSystem.deleteAsync(localUri, { idempotent: true });
+    } catch {
+      throw new Error(`${statusErrorCode}_cleanup_failed`);
+    }
+    if (preserveDownloadError) throw error;
+    throw new Error(statusErrorCode);
+  }
+
+  const downloadedUri = download.uri || localUri;
+  const status = typeof download.status === 'number' ? download.status : 200;
+  if (status < 200 || status >= 300) {
+    try {
+      await FileSystem.deleteAsync(downloadedUri, { idempotent: true });
+    } catch {
+      throw new Error(`${statusErrorCode}_cleanup_failed`);
+    }
+    throw new Error(statusErrorCode);
+  }
+
+  return {
+    uri: downloadedUri,
+    cleanup: () => FileSystem.deleteAsync(downloadedUri, { idempotent: true }),
+  };
+}
+
 export async function shareImage(uri: string, options: ShareImageOptions = {}) {
   const sourceUri = String(uri || '').trim();
   if (!sourceUri) throw new Error('image_uri_missing');
@@ -176,26 +225,19 @@ export async function shareImage(uri: string, options: ShareImageOptions = {}) {
   }
 
   let localUri = isBareAbsolutePath ? `file://${sourceUri}` : sourceUri;
-  let cleanup = false;
+  let cleanup: (() => Promise<void>) | undefined;
   if (isRemote) {
     if (!FileSystem.cacheDirectory) throw new Error('image_share_cache_unavailable');
     localUri = `${FileSystem.cacheDirectory}reva-shared-image-${safeCacheKey(options.cacheKey)}.${format.extension}`;
-    let download;
-    try {
-      download = options.headers
-        ? await FileSystem.downloadAsync(sourceUri, localUri, { headers: options.headers })
-        : await FileSystem.downloadAsync(sourceUri, localUri);
-    } catch (error) {
-      await FileSystem.deleteAsync(localUri, { idempotent: true }).catch(() => {});
-      throw error;
-    }
-    const status = typeof download.status === 'number' ? download.status : 200;
-    if (status < 200 || status >= 300) {
-      await FileSystem.deleteAsync(localUri, { idempotent: true }).catch(() => {});
-      throw new Error('image_share_download_failed');
-    }
-    localUri = download.uri || localUri;
-    cleanup = true;
+    const materialized = await downloadImageToCache(
+      sourceUri,
+      localUri,
+      options.headers,
+      'image_share_download_failed',
+      true,
+    );
+    localUri = materialized.uri;
+    cleanup = materialized.cleanup;
   }
 
   try {
@@ -206,7 +248,7 @@ export async function shareImage(uri: string, options: ShareImageOptions = {}) {
     });
   } finally {
     if (cleanup) {
-      await FileSystem.deleteAsync(localUri, { idempotent: true }).catch((error) => {
+      await cleanup().catch((error) => {
         if (__DEV__) console.warn('[share] temporary image cleanup failed', error);
       });
     }
@@ -231,6 +273,79 @@ function safeCacheKey(value: string | undefined): string {
     .replace(/[^a-zA-Z0-9_-]+/g, '-')
     .replace(/^-+|-+$/g, '');
   return normalized.slice(0, 64) || String(Date.now());
+}
+
+let localImageArtifactSequence = 0;
+
+function nextOpaqueCacheKey(value: string | undefined): string {
+  localImageArtifactSequence += 1;
+  const nonce = `${Date.now().toString(36)}${localImageArtifactSequence.toString(36)}`;
+  const normalized = `${safeCacheKey(value)}-${nonce}`;
+  let hash = 2166136261;
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash ^= normalized.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `k${(hash >>> 0).toString(16).padStart(8, '0')}${nonce}`;
+}
+
+function assertMaterializeImageRemoteAllowed(
+  sourceUrl: URL,
+  headers: Record<string, string> | undefined,
+): void {
+  if (sourceUrl.username || sourceUrl.password) {
+    throw new Error('image_materialization_url_credentials_forbidden');
+  }
+  if (!headers || Object.keys(headers).length === 0) return;
+
+  let trustedUrl: URL;
+  try {
+    trustedUrl = new URL(BASE_URL);
+  } catch {
+    throw new Error('image_materialization_headers_untrusted_origin');
+  }
+  if (
+    trustedUrl.username
+    || trustedUrl.password
+    || sourceUrl.origin !== trustedUrl.origin
+  ) {
+    throw new Error('image_materialization_headers_untrusted_origin');
+  }
+}
+
+export async function materializeImageForLocalUse(
+  uri: string,
+  options: MaterializeImageOptions = {},
+): Promise<MaterializedImage> {
+  const sourceUri = String(uri || '').trim();
+  if (!sourceUri) throw new Error('image_materialization_uri_missing');
+
+  if (/^file:\/\//i.test(sourceUri) || sourceUri.startsWith('/')) {
+    return { uri: sourceUri, cleanup: async () => {} };
+  }
+  if (!/^https:\/\//i.test(sourceUri)) {
+    throw new Error('image_materialization_requires_file_or_https');
+  }
+  let sourceUrl: URL;
+  try {
+    sourceUrl = new URL(sourceUri);
+  } catch {
+    throw new Error('image_materialization_uri_invalid');
+  }
+  assertMaterializeImageRemoteAllowed(sourceUrl, options.headers);
+  if (!FileSystem.cacheDirectory) {
+    throw new Error('image_materialization_cache_unavailable');
+  }
+
+  const format = imageFormat(sourceUri);
+  const localUri = `${FileSystem.cacheDirectory}reva-local-image-${nextOpaqueCacheKey(options.cacheKey)}.${format.extension}`;
+  return downloadImageToCache(
+    sourceUri,
+    localUri,
+    options.headers,
+    'image_materialization_download_failed',
+    false,
+  );
 }
 
 export async function shareRemoteVideo(

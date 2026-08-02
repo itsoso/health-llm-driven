@@ -1,8 +1,13 @@
 import json
 
+import pytest
+
 from app.services.agent_executor import (
     _build_deterministic_simple_record_tool_call,
+    _enrich_simple_diet_goal_tool_calls,
+    _estimate_simple_diet_nutrition,
     _normalize_goal_guarded_tool_calls,
+    _simple_diet_nutrition_is_complete,
     _write_operation_fingerprint,
 )
 from app.services.agent_kernel.types import GoalSpec
@@ -29,6 +34,7 @@ def test_water_goal_replaces_model_amount_and_record_type_with_goal_payload():
         kind="simple_health_record",
         domain="water",
         operation="create",
+        target_date="2026-07-26",
         target_record_type="water",
         target_values=(("amount_ml", "500"),),
         requires_verification=True,
@@ -53,7 +59,7 @@ def test_water_goal_replaces_model_amount_and_record_type_with_goal_payload():
     assert function["name"] == "health_record"
     assert json.loads(function["arguments"]) == {
         "record_type": "water",
-        "data": {"amount": 500},
+        "data": {"amount": 500, "record_date": "2026-07-26"},
     }
 
 
@@ -482,11 +488,265 @@ def test_diet_goal_builds_deterministic_write_when_model_omits_tool_call():
     }
 
 
+@pytest.mark.asyncio
+async def test_diet_goal_server_fills_missing_nutrition_without_changing_food(
+    monkeypatch,
+):
+    goal = GoalSpec(
+        kind="simple_health_record",
+        domain="diet",
+        operation="create",
+        target_date="2026-08-02",
+        target_meal_types=("snack",),
+        target_record_type="diet",
+        target_values=(
+            ("meal_type", "snack"),
+            ("food_items", "一个桃子"),
+        ),
+        requires_verification=True,
+    )
+    calls = _normalize_goal_guarded_tool_calls(
+        [
+            _tool_call(
+                "peach-without-nutrition",
+                {
+                    "record_type": "diet",
+                    "data": {
+                        "meal_type": "snack",
+                        "food_items": "一个桃子",
+                    },
+                },
+            ),
+        ],
+        goal,
+    )
+    observed_foods = []
+
+    async def fake_estimate(food_items):
+        observed_foods.append(food_items)
+        return {
+            "calories": 58,
+            "protein": 1.4,
+            "carbs": 14,
+            "fat": 0.4,
+            "fiber": 2.3,
+        }
+
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        fake_estimate,
+    )
+
+    enriched, attempted = await _enrich_simple_diet_goal_tool_calls(
+        calls,
+        goal,
+        estimation_attempted=False,
+        runtime_write_blocked=False,
+    )
+
+    assert attempted is True
+    assert observed_foods == ["一个桃子"]
+    assert json.loads(enriched[0]["function"]["arguments"]) == {
+        "record_type": "diet",
+        "data": {
+            "record_date": "2026-08-02",
+            "meal_type": "snack",
+            "food_items": "一个桃子",
+            "source": "agent_text",
+            "calories": 58,
+            "protein": 1.4,
+            "carbs": 14,
+            "fat": 0.4,
+            "fiber": 2.3,
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_diet_goal_reuses_one_estimate_for_duplicate_canonical_calls(
+    monkeypatch,
+):
+    goal = GoalSpec(
+        kind="simple_health_record",
+        domain="diet",
+        operation="create",
+        target_date="2026-08-02",
+        target_meal_types=("snack",),
+        target_record_type="diet",
+        target_values=(("meal_type", "snack"), ("food_items", "一个桃子")),
+        requires_verification=True,
+    )
+    calls = _normalize_goal_guarded_tool_calls(
+        [
+            _tool_call(
+                call_id,
+                {
+                    "record_type": "diet",
+                    "data": {
+                        "meal_type": "snack",
+                        "food_items": "一个桃子",
+                    },
+                },
+            )
+            for call_id in ("duplicate-peach-a", "duplicate-peach-b")
+        ],
+        goal,
+    )
+    estimate_calls = []
+
+    async def fake_estimate(food_items):
+        estimate_calls.append(food_items)
+        return {
+            "calories": 58,
+            "protein": 1.4,
+            "carbs": 14,
+            "fat": 0.4,
+            "fiber": 2.3,
+        }
+
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        fake_estimate,
+    )
+
+    enriched, attempted = await _enrich_simple_diet_goal_tool_calls(
+        calls,
+        goal,
+        estimation_attempted=False,
+        runtime_write_blocked=False,
+    )
+
+    assert attempted is True
+    assert estimate_calls == ["一个桃子"]
+    assert len(enriched) == 2
+    assert (
+        json.loads(enriched[0]["function"]["arguments"])
+        == json.loads(enriched[1]["function"]["arguments"])
+    )
+
+
+@pytest.mark.asyncio
+async def test_diet_goal_does_not_estimate_while_runtime_write_is_blocked(
+    monkeypatch,
+):
+    goal = GoalSpec(
+        kind="simple_health_record",
+        domain="diet",
+        operation="create",
+        target_date="2026-08-02",
+        target_meal_types=("snack",),
+        target_record_type="diet",
+        target_values=(("meal_type", "snack"), ("food_items", "一个桃子")),
+        requires_verification=True,
+    )
+    calls = _normalize_goal_guarded_tool_calls(
+        [_tool_call("blocked-peach", {"record_type": "diet", "data": {}})],
+        goal,
+    )
+
+    async def fail_if_called(_food_items):
+        raise AssertionError("blocked writes must not call the nutrition provider")
+
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        fail_if_called,
+    )
+
+    unchanged, attempted = await _enrich_simple_diet_goal_tool_calls(
+        calls,
+        goal,
+        estimation_attempted=False,
+        runtime_write_blocked=True,
+    )
+
+    assert unchanged == calls
+    assert attempted is False
+
+
+@pytest.mark.parametrize(
+    "estimate",
+    [
+        {"calories": 58, "protein": 1.4, "carbs": 14, "fat": 0.4},
+        {
+            "calories": 58,
+            "protein": 1.4,
+            "carbs": 14,
+            "fat": 0.4,
+            "fiber": float("nan"),
+        },
+        {
+            "calories": 5001,
+            "protein": 1.4,
+            "carbs": 14,
+            "fat": 0.4,
+            "fiber": 2.3,
+        },
+        {
+            "calories": 58,
+            "protein": 0,
+            "carbs": 0,
+            "fat": 0,
+            "fiber": 2.3,
+        },
+    ],
+)
+def test_simple_diet_nutrition_rejects_incomplete_or_unbounded_estimates(estimate):
+    assert _simple_diet_nutrition_is_complete(estimate) is False
+
+
+def test_simple_diet_nutrition_accepts_alcohol_energy_with_zero_macros():
+    assert _simple_diet_nutrition_is_complete({
+        "calories": 105,
+        "protein": 0,
+        "carbs": 0,
+        "fat": 0,
+        "fiber": 0,
+        "alcohol_units": 1.5,
+    }) is True
+
+
+@pytest.mark.asyncio
+async def test_simple_diet_estimator_uses_sanitized_food_totals(monkeypatch):
+    def fake_estimate(_food_items):
+        return {
+            "success": True,
+            "foods": [{
+                "name": "桃子",
+                "quantity": "1个",
+                "calories": 58,
+                "protein": 1.4,
+                "carbs": 14,
+                "fat": 0.4,
+                "fiber": 2.3,
+            }],
+            # These untrusted aggregate fields must not bypass sanitization.
+            "total_calories": 4999,
+            "total_protein": 999,
+        }
+
+    monkeypatch.setattr(
+        "app.services.ai.food_recognition.food_recognition_service."
+        "estimate_nutrition_from_text",
+        fake_estimate,
+    )
+
+    estimate = await _estimate_simple_diet_nutrition("一个桃子")
+
+    assert estimate == {
+        "calories": 58.0,
+        "protein": 1.4,
+        "carbs": 14.0,
+        "fat": 0.4,
+        "fiber": 2.3,
+    }
+
+
 def test_equivalent_model_writes_share_one_canonical_fingerprint():
     goal = GoalSpec(
         kind="simple_health_record",
         domain="water",
         operation="create",
+        target_date="2026-07-26",
         target_record_type="water",
         target_values=(("amount_ml", "500"),),
         requires_verification=True,
@@ -512,6 +772,7 @@ def test_equivalent_model_writes_share_one_canonical_fingerprint():
     ]
 
     assert parsed[0] == parsed[1]
+    assert parsed[0]["data"]["record_date"] == "2026-07-26"
     assert (
         _write_operation_fingerprint("health_record", parsed[0])
         == _write_operation_fingerprint("health_record", parsed[1])

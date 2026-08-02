@@ -222,6 +222,18 @@ describe('ChatScreen', () => {
     mockShareImage.mockResolvedValue(undefined);
   });
 
+  it('renders an edge-to-edge root surface for the whole chat page', async () => {
+    const { getByTestId } = render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(mockFetchConversationStarters).toHaveBeenCalled();
+      expect(getByTestId('chat-edge-to-edge-root')).toBeTruthy();
+    });
+    const rootStyle = StyleSheet.flatten(getByTestId('chat-edge-to-edge-root').props.style);
+    expect(rootStyle.flex).toBe(1);
+    expect(rootStyle.backgroundColor).toBeTruthy();
+  });
+
   it('lets the reviewer save an image from the full-screen preview', async () => {
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
     mockMessages = [{
@@ -472,6 +484,7 @@ describe('ChatScreen', () => {
     mockActiveTurn = {
       phase: 'failed',
       recoverable: true,
+      retryMode: 'resubmit',
       label: '网络中断，已保留内容',
       errorCode: 'stream_request_failed',
       turnId: 'turn-current',
@@ -482,6 +495,43 @@ describe('ChatScreen', () => {
     expect(getByText('网络中断，已保留内容')).toBeTruthy();
     fireEvent.press(getByLabelText('重试上一轮'));
     await waitFor(() => expect(mockSendMessage).toHaveBeenCalledWith('查询今天饮食', null));
+  });
+
+  it('uses the server retry command instead of resubmitting a write request', async () => {
+    mockMessages = [{
+      id: 'u-write', role: 'user', content: '记录喝水 1200 毫升', sourceTurnId: 'turn-write',
+    }];
+    mockActiveTurn = {
+      phase: 'failed',
+      recoverable: true,
+      retryMode: 'retry_source',
+      label: '本轮未执行，可以安全重试',
+      errorCode: 'write_without_tool',
+      turnId: 'turn-write',
+    };
+
+    const view = render(<ChatScreen />);
+    fireEvent.press(view.getByLabelText('重试上一轮'));
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledWith('重试', null));
+    expect(mockSendMessage).not.toHaveBeenCalledWith('记录喝水 1200 毫升', null);
+  });
+
+  it('does not expose retry while an accepted turn is only awaiting server recovery', () => {
+    mockMessages = [{
+      id: 'u-recovering', role: 'user', content: '记录喝水 1200 毫升', sourceTurnId: 'turn-recovering',
+    }];
+    mockActiveTurn = {
+      phase: 'interrupted',
+      recoverable: true,
+      label: '连接中断，正在从服务端恢复',
+      errorCode: 'stream_transport_interrupted',
+      turnId: 'turn-recovering',
+    };
+
+    const view = render(<ChatScreen />);
+
+    expect(view.queryByLabelText('重试上一轮')).toBeNull();
   });
 
   it('queues structured health continuation while another turn is streaming', () => {
@@ -599,9 +649,15 @@ describe('ChatScreen', () => {
     };
 
     expect(styleOf(getByTestId('chat-header-surface')).minHeight).toBeLessThanOrEqual(40);
-    expect(styleOf(getByLabelText('新建对话')).width).toBe(42);
-    expect(styleOf(getByLabelText('对话历史')).width).toBe(42);
-    expect(styleOf(getByLabelText('更多会诊操作')).width).toBe(42);
+    expect(styleOf(getByLabelText('新建对话'))).toEqual(
+      expect.objectContaining({ width: 44, height: 44 }),
+    );
+    expect(styleOf(getByLabelText('对话历史'))).toEqual(
+      expect.objectContaining({ width: 44, height: 44 }),
+    );
+    expect(styleOf(getByLabelText('更多会诊操作'))).toEqual(
+      expect.objectContaining({ width: 44, height: 44 }),
+    );
     expect(minHitSlop(getByLabelText('新建对话'))).toBeGreaterThanOrEqual(8);
     expect(minHitSlop(getByLabelText('对话历史'))).toBeGreaterThanOrEqual(8);
     expect(minHitSlop(getByLabelText('更多会诊操作'))).toBeGreaterThanOrEqual(8);
@@ -695,9 +751,15 @@ describe('ChatScreen', () => {
     const headerSurface = StyleSheet.flatten(getByTestId('chat-header-surface').props.style);
     expect(headerSurface.minHeight).toBeLessThanOrEqual(42);
     expect(headerSurface.paddingVertical).toBeLessThanOrEqual(2);
-    expect(StyleSheet.flatten(getByLabelText('新建对话').props.style).width).toBe(42);
-    expect(StyleSheet.flatten(getByLabelText('对话历史').props.style).width).toBe(42);
-    expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style).width).toBe(42);
+    expect(StyleSheet.flatten(getByLabelText('新建对话').props.style)).toEqual(
+      expect.objectContaining({ width: 44, height: 44 }),
+    );
+    expect(StyleSheet.flatten(getByLabelText('对话历史').props.style)).toEqual(
+      expect.objectContaining({ width: 44, height: 44 }),
+    );
+    expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style)).toEqual(
+      expect.objectContaining({ width: 44, height: 44 }),
+    );
   });
 
   it('starts a new chat from a first-level header action', async () => {

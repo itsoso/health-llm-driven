@@ -1,4 +1,7 @@
 """系统健康度评分脚本测试 — scripts/system_health_score.py"""
+import json
+from pathlib import Path
+import subprocess
 from unittest.mock import patch, MagicMock
 
 import sys
@@ -14,6 +17,37 @@ from scripts.system_health_score import (
     calculate_health_score,
     FAIL_THRESHOLD,
 )
+
+
+def test_health_score_direct_script_resolves_backend_imports_without_pythonpath(
+    tmp_path: Path,
+):
+    script = Path(__file__).resolve().parents[1] / "scripts" / "system_health_score.py"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--skip-tests",
+            "--url",
+            "http://127.0.0.1:1",
+            "--json",
+        ],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "APP_ENV": "test",
+            "DATABASE_URL": "sqlite:///:memory:",
+            "PYTHONPATH": "",
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+
+    payload = json.loads(result.stdout)
+    circuit = payload["dimensions"]["agent_runtime_circuit"]
+    assert circuit["detail"] != "unavailable:ModuleNotFoundError:attempts=3"
 
 
 class TestScoreTests:
@@ -203,3 +237,172 @@ def test_agent_runtime_circuit_score_is_content_free(db, monkeypatch):
         "detail": "paused:reconciliation_detected:generation=1:ack=0",
         "healthy": False,
     }
+
+
+def _runtime_circuit_session(first_result):
+    session = MagicMock()
+    session.query.return_value.filter_by.return_value.first.side_effect = (
+        first_result
+        if isinstance(first_result, BaseException)
+        else None
+    )
+    if not isinstance(first_result, BaseException):
+        session.query.return_value.filter_by.return_value.first.return_value = (
+            first_result
+        )
+    return session
+
+
+def _runtime_circuit_state(
+    *,
+    status="active",
+    reason_code="none",
+    generation=1,
+    acknowledged_generation=1,
+):
+    state = MagicMock()
+    state.status = status
+    state.reason_code = reason_code
+    state.reconciliation_generation = generation
+    state.reconciliation_acknowledged_generation = acknowledged_generation
+    return state
+
+
+def test_agent_runtime_circuit_retries_transient_unavailable_and_closes_sessions(
+    monkeypatch,
+):
+    from app.services import agent_runtime_rollout
+
+    monkeypatch.setattr(agent_runtime_rollout, "runtime_control_enabled", lambda: True)
+    first = _runtime_circuit_session(
+        RuntimeError("postgresql://admin:secret@db.example/runtime")
+    )
+    second = _runtime_circuit_session(_runtime_circuit_state())
+    sessions = iter((first, second))
+    factory = MagicMock(side_effect=lambda: next(sessions))
+
+    with patch("scripts.system_health_score.time.sleep") as sleep:
+        result = score_agent_runtime_circuit(session_factory=factory)
+
+    assert result == {
+        "score": 0,
+        "detail": "active:none:generation=1:ack=1",
+        "healthy": True,
+    }
+    assert factory.call_count == 2
+    sleep.assert_called_once()
+    first.close.assert_called_once_with()
+    second.close.assert_called_once_with()
+
+
+def test_agent_runtime_circuit_persistent_unavailable_is_bounded_and_redacted(
+    monkeypatch,
+):
+    from app.services import agent_runtime_rollout
+
+    monkeypatch.setattr(agent_runtime_rollout, "runtime_control_enabled", lambda: True)
+    sessions = [
+        _runtime_circuit_session(
+            RuntimeError("postgresql://admin:secret@db.example/runtime")
+        )
+        for _ in range(3)
+    ]
+    factory = MagicMock(side_effect=iter(sessions))
+
+    with patch("scripts.system_health_score.time.sleep") as sleep:
+        result = score_agent_runtime_circuit(session_factory=factory)
+
+    assert result == {
+        "score": 0,
+        "detail": "unavailable:RuntimeError:attempts=3",
+        "healthy": False,
+    }
+    assert "secret" not in result["detail"]
+    assert "db.example" not in result["detail"]
+    assert factory.call_count == 3
+    assert sleep.call_count == 2
+    for session in sessions:
+        session.close.assert_called_once_with()
+
+
+def test_agent_runtime_circuit_close_failure_is_bounded_and_redacted(
+    monkeypatch,
+):
+    from app.services import agent_runtime_rollout
+
+    monkeypatch.setattr(agent_runtime_rollout, "runtime_control_enabled", lambda: True)
+    sessions = [
+        _runtime_circuit_session(_runtime_circuit_state())
+        for _ in range(3)
+    ]
+    for session in sessions:
+        session.close.side_effect = RuntimeError(
+            "postgresql://admin:close-secret@db.example/runtime"
+        )
+    factory = MagicMock(side_effect=iter(sessions))
+
+    with patch("scripts.system_health_score.time.sleep") as sleep:
+        result = score_agent_runtime_circuit(session_factory=factory)
+
+    assert result == {
+        "score": 0,
+        "detail": "unavailable:RuntimeError:attempts=3",
+        "healthy": False,
+    }
+    assert "close-secret" not in result["detail"]
+    assert "db.example" not in result["detail"]
+    assert factory.call_count == 3
+    assert sleep.call_count == 2
+    for session in sessions:
+        session.close.assert_called_once_with()
+
+
+def test_agent_runtime_circuit_paused_hard_fails_without_retry(monkeypatch):
+    from app.services import agent_runtime_rollout
+
+    monkeypatch.setattr(agent_runtime_rollout, "runtime_control_enabled", lambda: True)
+    session = _runtime_circuit_session(
+        _runtime_circuit_state(
+            status="paused",
+            reason_code="reconciliation_detected",
+            generation=2,
+            acknowledged_generation=1,
+        )
+    )
+    session.close.side_effect = RuntimeError(
+        "postgresql://admin:close-secret@db.example/runtime"
+    )
+    factory = MagicMock(return_value=session)
+
+    with patch("scripts.system_health_score.time.sleep") as sleep:
+        result = score_agent_runtime_circuit(session_factory=factory)
+
+    assert result == {
+        "score": 0,
+        "detail": "paused:reconciliation_detected:generation=2:ack=1",
+        "healthy": False,
+    }
+    factory.assert_called_once_with()
+    sleep.assert_not_called()
+    session.close.assert_called_once_with()
+
+
+def test_agent_runtime_circuit_generation_mismatch_hard_fails_without_retry(
+    monkeypatch,
+):
+    from app.services import agent_runtime_rollout
+
+    monkeypatch.setattr(agent_runtime_rollout, "runtime_control_enabled", lambda: True)
+    session = _runtime_circuit_session(
+        _runtime_circuit_state(generation=2, acknowledged_generation=1)
+    )
+    factory = MagicMock(return_value=session)
+
+    with patch("scripts.system_health_score.time.sleep") as sleep:
+        result = score_agent_runtime_circuit(session_factory=factory)
+
+    assert result["healthy"] is False
+    assert result["detail"] == "active:none:generation=2:ack=1"
+    factory.assert_called_once_with()
+    sleep.assert_not_called()
+    session.close.assert_called_once_with()

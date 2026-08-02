@@ -128,6 +128,21 @@ describe('ChatBubble 调用 Skill 展示 (透视面板)', () => {
     expect(queryByText('调用 Skill')).toBeNull();
   });
 
+  it('失败回合把 toolsUsed 明确标为尝试调用', () => {
+    const { getByText, getByLabelText, queryByText } = renderBubble({
+      id: 'assistant-failed-tool-attempt',
+      role: 'assistant',
+      content: '记录服务暂停，这次没有写入。',
+      streaming: false,
+      toolsUsed: ['health_record'],
+      completionStatus: 'error',
+    });
+
+    fireEvent.press(getByLabelText(EXPAND_LABEL));
+    expect(getByText('尝试调用 Skill')).toBeTruthy();
+    expect(queryByText('调用 Skill')).toBeNull();
+  });
+
   it('toolsUsed undefined → 不渲染', () => {
     const { queryByText, queryByLabelText } = renderBubble({
       id: 'assistant-undef-tools',

@@ -18,6 +18,7 @@ from app.models.agent_runtime import (
     AgentRuntimeRolloutState,
     AgentRun,
     AgentRunAttempt,
+    AgentRunEvent,
     AgentToolOperation,
 )
 
@@ -160,6 +161,9 @@ def rollout_public_configuration() -> dict[str, int | str]:
         "window_minutes": AgentRuntimeRolloutService._window_minutes(None),
         "min_terminal_runs": _rollout_minimum_terminal_runs(),
         "failure_rate_percent": _rollout_failure_rate_percent(),
+        "reconciliation_global_pause_threshold": (
+            _reconciliation_global_pause_threshold()
+        ),
     }
 
 
@@ -198,6 +202,8 @@ class AgentRuntimeRolloutService:
 
         try:
             state = self._get_or_create_state()
+            if state.status == "paused":
+                return self._paused_admission_decision(state, user_id)
         except SQLAlchemyError as exc:
             self.db.rollback()
             logger.warning(
@@ -205,8 +211,6 @@ class AgentRuntimeRolloutService:
                 type(exc).__name__,
             )
             return RuntimeAdmissionDecision(False, "circuit_unavailable")
-        if state.status == "paused":
-            return RuntimeAdmissionDecision(False, "circuit_paused")
         return selection
 
     def admit_run(
@@ -264,15 +268,28 @@ class AgentRuntimeRolloutService:
                 coordinator.create_or_resume_run(**values),
                 "existing_managed_turn",
             )
+        admission_reason = selection.reason
         if state.status == "paused":
-            self.db.commit()
-            return RuntimeRunAdmission(None, "circuit_paused")
+            try:
+                paused_decision = self._paused_admission_decision(state, user_id)
+            except SQLAlchemyError as exc:
+                self.db.rollback()
+                logger.warning(
+                    "Agent Runtime reconciliation scope unavailable; "
+                    "bypassing managed admission: error=%s",
+                    type(exc).__name__,
+                )
+                return RuntimeRunAdmission(None, "circuit_unavailable")
+            if not paused_decision.managed:
+                self.db.commit()
+                return RuntimeRunAdmission(None, paused_decision.reason)
+            admission_reason = paused_decision.reason
 
         # create_or_resume_run commits the Run in the same transaction, releasing
         # the circuit row lock only after admission is durable.
         return RuntimeRunAdmission(
             coordinator.create_or_resume_run(**values),
-            selection.reason,
+            admission_reason,
         )
 
     def get_state(self) -> AgentRuntimeRolloutState:
@@ -737,6 +754,73 @@ class AgentRuntimeRolloutService:
             is not None
         )
 
+    def _paused_admission_decision(
+        self,
+        state: AgentRuntimeRolloutState,
+        user_id: int,
+    ) -> RuntimeAdmissionDecision:
+        """Scope a reconciliation pause without weakening other circuit trips.
+
+        The query returns only user identifiers and is bounded by the configured
+        systemic threshold. No prompt, response, receipt payload, or health data
+        crosses this control-plane boundary.
+        """
+        if state.reason_code != "reconciliation_detected":
+            return RuntimeAdmissionDecision(False, "circuit_paused")
+
+        threshold = _reconciliation_global_pause_threshold()
+        unacknowledged = max(
+            0,
+            int(state.reconciliation_generation)
+            - int(state.reconciliation_acknowledged_generation),
+        )
+        if unacknowledged == 0:
+            return RuntimeAdmissionDecision(
+                True,
+                "scoped_reconciliation_admission",
+            )
+        total_reconciliation_events = int(
+            self.db.query(func.count(AgentRunEvent.id))
+            .filter(AgentRunEvent.event_name == "run.reconciliation_required")
+            .scalar()
+            or 0
+        )
+        if total_reconciliation_events != int(state.reconciliation_generation):
+            logger.error(
+                "Agent Runtime reconciliation generation and event ledger disagree; "
+                "keeping global pause"
+            )
+            return RuntimeAdmissionDecision(False, "circuit_paused")
+
+        # Generation allocation and this event are committed in the same
+        # state-row-locked transaction. Descending event IDs therefore match
+        # descending reconciliation generations. If retention ever breaks that
+        # invariant, the count check above keeps admission globally fail-closed.
+        recent_reconciliations = (
+            self.db.query(AgentRunEvent.run_id.label("run_id"))
+            .filter(AgentRunEvent.event_name == "run.reconciliation_required")
+            .order_by(AgentRunEvent.id.desc())
+            .limit(unacknowledged)
+            .subquery()
+        )
+        rows = (
+            self.db.query(AgentRun.user_id)
+            .join(
+                recent_reconciliations,
+                recent_reconciliations.c.run_id == AgentRun.run_id,
+            )
+            .filter(AgentRun.status == "reconciliation_required")
+            .distinct()
+            .limit(threshold)
+            .all()
+        )
+        affected_user_ids = {int(row[0]) for row in rows}
+        if int(user_id) in affected_user_ids:
+            return RuntimeAdmissionDecision(False, "circuit_paused")
+        if len(affected_user_ids) >= threshold:
+            return RuntimeAdmissionDecision(False, "circuit_paused")
+        return RuntimeAdmissionDecision(True, "scoped_reconciliation_admission")
+
     @staticmethod
     def _selection_decision(user_id: int) -> RuntimeAdmissionDecision:
         mode = runtime_mode()
@@ -853,4 +937,18 @@ def _rollout_failure_rate_percent() -> int:
     value = int(10 if configured is None else configured)
     if not 1 <= value <= 100:
         raise RolloutConfigurationError("invalid_rollout_failure_rate_percent")
+    return value
+
+
+def _reconciliation_global_pause_threshold() -> int:
+    configured = getattr(
+        settings,
+        "agent_runtime_reconciliation_global_pause_threshold",
+        2,
+    )
+    value = int(2 if configured is None else configured)
+    if not 1 <= value <= 100_000:
+        raise RolloutConfigurationError(
+            "invalid_reconciliation_global_pause_threshold"
+        )
     return value

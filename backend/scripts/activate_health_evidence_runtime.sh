@@ -79,6 +79,7 @@ PROCESS_UNITS=(
     celery-worker.service
     celery-beat.service
 )
+SERVICE_STABILITY_SECONDS=7
 SUCCESS_SENTINEL="HEALTH_EVIDENCE_ACTIVATION_OK commit=$EXPECTED_SHA flag=true health=passed auth_probe=passed score=passed contract=enabled services=active"
 ROLLBACK_SENTINEL="HEALTH_EVIDENCE_ACTIVATION_ROLLED_BACK commit=$EXPECTED_SHA flag=false health=passed contract=staged services=active"
 BLOCKED_SENTINEL="HEALTH_EVIDENCE_ACTIVATION_BLOCKED commit=$EXPECTED_SHA flag=unknown services=inactive containment=passed manual_intervention=required"
@@ -174,21 +175,311 @@ verify_flag_file() {
     ' "$env_file"
 }
 
+verify_root_owned_nonwritable() {
+    local path="$1"
+    local metadata
+    local mode
+
+    metadata="$(stat -c '%U:%G:%a' "$path")" || return 1
+    [[ "$metadata" =~ ^root:root:([0-7]{3,4})$ ]] || return 1
+    mode="${BASH_REMATCH[1]}"
+    (( (8#$mode & 8#022) == 0 ))
+}
+
+verify_git_metadata_trust() {
+    local git_config="$REPO_PATH/.git/config"
+    local git_dir="$REPO_PATH/.git"
+    local git_head="$git_dir/HEAD"
+    local main_ref="$git_dir/refs/heads/main"
+    local metadata_entry
+    local metadata_listing
+
+    [ "$(id -u)" = "0" ] || return 1
+    test -d "$REPO_PATH" || return 1
+    test ! -L "$REPO_PATH" || return 1
+    test -d "$git_dir" || return 1
+    test ! -L "$git_dir" || return 1
+    test -f "$git_config" || return 1
+    test ! -L "$git_config" || return 1
+    test ! -e "$git_dir/config.worktree" || return 1
+    test ! -e "$git_dir/objects/info/alternates" || return 1
+    test ! -e "$git_dir/objects/info/http-alternates" || return 1
+    test -f "$git_head" && test ! -L "$git_head" || return 1
+    test -f "$main_ref" && test ! -L "$main_ref" || return 1
+    test "$(/bin/cat "$git_head")" = "ref: refs/heads/main" || return 1
+    test "$(/bin/cat "$main_ref")" = "$EXPECTED_SHA" || return 1
+    verify_root_owned_nonwritable "$REPO_PATH" || return 1
+
+    umask 077
+    metadata_listing="$(
+        /usr/bin/mktemp /tmp/reva-health-git-metadata.XXXXXX
+    )" || return 1
+    if ! /usr/bin/find "$git_dir" -xdev -print0 >"$metadata_listing"; then
+        /bin/rm -f -- "$metadata_listing"
+        return 1
+    fi
+    while IFS= read -r -d '' metadata_entry; do
+        if test -L "$metadata_entry" ||
+            ! verify_root_owned_nonwritable "$metadata_entry"; then
+            /bin/rm -f -- "$metadata_listing"
+            return 1
+        fi
+    done <"$metadata_listing"
+    /bin/rm -f -- "$metadata_listing"
+}
+
+trusted_git() {
+    local git_dir="$REPO_PATH/.git"
+    local proof_git
+    local proof_root
+    local protected_config
+    local rc
+
+    umask 077
+    proof_root="$(
+        /usr/bin/mktemp -d /tmp/reva-health-git-proof.XXXXXX
+    )" || return 1
+    proof_git="$proof_root/git"
+    protected_config="$proof_root/global.config"
+    if ! /bin/mkdir -m 0700 -- \
+        "$proof_git" "$proof_git/objects" "$proof_git/refs" ||
+        ! printf '%s\n' "$EXPECTED_SHA" >"$proof_git/HEAD" ||
+        ! printf '%s\n' \
+            '[core]' \
+            '    repositoryformatversion = 0' \
+            '    filemode = true' \
+            '    bare = false' >"$proof_git/config" ||
+        ! printf '[safe]\n\tdirectory = %s\n' \
+            "$REPO_PATH" >"$protected_config" ||
+        ! /bin/chmod 0600 \
+            "$proof_git/HEAD" "$proof_git/config" "$protected_config"; then
+        /bin/rm -rf -- "$proof_root"
+        return 1
+    fi
+    if ! /usr/bin/env -i \
+        HOME=/nonexistent \
+        PATH=/usr/bin:/bin \
+        LC_ALL=C \
+        GIT_ATTR_NOSYSTEM=1 \
+        GIT_ALTERNATE_OBJECT_DIRECTORIES= \
+        GIT_CONFIG_NOSYSTEM=1 \
+        GIT_CONFIG_GLOBAL="$protected_config" \
+        GIT_OBJECT_DIRECTORY="$git_dir/objects" \
+        GIT_OPTIONAL_LOCKS=0 \
+        /usr/bin/git --no-optional-locks --no-replace-objects \
+        -c core.fsmonitor=false \
+        -c core.hooksPath=/dev/null \
+        --git-dir="$proof_git" \
+        --work-tree="$REPO_PATH" \
+        read-tree "$EXPECTED_SHA"; then
+        /bin/rm -rf -- "$proof_root"
+        return 1
+    fi
+    if /usr/bin/env -i \
+        HOME=/nonexistent \
+        PATH=/usr/bin:/bin \
+        LC_ALL=C \
+        GIT_ATTR_NOSYSTEM=1 \
+        GIT_ALTERNATE_OBJECT_DIRECTORIES= \
+        GIT_CONFIG_NOSYSTEM=1 \
+        GIT_CONFIG_GLOBAL="$protected_config" \
+        GIT_OBJECT_DIRECTORY="$git_dir/objects" \
+        GIT_OPTIONAL_LOCKS=0 \
+        /usr/bin/git --no-optional-locks --no-replace-objects \
+        -c core.fsmonitor=false \
+        -c core.hooksPath=/dev/null \
+        --git-dir="$proof_git" \
+        --work-tree="$REPO_PATH" \
+        "$@"; then
+        rc=0
+    else
+        rc=$?
+    fi
+    /bin/rm -rf -- "$proof_root"
+    return "$rc"
+}
+
+verify_tracked_worktree_trust() {
+    local component
+    local current
+    local listing
+    local parent
+    local relative
+    local target
+
+    umask 077
+    listing="$(
+        /usr/bin/mktemp /tmp/reva-health-tracked-paths.XXXXXX
+    )" || return 1
+    if ! trusted_git ls-files -z >"$listing"; then
+        /bin/rm -f -- "$listing"
+        return 1
+    fi
+    while IFS= read -r -d '' relative; do
+        [[ -n "$relative" && "$relative" != /* ]] || {
+            /bin/rm -f -- "$listing"
+            return 1
+        }
+        [[ "/$relative/" != *"/../"* && "/$relative/" != *"/./"* ]] || {
+            /bin/rm -f -- "$listing"
+            return 1
+        }
+        current="$REPO_PATH"
+        if [[ "$relative" = */* ]]; then
+            parent="${relative%/*}"
+            while [[ -n "$parent" ]]; do
+                component="${parent%%/*}"
+                [[ -n "$component" ]] || {
+                    /bin/rm -f -- "$listing"
+                    return 1
+                }
+                current="$current/$component"
+                test -d "$current" &&
+                    test ! -L "$current" &&
+                    verify_root_owned_nonwritable "$current" || {
+                    /bin/rm -f -- "$listing"
+                    return 1
+                }
+                if [[ "$parent" = "$component" ]]; then
+                    break
+                fi
+                parent="${parent#*/}"
+            done
+        fi
+        target="$REPO_PATH/$relative"
+        if test -L "$target"; then
+            :
+        elif test -f "$target" || test -d "$target"; then
+            verify_root_owned_nonwritable "$target" || {
+                /bin/rm -f -- "$listing"
+                return 1
+            }
+        else
+            /bin/rm -f -- "$listing"
+            return 1
+        fi
+    done <"$listing"
+    /bin/rm -f -- "$listing"
+}
+
 verify_repo_revision() {
-    test "$(git -C "$REPO_PATH" rev-parse HEAD)" = "$EXPECTED_SHA" &&
-        test -z "$(
-            git -C "$REPO_PATH" status --porcelain --untracked-files=all
-        )"
+    local actual_sha
+    local status_output
+
+    if ! verify_git_metadata_trust; then
+        echo "release revision proof failed: git metadata trust" >&2
+        return 1
+    fi
+    if ! actual_sha="$(trusted_git rev-parse HEAD)"; then
+        echo "release revision proof failed: isolated HEAD read" >&2
+        return 1
+    fi
+    if test "$actual_sha" != "$EXPECTED_SHA"; then
+        echo "release revision proof failed: unexpected HEAD" >&2
+        return 1
+    fi
+    if ! verify_tracked_worktree_trust; then
+        echo "release revision proof failed: tracked path trust" >&2
+        return 1
+    fi
+    status_output="$(
+        trusted_git status --porcelain --untracked-files=all
+    )" || {
+        echo "release revision proof failed: isolated status" >&2
+        return 1
+    }
+    if test -n "$status_output"; then
+        echo "release revision proof failed: worktree is not clean" >&2
+        return 1
+    fi
 }
 
 verify_services_active() {
+    local phase
     local unit
-    local state
-    for unit in "${SERVICES[@]}"; do
-        state="$(
-            systemctl show "$unit" --property=ActiveState --value 2>/dev/null
-        )" || return 1
-        [ "$state" = "active" ] || return 1
+    local active_state
+    local sub_state
+    local result
+    local main_pid
+    local restart_count
+    local enter_timestamp
+    local process_index
+    local stable_main_pid=()
+    local stable_restart_count=()
+    local stable_enter_timestamp=()
+    local stable_socket_sub_state=""
+
+    for phase in record compare; do
+        process_index=0
+        for unit in "${SERVICES[@]}"; do
+            active_state="$(
+                systemctl show "$unit" --property=ActiveState --value \
+                    2>/dev/null
+            )" || return 1
+            sub_state="$(
+                systemctl show "$unit" --property=SubState --value \
+                    2>/dev/null
+            )" || return 1
+            result="$(
+                systemctl show "$unit" --property=Result --value \
+                    2>/dev/null
+            )" || return 1
+            [ "$active_state" = "active" ] || return 1
+            [ "$result" = "success" ] || return 1
+            if [ "$unit" = "health-backend.socket" ]; then
+                # systemd 249 uses "running" for an active bound socket;
+                # newer releases may use "listening". Require one of those
+                # ready states and require it to stay unchanged across the
+                # complete stability window.
+                case "$sub_state" in
+                    listening|running) ;;
+                    *) return 1 ;;
+                esac
+                if [ "$phase" = "record" ]; then
+                    stable_socket_sub_state="$sub_state"
+                else
+                    [ "$sub_state" = "$stable_socket_sub_state" ] ||
+                        return 1
+                fi
+                continue
+            fi
+            [ "$sub_state" = "running" ] || return 1
+            main_pid="$(
+                systemctl show "$unit" --property=MainPID --value \
+                    2>/dev/null
+            )" || return 1
+            restart_count="$(
+                systemctl show "$unit" --property=NRestarts --value \
+                    2>/dev/null
+            )" || return 1
+            enter_timestamp="$(
+                systemctl show "$unit" \
+                    --property=ActiveEnterTimestampMonotonic --value \
+                    2>/dev/null
+            )" || return 1
+            [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] || return 1
+            [ "$main_pid" -gt 1 ] || return 1
+            [[ "$restart_count" =~ ^[0-9]+$ ]] || return 1
+            [[ "$enter_timestamp" =~ ^[1-9][0-9]*$ ]] || return 1
+            if [ "$phase" = "record" ]; then
+                stable_main_pid[$process_index]="$main_pid"
+                stable_restart_count[$process_index]="$restart_count"
+                stable_enter_timestamp[$process_index]="$enter_timestamp"
+            else
+                [ "$main_pid" = \
+                    "${stable_main_pid[$process_index]}" ] || return 1
+                [ "$restart_count" = \
+                    "${stable_restart_count[$process_index]}" ] || return 1
+                [ "$enter_timestamp" = \
+                    "${stable_enter_timestamp[$process_index]}" ] || return 1
+            fi
+            process_index=$((process_index + 1))
+        done
+        if [ "$phase" = "record" ]; then
+            assert_release_lease || return 1
+            sleep "$SERVICE_STABILITY_SECONDS" || return 1
+            assert_release_lease || return 1
+        fi
     done
 }
 
@@ -667,9 +958,12 @@ write_state_file_atomically() {
         rm -f -- "$marker_tmp"
         return 1
     fi
-    if ! chmod 0600 "$marker_tmp" ||
+    if ! chmod 0400 "$marker_tmp" ||
         ! chown root:root "$marker_tmp" ||
-        ! mv -f -- "$marker_tmp" "$target_file"; then
+        ! sync -f "$marker_tmp" ||
+        ! mv -f -- "$marker_tmp" "$target_file" ||
+        ! sync -f "$target_file" ||
+        ! sync -f "$marker_dir"; then
         rm -f -- "$marker_tmp"
         return 1
     fi
@@ -766,21 +1060,34 @@ verify_enabled_marker_state() {
     verify_services_active || return 1
 }
 
+recover_step() {
+    local label="$1"
+    shift
+    if "$@"; then
+        return 0
+    fi
+    echo "guard recovery failed: step=$label" >&2
+    return 1
+}
+
 recover_guard() {
-    assert_release_lease || return 1
-    install_env_atomically "$GUARD_ENV" || return 1
-    verify_flag_file "$TARGET_ENV" false || return 1
-    cmp -s "$GUARD_ENV" "$TARGET_ENV" || return 1
-    remove_durable_enabled || return 1
-    remove_runtime_overrides || return 1
-    restart_services_in_order || return 1
-    assert_release_lease || return 1
-    verify_repo_revision || return 1
-    verify_service_process_flags false || return 1
-    wait_for_health || return 1
-    verify_runtime_contract staged persistent || return 1
-    assert_release_lease || return 1
-    verify_services_active || return 1
+    recover_step release-lease-before-guard assert_release_lease || return 1
+    recover_step install-guard install_env_atomically "$GUARD_ENV" || return 1
+    recover_step verify-guard-flag \
+        verify_flag_file "$TARGET_ENV" false || return 1
+    recover_step verify-guard-bytes \
+        cmp -s "$GUARD_ENV" "$TARGET_ENV" || return 1
+    recover_step revoke-durable remove_durable_enabled || return 1
+    recover_step remove-runtime-overrides remove_runtime_overrides || return 1
+    recover_step restart-services restart_services_in_order || return 1
+    recover_step release-lease-after-restart assert_release_lease || return 1
+    recover_step revision-proof verify_repo_revision || return 1
+    recover_step process-flags verify_service_process_flags false || return 1
+    recover_step health wait_for_health || return 1
+    recover_step staged-contract \
+        verify_runtime_contract staged persistent || return 1
+    recover_step release-lease-final assert_release_lease || return 1
+    recover_step services-active verify_services_active
 }
 
 ACTIVATION_COMPLETE=0

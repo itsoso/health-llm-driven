@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Optional
 from urllib.request import urlopen, Request
 
+from app.utils.runtime_data import is_production, skills_hub_cache_dir
+
 logger = logging.getLogger(__name__)
 
 SKILLS_DIR = Path(__file__).parent.parent.parent / "skills"
@@ -20,17 +22,15 @@ class SkillsHubClient:
     GITHUB_RAW_BASE = "https://raw.githubusercontent.com"
     GITHUB_API_BASE = "https://api.github.com"
 
-    # 本地缓存目录
-    CACHE_DIR = Path.home() / ".health-skills-cache"
     CACHE_TTL = 86400  # 24 小时缓存
 
     def __init__(self, hub_repo: Optional[str] = None):
         self.hub_repo = hub_repo or self.DEFAULT_HUB_REPO
-        self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        self.CACHE_DIR = skills_hub_cache_dir()
 
     def get_taxonomy(self) -> dict:
         """获取 Hub 的技能分类（taxonomy.yaml）"""
-        cache_file = self.CACHE_DIR / "taxonomy.json"
+        cache_file = self._cache_file("taxonomy.json")
         if self._is_cache_valid(cache_file):
             return json.loads(cache_file.read_text(encoding="utf-8"))
 
@@ -88,7 +88,7 @@ class SkillsHubClient:
 
     def fetch_skill(self, domain: str, skill_name: str) -> Optional[str]:
         """从 Hub 获取单个 Skill 的 SKILL.md 内容"""
-        cache_file = self.CACHE_DIR / f"{domain}_{skill_name}.md"
+        cache_file = self._cache_file(f"{domain}_{skill_name}.md")
         if self._is_cache_valid(cache_file):
             return cache_file.read_text(encoding="utf-8")
 
@@ -105,6 +105,12 @@ class SkillsHubClient:
 
     def install_skill(self, domain: str, skill_name: str) -> dict:
         """从 Hub 安装 Skill 到本地 skills 目录"""
+        if is_production():
+            return {
+                "success": False,
+                "error": "hub_skill_mutation_disabled",
+            }
+
         # 检查是否已存在
         local_dir = SKILLS_DIR / skill_name
         if local_dir.exists():
@@ -142,6 +148,12 @@ class SkillsHubClient:
 
     def uninstall_skill(self, skill_name: str) -> dict:
         """卸载 Hub 安装的 Skill（仅允许删除 Hub 来源的）"""
+        if is_production():
+            return {
+                "success": False,
+                "error": "hub_skill_mutation_disabled",
+            }
+
         local_dir = SKILLS_DIR / skill_name
         if not local_dir.exists():
             return {"success": False, "error": f"Skill {skill_name} 不存在"}
@@ -174,6 +186,10 @@ class SkillsHubClient:
         return results
 
     # ---- 内部方法 ----
+
+    def _cache_file(self, name: str) -> Path:
+        self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        return self.CACHE_DIR / name
 
     def _fetch_url(self, url: str, timeout: int = 15) -> str:
         """获取 URL 内容"""

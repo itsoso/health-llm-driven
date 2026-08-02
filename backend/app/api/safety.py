@@ -21,6 +21,7 @@ from app.agents.safety_guardian import evaluate_safety
 from app.agents.safety_guardian.cache import safety_report_cache_key
 from app.agents.safety_guardian.engine import registry
 from app.api.deps import get_current_user_required
+from app.api.knowledge import _ensure_legacy_knowledge_runtime_enabled
 from app.database import get_db
 from app.models.user import User
 from app.twin.builder import build_twin
@@ -262,8 +263,17 @@ def list_dismissed(
 def build_knowledge_index(
     force: bool = Query(False),
     current_user: User = Depends(get_current_user_required),
+    _legacy_runtime: None = Depends(
+        _ensure_legacy_knowledge_runtime_enabled
+    ),
 ):
     """触发知识库索引构建（得到 wiki → ChromaDB）。"""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="只有管理员可以重建旧知识索引",
+        )
+
     try:
         from app.agents.knowledge_librarian.indexer import build_index
 

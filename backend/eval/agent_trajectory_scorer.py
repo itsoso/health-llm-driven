@@ -443,7 +443,7 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
         and (not expected_record_type or _record_type(call) == expected_record_type)
     ]
     expected_values = expected.get("target_values") or {}
-    if target_meals:
+    if target_meals and expected_operation == "update":
         target_effects = exact_target_updates
     elif expected_operation in _WRITE_OPERATIONS:
         matching_writes = [

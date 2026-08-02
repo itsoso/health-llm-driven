@@ -14,7 +14,6 @@ import logging
 import os
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Awaitable, Callable, Literal
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -48,6 +47,7 @@ from app.services.chat_utils import (
 from app.services.private_uploads import build_signed_private_upload_url
 from app.services.aigc_media_policy import AIGCMediaPolicyError, validate_aigc_media_policy
 from app.services.tenant_crypto import decrypt_aigc_confirmation_for, encrypt_aigc_confirmation_for
+from app.utils.runtime_data import upload_dir
 
 
 logger = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ AIGC_SAFE_RETRY_ERROR_CODES = frozenset(
         "missing_provider_task",
     }
 )
-_AIGC_UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads" / "aigc"
+_AIGC_UPLOAD_ROOT = upload_dir() / "aigc"
 _MAX_IMAGE_RESULT_BYTES = 20 * 1024 * 1024
 _MAX_VIDEO_RESULT_BYTES = 100 * 1024 * 1024
 # A creation card is part of durable chat history, so a 10-minute lifetime made
