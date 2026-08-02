@@ -230,4 +230,3 @@ None for the first slice. Structured promotion from clinician feedback into a
 | Date | Change | Reason |
 |---|---|---|
 | 2026-07-30 | Initial accepted spec | User approved understand-only by default and explicit-save persistence. |
-

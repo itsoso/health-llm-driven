@@ -4,8 +4,8 @@
 |---|---|
 | slug | `clinician-attributed-context` |
 | 创建日期 | 2026-07-30 |
-| 当前阶段 | S4 研发任务分解 |
-| 状态 | building |
+| 当前阶段 | S5 实现收口 / 合并前验证 |
+| 状态 | verifying |
 | 负责 | Codex |
 | 反馈环 | backend deploy |
 
@@ -103,6 +103,26 @@
     `根据/依据/按照 + clinician basis + mutation` 统一非写并提示用户把操作
     单独重述；独立 mutation 和显式 doctor-feedback save 语义不变。
   - 用户裁决：2026-08-01 明确批准上述安全收紧。
+- [x] Correction Block 7
+  - 触发：窄 guard 首轮端到端实现后，独立复审发现“已保存但不代表 Reva
+    诊断”仍能掩盖虚假写入声明，且敬语、条件句和硬分句后的 clinician-basis
+    mutation 可绕过 fail-closed。
+  - 根因：授权判断仍依赖外层句式枚举，false-save backstop 只看局部模板；
+    未形成统一的语义优先级和 turn-level 写入事实源。
+  - 修正：引入 clause-local canonical representation；clinician guard 先于
+    legacy classifier，typed receipt 成为唯一成功事实源；stream token、落库
+    assistant message 和 done message 共用同一条 false-save backstop。
+  - 裁决：裸医生陈述和普通咨询保持只读；clinician-basis mutation 统一要求
+    用户另发独立操作命令。
+- [x] Correction Block 8
+  - 触发：Unicode 安全复审发现控制符、私用区和未分配码点可插入来源词或
+    outer command/object；同时有效显式保存正文被二次混淆扫描误拒。
+  - 根因：canonical view 采用黑名单过滤，且“写入信封”和用户提供的医疗正文
+    没有先后分层。
+  - 修正：NFKC 后 canonical view 只保留 Unicode `L*`/`N*`，其余字符作为
+    gap 并保留 raw offset；只有 outer envelope 完整证明后，保存正文才对通用
+    混淆扫描不透明，outer command/object 和复合动作仍 fail-closed。
+  - 裁决：`97f26b55f` 经独立规格与质量双审均 GO，Critical 0、Important 0。
 
 ## S0 · 用户需求（逐字）
 
@@ -196,22 +216,52 @@
 ## S5 · 实现
 
 - 分支：`codex/clinical-context-intelligence`，从 `origin/main@b8164308f` 创建。
-- 已完成 Task 1A：typed primitives、span/order invariants。
-- Task 1B：v2 最终 HEAD `2a8f57b07` 通过规格、未通过质量 Gate；正在按
-  v3 authorization-proof correction 重做，不能作为 Task 1C 输入。
+- Health Harness Run Ledger：`docs/_generated/harness-runs/57c7b7e8a387.jsonl`
+  （本地运行追踪，不提交原始 JSONL）。
+- T1 已完成：`ClinicianProvenanceGuard` 在宽泛 symptom/mutation classifier
+  前裁决医生来源语义；裸陈述只理解，显式反馈保存走窄 typed envelope，
+  clinician-basis mutation 要求另发独立命令。
+- T2 已完成：注册 `record_doctor_feedback`、capability gate、tool registry 与
+  verified `clinical_journal_entry` receipt；每 turn 最多一次 typed write。
+- T3 已完成：owner-scoped adapter、候选集/快照一致性验证、rollback 和不含
+  原始医疗文本的日志契约。
+- T4 已完成：最近医生反馈以“用户转述的医生意见”进入完整 health context；
+  cache invalidation 避免成功写入后召回旧上下文。
+- T5 已完成：提示词、streaming、持久化 assistant message 与 done message
+  使用同一写入事实；无 verified receipt 时禁止宣称已记录。
+- T6 已完成：截图原句、显式保存、普通咨询、复合动作、Unicode gap、owner
+  isolation、rollback、receipt freshness 与 Health Evidence 优先级均有回归覆盖。
+- 当前实现 HEAD：`97f26b55f`。药物 Health Evidence 域未扩张；正式 golden
+  pack 仍只覆盖既有 low-back 场景，药物风险问题走可靠普通分析路径。
+- 独立审查：规格 reviewer GO（Critical 0 / Important 0，`1986 passed`）；
+  医疗质量 reviewer GO（Critical 0 / Important 0，相关套件合计
+  `2030 passed`）。
 
 ## G3 · 测试闸
 
 - 基线：CI 模式相关测试 `158 passed`。
-- 增量 / 集成闸：待实现后填写。
+- 实现 HEAD `97f26b55f`：扩展相关回归 `1986 passed, 7 warnings`；独立质量
+  reviewer 分组复核合计 `2030 passed`。
+- Ruff、`py_compile`、fixture JSON、`git diff --check`、pre-commit：通过。
+- 最后一次 live Health Harness（`b00d7707a`）：invariants `12/12`、
+  health-agent-core `50/50`、live orchestrator `5/5`（平均分 `0.96`）、
+  trajectory contract `12/12`、trajectory goldens `9/9`、path-sensitive
+  confirmation：通过。最终合并最新主干后将重跑。
+- 非阻塞本地环境提示：live gate 所用本地 `llm_usage_logs` 缺少
+  `error_class` / `cached_tokens` 列，usage logging/quota guard fail-soft；模型
+  调用和 gate 本身成功。生产部署前仍以部署健康与 smoke 为准。
 - main CI 真实色：待部署前检查。
-- 裁决：待定。
+- 裁决：预合并 PASS；待合并后最终确认。
 
 ## G4 · 安全闸
 
 - 触发：医疗来源文本 + 新健康写路径。
-- 评审：实现 commit 后执行 safety-gate。
-- 裁决：待定。
+- 独立规格评审：GO（Critical 0、Important 0）。
+- 独立医疗质量/隐私评审：GO（Critical 0、Important 0）。
+- 已验证边界：只有明确保存才写入；普通陈述/咨询零写入；原始 assessment
+  保留、来源不升级为 Reva 诊断；owner isolation、rollback、verified receipt、
+  日志隐私与 false-save backstop 均通过。
+- 裁决：PASS（2026-08-01，HEAD `97f26b55f`）。
 
 ## S6 · 部署
 
