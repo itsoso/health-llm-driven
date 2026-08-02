@@ -1,3 +1,4 @@
+/* eslint-disable import/first */
 import React from 'react';
 import { AppState, Text } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
@@ -13,9 +14,16 @@ jest.mock('../../services/api', () => ({
 
 jest.mock('../../services/auth', () => ({
   login: jest.fn(),
+  loginByPhoneCode: jest.fn(),
+  verifyPhoneCode: jest.fn(),
+  completeInvitedRegistration: jest.fn(),
   logout: jest.fn(),
   getToken: jest.fn(),
   fetchCurrentUser: jest.fn(),
+  loadPendingRegistration: jest.fn(),
+  isAuthOperationSuperseded: (error: unknown) => (
+    (error as { name?: string } | null)?.name === 'AuthOperationSuperseded'
+  ),
 }));
 
 jest.mock('../../services/authSessionMarker', () => ({
@@ -34,7 +42,15 @@ jest.mock('../../modules/shared-keychain', () => ({
 }));
 
 import { AuthProvider, useAuth } from '../useAuth';
-import { getToken, fetchCurrentUser, logout } from '../../services/auth';
+import {
+  completeInvitedRegistration,
+  fetchCurrentUser,
+  getToken,
+  login,
+  loadPendingRegistration,
+  logout,
+  verifyPhoneCode,
+} from '../../services/auth';
 
 function Probe() {
   const auth = useAuth();
@@ -52,6 +68,13 @@ function Probe() {
               : 'guest'}
       </Text>
       <Text testID="logout" onPress={() => void auth.logout()}>logout</Text>
+      <Text testID="retry" onPress={() => void auth.retrySession().catch(() => {})}>retry</Text>
+      <Text testID="login" onPress={() => void auth.login('alice', 'hunter2').catch(() => {})}>login</Text>
+      <Text testID="verify" onPress={() => void auth.verifyPhoneCode('13800138000', '123456').catch(() => {})}>verify</Text>
+      <Text testID="verify-2" onPress={() => void auth.verifyPhoneCode('13900139000', '654321').catch(() => {})}>verify-2</Text>
+      <Text testID="complete" onPress={() => void auth.completeInvitedRegistration({ manualCode: 'ABCD2345' }).catch(() => {})}>complete</Text>
+      <Text testID="pending">{auth.pendingRegistration ? 'pending' : 'no-pending'}</Text>
+      <Text testID="pending-metadata">{JSON.stringify(auth.pendingRegistration)}</Text>
     </>
   );
 }
@@ -64,11 +87,32 @@ describe('useAuth update resilience', () => {
     unauthorizedHandler = null;
     appStateHandler = null;
     mockHadPersistedSession = false;
+    (loadPendingRegistration as jest.Mock).mockResolvedValue(null);
     jest.spyOn(AppState, 'addEventListener').mockImplementation(((_type: string, handler: (state: string) => void) => {
       appStateHandler = handler;
       return { remove: jest.fn() };
     }) as never);
   });
+
+  function makeSupersededError(): Error {
+    const error = new Error('auth operation superseded');
+    error.name = 'AuthOperationSuperseded';
+    return error;
+  }
+
+  function makeDeferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((done, fail) => {
+      resolve = done;
+      reject = fail;
+    });
+    return { promise, resolve, reject };
+  }
+
+  async function waitForUnauthorizedConfirmation(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 450));
+  }
 
   it('clears an expired saved token only after /auth/me confirms 401 twice', async () => {
     (getToken as jest.Mock).mockResolvedValueOnce('tok_saved');
@@ -253,5 +297,483 @@ describe('useAuth update resilience', () => {
     view.unmount();
 
     expect(unauthorizedHandler).toBeNull();
+  });
+
+  it('cancels hydration on unmount without logging out the durable session', async () => {
+    type GuardOptions = { isCurrent?: () => boolean };
+    const hydrationGate = makeDeferred<string>();
+    (getToken as jest.Mock).mockImplementation(async (options?: GuardOptions) => {
+      const token = await hydrationGate.promise;
+      if (!options?.isCurrent?.()) throw makeSupersededError();
+      return token;
+    });
+
+    const view = render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(getToken).toHaveBeenCalledTimes(1));
+    const guard = (getToken as jest.Mock).mock.calls[0][0]?.isCurrent;
+    expect(guard).toEqual(expect.any(Function));
+    view.unmount();
+    expect(guard()).toBe(false);
+    await act(async () => {
+      hydrationGate.resolve('tok_existing');
+    });
+
+    expect(logout).not.toHaveBeenCalled();
+  });
+
+  it('does not clear durable auth when initial /auth/me returns 401 after unmount', async () => {
+    const currentUserGate = makeDeferred<{ id: number; username: string }>();
+    (getToken as jest.Mock).mockResolvedValueOnce('tok_existing');
+    (fetchCurrentUser as jest.Mock).mockReturnValueOnce(currentUserGate.promise);
+
+    const view = render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(fetchCurrentUser).toHaveBeenCalledTimes(1));
+    view.unmount();
+    await act(async () => {
+      currentUserGate.reject({ response: { status: 401 } });
+      await waitForUnauthorizedConfirmation();
+    });
+
+    expect(fetchCurrentUser).toHaveBeenCalledTimes(1);
+    expect(logout).not.toHaveBeenCalled();
+  });
+
+  it('does not clear durable auth when retry /auth/me returns 401 after unmount', async () => {
+    const currentUserGate = makeDeferred<{ id: number; username: string }>();
+    (getToken as jest.Mock).mockResolvedValueOnce('tok_existing');
+    (fetchCurrentUser as jest.Mock).mockReturnValueOnce(currentUserGate.promise);
+
+    const view = render(
+      <AuthProvider restoreCloudSession={false}>
+        <Probe />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('guest'));
+    fireEvent.press(screen.getByTestId('retry'));
+    await waitFor(() => expect(fetchCurrentUser).toHaveBeenCalledTimes(1));
+    view.unmount();
+    await act(async () => {
+      currentUserGate.reject({ response: { status: 401 } });
+      await waitForUnauthorizedConfirmation();
+    });
+
+    expect(fetchCurrentUser).toHaveBeenCalledTimes(1);
+    expect(logout).not.toHaveBeenCalled();
+  });
+
+  it('stops an old hydration 401 after a newer login supersedes its epoch', async () => {
+    const currentUserGate = makeDeferred<{ id: number; username: string }>();
+    (getToken as jest.Mock).mockResolvedValueOnce('tok_existing');
+    (fetchCurrentUser as jest.Mock).mockReturnValueOnce(currentUserGate.promise);
+    (login as jest.Mock).mockResolvedValue({
+      access_token: 'tok_new_login',
+      token_type: 'bearer',
+      user: { id: 7, username: 'alice' },
+    });
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(fetchCurrentUser).toHaveBeenCalledTimes(1));
+    fireEvent.press(screen.getByTestId('login'));
+    await waitFor(() => expect(login).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      currentUserGate.reject({ response: { status: 401 } });
+      await waitForUnauthorizedConfirmation();
+    });
+
+    expect(fetchCurrentUser).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('auth+user'));
+    expect(logout).not.toHaveBeenCalled();
+  });
+
+  it('restores an unexpired pending registration during first-load hydration', async () => {
+    (getToken as jest.Mock).mockResolvedValue(null);
+    (loadPendingRegistration as jest.Mock).mockResolvedValue({
+      version: 1,
+      verifiedPhoneTicket: 'T'.repeat(32),
+      expiresAt: Date.now() + 300_000,
+      idempotencyKey: 'registration-1234567890abcdef',
+    });
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+
+    expect(screen.getByTestId('state')).toHaveTextContent('loading');
+    await waitFor(() => expect(screen.getByTestId('pending')).toHaveTextContent('pending'));
+    expect(screen.getByTestId('state')).toHaveTextContent('guest');
+    expect(screen.getByTestId('pending-metadata')).not.toHaveTextContent('verifiedPhoneTicket');
+    expect(screen.getByTestId('pending-metadata')).not.toHaveTextContent('idempotencyKey');
+  });
+
+  it('does not authenticate when verification requires an invitation', async () => {
+    const pending = {
+      version: 1 as const,
+      verifiedPhoneTicket: 'T'.repeat(32),
+      expiresAt: Date.now() + 300_000,
+      idempotencyKey: 'registration-1234567890abcdef',
+    };
+    (getToken as jest.Mock).mockResolvedValue(null);
+    (verifyPhoneCode as jest.Mock).mockResolvedValue({
+      outcome: 'invitation_required',
+      verified_phone_ticket: 'T'.repeat(32),
+      expires_in_seconds: 300,
+    });
+    (loadPendingRegistration as jest.Mock)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(pending);
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('guest'));
+    fireEvent.press(screen.getByTestId('verify'));
+
+    await waitFor(() => expect(screen.getByTestId('pending')).toHaveTextContent('pending'));
+    expect(screen.getByTestId('state')).toHaveTextContent('guest');
+  });
+
+  it('authenticates only after the verify service returns a durably persisted token', async () => {
+    (getToken as jest.Mock).mockResolvedValue(null);
+    (verifyPhoneCode as jest.Mock).mockResolvedValue({
+      outcome: 'authenticated',
+      access_token: 'tok_verified',
+      token_type: 'bearer',
+      is_new_user: false,
+      user: { id: 8, username: 'phone_8' },
+    });
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('guest'));
+    fireEvent.press(screen.getByTestId('verify'));
+
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('auth+user'));
+    expect(screen.getByTestId('pending')).toHaveTextContent('no-pending');
+  });
+
+  it('remains unauthenticated when secure pending persistence fails', async () => {
+    (getToken as jest.Mock).mockResolvedValue(null);
+    (verifyPhoneCode as jest.Mock).mockRejectedValue(
+      new Error('待注册状态无法安全保存，请解锁设备后重试'),
+    );
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('guest'));
+    fireEvent.press(screen.getByTestId('verify'));
+
+    await waitFor(() => expect(verifyPhoneCode).toHaveBeenCalled());
+    expect(screen.getByTestId('state')).toHaveTextContent('guest');
+    expect(screen.getByTestId('pending')).toHaveTextContent('no-pending');
+  });
+
+  it('moves from pending to authenticated only after invited registration completes', async () => {
+    const pending = {
+      version: 1 as const,
+      verifiedPhoneTicket: 'T'.repeat(32),
+      expiresAt: Date.now() + 300_000,
+      idempotencyKey: 'registration-1234567890abcdef',
+    };
+    (getToken as jest.Mock).mockResolvedValue(null);
+    (loadPendingRegistration as jest.Mock).mockResolvedValueOnce(pending);
+    (completeInvitedRegistration as jest.Mock).mockResolvedValue({
+      access_token: 'tok_invited',
+      token_type: 'bearer',
+      is_new_user: true,
+      user: { id: 9, username: 'phone_9' },
+    });
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('pending')).toHaveTextContent('pending'));
+    fireEvent.press(screen.getByTestId('complete'));
+
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('auth+user'));
+    expect(screen.getByTestId('pending')).toHaveTextContent('no-pending');
+  });
+
+  it('preserves pending state when invited registration fails so the code can be corrected', async () => {
+    const pending = {
+      version: 1 as const,
+      verifiedPhoneTicket: 'T'.repeat(32),
+      expiresAt: Date.now() + 300_000,
+      idempotencyKey: 'registration-1234567890abcdef',
+    };
+    (getToken as jest.Mock).mockResolvedValue(null);
+    (loadPendingRegistration as jest.Mock)
+      .mockResolvedValueOnce(pending)
+      .mockResolvedValueOnce(pending);
+    (completeInvitedRegistration as jest.Mock).mockRejectedValue(new Error('INVITATION_INVALID'));
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('pending')).toHaveTextContent('pending'));
+    fireEvent.press(screen.getByTestId('complete'));
+
+    await waitFor(() => expect(completeInvitedRegistration).toHaveBeenCalled());
+    expect(screen.getByTestId('state')).toHaveTextContent('guest');
+    expect(screen.getByTestId('pending')).toHaveTextContent('pending');
+  });
+
+  it('clears pending context state on logout', async () => {
+    (getToken as jest.Mock).mockResolvedValue(null);
+    (loadPendingRegistration as jest.Mock).mockResolvedValue({
+      version: 1,
+      verifiedPhoneTicket: 'T'.repeat(32),
+      expiresAt: Date.now() + 300_000,
+      idempotencyKey: 'registration-1234567890abcdef',
+    });
+    (logout as jest.Mock).mockResolvedValue(undefined);
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('pending')).toHaveTextContent('pending'));
+    fireEvent.press(screen.getByTestId('logout'));
+
+    await waitFor(() => expect(screen.getByTestId('pending')).toHaveTextContent('no-pending'));
+  });
+
+  it('supersedes a delayed verify response when logout starts', async () => {
+    type GuardOptions = { isCurrent: () => boolean };
+    const gate = makeDeferred<{
+      outcome: 'invitation_required';
+      verified_phone_ticket: string;
+      expires_in_seconds: number;
+    }>();
+    (getToken as jest.Mock).mockResolvedValue(null);
+    (logout as jest.Mock).mockResolvedValue(undefined);
+    (verifyPhoneCode as jest.Mock).mockImplementation(async (
+      _phone: string,
+      _code: string,
+      options?: GuardOptions,
+    ) => {
+      const result = await gate.promise;
+      if (!options?.isCurrent()) throw makeSupersededError();
+      return result;
+    });
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('guest'));
+    fireEvent.press(screen.getByTestId('verify'));
+    await waitFor(() => expect(verifyPhoneCode).toHaveBeenCalledTimes(1));
+    expect((verifyPhoneCode as jest.Mock).mock.calls[0][2]?.isCurrent).toEqual(expect.any(Function));
+    fireEvent.press(screen.getByTestId('logout'));
+    await act(async () => {
+      gate.resolve({
+        outcome: 'invitation_required',
+        verified_phone_ticket: 'T'.repeat(32),
+        expires_in_seconds: 300,
+      });
+    });
+
+    expect(screen.getByTestId('state')).toHaveTextContent('guest');
+    expect(screen.getByTestId('pending')).toHaveTextContent('no-pending');
+    expect(loadPendingRegistration).toHaveBeenCalledTimes(1);
+  });
+
+  it('supersedes a delayed completion when logout starts', async () => {
+    type GuardOptions = { isCurrent: () => boolean };
+    const pending = {
+      version: 1 as const,
+      verifiedPhoneTicket: 'T'.repeat(32),
+      expiresAt: Date.now() + 300_000,
+      idempotencyKey: 'registration-1234567890abcdef',
+    };
+    const gate = makeDeferred<{
+      access_token: string;
+      token_type: string;
+      is_new_user: boolean;
+      user: { id: number; username: string };
+    }>();
+    (getToken as jest.Mock).mockResolvedValue(null);
+    (loadPendingRegistration as jest.Mock).mockResolvedValueOnce(pending);
+    (logout as jest.Mock).mockResolvedValue(undefined);
+    (completeInvitedRegistration as jest.Mock).mockImplementation(async (
+      _credential: unknown,
+      options?: GuardOptions,
+    ) => {
+      const result = await gate.promise;
+      if (!options?.isCurrent()) throw makeSupersededError();
+      return result;
+    });
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('pending')).toHaveTextContent('pending'));
+    fireEvent.press(screen.getByTestId('complete'));
+    await waitFor(() => expect(completeInvitedRegistration).toHaveBeenCalledTimes(1));
+    expect((completeInvitedRegistration as jest.Mock).mock.calls[0][1]?.isCurrent)
+      .toEqual(expect.any(Function));
+    fireEvent.press(screen.getByTestId('logout'));
+    await act(async () => {
+      gate.resolve({
+        access_token: 'tok_stale_complete',
+        token_type: 'bearer',
+        is_new_user: true,
+        user: { id: 9, username: 'phone_9' },
+      });
+    });
+
+    expect(screen.getByTestId('state')).toHaveTextContent('guest');
+    expect(screen.getByTestId('pending')).toHaveTextContent('no-pending');
+  });
+
+  it('does not let an older verify response overwrite a newer successful login', async () => {
+    type GuardOptions = { isCurrent: () => boolean };
+    const gate = makeDeferred<{
+      outcome: 'invitation_required';
+      verified_phone_ticket: string;
+      expires_in_seconds: number;
+    }>();
+    const pending = {
+      version: 1 as const,
+      verifiedPhoneTicket: 'T'.repeat(32),
+      expiresAt: Date.now() + 300_000,
+      idempotencyKey: 'registration-1234567890abcdef',
+    };
+    (getToken as jest.Mock).mockResolvedValue(null);
+    (loadPendingRegistration as jest.Mock)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue(pending);
+    (login as jest.Mock).mockResolvedValue({
+      access_token: 'tok_new_login',
+      token_type: 'bearer',
+      user: { id: 7, username: 'alice' },
+    });
+    (verifyPhoneCode as jest.Mock).mockImplementation(async (
+      _phone: string,
+      _code: string,
+      options?: GuardOptions,
+    ) => {
+      const result = await gate.promise;
+      if (!options?.isCurrent()) throw makeSupersededError();
+      return result;
+    });
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('guest'));
+    fireEvent.press(screen.getByTestId('verify'));
+    await waitFor(() => expect(verifyPhoneCode).toHaveBeenCalledTimes(1));
+    expect((verifyPhoneCode as jest.Mock).mock.calls[0][2]?.isCurrent)
+      .toEqual(expect.any(Function));
+    fireEvent.press(screen.getByTestId('login'));
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('auth+user'));
+    await act(async () => {
+      gate.resolve({
+        outcome: 'invitation_required',
+        verified_phone_ticket: 'T'.repeat(32),
+        expires_in_seconds: 300,
+      });
+    });
+
+    expect(screen.getByTestId('state')).toHaveTextContent('auth+user');
+    expect(screen.getByTestId('pending')).toHaveTextContent('no-pending');
+  });
+
+  it('applies only the latest of two out-of-order phone verifications', async () => {
+    type GuardOptions = { isCurrent: () => boolean };
+    type Outcome = {
+      outcome: 'invitation_required';
+      verified_phone_ticket: string;
+      expires_in_seconds: number;
+    } | {
+      outcome: 'authenticated';
+      access_token: string;
+      token_type: string;
+      is_new_user: false;
+      user: { id: number; username: string };
+    };
+    const first = makeDeferred<Outcome>();
+    const second = makeDeferred<Outcome>();
+    (getToken as jest.Mock).mockResolvedValue(null);
+    (verifyPhoneCode as jest.Mock).mockImplementation(async (
+      phone: string,
+      _code: string,
+      options?: GuardOptions,
+    ) => {
+      const result = await (phone === '13800138000' ? first.promise : second.promise);
+      if (!options?.isCurrent()) throw makeSupersededError();
+      return result;
+    });
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('guest'));
+    fireEvent.press(screen.getByTestId('verify'));
+    fireEvent.press(screen.getByTestId('verify-2'));
+    await waitFor(() => expect(verifyPhoneCode).toHaveBeenCalledTimes(2));
+    expect((verifyPhoneCode as jest.Mock).mock.calls[0][2]?.isCurrent)
+      .toEqual(expect.any(Function));
+    expect((verifyPhoneCode as jest.Mock).mock.calls[1][2]?.isCurrent)
+      .toEqual(expect.any(Function));
+    await act(async () => {
+      second.resolve({
+        outcome: 'authenticated',
+        access_token: 'tok_latest',
+        token_type: 'bearer',
+        is_new_user: false,
+        user: { id: 10, username: 'latest' },
+      });
+    });
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('auth+user'));
+    await act(async () => {
+      first.resolve({
+        outcome: 'invitation_required',
+        verified_phone_ticket: 'T'.repeat(32),
+        expires_in_seconds: 300,
+      });
+    });
+
+    expect(screen.getByTestId('state')).toHaveTextContent('auth+user');
+    expect(screen.getByTestId('pending')).toHaveTextContent('no-pending');
+  });
+
+  it('does not restore an old pending payload after a newer login completes', async () => {
+    const pendingGate = makeDeferred<{
+      version: 1;
+      verifiedPhoneTicket: string;
+      expiresAt: number;
+      idempotencyKey: string;
+    }>();
+    (getToken as jest.Mock).mockResolvedValue(null);
+    (loadPendingRegistration as jest.Mock).mockReturnValueOnce(pendingGate.promise);
+    (login as jest.Mock).mockResolvedValue({
+      access_token: 'tok_new_login',
+      token_type: 'bearer',
+      user: { id: 7, username: 'alice' },
+    });
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(loadPendingRegistration).toHaveBeenCalledTimes(1));
+    fireEvent.press(screen.getByTestId('login'));
+    await waitFor(() => expect(login).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      pendingGate.resolve({
+        version: 1,
+        verifiedPhoneTicket: 'T'.repeat(32),
+        expiresAt: Date.now() + 300_000,
+        idempotencyKey: 'registration-old-pending-1234',
+      });
+    });
+
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('auth+user'));
+    expect(screen.getByTestId('pending')).toHaveTextContent('no-pending');
+  });
+
+  it('does not restore an old pending payload after logout completes', async () => {
+    const pendingGate = makeDeferred<{
+      version: 1;
+      verifiedPhoneTicket: string;
+      expiresAt: number;
+      idempotencyKey: string;
+    }>();
+    (getToken as jest.Mock).mockResolvedValue(null);
+    (loadPendingRegistration as jest.Mock).mockReturnValueOnce(pendingGate.promise);
+    (logout as jest.Mock).mockResolvedValue(undefined);
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(loadPendingRegistration).toHaveBeenCalledTimes(1));
+    fireEvent.press(screen.getByTestId('logout'));
+    await waitFor(() => expect(logout).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      pendingGate.resolve({
+        version: 1,
+        verifiedPhoneTicket: 'T'.repeat(32),
+        expiresAt: Date.now() + 300_000,
+        idempotencyKey: 'registration-old-pending-1234',
+      });
+    });
+
+    expect(screen.getByTestId('state')).toHaveTextContent('guest');
+    expect(screen.getByTestId('pending')).toHaveTextContent('no-pending');
   });
 });

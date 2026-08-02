@@ -1,3 +1,4 @@
+/* eslint-disable import/first */
 /**
  * services/auth.ts unit tests.
  *
@@ -34,10 +35,17 @@ jest.mock('../../modules/shared-keychain', () => ({
 import {
   login, logout, getToken, isLoggedIn, fetchCurrentUser,
   requestPhoneCode, loginByPhoneCode, setPassword, changePassword,
+  verifyPhoneCode, completeInvitedRegistration,
   saveCredentials, loadCredentials, clearCredentials,
+  type PhoneLoginResponse,
 } from '../auth';
 import api, { TOKEN_KEY, setRuntimeAuthToken } from '../api';
 import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  hasPersistedSessionMarker,
+  markPersistedSession,
+} from '../authSessionMarker';
 import {
   saveTokenToSharedKeychain,
   deleteTokenFromSharedKeychain,
@@ -50,11 +58,28 @@ const mockedDelete = deleteTokenFromSharedKeychain as jest.MockedFunction<typeof
 const mockedReadShared = readTokenFromSharedKeychain as jest.MockedFunction<typeof readTokenFromSharedKeychain>;
 const mockedSetRuntimeToken = setRuntimeAuthToken as jest.MockedFunction<typeof setRuntimeAuthToken>;
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+async function waitForApiPost(): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    if (mockedApi.post.mock.calls.length > 0) return;
+    await Promise.resolve();
+  }
+  throw new Error('API post was not called');
+}
+
 describe('services/auth', () => {
   let secureItems: Record<string, string>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
+    await AsyncStorage.clear();
     secureItems = {};
     (SecureStore.setItemAsync as jest.Mock).mockImplementation(
       async (key: string, value: string) => {
@@ -76,6 +101,7 @@ describe('services/auth', () => {
 
   describe('login', () => {
     it('stores token in SecureStore and forwards to shared keychain on success', async () => {
+      secureItems.pending_invited_registration_v1 = JSON.stringify({ version: 1 });
       mockedApi.post.mockResolvedValueOnce({
         data: {
           access_token: 'tok_abc',
@@ -93,7 +119,12 @@ describe('services/auth', () => {
       expect(SecureStore.setItemAsync).toHaveBeenCalledWith(TOKEN_KEY, 'tok_abc');
       expect(mockedSave).toHaveBeenCalledWith('tok_abc');
       expect(mockedSetRuntimeToken).toHaveBeenCalledWith('tok_abc');
+      expect((SecureStore.getItemAsync as jest.Mock).mock.invocationCallOrder[0])
+        .toBeLessThan(mockedSetRuntimeToken.mock.invocationCallOrder[0]);
+      expect(mockedReadShared.mock.invocationCallOrder[0])
+        .toBeLessThan(mockedSetRuntimeToken.mock.invocationCallOrder[0]);
       expect(result.user.username).toBe('alice');
+      expect(secureItems.pending_invited_registration_v1).toBeUndefined();
     });
 
     it('propagates API errors without touching storage', async () => {
@@ -149,8 +180,7 @@ describe('services/auth', () => {
       mockedSave.mockRejectedValueOnce(new Error('no module'));
 
       await expect(login('alice', 'hunter2')).rejects.toThrow('登录状态无法安全保存');
-      expect(mockedSetRuntimeToken).toHaveBeenCalledWith('tok_memory_only');
-      expect(mockedSetRuntimeToken).toHaveBeenLastCalledWith(null);
+      expect(mockedSetRuntimeToken).not.toHaveBeenCalledWith('tok_memory_only');
     });
 
     it('does not accept a resolved shared-keychain write until the same token is readable', async () => {
@@ -166,6 +196,44 @@ describe('services/auth', () => {
       mockedReadShared.mockResolvedValue(null);
 
       await expect(login('alice', 'hunter2')).rejects.toThrow('登录状态无法安全保存');
+    });
+
+    it('keeps pending registration when token persistence fails', async () => {
+      const pending = JSON.stringify({
+        version: 1,
+        verifiedPhoneTicket: 'T'.repeat(32),
+        expiresAt: Date.now() + 300_000,
+        idempotencyKey: 'registration-1234567890abcdef',
+      });
+      secureItems.pending_invited_registration_v1 = pending;
+      mockedApi.post.mockResolvedValueOnce({
+        data: {
+          access_token: 'tok_failed',
+          token_type: 'bearer',
+          user: { id: 7, username: 'alice' },
+        },
+      } as never);
+      (SecureStore.setItemAsync as jest.Mock).mockRejectedValueOnce(new Error('locked'));
+      mockedSave.mockRejectedValueOnce(new Error('shared unavailable'));
+
+      await expect(login('alice', 'hunter2')).rejects.toThrow('登录状态无法安全保存');
+      expect(secureItems.pending_invited_registration_v1).toBe(pending);
+    });
+
+    it('authenticates when pending cleanup fails after durable token persistence', async () => {
+      secureItems.pending_invited_registration_v1 = JSON.stringify({ version: 1 });
+      mockedApi.post.mockResolvedValueOnce({
+        data: {
+          access_token: 'tok_cleanup_retry',
+          token_type: 'bearer',
+          user: { id: 7, username: 'alice' },
+        },
+      } as never);
+      (SecureStore.deleteItemAsync as jest.Mock).mockRejectedValueOnce(new Error('locked'));
+
+      await expect(login('alice', 'hunter2')).resolves.toBeDefined();
+      expect(secureItems.auth_token).toBe('tok_cleanup_retry');
+      expect(mockedSetRuntimeToken).toHaveBeenCalledWith('tok_cleanup_retry');
     });
   });
 
@@ -210,6 +278,289 @@ describe('services/auth', () => {
       expect(mockedSetRuntimeToken).toHaveBeenCalledWith('tok_phone');
       expect(result.is_new_user).toBe(true);
     });
+
+    it('returns an authenticated outcome only after its token is durable', async () => {
+      mockedApi.post.mockResolvedValueOnce({
+        data: {
+          outcome: 'authenticated',
+          access_token: 'tok_verified',
+          token_type: 'bearer',
+          is_new_user: false,
+          user: { id: 8, username: 'phone_8' },
+        },
+      } as never);
+
+      const result = await verifyPhoneCode('13800138000', '123456');
+
+      expect(mockedApi.post).toHaveBeenCalledWith('/auth/phone/verify', {
+        phone: '13800138000',
+        code: '123456',
+      });
+      expect(result.outcome).toBe('authenticated');
+      expect(SecureStore.setItemAsync).toHaveBeenCalledWith(TOKEN_KEY, 'tok_verified');
+      expect(mockedSetRuntimeToken).toHaveBeenLastCalledWith('tok_verified');
+    });
+
+    it('creates only a secure pending registration for an unknown verified phone', async () => {
+      mockedApi.post.mockResolvedValueOnce({
+        data: {
+          outcome: 'invitation_required',
+          verified_phone_ticket: 'T'.repeat(32),
+          expires_in_seconds: 300,
+        },
+      } as never);
+
+      const result = await verifyPhoneCode('13800138000', '123456');
+
+      expect(result.outcome).toBe('invitation_required');
+      expect(secureItems.auth_token).toBeUndefined();
+      expect(mockedSave).not.toHaveBeenCalled();
+      const stored = JSON.parse(secureItems.pending_invited_registration_v1);
+      expect(stored.verifiedPhoneTicket).toBe('T'.repeat(32));
+      expect(stored.idempotencyKey).toMatch(/^registration-/);
+    });
+
+    it('does not report invitation-required when pending state cannot be persisted', async () => {
+      mockedApi.post.mockResolvedValueOnce({
+        data: {
+          outcome: 'invitation_required',
+          verified_phone_ticket: 'T'.repeat(32),
+          expires_in_seconds: 300,
+        },
+      } as never);
+      (SecureStore.getItemAsync as jest.Mock).mockResolvedValue(null);
+
+      await expect(verifyPhoneCode('13800138000', '123456'))
+        .rejects.toThrow('待注册状态无法安全保存');
+      expect(mockedSetRuntimeToken).not.toHaveBeenCalledWith(expect.any(String));
+    });
+
+    it('completes invited registration without persisting the invitation credential', async () => {
+      secureItems.pending_invited_registration_v1 = JSON.stringify({
+        version: 1,
+        verifiedPhoneTicket: 'T'.repeat(32),
+        expiresAt: Date.now() + 300_000,
+        idempotencyKey: 'registration-1234567890abcdef',
+      });
+      mockedApi.post.mockResolvedValueOnce({
+        data: {
+          access_token: 'tok_invited',
+          token_type: 'bearer',
+          is_new_user: true,
+          user: { id: 9, username: 'phone_9' },
+        },
+      } as never);
+
+      const result = await completeInvitedRegistration({ manualCode: 'ABCD1234' });
+
+      expect(mockedApi.post).toHaveBeenCalledWith('/auth/invited-registration', {
+        verified_phone_ticket: 'T'.repeat(32),
+        idempotency_key: 'registration-1234567890abcdef',
+        manual_code: 'ABCD1234',
+      });
+      expect(result.access_token).toBe('tok_invited');
+      expect(secureItems.auth_token).toBe('tok_invited');
+      expect(secureItems.pending_invited_registration_v1).toBeUndefined();
+      expect(JSON.stringify(secureItems)).not.toContain('ABCD1234');
+    });
+
+    it('keeps pending state for a correctable invitation error', async () => {
+      const pending = JSON.stringify({
+        version: 1,
+        verifiedPhoneTicket: 'T'.repeat(32),
+        expiresAt: Date.now() + 300_000,
+        idempotencyKey: 'registration-1234567890abcdef',
+      });
+      secureItems.pending_invited_registration_v1 = pending;
+      mockedApi.post.mockRejectedValueOnce({
+        response: { data: { detail: { code: 'INVITATION_PHONE_MISMATCH' } } },
+      });
+
+      await expect(completeInvitedRegistration({ linkToken: 'L'.repeat(32) })).rejects.toBeDefined();
+      expect(secureItems.pending_invited_registration_v1).toBe(pending);
+    });
+
+    it('clears pending state when the verified phone ticket has expired', async () => {
+      secureItems.pending_invited_registration_v1 = JSON.stringify({
+        version: 1,
+        verifiedPhoneTicket: 'T'.repeat(32),
+        expiresAt: Date.now() + 300_000,
+        idempotencyKey: 'registration-1234567890abcdef',
+      });
+      mockedApi.post.mockRejectedValueOnce({
+        response: { data: { detail: { code: 'VERIFIED_PHONE_TICKET_EXPIRED' } } },
+      });
+
+      await expect(completeInvitedRegistration({ manualCode: 'ABCD1234' })).rejects.toBeDefined();
+      expect(secureItems.pending_invited_registration_v1).toBeUndefined();
+    });
+
+    it('does not apply a stale invitation-required response after logout supersedes it', async () => {
+      const response = deferred<{ data: {
+        outcome: 'invitation_required';
+        verified_phone_ticket: string;
+        expires_in_seconds: number;
+      } }>();
+      let current = true;
+      mockedApi.post.mockReturnValueOnce(response.promise as never);
+
+      const verification = verifyPhoneCode(
+        '13800138000',
+        '123456',
+        { isCurrent: () => current },
+      );
+      current = false;
+      response.resolve({
+        data: {
+          outcome: 'invitation_required',
+          verified_phone_ticket: 'T'.repeat(32),
+          expires_in_seconds: 300,
+        },
+      });
+
+      await expect(verification).rejects.toMatchObject({ name: 'AuthOperationSuperseded' });
+      expect(secureItems.pending_invited_registration_v1).toBeUndefined();
+      expect(secureItems.auth_token).toBeUndefined();
+    });
+
+    it('cleans a stale token write without exposing it to runtime auth', async () => {
+      let current = true;
+      const writeStarted = deferred<void>();
+      const releaseWrite = deferred<void>();
+      mockedApi.post.mockResolvedValueOnce({
+        data: {
+          outcome: 'authenticated',
+          access_token: 'tok_stale',
+          token_type: 'bearer',
+          is_new_user: false,
+          user: { id: 8, username: 'phone_8' },
+        },
+      } as never);
+      (SecureStore.setItemAsync as jest.Mock).mockImplementationOnce(async (key, value) => {
+        secureItems[key] = value;
+        writeStarted.resolve();
+        await releaseWrite.promise;
+      });
+
+      const verification = verifyPhoneCode(
+        '13800138000',
+        '123456',
+        { isCurrent: () => current },
+      );
+      await writeStarted.promise;
+      current = false;
+      releaseWrite.resolve();
+
+      await expect(verification).rejects.toMatchObject({ name: 'AuthOperationSuperseded' });
+      expect(secureItems.auth_token).toBeUndefined();
+      expect(mockedSetRuntimeToken).not.toHaveBeenCalledWith('tok_stale');
+    });
+
+    it('does not apply a stale invited-registration success after logout supersedes it', async () => {
+      secureItems.pending_invited_registration_v1 = JSON.stringify({
+        version: 1,
+        verifiedPhoneTicket: 'T'.repeat(32),
+        expiresAt: Date.now() + 300_000,
+        idempotencyKey: 'registration-1234567890abcdef',
+      });
+      const response = deferred<{ data: PhoneLoginResponse }>();
+      let current = true;
+      mockedApi.post.mockReturnValueOnce(response.promise as never);
+
+      const completion = completeInvitedRegistration(
+        { manualCode: 'ABCD2345' },
+        { isCurrent: () => current },
+      );
+      await waitForApiPost();
+      current = false;
+      response.resolve({
+        data: {
+          access_token: 'tok_stale_complete',
+          token_type: 'bearer',
+          is_new_user: true,
+          user: { id: 9, username: 'phone_9' },
+        },
+      });
+
+      await expect(completion).rejects.toMatchObject({ name: 'AuthOperationSuperseded' });
+      expect(secureItems.auth_token).toBeUndefined();
+      expect(secureItems.pending_invited_registration_v1).toBeDefined();
+    });
+
+    it.each(['legacy_phone', 'verified_phone', 'invited_completion'] as const)(
+      '%s preserves pending registration when durable token persistence fails',
+      async (flow) => {
+        const pending = JSON.stringify({
+          version: 1,
+          verifiedPhoneTicket: 'T'.repeat(32),
+          expiresAt: Date.now() + 300_000,
+          idempotencyKey: 'registration-1234567890abcdef',
+        });
+        secureItems.pending_invited_registration_v1 = pending;
+        const base = {
+          access_token: `tok_failed_${flow}`,
+          token_type: 'bearer',
+          is_new_user: flow === 'invited_completion',
+          user: { id: 11, username: 'phone_11' },
+        };
+        mockedApi.post.mockResolvedValueOnce({
+          data: flow === 'verified_phone'
+            ? { ...base, outcome: 'authenticated' }
+            : base,
+        } as never);
+        (SecureStore.setItemAsync as jest.Mock).mockRejectedValueOnce(new Error('locked'));
+        mockedSave.mockRejectedValueOnce(new Error('shared unavailable'));
+
+        const operation = flow === 'legacy_phone'
+          ? loginByPhoneCode('13800138000', '123456')
+          : flow === 'verified_phone'
+            ? verifyPhoneCode('13800138000', '123456')
+            : completeInvitedRegistration({ manualCode: 'ABCD2345' });
+
+        await expect(operation).rejects.toThrow('登录状态无法安全保存');
+        expect(secureItems.pending_invited_registration_v1).toBe(pending);
+      },
+    );
+
+    it.each(['legacy_phone', 'verified_phone', 'invited_completion'] as const)(
+      '%s authenticates after durable token even when pending cleanup must retry',
+      async (flow) => {
+        secureItems.pending_invited_registration_v1 = JSON.stringify({
+          version: 1,
+          verifiedPhoneTicket: 'T'.repeat(32),
+          expiresAt: Date.now() + 300_000,
+          idempotencyKey: 'registration-1234567890abcdef',
+        });
+        const token = `tok_cleanup_${flow}`;
+        const base = {
+          access_token: token,
+          token_type: 'bearer',
+          is_new_user: flow === 'invited_completion',
+          user: { id: 12, username: 'phone_12' },
+        };
+        mockedApi.post.mockResolvedValueOnce({
+          data: flow === 'verified_phone'
+            ? { ...base, outcome: 'authenticated' }
+            : base,
+        } as never);
+        (SecureStore.deleteItemAsync as jest.Mock).mockRejectedValueOnce(new Error('locked'));
+
+        const operation = flow === 'legacy_phone'
+          ? loginByPhoneCode('13800138000', '123456')
+          : flow === 'verified_phone'
+            ? verifyPhoneCode('13800138000', '123456')
+            : completeInvitedRegistration({ manualCode: 'ABCD2345' });
+
+        await expect(operation).resolves.toBeDefined();
+        expect(secureItems.auth_token).toBe(token);
+        expect(mockedSetRuntimeToken).toHaveBeenCalledWith(token);
+        const tokenReadIndex = (SecureStore.getItemAsync as jest.Mock).mock.calls
+          .findIndex(([key]) => key === TOKEN_KEY);
+        expect(tokenReadIndex).toBeGreaterThanOrEqual(0);
+        expect((SecureStore.getItemAsync as jest.Mock).mock.invocationCallOrder[tokenReadIndex])
+          .toBeLessThan((SecureStore.deleteItemAsync as jest.Mock).mock.invocationCallOrder[0]);
+      },
+    );
   });
 
   describe('password management', () => {
@@ -233,10 +584,12 @@ describe('services/auth', () => {
 
   describe('logout', () => {
     it('clears SecureStore and shared keychain', async () => {
+      secureItems.pending_invited_registration_v1 = '{"version":1}';
       await logout();
       expect(mockedSetRuntimeToken).toHaveBeenCalledWith(null);
       expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith(TOKEN_KEY);
       expect(mockedDelete).toHaveBeenCalled();
+      expect(secureItems.pending_invited_registration_v1).toBeUndefined();
     });
 
     it('ignores keychain clearing failure', async () => {
@@ -335,6 +688,185 @@ describe('services/auth', () => {
 
       (SecureStore.getItemAsync as jest.Mock).mockResolvedValueOnce(null);
       await expect(isLoggedIn()).resolves.toBe(false);
+    });
+
+    it('queues a newer login behind stale candidate cleanup and preserves the new marker', async () => {
+      let current = true;
+      const writeStarted = deferred<void>();
+      const releaseWrite = deferred<void>();
+      const cleanupReadStarted = deferred<void>();
+      const releaseCleanupRead = deferred<void>();
+      let setCalls = 0;
+      let getCalls = 0;
+      (SecureStore.setItemAsync as jest.Mock).mockImplementation(async (key, value) => {
+        secureItems[key] = value;
+        setCalls += 1;
+        if (setCalls === 1) {
+          writeStarted.resolve();
+          await releaseWrite.promise;
+        }
+      });
+      (SecureStore.getItemAsync as jest.Mock).mockImplementation(async (key) => {
+        getCalls += 1;
+        if (getCalls === 1) {
+          cleanupReadStarted.resolve();
+          await releaseCleanupRead.promise;
+        }
+        return secureItems[key] ?? null;
+      });
+      mockedApi.post
+        .mockResolvedValueOnce({
+          data: {
+            outcome: 'authenticated',
+            access_token: 'tok_A',
+            token_type: 'bearer',
+            is_new_user: false,
+            user: { id: 21, username: 'old' },
+          },
+        } as never)
+        .mockResolvedValueOnce({
+          data: {
+            access_token: 'tok_B',
+            token_type: 'bearer',
+            user: { id: 22, username: 'new' },
+          },
+        } as never);
+
+      const stale = verifyPhoneCode('13800138000', '123456', {
+        isCurrent: () => current,
+      });
+      await writeStarted.promise;
+      current = false;
+      releaseWrite.resolve();
+      await cleanupReadStarted.promise;
+      const newer = login('new', 'hunter2');
+      releaseCleanupRead.resolve();
+
+      await expect(stale).rejects.toMatchObject({ name: 'AuthOperationSuperseded' });
+      await expect(newer).resolves.toBeDefined();
+      expect(secureItems[TOKEN_KEY]).toBe('tok_B');
+      expect(await hasPersistedSessionMarker()).toBe(true);
+      expect(mockedSetRuntimeToken).toHaveBeenLastCalledWith('tok_B');
+    });
+
+    it('does not let an old SecureStore hydration revive auth after logout', async () => {
+      secureItems[TOKEN_KEY] = 'tok_old_hydration';
+      let sharedToken: string | null = null;
+      let current = true;
+      const sharedSaveStarted = deferred<void>();
+      const releaseSharedSave = deferred<void>();
+      mockedSave.mockImplementation(async (token) => {
+        sharedToken = token;
+        sharedSaveStarted.resolve();
+        await releaseSharedSave.promise;
+        return 0;
+      });
+      mockedReadShared.mockImplementation(async () => sharedToken);
+      mockedDelete.mockImplementation(async () => {
+        sharedToken = null;
+      });
+
+      const hydration = getToken({ isCurrent: () => current });
+      await sharedSaveStarted.promise;
+      expect(mockedSave).toHaveBeenCalledWith('tok_old_hydration');
+      current = false;
+      const loggingOut = logout();
+      releaseSharedSave.resolve();
+
+      await expect(hydration).rejects.toMatchObject({ name: 'AuthOperationSuperseded' });
+      await loggingOut;
+      expect(secureItems[TOKEN_KEY]).toBeUndefined();
+      expect(sharedToken).toBeNull();
+      expect(await hasPersistedSessionMarker()).toBe(false);
+      expect(mockedSetRuntimeToken).toHaveBeenLastCalledWith(null);
+    });
+
+    it('serializes shared-to-SecureStore self-heal with logout', async () => {
+      let sharedToken: string | null = 'tok_shared_old';
+      let current = true;
+      const secureWriteStarted = deferred<void>();
+      const releaseSecureWrite = deferred<void>();
+      mockedReadShared.mockImplementation(async () => sharedToken);
+      mockedDelete.mockImplementation(async () => {
+        sharedToken = null;
+      });
+      (SecureStore.setItemAsync as jest.Mock).mockImplementationOnce(async (key, value) => {
+        secureItems[key] = value;
+        secureWriteStarted.resolve();
+        await releaseSecureWrite.promise;
+      });
+
+      const hydration = getToken({ isCurrent: () => current });
+      await secureWriteStarted.promise;
+      current = false;
+      const loggingOut = logout();
+      releaseSecureWrite.resolve();
+
+      await expect(hydration).rejects.toMatchObject({ name: 'AuthOperationSuperseded' });
+      await loggingOut;
+      expect(secureItems[TOKEN_KEY]).toBeUndefined();
+      expect(sharedToken).toBeNull();
+      expect(await hasPersistedSessionMarker()).toBe(false);
+      expect(mockedSetRuntimeToken).toHaveBeenLastCalledWith(null);
+    });
+
+    it('preserves an existing durable session when a superseding login fails', async () => {
+      secureItems[TOKEN_KEY] = 'tok_existing';
+      await markPersistedSession();
+      let sharedToken: string | null = null;
+      let current = true;
+      const mirrorStarted = deferred<void>();
+      const releaseMirror = deferred<void>();
+      mockedSave.mockImplementation(async (token) => {
+        sharedToken = token;
+        mirrorStarted.resolve();
+        await releaseMirror.promise;
+        return 0;
+      });
+      mockedReadShared.mockImplementation(async () => sharedToken);
+      mockedDelete.mockImplementation(async () => {
+        sharedToken = null;
+      });
+
+      const hydration = getToken({ isCurrent: () => current });
+      await mirrorStarted.promise;
+      current = false;
+      mockedApi.post.mockRejectedValueOnce(new Error('new login failed'));
+      await expect(login('new-user', 'wrong')).rejects.toThrow('new login failed');
+      releaseMirror.resolve();
+
+      await expect(hydration).rejects.toMatchObject({ name: 'AuthOperationSuperseded' });
+      expect(secureItems[TOKEN_KEY]).toBe('tok_existing');
+      expect(sharedToken).toBe('tok_existing');
+      expect(await hasPersistedSessionMarker()).toBe(true);
+      expect(mockedSetRuntimeToken).not.toHaveBeenCalledWith('tok_existing');
+    });
+
+    it('preserves the original shared token when its SecureStore mirror becomes stale', async () => {
+      let sharedToken: string | null = 'tok_shared_source';
+      await markPersistedSession();
+      let current = true;
+      const mirrorStarted = deferred<void>();
+      const releaseMirror = deferred<void>();
+      mockedReadShared.mockImplementation(async () => sharedToken);
+      mockedDelete.mockImplementation(async () => {
+        sharedToken = null;
+      });
+      (SecureStore.setItemAsync as jest.Mock).mockImplementationOnce(async (key, value) => {
+        secureItems[key] = value;
+        mirrorStarted.resolve();
+        await releaseMirror.promise;
+      });
+
+      const hydration = getToken({ isCurrent: () => current });
+      await mirrorStarted.promise;
+      current = false;
+      releaseMirror.resolve();
+
+      await expect(hydration).rejects.toMatchObject({ name: 'AuthOperationSuperseded' });
+      expect(sharedToken).toBe('tok_shared_source');
+      expect(await hasPersistedSessionMarker()).toBe(true);
+      expect(mockedSetRuntimeToken).not.toHaveBeenCalledWith('tok_shared_source');
     });
   });
 

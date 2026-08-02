@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import type { components as ApiComponents } from '../types/api.generated';
 import api, {
   TOKEN_KEY,
   isUsableNativeAuthToken,
@@ -13,6 +14,12 @@ import {
   clearPersistedSessionMarker,
   markPersistedSession,
 } from './authSessionMarker';
+import {
+  clearPendingRegistration,
+  createPendingRegistration,
+  loadPendingRegistration,
+  type PendingRegistration,
+} from './registrationInviteStorage';
 
 export interface User {
   id: number;
@@ -42,6 +49,22 @@ export interface PhoneLoginResponse extends LoginResponse {
   is_new_user: boolean;
 }
 
+export type PhoneVerificationAuthenticated =
+  Omit<ApiComponents['schemas']['PhoneVerificationAuthenticated'], 'user'> & {
+    user: User;
+  };
+
+export type PhoneVerificationInvitationRequired =
+  ApiComponents['schemas']['PhoneVerificationInvitationRequired'];
+
+export type PhoneVerificationOutcome =
+  | PhoneVerificationAuthenticated
+  | PhoneVerificationInvitationRequired;
+
+export type InvitationCredential =
+  | { manualCode: string; linkToken?: never }
+  | { manualCode?: never; linkToken: string };
+
 export interface AccountDeletionRequestResponse {
   status: 'none' | 'requested' | 'processing' | 'completed' | 'rejected';
   user_id: number;
@@ -55,12 +78,83 @@ export interface AccountDeletionRequestResponse {
   message?: string;
 }
 
-let tokenStorageMutation: Promise<void> = Promise.resolve();
+export interface AuthOperationOptions {
+  isCurrent?: () => boolean;
+}
 
-function serializeTokenStorageMutation(operation: () => Promise<void>): Promise<void> {
-  const next = tokenStorageMutation.then(operation, operation);
-  tokenStorageMutation = next.catch(() => {});
+class AuthOperationSuperseded extends Error {
+  constructor() {
+    super('auth operation superseded');
+    this.name = 'AuthOperationSuperseded';
+  }
+}
+
+export function isAuthOperationSuperseded(error: unknown): boolean {
+  return error instanceof AuthOperationSuperseded
+    || (error as { name?: string } | null)?.name === 'AuthOperationSuperseded';
+}
+
+function assertOperationCurrent(options?: AuthOperationOptions): void {
+  if (options?.isCurrent && !options.isCurrent()) {
+    throw new AuthOperationSuperseded();
+  }
+}
+
+let authStorageMutation: Promise<unknown> = Promise.resolve();
+
+function serializeAuthStorageMutation<T>(operation: () => Promise<T>): Promise<T> {
+  const next = authStorageMutation.then(operation, operation);
+  authStorageMutation = next.then(() => undefined, () => undefined);
   return next;
+}
+
+async function cleanupCandidateToken(token: string): Promise<void> {
+  try {
+    if ((await SecureStore.getItemAsync(TOKEN_KEY)) === token) {
+      await SecureStore.deleteItemAsync(TOKEN_KEY);
+    }
+  } catch {
+    console.warn('[auth] stale SecureStore token cleanup failed');
+  }
+  try {
+    if ((await readTokenFromSharedKeychain()) === token) {
+      await deleteTokenFromSharedKeychain();
+    }
+  } catch {
+    console.warn('[auth] stale shared token cleanup failed');
+  }
+
+  let secureRemaining: string | null | undefined;
+  let sharedRemaining: string | null | undefined;
+  try {
+    secureRemaining = await SecureStore.getItemAsync(TOKEN_KEY);
+  } catch {
+    secureRemaining = undefined;
+  }
+  try {
+    sharedRemaining = await readTokenFromSharedKeychain();
+  } catch {
+    sharedRemaining = undefined;
+  }
+  if (
+    secureRemaining !== undefined
+    && sharedRemaining !== undefined
+    && !isUsableNativeAuthToken(secureRemaining)
+    && !isUsableNativeAuthToken(sharedRemaining)
+  ) {
+    await clearPersistedSessionMarker();
+  }
+}
+
+async function bestEffortClearPendingRegistration(
+  options?: AuthOperationOptions,
+): Promise<void> {
+  if (options?.isCurrent && !options.isCurrent()) return;
+  try {
+    await clearPendingRegistration();
+  } catch {
+    console.warn('[auth] pending registration cleanup failed');
+  }
 }
 
 /**
@@ -68,55 +162,87 @@ function serializeTokenStorageMutation(operation: () => Promise<void>): Promise<
  * exact value back. A memory-only login looks successful but disappears on
  * the next process launch, which is worse than an actionable login error.
  */
-async function persistToken(token: string): Promise<void> {
+async function persistTokenWithinMutation(
+  token: string,
+  options?: AuthOperationOptions,
+): Promise<void> {
   if (!isUsableNativeAuthToken(token)) {
-    setRuntimeAuthToken(null);
     throw new Error('登录服务返回了无效的原生访问凭证');
   }
+  assertOperationCurrent(options);
+  let durable = false;
 
-  await serializeTokenStorageMutation(async () => {
-    setRuntimeAuthToken(token);
-    let durable = false;
+  try {
+    assertOperationCurrent(options);
+    await SecureStore.setItemAsync(TOKEN_KEY, token);
+    assertOperationCurrent(options);
+    durable = (await SecureStore.getItemAsync(TOKEN_KEY)) === token;
+    assertOperationCurrent(options);
+    if (!durable) console.warn('[auth] SecureStore token verification failed');
+  } catch (error) {
+    if (isAuthOperationSuperseded(error)) {
+      await cleanupCandidateToken(token);
+      throw error;
+    }
+    console.warn('[auth] SecureStore token persistence failed');
+  }
 
+  try {
+    assertOperationCurrent(options);
+    await saveTokenToSharedKeychain(token);
+    assertOperationCurrent(options);
+    const sharedToken = await readTokenFromSharedKeychain();
+    assertOperationCurrent(options);
+    durable = durable || sharedToken === token;
+  } catch (error) {
+    if (isAuthOperationSuperseded(error)) {
+      await cleanupCandidateToken(token);
+      throw error;
+    }
+    if (!durable) console.warn('[auth] shared token persistence failed');
+  }
+
+  if (!durable) {
+    await cleanupCandidateToken(token);
+    throw new Error('登录状态无法安全保存，请解锁设备后重试');
+  }
+
+  assertOperationCurrent(options);
+  await markPersistedSession();
+  assertOperationCurrent(options);
+}
+
+async function applyAuthenticatedToken(
+  token: string,
+  options?: AuthOperationOptions,
+): Promise<void> {
+  await serializeAuthStorageMutation(async () => {
     try {
-      await SecureStore.setItemAsync(TOKEN_KEY, token);
-      durable = (await SecureStore.getItemAsync(TOKEN_KEY)) === token;
-      if (!durable) {
-        console.warn('[auth] SecureStore token verification failed');
+      assertOperationCurrent(options);
+      await persistTokenWithinMutation(token, options);
+      await bestEffortClearPendingRegistration(options);
+      assertOperationCurrent(options);
+      setRuntimeAuthToken(token);
+    } catch (error) {
+      if (isAuthOperationSuperseded(error)) {
+        await cleanupCandidateToken(token);
       }
-    } catch (e) {
-      console.warn('[auth] SecureStore write failed, relying on shared keychain:', e);
+      throw error;
     }
-
-    try {
-      await saveTokenToSharedKeychain(token);
-      const sharedToken = await readTokenFromSharedKeychain();
-      durable = durable || sharedToken === token;
-    } catch (e) {
-      if (!durable) {
-        console.warn('[auth] shared keychain token persistence failed:', e);
-      }
-    }
-
-    if (!durable) {
-      setRuntimeAuthToken(null);
-      throw new Error('登录状态无法安全保存，请解锁设备后重试');
-    }
-
-    setRuntimeAuthToken(token);
-    await markPersistedSession();
   });
 }
 
 export async function login(
   username: string,
   password: string,
+  options?: AuthOperationOptions,
 ): Promise<LoginResponse> {
   const { data } = await api.post<LoginResponse>('/auth/login/json', {
     username,
     password,
   });
-  await persistToken(data.access_token);
+  assertOperationCurrent(options);
+  await applyAuthenticatedToken(data.access_token, options);
   return data;
 }
 
@@ -134,14 +260,98 @@ export async function requestPhoneCode(
 export async function loginByPhoneCode(
   phone: string,
   code: string,
+  options?: AuthOperationOptions,
 ): Promise<PhoneLoginResponse> {
   const { data } = await api.post<PhoneLoginResponse>('/auth/phone/login', {
     phone,
     code,
   });
-  await persistToken(data.access_token);
+  assertOperationCurrent(options);
+  await applyAuthenticatedToken(data.access_token, options);
   return data;
 }
+
+function isAuthenticatedPhoneOutcome(
+  value: PhoneVerificationOutcome,
+): value is PhoneVerificationAuthenticated {
+  return value.outcome === 'authenticated';
+}
+
+export async function verifyPhoneCode(
+  phone: string,
+  code: string,
+  options?: AuthOperationOptions,
+): Promise<PhoneVerificationOutcome> {
+  const { data } = await api.post<PhoneVerificationOutcome>('/auth/phone/verify', {
+    phone,
+    code,
+  });
+  assertOperationCurrent(options);
+  if (isAuthenticatedPhoneOutcome(data)) {
+    await applyAuthenticatedToken(data.access_token, options);
+    return data;
+  }
+  if (data.outcome !== 'invitation_required') {
+    throw new Error('登录服务返回了无法识别的手机号验证结果');
+  }
+  await serializeAuthStorageMutation(async () => {
+    assertOperationCurrent(options);
+    await createPendingRegistration({
+      verifiedPhoneTicket: data.verified_phone_ticket,
+      expiresInSeconds: data.expires_in_seconds,
+    });
+    try {
+      assertOperationCurrent(options);
+    } catch (error) {
+      await bestEffortClearPendingRegistration();
+      throw error;
+    }
+  });
+  return data;
+}
+
+function authErrorCode(error: unknown): string | null {
+  const code = (
+    error as { response?: { data?: { detail?: { code?: unknown } } } } | null
+  )?.response?.data?.detail?.code;
+  return typeof code === 'string' ? code : null;
+}
+
+export async function completeInvitedRegistration(
+  credential: InvitationCredential,
+  options?: AuthOperationOptions,
+): Promise<PhoneLoginResponse> {
+  assertOperationCurrent(options);
+  const pending = await loadPendingRegistration();
+  assertOperationCurrent(options);
+  if (!pending) throw new Error('手机号验证已失效，请重新验证');
+
+  const invitation = credential.manualCode !== undefined
+    ? { manual_code: credential.manualCode.trim().toUpperCase() }
+    : { link_token: credential.linkToken.trim() };
+  try {
+    const { data } = await api.post<PhoneLoginResponse>('/auth/invited-registration', {
+      verified_phone_ticket: pending.verifiedPhoneTicket,
+      idempotency_key: pending.idempotencyKey,
+      ...invitation,
+    });
+    assertOperationCurrent(options);
+    await applyAuthenticatedToken(data.access_token, options);
+    return data;
+  } catch (error) {
+    if (options?.isCurrent && !options.isCurrent()) {
+      throw new AuthOperationSuperseded();
+    }
+    if (authErrorCode(error) === 'VERIFIED_PHONE_TICKET_EXPIRED') {
+      await serializeAuthStorageMutation(async () => {
+        await bestEffortClearPendingRegistration(options);
+      });
+    }
+    throw error;
+  }
+}
+
+export { loadPendingRegistration, type PendingRegistration };
 
 export async function setPassword(newPassword: string): Promise<{ message: string }> {
   const { data } = await api.post<{ message: string }>('/auth/password/set', {
@@ -163,7 +373,7 @@ export async function changePassword(
 
 export async function logout(): Promise<void> {
   setRuntimeAuthToken(null);
-  await serializeTokenStorageMutation(async () => {
+  await serializeAuthStorageMutation(async () => {
     try {
       await SecureStore.deleteItemAsync(TOKEN_KEY);
     } catch (e) {
@@ -175,37 +385,72 @@ export async function logout(): Promise<void> {
       console.warn('[auth] shared keychain token deletion failed:', e);
     }
     await clearPersistedSessionMarker();
+    await bestEffortClearPendingRegistration();
   });
 }
 
-export async function getToken(): Promise<string | null> {
+async function hydrateAuthSessionWithinMutation(
+  options?: AuthOperationOptions,
+): Promise<string | null> {
+  let candidate: string | null = null;
+  let secureToken: string | null = null;
   try {
-    const token = await SecureStore.getItemAsync(TOKEN_KEY);
-    if (isUsableNativeAuthToken(token)) {
-      setRuntimeAuthToken(token);
-      await markPersistedSession();
-      return token;
-    }
-  } catch {
-    // Fall through to the shared native store. iOS updates can transiently
-    // fail SecureStore reads while App Group storage still has the token.
+    assertOperationCurrent(options);
+    secureToken = await SecureStore.getItemAsync(TOKEN_KEY);
+    assertOperationCurrent(options);
+  } catch (error) {
+    if (isAuthOperationSuperseded(error)) throw error;
   }
 
-  try {
-    const sharedToken = await readTokenFromSharedKeychain();
-    if (!isUsableNativeAuthToken(sharedToken)) return null;
-
-    setRuntimeAuthToken(sharedToken);
-    await markPersistedSession();
+  if (isUsableNativeAuthToken(secureToken)) {
+    candidate = secureToken;
     try {
-      await SecureStore.setItemAsync(TOKEN_KEY, sharedToken);
-    } catch {
-      // Returning the shared token is still better than forcing a logout.
+      assertOperationCurrent(options);
+      await saveTokenToSharedKeychain(secureToken);
+      assertOperationCurrent(options);
+      await readTokenFromSharedKeychain();
+      assertOperationCurrent(options);
+    } catch (error) {
+      if (isAuthOperationSuperseded(error)) throw error;
+      console.warn('[auth] shared token hydration failed');
     }
-    return sharedToken;
-  } catch {
-    return null;
+  } else {
+    let sharedToken: string | null = null;
+    try {
+      assertOperationCurrent(options);
+      sharedToken = await readTokenFromSharedKeychain();
+      assertOperationCurrent(options);
+    } catch (error) {
+      if (isAuthOperationSuperseded(error)) throw error;
+      return null;
+    }
+    if (!isUsableNativeAuthToken(sharedToken)) return null;
+    candidate = sharedToken;
+    try {
+      assertOperationCurrent(options);
+      await SecureStore.setItemAsync(TOKEN_KEY, sharedToken);
+      assertOperationCurrent(options);
+      await SecureStore.getItemAsync(TOKEN_KEY);
+      assertOperationCurrent(options);
+    } catch (error) {
+      if (isAuthOperationSuperseded(error)) throw error;
+      console.warn('[auth] SecureStore token hydration failed');
+    }
   }
+
+  assertOperationCurrent(options);
+  await markPersistedSession();
+  assertOperationCurrent(options);
+  setRuntimeAuthToken(candidate);
+  return candidate;
+}
+
+export async function getToken(
+  options?: AuthOperationOptions,
+): Promise<string | null> {
+  return serializeAuthStorageMutation(
+    () => hydrateAuthSessionWithinMutation(options),
+  );
 }
 
 export async function isLoggedIn(): Promise<boolean> {
