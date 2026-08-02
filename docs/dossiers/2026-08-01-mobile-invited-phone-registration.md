@@ -49,6 +49,7 @@
 ## S3 · 设计
 
 - 设计：`docs/plans/2026-08-01-mobile-invited-phone-registration-design.md`
+- 实施计划：`docs/plans/2026-08-01-mobile-invited-phone-registration.md`
 - 采用绑定手机号的一次性邀请；邀请链接自动填入，8 位码手工兜底。
 - 新 `RegistrationInvitation` 保存手机号密文 + HMAC、凭证 digest、状态和审计元数据。
 - 邀请核销、用户创建和 token 签发在一个 PostgreSQL 事务边界内完成。
@@ -93,4 +94,3 @@
 
 定义完成后将 Mobile 登录/注册与管理员邀请流同步到 system-map product/mobile nav map；
 架构计数只能由生成器更新，不手写。
-
