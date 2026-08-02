@@ -113,6 +113,8 @@ class FakeSystemd:
                     "-A app.celery_app:celery_app beat --loglevel=info "
                     f"--schedule={schedule}"
                 )
+            elif unit == "health-backend.service" and candidate_installed:
+                command = runtime_transaction.BACKEND_EXEC_START_ARGV
             else:
                 command = f"/opt/health-app/{unit}"
             path = command.split()[0]
@@ -715,6 +717,18 @@ def test_candidate_effective_rejects_additional_execstart_record(
 
     with pytest.raises(TransactionError, match="unsupported systemd ExecStart shape"):
         transaction.install("a" * 40, "b" * 40, lock_dir, token)
+
+
+def test_candidate_effective_installs_single_worker_backend_execstart(
+    tmp_path: Path,
+) -> None:
+    transaction, _layout, lock_dir, token = _transaction(tmp_path)
+    transaction.prepare("a" * 40, "b" * 40, lock_dir, token)
+
+    assert transaction.install("a" * 40, "b" * 40, lock_dir, token) == "INSTALLED"
+    effective = transaction.systemd.show("health-backend.service", "ExecStart")
+    assert "--workers 1" in effective
+    assert "--workers 2" not in effective
 
 
 @pytest.mark.parametrize("unit", UNITS)

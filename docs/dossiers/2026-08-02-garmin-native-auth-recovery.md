@@ -120,9 +120,18 @@ read-only preflight, before changing the service or live environment, because
 the transaction parser's exact candidate whitelist still described the old
 drop-in. The parser now accepts only the new byte-exact single-worker artifact,
 with a drift regression linking the checked-in file to the production parser.
-The complete infrastructure, deploy and runtime-state transaction suite again
-passes 244 tests. Another backend deployment and effective-unit probe remain
-required before G5 can pass; Mobile OTA has not started.
+A third deployment passed preflight but stopped in phase `PREPARED`: effective
+systemd state correctly showed the new one-worker command, while candidate
+validation still required the backend command to equal its old snapshot. All
+services were inactive under the armed boot gate, so the staged controlled
+rollback runner restored commit `5ecaaa41a1c2`, schema compatibility, auth
+probe, runtime state and active service health before further work continued.
+
+Candidate validation now requires the exact new Uvicorn path and argv for the
+backend while retaining fail-closed rejection of additional or changed command
+records. The complete infrastructure, deploy and runtime-state transaction
+suite passes 245 tests. Another backend deployment and effective-unit probe
+remain required before G5 can pass; Mobile OTA has not started.
 
 ### G6 Production Verification: PENDING
 
