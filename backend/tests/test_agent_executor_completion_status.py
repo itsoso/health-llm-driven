@@ -57,6 +57,19 @@ def _stream_from(fake_call_llm):
     return fake_call_llm_stream
 
 
+async def _no_simple_diet_nutrition_estimate(_food_items):
+    return None
+
+
+@pytest.fixture(autouse=True)
+def _isolate_simple_diet_nutrition_estimator(monkeypatch):
+    """Unit tests must never reach the configured external nutrition model."""
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        _no_simple_diet_nutrition_estimate,
+    )
+
+
 def test_completion_status_marks_length_finish_reason_as_interrupted():
     assert _completion_status_from_finish_reason("length") == "interrupted"
 
@@ -2836,6 +2849,103 @@ async def test_agent_stream_saves_explicit_text_diet_when_model_omits_tool_call(
 
 
 @pytest.mark.asyncio
+async def test_agent_stream_enriches_anchor_peach_before_single_dispatch(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    dispatched = []
+    llm_calls = 0
+    estimate_calls = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{
+                    "id": "peach-without-nutrition",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "diet",
+                            "data": {
+                                "meal_type": "snack",
+                                "food_items": "一个桃子",
+                            },
+                        }, ensure_ascii=False),
+                    },
+                }],
+            }
+        return {
+            "content": "已记录加餐。",
+            "finish_reason": "stop",
+        }
+
+    async def fake_estimate(food_items):
+        estimate_calls.append(food_items)
+        return {
+            "calories": 58,
+            "protein": 1.4,
+            "carbs": 14,
+            "fat": 0.4,
+            "fiber": 2.3,
+        }
+
+    async def fake_dispatch(request, user_token):
+        dispatched.append((request.tool_name, request.arguments, user_token))
+        return json.dumps(
+            {
+                "id": 110,
+                "meal_type": request.arguments["data"]["meal_type"],
+                "food_items": request.arguments["data"]["food_items"],
+                "calories": request.arguments["data"]["calories"],
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        fake_estimate,
+    )
+    monkeypatch.setattr(executor, "_dispatch_tool_request", fake_dispatch)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录吃了一个桃子",
+            user_auth_token="test-token",
+            client_turn_id="turn-anchor-peach-enrichment",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert estimate_calls == ["一个桃子"]
+    assert len(dispatched) == 1
+    dispatched_data = dispatched[0][1]["data"]
+    assert dispatched_data["food_items"] == "一个桃子"
+    assert dispatched_data["calories"] == 58
+    assert dispatched_data["protein"] == 1.4
+    assert dispatched_data["carbs"] == 14
+    assert dispatched_data["fat"] == 0.4
+    assert dispatched_data["fiber"] == 2.3
+    assert "已记录" in rendered
+    assert "这次没有写入" not in rendered
+    assert done["data"]["completion_status"] == "complete"
+    assert done["data"]["write_receipts"][0]["resource_type"] == "diet_record"
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_reports_nutrition_rejection_instead_of_model_success_text(
     db, auth_user_and_headers, monkeypatch
 ):
@@ -2853,6 +2963,10 @@ async def test_agent_stream_reports_nutrition_rejection_instead_of_model_success
 
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        _no_simple_diet_nutrition_estimate,
+    )
     monkeypatch.setattr(executor, "_dispatch_tool_request", fail_if_dispatched)
 
     events = [
@@ -2911,6 +3025,10 @@ async def test_agent_stream_reports_last_nutrition_error_when_all_rounds_reject(
 
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        _no_simple_diet_nutrition_estimate,
+    )
 
     events = [
         event
@@ -3255,6 +3373,10 @@ async def test_agent_stream_repaired_diet_name_clears_older_scope_rejection(
 
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        _no_simple_diet_nutrition_estimate,
+    )
     monkeypatch.setattr(executor, "_dispatch_tool_request", fake_dispatch)
     monkeypatch.setattr(
         "app.services.agent_executor._post_record_quality_response",

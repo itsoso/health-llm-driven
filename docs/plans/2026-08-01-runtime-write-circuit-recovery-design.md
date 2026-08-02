@@ -41,6 +41,12 @@ explicit meal label. It does not reuse the repository's existing local-time meal
 so the first anchor phrase falls back to a generic write while the second gets a bounded
 `simple_health_record` goal.
 
+The first production smoke after that recovery found a deeper ownership gap: the goal
+contract owned food, meal, and date, but still delegated all required nutrition fields to
+the first tool-selection model. That model emitted the correct canonical diet write without
+nutrition. The validator rejected it as designed; repeated model rounds could not change
+the already canonical operation safely, so the user received another failure with no write.
+
 ## 3. Safety Invariants
 
 - A write is successful only when a verified durable receipt exists.
@@ -100,6 +106,10 @@ user record text
             affected user -> managed=false + circuit_paused write block
             unrelated user -> managed run + scoped_reconciliation_admission
        -> systemic/manual/stale/unavailable: global write block
+  -> simple diet numeric enrichment (only after admission is available)
+       -> existing text estimator, once
+       -> sanitize + bound calories/protein/carbs/fat/fiber
+       -> preserve canonical food/meal/date
   -> ToolGateway / AgentExecutor
        -> verified receipt -> success
        -> pre-dispatch runtime_control_unavailable
@@ -159,6 +169,18 @@ The terminal outcome is:
 `retryable=false` prevents reconnects or generic retry UI from hammering a still-paused
 circuit. The user can send a new turn after recovery.
 
+### Server-owned diet enrichment
+
+After the goal guard has replaced model-authored identity fields with the current turn's
+canonical food, meal, and date, inspect the five nutrition fields. If they are incomplete,
+invoke the existing text-nutrition estimator at most once, sanitize per-food results, bound
+all totals, and add numeric fields only. The enriched call still passes through the normal
+validator, ToolGateway, write checkpoint, and verified-receipt boundary.
+
+Do not invoke the estimator while Runtime has already blocked writes. Do not accept an
+incomplete, non-finite, negative, or unbounded result. Failure leaves the original call to
+the hard validator, which fails closed without a health mutation.
+
 ### Cards and transparency
 
 Draft-card suppression is derived from verified `write_receipts`, explicit existing cards,
@@ -193,6 +215,10 @@ requesting user, and an error-log scan.
 
 - Both anchor phrases compile to `simple_health_record / diet / create`; at 21:05 local time
   the phrase without a meal label resolves to `snack`.
+- If the first tool model omits nutrition, the server enriches the canonical diet call once,
+  preserves food/meal/date, and dispatches exactly one validated write.
+- Estimator failure or invalid totals cannot bypass the nutrition validator; a Runtime block
+  prevents the estimator call entirely.
 - A simulated paused circuit produces one `health_record` attempt, zero dispatches, at most
   one LLM tool round, `completion_status=error`, and the typed service-unavailable outcome.
 - No model-authored “need details” or health-analysis disclaimer replaces the typed block.

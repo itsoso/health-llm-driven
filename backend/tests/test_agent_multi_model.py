@@ -16,6 +16,19 @@ from app.services.agent_executor import (
 )
 
 
+async def _no_simple_diet_nutrition_estimate(_food_items):
+    return None
+
+
+@pytest.fixture(autouse=True)
+def _isolate_simple_diet_nutrition_estimator(monkeypatch):
+    """Multi-model unit tests must not reach the external nutrition model."""
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        _no_simple_diet_nutrition_estimate,
+    )
+
+
 def test_extract_multi_model_flag():
     assert _extract_multi_model_flag('{"multi_model": true}') is True
     assert _extract_multi_model_flag('{"multi_model": false}') is False

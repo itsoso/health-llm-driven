@@ -294,3 +294,34 @@ duplicate, no generic disclaimer/detail prompt, and no new reconciliation genera
 
 Record actual G3–G6 evidence and set `shipped` only after the production loop closes. Keep
 any client packaging/OTA limitation explicit rather than claiming it shipped.
+
+### Task 7: Correct the production-only missing-nutrition failure
+
+**Trigger:** The first exact production phrase compiled to the intended diet goal and called
+`health_record`, but the tool model omitted all five nutrition fields. The validator returned
+`diet_nutrition_incomplete`; zero tool operations and zero diet records were created.
+
+**Files:**
+- Modify: `backend/app/services/agent_executor.py`
+- Modify: `backend/tests/test_agent_simple_record_goal_guard.py`
+- Modify: `backend/tests/test_agent_executor_completion_status.py`
+- Modify: `backend/tests/test_agent_multi_model.py`
+
+**Step 1: Add failing unit and stream tests**
+
+Require a model-authored canonical peach call without nutrition to receive one sanitized,
+bounded estimate and one dispatch. Assert food, meal, date, and source do not change. Assert
+blocked Runtime skips estimation, and invalid totals remain rejected.
+
+**Step 2: Add the narrow enrichment boundary**
+
+Run it after goal canonicalization and before planned-write persistence. Call the existing
+text estimator at most once per turn, in a worker thread; use sanitized per-food totals and
+fill numeric fields only. Keep the normal validator, Runtime, checkpoint, and receipt path.
+
+**Step 3: Return to the failed Gates**
+
+Re-run backend integration, `qwen3.7-max` live evaluation, CI, backend deployment, then both
+exact production phrases one at a time. Stop before the second phrase if the first does not
+produce exactly one verified owned record; delete only the synthetic smoke records after
+verification.

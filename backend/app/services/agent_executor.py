@@ -6398,6 +6398,225 @@ def _merge_equivalent_diet_model_estimates(
     }
 
 
+_SIMPLE_DIET_NUTRITION_FIELDS = (
+    "calories",
+    "protein",
+    "carbs",
+    "fat",
+    "fiber",
+)
+_SIMPLE_DIET_NUTRITION_LIMITS = {
+    "calories": 5000.0,
+    "protein": 1000.0,
+    "carbs": 1000.0,
+    "fat": 500.0,
+    "fiber": 200.0,
+}
+
+
+def _simple_diet_nutrition_is_complete(data: Mapping[str, Any]) -> bool:
+    values: dict[str, float] = {}
+    for field in _SIMPLE_DIET_NUTRITION_FIELDS:
+        raw = data.get(field)
+        if isinstance(raw, bool):
+            return False
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return False
+        if (
+            not math.isfinite(value)
+            or value < 0
+            or value > _SIMPLE_DIET_NUTRITION_LIMITS[field]
+        ):
+            return False
+        values[field] = value
+    try:
+        alcohol_units = float(data.get("alcohol_units") or 0)
+    except (TypeError, ValueError):
+        alcohol_units = 0.0
+    has_alcohol_energy = math.isfinite(alcohol_units) and alcohol_units > 0
+    return bool(
+        values["calories"] > 0
+        and (
+            any(values[field] > 0 for field in ("protein", "carbs", "fat"))
+            or has_alcohol_energy
+        )
+    )
+
+
+async def _estimate_simple_diet_nutrition(
+    food_items: str,
+) -> Optional[Dict[str, float]]:
+    """Return bounded totals from the existing text-nutrition estimator.
+
+    The estimate is numeric enrichment only.  The caller keeps the user's
+    canonical meal/date/food text and still sends the resulting payload through
+    the normal validator, ToolGateway, write checkpoint, and receipt boundary.
+    """
+    try:
+        from app.services.ai.food_recognition import (
+            food_recognition_service,
+            sanitize_food_recognition_result,
+        )
+
+        raw = await asyncio.to_thread(
+            food_recognition_service.estimate_nutrition_from_text,
+            food_items,
+        )
+        sanitized = sanitize_food_recognition_result(raw)
+    except Exception as exc:  # noqa: BLE001 - fail closed at the write validator
+        logger.warning(
+            "[agent_executor] simple diet nutrition estimation failed "
+            "error_type=%s",
+            type(exc).__name__,
+        )
+        return None
+
+    mapping = {
+        "calories": "total_calories",
+        "protein": "total_protein",
+        "carbs": "total_carbs",
+        "fat": "total_fat",
+        "fiber": "total_fiber",
+    }
+    estimate = {
+        field: sanitized.get(total_field)
+        for field, total_field in mapping.items()
+    }
+    if not sanitized.get("success") or not _simple_diet_nutrition_is_complete(
+        estimate
+    ):
+        logger.warning(
+            "[agent_executor] simple diet nutrition estimator returned "
+            "an incomplete bounded result"
+        )
+        return None
+    return {
+        field: float(estimate[field])
+        for field in _SIMPLE_DIET_NUTRITION_FIELDS
+    }
+
+
+async def _enrich_simple_diet_goal_tool_calls(
+    tool_calls: List[Dict[str, Any]],
+    goal: Optional[GoalSpec],
+    *,
+    estimation_attempted: bool,
+    runtime_write_blocked: bool,
+) -> tuple[List[Dict[str, Any]], bool]:
+    """Fill a canonical simple-diet call once when its nutrition is missing.
+
+    This runs after the goal guard has replaced model-authored identity fields,
+    so only numeric estimates can be added.  A paused Runtime skips the external
+    estimate entirely and remains the first terminal boundary.
+    """
+    if (
+        runtime_write_blocked
+        or estimation_attempted
+        or goal is None
+        or goal.kind != "simple_health_record"
+        or goal.target_record_type != "diet"
+    ):
+        return tool_calls, estimation_attempted
+
+    candidates: list[
+        tuple[int, Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any]]
+    ] = []
+    for index, tool_call in enumerate(tool_calls):
+        function = tool_call.get("function") or {}
+        if str(function.get("name") or "") != "health_record":
+            continue
+        try:
+            arguments = (
+                json.loads(function.get("arguments"))
+                if isinstance(function.get("arguments"), str)
+                else dict(function.get("arguments") or {})
+            )
+        except (json.JSONDecodeError, TypeError, ValueError):
+            continue
+        data = arguments.get("data")
+        if (
+            _normalize_fast_record_kind(arguments.get("record_type") or "")
+            != "diet"
+            or not isinstance(data, dict)
+        ):
+            continue
+        food_items = str(data.get("food_items") or "").strip()
+        if not food_items:
+            continue
+        candidates.append((index, tool_call, function, arguments, data))
+
+    if not candidates or (
+        len(candidates) == 1
+        and _simple_diet_nutrition_is_complete(candidates[0][4])
+    ):
+        return tool_calls, estimation_attempted
+
+    canonical_nutrition: Optional[Dict[str, float]] = None
+    for _, _, _, _, data in candidates:
+        if _simple_diet_nutrition_is_complete(data):
+            canonical_nutrition = {
+                field: float(data[field])
+                for field in _SIMPLE_DIET_NUTRITION_FIELDS
+            }
+            break
+
+    if canonical_nutrition is None:
+        food_items = str(candidates[0][4]["food_items"]).strip()
+        estimate = await _estimate_simple_diet_nutrition(food_items)
+        estimation_attempted = True
+        if estimate is None:
+            return tool_calls, estimation_attempted
+        canonical_nutrition = dict(estimate)
+
+        # Preserve one stable model/user-provided numeric fact, but never blend
+        # conflicting duplicate calls into multiple write fingerprints.
+        for field in _SIMPLE_DIET_NUTRITION_FIELDS:
+            present = [
+                data[field]
+                for _, _, _, _, data in candidates
+                if data.get(field) not in (None, "")
+            ]
+            if not present:
+                continue
+            try:
+                numeric = [float(value) for value in present]
+            except (TypeError, ValueError):
+                continue
+            if (
+                all(math.isfinite(value) for value in numeric)
+                and all(
+                    math.isclose(value, numeric[0], rel_tol=1e-6, abs_tol=1e-6)
+                    for value in numeric[1:]
+                )
+                and 0 <= numeric[0] <= _SIMPLE_DIET_NUTRITION_LIMITS[field]
+            ):
+                canonical_nutrition[field] = present[0]
+
+    updated_calls = list(tool_calls)
+    for index, tool_call, function, arguments, data in candidates:
+        enriched_data = dict(data)
+        enriched_data.update(canonical_nutrition)
+        if not _simple_diet_nutrition_is_complete(enriched_data):
+            return tool_calls, estimation_attempted
+        enriched_arguments = dict(arguments)
+        enriched_arguments["data"] = enriched_data
+        updated_calls[index] = {
+            **tool_call,
+            "function": {
+                **function,
+                "arguments": json.dumps(enriched_arguments, ensure_ascii=False),
+            },
+        }
+    logger.info(
+        "[agent_executor] simple diet nutrition enriched calls=%s food_chars=%s",
+        len(candidates),
+        len(str(candidates[0][4]["food_items"])),
+    )
+    return updated_calls, estimation_attempted
+
+
 def _simple_record_goal_completion_text(goal: GoalSpec) -> str:
     """Render a verified simple-record result without another model call."""
     values = dict(goal.target_values)
@@ -8363,6 +8582,7 @@ class AgentExecutor:
             last_recoverable_write_rejection_code: Optional[str] = None
             deterministic_diet_correction_fallback_attempted = False
             deterministic_simple_record_fallback_attempted = False
+            simple_diet_nutrition_estimation_attempted = False
             deterministic_goal_lookup_attempted = False
             goal_verification_attempted = False
             receipt_goal_evaluated = False
@@ -8580,6 +8800,22 @@ class AgentExecutor:
                         ),
                         lookup_completed=goal_lookup_completed,
                         allowed_record_ids=goal_allowed_record_ids,
+                    )
+                    tool_calls, simple_diet_nutrition_estimation_attempted = (
+                        await _enrich_simple_diet_goal_tool_calls(
+                            tool_calls,
+                            (
+                                self._agent_kernel_snapshot.goal
+                                if self._agent_kernel_snapshot is not None
+                                else None
+                            ),
+                            estimation_attempted=(
+                                simple_diet_nutrition_estimation_attempted
+                            ),
+                            runtime_write_blocked=bool(
+                                self._runtime_write_block_reason
+                            ),
+                        )
                     )
                     rejected_goal_writes = _goal_guard_rejected_writes(
                         proposed_tool_calls,
@@ -10180,6 +10416,7 @@ class AgentExecutor:
         deterministic_symptom_fallback_attempted = False
         deterministic_diet_correction_fallback_attempted = False
         deterministic_simple_record_fallback_attempted = False
+        simple_diet_nutrition_estimation_attempted = False
         deterministic_goal_lookup_attempted = False
         goal_verification_attempted = False
         receipt_goal_evaluated = False
@@ -10912,6 +11149,22 @@ class AgentExecutor:
                         ),
                         lookup_completed=goal_lookup_completed,
                         allowed_record_ids=goal_allowed_record_ids,
+                    )
+                    tool_calls, simple_diet_nutrition_estimation_attempted = (
+                        await _enrich_simple_diet_goal_tool_calls(
+                            tool_calls,
+                            (
+                                self._agent_kernel_snapshot.goal
+                                if self._agent_kernel_snapshot is not None
+                                else None
+                            ),
+                            estimation_attempted=(
+                                simple_diet_nutrition_estimation_attempted
+                            ),
+                            runtime_write_blocked=bool(
+                                self._runtime_write_block_reason
+                            ),
+                        )
                     )
                     rejected_goal_writes = _goal_guard_rejected_writes(
                         proposed_tool_calls,

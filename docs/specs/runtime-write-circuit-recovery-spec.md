@@ -20,6 +20,11 @@ control failure and produces an incorrect generic reply. The UI reports the atte
 as “调用 Skill”. A common diet phrase without an explicit meal label also misses the bounded
 simple-record goal.
 
+A second production smoke then exposed that the bounded goal still depended on the first
+tool-selection model to supply all five nutrition numbers. When it omitted them, the hard
+nutrition validator correctly rejected the write and later model rounds could not safely
+repair the canonical operation.
+
 If unchanged, one unresolved operation can cause an indefinite global write outage and make
 users distrust whether health data was recorded.
 
@@ -53,6 +58,7 @@ RequirementAdmission:
 
 - Do not auto-replay or mutate the unresolved production write.
 - Do not lower verified-receipt requirements or nutrition validation.
+- Do not let nutrition enrichment rewrite the user-owned food, meal, or record date.
 - Do not add clinical recommendations or raise autonomy.
 - Do not replace the durable Runtime control plane.
 - Do not introduce a scoped-circuit database migration in the active recovery slice.
@@ -71,6 +77,7 @@ RequirementAdmission:
 record request
   -> deterministic goal and meal inference
   -> scoped Runtime admission
+  -> server-owned numeric nutrition enrichment when admission is available and the model estimate is incomplete
   -> write tool gateway
   -> verified receipt OR deterministic terminal block
   -> truthful cross-surface presentation
@@ -121,8 +128,11 @@ the previous global fail-closed behavior.
 ## 10. AI Behavior
 
 - The LLM may estimate bounded nutrition for an explicit food phrase.
-- Deterministic code owns meal inference, control-state interpretation, dispatch facts, and
-  success claims.
+- When the first tool-selection model omits required diet nutrition, the executor calls the
+  existing text-nutrition estimator once, sanitizes and bounds its result, and fills numeric
+  fields only. It skips this external call while Runtime writes are blocked.
+- Deterministic code owns food/meal/date identity, meal inference, control-state
+  interpretation, dispatch facts, and success claims.
 - The LLM must not convert `runtime_control_unavailable` into missing user details, a health
   disclaimer, or a success claim.
 - Failure degrades to deterministic terminal copy after one attempted write.
@@ -133,6 +143,20 @@ the previous global fail-closed behavior.
 Given local time is 21:05 and the user says “记录吃了一个桃子”
 When the goal is compiled
 Then it is one diet create for snack with food_items “一个桃子”
+
+Given that bounded diet goal and a model tool call without complete nutrition
+When the Runtime write path is available
+Then the server estimates nutrition once, preserves food/meal/date exactly, validates all
+five bounded numeric fields, and dispatches one canonical write
+
+Given the nutrition estimator fails or returns incomplete, non-finite, or unbounded values
+When the canonical diet write is prepared
+Then the original nutrition validator rejects it and no health record is persisted
+
+Given Runtime writes are blocked before dispatch
+When the canonical diet tool call lacks nutrition
+Then no nutrition provider is called and the typed Runtime block remains the first terminal
+boundary
 
 Given a write is blocked by a paused Runtime before dispatch
 When the Agent receives runtime_control_unavailable
@@ -205,3 +229,4 @@ only if admission-time scoping proves operationally insufficient.
 | Date | Change | Reason |
 |---|---|---|
 | 2026-08-01 | Initial approved spec | Production global write outage and exact diet-record failures |
+| 2026-08-01 | Add server-owned numeric nutrition enrichment | First production smoke reached the correct goal but the weak tool model omitted all required nutrition fields; zero writes occurred |
