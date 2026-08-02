@@ -41,6 +41,29 @@ def _assert_uncertain_write(result: str) -> None:
     assert outcome.error_code == "doctor_feedback_write_uncertain"
 
 
+def _managed_doctor_feedback_executor(db, *, user_id: int, run_suffix: str):
+    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    runtime = AgentRuntimeCoordinator(db)
+    admission = runtime.create_or_resume_run(
+        run_id=f"run-doctor-feedback-{run_suffix}",
+        attempt_id=f"attempt-doctor-feedback-{run_suffix}",
+        user_id=user_id,
+        conversation_id=None,
+        client_turn_id=f"turn-doctor-feedback-{run_suffix}",
+        origin="test",
+    )
+    runtime.mark_running(admission.context)
+    executor = AgentExecutor(db)
+    executor._current_user_id = user_id
+    executor._current_turn_user_message = "请记录医生诊断：当前评估"
+    executor._runtime_run_id = admission.context.run_id
+    executor._runtime_attempt_id = admission.context.attempt_id
+    executor._runtime_managed = True
+    return executor
+
+
 @pytest.mark.asyncio
 async def test_health_record_missing_diet_items_is_structured_local_rejection(db):
     from app.services.agent_executor import AgentExecutor
@@ -1276,31 +1299,50 @@ async def test_doctor_feedback_service_cannot_insert_new_row_but_return_old_row(
 
 
 @pytest.mark.asyncio
-async def test_doctor_feedback_concurrent_same_owner_insert_is_uncertain(
+@pytest.mark.parametrize(
+    "concurrent_owner",
+    ("same_owner", "other_owner"),
+)
+async def test_doctor_feedback_concurrent_insert_keeps_requested_receipt_verified(
     db,
     auth_user_and_headers,
     monkeypatch,
+    concurrent_owner,
 ):
+    from app.models.agent_runtime import AgentToolOperation
     from app.models.clinical_journal import ClinicalJournalEntry
+    from app.models.user import User
     from app.services import doctor_report_service
-    from app.services.agent_executor import (
-        AgentExecutor,
-        _write_receipt_from_tool_result,
-    )
+    from app.services.agent_executor import _write_receipt_from_tool_result
 
     user, _headers = auth_user_and_headers
+    concurrent_user_id = user.id
+    if concurrent_owner == "other_owner":
+        other = User(
+            id=user.id + 1,
+            username="doctor-feedback-concurrent-other",
+            name="并发反馈其他用户",
+        )
+        db.add(other)
+        db.commit()
+        concurrent_user_id = other.id
     real_record = doctor_report_service.record_doctor_feedback
+    requested_id = None
+    concurrent_id = None
 
     def record_with_concurrent_insert(db_session, **kwargs):
+        nonlocal requested_id, concurrent_id
         requested = real_record(db_session, **kwargs)
-        db_session.add(
-            ClinicalJournalEntry(
-                user_id=kwargs["user_id"],
-                assessment="同一用户的并发医生反馈",
-                created_by="doctor",
-            )
+        requested_id = requested.id
+        concurrent = ClinicalJournalEntry(
+            user_id=concurrent_user_id,
+            assessment="并发创建的另一条医生反馈",
+            created_by="doctor",
         )
+        db_session.add(concurrent)
         db_session.commit()
+        db_session.refresh(concurrent)
+        concurrent_id = concurrent.id
         return requested
 
     monkeypatch.setattr(
@@ -1308,20 +1350,120 @@ async def test_doctor_feedback_concurrent_same_owner_insert_is_uncertain(
         "record_doctor_feedback",
         record_with_concurrent_insert,
     )
-    executor = AgentExecutor(db)
-    executor._current_user_id = user.id
+    executor = _managed_doctor_feedback_executor(
+        db,
+        user_id=user.id,
+        run_suffix=f"concurrent-{concurrent_owner}",
+    )
     args = {"assessment": "当前请求的医生反馈", "visit_date": "2026-08-01"}
 
-    result = await executor._exec_record_doctor_feedback(args)
+    result = await executor._execute_tool("record_doctor_feedback", args, None)
+
+    payload = json.loads(result)
+    receipt = _write_receipt_from_tool_result(
+        "record_doctor_feedback", args, result
+    )
+    rows = db.query(ClinicalJournalEntry).all()
+    operation = db.query(AgentToolOperation).one()
+    assert requested_id is not None
+    assert concurrent_id is not None
+    assert requested_id < concurrent_id
+    assert len(rows) == 2
+    assert payload["id"] == requested_id
+    assert receipt is not None
+    assert receipt["status"] == "verified"
+    assert receipt["resource_id"] == str(requested_id)
+    assert operation.status == "succeeded"
+    assert operation.resource_id == str(requested_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mutation_kind",
+    ("current_orchestrator", "other_owner_doctor"),
+)
+async def test_doctor_feedback_runtime_rejects_mutated_preexisting_row(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    mutation_kind,
+):
+    from app.models.agent_runtime import AgentToolOperation
+    from app.models.clinical_journal import ClinicalJournalEntry
+    from app.models.user import User
+    from app.services import doctor_report_service
+    from app.services.agent_executor import _write_receipt_from_tool_result
+
+    user, _headers = auth_user_and_headers
+    if mutation_kind == "current_orchestrator":
+        old_owner_id = user.id
+        old_created_by = "orchestrator"
+    else:
+        other = User(
+            id=user.id + 1,
+            username="doctor-feedback-mutated-other",
+            name="被篡改反馈其他用户",
+        )
+        db.add(other)
+        db.commit()
+        old_owner_id = other.id
+        old_created_by = "doctor"
+    old = ClinicalJournalEntry(
+        user_id=old_owner_id,
+        subjective="旧摘要",
+        objective="旧客观内容",
+        assessment="旧评估",
+        plan="旧计划",
+        created_by=old_created_by,
+    )
+    db.add(old)
+    db.commit()
+    old_id = old.id
+
+    def mutate_old_row(db_session, **kwargs):
+        old.user_id = kwargs["user_id"]
+        old.created_by = "doctor"
+        old.subjective = kwargs["summary"]
+        old.assessment = kwargs["assessment"]
+        old.plan = kwargs["plan"]
+        old.objective = f"医生随访 @ {kwargs['visit_date'].isoformat()}"
+        db_session.commit()
+        db_session.refresh(old)
+        return old
+
+    monkeypatch.setattr(
+        doctor_report_service,
+        "record_doctor_feedback",
+        mutate_old_row,
+    )
+    executor = _managed_doctor_feedback_executor(
+        db,
+        user_id=user.id,
+        run_suffix=f"mutated-{mutation_kind}",
+    )
+    args = {
+        "summary": "当前摘要",
+        "assessment": "当前评估",
+        "plan": "当前计划",
+        "visit_date": "2026-08-01",
+    }
+
+    result = await executor._execute_tool("record_doctor_feedback", args, None)
 
     _assert_uncertain_write(result)
     assert _write_receipt_from_tool_result(
-        "record_doctor_feedback",
-        args,
-        result,
+        "record_doctor_feedback", args, result
     ) is None
-    rows = db.query(ClinicalJournalEntry).filter_by(user_id=user.id).all()
-    assert len(rows) == 2
+    rows = db.query(ClinicalJournalEntry).all()
+    operation = db.query(AgentToolOperation).one()
+    assert len(rows) == 1
+    assert rows[0].id == old_id
+    assert rows[0].user_id == user.id
+    assert rows[0].created_by == "doctor"
+    assert rows[0].assessment == "当前评估"
+    assert operation.status == "reconciliation_required"
+    assert operation.error_code == "write_uncertain"
+    assert operation.resource_id is None
 
 
 @pytest.mark.asyncio

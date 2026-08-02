@@ -19428,19 +19428,13 @@ class AgentExecutor:
         from sqlalchemy import func
 
         try:
-            pre_count, pre_max_id = (
-                self.db.query(
-                    func.count(ClinicalJournalEntry.id),
-                    func.max(ClinicalJournalEntry.id),
-                )
-                .filter(
-                    ClinicalJournalEntry.user_id == user_id,
-                    ClinicalJournalEntry.created_by == "doctor",
-                )
-                .one()
-            )
-            pre_count = int(pre_count or 0)
-            pre_max_id = int(pre_max_id or 0)
+            # A returned ID above this global high-water mark proves that the
+            # resource did not exist before dispatch, while permitting other
+            # rows to be inserted concurrently after the snapshot.
+            pre_global_max_id = self.db.query(
+                func.max(ClinicalJournalEntry.id)
+            ).scalar()
+            pre_global_max_id = int(pre_global_max_id or 0)
         except Exception as exc:  # noqa: BLE001
             logger.error(
                 "operation=record_doctor_feedback snapshot_error_type=%s",
@@ -19476,6 +19470,7 @@ class AgentExecutor:
                 not isinstance(entry_id, int)
                 or isinstance(entry_id, bool)
                 or entry_id <= 0
+                or entry_id <= pre_global_max_id
                 or entry.created_by != "doctor"
                 or entry.user_id != user_id
                 or entry.subjective != normalized["summary"]
@@ -19484,24 +19479,6 @@ class AgentExecutor:
                 or entry.objective != f"医生随访 @ {visit_date.isoformat()}"
             ):
                 raise RuntimeError("invalid_doctor_feedback_receipt")
-
-            post_count, post_max_id = (
-                self.db.query(
-                    func.count(ClinicalJournalEntry.id),
-                    func.max(ClinicalJournalEntry.id),
-                )
-                .filter(
-                    ClinicalJournalEntry.user_id == user_id,
-                    ClinicalJournalEntry.created_by == "doctor",
-                )
-                .one()
-            )
-            if (
-                int(post_count or 0) != pre_count + 1
-                or entry_id <= pre_max_id
-                or int(post_max_id or 0) != entry_id
-            ):
-                raise RuntimeError("unverified_doctor_feedback_freshness")
 
             persisted = (
                 self.db.query(ClinicalJournalEntry)
