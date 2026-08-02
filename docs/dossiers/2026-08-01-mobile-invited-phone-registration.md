@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-invited-phone-registration` |
 | 创建日期 | 2026-08-01 |
-| 当前阶段 | S3 设计已确认，待实施规划 |
-| 状态 | definition_approved |
+| 当前阶段 | G4 已通过；等待 G5 部署健康闸 |
+| 状态 | shipping · implementation complete, not deployed |
 | 负责 | Codex |
 | 反馈环 | Backend PostgreSQL auth tests / Mobile Jest + TypeScript / Web tests / iOS real device |
 
@@ -65,32 +65,49 @@
 
 ## S4 · 需求分解
 
-- [ ] Managed PostgreSQL migration + `RegistrationInvitation` model/repository
-- [ ] 管理员创建/列表/重发/撤销 API 与审计
-- [ ] SMS 注册邀请模板与失败语义
-- [ ] Phone verify outcome + verified ticket + invited registration transaction
-- [ ] Mobile 邀请深链、手机号/OTP/邀请码状态机与 SecureStore 恢复
-- [ ] Web 管理员邀请视图
-- [ ] OpenAPI/client types、focused/concurrency/privacy tests
+- [x] Managed PostgreSQL migration + `RegistrationInvitation` model/repository
+- [x] 管理员创建/列表/重发/撤销 API 与审计
+- [x] SMS 注册邀请模板与失败语义
+- [x] Phone verify outcome + verified ticket + invited registration transaction
+- [x] Mobile 邀请深链、手机号/OTP/邀请码状态机与 SecureStore 恢复
+- [x] Web 管理员邀请视图
+- [x] OpenAPI/client types、focused/concurrency/privacy tests
 - [ ] 分阶段 enforcement、OTA、生产 smoke 与真机 G6
+
+## S5 · 实现
+
+- Backend 新增绑定手机号的单次邀请、短时 verified-phone grant、原子核销建号、管理端发送/重发/撤销和无敏感数据聚合观测。
+- Mobile 实现 OTP outcome 分流、邀请深链/手工码、SecureStore 恢复、onboarding 衔接与防残留凭据复活的 logout tombstone。
+- Web 管理面板实现手机号脱敏确认、有效期、发送终态、一次性凭据展示和 legacy 邀请码分区。
+- Rollout 四态已收口：旧版兼容窗、完全强制、安全回滚关闭新注册、本地 legacy-only。手机号、微信、旧邀请、管理员创建/审批和账号合并旁路均已 fail-closed。
+- 实现提交为 `2eed8573f..e6fd9a249`；当前功能分支尚未部署。
 
 ## G3 · 测试闸
 
-`PENDING`：尚未实现。
+- Backend 认证/邀请/安全/隐私相关集：`345 passed, 2 skipped`；两个条件跳过项后续在真实 PostgreSQL 专项中通过。
+- 阻塞 CI 的真实 PostgreSQL job：`149 passed, 0 skipped`，覆盖双 session 邀请注册、OTP grant、错误尝试计数、grant 核销、同源账号合并竞争和 migration 重放约束；CI 静态契约防止节点被移除后假 skip。
+- Mobile 全量：`290/290 suites`，`2371 passed, 1 skipped`；TypeScript 通过，Expo lint `0 errors`。
+- Web 全量：`56 files / 334 tests passed`；TypeScript 通过，lint `0 errors`，production build `73/73` 页面通过。
+- OpenAPI 用 CI 固定版 `openapi-typescript@7.13.0` 临时生成，Mobile/Web 类型均逐字节一致。Doc drift、dossier consistency 和 `git diff --check` 通过。
+- **裁决：PASS。** 相关全集与生产数据库语义均为绿，允许进入 G4。
 
 ## G4 · 安全闸
 
-`PENDING`：认证改动实现提交后必须独立 safety/privacy reviewer `GO`。
+- 独立 safety/privacy reviewer 对未知用户旁路、用户枚举、OTP/grant/invite replay、并发双建号、PII/凭据泄漏、非管理员写入、rollout fail-open、旧客户端兼容、深链与本地存储进行多轮攻击性审查。
+- 所有 NO-GO 项已返回上游加 RED 测试并修复：严格密文读取 fail-closed、OTP provider 异常脱敏、管理员/微信/旧注册旁路封闭、幂等恢复过期限制、自助账号合并停用、管理员合并锁/原子终态审计/never-throw 失败边界，以及 Mobile 两阶段 logout tombstone 与 epoch 竞态隔离。
+- 最终独立复审结论：**GO**，未发现剩余代码级安全/隐私阻断项。
+- 非阻断运营风险：iOS 卸载时 AsyncStorage 与 Keychain 生命周期不同，后续宜增加服务端 token 撤销或 Keychain 同生命周期 generation marker；PostgreSQL 连接中断仍有 commit 结果不确定窗口，运维重试前必须先查 `admin_user_merge_completed` 终态审计。
+- **裁决：PASS / GO。** 允许进入 G5，不代表已部署。
 
 ## G5 · 部署健康闸
 
-`PENDING`：尚未部署。
+**PENDING**：尚未部署。上线前必须确认生产 encryption/digest key 稳定、邀请 SMS 签名/模板已审核，并按兼容窗 → Mobile OTA → enforcement 的顺序执行。
 
 ## G6 · 验证闸
 
-`PENDING`：需真机证明老用户登录、无邀请拒绝、受邀注册和邀请不可二次使用。
+**PENDING**：需真机证明老用户登录、无邀请拒绝、受邀注册、邀请不可二次使用，以及注销后残留 token/pending registration 不复活。
 
 ## S8 · 沉淀
 
-定义完成后将 Mobile 登录/注册与管理员邀请流同步到 system-map product/mobile nav map；
-架构计数只能由生成器更新，不手写。
+- 系统结构快照已通过 `scripts/dump_system_map.py` 重新生成，架构计数继续以代码派生文件为唯一真源。
+- G5/G6 完成后回填生产部署提交、迁移、健康分、OTA 标识与真机证据。
