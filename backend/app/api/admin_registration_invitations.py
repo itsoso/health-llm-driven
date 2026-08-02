@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.admin import get_admin_user
+from app.config import settings
 from app.database import get_db
 from app.models.agent_audit_log import AgentAuditLog
 from app.models.registration_invitation import RegistrationInvitation
@@ -45,6 +46,15 @@ _MAX_PHONE_INPUT_LENGTH = 32
 
 def _error(status_code: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail={"code": code, "message": message})
+
+
+def _require_rollout_open() -> None:
+    if not settings.registration_invitation_rollout_enabled:
+        raise _error(
+            status.HTTP_403_FORBIDDEN,
+            "REGISTRATION_CLOSED",
+            "新用户注册暂时关闭，已注册用户仍可登录",
+        )
 
 
 def _aware(value: datetime) -> datetime:
@@ -265,6 +275,7 @@ def create_invitation(
     admin: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
+    _require_rollout_open()
     now = datetime.now(UTC)
     actor_id = int(admin.id)
     if request.expires_at is not None and _aware(request.expires_at) <= now:
@@ -387,6 +398,7 @@ def prepare_resend(
     admin: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
+    _require_rollout_open()
     actor_id = int(admin.id)
     try:
         invitation = _locked_invitation(db, invitation_id)

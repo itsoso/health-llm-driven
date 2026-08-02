@@ -119,6 +119,62 @@ def test_production_invitation_sms_accepts_effective_fallback_access_keys():
     configured.validate_required_security()
 
 
+@pytest.mark.parametrize(
+    ("dedicated_id", "dedicated_secret"),
+    [("dedicated-id", None), (None, "dedicated-secret")],
+)
+def test_production_invitation_sms_rejects_partial_dedicated_pair_instead_of_mixing(
+    dedicated_id, dedicated_secret
+):
+    configured = Settings(
+        _env_file=None,
+        secret_key="A" * 32,
+        app_env="production",
+        debug=False,
+        garmin_encryption_key="B" * 44,
+        device_encryption_key="C" * 44,
+        registration_invitation_digest_key="D" * 32,
+        registration_invitation_rollout_enabled=True,
+        aliyun_access_key_id="fallback-id",
+        aliyun_access_key_secret="fallback-secret",
+        aliyun_sms_access_key_id=dedicated_id,
+        aliyun_sms_access_key_secret=dedicated_secret,
+        registration_invitation_sms_sign_name="小巴邀请",
+        registration_invitation_sms_template_code="SMS_INVITE_123",
+    )
+
+    with pytest.raises(ValueError, match="ALIYUN_SMS_ACCESS_KEY"):
+        configured.validate_required_security()
+
+
+@pytest.mark.parametrize(
+    ("invite_sign", "invite_template"),
+    [("OTP签名", "SMS_INVITE_123"), ("小巴邀请", "SMS_OTP_123")],
+)
+def test_production_invitation_sms_rejects_otp_sign_or_template_reuse(
+    invite_sign, invite_template
+):
+    configured = Settings(
+        _env_file=None,
+        secret_key="A" * 32,
+        app_env="production",
+        debug=False,
+        garmin_encryption_key="B" * 44,
+        device_encryption_key="C" * 44,
+        registration_invitation_digest_key="D" * 32,
+        registration_invitation_rollout_enabled=True,
+        aliyun_sms_access_key_id="dedicated-id",
+        aliyun_sms_access_key_secret="dedicated-secret",
+        aliyun_sms_sign_name="OTP签名",
+        aliyun_sms_template_code="SMS_OTP_123",
+        registration_invitation_sms_sign_name=invite_sign,
+        registration_invitation_sms_template_code=invite_template,
+    )
+
+    with pytest.raises(ValueError, match="must not reuse OTP"):
+        configured.validate_required_security()
+
+
 def test_backup_and_migration_scripts_do_not_embed_database_credentials():
     repo_root = Path(__file__).resolve().parents[2]
     files = (

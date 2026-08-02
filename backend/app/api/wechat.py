@@ -5,9 +5,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional, Dict, List
-from datetime import datetime, timedelta
-import jwt
+from typing import Optional, Dict
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -136,11 +134,19 @@ async def wechat_login(
     merged_user_id = None
 
     if not user:
+        if settings.registration_invitation_enforcement_enabled:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "REGISTRATION_INVITATION_REQUIRED",
+                    "message": "新用户需要管理员发送的手机号注册邀请",
+                },
+            )
         # 新用户 - 验证邀请码
         if not login_request.invite_code:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"新用户注册需要邀请码，请输入邀请码"
+                detail="新用户注册需要邀请码，请输入邀请码"
             )
 
         # 验证邀请码：先检查数据库中的邀请码，再检查默认邀请码
@@ -159,16 +165,20 @@ async def wechat_login(
             # 增加使用次数
             db_invite.used_count += 1
             db.commit()
-            logger.info(f"使用数据库邀请码: {invite_code_upper}, 已使用 {db_invite.used_count}/{db_invite.max_uses}")
+            logger.info(
+                "使用数据库邀请码，已使用 %s/%s",
+                db_invite.used_count,
+                db_invite.max_uses,
+            )
         elif invite_code_upper == settings.default_invite_code.upper():
             # 默认邀请码有效
             invite_valid = True
-            logger.info(f"使用默认邀请码: {invite_code_upper}")
+            logger.info("使用默认邀请码")
 
         if not invite_valid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"邀请码无效或已过期，请输入正确的邀请码"
+                detail="邀请码无效或已过期，请输入正确的邀请码"
             )
 
         # 检查是否有匹配的PC用户可以合并
@@ -226,7 +236,7 @@ async def wechat_login(
             db.commit()
             db.refresh(user)
 
-            logger.info(f"创建新微信用户: {user.id} ({nickname}), 邀请码: {user.invite_code}, 自动审核通过")
+            logger.info("旧版邀请码创建微信用户: user_id=%s", user.id)
     else:
         # 已存在的微信用户 - 更新信息
         user.wechat_session_key = session_key
@@ -400,7 +410,7 @@ async def save_subscribe_settings(
         if isinstance(existing_templates, str):
             try:
                 existing_templates = json.loads(existing_templates)
-            except:
+            except (json.JSONDecodeError, TypeError):
                 existing_templates = {}
         existing_templates.update(request.template_ids)
         settings_record.wechat_template_ids = existing_templates
@@ -447,7 +457,7 @@ async def get_subscribe_settings(
     if isinstance(template_ids, str):
         try:
             template_ids = json.loads(template_ids)
-        except:
+        except (json.JSONDecodeError, TypeError):
             template_ids = None
 
     return SubscribeSettingsResponse(

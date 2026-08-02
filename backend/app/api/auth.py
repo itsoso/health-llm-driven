@@ -73,6 +73,32 @@ def _auth_error(http_status: int, code: str, message: str) -> HTTPException:
     )
 
 
+def _require_legacy_registration_open() -> None:
+    """Block every legacy account-creation path once enforcement is active."""
+
+    from app.config import settings
+
+    if settings.registration_invitation_enforcement_enabled:
+        raise _auth_error(
+            status.HTTP_403_FORBIDDEN,
+            "REGISTRATION_INVITATION_REQUIRED",
+            "新用户需要管理员发送的手机号注册邀请",
+        )
+
+
+def _require_registration_rollout_open() -> None:
+    """Fail closed when invited registration is paused for safe rollback."""
+
+    from app.config import settings
+
+    if not settings.registration_invitation_rollout_enabled:
+        raise _auth_error(
+            status.HTTP_403_FORBIDDEN,
+            "REGISTRATION_CLOSED",
+            "新用户注册暂时关闭，已注册用户仍可登录",
+        )
+
+
 def _safe_body(model: type, raw: Any):
     """Validate public credential bodies without FastAPI echoing rejected input."""
 
@@ -300,6 +326,8 @@ async def register(
     from app.config import settings
     from app.models.invitation import InvitationCode
 
+    _require_legacy_registration_open()
+
     # 验证邀请码：先检查数据库中的邀请码，再检查默认邀请码
     invite_code_upper = user_data.invite_code.upper()
     invite_valid = False
@@ -312,10 +340,14 @@ async def register(
     if db_invite and db_invite.is_valid:
         invite_valid = True
         db_invite.used_count += 1
-        logger.info(f"使用数据库邀请码: {invite_code_upper}, 已使用 {db_invite.used_count}/{db_invite.max_uses}")
+        logger.info(
+            "使用数据库邀请码，已使用 %s/%s",
+            db_invite.used_count,
+            db_invite.max_uses,
+        )
     elif invite_code_upper == settings.default_invite_code.upper():
         invite_valid = True
-        logger.info(f"使用默认邀请码: {invite_code_upper}")
+        logger.info("使用默认邀请码")
 
     if not invite_valid:
         raise HTTPException(
@@ -352,7 +384,7 @@ async def register(
     db.commit()
     db.refresh(user)
 
-    logger.info(f"新用户注册: {user.id} ({user.username}), 邀请码: {user.invite_code}, 自动审核通过")
+    logger.info("旧版邀请码新用户注册: user_id=%s", user.id)
 
     # 邀请码有效，自动通过，直接返回token
     access_token = auth_service.create_access_token({"sub": str(user.id)})
@@ -534,6 +566,17 @@ async def verify_phone_code(
             )
             return _deliver_token(request, response, result)
 
+        from app.config import settings
+
+        if not settings.registration_invitation_rollout_enabled:
+            # A valid OTP remains one-time while rollback closes only new
+            # registrations. Existing users above continue to authenticate.
+            db.commit()
+            raise _auth_error(
+                status.HTTP_403_FORBIDDEN,
+                "REGISTRATION_CLOSED",
+                "新用户注册暂时关闭，已注册用户仍可登录",
+            )
         issued = create_phone_registration_grant(db, phone, now=now)
         db.commit()
         expires_in = max(1, int((issued.expires_at - now).total_seconds()))
@@ -578,6 +621,7 @@ async def inspect_registration_invitation(
     payload: Any = Body(...),
     db: Session = Depends(get_db),
 ):
+    _require_registration_rollout_open()
     parsed = _safe_body(InvitationCredentialInput, payload)
     manual_code, link_token = _validated_invitation_credentials(parsed)
     invitation = (
@@ -627,6 +671,7 @@ async def invited_phone_registration(
         ),
     }
     try:
+        _require_registration_rollout_open()
         parsed = _safe_body(InvitedRegistrationInput, payload)
         manual_code, link_token = _validated_invitation_credentials(parsed)
         ticket = parsed.verified_phone_ticket.get_secret_value().strip()

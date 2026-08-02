@@ -70,14 +70,14 @@ class _InviteSmsInvalidAck(RuntimeError):
 
 
 def _delivery_config(config=settings) -> tuple[str, str, str, str]:
-    access_key_id = (
-        config.aliyun_sms_access_key_id or config.aliyun_access_key_id or ""
-    ).strip()
-    access_key_secret = (
-        config.aliyun_sms_access_key_secret or config.aliyun_access_key_secret or ""
-    ).strip()
-    sign_name = (config.registration_invitation_sms_sign_name or "").strip()
-    template_code = (config.registration_invitation_sms_template_code or "").strip()
+    try:
+        access_key_id, access_key_secret, sign_name, template_code = (
+            config.registration_invitation_sms_delivery_config
+        )
+    except ValueError as exc:
+        raise _InviteSmsNotConfigured(
+            "registration invitation SMS is not configured"
+        ) from exc
     if not access_key_id or not access_key_secret or not sign_name or not template_code:
         raise _InviteSmsNotConfigured("registration invitation SMS is not configured")
     return access_key_id, access_key_secret, sign_name, template_code

@@ -533,6 +533,56 @@ class Settings(BaseSettings):
             if origin.strip()
         ]
 
+    @property
+    def registration_invitation_mode(self) -> str:
+        """Return the bounded server-side rollout state.
+
+        Enforcement is intentionally independent from API rollout so rollback
+        can close new registration without reopening legacy auto-registration.
+        """
+
+        if self.registration_invitation_enforcement_enabled:
+            return (
+                "enforced"
+                if self.registration_invitation_rollout_enabled
+                else "rollback_closed"
+            )
+        return (
+            "ota_compatibility"
+            if self.registration_invitation_rollout_enabled
+            else "legacy_only"
+        )
+
+    @property
+    def registration_invitation_sms_delivery_config(self) -> tuple[str, str, str, str]:
+        """Resolve one complete credential pair and a dedicated template."""
+
+        dedicated_id = (self.aliyun_sms_access_key_id or "").strip()
+        dedicated_secret = (self.aliyun_sms_access_key_secret or "").strip()
+        if bool(dedicated_id) != bool(dedicated_secret):
+            raise ValueError(
+                "registration invitation SMS ALIYUN_SMS_ACCESS_KEY_ID and "
+                "ALIYUN_SMS_ACCESS_KEY_SECRET must either both be set or both be absent"
+            )
+        if dedicated_id:
+            access_key_id, access_key_secret = dedicated_id, dedicated_secret
+        else:
+            access_key_id = (self.aliyun_access_key_id or "").strip()
+            access_key_secret = (self.aliyun_access_key_secret or "").strip()
+
+        sign_name = (self.registration_invitation_sms_sign_name or "").strip()
+        template_code = (self.registration_invitation_sms_template_code or "").strip()
+        if (self.app_env or "").strip().lower() == "production":
+            otp_sign_name = (self.aliyun_sms_sign_name or "").strip()
+            otp_template_code = (self.aliyun_sms_template_code or "").strip()
+            if otp_sign_name and sign_name == otp_sign_name:
+                raise ValueError("registration invitation SMS sign must not reuse OTP sign")
+            if otp_template_code and template_code == otp_template_code:
+                raise ValueError(
+                    "registration invitation SMS template must not reuse OTP template"
+                )
+        return access_key_id, access_key_secret, sign_name, template_code
+
     def validate_required_security(self) -> None:
         """验证生产环境必须的安全配置"""
         if not self.secret_key or "change-in-production" in self.secret_key:
@@ -574,16 +624,8 @@ class Settings(BaseSettings):
                 self.registration_invitation_rollout_enabled
                 or self.registration_invitation_enforcement_enabled
             ):
-                invitation_sms_values = (
-                    self.aliyun_sms_access_key_id or self.aliyun_access_key_id,
-                    self.aliyun_sms_access_key_secret or self.aliyun_access_key_secret,
-                    self.registration_invitation_sms_sign_name,
-                    self.registration_invitation_sms_template_code,
-                )
-                if not all(
-                    isinstance(value, str) and bool(value.strip())
-                    for value in invitation_sms_values
-                ):
+                invitation_sms_values = self.registration_invitation_sms_delivery_config
+                if not all(invitation_sms_values):
                     raise ValueError(
                         "registration invitation SMS configuration is required when "
                         "invitation registration is enabled in production"

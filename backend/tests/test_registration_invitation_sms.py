@@ -21,6 +21,7 @@ from app.services.registration_invitation import create_registration_invitation
 
 @pytest.fixture(autouse=True)
 def _invite_sms_config(monkeypatch):
+    monkeypatch.setattr(settings, "registration_invitation_rollout_enabled", True)
     monkeypatch.setattr(settings, "aliyun_sms_access_key_id", "invite-key")
     monkeypatch.setattr(settings, "aliyun_sms_access_key_secret", "invite-secret")
     monkeypatch.setattr(settings, "registration_invitation_sms_sign_name", "小巴邀请")
@@ -136,6 +137,52 @@ def test_enterprise_aliyun_ack_marks_sent_and_uses_dedicated_template(db, monkey
         "attempt": 1,
         "actor_id": 1,
     }
+
+
+@pytest.mark.parametrize(
+    ("dedicated_id", "dedicated_secret"),
+    [("dedicated-id", None), (None, "dedicated-secret")],
+)
+def test_delivery_rejects_partial_dedicated_access_key_pair_without_http(
+    db, monkeypatch, dedicated_id, dedicated_secret
+):
+    prepared = _prepared(db)
+    monkeypatch.setattr(settings, "aliyun_access_key_id", "fallback-id")
+    monkeypatch.setattr(settings, "aliyun_access_key_secret", "fallback-secret")
+    monkeypatch.setattr(settings, "aliyun_sms_access_key_id", dedicated_id)
+    monkeypatch.setattr(settings, "aliyun_sms_access_key_secret", dedicated_secret)
+    monkeypatch.setattr(
+        __import__("app.services.registration_invitation_sms", fromlist=["httpx"]),
+        "httpx",
+        SimpleNamespace(Client=_Client),
+    )
+
+    result = _deliver(db, prepared, monkeypatch)
+
+    assert result.delivery_status == "send_failed"
+    assert result.error_code == "sms_not_configured"
+    assert _Client.captured_params is None
+
+
+@pytest.mark.parametrize(
+    ("invite_sign", "invite_template"),
+    [("OTP签名", "SMS_INVITE_123"), ("小巴邀请", "SMS_OTP_123")],
+)
+def test_production_delivery_rejects_reused_otp_sign_or_template_without_http(
+    db, monkeypatch, invite_sign, invite_template
+):
+    prepared = _prepared(db)
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "aliyun_sms_sign_name", "OTP签名")
+    monkeypatch.setattr(settings, "aliyun_sms_template_code", "SMS_OTP_123")
+    monkeypatch.setattr(settings, "registration_invitation_sms_sign_name", invite_sign)
+    monkeypatch.setattr(settings, "registration_invitation_sms_template_code", invite_template)
+
+    result = _deliver(db, prepared, monkeypatch)
+
+    assert result.delivery_status == "send_failed"
+    assert result.error_code == "sms_not_configured"
+    assert _Client.captured_params is None
 
 
 @pytest.mark.parametrize(

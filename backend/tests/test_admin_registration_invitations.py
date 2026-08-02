@@ -30,6 +30,11 @@ SAFE_ITEM_FIELDS = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _registration_invitation_rollout(monkeypatch):
+    monkeypatch.setattr(settings, "registration_invitation_rollout_enabled", True)
+
+
 def _admin_headers(db, auth_user_and_headers):
     user, headers = auth_user_and_headers
     user.is_admin = True
@@ -39,6 +44,99 @@ def _admin_headers(db, auth_user_and_headers):
 
 def _create(client, headers, phone="13800138000", **extra):
     return client.post(PATH, headers=headers, json={"phone": phone, **extra})
+
+
+def test_rollout_closed_blocks_create_before_db_or_sms_side_effect(
+    client, db, auth_user_and_headers, monkeypatch
+):
+    _, headers = _admin_headers(db, auth_user_and_headers)
+    monkeypatch.setattr(settings, "registration_invitation_rollout_enabled", False)
+    send_calls = []
+    monkeypatch.setattr(
+        admin_api,
+        "send_frozen_registration_invitation_sms",
+        lambda payload: send_calls.append(payload),
+    )
+    audit_count = db.query(AgentAuditLog).filter(
+        AgentAuditLog.agent_type == "registration_access_control"
+    ).count()
+
+    response = _create(client, headers)
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "REGISTRATION_CLOSED"
+    assert db.query(RegistrationInvitation).count() == 0
+    assert db.query(AgentAuditLog).filter(
+        AgentAuditLog.agent_type == "registration_access_control"
+    ).count() == audit_count
+    assert send_calls == []
+
+
+def test_rollout_closed_blocks_resend_without_rotating_or_sending(
+    client, db, auth_user_and_headers, monkeypatch
+):
+    _, headers = _admin_headers(db, auth_user_and_headers)
+    created = create_registration_invitation(db, "13800138000")
+    db.commit()
+    invitation_id = created.invitation.id
+    original_code_digest = created.invitation.code_digest
+    original_link_digest = created.invitation.link_token_digest
+    original_updated_at = created.invitation.updated_at
+    send_calls = []
+    monkeypatch.setattr(settings, "registration_invitation_rollout_enabled", False)
+    monkeypatch.setattr(
+        admin_api,
+        "send_frozen_registration_invitation_sms",
+        lambda payload: send_calls.append(payload),
+    )
+    audit_count = db.query(AgentAuditLog).filter(
+        AgentAuditLog.agent_type == "registration_access_control"
+    ).count()
+
+    response = client.post(f"{PATH}/{invitation_id}/resend", headers=headers)
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "REGISTRATION_CLOSED"
+    db.expire_all()
+    persisted = db.get(RegistrationInvitation, invitation_id)
+    assert persisted.code_digest == original_code_digest
+    assert persisted.link_token_digest == original_link_digest
+    assert persisted.updated_at == original_updated_at
+    assert db.query(AgentAuditLog).filter(
+        AgentAuditLog.agent_type == "registration_access_control"
+    ).count() == audit_count
+    assert send_calls == []
+
+
+def test_rollout_closed_keeps_invitation_list_available(
+    client, db, auth_user_and_headers, monkeypatch
+):
+    _, headers = _admin_headers(db, auth_user_and_headers)
+    invitation = create_registration_invitation(db, "13800138000").invitation
+    db.commit()
+    monkeypatch.setattr(settings, "registration_invitation_rollout_enabled", False)
+
+    response = client.get(PATH, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["id"] == invitation.id
+
+
+def test_rollout_closed_keeps_revoke_available(
+    client, db, auth_user_and_headers, monkeypatch
+):
+    _, headers = _admin_headers(db, auth_user_and_headers)
+    invitation = create_registration_invitation(db, "13800138000").invitation
+    db.commit()
+    invitation_id = invitation.id
+    monkeypatch.setattr(settings, "registration_invitation_rollout_enabled", False)
+
+    response = client.post(f"{PATH}/{invitation_id}/revoke", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "revoked"
+    db.expire_all()
+    assert db.get(RegistrationInvitation, invitation_id).status == "revoked"
 
 
 def test_create_uses_default_expiry_returns_credentials_once_and_audits(
