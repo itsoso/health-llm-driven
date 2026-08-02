@@ -24,15 +24,6 @@ class MergeUsersRequest(BaseModel):
     confirm: bool = False  # 确认合并
 
 
-class MergeUsersResponse(BaseModel):
-    """合并用户响应"""
-    success: bool
-    message: str
-    source_user_id: int
-    target_user_id: int
-    stats: dict
-
-
 @router.get("/candidates", response_model=MergeCandidatesResponse, summary="查找可合并的用户")
 async def find_merge_candidates(
     current_user: User = Depends(get_current_user_required),
@@ -66,7 +57,31 @@ async def find_merge_candidates(
     )
 
 
-@router.post("/merge", response_model=MergeUsersResponse, summary="合并用户")
+@router.post(
+    "/merge",
+    status_code=status.HTTP_410_GONE,
+    summary="旧版账号合并已禁用（需要双方重新验证）",
+    description=(
+        "旧版 ID-only 自助账号合并接口已禁用。请求不会解析两个账号 ID，也不会执行"
+        "数据迁移；调用方会收到 410 ACCOUNT_MERGE_REAUTH_REQUIRED，双方完成重新验证"
+        "后才能通过受控流程处理。"
+    ),
+    responses={
+        status.HTTP_410_GONE: {
+            "description": "旧版自助合并已禁用，需要双方重新验证",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": {
+                            "code": "ACCOUNT_MERGE_REAUTH_REQUIRED",
+                            "message": "账号合并需要双方重新验证，请联系管理员处理",
+                        }
+                    }
+                }
+            },
+        }
+    },
+)
 async def merge_users(
     request: MergeUsersRequest,
     current_user: User = Depends(get_current_user_required),

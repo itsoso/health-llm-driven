@@ -17,6 +17,7 @@ from app.models.monthly_report import MonthlyReport
 from app.models.user import User
 from app.services.auth import auth_service
 from app.services.user_merge import UserMergeService
+from main import app
 
 
 def _user(db, suffix: str, **overrides) -> User:
@@ -38,6 +39,24 @@ def _user(db, suffix: str, **overrides) -> User:
 def _headers(user: User) -> dict[str, str]:
     token = auth_service.create_access_token({"sub": str(user.id)})
     return {"Authorization": f"Bearer {token}"}
+
+
+def test_legacy_self_service_merge_openapi_declares_disabled_410_contract():
+    app.openapi_schema = None
+    operation = app.openapi()["paths"]["/api/v1/user-merge/merge"]["post"]
+
+    assert operation["summary"] == "旧版账号合并已禁用（需要双方重新验证）"
+    assert "ID-only" in operation["description"]
+    assert "ACCOUNT_MERGE_REAUTH_REQUIRED" in operation["description"]
+    assert "200" not in operation["responses"]
+    gone = operation["responses"]["410"]
+    assert gone["description"] == "旧版自助合并已禁用，需要双方重新验证"
+    assert gone["content"]["application/json"]["example"] == {
+        "detail": {
+            "code": "ACCOUNT_MERGE_REAUTH_REQUIRED",
+            "message": "账号合并需要双方重新验证，请联系管理员处理",
+        }
+    }
 
 
 @pytest.mark.parametrize("attacker_position", ["source", "target"])
