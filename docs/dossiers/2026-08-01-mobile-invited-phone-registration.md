@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-invited-phone-registration` |
 | 创建日期 | 2026-08-01 |
-| 当前阶段 | G4 已通过；等待 G5 部署健康闸 |
-| 状态 | shipping · implementation complete, not deployed |
+| 当前阶段 | G5 部分完成；后端已 dormant 部署，等待生产邀请配置后继续 |
+| 状态 | shipping · backend deployed fail-closed, OTA/enforcement pending |
 | 负责 | Codex |
 | 反馈环 | Backend PostgreSQL auth tests / Mobile Jest + TypeScript / Web tests / iOS real device |
 
@@ -80,14 +80,14 @@
 - Mobile 实现 OTP outcome 分流、邀请深链/手工码、SecureStore 恢复、onboarding 衔接与防残留凭据复活的 logout tombstone。
 - Web 管理面板实现手机号脱敏确认、有效期、发送终态、一次性凭据展示和 legacy 邀请码分区。
 - Rollout 四态已收口：旧版兼容窗、完全强制、安全回滚关闭新注册、本地 legacy-only。手机号、微信、旧邀请、管理员创建/审批和账号合并旁路均已 fail-closed。
-- 实现提交为 `2eed8573f..e6fd9a249`；当前功能分支尚未部署。
+- 实现提交为 `e2ad25fa..e966281c`；已进入 `main`，生产后端以 rollout/enforcement 均关闭的 dormant 模式部署。
 
 ## G3 · 测试闸
 
-- Backend 认证/邀请/安全/隐私相关集：`345 passed, 2 skipped`；两个条件跳过项后续在真实 PostgreSQL 专项中通过。
+- Backend 扩大认证/邀请/安全集：`222 passed, 6 skipped`；条件跳过项后续在真实 PostgreSQL 专项中通过。
 - 阻塞 CI 的真实 PostgreSQL job：`149 passed, 0 skipped`，覆盖双 session 邀请注册、OTP grant、错误尝试计数、grant 核销、同源账号合并竞争和 migration 重放约束；CI 静态契约防止节点被移除后假 skip。
-- Mobile 全量：`290/290 suites`，`2371 passed, 1 skipped`；TypeScript 通过，Expo lint `0 errors`。
-- Web 全量：`56 files / 334 tests passed`；TypeScript 通过，lint `0 errors`，production build `73/73` 页面通过。
+- Mobile 全量：`292/292 suites`，`2382 passed, 1 skipped`；TypeScript 通过，Expo lint `0 errors`。
+- Web 全量：`57 files / 335 tests passed`；TypeScript 通过，lint `0 errors`，production build `73/73` 页面通过。
 - OpenAPI 用 CI 固定版 `openapi-typescript@7.13.0` 临时生成，Mobile/Web 类型均逐字节一致。Doc drift、dossier consistency 和 `git diff --check` 通过。
 - **裁决：PASS。** 相关全集与生产数据库语义均为绿，允许进入 G4。
 
@@ -101,7 +101,14 @@
 
 ## G5 · 部署健康闸
 
-**PENDING**：尚未部署。上线前必须确认生产 encryption/digest key 稳定、邀请 SMS 签名/模板已审核，并按兼容窗 → Mobile OTA → enforcement 的顺序执行。
+**PARTIAL / BLOCKED**：2026-08-02 已用根目录 `deploy.sh -b` 将 `e966281cd50b45bbf98bd623923705b9b2cce2c0` 部署到生产，保持 registration invitation rollout/enforcement 默认关闭。
+
+- 发布前数据库备份、234 表恢复演练、站外加密归档哈希/HMAC 校验均通过；旧备份按保留 7 份策略清理。
+- managed migration `20260801_230000_registration_invitations` 已应用，完整 runtime schema probe 通过。
+- 发布事务已 `COMMITTED` / `finalized`，远端 SHA 两次核验一致，部署后健康分三次均为 `60/60 PASS`。
+- 后端进程为 `active (running)`，`GET /api/v1/health` 返回 200；公开无凭据探测 `POST /api/v1/auth/invitations/inspect` 返回 `403 REGISTRATION_CLOSED`，证明路由已部署且新注册 fail-closed。
+- 当前生产配置缺少稳定的 `REGISTRATION_INVITATION_DIGEST_KEY`、独立审核的 `REGISTRATION_INVITATION_SMS_SIGN_NAME` 与 `REGISTRATION_INVITATION_SMS_TEMPLATE_CODE`。按安全约束不得复用 OTP 模板或虚构配置，因此管理员真实发邀 smoke、Mobile OTA 和 enforcement 尚未执行。
+- **裁决：G5 尚未 PASS。** 配置就绪后必须按 rollout=true/enforcement=false → 受控手机号管理员发邀 smoke → Mobile OTA → 覆盖率确认 → enforcement=true 的顺序继续。
 
 ## G6 · 验证闸
 
@@ -110,4 +117,4 @@
 ## S8 · 沉淀
 
 - 系统结构快照已通过 `scripts/dump_system_map.py` 重新生成，架构计数继续以代码派生文件为唯一真源。
-- G5/G6 完成后回填生产部署提交、迁移、健康分、OTA 标识与真机证据。
+- G5 已回填 dormant 后端部署、迁移与健康分；配置就绪后继续回填管理员 SMS smoke、OTA 标识、enforcement 和真机证据。
