@@ -14,7 +14,7 @@ import hashlib
 import hmac
 import re
 import secrets
-from typing import Any
+from typing import Any, Final
 
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,7 @@ from app.services.phone_auth import InvalidPhoneNumber, mask_phone, normalize_ph
 
 
 MANUAL_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+REGISTRATION_INVITATION_DEEP_LINK_PREFIX: Final = "health://invite?token="
 _DUMMY_DIGEST = "0" * 64
 _CODE_PURPOSE = "registration-invitation-code:v1"
 _LINK_PURPOSE = "registration-invitation-link:v1"
@@ -146,6 +147,15 @@ def _credential_text(value: Any, *, purpose: str) -> str:
     if purpose in {_LINK_PURPOSE, _GRANT_PURPOSE}:
         return clean if _URL_SAFE_CREDENTIAL_RE.fullmatch(clean) else sentinel
     return sentinel
+
+
+def build_registration_invitation_deep_link(link_token: Any) -> str:
+    """Build the canonical mobile deep link without reflecting invalid credentials."""
+
+    clean_token = _credential_text(link_token, purpose=_LINK_PURPOSE)
+    if clean_token == _INVALID_LINK_TOKEN:
+        raise InvalidRegistrationCredential("invalid registration invitation link token")
+    return f"{REGISTRATION_INVITATION_DEEP_LINK_PREFIX}{clean_token}"
 
 
 def _constant_time_digest_match(candidate: str, stored: Any) -> bool:

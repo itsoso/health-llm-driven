@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
 import os
+from pathlib import Path
 import threading
 import uuid
 
@@ -14,6 +16,7 @@ from app.config import settings
 from app.models.registration_invitation import PhoneRegistrationGrant
 from app.services.registration_invitation import (
     InvalidRegistrationCredential,
+    build_registration_invitation_deep_link,
     consume_phone_registration_grant,
     create_phone_registration_grant,
     create_registration_invitation,
@@ -46,6 +49,26 @@ def test_generated_manual_code_excludes_ambiguous_characters(db):
     assert set(created.manual_code).isdisjoint(set("0O1IL"))
     assert created.manual_code.isalnum()
     assert len(created.link_token) >= 22  # >= 128 random bits when URL-safe encoded
+
+
+def test_invitation_deep_link_matches_mobile_canonical_contract():
+    token = "abcdefghijklmnopqrstuvwxyz_123456"
+
+    assert build_registration_invitation_deep_link(token) == (
+        "health://invite?token=abcdefghijklmnopqrstuvwxyz_123456"
+    )
+
+    repository_root = Path(__file__).resolve().parents[2]
+    mobile_config = json.loads((repository_root / "mobile" / "app.json").read_text())
+    assert "health" in mobile_config["expo"]["scheme"]
+
+
+@pytest.mark.parametrize("invalid_token", ["short", "contains!punctuation", None])
+def test_invitation_deep_link_rejects_invalid_token_without_reflecting_it(invalid_token):
+    with pytest.raises(InvalidRegistrationCredential) as error:
+        build_registration_invitation_deep_link(invalid_token)
+
+    assert str(invalid_token) not in str(error.value)
 
 
 def test_code_and_link_are_stored_as_digest_only(db):

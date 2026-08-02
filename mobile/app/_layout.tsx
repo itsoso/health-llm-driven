@@ -1,7 +1,7 @@
 import { configureSentryForAppMode, Sentry, SENTRY_ENABLED } from '../applib/sentry';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { focusManager } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
@@ -28,6 +28,7 @@ import { getReleaseCapabilities } from '../config/releaseCapabilities';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { loadDietPhotoDraft } from '../services/dietPhotoDraftStorage';
 import { flushClientEventOutbox } from '../services/clientEvents';
+import { useRegistrationInviteDeepLink } from '../services/registrationInviteDeepLink';
 import {
   View,
   ActivityIndicator,
@@ -45,15 +46,29 @@ export const unstable_settings = {
   initialRouteName: '(tabs)',
 };
 
-function AppContent() {
+export function AppContent() {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   const { isAuthenticated, user, retrySession } = useAuth();
   const { session, isLoading, errorCode } = useAppSession();
   const [sessionRecoveryError, setSessionRecoveryError] = useState(false);
+  const [registrationPhase, setRegistrationPhase] = useState<'idle' | 'welcome' | 'onboarding'>('idle');
   const cloudActive = session?.mode === 'cloud_account' && isAuthenticated;
   const { isLocked, authenticate } = useBiometricLock(cloudActive);
   const releaseCapabilities = getReleaseCapabilities();
+  const {
+    token: registrationInviteToken,
+    clear: clearRegistrationInviteLink,
+  } = useRegistrationInviteDeepLink();
+  const finishRegistrationNavigation = useCallback(() => {
+    setRegistrationPhase('idle');
+  }, []);
+
+  useEffect(() => {
+    if ((isAuthenticated || session) && registrationInviteToken) {
+      clearRegistrationInviteLink();
+    }
+  }, [clearRegistrationInviteLink, isAuthenticated, registrationInviteToken, session]);
 
   useNotifications(cloudActive);
   useGPSAutoRefresh(cloudActive);
@@ -136,8 +151,23 @@ function AppContent() {
     );
   }
 
+  if (registrationPhase === 'welcome') {
+    return (
+      <LoginScreen
+        registrationCompleted
+        onStartHealthProfile={() => setRegistrationPhase('onboarding')}
+      />
+    );
+  }
+
   if (!session) {
-    return <LoginScreen />;
+    return (
+      <LoginScreen
+        invitationLinkToken={registrationInviteToken}
+        onInvitationLinkCleared={clearRegistrationInviteLink}
+        onInvitedRegistrationComplete={() => setRegistrationPhase('welcome')}
+      />
+    );
   }
 
   if (isLocked) {
@@ -223,11 +253,27 @@ function AppContent() {
       </Stack>
       <NotificationBanner />
       <AppUpdateBanner />
+      {registrationPhase === 'onboarding' ? (
+        <InvitedRegistrationOnboardingRedirect onNavigated={finishRegistrationNavigation} />
+      ) : null}
     </>
   );
 }
 
-function RootLayout() {
+function InvitedRegistrationOnboardingRedirect({
+  onNavigated,
+}: {
+  onNavigated: () => void;
+}) {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace('/reva-onboarding');
+    onNavigated();
+  }, [onNavigated, router]);
+  return null;
+}
+
+export function RootLayout() {
   useRevaFonts();
 
   // Connect AppState to React Query for auto-refetch on foreground

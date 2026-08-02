@@ -65,6 +65,27 @@ export type InvitationCredential =
   | { manualCode: string; linkToken?: never }
   | { manualCode?: never; linkToken: string };
 
+export type RegistrationAuthErrorCode =
+  | 'VERIFIED_PHONE_TICKET_EXPIRED'
+  | 'INVITATION_INVALID'
+  | 'INVITATION_PHONE_MISMATCH'
+  | 'INVITATION_EXPIRED'
+  | 'INVITATION_REVOKED'
+  | 'INVITATION_ALREADY_USED'
+  | 'REGISTRATION_INPUT_INVALID'
+  | 'REGISTRATION_STATE_CONFLICT'
+  | 'REGISTRATION_USER_ALREADY_EXISTS';
+
+export class RegistrationFlowError extends Error {
+  readonly code: RegistrationAuthErrorCode;
+
+  constructor(code: RegistrationAuthErrorCode, message: string) {
+    super(message);
+    this.name = 'RegistrationFlowError';
+    this.code = code;
+  }
+}
+
 export interface AccountDeletionRequestResponse {
   status: 'none' | 'requested' | 'processing' | 'completed' | 'rejected';
   user_id: number;
@@ -310,7 +331,9 @@ export async function verifyPhoneCode(
   return data;
 }
 
-function authErrorCode(error: unknown): string | null {
+export function registrationAuthErrorCode(error: unknown): string | null {
+  const localCode = (error as { code?: unknown } | null)?.code;
+  if (typeof localCode === 'string') return localCode;
   const code = (
     error as { response?: { data?: { detail?: { code?: unknown } } } } | null
   )?.response?.data?.detail?.code;
@@ -324,7 +347,15 @@ export async function completeInvitedRegistration(
   assertOperationCurrent(options);
   const pending = await loadPendingRegistration();
   assertOperationCurrent(options);
-  if (!pending) throw new Error('手机号验证已失效，请重新验证');
+  if (!pending) {
+    await serializeAuthStorageMutation(async () => {
+      await bestEffortClearPendingRegistration(options);
+    });
+    throw new RegistrationFlowError(
+      'VERIFIED_PHONE_TICKET_EXPIRED',
+      '手机号验证已失效，请重新验证',
+    );
+  }
 
   const invitation = credential.manualCode !== undefined
     ? { manual_code: credential.manualCode.trim().toUpperCase() }
@@ -342,7 +373,7 @@ export async function completeInvitedRegistration(
     if (options?.isCurrent && !options.isCurrent()) {
       throw new AuthOperationSuperseded();
     }
-    if (authErrorCode(error) === 'VERIFIED_PHONE_TICKET_EXPIRED') {
+    if (registrationAuthErrorCode(error) === 'VERIFIED_PHONE_TICKET_EXPIRED') {
       await serializeAuthStorageMutation(async () => {
         await bestEffortClearPendingRegistration(options);
       });

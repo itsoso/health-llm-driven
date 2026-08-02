@@ -36,6 +36,7 @@ import {
   login, logout, getToken, isLoggedIn, fetchCurrentUser,
   requestPhoneCode, loginByPhoneCode, setPassword, changePassword,
   verifyPhoneCode, completeInvitedRegistration,
+  RegistrationFlowError, registrationAuthErrorCode,
   saveCredentials, loadCredentials, clearCredentials,
   type PhoneLoginResponse,
 } from '../auth';
@@ -393,6 +394,26 @@ describe('services/auth', () => {
 
       await expect(completeInvitedRegistration({ manualCode: 'ABCD1234' })).rejects.toBeDefined();
       expect(secureItems.pending_invited_registration_v1).toBeUndefined();
+    });
+
+    it('returns a stable typed ticket-expired error and clears pending when local state is missing', async () => {
+      let capturedError: unknown;
+      try {
+        await completeInvitedRegistration({ manualCode: 'ABCD1234' });
+      } catch (error) {
+        capturedError = error;
+      }
+
+      expect(capturedError).toMatchObject({
+        name: 'RegistrationFlowError',
+        code: 'VERIFIED_PHONE_TICKET_EXPIRED',
+      });
+      expect(capturedError).toBeInstanceOf(RegistrationFlowError);
+      expect(registrationAuthErrorCode(capturedError))
+        .toBe('VERIFIED_PHONE_TICKET_EXPIRED');
+      expect(SecureStore.deleteItemAsync)
+        .toHaveBeenCalledWith('pending_invited_registration_v1');
+      expect(mockedApi.post).not.toHaveBeenCalled();
     });
 
     it('does not apply a stale invitation-required response after logout supersedes it', async () => {

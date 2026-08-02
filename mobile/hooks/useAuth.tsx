@@ -17,6 +17,7 @@ import {
   getToken,
   fetchCurrentUser,
   isAuthOperationSuperseded,
+  registrationAuthErrorCode,
   loadPendingRegistration,
   type InvitationCredential,
   type PendingRegistration,
@@ -363,6 +364,10 @@ export function AuthProvider({
       setPendingRegistration(null);
     } catch (error) {
       if (!operation.isCurrent() || isAuthOperationSuperseded(error)) return;
+      if (registrationAuthErrorCode(error) === 'VERIFIED_PHONE_TICKET_EXPIRED') {
+        setPendingRegistration(null);
+        throw error;
+      }
       const pending = await restorePendingRegistrationState(operation.isCurrent);
       if (!operation.isCurrent()) return;
       setPendingRegistration(pending);

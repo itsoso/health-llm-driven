@@ -24,6 +24,9 @@ jest.mock('../../services/auth', () => ({
   isAuthOperationSuperseded: (error: unknown) => (
     (error as { name?: string } | null)?.name === 'AuthOperationSuperseded'
   ),
+  registrationAuthErrorCode: (error: unknown) => (
+    (error as { code?: string } | null)?.code ?? null
+  ),
 }));
 
 jest.mock('../../services/authSessionMarker', () => ({
@@ -505,6 +508,28 @@ describe('useAuth update resilience', () => {
     await waitFor(() => expect(completeInvitedRegistration).toHaveBeenCalled());
     expect(screen.getByTestId('state')).toHaveTextContent('guest');
     expect(screen.getByTestId('pending')).toHaveTextContent('pending');
+  });
+
+  it('clears pending context immediately when completion reports a missing or expired ticket', async () => {
+    const pending = {
+      version: 1 as const,
+      verifiedPhoneTicket: 'T'.repeat(32),
+      expiresAt: Date.now() + 300_000,
+      idempotencyKey: 'registration-1234567890abcdef',
+    };
+    (getToken as jest.Mock).mockResolvedValue(null);
+    (loadPendingRegistration as jest.Mock).mockResolvedValueOnce(pending);
+    (completeInvitedRegistration as jest.Mock).mockRejectedValue({
+      name: 'RegistrationFlowError',
+      code: 'VERIFIED_PHONE_TICKET_EXPIRED',
+    });
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('pending')).toHaveTextContent('pending'));
+    fireEvent.press(screen.getByTestId('complete'));
+
+    await waitFor(() => expect(screen.getByTestId('pending')).toHaveTextContent('no-pending'));
+    expect(loadPendingRegistration).toHaveBeenCalledTimes(1);
   });
 
   it('clears pending context state on logout', async () => {

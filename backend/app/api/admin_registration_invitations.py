@@ -23,6 +23,7 @@ from app.schemas.registration_invitation import (
 )
 from app.services.phone_auth import InvalidPhoneNumber
 from app.services.registration_invitation import (
+    build_registration_invitation_deep_link,
     create_registration_invitation,
     phone_lookup_hmac,
     rotate_registration_invitation_credentials,
@@ -38,7 +39,6 @@ from app.services.registration_invitation_sms import (
 
 router = APIRouter(prefix="/admin/registration-invitations", tags=["admin-registration-invitations"])
 logger = logging.getLogger(__name__)
-_DEEP_LINK_PREFIX = "reva://register?invite="
 _ACTIVE_STATUSES = ("created", "sent", "send_failed")
 _MAX_PHONE_INPUT_LENGTH = 32
 
@@ -81,7 +81,7 @@ def _credential_payload_snapshot(
         **_safe_payload(invitation),
         "manual_code": manual_code,
         "link_token": link_token,
-        "deep_link": f"{_DEEP_LINK_PREFIX}{link_token}",
+        "deep_link": build_registration_invitation_deep_link(link_token),
     }
 
 

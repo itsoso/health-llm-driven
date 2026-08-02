@@ -22,11 +22,11 @@ from app.config import settings
 from app.models.agent_audit_log import AgentAuditLog
 from app.models.registration_invitation import RegistrationInvitation
 from app.services import phone_auth
+from app.services.registration_invitation import build_registration_invitation_deep_link
 
 
 logger = logging.getLogger(__name__)
 
-_DEEP_LINK_PREFIX: Final = "reva://register?invite="
 _ERROR_NOT_CONFIGURED: Final = "sms_not_configured"
 _ERROR_PROVIDER_REJECTED: Final = "provider_rejected"
 _ERROR_PROVIDER_INVALID_ACK: Final = "provider_invalid_ack"
@@ -116,7 +116,7 @@ def _template_params(payload: FrozenRegistrationInvitationDelivery) -> dict[str,
     # durable credential material must never become template variables.
     return {
         "code": payload.manual_code,
-        "link": f"{_DEEP_LINK_PREFIX}{payload.link_token}",
+        "link": build_registration_invitation_deep_link(payload.link_token),
         "expires": expires_at.strftime("%Y-%m-%d %H:%M UTC"),
     }
 

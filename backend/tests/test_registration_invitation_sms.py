@@ -121,7 +121,7 @@ def test_enterprise_aliyun_ack_marks_sent_and_uses_dedicated_template(db, monkey
     template = json.loads(params["TemplateParam"])
     assert set(template) == {"code", "link", "expires"}
     assert template["code"] == prepared.manual_code
-    assert template["link"].endswith(prepared.link_token)
+    assert template["link"] == f"health://invite?token={prepared.link_token}"
     assert template["expires"]
 
     audit = (
@@ -340,7 +340,7 @@ def test_aliyun_invitation_signature_known_vector_preserves_utf8_and_json_encodi
     )
 
     assert params["TemplateParam"] == (
-        '{"code":"ABCD2345","link":"reva://register?invite='
+        '{"code":"ABCD2345","link":"health://invite?token='
         'token_1234567890123456789012","expires":"2026-08-05 12:34 UTC"}'
     )
     unsigned = {key: value for key, value in params.items() if key != "Signature"}
@@ -354,11 +354,11 @@ def test_aliyun_invitation_signature_known_vector_preserves_utf8_and_json_encodi
         "RegionId=cn-hangzhou&SignName=%E5%B0%8F%E5%B7%B4%E9%82%80%E8%AF%B7&"
         "SignatureMethod=HMAC-SHA1&SignatureNonce=nonce-123&SignatureVersion=1.0&"
         "TemplateCode=SMS_INVITE_123&TemplateParam=%7B%22code%22%3A%22ABCD2345%22%2C%22"
-        "link%22%3A%22reva%3A%2F%2Fregister%3Finvite%3Dtoken_1234567890123456789012%22%"
+        "link%22%3A%22health%3A%2F%2Finvite%3Ftoken%3Dtoken_1234567890123456789012%22%"
         "2C%22expires%22%3A%222026-08-05%2012%3A34%20UTC%22%7D&Timestamp=2026-08-02T12%"
         "3A34%3A56Z&Version=2017-05-25"
     )
-    assert params["Signature"] == "27FzadOmr2jfA+s/a88U1kkBZqs="
+    assert params["Signature"] == "vj61YvFbGn+5AxZgdSNXGLI3hQ4="
 
 
 def test_admin_create_reports_delivery_failure_and_returns_copy_fallback(
@@ -380,7 +380,7 @@ def test_admin_create_reports_delivery_failure_and_returns_copy_fallback(
     assert payload["delivery_status"] == "send_failed"
     assert payload["delivery_error_code"] == "sms_not_configured"
     assert payload["manual_code"]
-    assert payload["deep_link"].endswith(payload["link_token"])
+    assert payload["deep_link"] == f"health://invite?token={payload['link_token']}"
     row = db.get(RegistrationInvitation, payload["id"])
     assert row.status == "send_failed"
     assert row.send_attempt_count == 1

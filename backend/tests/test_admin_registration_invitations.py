@@ -59,7 +59,7 @@ def test_create_uses_default_expiry_returns_credentials_once_and_audits(
     assert payload["delivery_error_code"] == "sms_not_configured"
     assert len(payload["manual_code"]) == 8
     assert payload["link_token"]
-    assert payload["deep_link"].endswith(payload["link_token"])
+    assert payload["deep_link"] == f"health://invite?token={payload['link_token']}"
     assert before + timedelta(days=6, hours=23) < datetime.fromisoformat(payload["expires_at"])
     assert "phone" not in payload
     assert "phone_hmac" not in payload

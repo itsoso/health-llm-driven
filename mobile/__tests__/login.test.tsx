@@ -3,10 +3,19 @@ import React from 'react';
 import { render } from '@testing-library/react-native';
 
 const mockLogin = jest.fn();
+const mockVerifyPhoneCode = jest.fn();
+const mockCompleteInvitedRegistration = jest.fn();
 
 jest.mock('../hooks/useAuth', () => ({
-  useAuth: () => ({ login: mockLogin }),
+  useAuth: () => ({
+    login: mockLogin,
+    verifyPhoneCode: mockVerifyPhoneCode,
+    completeInvitedRegistration: mockCompleteInvitedRegistration,
+    pendingRegistration: null,
+  }),
 }));
+
+jest.mock('expo-router', () => ({ useRouter: () => ({ replace: jest.fn() }) }));
 
 jest.mock('../hooks/useTheme', () => ({
   useTheme: () => ({
@@ -20,6 +29,9 @@ jest.mock('../hooks/useTheme', () => ({
       labelTertiary: '#999',
       separator: '#ddd',
     },
+    s: {
+      danger: { fg: '#900', bg: '#fee', solid: '#c00' },
+    },
   }),
 }));
 
@@ -31,10 +43,13 @@ jest.mock('../services/auth', () => ({
 import LoginScreen from '../app/login';
 
 describe('LoginScreen', () => {
-  it('uses 小巴 as the login brand name', () => {
+  it('uses 小巴 and invitation-only registration language', () => {
     const { getByText, queryByText } = render(<LoginScreen />);
 
     expect(getByText('小巴')).toBeTruthy();
+    expect(getByText('登录小巴')).toBeTruthy();
+    expect(getByText('首次使用需获得管理员邀请')).toBeTruthy();
+    expect(queryByText('登录 / 注册')).toBeNull();
     expect(queryByText('HealthPilot')).toBeNull();
   });
 });
