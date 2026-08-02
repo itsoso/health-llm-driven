@@ -24,6 +24,10 @@
 > 这个基本能力都没了 思考这个设计和实现 哪里出了问题 如何修复
 >
 > 确认
+>
+> 允许
+>
+> 使用 qwen-max-3.7 评测
 
 - 谁用 / 解决什么 / 现在怎么绕过: 小巴用户自然语言记录饮食；目前被全局熔断，只能等待或去专页手工记录。
 - 锚点用户相关性: 饮食捕获是 Health OS 的高频 `WriteIntent -> ExecutionEvent` 入口。
@@ -107,15 +111,18 @@
   - 当前未确认 reconciliation window 仅隔离仍未解决的 owner；已确认历史 owner 与已解决 Run 不污染新 scope；达到配置的 distinct-user 阈值才升级全局暂停；事件账本不一致时保持全局 fail-closed；所有放行仍创建 managed Run。
   - intake 卡片压制只接受 verified receipt / server-owned pending intent，不再采信 `tools_used` 尝试事实。
   - Mac/Mobile/Web 错误或中断回合显示“尝试调用 Skill”；Web 历史与 live SSE 均贯通 `completion_status`。
-- commits: `ddf474ddf` + producer-review correction commit（提交后记录）。
+- commits: `8c72d16c6`、`3055833b1`、`90501427c`、`9453a33f0`；并发主干 `acc910fd9` 同步修正 fruit trajectory golden/scorer。
 
 ## G3 · 测试闸
 
 - Backend 集成闸: 297 passed / 3 skipped；skip 为 SQLite 环境不执行的 PostgreSQL row-lock 用例。
 - Client: Mobile targeted 17 passed + TypeScript PASS；Web targeted 25 passed + TypeScript PASS；Mac ChatTranscriptHTML 51 passed。
 - 静态/治理: Ruff `F821,F822,E9` PASS；doc drift PASS；dossier consistency PASS；`git diff --check` PASS。
-- main CI 真实色: 推送后复核。
-- **裁决**: 本地 PASS；远端 CI 待推送后闭环。
+- LLM live-change 首次 main CI `30705987231`: 按预期因未设置一次性确认变量在发送真实模型前 BLOCK；未带红部署。
+- 用户明确批准目的地与模型后，TokenPlan `qwen3.7-max` live gate PASS：invariants `12/12`、health_agent_core `50/50`、orchestrator `5/5`（avg `0.94`、0 regression）、trajectory contract `12/12`、golden `9/9`；原始聚合 JSON 仅保存在本机 `/tmp/runtime-write-circuit-live-eval-20260801.json`，无生产健康正文入库。备用 OpenAI endpoint 在本次命令中指向本机不可用端口，未发生第二外部目的地 fallback。
+- 并发主干 golden 修复复核：`test_agent_trajectory_scorer.py` + `test_llm_synthesis_regression_gate.py` 共 57 passed；offline gate PASS。
+- main CI 真实色: 设置一次性确认变量后的新 run 待复核，成功后必须立即删除变量。
+- **裁决**: 本地 + live LLM PASS；远端 CI 待一次性确认闭环。
 
 ## G4 · 安全闸
 
