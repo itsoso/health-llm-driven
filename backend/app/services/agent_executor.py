@@ -118,7 +118,8 @@ _CLINICIAN_PROVENANCE_PROMPT_BLOCK = (
         "不得改用 remember 或通用 health_record。"
     ),
     (
-        "- 若医生来源子句与调整、更新、同步等动作混在同一句，工具调用必须为零；"
+        "- 若医生来源子句与调整、更新、同步、删除或停药等动作混在同一句，"
+        "工具调用必须为零；"
         "明确说本轮没有执行或保存，并请用户另发一条消息，去掉临床依据子句后"
         "单独明确重述要执行的操作。"
     ),
@@ -136,6 +137,17 @@ _CLINICIAN_ZERO_TOOL_KINDS = frozenset({
     "clinician_context",
     "ambiguous_clinician_action",
 })
+
+_CLINICIAN_CONTEXT_NOT_SAVED_REPLY = (
+    "我理解这是你转述的医生判断/评估；本轮未保存。"
+    "若要保存，请另发一条明确消息，例如“请记录医生诊断：……”"
+    "或“请记录医生医嘱：……”。"
+)
+_CLINICIAN_AMBIGUOUS_ACTION_REPLY = (
+    "这一轮没有执行任何操作，也没有保存。"
+    "请在一条新消息中去掉“依据医生意见”这类临床依据子句，"
+    "再单独、明确地说要执行哪一项操作。"
+)
 
 
 def _clinician_turn_prompt_guidance(decision: Any) -> str:
@@ -173,6 +185,23 @@ def _clinician_turn_allows_tool(decision: Any, tool_name: Any) -> bool:
     return True
 
 
+def _clinician_deterministic_reply(
+    decision: Any,
+    candidate: str,
+    *,
+    force: bool = False,
+) -> str | None:
+    """Return a content-free clinician fallback when model text is unsafe."""
+    if decision.kind == "ambiguous_clinician_action":
+        return _CLINICIAN_AMBIGUOUS_ACTION_REPLY
+    if decision.kind != "clinician_context":
+        return None
+    normalized = str(candidate or "").strip()
+    if force or not normalized or _claims_unverified_write_success(candidate):
+        return _CLINICIAN_CONTEXT_NOT_SAVED_REPLY
+    return None
+
+
 def _canonicalize_doctor_feedback_args(
     args: Mapping[str, Any],
     *,
@@ -195,6 +224,27 @@ def _canonicalize_doctor_feedback_args(
         visit_date = visit_date.strip()
     canonical["visit_date"] = visit_date
     return canonical
+
+
+def _bind_doctor_feedback_args_to_turn(
+    decision: Any,
+    *,
+    reference_now: datetime,
+) -> dict[str, Any] | None:
+    """Bind the write payload to the exact guard-authorized user text span."""
+    if (
+        decision.kind != "explicit_doctor_feedback_write"
+        or decision.content_start is None
+        or decision.content_end is None
+    ):
+        return None
+    assessment = decision.raw[
+        decision.content_start:decision.content_end
+    ]
+    return _canonicalize_doctor_feedback_args(
+        {"assessment": assessment},
+        reference_now=reference_now,
+    )
 
 
 def _doctor_feedback_exact_sql(column: Any, value: str | None) -> Any:
@@ -7476,6 +7526,7 @@ class AgentExecutor:
         self._turn_contextual_diet_receipts: list[dict] = []
         self._turn_contextual_diet_cards: list[dict] = []
         self._turn_attachment_write_receipts: list[dict] = []
+        self._turn_doctor_feedback_write_attempted = False
         self._turn_contextual_diet_record_id: Optional[int] = None
         self._turn_contextual_diet_consumed_fraction: Optional[float] = None
         self._turn_pending_write_intent_ids: list[int] = []
@@ -9435,6 +9486,7 @@ class AgentExecutor:
         self._turn_contextual_diet_receipts = []
         self._turn_contextual_diet_cards = []
         self._turn_attachment_write_receipts = []
+        self._turn_doctor_feedback_write_attempted = False
         self._turn_contextual_diet_record_id = None
         self._turn_contextual_diet_consumed_fraction = None
         self._ensure_agent_kernel_turn(channel=channel)
@@ -9452,6 +9504,7 @@ class AgentExecutor:
                 parse_health_evidence_continuation,
                 resolve_health_evidence_continuation_query,
             )
+            from app.services.health_evidence.contracts import RiskLevel
 
             continuation_parse = parse_health_evidence_continuation(extra_context)
             health_continuation_attempted = continuation_parse.attempted
@@ -9465,7 +9518,19 @@ class AgentExecutor:
                 clinical_query,
                 client=channel,
             )
-            if health_intent.requires_authority:
+            clinician_context_precedes_health_release = bool(
+                clinician_turn_decision.kind
+                in {
+                    "clinician_context",
+                    "ambiguous_clinician_action",
+                    "explicit_doctor_feedback_write",
+                }
+                and health_intent.risk_level != RiskLevel.EMERGENCY
+            )
+            if (
+                health_intent.requires_authority
+                and not clinician_context_precedes_health_release
+            ):
                 try:
                     health_evidence_turn = (
                         _health_evidence.build_health_evidence_turn(
@@ -10995,6 +11060,18 @@ class AgentExecutor:
                             (tool_call.get("function") or {}).get("name"),
                         )
                     ]
+                    if (
+                        clinician_turn_decision.kind
+                        == "explicit_doctor_feedback_write"
+                    ):
+                        # One explicit user object maps to one typed write. Model
+                        # attempts to fan it out into alternate SOAP plans are
+                        # discarded before any tool event or Gateway dispatch.
+                        tool_calls = (
+                            []
+                            if self._turn_doctor_feedback_write_attempted
+                            else tool_calls[:1]
+                        )
                     rejected_clinician_tool_count = (
                         len(proposed_clinician_tool_calls) - len(tool_calls)
                     )
@@ -12063,6 +12140,14 @@ class AgentExecutor:
                         # 破坏性/同步意图但 0 工具执行 = 动作未执行 → 诚实覆盖(加层不减层)。
                         final_text = _destructive_or_sync_not_performed_message(message)
                         streamed_to_client = False
+                    clinician_reply = _clinician_deterministic_reply(
+                        clinician_turn_decision,
+                        final_text,
+                    )
+                    if clinician_reply is not None:
+                        final_text = clinician_reply
+                        final_finish_reason = "stop"
+                        streamed_to_client = False
                     if (
                         not health_advice_buffered
                         and streamed_to_client
@@ -12114,7 +12199,18 @@ class AgentExecutor:
                     ),
                 })
                 _round_start = time.time()
-                response = await self._call_llm(messages, [])
+                clinician_exhausted_reply = _clinician_deterministic_reply(
+                    clinician_turn_decision,
+                    "",
+                    force=True,
+                )
+                if clinician_exhausted_reply is not None:
+                    response = {
+                        "content": clinician_exhausted_reply,
+                        "finish_reason": "stop",
+                    }
+                else:
+                    response = await self._call_llm(messages, [])
                 if self._last_provider_model_name:
                     model_name = self._last_provider_model_name
                 if isinstance(response, dict):
@@ -12191,6 +12287,13 @@ class AgentExecutor:
             message,
             reference_now=self._agent_kernel_reference_now(),
         )
+        clinician_reply = _clinician_deterministic_reply(
+            clinician_turn_decision,
+            full_reply,
+        )
+        if clinician_reply is not None:
+            full_reply = clinician_reply
+            final_finish_reason = "stop"
         record_intent_no_tool = bool(
             health_evidence_turn is None
             and self._prefer_fast_record_model
@@ -16682,6 +16785,33 @@ class AgentExecutor:
                     "不要改用其他写入工具。"
                 ),
             )
+
+        if tool_name == "record_doctor_feedback":
+            if self._turn_doctor_feedback_write_attempted:
+                logger.warning(
+                    "[_execute_tool] blocked second doctor feedback write "
+                    "before gateway user=%s",
+                    self._current_user_id,
+                )
+                return local_write_rejection(
+                    "doctor_feedback_turn_cardinality_exceeded",
+                    message="本回合已经处理过一次医生反馈保存请求。",
+                    recovery_guidance="不要在同一回合再次调用该工具。",
+                )
+            bound_args = _bind_doctor_feedback_args_to_turn(
+                clinician_turn_decision,
+                reference_now=self._agent_kernel_reference_now(),
+            )
+            if bound_args is None:
+                return local_write_rejection(
+                    "doctor_feedback_turn_binding_failed",
+                    message="当前消息无法绑定到明确的医生反馈内容。",
+                    recovery_guidance="请重新明确要保存的医生反馈原文。",
+                )
+            args = bound_args
+            # Mark before validation/Gateway so no retry path can dispatch a
+            # second write for the same explicit user object.
+            self._turn_doctor_feedback_write_attempted = True
 
         trusted_recipe_authorized = False
         if tool_name == "health_record" and isinstance(args, dict):

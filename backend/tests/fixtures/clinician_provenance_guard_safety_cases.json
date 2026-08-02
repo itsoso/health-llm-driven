@@ -1962,6 +1962,45 @@
     "reason_code": "obfuscated_clinician_action"
   },
   {
+    "id": "follow_medical_instruction_delete_requires_separate_command",
+    "text": "遵医嘱删除这条用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "per_medical_instruction_stop_and_delete_requires_separate_command",
+    "text": "按医嘱停药并删除记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "according_to_medical_instruction_sync_requires_separate_command",
+    "text": "按照医嘱同步健康数据",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "explicit_doctor_instruction_write",
+    "text": "请记录医生医嘱：减少负重训练",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "减少负重训练",
+    "command": "请记录医生医嘱"
+  },
+  {
+    "id": "bare_medical_instruction_write_does_not_gain_authority",
+    "text": "请记录医嘱：减少负重训练",
+    "kind": "none",
+    "reason_code": "no_clinician_signal"
+  },
+  {
+    "id": "non_mutating_medical_instruction_basis_does_not_gain_authority",
+    "text": "遵医嘱休息",
+    "kind": "none",
+    "reason_code": "no_clinician_signal"
+  },
+  {
     "id": "unanchored_clinician_advice_is_not_basis_control",
     "text": "医生建议删除昨天用药记录",
     "kind": "clinician_context",

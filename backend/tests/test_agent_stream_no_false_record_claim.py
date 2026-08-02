@@ -761,6 +761,44 @@ async def test_bare_clinician_report_is_understood_without_write_or_retry(
     assert saved.meta["client_turn_finalized"] is True
 
 
+async def test_bare_clinician_report_replaces_model_false_save_claim(
+    db, auth_user_and_headers
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    message = "医生诊断是大腿和臀部肌肉无力导致腰肌代偿"
+
+    async def fake_call_llm_stream(_messages, tools):
+        assert tools == []
+        yield {"type": "content", "text": "已保存医生诊断"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    executor._call_llm_stream = fake_call_llm_stream
+
+    events = [
+        event async for event in executor.run_stream(
+            user_id=user.id,
+            message=message,
+            user_auth_token="test-token",
+            client_turn_id="bare-clinician-false-save",
+        )
+    ]
+    reply = _tokens(events)
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert "已保存医生诊断" not in reply
+    assert "本轮未保存" in reply
+    assert "请记录医生诊断" in reply
+    assert not [event for event in events if event.get("event") == "tool_call"]
+    assert done["data"]["tools_used"] == []
+    assert done["data"]["write_receipts"] == []
+    assert done["data"]["finish_reason"] == "stop"
+    assert done["data"]["completion_status"] == "complete"
+    assert done["data"]["turn_outcome"]["category"] == "success"
+    assert done["data"]["turn_outcome"]["retryable"] is False
+    assert done["data"]["client_turn_finalized"] is True
+
+
 async def test_clinician_basis_compound_action_is_not_executed_or_retried(
     db, auth_user_and_headers
 ):
@@ -769,7 +807,7 @@ async def test_clinician_basis_compound_action_is_not_executed_or_retried(
     executor = AgentExecutor(db)
     message = "依据医生意见调整剂量并同步健康数据"
     guarded_reply = (
-        "这一轮没有执行调整、同步或保存。"
+        "这一轮没有执行任何操作，也没有保存。"
         "请在一条新消息中去掉“依据医生意见”这类临床依据子句，"
         "再单独、明确地说要执行哪一项操作。"
     )
@@ -847,6 +885,86 @@ async def test_clinician_basis_compound_action_is_not_executed_or_retried(
     assert done["data"]["client_turn_finalized"] is True
 
 
+async def test_clinician_basis_hallucinated_tools_exhaust_to_safe_success(
+    db, auth_user_and_headers
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    message = "按医嘱停药并删除记录"
+    model_rounds = 0
+    forced_synthesis_calls = 0
+
+    async def fake_call_llm_stream(_messages, tools):
+        nonlocal model_rounds
+        model_rounds += 1
+        assert tools == []
+        yield {
+            "type": "tool_calls",
+            "tool_calls": [{
+                "id": f"hallucinated-clinician-write-{model_rounds}",
+                "type": "function",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps({
+                        "record_type": "medication",
+                        "operation": "delete",
+                        "record_id": 1,
+                    }),
+                },
+            }],
+        }
+        yield {"type": "finish", "finish_reason": "tool_calls"}
+
+    async def fake_call_llm(_messages, tools):
+        nonlocal forced_synthesis_calls
+        forced_synthesis_calls += 1
+        assert tools == []
+        return {
+            "content": "",
+            "tool_calls": [{
+                "id": "ninth-forbidden-call",
+                "type": "function",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": "{}",
+                },
+            }],
+            "finish_reason": "tool_calls",
+        }
+
+    executor._call_llm_stream = fake_call_llm_stream
+    executor._call_llm = fake_call_llm
+
+    events = [
+        event async for event in executor.run_stream(
+            user_id=user.id,
+            message=message,
+            user_auth_token="test-token",
+            client_turn_id="clinician-basis-eight-rounds",
+        )
+    ]
+    reply = _tokens(events)
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert model_rounds == 8
+    assert forced_synthesis_calls == 0
+    assert "没有执行" in reply and "保存" in reply
+    assert "去掉" in reply and "临床依据子句" in reply
+    assert "完成了多轮数据查询" not in reply
+    assert not [
+        event
+        for event in events
+        if event.get("event") in {"tool_call", "tool_result"}
+    ]
+    assert done["data"]["tools_used"] == []
+    assert done["data"]["write_receipts"] == []
+    assert done["data"]["finish_reason"] == "stop"
+    assert done["data"]["completion_status"] == "complete"
+    assert done["data"]["turn_outcome"]["category"] == "success"
+    assert done["data"]["turn_outcome"]["retryable"] is False
+    assert done["data"]["client_turn_finalized"] is True
+
+
 async def test_explicit_clinician_feedback_stream_uses_typed_gateway_once(
     db, auth_user_and_headers
 ):
@@ -882,16 +1000,61 @@ async def test_explicit_clinician_feedback_stream_uses_typed_gateway_once(
         if rounds == 1:
             yield {
                 "type": "tool_calls",
-                "tool_calls": [{
-                    "id": "record-clinician-feedback-once",
-                    "type": "function",
-                    "function": {
-                        "name": "record_doctor_feedback",
-                        "arguments": json.dumps(
-                            {"assessment": assessment}, ensure_ascii=False
-                        ),
+                "tool_calls": [
+                    {
+                        "id": "record-clinician-feedback-plan-a",
+                        "type": "function",
+                        "function": {
+                            "name": "record_doctor_feedback",
+                            "arguments": json.dumps(
+                                {
+                                    "summary": "模型添加的摘要",
+                                    "assessment": "模型改写的判断",
+                                    "plan": "模型创建的 Plan A",
+                                },
+                                ensure_ascii=False,
+                            ),
+                        },
                     },
-                }],
+                    {
+                        "id": "record-clinician-feedback-plan-b",
+                        "type": "function",
+                        "function": {
+                            "name": "record_doctor_feedback",
+                            "arguments": json.dumps(
+                                {
+                                    "assessment": "另一个模型判断",
+                                    "plan": "模型创建的 Plan B",
+                                },
+                                ensure_ascii=False,
+                            ),
+                        },
+                    },
+                    {
+                        "id": "forbidden-generic-record",
+                        "type": "function",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": "{}",
+                        },
+                    },
+                    {
+                        "id": "forbidden-remember",
+                        "type": "function",
+                        "function": {
+                            "name": "remember",
+                            "arguments": "{}",
+                        },
+                    },
+                    {
+                        "id": "forbidden-unknown",
+                        "type": "function",
+                        "function": {
+                            "name": "made_up_write_tool",
+                            "arguments": "{}",
+                        },
+                    },
+                ],
             }
             yield {"type": "finish", "finish_reason": "tool_calls"}
             return
@@ -935,7 +1098,9 @@ async def test_explicit_clinician_feedback_stream_uses_typed_gateway_once(
         created_by="doctor",
     ).all()
     assert len(entries) == 1
+    assert entries[0].subjective is None
     assert entries[0].assessment == assessment
+    assert entries[0].plan is None
     assert receipt["resource_id"] == str(entries[0].id)
 
     operation = db.query(AgentToolOperation).one()

@@ -187,6 +187,7 @@ def test_full_and_lite_prompts_share_clinician_provenance_contract(
         assert "record_doctor_feedback" in prompt
         assert "唯一的结构化医生反馈写入工具" in prompt
         assert "不得改用 remember 或通用 health_record" in prompt
+        assert "调整、更新、同步、删除或停药" in prompt
         assert "去掉临床依据子句" in prompt
         assert "工具调用必须为零" in prompt
         assert "服务端临床来源护栏与工具权限裁决是唯一权威" in prompt

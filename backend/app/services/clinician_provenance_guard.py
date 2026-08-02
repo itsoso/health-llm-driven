@@ -12,6 +12,7 @@ import unicodedata
 
 from app.services.utterance_intent_lexicon import (
     CLAUSE_ACTION_NEGATIONS,
+    CLINICIAN_BASIS_TERMS,
     CLINICIAN_CONTEXT_WRITE_ACTIONS,
     CLINICIAN_CONSULTATION_TERMS,
     CLINICIAN_FEEDBACK_OBJECT_NOUNS,
@@ -1399,15 +1400,25 @@ def _has_anchored_clinician_basis_mutation(raw: str) -> bool:
         return None
 
     position = consume(0, ("根据", "依据", "按照"))
+    if position is not None:
+        position = consume(position, CLINICIAN_PROVIDER_TERMS)
+        if position is not None:
+            position = consume(
+                position,
+                (*CLINICIAN_FEEDBACK_OBJECT_NOUNS, "建议"),
+            )
+            if position is not None and any(
+                root in compact[position:]
+                for root in _MUTATION_ACTION_ROOTS
+            ):
+                return True
+
+    # ``医嘱`` is an action basis, not a provider identity. Only anchored
+    # follow/per-instruction shapes with a later mutation fail closed here.
+    position = consume(0, ("按照", "遵", "按"))
     if position is None:
         return False
-    position = consume(position, CLINICIAN_PROVIDER_TERMS)
-    if position is None:
-        return False
-    position = consume(
-        position,
-        (*CLINICIAN_FEEDBACK_OBJECT_NOUNS, "建议"),
-    )
+    position = consume(position, CLINICIAN_BASIS_TERMS)
     if position is None:
         return False
     return any(root in compact[position:] for root in _MUTATION_ACTION_ROOTS)

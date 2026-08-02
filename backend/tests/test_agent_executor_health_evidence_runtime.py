@@ -339,6 +339,192 @@ async def test_non_health_turn_keeps_existing_stream_contract(
 
 
 @pytest.mark.asyncio
+async def test_bare_clinician_context_precedes_health_advice_release(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    import app.services.health_evidence as health_evidence
+
+    user, _headers = auth_user_and_headers
+    query = "医生诊断是腰痛由臀肌无力导致"
+    build_calls: list[str] = []
+
+    def build_turn(db_arg, *, user_id, query, intent, now=None):
+        del db_arg, now
+        build_calls.append(query)
+        return _turn(user_id, query)
+
+    monkeypatch.setattr(settings, "health_evidence_runtime_enabled", True)
+    monkeypatch.setattr(
+        health_evidence,
+        "build_health_evidence_turn",
+        build_turn,
+    )
+    executor = AgentExecutor(db)
+    captured: list[list[dict]] = []
+    source_aware_reply = (
+        "我理解这是你转述的医生判断/评估；"
+        "本轮不会把它升格成 Reva 的诊断，也不会自动保存。"
+    )
+    _install_stream(executor, [source_aware_reply], captured)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message=query,
+            channel="typed",
+        )
+    ]
+
+    done = events[-1]["data"]
+    assert build_calls == []
+    assert len(captured) == 1
+    assert _token_text(events) == source_aware_reply
+    assert "health_evidence_manifest" not in done
+    assert done["tools_used"] == []
+    assert done["write_receipts"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("query", "expected_tools"),
+    (
+        (
+            "根据医生诊断腰痛需要删除记录",
+            [],
+        ),
+        (
+            "请记录医生诊断：腰痛由臀肌无力导致",
+            ["record_doctor_feedback"],
+        ),
+    ),
+)
+async def test_non_emergency_clinician_actions_precede_health_release(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    query,
+    expected_tools,
+):
+    import app.services.health_evidence as health_evidence
+
+    user, _headers = auth_user_and_headers
+    build_calls: list[str] = []
+
+    def build_turn(db_arg, *, user_id, query, intent, now=None):
+        del db_arg, now
+        build_calls.append(query)
+        return _turn(user_id, query)
+
+    monkeypatch.setattr(settings, "health_evidence_runtime_enabled", True)
+    monkeypatch.setattr(
+        health_evidence,
+        "build_health_evidence_turn",
+        build_turn,
+    )
+    executor = AgentExecutor(db)
+    captured_messages: list[list[dict]] = []
+    captured_tools: list[list[dict]] = []
+    _install_stream(
+        executor,
+        ["本轮按临床来源护栏处理。"],
+        captured_messages,
+        captured_tools,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message=query,
+            channel="typed",
+        )
+    ]
+
+    done = events[-1]["data"]
+    assert build_calls == []
+    assert len(captured_messages) == 1
+    assert [
+        (tool.get("function") or {}).get("name")
+        for tool in captured_tools[0]
+    ] == expected_tools
+    assert "health_evidence_manifest" not in done
+
+
+@pytest.mark.asyncio
+async def test_clinician_advice_still_uses_health_evidence_runtime(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    import app.services.health_evidence as health_evidence
+
+    user, _headers = auth_user_and_headers
+    query = "医生说腰痛是臀肌无力导致的吗？"
+    build_calls: list[str] = []
+
+    def build_turn(db_arg, *, user_id, query, intent, now=None):
+        del db_arg, now
+        build_calls.append(query)
+        return _turn(user_id, query)
+
+    monkeypatch.setattr(settings, "health_evidence_runtime_enabled", True)
+    monkeypatch.setattr(
+        health_evidence,
+        "build_health_evidence_turn",
+        build_turn,
+    )
+    executor = AgentExecutor(db)
+    captured: list[list[dict]] = []
+    _install_stream(executor, ["需要结合证据判断。"], captured)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message=query,
+            channel="typed",
+        )
+    ]
+
+    done = events[-1]["data"]
+    assert build_calls == [query]
+    assert done["health_evidence_manifest"]["intent"]["intent_id"] == (
+        "health_advice.symptom.low_back_pain"
+    )
+
+
+@pytest.mark.asyncio
+async def test_acute_red_flags_override_bare_clinician_context_precedence(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    user, _headers = auth_user_and_headers
+    query = "医生说我腰痛、排不出尿而且会阴麻木"
+    _install_runtime(monkeypatch, user_id=user.id, query=query)
+    executor = AgentExecutor(db)
+    captured: list[list[dict]] = []
+    _install_stream(executor, ["这段模型文本不应被请求。"], captured)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message=query,
+            channel="typed",
+        )
+    ]
+
+    done = events[-1]["data"]
+    assert captured == []
+    assert done["health_evidence_manifest"]["risk_level"] == "emergency"
+    assert "立即" in _token_text(events)
+
+
+@pytest.mark.asyncio
 async def test_health_runtime_compilation_failure_stays_failed_and_safe(
     db,
     auth_user_and_headers,

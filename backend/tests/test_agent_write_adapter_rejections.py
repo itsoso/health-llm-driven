@@ -61,6 +61,9 @@ def _managed_doctor_feedback_executor(db, *, user_id: int, run_suffix: str):
     executor._runtime_run_id = admission.context.run_id
     executor._runtime_attempt_id = admission.context.attempt_id
     executor._runtime_managed = True
+    executor._agent_kernel_reference_now = lambda: datetime.fromisoformat(
+        "2026-08-01T21:30:00+08:00"
+    )
     return executor
 
 
@@ -935,6 +938,44 @@ async def test_doctor_feedback_executes_through_gateway_for_current_owner(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    "message",
+    (
+        "遵医嘱删除这条用药记录",
+        "按医嘱停药并删除记录",
+    ),
+)
+async def test_medical_instruction_basis_blocks_direct_destructive_dispatch(
+    db,
+    monkeypatch,
+    message,
+):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = message
+    dispatch = AsyncMock()
+    monkeypatch.setattr(executor, "_dispatch_tool_request", dispatch)
+
+    result = await executor._execute_tool(
+        "health_manage",
+        {
+            "record_type": "medication",
+            "operation": "delete",
+            "record_id": 1,
+        },
+        None,
+    )
+
+    _assert_local_rejection(
+        result,
+        error_code="clinician_provenance_tool_not_authorized",
+    )
+    dispatch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
     ("case_name", "first_args", "second_args"),
     (
         (
@@ -968,7 +1009,7 @@ async def test_doctor_feedback_executes_through_gateway_for_current_owner(
         ),
     ),
 )
-async def test_doctor_feedback_runtime_replays_canonical_equivalent_args(
+async def test_doctor_feedback_runtime_binds_raw_turn_and_rejects_second_dispatch(
     db,
     auth_user_and_headers,
     monkeypatch,
@@ -1050,11 +1091,20 @@ async def test_doctor_feedback_runtime_replays_canonical_equivalent_args(
         "visit_date",
     }
     assert handler_args[0]["visit_date"] == "2026-08-01"
-    assert second_payload["replayed"] is True
-    assert second_payload["resource_id"] == str(first_payload["id"])
+    assert handler_args[0]["summary"] is None
+    assert handler_args[0]["assessment"] == "目标内容"
+    assert handler_args[0]["plan"] is None
+    assert second_payload == {
+        "status": "rejected",
+        "success": False,
+        "dispatch_started": False,
+        "error_code": "doctor_feedback_turn_cardinality_exceeded",
+        "message": "本回合已经处理过一次医生反馈保存请求。",
+        "recovery_guidance": "不要在同一回合再次调用该工具。",
+    }
     assert first_receipt is not None
-    assert second_receipt is not None
-    assert first_receipt["resource_id"] == second_receipt["resource_id"]
+    assert second_receipt is None
+    assert first_receipt["resource_id"] == str(first_payload["id"])
     assert operations[0].status == "succeeded"
 
 
@@ -1588,7 +1638,7 @@ async def test_doctor_feedback_runtime_rejects_exact_insert_between_pre_snapshot
         run_suffix=f"between-snapshots-{duplicate_id}",
     )
     args = {
-        "assessment": "快照窗口内完全相同的评估",
+        "assessment": "当前评估",
         "visit_date": "2026-08-01",
     }
     original_query = db.query
@@ -1711,17 +1761,17 @@ async def test_doctor_feedback_historical_exact_row_does_not_make_new_write_ambi
 
     user, _headers = auth_user_and_headers
     args = {
-        "summary": "历史和当前相同的摘要",
-        "assessment": "历史和当前相同的评估",
-        "plan": "历史和当前相同的计划",
+        "summary": "模型生成但不会入库的摘要",
+        "assessment": "模型生成但不会入库的评估",
+        "plan": "模型生成但不会入库的计划",
         "visit_date": "2026-08-01",
     }
     historical = ClinicalJournalEntry(
         user_id=user.id,
-        subjective=args["summary"],
+        subjective=None,
         objective="医生随访 @ 2026-08-01",
-        assessment=args["assessment"],
-        plan=args["plan"],
+        assessment="当前评估",
+        plan=None,
         created_by="doctor",
     )
     db.add(historical)

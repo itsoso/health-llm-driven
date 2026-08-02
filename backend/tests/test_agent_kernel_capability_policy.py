@@ -138,6 +138,41 @@ def test_doctor_feedback_tool_blocks_non_authorizing_clinician_frames(
     assert decision.receipt_required is True
 
 
+@pytest.mark.parametrize(
+    ("message", "operation"),
+    (
+        ("遵医嘱删除这条用药记录", "delete"),
+        ("按医嘱停药并删除记录", "delete"),
+    ),
+)
+def test_medical_instruction_basis_cannot_authorize_destructive_manage(
+    message,
+    operation,
+):
+    snapshot = _snapshot(message)
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "medication",
+                "operation": operation,
+                "record_id": 1,
+            },
+        ),
+    )
+
+    assert (
+        snapshot.intent.primary,
+        snapshot.intent.domain,
+        snapshot.intent.operation,
+        snapshot.intent.is_write,
+    ) == ("chat", "clinical_context", "acknowledge", False)
+    assert decision.action == "block"
+    assert decision.reason == "manage_write_without_mutate_intent"
+    assert decision.receipt_required is True
+
+
 def test_doctor_feedback_tool_allows_only_guard_authorized_explicit_save():
     snapshot = _snapshot("请记录医生诊断：臀肌无力导致腰肌代偿")
     decision = decide_tool_capability(
@@ -154,6 +189,23 @@ def test_doctor_feedback_tool_allows_only_guard_authorized_explicit_save():
     assert decision.action == "allow"
     assert decision.reason == "explicit_doctor_feedback_write"
     assert decision.receipt_required is True
+
+
+def test_doctor_feedback_tool_allows_explicit_doctor_instruction_save_only():
+    snapshot = _snapshot("请记录医生医嘱：减少负重训练")
+    decision = decide_tool_capability(
+        snapshot,
+        _request("record_doctor_feedback", {"assessment": "减少负重训练"}),
+    )
+
+    assert (
+        snapshot.intent.primary,
+        snapshot.intent.domain,
+        snapshot.intent.operation,
+        snapshot.intent.is_write,
+    ) == ("write", "clinical_context", "create", True)
+    assert decision.action == "allow"
+    assert decision.reason == "explicit_doctor_feedback_write"
 
 
 def test_doctor_feedback_tool_allows_explicit_save_after_clinician_report():

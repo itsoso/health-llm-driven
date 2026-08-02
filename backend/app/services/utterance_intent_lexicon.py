@@ -262,6 +262,12 @@ CLINICIAN_PROVIDER_TERMS = (
     "大夫",
 )
 
+# A clinician-basis surface is not itself a human provider. Keep it separate
+# so ``遵医嘱`` can fail closed without granting feedback-write authority.
+CLINICIAN_BASIS_TERMS = (
+    "医嘱",
+)
+
 CLINICIAN_REPORT_PREDICATES = (
     "告诉我",
     "告诉",
@@ -280,6 +286,7 @@ CLINICIAN_REPORT_PREDICATES = (
 
 CLINICIAN_FEEDBACK_OBJECT_NOUNS = (
     "诊断",
+    "医嘱",
     "意见",
     "反馈",
     "结论",
