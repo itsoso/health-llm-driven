@@ -1549,6 +1549,13 @@ def test_dropins_enforce_minimal_external_writable_boundaries() -> None:
     )
     assert backend == (
         "[Service]\n"
+        "# The runtime-state drop-in is the transactionally installed production\n"
+        "# artifact. Reset any older base unit command so process-local Garmin MFA\n"
+        "# challenges remain pinned to the worker that created them.\n"
+        "ExecStart=\n"
+        "ExecStart=/opt/health-app/backend/venv/bin/uvicorn main:app --fd 3 "
+        "--workers 1 --limit-concurrency 100 --proxy-headers "
+        "--forwarded-allow-ips=127.0.0.1\n"
         "ReadWritePaths=\n"
         "ReadWritePaths=/var/lib/health-app/uploads "
         "/var/cache/health-app/skills-hub "

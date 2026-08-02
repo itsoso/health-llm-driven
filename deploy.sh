@@ -1182,6 +1182,15 @@ verify_deployment() {
         return 1
     fi
 
+    BACKEND_EXEC_START=$(ssh $SERVER \
+        "systemctl show health-backend --property=ExecStart --value" \
+        2>/dev/null)
+    if [[ "$BACKEND_EXEC_START" != *"--workers 1"* ]] ||
+       [[ "$BACKEND_EXEC_START" == *"--workers 2"* ]]; then
+        print_error "Garmin MFA 单 worker 约束未生效，阻断部署"
+        return 1
+    fi
+
     sleep 2
 
     SCORE=$(ssh $SERVER "

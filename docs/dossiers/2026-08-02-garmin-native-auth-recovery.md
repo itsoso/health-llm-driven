@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-02 |
 | status | ready_to_deploy |
-| current_stage | G3/G4 PASS; backend deployment pending |
+| current_stage | G3/G4 PASS; G5 deployment retry pending after unit-drift fix |
 | owner_surface | Backend / Mobile data connection |
 
 ## Problem
@@ -106,7 +106,19 @@ multiple Uvicorn workers.
 
 ### G5 Deployment Health: PENDING
 
-Backend deployment and Mobile OTA have not started.
+The first backend deployment reached commit `5ecaaa41a1c2`, completed database
+backup and restore rehearsal, and passed the built-in 60/60 health gate. The
+Garmin-specific post-deploy probe then correctly blocked G5: the repository
+base unit specified one worker, but the older `/etc/systemd/system` unit still
+ran two because the release transaction only installs the runtime-state
+drop-in.
+
+The deployment artifact now resets and replaces `ExecStart` in that
+transactional drop-in, and `deploy.sh` rejects an effective production command
+that does not contain `--workers 1`. The complete infrastructure, deploy and
+runtime-state transaction regression suite passes 244 tests. A second backend
+deployment and effective-unit probe remain required before G5 can pass; Mobile
+OTA has not started.
 
 ### G6 Production Verification: PENDING
 

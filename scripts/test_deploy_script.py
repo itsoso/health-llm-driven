@@ -605,6 +605,17 @@ def test_health_score_failure_reports_critical_gate_detail():
     assert "健康度硬闸" in verify_body
 
 
+def test_deploy_health_gate_proves_garmin_worker_affinity():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    verify_start = script.index("verify_deployment() {")
+    verify_end = script.index("wait_for_agent_skills_manifest()", verify_start)
+    verify_body = script[verify_start:verify_end]
+
+    assert "systemctl show health-backend --property=ExecStart --value" in verify_body
+    assert '[[ "$BACKEND_EXEC_START" != *"--workers 1"* ]]' in verify_body
+    assert "Garmin MFA 单 worker 约束未生效" in verify_body
+
+
 def test_backend_proves_rollback_schema_before_live_env_mutation():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
     deploy_start = script.index("deploy_backend() {")
