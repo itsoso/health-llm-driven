@@ -491,6 +491,13 @@ class Settings(BaseSettings):
     auth_phone_code_resend_seconds: int = 60
     auth_phone_code_max_attempts: int = 5
     auth_phone_registration_auto_approve: bool = True
+    # 邀请制手机号注册。凭据摘要使用独立 key，避免与 JWT/OTP 的密钥域复用。
+    # development/test 可从 SECRET_KEY 做带域派生；production enforcement 必须显式配置。
+    registration_invitation_digest_key: Optional[str] = None
+    registration_invitation_grant_ttl_seconds: int = 600
+    registration_invitation_expiry_days: int = 7
+    registration_invitation_rollout_enabled: bool = False
+    registration_invitation_enforcement_enabled: bool = False
     aliyun_sms_access_key_id: Optional[str] = None  # 为空则复用 aliyun_access_key_id
     aliyun_sms_access_key_secret: Optional[str] = None  # 为空则复用 aliyun_access_key_secret
     aliyun_sms_sign_name: Optional[str] = None
@@ -548,6 +555,17 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "DEVICE_ENCRYPTION_KEY must be set in production. "
                     "Generate one with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+                )
+            registration_digest_key = (
+                self.registration_invitation_digest_key or ""
+            ).strip().encode("utf-8")
+            if (
+                self.registration_invitation_rollout_enabled
+                or self.registration_invitation_enforcement_enabled
+            ) and len(registration_digest_key) < 32:
+                raise ValueError(
+                    "REGISTRATION_INVITATION_DIGEST_KEY must contain at least 32 UTF-8 "
+                    "bytes when invitation registration is enabled in production"
                 )
 
     model_config = ConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
