@@ -582,6 +582,37 @@ goal: {"title":"每日快走 30 分钟","status":"paused","notes":"膝盖恢复�
     {
         "type": "function",
         "function": {
+            "name": "record_doctor_feedback",
+            "description": """仅当用户明确要求记录或保存医生反馈时调用。
+
+裸转述医生诊断/意见、询问建议、混合多个动作，或依据医生意见修改其他记录时不得调用；这些情况应先正常回应或请用户把记录命令单独重述。""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "summary": {
+                        "type": "string",
+                        "description": "医生反馈的简短摘要（可选）。",
+                    },
+                    "assessment": {
+                        "type": "string",
+                        "description": "用户明确要求保存的医生评估或诊断内容（可选）。",
+                    },
+                    "plan": {
+                        "type": "string",
+                        "description": "医生提出的后续计划或建议（可选）。",
+                    },
+                    "visit_date": {
+                        "type": "string",
+                        "description": "就诊日期，ISO YYYY-MM-DD（可选）。",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "query_lab_indicators",
             "description": """查询用户的化验/体检指标历史 (MedicalIndicator 表).
 

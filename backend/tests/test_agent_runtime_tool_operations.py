@@ -108,6 +108,60 @@ def test_fixed_receipt_write_declares_reconcilable_resource_type():
     ) == "medical_exam"
 
 
+def test_doctor_feedback_tool_has_strict_schema_and_receipt_contract():
+    from app.services.agent_kernel.tool_registry import (
+        get_tool_spec,
+        is_valid_receipt_resource_id,
+    )
+    from app.services.tool_schema_registry import get_health_tools
+
+    schema = next(
+        tool["function"]
+        for tool in get_health_tools()
+        if tool["function"]["name"] == "record_doctor_feedback"
+    )
+    parameters = schema["parameters"]
+    spec = get_tool_spec("record_doctor_feedback")
+
+    assert set(parameters["properties"]) == {
+        "summary",
+        "assessment",
+        "plan",
+        "visit_date",
+    }
+    assert "required" not in parameters
+    assert parameters["additionalProperties"] is False
+    assert "仅当用户明确要求记录或保存医生反馈时" in schema["description"]
+    assert spec.operation == "write"
+    assert spec.receipt_required is True
+    assert spec.reconciliation_resource_type({}) == "clinical_journal_entry"
+    assert is_valid_receipt_resource_id("record_doctor_feedback", "1") is True
+    for invalid_id in ("0", "-1", "1.0", "clinical-note-1"):
+        assert (
+            is_valid_receipt_resource_id("record_doctor_feedback", invalid_id)
+            is False
+        )
+
+
+def test_doctor_feedback_result_builds_fixed_verified_receipt():
+    from app.services.agent_executor import (
+        _tool_progress_label,
+        _write_receipt_from_tool_result,
+    )
+
+    receipt = _write_receipt_from_tool_result(
+        "record_doctor_feedback",
+        {"assessment": "模型生成的反馈摘要"},
+        {"id": 41, "resource_type": "clinical_journal_entry"},
+    )
+
+    assert receipt is not None
+    assert receipt["status"] == "verified"
+    assert receipt["resource_type"] == "clinical_journal_entry"
+    assert receipt["resource_id"] == "41"
+    assert _tool_progress_label("record_doctor_feedback") == "正在记录医生反馈…"
+
+
 def test_verified_operation_is_replayed_without_second_execution(
     db, auth_user_and_headers
 ):

@@ -84,6 +84,83 @@ def test_write_turn_allows_health_record_with_receipt():
 
 
 @pytest.mark.parametrize(
+    ("message", "expected_primary", "expected_operation"),
+    (
+        (
+            "医生诊断是臀肌无力导致腰肌代偿",
+            "chat",
+            "acknowledge",
+        ),
+        (
+            "医生认为是臀肌无力，我该怎么办？",
+            "advice",
+            "analyze",
+        ),
+        (
+            "医生建议休息然后请保存诊断记录",
+            "chat",
+            "acknowledge",
+        ),
+        (
+            "根据医生诊断删除昨天用药记录",
+            "chat",
+            "acknowledge",
+        ),
+    ),
+)
+def test_doctor_feedback_tool_blocks_non_authorizing_clinician_frames(
+    message,
+    expected_primary,
+    expected_operation,
+):
+    snapshot = _snapshot(message)
+    decision = decide_tool_capability(
+        snapshot,
+        _request("record_doctor_feedback", {"assessment": "模型生成的反馈摘要"}),
+    )
+
+    assert snapshot.intent.primary == expected_primary
+    assert snapshot.intent.domain == "clinical_context"
+    assert snapshot.intent.operation == expected_operation
+    assert snapshot.intent.is_write is False
+    assert decision.action == "block"
+    assert decision.reason == "doctor_feedback_without_explicit_clinician_write"
+    assert decision.receipt_required is True
+
+
+def test_doctor_feedback_tool_allows_only_guard_authorized_explicit_save():
+    snapshot = _snapshot("请记录医生诊断：臀肌无力导致腰肌代偿")
+    decision = decide_tool_capability(
+        snapshot,
+        _request("record_doctor_feedback", {"assessment": "臀肌无力导致腰肌代偿"}),
+    )
+
+    assert (
+        snapshot.intent.primary,
+        snapshot.intent.domain,
+        snapshot.intent.operation,
+        snapshot.intent.is_write,
+    ) == ("write", "clinical_context", "create", True)
+    assert decision.action == "allow"
+    assert decision.reason == "explicit_doctor_feedback_write"
+    assert decision.receipt_required is True
+
+
+def test_another_domain_write_frame_cannot_authorize_doctor_feedback_tool():
+    snapshot = _snapshot("记录体重71公斤")
+    decision = decide_tool_capability(
+        snapshot,
+        _request("record_doctor_feedback", {"summary": "不应写入"}),
+    )
+
+    assert snapshot.intent.is_write is True
+    assert snapshot.intent.domain != "clinical_context"
+    assert decision.action == "block"
+    assert decision.reason == "doctor_feedback_without_explicit_clinician_write"
+    assert decision.receipt_required is True
+
+
+@pytest.mark.parametrize(
     "message",
     (
         "不要记录午餐牛肉面",

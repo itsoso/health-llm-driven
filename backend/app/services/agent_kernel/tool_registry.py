@@ -53,6 +53,11 @@ class ToolSpec:
     annotate_implausible: bool = False
     marks_deep_analysis: bool = False
 
+    @property
+    def operation(self) -> ToolEffect:
+        """Stable operation alias used by capability contract consumers."""
+        return self.effect
+
     def classify_effect(self, arguments: Any) -> ResolvedToolEffect:
         args = _parse_arguments(arguments)
         action = str(args.get(self.action_field or "") or "").strip().lower()
@@ -215,6 +220,14 @@ _CORE_TOOL_SPECS = (
         "_exec_upload_medical_exam_text",
         receipt_required=True,
         receipt_resource_types=frozenset({"medical_exam"}),
+        receipt_resource_id_pattern=_POSITIVE_INTEGER_RECEIPT_ID,
+    ),
+    _spec(
+        "record_doctor_feedback",
+        "write",
+        "_exec_record_doctor_feedback",
+        receipt_required=True,
+        receipt_resource_types=frozenset({"clinical_journal_entry"}),
         receipt_resource_id_pattern=_POSITIVE_INTEGER_RECEIPT_ID,
     ),
     _spec(

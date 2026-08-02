@@ -2570,6 +2570,7 @@ _RECEIPT_TYPE_LABELS = {
     "health_checkin": "鼻炎打卡",
     "smart_reminder": "提醒",
     "user_directive": "健康约束",
+    "clinical_journal_entry": "医生反馈",
 }
 
 
@@ -2781,6 +2782,7 @@ _FIXED_RECEIPT_RESOURCE_TYPE_BY_TOOL = {
     "user_directive": "user_directive",
     "upload_genetic_txt": "genetic_profile",
     "upload_medical_exam_text": "medical_exam",
+    "record_doctor_feedback": "clinical_journal_entry",
 }
 
 
@@ -6569,6 +6571,7 @@ _TOOL_TO_STATUS_LABEL = {
     "health_record": "写入记录",
     "health_manage": "管理记录",
     "health_analysis": "深度分析",
+    "record_doctor_feedback": "记录医生反馈",
     "knowledge_search": "检索知识库",
     "realtime_search": "联网搜索",
 }
@@ -6599,6 +6602,7 @@ _TOOL_PROGRESS_LABEL = {
     "upload_genetic_txt": "导入基因数据…",
     "query_genetic_profile": "查阅基因数据…",
     "upload_medical_exam_text": "录入体检报告…",
+    "record_doctor_feedback": "正在记录医生反馈…",
     "query_lab_indicators": "查看化验指标…",
     "intervention_cycle": "整理干预周期…",
     "knowledge_search": "检索知识库…",

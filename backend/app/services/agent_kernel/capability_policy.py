@@ -193,6 +193,30 @@ def decide_tool_capability(
             receipt_required=True,
         )
 
+    if tool_name == "record_doctor_feedback":
+        explicit_clinician_write = (
+            primary == "write"
+            and snapshot.intent.domain == "clinical_context"
+            and snapshot.intent.operation == "create"
+            and snapshot.intent.is_write
+            and "classifier:explicit_feedback_write" in snapshot.intent.evidence
+        )
+        if explicit_clinician_write:
+            return _decision(
+                "allow",
+                "explicit_doctor_feedback_write",
+                tool_name,
+                args,
+                receipt_required=True,
+            )
+        return _decision(
+            "block",
+            "doctor_feedback_without_explicit_clinician_write",
+            tool_name,
+            args,
+            receipt_required=True,
+        )
+
     if tool_name == "health_manage":
         operation = str(args.get("operation") or "").strip().lower()
         if operation == "list":
