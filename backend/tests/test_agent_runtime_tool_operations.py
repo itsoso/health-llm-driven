@@ -163,6 +163,37 @@ def test_doctor_feedback_result_builds_fixed_verified_receipt():
     assert _tool_progress_label("record_doctor_feedback") == "正在记录医生反馈…"
 
 
+def test_full_and_lite_prompts_share_clinician_provenance_contract(
+    db, auth_user_and_headers
+):
+    from app.services.agent_executor import AgentExecutor
+
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    prompts = (
+        executor._build_system_prompt(
+            user.id,
+            conv_id=1,
+            user_auth_token=None,
+            lite=False,
+        ),
+        executor._build_tool_decision_system_prompt(),
+    )
+
+    for prompt in prompts:
+        assert "用户转述的医生判断/评估" in prompt
+        assert "不得升格为 Reva 的诊断" in prompt
+        assert "不自动保存" in prompt
+        assert "record_doctor_feedback" in prompt
+        assert "唯一的结构化医生反馈写入工具" in prompt
+        assert "不得改用 remember 或通用 health_record" in prompt
+        assert "去掉临床依据子句" in prompt
+        assert "工具调用必须为零" in prompt
+        assert "服务端临床来源护栏与工具权限裁决是唯一权威" in prompt
+        assert "提示词只是行为层" in prompt
+        assert "不进入通用记录失败/重试链" in prompt
+
+
 def test_verified_operation_is_replayed_without_second_execution(
     db, auth_user_and_headers
 ):

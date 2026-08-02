@@ -106,6 +106,72 @@ logger = logging.getLogger(__name__)
 # Bound each SOAP field without truncating user-reported clinical meaning.
 _DOCTOR_FEEDBACK_FIELD_MAX_CHARS = 4000
 
+_CLINICIAN_PROVENANCE_PROMPT_BLOCK = (
+    "## 临床来源与写入边界（服务端护栏优先）",
+    (
+        "- 用户裸陈述医生的诊断、意见、反馈或结论时，必须保留为"
+        "“用户转述的医生判断/评估”；不得升格为 Reva 的诊断，不自动保存。"
+    ),
+    (
+        "- 只有用户当前这一轮明确要求记录/保存医生诊断、意见、反馈或结论时，"
+        "才能调用 record_doctor_feedback。它是唯一的结构化医生反馈写入工具；"
+        "不得改用 remember 或通用 health_record。"
+    ),
+    (
+        "- 若医生来源子句与调整、更新、同步等动作混在同一句，工具调用必须为零；"
+        "明确说本轮没有执行或保存，并请用户另发一条消息，去掉临床依据子句后"
+        "单独明确重述要执行的操作。"
+    ),
+    (
+        "- 服务端临床来源护栏与工具权限裁决是唯一权威；提示词只是行为层。"
+        "若需处理歧义，必须依据服务端对当前回合的裁决，不得自行放宽。"
+    ),
+    (
+        "- 裸临床来源上下文和已拦截的歧义动作都不进入通用记录失败/重试链；"
+        "不得追问通用的“类型和值”，也不得声称已持久化。"
+    ),
+)
+
+_CLINICIAN_ZERO_TOOL_KINDS = frozenset({
+    "clinician_context",
+    "ambiguous_clinician_action",
+})
+
+
+def _clinician_turn_prompt_guidance(decision: Any) -> str:
+    """Render content-free turn guidance from the server-owned guard decision."""
+    if decision.kind == "clinician_context":
+        return (
+            "## 本回合临床来源护栏裁决\n"
+            "服务端已将本回合判定为用户转述的医生判断/评估。"
+            "自然确认理解并保留该来源；不调用工具、不自动保存、"
+            "不把它升格成 Reva 的诊断，不追问通用的类型和值。"
+        )
+    if decision.kind == "ambiguous_clinician_action":
+        return (
+            "## 本回合临床来源护栏裁决\n"
+            "服务端已拦截本回合的临床依据复合/歧义动作。"
+            "不调用任何工具；明确说本轮没有执行或保存，"
+            "并请用户另发一条新消息，去掉临床依据子句后单独明确重述操作。"
+        )
+    if decision.kind == "explicit_doctor_feedback_write":
+        return (
+            "## 本回合临床来源护栏裁决\n"
+            "服务端已判定为明确保存医生反馈。仅可调用 "
+            "record_doctor_feedback，并从当前用户消息中提取对应 SOAP 字段；"
+            "不得改用其他写入工具。"
+        )
+    return ""
+
+
+def _clinician_turn_allows_tool(decision: Any, tool_name: Any) -> bool:
+    """Apply the guard decision before model-selected tools reach dispatch."""
+    if decision.kind in _CLINICIAN_ZERO_TOOL_KINDS:
+        return False
+    if decision.kind == "explicit_doctor_feedback_write":
+        return str(tool_name or "").strip() == "record_doctor_feedback"
+    return True
+
 
 def _canonicalize_doctor_feedback_args(
     args: Mapping[str, Any],
@@ -9372,6 +9438,7 @@ class AgentExecutor:
         self._turn_contextual_diet_record_id = None
         self._turn_contextual_diet_consumed_fraction = None
         self._ensure_agent_kernel_turn(channel=channel)
+        clinician_turn_decision = classify_clinician_turn(message or "")
         # Backend-owned health evidence runtime. Clinical semantics are compiled
         # before any client-specific presentation or model routing so Mobile/Mac
         # cannot diverge. A health answer is buffered until deterministic verify.
@@ -9897,6 +9964,11 @@ class AgentExecutor:
         # 字节稳定,turn 内容落在增长尾部,天然不破坏前缀匹配。块文本逐字保留。
         turn_context_parts: List[str] = []
         turn_context_parts.append(self._agent_kernel_time_context(client_time_context))
+        clinician_turn_guidance = _clinician_turn_prompt_guidance(
+            clinician_turn_decision
+        )
+        if clinician_turn_guidance:
+            turn_context_parts.append(clinician_turn_guidance)
         if health_evidence_turn is not None:
             # Clinical envelope precedes every surface-format instruction. Clients
             # may alter presentation, never risk semantics or admitted evidence.
@@ -10156,6 +10228,13 @@ class AgentExecutor:
             tools = get_health_tools(subset=list(turn_tool_names))
         else:
             tools = get_health_tools()
+        if clinician_turn_decision.kind in _CLINICIAN_ZERO_TOOL_KINDS:
+            tools = []
+        elif (
+            clinician_turn_decision.kind
+            == "explicit_doctor_feedback_write"
+        ):
+            tools = get_health_tools(subset=["record_doctor_feedback"])
         if health_advice_buffered:
             # The compiler has already selected the frozen personal packet and
             # admitted reviewed authority claims. Synthesis receives no tools:
@@ -10172,7 +10251,14 @@ class AgentExecutor:
             ]
         # 任一真实子集(fast big-3 或 analysis 只读)激活 → 走 withheld-upgrade。
         # health evidence 不是“可升级子集”：它是强制零工具的临床边界。
-        tool_subset_active = turn_tool_names is not None
+        tool_subset_active = bool(
+            turn_tool_names is not None
+            and clinician_turn_decision.kind
+            not in {
+                *_CLINICIAN_ZERO_TOOL_KINDS,
+                "explicit_doctor_feedback_write",
+            }
+        )
 
         # 5. Agent 循环
         full_reply = ""
@@ -10461,6 +10547,14 @@ class AgentExecutor:
                         # A later tool call in the same turn may still fail even
                         # after an earlier write produced a verified receipt.
                         _mutation_claim_unverified = write_action_requested
+                        # Clinician context/ambiguous turns are server-buffered.
+                        # If a weak model emits a forbidden structured tool call
+                        # after prose, the prose must not reach the client before
+                        # the guard has filtered and recovered that round.
+                        _clinician_response_guarded = (
+                            clinician_turn_decision.kind
+                            in _CLINICIAN_ZERO_TOOL_KINDS
+                        )
                         # 工具决策轮快路由 (fast 模型): 本轮输出只当工具决策, content 绝不
                         # live 下发 —— 若最终是直接答文本 (无 tool_calls), 会被丢弃并在强模型
                         # 重合成 (安全不变量: 面向用户的医疗正文绝不来自 fast 模型)。
@@ -10471,6 +10565,7 @@ class AgentExecutor:
                             and not _record_claim_unverified
                             and not _diet_correction_claim_unverified
                             and not _mutation_claim_unverified
+                            and not _clinician_response_guarded
                             and not recoverable_response_buffered
                         ):
                             streamed_to_client = True
@@ -10891,8 +10986,53 @@ class AgentExecutor:
 
                 # 检查是否有 tool_call
                 if isinstance(response, dict) and response.get("tool_calls"):
-                    self._record_tool_model_name(self._last_provider_model_name or model_name)
-                    tool_calls = response["tool_calls"]
+                    proposed_clinician_tool_calls = list(response["tool_calls"])
+                    tool_calls = [
+                        tool_call
+                        for tool_call in proposed_clinician_tool_calls
+                        if _clinician_turn_allows_tool(
+                            clinician_turn_decision,
+                            (tool_call.get("function") or {}).get("name"),
+                        )
+                    ]
+                    rejected_clinician_tool_count = (
+                        len(proposed_clinician_tool_calls) - len(tool_calls)
+                    )
+                    if rejected_clinician_tool_count:
+                        logger.warning(
+                            "[agent_executor] clinician provenance guard rejected "
+                            "model tools kind=%s reason=%s count=%s user=%s",
+                            clinician_turn_decision.kind,
+                            clinician_turn_decision.reason_code,
+                            rejected_clinician_tool_count,
+                            user_id,
+                        )
+                    if not tool_calls:
+                        # Recover as a normal, successful text turn. No rejected
+                        # call reaches ToolGateway, persistence or retry state.
+                        messages.append({"role": "assistant", "content": ""})
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                clinician_turn_guidance
+                                or "不要调用工具，直接用中文回答。"
+                            ),
+                        })
+                        rounds.append({
+                            "llm_gen_ms": _round_llm_gen_ms,
+                            "tool_exec_ms": 0,
+                            "tools": [],
+                        })
+                        if (
+                            clinician_turn_decision.kind
+                            in _CLINICIAN_ZERO_TOOL_KINDS
+                        ):
+                            self._force_no_tools_synthesis = True
+                        continue
+
+                    self._record_tool_model_name(
+                        self._last_provider_model_name or model_name
+                    )
                     proposed_tool_calls = list(tool_calls)
                     text_content = response.get("content") or ""
 
@@ -13726,6 +13866,7 @@ class AgentExecutor:
             "需要查询真实数据时调用 health_query；没有工具结果时不得编造数据。",
             "只有用户明确要求新增记录时才调用 health_record；修改或删除已有记录才调用 health_manage。",
             "纯查询、历史记录作为分析依据、或健康建议不得触发写入。",
+            *_CLINICIAN_PROVENANCE_PROMPT_BLOCK,
             "工具调用后由后续模型生成面向用户的解释与安全建议。",
         ))
 
@@ -13759,6 +13900,8 @@ class AgentExecutor:
             "3. 基于返回的数据进行分析和推理",
             "4. 给出有据可依的建议",
             "5. 复合意图时在一次对话中同时处理（如'记一下吃了鱼油，看看对基因有什么影响' → 先记录后查询）",
+            "",
+            *_CLINICIAN_PROVENANCE_PROMPT_BLOCK,
             "",
             "## 数据记录规则",
             "- **核心原则：所有记录操作必须调用 health_record 工具才算完成。绝对不能口头说'已记录'而不调用工具。**",
@@ -16515,6 +16658,30 @@ class AgentExecutor:
                     message="工具参数无法解析。",
                     recovery_guidance="请重新生成完整的结构化参数。",
                 )
+
+        clinician_turn_decision = classify_clinician_turn(
+            getattr(self, "_current_turn_user_message", "") or ""
+        )
+        if not _clinician_turn_allows_tool(
+            clinician_turn_decision,
+            tool_name,
+        ):
+            logger.warning(
+                "[_execute_tool] clinician provenance guard blocked tool=%s "
+                "kind=%s reason=%s user=%s",
+                tool_name,
+                clinician_turn_decision.kind,
+                clinician_turn_decision.reason_code,
+                self._current_user_id,
+            )
+            return local_write_rejection(
+                "clinician_provenance_tool_not_authorized",
+                message="当前临床来源回合未授权该工具调用。",
+                recovery_guidance=(
+                    "按服务端临床来源裁决处理；"
+                    "不要改用其他写入工具。"
+                ),
+            )
 
         trusted_recipe_authorized = False
         if tool_name == "health_record" and isinstance(args, dict):

@@ -699,3 +699,256 @@ async def test_ambiguous_partial_diet_correction_never_claims_an_update(
     assert all(args["operation"] != "update" for _name, args in executed)
     assert "已按三分之一更新午餐" not in reply
     assert "多条" in reply and "选择" in reply
+
+
+async def test_bare_clinician_report_is_understood_without_write_or_retry(
+    db, auth_user_and_headers
+):
+    """A pasted clinician conclusion is context, not a malformed record command."""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    message = "医生诊断是大腿和臀部肌肉无力导致腰肌代偿进而导致腰肌痛"
+    natural_reply = (
+        "我理解这是你转述的医生判断/评估："
+        "医生认为下肢与臀部力量不足，腰部因代偿而出现疼痛。"
+        "我会保留这一来源属性，不把它说成 Reva 新作出的诊断。"
+    )
+    seen_prompts = []
+
+    async def fake_call_llm_stream(messages, tools):
+        prompt = "\n".join(
+            str(item.get("content") or "")
+            for item in messages
+            if isinstance(item, dict)
+        )
+        seen_prompts.append(prompt)
+        text = (
+            natural_reply
+            if "用户转述的医生判断/评估" in prompt
+            else "请补充要记录的类型和值。"
+        )
+        for char in text:
+            yield {"type": "content", "text": char}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    executor._call_llm_stream = fake_call_llm_stream
+
+    events = [
+        event async for event in executor.run_stream(
+            user_id=user.id,
+            message=message,
+            user_auth_token="test-token",
+            client_turn_id="bare-clinician-context",
+        )
+    ]
+    reply = _tokens(events)
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert seen_prompts
+    assert reply == natural_reply
+    assert "类型和值" not in reply
+    assert "上一轮未完成" not in reply and "重试" not in reply
+    assert not [event for event in events if event.get("event") == "tool_call"]
+    assert done["data"]["tools_used"] == []
+    assert done["data"]["write_receipts"] == []
+    assert done["data"]["completion_status"] == "complete"
+    assert done["data"]["turn_outcome"]["category"] == "success"
+    assert done["data"]["turn_outcome"]["retryable"] is False
+    assert done["data"]["client_turn_finalized"] is True
+
+    saved = db.query(AgentMessage).filter_by(role="assistant").one()
+    assert saved.content == reply
+    assert saved.meta["client_turn_finalized"] is True
+
+
+async def test_clinician_basis_compound_action_is_not_executed_or_retried(
+    db, auth_user_and_headers
+):
+    """A clinician-basis clause cannot authorize a mutation or sync side effect."""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    message = "依据医生意见调整剂量并同步健康数据"
+    guarded_reply = (
+        "这一轮没有执行调整、同步或保存。"
+        "请在一条新消息中去掉“依据医生意见”这类临床依据子句，"
+        "再单独、明确地说要执行哪一项操作。"
+    )
+    exposed_tools = []
+    rounds = 0
+
+    async def fake_call_llm_stream(messages, tools):
+        nonlocal rounds
+        rounds += 1
+        exposed_tools.append([
+            (tool.get("function") or {}).get("name") for tool in tools
+        ])
+        if rounds == 1:
+            # Adversarial weak-model behavior: hallucinate a write even though
+            # the server exposed no tools. The clinician guard must recover it
+            # before any tool event, dispatch, receipt, or retry state exists.
+            yield {
+                "type": "tool_calls",
+                "tool_calls": [{
+                    "id": "forbidden-clinician-compound-write",
+                    "type": "function",
+                    "function": {
+                        "name": "health_manage",
+                        "arguments": json.dumps({
+                            "record_type": "medication",
+                            "operation": "update",
+                            "record_id": 1,
+                            "data": {"dosage": "changed"},
+                        }),
+                    },
+                }],
+            }
+            yield {"type": "finish", "finish_reason": "tool_calls"}
+            return
+        prompt = "\n".join(
+            str(item.get("content") or "")
+            for item in messages
+            if isinstance(item, dict)
+        )
+        text = (
+            guarded_reply
+            if "去掉临床依据子句" in prompt
+            else "请告诉我要记录的类型和值。"
+        )
+        for char in text:
+            yield {"type": "content", "text": char}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    executor._call_llm_stream = fake_call_llm_stream
+
+    events = [
+        event async for event in executor.run_stream(
+            user_id=user.id,
+            message=message,
+            user_auth_token="test-token",
+            client_turn_id="clinician-basis-compound",
+        )
+    ]
+    reply = _tokens(events)
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert rounds == 2
+    assert exposed_tools == [[], []]
+    assert reply == guarded_reply
+    assert "没有执行" in reply and "保存" in reply
+    assert "去掉" in reply and "临床依据子句" in reply
+    assert "类型和值" not in reply
+    assert "上一轮未完成" not in reply and "重试" not in reply
+    assert not [event for event in events if event.get("event") == "tool_call"]
+    assert done["data"]["tools_used"] == []
+    assert done["data"]["write_receipts"] == []
+    assert done["data"]["completion_status"] == "complete"
+    assert done["data"]["turn_outcome"]["category"] == "success"
+    assert done["data"]["turn_outcome"]["retryable"] is False
+    assert done["data"]["client_turn_finalized"] is True
+
+
+async def test_explicit_clinician_feedback_stream_uses_typed_gateway_once(
+    db, auth_user_and_headers
+):
+    """Explicit save uses the typed adapter, policy and runtime receipt ledger."""
+    from app.models.agent_runtime import AgentToolOperation
+    from app.models.clinical_journal import ClinicalJournalEntry
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    assessment = "大腿和臀部肌肉无力导致腰肌代偿进而导致腰肌痛"
+    message = f"请记录医生诊断：{assessment}"
+    runtime = AgentRuntimeCoordinator(db)
+    admission = runtime.create_or_resume_run(
+        run_id="run-explicit-clinician-feedback",
+        attempt_id="attempt-explicit-clinician-feedback",
+        user_id=user.id,
+        conversation_id=None,
+        client_turn_id="explicit-clinician-feedback",
+        origin="test",
+    )
+    runtime.mark_running(admission.context)
+    rounds = 0
+    exposed_tools = []
+    final_reply = "已把这条内容按用户转述的医生判断/评估记录，不代表 Reva 新作出诊断。"
+
+    async def fake_call_llm_stream(messages, tools):
+        nonlocal rounds
+        rounds += 1
+        exposed_tools.append([
+            (tool.get("function") or {}).get("name") for tool in tools
+        ])
+        if rounds == 1:
+            yield {
+                "type": "tool_calls",
+                "tool_calls": [{
+                    "id": "record-clinician-feedback-once",
+                    "type": "function",
+                    "function": {
+                        "name": "record_doctor_feedback",
+                        "arguments": json.dumps(
+                            {"assessment": assessment}, ensure_ascii=False
+                        ),
+                    },
+                }],
+            }
+            yield {"type": "finish", "finish_reason": "tool_calls"}
+            return
+        for char in final_reply:
+            yield {"type": "content", "text": char}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    executor._call_llm_stream = fake_call_llm_stream
+
+    events = [
+        event async for event in executor.run_stream(
+            user_id=user.id,
+            message=message,
+            user_auth_token="test-token",
+            client_turn_id="explicit-clinician-feedback",
+            run_id=admission.context.run_id,
+            attempt_id=admission.context.attempt_id,
+            runtime_managed=True,
+        )
+    ]
+    reply = _tokens(events)
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert exposed_tools[0] == ["record_doctor_feedback"]
+    assert exposed_tools[1] == []
+    assert rounds == 2
+    assert reply == final_reply
+    assert done["data"]["tools_used"] == ["record_doctor_feedback"]
+    assert len(done["data"]["write_receipts"]) == 1
+    receipt = done["data"]["write_receipts"][0]
+    assert receipt["status"] == "verified"
+    assert receipt["verified"] is True
+    assert receipt["resource_type"] == "clinical_journal_entry"
+    assert done["data"]["completion_status"] == "complete"
+    assert done["data"]["turn_outcome"]["category"] == "success"
+    assert done["data"]["turn_outcome"]["retryable"] is False
+    assert done["data"]["client_turn_finalized"] is True
+
+    entries = db.query(ClinicalJournalEntry).filter_by(
+        user_id=user.id,
+        created_by="doctor",
+    ).all()
+    assert len(entries) == 1
+    assert entries[0].assessment == assessment
+    assert receipt["resource_id"] == str(entries[0].id)
+
+    operation = db.query(AgentToolOperation).one()
+    assert operation.tool_name == "record_doctor_feedback"
+    assert operation.status == "succeeded"
+    assert operation.resource_type == "clinical_journal_entry"
+    assert operation.resource_id == str(entries[0].id)
+    assert executor._agent_kernel_last_decision.action == "allow"
+    assert (
+        executor._agent_kernel_last_decision.reason
+        == "explicit_doctor_feedback_write"
+    )
+
+    saved = db.query(AgentMessage).filter_by(role="assistant").one()
+    assert saved.content == reply
+    assert saved.meta["client_turn_finalized"] is True
