@@ -4,8 +4,8 @@
 |---|---|
 | slug | `cross-surface-chat-continuity` |
 | 创建日期 | 2026-08-01 |
-| 当前阶段 | S5 实现与本地 Gate 完成，等待 S6 CI/发布 |
-| 状态 | release_ready |
+| 当前阶段 | S7 已部署，等待同账号跨端与 iPhone 真机验收 |
+| 状态 | deployed_device_smoke_pending |
 | 负责 | User / Codex |
 | 反馈环 | Web deploy + Mobile production OTA |
 
@@ -70,7 +70,8 @@
 - [x] T2 Mobile canonical resume + server-order sheet（OTA）
 - [x] T3 Web no-query latest resume（Web）
 - [x] T4 Mobile edge-to-edge root + 32/28 header hierarchy + 44pt actions（OTA）
-- [ ] T5 G3/G4、部署、真实跨端与真机验证
+- [x] T5 G3/G4、CI、Web deploy、Mobile production OTA
+- [ ] T6 同账号 Web↔Mobile 双向续接与 iPhone 真机视觉验证
 - 并发检查：2026-08-01 开放 PR 已核，无同名/同范围 PR；在干净隔离 worktree 实现。
 
 ## S5 · 实现
@@ -80,7 +81,8 @@
 - Mobile：可恢复本地 turn 优先，否则恢复 owner-scoped latest；设备旧 id 只作空列表/失败回退；历史列表不再按简报标题重排。
 - Mobile UI：根背景真正 edge-to-edge，状态栏透明；top/bottom 都读取动态 safe-area；原生 Stack/Tab scene 背景一致且根页无卡片转场轮廓。
 - 品牌层级：头像 32pt、“小巴” 28/34；模型入口和三个一级动作均为 44pt 交互目标。
-- commits：待完成。
+- feature commit：`4e78d8f87c7e25f08e564d26cb840bd5adb829c2`。
+- production deploy/OTA source（含随后合入的 docs-only 主干提交）：`6164452870d3645f97c5f6e426996ab63ad86062`。
 
 ## G3 · 测试闸
 
@@ -91,6 +93,10 @@
   - Mobile `design:check` 通过（raw hex 596 ≤ baseline 599）；targeted ESLint 0 errors（8 条既有 warnings）。
   - `check_doc_drift.py`、95 份 Dossier consistency、frontend page-freeze、`git diff --check` 均通过。
 - 本机 `npm run build` 因已安装的 optional Next SWC 包为空、受限网络无法重取而不可执行；代码 typecheck/Vitest 已绿，发布前仍以 GitHub `frontend-build`（含 clean install + production build）为硬阻断。
+- **PASS（CI）**：
+  - feature commit `4e78d8f87` 的 GitHub Actions run `30730652072`：44/44 jobs success，含 frontend production build、Mobile 全量 Jest/typecheck、Backend 全分片、Mac、type drift 与 release invariants。
+  - 最终生产 source `616445287` 的 run `30731563615`：44/44 jobs success。
+  - 中间 docs-only main run `30730960303` 的 `backend-test-a-early` 曾在两个不同既有 agenda 测试位置各超时 600 秒、无断言失败；一次受控 failed-jobs rerun 通过，随后最终 source 的独立全量 run 全绿，不以重复重跑替代最终证据。
 
 ## G4 · 安全闸
 
@@ -103,11 +109,19 @@
 ## S6 · 部署
 
 - 路由：frontend deploy + Mobile production OTA。
-- 部署 SHA / 回滚点：待完成。
+- feature commit：`4e78d8f87c7e25f08e564d26cb840bd5adb829c2`。
+- production source/deploy SHA：`6164452870d3645f97c5f6e426996ab63ad86062`。
+- iOS production OTA：runtime `1.3.2`；group `5ae84fdf-0e71-4121-a34a-86dd6a747f51`；update `019fc0af-ce41-7259-8800-1d3451bb3682`；EAS dashboard `https://expo.dev/accounts/itsoso/projects/health-pilot/updates/5ae84fdf-0e71-4121-a34a-86dd6a747f51`。
+- Mobile 上一已知可用回滚目标：group `8120489e-ab4c-47b2-a5ee-0b031486bfec`；iOS update `019fbff2-b49f-7023-88dc-bce236ad2d96`；执行前 dry-run `./scripts/mobile-ota-rollback.sh production`，确认后追加 `--confirm`。
+- Web/backend 生产发布：`./deploy.sh --all --yes` 从一次性干净 `main` 克隆执行；数据库备份、234 表恢复演练、站外加密归档哈希/HMAC、schema rollback probe 均通过；服务器回滚点 `354ca6925e24d15a391e51a6bfd8967e4f57933e`。
 
 ## G5 · 部署健康闸
 
-- 状态：待部署后验证。
+- **PASS**：
+  - 生产 Next.js build 通过，73/73 静态页面生成；`health-frontend` PM2 online。
+  - 后端目标 SHA 核验通过，最终健康度 `60/60 PASS`；runtime-only KB staged contract 与 22/22 skills manifest 一致。
+  - 公网 `GET https://health.executor.life/api/v1/health` 返回 `healthy`，API/PostgreSQL/Redis/Celery 全连接。
+  - 公网 `GET https://health.executor.life/ai-assistant` 返回 HTTP 200；未登录 `GET /api/v1/agent/conversations` 返回 401，owner-scoped 鉴权边界正常。
 
 ## S7 · 上线验证
 
@@ -116,9 +130,10 @@
 
 ## G6 · 验证闸
 
-- 真机/发布用户确认：待完成。
-- 裁决：待定。
+- 自动化/公网 smoke：PASS。
+- 真机/发布用户确认：待完成；本机无可用 iOS Simulator runtime，不能伪造 status bar、刘海、键盘/Home Indicator 与 Web↔Mobile 同账号双向续接证据。
+- 裁决：`PENDING_TRUE_DEVICE`，仅阻止 Dossier 关闭，不回滚已通过 G3-G5 的 production 发布。
 
 ## S8 · 沉淀
 
-- 状态：待回流跨端 parity / Dossier shipped。
+- 状态：等待真机证据后回流跨端 parity / Dossier shipped。
