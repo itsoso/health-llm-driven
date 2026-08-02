@@ -1,3 +1,6 @@
+from dataclasses import replace
+import json
+from pathlib import Path
 import re
 
 import pytest
@@ -14,6 +17,13 @@ from app.services.agent_kernel.types import (
     ExecutionContext,
     ToolExecutionRequest,
     TurnSnapshot,
+)
+
+
+CLINICIAN_GUARD_FIXTURE = (
+    Path(__file__).parent
+    / "fixtures"
+    / "clinician_provenance_guard_safety_cases.json"
 )
 
 
@@ -144,6 +154,83 @@ def test_doctor_feedback_tool_allows_only_guard_authorized_explicit_save():
     assert decision.action == "allow"
     assert decision.reason == "explicit_doctor_feedback_write"
     assert decision.receipt_required is True
+
+
+def test_doctor_feedback_tool_allows_explicit_save_after_clinician_report():
+    snapshot = _snapshot(
+        "医生说是臀肌无力。请记录医生诊断：臀肌无力导致腰痛"
+    )
+    decision = decide_tool_capability(
+        snapshot,
+        _request("record_doctor_feedback", {"assessment": "臀肌无力导致腰痛"}),
+    )
+
+    assert (
+        snapshot.intent.primary,
+        snapshot.intent.domain,
+        snapshot.intent.operation,
+        snapshot.intent.is_write,
+    ) == ("write", "clinical_context", "create", True)
+    assert "classifier:explicit_feedback_write_after_report" in snapshot.intent.evidence
+    assert decision.action == "allow"
+    assert decision.reason == "explicit_doctor_feedback_write"
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "医生诊断是臀肌无力导致腰肌代偿",
+        "记录体重71公斤",
+    ),
+)
+def test_forged_clinical_write_frame_cannot_override_raw_guard_decision(text):
+    base = _snapshot(text)
+    forged = replace(
+        base,
+        intent=replace(
+            base.intent,
+            primary="write",
+            domain="clinical_context",
+            operation="create",
+            is_write=True,
+            evidence=("classifier:explicit_feedback_write",),
+        ),
+    )
+
+    decision = decide_tool_capability(
+        forged,
+        _request("record_doctor_feedback", {"assessment": "不应写入"}),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "doctor_feedback_without_explicit_clinician_write"
+
+
+@pytest.mark.parametrize(
+    "case",
+    json.loads(CLINICIAN_GUARD_FIXTURE.read_text(encoding="utf-8")),
+    ids=lambda row: row["id"],
+)
+def test_doctor_feedback_policy_matches_full_clinician_guard_corpus(case):
+    from app.services.clinician_provenance_guard import classify_clinician_turn
+
+    guard_decision = classify_clinician_turn(case["text"])
+    snapshot = _snapshot(case["text"])
+    decision = decide_tool_capability(
+        snapshot,
+        _request("record_doctor_feedback", {"assessment": "固定测试内容"}),
+    )
+    expected_allowed = case["kind"] == "explicit_doctor_feedback_write"
+
+    assert guard_decision.authorizes_feedback_write is expected_allowed
+    assert decision.action == ("allow" if expected_allowed else "block")
+    if expected_allowed:
+        assert (
+            snapshot.intent.primary,
+            snapshot.intent.domain,
+            snapshot.intent.operation,
+            snapshot.intent.is_write,
+        ) == ("write", "clinical_context", "create", True)
 
 
 def test_another_domain_write_frame_cannot_authorize_doctor_feedback_tool():

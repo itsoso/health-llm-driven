@@ -12,6 +12,7 @@ from app.services.agent_kernel.tool_registry import (
 )
 from app.services.agent_kernel.types import CapabilityDecision, ToolExecutionRequest, TurnSnapshot
 from app.services.agent_kernel.write_safety import is_explicit_write_cancellation
+from app.services.clinician_provenance_guard import classify_clinician_turn
 
 READ_ONLY_TOOLS = frozenset(
     spec.name
@@ -194,12 +195,13 @@ def decide_tool_capability(
         )
 
     if tool_name == "record_doctor_feedback":
+        clinician_decision = classify_clinician_turn(snapshot.envelope.text)
         explicit_clinician_write = (
             primary == "write"
             and snapshot.intent.domain == "clinical_context"
             and snapshot.intent.operation == "create"
             and snapshot.intent.is_write
-            and "classifier:explicit_feedback_write" in snapshot.intent.evidence
+            and clinician_decision.authorizes_feedback_write
         )
         if explicit_clinician_write:
             return _decision(
