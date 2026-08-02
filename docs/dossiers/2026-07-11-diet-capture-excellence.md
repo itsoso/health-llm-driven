@@ -4,8 +4,8 @@
 |---|---|
 | slug | `diet-capture-excellence` |
 | 创建日期 | 2026-07-11 |
-| 当前阶段 | G5 已通过，G6 真机小红书验证 |
-| 状态 | production_ota_published_device_validation_pending |
+| 当前阶段 | G6 已通过（T6.1 小红书照片分享闭环） |
+| 状态 | xiaohongshu_photo_share_verified |
 | 负责 | Codex |
 | 反馈环 | Backend pytest / Mobile Jest + TypeScript / Simulator / backend deploy / EAS TestFlight + production OTA |
 
@@ -20,7 +20,7 @@
   - 实施：[`docs/plans/2026-08-01-xiaohongshu-diet-share-card.md`](../plans/2026-08-01-xiaohongshu-diet-share-card.md)。
   - 安全 Gate：`privacy_sensitive`；原始 `DietRecord` 照片不可变，编辑与合成仅在本地副本完成，第一版不做自动 QR/条码识别。
   - 回退阶段：S3/S5；需重跑 G3/G4/G5/G6。当前实现与集成闸已完成，但不把新分享流程记为已上线。
-  - 本轮 Gate：G3=`PASS`、G4=`PASS`、G5=`PASS`、G6=`PENDING`；旧分享流程的测试、部署和上线证据只作为 Correction 前历史基线。
+  - 本轮 Gate：G3=`PASS`、G4=`PASS`、G5=`PASS`、G6=`PASS`；旧分享流程的测试、部署和上线证据只作为 Correction 前历史基线。
   - Run Ledger：`docs/_generated/harness-runs/7779bb67a50d.jsonl`（本地运行证据，不提交）。
   - 用户确认：☑
 
@@ -98,7 +98,7 @@
 - [x] T5.8 图片消息首个 SSE 确认前断流时，以 `client_turn_id` 核对 Runtime 持久化状态并恢复同一回合（backend deploy + OTA）
 - [x] T5.9 失败写入的源消息恢复绑定：用户紧邻回复“重试/需要”时恢复原文字与图片，保留新回合幂等检查点；不确定写入禁止重放（backend deploy）
 - [ ] T6 模拟器视觉、真机微信/小红书、生产数据闭环验收
-- [x] T6.1 小红书照片必需的本地 3:4 编辑器、裁剪与缩放/90° 旋转/撤销/重做/重置/手动不透明隐私涂抹、完整海报预览，以及预览/保存/分享单一 rendered URI 复用（实现完成，待主干 CI、OTA 与真机目标应用验收；Run Ledger：`docs/_generated/harness-runs/7779bb67a50d.jsonl`）
+- [x] T6.1 小红书照片必需的本地 3:4 编辑器、裁剪与缩放/90° 旋转/撤销/重做/重置/手动不透明隐私涂抹、完整海报预览，以及预览/保存/分享单一 rendered URI 复用（主干 CI、production OTA 与真机小红书目标应用验收均通过；Run Ledger：`docs/_generated/harness-runs/7779bb67a50d.jsonl`）
 - Agent Native 验收约束：每个新增 Mobile 饮食入口都必须证明三件事：Agent 可引用 pending draft 或 confirmed DietRecord；确认成功必须有 `diet_record_id` 回执；用户能在小巴对话里继续追问、修正或查看全天影响。
 - 并发检查：2026-07-11 `origin/main` 与当前干净集成 worktree 一致；原始用户工作区不纳入暂存。
 
@@ -250,13 +250,36 @@
 - T6.1 production OTA 已绑定 runtime `1.3.2` 与 update
   `019fbff2-b49f-7023-88dc-bce236ad2d96`；App 回到前台并确认更新后可加载。
   自动发布证据不证明照片编辑手势、导出像素或小红书实际接收成功。
-- 待真机验证：相机实拍 -> 识别 -> 修正 -> 确认单次写入，以及分享图分别投递微信和小红书。
+- T6.1 真机 OTA 证明（设备 `suntice`，App `1.3.2 (240)`）：设备内 Expo
+  数据库的 active/latest update 为
+  `019FBFF2B49F702388DCBCE236AD2D96`，`successful_launch_count=3`、
+  `failed_launch_count=0`，与 production manifest 一致。
+- T6.1 真机失败路径：对既有无照片餐食发起分享时明确显示“这条记录没有可用照片”，
+  只允许重试或分享完整饮食正文，没有生成 metric-only 图片海报。
+- T6.1 真机照片路径：相机实拍并保存记录后进入本地编辑器；实机完成 90° 旋转、
+  手动不透明隐私涂抹和撤销，完整预览保留旋转/裁剪结果及撤销后剩余涂抹。
+  重做、重置控件在真机可见，行为由本轮自动化回归覆盖；不把未手工点击冒充真机手势证据。
+- T6.1 真机导出与保存：预览产物为 `1080x1440` PNG。保存前后从 App
+  container 只读取得的 rendered file 字节完全相同，`cmp_exit=0`，SHA-256 均为
+  `3b83620042d200f17af442c54cf218a3fe0507cafbbee215a669f15badffb817`，证明保存复用
+  已审阅的同一 rendered URI，而非重新合成另一张图。
+- T6.1 小红书目标应用投递：iOS 系统分享面板显示“分享到小红书”；经用户在明确
+  数据范围后批准，编辑后海报已进入小红书笔记编辑页，缩略图保留隐私涂抹。验证停在
+  “发布笔记”之前，没有公开发布。真机证据为本地 Xcode device screenshots
+  `Screenshot 2026-08-01 at 10.14.08 PM.png`（系统分享面板）与
+  `Screenshot 2026-08-01 at 10.15.24 PM.png`（小红书接收页）；截图含健康图片，
+  不提交仓库。
+- 仍待 T6 总体验收：微信目标应用投递、真实识别准确率/时延生产样本，以及既定的
+  真机失败写入恢复专项；这些不阻塞本次 T6.1 小红书照片分享 Correction 的 G6。
 
 ## G6 · 验证闸（2026-08-01 Correction 前历史基线）
 
 - 模拟器与生产后端验证通过；T5.9 生产部署与公网健康已通过，真机失败写入恢复及目标应用投递尚缺终端证据。
 - **2026-08-01 Correction 前历史裁决：PENDING**。当时状态为 `device_validation_pending`，不进入完成态。
-- **本轮 G6 裁决：PENDING**。待真机验证照片编辑、用户审阅完整预览、保存与小红书系统分享均复用同一 `1080x1440` rendered URI，且照片失败不生成 metric-only 海报。
+- **本轮 G6 裁决：PASS**。真机已验证 production OTA 命中、照片缺失 fail closed、
+  本地编辑与不透明涂抹、完整预览、保存前后同一 `1080x1440` rendered file 字节一致，
+  以及经用户批准后由系统分享进入小红书笔记编辑页；未点击“发布笔记”。微信投递、
+  生产识别指标与失败写入恢复仍属于上层 T6 的独立待验项，不冒充已完成。
 
 ## S8 · 沉淀
 
