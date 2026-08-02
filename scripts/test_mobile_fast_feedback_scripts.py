@@ -188,7 +188,12 @@ echo \"iOS update ID    22222222-2222-4222-8222-222222222222\"
     return runner, counter
 
 
-def run_ota(tmp_path: Path, mode: str) -> tuple[subprocess.CompletedProcess[str], Path, Path, Path]:
+def run_ota(
+    tmp_path: Path,
+    mode: str,
+    *,
+    force_no_bytecode: bool = False,
+) -> tuple[subprocess.CompletedProcess[str], Path, Path, Path]:
     runner, counter = make_ota_runner(tmp_path, mode)
     expo_runner = tmp_path / "fake-expo-export"
     expo_runner.write_text(
@@ -211,6 +216,7 @@ def run_ota(tmp_path: Path, mode: str) -> tuple[subprocess.CompletedProcess[str]
             "OTA_TEST_MODE": mode,
             "OTA_TEST_EXPO_ARGS": str(tmp_path / "expo-args"),
             "REVA_RELEASE_LOCK_DIR": str(tmp_path / "release-lock"),
+            "OTA_FORCE_NO_BYTECODE": "1" if force_no_bytecode else "0",
             "PATH": "/usr/bin:/bin",
         }
     )
@@ -248,6 +254,22 @@ def test_ota_falls_back_to_no_bytecode_after_repeated_asset_timeout(
     assert counter.read_text().strip() == "3"
     assert "--no-bytecode" in (tmp_path / "expo-args").read_text()
     assert "--skip-bundler" in result.stdout
+    assert anchor.exists()
+    assert json.loads(manifest.read_text())["status"] == "published"
+
+
+def test_ota_can_force_no_bytecode_without_repeating_hermes_attempts(
+    tmp_path: Path,
+) -> None:
+    result, counter, anchor, manifest = run_ota(
+        tmp_path,
+        "asset-timeout",
+        force_no_bytecode=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert counter.read_text().strip() == "1"
+    assert "--no-bytecode" in (tmp_path / "expo-args").read_text()
     assert anchor.exists()
     assert json.loads(manifest.read_text())["status"] == "published"
 

@@ -129,7 +129,21 @@ run_no_bytecode_update_attempt() {
   return "${update_exit}"
 }
 
-if run_update_attempt; then
+if [[ "${OTA_FORCE_NO_BYTECODE:-0}" != "0" &&
+      "${OTA_FORCE_NO_BYTECODE:-0}" != "1" ]]; then
+  echo "✗ OTA_FORCE_NO_BYTECODE 只接受 0/1。" >&2
+  exit 1
+fi
+
+if [[ "${OTA_FORCE_NO_BYTECODE:-0}" == "1" ]]; then
+  if run_no_bytecode_update_attempt; then
+    FALLBACK_EXIT=0
+  else
+    FALLBACK_EXIT=$?
+    echo "✗ Forced OTA no-bytecode update failed." >&2
+    exit "${FALLBACK_EXIT}"
+  fi
+elif run_update_attempt; then
   FIRST_EXIT=0
 else
   FIRST_EXIT=$?
