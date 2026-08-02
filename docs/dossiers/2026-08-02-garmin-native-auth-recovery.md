@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | date | 2026-08-02 |
-| status | deploying |
-| current_stage | G5 PASS; G6 Mobile OTA retry and authenticated-account smoke pending |
+| status | blocked |
+| current_stage | G5 PASS; G6 BLOCKED by EAS asset processing and authenticated-account smoke |
 | owner_surface | Backend / Mobile data connection |
 
 ## Problem
@@ -136,17 +136,24 @@ guard/staged serving contracts, Skills 22/22 and transaction finalize. A
 separate production probe confirmed all four units active and the effective
 backend command contains `--workers 1` and no `--workers 2`.
 
-### G6 Production Verification: PENDING
+### G6 Production Verification: BLOCKED
 
 Production health and the Garmin credential, sync, connect, test and MFA routes
 are live; unauthenticated probes returned 401 for all five, proving registration
 and auth protection without sending real credentials. Production intentionally
 disables OpenAPI/Docs, so route probes replace a public schema fetch.
 
-The production Mobile OTA built successfully but four Hermes bundle uploads
+The production Mobile OTA built successfully, but repeated Hermes uploads
 failed before an update ID with EAS asset-processing timeout/connection-reset
 errors. Expo CLI's supported `--no-bytecode` export and EAS Update's supported
-`--input-dir --skip-bundler` path are now a fail-closed fallback after the two
-normal retries; its release-lock, ID, manifest and anchor behavior passes all 16
-Mobile release-script tests. Publishing that fallback plus one authenticated
-credential/reconnect/MFA/manual-sync smoke remain before G6 can pass.
+`--input-dir --skip-bundler` path were added as a fail-closed fallback after the
+two normal retries, plus an explicit direct retry for a previously submitted
+asset hash; release-lock, ID, manifest and anchor behavior passes all 17 Mobile
+release-script tests.
+
+Both the fallback JS asset and its direct same-hash retry also timed out in EAS
+processing. No update group was published: `.last-ota-commit` and the release
+manifest remain on known-good commit `ffa790f67c62`. G6 is therefore blocked on
+an external EAS per-asset processing failure and on the lack of a safe
+authenticated Garmin account for one credential/reconnect/MFA/manual-sync
+smoke. Do not mark the feature complete until both are cleared.
