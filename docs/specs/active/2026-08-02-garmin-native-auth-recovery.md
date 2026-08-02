@@ -146,7 +146,7 @@ Then the database contains a versioned encrypted envelope and no plaintext token
 
 Given Garmin requires MFA
 When the user submits a valid code from Mobile
-Then the backend resumes the native login, stores the encrypted token and clears requires_mfa
+Then the backend resumes the same user-bound native client, stores the encrypted token and clears requires_mfa
 
 Given a legacy, revoked or invalid session
 When the user opens the Garmin Mobile screen

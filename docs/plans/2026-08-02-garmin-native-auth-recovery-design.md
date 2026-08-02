@@ -29,7 +29,8 @@ Introduce a focused native-auth adapter used by `GarminConnectService`,
 - construction of the pinned `Garmin` client without `.garth` access;
 - native token restore via `login(tokenstore)`;
 - password login with `return_on_mfa=True`;
-- MFA resume via `Garmin.resume_login(client_state, code)`;
+- MFA resume via `Garmin.resume_login(client_state, code)` while accepting that
+  0.3.6 returns no external client-state payload;
 - authenticated-client validation using native DI token state;
 - token serialization via `client.dumps()` and encrypted persistence.
 
@@ -67,7 +68,7 @@ no credentials
   -> save encrypted credentials
   -> native login
      -> success: persist encrypted token, clear MFA, connected
-     -> MFA: retain short-lived in-memory client_state, mark requires_mfa
+     -> MFA: retain the short-lived native client, mark requires_mfa
         -> valid code: resume, persist token, clear MFA, connected
         -> invalid/expired: actionable retry or reconnect
 
@@ -78,9 +79,11 @@ existing token envelope
         -> success or MFA as above
 ```
 
-The short-lived MFA session remains in process and contains only the minimal
-native client state required by the library. It is never returned to Mobile;
-Mobile receives an opaque application MFA session identifier.
+In 0.3.6, `login(return_on_mfa=True)` returns `("needs_mfa", None)` and keeps the
+challenge state inside the native client. The short-lived MFA session therefore
+retains that client, is bound to the authenticated application user and Garmin
+account, and expires after five minutes. Native state is never returned to
+Mobile; Mobile receives only an opaque application MFA session identifier.
 
 ## Sync And Renewal
 

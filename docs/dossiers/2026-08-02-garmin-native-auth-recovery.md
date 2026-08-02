@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | date | 2026-08-02 |
-| status | definition |
-| current_stage | G1 passed; design approved; G2 pending implementation plan |
+| status | planned |
+| current_stage | G2 passed; test-first implementation ready |
 | owner_surface | Backend / Mobile data connection |
 
 ## Problem
@@ -21,6 +21,9 @@ generic manual-sync failure without a reconnect or MFA recovery path.
   raises `AttributeError: 'Garmin' object has no attribute 'garth'`.
 - The installed client exposes native `client.dumps()`, `client.loads()`,
   `login(tokenstore)` and `resume_login(client_state, mfa_code)` APIs.
+- In 0.3.6 MFA mode, login returns `("needs_mfa", None)` and retains challenge
+  state in the native client, so recovery must keep a short-lived user-bound
+  server-side session rather than expect a returned state dictionary.
 - Regression introduction: dependency upgrade in `0826b2246` without a matching
   adapter migration.
 
@@ -47,10 +50,17 @@ new wearable metric.
 The user explicitly selected the complete backend plus Mobile recovery option
 (`方案 1`) on 2026-08-02.
 
-### G2 Feasibility And Risk: PENDING
+### G2 Feasibility And Risk: PASS
 
-Pending the task-level implementation plan, contract consistency check and
-security pre-review.
+The production 0.3.6 authentication, serialization, refresh and MFA source
+contracts were inspected directly. The implementation plan is recorded in
+`docs/plans/2026-08-02-garmin-native-auth-recovery-implementation.md`.
+
+The slice needs no schema migration: the legacy-named session column can hold a
+strict versioned encrypted envelope. The highest risks are cross-user MFA state,
+secret leakage, legacy-token confusion and duplicate authentication paths; the
+plan addresses them with user-bound short-lived sessions, fail-closed decoding,
+safe errors and one shared adapter. G4 remains mandatory before deployment.
 
 ### G3 Tests: PENDING
 
