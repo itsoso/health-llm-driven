@@ -63,9 +63,63 @@ export interface paths {
         put?: never;
         /**
          * 手机号验证码登录或注册
-         * @description 验证码正确则登录；新手机号自动创建一个最小账号。
+         * @description Legacy OTP login; enforcement blocks unknown-phone auto-registration.
          */
         post: operations["login_by_phone_code_api_v1_auth_phone_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/phone/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 验证手机号并区分登录或邀请注册
+         * @description Consume an OTP exactly once without creating an unknown-phone user.
+         */
+        post: operations["verify_phone_code_api_v1_auth_phone_verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/invitations/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 检查注册邀请 */
+        post: operations["inspect_registration_invitation_api_v1_auth_invitations_inspect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/invited-registration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 使用手机号验证票据与邀请完成注册 */
+        post: operations["invited_phone_registration_api_v1_auth_invited_registration_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1344,6 +1398,58 @@ export interface paths {
          *     - target_user 继承两个账号的微信/Web登录能力
          */
         post: operations["admin_merge_users_api_v1_admin_users_merge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/registration-invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Invitations */
+        get: operations["list_invitations_api_v1_admin_registration_invitations_get"];
+        put?: never;
+        /** Create Invitation */
+        post: operations["create_invitation_api_v1_admin_registration_invitations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/registration-invitations/{invitation_id}/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Prepare Resend */
+        post: operations["prepare_resend_api_v1_admin_registration_invitations__invitation_id__resend_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/registration-invitations/{invitation_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke Invitation */
+        post: operations["revoke_invitation_api_v1_admin_registration_invitations__invitation_id__revoke_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -26521,6 +26627,15 @@ export interface components {
             /** Remaining Uses */
             remaining_uses?: number | null;
         };
+        /** InvitationInspectResponse */
+        InvitationInspectResponse: {
+            /** Valid */
+            valid: boolean;
+            /** Phone Masked */
+            phone_masked?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
+        };
         /** InviteAcceptRequest */
         InviteAcceptRequest: {
             /** Code */
@@ -28537,22 +28652,6 @@ export interface components {
             predictions: components["schemas"]["PersonalPredictionItem"][];
         };
         /**
-         * PhoneCodeLogin
-         * @description 手机号验证码登录/注册
-         */
-        PhoneCodeLogin: {
-            /**
-             * Phone
-             * @description 手机号
-             */
-            phone: string;
-            /**
-             * Code
-             * @description 验证码
-             */
-            code: string;
-        };
-        /**
          * PhoneCodeRequest
          * @description 请求手机号验证码
          */
@@ -28601,6 +28700,39 @@ export interface components {
              * @default false
              */
             is_new_user: boolean;
+        };
+        /** PhoneVerificationAuthenticated */
+        PhoneVerificationAuthenticated: {
+            /** Access Token */
+            access_token: string;
+            /**
+             * Token Type
+             * @default bearer
+             */
+            token_type: string;
+            user: components["schemas"]["app__schemas__auth__UserResponse"];
+            /**
+             * Is New User
+             * @default false
+             */
+            is_new_user: boolean;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            outcome: "authenticated";
+        };
+        /** PhoneVerificationInvitationRequired */
+        PhoneVerificationInvitationRequired: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            outcome: "invitation_required";
+            /** Verified Phone Ticket */
+            verified_phone_ticket: string;
+            /** Expires In Seconds */
+            expires_in_seconds: number;
         };
         /** PlanFeedbackRequest */
         PlanFeedbackRequest: {
@@ -29127,6 +29259,92 @@ export interface components {
              * @default false
              */
             override_safety: boolean;
+        };
+        /** RegistrationInvitationCreate */
+        RegistrationInvitationCreate: {
+            /** Phone */
+            phone: unknown;
+            /** Note */
+            note?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
+        };
+        /** RegistrationInvitationList */
+        RegistrationInvitationList: {
+            /** Items */
+            items: components["schemas"]["RegistrationInvitationSafe"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /** RegistrationInvitationPrepared */
+        RegistrationInvitationPrepared: {
+            /** Id */
+            id: number;
+            /** Phone Masked */
+            phone_masked: string;
+            /** Note */
+            note: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Prepared For Delivery */
+            prepared_for_delivery: boolean;
+            /** Manual Code */
+            manual_code: string;
+            /** Link Token */
+            link_token: string;
+            /** Deep Link */
+            deep_link: string;
+            /** Delivery Status */
+            delivery_status: string;
+            /** Delivery Error Code */
+            delivery_error_code: string | null;
+        };
+        /** RegistrationInvitationSafe */
+        RegistrationInvitationSafe: {
+            /** Id */
+            id: number;
+            /** Phone Masked */
+            phone_masked: string;
+            /** Note */
+            note: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Prepared For Delivery */
+            prepared_for_delivery: boolean;
         };
         /** RelationCreate */
         RelationCreate: {
@@ -33579,7 +33797,148 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PhoneCodeLogin"];
+                "application/json": {
+                    /**
+                     * Phone
+                     * @description 手机号
+                     */
+                    phone: string;
+                    /**
+                     * Code
+                     * @description 验证码
+                     */
+                    code: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhoneLoginToken"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_phone_code_api_v1_auth_phone_verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Phone
+                     * @description 手机号
+                     */
+                    phone: string;
+                    /**
+                     * Code
+                     * @description 验证码
+                     */
+                    code: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhoneVerificationAuthenticated"] | components["schemas"]["PhoneVerificationInvitationRequired"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    inspect_registration_invitation_api_v1_auth_invitations_inspect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Manual Code */
+                    manual_code?: string | null;
+                    /** Link Token */
+                    link_token?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationInspectResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    invited_phone_registration_api_v1_auth_invited_registration_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Manual Code */
+                    manual_code?: string | null;
+                    /** Link Token */
+                    link_token?: string | null;
+                    /**
+                     * Verified Phone Ticket
+                     * Format: password
+                     */
+                    verified_phone_ticket: string;
+                    /**
+                     * Idempotency Key
+                     * Format: password
+                     */
+                    idempotency_key: string;
+                };
             };
         };
         responses: {
@@ -35565,6 +35924,133 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_invitations_api_v1_admin_registration_invitations_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistrationInvitationList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_invitation_api_v1_admin_registration_invitations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegistrationInvitationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistrationInvitationPrepared"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    prepare_resend_api_v1_admin_registration_invitations__invitation_id__resend_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistrationInvitationPrepared"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_invitation_api_v1_admin_registration_invitations__invitation_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistrationInvitationSafe"];
                 };
             };
             /** @description Validation Error */

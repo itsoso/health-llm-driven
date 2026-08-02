@@ -93,6 +93,34 @@ def test_phone_verify_openapi_declares_outcome_discriminator():
     assert schema["discriminator"]["propertyName"] == "outcome"
 
 
+def test_registration_openapi_marks_sensitive_request_fields_write_only():
+    from main import app
+
+    document = app.openapi()
+    paths = document["paths"]
+
+    verify_properties = paths["/api/v1/auth/phone/verify"]["post"]["requestBody"][
+        "content"
+    ]["application/json"]["schema"]["properties"]
+    assert verify_properties["code"]["writeOnly"] is True
+
+    for path in ("/api/v1/auth/invitations/inspect", "/api/v1/auth/invited-registration"):
+        properties = paths[path]["post"]["requestBody"]["content"]["application/json"][
+            "schema"
+        ]["properties"]
+        for field in {
+            "manual_code",
+            "link_token",
+            "verified_phone_ticket",
+            "idempotency_key",
+        } & properties.keys():
+            schema = properties[field]
+            assert schema.get("writeOnly") is True or any(
+                candidate.get("writeOnly") is True
+                for candidate in schema.get("anyOf", [])
+            ), (path, field)
+
+
 def test_registration_source_hmac_is_stable_separated_bounded_and_fail_safe(monkeypatch):
     from app.services import registration_invitation as service
 

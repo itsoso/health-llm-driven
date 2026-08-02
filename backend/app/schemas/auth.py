@@ -43,7 +43,13 @@ class PhoneCodeResponse(BaseModel):
 class PhoneCodeLogin(BaseModel):
     """手机号验证码登录/注册"""
     phone: str = Field(..., min_length=5, max_length=32, description="手机号")
-    code: str = Field(..., min_length=4, max_length=12, description="验证码")
+    code: str = Field(
+        ...,
+        min_length=4,
+        max_length=12,
+        description="验证码",
+        json_schema_extra={"writeOnly": True},
+    )
 
 
 class PhoneLoginToken(Token):
