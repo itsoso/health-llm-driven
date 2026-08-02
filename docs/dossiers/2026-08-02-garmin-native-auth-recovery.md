@@ -115,10 +115,14 @@ drop-in.
 
 The deployment artifact now resets and replaces `ExecStart` in that
 transactional drop-in, and `deploy.sh` rejects an effective production command
-that does not contain `--workers 1`. The complete infrastructure, deploy and
-runtime-state transaction regression suite passes 244 tests. A second backend
-deployment and effective-unit probe remain required before G5 can pass; Mobile
-OTA has not started.
+that does not contain `--workers 1`. A second deployment then stopped in
+read-only preflight, before changing the service or live environment, because
+the transaction parser's exact candidate whitelist still described the old
+drop-in. The parser now accepts only the new byte-exact single-worker artifact,
+with a drift regression linking the checked-in file to the production parser.
+The complete infrastructure, deploy and runtime-state transaction suite again
+passes 244 tests. Another backend deployment and effective-unit probe remain
+required before G5 can pass; Mobile OTA has not started.
 
 ### G6 Production Verification: PENDING
 

@@ -1562,6 +1562,9 @@ def test_dropins_enforce_minimal_external_writable_boundaries() -> None:
         "/var/lib/health-app/runtime "
         "/var/lib/health-app/dedao-kbase\n"
     )
+    assert backend.encode() == runtime_transaction._expected_candidate(
+        "health-backend.service"
+    )
     worker = (dropins / "celery-worker-runtime-state.conf").read_text(encoding="utf-8")
     assert worker == (
         "[Service]\n"
