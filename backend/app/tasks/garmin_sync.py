@@ -111,34 +111,39 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1, notify_on_failure: 
 
             # 同步运动活动数据（复用已认证的 client）
             synced_activities = 0
+            from app.services.workout_sync import WorkoutSyncService
+
+            workout_client = service.client if hasattr(service, 'client') and service._authenticated else None
+            workout_sync_service = WorkoutSyncService(
+                email=email,
+                password=password,
+                is_cn=is_cn,
+                user_id=user_id,
+                client=workout_client
+            )
+
+            # 单次 event loop 完成所有 async 操作
+            async def _async_sync():
+                return await workout_sync_service.sync_activities(db, user_id, days)
+
             try:
-                from app.services.workout_sync import WorkoutSyncService
-
-                workout_client = service.client if hasattr(service, 'client') and service._authenticated else None
-                workout_sync_service = WorkoutSyncService(
-                    email=email,
-                    password=password,
-                    is_cn=is_cn,
-                    user_id=user_id,
-                    client=workout_client
-                )
-
-                # 单次 event loop 完成所有 async 操作
-                async def _async_sync():
-                    return await workout_sync_service.sync_activities(db, user_id, days)
-
                 workout_result = asyncio.run(_async_sync())
-                synced_activities = workout_result.get("synced_count", 0)
-                logger.info(f"用户 {user_id} 运动活动同步完成: {synced_activities} 条")
-
-                # 从运动记录中提取 VO2Max 更新到每日数据
-                try:
-                    from app.scheduler import _update_vo2max_from_workouts
-                    _update_vo2max_from_workouts(db, user_id, days)
-                except Exception as e:
-                    logger.warning(f"用户 {user_id} VO2Max 更新失败: {e}")
             except Exception as e:
-                logger.warning(f"用户 {user_id} 运动活动同步失败: {e}", exc_info=True)
+                logger.warning(
+                    "用户 %s 运动活动同步失败 (%s)",
+                    user_id,
+                    type(e).__name__,
+                )
+                raise
+            synced_activities = workout_result.get("synced_count", 0)
+            logger.info(f"用户 {user_id} 运动活动同步完成: {synced_activities} 条")
+
+            # 从运动记录中提取 VO2Max 更新到每日数据
+            try:
+                from app.scheduler import _update_vo2max_from_workouts
+                _update_vo2max_from_workouts(db, user_id, days)
+            except Exception as e:
+                logger.warning(f"用户 {user_id} VO2Max 更新失败: {e}")
 
             # rank7: passive Garmin sync just wrote daily health + workout data →
             # drop the stale twin cache (also fixes the pre-existing ≤60s staleness
@@ -245,7 +250,10 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1, notify_on_failure: 
                     logger.warning(f"Agent Planning Loop 失败（不影响同步）: {e}")
 
             # 更新同步状态
-            garmin_credential_service.update_sync_status(db, user_id)
+            if not garmin_credential_service.update_sync_status(db, user_id):
+                from app.services.data_collection.garmin_errors import GarminSyncError
+
+                raise GarminSyncError("Garmin sync status persistence failed")
 
             # 同步完成后重新生成今日简报（确保简报包含最新数据）
             try:
@@ -269,14 +277,25 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1, notify_on_failure: 
             }
 
     except Exception as e:
-        logger.error(f"用户 {user_id} Garmin 同步失败: {e}", exc_info=True)
+        from app.services.data_collection.garmin_errors import GarminSyncError
+        from app.services.data_collection.garmin_native_auth import safe_garmin_error_message
+
+        safe_message = safe_garmin_error_message(e)
+        logger.error(
+            "用户 %s Garmin 同步失败 (%s)",
+            user_id,
+            type(e).__name__,
+        )
         # 已到最大重试:agent 触发的同步必须 fail-loud 告知用户,否则"已在后台同步"
         # 之后所有重试静默耗尽 = 静默谎报。retries 从 0 计,>= max_retries 即终态。
         if self.request.retries >= self.max_retries:
             if notify_on_failure:
                 _notify_garmin_sync_failed(user_id, reason="sync_error")
-            return {"status": "error", "reason": str(e)[:200]}
-        raise self.retry(exc=e, countdown=60 * (self.request.retries + 1))
+            return {"status": "error", "reason": safe_message}
+        raise self.retry(
+            exc=GarminSyncError(safe_message),
+            countdown=60 * (self.request.retries + 1),
+        )
 
 
 @celery_app.task

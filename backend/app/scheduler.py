@@ -10,11 +10,17 @@ import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import List, Dict, Any
-from app.services.data_collection.garmin_connect import GarminConnectService, GarminAuthenticationError, probe_sso_availability
+from app.services.data_collection.garmin_connect import (
+    GarminAuthenticationError,
+    GarminConnectService,
+    GarminMFARequiredError,
+    probe_sso_availability,
+)
 from app.services.data_collection.garmin_native_auth import (
     credential_can_sync,
     has_native_token_store,
 )
+from app.services.data_collection.garmin_executor import run_garmin_blocking
 from app.services.auth import garmin_credential_service
 from app.services.garmin_session_manager import get_session_manager
 from app.models.user import GarminCredential
@@ -111,6 +117,28 @@ def get_all_sync_enabled_users(db) -> List[Dict[str, Any]]:
 
 
 async def sync_user_garmin_data(
+    db,
+    user_id: int,
+    email: str,
+    password: str,
+    days: int = 3,
+    is_cn: bool = False,
+    retry_count: int = 0,
+) -> Dict[str, Any]:
+    """Dispatch the complete blocking Garmin flow away from the API event loop."""
+    return await run_garmin_blocking(
+        _sync_user_garmin_data_impl,
+        db,
+        user_id,
+        email,
+        password,
+        days=days,
+        is_cn=is_cn,
+        retry_count=retry_count,
+    )
+
+
+async def _sync_user_garmin_data_impl(
     db,
     user_id: int,
     email: str,
@@ -228,30 +256,33 @@ async def sync_user_garmin_data(
 
             raise GarminSyncError("Garmin partial date range failure")
 
-        result["success"] = True
         result["success_count"] = sync_result.get("success_count", 0)
         result["error_count"] = sync_result.get("error_count", 0)
 
         # 同步运动活动数据（复用已认证的 client，避免重复登录触发限流）
+        from app.services.workout_sync import WorkoutSyncService
+        workout_client = service.client if hasattr(service, 'client') and service._authenticated else None
+        workout_sync_service = WorkoutSyncService(
+            email=email,
+            password=password,
+            is_cn=is_cn,
+            user_id=user_id,
+            client=workout_client
+        )
         try:
-            from app.services.workout_sync import WorkoutSyncService
-            workout_client = service.client if hasattr(service, 'client') and service._authenticated else None
-            workout_sync_service = WorkoutSyncService(
-                email=email,
-                password=password,
-                is_cn=is_cn,
-                user_id=user_id,
-                client=workout_client
-            )
             workout_result = await workout_sync_service.sync_activities(db, user_id, days)
-            result["activities_count"] = workout_result.get("synced_count", 0)
-            logger.info(f"用户 {user_id} 运动活动同步完成: {result['activities_count']} 条")
-
-            # 从运动记录中提取最新的 VO2Max 并更新到每日数据
-            _update_vo2max_from_workouts(db, user_id, days)
         except Exception as e:
-            logger.warning(f"用户 {user_id} 运动活动同步失败: {e}", exc_info=True)
-            result["activities_error"] = str(e)
+            logger.warning(
+                "用户 %s 运动活动同步失败 (%s)",
+                user_id,
+                type(e).__name__,
+            )
+            raise
+        result["activities_count"] = workout_result.get("synced_count", 0)
+        logger.info(f"用户 {user_id} 运动活动同步完成: {result['activities_count']} 条")
+
+        # 从运动记录中提取最新的 VO2Max 并更新到每日数据
+        _update_vo2max_from_workouts(db, user_id, days)
 
         result["message"] = f"同步完成: 健康数据 {result['success_count']} 天"
         if result["activities_count"] > 0:
@@ -260,10 +291,14 @@ async def sync_user_garmin_data(
             result["message"] += f", 失败 {result['error_count']} 天"
 
         # 更新最后同步时间（会重置错误状态）
-        garmin_credential_service.update_sync_status(db, user_id)
+        if not garmin_credential_service.update_sync_status(db, user_id):
+            from app.services.data_collection.garmin_errors import GarminSyncError
+
+            raise GarminSyncError("Garmin sync status persistence failed")
 
         # 4. 记录成功
         session_manager.record_success(user_id, email)
+        result["success"] = True
 
         # 如果是从锁定状态恢复的，记录恢复日志
         if _was_previously_locked:
@@ -271,8 +306,17 @@ async def sync_user_garmin_data(
 
         logger.info(f"✅ 用户 {user_id} Garmin数据同步成功: {result['message']}")
 
+    except GarminMFARequiredError as e:
+        result["success"] = False
+        result["requires_mfa"] = True
+        result["message"] = "需要两步验证，请完成 Garmin 验证码确认"
+        if isinstance(e.client_state, dict):
+            result["mfa_session_id"] = e.client_state.get("session_id")
+        logger.info(f"🔐 用户 {user_id} 需要MFA两步验证，跳过后台自动同步")
+
     except GarminAuthenticationError as e:
         # 明确的认证错误
+        result["success"] = False
         error_message = str(e)
         result["message"] = error_message
         result["is_auth_error"] = True
@@ -285,6 +329,7 @@ async def sync_user_garmin_data(
         logger.warning(f"🔑 用户 {user_id} Garmin认证失败: {error_message}")
 
     except Exception as e:
+        result["success"] = False
         error_str = str(e).lower()
         from app.services.data_collection.garmin_native_auth import safe_garmin_error_message
 
@@ -296,7 +341,6 @@ async def sync_user_garmin_data(
         ])
 
         if requires_mfa:
-            # 需要MFA验证的用户，跳过同步，不标记为失败
             result["requires_mfa"] = True
             result["message"] = "需要两步验证，跳过自动同步"
             logger.info(f"🔐 用户 {user_id} 需要MFA两步验证，跳过后台自动同步")
@@ -331,7 +375,7 @@ async def sync_user_garmin_data(
             logger.info(f"⏳ 用户 {user_id} 将在 {retry_delay} 秒后重试 (第 {retry_count + 1} 次)")
             await asyncio.sleep(retry_delay)
             release_sync_lock(db, user_id)
-            return await sync_user_garmin_data(
+            return await _sync_user_garmin_data_impl(
                 db, user_id, email, password, days, is_cn, retry_count + 1
             )
     finally:

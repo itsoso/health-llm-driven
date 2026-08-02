@@ -60,6 +60,30 @@ async def test_manual_sync_allows_native_token_despite_stale_flags(db, monkeypat
 
 
 @pytest.mark.asyncio
+async def test_manual_sync_reports_success_when_only_workouts_are_new(db, monkeypatch) -> None:
+    from app import scheduler
+
+    user, _credential = _create_user_and_credential(db, "workout-only")
+
+    async def fake_sync(*_args, **_kwargs):
+        return {
+            "success": True,
+            "success_count": 0,
+            "error_count": 0,
+            "activities_count": 2,
+            "message": "同步完成",
+        }
+
+    monkeypatch.setattr(scheduler, "sync_user_garmin_data", fake_sync)
+
+    result = await sync_my_garmin_data(days=1, current_user=user, db=db)
+
+    assert result["status"] == "success"
+    assert result["success_count"] == 0
+    assert result["activities_count"] == 2
+
+
+@pytest.mark.asyncio
 async def test_manual_sync_requires_mfa_when_no_native_token(db) -> None:
     user, credential = _create_user_and_credential(db, "mfa")
     credential.requires_mfa = True

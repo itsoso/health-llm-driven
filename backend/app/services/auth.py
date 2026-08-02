@@ -172,6 +172,22 @@ class GarminCredentialService:
         return GarminCredentialService.decrypt_secret(encrypted_password)
 
     @staticmethod
+    def _invalidate_mfa_sessions_after_commit(user_id: int) -> None:
+        """Best-effort cleanup that cannot reverse an already committed truth."""
+        try:
+            from app.services.data_collection.garmin_mfa import (
+                invalidate_mfa_sessions_for_user,
+            )
+
+            invalidate_mfa_sessions_for_user(user_id)
+        except Exception as exc:
+            logger.warning(
+                "Garmin MFA post-commit cleanup failed user_id=%s type=%s",
+                user_id,
+                type(exc).__name__,
+            )
+
+    @staticmethod
     def save_credentials(db: Session, user_id: int, garmin_email: str, garmin_password: str, is_cn: bool = False, requires_mfa: bool = False) -> GarminCredential:
         """保存或更新Garmin凭证"""
         encrypted_password = GarminCredentialService.encrypt_password(garmin_password)
@@ -205,9 +221,7 @@ class GarminCredentialService:
 
         db.commit()
         db.refresh(credential)
-        from app.services.data_collection.garmin_mfa import invalidate_mfa_sessions_for_user
-
-        invalidate_mfa_sessions_for_user(user_id)
+        GarminCredentialService._invalidate_mfa_sessions_after_commit(user_id)
         return credential
 
     @staticmethod
@@ -241,14 +255,11 @@ class GarminCredentialService:
         credential.updated_at = datetime.now(UTC)
         try:
             db.commit()
-            db.refresh(credential)
         except Exception:
             db.rollback()
             raise
 
-        from app.services.data_collection.garmin_mfa import invalidate_mfa_sessions_for_user
-
-        invalidate_mfa_sessions_for_user(user_id)
+        GarminCredentialService._invalidate_mfa_sessions_after_commit(user_id)
         return credential
 
     @staticmethod
@@ -296,9 +307,7 @@ class GarminCredentialService:
         if credential:
             db.delete(credential)
             db.commit()
-            from app.services.data_collection.garmin_mfa import invalidate_mfa_sessions_for_user
-
-            invalidate_mfa_sessions_for_user(user_id)
+            GarminCredentialService._invalidate_mfa_sessions_after_commit(user_id)
             return True
         return False
 

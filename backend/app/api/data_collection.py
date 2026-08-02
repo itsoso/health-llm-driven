@@ -348,7 +348,10 @@ async def sync_my_garmin_data(
                 detail="Garmin 服务暂时不可用，请稍后再试",
             )
 
-        if result.get("success_count", 0) > 0:
+        if (
+            result.get("success_count", 0) > 0
+            or result.get("activities_count", 0) > 0
+        ):
             # Garmin 数据更新后 invalidate Twin cache，确保下次读到最新数据
             try:
                 from app.twin.cache import invalidate_twin

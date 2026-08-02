@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | date | 2026-08-02 |
-| status | planned |
-| current_stage | implementation hardened; G3 integration and G4 re-review in progress |
+| status | ready_to_deploy |
+| current_stage | G3/G4 PASS; backend deployment pending |
 | owner_surface | Backend / Mobile data connection |
 
 ## Problem
@@ -21,9 +21,10 @@ generic manual-sync failure without a reconnect or MFA recovery path.
   raises `AttributeError: 'Garmin' object has no attribute 'garth'`.
 - The installed client exposes native `client.dumps()`, `client.loads()`,
   `login(tokenstore)` and `resume_login(client_state, mfa_code)` APIs.
-- In 0.3.6 MFA mode, login returns `("needs_mfa", None)` and retains challenge
-  state in the native client, so recovery must keep a short-lived user-bound
-  server-side session rather than expect a returned state dictionary.
+- In 0.3.6 MFA mode, the returned challenge state contains the native HTTP
+  client and its cookies/CSRF response. It cannot safely cross a process
+  boundary, so recovery must keep a short-lived user-bound server-side session
+  and preserve worker affinity until a durable encrypted coordinator exists.
 - Regression introduction: dependency upgrade in `0826b2246` without a matching
   adapter migration.
 
@@ -36,6 +37,9 @@ Implement the user-approved native-auth recovery described in
 - migrate backend authentication, refresh, MFA and workout sync to the native
   `garminconnect` 0.3.6 token store;
 - store the native token store in a versioned encrypted envelope;
+- keep the backend on one process for native MFA affinity while moving all
+  blocking Garmin SDK work to a dedicated two-thread executor, with locked MFA
+  session access, so slow Garmin I/O cannot stall the API event loop;
 - add a Mobile bind/reconnect/MFA/sync recovery surface with truthful errors;
 - deploy backend first, then publish the Mobile JS/TS change by production OTA.
 
@@ -58,24 +62,47 @@ contracts were inspected directly. The implementation plan is recorded in
 
 The slice needs no schema migration: the legacy-named session column can hold a
 strict versioned encrypted envelope. The highest risks are cross-user MFA state,
-secret leakage, legacy-token confusion and duplicate authentication paths; the
-plan addresses them with user-bound short-lived sessions, fail-closed decoding,
-safe errors and one shared adapter. G4 remains mandatory before deployment.
+secret leakage, legacy-token confusion, duplicate authentication paths and
+event-loop starvation. The implementation uses user-bound short-lived sessions,
+fail-closed decoding, safe errors, one shared adapter, one Uvicorn worker for
+challenge affinity, a bounded two-thread Garmin executor and an MFA session
+lock. The single-worker constraint has an infrastructure regression test. G4
+remains mandatory before deployment.
 
-### G3 Tests: PENDING
+### G3 Tests: PASS
 
-Focused Garmin verification is green: 119 backend tests, 20 Mobile Garmin /
-Settings tests, TypeScript, blocking Ruff, compileall, Mobile lint and design
-token checks. The full Mobile suite is green at 284 suites / 2,196 tests. Full
-backend integration remains pending after reconciling the latest `origin/main`.
+Focused Garmin and infrastructure verification is green: 133 backend tests,
+including event-loop responsiveness, bounded executor capacity, whole-flow
+scheduler isolation, serialized MFA verification, post-commit truth and
+single-worker affinity. Blocking Ruff, compileall, doc drift and dossier checks
+are green. The full Mobile suite is green at 289 suites / 2,274 tests, plus
+TypeScript, lint and design-token checks. The secondary Web surface is green at
+54 suites / 312 tests, TypeScript and lint (0 errors; pre-existing warnings
+only). The complete backend suite is green across mutually exclusive shards:
+9,537 passed and 12 skipped (9,549 collected). Twenty-four unrelated knowledge
+release tests initially hit the filesystem sandbox's loopback-bind restriction;
+both complete affected files then passed 66/66 outside that restriction.
 
-### G4 Safety Review: PENDING
+### G4 Safety Review: PASS
 
 Required because the change handles credentials, refresh tokens and private
-health-data ingestion. The first independent review returned NO-GO on shared
-live-client caching, token log leakage, false-green sync errors and non-atomic
-reconnect. Those paths now have regression tests and architectural fixes; a
-fresh independent re-review is running before any deployment.
+health-data ingestion. Independent reviews returned NO-GO findings including
+shared live-client caching, token/MFA log leakage, false-green daily/workout
+sync, non-atomic reconnect truth, parser regression, side-effecting test flow,
+cross-worker MFA loss, post-commit cleanup false failure and single-worker
+event-loop starvation. Each finding now has a regression test and architectural
+fix: Web/Mobile share the scheduler truth path, Celery fails loudly, test-purpose
+MFA never writes connection state, commits remain authoritative, production MFA
+has process affinity, and all API-side Garmin work runs in a bounded executor
+with locked session access.
+
+The third independent review returned **GO** after verifying the two-thread
+executor, all connect/test/verify entry points, whole-scheduler isolation,
+deadlock-free retry, single-worker affinity and locked session lifecycle. Its
+independent focused suite passed 143 Garmin, Workout Twin and infrastructure
+tests, with no new production blocker. Long-term follow-up: replace the
+process-local challenge with an encrypted durable coordinator before restoring
+multiple Uvicorn workers.
 
 ### G5 Deployment Health: PENDING
 

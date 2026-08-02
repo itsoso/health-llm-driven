@@ -2,10 +2,16 @@
 
 从 garmin_connect.py 抽出. 这部分是模块级状态 (全局 _mfa_sessions dict),
 不依赖 GarminConnectService 实例, 自然适合独立模块.
+
+garminconnect 0.3.6 的 challenge 包含不可安全持久化的原生 HTTP client，
+因此生产 uvicorn 暂时固定为单 worker，确保 challenge 与验证码验证落在同一
+进程。对应部署约束由 ``scripts/test_infrastructure_security.py`` 锁定；在实现
+加密的跨 worker challenge coordinator 前不得提高 worker 数。
 """
 from __future__ import annotations
 
 import logging
+import threading
 import time
 import uuid
 from typing import Any, Dict
@@ -16,22 +22,29 @@ logger = logging.getLogger(__name__)
 # 全局 MFA 会话存储 (用于跨请求保持 client 对象)
 # 格式: {session_id: {"client": Garmin, "client_state": dict, "expires": timestamp, ...}}
 _mfa_sessions: Dict[str, Any] = {}
+_mfa_sessions_lock = threading.RLock()
 
 
 def _cleanup_expired_mfa_sessions() -> None:
     """清理过期的 MFA 会话"""
-    current_time = time.time()
-    expired_keys = [k for k, v in _mfa_sessions.items() if v.get("expires", 0) < current_time]
-    for k in expired_keys:
-        del _mfa_sessions[k]
+    with _mfa_sessions_lock:
+        current_time = time.time()
+        expired_keys = [
+            k for k, v in _mfa_sessions.items() if v.get("expires", 0) < current_time
+        ]
+        for k in expired_keys:
+            del _mfa_sessions[k]
 
 
 def invalidate_mfa_sessions_for_user(user_id: int) -> None:
     """Drop every pending or authenticated MFA challenge owned by one user."""
-    for session_id in [
-        key for key, value in _mfa_sessions.items() if value.get("user_id") == user_id
-    ]:
-        _mfa_sessions.pop(session_id, None)
+    with _mfa_sessions_lock:
+        for session_id in [
+            key
+            for key, value in _mfa_sessions.items()
+            if value.get("user_id") == user_id
+        ]:
+            _mfa_sessions.pop(session_id, None)
 
 
 def _generate_mfa_session_id() -> str:
@@ -97,6 +110,23 @@ def verify_mfa_with_session(
     user_id: int,
     db=None,
 ) -> Dict[str, Any]:
+    """Serialize access to the native MFA client shared across request threads."""
+    with _mfa_sessions_lock:
+        return _verify_mfa_with_session_locked(
+            session_id,
+            mfa_code,
+            user_id=user_id,
+            db=db,
+        )
+
+
+def _verify_mfa_with_session_locked(
+    session_id: str,
+    mfa_code: str,
+    *,
+    user_id: int,
+    db=None,
+) -> Dict[str, Any]:
     """使用 session_id 和 MFA 验证码完成登录.
 
     模块级函数, 用于处理 MFA 验证流程. client 对象需要在请求之间保持,
@@ -146,9 +176,15 @@ def verify_mfa_with_session(
 
     from app.models.user import GarminCredential
 
-    credential = db.query(GarminCredential).filter(
-        GarminCredential.user_id == user_id
-    ).first()
+    if purpose not in {"existing", "connect", "test"}:
+        _mfa_sessions.pop(session_id, None)
+        return {"success": False, "message": "验证会话无效，请重新连接 Garmin"}
+
+    credential = None
+    if purpose != "test":
+        credential = db.query(GarminCredential).filter(
+            GarminCredential.user_id == user_id
+        ).first()
     if purpose == "existing" and (
         credential is None
         or credential.garmin_email != email
@@ -194,7 +230,7 @@ def verify_mfa_with_session(
                 bool(is_cn),
                 native_token_store,
             )
-        else:
+        elif purpose == "existing":
             credential.garth_session = native_token_store
             credential.session_expires_at = None
             credential.requires_mfa = False
@@ -214,10 +250,13 @@ def verify_mfa_with_session(
 
         return {
             "success": True,
-            "message": "Garmin 验证成功，账号已连接",
+            "message": (
+                "Garmin 凭证验证成功"
+                if purpose == "test"
+                else "Garmin 验证成功，账号已连接"
+            ),
             "email": email,
             "is_cn": is_cn,
-            "session_id": session_id,
         }
 
     except Exception as e:

@@ -121,7 +121,7 @@ async def test_connection_endpoint_never_echoes_upstream_secret(
 ) -> None:
     user, _credential = _create_saved_credential(db, "safe-endpoint")
 
-    def fail_connection(_self, db=None):
+    def fail_connection(_self, db=None, **_kwargs):
         raise RuntimeError("upstream-secret-value")
 
     monkeypatch.setattr(
@@ -290,6 +290,61 @@ def test_atomic_connect_commit_failure_preserves_existing_credentials(db, monkey
     assert persisted.garmin_email == "garmin-atomic-rollback@example.com"
     assert persisted.encrypted_password == old_password
     assert persisted.garth_session == "old-token-envelope"
+
+
+def test_atomic_connect_does_not_fail_after_successful_commit(db, monkeypatch) -> None:
+    user, _credential = _create_saved_credential(db, "post-commit-refresh")
+    _install_fake_garmin(monkeypatch)
+
+    def fail_if_refreshed(_credential):
+        raise RuntimeError("refresh unavailable after commit")
+
+    monkeypatch.setattr(db, "refresh", fail_if_refreshed)
+    service = GarminConnectService(
+        "replacement@example.com",
+        "replacement-password",
+        user_id=user.id,
+    )
+
+    result = service.connect_and_save(db)
+
+    db.expire_all()
+    persisted = db.query(GarminCredential).filter_by(user_id=user.id).one()
+    assert result["success"] is True
+    assert persisted.garmin_email == "replacement@example.com"
+    assert garmin_credential_service.decrypt_password(persisted.encrypted_password) == (
+        "replacement-password"
+    )
+
+
+def test_atomic_connect_does_not_report_failure_when_post_commit_cleanup_fails(
+    db,
+    monkeypatch,
+) -> None:
+    from app.services.data_collection import garmin_mfa
+
+    user, _credential = _create_saved_credential(db, "post-commit-cleanup")
+    _install_fake_garmin(monkeypatch)
+
+    def fail_cleanup(_user_id: int) -> None:
+        raise RuntimeError("cleanup unavailable")
+
+    monkeypatch.setattr(garmin_mfa, "invalidate_mfa_sessions_for_user", fail_cleanup)
+    service = GarminConnectService(
+        "replacement@example.com",
+        "replacement-password",
+        user_id=user.id,
+    )
+
+    result = service.connect_and_save(db)
+
+    db.expire_all()
+    persisted = db.query(GarminCredential).filter_by(user_id=user.id).one()
+    assert result["success"] is True
+    assert persisted.garmin_email == "replacement@example.com"
+    assert garmin_credential_service.decrypt_password(persisted.encrypted_password) == (
+        "replacement-password"
+    )
 
 
 def test_login_lock_uses_consistent_datetime_awareness(db) -> None:

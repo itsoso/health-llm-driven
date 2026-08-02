@@ -36,6 +36,17 @@ def test_systemd_units_use_dedicated_user_and_sandbox() -> None:
     assert "ListenStream=127.0.0.1:8000" in socket
 
 
+def test_backend_keeps_process_local_garmin_mfa_challenges_on_one_worker() -> None:
+    """MFA challenge state cannot cross a uvicorn process boundary yet."""
+    body = (ROOT / "infra" / "systemd" / "health-backend.service").read_text()
+    exec_start = next(
+        line for line in body.splitlines() if line.startswith("ExecStart=")
+    )
+
+    assert "--workers 1" in exec_start
+    assert "--workers 2" not in exec_start
+
+
 def test_celery_beat_state_is_outside_the_trusted_worktree() -> None:
     body = (ROOT / "infra" / "systemd" / "celery-beat.service").read_text()
     read_write_paths = next(

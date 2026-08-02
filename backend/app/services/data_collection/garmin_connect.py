@@ -56,6 +56,7 @@ from app.services.data_collection.garmin_errors import (  # noqa: E402,F401
 # 这里 re-export 名字, 老调用方 (api/auth.py 等) 不破.
 from app.services.data_collection.garmin_mfa import (  # noqa: E402,F401
     _mfa_sessions,
+    _mfa_sessions_lock,
     _cleanup_expired_mfa_sessions,
     _generate_mfa_session_id,
     _ensure_display_name_for_client,
@@ -250,20 +251,23 @@ class GarminConnectService(GarminGettersMixin):
         """保存短时、用户绑定的原生 MFA 挑战。"""
         import time
 
+        if purpose not in {"existing", "connect", "test"}:
+            raise ValueError("Unsupported Garmin MFA purpose")
         _cleanup_expired_mfa_sessions()
         session_id = _generate_mfa_session_id()
-        _mfa_sessions[session_id] = {
-            "client": self.client,
-            "client_state": client_state,
-            "email": self.email,
-            "is_cn": self.is_cn,
-            "user_id": self.user_id,
-            "authenticated": False,
-            "purpose": purpose,
-            "pending_encrypted_password": pending_encrypted_password,
-            "attempts": 0,
-            "expires": time.time() + 300,
-        }
+        with _mfa_sessions_lock:
+            _mfa_sessions[session_id] = {
+                "client": self.client,
+                "client_state": client_state,
+                "email": self.email,
+                "is_cn": self.is_cn,
+                "user_id": self.user_id,
+                "authenticated": False,
+                "purpose": purpose,
+                "pending_encrypted_password": pending_encrypted_password,
+                "attempts": 0,
+                "expires": time.time() + 300,
+            }
         self._mfa_client_state = client_state
         return session_id
 
@@ -1381,7 +1385,7 @@ class GarminConnectService(GarminGettersMixin):
                     if key in value and isinstance(value[key], (int, float)):
                         return int(value[key])
                 return None
-            raise
+            return None
 
         def safe_float(value):
             """安全地将值转换为浮点数，如果是字典或列表则返回None"""

@@ -5,10 +5,13 @@
 2. 代码审查类测试（检查源码中的关键模式）
 3. 端点集成测试（garmin_connect 端点已移除）
 """
+from contextlib import AbstractContextManager
+from datetime import UTC, date, datetime, timedelta
+
 import pytest
-import inspect
-from unittest.mock import patch, MagicMock, AsyncMock
-from datetime import date, timedelta
+from starlette.requests import Request
+
+from app.models.user import User
 
 
 def _create_garmin_credential(db, user_id=1, sync_enabled=True, credentials_valid=True):
@@ -140,13 +143,178 @@ class TestCeleryTaskCodeReview:
 class TestSyncStreamCodeReview:
     """验证 sync-stream 端点不再双重登录"""
 
-    def test_reuses_test_service_instance(self):
-        """验证 sync-stream 复用 test_service，不创建第二个 GarminConnectService"""
+    def test_delegates_to_shared_scheduler_truth_path(self):
+        """Web stream 应复用与 Mobile 相同的同步真值路径。"""
         with open("app/api/auth.py", "r") as f:
             source = f.read()
 
-        assert "garmin_service = test_service" in source, \
-            "sync-stream 应复用 test_service，而不是创建新的 GarminConnectService 实例"
+        assert "await sync_user_garmin_data(" in source
+        assert "test_connection_with_mfa()" not in source
+
+
+@pytest.mark.asyncio
+async def test_sync_stream_operational_failure_never_completes_or_refreshes_status(
+    db,
+    monkeypatch,
+) -> None:
+    from app import scheduler
+    from app.api import auth as auth_api
+
+    credential = _create_garmin_credential(db, user_id=1)
+    user = db.query(User).filter_by(id=1).one()
+    old_last_sync = datetime.now(UTC) - timedelta(days=1)
+    credential.last_sync_at = old_last_sync
+    db.commit()
+    scheduler_calls = []
+
+    async def fake_scheduler(*args, **kwargs):
+        scheduler_calls.append((args, kwargs))
+        return {
+            "success": False,
+            "skipped": False,
+            "requires_mfa": False,
+            "is_auth_error": False,
+            "error_count": 1,
+            "message": "Garmin 服务暂时不可用，请稍后再试",
+        }
+
+    monkeypatch.setattr(scheduler, "sync_user_garmin_data", fake_scheduler)
+
+    response = await auth_api.sync_garmin_data_stream(
+        Request({
+            "type": "http",
+            "method": "GET",
+            "path": "/auth/garmin/sync-stream",
+            "client": ("127.0.0.1", 12345),
+            "headers": [],
+        }),
+        days=1,
+        current_user=user,
+        db=db,
+    )
+    chunks = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+    body = "".join(chunks)
+
+    db.refresh(credential)
+    persisted_last_sync = credential.last_sync_at
+    if persisted_last_sync and persisted_last_sync.tzinfo is None:
+        persisted_last_sync = persisted_last_sync.replace(tzinfo=UTC)
+    assert len(scheduler_calls) == 1
+    assert '"type": "error"' in body
+    assert '"type": "complete"' not in body
+    assert persisted_last_sync == old_last_sync
+
+
+@pytest.mark.asyncio
+async def test_sync_stream_mfa_session_is_returned_but_never_logged(
+    db,
+    monkeypatch,
+    caplog,
+) -> None:
+    from app import scheduler
+    from app.api import auth as auth_api
+
+    _create_garmin_credential(db, user_id=1)
+    user = db.query(User).filter_by(id=1).one()
+    secret_session_id = "mfa-session-secret"
+
+    async def fake_scheduler(*_args, **_kwargs):
+        return {
+            "success": False,
+            "skipped": False,
+            "requires_mfa": True,
+            "is_auth_error": False,
+            "mfa_session_id": secret_session_id,
+            "message": "需要两步验证",
+        }
+
+    monkeypatch.setattr(scheduler, "sync_user_garmin_data", fake_scheduler)
+
+    response = await auth_api.sync_garmin_data_stream(
+        Request({
+            "type": "http",
+            "method": "GET",
+            "path": "/auth/garmin/sync-stream",
+            "client": ("127.0.0.1", 12345),
+            "headers": [],
+        }),
+        days=1,
+        current_user=user,
+        db=db,
+    )
+    chunks = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+    body = "".join(chunks)
+
+    assert secret_session_id in body
+    assert secret_session_id not in caplog.text
+
+
+def test_celery_workout_failure_retries_instead_of_marking_success(
+    db,
+    monkeypatch,
+) -> None:
+    from app.services import anomaly_detection_service, auth as auth_service_module, workout_sync
+    from app.services.data_collection import garmin_connect
+    from app.tasks import garmin_sync as garmin_task
+    from app.tasks import notifications
+    from app.twin import builder as twin_builder
+
+    credential = _create_garmin_credential(db, user_id=1)
+    status_updates = []
+
+    class DbContext(AbstractContextManager):
+        def __enter__(self):
+            return db
+
+        def __exit__(self, *_args):
+            return False
+
+    class FakeGarminService:
+        def __init__(self, *_args, **_kwargs) -> None:
+            self.client = object()
+            self._authenticated = True
+
+        def sync_date_range(self, *_args, **_kwargs):
+            return {"success_count": 1, "error_count": 0, "no_data_count": 0}
+
+    class FailingWorkoutService:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        async def sync_activities(self, *_args, **_kwargs):
+            raise RuntimeError("workout service unavailable")
+
+    class RetryScheduled(Exception):
+        pass
+
+    def schedule_retry(*, exc, countdown):
+        raise RetryScheduled(f"{type(exc).__name__}:{countdown}")
+
+    monkeypatch.setattr(garmin_task, "SessionLocal", lambda: DbContext())
+    monkeypatch.setattr(garmin_connect, "GarminConnectService", FakeGarminService)
+    monkeypatch.setattr(workout_sync, "WorkoutSyncService", FailingWorkoutService)
+    monkeypatch.setattr(
+        auth_service_module.garmin_credential_service,
+        "update_sync_status",
+        lambda *_args, **_kwargs: status_updates.append(True),
+    )
+    monkeypatch.setattr(
+        anomaly_detection_service.AnomalyDetectionService,
+        "detect_anomalies",
+        lambda *_args, **_kwargs: [],
+    )
+    monkeypatch.setattr(twin_builder, "build_twin", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(notifications.regenerate_briefing_for_user, "delay", lambda *_args: None)
+    monkeypatch.setattr(garmin_task.sync_user_garmin_data, "retry", schedule_retry)
+
+    with pytest.raises(RetryScheduled, match="GarminSyncError"):
+        garmin_task.sync_user_garmin_data.run(credential.user_id, days=1)
+
+    assert status_updates == []
 
 
 class TestCeleryBeatScheduleReview:

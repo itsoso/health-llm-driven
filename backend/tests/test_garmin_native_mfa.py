@@ -1,14 +1,20 @@
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from starlette.requests import Request
 
 from app.api import auth as auth_api
 from app.models.user import User
-from app.schemas.auth import GarminMFAVerifyRequest
+from app.schemas.auth import GarminCredentialCreate, GarminMFAVerifyRequest
 from app.services.auth import garmin_credential_service
+from app.services.data_collection import garmin_connect
 from app.services.data_collection.garmin_mfa import _mfa_sessions, verify_mfa_with_session
-from app.services.data_collection.garmin_native_auth import decode_native_token_store
+from app.services.data_collection.garmin_native_auth import (
+    decode_native_token_store,
+    encode_native_token_store,
+)
 
 
 class FakeNativeClient:
@@ -174,6 +180,49 @@ def test_native_mfa_stops_after_five_invalid_codes(db) -> None:
     assert len(fake.resume_calls) == 5
 
 
+def test_native_mfa_verification_serializes_shared_session_access(db) -> None:
+    _mfa_sessions.clear()
+    user, credential = _create_user_and_credential(db, "thread-safe")
+
+    class ConcurrentInvalidGarmin(FakeGarmin):
+        def __init__(self) -> None:
+            super().__init__()
+            self._counter_lock = threading.Lock()
+            self.active = 0
+            self.max_active = 0
+
+        def resume_login(self, client_state, mfa_code: str):
+            with self._counter_lock:
+                self.active += 1
+                self.max_active = max(self.max_active, self.active)
+            try:
+                time.sleep(0.05)
+                raise RuntimeError("invalid code")
+            finally:
+                with self._counter_lock:
+                    self.active -= 1
+
+    fake = ConcurrentInvalidGarmin()
+    session_id = _put_session(user, credential, fake)
+    _mfa_sessions[session_id]["purpose"] = "test"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(
+                verify_mfa_with_session,
+                session_id,
+                "123456",
+                user_id=user.id,
+                db=db,
+            )
+            for _ in range(2)
+        ]
+        results = [future.result(timeout=2) for future in futures]
+
+    assert all(result["success"] is False for result in results)
+    assert fake.max_active == 1
+
+
 def test_expired_native_mfa_session_never_calls_garmin(db) -> None:
     _mfa_sessions.clear()
     user, credential = _create_user_and_credential(db, "expired")
@@ -264,3 +313,68 @@ async def test_verify_mfa_endpoint_never_echoes_upstream_secret(
     assert "mfa-upstream-secret" not in rendered
     assert "123456" not in rendered
     assert "Garmin" in response.message
+
+
+@pytest.mark.asyncio
+async def test_test_connection_mfa_flow_is_side_effect_free(db, monkeypatch) -> None:
+    """“测试连接”完成 MFA 后不得替换已保存连接或重置其错误状态。"""
+    _mfa_sessions.clear()
+    user, credential = _create_user_and_credential(db, "test-purpose")
+    original_token = encode_native_token_store(
+        '{"di_token":"original","di_refresh_token":"original-refresh"}'
+    )
+    credential.garth_session = original_token
+    credential.credentials_valid = False
+    credential.requires_mfa = True
+    credential.error_count = 3
+    credential.last_error = "existing failure"
+    db.commit()
+
+    class ChallengeGarmin(FakeGarmin):
+        def __init__(self, *_args, **_kwargs) -> None:
+            super().__init__()
+
+        def login(self):
+            return "needs_mfa", None
+
+    monkeypatch.setattr(garmin_connect, "Garmin", ChallengeGarmin)
+    request = Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/auth/garmin/test-connection",
+        "client": ("127.0.0.1", 12345),
+        "headers": [],
+    })
+
+    challenge = await auth_api.test_garmin_connection(
+        request,
+        GarminCredentialCreate(
+            garmin_email=credential.garmin_email,
+            garmin_password="fake-password",
+            is_cn=credential.is_cn,
+        ),
+        current_user=user,
+        db=db,
+    )
+    assert challenge.mfa_required is True
+    assert _mfa_sessions[challenge.mfa_session_id]["purpose"] == "test"
+
+    verified = await auth_api.verify_garmin_mfa(
+        request,
+        GarminMFAVerifyRequest(
+            mfa_code="123456",
+            mfa_session_id=challenge.mfa_session_id,
+        ),
+        current_user=user,
+        db=db,
+    )
+
+    db.expire_all()
+    persisted = db.query(type(credential)).filter_by(user_id=user.id).one()
+    assert verified.success is True
+    assert verified.session_id is None
+    assert persisted.garth_session == original_token
+    assert persisted.credentials_valid is False
+    assert persisted.requires_mfa is True
+    assert persisted.error_count == 3
+    assert persisted.last_error == "existing failure"
