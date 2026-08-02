@@ -19472,13 +19472,9 @@ class AgentExecutor:
 
         expected_objective = f"医生随访 @ {visit_date.isoformat()}"
         try:
-            # A returned ID above this global high-water mark proves that the
-            # resource did not exist before dispatch, while permitting other
-            # rows to be inserted concurrently after the snapshot.
-            pre_global_max_id = self.db.query(
-                func.max(ClinicalJournalEntry.id)
-            ).scalar()
-            pre_global_max_id = int(pre_global_max_id or 0)
+            # Capture the exact-match set first. Any matching row inserted
+            # after this point must remain visible in the post-write set diff,
+            # including explicit IDs below the later global high-water mark.
             pre_exact_ids = _doctor_feedback_exact_candidate_ids(
                 self.db,
                 user_id=user_id,
@@ -19487,6 +19483,13 @@ class AgentExecutor:
                 plan=normalized["plan"],
                 objective=expected_objective,
             )
+            # A returned ID above this global high-water mark proves that the
+            # resource did not exist before dispatch, while permitting other
+            # rows to be inserted concurrently after the snapshot.
+            pre_global_max_id = self.db.query(
+                func.max(ClinicalJournalEntry.id)
+            ).scalar()
+            pre_global_max_id = int(pre_global_max_id or 0)
         except Exception as exc:  # noqa: BLE001
             logger.error(
                 "operation=record_doctor_feedback snapshot_error_type=%s",
@@ -19544,23 +19547,6 @@ class AgentExecutor:
             )
             if post_exact_ids - pre_exact_ids != {entry_id}:
                 raise RuntimeError("ambiguous_doctor_feedback_persistence")
-
-            persisted = (
-                self.db.query(ClinicalJournalEntry)
-                .filter(
-                    ClinicalJournalEntry.id == entry_id,
-                    ClinicalJournalEntry.user_id == user_id,
-                    ClinicalJournalEntry.created_by == "doctor",
-                )
-                .one_or_none()
-            )
-            if persisted is None or (
-                persisted.subjective != normalized["summary"]
-                or persisted.assessment != normalized["assessment"]
-                or persisted.plan != normalized["plan"]
-                or persisted.objective != expected_objective
-            ):
-                raise RuntimeError("unverified_doctor_feedback_persistence")
             return json.dumps(
                 {
                     "message": "医生反馈已记录",

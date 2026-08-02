@@ -838,6 +838,28 @@ def test_doctor_feedback_canonicalizer_drops_unknowns_and_normalizes_equivalents
     }
 
 
+def test_doctor_feedback_exact_null_sql_is_portable():
+    from sqlalchemy.dialects import postgresql, sqlite
+
+    from app.models.clinical_journal import ClinicalJournalEntry
+    from app.services.agent_executor import _doctor_feedback_exact_sql
+
+    predicate = _doctor_feedback_exact_sql(
+        ClinicalJournalEntry.subjective,
+        None,
+    )
+
+    for dialect in (sqlite.dialect(), postgresql.dialect()):
+        compiled = str(
+            predicate.compile(
+                dialect=dialect,
+                compile_kwargs={"literal_binds": True},
+            )
+        ).upper()
+        assert " IS NULL" in compiled
+        assert " = NULL" not in compiled
+
+
 @pytest.mark.asyncio
 async def test_doctor_feedback_executes_through_gateway_for_current_owner(
     db,
@@ -1532,6 +1554,150 @@ async def test_doctor_feedback_runtime_rejects_fresh_exact_low_id_duplicate(
     assert operation.status == "reconciliation_required"
     assert operation.error_code == "write_uncertain"
     assert operation.resource_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("duplicate_id", "expected_requested_id"),
+    ((101, 102), (50, 101)),
+)
+async def test_doctor_feedback_runtime_rejects_exact_insert_between_pre_snapshots(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    duplicate_id,
+    expected_requested_id,
+):
+    from app.models.agent_runtime import AgentToolOperation
+    from app.models.clinical_journal import ClinicalJournalEntry
+    from app.services.agent_executor import _write_receipt_from_tool_result
+
+    user, _headers = auth_user_and_headers
+    db.add(
+        ClinicalJournalEntry(
+            id=100,
+            user_id=user.id,
+            assessment="用于建立竞态窗口高水位的不相关记录",
+            created_by="doctor",
+        )
+    )
+    db.commit()
+    executor = _managed_doctor_feedback_executor(
+        db,
+        user_id=user.id,
+        run_suffix=f"between-snapshots-{duplicate_id}",
+    )
+    args = {
+        "assessment": "快照窗口内完全相同的评估",
+        "visit_date": "2026-08-01",
+    }
+    original_query = db.query
+    injected = False
+
+    class InjectExactRowAfterJournalMaxScalar:
+        def __init__(self, query):
+            self._query = query
+
+        def scalar(self):
+            nonlocal injected
+            value = self._query.scalar()
+            if not injected:
+                injected = True
+                db.add(
+                    ClinicalJournalEntry(
+                        id=duplicate_id,
+                        user_id=user.id,
+                        subjective=None,
+                        objective="医生随访 @ 2026-08-01",
+                        assessment=args["assessment"],
+                        plan=None,
+                        created_by="doctor",
+                    )
+                )
+                db.commit()
+            return value
+
+        def __getattr__(self, name):
+            return getattr(self._query, name)
+
+    def inject_after_journal_max_scalar(*entities, **kwargs):
+        query = original_query(*entities, **kwargs)
+        is_journal_max = (
+            len(entities) == 1
+            and getattr(entities[0], "name", None) == "max"
+            and "clinical_journal_entries.id" in str(entities[0])
+        )
+        if is_journal_max:
+            return InjectExactRowAfterJournalMaxScalar(query)
+        return query
+
+    monkeypatch.setattr(db, "query", inject_after_journal_max_scalar)
+
+    result = await executor._execute_tool("record_doctor_feedback", args, None)
+
+    _assert_uncertain_write(result)
+    assert _write_receipt_from_tool_result(
+        "record_doctor_feedback", args, result
+    ) is None
+    monkeypatch.setattr(db, "query", original_query)
+    rows = original_query(ClinicalJournalEntry).all()
+    operation = original_query(AgentToolOperation).one()
+    assert injected is True
+    assert {row.id for row in rows} == {100, duplicate_id, expected_requested_id}
+    assert operation.status == "reconciliation_required"
+    assert operation.error_code == "write_uncertain"
+    assert operation.resource_id is None
+
+
+@pytest.mark.asyncio
+async def test_doctor_feedback_success_has_no_final_entity_lookup(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.models.agent_runtime import AgentToolOperation
+    from app.models.clinical_journal import ClinicalJournalEntry
+    from app.services.agent_executor import _write_receipt_from_tool_result
+
+    user, _headers = auth_user_and_headers
+    executor = _managed_doctor_feedback_executor(
+        db,
+        user_id=user.id,
+        run_suffix="no-final-entity-lookup",
+    )
+    args = {
+        "assessment": "最终 SQL 核验后的成功评估",
+        "visit_date": "2026-08-01",
+    }
+    original_query = db.query
+    final_entity_lookups = 0
+
+    def reject_final_entity_lookup(*entities, **kwargs):
+        nonlocal final_entity_lookups
+        if len(entities) == 1 and entities[0] is ClinicalJournalEntry:
+            final_entity_lookups += 1
+            raise RuntimeError("final entity lookup must not execute")
+        return original_query(*entities, **kwargs)
+
+    monkeypatch.setattr(db, "query", reject_final_entity_lookup)
+
+    result = await executor._execute_tool("record_doctor_feedback", args, None)
+
+    payload = json.loads(result)
+    receipt = _write_receipt_from_tool_result(
+        "record_doctor_feedback", args, result
+    )
+    monkeypatch.setattr(db, "query", original_query)
+    operation = original_query(AgentToolOperation).one()
+    rows = original_query(ClinicalJournalEntry).all()
+    assert final_entity_lookups == 0
+    assert len(rows) == 1
+    assert payload["id"] == rows[0].id
+    assert receipt is not None
+    assert receipt["status"] == "verified"
+    assert receipt["resource_id"] == str(rows[0].id)
+    assert operation.status == "succeeded"
+    assert operation.resource_id == str(rows[0].id)
 
 
 @pytest.mark.asyncio
