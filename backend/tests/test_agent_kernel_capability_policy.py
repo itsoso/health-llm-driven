@@ -152,6 +152,14 @@ def test_doctor_feedback_tool_blocks_non_authorizing_clinician_frames(
         ("需要遵医嘱删除这条用药记录", "delete"),
         ("先按医嘱删除这条用药记录", "delete"),
         ("顺便按医嘱删除这条用药记录", "delete"),
+        ("请您按医嘱删除这条用药记录", "delete"),
+        ("麻烦您按医嘱删除这条用药记录", "delete"),
+        ("希望能按医嘱删除这条用药记录", "delete"),
+        ("我要按医嘱删除这条用药记录", "delete"),
+        ("可以按医嘱删除这条用药记录", "delete"),
+        ("如果按医嘱删除这条用药记录", "delete"),
+        ("并非要按医嘱删除这条用药记录", "delete"),
+        ("如果需要就根据医生诊断删除这条用药记录", "delete"),
     ),
 )
 def test_medical_instruction_basis_cannot_authorize_destructive_manage(
@@ -179,6 +187,30 @@ def test_medical_instruction_basis_cannot_authorize_destructive_manage(
     ) == ("chat", "clinical_context", "acknowledge", False)
     assert decision.action == "block"
     assert decision.reason == "manage_write_without_mutate_intent"
+    assert decision.receipt_required is True
+
+
+def test_ordinary_delete_without_clinician_basis_keeps_manage_capability():
+    snapshot = _snapshot("请您删除这条用药记录")
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "medication",
+                "operation": "delete",
+                "record_id": 1,
+            },
+        ),
+    )
+
+    assert (
+        snapshot.intent.primary,
+        snapshot.intent.domain,
+        snapshot.intent.operation,
+        snapshot.intent.is_write,
+    ) == ("mutate", "medication", "delete", True)
+    assert decision.action == "allow"
     assert decision.receipt_required is True
 
 

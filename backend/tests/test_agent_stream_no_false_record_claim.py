@@ -775,6 +775,7 @@ async def test_bare_clinician_report_is_understood_without_write_or_retry(
         "已经为您同步成功。",
         "已经成功保存了医生诊断。",
         "已经成功替您保存了医生诊断。",
+        "已经替你保存医生诊断并不代表 Reva 作出了新诊断。",
     ),
 )
 async def test_bare_clinician_report_replaces_model_false_save_claim(
@@ -819,14 +820,48 @@ async def test_bare_clinician_report_replaces_model_false_save_claim(
     assert done["data"]["message_id"] == saved.id
 
 
+async def test_bare_clinician_report_preserves_negated_save_statement(
+    db, auth_user_and_headers
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    model_reply = "系统提示“已经替你保存医生诊断”并非事实。"
+
+    async def fake_call_llm_stream(_messages, tools):
+        assert tools == []
+        yield {"type": "content", "text": model_reply}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    executor._call_llm_stream = fake_call_llm_stream
+
+    events = [
+        event async for event in executor.run_stream(
+            user_id=user.id,
+            message="医生诊断是大腿和臀部肌肉无力导致腰肌代偿",
+            user_auth_token="test-token",
+        )
+    ]
+    reply = _tokens(events)
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert reply == model_reply
+    assert done["data"]["tools_used"] == []
+    assert done["data"]["write_receipts"] == []
+    saved = db.query(AgentMessage).filter_by(role="assistant").one()
+    assert saved.content == reply
+    assert done["data"]["message_id"] == saved.id
+
+
 @pytest.mark.parametrize(
     "text",
     (
         "已经成功保存了医生诊断。",
         "已经成功替您保存了医生诊断。",
+        "已经替你保存医生诊断并不代表 Reva 作出了新诊断。",
+        "已保存医生诊断不等于 Reva 认可该诊断。",
     ),
 )
-def test_success_before_write_or_helper_is_a_success_claim(text):
+def test_assertive_write_language_is_a_success_claim(text):
     from app.services.agent_executor import _claims_unverified_write_success
 
     assert _claims_unverified_write_success(text) is True
@@ -845,6 +880,7 @@ def test_success_before_write_or_helper_is_a_success_claim(text):
         "没有替您删除医生反馈。",
         "系统提示“已经为您同步成功”并非事实。",
         "如果已经成功替您保存了医生诊断，请忽略。",
+        "系统提示“已经替你保存医生诊断”并非事实。",
     ),
 )
 def test_nonassertive_write_language_is_not_a_success_claim(text):
@@ -951,6 +987,16 @@ async def test_clinician_basis_compound_action_is_not_executed_or_retried(
         "需要遵医嘱删除这条用药记录",
         "先按医嘱删除这条用药记录",
         "顺便按医嘱删除这条用药记录",
+        "医生说是臀肌无力。请遵医嘱删除这条用药记录",
+        "医生说是臀肌无力\n请遵医嘱删除这条用药记录",
+        "请您按医嘱删除这条用药记录",
+        "麻烦您按医嘱删除这条用药记录",
+        "希望能按医嘱删除这条用药记录",
+        "我要按医嘱删除这条用药记录",
+        "可以按医嘱删除这条用药记录",
+        "如果按医嘱删除这条用药记录",
+        "并非要按医嘱删除这条用药记录",
+        "如果需要就根据医生诊断删除这条用药记录",
     ),
 )
 async def test_prefixed_clinician_basis_turn_exposes_zero_tool_schema(

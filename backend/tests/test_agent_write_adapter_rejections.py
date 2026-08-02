@@ -951,6 +951,14 @@ async def test_doctor_feedback_executes_through_gateway_for_current_owner(
         "需要遵医嘱删除这条用药记录",
         "先按医嘱删除这条用药记录",
         "顺便按医嘱删除这条用药记录",
+        "请您按医嘱删除这条用药记录",
+        "麻烦您按医嘱删除这条用药记录",
+        "希望能按医嘱删除这条用药记录",
+        "我要按医嘱删除这条用药记录",
+        "可以按医嘱删除这条用药记录",
+        "如果按医嘱删除这条用药记录",
+        "并非要按医嘱删除这条用药记录",
+        "如果需要就根据医生诊断删除这条用药记录",
     ),
 )
 async def test_medical_instruction_basis_blocks_direct_destructive_dispatch(
@@ -981,6 +989,35 @@ async def test_medical_instruction_basis_blocks_direct_destructive_dispatch(
         error_code="clinician_provenance_tool_not_authorized",
     )
     dispatch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ordinary_delete_without_clinician_basis_dispatches(
+    db,
+    monkeypatch,
+):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "请您删除这条用药记录"
+    dispatch = AsyncMock(
+        return_value=json.dumps({"success": True, "deleted_id": 1})
+    )
+    monkeypatch.setattr(executor, "_dispatch_tool_request", dispatch)
+
+    result = await executor._execute_tool(
+        "health_manage",
+        {
+            "record_type": "medication",
+            "operation": "delete",
+            "record_id": 1,
+        },
+        None,
+    )
+
+    assert json.loads(result)["success"] is True
+    dispatch.assert_awaited_once()
 
 
 @pytest.mark.asyncio

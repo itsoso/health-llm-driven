@@ -2058,9 +2058,81 @@
     "id": "mid_sentence_medical_instruction_quote_is_not_anchored_basis",
     "text": "医生说请遵医嘱删除这条用药记录",
     "kind": "ambiguous_clinician_action",
-    "reason_code": "coordinated_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "hard_boundary_reanchors_medical_instruction_basis",
+    "text": "医生说是臀肌无力。请遵医嘱删除这条用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "newline_reanchors_medical_instruction_basis",
+    "text": "医生说是臀肌无力。\n请遵医嘱删除这条用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "honorific_per_medical_instruction_delete_requires_separate_command",
+    "text": "请您按医嘱删除这条用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "polite_honorific_per_medical_instruction_delete_requires_separate_command",
+    "text": "麻烦您按医嘱删除这条用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "hope_can_per_medical_instruction_delete_requires_separate_command",
+    "text": "希望能按医嘱删除这条用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "want_per_medical_instruction_delete_requires_separate_command",
+    "text": "我要按医嘱删除这条用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "can_per_medical_instruction_delete_requires_separate_command",
+    "text": "可以按医嘱删除这条用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "conditional_per_medical_instruction_delete_requires_separate_command",
+    "text": "如果按医嘱删除这条用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "negated_intent_per_medical_instruction_delete_requires_separate_command",
+    "text": "并非要按医嘱删除这条用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "conditional_provider_basis_delete_requires_separate_command",
+    "text": "如果需要就根据医生诊断删除这条用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "ordinary_delete_without_clinician_basis_remains_legacy",
+    "text": "请您删除这条用药记录",
+    "kind": "none",
+    "reason_code": "no_clinician_signal"
+  },
+  {
+    "id": "quoted_nonmutating_medical_instruction_remains_context",
+    "text": "医生说“请遵医嘱休息”",
+    "kind": "clinician_context",
+    "reason_code": "clinician_report",
     "provider": "医生",
-    "content": "请遵医嘱删除这条用药记录"
+    "content": "“请遵医嘱休息”"
   },
   {
     "id": "unanchored_clinician_advice_is_not_basis_control",

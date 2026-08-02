@@ -94,12 +94,6 @@ _ACTION_PREFIX_WRAPPERS = tuple(
         key=lambda term: (-len(term), term),
     )
 )
-_CLINICIAN_BASIS_PREFIX_WRAPPERS = tuple(
-    sorted(
-        {*_ACTION_PREFIX_WRAPPERS, "那就"},
-        key=lambda term: (-len(term), term),
-    )
-)
 _HIGH_RISK_MUTATION_ROOTS = _MUTATION_ACTION_ROOTS
 _LOCAL_ADVICE_PREDICATES = tuple(
     predicate
@@ -1392,53 +1386,84 @@ def _has_obfuscated_clinician_action(raw: str) -> bool:
 
 
 def _has_anchored_clinician_basis_mutation(raw: str) -> bool:
-    """Block mixed clinician-basis mutations without interpreting targets."""
+    """Block clause-local clinician-basis mutations without wrapper lists."""
 
     normalized = unicodedata.normalize("NFKC", raw)
-    compact = "".join(
-        char for char in normalized if not _is_ignorable(char)
+    clauses: list[str] = []
+    clause_chars: list[str] = []
+    for char in normalized:
+        if char in _HARD_BOUNDARIES:
+            clauses.append("".join(clause_chars))
+            clause_chars = []
+        elif not _is_ignorable(char):
+            clause_chars.append(char)
+    clauses.append("".join(clause_chars))
+
+    def mutation_follows(clause: str, position: int) -> bool:
+        return any(
+            root in clause[position:]
+            for root in _MUTATION_ACTION_ROOTS
+        )
+
+    def provider_basis_mutates(clause: str) -> bool:
+        for relation in ("根据", "依据", "按照"):
+            start = clause.find(relation)
+            while start >= 0:
+                position = start + len(relation)
+                provider = next(
+                    (
+                        term
+                        for term in CLINICIAN_PROVIDER_TERMS
+                        if clause.startswith(term, position)
+                    ),
+                    None,
+                )
+                if provider is not None:
+                    position += len(provider)
+                    feedback_object = next(
+                        (
+                            term
+                            for term in (
+                                *CLINICIAN_FEEDBACK_OBJECT_NOUNS,
+                                "建议",
+                            )
+                            if clause.startswith(term, position)
+                        ),
+                        None,
+                    )
+                    if feedback_object is not None:
+                        position += len(feedback_object)
+                        if mutation_follows(clause, position):
+                            return True
+                start = clause.find(relation, start + 1)
+        return False
+
+    def medical_instruction_basis_mutates(clause: str) -> bool:
+        for relation in ("按照", "遵", "按"):
+            start = clause.find(relation)
+            while start >= 0:
+                position = start + len(relation)
+                basis = next(
+                    (
+                        term
+                        for term in CLINICIAN_BASIS_TERMS
+                        if clause.startswith(term, position)
+                    ),
+                    None,
+                )
+                if basis is not None and mutation_follows(
+                    clause,
+                    position + len(basis),
+                ):
+                    return True
+                start = clause.find(relation, start + 1)
+        return False
+
+    return any(
+        provider_basis_mutates(clause)
+        or medical_instruction_basis_mutates(clause)
+        for clause in clauses
     )
-
-    def consume(position: int, terms: tuple[str, ...]) -> int | None:
-        for term in terms:
-            if compact.startswith(term, position):
-                return position + len(term)
-        return None
-
-    # Consume only a bounded set of command/politeness wrappers from the start
-    # of the turn. This covers common direct-command phrasing without turning a
-    # mid-sentence quotation into an anchored clinician-basis mutation.
-    position = 0
-    while True:
-        next_position = consume(position, _CLINICIAN_BASIS_PREFIX_WRAPPERS)
-        if next_position is None:
-            break
-        position = next_position
-    basis_start = position
-
-    position = consume(basis_start, ("根据", "依据", "按照"))
-    if position is not None:
-        position = consume(position, CLINICIAN_PROVIDER_TERMS)
-        if position is not None:
-            position = consume(
-                position,
-                (*CLINICIAN_FEEDBACK_OBJECT_NOUNS, "建议"),
-            )
-            if position is not None and any(
-                root in compact[position:]
-                for root in _MUTATION_ACTION_ROOTS
-            ):
-                return True
-
-    # ``医嘱`` is an action basis, not a provider identity. Only anchored
-    # follow/per-instruction shapes with a later mutation fail closed here.
-    position = consume(basis_start, ("按照", "遵", "按"))
-    if position is None:
-        return False
-    position = consume(position, CLINICIAN_BASIS_TERMS)
-    if position is None:
-        return False
-    return any(root in compact[position:] for root in _MUTATION_ACTION_ROOTS)
 
 
 def _decision(

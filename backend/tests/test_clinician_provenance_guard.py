@@ -311,15 +311,67 @@ def test_obfuscation_view_does_not_join_intact_terms_across_punctuation(text):
     assert guard._has_obfuscated_clinician_action(text) is False
 
 
-def test_medical_instruction_basis_is_not_matched_mid_sentence():
+def test_medical_instruction_basis_is_detected_mid_clause():
     guard = _module()
     text = "医生说请遵医嘱删除这条用药记录"
 
     decision = guard.classify_clinician_turn(text)
 
-    assert guard._has_anchored_clinician_basis_mutation(text) is False
+    assert guard._has_anchored_clinician_basis_mutation(text) is True
     assert decision.kind == "ambiguous_clinician_action"
-    assert decision.reason_code == "coordinated_clinician_action"
+    assert (
+        decision.reason_code
+        == "clinician_basis_action_requires_separate_command"
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "医生说是臀肌无力。请遵医嘱删除这条用药记录",
+        "医生说是臀肌无力\n请遵医嘱删除这条用药记录",
+    ),
+)
+def test_medical_instruction_basis_reanchors_after_hard_boundary(text):
+    guard = _module()
+
+    decision = guard.classify_clinician_turn(text)
+
+    assert guard._has_anchored_clinician_basis_mutation(text) is True
+    assert decision.kind == "ambiguous_clinician_action"
+    assert (
+        decision.reason_code
+        == "clinician_basis_action_requires_separate_command"
+    )
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_kind", "expected_reason"),
+    (
+        (
+            "请您删除这条用药记录",
+            "none",
+            "no_clinician_signal",
+        ),
+        (
+            "医生说“请遵医嘱休息”",
+            "clinician_context",
+            "clinician_report",
+        ),
+    ),
+)
+def test_basis_scan_preserves_nonbasis_and_nonmutating_quoted_turns(
+    text,
+    expected_kind,
+    expected_reason,
+):
+    guard = _module()
+
+    decision = guard.classify_clinician_turn(text)
+
+    assert guard._has_anchored_clinician_basis_mutation(text) is False
+    assert decision.kind == expected_kind
+    assert decision.reason_code == expected_reason
 
 
 @pytest.mark.parametrize(
