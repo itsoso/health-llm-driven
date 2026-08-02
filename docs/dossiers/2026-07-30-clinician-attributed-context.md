@@ -89,6 +89,20 @@
     混合/歧义操作全部非写并提示拆分；非医生输入继续走 legacy classifier。
   - 用户裁决：2026-08-01 批准窄授权、强理解方案及复杂混合操作 fail-closed。
   - 新设计：`docs/plans/2026-08-01-clinician-provenance-guard-design.md`。
+- [x] Correction Block 6
+  - 触发：Task 2 独立质量评审要求保留 `根据/依据/按照医生意见 + 用户操作`
+    的 legacy mutation；连续对抗复审证明，纯字符级 guard 无法同时支持任意
+    非空 target，并完备排除尾随否定、拆词和第二个医疗动作。
+  - 证据：`根据医生诊断删除昨天用药记录，停药`、`依据医生意见调整剂量并
+    换药`、`...拒绝执行` 可被放行为写；收紧到 target 词典又误伤午餐、
+    体重、心率、药物和复合记录等合法目标。
+  - 根因：clinician provenance guard 被迫承担开放域中文 mutation 授权解析，
+    再次超出产品所需的窄授权边界；有限否定/连接词/target 枚举不能形成安全
+    证明。
+  - 裁决：撤销评审期间新增的 clinician-basis → legacy 豁免。任何
+    `根据/依据/按照 + clinician basis + mutation` 统一非写并提示用户把操作
+    单独重述；独立 mutation 和显式 doctor-feedback save 语义不变。
+  - 用户裁决：2026-08-01 明确批准上述安全收紧。
 
 ## S0 · 用户需求（逐字）
 
@@ -158,6 +172,8 @@
   - clinician-bearing 输入绝不回 raw whole-text authorizer。
   - 只有窄格式的 clinician-feedback save envelope 可以产生写意图；复杂混合
     动作统一 fail-closed 并提示拆分。
+  - clinician-basis mutation 也属于复杂混合动作；必须先移除医生依据从句，
+    再以单独明确命令重述，系统才交给 legacy mutation 路径。
   - 保存必须有显式写意图并产生可验证回执。
   - 上下文标明“用户转述的医生意见”，禁止把来源升级成系统诊断。
   - 不新增表、不迁移、不自动变更 HealthProblem。

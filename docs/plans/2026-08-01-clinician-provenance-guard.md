@@ -217,6 +217,12 @@ the reason `ambiguous_clinician_action`.
 Add conservation cases for ordinary diet, current symptoms, medication,
 media, plan, reminder, `查看医生诊断记录` and `删除医生诊断记录`.
 
+Add clinician-basis mutation cases such as `根据医生诊断删除昨天用药记录`,
+`依据医生意见调整用药剂量` and `按照医生建议同步健康数据`. They are
+compound clinician-bearing actions and must map to reliable non-write
+clarification; the same mutations without the clinician-basis prefix must keep
+their legacy behavior.
+
 ### Step 2: Write the legacy-authorizer canary
 
 Monkeypatch legacy write/mutation/plan/reminder/media helpers to raise. Feed
@@ -224,11 +230,16 @@ clinician-context, clinician-advice, explicit feedback save and ambiguous
 clinician-action cases. All must return through the guard mapping without
 calling legacy whole-text authorizers.
 
+Include clinician-basis mutations in this canary. They must not fall through to
+the legacy mutation authorizer until the user restates the operation without
+the clinician-basis clause.
+
 Feed `kind=none` controls and assert the legacy helpers remain reachable.
 
 ### Step 3: Write fast-record boundary tests
 
-For the screenshot, advice and ambiguous compound cases assert:
+For the screenshot, advice, clinician-basis mutations and ambiguous compound
+cases assert:
 
 - `_extract_clear_symptom_record` returns `None`;
 - forced record tool choice is not requested;

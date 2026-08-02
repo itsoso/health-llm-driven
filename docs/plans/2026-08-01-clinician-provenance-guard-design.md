@@ -208,8 +208,9 @@ TDD must cover:
 5. missing content, objectless save and all compound/mixed actions fail closed;
 6. clinician record nouns without report semantics retain existing read/delete
    behavior;
-7. clinician basis commands that are not reports retain existing legacy
-   behavior unless ambiguous provider evidence requires fail closed;
+7. clinician-basis mutations such as `根据/依据/按照医生意见 + 删除/调整/同步`
+   fail closed and ask the user to restate the operation as a separate explicit
+   command; standalone non-clinician mutations retain existing legacy behavior;
 8. ordinary diet, symptom, medication, media, plan and reminder classifier
    behavior does not drift;
 9. a structural canary proves clinician-bearing decisions never call legacy raw
