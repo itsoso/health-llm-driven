@@ -676,7 +676,7 @@ export async function getConversationsPage({
 }
 
 /**
- * 兼容旧调用方 (voice-chat / useChatEngine 的 briefing 探测) — 取第一页 items。
+ * 兼容旧调用方 (voice-chat / useChatEngine 的最近会话探测) — 取第一页 items。
  * 失败时返回空数组 (保持历史行为: 这些调用方不处理异常)。
  */
 export async function getConversations(titleLike?: string): Promise<Conversation[]> {

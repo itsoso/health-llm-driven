@@ -982,6 +982,99 @@ describe('useChatEngine', () => {
     expect(mockGetConversations).not.toHaveBeenCalledWith('每日健康简报');
   });
 
+  it('resumes a newer server conversation instead of an older device-local id', async () => {
+    mockAsyncStorage[scopedStorageKey('chat:last_conversation_id:v1')] = '321';
+    mockGetConversations.mockResolvedValue([
+      {
+        id: 999,
+        title: 'Web 刚更新的对话',
+        created_at: '2026-08-01T10:00:00Z',
+        updated_at: '2026-08-01T10:10:00Z',
+      },
+      {
+        id: 321,
+        title: 'Mobile 本地旧指针',
+        created_at: '2026-08-01T09:00:00Z',
+        updated_at: '2026-08-01T09:10:00Z',
+      },
+    ]);
+    mockGetConversationMessages.mockImplementation(async (id: number) => ({
+      total_messages: 1,
+      messages: [{
+        id: id * 10,
+        role: 'assistant',
+        content: id === 999 ? '来自 Web 的最新回答' : '设备本地旧回答',
+        created_at: id === 999 ? '2026-08-01T10:10:00Z' : '2026-08-01T09:10:00Z',
+      }],
+    }));
+
+    const { result } = renderHook(() => useChatEngine());
+
+    await act(async () => {
+      await result.current.loadLatestConversation();
+    });
+
+    expect(result.current.conversationId).toBe(999);
+    expect(result.current.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ content: '来自 Web 的最新回答' }),
+    ]));
+    expect(mockGetConversationMessages).toHaveBeenCalledWith(999, { limit: 80 });
+    expect(mockGetConversationMessages).not.toHaveBeenCalledWith(321, { limit: 80 });
+  });
+
+  it('keeps a recoverable local turn ahead of a newer cross-surface conversation', async () => {
+    mockAsyncStorage[scopedStorageKey('chat:last_conversation_id:v1')] = '321';
+    mockAsyncStorage[scopedStorageKey('chat:active_turn:v1')] = JSON.stringify({
+      version: 1,
+      phase: 'interrupted',
+      turnId: 'turn-recover-first',
+      conversationId: 321,
+      startedAt: Date.now() - 1000,
+      updatedAt: Date.now() - 500,
+      errorCode: 'app_backgrounded',
+      recoverable: true,
+      hadWrite: false,
+    });
+    mockGetConversations.mockResolvedValue([{
+      id: 999,
+      title: 'Web 更新得更晚',
+      created_at: '2026-08-01T10:00:00Z',
+      updated_at: '2026-08-01T10:10:00Z',
+    }]);
+    mockGetConversationMessages.mockResolvedValue({
+      total_messages: 2,
+      messages: [
+        {
+          id: 1,
+          role: 'user',
+          content: '恢复中的问题',
+          meta: { client_turn_id: 'turn-recover-first' },
+        },
+        {
+          id: 2,
+          role: 'assistant',
+          content: '恢复完成',
+          meta: {
+            client_turn_id: 'turn-recover-first',
+            completion_status: 'complete',
+            client_turn_finalized: true,
+          },
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useChatEngine());
+    await waitFor(() => expect(result.current.activeTurn.turnId).toBe('turn-recover-first'));
+
+    await act(async () => {
+      await result.current.loadLatestConversation();
+    });
+
+    expect(result.current.conversationId).toBe(321);
+    expect(mockGetConversationMessages).toHaveBeenCalledWith(321, { limit: 80 });
+    expect(mockGetConversationMessages).not.toHaveBeenCalledWith(999, { limit: 80 });
+  });
+
   it('can force a context entry to start a new server conversation', async () => {
     mockAsyncStorage[scopedStorageKey('chat:last_conversation_id:v1')] = '321';
     mockGetConversationMessages.mockResolvedValueOnce({
@@ -1147,6 +1240,7 @@ describe('useChatEngine', () => {
     expect(cardIndex).toBe(firstAssistantIndex + 1);
     expect(cardIndex).toBeLessThan(queuedUserIndex);
 
+    await waitFor(() => expect(mockStreamChat).toHaveBeenCalledTimes(2));
     await act(async () => {
       finishStream?.();
       await Promise.resolve();

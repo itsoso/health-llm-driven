@@ -486,7 +486,6 @@ interface QueuedChatTurn {
   assistantMessageId: string;
 }
 
-const BRIEFING_CONVERSATION_TITLE = '每日健康简报';
 const HISTORY_PAGE_SIZE = 80;
 const LAST_CONVERSATION_ID_KEY = 'chat:last_conversation_id:v1';
 const PENDING_STREAM_STARTED_AT_KEY = 'chat:pending_stream_started_at:v1';
@@ -963,7 +962,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     return true;
   }, [reconcileActiveTurnFromServer]);
 
-  const loadLatestConversation = useCallback(async (options?: { preferBriefing?: boolean }) => {
+  const loadLatestConversation = useCallback(async (_options?: { preferBriefing?: boolean }) => {
     const requestGeneration = ++conversationRequestGenerationRef.current;
     historyLoadRequestRef.current += 1;
     setIsLoadingMoreHistory(false);
@@ -972,37 +971,57 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     // P0-5: 本地流式态活跃且 <30s → 不拉服务端最近对话覆盖当前流。
     if (localStreamOwnsState()) return;
     try {
-      const preferBriefing = options?.preferBriefing ?? true;
       const storedConversationId = await readStoredConversationId();
       if (requestGeneration !== conversationRequestGenerationRef.current) return;
-      if (storedConversationId) {
-        const restoredStoredConversation = await loadConversationFromServer(
+
+      // 未完成 / 可恢复 turn 是显式的本地工作状态，必须先回到它所属的 conversation。
+      // 这条优先级高于跨端 latest，避免 Web 上的新消息打断 Mobile 正在恢复的写回执。
+      const recoverableConversationId = (
+        activeTurnRef.current.recoverable
+        && activeTurnRef.current.phase !== 'completed'
+        && activeTurnRef.current.conversationId
+      ) || null;
+      const hasPendingStream = await hasFreshPendingStream();
+      if (requestGeneration !== conversationRequestGenerationRef.current) return;
+      const localRecoveryId = recoverableConversationId || (hasPendingStream ? storedConversationId : null);
+      if (localRecoveryId) {
+        const restoredRecovery = await loadConversationFromServer(
+          localRecoveryId,
+          'hist',
+          requestGeneration,
+        );
+        if (requestGeneration !== conversationRequestGenerationRef.current) return;
+        if (restoredRecovery || localStreamOwnsState()) return;
+      }
+
+      // Web / Mobile 共用同一条默认续接规则：服务端 owner-scoped 列表里
+      // updated_at 最新的 durable conversation。设备本地 id 只作离线/空列表回退，
+      // 不再抢占另一端刚更新的会话，也不再让“每日健康简报”特殊置顶。
+      const convs = await getConversations();
+      if (requestGeneration !== conversationRequestGenerationRef.current) return;
+      if (localStreamOwnsState()) return;
+
+      const latestId = convs[0]?.id;
+      if (latestId) {
+        const restoredLatest = await loadConversationFromServer(
+          latestId,
+          'hist',
+          requestGeneration,
+        );
+        if (requestGeneration !== conversationRequestGenerationRef.current) return;
+        if (restoredLatest || localStreamOwnsState()) return;
+      }
+
+      if (storedConversationId && storedConversationId !== latestId) {
+        const restoredStored = await loadConversationFromServer(
           storedConversationId,
           'hist',
           requestGeneration,
         );
         if (requestGeneration !== conversationRequestGenerationRef.current) return;
-        if (restoredStoredConversation || localStreamOwnsState()) return;
-        await forgetConversationId();
+        if (restoredStored || localStreamOwnsState()) return;
       }
-
-      const shouldPreferRecent = await hasFreshPendingStream();
-      // 默认进入 chat tab 时优先打开"每日健康简报"；但从后台/其它 tab 恢复未完成新会话时,
-      // 必须按真实最近对话找，否则会被旧简报抢走，导致用户看不到刚才那次 Agent 回复。
-      let convs = preferBriefing && !shouldPreferRecent ? await getConversations(BRIEFING_CONVERSATION_TITLE) : [];
-      if (requestGeneration !== conversationRequestGenerationRef.current) return;
-      if (convs.length === 0) convs = await getConversations();
-      if (requestGeneration !== conversationRequestGenerationRef.current) return;
-      convs = [...convs].sort((a: any, b: any) =>
-        ((b as any).updated_at || b.created_at || '').localeCompare(
-          ((a as any).updated_at || a.created_at || '') as string
-        )
-      );
-      if (convs.length === 0) return;
-      if (localStreamOwnsState()) return;
-
-      const latestId = convs[0].id;
-      await loadConversationFromServer(latestId, 'hist', requestGeneration);
+      if (storedConversationId) await forgetConversationId();
     } catch { console.warn('Failed to load latest conversation'); }
   }, [loadConversationFromServer, localStreamOwnsState]);
 

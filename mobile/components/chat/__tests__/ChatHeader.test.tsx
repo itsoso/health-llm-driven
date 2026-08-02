@@ -6,7 +6,7 @@ import ChatHeader from '../ChatHeader';
 
 describe('ChatHeader', () => {
   it('shows 小巴 as a branded assistant avatar beside the header title', () => {
-    const { getByLabelText } = render(
+    const { getByLabelText, getByText } = render(
       <ChatHeader
         activeLlmLabel="Qwen3.7 Plus"
         llmModelId="qwen3.7-plus"
@@ -21,7 +21,12 @@ describe('ChatHeader', () => {
       />,
     );
 
-    expect(getByLabelText('小巴形象')).toBeTruthy();
+    const avatarStyle = StyleSheet.flatten(getByLabelText('小巴形象').props.style);
+    const titleStyle = StyleSheet.flatten(getByText('小巴').props.style);
+    expect(avatarStyle.width).toBeGreaterThanOrEqual(32);
+    expect(avatarStyle.height).toBeGreaterThanOrEqual(32);
+    expect(titleStyle.fontSize).toBeGreaterThanOrEqual(28);
+    expect(titleStyle.lineHeight).toBeGreaterThanOrEqual(34);
   });
 
   it('keeps streaming state inside the active assistant turn instead of the header', () => {
@@ -70,9 +75,15 @@ describe('ChatHeader', () => {
     expect(getByTestId('icon-time-outline')).toBeTruthy();
     expect(getByTestId('icon-settings-outline')).toBeTruthy();
 
-    expect(StyleSheet.flatten(getByLabelText('新建对话').props.style).width).toBe(42);
-    expect(StyleSheet.flatten(getByLabelText('对话历史').props.style).width).toBe(42);
-    expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style).width).toBe(42);
+    expect(StyleSheet.flatten(getByLabelText('新建对话').props.style)).toEqual(
+      expect.objectContaining({ width: 44, height: 44 }),
+    );
+    expect(StyleSheet.flatten(getByLabelText('对话历史').props.style)).toEqual(
+      expect.objectContaining({ width: 44, height: 44 }),
+    );
+    expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style)).toEqual(
+      expect.objectContaining({ width: 44, height: 44 }),
+    );
 
     fireEvent.press(getByLabelText('更多会诊操作'));
     expect(onOpenToolMenu).toHaveBeenCalledTimes(1);

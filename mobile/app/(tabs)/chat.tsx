@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 import { deleteConversation, getConversationsPage, updateConversationTitle } from '../../services/chat';
@@ -897,7 +897,7 @@ export default function ChatScreen() {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   // 小巴是 agent-native 主屏,没有底部 Tab Bar。键盘弹起时直接为键盘留位;
-  // 收起时 = 底部安全区(SafeAreaView 只包 top, home indicator 由这里补) + 呼吸空间,
+  // 收起时 = 动态底部安全区(home indicator 由这里补) + 呼吸空间,
   // 输入栏悬浮在 home indicator 之上而非压进去(founder 2026-07-05: 参考阿福)。
   const bottomSpacerHeight = keyboardVisible
     ? (Platform.OS === 'ios' ? keyboardHeight : 0)
@@ -958,20 +958,22 @@ export default function ChatScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <StatusBar style="dark" backgroundColor={C.paper} translucent={false} />
-      <ChatHeader
-        activeLlmLabel={activeLlmLabel}
-        llmModelId={llmModelId}
-        llmOptions={llmOptions}
-        llmSaving={llmSaving}
-        llmError={llmError}
-        isStreaming={isStreaming}
-        onSelectModel={handleSelectModel}
-        onNewChat={handleNewChat}
-        onOpenHistory={openHistory}
-        onOpenToolMenu={() => setToolMenuVisible(true)}
-      />
+    <View testID="chat-edge-to-edge-root" style={styles.safe}>
+      <StatusBar style="dark" backgroundColor="transparent" translucent />
+      <View style={{ paddingTop: insets.top }}>
+        <ChatHeader
+          activeLlmLabel={activeLlmLabel}
+          llmModelId={llmModelId}
+          llmOptions={llmOptions}
+          llmSaving={llmSaving}
+          llmError={llmError}
+          isStreaming={isStreaming}
+          onSelectModel={handleSelectModel}
+          onNewChat={handleNewChat}
+          onOpenHistory={openHistory}
+          onOpenToolMenu={() => setToolMenuVisible(true)}
+        />
+      </View>
 
       <ChatTodayFocusCard
         model={visibleTodayFocusModel}
@@ -1230,7 +1232,7 @@ export default function ChatScreen() {
         searchValue={historySearch}
         onSearchChange={handleHistorySearchChange}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 

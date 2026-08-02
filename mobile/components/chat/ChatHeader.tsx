@@ -50,7 +50,7 @@ export default function ChatHeader({
   return (
     <View style={styles.headerWrap}>
       <View testID="chat-header-surface" style={styles.headerSurface}>
-        <XiaoBaAvatar size={28} />
+        <XiaoBaAvatar size={32} />
         <LlmModelPicker
           variant="header"
           currentLabel={headerLlmLabel}
@@ -104,7 +104,7 @@ export default function ChatHeader({
 const styles = StyleSheet.create({
   headerWrap: {
     paddingHorizontal: revaSpacing.s4,
-    // 与状态栏时钟留清晰呼吸(SafeAreaView 托底 notch inset)。
+    // 与状态栏时钟留清晰呼吸(页面根用动态 top inset 托底 notch)。
     paddingTop: 10,
     paddingBottom: 4,
   },
@@ -134,9 +134,9 @@ const styles = StyleSheet.create({
     borderColor: C.line,
   },
   headerAction: {
-    width: 42,
-    height: 32,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: C.surface2,

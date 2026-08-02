@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, Modal, Pressable, FlatList, TouchableOpacity,
   StyleSheet, Alert, ActivityIndicator, useWindowDimensions,
@@ -56,24 +56,6 @@ export default function ConversationSheet({
     : screenH * 0.7;
   // 单列宽度: iPad 居中并限宽, 让列表别撑满 13 寸屏
   const sheetMaxWidth = isTablet ? 560 : undefined;
-  const titleOf = (c: any) => (c?.title || '').trim();
-  const isBriefing = (t: string) => t === '每日健康简报' || t.startsWith('每日健康简报 ');
-  const isWeekly = (t: string) => t === '每周健康周报' || t.startsWith('每周健康周报 ');
-  const isPinned = (t: string) => isBriefing(t) || isWeekly(t);
-  const byNewest = (a: any, b: any) =>
-    ((b.updated_at || b.created_at || '') as string).localeCompare(
-      (a.updated_at || a.created_at || '') as string,
-    );
-  // 置顶排序只作用于"当前已加载"的条目 (无限下拉追加时不打乱已有相对顺序)。
-  const sortedConversations = useMemo(
-    () => [
-      ...conversations.filter((c: any) => isBriefing(titleOf(c))).sort(byNewest),
-      ...conversations.filter((c: any) => isWeekly(titleOf(c))).sort(byNewest),
-      ...conversations.filter((c: any) => !isPinned(titleOf(c))),
-    ],
-    [conversations],
-  );
-
   const startRename = (item: any) => {
     setEditingId(item.id);
     setDraftTitle(item.title || '');
@@ -162,7 +144,7 @@ export default function ConversationSheet({
           ) : (
             <FlatList
               style={{ maxHeight: listMaxHeight }}
-              data={sortedConversations}
+              data={conversations}
               keyExtractor={(item: any) => String(item.id)}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"

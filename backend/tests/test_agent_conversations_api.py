@@ -3,7 +3,7 @@
 import inspect
 import json
 import logging
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -209,6 +209,23 @@ def test_agent_conversations_list_returns_user_history_with_last_user_message(
     assert items[0]["id"] == conv.id
     assert items[0]["title"] == "代谢健康问题"
     assert items[0]["last_message"] == "最近血糖怎么样？"
+
+
+def test_agent_conversations_list_uses_latest_updated_conversation_as_canonical_first(
+    client, db, auth_user_and_headers
+):
+    user, headers = auth_user_and_headers
+    older = _create_conversation(db, user.id, "旧端对话")
+    newer = _create_conversation(db, user.id, "另一端刚更新的对话")
+    now = datetime.now(UTC)
+    older.updated_at = now - timedelta(minutes=10)
+    newer.updated_at = now
+    db.commit()
+
+    res = client.get("/api/v1/agent/conversations?limit=1", headers=headers)
+
+    assert res.status_code == 200
+    assert [item["id"] for item in res.json()["items"]] == [newer.id]
 
 
 def test_agent_send_collects_first_party_executor_stream(client, auth_user_and_headers, monkeypatch):
