@@ -344,7 +344,14 @@ def issue_phone_code(
     )
 
 
-def consume_phone_code(db: Session, raw_phone: str, code: str, *, purpose: str = "login") -> str:
+def consume_phone_code(
+    db: Session,
+    raw_phone: str,
+    code: str,
+    *,
+    purpose: str = "login",
+    commit: bool = True,
+) -> str:
     phone = normalize_phone(raw_phone)
     clean_code = _PHONE_DIGITS_RE.sub("", code or "")
     if len(clean_code) < 4:
@@ -358,6 +365,7 @@ def consume_phone_code(db: Session, raw_phone: str, code: str, *, purpose: str =
             PhoneAuthCode.consumed_at.is_(None),
         )
         .order_by(PhoneAuthCode.created_at.desc())
+        .with_for_update()
         .first()
     )
     if not record:
@@ -373,9 +381,15 @@ def consume_phone_code(db: Session, raw_phone: str, code: str, *, purpose: str =
     expected_hash = _hash_code(phone, clean_code, purpose)
     if not hmac.compare_digest(record.code_hash, expected_hash):
         record.attempt_count += 1
+        # Failed attempts remain durable even when the caller defers a
+        # successful consume into a larger transaction. Otherwise callers that
+        # roll back on this ValueError could bypass the attempt limit.
         db.commit()
         raise ValueError("验证码无效或已过期")
 
     record.consumed_at = now
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return phone

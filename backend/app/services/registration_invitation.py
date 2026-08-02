@@ -32,6 +32,8 @@ _CODE_PURPOSE = "registration-invitation-code:v1"
 _LINK_PURPOSE = "registration-invitation-link:v1"
 _PHONE_PURPOSE = "registration-invitation-phone:v1"
 _GRANT_PURPOSE = "phone-registration-grant:v1"
+_IDEMPOTENCY_PURPOSE = "invited-registration-idempotency:v1"
+_SOURCE_PURPOSE = "invited-registration-request-source:v1"
 _INVALID_CODE = "<invalid-registration-code>"
 _INVALID_LINK_TOKEN = "<invalid-registration-link-token>"
 _INVALID_GRANT_TOKEN = "<invalid-phone-registration-grant>"
@@ -180,6 +182,68 @@ def _link_token_digest(value: Any) -> str:
 
 def _grant_token_digest(value: Any) -> str:
     return _digest(_credential_text(value, purpose=_GRANT_PURPOSE), _GRANT_PURPOSE)
+
+
+def registration_idempotency_digest(value: str) -> str:
+    """Digest a bounded client retry key in a dedicated credential domain."""
+
+    return _digest(value, _IDEMPOTENCY_PURPOSE)
+
+
+def registration_source_hmac(value: Any) -> str | None:
+    """Return a bounded, purpose-separated request-source HMAC.
+
+    Source attribution is optional observability. Invalid input or key
+    unavailability must never change registration behavior.
+    """
+
+    if not isinstance(value, str):
+        return None
+    clean = value.strip()
+    if not clean or len(clean) > 256:
+        return None
+    try:
+        return _digest(clean, _SOURCE_PURPOSE)
+    except Exception:
+        return None
+
+
+def find_phone_registration_grant_for_update(
+    db: Session, token: Any
+) -> PhoneRegistrationGrant | None:
+    candidate = _grant_token_digest(token)
+    grant = (
+        db.query(PhoneRegistrationGrant)
+        .filter(PhoneRegistrationGrant.token_digest == candidate)
+        .with_for_update()
+        .one_or_none()
+    )
+    stored = grant.token_digest if grant is not None else _DUMMY_DIGEST
+    return grant if _constant_time_digest_match(candidate, stored) else None
+
+
+def find_invitation_for_update(
+    db: Session,
+    *,
+    manual_code: Any = None,
+    link_token: Any = None,
+) -> RegistrationInvitation | None:
+    if (manual_code is None) == (link_token is None):
+        return None
+    if manual_code is not None:
+        candidate = _manual_code_digest(manual_code)
+        column = RegistrationInvitation.code_digest
+    else:
+        candidate = _link_token_digest(link_token)
+        column = RegistrationInvitation.link_token_digest
+    invitation = (
+        db.query(RegistrationInvitation)
+        .filter(column == candidate)
+        .with_for_update()
+        .one_or_none()
+    )
+    stored = getattr(invitation, column.key) if invitation is not None else _DUMMY_DIGEST
+    return invitation if _constant_time_digest_match(candidate, stored) else None
 
 
 def _find_invitation_by_digest(

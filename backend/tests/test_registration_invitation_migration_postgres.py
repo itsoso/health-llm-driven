@@ -13,6 +13,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.models.registration_invitation import (
     PhoneRegistrationGrant,
+    RegistrationAuthAttemptAudit,
     RegistrationInvitation,
 )
 from app.models._encrypted import StrictEncryptedString, StrictEncryptionError
@@ -50,6 +51,10 @@ def test_registration_invitation_model_uses_only_encrypted_phone_and_digests():
     assert invitation_columns.code_digest.unique is True
     assert invitation_columns.link_token_digest.unique is True
     assert grant_columns.token_digest.unique is True
+    assert set(RegistrationAuthAttemptAudit.__table__.c.keys()) == {
+        "id", "outcome", "error_code", "invitation_id", "grant_id",
+        "user_id", "phone_masked", "source_hmac", "created_at",
+    }
 
 
 def test_registration_invitation_is_usable_is_deterministic():
@@ -205,7 +210,11 @@ def test_sqlite_managed_migration_creates_constraints_and_partial_uniqueness(tmp
 
     assert [item.id for item in first.applied] == [MIGRATION_ID]
     assert [item.id for item in replay.skipped] == [MIGRATION_ID]
-    assert {"registration_invitations", "phone_registration_grants"}.issubset(
+    assert {
+        "registration_invitations",
+        "phone_registration_grants",
+        "registration_auth_attempt_audits",
+    }.issubset(
         inspect(engine).get_table_names()
     )
     invitation_columns = {
@@ -214,6 +223,10 @@ def test_sqlite_managed_migration_creates_constraints_and_partial_uniqueness(tmp
     grant_columns = {
         item["name"] for item in inspect(engine).get_columns("phone_registration_grants")
     }
+    audit_columns = {
+        item["name"]
+        for item in inspect(engine).get_columns("registration_auth_attempt_audits")
+    }
     assert {
         "id", "code_digest", "link_token_digest", "phone_ciphertext",
         "phone_hmac", "phone_masked", "status", "expires_at",
@@ -221,8 +234,13 @@ def test_sqlite_managed_migration_creates_constraints_and_partial_uniqueness(tmp
     }.issubset(invitation_columns)
     assert {
         "id", "token_digest", "phone_hmac", "phone_ciphertext",
-        "expires_at", "consumed_at", "created_at",
+        "expires_at", "consumed_by", "idempotency_key_digest",
+        "consumed_at", "created_at",
     }.issubset(grant_columns)
+    assert {
+        "id", "outcome", "error_code", "invitation_id", "grant_id",
+        "user_id", "phone_masked", "source_hmac", "created_at",
+    } == audit_columns
     invitation_uniques = {
         tuple(item["column_names"])
         for item in inspect(engine).get_unique_constraints("registration_invitations")
@@ -313,6 +331,21 @@ def test_postgres_managed_migration_is_replay_safe_and_enforces_contract(tmp_pat
         }
         assert foreign_keys[("consumed_by",)]["options"]["ondelete"] == "SET NULL"
         assert foreign_keys[("created_by",)]["options"]["ondelete"] == "SET NULL"
+        grant_foreign_keys = {
+            tuple(item["constrained_columns"]): item
+            for item in inspect(migration_engine).get_foreign_keys(
+                "phone_registration_grants"
+            )
+        }
+        assert grant_foreign_keys[("consumed_by",)]["options"]["ondelete"] == "SET NULL"
+        audit_foreign_keys = {
+            tuple(item["constrained_columns"]): item
+            for item in inspect(migration_engine).get_foreign_keys(
+                "registration_auth_attempt_audits"
+            )
+        }
+        for constrained in (("invitation_id",), ("grant_id",), ("user_id",)):
+            assert audit_foreign_keys[constrained]["options"]["ondelete"] == "SET NULL"
     finally:
         if migration_engine is not None:
             migration_engine.dispose()

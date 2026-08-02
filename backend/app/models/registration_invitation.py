@@ -111,5 +111,50 @@ class PhoneRegistrationGrant(Base):
     phone_hmac = Column(String(128), nullable=False, index=True)
     phone_ciphertext = Column(StrictEncryptedString(512), nullable=False)
     expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    consumed_by = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    idempotency_key_digest = Column(String(128), nullable=True)
     consumed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class RegistrationAuthAttemptAudit(Base):
+    """PII-minimized terminal outcome for one invited-registration attempt."""
+
+    __tablename__ = "registration_auth_attempt_audits"
+
+    id = Column(_SQLITE_BIGINT, primary_key=True)
+    outcome = Column(String(16), nullable=False, index=True)
+    error_code = Column(String(64), nullable=True, index=True)
+    invitation_id = Column(
+        _SQLITE_BIGINT,
+        ForeignKey("registration_invitations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    grant_id = Column(
+        _SQLITE_BIGINT,
+        ForeignKey("phone_registration_grants.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    phone_masked = Column(String(32), nullable=True)
+    source_hmac = Column(String(128), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint(
+            "outcome IN ('success', 'rejected')",
+            name="ck_registration_auth_attempt_audits_outcome",
+        ),
+    )

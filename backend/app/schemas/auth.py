@@ -1,6 +1,6 @@
 """认证相关Schema"""
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
-from typing import Optional
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, model_validator
+from typing import Literal, Optional
 from datetime import datetime, date
 
 
@@ -77,6 +77,38 @@ class UserResponse(BaseModel):
     has_password: bool = False
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PhoneVerificationAuthenticated(PhoneLoginToken):
+    outcome: Literal["authenticated"] = "authenticated"
+
+
+class PhoneVerificationInvitationRequired(BaseModel):
+    outcome: Literal["invitation_required"] = "invitation_required"
+    verified_phone_ticket: str
+    expires_in_seconds: int
+
+
+class InvitationCredentialInput(BaseModel):
+    manual_code: Optional[SecretStr] = None
+    link_token: Optional[SecretStr] = None
+
+    @model_validator(mode="after")
+    def require_exactly_one_credential(self):
+        if (self.manual_code is None) == (self.link_token is None):
+            raise ValueError("exactly one invitation credential is required")
+        return self
+
+
+class InvitationInspectResponse(BaseModel):
+    valid: bool
+    phone_masked: Optional[str] = None
+    expires_at: Optional[datetime] = None
+
+
+class InvitedRegistrationInput(InvitationCredentialInput):
+    verified_phone_ticket: SecretStr
+    idempotency_key: SecretStr
 
 
 class UserUpdate(BaseModel):

@@ -146,6 +146,8 @@ def test_postgres_concurrent_grant_consumption_has_exactly_one_winner(monkeypatc
             TEST_DATABASE_URL,
             connect_args={"options": f"-csearch_path={schema}"},
         )
+        with isolated_engine.begin() as connection:
+            connection.execute(text("CREATE TABLE users (id SERIAL PRIMARY KEY)"))
         PhoneRegistrationGrant.__table__.create(isolated_engine)
         Session = sessionmaker(bind=isolated_engine, expire_on_commit=False)
         creator = Session()
