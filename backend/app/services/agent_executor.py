@@ -136,6 +136,44 @@ def _doctor_feedback_exact_sql(column: Any, value: str | None) -> Any:
     return column.is_(None) if value is None else column == value
 
 
+def _doctor_feedback_exact_candidate_ids(
+    db: Session,
+    *,
+    user_id: int,
+    summary: str | None,
+    assessment: str | None,
+    plan: str | None,
+    objective: str,
+) -> set[int]:
+    """Load only IDs for owner-scoped, provenance-safe exact SOAP matches."""
+    from app.models.clinical_journal import ClinicalJournalEntry
+
+    return {
+        int(candidate_id)
+        for (candidate_id,) in (
+            db.query(ClinicalJournalEntry.id)
+            .filter(
+                ClinicalJournalEntry.user_id == user_id,
+                ClinicalJournalEntry.created_by == "doctor",
+                _doctor_feedback_exact_sql(
+                    ClinicalJournalEntry.subjective,
+                    summary,
+                ),
+                _doctor_feedback_exact_sql(
+                    ClinicalJournalEntry.assessment,
+                    assessment,
+                ),
+                _doctor_feedback_exact_sql(
+                    ClinicalJournalEntry.plan,
+                    plan,
+                ),
+                ClinicalJournalEntry.objective == objective,
+            )
+            .all()
+        )
+    }
+
+
 def _sha12(text: str) -> str:
     """sha256 的前 12 hex (可观测性用短指纹, 非安全哈希)。"""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
@@ -19432,6 +19470,7 @@ class AgentExecutor:
         from app.models.clinical_journal import ClinicalJournalEntry
         from sqlalchemy import func
 
+        expected_objective = f"医生随访 @ {visit_date.isoformat()}"
         try:
             # A returned ID above this global high-water mark proves that the
             # resource did not exist before dispatch, while permitting other
@@ -19440,6 +19479,14 @@ class AgentExecutor:
                 func.max(ClinicalJournalEntry.id)
             ).scalar()
             pre_global_max_id = int(pre_global_max_id or 0)
+            pre_exact_ids = _doctor_feedback_exact_candidate_ids(
+                self.db,
+                user_id=user_id,
+                summary=normalized["summary"],
+                assessment=normalized["assessment"],
+                plan=normalized["plan"],
+                objective=expected_objective,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.error(
                 "operation=record_doctor_feedback snapshot_error_type=%s",
@@ -19485,35 +19532,17 @@ class AgentExecutor:
             ):
                 raise RuntimeError("invalid_doctor_feedback_receipt")
 
-            expected_objective = f"医生随访 @ {visit_date.isoformat()}"
             # Freshness alone cannot attribute the write when the service (or a
             # concurrent writer) creates two indistinguishable matching rows.
-            candidate_ids = [
-                candidate_id
-                for (candidate_id,) in (
-                    self.db.query(ClinicalJournalEntry.id)
-                    .filter(
-                        ClinicalJournalEntry.id > pre_global_max_id,
-                        ClinicalJournalEntry.user_id == user_id,
-                        ClinicalJournalEntry.created_by == "doctor",
-                        _doctor_feedback_exact_sql(
-                            ClinicalJournalEntry.subjective,
-                            normalized["summary"],
-                        ),
-                        _doctor_feedback_exact_sql(
-                            ClinicalJournalEntry.assessment,
-                            normalized["assessment"],
-                        ),
-                        _doctor_feedback_exact_sql(
-                            ClinicalJournalEntry.plan,
-                            normalized["plan"],
-                        ),
-                        ClinicalJournalEntry.objective == expected_objective,
-                    )
-                    .all()
-                )
-            ]
-            if len(candidate_ids) != 1 or candidate_ids[0] != entry_id:
+            post_exact_ids = _doctor_feedback_exact_candidate_ids(
+                self.db,
+                user_id=user_id,
+                summary=normalized["summary"],
+                assessment=normalized["assessment"],
+                plan=normalized["plan"],
+                objective=expected_objective,
+            )
+            if post_exact_ids - pre_exact_ids != {entry_id}:
                 raise RuntimeError("ambiguous_doctor_feedback_persistence")
 
             persisted = (

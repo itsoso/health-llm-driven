@@ -1459,6 +1459,199 @@ async def test_doctor_feedback_runtime_rejects_ambiguous_fresh_exact_duplicates(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("returned_row", ("requested", "low_id_duplicate"))
+async def test_doctor_feedback_runtime_rejects_fresh_exact_low_id_duplicate(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    returned_row,
+):
+    from app.models.agent_runtime import AgentToolOperation
+    from app.models.clinical_journal import ClinicalJournalEntry
+    from app.services import doctor_report_service
+    from app.services.agent_executor import _write_receipt_from_tool_result
+
+    user, _headers = auth_user_and_headers
+    db.add(
+        ClinicalJournalEntry(
+            id=100,
+            user_id=user.id,
+            assessment="用于建立全局高水位的不相关记录",
+            created_by="doctor",
+        )
+    )
+    db.commit()
+    real_record = doctor_report_service.record_doctor_feedback
+    requested_id = None
+
+    def record_with_low_id_exact_duplicate(db_session, **kwargs):
+        nonlocal requested_id
+        requested = real_record(db_session, **kwargs)
+        requested_id = requested.id
+        low_id_duplicate = ClinicalJournalEntry(
+            id=50,
+            user_id=kwargs["user_id"],
+            subjective=kwargs["summary"],
+            objective=f"医生随访 @ {kwargs['visit_date'].isoformat()}",
+            assessment=kwargs["assessment"],
+            plan=kwargs["plan"],
+            created_by="doctor",
+        )
+        db_session.add(low_id_duplicate)
+        db_session.commit()
+        db_session.refresh(low_id_duplicate)
+        return requested if returned_row == "requested" else low_id_duplicate
+
+    monkeypatch.setattr(
+        doctor_report_service,
+        "record_doctor_feedback",
+        record_with_low_id_exact_duplicate,
+    )
+    executor = _managed_doctor_feedback_executor(
+        db,
+        user_id=user.id,
+        run_suffix=f"low-id-exact-{returned_row}",
+    )
+    args = {
+        "summary": "低 ID 重复摘要",
+        "assessment": "低 ID 重复评估",
+        "plan": "低 ID 重复计划",
+        "visit_date": "2026-08-01",
+    }
+
+    result = await executor._execute_tool("record_doctor_feedback", args, None)
+
+    _assert_uncertain_write(result)
+    assert _write_receipt_from_tool_result(
+        "record_doctor_feedback", args, result
+    ) is None
+    rows = db.query(ClinicalJournalEntry).all()
+    operation = db.query(AgentToolOperation).one()
+    assert requested_id == 101
+    assert {row.id for row in rows} == {50, 100, 101}
+    assert operation.status == "reconciliation_required"
+    assert operation.error_code == "write_uncertain"
+    assert operation.resource_id is None
+
+
+@pytest.mark.asyncio
+async def test_doctor_feedback_historical_exact_row_does_not_make_new_write_ambiguous(
+    db,
+    auth_user_and_headers,
+):
+    from app.models.agent_runtime import AgentToolOperation
+    from app.models.clinical_journal import ClinicalJournalEntry
+    from app.services.agent_executor import _write_receipt_from_tool_result
+
+    user, _headers = auth_user_and_headers
+    args = {
+        "summary": "历史和当前相同的摘要",
+        "assessment": "历史和当前相同的评估",
+        "plan": "历史和当前相同的计划",
+        "visit_date": "2026-08-01",
+    }
+    historical = ClinicalJournalEntry(
+        user_id=user.id,
+        subjective=args["summary"],
+        objective="医生随访 @ 2026-08-01",
+        assessment=args["assessment"],
+        plan=args["plan"],
+        created_by="doctor",
+    )
+    db.add(historical)
+    db.commit()
+    historical_id = historical.id
+    executor = _managed_doctor_feedback_executor(
+        db,
+        user_id=user.id,
+        run_suffix="historical-exact-new-write",
+    )
+
+    result = await executor._execute_tool("record_doctor_feedback", args, None)
+
+    payload = json.loads(result)
+    receipt = _write_receipt_from_tool_result(
+        "record_doctor_feedback", args, result
+    )
+    rows = db.query(ClinicalJournalEntry).all()
+    operation = db.query(AgentToolOperation).one()
+    assert len(rows) == 2
+    assert payload["id"] != historical_id
+    assert receipt is not None
+    assert receipt["status"] == "verified"
+    assert receipt["resource_id"] == str(payload["id"])
+    assert operation.status == "succeeded"
+    assert operation.resource_id == str(payload["id"])
+
+
+@pytest.mark.asyncio
+async def test_doctor_feedback_scope_move_plus_new_write_is_ambiguous(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.models.agent_runtime import AgentToolOperation
+    from app.models.clinical_journal import ClinicalJournalEntry
+    from app.services import doctor_report_service
+    from app.services.agent_executor import _write_receipt_from_tool_result
+
+    user, _headers = auth_user_and_headers
+    old = ClinicalJournalEntry(
+        user_id=user.id,
+        assessment="移动前的旧评估",
+        created_by="orchestrator",
+    )
+    db.add(old)
+    db.commit()
+    old_id = old.id
+    real_record = doctor_report_service.record_doctor_feedback
+    requested_id = None
+
+    def record_new_then_move_old_into_scope(db_session, **kwargs):
+        nonlocal requested_id
+        requested = real_record(db_session, **kwargs)
+        requested_id = requested.id
+        old.created_by = "doctor"
+        old.subjective = kwargs["summary"]
+        old.objective = f"医生随访 @ {kwargs['visit_date'].isoformat()}"
+        old.assessment = kwargs["assessment"]
+        old.plan = kwargs["plan"]
+        db_session.commit()
+        return requested
+
+    monkeypatch.setattr(
+        doctor_report_service,
+        "record_doctor_feedback",
+        record_new_then_move_old_into_scope,
+    )
+    executor = _managed_doctor_feedback_executor(
+        db,
+        user_id=user.id,
+        run_suffix="scope-move-plus-new",
+    )
+    args = {
+        "summary": "移动后相同摘要",
+        "assessment": "移动后相同评估",
+        "plan": "移动后相同计划",
+        "visit_date": "2026-08-01",
+    }
+
+    result = await executor._execute_tool("record_doctor_feedback", args, None)
+
+    _assert_uncertain_write(result)
+    assert _write_receipt_from_tool_result(
+        "record_doctor_feedback", args, result
+    ) is None
+    rows = db.query(ClinicalJournalEntry).all()
+    operation = db.query(AgentToolOperation).one()
+    assert requested_id is not None
+    assert {row.id for row in rows} == {old_id, requested_id}
+    assert operation.status == "reconciliation_required"
+    assert operation.error_code == "write_uncertain"
+    assert operation.resource_id is None
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "mutation_kind",
     ("current_orchestrator", "other_owner_doctor"),
@@ -1548,11 +1741,13 @@ async def test_doctor_feedback_runtime_rejects_mutated_preexisting_row(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("failure_call", (1, 2))
 async def test_doctor_feedback_prewrite_snapshot_failure_is_non_dispatched_and_log_safe(
     db,
     auth_user_and_headers,
     monkeypatch,
     caplog,
+    failure_call,
 ):
     from app.services import doctor_report_service
     from app.services.agent_executor import AgentExecutor
@@ -1561,7 +1756,17 @@ async def test_doctor_feedback_prewrite_snapshot_failure_is_non_dispatched_and_l
     private_text = "私密快照异常内容"
     record = Mock(side_effect=AssertionError("service must not run"))
     monkeypatch.setattr(doctor_report_service, "record_doctor_feedback", record)
-    monkeypatch.setattr(db, "query", Mock(side_effect=RuntimeError(private_text)))
+    original_query = db.query
+    query_calls = 0
+
+    def fail_selected_prewrite_query(*entities, **kwargs):
+        nonlocal query_calls
+        query_calls += 1
+        if query_calls == failure_call:
+            raise RuntimeError(private_text)
+        return original_query(*entities, **kwargs)
+
+    monkeypatch.setattr(db, "query", fail_selected_prewrite_query)
     executor = AgentExecutor(db)
     executor._current_user_id = user.id
     caplog.set_level(logging.ERROR, logger="app.services.agent_executor")
@@ -1596,14 +1801,14 @@ async def test_doctor_feedback_postwrite_snapshot_failure_is_uncertain(
     original_query = db.query
     query_calls = 0
 
-    def fail_second_query(*entities, **kwargs):
+    def fail_postwrite_query(*entities, **kwargs):
         nonlocal query_calls
         query_calls += 1
-        if query_calls > 1:
+        if query_calls > 2:
             raise RuntimeError(private_text)
         return original_query(*entities, **kwargs)
 
-    monkeypatch.setattr(db, "query", fail_second_query)
+    monkeypatch.setattr(db, "query", fail_postwrite_query)
     executor = AgentExecutor(db)
     executor._current_user_id = user.id
     caplog.set_level(logging.ERROR, logger="app.services.agent_executor")
