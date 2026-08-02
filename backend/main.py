@@ -16,7 +16,6 @@ from app.api.main import api_router
 from app.scheduler import start_scheduler
 from app.utils.logging_config import setup_beijing_logging
 from app.config import settings
-from app.services.garmin_cffi_patch import patch_garth_with_cffi
 from app.middleware.request_body_limit import RequestBodyLimitMiddleware
 import app.models.smart_reminder  # noqa: F401 - ensure table creation
 import app.models.interaction_feedback  # noqa: F401 - Agent 反馈系统
@@ -58,9 +57,6 @@ if settings.sentry_dsn:
         _experiments={"continuous_profiling_auto_start": False},
     )
     logger.info(f"[Sentry] 错误监控已启用，环境={settings.sentry_environment}")
-
-# Patch garth 使用 Chrome TLS 指纹（绕过 Cloudflare bot 检测）
-patch_garth_with_cffi()
 
 # 创建数据库表(SKIP_DB_INIT=1 时跳过 —— 供 OpenAPI dump / 纯 import 用,不连 DB,
 # 也让 type-drift CI 能在无 DB 的 runner 上 dump app.openapi())

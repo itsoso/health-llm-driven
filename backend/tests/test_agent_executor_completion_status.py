@@ -57,6 +57,19 @@ def _stream_from(fake_call_llm):
     return fake_call_llm_stream
 
 
+async def _no_simple_diet_nutrition_estimate(_food_items):
+    return None
+
+
+@pytest.fixture(autouse=True)
+def _isolate_simple_diet_nutrition_estimator(monkeypatch):
+    """Unit tests must never reach the configured external nutrition model."""
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        _no_simple_diet_nutrition_estimate,
+    )
+
+
 def test_completion_status_marks_length_finish_reason_as_interrupted():
     assert _completion_status_from_finish_reason("length") == "interrupted"
 
@@ -1385,7 +1398,161 @@ async def test_agent_stream_finishes_pure_record_turn_from_tool_result(db, auth_
     # 食材名/宏量由结构化卡承载,不再复述进文本(founder 截图的多段墙已收敛)。
     assert "已记录晚餐。" in rendered
     assert "牛肉饭" not in rendered  # 食材不再进文本
+    tool_result = next(
+        event["data"] for event in events if event.get("event") == "tool_result"
+    )
+    assert tool_result["write_outcome"] == "verified"
+    assert tool_result["dispatch_started"] is True
+    assert tool_result["resubmit_safe"] is False
+    assert tool_result["error_code"] is None
     assert events[-1]["event"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_marks_missing_write_receipt_non_retryable(
+    db, auth_user_and_headers
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+
+    async def fake_call_llm(messages, tools):
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": "call_uncertain_water",
+                "type": "function",
+                "function": {
+                    "name": "health_record",
+                    "arguments": json.dumps({
+                        "record_type": "water",
+                        "data": {"amount": 1200},
+                    }),
+                },
+            }],
+        }
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        assert tool_name == "health_record"
+        return json.dumps({
+            "status": "uncertain",
+            "error_code": "missing_receipt",
+            "dispatch_started": True,
+        })
+
+    executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录喝水 1200 毫升",
+            user_auth_token="test-token",
+        )
+    ]
+
+    tool_result = next(
+        event["data"] for event in events if event.get("event") == "tool_result"
+    )
+    assert tool_result["write_outcome"] == "uncertain"
+    assert tool_result["dispatch_started"] is True
+    assert tool_result["resubmit_safe"] is False
+    assert tool_result["error_code"] == "missing_receipt"
+
+    done = next(event["data"] for event in events if event.get("event") == "done")
+    assert done["turn_outcome"]["category"] == "write_reconciliation_required"
+    assert done["turn_outcome"]["reason_code"] == "missing_receipt"
+    assert done["turn_outcome"]["retryable"] is False
+    assert "recovery_action" not in done
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_runtime_control_block_is_one_attempt_terminal(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    dispatched = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{
+                    "id": "call_blocked_peach",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "diet",
+                            "data": {
+                                "meal_type": "snack",
+                                "food_items": "一个桃子",
+                                "calories": 60,
+                                "protein": 1,
+                                "carbs": 15,
+                                "fat": 0.2,
+                                "fiber": 2,
+                            },
+                        }, ensure_ascii=False),
+                    },
+                }],
+            }
+        return {
+            "content": "请补充要记录的类型和值。",
+            "finish_reason": "stop",
+        }
+
+    async def fail_if_dispatched(request, user_token):
+        dispatched.append((request, user_token))
+        raise AssertionError("pre-dispatch Runtime block must not reach adapter")
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_dispatch_tool_request", fail_if_dispatched)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录加餐，我吃了一个桃子",
+            user_auth_token="test-token",
+            runtime_write_block_reason="circuit_paused",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    tool_results = [
+        event["data"] for event in events if event.get("event") == "tool_result"
+    ]
+    done = next(event["data"] for event in events if event.get("event") == "done")
+
+    assert llm_calls == 1
+    assert dispatched == []
+    assert len(tool_results) == 1
+    assert tool_results[0]["tool"] == "health_record"
+    assert tool_results[0]["write_outcome"] == "failed"
+    assert tool_results[0]["dispatch_started"] is False
+    assert tool_results[0]["error_code"] == "runtime_control_unavailable"
+    assert "保护性暂停" in rendered
+    assert "这次没有写入" in rendered
+    assert "补充要记录" not in rendered
+    assert done["completion_status"] == "error"
+    assert done["record_intent_no_tool"] is False
+    assert done["turn_outcome"]["category"] == "service_unavailable"
+    assert done["turn_outcome"]["reason_code"] == "runtime_control_unavailable"
+    assert done["turn_outcome"]["retryable"] is False
+    assert "recovery_action" not in done
 
 
 @pytest.mark.asyncio
@@ -2682,6 +2849,103 @@ async def test_agent_stream_saves_explicit_text_diet_when_model_omits_tool_call(
 
 
 @pytest.mark.asyncio
+async def test_agent_stream_enriches_anchor_peach_before_single_dispatch(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    dispatched = []
+    llm_calls = 0
+    estimate_calls = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{
+                    "id": "peach-without-nutrition",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "diet",
+                            "data": {
+                                "meal_type": "snack",
+                                "food_items": "一个桃子",
+                            },
+                        }, ensure_ascii=False),
+                    },
+                }],
+            }
+        return {
+            "content": "已记录加餐。",
+            "finish_reason": "stop",
+        }
+
+    async def fake_estimate(food_items):
+        estimate_calls.append(food_items)
+        return {
+            "calories": 58,
+            "protein": 1.4,
+            "carbs": 14,
+            "fat": 0.4,
+            "fiber": 2.3,
+        }
+
+    async def fake_dispatch(request, user_token):
+        dispatched.append((request.tool_name, request.arguments, user_token))
+        return json.dumps(
+            {
+                "id": 110,
+                "meal_type": request.arguments["data"]["meal_type"],
+                "food_items": request.arguments["data"]["food_items"],
+                "calories": request.arguments["data"]["calories"],
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        fake_estimate,
+    )
+    monkeypatch.setattr(executor, "_dispatch_tool_request", fake_dispatch)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录吃了一个桃子",
+            user_auth_token="test-token",
+            client_turn_id="turn-anchor-peach-enrichment",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert estimate_calls == ["一个桃子"]
+    assert len(dispatched) == 1
+    dispatched_data = dispatched[0][1]["data"]
+    assert dispatched_data["food_items"] == "一个桃子"
+    assert dispatched_data["calories"] == 58
+    assert dispatched_data["protein"] == 1.4
+    assert dispatched_data["carbs"] == 14
+    assert dispatched_data["fat"] == 0.4
+    assert dispatched_data["fiber"] == 2.3
+    assert "已记录" in rendered
+    assert "这次没有写入" not in rendered
+    assert done["data"]["completion_status"] == "complete"
+    assert done["data"]["write_receipts"][0]["resource_type"] == "diet_record"
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_reports_nutrition_rejection_instead_of_model_success_text(
     db, auth_user_and_headers, monkeypatch
 ):
@@ -2699,6 +2963,10 @@ async def test_agent_stream_reports_nutrition_rejection_instead_of_model_success
 
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        _no_simple_diet_nutrition_estimate,
+    )
     monkeypatch.setattr(executor, "_dispatch_tool_request", fail_if_dispatched)
 
     events = [
@@ -2757,6 +3025,10 @@ async def test_agent_stream_reports_last_nutrition_error_when_all_rounds_reject(
 
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        _no_simple_diet_nutrition_estimate,
+    )
 
     events = [
         event
@@ -3101,6 +3373,10 @@ async def test_agent_stream_repaired_diet_name_clears_older_scope_rejection(
 
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        _no_simple_diet_nutrition_estimate,
+    )
     monkeypatch.setattr(executor, "_dispatch_tool_request", fake_dispatch)
     monkeypatch.setattr(
         "app.services.agent_executor._post_record_quality_response",

@@ -203,7 +203,7 @@ const styles = StyleSheet.create({
     ...revaShadows.sm,
   },
   triggerHeader: {
-    minHeight: 36,
+    minHeight: 44,
     paddingHorizontal: 0,
     paddingVertical: 0,
     borderRadius: 0,
@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
 });
 
 const txt = {
-  headerTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 23, fontWeight: '800', lineHeight: 29 } as TextStyle,
+  headerTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 28, fontWeight: '800', lineHeight: 34 } as TextStyle,
   triggerTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 15, fontWeight: '700' } as TextStyle,
   triggerModel: { fontFamily: revaFonts.sans, color: C.ink3, fontSize: 13, flexShrink: 1 } as TextStyle,
   sheetTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 17, fontWeight: '700' } as TextStyle,

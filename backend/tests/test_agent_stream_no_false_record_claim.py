@@ -27,7 +27,9 @@ update/delete 算写)后出现。无回执 → fall through 合成轮,让模型�
   - 真写入回合 → 仍正常"已记录…"确认,不被过度抑制(test 3 正向控制)。
 """
 import json
+from datetime import datetime
 from unittest.mock import AsyncMock
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -280,7 +282,11 @@ async def test_water_record_without_model_tool_call_uses_one_deterministic_write
         "health_record",
         {
             "record_type": "water",
-            "data": {"amount": 500, "confirmed": True},
+            "data": {
+                "amount": 500,
+                "record_date": executor._agent_kernel_reference_now().date().isoformat(),
+                "confirmed": True,
+            },
             "confirmed": True,
         },
     )]
@@ -292,7 +298,78 @@ async def test_water_record_without_model_tool_call_uses_one_deterministic_write
         "resource_id": "801",
         "completed_at": done["data"]["write_receipts"][0]["completed_at"],
         "verified": True,
+        "date": executor._agent_kernel_reference_now().date().isoformat(),
     }]
+
+
+async def test_historical_water_supplement_uses_one_date_bound_write(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_kernel.context import build_turn_snapshot
+
+    def build_fixed_turn_snapshot(*args, **kwargs):
+        kwargs["now_utc"] = datetime(
+            2026, 7, 17, 1, 57, tzinfo=ZoneInfo("UTC")
+        )
+        return build_turn_snapshot(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.build_turn_snapshot",
+        build_fixed_turn_snapshot,
+    )
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executor._agent_kernel_reference_now = lambda: datetime(
+        2026, 7, 17, 9, 57, tzinfo=ZoneInfo("Asia/Shanghai")
+    )
+    calls = []
+
+    async def fake_call_llm_stream(messages, tools):
+        for ch in "好的，已经补充记录。":
+            yield {"type": "content", "text": ch}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+        calls.append((tool_name, args))
+        return json.dumps(
+            {
+                "id": 805,
+                "record_id": 805,
+                "resource_type": "water_record",
+                "record_date": "2026-07-16",
+                "status": "verified",
+                "success": True,
+                "message": "已补充记录 2026-07-16 饮水 1200ml",
+            },
+            ensure_ascii=False,
+        )
+
+    executor._call_llm_stream = fake_call_llm_stream
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event async for event in executor.run_stream(
+            user_id=user.id,
+            message="昨天喝水很多 补充记录 1200 毫升",
+            user_auth_token="test-token",
+        )
+    ]
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert calls == [(
+        "health_record",
+        {
+            "record_type": "water",
+            "data": {
+                "amount": 1200,
+                "record_date": "2026-07-16",
+                "confirmed": True,
+            },
+            "confirmed": True,
+        },
+    )]
+    assert done["data"]["write_receipts"][0]["date"] == "2026-07-16"
 
 
 async def test_water_goal_canonicalizes_wrong_duplicate_model_writes(
@@ -369,7 +446,11 @@ async def test_water_goal_canonicalizes_wrong_duplicate_model_writes(
         "health_record",
         {
             "record_type": "water",
-            "data": {"amount": 500, "confirmed": True},
+            "data": {
+                "amount": 500,
+                "record_date": executor._agent_kernel_reference_now().date().isoformat(),
+                "confirmed": True,
+            },
             "confirmed": True,
         },
     )]

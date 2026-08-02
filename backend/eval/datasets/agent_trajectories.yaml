@@ -196,16 +196,18 @@ cases:
     prior_actionable: []
     user: "记录刚才吃了一个水蜜桃"
     expected:
-      goal_kind: write
+      goal_kind: simple_health_record
       domain: diet
       operation: create
       target_date: "2026-07-17"
-      target_meal_types: []
-      target_record_type:
-      target_values: {}
+      target_meal_types: [lunch]
+      target_record_type: diet
+      target_values:
+        meal_type: lunch
+        food_items: 一个水蜜桃
       requires_lookup: false
-      requires_verification: false
-      prohibited_operations: []
+      requires_verification: true
+      prohibited_operations: [update, delete]
       clarification: false
 
   - id: symptom_record_explicit_observation

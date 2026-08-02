@@ -54,11 +54,11 @@ describe('agentTurnState', () => {
     });
   });
 
-  it('fails closed when a write tool succeeds without a verified receipt', () => {
+  it('waits for the authoritative done event when a write lacks a receipt', () => {
     const submitted = reduceAgentTurn(createIdleAgentTurn(), {
       type: 'submit', turnId: 'turn-unverified', at: 10,
     });
-    const failed = reduceAgentTurn(submitted, {
+    const verifying = reduceAgentTurn(submitted, {
       type: 'tool_finished',
       toolName: 'health_record',
       writes: true,
@@ -67,10 +67,10 @@ describe('agentTurnState', () => {
       at: 30,
     });
 
-    expect(failed).toMatchObject({
-      phase: 'failed',
+    expect(verifying).toMatchObject({
+      phase: 'verifying',
       errorCode: 'write_receipt_missing_identity',
-      recoverable: true,
+      recoverable: false,
       writeVerified: false,
     });
   });
@@ -115,7 +115,63 @@ describe('agentTurnState', () => {
       messageId: 9,
       hadWrite: true,
       errorCode: 'write_receipt_missing_identity',
+      recoverable: false,
+    });
+  });
+
+  it('keeps an uncertain write nonterminal and applies a nonretryable final verdict', () => {
+    const submitted = reduceAgentTurn(createIdleAgentTurn(), {
+      type: 'submit', turnId: 'turn-uncertain', at: 10,
+    });
+    const verifying = reduceAgentTurn(submitted, {
+      type: 'tool_finished',
+      toolName: 'health_record',
+      writes: true,
+      success: false,
+      receiptVerified: false,
+      errorCode: 'missing_receipt',
+      at: 20,
+    });
+    const failed = reduceAgentTurn(verifying, {
+      type: 'done',
+      completionStatus: 'error',
+      retryable: false,
+      errorCode: 'missing_receipt',
+      messageId: 10,
+      at: 30,
+    });
+
+    expect(verifying).toMatchObject({
+      phase: 'verifying',
+      recoverable: false,
+      errorCode: 'missing_receipt',
+    });
+    expect(failed).toMatchObject({
+      phase: 'failed',
+      recoverable: false,
+      errorCode: 'missing_receipt',
+      messageId: 10,
+    });
+  });
+
+  it('exposes retry_source only when the authoritative done event allows it', () => {
+    const submitted = reduceAgentTurn(createIdleAgentTurn(), {
+      type: 'submit', turnId: 'turn-safe-retry', at: 10,
+    });
+    const failed = reduceAgentTurn(submitted, {
+      type: 'done',
+      completionStatus: 'error',
+      retryable: true,
+      retryMode: 'retry_source',
+      errorCode: 'write_without_tool',
+      at: 20,
+    });
+
+    expect(failed).toMatchObject({
+      phase: 'failed',
       recoverable: true,
+      retryMode: 'retry_source',
+      errorCode: 'write_without_tool',
     });
   });
 
@@ -143,6 +199,28 @@ describe('agentTurnState', () => {
     });
   });
 
+  it('keeps accepted transport recovery without granting a resubmit action', () => {
+    const submitted = reduceAgentTurn(createIdleAgentTurn(), {
+      type: 'submit', turnId: 'turn-accepted-loss', at: 10,
+    });
+    const accepted = reduceAgentTurn(submitted, {
+      type: 'accepted', conversationId: 8, at: 15,
+    });
+    const interrupted = reduceAgentTurn(accepted, {
+      type: 'interrupt',
+      at: 20,
+      errorCode: 'stream_transport_interrupted',
+      recoverable: true,
+    });
+
+    expect(interrupted).toMatchObject({
+      phase: 'interrupted',
+      recoverable: true,
+      conversationId: 8,
+    });
+    expect(interrupted.retryMode).toBeUndefined();
+  });
+
   it('hydrates verified write state from authoritative recovery metadata', () => {
     const interrupted = {
       ...reduceAgentTurn(createIdleAgentTurn(), {
@@ -166,6 +244,27 @@ describe('agentTurnState', () => {
       hadWrite: true,
       writeVerified: true,
       recoverable: false,
+    });
+  });
+
+  it('does not make a recovered server failure retryable without an explicit action', () => {
+    const interrupted = reduceAgentTurn(
+      reduceAgentTurn(createIdleAgentTurn(), {
+        type: 'submit', turnId: 'turn-recovered-failure', at: 10,
+      }),
+      { type: 'interrupt', at: 20 },
+    );
+    const failed = reduceAgentTurn(interrupted, {
+      type: 'recover',
+      serverStatus: 'failed',
+      errorCode: 'missing_receipt',
+      at: 30,
+    });
+
+    expect(failed).toMatchObject({
+      phase: 'failed',
+      recoverable: false,
+      errorCode: 'missing_receipt',
     });
   });
 
@@ -203,7 +302,7 @@ describe('agentTurnState', () => {
     expect(isAgentTurnTerminal(lateStatus)).toBe(true);
   });
 
-  it('maps an interrupted done event to an interrupted terminal state', () => {
+  it('maps an interrupted done event to a nonretryable terminal state by default', () => {
     const submitted = reduceAgentTurn(createIdleAgentTurn(), {
       type: 'submit', turnId: 'turn-cutoff', at: 10,
     });
@@ -215,7 +314,7 @@ describe('agentTurnState', () => {
       phase: 'interrupted',
       messageId: 11,
       errorCode: 'stream_interrupted',
-      recoverable: true,
+      recoverable: false,
     });
     expect(isAgentTurnTerminal(interrupted)).toBe(true);
   });

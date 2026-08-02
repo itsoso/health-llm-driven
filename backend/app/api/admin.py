@@ -780,7 +780,9 @@ async def get_all_users_sync_status(
                 lock_remaining_minutes = int((locked_until - now).total_seconds() / 60) + 1
 
         # Token 缓存状态
-        has_cached_token = bool(cred.garth_session) if hasattr(cred, 'garth_session') else False
+        from app.services.data_collection.garmin_native_auth import has_native_token_store
+
+        has_cached_token = has_native_token_store(getattr(cred, 'garth_session', None))
         token_expires_at = cred.session_expires_at.isoformat() if hasattr(cred, 'session_expires_at') and cred.session_expires_at else None
 
         # 同步锁状态

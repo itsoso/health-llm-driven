@@ -2787,6 +2787,20 @@ def _unverified_write_message(verified_receipts: Optional[List[Dict[str, Any]]] 
     )
 
 
+def _runtime_control_unavailable_message(
+    verified_receipts: Optional[List[Dict[str, Any]]] = None,
+) -> str:
+    """Explain a proven pre-dispatch control block without model reinterpretation."""
+    blocked = (
+        "记录服务当前处于保护性暂停状态，这次没有写入，"
+        "也没有发送到数据服务。系统正在核对写入链路状态；"
+        "服务恢复后，请重新提交这条记录。"
+    )
+    if not verified_receipts:
+        return blocked
+    return f"本轮已有 {len(verified_receipts)} 项记录取得写入回执。\n\n{blocked}"
+
+
 class _UnverifiedWriteResult(RuntimeError):
     pass
 
@@ -3089,6 +3103,23 @@ def _write_checkpoint_status_after_dispatch(
 ) -> str:
     """Return the durable status from the structured write outcome."""
     return classify_write_execution(result, receipt=receipt).status
+
+
+def _write_outcome_event_fields(
+    result: Any,
+    receipt: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Expose the write state machine without asking clients to parse prose."""
+    outcome = classify_write_execution(result, receipt=receipt)
+    return {
+        "write_outcome": outcome.status,
+        "dispatch_started": outcome.dispatch_started,
+        "resubmit_safe": bool(
+            outcome.dispatch_started is False
+            and outcome.status in {"rejected", "failed"}
+        ),
+        "error_code": outcome.error_code,
+    }
 
 
 def _write_operation_fingerprint(
@@ -6257,13 +6288,19 @@ def _simple_record_goal_arguments(
     if goal.target_record_type == "water":
         try:
             amount_ml = int(values["amount_ml"])
+            canonical_date = date.fromisoformat(
+                str(goal.target_date or "").strip()
+            ).isoformat()
         except (KeyError, TypeError, ValueError):
             return None
         if not 1 <= amount_ml <= 5000:
             return None
         return {
             "record_type": "water",
-            "data": {"amount": amount_ml},
+            "data": {
+                "amount": amount_ml,
+                "record_date": canonical_date,
+            },
         }
     if goal.target_record_type == "symptom":
         body_part = str(values.get("body_part") or "").strip()
@@ -6569,6 +6606,225 @@ def _merge_equivalent_diet_model_estimates(
         "record_type": "diet",
         "data": merged_data,
     }
+
+
+_SIMPLE_DIET_NUTRITION_FIELDS = (
+    "calories",
+    "protein",
+    "carbs",
+    "fat",
+    "fiber",
+)
+_SIMPLE_DIET_NUTRITION_LIMITS = {
+    "calories": 5000.0,
+    "protein": 1000.0,
+    "carbs": 1000.0,
+    "fat": 500.0,
+    "fiber": 200.0,
+}
+
+
+def _simple_diet_nutrition_is_complete(data: Mapping[str, Any]) -> bool:
+    values: dict[str, float] = {}
+    for field in _SIMPLE_DIET_NUTRITION_FIELDS:
+        raw = data.get(field)
+        if isinstance(raw, bool):
+            return False
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return False
+        if (
+            not math.isfinite(value)
+            or value < 0
+            or value > _SIMPLE_DIET_NUTRITION_LIMITS[field]
+        ):
+            return False
+        values[field] = value
+    try:
+        alcohol_units = float(data.get("alcohol_units") or 0)
+    except (TypeError, ValueError):
+        alcohol_units = 0.0
+    has_alcohol_energy = math.isfinite(alcohol_units) and alcohol_units > 0
+    return bool(
+        values["calories"] > 0
+        and (
+            any(values[field] > 0 for field in ("protein", "carbs", "fat"))
+            or has_alcohol_energy
+        )
+    )
+
+
+async def _estimate_simple_diet_nutrition(
+    food_items: str,
+) -> Optional[Dict[str, float]]:
+    """Return bounded totals from the existing text-nutrition estimator.
+
+    The estimate is numeric enrichment only.  The caller keeps the user's
+    canonical meal/date/food text and still sends the resulting payload through
+    the normal validator, ToolGateway, write checkpoint, and receipt boundary.
+    """
+    try:
+        from app.services.ai.food_recognition import (
+            food_recognition_service,
+            sanitize_food_recognition_result,
+        )
+
+        raw = await asyncio.to_thread(
+            food_recognition_service.estimate_nutrition_from_text,
+            food_items,
+        )
+        sanitized = sanitize_food_recognition_result(raw)
+    except Exception as exc:  # noqa: BLE001 - fail closed at the write validator
+        logger.warning(
+            "[agent_executor] simple diet nutrition estimation failed "
+            "error_type=%s",
+            type(exc).__name__,
+        )
+        return None
+
+    mapping = {
+        "calories": "total_calories",
+        "protein": "total_protein",
+        "carbs": "total_carbs",
+        "fat": "total_fat",
+        "fiber": "total_fiber",
+    }
+    estimate = {
+        field: sanitized.get(total_field)
+        for field, total_field in mapping.items()
+    }
+    if not sanitized.get("success") or not _simple_diet_nutrition_is_complete(
+        estimate
+    ):
+        logger.warning(
+            "[agent_executor] simple diet nutrition estimator returned "
+            "an incomplete bounded result"
+        )
+        return None
+    return {
+        field: float(estimate[field])
+        for field in _SIMPLE_DIET_NUTRITION_FIELDS
+    }
+
+
+async def _enrich_simple_diet_goal_tool_calls(
+    tool_calls: List[Dict[str, Any]],
+    goal: Optional[GoalSpec],
+    *,
+    estimation_attempted: bool,
+    runtime_write_blocked: bool,
+) -> tuple[List[Dict[str, Any]], bool]:
+    """Fill a canonical simple-diet call once when its nutrition is missing.
+
+    This runs after the goal guard has replaced model-authored identity fields,
+    so only numeric estimates can be added.  A paused Runtime skips the external
+    estimate entirely and remains the first terminal boundary.
+    """
+    if (
+        runtime_write_blocked
+        or estimation_attempted
+        or goal is None
+        or goal.kind != "simple_health_record"
+        or goal.target_record_type != "diet"
+    ):
+        return tool_calls, estimation_attempted
+
+    candidates: list[
+        tuple[int, Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any]]
+    ] = []
+    for index, tool_call in enumerate(tool_calls):
+        function = tool_call.get("function") or {}
+        if str(function.get("name") or "") != "health_record":
+            continue
+        try:
+            arguments = (
+                json.loads(function.get("arguments"))
+                if isinstance(function.get("arguments"), str)
+                else dict(function.get("arguments") or {})
+            )
+        except (json.JSONDecodeError, TypeError, ValueError):
+            continue
+        data = arguments.get("data")
+        if (
+            _normalize_fast_record_kind(arguments.get("record_type") or "")
+            != "diet"
+            or not isinstance(data, dict)
+        ):
+            continue
+        food_items = str(data.get("food_items") or "").strip()
+        if not food_items:
+            continue
+        candidates.append((index, tool_call, function, arguments, data))
+
+    if not candidates or (
+        len(candidates) == 1
+        and _simple_diet_nutrition_is_complete(candidates[0][4])
+    ):
+        return tool_calls, estimation_attempted
+
+    canonical_nutrition: Optional[Dict[str, float]] = None
+    for _, _, _, _, data in candidates:
+        if _simple_diet_nutrition_is_complete(data):
+            canonical_nutrition = {
+                field: float(data[field])
+                for field in _SIMPLE_DIET_NUTRITION_FIELDS
+            }
+            break
+
+    if canonical_nutrition is None:
+        food_items = str(candidates[0][4]["food_items"]).strip()
+        estimate = await _estimate_simple_diet_nutrition(food_items)
+        estimation_attempted = True
+        if estimate is None:
+            return tool_calls, estimation_attempted
+        canonical_nutrition = dict(estimate)
+
+        # Preserve one stable model/user-provided numeric fact, but never blend
+        # conflicting duplicate calls into multiple write fingerprints.
+        for field in _SIMPLE_DIET_NUTRITION_FIELDS:
+            present = [
+                data[field]
+                for _, _, _, _, data in candidates
+                if data.get(field) not in (None, "")
+            ]
+            if not present:
+                continue
+            try:
+                numeric = [float(value) for value in present]
+            except (TypeError, ValueError):
+                continue
+            if (
+                all(math.isfinite(value) for value in numeric)
+                and all(
+                    math.isclose(value, numeric[0], rel_tol=1e-6, abs_tol=1e-6)
+                    for value in numeric[1:]
+                )
+                and 0 <= numeric[0] <= _SIMPLE_DIET_NUTRITION_LIMITS[field]
+            ):
+                canonical_nutrition[field] = present[0]
+
+    updated_calls = list(tool_calls)
+    for index, tool_call, function, arguments, data in candidates:
+        enriched_data = dict(data)
+        enriched_data.update(canonical_nutrition)
+        if not _simple_diet_nutrition_is_complete(enriched_data):
+            return tool_calls, estimation_attempted
+        enriched_arguments = dict(arguments)
+        enriched_arguments["data"] = enriched_data
+        updated_calls[index] = {
+            **tool_call,
+            "function": {
+                **function,
+                "arguments": json.dumps(enriched_arguments, ensure_ascii=False),
+            },
+        }
+    logger.info(
+        "[agent_executor] simple diet nutrition enriched calls=%s food_chars=%s",
+        len(candidates),
+        len(str(candidates[0][4]["food_items"])),
+    )
+    return updated_calls, estimation_attempted
 
 
 def _simple_record_goal_completion_text(goal: GoalSpec) -> str:
@@ -8544,6 +8800,7 @@ class AgentExecutor:
             last_recoverable_write_rejection_code: Optional[str] = None
             deterministic_diet_correction_fallback_attempted = False
             deterministic_simple_record_fallback_attempted = False
+            simple_diet_nutrition_estimation_attempted = False
             deterministic_goal_lookup_attempted = False
             goal_verification_attempted = False
             receipt_goal_evaluated = False
@@ -8762,6 +9019,22 @@ class AgentExecutor:
                         lookup_completed=goal_lookup_completed,
                         allowed_record_ids=goal_allowed_record_ids,
                     )
+                    tool_calls, simple_diet_nutrition_estimation_attempted = (
+                        await _enrich_simple_diet_goal_tool_calls(
+                            tool_calls,
+                            (
+                                self._agent_kernel_snapshot.goal
+                                if self._agent_kernel_snapshot is not None
+                                else None
+                            ),
+                            estimation_attempted=(
+                                simple_diet_nutrition_estimation_attempted
+                            ),
+                            runtime_write_blocked=bool(
+                                self._runtime_write_block_reason
+                            ),
+                        )
+                    )
                     rejected_goal_writes = _goal_guard_rejected_writes(
                         proposed_tool_calls,
                         tool_calls,
@@ -8929,6 +9202,9 @@ class AgentExecutor:
                                         write_receipts.append(receipt)
                             else:
                                 receipt = None
+                            tool_event_data.update(
+                                _write_outcome_event_fields(result, receipt)
+                            )
                             if write_attempted and not replayed_write:
                                 checkpoint_status = _write_checkpoint_status_after_dispatch(
                                     result,
@@ -10391,12 +10667,14 @@ class AgentExecutor:
         deterministic_symptom_fallback_attempted = False
         deterministic_diet_correction_fallback_attempted = False
         deterministic_simple_record_fallback_attempted = False
+        simple_diet_nutrition_estimation_attempted = False
         deterministic_goal_lookup_attempted = False
         goal_verification_attempted = False
         receipt_goal_evaluated = False
         goal_verification_result: Any = None
         goal_lookup_completed = False
         goal_allowed_record_ids: set[str] = set()
+        runtime_control_terminal = False
         # 本轮 agent 实际调用过的工具/Skill 名, 去重、按首次调用顺序。供 mac/mobile
         # 展示"调用了哪些 Skills"。与 sources_used (引用了哪些数据源) 独立。
         tools_used: List[str] = []
@@ -11189,6 +11467,22 @@ class AgentExecutor:
                         lookup_completed=goal_lookup_completed,
                         allowed_record_ids=goal_allowed_record_ids,
                     )
+                    tool_calls, simple_diet_nutrition_estimation_attempted = (
+                        await _enrich_simple_diet_goal_tool_calls(
+                            tool_calls,
+                            (
+                                self._agent_kernel_snapshot.goal
+                                if self._agent_kernel_snapshot is not None
+                                else None
+                            ),
+                            estimation_attempted=(
+                                simple_diet_nutrition_estimation_attempted
+                            ),
+                            runtime_write_blocked=bool(
+                                self._runtime_write_block_reason
+                            ),
+                        )
+                    )
                     rejected_goal_writes = _goal_guard_rejected_writes(
                         proposed_tool_calls,
                         tool_calls,
@@ -11601,6 +11895,18 @@ class AgentExecutor:
                                         write_receipts.append(receipt)
                             else:
                                 receipt = None
+                            write_outcome_fields = _write_outcome_event_fields(
+                                result_for_record_card,
+                                receipt,
+                            )
+                            tool_event_data.update(write_outcome_fields)
+                            if (
+                                write_attempted
+                                and write_outcome_fields.get("error_code")
+                                == "runtime_control_unavailable"
+                                and write_outcome_fields.get("dispatch_started") is False
+                            ):
+                                runtime_control_terminal = True
                             if write_attempted and not replayed_write:
                                 checkpoint_status = _write_checkpoint_status_after_dispatch(
                                     result_for_record_card,
@@ -11774,6 +12080,8 @@ class AgentExecutor:
                                         "descriptor": safety_card,
                                     },
                                 }
+                        if runtime_control_terminal:
+                            break
 
                     medication_confirmation_card = getattr(
                         self,
@@ -11801,6 +12109,20 @@ class AgentExecutor:
                         "tool_exec_ms": _round_tool_exec_ms,
                         "tools": list(_round_tool_names),
                     })
+
+                    if runtime_control_terminal:
+                        final_finish_reason = "error"
+                        terminal_text = _runtime_control_unavailable_message(
+                            write_receipts
+                        )
+                        if not health_advice_buffered:
+                            for i in range(0, len(terminal_text), 20):
+                                yield {
+                                    "event": "token",
+                                    "data": {"content": terminal_text[i:i + 20]},
+                                }
+                        full_reply += terminal_text
+                        break
 
                     if unverified_write_operations:
                         final_finish_reason = "error"
@@ -12320,6 +12642,7 @@ class AgentExecutor:
             and not write_receipts
             and not self._agent_kernel_pending_confirmation_tools
             and not last_recoverable_write_rejection
+            and not runtime_control_terminal
         )
         # 破坏性/同步意图从 fast-record 集排除后(留强模型),其 0-工具 缺口在此补上,
         # 与 record_intent_no_tool 加层不减层(不与之重叠:record 集已被上面判掉)。
@@ -12563,6 +12886,8 @@ class AgentExecutor:
             write_receipts=write_receipts,
             record_intent_no_tool=record_intent_no_tool,
             destructive_or_sync_no_tool=destructive_or_sync_no_tool,
+            write_reconciliation_required=bool(unverified_write_operations),
+            runtime_control_unavailable=runtime_control_terminal,
         )
         kernel_snapshot = self._agent_kernel_snapshot
         health_write_requested = bool(
@@ -18190,6 +18515,21 @@ class AgentExecutor:
             from app.services.water_service import create_water_intake
 
             recorded_at = self._agent_kernel_reference_now()
+            raw_record_date = str(data.get("record_date") or "").strip()
+            if raw_record_date:
+                try:
+                    target_record_date = date.fromisoformat(raw_record_date)
+                except ValueError:
+                    return local_write_rejection(
+                        "water_record_date_invalid",
+                        message="饮水记录日期无效。",
+                        recovery_guidance="请使用 YYYY-MM-DD 或今天、昨天等明确日期。",
+                    )
+                recorded_at = recorded_at.replace(
+                    year=target_record_date.year,
+                    month=target_record_date.month,
+                    day=target_record_date.day,
+                )
             record = create_water_intake(
                 self.db,
                 user_id=self._current_user_id,

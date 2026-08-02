@@ -188,6 +188,7 @@ function AIAssistantInner() {
   const activeConvIdRef = useRef<number | undefined>(undefined);
   const historyRequestRef = useRef(0);
   const hasLoadedHistoryRef = useRef(false);
+  const conversationIntentGenerationRef = useRef(0);
   const queuedPromptsRef = useRef<QueuedWebPrompt[]>([]);
   // 状态行去抖: for-await 循环内读闭包会拿到陈旧 statusText, 用 ref 避免重复 setState。
   const statusRef = useRef<string | null>(null);
@@ -303,21 +304,34 @@ function AIAssistantInner() {
     router.replace(target, { scroll: false });
   };
 
-  // 页面 mount: 若 URL 带 ?c=<id> 则自动加载该对话 (支持刷新/直达/分享).
-  // 只跑一次 — 后续 URL 变更由用户操作 (load/new/stream done) 主动触发.
+  // 页面 mount:显式 ?c=<id> 优先；否则续接 owner-scoped 服务端最新对话。
+  // 只跑一次 — 后续 URL 变更由用户操作 (load/new/stream done) 主动触发。
   const bootstrappedRef = useRef(false);
   useEffect(() => {
     if (bootstrappedRef.current) return;
     bootstrappedRef.current = true;
+    const intentGeneration = conversationIntentGenerationRef.current;
     const raw = searchParams.get('c');
     const id = raw ? Number(raw) : NaN;
     if (Number.isInteger(id) && id > 0) {
-      loadConversation(id).catch(() => {
+      loadConversation(id, intentGeneration).catch(() => {
+        if (intentGeneration !== conversationIntentGenerationRef.current) return;
         // 对话不存在/无权限 → 退回新对话并清掉脏 URL.
         startNewConversation();
         syncConvUrl(undefined);
       });
+      return;
     }
+    if (raw) return; // 非法显式 id fail closed，不猜测另一条健康对话。
+
+    void agentApi.getConversations(1, 0).then((res) => {
+      if (intentGeneration !== conversationIntentGenerationRef.current) return;
+      const latestId = res.data.items?.[0]?.id;
+      if (!latestId) return;
+      return loadConversation(latestId, intentGeneration);
+    }).catch(() => {
+      // 历史 rail 仍保留重拉入口；启动失败时不制造或猜测会话内容。
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -482,6 +496,9 @@ function AIAssistantInner() {
             // 2026-05-14 #4: 可解释性 sources
             sources_used: Array.isArray(data.sources_used) ? data.sources_used : undefined,
             tools_used: Array.isArray(data.tools_used) ? data.tools_used : undefined,
+            completion_status: typeof data.completion_status === 'string'
+              ? data.completion_status
+              : undefined,
           };
           setMessages(prev => prev.map((message) => {
             let next = message.id === tempAssistantId ? {
@@ -547,6 +564,7 @@ function AIAssistantInner() {
   }
 
   const startNewConversation = () => {
+    conversationIntentGenerationRef.current += 1;
     medicationBatchLocksRef.current.clear();
     queuedPromptsRef.current = [];
     setQueuedPromptCount(0);
@@ -561,9 +579,15 @@ function AIAssistantInner() {
     refreshConversationStarters();
   };
 
-  const loadConversation = async (conversationId: number) => {
+  const loadConversation = async (
+    conversationId: number,
+    expectedIntentGeneration?: number,
+  ) => {
     if (streaming) return;
+    const intentGeneration = expectedIntentGeneration
+      ?? ++conversationIntentGenerationRef.current;
     const res = await agentApi.getConversation(conversationId);
+    if (intentGeneration !== conversationIntentGenerationRef.current) return;
     const loaded = restoreWebConversationMessages(res.data.messages || []);
     medicationBatchLocksRef.current.clear();
     activeConvIdRef.current = conversationId;
@@ -1110,6 +1134,7 @@ function restoreWebConversationMessages(rawMessages: any[]): ChatMessage[] {
       perf: meta.perf,
       sources_used: meta.sources_used,
       tools_used: meta.tools_used,
+      completion_status: meta.completion_status,
       ...(serverCard ? {
         card_type: serverCard.type,
         card_data: serverCard.data,

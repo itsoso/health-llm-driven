@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, QueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDateTime } from '@/utils/timezone';
+import { GARMIN_ENDPOINTS } from './garminEndpoints';
 
 // 使用相对路径，通过Next.js代理到后端
 const API_BASE = '/api';
@@ -73,9 +74,8 @@ export default function GarminSection({
   const [showMFA, setShowMFA] = useState(false);
   const [mfaCode, setMfaCode] = useState('');
   const [mfaSessionId, setMfaSessionId] = useState<string | null>(null);
-  const [mfaContext, setMfaContext] = useState<'test' | 'sync' | null>(null);
+  const [mfaContext, setMfaContext] = useState<'test' | 'connect' | 'sync' | null>(null);
   const [pendingSyncDays, setPendingSyncDays] = useState<number | null>(null);
-  const [authenticatedSessionId, setAuthenticatedSessionId] = useState<string | null>(null);
 
   // 处理 URL hash 滚动到 Garmin 设置
   useEffect(() => {
@@ -95,7 +95,7 @@ export default function GarminSection({
     queryKey: ['garmin-credential'],
     queryFn: async () => {
       if (!token) return null;
-      const res = await fetch(`${API_BASE}/auth/garmin/credentials`, {
+      const res = await fetch(GARMIN_ENDPOINTS.credentials, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (res.status === 404) return null;
@@ -105,10 +105,10 @@ export default function GarminSection({
     enabled: !!token,
   });
 
-  // 保存Garmin凭证
+  // 认证成功后原子保存 Garmin 连接
   const saveGarminMutation = useMutation({
     mutationFn: async (data: { garmin_email: string; garmin_password: string; is_cn: boolean }) => {
-      const res = await fetch(`${API_BASE}/auth/garmin/credentials`, {
+      const res = await fetch(GARMIN_ENDPOINTS.connect, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -119,8 +119,6 @@ export default function GarminSection({
 
       const contentType = res.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        const text = await res.text();
-        console.error('服务器返回非JSON响应:', text);
         throw new Error('服务器错误，请稍后重试');
       }
 
@@ -128,14 +126,24 @@ export default function GarminSection({
       if (!res.ok) {
         throw new Error(result.detail || '保存失败');
       }
+      if (!result.success && !result.mfa_required) {
+        throw new Error(result.message || '连接失败');
+      }
       return result;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data.mfa_required && data.mfa_session_id) {
+        setMfaSessionId(data.mfa_session_id);
+        setMfaContext('connect');
+        setShowMFA(true);
+        setMessage({ type: 'error', text: '🔐 需要两步验证，请输入验证码' });
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ['garmin-credential'] });
       refreshUser();
       setShowGarminForm(false);
       setGarminForm({ garmin_email: '', garmin_password: '', is_cn: false });
-      setMessage({ type: 'success', text: 'Garmin凭证保存成功！' });
+      setMessage({ type: 'success', text: 'Garmin 账号已安全连接。' });
     },
     onError: (error: Error) => {
       setMessage({ type: 'error', text: error.message });
@@ -145,15 +153,13 @@ export default function GarminSection({
   // 删除Garmin凭证
   const deleteGarminMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`${API_BASE}/auth/garmin/credentials`, {
+      const res = await fetch(GARMIN_ENDPOINTS.credentials, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       });
 
       const contentType = res.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        const text = await res.text();
-        console.error('服务器返回非JSON响应:', text);
         throw new Error('服务器错误，请稍后重试');
       }
 
@@ -183,8 +189,6 @@ export default function GarminSection({
 
       const contentType = res.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        const text = await res.text();
-        console.error('服务器返回非JSON响应:', text);
         throw new Error('服务器错误，请稍后重试');
       }
 
@@ -217,8 +221,6 @@ export default function GarminSection({
 
       const contentType = res.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        const text = await res.text();
-        console.error('服务器返回非JSON响应:', text);
         return { success: false, mfa_required: false, message: '服务器错误，请稍后重试' };
       }
 
@@ -251,8 +253,6 @@ export default function GarminSection({
     mutationFn: async () => {
       if (!mfaSessionId) throw new Error('验证状态已过期');
 
-      console.log('🔐 发送MFA验证请求:', { mfaSessionId, mfaCodeLength: mfaCode.length });
-
       const res = await fetch(`${API_BASE}/auth/garmin/verify-mfa`, {
         method: 'POST',
         headers: {
@@ -273,17 +273,9 @@ export default function GarminSection({
       return res.json();
     },
     onSuccess: (data) => {
-      console.log('✅ MFA验证成功回调:', { success: data.success, session_id: data.session_id, mfaContext });
       if (data.success) {
         const isSyncContext = mfaContext === 'sync';
-
-        const verifiedSessionId = data.session_id;
-        if (verifiedSessionId) {
-          setAuthenticatedSessionId(verifiedSessionId);
-          console.log('✅ 保存已验证的MFA session_id:', verifiedSessionId);
-        } else {
-          console.warn('⚠️ MFA验证成功但未返回session_id');
-        }
+        const isConnectContext = mfaContext === 'connect';
 
         if (isSyncContext) {
           setMessage({ type: 'success', text: '✅ 验证成功！正在开始同步...' });
@@ -298,14 +290,21 @@ export default function GarminSection({
 
           setTimeout(() => {
             if (!syncProgress.isSyncing) {
-              console.log('✅ MFA验证成功，自动触发同步:', syncDaysVal, '天', '使用session_id:', verifiedSessionId);
-              startSyncWithProgressWithSessionId(syncDaysVal, verifiedSessionId);
-            } else {
-              console.log('⚠️ 同步已在进行中，跳过自动触发');
+              startSyncWithProgressRequest(syncDaysVal);
             }
           }, 500);
         } else {
-          setMessage({ type: 'success', text: data.message || '✅ 验证成功！Garmin账号连接成功，可以保存凭证了。' });
+          if (isConnectContext) {
+            setShowGarminForm(false);
+            setGarminForm({ garmin_email: '', garmin_password: '', is_cn: false });
+            refreshUser();
+          }
+          setMessage({
+            type: 'success',
+            text: data.message || (isConnectContext
+              ? 'Garmin 账号已安全连接。'
+              : 'Garmin 凭证验证成功。'),
+          });
           setShowMFA(false);
           setMfaCode('');
           setMfaSessionId(null);
@@ -332,19 +331,15 @@ export default function GarminSection({
 
   // 流式同步Garmin数据（带进度）
   const startSyncWithProgress = async (days: number) => {
-    startSyncWithProgressWithSessionId(days, authenticatedSessionId);
+    startSyncWithProgressRequest(days);
   };
 
-  // 带session_id的同步函数（内部使用）
-  const startSyncWithProgressWithSessionId = async (days: number, sessionId: string | null = null) => {
+  const startSyncWithProgressRequest = async (days: number) => {
     if (!token) return;
 
     if (syncProgress.isSyncing) {
-      console.log('⚠️ 同步已在进行中，忽略重复调用');
       return;
     }
-
-    const mfaSessionIdToUse = sessionId || authenticatedSessionId;
 
     setMfaContext('sync');
     setPendingSyncDays(days);
@@ -361,15 +356,7 @@ export default function GarminSection({
     setMessage(null);
 
     try {
-      let url = `${API_BASE}/auth/garmin/sync-stream?days=${days}`;
-      if (mfaSessionIdToUse) {
-        url += `&mfa_session_id=${mfaSessionIdToUse}`;
-        console.log('✅ 使用已认证的MFA session进行同步:', mfaSessionIdToUse);
-      } else {
-        console.log('⚠️ 没有已认证的MFA session，将重新检测MFA');
-      }
-
-      const response = await fetch(url, {
+      const response = await fetch(`${API_BASE}/auth/garmin/sync-stream?days=${days}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -397,7 +384,6 @@ export default function GarminSection({
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6));
-              console.log('收到SSE消息:', data);
 
               if (data.type === 'progress') {
                 setSyncProgress(prev => ({
@@ -421,15 +407,12 @@ export default function GarminSection({
                 setMessage({ type: 'success', text: data.message });
               } else if (data.type === 'error') {
                 setSyncProgress(prev => ({ ...prev, isSyncing: false }));
-                console.log('收到错误消息:', data);
                 if (data.mfa_required) {
-                  console.log('检测到MFA要求:', { mfa_session_id: data.mfa_session_id, showGarminForm });
                   if (data.mfa_session_id) {
                     setMfaSessionId(data.mfa_session_id);
                     setMfaContext('sync');
                     setPendingSyncDays(days);
                     setShowMFA(true);
-                    console.log('设置MFA状态:', { showMFA: true, mfaSessionId: data.mfa_session_id, showGarminForm });
                     setMessage({ type: 'error', text: '🔐 需要两步验证，请输入验证码' });
                   } else {
                     setMessage({ type: 'error', text: data.message || '需要两步验证，请先在设置页面完成MFA验证' });
@@ -469,8 +452,6 @@ export default function GarminSection({
 
       const contentType = res.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        const text = await res.text();
-        console.error('服务器返回非JSON响应:', text);
         throw new Error('服务器错误，请稍后重试');
       }
 
@@ -835,7 +816,7 @@ export default function GarminSection({
                 disabled={!garminForm.garmin_email || !garminForm.garmin_password || saveGarminMutation.isPending || showMFA}
                 className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50"
               >
-                {saveGarminMutation.isPending ? '保存中...' : '💾 保存凭证'}
+                {saveGarminMutation.isPending ? '连接中...' : '🔗 连接并保存'}
               </button>
               {showGarminForm && (
                 <button

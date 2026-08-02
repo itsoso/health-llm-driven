@@ -354,15 +354,31 @@ export interface paths {
         };
         /**
          * 流式同步Garmin数据（带进度）
-         * @description 使用 Server-Sent Events 流式同步Garmin数据，实时返回进度
-         *
-         *     参数：
-         *     - days: 同步最近N天的数据
-         *     - mfa_session_id: MFA会话ID（可选，如果已完成MFA验证可传入以复用认证状态）
+         * @description 用与 Mobile 相同的真值路径执行同步，并通过 SSE 返回终态。
          */
         get: operations["sync_garmin_data_stream_api_v1_auth_garmin_sync_stream_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/garmin/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 原子连接Garmin账号
+         * @description 先完成 Garmin 认证，再原子替换旧连接；失败时旧连接保持不变。
+         */
+        post: operations["connect_garmin_account_api_v1_auth_garmin_connect_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -20733,13 +20749,17 @@ export interface components {
         Body_import_apple_health_api_v1_devices_apple_import_post: {
             /**
              * File
+             * Format: binary
              * @description Apple Health 导出的 XML 文件
              */
             file: string;
         };
         /** Body_import_medical_exam_from_csv_api_v1_medical_exams_import_csv_post */
         Body_import_medical_exam_from_csv_api_v1_medical_exams_import_csv_post: {
-            /** File */
+            /**
+             * File
+             * Format: binary
+             */
             file: string;
             /** Exam Info */
             exam_info?: Record<string, never>;
@@ -20748,6 +20768,7 @@ export interface components {
         Body_import_medical_exam_from_image_api_v1_medical_exams_import_image_post: {
             /**
              * File
+             * Format: binary
              * @description 体检报告图片 (jpg/png/heic/webp)
              */
             file: string;
@@ -20756,6 +20777,7 @@ export interface components {
         Body_import_medical_exam_from_pdf_api_v1_medical_exams_import_pdf_post: {
             /**
              * File
+             * Format: binary
              * @description PDF文件
              */
             file: string;
@@ -20766,10 +20788,7 @@ export interface components {
             grant_type?: string | null;
             /** Username */
             username: string;
-            /**
-             * Password
-             * Format: password
-             */
+            /** Password */
             password: string;
             /**
              * Scope
@@ -20778,16 +20797,14 @@ export interface components {
             scope: string;
             /** Client Id */
             client_id?: string | null;
-            /**
-             * Client Secret
-             * Format: password
-             */
+            /** Client Secret */
             client_secret?: string | null;
         };
         /** Body_parse_image_preview_api_v1_medical_exams_parse_image_preview_post */
         Body_parse_image_preview_api_v1_medical_exams_parse_image_preview_post: {
             /**
              * File
+             * Format: binary
              * @description 体检报告图片 (jpg/png/heic/webp)
              */
             file: string;
@@ -20796,6 +20813,7 @@ export interface components {
         Body_parse_pdf_preview_api_v1_medical_exams_parse_pdf_preview_post: {
             /**
              * File
+             * Format: binary
              * @description PDF文件
              */
             file: string;
@@ -20804,13 +20822,17 @@ export interface components {
         Body_recognize_prescription_image_api_v1_prescriptions_recognize_post: {
             /**
              * File
+             * Format: binary
              * @description 处方图片 (jpg/png/heic/webp)
              */
             file: string;
         };
         /** Body_upload_avatar_api_v1_users_me_avatar_post */
         Body_upload_avatar_api_v1_users_me_avatar_post: {
-            /** File */
+            /**
+             * File
+             * Format: binary
+             */
             file: string;
         };
         /** Body_upload_course_files_api_v1_knowledge_documents_course_files_post */
@@ -20839,7 +20861,10 @@ export interface components {
         };
         /** Body_upload_document_api_v1_knowledge_documents_upload_post */
         Body_upload_document_api_v1_knowledge_documents_upload_post: {
-            /** File */
+            /**
+             * File
+             * Format: binary
+             */
             file: string;
             /** Source */
             source: string;
@@ -20851,7 +20876,10 @@ export interface components {
         };
         /** Body_upload_image_api_v1_upload_image_post */
         Body_upload_image_api_v1_upload_image_post: {
-            /** File */
+            /**
+             * File
+             * Format: binary
+             */
             file: string;
             /**
              * Category
@@ -32084,10 +32112,6 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
-            /** Input */
-            input?: unknown;
-            /** Context */
-            ctx?: Record<string, never>;
         };
         /** VariantBatchCreateRequest */
         VariantBatchCreateRequest: {
@@ -34031,8 +34055,6 @@ export interface operations {
         parameters: {
             query?: {
                 days?: number;
-                /** @description MFA会话ID（如果已完成MFA验证） */
-                mfa_session_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -34047,6 +34069,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connect_garmin_account_api_v1_auth_garmin_connect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GarminCredentialCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GarminTestConnectionResponse"];
                 };
             };
             /** @description Validation Error */

@@ -54,6 +54,12 @@ TOKEN_RE = re.compile(r"^[A-Za-z0-9._:-]+$")
 STAGE_RE = re.compile(r"^/tmp/health-app-backup-preflight-[1-9][0-9]*-[1-9][0-9]*$")
 SCHEDULE_RE = re.compile(r"(?:^|\s)--schedule(?:=|\s+)([^\s;}\]]+)")
 SUPPORTED_ENABLEMENT_STATES = {"enabled", "disabled", "static"}
+BACKEND_EXEC_START_PATH = "/opt/health-app/backend/venv/bin/uvicorn"
+BACKEND_EXEC_START_ARGV = (
+    f"{BACKEND_EXEC_START_PATH} main:app --fd 3 --workers 1 "
+    "--limit-concurrency 100 --proxy-headers "
+    "--forwarded-allow-ips=127.0.0.1"
+)
 
 
 class TransactionError(RuntimeError):
@@ -288,6 +294,11 @@ def _expected_candidate(unit: str) -> bytes:
     if unit == "health-backend.service":
         return (
             "[Service]\n"
+            "# The runtime-state drop-in is the transactionally installed production\n"
+            "# artifact. Reset any older base unit command so process-local Garmin MFA\n"
+            "# challenges remain pinned to the worker that created them.\n"
+            "ExecStart=\n"
+            f"ExecStart={BACKEND_EXEC_START_ARGV}\n"
             "ReadWritePaths=\n"
             "ReadWritePaths=/var/lib/health-app/uploads "
             "/var/cache/health-app/skills-hub "
@@ -2954,7 +2965,15 @@ class ReleaseTransaction:
             actual_exec_start = self._stable_exec_start(
                 self.systemd.show(unit, "ExecStart")
             )
-            if unit == "celery-beat.service":
+            if unit == "health-backend.service":
+                expected_exec_start = "\n".join(
+                    (
+                        f"path={BACKEND_EXEC_START_PATH}",
+                        f"argv[]={BACKEND_EXEC_START_ARGV}",
+                        "ignore_errors=no",
+                    )
+                )
+            elif unit == "celery-beat.service":
                 celery = Path("/opt/health-app/backend/venv/bin/celery")
                 expected_exec_start = "\n".join(
                     (

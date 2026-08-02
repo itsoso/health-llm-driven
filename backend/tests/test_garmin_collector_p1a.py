@@ -51,6 +51,18 @@ class TestParseTrainingReadiness:
         assert result.training_readiness_score is None
         assert result.training_status is None
 
+    def test_non_numeric_score_is_tolerated(self, service):
+        """Garmin 偶发返回 list 等非标准值时，解析层应降级为空而不是整日失败。"""
+        raw = {"training_readiness": {"score": ["unexpected"]}}
+
+        result = service.parse_to_garmin_data_create(
+            raw,
+            user_id=1,
+            record_date=date(2026, 4, 23),
+        )
+
+        assert result.training_readiness_score is None
+
 
 class TestParseTrainingStatus:
     """Garmin trainingStatus 是枚举整数（如 8 = productive），trainingStatusKey 才是字符串。

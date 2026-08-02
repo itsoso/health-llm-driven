@@ -36,6 +36,27 @@ def test_systemd_units_use_dedicated_user_and_sandbox() -> None:
     assert "ListenStream=127.0.0.1:8000" in socket
 
 
+def test_backend_keeps_process_local_garmin_mfa_challenges_on_one_worker() -> None:
+    """MFA challenge state cannot cross a uvicorn process boundary yet."""
+    unit_dir = ROOT / "infra" / "systemd"
+    body = (unit_dir / "health-backend.service").read_text()
+    exec_start = next(line for line in body.splitlines() if line.startswith("ExecStart="))
+
+    assert "--workers 1" in exec_start
+    assert "--workers 2" not in exec_start
+
+    # Production deploys the runtime-state drop-in transactionally while the
+    # base unit in /etc may predate the checkout. The deployed artifact must
+    # therefore reset and replace ExecStart too, not only the repository unit.
+    dropin = (unit_dir / "dropins" / "health-backend-runtime-state.conf").read_text()
+    dropin_exec_starts = [
+        line for line in dropin.splitlines() if line.startswith("ExecStart=")
+    ]
+    assert dropin_exec_starts[0] == "ExecStart="
+    assert "--workers 1" in dropin_exec_starts[1]
+    assert all("--workers 2" not in line for line in dropin_exec_starts)
+
+
 def test_celery_beat_state_is_outside_the_trusted_worktree() -> None:
     body = (ROOT / "infra" / "systemd" / "celery-beat.service").read_text()
     read_write_paths = next(

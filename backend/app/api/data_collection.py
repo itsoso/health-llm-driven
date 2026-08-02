@@ -11,6 +11,10 @@ from app.models.daily_health import GarminData
 from app.models.user import User, GarminCredential
 from app.api.deps import get_current_user_required, require_self_or_admin
 from app.services.auth import garmin_credential_service
+from app.services.data_collection.garmin_native_auth import (
+    has_native_token_store,
+    safe_garmin_error_message,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -184,22 +188,25 @@ def get_credential_status(
             last = last.replace(tzinfo=timezone.utc)
         minutes_since = max(0, int((now - last).total_seconds() / 60))
 
-    # health 判定
-    if not cred.credentials_valid:
+    # health 判定：已绑定但待验证/首次同步不等于 unbound。
+    if cred.requires_mfa:
+        health = "error"
+    elif not cred.credentials_valid:
         health = "error"
     elif cred.error_count >= 3:
         health = "error"
     elif minutes_since is None:
-        health = "unbound"
+        health = "stale"
     elif minutes_since > 60 * 12:  # 12h 没同步
         health = "stale"
     else:
         health = "healthy"
 
-    # 脱敏错误信息（去掉密码/邮箱）
-    err = cred.last_error
-    if err and len(err) > 200:
-        err = err[:200] + "..."
+    err = None
+    if cred.requires_mfa:
+        err = "Garmin 需要两步验证，请完成验证码确认"
+    elif cred.last_error:
+        err = safe_garmin_error_message(RuntimeError(cred.last_error))
 
     return {
         "bound": True,
@@ -290,16 +297,18 @@ async def sync_my_garmin_data(
             detail="Garmin 同步已禁用，请在设置中启用"
         )
 
-    if not credential.credentials_valid:
+    has_native_token = has_native_token_store(credential.garth_session)
+
+    if not credential.credentials_valid and not has_native_token:
         raise HTTPException(
-            status_code=400,
-            detail="Garmin 凭据无效，请重新绑定账号"
+            status_code=409,
+            detail="Garmin 连接已失效，请重新连接账号"
         )
 
-    if credential.requires_mfa:
+    if credential.requires_mfa and not has_native_token:
         raise HTTPException(
-            status_code=400,
-            detail="该账号需要 MFA 验证，暂不支持自动同步"
+            status_code=409,
+            detail="Garmin 需要两步验证，请在设置中完成验证码确认"
         )
 
     # 解密密码
@@ -323,7 +332,26 @@ async def sync_my_garmin_data(
             is_cn=credential.is_cn if hasattr(credential, 'is_cn') else True
         )
 
-        if result.get("success_count", 0) > 0:
+        if result.get("requires_mfa"):
+            raise HTTPException(
+                status_code=409,
+                detail="Garmin 需要两步验证，请在设置中完成验证码确认",
+            )
+        if result.get("is_auth_error"):
+            raise HTTPException(
+                status_code=409,
+                detail="Garmin 连接已失效，请重新连接账号",
+            )
+        if not result.get("success") and not result.get("skipped"):
+            raise HTTPException(
+                status_code=502,
+                detail="Garmin 服务暂时不可用，请稍后再试",
+            )
+
+        if (
+            result.get("success_count", 0) > 0
+            or result.get("activities_count", 0) > 0
+        ):
             # Garmin 数据更新后 invalidate Twin cache，确保下次读到最新数据
             try:
                 from app.twin.cache import invalidate_twin
@@ -348,9 +376,32 @@ async def sync_my_garmin_data(
                 "message": result.get("message", "未找到新数据")
             }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"用户 {user_id} Garmin 同步失败: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"同步失败: {str(e)}"
+        from app.services.data_collection.garmin_connect import (
+            GarminAuthenticationError,
+            GarminLoginLockedError,
+            GarminMFARequiredError,
         )
+
+        logger.warning(f"用户 {user_id} Garmin 同步失败 ({type(e).__name__})")
+        if isinstance(e, GarminMFARequiredError):
+            raise HTTPException(
+                status_code=409,
+                detail="Garmin 需要两步验证，请在设置中完成验证码确认",
+            ) from e
+        if isinstance(e, GarminAuthenticationError):
+            raise HTTPException(
+                status_code=409,
+                detail="Garmin 连接已失效，请重新连接账号",
+            ) from e
+        if isinstance(e, GarminLoginLockedError):
+            raise HTTPException(
+                status_code=429,
+                detail="Garmin 登录暂时锁定，请稍后再试",
+            ) from e
+        raise HTTPException(
+            status_code=502,
+            detail="Garmin 服务暂时不可用，请稍后再试",
+        ) from e

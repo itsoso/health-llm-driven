@@ -2,7 +2,7 @@
 /**
  * ai-assistant 页 URL 状态回归:
  *   - mount 时 URL 带 ?c=<id> → 自动加载对应对话 (agentApi.getConversation(id)).
- *   - 无 ?c → 不加载, 进新对话空态.
+ *   - 无 ?c → 自动续接服务端最新对话.
  */
 import React from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -144,11 +144,53 @@ describe('ai-assistant URL state', () => {
     await waitFor(() => expect(getConversation).toHaveBeenCalledWith(42));
   });
 
-  it('does not load any conversation when ?c is absent', async () => {
+  it('resumes the newest durable conversation when ?c is absent', async () => {
     searchParamsGet.mockReturnValue(null);
+    getConversations.mockResolvedValue({
+      data: {
+        items: [{
+          id: 84,
+          title: 'Mobile 刚更新的对话',
+          created_at: '2026-08-01T10:00:00Z',
+          updated_at: '2026-08-01T10:05:00Z',
+        }],
+        total: 1,
+      },
+    });
     render(<AIAssistantPage />);
-    await waitFor(() => expect(getConversations).toHaveBeenCalled());
-    expect(getConversation).not.toHaveBeenCalled();
+    await waitFor(() => expect(getConversation).toHaveBeenCalledWith(84));
+  });
+
+  it('does not let a late latest-conversation bootstrap override explicit new chat', async () => {
+    searchParamsGet.mockReturnValue(null);
+    let resolveLatest!: (value: unknown) => void;
+    const latest = new Promise(resolve => { resolveLatest = resolve; });
+    getConversations.mockImplementation((limit: number) => (
+      limit === 1
+        ? latest
+        : Promise.resolve({ data: { items: [], total: 0 } })
+    ));
+
+    render(<AIAssistantPage />);
+    fireEvent.click(screen.getAllByRole('button', { name: '新对话' })[0]);
+
+    await act(async () => {
+      resolveLatest({
+        data: {
+          items: [{
+            id: 84,
+            title: '启动请求晚到的对话',
+            created_at: '2026-08-01T10:00:00Z',
+            updated_at: '2026-08-01T10:05:00Z',
+          }],
+          total: 1,
+        },
+      });
+      await latest;
+      await Promise.resolve();
+    });
+
+    expect(getConversation).not.toHaveBeenCalledWith(84);
   });
 
   it('shares selected persisted messages through the server-owned Agent API', async () => {

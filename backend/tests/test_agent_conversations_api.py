@@ -3,7 +3,7 @@
 import inspect
 import json
 import logging
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -18,6 +18,7 @@ from app.api.agent import (
     _done_event_may_expose_cards,
     _merge_card_descriptors,
     _persist_done_cards,
+    _verified_intake_suppressions,
 )
 from app.services.agent_conversation_service import AgentConversationService
 
@@ -210,6 +211,23 @@ def test_agent_conversations_list_returns_user_history_with_last_user_message(
     assert items[0]["last_message"] == "最近血糖怎么样？"
 
 
+def test_agent_conversations_list_uses_latest_updated_conversation_as_canonical_first(
+    client, db, auth_user_and_headers
+):
+    user, headers = auth_user_and_headers
+    older = _create_conversation(db, user.id, "旧端对话")
+    newer = _create_conversation(db, user.id, "另一端刚更新的对话")
+    now = datetime.now(UTC)
+    older.updated_at = now - timedelta(minutes=10)
+    newer.updated_at = now
+    db.commit()
+
+    res = client.get("/api/v1/agent/conversations?limit=1", headers=headers)
+
+    assert res.status_code == 200
+    assert [item["id"] for item in res.json()["items"]] == [newer.id]
+
+
 def test_agent_send_collects_first_party_executor_stream(client, auth_user_and_headers, monkeypatch):
     _, headers = auth_user_and_headers
 
@@ -376,6 +394,110 @@ def test_only_complete_persisted_done_events_may_expose_action_cards():
         "completion_status": "complete",
         "request_persisted": False,
     }) is False
+
+
+@pytest.mark.parametrize(
+    ("receipts", "expected"),
+    [
+        (
+            [{
+                "status": "verified",
+                "verified": True,
+                "resource_type": "diet_record",
+                "resource_id": "830",
+            }],
+            {"diet"},
+        ),
+        (
+            [{
+                "status": "failed",
+                "verified": False,
+                "resource_type": "diet_record",
+                "resource_id": "830",
+            }],
+            set(),
+        ),
+        ([], set()),
+    ],
+)
+def test_verified_intake_suppressions_require_a_verified_receipt(
+    receipts,
+    expected,
+):
+    assert _verified_intake_suppressions({"write_receipts": receipts}) == expected
+
+
+@pytest.mark.parametrize(
+    ("receipts", "diet_should_be_suppressed"),
+    [
+        ([], False),
+        (
+            [{
+                "status": "verified",
+                "verified": True,
+                "resource_type": "diet_record",
+                "resource_id": "830",
+            }],
+            True,
+        ),
+    ],
+)
+def test_agent_stream_suppresses_diet_projection_by_receipt_not_tool_attempt(
+    client,
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    receipts,
+    diet_should_be_suppressed,
+):
+    from app.services import inline_cards
+
+    user, headers = auth_user_and_headers
+    conversation = _create_conversation(db, user.id, "回执驱动卡片压制")
+    assistant = _add_message(db, conversation.id, "assistant", "处理完成。")
+    assistant.meta = {"cards": []}
+    db.commit()
+
+    build_calls = []
+
+    def build_cards_spy(*_args, **kwargs):
+        build_calls.append(kwargs.copy())
+        return []
+
+    async def fake_run_stream(self, **kwargs):
+        yield {
+            "event": "done",
+            "data": {
+                "conversation_id": conversation.id,
+                "message_id": assistant.id,
+                "completion_status": "complete",
+                "tools_used": ["health_record"],
+                "write_receipts": receipts,
+                "cards": [],
+            },
+        }
+
+    _wire_live_agent_stream_test(monkeypatch, db)
+    monkeypatch.setattr(inline_cards, "build_cards", build_cards_spy)
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream",
+        fake_run_stream,
+    )
+
+    response = client.post(
+        "/api/v1/agent/stream",
+        headers=headers,
+        json={
+            "message": "记录吃了一个桃子",
+            "conversation_id": conversation.id,
+            "client_turn_id": f"receipt-card-suppression-{diet_should_be_suppressed}",
+        },
+    )
+
+    assert response.status_code == 200
+    assert build_calls
+    suppressions = build_calls[-1]["suppress_intake_kinds"]
+    assert ("diet" in suppressions) is diet_should_be_suppressed
 
 
 def test_done_cards_report_persistence_failure_without_logging_health_payload(

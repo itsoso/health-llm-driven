@@ -53,6 +53,7 @@ export interface AgentTransparencyInput {
   llmUsage?: LlmUsageProfileLike | null;
   sourcesUsed?: string[] | null;
   toolsUsed?: string[] | null;
+  completionStatus?: string | null;
   perf?: AgentPerfProfileLike | null;
   // 2026-07-06: 模型路由透明化 — 后端 done.fallback_reasons / meta.fallback_reasons
   fallbackReasons?: string[] | null;
@@ -82,6 +83,7 @@ export interface AgentTransparencyProfile {
   rounds: AgentTransparencyRow[];
   sources: string[];
   tools: string[];
+  toolLabel: '调用 Skill' | '尝试调用 Skill';
   /** 模型路由原因(中文人话),如「简单查询·自动用快模型」。空数组=无自动切换。 */
   routing: string[];
 }
@@ -288,6 +290,10 @@ export function buildAgentTransparency(input: AgentTransparencyInput): AgentTran
 
   const sources = uniqueClean(input.sourcesUsed);
   const tools = uniqueClean(input.toolsUsed);
+  const toolLabel = input.completionStatus != null
+    && input.completionStatus !== 'complete'
+    ? '尝试调用 Skill'
+    : '调用 Skill';
   // 去重在映射之后:不同 reason 可能映射同一中文标签(如 stream/chat failed)。
   const routing = uniqueClean((input.fallbackReasons || []).map(routingReasonLabel));
   const tokenLine = buildTokenLine(input.llmUsage);
@@ -311,6 +317,7 @@ export function buildAgentTransparency(input: AgentTransparencyInput): AgentTran
     rounds,
     sources,
     tools,
+    toolLabel,
     routing,
   };
 }

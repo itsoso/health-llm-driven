@@ -165,6 +165,12 @@ case \"${OTA_TEST_MODE}\" in
       exit 1
     fi
     ;;
+  asset-timeout)
+    if [[ \" $* \" != *\" --skip-bundler \"* ]]; then
+      echo \"Asset processing timed out for assets\" >&2
+      exit 1
+    fi
+    ;;
   auth)
     echo \"Authentication failed: invalid token\" >&2
     exit 1
@@ -182,8 +188,20 @@ echo \"iOS update ID    22222222-2222-4222-8222-222222222222\"
     return runner, counter
 
 
-def run_ota(tmp_path: Path, mode: str) -> tuple[subprocess.CompletedProcess[str], Path, Path, Path]:
+def run_ota(
+    tmp_path: Path,
+    mode: str,
+    *,
+    force_no_bytecode: bool = False,
+) -> tuple[subprocess.CompletedProcess[str], Path, Path, Path]:
     runner, counter = make_ota_runner(tmp_path, mode)
+    expo_runner = tmp_path / "fake-expo-export"
+    expo_runner.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        "printf '%s\\n' \"$*\" > \"${OTA_TEST_EXPO_ARGS}\"\n"
+    )
+    expo_runner.chmod(0o755)
     anchor = tmp_path / "last-ota-commit"
     manifest = tmp_path / "release-manifest.json"
     env = os.environ.copy()
@@ -191,10 +209,14 @@ def run_ota(tmp_path: Path, mode: str) -> tuple[subprocess.CompletedProcess[str]
         {
             "OTA_ALLOW_DIRTY": "1",
             "OTA_EAS_RUNNER": str(runner),
+            "OTA_EXPO_RUNNER": str(expo_runner),
             "OTA_ANCHOR_FILE": str(anchor),
             "OTA_MANIFEST_FILE": str(manifest),
             "OTA_TEST_COUNTER": str(counter),
             "OTA_TEST_MODE": mode,
+            "OTA_TEST_EXPO_ARGS": str(tmp_path / "expo-args"),
+            "REVA_RELEASE_LOCK_DIR": str(tmp_path / "release-lock"),
+            "OTA_FORCE_NO_BYTECODE": "1" if force_no_bytecode else "0",
             "PATH": "/usr/bin:/bin",
         }
     )
@@ -221,6 +243,35 @@ def test_ota_retries_one_transient_failure_and_verifies_ids(tmp_path: Path) -> N
     assert payload["status"] == "published"
     assert payload["active_update_id"] == "22222222-2222-4222-8222-222222222222"
     assert payload["previous_known_good_update_id"] is None
+
+
+def test_ota_falls_back_to_no_bytecode_after_repeated_asset_timeout(
+    tmp_path: Path,
+) -> None:
+    result, counter, anchor, manifest = run_ota(tmp_path, "asset-timeout")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert counter.read_text().strip() == "3"
+    assert "--no-bytecode" in (tmp_path / "expo-args").read_text()
+    assert "--skip-bundler" in result.stdout
+    assert anchor.exists()
+    assert json.loads(manifest.read_text())["status"] == "published"
+
+
+def test_ota_can_force_no_bytecode_without_repeating_hermes_attempts(
+    tmp_path: Path,
+) -> None:
+    result, counter, anchor, manifest = run_ota(
+        tmp_path,
+        "asset-timeout",
+        force_no_bytecode=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert counter.read_text().strip() == "1"
+    assert "--no-bytecode" in (tmp_path / "expo-args").read_text()
+    assert anchor.exists()
+    assert json.loads(manifest.read_text())["status"] == "published"
 
 
 def test_ota_does_not_retry_authentication_failures(tmp_path: Path) -> None:

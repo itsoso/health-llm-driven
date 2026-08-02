@@ -12,10 +12,6 @@ from app.config import settings
 # 避免 relationship() lazy resolution 失败（如 UserApiKey）
 import app.models.user_api_key  # noqa: F401
 
-# Patch garth 使用 Chrome TLS 指纹（Celery worker 也需要）
-from app.services.garmin_cffi_patch import patch_garth_with_cffi
-patch_garth_with_cffi()
-
 logger = logging.getLogger(__name__)
 
 # 创建 Celery 应用

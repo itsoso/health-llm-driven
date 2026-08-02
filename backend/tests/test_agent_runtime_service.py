@@ -678,6 +678,19 @@ def test_unbound_terminal_retry_joins_conversation_admission(
             "request_not_persisted",
             True,
         ),
+        (
+            {
+                "completion_status": "error",
+                "turn_outcome": {
+                    "category": "service_unavailable",
+                    "reason_code": "runtime_control_unavailable",
+                    "retryable": False,
+                },
+            },
+            "failed",
+            "runtime_control_unavailable",
+            False,
+        ),
     ],
 )
 def test_executor_done_maps_to_runtime_state(

@@ -605,6 +605,17 @@ def test_health_score_failure_reports_critical_gate_detail():
     assert "健康度硬闸" in verify_body
 
 
+def test_deploy_health_gate_proves_garmin_worker_affinity():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    verify_start = script.index("verify_deployment() {")
+    verify_end = script.index("wait_for_agent_skills_manifest()", verify_start)
+    verify_body = script[verify_start:verify_end]
+
+    assert "systemctl show health-backend --property=ExecStart --value" in verify_body
+    assert '[[ "$BACKEND_EXEC_START" != *"--workers 1"* ]]' in verify_body
+    assert "Garmin MFA 单 worker 约束未生效" in verify_body
+
+
 def test_backend_proves_rollback_schema_before_live_env_mutation():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
     deploy_start = script.index("deploy_backend() {")
@@ -2339,6 +2350,34 @@ def test_activation_proof_derives_space_bearing_markers_on_remote_side():
     assert "HEALTH_EVIDENCE_DEADMAN_NOOP" not in staged_body
     assert "expected_outcome=" not in invalid_body
     assert "exit 2" in invalid_body
+
+
+def test_activation_process_flag_awk_executes_on_posix_awk():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    proof_start = script.index("prove_health_evidence_activation_state() {")
+    proof_end = script.index(
+        "prove_health_evidence_activation_not_launched() {", proof_start
+    )
+    proof = script[proof_start:proof_end]
+    process_start = proof.index("verify_process_environment() {")
+    process_end = proof.index("\nverify_repo_revision\n", process_start)
+    process_proof = proof[process_start:process_end]
+    awk_program_match = re.search(
+        r'awk -v expected="\$expected" \'(?P<program>.*?)\n\s*\'',
+        process_proof,
+        re.DOTALL,
+    )
+
+    assert awk_program_match is not None
+    result = subprocess.run(
+        ["awk", "-v", "expected=true", awk_program_match.group("program")],
+        input="HEALTH_EVIDENCE_RUNTIME_ENABLED=true\n",
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_activation_proof_marker_checks_are_byte_exact(tmp_path: Path):

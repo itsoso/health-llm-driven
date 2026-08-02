@@ -9,6 +9,7 @@ const mockLogout = jest.fn();
 const mockRequestAccountDeletion = jest.fn();
 const mockGetAccountDeletionRequest = jest.fn();
 const mockCheckNow = jest.fn();
+const mockApiPost = jest.fn();
 let mockGarminStatus: any = { health: 'healthy', minutes_since_last_sync: 3 };
 
 jest.mock('expo-router', () => ({
@@ -104,7 +105,7 @@ jest.mock('../../services/api', () => ({
   __esModule: true,
   default: {
     get: jest.fn(),
-    post: jest.fn(),
+    post: (...args: unknown[]) => mockApiPost(...args),
   },
 }));
 
@@ -221,6 +222,23 @@ describe('SettingsScreen', () => {
 
     expect(queryByText('-471 分钟前')).toBeNull();
     expect(getByText('刚刚同步')).toBeTruthy();
+  });
+
+  it('opens Garmin recovery instead of starting a blind sync from settings', () => {
+    mockGarminStatus = {
+      bound: true,
+      health: 'error',
+      credentials_valid: false,
+      requires_mfa: false,
+      last_error: 'Garmin 连接已失效，请重新连接账号',
+      error_count: 3,
+    };
+    const { getByRole } = render(<SettingsScreen />);
+
+    fireEvent.press(getByRole('button', { name: 'Garmin 连接，凭证失效' }));
+
+    expect(mockPush).toHaveBeenCalledWith('/garmin-connection');
+    expect(mockApiPost).not.toHaveBeenCalled();
   });
 
   it('shows the real build and allows a manual update check', async () => {

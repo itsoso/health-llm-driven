@@ -1,7 +1,7 @@
 /* eslint-disable import/first, @typescript-eslint/no-require-imports */
 import React from 'react';
-import { Alert } from 'react-native';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { Alert, Share } from 'react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import * as ImagePicker from 'expo-image-picker';
 
 const mockRouteParams: Record<string, string> = { capture: 'photo' };
@@ -9,6 +9,9 @@ const mockMealForm = jest.fn();
 const mockEstimate = jest.fn();
 const mockRouterPush = jest.fn();
 const mockPushChatWithContext = jest.fn();
+const mockDietShareComposer = jest.fn();
+const mockMeals: any[] = [];
+const mockToastShow = jest.fn();
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ back: jest.fn(), push: (...args: any[]) => mockRouterPush(...args) }),
@@ -42,7 +45,7 @@ jest.mock('react-native-gesture-handler/ReanimatedSwipeable', () => {
 
 jest.mock('../../hooks/useDiet', () => ({
   useDailyDiet: () => ({
-    data: { meals: [], meals_count: 0, total_calories: 0, total_protein: 0, total_carbs: 0, total_fat: 0 },
+    data: { meals: mockMeals, meals_count: mockMeals.length, total_calories: 0, total_protein: 0, total_carbs: 0, total_fat: 0 },
     refetch: jest.fn(),
     isRefetching: false,
   }),
@@ -63,10 +66,15 @@ jest.mock('../../services/diet', () => ({
   estimateNutrition: jest.fn(),
   recognizeFood: jest.fn(),
   getFrequentFoods: jest.fn().mockResolvedValue([]),
+  dietRecordImageUrls: (record: any) => record.image_url ? [record.image_url] : [],
+}));
+
+jest.mock('../../hooks/useAuth', () => ({
+  useAuth: () => ({ token: 'diet-auth-token', user: { id: 1 }, isLoading: false }),
 }));
 
 jest.mock('../../hooks/useToast', () => ({
-  useToast: () => ({ show: jest.fn(), showUndoable: jest.fn() }),
+  useToast: () => ({ show: mockToastShow, showUndoable: jest.fn() }),
 }));
 
 jest.mock('../../hooks/useTheme', () => ({
@@ -112,6 +120,17 @@ jest.mock('../../components/diet/DietFAB', () => {
   return MockDietFAB;
 });
 
+jest.mock('../../components/diet/DietShareComposer', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return {
+    DietShareComposer: (props: any) => {
+      mockDietShareComposer(props);
+      return <View testID="mock-diet-share-composer" />;
+    },
+  };
+});
+
 jest.mock('../../utils/agentContext', () => ({
   createDietAgentContext: jest.fn(() => ({})),
   pushChatWithContext: (...args: any[]) => mockPushChatWithContext(...args),
@@ -124,7 +143,86 @@ describe('DietScreen capture deeplink', () => {
     mockMealForm.mockClear();
     mockEstimate.mockClear();
     jest.clearAllMocks();
+    mockMeals.splice(0);
     Object.keys(mockRouteParams).forEach((key) => { delete mockRouteParams[key]; });
+  });
+
+  it('opens the same authenticated photo composer and shares the canonical diet caption', async () => {
+    mockRouteParams.share_record_id = '88';
+    mockMeals.push({
+      id: 88,
+      user_id: 1,
+      record_date: '2026-08-01',
+      meal_type: 'lunch',
+      food_items: '番茄鸡蛋面',
+      source: 'photo',
+      calories: 520,
+      protein: 24,
+      carbs: 64,
+      fat: 17,
+      fiber: 4,
+      image_url: '/api/v1/upload/files/diet/1/meal.jpg',
+      health_tips: '下一餐补蔬菜',
+      ai_confidence: 0.88,
+    });
+    const shareSpy = jest.spyOn(Share, 'share').mockResolvedValue({ action: Share.sharedAction });
+
+    const view = render(<DietScreen />);
+
+    await waitFor(() => expect(view.getByTestId('mock-diet-share-composer')).toBeTruthy());
+    const props = mockDietShareComposer.mock.lastCall?.[0];
+    expect(props).toEqual(expect.objectContaining({
+      record: expect.objectContaining({ id: 88 }),
+      photoSource: {
+        uri: 'https://health.executor.life/api/v1/upload/files/diet/1/meal.jpg',
+        headers: { Authorization: 'Bearer diet-auth-token' },
+      },
+    }));
+
+    await act(async () => props.onShareText());
+    expect(shareSpy).toHaveBeenCalledWith(expect.objectContaining({
+      title: '分享饮食记录',
+      message: expect.stringContaining('小巴饮食卡｜'),
+    }));
+    shareSpy.mockRestore();
+  });
+
+  it('falls back to canonical text sharing with feedback when a record has no accessible photo', async () => {
+    mockRouteParams.share_record_id = '89';
+    mockMeals.push({
+      id: 89,
+      user_id: 1,
+      record_date: '2026-08-01',
+      meal_type: 'dinner',
+      food_items: '清炒时蔬和米饭',
+      source: 'manual',
+      calories: 430,
+      protein: 12,
+      carbs: 72,
+      fat: 10,
+      fiber: 7,
+      image_url: null,
+    });
+    const pendingShare = new Promise<Awaited<ReturnType<typeof Share.share>>>(() => {});
+    const shareSpy = jest.spyOn(Share, 'share').mockReturnValue(pendingShare);
+
+    const view = render(<DietScreen />);
+
+    await waitFor(() => expect(view.getByTestId('diet-share-text-fallback')).toBeTruthy());
+    expect(view.getByText('这条记录没有可用照片')).toBeTruthy();
+    expect(shareSpy).not.toHaveBeenCalled();
+    const shareButton = view.getByRole('button', { name: '分享饮食正文' });
+    fireEvent.press(shareButton);
+    fireEvent.press(shareButton);
+    await waitFor(() => expect(shareSpy).toHaveBeenCalledWith(expect.objectContaining({
+      title: '分享饮食记录',
+      message: expect.stringContaining('清炒时蔬和米饭'),
+    })));
+    expect(shareSpy).toHaveBeenCalledTimes(1);
+    expect(view.getByRole('button', { name: '分享饮食正文' })).toBeDisabled();
+    expect(view.getByText('分享中…')).toBeTruthy();
+    expect(view.queryByTestId('mock-diet-share-composer')).toBeNull();
+    shareSpy.mockRestore();
   });
 
   it('starts photo capture when opened with capture=photo', async () => {

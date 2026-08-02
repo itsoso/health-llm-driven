@@ -152,14 +152,40 @@ class GarminCredentialService:
     """Garmin凭证管理服务"""
 
     @staticmethod
+    def encrypt_secret(value: str) -> str:
+        """使用 Garmin 专用密钥加密私密值。"""
+        return fernet.encrypt(value.encode()).decode()
+
+    @staticmethod
+    def decrypt_secret(encrypted_value: str) -> str:
+        """使用 Garmin 专用密钥解密私密值。"""
+        return fernet.decrypt(encrypted_value.encode()).decode()
+
+    @staticmethod
     def encrypt_password(password: str) -> str:
         """加密Garmin密码"""
-        return fernet.encrypt(password.encode()).decode()
+        return GarminCredentialService.encrypt_secret(password)
 
     @staticmethod
     def decrypt_password(encrypted_password: str) -> str:
         """解密Garmin密码"""
-        return fernet.decrypt(encrypted_password.encode()).decode()
+        return GarminCredentialService.decrypt_secret(encrypted_password)
+
+    @staticmethod
+    def _invalidate_mfa_sessions_after_commit(user_id: int) -> None:
+        """Best-effort cleanup that cannot reverse an already committed truth."""
+        try:
+            from app.services.data_collection.garmin_mfa import (
+                invalidate_mfa_sessions_for_user,
+            )
+
+            invalidate_mfa_sessions_for_user(user_id)
+        except Exception as exc:
+            logger.warning(
+                "Garmin MFA post-commit cleanup failed user_id=%s type=%s",
+                user_id,
+                type(exc).__name__,
+            )
 
     @staticmethod
     def save_credentials(db: Session, user_id: int, garmin_email: str, garmin_password: str, is_cn: bool = False, requires_mfa: bool = False) -> GarminCredential:
@@ -178,6 +204,9 @@ class GarminCredentialService:
             credential.requires_mfa = requires_mfa  # 更新MFA标志
             credential.error_count = 0
             credential.last_error = None
+            credential.login_locked_until = None
+            credential.garth_session = None
+            credential.session_expires_at = None
             credential.updated_at = datetime.now(UTC)
         else:
             # 创建新凭证
@@ -192,6 +221,45 @@ class GarminCredentialService:
 
         db.commit()
         db.refresh(credential)
+        GarminCredentialService._invalidate_mfa_sessions_after_commit(user_id)
+        return credential
+
+    @staticmethod
+    def save_connected_credentials(
+        db: Session,
+        user_id: int,
+        garmin_email: str,
+        encrypted_password: str,
+        is_cn: bool,
+        native_token_store: str,
+    ) -> GarminCredential:
+        """Atomically install a fully authenticated Garmin connection."""
+        credential = db.query(GarminCredential).filter(
+            GarminCredential.user_id == user_id
+        ).first()
+        if credential is None:
+            credential = GarminCredential(user_id=user_id)
+            db.add(credential)
+
+        credential.garmin_email = garmin_email
+        credential.encrypted_password = encrypted_password
+        credential.is_cn = is_cn
+        credential.garth_session = native_token_store
+        credential.session_expires_at = None
+        credential.credentials_valid = True
+        credential.requires_mfa = False
+        credential.sync_enabled = True
+        credential.error_count = 0
+        credential.last_error = None
+        credential.login_locked_until = None
+        credential.updated_at = datetime.now(UTC)
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        GarminCredentialService._invalidate_mfa_sessions_after_commit(user_id)
         return credential
 
     @staticmethod
@@ -239,6 +307,7 @@ class GarminCredentialService:
         if credential:
             db.delete(credential)
             db.commit()
+            GarminCredentialService._invalidate_mfa_sessions_after_commit(user_id)
             return True
         return False
 

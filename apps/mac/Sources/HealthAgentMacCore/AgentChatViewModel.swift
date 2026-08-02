@@ -1903,6 +1903,7 @@ public final class AgentChatViewModel {
                     llmRounds: message.llmRounds,
                     sourcesUsed: message.sourcesUsed,
                     toolsUsed: message.toolsUsed,
+                    completionStatus: message.completionStatus,
                     perf: message.perf,
                     llmUsage: message.llmUsage
                 )
