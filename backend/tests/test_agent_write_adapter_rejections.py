@@ -1300,14 +1300,14 @@ async def test_doctor_feedback_service_cannot_insert_new_row_but_return_old_row(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "concurrent_owner",
-    ("same_owner", "other_owner"),
+    "concurrent_case",
+    ("same_owner_different", "other_owner_different", "other_owner_exact"),
 )
 async def test_doctor_feedback_concurrent_insert_keeps_requested_receipt_verified(
     db,
     auth_user_and_headers,
     monkeypatch,
-    concurrent_owner,
+    concurrent_case,
 ):
     from app.models.agent_runtime import AgentToolOperation
     from app.models.clinical_journal import ClinicalJournalEntry
@@ -1317,10 +1317,10 @@ async def test_doctor_feedback_concurrent_insert_keeps_requested_receipt_verifie
 
     user, _headers = auth_user_and_headers
     concurrent_user_id = user.id
-    if concurrent_owner == "other_owner":
+    if concurrent_case.startswith("other_owner"):
         other = User(
             id=user.id + 1,
-            username="doctor-feedback-concurrent-other",
+            username=f"doctor-feedback-{concurrent_case}",
             name="并发反馈其他用户",
         )
         db.add(other)
@@ -1334,11 +1334,21 @@ async def test_doctor_feedback_concurrent_insert_keeps_requested_receipt_verifie
         nonlocal requested_id, concurrent_id
         requested = real_record(db_session, **kwargs)
         requested_id = requested.id
-        concurrent = ClinicalJournalEntry(
-            user_id=concurrent_user_id,
-            assessment="并发创建的另一条医生反馈",
-            created_by="doctor",
-        )
+        if concurrent_case == "other_owner_exact":
+            concurrent = ClinicalJournalEntry(
+                user_id=concurrent_user_id,
+                subjective=kwargs["summary"],
+                objective=f"医生随访 @ {kwargs['visit_date'].isoformat()}",
+                assessment=kwargs["assessment"],
+                plan=kwargs["plan"],
+                created_by="doctor",
+            )
+        else:
+            concurrent = ClinicalJournalEntry(
+                user_id=concurrent_user_id,
+                assessment="并发创建的另一条医生反馈",
+                created_by="doctor",
+            )
         db_session.add(concurrent)
         db_session.commit()
         db_session.refresh(concurrent)
@@ -1353,7 +1363,7 @@ async def test_doctor_feedback_concurrent_insert_keeps_requested_receipt_verifie
     executor = _managed_doctor_feedback_executor(
         db,
         user_id=user.id,
-        run_suffix=f"concurrent-{concurrent_owner}",
+        run_suffix=f"concurrent-{concurrent_case}",
     )
     args = {"assessment": "当前请求的医生反馈", "visit_date": "2026-08-01"}
 
@@ -1375,6 +1385,77 @@ async def test_doctor_feedback_concurrent_insert_keeps_requested_receipt_verifie
     assert receipt["resource_id"] == str(requested_id)
     assert operation.status == "succeeded"
     assert operation.resource_id == str(requested_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("returned_row", ("requested", "duplicate"))
+async def test_doctor_feedback_runtime_rejects_ambiguous_fresh_exact_duplicates(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    returned_row,
+):
+    from app.models.agent_runtime import AgentToolOperation
+    from app.models.clinical_journal import ClinicalJournalEntry
+    from app.services import doctor_report_service
+    from app.services.agent_executor import _write_receipt_from_tool_result
+
+    user, _headers = auth_user_and_headers
+    real_record = doctor_report_service.record_doctor_feedback
+    requested_id = None
+    duplicate_id = None
+
+    def record_with_exact_duplicate(db_session, **kwargs):
+        nonlocal requested_id, duplicate_id
+        requested = real_record(db_session, **kwargs)
+        requested_id = requested.id
+        duplicate = ClinicalJournalEntry(
+            user_id=kwargs["user_id"],
+            subjective=kwargs["summary"],
+            objective=f"医生随访 @ {kwargs['visit_date'].isoformat()}",
+            assessment=kwargs["assessment"],
+            plan=kwargs["plan"],
+            created_by="doctor",
+        )
+        db_session.add(duplicate)
+        db_session.commit()
+        db_session.refresh(duplicate)
+        duplicate_id = duplicate.id
+        return requested if returned_row == "requested" else duplicate
+
+    monkeypatch.setattr(
+        doctor_report_service,
+        "record_doctor_feedback",
+        record_with_exact_duplicate,
+    )
+    executor = _managed_doctor_feedback_executor(
+        db,
+        user_id=user.id,
+        run_suffix=f"ambiguous-exact-{returned_row}",
+    )
+    args = {
+        "summary": "完全相同的当前摘要",
+        "assessment": "完全相同的当前评估",
+        "plan": "完全相同的当前计划",
+        "visit_date": "2026-08-01",
+    }
+
+    result = await executor._execute_tool("record_doctor_feedback", args, None)
+
+    _assert_uncertain_write(result)
+    assert _write_receipt_from_tool_result(
+        "record_doctor_feedback", args, result
+    ) is None
+    rows = db.query(ClinicalJournalEntry).all()
+    operation = db.query(AgentToolOperation).one()
+    assert requested_id is not None
+    assert duplicate_id is not None
+    assert requested_id < duplicate_id
+    assert len(rows) == 2
+    assert {row.id for row in rows} == {requested_id, duplicate_id}
+    assert operation.status == "reconciliation_required"
+    assert operation.error_code == "write_uncertain"
+    assert operation.resource_id is None
 
 
 @pytest.mark.asyncio

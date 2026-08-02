@@ -131,6 +131,11 @@ def _canonicalize_doctor_feedback_args(
     return canonical
 
 
+def _doctor_feedback_exact_sql(column: Any, value: str | None) -> Any:
+    """Build a SQL exact-value predicate with explicit NULL semantics."""
+    return column.is_(None) if value is None else column == value
+
+
 def _sha12(text: str) -> str:
     """sha256 的前 12 hex (可观测性用短指纹, 非安全哈希)。"""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
@@ -19480,6 +19485,37 @@ class AgentExecutor:
             ):
                 raise RuntimeError("invalid_doctor_feedback_receipt")
 
+            expected_objective = f"医生随访 @ {visit_date.isoformat()}"
+            # Freshness alone cannot attribute the write when the service (or a
+            # concurrent writer) creates two indistinguishable matching rows.
+            candidate_ids = [
+                candidate_id
+                for (candidate_id,) in (
+                    self.db.query(ClinicalJournalEntry.id)
+                    .filter(
+                        ClinicalJournalEntry.id > pre_global_max_id,
+                        ClinicalJournalEntry.user_id == user_id,
+                        ClinicalJournalEntry.created_by == "doctor",
+                        _doctor_feedback_exact_sql(
+                            ClinicalJournalEntry.subjective,
+                            normalized["summary"],
+                        ),
+                        _doctor_feedback_exact_sql(
+                            ClinicalJournalEntry.assessment,
+                            normalized["assessment"],
+                        ),
+                        _doctor_feedback_exact_sql(
+                            ClinicalJournalEntry.plan,
+                            normalized["plan"],
+                        ),
+                        ClinicalJournalEntry.objective == expected_objective,
+                    )
+                    .all()
+                )
+            ]
+            if len(candidate_ids) != 1 or candidate_ids[0] != entry_id:
+                raise RuntimeError("ambiguous_doctor_feedback_persistence")
+
             persisted = (
                 self.db.query(ClinicalJournalEntry)
                 .filter(
@@ -19493,8 +19529,7 @@ class AgentExecutor:
                 persisted.subjective != normalized["summary"]
                 or persisted.assessment != normalized["assessment"]
                 or persisted.plan != normalized["plan"]
-                or persisted.objective
-                != f"医生随访 @ {visit_date.isoformat()}"
+                or persisted.objective != expected_objective
             ):
                 raise RuntimeError("unverified_doctor_feedback_persistence")
             return json.dumps(
