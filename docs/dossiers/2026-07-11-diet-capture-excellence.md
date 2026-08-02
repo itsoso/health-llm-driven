@@ -4,8 +4,8 @@
 |---|---|
 | slug | `diet-capture-excellence` |
 | 创建日期 | 2026-07-11 |
-| 当前阶段 | G3/G4 已通过，G5 等待既有 release lease 官方 cleanup |
-| 状态 | deploy_blocked_pending_release_adoption_cleanup |
+| 当前阶段 | G5 已通过，G6 真机小红书验证 |
+| 状态 | production_ota_published_device_validation_pending |
 | 负责 | Codex |
 | 反馈环 | Backend pytest / Mobile Jest + TypeScript / Simulator / backend deploy / EAS TestFlight + production OTA |
 
@@ -20,7 +20,7 @@
   - 实施：[`docs/plans/2026-08-01-xiaohongshu-diet-share-card.md`](../plans/2026-08-01-xiaohongshu-diet-share-card.md)。
   - 安全 Gate：`privacy_sensitive`；原始 `DietRecord` 照片不可变，编辑与合成仅在本地副本完成，第一版不做自动 QR/条码识别。
   - 回退阶段：S3/S5；需重跑 G3/G4/G5/G6。当前实现与集成闸已完成，但不把新分享流程记为已上线。
-  - 本轮 Gate：G3=`PASS`、G4=`PASS`、G5=`PENDING`、G6=`PENDING`；旧分享流程的测试、部署和上线证据只作为 Correction 前历史基线。
+  - 本轮 Gate：G3=`PASS`、G4=`PASS`、G5=`PASS`、G6=`PENDING`；旧分享流程的测试、部署和上线证据只作为 Correction 前历史基线。
   - Run Ledger：`docs/_generated/harness-runs/7779bb67a50d.jsonl`（本地运行证据，不提交）。
   - 用户确认：☑
 
@@ -192,6 +192,15 @@
 - T5.8 Backend 已从干净且与 `origin/main` 一致的部署副本通过 `./deploy.sh -b -y` 发布；生产 Git HEAD 为 `b2ee0ec6c19ebf79fd227cf97a3050cc0b7b226a`，本轮无新 migration。部署前备份为 `/var/backups/health-app/database/health_db_2026-07-27_23-28-00_233292.sql.gz`，41 MB、权限 `0600`，force-RLS 数据段、234 表恢复演练与站外加密归档哈希/HMAC 校验通过。
 - T5.8 production OTA：runtime `1.3.2`，update group `d1c14bea-b018-4e28-a0b0-5a7352986ed0`，iOS update `019fa439-1a11-79ce-9b93-65c0a5011016`；发布脚本复核 channel=`production`、commit=`b2ee0ec6c19ebf79fd227cf97a3050cc0b7b226a`、active group/update 与发布结果一致。
 - T5.9 Backend 已从干净且与 `origin/main` 一致的部署副本通过 `./deploy.sh -b` 发布；恢复逻辑代码提交为 `6c2b1c48`，生产 Git HEAD 为 `4bd96fa62a75da8a8b06aee8ccc76764bcf205f7`，本轮无新 migration。部署前备份为 `/var/backups/health-app/database/health_db_2026-07-29_10-32-43_309421.sql.gz`，41 MB、权限 `0600`，force-RLS 数据段、234 表恢复演练与站外加密归档哈希/HMAC 校验通过。该变更为纯 Backend，不发布 Mobile OTA。
+- T6.1 Backend 已从干净 main 部署至 `dd578a82f366b11ea4aeca41516801c650286cbe`；
+  最新部署前备份为
+  `/var/backups/health-app/database/health_db_2026-08-02_08-23-14_979542.sql.gz`，
+  41 MB、权限 `0600`，force-RLS、234 表恢复演练与站外 hash/HMAC 均通过。
+  production iOS OTA runtime `1.3.2` 已发布：group
+  `8120489e-ab4c-47b2-a5ee-0b031486bfec`、update
+  `019fbff2-b49f-7023-88dc-bce236ad2d96`、commit
+  `ffa790f67c62b1552bb9d65def6b0753d3515856`；该 commit 相对 backend 部署点
+  仅有 Dossier 更新，mobile/shared bundle 无差异，manifest 与 anchor 已复核一致。
 
 ## G5 · 部署健康闸（2026-08-01 Correction 前历史基线）
 
@@ -216,9 +225,15 @@
   orchestrator 5/5（平均 0.96、无 regression），一次性确认变量已删除；原 stage
   adoption cleanup 仍待完成。详见
   [`mobile-health-evidence-runtime`](2026-07-29-mobile-health-evidence-runtime.md)。
-- **本轮 G5 裁决：PENDING / BLOCKED BY RELEASE LEASE**。须先完成上述 proof CI 与
-  官方 adoption cleanup，再从干净主干部署 Backend、发布 production OTA 并执行
-  发布后健康验证；不得手工删除锁或绕过证明。
+- 原 health-evidence lease/stage 已通过官方 adoption 路径证明成功并清理；未手工
+  删除锁。首次 replacement deploy 因 Agent Runtime circuit fail closed 后自动回滚；
+  经用户批准完成 `verified_no_effect` 对账后，第二次部署健康分两轮 `60/60 PASS`，
+  exact SHA、schema 199、skills `22/22`、staged KB contract 与事务 finalize 均通过。
+  随后受控 health-evidence activation、真实 runtime eval 和独立服务/进程/锁证明
+  全部通过；OTA 发布后再次复核 backend clean、durable=true、四服务 active、
+  release lock absent、health=ok。
+- **本轮 G5 裁决：PASS**。Backend 与 production OTA 发布闸闭合；G6 仍不得用
+  EAS 成功替代真机目标应用验收。
 
 ## S7 · 上线验证（2026-08-01 Correction 前历史基线）
 
@@ -232,6 +247,9 @@
 - T5.5 OTA 已绑定 build 221 的 runtime `1.3.1` 与代码提交 `d8cdc1d1e`；设备冷启或后台超过 30 秒后可拉取。真机相册权限体验、微信和小红书投递仍保持待验证，不以 EAS 发布成功替代终端验收。
 - T5.6 OTA 已绑定 build 221 的 runtime `1.3.1` 与代码提交 `da579f055`；设备冷启或后台超过 30 秒后可拉取。自动化已证明相机、相册、文字、语音四种 Mobile 入口确认后都会带 `diet/quick_capture` 上下文回到小巴；真实设备语音输入和真机目标应用分享仍需继续验收。
 - T5.9 失败写入恢复已部署至生产 Backend。自动化与真实模型回归已证明窄确认短语可以在同一用户、同一会话、紧邻顺序且没有已验证或不确定写入时恢复原文字与图片，并为新 Run 使用新的幂等身份；仍需在真机生产会话中人为触发一次可重试失败并完成“重试/需要”闭环，作为最终终端证据。
+- T6.1 production OTA 已绑定 runtime `1.3.2` 与 update
+  `019fbff2-b49f-7023-88dc-bce236ad2d96`；App 回到前台并确认更新后可加载。
+  自动发布证据不证明照片编辑手势、导出像素或小红书实际接收成功。
 - 待真机验证：相机实拍 -> 识别 -> 修正 -> 确认单次写入，以及分享图分别投递微信和小红书。
 
 ## G6 · 验证闸（2026-08-01 Correction 前历史基线）

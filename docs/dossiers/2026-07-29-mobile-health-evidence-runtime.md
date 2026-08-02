@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-health-evidence-runtime` |
 | 创建日期 | 2026-07-29 |
-| 当前阶段 | production activation terminal adoption cleanup |
-| 状态 | prod=`98e27869...`、base flag=false、durable runtime=true、四服务 active；POSIX awk proof 修复的 replacement exact-SHA CI 已全绿，原 lease/stage adoption cleanup 前继续阻断新部署/OTA |
+| 当前阶段 | G5 已通过，G6 人在环验证 |
+| 状态 | prod=`dd578a82f366...`、base flag=false、durable runtime=true、四服务 active；受控 activation 与真实 runtime eval 已通过，production iOS OTA 已发布；跨端真机验证待完成 |
 | 负责 | product owner + Codex |
 | 反馈环 | backend/Web → 受控 activation → semantic smoke → Mobile OTA → 跨端对照 |
 
@@ -820,6 +820,10 @@
     清理。下一目标依次为 ExecStart/ownership 修复完整 local G3/G4 + fresh
     review、提交/CI、backend replacement deploy、受控 activation 与 smoke，
     最后才是 OTA。
+  - replacement 目标 `dd578a82f366...` 已从干净 main 部署；production iOS OTA
+    基于其后仅含 Dossier 更新的 `ffa790f67c62...` 发布，mobile/shared bundle 与
+    backend 部署点之间无代码差异。回滚基线为 backend `98e278693934...` 与上一
+    production OTA group `d1c14bea-b018-4e28-a0b0-5a7352986ed0`。
 
 ## G5 · 部署健康闸
 
@@ -877,18 +881,37 @@
   activation，但目标机 POSIX awk 拒绝 process flag proof 的多行 `exit(...)`；
   lease/stage 按 fail-closed 契约保留。单行修复本地 release-invariants 308/308，
   replacement exact-SHA CI 与原 stage cleanup 尚未完成。
-- **裁决**:☐ PASS ☒ BLOCK → 候选回 S5/G3/G4；旧版本恢复 PASS
+- replacement deploy + activation:
+  - 原 lease/stage 已由官方 adoption 路径证明成功并清理；未手工删锁。
+  - 第一次 replacement deploy 因 Agent Runtime circuit
+    `generation=5/ack=4` fail closed，自动回滚到 `98e27869...` 并证明服务恢复。
+    经用户明确批准，对无实际写入的 missing-receipt 事件以
+    `verified_no_effect` 对账，circuit 恢复为 active `5/5`，未增删健康记录。
+  - 第二次 backend deploy 成功：最新备份
+    `/var/backups/health-app/database/health_db_2026-08-02_08-23-14_979542.sql.gz`
+    为 41 MB、`0600`，force-RLS、234 表恢复演练与站外 hash/HMAC 均通过；
+    健康分两轮 `60/60 PASS`、schema 199、skills `22/22`、staged KB contract
+    通过，事务 `finalized`，生产 exact SHA=`dd578a82f366...`。
+  - 用户另行明确批准生产 activation。官方 `deploy.sh -H` 的不可变 systemd 单元
+    退出 0，真实 runtime eval 与 enabled KB contract 通过；独立只读证明确认
+    durable 文件 `root:root:400`、三类服务全部 cgroup 进程 flag=true、四服务
+    active、Git tree clean、health=ok，release lock/runtime stage/drop-in 均 absent。
+  - production iOS OTA runtime `1.3.2` 已发布：group
+    `8120489e-ab4c-47b2-a5ee-0b031486bfec`、update
+    `019fbff2-b49f-7023-88dc-bce236ad2d96`；manifest 与 anchor 复核一致。
+- **裁决**:☒ PASS ☐ BLOCK —— 自动部署与运行时健康闸闭合；G6 人在环验证仍独立待完成
 
 ## S7 · 上线验证
 
-- 真实路径验证(curl / 健康分 / 真机 / anchor 视角): NOT RUN
-- 结果(相关非因果措辞): 无生产结果
+- 真实路径验证(curl / 健康分 / 真机 / anchor 视角): 自动生产路径已完成；真机跨端待验
+- 结果(相关非因果措辞): 生产 health=ok、真实 runtime eval PASS、runtime
+  `1.3.2` OTA 已发布；这些只证明发布与受控运行时，不替代 anchor 用户真机语义验收
 
 ## G6 · 验证闸(人在环)
 
-- 需求在 prod 对 anchor 用户真成立?: 未验证
+- 需求在 prod 对 anchor 用户真成立?: 自动 runtime contract 已验证；真实用户跨端体验未验证
 - 真机/发布用户确认:☐
-- **裁决**:☐ PASS(回路闭合) ☒ NOT RUN
+- **裁决**:☐ PASS(回路闭合) ☒ PENDING HUMAN VERIFICATION
 
 ## S8 · 沉淀
 
