@@ -72,6 +72,19 @@ class IssuedPhoneRegistrationGrant:
         )
 
 
+@dataclass(frozen=True, repr=False)
+class RotatedRegistrationInvitationCredentials:
+    invitation: RegistrationInvitation
+    manual_code: str
+    link_token: str
+
+    def __repr__(self) -> str:
+        return (
+            "RotatedRegistrationInvitationCredentials("
+            f"invitation_id={self.invitation.id!r}, credentials=<redacted>)"
+        )
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -226,6 +239,29 @@ def create_registration_invitation(
     db.add(invitation)
     db.flush()
     return CreatedRegistrationInvitation(
+        invitation=invitation,
+        manual_code=manual_code,
+        link_token=link_token,
+    )
+
+
+def rotate_registration_invitation_credentials(
+    db: Session,
+    invitation: RegistrationInvitation,
+) -> RotatedRegistrationInvitationCredentials:
+    """Replace both credentials in-place and return plaintext exactly once.
+
+    The caller must lock the invitation row and commit the enclosing transaction.
+    """
+
+    manual_code = "".join(secrets.choice(MANUAL_CODE_ALPHABET) for _ in range(8))
+    link_token = secrets.token_urlsafe(24)
+    invitation.code_digest = _manual_code_digest(manual_code)
+    invitation.link_token_digest = _link_token_digest(link_token)
+    invitation.status = "created"
+    invitation.last_send_error_code = None
+    db.flush()
+    return RotatedRegistrationInvitationCredentials(
         invitation=invitation,
         manual_code=manual_code,
         link_token=link_token,
