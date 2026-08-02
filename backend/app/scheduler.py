@@ -11,6 +11,7 @@ import logging
 from datetime import UTC, datetime, timedelta, date
 from typing import List, Dict, Any
 from app.services.data_collection.garmin_connect import GarminConnectService, GarminAuthenticationError, probe_sso_availability
+from app.services.data_collection.garmin_native_auth import has_native_token_store
 from app.services.auth import garmin_credential_service
 from app.services.garmin_session_manager import get_session_manager, AccountStatus
 from app.models.user import GarminCredential
@@ -152,14 +153,13 @@ async def sync_user_garmin_data(
     try:
         cred = db.query(GarminCredential).filter(GarminCredential.user_id == user_id).first()
         if cred and cred.login_locked_until:
-            now = datetime.now(UTC)
+            now = datetime.now(UTC).replace(tzinfo=None)
             locked_until = cred.login_locked_until
             if locked_until.tzinfo is not None:
                 locked_until = locked_until.replace(tzinfo=None)
             if locked_until > now:
                 # 有缓存 session 时，忽略锁定继续同步（锁定仅防止 SSO 登录）
-                has_valid_session = (cred.garth_session and cred.session_expires_at
-                    and (cred.session_expires_at.replace(tzinfo=None) if cred.session_expires_at.tzinfo else cred.session_expires_at) > now)
+                has_valid_session = has_native_token_store(cred.garth_session)
                 if has_valid_session:
                     logger.info(f"🔓 用户 {user_id} 虽被锁定但有有效 session，继续同步")
                 else:

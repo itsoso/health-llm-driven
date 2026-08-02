@@ -232,11 +232,15 @@ class WorkoutSyncService:
         self.user_id = user_id
         self._mfa_session_id = mfa_session_id  # 存储MFA会话ID
 
-        # 如果直接传入了已认证的client，直接使用
-        if client and hasattr(client, 'garth') and client.garth.oauth2_token:
+        from app.services.data_collection.garmin_native_auth import (
+            is_native_client_authenticated,
+        )
+
+        # 如果直接传入已认证的 0.3.x client，直接使用。
+        if is_native_client_authenticated(client):
             self.client = client
             self._authenticated = True
-            logger.info(f"{self._log_prefix()}WorkoutSyncService: 直接使用已认证的client")
+            logger.info(f"{self._log_prefix()}WorkoutSyncService: 复用已认证的原生 client")
         else:
             self.client: Optional[Garmin] = None
             self._authenticated = False
@@ -244,126 +248,35 @@ class WorkoutSyncService:
     def _log_prefix(self) -> str:
         return f"[用户 {self.user_id}] " if self.user_id else ""
 
-    def _create_patched_client(self, **kwargs) -> Garmin:
-        """创建 Garmin 客户端并 patch curl_cffi"""
-        client = Garmin(self.email, self.password, is_cn=self.is_cn, **kwargs)
-        try:
-            from curl_cffi.requests import Session as CffiSession
-            headers = dict(client.garth.sess.headers)
-            cffi_sess = CffiSession(impersonate="chrome")
-            cffi_sess.headers.update(headers)
-            from app.services.garmin_cffi_patch import make_cffi_session_compatible
-            make_cffi_session_compatible(cffi_sess)
-            client.garth.sess = cffi_sess
-        except ImportError:
-            pass
-        return client
-
     def _ensure_authenticated(self):
-        """确保已认证"""
-        prefix = self._log_prefix()
+        """通过共享服务确保认证，禁止维护第二套 token/login 逻辑。"""
+        from app.services.data_collection.garmin_native_auth import (
+            is_native_client_authenticated,
+        )
 
-        # 如果有MFA会话ID，尝试复用已认证的client
-        if self._mfa_session_id and not self._authenticated:
-            from app.services.data_collection.garmin_connect import _cleanup_expired_mfa_sessions, _mfa_sessions
-            _cleanup_expired_mfa_sessions()
-            logger.info(f"{prefix}WorkoutSyncService: 尝试复用MFA会话: {self._mfa_session_id}")
-            if self._mfa_session_id in _mfa_sessions:
-                session = _mfa_sessions[self._mfa_session_id]
-                if session.get("authenticated") and session.get("email") == self.email:
-                    # 复用已认证的client
-                    self.client = session.get("client")
-                    if self.client and hasattr(self.client, 'garth') and self.client.garth.oauth2_token:
-                        self._authenticated = True
-                        server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
-                        logger.info(f"{prefix}WorkoutSyncService: ✅ 成功复用已认证的Garmin会话 - {server_type}")
-                        return
-                    else:
-                        logger.warning(f"{prefix}WorkoutSyncService: MFA会话中的client无效或没有oauth2_token")
-                else:
-                    logger.warning(f"{prefix}WorkoutSyncService: MFA会话未认证或email不匹配")
-            else:
-                logger.warning(f"{prefix}WorkoutSyncService: MFA会话不存在或已过期: {self._mfa_session_id}")
+        if self._authenticated and is_native_client_authenticated(self.client):
+            return
 
-        if not self._authenticated or self.client is None:
-            # 优先从 DB 加载缓存的 garth session（避免 SSO 登录被 Cloudflare 429）
-            if self.user_id:
-                try:
-                    from app.database import SessionLocal
-                    from app.models.user import GarminCredential
-                    import json, tempfile, os
-                    from datetime import datetime
-                    _db = SessionLocal()
-                    cred = _db.query(GarminCredential).filter(GarminCredential.user_id == self.user_id).first()
-                    if cred and cred.garth_session and cred.session_expires_at:
-                        expires = cred.session_expires_at
-                        if expires.tzinfo:
-                            expires = expires.replace(tzinfo=None)
-                        if expires > datetime.now(UTC):
-                            session_data = json.loads(cred.garth_session)
-                            self.client = self._create_patched_client()
-                            with tempfile.TemporaryDirectory() as tmpdir:
-                                for fname, data in session_data.items():
-                                    with open(os.path.join(tmpdir, fname), "w") as f:
-                                        json.dump(data, f)
-                                self.client.garth.load(tmpdir)
-                            self._authenticated = True
-                            logger.info(f"{prefix}WorkoutSyncService: ✅ 从 DB 加载 garth session 成功")
-                            _db.close()
-                            return
-                    _db.close()
-                except Exception as e:
-                    logger.warning(f"{prefix}WorkoutSyncService: 加载 DB session 失败: {e}")
+        from app.database import SessionLocal
+        from app.services.data_collection.garmin_connect import GarminConnectService
 
-            try:
-                # 回退：用 cffi patched client 尝试 SSO 登录
-                # curl_cffi 用 Chrome TLS 指纹，大部分情况能绕过 Cloudflare
-                logger.info(f"{prefix}WorkoutSyncService: DB session 不可用，尝试 cffi SSO 登录")
-                self.client = self._create_patched_client(return_on_mfa=True)
-                result = self.client.login()
-
-                # 检查是否需要 MFA
-                if result and isinstance(result, tuple) and len(result) >= 2:
-                    first_element = result[0]
-                    second_element = result[1]
-
-                    # 检查是否是 MFA 需要的返回格式
-                    if first_element == "needs_mfa" and isinstance(second_element, dict):
-                        logger.warning(f"{self._log_prefix()}Garmin需要两步验证")
-                        from app.services.data_collection.garmin_connect import GarminMFARequiredError
-                        raise GarminMFARequiredError(
-                            "🔐 Garmin账号需要两步验证！请先在设置页面完成MFA验证，然后再尝试同步。",
-                            {"client_state": second_element}
-                        )
-
-                    # 正常登录成功返回 (oauth1_token, oauth2_token)
-                    if self.client.garth.oauth2_token:
-                        self._authenticated = True
-                        logger.info(f"{self._log_prefix()}Garmin Connect登录成功")
-                        return
-
-                # 如果没有返回tuple，可能是旧版本的库，使用原来的方式
-                if not self._authenticated:
-                    # 如果没有oauth2_token，尝试重新登录
-                    if not hasattr(self.client, 'garth') or not self.client.garth.oauth2_token:
-                        self.client = self._create_patched_client()
-                        self.client.login()
-                    self._authenticated = True
-                    logger.info(f"{self._log_prefix()}Garmin Connect登录成功")
-            except Exception as e:
-                error_msg = str(e).lower()
-
-                # 检查是否需要MFA（某些版本的库可能通过异常表示需要MFA）
-                if 'mfa' in error_msg or 'two-factor' in error_msg or 'verification' in error_msg:
-                    logger.warning(f"{self._log_prefix()}Garmin账号需要两步验证")
-                    from app.services.data_collection.garmin_connect import GarminMFARequiredError
-                    raise GarminMFARequiredError(
-                        "🔐 Garmin账号需要两步验证！请先在设置页面完成MFA验证，然后再尝试同步。",
-                        {}
-                    ) from e
-
-                # 其他错误直接抛出
-                raise
+        db = SessionLocal()
+        try:
+            auth_service = GarminConnectService(
+                email=self.email,
+                password=self.password,
+                is_cn=self.is_cn,
+                user_id=self.user_id,
+                mfa_session_id=self._mfa_session_id,
+            )
+            auth_service._ensure_authenticated(db)
+            self.client = auth_service.client
+            self._authenticated = is_native_client_authenticated(self.client)
+            if not self._authenticated:
+                raise RuntimeError("Garmin workout authentication incomplete")
+            logger.info(f"{self._log_prefix()}WorkoutSyncService: 原生认证成功")
+        finally:
+            db.close()
 
     def _map_activity_type(self, garmin_type: str, activity_name: str = None) -> str:
         """

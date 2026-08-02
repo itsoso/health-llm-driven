@@ -111,7 +111,6 @@ def test_sensitive_values_are_not_formatted_into_application_logs() -> None:
         "app/services/action_card_extractor.py": ("cleaned[:200]",),
         "app/services/agent_loop.py": ("text[:100]",),
         "app/services/directive_parser.py": ("text[:80]",),
-        "app/services/garmin_cffi_login.py": ("ticket[:20]",),
     }
 
     for relative_path, needles in prohibited.items():

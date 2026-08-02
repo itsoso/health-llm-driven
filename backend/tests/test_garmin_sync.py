@@ -102,6 +102,40 @@ class TestCeleryTaskCodeReview:
         assert "credentials_valid == True" in source, \
             "应只查询 credentials_valid=True 的凭据"
 
+    def test_runtime_has_no_legacy_garth_or_cffi_authentication(self):
+        """0.3.6 的所有运行时入口必须收敛到原生认证。"""
+        from pathlib import Path
+
+        backend_root = Path(__file__).resolve().parents[1]
+        sources = {
+            "garmin_connect": (backend_root / "app/services/data_collection/garmin_connect.py").read_text(),
+            "workout_sync": (backend_root / "app/services/workout_sync.py").read_text(),
+            "garmin_task": (backend_root / "app/tasks/garmin_sync.py").read_text(),
+            "main": (backend_root / "main.py").read_text(),
+            "celery": (backend_root / "app/celery_app.py").read_text(),
+        }
+
+        for name, source in sources.items():
+            assert "client.garth" not in source, f"{name} still dereferences removed client.garth"
+            assert "self.client.garth" not in source, f"{name} still dereferences removed self.client.garth"
+            assert "import garth" not in source, f"{name} still imports legacy garth"
+            assert "garmin_cffi_login" not in source, f"{name} still uses legacy cffi login"
+            assert "patch_garth_with_cffi" not in source, f"{name} still patches garth"
+
+        assert not (backend_root / "app/services/garmin_cffi_patch.py").exists()
+        assert not (backend_root / "app/services/garmin_cffi_login.py").exists()
+        assert not (backend_root / "scripts/garmin_cffi_login.py").exists()
+        assert not (backend_root / "scripts/garmin_inject_session.py").exists()
+        assert not (backend_root / "scripts/garmin_browser_inject.py").exists()
+        assert not (backend_root / "scripts/garmin_playwright_sync.py").exists()
+
+    def test_scheduler_native_token_bypass_does_not_require_synthetic_expiry(self):
+        with open("app/scheduler.py", "r") as f:
+            source = f.read()
+
+        assert "has_native_token_store(cred.garth_session)" in source
+        assert "cred.garth_session and cred.session_expires_at" not in source
+
 
 class TestSyncStreamCodeReview:
     """验证 sync-stream 端点不再双重登录"""

@@ -264,3 +264,55 @@ def test_native_mfa_tuple_registers_user_bound_session(db, monkeypatch) -> None:
     assert session["email"] == "garmin-mfa@example.com"
     assert session["client_state"] is None
     assert session["authenticated"] is False
+
+
+def test_workout_sync_accepts_authenticated_native_client() -> None:
+    from app.services.workout_sync import WorkoutSyncService
+
+    class Native:
+        is_authenticated = True
+
+    class Client:
+        client = Native()
+
+    authenticated_client = Client()
+
+    service = WorkoutSyncService(
+        "garmin-workout@example.com",
+        "fake-password",
+        user_id=42,
+        client=authenticated_client,
+    )
+
+    assert service.client is authenticated_client
+    assert service._authenticated is True
+
+
+def test_session_renewal_delegates_to_shared_native_service(db, monkeypatch) -> None:
+    from app.services.data_collection import garmin_connect as garmin_connect_module
+    from app.services.data_collection.garmin_native_auth import encode_native_token_store
+    from app.tasks.garmin_sync import _renew_single_session
+
+    user, credential = _create_saved_credential(db, "renew")
+    credential.garth_session = encode_native_token_store(
+        '{"di_token":"renew-old","di_refresh_token":"renew-refresh"}'
+    )
+    db.commit()
+    calls = []
+
+    class FakeGarminService:
+        def __init__(self, email, password, is_cn=False, user_id=None):
+            calls.append((email, password, is_cn, user_id))
+            self.client = object()
+
+        def _ensure_authenticated(self, passed_db):
+            assert passed_db is db
+
+    monkeypatch.setattr(garmin_connect_module, "GarminConnectService", FakeGarminService)
+
+    result = _renew_single_session(db, credential, "[test-renew]")
+
+    assert result == "renewed"
+    assert calls == [
+        (credential.garmin_email, "fake-password", credential.is_cn, user.id),
+    ]
