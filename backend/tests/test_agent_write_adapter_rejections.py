@@ -879,6 +879,15 @@ def test_doctor_feedback_exact_null_sql_is_portable():
             "请记录医生意见：根据医生建议调整训练强度",
             "根据医生建议调整训练强度",
         ),
+        (
+            "请记录医生意见：按医🩺嘱调整训练强度",
+            "按医🩺嘱调整训练强度",
+        ),
+        ("请记录医生意见：餐后记录血糖", "餐后记录血糖"),
+        ("请记录医生意见：术后记录血压", "术后记录血压"),
+        ("请记录医生意见：运动后记录疼痛", "运动后记录疼痛"),
+        ("请记录医生意见：服药后记录反应", "服药后记录反应"),
+        ("请记录医生意见：术后提醒复查", "术后提醒复查"),
     ),
 )
 async def test_doctor_feedback_executes_through_gateway_for_current_owner(
@@ -988,6 +997,13 @@ async def test_doctor_feedback_executes_through_gateway_for_current_owner(
         "请您听从医嘱删除昨天的用药记录",
         "请您遵循医嘱删除昨天的用药记录",
         "请您医嘱删除昨天的用药记录",
+        "请按医\ufe0f嘱删除记录",
+        "请按医\u034f嘱删除记录",
+        "请按医🩺嘱删除记录",
+        "请按医★嘱删除记录",
+        "请按醫囑删除记录",
+        "请遵嘱删除记录",
+        "请依嘱删除记录",
         "请记录医生意见：按医嘱调整训练强度，然后按医嘱删除昨天用药记录",
         "请记录医生意见：按医嘱调整训练强度，然后按照医生意见同步健康数据",
         "按医嘱调整剂量有什么风险吗，顺便记录早餐",
@@ -995,6 +1011,26 @@ async def test_doctor_feedback_executes_through_gateway_for_current_owner(
         "按医嘱调整剂量有什么风险吗，查询昨天的体重",
         "请比较按医嘱调整剂量和自行调整剂量的风险并记录早餐",
         "“说明”按医嘱删除记录是什么意思“结尾”？",
+        "我想了解按医嘱调整剂量的风险，查询昨天体重",
+        "分析按医嘱调整剂量的副作用并记录早餐",
+        "解释“按医嘱删除记录”的意思并创建提醒",
+        "按医嘱调整剂量的风险并生成图片",
+        "按医嘱调整剂量的风险并制定计划",
+        "可以按醫囑删除记录吗？",
+        "我想了解按医嘱删除这条记录并记录早餐有什么风险？",
+        "我想了解按医嘱删除这条记录并★记录早餐有什么风险？",
+        "我想了解按医嘱调整剂量并★查询昨天体重有什么风险？",
+        "分析按医嘱调整剂量并🩺创建提醒的副作用",
+        "分析按医嘱调整剂量后记录早餐的副作用",
+        "分析按医嘱调整剂量之后制定计划的副作用",
+        "按医嘱调整剂量而生成图片的风险",
+        "分析按医嘱调整剂量接下来查询体重的副作用",
+        "分析按医嘱调整剂量并立即记录早餐的副作用",
+        "分析按医嘱调整剂量接下来记录早餐的副作用",
+        "分析按医嘱调整剂量然后去记录早餐的副作用",
+        "分析按医嘱调整剂量然后去设置闹钟的副作用",
+        "分析按医嘱调整剂量接下来生成图片的副作用",
+        "分析按医嘱调整剂量随后开始制定计划的副作用",
     ),
 )
 async def test_medical_instruction_basis_blocks_direct_destructive_dispatch(
@@ -1028,15 +1064,20 @@ async def test_medical_instruction_basis_blocks_direct_destructive_dispatch(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    ("请您删除这条用药记录", "请您删除这条用药记录🩺"),
+)
 async def test_ordinary_delete_without_clinician_basis_dispatches(
     db,
     monkeypatch,
+    message,
 ):
     from app.services.agent_executor import AgentExecutor
 
     executor = AgentExecutor(db)
     executor._current_user_id = 1
-    executor._current_turn_user_message = "请您删除这条用药记录"
+    executor._current_turn_user_message = message
     dispatch = AsyncMock(
         return_value=json.dumps({"success": True, "deleted_id": 1})
     )
@@ -1068,6 +1109,15 @@ async def test_ordinary_delete_without_clinician_basis_dispatches(
         "搜索“按医嘱删除记录”的法律含义",
         "照着医嘱调整剂量会有什么风险？",
         "“听从医嘱删除记录”是什么意思？",
+        "我想了解按医嘱调整剂量的风险",
+        "分析按医嘱调整剂量的副作用",
+        "解释“按医嘱删除记录”的意思",
+        "按医嘱调整剂量的风险",
+        "我想了解按医嘱删除记录的风险",
+        "我想了解按医嘱删除这条用药记录的风险",
+        "按医嘱同步数据有什么风险？",
+        "分析按医\ufe0f嘱调整剂量的风险",
+        "解释“按医★嘱删除记录”的意思",
     ),
 )
 async def test_medical_basis_analysis_dispatches_reads_not_mutations(

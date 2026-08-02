@@ -353,6 +353,9 @@ def test_medical_instruction_basis_reanchors_after_hard_boundary(text):
         ("请您按医。嘱删除昨天的用药记录", False),
         ("请您按？医嘱删除昨天的用药记录", True),
         ("请您听从医嘱。删除昨天的用药记录", False),
+        ("请按醫。囑删除记录", False),
+        ("请遵。嘱删除记录", False),
+        ("请按医🩺嘱。删除记录", False),
     ),
 )
 def test_medical_basis_canonical_view_never_joins_hard_boundaries(
@@ -362,6 +365,24 @@ def test_medical_basis_canonical_view_never_joins_hard_boundaries(
     guard = _module()
 
     assert guard._has_anchored_clinician_basis_mutation(text) is expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "医生🩺建议休息",
+        "今天体重是71kg⭐",
+        "血糖单位是mmol/L★",
+        "请删除昨天的用药记录🩺",
+    ),
+)
+def test_normal_symbols_do_not_create_a_clinician_basis_mutation(text):
+    guard = _module()
+
+    assert guard._has_anchored_clinician_basis_mutation(text) is False
+    assert guard.classify_clinician_turn(text).kind != (
+        "ambiguous_clinician_action"
+    )
 
 
 @pytest.mark.parametrize(

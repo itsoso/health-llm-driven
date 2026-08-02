@@ -262,10 +262,13 @@ CLINICIAN_PROVIDER_TERMS = (
     "大夫",
 )
 
-# A clinician-basis surface is not itself a human provider. Keep it separate
-# so ``遵医嘱`` can fail closed without granting feedback-write authority.
+# A clinician-basis surface is not itself a human provider. Keep these aliases
+# separate so they fail closed without granting feedback-write authority.
 CLINICIAN_BASIS_TERMS = (
     "医嘱",
+    "醫囑",
+    "遵嘱",
+    "依嘱",
 )
 
 CLINICIAN_REPORT_PREDICATES = (

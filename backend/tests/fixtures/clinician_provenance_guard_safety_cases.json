@@ -2255,6 +2255,69 @@
     "reason_code": "clinician_question"
   },
   {
+    "id": "understand_medical_basis_adjustment_risk_is_advice",
+    "text": "我想了解按医嘱调整剂量的风险",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_consultation"
+  },
+  {
+    "id": "analyze_medical_basis_adjustment_side_effect_is_advice",
+    "text": "分析按医嘱调整剂量的副作用",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_consultation"
+  },
+  {
+    "id": "explain_quoted_medical_basis_delete_meaning_is_advice",
+    "text": "解释“按医嘱删除记录”的意思",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_consultation"
+  },
+  {
+    "id": "nominal_medical_basis_adjustment_risk_is_advice",
+    "text": "按医嘱调整剂量的风险",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_consultation"
+  },
+  {
+    "id": "understand_medical_basis_delete_risk_is_advice",
+    "text": "我想了解按医嘱删除记录的风险",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_consultation"
+  },
+  {
+    "id": "understand_medical_basis_delete_target_risk_is_advice",
+    "text": "我想了解按医嘱删除这条用药记录的风险",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_consultation"
+  },
+  {
+    "id": "medical_basis_sync_risk_question_is_advice",
+    "text": "按医嘱同步数据有什么风险？",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_question"
+  },
+  {
+    "id": "mark_obfuscated_medical_basis_risk_is_advice",
+    "text": "分析按医\uFE0F嘱调整剂量的风险",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_consultation"
+  },
+  {
+    "id": "symbol_obfuscated_quoted_basis_meaning_is_advice",
+    "text": "解释“按医★嘱删除记录”的意思",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_consultation"
+  },
+  {
+    "id": "explicit_opinion_preserves_symbol_obfuscated_basis_adjustment",
+    "text": "请记录医生意见：按医🩺嘱调整训练强度",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "按医🩺嘱调整训练强度",
+    "command": "请记录医生意见"
+  },
+  {
     "id": "honorific_follow_according_to_medical_instruction_delete_requires_separate_command",
     "text": "请您遵照医嘱删除昨天的用药记录",
     "kind": "ambiguous_clinician_action",
@@ -2321,6 +2384,48 @@
     "reason_code": "clinician_basis_action_requires_separate_command"
   },
   {
+    "id": "variation_selector_inside_medical_instruction_fails_closed",
+    "text": "请按医\uFE0F嘱删除记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "combining_grapheme_joiner_inside_medical_instruction_fails_closed",
+    "text": "请按医\u034F嘱删除记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "emoji_inside_medical_instruction_fails_closed",
+    "text": "请按医🩺嘱删除记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "symbol_inside_medical_instruction_fails_closed",
+    "text": "请按医★嘱删除记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "traditional_medical_instruction_delete_fails_closed",
+    "text": "请按醫囑删除记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "follow_instruction_alias_delete_fails_closed",
+    "text": "请遵嘱删除记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "according_to_instruction_alias_delete_fails_closed",
+    "text": "请依嘱删除记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
     "id": "generic_question_mark_does_not_release_basis_delete",
     "text": "可以按医嘱删除这条记录吗？",
     "kind": "ambiguous_clinician_action",
@@ -2365,6 +2470,126 @@
   {
     "id": "unrelated_quote_pairs_do_not_forge_quoted_analysis",
     "text": "“说明”按医嘱删除记录是什么意思“结尾”？",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "understand_risk_then_read_fails_closed",
+    "text": "我想了解按医嘱调整剂量的风险，查询昨天体重",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "analyze_side_effect_then_write_fails_closed",
+    "text": "分析按医嘱调整剂量的副作用并记录早餐",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "explain_meaning_then_reminder_fails_closed",
+    "text": "解释“按医嘱删除记录”的意思并创建提醒",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "nominal_risk_then_media_fails_closed",
+    "text": "按医嘱调整剂量的风险并生成图片",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "nominal_risk_then_plan_fails_closed",
+    "text": "按医嘱调整剂量的风险并制定计划",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "traditional_basis_generic_question_stays_closed",
+    "text": "可以按醫囑删除记录吗？",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "delete_target_then_breakfast_write_risk_fails_closed",
+    "text": "我想了解按医嘱删除这条记录并记录早餐有什么风险？",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "symbol_after_joiner_cannot_hide_breakfast_write",
+    "text": "我想了解按医嘱删除这条记录并★记录早餐有什么风险？",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "symbol_after_joiner_cannot_hide_read_action",
+    "text": "我想了解按医嘱调整剂量并★查询昨天体重有什么风险？",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "mark_after_joiner_cannot_hide_reminder_action",
+    "text": "分析按医嘱调整剂量并🩺创建提醒的副作用",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "after_joiner_cannot_hide_write_action",
+    "text": "分析按医嘱调整剂量后记录早餐的副作用",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "afterwards_joiner_cannot_hide_plan_action",
+    "text": "分析按医嘱调整剂量之后制定计划的副作用",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "whereas_joiner_cannot_hide_media_action",
+    "text": "按医嘱调整剂量而生成图片的风险",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "ordinary_modifier_cannot_hide_read_action",
+    "text": "分析按医嘱调整剂量接下来查询体重的副作用",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "ordinary_modifier_cannot_hide_write_action",
+    "text": "分析按医嘱调整剂量并立即记录早餐的副作用",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "next_modifier_cannot_hide_write_action",
+    "text": "分析按医嘱调整剂量接下来记录早餐的副作用",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "then_go_modifier_cannot_hide_write_action",
+    "text": "分析按医嘱调整剂量然后去记录早餐的副作用",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "ordinary_modifier_cannot_hide_reminder_action",
+    "text": "分析按医嘱调整剂量然后去设置闹钟的副作用",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "ordinary_modifier_cannot_hide_media_action",
+    "text": "分析按医嘱调整剂量接下来生成图片的副作用",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "ordinary_modifier_cannot_hide_plan_action",
+    "text": "分析按医嘱调整剂量随后开始制定计划的副作用",
     "kind": "ambiguous_clinician_action",
     "reason_code": "clinician_basis_action_requires_separate_command"
   }

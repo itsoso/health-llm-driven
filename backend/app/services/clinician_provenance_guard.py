@@ -135,7 +135,54 @@ _MEDICAL_ADVICE_TARGETS = (
 )
 _PROVIDER_BASIS_RELATIONS = ("根据", "依据", "依照", "按照")
 _BASIS_RISK_ANALYSIS_TERMS = ("风险", "副作用")
-_BASIS_MEANING_ANALYSIS_TERMS = ("是什么意思", "什么意思", "含义")
+_BASIS_MEANING_ANALYSIS_TERMS = (
+    "是什么意思",
+    "什么意思",
+    "含义",
+    "意思",
+)
+_BASIS_EPISTEMIC_PREFIX_TERMS = ("了解", "分析", "解释", "搜索")
+# These words are sequential only inside the narrow mutation→risk analysis
+# envelope.  Keeping them local avoids treating clinical target phrases such
+# as ``餐后记录血糖`` as coordinated commands in explicit typed receipts.
+_BASIS_ANALYSIS_ACTION_JOINER_SUFFIXES = (
+    "之后",
+    "继而",
+    "而后",
+    "后",
+    "而",
+)
+# ``记录`` is both a write verb and a common mutation target noun.  Only these
+# compact, domain-shaped prefixes may make it nominal inside a risk question;
+# arbitrary first actions must remain deny-only.
+_BASIS_ANALYSIS_RECORD_TARGET_PREFIXES = frozenset(
+    {
+        "",
+        "这条",
+        "该条",
+        "此条",
+        "这份",
+        "该份",
+        "此份",
+        "用药",
+        "服药",
+        "药物",
+        "健康",
+        "医疗",
+        "诊疗",
+        "就诊",
+        "这条用药",
+        "该条用药",
+        "此条用药",
+        "这份用药",
+        "该份用药",
+        "此份用药",
+        "这条服药",
+        "该条服药",
+        "这条药物",
+        "该条药物",
+    }
+)
 _QUOTE_PAIRS = (
     ("“", "”"),
     ("「", "」"),
@@ -503,11 +550,20 @@ def _second_action_prefix_kind(
     *,
     span_start: int,
     action_start: int,
+    extra_joiner_suffixes: tuple[str, ...] = (),
 ) -> Literal["soft", "coordinated"] | None:
+    # Marks and symbols are ignored by the clause-local action scanner.  Ignore
+    # the same trailing gap here so ``并★记录`` cannot hide its joiner, while a
+    # symbol inside a target noun (for example ``用药★记录``) remains nominal.
+    canonical_gap_end = action_start
+    while canonical_gap_end > span_start and unicodedata.category(
+        raw[canonical_gap_end - 1]
+    )[0] in {"M", "S"}:
+        canonical_gap_end -= 1
     prefix_end, wrapper_found, gap_found = _strip_action_wrappers_from_end(
         raw,
         start=span_start,
-        end=action_start,
+        end=canonical_gap_end,
     )
     if prefix_end <= span_start:
         return None
@@ -524,7 +580,10 @@ def _second_action_prefix_kind(
         return "coordinated"
     if last_char in _ACTION_JOINER_CHARS:
         return "coordinated"
-    if any(prefix.endswith(joiner) for joiner in _ACTION_JOINER_SUFFIXES):
+    if any(
+        prefix.endswith(joiner)
+        for joiner in (*_ACTION_JOINER_SUFFIXES, *extra_joiner_suffixes)
+    ):
         return "coordinated"
     return None
 
@@ -1418,7 +1477,7 @@ def _canonical_clauses(
             elif (
                 char.isspace()
                 or category in {"Cf", "Zs"}
-                or category.startswith("P")
+                or category.startswith(("P", "M", "S"))
             ):
                 continue
             else:
@@ -1539,16 +1598,28 @@ def _canonical_term_is_obfuscated(
     raw: str,
     clause: _CanonicalClause,
     term: str,
+    *,
+    ignored_spans: tuple[_Span, ...] = (),
 ) -> bool:
     for start in _canonical_term_occurrences(clause, term):
         raw_start = clause.raw_positions[start]
         raw_end = clause.raw_positions[start + len(term) - 1] + 1
-        if raw[raw_start:raw_end] != term:
-            return True
+        if raw[raw_start:raw_end] == term:
+            continue
+        if any(
+            span.start <= raw_start and raw_end <= span.end
+            for span in ignored_spans
+        ):
+            continue
+        return True
     return False
 
 
-def _has_obfuscated_clinician_action(raw: str) -> bool:
+def _has_obfuscated_clinician_action(
+    raw: str,
+    *,
+    allowed_basis_spans: tuple[_Span, ...] = (),
+) -> bool:
     """Detect compact-sensitive signals within one hard-boundary clause."""
 
     for clause in _canonical_clauses(raw):
@@ -1559,7 +1630,16 @@ def _has_obfuscated_clinician_action(raw: str) -> bool:
             continue
         if any(
             term in canonical
-            and _canonical_term_is_obfuscated(raw, clause, term)
+            and _canonical_term_is_obfuscated(
+                raw,
+                clause,
+                term,
+                ignored_spans=(
+                    allowed_basis_spans
+                    if term in CLINICIAN_BASIS_TERMS
+                    else ()
+                ),
+            )
             for term in _CANONICAL_SENSITIVE_TERMS
         ):
             return True
@@ -1659,16 +1739,70 @@ def _basis_analysis_reason(
         suffix = text[match.mutation_end :]
         mutation_starts = _canonical_mutation_starts(match.clause)
         mutation_count = len(mutation_starts)
-        extra_action_starts = (
-            _canonical_action_starts(match.clause) - mutation_starts
+        action_starts = _canonical_action_starts(match.clause)
+        risk_starts = tuple(
+            position
+            for term in _BASIS_RISK_ANALYSIS_TERMS
+            if (position := text.find(term, match.mutation_end)) >= 0
+        )
+        risk_start = min(risk_starts) if risk_starts else None
+        discussed_action_starts = set(mutation_starts)
+        if risk_start is not None:
+            raw_target_start = (
+                match.clause.raw_positions[match.mutation_end - 1] + 1
+            )
+            target_action_starts = sorted(
+                action_start
+                for action_start in action_starts
+                if match.mutation_end <= action_start < risk_start
+            )
+            # A single action-shaped noun can be the mutation target (for
+            # example ``删除这条用药记录``).  Any later action is additional
+            # intent and therefore remains fail-closed.
+            if target_action_starts:
+                action_start = target_action_starts[0]
+                raw_action_start = match.clause.raw_positions[action_start]
+                if (
+                    text.startswith("记录", action_start)
+                    and text[match.mutation_end : action_start]
+                    in _BASIS_ANALYSIS_RECORD_TARGET_PREFIXES
+                    and
+                    _second_action_prefix_kind(
+                        raw,
+                        span_start=raw_target_start,
+                        action_start=raw_action_start,
+                        extra_joiner_suffixes=(
+                            _BASIS_ANALYSIS_ACTION_JOINER_SUFFIXES
+                        ),
+                    )
+                    is None
+                ):
+                    discussed_action_starts.add(action_start)
+        extra_action_starts = action_starts - discussed_action_starts
+        has_epistemic_prefix = any(
+            term in prefix for term in _BASIS_EPISTEMIC_PREFIX_TERMS
+        )
+        has_risk_theme = any(
+            term in suffix for term in _BASIS_RISK_ANALYSIS_TERMS
+        )
+        has_nominal_risk_ending = any(
+            suffix.endswith(term) for term in _BASIS_RISK_ANALYSIS_TERMS
         )
         if (
             mutation_count == 1
             and not extra_action_starts
-            and has_question
-            and any(term in suffix for term in _BASIS_RISK_ANALYSIS_TERMS)
+            and has_risk_theme
+            and (
+                has_question
+                or has_epistemic_prefix
+                or has_nominal_risk_ending
+            )
         ):
-            return "clinician_question"
+            return (
+                "clinician_question"
+                if has_question
+                else "clinician_consultation"
+            )
         if (
             mutation_count == 1
             and not extra_action_starts
@@ -1700,14 +1834,14 @@ def _basis_analysis_reason(
             for action_start in _canonical_action_starts(match.clause)
         ):
             continue
-        if has_question and any(
+        if (has_question or has_epistemic_prefix) and any(
             term in suffix for term in _BASIS_MEANING_ANALYSIS_TERMS
         ):
-            return "clinician_question"
-        if "搜索" in prefix and any(
-            term in suffix for term in _BASIS_MEANING_ANALYSIS_TERMS
-        ):
-            return "clinician_consultation"
+            return (
+                "clinician_question"
+                if has_question
+                else "clinician_consultation"
+            )
     return None
 
 
@@ -1796,7 +1930,10 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
         excluded_spans=basis_exclusions,
     )
     basis_analysis_reason = _basis_analysis_reason(raw, basis_matches)
-    obfuscated_action = _has_obfuscated_clinician_action(raw)
+    obfuscated_action = _has_obfuscated_clinician_action(
+        raw,
+        allowed_basis_spans=basis_exclusions,
+    )
     compact_basis_without_punctuation = any(
         not _basis_match_uses_punctuation_gap(raw, match)
         for match in basis_matches
