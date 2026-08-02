@@ -22,7 +22,6 @@ from app.services.utterance_intent_lexicon import (
     CLINICIAN_STRICT_COMMAND_PREFIXES,
     MEDIA_CREATE_ACTIONS,
     MUTATE_ACTIONS,
-    MUTATION_NEGATIONS,
     PLAN_CREATE_ACTIONS,
     PLAN_UPDATE_ACTIONS,
     QUESTION_SIGNALS,
@@ -154,74 +153,13 @@ _LEGACY_CLINICIAN_OBJECT_SUFFIXES = (
 _PRE_NEGATION_MODIFIERS = ("暂时", "现在", "先")
 _POST_NEGATION_WRAPPERS = ("帮我", "立即", "再")
 _NONREPORT_RECORD_SUFFIXES = ("报告知情同意记录",)
-_CLINICIAN_BASIS_PREFIXES = ("根据", "依据", "按照")
-_CLINICIAN_BASIS_NOUNS = tuple(
-    dict.fromkeys((*CLINICIAN_FEEDBACK_OBJECT_NOUNS, "建议"))
-)
-# Full phrases only: single-character morphology overblocks noun targets such
-# as 性别、免疫 and 无效.  These phrases can deny a release but never authorize.
-_CLINICIAN_BASIS_NEGATION_PHRASES = tuple(
-    sorted(
-        {
-            *(
-                term
-                for term in CLAUSE_ACTION_NEGATIONS
-                if len(term) > 1
-            ),
-            *(term for term in MUTATION_NEGATIONS if len(term) > 1),
-            "尚未获准",
-            "未获准",
-            "不允许",
-            "不可以",
-            "不行",
-            "未经允许",
-            "不得执行",
-            "不应执行",
-            "拒绝执行",
-            "作废",
-        },
-        key=lambda term: (-len(term), term),
-    )
-)
-# Deny-only predicates after a grammatical joiner.  Shared legacy roots remain
-# the source of truth; the local additions cover common medication/abort
-# morphology that the public mutation classifier intentionally does not own.
-_CLINICIAN_BASIS_SECOND_ACTION_ROOTS = tuple(
-    sorted(
-        {
-            *_DENY_ONLY_ACTION_ROOTS,
-            "停止用药",
-            "中止用药",
-            "停药",
-            "减量",
-            "加量",
-            "换药",
-            "停止",
-            "中止",
-            "暂停",
-            "终止",
-            "取消",
-            "撤回",
-            "保留",
-            "拒绝",
-            "作废",
-            "改",
-        },
-        key=lambda term: (-len(term), term),
-    )
-)
-_CLINICIAN_BASIS_ACTION_JOINERS = tuple(
-    sorted(
-        {*_ACTION_JOINER_SUFFIXES, *_ACTION_JOINER_CHARS, "又"},
-        key=lambda term: (-len(term), term),
-    )
-)
 _CANONICAL_SENSITIVE_TERMS = tuple(
     dict.fromkeys(
         (
             *CLINICIAN_PROVIDER_TERMS,
             *_DENY_ONLY_ACTION_ROOTS,
-            *_CLINICIAN_BASIS_NOUNS,
+            *CLINICIAN_FEEDBACK_OBJECT_NOUNS,
+            "建议",
         )
     )
 )
@@ -231,7 +169,6 @@ _REASONS_BY_KIND: dict[DecisionKind, frozenset[str]] = {
             "no_clinician_signal",
             "no_clinician_report",
             "legacy_clinician_record_operation",
-            "clinician_basis_user_action",
         }
     ),
     "clinician_context": frozenset({"clinician_report"}),
@@ -254,6 +191,7 @@ _REASONS_BY_KIND: dict[DecisionKind, frozenset[str]] = {
             "negated_clinician_action",
             "unresolved_clinician_action",
             "obfuscated_clinician_action",
+            "clinician_basis_action_requires_separate_command",
         }
     ),
 }
@@ -1400,7 +1338,12 @@ def _has_obfuscated_clinician_action(raw: str) -> bool:
     normalized = unicodedata.normalize("NFKC", raw)
 
     def is_gap(char: str) -> bool:
-        return char.isspace() or unicodedata.category(char) in {"Cf", "Zs"}
+        category = unicodedata.category(char)
+        return (
+            char.isspace()
+            or category in {"Cf", "Zs"}
+            or category.startswith("P")
+        )
 
     def contains_gapped_term(term: str) -> bool:
         for start, char in enumerate(normalized):
@@ -1441,99 +1384,33 @@ def _has_obfuscated_clinician_action(raw: str) -> bool:
     )
 
 
-def _clinician_basis_user_action_provider(
-    raw: str,
-    segments: tuple[_Span, ...],
-) -> _Span | None:
-    """Match one positive legacy mutation based on clinician feedback."""
+def _has_anchored_clinician_basis_mutation(raw: str) -> bool:
+    """Block mixed clinician-basis mutations without interpreting targets."""
 
-    def has_joined_second_action(target: _Span) -> bool:
-        for position in range(target.start, target.end):
-            joiner = _starts_with_term(
-                raw,
-                _CLINICIAN_BASIS_ACTION_JOINERS,
-                position=position,
-                end=target.end,
-            )
-            if joiner is None:
-                continue
-            joiner_span, joiner_term = joiner
-            if (
-                joiner_term == "并"
-                and position > target.start
-                and raw[position - 1] == "合"
-                and raw.startswith("记录", joiner_span.end, target.end)
-            ):
-                continue
-            action_start = _skip_spaces(
-                raw,
-                joiner_span.end,
-                target.end,
-            )
-            if _starts_with_term(
-                raw,
-                _CLINICIAN_BASIS_SECOND_ACTION_ROOTS,
-                position=action_start,
-                end=target.end,
-            ) is not None:
-                return True
+    normalized = unicodedata.normalize("NFKC", raw)
+    compact = "".join(
+        char for char in normalized if not _is_ignorable(char)
+    )
+
+    def consume(position: int, terms: tuple[str, ...]) -> int | None:
+        for term in terms:
+            if compact.startswith(term, position):
+                return position + len(term)
+        return None
+
+    position = consume(0, ("根据", "依据", "按照"))
+    if position is None:
         return False
-
-    if len(segments) != 1:
-        return None
-    segment = segments[0]
-    position = _skip_spaces(raw, segment.start, segment.end)
-    basis_prefix = _starts_with_term(
-        raw,
-        _CLINICIAN_BASIS_PREFIXES,
-        position=position,
-        end=segment.end,
+    position = consume(position, CLINICIAN_PROVIDER_TERMS)
+    if position is None:
+        return False
+    position = consume(
+        position,
+        (*CLINICIAN_FEEDBACK_OBJECT_NOUNS, "建议"),
     )
-    if basis_prefix is None:
-        return None
-    position = _skip_spaces(raw, basis_prefix[0].end, segment.end)
-    provider_match = _starts_with_term(
-        raw,
-        CLINICIAN_PROVIDER_TERMS,
-        position=position,
-        end=segment.end,
-    )
-    if provider_match is None:
-        return None
-    provider, _ = provider_match
-    position = _skip_spaces(raw, provider.end, segment.end)
-    basis_noun = _starts_with_term(
-        raw,
-        _CLINICIAN_BASIS_NOUNS,
-        position=position,
-        end=segment.end,
-    )
-    if basis_noun is None:
-        return None
-    position = _skip_spaces(raw, basis_noun[0].end, segment.end)
-    action = _starts_with_term(
-        raw,
-        _MUTATION_ACTION_ROOTS,
-        position=position,
-        end=segment.end,
-    )
-    if action is None:
-        return None
-    target = _trim(raw, action[0].end, segment.end)
-    target_text = raw[target.start : target.end]
-    if (
-        target.start >= target.end
-        or not _content_is_substantive(raw, target)
-        or any(
-            phrase in target_text
-            for phrase in _CLINICIAN_BASIS_NEGATION_PHRASES
-        )
-        or _span_is_question(raw, segment)
-        or _segment_starts_with_action(raw, target)
-        or has_joined_second_action(target)
-    ):
-        return None
-    return provider
+    if position is None:
+        return False
+    return any(root in compact[position:] for root in _MUTATION_ACTION_ROOTS)
 
 
 def _decision(
@@ -1576,6 +1453,15 @@ def _ambiguous_candidate(
 def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
     """Classify clinician provenance without authorizing general actions."""
 
+    if _has_anchored_clinician_basis_mutation(raw):
+        return _decision(
+            raw,
+            kind="ambiguous_clinician_action",
+            reason_code=(
+                "clinician_basis_action_requires_separate_command"
+            ),
+        )
+
     if _has_obfuscated_clinician_action(raw):
         return _decision(
             raw,
@@ -1593,15 +1479,6 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
             reason_code="no_clinician_signal",
         )
     first_provider, _ = first_provider_match
-
-    basis_provider = _clinician_basis_user_action_provider(raw, segments)
-    if basis_provider is not None:
-        return _decision(
-            raw,
-            kind="none",
-            reason_code="clinician_basis_user_action",
-            provider=basis_provider,
-        )
 
     candidates = tuple(
         candidate

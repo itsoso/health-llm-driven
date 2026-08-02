@@ -171,11 +171,34 @@ CLINICIAN_NEGATED_WRITE_CASES = (
     ("不要不保存医生诊断", "unresolved_clinician_action"),
 )
 
+CLINICIAN_BASIS_NONWRITE_MESSAGES = (
+    "根据医生诊断删除昨天用药记录",
+    "依据医生意见调整用药剂量",
+    "按照医生建议同步健康数据",
+    "根据 医生 诊断 删除昨天用药记录",
+    "根据医生诊断不要删除昨天用药记录",
+    "根据医生诊断删除昨天用药记录并停药",
+    "根据医 生诊断删除昨天用药记录",
+    "按照医生建议同 步健康数据",
+)
+
+CLINICIAN_BASIS_OBFUSCATED_NONWRITE_MESSAGES = (
+    "根据医，生诊断删除昨天用药记录",
+    "根据医：生诊断调整体重",
+    "依据医、师意见同步健康数据",
+    "按照物理治，疗师建议删除记录",
+    "根据医,生诊断删除昨天用药记录",
+    "依据医/师意见同步健康数据",
+    "按照物理治.疗师建议删除记录",
+)
+
 CLINICIAN_FALLBACK_NONWRITE_MESSAGES = (
     *CLINICIAN_INSTRUCTION_MESSAGES,
     *CLINICIAN_ROLE_REVERSAL_MESSAGES,
     *CLINICIAN_POST_REPORT_INSTRUCTION_MESSAGES,
     *(message for message, _reason in CLINICIAN_NEGATED_WRITE_CASES),
+    *CLINICIAN_BASIS_NONWRITE_MESSAGES,
+    *CLINICIAN_BASIS_OBFUSCATED_NONWRITE_MESSAGES,
 )
 
 
@@ -342,6 +365,51 @@ def test_negated_clinician_writes_fail_closed_without_record_recovery(
     )
 
 
+@pytest.mark.parametrize("message", CLINICIAN_BASIS_NONWRITE_MESSAGES)
+def test_clinician_basis_mutations_require_a_separate_command(message):
+    intent = classify_agent_utterance(message)
+
+    assert (
+        intent.primary,
+        intent.domain,
+        intent.operation,
+        intent.reason,
+        intent.is_write,
+        intent.requires_reliable_tool_model,
+    ) == (
+        "chat",
+        "clinical_context",
+        "acknowledge",
+        "clinician_basis_action_requires_separate_command",
+        False,
+        True,
+    )
+
+
+@pytest.mark.parametrize(
+    "message",
+    CLINICIAN_BASIS_OBFUSCATED_NONWRITE_MESSAGES,
+)
+def test_punctuated_clinician_basis_mutations_fail_closed(message):
+    intent = classify_agent_utterance(message)
+
+    assert (
+        intent.primary,
+        intent.domain,
+        intent.operation,
+        intent.reason,
+        intent.is_write,
+        intent.requires_reliable_tool_model,
+    ) == (
+        "chat",
+        "clinical_context",
+        "acknowledge",
+        "obfuscated_clinician_action",
+        False,
+        True,
+    )
+
+
 @pytest.mark.parametrize(
     ("message", "expected"),
     (
@@ -365,6 +433,12 @@ def test_negated_clinician_writes_fail_closed_without_record_recovery(
             "删除医生诊断记录",
             ("mutate", "clinical_context", "delete", True, True),
         ),
+        (
+            "删除昨天用药记录",
+            ("mutate", "medication", "delete", True, True),
+        ),
+        ("调整体重", ("mutate", "metric", "update", True, True)),
+        ("同步健康数据", ("mutate", "unknown", "sync", True, True)),
     ),
 )
 def test_guard_none_conserves_legacy_public_intents(message, expected):

@@ -249,70 +249,15 @@ _OBFUSCATED_CLINICIAN_ACTION_IDS = frozenset(
         "duplicated_provider_does_not_mask_split_provider",
         "duplicated_root_does_not_mask_split_root",
         "duplicated_object_does_not_mask_split_object",
+        "punctuated_doctor_provider_basis_requires_separate_command",
+        "punctuated_doctor_provider_update_requires_separate_command",
+        "punctuated_physician_provider_basis_requires_separate_command",
+        "punctuated_physiotherapist_provider_requires_separate_command",
+        "ascii_comma_split_provider_basis_is_obfuscated",
+        "ascii_slash_split_provider_basis_is_obfuscated",
+        "ascii_dot_split_provider_basis_is_obfuscated",
     }
 )
-
-_CLINICIAN_BASIS_CONTROL_IDS = frozenset(
-    {
-        "diagnosis_basis_delete_control",
-        "opinion_basis_update_control",
-        "advice_basis_sync_control",
-        "spaced_clinician_basis_control",
-        "conjoined_dates_remain_a_single_basis_target",
-        "conjoined_nouns_remain_a_single_basis_target",
-        "conjoined_objects_remain_a_single_basis_target",
-        "comorbidity_record_remains_a_basis_target",
-        "gender_record_remains_a_basis_target",
-        "immune_plan_remains_a_basis_target",
-        "invalid_record_remains_a_basis_target",
-        "meal_remains_a_basis_target",
-        "weight_remains_a_basis_target",
-        "health_data_record_remains_a_basis_target",
-        "medication_info_record_remains_a_basis_target",
-        "exercise_goal_record_remains_a_basis_target",
-        "heart_rate_remains_a_basis_target",
-        "medication_remains_a_basis_target",
-        "dose_adjustment_record_remains_a_basis_target",
-        "immune_plan_execution_record_remains_a_basis_target",
-        "merged_record_remains_a_basis_target",
-    }
-)
-
-_INVALID_CLINICIAN_BASIS_IDS = frozenset(
-    {
-        "negated_clinician_basis_is_not_released",
-        "second_subject_clinician_basis_is_not_released",
-        "coordinated_clinician_basis_is_not_released",
-        "empty_target_clinician_basis_is_not_released",
-        "unable_suffix_clinician_basis_is_not_released",
-        "cannot_suffix_clinician_basis_is_not_released",
-        "prohibited_suffix_clinician_basis_is_not_released",
-        "avoid_suffix_clinician_basis_is_not_released",
-        "unknown_coordinated_verb_basis_is_not_released",
-        "not_yet_authorized_basis_is_not_released",
-        "not_allowed_basis_is_not_released",
-        "not_possible_basis_is_not_released",
-        "not_viable_basis_is_not_released",
-        "without_permission_basis_is_not_released",
-        "must_not_execute_basis_is_not_released",
-        "should_not_execute_basis_is_not_released",
-        "stop_medication_coordination_basis_is_not_released",
-        "reduce_dose_coordination_basis_is_not_released",
-        "switch_medication_coordination_basis_is_not_released",
-        "weak_and_stop_medication_basis_is_not_released",
-        "weak_with_reduce_dose_basis_is_not_released",
-        "weak_also_switch_medication_basis_is_not_released",
-        "weak_and_abort_medication_basis_is_not_released",
-        "refuse_execution_basis_is_not_released",
-        "void_basis_is_not_released",
-        "known_second_root_basis_is_not_released",
-        "noun_terminated_stop_plan_basis_is_not_released",
-        "noun_terminated_keep_backup_basis_is_not_released",
-        "noun_terminated_refusal_plan_basis_is_not_released",
-        "unanchored_clinician_advice_is_not_basis_control",
-    }
-)
-
 
 @pytest.mark.parametrize(
     "case",
@@ -353,29 +298,17 @@ def test_obfuscated_clinician_actions_fail_closed_without_raw_spans(case):
 
 
 @pytest.mark.parametrize(
-    "case",
-    tuple(
-        case
-        for case in _cases()
-        if case["id"] in _CLINICIAN_BASIS_CONTROL_IDS
+    "text",
+    (
+        "医生，删除昨天用药记录",
+        "医生说腰痛。删除昨天用药记录",
+        "根据医生诊断。删除昨天用药记录",
     ),
-    ids=lambda row: row["id"],
 )
-def test_clinician_basis_controls_reach_legacy_mutation(case):
+def test_obfuscation_view_does_not_join_intact_terms_across_punctuation(text):
     guard = _module()
-    classifier = importlib.import_module(
-        "app.services.utterance_intent_classifier"
-    )
 
-    decision = guard.classify_clinician_turn(case["text"])
-    intent = classifier.classify_agent_utterance(case["text"])
-
-    assert decision.kind == "none"
-    assert decision.reason_code == "clinician_basis_user_action"
-    assert decision.authorizes_feedback_write is False
-    assert intent.primary == "mutate"
-    assert intent.operation == case["public_operation"]
-    assert intent.is_write is True
+    assert guard._has_obfuscated_clinician_action(text) is False
 
 
 @pytest.mark.parametrize(
@@ -383,11 +316,12 @@ def test_clinician_basis_controls_reach_legacy_mutation(case):
     tuple(
         case
         for case in _cases()
-        if case["id"] in _INVALID_CLINICIAN_BASIS_IDS
+        if case["reason_code"]
+        == "clinician_basis_action_requires_separate_command"
     ),
     ids=lambda row: row["id"],
 )
-def test_invalid_clinician_basis_shapes_are_never_released(case):
+def test_clinician_basis_actions_require_a_separate_nonwrite_command(case):
     guard = _module()
     classifier = importlib.import_module(
         "app.services.utterance_intent_classifier"
@@ -396,9 +330,28 @@ def test_invalid_clinician_basis_shapes_are_never_released(case):
     decision = guard.classify_clinician_turn(case["text"])
     intent = classifier.classify_agent_utterance(case["text"])
 
-    assert decision.reason_code != "clinician_basis_user_action"
+    assert decision.kind == "ambiguous_clinician_action"
+    assert (
+        decision.reason_code
+        == "clinician_basis_action_requires_separate_command"
+    )
     assert decision.authorizes_feedback_write is False
-    assert intent.is_write is False
+    assert decision.provider_start is decision.provider_end is None
+    assert decision.content_start is decision.content_end is None
+    assert decision.command_start is decision.command_end is None
+    assert (
+        intent.primary,
+        intent.domain,
+        intent.operation,
+        intent.is_write,
+        intent.requires_reliable_tool_model,
+    ) == (
+        "chat",
+        "clinical_context",
+        "acknowledge",
+        False,
+        True,
+    )
 
 
 def test_non_writes_never_expose_an_authorizing_command_span():
@@ -479,7 +432,10 @@ def test_guard_deny_roots_cover_shared_legacy_action_lexicon():
         ("clinician_context", "clinician_instruction"),
         ("clinician_advice", "negated_clinician_action"),
         ("none", "unresolved_clinician_action"),
-        ("clinician_context", "clinician_basis_user_action"),
+        (
+            "none",
+            "clinician_basis_action_requires_separate_command",
+        ),
         ("none", "obfuscated_clinician_action"),
     ),
 )

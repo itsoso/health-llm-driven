@@ -1848,375 +1848,118 @@
     "command": "请记录 医生诊断"
   },
   {
-    "id": "diagnosis_basis_delete_control",
+    "id": "diagnosis_basis_delete_requires_separate_command",
     "text": "根据医生诊断删除昨天用药记录",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "delete"
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
   },
   {
-    "id": "opinion_basis_update_control",
+    "id": "opinion_basis_update_requires_separate_command",
     "text": "依据医生意见调整用药剂量",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "update"
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
   },
   {
-    "id": "advice_basis_sync_control",
+    "id": "advice_basis_sync_requires_separate_command",
     "text": "按照医生建议同步健康数据",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "sync"
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
   },
   {
-    "id": "spaced_clinician_basis_control",
+    "id": "spaced_clinician_basis_requires_separate_command",
     "text": "根据 医生 诊断 删除昨天用药记录",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "delete"
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
   },
   {
-    "id": "conjoined_dates_remain_a_single_basis_target",
-    "text": "根据医生诊断删除昨天和今天的用药记录",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "delete"
-  },
-  {
-    "id": "conjoined_nouns_remain_a_single_basis_target",
-    "text": "依据医生意见调整饮食与运动目标",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "update"
-  },
-  {
-    "id": "conjoined_objects_remain_a_single_basis_target",
-    "text": "根据医生诊断删除鱼油和维生素记录",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "delete"
-  },
-  {
-    "id": "comorbidity_record_remains_a_basis_target",
-    "text": "根据医生诊断删除并发症记录",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "delete"
-  },
-  {
-    "id": "gender_record_remains_a_basis_target",
-    "text": "根据医生诊断删除性别记录",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "delete"
-  },
-  {
-    "id": "immune_plan_remains_a_basis_target",
-    "text": "依据医生意见调整免疫计划",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "update"
-  },
-  {
-    "id": "invalid_record_remains_a_basis_target",
-    "text": "根据医生诊断删除无效记录",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "delete"
-  },
-  {
-    "id": "meal_remains_a_basis_target",
-    "text": "根据医生诊断删除昨天午餐",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "delete"
-  },
-  {
-    "id": "weight_remains_a_basis_target",
-    "text": "依据医生意见调整体重",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "update"
-  },
-  {
-    "id": "health_data_record_remains_a_basis_target",
-    "text": "根据医生反馈删除健康数据记录",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "delete"
-  },
-  {
-    "id": "medication_info_record_remains_a_basis_target",
-    "text": "根据医生意见调整用药信息记录",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "update"
-  },
-  {
-    "id": "exercise_goal_record_remains_a_basis_target",
-    "text": "根据医生诊断删除运动目标记录",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "delete"
-  },
-  {
-    "id": "heart_rate_remains_a_basis_target",
+    "id": "arbitrary_target_basis_requires_separate_command",
     "text": "根据医生意见调整心率",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "update"
-  },
-  {
-    "id": "medication_remains_a_basis_target",
-    "text": "根据医生诊断删除药物",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "delete"
-  },
-  {
-    "id": "dose_adjustment_record_remains_a_basis_target",
-    "text": "根据医生反馈删除用药剂量调整记录",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "delete"
-  },
-  {
-    "id": "immune_plan_execution_record_remains_a_basis_target",
-    "text": "根据医生意见删除免疫计划执行记录",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "delete"
-  },
-  {
-    "id": "merged_record_remains_a_basis_target",
-    "text": "根据医生诊断删除合并记录",
-    "kind": "none",
-    "reason_code": "clinician_basis_user_action",
-    "provider": "医生",
-    "public_operation": "delete"
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
   },
   {
     "id": "negated_clinician_basis_is_not_released",
     "text": "根据医生诊断不要删除昨天用药记录",
     "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
+    "reason_code": "clinician_basis_action_requires_separate_command"
   },
   {
     "id": "second_subject_clinician_basis_is_not_released",
     "text": "根据医生诊断患者建议删除昨天用药记录",
     "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
+    "reason_code": "clinician_basis_action_requires_separate_command"
   },
   {
     "id": "coordinated_clinician_basis_is_not_released",
     "text": "根据医生诊断删除昨天用药记录并同步健康数据",
     "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
+    "reason_code": "clinician_basis_action_requires_separate_command"
   },
   {
     "id": "empty_target_clinician_basis_is_not_released",
     "text": "根据医生诊断删除",
     "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
+    "reason_code": "clinician_basis_action_requires_separate_command"
   },
   {
-    "id": "unable_suffix_clinician_basis_is_not_released",
-    "text": "根据医生诊断删除昨天用药记录不可行",
+    "id": "split_provider_clinician_basis_requires_separate_command",
+    "text": "根据医 生诊断删除昨天用药记录",
     "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
+    "reason_code": "clinician_basis_action_requires_separate_command"
   },
   {
-    "id": "cannot_suffix_clinician_basis_is_not_released",
-    "text": "根据医生诊断删除昨天用药记录不能执行",
+    "id": "split_feedback_noun_clinician_basis_requires_separate_command",
+    "text": "依据医生意 见调整体重",
     "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
+    "reason_code": "clinician_basis_action_requires_separate_command"
   },
   {
-    "id": "prohibited_suffix_clinician_basis_is_not_released",
-    "text": "根据医生诊断删除昨天用药记录禁止执行",
+    "id": "split_mutation_root_clinician_basis_requires_separate_command",
+    "text": "按照医生建议同 步健康数据",
     "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
+    "reason_code": "clinician_basis_action_requires_separate_command"
   },
   {
-    "id": "avoid_suffix_clinician_basis_is_not_released",
-    "text": "根据医生诊断删除昨天用药记录避免误删",
+    "id": "punctuated_doctor_provider_basis_requires_separate_command",
+    "text": "根据医，生诊断删除昨天用药记录",
     "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
+    "reason_code": "obfuscated_clinician_action"
   },
   {
-    "id": "unknown_coordinated_verb_basis_is_not_released",
-    "text": "根据医生诊断删除昨天用药记录并改剂量",
+    "id": "punctuated_doctor_provider_update_requires_separate_command",
+    "text": "根据医：生诊断调整体重",
     "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
+    "reason_code": "obfuscated_clinician_action"
   },
   {
-    "id": "not_yet_authorized_basis_is_not_released",
-    "text": "根据医生诊断删除昨天用药记录尚未获准",
+    "id": "punctuated_physician_provider_basis_requires_separate_command",
+    "text": "依据医、师意见同步健康数据",
     "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
+    "reason_code": "obfuscated_clinician_action"
   },
   {
-    "id": "not_allowed_basis_is_not_released",
-    "text": "根据医生诊断删除昨天用药记录不允许",
+    "id": "punctuated_physiotherapist_provider_requires_separate_command",
+    "text": "按照物理治，疗师建议删除记录",
     "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
+    "reason_code": "obfuscated_clinician_action"
   },
   {
-    "id": "not_possible_basis_is_not_released",
-    "text": "根据医生诊断删除昨天用药记录不可以",
+    "id": "ascii_comma_split_provider_basis_is_obfuscated",
+    "text": "根据医,生诊断删除昨天用药记录",
     "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
+    "reason_code": "obfuscated_clinician_action"
   },
   {
-    "id": "not_viable_basis_is_not_released",
-    "text": "根据医生诊断删除昨天用药记录不行",
+    "id": "ascii_slash_split_provider_basis_is_obfuscated",
+    "text": "依据医/师意见同步健康数据",
     "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
+    "reason_code": "obfuscated_clinician_action"
   },
   {
-    "id": "without_permission_basis_is_not_released",
-    "text": "根据医生诊断删除昨天用药记录未经允许",
+    "id": "ascii_dot_split_provider_basis_is_obfuscated",
+    "text": "按照物理治.疗师建议删除记录",
     "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
-  },
-  {
-    "id": "must_not_execute_basis_is_not_released",
-    "text": "根据医生诊断删除昨天用药记录不得执行",
-    "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
-  },
-  {
-    "id": "should_not_execute_basis_is_not_released",
-    "text": "根据医生诊断删除昨天用药记录不应执行",
-    "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
-  },
-  {
-    "id": "stop_medication_coordination_basis_is_not_released",
-    "text": "根据医生建议调整用药剂量并停药",
-    "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
-  },
-  {
-    "id": "reduce_dose_coordination_basis_is_not_released",
-    "text": "根据医生建议调整用药剂量并减量",
-    "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
-  },
-  {
-    "id": "switch_medication_coordination_basis_is_not_released",
-    "text": "根据医生建议调整用药剂量并换药",
-    "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
-  },
-  {
-    "id": "weak_and_stop_medication_basis_is_not_released",
-    "text": "根据医生建议调整用药剂量和停药",
-    "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
-  },
-  {
-    "id": "weak_with_reduce_dose_basis_is_not_released",
-    "text": "根据医生建议调整用药剂量与减量",
-    "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
-  },
-  {
-    "id": "weak_also_switch_medication_basis_is_not_released",
-    "text": "根据医生建议调整用药剂量以及换药",
-    "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
-  },
-  {
-    "id": "weak_and_abort_medication_basis_is_not_released",
-    "text": "根据医生建议调整用药剂量及中止用药",
-    "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
-  },
-  {
-    "id": "refuse_execution_basis_is_not_released",
-    "text": "根据医生诊断删除昨天用药记录拒绝执行",
-    "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
-  },
-  {
-    "id": "void_basis_is_not_released",
-    "text": "根据医生诊断删除昨天用药记录作废",
-    "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
-  },
-  {
-    "id": "known_second_root_basis_is_not_released",
-    "text": "根据医生诊断删除昨天用药记录并删除记录",
-    "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
-  },
-  {
-    "id": "noun_terminated_stop_plan_basis_is_not_released",
-    "text": "根据医生建议调整用药剂量和停药计划",
-    "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
-  },
-  {
-    "id": "noun_terminated_keep_backup_basis_is_not_released",
-    "text": "根据医生诊断删除昨天用药记录但保留备份记录",
-    "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
-  },
-  {
-    "id": "noun_terminated_refusal_plan_basis_is_not_released",
-    "text": "根据医生建议调整用药剂量并拒绝本操作计划",
-    "kind": "ambiguous_clinician_action",
-    "reason_code": "unresolved_clinician_action",
-    "provider": "医生"
+    "reason_code": "obfuscated_clinician_action"
   },
   {
     "id": "unanchored_clinician_advice_is_not_basis_control",
