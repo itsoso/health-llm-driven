@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | date | 2026-08-02 |
-| status | ready_to_deploy |
-| current_stage | G3/G4 PASS; G5 deployment retry pending after unit-drift fix |
+| status | deploying |
+| current_stage | G5 PASS; G6 Mobile OTA retry and authenticated-account smoke pending |
 | owner_surface | Backend / Mobile data connection |
 
 ## Problem
@@ -104,7 +104,7 @@ tests, with no new production blocker. Long-term follow-up: replace the
 process-local challenge with an encrypted durable coordinator before restoring
 multiple Uvicorn workers.
 
-### G5 Deployment Health: PENDING
+### G5 Deployment Health: PASS
 
 The first backend deployment reached commit `5ecaaa41a1c2`, completed database
 backup and restore rehearsal, and passed the built-in 60/60 health gate. The
@@ -130,10 +130,23 @@ probe, runtime state and active service health before further work continued.
 Candidate validation now requires the exact new Uvicorn path and argv for the
 backend while retaining fail-closed rejection of additional or changed command
 records. The complete infrastructure, deploy and runtime-state transaction
-suite passes 245 tests. Another backend deployment and effective-unit probe
-remain required before G5 can pass; Mobile OTA has not started.
+suite passes 245 tests. The final backend deployment of commit `64fbf0b016fc`
+passed candidate preflight/install, three 60/60 health checks, exact revision,
+guard/staged serving contracts, Skills 22/22 and transaction finalize. A
+separate production probe confirmed all four units active and the effective
+backend command contains `--workers 1` and no `--workers 2`.
 
 ### G6 Production Verification: PENDING
 
-Production credential status, reconnect/MFA recovery and one manual sync remain
-to be verified without exposing secrets.
+Production health and the Garmin credential, sync, connect, test and MFA routes
+are live; unauthenticated probes returned 401 for all five, proving registration
+and auth protection without sending real credentials. Production intentionally
+disables OpenAPI/Docs, so route probes replace a public schema fetch.
+
+The production Mobile OTA built successfully but four Hermes bundle uploads
+failed before an update ID with EAS asset-processing timeout/connection-reset
+errors. Expo CLI's supported `--no-bytecode` export and EAS Update's supported
+`--input-dir --skip-bundler` path are now a fail-closed fallback after the two
+normal retries; its release-lock, ID, manifest and anchor behavior passes all 16
+Mobile release-script tests. Publishing that fallback plus one authenticated
+credential/reconnect/MFA/manual-sync smoke remain before G6 can pass.

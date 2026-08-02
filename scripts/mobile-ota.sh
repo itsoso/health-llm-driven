@@ -71,8 +71,13 @@ echo ""
 # 不打 web bundle (react-native-maps 不支持 web)
 # --environment 对普通 channel 与 channel 名字对齐;Rokid 隔离 channel 复用生产/预览环境变量。
 UPDATE_LOG="$(mktemp)"
+NO_BYTECODE_DIR=""
 cleanup_mobile_ota() {
   rm -f "${UPDATE_LOG}"
+  if [[ -n "${NO_BYTECODE_DIR}" &&
+        "${NO_BYTECODE_DIR##*/}" == reva-mobile-ota-js.* ]]; then
+    rm -rf -- "${NO_BYTECODE_DIR}"
+  fi
   release_release_lock
 }
 trap cleanup_mobile_ota EXIT
@@ -87,6 +92,41 @@ run_update_attempt() {
   local exit_code=$?
   set -e
   return "${exit_code}"
+}
+
+run_no_bytecode_update_attempt() {
+  NO_BYTECODE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/reva-mobile-ota-js.XXXXXX")"
+  echo "△ EAS did not process the Hermes bundle; retrying with official --no-bytecode export + --skip-bundler."
+
+  set +e
+  if [[ -n "${OTA_EXPO_RUNNER:-}" ]]; then
+    CI=1 "${OTA_EXPO_RUNNER}" export --platform ios \
+      --output-dir "${NO_BYTECODE_DIR}" --no-bytecode \
+      --dump-assetmap --source-maps 2>&1 | tee "${UPDATE_LOG}"
+  else
+    CI=1 npx expo export --platform ios \
+      --output-dir "${NO_BYTECODE_DIR}" --no-bytecode \
+      --dump-assetmap --source-maps 2>&1 | tee "${UPDATE_LOG}"
+  fi
+  local export_exit=$?
+  set -e
+  if [[ "${export_exit}" -ne 0 ]]; then
+    return "${export_exit}"
+  fi
+
+  set +e
+  if [[ -n "${OTA_EAS_RUNNER:-}" ]]; then
+    CI=1 "${OTA_EAS_RUNNER}" update --channel "${CHANNEL}" \
+      --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" \
+      --input-dir "${NO_BYTECODE_DIR}" --skip-bundler 2>&1 | tee "${UPDATE_LOG}"
+  else
+    CI=1 npx eas-cli update --channel "${CHANNEL}" \
+      --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" \
+      --input-dir "${NO_BYTECODE_DIR}" --skip-bundler 2>&1 | tee "${UPDATE_LOG}"
+  fi
+  local update_exit=$?
+  set -e
+  return "${update_exit}"
 }
 
 if run_update_attempt; then
@@ -104,8 +144,18 @@ else
       SECOND_EXIT=0
     else
       SECOND_EXIT=$?
-      echo "✗ OTA failed after one retry." >&2
-      exit "${SECOND_EXIT}"
+      if grep -Eiq 'Asset processing timed out for assets' "${UPDATE_LOG}"; then
+        if run_no_bytecode_update_attempt; then
+          FALLBACK_EXIT=0
+        else
+          FALLBACK_EXIT=$?
+          echo "✗ OTA no-bytecode fallback failed." >&2
+          exit "${FALLBACK_EXIT}"
+        fi
+      else
+        echo "✗ OTA failed after one retry." >&2
+        exit "${SECOND_EXIT}"
+      fi
     fi
   else
     echo "✗ OTA failed and was not safe to retry automatically." >&2
