@@ -1,6 +1,7 @@
 """轻量健康上下文服务测试"""
 import logging
 import threading
+import time
 from datetime import date, datetime, timedelta
 
 import pytest
@@ -406,6 +407,21 @@ def test_full_context_without_doctor_feedback_omits_empty_section(db, test_user)
     assert "用户转述的医生意见" not in context
 
 
+@pytest.mark.parametrize(
+    ("base", "section", "expected"),
+    (
+        ("基础上下文", "", "基础上下文"),
+        ("", "医生来源段", "医生来源段"),
+        ("基础上下文", "医生来源段", "基础上下文\n医生来源段"),
+        ("", "", ""),
+    ),
+)
+def test_append_context_section_preserves_empty_values(base, section, expected):
+    from app.services.health_context_lite_service import _append_context_section
+
+    assert _append_context_section(base, section) == expected
+
+
 def test_minimal_context_never_queries_or_renders_clinician_feedback(
     db,
     test_user,
@@ -431,33 +447,137 @@ def test_minimal_context_never_queries_or_renders_clinician_feedback(
     assert "用户转述的医生意见" not in context
 
 
-def test_invalidate_health_context_rebuilds_stale_full_context(db, test_user):
+def test_full_context_reads_fresh_clinician_overlay_without_local_invalidation(
+    db,
+    test_user,
+):
     from app.services.health_context_lite_service import (
+        INJECTION_FULL,
+        _context_cache,
         build_lite_health_context,
-        invalidate_health_context,
     )
 
     initial = build_lite_health_context(db, test_user.id)
     assert initial is not None
-    assert "失效后可见的医生意见" not in initial
+    cache_key = (test_user.id, INJECTION_FULL)
+    assert _context_cache[cache_key][1] == initial
+    assert "无需本地失效即可见的医生意见" not in initial
     _add_clinician_feedback(
         db,
         user_id=test_user.id,
         generated_at=datetime(2026, 8, 1, 9),
-        assessment="失效后可见的医生意见",
+        assessment="无需本地失效即可见的医生意见",
     )
     db.commit()
 
-    stale = build_lite_health_context(db, test_user.id)
-    invalidate_health_context(test_user.id)
     fresh = build_lite_health_context(db, test_user.id)
 
-    assert stale == initial
-    assert fresh is not None
-    assert "失效后可见的医生意见" in fresh
+    assert "无需本地失效即可见的医生意见" in fresh
+    cached_base = _context_cache[cache_key][1]
+    assert cached_base == initial
+    assert "无需本地失效即可见的医生意见" not in cached_base
+    assert "用户转述的医生意见" not in cached_base
 
 
-def test_invalidate_health_context_is_owner_scoped_and_missing_key_is_noop():
+def test_every_full_call_refreshes_owner_doctor_overlay_only(db, test_user):
+    from app.services.health_context_lite_service import (
+        INJECTION_FULL,
+        _context_cache,
+        build_lite_health_context,
+    )
+
+    other = User(
+        username="ctx-overlay-other",
+        email="ctx-overlay-other@example.com",
+        hashed_password="hashed_password",
+        name="医生上下文其他用户",
+        is_active=True,
+        is_approved=True,
+    )
+    db.add(other)
+    db.flush()
+    build_lite_health_context(db, test_user.id)
+    current_entry = _add_clinician_feedback(
+        db,
+        user_id=test_user.id,
+        generated_at=datetime(2026, 8, 1, 9),
+        assessment="初始临床词条",
+    )
+    _add_clinician_feedback(
+        db,
+        user_id=test_user.id,
+        generated_at=datetime(2026, 8, 2, 9),
+        created_by="orchestrator",
+        assessment="错误来源词条不得泄露",
+    )
+    _add_clinician_feedback(
+        db,
+        user_id=other.id,
+        generated_at=datetime(2026, 8, 3, 9),
+        assessment="其他用户词条不得泄露",
+    )
+    db.commit()
+
+    first = build_lite_health_context(db, test_user.id)
+    assert "初始临床词条" in first
+    assert "错误来源词条不得泄露" not in first
+    assert "其他用户词条不得泄露" not in first
+
+    current_entry.assessment = "修订临床词条"
+    db.commit()
+    second = build_lite_health_context(db, test_user.id)
+    _add_clinician_feedback(
+        db,
+        user_id=test_user.id,
+        generated_at=datetime(2026, 8, 4, 9),
+        plan="新增临床词条",
+    )
+    db.commit()
+    third = build_lite_health_context(db, test_user.id)
+
+    assert "修订临床词条" in second
+    assert "初始临床词条" not in second
+    assert "修订临床词条" in third
+    assert "新增临床词条" in third
+    cached_base = _context_cache[(test_user.id, INJECTION_FULL)][1]
+    assert "用户转述的医生意见" not in cached_base
+    assert "修订临床词条" not in cached_base
+    assert "新增临床词条" not in cached_base
+
+
+def test_simulated_other_worker_stale_base_still_gets_fresh_doctor_overlay(
+    db,
+    test_user,
+):
+    from app.services.health_context_lite_service import (
+        INJECTION_FULL,
+        _context_cache,
+        _context_cache_entry_generations,
+        _context_generations,
+        build_lite_health_context,
+    )
+
+    _add_clinician_feedback(
+        db,
+        user_id=test_user.id,
+        generated_at=datetime(2026, 8, 1, 9),
+        assessment="跨worker立即可见的医生意见",
+    )
+    db.commit()
+    cache_key = (test_user.id, INJECTION_FULL)
+    current_generation = _context_generations.get(test_user.id, 0)
+    _context_cache[cache_key] = (time.time(), "另worker缓存的旧基础上下文")
+    _context_cache_entry_generations[cache_key] = current_generation
+
+    context = build_lite_health_context(db, test_user.id)
+
+    assert context.startswith("另worker缓存的旧基础上下文\n")
+    assert "跨worker立即可见的医生意见" in context
+    assert _context_cache[cache_key][1] == "另worker缓存的旧基础上下文"
+    assert "用户转述的医生意见" not in _context_cache[cache_key][1]
+
+
+def test_invalidate_health_context_clears_only_owner_cache_keys():
     from app.services.health_context_lite_service import (
         INJECTION_FULL,
         INJECTION_MINIMAL,
@@ -504,6 +624,11 @@ def test_invalidation_during_cache_miss_prevents_stale_build_from_refilling(
         health_context_lite_service,
         "_build_context",
         controlled_build,
+    )
+    monkeypatch.setattr(
+        health_context_lite_service,
+        "_clinician_feedback_context_section",
+        lambda _db, _user_id: "",
     )
     inflight_result = []
     worker = threading.Thread(

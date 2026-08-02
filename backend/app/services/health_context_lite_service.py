@@ -147,6 +147,30 @@ def _get_time_period() -> tuple[str, str]:
     return now.strftime("%H:%M"), period
 
 
+def _append_context_section(base: str, section: str) -> str:
+    """Append one prompt section without introducing empty separators."""
+    if not base:
+        return section
+    if not section:
+        return base
+    return f"{base}\n{section}"
+
+
+def _with_clinician_feedback_overlay(
+    db: Session,
+    user_id: int,
+    budget: str,
+    base_context: str,
+) -> str:
+    """Append uncached clinician feedback to FULL context only."""
+    if budget != INJECTION_FULL:
+        return base_context
+    return _append_context_section(
+        base_context,
+        _clinician_feedback_context_section(db, user_id),
+    )
+
+
 def build_lite_health_context(
     db: Session, user_id: int, intent: Optional[str] = None
 ) -> Optional[str]:
@@ -158,6 +182,7 @@ def build_lite_health_context(
     """
     budget = classify_injection_budget(intent) if intent is not None else INJECTION_FULL
     cache_key = (user_id, budget)
+    base_context = None
     with _context_cache_lock:
         build_generation = _context_generations.get(user_id, 0)
         cached = _context_cache.get(cache_key)
@@ -167,21 +192,23 @@ def build_lite_health_context(
             and cached_generation == build_generation
             and (time.time() - cached[0]) < _CACHE_TTL
         ):
-            return cached[1]
-        if cached is not None:
+            base_context = cached[1]
+        elif cached is not None:
             _context_cache.pop(cache_key, None)
             _context_cache_entry_generations.pop(cache_key, None)
 
-    try:
-        context = _build_context(db, user_id, budget=budget)
-        with _context_cache_lock:
-            if _context_generations.get(user_id, 0) == build_generation:
-                _context_cache[cache_key] = (time.time(), context)
-                _context_cache_entry_generations[cache_key] = build_generation
-        return context
-    except Exception as e:
-        logger.error(f"构建健康上下文失败(user={user_id}): {e}", exc_info=True)
-        return None
+    if base_context is None:
+        try:
+            base_context = _build_context(db, user_id, budget=budget)
+            with _context_cache_lock:
+                if _context_generations.get(user_id, 0) == build_generation:
+                    _context_cache[cache_key] = (time.time(), base_context)
+                    _context_cache_entry_generations[cache_key] = build_generation
+        except Exception as e:
+            logger.error(f"构建健康上下文失败(user={user_id}): {e}", exc_info=True)
+            return None
+
+    return _with_clinician_feedback_overlay(db, user_id, budget, base_context)
 
 
 def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> str:
@@ -679,10 +706,6 @@ def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> s
     gene_section = _gene_context_section(db, user_id)
     if gene_section:
         parts.append(gene_section)
-
-    clinician_feedback_section = _clinician_feedback_context_section(db, user_id)
-    if clinician_feedback_section:
-        parts.append(clinician_feedback_section)
 
     return "\n".join(parts)
 
