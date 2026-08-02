@@ -88,9 +88,9 @@ class GarminCredential(Base):
     sync_in_progress = Column(Boolean, default=False, server_default="false")
     sync_started_at = Column(DateTime(timezone=True), nullable=True)
 
-    # OAuth Token 缓存 - 防止频繁登录导致账号锁定
-    garth_session = Column(Text, nullable=True)  # 序列化的 garth session (JSON)
-    session_expires_at = Column(DateTime(timezone=True), nullable=True)  # session 过期时间
+    # Garmin 原生 token 缓存；字段名为历史兼容，内容是带版本的加密 envelope
+    garth_session = Column(Text, nullable=True)
+    session_expires_at = Column(DateTime(timezone=True), nullable=True)  # 仅作历史/观测元数据
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
