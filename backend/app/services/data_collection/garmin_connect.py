@@ -1812,9 +1812,12 @@ class GarminConnectService(GarminGettersMixin):
             return result
 
         except Exception as e:
-            import traceback
-            logger.error(f"{prefix} 同步Garmin数据失败: {str(e)}")
-            logger.error(f"{prefix} 详细错误: {traceback.format_exc()}")
+            logger.error(
+                "%s 同步 Garmin 数据失败 - error_type=%s, reason=%s",
+                prefix,
+                type(e).__name__,
+                safe_garmin_error_message(e),
+            )
             return None
 
     def _sync_heart_rate_samples(

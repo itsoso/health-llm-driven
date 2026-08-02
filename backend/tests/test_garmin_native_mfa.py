@@ -188,3 +188,31 @@ async def test_verify_mfa_endpoint_clears_requires_mfa(db, monkeypatch) -> None:
     db.refresh(credential)
     assert response.success is True
     assert credential.requires_mfa is False
+
+
+@pytest.mark.asyncio
+async def test_verify_mfa_endpoint_never_echoes_upstream_secret(
+    db,
+    monkeypatch,
+    caplog,
+) -> None:
+    user, _credential = _create_user_and_credential(db, "safe-endpoint")
+
+    def fail_verify(*_args, **_kwargs):
+        raise RuntimeError("mfa-upstream-secret")
+
+    from app.services.data_collection import garmin_connect
+
+    monkeypatch.setattr(garmin_connect, "verify_mfa_with_session", fail_verify)
+
+    response = await auth_api.verify_garmin_mfa(
+        GarminMFAVerifyRequest(mfa_code="123456", mfa_session_id="pending-session"),
+        current_user=user,
+        db=db,
+    )
+
+    rendered = response.message + caplog.text
+    assert response.success is False
+    assert "mfa-upstream-secret" not in rendered
+    assert "123456" not in rendered
+    assert "Garmin" in response.message

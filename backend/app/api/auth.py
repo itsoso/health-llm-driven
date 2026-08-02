@@ -1178,38 +1178,17 @@ async def test_garmin_connection(
         )
 
     except Exception as e:
-        logger.error(f"测试Garmin连接失败: {e}")
-        error_msg = str(e).lower()
-        original_msg = str(e)
+        from app.services.data_collection.garmin_native_auth import safe_garmin_error_message
 
-        # 检查是否是登录锁定错误
-        if '登录已被暂停' in original_msg or '分钟后再试' in original_msg:
-            return GarminTestConnectionResponse(
-                success=False,
-                mfa_required=False,
-                message=original_msg  # 直接使用原始的友好提示
-            )
-
-        # 检查是否需要设置密码
-        if 'set password' in error_msg or 'unexpected title' in error_msg:
-            return GarminTestConnectionResponse(
-                success=False,
-                mfa_required=False,
-                message="⚠️ Garmin账号需要设置密码！请先访问 connect.garmin.com 登录并按提示完成密码设置。"
-            )
-
-        # 登录失败 - 提供更详细的提示
-        if any(kw in error_msg for kw in ['401', 'unauthorized', 'credential', 'password', 'login', 'auth', 'oauth', 'ticket']):
-            return GarminTestConnectionResponse(
-                success=False,
-                mfa_required=False,
-                message="❌ 登录失败！请检查：1) 邮箱和密码是否正确 2) 是否选对了服务器（国际版/中国版）3) 先在 Garmin Connect 官网登录确认账号正常"
-            )
-
+        logger.error(
+            "测试 Garmin 连接失败 - user_id=%s, error_type=%s",
+            current_user.id,
+            type(e).__name__,
+        )
         return GarminTestConnectionResponse(
             success=False,
             mfa_required=False,
-            message=f"❌ 连接失败: {str(e)}"
+            message=safe_garmin_error_message(e),
         )
 
 
@@ -1256,8 +1235,14 @@ async def verify_garmin_mfa(
         )
 
     except Exception as e:
-        logger.error(f"验证Garmin MFA失败: {e}")
+        from app.services.data_collection.garmin_native_auth import safe_garmin_error_message
+
+        logger.error(
+            "验证 Garmin MFA 失败 - user_id=%s, error_type=%s",
+            current_user.id,
+            type(e).__name__,
+        )
         return GarminMFAVerifyResponse(
             success=False,
-            message=f"❌ 验证失败: {str(e)}"
+            message=safe_garmin_error_message(e),
         )

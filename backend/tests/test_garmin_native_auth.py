@@ -2,7 +2,9 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from app.api import auth as auth_api
 from app.models.user import GarminCredential, User
+from app.schemas.auth import GarminCredentialCreate
 from app.services.auth import garmin_credential_service
 from app.services.data_collection import garmin_connect
 from app.services.data_collection.garmin_connect import GarminConnectService
@@ -107,6 +109,63 @@ def test_general_secret_codec_keeps_password_round_trip() -> None:
 
     assert "private-value" not in encrypted
     assert garmin_credential_service.decrypt_secret(encrypted) == "private-value"
+
+
+@pytest.mark.asyncio
+async def test_connection_endpoint_never_echoes_upstream_secret(
+    db,
+    monkeypatch,
+    caplog,
+) -> None:
+    user, _credential = _create_saved_credential(db, "safe-endpoint")
+
+    def fail_connection(_self, db=None):
+        raise RuntimeError("upstream-secret-value")
+
+    monkeypatch.setattr(
+        GarminConnectService,
+        "test_connection_with_mfa",
+        fail_connection,
+    )
+
+    response = await auth_api.test_garmin_connection(
+        GarminCredentialCreate(
+            garmin_email="garmin-safe-endpoint@example.com",
+            garmin_password="password-secret-value",
+            is_cn=False,
+        ),
+        current_user=user,
+        db=db,
+    )
+
+    rendered = response.message + caplog.text
+    assert response.success is False
+    assert "upstream-secret-value" not in rendered
+    assert "password-secret-value" not in rendered
+    assert "暂时不可用" in response.message
+
+
+def test_daily_sync_logging_never_echoes_upstream_secret(
+    db,
+    monkeypatch,
+    caplog,
+) -> None:
+    service = GarminConnectService(
+        "garmin-safe-log@example.com",
+        "password-secret-value",
+        user_id=99,
+    )
+
+    def fail_authentication(_db):
+        raise RuntimeError("sync-upstream-secret")
+
+    monkeypatch.setattr(service, "_ensure_authenticated", fail_authentication)
+
+    result = service.sync_daily_data(db, 99, datetime.now(UTC).date())
+
+    assert result is None
+    assert "sync-upstream-secret" not in caplog.text
+    assert "password-secret-value" not in caplog.text
 
 
 def _create_saved_credential(db, suffix: str = "service") -> tuple[User, GarminCredential]:

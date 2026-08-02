@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextStyle, Alert, ScrollView, Switch } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Pressable, TextStyle, Alert, ScrollView, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -29,7 +29,6 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { logout, user, isAuthenticated } = useAuth();
   const qc = useQueryClient();
-  const [syncing, setSyncing] = useState(false);
   const [deletionRequesting, setDeletionRequesting] = useState(false);
   const releaseCapabilities = getReleaseCapabilities();
   const { status: updateStatus, checkNow: checkForUpdate, applyUpdate } = useAppUpdate();
@@ -50,7 +49,7 @@ export default function SettingsScreen() {
     return '未设置';
   }, [profile]);
 
-  const { data: garminStatus, refetch: refetchGarminStatus } = useQuery({
+  const { data: garminStatus } = useQuery({
     queryKey: ['garminStatus'],
     queryFn: () => api.get('/data-collection/garmin/me/credential-status').then(r => r.data),
     staleTime: 60_000,
@@ -66,21 +65,6 @@ export default function SettingsScreen() {
     queryFn: getAccountDeletionRequest,
     staleTime: 60_000,
   });
-
-  const syncGarmin = async () => {
-    setSyncing(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    try {
-      await api.post('/data-collection/garmin/me/sync?days=1');
-      Alert.alert('同步成功', 'Garmin 数据已更新');
-      await invalidateHealthSnapshot(qc);
-      refetchGarminStatus();
-    } catch {
-      Alert.alert('同步失败', '请稍后再试');
-    } finally {
-      setSyncing(false);
-    }
-  };
 
   const handleLogout = () => {
     Alert.alert('退出登录', '确定要退出吗？', [
@@ -229,7 +213,10 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <LocationSettingsRow city={city} useManual={profile?.use_manual_location === true}
             onPress={() => router.push('/location' as any)} />
-          <GarminStatusRow status={garminStatus} syncing={syncing} onSync={syncGarmin} />
+          <GarminStatusRow
+            status={garminStatus}
+            onPress={() => router.push('/garmin-connection' as any)}
+          />
           <AppleHealthRow onSyncComplete={() => invalidateHealthSnapshot(qc)} />
           <SettingRow icon="key-outline" label="数据连接与授权"
             value={connectionStatusSummary(dataConnections)}
@@ -441,12 +428,10 @@ function LocationSettingsRow({ city, useManual, onPress }: { city: string; useMa
 
 function GarminStatusRow({
   status,
-  syncing,
-  onSync,
+  onPress,
 }: {
   status: any;
-  syncing: boolean;
-  onSync: () => void;
+  onPress: () => void;
 }) {
   const health = status?.health as 'healthy' | 'stale' | 'error' | 'unbound' | undefined;
   const mins = status?.minutes_since_last_sync as number | null | undefined;
@@ -461,7 +446,6 @@ function GarminStatusRow({
     C.ink3;
 
   const statusText = (() => {
-    if (syncing) return '同步中...';
     if (!status) return '...';
     if (health === 'unbound') return '未绑定';
     if (health === 'error') {
@@ -477,7 +461,12 @@ function GarminStatusRow({
   })();
 
   return (
-    <TouchableOpacity style={styles.settingRow} onPress={onSync} activeOpacity={0.6} disabled={syncing}>
+    <Pressable
+      style={styles.settingRow}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Garmin 连接，${statusText}`}
+    >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
         <Ionicons name="watch-outline" size={18} color={C.ink2} />
         <View style={{
@@ -486,8 +475,8 @@ function GarminStatusRow({
       </View>
       <Text style={txt.settingLabel}>Garmin</Text>
       <Text style={[txt.settingValue, health === 'error' && { color: revaSemantic.risk.fg }]}>{statusText}</Text>
-      <Ionicons name={syncing ? 'refresh' : 'chevron-forward'} size={14} color={C.ink3} />
-    </TouchableOpacity>
+      <Ionicons name="chevron-forward" size={14} color={C.ink3} />
+    </Pressable>
   );
 }
 
