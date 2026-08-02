@@ -19322,6 +19322,80 @@ class AgentExecutor:
             return _truncate_for_display(raw)
         return await self._api_get(f"{base}/genetic/profiles/me", headers)
 
+    async def _exec_record_doctor_feedback(self, args: dict) -> str:
+        """Persist an explicit, owner-scoped clinician-feedback write."""
+        normalized = {
+            field: (
+                value.strip()
+                if isinstance((value := args.get(field)), str) and value.strip()
+                else None
+            )
+            for field in ("summary", "assessment", "plan")
+        }
+        if not any(normalized.values()):
+            return "Error: 医生反馈内容不能为空"
+
+        user_id = self._current_user_id
+        if not isinstance(user_id, int) or isinstance(user_id, bool) or user_id <= 0:
+            return "Error: 当前会话缺少用户身份，无法记录医生反馈"
+
+        raw_visit_date = args.get("visit_date")
+        if raw_visit_date is None or (
+            isinstance(raw_visit_date, str) and not raw_visit_date.strip()
+        ):
+            visit_date = self._agent_kernel_reference_now().date()
+        elif not isinstance(raw_visit_date, str) or re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}", raw_visit_date
+        ) is None:
+            return "Error: 医生反馈日期格式无效，请使用 YYYY-MM-DD"
+        else:
+            try:
+                visit_date = date.fromisoformat(raw_visit_date)
+            except ValueError:
+                return "Error: 医生反馈日期格式无效，请使用 YYYY-MM-DD"
+
+        try:
+            from app.services import doctor_report_service
+
+            entry = doctor_report_service.record_doctor_feedback(
+                self.db,
+                user_id=user_id,
+                summary=normalized["summary"],
+                assessment=normalized["assessment"],
+                plan=normalized["plan"],
+                visit_date=visit_date,
+            )
+            entry_id = entry.id
+            if (
+                not isinstance(entry_id, int)
+                or isinstance(entry_id, bool)
+                or entry_id <= 0
+                or entry.created_by != "doctor"
+            ):
+                raise RuntimeError("invalid_doctor_feedback_receipt")
+            return json.dumps(
+                {
+                    "message": "医生反馈已记录",
+                    "id": entry_id,
+                    "resource_type": "clinical_journal_entry",
+                    "created_by": "doctor",
+                },
+                ensure_ascii=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "operation=record_doctor_feedback error_type=%s",
+                type(exc).__name__,
+            )
+            try:
+                self.db.rollback()
+            except Exception as rollback_exc:  # noqa: BLE001
+                logger.error(
+                    "operation=record_doctor_feedback rollback_error_type=%s",
+                    type(rollback_exc).__name__,
+                )
+            return "Error: 医生反馈记录失败"
+
     async def _exec_upload_medical_exam_text(
         self, base: str, headers: dict, args: dict
     ) -> str:
