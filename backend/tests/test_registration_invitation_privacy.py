@@ -160,6 +160,10 @@ def test_production_registration_flags_accept_32_byte_digest_key(
         registration_invitation_rollout_enabled=rollout_enabled,
         registration_invitation_enforcement_enabled=enforcement_enabled,
         registration_invitation_digest_key="K" * 32,
+        aliyun_sms_access_key_id="invite-id",
+        aliyun_sms_access_key_secret="invite-secret",
+        registration_invitation_sms_sign_name="小巴邀请",
+        registration_invitation_sms_template_code="SMS_INVITE_123",
     )
     present.validate_required_security()
 

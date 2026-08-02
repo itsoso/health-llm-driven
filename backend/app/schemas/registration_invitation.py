@@ -31,6 +31,8 @@ class RegistrationInvitationPrepared(RegistrationInvitationSafe):
     manual_code: str
     link_token: str
     deep_link: str
+    delivery_status: str
+    delivery_error_code: str | None
 
 
 class RegistrationInvitationList(BaseModel):

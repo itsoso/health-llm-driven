@@ -53,8 +53,10 @@ def test_create_uses_default_expiry_returns_credentials_once_and_audits(
     assert response.status_code == 201
     payload = response.json()
     assert payload["phone_masked"] == "+86 138****8000"
-    assert payload["status"] == "created"
-    assert payload["prepared_for_delivery"] is True
+    assert payload["status"] == "send_failed"
+    assert payload["prepared_for_delivery"] is False
+    assert payload["delivery_status"] == "send_failed"
+    assert payload["delivery_error_code"] == "sms_not_configured"
     assert len(payload["manual_code"]) == 8
     assert payload["link_token"]
     assert payload["deep_link"].endswith(payload["link_token"])
@@ -234,8 +236,10 @@ def test_resend_rotates_credentials_on_same_row_and_invalidates_old_credentials(
     assert response.status_code == 200
     payload = response.json()
     assert payload["id"] == row.id
-    assert payload["status"] == "created"
-    assert payload["prepared_for_delivery"] is True
+    assert payload["status"] == "send_failed"
+    assert payload["prepared_for_delivery"] is False
+    assert payload["delivery_status"] == "send_failed"
+    assert payload["delivery_error_code"] == "sms_not_configured"
     assert payload["manual_code"] != created["manual_code"]
     assert payload["link_token"] != created["link_token"]
     db.refresh(row)

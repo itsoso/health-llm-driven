@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import desc
@@ -26,9 +27,17 @@ from app.services.registration_invitation import (
     phone_lookup_hmac,
     rotate_registration_invitation_credentials,
 )
+from app.services.registration_invitation_sms import (
+    FrozenRegistrationInvitationDelivery,
+    RegistrationInvitationDeliveryResult,
+    apply_registration_invitation_delivery_outcome,
+    freeze_registration_invitation_delivery,
+    send_frozen_registration_invitation_sms,
+)
 
 
 router = APIRouter(prefix="/admin/registration-invitations", tags=["admin-registration-invitations"])
+logger = logging.getLogger(__name__)
 _DEEP_LINK_PREFIX = "reva://register?invite="
 _ACTIVE_STATUSES = ("created", "sent", "send_failed")
 _MAX_PHONE_INPUT_LENGTH = 32
@@ -63,12 +72,29 @@ def _safe_payload(invitation: RegistrationInvitation) -> dict:
     }
 
 
-def _prepared_payload(invitation: RegistrationInvitation, manual_code: str, link_token: str) -> dict:
+def _credential_payload_snapshot(
+    invitation: RegistrationInvitation,
+    manual_code: str,
+    link_token: str,
+) -> dict:
     return {
         **_safe_payload(invitation),
         "manual_code": manual_code,
         "link_token": link_token,
         "deep_link": f"{_DEEP_LINK_PREFIX}{link_token}",
+    }
+
+
+def _delivered_payload(
+    invitation: RegistrationInvitation,
+    credential_snapshot: dict,
+    outcome: RegistrationInvitationDeliveryResult,
+) -> dict:
+    return {
+        **credential_snapshot,
+        **_safe_payload(invitation),
+        "delivery_status": outcome.delivery_status,
+        "delivery_error_code": outcome.error_code,
     }
 
 
@@ -129,6 +155,110 @@ def _rollback_and_raise(db: Session, exc: Exception) -> None:
     ) from None
 
 
+def _phase_two_persistence_error(
+    db: Session,
+    *,
+    invitation_id: int,
+    outcome: RegistrationInvitationDeliveryResult,
+) -> None:
+    db.rollback()
+    error_code = (
+        "provider_ack_persistence_failed"
+        if outcome.delivery_status == "sent"
+        else "delivery_outcome_persistence_failed"
+    )
+    # CRITICAL is the durable operational signal when the database cannot
+    # record its own terminal audit. It is intentionally bounded and contains
+    # neither provider response details nor delivery credentials.
+    logger.critical(
+        "registration invitation delivery outcome persistence failed "
+        "invitation_id=%s delivery_status=%s error_code=%s",
+        invitation_id,
+        outcome.delivery_status,
+        error_code,
+    )
+    message = (
+        "短信可能已送达，但邀请状态暂时无法确认；请勿立即重试"
+        if outcome.delivery_status == "sent"
+        else "邀请已保存，但短信投递状态暂时无法确认；请勿立即重试"
+    )
+    raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, error_code, message) from None
+
+
+def _persist_delivery_outcome(
+    db: Session,
+    *,
+    delivery_payload: FrozenRegistrationInvitationDelivery,
+    actor_id: int,
+    credential_snapshot: dict,
+    outcome: RegistrationInvitationDeliveryResult,
+) -> RegistrationInvitationPrepared:
+    try:
+        invitation = (
+            db.query(RegistrationInvitation)
+            .filter(
+                RegistrationInvitation.id == delivery_payload.invitation_id,
+                RegistrationInvitation.status == "created",
+                RegistrationInvitation.code_digest == delivery_payload.expected_code_digest,
+                RegistrationInvitation.link_token_digest
+                == delivery_payload.expected_link_token_digest,
+            )
+            .with_for_update()
+            .one_or_none()
+        )
+        if invitation is None:
+            db.rollback()
+            logger.warning(
+                "registration invitation delivery attempt superseded "
+                "invitation_id=%s operation=persist_delivery_outcome",
+                delivery_payload.invitation_id,
+            )
+            raise _error(
+                status.HTTP_409_CONFLICT,
+                "delivery_attempt_superseded",
+                "该邀请已被更新，本次短信结果不再适用于当前凭据",
+            )
+        apply_registration_invitation_delivery_outcome(
+            db,
+            invitation,
+            outcome=outcome,
+            actor_id=actor_id,
+        )
+        db.flush()
+        response = RegistrationInvitationPrepared(
+            **_delivered_payload(invitation, credential_snapshot, outcome)
+        )
+        db.commit()
+        return response
+    except HTTPException:
+        raise
+    except Exception:
+        _phase_two_persistence_error(
+            db,
+            invitation_id=delivery_payload.invitation_id,
+            outcome=outcome,
+        )
+
+
+def _send_after_phase_one(delivery_payload):
+    try:
+        return send_frozen_registration_invitation_sms(delivery_payload)
+    except Exception:
+        # The normal transport function converts all provider failures into a
+        # bounded outcome. This guard covers unexpected pre-dispatch/runtime
+        # faults while preserving the already committed recoverable row.
+        logger.critical(
+            "registration invitation delivery did not start invitation_id=%s "
+            "error_code=registration_invitation_delivery_not_started",
+            delivery_payload.invitation_id,
+        )
+        raise _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "registration_invitation_delivery_not_started",
+            "邀请已保存，但短信发送尚未开始；请稍后由管理员重发",
+        ) from None
+
+
 @router.post("", response_model=RegistrationInvitationPrepared, status_code=status.HTTP_201_CREATED)
 def create_invitation(
     request: RegistrationInvitationCreate,
@@ -136,6 +266,7 @@ def create_invitation(
     db: Session = Depends(get_db),
 ):
     now = datetime.now(UTC)
+    actor_id = int(admin.id)
     if request.expires_at is not None and _aware(request.expires_at) <= now:
         raise _error(422, "registration_invitation_expiry_invalid", "邀请有效期必须晚于当前时间")
     try:
@@ -184,16 +315,18 @@ def create_invitation(
                 action="create",
             )
         )
+        delivery_payload = freeze_registration_invitation_delivery(
+            created.invitation,
+            manual_code=created.manual_code,
+            link_token=created.link_token,
+        )
         db.flush()
-        response = RegistrationInvitationPrepared(
-            **_prepared_payload(
-                created.invitation,
-                created.manual_code,
-                created.link_token,
-            )
+        credential_snapshot = _credential_payload_snapshot(
+            created.invitation,
+            created.manual_code,
+            created.link_token,
         )
         db.commit()
-        return response
     except HTTPException:
         db.rollback()
         raise
@@ -202,6 +335,17 @@ def create_invitation(
         raise _error(422, "registration_invitation_phone_invalid", "手机号格式不正确") from None
     except (IntegrityError, SQLAlchemyError) as exc:
         _rollback_and_raise(db, exc)
+
+    # Phase 1 is durable before any provider side effect. Everything below uses
+    # frozen plain values because commit expires ORM state by default.
+    outcome = _send_after_phase_one(delivery_payload)
+    return _persist_delivery_outcome(
+        db,
+        delivery_payload=delivery_payload,
+        actor_id=actor_id,
+        credential_snapshot=credential_snapshot,
+        outcome=outcome,
+    )
 
 
 @router.get("", response_model=RegistrationInvitationList)
@@ -243,6 +387,7 @@ def prepare_resend(
     admin: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
+    actor_id = int(admin.id)
     try:
         invitation = _locked_invitation(db, invitation_id)
         rotated = rotate_registration_invitation_credentials(db, invitation)
@@ -254,21 +399,32 @@ def prepare_resend(
                 action="resend_prepare",
             )
         )
+        delivery_payload = freeze_registration_invitation_delivery(
+            invitation,
+            manual_code=rotated.manual_code,
+            link_token=rotated.link_token,
+        )
         db.flush()
-        response = RegistrationInvitationPrepared(
-            **_prepared_payload(
-                invitation,
-                rotated.manual_code,
-                rotated.link_token,
-            )
+        credential_snapshot = _credential_payload_snapshot(
+            invitation,
+            rotated.manual_code,
+            rotated.link_token,
         )
         db.commit()
-        return response
     except HTTPException:
         db.rollback()
         raise
     except (IntegrityError, SQLAlchemyError) as exc:
         _rollback_and_raise(db, exc)
+
+    outcome = _send_after_phase_one(delivery_payload)
+    return _persist_delivery_outcome(
+        db,
+        delivery_payload=delivery_payload,
+        actor_id=actor_id,
+        credential_snapshot=credential_snapshot,
+        outcome=outcome,
+    )
 
 
 @router.post("/{invitation_id}/revoke", response_model=RegistrationInvitationSafe)

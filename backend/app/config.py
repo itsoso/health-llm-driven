@@ -503,6 +503,9 @@ class Settings(BaseSettings):
     aliyun_sms_sign_name: Optional[str] = None
     aliyun_sms_template_code: Optional[str] = None
     aliyun_sms_region_id: str = "cn-hangzhou"
+    # 注册邀请必须使用独立、已审核的短信签名与模板，绝不与 OTP 模板复用。
+    registration_invitation_sms_sign_name: Optional[str] = None
+    registration_invitation_sms_template_code: Optional[str] = None
     # 号码认证服务「短信认证」(dypnsapi) 免资质通道：个人认证账号可用，
     # 签名/模板只能用控制台赠送值（如 恒创联众 / 100001），仅支持大陆手机号。
     # 与 aliyun_sms_* 企业签名通道并存时，企业签名优先。
@@ -567,6 +570,24 @@ class Settings(BaseSettings):
                     "REGISTRATION_INVITATION_DIGEST_KEY must contain at least 32 UTF-8 "
                     "bytes when invitation registration is enabled in production"
                 )
+            if (
+                self.registration_invitation_rollout_enabled
+                or self.registration_invitation_enforcement_enabled
+            ):
+                invitation_sms_values = (
+                    self.aliyun_sms_access_key_id or self.aliyun_access_key_id,
+                    self.aliyun_sms_access_key_secret or self.aliyun_access_key_secret,
+                    self.registration_invitation_sms_sign_name,
+                    self.registration_invitation_sms_template_code,
+                )
+                if not all(
+                    isinstance(value, str) and bool(value.strip())
+                    for value in invitation_sms_values
+                ):
+                    raise ValueError(
+                        "registration invitation SMS configuration is required when "
+                        "invitation registration is enabled in production"
+                    )
 
     model_config = ConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 

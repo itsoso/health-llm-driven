@@ -63,6 +63,62 @@ def test_production_rejects_implicit_llm_recovery():
         settings.validate_required_security()
 
 
+@pytest.mark.parametrize(
+    "missing_field",
+    [
+        "aliyun_sms_access_key_id",
+        "aliyun_sms_access_key_secret",
+        "registration_invitation_sms_sign_name",
+        "registration_invitation_sms_template_code",
+    ],
+)
+def test_production_invitation_rollout_requires_dedicated_sms_config(missing_field):
+    values = {
+        "aliyun_sms_access_key_id": "invite-access-id",
+        "aliyun_sms_access_key_secret": "invite-access-secret",
+        "registration_invitation_sms_sign_name": "小巴邀请",
+        "registration_invitation_sms_template_code": "SMS_INVITE_123",
+    }
+    secret = values[missing_field]
+    values[missing_field] = None
+    configured = Settings(
+        _env_file=None,
+        secret_key="A" * 32,
+        app_env="production",
+        debug=False,
+        garmin_encryption_key="B" * 44,
+        device_encryption_key="C" * 44,
+        registration_invitation_digest_key="D" * 32,
+        registration_invitation_rollout_enabled=True,
+        **values,
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        configured.validate_required_security()
+
+    assert "registration invitation SMS" in str(exc_info.value)
+    assert secret not in str(exc_info.value)
+
+
+def test_production_invitation_sms_accepts_effective_fallback_access_keys():
+    configured = Settings(
+        _env_file=None,
+        secret_key="A" * 32,
+        app_env="production",
+        debug=False,
+        garmin_encryption_key="B" * 44,
+        device_encryption_key="C" * 44,
+        registration_invitation_digest_key="D" * 32,
+        registration_invitation_enforcement_enabled=True,
+        aliyun_access_key_id="fallback-id",
+        aliyun_access_key_secret="fallback-secret",
+        registration_invitation_sms_sign_name="小巴邀请",
+        registration_invitation_sms_template_code="SMS_INVITE_123",
+    )
+
+    configured.validate_required_security()
+
+
 def test_backup_and_migration_scripts_do_not_embed_database_credentials():
     repo_root = Path(__file__).resolve().parents[2]
     files = (
