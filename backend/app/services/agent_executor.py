@@ -2898,17 +2898,30 @@ _UNVERIFIED_WRITE_SUCCESS_CLAIMS = (
 _UNVERIFIED_WRITE_CLAUSE_SPLIT_RE = re.compile(
     r"(?:[，,。！？!?；;\n]|但是|但|不过|然而|并且|且|同时|另外|此外|然后)"
 )
+_UNVERIFIED_WRITE_INTERPOSED_SUCCESS_RE = re.compile(
+    r"(?:已经|已)(?:成功)?"
+    r"(?:(?:替|帮|为|给)(?:你|您)(?:成功)?)?"
+    r"(?:记录|保存|写入|更新|修改|删除|同步|创建)(?:成功)?"
+)
 _UNVERIFIED_WRITE_NEGATION_TERMS = (
     "尚未",
     "还没有",
     "还没",
     "没有",
+    "不要",
     "未能",
     "没能",
     "无法",
     "不能",
     "不确定",
     "未确认",
+    "不代表",
+    "并不代表",
+    "并非",
+    "如果",
+    "假如",
+    "要是",
+    "是否",
 )
 _UNVERIFIED_WRITE_POST_NEGATION_TERMS = (
     "并不准确",
@@ -2930,22 +2943,31 @@ def _claims_unverified_write_success(text: Any) -> bool:
     if not normalized:
         return False
     for clause in _UNVERIFIED_WRITE_CLAUSE_SPLIT_RE.split(normalized):
+        claim_spans: list[tuple[int, int]] = []
         for claim in _UNVERIFIED_WRITE_SUCCESS_CLAIMS:
             start = clause.find(claim)
             while start >= 0:
-                prefix = clause[:start]
-                suffix = clause[start + len(claim):]
-                negated_before = any(
-                    term in prefix
-                    for term in _UNVERIFIED_WRITE_NEGATION_TERMS
-                )
-                negated_after = any(
-                    term in suffix[:16]
-                    for term in _UNVERIFIED_WRITE_POST_NEGATION_TERMS
-                )
-                if not negated_before and not negated_after:
-                    return True
+                claim_spans.append((start, start + len(claim)))
                 start = clause.find(claim, start + len(claim))
+        claim_spans.extend(
+            (match.start(), match.end())
+            for match in _UNVERIFIED_WRITE_INTERPOSED_SUCCESS_RE.finditer(
+                clause
+            )
+        )
+        for start, end in claim_spans:
+            prefix = clause[:start]
+            suffix = clause[end:]
+            negated_before = any(
+                term in prefix
+                for term in _UNVERIFIED_WRITE_NEGATION_TERMS
+            )
+            negated_after = any(
+                term in suffix[:16]
+                for term in _UNVERIFIED_WRITE_POST_NEGATION_TERMS
+            )
+            if not negated_before and not negated_after:
+                return True
     return False
 
 

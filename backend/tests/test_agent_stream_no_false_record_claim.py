@@ -29,6 +29,8 @@ update/delete 算写)后出现。无回执 → fall through 合成轮,让模型�
 import json
 from unittest.mock import AsyncMock
 
+import pytest
+
 from app.services.agent_executor import AgentExecutor
 from app.services.utterance_intent_classifier import classify_agent_utterance
 from app.models.agent_conversation import AgentMessage
@@ -761,8 +763,22 @@ async def test_bare_clinician_report_is_understood_without_write_or_retry(
     assert saved.meta["client_turn_finalized"] is True
 
 
+@pytest.mark.parametrize(
+    "model_reply",
+    (
+        "已保存医生诊断",
+        "好的，已经替你保存了医生诊断。",
+        "已经帮你记录医生诊断。",
+        "已经为你写入医生诊断。",
+        "已经给您成功更新了医生反馈。",
+        "已经替您删除了医生反馈。",
+        "已经为您同步成功。",
+        "已经成功保存了医生诊断。",
+        "已经成功替您保存了医生诊断。",
+    ),
+)
 async def test_bare_clinician_report_replaces_model_false_save_claim(
-    db, auth_user_and_headers
+    db, auth_user_and_headers, model_reply
 ):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
@@ -770,7 +786,7 @@ async def test_bare_clinician_report_replaces_model_false_save_claim(
 
     async def fake_call_llm_stream(_messages, tools):
         assert tools == []
-        yield {"type": "content", "text": "已保存医生诊断"}
+        yield {"type": "content", "text": model_reply}
         yield {"type": "finish", "finish_reason": "stop"}
 
     executor._call_llm_stream = fake_call_llm_stream
@@ -786,7 +802,7 @@ async def test_bare_clinician_report_replaces_model_false_save_claim(
     reply = _tokens(events)
     done = next(event for event in events if event.get("event") == "done")
 
-    assert "已保存医生诊断" not in reply
+    assert model_reply not in reply
     assert "本轮未保存" in reply
     assert "请记录医生诊断" in reply
     assert not [event for event in events if event.get("event") == "tool_call"]
@@ -797,6 +813,44 @@ async def test_bare_clinician_report_replaces_model_false_save_claim(
     assert done["data"]["turn_outcome"]["category"] == "success"
     assert done["data"]["turn_outcome"]["retryable"] is False
     assert done["data"]["client_turn_finalized"] is True
+
+    saved = db.query(AgentMessage).filter_by(role="assistant").one()
+    assert saved.content == reply
+    assert done["data"]["message_id"] == saved.id
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "已经成功保存了医生诊断。",
+        "已经成功替您保存了医生诊断。",
+    ),
+)
+def test_success_before_write_or_helper_is_a_success_claim(text):
+    from app.services.agent_executor import _claims_unverified_write_success
+
+    assert _claims_unverified_write_success(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "没有替你保存医生诊断。",
+        "并不代表已经保存医生诊断。",
+        "并不代表已经替你保存医生诊断。",
+        "如果已经替你保存医生诊断，请忽略。",
+        "是否已经帮你记录医生诊断？",
+        "系统提示“已经为你写入医生诊断”并非事实。",
+        "如果已经给您成功更新了医生反馈，请忽略。",
+        "没有替您删除医生反馈。",
+        "系统提示“已经为您同步成功”并非事实。",
+        "如果已经成功替您保存了医生诊断，请忽略。",
+    ),
+)
+def test_nonassertive_write_language_is_not_a_success_claim(text):
+    from app.services.agent_executor import _claims_unverified_write_success
+
+    assert _claims_unverified_write_success(text) is False
 
 
 async def test_clinician_basis_compound_action_is_not_executed_or_retried(
@@ -883,6 +937,55 @@ async def test_clinician_basis_compound_action_is_not_executed_or_retried(
     assert done["data"]["turn_outcome"]["category"] == "success"
     assert done["data"]["turn_outcome"]["retryable"] is False
     assert done["data"]["client_turn_finalized"] is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "请遵医嘱删除这条用药记录",
+        "麻烦按医嘱停药并删除记录",
+        "我想遵医嘱删除这条用药记录",
+        "那就按医嘱停药并删除记录",
+        "请根据医生诊断删除这条用药记录",
+        "希望按医嘱删除这条用药记录",
+        "需要遵医嘱删除这条用药记录",
+        "先按医嘱删除这条用药记录",
+        "顺便按医嘱删除这条用药记录",
+    ),
+)
+async def test_prefixed_clinician_basis_turn_exposes_zero_tool_schema(
+    db,
+    auth_user_and_headers,
+    message,
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    exposed_tools = []
+
+    async def fake_call_llm_stream(_messages, tools):
+        exposed_tools.append(tools)
+        yield {"type": "content", "text": "不应直接执行。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    executor._call_llm_stream = fake_call_llm_stream
+
+    events = [
+        event async for event in executor.run_stream(
+            user_id=user.id,
+            message=message,
+            user_auth_token="test-token",
+        )
+    ]
+    reply = _tokens(events)
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert exposed_tools == [[]]
+    assert "没有执行任何操作" in reply
+    assert "没有保存" in reply
+    assert not [event for event in events if event.get("event") == "tool_call"]
+    assert done["data"]["tools_used"] == []
+    assert done["data"]["write_receipts"] == []
+    assert done["data"]["turn_outcome"]["retryable"] is False
 
 
 async def test_clinician_basis_hallucinated_tools_exhaust_to_safe_success(

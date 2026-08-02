@@ -311,6 +311,17 @@ def test_obfuscation_view_does_not_join_intact_terms_across_punctuation(text):
     assert guard._has_obfuscated_clinician_action(text) is False
 
 
+def test_medical_instruction_basis_is_not_matched_mid_sentence():
+    guard = _module()
+    text = "医生说请遵医嘱删除这条用药记录"
+
+    decision = guard.classify_clinician_turn(text)
+
+    assert guard._has_anchored_clinician_basis_mutation(text) is False
+    assert decision.kind == "ambiguous_clinician_action"
+    assert decision.reason_code == "coordinated_clinician_action"
+
+
 @pytest.mark.parametrize(
     "case",
     tuple(

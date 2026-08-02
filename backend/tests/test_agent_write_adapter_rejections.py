@@ -942,6 +942,15 @@ async def test_doctor_feedback_executes_through_gateway_for_current_owner(
     (
         "遵医嘱删除这条用药记录",
         "按医嘱停药并删除记录",
+        "请遵医嘱删除这条用药记录",
+        "麻烦按医嘱停药并删除记录",
+        "我想遵医嘱删除这条用药记录",
+        "那就按医嘱停药并删除记录",
+        "请根据医生诊断删除这条用药记录",
+        "希望按医嘱删除这条用药记录",
+        "需要遵医嘱删除这条用药记录",
+        "先按医嘱删除这条用药记录",
+        "顺便按医嘱删除这条用药记录",
     ),
 )
 async def test_medical_instruction_basis_blocks_direct_destructive_dispatch(

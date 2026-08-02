@@ -143,6 +143,15 @@ def test_doctor_feedback_tool_blocks_non_authorizing_clinician_frames(
     (
         ("遵医嘱删除这条用药记录", "delete"),
         ("按医嘱停药并删除记录", "delete"),
+        ("请遵医嘱删除这条用药记录", "delete"),
+        ("麻烦按医嘱停药并删除记录", "delete"),
+        ("我想遵医嘱删除这条用药记录", "delete"),
+        ("那就按医嘱停药并删除记录", "delete"),
+        ("请根据医生诊断删除这条用药记录", "delete"),
+        ("希望按医嘱删除这条用药记录", "delete"),
+        ("需要遵医嘱删除这条用药记录", "delete"),
+        ("先按医嘱删除这条用药记录", "delete"),
+        ("顺便按医嘱删除这条用药记录", "delete"),
     ),
 )
 def test_medical_instruction_basis_cannot_authorize_destructive_manage(

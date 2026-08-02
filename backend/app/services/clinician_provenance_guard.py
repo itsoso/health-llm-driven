@@ -94,6 +94,12 @@ _ACTION_PREFIX_WRAPPERS = tuple(
         key=lambda term: (-len(term), term),
     )
 )
+_CLINICIAN_BASIS_PREFIX_WRAPPERS = tuple(
+    sorted(
+        {*_ACTION_PREFIX_WRAPPERS, "那就"},
+        key=lambda term: (-len(term), term),
+    )
+)
 _HIGH_RISK_MUTATION_ROOTS = _MUTATION_ACTION_ROOTS
 _LOCAL_ADVICE_PREDICATES = tuple(
     predicate
@@ -1399,7 +1405,18 @@ def _has_anchored_clinician_basis_mutation(raw: str) -> bool:
                 return position + len(term)
         return None
 
-    position = consume(0, ("根据", "依据", "按照"))
+    # Consume only a bounded set of command/politeness wrappers from the start
+    # of the turn. This covers common direct-command phrasing without turning a
+    # mid-sentence quotation into an anchored clinician-basis mutation.
+    position = 0
+    while True:
+        next_position = consume(position, _CLINICIAN_BASIS_PREFIX_WRAPPERS)
+        if next_position is None:
+            break
+        position = next_position
+    basis_start = position
+
+    position = consume(basis_start, ("根据", "依据", "按照"))
     if position is not None:
         position = consume(position, CLINICIAN_PROVIDER_TERMS)
         if position is not None:
@@ -1415,7 +1432,7 @@ def _has_anchored_clinician_basis_mutation(raw: str) -> bool:
 
     # ``医嘱`` is an action basis, not a provider identity. Only anchored
     # follow/per-instruction shapes with a later mutation fail closed here.
-    position = consume(0, ("按照", "遵", "按"))
+    position = consume(basis_start, ("按照", "遵", "按"))
     if position is None:
         return False
     position = consume(position, CLINICIAN_BASIS_TERMS)

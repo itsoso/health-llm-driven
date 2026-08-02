@@ -427,7 +427,26 @@ async def test_clinician_turns_never_select_fast_record_or_needs_detail_reply(
 
     assert executor._prefer_fast_record_model is False
     assert done["record_intent_no_tool"] is False
-    assert emitted_text == "OK"
+    from app.services.clinician_provenance_guard import classify_clinician_turn
+
+    decision = classify_clinician_turn(message)
+    if decision.kind == "ambiguous_clinician_action":
+        assert emitted_text == (
+            "这一轮没有执行任何操作，也没有保存。"
+            "请在一条新消息中去掉“依据医生意见”这类临床依据子句，"
+            "再单独、明确地说要执行哪一项操作。"
+        )
+        assert done["tools_used"] == []
+        assert done["write_receipts"] == []
+        assert done["completion_status"] == "complete"
+        assert done["turn_outcome"]["retryable"] is False
+        assert not [
+            event
+            for event in events
+            if event.get("event") in {"tool_call", "tool_result"}
+        ]
+    else:
+        assert emitted_text == "OK"
 
 
 @pytest.mark.asyncio
