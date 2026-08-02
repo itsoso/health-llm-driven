@@ -9,6 +9,7 @@
 """
 import logging
 import re
+import threading
 import time
 from datetime import date, timedelta
 from typing import Optional
@@ -21,6 +22,9 @@ logger = logging.getLogger(__name__)
 # ── 内存缓存 ──────────────────────────────────────────
 # key = (user_id, budget) —— 不同注入档输出不同, 分开缓存, 避免 MINIMAL/FULL 互相污染。
 _context_cache: dict[tuple[int, str], tuple[float, str]] = {}
+_context_cache_entry_generations: dict[tuple[int, str], int] = {}
+_context_generations: dict[int, int] = {}
+_context_cache_lock = threading.RLock()
 _CACHE_TTL = 300  # 5 分钟
 
 # 医生反馈属于 L3 健康数据：只召回很小的近期窗口，并在字段、单条、整段三层限长。
@@ -40,8 +44,12 @@ INJECTION_MINIMAL = "minimal"
 
 def invalidate_health_context(user_id: int) -> None:
     """清除单个用户的 FULL/MINIMAL 健康上下文缓存。"""
-    _context_cache.pop((user_id, INJECTION_FULL), None)
-    _context_cache.pop((user_id, INJECTION_MINIMAL), None)
+    with _context_cache_lock:
+        _context_generations[user_id] = _context_generations.get(user_id, 0) + 1
+        for budget in (INJECTION_FULL, INJECTION_MINIMAL):
+            cache_key = (user_id, budget)
+            _context_cache.pop(cache_key, None)
+            _context_cache_entry_generations.pop(cache_key, None)
 
 
 # 纯知识题标志: 问定义 / 机制 / 分期 / 通用剂量 / 科普。命中 → MINIMAL 候选。
@@ -150,13 +158,26 @@ def build_lite_health_context(
     """
     budget = classify_injection_budget(intent) if intent is not None else INJECTION_FULL
     cache_key = (user_id, budget)
-    cached = _context_cache.get(cache_key)
-    if cached and (time.time() - cached[0]) < _CACHE_TTL:
-        return cached[1]
+    with _context_cache_lock:
+        build_generation = _context_generations.get(user_id, 0)
+        cached = _context_cache.get(cache_key)
+        cached_generation = _context_cache_entry_generations.get(cache_key)
+        if (
+            cached
+            and cached_generation == build_generation
+            and (time.time() - cached[0]) < _CACHE_TTL
+        ):
+            return cached[1]
+        if cached is not None:
+            _context_cache.pop(cache_key, None)
+            _context_cache_entry_generations.pop(cache_key, None)
 
     try:
         context = _build_context(db, user_id, budget=budget)
-        _context_cache[cache_key] = (time.time(), context)
+        with _context_cache_lock:
+            if _context_generations.get(user_id, 0) == build_generation:
+                _context_cache[cache_key] = (time.time(), context)
+                _context_cache_entry_generations[cache_key] = build_generation
         return context
     except Exception as e:
         logger.error(f"构建健康上下文失败(user={user_id}): {e}", exc_info=True)

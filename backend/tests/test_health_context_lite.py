@@ -1,5 +1,6 @@
 """轻量健康上下文服务测试"""
 import logging
+import threading
 from datetime import date, datetime, timedelta
 
 import pytest
@@ -74,10 +75,23 @@ def test_garmin(db, test_user):
 @pytest.fixture(autouse=True)
 def clear_cache():
     """每个测试前清空缓存"""
-    from app.services.health_context_lite_service import _context_cache
-    _context_cache.clear()
+    from app.services import health_context_lite_service
+
+    health_context_lite_service._context_cache.clear()
+    getattr(
+        health_context_lite_service,
+        "_context_cache_entry_generations",
+        {},
+    ).clear()
+    getattr(health_context_lite_service, "_context_generations", {}).clear()
     yield
-    _context_cache.clear()
+    health_context_lite_service._context_cache.clear()
+    getattr(
+        health_context_lite_service,
+        "_context_cache_entry_generations",
+        {},
+    ).clear()
+    getattr(health_context_lite_service, "_context_generations", {}).clear()
 
 
 def _add_clinician_feedback(
@@ -463,6 +477,78 @@ def test_invalidate_health_context_is_owner_scoped_and_missing_key_is_noop():
     assert (7, INJECTION_MINIMAL) not in _context_cache
     assert _context_cache[(8, INJECTION_FULL)][1] == "user-eight-full"
     assert _context_cache[(8, INJECTION_MINIMAL)][1] == "user-eight-minimal"
+
+
+def test_invalidation_during_cache_miss_prevents_stale_build_from_refilling(
+    monkeypatch,
+):
+    from app.services import health_context_lite_service
+
+    user_id = 7007
+    build_started = threading.Event()
+    release_stale_build = threading.Event()
+    call_count = 0
+
+    def controlled_build(_db, _user_id, *, budget):
+        nonlocal call_count
+        call_count += 1
+        assert _user_id == user_id
+        assert budget == health_context_lite_service.INJECTION_FULL
+        if call_count == 1:
+            build_started.set()
+            assert release_stale_build.wait(timeout=3)
+            return "before-commit-context"
+        return "after-commit-context"
+
+    monkeypatch.setattr(
+        health_context_lite_service,
+        "_build_context",
+        controlled_build,
+    )
+    inflight_result = []
+    worker = threading.Thread(
+        target=lambda: inflight_result.append(
+            health_context_lite_service.build_lite_health_context(None, user_id)
+        )
+    )
+    worker.start()
+    try:
+        assert build_started.wait(timeout=3)
+        cache_key = (user_id, health_context_lite_service.INJECTION_FULL)
+        assert cache_key not in health_context_lite_service._context_cache
+
+        health_context_lite_service.invalidate_health_context(user_id)
+        release_stale_build.set()
+        worker.join(timeout=3)
+
+        assert not worker.is_alive()
+        assert inflight_result == ["before-commit-context"]
+        assert cache_key not in health_context_lite_service._context_cache
+        assert health_context_lite_service.build_lite_health_context(
+            None,
+            user_id,
+        ) == "after-commit-context"
+        assert call_count == 2
+    finally:
+        release_stale_build.set()
+        worker.join(timeout=3)
+
+
+def test_missing_key_invalidation_still_advances_owner_generation():
+    from app.services.health_context_lite_service import (
+        _context_cache,
+        _context_generations,
+        invalidate_health_context,
+    )
+
+    user_id = 7008
+    assert not any(key[0] == user_id for key in _context_cache)
+    assert _context_generations.get(user_id, 0) == 0
+
+    invalidate_health_context(user_id)
+    invalidate_health_context(user_id)
+
+    assert _context_generations[user_id] == 2
 
 
 def test_clinician_feedback_query_failure_is_fail_soft_and_log_safe(
