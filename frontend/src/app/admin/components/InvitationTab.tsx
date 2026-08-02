@@ -1,5 +1,7 @@
 'use client';
 
+import RegistrationInvitationPanel from './RegistrationInvitationPanel';
+
 interface InvitationCode {
   id: number;
   code: string;
@@ -80,6 +82,13 @@ export default function InvitationTab({
 }: InvitationTabProps) {
   return (
     <div className="space-y-6">
+      <RegistrationInvitationPanel />
+
+      <div className="pt-2">
+        <h2 className="text-lg font-semibold text-white">旧版通用邀请码（不用于手机号注册）</h2>
+        <p className="mt-1 text-sm text-purple-200/80">以下邀请码与申请审批仅供旧流程维护，不授予手机号首次注册资格。</p>
+      </div>
+
       {/* Stats Cards */}
       {invitationStats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -105,7 +114,7 @@ export default function InvitationTab({
       {/* Invitation Code List */}
       <div className="bg-white/10 backdrop-blur-lg rounded-xl border border-white/20 overflow-hidden">
         <div className="p-4 border-b border-white/10 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">🎫 邀请码列表</h2>
+          <h3 className="text-lg font-semibold text-white">🎫 旧版邀请码列表</h3>
           <button
             onClick={() => setShowCreateCode(true)}
             className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
