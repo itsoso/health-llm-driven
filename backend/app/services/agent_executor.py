@@ -19547,6 +19547,19 @@ class AgentExecutor:
             )
             if post_exact_ids - pre_exact_ids != {entry_id}:
                 raise RuntimeError("ambiguous_doctor_feedback_persistence")
+            try:
+                from app.services.health_context_lite_service import (
+                    invalidate_health_context,
+                )
+
+                invalidate_health_context(user_id)
+            except Exception as invalidation_exc:  # noqa: BLE001
+                # Persistence is already verified. Cache refresh is best-effort
+                # and must not downgrade a committed write to uncertain.
+                logger.warning(
+                    "operation=invalidate_health_context error_type=%s",
+                    type(invalidation_exc).__name__,
+                )
             return json.dumps(
                 {
                     "message": "医生反馈已记录",

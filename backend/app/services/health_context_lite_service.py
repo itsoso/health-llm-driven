@@ -23,6 +23,12 @@ logger = logging.getLogger(__name__)
 _context_cache: dict[tuple[int, str], tuple[float, str]] = {}
 _CACHE_TTL = 300  # 5 分钟
 
+# 医生反馈属于 L3 健康数据：只召回很小的近期窗口，并在字段、单条、整段三层限长。
+_CLINICIAN_FEEDBACK_RECENT_LIMIT = 3
+_CLINICIAN_FEEDBACK_FIELD_MAX_CHARS = 240
+_CLINICIAN_FEEDBACK_ENTRY_MAX_CHARS = 640
+_CLINICIAN_FEEDBACK_SECTION_MAX_CHARS = 2048
+
 # ── 注入档 (P2 意图分级) ────────────────────────────────
 # FULL:    维持现状全量注入 (个人判读意图 / 默认)。
 # MINIMAL: 纯知识题 —— 保留基础画像 (年龄/性别/慢病标签/用药/过敏/目标/基因静态标签),
@@ -30,6 +36,13 @@ _CACHE_TTL = 300  # 5 分钟
 #          运动、预警、打卡、补剂服用状态、周计划、记忆), 避免污染通用知识回答。
 INJECTION_FULL = "full"
 INJECTION_MINIMAL = "minimal"
+
+
+def invalidate_health_context(user_id: int) -> None:
+    """清除单个用户的 FULL/MINIMAL 健康上下文缓存。"""
+    _context_cache.pop((user_id, INJECTION_FULL), None)
+    _context_cache.pop((user_id, INJECTION_MINIMAL), None)
+
 
 # 纯知识题标志: 问定义 / 机制 / 分期 / 通用剂量 / 科普。命中 → MINIMAL 候选。
 _KNOWLEDGE_MARKERS = re.compile(
@@ -646,7 +659,96 @@ def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> s
     if gene_section:
         parts.append(gene_section)
 
+    clinician_feedback_section = _clinician_feedback_context_section(db, user_id)
+    if clinician_feedback_section:
+        parts.append(clinician_feedback_section)
+
     return "\n".join(parts)
+
+
+def _truncate_clinician_text(value: str, max_chars: int) -> str:
+    """Normalize a prompt field to one line and enforce a character bound."""
+    normalized = " ".join(value.split())
+    if len(normalized) <= max_chars:
+        return normalized
+    return normalized[: max_chars - 1] + "…"
+
+
+def _truncate_clinician_block(value: str, max_chars: int) -> str:
+    """Enforce a section bound while preserving entry line boundaries."""
+    if len(value) <= max_chars:
+        return value
+    return value[: max_chars - 1] + "…"
+
+
+def _format_clinician_feedback_entry(entry) -> str:
+    """Render one user-reported clinician entry without elevating attribution."""
+    fields = []
+    for attribute, label in (
+        ("subjective", "摘要"),
+        ("assessment", "评估"),
+        ("plan", "计划"),
+    ):
+        raw_value = getattr(entry, attribute, None)
+        if raw_value is None:
+            continue
+        value = _truncate_clinician_text(
+            str(raw_value),
+            _CLINICIAN_FEEDBACK_FIELD_MAX_CHARS,
+        )
+        if value:
+            fields.append(f"{label}: {value}")
+    if not fields:
+        return ""
+
+    generated_at = getattr(entry, "generated_at", None)
+    date_label = generated_at.date().isoformat() if generated_at else "日期未知"
+    rendered = (
+        f"- 用户转述的医生意见 ({date_label}): "
+        + " | ".join(fields)
+    )
+    return _truncate_clinician_text(
+        rendered,
+        _CLINICIAN_FEEDBACK_ENTRY_MAX_CHARS,
+    )
+
+
+def _clinician_feedback_context_section(db: Session, user_id: int) -> str:
+    """Load bounded clinician-attributed context for FULL injection only."""
+    try:
+        from app.models.clinical_journal import ClinicalJournalEntry
+
+        entries = (
+            db.query(ClinicalJournalEntry)
+            .filter(
+                ClinicalJournalEntry.user_id == user_id,
+                ClinicalJournalEntry.created_by == "doctor",
+            )
+            .order_by(
+                ClinicalJournalEntry.generated_at.desc(),
+                ClinicalJournalEntry.id.desc(),
+            )
+            .limit(_CLINICIAN_FEEDBACK_RECENT_LIMIT)
+            .all()
+        )
+        rendered_entries = [
+            rendered
+            for entry in entries
+            if (rendered := _format_clinician_feedback_entry(entry))
+        ]
+        if not rendered_entries:
+            return ""
+        section = "[近期临床背景（仅为用户转述）]\n" + "\n".join(rendered_entries)
+        return _truncate_clinician_block(
+            section,
+            _CLINICIAN_FEEDBACK_SECTION_MAX_CHARS,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "operation=load_clinician_feedback error_type=%s",
+            type(exc).__name__,
+        )
+        return ""
 
 
 def _gene_context_section(db: Session, user_id: int) -> str:

@@ -2027,3 +2027,133 @@ async def test_doctor_feedback_rollback_failure_does_not_leak_private_text(
 
     _assert_uncertain_write(result)
     assert private_text not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_verified_doctor_feedback_invalidates_only_owner_context_cache(
+    db,
+    auth_user_and_headers,
+):
+    from app.services.agent_executor import AgentExecutor
+    from app.services.health_context_lite_service import (
+        INJECTION_FULL,
+        INJECTION_MINIMAL,
+        _context_cache,
+    )
+
+    user, _headers = auth_user_and_headers
+    other_user_id = user.id + 1000
+    _context_cache[(user.id, INJECTION_FULL)] = (1.0, "stale-owner-full")
+    _context_cache[(user.id, INJECTION_MINIMAL)] = (1.0, "stale-owner-minimal")
+    _context_cache[(other_user_id, INJECTION_FULL)] = (1.0, "other-full")
+    _context_cache[(other_user_id, INJECTION_MINIMAL)] = (1.0, "other-minimal")
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+
+    result = await executor._exec_record_doctor_feedback(
+        {"assessment": "需要失效缓存的医生评估"}
+    )
+
+    payload = json.loads(result)
+    assert payload["resource_type"] == "clinical_journal_entry"
+    assert (user.id, INJECTION_FULL) not in _context_cache
+    assert (user.id, INJECTION_MINIMAL) not in _context_cache
+    assert _context_cache[(other_user_id, INJECTION_FULL)][1] == "other-full"
+    assert _context_cache[(other_user_id, INJECTION_MINIMAL)][1] == "other-minimal"
+    _context_cache.pop((other_user_id, INJECTION_FULL), None)
+    _context_cache.pop((other_user_id, INJECTION_MINIMAL), None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ("rejected", "uncertain"))
+async def test_unverified_doctor_feedback_retains_context_cache(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    outcome,
+):
+    from app.services import doctor_report_service
+    from app.services.agent_executor import AgentExecutor
+    from app.services.health_context_lite_service import (
+        INJECTION_FULL,
+        INJECTION_MINIMAL,
+        _context_cache,
+    )
+
+    user, _headers = auth_user_and_headers
+    _context_cache[(user.id, INJECTION_FULL)] = (1.0, "keep-full")
+    _context_cache[(user.id, INJECTION_MINIMAL)] = (1.0, "keep-minimal")
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    args = {}
+    if outcome == "uncertain":
+        private_text = "私密写入异常"
+        monkeypatch.setattr(
+            doctor_report_service,
+            "record_doctor_feedback",
+            Mock(side_effect=RuntimeError(private_text)),
+        )
+        args = {"assessment": "写入后状态不确定"}
+
+    result = await executor._exec_record_doctor_feedback(args)
+
+    if outcome == "rejected":
+        _assert_local_rejection(
+            result,
+            error_code="doctor_feedback_content_missing",
+        )
+    else:
+        _assert_uncertain_write(result)
+    assert _context_cache[(user.id, INJECTION_FULL)][1] == "keep-full"
+    assert _context_cache[(user.id, INJECTION_MINIMAL)][1] == "keep-minimal"
+    _context_cache.pop((user.id, INJECTION_FULL), None)
+    _context_cache.pop((user.id, INJECTION_MINIMAL), None)
+
+
+@pytest.mark.asyncio
+async def test_cache_invalidation_failure_keeps_verified_receipt_and_log_safe(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    caplog,
+):
+    from app.services import health_context_lite_service
+    from app.services.agent_executor import (
+        AgentExecutor,
+        _write_receipt_from_tool_result,
+    )
+
+    user, _headers = auth_user_and_headers
+    private_text = "私密医生意见不得进入缓存日志"
+
+    def fail_invalidation(_user_id):
+        raise RuntimeError(private_text)
+
+    monkeypatch.setattr(
+        health_context_lite_service,
+        "invalidate_health_context",
+        fail_invalidation,
+        raising=False,
+    )
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    caplog.set_level(logging.WARNING, logger="app.services.agent_executor")
+
+    result = await executor._exec_record_doctor_feedback(
+        {"assessment": "已确认持久化的医生意见"}
+    )
+
+    payload = json.loads(result)
+    receipt = _write_receipt_from_tool_result(
+        "record_doctor_feedback",
+        {"assessment": "已确认持久化的医生意见"},
+        result,
+    )
+    assert payload["resource_type"] == "clinical_journal_entry"
+    assert isinstance(payload["id"], int) and payload["id"] > 0
+    assert receipt is not None
+    assert receipt["status"] == "verified"
+    assert receipt["resource_id"] == str(payload["id"])
+    assert "operation=invalidate_health_context" in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert private_text not in caplog.text
