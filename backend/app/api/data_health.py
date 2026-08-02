@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user_required
 from app.database import get_db
 from app.models.user import User
+from app.services.data_collection.garmin_native_auth import has_native_token_store
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -91,11 +92,7 @@ def _garmin_status(db: Session, user_id: int, now: datetime) -> dict:
     session_expires = _ensure_utc(cred.session_expires_at)
     last_sync = _ensure_utc(cred.last_sync_at)
 
-    session_valid = bool(
-        cred.garth_session
-        and session_expires
-        and session_expires > now
-    )
+    session_valid = has_native_token_store(cred.garth_session)
 
     if not cred.sync_enabled:
         status = "error"
