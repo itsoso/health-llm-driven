@@ -13,11 +13,32 @@ def _assert_local_rejection(
     *,
     error_code: str,
 ) -> None:
+    from app.services.agent_write_outcome import classify_write_execution
+
     payload = json.loads(result)
     assert payload["status"] == "rejected"
     assert payload["success"] is False
     assert payload["dispatch_started"] is False
     assert payload["error_code"] == error_code
+    outcome = classify_write_execution(result)
+    assert outcome.status == "rejected"
+    assert outcome.dispatch_started is False
+
+
+def _assert_uncertain_write(result: str) -> None:
+    from app.services.agent_write_outcome import classify_write_execution
+
+    payload = json.loads(result)
+    assert payload == {
+        "status": "uncertain",
+        "success": False,
+        "dispatch_started": True,
+        "error_code": "doctor_feedback_write_uncertain",
+    }
+    outcome = classify_write_execution(result)
+    assert outcome.status == "uncertain"
+    assert outcome.dispatch_started is True
+    assert outcome.error_code == "doctor_feedback_write_uncertain"
 
 
 @pytest.mark.asyncio
@@ -520,8 +541,10 @@ async def test_doctor_feedback_rejects_when_all_text_fields_are_blank(db, args):
 
     result = await executor._exec_record_doctor_feedback(args)
 
-    assert result.startswith("Error:")
-    assert "写入" not in result
+    _assert_local_rejection(
+        result,
+        error_code="doctor_feedback_content_missing",
+    )
 
 
 @pytest.mark.asyncio
@@ -540,7 +563,7 @@ async def test_doctor_feedback_rejects_missing_current_user_before_service(
         {"assessment": "臀肌无力导致腰肌代偿"}
     )
 
-    assert result.startswith("Error:")
+    _assert_local_rejection(result, error_code="doctor_feedback_user_missing")
     record.assert_not_called()
 
 
@@ -572,7 +595,64 @@ async def test_doctor_feedback_requires_strict_iso_visit_date(
         {"assessment": "臀肌无力导致腰肌代偿", "visit_date": visit_date}
     )
 
-    assert result.startswith("Error:")
+    _assert_local_rejection(result, error_code="doctor_feedback_date_invalid")
+    record.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invisible_text",
+    (
+        "\u200b",
+        "\ufeff",
+        " \t\u200b\n\ufeff ",
+    ),
+)
+async def test_doctor_feedback_rejects_format_controls_without_visible_content(
+    db,
+    monkeypatch,
+    invisible_text,
+):
+    from app.services import doctor_report_service
+    from app.services.agent_executor import AgentExecutor
+
+    record = Mock(side_effect=AssertionError("service must not run"))
+    monkeypatch.setattr(doctor_report_service, "record_doctor_feedback", record)
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+
+    result = await executor._exec_record_doctor_feedback(
+        {"assessment": invisible_text}
+    )
+
+    _assert_local_rejection(
+        result,
+        error_code="doctor_feedback_content_not_visible",
+    )
+    record.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ("summary", "assessment", "plan"))
+async def test_doctor_feedback_rejects_oversized_field_before_service(
+    db,
+    monkeypatch,
+    field,
+):
+    from app.services import doctor_report_service
+    from app.services.agent_executor import AgentExecutor
+
+    record = Mock(side_effect=AssertionError("service must not run"))
+    monkeypatch.setattr(doctor_report_service, "record_doctor_feedback", record)
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+
+    result = await executor._exec_record_doctor_feedback({field: "诊" * 4001})
+
+    _assert_local_rejection(
+        result,
+        error_code="doctor_feedback_field_too_long",
+    )
     record.assert_not_called()
 
 
@@ -663,6 +743,102 @@ async def test_doctor_feedback_success_is_owner_scoped_and_receipted(
 
 
 @pytest.mark.asyncio
+async def test_doctor_feedback_visible_content_preserves_format_controls(
+    db,
+    auth_user_and_headers,
+):
+    from app.models.clinical_journal import ClinicalJournalEntry
+    from app.services.agent_executor import AgentExecutor
+
+    user, _headers = auth_user_and_headers
+    assessment = "\u200b医生判断保持原文\ufeff"
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+
+    result = await executor._exec_record_doctor_feedback(
+        {"assessment": assessment}
+    )
+
+    payload = json.loads(result)
+    entry = db.query(ClinicalJournalEntry).filter_by(user_id=user.id).one()
+    assert payload["id"] == entry.id
+    assert entry.assessment == assessment
+
+
+@pytest.mark.asyncio
+async def test_doctor_feedback_executes_through_gateway_for_current_owner(
+    db,
+    auth_user_and_headers,
+):
+    from app.models.agent_runtime import AgentToolOperation
+    from app.models.clinical_journal import ClinicalJournalEntry
+    from app.models.user import User
+    from app.services.agent_executor import (
+        AgentExecutor,
+        _write_receipt_from_tool_result,
+    )
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    other = User(
+        id=user.id + 1,
+        username="doctor-feedback-gateway-other",
+        name="网关其他用户",
+    )
+    db.add(other)
+    db.commit()
+    assessment = "臀肌无力导致腰肌代偿"
+    runtime = AgentRuntimeCoordinator(db)
+    admission = runtime.create_or_resume_run(
+        run_id="run-doctor-feedback-gateway",
+        attempt_id="attempt-doctor-feedback-gateway",
+        user_id=user.id,
+        conversation_id=None,
+        client_turn_id="turn-doctor-feedback-gateway",
+        origin="test",
+    )
+    runtime.mark_running(admission.context)
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._current_turn_user_message = f"请记录医生诊断：{assessment}"
+    executor._runtime_run_id = admission.context.run_id
+    executor._runtime_attempt_id = admission.context.attempt_id
+    executor._runtime_managed = True
+    args = {
+        "assessment": assessment,
+        "user_id": other.id,
+        "owner_id": other.id,
+    }
+
+    result = await executor._execute_tool(
+        "record_doctor_feedback",
+        args,
+        None,
+    )
+
+    payload = json.loads(result)
+    receipt = _write_receipt_from_tool_result(
+        "record_doctor_feedback",
+        args,
+        result,
+    )
+    entry = db.query(ClinicalJournalEntry).one()
+    operation = db.query(AgentToolOperation).one()
+    assert executor._agent_kernel_last_decision is not None
+    assert executor._agent_kernel_last_decision.action == "allow"
+    assert entry.user_id == user.id
+    assert entry.user_id != other.id
+    assert payload["id"] == entry.id
+    assert receipt is not None
+    assert receipt["status"] == "verified"
+    assert receipt["resource_type"] == "clinical_journal_entry"
+    assert receipt["resource_id"] == str(entry.id)
+    assert operation.status == "succeeded"
+    assert operation.resource_type == "clinical_journal_entry"
+    assert operation.resource_id == str(entry.id)
+
+
+@pytest.mark.asyncio
 async def test_doctor_feedback_service_failure_rolls_back_and_is_log_safe(
     db,
     auth_user_and_headers,
@@ -702,7 +878,7 @@ async def test_doctor_feedback_service_failure_rolls_back_and_is_log_safe(
         {"assessment": private_text}
     )
 
-    assert result.startswith("Error:")
+    _assert_uncertain_write(result)
     assert _write_receipt_from_tool_result(
         "record_doctor_feedback",
         {"assessment": private_text},
@@ -712,6 +888,115 @@ async def test_doctor_feedback_service_failure_rolls_back_and_is_log_safe(
     assert "record_doctor_feedback" in caplog.text
     assert "RuntimeError" in caplog.text
     assert private_text not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_doctor_feedback_refresh_failure_after_commit_is_uncertain_without_receipt(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    caplog,
+):
+    from app.models.clinical_journal import ClinicalJournalEntry
+    from app.services.agent_executor import (
+        AgentExecutor,
+        _write_receipt_from_tool_result,
+    )
+
+    user, _headers = auth_user_and_headers
+    private_text = "医生评估原文"
+
+    def fail_refresh(_instance):
+        raise RuntimeError(private_text)
+
+    monkeypatch.setattr(db, "refresh", fail_refresh)
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    caplog.set_level(logging.ERROR, logger="app.services.agent_executor")
+
+    result = await executor._exec_record_doctor_feedback(
+        {"assessment": private_text}
+    )
+
+    _assert_uncertain_write(result)
+    assert _write_receipt_from_tool_result(
+        "record_doctor_feedback",
+        {"assessment": private_text},
+        result,
+    ) is None
+    db.expire_all()
+    rows = db.query(ClinicalJournalEntry).filter_by(user_id=user.id).all()
+    assert len(rows) == 1
+    assert rows[0].assessment == private_text
+    assert private_text not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_kind", ("wrong_owner", "not_persisted", "old_row"))
+async def test_doctor_feedback_rejects_forged_or_unverified_service_entry(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    failure_kind,
+):
+    from app.models.clinical_journal import ClinicalJournalEntry
+    from app.models.user import User
+    from app.services import doctor_report_service
+    from app.services.agent_executor import (
+        AgentExecutor,
+        _write_receipt_from_tool_result,
+    )
+
+    user, _headers = auth_user_and_headers
+    assessment = "需要持久化核验的新评估"
+    if failure_kind == "wrong_owner":
+        other = User(
+            id=user.id + 1,
+            username="doctor-feedback-forged-owner",
+            name="伪造归属用户",
+        )
+        db.add(other)
+        forged = ClinicalJournalEntry(
+            user_id=other.id,
+            assessment=assessment,
+            created_by="doctor",
+        )
+        db.add(forged)
+        db.commit()
+    elif failure_kind == "not_persisted":
+        forged = ClinicalJournalEntry(
+            id=999,
+            user_id=user.id,
+            assessment=assessment,
+            created_by="doctor",
+        )
+    else:
+        forged = ClinicalJournalEntry(
+            user_id=user.id,
+            assessment="旧评估",
+            created_by="doctor",
+        )
+        db.add(forged)
+        db.commit()
+
+    monkeypatch.setattr(
+        doctor_report_service,
+        "record_doctor_feedback",
+        Mock(return_value=forged),
+    )
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+
+    result = await executor._exec_record_doctor_feedback(
+        {"assessment": assessment}
+    )
+
+    _assert_uncertain_write(result)
+    assert _write_receipt_from_tool_result(
+        "record_doctor_feedback",
+        {"assessment": assessment},
+        result,
+    ) is None
 
 
 @pytest.mark.asyncio
@@ -744,5 +1029,5 @@ async def test_doctor_feedback_rollback_failure_does_not_leak_private_text(
         {"assessment": private_text}
     )
 
-    assert result.startswith("Error:")
+    _assert_uncertain_write(result)
     assert private_text not in caplog.text

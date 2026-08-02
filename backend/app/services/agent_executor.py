@@ -19,6 +19,7 @@ import logging
 import math
 import re
 import time
+import unicodedata
 from datetime import UTC, date, datetime, time as datetime_time, timezone, timedelta
 from typing import AsyncGenerator, Collection, Dict, Any, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import urlencode
@@ -101,6 +102,9 @@ from app.services.agent_kernel.types import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Bound each SOAP field without truncating user-reported clinical meaning.
+_DOCTOR_FEEDBACK_FIELD_MAX_CHARS = 4000
 
 
 def _sha12(text: str) -> str:
@@ -19324,20 +19328,44 @@ class AgentExecutor:
 
     async def _exec_record_doctor_feedback(self, args: dict) -> str:
         """Persist an explicit, owner-scoped clinician-feedback write."""
-        normalized = {
-            field: (
-                value.strip()
-                if isinstance((value := args.get(field)), str) and value.strip()
-                else None
-            )
-            for field in ("summary", "assessment", "plan")
-        }
+        normalized: dict[str, str | None] = {}
+        had_invisible_only_content = False
+        for field in ("summary", "assessment", "plan"):
+            raw_value = args.get(field)
+            value = raw_value.strip() if isinstance(raw_value, str) else ""
+            if len(value) > _DOCTOR_FEEDBACK_FIELD_MAX_CHARS:
+                return local_write_rejection(
+                    "doctor_feedback_field_too_long",
+                    message="单项医生反馈内容过长，本次未写入。",
+                )
+            if not value:
+                normalized[field] = None
+                continue
+            if not any(
+                not char.isspace() and unicodedata.category(char) != "Cf"
+                for char in value
+            ):
+                had_invisible_only_content = True
+                normalized[field] = None
+                continue
+            normalized[field] = value
         if not any(normalized.values()):
-            return "Error: 医生反馈内容不能为空"
+            if had_invisible_only_content:
+                return local_write_rejection(
+                    "doctor_feedback_content_not_visible",
+                    message="医生反馈缺少可见内容，本次未写入。",
+                )
+            return local_write_rejection(
+                "doctor_feedback_content_missing",
+                message="医生反馈内容不能为空，本次未写入。",
+            )
 
         user_id = self._current_user_id
         if not isinstance(user_id, int) or isinstance(user_id, bool) or user_id <= 0:
-            return "Error: 当前会话缺少用户身份，无法记录医生反馈"
+            return local_write_rejection(
+                "doctor_feedback_user_missing",
+                message="当前会话缺少用户身份，无法记录医生反馈。",
+            )
 
         raw_visit_date = args.get("visit_date")
         if raw_visit_date is None or (
@@ -19347,12 +19375,20 @@ class AgentExecutor:
         elif not isinstance(raw_visit_date, str) or re.fullmatch(
             r"\d{4}-\d{2}-\d{2}", raw_visit_date
         ) is None:
-            return "Error: 医生反馈日期格式无效，请使用 YYYY-MM-DD"
+            return local_write_rejection(
+                "doctor_feedback_date_invalid",
+                message="医生反馈日期格式无效，本次未写入。",
+                recovery_guidance="请使用 YYYY-MM-DD。",
+            )
         else:
             try:
                 visit_date = date.fromisoformat(raw_visit_date)
             except ValueError:
-                return "Error: 医生反馈日期格式无效，请使用 YYYY-MM-DD"
+                return local_write_rejection(
+                    "doctor_feedback_date_invalid",
+                    message="医生反馈日期格式无效，本次未写入。",
+                    recovery_guidance="请使用 YYYY-MM-DD。",
+                )
 
         try:
             from app.services import doctor_report_service
@@ -19371,8 +19407,29 @@ class AgentExecutor:
                 or isinstance(entry_id, bool)
                 or entry_id <= 0
                 or entry.created_by != "doctor"
+                or entry.user_id != user_id
             ):
                 raise RuntimeError("invalid_doctor_feedback_receipt")
+
+            from app.models.clinical_journal import ClinicalJournalEntry
+
+            persisted = (
+                self.db.query(ClinicalJournalEntry)
+                .filter(
+                    ClinicalJournalEntry.id == entry_id,
+                    ClinicalJournalEntry.user_id == user_id,
+                    ClinicalJournalEntry.created_by == "doctor",
+                )
+                .one_or_none()
+            )
+            if persisted is None or (
+                persisted.subjective != normalized["summary"]
+                or persisted.assessment != normalized["assessment"]
+                or persisted.plan != normalized["plan"]
+                or persisted.objective
+                != f"医生随访 @ {visit_date.isoformat()}"
+            ):
+                raise RuntimeError("unverified_doctor_feedback_persistence")
             return json.dumps(
                 {
                     "message": "医生反馈已记录",
@@ -19394,7 +19451,16 @@ class AgentExecutor:
                     "operation=record_doctor_feedback rollback_error_type=%s",
                     type(rollback_exc).__name__,
                 )
-            return "Error: 医生反馈记录失败"
+            return json.dumps(
+                {
+                    "status": "uncertain",
+                    "success": False,
+                    "dispatch_started": True,
+                    "error_code": "doctor_feedback_write_uncertain",
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
 
     async def _exec_upload_medical_exam_text(
         self, base: str, headers: dict, args: dict

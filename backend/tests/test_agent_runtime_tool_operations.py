@@ -133,6 +133,7 @@ def test_doctor_feedback_tool_has_strict_schema_and_receipt_contract():
     assert parameters["additionalProperties"] is False
     assert "仅当用户明确要求记录或保存医生反馈时" in schema["description"]
     assert spec.operation == "write"
+    assert spec.call_style == "args"
     assert spec.receipt_required is True
     assert spec.reconciliation_resource_type({}) == "clinical_journal_entry"
     assert is_valid_receipt_resource_id("record_doctor_feedback", "1") is True

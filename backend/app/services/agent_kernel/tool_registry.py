@@ -226,6 +226,7 @@ _CORE_TOOL_SPECS = (
         "record_doctor_feedback",
         "write",
         "_exec_record_doctor_feedback",
+        call_style="args",
         receipt_required=True,
         receipt_resource_types=frozenset({"clinical_journal_entry"}),
         receipt_resource_id_pattern=_POSITIVE_INTEGER_RECEIPT_ID,
