@@ -34,7 +34,7 @@ def _generate_mfa_session_id() -> str:
 def _ensure_display_name_for_client(client, email: str) -> bool:
     """确保 client 的 display_name 已设置, 尝试多种方式获取.
 
-    用于 verify_mfa_with_session 等场景: MFA 验证完成后, garth 客户端可能还
+    用于 verify_mfa_with_session 等场景: MFA 验证完成后, 原生客户端可能还
     没有加载 profile, 后续 API 调用会因 display_name=None 而失败.
 
     Args:
@@ -47,68 +47,48 @@ def _ensure_display_name_for_client(client, email: str) -> bool:
     if client.display_name:
         return True
 
-    # 方法1: 尝试 userprofile API
-    try:
-        prof = client.garth.connectapi("/userprofile-service/userprofile/profile")
-        if prof and isinstance(prof, dict):
-            client.display_name = prof.get("displayName") or prof.get("userName")
-            client.full_name = prof.get("fullName")
-            if client.display_name:
-                logger.info(f"[MFA] 从 userprofile API 获取 display_name: {client.display_name}")
-                return True
-    except Exception as e:
-        logger.debug(f"[MFA] userprofile API 失败: {e}")
+    native = getattr(client, "client", None)
+    if native:
+        for path in (
+            "/userprofile-service/userprofile/profile",
+            "/userprofile-service/socialProfile",
+        ):
+            try:
+                profile = native.connectapi(path)
+                if profile and isinstance(profile, dict):
+                    client.display_name = profile.get("displayName") or profile.get("userName")
+                    client.full_name = profile.get("fullName")
+                    if client.display_name:
+                        return True
+            except Exception:
+                logger.debug("[MFA] Garmin profile lookup failed (%s)", path)
 
-    # 方法2: 尝试 socialProfile API
-    try:
-        social = client.garth.connectapi("/userprofile-service/socialProfile")
-        if social and isinstance(social, dict):
-            client.display_name = social.get("displayName") or social.get("userName")
-            client.full_name = social.get("fullName")
-            if client.display_name:
-                logger.info(f"[MFA] 从 socialProfile API 获取 display_name: {client.display_name}")
-                return True
-    except Exception as e:
-        logger.debug(f"[MFA] socialProfile API 失败: {e}")
-
-    # 方法3: 尝试从 garth 的 profile 属性获取
-    try:
-        if hasattr(client.garth, 'profile') and client.garth.profile:
-            profile = client.garth.profile
-            client.display_name = (
-                getattr(profile, 'display_name', None) or getattr(profile, 'email', None)
-            )
-            if client.display_name:
-                logger.info(f"[MFA] 从 garth.profile 获取 display_name: {client.display_name}")
-                return True
-    except Exception as e:
-        logger.debug(f"[MFA] garth.profile 获取失败: {e}")
-
-    # 方法4: 尝试调用 get_full_name()
-    try:
-        full_name = client.get_full_name()
-        if full_name:
-            client.display_name = full_name
-            logger.info(f"[MFA] 从 get_full_name() 获取 display_name: {client.display_name}")
-            return True
-    except Exception as e:
-        logger.debug(f"[MFA] get_full_name() 失败: {e}")
+    full_name = getattr(client, "full_name", None)
+    if full_name:
+        client.display_name = full_name
+        return True
 
     # 方法5: 从邮箱地址提取用户名作为后备
     try:
         email_username = email.split('@')[0]
         if email_username:
             client.display_name = email_username
-            logger.warning(f"[MFA] 使用邮箱用户名作为 display_name: {client.display_name}")
+            logger.warning("[MFA] Garmin profile 缺失，使用账号标识兜底")
             return True
-    except Exception as e:
-        logger.debug(f"[MFA] 邮箱提取失败: {e}")
+    except Exception:
+        logger.debug("[MFA] Garmin 账号标识提取失败")
 
     logger.error("[MFA] 无法获取 display_name, 部分 API 可能无法正常工作")
     return False
 
 
-def verify_mfa_with_session(session_id: str, mfa_code: str) -> Dict[str, Any]:
+def verify_mfa_with_session(
+    session_id: str,
+    mfa_code: str,
+    *,
+    user_id: int,
+    db=None,
+) -> Dict[str, Any]:
     """使用 session_id 和 MFA 验证码完成登录.
 
     模块级函数, 用于处理 MFA 验证流程. client 对象需要在请求之间保持,
@@ -132,38 +112,65 @@ def verify_mfa_with_session(session_id: str, mfa_code: str) -> Dict[str, Any]:
 
     # 查找会话
     if session_id not in _mfa_sessions:
-        logger.warning(f"MFA session not found: {session_id}")
-        return {"success": False, "message": "❌ 验证会话已过期, 请重新测试连接."}
+        logger.warning("[MFA] Garmin 验证会话不存在或已过期 user=%s", user_id)
+        return {"success": False, "message": "验证会话已过期，请重新连接 Garmin"}
 
     session = _mfa_sessions[session_id]
 
     # 检查是否过期
     if session.get("expires", 0) < time.time():
         del _mfa_sessions[session_id]
-        return {"success": False, "message": "❌ 验证会话已过期, 请重新测试连接."}
+        return {"success": False, "message": "验证会话已过期，请重新连接 Garmin"}
+
+    if session.get("user_id") != user_id:
+        logger.warning("[MFA] Garmin 验证会话所有者不匹配 user=%s", user_id)
+        return {"success": False, "message": "验证会话无效，请重新连接 Garmin"}
 
     client = session.get("client")
     client_state = session.get("client_state")
     email = session.get("email")
     is_cn = session.get("is_cn")
 
-    if not client or not client_state:
+    if not client:
         del _mfa_sessions[session_id]
-        return {"success": False, "message": "❌ 会话数据无效, 请重新测试连接."}
+        return {"success": False, "message": "验证会话无效，请重新连接 Garmin"}
 
     try:
         # 使用验证码恢复登录
         client.resume_login(client_state, mfa_code)
 
+        from app.services.data_collection.garmin_native_auth import (
+            dump_native_token_store,
+            is_native_client_authenticated,
+        )
+
+        if not is_native_client_authenticated(client):
+            raise RuntimeError("Garmin native authentication incomplete")
+
         # 重要: MFA 验证后需要手动加载 profile 来获取 display_name
         # 否则后续的 API 调用会因为 display_name 为 None 而失败
         _ensure_display_name_for_client(client, email)
 
-        server_type = "中国版" if is_cn else "国际版"
-        logger.info(
-            f"[MFA] Garmin {server_type} ({email}) MFA 验证成功, "
-            f"display_name={client.display_name}"
-        )
+        if db is not None:
+            from app.models.user import GarminCredential
+
+            credential = db.query(GarminCredential).filter(
+                GarminCredential.user_id == user_id
+            ).first()
+            if (
+                credential
+                and credential.garmin_email == email
+                and bool(credential.is_cn) == bool(is_cn)
+            ):
+                credential.garth_session = dump_native_token_store(client)
+                credential.session_expires_at = None
+                credential.requires_mfa = False
+                credential.credentials_valid = True
+                credential.error_count = 0
+                credential.last_error = None
+                db.commit()
+
+        logger.info("[MFA] Garmin 验证成功 user=%s", user_id)
 
         # 不要立即删除会话, 标记为已认证, 并延长过期时间 (10 分钟)
         # 这样后续同步可以复用已认证的 client
@@ -172,13 +179,14 @@ def verify_mfa_with_session(session_id: str, mfa_code: str) -> Dict[str, Any]:
             "client_state": client_state,
             "email": email,
             "is_cn": is_cn,
+            "user_id": user_id,
             "authenticated": True,
             "expires": time.time() + 600,
         }
 
         return {
             "success": True,
-            "message": "✅ 验证成功! Garmin 账号连接成功, 可以保存凭证了.",
+            "message": "Garmin 验证成功，账号已连接",
             "email": email,
             "is_cn": is_cn,
             "session_id": session_id,
@@ -189,9 +197,9 @@ def verify_mfa_with_session(session_id: str, mfa_code: str) -> Dict[str, Any]:
 
         if 'invalid' in error_msg or 'incorrect' in error_msg or 'wrong' in error_msg:
             # 验证码错误, 保留会话供重试
-            return {"success": False, "message": "❌ 验证码错误! 请检查并重新输入."}
+            return {"success": False, "message": "验证码错误或已过期，请重新输入"}
 
         # 其他错误, 清理会话
         del _mfa_sessions[session_id]
-        logger.error(f"[MFA] MFA 验证失败: {e}")
-        return {"success": False, "message": f"❌ 验证失败: {str(e)}"}
+        logger.warning("[MFA] Garmin 验证失败 user=%s type=%s", user_id, type(e).__name__)
+        return {"success": False, "message": "Garmin 验证失败，请重新连接"}

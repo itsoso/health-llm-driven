@@ -1160,7 +1160,7 @@ async def test_garmin_connection(
         )
 
         # 使用支持 MFA 的测试连接方法
-        result = garmin_service.test_connection_with_mfa()
+        result = garmin_service.test_connection_with_mfa(db=db)
 
         # 如果检测到需要MFA，更新数据库中的requires_mfa字段
         if result.get("mfa_required"):
@@ -1231,19 +1231,21 @@ async def verify_garmin_mfa(
     try:
         from app.services.data_collection.garmin_connect import verify_mfa_with_session
 
-        logger.info(f"验证Garmin MFA - session_id: {mfa_request.mfa_session_id}")
+        logger.info(f"验证 Garmin MFA - user_id={current_user.id}")
 
         # 使用验证码恢复登录
         result = verify_mfa_with_session(
             session_id=mfa_request.mfa_session_id,
-            mfa_code=mfa_request.mfa_code
+            mfa_code=mfa_request.mfa_code,
+            user_id=current_user.id,
+            db=db,
         )
 
-        # 如果验证成功，更新数据库中的requires_mfa字段为True
+        # 验证成功后清除 MFA 阻塞状态。
         if result.get("success") and result.get("session_id"):
             try:
-                garmin_credential_service.update_mfa_status(db, current_user.id, requires_mfa=True)
-                logger.info(f"MFA验证成功，已更新用户 {current_user.id} 的MFA状态为需要MFA")
+                garmin_credential_service.update_mfa_status(db, current_user.id, requires_mfa=False)
+                logger.info(f"Garmin MFA 验证成功 user_id={current_user.id}")
             except Exception as e:
                 logger.warning(f"更新MFA状态失败: {e}")
 
