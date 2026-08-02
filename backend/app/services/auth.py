@@ -205,6 +205,50 @@ class GarminCredentialService:
 
         db.commit()
         db.refresh(credential)
+        from app.services.data_collection.garmin_mfa import invalidate_mfa_sessions_for_user
+
+        invalidate_mfa_sessions_for_user(user_id)
+        return credential
+
+    @staticmethod
+    def save_connected_credentials(
+        db: Session,
+        user_id: int,
+        garmin_email: str,
+        encrypted_password: str,
+        is_cn: bool,
+        native_token_store: str,
+    ) -> GarminCredential:
+        """Atomically install a fully authenticated Garmin connection."""
+        credential = db.query(GarminCredential).filter(
+            GarminCredential.user_id == user_id
+        ).first()
+        if credential is None:
+            credential = GarminCredential(user_id=user_id)
+            db.add(credential)
+
+        credential.garmin_email = garmin_email
+        credential.encrypted_password = encrypted_password
+        credential.is_cn = is_cn
+        credential.garth_session = native_token_store
+        credential.session_expires_at = None
+        credential.credentials_valid = True
+        credential.requires_mfa = False
+        credential.sync_enabled = True
+        credential.error_count = 0
+        credential.last_error = None
+        credential.login_locked_until = None
+        credential.updated_at = datetime.now(UTC)
+        try:
+            db.commit()
+            db.refresh(credential)
+        except Exception:
+            db.rollback()
+            raise
+
+        from app.services.data_collection.garmin_mfa import invalidate_mfa_sessions_for_user
+
+        invalidate_mfa_sessions_for_user(user_id)
         return credential
 
     @staticmethod
@@ -252,6 +296,9 @@ class GarminCredentialService:
         if credential:
             db.delete(credential)
             db.commit()
+            from app.services.data_collection.garmin_mfa import invalidate_mfa_sessions_for_user
+
+            invalidate_mfa_sessions_for_user(user_id)
             return True
         return False
 

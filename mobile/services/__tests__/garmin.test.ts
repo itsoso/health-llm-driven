@@ -17,10 +17,9 @@ import {
   deleteGarminCredentials,
   fetchGarminStatus,
   garminErrorMessage,
-  saveGarminCredentials,
+  connectGarminCredentials,
   setGarminSyncEnabled,
   syncGarmin,
-  testGarminConnection,
   verifyGarminMfa,
 } from '../garmin';
 
@@ -36,17 +35,15 @@ describe('Garmin service', () => {
       is_cn: false,
     };
     mockGet.mockResolvedValueOnce({ data: { bound: false, health: 'unbound' } });
-    mockPost
-      .mockResolvedValueOnce({ data: { id: 7, garmin_email: input.garmin_email } })
-      .mockResolvedValueOnce({ data: { success: true, mfa_required: false, message: 'ok' } });
+    mockPost.mockResolvedValueOnce({
+      data: { success: true, mfa_required: false, message: 'ok' },
+    });
 
     await expect(fetchGarminStatus()).resolves.toMatchObject({ health: 'unbound' });
-    await saveGarminCredentials(input);
-    await expect(testGarminConnection(input)).resolves.toMatchObject({ success: true });
+    await expect(connectGarminCredentials(input)).resolves.toMatchObject({ success: true });
 
     expect(mockGet).toHaveBeenCalledWith('/data-collection/garmin/me/credential-status');
-    expect(mockPost).toHaveBeenNthCalledWith(1, '/auth/garmin/credentials', input);
-    expect(mockPost).toHaveBeenNthCalledWith(2, '/auth/garmin/test-connection', input);
+    expect(mockPost).toHaveBeenCalledWith('/auth/garmin/connect', input);
   });
 
   it('submits only the MFA code and opaque user-bound session id', async () => {

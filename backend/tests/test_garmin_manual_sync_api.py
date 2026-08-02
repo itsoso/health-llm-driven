@@ -43,6 +43,7 @@ async def test_manual_sync_allows_native_token_despite_stale_flags(db, monkeypat
     async def fake_sync(passed_db, user_id, email, password, **kwargs):
         calls.append((passed_db, user_id, email, password, kwargs))
         return {
+            "success": True,
             "success_count": 1,
             "error_count": 0,
             "activities_count": 2,
@@ -100,4 +101,30 @@ async def test_manual_sync_does_not_echo_upstream_secret(db, monkeypatch) -> Non
 
     assert exc_info.value.status_code == 502
     assert "upstream-secret-token" not in str(exc_info.value.detail)
+    assert "暂时不可用" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_manual_sync_rejects_false_green_scheduler_result(db, monkeypatch) -> None:
+    from app import scheduler
+
+    user, _credential = _create_user_and_credential(db, "false-green")
+
+    async def fake_sync(*_args, **_kwargs):
+        return {
+            "success": False,
+            "success_count": 0,
+            "error_count": 1,
+            "message": "upstream failed",
+            "is_auth_error": False,
+            "requires_mfa": False,
+            "skipped": False,
+        }
+
+    monkeypatch.setattr(scheduler, "sync_user_garmin_data", fake_sync)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await sync_my_garmin_data(days=1, current_user=user, db=db)
+
+    assert exc_info.value.status_code == 502
     assert "暂时不可用" in exc_info.value.detail

@@ -369,6 +369,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/garmin/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 原子连接Garmin账号
+         * @description 先完成 Garmin 认证，再原子替换旧连接；失败时旧连接保持不变。
+         */
+        post: operations["connect_garmin_account_api_v1_auth_garmin_connect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/garmin/test-connection": {
         parameters: {
             query?: never;
@@ -34055,6 +34075,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connect_garmin_account_api_v1_auth_garmin_connect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GarminCredentialCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GarminTestConnectionResponse"];
                 };
             };
             /** @description Validation Error */

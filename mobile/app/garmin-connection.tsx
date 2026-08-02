@@ -20,10 +20,9 @@ import {
   deleteGarminCredentials,
   fetchGarminStatus,
   garminErrorMessage,
-  saveGarminCredentials,
+  connectGarminCredentials,
   setGarminSyncEnabled,
   syncGarmin,
-  testGarminConnection,
   verifyGarminMfa,
   type GarminCredentialStatus,
   type GarminCredentialsInput,
@@ -132,6 +131,7 @@ export default function GarminConnectionScreen() {
   const [busy, setBusy] = useState<BusyAction>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeIsCaution, setNoticeIsCaution] = useState(false);
 
   const isBusy = busy !== null;
   const showCredentialForm = !status?.bound || editing;
@@ -156,10 +156,10 @@ export default function GarminConnectionScreen() {
     setError(null);
     setNotice(null);
     try {
-      await saveGarminCredentials(input);
-      const result = await testGarminConnection(input);
+      const result = await connectGarminCredentials(input);
       setPassword('');
       if (result.success) {
+        setNoticeIsCaution(false);
         setEditing(false);
         setNotice('Garmin 已连接，可以开始同步。');
         await refreshStatus();
@@ -168,6 +168,7 @@ export default function GarminConnectionScreen() {
       if (result.mfa_required && result.mfa_session_id) {
         setMfaSession(result.mfa_session_id);
         setNotice('Garmin 已发送验证请求，请输入 6 位验证码。');
+        setNoticeIsCaution(true);
         return;
       }
       setError(result.message || '连接失败，请检查账号和服务器区域');
@@ -195,6 +196,7 @@ export default function GarminConnectionScreen() {
       setMfaCode('');
       setEditing(false);
       setNotice('两步验证完成，Garmin 连接已恢复。');
+      setNoticeIsCaution(false);
       await refreshStatus();
     } catch (mfaError) {
       setError(garminErrorMessage(mfaError));
@@ -210,6 +212,7 @@ export default function GarminConnectionScreen() {
     try {
       const result = await syncGarmin(1);
       setNotice(result.message || 'Garmin 数据已更新。');
+      setNoticeIsCaution(result.status === 'no_data' || result.status === 'skipped');
       await invalidateHealthSnapshot(queryClient);
       await refreshStatus();
     } catch (syncError) {
@@ -322,13 +325,23 @@ export default function GarminConnectionScreen() {
           ) : null}
 
           {notice ? (
-            <View style={styles.noticeBox}>
-              <Ionicons name="checkmark-circle-outline" size={18} color={revaSemantic.normal.fg} />
-              <Text style={styles.noticeText}>{notice}</Text>
+            <View
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+              style={[styles.noticeBox, noticeIsCaution ? styles.cautionBox : null]}
+            >
+              <Ionicons
+                name={noticeIsCaution ? 'information-circle-outline' : 'checkmark-circle-outline'}
+                size={18}
+                color={noticeIsCaution ? revaSemantic.caution.fg : revaSemantic.normal.fg}
+              />
+              <Text style={[styles.noticeText, noticeIsCaution ? styles.cautionText : null]}>
+                {notice}
+              </Text>
             </View>
           ) : null}
           {error ? (
-            <View style={styles.errorBox}>
+            <View accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.errorBox}>
               <Ionicons name="alert-circle-outline" size={18} color={revaSemantic.risk.fg} />
               <Text style={styles.errorText}>{error}</Text>
             </View>
@@ -340,7 +353,7 @@ export default function GarminConnectionScreen() {
               <Text style={styles.bodyCopy}>输入 Garmin 验证器或邮件中的 6 位验证码。</Text>
               <TextInput
                 accessibilityLabel="Garmin 两步验证码"
-                autoComplete="one-time-code"
+                autoComplete="off"
                 keyboardType="number-pad"
                 maxLength={6}
                 onChangeText={(value) => setMfaCode(value.replace(/\D/g, '').slice(0, 6))}
@@ -527,6 +540,11 @@ const styles = StyleSheet.create({
     borderCurve: 'continuous',
   },
   noticeText: { ...revaType.body2, color: revaSemantic.normal.fg, flex: 1 },
+  cautionBox: {
+    backgroundColor: revaSemantic.caution.bg,
+    borderColor: revaSemantic.caution.line,
+  },
+  cautionText: { color: revaSemantic.caution.fg },
   errorBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',

@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-02 |
 | status | planned |
-| current_stage | G2 passed; test-first implementation ready |
+| current_stage | implementation hardened; G3 integration and G4 re-review in progress |
 | owner_surface | Backend / Mobile data connection |
 
 ## Problem
@@ -64,12 +64,18 @@ safe errors and one shared adapter. G4 remains mandatory before deployment.
 
 ### G3 Tests: PENDING
 
-Test-first implementation has not started.
+Focused Garmin verification is green: 119 backend tests, 20 Mobile Garmin /
+Settings tests, TypeScript, blocking Ruff, compileall, Mobile lint and design
+token checks. The full Mobile suite is green at 284 suites / 2,196 tests. Full
+backend integration remains pending after reconciling the latest `origin/main`.
 
 ### G4 Safety Review: PENDING
 
 Required because the change handles credentials, refresh tokens and private
-health-data ingestion.
+health-data ingestion. The first independent review returned NO-GO on shared
+live-client caching, token log leakage, false-green sync errors and non-atomic
+reconnect. Those paths now have regression tests and architectural fixes; a
+fresh independent re-review is running before any deployment.
 
 ### G5 Deployment Health: PENDING
 

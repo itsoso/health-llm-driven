@@ -61,14 +61,14 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1, notify_on_failure: 
             # 使用 GarminCredential 获取凭据（与 scheduler/auth 保持一致）
             from app.models.user import GarminCredential
             from app.services.auth import garmin_credential_service
+            from app.services.data_collection.garmin_native_auth import credential_can_sync
 
             credential = db.query(GarminCredential).filter(
                 GarminCredential.user_id == user_id,
                 GarminCredential.sync_enabled == True,
-                GarminCredential.credentials_valid == True
             ).first()
 
-            if not credential:
+            if not credential or not credential_can_sync(credential):
                 logger.warning(f"用户 {user_id} 没有有效的 Garmin 凭据")
                 if notify_on_failure:
                     _notify_garmin_sync_failed(user_id, reason="no_credentials")
@@ -103,6 +103,10 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1, notify_on_failure: 
 
             success_count = sync_result.get("success_count", 0)
             error_count = sync_result.get("error_count", 0)
+            if error_count:
+                from app.services.data_collection.garmin_errors import GarminSyncError
+
+                raise GarminSyncError("Garmin partial date range failure")
             logger.info(f"用户 {user_id} 健康数据同步完成: 成功 {success_count} 天, 失败 {error_count} 天")
 
             # 同步运动活动数据（复用已认证的 client）
@@ -289,11 +293,12 @@ def sync_all_users_garmin():
 
     with SessionLocal() as db:
         from app.models.user import GarminCredential
+        from app.services.data_collection.garmin_native_auth import credential_can_sync
 
         credentials = db.query(GarminCredential).filter(
             GarminCredential.sync_enabled == True,
-            GarminCredential.credentials_valid == True
         ).all()
+        credentials = [credential for credential in credentials if credential_can_sync(credential)]
 
         dispatched = []
         skipped = []

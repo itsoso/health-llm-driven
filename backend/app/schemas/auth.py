@@ -151,7 +151,13 @@ class GarminTestConnectionResponse(BaseModel):
 
 class GarminMFAVerifyRequest(BaseModel):
     """Garmin MFA验证请求"""
-    mfa_code: str = Field(..., min_length=6, max_length=6, description="6位MFA验证码")
+    mfa_code: str = Field(
+        ...,
+        min_length=6,
+        max_length=6,
+        pattern=r"^\d{6}$",
+        description="6位MFA验证码",
+    )
     mfa_session_id: str = Field(..., description="测试连接时返回的MFA会话ID")
 
 

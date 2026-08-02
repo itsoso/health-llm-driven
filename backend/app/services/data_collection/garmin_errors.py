@@ -29,6 +29,10 @@ class GarminMFARequiredError(Exception):
         self.client_state = client_state
 
 
+class GarminSyncError(Exception):
+    """Garmin reached the service but an operational sync failed."""
+
+
 # 登录失败阈值和锁定时间配置
 LOGIN_FAIL_THRESHOLD = 2  # 连续失败次数阈值 (429 立即触发, 其他错误 2 次后锁定)
 # 指数退避锁定时间 (分钟): 第1次30分钟, 第2次2小时, 第3次8小时, 第4次+24小时

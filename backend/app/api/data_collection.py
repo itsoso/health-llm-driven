@@ -332,6 +332,22 @@ async def sync_my_garmin_data(
             is_cn=credential.is_cn if hasattr(credential, 'is_cn') else True
         )
 
+        if result.get("requires_mfa"):
+            raise HTTPException(
+                status_code=409,
+                detail="Garmin 需要两步验证，请在设置中完成验证码确认",
+            )
+        if result.get("is_auth_error"):
+            raise HTTPException(
+                status_code=409,
+                detail="Garmin 连接已失效，请重新连接账号",
+            )
+        if not result.get("success") and not result.get("skipped"):
+            raise HTTPException(
+                status_code=502,
+                detail="Garmin 服务暂时不可用，请稍后再试",
+            )
+
         if result.get("success_count", 0) > 0:
             # Garmin 数据更新后 invalidate Twin cache，确保下次读到最新数据
             try:
@@ -357,6 +373,8 @@ async def sync_my_garmin_data(
                 "message": result.get("message", "未找到新数据")
             }
 
+    except HTTPException:
+        raise
     except Exception as e:
         from app.services.data_collection.garmin_connect import (
             GarminAuthenticationError,

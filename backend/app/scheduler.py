@@ -1,19 +1,22 @@
 """后台任务调度器 - 自动同步所有用户的Garmin数据
 
 优化措施（防止账户锁定）：
-1. OAuth令牌缓存 - 复用已登录的会话，避免每次都重新登录
+1. 用户绑定的加密原生 token - 避免每次都重新登录
 2. 用户间随机延迟 - 避免同一时间大量请求
 3. 指数退避重试 - 遇到限流时智能等待
 4. 账户状态监控 - 检测到锁定风险时自动暂停
 """
 import asyncio
 import logging
-from datetime import UTC, datetime, timedelta, date
+from datetime import UTC, datetime, timedelta
 from typing import List, Dict, Any
 from app.services.data_collection.garmin_connect import GarminConnectService, GarminAuthenticationError, probe_sso_availability
-from app.services.data_collection.garmin_native_auth import has_native_token_store
+from app.services.data_collection.garmin_native_auth import (
+    credential_can_sync,
+    has_native_token_store,
+)
 from app.services.auth import garmin_credential_service
-from app.services.garmin_session_manager import get_session_manager, AccountStatus
+from app.services.garmin_session_manager import get_session_manager
 from app.models.user import GarminCredential
 from app.database import SessionLocal
 from app.utils.timezone import get_china_today, get_china_now
@@ -73,23 +76,20 @@ def _update_vo2max_from_workouts(db, user_id: int, days: int = 30):
 
 
 def get_all_sync_enabled_users(db) -> List[Dict[str, Any]]:
-    """获取所有启用同步且凭证有效的用户及其解密后的凭证"""
-    # 查询所有启用同步的用户（包括需要MFA的）
+    """获取可用密码或原生 token 的启用同步用户。"""
     all_credentials = db.query(GarminCredential).filter(
-        GarminCredential.sync_enabled == True,
-        GarminCredential.credentials_valid == True
+        GarminCredential.sync_enabled == True
     ).all()
 
-    # 统计需要MFA的用户
-    mfa_users = [cred for cred in all_credentials if cred.requires_mfa == True]
-    if mfa_users:
-        mfa_user_ids = [cred.user_id for cred in mfa_users]
-        logger.info(f"🔐 检测到 {len(mfa_users)} 个需要MFA验证的用户，已跳过自动同步: {mfa_user_ids}")
+    credentials = [cred for cred in all_credentials if credential_can_sync(cred)]
+    blocked = [cred for cred in all_credentials if not credential_can_sync(cred)]
 
-    # 只获取不需要MFA的用户
-    credentials = [cred for cred in all_credentials if cred.requires_mfa == False]
-
-    logger.info(f"📊 同步用户统计: 总启用同步用户={len(all_credentials)}, 需要MFA(已跳过)={len(mfa_users)}, 可同步用户={len(credentials)}")
+    logger.info(
+        "📊 同步用户统计: 总启用同步用户=%s, 状态阻塞=%s, 可同步用户=%s",
+        len(all_credentials),
+        len(blocked),
+        len(credentials),
+    )
 
     users_with_credentials = []
     for cred in credentials:
@@ -212,16 +212,9 @@ async def sync_user_garmin_data(
     try:
         server_type = "中国版" if is_cn else "国际版"
 
-        # 2. 尝试复用缓存的会话（OAuth令牌缓存）
-        cached_client = session_manager.get_cached_session(email)
-        if cached_client:
-            logger.info(f"♻️ 用户 {user_id} 复用缓存会话")
-            service = GarminConnectService(email, password, is_cn=is_cn, user_id=user_id)
-            service.client = cached_client
-            service._authenticated = True
-        else:
-            logger.info(f"🔐 用户 {user_id} 创建新会话 ({server_type})")
-            service = GarminConnectService(email, password, is_cn=is_cn, user_id=user_id)
+        # 2. 每次创建用户绑定的 adapter；adapter 从该用户的加密 token 恢复。
+        logger.info(f"🔐 用户 {user_id} 创建用户绑定会话 ({server_type})")
+        service = GarminConnectService(email, password, is_cn=is_cn, user_id=user_id)
 
         # 计算日期范围
         end_date = get_china_today()
@@ -230,9 +223,10 @@ async def sync_user_garmin_data(
         # 执行健康数据同步
         sync_result = service.sync_date_range(db, user_id, start_date, end_date)
 
-        # 3. 缓存成功的会话
-        if service.client and service._authenticated:
-            session_manager.cache_session(email, service.client, is_cn)
+        if sync_result.get("error_count", 0) > 0:
+            from app.services.data_collection.garmin_errors import GarminSyncError
+
+            raise GarminSyncError("Garmin partial date range failure")
 
         result["success"] = True
         result["success_count"] = sync_result.get("success_count", 0)
@@ -292,7 +286,9 @@ async def sync_user_garmin_data(
 
     except Exception as e:
         error_str = str(e).lower()
-        error_message = str(e)
+        from app.services.data_collection.garmin_native_auth import safe_garmin_error_message
+
+        error_message = safe_garmin_error_message(e)
 
         # 检测是否需要MFA验证
         requires_mfa = any(keyword in error_str for keyword in [
@@ -324,14 +320,16 @@ async def sync_user_garmin_data(
         if is_auth_error:
             logger.warning(f"🔑 用户 {user_id} Garmin认证失败: {error_message}")
         else:
-            logger.error(f"❌ 用户 {user_id} Garmin数据同步失败: {e}")
+            logger.error(
+                "❌ 用户 %s Garmin数据同步失败 (%s)",
+                user_id,
+                type(e).__name__,
+            )
 
         # 6. 指数退避重试
         if should_retry and retry_delay > 0:
             logger.info(f"⏳ 用户 {user_id} 将在 {retry_delay} 秒后重试 (第 {retry_count + 1} 次)")
             await asyncio.sleep(retry_delay)
-            # 清除缓存的会话，强制重新登录
-            session_manager.invalidate_session(email)
             release_sync_lock(db, user_id)
             return await sync_user_garmin_data(
                 db, user_id, email, password, days, is_cn, retry_count + 1
@@ -349,7 +347,7 @@ async def sync_all_users_garmin_task(days: int = 3) -> Dict[str, Any]:
     集成会话管理器功能：
     - 用户间随机延迟（分散请求）
     - 账户状态检查（跳过风险账户）
-    - 同步结束后清理过期会话
+    - 同步结束后清理过期账户状态
     """
     logger.info(f"🚀 开始执行全部用户 Garmin 数据同步任务: {get_china_now()}")
     logger.info(f"📅 同步天数: {days} 天")
@@ -494,8 +492,8 @@ async def scheduler_loop_daily(target_hour: int = 8, target_minute: int = 1):
     """
     logger.info(f"🚀 Garmin 每日定时同步调度器已启动")
     logger.info(f"⏰ 每日同步时间: {target_hour:02d}:{target_minute:02d} (北京时间)")
-    logger.info(f"🛡️ 账户保护机制已启用:")
-    logger.info(f"   - OAuth令牌缓存: 会话有效期 {session_manager.SESSION_TTL_HOURS} 小时")
+    logger.info("🛡️ 账户保护机制已启用:")
+    logger.info("   - 用户绑定加密原生 token: 启用")
     logger.info(f"   - 用户间延迟: {session_manager.MIN_DELAY_SECONDS}-{session_manager.MAX_DELAY_SECONDS} 秒随机")
     logger.info(f"   - 指数退避重试: 最多 {session_manager.MAX_RETRIES} 次，最大延迟 {session_manager.MAX_RETRY_DELAY} 秒")
     logger.info(f"   - 每日请求限制: {session_manager.MAX_REQUESTS_PER_DAY} 次/账户")

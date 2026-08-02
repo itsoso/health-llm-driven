@@ -8,6 +8,9 @@ store.  Callers must never persist or log the decoded payload.
 from __future__ import annotations
 
 import json
+import logging
+from contextlib import contextmanager
+from collections.abc import Iterator
 from typing import Any
 
 from app.services.auth import garmin_credential_service
@@ -18,6 +21,33 @@ TOKEN_STORE_FORMAT = "garmin_di_oauth"
 
 class GarminNativeTokenError(ValueError):
     """Stored Garmin native token state is absent, legacy, or invalid."""
+
+
+class _TokenPayloadFilter(logging.Filter):
+    """Remove one decoded token payload from third-party log records."""
+
+    def __init__(self, payload: str) -> None:
+        super().__init__()
+        self.payload = payload
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        rendered = record.getMessage()
+        if self.payload in rendered:
+            record.msg = rendered.replace(self.payload, "[REDACTED GARMIN TOKEN]")
+            record.args = ()
+        return True
+
+
+@contextmanager
+def garmin_token_log_redaction(payload: str) -> Iterator[None]:
+    """Redact a decoded token while ``garminconnect`` loads or refreshes it."""
+    third_party_logger = logging.getLogger("garminconnect")
+    payload_filter = _TokenPayloadFilter(payload)
+    third_party_logger.addFilter(payload_filter)
+    try:
+        yield
+    finally:
+        third_party_logger.removeFilter(payload_filter)
 
 
 def encode_native_token_store(payload: str) -> str:
@@ -68,6 +98,17 @@ def has_native_token_store(envelope: str | None) -> bool:
     except GarminNativeTokenError:
         return False
     return True
+
+
+def credential_can_sync(credential: Any) -> bool:
+    """Allow a valid native token to override stale legacy status flags."""
+    if not credential or not bool(getattr(credential, "sync_enabled", False)):
+        return False
+    if has_native_token_store(getattr(credential, "garth_session", None)):
+        return True
+    return bool(getattr(credential, "credentials_valid", False)) and not bool(
+        getattr(credential, "requires_mfa", False)
+    )
 
 
 def get_native_client(client: Any) -> Any | None:

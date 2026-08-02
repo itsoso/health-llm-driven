@@ -2,18 +2,19 @@
 Garmin 会话管理器 - 防止账户锁定的保护机制
 
 功能：
-1. OAuth令牌缓存 - 复用已登录的会话，避免每次都重新登录
-2. 用户间随机延迟 - 避免同一时间大量请求
-3. 指数退避重试 - 遇到限流时智能等待
-4. 账户状态监控 - 检测到锁定风险时自动暂停
+1. 用户间随机延迟 - 避免同一时间大量请求
+2. 指数退避重试 - 遇到限流时智能等待
+3. 账户状态监控 - 检测到锁定风险时自动暂停
+
+认证 client 不在进程内缓存；唯一复用路径是用户绑定的加密原生 token。
 """
 import asyncio
 import logging
 import random
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Any, Optional, Tuple
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -26,18 +27,6 @@ class AccountStatus(Enum):
     LOCKED = "locked"          # 被锁定
     MFA_REQUIRED = "mfa_required"  # 需要MFA
     INVALID_CREDENTIALS = "invalid_credentials"  # 凭证无效
-
-
-@dataclass
-class SessionInfo:
-    """会话信息"""
-    client: Any                # Garmin client对象
-    email: str                 # 账号邮箱
-    is_cn: bool               # 是否中国区
-    created_at: float         # 创建时间戳
-    last_used_at: float       # 最后使用时间戳
-    expires_at: float         # 过期时间戳
-    request_count: int = 0    # 请求计数
 
 
 @dataclass
@@ -60,14 +49,12 @@ class GarminSessionManager:
     Garmin 会话管理器
 
     提供以下功能：
-    1. OAuth令牌缓存 - 复用已认证的会话
-    2. 用户间随机延迟 - 分散请求时间
-    3. 指数退避重试 - 智能处理限流
-    4. 账户状态监控 - 自动暂停风险账户
+    1. 用户间随机延迟 - 分散请求时间
+    2. 指数退避重试 - 智能处理限流
+    3. 账户状态监控 - 自动暂停风险账户
     """
 
     # 配置常量
-    SESSION_TTL_HOURS = 24          # 会话有效期（小时）- 延长到24小时
     MAX_REQUESTS_PER_DAY = 50       # 每日最大请求数（保守值）
     MIN_DELAY_SECONDS = 10          # 用户间最小延迟（秒）- 增加到10秒
     MAX_DELAY_SECONDS = 60          # 用户间最大延迟（秒）- 增加到60秒
@@ -82,8 +69,6 @@ class GarminSessionManager:
     MAX_RETRIES = 3                 # 最大重试次数
 
     def __init__(self):
-        # 会话缓存: {email: SessionInfo}
-        self._sessions: Dict[str, SessionInfo] = {}
         # 账户状态: {user_id: AccountState}
         self._account_states: Dict[int, AccountState] = {}
         # 锁，防止并发问题
@@ -94,70 +79,6 @@ class GarminSessionManager:
     def _get_today_str(self) -> str:
         """获取今天的日期字符串"""
         return datetime.now().strftime("%Y-%m-%d")
-
-    def get_cached_session(self, email: str) -> Optional[Any]:
-        """
-        获取缓存的会话（OAuth令牌复用）
-
-        Args:
-            email: Garmin账号邮箱
-
-        Returns:
-            Garmin client对象，如果缓存有效的话
-        """
-        if email not in self._sessions:
-            return None
-
-        session = self._sessions[email]
-        current_time = time.time()
-
-        # 检查是否过期
-        if current_time >= session.expires_at:
-            logger.info(f"📤 会话已过期: {self._mask_email(email)}")
-            del self._sessions[email]
-            return None
-
-        # 更新最后使用时间
-        session.last_used_at = current_time
-        session.request_count += 1
-
-        logger.info(f"♻️ 复用缓存会话: {self._mask_email(email)} (已用 {session.request_count} 次)")
-        return session.client
-
-    def cache_session(self, email: str, client: Any, is_cn: bool = False):
-        """
-        缓存会话（保存OAuth令牌）
-
-        Args:
-            email: Garmin账号邮箱
-            client: 已认证的Garmin client对象
-            is_cn: 是否中国区
-        """
-        current_time = time.time()
-        expires_at = current_time + (self.SESSION_TTL_HOURS * 3600)
-
-        self._sessions[email] = SessionInfo(
-            client=client,
-            email=email,
-            is_cn=is_cn,
-            created_at=current_time,
-            last_used_at=current_time,
-            expires_at=expires_at,
-            request_count=1
-        )
-
-        logger.info(f"💾 缓存新会话: {self._mask_email(email)} (有效期 {self.SESSION_TTL_HOURS} 小时)")
-
-    def invalidate_session(self, email: str):
-        """
-        使会话失效
-
-        Args:
-            email: Garmin账号邮箱
-        """
-        if email in self._sessions:
-            del self._sessions[email]
-            logger.info(f"🗑️ 已清除会话缓存: {self._mask_email(email)}")
 
     def get_account_state(self, user_id: int, email: str) -> AccountState:
         """
@@ -274,21 +195,18 @@ class GarminSessionManager:
         if any(kw in error_lower for kw in ['locked', 'blocked', 'suspended', 'banned']):
             state.status = AccountStatus.LOCKED
             state.lock_until = time.time() + (self.LOCK_DURATION_HOURS * 3600)
-            self.invalidate_session(email)
             logger.warning(f"🔒 检测到账户可能被锁定: 用户 {user_id}，暂停 {self.LOCK_DURATION_HOURS} 小时")
             return False, 0
 
         # 检测限流
         if any(kw in error_lower for kw in ['rate limit', 'too many', '429', 'throttl']):
             self._set_rate_limited(state)
-            self.invalidate_session(email)
             logger.warning(f"⚡ 检测到API限流: 用户 {user_id}，暂停 {self.RATE_LIMIT_DURATION_HOURS} 小时")
             return False, 0
 
         # 检测认证错误（不重试）
         if any(kw in error_lower for kw in ['401', 'unauthorized', 'invalid credential', 'login failed']):
             state.status = AccountStatus.INVALID_CREDENTIALS
-            self.invalidate_session(email)
             logger.warning(f"🔑 认证失败: 用户 {user_id}，不重试")
             return False, 0
 
@@ -348,38 +266,18 @@ class GarminSessionManager:
             统计数据字典
         """
         return {
-            "cached_sessions": len(self._sessions),
+            "cached_sessions": 0,
             "monitored_accounts": len(self._account_states),
             "accounts_by_status": {
                 status.value: len([s for s in self._account_states.values() if s.status == status])
                 for status in AccountStatus
             },
-            "session_details": [
-                {
-                    "email": self._mask_email(s.email),
-                    "request_count": s.request_count,
-                    "age_hours": (time.time() - s.created_at) / 3600,
-                    "ttl_hours": (s.expires_at - time.time()) / 3600
-                }
-                for s in self._sessions.values()
-            ]
+            "session_details": [],
         }
 
     def cleanup_expired(self):
         """清理过期的会话和状态"""
-        current_time = time.time()
-
-        # 清理过期会话
-        expired_emails = [
-            email for email, session in self._sessions.items()
-            if current_time >= session.expires_at
-        ]
-        for email in expired_emails:
-            del self._sessions[email]
-            logger.debug(f"🧹 清理过期会话: {self._mask_email(email)}")
-
-        if expired_emails:
-            logger.info(f"🧹 已清理 {len(expired_emails)} 个过期会话")
+        return None
 
     def _mask_email(self, email: str) -> str:
         """隐藏邮箱中间部分"""

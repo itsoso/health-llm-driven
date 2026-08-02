@@ -26,6 +26,14 @@ def _cleanup_expired_mfa_sessions() -> None:
         del _mfa_sessions[k]
 
 
+def invalidate_mfa_sessions_for_user(user_id: int) -> None:
+    """Drop every pending or authenticated MFA challenge owned by one user."""
+    for session_id in [
+        key for key, value in _mfa_sessions.items() if value.get("user_id") == user_id
+    ]:
+        _mfa_sessions.pop(session_id, None)
+
+
 def _generate_mfa_session_id() -> str:
     """生成 MFA 会话 ID"""
     return str(uuid.uuid4())
@@ -126,16 +134,39 @@ def verify_mfa_with_session(
         logger.warning("[MFA] Garmin 验证会话所有者不匹配 user=%s", user_id)
         return {"success": False, "message": "验证会话无效，请重新连接 Garmin"}
 
+    if db is None:
+        _mfa_sessions.pop(session_id, None)
+        return {"success": False, "message": "验证会话无效，请重新连接 Garmin"}
+
     client = session.get("client")
     client_state = session.get("client_state")
     email = session.get("email")
     is_cn = session.get("is_cn")
+    purpose = session.get("purpose", "existing")
+
+    from app.models.user import GarminCredential
+
+    credential = db.query(GarminCredential).filter(
+        GarminCredential.user_id == user_id
+    ).first()
+    if purpose == "existing" and (
+        credential is None
+        or credential.garmin_email != email
+        or bool(credential.is_cn) != bool(is_cn)
+    ):
+        _mfa_sessions.pop(session_id, None)
+        logger.warning("[MFA] Garmin 已保存账号与挑战不匹配 user=%s", user_id)
+        return {"success": False, "message": "账号已变更，请重新连接 Garmin"}
+    if purpose == "connect" and not session.get("pending_encrypted_password"):
+        _mfa_sessions.pop(session_id, None)
+        return {"success": False, "message": "验证会话无效，请重新连接 Garmin"}
 
     if not client:
         del _mfa_sessions[session_id]
         return {"success": False, "message": "验证会话无效，请重新连接 Garmin"}
 
     try:
+        session["attempts"] = int(session.get("attempts", 0)) + 1
         # 使用验证码恢复登录
         client.resume_login(client_state, mfa_code)
 
@@ -151,38 +182,35 @@ def verify_mfa_with_session(
         # 否则后续的 API 调用会因为 display_name 为 None 而失败
         _ensure_display_name_for_client(client, email)
 
-        if db is not None:
-            from app.models.user import GarminCredential
+        native_token_store = dump_native_token_store(client)
+        if purpose == "connect":
+            from app.services.auth import garmin_credential_service
 
-            credential = db.query(GarminCredential).filter(
-                GarminCredential.user_id == user_id
-            ).first()
-            if (
-                credential
-                and credential.garmin_email == email
-                and bool(credential.is_cn) == bool(is_cn)
-            ):
-                credential.garth_session = dump_native_token_store(client)
-                credential.session_expires_at = None
-                credential.requires_mfa = False
-                credential.credentials_valid = True
-                credential.error_count = 0
-                credential.last_error = None
+            garmin_credential_service.save_connected_credentials(
+                db,
+                user_id,
+                email,
+                session["pending_encrypted_password"],
+                bool(is_cn),
+                native_token_store,
+            )
+        else:
+            credential.garth_session = native_token_store
+            credential.session_expires_at = None
+            credential.requires_mfa = False
+            credential.credentials_valid = True
+            credential.error_count = 0
+            credential.last_error = None
+            try:
                 db.commit()
+            except Exception:
+                db.rollback()
+                raise
 
         logger.info("[MFA] Garmin 验证成功 user=%s", user_id)
 
-        # 不要立即删除会话, 标记为已认证, 并延长过期时间 (10 分钟)
-        # 这样后续同步可以复用已认证的 client
-        _mfa_sessions[session_id] = {
-            "client": client,
-            "client_state": client_state,
-            "email": email,
-            "is_cn": is_cn,
-            "user_id": user_id,
-            "authenticated": True,
-            "expires": time.time() + 600,
-        }
+        # 验证完成后立即销毁内存 client；后续同步只从用户绑定的加密 token 恢复。
+        _mfa_sessions.pop(session_id, None)
 
         return {
             "success": True,
@@ -196,10 +224,12 @@ def verify_mfa_with_session(
         error_msg = str(e).lower()
 
         if 'invalid' in error_msg or 'incorrect' in error_msg or 'wrong' in error_msg:
-            # 验证码错误, 保留会话供重试
+            if int(session.get("attempts", 0)) >= 5:
+                _mfa_sessions.pop(session_id, None)
+                return {"success": False, "message": "验证码尝试过多，请重新连接 Garmin"}
             return {"success": False, "message": "验证码错误或已过期，请重新输入"}
 
         # 其他错误, 清理会话
-        del _mfa_sessions[session_id]
+        _mfa_sessions.pop(session_id, None)
         logger.warning("[MFA] Garmin 验证失败 user=%s type=%s", user_id, type(e).__name__)
         return {"success": False, "message": "Garmin 验证失败，请重新连接"}

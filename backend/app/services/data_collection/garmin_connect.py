@@ -71,6 +71,7 @@ from app.services.data_collection.garmin_native_auth import (
     GarminNativeTokenError,
     decode_native_token_store,
     dump_native_token_store,
+    garmin_token_log_redaction,
     has_native_token_store,
     is_native_client_authenticated,
     safe_garmin_error_message,
@@ -144,33 +145,38 @@ class GarminConnectService(GarminGettersMixin):
             bool: 是否保存成功
         """
         if not self.user_id or not is_native_client_authenticated(self.client):
-            return False
+            raise GarminNativeTokenError("Garmin token persistence requires an authenticated user")
 
         prefix = self._log_prefix()
 
+        from app.models.user import GarminCredential
+
+        cred = db.query(GarminCredential).filter(
+            GarminCredential.user_id == self.user_id
+        ).first()
+
+        if (
+            cred is None
+            or cred.garmin_email != self.email
+            or bool(cred.is_cn) != bool(self.is_cn)
+        ):
+            raise GarminNativeTokenError("Garmin credential owner or account mismatch")
+
         try:
-            from app.models.user import GarminCredential
-
-            cred = db.query(GarminCredential).filter(
-                GarminCredential.user_id == self.user_id
-            ).first()
-
-            if cred:
-                cred.garth_session = dump_native_token_store(self.client)
-                cred.session_expires_at = None
-                cred.requires_mfa = False
-                cred.credentials_valid = True
-                cred.error_count = 0
-                cred.last_error = None
-                db.commit()
-                logger.info(f"{prefix} Garmin 原生 token 已加密缓存")
-                return True
-
+            cred.garth_session = dump_native_token_store(self.client)
+            cred.session_expires_at = None
+            cred.requires_mfa = False
+            cred.credentials_valid = True
+            cred.error_count = 0
+            cred.last_error = None
+            db.commit()
         except Exception as e:
-            logger.warning(f"{prefix} 保存 Garmin token 失败 ({type(e).__name__})")
             db.rollback()
+            logger.warning(f"{prefix} 保存 Garmin token 失败 ({type(e).__name__})")
+            raise GarminNativeTokenError("Garmin token persistence failed") from e
 
-        return False
+        logger.info(f"{prefix} Garmin 原生 token 已加密缓存")
+        return True
 
     def _load_session_from_db(self, db: Session) -> bool:
         """
@@ -204,7 +210,8 @@ class GarminConnectService(GarminGettersMixin):
                 return False
 
             self.client = self._create_client(return_on_mfa=True)
-            result = self.client.login(token_payload)
+            with garmin_token_log_redaction(token_payload):
+                result = self.client.login(token_payload)
             if result and result[0] == "needs_mfa":
                 session_id = self._store_mfa_session(result[1] if len(result) > 1 else None)
                 cred.requires_mfa = True
@@ -225,7 +232,7 @@ class GarminConnectService(GarminGettersMixin):
             logger.info(f"{prefix} 已恢复 Garmin 原生 token")
             return True
 
-        except GarminMFARequiredError:
+        except (GarminMFARequiredError, GarminNativeTokenError):
             raise
         except Exception as e:
             logger.warning(f"{prefix} 加载 Garmin token 失败 ({type(e).__name__})")
@@ -233,7 +240,13 @@ class GarminConnectService(GarminGettersMixin):
 
         return False
 
-    def _store_mfa_session(self, client_state: Any) -> str:
+    def _store_mfa_session(
+        self,
+        client_state: Any,
+        *,
+        purpose: str = "existing",
+        pending_encrypted_password: str | None = None,
+    ) -> str:
         """保存短时、用户绑定的原生 MFA 挑战。"""
         import time
 
@@ -246,6 +259,9 @@ class GarminConnectService(GarminGettersMixin):
             "is_cn": self.is_cn,
             "user_id": self.user_id,
             "authenticated": False,
+            "purpose": purpose,
+            "pending_encrypted_password": pending_encrypted_password,
+            "attempts": 0,
             "expires": time.time() + 300,
         }
         self._mfa_client_state = client_state
@@ -289,7 +305,7 @@ class GarminConnectService(GarminGettersMixin):
             ).first()
 
             if cred and cred.login_locked_until:
-                now = datetime.now(UTC)
+                now = datetime.now(UTC).replace(tzinfo=None)
                 locked_until = cred.login_locked_until
                 # 统一为 naive datetime 比较，避免 offset-naive vs offset-aware 错误
                 if locked_until.tzinfo is not None:
@@ -466,40 +482,14 @@ class GarminConnectService(GarminGettersMixin):
             locked_until = self._check_login_lock(db)
             if locked_until:
                 locked_naive = locked_until.replace(tzinfo=None) if locked_until.tzinfo else locked_until
-                remaining_minutes = int((locked_naive - datetime.now(UTC)).total_seconds() / 60) + 1
+                remaining_minutes = int(
+                    (locked_naive - datetime.now(UTC).replace(tzinfo=None)).total_seconds() / 60
+                ) + 1
                 error_msg = f"⏳ 登录已被暂停，请 {remaining_minutes} 分钟后再试。连续登录失败会导致 Garmin 账号被锁定，请先确认密码正确。"
                 logger.warning(f"{prefix} {error_msg}")
                 raise GarminLoginLockedError(error_msg, locked_until)
 
-        # 2. 如果有MFA会话ID，尝试复用已认证的client
-        if self._mfa_session_id and not self._authenticated:
-            _cleanup_expired_mfa_sessions()
-            logger.info(f"{prefix} 尝试复用MFA会话: {self._mfa_session_id}")
-            if self._mfa_session_id in _mfa_sessions:
-                session = _mfa_sessions[self._mfa_session_id]
-                from app.utils.redact import mask_email
-                logger.info(f"{prefix} 找到MFA会话: authenticated={session.get('authenticated')}, email={mask_email(session.get('email'))}, 当前email={mask_email(self.email)}")
-                if session.get("authenticated") and session.get("email") == self.email:
-                    # 复用已认证的原生 client
-                    self.client = session.get("client")
-                    if (
-                        session.get("user_id") == self.user_id
-                        and is_native_client_authenticated(self.client)
-                    ):
-                        self._ensure_display_name()
-                        self._authenticated = True
-                        logger.info(f"{prefix} 已复用认证后的 Garmin MFA 会话")
-                        if db:
-                            self._save_session_to_db(db)
-                        return
-                    else:
-                        logger.warning(f"{prefix} Garmin MFA 会话无效或所有者不匹配")
-                else:
-                    logger.warning(f"{prefix} Garmin MFA 会话未认证或账号不匹配")
-            else:
-                logger.warning(f"{prefix} Garmin MFA 会话不存在或已过期")
-
-        # 3. 重新登录
+        # 2. 重新登录。完成 MFA 后只从数据库 token 恢复，不复用内存 client。
         if not self._authenticated or self.client is None:
             try:
                 self.client = self._create_client(return_on_mfa=True)
@@ -573,40 +563,26 @@ class GarminConnectService(GarminGettersMixin):
                 logger.warning(f"{prefix} Garmin 连接失败 ({type(e).__name__})")
                 raise GarminAuthenticationError(safe_message) from e
 
-    def test_connection_with_mfa(self, db: Session = None) -> Dict[str, Any]:
+    def test_connection_with_mfa(
+        self,
+        db: Session = None,
+        *,
+        mfa_purpose: str = "existing",
+        pending_encrypted_password: str | None = None,
+    ) -> Dict[str, Any]:
         """测试连接，只向调用方返回应用生成的 MFA session id。"""
         prefix = self._log_prefix()
-
-        if self._mfa_session_id:
-            _cleanup_expired_mfa_sessions()
-            session = _mfa_sessions.get(self._mfa_session_id)
-            if (
-                session
-                and session.get("authenticated")
-                and session.get("email") == self.email
-                and session.get("user_id") == self.user_id
-                and is_native_client_authenticated(session.get("client"))
-            ):
-                self.client = session["client"]
-                self._authenticated = True
-                if db:
-                    self._save_session_to_db(db)
-                return {
-                    "success": True,
-                    "mfa_required": False,
-                    "message": "Garmin 已连接",
-                }
 
         try:
             self.client = self._create_client(return_on_mfa=True)
             result = self.client.login()
             if result and result[0] == "needs_mfa":
                 client_state = result[1] if len(result) > 1 else None
-                session_id = self._store_mfa_session(client_state)
-                if db and self.user_id:
-                    from app.services.auth import garmin_credential_service
-
-                    garmin_credential_service.update_mfa_status(db, self.user_id, True)
+                session_id = self._store_mfa_session(
+                    client_state,
+                    purpose=mfa_purpose,
+                    pending_encrypted_password=pending_encrypted_password,
+                )
                 return {
                     "success": False,
                     "mfa_required": True,
@@ -636,6 +612,49 @@ class GarminConnectService(GarminGettersMixin):
                 "mfa_required": False,
                 "message": safe_garmin_error_message(e),
             }
+
+    def connect_and_save(self, db: Session) -> Dict[str, Any]:
+        """Authenticate first, then atomically replace the stored connection."""
+        from app.services.auth import garmin_credential_service
+
+        locked_until = self._check_login_lock(db)
+        if locked_until:
+            return {
+                "success": False,
+                "mfa_required": False,
+                "message": "Garmin 登录暂时锁定，请稍后再试",
+            }
+
+        encrypted_password = garmin_credential_service.encrypt_password(self.password)
+        result = self.test_connection_with_mfa(
+            mfa_purpose="connect",
+            pending_encrypted_password=encrypted_password,
+        )
+        if not result.get("success"):
+            return result
+
+        try:
+            native_token_store = dump_native_token_store(self.client)
+            garmin_credential_service.save_connected_credentials(
+                db,
+                self.user_id,
+                self.email,
+                encrypted_password,
+                self.is_cn,
+                native_token_store,
+            )
+        except Exception as e:
+            logger.warning(
+                "%s 原子保存 Garmin 连接失败 (%s)",
+                self._log_prefix(),
+                type(e).__name__,
+            )
+            return {
+                "success": False,
+                "mfa_required": False,
+                "message": safe_garmin_error_message(e),
+            }
+        return result
 
     def resume_login_with_mfa(self, client_state: Dict[str, Any], mfa_code: str) -> Dict[str, Any]:
         """
@@ -1362,7 +1381,7 @@ class GarminConnectService(GarminGettersMixin):
                     if key in value and isinstance(value[key], (int, float)):
                         return int(value[key])
                 return None
-            return None
+            raise
 
         def safe_float(value):
             """安全地将值转换为浮点数，如果是字典或列表则返回None"""
@@ -1818,7 +1837,7 @@ class GarminConnectService(GarminGettersMixin):
                 type(e).__name__,
                 safe_garmin_error_message(e),
             )
-            return None
+            raise
 
     def _sync_heart_rate_samples(
         self,
@@ -2624,6 +2643,7 @@ class GarminConnectService(GarminGettersMixin):
         """
         results = []
         errors = []
+        no_data = []
         current_date = start_date
 
         while current_date <= end_date:
@@ -2636,18 +2656,18 @@ class GarminConnectService(GarminGettersMixin):
                         "data_id": result.id
                     })
                 else:
-                    errors.append({
+                    no_data.append({
                         "date": current_date.isoformat(),
                         "status": "no_data"
                     })
-            except GarminAuthenticationError:
+            except (GarminAuthenticationError, GarminLoginLockedError, GarminMFARequiredError):
                 # 认证错误需要向上传递，让调用者处理
                 raise
             except Exception as e:
                 errors.append({
                     "date": current_date.isoformat(),
                     "status": "error",
-                    "error": str(e)
+                    "error": safe_garmin_error_message(e)
                 })
 
             current_date += timedelta(days=1)
@@ -2656,9 +2676,16 @@ class GarminConnectService(GarminGettersMixin):
             import time
             time.sleep(0.5)  # 减少延迟时间，提高同步速度
 
+        if errors and not results:
+            from app.services.data_collection.garmin_errors import GarminSyncError
+
+            raise GarminSyncError("Garmin date range sync failed")
+
         return {
             "success_count": len(results),
             "error_count": len(errors),
+            "no_data_count": len(no_data),
             "results": results,
-            "errors": errors
+            "errors": errors,
+            "no_data": no_data,
         }

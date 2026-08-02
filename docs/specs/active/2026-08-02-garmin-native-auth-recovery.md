@@ -78,7 +78,7 @@ RequirementAdmission:
 ```text
 Settings -> Garmin connection
   -> load backend-owned status
-  -> bind/reconnect and test credentials
+  -> authenticate and atomically bind/reconnect credentials
   -> if challenged, enter MFA code
   -> backend stores an encrypted native token store
   -> user starts a manual sync
@@ -105,6 +105,7 @@ apis:
     - GET /api/v1/data-collection/garmin/me/credential-status
     - POST /api/v1/auth/garmin/credentials
     - POST /api/v1/auth/garmin/test-connection
+    - POST /api/v1/auth/garmin/connect
     - POST /api/v1/auth/garmin/verify-mfa
     - POST /api/v1/data-collection/garmin/me/sync
     - DELETE /api/v1/auth/garmin/credentials

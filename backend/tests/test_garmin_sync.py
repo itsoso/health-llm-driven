@@ -99,8 +99,8 @@ class TestCeleryTaskCodeReview:
 
         assert "sync_enabled == True" in source, \
             "应只查询 sync_enabled=True 的凭据"
-        assert "credentials_valid == True" in source, \
-            "应只查询 credentials_valid=True 的凭据"
+        assert "credential_can_sync" in source, \
+            "原生 token 有效时不应被历史 credentials_valid 状态拦截"
 
     def test_runtime_has_no_legacy_garth_or_cffi_authentication(self):
         """0.3.6 的所有运行时入口必须收敛到原生认证。"""

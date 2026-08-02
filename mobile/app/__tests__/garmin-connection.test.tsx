@@ -1,12 +1,12 @@
 /* eslint-disable import/first */
 import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 const mockBack = jest.fn();
 const mockRefetch = jest.fn();
 const mockInvalidateHealthSnapshot = jest.fn();
-const mockSaveCredentials = jest.fn();
-const mockTestConnection = jest.fn();
+const mockConnectCredentials = jest.fn();
 const mockVerifyMfa = jest.fn();
 const mockSync = jest.fn();
 const mockSetSyncEnabled = jest.fn();
@@ -34,8 +34,7 @@ jest.mock('../../applib/queryKeys', () => ({
 
 jest.mock('../../services/garmin', () => ({
   fetchGarminStatus: jest.fn(),
-  saveGarminCredentials: (...args: unknown[]) => mockSaveCredentials(...args),
-  testGarminConnection: (...args: unknown[]) => mockTestConnection(...args),
+  connectGarminCredentials: (...args: unknown[]) => mockConnectCredentials(...args),
   verifyGarminMfa: (...args: unknown[]) => mockVerifyMfa(...args),
   syncGarmin: (...args: unknown[]) => mockSync(...args),
   setGarminSyncEnabled: (...args: unknown[]) => mockSetSyncEnabled(...args),
@@ -59,8 +58,7 @@ describe('GarminConnectionScreen', () => {
       last_error: null,
       error_count: 0,
     };
-    mockSaveCredentials.mockResolvedValue(undefined);
-    mockTestConnection.mockResolvedValue({
+    mockConnectCredentials.mockResolvedValue({
       success: true,
       mfa_required: false,
       message: '连接成功',
@@ -81,20 +79,16 @@ describe('GarminConnectionScreen', () => {
     expect(getByLabelText('Garmin 密码').props.secureTextEntry).toBe(true);
     fireEvent.press(getByRole('button', { name: '连接 Garmin' }));
 
-    await waitFor(() => expect(mockSaveCredentials).toHaveBeenCalledWith({
+    await waitFor(() => expect(mockConnectCredentials).toHaveBeenCalledWith({
       garmin_email: 'athlete@example.com',
       garmin_password: 'secret-value',
       is_cn: false,
-    }));
-    expect(mockTestConnection).toHaveBeenCalledWith(expect.objectContaining({
-      garmin_email: 'athlete@example.com',
-      garmin_password: 'secret-value',
     }));
     expect(mockRefetch).toHaveBeenCalled();
   });
 
   it('continues a native login with a six-digit MFA code', async () => {
-    mockTestConnection.mockResolvedValueOnce({
+    mockConnectCredentials.mockResolvedValueOnce({
       success: false,
       mfa_required: true,
       message: '需要验证码',
@@ -130,6 +124,26 @@ describe('GarminConnectionScreen', () => {
     await waitFor(() => expect(mockSync).toHaveBeenCalledWith(1));
     expect(mockInvalidateHealthSnapshot).toHaveBeenCalled();
     expect(mockRefetch).toHaveBeenCalled();
+  });
+
+  it('renders a no-data sync as informational instead of a success check', async () => {
+    mockStatus = {
+      ...mockStatus,
+      bound: true,
+      health: 'healthy',
+      credentials_valid: true,
+    };
+    mockSync.mockResolvedValueOnce({ status: 'no_data', message: '今天暂无新数据' });
+    const { getByRole, getByText, UNSAFE_getAllByType } = render(<GarminConnectionScreen />);
+
+    fireEvent.press(getByRole('button', { name: '立即同步 Garmin' }));
+
+    await waitFor(() => expect(getByText('今天暂无新数据')).toBeTruthy());
+    expect(
+      UNSAFE_getAllByType(Ionicons).some(
+        (icon) => icon.props.name === 'information-circle-outline',
+      ),
+    ).toBe(true);
   });
 
   it('shows an actionable reconnect path for revoked credentials', () => {

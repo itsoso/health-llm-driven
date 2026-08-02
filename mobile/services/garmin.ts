@@ -46,14 +46,10 @@ export async function fetchGarminStatus(): Promise<GarminCredentialStatus> {
   return response.data;
 }
 
-export async function saveGarminCredentials(input: GarminCredentialsInput): Promise<void> {
-  await api.post('/auth/garmin/credentials', input);
-}
-
-export async function testGarminConnection(
+export async function connectGarminCredentials(
   input: GarminCredentialsInput,
 ): Promise<GarminConnectionResult> {
-  const response = await api.post('/auth/garmin/test-connection', input);
+  const response = await api.post('/auth/garmin/connect', input);
   return response.data;
 }
 

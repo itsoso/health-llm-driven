@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
+import logging
 
 import pytest
+from starlette.requests import Request
 
 from app.api import auth as auth_api
 from app.models.user import GarminCredential, User
@@ -129,6 +131,7 @@ async def test_connection_endpoint_never_echoes_upstream_secret(
     )
 
     response = await auth_api.test_garmin_connection(
+        Request({"type": "http", "method": "POST", "path": "/auth/garmin/test-connection", "client": ("127.0.0.1", 12345), "headers": []}),
         GarminCredentialCreate(
             garmin_email="garmin-safe-endpoint@example.com",
             garmin_password="password-secret-value",
@@ -161,11 +164,145 @@ def test_daily_sync_logging_never_echoes_upstream_secret(
 
     monkeypatch.setattr(service, "_ensure_authenticated", fail_authentication)
 
-    result = service.sync_daily_data(db, 99, datetime.now(UTC).date())
+    with pytest.raises(RuntimeError, match="sync-upstream-secret"):
+        service.sync_daily_data(db, 99, datetime.now(UTC).date())
 
-    assert result is None
     assert "sync-upstream-secret" not in caplog.text
     assert "password-secret-value" not in caplog.text
+
+
+def test_native_token_restore_redacts_third_party_debug_logging(
+    db,
+    monkeypatch,
+    caplog,
+) -> None:
+    from app.services.data_collection.garmin_native_auth import encode_native_token_store
+
+    user, credential = _create_saved_credential(db, "debug-redaction")
+    token_payload = '{"di_token":"debug-secret-token","di_refresh_token":"debug-refresh"}'
+    credential.garth_session = encode_native_token_store(token_payload)
+    db.commit()
+
+    class LoggingGarmin:
+        def __init__(self, *_args, **_kwargs):
+            self.client = type("Native", (), {"is_authenticated": False})()
+            self.display_name = None
+
+        def login(self, tokenstore=None):
+            logging.getLogger("garminconnect").debug("tokenstore=%s", tokenstore)
+            raise RuntimeError("restore failed")
+
+    monkeypatch.setattr(garmin_connect, "Garmin", LoggingGarmin)
+    service = GarminConnectService(
+        credential.garmin_email,
+        "fake-password",
+        user_id=user.id,
+    )
+
+    with caplog.at_level(logging.DEBUG, logger="garminconnect"):
+        assert service._load_session_from_db(db) is False
+
+    assert "debug-secret-token" not in caplog.text
+    assert "debug-refresh" not in caplog.text
+
+
+def test_atomic_connect_failure_preserves_existing_credentials(db, monkeypatch) -> None:
+    user, credential = _create_saved_credential(db, "atomic-failure")
+    credential.garth_session = "old-token-envelope"
+    old_password = credential.encrypted_password
+    db.commit()
+
+    class FailingGarmin:
+        def __init__(self, *_args, **_kwargs):
+            self.client = type("Native", (), {"is_authenticated": False})()
+            self.display_name = None
+
+        def login(self):
+            raise RuntimeError("wrong password")
+
+    monkeypatch.setattr(garmin_connect, "Garmin", FailingGarmin)
+    service = GarminConnectService(
+        "replacement@example.com",
+        "wrong-password",
+        user_id=user.id,
+    )
+
+    result = service.connect_and_save(db)
+
+    db.refresh(credential)
+    assert result["success"] is False
+    assert credential.garmin_email == "garmin-atomic-failure@example.com"
+    assert credential.encrypted_password == old_password
+    assert credential.garth_session == "old-token-envelope"
+
+
+def test_atomic_connect_success_replaces_credentials_and_token(db, monkeypatch) -> None:
+    from app.services.data_collection.garmin_native_auth import decode_native_token_store
+
+    user, credential = _create_saved_credential(db, "atomic-success")
+    fake_garmin = _install_fake_garmin(monkeypatch)
+    service = GarminConnectService(
+        "replacement@example.com",
+        "replacement-password",
+        is_cn=True,
+        user_id=user.id,
+    )
+
+    result = service.connect_and_save(db)
+
+    db.refresh(credential)
+    assert result["success"] is True
+    assert fake_garmin.instances[0].login_calls == [None]
+    assert credential.garmin_email == "replacement@example.com"
+    assert credential.is_cn is True
+    assert garmin_credential_service.decrypt_password(credential.encrypted_password) == (
+        "replacement-password"
+    )
+    assert decode_native_token_store(credential.garth_session) == (
+        '{"di_token":"new","di_refresh_token":"refresh"}'
+    )
+
+
+def test_atomic_connect_commit_failure_preserves_existing_credentials(db, monkeypatch) -> None:
+    user, credential = _create_saved_credential(db, "atomic-rollback")
+    credential.garth_session = "old-token-envelope"
+    old_password = credential.encrypted_password
+    db.commit()
+    _install_fake_garmin(monkeypatch)
+    original_commit = db.commit
+
+    def fail_commit():
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(db, "commit", fail_commit)
+    service = GarminConnectService(
+        "replacement@example.com",
+        "replacement-password",
+        user_id=user.id,
+    )
+
+    result = service.connect_and_save(db)
+
+    monkeypatch.setattr(db, "commit", original_commit)
+    db.expire_all()
+    persisted = db.query(GarminCredential).filter_by(user_id=user.id).one()
+    assert result["success"] is False
+    assert persisted.garmin_email == "garmin-atomic-rollback@example.com"
+    assert persisted.encrypted_password == old_password
+    assert persisted.garth_session == "old-token-envelope"
+
+
+def test_login_lock_uses_consistent_datetime_awareness(db) -> None:
+    user, credential = _create_saved_credential(db, "login-lock")
+    credential.login_locked_until = datetime.now(UTC) + timedelta(minutes=10)
+    db.commit()
+    service = GarminConnectService(
+        credential.garmin_email,
+        "fake-password",
+        user_id=user.id,
+    )
+
+    assert service._check_login_lock(db) is not None
 
 
 def _create_saved_credential(db, suffix: str = "service") -> tuple[User, GarminCredential]:

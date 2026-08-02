@@ -4,7 +4,7 @@
 
 **Goal:** Restore Garmin daily and workout synchronization on `garminconnect==0.3.6`, persist its native DI OAuth token store securely, and let Mobile users bind, reconnect and complete MFA.
 
-**Architecture:** A small native-auth module owns client-shape checks, encrypted versioned token envelopes and safe authentication errors. `GarminConnectService` remains the orchestration entry point; workout sync and Celery renewal reuse it instead of maintaining parallel garth/curl-cffi paths. Backend remains the source of truth, while one Mobile screen drives the existing authenticated credential, test, MFA, toggle, delete and manual-sync APIs.
+**Architecture:** A small native-auth module owns client-shape checks, encrypted versioned token envelopes and safe authentication errors. `GarminConnectService` remains the orchestration entry point; workout sync and Celery renewal reuse it instead of maintaining parallel garth/curl-cffi paths. Backend remains the source of truth. Mobile connects through one server-side atomic endpoint: authentication and token serialization complete before one database commit replaces the old connection; failed immediate or MFA flows preserve the old connection.
 
 **Tech Stack:** Python 3.12, FastAPI, SQLAlchemy, Fernet, `garminconnect==0.3.6`, pytest, React Native/Expo Router, TypeScript, TanStack Query, Jest.
 
@@ -14,6 +14,12 @@ Implementation follows `@test-driven-development`, project `safety-gate`,
 `@requesting-code-review`, and `@verification-before-completion`. Work remains
 on `main` because the repository-level instruction explicitly makes `main` the
 default and overrides the generic worktree recommendation.
+
+Safety-review amendment: live Garmin clients are never cached after
+authentication. Only pending, user-bound MFA challenges remain in memory, and
+they are destroyed after at most five attempts or after encrypted token
+persistence. `POST /auth/garmin/connect` replaces the original Mobile
+save-then-test sequence; the legacy test endpoint remains side-effect-free.
 
 ### Task 1: Align The Local Garmin Runtime And Freeze The Production Regression
 
@@ -411,8 +417,8 @@ git commit -m "fix(garmin): expose actionable connection state"
 
 **Step 1: Write failing service tests**
 
-Mock `mobile/services/api.ts` and verify exact existing endpoints for status,
-save, test, MFA, manual sync, toggle and delete. Add this safe extractor:
+Mock `mobile/services/api.ts` and verify exact endpoints for status, atomic
+connect, MFA, manual sync, toggle and delete. Add this safe extractor:
 
 ```ts
 export function garminErrorMessage(error: unknown, fallback: string): string {
@@ -442,7 +448,7 @@ payloads or errors because inputs include credentials/MFA codes.
 
 Cover four states with mocked service functions:
 
-- unbound screen shows secure email/password and connects by save -> test;
+- unbound screen shows secure email/password and calls the atomic connect endpoint;
 - test returning `mfa_required` reveals a six-digit code input and verification
   completes connection;
 - connected screen syncs, calls `invalidateHealthSnapshot`, then refreshes

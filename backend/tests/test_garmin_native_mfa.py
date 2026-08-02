@@ -1,6 +1,7 @@
 import time
 
 import pytest
+from starlette.requests import Request
 
 from app.api import auth as auth_api
 from app.models.user import User
@@ -19,6 +20,11 @@ class FakeNativeClient:
 
     def connectapi(self, _path: str):
         return {"displayName": "mfa-user", "fullName": "MFA User"}
+
+
+def test_mfa_schema_accepts_only_six_digits() -> None:
+    with pytest.raises(ValueError):
+        GarminMFAVerifyRequest(mfa_code="abcdef", mfa_session_id="pending-session")
 
 
 class FakeGarmin:
@@ -70,6 +76,8 @@ def _put_session(user, credential, client, *, expires: float | None = None) -> s
         "is_cn": credential.is_cn,
         "user_id": user.id,
         "authenticated": False,
+        "purpose": "existing",
+        "attempts": 0,
         "expires": expires if expires is not None else time.time() + 300,
     }
     return session_id
@@ -128,6 +136,44 @@ def test_native_mfa_session_is_scoped_to_application_user(db) -> None:
     assert fake.resume_calls == []
 
 
+def test_native_mfa_never_resumes_when_saved_account_changed(db) -> None:
+    _mfa_sessions.clear()
+    user, credential = _create_user_and_credential(db, "changed")
+    fake = FakeGarmin()
+    session_id = _put_session(user, credential, fake)
+    credential.garmin_email = "replacement@example.com"
+    db.commit()
+
+    result = verify_mfa_with_session(
+        session_id,
+        "123456",
+        user_id=user.id,
+        db=db,
+    )
+
+    assert result["success"] is False
+    assert fake.resume_calls == []
+
+
+def test_native_mfa_stops_after_five_invalid_codes(db) -> None:
+    _mfa_sessions.clear()
+    user, credential = _create_user_and_credential(db, "attempts")
+    fake = FakeGarmin(error=RuntimeError("invalid code"))
+    session_id = _put_session(user, credential, fake)
+
+    for _ in range(5):
+        result = verify_mfa_with_session(
+            session_id,
+            "123456",
+            user_id=user.id,
+            db=db,
+        )
+
+    assert result["success"] is False
+    assert session_id not in _mfa_sessions
+    assert len(fake.resume_calls) == 5
+
+
 def test_expired_native_mfa_session_never_calls_garmin(db) -> None:
     _mfa_sessions.clear()
     user, credential = _create_user_and_credential(db, "expired")
@@ -180,6 +226,7 @@ async def test_verify_mfa_endpoint_clears_requires_mfa(db, monkeypatch) -> None:
     monkeypatch.setattr(garmin_connect, "verify_mfa_with_session", fake_verify)
 
     response = await auth_api.verify_garmin_mfa(
+        Request({"type": "http", "method": "POST", "path": "/auth/garmin/verify-mfa", "client": ("127.0.0.1", 12345), "headers": []}),
         GarminMFAVerifyRequest(mfa_code="123456", mfa_session_id="pending-session"),
         current_user=user,
         db=db,
@@ -187,7 +234,7 @@ async def test_verify_mfa_endpoint_clears_requires_mfa(db, monkeypatch) -> None:
 
     db.refresh(credential)
     assert response.success is True
-    assert credential.requires_mfa is False
+    assert credential.requires_mfa is True
 
 
 @pytest.mark.asyncio
@@ -206,6 +253,7 @@ async def test_verify_mfa_endpoint_never_echoes_upstream_secret(
     monkeypatch.setattr(garmin_connect, "verify_mfa_with_session", fail_verify)
 
     response = await auth_api.verify_garmin_mfa(
+        Request({"type": "http", "method": "POST", "path": "/auth/garmin/verify-mfa", "client": ("127.0.0.1", 12345), "headers": []}),
         GarminMFAVerifyRequest(mfa_code="123456", mfa_session_id="pending-session"),
         current_user=user,
         db=db,

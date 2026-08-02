@@ -941,7 +941,11 @@ async def sync_garmin_data_stream(
             # 尝试测试连接来检测MFA
             try:
                 test_result = test_service.test_connection_with_mfa()
-                logger.info(f"测试连接结果: success={test_result.get('success')}, mfa_required={test_result.get('mfa_required')}, mfa_session_id={test_result.get('mfa_session_id')}")
+                logger.info(
+                    "测试连接结果: success=%s, mfa_required=%s",
+                    test_result.get("success"),
+                    test_result.get("mfa_required"),
+                )
                 if test_result.get("mfa_required") and test_result.get("mfa_session_id"):
                     error_data = {
                         'type': 'error',
@@ -1126,8 +1130,50 @@ async def sync_garmin_data_stream(
     )
 
 
+@router.post("/garmin/connect", response_model=GarminTestConnectionResponse, summary="原子连接Garmin账号")
+@limiter.limit("3/minute")
+async def connect_garmin_account(
+    request: Request,
+    credentials: GarminCredentialCreate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """先完成 Garmin 认证，再原子替换旧连接；失败时旧连接保持不变。"""
+    try:
+        from app.services.data_collection.garmin_connect import GarminConnectService
+
+        service = GarminConnectService(
+            email=credentials.garmin_email,
+            password=credentials.garmin_password,
+            is_cn=credentials.is_cn,
+            user_id=current_user.id,
+        )
+        result = service.connect_and_save(db)
+        return GarminTestConnectionResponse(
+            success=result.get("success", False),
+            mfa_required=result.get("mfa_required", False),
+            message=result.get("message", ""),
+            mfa_session_id=result.get("mfa_session_id"),
+        )
+    except Exception as e:
+        from app.services.data_collection.garmin_native_auth import safe_garmin_error_message
+
+        logger.warning(
+            "原子连接 Garmin 失败 - user_id=%s, error_type=%s",
+            current_user.id,
+            type(e).__name__,
+        )
+        return GarminTestConnectionResponse(
+            success=False,
+            mfa_required=False,
+            message=safe_garmin_error_message(e),
+        )
+
+
 @router.post("/garmin/test-connection", response_model=GarminTestConnectionResponse, summary="测试Garmin连接")
+@limiter.limit("3/minute")
 async def test_garmin_connection(
+    request: Request,
     credentials: GarminCredentialCreate,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
@@ -1160,15 +1206,7 @@ async def test_garmin_connection(
         )
 
         # 使用支持 MFA 的测试连接方法
-        result = garmin_service.test_connection_with_mfa(db=db)
-
-        # 如果检测到需要MFA，更新数据库中的requires_mfa字段
-        if result.get("mfa_required"):
-            try:
-                garmin_credential_service.update_mfa_status(db, current_user.id, requires_mfa=True)
-                logger.info(f"已更新用户 {current_user.id} 的MFA状态为需要MFA")
-            except Exception as e:
-                logger.warning(f"更新MFA状态失败: {e}")
+        result = garmin_service.test_connection_with_mfa(db=None)
 
         return GarminTestConnectionResponse(
             success=result.get("success", False),
@@ -1193,7 +1231,9 @@ async def test_garmin_connection(
 
 
 @router.post("/garmin/verify-mfa", response_model=GarminMFAVerifyResponse, summary="验证Garmin两步验证码")
+@limiter.limit("5/minute")
 async def verify_garmin_mfa(
+    request: Request,
     mfa_request: GarminMFAVerifyRequest,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
@@ -1220,13 +1260,8 @@ async def verify_garmin_mfa(
             db=db,
         )
 
-        # 验证成功后清除 MFA 阻塞状态。
-        if result.get("success") and result.get("session_id"):
-            try:
-                garmin_credential_service.update_mfa_status(db, current_user.id, requires_mfa=False)
-                logger.info(f"Garmin MFA 验证成功 user_id={current_user.id}")
-            except Exception as e:
-                logger.warning(f"更新MFA状态失败: {e}")
+        if result.get("success"):
+            logger.info(f"Garmin MFA 验证成功 user_id={current_user.id}")
 
         return GarminMFAVerifyResponse(
             success=result.get("success", False),
