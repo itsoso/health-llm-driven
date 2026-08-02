@@ -107,6 +107,30 @@ logger = logging.getLogger(__name__)
 _DOCTOR_FEEDBACK_FIELD_MAX_CHARS = 4000
 
 
+def _canonicalize_doctor_feedback_args(
+    args: Mapping[str, Any],
+    *,
+    reference_now: datetime,
+) -> dict[str, Any]:
+    """Return the sole server-owned identity for a clinician-feedback write."""
+    canonical: dict[str, Any] = {}
+    for field in ("summary", "assessment", "plan"):
+        value = args.get(field)
+        if isinstance(value, str):
+            value = value.strip() or None
+        canonical[field] = value
+
+    visit_date = args.get("visit_date")
+    if visit_date is None or (
+        isinstance(visit_date, str) and not visit_date.strip()
+    ):
+        visit_date = reference_now.date().isoformat()
+    elif isinstance(visit_date, str):
+        visit_date = visit_date.strip()
+    canonical["visit_date"] = visit_date
+    return canonical
+
+
 def _sha12(text: str) -> str:
     """sha256 的前 12 hex (可观测性用短指纹, 非安全哈希)。"""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
@@ -16651,6 +16675,11 @@ class AgentExecutor:
                 recovery_guidance="请修正参数后重新提交。",
             )
         args = v["data"]
+        if tool_name == "record_doctor_feedback":
+            args = _canonicalize_doctor_feedback_args(
+                args,
+                reference_now=self._agent_kernel_reference_now(),
+            )
         if tool_name == "health_record" and trusted_recipe_authorized:
             args["_trusted_server_write_authorized"] = True
 
@@ -19328,11 +19357,20 @@ class AgentExecutor:
 
     async def _exec_record_doctor_feedback(self, args: dict) -> str:
         """Persist an explicit, owner-scoped clinician-feedback write."""
+        args = _canonicalize_doctor_feedback_args(
+            args,
+            reference_now=self._agent_kernel_reference_now(),
+        )
         normalized: dict[str, str | None] = {}
         had_invisible_only_content = False
         for field in ("summary", "assessment", "plan"):
             raw_value = args.get(field)
-            value = raw_value.strip() if isinstance(raw_value, str) else ""
+            if raw_value is not None and not isinstance(raw_value, str):
+                return local_write_rejection(
+                    "doctor_feedback_field_invalid",
+                    message="医生反馈文本字段格式无效，本次未写入。",
+                )
+            value = raw_value or ""
             if len(value) > _DOCTOR_FEEDBACK_FIELD_MAX_CHARS:
                 return local_write_rejection(
                     "doctor_feedback_field_too_long",
@@ -19368,11 +19406,7 @@ class AgentExecutor:
             )
 
         raw_visit_date = args.get("visit_date")
-        if raw_visit_date is None or (
-            isinstance(raw_visit_date, str) and not raw_visit_date.strip()
-        ):
-            visit_date = self._agent_kernel_reference_now().date()
-        elif not isinstance(raw_visit_date, str) or re.fullmatch(
+        if not isinstance(raw_visit_date, str) or re.fullmatch(
             r"\d{4}-\d{2}-\d{2}", raw_visit_date
         ) is None:
             return local_write_rejection(
@@ -19389,6 +19423,42 @@ class AgentExecutor:
                     message="医生反馈日期格式无效，本次未写入。",
                     recovery_guidance="请使用 YYYY-MM-DD。",
                 )
+
+        from app.models.clinical_journal import ClinicalJournalEntry
+        from sqlalchemy import func
+
+        try:
+            pre_count, pre_max_id = (
+                self.db.query(
+                    func.count(ClinicalJournalEntry.id),
+                    func.max(ClinicalJournalEntry.id),
+                )
+                .filter(
+                    ClinicalJournalEntry.user_id == user_id,
+                    ClinicalJournalEntry.created_by == "doctor",
+                )
+                .one()
+            )
+            pre_count = int(pre_count or 0)
+            pre_max_id = int(pre_max_id or 0)
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "operation=record_doctor_feedback snapshot_error_type=%s",
+                type(exc).__name__,
+            )
+            try:
+                self.db.rollback()
+            except Exception as rollback_exc:  # noqa: BLE001
+                logger.error(
+                    "operation=record_doctor_feedback "
+                    "snapshot_rollback_error_type=%s",
+                    type(rollback_exc).__name__,
+                )
+            return local_write_rejection(
+                "doctor_feedback_snapshot_unavailable",
+                message="无法核验医生反馈写入前状态，本次未写入。",
+                recovery_guidance="请稍后重试。",
+            )
 
         try:
             from app.services import doctor_report_service
@@ -19408,10 +19478,30 @@ class AgentExecutor:
                 or entry_id <= 0
                 or entry.created_by != "doctor"
                 or entry.user_id != user_id
+                or entry.subjective != normalized["summary"]
+                or entry.assessment != normalized["assessment"]
+                or entry.plan != normalized["plan"]
+                or entry.objective != f"医生随访 @ {visit_date.isoformat()}"
             ):
                 raise RuntimeError("invalid_doctor_feedback_receipt")
 
-            from app.models.clinical_journal import ClinicalJournalEntry
+            post_count, post_max_id = (
+                self.db.query(
+                    func.count(ClinicalJournalEntry.id),
+                    func.max(ClinicalJournalEntry.id),
+                )
+                .filter(
+                    ClinicalJournalEntry.user_id == user_id,
+                    ClinicalJournalEntry.created_by == "doctor",
+                )
+                .one()
+            )
+            if (
+                int(post_count or 0) != pre_count + 1
+                or entry_id <= pre_max_id
+                or int(post_max_id or 0) != entry_id
+            ):
+                raise RuntimeError("unverified_doctor_feedback_freshness")
 
             persisted = (
                 self.db.query(ClinicalJournalEntry)

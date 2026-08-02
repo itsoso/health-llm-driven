@@ -657,6 +657,32 @@ async def test_doctor_feedback_rejects_oversized_field_before_service(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("field", ("summary", "assessment", "plan"))
+async def test_doctor_feedback_rejects_non_string_text_before_service(
+    db,
+    monkeypatch,
+    field,
+):
+    from app.services import doctor_report_service
+    from app.services.agent_executor import AgentExecutor
+
+    record = Mock(side_effect=AssertionError("service must not run"))
+    monkeypatch.setattr(doctor_report_service, "record_doctor_feedback", record)
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+
+    result = await executor._exec_record_doctor_feedback(
+        {field: {"unexpected": "structured value"}}
+    )
+
+    _assert_local_rejection(
+        result,
+        error_code="doctor_feedback_field_invalid",
+    )
+    record.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_doctor_feedback_defaults_visit_date_to_kernel_reference_date(
     db,
     auth_user_and_headers,
@@ -765,6 +791,30 @@ async def test_doctor_feedback_visible_content_preserves_format_controls(
     assert entry.assessment == assessment
 
 
+def test_doctor_feedback_canonicalizer_drops_unknowns_and_normalizes_equivalents():
+    from app.services.agent_executor import _canonicalize_doctor_feedback_args
+
+    reference_now = datetime.fromisoformat("2026-08-01T21:30:00+08:00")
+    canonical = _canonicalize_doctor_feedback_args(
+        {
+            "owner_id": 999,
+            "plan": "  下一步计划  ",
+            "assessment": " \u200b医生判断\ufeff ",
+            "summary": "",
+            "visit_date": " ",
+            "user_id": 999,
+        },
+        reference_now=reference_now,
+    )
+
+    assert canonical == {
+        "summary": None,
+        "assessment": "\u200b医生判断\ufeff",
+        "plan": "下一步计划",
+        "visit_date": "2026-08-01",
+    }
+
+
 @pytest.mark.asyncio
 async def test_doctor_feedback_executes_through_gateway_for_current_owner(
     db,
@@ -836,6 +886,131 @@ async def test_doctor_feedback_executes_through_gateway_for_current_owner(
     assert operation.status == "succeeded"
     assert operation.resource_type == "clinical_journal_entry"
     assert operation.resource_id == str(entry.id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("case_name", "first_args", "second_args"),
+    (
+        (
+            "blank_unknowns",
+            {"assessment": "目标内容"},
+            {
+                "summary": "",
+                "assessment": " 目标内容 ",
+                "visit_date": "",
+                "owner_id": 999,
+                "user_id": 999,
+            },
+        ),
+        (
+            "explicit_default_date",
+            {"assessment": "目标内容"},
+            {"visit_date": "2026-08-01", "assessment": "目标内容"},
+        ),
+        (
+            "field_order",
+            {
+                "summary": "复诊摘要",
+                "assessment": "目标内容",
+                "plan": "下一步计划",
+            },
+            {
+                "plan": "下一步计划",
+                "assessment": "目标内容",
+                "summary": "复诊摘要",
+            },
+        ),
+    ),
+)
+async def test_doctor_feedback_runtime_replays_canonical_equivalent_args(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    case_name,
+    first_args,
+    second_args,
+):
+    from app.models.agent_runtime import AgentToolOperation
+    from app.models.clinical_journal import ClinicalJournalEntry
+    from app.services.agent_executor import (
+        AgentExecutor,
+        _write_receipt_from_tool_result,
+    )
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    runtime = AgentRuntimeCoordinator(db)
+    admission = runtime.create_or_resume_run(
+        run_id=f"run-doctor-feedback-canonical-{case_name}",
+        attempt_id=f"attempt-doctor-feedback-canonical-{case_name}",
+        user_id=user.id,
+        conversation_id=None,
+        client_turn_id=f"turn-doctor-feedback-canonical-{case_name}",
+        origin="test",
+    )
+    runtime.mark_running(admission.context)
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._current_turn_user_message = "请记录医生诊断：目标内容"
+    executor._runtime_run_id = admission.context.run_id
+    executor._runtime_attempt_id = admission.context.attempt_id
+    executor._runtime_managed = True
+    monkeypatch.setattr(
+        executor,
+        "_agent_kernel_reference_now",
+        lambda: datetime.fromisoformat("2026-08-01T21:30:00+08:00"),
+    )
+    handler_args = []
+    real_handler = executor._exec_record_doctor_feedback
+
+    async def capture_handler_args(args):
+        handler_args.append(dict(args))
+        return await real_handler(args)
+
+    monkeypatch.setattr(
+        executor,
+        "_exec_record_doctor_feedback",
+        capture_handler_args,
+    )
+
+    first_result = await executor._execute_tool(
+        "record_doctor_feedback",
+        first_args,
+        None,
+    )
+    second_result = await executor._execute_tool(
+        "record_doctor_feedback",
+        second_args,
+        None,
+    )
+
+    first_payload = json.loads(first_result)
+    second_payload = json.loads(second_result)
+    first_receipt = _write_receipt_from_tool_result(
+        "record_doctor_feedback", first_args, first_result
+    )
+    second_receipt = _write_receipt_from_tool_result(
+        "record_doctor_feedback", second_args, second_result
+    )
+    rows = db.query(ClinicalJournalEntry).filter_by(user_id=user.id).all()
+    operations = db.query(AgentToolOperation).all()
+    assert len(rows) == 1
+    assert len(operations) == 1
+    assert len(handler_args) == 1
+    assert set(handler_args[0]) == {
+        "summary",
+        "assessment",
+        "plan",
+        "visit_date",
+    }
+    assert handler_args[0]["visit_date"] == "2026-08-01"
+    assert second_payload["replayed"] is True
+    assert second_payload["resource_id"] == str(first_payload["id"])
+    assert first_receipt is not None
+    assert second_receipt is not None
+    assert first_receipt["resource_id"] == second_receipt["resource_id"]
+    assert operations[0].status == "succeeded"
 
 
 @pytest.mark.asyncio
@@ -997,6 +1172,233 @@ async def test_doctor_feedback_rejects_forged_or_unverified_service_entry(
         {"assessment": assessment},
         result,
     ) is None
+
+
+@pytest.mark.asyncio
+async def test_doctor_feedback_exact_matching_old_row_cannot_forge_freshness(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.models.clinical_journal import ClinicalJournalEntry
+    from app.services import doctor_report_service
+    from app.services.agent_executor import (
+        AgentExecutor,
+        _write_receipt_from_tool_result,
+    )
+
+    user, _headers = auth_user_and_headers
+    assessment = "与请求完全一致的医生评估"
+    old = ClinicalJournalEntry(
+        user_id=user.id,
+        subjective=None,
+        objective="医生随访 @ 2026-08-01",
+        assessment=assessment,
+        plan=None,
+        created_by="doctor",
+    )
+    db.add(old)
+    db.commit()
+    old_id = old.id
+    monkeypatch.setattr(
+        doctor_report_service,
+        "record_doctor_feedback",
+        Mock(return_value=old),
+    )
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+
+    result = await executor._exec_record_doctor_feedback(
+        {"assessment": assessment, "visit_date": "2026-08-01"}
+    )
+
+    _assert_uncertain_write(result)
+    assert _write_receipt_from_tool_result(
+        "record_doctor_feedback",
+        {"assessment": assessment, "visit_date": "2026-08-01"},
+        result,
+    ) is None
+    rows = db.query(ClinicalJournalEntry).filter_by(user_id=user.id).all()
+    assert len(rows) == 1
+    assert rows[0].id == old_id
+
+
+@pytest.mark.asyncio
+async def test_doctor_feedback_service_cannot_insert_new_row_but_return_old_row(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.models.clinical_journal import ClinicalJournalEntry
+    from app.services import doctor_report_service
+    from app.services.agent_executor import (
+        AgentExecutor,
+        _write_receipt_from_tool_result,
+    )
+
+    user, _headers = auth_user_and_headers
+    old = ClinicalJournalEntry(
+        user_id=user.id,
+        objective="医生随访 @ 2026-08-01",
+        assessment="新行",
+        created_by="doctor",
+    )
+    db.add(old)
+    db.commit()
+    old_id = old.id
+    real_record = doctor_report_service.record_doctor_feedback
+
+    def insert_new_but_return_old(db_session, **kwargs):
+        real_record(db_session, **kwargs)
+        return old
+
+    monkeypatch.setattr(
+        doctor_report_service,
+        "record_doctor_feedback",
+        insert_new_but_return_old,
+    )
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+
+    result = await executor._exec_record_doctor_feedback(
+        {"assessment": "新行", "visit_date": "2026-08-01"}
+    )
+
+    _assert_uncertain_write(result)
+    assert _write_receipt_from_tool_result(
+        "record_doctor_feedback",
+        {"assessment": "新行", "visit_date": "2026-08-01"},
+        result,
+    ) is None
+    rows = db.query(ClinicalJournalEntry).filter_by(user_id=user.id).all()
+    assert len(rows) == 2
+    assert {row.id for row in rows} > {old_id}
+
+
+@pytest.mark.asyncio
+async def test_doctor_feedback_concurrent_same_owner_insert_is_uncertain(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.models.clinical_journal import ClinicalJournalEntry
+    from app.services import doctor_report_service
+    from app.services.agent_executor import (
+        AgentExecutor,
+        _write_receipt_from_tool_result,
+    )
+
+    user, _headers = auth_user_and_headers
+    real_record = doctor_report_service.record_doctor_feedback
+
+    def record_with_concurrent_insert(db_session, **kwargs):
+        requested = real_record(db_session, **kwargs)
+        db_session.add(
+            ClinicalJournalEntry(
+                user_id=kwargs["user_id"],
+                assessment="同一用户的并发医生反馈",
+                created_by="doctor",
+            )
+        )
+        db_session.commit()
+        return requested
+
+    monkeypatch.setattr(
+        doctor_report_service,
+        "record_doctor_feedback",
+        record_with_concurrent_insert,
+    )
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    args = {"assessment": "当前请求的医生反馈", "visit_date": "2026-08-01"}
+
+    result = await executor._exec_record_doctor_feedback(args)
+
+    _assert_uncertain_write(result)
+    assert _write_receipt_from_tool_result(
+        "record_doctor_feedback",
+        args,
+        result,
+    ) is None
+    rows = db.query(ClinicalJournalEntry).filter_by(user_id=user.id).all()
+    assert len(rows) == 2
+
+
+@pytest.mark.asyncio
+async def test_doctor_feedback_prewrite_snapshot_failure_is_non_dispatched_and_log_safe(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    caplog,
+):
+    from app.services import doctor_report_service
+    from app.services.agent_executor import AgentExecutor
+
+    user, _headers = auth_user_and_headers
+    private_text = "私密快照异常内容"
+    record = Mock(side_effect=AssertionError("service must not run"))
+    monkeypatch.setattr(doctor_report_service, "record_doctor_feedback", record)
+    monkeypatch.setattr(db, "query", Mock(side_effect=RuntimeError(private_text)))
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    caplog.set_level(logging.ERROR, logger="app.services.agent_executor")
+
+    result = await executor._exec_record_doctor_feedback(
+        {"assessment": "可见医生评估"}
+    )
+
+    _assert_local_rejection(
+        result,
+        error_code="doctor_feedback_snapshot_unavailable",
+    )
+    record.assert_not_called()
+    assert private_text not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_doctor_feedback_postwrite_snapshot_failure_is_uncertain(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    caplog,
+):
+    from app.models.clinical_journal import ClinicalJournalEntry
+    from app.services.agent_executor import (
+        AgentExecutor,
+        _write_receipt_from_tool_result,
+    )
+
+    user, _headers = auth_user_and_headers
+    private_text = "私密持久化核验异常"
+    original_query = db.query
+    query_calls = 0
+
+    def fail_second_query(*entities, **kwargs):
+        nonlocal query_calls
+        query_calls += 1
+        if query_calls > 1:
+            raise RuntimeError(private_text)
+        return original_query(*entities, **kwargs)
+
+    monkeypatch.setattr(db, "query", fail_second_query)
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    caplog.set_level(logging.ERROR, logger="app.services.agent_executor")
+
+    result = await executor._exec_record_doctor_feedback(
+        {"assessment": "可见医生评估"}
+    )
+
+    _assert_uncertain_write(result)
+    assert _write_receipt_from_tool_result(
+        "record_doctor_feedback",
+        {"assessment": "可见医生评估"},
+        result,
+    ) is None
+    monkeypatch.setattr(db, "query", original_query)
+    rows = original_query(ClinicalJournalEntry).filter_by(user_id=user.id).all()
+    assert len(rows) == 1
+    assert private_text not in caplog.text
 
 
 @pytest.mark.asyncio
