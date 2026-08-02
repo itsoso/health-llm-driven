@@ -1,11 +1,14 @@
 """用户合并服务 - 合并小程序用户和PC用户"""
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 from sqlalchemy import text, inspect
-from app.models.user import User, GarminCredential
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
+post_commit_observability_logger = logging.getLogger(
+    f"{__name__}.post_commit_observability"
+)
 
 # user_id 字段有 unique=True 的表（一个用户只有一条记录）
 UNIQUE_USER_TABLES = {
@@ -16,18 +19,40 @@ UNIQUE_USER_TABLES = {
 
 # user_id 参与复合唯一约束的表: {表名: [额外唯一字段]}
 COMPOSITE_UNIQUE_TABLES = {
-    "garmin_data": ["record_date"],
-    "weight_records": ["record_date"],
+    "garmin_data": ["record_date", "data_source"],
     "daily_recommendations": ["recommendation_date"],
     "monthly_reports": ["year", "month"],
-    "checkin_records": ["template_id", "checkin_date"],
-    "health_analysis_cache": ["analysis_date", "cache_type"],
-    "habit_records": ["habit_id", "record_date"],
 }
+
+
+class UserMergeIneligible(ValueError):
+    """The locked source/target state is not eligible for an admin merge."""
 
 
 class UserMergeService:
     """用户合并服务"""
+
+    @staticmethod
+    def _log_committed_merge_best_effort(
+        source_user_id: int,
+        target_user_id: int,
+        merge_stats: Dict[str, int],
+    ) -> None:
+        """Emit bounded post-commit telemetry without changing the outcome."""
+        try:
+            logger.info(
+                "成功合并用户: %s -> %s, 迁移表数: %s",
+                source_user_id,
+                target_user_id,
+                len(merge_stats),
+            )
+        except Exception:  # noqa: BLE001 - observability must not undo a commit
+            try:
+                post_commit_observability_logger.error(
+                    "用户合并已提交，但成功日志写入失败"
+                )
+            except Exception:  # noqa: BLE001 - never rethrow after the commit
+                return
 
     @staticmethod
     def find_potential_merge_candidates(
@@ -78,7 +103,10 @@ class UserMergeService:
     @staticmethod
     def _get_all_user_tables(db: Session) -> List[str]:
         """获取所有包含 user_id 列的表名（排除 users 表本身）"""
-        insp = inspect(db.bind)
+        # Reuse the Session connection. Opening a second inspector connection can
+        # observe a different transaction and, with SQLite StaticPool tests, its
+        # cleanup rollback can undo the in-flight merge transaction.
+        insp = inspect(db.connection())
         result = []
         for table_name in insp.get_table_names():
             columns = [col['name'] for col in insp.get_columns(table_name)]
@@ -115,18 +143,14 @@ class UserMergeService:
     ) -> int:
         """迁移有复合唯一约束的表。先删冲突记录，再迁移剩余。"""
         join_conds = " AND ".join(f"s.\"{col}\" = t.\"{col}\"" for col in unique_cols)
-        # 删除冲突记录
-        try:
-            db.execute(text(
-                f'DELETE FROM "{table_name}" WHERE user_id = :sid AND id IN '
-                f'(SELECT s.id FROM "{table_name}" s '
-                f'INNER JOIN "{table_name}" t ON {join_conds} AND t.user_id = :tid '
-                f'WHERE s.user_id = :sid2)'
-            ), {"sid": source_id, "tid": target_id, "sid2": source_id})
-        except Exception:
-            logger.warning(f"  {table_name}: 冲突检测失败，删除source所有记录")
-            db.execute(text(f'DELETE FROM "{table_name}" WHERE user_id = :sid'), {"sid": source_id})
-            return 0
+        # 删除由真实唯一约束确认的冲突记录。任何 SQL/结构错误交给
+        # merge_users 的外层事务整体 rollback；绝不降级为删除 source 全表。
+        db.execute(text(
+            f'DELETE FROM "{table_name}" WHERE user_id = :sid AND id IN '
+            f'(SELECT s.id FROM "{table_name}" s '
+            f'INNER JOIN "{table_name}" t ON {join_conds} AND t.user_id = :tid '
+            f'WHERE s.user_id = :sid2)'
+        ), {"sid": source_id, "tid": target_id, "sid2": source_id})
         # 迁移剩余
         result = db.execute(
             text(f'UPDATE "{table_name}" SET user_id = :tid WHERE user_id = :sid'),
@@ -139,7 +163,9 @@ class UserMergeService:
     def merge_users(
         db: Session,
         source_user_id: int,  # 被合并的用户（将被删除）
-        target_user_id: int   # 目标用户（保留）
+        target_user_id: int,  # 目标用户（保留）
+        *,
+        require_active_approved: bool = False,
     ) -> Dict[str, Any]:
         """
         合并两个用户
@@ -149,14 +175,30 @@ class UserMergeService:
         - 自动发现所有含 user_id 的表并迁移数据
         - 合并用户信息（保留更完整的信息）
         """
-        source_user = db.query(User).filter(User.id == source_user_id).first()
-        target_user = db.query(User).filter(User.id == target_user_id).first()
+        locked_users = (
+            db.query(User)
+            .filter(User.id.in_((source_user_id, target_user_id)))
+            .order_by(User.id)
+            .with_for_update()
+            .all()
+        )
+        users_by_id = {user.id: user for user in locked_users}
+        source_user = users_by_id.get(source_user_id)
+        target_user = users_by_id.get(target_user_id)
 
         if not source_user or not target_user:
             raise ValueError("用户不存在")
 
         if source_user.id == target_user.id:
             raise ValueError("不能合并同一个用户")
+        if require_active_approved and not all((
+            source_user.is_active,
+            source_user.is_approved,
+            target_user.is_active,
+            target_user.is_approved,
+        )):
+            db.rollback()
+            raise UserMergeIneligible("仅可合并已启用且已审核的既有账号")
 
         merge_stats = {}
 
@@ -228,16 +270,20 @@ class UserMergeService:
             # 4. 提交事务
             db.commit()
 
-            logger.info(f"成功合并用户: {source_user_id} -> {target_user_id}, 统计: {merge_stats}")
-
-            return {
-                "success": True,
-                "source_user_id": source_user_id,
-                "target_user_id": target_user_id,
-                "stats": merge_stats
-            }
-
-        except Exception as e:
+        except Exception:
             db.rollback()
-            logger.error(f"合并用户失败: {e}")
+            logger.error("合并用户事务失败")
             raise
+
+        result = {
+            "success": True,
+            "source_user_id": source_user_id,
+            "target_user_id": target_user_id,
+            "stats": merge_stats,
+        }
+        UserMergeService._log_committed_merge_best_effort(
+            source_user_id,
+            target_user_id,
+            merge_stats,
+        )
+        return result

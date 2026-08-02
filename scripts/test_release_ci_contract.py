@@ -59,3 +59,35 @@ def test_ci_blocks_on_release_invariants_and_exercises_macos_bash3():
         "test_release_rollback_restart_window_never_claims_success"
         in mac_runs
     )
+
+
+def test_postgres_gate_runs_invitation_migration_and_merge_concurrency_without_skip():
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    job = workflow["jobs"]["agent-runtime-postgres"]
+    postgres_step = next(
+        step
+        for step in job["steps"]
+        if step.get("name") == "Run Runtime and medication PostgreSQL semantics"
+    )
+    run = str(postgres_step["run"])
+    env = postgres_step["env"]
+
+    assert env["TEST_DATABASE_URL"].startswith("postgresql://")
+    assert env["REGISTRATION_INVITATION_ROLLOUT_ENABLED"] == "true"
+    assert env["REGISTRATION_INVITATION_ENFORCEMENT_ENABLED"] == "true"
+    assert (
+        "tests/test_user_merge_security.py::"
+        "test_postgres_concurrent_same_source_merge_has_one_winner_and_no_data_loss"
+        in run
+    )
+    assert (
+        "tests/test_registration_invitation_migration_postgres.py::"
+        "test_postgres_managed_migration_is_replay_safe_and_enforces_contract"
+        in run
+    )
+    assert "tests/test_invited_phone_registration_postgres.py" in run
+    assert (
+        "tests/test_registration_invitation_service.py::"
+        "test_postgres_concurrent_grant_consumption_has_exactly_one_winner"
+        in run
+    )

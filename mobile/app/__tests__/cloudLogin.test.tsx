@@ -22,6 +22,9 @@ jest.mock('../../hooks/useTheme', () => ({
       labelPrimary: '#111', labelSecondary: '#555', labelTertiary: '#888',
       separator: '#ddd',
     },
+    s: {
+      danger: { fg: '#b42318', bg: '#fef3f2' },
+    },
   }),
 }));
 

@@ -37,6 +37,7 @@ import {
   requestPhoneCode, loginByPhoneCode, setPassword, changePassword,
   verifyPhoneCode, completeInvitedRegistration,
   RegistrationFlowError, registrationAuthErrorCode,
+  loadPendingRegistrationForHydration,
   saveCredentials, loadCredentials, clearCredentials,
   type PhoneLoginResponse,
 } from '../auth';
@@ -58,6 +59,7 @@ const mockedSave = saveTokenToSharedKeychain as jest.MockedFunction<typeof saveT
 const mockedDelete = deleteTokenFromSharedKeychain as jest.MockedFunction<typeof deleteTokenFromSharedKeychain>;
 const mockedReadShared = readTokenFromSharedKeychain as jest.MockedFunction<typeof readTokenFromSharedKeychain>;
 const mockedSetRuntimeToken = setRuntimeAuthToken as jest.MockedFunction<typeof setRuntimeAuthToken>;
+const LOGOUT_TOMBSTONE_KEY = 'auth:logout_tombstone:v1';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -613,9 +615,157 @@ describe('services/auth', () => {
       expect(secureItems.pending_invited_registration_v1).toBeUndefined();
     });
 
-    it('ignores keychain clearing failure', async () => {
-      mockedDelete.mockRejectedValueOnce(new Error('no module'));
-      await expect(logout()).resolves.toBeUndefined();
+    it.each(['password_login', 'phone_verify', 'invited_completion'] as const)(
+      'does not let a stale %s response cross a pending logout barrier',
+      async (flow) => {
+        let current = true;
+        const apiGate = deferred<{ data: Record<string, unknown> }>();
+        const barrierStarted = deferred<void>();
+        const releaseBarrier = deferred<void>();
+        const setItemImplementation = (AsyncStorage.setItem as jest.Mock)
+          .getMockImplementation();
+        (AsyncStorage.setItem as jest.Mock).mockImplementationOnce(async (key: string, value: string) => {
+          if (key === LOGOUT_TOMBSTONE_KEY) {
+            barrierStarted.resolve();
+            await releaseBarrier.promise;
+          }
+          return setItemImplementation?.(key, value);
+        });
+        if (flow === 'invited_completion') {
+          secureItems.pending_invited_registration_v1 = JSON.stringify({
+            version: 1,
+            verifiedPhoneTicket: 'T'.repeat(32),
+            expiresAt: Date.now() + 300_000,
+            idempotencyKey: 'registration-1234567890abcdef',
+          });
+        }
+        mockedApi.post.mockReturnValueOnce(apiGate.promise as never);
+        const options = { isCurrent: () => current };
+        const staleOperation = flow === 'password_login'
+          ? login('alice', 'hunter2', options)
+          : flow === 'phone_verify'
+            ? verifyPhoneCode('13800138000', '123456', options)
+            : completeInvitedRegistration({ manualCode: 'ABCD2345' }, options);
+        await waitForApiPost();
+
+        // Mirrors AuthProvider's synchronous epoch invalidation at logout entry.
+        current = false;
+        const loggingOut = logout();
+        await barrierStarted.promise;
+        apiGate.resolve({
+          data: flow === 'phone_verify'
+            ? {
+              outcome: 'invitation_required',
+              verified_phone_ticket: 'V'.repeat(32),
+              expires_in_seconds: 300,
+            }
+            : {
+              access_token: `tok_stale_${flow}`,
+              token_type: 'bearer',
+              is_new_user: flow === 'invited_completion',
+              user: { id: 12, username: 'stale-user' },
+            },
+        });
+
+        await expect(staleOperation).rejects.toMatchObject({ name: 'AuthOperationSuperseded' });
+        expect(SecureStore.setItemAsync).not.toHaveBeenCalledWith(
+          TOKEN_KEY,
+          expect.stringContaining('tok_stale'),
+        );
+        expect(mockedSave).not.toHaveBeenCalledWith(expect.stringContaining('tok_stale'));
+        expect(mockedSetRuntimeToken).not.toHaveBeenCalledWith(expect.stringContaining('tok_stale'));
+
+        releaseBarrier.resolve();
+        await expect(loggingOut).resolves.toBeUndefined();
+        expect(await AsyncStorage.getItem(LOGOUT_TOMBSTONE_KEY)).toBe('1');
+        expect(AsyncStorage.removeItem).not.toHaveBeenCalledWith(LOGOUT_TOMBSTONE_KEY);
+        expect(secureItems[TOKEN_KEY]).toBeUndefined();
+        expect(secureItems.pending_invited_registration_v1).toBeUndefined();
+      },
+    );
+
+    it('keeps the provider session intact when the logout tombstone write fails', async () => {
+      secureItems[TOKEN_KEY] = 'tok_still_authenticated';
+      secureItems.pending_invited_registration_v1 = '{"version":1}';
+      (AsyncStorage.setItem as jest.Mock).mockRejectedValueOnce(
+        new Error('provider-secret tok_still_authenticated'),
+      );
+
+      const operation = logout();
+
+      await expect(operation).rejects.toMatchObject({ code: 'LOGOUT_BARRIER_FAILED' });
+      expect(mockedSetRuntimeToken).not.toHaveBeenCalledWith(null);
+      expect(SecureStore.deleteItemAsync).not.toHaveBeenCalled();
+      expect(mockedDelete).not.toHaveBeenCalled();
+      expect(secureItems[TOKEN_KEY]).toBe('tok_still_authenticated');
+      expect(secureItems.pending_invited_registration_v1).toBe('{"version":1}');
+      await expect(getToken()).resolves.toBe('tok_still_authenticated');
+    });
+
+    it('keeps stores intact when tombstone readback fails and a later restart honors the actual marker', async () => {
+      secureItems[TOKEN_KEY] = 'tok_barrier_unconfirmed';
+      secureItems.pending_invited_registration_v1 = '{"version":1}';
+      (AsyncStorage.getItem as jest.Mock).mockResolvedValueOnce(null);
+
+      await expect(logout()).rejects.toMatchObject({ code: 'LOGOUT_BARRIER_FAILED' });
+      expect(mockedSetRuntimeToken).not.toHaveBeenCalledWith(null);
+      expect(SecureStore.deleteItemAsync).not.toHaveBeenCalled();
+      expect(mockedDelete).not.toHaveBeenCalled();
+      expect(secureItems[TOKEN_KEY]).toBe('tok_barrier_unconfirmed');
+      expect(secureItems.pending_invited_registration_v1).toBe('{"version":1}');
+
+      // setItem did persist the marker even though the first readback could not
+      // confirm it. A later process must honor the actual durable state.
+      await expect(getToken()).resolves.toBeNull();
+      expect(mockedSetRuntimeToken).toHaveBeenLastCalledWith(null);
+    });
+
+    it('keeps a durable tombstone when SecureStore token deletion fails and blocks restart hydration', async () => {
+      secureItems[TOKEN_KEY] = 'tok_secure_residue';
+      (SecureStore.deleteItemAsync as jest.Mock).mockImplementation(async (key: string) => {
+        if (key === TOKEN_KEY) throw new Error('provider leaked tok_secure_residue');
+        delete secureItems[key];
+      });
+
+      await expect(logout()).rejects.toMatchObject({ code: 'LOGOUT_CLEANUP_INCOMPLETE' });
+      expect(await AsyncStorage.getItem(LOGOUT_TOMBSTONE_KEY)).toBe('1');
+      await expect(getToken()).resolves.toBeNull();
+      expect(mockedSetRuntimeToken).toHaveBeenLastCalledWith(null);
+    });
+
+    it('keeps a durable tombstone when shared token deletion fails and blocks restart hydration', async () => {
+      let sharedToken: string | null = 'tok_shared_residue';
+      mockedReadShared.mockImplementation(async () => sharedToken);
+      mockedDelete.mockImplementation(async () => {
+        throw new Error('provider leaked tok_shared_residue');
+      });
+
+      await expect(logout()).rejects.toMatchObject({ code: 'LOGOUT_CLEANUP_INCOMPLETE' });
+      expect(await AsyncStorage.getItem(LOGOUT_TOMBSTONE_KEY)).toBe('1');
+      await expect(getToken()).resolves.toBeNull();
+      expect(sharedToken).toBe('tok_shared_residue');
+      expect(mockedSetRuntimeToken).toHaveBeenLastCalledWith(null);
+    });
+
+    it('keeps a durable tombstone when pending deletion fails and blocks restart pending hydration', async () => {
+      const pending = JSON.stringify({
+        version: 1,
+        verifiedPhoneTicket: 'T'.repeat(32),
+        expiresAt: Date.now() + 300_000,
+        idempotencyKey: 'registration-1234567890abcdef',
+      });
+      secureItems.pending_invited_registration_v1 = pending;
+      (SecureStore.deleteItemAsync as jest.Mock).mockImplementation(async (key: string) => {
+        if (key === 'pending_invited_registration_v1') {
+          throw new Error(`provider leaked ${pending}`);
+        }
+        delete secureItems[key];
+      });
+
+      await expect(logout()).rejects.toMatchObject({ code: 'LOGOUT_CLEANUP_INCOMPLETE' });
+      expect(await AsyncStorage.getItem(LOGOUT_TOMBSTONE_KEY)).toBe('1');
+      await expect(loadPendingRegistrationForHydration()).resolves.toBeNull();
+      expect(secureItems.pending_invited_registration_v1).toBe(pending);
     });
 
     it('serializes token storage so an old logout cannot erase a newer login', async () => {
@@ -646,7 +796,9 @@ describe('services/auth', () => {
       } as never);
 
       const logoutPromise = logout();
-      await Promise.resolve();
+      for (let attempt = 0; attempt < 10 && !deleteGate.release; attempt += 1) {
+        await Promise.resolve();
+      }
       expect(deleteGate.release).toBeDefined();
 
       const loginPromise = login('new-user', 'hunter2');
@@ -655,6 +807,58 @@ describe('services/auth', () => {
       await Promise.all([logoutPromise, loginPromise]);
 
       expect(storedToken).toBe('tok_new');
+      expect(await AsyncStorage.getItem(LOGOUT_TOMBSTONE_KEY)).toBeNull();
+    });
+
+    it('clears the tombstone only after a new token is durably readable', async () => {
+      await AsyncStorage.setItem(LOGOUT_TOMBSTONE_KEY, '1');
+      const tokenRead = deferred<void>();
+      const releaseTokenRead = deferred<void>();
+      (SecureStore.getItemAsync as jest.Mock).mockImplementation(async (key: string) => {
+        if (key === TOKEN_KEY && secureItems[key]) {
+          tokenRead.resolve();
+          await releaseTokenRead.promise;
+        }
+        return secureItems[key] ?? null;
+      });
+      mockedApi.post.mockResolvedValueOnce({
+        data: {
+          access_token: 'tok_after_logout',
+          token_type: 'bearer',
+          user: { id: 9, username: 'returning' },
+        },
+      } as never);
+
+      const loggingIn = login('returning', 'hunter2');
+      await tokenRead.promise;
+      expect(await AsyncStorage.getItem(LOGOUT_TOMBSTONE_KEY)).toBe('1');
+      releaseTokenRead.resolve();
+      await expect(loggingIn).resolves.toBeDefined();
+
+      expect(await AsyncStorage.getItem(LOGOUT_TOMBSTONE_KEY)).toBeNull();
+      await expect(getToken()).resolves.toBe('tok_after_logout');
+    });
+
+    it('writes the tombstone before cleanup and never logs provider errors or credentials', async () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      secureItems[TOKEN_KEY] = 'tok_secret_residue';
+      (SecureStore.deleteItemAsync as jest.Mock).mockRejectedValue(
+        new Error('provider-secret tok_secret_residue'),
+      );
+
+      await expect(logout()).rejects.toMatchObject({ code: 'LOGOUT_CLEANUP_INCOMPLETE' });
+
+      const tombstoneWriteOrder = (AsyncStorage.setItem as jest.Mock).mock.invocationCallOrder
+        .find((_order, index) => (
+          (AsyncStorage.setItem as jest.Mock).mock.calls[index][0] === LOGOUT_TOMBSTONE_KEY
+        ));
+      expect(tombstoneWriteOrder).toBeLessThan(
+        (SecureStore.deleteItemAsync as jest.Mock).mock.invocationCallOrder[0],
+      );
+      const logged = warn.mock.calls.flat().join(' ');
+      expect(logged).not.toContain('provider-secret');
+      expect(logged).not.toContain('tok_secret_residue');
+      warn.mockRestore();
     });
   });
 

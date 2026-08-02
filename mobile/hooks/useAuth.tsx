@@ -17,8 +17,10 @@ import {
   getToken,
   fetchCurrentUser,
   isAuthOperationSuperseded,
+  authLogoutErrorCode,
   registrationAuthErrorCode,
   loadPendingRegistration,
+  loadPendingRegistrationForHydration,
   type InvitationCredential,
   type PendingRegistration,
   type User,
@@ -125,8 +127,11 @@ async function fetchCurrentUserWithConfirmedAuth(
 
 async function restorePendingRegistrationState(
   isCurrent: () => boolean = () => true,
+  respectLogoutTombstone = false,
 ): Promise<PendingRegistrationState | null> {
-  const pending: PendingRegistration | null = await loadPendingRegistration();
+  const pending: PendingRegistration | null = respectLogoutTombstone
+    ? await loadPendingRegistrationForHydration()
+    : await loadPendingRegistration();
   if (!isCurrent()) throwAuthOperationSuperseded();
   if (!pending) return null;
   return {
@@ -268,7 +273,7 @@ export function AuthProvider({
             }
           }
         } else {
-          const pending = await restorePendingRegistrationState(isCurrent);
+          const pending = await restorePendingRegistrationState(isCurrent, true);
           if (!isCurrent()) return;
           setPendingRegistration(pending);
         }
@@ -376,11 +381,24 @@ export function AuthProvider({
   }, [beginAuthOperation]);
 
   const logout = useCallback(async () => {
+    // Invalidate every operation that started before this explicit logout at
+    // the synchronous entry boundary. A failed durable barrier keeps the
+    // current UI, but must never revive those now-stale operations.
     sessionEpochRef.current += 1;
+    try {
+      await logoutApi();
+    } catch (error) {
+      if (authLogoutErrorCode(error) !== 'LOGOUT_CLEANUP_INCOMPLETE') {
+        throw error;
+      }
+      setToken(null);
+      setUser(null);
+      setPendingRegistration(null);
+      throw error;
+    }
     setToken(null);
     setUser(null);
     setPendingRegistration(null);
-    await logoutApi();
   }, []);
 
   const isAuthenticated = token !== null;

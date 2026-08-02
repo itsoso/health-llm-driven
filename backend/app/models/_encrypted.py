@@ -87,8 +87,11 @@ class StrictEncryptedString(EncryptedString):
     cache_ok = True
 
     def process_bind_param(self, value: Optional[str], dialect) -> Optional[str]:
-        if value is None or value == "":
+        if value is None:
             return value
+        if value == "":
+            logger.error("[strict-encrypted] empty value, 拒绝写入")
+            raise StrictEncryptionError("sensitive value encryption failed") from None
         try:
             return _fernet.encrypt(value.encode()).decode()
         except Exception:  # noqa: BLE001
@@ -98,6 +101,26 @@ class StrictEncryptedString(EncryptedString):
         # StatementError from attaching all statement parameters, including the
         # sensitive plaintext value.
         raise StrictEncryptionError("sensitive value encryption failed") from None
+
+    def process_result_value(self, value: Optional[str], dialect) -> Optional[str]:
+        if value is None:
+            return value
+        if value == "":
+            logger.error("[strict-encrypted] empty value, 拒绝读取")
+            raise StrictEncryptionError("sensitive value decryption failed") from None
+        decryption_failed = False
+        try:
+            return _fernet.decrypt(value.encode()).decode()
+        except InvalidToken:
+            decryption_failed = True
+        except Exception:  # noqa: BLE001
+            decryption_failed = True
+        if decryption_failed:
+            logger.error("[strict-encrypted] decrypt 失败, 拒绝读取")
+        # Raise outside the handler so the crypto exception (and any raw input
+        # it may carry) is not retained as __context__. Strict columns do not
+        # support legacy plaintext fallback.
+        raise StrictEncryptionError("sensitive value decryption failed") from None
 
 
 class EncryptedText(EncryptedString):

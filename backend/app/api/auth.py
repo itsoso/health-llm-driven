@@ -73,6 +73,17 @@ def _auth_error(http_status: int, code: str, message: str) -> HTTPException:
     )
 
 
+def _registration_expiry_is_future(value: datetime | None, now: datetime) -> bool:
+    if value is None:
+        return False
+    normalized = value
+    if normalized.tzinfo is None:
+        normalized = normalized.replace(tzinfo=timezone.utc)
+    else:
+        normalized = normalized.astimezone(timezone.utc)
+    return normalized > now
+
+
 def _require_legacy_registration_open() -> None:
     """Block every legacy account-creation path once enforcement is active."""
 
@@ -418,7 +429,10 @@ async def send_phone_code(
     except PhoneCodeCooldown as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
     except (PhoneCodeDeliveryFailed, PhoneCodeDeliveryNotConfigured) as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from None
 
     return PhoneCodeResponse(
         message="验证码已发送",
@@ -715,6 +729,18 @@ async def invited_phone_registration(
                 and invitation.status == "consumed"
                 and invitation.consumed_by == grant.consumed_by
             ):
+                if not _registration_expiry_is_future(grant.expires_at, now):
+                    raise _auth_error(
+                        400,
+                        "VERIFIED_PHONE_TICKET_EXPIRED",
+                        "手机号验证已失效，请重新验证",
+                    )
+                if not _registration_expiry_is_future(invitation.expires_at, now):
+                    raise _auth_error(
+                        400,
+                        "INVITATION_EXPIRED",
+                        "邀请无效或已过期",
+                    )
                 user = db.get(User, grant.consumed_by)
                 if user is None:
                     raise _auth_error(409, "REGISTRATION_STATE_CONFLICT", "注册状态冲突")

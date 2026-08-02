@@ -17,9 +17,14 @@ import {
 import {
   clearPendingRegistration,
   createPendingRegistration,
-  loadPendingRegistration,
+  loadPendingRegistration as loadPendingRegistrationRaw,
   type PendingRegistration,
 } from './registrationInviteStorage';
+import {
+  clearAuthLogoutTombstone,
+  hasAuthLogoutTombstone,
+  writeAuthLogoutTombstone,
+} from './authLogoutTombstone';
 
 export interface User {
   id: number;
@@ -84,6 +89,27 @@ export class RegistrationFlowError extends Error {
     this.name = 'RegistrationFlowError';
     this.code = code;
   }
+}
+
+export type AuthLogoutErrorCode =
+  | 'LOGOUT_BARRIER_FAILED'
+  | 'LOGOUT_CLEANUP_INCOMPLETE';
+
+export class AuthLogoutError extends Error {
+  readonly code: AuthLogoutErrorCode;
+
+  constructor(code: AuthLogoutErrorCode, message: string) {
+    super(message);
+    this.name = 'AuthLogoutError';
+    this.code = code;
+  }
+}
+
+export function authLogoutErrorCode(error: unknown): AuthLogoutErrorCode | null {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === 'LOGOUT_BARRIER_FAILED' || code === 'LOGOUT_CLEANUP_INCOMPLETE'
+    ? code
+    : null;
 }
 
 export interface AccountDeletionRequestResponse {
@@ -243,6 +269,8 @@ async function applyAuthenticatedToken(
       await persistTokenWithinMutation(token, options);
       await bestEffortClearPendingRegistration(options);
       assertOperationCurrent(options);
+      await clearAuthLogoutTombstone();
+      assertOperationCurrent(options);
       setRuntimeAuthToken(token);
     } catch (error) {
       if (isAuthOperationSuperseded(error)) {
@@ -345,7 +373,7 @@ export async function completeInvitedRegistration(
   options?: AuthOperationOptions,
 ): Promise<PhoneLoginResponse> {
   assertOperationCurrent(options);
-  const pending = await loadPendingRegistration();
+  const pending = await loadPendingRegistrationRaw();
   assertOperationCurrent(options);
   if (!pending) {
     await serializeAuthStorageMutation(async () => {
@@ -382,7 +410,19 @@ export async function completeInvitedRegistration(
   }
 }
 
-export { loadPendingRegistration, type PendingRegistration };
+export { loadPendingRegistrationRaw as loadPendingRegistration, type PendingRegistration };
+
+export async function loadPendingRegistrationForHydration(): Promise<PendingRegistration | null> {
+  if (await hasAuthLogoutTombstone()) {
+    try {
+      await clearPendingRegistration();
+    } catch {
+      console.warn('[auth] logged-out pending residue cleanup incomplete');
+    }
+    return null;
+  }
+  return loadPendingRegistrationRaw();
+}
 
 export async function setPassword(newPassword: string): Promise<{ message: string }> {
   const { data } = await api.post<{ message: string }>('/auth/password/set', {
@@ -403,26 +443,93 @@ export async function changePassword(
 }
 
 export async function logout(): Promise<void> {
-  setRuntimeAuthToken(null);
   await serializeAuthStorageMutation(async () => {
     try {
+      await writeAuthLogoutTombstone();
+    } catch {
+      throw new AuthLogoutError(
+        'LOGOUT_BARRIER_FAILED',
+        '无法安全建立本地登出状态，当前登录保持不变，请稍后重试',
+      );
+    }
+
+    // Phase 2 starts only after the durable barrier is confirmed. From this
+    // point forward the device must remain logged out even if residue cleanup
+    // is incomplete.
+    setRuntimeAuthToken(null);
+    let cleanupFailed = false;
+
+    try {
       await SecureStore.deleteItemAsync(TOKEN_KEY);
-    } catch (e) {
-      console.warn('[auth] SecureStore token deletion failed:', e);
+      const remaining = await SecureStore.getItemAsync(TOKEN_KEY);
+      if (isUsableNativeAuthToken(remaining)) cleanupFailed = true;
+    } catch {
+      cleanupFailed = true;
+      console.warn('[auth] SecureStore token cleanup incomplete');
     }
     try {
       await deleteTokenFromSharedKeychain();
-    } catch (e) {
-      console.warn('[auth] shared keychain token deletion failed:', e);
+      const remaining = await readTokenFromSharedKeychain();
+      if (isUsableNativeAuthToken(remaining)) cleanupFailed = true;
+    } catch {
+      cleanupFailed = true;
+      console.warn('[auth] shared token cleanup incomplete');
     }
     await clearPersistedSessionMarker();
-    await bestEffortClearPendingRegistration();
+    try {
+      await clearPendingRegistration();
+      if (await loadPendingRegistrationRaw()) cleanupFailed = true;
+    } catch {
+      cleanupFailed = true;
+      console.warn('[auth] pending registration cleanup incomplete');
+    }
+
+    if (cleanupFailed) {
+      throw new AuthLogoutError(
+        'LOGOUT_CLEANUP_INCOMPLETE',
+        '已安全退出，但本机残留数据清理未完成，请稍后重试',
+      );
+    }
   });
+}
+
+async function cleanupLoggedOutResidueBestEffort(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(TOKEN_KEY);
+  } catch {
+    console.warn('[auth] logged-out SecureStore residue cleanup incomplete');
+  }
+  try {
+    await deleteTokenFromSharedKeychain();
+  } catch {
+    console.warn('[auth] logged-out shared residue cleanup incomplete');
+  }
+  await clearPersistedSessionMarker();
+  try {
+    await clearPendingRegistration();
+  } catch {
+    console.warn('[auth] logged-out pending residue cleanup incomplete');
+  }
 }
 
 async function hydrateAuthSessionWithinMutation(
   options?: AuthOperationOptions,
 ): Promise<string | null> {
+  assertOperationCurrent(options);
+  try {
+    if (await hasAuthLogoutTombstone()) {
+      assertOperationCurrent(options);
+      setRuntimeAuthToken(null);
+      await cleanupLoggedOutResidueBestEffort();
+      assertOperationCurrent(options);
+      return null;
+    }
+  } catch (error) {
+    if (isAuthOperationSuperseded(error)) throw error;
+    console.warn('[auth] logout tombstone read failed');
+    return null;
+  }
+
   let candidate: string | null = null;
   let secureToken: string | null = null;
   try {

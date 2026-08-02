@@ -112,6 +112,9 @@ jest.mock('../../services/api', () => ({
 jest.mock('../../services/auth', () => ({
   requestAccountDeletion: (...args: unknown[]) => mockRequestAccountDeletion(...args),
   getAccountDeletionRequest: (...args: unknown[]) => mockGetAccountDeletionRequest(...args),
+  authLogoutErrorCode: (error: unknown) => (
+    (error as { code?: string } | null)?.code ?? null
+  ),
 }));
 
 import SettingsScreen from '../settings';
@@ -128,6 +131,7 @@ describe('SettingsScreen', () => {
     });
     mockGetAccountDeletionRequest.mockResolvedValue({ status: 'none' });
     mockCheckNow.mockResolvedValue('current');
+    mockLogout.mockResolvedValue(undefined);
   });
 
   it('surfaces GPS and city positioning as one explicit clickable entry', () => {
@@ -188,6 +192,42 @@ describe('SettingsScreen', () => {
     fireEvent.press(getByText('账号安全'));
 
     expect(mockPush).toHaveBeenCalledWith('/account-security');
+  });
+
+  it('explains that the user remains signed in when the logout barrier fails', async () => {
+    mockLogout.mockRejectedValueOnce({ code: 'LOGOUT_BARRIER_FAILED' });
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((title, _message, buttons) => {
+      if (title === '退出登录') {
+        void buttons?.find((button) => button.style === 'destructive')?.onPress?.();
+      }
+    });
+    const { getByText } = render(<SettingsScreen />);
+
+    fireEvent.press(getByText('退出登录'));
+
+    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith(
+      '退出失败',
+      expect.stringContaining('仍保持登录'),
+    ));
+    alertSpy.mockRestore();
+  });
+
+  it('explains that logout is safe when only residue cleanup remains', async () => {
+    mockLogout.mockRejectedValueOnce({ code: 'LOGOUT_CLEANUP_INCOMPLETE' });
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((title, _message, buttons) => {
+      if (title === '退出登录') {
+        void buttons?.find((button) => button.style === 'destructive')?.onPress?.();
+      }
+    });
+    const { getByText } = render(<SettingsScreen />);
+
+    fireEvent.press(getByText('退出登录'));
+
+    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith(
+      '已安全退出',
+      expect.stringContaining('清理'),
+    ));
+    alertSpy.mockRestore();
   });
 
   it('lets the user request account deletion from the app', async () => {

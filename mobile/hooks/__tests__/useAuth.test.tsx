@@ -21,8 +21,12 @@ jest.mock('../../services/auth', () => ({
   getToken: jest.fn(),
   fetchCurrentUser: jest.fn(),
   loadPendingRegistration: jest.fn(),
+  loadPendingRegistrationForHydration: jest.fn(),
   isAuthOperationSuperseded: (error: unknown) => (
     (error as { name?: string } | null)?.name === 'AuthOperationSuperseded'
+  ),
+  authLogoutErrorCode: (error: unknown) => (
+    (error as { code?: string } | null)?.code ?? null
   ),
   registrationAuthErrorCode: (error: unknown) => (
     (error as { code?: string } | null)?.code ?? null
@@ -51,6 +55,7 @@ import {
   getToken,
   login,
   loadPendingRegistration,
+  loadPendingRegistrationForHydration,
   logout,
   verifyPhoneCode,
 } from '../../services/auth';
@@ -70,7 +75,8 @@ function Probe() {
               ? 'guest+stale-user'
               : 'guest'}
       </Text>
-      <Text testID="logout" onPress={() => void auth.logout()}>logout</Text>
+      <Text testID="username">{auth.user?.username ?? 'no-user'}</Text>
+      <Text testID="logout" onPress={() => void auth.logout().catch(() => {})}>logout</Text>
       <Text testID="retry" onPress={() => void auth.retrySession().catch(() => {})}>retry</Text>
       <Text testID="login" onPress={() => void auth.login('alice', 'hunter2').catch(() => {})}>login</Text>
       <Text testID="verify" onPress={() => void auth.verifyPhoneCode('13800138000', '123456').catch(() => {})}>verify</Text>
@@ -91,6 +97,9 @@ describe('useAuth update resilience', () => {
     appStateHandler = null;
     mockHadPersistedSession = false;
     (loadPendingRegistration as jest.Mock).mockResolvedValue(null);
+    (loadPendingRegistrationForHydration as jest.Mock).mockImplementation(
+      (...args: unknown[]) => (loadPendingRegistration as jest.Mock)(...args),
+    );
     jest.spyOn(AppState, 'addEventListener').mockImplementation(((_type: string, handler: (state: string) => void) => {
       appStateHandler = handler;
       return { remove: jest.fn() };
@@ -406,6 +415,24 @@ describe('useAuth update resilience', () => {
     expect(screen.getByTestId('pending-metadata')).not.toHaveTextContent('idempotencyKey');
   });
 
+  it('does not restore raw pending credentials when logout tombstone hydration blocks them', async () => {
+    (getToken as jest.Mock).mockResolvedValue(null);
+    (loadPendingRegistrationForHydration as jest.Mock).mockResolvedValueOnce(null);
+    (loadPendingRegistration as jest.Mock).mockResolvedValue({
+      version: 1,
+      verifiedPhoneTicket: 'T'.repeat(32),
+      expiresAt: Date.now() + 300_000,
+      idempotencyKey: 'registration-residue-12345678',
+    });
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('guest'));
+    expect(screen.getByTestId('pending')).toHaveTextContent('no-pending');
+    expect(loadPendingRegistrationForHydration).toHaveBeenCalledTimes(1);
+    expect(loadPendingRegistration).not.toHaveBeenCalled();
+  });
+
   it('does not authenticate when verification requires an invitation', async () => {
     const pending = {
       version: 1 as const,
@@ -547,6 +574,180 @@ describe('useAuth update resilience', () => {
     fireEvent.press(screen.getByTestId('logout'));
 
     await waitFor(() => expect(screen.getByTestId('pending')).toHaveTextContent('no-pending'));
+  });
+
+  it('keeps the authenticated UI when the durable logout barrier cannot be established', async () => {
+    (getToken as jest.Mock).mockResolvedValue('tok_existing');
+    (fetchCurrentUser as jest.Mock).mockResolvedValue({ id: 7, username: 'alice' });
+    (logout as jest.Mock).mockRejectedValue({
+      name: 'AuthLogoutError',
+      code: 'LOGOUT_BARRIER_FAILED',
+    });
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('auth+user'));
+    fireEvent.press(screen.getByTestId('logout'));
+
+    await waitFor(() => expect(logout).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('state')).toHaveTextContent('auth+user');
+  });
+
+  it('synchronously invalidates a delayed password login before awaiting a failing logout barrier', async () => {
+    type GuardOptions = { isCurrent: () => boolean };
+    const loginGate = makeDeferred<{
+      access_token: string;
+      token_type: string;
+      user: { id: number; username: string };
+    }>();
+    const logoutGate = makeDeferred<void>();
+    (getToken as jest.Mock).mockResolvedValue('tok_existing');
+    (fetchCurrentUser as jest.Mock).mockResolvedValue({ id: 7, username: 'alice' });
+    (login as jest.Mock)
+      .mockImplementationOnce(async (
+        _username: string,
+        _password: string,
+        options?: GuardOptions,
+      ) => {
+        const result = await loginGate.promise;
+        if (!options?.isCurrent()) throw makeSupersededError();
+        return result;
+      })
+      .mockResolvedValueOnce({
+        access_token: 'tok_explicit_new',
+        token_type: 'bearer',
+        user: { id: 9, username: 'new-alice' },
+      });
+    (logout as jest.Mock).mockReturnValueOnce(logoutGate.promise);
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('auth+user'));
+    fireEvent.press(screen.getByTestId('login'));
+    await waitFor(() => expect(login).toHaveBeenCalledTimes(1));
+    const oldGuard = (login as jest.Mock).mock.calls[0][2].isCurrent;
+
+    fireEvent.press(screen.getByTestId('logout'));
+    expect(oldGuard()).toBe(false);
+    await act(async () => {
+      loginGate.resolve({
+        access_token: 'tok_stale_login',
+        token_type: 'bearer',
+        user: { id: 8, username: 'stale-alice' },
+      });
+      logoutGate.reject({ code: 'LOGOUT_BARRIER_FAILED' });
+    });
+
+    expect(screen.getByTestId('state')).toHaveTextContent('auth+user');
+    fireEvent.press(screen.getByTestId('login'));
+    await waitFor(() => expect(screen.getByTestId('username')).toHaveTextContent('new-alice'));
+    expect(login).toHaveBeenCalledTimes(2);
+
+    (logout as jest.Mock).mockResolvedValueOnce(undefined);
+    fireEvent.press(screen.getByTestId('logout'));
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('guest'));
+  });
+
+  it('synchronously invalidates delayed phone verification while a logout barrier is pending', async () => {
+    type GuardOptions = { isCurrent: () => boolean };
+    const verifyGate = makeDeferred<{
+      outcome: 'invitation_required';
+      verified_phone_ticket: string;
+      expires_in_seconds: number;
+    }>();
+    const logoutGate = makeDeferred<void>();
+    (getToken as jest.Mock).mockResolvedValue('tok_existing');
+    (fetchCurrentUser as jest.Mock).mockResolvedValue({ id: 7, username: 'alice' });
+    (verifyPhoneCode as jest.Mock).mockImplementationOnce(async (
+      _phone: string,
+      _code: string,
+      options?: GuardOptions,
+    ) => {
+      const result = await verifyGate.promise;
+      if (!options?.isCurrent()) throw makeSupersededError();
+      return result;
+    });
+    (logout as jest.Mock).mockReturnValueOnce(logoutGate.promise);
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('auth+user'));
+    fireEvent.press(screen.getByTestId('verify'));
+    await waitFor(() => expect(verifyPhoneCode).toHaveBeenCalledTimes(1));
+    const oldGuard = (verifyPhoneCode as jest.Mock).mock.calls[0][2].isCurrent;
+    fireEvent.press(screen.getByTestId('logout'));
+
+    expect(oldGuard()).toBe(false);
+    await act(async () => {
+      verifyGate.resolve({
+        outcome: 'invitation_required',
+        verified_phone_ticket: 'T'.repeat(32),
+        expires_in_seconds: 300,
+      });
+      logoutGate.reject({ code: 'LOGOUT_BARRIER_FAILED' });
+    });
+    expect(screen.getByTestId('state')).toHaveTextContent('auth+user');
+    expect(screen.getByTestId('pending')).toHaveTextContent('no-pending');
+  });
+
+  it('synchronously invalidates delayed invited completion without dropping pending UI on barrier failure', async () => {
+    type GuardOptions = { isCurrent: () => boolean };
+    const pending = {
+      version: 1 as const,
+      verifiedPhoneTicket: 'T'.repeat(32),
+      expiresAt: Date.now() + 300_000,
+      idempotencyKey: 'registration-1234567890abcdef',
+    };
+    const completionGate = makeDeferred<{
+      access_token: string;
+      token_type: string;
+      is_new_user: boolean;
+      user: { id: number; username: string };
+    }>();
+    const logoutGate = makeDeferred<void>();
+    (getToken as jest.Mock).mockResolvedValue(null);
+    (loadPendingRegistration as jest.Mock).mockResolvedValueOnce(pending);
+    (completeInvitedRegistration as jest.Mock).mockImplementationOnce(async (
+      _credential: unknown,
+      options?: GuardOptions,
+    ) => {
+      const result = await completionGate.promise;
+      if (!options?.isCurrent()) throw makeSupersededError();
+      return result;
+    });
+    (logout as jest.Mock).mockReturnValueOnce(logoutGate.promise);
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('pending')).toHaveTextContent('pending'));
+    fireEvent.press(screen.getByTestId('complete'));
+    await waitFor(() => expect(completeInvitedRegistration).toHaveBeenCalledTimes(1));
+    const oldGuard = (completeInvitedRegistration as jest.Mock).mock.calls[0][1].isCurrent;
+    fireEvent.press(screen.getByTestId('logout'));
+
+    expect(oldGuard()).toBe(false);
+    await act(async () => {
+      completionGate.resolve({
+        access_token: 'tok_stale_completion',
+        token_type: 'bearer',
+        is_new_user: true,
+        user: { id: 10, username: 'stale-invite' },
+      });
+      logoutGate.reject({ code: 'LOGOUT_BARRIER_FAILED' });
+    });
+    expect(screen.getByTestId('state')).toHaveTextContent('guest');
+    expect(screen.getByTestId('pending')).toHaveTextContent('pending');
+  });
+
+  it('clears authenticated UI when cleanup fails after the durable logout barrier', async () => {
+    (getToken as jest.Mock).mockResolvedValue('tok_existing');
+    (fetchCurrentUser as jest.Mock).mockResolvedValue({ id: 7, username: 'alice' });
+    (logout as jest.Mock).mockRejectedValue({
+      name: 'AuthLogoutError',
+      code: 'LOGOUT_CLEANUP_INCOMPLETE',
+    });
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('auth+user'));
+    fireEvent.press(screen.getByTestId('logout'));
+
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('guest'));
   });
 
   it('supersedes a delayed verify response when logout starts', async () => {

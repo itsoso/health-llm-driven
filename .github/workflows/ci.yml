@@ -380,6 +380,8 @@ jobs:
           GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/health_runtime_test
           TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/health_runtime_test
+          REGISTRATION_INVITATION_ROLLOUT_ENABLED: "true"
+          REGISTRATION_INVITATION_ENFORCEMENT_ENABLED: "true"
           TZ: Asia/Shanghai
         run: >-
           python -m pytest -q --no-cov --tb=short --maxfail=5
@@ -390,6 +392,10 @@ jobs:
           tests/test_medication_intake_batch.py
           tests/test_write_intent_medication_batch_schema.py
           tests/test_medication_intake_batch_postgres.py
+          tests/test_user_merge_security.py::test_postgres_concurrent_same_source_merge_has_one_winner_and_no_data_loss
+          tests/test_registration_invitation_migration_postgres.py::test_postgres_managed_migration_is_replay_safe_and_enforces_contract
+          tests/test_invited_phone_registration_postgres.py
+          tests/test_registration_invitation_service.py::test_postgres_concurrent_grant_consumption_has_exactly_one_winner
 
   backend-tests:
     runs-on: ubuntu-latest

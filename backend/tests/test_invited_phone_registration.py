@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
+import logging
 
 import pytest
+from sqlalchemy import text
 
 from app.config import settings
 from app.models.agent_audit_log import AgentAuditLog
@@ -268,6 +270,78 @@ def test_replay_with_different_idempotency_key_is_rejected_without_duplicate(cli
     ]
 
 
+@pytest.mark.parametrize("credential", ["grant", "invitation"])
+@pytest.mark.parametrize("offset_seconds", [0, -1], ids=["exact-boundary", "expired"])
+def test_same_key_replay_requires_both_consumed_credentials_to_remain_strictly_valid(
+    client, db, monkeypatch, credential, offset_seconds
+):
+    from app.api import auth as auth_api
+
+    phone = "13800138019"
+    created = create_registration_invitation(db, phone)
+    db.commit()
+    ticket = _verify(client, phone).json()["verified_phone_ticket"]
+    payload = {
+        "verified_phone_ticket": ticket,
+        "manual_code": created.manual_code,
+        "idempotency_key": "registration-replay-expiry-0019",
+    }
+    first = client.post("/api/v1/auth/invited-registration", json=payload)
+    assert first.status_code == 200
+
+    fixed_now = datetime(2030, 1, 2, 3, 4, 5, tzinfo=UTC)
+    grant = db.query(PhoneRegistrationGrant).one()
+    created.invitation.expires_at = fixed_now + timedelta(minutes=1)
+    grant.expires_at = fixed_now + timedelta(minutes=1)
+    if credential == "grant":
+        grant.expires_at = fixed_now + timedelta(seconds=offset_seconds)
+        expected_code = "VERIFIED_PHONE_TICKET_EXPIRED"
+    else:
+        created.invitation.expires_at = fixed_now + timedelta(seconds=offset_seconds)
+        expected_code = "INVITATION_EXPIRED"
+    db.commit()
+    consumed_state = (
+        grant.consumed_at,
+        grant.consumed_by,
+        grant.idempotency_key_digest,
+        created.invitation.status,
+        created.invitation.consumed_at,
+        created.invitation.consumed_by,
+    )
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now if tz is not None else fixed_now.replace(tzinfo=None)
+
+    token_calls = 0
+
+    def forbidden_token_issue(*args, **kwargs):
+        nonlocal token_calls
+        token_calls += 1
+        raise AssertionError("expired replay must not issue a JWT")
+
+    monkeypatch.setattr(auth_api, "datetime", FrozenDateTime)
+    monkeypatch.setattr(auth_api, "_issue_token_response", forbidden_token_issue)
+    replay = client.post("/api/v1/auth/invited-registration", json=payload)
+
+    assert replay.status_code == 400
+    assert replay.json()["detail"]["code"] == expected_code
+    assert "access_token" not in replay.text
+    assert token_calls == 0
+    db.refresh(grant)
+    db.refresh(created.invitation)
+    assert (
+        grant.consumed_at,
+        grant.consumed_by,
+        grant.idempotency_key_digest,
+        created.invitation.status,
+        created.invitation.consumed_at,
+        created.invitation.consumed_by,
+    ) == consumed_state
+    assert db.query(User).count() == 1
+
+
 @pytest.mark.parametrize("terminal_status", ["revoked", "expired"])
 def test_terminal_invitation_is_rejected_without_consuming_grant(
     client, db, terminal_status
@@ -445,6 +519,98 @@ def test_audit_write_failure_rolls_back_registration_without_echoing_error(
     assert created.invitation.status == "created"
     grant = db.query(PhoneRegistrationGrant).one()
     assert grant.consumed_at is None
+
+
+def test_corrupt_grant_ciphertext_fails_closed_without_consuming_or_leaking(
+    client, db, caplog
+):
+    created = create_registration_invitation(db, "13800138017")
+    db.commit()
+    ticket = _verify(client, "13800138017").json()["verified_phone_ticket"]
+    corrupt = "corrupt-registration-phone-ciphertext-private-marker"
+    db.execute(
+        text(
+            "UPDATE phone_registration_grants "
+            "SET phone_ciphertext = :ciphertext"
+        ),
+        {"ciphertext": corrupt},
+    )
+    db.commit()
+    db.expire_all()
+
+    with caplog.at_level(logging.INFO):
+        response = client.post(
+            "/api/v1/auth/invited-registration",
+            json={
+                "verified_phone_ticket": ticket,
+                "manual_code": created.manual_code,
+                "idempotency_key": "registration-corrupt-ciphertext-0017",
+            },
+        )
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "REGISTRATION_PERSISTENCE_FAILED"
+    assert corrupt not in response.text
+    assert corrupt not in caplog.text
+    assert db.query(User).count() == 0
+    invitation_state = db.execute(
+        text(
+            "SELECT status, consumed_at, consumed_by FROM registration_invitations"
+        )
+    ).one()
+    grant_state = db.execute(
+        text(
+            "SELECT consumed_at, consumed_by, idempotency_key_digest "
+            "FROM phone_registration_grants"
+        )
+    ).one()
+    assert invitation_state == ("created", None, None)
+    assert grant_state == (None, None, None)
+
+
+def test_empty_grant_ciphertext_fails_closed_without_consuming_or_leaking(
+    client, db, caplog
+):
+    phone = "13800138018"
+    created = create_registration_invitation(db, phone)
+    db.commit()
+    ticket = _verify(client, phone).json()["verified_phone_ticket"]
+    idempotency_key = "registration-empty-ciphertext-private-marker-0018"
+    db.execute(
+        text("UPDATE phone_registration_grants SET phone_ciphertext = ''")
+    )
+    db.commit()
+    db.expire_all()
+
+    with caplog.at_level(logging.INFO):
+        response = client.post(
+            "/api/v1/auth/invited-registration",
+            json={
+                "verified_phone_ticket": ticket,
+                "manual_code": created.manual_code,
+                "idempotency_key": idempotency_key,
+            },
+        )
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "REGISTRATION_PERSISTENCE_FAILED"
+    exposed = response.text + caplog.text
+    for sensitive in (phone, ticket, created.manual_code, idempotency_key):
+        assert sensitive not in exposed
+    assert db.query(User).count() == 0
+    invitation_state = db.execute(
+        text(
+            "SELECT status, consumed_at, consumed_by FROM registration_invitations"
+        )
+    ).one()
+    grant_state = db.execute(
+        text(
+            "SELECT consumed_at, consumed_by, idempotency_key_digest "
+            "FROM phone_registration_grants"
+        )
+    ).one()
+    assert invitation_state == ("created", None, None)
+    assert grant_state == (None, None, None)
 
 
 def test_rejected_attempt_audit_failure_preserves_original_safe_error(

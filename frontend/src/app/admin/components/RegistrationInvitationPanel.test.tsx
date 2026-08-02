@@ -9,7 +9,7 @@ const rows = [
   { id: 7, phone_masked: '+86 138****8000', note: '内测成员', status: 'send_failed', expires_at: '2999-08-09T12:00:00Z', created_at: '2026-08-02T12:00:00Z', updated_at: '2026-08-02T12:00:00Z', prepared_for_delivery: true },
   { id: 8, phone_masked: '+86 139****9000', note: null, status: 'consumed', expires_at: '2999-08-09T12:00:00Z', created_at: '2026-08-02T12:00:00Z', updated_at: '2026-08-02T12:00:00Z', prepared_for_delivery: false },
 ];
-const prepared = { ...rows[0], status: 'sent', manual_code: 'A8M2K9QX', link_token: 'link-token-must-not-render', deep_link: 'reva://register?invite=opaque-link-token', delivery_status: 'sent', delivery_error_code: null };
+const prepared = { ...rows[0], status: 'sent', manual_code: 'A8M2K9QX', link_token: 'link-token-must-not-render', deep_link: 'health://invite?token=opaque-link-token', delivery_status: 'sent', delivery_error_code: null };
 const mockList = () => vi.mocked(api.get).mockResolvedValue({ data: { items: rows, total: rows.length, limit: 20, offset: 0 } });
 
 describe('RegistrationInvitationPanel', () => {
@@ -84,7 +84,7 @@ describe('RegistrationInvitationPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '重发 +86 138****8000 的邀请' }));
     const dialog = await screen.findByRole('dialog', { name: '一次性注册凭据' });
     expect(api.post).toHaveBeenCalledWith('/admin/registration-invitations/7/resend');
-    expect(within(dialog).getByDisplayValue('A8M2K9QX')).toBeInTheDocument(); expect(within(dialog).getByDisplayValue('reva://register?invite=opaque-link-token')).toBeInTheDocument();
+    expect(within(dialog).getByDisplayValue('A8M2K9QX')).toBeInTheDocument(); expect(within(dialog).getByDisplayValue('health://invite?token=opaque-link-token')).toBeInTheDocument();
     expect(screen.queryByText('link-token-must-not-render')).not.toBeInTheDocument(); expect(within(dialog).getByText(/旧凭据已失效/)).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: '复制手动邀请码' })); await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith('A8M2K9QX'));
     fireEvent.click(within(dialog).getByRole('button', { name: '关闭一次性凭据' })); expect(screen.queryByDisplayValue('A8M2K9QX')).not.toBeInTheDocument(); expect(Storage.prototype.setItem).not.toHaveBeenCalled();

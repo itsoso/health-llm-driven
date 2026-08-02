@@ -6,6 +6,7 @@ from pathlib import Path
 import uuid
 
 import pytest
+from cryptography.fernet import Fernet
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
@@ -151,6 +152,93 @@ def test_grant_phone_encryption_failure_is_fail_loud_and_never_persists_plaintex
         "WHERE token_digest = 'strict-token-digest'"
     )).all()
     assert persisted == []
+
+
+def test_strict_encrypted_result_rejects_ciphertext_from_wrong_key_without_leak(
+    monkeypatch, caplog
+):
+    from app.models import _encrypted
+
+    plaintext = "+14155550991"
+    ciphertext = _encrypted._fernet.encrypt(plaintext.encode()).decode()
+    monkeypatch.setattr(_encrypted, "_fernet", Fernet(Fernet.generate_key()))
+
+    with pytest.raises(StrictEncryptionError) as exc_info:
+        StrictEncryptedString(512).process_result_value(ciphertext, None)
+
+    exposed = " ".join(
+        (
+            str(exc_info.value),
+            repr(exc_info.value),
+            repr(exc_info.value.__cause__),
+            repr(exc_info.value.__context__),
+            caplog.text,
+        )
+    )
+    assert "sensitive value decryption failed" in str(exc_info.value)
+    assert plaintext not in exposed
+    assert ciphertext not in exposed
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
+
+
+def test_strict_encrypted_result_rejects_corrupt_ciphertext_without_raw_fallback(
+    caplog,
+):
+    corrupt = "corrupt-ciphertext-must-not-return-or-log"
+
+    with pytest.raises(StrictEncryptionError) as exc_info:
+        StrictEncryptedString(512).process_result_value(corrupt, None)
+
+    exposed = " ".join(
+        (
+            str(exc_info.value),
+            repr(exc_info.value),
+            repr(exc_info.value.__cause__),
+            repr(exc_info.value.__context__),
+            caplog.text,
+        )
+    )
+    assert corrupt not in exposed
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
+
+
+@pytest.mark.parametrize(
+    ("operation", "message"),
+    [
+        ("bind", "sensitive value encryption failed"),
+        ("result", "sensitive value decryption failed"),
+    ],
+)
+def test_strict_encrypted_rejects_empty_string_without_exception_context(
+    operation, message, caplog
+):
+    encrypted = StrictEncryptedString(512)
+    processor = (
+        encrypted.process_bind_param
+        if operation == "bind"
+        else encrypted.process_result_value
+    )
+
+    with pytest.raises(StrictEncryptionError, match=message) as exc_info:
+        processor("", None)
+
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
+    assert "拒绝" in caplog.text
+
+
+def test_strict_encrypted_allows_none_and_round_trips_non_empty_value():
+    encrypted = StrictEncryptedString(512)
+    plaintext = "+14155550992"
+
+    assert encrypted.process_bind_param(None, None) is None
+    assert encrypted.process_result_value(None, None) is None
+    ciphertext = encrypted.process_bind_param(plaintext, None)
+    assert ciphertext
+    assert ciphertext != plaintext
+    assert encrypted.process_result_value(ciphertext, None) == plaintext
 
 
 def test_is_usable_normalizes_sqlite_roundtrip_timestamps_as_utc():
