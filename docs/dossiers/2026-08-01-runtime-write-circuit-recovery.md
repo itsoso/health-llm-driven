@@ -4,8 +4,8 @@
 |---|---|
 | slug | `runtime-write-circuit-recovery` |
 | 创建日期 | 2026-08-01 |
-| 当前阶段 | S4 / S5 修正后复验 |
-| 状态 | building |
+| 当前阶段 | S8 已交付 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | Backend deploy + Mac/Mobile/Web targeted verification |
 
@@ -110,7 +110,7 @@
   - [x] T7 exact-generation 恢复、首次部署；production 第一条原句揭示营养补全缺口，零写入。
   - [x] T8 服务端 canonical diet 数值补全 + TDD。
   - [x] T9 重新执行 `qwen3.7-max` 评测。
-  - [ ] T10 CI、backend deploy、两条 production 原句与精确清理。
+  - [x] T10 CI、backend deploy、两条 production 原句与精确清理。
 - 并发检查: `git fetch origin main` + open PR checked；无相同作用域 PR。隔离 worktree 基于 `7b277ed0f`。☑
 
 ## S5 · 实现
@@ -123,7 +123,7 @@
   - intake 卡片压制只接受 verified receipt / server-owned pending intent，不再采信 `tools_used` 尝试事实。
   - Mac/Mobile/Web 错误或中断回合显示“尝试调用 Skill”；Web 历史与 live SSE 均贯通 `completion_status`。
   - 简单饮食 goal 在模型漏填营养时，服务端以既有文本估算器补齐五项 sanitized/bounded 数值；用户事实字段保持 canonical；Runtime block 优先且不触发估算。
-- commits: `8c72d16c6`、`3055833b1`、`90501427c`、`9453a33f0`；并发主干 `acc910fd9` 同步修正 fruit trajectory golden/scorer。
+- commits: `8c72d16c6`、`3055833b1`、`90501427c`、`9453a33f0`、`354ca6925`；并发主干 `acc910fd9` 同步修正 fruit trajectory golden/scorer。
 
 ## G3 · 测试闸
 
@@ -133,11 +133,11 @@
 - LLM live-change 首次 main CI `30705987231`: 按预期因未设置一次性确认变量在发送真实模型前 BLOCK；未带红部署。
 - 用户明确批准目的地与模型后，TokenPlan `qwen3.7-max` live gate PASS：invariants `12/12`、health_agent_core `50/50`、orchestrator `5/5`（avg `0.94`、0 regression）、trajectory contract `12/12`、golden `9/9`；原始聚合 JSON 仅保存在本机 `/tmp/runtime-write-circuit-live-eval-20260801.json`，无生产健康正文入库。备用 OpenAI endpoint 在本次命令中指向本机不可用端口，未发生第二外部目的地 fallback。
 - 并发主干 golden 修复复核：`test_agent_trajectory_scorer.py` + `test_llm_synthesis_regression_gate.py` 共 57 passed；offline gate PASS。
-- main CI 真实色: 已部署基线 `dd578a82f` 的 CI `30709378485` 为 44/44 success；一次性 live 确认变量已删除。Correction Block 2 改动尚待重跑。
+- main CI 真实色: 已部署基线 `dd578a82f` 的 CI `30709378485` 为 44/44 success；Correction Block 2 commit `354ca6925` 的 CI `30727545724` 为 44/44 success。两次一次性 live 确认变量均在使用后立即删除，远端当前不存在该变量。
 - Correction Block 2 集成: 456 passed / 3 skipped；skip 均为 SQLite 环境不执行的 PostgreSQL row-lock 用例。覆盖 canonical 字段不变、单次 estimator、重复 tool call 归一为同一指纹、一次 dispatch、Runtime block 不调用 estimator、invalid/unbounded fail-closed、酒精热量兼容及外部 estimator 测试隔离。
 - Correction Block 2 `qwen3.7-max` live: 首次汇总为 orchestrator 3/5、avg 0.83、0 regression，Gate 保持红并执行逐 case 详情复跑；同模型/同数据/同阈值复跑为 5/5、avg 0.94、0 regression，五条调用日志均为 `qwen3.7-max` 且无 fallback。两次共同的离线结果均为 invariants 12/12、health_agent_core 50/50、trajectory 12/12、goldens 9/9；非确定性结果未隐去。原始文件仅在本机 `/tmp/runtime-write-circuit-nutrition-live-eval-20260801.json` 与 `/tmp/runtime-write-circuit-nutrition-orchestrator-detail-20260801.json`。
 - 生产同构 estimator smoke（无写入）: 合成输入“一个桃子”返回 calories/protein/carbs/fat/fiber 五项齐全、全部 finite、calories>0 且至少一项宏量>0；通过新增 sanitizer/bounds 边界。
-- **裁决**: 本地集成 + 详细 live 复跑 PASS；远端 CI 待重跑。
+- **裁决**: PASS —— 本地集成、`qwen3.7-max` 详细 live 复跑与远端 44/44 CI 均通过；首次 live 非确定性红灯已如实保留。
 
 ## G4 · 安全闸
 
@@ -162,30 +162,34 @@
 - 路由: backend-deploy；client release only if changed and required。
 - 首次 backend production SHA: `dd578a82f366b11ea4aeca41516801c650286cbe`；目标修复祖先 `9453a33f0` 已确认在内。
 - 首次 Mobile production OTA: `ffa790f67`。
-- Correction Block 2 backend deploy: pending。
+- Correction Block 2 backend production SHA: `354ca6925e24d15a391e51a6bfd8967e4f57933e`；从干净 main 克隆执行 backend-only deploy，rollback point 为 `dd578a82f`，无 schema migration。
 
 ## G5 · 部署健康闸
 
 - 首次部署健康: backend active；Runtime `active`, generation=5, acknowledged=5, event ledger 与 generation 一致。
-- Correction Block 2 部署健康: pending。
-- **裁决**: 首次部署 PASS；修正部署待复验。
+- Correction Block 2 部署健康: DB backup 41 MB，restore drill 见 234 tables，offsite HMAC 校验通过；backend health `60/60` PASS，Runtime-only KB/staged `11/11` PASS，Skills `22/22` PASS，Runtime release transaction 成功 finalized。
+- 部署后权威状态: remote SHA 精确为 `354ca6925e24d15a391e51a6bfd8967e4f57933e`；Runtime `active`、reason `null`、generation `5`、acknowledged `5`。
+- **裁决**: PASS。
 
 ## S7 · 上线验证
 
 - 真实路径: 两条用户原句、owner-scoped persisted lookup、Runtime state、startup/error scan。
 - 首次 exact phrase `记录吃了一个桃子`: goal/intent 正确，模型漏营养后被验证器拒绝；run `send_ad59d5a5c4604e99` failed，tool operation=0，record=0。
 - 第二条原句: 未执行（第一条失败后立即停闸，避免扩大生产测试）。
-- 修正后结果: pending。
+- 修正后第一条 `记录吃了一个桃子`: run `send_300fe3df1fe74ad4` succeeded；上海当地 10:07 按现有时段规则推断为 lunch；仅 1 条 `AgentToolOperation(health_record/write/succeeded)`，仅 1 个 verified `diet_record` receipt，owner 与 Run owner 一致。
+- 修正后第二条 `记录加餐，我吃了一个桃子`: run `send_1bf5a9903d464297` succeeded；明确餐次保持为 snack；仅 1 条 `AgentToolOperation(health_record/write/succeeded)`，仅 1 个 verified `diet_record` receipt，owner 与 Run owner 一致。
+- 两个 Run 的 content-free event 序列均为 `created -> started -> tool.requested -> tool.receipt_verified -> succeeded`，无 retry、fallback write 或 reconciliation generation 增长。
+- 清理: 仅通过 owner-scoped DELETE 删除本次合成 diet records `912` / `913`；两次 HTTP 200，随后 owner API 与生产 DB 反查均为 0。Runtime 内容无关审计账本保留。
 
 ## G6 · 验证闸（人在环）
 
-- prod 对 anchor 用户真成立: **FAIL（首次 smoke）**；Correction Block 2 后待重跑。
-- 真机/发布用户确认: pending
+- prod 对 anchor 用户真成立: **PASS（Correction Block 2 smoke）**；两条原句均只产生一次受管写入与一个 verified receipt。
+- 真机/发布用户确认: backend-only 修正无新 client 合同；已用 production 用户鉴权路径验收。
 - 首次 Gate 结果: FAIL → 已回退 S4/S5，禁止沿用首次部署结果宣称完成。
-- **裁决**: pending（Correction Block 2 修复后必须重跑）
+- **裁决**: PASS —— Correction Block 2 已按原验收路径完整重跑，测试数据已精确清理。
 
 ## S8 · 沉淀
 
-- 新坑: circuit scope 与 typed terminal 进入 Runtime design/agent operating docs（如结构变化要求）。
-- 文档同步: doc drift 结果决定；计数仅取生成文件。
-- 状态: building
+- 新坑: circuit scope、typed terminal 与 simple-diet numeric enrichment 边界已进入 Runtime design/spec。
+- 文档同步: doc drift PASS；本文只引用实际命令/审计结果，未手写架构计数。
+- 状态: shipped
