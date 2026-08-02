@@ -4,8 +4,8 @@
 |---|---|
 | slug | `diet-capture-excellence` |
 | 创建日期 | 2026-07-11 |
-| 当前阶段 | G6 已通过（T6.1 小红书照片分享闭环） |
-| 状态 | xiaohongshu_photo_share_verified |
+| 当前阶段 | G6 已通过（T6.1 小红书/微信照片分享闭环） |
+| 状态 | social_photo_share_verified |
 | 负责 | Codex |
 | 反馈环 | Backend pytest / Mobile Jest + TypeScript / Simulator / backend deploy / EAS TestFlight + production OTA |
 
@@ -98,7 +98,7 @@
 - [x] T5.8 图片消息首个 SSE 确认前断流时，以 `client_turn_id` 核对 Runtime 持久化状态并恢复同一回合（backend deploy + OTA）
 - [x] T5.9 失败写入的源消息恢复绑定：用户紧邻回复“重试/需要”时恢复原文字与图片，保留新回合幂等检查点；不确定写入禁止重放（backend deploy）
 - [ ] T6 模拟器视觉、真机微信/小红书、生产数据闭环验收
-- [x] T6.1 小红书照片必需的本地 3:4 编辑器、裁剪与缩放/90° 旋转/撤销/重做/重置/手动不透明隐私涂抹、完整海报预览，以及预览/保存/分享单一 rendered URI 复用（主干 CI、production OTA 与真机小红书目标应用验收均通过；Run Ledger：`docs/_generated/harness-runs/7779bb67a50d.jsonl`）
+- [x] T6.1 小红书照片必需的本地 3:4 编辑器、裁剪与缩放/90° 旋转/撤销/重做/重置/手动不透明隐私涂抹、完整海报预览，以及预览/保存/分享单一 rendered URI 复用（主干 CI、production OTA 与真机小红书/微信目标应用验收均通过；Run Ledger：`docs/_generated/harness-runs/7779bb67a50d.jsonl`）
 - Agent Native 验收约束：每个新增 Mobile 饮食入口都必须证明三件事：Agent 可引用 pending draft 或 confirmed DietRecord；确认成功必须有 `diet_record_id` 回执；用户能在小巴对话里继续追问、修正或查看全天影响。
 - 并发检查：2026-07-11 `origin/main` 与当前干净集成 worktree 一致；原始用户工作区不纳入暂存。
 
@@ -132,7 +132,7 @@
 - Linux CI 的原 `s-u` 大分片连续两次在 `test_telegram_webhook.py` 完成后、进入 `test_timeline_agenda_lifecycle.py` 前停住；同命令本机 1090/1090 在 133.21 秒通过。为隔离进程级顺序污染且保持覆盖完整，将该分片拆成 `s`、`t[a-e]`、`t[f-z]+u` 三个独立 pytest 进程。第三次 run 中 `s` 和 `t[a-e]` 已通过，但新进程的 `t[f-z]+u` 仍超出 12 分钟；因此 Linux pytest timeout 改用可中断主线程的 `signal` 模式，该诊断分片开启逐测试输出，并为所有后端 shard 增加 20 分钟 job 上限，确保后续失败能给出具体栈而非无限等待。
 - 营养目录部署补丁 focused regression：32 passed；`bash -n deploy.sh` 与全部 pre-commit hooks passed。
 - Linux 全仓权威闸门：GitHub Actions run `29159958346` attempt 3 SUCCESS；四个首轮冻结分片均通过失败作业重跑恢复，最终 Backend tests enforcement 通过。
-- 待执行：真机微信/小红书目标应用投递。Backend 全仓本地测试仍保留既有跨用例污染问题，Linux CI 为全仓权威闸门。
+- 当时待执行：真机微信/小红书目标应用投递；后续 T6.1 已补齐两端接收证据。Backend 全仓本地测试仍保留既有跨用例污染问题，Linux CI 为全仓权威闸门。
 - 2026-07-12 上线前生产只读审计：近 30 天 116 条饮食记录中，AI 标记、图片、`food_id` 和新版饮食终态事件样本均为 0；因此当前不能宣称真实识别准确率或时延达标，需新 TestFlight/OTA 产生样本后再验收。
 - T5.1 发布回归：Mobile 全量 `233 suites / 1626 tests`、受影响 focused `66 tests`、TypeScript 通过；Backend 饮食/营养/事件联合回归 `112 tests` 通过；lint `0 errors`（保留全仓 97 条既有 warnings）；pre-commit、doc drift 与 Dossier consistency 全绿。
 - T5.2 发布前回归：Backend 识别清洗/营养校准/Diet API/Agent vision 联合 `74 tests` 通过；Mobile focused `24 tests` 与全量 `233 suites / 1626 tests` 通过；TypeScript 通过，OpenAPI 生成仅新增 4 行份量字段；lint `0 errors`（97 条既有 warnings）；带项目 venv 的全部 pre-commit、doc drift 与 Dossier consistency 通过。独立审查另以 RED 测试修复“益生菌酸奶”被补剂规则误删的假阳性。
@@ -257,8 +257,9 @@
 - T6.1 真机失败路径：对既有无照片餐食发起分享时明确显示“这条记录没有可用照片”，
   只允许重试或分享完整饮食正文，没有生成 metric-only 图片海报。
 - T6.1 真机照片路径：相机实拍并保存记录后进入本地编辑器；实机完成 90° 旋转、
-  手动不透明隐私涂抹和撤销，完整预览保留旋转/裁剪结果及撤销后剩余涂抹。
-  重做、重置控件在真机可见，行为由本轮自动化回归覆盖；不把未手工点击冒充真机手势证据。
+  手动不透明隐私涂抹、撤销、重做和重置。第二轮独立手势验证从初始方向开始：旋转后
+  撤销恢复初始方向并启用重做，重做恢复旋转结果，重置再次恢复初始方向并清空撤销/
+  重做栈；四个状态均由真机截图确认。
 - T6.1 真机导出与保存：预览产物为 `1080x1440` PNG。保存前后从 App
   container 只读取得的 rendered file 字节完全相同，`cmp_exit=0`，SHA-256 均为
   `3b83620042d200f17af442c54cf218a3fe0507cafbbee215a669f15badffb817`，证明保存复用
@@ -269,7 +270,12 @@
   `Screenshot 2026-08-01 at 10.14.08 PM.png`（系统分享面板）与
   `Screenshot 2026-08-01 at 10.15.24 PM.png`（小红书接收页）；截图含健康图片，
   不提交仓库。
-- 仍待 T6 总体验收：微信目标应用投递、真实识别准确率/时延生产样本，以及既定的
+- T6.1 微信目标应用投递：iOS 系统分享面板“更多”中显示微信；重置会清除隐私涂抹，
+  因此在传输前再次向用户明确当前为未涂抹海报及所含餐食照片、日期和营养摘要，并在
+  获得批准后进入微信分享页。微信完整显示海报，验证停在“转发给朋友/分享到朋友圈”
+  之前，没有选择联系人或发送。真机证据为本地 Xcode device screenshot
+  `Screenshot 2026-08-01 at 11.35.54 PM.png`；截图含健康图片，不提交仓库。
+- 仍待 T6 总体验收：真实识别准确率/时延生产样本，以及既定的
   真机失败写入恢复专项；这些不阻塞本次 T6.1 小红书照片分享 Correction 的 G6。
 
 ## G6 · 验证闸（2026-08-01 Correction 前历史基线）
@@ -278,8 +284,9 @@
 - **2026-08-01 Correction 前历史裁决：PENDING**。当时状态为 `device_validation_pending`，不进入完成态。
 - **本轮 G6 裁决：PASS**。真机已验证 production OTA 命中、照片缺失 fail closed、
   本地编辑与不透明涂抹、完整预览、保存前后同一 `1080x1440` rendered file 字节一致，
-  以及经用户批准后由系统分享进入小红书笔记编辑页；未点击“发布笔记”。微信投递、
-  生产识别指标与失败写入恢复仍属于上层 T6 的独立待验项，不冒充已完成。
+  完整的旋转/撤销/重做/重置状态机，以及经用户分别批准后由系统分享进入小红书笔记
+  编辑页和微信分享页；未点击“发布笔记”，也未选择微信联系人或发送。生产识别指标与
+  失败写入恢复仍属于上层 T6 的独立待验项，不冒充已完成。
 
 ## S8 · 沉淀
 
