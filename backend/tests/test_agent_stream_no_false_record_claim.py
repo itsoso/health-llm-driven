@@ -889,13 +889,23 @@ def test_nonassertive_write_language_is_not_a_success_claim(text):
     assert _claims_unverified_write_success(text) is False
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "依据医生意见调整剂量并同步健康数据",
+        "请按医\u0007嘱删除记录",
+        "请按医\u007f嘱删除记录",
+        "请按医\u0080嘱删除记录",
+        "请按医\ue000嘱删除记录",
+        "请按医\ufdd0嘱删除记录",
+    ),
+)
 async def test_clinician_basis_compound_action_is_not_executed_or_retried(
-    db, auth_user_and_headers
+    db, auth_user_and_headers, message
 ):
     """A clinician-basis clause cannot authorize a mutation or sync side effect."""
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
-    message = "依据医生意见调整剂量并同步健康数据"
     guarded_reply = (
         "这一轮没有执行任何操作，也没有保存。"
         "请在一条新消息中去掉“依据医生意见”这类临床依据子句，"
@@ -1012,6 +1022,11 @@ async def test_clinician_basis_compound_action_is_not_executed_or_retried(
         "请按医\u034f嘱删除记录",
         "请按医🩺嘱删除记录",
         "请按医★嘱删除记录",
+        "请按医\u0007嘱删除记录",
+        "请按医\u007f嘱删除记录",
+        "请按医\u0080嘱删除记录",
+        "请按医\ue000嘱删除记录",
+        "请按医\ufdd0嘱删除记录",
         "请按醫囑删除记录",
         "请遵嘱删除记录",
         "请依嘱删除记录",
@@ -1234,6 +1249,27 @@ async def test_clinician_basis_hallucinated_tools_exhaust_to_safe_success(
         (
             "请记录医生意见：按医🩺嘱调整训练强度",
             "按医🩺嘱调整训练强度",
+        ),
+        (
+            "请记录医生诊断：医生让我训练，医 生",
+            "医生让我训练，医 生",
+        ),
+        ("请记录医生诊断：保存方法，保 存", "保存方法，保 存"),
+        (
+            "请记录医生诊断：诊断是臀肌无力，诊\u200b断",
+            "诊断是臀肌无力，诊\u200b断",
+        ),
+        (
+            "请记录医生意见：根据医★生建议调整训练强度",
+            "根据医★生建议调整训练强度",
+        ),
+        (
+            "请记录医生意见：根据医生建★议调整训练强度",
+            "根据医生建★议调整训练强度",
+        ),
+        (
+            "请记录医生意见：根据医生建议调★整训练强度",
+            "根据医生建议调★整训练强度",
         ),
     ),
 )

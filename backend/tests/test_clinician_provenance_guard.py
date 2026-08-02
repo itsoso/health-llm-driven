@@ -246,9 +246,9 @@ _OBFUSCATED_CLINICIAN_ACTION_IDS = frozenset(
         "word_joiner_split_write_root",
         "zero_width_space_split_feedback_object",
         "fullwidth_space_split_feedback_object",
-        "duplicated_provider_does_not_mask_split_provider",
-        "duplicated_root_does_not_mask_split_root",
-        "duplicated_object_does_not_mask_split_object",
+        "split_write_command_outside_content_stays_blocked",
+        "split_provider_in_feedback_object_stays_blocked",
+        "split_feedback_object_outside_content_stays_blocked",
         "punctuated_doctor_provider_basis_requires_separate_command",
         "punctuated_doctor_provider_update_requires_separate_command",
         "punctuated_physician_provider_basis_requires_separate_command",
@@ -377,6 +377,35 @@ def test_medical_basis_canonical_view_never_joins_hard_boundaries(
     ),
 )
 def test_normal_symbols_do_not_create_a_clinician_basis_mutation(text):
+    guard = _module()
+
+    assert guard._has_anchored_clinician_basis_mutation(text) is False
+    assert guard.classify_clinician_turn(text).kind != (
+        "ambiguous_clinician_action"
+    )
+
+
+def test_canonical_clauses_retain_only_nfkc_letters_and_numbers_with_offsets():
+    guard = _module()
+    raw = "A\u0007１\u0080中\ue000★文\ufdd0"
+
+    clauses = guard._canonical_clauses(raw)
+
+    assert tuple(clause.text for clause in clauses) == ("A1中文",)
+    assert clauses[0].raw_positions == (0, 2, 4, 7)
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "今天体重71kg\u0007",
+        "备注\u007f正常",
+        "血糖7\u0080mmol/L",
+        "设备编号A\ue0001",
+        "普通文本\ufdd0结束",
+    ),
+)
+def test_non_letter_number_gaps_do_not_create_clinician_basis(text):
     guard = _module()
 
     assert guard._has_anchored_clinician_basis_mutation(text) is False

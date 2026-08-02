@@ -888,6 +888,27 @@ def test_doctor_feedback_exact_null_sql_is_portable():
         ("请记录医生意见：运动后记录疼痛", "运动后记录疼痛"),
         ("请记录医生意见：服药后记录反应", "服药后记录反应"),
         ("请记录医生意见：术后提醒复查", "术后提醒复查"),
+        (
+            "请记录医生诊断：医生让我训练，医 生",
+            "医生让我训练，医 生",
+        ),
+        ("请记录医生诊断：保存方法，保 存", "保存方法，保 存"),
+        (
+            "请记录医生诊断：诊断是臀肌无力，诊\u200b断",
+            "诊断是臀肌无力，诊\u200b断",
+        ),
+        (
+            "请记录医生意见：根据医★生建议调整训练强度",
+            "根据医★生建议调整训练强度",
+        ),
+        (
+            "请记录医生意见：根据医生建★议调整训练强度",
+            "根据医生建★议调整训练强度",
+        ),
+        (
+            "请记录医生意见：根据医生建议调★整训练强度",
+            "根据医生建议调★整训练强度",
+        ),
     ),
 )
 async def test_doctor_feedback_executes_through_gateway_for_current_owner(
@@ -953,6 +974,7 @@ async def test_doctor_feedback_executes_through_gateway_for_current_owner(
     assert executor._agent_kernel_last_decision.action == "allow"
     assert entry.user_id == user.id
     assert entry.user_id != other.id
+    assert entry.assessment == assessment
     assert payload["id"] == entry.id
     assert receipt is not None
     assert receipt["status"] == "verified"
@@ -1001,6 +1023,11 @@ async def test_doctor_feedback_executes_through_gateway_for_current_owner(
         "请按医\u034f嘱删除记录",
         "请按医🩺嘱删除记录",
         "请按医★嘱删除记录",
+        "请按医\u0007嘱删除记录",
+        "请按医\u007f嘱删除记录",
+        "请按医\u0080嘱删除记录",
+        "请按医\ue000嘱删除记录",
+        "请按医\ufdd0嘱删除记录",
         "请按醫囑删除记录",
         "请遵嘱删除记录",
         "请依嘱删除记录",

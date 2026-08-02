@@ -1807,20 +1807,74 @@
     "reason_code": "obfuscated_clinician_action"
   },
   {
-    "id": "duplicated_provider_does_not_mask_split_provider",
+    "id": "duplicated_provider_inside_valid_content_is_opaque",
     "text": "请记录医生诊断：医生让我训练，医 生",
-    "kind": "ambiguous_clinician_action",
-    "reason_code": "obfuscated_clinician_action"
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "医生让我训练，医 生",
+    "command": "请记录医生诊断"
   },
   {
-    "id": "duplicated_root_does_not_mask_split_root",
+    "id": "duplicated_root_inside_valid_content_is_opaque",
     "text": "请记录医生诊断：保存方法，保 存",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "保存方法，保 存",
+    "command": "请记录医生诊断"
+  },
+  {
+    "id": "duplicated_object_inside_valid_content_is_opaque",
+    "text": "请记录医生诊断：诊断是臀肌无力，诊\u200b断",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "诊断是臀肌无力，诊\u200b断",
+    "command": "请记录医生诊断"
+  },
+  {
+    "id": "split_provider_inside_valid_feedback_content_is_opaque",
+    "text": "请记录医生意见：根据医★生建议调整训练强度",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "根据医★生建议调整训练强度",
+    "command": "请记录医生意见"
+  },
+  {
+    "id": "split_advice_inside_valid_feedback_content_is_opaque",
+    "text": "请记录医生意见：根据医生建★议调整训练强度",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "根据医生建★议调整训练强度",
+    "command": "请记录医生意见"
+  },
+  {
+    "id": "split_mutation_inside_valid_feedback_content_is_opaque",
+    "text": "请记录医生意见：根据医生建议调★整训练强度",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "根据医生建议调★整训练强度",
+    "command": "请记录医生意见"
+  },
+  {
+    "id": "split_write_command_outside_content_stays_blocked",
+    "text": "请记★录医生意见：臀肌无力",
     "kind": "ambiguous_clinician_action",
     "reason_code": "obfuscated_clinician_action"
   },
   {
-    "id": "duplicated_object_does_not_mask_split_object",
-    "text": "请记录医生诊断：诊断是臀肌无力，诊\u200b断",
+    "id": "split_provider_in_feedback_object_stays_blocked",
+    "text": "请记录医★生意见：臀肌无力",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "obfuscated_clinician_action"
+  },
+  {
+    "id": "split_feedback_object_outside_content_stays_blocked",
+    "text": "请记录医生意★见：臀肌无力",
     "kind": "ambiguous_clinician_action",
     "reason_code": "obfuscated_clinician_action"
   },
@@ -2404,6 +2458,36 @@
   {
     "id": "symbol_inside_medical_instruction_fails_closed",
     "text": "请按医★嘱删除记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "bell_control_inside_medical_instruction_fails_closed",
+    "text": "请按医\u0007嘱删除记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "delete_control_inside_medical_instruction_fails_closed",
+    "text": "请按医\u007f嘱删除记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "c1_control_inside_medical_instruction_fails_closed",
+    "text": "请按医\u0080嘱删除记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "private_use_inside_medical_instruction_fails_closed",
+    "text": "请按医\ue000嘱删除记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "noncharacter_inside_medical_instruction_fails_closed",
+    "text": "请按医\ufdd0嘱删除记录",
     "kind": "ambiguous_clinician_action",
     "reason_code": "clinician_basis_action_requires_separate_command"
   },

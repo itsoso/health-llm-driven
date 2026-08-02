@@ -1433,9 +1433,10 @@ def _canonical_clauses(
 ) -> tuple[_CanonicalClause, ...]:
     """Build clause-local NFKC views without crossing hard boundaries.
 
-    Punctuation and format separators may split a sensitive token, so they are
-    omitted inside a clause.  Hard sentence boundaries and explicitly excluded
-    authorization envelopes flush the view instead of being omitted.
+    Only Unicode letters and numbers survive inside a clause; every other
+    category is a gap that may split a sensitive token. Hard/question sentence
+    boundaries and explicitly excluded authorization envelopes flush the view
+    instead of being omitted.
     """
 
     exclusions = tuple(sorted(excluded_spans, key=lambda span: span.start))
@@ -1474,11 +1475,7 @@ def _canonical_clauses(
             category = unicodedata.category(char)
             if char in _HARD_BOUNDARIES or _is_question_punctuation(char):
                 flush()
-            elif (
-                char.isspace()
-                or category in {"Cf", "Zs"}
-                or category.startswith(("P", "M", "S"))
-            ):
+            elif category[0] not in {"L", "N"}:
                 continue
             else:
                 chars.append(char)
@@ -1598,18 +1595,11 @@ def _canonical_term_is_obfuscated(
     raw: str,
     clause: _CanonicalClause,
     term: str,
-    *,
-    ignored_spans: tuple[_Span, ...] = (),
 ) -> bool:
     for start in _canonical_term_occurrences(clause, term):
         raw_start = clause.raw_positions[start]
         raw_end = clause.raw_positions[start + len(term) - 1] + 1
         if raw[raw_start:raw_end] == term:
-            continue
-        if any(
-            span.start <= raw_start and raw_end <= span.end
-            for span in ignored_spans
-        ):
             continue
         return True
     return False
@@ -1618,11 +1608,11 @@ def _canonical_term_is_obfuscated(
 def _has_obfuscated_clinician_action(
     raw: str,
     *,
-    allowed_basis_spans: tuple[_Span, ...] = (),
+    opaque_spans: tuple[_Span, ...] = (),
 ) -> bool:
     """Detect compact-sensitive signals within one hard-boundary clause."""
 
-    for clause in _canonical_clauses(raw):
+    for clause in _canonical_clauses(raw, excluded_spans=opaque_spans):
         canonical = clause.text
         if not any(term in canonical for term in CLINICIAN_PROVIDER_TERMS):
             continue
@@ -1630,16 +1620,7 @@ def _has_obfuscated_clinician_action(
             continue
         if any(
             term in canonical
-            and _canonical_term_is_obfuscated(
-                raw,
-                clause,
-                term,
-                ignored_spans=(
-                    allowed_basis_spans
-                    if term in CLINICIAN_BASIS_TERMS
-                    else ()
-                ),
-            )
+            and _canonical_term_is_obfuscated(raw, clause, term)
             for term in _CANONICAL_SENSITIVE_TERMS
         ):
             return True
@@ -1920,19 +1901,19 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
         if (candidate := _parse_write_segment(raw, segment, index))
         is not None
     )
-    basis_exclusions = tuple(
+    content_exclusions = tuple(
         candidate.content
         for candidate in candidates
         if candidate.status == "valid" and candidate.content is not None
     )
     basis_matches = _basis_mutation_matches(
         raw,
-        excluded_spans=basis_exclusions,
+        excluded_spans=content_exclusions,
     )
     basis_analysis_reason = _basis_analysis_reason(raw, basis_matches)
     obfuscated_action = _has_obfuscated_clinician_action(
         raw,
-        allowed_basis_spans=basis_exclusions,
+        opaque_spans=content_exclusions,
     )
     compact_basis_without_punctuation = any(
         not _basis_match_uses_punctuation_gap(raw, match)
