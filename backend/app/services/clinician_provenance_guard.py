@@ -133,6 +133,18 @@ _MEDICAL_ADVICE_TARGETS = (
     "疗程",
     "复查",
 )
+_PROVIDER_BASIS_RELATIONS = ("根据", "依据", "依照", "按照")
+_BASIS_RISK_ANALYSIS_TERMS = ("风险", "副作用")
+_BASIS_MEANING_ANALYSIS_TERMS = ("是什么意思", "什么意思", "含义")
+_QUOTE_PAIRS = (
+    ("“", "”"),
+    ("「", "」"),
+    ("『", "』"),
+    ("《", "》"),
+    ("〈", "〉"),
+    ('"', '"'),
+    ("'", "'"),
+)
 _GUARD_QUESTION_SIGNALS = tuple(
     dict.fromkeys((*QUESTION_SIGNALS, "会不会", "能不能", "会否"))
 )
@@ -316,6 +328,21 @@ class _Instruction:
     provider: _Span
     predicate: _Span
     content: _Span
+
+
+@dataclass(frozen=True)
+class _CanonicalClause:
+    text: str
+    raw_positions: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class _BasisMutationMatch:
+    clause: _CanonicalClause
+    basis_start: int
+    basis_end: int
+    mutation_start: int
+    mutation_end: int
 
 
 def _is_ignorable(char: str) -> bool:
@@ -585,6 +612,13 @@ def _is_locally_proven_clinician_advice(
     action_start: int,
     root: str,
 ) -> bool:
+    if _local_basis_targets_action(
+        raw,
+        span=span,
+        action_start=action_start,
+        root=root,
+    ):
+        return True
     local_start = max(0, action_start - 24)
     local_span = _Span(local_start, action_start)
     for provider, _ in reversed(_provider_matches(raw, local_span)):
@@ -1333,136 +1367,375 @@ def _turn_contains_deny_only_action(raw: str) -> bool:
     return any(root in raw for root in _DENY_ONLY_ACTION_ROOTS)
 
 
-def _has_obfuscated_clinician_action(raw: str) -> bool:
-    """Detect compact-sensitive signals without authorizing from them."""
+def _canonical_clauses(
+    raw: str,
+    *,
+    excluded_spans: tuple[_Span, ...] = (),
+) -> tuple[_CanonicalClause, ...]:
+    """Build clause-local NFKC views without crossing hard boundaries.
 
-    normalized = unicodedata.normalize("NFKC", raw)
+    Punctuation and format separators may split a sensitive token, so they are
+    omitted inside a clause.  Hard sentence boundaries and explicitly excluded
+    authorization envelopes flush the view instead of being omitted.
+    """
 
-    def is_gap(char: str) -> bool:
-        category = unicodedata.category(char)
-        return (
-            char.isspace()
-            or category in {"Cf", "Zs"}
-            or category.startswith("P")
-        )
+    exclusions = tuple(sorted(excluded_spans, key=lambda span: span.start))
+    clauses: list[_CanonicalClause] = []
+    chars: list[str] = []
+    positions: list[int] = []
 
-    def contains_gapped_term(term: str) -> bool:
-        for start, char in enumerate(normalized):
-            if char != term[0]:
+    def flush() -> None:
+        if chars:
+            clauses.append(
+                _CanonicalClause(
+                    text="".join(chars),
+                    raw_positions=tuple(positions),
+                )
+            )
+            chars.clear()
+            positions.clear()
+
+    position = 0
+    exclusion_index = 0
+    while position < len(raw):
+        while (
+            exclusion_index < len(exclusions)
+            and exclusions[exclusion_index].end <= position
+        ):
+            exclusion_index += 1
+        if exclusion_index < len(exclusions):
+            exclusion = exclusions[exclusion_index]
+            if exclusion.start <= position < exclusion.end:
+                flush()
+                position = exclusion.end
                 continue
-            position = start + 1
-            saw_gap = False
-            for expected in term[1:]:
-                while position < len(normalized) and is_gap(
-                    normalized[position]
-                ):
-                    position += 1
-                    saw_gap = True
-                if (
-                    position >= len(normalized)
-                    or normalized[position] != expected
-                ):
-                    break
-                position += 1
+
+        compatible = unicodedata.normalize("NFKC", raw[position])
+        for char in compatible:
+            category = unicodedata.category(char)
+            if char in _HARD_BOUNDARIES or _is_question_punctuation(char):
+                flush()
+            elif (
+                char.isspace()
+                or category in {"Cf", "Zs"}
+                or category.startswith("P")
+            ):
+                continue
             else:
-                if saw_gap:
-                    return True
-        return False
+                chars.append(char)
+                positions.append(position)
+        position += 1
+    flush()
+    return tuple(clauses)
 
-    canonical = "".join(
-        char
-        for char in normalized
-        if not is_gap(char)
+
+def _canonical_term_occurrences(
+    clause: _CanonicalClause,
+    term: str,
+) -> tuple[int, ...]:
+    positions: list[int] = []
+    start = clause.text.find(term)
+    while start >= 0:
+        positions.append(start)
+        start = clause.text.find(term, start + 1)
+    return tuple(positions)
+
+
+def _term_at(
+    text: str,
+    position: int,
+    terms: tuple[str, ...],
+) -> str | None:
+    return next(
+        (term for term in terms if text.startswith(term, position)),
+        None,
     )
-    if not any(term in canonical for term in CLINICIAN_PROVIDER_TERMS):
-        return False
-    if not any(root in canonical for root in _DENY_ONLY_ACTION_ROOTS):
-        return False
-    return any(
-        term in canonical
-        and (contains_gapped_term(term) or term not in raw)
-        for term in _CANONICAL_SENSITIVE_TERMS
-    )
 
 
-def _has_anchored_clinician_basis_mutation(raw: str) -> bool:
-    """Block clause-local clinician-basis mutations without wrapper lists."""
+def _next_mutation(
+    text: str,
+    position: int,
+) -> tuple[int, str] | None:
+    candidates = [
+        (found, -len(root), root)
+        for root in _MUTATION_ACTION_ROOTS
+        if (found := text.find(root, position)) >= 0
+    ]
+    if not candidates:
+        return None
+    found, _negative_length, root = min(candidates)
+    return found, root
 
-    normalized = unicodedata.normalize("NFKC", raw)
-    clauses: list[str] = []
-    clause_chars: list[str] = []
-    for char in normalized:
-        if char in _HARD_BOUNDARIES:
-            clauses.append("".join(clause_chars))
-            clause_chars = []
-        elif not _is_ignorable(char):
-            clause_chars.append(char)
-    clauses.append("".join(clause_chars))
 
-    def mutation_follows(clause: str, position: int) -> bool:
-        return any(
-            root in clause[position:]
-            for root in _MUTATION_ACTION_ROOTS
+def _basis_mutation_matches(
+    raw: str,
+    *,
+    excluded_spans: tuple[_Span, ...] = (),
+) -> tuple[_BasisMutationMatch, ...]:
+    matches: list[_BasisMutationMatch] = []
+    seen: set[tuple[tuple[int, ...], int, int]] = set()
+
+    def add_match(
+        clause: _CanonicalClause,
+        *,
+        basis_start: int,
+        basis_end: int,
+    ) -> None:
+        mutation = _next_mutation(clause.text, basis_end)
+        if mutation is None:
+            return
+        mutation_start, root = mutation
+        key = (clause.raw_positions, basis_start, mutation_start)
+        if key in seen:
+            return
+        seen.add(key)
+        matches.append(
+            _BasisMutationMatch(
+                clause=clause,
+                basis_start=basis_start,
+                basis_end=basis_end,
+                mutation_start=mutation_start,
+                mutation_end=mutation_start + len(root),
+            )
         )
 
-    def provider_basis_mutates(clause: str) -> bool:
-        for relation in ("根据", "依据", "按照"):
-            start = clause.find(relation)
-            while start >= 0:
+    for clause in _canonical_clauses(raw, excluded_spans=excluded_spans):
+        text = clause.text
+        for relation in _PROVIDER_BASIS_RELATIONS:
+            for start in _canonical_term_occurrences(clause, relation):
                 position = start + len(relation)
-                provider = next(
-                    (
-                        term
-                        for term in CLINICIAN_PROVIDER_TERMS
-                        if clause.startswith(term, position)
-                    ),
-                    None,
+                provider = _term_at(
+                    text,
+                    position,
+                    CLINICIAN_PROVIDER_TERMS,
                 )
-                if provider is not None:
-                    position += len(provider)
-                    feedback_object = next(
-                        (
-                            term
-                            for term in (
-                                *CLINICIAN_FEEDBACK_OBJECT_NOUNS,
-                                "建议",
-                            )
-                            if clause.startswith(term, position)
-                        ),
-                        None,
-                    )
-                    if feedback_object is not None:
-                        position += len(feedback_object)
-                        if mutation_follows(clause, position):
-                            return True
-                start = clause.find(relation, start + 1)
-        return False
-
-    def medical_instruction_basis_mutates(clause: str) -> bool:
-        for relation in ("按照", "遵", "按"):
-            start = clause.find(relation)
-            while start >= 0:
-                position = start + len(relation)
-                basis = next(
-                    (
-                        term
-                        for term in CLINICIAN_BASIS_TERMS
-                        if clause.startswith(term, position)
-                    ),
-                    None,
+                if provider is None:
+                    continue
+                position += len(provider)
+                feedback_object = _term_at(
+                    text,
+                    position,
+                    (*CLINICIAN_FEEDBACK_OBJECT_NOUNS, "建议"),
                 )
-                if basis is not None and mutation_follows(
+                if feedback_object is None:
+                    continue
+                add_match(
                     clause,
-                    position + len(basis),
-                ):
-                    return True
-                start = clause.find(relation, start + 1)
-        return False
+                    basis_start=start,
+                    basis_end=position + len(feedback_object),
+                )
 
+        for basis in CLINICIAN_BASIS_TERMS:
+            for start in _canonical_term_occurrences(clause, basis):
+                add_match(
+                    clause,
+                    basis_start=start,
+                    basis_end=start + len(basis),
+                )
+    return tuple(matches)
+
+
+def _canonical_term_is_obfuscated(
+    raw: str,
+    clause: _CanonicalClause,
+    term: str,
+) -> bool:
+    for start in _canonical_term_occurrences(clause, term):
+        raw_start = clause.raw_positions[start]
+        raw_end = clause.raw_positions[start + len(term) - 1] + 1
+        if raw[raw_start:raw_end] != term:
+            return True
+    return False
+
+
+def _has_obfuscated_clinician_action(raw: str) -> bool:
+    """Detect compact-sensitive signals within one hard-boundary clause."""
+
+    for clause in _canonical_clauses(raw):
+        canonical = clause.text
+        if not any(term in canonical for term in CLINICIAN_PROVIDER_TERMS):
+            continue
+        if not any(root in canonical for root in _DENY_ONLY_ACTION_ROOTS):
+            continue
+        if any(
+            term in canonical
+            and _canonical_term_is_obfuscated(raw, clause, term)
+            for term in _CANONICAL_SENSITIVE_TERMS
+        ):
+            return True
+    return False
+
+
+def _has_anchored_clinician_basis_mutation(
+    raw: str,
+    *,
+    excluded_spans: tuple[_Span, ...] = (),
+) -> bool:
+    """Return whether one clause contains a clinician-basis mutation."""
+
+    return bool(
+        _basis_mutation_matches(raw, excluded_spans=excluded_spans)
+    )
+
+
+def _matched_quote_spans(raw: str) -> tuple[_Span, ...]:
+    spans: list[_Span] = []
+    for opener, closer in _QUOTE_PAIRS:
+        if opener == closer:
+            open_position: int | None = None
+            for position, char in enumerate(raw):
+                if char != opener:
+                    continue
+                if open_position is None:
+                    open_position = position
+                else:
+                    spans.append(_Span(open_position, position + 1))
+                    open_position = None
+            continue
+
+        open_positions: list[int] = []
+        for position, char in enumerate(raw):
+            if char == opener:
+                open_positions.append(position)
+            elif char == closer and open_positions:
+                spans.append(_Span(open_positions.pop(), position + 1))
+    return tuple(sorted(spans, key=lambda span: (span.start, span.end)))
+
+
+def _basis_match_quote_span(
+    raw: str,
+    match: _BasisMutationMatch,
+) -> _Span | None:
+    raw_start = match.clause.raw_positions[match.basis_start]
+    raw_end = match.clause.raw_positions[match.mutation_end - 1] + 1
+    return next(
+        (
+            span
+            for span in _matched_quote_spans(raw)
+            if span.start < raw_start and raw_end < span.end
+        ),
+        None,
+    )
+
+
+def _canonical_mutation_starts(clause: _CanonicalClause) -> frozenset[int]:
+    starts: set[int] = set()
+    for root in _MUTATION_ACTION_ROOTS:
+        starts.update(_canonical_term_occurrences(clause, root))
+    return frozenset(starts)
+
+
+def _canonical_action_starts(clause: _CanonicalClause) -> frozenset[int]:
+    starts: set[int] = set()
+    for root in _DENY_ONLY_ACTION_ROOTS:
+        starts.update(_canonical_term_occurrences(clause, root))
+    return frozenset(starts)
+
+
+def _basis_match_uses_punctuation_gap(
+    raw: str,
+    match: _BasisMutationMatch,
+) -> bool:
+    raw_start = match.clause.raw_positions[match.basis_start]
+    raw_end = match.clause.raw_positions[match.mutation_end - 1] + 1
     return any(
-        provider_basis_mutates(clause)
-        or medical_instruction_basis_mutates(clause)
-        for clause in clauses
+        unicodedata.category(char).startswith("P")
+        for char in raw[raw_start:raw_end]
+    )
+
+
+def _basis_analysis_reason(
+    raw: str,
+    matches: tuple[_BasisMutationMatch, ...],
+) -> Literal["clinician_question", "clinician_consultation"] | None:
+    """Recognize narrow epistemic uses without releasing action questions."""
+
+    if len(_segments(raw)) != 1:
+        return None
+    has_question = _contains_question(raw)
+    for match in matches:
+        text = match.clause.text
+        prefix = text[: match.basis_start]
+        suffix = text[match.mutation_end :]
+        mutation_starts = _canonical_mutation_starts(match.clause)
+        mutation_count = len(mutation_starts)
+        extra_action_starts = (
+            _canonical_action_starts(match.clause) - mutation_starts
+        )
+        if (
+            mutation_count == 1
+            and not extra_action_starts
+            and has_question
+            and any(term in suffix for term in _BASIS_RISK_ANALYSIS_TERMS)
+        ):
+            return "clinician_question"
+        if (
+            mutation_count == 1
+            and not extra_action_starts
+            and has_question
+            and "为什么" in prefix
+        ):
+            return "clinician_question"
+        if (
+            mutation_count == 2
+            and not extra_action_starts
+            and "比较" in prefix
+            and any(term in suffix for term in _BASIS_RISK_ANALYSIS_TERMS)
+            and any(joiner in suffix for joiner in ("和", "与", "跟", "相比"))
+        ):
+            return (
+                "clinician_question"
+                if has_question
+                else "clinician_consultation"
+            )
+        quote_span = _basis_match_quote_span(raw, match)
+        if mutation_count != 1 or quote_span is None:
+            continue
+        if any(
+            not (
+                quote_span.start
+                < match.clause.raw_positions[action_start]
+                < quote_span.end
+            )
+            for action_start in _canonical_action_starts(match.clause)
+        ):
+            continue
+        if has_question and any(
+            term in suffix for term in _BASIS_MEANING_ANALYSIS_TERMS
+        ):
+            return "clinician_question"
+        if "搜索" in prefix and any(
+            term in suffix for term in _BASIS_MEANING_ANALYSIS_TERMS
+        ):
+            return "clinician_consultation"
+    return None
+
+
+def _local_basis_targets_action(
+    raw: str,
+    *,
+    span: _Span,
+    action_start: int,
+    root: str,
+) -> bool:
+    if root not in MUTATE_ACTIONS["update"]:
+        return False
+    matches: list[tuple[int, int]] = []
+    for match in _basis_mutation_matches(raw):
+        basis_raw_start = match.clause.raw_positions[match.basis_start]
+        mutation_raw_start = match.clause.raw_positions[match.mutation_start]
+        mutation_raw_end = match.clause.raw_positions[match.mutation_end - 1] + 1
+        if (
+            span.start <= basis_raw_start
+            and mutation_raw_end <= span.end
+        ):
+            matches.append((basis_raw_start, mutation_raw_start))
+    if not matches:
+        return False
+    first_basis_start = min(basis_start for basis_start, _ in matches)
+    return any(
+        basis_start == first_basis_start and mutation_start == action_start
+        for basis_start, mutation_start in matches
     )
 
 
@@ -1506,7 +1779,35 @@ def _ambiguous_candidate(
 def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
     """Classify clinician provenance without authorizing general actions."""
 
-    if _has_anchored_clinician_basis_mutation(raw):
+    segments = _segments(raw)
+    candidates = tuple(
+        candidate
+        for index, segment in enumerate(segments)
+        if (candidate := _parse_write_segment(raw, segment, index))
+        is not None
+    )
+    basis_exclusions = tuple(
+        candidate.content
+        for candidate in candidates
+        if candidate.status == "valid" and candidate.content is not None
+    )
+    basis_matches = _basis_mutation_matches(
+        raw,
+        excluded_spans=basis_exclusions,
+    )
+    basis_analysis_reason = _basis_analysis_reason(raw, basis_matches)
+    obfuscated_action = _has_obfuscated_clinician_action(raw)
+    compact_basis_without_punctuation = any(
+        not _basis_match_uses_punctuation_gap(raw, match)
+        for match in basis_matches
+    )
+    if obfuscated_action and not compact_basis_without_punctuation:
+        return _decision(
+            raw,
+            kind="ambiguous_clinician_action",
+            reason_code="obfuscated_clinician_action",
+        )
+    if basis_matches and basis_analysis_reason is None:
         return _decision(
             raw,
             kind="ambiguous_clinician_action",
@@ -1514,18 +1815,22 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
                 "clinician_basis_action_requires_separate_command"
             ),
         )
-
-    if _has_obfuscated_clinician_action(raw):
+    if obfuscated_action:
         return _decision(
             raw,
             kind="ambiguous_clinician_action",
             reason_code="obfuscated_clinician_action",
         )
 
-    segments = _segments(raw)
     whole = _Span(0, len(raw))
     first_provider_match = _first_provider(raw, whole)
     if first_provider_match is None:
+        if basis_analysis_reason is not None:
+            return _decision(
+                raw,
+                kind="clinician_advice",
+                reason_code=basis_analysis_reason,
+            )
         return _decision(
             raw,
             kind="none",
@@ -1533,12 +1838,6 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
         )
     first_provider, _ = first_provider_match
 
-    candidates = tuple(
-        candidate
-        for index, segment in enumerate(segments)
-        if (candidate := _parse_write_segment(raw, segment, index))
-        is not None
-    )
     instructions = tuple(
         instruction
         for index, segment in enumerate(segments)

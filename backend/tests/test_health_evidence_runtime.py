@@ -44,6 +44,35 @@ def test_low_back_advice_compiles_a_typed_symptom_intent():
     assert intent.requires_authority is True
 
 
+def test_clinician_basis_low_back_risk_question_keeps_evidence_precedence():
+    from app.services.clinician_provenance_guard import classify_clinician_turn
+    from app.services.utterance_intent_classifier import (
+        classify_agent_utterance,
+    )
+
+    query = "医生说按医嘱调整腰痛训练会有什么风险？"
+    clinician = classify_clinician_turn(query)
+    public_intent = classify_agent_utterance(query)
+    health_intent = classify_health_intent(query)
+
+    assert (clinician.kind, clinician.reason_code) == (
+        "clinician_advice",
+        "clinician_question",
+    )
+    assert (
+        public_intent.primary,
+        public_intent.domain,
+        public_intent.operation,
+        public_intent.is_write,
+    ) == ("advice", "clinical_context", "analyze", False)
+    assert health_intent.intent_id == "health_advice.symptom.low_back_pain"
+    assert health_intent.requires_authority is True
+    turn = _compile_turn(query)
+    assert turn.intent.intent_id == health_intent.intent_id
+    assert turn.authority_bundle.accepted
+    assert turn.public_manifest()["authority_evidence_refs"]
+
+
 def test_low_back_intent_has_stable_mandatory_discriminator_ids():
     intent = classify_health_intent("下背痛该怎么处理")
 

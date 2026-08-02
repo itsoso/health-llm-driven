@@ -160,6 +160,39 @@ def test_doctor_feedback_tool_blocks_non_authorizing_clinician_frames(
         ("如果按医嘱删除这条用药记录", "delete"),
         ("并非要按医嘱删除这条用药记录", "delete"),
         ("如果需要就根据医生诊断删除这条用药记录", "delete"),
+        ("请您遵照医嘱删除昨天的用药记录", "delete"),
+        ("请您依照医嘱删除昨天的用药记录", "delete"),
+        ("请您照医嘱删除昨天的用药记录", "delete"),
+        ("请您按着医嘱删除昨天的用药记录", "delete"),
+        ("请您按，医嘱删除昨天的用药记录", "delete"),
+        ("请您按/医嘱删除昨天的用药记录", "delete"),
+        ("请您按医，嘱删除昨天的用药记录", "delete"),
+        ("请您照着医嘱删除昨天的用药记录", "delete"),
+        ("请您听从医嘱删除昨天的用药记录", "delete"),
+        ("请您遵循医嘱删除昨天的用药记录", "delete"),
+        ("请您医嘱删除昨天的用药记录", "delete"),
+        (
+            "请记录医生意见：按医嘱调整训练强度，然后按医嘱删除昨天用药记录",
+            "delete",
+        ),
+        (
+            "请记录医生意见：按医嘱调整训练强度，然后按照医生意见同步健康数据",
+            "delete",
+        ),
+        (
+            "按医嘱调整剂量有什么风险吗，顺便记录早餐",
+            "delete",
+        ),
+        (
+            "按医嘱调整剂量有什么风险吗，并创建一个提醒",
+            "delete",
+        ),
+        ("按医嘱调整剂量有什么风险吗，查询昨天的体重", "delete"),
+        (
+            "请比较按医嘱调整剂量和自行调整剂量的风险并记录早餐",
+            "delete",
+        ),
+        ("“说明”按医嘱删除记录是什么意思“结尾”？", "delete"),
     ),
 )
 def test_medical_instruction_basis_cannot_authorize_destructive_manage(
@@ -232,8 +265,19 @@ def test_doctor_feedback_tool_allows_only_guard_authorized_explicit_save():
     assert decision.receipt_required is True
 
 
-def test_doctor_feedback_tool_allows_explicit_doctor_instruction_save_only():
-    snapshot = _snapshot("请记录医生医嘱：减少负重训练")
+@pytest.mark.parametrize(
+    "message",
+    (
+        "请记录医生医嘱：减少负重训练",
+        "请记录医生意见：按医嘱调整训练强度",
+        "请记录医生医嘱：患者需要按医嘱调整用药剂量",
+        "请记录医生意见：根据医生建议调整训练强度",
+    ),
+)
+def test_doctor_feedback_tool_allows_explicit_doctor_instruction_save_only(
+    message,
+):
+    snapshot = _snapshot(message)
     decision = decide_tool_capability(
         snapshot,
         _request("record_doctor_feedback", {"assessment": "减少负重训练"}),
@@ -247,6 +291,49 @@ def test_doctor_feedback_tool_allows_explicit_doctor_instruction_save_only():
     ) == ("write", "clinical_context", "create", True)
     assert decision.action == "allow"
     assert decision.reason == "explicit_doctor_feedback_write"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "按医嘱调整用药剂量会有什么风险？",
+        "医生说按医嘱调整剂量会有副作用吗？",
+        "为什么要按医嘱调整剂量？",
+        "请比较按医嘱调整剂量和自行调整剂量的风险",
+        "“按医嘱删除记录”是什么意思？",
+        "搜索“按医嘱删除记录”的法律含义",
+        "照着医嘱调整剂量会有什么风险？",
+        "“听从医嘱删除记录”是什么意思？",
+    ),
+)
+def test_medical_basis_analysis_allows_reads_but_not_mutations(message):
+    snapshot = _snapshot(message)
+    mutation = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "medication",
+                "operation": "delete",
+                "record_id": 1,
+            },
+        ),
+    )
+    read = decide_tool_capability(
+        snapshot,
+        _request("knowledge_search", {"query": message}),
+    )
+
+    assert (
+        snapshot.intent.primary,
+        snapshot.intent.domain,
+        snapshot.intent.operation,
+        snapshot.intent.is_write,
+    ) == ("advice", "clinical_context", "analyze", False)
+    assert mutation.action == "block"
+    assert mutation.reason == "manage_write_without_mutate_intent"
+    assert read.action == "allow"
+    assert read.reason == "read_only_tool"
 
 
 def test_doctor_feedback_tool_allows_explicit_save_after_clinician_report():

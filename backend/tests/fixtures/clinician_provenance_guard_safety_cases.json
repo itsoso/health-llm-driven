@@ -2141,5 +2141,231 @@
     "reason_code": "clinician_report",
     "provider": "医生",
     "content": "删除昨天用药记录"
+  },
+  {
+    "id": "explicit_opinion_preserves_medical_basis_adjustment",
+    "text": "请记录医生意见：按医嘱调整训练强度",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "按医嘱调整训练强度",
+    "command": "请记录医生意见"
+  },
+  {
+    "id": "explicit_instruction_preserves_medical_basis_dose_adjustment",
+    "text": "请记录医生医嘱：患者需要按医嘱调整用药剂量",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "患者需要按医嘱调整用药剂量",
+    "command": "请记录医生医嘱"
+  },
+  {
+    "id": "explicit_opinion_preserves_provider_advice_adjustment",
+    "text": "请记录医生意见：根据医生建议调整训练强度",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "根据医生建议调整训练强度",
+    "command": "请记录医生意见"
+  },
+  {
+    "id": "explicit_opinion_preserves_follow_medical_basis_adjustment",
+    "text": "请记录医生意见：听从医嘱调整训练强度",
+    "kind": "explicit_doctor_feedback_write",
+    "reason_code": "explicit_feedback_write",
+    "provider": "医生",
+    "content": "听从医嘱调整训练强度",
+    "command": "请记录医生意见"
+  },
+  {
+    "id": "explicit_basis_write_with_repeated_basis_delete_fails_closed",
+    "text": "请记录医生意见：按医嘱调整训练强度，然后按医嘱删除昨天用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "explicit_basis_write_with_repeated_provider_basis_sync_fails_closed",
+    "text": "请记录医生意见：按医嘱调整训练强度，然后按照医生意见同步健康数据",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "explicit_basis_write_then_external_delete_fails_closed",
+    "text": "请记录医生意见：按医嘱调整训练强度。然后删除昨天用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "coordinated_clinician_action",
+    "provider": "医生",
+    "content": "按医嘱调整训练强度"
+  },
+  {
+    "id": "explicit_basis_write_then_external_sync_fails_closed",
+    "text": "请记录医生意见：按医嘱调整训练强度，然后同步健康数据",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "medical_basis_dose_risk_question_is_advice",
+    "text": "按医嘱调整用药剂量会有什么风险？",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_question"
+  },
+  {
+    "id": "reported_medical_basis_side_effect_question_is_advice",
+    "text": "医生说按医嘱调整剂量会有副作用吗？",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_question",
+    "provider": "医生",
+    "content": "按医嘱调整剂量会有副作用吗"
+  },
+  {
+    "id": "why_medical_basis_adjustment_is_advice",
+    "text": "为什么要按医嘱调整剂量？",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_question"
+  },
+  {
+    "id": "compare_medical_basis_adjustment_risks_is_advice",
+    "text": "请比较按医嘱调整剂量和自行调整剂量的风险",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_consultation"
+  },
+  {
+    "id": "quoted_medical_basis_delete_meaning_is_advice",
+    "text": "“按医嘱删除记录”是什么意思？",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_question"
+  },
+  {
+    "id": "search_quoted_medical_basis_delete_meaning_is_advice",
+    "text": "搜索“按医嘱删除记录”的法律含义",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_consultation"
+  },
+  {
+    "id": "follow_medical_basis_risk_question_is_advice",
+    "text": "照着医嘱调整剂量会有什么风险？",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_question"
+  },
+  {
+    "id": "quoted_follow_medical_basis_delete_meaning_is_advice",
+    "text": "“听从医嘱删除记录”是什么意思？",
+    "kind": "clinician_advice",
+    "reason_code": "clinician_question"
+  },
+  {
+    "id": "honorific_follow_according_to_medical_instruction_delete_requires_separate_command",
+    "text": "请您遵照医嘱删除昨天的用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "honorific_in_accordance_with_medical_instruction_delete_requires_separate_command",
+    "text": "请您依照医嘱删除昨天的用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "honorific_according_to_medical_instruction_delete_requires_separate_command",
+    "text": "请您照医嘱删除昨天的用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "honorific_per_medical_instruction_particle_delete_requires_separate_command",
+    "text": "请您按着医嘱删除昨天的用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "comma_between_relation_and_medical_instruction_requires_separate_command",
+    "text": "请您按，医嘱删除昨天的用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "slash_between_relation_and_medical_instruction_requires_separate_command",
+    "text": "请您按/医嘱删除昨天的用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "comma_inside_medical_instruction_requires_separate_command",
+    "text": "请您按医，嘱删除昨天的用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "follow_medical_instruction_delete_requires_separate_command",
+    "text": "请您照着医嘱删除昨天的用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "listen_to_medical_instruction_delete_requires_separate_command",
+    "text": "请您听从医嘱删除昨天的用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "follow_principle_medical_instruction_delete_requires_separate_command",
+    "text": "请您遵循医嘱删除昨天的用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "bare_medical_instruction_delete_requires_separate_command",
+    "text": "请您医嘱删除昨天的用药记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "generic_question_mark_does_not_release_basis_delete",
+    "text": "可以按医嘱删除这条记录吗？",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "analysis_question_then_external_delete_fails_closed",
+    "text": "为什么要按医嘱调整剂量？然后删除记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "comparison_analysis_then_external_delete_fails_closed",
+    "text": "请比较按医嘱调整剂量和自行调整剂量的风险并删除记录",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "risk_analysis_then_breakfast_write_fails_closed",
+    "text": "按医嘱调整剂量有什么风险吗，顺便记录早餐",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "risk_analysis_then_reminder_fails_closed",
+    "text": "按医嘱调整剂量有什么风险吗，并创建一个提醒",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "risk_analysis_then_read_fails_closed",
+    "text": "按医嘱调整剂量有什么风险吗，查询昨天的体重",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "comparison_analysis_then_breakfast_write_fails_closed",
+    "text": "请比较按医嘱调整剂量和自行调整剂量的风险并记录早餐",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
+  },
+  {
+    "id": "unrelated_quote_pairs_do_not_forge_quoted_analysis",
+    "text": "“说明”按医嘱删除记录是什么意思“结尾”？",
+    "kind": "ambiguous_clinician_action",
+    "reason_code": "clinician_basis_action_requires_separate_command"
   }
 ]

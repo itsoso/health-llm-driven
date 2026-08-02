@@ -462,7 +462,7 @@ async def test_clinician_advice_still_uses_health_evidence_runtime(
     import app.services.health_evidence as health_evidence
 
     user, _headers = auth_user_and_headers
-    query = "医生说腰痛是臀肌无力导致的吗？"
+    query = "医生说按医嘱调整腰痛训练会有什么风险？"
     build_calls: list[str] = []
 
     def build_turn(db_arg, *, user_id, query, intent, now=None):

@@ -997,6 +997,24 @@ async def test_clinician_basis_compound_action_is_not_executed_or_retried(
         "如果按医嘱删除这条用药记录",
         "并非要按医嘱删除这条用药记录",
         "如果需要就根据医生诊断删除这条用药记录",
+        "请您遵照医嘱删除昨天的用药记录",
+        "请您依照医嘱删除昨天的用药记录",
+        "请您照医嘱删除昨天的用药记录",
+        "请您按着医嘱删除昨天的用药记录",
+        "请您按，医嘱删除昨天的用药记录",
+        "请您按/医嘱删除昨天的用药记录",
+        "请您按医，嘱删除昨天的用药记录",
+        "请您照着医嘱删除昨天的用药记录",
+        "请您听从医嘱删除昨天的用药记录",
+        "请您遵循医嘱删除昨天的用药记录",
+        "请您医嘱删除昨天的用药记录",
+        "请记录医生意见：按医嘱调整训练强度，然后按医嘱删除昨天用药记录",
+        "请记录医生意见：按医嘱调整训练强度，然后按照医生意见同步健康数据",
+        "按医嘱调整剂量有什么风险吗，顺便记录早餐",
+        "按医嘱调整剂量有什么风险吗，并创建一个提醒",
+        "按医嘱调整剂量有什么风险吗，查询昨天的体重",
+        "请比较按医嘱调整剂量和自行调整剂量的风险并记录早餐",
+        "“说明”按医嘱删除记录是什么意思“结尾”？",
     ),
 )
 async def test_prefixed_clinician_basis_turn_exposes_zero_tool_schema(
@@ -1032,6 +1050,54 @@ async def test_prefixed_clinician_basis_turn_exposes_zero_tool_schema(
     assert done["data"]["tools_used"] == []
     assert done["data"]["write_receipts"] == []
     assert done["data"]["turn_outcome"]["retryable"] is False
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "按医嘱调整用药剂量会有什么风险？",
+        "医生说按医嘱调整剂量会有副作用吗？",
+        "为什么要按医嘱调整剂量？",
+        "请比较按医嘱调整剂量和自行调整剂量的风险",
+        "“按医嘱删除记录”是什么意思？",
+        "搜索“按医嘱删除记录”的法律含义",
+        "照着医嘱调整剂量会有什么风险？",
+        "“听从医嘱删除记录”是什么意思？",
+    ),
+)
+async def test_medical_basis_analysis_exposes_read_schema_without_writes(
+    db,
+    auth_user_and_headers,
+    message,
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    exposed_tools = []
+
+    async def fake_call_llm_stream(_messages, tools):
+        exposed_tools.append([
+            (tool.get("function") or {}).get("name") for tool in tools
+        ])
+        yield {"type": "content", "text": "这是分析回答。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    executor._call_llm_stream = fake_call_llm_stream
+
+    events = [
+        event async for event in executor.run_stream(
+            user_id=user.id,
+            message=message,
+            user_auth_token="test-token",
+        )
+    ]
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert len(exposed_tools) == 1
+    assert "knowledge_search" in exposed_tools[0]
+    assert _tokens(events) == "这是分析回答。"
+    assert done["data"]["tools_used"] == []
+    assert done["data"]["write_receipts"] == []
+    assert done["data"]["completion_status"] == "complete"
 
 
 async def test_clinician_basis_hallucinated_tools_exhaust_to_safe_success(
@@ -1114,8 +1180,25 @@ async def test_clinician_basis_hallucinated_tools_exhaust_to_safe_success(
     assert done["data"]["client_turn_finalized"] is True
 
 
+@pytest.mark.parametrize(
+    ("message", "assessment"),
+    (
+        (
+            "请记录医生意见：按医嘱调整训练强度",
+            "按医嘱调整训练强度",
+        ),
+        (
+            "请记录医生医嘱：患者需要按医嘱调整用药剂量",
+            "患者需要按医嘱调整用药剂量",
+        ),
+        (
+            "请记录医生意见：根据医生建议调整训练强度",
+            "根据医生建议调整训练强度",
+        ),
+    ),
+)
 async def test_explicit_clinician_feedback_stream_uses_typed_gateway_once(
-    db, auth_user_and_headers
+    db, auth_user_and_headers, message, assessment
 ):
     """Explicit save uses the typed adapter, policy and runtime receipt ledger."""
     from app.models.agent_runtime import AgentToolOperation
@@ -1124,8 +1207,6 @@ async def test_explicit_clinician_feedback_stream_uses_typed_gateway_once(
 
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
-    assessment = "大腿和臀部肌肉无力导致腰肌代偿进而导致腰肌痛"
-    message = f"请记录医生诊断：{assessment}"
     runtime = AgentRuntimeCoordinator(db)
     admission = runtime.create_or_resume_run(
         run_id="run-explicit-clinician-feedback",

@@ -864,9 +864,28 @@ def test_doctor_feedback_exact_null_sql_is_portable():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "assessment"),
+    (
+        (
+            "请记录医生意见：按医嘱调整训练强度",
+            "按医嘱调整训练强度",
+        ),
+        (
+            "请记录医生医嘱：患者需要按医嘱调整用药剂量",
+            "患者需要按医嘱调整用药剂量",
+        ),
+        (
+            "请记录医生意见：根据医生建议调整训练强度",
+            "根据医生建议调整训练强度",
+        ),
+    ),
+)
 async def test_doctor_feedback_executes_through_gateway_for_current_owner(
     db,
     auth_user_and_headers,
+    message,
+    assessment,
 ):
     from app.models.agent_runtime import AgentToolOperation
     from app.models.clinical_journal import ClinicalJournalEntry
@@ -885,7 +904,6 @@ async def test_doctor_feedback_executes_through_gateway_for_current_owner(
     )
     db.add(other)
     db.commit()
-    assessment = "臀肌无力导致腰肌代偿"
     runtime = AgentRuntimeCoordinator(db)
     admission = runtime.create_or_resume_run(
         run_id="run-doctor-feedback-gateway",
@@ -898,7 +916,7 @@ async def test_doctor_feedback_executes_through_gateway_for_current_owner(
     runtime.mark_running(admission.context)
     executor = AgentExecutor(db)
     executor._current_user_id = user.id
-    executor._current_turn_user_message = f"请记录医生诊断：{assessment}"
+    executor._current_turn_user_message = message
     executor._runtime_run_id = admission.context.run_id
     executor._runtime_attempt_id = admission.context.attempt_id
     executor._runtime_managed = True
@@ -959,6 +977,24 @@ async def test_doctor_feedback_executes_through_gateway_for_current_owner(
         "如果按医嘱删除这条用药记录",
         "并非要按医嘱删除这条用药记录",
         "如果需要就根据医生诊断删除这条用药记录",
+        "请您遵照医嘱删除昨天的用药记录",
+        "请您依照医嘱删除昨天的用药记录",
+        "请您照医嘱删除昨天的用药记录",
+        "请您按着医嘱删除昨天的用药记录",
+        "请您按，医嘱删除昨天的用药记录",
+        "请您按/医嘱删除昨天的用药记录",
+        "请您按医，嘱删除昨天的用药记录",
+        "请您照着医嘱删除昨天的用药记录",
+        "请您听从医嘱删除昨天的用药记录",
+        "请您遵循医嘱删除昨天的用药记录",
+        "请您医嘱删除昨天的用药记录",
+        "请记录医生意见：按医嘱调整训练强度，然后按医嘱删除昨天用药记录",
+        "请记录医生意见：按医嘱调整训练强度，然后按照医生意见同步健康数据",
+        "按医嘱调整剂量有什么风险吗，顺便记录早餐",
+        "按医嘱调整剂量有什么风险吗，并创建一个提醒",
+        "按医嘱调整剂量有什么风险吗，查询昨天的体重",
+        "请比较按医嘱调整剂量和自行调整剂量的风险并记录早餐",
+        "“说明”按医嘱删除记录是什么意思“结尾”？",
     ),
 )
 async def test_medical_instruction_basis_blocks_direct_destructive_dispatch(
@@ -1018,6 +1054,60 @@ async def test_ordinary_delete_without_clinician_basis_dispatches(
 
     assert json.loads(result)["success"] is True
     dispatch.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    (
+        "按医嘱调整用药剂量会有什么风险？",
+        "医生说按医嘱调整剂量会有副作用吗？",
+        "为什么要按医嘱调整剂量？",
+        "请比较按医嘱调整剂量和自行调整剂量的风险",
+        "“按医嘱删除记录”是什么意思？",
+        "搜索“按医嘱删除记录”的法律含义",
+        "照着医嘱调整剂量会有什么风险？",
+        "“听从医嘱删除记录”是什么意思？",
+    ),
+)
+async def test_medical_basis_analysis_dispatches_reads_not_mutations(
+    db,
+    monkeypatch,
+    message,
+):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = message
+    dispatch = AsyncMock(return_value=json.dumps({"success": True}))
+    monkeypatch.setattr(executor, "_dispatch_tool_request", dispatch)
+
+    mutation_result = await executor._execute_tool(
+        "health_manage",
+        {
+            "record_type": "medication",
+            "operation": "delete",
+            "record_id": 1,
+        },
+        None,
+    )
+    read_result = await executor._execute_tool(
+        "knowledge_search",
+        {"query": message},
+        None,
+    )
+
+    mutation_payload = json.loads(mutation_result)
+    assert mutation_payload["status"] == "rejected"
+    assert mutation_payload["dispatch_started"] is False
+    assert (
+        mutation_payload["error_code"]
+        == "manage_write_without_mutate_intent"
+    )
+    assert json.loads(read_result)["success"] is True
+    dispatch.assert_awaited_once()
+    assert dispatch.await_args.args[0].tool_name == "knowledge_search"
 
 
 @pytest.mark.asyncio
