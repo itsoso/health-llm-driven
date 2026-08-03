@@ -295,6 +295,14 @@
 - 第二次生产失败后的上下文修正 TDD：新增 2 项跨层回归，修正前均失败
   （缺少 `force_full_personal_context` 信号 / prompt 不接受该参数），修正后
   `2 passed, 7 warnings`。
+- 上下文修正与并发饮食链合并后组合回归：前 1154 项通过，`test_diet.py`
+  55 项因误载生产 `.env`、本机管理员角色被生产数据库角色闸正确拒绝而在
+  TestClient 启动阶段报错；显式 `APP_ENV=test` 后该文件全部 `59 passed,
+  7 warnings`。这是测试环境配置失败，无业务断言失败，且安全闸未被绕过。
+- 最新合并头 live Harness 再次通过：invariants `12/12`、health-agent-core
+  `50/50`、orchestrator `5/5`（平均分 `0.90`）、trajectory contract `12/12`、
+  trajectory goldens `9/9`。结构闸、变更文件 Ruff、`py_compile`、diff-check
+  同时通过。
 - main CI 真实色：曾在 `508624f7f` 因 OpenAPI 派生类型漂移失败；按 CI 同版
   Python 3.12、`requirements.lock` 和 `openapi-typescript@7.13.0` 精确复现并
   生成修复。后续主干已同步同一类型结果，完成的 `e966281cd` 与
@@ -333,6 +341,10 @@
 - 部署启动后 `origin/main` 被并发推进到 `96e10374f`；事务保持锁定、生产只
   安装已验证 `431ea2d10`，未混入并发提交。后续修正须先合并最新主干并重新
   通过 CI，不能直接追部署未知提交。
+- 并发饮食功能随后独立完成其 Gate 并把生产推进到
+  `96e10374f6a600fe8401abb5b7fb9360b963b911`；本任务只读复查 backend active、
+  `/api/v1/health` healthy。上下文修正已合并该主干及其 docs-only 收尾提交，
+  第三轮发布必须以新的远端 main 精确 SHA 为准。
 - 第三轮上下文修正部署：待定。
 
 ## G5 · 部署健康闸
