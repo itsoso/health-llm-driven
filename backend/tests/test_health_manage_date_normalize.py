@@ -660,6 +660,11 @@ async def test_partial_meal_correction_replaces_the_previous_nutrition_fraction(
         "晚餐百分50，修改记录",
         "晚餐1:2，修改记录",
         "晚餐１：２，修改记录",
+        "晚餐吃了1÷2，取消修改",
+        "晚餐吃了0点5，取消修改",
+        "晚餐吃了百分之 50，取消修改",
+        "晚餐吃了一比二，取消修改",
+        "晚餐吃了1∶2，取消修改",
     ],
 )
 async def test_unsafe_unsupported_or_invalid_fraction_cannot_reach_a_diet_write(message):

@@ -373,6 +373,11 @@ def test_contextual_meal_fraction_only_scales_an_explicit_whole_meal(
         "这餐百分50",
         "这餐1:2",
         "这餐１：２",
+        "晚餐吃了1÷2，取消修改",
+        "晚餐吃了0点5，取消修改",
+        "晚餐吃了百分之 50，取消修改",
+        "晚餐吃了一比二，取消修改",
+        "晚餐吃了1∶2，取消修改",
     ],
 )
 def test_unsafe_photo_fraction_language_never_auto_captures(
