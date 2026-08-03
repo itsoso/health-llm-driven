@@ -466,6 +466,64 @@ def test_saved_clinician_feedback_recall_is_zero_tool_and_context_bound():
 
 
 @pytest.mark.asyncio
+async def test_saved_clinician_feedback_recall_forces_full_personal_context(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    provider = _FakeProvider("qwen3.7-plus")
+    prompt_calls = []
+
+    _stub_registry_fast(monkeypatch)
+    _wire_common(executor, monkeypatch, lambda model_id: _FakeProvider(model_id))
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_user",
+        lambda uid, db, **kwargs: provider,
+    )
+    monkeypatch.setattr(
+        executor,
+        "_build_system_prompt",
+        lambda *args, **kwargs: prompt_calls.append(kwargs) or "SYS",
+    )
+
+    await _run(executor, "刚才记录的医生诊断是什么？", user_id=user.id)
+
+    assert prompt_calls
+    assert prompt_calls[0]["force_full_personal_context"] is True
+
+
+def test_saved_clinician_feedback_recall_prompt_contains_owner_feedback(
+    db,
+    auth_user_and_headers,
+):
+    from app.models.clinical_journal import ClinicalJournalEntry
+
+    user, _ = auth_user_and_headers
+    db.add(
+        ClinicalJournalEntry(
+            user_id=user.id,
+            assessment="臀肌无力导致腰肌代偿",
+            created_by="doctor",
+        )
+    )
+    db.commit()
+
+    prompt = AgentExecutor(db)._build_system_prompt(
+        user.id,
+        1,
+        "tok",
+        lite=True,
+        intent_query="刚才记录的医生诊断是什么？",
+        force_full_personal_context=True,
+    )
+
+    assert "用户转述的医生意见" in prompt
+    assert "臀肌无力导致腰肌代偿" in prompt
+
+
+@pytest.mark.asyncio
 async def test_explicit_model_override_is_honored(db, auth_user_and_headers, monkeypatch):
     """(d) Explicit _request_model_id (UI pick) → honored, not overridden by fast route."""
     user, _ = auth_user_and_headers

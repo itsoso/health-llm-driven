@@ -135,6 +135,17 @@
     找到时明确说不知道。删除、调整、同步及角色反转问句继续 fail-closed。
   - 安全边界：修正不扩大任何写授权；召回仍由 owner-scoped doctor source
     上下文提供，不能用模型猜测补全。
+- [x] Correction Block 10
+  - 触发：`431ea2d10` 第二轮生产验证中，guard 已正确识别 recall 且强制
+    tools `[]`，但新会话回答“看不到最近医生反馈”，G6 再次未通过。
+  - 根因：typed clinician recall 之后，system prompt 仍把原句交给通用个人
+    上下文预算分类器；“是什么/有哪些”命中纯知识题，预算降成 MINIMAL，而
+    L3 医生反馈按隐私设计只在 FULL 注入。两套分类器的决策没有串联。
+  - 修正：executor 将 server-owned `clinician_feedback_recall` 决策显式传给
+    system prompt，强制本回合使用 FULL 个人上下文；其他查询仍沿用原有
+    FULL/MINIMAL 分类，不新增关键词，也不开放工具。
+  - TDD：跨层测试先证明 run-stream 未传 full-context 信号、prompt 缺少 owner
+    医生反馈；修正后两项均通过。
 
 ## S0 · 用户需求（逐字）
 
@@ -244,7 +255,8 @@
 - T6 已完成：截图原句、显式保存、普通咨询、复合动作、Unicode gap、owner
   isolation、rollback、receipt freshness 与 Health Evidence 优先级均有回归覆盖。
 - 上线召回修正已完成：窄 recall envelope、零工具执行约束及正反例回归已
-  实现；当前等待修正提交、CI 与第二轮生产部署。
+  实现。第二轮生产暴露上下文预算断链后，typed recall → FULL context 的跨层
+  修正也已实现，当前等待合并并发主干、复验、提交与第三轮部署。
 - 当前实现 HEAD：`97f26b55f`。药物 Health Evidence 域未扩张；正式 golden
   pack 仍只覆盖既有 low-back 场景，药物风险问题走可靠普通分析路径。
 - 发布前再次无冲突合并 `origin/main@0e2f05252`；当前合并提交
@@ -280,6 +292,9 @@
   `health_test` 后通过：invariants `12/12`、health-agent-core `50/50`、
   orchestrator `5/5`（平均分 `0.94`）、trajectory contract `12/12`、
   trajectory goldens `9/9`。未绕过配额保护，也未用失败回退结果冒充成功。
+- 第二次生产失败后的上下文修正 TDD：新增 2 项跨层回归，修正前均失败
+  （缺少 `force_full_personal_context` 信号 / prompt 不接受该参数），修正后
+  `2 passed, 7 warnings`。
 - main CI 真实色：曾在 `508624f7f` 因 OpenAPI 派生类型漂移失败；按 CI 同版
   Python 3.12、`requirements.lock` 和 `openapi-typescript@7.13.0` 精确复现并
   生成修复。后续主干已同步同一类型结果，完成的 `e966281cd` 与
@@ -308,13 +323,25 @@
   `/var/backups/health-app/env/.env.20260803_155911`。
 - 首轮 main CI：run `30788287172` attempt 2 全绿。一次性
   `HARNESS_LIVE_LLM_EVAL_CONFIRMED` 变量在 CI 后已删除并验证不存在。
-- 第二轮修正部署：待修正提交与 CI 全绿后执行。
+- 第二轮部署 SHA：`431ea2d10394a37cf00888f69fb33b8bffdc3511`；CI run
+  `30798444883` 全部 44 jobs 成功。一次性 live-eval 变量在
+  `backend-quality` success 后删除并验证 `not found`。
+- 第二轮回滚点：`c78b5b1ef419ddec92346bb1e0b7372ca4cd182c`；数据库
+  备份 `/var/backups/health-app/database/health_db_2026-08-03_17-07-25_1679893.sql.gz`
+  恢复演练 237 tables，异地加密归档哈希/HMAC 通过；env 备份
+  `/var/backups/health-app/env/.env.20260803_171352`。
+- 部署启动后 `origin/main` 被并发推进到 `96e10374f`；事务保持锁定、生产只
+  安装已验证 `431ea2d10`，未混入并发提交。后续修正须先合并最新主干并重新
+  通过 CI，不能直接追部署未知提交。
+- 第三轮上下文修正部署：待定。
 
 ## G5 · 部署健康闸
 
 - 首轮部署健康分：`60/60 PASS`；远端 SHA 与部署 SHA 完全一致；运行时 KB
   guard、skills 对齐、schema probe 与发布事务终态均通过。
-- 裁决：首轮 G5 PASS；第二轮修正部署待复验。
+- 第二轮部署健康分三次 `60/60 PASS`；远端 SHA 精确为 `431ea2d10`；schema
+  probe、runtime-only KB guard/staged、skills `22 = 22` 和事务 finalize 通过。
+- 裁决：首轮与第二轮 G5 PASS；第三轮修正部署待复验。
 
 ## S7 · 上线验证
 
@@ -325,13 +352,21 @@
   `record_doctor_feedback`。随后新会话召回失败，触发 Correction Block 9。
 - 测试会话均已删除；ID `206` 通过 `id + user_id + created_by + release marker`
   精确删除并复查计数为 0，生产无合成医疗数据残留。
-- 第二轮将以新 SHA 再做“显式保存 → 新会话原句召回 → 精确清理”的闭环验证。
+- 第二轮生产 smoke：显式保存成功，tools
+  `["record_doctor_feedback"]`，创建唯一测试反馈 ID `207`；新会话 guard
+  正确保持 tools `[]`，但因 FULL/MINIMAL 预算断链未拿到反馈，触发
+  Correction Block 10。会话 `1826` / `1827` 均删除成功；ID `207` 按
+  `id + user_id + created_by + release marker` 精确清理，标记复查计数 `0`。
+- 第三轮仍执行相同闭环，并要求回读正文包含“大腿 / 臀部 / 腰肌”。
 
 ## G6 · 验证闸
 
 - 首轮历史结果：**FAIL** —— 裸陈述与显式保存通过，但新会话召回错误；已停止
   完成声明并回到 S5 修正。
-- 当前状态：修正已完成，待第二轮生产 smoke 后作出新裁决。
+- 第二轮历史结果：**FAIL** —— recall 只读语义正确，但个人上下文预算误降级；
+  已停止完成声明并再次回到 S5 修正。
+- 当前状态：上下文预算修正已完成，待合并主干、CI 与第三轮生产 smoke 后作出
+  新裁决。
 
 ## S8 · 沉淀
 

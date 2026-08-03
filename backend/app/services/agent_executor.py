@@ -10321,6 +10321,10 @@ class AgentExecutor:
             user_id, conv.id, user_auth_token, lite=self._fast_route_simple_turn,
             intent_query=message,
             health_evidence_runtime=health_advice_buffered,
+            force_full_personal_context=(
+                clinician_turn_decision.reason_code
+                in _CLINICIAN_ZERO_TOOL_REASON_CODES
+            ),
         )
         for source_label in _source_labels_from_system_prompt(system_content):
             if source_label not in sources_used:
@@ -14346,6 +14350,7 @@ class AgentExecutor:
         self, user_id: int, conv_id: int, user_auth_token: Optional[str],
         lite: bool = False, intent_query: Optional[str] = None,
         health_evidence_runtime: bool = False,
+        force_full_personal_context: bool = False,
     ) -> str:
         """构建统一 Agent 的 system prompt。
 
@@ -14456,7 +14461,13 @@ class AgentExecutor:
                 )
                 # P2 意图分级: intent_query 存在时按纯知识 vs 个人判读裁剪个人上下文预算;
                 # None (默认 / 多模型综合入口) → 全量注入, 零回归。
-                health_ctx = build_lite_health_context(self.db, user_id, intent=intent_query)
+                # clinician_feedback_recall 已由 server-owned guard 证明是个人历史召回；
+                # 不再让通用知识分类器因“是什么/有哪些”把它降成 MINIMAL。
+                health_ctx = build_lite_health_context(
+                    self.db,
+                    user_id,
+                    intent=(None if force_full_personal_context else intent_query),
+                )
                 if health_ctx:
                     parts.append("\n## 用户健康档案")
                     parts.append(health_ctx)
