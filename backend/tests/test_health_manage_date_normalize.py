@@ -665,14 +665,18 @@ async def test_partial_meal_correction_replaces_the_previous_nutrition_fraction(
         "晚餐吃了百分之 50，取消修改",
         "晚餐吃了一比二，取消修改",
         "晚餐吃了1∶2，取消修改",
+        "晚餐取消修改",
+        "晚餐莫修改",
+        "晚餐勿修改",
+        "晚餐别再修改记录",
     ],
 )
-async def test_unsafe_unsupported_or_invalid_fraction_cannot_reach_a_diet_write(message):
+async def test_unsafe_or_cancelled_diet_correction_cannot_reach_a_write(message):
     executor = AgentExecutor(MagicMock())
     executor._current_turn_user_message = message
     executor._api_get_json = AsyncMock()
 
-    with pytest.raises(RuntimeError, match="无法确认.*没有修改"):
+    with pytest.raises(RuntimeError, match="没有修改"):
         await executor._normalize_explicit_diet_update_tool_calls([{
             "id": "call-1",
             "type": "function",

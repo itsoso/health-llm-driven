@@ -2834,6 +2834,8 @@ class _SimpleRecordTerminal(RuntimeError):
 
 
 def _diet_correction_unresolved_message(reason: str) -> str:
+    if reason == "cancelled":
+        return "已按你的取消要求处理，本轮没有修改饮食记录。"
     if reason == "invalid_fraction":
         return (
             "我无法确认这个食用比例，因此没有修改。"
@@ -4846,6 +4848,13 @@ _DIET_PARTIAL_CORRECTION_CANCEL_RE = re.compile(
     r"(?:暂时|先)?\s*(?:不要|别|不用|无需|不必|不需要|停止)(?:再)?",
     re.I,
 )
+_DIET_WRITE_CANCEL_RE = re.compile(
+    r"(?:算了|作废|撤回|撤销|取消|反悔)\s*"
+    r"(?:修改|更正|修正|更新|调整|改|记录|保存)?|"
+    r"(?:莫|勿|不要|别|不用|无需|不必|不需要|停止)(?:再)?\s*"
+    r"(?:修改|更正|修正|更新|调整|改|记录|保存)",
+    re.I,
+)
 _DIET_ALLOWED_FACTUAL_SHORTFALL_RE = re.compile(
     r"没(?:有)?(?:吃那么多|全吃(?:完)?|吃完)",
     re.I,
@@ -5165,7 +5174,12 @@ def _utterance_contains_fraction_like_portion(text: str) -> bool:
     return False
 
 
-def _invalid_partial_meal_fraction_requested(message: str) -> bool:
+def _diet_write_is_explicitly_cancelled(text: str) -> bool:
+    normalized = " ".join((text or "").strip().split())
+    return bool(_DIET_WRITE_CANCEL_RE.search(normalized))
+
+
+def _unsafe_diet_correction_requested(message: str) -> bool:
     text = _normalize_meal_fraction_symbols(
         " ".join((message or "").strip().split())
     )
@@ -5173,6 +5187,8 @@ def _invalid_partial_meal_fraction_requested(message: str) -> bool:
         not _DIET_CORRECTION_MEAL_RE.search(text)
     ):
         return False
+    if _diet_write_is_explicitly_cancelled(text):
+        return True
     if not _utterance_contains_fraction_like_portion(text):
         return False
     # Any fraction-like value in a named-meal correction must be consumed by
@@ -5280,7 +5296,7 @@ def _parse_explicit_diet_correction(
     # Validate the complete utterance before accepting the first fraction.
     # Otherwise a question, negation or contradictory second ratio could be
     # truncated into a factual update using only the first match.
-    if _invalid_partial_meal_fraction_requested(text):
+    if _unsafe_diet_correction_requested(text):
         return None
 
     consumed_portion = _partial_meal_consumed_portion(text)
@@ -8206,7 +8222,7 @@ class AgentExecutor:
         self._turn_doctor_feedback_write_attempted = False
         self._turn_contextual_diet_record_id: Optional[int] = None
         self._turn_contextual_diet_consumed_fraction: Optional[float] = None
-        self._turn_contextual_diet_fraction_blocked = False
+        self._turn_contextual_diet_write_blocked_reason: Optional[str] = None
         self._turn_pending_write_intent_ids: list[int] = []
         self._turn_pending_write_intent_kinds: list[str] = []
         self._turn_medication_tool_intent_id: Optional[int] = None
@@ -10189,7 +10205,7 @@ class AgentExecutor:
         self._turn_doctor_feedback_write_attempted = False
         self._turn_contextual_diet_record_id = None
         self._turn_contextual_diet_consumed_fraction = None
-        self._turn_contextual_diet_fraction_blocked = False
+        self._turn_contextual_diet_write_blocked_reason = None
         self._ensure_agent_kernel_turn(channel=channel)
         clinician_turn_decision = classify_clinician_turn(message or "")
         # Backend-owned health evidence runtime. Clinical semantics are compiled
@@ -16327,16 +16343,22 @@ class AgentExecutor:
         if user_id is None or source_message_id is None:
             vision_result["contextual_capture_failed"] = True
             return None
-        if (
+        cancelled_write = _diet_write_is_explicitly_cancelled(user_message)
+        ambiguous_fraction = (
             _utterance_contains_fraction_like_portion(user_message)
             and _contextual_meal_consumed_fraction(user_message) is None
-        ):
-            # A rejected fraction sentence must not silently degrade into a
-            # full-meal photo auto-save. Preserve the recognition for a
-            # clarification response, but close every diet write adapter for
-            # this turn.
-            self._turn_contextual_diet_fraction_blocked = True
-            vision_result["contextual_capture_fraction_blocked"] = True
+        )
+        if cancelled_write or ambiguous_fraction:
+            # A cancelled or rejected portion sentence must not silently
+            # degrade into a full-meal photo auto-save. Preserve recognition
+            # for an honest response and close every diet write adapter.
+            block_reason = (
+                "cancelled" if cancelled_write else "ambiguous_fraction"
+            )
+            self._turn_contextual_diet_write_blocked_reason = block_reason
+            vision_result["contextual_capture_write_blocked_reason"] = (
+                block_reason
+            )
             return None
         normalized_indexes = sorted(set(image_indexes))
         if not normalized_indexes or any(
@@ -16738,12 +16760,19 @@ class AgentExecutor:
                 "本轮仅用于分析或查询，严禁调用 health_record；"
                 "只解释识别结果、不确定性和可选建议。"
             )
-        elif result.get("contextual_capture_fraction_blocked"):
-            capture_instruction = (
-                "用户的整餐份量表达没有通过明确事实校验；严禁调用 health_record "
-                "或 health_manage，也不得声称已经保存。请让用户用明确已完成的"
-                "事实句重述，例如“这餐只吃了1/2，请记录”。"
-            )
+        elif result.get("contextual_capture_write_blocked_reason"):
+            if result["contextual_capture_write_blocked_reason"] == "cancelled":
+                capture_instruction = (
+                    "用户已明确取消本次记餐；严禁调用 health_record 或 "
+                    "health_manage，也不得声称已经保存。请简短确认本轮未写入。"
+                )
+            else:
+                capture_instruction = (
+                    "用户的整餐份量表达没有通过明确事实校验；严禁调用 "
+                    "health_record 或 health_manage，也不得声称已经保存。"
+                    "请让用户用明确已完成的事实句重述，例如“这餐只吃了1/2，"
+                    "请记录”。"
+                )
         elif result.get("contextual_capture_failed"):
             capture_instruction = (
                 "图片资产与饮食记录的原子保存没有完成；严禁调用 health_record "
@@ -17242,7 +17271,7 @@ class AgentExecutor:
             reference_now=self._agent_kernel_reference_now(),
         )
         if not correction:
-            if _invalid_partial_meal_fraction_requested(current_message):
+            if _unsafe_diet_correction_requested(current_message):
                 for tool_call in tool_calls:
                     function = tool_call.get("function") or {}
                     try:
@@ -17258,10 +17287,18 @@ class AgentExecutor:
                         function.get("name") in {"health_manage", "health_record"}
                         and args.get("record_type") == "diet"
                     ):
-                        reason = "invalid_fraction"
+                        reason = (
+                            "cancelled"
+                            if _diet_write_is_explicitly_cancelled(
+                                current_message
+                            )
+                            else "invalid_fraction"
+                        )
                         self._turn_diet_correction_unresolved_reason = reason
                         logger.warning(
-                            "[health_manage] invalid diet correction fraction user=%s",
+                            "[health_manage] unsafe diet correction rejected "
+                            "reason=%s user=%s",
+                            reason,
                             self._current_user_id,
                         )
                         raise _SimpleRecordTerminal(
@@ -18766,12 +18803,21 @@ class AgentExecutor:
                 default_record_date=today,
             )
 
-        if rtype == "diet" and self._turn_contextual_diet_fraction_blocked:
+        if rtype == "diet" and self._turn_contextual_diet_write_blocked_reason:
+            cancelled = (
+                self._turn_contextual_diet_write_blocked_reason == "cancelled"
+            )
             return local_write_rejection(
-                "contextual_diet_fraction_ambiguous",
-                message="这条图片餐食份量表达不够明确，本轮没有写入饮食记录。",
+                "contextual_diet_write_blocked",
+                message=(
+                    "已按你的取消要求处理，本轮没有写入饮食记录。"
+                    if cancelled
+                    else "这条图片餐食份量表达不够明确，本轮没有写入饮食记录。"
+                ),
                 recovery_guidance=(
-                    "请用明确已完成的事实句重述，例如“这餐只吃了1/2，请记录”。"
+                    None
+                    if cancelled
+                    else "请用明确已完成的事实句重述，例如“这餐只吃了1/2，请记录”。"
                 ),
             )
 
@@ -19678,13 +19724,22 @@ class AgentExecutor:
         if (
             record_type == "diet"
             and operation != "list"
-            and self._turn_contextual_diet_fraction_blocked
+            and self._turn_contextual_diet_write_blocked_reason
         ):
+            cancelled = (
+                self._turn_contextual_diet_write_blocked_reason == "cancelled"
+            )
             return local_write_rejection(
-                "contextual_diet_fraction_ambiguous",
-                message="这条图片餐食份量表达不够明确，本轮没有修改饮食记录。",
+                "contextual_diet_write_blocked",
+                message=(
+                    "已按你的取消要求处理，本轮没有修改饮食记录。"
+                    if cancelled
+                    else "这条图片餐食份量表达不够明确，本轮没有修改饮食记录。"
+                ),
                 recovery_guidance=(
-                    "请用明确已完成的事实句重述，例如“这餐只吃了1/2，请记录”。"
+                    None
+                    if cancelled
+                    else "请用明确已完成的事实句重述，例如“这餐只吃了1/2，请记录”。"
                 ),
             )
         if (

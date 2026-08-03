@@ -378,6 +378,10 @@ def test_contextual_meal_fraction_only_scales_an_explicit_whole_meal(
         "晚餐吃了百分之 50，取消修改",
         "晚餐吃了一比二，取消修改",
         "晚餐吃了1∶2，取消修改",
+        "取消记录",
+        "这餐莫记录",
+        "这餐勿记录",
+        "这餐别再记录",
     ],
 )
 def test_unsafe_photo_fraction_language_never_auto_captures(
@@ -396,15 +400,24 @@ def test_unsafe_photo_fraction_language_never_auto_captures(
     assert db.query(DietRecord).count() == 0
     assert db.query(DietPhotoAsset).count() == 0
     assert db.query(DietPhotoDraft).count() == 0
-    assert recognition["contextual_capture_fraction_blocked"] is True
-    assert executor._turn_contextual_diet_fraction_blocked is True
+    assert recognition["contextual_capture_write_blocked_reason"] in {
+        "ambiguous_fraction",
+        "cancelled",
+    }
+    assert executor._turn_contextual_diet_write_blocked_reason in {
+        "ambiguous_fraction",
+        "cancelled",
+    }
     prompt_context = executor._format_food_recognition_for_agent(
         message,
         recognition,
         contextual_capture=result,
     )
     assert "严禁调用 health_record" in prompt_context
-    assert "没有通过明确事实校验" in prompt_context
+    assert (
+        "没有通过明确事实校验" in prompt_context
+        or "明确取消" in prompt_context
+    )
 
 
 @pytest.mark.asyncio
@@ -430,7 +443,7 @@ async def test_unsafe_photo_fraction_closes_model_diet_write_adapter(
         },
     })
 
-    assert "contextual_diet_fraction_ambiguous" in result
+    assert "contextual_diet_write_blocked" in result
     post.assert_not_awaited()
     assert db.query(DietRecord).count() == 0
 
@@ -445,7 +458,7 @@ async def test_unsafe_photo_fraction_closes_model_diet_write_adapter(
         },
     })
 
-    assert "contextual_diet_fraction_ambiguous" in manage_result
+    assert "contextual_diet_write_blocked" in manage_result
     post.assert_not_awaited()
     assert db.query(DietRecord).count() == 0
 

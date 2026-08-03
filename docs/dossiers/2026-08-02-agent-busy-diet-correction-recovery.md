@@ -84,7 +84,7 @@ Fresh verification after the final implementation commit:
 - Mobile full regression: 289 suites / 2,290 tests passed.
 - Mobile TypeScript: `npx tsc --noEmit` passed.
 - Mobile lint: 0 errors; 92 pre-existing warnings outside this change remain.
-- Backend focused, stream integration, diet API and photo-context regression after the twelfth G4 remediation: 385 tests passed with 7 dependency/
+- Backend focused, stream integration, diet API and photo-context regression after the twelfth G4 remediation: 393 tests passed with 7 dependency/
   framework deprecation warnings.
 - Backend Ruff and Python compilation passed.
 - Dossier consistency: 98 dossiers passed.
@@ -234,8 +234,13 @@ both a generic text replacement and a high-confidence photo auto-save. Symbol
 normalization now maps division and ratio glyphs to their canonical forms, and
 the shared unsupported-portion detector recognizes Chinese decimals, spaced
 percentages, and Chinese numeral ratios. Ten new real-path cases assert the
-same text/photo zero-write invariant. A fresh independent reviewer must issue
-GO before deployment.
+same text/photo zero-write invariant. A final root-cause probe removed the
+remaining dependence on recognizing a portion at all: explicit `取消`/`莫`/`勿`/
+`别再` write cancellations now veto both text and photo diet writes before
+portion parsing, close the create/update/delete adapters, and produce a
+truthful cancellation acknowledgement. Eight no-fraction cancellation cases
+assert zero lookup and zero record/asset/draft writes. A fresh independent
+reviewer must issue GO before deployment.
 
 ### G5 Deployment Health: PENDING
 
