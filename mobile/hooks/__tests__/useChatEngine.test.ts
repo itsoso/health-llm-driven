@@ -1595,6 +1595,63 @@ describe('useChatEngine', () => {
     expect(mockStreamChat).toHaveBeenCalledTimes(1);
   });
 
+  it.each(['stopStreaming', 'cancelActiveTurn'] as const)(
+    'cancels a scheduled server-busy retry with %s',
+    async (cancelMethod) => {
+      jest.useFakeTimers();
+      mockStreamChat.mockImplementation(streamServerBusy);
+      const { result } = renderHook(() => useChatEngine());
+
+      let acceptedPromise: Promise<boolean> | undefined;
+      act(() => {
+        acceptedPromise = result.current.sendMessage('不要再重试这条晚餐修正');
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      await expect(acceptedPromise).resolves.toBe(true);
+      expect(result.current.queuedCount).toBe(1);
+
+      await act(async () => {
+        result.current[cancelMethod]();
+        jest.advanceTimersByTime(5000);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(result.current.queuedCount).toBe(0);
+      expect(mockStreamChat).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('does not revive a delayed busy turn after cancelTurn stops the running turn', async () => {
+    jest.useFakeTimers();
+    mockStreamChat.mockImplementation(streamWaitThenServerBusy);
+    const { result } = renderHook(() => useChatEngine());
+
+    let acceptedPromise: Promise<boolean> | undefined;
+    act(() => {
+      acceptedPromise = result.current.sendMessage('取消前仍在发送的晚餐修正');
+    });
+    await waitFor(() => expect(result.current.runningTurnId).toMatch(/^turn-/));
+
+    act(() => {
+      result.current.cancelTurn(result.current.runningTurnId!);
+    });
+    await act(async () => {
+      releaseBusyResponse?.();
+      await Promise.resolve();
+      await Promise.resolve();
+      jest.runOnlyPendingTimers();
+      await Promise.resolve();
+    });
+
+    await expect(acceptedPromise).resolves.toBe(false);
+    expect(result.current.queuedCount).toBe(0);
+    expect(mockStreamChat).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps a done health card anchored before a queued next turn', async () => {
     let streamCalls = 0;
     mockStreamChat.mockImplementation(() => {

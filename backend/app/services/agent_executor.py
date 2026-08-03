@@ -4898,6 +4898,57 @@ _CONTEXTUAL_MEAL_WHOLE_PORTION_RE = re.compile(
     r"(?:这|整|本)(?:一)?(?:餐|顿|份|盘)|(?:这|整)些|只吃",
     re.I,
 )
+_DIET_FACTUAL_PORTION_PLACEHOLDER = "__portion__"
+_DIET_FACTUAL_SHORTFALL_PATTERN = (
+    r"没(?:有)?(?:吃那么多|全吃(?:完)?|吃完)"
+)
+_DIET_FACTUAL_DATE_PATTERN = (
+    r"(?:今天|今日|本日|当天|当日|昨天|昨日|前天)"
+)
+_DIET_FACTUAL_MEAL_PATTERN = f"(?:{_DIET_CORRECTION_MEAL_RE.pattern})"
+_DIET_FACTUAL_CALORIE_DESCRIPTOR_PATTERN = (
+    r"(?:的\s*[零〇一二两三四五六七八九十百千万\d.]+\s*"
+    r"(?:大卡|千卡|卡路里|卡))?"
+)
+_DIET_FACTUAL_WRITE_SUFFIX_PATTERN = (
+    r"(?:\s*[,，]\s*|\s*)"
+    r"(?:(?:请|麻烦)\s*)?(?:帮我\s*)?"
+    r"(?:按实际(?:摄入|食用量)\s*)?"
+    r"(?:修改|更正|修正|更新|调整|改)(?:一下)?(?:饮食)?(?:记录)?"
+)
+_DIET_FACTUAL_CORRECTION_SHAPE_RE = re.compile(
+    rf"^(?:{_DIET_FACTUAL_DATE_PATTERN}\s*)?(?:我\s*)?"
+    rf"(?:{_DIET_FACTUAL_SHORTFALL_PATTERN}\s*[,，]\s*)?"
+    rf"{_DIET_FACTUAL_MEAL_PATTERN}\s*"
+    rf"{_DIET_FACTUAL_CALORIE_DESCRIPTOR_PATTERN}\s*"
+    rf"(?:{_DIET_FACTUAL_SHORTFALL_PATTERN}\s*[,，]\s*)?"
+    r"(?:实际(?:上)?(?:我)?\s*只吃(?:了)?|只吃了|只有吃了)\s*"
+    rf"{_DIET_FACTUAL_PORTION_PLACEHOLDER}"
+    rf"(?:{_DIET_FACTUAL_WRITE_SUFFIX_PATTERN})?\s*[。！!]*$",
+    re.I,
+)
+_DIET_FACTUAL_PHOTO_SUBJECT_PATTERN = (
+    r"(?:(?:这|整|本)(?:一)?(?:餐|顿|份|盘)|(?:这|整)些)"
+)
+_DIET_FACTUAL_PHOTO_SUFFIX_PATTERN = (
+    r"(?:\s*[,，]\s*|\s*)"
+    r"(?:(?:请|麻烦)\s*)?(?:帮我\s*)?"
+    r"(?:记录|保存)(?:一下)?"
+)
+_DIET_FACTUAL_PHOTO_SHAPE_RE = re.compile(
+    r"^(?:(?:(?:请|麻烦)\s*)?(?:帮我\s*)?记录\s*)?"
+    rf"{_DIET_FACTUAL_PHOTO_SUBJECT_PATTERN}\s*[,，]?\s*"
+    r"(?:实际(?:上)?\s*)?(?:只)?(?:吃了|吃掉了)\s*"
+    rf"{_DIET_FACTUAL_PORTION_PLACEHOLDER}"
+    rf"(?:{_DIET_FACTUAL_PHOTO_SUFFIX_PATTERN})?\s*[。！!]*$",
+    re.I,
+)
+_DIET_FACTUAL_BARE_PHOTO_SHAPE_RE = re.compile(
+    r"^(?:实际(?:上)?\s*)?只吃了\s*"
+    rf"{_DIET_FACTUAL_PORTION_PLACEHOLDER}"
+    rf"(?:{_DIET_FACTUAL_PHOTO_SUFFIX_PATTERN})?\s*[。！!]*$",
+    re.I,
+)
 _DIET_SCALABLE_NUTRIENT_FIELDS = (
     "calories",
     "protein",
@@ -4960,6 +5011,24 @@ def _parse_meal_fraction_token(token: str) -> Optional[tuple[float, str]]:
     return float(fraction), normalized
 
 
+def _meal_fraction_utterance_has_factual_shape(
+    normalized: str,
+    fraction_span: tuple[int, int],
+) -> bool:
+    """Accept only narrow, fully consumed factual portion utterances."""
+    start, end = fraction_span
+    marked = (
+        normalized[:start]
+        + _DIET_FACTUAL_PORTION_PLACEHOLDER
+        + normalized[end:]
+    )
+    return any(pattern.fullmatch(marked) for pattern in (
+        _DIET_FACTUAL_CORRECTION_SHAPE_RE,
+        _DIET_FACTUAL_PHOTO_SHAPE_RE,
+        _DIET_FACTUAL_BARE_PHOTO_SHAPE_RE,
+    ))
+
+
 def _meal_fraction_utterance_is_unsafe(
     text: str,
     *,
@@ -5009,6 +5078,10 @@ def _meal_fraction_utterance_is_unsafe(
         or _DIET_PARTIAL_CORRECTION_CANCEL_RE.search(normalized)
         or _DIET_PARTIAL_CORRECTION_RESIDUAL_NEGATION_RE.search(
             semantic_remainder
+        )
+        or not _meal_fraction_utterance_has_factual_shape(
+            normalized,
+            supported_matches[0].span(),
         )
     ):
         return True

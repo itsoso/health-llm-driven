@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-02 |
 | status | in_progress |
-| current_stage | Eighth G4 NO-GO remediated; fresh G4 review pending |
+| current_stage | Ninth G4 NO-GO remediated; fresh G4 review pending |
 | owner_surface | Mobile chat / Backend agent runtime |
 
 ## Problem
@@ -84,7 +84,7 @@ Fresh verification after the final implementation commit:
 - Mobile full regression: 289 suites / 2,287 tests passed.
 - Mobile TypeScript: `npx tsc --noEmit` passed.
 - Mobile lint: 0 errors; 92 pre-existing warnings outside this change remain.
-- Backend focused, stream integration, diet API and photo-context regression after the eighth G4 remediation: 278 tests passed with 7 dependency/
+- Backend focused, stream integration, diet API and photo-context regression after the ninth G4 remediation: 331 tests passed with 7 dependency/
   framework deprecation warnings.
 - Backend Ruff and Python compilation passed.
 - Dossier consistency: 98 dossiers passed.
@@ -184,8 +184,21 @@ semantics: it permits the narrow explicit shortfall phrases `没吃那么多`,
 `没有全吃完` and `没吃完`, while residual negation, retraction, uncertainty or
 question language fails closed before lookup or write. Twenty-four new text
 and photo regression cases cover `撤回`, `反悔`, `先不改`, `并非`, `应该`,
-`好像`, `估计`, `差不多` and sentence-final `吧`. A fresh independent reviewer
-must issue GO before deployment.
+`好像`, `估计`, `差不多` and sentence-final `吧`. The next independent review
+found that this was still a blacklist rather than an actual positive grammar:
+hypothetical, quoted, demonstrative, prospective, contradictory and uncommon
+cancellation wording could still reach a write. It also found that
+`stopStreaming` and `cancelActiveTurn` did not remove a retry already waiting
+in the busy queue. Both blockers were reproduced before remediation. Text and
+photo portions now have narrow anchored positive grammars which must consume
+the entire normalized utterance as an explicit completed-consumption fact;
+anything outside the allowed meal/date, shortfall, exact ratio and write
+phrases fails closed. Fifty text/photo adversarial cases cover the reviewer's
+bypasses plus future-intent forms. Stop and cancel now remove the logical busy
+queue head, cancel pending image acceptance, record an interrupted terminal
+state and leave any later independent turn eligible to continue. Three Mobile
+cancellation race tests cover scheduled and delayed-409 paths. A fresh
+independent reviewer must issue GO before deployment.
 
 ### G5 Deployment Health: PENDING
 

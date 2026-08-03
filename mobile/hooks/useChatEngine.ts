@@ -2250,15 +2250,63 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     (timer as any)?.unref?.();
   };
 
+  const cancelScheduledBusyRetry = useCallback(() => {
+    const queued = queuedTurnsRef.current[0];
+    if (!queued) return false;
+    const runningTurnId = runningTurnIdRef.current;
+    if (
+      (isStreamingRef.current || runningTurnId)
+      && queued.turnId !== runningTurnId
+    ) {
+      return false;
+    }
+    queuedTurnsRef.current.shift();
+    if (busyQueueTimerRef.current) {
+      clearTimeout(busyQueueTimerRef.current);
+      busyQueueTimerRef.current = null;
+    }
+    queued.options?.onAccepted?.(false);
+    setQueuedCount(queuedTurnsRef.current.length);
+    setMessages(prev => prev.map(message => (
+      message.id === queued.assistantMessageId
+        ? {
+            ...message,
+            currentStatus: undefined,
+            completionStatus: 'interrupted',
+            content: '已取消发送。',
+          }
+        : message
+    )));
+    dispatchAgentTurn({
+      type: 'interrupt',
+      at: Date.now(),
+      errorCode: 'server_busy_retry_cancelled',
+      label: '已取消发送。',
+      recoverable: true,
+    });
+    emitAgentTurnTerminal(
+      queued.turnId,
+      queued.busyStartedAt ?? Date.now(),
+      'interrupted',
+      'server_busy_retry_cancelled',
+    );
+    if (queuedTurnsRef.current.length > 0) {
+      scheduleBusyQueuePumpRef.current(0);
+    }
+    return true;
+  }, [dispatchAgentTurn, emitAgentTurnTerminal]);
+
   const stopStreaming = useCallback(() => {
     turnQueueGenerationRef.current += 1;
+    cancelScheduledBusyRetry();
     abortRef.current?.abort();
-  }, []);
+  }, [cancelScheduledBusyRetry]);
 
   const cancelActiveTurn = useCallback(() => {
     turnQueueGenerationRef.current += 1;
+    cancelScheduledBusyRetry();
     abortRef.current?.abort();
-  }, []);
+  }, [cancelScheduledBusyRetry]);
 
   const cancelTurn = useCallback((turnId: string) => {
     if (runningTurnIdRef.current === turnId) {
