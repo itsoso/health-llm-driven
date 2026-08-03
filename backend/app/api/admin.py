@@ -14,6 +14,7 @@ from app.models.medical_exam import MedicalExam
 from app.models.account_deletion_request import AccountDeletionRequest
 from app.models.agent_audit_log import AgentAuditLog
 from app.api.auth import get_current_user_required
+from app.config import settings
 from app.services.account_deletion import build_deletion_verification_report
 
 import logging
@@ -21,6 +22,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _require_legacy_admission_open() -> None:
+    if settings.registration_invitation_enforcement_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "REGISTRATION_INVITATION_REQUIRED",
+                "message": "新用户需要管理员发送的手机号注册邀请",
+            },
+        )
 
 
 # ========== 响应模型 ==========
@@ -486,6 +498,8 @@ async def approve_user(
     db: Session = Depends(get_db)
 ):
     """审核通过或拒绝用户"""
+    if request.is_approved:
+        _require_legacy_admission_open()
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(
@@ -576,6 +590,7 @@ async def admin_create_user(
     db: Session = Depends(get_db)
 ):
     """管理员直接创建用户（无需邀请码）"""
+    _require_legacy_admission_open()
     from app.services.auth import AuthService
 
     # 检查用户名和邮箱是否已存在
@@ -978,6 +993,81 @@ class AdminMergeRequest(BaseModel):
     target_user_id: int  # 目标用户ID（保留）
 
 
+_ADMIN_MERGE_AUDIT_SUMMARIES = {
+    "admin_user_merge_authorized": "管理员账号合并准入通过",
+    "admin_user_merge_blocked": "管理员账号合并被准入策略阻止",
+    "admin_user_merge_completed": "管理员账号合并已完成",
+    "admin_user_merge_failed": "管理员账号合并执行失败",
+}
+
+
+def _build_admin_merge_audit(
+    *,
+    admin_user_id: int,
+    audit_detail: dict,
+    action: str,
+) -> AgentAuditLog:
+    return AgentAuditLog(
+        user_id=admin_user_id,
+        agent_type="security_audit",
+        action=action,
+        result_summary=_ADMIN_MERGE_AUDIT_SUMMARIES[action],
+        result_detail=dict(audit_detail),
+    )
+
+
+def _record_admin_merge_audit(
+    db: Session,
+    *,
+    admin_user_id: int,
+    audit_detail: dict,
+    action: str,
+) -> None:
+    db.add(_build_admin_merge_audit(
+        admin_user_id=admin_user_id,
+        audit_detail=audit_detail,
+        action=action,
+    ))
+    db.commit()
+
+
+def _log_admin_merge_failure_best_effort(message: str) -> None:
+    """Emit only fixed diagnostics; logging failure must never affect the API."""
+    try:
+        logger.error(message)
+    except Exception:  # noqa: BLE001 - there is no safer in-process sink left
+        # Deliberately stop here: propagating a logger failure would replace the
+        # bounded ACCOUNT_MERGE_FAILED response with an unrelated raw 500.
+        return
+
+
+def _rollback_admin_merge_best_effort(db: Session) -> None:
+    try:
+        db.rollback()
+    except Exception:  # noqa: BLE001 - cleanup must never mask the primary error
+        _log_admin_merge_failure_best_effort("管理员合并事务回滚失败")
+
+
+def _record_failed_admin_merge_audit_best_effort(
+    db: Session,
+    *,
+    admin_user_id: int,
+    audit_detail: dict,
+) -> None:
+    """Persist the terminal failure after rollback without masking the API error."""
+    _rollback_admin_merge_best_effort(db)
+    try:
+        _record_admin_merge_audit(
+            db,
+            admin_user_id=admin_user_id,
+            audit_detail=audit_detail,
+            action="admin_user_merge_failed",
+        )
+    except Exception:  # noqa: BLE001 - the primary merge failure wins
+        _rollback_admin_merge_best_effort(db)
+        _log_admin_merge_failure_best_effort("管理员合并失败审计写入失败")
+
+
 @router.post("/users/merge", summary="合并两个用户（管理员）")
 async def admin_merge_users(
     request: AdminMergeRequest,
@@ -991,7 +1081,7 @@ async def admin_merge_users(
     - source_user 被删除
     - target_user 继承两个账号的微信/Web登录能力
     """
-    from app.services.user_merge import UserMergeService
+    from app.services.user_merge import UserMergeIneligible, UserMergeService
 
     source = db.query(User).filter(User.id == request.source_user_id).first()
     target = db.query(User).filter(User.id == request.target_user_id).first()
@@ -1002,21 +1092,91 @@ async def admin_merge_users(
     if source.id == target.id:
         raise HTTPException(status_code=400, detail="不能合并同一个用户")
 
-    logger.info(
-        f"管理员 {admin_user.name} 发起合并: "
-        f"source={source.id}({source.name}) -> target={target.id}({target.name})"
+    audit_detail = {
+        "source_user_id": source.id,
+        "target_user_id": target.id,
+        "source_active": bool(source.is_active),
+        "source_approved": bool(source.is_approved),
+        "target_active": bool(target.is_active),
+        "target_approved": bool(target.is_approved),
+    }
+
+    if settings.registration_invitation_enforcement_enabled and not all((
+        source.is_active,
+        source.is_approved,
+        target.is_active,
+        target.is_approved,
+    )):
+        _record_admin_merge_audit(
+            db,
+            admin_user_id=admin_user.id,
+            audit_detail=audit_detail,
+            action="admin_user_merge_blocked",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "ACCOUNT_MERGE_INELIGIBLE",
+                "message": "仅可合并已启用且已审核的既有账号",
+            },
+        )
+
+    _record_admin_merge_audit(
+        db,
+        admin_user_id=admin_user.id,
+        audit_detail=audit_detail,
+        action="admin_user_merge_authorized",
     )
 
     try:
+        # UserMergeService owns the business commit. Keeping this pending audit
+        # in the same Session makes "completed" atomic with the destructive merge.
+        db.add(_build_admin_merge_audit(
+            admin_user_id=admin_user.id,
+            audit_detail=audit_detail,
+            action="admin_user_merge_completed",
+        ))
+        db.flush()
         result = UserMergeService.merge_users(
             db=db,
             source_user_id=request.source_user_id,
-            target_user_id=request.target_user_id
+            target_user_id=request.target_user_id,
+            require_active_approved=(
+                settings.registration_invitation_enforcement_enabled
+            ),
         )
         return {
-            "message": f"合并成功: {source.name}(ID:{source.id}) -> {target.name}(ID:{target.id})",
+            "message": (
+                f"合并成功: {result['source_user_id']} -> "
+                f"{result['target_user_id']}"
+            ),
             **result
         }
-    except Exception as e:
-        logger.error(f"管理员合并用户失败: {e}")
-        raise HTTPException(status_code=500, detail=f"合并失败: {str(e)}")
+    except UserMergeIneligible:
+        _record_admin_merge_audit(
+            db,
+            admin_user_id=admin_user.id,
+            audit_detail=audit_detail,
+            action="admin_user_merge_blocked",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "ACCOUNT_MERGE_INELIGIBLE",
+                "message": "仅可合并已启用且已审核的既有账号",
+            },
+        ) from None
+    except Exception:  # noqa: BLE001
+        _record_failed_admin_merge_audit_best_effort(
+            db,
+            admin_user_id=admin_user.id,
+            audit_detail=audit_detail,
+        )
+        _log_admin_merge_failure_best_effort("管理员合并用户失败")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "ACCOUNT_MERGE_FAILED",
+                "message": "账号合并失败，请稍后重试",
+            },
+        ) from None

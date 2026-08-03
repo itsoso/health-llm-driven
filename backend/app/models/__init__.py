@@ -1,6 +1,11 @@
 """数据模型"""
 from app.models.user import User
 from app.models.phone_auth import PhoneAuthCode
+from app.models.registration_invitation import (
+    PhoneRegistrationGrant,
+    RegistrationAuthAttemptAudit,
+    RegistrationInvitation,
+)
 from app.models.basic_health import BasicHealthData
 from app.models.medical_exam import MedicalExam, MedicalExamItem
 from app.models.disease import DiseaseRecord

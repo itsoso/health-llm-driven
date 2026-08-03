@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import type { components as ApiComponents } from '../types/api.generated';
 import api, {
   TOKEN_KEY,
   isUsableNativeAuthToken,
@@ -13,6 +14,17 @@ import {
   clearPersistedSessionMarker,
   markPersistedSession,
 } from './authSessionMarker';
+import {
+  clearPendingRegistration,
+  createPendingRegistration,
+  loadPendingRegistration as loadPendingRegistrationRaw,
+  type PendingRegistration,
+} from './registrationInviteStorage';
+import {
+  clearAuthLogoutTombstone,
+  hasAuthLogoutTombstone,
+  writeAuthLogoutTombstone,
+} from './authLogoutTombstone';
 
 export interface User {
   id: number;
@@ -42,6 +54,64 @@ export interface PhoneLoginResponse extends LoginResponse {
   is_new_user: boolean;
 }
 
+export type PhoneVerificationAuthenticated =
+  Omit<ApiComponents['schemas']['PhoneVerificationAuthenticated'], 'user'> & {
+    user: User;
+  };
+
+export type PhoneVerificationInvitationRequired =
+  ApiComponents['schemas']['PhoneVerificationInvitationRequired'];
+
+export type PhoneVerificationOutcome =
+  | PhoneVerificationAuthenticated
+  | PhoneVerificationInvitationRequired;
+
+export type InvitationCredential =
+  | { manualCode: string; linkToken?: never }
+  | { manualCode?: never; linkToken: string };
+
+export type RegistrationAuthErrorCode =
+  | 'VERIFIED_PHONE_TICKET_EXPIRED'
+  | 'INVITATION_INVALID'
+  | 'INVITATION_PHONE_MISMATCH'
+  | 'INVITATION_EXPIRED'
+  | 'INVITATION_REVOKED'
+  | 'INVITATION_ALREADY_USED'
+  | 'REGISTRATION_INPUT_INVALID'
+  | 'REGISTRATION_STATE_CONFLICT'
+  | 'REGISTRATION_USER_ALREADY_EXISTS';
+
+export class RegistrationFlowError extends Error {
+  readonly code: RegistrationAuthErrorCode;
+
+  constructor(code: RegistrationAuthErrorCode, message: string) {
+    super(message);
+    this.name = 'RegistrationFlowError';
+    this.code = code;
+  }
+}
+
+export type AuthLogoutErrorCode =
+  | 'LOGOUT_BARRIER_FAILED'
+  | 'LOGOUT_CLEANUP_INCOMPLETE';
+
+export class AuthLogoutError extends Error {
+  readonly code: AuthLogoutErrorCode;
+
+  constructor(code: AuthLogoutErrorCode, message: string) {
+    super(message);
+    this.name = 'AuthLogoutError';
+    this.code = code;
+  }
+}
+
+export function authLogoutErrorCode(error: unknown): AuthLogoutErrorCode | null {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === 'LOGOUT_BARRIER_FAILED' || code === 'LOGOUT_CLEANUP_INCOMPLETE'
+    ? code
+    : null;
+}
+
 export interface AccountDeletionRequestResponse {
   status: 'none' | 'requested' | 'processing' | 'completed' | 'rejected';
   user_id: number;
@@ -55,12 +125,83 @@ export interface AccountDeletionRequestResponse {
   message?: string;
 }
 
-let tokenStorageMutation: Promise<void> = Promise.resolve();
+export interface AuthOperationOptions {
+  isCurrent?: () => boolean;
+}
 
-function serializeTokenStorageMutation(operation: () => Promise<void>): Promise<void> {
-  const next = tokenStorageMutation.then(operation, operation);
-  tokenStorageMutation = next.catch(() => {});
+class AuthOperationSuperseded extends Error {
+  constructor() {
+    super('auth operation superseded');
+    this.name = 'AuthOperationSuperseded';
+  }
+}
+
+export function isAuthOperationSuperseded(error: unknown): boolean {
+  return error instanceof AuthOperationSuperseded
+    || (error as { name?: string } | null)?.name === 'AuthOperationSuperseded';
+}
+
+function assertOperationCurrent(options?: AuthOperationOptions): void {
+  if (options?.isCurrent && !options.isCurrent()) {
+    throw new AuthOperationSuperseded();
+  }
+}
+
+let authStorageMutation: Promise<unknown> = Promise.resolve();
+
+function serializeAuthStorageMutation<T>(operation: () => Promise<T>): Promise<T> {
+  const next = authStorageMutation.then(operation, operation);
+  authStorageMutation = next.then(() => undefined, () => undefined);
   return next;
+}
+
+async function cleanupCandidateToken(token: string): Promise<void> {
+  try {
+    if ((await SecureStore.getItemAsync(TOKEN_KEY)) === token) {
+      await SecureStore.deleteItemAsync(TOKEN_KEY);
+    }
+  } catch {
+    console.warn('[auth] stale SecureStore token cleanup failed');
+  }
+  try {
+    if ((await readTokenFromSharedKeychain()) === token) {
+      await deleteTokenFromSharedKeychain();
+    }
+  } catch {
+    console.warn('[auth] stale shared token cleanup failed');
+  }
+
+  let secureRemaining: string | null | undefined;
+  let sharedRemaining: string | null | undefined;
+  try {
+    secureRemaining = await SecureStore.getItemAsync(TOKEN_KEY);
+  } catch {
+    secureRemaining = undefined;
+  }
+  try {
+    sharedRemaining = await readTokenFromSharedKeychain();
+  } catch {
+    sharedRemaining = undefined;
+  }
+  if (
+    secureRemaining !== undefined
+    && sharedRemaining !== undefined
+    && !isUsableNativeAuthToken(secureRemaining)
+    && !isUsableNativeAuthToken(sharedRemaining)
+  ) {
+    await clearPersistedSessionMarker();
+  }
+}
+
+async function bestEffortClearPendingRegistration(
+  options?: AuthOperationOptions,
+): Promise<void> {
+  if (options?.isCurrent && !options.isCurrent()) return;
+  try {
+    await clearPendingRegistration();
+  } catch {
+    console.warn('[auth] pending registration cleanup failed');
+  }
 }
 
 /**
@@ -68,55 +209,89 @@ function serializeTokenStorageMutation(operation: () => Promise<void>): Promise<
  * exact value back. A memory-only login looks successful but disappears on
  * the next process launch, which is worse than an actionable login error.
  */
-async function persistToken(token: string): Promise<void> {
+async function persistTokenWithinMutation(
+  token: string,
+  options?: AuthOperationOptions,
+): Promise<void> {
   if (!isUsableNativeAuthToken(token)) {
-    setRuntimeAuthToken(null);
     throw new Error('登录服务返回了无效的原生访问凭证');
   }
+  assertOperationCurrent(options);
+  let durable = false;
 
-  await serializeTokenStorageMutation(async () => {
-    setRuntimeAuthToken(token);
-    let durable = false;
+  try {
+    assertOperationCurrent(options);
+    await SecureStore.setItemAsync(TOKEN_KEY, token);
+    assertOperationCurrent(options);
+    durable = (await SecureStore.getItemAsync(TOKEN_KEY)) === token;
+    assertOperationCurrent(options);
+    if (!durable) console.warn('[auth] SecureStore token verification failed');
+  } catch (error) {
+    if (isAuthOperationSuperseded(error)) {
+      await cleanupCandidateToken(token);
+      throw error;
+    }
+    console.warn('[auth] SecureStore token persistence failed');
+  }
 
+  try {
+    assertOperationCurrent(options);
+    await saveTokenToSharedKeychain(token);
+    assertOperationCurrent(options);
+    const sharedToken = await readTokenFromSharedKeychain();
+    assertOperationCurrent(options);
+    durable = durable || sharedToken === token;
+  } catch (error) {
+    if (isAuthOperationSuperseded(error)) {
+      await cleanupCandidateToken(token);
+      throw error;
+    }
+    if (!durable) console.warn('[auth] shared token persistence failed');
+  }
+
+  if (!durable) {
+    await cleanupCandidateToken(token);
+    throw new Error('登录状态无法安全保存，请解锁设备后重试');
+  }
+
+  assertOperationCurrent(options);
+  await markPersistedSession();
+  assertOperationCurrent(options);
+}
+
+async function applyAuthenticatedToken(
+  token: string,
+  options?: AuthOperationOptions,
+): Promise<void> {
+  await serializeAuthStorageMutation(async () => {
     try {
-      await SecureStore.setItemAsync(TOKEN_KEY, token);
-      durable = (await SecureStore.getItemAsync(TOKEN_KEY)) === token;
-      if (!durable) {
-        console.warn('[auth] SecureStore token verification failed');
+      assertOperationCurrent(options);
+      await persistTokenWithinMutation(token, options);
+      await bestEffortClearPendingRegistration(options);
+      assertOperationCurrent(options);
+      await clearAuthLogoutTombstone();
+      assertOperationCurrent(options);
+      setRuntimeAuthToken(token);
+    } catch (error) {
+      if (isAuthOperationSuperseded(error)) {
+        await cleanupCandidateToken(token);
       }
-    } catch (e) {
-      console.warn('[auth] SecureStore write failed, relying on shared keychain:', e);
+      throw error;
     }
-
-    try {
-      await saveTokenToSharedKeychain(token);
-      const sharedToken = await readTokenFromSharedKeychain();
-      durable = durable || sharedToken === token;
-    } catch (e) {
-      if (!durable) {
-        console.warn('[auth] shared keychain token persistence failed:', e);
-      }
-    }
-
-    if (!durable) {
-      setRuntimeAuthToken(null);
-      throw new Error('登录状态无法安全保存，请解锁设备后重试');
-    }
-
-    setRuntimeAuthToken(token);
-    await markPersistedSession();
   });
 }
 
 export async function login(
   username: string,
   password: string,
+  options?: AuthOperationOptions,
 ): Promise<LoginResponse> {
   const { data } = await api.post<LoginResponse>('/auth/login/json', {
     username,
     password,
   });
-  await persistToken(data.access_token);
+  assertOperationCurrent(options);
+  await applyAuthenticatedToken(data.access_token, options);
   return data;
 }
 
@@ -134,13 +309,119 @@ export async function requestPhoneCode(
 export async function loginByPhoneCode(
   phone: string,
   code: string,
+  options?: AuthOperationOptions,
 ): Promise<PhoneLoginResponse> {
   const { data } = await api.post<PhoneLoginResponse>('/auth/phone/login', {
     phone,
     code,
   });
-  await persistToken(data.access_token);
+  assertOperationCurrent(options);
+  await applyAuthenticatedToken(data.access_token, options);
   return data;
+}
+
+function isAuthenticatedPhoneOutcome(
+  value: PhoneVerificationOutcome,
+): value is PhoneVerificationAuthenticated {
+  return value.outcome === 'authenticated';
+}
+
+export async function verifyPhoneCode(
+  phone: string,
+  code: string,
+  options?: AuthOperationOptions,
+): Promise<PhoneVerificationOutcome> {
+  const { data } = await api.post<PhoneVerificationOutcome>('/auth/phone/verify', {
+    phone,
+    code,
+  });
+  assertOperationCurrent(options);
+  if (isAuthenticatedPhoneOutcome(data)) {
+    await applyAuthenticatedToken(data.access_token, options);
+    return data;
+  }
+  if (data.outcome !== 'invitation_required') {
+    throw new Error('登录服务返回了无法识别的手机号验证结果');
+  }
+  await serializeAuthStorageMutation(async () => {
+    assertOperationCurrent(options);
+    await createPendingRegistration({
+      verifiedPhoneTicket: data.verified_phone_ticket,
+      expiresInSeconds: data.expires_in_seconds,
+    });
+    try {
+      assertOperationCurrent(options);
+    } catch (error) {
+      await bestEffortClearPendingRegistration();
+      throw error;
+    }
+  });
+  return data;
+}
+
+export function registrationAuthErrorCode(error: unknown): string | null {
+  const localCode = (error as { code?: unknown } | null)?.code;
+  if (typeof localCode === 'string') return localCode;
+  const code = (
+    error as { response?: { data?: { detail?: { code?: unknown } } } } | null
+  )?.response?.data?.detail?.code;
+  return typeof code === 'string' ? code : null;
+}
+
+export async function completeInvitedRegistration(
+  credential: InvitationCredential,
+  options?: AuthOperationOptions,
+): Promise<PhoneLoginResponse> {
+  assertOperationCurrent(options);
+  const pending = await loadPendingRegistrationRaw();
+  assertOperationCurrent(options);
+  if (!pending) {
+    await serializeAuthStorageMutation(async () => {
+      await bestEffortClearPendingRegistration(options);
+    });
+    throw new RegistrationFlowError(
+      'VERIFIED_PHONE_TICKET_EXPIRED',
+      '手机号验证已失效，请重新验证',
+    );
+  }
+
+  const invitation = credential.manualCode !== undefined
+    ? { manual_code: credential.manualCode.trim().toUpperCase() }
+    : { link_token: credential.linkToken.trim() };
+  try {
+    const { data } = await api.post<PhoneLoginResponse>('/auth/invited-registration', {
+      verified_phone_ticket: pending.verifiedPhoneTicket,
+      idempotency_key: pending.idempotencyKey,
+      ...invitation,
+    });
+    assertOperationCurrent(options);
+    await applyAuthenticatedToken(data.access_token, options);
+    return data;
+  } catch (error) {
+    if (options?.isCurrent && !options.isCurrent()) {
+      throw new AuthOperationSuperseded();
+    }
+    if (registrationAuthErrorCode(error) === 'VERIFIED_PHONE_TICKET_EXPIRED') {
+      await serializeAuthStorageMutation(async () => {
+        await bestEffortClearPendingRegistration(options);
+      });
+    }
+    throw error;
+  }
+}
+
+export { loadPendingRegistrationRaw as loadPendingRegistration, type PendingRegistration };
+
+export async function loadPendingRegistrationForHydration(): Promise<PendingRegistration | null> {
+  if (await hasAuthLogoutTombstone()) {
+    try {
+      await clearPendingRegistration();
+    } catch {
+      console.warn('[auth] logged-out pending residue cleanup incomplete');
+    }
+    return null;
+  }
+  return loadPendingRegistrationRaw();
 }
 
 export async function setPassword(newPassword: string): Promise<{ message: string }> {
@@ -162,50 +443,152 @@ export async function changePassword(
 }
 
 export async function logout(): Promise<void> {
-  setRuntimeAuthToken(null);
-  await serializeTokenStorageMutation(async () => {
+  await serializeAuthStorageMutation(async () => {
+    try {
+      await writeAuthLogoutTombstone();
+    } catch {
+      throw new AuthLogoutError(
+        'LOGOUT_BARRIER_FAILED',
+        '无法安全建立本地登出状态，当前登录保持不变，请稍后重试',
+      );
+    }
+
+    // Phase 2 starts only after the durable barrier is confirmed. From this
+    // point forward the device must remain logged out even if residue cleanup
+    // is incomplete.
+    setRuntimeAuthToken(null);
+    let cleanupFailed = false;
+
     try {
       await SecureStore.deleteItemAsync(TOKEN_KEY);
-    } catch (e) {
-      console.warn('[auth] SecureStore token deletion failed:', e);
+      const remaining = await SecureStore.getItemAsync(TOKEN_KEY);
+      if (isUsableNativeAuthToken(remaining)) cleanupFailed = true;
+    } catch {
+      cleanupFailed = true;
+      console.warn('[auth] SecureStore token cleanup incomplete');
     }
     try {
       await deleteTokenFromSharedKeychain();
-    } catch (e) {
-      console.warn('[auth] shared keychain token deletion failed:', e);
+      const remaining = await readTokenFromSharedKeychain();
+      if (isUsableNativeAuthToken(remaining)) cleanupFailed = true;
+    } catch {
+      cleanupFailed = true;
+      console.warn('[auth] shared token cleanup incomplete');
     }
     await clearPersistedSessionMarker();
+    try {
+      await clearPendingRegistration();
+      if (await loadPendingRegistrationRaw()) cleanupFailed = true;
+    } catch {
+      cleanupFailed = true;
+      console.warn('[auth] pending registration cleanup incomplete');
+    }
+
+    if (cleanupFailed) {
+      throw new AuthLogoutError(
+        'LOGOUT_CLEANUP_INCOMPLETE',
+        '已安全退出，但本机残留数据清理未完成，请稍后重试',
+      );
+    }
   });
 }
 
-export async function getToken(): Promise<string | null> {
+async function cleanupLoggedOutResidueBestEffort(): Promise<void> {
   try {
-    const token = await SecureStore.getItemAsync(TOKEN_KEY);
-    if (isUsableNativeAuthToken(token)) {
-      setRuntimeAuthToken(token);
-      await markPersistedSession();
-      return token;
-    }
+    await SecureStore.deleteItemAsync(TOKEN_KEY);
   } catch {
-    // Fall through to the shared native store. iOS updates can transiently
-    // fail SecureStore reads while App Group storage still has the token.
+    console.warn('[auth] logged-out SecureStore residue cleanup incomplete');
   }
-
   try {
-    const sharedToken = await readTokenFromSharedKeychain();
-    if (!isUsableNativeAuthToken(sharedToken)) return null;
-
-    setRuntimeAuthToken(sharedToken);
-    await markPersistedSession();
-    try {
-      await SecureStore.setItemAsync(TOKEN_KEY, sharedToken);
-    } catch {
-      // Returning the shared token is still better than forcing a logout.
-    }
-    return sharedToken;
+    await deleteTokenFromSharedKeychain();
   } catch {
+    console.warn('[auth] logged-out shared residue cleanup incomplete');
+  }
+  await clearPersistedSessionMarker();
+  try {
+    await clearPendingRegistration();
+  } catch {
+    console.warn('[auth] logged-out pending residue cleanup incomplete');
+  }
+}
+
+async function hydrateAuthSessionWithinMutation(
+  options?: AuthOperationOptions,
+): Promise<string | null> {
+  assertOperationCurrent(options);
+  try {
+    if (await hasAuthLogoutTombstone()) {
+      assertOperationCurrent(options);
+      setRuntimeAuthToken(null);
+      await cleanupLoggedOutResidueBestEffort();
+      assertOperationCurrent(options);
+      return null;
+    }
+  } catch (error) {
+    if (isAuthOperationSuperseded(error)) throw error;
+    console.warn('[auth] logout tombstone read failed');
     return null;
   }
+
+  let candidate: string | null = null;
+  let secureToken: string | null = null;
+  try {
+    assertOperationCurrent(options);
+    secureToken = await SecureStore.getItemAsync(TOKEN_KEY);
+    assertOperationCurrent(options);
+  } catch (error) {
+    if (isAuthOperationSuperseded(error)) throw error;
+  }
+
+  if (isUsableNativeAuthToken(secureToken)) {
+    candidate = secureToken;
+    try {
+      assertOperationCurrent(options);
+      await saveTokenToSharedKeychain(secureToken);
+      assertOperationCurrent(options);
+      await readTokenFromSharedKeychain();
+      assertOperationCurrent(options);
+    } catch (error) {
+      if (isAuthOperationSuperseded(error)) throw error;
+      console.warn('[auth] shared token hydration failed');
+    }
+  } else {
+    let sharedToken: string | null = null;
+    try {
+      assertOperationCurrent(options);
+      sharedToken = await readTokenFromSharedKeychain();
+      assertOperationCurrent(options);
+    } catch (error) {
+      if (isAuthOperationSuperseded(error)) throw error;
+      return null;
+    }
+    if (!isUsableNativeAuthToken(sharedToken)) return null;
+    candidate = sharedToken;
+    try {
+      assertOperationCurrent(options);
+      await SecureStore.setItemAsync(TOKEN_KEY, sharedToken);
+      assertOperationCurrent(options);
+      await SecureStore.getItemAsync(TOKEN_KEY);
+      assertOperationCurrent(options);
+    } catch (error) {
+      if (isAuthOperationSuperseded(error)) throw error;
+      console.warn('[auth] SecureStore token hydration failed');
+    }
+  }
+
+  assertOperationCurrent(options);
+  await markPersistedSession();
+  assertOperationCurrent(options);
+  setRuntimeAuthToken(candidate);
+  return candidate;
+}
+
+export async function getToken(
+  options?: AuthOperationOptions,
+): Promise<string | null> {
+  return serializeAuthStorageMutation(
+    () => hydrateAuthSessionWithinMutation(options),
+  );
 }
 
 export async function isLoggedIn(): Promise<boolean> {

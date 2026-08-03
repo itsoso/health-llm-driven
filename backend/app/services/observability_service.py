@@ -917,7 +917,115 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
 
 
 # ---------------------------------------------------------------
-# G. tool_validator (journalctl, 仅线上)
+# G. Invitation-only registration rollout
+# ---------------------------------------------------------------
+
+_REGISTRATION_INVITATION_STATUSES = frozenset(
+    {"created", "sent", "send_failed", "consumed", "revoked", "expired"}
+)
+_REGISTRATION_SEND_ERRORS = frozenset(
+    {
+        "sms_not_configured",
+        "provider_rejected",
+        "provider_invalid_ack",
+        "provider_timeout",
+        "transport_failed",
+    }
+)
+_REGISTRATION_OUTCOMES = frozenset({"success", "rejected"})
+_REGISTRATION_ERRORS = frozenset(
+    {
+        "REGISTRATION_INPUT_INVALID",
+        "VERIFIED_PHONE_TICKET_EXPIRED",
+        "INVITATION_INVALID",
+        "INVITATION_PHONE_MISMATCH",
+        "INVITATION_EXPIRED",
+        "INVITATION_REVOKED",
+        "INVITATION_ALREADY_USED",
+        "REGISTRATION_USER_ALREADY_EXISTS",
+        "REGISTRATION_STATE_CONFLICT",
+        "REGISTRATION_PERSISTENCE_FAILED",
+        "REGISTRATION_POLICY_REJECTED",
+        "REGISTRATION_CLOSED",
+    }
+)
+
+
+def _bounded_counts(rows: list[tuple[object, object]], allowed: frozenset[str]) -> dict[str, int]:
+    """Collapse database enum drift into one non-sensitive `unknown` bucket."""
+
+    counts: dict[str, int] = {}
+    for raw_value, raw_count in rows:
+        key = raw_value if isinstance(raw_value, str) and raw_value in allowed else "unknown"
+        counts[key] = counts.get(key, 0) + int(raw_count or 0)
+    return dict(sorted(counts.items()))
+
+
+def registration_invitation_stats(db: Session, since: datetime) -> dict:
+    """Return aggregate rollout health without identifiers or credential material."""
+
+    from app.config import settings
+    from app.models.registration_invitation import (
+        RegistrationAuthAttemptAudit,
+        RegistrationInvitation,
+    )
+
+    invitations = db.query(RegistrationInvitation).filter(
+        RegistrationInvitation.created_at >= since
+    )
+    invitation_status_rows = invitations.with_entities(
+        RegistrationInvitation.status,
+        func.count(RegistrationInvitation.id),
+    ).group_by(RegistrationInvitation.status).all()
+    send_error_rows = invitations.with_entities(
+        RegistrationInvitation.last_send_error_code,
+        func.count(RegistrationInvitation.id),
+    ).filter(
+        RegistrationInvitation.last_send_error_code.is_not(None)
+    ).group_by(RegistrationInvitation.last_send_error_code).all()
+    send_attempts = invitations.with_entities(
+        func.sum(RegistrationInvitation.send_attempt_count)
+    ).scalar() or 0
+
+    attempts = db.query(RegistrationAuthAttemptAudit).filter(
+        RegistrationAuthAttemptAudit.created_at >= since
+    )
+    outcome_rows = attempts.with_entities(
+        RegistrationAuthAttemptAudit.outcome,
+        func.count(RegistrationAuthAttemptAudit.id),
+    ).group_by(RegistrationAuthAttemptAudit.outcome).all()
+    rejection_error_rows = attempts.with_entities(
+        RegistrationAuthAttemptAudit.error_code,
+        func.count(RegistrationAuthAttemptAudit.id),
+    ).filter(
+        RegistrationAuthAttemptAudit.outcome == "rejected"
+    ).group_by(RegistrationAuthAttemptAudit.error_code).all()
+
+    invitations_by_status = _bounded_counts(
+        invitation_status_rows,
+        _REGISTRATION_INVITATION_STATUSES,
+    )
+    attempts_by_outcome = _bounded_counts(outcome_rows, _REGISTRATION_OUTCOMES)
+    return {
+        "mode": settings.registration_invitation_mode,
+        "invitations_total": sum(invitations_by_status.values()),
+        "invitations_by_status": invitations_by_status,
+        "send_attempts_total": int(send_attempts),
+        "send_failures_by_error": _bounded_counts(
+            send_error_rows,
+            _REGISTRATION_SEND_ERRORS,
+        ),
+        "registration_attempts_total": sum(attempts_by_outcome.values()),
+        "registration_attempts_by_outcome": attempts_by_outcome,
+        "registration_rejections_by_error": _bounded_counts(
+            rejection_error_rows,
+            _REGISTRATION_ERRORS,
+        ),
+    }
+
+
+# ---------------------------------------------------------------
+# H. tool_validator (journalctl, 仅线上)
 # ---------------------------------------------------------------
 
 def tool_validator_stats_remote(days: int) -> dict:
@@ -1128,6 +1236,8 @@ def collect_dashboard(
         "client_events": client_events_stats(db, since, user_id),
         "aigc_media": aigc_media_stats(db, since, user_id),
     }
+    if user_id is None:
+        report["registration_invitation"] = registration_invitation_stats(db, since)
     if include_journalctl:
         report["tool_validator"] = tool_validator_stats_remote(days)
     return report

@@ -14,8 +14,30 @@ from app.models.user_profile import UserProfile
 from app.models.notification import NotificationLog
 from app.api.users import get_current_user_required
 from app.services.auth import AuthService
+from app.config import settings
 
 router = APIRouter(prefix="/invitation", tags=["邀请码管理"])
+
+
+def _require_legacy_registration_open() -> None:
+    if settings.registration_invitation_enforcement_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "REGISTRATION_INVITATION_REQUIRED",
+                "message": "新用户需要管理员发送的手机号注册邀请",
+            },
+        )
+
+
+def _pending_wechat_user_filters():
+    """Single SQL definition of a reviewable pending WeChat account."""
+
+    return (
+        User.wechat_openid.is_not(None),
+        User.is_approved.is_(False),
+        User.is_active.is_(True),
+    )
 
 
 # ==================== Pydantic 模型 ====================
@@ -172,7 +194,7 @@ async def list_invitation_codes(
     )
 
     if active_only:
-        query = query.filter(InvitationCode.is_active == True)
+        query = query.filter(InvitationCode.is_active.is_(True))
 
     invitations = query.all()
 
@@ -280,6 +302,7 @@ async def submit_application(
     3. 创建申请记录
     4. 等待管理员审批
     """
+    _require_legacy_registration_open()
     # 1. 验证邀请码
     invitation = db.query(InvitationCode).filter(
         InvitationCode.code == data.invitation_code.upper()
@@ -437,8 +460,7 @@ async def list_applications(
     # 如果查询 pending 状态，也包含 User 表中未审核的微信用户
     if status == "pending" or status is None:
         pending_users = db.query(User).filter(
-            User.is_approved == False,
-            User.wechat_openid != None  # 微信用户
+            *_pending_wechat_user_filters(),
         ).order_by(User.created_at.desc()).all()
 
         for user in pending_users:
@@ -516,10 +538,19 @@ async def review_application(
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="只有管理员可以审批申请")
 
+    # Approval changes account admission in both branches. Gate it before the
+    # negative-id WeChat compatibility branch so no legacy approval can bypass
+    # invitation enforcement. Rejection remains available for cleanup.
+    if review.approved:
+        _require_legacy_registration_open()
+
     # 处理微信用户审核（负数ID）
     if app_id < 0:
         user_id = abs(app_id)
-        user = db.query(User).filter(User.id == user_id).first()
+        user = db.query(User).filter(
+            User.id == user_id,
+            *_pending_wechat_user_filters(),
+        ).first()
         if not user:
             raise HTTPException(status_code=404, detail="用户不存在")
 
@@ -579,7 +610,7 @@ async def review_application(
         # 记录站内通知：申请已通过
         _log_application_notification(
             db, new_user.id, "申请已通过",
-            f"您的注册申请已通过审核，欢迎使用健康管理平台！"
+            "您的注册申请已通过审核，欢迎使用健康管理平台！"
         )
 
         return {
@@ -679,7 +710,7 @@ async def get_invitation_stats(
     # 邀请码统计
     total_codes = db.query(func.count(InvitationCode.id)).scalar()
     active_codes = db.query(func.count(InvitationCode.id)).filter(
-        InvitationCode.is_active == True
+        InvitationCode.is_active.is_(True)
     ).scalar()
     total_uses = db.query(func.sum(InvitationCode.used_count)).scalar() or 0
 
@@ -697,8 +728,7 @@ async def get_invitation_stats(
 
     # 统计未审核的微信用户
     pending_wechat_users = db.query(func.count(User.id)).filter(
-        User.is_approved == False,
-        User.wechat_openid != None
+        *_pending_wechat_user_filters(),
     ).scalar()
 
     return {

@@ -491,11 +491,21 @@ class Settings(BaseSettings):
     auth_phone_code_resend_seconds: int = 60
     auth_phone_code_max_attempts: int = 5
     auth_phone_registration_auto_approve: bool = True
+    # 邀请制手机号注册。凭据摘要使用独立 key，避免与 JWT/OTP 的密钥域复用。
+    # development/test 可从 SECRET_KEY 做带域派生；production enforcement 必须显式配置。
+    registration_invitation_digest_key: Optional[str] = None
+    registration_invitation_grant_ttl_seconds: int = 600
+    registration_invitation_expiry_days: int = 7
+    registration_invitation_rollout_enabled: bool = False
+    registration_invitation_enforcement_enabled: bool = False
     aliyun_sms_access_key_id: Optional[str] = None  # 为空则复用 aliyun_access_key_id
     aliyun_sms_access_key_secret: Optional[str] = None  # 为空则复用 aliyun_access_key_secret
     aliyun_sms_sign_name: Optional[str] = None
     aliyun_sms_template_code: Optional[str] = None
     aliyun_sms_region_id: str = "cn-hangzhou"
+    # 注册邀请必须使用独立、已审核的短信签名与模板，绝不与 OTP 模板复用。
+    registration_invitation_sms_sign_name: Optional[str] = None
+    registration_invitation_sms_template_code: Optional[str] = None
     # 号码认证服务「短信认证」(dypnsapi) 免资质通道：个人认证账号可用，
     # 签名/模板只能用控制台赠送值（如 恒创联众 / 100001），仅支持大陆手机号。
     # 与 aliyun_sms_* 企业签名通道并存时，企业签名优先。
@@ -523,6 +533,56 @@ class Settings(BaseSettings):
             if origin.strip()
         ]
 
+    @property
+    def registration_invitation_mode(self) -> str:
+        """Return the bounded server-side rollout state.
+
+        Enforcement is intentionally independent from API rollout so rollback
+        can close new registration without reopening legacy auto-registration.
+        """
+
+        if self.registration_invitation_enforcement_enabled:
+            return (
+                "enforced"
+                if self.registration_invitation_rollout_enabled
+                else "rollback_closed"
+            )
+        return (
+            "ota_compatibility"
+            if self.registration_invitation_rollout_enabled
+            else "legacy_only"
+        )
+
+    @property
+    def registration_invitation_sms_delivery_config(self) -> tuple[str, str, str, str]:
+        """Resolve one complete credential pair and a dedicated template."""
+
+        dedicated_id = (self.aliyun_sms_access_key_id or "").strip()
+        dedicated_secret = (self.aliyun_sms_access_key_secret or "").strip()
+        if bool(dedicated_id) != bool(dedicated_secret):
+            raise ValueError(
+                "registration invitation SMS ALIYUN_SMS_ACCESS_KEY_ID and "
+                "ALIYUN_SMS_ACCESS_KEY_SECRET must either both be set or both be absent"
+            )
+        if dedicated_id:
+            access_key_id, access_key_secret = dedicated_id, dedicated_secret
+        else:
+            access_key_id = (self.aliyun_access_key_id or "").strip()
+            access_key_secret = (self.aliyun_access_key_secret or "").strip()
+
+        sign_name = (self.registration_invitation_sms_sign_name or "").strip()
+        template_code = (self.registration_invitation_sms_template_code or "").strip()
+        if (self.app_env or "").strip().lower() == "production":
+            otp_sign_name = (self.aliyun_sms_sign_name or "").strip()
+            otp_template_code = (self.aliyun_sms_template_code or "").strip()
+            if otp_sign_name and sign_name == otp_sign_name:
+                raise ValueError("registration invitation SMS sign must not reuse OTP sign")
+            if otp_template_code and template_code == otp_template_code:
+                raise ValueError(
+                    "registration invitation SMS template must not reuse OTP template"
+                )
+        return access_key_id, access_key_secret, sign_name, template_code
+
     def validate_required_security(self) -> None:
         """验证生产环境必须的安全配置"""
         if not self.secret_key or "change-in-production" in self.secret_key:
@@ -549,6 +609,27 @@ class Settings(BaseSettings):
                     "DEVICE_ENCRYPTION_KEY must be set in production. "
                     "Generate one with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
                 )
+            registration_digest_key = (
+                self.registration_invitation_digest_key or ""
+            ).strip().encode("utf-8")
+            if (
+                self.registration_invitation_rollout_enabled
+                or self.registration_invitation_enforcement_enabled
+            ) and len(registration_digest_key) < 32:
+                raise ValueError(
+                    "REGISTRATION_INVITATION_DIGEST_KEY must contain at least 32 UTF-8 "
+                    "bytes when invitation registration is enabled in production"
+                )
+            if (
+                self.registration_invitation_rollout_enabled
+                or self.registration_invitation_enforcement_enabled
+            ):
+                invitation_sms_values = self.registration_invitation_sms_delivery_config
+                if not all(invitation_sms_values):
+                    raise ValueError(
+                        "registration invitation SMS configuration is required when "
+                        "invitation registration is enabled in production"
+                    )
 
     model_config = ConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 

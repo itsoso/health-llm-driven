@@ -24,6 +24,7 @@ from typing import Optional
 
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import String, Text
+from sqlalchemy.exc import DontWrapMixin
 from sqlalchemy.types import TypeDecorator
 
 from app.config import settings
@@ -41,6 +42,10 @@ def _resolve_key() -> bytes:
 
 
 _fernet = Fernet(_resolve_key())
+
+
+class StrictEncryptionError(RuntimeError, DontWrapMixin):
+    """Sanitized bind failure that SQLAlchemy must not wrap with parameters."""
 
 
 class EncryptedString(TypeDecorator):
@@ -69,6 +74,53 @@ class EncryptedString(TypeDecorator):
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[encrypted] decrypt 失败, 返回原值: {e}")
             return value
+
+
+class StrictEncryptedString(EncryptedString):
+    """Encrypted string that rejects writes when encryption is unavailable.
+
+    This opt-in type is for new high-sensitivity columns where plaintext must
+    never be a compatibility fallback.  Existing ``EncryptedString`` columns
+    intentionally retain their legacy behavior.
+    """
+
+    cache_ok = True
+
+    def process_bind_param(self, value: Optional[str], dialect) -> Optional[str]:
+        if value is None:
+            return value
+        if value == "":
+            logger.error("[strict-encrypted] empty value, 拒绝写入")
+            raise StrictEncryptionError("sensitive value encryption failed") from None
+        try:
+            return _fernet.encrypt(value.encode()).decode()
+        except Exception:  # noqa: BLE001
+            logger.error("[strict-encrypted] encrypt 失败, 拒绝写入")
+        # Raise after leaving the except block so the provider exception is not
+        # retained as accessible context. DontWrapMixin prevents SQLAlchemy
+        # StatementError from attaching all statement parameters, including the
+        # sensitive plaintext value.
+        raise StrictEncryptionError("sensitive value encryption failed") from None
+
+    def process_result_value(self, value: Optional[str], dialect) -> Optional[str]:
+        if value is None:
+            return value
+        if value == "":
+            logger.error("[strict-encrypted] empty value, 拒绝读取")
+            raise StrictEncryptionError("sensitive value decryption failed") from None
+        decryption_failed = False
+        try:
+            return _fernet.decrypt(value.encode()).decode()
+        except InvalidToken:
+            decryption_failed = True
+        except Exception:  # noqa: BLE001
+            decryption_failed = True
+        if decryption_failed:
+            logger.error("[strict-encrypted] decrypt 失败, 拒绝读取")
+        # Raise outside the handler so the crypto exception (and any raw input
+        # it may carry) is not retained as __context__. Strict columns do not
+        # support legacy plaintext fallback.
+        raise StrictEncryptionError("sensitive value decryption failed") from None
 
 
 class EncryptedText(EncryptedString):

@@ -119,6 +119,7 @@ def test_collect_dashboard_schema(db):
         "open_loop", "clinical_journal", "memory_kg",
         "doctor_report", "action_card", "safety_guardian",
         "memory_injection", "client_events", "aigc_media",
+        "registration_invitation",
     }
 
 

@@ -11,17 +11,22 @@ import { AppState } from 'react-native';
 import {
   login as loginApi,
   loginByPhoneCode as loginByPhoneCodeApi,
+  verifyPhoneCode as verifyPhoneCodeApi,
+  completeInvitedRegistration as completeInvitedRegistrationApi,
   logout as logoutApi,
   getToken,
   fetchCurrentUser,
+  isAuthOperationSuperseded,
+  authLogoutErrorCode,
+  registrationAuthErrorCode,
+  loadPendingRegistration,
+  loadPendingRegistrationForHydration,
+  type InvitationCredential,
+  type PendingRegistration,
   type User,
 } from '../services/auth';
 import { setOnUnauthorized } from '../services/api';
-import { saveTokenToSharedKeychain } from '../modules/shared-keychain';
-import {
-  hasPersistedSessionMarker,
-  markPersistedSession,
-} from '../services/authSessionMarker';
+import { hasPersistedSessionMarker } from '../services/authSessionMarker';
 
 const TOKEN_RESTORE_ATTEMPTS = 3;
 const KNOWN_SESSION_RESTORE_ATTEMPTS = 10;
@@ -31,21 +36,37 @@ const UNAUTHORIZED_CONFIRM_RETRY_MS = 350;
 interface AuthState {
   user: User | null;
   token: string | null;
+  pendingRegistration: PendingRegistrationState | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (username: string, password: string) => Promise<void>;
   loginByPhoneCode: (phone: string, code: string) => Promise<void>;
+  verifyPhoneCode: (
+    phone: string,
+    code: string,
+  ) => Promise<'authenticated' | 'invitation_required' | 'superseded'>;
+  completeInvitedRegistration: (credential: InvitationCredential) => Promise<void>;
   logout: () => Promise<void>;
   retrySession: () => Promise<void>;
+}
+
+export interface PendingRegistrationState {
+  expiresAt: number;
+  phoneMasked?: string;
 }
 
 const AuthContext = createContext<AuthState>({
   user: null,
   token: null,
+  pendingRegistration: null,
   isLoading: true,
   isAuthenticated: false,
   login: async () => {},
   loginByPhoneCode: async () => {},
+  verifyPhoneCode: async () => {
+    throw new Error('认证服务尚未初始化');
+  },
+  completeInvitedRegistration: async () => {},
   logout: async () => {},
   retrySession: async () => {},
 });
@@ -54,15 +75,20 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function restoreSavedToken(knownSession = false): Promise<string | null> {
+async function restoreSavedToken(
+  knownSession = false,
+  isCurrent?: () => boolean,
+): Promise<string | null> {
   const attempts = knownSession
     ? KNOWN_SESSION_RESTORE_ATTEMPTS
     : TOKEN_RESTORE_ATTEMPTS;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const saved = await getToken();
+    const saved = await getToken({ isCurrent });
+    if (isCurrent && !isCurrent()) throwAuthOperationSuperseded();
     if (saved) return saved;
     if (attempt < attempts - 1) {
       await sleep(TOKEN_RESTORE_RETRY_MS);
+      if (isCurrent && !isCurrent()) throwAuthOperationSuperseded();
     }
   }
   return null;
@@ -72,14 +98,46 @@ function isUnauthorizedError(error: unknown): boolean {
   return (error as { response?: { status?: number } } | null)?.response?.status === 401;
 }
 
-async function fetchCurrentUserWithConfirmedAuth(): Promise<User> {
+function throwAuthOperationSuperseded(): never {
+  const error = new Error('auth operation superseded');
+  error.name = 'AuthOperationSuperseded';
+  throw error;
+}
+
+async function fetchCurrentUserWithConfirmedAuth(
+  isCurrent: () => boolean = () => true,
+): Promise<User> {
   try {
-    return await fetchCurrentUser();
+    const currentUser = await fetchCurrentUser();
+    if (!isCurrent()) throwAuthOperationSuperseded();
+    return currentUser;
   } catch (error) {
+    if (!isCurrent() || isAuthOperationSuperseded(error)) {
+      throwAuthOperationSuperseded();
+    }
     if (!isUnauthorizedError(error)) throw error;
-    await sleep(UNAUTHORIZED_CONFIRM_RETRY_MS);
-    return fetchCurrentUser();
   }
+
+  await sleep(UNAUTHORIZED_CONFIRM_RETRY_MS);
+  if (!isCurrent()) throwAuthOperationSuperseded();
+  const currentUser = await fetchCurrentUser();
+  if (!isCurrent()) throwAuthOperationSuperseded();
+  return currentUser;
+}
+
+async function restorePendingRegistrationState(
+  isCurrent: () => boolean = () => true,
+  respectLogoutTombstone = false,
+): Promise<PendingRegistrationState | null> {
+  const pending: PendingRegistration | null = respectLogoutTombstone
+    ? await loadPendingRegistrationForHydration()
+    : await loadPendingRegistration();
+  if (!isCurrent()) throwAuthOperationSuperseded();
+  if (!pending) return null;
+  return {
+    expiresAt: pending.expiresAt,
+    ...(pending.phoneMasked ? { phoneMasked: pending.phoneMasked } : {}),
+  };
 }
 
 export function AuthProvider({
@@ -91,14 +149,35 @@ export function AuthProvider({
 }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [pendingRegistration, setPendingRegistration] = useState<PendingRegistrationState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const sessionEpochRef = useRef(0);
   const sessionValidationRef = useRef<Promise<void> | null>(null);
+  const providerMountedRef = useRef(true);
+
+  useEffect(() => {
+    providerMountedRef.current = true;
+    return () => {
+      providerMountedRef.current = false;
+    };
+  }, []);
+
+  const beginAuthOperation = useCallback(() => {
+    sessionEpochRef.current += 1;
+    const operationEpoch = sessionEpochRef.current;
+    return {
+      isCurrent: () => (
+        providerMountedRef.current
+        && sessionEpochRef.current === operationEpoch
+      ),
+    };
+  }, []);
 
   const clearSession = useCallback(async () => {
     sessionEpochRef.current += 1;
     setToken(null);
     setUser(null);
+    setPendingRegistration(null);
     await logoutApi();
   }, []);
 
@@ -107,19 +186,28 @@ export function AuthProvider({
 
     const validation = (async () => {
       const recoveryEpoch = sessionEpochRef.current;
-      const knownSession = token !== null || await hasPersistedSessionMarker();
-      const saved = token || await restoreSavedToken(knownSession);
-      if (!saved || sessionEpochRef.current !== recoveryEpoch) return;
+      const isCurrent = () => (
+        providerMountedRef.current
+        && sessionEpochRef.current === recoveryEpoch
+      );
+      let knownSession = token !== null;
+      if (!knownSession) {
+        knownSession = await hasPersistedSessionMarker();
+        if (!isCurrent()) return;
+      }
+      const saved = token || await restoreSavedToken(knownSession, isCurrent);
+      if (!isCurrent() || !saved) return;
 
       setToken(saved);
-      await markPersistedSession();
-      saveTokenToSharedKeychain(saved).catch(() => {});
       try {
-        const me = await fetchCurrentUserWithConfirmedAuth();
-        if (sessionEpochRef.current === recoveryEpoch) setUser(me);
+        const me = await fetchCurrentUserWithConfirmedAuth(isCurrent);
+        if (!isCurrent()) return;
+        setUser(me);
       } catch (error) {
-        if (sessionEpochRef.current === recoveryEpoch && isUnauthorizedError(error)) {
+        if (!isCurrent() || isAuthOperationSuperseded(error)) return;
+        if (isUnauthorizedError(error)) {
           await clearSession();
+          return;
         }
         throw error;
       }
@@ -149,6 +237,7 @@ export function AuthProvider({
     if (!restoreCloudSession) {
       setToken(null);
       setUser(null);
+      setPendingRegistration(null);
       setIsLoading(false);
       return () => {
         mounted = false;
@@ -157,36 +246,41 @@ export function AuthProvider({
     setIsLoading(true);
     const hydrationEpoch = sessionEpochRef.current;
     (async () => {
+      const isCurrent = () => (
+        mounted
+        && providerMountedRef.current
+        && sessionEpochRef.current === hydrationEpoch
+      );
       try {
         const knownSession = await hasPersistedSessionMarker();
-        const saved = await restoreSavedToken(knownSession);
-        if (saved && mounted && sessionEpochRef.current === hydrationEpoch) {
+        if (!isCurrent()) return;
+        const saved = await restoreSavedToken(knownSession, isCurrent);
+        if (!isCurrent()) return;
+        if (saved) {
           setToken(saved);
-          await markPersistedSession();
-          // 冷启动回灌 token 到 App Group UserDefaults + 共享 keychain,
-          // 让 Siri extension 能读到。失败静默 —— 主 App 体验不受影响。
-          saveTokenToSharedKeychain(saved).catch(() => {});
           try {
-            const me = await fetchCurrentUserWithConfirmedAuth();
-            if (mounted && sessionEpochRef.current === hydrationEpoch) setUser(me);
+            const me = await fetchCurrentUserWithConfirmedAuth(isCurrent);
+            if (!isCurrent()) return;
+            setUser(me);
           } catch (error) {
-            if (sessionEpochRef.current !== hydrationEpoch) {
-              return;
-            }
+            if (!isCurrent() || isAuthOperationSuperseded(error)) return;
             if (isUnauthorizedError(error)) {
               await clearSession();
-            } else if (mounted) {
+            } else {
               // Preserve the token for offline/transient failures and retry on
               // the next foreground transition.
               setUser(null);
             }
           }
+        } else {
+          const pending = await restorePendingRegistrationState(isCurrent, true);
+          if (!isCurrent()) return;
+          setPendingRegistration(pending);
         }
-      } catch {
-        if (sessionEpochRef.current === hydrationEpoch) {
-          setToken(null);
-          setUser(null);
-        }
+      } catch (error) {
+        if (!isCurrent() || isAuthOperationSuperseded(error)) return;
+        setToken(null);
+        setUser(null);
       } finally {
         if (mounted) setIsLoading(false);
       }
@@ -215,24 +309,96 @@ export function AuthProvider({
   }, [token, user, isLoading, restoreCloudSession, retrySession]);
 
   const login = useCallback(async (username: string, password: string) => {
-    const result = await loginApi(username, password);
-    sessionEpochRef.current += 1;
-    setToken(result.access_token);
-    setUser(result.user);
-  }, []);
+    const operation = beginAuthOperation();
+    try {
+      const result = await loginApi(username, password, operation);
+      if (!operation.isCurrent()) return;
+      setToken(result.access_token);
+      setUser(result.user);
+      setPendingRegistration(null);
+    } catch (error) {
+      if (!operation.isCurrent() || isAuthOperationSuperseded(error)) return;
+      throw error;
+    }
+  }, [beginAuthOperation]);
 
   const loginByPhoneCode = useCallback(async (phone: string, code: string) => {
-    const result = await loginByPhoneCodeApi(phone, code);
-    sessionEpochRef.current += 1;
-    setToken(result.access_token);
-    setUser(result.user);
-  }, []);
+    const operation = beginAuthOperation();
+    try {
+      const result = await loginByPhoneCodeApi(phone, code, operation);
+      if (!operation.isCurrent()) return;
+      setToken(result.access_token);
+      setUser(result.user);
+      setPendingRegistration(null);
+    } catch (error) {
+      if (!operation.isCurrent() || isAuthOperationSuperseded(error)) return;
+      throw error;
+    }
+  }, [beginAuthOperation]);
+
+  const verifyPhoneCode = useCallback(async (phone: string, code: string) => {
+    const operation = beginAuthOperation();
+    try {
+      const result = await verifyPhoneCodeApi(phone, code, operation);
+      if (!operation.isCurrent()) return 'superseded';
+      if (result.outcome === 'authenticated') {
+        setToken(result.access_token);
+        setUser(result.user);
+        setPendingRegistration(null);
+      } else {
+        const pending = await restorePendingRegistrationState(operation.isCurrent);
+        if (!operation.isCurrent()) return 'superseded';
+        setPendingRegistration(pending);
+      }
+      return result.outcome;
+    } catch (error) {
+      if (!operation.isCurrent() || isAuthOperationSuperseded(error)) return 'superseded';
+      throw error;
+    }
+  }, [beginAuthOperation]);
+
+  const completeInvitedRegistration = useCallback(async (
+    credential: InvitationCredential,
+  ) => {
+    const operation = beginAuthOperation();
+    try {
+      const result = await completeInvitedRegistrationApi(credential, operation);
+      if (!operation.isCurrent()) return;
+      setToken(result.access_token);
+      setUser(result.user);
+      setPendingRegistration(null);
+    } catch (error) {
+      if (!operation.isCurrent() || isAuthOperationSuperseded(error)) return;
+      if (registrationAuthErrorCode(error) === 'VERIFIED_PHONE_TICKET_EXPIRED') {
+        setPendingRegistration(null);
+        throw error;
+      }
+      const pending = await restorePendingRegistrationState(operation.isCurrent);
+      if (!operation.isCurrent()) return;
+      setPendingRegistration(pending);
+      throw error;
+    }
+  }, [beginAuthOperation]);
 
   const logout = useCallback(async () => {
+    // Invalidate every operation that started before this explicit logout at
+    // the synchronous entry boundary. A failed durable barrier keeps the
+    // current UI, but must never revive those now-stale operations.
     sessionEpochRef.current += 1;
+    try {
+      await logoutApi();
+    } catch (error) {
+      if (authLogoutErrorCode(error) !== 'LOGOUT_CLEANUP_INCOMPLETE') {
+        throw error;
+      }
+      setToken(null);
+      setUser(null);
+      setPendingRegistration(null);
+      throw error;
+    }
     setToken(null);
     setUser(null);
-    await logoutApi();
+    setPendingRegistration(null);
   }, []);
 
   const isAuthenticated = token !== null;
@@ -242,10 +408,13 @@ export function AuthProvider({
       value={{
         user,
         token,
+        pendingRegistration,
         isLoading,
         isAuthenticated,
         login,
         loginByPhoneCode,
+        verifyPhoneCode,
+        completeInvitedRegistration,
         logout,
         retrySession,
       }}

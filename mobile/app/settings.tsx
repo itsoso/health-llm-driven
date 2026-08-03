@@ -6,7 +6,11 @@ import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import api from '../services/api';
-import { getAccountDeletionRequest, requestAccountDeletion } from '../services/auth';
+import {
+  authLogoutErrorCode,
+  getAccountDeletionRequest,
+  requestAccountDeletion,
+} from '../services/auth';
 import { connectionStatusSummary, fetchDataConnections } from '../services/dataConnections';
 import { useAuth } from '../hooks/useAuth';
 import { useBiometricLock } from '../hooks/useBiometricLock';
@@ -69,7 +73,21 @@ export default function SettingsScreen() {
   const handleLogout = () => {
     Alert.alert('退出登录', '确定要退出吗？', [
       { text: '取消', style: 'cancel' },
-      { text: '退出', style: 'destructive', onPress: () => logout() },
+      {
+        text: '退出',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await logout();
+          } catch (error) {
+            if (authLogoutErrorCode(error) === 'LOGOUT_CLEANUP_INCOMPLETE') {
+              Alert.alert('已安全退出', '登录已失效，但本机残留数据清理尚未完成，请稍后重试。');
+              return;
+            }
+            Alert.alert('退出失败', '未能安全保存退出状态，你仍保持登录，请稍后重试。');
+          }
+        },
+      },
     ]);
   };
 

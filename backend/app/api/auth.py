@@ -1,21 +1,27 @@
 """用户认证API"""
 from datetime import datetime, timedelta, timezone
-from typing import Optional, AsyncGenerator
+from typing import Annotated, Any, Optional, AsyncGenerator
 import json
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+import hmac
+import re
+from fastapi import APIRouter, Body, Depends, HTTPException, status, Request, Response
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from pydantic import Field, ValidationError
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from app.database import get_db
 from app.models.user import User, GarminCredential
 from app.models.agent_audit_log import AgentAuditLog
+from app.models.registration_invitation import RegistrationAuthAttemptAudit
 from app.models.account_deletion_request import AccountDeletionRequest
 from app.schemas.auth import (
     UserRegister, UserLogin, Token, UserResponse, UserUpdate,
     PhoneCodeRequest, PhoneCodeResponse, PhoneCodeLogin, PhoneLoginToken,
+    PhoneVerificationAuthenticated, PhoneVerificationInvitationRequired,
+    InvitationCredentialInput, InvitationInspectResponse, InvitedRegistrationInput,
     PasswordChange, PasswordSet, BindWebLogin, GarminCredentialCreate, GarminCredentialResponse,
     GarminSyncRequest, GarminSyncResponse,
     GarminTestConnectionResponse, GarminMFAVerifyRequest, GarminMFAVerifyResponse
@@ -30,7 +36,15 @@ from app.services.phone_auth import (
     consume_phone_code,
     issue_phone_code,
     mask_phone,
-    normalize_phone,
+)
+from app.services.registration_invitation import (
+    create_phone_registration_grant,
+    find_invitation_by_code,
+    find_invitation_by_link_token,
+    find_invitation_for_update,
+    find_phone_registration_grant_for_update,
+    registration_idempotency_digest,
+    registration_source_hmac,
 )
 from app.api.deps import get_current_user, get_current_user_required
 from app.services.web_session import (
@@ -46,6 +60,174 @@ router = APIRouter()
 
 # 配置限流器
 limiter = Limiter(key_func=get_remote_address)
+
+_URL_SAFE_CREDENTIAL_RE = re.compile(r"[A-Za-z0-9_-]{22,128}\Z")
+_MANUAL_CODE_RE = re.compile(r"[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}\Z")
+_IDEMPOTENCY_KEY_RE = re.compile(r"[A-Za-z0-9._:-]{16,128}\Z")
+
+
+def _auth_error(http_status: int, code: str, message: str) -> HTTPException:
+    return HTTPException(
+        status_code=http_status,
+        detail={"code": code, "message": message},
+    )
+
+
+def _registration_expiry_is_future(value: datetime | None, now: datetime) -> bool:
+    if value is None:
+        return False
+    normalized = value
+    if normalized.tzinfo is None:
+        normalized = normalized.replace(tzinfo=timezone.utc)
+    else:
+        normalized = normalized.astimezone(timezone.utc)
+    return normalized > now
+
+
+def _require_legacy_registration_open() -> None:
+    """Block every legacy account-creation path once enforcement is active."""
+
+    from app.config import settings
+
+    if settings.registration_invitation_enforcement_enabled:
+        raise _auth_error(
+            status.HTTP_403_FORBIDDEN,
+            "REGISTRATION_INVITATION_REQUIRED",
+            "新用户需要管理员发送的手机号注册邀请",
+        )
+
+
+def _require_registration_rollout_open() -> None:
+    """Fail closed when invited registration is paused for safe rollback."""
+
+    from app.config import settings
+
+    if not settings.registration_invitation_rollout_enabled:
+        raise _auth_error(
+            status.HTTP_403_FORBIDDEN,
+            "REGISTRATION_CLOSED",
+            "新用户注册暂时关闭，已注册用户仍可登录",
+        )
+
+
+def _safe_body(model: type, raw: Any):
+    """Validate public credential bodies without FastAPI echoing rejected input."""
+
+    try:
+        return model.model_validate(raw)
+    except (ValidationError, TypeError, ValueError) as exc:
+        raise _auth_error(
+            status.HTTP_400_BAD_REQUEST,
+            "REGISTRATION_INPUT_INVALID",
+            "注册凭据格式无效",
+        ) from exc
+
+
+def _secret_value(value: Any) -> str | None:
+    return value.get_secret_value() if value is not None else None
+
+
+def _validated_invitation_credentials(payload: InvitationCredentialInput) -> tuple[str | None, str | None]:
+    manual_code = _secret_value(payload.manual_code)
+    link_token = _secret_value(payload.link_token)
+    if manual_code is not None:
+        manual_code = manual_code.strip().upper()
+        if not _MANUAL_CODE_RE.fullmatch(manual_code):
+            raise _auth_error(400, "REGISTRATION_INPUT_INVALID", "注册凭据格式无效")
+    if link_token is not None:
+        link_token = link_token.strip()
+        if not _URL_SAFE_CREDENTIAL_RE.fullmatch(link_token):
+            raise _auth_error(400, "REGISTRATION_INPUT_INVALID", "注册凭据格式无效")
+    return manual_code, link_token
+
+
+def _audit_invited_registration(
+    db: Session,
+    *,
+    user_id: int,
+    action: str,
+    invitation_id: int,
+    grant_id: int,
+    outcome: str,
+) -> None:
+    db.add(
+        AgentAuditLog(
+            user_id=user_id,
+            agent_type="auth_registration",
+            specialist_name="invited_phone_registration",
+            action=action,
+            result_summary=outcome,
+            result_detail={
+                "invitation_id": invitation_id,
+                "grant_id": grant_id,
+                "outcome": outcome,
+            },
+        )
+    )
+
+
+def _write_registration_terminal_audit(
+    db: Session,
+    *,
+    outcome: str,
+    error_code: str | None,
+    invitation_id: int | None,
+    grant_id: int | None,
+    user_id: int | None,
+    phone_masked: str | None,
+    source_hmac: str | None,
+) -> None:
+    """Stage one bounded terminal attempt record in the current transaction."""
+
+    db.add(
+        RegistrationAuthAttemptAudit(
+            outcome=outcome,
+            error_code=error_code,
+            invitation_id=invitation_id,
+            grant_id=grant_id,
+            user_id=user_id,
+            phone_masked=phone_masked,
+            source_hmac=source_hmac,
+        )
+    )
+    db.flush()
+
+
+def _persist_rejected_registration_audit(
+    db: Session,
+    *,
+    error_code: str,
+    context: dict[str, Any],
+) -> None:
+    """Persist rejection after the business transaction rolled back.
+
+    Audit availability never changes the original safe business response.
+    """
+
+    try:
+        _write_registration_terminal_audit(
+            db,
+            outcome="rejected",
+            error_code=error_code[:64],
+            invitation_id=context.get("invitation_id"),
+            grant_id=context.get("grant_id"),
+            user_id=context.get("user_id"),
+            phone_masked=context.get("phone_masked"),
+            source_hmac=context.get("source_hmac"),
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.error("invited registration terminal audit unavailable")
+
+
+def _registration_error_code(exc: HTTPException) -> str:
+    detail = exc.detail
+    if isinstance(detail, dict):
+        code = detail.get("code")
+        if isinstance(code, str) and 1 <= len(code) <= 64:
+            return code
+    return "REGISTRATION_POLICY_REJECTED"
 
 
 def user_to_response(user: User, db: Session) -> UserResponse:
@@ -155,6 +337,8 @@ async def register(
     from app.config import settings
     from app.models.invitation import InvitationCode
 
+    _require_legacy_registration_open()
+
     # 验证邀请码：先检查数据库中的邀请码，再检查默认邀请码
     invite_code_upper = user_data.invite_code.upper()
     invite_valid = False
@@ -167,10 +351,14 @@ async def register(
     if db_invite and db_invite.is_valid:
         invite_valid = True
         db_invite.used_count += 1
-        logger.info(f"使用数据库邀请码: {invite_code_upper}, 已使用 {db_invite.used_count}/{db_invite.max_uses}")
+        logger.info(
+            "使用数据库邀请码，已使用 %s/%s",
+            db_invite.used_count,
+            db_invite.max_uses,
+        )
     elif invite_code_upper == settings.default_invite_code.upper():
         invite_valid = True
-        logger.info(f"使用默认邀请码: {invite_code_upper}")
+        logger.info("使用默认邀请码")
 
     if not invite_valid:
         raise HTTPException(
@@ -207,7 +395,7 @@ async def register(
     db.commit()
     db.refresh(user)
 
-    logger.info(f"新用户注册: {user.id} ({user.username}), 邀请码: {user.invite_code}, 自动审核通过")
+    logger.info("旧版邀请码新用户注册: user_id=%s", user.id)
 
     # 邀请码有效，自动通过，直接返回token
     access_token = auth_service.create_access_token({"sub": str(user.id)})
@@ -241,7 +429,10 @@ async def send_phone_code(
     except PhoneCodeCooldown as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
     except (PhoneCodeDeliveryFailed, PhoneCodeDeliveryNotConfigured) as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from None
 
     return PhoneCodeResponse(
         message="验证码已发送",
@@ -251,17 +442,28 @@ async def send_phone_code(
     )
 
 
-@router.post("/phone/login", response_model=PhoneLoginToken, summary="手机号验证码登录或注册")
+@router.post(
+    "/phone/login",
+    response_model=PhoneLoginToken,
+    summary="手机号验证码登录或注册",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {"application/json": {"schema": PhoneCodeLogin.model_json_schema()}},
+        }
+    },
+)
 @limiter.limit("10/minute")
 async def login_by_phone_code(
     request: Request,
     response: Response,
-    payload: PhoneCodeLogin,
+    payload: Any = Body(...),
     db: Session = Depends(get_db),
 ):
-    """验证码正确则登录；新手机号自动创建一个最小账号。"""
+    """Legacy OTP login; enforcement blocks unknown-phone auto-registration."""
+    parsed = _safe_body(PhoneCodeLogin, payload)
     try:
-        phone = consume_phone_code(db, payload.phone, payload.code, purpose="login")
+        phone = consume_phone_code(db, parsed.phone, parsed.code, purpose="login")
     except (InvalidPhoneNumber, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -270,6 +472,13 @@ async def login_by_phone_code(
     is_new_user = False
     if user is None:
         from app.config import settings
+
+        if settings.registration_invitation_enforcement_enabled:
+            raise _auth_error(
+                status.HTTP_403_FORBIDDEN,
+                "REGISTRATION_INVITATION_REQUIRED",
+                "该手机号需要管理员邀请后才能注册",
+            )
 
         user = User(
             username=_unique_phone_username(db, phone),
@@ -315,6 +524,375 @@ async def login_by_phone_code(
         result.access_token,
     )
     return result.model_copy(update={"access_token": delivered_access_token})
+
+
+@router.post(
+    "/phone/verify",
+    response_model=Annotated[
+        PhoneVerificationAuthenticated | PhoneVerificationInvitationRequired,
+        Field(discriminator="outcome"),
+    ],
+    summary="验证手机号并区分登录或邀请注册",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {"application/json": {"schema": PhoneCodeLogin.model_json_schema()}},
+        }
+    },
+)
+@limiter.limit("10/minute")
+async def verify_phone_code(
+    request: Request,
+    response: Response,
+    payload: Any = Body(...),
+    db: Session = Depends(get_db),
+):
+    """Consume an OTP exactly once without creating an unknown-phone user."""
+
+    parsed = _safe_body(PhoneCodeLogin, payload)
+    try:
+        phone = consume_phone_code(
+            db,
+            parsed.phone,
+            parsed.code,
+            purpose="login",
+            commit=False,
+        )
+        now = datetime.now(timezone.utc)
+        user = auth_service.get_user_by_phone(db, phone)
+        if user is not None:
+            try:
+                _ensure_active_approved(user)
+            except HTTPException:
+                # A valid OTP remains one-time even when account policy denies
+                # token issuance.
+                db.commit()
+                raise
+            user.phone_verified_at = now
+            db.commit()
+            db.refresh(user)
+            token = _issue_token_response(user, db)
+            result = PhoneVerificationAuthenticated(
+                access_token=token.access_token,
+                token_type=token.token_type,
+                user=token.user,
+                is_new_user=False,
+            )
+            return _deliver_token(request, response, result)
+
+        from app.config import settings
+
+        if not settings.registration_invitation_rollout_enabled:
+            # A valid OTP remains one-time while rollback closes only new
+            # registrations. Existing users above continue to authenticate.
+            db.commit()
+            raise _auth_error(
+                status.HTTP_403_FORBIDDEN,
+                "REGISTRATION_CLOSED",
+                "新用户注册暂时关闭，已注册用户仍可登录",
+            )
+        issued = create_phone_registration_grant(db, phone, now=now)
+        db.commit()
+        expires_in = max(1, int((issued.expires_at - now).total_seconds()))
+        return PhoneVerificationInvitationRequired(
+            verified_phone_ticket=issued.token,
+            expires_in_seconds=expires_in,
+        )
+    except HTTPException:
+        db.rollback()
+        raise
+    except (InvalidPhoneNumber, ValueError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        db.rollback()
+        logger.warning("phone verification persistence conflict")
+        raise _auth_error(
+            status.HTTP_409_CONFLICT,
+            "PHONE_VERIFICATION_CONFLICT",
+            "手机号验证状态冲突，请重新获取验证码",
+        ) from exc
+
+
+@router.post(
+    "/invitations/inspect",
+    response_model=InvitationInspectResponse,
+    summary="检查注册邀请",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": InvitationCredentialInput.model_json_schema()
+                }
+            },
+        }
+    },
+)
+@limiter.limit("20/minute")
+async def inspect_registration_invitation(
+    request: Request,
+    payload: Any = Body(...),
+    db: Session = Depends(get_db),
+):
+    _require_registration_rollout_open()
+    parsed = _safe_body(InvitationCredentialInput, payload)
+    manual_code, link_token = _validated_invitation_credentials(parsed)
+    invitation = (
+        find_invitation_by_code(db, manual_code)
+        if manual_code is not None
+        else find_invitation_by_link_token(db, link_token)
+    )
+    now = datetime.now(timezone.utc)
+    if invitation is None or not invitation.is_usable(now):
+        return InvitationInspectResponse(valid=False)
+    return InvitationInspectResponse(
+        valid=True,
+        phone_masked=invitation.phone_masked,
+        expires_at=invitation.expires_at,
+    )
+
+
+@router.post(
+    "/invited-registration",
+    response_model=PhoneLoginToken,
+    summary="使用手机号验证票据与邀请完成注册",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": InvitedRegistrationInput.model_json_schema()
+                }
+            },
+        }
+    },
+)
+@limiter.limit("10/minute")
+async def invited_phone_registration(
+    request: Request,
+    response: Response,
+    payload: Any = Body(...),
+    db: Session = Depends(get_db),
+):
+    audit_context: dict[str, Any] = {
+        "invitation_id": None,
+        "grant_id": None,
+        "user_id": None,
+        "phone_masked": None,
+        "source_hmac": registration_source_hmac(
+            request.client.host if request.client is not None else None
+        ),
+    }
+    try:
+        _require_registration_rollout_open()
+        parsed = _safe_body(InvitedRegistrationInput, payload)
+        manual_code, link_token = _validated_invitation_credentials(parsed)
+        ticket = parsed.verified_phone_ticket.get_secret_value().strip()
+        idempotency_key = parsed.idempotency_key.get_secret_value().strip()
+        if not _URL_SAFE_CREDENTIAL_RE.fullmatch(
+            ticket
+        ) or not _IDEMPOTENCY_KEY_RE.fullmatch(idempotency_key):
+            raise _auth_error(400, "REGISTRATION_INPUT_INVALID", "注册凭据格式无效")
+
+        now = datetime.now(timezone.utc)
+        idempotency_digest = registration_idempotency_digest(idempotency_key)
+        grant = find_phone_registration_grant_for_update(db, ticket)
+        invitation = find_invitation_for_update(
+            db,
+            manual_code=manual_code,
+            link_token=link_token,
+        )
+        if grant is not None:
+            audit_context["grant_id"] = grant.id
+        if invitation is not None:
+            audit_context["invitation_id"] = invitation.id
+            audit_context["phone_masked"] = invitation.phone_masked
+        if grant is None:
+            raise _auth_error(
+                400,
+                "VERIFIED_PHONE_TICKET_EXPIRED",
+                "手机号验证已失效，请重新验证",
+            )
+        if invitation is None:
+            raise _auth_error(
+                400,
+                "INVITATION_INVALID",
+                "邀请无效或已过期",
+            )
+
+        # A successful request can be safely replayed only with the same key.
+        if grant.consumed_at is not None:
+            if (
+                grant.idempotency_key_digest == idempotency_digest
+                and grant.consumed_by is not None
+                and invitation.status == "consumed"
+                and invitation.consumed_by == grant.consumed_by
+            ):
+                if not _registration_expiry_is_future(grant.expires_at, now):
+                    raise _auth_error(
+                        400,
+                        "VERIFIED_PHONE_TICKET_EXPIRED",
+                        "手机号验证已失效，请重新验证",
+                    )
+                if not _registration_expiry_is_future(invitation.expires_at, now):
+                    raise _auth_error(
+                        400,
+                        "INVITATION_EXPIRED",
+                        "邀请无效或已过期",
+                    )
+                user = db.get(User, grant.consumed_by)
+                if user is None:
+                    raise _auth_error(409, "REGISTRATION_STATE_CONFLICT", "注册状态冲突")
+                _ensure_active_approved(user)
+                audit_context["user_id"] = user.id
+                token = _issue_token_response(user, db)
+                result = PhoneLoginToken(
+                    access_token=token.access_token,
+                    token_type=token.token_type,
+                    user=token.user,
+                    is_new_user=False,
+                )
+                _write_registration_terminal_audit(
+                    db,
+                    outcome="success",
+                    error_code=None,
+                    invitation_id=invitation.id,
+                    grant_id=grant.id,
+                    user_id=user.id,
+                    phone_masked=invitation.phone_masked,
+                    source_hmac=audit_context["source_hmac"],
+                )
+                db.commit()
+                delivered = _deliver_access_token(request, response, result.access_token)
+                return result.model_copy(update={"access_token": delivered})
+            raise _auth_error(
+                409,
+                "INVITATION_ALREADY_USED",
+                "注册凭据已使用",
+            )
+
+        grant_expiry = grant.expires_at
+        if grant_expiry.tzinfo is None:
+            grant_expiry = grant_expiry.replace(tzinfo=timezone.utc)
+        if grant_expiry <= now:
+            raise _auth_error(
+                400,
+                "VERIFIED_PHONE_TICKET_EXPIRED",
+                "手机号验证已失效，请重新验证",
+            )
+        if not invitation.is_usable(now):
+            invitation_code = {
+                "revoked": "INVITATION_REVOKED",
+                "consumed": "INVITATION_ALREADY_USED",
+                "expired": "INVITATION_EXPIRED",
+            }.get(invitation.status, "INVITATION_EXPIRED")
+            raise _auth_error(
+                400,
+                invitation_code,
+                "邀请无效或已过期",
+            )
+        if not hmac.compare_digest(grant.phone_hmac, invitation.phone_hmac):
+            raise _auth_error(
+                400,
+                "INVITATION_PHONE_MISMATCH",
+                "邀请与已验证手机号不匹配",
+            )
+
+        phone = grant.phone_ciphertext
+        if auth_service.get_user_by_phone(db, phone) is not None:
+            raise _auth_error(
+                409,
+                "REGISTRATION_USER_ALREADY_EXISTS",
+                "该手机号已注册，请直接登录",
+            )
+
+        user = User(
+            username=_unique_phone_username(db, phone),
+            email=None,
+            hashed_password=None,
+            name="小巴用户",
+            phone=phone,
+            phone_verified_at=now,
+            is_active=True,
+            is_approved=True,
+            onboarding_completed=False,
+        )
+        db.add(user)
+        db.flush()
+        grant.consumed_at = now
+        grant.consumed_by = user.id
+        grant.idempotency_key_digest = idempotency_digest
+        invitation.status = "consumed"
+        invitation.consumed_at = now
+        invitation.consumed_by = user.id
+        _audit_invited_registration(
+            db,
+            user_id=user.id,
+            action="invitation_consumed",
+            invitation_id=invitation.id,
+            grant_id=grant.id,
+            outcome="success",
+        )
+        _write_registration_terminal_audit(
+            db,
+            outcome="success",
+            error_code=None,
+            invitation_id=invitation.id,
+            grant_id=grant.id,
+            user_id=user.id,
+            phone_masked=invitation.phone_masked,
+            source_hmac=audit_context["source_hmac"],
+        )
+        db.commit()
+        db.refresh(user)
+        token = _issue_token_response(user, db)
+        result = PhoneLoginToken(
+            access_token=token.access_token,
+            token_type=token.token_type,
+            user=token.user,
+            is_new_user=True,
+        )
+        delivered = _deliver_access_token(request, response, result.access_token)
+        return result.model_copy(update={"access_token": delivered})
+    except HTTPException as exc:
+        db.rollback()
+        _persist_rejected_registration_audit(
+            db,
+            error_code=_registration_error_code(exc),
+            context=audit_context,
+        )
+        raise
+    except IntegrityError as exc:
+        db.rollback()
+        logger.warning("invited registration persistence conflict")
+        safe_error = _auth_error(
+            409,
+            "REGISTRATION_STATE_CONFLICT",
+            "注册状态冲突，请重试",
+        )
+        _persist_rejected_registration_audit(
+            db,
+            error_code="REGISTRATION_STATE_CONFLICT",
+            context=audit_context,
+        )
+        raise safe_error from exc
+    except Exception as exc:
+        db.rollback()
+        # Keep both the response and production logs free of exception text:
+        # SQL drivers and downstream audit hooks may attach sensitive params.
+        logger.error("invited registration persistence failed")
+        safe_error = _auth_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "REGISTRATION_PERSISTENCE_FAILED",
+            "注册服务暂时不可用，请稍后重试",
+        )
+        _persist_rejected_registration_audit(
+            db,
+            error_code="REGISTRATION_PERSISTENCE_FAILED",
+            context=audit_context,
+        )
+        raise safe_error from exc
 
 
 @router.post("/login", response_model=Token, summary="用户登录")

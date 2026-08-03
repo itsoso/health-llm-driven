@@ -21,6 +21,7 @@ import urllib.parse
 import uuid
 
 import httpx
+from httpx import HTTPStatusError, RequestError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -45,6 +46,16 @@ class PhoneCodeDeliveryNotConfigured(RuntimeError):
 
 class PhoneCodeDeliveryFailed(RuntimeError):
     """SMS provider rejected or failed the delivery request."""
+
+
+def _raise_sms_delivery_failed(*, channel: str, error_code: str, phone: str) -> None:
+    logger.error(
+        "[phone-auth] SMS delivery failed channel=%s error_code=%s phone=%s",
+        channel,
+        error_code,
+        mask_phone(phone),
+    )
+    raise PhoneCodeDeliveryFailed("短信发送失败，请稍后再试") from None
 
 
 @dataclass(frozen=True)
@@ -186,23 +197,35 @@ def _send_aliyun_sms(phone: str, code: str) -> None:
     }
     params["Signature"] = _aliyun_signature(params, access_key_secret)
 
+    failure_code: str | None = None
+    payload = None
     try:
         with httpx.Client(timeout=8.0) as client:
             response = client.get("https://dysmsapi.aliyuncs.com/", params=params)
             response.raise_for_status()
-            payload = response.json()
-    except Exception as exc:
-        logger.error("[phone-auth] Aliyun SMS request failed for %s: %s", mask_phone(phone), str(exc))
-        raise PhoneCodeDeliveryFailed("短信发送失败，请稍后再试") from exc
+    except HTTPStatusError:
+        failure_code = "http_status"
+    except RequestError:
+        failure_code = "transport"
+    except Exception:  # noqa: BLE001
+        failure_code = "transport"
 
-    if payload.get("Code") != "OK":
-        logger.error(
-            "[phone-auth] Aliyun SMS rejected for %s: code=%s message=%s",
-            mask_phone(phone),
-            payload.get("Code"),
-            payload.get("Message"),
+    if failure_code is None:
+        try:
+            payload = response.json()
+        except Exception:  # noqa: BLE001
+            failure_code = "invalid_ack"
+    if failure_code is None:
+        if not isinstance(payload, dict) or not isinstance(payload.get("Code"), str):
+            failure_code = "invalid_ack"
+        elif payload["Code"] != "OK":
+            failure_code = "provider_rejected"
+    if failure_code is not None:
+        _raise_sms_delivery_failed(
+            channel="aliyun_enterprise",
+            error_code=failure_code,
+            phone=phone,
         )
-        raise PhoneCodeDeliveryFailed("短信发送失败，请稍后再试")
 
 
 def _aliyun_pnvs_configured() -> bool:
@@ -249,23 +272,35 @@ def _send_aliyun_pnvs_sms(phone: str, code: str) -> None:
     }
     params["Signature"] = _aliyun_signature(params, access_key_secret, http_method="POST")
 
+    failure_code: str | None = None
+    payload = None
     try:
         with httpx.Client(timeout=8.0) as client:
             response = client.post("https://dypnsapi.aliyuncs.com/", data=params)
             response.raise_for_status()
-            payload = response.json()
-    except Exception as exc:
-        logger.error("[phone-auth] Aliyun PNVS SMS request failed for %s: %s", mask_phone(phone), str(exc))
-        raise PhoneCodeDeliveryFailed("短信发送失败，请稍后再试") from exc
+    except HTTPStatusError:
+        failure_code = "http_status"
+    except RequestError:
+        failure_code = "transport"
+    except Exception:  # noqa: BLE001
+        failure_code = "transport"
 
-    if payload.get("Code") != "OK":
-        logger.error(
-            "[phone-auth] Aliyun PNVS SMS rejected for %s: code=%s message=%s",
-            mask_phone(phone),
-            payload.get("Code"),
-            payload.get("Message"),
+    if failure_code is None:
+        try:
+            payload = response.json()
+        except Exception:  # noqa: BLE001
+            failure_code = "invalid_ack"
+    if failure_code is None:
+        if not isinstance(payload, dict) or not isinstance(payload.get("Code"), str):
+            failure_code = "invalid_ack"
+        elif payload["Code"] != "OK":
+            failure_code = "provider_rejected"
+    if failure_code is not None:
+        _raise_sms_delivery_failed(
+            channel="aliyun_pnvs",
+            error_code=failure_code,
+            phone=phone,
         )
-        raise PhoneCodeDeliveryFailed("短信发送失败，请稍后再试")
 
 
 def _deliver_code(phone: str, code: str) -> Optional[str]:
@@ -344,7 +379,14 @@ def issue_phone_code(
     )
 
 
-def consume_phone_code(db: Session, raw_phone: str, code: str, *, purpose: str = "login") -> str:
+def consume_phone_code(
+    db: Session,
+    raw_phone: str,
+    code: str,
+    *,
+    purpose: str = "login",
+    commit: bool = True,
+) -> str:
     phone = normalize_phone(raw_phone)
     clean_code = _PHONE_DIGITS_RE.sub("", code or "")
     if len(clean_code) < 4:
@@ -358,6 +400,7 @@ def consume_phone_code(db: Session, raw_phone: str, code: str, *, purpose: str =
             PhoneAuthCode.consumed_at.is_(None),
         )
         .order_by(PhoneAuthCode.created_at.desc())
+        .with_for_update()
         .first()
     )
     if not record:
@@ -373,9 +416,15 @@ def consume_phone_code(db: Session, raw_phone: str, code: str, *, purpose: str =
     expected_hash = _hash_code(phone, clean_code, purpose)
     if not hmac.compare_digest(record.code_hash, expected_hash):
         record.attempt_count += 1
+        # Failed attempts remain durable even when the caller defers a
+        # successful consume into a larger transaction. Otherwise callers that
+        # roll back on this ValueError could bypass the attempt limit.
         db.commit()
         raise ValueError("验证码无效或已过期")
 
     record.consumed_at = now
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return phone
