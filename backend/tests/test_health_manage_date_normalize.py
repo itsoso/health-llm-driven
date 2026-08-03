@@ -25,6 +25,10 @@ from app.services.agent_executor import (
     _tool_call_is_read_only,
 )
 from app.services.agent_kernel.types import GoalSpec
+from app.services.internal_diet_correction import (
+    INTERNAL_DIET_PORTION_SIGNATURE_HEADER,
+    verify_internal_diet_portion_signature,
+)
 
 BJ = timezone(timedelta(hours=8))
 
@@ -500,7 +504,6 @@ async def test_partial_meal_correction_scales_the_unique_existing_record():
         "record_id": 829,
         "data": {
             "meal_type": "dinner",
-            "source": "agent_portion_correction",
             "food_items": "三文鱼 + 黎麦沙拉 + 羊乳酪（按实际食用四分之一计）",
             "calories": 500.0,
             "protein": 20.0,
@@ -576,6 +579,13 @@ async def test_partial_meal_correction_replaces_the_previous_nutrition_fraction(
         "晚餐不是只吃了1/2，修改记录",
         "晚餐不是只吃了1/2，是只吃了1/3，修改记录",
         "晚餐只吃了1/2还是1/3？",
+        "晚餐只吃了1/2，实际是1/3，修改记录",
+        "晚餐只吃了1/2，应该改成1/3，修改记录",
+        "晚餐只吃了1/2么 修改记录",
+        "晚餐只吃了1/2呢 修改记录",
+        "晚餐没只吃1/2，修改记录",
+        "晚餐未只吃1/2，修改记录",
+        "晚餐并没有只吃1/2，修改记录",
     ],
 )
 async def test_unsafe_unsupported_or_invalid_fraction_cannot_reach_a_diet_write(message):
@@ -633,7 +643,6 @@ async def test_partial_meal_correction_preserves_food_without_inventing_nutritio
         "record_id": 830,
         "data": {
             "meal_type": "lunch",
-            "source": "agent_portion_correction",
             "food_items": "牛肉面（按实际食用三分之一计）",
         },
     }
@@ -672,9 +681,59 @@ async def test_partial_meal_correction_replaces_a_generated_portion_suffix():
     assert args["record_id"] == 831
     assert args["data"] == {
         "meal_type": "dinner",
-        "source": "agent_portion_correction",
         "food_items": "牛肉面（按实际食用1/2计）",
     }
+
+
+@pytest.mark.asyncio
+async def test_deterministic_portion_execution_signs_the_exact_internal_update():
+    executor = AgentExecutor(MagicMock())
+    executor._current_user_id = 7
+    executor._current_turn_user_message = "晚餐只吃了 1/1 修改记录"
+    executor._api_get_json = AsyncMock(return_value=([{
+        "id": 833,
+        "meal_type": "dinner",
+        "food_items": "牛肉面",
+        "calories": 500,
+        "fiber": 0,
+    }], None))
+
+    calls = await executor._normalize_explicit_diet_update_tool_calls([{
+        "id": "call-1",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps({
+                "record_type": "diet",
+                "operation": "list",
+                "date": "today",
+                "meal_type": "dinner",
+            }),
+        },
+    }], "test-token")
+    args = json.loads(calls[0]["function"]["arguments"])
+    executor._api_put = AsyncMock(return_value=json.dumps({
+        "id": 833,
+        "meal_type": "dinner",
+        "food_items": args["data"]["food_items"],
+    }))
+    executor._invalidate_twin_after_mutation = MagicMock()
+
+    await executor._exec_health_manage(
+        "http://internal.test/api/v1",
+        {"Authorization": "Bearer test-token"},
+        args,
+    )
+
+    put_headers = executor._api_put.await_args.args[1]
+    signature = put_headers[INTERNAL_DIET_PORTION_SIGNATURE_HEADER]
+    assert verify_internal_diet_portion_signature(
+        signature,
+        7,
+        833,
+        args["data"],
+    )
+    assert "source" not in args["data"]
 
 
 @pytest.mark.asyncio

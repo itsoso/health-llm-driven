@@ -42,6 +42,11 @@ from app.services.post_record_quality import (
     build_post_record_quality_response,
     combine_post_record_quality_responses,
 )
+from app.services.internal_diet_correction import (
+    INTERNAL_DIET_PORTION_SIGNATURE_HEADER,
+    build_internal_diet_portion_signature,
+    diet_portion_update_fingerprint,
+)
 from app.services.agent_turn_recovery import (
     is_data_insufficiency_response,
     is_model_scope_refusal,
@@ -4815,13 +4820,15 @@ _DIET_PARTIAL_CORRECTION_SIGNAL_RE = re.compile(
     re.I,
 )
 _DIET_PARTIAL_CORRECTION_QUESTION_RE = re.compile(
-    r"[?？]|会不会|要不要|是否|行不行|可以吗|(?:吗|嘛)(?:[，。！？?!]|$)|"
+    r"[?？]|会不会|要不要|是否|行不行|可以吗|"
+    r"(?:吗|嘛|么|呢)(?=\s|[，。！？?!]|$)|"
     r"好不好|是不是|怎么办|怎么吃|吃多少",
     re.I,
 )
 _DIET_PARTIAL_CORRECTION_NEGATION_RE = re.compile(
     r"(?:不要|别|不该|不能|不可|避免|不是|并非|并不是).{0,10}"
-    r"(?:只吃|吃.{0,4}(?:一半|半份|分之|\d+\s*/))",
+    r"(?:只吃|吃.{0,4}(?:一半|半份|分之|\d+\s*/))|"
+    r"(?:并没有|没有|没|未)\s*只吃",
     re.I,
 )
 _DIET_PARTIAL_FRACTIONS = {
@@ -5081,6 +5088,12 @@ def _parse_explicit_diet_correction(
     if not target_date:
         return None
 
+    # Validate the complete utterance before accepting the first fraction.
+    # Otherwise a question, negation or contradictory second ratio could be
+    # truncated into a factual update using only the first match.
+    if _invalid_partial_meal_fraction_requested(text):
+        return None
+
     consumed_portion = _partial_meal_consumed_portion(text)
     if consumed_portion is not None:
         consumed_fraction, consumed_fraction_label = consumed_portion
@@ -5172,14 +5185,7 @@ def _diet_correction_update_data(
         previous_fraction = previous_portion[0]
     scale_factor = fraction / previous_fraction
 
-    update_data: Dict[str, Any] = {
-        "meal_type": meal_type,
-        # The diet endpoint normally invalidates unchanged nutrient values when
-        # food text changes, because generic clients may submit stale values.
-        # This deterministic path calculated every supplied value from the
-        # owner-scoped existing record, so the endpoint may preserve them.
-        "source": "agent_portion_correction",
-    }
+    update_data: Dict[str, Any] = {"meal_type": meal_type}
     for field in _DIET_SCALABLE_NUTRIENT_FIELDS:
         value = existing_record.get(field)
         if (
@@ -8048,6 +8054,7 @@ class AgentExecutor:
         self._turn_evidence_card_key: Optional[tuple] = None
         self._turn_twin_write_occurred = False
         self._turn_diet_correction_unresolved_reason = None
+        self._trusted_diet_portion_update_keys: set[str] = set()
         self._last_provider_model_name: Optional[str] = None
         self._request_model_tool_fallback_used = False
         self._model_fallback_reasons: List[str] = []
@@ -9704,6 +9711,7 @@ class AgentExecutor:
         yield self._progress_event("accepted")
         self._current_user_id = user_id
         self._current_turn_user_message = message or ""
+        self._trusted_diet_portion_update_keys.clear()
         self._current_turn_recent_messages = []
         self._current_turn_has_attachment = bool(images or file_base64)
         self._turn_pending_write_intent_ids = []
@@ -17120,6 +17128,10 @@ class AgentExecutor:
             )
             if update_data is not None:
                 record_id = candidate_rows[0].get("id") or candidate_rows[0].get("record_id")
+                if correction.get("consumed_fraction") is not None:
+                    self._trusted_diet_portion_update_keys.add(
+                        diet_portion_update_fingerprint(record_id, update_data)
+                    )
                 resolved_args = {
                     "record_type": "diet",
                     "operation": "update",
@@ -19612,7 +19624,22 @@ class AgentExecutor:
                     message="当前记录类型暂不支持修改。",
                     recovery_guidance="可以确认后删除原记录并重新记录。",
                 )
-            result = await self._api_put(f"{base}{path}", headers, data)
+            put_headers = headers
+            if record_type == "diet":
+                trusted_key = diet_portion_update_fingerprint(record_id, data)
+                if trusted_key in self._trusted_diet_portion_update_keys:
+                    self._trusted_diet_portion_update_keys.discard(trusted_key)
+                    signature = build_internal_diet_portion_signature(
+                        self._current_user_id,
+                        record_id,
+                        data,
+                    )
+                    if signature:
+                        put_headers = {
+                            **headers,
+                            INTERNAL_DIET_PORTION_SIGNATURE_HEADER: signature,
+                        }
+            result = await self._api_put(f"{base}{path}", put_headers, data)
             self._invalidate_twin_after_mutation()
             if record_type == "diet" and not str(result).startswith("Error:"):
                 try:

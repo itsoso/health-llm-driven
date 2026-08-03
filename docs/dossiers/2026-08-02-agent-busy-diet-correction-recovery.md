@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-02 |
 | status | in_progress |
-| current_stage | Fourth G4 NO-GO remediated; fresh G4 review pending |
+| current_stage | Fifth G4 NO-GO remediated; fresh G4 review pending |
 | owner_surface | Mobile chat / Backend agent runtime |
 
 ## Problem
@@ -81,10 +81,10 @@ Failure-first evidence was observed before implementation:
 Fresh verification after the final implementation commit:
 
 - Mobile critical path after the fourth G4 remediation: 3 suites / 167 tests passed.
-- Mobile full regression: 289 suites / 2,279 tests passed.
+- Mobile full regression: 289 suites / 2,284 tests passed.
 - Mobile TypeScript: `npx tsc --noEmit` passed.
 - Mobile lint: 0 errors; 92 pre-existing warnings outside this change remain.
-- Backend focused, stream integration and diet API after the fourth G4 remediation: 205 tests passed with 7 dependency/
+- Backend focused, stream integration and diet API after the fifth G4 remediation: 213 tests passed with 7 dependency/
   framework deprecation warnings.
 - Backend Ruff and Python compilation passed.
 - Dossier consistency: 98 dossiers passed.
@@ -137,7 +137,20 @@ now always receive distinct IDs while retries retain the original ID. Unsafe or
 multi-ratio language terminates before lookup/write. Deterministic portion
 updates carry an internal source marker so the diet API preserves explicitly
 calculated values without relaxing stale-nutrition invalidation for ordinary
-food edits. A fresh independent reviewer must issue GO before deployment.
+food edits.
+
+The fifth independent reviewer found two further Important blockers. The
+parser accepted the first ratio before running whole-utterance safety checks,
+so additional contradictory ratios and several question/negation particles
+could still reach an update. It also found that the internal source marker was
+a public request field and therefore forgeable. Whole-utterance validation now
+runs before any fraction is accepted, with explicit no-write coverage for the
+additional adversarial forms. The public source marker was removed. Exact
+deterministic portion updates now use a one-shot server-side fingerprint and an
+HMAC over owner, record and canonical payload in an internal-only header; the
+diet API verifies that signature before preserving explicit unchanged/zero
+nutrients. A public client spoof remains on the ordinary stale-invalidation
+path. A fresh independent reviewer must issue GO before deployment.
 
 ### G5 Deployment Health: PENDING
 
