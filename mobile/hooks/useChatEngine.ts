@@ -3,7 +3,7 @@ import { AppState } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { streamChat, getConversations, getConversationMessages, getAgentTurnStatus, deleteConversation, type ChatMessage, type LlmUsageProfile, type AgentPerfProfile, type MedicationBatchStreamDecision } from '../services/chat';
+import { streamChat, getConversations, getConversationMessages, getAgentTurnStatus, deleteConversation, type ChatStreamHttpError, type ChatMessage, type LlmUsageProfile, type AgentPerfProfile, type MedicationBatchStreamDecision } from '../services/chat';
 import { dispatchCard, renderServerCards } from '../components/chat/cards';
 import type { ChatCardActionDescriptor, ServerCardDescriptor } from '../components/chat/cards/types';
 import {
@@ -475,6 +475,8 @@ interface SendMessageOptions {
   __localUserMessageId?: string;
   __localAssistantMessageId?: string;
   __precreatedLocalMessages?: boolean;
+  __busyAttempt?: number;
+  __busyStartedAt?: number;
 }
 
 interface QueuedChatTurn {
@@ -484,6 +486,9 @@ interface QueuedChatTurn {
   options?: SendMessageOptions;
   userMessageId: string;
   assistantMessageId: string;
+  busyAttempt?: number;
+  busyStartedAt?: number;
+  busyRetryAt?: number;
 }
 
 const HISTORY_PAGE_SIZE = 80;
@@ -493,6 +498,8 @@ const ACTIVE_TURN_KEY = 'chat:active_turn:v1';
 const PENDING_STREAM_TTL_MS = 10 * 60 * 1000;
 const THINKING_PLACEHOLDER = '⏳ AI 正在思考中...';
 const QUEUED_TURN_PLACEHOLDER = '小巴处理中，已加入队列。';
+const SERVER_BUSY_TURN_PLACEHOLDER = '上一条仍在处理，本条已排队。';
+const SERVER_BUSY_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 15000, 30000] as const;
 const STREAM_RECOVERY_NOTICE = '小巴还在处理，正在同步完整回答。';
 const STREAM_RECOVERY_SUFFIX = '\n\n[连接短暂中断，正在同步完整回答]';
 const STREAM_RECEIVED_CONTENT_SUFFIX = '\n\n[回复中断，已保留已接收内容]';
@@ -507,6 +514,24 @@ const LOCAL_STREAM_HOLD_MS = 30 * 1000;
 // P0-1 节流: 思考面板 (thinkingSteps) 更新最小间隔。快路由下 status/tool 事件密集到达,
 // 逐事件 setMessages 全量 map 会打满 JS 线程 —— 攒到 >=200ms 才 flush 一次思考步骤。
 const THINKING_FLUSH_MS = 200;
+
+function isServerBusyStreamError(error: unknown): error is ChatStreamHttpError {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as Partial<ChatStreamHttpError>;
+  return (
+    candidate.name === 'ChatStreamHttpError'
+    && candidate.status === 409
+    && (candidate.detail || '').includes('上一条消息仍在处理')
+  );
+}
+
+function serverBusyRetryDelay(attempt: number): number {
+  const index = Math.min(
+    Math.max(attempt - 1, 0),
+    SERVER_BUSY_RETRY_DELAYS_MS.length - 1,
+  );
+  return SERVER_BUSY_RETRY_DELAYS_MS[index];
+}
 
 export function scopedChatStorageKey(baseKey: string, scope: string): string {
   return `${baseKey}:${scope}`;
@@ -664,6 +689,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const activeTurnRef = useRef(activeTurn);
   const queuedTurnsRef = useRef<QueuedChatTurn[]>([]);
   const pumpQueuedTurnsRef = useRef<() => void>(() => undefined);
+  const scheduleBusyQueuePumpRef = useRef<(delayMs: number) => void>(() => undefined);
+  const busyQueueTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isStreamingRef = useRef(false);
   const runningTurnIdRef = useRef<string | undefined>(undefined);
   const terminalTelemetryKeysRef = useRef<Set<string>>(new Set());
@@ -776,6 +803,12 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   useEffect(() => () => {
     serverRecoveryTimersRef.current.forEach(timer => clearTimeout(timer));
     serverRecoveryTimersRef.current.clear();
+    if (busyQueueTimerRef.current) {
+      clearTimeout(busyQueueTimerRef.current);
+      busyQueueTimerRef.current = null;
+    }
+    queuedTurnsRef.current.forEach(turn => turn.options?.onAccepted?.(false));
+    queuedTurnsRef.current = [];
   }, []);
 
   const reconcileActiveTurnFromServer = useCallback((id: number, msgs: any[]) => {
@@ -1341,6 +1374,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
     let streamConversationId = targetConversationId;
     let keepPendingStreamForRecovery = false;
+    let deferQueuedPump = false;
     const writeToolStartedAt = new Map<string, number>();
     const emitRecoveredTerminal = (phase: 'completed' | 'failed' | 'interrupted') => {
       if (phase === 'failed') {
@@ -1962,6 +1996,109 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       setMessages(prev => prev.filter(
         message => !message.cardType || message.sourceTurnId !== turnId,
       ));
+      if (!acceptedByServer && isServerBusyStreamError(err)) {
+        const now = Date.now();
+        const busyStartedAt = sendOpts?.__busyStartedAt ?? now;
+        const busyAttempt = (sendOpts?.__busyAttempt ?? 0) + 1;
+        if (now - busyStartedAt >= PENDING_STREAM_TTL_MS) {
+          settleAcceptance(false);
+          dispatchAgentTurn({
+            type: 'fail',
+            at: now,
+            errorCode: 'server_busy_retry_expired',
+            label: '等待时间过长，请点此重试。',
+            recoverable: true,
+          });
+          emitAgentTerminal('failed', 'server_busy_retry_expired');
+          setMessages(prev => prev.map(m => m.id === aId ? {
+            ...m,
+            currentStatus: undefined,
+            completionStatus: 'error',
+            content: '等待时间过长，本条尚未发送，请重试。',
+          } : m));
+          return false;
+        }
+
+        deferQueuedPump = true;
+        let queuedAcceptance: Promise<boolean> | undefined;
+        let queuedOptions: SendMessageOptions;
+        if (sendOpts?.__precreatedLocalMessages) {
+          queuedOptions = {
+            ...sendOpts,
+            __busyAttempt: busyAttempt,
+            __busyStartedAt: busyStartedAt,
+          };
+        } else {
+          let resolveQueuedAcceptance: ((accepted: boolean) => void) | undefined;
+          queuedAcceptance = hasImages
+            ? new Promise<boolean>((resolve) => {
+              resolveQueuedAcceptance = resolve;
+            })
+            : undefined;
+          queuedOptions = {
+            ...sendOpts,
+            onAccepted: hasImages
+              ? (accepted: boolean) => {
+                settleAcceptance(accepted);
+                resolveQueuedAcceptance?.(accepted);
+              }
+              : undefined,
+            __queuedTurnId: turnId,
+            __localUserMessageId: userMsg.id,
+            __localAssistantMessageId: aId,
+            __precreatedLocalMessages: true,
+            __busyAttempt: busyAttempt,
+            __busyStartedAt: busyStartedAt,
+          };
+        }
+        const queuedTurn: QueuedChatTurn = {
+          turnId,
+          text: finalMsg,
+          pendingImages,
+          options: queuedOptions,
+          userMessageId: userMsg.id,
+          assistantMessageId: aId,
+          busyAttempt,
+          busyStartedAt,
+          busyRetryAt: now + serverBusyRetryDelay(busyAttempt),
+        };
+        queuedTurnsRef.current = queuedTurnsRef.current.filter(
+          queued => queued.turnId !== turnId,
+        );
+        if (sendOpts?.__precreatedLocalMessages) {
+          queuedTurnsRef.current.unshift(queuedTurn);
+        } else {
+          queuedTurnsRef.current.push(queuedTurn);
+        }
+        setQueuedCount(queuedTurnsRef.current.length);
+        setMessages(prev => prev.map(m => m.id === aId ? {
+          ...m,
+          content: SERVER_BUSY_TURN_PLACEHOLDER,
+          currentStatus: undefined,
+          completionStatus: undefined,
+        } : m));
+        dispatchAgentTurn({
+          type: 'interrupt',
+          at: now,
+          errorCode: 'server_busy_queued',
+          label: SERVER_BUSY_TURN_PLACEHOLDER,
+          recoverable: true,
+        });
+        void emitClientEvent('chat_turn_queued', {
+          surface: 'mobile',
+          channel: inputChannel,
+          reason: 'server_busy',
+          queue_depth_at_submit: queuedTurnsRef.current.length,
+          retry_attempt: busyAttempt,
+        }).catch(() => undefined);
+        scheduleBusyQueuePumpRef.current(serverBusyRetryDelay(busyAttempt));
+        if (!hasImages) {
+          settleAcceptance(true);
+          return true;
+        }
+        if (queuedAcceptance) return queuedAcceptance;
+        return false;
+      }
       const isAbort = err?.message === 'aborted';
       if (streamConversationId) {
         const recovered = await recoverConversationFromServer(streamConversationId, turnId);
@@ -2021,19 +2158,43 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       // 终态: 停 streaming + 兜底清 status 行 (无论 done/error/interrupt 都不残留状态行)。
       setMessages(prev => prev.map(m => m.id === aId ? { ...m, streaming: false, currentStatus: undefined } : m));
       setIsStreaming(false);
-      setTimeout(() => pumpQueuedTurnsRef.current(), 0);
+      if (!deferQueuedPump) {
+        setTimeout(() => pumpQueuedTurnsRef.current(), 0);
+      }
     }
     return acceptedByServer;
   }, [opts.contextData, recoverConversationFromServer]);
 
   pumpQueuedTurnsRef.current = () => {
     if (isStreamingRef.current) return;
-    const next = queuedTurnsRef.current.shift();
+    const next = queuedTurnsRef.current[0];
     if (!next) {
       return;
     }
+    const retryDelay = (next.busyRetryAt ?? 0) - Date.now();
+    if (retryDelay > 0) {
+      scheduleBusyQueuePumpRef.current(retryDelay);
+      return;
+    }
+    queuedTurnsRef.current.shift();
     setQueuedCount(queuedTurnsRef.current.length);
-    void sendMessage(next.text, next.pendingImages, next.options);
+    void sendMessage(next.text, next.pendingImages, {
+      ...next.options,
+      __busyAttempt: next.busyAttempt,
+      __busyStartedAt: next.busyStartedAt,
+    });
+  };
+
+  scheduleBusyQueuePumpRef.current = (delayMs: number) => {
+    if (busyQueueTimerRef.current) return;
+    const timer = setTimeout(() => {
+      if (busyQueueTimerRef.current === timer) {
+        busyQueueTimerRef.current = null;
+      }
+      pumpQueuedTurnsRef.current();
+    }, Math.max(0, delayMs));
+    busyQueueTimerRef.current = timer;
+    (timer as any)?.unref?.();
   };
 
   const stopStreaming = useCallback(() => {
@@ -2049,6 +2210,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       abortRef.current?.abort();
       return;
     }
+    const wasQueueHead = queuedTurnsRef.current[0]?.turnId === turnId;
     const queued = queuedTurnsRef.current.find(turn => turn.turnId === turnId);
     if (!queued) return;
     queuedTurnsRef.current = queuedTurnsRef.current.filter(turn => turn.turnId !== turnId);
@@ -2058,6 +2220,11 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       message.id !== queued.userMessageId
       && message.id !== queued.assistantMessageId
     )));
+    if (wasQueueHead && busyQueueTimerRef.current) {
+      clearTimeout(busyQueueTimerRef.current);
+      busyQueueTimerRef.current = null;
+      setTimeout(() => pumpQueuedTurnsRef.current(), 0);
+    }
   }, []);
 
 
@@ -2068,6 +2235,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     queuedTurnsRef.current.forEach(turn => turn.options?.onAccepted?.(false));
     queuedTurnsRef.current = [];
     setQueuedCount(0);
+    if (busyQueueTimerRef.current) {
+      clearTimeout(busyQueueTimerRef.current);
+      busyQueueTimerRef.current = null;
+    }
     runningTurnIdRef.current = undefined;
     setRunningTurnId(undefined);
     setMessages([]);
