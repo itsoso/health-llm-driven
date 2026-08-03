@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-02 |
 | status | in_progress |
-| current_stage | G4 GO; remote integration and release verification pending |
+| current_stage | G4 GO; deployment pending |
 | owner_surface | Mobile chat / Backend agent runtime |
 
 ## Problem
@@ -81,13 +81,15 @@ Failure-first evidence was observed before implementation:
 Fresh verification after the final implementation commit:
 
 - Mobile critical path after the ninth G4 remediation: 3 suites / 156 tests passed.
-- Mobile full regression: 289 suites / 2,290 tests passed.
+- Mobile full regression after rebasing onto the latest `origin/main`: 292 suites /
+  2,399 tests passed.
 - Mobile TypeScript: `npx tsc --noEmit` passed.
 - Mobile lint: 0 errors; 92 pre-existing warnings outside this change remain.
-- Backend focused, stream integration, diet API and photo-context regression after the thirteenth G4 remediation: 401 tests passed with 7 dependency/
-  framework deprecation warnings.
+- Backend focused, stream integration, diet API and photo-context regression
+  after rebasing onto the latest `origin/main`: 531 tests passed with 7
+  dependency/framework deprecation warnings.
 - Backend Ruff and Python compilation passed.
-- Dossier consistency: 98 dossiers passed.
+- Dossier consistency: 99 dossiers passed.
 - Generated system-map drift check passed.
 - `git diff --check` passed.
 
@@ -255,6 +257,16 @@ drafts; create/update/delete adapters stopped before downstream dispatch.
 Positive signed portion updates, ordinary photo capture, explicit food
 quantities, owner/HMAC binding, unique targeting, no-nutrition markers and
 verified receipts all remained functional.
+
+After the implementation was rebased onto the latest remote `main`, a fresh
+independent reviewer rechecked the material executor conflict resolution and
+issued `G4: GO` for commit `64eee6c460a442014819cca0fdb8746cb01660b9`.
+The review confirmed both the upstream destructive/sync intent guard and the
+local deterministic diet terminal exclusion are preserved. It passed 150
+Backend safety regressions, 108 Mobile queue regressions and 31 real ORM
+cancel/photo variants with zero diet records, assets or drafts. Owner-bound
+HMAC probes, a signed real PUT returning 200, verified receipt truthfulness,
+stable FIFO retry IDs and cancellation generation invalidation also passed.
 
 ### G5 Deployment Health: PENDING
 
