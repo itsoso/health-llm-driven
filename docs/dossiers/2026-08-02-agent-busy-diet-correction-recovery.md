@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-02 |
 | status | in_progress |
-| current_stage | Twelfth G4 NO-GO remediated; fresh G4 review pending |
+| current_stage | Thirteenth G4 NO-GO remediated; fresh G4 review pending |
 | owner_surface | Mobile chat / Backend agent runtime |
 
 ## Problem
@@ -84,7 +84,7 @@ Fresh verification after the final implementation commit:
 - Mobile full regression: 289 suites / 2,290 tests passed.
 - Mobile TypeScript: `npx tsc --noEmit` passed.
 - Mobile lint: 0 errors; 92 pre-existing warnings outside this change remain.
-- Backend focused, stream integration, diet API and photo-context regression after the twelfth G4 remediation: 393 tests passed with 7 dependency/
+- Backend focused, stream integration, diet API and photo-context regression after the thirteenth G4 remediation: 401 tests passed with 7 dependency/
   framework deprecation warnings.
 - Backend Ruff and Python compilation passed.
 - Dossier consistency: 98 dossiers passed.
@@ -239,8 +239,16 @@ remaining dependence on recognizing a portion at all: explicit `取消`/`莫`/`�
 `别再` write cancellations now veto both text and photo diet writes before
 portion parsing, close the create/update/delete adapters, and produce a
 truthful cancellation acknowledgement. Eight no-fraction cancellation cases
-assert zero lookup and zero record/asset/draft writes. A fresh independent
-reviewer must issue GO before deployment.
+assert zero lookup and zero record/asset/draft writes. The next independent
+reviewer found the cancel word still had to be adjacent to the write verb:
+`别帮我记录`, `不要给我记录`, and `别把它记录下来` therefore auto-saved real
+photos, while their portion-bearing forms used the less truthful ambiguous-
+fraction reason. The cancellation grammar now permits a bounded sequence of
+common helper and object phrases (`再`, `帮我`, `给我`, `把它`/`将这餐`) before
+the explicit write verb, without treating unrelated free text as cancellation.
+The three no-portion and two portion-bearing photo cases now produce a
+`cancelled` reason and zero records/assets/drafts; matching text cases perform
+zero lookup. A fresh independent reviewer must issue GO before deployment.
 
 ### G5 Deployment Health: PENDING
 

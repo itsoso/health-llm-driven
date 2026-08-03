@@ -382,6 +382,11 @@ def test_contextual_meal_fraction_only_scales_an_explicit_whole_meal(
         "这餐莫记录",
         "这餐勿记录",
         "这餐别再记录",
+        "这餐别帮我记录",
+        "这餐不要给我记录",
+        "这餐别把它记录下来",
+        "这餐吃了1÷2，别帮我记录",
+        "这餐0点5，不要给我记录",
     ],
 )
 def test_unsafe_photo_fraction_language_never_auto_captures(
@@ -408,6 +413,8 @@ def test_unsafe_photo_fraction_language_never_auto_captures(
         "ambiguous_fraction",
         "cancelled",
     }
+    if any(token in message for token in ("取消", "莫", "勿", "别", "不要")):
+        assert recognition["contextual_capture_write_blocked_reason"] == "cancelled"
     prompt_context = executor._format_food_recognition_for_agent(
         message,
         recognition,

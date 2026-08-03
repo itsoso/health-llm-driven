@@ -669,6 +669,9 @@ async def test_partial_meal_correction_replaces_the_previous_nutrition_fraction(
         "晚餐莫修改",
         "晚餐勿修改",
         "晚餐别再修改记录",
+        "晚餐别帮我修改记录",
+        "晚餐不要给我修改",
+        "晚餐别把它记录下来",
     ],
 )
 async def test_unsafe_or_cancelled_diet_correction_cannot_reach_a_write(message):
