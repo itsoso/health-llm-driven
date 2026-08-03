@@ -1164,9 +1164,12 @@ def update_diet_record(
         update_dict["ai_raw_result"] = None
         update_dict["health_tips"] = None
     if 'meal_type' in update_dict and update_dict['meal_type']:
-        update_dict['meal_type'] = update_dict['meal_type'].value
+        meal_type = update_dict['meal_type']
+        update_dict['meal_type'] = (
+            meal_type.value if hasattr(meal_type, 'value') else str(meal_type)
+        )
     if 'meal_time' in update_dict and update_dict['meal_time']:
-        update_dict['meal_time'] = update_dict['meal_time'].strftime('%H:%M')
+        update_dict['meal_time'] = update_data.meal_time
     if update_dict.get("ai_raw_result") is not None and not isinstance(
         update_dict["ai_raw_result"], str
     ):

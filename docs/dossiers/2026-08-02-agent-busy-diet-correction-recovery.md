@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-02 |
 | status | in_progress |
-| current_stage | Tenth G4 NO-GO remediated; fresh G4 review pending |
+| current_stage | Eleventh G4 NO-GO remediated; fresh G4 review pending |
 | owner_surface | Mobile chat / Backend agent runtime |
 
 ## Problem
@@ -84,7 +84,7 @@ Fresh verification after the final implementation commit:
 - Mobile full regression: 289 suites / 2,290 tests passed.
 - Mobile TypeScript: `npx tsc --noEmit` passed.
 - Mobile lint: 0 errors; 92 pre-existing warnings outside this change remain.
-- Backend focused, stream integration, diet API and photo-context regression after the tenth G4 remediation: 347 tests passed with 7 dependency/
+- Backend focused, stream integration, diet API and photo-context regression after the eleventh G4 remediation: 366 tests passed with 7 dependency/
   framework deprecation warnings.
 - Backend Ruff and Python compilation passed.
 - Dossier consistency: 98 dossiers passed.
@@ -209,7 +209,21 @@ fraction-blocked before asset or record creation, gives the model an explicit
 no-write instruction, and independently rejects both diet create and update
 tool calls for the turn. Positive decimal food quantities and ordinary
 high-confidence photo capture remain covered. A fresh independent reviewer
-must issue GO before deployment.
+then confirmed those guards but found three remaining blockers. Standalone
+unsupported portions such as `50%`, `0.5`, `½` and `二分之一` were not treated
+as portion-like without a preceding consumption verb; full-width ratio symbols
+were not normalized before the photo gate; and a legitimate signed portion
+update containing `meal_type` failed with HTTP 500 because the JSON-mode enum
+had already become a string. All were reproduced with failure-first tests. The
+shared detector now normalizes symbols at its boundary, recognizes percent,
+decimal, vulgar fraction, Chinese percentage, `成` and `比` forms regardless
+of a consumption prefix, while preserving decimal quantities followed by a
+measurement unit such as `鸡胸肉71.4克`. Unsafe photo cases assert zero diet
+records, zero photo assets and zero drafts. Diet updates now accept the
+JSON-mode meal-type string and restore typed meal-time assignment; a real
+signed API update including the meal type returns 200 and preserves the
+explicit nutrition. A fresh independent reviewer must issue GO before
+deployment.
 
 ### G5 Deployment Health: PENDING
 

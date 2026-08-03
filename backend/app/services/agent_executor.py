@@ -4881,12 +4881,24 @@ _DIET_UNSUPPORTED_PORTION_LIKE_RE = re.compile(
     r"(?<![\d.])[+-]?(?:\d*\.\d+)(?![\d.])|"
     r"(?<![\d.])[+-]?\d+(?:\.\d+)?\s*[eE]\s*[+-]?\d+(?![\d.])|"
     r"[¼½¾⅐⅑⅒⅓⅔⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞]|"
+    r"百分之[零〇一二三四五六七八九十百两\d]{1,5}|"
+    r"[一二三四五六七八九十两\d]{1,3}成(?!熟)|"
+    r"[+-]?\d+(?:\.\d+)?\s*比\s*[+-]?\d+(?:\.\d+)?|"
     r"[一二三四五六七八九十两]{1,3}分之[一二三四五六七八九十两]{1,3}",
     re.I,
 )
 _DIET_CONSUMPTION_VALUE_PREFIX_RE = re.compile(
     r"(?:吃(?:了|掉了)?|摄入(?:了)?|食用(?:了)?)\s*"
     r"(?:约|大约|大概|差不多)?\s*$",
+    re.I,
+)
+_DIET_DECIMAL_OR_SCIENTIFIC_VALUE_RE = re.compile(
+    r"[+-]?(?:(?:\d*\.\d+)|(?:\d+(?:\.\d+)?[eE][+-]?\d+))",
+    re.I,
+)
+_DIET_MEASUREMENT_SUFFIX_RE = re.compile(
+    r"\s*(?:毫克|千克|公斤|克|斤|两|毫升|升|kg|mg|ml|g|l|"
+    r"大卡|千卡|卡路里|卡|份|碗|杯|盘|勺|个|只|片|块)",
     re.I,
 )
 _CONTEXTUAL_MEAL_PORTION_RE = re.compile(
@@ -5117,14 +5129,23 @@ def _partial_meal_consumed_fraction(text: str) -> Optional[float]:
 
 
 def _utterance_contains_fraction_like_portion(text: str) -> bool:
+    normalized = _normalize_meal_fraction_symbols(
+        " ".join((text or "").strip().split())
+    )
     if (
-        _DIET_FRACTION_TOKEN_RE.search(text)
-        or _DIET_NUMERIC_RATIO_LIKE_RE.search(text)
+        _DIET_FRACTION_TOKEN_RE.search(normalized)
+        or _DIET_NUMERIC_RATIO_LIKE_RE.search(normalized)
     ):
         return True
-    for match in _DIET_UNSUPPORTED_PORTION_LIKE_RE.finditer(text):
-        nearby_prefix = text[max(0, match.start() - 16):match.start()]
-        if _DIET_CONSUMPTION_VALUE_PREFIX_RE.search(nearby_prefix):
+    for match in _DIET_UNSUPPORTED_PORTION_LIKE_RE.finditer(normalized):
+        nearby_prefix = normalized[max(0, match.start() - 16):match.start()]
+        nearby_suffix = normalized[match.end():match.end() + 8]
+        is_measurement_value = bool(
+            _DIET_DECIMAL_OR_SCIENTIFIC_VALUE_RE.fullmatch(match.group(0))
+            and _DIET_MEASUREMENT_SUFFIX_RE.match(nearby_suffix)
+            and not _DIET_CONSUMPTION_VALUE_PREFIX_RE.search(nearby_prefix)
+        )
+        if not is_measurement_value:
             return True
     return False
 

@@ -943,7 +943,9 @@ class TestDietAPI:
         # 更新记录
         update_data = {
             "calories": 500,
-            "notes": "更新后的备注"
+            "meal_type": "dinner",
+            "meal_time": "18:30:00",
+            "notes": "更新后的备注",
         }
         update_response = client.put(
             f"/api/v1/diet/records/{record_id}",
@@ -952,6 +954,8 @@ class TestDietAPI:
         )
         assert update_response.status_code == 200
         assert update_response.json()["calories"] == 500
+        assert update_response.json()["meal_type"] == "dinner"
+        assert update_response.json()["meal_time"] == "18:30:00"
         assert update_response.json()["notes"] == "更新后的备注"
 
     def test_public_source_cannot_bypass_stale_nutrition_invalidation(
@@ -999,6 +1003,7 @@ class TestDietAPI:
         assert trusted_created.status_code == 200
         trusted_original = trusted_created.json()
         trusted_payload = {
+            "meal_type": trusted_original["meal_type"],
             "food_items": (
                 f"{trusted_original['food_items']}（按实际食用1/1计）"
             ),

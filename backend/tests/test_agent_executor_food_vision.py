@@ -360,6 +360,15 @@ def test_contextual_meal_fraction_only_scales_an_explicit_whole_meal(
         "假设这餐吃了1/2",
         "这餐打算只吃1/2",
         "这餐吃了1/2，莫记录",
+        "这餐50%",
+        "这餐0.5",
+        "这餐½",
+        "这餐二分之一",
+        "这餐吃了１／２，取消记录",
+        "这餐吃了1／2，莫记录",
+        "这餐百分之五十",
+        "这餐五成",
+        "这餐1比2",
     ],
 )
 def test_unsafe_photo_fraction_language_never_auto_captures(
@@ -376,6 +385,8 @@ def test_unsafe_photo_fraction_language_never_auto_captures(
 
     assert result is None
     assert db.query(DietRecord).count() == 0
+    assert db.query(DietPhotoAsset).count() == 0
+    assert db.query(DietPhotoDraft).count() == 0
     assert recognition["contextual_capture_fraction_blocked"] is True
     assert executor._turn_contextual_diet_fraction_blocked is True
     prompt_context = executor._format_food_recognition_for_agent(
