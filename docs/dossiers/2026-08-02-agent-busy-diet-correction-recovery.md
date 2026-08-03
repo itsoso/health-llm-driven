@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-02 |
 | status | in_progress |
-| current_stage | Seventh G4 NO-GO remediated; fresh G4 review pending |
+| current_stage | Eighth G4 NO-GO remediated; fresh G4 review pending |
 | owner_surface | Mobile chat / Backend agent runtime |
 
 ## Problem
@@ -84,7 +84,7 @@ Fresh verification after the final implementation commit:
 - Mobile full regression: 289 suites / 2,287 tests passed.
 - Mobile TypeScript: `npx tsc --noEmit` passed.
 - Mobile lint: 0 errors; 92 pre-existing warnings outside this change remain.
-- Backend focused, stream integration, diet API and photo-context regression after the seventh G4 remediation: 254 tests passed with 7 dependency/
+- Backend focused, stream integration, diet API and photo-context regression after the eighth G4 remediation: 278 tests passed with 7 dependency/
   framework deprecation warnings.
 - Backend Ruff and Python compilation passed.
 - Dossier consistency: 98 dossiers passed.
@@ -176,7 +176,16 @@ standalone question particles without misclassifying `那么`, and rejects
 cancel/retract language independent of word order. Mobile captures a queue
 generation per request and invalidates it on new chat, unmount and explicit
 cancellation; a stale busy response is rejected instead of re-queued. A fresh
-independent reviewer must issue GO before deployment.
+independent reviewer then confirmed the Mobile generation cancellation and
+authenticated owner-scoped write paths, but found that several cancellation,
+negation, uncertainty and question forms could still be read as factual diet
+corrections. The shared text/photo utterance guard now defaults to factual-only
+semantics: it permits the narrow explicit shortfall phrases `没吃那么多`,
+`没有全吃完` and `没吃完`, while residual negation, retraction, uncertainty or
+question language fails closed before lookup or write. Twenty-four new text
+and photo regression cases cover `撤回`, `反悔`, `先不改`, `并非`, `应该`,
+`好像`, `估计`, `差不多` and sentence-final `吧`. A fresh independent reviewer
+must issue GO before deployment.
 
 ### G5 Deployment Health: PENDING
 

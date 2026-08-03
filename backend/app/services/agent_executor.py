@@ -4821,7 +4821,7 @@ _DIET_PARTIAL_CORRECTION_SIGNAL_RE = re.compile(
 )
 _DIET_PARTIAL_CORRECTION_QUESTION_RE = re.compile(
     r"[?？]|会不会|要不要|是否|行不行|可以吗|"
-    r"(?:吗|嘛|呢)|(?<![什怎这那])么|"
+    r"(?:吗|嘛|呢|吧)|(?<![什怎这那])么|"
     r"好不好|是不是|为什么|什么|怎么办|怎么|吃多少",
     re.I,
 )
@@ -4832,7 +4832,9 @@ _DIET_PARTIAL_CORRECTION_NEGATION_RE = re.compile(
     re.I,
 )
 _DIET_PARTIAL_CORRECTION_UNCERTAIN_RE = re.compile(
-    r"还是|如果|要是|假如|可能|大概|也许|或许|不确定|记不清",
+    r"还是|如果|要是|假如|可能|大概|也许|或许|应该|"
+    r"好像|估计|似乎|貌似|大约|约莫|接近|左右|差不多|"
+    r"感觉|猜|听说|据说|至少|至多|超过|不到|少于|多于",
     re.I,
 )
 _DIET_PARTIAL_CORRECTION_RETRACTION_RE = re.compile(
@@ -4840,8 +4842,16 @@ _DIET_PARTIAL_CORRECTION_RETRACTION_RE = re.compile(
     re.I,
 )
 _DIET_PARTIAL_CORRECTION_CANCEL_RE = re.compile(
-    r"算了|作废|撤销|取消|"
+    r"算了|作废|撤回|撤销|取消|反悔|"
     r"(?:暂时|先)?\s*(?:不要|别|不用|无需|不必|不需要|停止)(?:再)?",
+    re.I,
+)
+_DIET_ALLOWED_FACTUAL_SHORTFALL_RE = re.compile(
+    r"没(?:有)?(?:吃那么多|全吃(?:完)?|吃完)",
+    re.I,
+)
+_DIET_PARTIAL_CORRECTION_RESIDUAL_NEGATION_RE = re.compile(
+    r"[不没未无]|并非|不是",
     re.I,
 )
 _DIET_PARTIAL_FRACTIONS = {
@@ -4980,6 +4990,10 @@ def _meal_fraction_utterance_is_unsafe(
             merged_spans.append((start, end))
 
     supported_matches = list(_DIET_FRACTION_TOKEN_RE.finditer(normalized))
+    semantic_remainder = _DIET_ALLOWED_FACTUAL_SHORTFALL_RE.sub(
+        "",
+        normalized,
+    )
     if (
         len(merged_spans) != 1
         or len(supported_matches) != 1
@@ -4993,6 +5007,9 @@ def _meal_fraction_utterance_is_unsafe(
         or _DIET_PARTIAL_CORRECTION_UNCERTAIN_RE.search(normalized)
         or _DIET_PARTIAL_CORRECTION_RETRACTION_RE.search(normalized)
         or _DIET_PARTIAL_CORRECTION_CANCEL_RE.search(normalized)
+        or _DIET_PARTIAL_CORRECTION_RESIDUAL_NEGATION_RE.search(
+            semantic_remainder
+        )
     ):
         return True
     return _parse_meal_fraction_token(supported_matches[0].group(0)) is None
