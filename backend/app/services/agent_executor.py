@@ -2829,6 +2829,11 @@ class _SimpleRecordTerminal(RuntimeError):
 
 
 def _diet_correction_unresolved_message(reason: str) -> str:
+    if reason == "invalid_fraction":
+        return (
+            "我无法确认这个食用比例，因此没有修改。"
+            "请用 1/2 这类大于 0 且不超过 1 的比例重试。"
+        )
     if reason == "ambiguous_target":
         return (
             "我找到多条符合日期和餐次的饮食记录，暂时没有修改。"
@@ -4847,7 +4852,7 @@ _CONTEXTUAL_MEAL_PORTION_RE = re.compile(
     re.I,
 )
 _GENERATED_DIET_PORTION_SUFFIX_RE = re.compile(
-    r"（按实际食用[^（）]{1,24}计）\s*$"
+    r"（按实际食用(?P<label>[^（）]{1,24})计）\s*$"
 )
 _CONTEXTUAL_MEAL_WHOLE_PORTION_RE = re.compile(
     r"(?:这|整|本)(?:一)?(?:餐|顿|份|盘)|(?:这|整)些|只吃",
@@ -4868,8 +4873,33 @@ _MESSAGE_DATE_RE = re.compile(
 )
 
 
+def _normalize_meal_fraction_symbols(value: str) -> str:
+    return (value or "").translate(str.maketrans({
+        "０": "0",
+        "１": "1",
+        "２": "2",
+        "３": "3",
+        "４": "4",
+        "５": "5",
+        "６": "6",
+        "７": "7",
+        "８": "8",
+        "９": "9",
+        "／": "/",
+        "−": "-",
+        "－": "-",
+        "＋": "+",
+        "⁄": "/",
+        "∕": "/",
+    }))
+
+
 def _parse_meal_fraction_token(token: str) -> Optional[tuple[float, str]]:
-    normalized = re.sub(r"\s+", "", token or "")
+    normalized = re.sub(
+        r"\s+",
+        "",
+        _normalize_meal_fraction_symbols(token),
+    )
     fraction = _DIET_PARTIAL_FRACTIONS.get(normalized)
     if fraction is None and "/" in normalized:
         numerator_text, denominator_text = normalized.split("/", 1)
@@ -4911,6 +4941,26 @@ def _partial_meal_consumed_fraction(text: str) -> Optional[float]:
     return portion[0] if portion is not None else None
 
 
+def _invalid_partial_meal_fraction_requested(message: str) -> bool:
+    text = _normalize_meal_fraction_symbols(
+        " ".join((message or "").strip().split())
+    )
+    if (
+        not _DIET_CORRECTION_MEAL_RE.search(text)
+        or _DIET_PARTIAL_CORRECTION_QUESTION_RE.search(text)
+        or _DIET_PARTIAL_CORRECTION_NEGATION_RE.search(text)
+    ):
+        return False
+    partial_signal = _DIET_PARTIAL_CORRECTION_SIGNAL_RE.search(text)
+    if partial_signal is None:
+        return False
+    has_ratio_like_input = bool(
+        _DIET_FRACTION_TOKEN_RE.search(text, partial_signal.start())
+        or _DIET_NUMERIC_RATIO_LIKE_RE.search(text, partial_signal.start())
+    )
+    return has_ratio_like_input and _partial_meal_consumed_portion(text) is None
+
+
 def _contextual_meal_consumed_fraction(
     text: str,
 ) -> Optional[tuple[float, str]]:
@@ -4921,7 +4971,9 @@ def _contextual_meal_consumed_fraction(
     scale every item in the image.  We only accept an explicit whole-meal
     reference (``这餐``/``这份``) or the unambiguous ``只吃`` form.
     """
-    normalized = " ".join((text or "").strip().split())
+    normalized = _normalize_meal_fraction_symbols(
+        " ".join((text or "").strip().split())
+    )
     if (
         not normalized
         or not _CONTEXTUAL_MEAL_WHOLE_PORTION_RE.search(normalized)
@@ -4984,7 +5036,9 @@ def _parse_explicit_diet_correction(
     fraction. Ambiguous requests stay on the read-only lookup path rather than
     risking a duplicate or editing the wrong record.
     """
-    text = " ".join((message or "").strip().split())
+    text = _normalize_meal_fraction_symbols(
+        " ".join((message or "").strip().split())
+    )
     meal_match = _DIET_CORRECTION_MEAL_RE.search(text)
     if not meal_match:
         return None
@@ -5065,6 +5119,28 @@ def _diet_correction_update_data(
     if not math.isfinite(fraction) or not 0 < fraction <= 1:
         return None
 
+    label = correction.get("consumed_fraction_label")
+    food_items = existing_record.get("food_items")
+    if not isinstance(label, str) or not label.strip():
+        return None
+    if not isinstance(food_items, str) or not food_items.strip():
+        return None
+
+    normalized_label = _normalize_meal_fraction_symbols(label.strip())
+    current_food_items = food_items.strip()
+    previous_fraction = 1.0
+    previous_marker = _GENERATED_DIET_PORTION_SUFFIX_RE.search(
+        current_food_items
+    )
+    if previous_marker is not None:
+        previous_portion = _parse_meal_fraction_token(
+            previous_marker.group("label")
+        )
+        if previous_portion is None:
+            return None
+        previous_fraction = previous_portion[0]
+    scale_factor = fraction / previous_fraction
+
     update_data: Dict[str, Any] = {"meal_type": meal_type}
     for field in _DIET_SCALABLE_NUTRIENT_FIELDS:
         value = existing_record.get(field)
@@ -5073,23 +5149,14 @@ def _diet_correction_update_data(
             and not isinstance(value, bool)
             and math.isfinite(float(value))
         ):
-            update_data[field] = float(value) * fraction
-    if len(update_data) > 1:
-        return update_data
-
-    label = correction.get("consumed_fraction_label")
-    food_items = existing_record.get("food_items")
-    if not isinstance(label, str) or not label.strip():
-        return None
-    if not isinstance(food_items, str) or not food_items.strip():
-        return None
+            update_data[field] = float(value) * scale_factor
     base_food_items = _GENERATED_DIET_PORTION_SUFFIX_RE.sub(
-        "", food_items.strip()
+        "", current_food_items
     ).strip()
     if not base_food_items:
         return None
     update_data["food_items"] = (
-        f"{base_food_items}（按实际食用{label.strip()}计）"
+        f"{base_food_items}（按实际食用{normalized_label}计）"
     )
     return update_data
 
@@ -16915,11 +16982,38 @@ class AgentExecutor:
         immediately with a deterministic no-write clarification so a model
         mistake cannot create a duplicate or edit an arbitrary meal.
         """
+        current_message = getattr(self, "_current_turn_user_message", "")
         correction = _parse_explicit_diet_correction(
-            getattr(self, "_current_turn_user_message", ""),
+            current_message,
             reference_now=self._agent_kernel_reference_now(),
         )
         if not correction:
+            if _invalid_partial_meal_fraction_requested(current_message):
+                for tool_call in tool_calls:
+                    function = tool_call.get("function") or {}
+                    try:
+                        raw_args = function.get("arguments")
+                        args = (
+                            json.loads(raw_args)
+                            if isinstance(raw_args, str)
+                            else dict(raw_args or {})
+                        )
+                    except (json.JSONDecodeError, TypeError, ValueError):
+                        continue
+                    if (
+                        function.get("name") in {"health_manage", "health_record"}
+                        and args.get("record_type") == "diet"
+                    ):
+                        reason = "invalid_fraction"
+                        self._turn_diet_correction_unresolved_reason = reason
+                        logger.warning(
+                            "[health_manage] invalid diet correction fraction user=%s",
+                            self._current_user_id,
+                        )
+                        raise _SimpleRecordTerminal(
+                            _diet_correction_unresolved_message(reason),
+                            satisfied=False,
+                        )
             return tool_calls
 
         base_url = settings.health_api_base_url or "http://localhost:8000/api/v1"

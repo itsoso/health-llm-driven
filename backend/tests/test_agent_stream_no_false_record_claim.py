@@ -725,6 +725,7 @@ async def test_partial_diet_correction_uses_deterministic_update_without_false_c
             "record_id": 829,
             "data": {
                 "meal_type": "dinner",
+                "food_items": "三文鱼 + 黎麦沙拉 + 羊乳酪（按实际食用四分之一计）",
                 "calories": 500.0,
                 "protein": 20.0,
                 "carbs": 30.0,

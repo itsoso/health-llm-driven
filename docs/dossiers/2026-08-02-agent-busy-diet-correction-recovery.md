@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-02 |
 | status | in_progress |
-| current_stage | First G4 NO-GO remediated; fresh G4 review pending |
+| current_stage | Second G4 NO-GO remediated; fresh G4 review pending |
 | owner_surface | Mobile chat / Backend agent runtime |
 
 ## Problem
@@ -84,7 +84,7 @@ Fresh verification after the final implementation commit:
 - Mobile full regression: 289 suites / 2,279 tests passed.
 - Mobile TypeScript: `npx tsc --noEmit` passed.
 - Mobile lint: 0 errors; 92 pre-existing warnings outside this change remain.
-- Backend focused and stream integration after G4 remediation: 127 tests passed with 7 dependency/
+- Backend focused and stream integration after G4 remediation: 135 tests passed with 7 dependency/
   framework deprecation warnings.
 - Backend Ruff and Python compilation passed.
 - Dossier consistency: 98 dossiers passed.
@@ -105,8 +105,18 @@ All three were reproduced with failing tests and remediated. HTTP error details
 now use an allowlisted canonical busy message and other non-2xx bodies never
 enter SSE/UI parsing. New turns append whenever a queue already exists. Signed,
 decimal and malformed ratio-like input fails closed before any write. The
-stale correction-normalizer docstring was also updated. A fresh independent
-reviewer must issue GO before deployment.
+stale correction-normalizer docstring was also updated.
+
+The second independent reviewer confirmed those fixes but found two further
+Important blockers: Unicode/full-width ratio characters could still bypass the
+guard, and a completed nutrition correction could be multiplied again by a
+later turn. Both were reproduced with failing tests. Fraction input now
+normalizes only recognized Unicode digits/slashes/signs before validation, and
+the stored portion marker is used as the previous ratio: repeating the same
+ratio is idempotent, while changing it applies `new / previous` to the stored
+nutrition. The food description is preserved byte-for-byte apart from replacing
+the generated suffix. A fresh independent reviewer must issue GO before
+deployment.
 
 ### G5 Deployment Health: PENDING
 

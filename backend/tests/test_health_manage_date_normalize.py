@@ -355,6 +355,7 @@ def test_parse_partial_meal_correction(message, meal_type, consumed_fraction):
     [
         ("晚餐只吃了 1/2 修改记录", "1/2"),
         ("晚餐只吃了 1 / 2，按实际摄入修正", "1/2"),
+        ("晚餐只吃了 1／2 修改记录", "1/2"),
     ],
 )
 def test_parse_numeric_partial_meal_correction(message, label):
@@ -378,6 +379,8 @@ def test_parse_numeric_partial_meal_correction(message, label):
         "晚餐只吃了 1//2 修改记录",
         "晚餐只吃了 1.5/2 修改记录",
         "晚餐只吃了 1/2.5 修改记录",
+        "晚餐只吃了 −1/2 修改记录",
+        "晚餐只吃了 1/−2 修改记录",
     ],
 )
 def test_invalid_numeric_partial_meal_fraction_is_not_a_food_replacement(message):
@@ -497,6 +500,7 @@ async def test_partial_meal_correction_scales_the_unique_existing_record():
         "record_id": 829,
         "data": {
             "meal_type": "dinner",
+            "food_items": "三文鱼 + 黎麦沙拉 + 羊乳酪（按实际食用四分之一计）",
             "calories": 500.0,
             "protein": 20.0,
             "carbs": 30.0,
@@ -505,6 +509,85 @@ async def test_partial_meal_correction_scales_the_unique_existing_record():
             "alcohol_units": 0.5,
         },
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "expected_label", "expected_calories", "expected_protein"),
+    [
+        ("晚餐只吃了 1／2 修改记录", "1/2", 500.0, 50.0),
+        ("晚餐只吃了 1/3 修改记录", "1/3", 1000 / 3, 100 / 3),
+    ],
+)
+async def test_partial_meal_correction_replaces_the_previous_nutrition_fraction(
+    message,
+    expected_label,
+    expected_calories,
+    expected_protein,
+):
+    executor = AgentExecutor(MagicMock())
+    executor._current_turn_user_message = message
+    executor._api_get_json = AsyncMock(return_value=([{
+        "id": 832,
+        "meal_type": "dinner",
+        "food_items": "牛肉面（按实际食用1/2计）",
+        "calories": 500,
+        "protein": 50,
+    }], None))
+
+    calls = await executor._normalize_explicit_diet_update_tool_calls([{
+        "id": "call-1",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps({
+                "record_type": "diet",
+                "operation": "list",
+                "date": "today",
+                "meal_type": "dinner",
+            }),
+        },
+    }], "test-token")
+
+    args = json.loads(calls[0]["function"]["arguments"])
+    assert args["operation"] == "update"
+    assert args["record_id"] == 832
+    assert args["data"]["food_items"] == f"牛肉面（按实际食用{expected_label}计）"
+    assert args["data"]["calories"] == pytest.approx(expected_calories)
+    assert args["data"]["protein"] == pytest.approx(expected_protein)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    [
+        "晚餐只吃了 −1/2 修改记录",
+        "晚餐只吃了 1/−2 修改记录",
+        "晚餐只吃了 1／／2 修改记录",
+    ],
+)
+async def test_invalid_unicode_fraction_cannot_reach_a_diet_write(message):
+    executor = AgentExecutor(MagicMock())
+    executor._current_turn_user_message = message
+    executor._api_get_json = AsyncMock()
+
+    with pytest.raises(RuntimeError, match="无法确认.*没有修改"):
+        await executor._normalize_explicit_diet_update_tool_calls([{
+            "id": "call-1",
+            "type": "function",
+            "function": {
+                "name": "health_record",
+                "arguments": json.dumps({
+                    "record_type": "diet",
+                    "data": {
+                        "meal_type": "dinner",
+                        "food_items": message,
+                    },
+                }),
+            },
+        }], "test-token")
+
+    executor._api_get_json.assert_not_awaited()
 
 
 @pytest.mark.asyncio
