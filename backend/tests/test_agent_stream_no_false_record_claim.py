@@ -778,10 +778,12 @@ async def test_ambiguous_partial_diet_correction_never_claims_an_update(
     ]
     reply = _tokens(events)
 
-    assert executed and executed[0][1]["operation"] == "list"
-    assert all(args["operation"] != "update" for _name, args in executed)
+    assert rounds == 1
+    assert executed == []
     assert "已按三分之一更新午餐" not in reply
     assert "多条" in reply and "选择" in reply
+    assert events[-1]["data"]["completion_status"] == "error"
+    assert not events[-1]["data"].get("write_receipts")
 
 
 async def test_bare_clinician_report_is_understood_without_write_or_retry(

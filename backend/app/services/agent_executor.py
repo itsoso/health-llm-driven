@@ -2828,6 +2828,28 @@ class _SimpleRecordTerminal(RuntimeError):
         self.satisfied = satisfied
 
 
+def _diet_correction_unresolved_message(reason: str) -> str:
+    if reason == "ambiguous_target":
+        return (
+            "我找到多条符合日期和餐次的饮食记录，暂时没有修改。"
+            "请选择具体哪一条后再提交修正。"
+        )
+    if reason == "target_not_found":
+        return (
+            "我没有找到符合日期和餐次的饮食记录，因此没有修改。"
+            "请确认日期或餐次后重试。"
+        )
+    if reason == "lookup_failed":
+        return (
+            "饮食记录暂时无法核对，这次没有修改。"
+            "请稍后重试。"
+        )
+    return (
+        "我找到了对应餐次，但现有记录既没有可缩放的营养数据，"
+        "也没有可保留的食物内容，因此没有修改。请补充实际吃了什么。"
+    )
+
+
 def _write_result_is_pre_dispatch_validation_error(result: Any) -> bool:
     """Hide only argument/validation rejections the same model turn can repair."""
     outcome = classify_write_execution(result)
@@ -10753,6 +10775,7 @@ class AgentExecutor:
         goal_lookup_completed = False
         goal_allowed_record_ids: set[str] = set()
         runtime_control_terminal = False
+        deterministic_diet_correction_terminal = False
         # 本轮 agent 实际调用过的工具/Skill 名, 去重、按首次调用顺序。供 mac/mobile
         # 展示"调用了哪些 Skills"。与 sources_used (引用了哪些数据源) 独立。
         tools_used: List[str] = []
@@ -12546,16 +12569,9 @@ class AgentExecutor:
                         and not write_receipts
                         and self._turn_diet_correction_unresolved_reason
                     ):
-                        if self._turn_diet_correction_unresolved_reason == "ambiguous_target":
-                            final_text = (
-                                "我找到多条符合日期和餐次的饮食记录，暂时没有修改。"
-                                "请选择具体哪一条后再提交修正。"
-                            )
-                        else:
-                            final_text = (
-                                "我找到了对应餐次，但现有记录缺少可缩放的营养数据，"
-                                "暂时没有修改。请补充实际吃了什么或具体热量。"
-                            )
+                        final_text = _diet_correction_unresolved_message(
+                            self._turn_diet_correction_unresolved_reason
+                        )
                         streamed_to_client = False
                     elif (
                         _has_destructive_or_sync_intent(message or "")
@@ -12664,6 +12680,16 @@ class AgentExecutor:
                         yield {"event": "token", "data": {"content": chunk}}
                 full_reply += final_text
 
+        except _SimpleRecordTerminal as terminal:
+            deterministic_diet_correction_terminal = True
+            full_reply = terminal.message
+            final_finish_reason = "stop" if terminal.satisfied else "error"
+            if not health_advice_buffered:
+                for i in range(0, len(full_reply), 20):
+                    yield {
+                        "event": "token",
+                        "data": {"content": full_reply[i:i + 20]},
+                    }
         except Exception as e:
             logger.error(
                 "Agent 执行异常 user=%s error_type=%s",
@@ -12725,12 +12751,14 @@ class AgentExecutor:
             and not self._agent_kernel_pending_confirmation_tools
             and not last_recoverable_write_rejection
             and not runtime_control_terminal
+            and not deterministic_diet_correction_terminal
         )
         # 破坏性/同步意图从 fast-record 集排除后(留强模型),其 0-工具 缺口在此补上,
         # 与 record_intent_no_tool 加层不减层(不与之重叠:record 集已被上面判掉)。
         destructive_or_sync_no_tool = bool(
             health_evidence_turn is None
             and not record_intent_no_tool
+            and not deterministic_diet_correction_terminal
             and _has_destructive_or_sync_intent(message or "")
             and tool_executed_count == 0
         )
@@ -16966,28 +16994,25 @@ class AgentExecutor:
                     correction["meal_type"],
                 )
             else:
-                resolved_args = {
-                    "record_type": "diet",
-                    "operation": "list",
-                    "date": correction["date"],
-                    "meal_type": correction["meal_type"],
-                    "limit": 20,
-                }
+                if error:
+                    unresolved_reason = "lookup_failed"
+                elif not candidate_rows:
+                    unresolved_reason = "target_not_found"
+                elif len(candidate_rows) > 1:
+                    unresolved_reason = "ambiguous_target"
+                else:
+                    unresolved_reason = "record_has_no_scalable_nutrition"
                 logger.warning(
                     "[health_manage] diet correction target unresolved user=%s meal=%s candidates=%s error=%s",
                     self._current_user_id,
                     correction["meal_type"],
                     len(candidate_rows),
-                    error or (
-                        "record_has_no_scalable_nutrition"
-                        if len(candidate_rows) == 1
-                        else "ambiguous_target"
-                    ),
+                    unresolved_reason,
                 )
-                self._turn_diet_correction_unresolved_reason = (
-                    "record_has_no_scalable_nutrition"
-                    if len(candidate_rows) == 1
-                    else "ambiguous_target"
+                self._turn_diet_correction_unresolved_reason = unresolved_reason
+                raise _SimpleRecordTerminal(
+                    _diet_correction_unresolved_message(unresolved_reason),
+                    satisfied=False,
                 )
 
             normalized.append({

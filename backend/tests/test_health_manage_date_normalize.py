@@ -576,7 +576,7 @@ async def test_partial_meal_correction_replaces_a_generated_portion_suffix():
 
 
 @pytest.mark.asyncio
-async def test_explicit_diet_correction_stays_read_only_when_target_is_ambiguous():
+async def test_explicit_diet_correction_terminates_when_target_is_ambiguous():
     executor = AgentExecutor(MagicMock())
     executor._current_turn_user_message = "修改早餐：一碗小米粥 一个蔬菜饼"
     executor._api_get_json = AsyncMock(return_value=([
@@ -590,22 +590,17 @@ async def test_explicit_diet_correction_stays_read_only_when_target_is_ambiguous
         "meal_type": "breakfast",
     }
 
-    calls = await executor._normalize_explicit_diet_update_tool_calls([{
-        "id": "call-1",
-        "type": "function",
-        "function": {
-            "name": "health_manage",
-            "arguments": json.dumps(original_args),
-        },
-    }], "test-token")
+    with pytest.raises(RuntimeError, match="找到多条.*暂时没有修改"):
+        await executor._normalize_explicit_diet_update_tool_calls([{
+            "id": "call-1",
+            "type": "function",
+            "function": {
+                "name": "health_manage",
+                "arguments": json.dumps(original_args),
+            },
+        }], "test-token")
 
-    assert json.loads(calls[0]["function"]["arguments"]) == {
-        "record_type": "diet",
-        "operation": "list",
-        "date": datetime.now(BJ).date().isoformat(),
-        "meal_type": "breakfast",
-        "limit": 20,
-    }
+    assert executor._turn_diet_correction_unresolved_reason == "ambiguous_target"
 
 
 @pytest.mark.asyncio
