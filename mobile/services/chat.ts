@@ -24,12 +24,18 @@ export class ChatStreamHttpError extends Error {
   }
 }
 
+const SERVER_BUSY_HTTP_DETAIL = '上一条消息仍在处理，请稍后重试';
+
 function chatStreamHttpError(status: number, responseText: string): ChatStreamHttpError {
   let detail: string | undefined;
   try {
     const body = JSON.parse(responseText);
-    if (typeof body?.detail === 'string') {
-      detail = sanitizeChatErrorMessage(body.detail, '').slice(0, 200) || undefined;
+    if (
+      status === 409
+      && typeof body?.detail === 'string'
+      && body.detail.includes('上一条消息仍在处理')
+    ) {
+      detail = SERVER_BUSY_HTTP_DETAIL;
     }
   } catch {
     // An HTTP error document is not an SSE payload. Keep malformed bodies out
@@ -391,6 +397,9 @@ export async function* streamChat(
   }
 
   xhr.onprogress = () => {
+    if (xhr.status < 200 || xhr.status >= 300) {
+      return;
+    }
     const newText = xhr.responseText.slice(processed);
     processed = xhr.responseText.length;
     if (newText) {

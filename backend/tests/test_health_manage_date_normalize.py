@@ -373,6 +373,11 @@ def test_parse_numeric_partial_meal_correction(message, label):
         "晚餐只吃了 0/2 修改记录",
         "晚餐只吃了 2/1 修改记录",
         "晚餐只吃了 1/0 修改记录",
+        "晚餐只吃了 -1/2 修改记录",
+        "晚餐只吃了 1/-2 修改记录",
+        "晚餐只吃了 1//2 修改记录",
+        "晚餐只吃了 1.5/2 修改记录",
+        "晚餐只吃了 1/2.5 修改记录",
     ],
 )
 def test_invalid_numeric_partial_meal_fraction_is_not_a_food_replacement(message):

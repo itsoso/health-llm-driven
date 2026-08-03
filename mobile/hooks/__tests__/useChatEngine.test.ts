@@ -1301,6 +1301,54 @@ describe('useChatEngine', () => {
     ).toHaveLength(1);
   });
 
+  it('keeps later turns behind a server-busy queue head during backoff', async () => {
+    jest.useFakeTimers();
+    mockStreamChat
+      .mockImplementationOnce(streamServerBusy)
+      .mockImplementation(streamPersistedIdsThenDone);
+    const { result } = renderHook(() => useChatEngine());
+
+    let firstAccepted: Promise<boolean> | undefined;
+    act(() => {
+      firstAccepted = result.current.sendMessage('先把晚餐改成一半');
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await expect(firstAccepted).resolves.toBe(true);
+    expect(result.current.queuedCount).toBe(1);
+
+    let secondAccepted: Promise<boolean> | undefined;
+    act(() => {
+      secondAccepted = result.current.sendMessage('再补充一条记录');
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await expect(secondAccepted).resolves.toBe(true);
+    expect(result.current.queuedCount).toBe(2);
+    expect(mockStreamChat).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      jest.advanceTimersByTime(1000);
+      await Promise.resolve();
+      await Promise.resolve();
+      jest.runOnlyPendingTimers();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(mockStreamChat).toHaveBeenCalledTimes(3));
+    expect(mockStreamChat.mock.calls.map(call => call[0])).toEqual([
+      '先把晚餐改成一半',
+      '先把晚餐改成一半',
+      '再补充一条记录',
+    ]);
+  });
+
   it('keeps a server-busy photo draft pending until the retry is persisted', async () => {
     jest.useFakeTimers();
     mockStreamChat

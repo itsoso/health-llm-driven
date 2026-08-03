@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-02 |
 | status | in_progress |
-| current_stage | G2 design approved; implementation planning |
+| current_stage | First G4 NO-GO remediated; fresh G4 review pending |
 | owner_surface | Mobile chat / Backend agent runtime |
 
 ## Problem
@@ -65,13 +65,48 @@ pump, owner-scoped deterministic selection, fail-closed ambiguity and
 content-free logs address those risks. G3 regression tests and G4 independent
 health-write safety review remain mandatory.
 
-### G3 Tests: PENDING
+### G3 Tests: PASS
 
-Failure-first regression tests and verification have not run yet.
+Failure-first evidence was observed before implementation:
 
-### G4 Safety Review: PENDING
+- Mobile treated the Backend 409 JSON response as a successful empty SSE
+  stream, then polled a turn that had never been admitted.
+- Numeric fractions, whitespace fractions, invalid fractions and truthful
+  no-nutrition corrections failed their new Backend assertions.
+- Ambiguous, missing and failed diet lookups entered three model rounds instead
+  of terminating after one deterministic lookup.
+- Busy retries triggered three haptics for one user submission before the
+  final feedback-deduplication guard was added.
 
-Required because this path changes health records.
+Fresh verification after the final implementation commit:
+
+- Mobile critical path after G4 remediation: 3 suites / 165 tests passed.
+- Mobile full regression: 289 suites / 2,279 tests passed.
+- Mobile TypeScript: `npx tsc --noEmit` passed.
+- Mobile lint: 0 errors; 92 pre-existing warnings outside this change remain.
+- Backend focused and stream integration after G4 remediation: 127 tests passed with 7 dependency/
+  framework deprecation warnings.
+- Backend Ruff and Python compilation passed.
+- Dossier consistency: 98 dossiers passed.
+- Generated system-map drift check passed.
+- `git diff --check` passed.
+
+### G4 Safety Review: NO-GO -> REMEDIATED -> RE-REVIEW PENDING
+
+The first independent review found no Critical issue and three Important
+release blockers:
+
+1. arbitrary non-2xx HTTP `detail` text could reach the chat UI;
+2. a later turn could bypass a busy queue head during its backoff window; and
+3. signed or malformed ratios such as `-1/2`, `1/-2` and `1//2` could be
+   misparsed or persisted as replacement food text.
+
+All three were reproduced with failing tests and remediated. HTTP error details
+now use an allowlisted canonical busy message and other non-2xx bodies never
+enter SSE/UI parsing. New turns append whenever a queue already exists. Signed,
+decimal and malformed ratio-like input fails closed before any write. The
+stale correction-normalizer docstring was also updated. A fresh independent
+reviewer must issue GO before deployment.
 
 ### G5 Deployment Health: PENDING
 

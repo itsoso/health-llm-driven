@@ -1192,7 +1192,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       ? findReusableTurnMessage(messagesRef.current, 'assistant', reusableTurnId)
       : undefined;
 
-    if (isStreamingRef.current && !sendOpts?.__precreatedLocalMessages) {
+    if (
+      (isStreamingRef.current || queuedTurnsRef.current.length > 0)
+      && !sendOpts?.__precreatedLocalMessages
+    ) {
       const userMessageId = nextId();
       const assistantMessageId = nextId();
       const uris = hasImages ? pendingImages.map(optimisticImageUri) : undefined;

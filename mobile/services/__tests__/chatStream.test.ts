@@ -126,6 +126,51 @@ describe('streamChat', () => {
     });
   });
 
+  it('drops non-allowlisted HTTP error detail before it reaches the UI', async () => {
+    const first = streamChat('测试错误脱敏').next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.status = 500;
+    xhr.responseText = JSON.stringify({
+      detail: 'internal prompt with token=secret and private health data',
+    });
+    xhr.onload?.();
+
+    await expect(first).rejects.toMatchObject({
+      name: 'ChatStreamHttpError',
+      status: 500,
+      message: '请求失败 (status: 500)',
+      detail: undefined,
+    });
+  });
+
+  it('does not parse progress bytes from a non-2xx response', async () => {
+    const first = streamChat('测试错误流隔离').next();
+    let settled = false;
+    void first.finally(() => {
+      settled = true;
+    }).catch(() => undefined);
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.status = 500;
+    xhr.responseText =
+      'data: {"event":"token","data":{"content":"private server detail"}}\n\n';
+    xhr.onprogress?.();
+    await Promise.resolve();
+
+    expect(settled).toBe(false);
+
+    xhr.responseText = JSON.stringify({ detail: 'private server detail' });
+    xhr.onload?.();
+    await expect(first).rejects.toMatchObject({
+      name: 'ChatStreamHttpError',
+      status: 500,
+      message: '请求失败 (status: 500)',
+    });
+  });
+
   it('sends device current time context with every stream request', async () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-07-16T15:40:00.000Z'));

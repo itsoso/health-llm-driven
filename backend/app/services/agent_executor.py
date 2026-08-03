@@ -4832,14 +4832,18 @@ _DIET_PARTIAL_FRACTIONS = {
 _DIET_FRACTION_TOKEN_RE = re.compile(
     r"三分之一|三分之二|四分之一|四分之三|"
     r"五分之一|五分之二|五分之三|五分之四|一半|半份|"
-    r"\d+\s*/\s*\d+",
+    r"(?<![\d.+-])[+-]?\d+\s*/\s*[+-]?\d+(?![\d.])",
+    re.I,
+)
+_DIET_NUMERIC_RATIO_LIKE_RE = re.compile(
+    r"(?<![\d.])[+-]?\d+(?:\.\d+)?\s*/+\s*[+-]?\d*(?:\.\d+)?",
     re.I,
 )
 _CONTEXTUAL_MEAL_PORTION_RE = re.compile(
     r"(?:吃了|吃掉了|实际吃了|只吃了?)\s*"
     r"(?P<fraction>三分之一|三分之二|四分之一|四分之三|"
     r"五分之一|五分之二|五分之三|五分之四|一半|半份|"
-    r"\d+\s*/\s*\d+)",
+    r"(?<![\d.+-])[+-]?\d+\s*/\s*[+-]?\d+(?![\d.]))",
     re.I,
 )
 _GENERATED_DIET_PORTION_SUFFIX_RE = re.compile(
@@ -5009,7 +5013,10 @@ def _parse_explicit_diet_correction(
     partial_signal = _DIET_PARTIAL_CORRECTION_SIGNAL_RE.search(text)
     if (
         partial_signal is not None
-        and _DIET_FRACTION_TOKEN_RE.search(text, partial_signal.start())
+        and (
+            _DIET_FRACTION_TOKEN_RE.search(text, partial_signal.start())
+            or _DIET_NUMERIC_RATIO_LIKE_RE.search(text, partial_signal.start())
+        )
     ):
         # A malformed numeric fraction is not a food replacement. Failing
         # closed avoids persisting strings such as "只吃了 1/0 修改记录" as food.
@@ -16904,9 +16911,9 @@ class AgentExecutor:
 
         The target date, meal and replacement food are parsed from the user's
         message, never from model-authored arguments. Exactly one server-side
-        candidate is required. Zero or multiple candidates are converted to a
-        read-only lookup so a model mistake cannot create a duplicate or edit an
-        arbitrary meal.
+        candidate is required. Zero, multiple or unverifiable candidates stop
+        immediately with a deterministic no-write clarification so a model
+        mistake cannot create a duplicate or edit an arbitrary meal.
         """
         correction = _parse_explicit_diet_correction(
             getattr(self, "_current_turn_user_message", ""),
