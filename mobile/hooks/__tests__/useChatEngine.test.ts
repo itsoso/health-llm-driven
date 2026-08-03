@@ -1441,6 +1441,57 @@ describe('useChatEngine', () => {
     ]);
   });
 
+  it('does not revive a delayed busy turn after starting a new chat', async () => {
+    jest.useFakeTimers();
+    mockStreamChat.mockImplementation(streamWaitThenServerBusy);
+    const { result } = renderHook(() => useChatEngine());
+
+    let acceptedPromise: Promise<boolean> | undefined;
+    act(() => {
+      acceptedPromise = result.current.sendMessage('旧对话里的晚餐修正');
+    });
+    await waitFor(() => expect(mockStreamChat).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      result.current.newChat();
+    });
+    await act(async () => {
+      releaseBusyResponse?.();
+      await Promise.resolve();
+      await Promise.resolve();
+      jest.runOnlyPendingTimers();
+      await Promise.resolve();
+    });
+
+    await expect(acceptedPromise).resolves.toBe(false);
+    expect(result.current.queuedCount).toBe(0);
+    expect(mockStreamChat).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not revive a delayed busy turn after the chat engine unmounts', async () => {
+    jest.useFakeTimers();
+    mockStreamChat.mockImplementation(streamWaitThenServerBusy);
+    const { result, unmount } = renderHook(() => useChatEngine());
+
+    let acceptedPromise: Promise<boolean> | undefined;
+    act(() => {
+      acceptedPromise = result.current.sendMessage('离开页面前的晚餐修正');
+    });
+    await waitFor(() => expect(mockStreamChat).toHaveBeenCalledTimes(1));
+
+    unmount();
+    await act(async () => {
+      releaseBusyResponse?.();
+      await Promise.resolve();
+      await Promise.resolve();
+      jest.runOnlyPendingTimers();
+      await Promise.resolve();
+    });
+
+    await expect(acceptedPromise).resolves.toBe(false);
+    expect(mockStreamChat).toHaveBeenCalledTimes(1);
+  });
+
   it('assigns distinct turn ids to identical independent messages in the busy fifo', async () => {
     jest.useFakeTimers();
     mockStreamChat

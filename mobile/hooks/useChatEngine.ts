@@ -691,6 +691,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const pumpQueuedTurnsRef = useRef<() => void>(() => undefined);
   const scheduleBusyQueuePumpRef = useRef<(delayMs: number) => void>(() => undefined);
   const busyQueueTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const turnQueueGenerationRef = useRef(0);
   const isStreamingRef = useRef(false);
   const runningTurnIdRef = useRef<string | undefined>(undefined);
   const terminalTelemetryKeysRef = useRef<Set<string>>(new Set());
@@ -801,6 +802,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   // 把后端写入的最终消息拉回前端显示.
   useEffect(() => () => { /* no-op: 不在 unmount 时 abort */ }, []);
   useEffect(() => () => {
+    turnQueueGenerationRef.current += 1;
     serverRecoveryTimersRef.current.forEach(timer => clearTimeout(timer));
     serverRecoveryTimersRef.current.clear();
     if (busyQueueTimerRef.current) {
@@ -1174,6 +1176,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     }
 
     const finalMsg = msg || (hasImages ? '请分析这些图片' : '');
+    const turnQueueGeneration = turnQueueGenerationRef.current;
     const requestFingerprint = buildTurnRequestFingerprint(finalMsg, pendingImages);
     const forceNewConversation = !!sendOpts?.forceNewConversation;
     const previousTurn = activeTurnRef.current;
@@ -2004,6 +2007,14 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       setMessages(prev => prev.filter(
         message => !message.cardType || message.sourceTurnId !== turnId,
       ));
+      if (
+        !acceptedByServer
+        && isServerBusyStreamError(err)
+        && turnQueueGeneration !== turnQueueGenerationRef.current
+      ) {
+        settleAcceptance(false);
+        return false;
+      }
       if (!acceptedByServer && isServerBusyStreamError(err)) {
         const now = Date.now();
         const busyStartedAt = sendOpts?.__busyStartedAt ?? now;
@@ -2240,15 +2251,18 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   };
 
   const stopStreaming = useCallback(() => {
+    turnQueueGenerationRef.current += 1;
     abortRef.current?.abort();
   }, []);
 
   const cancelActiveTurn = useCallback(() => {
+    turnQueueGenerationRef.current += 1;
     abortRef.current?.abort();
   }, []);
 
   const cancelTurn = useCallback((turnId: string) => {
     if (runningTurnIdRef.current === turnId) {
+      turnQueueGenerationRef.current += 1;
       abortRef.current?.abort();
       return;
     }
@@ -2271,6 +2285,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
 
   const newChat = useCallback(() => {
+    turnQueueGenerationRef.current += 1;
     conversationRequestGenerationRef.current += 1;
     historyLoadRequestRef.current += 1;
     setIsLoadingMoreHistory(false);

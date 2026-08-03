@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-02 |
 | status | in_progress |
-| current_stage | Sixth G4 NO-GO remediated; fresh G4 review pending |
+| current_stage | Seventh G4 NO-GO remediated; fresh G4 review pending |
 | owner_surface | Mobile chat / Backend agent runtime |
 
 ## Problem
@@ -80,11 +80,11 @@ Failure-first evidence was observed before implementation:
 
 Fresh verification after the final implementation commit:
 
-- Mobile critical path after the sixth G4 remediation: 3 suites / 168 tests passed.
-- Mobile full regression: 289 suites / 2,285 tests passed.
+- Mobile critical path after the seventh G4 remediation: 3 suites / 170 tests passed.
+- Mobile full regression: 289 suites / 2,287 tests passed.
 - Mobile TypeScript: `npx tsc --noEmit` passed.
 - Mobile lint: 0 errors; 92 pre-existing warnings outside this change remain.
-- Backend focused, stream integration, diet API and photo-context regression after the sixth G4 remediation: 247 tests passed with 7 dependency/
+- Backend focused, stream integration, diet API and photo-context regression after the seventh G4 remediation: 254 tests passed with 7 dependency/
   framework deprecation warnings.
 - Backend Ruff and Python compilation passed.
 - Dossier consistency: 98 dossiers passed.
@@ -166,7 +166,17 @@ always restores the already-in-flight turn at the queue head. Positive
 regressions retain legitimate language such as `没吃那么多，只吃了1/2`. The
 reviewer's non-blocking HMAC replay-hardening suggestion remains documented;
 the header is not returned to clients and still requires valid owner auth. A
-fresh independent reviewer must issue GO before deployment.
+fresh independent reviewer then found two more Important cancellation gaps.
+Question particles followed by helper words and explicit trailing cancellation
+language could still trigger text or photo corrections. In addition, a 409
+arriving after new-chat or unmount cleanup could revive the old turn because
+the catch path did not know that its queue generation was cancelled. Both were
+reproduced before remediation. The shared utterance guard now recognizes
+standalone question particles without misclassifying `那么`, and rejects
+cancel/retract language independent of word order. Mobile captures a queue
+generation per request and invalidates it on new chat, unmount and explicit
+cancellation; a stale busy response is rejected instead of re-queued. A fresh
+independent reviewer must issue GO before deployment.
 
 ### G5 Deployment Health: PENDING
 

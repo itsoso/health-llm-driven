@@ -4821,8 +4821,8 @@ _DIET_PARTIAL_CORRECTION_SIGNAL_RE = re.compile(
 )
 _DIET_PARTIAL_CORRECTION_QUESTION_RE = re.compile(
     r"[?？]|会不会|要不要|是否|行不行|可以吗|"
-    r"(?:吗|嘛|么|呢)(?=\s|[，。！？?!]|$|修改|更正|更新|调整|改|记录)|"
-    r"好不好|是不是|怎么办|怎么吃|吃多少",
+    r"(?:吗|嘛|呢)|(?<![什怎这那])么|"
+    r"好不好|是不是|为什么|什么|怎么办|怎么|吃多少",
     re.I,
 )
 _DIET_PARTIAL_CORRECTION_NEGATION_RE = re.compile(
@@ -4837,6 +4837,11 @@ _DIET_PARTIAL_CORRECTION_UNCERTAIN_RE = re.compile(
 )
 _DIET_PARTIAL_CORRECTION_RETRACTION_RE = re.compile(
     r"不对|不准(?:确)?|不正确|有误|错了?|写错了?|说错了?",
+    re.I,
+)
+_DIET_PARTIAL_CORRECTION_CANCEL_RE = re.compile(
+    r"算了|作废|撤销|取消|"
+    r"(?:暂时|先)?\s*(?:不要|别|不用|无需|不必|不需要|停止)(?:再)?",
     re.I,
 )
 _DIET_PARTIAL_FRACTIONS = {
@@ -4987,6 +4992,7 @@ def _meal_fraction_utterance_is_unsafe(
         or _DIET_PARTIAL_CORRECTION_NEGATION_RE.search(normalized)
         or _DIET_PARTIAL_CORRECTION_UNCERTAIN_RE.search(normalized)
         or _DIET_PARTIAL_CORRECTION_RETRACTION_RE.search(normalized)
+        or _DIET_PARTIAL_CORRECTION_CANCEL_RE.search(normalized)
     ):
         return True
     return _parse_meal_fraction_token(supported_matches[0].group(0)) is None
