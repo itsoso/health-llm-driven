@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-02 |
 | status | in_progress |
-| current_stage | G4 GO; deployment pending |
+| current_stage | G5 PASS; G6 production device verification pending |
 | owner_surface | Mobile chat / Backend agent runtime |
 
 ## Problem
@@ -92,6 +92,9 @@ Fresh verification after the final implementation commit:
 - Dossier consistency: 99 dossiers passed.
 - Generated system-map drift check passed.
 - `git diff --check` passed.
+- After a final upstream executor change was integrated, the combined Backend
+  agent/diet/clinician suite passed 1,216 tests with 7 dependency/framework
+  warnings, and the Mobile critical path passed 3 suites / 173 tests.
 
 ### G4 Safety Review: PASS (FINAL GO)
 
@@ -268,10 +271,34 @@ cancel/photo variants with zero diet records, assets or drafts. Owner-bound
 HMAC probes, a signed real PUT returning 200, verified receipt truthfulness,
 stable FIFO retry IDs and cancellation generation invalidation also passed.
 
-### G5 Deployment Health: PENDING
+The remote `main` advanced once more before deployment with clinician-feedback
+recall logic touching the same executor. A second fresh independent review
+issued `G4: GO` for final commit
+`96e10374f6a600fe8401abb5b7fb9360b963b911`. It confirmed clinician recall
+cannot override `_SimpleRecordTerminal`, performs zero tools for read-only
+recall, and fails closed for mixed clinician/diet action text. Its focused
+cross-routing regression passed 117 tests with no release blocker.
 
-Backend has not yet been deployed for this change.
+### G5 Deployment Health: PASS
 
-### G6 Production Verification: PENDING
+The final commit `96e10374f6a600fe8401abb5b7fb9360b963b911` was pushed to
+`origin/main` and deployed with `./deploy.sh -b`. The production backup,
+237-table restore rehearsal, encrypted offsite archive authenticity check,
+202-table rollback-schema probe, runtime transaction, migrations and runtime-
+only KB contracts all passed. Multiple post-deploy health checks scored 60/60,
+the transaction finalized, and a fresh status check confirmed the Backend is
+active on the exact final commit with `/api/v1/health` returning 200.
 
-Mobile OTA and end-to-end production verification have not yet run.
+### G6 Production Verification: OTA RELEASED; DEVICE CHECK PENDING
+
+The production iOS OTA was published for runtime `1.3.2` and verified by the
+release script:
+
+- update group: `f99356fb-7438-4ce5-9dee-3df1215b2bf7`;
+- iOS update: `019fc6fb-e3a5-792a-a923-4e2f66ee9164`;
+- commit: `96e10374f6a600fe8401abb5b7fb9360b963b911`.
+
+The remaining G6 evidence is a real authenticated device reopening the App,
+applying the OTA and repeating the original busy follow-up. Until that is
+confirmed, the dossier remains `in_progress` rather than claiming end-to-end
+production completion.
