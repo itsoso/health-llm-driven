@@ -108,6 +108,7 @@
 - 发布事务已 `COMMITTED` / `finalized`，远端 SHA 两次核验一致，部署后健康分三次均为 `60/60 PASS`。
 - 后端进程为 `active (running)`，`GET /api/v1/health` 返回 200；公开无凭据探测 `POST /api/v1/auth/invitations/inspect` 返回 `403 REGISTRATION_CLOSED`，证明路由已部署且新注册 fail-closed。
 - 当前生产配置缺少稳定的 `REGISTRATION_INVITATION_DIGEST_KEY`、独立审核的 `REGISTRATION_INVITATION_SMS_SIGN_NAME` 与 `REGISTRATION_INVITATION_SMS_TEMPLATE_CODE`。按安全约束不得复用 OTP 模板或虚构配置，因此管理员真实发邀 smoke、Mobile OTA 和 enforcement 尚未执行。
+- 2026-08-03 用户明确要求发布 production OTA；发布源为干净 `main` 提交 `d19c536032f3e815cf20649734eb73fd45804543`，CI 全绿且发布前 Mobile TypeScript 复验通过。iOS bundle 三次均成功导出（Hermes 两次、官方 `--no-bytecode + --skip-bundler` 兜底一次），但 EAS 对唯一 launch asset 的服务端 processing 全部超时，命令在生成 update group/ID 前 fail loud。production channel 查询仍指向上一已知可用 runtime `1.3.2`、group `5ae84fdf-0e71-4121-a34a-86dd6a747f51`、iOS update `019fc0af-ce41-7259-8800-1d3451bb3682`；没有半发布或错误切换。该故障与 Garmin dossier 已记录的 EAS per-asset processing 故障一致，重复同哈希上传已有失败证据，因此不继续无界重试。
 - **裁决：G5 尚未 PASS。** 配置就绪后必须按 rollout=true/enforcement=false → 受控手机号管理员发邀 smoke → Mobile OTA → 覆盖率确认 → enforcement=true 的顺序继续。
 
 ## G6 · 验证闸
