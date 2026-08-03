@@ -306,6 +306,7 @@ def test_unparseable_returns_none_not_garbage():
     [
         ("修改早餐：一碗小米粥 一个蔬菜饼", "breakfast", "一碗小米粥 一个蔬菜饼"),
         ("午餐改成 牛肉面一碗", "lunch", "牛肉面一碗"),
+        ("午餐改成 鸡胸肉71.4克", "lunch", "鸡胸肉71.4克"),
         ("把昨天晚餐修改为清蒸鱼和米饭", "dinner", "清蒸鱼和米饭"),
         ("把早餐从西米露改成小米粥", "breakfast", "小米粥"),
     ],
@@ -634,6 +635,16 @@ async def test_partial_meal_correction_replaces_the_previous_nutrition_fraction(
         "晚餐计划只吃1/2，修改记录",
         "晚餐准备只吃1/2，修改记录",
         "晚餐想只吃1/2，修改记录",
+        "晚餐打算吃1/2，修改记录",
+        "晚餐计划吃1/2，修改记录",
+        "假设晚餐吃了1/2，修改记录",
+        "晚餐没吃1/2，修改记录",
+        "晚餐吃了1/2，取消修改",
+        "晚餐吃了1/2，勿修改",
+        "晚餐吃了50%，取消修改",
+        "晚餐吃了0.5，取消修改",
+        "晚餐吃了½，取消修改",
+        "晚餐吃了二分之一，取消修改",
     ],
 )
 async def test_unsafe_unsupported_or_invalid_fraction_cannot_reach_a_diet_write(message):

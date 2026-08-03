@@ -4884,6 +4884,11 @@ _DIET_UNSUPPORTED_PORTION_LIKE_RE = re.compile(
     r"[一二三四五六七八九十两]{1,3}分之[一二三四五六七八九十两]{1,3}",
     re.I,
 )
+_DIET_CONSUMPTION_VALUE_PREFIX_RE = re.compile(
+    r"(?:吃(?:了|掉了)?|摄入(?:了)?|食用(?:了)?)\s*"
+    r"(?:约|大约|大概|差不多)?\s*$",
+    re.I,
+)
 _CONTEXTUAL_MEAL_PORTION_RE = re.compile(
     r"(?:吃了|吃掉了|实际吃了|只吃了?)\s*"
     r"(?P<fraction>三分之一|三分之二|四分之一|四分之三|"
@@ -5111,6 +5116,19 @@ def _partial_meal_consumed_fraction(text: str) -> Optional[float]:
     return portion[0] if portion is not None else None
 
 
+def _utterance_contains_fraction_like_portion(text: str) -> bool:
+    if (
+        _DIET_FRACTION_TOKEN_RE.search(text)
+        or _DIET_NUMERIC_RATIO_LIKE_RE.search(text)
+    ):
+        return True
+    for match in _DIET_UNSUPPORTED_PORTION_LIKE_RE.finditer(text):
+        nearby_prefix = text[max(0, match.start() - 16):match.start()]
+        if _DIET_CONSUMPTION_VALUE_PREFIX_RE.search(nearby_prefix):
+            return True
+    return False
+
+
 def _invalid_partial_meal_fraction_requested(message: str) -> bool:
     text = _normalize_meal_fraction_symbols(
         " ".join((message or "").strip().split())
@@ -5119,13 +5137,13 @@ def _invalid_partial_meal_fraction_requested(message: str) -> bool:
         not _DIET_CORRECTION_MEAL_RE.search(text)
     ):
         return False
-    partial_signal = _DIET_PARTIAL_CORRECTION_SIGNAL_RE.search(text)
-    if partial_signal is None:
+    if not _utterance_contains_fraction_like_portion(text):
         return False
-    return _meal_fraction_utterance_is_unsafe(
-        text,
-        fraction_must_start_at_or_after=partial_signal.start(),
-    )
+    # Any fraction-like value in a named-meal correction must be consumed by
+    # the narrow factual portion grammar. It must never fall through to the
+    # generic food-replacement path when the sentence is hypothetical,
+    # cancelled, contradictory, unsupported or otherwise ambiguous.
+    return _partial_meal_consumed_portion(text) is None
 
 
 def _contextual_meal_consumed_fraction(
@@ -8152,6 +8170,7 @@ class AgentExecutor:
         self._turn_doctor_feedback_write_attempted = False
         self._turn_contextual_diet_record_id: Optional[int] = None
         self._turn_contextual_diet_consumed_fraction: Optional[float] = None
+        self._turn_contextual_diet_fraction_blocked = False
         self._turn_pending_write_intent_ids: list[int] = []
         self._turn_pending_write_intent_kinds: list[str] = []
         self._turn_medication_tool_intent_id: Optional[int] = None
@@ -10134,6 +10153,7 @@ class AgentExecutor:
         self._turn_doctor_feedback_write_attempted = False
         self._turn_contextual_diet_record_id = None
         self._turn_contextual_diet_consumed_fraction = None
+        self._turn_contextual_diet_fraction_blocked = False
         self._ensure_agent_kernel_turn(channel=channel)
         clinician_turn_decision = classify_clinician_turn(message or "")
         # Backend-owned health evidence runtime. Clinical semantics are compiled
@@ -16271,6 +16291,17 @@ class AgentExecutor:
         if user_id is None or source_message_id is None:
             vision_result["contextual_capture_failed"] = True
             return None
+        if (
+            _utterance_contains_fraction_like_portion(user_message)
+            and _contextual_meal_consumed_fraction(user_message) is None
+        ):
+            # A rejected fraction sentence must not silently degrade into a
+            # full-meal photo auto-save. Preserve the recognition for a
+            # clarification response, but close every diet write adapter for
+            # this turn.
+            self._turn_contextual_diet_fraction_blocked = True
+            vision_result["contextual_capture_fraction_blocked"] = True
+            return None
         normalized_indexes = sorted(set(image_indexes))
         if not normalized_indexes or any(
             image_index < 0 or image_index >= len(self._current_turn_image_urls)
@@ -16670,6 +16701,12 @@ class AgentExecutor:
             capture_instruction = (
                 "本轮仅用于分析或查询，严禁调用 health_record；"
                 "只解释识别结果、不确定性和可选建议。"
+            )
+        elif result.get("contextual_capture_fraction_blocked"):
+            capture_instruction = (
+                "用户的整餐份量表达没有通过明确事实校验；严禁调用 health_record "
+                "或 health_manage，也不得声称已经保存。请让用户用明确已完成的"
+                "事实句重述，例如“这餐只吃了1/2，请记录”。"
             )
         elif result.get("contextual_capture_failed"):
             capture_instruction = (
@@ -18693,6 +18730,15 @@ class AgentExecutor:
                 default_record_date=today,
             )
 
+        if rtype == "diet" and self._turn_contextual_diet_fraction_blocked:
+            return local_write_rejection(
+                "contextual_diet_fraction_ambiguous",
+                message="这条图片餐食份量表达不够明确，本轮没有写入饮食记录。",
+                recovery_guidance=(
+                    "请用明确已完成的事实句重述，例如“这餐只吃了1/2，请记录”。"
+                ),
+            )
+
         # A contextual meal photo may already have been persisted before the
         # model receives its structured vision summary.  A model retry must
         # receive the same verified record, never create a second meal.
@@ -19593,6 +19639,18 @@ class AgentExecutor:
         operation = args.get("operation")
         record_id = args.get("record_id")
         data = args.get("data") or {}
+        if (
+            record_type == "diet"
+            and operation != "list"
+            and self._turn_contextual_diet_fraction_blocked
+        ):
+            return local_write_rejection(
+                "contextual_diet_fraction_ambiguous",
+                message="这条图片餐食份量表达不够明确，本轮没有修改饮食记录。",
+                recovery_guidance=(
+                    "请用明确已完成的事实句重述，例如“这餐只吃了1/2，请记录”。"
+                ),
+            )
         if (
             record_type == "diet"
             and operation == "update"

@@ -2,6 +2,7 @@ import base64
 import json
 from io import BytesIO
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock
 
 import pytest
 from PIL import Image
@@ -350,6 +351,83 @@ def test_contextual_meal_fraction_only_scales_an_explicit_whole_meal(
         assert parsed is not None
         assert parsed[0] == pytest.approx(expected[0])
         assert parsed[1] == expected[1]
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "这餐吃了1/2，取消记录",
+        "假设这餐吃了1/2",
+        "这餐打算只吃1/2",
+        "这餐吃了1/2，莫记录",
+    ],
+)
+def test_unsafe_photo_fraction_language_never_auto_captures(
+    message, db, tmp_path, monkeypatch
+):
+    executor, _user = _food_photo_executor(db, tmp_path, monkeypatch)
+    recognition = _food_result()
+
+    result = executor._capture_contextual_meal_photo(
+        message,
+        recognition,
+        image_index=0,
+    )
+
+    assert result is None
+    assert db.query(DietRecord).count() == 0
+    assert recognition["contextual_capture_fraction_blocked"] is True
+    assert executor._turn_contextual_diet_fraction_blocked is True
+    prompt_context = executor._format_food_recognition_for_agent(
+        message,
+        recognition,
+        contextual_capture=result,
+    )
+    assert "严禁调用 health_record" in prompt_context
+    assert "没有通过明确事实校验" in prompt_context
+
+
+@pytest.mark.asyncio
+async def test_unsafe_photo_fraction_closes_model_diet_write_adapter(
+    db, tmp_path, monkeypatch
+):
+    executor, _user = _food_photo_executor(db, tmp_path, monkeypatch)
+    recognition = _food_result()
+    executor._capture_contextual_meal_photo(
+        "这餐吃了1/2，取消记录",
+        recognition,
+        image_index=0,
+    )
+    post = AsyncMock()
+    monkeypatch.setattr(executor, "_api_post_json", post)
+
+    result = await executor._exec_health_record("http://test", {}, {
+        "record_type": "diet",
+        "data": {
+            "meal_type": "dinner",
+            "food_items": "鸡胸肉",
+            "calories": 198,
+        },
+    })
+
+    assert "contextual_diet_fraction_ambiguous" in result
+    post.assert_not_awaited()
+    assert db.query(DietRecord).count() == 0
+
+    manage_result = await executor._exec_health_manage("http://test", {}, {
+        "record_type": "diet",
+        "operation": "update",
+        "record_id": 123,
+        "data": {
+            "meal_type": "dinner",
+            "food_items": "鸡胸肉",
+            "calories": 198,
+        },
+    })
+
+    assert "contextual_diet_fraction_ambiguous" in manage_result
+    post.assert_not_awaited()
+    assert db.query(DietRecord).count() == 0
 
 
 def test_agent_auto_captures_empty_high_confidence_lunch_photo_with_receipt(

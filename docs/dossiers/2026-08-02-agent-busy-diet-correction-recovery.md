@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-02 |
 | status | in_progress |
-| current_stage | Ninth G4 NO-GO remediated; fresh G4 review pending |
+| current_stage | Tenth G4 NO-GO remediated; fresh G4 review pending |
 | owner_surface | Mobile chat / Backend agent runtime |
 
 ## Problem
@@ -80,11 +80,11 @@ Failure-first evidence was observed before implementation:
 
 Fresh verification after the final implementation commit:
 
-- Mobile critical path after the seventh G4 remediation: 3 suites / 170 tests passed.
-- Mobile full regression: 289 suites / 2,287 tests passed.
+- Mobile critical path after the ninth G4 remediation: 3 suites / 156 tests passed.
+- Mobile full regression: 289 suites / 2,290 tests passed.
 - Mobile TypeScript: `npx tsc --noEmit` passed.
 - Mobile lint: 0 errors; 92 pre-existing warnings outside this change remain.
-- Backend focused, stream integration, diet API and photo-context regression after the ninth G4 remediation: 331 tests passed with 7 dependency/
+- Backend focused, stream integration, diet API and photo-context regression after the tenth G4 remediation: 347 tests passed with 7 dependency/
   framework deprecation warnings.
 - Backend Ruff and Python compilation passed.
 - Dossier consistency: 98 dossiers passed.
@@ -197,8 +197,19 @@ phrases fails closed. Fifty text/photo adversarial cases cover the reviewer's
 bypasses plus future-intent forms. Stop and cancel now remove the logical busy
 queue head, cancel pending image acceptance, record an interrupted terminal
 state and leave any later independent turn eligible to continue. Three Mobile
-cancellation race tests cover scheduled and delayed-409 paths. A fresh
-independent reviewer must issue GO before deployment.
+cancellation race tests cover scheduled and delayed-409 paths. The next
+independent reviewer found one remaining fail-open boundary: unsupported or
+cancelled fraction language without the narrow positive grammar could fall
+through to the generic text food-replacement parser, while the contextual
+photo path could still auto-save the whole meal after rejecting its fraction.
+Both paths were reproduced with real zero-write assertions before remediation.
+Any fraction-like named-meal correction not consumed by the positive grammar
+now terminates before generic replacement. The photo path marks the turn as
+fraction-blocked before asset or record creation, gives the model an explicit
+no-write instruction, and independently rejects both diet create and update
+tool calls for the turn. Positive decimal food quantities and ordinary
+high-confidence photo capture remain covered. A fresh independent reviewer
+must issue GO before deployment.
 
 ### G5 Deployment Health: PENDING
 
