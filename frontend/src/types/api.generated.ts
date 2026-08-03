@@ -43651,7 +43651,9 @@ export interface operations {
     update_diet_record_api_v1_diet_records__record_id__put: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Reva-Internal-Diet-Portion-Signature"?: string | null;
+            };
             path: {
                 record_id: number;
             };

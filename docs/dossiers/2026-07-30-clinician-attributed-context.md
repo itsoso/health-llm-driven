@@ -146,6 +146,21 @@
     FULL/MINIMAL 分类，不新增关键词，也不开放工具。
   - TDD：跨层测试先证明 run-stream 未传 full-context 信号、prompt 缺少 owner
     医生反馈；修正后两项均通过。
+- [x] Correction Block 11
+  - 触发：上下文修正候选 `3c83612d7` 推送后，main CI run
+    `30803354084` 的 `type-drift` 失败，其余 43 个 jobs 成功；发布闸因此
+    停止，未部署该候选。
+  - 根因：并发合入的饮食份量修正 API 新增内部请求头
+    `X-Reva-Internal-Diet-Portion-Signature`，后端 OpenAPI 已更新，但 Mobile
+    与 Frontend 派生类型尚未同步。该漂移与 clinician recall 业务逻辑无关，
+    但属于接口契约 Gate，不能带红发布。
+  - 修正：使用 CI 同版 Python 3.12、`requirements.lock`（FastAPI 0.139.2、
+    Pydantic 2.9.2、Starlette 1.3.1）和
+    `openapi-typescript@7.13.0` 重新生成两端类型；最终差异仅为两端各新增
+    该请求头，复跑前后 SHA-256 均为
+    `18f69d6114bc108503dcd7bcb35a67332b8d290471507914d9d7d33bec10b96e`。
+  - 一次性 `HARNESS_LIVE_LLM_EVAL_CONFIRMED` 已在 `backend-quality` 成功读取
+    后删除，并验证远端返回 `not found`。
 
 ## S0 · 用户需求（逐字）
 
@@ -256,8 +271,10 @@
   isolation、rollback、receipt freshness 与 Health Evidence 优先级均有回归覆盖。
 - 上线召回修正已完成：窄 recall envelope、零工具执行约束及正反例回归已
   实现。第二轮生产暴露上下文预算断链后，typed recall → FULL context 的跨层
-  修正也已实现，当前等待合并并发主干、复验、提交与第三轮部署。
-- 当前实现 HEAD：`97f26b55f`。药物 Health Evidence 域未扩张；正式 golden
+  修正也已实现；当前正在修复并复验并发 API 类型契约 Gate，尚未进入第三轮
+  部署。
+- 上下文预算修正提交：`a410e80c4`；当前发布候选记录提交：`3c83612d7`。
+  药物 Health Evidence 域未扩张；正式 golden
   pack 仍只覆盖既有 low-back 场景，药物风险问题走可靠普通分析路径。
 - 发布前再次无冲突合并 `origin/main@0e2f05252`；当前合并提交
   `e218c3ac57cf`。
@@ -307,7 +324,12 @@
   Python 3.12、`requirements.lock` 和 `openapi-typescript@7.13.0` 精确复现并
   生成修复。后续主干已同步同一类型结果，完成的 `e966281cd` 与
   `d19c53603` CI 均 success；最新 `0e2f05252` 为 docs-only，检查仍在运行。
-- 裁决：本功能与合并后本地 Gate PASS；远端 CI 待推送后确认。
+- 当前发布候选 CI run `30803354084`：43 jobs success，唯一失败为
+  `type-drift`。精确复现确认是并发饮食 API 新请求头未同步到两端派生类型；
+  固定依赖重生成后仅产生两端各 `4 +++-` 的同一请求头差异，连续两次生成
+  SHA-256 不变，`git diff --check` 通过。
+- 裁决：本功能与合并后本地 Gate PASS；远端接口契约 Gate 已在本地修复，
+  待重新推送并取得全绿后才能部署。
 
 ## G4 · 安全闸
 
@@ -345,7 +367,8 @@
   `96e10374f6a600fe8401abb5b7fb9360b963b911`；本任务只读复查 backend active、
   `/api/v1/health` healthy。上下文修正已合并该主干及其 docs-only 收尾提交，
   第三轮发布必须以新的远端 main 精确 SHA 为准。
-- 第三轮上下文修正部署：待定。
+- 第三轮候选 `3c83612d7` 的 CI 因 `type-drift` 失败，已按 Gate 停止，未部署；
+  精确类型同步完成后待新候选全绿再部署。
 
 ## G5 · 部署健康闸
 
@@ -377,7 +400,8 @@
   完成声明并回到 S5 修正。
 - 第二轮历史结果：**FAIL** —— recall 只读语义正确，但个人上下文预算误降级；
   已停止完成声明并再次回到 S5 修正。
-- 当前状态：上下文预算修正已完成，待合并主干、CI 与第三轮生产 smoke 后作出
+- 当前状态：上下文预算修正已完成；第三轮首个发布候选因接口类型漂移被 CI
+  拒绝且未部署，漂移已本地精确修复。待新候选 CI、部署与生产 smoke 后作出
   新裁决。
 
 ## S8 · 沉淀
