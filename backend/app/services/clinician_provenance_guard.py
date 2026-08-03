@@ -195,6 +195,26 @@ _QUOTE_PAIRS = (
 _GUARD_QUESTION_SIGNALS = tuple(
     dict.fromkeys((*QUESTION_SIGNALS, "会不会", "能不能", "会否"))
 )
+_FEEDBACK_RECALL_PREFIXES = frozenset(
+    f"{referent}{when}"
+    for referent in ("", "我", "你", "我们")
+    for when in ("", "刚才", "刚刚", "之前", "此前", "先前", "最近", "上次", "已经")
+)
+_FEEDBACK_RECALL_SUFFIXES = frozenset(
+    {
+        "是什么",
+        "是什么来着",
+        "有哪些",
+        "有哪几条",
+        "内容是什么",
+        "具体是什么",
+        "怎么说的",
+        "说了什么",
+        "写了什么",
+        "记了什么",
+        "保存了什么",
+    }
+)
 _REPORT_FILLERS = frozenset(" 是为：:，,")
 _CONTENT_SEPARATORS = frozenset("：:,，")
 _CONTENT_PLACEHOLDERS = frozenset(
@@ -237,6 +257,7 @@ _REASONS_BY_KIND: dict[DecisionKind, frozenset[str]] = {
             "clinician_question",
             "clinician_consultation",
             "clinician_instruction",
+            "clinician_feedback_recall",
         }
     ),
     "explicit_doctor_feedback_write": frozenset(
@@ -1426,6 +1447,63 @@ def _turn_contains_deny_only_action(raw: str) -> bool:
     return any(root in raw for root in _DENY_ONLY_ACTION_ROOTS)
 
 
+def _letters_numbers_only(text: str) -> str:
+    compatible = unicodedata.normalize("NFKC", text)
+    return "".join(
+        char
+        for char in compatible
+        if unicodedata.category(char)[0] in {"L", "N"}
+    )
+
+
+def _saved_feedback_recall_provider(
+    raw: str,
+    segments: tuple[_Span, ...],
+) -> _Span | None:
+    """Recognize narrow nominal queries about already-saved feedback."""
+
+    if len(segments) != 1 or not _contains_question(raw):
+        return None
+    segment = segments[0]
+    for root in CLINICIAN_FEEDBACK_WRITE_ROOTS:
+        action_start = raw.find(root, segment.start, segment.end)
+        while action_start >= 0:
+            action_end = action_start + len(root)
+            object_start = _skip_spaces(raw, action_end, segment.end)
+            if object_start >= segment.end or raw[object_start] != "的":
+                action_start = raw.find(
+                    root,
+                    action_start + len(root),
+                    segment.end,
+                )
+                continue
+            object_start = _skip_spaces(raw, object_start + 1, segment.end)
+            feedback_object = _match_feedback_object(
+                raw,
+                position=object_start,
+                end=segment.end,
+            )
+            if feedback_object is not None:
+                provider, object_span = feedback_object
+                prefix = _letters_numbers_only(
+                    raw[segment.start:action_start]
+                )
+                suffix = _letters_numbers_only(
+                    raw[object_span.end:segment.end]
+                )
+                if (
+                    prefix in _FEEDBACK_RECALL_PREFIXES
+                    and suffix in _FEEDBACK_RECALL_SUFFIXES
+                ):
+                    return provider
+            action_start = raw.find(
+                root,
+                action_start + len(root),
+                segment.end,
+            )
+    return None
+
+
 def _canonical_clauses(
     raw: str,
     *,
@@ -2088,6 +2166,15 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
             raw,
             candidate,
             reason_code="coordinated_clinician_action",
+        )
+
+    feedback_recall_provider = _saved_feedback_recall_provider(raw, segments)
+    if feedback_recall_provider is not None:
+        return _decision(
+            raw,
+            kind="clinician_advice",
+            reason_code="clinician_feedback_recall",
+            provider=feedback_recall_provider,
         )
 
     if instructions:

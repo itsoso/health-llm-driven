@@ -181,6 +181,48 @@ def test_notification_diagnosis_question_is_advice_not_a_report():
 @pytest.mark.parametrize(
     "text",
     (
+        "刚才记录的医生诊断是什么？",
+        "我刚才保存的医生诊断是什么？",
+        "之前录入的康复师意见有哪些？",
+        "上次写入的大夫反馈内容是什么？",
+    ),
+)
+def test_saved_clinician_feedback_recall_questions_are_read_only(text):
+    guard = _module()
+
+    decision = guard.classify_clinician_turn(text)
+
+    assert decision.kind == "clinician_advice"
+    assert decision.reason_code == "clinician_feedback_recall"
+    assert decision.authorizes_feedback_write is False
+    assert decision.provider_start is not None
+    assert decision.provider_end is not None
+    assert decision.command_start is None
+    assert decision.command_end is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "删除刚才记录的医生诊断了吗？",
+        "刚才记录的医生诊断，删除了吗？",
+        "调整之前保存的医生意见吗？",
+        "同步上次录入的康复师意见吗？",
+        "我让医生记录每天腰痛情况吗？",
+    ),
+)
+def test_saved_feedback_shaped_action_questions_remain_fail_closed(text):
+    guard = _module()
+
+    decision = guard.classify_clinician_turn(text)
+
+    assert decision.kind == "ambiguous_clinician_action"
+    assert decision.authorizes_feedback_write is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
         "我让医生记录每天腰痛情况",
         "家属叫医生记录每天腰痛情况",
     ),

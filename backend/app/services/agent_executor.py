@@ -137,6 +137,9 @@ _CLINICIAN_ZERO_TOOL_KINDS = frozenset({
     "clinician_context",
     "ambiguous_clinician_action",
 })
+_CLINICIAN_ZERO_TOOL_REASON_CODES = frozenset({
+    "clinician_feedback_recall",
+})
 
 _CLINICIAN_CONTEXT_NOT_SAVED_REPLY = (
     "我理解这是你转述的医生判断/评估；本轮未保存。"
@@ -152,6 +155,14 @@ _CLINICIAN_AMBIGUOUS_ACTION_REPLY = (
 
 def _clinician_turn_prompt_guidance(decision: Any) -> str:
     """Render content-free turn guidance from the server-owned guard decision."""
+    if decision.reason_code == "clinician_feedback_recall":
+        return (
+            "## 本回合临床来源护栏裁决\n"
+            "服务端已将本回合判定为回读最近医生反馈。"
+            "只根据系统附注中的最近医生反馈回答，并明确这是用户此前记录的医生判断；"
+            "不调用工具、不执行或保存任何操作。若附注中找不到对应反馈，明确说找不到，"
+            "不得猜测或把 Reva 的分析冒充医生结论。"
+        )
     if decision.kind == "clinician_context":
         return (
             "## 本回合临床来源护栏裁决\n"
@@ -178,7 +189,10 @@ def _clinician_turn_prompt_guidance(decision: Any) -> str:
 
 def _clinician_turn_allows_tool(decision: Any, tool_name: Any) -> bool:
     """Apply the guard decision before model-selected tools reach dispatch."""
-    if decision.kind in _CLINICIAN_ZERO_TOOL_KINDS:
+    if (
+        decision.kind in _CLINICIAN_ZERO_TOOL_KINDS
+        or decision.reason_code in _CLINICIAN_ZERO_TOOL_REASON_CODES
+    ):
         return False
     if decision.kind == "explicit_doctor_feedback_write":
         return str(tool_name or "").strip() == "record_doctor_feedback"
@@ -10589,7 +10603,11 @@ class AgentExecutor:
             tools = get_health_tools(subset=list(turn_tool_names))
         else:
             tools = get_health_tools()
-        if clinician_turn_decision.kind in _CLINICIAN_ZERO_TOOL_KINDS:
+        if (
+            clinician_turn_decision.kind in _CLINICIAN_ZERO_TOOL_KINDS
+            or clinician_turn_decision.reason_code
+            in _CLINICIAN_ZERO_TOOL_REASON_CODES
+        ):
             tools = []
         elif (
             clinician_turn_decision.kind
@@ -10619,6 +10637,8 @@ class AgentExecutor:
                 *_CLINICIAN_ZERO_TOOL_KINDS,
                 "explicit_doctor_feedback_write",
             }
+            and clinician_turn_decision.reason_code
+            not in _CLINICIAN_ZERO_TOOL_REASON_CODES
         )
 
         # 5. Agent 循环
@@ -10917,6 +10937,8 @@ class AgentExecutor:
                         _clinician_response_guarded = (
                             clinician_turn_decision.kind
                             in _CLINICIAN_ZERO_TOOL_KINDS
+                            or clinician_turn_decision.reason_code
+                            in _CLINICIAN_ZERO_TOOL_REASON_CODES
                         )
                         # 工具决策轮快路由 (fast 模型): 本轮输出只当工具决策, content 绝不
                         # live 下发 —— 若最终是直接答文本 (无 tool_calls), 会被丢弃并在强模型
@@ -11401,6 +11423,8 @@ class AgentExecutor:
                         if (
                             clinician_turn_decision.kind
                             in _CLINICIAN_ZERO_TOOL_KINDS
+                            or clinician_turn_decision.reason_code
+                            in _CLINICIAN_ZERO_TOOL_REASON_CODES
                         ):
                             self._force_no_tools_synthesis = True
                         continue

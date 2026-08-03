@@ -4,7 +4,7 @@
 |---|---|
 | slug | `clinician-attributed-context` |
 | 创建日期 | 2026-07-30 |
-| 当前阶段 | S5 实现收口 / 发布闸验证 |
+| 当前阶段 | S5 上线召回修正 / 发布闸复验 |
 | 状态 | verifying |
 | 负责 | Codex |
 | 反馈环 | backend deploy |
@@ -123,6 +123,18 @@
     gap 并保留 raw offset；只有 outer envelope 完整证明后，保存正文才对通用
     混淆扫描不透明，outer command/object 和复合动作仍 fail-closed。
   - 裁决：`97f26b55f` 经独立规格与质量双审均 GO，Critical 0、Important 0。
+- [x] Correction Block 9
+  - 触发：首轮生产上线验证中，显式保存成功，但新会话询问“刚才记录的医生
+    诊断是什么？”被 guard 判为 `ambiguous_clinician_action`，返回“没有执行
+    操作”，G6 因此 FAIL 并停止宣告完成。
+  - 根因：guard 在问句裁决前扫描到 legacy `记录/保存` 动作词；没有区分
+    “记录医生诊断”命令与“记录的医生诊断”这一名词性历史召回结构。
+  - 修正：新增窄格式、单分句的 clinician-feedback recall envelope，只接受
+    来源对象 + `的` + 明确回忆问法；返回只读 `clinician_feedback_recall`。
+    executor 对该 reason 强制零工具，并要求只从最近医生反馈上下文回答，未
+    找到时明确说不知道。删除、调整、同步及角色反转问句继续 fail-closed。
+  - 安全边界：修正不扩大任何写授权；召回仍由 owner-scoped doctor source
+    上下文提供，不能用模型猜测补全。
 
 ## S0 · 用户需求（逐字）
 
@@ -231,6 +243,8 @@
   使用同一写入事实；无 verified receipt 时禁止宣称已记录。
 - T6 已完成：截图原句、显式保存、普通咨询、复合动作、Unicode gap、owner
   isolation、rollback、receipt freshness 与 Health Evidence 优先级均有回归覆盖。
+- 上线召回修正已完成：窄 recall envelope、零工具执行约束及正反例回归已
+  实现；当前等待修正提交、CI 与第二轮生产部署。
 - 当前实现 HEAD：`97f26b55f`。药物 Health Evidence 域未扩张；正式 golden
   pack 仍只覆盖既有 low-back 场景，药物风险问题走可靠普通分析路径。
 - 发布前再次无冲突合并 `origin/main@0e2f05252`；当前合并提交
@@ -257,9 +271,15 @@
   （平均分 `0.94`）。本分支未修改 orchestrator、judge 或其 dataset；合成路径
   `temperature=0.3`，裁定为 live 模型方差而非确定性代码回归。失败与重放证据
   均保留，不以静默重试掩盖。
-- 非阻塞本地环境提示：live gate 所用本地 `llm_usage_logs` 缺少
-  `error_class` / `cached_tokens` 列，usage logging/quota guard fail-soft；模型
-  调用和 gate 本身成功。生产部署前仍以部署健康与 smoke 为准。
+- 上线召回修正相关套件：`1580 passed, 7 warnings`；Ruff、`py_compile`、
+  `git diff --check` 通过。新增召回正例先按 TDD 在旧实现上失败，修正后与
+  删除/调整/同步/角色反转反例共同通过。
+- 修正后 live Harness：最初误用了生产角色连接本地库，随后改为本地
+  `health_db`，又因该开发库 `llm_usage_logs` 缺列而被配额保护正确阻止；两次
+  均是环境失败且未产生成功 TokenPlan 调用。最终切换到结构最新的隔离
+  `health_test` 后通过：invariants `12/12`、health-agent-core `50/50`、
+  orchestrator `5/5`（平均分 `0.94`）、trajectory contract `12/12`、
+  trajectory goldens `9/9`。未绕过配额保护，也未用失败回退结果冒充成功。
 - main CI 真实色：曾在 `508624f7f` 因 OpenAPI 派生类型漂移失败；按 CI 同版
   Python 3.12、`requirements.lock` 和 `openapi-typescript@7.13.0` 精确复现并
   生成修复。后续主干已同步同一类型结果，完成的 `e966281cd` 与
@@ -279,21 +299,39 @@
 ## S6 · 部署
 
 - 路由：backend-deploy。
-- 部署 SHA / 回滚点：待定。
+- 首轮部署 SHA：`c78b5b1ef419ddec92346bb1e0b7372ca4cd182c`；从与
+  `origin/main` 完全一致的临时干净 main 部署。
+- 首轮回滚点：`e966281cd50b45bbf98bd623923705b9b2cce2c0`。
+- 生产数据库备份：
+  `/var/backups/health-app/database/health_db_2026-08-03_15-52-23_1617541.sql.gz`
+  （恢复演练通过，237 tables）；生产 `.env` 备份：
+  `/var/backups/health-app/env/.env.20260803_155911`。
+- 首轮 main CI：run `30788287172` attempt 2 全绿。一次性
+  `HARNESS_LIVE_LLM_EVAL_CONFIRMED` 变量在 CI 后已删除并验证不存在。
+- 第二轮修正部署：待修正提交与 CI 全绿后执行。
 
 ## G5 · 部署健康闸
 
-- 健康分 / prod smoke：待定。
-- 裁决：待定。
+- 首轮部署健康分：`60/60 PASS`；远端 SHA 与部署 SHA 完全一致；运行时 KB
+  guard、skills 对齐、schema probe 与发布事务终态均通过。
+- 裁决：首轮 G5 PASS；第二轮修正部署待复验。
 
 ## S7 · 上线验证
 
-- 用原始截图语句验证正常理解且无写入。
-- 用“请记录医生诊断：……”验证医生反馈回执与后续召回。
+- 原始截图语句经生产 API 得到语义理解，并明确“不自动保存”；医生反馈计数
+  `0 -> 0`、tools `[]`、error `null`。本地 smoke 仅因过度精确断言期待字面
+  “未保存”而退出 1，产品行为本身通过。
+- 显式保存生产 smoke 成功，创建唯一测试反馈 ID `206`，回执工具为
+  `record_doctor_feedback`。随后新会话召回失败，触发 Correction Block 9。
+- 测试会话均已删除；ID `206` 通过 `id + user_id + created_by + release marker`
+  精确删除并复查计数为 0，生产无合成医疗数据残留。
+- 第二轮将以新 SHA 再做“显式保存 → 新会话原句召回 → 精确清理”的闭环验证。
 
 ## G6 · 验证闸
 
-- 待用户真机确认。
+- 首轮历史结果：**FAIL** —— 裸陈述与显式保存通过，但新会话召回错误；已停止
+  完成声明并回到 S5 修正。
+- 当前状态：修正已完成，待第二轮生产 smoke 后作出新裁决。
 
 ## S8 · 沉淀
 

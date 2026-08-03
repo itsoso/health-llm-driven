@@ -449,6 +449,22 @@ async def test_clinician_turns_never_select_fast_record_or_needs_detail_reply(
         assert emitted_text == "OK"
 
 
+def test_saved_clinician_feedback_recall_is_zero_tool_and_context_bound():
+    from app.services.clinician_provenance_guard import classify_clinician_turn
+
+    decision = classify_clinician_turn("刚才记录的医生诊断是什么？")
+
+    assert decision.kind == "clinician_advice"
+    assert decision.reason_code == "clinician_feedback_recall"
+    assert ae._clinician_turn_allows_tool(decision, "health_query") is False
+    assert ae._clinician_turn_allows_tool(decision, "health_manage") is False
+    assert ae._clinician_turn_allows_tool(decision, "record_doctor_feedback") is False
+    guidance = ae._clinician_turn_prompt_guidance(decision)
+    assert "最近医生反馈" in guidance
+    assert "不调用工具" in guidance
+    assert "找不到" in guidance
+
+
 @pytest.mark.asyncio
 async def test_explicit_model_override_is_honored(db, auth_user_and_headers, monkeypatch):
     """(d) Explicit _request_model_id (UI pick) → honored, not overridden by fast route."""
