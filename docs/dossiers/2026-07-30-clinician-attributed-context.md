@@ -248,10 +248,15 @@
 - 最终主干合并后集成回归：`2031 passed, 7 warnings`；system-map 生成/校验、
   `py_compile`、fixture JSON、doc drift、Dossier consistency、diff-check 和
   全变更 pre-commit：通过。
-- 合并后 live Health Harness（`ab2c4e6755d6`）：invariants `12/12`、
-  health-agent-core `50/50`、live orchestrator `5/5`（平均分 `0.94`）、
-  trajectory contract `12/12`、trajectory goldens `9/9`、path-sensitive
-  confirmation：通过。
+- 最终头 offline Health Harness：invariants `12/12`、health-agent-core
+  `50/50`、trajectory contract `12/12`、trajectory goldens `9/9`；
+  path-sensitive confirmation：通过。
+- 最终头 live Harness 首轮 orchestrator `4/5`（平均分 `0.91`），因此停止发布
+  并按 systematic-debugging 复查；同 SHA 逐 case 诊断重放 `5/5`（平均分
+  `0.90`），所有 keywords 与 LLM judge 均通过。此前合并头 live 为 `5/5`
+  （平均分 `0.94`）。本分支未修改 orchestrator、judge 或其 dataset；合成路径
+  `temperature=0.3`，裁定为 live 模型方差而非确定性代码回归。失败与重放证据
+  均保留，不以静默重试掩盖。
 - 非阻塞本地环境提示：live gate 所用本地 `llm_usage_logs` 缺少
   `error_class` / `cached_tokens` 列，usage logging/quota guard fail-soft；模型
   调用和 gate 本身成功。生产部署前仍以部署健康与 smoke 为准。
