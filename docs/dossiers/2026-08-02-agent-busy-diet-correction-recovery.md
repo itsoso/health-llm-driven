@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-02 |
 | status | in_progress |
-| current_stage | Fifth G4 NO-GO remediated; fresh G4 review pending |
+| current_stage | Sixth G4 NO-GO remediated; fresh G4 review pending |
 | owner_surface | Mobile chat / Backend agent runtime |
 
 ## Problem
@@ -80,11 +80,11 @@ Failure-first evidence was observed before implementation:
 
 Fresh verification after the final implementation commit:
 
-- Mobile critical path after the fourth G4 remediation: 3 suites / 167 tests passed.
-- Mobile full regression: 289 suites / 2,284 tests passed.
+- Mobile critical path after the sixth G4 remediation: 3 suites / 168 tests passed.
+- Mobile full regression: 289 suites / 2,285 tests passed.
 - Mobile TypeScript: `npx tsc --noEmit` passed.
 - Mobile lint: 0 errors; 92 pre-existing warnings outside this change remain.
-- Backend focused, stream integration and diet API after the fifth G4 remediation: 213 tests passed with 7 dependency/
+- Backend focused, stream integration, diet API and photo-context regression after the sixth G4 remediation: 247 tests passed with 7 dependency/
   framework deprecation warnings.
 - Backend Ruff and Python compilation passed.
 - Dossier consistency: 98 dossiers passed.
@@ -150,7 +150,23 @@ deterministic portion updates now use a one-shot server-side fingerprint and an
 HMAC over owner, record and canonical payload in an internal-only header; the
 diet API verifies that signature before preserving explicit unchanged/zero
 nutrients. A public client spoof remains on the ordinary stale-invalidation
-path. A fresh independent reviewer must issue GO before deployment.
+path.
+
+The sixth independent reviewer confirmed the authenticated update path but
+found two further Important blockers. Full-utterance validation still scanned
+only after the first partial-meal signal, so an earlier ratio, an unseparated
+question particle, a later retraction, scientific notation and contradictory
+photo-context ratios could still select the first supported fraction. Mobile
+could also reverse FIFO order when turn B entered the local queue while turn A
+was in flight and A's delayed response then returned 409. Both issues were
+reproduced before remediation. Text and photo correction paths now share a
+whole-utterance ratio guard that requires one exact supported factual ratio and
+rejects ambiguous, uncertain, retracted or unsupported forms. The busy path
+always restores the already-in-flight turn at the queue head. Positive
+regressions retain legitimate language such as `没吃那么多，只吃了1/2`. The
+reviewer's non-blocking HMAC replay-hardening suggestion remains documented;
+the header is not returned to clients and still requires valid owner auth. A
+fresh independent reviewer must issue GO before deployment.
 
 ### G5 Deployment Health: PENDING
 

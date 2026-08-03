@@ -99,6 +99,7 @@ describe('buildTurnRequestFingerprint', () => {
 let finishStream: (() => void) | undefined;
 let failStream: (() => void) | undefined;
 let persistStream: (() => void) | undefined;
+let releaseBusyResponse: (() => void) | undefined;
 
 async function* streamStartThenWait() {
   yield { type: 'start', conversationId: 777 };
@@ -109,6 +110,13 @@ async function* streamStartThenWait() {
 }
 
 async function* streamServerBusy() {
+  throw new MockChatStreamHttpError(409, '上一条消息仍在处理，请稍后重试');
+}
+
+async function* streamWaitThenServerBusy() {
+  await new Promise<void>((resolve) => {
+    releaseBusyResponse = resolve;
+  });
   throw new MockChatStreamHttpError(409, '上一条消息仍在处理，请稍后重试');
 }
 
@@ -611,6 +619,7 @@ describe('useChatEngine', () => {
     finishStream = undefined;
     failStream = undefined;
     persistStream = undefined;
+    releaseBusyResponse = undefined;
     mockGetConversations.mockResolvedValue([]);
     mockGetConversationMessages.mockResolvedValue({ total_messages: 0, messages: [] });
     mockGetAgentTurnStatus.mockResolvedValue(null);
@@ -1369,6 +1378,51 @@ describe('useChatEngine', () => {
     await expect(secondAccepted).resolves.toBe(true);
     expect(result.current.queuedCount).toBe(2);
     expect(mockStreamChat).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      jest.advanceTimersByTime(1000);
+      await Promise.resolve();
+      await Promise.resolve();
+      jest.runOnlyPendingTimers();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(mockStreamChat).toHaveBeenCalledTimes(3));
+    expect(mockStreamChat.mock.calls.map(call => call[0])).toEqual([
+      '先把晚餐改成一半',
+      '先把晚餐改成一半',
+      '再补充一条记录',
+    ]);
+  });
+
+  it('keeps an in-flight turn ahead when its delayed busy response arrives after a later submission', async () => {
+    jest.useFakeTimers();
+    mockStreamChat
+      .mockImplementationOnce(streamWaitThenServerBusy)
+      .mockImplementation(streamPersistedIdsThenDone);
+    const { result } = renderHook(() => useChatEngine());
+
+    let firstAccepted: Promise<boolean> | undefined;
+    act(() => {
+      firstAccepted = result.current.sendMessage('先把晚餐改成一半');
+    });
+    await waitFor(() => expect(mockStreamChat).toHaveBeenCalledTimes(1));
+
+    let secondAccepted: Promise<boolean> | undefined;
+    act(() => {
+      secondAccepted = result.current.sendMessage('再补充一条记录');
+    });
+    await expect(secondAccepted).resolves.toBe(true);
+    expect(result.current.queuedCount).toBe(1);
+
+    await act(async () => {
+      releaseBusyResponse?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await expect(firstAccepted).resolves.toBe(true);
+    expect(result.current.queuedCount).toBe(2);
 
     await act(async () => {
       jest.advanceTimersByTime(1000);

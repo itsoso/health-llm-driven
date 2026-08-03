@@ -4821,7 +4821,7 @@ _DIET_PARTIAL_CORRECTION_SIGNAL_RE = re.compile(
 )
 _DIET_PARTIAL_CORRECTION_QUESTION_RE = re.compile(
     r"[?？]|会不会|要不要|是否|行不行|可以吗|"
-    r"(?:吗|嘛|么|呢)(?=\s|[，。！？?!]|$)|"
+    r"(?:吗|嘛|么|呢)(?=\s|[，。！？?!]|$|修改|更正|更新|调整|改|记录)|"
     r"好不好|是不是|怎么办|怎么吃|吃多少",
     re.I,
 )
@@ -4829,6 +4829,14 @@ _DIET_PARTIAL_CORRECTION_NEGATION_RE = re.compile(
     r"(?:不要|别|不该|不能|不可|避免|不是|并非|并不是).{0,10}"
     r"(?:只吃|吃.{0,4}(?:一半|半份|分之|\d+\s*/))|"
     r"(?:并没有|没有|没|未)\s*只吃",
+    re.I,
+)
+_DIET_PARTIAL_CORRECTION_UNCERTAIN_RE = re.compile(
+    r"还是|如果|要是|假如|可能|大概|也许|或许|不确定|记不清",
+    re.I,
+)
+_DIET_PARTIAL_CORRECTION_RETRACTION_RE = re.compile(
+    r"不对|不准(?:确)?|不正确|有误|错了?|写错了?|说错了?",
     re.I,
 )
 _DIET_PARTIAL_FRACTIONS = {
@@ -4856,6 +4864,7 @@ _DIET_NUMERIC_RATIO_LIKE_RE = re.compile(
 _DIET_UNSUPPORTED_PORTION_LIKE_RE = re.compile(
     r"[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*[%％]|"
     r"(?<![\d.])[+-]?(?:\d*\.\d+)(?![\d.])|"
+    r"(?<![\d.])[+-]?\d+(?:\.\d+)?\s*[eE]\s*[+-]?\d+(?![\d.])|"
     r"[¼½¾⅐⅑⅒⅓⅔⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞]|"
     r"[一二三四五六七八九十两]{1,3}分之[一二三四五六七八九十两]{1,3}",
     re.I,
@@ -4936,14 +4945,63 @@ def _parse_meal_fraction_token(token: str) -> Optional[tuple[float, str]]:
     return float(fraction), normalized
 
 
+def _meal_fraction_utterance_is_unsafe(
+    text: str,
+    *,
+    fraction_must_start_at_or_after: Optional[int] = None,
+) -> bool:
+    """Fail closed unless the whole utterance has one exact factual ratio."""
+    normalized = _normalize_meal_fraction_symbols(
+        " ".join((text or "").strip().split())
+    )
+    all_spans = sorted(
+        (match.start(), match.end())
+        for pattern in (
+            _DIET_FRACTION_TOKEN_RE,
+            _DIET_NUMERIC_RATIO_LIKE_RE,
+            _DIET_UNSUPPORTED_PORTION_LIKE_RE,
+        )
+        for match in pattern.finditer(normalized)
+    )
+    if not all_spans:
+        return False
+
+    merged_spans: list[tuple[int, int]] = []
+    for start, end in all_spans:
+        if merged_spans and start < merged_spans[-1][1]:
+            prior_start, prior_end = merged_spans[-1]
+            merged_spans[-1] = (prior_start, max(prior_end, end))
+        else:
+            merged_spans.append((start, end))
+
+    supported_matches = list(_DIET_FRACTION_TOKEN_RE.finditer(normalized))
+    if (
+        len(merged_spans) != 1
+        or len(supported_matches) != 1
+        or merged_spans[0] != supported_matches[0].span()
+        or (
+            fraction_must_start_at_or_after is not None
+            and supported_matches[0].start() < fraction_must_start_at_or_after
+        )
+        or _DIET_PARTIAL_CORRECTION_QUESTION_RE.search(normalized)
+        or _DIET_PARTIAL_CORRECTION_NEGATION_RE.search(normalized)
+        or _DIET_PARTIAL_CORRECTION_UNCERTAIN_RE.search(normalized)
+        or _DIET_PARTIAL_CORRECTION_RETRACTION_RE.search(normalized)
+    ):
+        return True
+    return _parse_meal_fraction_token(supported_matches[0].group(0)) is None
+
+
 def _partial_meal_consumed_portion(
     text: str,
 ) -> Optional[tuple[float, str]]:
     signal_match = _DIET_PARTIAL_CORRECTION_SIGNAL_RE.search(text)
     if (
         signal_match is None
-        or _DIET_PARTIAL_CORRECTION_QUESTION_RE.search(text)
-        or _DIET_PARTIAL_CORRECTION_NEGATION_RE.search(text)
+        or _meal_fraction_utterance_is_unsafe(
+            text,
+            fraction_must_start_at_or_after=signal_match.start(),
+        )
     ):
         return None
     fraction_match = _DIET_FRACTION_TOKEN_RE.search(text, signal_match.start())
@@ -4968,31 +5026,10 @@ def _invalid_partial_meal_fraction_requested(message: str) -> bool:
     partial_signal = _DIET_PARTIAL_CORRECTION_SIGNAL_RE.search(text)
     if partial_signal is None:
         return False
-    ratio_spans = sorted(
-        (match.start(), match.end())
-        for pattern in (
-            _DIET_FRACTION_TOKEN_RE,
-            _DIET_NUMERIC_RATIO_LIKE_RE,
-            _DIET_UNSUPPORTED_PORTION_LIKE_RE,
-        )
-        for match in pattern.finditer(text, partial_signal.start())
+    return _meal_fraction_utterance_is_unsafe(
+        text,
+        fraction_must_start_at_or_after=partial_signal.start(),
     )
-    if not ratio_spans:
-        return False
-    distinct_ratio_spans: list[tuple[int, int]] = []
-    for start, end in ratio_spans:
-        if distinct_ratio_spans and start < distinct_ratio_spans[-1][1]:
-            prior_start, prior_end = distinct_ratio_spans[-1]
-            distinct_ratio_spans[-1] = (prior_start, max(prior_end, end))
-        else:
-            distinct_ratio_spans.append((start, end))
-    if (
-        _DIET_PARTIAL_CORRECTION_QUESTION_RE.search(text)
-        or _DIET_PARTIAL_CORRECTION_NEGATION_RE.search(text)
-        or len(distinct_ratio_spans) != 1
-    ):
-        return True
-    return _partial_meal_consumed_portion(text) is None
 
 
 def _contextual_meal_consumed_fraction(
@@ -5017,6 +5054,8 @@ def _contextual_meal_consumed_fraction(
         return None
     match = _CONTEXTUAL_MEAL_PORTION_RE.search(normalized)
     if match is None:
+        return None
+    if _meal_fraction_utterance_is_unsafe(normalized):
         return None
     # ``三分之一的蛋糕`` is an item-level portion, not a whole-meal ratio.
     if normalized[match.end():].lstrip().startswith("的"):

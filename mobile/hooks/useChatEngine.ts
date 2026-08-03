@@ -2078,11 +2078,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         queuedTurnsRef.current = queuedTurnsRef.current.filter(
           queued => queued.turnId !== turnId,
         );
-        if (sendOpts?.__precreatedLocalMessages) {
-          queuedTurnsRef.current.unshift(queuedTurn);
-        } else {
-          queuedTurnsRef.current.push(queuedTurn);
-        }
+        // This request was already ahead of every locally queued submission.
+        // A delayed 409 must put it back at the head; appending here would let
+        // a later message overtake it while the first response was in flight.
+        queuedTurnsRef.current.unshift(queuedTurn);
         setQueuedCount(queuedTurnsRef.current.length);
         setMessages(prev => prev.map(m => m.id === aId ? {
           ...m,
