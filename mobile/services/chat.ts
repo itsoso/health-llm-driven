@@ -12,6 +12,38 @@ export interface ChatMessage {
   content: string;
 }
 
+export class ChatStreamHttpError extends Error {
+  readonly status: number;
+  readonly detail?: string;
+
+  constructor(status: number, detail?: string) {
+    super(detail || `请求失败 (status: ${status})`);
+    this.name = 'ChatStreamHttpError';
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+const SERVER_BUSY_HTTP_DETAIL = '上一条消息仍在处理，请稍后重试';
+
+function chatStreamHttpError(status: number, responseText: string): ChatStreamHttpError {
+  let detail: string | undefined;
+  try {
+    const body = JSON.parse(responseText);
+    if (
+      status === 409
+      && typeof body?.detail === 'string'
+      && body.detail.includes('上一条消息仍在处理')
+    ) {
+      detail = SERVER_BUSY_HTTP_DETAIL;
+    }
+  } catch {
+    // An HTTP error document is not an SSE payload. Keep malformed bodies out
+    // of the error so prompts, gateway pages, and provider details cannot leak.
+  }
+  return new ChatStreamHttpError(status, detail);
+}
+
 interface ClientTimeContext {
   client_now_iso: string;
   timezone?: string;
@@ -365,6 +397,9 @@ export async function* streamChat(
   }
 
   xhr.onprogress = () => {
+    if (xhr.status < 200 || xhr.status >= 300) {
+      return;
+    }
     const newText = xhr.responseText.slice(processed);
     processed = xhr.responseText.length;
     if (newText) {
@@ -374,6 +409,12 @@ export async function* streamChat(
   };
 
   xhr.onload = () => {
+    if (xhr.status < 200 || xhr.status >= 300) {
+      error = chatStreamHttpError(xhr.status, xhr.responseText);
+      done = true;
+      resolve?.();
+      return;
+    }
     // Process any remaining text
     const remaining = xhr.responseText.slice(processed);
     if (remaining) chunks.push(remaining);

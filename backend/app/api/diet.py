@@ -45,6 +45,10 @@ from app.services.intake_intent_classifier import (
     looks_like_food_ui_text,
 )
 from app.services.diet_media_storage import StoredDietPhoto, store_diet_image
+from app.services.internal_diet_correction import (
+    INTERNAL_DIET_PORTION_SIGNATURE_HEADER,
+    verify_internal_diet_portion_signature,
+)
 # D1(garmin-sync 治理 Wave 3):图片 URL 签名抽到 utils 做单一真源,供 api 的
 # _convert_to_response 与进程内 diet reader 共用(非确定性签名字段无法 parity-test,
 # 必须共用同一函数对象防静默漂移)。保留同名以不动本模块调用点。
@@ -1109,6 +1113,10 @@ def update_diet_record(
     update_data: DietRecordUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_required),
+    internal_portion_signature: Optional[str] = Header(
+        default=None,
+        alias=INTERNAL_DIET_PORTION_SIGNATURE_HEADER,
+    ),
 ):
     """更新饮食记录（需登录，且只能更新自己的记录）"""
     record = db.query(DietRecordModel).filter(
@@ -1119,7 +1127,13 @@ def update_diet_record(
     if record.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权更新他人的饮食记录")
 
-    update_dict = update_data.model_dump(exclude_unset=True)
+    update_dict = update_data.model_dump(exclude_unset=True, mode="json")
+    preserve_explicit_nutrients = verify_internal_diet_portion_signature(
+        internal_portion_signature,
+        current_user.id,
+        record_id,
+        update_dict,
+    )
     if update_dict.get("food_items") is not None:
         _assert_diet_food_items_allowed(update_dict["food_items"])
     food_changed = (
@@ -1135,7 +1149,13 @@ def update_diet_record(
     if food_changed:
         update_dict["food_id"] = None
         for key in nutrient_fields:
-            if key not in update_dict or update_dict[key] == getattr(record, key):
+            if (
+                key not in update_dict
+                or (
+                    not preserve_explicit_nutrients
+                    and update_dict[key] == getattr(record, key)
+                )
+            ):
                 update_dict[key] = None
     if food_changed or nutrition_changed:
         update_dict["source"] = "user_corrected"
@@ -1144,9 +1164,12 @@ def update_diet_record(
         update_dict["ai_raw_result"] = None
         update_dict["health_tips"] = None
     if 'meal_type' in update_dict and update_dict['meal_type']:
-        update_dict['meal_type'] = update_dict['meal_type'].value
+        meal_type = update_dict['meal_type']
+        update_dict['meal_type'] = (
+            meal_type.value if hasattr(meal_type, 'value') else str(meal_type)
+        )
     if 'meal_time' in update_dict and update_dict['meal_time']:
-        update_dict['meal_time'] = update_dict['meal_time'].strftime('%H:%M')
+        update_dict['meal_time'] = update_data.meal_time
     if update_dict.get("ai_raw_result") is not None and not isinstance(
         update_dict["ai_raw_result"], str
     ):

@@ -42,6 +42,11 @@ from app.services.post_record_quality import (
     build_post_record_quality_response,
     combine_post_record_quality_responses,
 )
+from app.services.internal_diet_correction import (
+    INTERNAL_DIET_PORTION_SIGNATURE_HEADER,
+    build_internal_diet_portion_signature,
+    diet_portion_update_fingerprint,
+)
 from app.services.agent_turn_recovery import (
     is_data_insufficiency_response,
     is_model_scope_refusal,
@@ -2828,6 +2833,35 @@ class _SimpleRecordTerminal(RuntimeError):
         self.satisfied = satisfied
 
 
+def _diet_correction_unresolved_message(reason: str) -> str:
+    if reason == "cancelled":
+        return "已按你的取消要求处理，本轮没有修改饮食记录。"
+    if reason == "invalid_fraction":
+        return (
+            "我无法确认这个食用比例，因此没有修改。"
+            "请用 1/2 这类大于 0 且不超过 1 的比例重试。"
+        )
+    if reason == "ambiguous_target":
+        return (
+            "我找到多条符合日期和餐次的饮食记录，暂时没有修改。"
+            "请选择具体哪一条后再提交修正。"
+        )
+    if reason == "target_not_found":
+        return (
+            "我没有找到符合日期和餐次的饮食记录，因此没有修改。"
+            "请确认日期或餐次后重试。"
+        )
+    if reason == "lookup_failed":
+        return (
+            "饮食记录暂时无法核对，这次没有修改。"
+            "请稍后重试。"
+        )
+    return (
+        "我找到了对应餐次，但现有记录既没有可缩放的营养数据，"
+        "也没有可保留的食物内容，因此没有修改。请补充实际吃了什么。"
+    )
+
+
 def _write_result_is_pre_dispatch_validation_error(result: Any) -> bool:
     """Hide only argument/validation rejections the same model turn can repair."""
     outcome = classify_write_execution(result)
@@ -4788,11 +4822,47 @@ _DIET_PARTIAL_CORRECTION_SIGNAL_RE = re.compile(
     re.I,
 )
 _DIET_PARTIAL_CORRECTION_QUESTION_RE = re.compile(
-    r"[?？]|会不会|要不要|是否|行不行|可以吗|怎么办|怎么吃|吃多少",
+    r"[?？]|会不会|要不要|是否|行不行|可以吗|"
+    r"(?:吗|嘛|呢|吧)|(?<![什怎这那])么|"
+    r"好不好|是不是|为什么|什么|怎么办|怎么|吃多少",
     re.I,
 )
 _DIET_PARTIAL_CORRECTION_NEGATION_RE = re.compile(
-    r"(?:不要|别|不该|不能|不可|避免).{0,10}(?:只吃|吃.{0,4}(?:一半|半份|分之))",
+    r"(?:不要|别|不该|不能|不可|避免|不是|并非|并不是).{0,10}"
+    r"(?:只吃|吃.{0,4}(?:一半|半份|分之|\d+\s*/))|"
+    r"(?:并没有|没有|没|未)\s*只吃",
+    re.I,
+)
+_DIET_PARTIAL_CORRECTION_UNCERTAIN_RE = re.compile(
+    r"还是|如果|要是|假如|可能|大概|也许|或许|应该|"
+    r"好像|估计|似乎|貌似|大约|约莫|接近|左右|差不多|"
+    r"感觉|猜|听说|据说|至少|至多|超过|不到|少于|多于",
+    re.I,
+)
+_DIET_PARTIAL_CORRECTION_RETRACTION_RE = re.compile(
+    r"不对|不准(?:确)?|不正确|有误|错了?|写错了?|说错了?",
+    re.I,
+)
+_DIET_PARTIAL_CORRECTION_CANCEL_RE = re.compile(
+    r"算了|作废|撤回|撤销|取消|反悔|"
+    r"(?:暂时|先)?\s*(?:不要|别|不用|无需|不必|不需要|停止)(?:再)?",
+    re.I,
+)
+_DIET_WRITE_CANCEL_RE = re.compile(
+    r"(?:算了|作废|撤回|撤销|取消|反悔)\s*"
+    r"(?:修改|更正|修正|更新|调整|改|记录|保存)?|"
+    r"(?:莫|勿|不要|别|不用|无需|不必|不需要|停止)\s*"
+    r"(?:(?:再|帮我|给我|替我|为我)\s*|"
+    r"(?:把|将)\s*(?:它|这个|这(?:餐|顿饭?|份|个))?\s*){0,3}"
+    r"(?:修改|更正|修正|更新|调整|改|记录(?:下来)?|记下来|保存)",
+    re.I,
+)
+_DIET_ALLOWED_FACTUAL_SHORTFALL_RE = re.compile(
+    r"没(?:有)?(?:吃那么多|全吃(?:完)?|吃完)",
+    re.I,
+)
+_DIET_PARTIAL_CORRECTION_RESIDUAL_NEGATION_RE = re.compile(
+    r"[不没未无]|并非|不是",
     re.I,
 )
 _DIET_PARTIAL_FRACTIONS = {
@@ -4807,15 +4877,115 @@ _DIET_PARTIAL_FRACTIONS = {
     "五分之三": 0.6,
     "五分之四": 0.8,
 }
+_DIET_FRACTION_TOKEN_RE = re.compile(
+    r"三分之一|三分之二|四分之一|四分之三|"
+    r"五分之一|五分之二|五分之三|五分之四|一半|半份|"
+    r"(?<![\d.+-])[+-]?\d+\s*/\s*[+-]?\d+(?![\d.])",
+    re.I,
+)
+_DIET_NUMERIC_RATIO_LIKE_RE = re.compile(
+    r"(?<![\d.])[+-]?\d+(?:\.\d+)?\s*/+\s*[+-]?\d*(?:\.\d+)?",
+    re.I,
+)
+_DIET_UNSUPPORTED_PORTION_LIKE_RE = re.compile(
+    r"[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*[%％]|"
+    r"(?<![\d.])[+-]?(?:\d*\.\d+)(?![\d.])|"
+    r"(?<![\d.])[+-]?\d+(?:\.\d+)?\s*[eE]\s*[+-]?\d+(?![\d.])|"
+    r"[¼½¾⅐⅑⅒⅓⅔⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞]|"
+    r"百分之\s*[零〇一二三四五六七八九十百两\d]{1,5}|"
+    r"[一二三四五六七八九十两\d]{1,3}成(?!熟)|"
+    r"[+-]?\d+(?:\.\d+)?\s*比\s*[+-]?\d+(?:\.\d+)?|"
+    r"[零〇一二三四五六七八九十百两]{1,3}\s*比\s*"
+    r"[零〇一二三四五六七八九十百两]{1,3}|"
+    r"(?:\d+|[零〇一二三四五六七八九十百两]{1,3})点"
+    r"(?:\d+|[零〇一二三四五六七八九十百两]{1,3})|"
+    r"百分[零〇一二三四五六七八九十百两\d]{1,5}"
+    r"(?=\s*(?:[,，。！!；;]|$|修改|更正|修正|更新|调整|记录|取消))|"
+    r"[+-]?\d+(?:\.\d+)?\s*[:：]\s*[+-]?\d+(?:\.\d+)?"
+    r"(?=\s*(?:[,，。！!；;]|$|修改|更正|修正|更新|调整|记录|取消))|"
+    r"半(?=\s*(?:[,，。！!；;]|$|修改|更正|修正|更新|调整|记录|取消))|"
+    r"[一二三四五六七八九十两]{1,3}分之[一二三四五六七八九十两]{1,3}",
+    re.I,
+)
+_DIET_CONSUMPTION_VALUE_PREFIX_RE = re.compile(
+    r"(?:吃(?:了|掉了)?|摄入(?:了)?|食用(?:了)?)\s*"
+    r"(?:约|大约|大概|差不多)?\s*$",
+    re.I,
+)
+_DIET_DECIMAL_OR_SCIENTIFIC_VALUE_RE = re.compile(
+    r"[+-]?(?:(?:\d*\.\d+)|(?:\d+(?:\.\d+)?[eE][+-]?\d+))|"
+    r"(?:\d+|[零〇一二三四五六七八九十百两]{1,3})点"
+    r"(?:\d+|[零〇一二三四五六七八九十百两]{1,3})",
+    re.I,
+)
+_DIET_MEASUREMENT_SUFFIX_RE = re.compile(
+    r"\s*(?:毫克|千克|公斤|克|斤|两|毫升|升|kg|mg|ml|g|l|"
+    r"大卡|千卡|卡路里|卡|份|碗|杯|盘|勺|个|只|片|块)",
+    re.I,
+)
 _CONTEXTUAL_MEAL_PORTION_RE = re.compile(
     r"(?:吃了|吃掉了|实际吃了|只吃了?)\s*"
     r"(?P<fraction>三分之一|三分之二|四分之一|四分之三|"
     r"五分之一|五分之二|五分之三|五分之四|一半|半份|"
-    r"\d+\s*/\s*\d+)",
+    r"(?<![\d.+-])[+-]?\d+\s*/\s*[+-]?\d+(?![\d.]))",
     re.I,
+)
+_GENERATED_DIET_PORTION_SUFFIX_RE = re.compile(
+    r"（按实际食用(?P<label>[^（）]{1,24})计）\s*$"
 )
 _CONTEXTUAL_MEAL_WHOLE_PORTION_RE = re.compile(
     r"(?:这|整|本)(?:一)?(?:餐|顿|份|盘)|(?:这|整)些|只吃",
+    re.I,
+)
+_DIET_FACTUAL_PORTION_PLACEHOLDER = "__portion__"
+_DIET_FACTUAL_SHORTFALL_PATTERN = (
+    r"没(?:有)?(?:吃那么多|全吃(?:完)?|吃完)"
+)
+_DIET_FACTUAL_DATE_PATTERN = (
+    r"(?:今天|今日|本日|当天|当日|昨天|昨日|前天)"
+)
+_DIET_FACTUAL_MEAL_PATTERN = f"(?:{_DIET_CORRECTION_MEAL_RE.pattern})"
+_DIET_FACTUAL_CALORIE_DESCRIPTOR_PATTERN = (
+    r"(?:的\s*[零〇一二两三四五六七八九十百千万\d.]+\s*"
+    r"(?:大卡|千卡|卡路里|卡))?"
+)
+_DIET_FACTUAL_WRITE_SUFFIX_PATTERN = (
+    r"(?:\s*[,，]\s*|\s*)"
+    r"(?:(?:请|麻烦)\s*)?(?:帮我\s*)?"
+    r"(?:按实际(?:摄入|食用量)\s*)?"
+    r"(?:修改|更正|修正|更新|调整|改)(?:一下)?(?:饮食)?(?:记录)?"
+)
+_DIET_FACTUAL_CORRECTION_SHAPE_RE = re.compile(
+    rf"^(?:{_DIET_FACTUAL_DATE_PATTERN}\s*)?(?:我\s*)?"
+    rf"(?:{_DIET_FACTUAL_SHORTFALL_PATTERN}\s*[,，]\s*)?"
+    rf"{_DIET_FACTUAL_MEAL_PATTERN}\s*"
+    rf"{_DIET_FACTUAL_CALORIE_DESCRIPTOR_PATTERN}\s*"
+    rf"(?:{_DIET_FACTUAL_SHORTFALL_PATTERN}\s*[,，]\s*)?"
+    r"(?:实际(?:上)?(?:我)?\s*只吃(?:了)?|只吃了|只有吃了)\s*"
+    rf"{_DIET_FACTUAL_PORTION_PLACEHOLDER}"
+    rf"(?:{_DIET_FACTUAL_WRITE_SUFFIX_PATTERN})?\s*[。！!]*$",
+    re.I,
+)
+_DIET_FACTUAL_PHOTO_SUBJECT_PATTERN = (
+    r"(?:(?:这|整|本)(?:一)?(?:餐|顿|份|盘)|(?:这|整)些)"
+)
+_DIET_FACTUAL_PHOTO_SUFFIX_PATTERN = (
+    r"(?:\s*[,，]\s*|\s*)"
+    r"(?:(?:请|麻烦)\s*)?(?:帮我\s*)?"
+    r"(?:记录|保存)(?:一下)?"
+)
+_DIET_FACTUAL_PHOTO_SHAPE_RE = re.compile(
+    r"^(?:(?:(?:请|麻烦)\s*)?(?:帮我\s*)?记录\s*)?"
+    rf"{_DIET_FACTUAL_PHOTO_SUBJECT_PATTERN}\s*[,，]?\s*"
+    r"(?:实际(?:上)?\s*)?(?:只)?(?:吃了|吃掉了)\s*"
+    rf"{_DIET_FACTUAL_PORTION_PLACEHOLDER}"
+    rf"(?:{_DIET_FACTUAL_PHOTO_SUFFIX_PATTERN})?\s*[。！!]*$",
+    re.I,
+)
+_DIET_FACTUAL_BARE_PHOTO_SHAPE_RE = re.compile(
+    r"^(?:实际(?:上)?\s*)?只吃了\s*"
+    rf"{_DIET_FACTUAL_PORTION_PLACEHOLDER}"
+    rf"(?:{_DIET_FACTUAL_PHOTO_SUFFIX_PATTERN})?\s*[。！!]*$",
     re.I,
 )
 _DIET_SCALABLE_NUTRIENT_FIELDS = (
@@ -4833,18 +5003,201 @@ _MESSAGE_DATE_RE = re.compile(
 )
 
 
-def _partial_meal_consumed_fraction(text: str) -> Optional[float]:
+def _normalize_meal_fraction_symbols(value: str) -> str:
+    return (value or "").translate(str.maketrans({
+        "０": "0",
+        "１": "1",
+        "２": "2",
+        "３": "3",
+        "４": "4",
+        "５": "5",
+        "６": "6",
+        "７": "7",
+        "８": "8",
+        "９": "9",
+        "／": "/",
+        "−": "-",
+        "－": "-",
+        "＋": "+",
+        "⁄": "/",
+        "∕": "/",
+        "÷": "/",
+        "∶": ":",
+        "﹕": ":",
+        "︰": ":",
+    }))
+
+
+def _parse_meal_fraction_token(token: str) -> Optional[tuple[float, str]]:
+    normalized = re.sub(
+        r"\s+",
+        "",
+        _normalize_meal_fraction_symbols(token),
+    )
+    fraction = _DIET_PARTIAL_FRACTIONS.get(normalized)
+    if fraction is None and "/" in normalized:
+        numerator_text, denominator_text = normalized.split("/", 1)
+        try:
+            numerator = int(numerator_text)
+            denominator = int(denominator_text)
+        except ValueError:
+            return None
+        if numerator <= 0 or denominator <= 0 or numerator > denominator:
+            return None
+        fraction = numerator / denominator
+    if (
+        fraction is None
+        or not math.isfinite(fraction)
+        or not 0 < fraction <= 1
+    ):
+        return None
+    return float(fraction), normalized
+
+
+def _meal_fraction_utterance_has_factual_shape(
+    normalized: str,
+    fraction_span: tuple[int, int],
+) -> bool:
+    """Accept only narrow, fully consumed factual portion utterances."""
+    start, end = fraction_span
+    marked = (
+        normalized[:start]
+        + _DIET_FACTUAL_PORTION_PLACEHOLDER
+        + normalized[end:]
+    )
+    return any(pattern.fullmatch(marked) for pattern in (
+        _DIET_FACTUAL_CORRECTION_SHAPE_RE,
+        _DIET_FACTUAL_PHOTO_SHAPE_RE,
+        _DIET_FACTUAL_BARE_PHOTO_SHAPE_RE,
+    ))
+
+
+def _meal_fraction_utterance_is_unsafe(
+    text: str,
+    *,
+    fraction_must_start_at_or_after: Optional[int] = None,
+) -> bool:
+    """Fail closed unless the whole utterance has one exact factual ratio."""
+    normalized = _normalize_meal_fraction_symbols(
+        " ".join((text or "").strip().split())
+    )
+    all_spans = sorted(
+        (match.start(), match.end())
+        for pattern in (
+            _DIET_FRACTION_TOKEN_RE,
+            _DIET_NUMERIC_RATIO_LIKE_RE,
+            _DIET_UNSUPPORTED_PORTION_LIKE_RE,
+        )
+        for match in pattern.finditer(normalized)
+    )
+    if not all_spans:
+        return False
+
+    merged_spans: list[tuple[int, int]] = []
+    for start, end in all_spans:
+        if merged_spans and start < merged_spans[-1][1]:
+            prior_start, prior_end = merged_spans[-1]
+            merged_spans[-1] = (prior_start, max(prior_end, end))
+        else:
+            merged_spans.append((start, end))
+
+    supported_matches = list(_DIET_FRACTION_TOKEN_RE.finditer(normalized))
+    semantic_remainder = _DIET_ALLOWED_FACTUAL_SHORTFALL_RE.sub(
+        "",
+        normalized,
+    )
+    if (
+        len(merged_spans) != 1
+        or len(supported_matches) != 1
+        or merged_spans[0] != supported_matches[0].span()
+        or (
+            fraction_must_start_at_or_after is not None
+            and supported_matches[0].start() < fraction_must_start_at_or_after
+        )
+        or _DIET_PARTIAL_CORRECTION_QUESTION_RE.search(normalized)
+        or _DIET_PARTIAL_CORRECTION_NEGATION_RE.search(normalized)
+        or _DIET_PARTIAL_CORRECTION_UNCERTAIN_RE.search(normalized)
+        or _DIET_PARTIAL_CORRECTION_RETRACTION_RE.search(normalized)
+        or _DIET_PARTIAL_CORRECTION_CANCEL_RE.search(normalized)
+        or _DIET_PARTIAL_CORRECTION_RESIDUAL_NEGATION_RE.search(
+            semantic_remainder
+        )
+        or not _meal_fraction_utterance_has_factual_shape(
+            normalized,
+            supported_matches[0].span(),
+        )
+    ):
+        return True
+    return _parse_meal_fraction_token(supported_matches[0].group(0)) is None
+
+
+def _partial_meal_consumed_portion(
+    text: str,
+) -> Optional[tuple[float, str]]:
     signal_match = _DIET_PARTIAL_CORRECTION_SIGNAL_RE.search(text)
     if (
         signal_match is None
-        or _DIET_PARTIAL_CORRECTION_QUESTION_RE.search(text)
-        or _DIET_PARTIAL_CORRECTION_NEGATION_RE.search(text)
+        or _meal_fraction_utterance_is_unsafe(
+            text,
+            fraction_must_start_at_or_after=signal_match.start(),
+        )
     ):
         return None
-    for phrase, fraction in _DIET_PARTIAL_FRACTIONS.items():
-        if text.find(phrase, signal_match.start()) >= 0:
-            return fraction
-    return None
+    fraction_match = _DIET_FRACTION_TOKEN_RE.search(text, signal_match.start())
+    if fraction_match is None:
+        return None
+    return _parse_meal_fraction_token(fraction_match.group(0))
+
+
+def _partial_meal_consumed_fraction(text: str) -> Optional[float]:
+    portion = _partial_meal_consumed_portion(text)
+    return portion[0] if portion is not None else None
+
+
+def _utterance_contains_fraction_like_portion(text: str) -> bool:
+    normalized = _normalize_meal_fraction_symbols(
+        " ".join((text or "").strip().split())
+    )
+    if (
+        _DIET_FRACTION_TOKEN_RE.search(normalized)
+        or _DIET_NUMERIC_RATIO_LIKE_RE.search(normalized)
+    ):
+        return True
+    for match in _DIET_UNSUPPORTED_PORTION_LIKE_RE.finditer(normalized):
+        nearby_prefix = normalized[max(0, match.start() - 16):match.start()]
+        nearby_suffix = normalized[match.end():match.end() + 8]
+        is_measurement_value = bool(
+            _DIET_DECIMAL_OR_SCIENTIFIC_VALUE_RE.fullmatch(match.group(0))
+            and _DIET_MEASUREMENT_SUFFIX_RE.match(nearby_suffix)
+            and not _DIET_CONSUMPTION_VALUE_PREFIX_RE.search(nearby_prefix)
+        )
+        if not is_measurement_value:
+            return True
+    return False
+
+
+def _diet_write_is_explicitly_cancelled(text: str) -> bool:
+    normalized = " ".join((text or "").strip().split())
+    return bool(_DIET_WRITE_CANCEL_RE.search(normalized))
+
+
+def _unsafe_diet_correction_requested(message: str) -> bool:
+    text = _normalize_meal_fraction_symbols(
+        " ".join((message or "").strip().split())
+    )
+    if (
+        not _DIET_CORRECTION_MEAL_RE.search(text)
+    ):
+        return False
+    if _diet_write_is_explicitly_cancelled(text):
+        return True
+    if not _utterance_contains_fraction_like_portion(text):
+        return False
+    # Any fraction-like value in a named-meal correction must be consumed by
+    # the narrow factual portion grammar. It must never fall through to the
+    # generic food-replacement path when the sentence is hypothetical,
+    # cancelled, contradictory, unsupported or otherwise ambiguous.
+    return _partial_meal_consumed_portion(text) is None
 
 
 def _contextual_meal_consumed_fraction(
@@ -4857,7 +5210,9 @@ def _contextual_meal_consumed_fraction(
     scale every item in the image.  We only accept an explicit whole-meal
     reference (``这餐``/``这份``) or the unambiguous ``只吃`` form.
     """
-    normalized = " ".join((text or "").strip().split())
+    normalized = _normalize_meal_fraction_symbols(
+        " ".join((text or "").strip().split())
+    )
     if (
         not normalized
         or not _CONTEXTUAL_MEAL_WHOLE_PORTION_RE.search(normalized)
@@ -4868,22 +5223,16 @@ def _contextual_meal_consumed_fraction(
     match = _CONTEXTUAL_MEAL_PORTION_RE.search(normalized)
     if match is None:
         return None
+    if _meal_fraction_utterance_is_unsafe(normalized):
+        return None
     # ``三分之一的蛋糕`` is an item-level portion, not a whole-meal ratio.
     if normalized[match.end():].lstrip().startswith("的"):
         return None
-    token = re.sub(r"\s+", "", match.group("fraction"))
-    fraction = _DIET_PARTIAL_FRACTIONS.get(token)
-    if fraction is None and "/" in token:
-        numerator_text, denominator_text = token.split("/", 1)
-        try:
-            numerator = int(numerator_text)
-            denominator = int(denominator_text)
-        except ValueError:
-            return None
-        if numerator <= 0 or denominator <= 0 or numerator >= denominator:
-            return None
-        fraction = numerator / denominator
-    if fraction is None or not math.isfinite(fraction) or not 0 < fraction < 1:
+    parsed_fraction = _parse_meal_fraction_token(match.group("fraction"))
+    if parsed_fraction is None:
+        return None
+    fraction, token = parsed_fraction
+    if fraction >= 1:
         return None
     return float(fraction), token
 
@@ -4928,7 +5277,9 @@ def _parse_explicit_diet_correction(
     fraction. Ambiguous requests stay on the read-only lookup path rather than
     risking a duplicate or editing the wrong record.
     """
-    text = " ".join((message or "").strip().split())
+    text = _normalize_meal_fraction_symbols(
+        " ".join((message or "").strip().split())
+    )
     meal_match = _DIET_CORRECTION_MEAL_RE.search(text)
     if not meal_match:
         return None
@@ -4944,13 +5295,37 @@ def _parse_explicit_diet_correction(
     if not target_date:
         return None
 
-    consumed_fraction = _partial_meal_consumed_fraction(text)
-    if consumed_fraction is not None:
+    # Validate the complete utterance before accepting the first fraction.
+    # Otherwise a question, negation or contradictory second ratio could be
+    # truncated into a factual update using only the first match.
+    if _unsafe_diet_correction_requested(text):
+        return None
+
+    consumed_portion = _partial_meal_consumed_portion(text)
+    if consumed_portion is not None:
+        consumed_fraction, consumed_fraction_label = consumed_portion
         return {
             "date": target_date,
             "meal_type": meal_type,
             "consumed_fraction": consumed_fraction,
+            "consumed_fraction_label": consumed_fraction_label,
         }
+
+    partial_signal = _DIET_PARTIAL_CORRECTION_SIGNAL_RE.search(text)
+    if (
+        partial_signal is not None
+        and (
+            _DIET_FRACTION_TOKEN_RE.search(text, partial_signal.start())
+            or _DIET_NUMERIC_RATIO_LIKE_RE.search(text, partial_signal.start())
+            or _DIET_UNSUPPORTED_PORTION_LIKE_RE.search(
+                text,
+                partial_signal.start(),
+            )
+        )
+    ):
+        # A malformed numeric fraction is not a food replacement. Failing
+        # closed avoids persisting strings such as "只吃了 1/0 修改记录" as food.
+        return None
 
     if not _has_explicit_update_intent(text):
         return None
@@ -4992,8 +5367,30 @@ def _diet_correction_update_data(
     if not isinstance(fraction, (int, float)) or isinstance(fraction, bool):
         return None
     fraction = float(fraction)
-    if not math.isfinite(fraction) or not 0 < fraction < 1:
+    if not math.isfinite(fraction) or not 0 < fraction <= 1:
         return None
+
+    label = correction.get("consumed_fraction_label")
+    food_items = existing_record.get("food_items")
+    if not isinstance(label, str) or not label.strip():
+        return None
+    if not isinstance(food_items, str) or not food_items.strip():
+        return None
+
+    normalized_label = _normalize_meal_fraction_symbols(label.strip())
+    current_food_items = food_items.strip()
+    previous_fraction = 1.0
+    previous_marker = _GENERATED_DIET_PORTION_SUFFIX_RE.search(
+        current_food_items
+    )
+    if previous_marker is not None:
+        previous_portion = _parse_meal_fraction_token(
+            previous_marker.group("label")
+        )
+        if previous_portion is None:
+            return None
+        previous_fraction = previous_portion[0]
+    scale_factor = fraction / previous_fraction
 
     update_data: Dict[str, Any] = {"meal_type": meal_type}
     for field in _DIET_SCALABLE_NUTRIENT_FIELDS:
@@ -5003,8 +5400,16 @@ def _diet_correction_update_data(
             and not isinstance(value, bool)
             and math.isfinite(float(value))
         ):
-            update_data[field] = float(value) * fraction
-    return update_data if len(update_data) > 1 else None
+            update_data[field] = float(value) * scale_factor
+    base_food_items = _GENERATED_DIET_PORTION_SUFFIX_RE.sub(
+        "", current_food_items
+    ).strip()
+    if not base_food_items:
+        return None
+    update_data["food_items"] = (
+        f"{base_food_items}（按实际食用{normalized_label}计）"
+    )
+    return update_data
 
 
 def _build_deterministic_diet_correction_tool_call(
@@ -7819,6 +8224,7 @@ class AgentExecutor:
         self._turn_doctor_feedback_write_attempted = False
         self._turn_contextual_diet_record_id: Optional[int] = None
         self._turn_contextual_diet_consumed_fraction: Optional[float] = None
+        self._turn_contextual_diet_write_blocked_reason: Optional[str] = None
         self._turn_pending_write_intent_ids: list[int] = []
         self._turn_pending_write_intent_kinds: list[str] = []
         self._turn_medication_tool_intent_id: Optional[int] = None
@@ -7856,6 +8262,7 @@ class AgentExecutor:
         self._turn_evidence_card_key: Optional[tuple] = None
         self._turn_twin_write_occurred = False
         self._turn_diet_correction_unresolved_reason = None
+        self._trusted_diet_portion_update_keys: set[str] = set()
         self._last_provider_model_name: Optional[str] = None
         self._request_model_tool_fallback_used = False
         self._model_fallback_reasons: List[str] = []
@@ -9512,6 +9919,7 @@ class AgentExecutor:
         yield self._progress_event("accepted")
         self._current_user_id = user_id
         self._current_turn_user_message = message or ""
+        self._trusted_diet_portion_update_keys.clear()
         self._current_turn_recent_messages = []
         self._current_turn_has_attachment = bool(images or file_base64)
         self._turn_pending_write_intent_ids = []
@@ -9799,6 +10207,7 @@ class AgentExecutor:
         self._turn_doctor_feedback_write_attempted = False
         self._turn_contextual_diet_record_id = None
         self._turn_contextual_diet_consumed_fraction = None
+        self._turn_contextual_diet_write_blocked_reason = None
         self._ensure_agent_kernel_turn(channel=channel)
         clinician_turn_decision = classify_clinician_turn(message or "")
         # Backend-owned health evidence runtime. Clinical semantics are compiled
@@ -10699,6 +11108,7 @@ class AgentExecutor:
         goal_lookup_completed = False
         goal_allowed_record_ids: set[str] = set()
         runtime_control_terminal = False
+        deterministic_diet_correction_terminal = False
         # 本轮 agent 实际调用过的工具/Skill 名, 去重、按首次调用顺序。供 mac/mobile
         # 展示"调用了哪些 Skills"。与 sources_used (引用了哪些数据源) 独立。
         tools_used: List[str] = []
@@ -12492,16 +12902,9 @@ class AgentExecutor:
                         and not write_receipts
                         and self._turn_diet_correction_unresolved_reason
                     ):
-                        if self._turn_diet_correction_unresolved_reason == "ambiguous_target":
-                            final_text = (
-                                "我找到多条符合日期和餐次的饮食记录，暂时没有修改。"
-                                "请选择具体哪一条后再提交修正。"
-                            )
-                        else:
-                            final_text = (
-                                "我找到了对应餐次，但现有记录缺少可缩放的营养数据，"
-                                "暂时没有修改。请补充实际吃了什么或具体热量。"
-                            )
+                        final_text = _diet_correction_unresolved_message(
+                            self._turn_diet_correction_unresolved_reason
+                        )
                         streamed_to_client = False
                     elif (
                         _has_destructive_or_sync_intent(message or "")
@@ -12610,6 +13013,16 @@ class AgentExecutor:
                         yield {"event": "token", "data": {"content": chunk}}
                 full_reply += final_text
 
+        except _SimpleRecordTerminal as terminal:
+            deterministic_diet_correction_terminal = True
+            full_reply = terminal.message
+            final_finish_reason = "stop" if terminal.satisfied else "error"
+            if not health_advice_buffered:
+                for i in range(0, len(full_reply), 20):
+                    yield {
+                        "event": "token",
+                        "data": {"content": full_reply[i:i + 20]},
+                    }
         except Exception as e:
             logger.error(
                 "Agent 执行异常 user=%s error_type=%s",
@@ -12671,12 +13084,14 @@ class AgentExecutor:
             and not self._agent_kernel_pending_confirmation_tools
             and not last_recoverable_write_rejection
             and not runtime_control_terminal
+            and not deterministic_diet_correction_terminal
         )
         # 破坏性/同步意图从 fast-record 集排除后(留强模型),其 0-工具 缺口在此补上,
         # 与 record_intent_no_tool 加层不减层(不与之重叠:record 集已被上面判掉)。
         destructive_or_sync_no_tool = bool(
             health_evidence_turn is None
             and not record_intent_no_tool
+            and not deterministic_diet_correction_terminal
             and _has_destructive_or_sync_intent(message or "")
             and tool_executed_count == 0
         )
@@ -15941,6 +16356,23 @@ class AgentExecutor:
         if user_id is None or source_message_id is None:
             vision_result["contextual_capture_failed"] = True
             return None
+        cancelled_write = _diet_write_is_explicitly_cancelled(user_message)
+        ambiguous_fraction = (
+            _utterance_contains_fraction_like_portion(user_message)
+            and _contextual_meal_consumed_fraction(user_message) is None
+        )
+        if cancelled_write or ambiguous_fraction:
+            # A cancelled or rejected portion sentence must not silently
+            # degrade into a full-meal photo auto-save. Preserve recognition
+            # for an honest response and close every diet write adapter.
+            block_reason = (
+                "cancelled" if cancelled_write else "ambiguous_fraction"
+            )
+            self._turn_contextual_diet_write_blocked_reason = block_reason
+            vision_result["contextual_capture_write_blocked_reason"] = (
+                block_reason
+            )
+            return None
         normalized_indexes = sorted(set(image_indexes))
         if not normalized_indexes or any(
             image_index < 0 or image_index >= len(self._current_turn_image_urls)
@@ -16341,6 +16773,19 @@ class AgentExecutor:
                 "本轮仅用于分析或查询，严禁调用 health_record；"
                 "只解释识别结果、不确定性和可选建议。"
             )
+        elif result.get("contextual_capture_write_blocked_reason"):
+            if result["contextual_capture_write_blocked_reason"] == "cancelled":
+                capture_instruction = (
+                    "用户已明确取消本次记餐；严禁调用 health_record 或 "
+                    "health_manage，也不得声称已经保存。请简短确认本轮未写入。"
+                )
+            else:
+                capture_instruction = (
+                    "用户的整餐份量表达没有通过明确事实校验；严禁调用 "
+                    "health_record 或 health_manage，也不得声称已经保存。"
+                    "请让用户用明确已完成的事实句重述，例如“这餐只吃了1/2，"
+                    "请记录”。"
+                )
         elif result.get("contextual_capture_failed"):
             capture_instruction = (
                 "图片资产与饮食记录的原子保存没有完成；严禁调用 health_record "
@@ -16829,15 +17274,50 @@ class AgentExecutor:
 
         The target date, meal and replacement food are parsed from the user's
         message, never from model-authored arguments. Exactly one server-side
-        candidate is required. Zero or multiple candidates are converted to a
-        read-only lookup so a model mistake cannot create a duplicate or edit an
-        arbitrary meal.
+        candidate is required. Zero, multiple or unverifiable candidates stop
+        immediately with a deterministic no-write clarification so a model
+        mistake cannot create a duplicate or edit an arbitrary meal.
         """
+        current_message = getattr(self, "_current_turn_user_message", "")
         correction = _parse_explicit_diet_correction(
-            getattr(self, "_current_turn_user_message", ""),
+            current_message,
             reference_now=self._agent_kernel_reference_now(),
         )
         if not correction:
+            if _unsafe_diet_correction_requested(current_message):
+                for tool_call in tool_calls:
+                    function = tool_call.get("function") or {}
+                    try:
+                        raw_args = function.get("arguments")
+                        args = (
+                            json.loads(raw_args)
+                            if isinstance(raw_args, str)
+                            else dict(raw_args or {})
+                        )
+                    except (json.JSONDecodeError, TypeError, ValueError):
+                        continue
+                    if (
+                        function.get("name") in {"health_manage", "health_record"}
+                        and args.get("record_type") == "diet"
+                    ):
+                        reason = (
+                            "cancelled"
+                            if _diet_write_is_explicitly_cancelled(
+                                current_message
+                            )
+                            else "invalid_fraction"
+                        )
+                        self._turn_diet_correction_unresolved_reason = reason
+                        logger.warning(
+                            "[health_manage] unsafe diet correction rejected "
+                            "reason=%s user=%s",
+                            reason,
+                            self._current_user_id,
+                        )
+                        raise _SimpleRecordTerminal(
+                            _diet_correction_unresolved_message(reason),
+                            satisfied=False,
+                        )
             return tool_calls
 
         base_url = settings.health_api_base_url or "http://localhost:8000/api/v1"
@@ -16906,6 +17386,10 @@ class AgentExecutor:
             )
             if update_data is not None:
                 record_id = candidate_rows[0].get("id") or candidate_rows[0].get("record_id")
+                if correction.get("consumed_fraction") is not None:
+                    self._trusted_diet_portion_update_keys.add(
+                        diet_portion_update_fingerprint(record_id, update_data)
+                    )
                 resolved_args = {
                     "record_type": "diet",
                     "operation": "update",
@@ -16919,28 +17403,25 @@ class AgentExecutor:
                     correction["meal_type"],
                 )
             else:
-                resolved_args = {
-                    "record_type": "diet",
-                    "operation": "list",
-                    "date": correction["date"],
-                    "meal_type": correction["meal_type"],
-                    "limit": 20,
-                }
+                if error:
+                    unresolved_reason = "lookup_failed"
+                elif not candidate_rows:
+                    unresolved_reason = "target_not_found"
+                elif len(candidate_rows) > 1:
+                    unresolved_reason = "ambiguous_target"
+                else:
+                    unresolved_reason = "record_has_no_scalable_nutrition"
                 logger.warning(
                     "[health_manage] diet correction target unresolved user=%s meal=%s candidates=%s error=%s",
                     self._current_user_id,
                     correction["meal_type"],
                     len(candidate_rows),
-                    error or (
-                        "record_has_no_scalable_nutrition"
-                        if len(candidate_rows) == 1
-                        else "ambiguous_target"
-                    ),
+                    unresolved_reason,
                 )
-                self._turn_diet_correction_unresolved_reason = (
-                    "record_has_no_scalable_nutrition"
-                    if len(candidate_rows) == 1
-                    else "ambiguous_target"
+                self._turn_diet_correction_unresolved_reason = unresolved_reason
+                raise _SimpleRecordTerminal(
+                    _diet_correction_unresolved_message(unresolved_reason),
+                    satisfied=False,
                 )
 
             normalized.append({
@@ -18335,6 +18816,24 @@ class AgentExecutor:
                 default_record_date=today,
             )
 
+        if rtype == "diet" and self._turn_contextual_diet_write_blocked_reason:
+            cancelled = (
+                self._turn_contextual_diet_write_blocked_reason == "cancelled"
+            )
+            return local_write_rejection(
+                "contextual_diet_write_blocked",
+                message=(
+                    "已按你的取消要求处理，本轮没有写入饮食记录。"
+                    if cancelled
+                    else "这条图片餐食份量表达不够明确，本轮没有写入饮食记录。"
+                ),
+                recovery_guidance=(
+                    None
+                    if cancelled
+                    else "请用明确已完成的事实句重述，例如“这餐只吃了1/2，请记录”。"
+                ),
+            )
+
         # A contextual meal photo may already have been persisted before the
         # model receives its structured vision summary.  A model retry must
         # receive the same verified record, never create a second meal.
@@ -19237,6 +19736,27 @@ class AgentExecutor:
         data = args.get("data") or {}
         if (
             record_type == "diet"
+            and operation != "list"
+            and self._turn_contextual_diet_write_blocked_reason
+        ):
+            cancelled = (
+                self._turn_contextual_diet_write_blocked_reason == "cancelled"
+            )
+            return local_write_rejection(
+                "contextual_diet_write_blocked",
+                message=(
+                    "已按你的取消要求处理，本轮没有修改饮食记录。"
+                    if cancelled
+                    else "这条图片餐食份量表达不够明确，本轮没有修改饮食记录。"
+                ),
+                recovery_guidance=(
+                    None
+                    if cancelled
+                    else "请用明确已完成的事实句重述，例如“这餐只吃了1/2，请记录”。"
+                ),
+            )
+        if (
+            record_type == "diet"
             and operation == "update"
             and self._turn_contextual_diet_record_id is not None
         ):
@@ -19401,7 +19921,22 @@ class AgentExecutor:
                     message="当前记录类型暂不支持修改。",
                     recovery_guidance="可以确认后删除原记录并重新记录。",
                 )
-            result = await self._api_put(f"{base}{path}", headers, data)
+            put_headers = headers
+            if record_type == "diet":
+                trusted_key = diet_portion_update_fingerprint(record_id, data)
+                if trusted_key in self._trusted_diet_portion_update_keys:
+                    self._trusted_diet_portion_update_keys.discard(trusted_key)
+                    signature = build_internal_diet_portion_signature(
+                        self._current_user_id,
+                        record_id,
+                        data,
+                    )
+                    if signature:
+                        put_headers = {
+                            **headers,
+                            INTERNAL_DIET_PORTION_SIGNATURE_HEADER: signature,
+                        }
+            result = await self._api_put(f"{base}{path}", put_headers, data)
             self._invalidate_twin_after_mutation()
             if record_type == "diet" and not str(result).startswith("Error:"):
                 try:

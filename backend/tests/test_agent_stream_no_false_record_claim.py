@@ -725,6 +725,7 @@ async def test_partial_diet_correction_uses_deterministic_update_without_false_c
             "record_id": 829,
             "data": {
                 "meal_type": "dinner",
+                "food_items": "三文鱼 + 黎麦沙拉 + 羊乳酪（按实际食用四分之一计）",
                 "calories": 500.0,
                 "protein": 20.0,
                 "carbs": 30.0,
@@ -778,10 +779,12 @@ async def test_ambiguous_partial_diet_correction_never_claims_an_update(
     ]
     reply = _tokens(events)
 
-    assert executed and executed[0][1]["operation"] == "list"
-    assert all(args["operation"] != "update" for _name, args in executed)
+    assert rounds == 1
+    assert executed == []
     assert "已按三分之一更新午餐" not in reply
     assert "多条" in reply and "选择" in reply
+    assert events[-1]["data"]["completion_status"] == "error"
+    assert not events[-1]["data"].get("write_receipts")
 
 
 async def test_bare_clinician_report_is_understood_without_write_or_retry(

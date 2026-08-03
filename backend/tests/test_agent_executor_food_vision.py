@@ -2,6 +2,7 @@ import base64
 import json
 from io import BytesIO
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock
 
 import pytest
 from PIL import Image
@@ -293,6 +294,49 @@ async def test_structured_food_vision_scales_label_locally_from_user_amount(
         ("记录这餐，吃了三分之一", (1 / 3, "三分之一")),
         ("这份只吃了1/3", (1 / 3, "1/3")),
         ("这餐应该只吃三分之一吗？", None),
+        ("这餐吃了1/2还是1/3", None),
+        ("这餐吃了1/2，实际是1/3", None),
+        ("这餐吃了1/2并不准确", None),
+        ("这餐吃了1/2吗帮我记录", None),
+        ("这餐吃了1/2，不要记录", None),
+        ("这餐吃了1/2，取消记录", None),
+        ("这餐吃了1/2，撤回记录", None),
+        ("这餐吃了1/2，我反悔了", None),
+        ("这餐吃了1/2，先不记录", None),
+        ("这餐吃了1/2，不想记录", None),
+        ("这餐吃了1/2，我没有让你记录", None),
+        ("这餐吃了1/2，并非让你记录", None),
+        ("这餐应该吃了1/2", None),
+        ("这餐好像吃了1/2", None),
+        ("这餐估计吃了1/2", None),
+        ("这餐差不多吃了1/2", None),
+        ("这餐吃了1/2吧", None),
+        ("这餐吃了1/2，对吧", None),
+        ("这餐吃了1/2，莫记录", None),
+        ("假设这餐吃了1/2", None),
+        ("这餐约吃了1/2", None),
+        ("难道这餐吃了1/2", None),
+        ("举例：这餐吃了1/2", None),
+        ("这餐本来吃了1/2，后来全吃完了", None),
+        ("这餐吃了1/2，勿记录", None),
+        ("这餐吃了1/2，暂停记录", None),
+        ("这餐吃了1/2，收回记录", None),
+        ("这餐吃了1/2，撤掉记录", None),
+        ("这餐吃了1/2，作罢", None),
+        ("倘若这餐吃了1/2", None),
+        ("这餐最多吃了1/2", None),
+        ("这餐大致吃了1/2", None),
+        ("这餐估摸吃了1/2", None),
+        ("这餐吃了1/2，可否记录", None),
+        ("谁说这餐吃了1/2", None),
+        ("我否认这餐吃了1/2", None),
+        ("演示：这餐吃了1/2", None),
+        ("复述：这餐吃了1/2", None),
+        ("小王说这餐吃了1/2", None),
+        ("这餐打算只吃1/2", None),
+        ("这餐计划只吃1/2", None),
+        ("这餐准备只吃1/2", None),
+        ("这餐想只吃1/2", None),
         ("记录这餐，吃了三分之一的蛋糕", None),
         ("吃了三分之一的蛋糕", None),
     ],
@@ -307,6 +351,123 @@ def test_contextual_meal_fraction_only_scales_an_explicit_whole_meal(
         assert parsed is not None
         assert parsed[0] == pytest.approx(expected[0])
         assert parsed[1] == expected[1]
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "这餐吃了1/2，取消记录",
+        "假设这餐吃了1/2",
+        "这餐打算只吃1/2",
+        "这餐吃了1/2，莫记录",
+        "这餐50%",
+        "这餐0.5",
+        "这餐½",
+        "这餐二分之一",
+        "这餐吃了１／２，取消记录",
+        "这餐吃了1／2，莫记录",
+        "这餐百分之五十",
+        "这餐五成",
+        "这餐1比2",
+        "这餐半",
+        "这餐百分50",
+        "这餐1:2",
+        "这餐１：２",
+        "晚餐吃了1÷2，取消修改",
+        "晚餐吃了0点5，取消修改",
+        "晚餐吃了百分之 50，取消修改",
+        "晚餐吃了一比二，取消修改",
+        "晚餐吃了1∶2，取消修改",
+        "取消记录",
+        "这餐莫记录",
+        "这餐勿记录",
+        "这餐别再记录",
+        "这餐别帮我记录",
+        "这餐不要给我记录",
+        "这餐别把它记录下来",
+        "这餐吃了1÷2，别帮我记录",
+        "这餐0点5，不要给我记录",
+    ],
+)
+def test_unsafe_photo_fraction_language_never_auto_captures(
+    message, db, tmp_path, monkeypatch
+):
+    executor, _user = _food_photo_executor(db, tmp_path, monkeypatch)
+    recognition = _food_result()
+
+    result = executor._capture_contextual_meal_photo(
+        message,
+        recognition,
+        image_index=0,
+    )
+
+    assert result is None
+    assert db.query(DietRecord).count() == 0
+    assert db.query(DietPhotoAsset).count() == 0
+    assert db.query(DietPhotoDraft).count() == 0
+    assert recognition["contextual_capture_write_blocked_reason"] in {
+        "ambiguous_fraction",
+        "cancelled",
+    }
+    assert executor._turn_contextual_diet_write_blocked_reason in {
+        "ambiguous_fraction",
+        "cancelled",
+    }
+    if any(token in message for token in ("取消", "莫", "勿", "别", "不要")):
+        assert recognition["contextual_capture_write_blocked_reason"] == "cancelled"
+    prompt_context = executor._format_food_recognition_for_agent(
+        message,
+        recognition,
+        contextual_capture=result,
+    )
+    assert "严禁调用 health_record" in prompt_context
+    assert (
+        "没有通过明确事实校验" in prompt_context
+        or "明确取消" in prompt_context
+    )
+
+
+@pytest.mark.asyncio
+async def test_unsafe_photo_fraction_closes_model_diet_write_adapter(
+    db, tmp_path, monkeypatch
+):
+    executor, _user = _food_photo_executor(db, tmp_path, monkeypatch)
+    recognition = _food_result()
+    executor._capture_contextual_meal_photo(
+        "这餐吃了1/2，取消记录",
+        recognition,
+        image_index=0,
+    )
+    post = AsyncMock()
+    monkeypatch.setattr(executor, "_api_post_json", post)
+
+    result = await executor._exec_health_record("http://test", {}, {
+        "record_type": "diet",
+        "data": {
+            "meal_type": "dinner",
+            "food_items": "鸡胸肉",
+            "calories": 198,
+        },
+    })
+
+    assert "contextual_diet_write_blocked" in result
+    post.assert_not_awaited()
+    assert db.query(DietRecord).count() == 0
+
+    manage_result = await executor._exec_health_manage("http://test", {}, {
+        "record_type": "diet",
+        "operation": "update",
+        "record_id": 123,
+        "data": {
+            "meal_type": "dinner",
+            "food_items": "鸡胸肉",
+            "calories": 198,
+        },
+    })
+
+    assert "contextual_diet_write_blocked" in manage_result
+    post.assert_not_awaited()
+    assert db.query(DietRecord).count() == 0
 
 
 def test_agent_auto_captures_empty_high_confidence_lunch_photo_with_receipt(

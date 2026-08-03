@@ -6,6 +6,10 @@ from sqlalchemy.exc import IntegrityError
 from app.models.user import User
 from app.models.daily_health import DietPhotoAsset, DietPhotoDraft, DietRecord
 from app.models.food_nutrition import FoodItem, FoodNutrient
+from app.services.internal_diet_correction import (
+    INTERNAL_DIET_PORTION_SIGNATURE_HEADER,
+    build_internal_diet_portion_signature,
+)
 
 
 VALID_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z/QAAAABJRU5ErkJggg=="
@@ -939,7 +943,9 @@ class TestDietAPI:
         # 更新记录
         update_data = {
             "calories": 500,
-            "notes": "更新后的备注"
+            "meal_type": "dinner",
+            "meal_time": "18:30:00",
+            "notes": "更新后的备注",
         }
         update_response = client.put(
             f"/api/v1/diet/records/{record_id}",
@@ -948,7 +954,87 @@ class TestDietAPI:
         )
         assert update_response.status_code == 200
         assert update_response.json()["calories"] == 500
+        assert update_response.json()["meal_type"] == "dinner"
+        assert update_response.json()["meal_time"] == "18:30:00"
         assert update_response.json()["notes"] == "更新后的备注"
+
+    def test_public_source_cannot_bypass_stale_nutrition_invalidation(
+        self, client, auth_headers, sample_diet_data
+    ):
+        created = client.post(
+            "/api/v1/diet/records",
+            json={**sample_diet_data, "fiber": 0},
+            headers=auth_headers,
+        )
+        assert created.status_code == 200
+        original = created.json()
+
+        updated = client.put(
+            f"/api/v1/diet/records/{original['id']}",
+            json={
+                "food_items": f"{original['food_items']}（按实际食用1/1计）",
+                "source": "agent_portion_correction",
+                "calories": original["calories"],
+                "protein": original["protein"],
+                "carbs": original["carbs"],
+                "fat": original["fat"],
+                "fiber": original["fiber"],
+            },
+            headers=auth_headers,
+        )
+
+        assert updated.status_code == 200
+        body = updated.json()
+        assert body["calories"] is None
+        assert body["protein"] is None
+        assert body["carbs"] is None
+        assert body["fat"] is None
+        assert body["fiber"] is None
+
+        trusted_created = client.post(
+            "/api/v1/diet/records",
+            json={
+                **sample_diet_data,
+                "food_items": "鸡蛋,牛奶,全麦面包",
+                "fiber": 0,
+            },
+            headers=auth_headers,
+        )
+        assert trusted_created.status_code == 200
+        trusted_original = trusted_created.json()
+        trusted_payload = {
+            "meal_type": trusted_original["meal_type"],
+            "food_items": (
+                f"{trusted_original['food_items']}（按实际食用1/1计）"
+            ),
+            "calories": trusted_original["calories"],
+            "protein": trusted_original["protein"],
+            "carbs": trusted_original["carbs"],
+            "fat": trusted_original["fat"],
+            "fiber": trusted_original["fiber"],
+        }
+        signature = build_internal_diet_portion_signature(
+            trusted_original["user_id"],
+            trusted_original["id"],
+            trusted_payload,
+        )
+
+        trusted_update = client.put(
+            f"/api/v1/diet/records/{trusted_original['id']}",
+            json=trusted_payload,
+            headers={
+                **auth_headers,
+                INTERNAL_DIET_PORTION_SIGNATURE_HEADER: signature,
+            },
+        )
+
+        assert trusted_update.status_code == 200
+        trusted_body = trusted_update.json()
+        assert trusted_body["calories"] == trusted_original["calories"]
+        assert trusted_body["protein"] == trusted_original["protein"]
+        assert trusted_body["carbs"] == trusted_original["carbs"]
+        assert trusted_body["fat"] == trusted_original["fat"]
+        assert trusted_body["fiber"] == 0
 
     def test_update_diet_record_rejects_non_food_items(self, client, auth_headers, sample_diet_data):
         """更新饮食记录也不能把药物/删除意图写进 food_items。"""
