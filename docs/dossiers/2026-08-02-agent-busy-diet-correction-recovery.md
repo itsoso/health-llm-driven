@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-02 |
 | status | in_progress |
-| current_stage | Thirteenth G4 NO-GO remediated; fresh G4 review pending |
+| current_stage | G4 GO; remote integration and release verification pending |
 | owner_surface | Mobile chat / Backend agent runtime |
 
 ## Problem
@@ -91,7 +91,7 @@ Fresh verification after the final implementation commit:
 - Generated system-map drift check passed.
 - `git diff --check` passed.
 
-### G4 Safety Review: NO-GO -> REMEDIATED -> RE-REVIEW PENDING
+### G4 Safety Review: PASS (FINAL GO)
 
 The first independent review found no Critical issue and three Important
 release blockers:
@@ -248,7 +248,13 @@ common helper and object phrases (`再`, `帮我`, `给我`, `把它`/`将这餐
 the explicit write verb, without treating unrelated free text as cancellation.
 The three no-portion and two portion-bearing photo cases now produce a
 `cancelled` reason and zero records/assets/drafts; matching text cases perform
-zero lookup. A fresh independent reviewer must issue GO before deployment.
+zero lookup. The final independent reviewer issued GO after 150 focused
+regressions, two real API cases and 31 real ORM database cancellation/portion
+variants. Every unsafe case produced zero diet records, photo assets and
+drafts; create/update/delete adapters stopped before downstream dispatch.
+Positive signed portion updates, ordinary photo capture, explicit food
+quantities, owner/HMAC binding, unique targeting, no-nutrition markers and
+verified receipts all remained functional.
 
 ### G5 Deployment Health: PENDING
 
