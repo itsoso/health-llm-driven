@@ -4807,12 +4807,21 @@ _DIET_PARTIAL_FRACTIONS = {
     "五分之三": 0.6,
     "五分之四": 0.8,
 }
+_DIET_FRACTION_TOKEN_RE = re.compile(
+    r"三分之一|三分之二|四分之一|四分之三|"
+    r"五分之一|五分之二|五分之三|五分之四|一半|半份|"
+    r"\d+\s*/\s*\d+",
+    re.I,
+)
 _CONTEXTUAL_MEAL_PORTION_RE = re.compile(
     r"(?:吃了|吃掉了|实际吃了|只吃了?)\s*"
     r"(?P<fraction>三分之一|三分之二|四分之一|四分之三|"
     r"五分之一|五分之二|五分之三|五分之四|一半|半份|"
     r"\d+\s*/\s*\d+)",
     re.I,
+)
+_GENERATED_DIET_PORTION_SUFFIX_RE = re.compile(
+    r"（按实际食用[^（）]{1,24}计）\s*$"
 )
 _CONTEXTUAL_MEAL_WHOLE_PORTION_RE = re.compile(
     r"(?:这|整|本)(?:一)?(?:餐|顿|份|盘)|(?:这|整)些|只吃",
@@ -4833,7 +4842,31 @@ _MESSAGE_DATE_RE = re.compile(
 )
 
 
-def _partial_meal_consumed_fraction(text: str) -> Optional[float]:
+def _parse_meal_fraction_token(token: str) -> Optional[tuple[float, str]]:
+    normalized = re.sub(r"\s+", "", token or "")
+    fraction = _DIET_PARTIAL_FRACTIONS.get(normalized)
+    if fraction is None and "/" in normalized:
+        numerator_text, denominator_text = normalized.split("/", 1)
+        try:
+            numerator = int(numerator_text)
+            denominator = int(denominator_text)
+        except ValueError:
+            return None
+        if numerator <= 0 or denominator <= 0 or numerator > denominator:
+            return None
+        fraction = numerator / denominator
+    if (
+        fraction is None
+        or not math.isfinite(fraction)
+        or not 0 < fraction <= 1
+    ):
+        return None
+    return float(fraction), normalized
+
+
+def _partial_meal_consumed_portion(
+    text: str,
+) -> Optional[tuple[float, str]]:
     signal_match = _DIET_PARTIAL_CORRECTION_SIGNAL_RE.search(text)
     if (
         signal_match is None
@@ -4841,10 +4874,15 @@ def _partial_meal_consumed_fraction(text: str) -> Optional[float]:
         or _DIET_PARTIAL_CORRECTION_NEGATION_RE.search(text)
     ):
         return None
-    for phrase, fraction in _DIET_PARTIAL_FRACTIONS.items():
-        if text.find(phrase, signal_match.start()) >= 0:
-            return fraction
-    return None
+    fraction_match = _DIET_FRACTION_TOKEN_RE.search(text, signal_match.start())
+    if fraction_match is None:
+        return None
+    return _parse_meal_fraction_token(fraction_match.group(0))
+
+
+def _partial_meal_consumed_fraction(text: str) -> Optional[float]:
+    portion = _partial_meal_consumed_portion(text)
+    return portion[0] if portion is not None else None
 
 
 def _contextual_meal_consumed_fraction(
@@ -4871,19 +4909,11 @@ def _contextual_meal_consumed_fraction(
     # ``三分之一的蛋糕`` is an item-level portion, not a whole-meal ratio.
     if normalized[match.end():].lstrip().startswith("的"):
         return None
-    token = re.sub(r"\s+", "", match.group("fraction"))
-    fraction = _DIET_PARTIAL_FRACTIONS.get(token)
-    if fraction is None and "/" in token:
-        numerator_text, denominator_text = token.split("/", 1)
-        try:
-            numerator = int(numerator_text)
-            denominator = int(denominator_text)
-        except ValueError:
-            return None
-        if numerator <= 0 or denominator <= 0 or numerator >= denominator:
-            return None
-        fraction = numerator / denominator
-    if fraction is None or not math.isfinite(fraction) or not 0 < fraction < 1:
+    parsed_fraction = _parse_meal_fraction_token(match.group("fraction"))
+    if parsed_fraction is None:
+        return None
+    fraction, token = parsed_fraction
+    if fraction >= 1:
         return None
     return float(fraction), token
 
@@ -4944,13 +4974,24 @@ def _parse_explicit_diet_correction(
     if not target_date:
         return None
 
-    consumed_fraction = _partial_meal_consumed_fraction(text)
-    if consumed_fraction is not None:
+    consumed_portion = _partial_meal_consumed_portion(text)
+    if consumed_portion is not None:
+        consumed_fraction, consumed_fraction_label = consumed_portion
         return {
             "date": target_date,
             "meal_type": meal_type,
             "consumed_fraction": consumed_fraction,
+            "consumed_fraction_label": consumed_fraction_label,
         }
+
+    partial_signal = _DIET_PARTIAL_CORRECTION_SIGNAL_RE.search(text)
+    if (
+        partial_signal is not None
+        and _DIET_FRACTION_TOKEN_RE.search(text, partial_signal.start())
+    ):
+        # A malformed numeric fraction is not a food replacement. Failing
+        # closed avoids persisting strings such as "只吃了 1/0 修改记录" as food.
+        return None
 
     if not _has_explicit_update_intent(text):
         return None
@@ -4992,7 +5033,7 @@ def _diet_correction_update_data(
     if not isinstance(fraction, (int, float)) or isinstance(fraction, bool):
         return None
     fraction = float(fraction)
-    if not math.isfinite(fraction) or not 0 < fraction < 1:
+    if not math.isfinite(fraction) or not 0 < fraction <= 1:
         return None
 
     update_data: Dict[str, Any] = {"meal_type": meal_type}
@@ -5004,7 +5045,24 @@ def _diet_correction_update_data(
             and math.isfinite(float(value))
         ):
             update_data[field] = float(value) * fraction
-    return update_data if len(update_data) > 1 else None
+    if len(update_data) > 1:
+        return update_data
+
+    label = correction.get("consumed_fraction_label")
+    food_items = existing_record.get("food_items")
+    if not isinstance(label, str) or not label.strip():
+        return None
+    if not isinstance(food_items, str) or not food_items.strip():
+        return None
+    base_food_items = _GENERATED_DIET_PORTION_SUFFIX_RE.sub(
+        "", food_items.strip()
+    ).strip()
+    if not base_food_items:
+        return None
+    update_data["food_items"] = (
+        f"{base_food_items}（按实际食用{label.strip()}计）"
+    )
+    return update_data
 
 
 def _build_deterministic_diet_correction_tool_call(
