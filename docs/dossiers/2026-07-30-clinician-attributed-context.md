@@ -233,7 +233,8 @@
   isolation、rollback、receipt freshness 与 Health Evidence 优先级均有回归覆盖。
 - 当前实现 HEAD：`97f26b55f`。药物 Health Evidence 域未扩张；正式 golden
   pack 仍只覆盖既有 low-back 场景，药物风险问题走可靠普通分析路径。
-- 已无冲突合并 `origin/main@508624f7f`；合并提交 `ab2c4e6755d6`。
+- 发布前再次无冲突合并 `origin/main@0e2f05252`；当前合并提交
+  `e218c3ac57cf`。
 - 独立审查：规格 reviewer GO（Critical 0 / Important 0，`1986 passed`）；
   医疗质量 reviewer GO（Critical 0 / Important 0，相关套件合计
   `2030 passed`）。
@@ -244,7 +245,7 @@
 - 实现 HEAD `97f26b55f`：扩展相关回归 `1986 passed, 7 warnings`；独立质量
   reviewer 分组复核合计 `2030 passed`。
 - Ruff、`py_compile`、fixture JSON、`git diff --check`、pre-commit：通过。
-- 合并后集成回归：`2031 passed, 7 warnings`；system-map 生成/校验、
+- 最终主干合并后集成回归：`2031 passed, 7 warnings`；system-map 生成/校验、
   `py_compile`、fixture JSON、doc drift、Dossier consistency、diff-check 和
   全变更 pre-commit：通过。
 - 合并后 live Health Harness（`ab2c4e6755d6`）：invariants `12/12`、
@@ -254,10 +255,10 @@
 - 非阻塞本地环境提示：live gate 所用本地 `llm_usage_logs` 缺少
   `error_class` / `cached_tokens` 列，usage logging/quota guard fail-soft；模型
   调用和 gate 本身成功。生产部署前仍以部署健康与 smoke 为准。
-- main CI 真实色：`origin/main@508624f7f` 的 type-drift job 因近期后端
-  OpenAPI 与两端派生类型未同步而失败；已使用 CI 同版 Python 3.12、
-  `requirements.lock` 和 `openapi-typescript@7.13.0` 重生成 mobile/frontend
-  类型，待推送后确认新 CI。
+- main CI 真实色：曾在 `508624f7f` 因 OpenAPI 派生类型漂移失败；按 CI 同版
+  Python 3.12、`requirements.lock` 和 `openapi-typescript@7.13.0` 精确复现并
+  生成修复。后续主干已同步同一类型结果，完成的 `e966281cd` 与
+  `d19c53603` CI 均 success；最新 `0e2f05252` 为 docs-only，检查仍在运行。
 - 裁决：本功能与合并后本地 Gate PASS；远端 CI 待推送后确认。
 
 ## G4 · 安全闸
