@@ -1249,6 +1249,44 @@ describe('useChatEngine', () => {
     expect(result.current.queuedCount).toBe(0);
   });
 
+  it('expires a server-busy queue head before sending another request at the ttl', async () => {
+    jest.useFakeTimers();
+    const startedAt = new Date('2026-08-02T12:00:00.000Z').getTime();
+    jest.setSystemTime(startedAt);
+    mockStreamChat.mockImplementation(streamServerBusy);
+    const { result } = renderHook(() => useChatEngine());
+
+    let acceptedPromise: Promise<boolean> | undefined;
+    act(() => {
+      acceptedPromise = result.current.sendMessage('晚餐只吃了 1/2 修改记录');
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await expect(acceptedPromise).resolves.toBe(true);
+    expect(mockStreamChat).toHaveBeenCalledTimes(1);
+    expect(result.current.queuedCount).toBe(1);
+
+    jest.setSystemTime(startedAt + 10 * 60 * 1000);
+    await act(async () => {
+      jest.advanceTimersByTime(1000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockStreamChat).toHaveBeenCalledTimes(1);
+    expect(result.current.queuedCount).toBe(0);
+    expect(result.current.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: 'assistant',
+        completionStatus: 'error',
+        content: '等待时间过长，本条尚未发送，请重试。',
+      }),
+    ]));
+  });
+
   it('backs off one busy queue item without starting an immediate retry loop', async () => {
     jest.useFakeTimers();
     mockStreamChat

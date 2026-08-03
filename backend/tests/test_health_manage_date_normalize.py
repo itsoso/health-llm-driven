@@ -564,9 +564,14 @@ async def test_partial_meal_correction_replaces_the_previous_nutrition_fraction(
         "晚餐只吃了 −1/2 修改记录",
         "晚餐只吃了 1/−2 修改记录",
         "晚餐只吃了 1／／2 修改记录",
+        "晚餐只吃了 50% 修改记录",
+        "晚餐只吃了 50％ 修改记录",
+        "晚餐只吃了 0.5 修改记录",
+        "晚餐只吃了 ½ 修改记录",
+        "晚餐只吃了 二分之一 修改记录",
     ],
 )
-async def test_invalid_unicode_fraction_cannot_reach_a_diet_write(message):
+async def test_unsupported_or_invalid_fraction_cannot_reach_a_diet_write(message):
     executor = AgentExecutor(MagicMock())
     executor._current_turn_user_message = message
     executor._api_get_json = AsyncMock()

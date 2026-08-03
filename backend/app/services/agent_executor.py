@@ -4844,6 +4844,13 @@ _DIET_NUMERIC_RATIO_LIKE_RE = re.compile(
     r"(?<![\d.])[+-]?\d+(?:\.\d+)?\s*/+\s*[+-]?\d*(?:\.\d+)?",
     re.I,
 )
+_DIET_UNSUPPORTED_PORTION_LIKE_RE = re.compile(
+    r"[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*[%％]|"
+    r"(?<![\d.])[+-]?(?:\d*\.\d+)(?![\d.])|"
+    r"[¼½¾⅐⅑⅒⅓⅔⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞]|"
+    r"[一二三四五六七八九十两]{1,3}分之[一二三四五六七八九十两]{1,3}",
+    re.I,
+)
 _CONTEXTUAL_MEAL_PORTION_RE = re.compile(
     r"(?:吃了|吃掉了|实际吃了|只吃了?)\s*"
     r"(?P<fraction>三分之一|三分之二|四分之一|四分之三|"
@@ -4957,6 +4964,10 @@ def _invalid_partial_meal_fraction_requested(message: str) -> bool:
     has_ratio_like_input = bool(
         _DIET_FRACTION_TOKEN_RE.search(text, partial_signal.start())
         or _DIET_NUMERIC_RATIO_LIKE_RE.search(text, partial_signal.start())
+        or _DIET_UNSUPPORTED_PORTION_LIKE_RE.search(
+            text,
+            partial_signal.start(),
+        )
     )
     return has_ratio_like_input and _partial_meal_consumed_portion(text) is None
 
@@ -5070,6 +5081,10 @@ def _parse_explicit_diet_correction(
         and (
             _DIET_FRACTION_TOKEN_RE.search(text, partial_signal.start())
             or _DIET_NUMERIC_RATIO_LIKE_RE.search(text, partial_signal.start())
+            or _DIET_UNSUPPORTED_PORTION_LIKE_RE.search(
+                text,
+                partial_signal.start(),
+            )
         )
     ):
         # A malformed numeric fraction is not a food replacement. Failing

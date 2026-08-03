@@ -2006,7 +2006,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         const now = Date.now();
         const busyStartedAt = sendOpts?.__busyStartedAt ?? now;
         const busyAttempt = (sendOpts?.__busyAttempt ?? 0) + 1;
-        if (now - busyStartedAt >= PENDING_STREAM_TTL_MS) {
+        const busyElapsedMs = now - busyStartedAt;
+        if (busyElapsedMs >= PENDING_STREAM_TTL_MS) {
           settleAcceptance(false);
           dispatchAgentTurn({
             type: 'fail',
@@ -2024,6 +2025,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           } : m));
           return false;
         }
+        const busyRetryDelayMs = Math.min(
+          serverBusyRetryDelay(busyAttempt),
+          PENDING_STREAM_TTL_MS - busyElapsedMs,
+        );
 
         deferQueuedPump = true;
         let queuedAcceptance: Promise<boolean> | undefined;
@@ -2066,7 +2071,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           assistantMessageId: aId,
           busyAttempt,
           busyStartedAt,
-          busyRetryAt: now + serverBusyRetryDelay(busyAttempt),
+          busyRetryAt: now + busyRetryDelayMs,
         };
         queuedTurnsRef.current = queuedTurnsRef.current.filter(
           queued => queued.turnId !== turnId,
@@ -2097,7 +2102,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           queue_depth_at_submit: queuedTurnsRef.current.length,
           retry_attempt: busyAttempt,
         }).catch(() => undefined);
-        scheduleBusyQueuePumpRef.current(serverBusyRetryDelay(busyAttempt));
+        scheduleBusyQueuePumpRef.current(busyRetryDelayMs);
         if (!hasImages) {
           settleAcceptance(true);
           return true;
@@ -2177,7 +2182,37 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     if (!next) {
       return;
     }
-    const retryDelay = (next.busyRetryAt ?? 0) - Date.now();
+    const now = Date.now();
+    if (
+      next.busyStartedAt != null
+      && now - next.busyStartedAt >= PENDING_STREAM_TTL_MS
+    ) {
+      queuedTurnsRef.current.shift();
+      next.options?.onAccepted?.(false);
+      setQueuedCount(queuedTurnsRef.current.length);
+      dispatchAgentTurn({
+        type: 'fail',
+        at: now,
+        errorCode: 'server_busy_retry_expired',
+        label: '等待时间过长，请点此重试。',
+        recoverable: true,
+      });
+      emitAgentTurnTerminal(
+        next.turnId,
+        next.busyStartedAt,
+        'failed',
+        'server_busy_retry_expired',
+      );
+      setMessages(prev => prev.map(message => message.id === next.assistantMessageId ? {
+        ...message,
+        currentStatus: undefined,
+        completionStatus: 'error',
+        content: '等待时间过长，本条尚未发送，请重试。',
+      } : message));
+      scheduleBusyQueuePumpRef.current(0);
+      return;
+    }
+    const retryDelay = (next.busyRetryAt ?? 0) - now;
     if (retryDelay > 0) {
       scheduleBusyQueuePumpRef.current(retryDelay);
       return;
