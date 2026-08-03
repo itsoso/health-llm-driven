@@ -1271,18 +1271,21 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       label: '正在提交…',
     });
 
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-    // Phase 0.4: 埋点 — 用户实际发出的对话, 区分入口 (siri vs chat)
     const inputChannel: 'typed' | 'voice' | 'siri' = sendOpts?.fromSiri
       ? 'siri'
       : (sendOpts?.channel ?? 'typed');
-    try {
-      emitClientEvent('chat_message_sent', {
-        source: inputChannel === 'typed' ? 'chat' : inputChannel,
-        has_image: !!hasImages,
-      });
-    } catch { /* noop */ }
+    const isServerBusyRetry = (sendOpts?.__busyAttempt ?? 0) > 0;
+    if (!isServerBusyRetry) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+      // Phase 0.4: 埋点 — 用户实际发出的对话, 区分入口 (siri vs chat)
+      try {
+        emitClientEvent('chat_message_sent', {
+          source: inputChannel === 'typed' ? 'chat' : inputChannel,
+          has_image: !!hasImages,
+        });
+      } catch { /* noop */ }
+    }
 
     const targetConversationId = forceNewConversation ? undefined : conversationIdRef.current;
     if (forceNewConversation) {

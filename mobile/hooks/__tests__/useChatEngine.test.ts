@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
+import * as Haptics from 'expo-haptics';
 
 const mockStreamChat = jest.fn();
 const mockGetConversations = jest.fn();
@@ -1294,6 +1295,10 @@ describe('useChatEngine', () => {
     });
     await waitFor(() => expect(mockStreamChat).toHaveBeenCalledTimes(3));
     expect(mockStreamChat.mock.calls[2][6]).toBe(mockStreamChat.mock.calls[0][6]);
+    expect(Haptics.impactAsync).toHaveBeenCalledTimes(1);
+    expect(
+      mockEmitClientEvent.mock.calls.filter(([name]) => name === 'chat_message_sent'),
+    ).toHaveLength(1);
   });
 
   it('keeps a server-busy photo draft pending until the retry is persisted', async () => {
