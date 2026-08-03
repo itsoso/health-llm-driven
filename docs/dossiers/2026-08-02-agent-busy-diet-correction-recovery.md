@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-02 |
 | status | in_progress |
-| current_stage | Third G4 NO-GO remediated; fresh G4 review pending |
+| current_stage | Fourth G4 NO-GO remediated; fresh G4 review pending |
 | owner_surface | Mobile chat / Backend agent runtime |
 
 ## Problem
@@ -80,11 +80,11 @@ Failure-first evidence was observed before implementation:
 
 Fresh verification after the final implementation commit:
 
-- Mobile critical path after the third G4 remediation: 3 suites / 166 tests passed.
+- Mobile critical path after the fourth G4 remediation: 3 suites / 167 tests passed.
 - Mobile full regression: 289 suites / 2,279 tests passed.
 - Mobile TypeScript: `npx tsc --noEmit` passed.
 - Mobile lint: 0 errors; 92 pre-existing warnings outside this change remain.
-- Backend focused and stream integration after the third G4 remediation: 140 tests passed with 7 dependency/
+- Backend focused, stream integration and diet API after the fourth G4 remediation: 205 tests passed with 7 dependency/
   framework deprecation warnings.
 - Backend Ruff and Python compilation passed.
 - Dossier consistency: 98 dossiers passed.
@@ -124,7 +124,20 @@ busy turn could exceed its ten-minute TTL by one final backoff request. Both
 were reproduced with failing tests and remediated. Unsupported portion-like
 input now fails closed before any diet write. Busy retry delay is capped at the
 remaining TTL, and the queue head is expired before network dispatch when the
-TTL is reached. A fresh independent reviewer must issue GO before deployment.
+TTL is reached.
+
+The fourth independent reviewer confirmed those fixes but found three further
+Important blockers. Identical independent submissions could share one turn ID
+and the second could be removed from the busy FIFO; questions, negations and
+contradictory ratios could be treated as factual corrections; and explicitly
+supplied unchanged nutrition (including `1/1` or zero-valued nutrients) could
+be erased when the generated portion marker changed food text. Each issue was
+reproduced with a failing test and remediated. Independent queued submissions
+now always receive distinct IDs while retries retain the original ID. Unsafe or
+multi-ratio language terminates before lookup/write. Deterministic portion
+updates carry an internal source marker so the diet API preserves explicitly
+calculated values without relaxing stale-nutrition invalidation for ordinary
+food edits. A fresh independent reviewer must issue GO before deployment.
 
 ### G5 Deployment Health: PENDING
 

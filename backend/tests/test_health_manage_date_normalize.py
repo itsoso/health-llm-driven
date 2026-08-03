@@ -500,6 +500,7 @@ async def test_partial_meal_correction_scales_the_unique_existing_record():
         "record_id": 829,
         "data": {
             "meal_type": "dinner",
+            "source": "agent_portion_correction",
             "food_items": "三文鱼 + 黎麦沙拉 + 羊乳酪（按实际食用四分之一计）",
             "calories": 500.0,
             "protein": 20.0,
@@ -517,6 +518,7 @@ async def test_partial_meal_correction_scales_the_unique_existing_record():
     [
         ("晚餐只吃了 1／2 修改记录", "1/2", 500.0, 50.0),
         ("晚餐只吃了 1/3 修改记录", "1/3", 1000 / 3, 100 / 3),
+        ("晚餐只吃了 1/1 修改记录", "1/1", 1000.0, 100.0),
     ],
 )
 async def test_partial_meal_correction_replaces_the_previous_nutrition_fraction(
@@ -569,9 +571,14 @@ async def test_partial_meal_correction_replaces_the_previous_nutrition_fraction(
         "晚餐只吃了 0.5 修改记录",
         "晚餐只吃了 ½ 修改记录",
         "晚餐只吃了 二分之一 修改记录",
+        "晚餐只吃一半好吗",
+        "晚餐是不是只吃一半",
+        "晚餐不是只吃了1/2，修改记录",
+        "晚餐不是只吃了1/2，是只吃了1/3，修改记录",
+        "晚餐只吃了1/2还是1/3？",
     ],
 )
-async def test_unsupported_or_invalid_fraction_cannot_reach_a_diet_write(message):
+async def test_unsafe_unsupported_or_invalid_fraction_cannot_reach_a_diet_write(message):
     executor = AgentExecutor(MagicMock())
     executor._current_turn_user_message = message
     executor._api_get_json = AsyncMock()
@@ -626,6 +633,7 @@ async def test_partial_meal_correction_preserves_food_without_inventing_nutritio
         "record_id": 830,
         "data": {
             "meal_type": "lunch",
+            "source": "agent_portion_correction",
             "food_items": "牛肉面（按实际食用三分之一计）",
         },
     }
@@ -664,6 +672,7 @@ async def test_partial_meal_correction_replaces_a_generated_portion_suffix():
     assert args["record_id"] == 831
     assert args["data"] == {
         "meal_type": "dinner",
+        "source": "agent_portion_correction",
         "food_items": "牛肉面（按实际食用1/2计）",
     }
 

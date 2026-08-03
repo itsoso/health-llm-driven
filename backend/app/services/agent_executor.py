@@ -4815,11 +4815,13 @@ _DIET_PARTIAL_CORRECTION_SIGNAL_RE = re.compile(
     re.I,
 )
 _DIET_PARTIAL_CORRECTION_QUESTION_RE = re.compile(
-    r"[?？]|会不会|要不要|是否|行不行|可以吗|怎么办|怎么吃|吃多少",
+    r"[?？]|会不会|要不要|是否|行不行|可以吗|(?:吗|嘛)(?:[，。！？?!]|$)|"
+    r"好不好|是不是|怎么办|怎么吃|吃多少",
     re.I,
 )
 _DIET_PARTIAL_CORRECTION_NEGATION_RE = re.compile(
-    r"(?:不要|别|不该|不能|不可|避免).{0,10}(?:只吃|吃.{0,4}(?:一半|半份|分之))",
+    r"(?:不要|别|不该|不能|不可|避免|不是|并非|并不是).{0,10}"
+    r"(?:只吃|吃.{0,4}(?:一半|半份|分之|\d+\s*/))",
     re.I,
 )
 _DIET_PARTIAL_FRACTIONS = {
@@ -4954,22 +4956,36 @@ def _invalid_partial_meal_fraction_requested(message: str) -> bool:
     )
     if (
         not _DIET_CORRECTION_MEAL_RE.search(text)
-        or _DIET_PARTIAL_CORRECTION_QUESTION_RE.search(text)
-        or _DIET_PARTIAL_CORRECTION_NEGATION_RE.search(text)
     ):
         return False
     partial_signal = _DIET_PARTIAL_CORRECTION_SIGNAL_RE.search(text)
     if partial_signal is None:
         return False
-    has_ratio_like_input = bool(
-        _DIET_FRACTION_TOKEN_RE.search(text, partial_signal.start())
-        or _DIET_NUMERIC_RATIO_LIKE_RE.search(text, partial_signal.start())
-        or _DIET_UNSUPPORTED_PORTION_LIKE_RE.search(
-            text,
-            partial_signal.start(),
+    ratio_spans = sorted(
+        (match.start(), match.end())
+        for pattern in (
+            _DIET_FRACTION_TOKEN_RE,
+            _DIET_NUMERIC_RATIO_LIKE_RE,
+            _DIET_UNSUPPORTED_PORTION_LIKE_RE,
         )
+        for match in pattern.finditer(text, partial_signal.start())
     )
-    return has_ratio_like_input and _partial_meal_consumed_portion(text) is None
+    if not ratio_spans:
+        return False
+    distinct_ratio_spans: list[tuple[int, int]] = []
+    for start, end in ratio_spans:
+        if distinct_ratio_spans and start < distinct_ratio_spans[-1][1]:
+            prior_start, prior_end = distinct_ratio_spans[-1]
+            distinct_ratio_spans[-1] = (prior_start, max(prior_end, end))
+        else:
+            distinct_ratio_spans.append((start, end))
+    if (
+        _DIET_PARTIAL_CORRECTION_QUESTION_RE.search(text)
+        or _DIET_PARTIAL_CORRECTION_NEGATION_RE.search(text)
+        or len(distinct_ratio_spans) != 1
+    ):
+        return True
+    return _partial_meal_consumed_portion(text) is None
 
 
 def _contextual_meal_consumed_fraction(
@@ -5156,7 +5172,14 @@ def _diet_correction_update_data(
         previous_fraction = previous_portion[0]
     scale_factor = fraction / previous_fraction
 
-    update_data: Dict[str, Any] = {"meal_type": meal_type}
+    update_data: Dict[str, Any] = {
+        "meal_type": meal_type,
+        # The diet endpoint normally invalidates unchanged nutrient values when
+        # food text changes, because generic clients may submit stale values.
+        # This deterministic path calculated every supplied value from the
+        # owner-scoped existing record, so the endpoint may preserve them.
+        "source": "agent_portion_correction",
+    }
     for field in _DIET_SCALABLE_NUTRIENT_FIELDS:
         value = existing_record.get(field)
         if (

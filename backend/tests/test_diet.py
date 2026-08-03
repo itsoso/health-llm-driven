@@ -950,6 +950,39 @@ class TestDietAPI:
         assert update_response.json()["calories"] == 500
         assert update_response.json()["notes"] == "更新后的备注"
 
+    def test_food_correction_preserves_every_explicit_nutrient_value(
+        self, client, auth_headers, sample_diet_data
+    ):
+        created = client.post(
+            "/api/v1/diet/records",
+            json={**sample_diet_data, "fiber": 0},
+            headers=auth_headers,
+        )
+        assert created.status_code == 200
+        original = created.json()
+
+        updated = client.put(
+            f"/api/v1/diet/records/{original['id']}",
+            json={
+                "food_items": f"{original['food_items']}（按实际食用1/1计）",
+                "source": "agent_portion_correction",
+                "calories": original["calories"],
+                "protein": original["protein"],
+                "carbs": original["carbs"],
+                "fat": original["fat"],
+                "fiber": original["fiber"],
+            },
+            headers=auth_headers,
+        )
+
+        assert updated.status_code == 200
+        body = updated.json()
+        assert body["calories"] == original["calories"]
+        assert body["protein"] == original["protein"]
+        assert body["carbs"] == original["carbs"]
+        assert body["fat"] == original["fat"]
+        assert body["fiber"] == 0
+
     def test_update_diet_record_rejects_non_food_items(self, client, auth_headers, sample_diet_data):
         """更新饮食记录也不能把药物/删除意图写进 food_items。"""
         create_response = client.post(

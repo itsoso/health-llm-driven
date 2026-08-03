@@ -1177,8 +1177,13 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     const requestFingerprint = buildTurnRequestFingerprint(finalMsg, pendingImages);
     const forceNewConversation = !!sendOpts?.forceNewConversation;
     const previousTurn = activeTurnRef.current;
+    const isIndependentQueuedSubmission = (
+      (isStreamingRef.current || queuedTurnsRef.current.length > 0)
+      && !sendOpts?.__precreatedLocalMessages
+    );
     const reusableTurnId = (
       !forceNewConversation
+      && !isIndependentQueuedSubmission
       && previousTurn.recoverable
       && previousTurn.turnId
       && previousTurn.requestFingerprint === requestFingerprint
@@ -1192,10 +1197,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       ? findReusableTurnMessage(messagesRef.current, 'assistant', reusableTurnId)
       : undefined;
 
-    if (
-      (isStreamingRef.current || queuedTurnsRef.current.length > 0)
-      && !sendOpts?.__precreatedLocalMessages
-    ) {
+    if (isIndependentQueuedSubmission) {
       const userMessageId = nextId();
       const assistantMessageId = nextId();
       const uris = hasImages ? pendingImages.map(optimisticImageUri) : undefined;

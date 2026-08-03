@@ -1387,6 +1387,48 @@ describe('useChatEngine', () => {
     ]);
   });
 
+  it('assigns distinct turn ids to identical independent messages in the busy fifo', async () => {
+    jest.useFakeTimers();
+    mockStreamChat
+      .mockImplementationOnce(streamServerBusy)
+      .mockImplementation(streamPersistedIdsThenDone);
+    const { result } = renderHook(() => useChatEngine());
+
+    let firstAccepted: Promise<boolean> | undefined;
+    act(() => {
+      firstAccepted = result.current.sendMessage('晚餐只吃了一半');
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await expect(firstAccepted).resolves.toBe(true);
+
+    let secondAccepted: Promise<boolean> | undefined;
+    act(() => {
+      secondAccepted = result.current.sendMessage('晚餐只吃了一半');
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await expect(secondAccepted).resolves.toBe(true);
+    expect(result.current.queuedCount).toBe(2);
+
+    await act(async () => {
+      jest.advanceTimersByTime(1000);
+      await Promise.resolve();
+      await Promise.resolve();
+      jest.runOnlyPendingTimers();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(mockStreamChat).toHaveBeenCalledTimes(3));
+    expect(mockStreamChat.mock.calls[1][6]).toBe(mockStreamChat.mock.calls[0][6]);
+    expect(mockStreamChat.mock.calls[2][6]).not.toBe(mockStreamChat.mock.calls[0][6]);
+  });
+
   it('keeps a server-busy photo draft pending until the retry is persisted', async () => {
     jest.useFakeTimers();
     mockStreamChat

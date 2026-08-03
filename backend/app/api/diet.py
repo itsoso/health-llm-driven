@@ -1132,10 +1132,19 @@ def update_diet_record(
         key in update_dict and update_dict[key] != getattr(record, key)
         for key in nutrient_fields
     )
+    preserve_explicit_nutrients = (
+        update_dict.get("source") == "agent_portion_correction"
+    )
     if food_changed:
         update_dict["food_id"] = None
         for key in nutrient_fields:
-            if key not in update_dict or update_dict[key] == getattr(record, key):
+            if (
+                key not in update_dict
+                or (
+                    not preserve_explicit_nutrients
+                    and update_dict[key] == getattr(record, key)
+                )
+            ):
                 update_dict[key] = None
     if food_changed or nutrition_changed:
         update_dict["source"] = "user_corrected"
