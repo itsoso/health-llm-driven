@@ -102,6 +102,30 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('rejects a busy JSON response instead of parsing it as SSE', async () => {
+    const first = streamChat(
+      '晚餐只吃了 1/2 修改记录',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'typed',
+      'turn-busy-1',
+    ).next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.status = 409;
+    xhr.responseText = JSON.stringify({ detail: '上一条消息仍在处理，请稍后重试' });
+    xhr.onload?.();
+
+    await expect(first).rejects.toMatchObject({
+      name: 'ChatStreamHttpError',
+      status: 409,
+      detail: '上一条消息仍在处理，请稍后重试',
+    });
+  });
+
   it('sends device current time context with every stream request', async () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-07-16T15:40:00.000Z'));

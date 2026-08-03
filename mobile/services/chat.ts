@@ -12,6 +12,32 @@ export interface ChatMessage {
   content: string;
 }
 
+export class ChatStreamHttpError extends Error {
+  readonly status: number;
+  readonly detail?: string;
+
+  constructor(status: number, detail?: string) {
+    super(detail || `请求失败 (status: ${status})`);
+    this.name = 'ChatStreamHttpError';
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+function chatStreamHttpError(status: number, responseText: string): ChatStreamHttpError {
+  let detail: string | undefined;
+  try {
+    const body = JSON.parse(responseText);
+    if (typeof body?.detail === 'string') {
+      detail = sanitizeChatErrorMessage(body.detail, '').slice(0, 200) || undefined;
+    }
+  } catch {
+    // An HTTP error document is not an SSE payload. Keep malformed bodies out
+    // of the error so prompts, gateway pages, and provider details cannot leak.
+  }
+  return new ChatStreamHttpError(status, detail);
+}
+
 interface ClientTimeContext {
   client_now_iso: string;
   timezone?: string;
@@ -374,6 +400,12 @@ export async function* streamChat(
   };
 
   xhr.onload = () => {
+    if (xhr.status < 200 || xhr.status >= 300) {
+      error = chatStreamHttpError(xhr.status, xhr.responseText);
+      done = true;
+      resolve?.();
+      return;
+    }
     // Process any remaining text
     const remaining = xhr.responseText.slice(processed);
     if (remaining) chunks.push(remaining);
