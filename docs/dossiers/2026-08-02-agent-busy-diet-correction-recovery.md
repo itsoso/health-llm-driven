@@ -84,7 +84,7 @@ Fresh verification after the final implementation commit:
 - Mobile full regression: 289 suites / 2,290 tests passed.
 - Mobile TypeScript: `npx tsc --noEmit` passed.
 - Mobile lint: 0 errors; 92 pre-existing warnings outside this change remain.
-- Backend focused, stream integration, diet API and photo-context regression after the eleventh G4 remediation: 366 tests passed with 7 dependency/
+- Backend focused, stream integration, diet API and photo-context regression after the eleventh G4 remediation: 375 tests passed with 7 dependency/
   framework deprecation warnings.
 - Backend Ruff and Python compilation passed.
 - Dossier consistency: 98 dossiers passed.
@@ -222,8 +222,12 @@ measurement unit such as `鸡胸肉71.4克`. Unsafe photo cases assert zero diet
 records, zero photo assets and zero drafts. Diet updates now accept the
 JSON-mode meal-type string and restore typed meal-time assignment; a real
 signed API update including the meal type returns 200 and preserves the
-explicit nutrition. A fresh independent reviewer must issue GO before
-deployment.
+explicit nutrition. A final pre-review adversarial probe also found bare `半`,
+compact `百分50`, and colon ratios such as `1:2`/`１：２` could still fall
+through in text or auto-save a contextual photo. Boundary-aware unsupported
+portion recognition now closes those forms while preserving the concrete food
+replacement `半只鸡`; real photo tests again assert zero records, assets and
+drafts. A fresh independent reviewer must issue GO before deployment.
 
 ### G5 Deployment Health: PENDING
 

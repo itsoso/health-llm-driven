@@ -369,6 +369,10 @@ def test_contextual_meal_fraction_only_scales_an_explicit_whole_meal(
         "这餐百分之五十",
         "这餐五成",
         "这餐1比2",
+        "这餐半",
+        "这餐百分50",
+        "这餐1:2",
+        "这餐１：２",
     ],
 )
 def test_unsafe_photo_fraction_language_never_auto_captures(
