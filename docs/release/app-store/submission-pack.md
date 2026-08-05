@@ -96,6 +96,8 @@ export APP_STORE_REVIEW_DEMO_ACCOUNT="..."
 export APP_STORE_REVIEW_DEMO_PASSWORD="..."
 export APP_STORE_REVIEW_CONTACT_PHONE="+8613800138000"
 export APP_STORE_BUILD_ID="..."
+export APP_STORE_EAS_BUILD_ID="..." # Copy from `eas build:view <id> --json`.
+export APP_STORE_GIT_COMMIT_HASH="..." # Full 40-character source SHA from the same EAS metadata.
 export APP_STORE_REAL_DEVICE_EVIDENCE="/secure/path/real-device-acceptance.json"
 export APP_STORE_PRIVACY_RESPONSES_PUBLISHED="1"
 export APP_STORE_REGULATED_MEDICAL_DEVICE_STATUS="no"
@@ -107,7 +109,7 @@ python3 scripts/check_app_store_release_pack.py \
   --screenshot-dir design/screenshots/app-store/<build-id>-ready
 ```
 
-Create the external evidence file from `docs/release/app-store/real-device-acceptance.template.json`. It must refer to the exact TestFlight build and include the app version, App Store build number, production EAS build ID, source commit, IPA `DTXcode`, IPA `DTPlatformVersion`, device, iOS version and tester. The final gate requires `DTXcode >= 2600`, iOS platform major `>= 26`, and exact matches for the configured app version and `APP_STORE_BUILD_ID`. Mark every physical-iPhone check `true`, including demo login, streaming Markdown, permission-denied text fallback, both voice modes, external-audio interruption, photo persistence, image/video playback and sharing, write/correct/delete idempotency, foreground recovery, draft preservation, latest-message scrolling, privacy and deletion paths. Do not commit tester evidence containing device or account details.
+Create the external evidence file from `docs/release/app-store/real-device-acceptance.template.json`. It must refer to the exact TestFlight build and include the app version, App Store build number, production EAS build ID, full 40-character source commit, IPA `DTXcode`, IPA `DTPlatformVersion`, device, iOS version and tester. Copy `APP_STORE_EAS_BUILD_ID` and `APP_STORE_GIT_COMMIT_HASH` independently from `eas build:view <id> --json`; the final gate compares both values exactly with the evidence instead of accepting format-only matches. It also requires `DTXcode >= 2600`, iOS platform major `>= 26`, and exact matches for the configured app version and `APP_STORE_BUILD_ID`. Mark every physical-iPhone check `true`, including demo login, streaming Markdown, permission-denied text fallback, both voice modes, external-audio interruption, photo persistence, image/video playback and sharing, write/correct/delete idempotency, foreground recovery, draft preservation, latest-message scrolling, privacy and deletion paths. Do not commit tester evidence containing device or account details.
 
 Extract the toolchain values from the exact downloaded IPA, not from a local Xcode assumption:
 
@@ -235,6 +237,7 @@ Do not submit until:
 - [ ] The release owner has reviewed and saved the current App Store Connect age-rating questionnaire, then set `APP_STORE_AGE_RATING_CONFIRMED=1`.
 - [ ] Production-channel OTA is frozen for the candidate through App Review and public G6 verification, then `APP_STORE_PRODUCTION_OTA_FROZEN=1` is set.
 - [ ] The exact IPA reports `DTXcode >= 2600` and `DTPlatformVersion` major `>= 26`; both values are copied into same-build real-device evidence.
+- [ ] `APP_STORE_EAS_BUILD_ID` and `APP_STORE_GIT_COMMIT_HASH` were copied from the candidate's EAS metadata and exactly match the same-build real-device evidence.
 - [ ] A physical iPhone has passed demo login, briefing expand/collapse, Agent text conversation, text fallback after denied optional permissions, real-time dictation toggle, hold-to-talk send/cancel/text conversion, camera/photo persistence, WeChat/Xiaohongshu share handoff, confirmed database write, personal-center/privacy and deletion-request status checks.
 - [ ] Only after the same-build physical-iPhone run and final screenshot review pass, change the submission pack status to `ready for App Store submission` and remove `Draft` from the Review Notes heading.
 - [ ] `docs/release/app-store/dependency-risk-review.md` still matches a fresh production dependency audit.

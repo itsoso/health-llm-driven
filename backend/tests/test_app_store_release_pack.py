@@ -14,6 +14,7 @@ from scripts.check_app_store_release_pack import (
     validate_demo_account_live,
     validate_final_release_confirmations,
     validate_final_submission_material_state,
+    validate_app_store_privacy_declaration,
     validate_privacy_policy_copy,
     validate_real_device_evidence,
     validate_regulated_medical_device_declaration,
@@ -135,6 +136,92 @@ def test_app_store_release_pack_checker_passes():
     assert "App Store release pack check passed." in result.stdout
 
 
+def test_app_store_privacy_declaration_rejects_stale_device_only_meal_photo_claim():
+    failures = validate_app_store_privacy_declaration(
+        privacy={
+            "device_only_processing": {
+                "not_collected_by_developer": True,
+                "applies_to_modes": ["strict_local", "local_first"],
+                "examples": ["selected_food_photo_temporary_copy"],
+                "notes": "The photo picker copy is deleted after on-device inference.",
+            },
+            "data_types": [
+                {
+                    "category": "User Content",
+                    "examples": ["food_or_report_images_selected_by_user"],
+                }
+            ],
+        },
+        review_notes="Reviewer notes rewritten without a local-mode statement.",
+        diet_service="api.post('/diet/recognize', { image_base64: imageBase64 })",
+    )
+
+    joined = "\n".join(failures)
+    assert "device-only processing claim conflicts with production" in joined
+    assert "Photos or Videos" in joined
+    assert "uploaded meal/report images" in joined
+
+
+def test_app_store_privacy_declaration_accepts_remote_image_collection():
+    assert validate_app_store_privacy_declaration(
+        privacy={
+            "data_types": [
+                {
+                    "category": "User Content",
+                    "apple_data_types": ["Other User Content", "Photos or Videos"],
+                    "examples": [
+                        "food_and_report_images_uploaded_to_service_for_recognition_and_record_drafts"
+                    ],
+                }
+            ],
+        },
+        review_notes=(
+            "The submitted binary does not bundle an on-device inference model "
+            "or expose an account-free local mode."
+        ),
+        diet_service="api.post('/diet/recognize', { image_base64: imageBase64 })",
+    ) == []
+
+
+def test_app_store_privacy_declaration_requires_production_boundary_in_review_notes():
+    failures = validate_app_store_privacy_declaration(
+        privacy={
+            "data_types": [
+                {
+                    "category": "User Content",
+                    "apple_data_types": ["Other User Content", "Photos or Videos"],
+                    "examples": ["meal_images_uploaded_to_service"],
+                }
+            ],
+        },
+        review_notes="Authenticated requests use the service.",
+        diet_service="api.post('/diet/recognize', { image_base64: imageBase64 })",
+    )
+
+    assert "no bundled on-device inference model" in "\n".join(failures)
+
+
+def test_app_store_privacy_declaration_fails_closed_when_image_flow_is_unrecognized():
+    failures = validate_app_store_privacy_declaration(
+        privacy={
+            "data_types": [
+                {
+                    "category": "User Content",
+                    "apple_data_types": ["Other User Content", "Photos or Videos"],
+                    "examples": ["meal_images_uploaded_to_service"],
+                }
+            ],
+        },
+        review_notes=(
+            "The submitted binary does not bundle an on-device inference model "
+            "or expose an account-free local mode."
+        ),
+        diet_service="export async function recognizeFood() { throw new Error('moved'); }",
+    )
+
+    assert "cannot verify production meal-photo upload contract" in "\n".join(failures)
+
+
 def test_privacy_policy_copy_rejects_stale_brand_and_missing_controls():
     failures = validate_privacy_policy_copy(
         "隐私政策 | 健康助理\n最近更新: 2026-06-28\nHealthKit",
@@ -208,6 +295,8 @@ def test_app_store_release_pack_final_submit_fails_loud_without_human_materials(
     assert "APP_STORE_REGULATED_MEDICAL_DEVICE_STATUS=no" in result.stderr
     assert "APP_STORE_AGE_RATING_CONFIRMED=1" in result.stderr
     assert "APP_STORE_PRODUCTION_OTA_FROZEN=1" in result.stderr
+    assert "final submit requires --eas-build-id or APP_STORE_EAS_BUILD_ID" in result.stderr
+    assert "final submit requires --git-commit-hash or APP_STORE_GIT_COMMIT_HASH" in result.stderr
 
 
 def test_app_store_release_pack_final_submit_rejects_screenshots_from_another_build(
@@ -272,7 +361,31 @@ def test_real_device_evidence_accepts_complete_matching_build(tmp_path: Path):
         encoding="utf-8",
     )
 
-    assert validate_real_device_evidence(evidence, expected_build_id="226") == []
+    assert validate_real_device_evidence(
+        evidence,
+        expected_build_id="226",
+        expected_eas_build_id="d6b5f7de-1208-488d-8799-4b6f8a76b011",
+        expected_git_commit_hash="371dacc60ba3f218edec4b367ea61472798904a2",
+    ) == []
+
+
+def test_real_device_evidence_rejects_wrong_eas_build_and_source_commit(tmp_path: Path):
+    evidence = tmp_path / "real-device.json"
+    evidence.write_text(
+        json.dumps(_real_device_evidence(build_id="226"), ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    failures = validate_real_device_evidence(
+        evidence,
+        expected_build_id="226",
+        expected_eas_build_id="11111111-1111-4111-8111-111111111111",
+        expected_git_commit_hash="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    joined = "\n".join(failures)
+
+    assert "eas_build_id does not match candidate EAS build" in joined
+    assert "git_commit_hash does not match candidate source commit" in joined
 
 
 def test_real_device_evidence_rejects_untraceable_build_metadata(tmp_path: Path):

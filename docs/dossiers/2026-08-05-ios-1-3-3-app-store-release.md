@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | S5 · Tasks 0–3 complete；pre-G3 dependency audit blocker |
+| 当前阶段 | S5 · T4/T5 人工项 pending；T6 G3/G4 PASS、待整改提交主干 CI |
 | 状态 | implementing |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -107,7 +107,9 @@
   - `588110a22`：新增鼻炎安全测试保持 lint-neutral。
   - `a8bf8f0b6`：升级 `aiohttp 3.14.3`、`cryptography 50.0.0`、`postcss 8.5.23` 和分 major 的 `brace-expansion` 安全版本，重生成 Linux x86_64 Python exact lock 与 Mobile lock，清空 npm audit 例外。
   - `e0c2a1e08`：同步 Python 与 Mobile 依赖安全契约测试，并显式锁定 `aiohttp 3.14.3` 契约。
-- 当前断点：T0–T3.5 完成；下一步执行 T4 审核账号与虚构数据验收。EAS Store Build 仍须等待 T4–T6 通过。
+  - `23e095ff1`：关闭依赖审计子闸并记录独立兼容性/安全评审证据。
+  - `55f2ca457`：把 ASC 草稿升级为 1.3.3 后，同步审核材料、T4/T5 部分验收和人工阻塞项。
+- 当前断点：T0–T3.5 完成；T4/T5 进行中，T6 的 G3 已通过但 G4 首轮 NO-GO 正在整改复评。EAS Store Build 仍须等待 T4–T6 全部通过。
 - 2026-08-05 T4/T5 进行中证据（`2026-08-05T11:25:22Z`）：
   - 审核账号凭证仅存在受控发布环境，未复制进 worktree 或 Git；production live gate 验证账号密码登录、`/auth/me` 身份、今日计划和每日工件均 PASS。
   - 虚构数据 seeder 契约 4/4 PASS；生产 seeder 与评审版本 SHA-256 一致，无需重置正式审核账号或轮换密码。
@@ -134,14 +136,24 @@
   - 依赖契约测试 21/21 PASS；Mobile 293/293 suites、2,403 passed / 1 skipped；App Store release pack 36/36 PASS，checker 与 iOS submission preflight PASS。
   - 独立代码评审 `Ready to merge: Yes`，无 Critical / Important / Minor；独立依赖安全评审 `GO`，旧 Fernet 密文解密、HKDF 字节一致性和篡改 `InvalidToken` fail-closed 均 PASS。
   - 主干 CI run `30998114422`（commit `e0c2a1e084829abc0340b329b1a81e82e9812eaa`）`completed/success`，44/44 jobs 成功。
-- **裁决**：T3.5 PASS，主干审计红灯已解除；完整 G3 仍待 T6 全量闸，T4–T6 完成前不得进入 EAS Store Build。
+- 2026-08-05 T6 全量闸（`2026-08-05T11:50:54Z`）：
+  - Mobile Jest 293/293 suites、2,403 passed / 1 skipped（2,404 total）；TypeScript PASS；lint 0 errors / 92 baseline warnings；npm full / production audit 与 policy gate 均 PASS、0 vulnerabilities。
+  - App Store release-pack 测试 41/41 PASS；基础 checker、iOS submission preflight、doc drift 和 `git diff --check` PASS。
+  - 最新已推送主干 CI run `31001479436`（commit `55f2ca4573d7b5e2aa7719c4e07fce6e4f0464be`）`completed/success`，44/44 jobs 成功；G4 整改提交仍须获得新的主干 CI 绿灯。
+- **裁决**：完整本地 G3 PASS；必须等 G4 整改提交的新主干 CI 成功，且 T4/T5/G4 全部通过后才能进入 EAS Store Build。
 
 ## G4 · 安全闸
 
 - 触发：用药、健康写入、隐私、认证审核路径。
 - T3.5 依赖安全评审：`GO`，无阻断项；未修改用户数据、认证逻辑、医疗建议边界或 App Store 产品行为。
-- 评审：完整 release diff 的独立 safety/privacy review 待 T6 执行。
-- **裁决**：T3.5 依赖子闸 PASS；完整 G4 pending，BLOCK 必须回 S5。
+- 2026-08-05 完整 release diff 独立评审首轮：`NO-GO`，无 Critical，2 个 Important BLOCK：
+  1. App Privacy 草稿错误声明未发布的 `strict_local` / `local_first` 与端上餐食推理，而 production 会把用户选择的图片上传到认证服务。
+  2. final-submit 仅校验 EAS build ID / source SHA 格式，未把真机证据绑定到候选 EAS metadata。
+- S5 整改：删除错误的 device-only 声明；把 `User Content -> Photos or Videos`、图片上传/草稿/记录用途写入隐私草案，并增加跨 release notes、Mobile `/diet/recognize` 数据流的防漂移测试。final-submit 新增 `APP_STORE_EAS_BUILD_ID` / `APP_STORE_GIT_COMMIT_HASH`（或等价 CLI 参数），要求与真机证据精确匹配，源码 SHA 必须为完整 40 位。
+- G4 第一次复评仍 `NO-GO`：发现旧 device-only 声明的拒绝依赖 Review Notes 英文原句，改写文案可绕过。第二轮整改将旧 `strict_local` / `local_first` / 餐食照片 / 端上推理 markers 直接绑定 production `/diet/recognize` 上传事实；Review Notes 缺无本地模型边界或代码无法识别图片上传流时均 fail-closed。7 个针对性测试及 release-pack 41/41 PASS。
+- 首轮其余评审项均 GO：鼻炎卡无内置处方/剂量/自动写入，production 无 Watch/Rokid/Siri/background，secret pattern scan 无命中，npm/pip audit 为 0，人工项保持 fail-closed pending。
+- G4 第三轮独立复评：`GO`，Critical / Important / Minor 均无；实际重放 Review Notes 文案漂移与无法识别图片上传流两种绕过，均 fail-closed。release-pack 41/41、基础 checker、iOS preflight、Ruff、`git diff --check` PASS；错误 EAS UUID / 完整 source SHA 均被拒绝。
+- **裁决**：完整 G4 PASS；仍须等待整改提交的新主干 CI 复绿，并完成 T4/T5，方可构建。
 
 ## S6 · 部署
 

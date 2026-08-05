@@ -522,7 +522,9 @@ python3 scripts/check_app_store_release_pack.py \
   --final-submit \
   --screenshot-dir design/screenshots/app-store/<BUILD_NUMBER>-ready \
   --real-device-evidence /secure/path/real-device-acceptance.json \
-  --build-id <BUILD_NUMBER>
+  --build-id <BUILD_NUMBER> \
+  --eas-build-id <EAS_BUILD_ID_FROM_EAS_METADATA> \
+  --git-commit-hash <FULL_40_CHARACTER_SOURCE_SHA_FROM_EAS_METADATA>
 python3 scripts/check_ios_app_store_submission.py --require-asc-credentials
 ```
 

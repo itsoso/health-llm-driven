@@ -87,6 +87,8 @@ APP_STORE_AGE_RATING_CONFIRMED_ENV = "APP_STORE_AGE_RATING_CONFIRMED"
 APP_STORE_PRODUCTION_OTA_FROZEN_ENV = "APP_STORE_PRODUCTION_OTA_FROZEN"
 REAL_DEVICE_EVIDENCE_ENV = "APP_STORE_REAL_DEVICE_EVIDENCE"
 APP_STORE_BUILD_ID_ENV = "APP_STORE_BUILD_ID"
+APP_STORE_EAS_BUILD_ID_ENV = "APP_STORE_EAS_BUILD_ID"
+APP_STORE_GIT_COMMIT_HASH_ENV = "APP_STORE_GIT_COMMIT_HASH"
 DEMO_API_BASE_ENV = "APP_STORE_REVIEW_API_BASE"
 DEFAULT_DEMO_API_BASE = "https://health.executor.life/api/v1"
 REAL_DEVICE_CHECKS = (
@@ -266,6 +268,75 @@ def validate_privacy_policy_copy(web_copy: str, mobile_copy: str) -> list[str]:
     ):
         if required not in web_copy or required not in mobile_copy:
             failures.append(f"privacy policy must contain {required!r} on web and mobile")
+    return failures
+
+
+def validate_app_store_privacy_declaration(
+    *,
+    privacy: dict,
+    review_notes: str,
+    diet_service: str,
+) -> list[str]:
+    """Keep the checked-in App Privacy answers aligned with production image flow."""
+    failures: list[str] = []
+    remote_meal_photo_flow = (
+        "/diet/recognize" in diet_service and "image_base64" in diet_service
+    )
+    documented_no_local_inference = (
+        "does not bundle an on-device inference model" in review_notes
+        and "account-free local mode" in review_notes
+    )
+    if not remote_meal_photo_flow:
+        failures.append(
+            "cannot verify production meal-photo upload contract in mobile/services/diet.ts"
+        )
+    if not documented_no_local_inference:
+        failures.append(
+            "App Review Notes must state that production has no bundled on-device "
+            "inference model or account-free local mode"
+        )
+
+    device_only_processing = privacy.get("device_only_processing")
+    device_only_claim = json.dumps(
+        device_only_processing,
+        ensure_ascii=False,
+        sort_keys=True,
+    ).lower()
+    stale_device_only_markers = (
+        "strict_local",
+        "local_first",
+        "selected_food_photo",
+        "chinese_clip",
+        "on-device inference",
+    )
+    if remote_meal_photo_flow and any(
+        marker in device_only_claim for marker in stale_device_only_markers
+    ):
+        failures.append(
+            "App Privacy device-only processing claim conflicts with production "
+            "meal-photo upload and the submitted binary's documented capabilities"
+        )
+
+    user_content = next(
+        (
+            entry
+            for entry in privacy.get("data_types", [])
+            if isinstance(entry, dict) and entry.get("category") == "User Content"
+        ),
+        {},
+    )
+    apple_data_types = user_content.get("apple_data_types", [])
+    if remote_meal_photo_flow and "Photos or Videos" not in apple_data_types:
+        failures.append(
+            "App Privacy User Content must include Apple data type 'Photos or Videos'"
+        )
+    examples = user_content.get("examples", [])
+    if remote_meal_photo_flow and not any(
+        "uploaded_to_service" in str(example) for example in examples
+    ):
+        failures.append(
+            "App Privacy User Content must explicitly disclose uploaded meal/report images"
+        )
     return failures
 
 
@@ -450,6 +521,8 @@ def validate_real_device_evidence(
     *,
     expected_build_id: str,
     expected_app_version: str | None = None,
+    expected_eas_build_id: str | None = None,
+    expected_git_commit_hash: str | None = None,
 ) -> list[str]:
     failures: list[str] = []
     if not path.is_file():
@@ -492,9 +565,31 @@ def validate_real_device_evidence(
         re.IGNORECASE,
     ):
         failures.append("real-device evidence has invalid eas_build_id")
+    if expected_eas_build_id:
+        normalized_expected_eas = expected_eas_build_id.strip()
+        if not re.fullmatch(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            normalized_expected_eas,
+            re.IGNORECASE,
+        ):
+            failures.append("candidate EAS build ID is invalid")
+        elif eas_build_id.lower() != normalized_expected_eas.lower():
+            failures.append(
+                "real-device evidence eas_build_id does not match candidate EAS build: "
+                f"evidence={eas_build_id!r}, expected={normalized_expected_eas!r}"
+            )
     git_commit_hash = str(evidence.get("git_commit_hash") or "").strip()
-    if git_commit_hash and not re.fullmatch(r"[0-9a-f]{7,40}", git_commit_hash, re.IGNORECASE):
+    if git_commit_hash and not re.fullmatch(r"[0-9a-f]{40}", git_commit_hash, re.IGNORECASE):
         failures.append("real-device evidence has invalid git_commit_hash")
+    if expected_git_commit_hash:
+        normalized_expected_commit = expected_git_commit_hash.strip()
+        if not re.fullmatch(r"[0-9a-f]{40}", normalized_expected_commit, re.IGNORECASE):
+            failures.append("candidate source commit must be a full 40-character SHA")
+        elif git_commit_hash.lower() != normalized_expected_commit.lower():
+            failures.append(
+                "real-device evidence git_commit_hash does not match candidate source commit: "
+                f"evidence={git_commit_hash!r}, expected={normalized_expected_commit!r}"
+            )
     dtxcode = str(evidence.get("dtxcode") or "").strip()
     if dtxcode:
         if not dtxcode.isdigit():
@@ -614,6 +709,14 @@ def main() -> int:
         "--build-id",
         help="App Store build number expected in real-device evidence. Overrides APP_STORE_BUILD_ID.",
     )
+    parser.add_argument(
+        "--eas-build-id",
+        help="Candidate EAS build UUID from `eas build:view`. Overrides APP_STORE_EAS_BUILD_ID.",
+    )
+    parser.add_argument(
+        "--git-commit-hash",
+        help="Candidate full source SHA from EAS metadata. Overrides APP_STORE_GIT_COMMIT_HASH.",
+    )
     args = parser.parse_args()
 
     failures: list[str] = []
@@ -636,6 +739,7 @@ def main() -> int:
     real_device_template = read_json("docs/release/app-store/real-device-acceptance.template.json")
     submission = read_text("docs/release/app-store/submission-pack.md")
     review_notes = read_text("docs/release/app-store/review-notes.zh-CN.md")
+    diet_service = read_text("mobile/services/diet.ts")
     screenshot_runbook = read_text("docs/release/app-store/screenshot-runbook.md")
     privacy_page = read_text("frontend/src/app/privacy/page.tsx")
     mobile_privacy_page = read_text("mobile/app/privacy-policy.tsx")
@@ -687,6 +791,13 @@ def main() -> int:
     for category in {"Health", "Fitness", "User Content", "Contact Info", "Identifiers", "Diagnostics"}:
         if category not in categories:
             failures.append(f"privacy nutrition missing category: {category}")
+    failures.extend(
+        validate_app_store_privacy_declaration(
+            privacy=privacy,
+            review_notes=review_notes,
+            diet_service=diet_service,
+        )
+    )
 
     combined_release_text = "\n".join([submission, review_notes, privacy_page])
     for term in MEDICAL_BOUNDARY_TERMS:
@@ -761,6 +872,8 @@ def main() -> int:
         failures.append(f"iOS App Store submission preflight failed\n{ios_preflight.stderr.strip()}")
 
     build_id = args.build_id or os.environ.get(APP_STORE_BUILD_ID_ENV, "").strip()
+    eas_build_id = args.eas_build_id or os.environ.get(APP_STORE_EAS_BUILD_ID_ENV, "").strip()
+    git_commit_hash = args.git_commit_hash or os.environ.get(APP_STORE_GIT_COMMIT_HASH_ENV, "").strip()
     screenshot_dir = args.screenshot_dir or os.environ.get("APP_STORE_SCREENSHOT_DIR")
     if args.final_submit and not screenshot_dir:
         failures.append("final submit requires APP_STORE_SCREENSHOT_DIR or --screenshot-dir")
@@ -790,6 +903,14 @@ def main() -> int:
             )
 
     if args.final_submit:
+        if not eas_build_id:
+            failures.append(
+                "final submit requires --eas-build-id or APP_STORE_EAS_BUILD_ID"
+            )
+        if not git_commit_hash:
+            failures.append(
+                "final submit requires --git-commit-hash or APP_STORE_GIT_COMMIT_HASH"
+            )
         evidence_path = args.real_device_evidence or os.environ.get(REAL_DEVICE_EVIDENCE_ENV, "").strip()
         if not evidence_path:
             failures.append(
@@ -804,6 +925,8 @@ def main() -> int:
                     Path(evidence_path),
                     expected_build_id=build_id,
                     expected_app_version=str(app.get("version") or "").strip(),
+                    expected_eas_build_id=eas_build_id or None,
+                    expected_git_commit_hash=git_commit_hash or None,
                 )
             )
 

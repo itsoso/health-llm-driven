@@ -6,21 +6,6 @@
   "data_not_used_for_tracking": true,
   "data_not_used_for_third_party_advertising": true,
   "healthkit_advertising_use": false,
-  "device_only_processing": {
-    "not_collected_by_developer": true,
-    "applies_to_modes": [
-      "strict_local",
-      "local_first"
-    ],
-    "examples": [
-      "local_diet_records",
-      "local_execution_events",
-      "selected_food_photo_temporary_copy",
-      "chinese_clip_food_candidates",
-      "encrypted_local_backup"
-    ],
-    "notes": "These items stay inside the app container unless the user explicitly shares an encrypted backup. The photo picker copy is deleted after on-device inference."
-  },
   "data_types": [
     {
       "category": "Health",
@@ -58,18 +43,23 @@
     },
     {
       "category": "User Content",
+      "apple_data_types": [
+        "Other User Content",
+        "Photos or Videos"
+      ],
       "examples": [
         "chat_messages",
         "health_notes",
         "uploaded_reports",
-        "food_or_report_images_selected_by_user"
+        "food_and_report_images_uploaded_to_service_for_recognition_and_record_drafts"
       ],
       "purpose": [
         "app_functionality",
         "personalization"
       ],
       "linked_to_user": true,
-      "used_for_tracking": false
+      "used_for_tracking": false,
+      "collection_notes": "The production app has no account-free local mode or bundled on-device inference model. User-selected meal and report images are uploaded to the authenticated service for recognition. Meal photo drafts are owner-scoped and expire after 24 hours if not saved; saved photos remain attached to the user's record until the user deletes the record or account."
     },
     {
       "category": "Contact Info",
@@ -127,7 +117,7 @@
   ],
   "manual_review_required_before_submission": [
     "Confirm that the App Store Connect privacy answers exactly match this checked-in declaration before submission.",
-    "Confirm that data processed only on device is not incorrectly declared as collected by the developer.",
+    "Confirm that User Content includes both Other User Content and Photos or Videos, linked to the user and used for App Functionality and Product Personalization.",
     "Re-run the privacy review whenever a new SDK, analytics provider, advertising feature, or data category is added."
   ]
 }
