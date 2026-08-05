@@ -56,6 +56,11 @@ Status: draft for the next App Store submission.
 
 Use `docs/release/app-store/review-notes.zh-CN.md` as the source text for App Store Connect.
 
+App Store Connect currently treats 1.3.3 as the app's inaugural Store version,
+so its API rejects the `whatsNew` field in `PREPARE_FOR_SUBMISSION`. The draft
+What's New copy above is retained for a later update release and is intentionally
+not uploaded for this first submission.
+
 ## Production Build Preflight
 
 Standard production is iPhone-only and portrait-only. It intentionally excludes the Watch companion, Rokid integration, Siri intents and background location. Those capabilities use separate non-submission profiles.
@@ -161,11 +166,12 @@ Build 226 historical App Store Connect set (uploaded and API-verified on 2026-07
 
 The uploaded set uses the demo account, contains no private user health data, and targets `APP_IPHONE_67` at 1290 x 2796. The settings screenshot containing the demo login identifier and the privacy-policy screenshot were validated locally but intentionally excluded from marketing assets.
 
-The release target is version 1.3.3 Build 241 or later. Version 1.3.2 Build 240
-and the Build 226 screenshots are historical evidence only and cannot satisfy
-the final gate. Record the newly produced EAS build ID, source commit and IPA
-metadata in the external evidence file, then capture or explicitly re-verify
-the required screenshot set against that exact candidate before submission.
+The release target is version 1.3.3 with the App Store build number assigned by
+EAS remote auto-increment (expected Build 241 or later). Build 240 and the Build
+226 screenshots are historical evidence only and cannot satisfy the final gate.
+Record the newly produced EAS build ID, source commit and IPA metadata in the
+external evidence file, then capture or explicitly re-verify the required
+screenshot set against that exact candidate before submission.
 
 Use `docs/release/app-store/screenshot-runbook.md`. Required first pass:
 

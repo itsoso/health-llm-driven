@@ -108,6 +108,13 @@
   - `a8bf8f0b6`：升级 `aiohttp 3.14.3`、`cryptography 50.0.0`、`postcss 8.5.23` 和分 major 的 `brace-expansion` 安全版本，重生成 Linux x86_64 Python exact lock 与 Mobile lock，清空 npm audit 例外。
   - `e0c2a1e08`：同步 Python 与 Mobile 依赖安全契约测试，并显式锁定 `aiohttp 3.14.3` 契约。
 - 当前断点：T0–T3.5 完成；下一步执行 T4 审核账号与虚构数据验收。EAS Store Build 仍须等待 T4–T6 通过。
+- 2026-08-05 T4/T5 进行中证据（`2026-08-05T11:25:22Z`）：
+  - 审核账号凭证仅存在受控发布环境，未复制进 worktree 或 Git；production live gate 验证账号密码登录、`/auth/me` 身份、今日计划和每日工件均 PASS。
+  - 虚构数据 seeder 契约 4/4 PASS；生产 seeder 与评审版本 SHA-256 一致，无需重置正式审核账号或轮换密码。
+  - 单独创建随机合成 QA 账号并发起删除申请；创建、查询、7 天处理窗口、重复提交幂等、pending 状态继续登录及正式审核账号隔离均 PASS。账号/密码、用户 ID、删除请求 ID 未输出或提交，删除申请留给既有受控运维清单处理。
+  - 物理 iPhone `suntice` 被 CoreDevice 识别但当前 `unavailable`，因此 T4 的 App UI 冷启动/登录/拒绝权限文本路径仍 pending；不得用 API 验证替代真机验收。
+  - App Store Connect 可编辑草稿已从 1.3.2 更新为 1.3.3，旧 Build 240 已解除；状态 `PREPARE_FOR_SUBMISSION`、发布类型 `AFTER_APPROVAL`，en-US 元数据及审核联系人/账号/备注经 API 回读一致，未绑定 Build、未创建 review submission。
+  - 1.3.3 是首个 Store 版本，Apple 在当前状态拒绝 `whatsNew`，故首次提交保持该字段为空；仓库文案仅作为后续更新草稿。年龄分级声明当前为空，App Privacy 发布状态与 `Regulated Medical Devices: No` 仍待登录 App Store Connect 后人工确认，T5 不得标记完成。
 
 ## G3 · 测试闸
 
