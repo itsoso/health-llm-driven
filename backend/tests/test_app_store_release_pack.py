@@ -12,6 +12,7 @@ from scripts.check_app_store_release_pack import (
     validate_app_store_privacy_publication,
     validate_demo_review_credentials,
     validate_demo_account_live,
+    validate_final_release_confirmations,
     validate_final_submission_material_state,
     validate_privacy_policy_copy,
     validate_real_device_evidence,
@@ -82,10 +83,12 @@ def _write_manifest(
 def _real_device_evidence(*, build_id: str = "235") -> dict:
     return {
         "build_id": build_id,
-        "app_version": "1.3.2",
+        "app_version": "1.3.3",
         "build_profile": "production",
         "eas_build_id": "d6b5f7de-1208-488d-8799-4b6f8a76b011",
         "git_commit_hash": "371dacc60ba3f218edec4b367ea61472798904a2",
+        "dtxcode": "2620",
+        "dtplatform_version": "26.2",
         "device_model": "iPhone 15 Pro",
         "ios_version": "18.5",
         "tested_at": "2026-07-23T12:00:00Z",
@@ -182,6 +185,8 @@ def test_app_store_release_pack_final_submit_fails_loud_without_human_materials(
         if not key.startswith("ASC_")
         and not key.startswith("APP_STORE_CONNECT_")
         and key != "APP_STORE_SCREENSHOT_DIR"
+        and key != "APP_STORE_AGE_RATING_CONFIRMED"
+        and key != "APP_STORE_PRODUCTION_OTA_FROZEN"
     }
 
     result = subprocess.run(
@@ -201,6 +206,8 @@ def test_app_store_release_pack_final_submit_fails_loud_without_human_materials(
     assert "final submit requires real-device acceptance evidence" in result.stderr
     assert "APP_STORE_PRIVACY_RESPONSES_PUBLISHED=1" in result.stderr
     assert "APP_STORE_REGULATED_MEDICAL_DEVICE_STATUS=no" in result.stderr
+    assert "APP_STORE_AGE_RATING_CONFIRMED=1" in result.stderr
+    assert "APP_STORE_PRODUCTION_OTA_FROZEN=1" in result.stderr
 
 
 def test_app_store_release_pack_final_submit_rejects_screenshots_from_another_build(
@@ -290,6 +297,30 @@ def test_real_device_evidence_rejects_untraceable_build_metadata(tmp_path: Path)
     assert "invalid git_commit_hash" in joined
 
 
+def test_real_device_evidence_rejects_mismatched_version_and_old_toolchain(tmp_path: Path):
+    evidence = tmp_path / "real-device.json"
+    payload = _real_device_evidence()
+    payload.update(
+        {
+            "app_version": "1.3.2",
+            "dtxcode": "2500",
+            "dtplatform_version": "25.4",
+        }
+    )
+    evidence.write_text(json.dumps(payload), encoding="utf-8")
+
+    failures = validate_real_device_evidence(
+        evidence,
+        expected_build_id="235",
+        expected_app_version="1.3.3",
+    )
+    joined = "\n".join(failures)
+
+    assert "app_version does not match" in joined
+    assert "dtxcode must be at least 2600" in joined
+    assert "dtplatform_version major must be at least 26" in joined
+
+
 def test_real_device_evidence_requires_named_tester_and_reviewer_paths(tmp_path: Path):
     evidence = tmp_path / "real-device.json"
     evidence.write_text(
@@ -364,6 +395,28 @@ def test_regulated_medical_device_declaration_is_not_required_for_draft_checks()
         final_submit=False,
         env={},
     ) == []
+
+
+def test_final_release_confirmations_require_age_rating_and_ota_freeze():
+    failures = validate_final_release_confirmations(final_submit=True, env={})
+    joined = "\n".join(failures)
+
+    assert "APP_STORE_AGE_RATING_CONFIRMED=1" in joined
+    assert "APP_STORE_PRODUCTION_OTA_FROZEN=1" in joined
+
+
+def test_final_release_confirmations_accept_explicit_release_owner_checks():
+    assert validate_final_release_confirmations(
+        final_submit=True,
+        env={
+            "APP_STORE_AGE_RATING_CONFIRMED": "1",
+            "APP_STORE_PRODUCTION_OTA_FROZEN": "1",
+        },
+    ) == []
+
+
+def test_final_release_confirmations_are_not_required_for_draft_checks():
+    assert validate_final_release_confirmations(final_submit=False, env={}) == []
 
 
 def test_app_store_privacy_publication_is_required_for_final_submit():

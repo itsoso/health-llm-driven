@@ -83,6 +83,8 @@ REVIEW_CONTACT_PHONE_ENV = "APP_STORE_REVIEW_CONTACT_PHONE"
 REVIEW_CONTACT_PHONE_RE = re.compile(r"^\+[1-9]\d{1,14}(?:[\s-]\d+)*$")
 APP_STORE_PRIVACY_RESPONSES_PUBLISHED_ENV = "APP_STORE_PRIVACY_RESPONSES_PUBLISHED"
 REGULATED_MEDICAL_DEVICE_STATUS_ENV = "APP_STORE_REGULATED_MEDICAL_DEVICE_STATUS"
+APP_STORE_AGE_RATING_CONFIRMED_ENV = "APP_STORE_AGE_RATING_CONFIRMED"
+APP_STORE_PRODUCTION_OTA_FROZEN_ENV = "APP_STORE_PRODUCTION_OTA_FROZEN"
 REAL_DEVICE_EVIDENCE_ENV = "APP_STORE_REAL_DEVICE_EVIDENCE"
 APP_STORE_BUILD_ID_ENV = "APP_STORE_BUILD_ID"
 DEMO_API_BASE_ENV = "APP_STORE_REVIEW_API_BASE"
@@ -443,7 +445,12 @@ def validate_demo_account_live(
     return []
 
 
-def validate_real_device_evidence(path: Path, *, expected_build_id: str) -> list[str]:
+def validate_real_device_evidence(
+    path: Path,
+    *,
+    expected_build_id: str,
+    expected_app_version: str | None = None,
+) -> list[str]:
     failures: list[str] = []
     if not path.is_file():
         return [f"real-device acceptance evidence file not found: {path}"]
@@ -457,10 +464,18 @@ def validate_real_device_evidence(path: Path, *, expected_build_id: str) -> list
             "real-device evidence build_id does not match APP_STORE_BUILD_ID: "
             f"evidence={evidence.get('build_id')!r}, expected={expected_build_id!r}"
         )
+    app_version = str(evidence.get("app_version") or "").strip()
+    if expected_app_version and app_version != expected_app_version:
+        failures.append(
+            "real-device evidence app_version does not match mobile/app.json: "
+            f"evidence={app_version!r}, expected={expected_app_version!r}"
+        )
     for field in (
         "app_version",
         "eas_build_id",
         "git_commit_hash",
+        "dtxcode",
+        "dtplatform_version",
         "device_model",
         "ios_version",
         "tested_at",
@@ -480,6 +495,19 @@ def validate_real_device_evidence(path: Path, *, expected_build_id: str) -> list
     git_commit_hash = str(evidence.get("git_commit_hash") or "").strip()
     if git_commit_hash and not re.fullmatch(r"[0-9a-f]{7,40}", git_commit_hash, re.IGNORECASE):
         failures.append("real-device evidence has invalid git_commit_hash")
+    dtxcode = str(evidence.get("dtxcode") or "").strip()
+    if dtxcode:
+        if not dtxcode.isdigit():
+            failures.append("real-device evidence dtxcode must be an integer")
+        elif int(dtxcode) < 2600:
+            failures.append("real-device evidence dtxcode must be at least 2600")
+    dtplatform_version = str(evidence.get("dtplatform_version") or "").strip()
+    if dtplatform_version:
+        platform_match = re.fullmatch(r"(\d+)(?:\.\d+)*", dtplatform_version)
+        if platform_match is None:
+            failures.append("real-device evidence dtplatform_version must be numeric")
+        elif int(platform_match.group(1)) < 26:
+            failures.append("real-device evidence dtplatform_version major must be at least 26")
     checks = evidence.get("checks")
     if not isinstance(checks, dict):
         return failures + ["real-device evidence missing checks object"]
@@ -545,6 +573,28 @@ def validate_regulated_medical_device_declaration(
     return []
 
 
+def validate_final_release_confirmations(
+    *,
+    final_submit: bool,
+    env: Mapping[str, str] = os.environ,
+) -> list[str]:
+    if not final_submit:
+        return []
+
+    failures: list[str] = []
+    if env.get(APP_STORE_AGE_RATING_CONFIRMED_ENV, "").strip() != "1":
+        failures.append(
+            "final submit requires APP_STORE_AGE_RATING_CONFIRMED=1 after the release owner "
+            "confirms the saved App Store Connect age-rating questionnaire"
+        )
+    if env.get(APP_STORE_PRODUCTION_OTA_FROZEN_ENV, "").strip() != "1":
+        failures.append(
+            "final submit requires APP_STORE_PRODUCTION_OTA_FROZEN=1 after the release owner "
+            "freezes production-channel OTA updates for the candidate build"
+        )
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -583,6 +633,7 @@ def main() -> int:
     entitlements = ios.get("entitlements", {})
     eas = read_json("mobile/eas.json")
     privacy = read_json("docs/release/app-store/privacy-nutrition-label.draft.json")
+    real_device_template = read_json("docs/release/app-store/real-device-acceptance.template.json")
     submission = read_text("docs/release/app-store/submission-pack.md")
     review_notes = read_text("docs/release/app-store/review-notes.zh-CN.md")
     screenshot_runbook = read_text("docs/release/app-store/screenshot-runbook.md")
@@ -600,6 +651,14 @@ def main() -> int:
         failures.append(f"submission pack App name must be {EXPECTED_APP_NAME!r}")
     if bundle_id != privacy.get("bundle_id"):
         failures.append(f"bundle id mismatch: app.json={bundle_id!r}, privacy={privacy.get('bundle_id')!r}")
+    if real_device_template.get("app_version") != app.get("version"):
+        failures.append(
+            "real-device evidence template app_version must match mobile/app.json: "
+            f"template={real_device_template.get('app_version')!r}, app={app.get('version')!r}"
+        )
+    for field in ("dtxcode", "dtplatform_version"):
+        if field not in real_device_template:
+            failures.append(f"real-device evidence template missing {field}")
 
     if entitlements.get("com.apple.developer.healthkit") is not True:
         failures.append("missing iOS HealthKit entitlement")
@@ -667,6 +726,7 @@ def main() -> int:
         )
         failures.extend(validate_app_store_privacy_publication(final_submit=True))
         failures.extend(validate_regulated_medical_device_declaration(final_submit=True))
+        failures.extend(validate_final_release_confirmations(final_submit=True))
     if args.final_submit and not demo_credential_failures:
         credentials = _resolved_demo_credentials(review_notes, os.environ)
         if credentials is None:
@@ -739,7 +799,13 @@ def main() -> int:
         elif not build_id:
             failures.append("final submit requires --build-id or APP_STORE_BUILD_ID")
         else:
-            failures.extend(validate_real_device_evidence(Path(evidence_path), expected_build_id=build_id))
+            failures.extend(
+                validate_real_device_evidence(
+                    Path(evidence_path),
+                    expected_build_id=build_id,
+                    expected_app_version=str(app.get("version") or "").strip(),
+                )
+            )
 
     if failures:
         print("App Store release pack check failed:", file=sys.stderr)

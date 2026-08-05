@@ -84,7 +84,7 @@ python3 scripts/check_app_store_release_pack.py
 
 The adapted review checklist is `docs/release/app-store/adapted-review-checklist.md`. It is included in the release-pack gate and maps operational App Review risks to automated and manual checks.
 
-Immediately before an App Store submission, run the stricter final gate. It must fail if the submission pack or review notes are still marked draft, demo credentials are still placeholders, App Store Connect credentials are unavailable, or no App Store-ready screenshot and physical-iPhone evidence set is provided:
+Immediately before an App Store submission, run the stricter final gate. It must fail if the submission pack or review notes are still marked draft, demo credentials are still placeholders, App Store Connect credentials are unavailable, the age rating or production OTA freeze has not been confirmed, or no exact-build App Store-ready screenshot and physical-iPhone evidence set is provided:
 
 ```bash
 export APP_STORE_REVIEW_DEMO_ACCOUNT="..."
@@ -94,13 +94,28 @@ export APP_STORE_BUILD_ID="..."
 export APP_STORE_REAL_DEVICE_EVIDENCE="/secure/path/real-device-acceptance.json"
 export APP_STORE_PRIVACY_RESPONSES_PUBLISHED="1"
 export APP_STORE_REGULATED_MEDICAL_DEVICE_STATUS="no"
+export APP_STORE_AGE_RATING_CONFIRMED="1"
+export APP_STORE_PRODUCTION_OTA_FROZEN="1"
 
 python3 scripts/check_app_store_release_pack.py \
   --final-submit \
   --screenshot-dir design/screenshots/app-store/<build-id>-ready
 ```
 
-Create the external evidence file from `docs/release/app-store/real-device-acceptance.template.json`. It must refer to the exact TestFlight build and include the app version, production EAS build ID, source commit, device, iOS version and tester. Mark every physical-iPhone check `true`, including demo login, streaming Markdown, permission-denied text fallback, both voice modes, external-audio interruption, photo persistence, image/video playback and sharing, write/correct/delete idempotency, foreground recovery, draft preservation, latest-message scrolling, privacy and deletion paths. Do not commit tester evidence containing device or account details.
+Create the external evidence file from `docs/release/app-store/real-device-acceptance.template.json`. It must refer to the exact TestFlight build and include the app version, App Store build number, production EAS build ID, source commit, IPA `DTXcode`, IPA `DTPlatformVersion`, device, iOS version and tester. The final gate requires `DTXcode >= 2600`, iOS platform major `>= 26`, and exact matches for the configured app version and `APP_STORE_BUILD_ID`. Mark every physical-iPhone check `true`, including demo login, streaming Markdown, permission-denied text fallback, both voice modes, external-audio interruption, photo persistence, image/video playback and sharing, write/correct/delete idempotency, foreground recovery, draft preservation, latest-message scrolling, privacy and deletion paths. Do not commit tester evidence containing device or account details.
+
+Extract the toolchain values from the exact downloaded IPA, not from a local Xcode assumption:
+
+```bash
+reva_ipa_extract_dir="$(mktemp -d)"
+unzip -q /secure/path/Xiaoba-<build-id>.ipa -d "$reva_ipa_extract_dir"
+reva_app_plist="$(find "$reva_ipa_extract_dir/Payload" -maxdepth 2 -path '*.app/Info.plist' -print -quit)"
+plutil -extract DTXcode raw -o - "$reva_app_plist"
+plutil -extract DTPlatformVersion raw -o - "$reva_app_plist"
+rm -rf "$reva_ipa_extract_dir"
+```
+
+The release owner copies those two outputs into the external evidence file and verifies the EAS build ID, build number and commit against the same binary before setting any final-submit confirmation.
 
 Run the non-destructive automated subset against the installed production app first:
 
@@ -126,6 +141,14 @@ Because the app is categorized as Health & Fitness and is intended for United St
 
 Official requirement: https://developer.apple.com/help/app-store-connect/manage-app-information/declare-regulated-medical-device-status
 
+## Age Rating Confirmation
+
+The release owner must open the saved App Store Connect age-rating questionnaire for version 1.3.3, review it against the production capability surface and save any required answers. Do not infer answers from the repository or set the confirmation before the saved questionnaire is visible. After this manual review, set `APP_STORE_AGE_RATING_CONFIRMED=1` on the release machine.
+
+## Production OTA Freeze
+
+From the moment the 1.3.3 candidate is built until App Review and public G6 verification finish, do not publish an EAS Update to the production channel. This keeps the reviewed JavaScript bundle identical to the tested candidate. The release owner records the freeze window and then sets `APP_STORE_PRODUCTION_OTA_FROZEN=1`; lift the freeze only after the approved binary is public and G6 passes.
+
 ## Screenshot Set
 
 Build 226 historical App Store Connect set (uploaded and API-verified on 2026-07-15):
@@ -138,13 +161,11 @@ Build 226 historical App Store Connect set (uploaded and API-verified on 2026-07
 
 The uploaded set uses the demo account, contains no private user health data, and targets `APP_IPHONE_67` at 1290 x 2796. The settings screenshot containing the demo login identifier and the privacy-policy screenshot were validated locally but intentionally excluded from marketing assets.
 
-The current internal TestFlight candidate is version 1.3.2 Build 237, EAS build
-`7a7df837-50b8-46ed-97a8-983fc8ea3a07`, source commit
-`f6e4308c`. App Store Connect reports the
-build as `VALID`, not expired and `IN_BETA_TESTING` for internal testers. The
-Build 226 screenshots are stale evidence and cannot satisfy the final gate for
-Build 237; capture or explicitly re-verify the required screenshot set against
-the exact Build 237 UI before submission.
+The release target is version 1.3.3 Build 241 or later. Version 1.3.2 Build 240
+and the Build 226 screenshots are historical evidence only and cannot satisfy
+the final gate. Record the newly produced EAS build ID, source commit and IPA
+metadata in the external evidence file, then capture or explicitly re-verify
+the required screenshot set against that exact candidate before submission.
 
 Use `docs/release/app-store/screenshot-runbook.md`. Required first pass:
 
@@ -205,6 +226,9 @@ Do not submit until:
 - [ ] A production IPA or EAS build is visible in App Store Connect.
 - [ ] App Privacy answers exactly match `privacy-nutrition-label.draft.json`, have been published, and the product-page preview has been reviewed.
 - [ ] App Information declares `Regulated Medical Devices: No` for this release; any `Yes` determination stops submission pending regulatory review.
+- [ ] The release owner has reviewed and saved the current App Store Connect age-rating questionnaire, then set `APP_STORE_AGE_RATING_CONFIRMED=1`.
+- [ ] Production-channel OTA is frozen for the candidate through App Review and public G6 verification, then `APP_STORE_PRODUCTION_OTA_FROZEN=1` is set.
+- [ ] The exact IPA reports `DTXcode >= 2600` and `DTPlatformVersion` major `>= 26`; both values are copied into same-build real-device evidence.
 - [ ] A physical iPhone has passed demo login, briefing expand/collapse, Agent text conversation, text fallback after denied optional permissions, real-time dictation toggle, hold-to-talk send/cancel/text conversion, camera/photo persistence, WeChat/Xiaohongshu share handoff, confirmed database write, personal-center/privacy and deletion-request status checks.
 - [ ] Only after the same-build physical-iPhone run and final screenshot review pass, change the submission pack status to `ready for App Store submission` and remove `Draft` from the Review Notes heading.
 - [ ] `docs/release/app-store/dependency-risk-review.md` still matches a fresh production dependency audit.
