@@ -64,6 +64,23 @@ function configuredPluginNames(config: any): string[] {
 }
 
 describe('app.config app links', () => {
+  it('pins the 1.3.3 production release identity and narrow capability surface', () => {
+    const config = configForVariant('production');
+
+    expect(config.version).toBe('1.3.3');
+    expect(config.runtimeVersion).toEqual({ policy: 'appVersion' });
+    expect(config.extra?.release).toEqual({
+      variant: 'production',
+      capabilities: {
+        advancedSettings: false,
+        backgroundLocation: false,
+        rokid: false,
+        siri: false,
+        watch: false,
+      },
+    });
+  });
+
   it('uses 小巴 as the user-visible production app name', () => {
     const config = configForVariant('production');
 
