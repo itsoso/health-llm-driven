@@ -342,7 +342,11 @@ export default function RecordScreen() {
         {/* 看板回显已迁至首页 — 此页只保留录入相关模块 (2026-05-28) */}
 
         {/* 4. Rhinitis */}
-        <RhinitisCard checkin={data?.checkin} medications={medications} onUpdate={refetch} />
+        <RhinitisCard
+          checkin={data?.checkin}
+          onUpdate={refetch}
+          onManageMedications={() => router.push('/medications' as any)}
+        />
 
         {/* 4.5 Symptoms — 偶发症状通用录入 */}
         <SymptomCard />

@@ -1,9 +1,8 @@
 import React, { useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextStyle } from 'react-native';
+import { Alert, View, Text, StyleSheet, TouchableOpacity, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { updateCheckin } from '../../services/records';
-import api from '../../services/api';
 import {
   revaColors as C,
   revaRadii,
@@ -17,33 +16,11 @@ const RHIN_HUE = { wash: '#2F9E8F', sneeze: '#C98A1E' } as const;
 
 interface Props {
   checkin: any;
-  medications?: any[];
   onUpdate?: () => void;
+  onManageMedications?: () => void;
 }
 
-async function ensureAndLogMed(
-  aliases: string[],
-  create: { name: string; dosage: string; frequency: string; category: string; purpose: string; notes?: string },
-  actualDosage: string,
-) {
-  const medsRes = await api.get('/medication/medications/me');
-  const meds: any[] = medsRes.data || [];
-  let med = meds.find((m: any) => aliases.includes(m.name));
-  if (!med) {
-    const r = await api.post('/medication/medications', { times_per_day: 1, ...create });
-    med = r.data;
-  }
-  const now = new Date();
-  const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  await api.post('/medication/logs', {
-    medication_id: med.id,
-    taken_time: timeStr,
-    status: 'taken',
-    actual_dosage: actualDosage,
-  });
-}
-
-export default function RhinitisCard({ checkin, medications, onUpdate }: Props) {
+export default function RhinitisCard({ checkin, onUpdate, onManageMedications }: Props) {
   const sneezeCount = checkin?.sneeze_count || 0;
   const washCount = checkin?.nasal_wash_count || 0;
 
@@ -52,28 +29,15 @@ export default function RhinitisCard({ checkin, medications, onUpdate }: Props) 
     try {
       await updateCheckin(field, value);
       onUpdate?.();
-    } catch { /* ignore */ }
+    } catch {
+      Alert.alert('记录失败', '请检查网络后重试。');
+    }
   }, [onUpdate]);
 
-  const logMed = useCallback(async (
-    aliases: string[],
-    create: { name: string; dosage: string; frequency: string; category: string; purpose: string; notes?: string },
-    dosage: string,
-  ) => {
+  const openMedicationManager = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    try {
-      await ensureAndLogMed(aliases, create, dosage);
-      onUpdate?.();
-    } catch { /* ignore */ }
-  }, [onUpdate]);
-
-  const ipratropiumTaken = (medications || []).some(
-    (m: any) => ['异丙托溴铵', '异丙托溴铵鼻喷雾剂'].includes(m.name) && m.taken_count > 0
-  );
-  // 莫米松同样从 medications 拉, 不再写到 health_checkin (没那个列, 老代码静默 422)
-  const mometasoneTaken = (medications || []).some(
-    (m: any) => ['糠酸莫米松鼻喷雾剂', '糠酸莫米松', '莫米松', 'Mometasone'].includes(m.name) && m.taken_count > 0
-  );
+    onManageMedications?.();
+  }, [onManageMedications]);
 
   return (
     <View style={styles.card}>
@@ -91,28 +55,13 @@ export default function RhinitisCard({ checkin, medications, onUpdate }: Props) 
           <Text style={txt.chipLabel}>喷嚏</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.chip, mometasoneTaken && { backgroundColor: C.green50 }]}
-          onPress={() => logMed(
-            ['糠酸莫米松鼻喷雾剂', '糠酸莫米松', '莫米松', 'Mometasone'],
-            { name: '糠酸莫米松鼻喷雾剂', dosage: '每侧2喷', frequency: '每日1次', category: 'prescription', purpose: '过敏性鼻炎', notes: '鼻喷糖皮质激素' },
-            '每侧2喷',
-          )}
+          style={styles.chip}
+          onPress={openMedicationManager}
           activeOpacity={0.7}
+          accessibilityLabel="打开用药管理"
         >
-          <Ionicons name={mometasoneTaken ? 'checkmark-circle' : 'ellipse-outline'} size={16} color={mometasoneTaken ? C.green500 : C.ink3} />
-          <Text style={txt.chipLabel}>莫米松</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.chip, ipratropiumTaken && { backgroundColor: C.green50 }]}
-          onPress={() => logMed(
-            ['异丙托溴铵', '异丙托溴铵鼻喷雾剂', 'Ipratropium Bromide'],
-            { name: '异丙托溴铵鼻喷雾剂', dosage: '每侧2喷', frequency: '每日3-4次', category: 'prescription', purpose: '过敏性鼻炎/流涕', notes: '抗胆碱能鼻喷，缓解流涕' },
-            '每侧2喷',
-          )}
-          activeOpacity={0.7}
-        >
-          <Ionicons name={ipratropiumTaken ? 'checkmark-circle' : 'ellipse-outline'} size={16} color={ipratropiumTaken ? C.green500 : C.ink3} />
-          <Text style={txt.chipLabel}>异丙托</Text>
+          <Ionicons name="medkit-outline" size={16} color={C.ink3} />
+          <Text style={txt.chipLabel}>用药管理</Text>
         </TouchableOpacity>
       </View>
     </View>
