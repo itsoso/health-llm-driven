@@ -4,14 +4,14 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | G2 PASS · definition complete |
-| 状态 | defining |
+| 当前阶段 | S5 · Tasks 0–3 complete；pre-G3 dependency audit blocker |
+| 状态 | implementing |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
 
 ## Correct Course
 
-- [ ] Correction Block（当前无）
+- [x] Correction Block（2026-08-05）：最新 `main` CI 在依赖审计处失败；在 T4 前插入 T3.5 修复 Python 锁文件漏洞并重验 Mobile advisory，禁止带红进入原生构建。
 
 ## S0 · 用户需求（逐字）
 
@@ -81,10 +81,11 @@
 
 - 跨端 API 契约：无 schema/API 变更；用药写入继续使用现有用户确认路径。
 - 任务表：
-  - [ ] T0 干净 origin/main 基线、并发检查、冻结声明
-  - [ ] T1 鼻炎卡医疗安全 TDD 修复
-  - [ ] T2 版本 1.3.3 与配置测试
-  - [ ] T3 年龄分级/OTA 冻结/IPA 工具链最终闸
+  - [x] T0 干净 origin/main 基线、并发检查、冻结声明
+  - [x] T1 鼻炎卡医疗安全 TDD 修复
+  - [x] T2 版本 1.3.3 与配置测试
+  - [x] T3 年龄分级/OTA 冻结/IPA 工具链最终闸
+  - [ ] T3.5 主干依赖审计修复与 CI 复绿
   - [ ] T4 审核账号与虚构数据验收
   - [ ] T5 提交材料与 App Store Connect 字段
   - [ ] T6 G3 全量 + 独立 G4
@@ -92,18 +93,33 @@
   - [ ] T8 精确 Build 真机与截图
   - [ ] T9 final-submit / App Review
   - [ ] T10 手动发布 / production G6
-- 并发检查：待 S4 开工时在最新 `origin/main` 干净 worktree 执行。
+- 并发检查：2026-08-05 已检查开放 PR 与 `origin/main` 最近提交；未发现其他变更占用鼻炎用药 surface 或 1.3.3 发布配置。1.3.3 仅接收审核阻断修复，其他请求进入 1.3.4。
 
 ## S5 · 实现
 
-- 委托：待开始。
-- 分支 / commit：待记录。当前共享 workspace 落后 `origin/main` 且含用户未提交文件，不得用于构建或部署。
+- 执行方式：用户选择全局隔离 worktree；未使用含用户未提交文件的主工作区构建、测试或暂存。
+- Worktree：`/Users/liqiuhua/.config/superpowers/worktrees/health-llm-driven/ios-1-3-3-app-store-release`
+- 分支 / base：`codex/ios-1-3-3-app-store-release` / `dddff6ee1f3e6487fc22b8742aba030f2e587b5b`（当时最新 `origin/main`）。
+- 已完成：
+  - `4d6ba5b25`：移除鼻炎卡内置处方药、固定剂量、自动建药/记录及静默失败；保留洗鼻/喷嚏观察和通用用药管理入口。
+  - `7ffd2e048`：production 版本升为 1.3.3，保持 `appVersion` runtime 和窄能力面。
+  - `43c73a621`：final-submit 新增年龄分级、production OTA 冻结、精确 app/build、`DTXcode` / `DTPlatformVersion` 证据闸。
+  - `588110a22`：新增鼻炎安全测试保持 lint-neutral。
+- 当前断点：T0–T3 完成；T4 前先执行 T3.5，修复当前主干依赖审计红灯并获得新的远端 CI 证据。
 
 ## G3 · 测试闸
 
-- 预实现基线：Mobile 292/292 suites、2,399/2,399 tests PASS；TypeScript PASS；lint 0 errors；依赖 high/critical=0。
-- 最终集成闸、main CI、改动后全量：待执行。
-- **裁决**：pending；基线通过不等于发布 Gate 通过。
+- 预实现基线：Mobile 292/292 suites、2,399/2,399 tests PASS；TypeScript PASS；lint 0 errors / 92 warnings；Mobile 依赖 high/critical=0。
+- 2026-08-05 首批集成：
+  - Mobile 293/293 suites、2,403 passed / 1 skipped（2,404 total）；TypeScript PASS。
+  - Mobile lint 0 errors / 92 warnings，与基线一致；changed files 未新增 warning。
+  - Mobile production audit PASS，无 high/critical advisory。
+  - `backend/tests/test_app_store_release_pack.py`：36/36 PASS。
+  - App Store release pack、iOS submission preflight、doc drift 均 PASS。
+- 主干 CI 事实：run `30984698027`（base `dddff6ee1`）FAIL。其余测试/构建 jobs 通过，失败集中在审计：
+  - Python：`aiohttp 3.14.2` / `PYSEC-2026-3545`（修复 3.14.3），`cryptography 49.0.0` / `PYSEC-2026-3552`（修复 50.0.0）。
+  - Mobile 当次远端审计报告 `brace-expansion` / `minimatch` 的 `GHSA-rgw5-rvv9-x895`；当前本地同一 Gate 已 PASS，仍须以新远端 CI 复验，不能仅凭本地推断 advisory 已撤回或解析变化。
+- **裁决**：pending / pre-G3 BLOCK；T3.5 和新远端 CI 全绿前不得进入 EAS Store Build。
 
 ## G4 · 安全闸
 
@@ -134,6 +150,7 @@
 
 ## S8 · 沉淀
 
-- 新坑：年龄分级和审核期间 OTA 冻结应成为 final-submit 机器闸；待实现验证后回流。
+- 新坑：年龄分级和审核期间 OTA 冻结已进入 final-submit 机器闸；精确 IPA 工具链和 app/build 对齐也已 fail-closed。
+- 新坑：发布规划文档提交也会触发实时依赖 advisory；必须把最新主干 CI 颜色作为预构建 Gate，锁文件安全修复不得延后到构建后。
 - 文档同步：若架构计数未变化，无 system-map 生成物变更；最终以 doc-drift 为准。
 - 状态：待 shipped。
