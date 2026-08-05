@@ -26,7 +26,7 @@ Pillow==12.3.0
 # 用户认证
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
-cryptography==49.0.0
+cryptography==50.0.0
 email-validator==2.0.0
 PyJWT==2.13.0
 # 请求频率限制
@@ -48,6 +48,8 @@ pdfplumber==0.11.10
 pyasn1==0.6.4
 sentry-sdk[fastapi]==2.20.0
 dashscope>=1.23.0
+# Explicitly pin the patched transitive HTTP client used by cloud SDKs.
+aiohttp==3.14.3
 
 # CalDAV 日历同步(timing-solver 议程驱动;无现成 CalDAV 客户端替代,当前维护版本,exact pin)
 caldav==3.2.1
