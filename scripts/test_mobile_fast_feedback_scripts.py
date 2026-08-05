@@ -14,9 +14,9 @@ def test_mobile_dependency_overrides_preserve_brace_expansion_major_compatibilit
     overrides = package_json["overrides"]
 
     assert "brace-expansion" not in overrides
-    assert overrides["brace-expansion@<2.0.0"] == "1.1.16"
-    assert overrides["brace-expansion@>=2.0.0 <3.0.0"] == "2.1.2"
-    assert overrides["brace-expansion@>=5.0.0"] == "5.0.7"
+    assert overrides["brace-expansion@<2.0.0"] == "1.1.18"
+    assert overrides["brace-expansion@>=2.0.0 <3.0.0"] == "2.1.4"
+    assert overrides["brace-expansion@>=5.0.0"] == "5.0.9"
 
 
 def run_fast_test(*args: str, changed_files: str = "") -> subprocess.CompletedProcess[str]:
