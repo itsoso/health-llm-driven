@@ -85,7 +85,7 @@
   - [x] T1 鼻炎卡医疗安全 TDD 修复
   - [x] T2 版本 1.3.3 与配置测试
   - [x] T3 年龄分级/OTA 冻结/IPA 工具链最终闸
-  - [ ] T3.5 主干依赖审计修复与 CI 复绿
+  - [x] T3.5 主干依赖审计修复与 CI 复绿
   - [ ] T4 审核账号与虚构数据验收
   - [ ] T5 提交材料与 App Store Connect 字段
   - [ ] T6 G3 全量 + 独立 G4
@@ -105,7 +105,9 @@
   - `7ffd2e048`：production 版本升为 1.3.3，保持 `appVersion` runtime 和窄能力面。
   - `43c73a621`：final-submit 新增年龄分级、production OTA 冻结、精确 app/build、`DTXcode` / `DTPlatformVersion` 证据闸。
   - `588110a22`：新增鼻炎安全测试保持 lint-neutral。
-- 当前断点：T0–T3 完成；T4 前先执行 T3.5，修复当前主干依赖审计红灯并获得新的远端 CI 证据。
+  - `a8bf8f0b6`：升级 `aiohttp 3.14.3`、`cryptography 50.0.0`、`postcss 8.5.23` 和分 major 的 `brace-expansion` 安全版本，重生成 Linux x86_64 Python exact lock 与 Mobile lock，清空 npm audit 例外。
+  - `e0c2a1e08`：同步 Python 与 Mobile 依赖安全契约测试，并显式锁定 `aiohttp 3.14.3` 契约。
+- 当前断点：T0–T3.5 完成；下一步执行 T4 审核账号与虚构数据验收。EAS Store Build 仍须等待 T4–T6 通过。
 
 ## G3 · 测试闸
 
@@ -116,16 +118,23 @@
   - Mobile production audit PASS，无 high/critical advisory。
   - `backend/tests/test_app_store_release_pack.py`：36/36 PASS。
   - App Store release pack、iOS submission preflight、doc drift 均 PASS。
-- 主干 CI 事实：run `30984698027`（base `dddff6ee1`）FAIL。其余测试/构建 jobs 通过，失败集中在审计：
+- 主干 CI 失败证据：run `30984698027`（base `dddff6ee1`）及修复前最新 run `30993466431`（commit `926f40639`）均 FAIL；后者其余测试/构建 jobs 通过，失败集中在审计：
   - Python：`aiohttp 3.14.2` / `PYSEC-2026-3545`（修复 3.14.3），`cryptography 49.0.0` / `PYSEC-2026-3552`（修复 50.0.0）。
   - Mobile 当次远端审计报告 `brace-expansion` / `minimatch` 的 `GHSA-rgw5-rvv9-x895`；当前本地同一 Gate 已 PASS，仍须以新远端 CI 复验，不能仅凭本地推断 advisory 已撤回或解析变化。
-- **裁决**：pending / pre-G3 BLOCK；T3.5 和新远端 CI 全绿前不得进入 EAS Store Build。
+- 2026-08-05 T3.5 复验：
+  - 官方 npm registry 完整与 production-only audit 均为 0 vulnerabilities；audit policy gate PASS，exceptions 为空。
+  - Python 3.12 exact hashed lock 安装与 `pip-audit --require-hashes` PASS；Garmin / Fernet / HKDF / 加密确认相关回归 75 passed / 2 skipped。
+  - 依赖契约测试 21/21 PASS；Mobile 293/293 suites、2,403 passed / 1 skipped；App Store release pack 36/36 PASS，checker 与 iOS submission preflight PASS。
+  - 独立代码评审 `Ready to merge: Yes`，无 Critical / Important / Minor；独立依赖安全评审 `GO`，旧 Fernet 密文解密、HKDF 字节一致性和篡改 `InvalidToken` fail-closed 均 PASS。
+  - 主干 CI run `30998114422`（commit `e0c2a1e084829abc0340b329b1a81e82e9812eaa`）`completed/success`，44/44 jobs 成功。
+- **裁决**：T3.5 PASS，主干审计红灯已解除；完整 G3 仍待 T6 全量闸，T4–T6 完成前不得进入 EAS Store Build。
 
 ## G4 · 安全闸
 
 - 触发：用药、健康写入、隐私、认证审核路径。
-- 评审：待独立 safety/privacy review。
-- **裁决**：pending；BLOCK 必须回 S5。
+- T3.5 依赖安全评审：`GO`，无阻断项；未修改用户数据、认证逻辑、医疗建议边界或 App Store 产品行为。
+- 评审：完整 release diff 的独立 safety/privacy review 待 T6 执行。
+- **裁决**：T3.5 依赖子闸 PASS；完整 G4 pending，BLOCK 必须回 S5。
 
 ## S6 · 部署
 
