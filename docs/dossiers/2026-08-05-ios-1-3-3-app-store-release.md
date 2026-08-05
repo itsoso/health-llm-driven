@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | S5 · T4/T5 人工项 pending；T6 G3/G4 PASS、待整改提交主干 CI |
+| 当前阶段 | S5 · T0–T3.5/T6 complete；T4/T5 人工项 pending |
 | 状态 | implementing |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -88,7 +88,7 @@
   - [x] T3.5 主干依赖审计修复与 CI 复绿
   - [ ] T4 审核账号与虚构数据验收
   - [ ] T5 提交材料与 App Store Connect 字段
-  - [ ] T6 G3 全量 + 独立 G4
+  - [x] T6 G3 全量 + 独立 G4
   - [ ] T7 EAS Store Build / IPA / TestFlight
   - [ ] T8 精确 Build 真机与截图
   - [ ] T9 final-submit / App Review
@@ -109,7 +109,7 @@
   - `e0c2a1e08`：同步 Python 与 Mobile 依赖安全契约测试，并显式锁定 `aiohttp 3.14.3` 契约。
   - `23e095ff1`：关闭依赖审计子闸并记录独立兼容性/安全评审证据。
   - `55f2ca457`：把 ASC 草稿升级为 1.3.3 后，同步审核材料、T4/T5 部分验收和人工阻塞项。
-- 当前断点：T0–T3.5 完成；T4/T5 进行中，T6 的 G3 已通过但 G4 首轮 NO-GO 正在整改复评。EAS Store Build 仍须等待 T4–T6 全部通过。
+- 当前断点：T0–T3.5/T6 完成；T4/T5 进行中。EAS Store Build 仍须等待 T4/T5 通过。
 - 2026-08-05 T4/T5 进行中证据（`2026-08-05T11:25:22Z`）：
   - 审核账号凭证仅存在受控发布环境，未复制进 worktree 或 Git；production live gate 验证账号密码登录、`/auth/me` 身份、今日计划和每日工件均 PASS。
   - 虚构数据 seeder 契约 4/4 PASS；生产 seeder 与评审版本 SHA-256 一致，无需重置正式审核账号或轮换密码。
@@ -139,8 +139,8 @@
 - 2026-08-05 T6 全量闸（`2026-08-05T11:50:54Z`）：
   - Mobile Jest 293/293 suites、2,403 passed / 1 skipped（2,404 total）；TypeScript PASS；lint 0 errors / 92 baseline warnings；npm full / production audit 与 policy gate 均 PASS、0 vulnerabilities。
   - App Store release-pack 测试 41/41 PASS；基础 checker、iOS submission preflight、doc drift 和 `git diff --check` PASS。
-  - 最新已推送主干 CI run `31001479436`（commit `55f2ca4573d7b5e2aa7719c4e07fce6e4f0464be`）`completed/success`，44/44 jobs 成功；G4 整改提交仍须获得新的主干 CI 绿灯。
-- **裁决**：完整本地 G3 PASS；必须等 G4 整改提交的新主干 CI 成功，且 T4/T5/G4 全部通过后才能进入 EAS Store Build。
+  - 主干 CI run `31003555856`（commit `642740f3729bd81ba599d94eefced38d2a1241be`）`completed/success`，44/44 jobs 成功，0 failed；包含 G4 隐私/精确构建整改及 41 项 release-pack 测试。
+- **裁决**：完整 G3 PASS；T6 complete。仍须等 T4/T5 通过后才能进入 EAS Store Build。
 
 ## G4 · 安全闸
 
