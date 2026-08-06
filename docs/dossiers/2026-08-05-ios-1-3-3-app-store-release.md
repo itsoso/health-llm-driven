@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | S5 · T0–T3.5/T6 complete；T4/T5 进行中 |
+| 当前阶段 | S5 · T0–T3.5/T5/T6 complete；T4 BLOCK |
 | 状态 | implementing |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -87,7 +87,7 @@
   - [x] T3 年龄分级/OTA 冻结/IPA 工具链最终闸
   - [x] T3.5 主干依赖审计修复与 CI 复绿
   - [ ] T4 审核账号与虚构数据验收
-  - [ ] T5 提交材料与 App Store Connect 字段
+  - [x] T5 提交材料与 App Store Connect 字段
   - [x] T6 G3 全量 + 独立 G4
   - [ ] T7 EAS Store Build / IPA / TestFlight
   - [ ] T8 精确 Build 真机与截图
@@ -109,17 +109,18 @@
   - `e0c2a1e08`：同步 Python 与 Mobile 依赖安全契约测试，并显式锁定 `aiohttp 3.14.3` 契约。
   - `23e095ff1`：关闭依赖审计子闸并记录独立兼容性/安全评审证据。
   - `55f2ca457`：把 ASC 草稿升级为 1.3.3 后，同步审核材料、T4/T5 部分验收和人工阻塞项。
-- 当前断点：T0–T3.5/T6 完成；T4/T5 进行中。EAS Store Build 仍须等待 T4/T5 通过。
-- T4 真机自动子集已连接物理 iPhone，当前安装的是历史 1.3.2 Build 240，只用于审核账号/导航路径预验，不能替代 T8 的 1.3.3 精确候选验收；自动化仍等待设备保持解锁，其他语音、相机、分享、写入/纠正/删除项目仍须按同一候选人工验收。
-- T5 ASC 已保存年龄分级问卷（当前结果 16+，无分级覆盖），并保存 `Regulated Medical Devices: No`；1.3.3 已改为审核通过后手动发布，未添加构建、未提交审核。
-- T5 App Privacy 复核发现旧的“未收集数据”与生产事实不符，立即停止发布。根因是隐私 taxonomy 漂移闸只覆盖饮食照片，未绑定 `/chat/transcribe` 的云端音频出口和持久化的认证客户端事件。已按 TDD 增加跨代码/声明/政策防漂移闸，并在 ASC 配置 12 个数据类型；待更正后的公开隐私政策上线并验证后再发布隐私答案。
+  - `ac1695445`：补齐云端语音转写和 linked Product Interaction 隐私披露，更新 Web/Mobile 政策并加固 release-pack 漂移闸。
+- 当前断点：T0–T3.5/T5/T6 完成；T4 因演示会话确定性验收失败而 BLOCK。EAS Store Build 不得开始。
+- T4 物理 iPhone（历史 1.3.2 Build 240，仅作预验）执行 7 项自动子集：5 passed / 2 failed。双冷启动首次失败于第二次恢复登录超过 30 秒，隔离重跑 1/1 PASS，判定为一次性恢复超时；会话用例稳定失败，因为设备保留旧 conversation 且生产 19 个会话里不存在最新固定演示会话。服务端 live gate 先前只验证今日计划/每日工件非空，错误放过了这个缺口。语音、相机、分享、写入/纠正/删除仍须在 T8 对同一 1.3.3 候选人工验收。
+- T5 ASC 已保存年龄分级问卷（结果 16+，无分级覆盖）、`Regulated Medical Devices: No` 和审核通过后手动发布。App Privacy 已按 checked-in JSON 发布 12 个数据类型，产品页预览可见；公开隐私政策已部署并验证 2026-08-05、云端语音音频和 linked 客户端事件文案。未添加构建、未提交审核。
+- T5 App Privacy 复核发现旧的“未收集数据”与生产事实不符，立即停止发布。根因是隐私 taxonomy 漂移闸只覆盖饮食照片，未绑定 `/chat/transcribe` 的云端音频出口和持久化的认证客户端事件。已按 TDD 增加跨代码/声明/政策防漂移闸并发布更正答案。
 - 2026-08-05 T4/T5 进行中证据（`2026-08-05T11:25:22Z`）：
   - 审核账号凭证仅存在受控发布环境，未复制进 worktree 或 Git；production live gate 验证账号密码登录、`/auth/me` 身份、今日计划和每日工件均 PASS。
-  - 虚构数据 seeder 契约 4/4 PASS；生产 seeder 与评审版本 SHA-256 一致，无需重置正式审核账号或轮换密码。
+  - 虚构数据 seeder 契约 4/4 PASS；生产 seeder 与评审版本 SHA-256 一致，但真机证据证明“无需重置正式审核账号”的旧判断错误：固定演示会话未进入 production 最新列表，必须重跑 seeder 并把这项事实焊进 live gate；无需轮换密码。
   - 单独创建随机合成 QA 账号并发起删除申请；创建、查询、7 天处理窗口、重复提交幂等、pending 状态继续登录及正式审核账号隔离均 PASS。账号/密码、用户 ID、删除请求 ID 未输出或提交，删除申请留给既有受控运维清单处理。
-  - 物理 iPhone `suntice` 被 CoreDevice 识别但当前 `unavailable`，因此 T4 的 App UI 冷启动/登录/拒绝权限文本路径仍 pending；不得用 API 验证替代真机验收。
-  - App Store Connect 可编辑草稿已从 1.3.2 更新为 1.3.3，旧 Build 240 已解除；状态 `PREPARE_FOR_SUBMISSION`、发布类型 `AFTER_APPROVAL`，en-US 元数据及审核联系人/账号/备注经 API 回读一致，未绑定 Build、未创建 review submission。
-  - 1.3.3 是首个 Store 版本，Apple 在当前状态拒绝 `whatsNew`，故首次提交保持该字段为空；仓库文案仅作为后续更新草稿。年龄分级声明当前为空，App Privacy 发布状态与 `Regulated Medical Devices: No` 仍待登录 App Store Connect 后人工确认，T5 不得标记完成。
+  - 物理 iPhone 后续恢复 available 并完成上述 7 项自动子集；不得用 API 或历史 Build 替代 T8 精确候选验收。
+  - App Store Connect 1.3.3 状态仍为 `PREPARE_FOR_SUBMISSION`；en-US 元数据、审核联系人/账号/备注和手动发布设置已复核保存，未绑定 Build、未创建 review submission。
+  - 1.3.3 是首个 Store 版本，Apple 在当前状态拒绝 `whatsNew`，故首次提交保持该字段为空；年龄分级、App Privacy 和医疗器械人工项已完成并写入发布机开关。
 
 ## G3 · 测试闸
 
@@ -143,7 +144,7 @@
   - Mobile Jest 293/293 suites、2,403 passed / 1 skipped（2,404 total）；TypeScript PASS；lint 0 errors / 92 baseline warnings；npm full / production audit 与 policy gate 均 PASS、0 vulnerabilities。
   - App Store release-pack 测试 41/41 PASS；基础 checker、iOS submission preflight、doc drift 和 `git diff --check` PASS。
   - 主干 CI run `31003555856`（commit `642740f3729bd81ba599d94eefced38d2a1241be`）`completed/success`，44/44 jobs 成功，0 failed；包含 G4 隐私/精确构建整改及 41 项 release-pack 测试。
-- 2026-08-05 T5 隐私漂移整改：先新增云端语音和客户端事件漏报回归测试并确认红灯，再更新声明、Web/Mobile 隐私政策和机器闸；针对性 4/4、release-pack 43/43、基础 checker 与 `git diff --check` PASS。完整 CI 仍须在提交后复验。
+- 2026-08-05 T5 隐私漂移整改：先新增云端语音和客户端事件漏报回归测试并确认红灯，再更新声明、Web/Mobile 隐私政策和机器闸；针对性 4/4、release-pack 43/43、基础 checker 与 `git diff --check` PASS。主干 CI run `31067249388`（commit `ac1695445666658863d8ef5935820b0a2329cf18`）`completed/success`，44/44 jobs 成功，0 failed。
 - **裁决**：完整 G3 PASS；T6 complete。仍须等 T4/T5 通过后才能进入 EAS Store Build。
 
 ## G4 · 安全闸
@@ -164,6 +165,7 @@
 
 - 路由：EAS production Store Build → TestFlight → App Store manual release。
 - production OTA：审核开始前冻结，G6 后解除。
+- T5 法务材料部署：commit `ac1695445` 通过根 `deploy.sh --all` 发布；数据库备份、恢复演练、站外加密归档、schema probe、runtime-only KB、skills manifest、精确 revision 均通过，连续后端健康分 60/60；前端 Next.js production build/TypeScript/73 个静态页面生成 PASS。线上 `/privacy` 和 `/api/v1/health` 已独立验证。
 - EAS Build ID / commit / App Store submission ID / 回滚点：待记录。
 
 ## G5 · 部署健康闸
