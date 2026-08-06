@@ -4,7 +4,7 @@
 |---|---|
 | slug | `agent-write-outcome-consistency` |
 | 创建日期 | 2026-08-06 |
-| 当前阶段 | G4 安全复审准备 |
+| 当前阶段 | S6 部署准备 |
 | 状态 | building |
 | 负责 | Codex + release owner |
 | 反馈环 | Backend deploy + Web deploy + Mobile OTA/1.3.3 candidate |
@@ -122,8 +122,8 @@
 - 首次独立评审:commit `9c0921031`；reviewer 发现未知“药名样式”可被宽泛分类器和 LLM medication tool 带入 durable `WriteIntent`，裁决 **NO-GO**。
 - 回上游修复:分类器只提升确定性受控药名；`propose_medication_intake_items` 只接受受控别名/规范名或该用户已有 Medication，并新增服务边界、分类器、完整 Agent 流程负例。
 - 修复后自审:未知名称在创建 `WriteIntent` 前 fail closed，零 MedicationLog；用户已有药物与受控药物兼容路径保留。
-- 独立复审:等待更新后的 commit。
-- **裁决**:pending（首次 NO-GO 已落实修复，尚未取得复审 GO）。
+- 独立复审:commit `70ab2a63d`，17 个定向用例及动态跨用户反例通过；Critical / Important / Minor 均无，工作树和 HEAD 完整性校验通过。
+- **裁决**:PASS（`G4: GO`）。
 
 ## S6 · 部署
 
