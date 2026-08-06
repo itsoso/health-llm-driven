@@ -26,6 +26,36 @@ class _Provider:
         return None
 
 
+def _review_token(service, *, user_id: int, confirmation_id: str) -> str:
+    projection = service.confirmation_projection(
+        user_id=user_id,
+        confirmation_id=confirmation_id,
+    )
+    token = projection.get("review_token")
+    assert isinstance(token, str) and token
+    return token
+
+
+async def _confirm_reviewed(
+    service,
+    *,
+    user_id: int,
+    confirmation_id: str,
+    duration_seconds: int | None = None,
+    review_token: str | None = None,
+):
+    return await service.confirm_and_dispatch(
+        user_id=user_id,
+        confirmation_id=confirmation_id,
+        review_token=review_token or _review_token(
+            service,
+            user_id=user_id,
+            confirmation_id=confirmation_id,
+        ),
+        duration_seconds=duration_seconds,
+    )
+
+
 def test_aigc_confirmation_ciphertext_uses_a_separate_tenant_crypto_context():
     from app.services.tenant_crypto import (
         decrypt_aigc_confirmation_for,
@@ -72,13 +102,196 @@ async def test_confirmation_is_encrypted_and_single_use_before_provider_dispatch
     assert prompt not in stored.prompt_ciphertext
     assert provider.image_requests == []
 
-    first = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
-    second = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+    review_token = _review_token(
+        service,
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+    )
+    first = await _confirm_reviewed(
+        service,
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+        review_token=review_token,
+    )
+    second = await _confirm_reviewed(
+        service,
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+        review_token=review_token,
+    )
 
     assert first.id == second.id
     assert first.status == "succeeded"
     assert len(provider.image_requests) == 1
     assert provider.image_requests[0]["prompt"] == prompt
+
+
+@pytest.mark.asyncio
+async def test_owner_projection_discloses_exact_prompt_and_review_token_before_dispatch(
+    db, auth_user_and_headers,
+):
+    from app.services.aigc_media_job_service import AIGCMediaJobRequest, AIGCMediaJobService
+
+    user, _ = auth_user_and_headers
+    exact_prompt = "制作一张早餐备餐步骤图\n<script>alert('text only')</script>"
+    service = AIGCMediaJobService(db, provider_factory=_Provider)
+    confirmation = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_image",
+            purpose="meal_visual",
+            prompt=exact_prompt,
+        ),
+    )
+
+    projection = service.confirmation_projection(
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+    )
+
+    assert projection["can_confirm"] is True
+    assert projection["outbound_prompt"] == exact_prompt
+    assert isinstance(projection["review_token"], str)
+    assert projection["review_token"]
+    assert projection["review_expires_at"]
+
+
+@pytest.mark.asyncio
+async def test_review_token_is_required_and_bound_before_provider_dispatch(
+    db, auth_user_and_headers, monkeypatch, tmp_path,
+):
+    from app.services import aigc_media_job_service
+    from app.services.aigc_media_job_service import (
+        AIGCMediaJobRequest,
+        AIGCMediaJobRequestError,
+        AIGCMediaJobService,
+    )
+
+    user, _ = auth_user_and_headers
+    provider = _Provider()
+    monkeypatch.setattr(aigc_media_job_service, "_AIGC_UPLOAD_ROOT", tmp_path)
+
+    async def download(_url: str, _kind: str):
+        return b"png", "image/png", "png"
+
+    service = AIGCMediaJobService(
+        db,
+        provider_factory=lambda: provider,
+        result_downloader=download,
+    )
+    confirmation = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_image",
+            purpose="meal_visual",
+            prompt="制作一张早餐备餐步骤图",
+        ),
+    )
+    projection = service.confirmation_projection(
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+    )
+
+    with pytest.raises(AIGCMediaJobRequestError, match="审阅"):
+        await service.confirm_and_dispatch(
+            user_id=user.id,
+            confirmation_id=confirmation.id,
+            review_token=f"{projection['review_token']}tampered",
+        )
+    assert provider.image_requests == []
+
+    job = await service.confirm_and_dispatch(
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+        review_token=projection["review_token"],
+    )
+
+    assert job.status == "succeeded"
+    assert provider.image_requests[0]["prompt"] == projection["outbound_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_review_token_rejects_cross_confirmation_expiry_and_prompt_version_change(
+    db, auth_user_and_headers,
+):
+    from app.services.aigc_media_job_service import (
+        AIGCMediaJobRequest,
+        AIGCMediaJobRequestError,
+        AIGCMediaJobService,
+    )
+    from app.services.tenant_crypto import encrypt_aigc_confirmation_for
+
+    user, _ = auth_user_and_headers
+    provider = _Provider()
+    service = AIGCMediaJobService(db, provider_factory=lambda: provider)
+    first = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_image",
+            purpose="meal_visual",
+            prompt="制作一张早餐备餐步骤图",
+        ),
+    )
+    second = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_image",
+            purpose="meal_visual",
+            prompt="制作一张午餐备餐步骤图",
+        ),
+    )
+    first_token = _review_token(
+        service,
+        user_id=user.id,
+        confirmation_id=first.id,
+    )
+
+    with pytest.raises(AIGCMediaJobRequestError, match="审阅"):
+        await service.confirm_and_dispatch(
+            user_id=user.id,
+            confirmation_id=second.id,
+            review_token=first_token,
+        )
+
+    expired_token = service._issue_review_token(
+        user_id=user.id,
+        confirmation=first,
+        expires_at=datetime.now(UTC) - timedelta(seconds=1),
+    )
+    with pytest.raises(AIGCMediaJobRequestError, match="审阅"):
+        await service.confirm_and_dispatch(
+            user_id=user.id,
+            confirmation_id=first.id,
+            review_token=expired_token,
+        )
+
+    expiry_boundary = datetime.now(UTC).replace(microsecond=0)
+    boundary_token = service._issue_review_token(
+        user_id=user.id,
+        confirmation=first,
+        expires_at=expiry_boundary,
+    )
+    with pytest.raises(AIGCMediaJobRequestError, match="审阅"):
+        service._verify_review_token(
+            user_id=user.id,
+            confirmation=first,
+            review_token=boundary_token,
+            now=expiry_boundary,
+        )
+
+    first.prompt_ciphertext = encrypt_aigc_confirmation_for(
+        user.id,
+        "已变化且未经审阅的提示词",
+    )
+    db.commit()
+    with pytest.raises(AIGCMediaJobRequestError, match="审阅"):
+        await service.confirm_and_dispatch(
+            user_id=user.id,
+            confirmation_id=first.id,
+            review_token=first_token,
+        )
+
+    assert provider.image_requests == []
 
 
 @pytest.mark.asyncio
@@ -112,8 +325,23 @@ async def test_video_confirmation_replay_returns_the_same_job_without_second_pro
         ),
     )
 
-    first = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
-    replayed = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+    review_token = _review_token(
+        service,
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+    )
+    first = await _confirm_reviewed(
+        service,
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+        review_token=review_token,
+    )
+    replayed = await _confirm_reviewed(
+        service,
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+        review_token=review_token,
+    )
 
     assert replayed.id == first.id
     assert first.provider_task_id == "happyhorse-video-idempotent"
@@ -183,15 +411,24 @@ async def test_video_confirmation_freezes_a_safe_duration_override_before_dispat
         ),
     )
 
-    job = await service.confirm_and_dispatch(
+    review_token = _review_token(
+        service,
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+    )
+    job = await _confirm_reviewed(
+        service,
         user_id=user.id,
         confirmation_id=confirmation.id,
         duration_seconds=duration_seconds,
+        review_token=review_token,
     )
-    replayed = await service.confirm_and_dispatch(
+    replayed = await _confirm_reviewed(
+        service,
         user_id=user.id,
         confirmation_id=confirmation.id,
         duration_seconds=5,
+        review_token=review_token,
     )
 
     assert replayed.id == job.id
@@ -239,7 +476,8 @@ async def test_invalid_video_duration_override_does_not_consume_confirmation(
     )
 
     with pytest.raises(AIGCMediaJobRequestError, match="3 到 15"):
-        await service.confirm_and_dispatch(
+        await _confirm_reviewed(
+            service,
             user_id=user.id,
             confirmation_id=confirmation.id,
             duration_seconds=16,
@@ -291,15 +529,20 @@ async def test_recent_expired_confirmation_can_be_reconfirmed_by_a_fresh_owner_c
         user_id=user.id,
         confirmation_id=confirmation.id,
     )
-    job = await service.confirm_and_dispatch(
+    review_token = projection["review_token"]
+    job = await _confirm_reviewed(
+        service,
         user_id=user.id,
         confirmation_id=confirmation.id,
         duration_seconds=10,
+        review_token=review_token,
     )
-    replayed = await service.confirm_and_dispatch(
+    replayed = await _confirm_reviewed(
+        service,
         user_id=user.id,
         confirmation_id=confirmation.id,
         duration_seconds=10,
+        review_token=review_token,
     )
     persisted = db.query(AIGCMediaConfirmation).filter_by(id=confirmation.id).one()
 
@@ -319,8 +562,8 @@ async def test_expired_confirmation_outside_recovery_window_cannot_contact_provi
 ):
     from app.models.aigc_media_confirmation import AIGCMediaConfirmation
     from app.services.aigc_media_job_service import (
-        AIGCMediaJobConflict,
         AIGCMediaJobRequest,
+        AIGCMediaJobRequestError,
         AIGCMediaJobService,
     )
 
@@ -352,8 +595,12 @@ async def test_expired_confirmation_outside_recovery_window_cannot_contact_provi
     assert projection["status"] == "expired"
     assert projection["can_confirm"] is False
 
-    with pytest.raises(AIGCMediaJobConflict, match="已过期"):
-        await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+    with pytest.raises(AIGCMediaJobRequestError, match="审阅"):
+        await service.confirm_and_dispatch(
+            user_id=user.id,
+            confirmation_id=confirmation.id,
+            review_token="",
+        )
     assert provider.image_requests == []
 
 
@@ -388,6 +635,11 @@ async def test_retry_recovers_job_persisted_before_confirmation_link(db, auth_us
         duration_seconds=confirmation.duration_seconds,
         ratio=confirmation.ratio,
     )
+    review_token = _review_token(
+        service,
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+    )
     job = await service._dispatch_confirmed(
         user_id=user.id,
         request=request,
@@ -400,7 +652,12 @@ async def test_retry_recovers_job_persisted_before_confirmation_link(db, auth_us
     )
     db.commit()
 
-    recovered = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+    recovered = await _confirm_reviewed(
+        service,
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+        review_token=review_token,
+    )
     persisted = db.query(AIGCMediaConfirmation).filter_by(id=confirmation.id).one()
 
     assert recovered.id == job.id
@@ -500,7 +757,8 @@ async def test_stale_dispatch_claim_without_job_becomes_confirmable_again(
         user_id=user.id,
         confirmation_id=confirmation.id,
     )
-    job = await service.confirm_and_dispatch(
+    job = await _confirm_reviewed(
+        service,
         user_id=user.id,
         confirmation_id=confirmation.id,
     )
@@ -556,7 +814,11 @@ async def test_confirmation_binds_the_wan_model_before_a_user_confirms(
     )
     monkeypatch.setattr(settings, "dashscope_aigc_image_model", "wan2.7-image-pro")
 
-    job = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+    job = await _confirm_reviewed(
+        service,
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+    )
 
     assert confirmation.model == "wan2.7-image"
     assert job.model == "wan2.7-image"
@@ -588,13 +850,29 @@ async def test_uncertain_provider_submission_is_not_replayed_by_a_second_confirm
         prompt="制作一张早餐备餐步骤图",
     )
     first_confirmation = await service.issue_confirmation(user_id=user.id, request=request)
-    first_job = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=first_confirmation.id)
+    first_job = await _confirm_reviewed(
+        service,
+        user_id=user.id,
+        confirmation_id=first_confirmation.id,
+    )
 
     duplicate_confirmation = await service.issue_confirmation(user_id=user.id, request=request)
-    duplicate_job = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=duplicate_confirmation.id)
-    retried_duplicate_job = await service.confirm_and_dispatch(
+    duplicate_review_token = _review_token(
+        service,
         user_id=user.id,
         confirmation_id=duplicate_confirmation.id,
+    )
+    duplicate_job = await _confirm_reviewed(
+        service,
+        user_id=user.id,
+        confirmation_id=duplicate_confirmation.id,
+        review_token=duplicate_review_token,
+    )
+    retried_duplicate_job = await _confirm_reviewed(
+        service,
+        user_id=user.id,
+        confirmation_id=duplicate_confirmation.id,
+        review_token=duplicate_review_token,
     )
 
     assert first_job.status == "submission_unknown"
@@ -639,7 +917,11 @@ async def test_dispatch_rechecks_the_fingerprint_after_acquiring_the_cost_lock(
 
     service._reserve_dispatch_capacity = reserve_then_simulate_a_racing_committed_job  # type: ignore[method-assign]
 
-    job = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+    job = await _confirm_reviewed(
+        service,
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+    )
 
     assert job.id == "aigc-racing-fingerprint"
     assert provider.image_requests == []
@@ -669,7 +951,11 @@ async def test_unexpected_failure_after_provider_request_links_an_unknown_job_to
         ),
     )
 
-    job = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+    job = await _confirm_reviewed(
+        service,
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+    )
     persisted_confirmation = db.query(AIGCMediaConfirmation).filter_by(id=confirmation.id).one()
 
     assert job.status == "submission_unknown"
@@ -719,7 +1005,11 @@ async def test_explicit_retry_reuses_a_definitively_rejected_job_without_duplica
         ),
     )
 
-    failed = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+    failed = await _confirm_reviewed(
+        service,
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+    )
     retried = await service.retry_failed(user_id=user.id, job_id=failed.id)
 
     assert failed.id == retried.id
@@ -800,7 +1090,11 @@ async def test_confirmed_job_replaces_persisted_confirmation_card(
     db.add_all([assistant, duplicate_assistant])
     db.commit()
 
-    job = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+    job = await _confirm_reviewed(
+        service,
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+    )
     assert service.persist_job_card(user_id=user.id, job=job, confirmation_id=confirmation.id) is True
 
     db.refresh(assistant)
@@ -853,7 +1147,11 @@ async def test_indeterminate_submission_cannot_be_retried(db, auth_user_and_head
             prompt="制作一张早餐备餐步骤图",
         ),
     )
-    job = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+    job = await _confirm_reviewed(
+        service,
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+    )
 
     with pytest.raises(AIGCMediaJobConflict, match="不能重新提交"):
         await service.retry_failed(user_id=user.id, job_id=job.id)

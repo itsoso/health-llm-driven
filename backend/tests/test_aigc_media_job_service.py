@@ -57,7 +57,15 @@ def _create_source_message(db, user_id: int):
 
 async def _issue_and_confirm(service, *, user_id: int, request):
     confirmation = await service.issue_confirmation(user_id=user_id, request=request)
-    return await service.confirm_and_dispatch(user_id=user_id, confirmation_id=confirmation.id)
+    projection = service.confirmation_projection(
+        user_id=user_id,
+        confirmation_id=confirmation.id,
+    )
+    return await service.confirm_and_dispatch(
+        user_id=user_id,
+        confirmation_id=confirmation.id,
+        review_token=projection["review_token"],
+    )
 
 
 @pytest.mark.asyncio
@@ -497,9 +505,17 @@ async def test_active_job_budget_blocks_a_second_billable_dispatch(
             prompt="制作一张早餐备餐步骤图",
         ),
     )
+    review_token = service.confirmation_projection(
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+    )["review_token"]
 
     with pytest.raises(AIGCMediaJobQuotaExceeded, match="进行中的创作任务"):
-        await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+        await service.confirm_and_dispatch(
+            user_id=user.id,
+            confirmation_id=confirmation.id,
+            review_token=review_token,
+        )
 
 
 @pytest.mark.asyncio
@@ -539,8 +555,16 @@ async def test_global_and_daily_aigc_budgets_are_enforced_before_dispatch(
     db.commit()
     monkeypatch.setattr(settings, "dashscope_aigc_max_active_jobs_global", 1)
     confirmation = await service.issue_confirmation(user_id=user.id, request=request)
+    review_token = service.confirmation_projection(
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+    )["review_token"]
     with pytest.raises(AIGCMediaJobQuotaExceeded, match="任务繁忙"):
-        await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+        await service.confirm_and_dispatch(
+            user_id=user.id,
+            confirmation_id=confirmation.id,
+            review_token=review_token,
+        )
 
     db.query(AIGCMediaJob).filter_by(id="aigc-global-active").update({"status": "succeeded"})
     db.add(AIGCMediaJob(
@@ -565,8 +589,16 @@ async def test_global_and_daily_aigc_budgets_are_enforced_before_dispatch(
             prompt="制作一张早餐摆盘海报",
         ),
     )
+    daily_review_token = service.confirmation_projection(
+        user_id=user.id,
+        confirmation_id=daily_confirmation.id,
+    )["review_token"]
     with pytest.raises(AIGCMediaJobQuotaExceeded, match="今日创作次数"):
-        await service.confirm_and_dispatch(user_id=user.id, confirmation_id=daily_confirmation.id)
+        await service.confirm_and_dispatch(
+            user_id=user.id,
+            confirmation_id=daily_confirmation.id,
+            review_token=daily_review_token,
+        )
 
 
 def test_admin_bypasses_personal_aigc_budgets_but_not_global_capacity(

@@ -19481,8 +19481,33 @@ export interface components {
     schemas: {
         /** AIGCMediaConfirmRequest */
         AIGCMediaConfirmRequest: {
+            /** Review Token */
+            review_token: string;
             /** Duration Seconds */
             duration_seconds?: number | null;
+        };
+        /** AIGCMediaConfirmationProjection */
+        AIGCMediaConfirmationProjection: {
+            /** Id */
+            id: string;
+            /** Status */
+            status: string;
+            /** Can Confirm */
+            can_confirm: boolean;
+            /** Requires Reconfirmation */
+            requires_reconfirmation: boolean;
+            /** Expires At */
+            expires_at: string;
+            /** Outbound Prompt */
+            outbound_prompt?: string | null;
+            /** Review Token */
+            review_token?: string | null;
+            /** Review Expires At */
+            review_expires_at?: string | null;
+            /** Spec */
+            spec?: Record<string, never> | null;
+            /** Job */
+            job?: Record<string, never> | null;
         };
         /**
          * AIInsightListResponse
@@ -51404,7 +51429,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AIGCMediaConfirmationProjection"];
                 };
             };
             /** @description Validation Error */
@@ -51427,9 +51452,9 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": components["schemas"]["AIGCMediaConfirmRequest"] | null;
+                "application/json": components["schemas"]["AIGCMediaConfirmRequest"];
             };
         };
         responses: {

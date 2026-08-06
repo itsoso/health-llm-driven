@@ -1352,13 +1352,24 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationData) {
   const [error, setError] = React.useState<string | null>(null);
   const [job, setJob] = React.useState<AIGCMediaJobData | null>(null);
   const [status, setStatus] = React.useState(String(data.status || 'pending').toLowerCase());
-  const [canConfirm, setCanConfirm] = React.useState(true);
+  const [canConfirm, setCanConfirm] = React.useState(false);
+  const [outboundPrompt, setOutboundPrompt] = React.useState<string | null>(null);
+  const [reviewToken, setReviewToken] = React.useState<string | null>(null);
+  const [reviewedConfirmationID, setReviewedConfirmationID] = React.useState<string | null>(null);
+  const [reviewLoading, setReviewLoading] = React.useState(true);
+  const [reviewReload, setReviewReload] = React.useState(0);
   const submittingRef = React.useRef(false);
   const confirmationID = String(data.confirmation_id || '').trim();
 
   React.useEffect(() => {
     if (!confirmationID) return;
     let active = true;
+    setCanConfirm(false);
+    setOutboundPrompt(null);
+    setReviewToken(null);
+    setReviewedConfirmationID(null);
+    setReviewLoading(true);
+    setError(null);
     void api.get(`/aigc/media/confirmations/${encodeURIComponent(confirmationID)}`)
       .then((response) => {
         const raw = response.data?.job;
@@ -1371,17 +1382,41 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationData) {
         if (active && restored?.job_id) setJob(restored);
         if (active) {
           setStatus(String(response.data?.status || 'pending').toLowerCase());
-          if (typeof response.data?.can_confirm === 'boolean') {
-            setCanConfirm(response.data.can_confirm);
+          const prompt = typeof response.data?.outbound_prompt === 'string'
+            ? response.data.outbound_prompt
+            : '';
+          const token = typeof response.data?.review_token === 'string'
+            ? response.data.review_token.trim()
+            : '';
+          const reviewReady = !restored?.job_id
+            && response.data?.can_confirm === true
+            && prompt.trim().length > 0
+            && token.length > 0;
+          if (reviewReady) {
+            setOutboundPrompt(prompt);
+            setReviewToken(token);
+            setReviewedConfirmationID(confirmationID);
+            setCanConfirm(true);
+          } else {
+            setCanConfirm(false);
+            if (!restored?.job_id && response.data?.can_confirm === true) {
+              setError('无法加载完整创作描述，请重试。');
+            }
           }
+          setReviewLoading(false);
         }
       })
       .catch(() => {
-        // A pending draft remains actionable. A later history refresh can
-        // resolve a consumed confirmation from the durable server ledger.
+        if (!active) return;
+        setCanConfirm(false);
+        setOutboundPrompt(null);
+        setReviewToken(null);
+        setReviewedConfirmationID(null);
+        setReviewLoading(false);
+        setError('无法加载完整创作描述，请重试。');
       });
     return () => { active = false; };
-  }, [confirmationID, data.kind]);
+  }, [confirmationID, data.kind, reviewReload]);
 
   React.useEffect(() => {
     if (!confirmationID || status !== 'dispatching' || job) return;
@@ -1428,12 +1463,22 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationData) {
   }, [confirmationID, data.kind, job, status]);
 
   const confirm = async () => {
-    if (!confirmationID || !canConfirm || submittingRef.current) return;
+    if (
+      !confirmationID
+      || !canConfirm
+      || reviewedConfirmationID !== confirmationID
+      || !outboundPrompt
+      || !reviewToken
+      || submittingRef.current
+    ) return;
     submittingRef.current = true;
     setSubmitting(true);
     setError(null);
     try {
-      const response = await api.post(`/aigc/media/confirmations/${encodeURIComponent(confirmationID)}/confirm`);
+      const response = await api.post(
+        `/aigc/media/confirmations/${encodeURIComponent(confirmationID)}/confirm`,
+        { review_token: reviewToken },
+      );
       const payload = response.data;
       if (!payload || typeof payload !== 'object' || typeof payload.id !== 'string') {
         throw new Error('aigc_confirmation_missing_job');
@@ -1455,8 +1500,24 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationData) {
         } else {
           const nextStatus = String(response.data?.status || 'pending').toLowerCase();
           setStatus(nextStatus);
-          if (typeof response.data?.can_confirm === 'boolean') {
-            setCanConfirm(response.data.can_confirm);
+          const refreshedPrompt = typeof response.data?.outbound_prompt === 'string'
+            ? response.data.outbound_prompt
+            : '';
+          const refreshedToken = typeof response.data?.review_token === 'string'
+            ? response.data.review_token.trim()
+            : '';
+          const reviewReady = response.data?.can_confirm === true
+            && refreshedPrompt.trim().length > 0
+            && refreshedToken.length > 0;
+          setCanConfirm(reviewReady);
+          if (reviewReady) {
+            setOutboundPrompt(refreshedPrompt);
+            setReviewToken(refreshedToken);
+            setReviewedConfirmationID(confirmationID);
+          } else if (response.data?.can_confirm === true) {
+            setOutboundPrompt(null);
+            setReviewToken(null);
+            setReviewedConfirmationID(null);
           }
           reconciled = nextStatus === 'expired' || nextStatus === 'dispatching';
         }
@@ -1481,9 +1542,30 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationData) {
   if (job) return <AIGCMediaJobCardView {...job} />;
   const isExpired = status === 'expired';
   const isDispatching = status === 'dispatching';
-  const buttonDisabled = !confirmationID || !canConfirm || submitting || isDispatching;
+  const reviewReady = Boolean(
+    outboundPrompt
+    && reviewToken
+    && reviewedConfirmationID === confirmationID,
+  );
+  const buttonDisabled = !confirmationID
+    || !canConfirm
+    || !reviewReady
+    || submitting
+    || isDispatching;
   return (
     <CardShell emoji="✦" title={data.title || '小巴创作草稿'} badge={aigcKindLabel(String(data.kind || ''))} badgeColor="#16805C" bg="#F1FAF5" border="#BFE4D1">
+      <div className="mb-2">
+        <div className="mb-1 text-xs font-extrabold text-slate-800">将发送的完整创作描述</div>
+        {outboundPrompt ? (
+          <pre className="whitespace-pre-wrap break-words rounded-lg border border-slate-200 bg-white px-3 py-2 font-sans text-xs leading-5 text-slate-800">
+            {outboundPrompt}
+          </pre>
+        ) : (
+          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-5 text-slate-500">
+            {reviewLoading ? '正在安全加载完整描述…' : '完整描述尚未加载。'}
+          </div>
+        )}
+      </div>
       <div className="rounded-lg bg-emerald-50 px-3 py-2 text-xs leading-5 text-slate-600">
         将发送你的创作描述{data.source_attached ? '和当前图片' : ''}给{data.provider || '百炼 Wan'}生成。
       </div>
@@ -1500,6 +1582,15 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationData) {
         </div>
       )}
       {error && <div className="mt-2 text-xs text-red-600">{error}</div>}
+      {error && !reviewReady && !isDispatching && (
+        <button
+          type="button"
+          onClick={() => setReviewReload((value) => value + 1)}
+          className="mt-2 flex min-h-10 w-full items-center justify-center rounded-lg border border-emerald-600 bg-white px-3 text-xs font-bold text-emerald-700"
+        >
+          重试加载完整描述
+        </button>
+      )}
       <button
         type="button"
         onClick={() => { void confirm(); }}

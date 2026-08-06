@@ -176,21 +176,12 @@ export async function dispatchChatCardAction(
     case 'aigc_media.confirm':
       assertManualConfirm(action);
       assertRegisteredWritePolicy(action);
-      {
-        const confirmationID = readAIGCMediaConfirmationID(action);
-        const { data } = await api.post(`/aigc/media/confirmations/${encodeURIComponent(confirmationID)}/confirm`);
-        const jobID = optionalText(data?.id);
-        if (!jobID) throw new Error('aigc_media_confirmation_missing_job');
-        return {
-          status: 'completed',
-          patch: { dispatched_job_id: jobID },
-          receipt: createVerifiedWriteReceipt({
-            operationId: action.id || `aigc_media.confirm:${confirmationID}`,
-            resourceType: 'aigc_media_job',
-            resourceId: jobID,
-          }),
-        };
-      }
+      readAIGCMediaConfirmationID(action);
+      // The generic dispatcher has no runtime-only prompt review token and
+      // must never fetch one on the user's behalf. Only the dedicated AIGC
+      // confirmation card can show the exact outbound prompt and submit its
+      // short-lived owner-bound token.
+      throw new Error('aigc_media_confirmation_requires_inline_review');
     case 'route.open':
       return { status: 'opened', route: readRoute(action) };
     case 'ui.inline.expand':

@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Mapping
@@ -91,6 +92,7 @@ APP_STORE_EAS_BUILD_ID_ENV = "APP_STORE_EAS_BUILD_ID"
 APP_STORE_GIT_COMMIT_HASH_ENV = "APP_STORE_GIT_COMMIT_HASH"
 DEMO_API_BASE_ENV = "APP_STORE_REVIEW_API_BASE"
 DEFAULT_DEMO_API_BASE = "https://health.executor.life/api/v1"
+DEMO_FIXTURE_PATH = ROOT / "backend/fixtures/demo_user_minimal.json"
 REAL_DEVICE_CHECKS = (
     "demo_account_login",
     "today_context_open_dismiss",
@@ -532,6 +534,13 @@ def _resolved_demo_credentials(
     return values[0], values[1]
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Fail closed instead of forwarding reviewer credentials across redirects."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def _request_json(
     url: str,
     *,
@@ -540,6 +549,18 @@ def _request_json(
     payload: dict | None = None,
     timeout: float = 10,
 ) -> dict:
+    parsed_url = urllib.parse.urlsplit(url)
+    if (
+        parsed_url.scheme.lower() != "https"
+        or not parsed_url.hostname
+        or parsed_url.username is not None
+        or parsed_url.password is not None
+        or parsed_url.fragment
+    ):
+        raise RuntimeError(
+            "App Store review live checks require an HTTPS URL without "
+            "embedded credentials or fragment"
+        )
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
     headers = {"Accept": "application/json"}
     if body is not None:
@@ -547,13 +568,29 @@ def _request_json(
     if token:
         headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(url, data=body, headers=headers, method=method)
+    opener = urllib.request.build_opener(_NoRedirectHandler())
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with opener.open(request, timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         raise RuntimeError(f"HTTP {exc.code}") from exc
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise RuntimeError(str(exc)) from exc
+
+
+def _load_demo_conversation_fixture() -> tuple[str, str, str]:
+    """Load the exact synthetic conversation promised to App Review."""
+    try:
+        payload = json.loads(DEMO_FIXTURE_PATH.read_text(encoding="utf-8"))
+        fixture = payload["agent_conversation"]
+        title_prefix = str(fixture["title_prefix"]).strip()
+        user_message = str(fixture["user_message"]).strip()
+        assistant_message = str(fixture["assistant_message"]).strip()
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"invalid App Store demo conversation fixture: {exc}") from exc
+    if not title_prefix or not user_message or not assistant_message:
+        raise RuntimeError("invalid App Store demo conversation fixture: required text is empty")
+    return title_prefix, user_message, assistant_message
 
 
 def validate_demo_account_live(
@@ -563,7 +600,20 @@ def validate_demo_account_live(
     api_base: str = DEFAULT_DEMO_API_BASE,
 ) -> list[str]:
     """Prove the exact reviewer credential against production read paths."""
-    base = api_base.rstrip("/")
+    base = api_base.strip().rstrip("/")
+    parsed_base = urllib.parse.urlsplit(base)
+    if (
+        parsed_base.scheme.lower() != "https"
+        or not parsed_base.hostname
+        or parsed_base.username is not None
+        or parsed_base.password is not None
+        or parsed_base.query
+        or parsed_base.fragment
+    ):
+        return [
+            "live demo account API base must be an HTTPS URL without "
+            "credentials, query, or fragment"
+        ]
     try:
         login = _request_json(
             f"{base}/auth/login/json",
@@ -587,6 +637,54 @@ def validate_demo_account_live(
         top_action = artifact.get("top_action")
         if not isinstance(top_action, dict) or not str(top_action.get("title") or "").strip():
             return ["live demo account daily artifact has no reviewer-visible top action"]
+
+        title_prefix, expected_user, expected_assistant = _load_demo_conversation_fixture()
+        encoded_title = urllib.parse.quote(title_prefix, safe="")
+        conversation_list = _request_json(
+            f"{base}/agent/conversations?limit=100&offset=0&title_like={encoded_title}",
+            token=token,
+        )
+        items = conversation_list.get("items")
+        candidates = [
+            item
+            for item in items
+            if isinstance(item, dict)
+            and str(item.get("title") or "").strip().startswith(title_prefix)
+            and isinstance(item.get("id"), int)
+        ] if isinstance(items, list) else []
+        if not candidates:
+            return ["live demo account has no fixed daily briefing conversation for App Review"]
+
+        seeded_pair_found = False
+        for candidate in candidates:
+            detail = _request_json(
+                f"{base}/agent/conversations/{candidate['id']}?limit=200",
+                token=token,
+            )
+            messages = detail.get("messages")
+            if not isinstance(messages, list):
+                continue
+            nonempty = [
+                message
+                for message in messages
+                if isinstance(message, dict)
+                and str(message.get("content") or "").strip()
+            ]
+            for user_message, assistant_message in zip(nonempty, nonempty[1:]):
+                if (
+                    user_message.get("role") == "user"
+                    and str(user_message.get("content") or "").strip() == expected_user
+                    and assistant_message.get("role") == "assistant"
+                    and str(assistant_message.get("content") or "").strip() == expected_assistant
+                ):
+                    seeded_pair_found = True
+                    break
+            if seeded_pair_found:
+                break
+        if not seeded_pair_found:
+            return [
+                "live demo account fixed daily briefing is missing the safe seeded message pair"
+            ]
     except Exception as exc:
         return [f"live demo account check failed: {exc}"]
     return []

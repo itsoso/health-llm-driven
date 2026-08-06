@@ -44,6 +44,12 @@ const MEDICATION_WRITE_POLICY = {
   ...WRITE_INTENT_POLICY,
   capability_id: 'medication_draft.v1',
 };
+const AIGC_WRITE_POLICY = {
+  capability_id: 'aigc_media_confirmation.v1',
+  required_receipt: true,
+  autonomy_tier: 'manual_confirm',
+  policy_reason: 'manual_confirm_write',
+};
 const MEDICATION_CARD_CONTEXT = {
   cardType: 'medication_draft',
   cardData: {
@@ -761,6 +767,19 @@ describe('dispatchChatCardAction', () => {
         },
       },
     })).rejects.toThrow(errorCode);
+
+    expect(mockApiPost).not.toHaveBeenCalled();
+  });
+
+  it('rejects generic AIGC confirmation dispatch without runtime prompt review', async () => {
+    await expect(dispatchChatCardAction({
+      id: 'aigc_media.confirm:aigc_confirm_owner_review',
+      label: '确认并生成',
+      action: 'aigc_media.confirm',
+      endpoint: '/aigc/media/confirmations/aigc_confirm_owner_review/confirm',
+      requires_manual_confirm: true,
+      ...AIGC_WRITE_POLICY,
+    })).rejects.toThrow('aigc_media_confirmation_requires_inline_review');
 
     expect(mockApiPost).not.toHaveBeenCalled();
   });

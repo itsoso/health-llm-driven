@@ -416,6 +416,8 @@ describe('renderCard', () => {
         status: 'expired',
         can_confirm: true,
         requires_reconfirmation: true,
+        outbound_prompt: '生成一段健康活动短视频',
+        review_token: 'review-token-expired',
         job: null,
       },
     } as never);
@@ -434,6 +436,91 @@ describe('renderCard', () => {
     get.mockRestore();
   });
 
+  it('shows the exact outbound prompt and requires its owner-bound review token', async () => {
+    let resolveReview: ((value: unknown) => void) | undefined;
+    const get = vi.spyOn(api, 'get')
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveReview = resolve;
+      }) as never)
+      .mockResolvedValueOnce({
+        data: {
+          id: 'aigc_reviewed_job',
+          kind: 'text_to_image',
+          status: 'queued',
+          progress: 0,
+        },
+      } as never);
+    const post = vi.spyOn(api, 'post').mockResolvedValueOnce({
+      data: {
+        id: 'aigc_reviewed_job',
+        kind: 'text_to_image',
+        status: 'queued',
+        progress: 0,
+      },
+    } as never);
+    const exactPrompt = "完整描述\n<script>alert('text only')</script>\n[链接](https://example.com)";
+    const card = renderCard({
+      type: 'aigc_media_confirmation',
+      data: {
+        confirmation_id: 'aigc_confirm_review',
+        kind: 'text_to_image',
+        status: 'pending',
+      },
+    });
+    render(card!);
+
+    const button = screen.getByRole('button', { name: '发送给百炼并生成' });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(post).not.toHaveBeenCalled();
+
+    resolveReview?.({
+      data: {
+        id: 'aigc_confirm_review',
+        status: 'pending',
+        can_confirm: true,
+        outbound_prompt: exactPrompt,
+        review_token: 'review-token-web',
+        review_expires_at: '2026-08-06T12:10:00Z',
+        job: null,
+      },
+    });
+
+    expect(await screen.findByText('将发送的完整创作描述')).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.tagName === 'PRE').textContent).toBe(exactPrompt);
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/aigc/media/confirmations/aigc_confirm_review/confirm',
+      { review_token: 'review-token-web' },
+    ));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    get.mockRestore();
+    post.mockRestore();
+  });
+
+  it('fails closed when exact AIGC prompt review cannot be loaded', async () => {
+    const get = vi.spyOn(api, 'get').mockRejectedValueOnce(new Error('offline'));
+    const post = vi.spyOn(api, 'post');
+    const card = renderCard({
+      type: 'aigc_media_confirmation',
+      data: {
+        confirmation_id: 'aigc_confirm_review_offline',
+        kind: 'text_to_image',
+        status: 'pending',
+      },
+    });
+    render(card!);
+
+    expect(await screen.findByText('无法加载完整创作描述，请重试。')).toBeInTheDocument();
+    const button = screen.getByRole('button', { name: '发送给百炼并生成' });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(post).not.toHaveBeenCalled();
+    get.mockRestore();
+    post.mockRestore();
+  });
+
   it('reconciles an AIGC job after the confirm response is lost', async () => {
     const get = vi.spyOn(api, 'get')
       .mockResolvedValueOnce({
@@ -441,6 +528,8 @@ describe('renderCard', () => {
           id: 'aigc_confirm_reconcile',
           status: 'pending',
           can_confirm: true,
+          outbound_prompt: '生成一段健康活动短视频',
+          review_token: 'review-token-reconcile',
           job: null,
         },
       } as never)
@@ -494,6 +583,8 @@ describe('renderCard', () => {
           id: 'aigc_confirm_dispatching',
           status: 'pending',
           can_confirm: true,
+          outbound_prompt: '生成一段健康活动短视频',
+          review_token: 'review-token-dispatching',
           job: null,
         },
       } as never)

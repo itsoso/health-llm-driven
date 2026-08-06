@@ -12,6 +12,7 @@ from app.services.agent_kernel.capability_policy import (
 )
 from app.services.agent_kernel.intent_frame import build_intent_frame
 from app.services.agent_kernel.goal_spec import compile_goal_spec
+from app.services.agent_kernel.write_safety import is_explicit_aigc_media_provider_veto
 from app.services.agent_kernel.types import (
     AgentEnvelope,
     ExecutionContext,
@@ -723,6 +724,142 @@ def test_media_draft_never_uses_model_controlled_provider_confirmation_flag():
 
     assert decision.action == "allow"
     assert decision.reason == "explicit_aigc_media_draft"
+
+
+def test_complex_source_image_provider_confirmation_allows_model_selected_draft():
+    snapshot = _snapshot("确认把这张早餐图片发送给百炼，生成 5 秒竖屏短视频")
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "draft_aigc_media",
+            {
+                "kind": "image_to_video",
+                "prompt": "做成晨间饮水提醒短视频",
+                "purpose": "hydration_reminder",
+            },
+        ),
+    )
+
+    assert snapshot.intent.primary == "write"
+    assert snapshot.intent.domain == "aigc_media"
+    assert snapshot.intent.operation == "create"
+    assert decision.action == "allow"
+    assert decision.reason == "explicit_aigc_media_draft"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "我确认把图片 发送给万相",
+        "我确认把图片\t发送给万相",
+        "我确认把图片\n发送给万相",
+    ),
+)
+def test_provider_confirmation_whitespace_cannot_authorize_model_selected_draft(message):
+    snapshot = _snapshot(message)
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "draft_aigc_media",
+            {
+                "kind": "image_to_video",
+                "prompt": "做成晨间饮水提醒短视频",
+                "purpose": "hydration_reminder",
+            },
+        ),
+    )
+
+    assert snapshot.intent.primary != "write"
+    assert decision.action == "block"
+    assert decision.reason == "aigc_media_without_explicit_draft_intent"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "确认发送图片但取消上传到百炼",
+        "确认把这张早餐图片发送给百炼，但不要上传",
+        "基于这张照片生成短视频，只限本地处理",
+        "基于这张照片生成短视频，必须断网处理",
+        "基于这张照片生成短视频，只在手机上处理",
+        "基于这张照片生成短视频，不得交由服务商处理",
+        "基于这张照片生成短视频，禁止传到云上",
+        "基于这张照片生成短视频，请勿出网",
+        "基于这张照片生成短视频，不允许远程处理",
+        "基于这张照片生成短视频，别调用云接口",
+        "基于这张照片生成短视频，严禁把内容送往服务器",
+        "基于这张照片生成短视频，不要把内容同步出去",
+        "基于这张照片生成短视频，别把照片传出去",
+        "基于这张照片生成短视频，无需调用外部服务",
+        "基于这张照片生成短视频，必须留在本机",
+        "基于这张照片生成短视频，不得送到线上处理",
+        "基于这张照片生成短视频，只许在终端侧运行",
+        "基于这张照片生成短视频，只能在本地运行",
+        "基于这张照片生成短视频，仅能在本地运行",
+        "基于这张照片生成短视频，只可在设备内处理",
+        "基于这张照片生成短视频，仅可在手机上处理",
+        "基于这张照片生成短视频，限定在本机完成",
+        "基于这张照片生成短视频，照片留在本地就好",
+        "基于这张照片生成短视频，全程本地完成",
+        "基于这张照片生成短视频，全程离线完成",
+        "基于这张照片生成短视频，在本机完成",
+        "基于这张照片生成短视频，在设备端完成",
+        "基于这张照片生成短视频，在端侧处理",
+        "基于这张照片生成短视频，只能在端侧运行",
+        "基于这张照片生成短视频，仅限端上处理",
+        "基于这张照片生成短视频，本地生成即可",
+        "基于这张照片生成短视频，离线生成即可",
+        "基于这张照片生成短视频，不准上传",
+        "基于这张照片生成短视频，不许上传",
+        "基于这张照片生成短视频，不让照片离开手机",
+        "基于这张照片生成短视频，照片不能离开本机",
+        "基于这张照片生成短视频，照片不离开设备",
+        "基于这张照片生成短视频，全部在手机本地做",
+        "基于这张照片生成短视频，只在手机端做",
+        "基于这张照片生成短视频，在本地做就行",
+        "基于这张照片生成短视频，离线做即可",
+        "基于这张照片生成短视频，不要把照片发出去",
+        "基于这张照片生成短视频，别把照片发出去",
+        "基于这张照片生成短视频，不要外发",
+        "基于这张照片生成短视频，禁止外发",
+        "基于这张照片生成短视频，请不要上云",
+        "基于这张照片生成短视频，禁止上云",
+        "基于这张照片生成短视频，不得使用云服务",
+        "基于这张照片生成短视频，只用手机处理",
+        "基于这张照片生成短视频，仅用当前设备处理",
+        "基于这张照片生成短视频，在当前设备完成",
+        "基于这张照片生成短视频，仅限当前设备处理",
+        "基于这张照片生成短视频，端内完成",
+        "基于这张照片生成短视频，只在端内做",
+        "基于这张照片生成短视频，本端处理",
+        "基于这张照片生成短视频，设备本身完成",
+        "基于这张照片生成短视频，手机自身处理",
+        "基于这张照片生成短视频，只用本机模型",
+        "请生成图片，local only",
+        "请生成图片，offline only",
+        "请生成图片，on-device only",
+        "请生成图片，do not upload",
+        "请生成图片，don't upload",
+        "请生成图片，keep it on my phone",
+        "请生成图片，no cloud processing",
+    ),
+)
+def test_media_provider_veto_blocks_model_selected_draft(message):
+    assert is_explicit_aigc_media_provider_veto(message) is True
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "draft_aigc_media",
+            {
+                "kind": "image_to_video",
+                "prompt": "做成晨间饮水提醒短视频",
+                "purpose": "hydration_reminder",
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "explicit_aigc_media_provider_veto"
 
 
 @pytest.mark.parametrize(

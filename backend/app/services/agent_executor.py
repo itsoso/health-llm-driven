@@ -72,7 +72,10 @@ from app.services.agent_write_outcome import (
 )
 from app.services.dynamic_card_persistence import cards_for_persistence
 from app.services.clinician_provenance_guard import classify_clinician_turn
-from app.services.utterance_intent_classifier import classify_agent_utterance
+from app.services.utterance_intent_classifier import (
+    classify_agent_utterance,
+    is_closed_aigc_provider_confirmation,
+)
 from app.utils.number_format import format_card_numbers
 from app.services.agent_kernel.context import (
     build_turn_snapshot,
@@ -7711,6 +7714,29 @@ def _fast_turn_tool_names_for_message(message: Optional[str]) -> tuple:
 
 
 _AIGC_MEDIA_DRAFT_TOOL_NAMES: tuple[str, ...] = ("draft_aigc_media",)
+_AIGC_MEDIA_OUTPUT_RE = r"(?:图片|图像|海报|封面|短视频|视频|图)"
+_AIGC_MEDIA_ACTION_RE = r"(?:生成|制作|创作|渲染|做成|变成)"
+_AIGC_MEDIA_DIRECT_PREFIX_RE = (
+    r"(?:请(?:你|帮我|给我|为我)?|帮我|麻烦(?:你|帮我)?|给我|为我|替我|"
+    r"现在请|立即|马上|我(?:想|想要|要|希望|需要|打算|准备))"
+)
+_AIGC_MEDIA_DIRECT_CREATE_RE = re.compile(
+    rf"^{_AIGC_MEDIA_DIRECT_PREFIX_RE}{_AIGC_MEDIA_ACTION_RE}"
+    rf"(?:(?:(?:一|两|二|三|几)(?:张|幅|个))?{_AIGC_MEDIA_OUTPUT_RE})"
+    rf"(?:吧|呀|啊|一下|看看|给我看看|就好|就行|即可)?[。.!！]?$",
+    re.IGNORECASE,
+)
+_AIGC_MEDIA_BARE_CREATE_RE = re.compile(
+    rf"^{_AIGC_MEDIA_ACTION_RE}(?:(?:一|两|二|三|几)(?:张|幅|个))?"
+    rf"{_AIGC_MEDIA_OUTPUT_RE}(?:吧|呀|啊|一下|看看|就好|就行|即可)?[。.!！]?$",
+    re.IGNORECASE,
+)
+_AIGC_MEDIA_RESTRICTION_RE = re.compile(
+    r"不|没|未|无须|无需|别|勿|禁止|严禁|避免|仅|只|限|不可|不得|不能|不应|"
+    r"只能|只可|必须|需要|取消|撤销|拒绝|停止|放弃|暂停|谢绝|撤回|终止|"
+    r"反悔|作罢|算了",
+    re.IGNORECASE,
+)
 _AIGC_MEDIA_TOPIC_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "活动",
@@ -7752,13 +7778,34 @@ def _aigc_media_content_preview(*, kind: str, prompt: str) -> Dict[str, Any]:
 
 
 def _is_explicit_aigc_media_draft_turn(message: Optional[str]) -> bool:
-    """Return whether this turn must create a user-confirmed AIGC draft."""
+    """Gate forced drafts to a high-confidence current-user command.
+
+    The broad utterance classifier is advisory. Natural-language reports and
+    quoted instructions are open-ended, so a classifier label alone must never
+    narrow the turn to one mutating tool or force a server-side draft.
+    """
     intent = classify_agent_utterance(message)
-    return (
+    if not (
         intent.primary == "write"
         and intent.is_write
         and intent.domain == "aigc_media"
         and intent.operation == "create"
+        and intent.reason == "media_generation_request"
+    ):
+        return False
+    text = "".join(
+        character
+        for character in unicodedata.normalize("NFKC", str(message or ""))
+        if unicodedata.category(character) != "Cf"
+    ).strip()
+    if not text:
+        return False
+    if _AIGC_MEDIA_RESTRICTION_RE.search(text):
+        return False
+    return bool(
+        _AIGC_MEDIA_DIRECT_CREATE_RE.fullmatch(text)
+        or _AIGC_MEDIA_BARE_CREATE_RE.fullmatch(text)
+        or is_closed_aigc_provider_confirmation(text)
     )
 
 

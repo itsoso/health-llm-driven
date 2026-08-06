@@ -11,7 +11,10 @@ from app.services.agent_kernel.tool_registry import (
     list_tool_specs,
 )
 from app.services.agent_kernel.types import CapabilityDecision, ToolExecutionRequest, TurnSnapshot
-from app.services.agent_kernel.write_safety import is_explicit_write_cancellation
+from app.services.agent_kernel.write_safety import (
+    is_explicit_aigc_media_provider_veto,
+    is_explicit_write_cancellation,
+)
 from app.services.clinician_provenance_guard import classify_clinician_turn
 
 READ_ONLY_TOOLS = frozenset(
@@ -102,6 +105,17 @@ def decide_tool_capability(
         return _decision("block", "missing_tool_name", tool_name, args)
 
     mutating_request = _is_mutating_request(tool_name, args)
+    if (
+        tool_name == "draft_aigc_media"
+        and is_explicit_aigc_media_provider_veto(snapshot.envelope.text)
+    ):
+        return _decision(
+            "block",
+            "explicit_aigc_media_provider_veto",
+            tool_name,
+            args,
+            receipt_required=True,
+        )
     if (
         mutating_request
         and is_explicit_write_cancellation(snapshot.envelope.text)

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_required
@@ -32,7 +32,25 @@ logger = logging.getLogger(__name__)
 
 
 class AIGCMediaConfirmRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    review_token: str = Field(min_length=1, max_length=4096)
     duration_seconds: int | None = Field(default=None, ge=3, le=15)
+
+
+class AIGCMediaConfirmationProjection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    status: str
+    can_confirm: bool
+    requires_reconfirmation: bool
+    expires_at: str
+    outbound_prompt: str | None = None
+    review_token: str | None = None
+    review_expires_at: str | None = None
+    spec: dict | None = None
+    job: dict | None = None
 
 
 def _persist_job_card_safely(
@@ -71,10 +89,14 @@ def _load_job(db: Session, *, user_id: int, job_id: str) -> AIGCMediaJob:
 @router.get("/confirmations/{confirmation_id}")
 async def get_aigc_media_confirmation(
     confirmation_id: str,
+    response: Response,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
-) -> dict:
+) -> AIGCMediaConfirmationProjection:
     """Resolve a persisted draft to its existing job without dispatching it."""
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Vary"] = "Authorization"
     service = AIGCMediaJobService(db)
     try:
         projection = service.confirmation_projection(
@@ -96,13 +118,13 @@ async def get_aigc_media_confirmation(
             job=job,
             confirmation_id=confirmation_id,
         )
-    return projection
+    return AIGCMediaConfirmationProjection.model_validate(projection)
 
 
 @router.post("/confirmations/{confirmation_id}/confirm")
 async def confirm_aigc_media_draft(
     confirmation_id: str,
-    request: AIGCMediaConfirmRequest | None = None,
+    request: AIGCMediaConfirmRequest,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -112,7 +134,8 @@ async def confirm_aigc_media_draft(
         job = await service.confirm_and_dispatch(
             user_id=current_user.id,
             confirmation_id=confirmation_id,
-            duration_seconds=request.duration_seconds if request is not None else None,
+            review_token=request.review_token,
+            duration_seconds=request.duration_seconds,
         )
     except AIGCMediaConfigurationError as exc:
         raise HTTPException(status_code=503, detail="AIGC 媒体服务暂不可用") from exc

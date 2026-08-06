@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | S5 · T0–T3.5/T5/T6 complete；T4 BLOCK |
+| 当前阶段 | S5 · 发布阻断热修复本地 G3 PASS；最终 G4 GO，待主干 CI/G5 |
 | 状态 | implementing |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -86,7 +86,7 @@
   - [x] T2 版本 1.3.3 与配置测试
   - [x] T3 年龄分级/OTA 冻结/IPA 工具链最终闸
   - [x] T3.5 主干依赖审计修复与 CI 复绿
-  - [ ] T4 审核账号与虚构数据验收
+  - [x] T4 审核账号与虚构数据验收
   - [x] T5 提交材料与 App Store Connect 字段
   - [x] T6 G3 全量 + 独立 G4
   - [ ] T7 EAS Store Build / IPA / TestFlight
@@ -110,7 +110,7 @@
   - `23e095ff1`：关闭依赖审计子闸并记录独立兼容性/安全评审证据。
   - `55f2ca457`：把 ASC 草稿升级为 1.3.3 后，同步审核材料、T4/T5 部分验收和人工阻塞项。
   - `ac1695445`：补齐云端语音转写和 linked Product Interaction 隐私披露，更新 Web/Mobile 政策并加固 release-pack 漂移闸。
-- 当前断点：T0–T3.5/T5/T6 完成；T4 因演示会话确定性验收失败而 BLOCK。EAS Store Build 不得开始。
+- 当前断点：T0–T6 完成；审核账号固定简报 live gate 已补强并通过。生产早餐图片烟测发现的领域误路由已修复；安全评审又要求把 AIGC 外发前的完整提示词审阅、一次性 owner-bound review token、客户端 fail-closed 和通用 action 防绕过焊成同一确认链。整改与本地回归已完成，等待最终 G4；EAS Store Build 仍不得开始。
 - T4 物理 iPhone（历史 1.3.2 Build 240，仅作预验）执行 7 项自动子集：5 passed / 2 failed。双冷启动首次失败于第二次恢复登录超过 30 秒，隔离重跑 1/1 PASS，判定为一次性恢复超时；会话用例稳定失败，因为设备保留旧 conversation 且生产 19 个会话里不存在最新固定演示会话。服务端 live gate 先前只验证今日计划/每日工件非空，错误放过了这个缺口。语音、相机、分享、写入/纠正/删除仍须在 T8 对同一 1.3.3 候选人工验收。
 - T5 ASC 已保存年龄分级问卷（结果 16+，无分级覆盖）、`Regulated Medical Devices: No` 和审核通过后手动发布。App Privacy 已按 checked-in JSON 发布 12 个数据类型，产品页预览可见；公开隐私政策已部署并验证 2026-08-05、云端语音音频和 linked 客户端事件文案。未添加构建、未提交审核。
 - T5 App Privacy 复核发现旧的“未收集数据”与生产事实不符，立即停止发布。根因是隐私 taxonomy 漂移闸只覆盖饮食照片，未绑定 `/chat/transcribe` 的云端音频出口和持久化的认证客户端事件。已按 TDD 增加跨代码/声明/政策防漂移闸并发布更正答案。
@@ -121,6 +121,7 @@
   - 物理 iPhone 后续恢复 available 并完成上述 7 项自动子集；不得用 API 或历史 Build 替代 T8 精确候选验收。
   - App Store Connect 1.3.3 状态仍为 `PREPARE_FOR_SUBMISSION`；en-US 元数据、审核联系人/账号/备注和手动发布设置已复核保存，未绑定 Build、未创建 review submission。
   - 1.3.3 是首个 Store 版本，Apple 在当前状态拒绝 `whatsNew`，故首次提交保持该字段为空；年龄分级、App Privacy 和医疗器械人工项已完成并写入发布机开关。
+  - 2026-08-06 T4 收口：release checker 现在从受控 fixture 读取固定简报标题和精确消息对，登录后按当前用户查询会话并 fail closed；聚焦测试 45/45、线上只读 live gate 和基础 release-pack checker 均 PASS，未输出账号或密码。
 
 ## G3 · 测试闸
 
@@ -145,7 +146,9 @@
   - App Store release-pack 测试 41/41 PASS；基础 checker、iOS submission preflight、doc drift 和 `git diff --check` PASS。
   - 主干 CI run `31003555856`（commit `642740f3729bd81ba599d94eefced38d2a1241be`）`completed/success`，44/44 jobs 成功，0 failed；包含 G4 隐私/精确构建整改及 41 项 release-pack 测试。
 - 2026-08-05 T5 隐私漂移整改：先新增云端语音和客户端事件漏报回归测试并确认红灯，再更新声明、Web/Mobile 隐私政策和机器闸；针对性 4/4、release-pack 43/43、基础 checker 与 `git diff --check` PASS。主干 CI run `31067249388`（commit `ac1695445666658863d8ef5935820b0a2329cf18`）`completed/success`，44/44 jobs 成功，0 failed。
-- **裁决**：完整 G3 PASS；T6 complete。仍须等 T4/T5 通过后才能进入 EAS Store Build。
+- 2026-08-06 发布阻断热修复本地证据：媒体授权对抗聚焦集 280 passed；餐食图片领域/工具裁剪/Agent food vision 路由广集 1057 passed；用药与 release gate 聚焦集 126 passed；基础 release-pack checker 及审核账号 live gate PASS。新提交的主干 CI 真实色仍待取得。
+- 2026-08-06 AIGC 外发确认整改最终证据：后端确认/令牌/API/网关/能力/force 聚焦集 660 passed，分类器广集 579 passed；Mobile 卡片与通用 action 115 passed，Web 卡片 40 passed 且无 jsdom 网络噪声；release-pack 48 passed。Backend Ruff、Mobile/Web TypeScript、两端 lint（0 errors）、基础 App Store checker/preflight 和 `git diff --check` 均 PASS。generated OpenAPI types 已同步到 Mobile/Web 并由 worktree venv 临时全量重生成逐字节复核；主干 CI 真实色仍待取得。
+- **裁决**：历史 T6 完整 G3 PASS；当前热修复 G3 pending，须等新主干 CI 复绿后才能进入 EAS Store Build。
 
 ## G4 · 安全闸
 
@@ -159,7 +162,16 @@
 - 首轮其余评审项均 GO：鼻炎卡无内置处方/剂量/自动写入，production 无 Watch/Rokid/Siri/background，secret pattern scan 无命中，npm/pip audit 为 0，人工项保持 fail-closed pending。
 - G4 第三轮独立复评：`GO`，Critical / Important / Minor 均无；实际重放 Review Notes 文案漂移与无法识别图片上传流两种绕过，均 fail-closed。release-pack 41/41、基础 checker、iOS preflight、Ruff、`git diff --check` PASS；错误 EAS UUID / 完整 source SHA 均被拒绝。
 - T5 ASC 人工复核补充发现两条未声明的数据出口：录音经认证 API 发送到云端 ASR，客户端交互事件按 `user_id` 持久化。整改后声明新增 `Audio Data`（linked / App Functionality）和 `Product Interaction`（linked / App Functionality + Analytics），诊断数据仅保留 unlinked Crash/Performance；全部类型均为 not tracking。对应防漂移测试直接绑定 production 代码路径，避免再次回退为“未收集数据”。
-- **裁决**：完整 G4 PASS；仍须等待整改提交的新主干 CI 复绿，并完成 T4/T5，方可构建。
+- 2026-08-06 热修复首次独立复评:`G4: NO-GO`，无 Critical，4 个 Important：普通/既成图片记录与否定生成仍可误授权 AIGC 草稿；审核 API 基址可使用 HTTP，默认重定向可跨 origin 转发 Bearer。整改后只有未否定的显式生成 reason 可进入 AIGC 工具集；live gate 在基础 URL 与每次请求双层强制 HTTPS、拒绝 URL 凭证/片段并禁止全部重定向。对抗测试与完整聚焦集已绿，等待同一 reviewer 复审。
+- 同一 reviewer 二次复评仍 `G4: NO-GO`，无 Critical：常见口语否定和动作后置否定仍可绕过，且邻近子串会误伤“分别/别的”、跨分句新命令与取消旧任务后的重新授权。现已改为显式否定短语、分句边界和局部重新授权关联，并追加“取消重新生成”和后句无关否定边界；53 个对抗用例、830 项路由广集及 126 项用药/发布闸均 PASS，等待第三次独立复评。
+- 第三次独立复评继续 `G4: NO-GO`，无 Critical：`不希望/没打算/不再/不应/不该/避免` 及 provider 确认表达仍可强制 AIGC 工具；“分别生成早餐图和午餐图”被误归饮食域。整改已把完整评审矩阵加入测试，收紧后置否定对象并补充受控图片简称；64 个聚焦用例、841 项路由广集及 126 项用药/发布闸均 PASS，等待同一 reviewer 对最终 diff 继续复核。
+- 同一轮扩展对抗先以 2 Important `G4: NO-GO` 推动 command-frame 架构重构；新一轮独立复评仍 `G4: NO-GO`（4 Important、无 Critical/Minor）：冒号引用归属、provider 撤销/veto、AI/模型内容约束和 prompt 内容/跨问句最后意图仍有漏洞。现已保留冒号归属，独立追踪 provider veto，补齐口语撤销，禁止把 AI/provider/model 当安全内容约束，只检查最终输出目标后的命令尾部并隔离 prompt 内嵌动作；144 个聚焦对抗、921 项路由广集及 126 项用药/发布闸均 PASS，等待独立复评。
+- 最新独立复评仍 `G4: NO-GO`（4 Important、2 类 Minor，无 Critical）：跨标点通用转述、sticky provider veto、确认后的事实限定及动作名词/事实谓词仍有同构绕过。现已逐条落入 24 个安全反例与 11 个正向反例，并用跨分句状态机收紧：转述上下文需明确当前用户转折重领；provider 确认被任何非明确新媒体命令后继失效；上传/分享/外部服务 veto 仅由后续明确 provider 确认解除；prompt 内容与控制动作隔离。220 个聚焦对抗、997 项路由广集、126 项用药/发布闸及静态/结构闸均 PASS，等待同一 reviewer 再复评。
+- 后续复评仍 `G4: NO-GO`（4 Important、3 类 Minor，无 Critical）：reporting/出站/动作名词同义词仍可绕过，中文引号内的转折被错当当前用户 reclaim，确认后的元描述因 attribution 早退而未失效。现已改成引号 payload 屏蔽、未知前导默认 attribution、严格裸命令对象语法、create-to-final-output payload span 以及先失效后归因的 provider 状态机；27 个新安全反例、25 个新正向反例及 8 个开放词汇变体均落测。最新 280 focused、1057 route-wide、126 medication/release 与静态闸全部 PASS，等待再次独立复评。
+- 最新安全评审给出 `CONDITIONAL GO`：阻断条件是 provider 确认必须使用闭合语法且取消词在任意位置优先；owner GET 必须返回与实际外发逐字节一致的解密 prompt、短时 owner/confirmation/provider/model/prompt-version 绑定 token 并设置 no-store；POST 无 token/篡改/跨确认/过期/版本变化均须在 provider 前 fail closed；Mobile/Web 初始禁用并显示完整纯文本 prompt；通用 Mobile action 不得绕过；复杂源图片指令保持 general toolset，但 provider veto 必须由 gateway 阻断。上述条件现已全部落入代码、生成契约和回归，等待同一 reviewer 最终裁决。
+- 其后最终复评返回 `G4: NO-GO`（Critical 0 / Important 2 / Minor 2）：闭合语法删除换行导致分行确认仍被 force；gateway 漏掉“必须断网/只在手机上/不得交由服务商/禁止传到云上”；token 在过期整秒仍可用；生成类型需证明无非预期漂移。现已先补红灯复现，再拒绝闭合语法中的任意空白、扩展 local-only 出站词法、把 token 边界改为严格 `exp > now`，并用临时 OpenAPI 全量重生成与两端 tracked types 逐字节比较。聚焦 9/9、完整相关集 616/616、分类器 576/576、Ruff 与 diff-check PASS，等待下一轮 G4。
+- 最终复评确认 provider 授权语法闭合且与 force 共用；空白注入 fail closed；复杂来源图片合法正例保留；capability 最终闸拒绝本地/离线、设备驻留、禁止外发/上云及固定中英混输隐私表达。review token 绑定与整秒过期边界、客户端先审阅后确认链、通用 action 防绕过和 OpenAPI 类型均通过独立重放；Critical / Important / Minor 均为 0。
+- **裁决**：`G4: GO`；允许提交、推送并进入下一部署 Gate，但新提交主干 CI、T4/T5、G5/G6 仍是独立阻断条件。
 
 ## S6 · 部署
 

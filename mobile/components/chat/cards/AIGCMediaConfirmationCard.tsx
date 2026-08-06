@@ -92,7 +92,12 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
   const [error, setError] = useState<string | null>(null);
   const [job, setJob] = useState<AIGCMediaJobCardData | null>(null);
   const [status, setStatus] = useState(confirmationStatus(data.status));
-  const [canConfirm, setCanConfirm] = useState(true);
+  const [canConfirm, setCanConfirm] = useState(false);
+  const [outboundPrompt, setOutboundPrompt] = useState<string | null>(null);
+  const [reviewToken, setReviewToken] = useState<string | null>(null);
+  const [reviewedConfirmationID, setReviewedConfirmationID] = useState<string | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(true);
+  const [reviewReload, setReviewReload] = useState(0);
   const [durationOptions, setDurationOptions] = useState(initialDurationOptions);
   const [selectedDuration, setSelectedDuration] = useState(() => (
     normalizedSelectedDuration(data.duration_seconds, initialDurationOptions)
@@ -105,15 +110,40 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
   useEffect(() => {
     if (!confirmationID) return;
     let active = true;
+    setCanConfirm(false);
+    setOutboundPrompt(null);
+    setReviewToken(null);
+    setReviewedConfirmationID(null);
+    setReviewLoading(true);
+    setError(null);
     void api.get(`/aigc/media/confirmations/${encodeURIComponent(confirmationID)}`)
       .then((response) => {
         const projection = normalizeJob(response?.data?.job);
         if (active && projection) setJob(projection);
         if (active) {
           setStatus(confirmationStatus(response?.data?.status));
-          if (typeof response?.data?.can_confirm === 'boolean') {
-            setCanConfirm(response.data.can_confirm);
+          const prompt = typeof response?.data?.outbound_prompt === 'string'
+            ? response.data.outbound_prompt
+            : '';
+          const token = typeof response?.data?.review_token === 'string'
+            ? response.data.review_token.trim()
+            : '';
+          const reviewReady = !projection
+            && response?.data?.can_confirm === true
+            && prompt.trim().length > 0
+            && token.length > 0;
+          if (reviewReady) {
+            setOutboundPrompt(prompt);
+            setReviewToken(token);
+            setReviewedConfirmationID(confirmationID);
+            setCanConfirm(true);
+          } else {
+            setCanConfirm(false);
+            if (!projection && response?.data?.can_confirm === true) {
+              setError('无法加载完整创作描述，请重试。');
+            }
           }
+          setReviewLoading(false);
         }
         if (active && isVideo) {
           const nextOptions = normalizedDurationOptions(
@@ -131,11 +161,16 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
         }
       })
       .catch(() => {
-        // Keep an unconsumed draft actionable. Durable history will resolve it
-        // after the next successful owner-scoped status refresh.
+        if (!active) return;
+        setCanConfirm(false);
+        setOutboundPrompt(null);
+        setReviewToken(null);
+        setReviewedConfirmationID(null);
+        setReviewLoading(false);
+        setError('无法加载完整创作描述，请重试。');
       });
     return () => { active = false; };
-  }, [confirmationID, isVideo]);
+  }, [confirmationID, isVideo, reviewReload]);
 
   useEffect(() => {
     if (!confirmationID || status !== 'dispatching' || job) return;
@@ -181,15 +216,25 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
   if (job) return <AIGCMediaJobCardView {...job} />;
 
   const confirm = async () => {
-    if (!confirmationID || !canConfirm || submittingRef.current) return;
+    if (
+      !confirmationID
+      || !canConfirm
+      || reviewedConfirmationID !== confirmationID
+      || !outboundPrompt
+      || !reviewToken
+      || submittingRef.current
+    ) return;
     submittingRef.current = true;
     setSubmitting(true);
     setError(null);
     try {
       const endpoint = `/aigc/media/confirmations/${encodeURIComponent(confirmationID)}/confirm`;
       const response = isVideo
-        ? await api.post(endpoint, { duration_seconds: selectedDuration })
-        : await api.post(endpoint);
+        ? await api.post(endpoint, {
+          review_token: reviewToken,
+          duration_seconds: selectedDuration,
+        })
+        : await api.post(endpoint, { review_token: reviewToken });
       const projection = normalizeJob(response?.data);
       if (!projection) throw new Error('aigc_confirmation_missing_job');
       setJob(projection);
@@ -206,8 +251,24 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
         } else {
           const nextStatus = confirmationStatus(response?.data?.status);
           setStatus(nextStatus);
-          if (typeof response?.data?.can_confirm === 'boolean') {
-            setCanConfirm(response.data.can_confirm);
+          const refreshedPrompt = typeof response?.data?.outbound_prompt === 'string'
+            ? response.data.outbound_prompt
+            : '';
+          const refreshedToken = typeof response?.data?.review_token === 'string'
+            ? response.data.review_token.trim()
+            : '';
+          const reviewReady = response?.data?.can_confirm === true
+            && refreshedPrompt.trim().length > 0
+            && refreshedToken.length > 0;
+          setCanConfirm(reviewReady);
+          if (reviewReady) {
+            setOutboundPrompt(refreshedPrompt);
+            setReviewToken(refreshedToken);
+            setReviewedConfirmationID(confirmationID);
+          } else if (response?.data?.can_confirm === true) {
+            setOutboundPrompt(null);
+            setReviewToken(null);
+            setReviewedConfirmationID(null);
           }
           reconciled = nextStatus === 'expired' || nextStatus === 'dispatching';
         }
@@ -225,7 +286,16 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
 
   const isExpired = status === 'expired';
   const isDispatching = status === 'dispatching';
-  const buttonDisabled = !confirmationID || !canConfirm || submitting || isDispatching;
+  const reviewReady = Boolean(
+    outboundPrompt
+    && reviewToken
+    && reviewedConfirmationID === confirmationID,
+  );
+  const buttonDisabled = !confirmationID
+    || !canConfirm
+    || !reviewReady
+    || submitting
+    || isDispatching;
   const buttonLabel = isVideo
     ? `${isExpired ? '重新确认生成' : '确认生成'}${selectedDuration}秒短视频`
     : isExpired ? '重新确认并生成' : '确认并生成';
@@ -249,6 +319,23 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
           </Text>
         </View>
       ) : null}
+      <View style={styles.promptSection}>
+        <Text maxFontSizeMultiplier={1.2} style={styles.promptLabel}>
+          将发送的完整创作描述
+        </Text>
+        {outboundPrompt ? (
+          <Text selectable maxFontSizeMultiplier={1.3} style={styles.promptText}>
+            {outboundPrompt}
+          </Text>
+        ) : (
+          <View style={styles.promptLoadingRow}>
+            {reviewLoading ? <ActivityIndicator size="small" color={C.green600} /> : null}
+            <Text maxFontSizeMultiplier={1.2} style={styles.promptLoadingText}>
+              {reviewLoading ? '正在安全加载完整描述…' : '完整描述尚未加载。'}
+            </Text>
+          </View>
+        )}
+      </View>
       {isVideo ? (
         <View style={styles.specSection}>
           <View style={styles.specHeader}>
@@ -316,6 +403,16 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
         </View>
       ) : null}
       {error ? <Text maxFontSizeMultiplier={1.2} style={styles.error}>{error}</Text> : null}
+      {error && !reviewReady && !isDispatching ? (
+        <Pressable
+          onPress={() => setReviewReload((value) => value + 1)}
+          accessibilityRole="button"
+          accessibilityLabel="重试加载完整创作描述"
+          style={({ pressed }) => [styles.reviewRetry, pressed && { opacity: 0.78 }]}
+        >
+          <Text style={styles.reviewRetryText}>重试加载完整描述</Text>
+        </Pressable>
+      ) : null}
       <Pressable
         onPress={confirm}
         disabled={buttonDisabled}
@@ -359,6 +456,26 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: C.ink1,
   } as TextStyle,
+  promptSection: { marginTop: 12, gap: 6 },
+  promptLabel: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    fontWeight: '800',
+    color: C.ink1,
+  } as TextStyle,
+  promptText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 13,
+    lineHeight: 20,
+    color: C.ink1,
+    backgroundColor: C.paper2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    borderRadius: revaRadii.sm,
+    padding: 10,
+  } as TextStyle,
+  promptLoadingRow: { flexDirection: 'row', alignItems: 'center', gap: 7, minHeight: 40 },
+  promptLoadingText: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3 } as TextStyle,
   notice: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -382,6 +499,8 @@ const styles = StyleSheet.create({
   stateNoticeUnavailable: { backgroundColor: C.paper2, borderColor: C.line },
   stateNoticeText: { flex: 1, fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 18, color: C.ink2 } as TextStyle,
   error: { marginTop: 8, fontFamily: revaFonts.sans, fontSize: 12, color: '#C84B3C' } as TextStyle,
+  reviewRetry: { minHeight: 40, marginTop: 8, alignItems: 'center', justifyContent: 'center', borderRadius: revaRadii.md, borderWidth: StyleSheet.hairlineWidth, borderColor: C.green500, backgroundColor: C.paper },
+  reviewRetryText: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '700', color: C.green700 } as TextStyle,
   confirmButton: { minHeight: 44, marginTop: 12, borderRadius: revaRadii.md, backgroundColor: C.green600, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
   confirmButtonDisabled: { backgroundColor: C.ink4 },
   confirmText: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '800', color: '#fff' } as TextStyle,

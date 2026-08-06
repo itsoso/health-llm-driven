@@ -7,6 +7,8 @@ import zlib
 from pathlib import Path
 
 from scripts.check_app_store_release_pack import (
+    _NoRedirectHandler,
+    _request_json,
     REQUIRED_FILES,
     validate_app_review_redlines,
     validate_app_store_privacy_publication,
@@ -640,6 +642,39 @@ def test_live_demo_account_gate_proves_login_identity_and_seeded_review_surfaces
             return {"actions": [{"title": "今日重点"}]}
         if url.endswith("/daily-artifact/me"):
             return {"top_action": {"title": "晨起记录"}}
+        if "/agent/conversations?" in url:
+            return {
+                "items": [
+                    {
+                        "id": 91,
+                        "title": "每日健康简报 · 08-06",
+                    }
+                ]
+            }
+        if url.endswith("/agent/conversations/91?limit=200"):
+            return {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "结合最近一周的数据，我今天最值得做什么？",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": (
+                            "## 今天优先完成两件事\n\n"
+                            "1. **午餐后快走 15 分钟**：延续每天约 8,000 步的活动节奏，"
+                            "餐后走动更容易执行。\n"
+                            "2. **把饮水分散到白天**：上午和下午各补水 2 次，"
+                            "避免临睡前集中饮水。\n\n"
+                            "### 最近一周\n\n"
+                            "- 平均睡眠约 **7 小时 48 分钟**，睡眠评分约 **82 分**\n"
+                            "- 日均步数约 **8,000 步**，恢复节奏整体稳定\n\n"
+                            "今天不用增加复杂任务，先把这两件事做完。完成后告诉我，"
+                            "我会根据执行结果调整明天的安排。"
+                        ),
+                    },
+                ]
+            }
         raise AssertionError(url)
 
     monkeypatch.setattr(
@@ -659,7 +694,159 @@ def test_live_demo_account_gate_proves_login_identity_and_seeded_review_surfaces
         ("GET", "https://health.example.test/api/v1/auth/me"),
         ("GET", "https://health.example.test/api/v1/daily-plan/me"),
         ("GET", "https://health.example.test/api/v1/daily-artifact/me"),
+        (
+            "GET",
+            "https://health.example.test/api/v1/agent/conversations"
+            "?limit=100&offset=0&title_like=%E6%AF%8F%E6%97%A5%E5%81%A5%E5%BA%B7%E7%AE%80%E6%8A%A5",
+        ),
+        ("GET", "https://health.example.test/api/v1/agent/conversations/91?limit=200"),
     ]
+
+
+def test_live_demo_account_gate_rejects_plain_http_before_sending_credentials(monkeypatch):
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("credentials must not be sent to a plaintext endpoint")
+
+    monkeypatch.setattr(
+        "scripts.check_app_store_release_pack._request_json",
+        fail_if_called,
+    )
+
+    failures = validate_demo_account_live(
+        "reviewer@example.com",
+        "private-password",
+        api_base="http://health.example.test/api/v1",
+    )
+
+    assert "HTTPS" in "\n".join(failures)
+
+
+def test_request_json_installs_no_redirect_handler_for_bearer_requests(monkeypatch):
+    captured_handlers = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"ok": true}'
+
+    class FakeOpener:
+        def open(self, request, *, timeout):
+            assert request.get_header("Authorization") == "Bearer private-token"
+            assert timeout == 10
+            return FakeResponse()
+
+    def fake_build_opener(*handlers):
+        captured_handlers.extend(handlers)
+        return FakeOpener()
+
+    monkeypatch.setattr(
+        "scripts.check_app_store_release_pack.urllib.request.build_opener",
+        fake_build_opener,
+    )
+
+    assert _request_json(
+        "https://health.example.test/api/v1/auth/me",
+        token="private-token",
+    ) == {"ok": True}
+    assert len(captured_handlers) == 1
+    handler = captured_handlers[0]
+    assert isinstance(handler, _NoRedirectHandler)
+    assert handler.redirect_request(
+        None,
+        None,
+        302,
+        "Found",
+        {},
+        "https://other.example.test/steal",
+    ) is None
+
+
+def test_request_json_rejects_plain_http_before_building_opener(monkeypatch):
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("plaintext requests must be rejected before I/O")
+
+    monkeypatch.setattr(
+        "scripts.check_app_store_release_pack.urllib.request.build_opener",
+        fail_if_called,
+    )
+
+    try:
+        _request_json(
+            "http://health.example.test/api/v1/auth/me",
+            token="private-token",
+        )
+    except RuntimeError as exc:
+        assert "HTTPS" in str(exc)
+    else:
+        raise AssertionError("plaintext request was accepted")
+
+
+def test_live_demo_account_gate_fails_closed_without_seeded_briefing(monkeypatch):
+    def fake_request(url, *, method="GET", token=None, payload=None, timeout=10):
+        if url.endswith("/auth/login/json"):
+            return {"access_token": "token", "user": {"id": 17}}
+        if url.endswith("/auth/me"):
+            return {"id": 17}
+        if url.endswith("/daily-plan/me"):
+            return {"actions": [{"title": "今日重点"}]}
+        if url.endswith("/daily-artifact/me"):
+            return {"top_action": {"title": "晨起记录"}}
+        if "/agent/conversations?" in url:
+            return {"items": []}
+        raise AssertionError(url)
+
+    monkeypatch.setattr(
+        "scripts.check_app_store_release_pack._request_json",
+        fake_request,
+    )
+
+    failures = validate_demo_account_live(
+        "reviewer@example.com",
+        "private-password",
+        api_base="https://health.example.test/api/v1",
+    )
+
+    assert "fixed daily briefing conversation" in "\n".join(failures)
+
+
+def test_live_demo_account_gate_fails_closed_on_non_fixture_messages(monkeypatch):
+    def fake_request(url, *, method="GET", token=None, payload=None, timeout=10):
+        if url.endswith("/auth/login/json"):
+            return {"access_token": "token", "user": {"id": 17}}
+        if url.endswith("/auth/me"):
+            return {"id": 17}
+        if url.endswith("/daily-plan/me"):
+            return {"actions": [{"title": "今日重点"}]}
+        if url.endswith("/daily-artifact/me"):
+            return {"top_action": {"title": "晨起记录"}}
+        if "/agent/conversations?" in url:
+            return {"items": [{"id": 91, "title": "每日健康简报 · 08-06"}]}
+        if url.endswith("/agent/conversations/91?limit=200"):
+            return {
+                "messages": [
+                    {"role": "user", "content": "普通问题"},
+                    {"role": "assistant", "content": "普通回答"},
+                ]
+            }
+        raise AssertionError(url)
+
+    monkeypatch.setattr(
+        "scripts.check_app_store_release_pack._request_json",
+        fake_request,
+    )
+
+    failures = validate_demo_account_live(
+        "reviewer@example.com",
+        "private-password",
+        api_base="https://health.example.test/api/v1",
+    )
+
+    assert "safe seeded message pair" in "\n".join(failures)
 
 
 def test_live_demo_account_gate_fails_closed_when_login_is_rejected(monkeypatch):

@@ -126,6 +126,63 @@ def test_aigc_confirmation_is_invisible_to_another_user(
     assert response.status_code == 404
 
 
+def test_pending_confirmation_projection_is_no_store_and_post_requires_review_token(
+    client, db, auth_user_and_headers,
+):
+    from datetime import timedelta
+
+    from app.models.aigc_media_confirmation import AIGCMediaConfirmation
+    from app.services.tenant_crypto import encrypt_aigc_confirmation_for
+
+    owner, headers = auth_user_and_headers
+    prompt = "制作一张早餐备餐步骤图"
+    confirmation = AIGCMediaConfirmation(
+        id="aigc_confirm_review_required",
+        user_id=owner.id,
+        kind="text_to_image",
+        purpose="meal_visual",
+        model="wanx2.1-t2i-turbo",
+        prompt_ciphertext=encrypt_aigc_confirmation_for(owner.id, prompt),
+        prompt_fingerprint="7" * 64,
+        duration_seconds=5,
+        ratio="9:16",
+        status="pending",
+        created_at=datetime.now(UTC),
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    db.add(confirmation)
+    db.commit()
+
+    projection = client.get(
+        "/api/v1/aigc/media/confirmations/aigc_confirm_review_required",
+        headers=headers,
+    )
+
+    assert projection.status_code == 200
+    assert projection.json()["outbound_prompt"] == prompt
+    assert projection.json()["review_token"]
+    assert projection.headers["cache-control"] == "private, no-store, max-age=0"
+    assert projection.headers["pragma"] == "no-cache"
+    assert projection.headers["vary"] == "Authorization"
+
+    missing_review = client.post(
+        "/api/v1/aigc/media/confirmations/aigc_confirm_review_required/confirm",
+        headers=headers,
+        json={},
+    )
+    assert missing_review.status_code == 422
+
+    client_prompt_override = client.post(
+        "/api/v1/aigc/media/confirmations/aigc_confirm_review_required/confirm",
+        headers=headers,
+        json={
+            "review_token": projection.json()["review_token"],
+            "prompt": "客户端试图替换提示词",
+        },
+    )
+    assert client_prompt_override.status_code == 422
+
+
 def test_aigc_media_job_is_invisible_to_another_user(client, db, auth_user_and_headers):
     from app.models.aigc_media_job import AIGCMediaJob
     from tests.conftest import create_authenticated_user
@@ -245,7 +302,11 @@ def test_aigc_confirmation_returns_429_when_dispatch_budget_is_exhausted(
 
     monkeypatch.setattr(aigc_media, "AIGCMediaJobService", BudgetedService)
 
-    response = client.post("/api/v1/aigc/media/confirmations/aigc_confirm_1/confirm", headers=headers)
+    response = client.post(
+        "/api/v1/aigc/media/confirmations/aigc_confirm_1/confirm",
+        headers=headers,
+        json={"review_token": "test-review-token"},
+    )
 
     assert response.status_code == 429
     assert "进行中的创作任务" in response.text
@@ -278,13 +339,14 @@ def test_aigc_confirmation_forwards_only_validated_product_spec(
     response = client.post(
         "/api/v1/aigc/media/confirmations/aigc_confirm_spec/confirm",
         headers=headers,
-        json={"duration_seconds": 15},
+        json={"review_token": "test-review-token", "duration_seconds": 15},
     )
 
     assert response.status_code == 200
     assert received == {
         "user_id": owner.id,
         "confirmation_id": "aigc_confirm_spec",
+        "review_token": "test-review-token",
         "duration_seconds": 15,
     }
 
@@ -297,7 +359,7 @@ def test_aigc_confirmation_rejects_out_of_range_duration_before_service(
     response = client.post(
         "/api/v1/aigc/media/confirmations/aigc_confirm_spec/confirm",
         headers=headers,
-        json={"duration_seconds": 16},
+        json={"review_token": "test-review-token", "duration_seconds": 16},
     )
 
     assert response.status_code == 422

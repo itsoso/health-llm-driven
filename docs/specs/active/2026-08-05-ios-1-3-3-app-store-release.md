@@ -4,7 +4,7 @@
 > Owner: product / mobile release
 > Updated: 2026-08-05
 > Related PRD: `docs/prd/2026-08-05-ios-1-3-3-app-store-release.md`
-> Related code: `mobile/components/dashboard/RhinitisCard.tsx`, `mobile/app/(tabs)/record.tsx`, `mobile/app.json`
+> Related code: `mobile/components/dashboard/RhinitisCard.tsx`, `mobile/app/(tabs)/record.tsx`, `mobile/components/chat/cards/AIGCMediaConfirmationCard.tsx`, `frontend/src/components/assistant/inlineCards/cards.tsx`, `backend/app/api/aigc_media.py`, `backend/app/services/aigc_media_job_service.py`, `mobile/app.json`
 
 ## 1. Decision
 
@@ -96,12 +96,12 @@ RequirementAdmission:
 ## 8. Data Contract
 
 ```yaml
-apis: unchanged
+apis: AIGC confirmation owner GET returns an exact outbound_prompt plus short-lived review_token; confirm POST requires that token
 events: existing medication execution events only
 models: unchanged
-fields: unchanged
+fields: [outbound_prompt, review_token, review_expires_at]
 enums: unchanged
-backward_compatibility: existing user medication records remain readable and writable
+backward_compatibility: existing user medication records remain readable and writable; old AIGC clients fail closed until updated
 migration: none
 ```
 
@@ -111,6 +111,8 @@ migration: none
 - 快捷记录只能记录用户已有事实，不能把缺失药物自动补成产品默认值。
 - 所有写入失败必须提示，不得空 `catch`。
 - 审核账号只含虚构、可复位的数据；不得复制真实用户数据。
+- 审核账号 live gate 只向 HTTPS 地址发送凭证，禁止跟随任何重定向；验证内容必须包含仓库 fixture 的精确合成会话，不得仅以“非空”代替。
+- AIGC provider 外发前必须由 owner-scoped no-store GET 展示将实际发送的完整提示词；确认 POST 只接受短时、owner/confirmation/provider/model/prompt-version 绑定的 runtime token，任何缺失、篡改、过期或版本变化必须在调用 provider 前失败。
 - HealthKit 数据不得用于广告、营销画像、出售或无关数据挖掘。
 - 用户可在应用内发起完整账号删除请求并查看处理状态。
 - App Store 截图不得泄露姓名、电话、药名、报告或设备标识。
@@ -149,6 +151,22 @@ Then 回复不产生处方决定，并在需要时引导医生或急救服务
 Given App Store 审核开始
 When production OTA 渠道被检查
 Then 审核期间没有发布改变 1.3.3 首次启动行为的新更新
+
+Given 发布机运行审核账号 live gate
+When API 基址为 HTTP、包含 URL 凭证/查询/片段或服务返回重定向
+Then 在泄露密码或 Bearer token 前 fail closed
+
+Given 审核账号成功登录
+When live gate 验证审核可见数据
+Then 当前用户的固定简报会话包含仓库 fixture 的精确连续消息对
+
+Given 用户准备把图片或提示词发送给外部 AIGC provider
+When Mobile 或 Web 尚未成功加载完整外发描述和 owner-bound review token
+Then 确认按钮保持禁用，通用卡片 action 也不能直接发起 confirm POST
+
+Given 完整外发描述已显示且用户点击确认
+When confirm POST 到达服务端
+Then token 必须与当前 owner、confirmation、provider、model 和 prompt 版本匹配，实际 provider prompt 与用户所见内容逐字节一致
 ```
 
 ## 12. Verification Plan
@@ -185,3 +203,4 @@ git diff --check
 | Date | Change | Reason |
 |---|---|---|
 | 2026-08-05 | Initial approved spec | 用户批准审核优先、功能冻结的 1.3.3 发布方案 |
+| 2026-08-06 | Added exact AIGC external-provider review boundary | 外发前必须展示实际完整 prompt 并取得 owner/provider/model/version 绑定短时 token；客户端与 capability gateway 均 fail closed，最终独立 G4 GO。 |

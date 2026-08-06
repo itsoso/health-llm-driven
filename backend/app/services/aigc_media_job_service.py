@@ -7,6 +7,7 @@ outputs are copied into Xiaoba's private storage before the user sees them.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -87,6 +88,8 @@ _CONFIRMATION_RECOVERY_WINDOW = timedelta(hours=24)
 # durable job row is committed before any provider call, so a claim with no
 # matching job after this window is safe to release for a fresh owner click.
 _CONFIRMATION_CLAIM_LEASE = timedelta(seconds=30)
+_REVIEW_TOKEN_TTL = timedelta(minutes=10)
+_REVIEW_TOKEN_CONTEXT = b"aigc-media-prompt-review-v1"
 
 
 def is_recoverable_provider_result_missing_job(job: AIGCMediaJob) -> bool:
@@ -316,6 +319,7 @@ class AIGCMediaJobService:
         *,
         user_id: int,
         confirmation_id: str,
+        review_token: str,
         duration_seconds: int | None = None,
     ) -> AIGCMediaJob:
         """Atomically consume a user confirmation and start exactly one job."""
@@ -330,6 +334,12 @@ class AIGCMediaJobService:
         )
         if not candidate:
             raise AIGCMediaJobRequestError("AIGC 确认不存在或无权使用")
+        self._verify_review_token(
+            user_id=int(user_id),
+            confirmation=candidate,
+            review_token=review_token,
+            now=now,
+        )
         requested_duration = (
             int(duration_seconds)
             if duration_seconds is not None
@@ -1071,7 +1081,12 @@ class AIGCMediaJobService:
         return changed_any
 
     def confirmation_projection(self, *, user_id: int, confirmation_id: str) -> dict:
-        """Return a prompt-free confirmation state and its existing job."""
+        """Return an owner-only prompt review state and its existing job.
+
+        The plaintext prompt is never persisted in chat/card metadata. It is
+        decrypted only for this authenticated projection, together with a
+        short-lived stateless token that the confirm endpoint must verify.
+        """
         confirmation = (
             self.db.query(AIGCMediaConfirmation)
             .filter(
@@ -1112,15 +1127,194 @@ class AIGCMediaJobService:
                 user_id=int(user_id),
                 fingerprint=confirmation.prompt_fingerprint,
             )
+        outbound_prompt: str | None = None
+        review_token: str | None = None
+        review_expires_at: str | None = None
+        if can_confirm:
+            try:
+                candidate_prompt = decrypt_aigc_confirmation_for(
+                    int(user_id),
+                    confirmation.prompt_ciphertext,
+                )
+            except Exception as exc:  # noqa: BLE001 - crypto errors fail closed
+                logger.error(
+                    "AIGC prompt review decrypt failed confirmation=%s user=%s error_type=%s",
+                    confirmation.id,
+                    int(user_id),
+                    type(exc).__name__,
+                )
+                can_confirm = False
+            else:
+                if (
+                    not isinstance(candidate_prompt, str)
+                    or not candidate_prompt.strip()
+                    or len(candidate_prompt) > 5000
+                ):
+                    logger.error(
+                        "AIGC prompt review rejected empty prompt confirmation=%s user=%s",
+                        confirmation.id,
+                        int(user_id),
+                    )
+                    can_confirm = False
+                else:
+                    outbound_prompt = candidate_prompt
+                    token_expires_at = min(now + _REVIEW_TOKEN_TTL, now + _CONFIRMATION_RECOVERY_WINDOW)
+                    review_token = self._issue_review_token(
+                        user_id=int(user_id),
+                        confirmation=confirmation,
+                        expires_at=token_expires_at,
+                    )
+                    review_expires_at = token_expires_at.isoformat()
         return {
             "id": confirmation.id,
             "status": confirmation.status,
             "can_confirm": can_confirm,
             "requires_reconfirmation": confirmation.status == "expired" and can_confirm,
             "expires_at": expires_at.isoformat(),
+            "outbound_prompt": outbound_prompt,
+            "review_token": review_token,
+            "review_expires_at": review_expires_at,
             "spec": self._confirmation_spec(confirmation),
             "job": self.project(job) if job is not None else None,
         }
+
+    @staticmethod
+    def _review_provider_route(confirmation: AIGCMediaConfirmation) -> str:
+        if confirmation.kind in IMAGE_KINDS:
+            return "model_studio"
+        return str(settings.aigc_video_provider or "").strip().lower()
+
+    @classmethod
+    def _review_binding(
+        cls,
+        *,
+        user_id: int,
+        confirmation: AIGCMediaConfirmation,
+    ) -> str:
+        canonical = json.dumps(
+            {
+                "user_id": int(user_id),
+                "confirmation_id": confirmation.id,
+                "kind": confirmation.kind,
+                "purpose": confirmation.purpose,
+                "model": confirmation.model,
+                "provider_route": cls._review_provider_route(confirmation),
+                "prompt_ciphertext": confirmation.prompt_ciphertext,
+                "source_message_id": confirmation.source_message_id,
+                "source_image_index": confirmation.source_image_index,
+                "ratio": confirmation.ratio,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        key = hmac.new(
+            settings.secret_key.encode("utf-8"),
+            _REVIEW_TOKEN_CONTEXT,
+            hashlib.sha256,
+        ).digest()
+        return hmac.new(key, canonical.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    @staticmethod
+    def _review_token_b64encode(value: bytes) -> str:
+        return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
+    @staticmethod
+    def _review_token_b64decode(value: str) -> bytes:
+        padding = "=" * (-len(value) % 4)
+        return base64.b64decode(
+            f"{value}{padding}".encode("ascii"),
+            altchars=b"-_",
+            validate=True,
+        )
+
+    @classmethod
+    def _issue_review_token(
+        cls,
+        *,
+        user_id: int,
+        confirmation: AIGCMediaConfirmation,
+        expires_at: datetime,
+    ) -> str:
+        payload = json.dumps(
+            {
+                "v": 1,
+                "uid": int(user_id),
+                "cid": confirmation.id,
+                "binding": cls._review_binding(
+                    user_id=int(user_id),
+                    confirmation=confirmation,
+                ),
+                "exp": int(expires_at.timestamp()),
+            },
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        encoded_payload = cls._review_token_b64encode(payload)
+        key = hmac.new(
+            settings.secret_key.encode("utf-8"),
+            _REVIEW_TOKEN_CONTEXT,
+            hashlib.sha256,
+        ).digest()
+        signature = hmac.new(
+            key,
+            encoded_payload.encode("ascii"),
+            hashlib.sha256,
+        ).digest()
+        return f"{encoded_payload}.{cls._review_token_b64encode(signature)}"
+
+    @classmethod
+    def _verify_review_token(
+        cls,
+        *,
+        user_id: int,
+        confirmation: AIGCMediaConfirmation,
+        review_token: str,
+        now: datetime,
+    ) -> None:
+        error = AIGCMediaJobRequestError("请先审阅完整创作描述后再确认")
+        token = str(review_token or "").strip()
+        if not token or len(token) > 4096:
+            raise error
+        try:
+            encoded_payload, encoded_signature = token.split(".", 1)
+            supplied_signature = cls._review_token_b64decode(encoded_signature)
+            key = hmac.new(
+                settings.secret_key.encode("utf-8"),
+                _REVIEW_TOKEN_CONTEXT,
+                hashlib.sha256,
+            ).digest()
+            expected_signature = hmac.new(
+                key,
+                encoded_payload.encode("ascii"),
+                hashlib.sha256,
+            ).digest()
+            if not hmac.compare_digest(supplied_signature, expected_signature):
+                raise error
+            payload = json.loads(
+                cls._review_token_b64decode(encoded_payload).decode("utf-8")
+            )
+            expected_binding = cls._review_binding(
+                user_id=int(user_id),
+                confirmation=confirmation,
+            )
+            valid = bool(
+                isinstance(payload, dict)
+                and payload.get("v") == 1
+                and payload.get("uid") == int(user_id)
+                and payload.get("cid") == confirmation.id
+                and isinstance(payload.get("binding"), str)
+                and hmac.compare_digest(payload["binding"], expected_binding)
+                and isinstance(payload.get("exp"), int)
+                and payload["exp"] > int(now.timestamp())
+            )
+            if not valid:
+                raise error
+        except AIGCMediaJobRequestError:
+            raise
+        except (UnicodeError, ValueError, TypeError, KeyError):
+            raise error from None
 
     async def _complete_from_provider_url(self, job: AIGCMediaJob, url: str, *, kind: str) -> None:
         data, media_type, extension = await self._result_downloader(url, kind)

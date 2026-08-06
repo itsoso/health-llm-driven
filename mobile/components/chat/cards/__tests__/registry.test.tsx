@@ -664,6 +664,9 @@ describe('renderCard 安全降级', () => {
         data: {
           id: 'aigc_confirm_duration',
           status: 'pending',
+          can_confirm: true,
+          outbound_prompt: '生成一段活动、饮食和睡眠短视频',
+          review_token: 'review-token-duration',
           job: null,
           spec: {
             duration_seconds: 5,
@@ -677,7 +680,7 @@ describe('renderCard 安全降级', () => {
 
     await waitFor(() => expect(api.post).toHaveBeenCalledWith(
       '/aigc/media/confirmations/aigc_confirm_duration/confirm',
-      { duration_seconds: 8 },
+      { review_token: 'review-token-duration', duration_seconds: 8 },
     ));
     expect(await screen.findByText('8秒 · 9:16 · 720P · 含音频')).toBeTruthy();
     screen.unmount();
@@ -689,6 +692,9 @@ describe('renderCard 安全降级', () => {
       data: {
         id: 'aigc_confirm_legacy_duration',
         status: 'pending',
+        can_confirm: true,
+        outbound_prompt: '生成一段历史健康短视频',
+        review_token: 'review-token-legacy-duration',
         job: null,
         spec: {
           duration_seconds: 10,
@@ -726,14 +732,84 @@ describe('renderCard 安全降级', () => {
     expect(screen.getByText('8 秒')).toBeTruthy();
     expect(screen.getByText('15 秒')).toBeTruthy();
     expect(screen.queryByText('10 秒')).toBeNull();
+    expect(await screen.findByText('生成一段历史健康短视频')).toBeTruthy();
     fireEvent.press(screen.getByLabelText('确认生成5秒短视频'));
 
     await waitFor(() => expect(api.post).toHaveBeenCalledWith(
       '/aigc/media/confirmations/aigc_confirm_legacy_duration/confirm',
-      { duration_seconds: 5 },
+      { review_token: 'review-token-legacy-duration', duration_seconds: 5 },
     ));
     screen.unmount();
     (api.post as jest.Mock).mockClear();
+  });
+
+  it('keeps AIGC confirmation disabled until the exact prompt and review token load', async () => {
+    let resolveReview: ((value: unknown) => void) | undefined;
+    (api.get as jest.Mock).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveReview = resolve;
+    }));
+    (api.post as jest.Mock).mockResolvedValueOnce({
+      data: {
+        id: 'aigc_reviewed_job',
+        kind: 'text_to_image',
+        status: 'queued',
+        progress: 0,
+      },
+    });
+    const exactPrompt = "完整描述\n<script>alert('text only')</script>\n[链接](https://example.com)";
+    const screen = render(renderCard({
+      type: 'aigc_media_confirmation',
+      data: {
+        confirmation_id: 'aigc_confirm_review',
+        kind: 'text_to_image',
+        status: 'pending',
+      },
+    })!);
+
+    fireEvent.press(screen.getByLabelText('确认并生成'));
+    expect(api.post).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveReview?.({
+        data: {
+          id: 'aigc_confirm_review',
+          status: 'pending',
+          can_confirm: true,
+          outbound_prompt: exactPrompt,
+          review_token: 'review-token-mobile',
+          review_expires_at: '2026-08-06T12:10:00Z',
+          job: null,
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText('将发送的完整创作描述')).toBeTruthy();
+    expect(screen.getByText(exactPrompt)).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('确认并生成'));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/aigc/media/confirmations/aigc_confirm_review/confirm',
+      { review_token: 'review-token-mobile' },
+    ));
+    screen.unmount();
+  });
+
+  it('fails closed when the AIGC prompt review cannot be loaded', async () => {
+    (api.post as jest.Mock).mockClear();
+    (api.get as jest.Mock).mockRejectedValueOnce(new Error('offline'));
+    const screen = render(renderCard({
+      type: 'aigc_media_confirmation',
+      data: {
+        confirmation_id: 'aigc_confirm_review_offline',
+        kind: 'text_to_image',
+        status: 'pending',
+      },
+    })!);
+
+    expect(await screen.findByText('无法加载完整创作描述，请重试。')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('确认并生成'));
+    expect(api.post).not.toHaveBeenCalled();
+    screen.unmount();
   });
 
   it('shows an expired AIGC draft as re-confirmable instead of a failed submission', async () => {
@@ -741,6 +817,9 @@ describe('renderCard 安全降级', () => {
       data: {
         id: 'aigc_confirm_expired',
         status: 'expired',
+        can_confirm: true,
+        outbound_prompt: '生成一段健康活动短视频',
+        review_token: 'review-token-expired',
         job: null,
         spec: {
           duration_seconds: 5,
@@ -770,7 +849,14 @@ describe('renderCard 安全降级', () => {
   it('resolves an indeterminate AIGC confirmation before reporting a failure', async () => {
     (api.get as jest.Mock)
       .mockResolvedValueOnce({
-        data: { id: 'aigc_confirm_reconcile', status: 'pending', job: null },
+        data: {
+          id: 'aigc_confirm_reconcile',
+          status: 'pending',
+          can_confirm: true,
+          outbound_prompt: '生成一段健康活动短视频',
+          review_token: 'review-token-reconcile',
+          job: null,
+        },
       })
       .mockResolvedValueOnce({
         data: {
@@ -809,6 +895,7 @@ describe('renderCard 安全降级', () => {
       },
     })!);
 
+    expect(await screen.findByText('生成一段健康活动短视频')).toBeTruthy();
     fireEvent.press(screen.getByLabelText('确认生成5秒短视频'));
 
     expect(await screen.findByText('排队中')).toBeTruthy();
@@ -823,7 +910,14 @@ describe('renderCard 安全降级', () => {
   it('keeps reconciling a dispatching confirmation until its durable job appears', async () => {
     (api.get as jest.Mock)
       .mockResolvedValueOnce({
-        data: { id: 'aigc_confirm_dispatching', status: 'pending', can_confirm: true, job: null },
+        data: {
+          id: 'aigc_confirm_dispatching',
+          status: 'pending',
+          can_confirm: true,
+          outbound_prompt: '生成一段健康活动短视频',
+          review_token: 'review-token-dispatching',
+          job: null,
+        },
       })
       .mockResolvedValueOnce({
         data: { id: 'aigc_confirm_dispatching', status: 'dispatching', can_confirm: false, job: null },
@@ -866,6 +960,7 @@ describe('renderCard 安全降级', () => {
       },
     })!);
 
+    expect(await screen.findByText('生成一段健康活动短视频')).toBeTruthy();
     fireEvent.press(screen.getByLabelText('确认生成5秒短视频'));
 
     expect(await screen.findByText('排队中')).toBeTruthy();
