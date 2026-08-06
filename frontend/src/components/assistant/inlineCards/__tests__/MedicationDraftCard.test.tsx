@@ -59,6 +59,20 @@ describe('MedicationDraftCardView', () => {
     expect(screen.getByText('用药 · 待确认')).toBeInTheDocument();
   });
 
+  it('renders a route-only suggestion without claiming a pending confirmation', () => {
+    render(
+      <MedicationDraftCardView
+        medication_name="阿奇霉素"
+        presentation_state="suggestion"
+        boundary="当前尚未写入; 请前往用药页核对药名、剂量和时间后记录。"
+      />,
+    );
+
+    expect(screen.getByText('用药 · 待核对')).toBeInTheDocument();
+    expect(screen.getByText(/当前尚未写入/)).toBeInTheDocument();
+    expect(screen.queryByText('用药 · 待确认')).not.toBeInTheDocument();
+  });
+
   it('renders all item receipts and every safety alert after execution', () => {
     render(
       <MedicationDraftCardView

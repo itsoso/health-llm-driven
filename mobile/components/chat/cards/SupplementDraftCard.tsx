@@ -23,6 +23,7 @@ interface SupplementDraftData {
   source?: unknown;
   suggestions?: unknown;
   boundary?: unknown;
+  presentation_state?: unknown;
 }
 
 function text(value: unknown): string | undefined {
@@ -75,14 +76,15 @@ export function SupplementDraftCardView(data: SupplementDraftData) {
   const takenAt = timeLabel(data.taken_time);
   const meta = [confidenceLabel(data.confidence), sourceLabel(data.source)].filter(Boolean).join(' · ');
   const suggestions = listText(data.suggestions);
+  const isSuggestion = text(data.presentation_state) === 'suggestion';
   const boundary = text(data.boundary) || '确认后记录为已服用; 如正在用药或有慢病, 先核对相互作用。';
 
   return (
     <CardShell
       icon="leaf"
       iconColor={SUPP_ACCENT}
-      title="补剂 · 待确认"
-      badge="需核对"
+      title={isSuggestion ? '补剂 · 待核对' : '补剂 · 待确认'}
+      badge={isSuggestion ? '去记录' : '需核对'}
       badgeColor={SUPP_ACCENT}
       bg={SUPP_TINT}
     >

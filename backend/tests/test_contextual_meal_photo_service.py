@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 import pytest
 from PIL import Image
+from sqlalchemy import event
 
 from app.models.daily_health import DietPhotoAsset, DietPhotoDraft, DietRecord
 from app.models.user import User
@@ -220,6 +221,40 @@ def test_food_photo_outside_auto_window_creates_owner_bound_confirmation_draft(
     assert asset.photo_draft_token == draft.token
     assert asset.diet_record_id is None
     assert asset.lifecycle == "pending"
+
+
+def test_confirmation_draft_parent_is_inserted_before_photo_assets(
+    db, test_user, tmp_path, monkeypatch
+):
+    """Keep PostgreSQL's immediate FK check safe without ORM relationships."""
+    source_url = _source_image(tmp_path, monkeypatch, test_user.id)
+    insert_order: list[str] = []
+
+    def capture_insert_order(_conn, _cursor, statement, _params, _ctx, _many):
+        normalized = statement.lstrip().lower()
+        if normalized.startswith("insert into diet_photo_drafts"):
+            insert_order.append("draft")
+        elif normalized.startswith("insert into diet_photo_assets"):
+            insert_order.append("asset")
+
+    engine = db.get_bind()
+    event.listen(engine, "before_cursor_execute", capture_insert_order)
+    try:
+        result = ContextualMealPhotoService(db).capture(ContextualMealPhotoCapture(
+            user_id=test_user.id,
+            source_message_id=703,
+            source_image_url=source_url,
+            source_image_index=0,
+            decision=_decision(
+                at=datetime(2026, 7, 20, 3, 30, tzinfo=timezone.utc),
+            ),
+            vision_result=_vision_result(),
+        ))
+    finally:
+        event.remove(engine, "before_cursor_execute", capture_insert_order)
+
+    assert result.photo_draft is not None
+    assert insert_order == ["draft", "asset"]
 
 
 def test_same_message_photos_attach_to_one_auto_record(

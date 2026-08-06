@@ -500,6 +500,74 @@ def test_agent_stream_suppresses_diet_projection_by_receipt_not_tool_attempt(
     assert ("diet" in suppressions) is diet_should_be_suppressed
 
 
+@pytest.mark.parametrize(
+    "category",
+    [
+        "action_not_executed",
+        "tool_failed",
+        "tool_blocked",
+        "write_reconciliation_required",
+        "service_unavailable",
+        "execution_error",
+        "confirmation_required",
+    ],
+)
+def test_agent_stream_terminal_write_state_suppresses_query_intake_projection(
+    client,
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    category,
+):
+    from app.services import inline_cards
+
+    user, headers = auth_user_and_headers
+    conversation = _create_conversation(db, user.id, f"终态摄入卡压制-{category}")
+    assistant = _add_message(db, conversation.id, "assistant", "本次没有写入。")
+    assistant.meta = {"cards": []}
+    db.commit()
+
+    build_calls = []
+
+    def build_cards_spy(*_args, **kwargs):
+        build_calls.append(kwargs.copy())
+        return []
+
+    async def fake_run_stream(self, **kwargs):
+        yield {
+            "event": "done",
+            "data": {
+                "conversation_id": conversation.id,
+                "message_id": assistant.id,
+                "completion_status": "complete",
+                "write_receipts": [],
+                "cards": [],
+                "turn_outcome": {"category": category},
+            },
+        }
+
+    _wire_live_agent_stream_test(monkeypatch, db)
+    monkeypatch.setattr(inline_cards, "build_cards", build_cards_spy)
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream",
+        fake_run_stream,
+    )
+
+    response = client.post(
+        "/api/v1/agent/stream",
+        headers=headers,
+        json={
+            "message": "记录我吃了两粒阿奇霉素",
+            "conversation_id": conversation.id,
+            "client_turn_id": f"terminal-card-suppression-{category}",
+        },
+    )
+
+    assert response.status_code == 200
+    assert build_calls
+    assert "medication" in build_calls[-1]["suppress_intake_kinds"]
+
+
 def test_done_cards_report_persistence_failure_without_logging_health_payload(
     db, auth_user_and_headers, monkeypatch, caplog
 ):

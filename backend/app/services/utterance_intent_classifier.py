@@ -15,6 +15,7 @@ from app.services.clinician_provenance_guard import (
     ClinicianTurnDecision,
     classify_clinician_turn,
 )
+from app.services.intake_intent_classifier import classify_intake_intent
 
 from app.services.utterance_intent_lexicon import (
     CLINICIAN_FEEDBACK_OBJECT_NOUNS,
@@ -690,6 +691,18 @@ def _infer_domain(text: str) -> str:
         return "clinical_context"
     if _has_water_signal(text):
         return "water"
+    intake_kind = classify_intake_intent(text).kind
+    if intake_kind == "supplement":
+        return "supplement"
+    if intake_kind == "medication":
+        # Suffixes such as “霉素” are useful recall signals but are not a safe
+        # medication identity boundary. Only promote a medication-like phrase
+        # when the deterministic parser resolves a curated medication name;
+        # user-owned medication names are added later at the database boundary.
+        from app.services.medication_intake_batch import parse_medication_intake_batch
+
+        if parse_medication_intake_batch(text) is not None:
+            return "medication"
     if _has_any(text, MEDICATION_TERMS):
         return "medication"
     if _has_any(text, SUPPLEMENT_TERMS):

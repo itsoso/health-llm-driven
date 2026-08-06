@@ -6049,6 +6049,30 @@ def _is_contextual_meal_photo_replay_result(result: Any) -> bool:
     )
 
 
+def _contextual_diet_write_rejection(reason: str, *, action: str) -> str:
+    """Build the same fail-closed result for both diet write adapters."""
+    if action not in {"写入", "修改"}:
+        raise ValueError("invalid_contextual_diet_write_action")
+    if reason == "cancelled":
+        message = f"已按你的取消要求处理，本轮没有{action}饮食记录。"
+        recovery_guidance = None
+    elif reason == "capture_failed":
+        message = f"图片资产未能安全保存，本轮没有{action}饮食记录。"
+        recovery_guidance = "请重新上传图片后再试。"
+    elif reason == "confirmation_pending":
+        qualifier = "额外" if action == "写入" else ""
+        message = f"图片餐食仍待你核对，本轮没有{qualifier}{action}饮食记录。"
+        recovery_guidance = "请在当前饮食卡片中核对并确认。"
+    else:
+        message = f"这条图片餐食份量表达不够明确，本轮没有{action}饮食记录。"
+        recovery_guidance = "请用明确已完成的事实句重述，例如“这餐只吃了1/2，请记录”。"
+    return local_write_rejection(
+        "contextual_diet_write_blocked",
+        message=message,
+        recovery_guidance=recovery_guidance,
+    )
+
+
 def _number_or_none(value: Any) -> Optional[float]:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
@@ -16355,6 +16379,7 @@ class AgentExecutor:
         )
         if user_id is None or source_message_id is None:
             vision_result["contextual_capture_failed"] = True
+            self._turn_contextual_diet_write_blocked_reason = "capture_failed"
             return None
         cancelled_write = _diet_write_is_explicitly_cancelled(user_message)
         ambiguous_fraction = (
@@ -16379,6 +16404,7 @@ class AgentExecutor:
             for image_index in normalized_indexes
         ):
             vision_result["contextual_capture_failed"] = True
+            self._turn_contextual_diet_write_blocked_reason = "capture_failed"
             return None
 
         from app.services.contextual_meal_photo_policy import (
@@ -16476,6 +16502,7 @@ class AgentExecutor:
             ])
         except ContextualMealPhotoServiceError as exc:
             vision_result["contextual_capture_failed"] = True
+            self._turn_contextual_diet_write_blocked_reason = "capture_failed"
             logger.warning(
                 "[contextual_meal_photo] capture rejected user_id=%s source_message_id=%s reason=%s",
                 user_id,
@@ -16485,6 +16512,7 @@ class AgentExecutor:
             return None
         except Exception as exc:  # noqa: BLE001 - never claim a record after a failed write
             vision_result["contextual_capture_failed"] = True
+            self._turn_contextual_diet_write_blocked_reason = "capture_failed"
             logger.error(
                 "[contextual_meal_photo] capture failed user_id=%s source_message_id=%s error=%s",
                 user_id,
@@ -16525,6 +16553,9 @@ class AgentExecutor:
             )
             self._invalidate_twin_after_mutation()
         elif result.photo_draft is not None:
+            self._turn_contextual_diet_write_blocked_reason = (
+                "confirmation_pending"
+            )
             self._upsert_turn_contextual_diet_card(
                 self._contextual_diet_confirmation_card(result),
             )
@@ -18817,21 +18848,9 @@ class AgentExecutor:
             )
 
         if rtype == "diet" and self._turn_contextual_diet_write_blocked_reason:
-            cancelled = (
-                self._turn_contextual_diet_write_blocked_reason == "cancelled"
-            )
-            return local_write_rejection(
-                "contextual_diet_write_blocked",
-                message=(
-                    "已按你的取消要求处理，本轮没有写入饮食记录。"
-                    if cancelled
-                    else "这条图片餐食份量表达不够明确，本轮没有写入饮食记录。"
-                ),
-                recovery_guidance=(
-                    None
-                    if cancelled
-                    else "请用明确已完成的事实句重述，例如“这餐只吃了1/2，请记录”。"
-                ),
+            return _contextual_diet_write_rejection(
+                self._turn_contextual_diet_write_blocked_reason,
+                action="写入",
             )
 
         # A contextual meal photo may already have been persisted before the
@@ -19739,21 +19758,9 @@ class AgentExecutor:
             and operation != "list"
             and self._turn_contextual_diet_write_blocked_reason
         ):
-            cancelled = (
-                self._turn_contextual_diet_write_blocked_reason == "cancelled"
-            )
-            return local_write_rejection(
-                "contextual_diet_write_blocked",
-                message=(
-                    "已按你的取消要求处理，本轮没有修改饮食记录。"
-                    if cancelled
-                    else "这条图片餐食份量表达不够明确，本轮没有修改饮食记录。"
-                ),
-                recovery_guidance=(
-                    None
-                    if cancelled
-                    else "请用明确已完成的事实句重述，例如“这餐只吃了1/2，请记录”。"
-                ),
+            return _contextual_diet_write_rejection(
+                self._turn_contextual_diet_write_blocked_reason,
+                action="修改",
             )
         if (
             record_type == "diet"

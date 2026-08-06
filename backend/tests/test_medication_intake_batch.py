@@ -159,6 +159,76 @@ def test_parse_single_explicit_intake_for_same_server_owned_confirmation_path():
     }
 
 
+def test_parse_single_explicit_intake_with_quantity_before_known_medication():
+    draft = batch.parse_medication_intake_batch("记录我吃了两粒阿奇霉素")
+
+    assert draft == {
+        "items": [
+            {
+                "medication_name": "阿奇霉素",
+                "actual_dosage": "2粒",
+                "observed_strength": None,
+            }
+        ]
+    }
+
+
+def test_tool_proposal_rejects_unknown_medication_name_before_write_intent(db):
+    user = _user(db, "unknown_tool_medication")
+    conversation, source = _source_message(
+        db,
+        user.id,
+        content="记录我吃了两粒咔咔霉素",
+    )
+
+    with pytest.raises(
+        batch.InvalidMedicationIntakePlan,
+        match="controlled medication name",
+    ):
+        batch.propose_medication_intake_items(
+            db,
+            user_id=user.id,
+            conversation_id=conversation.id,
+            source_message_id=source.id,
+            items=[{
+                "medication_name": "咔咔霉素",
+                "actual_dosage": "2粒",
+            }],
+            reference_now=FROZEN_NOW,
+        )
+
+    assert db.query(WriteIntent).filter(WriteIntent.user_id == user.id).count() == 0
+
+
+def test_tool_proposal_allows_an_existing_user_medication_name(db):
+    user = _user(db, "known_user_medication")
+    db.add(Medication(
+        user_id=user.id,
+        name="医生登记的临时药甲",
+        is_active=True,
+    ))
+    db.commit()
+    conversation, source = _source_message(
+        db,
+        user.id,
+        content="记录服用医生登记的临时药甲一粒",
+    )
+
+    intent = batch.propose_medication_intake_items(
+        db,
+        user_id=user.id,
+        conversation_id=conversation.id,
+        source_message_id=source.id,
+        items=[{
+            "medication_name": "医生登记的临时药甲",
+            "actual_dosage": "1粒",
+        }],
+        reference_now=FROZEN_NOW,
+    )
+
+    assert intent.payload["items"][0]["medication_name"] == "医生登记的临时药甲"
+
+
 def test_parse_keeps_strength_separate_from_actual_quantity():
     draft = batch.parse_medication_intake_batch(
         "记录服用奥美拉唑20mg一粒、替普瑞酮两粒"
@@ -208,6 +278,7 @@ def test_parse_deduplicates_generic_and_brand_alias_for_same_medication():
         "记录服用伊托必利一粒和自制药丸两粒",
         "记录刚服用胰岛素10单位和二甲双胍1片",
         "记录服用阿奇霉素0粒",
+        "记录我吃了两粒阿奇霉素一粒",
         f"记录服用阿奇霉素{'1' * 100}粒",
     ],
 )

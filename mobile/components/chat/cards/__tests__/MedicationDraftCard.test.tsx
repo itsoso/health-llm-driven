@@ -31,6 +31,20 @@ describe('MedicationDraftCardView', () => {
     expect(getByText('确认后一次写入全部服药记录；未确认前不会写入。')).toBeTruthy();
   });
 
+  it('renders a route-only suggestion without claiming a pending confirmation', () => {
+    const { getByText, queryByText } = render(
+      <MedicationDraftCardView
+        medication_name="阿奇霉素"
+        presentation_state="suggestion"
+        boundary="当前尚未写入; 请前往用药页核对药名、剂量和时间后记录。"
+      />,
+    );
+
+    expect(getByText('用药 · 待核对')).toBeTruthy();
+    expect(getByText(/当前尚未写入/)).toBeTruthy();
+    expect(queryByText('用药 · 待确认')).toBeNull();
+  });
+
   it('renders a truthful expired terminal instead of leaving the draft pending', () => {
     const { getByText, queryByText } = render(
       <MedicationDraftCardView

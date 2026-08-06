@@ -127,6 +127,21 @@ def test_real_record_command_is_write_intent():
     assert intent.is_write is True
 
 
+def test_known_medication_intake_outranks_generic_diet_verb():
+    intent = classify_agent_utterance("记录我吃了两粒阿奇霉素")
+
+    assert intent.primary == "write"
+    assert intent.domain == "medication"
+    assert intent.operation == "create"
+    assert intent.is_write is True
+
+
+def test_unknown_medication_like_name_does_not_enter_medication_write_domain():
+    intent = classify_agent_utterance("记录我吃了两粒咔咔霉素")
+
+    assert intent.domain != "medication"
+
+
 def test_clear_symptom_statement_is_write_intent():
     intent = classify_agent_utterance("还是有腰疼的症状。")
 

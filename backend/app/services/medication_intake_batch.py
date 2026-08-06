@@ -71,6 +71,10 @@ _SHARED_QUANTITY_RE = re.compile(
     rf"各\s*(?P<count>{_COUNT_TOKEN})\s*(?P<unit>{_QUANTITY_UNIT})",
     re.IGNORECASE,
 )
+_PREPOSED_QUANTITY_RE = re.compile(
+    rf"(?P<count>{_COUNT_TOKEN})\s*(?P<unit>{_QUANTITY_UNIT})\s*$",
+    re.IGNORECASE,
+)
 _STRENGTH_RE = re.compile(
     r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>mg|毫克|mcg|μg|ug|微克|g|克)",
     re.IGNORECASE,
@@ -300,7 +304,23 @@ def parse_medication_intake_batch(
     mentions = _find_name_mentions(raw, known_names=known_names)
     if not mentions or len(mentions) > _MAX_ITEMS:
         return None
-    if not _supported_prefix(raw[:mentions[0]["start"]]):
+    prefix = raw[:mentions[0]["start"]]
+    preposed_quantity: str | None = None
+    preposed_match = _PREPOSED_QUANTITY_RE.search(prefix)
+    if preposed_match is not None:
+        # Common spoken Chinese places the actual amount before one medication
+        # ("吃了两粒阿奇霉素").  Restrict this grammar to a single curated name;
+        # for multiple drugs the amount-to-item mapping is ambiguous.
+        if len(mentions) != 1:
+            return None
+        preposed_quantity = _normalized_quantity(
+            preposed_match.group("count"),
+            preposed_match.group("unit"),
+        )
+        if preposed_quantity is None:
+            return None
+        prefix = prefix[:preposed_match.start()]
+    if not _supported_prefix(prefix):
         return None
     if any(
         not raw[mentions[index]["end"]:mentions[index + 1]["start"]]
@@ -342,9 +362,14 @@ def parse_medication_intake_batch(
         direct_quantity = _normalized_quantity_text(tail_match.group("quantity"))
         if tail_match.group("quantity") and direct_quantity is None:
             return None
-        if shared_quantity is not None and direct_quantity is not None:
+        supplied_quantities = [
+            value
+            for value in (direct_quantity, shared_quantity, preposed_quantity)
+            if value is not None
+        ]
+        if len(supplied_quantities) > 1:
             return None
-        quantity = direct_quantity or shared_quantity
+        quantity = direct_quantity or shared_quantity or preposed_quantity
         if not quantity:
             return None
         observed_strength = _normalized_strength_text(tail_match.group("strength"))
@@ -617,6 +642,20 @@ def propose_medication_intake_items(
         )
 
     aliases = _alias_registry()
+    controlled_names = {
+        normalized
+        for value in (*aliases.keys(), *aliases.values())
+        if (normalized := _normalized_alias(value))
+    }
+    controlled_names.update(
+        normalized
+        for (value,) in (
+            db.query(Medication.name)
+            .filter(Medication.user_id == user_id)
+            .all()
+        )
+        if (normalized := _normalized_alias(value))
+    )
     normalized_items: list[dict[str, Any]] = []
     seen: dict[str, str] = {}
     for raw_item in items:
@@ -635,7 +674,12 @@ def propose_medication_intake_items(
                 "tool medication item requires a name and explicit actual quantity"
             )
         canonical = _canonical_name(name, aliases)
+        raw_key = _normalized_alias(name)
         key = _normalized_alias(canonical)
+        if raw_key not in controlled_names and key not in controlled_names:
+            raise InvalidMedicationIntakePlan(
+                "tool medication item requires a controlled medication name"
+            )
         if key in seen and seen[key] != dosage:
             raise InvalidMedicationIntakePlan("conflicting quantities for one medication")
         if key in seen:

@@ -802,6 +802,7 @@ export interface MedicationDraftData {
   taken_time?: unknown;
   source?: unknown;
   boundary?: unknown;
+  presentation_state?: unknown;
   decision_status?: unknown;
   action_pending?: unknown;
   write_receipts?: unknown;
@@ -909,11 +910,16 @@ export function MedicationDraftCardView(data: MedicationDraftData) {
   const receipts = medicationReceiptViews(data.write_receipts);
   const safetyAlerts = medicationSafetyAlertViews(data.safety_alerts);
   const rawStatus = medText(data.decision_status);
+  const presentationState = medText(data.presentation_state);
   const decisionStatus = rawStatus === 'executed' || rawStatus === 'dismissed' || rawStatus === 'expired'
     ? rawStatus
     : 'pending';
   const completeReceiptSet = receipts.length > 0 && (items.length === 0 || receipts.length === items.length);
-  const displayStatus = decisionStatus === 'executed' && !completeReceiptSet ? 'reconciling' : decisionStatus;
+  const displayStatus = rawStatus == null && presentationState === 'suggestion'
+    ? 'suggestion'
+    : decisionStatus === 'executed' && !completeReceiptSet
+      ? 'reconciling'
+      : decisionStatus;
   const statusMeta = displayStatus === 'executed'
     ? { title: '用药 · 已记录', badge: '已保存', badgeColor: '#176F49' }
     : displayStatus === 'dismissed'
@@ -922,6 +928,8 @@ export function MedicationDraftCardView(data: MedicationDraftData) {
         ? { title: '用药 · 确认已过期', badge: '未写入', badgeColor: '#B7791F' }
         : displayStatus === 'reconciling'
           ? { title: '用药 · 状态待核对', badge: '核对中', badgeColor: '#B7791F' }
+          : displayStatus === 'suggestion'
+            ? { title: '用药 · 待核对', badge: '去记录', badgeColor: '#7C5CBF' }
           : { title: '用药 · 待确认', badge: '需核对', badgeColor: '#7C5CBF' };
   const fallbackMedication = medText(data.medication_name) || '待确认用药';
   const takenAt = medicationTakenAt(data.taken_at ?? data.taken_time);
@@ -967,7 +975,7 @@ export function MedicationDraftCardView(data: MedicationDraftData) {
         </div>
       ) : null}
 
-      {displayStatus === 'pending' ? (
+      {displayStatus === 'pending' || displayStatus === 'suggestion' ? (
         <div className="mt-3 text-[11px] leading-5 text-[#6B665A]">{boundary}</div>
       ) : displayStatus === 'dismissed' ? (
         <div role="status" className="mt-3 text-xs font-semibold text-[#6B665A]">这组记录已取消，没有写入。</div>

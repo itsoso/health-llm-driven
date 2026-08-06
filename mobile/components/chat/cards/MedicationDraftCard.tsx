@@ -26,6 +26,7 @@ interface MedicationDraftData {
   source?: unknown;
   suggestions?: unknown;
   boundary?: unknown;
+  presentation_state?: unknown;
   decision_status?: unknown;
 }
 
@@ -143,7 +144,14 @@ export function MedicationDraftCardView(data: MedicationDraftData) {
   const meta = [confidenceLabel(data.confidence), sourceLabel(data.source)].filter(Boolean).join(' · ');
   const suggestions = listText(data.suggestions);
   const decisionStatus = medicationDecisionStatus(data.decision_status);
-  const presentation = terminalPresentation(decisionStatus);
+  const presentation = text(data.decision_status) == null && text(data.presentation_state) === 'suggestion'
+    ? {
+        title: '用药 · 待核对',
+        badge: '去记录',
+        badgeColor: MED_ACCENT,
+        boundary: undefined,
+      }
+    : terminalPresentation(decisionStatus);
   const boundary = presentation.boundary
     || text(data.boundary)
     || '确认后记录为已服用; 不替代医嘱, 不调整剂量。';

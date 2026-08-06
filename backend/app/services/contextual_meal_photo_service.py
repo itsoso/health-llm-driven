@@ -517,7 +517,12 @@ class ContextualMealPhotoService:
         )
         for asset in assets:
             asset.photo_draft_token = draft.token
-        self.db.add_all([draft, *assets])
+        # ``DietPhotoAsset`` intentionally has no ORM relationship to its
+        # draft parent. Flush the parent explicitly so PostgreSQL's immediate
+        # FK check never observes an asset before ``DietPhotoDraft`` exists.
+        self.db.add(draft)
+        self.db.flush()
+        self.db.add_all(assets)
         self.db.commit()
         self.db.refresh(draft)
         for asset in assets:

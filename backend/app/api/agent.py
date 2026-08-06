@@ -344,6 +344,35 @@ def _verified_intake_suppressions(data: dict | None) -> set[str]:
     }
 
 
+_INTAKE_PROJECTION_TERMINAL_CATEGORIES = frozenset({
+    "action_not_executed",
+    "tool_failed",
+    "tool_blocked",
+    "write_reconciliation_required",
+    "service_unavailable",
+    "execution_error",
+    "confirmation_required",
+})
+
+
+def _terminal_intake_suppressions(data: dict | None, query: str) -> set[str]:
+    """Suppress query-inferred write cards when execution owns the outcome."""
+    suppress = _pending_intake_suppressions(data) | _verified_intake_suppressions(data)
+    if not isinstance(data, dict):
+        return suppress
+    outcome = data.get("turn_outcome")
+    category = outcome.get("category") if isinstance(outcome, dict) else None
+    if category not in _INTAKE_PROJECTION_TERMINAL_CATEGORIES:
+        return suppress
+
+    from app.services.intake_intent_classifier import classify_intake_intent
+
+    kind = classify_intake_intent(query).kind
+    if kind in {"diet", "medication", "supplement"}:
+        suppress.add(kind)
+    return suppress
+
+
 def _persist_done_cards(db: Session, message_id: int | None, cards: list) -> bool:
     """Persist cards appended by the API wrapper into AgentMessage.meta.
 
@@ -1839,11 +1868,9 @@ async def agent_stream(
                                 # 即完成"的确认流(实锤:打卡替普瑞酮 → 确认问句与
                                 # medication_draft 双路互搏;mac 上该按钮还曾是静默死键)。
                                 suppress = represented_intake_kinds(existing, inline)
-                                suppress = set(suppress) | _pending_intake_suppressions(
-                                    done_data
-                                )
-                                suppress = set(suppress) | _verified_intake_suppressions(
-                                    done_data
+                                suppress = set(suppress) | _terminal_intake_suppressions(
+                                    done_data,
+                                    msg_text,
                                 )
                                 # 分析轮(LLM 正文已自带表格/多段分析)压掉冗余单日快照卡
                                 suppress_snapshots = _answer_owns_its_visualization(

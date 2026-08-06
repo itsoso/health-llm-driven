@@ -771,11 +771,12 @@ def _build_medication_draft(db: Session, user_id: int, q: str) -> Optional[Dict[
         "medication_name": medication_name,
         "confidence": intent.confidence,
         "source": "chat",
+        "presentation_state": "suggestion",
         "suggestions": [
             "确认前核对药名、剂量和服用时间",
             "如药品不在清单中, 先添加到用药管理",
         ],
-        "boundary": "确认后记录为已服用; 不替代医嘱, 不调整剂量。",
+        "boundary": "当前尚未写入; 请前往用药页核对药名、剂量和时间后记录。",
     }
     if intent.slots.get("dose"):
         data["dose"] = intent.slots["dose"]
@@ -795,11 +796,12 @@ def _build_supplement_draft(db: Session, user_id: int, q: str) -> Optional[Dict[
         "supplement_name": supplement_name,
         "confidence": intent.confidence,
         "source": "chat",
+        "presentation_state": "suggestion",
         "suggestions": [
             "确认前核对补剂名、剂量和服用时间",
             "如正在用药或有慢病, 先核对相互作用",
         ],
-        "boundary": "确认后记录为已服用; 如正在用药或有慢病, 先核对相互作用。",
+        "boundary": "当前尚未写入; 请前往补剂页核对名称、剂量和时间后记录。",
     }
 
 

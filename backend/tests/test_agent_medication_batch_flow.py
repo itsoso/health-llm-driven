@@ -266,13 +266,20 @@ async def test_confirm_commit_crash_replays_projected_receipts_without_llm_or_du
     assert db.query(MedicationLog).filter(MedicationLog.user_id == user.id).count() == 2
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    [
+        "记录服用阿奇霉素两粒",
+        "记录我吃了两粒阿奇霉素",
+    ],
+)
 async def test_single_explicit_intake_uses_the_same_zero_llm_confirmation_path(
-    db, auth_user_and_headers, monkeypatch
+    db, auth_user_and_headers, monkeypatch, message
 ):
     user, _ = auth_user_and_headers
     first_executor = AgentExecutor(db)
     _forbid_llm(first_executor, monkeypatch)
-    first = await _run(first_executor, user.id, "记录服用阿奇霉素两粒")
+    first = await _run(first_executor, user.id, message)
     first_done = _done(first)
     assert first_done["turn_outcome"]["category"] == "confirmation_required"
     assert "阿奇霉素 2粒" in _tokens(first)
@@ -822,6 +829,61 @@ async def test_llm_medication_tool_can_only_propose_a_server_owned_plan(
     )
     assert len(_done(confirmed)["write_receipts"]) == 1
     assert db.query(MedicationLog).filter(MedicationLog.user_id == user.id).count() == 1
+
+
+@pytest.mark.asyncio
+async def test_llm_medication_tool_rejects_unknown_name_without_pending_plan(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    calls = 0
+
+    async def fake_stream(messages, tools):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            yield {
+                "type": "tool_calls",
+                "tool_calls": [{
+                    "id": "unknown-medication-proposal",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "medication",
+                            "data": {
+                                "medication_name": "咔咔霉素",
+                                "actual_dosage": "2粒",
+                            },
+                        }, ensure_ascii=False),
+                    },
+                }],
+            }
+            yield {"type": "finish", "finish_reason": "tool_calls"}
+            return
+        yield {"type": "content", "text": "未建立用药确认计划，本轮没有写入。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
+    events = await _run(
+        executor,
+        user.id,
+        "记录我吃了两粒咔咔霉素",
+        client_turn_id="unknown-medication-tool-plan",
+    )
+
+    done = _done(events)
+    assert calls >= 2
+    assert done["pending_write_intent_ids"] == []
+    assert done["write_receipts"] == []
+    assert done["turn_outcome"]["category"] in {
+        "action_not_executed",
+        "tool_failed",
+    }
+    assert db.query(WriteIntent).filter(WriteIntent.user_id == user.id).count() == 0
+    assert db.query(MedicationLog).filter(MedicationLog.user_id == user.id).count() == 0
 
 
 @pytest.mark.asyncio

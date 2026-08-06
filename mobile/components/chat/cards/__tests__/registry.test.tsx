@@ -1297,8 +1297,9 @@ describe('renderCard 安全降级', () => {
         dose: '20mg',
         confidence: 0.9,
         source: 'chat',
+        presentation_state: 'suggestion',
         suggestions: ['确认前核对药名、剂量和服用时间'],
-        boundary: '确认后记录为已服用; 不替代医嘱, 不调整剂量。',
+        boundary: '当前尚未写入; 请前往用药页核对药名、剂量和时间后记录。',
       },
       actions: [
         {
@@ -1322,11 +1323,12 @@ describe('renderCard 安全降级', () => {
     expect(element).not.toBeNull();
 
     const { getByText } = render(element!);
-    expect(getByText('用药 · 待确认')).toBeTruthy();
+    expect(getByText('用药 · 待核对')).toBeTruthy();
+    expect(getByText('去用药页记录')).toBeTruthy();
     expect(getByText('替普瑞酮胶囊（施维舒）')).toBeTruthy();
     expect(getByText('20mg')).toBeTruthy();
     expect(getByText('置信度 90% · 来源: 对话')).toBeTruthy();
-    expect(getByText('确认后记录为已服用; 不替代医嘱, 不调整剂量。')).toBeTruthy();
+    expect(getByText('当前尚未写入; 请前往用药页核对药名、剂量和时间后记录。')).toBeTruthy();
 
     fireEvent.press(getByText('去用药页记录'));
     expect(onAction).toHaveBeenCalledWith(
@@ -1343,8 +1345,9 @@ describe('renderCard 安全降级', () => {
         supplement_name: '鱼油',
         confidence: 0.82,
         source: 'chat',
+        presentation_state: 'suggestion',
         suggestions: ['确认前核对补剂名、剂量和服用时间'],
-        boundary: '确认后记录为已服用; 如正在用药或有慢病, 先核对相互作用。',
+        boundary: '当前尚未写入; 请前往补剂页核对名称、剂量和时间后记录。',
       },
       actions: [
         {
@@ -1368,10 +1371,11 @@ describe('renderCard 安全降级', () => {
     expect(element).not.toBeNull();
 
     const { getByText } = render(element!);
-    expect(getByText('补剂 · 待确认')).toBeTruthy();
+    expect(getByText('补剂 · 待核对')).toBeTruthy();
+    expect(getByText('去补剂页记录')).toBeTruthy();
     expect(getByText('鱼油')).toBeTruthy();
     expect(getByText('置信度 82% · 来源: 对话')).toBeTruthy();
-    expect(getByText('确认后记录为已服用; 如正在用药或有慢病, 先核对相互作用。')).toBeTruthy();
+    expect(getByText('当前尚未写入; 请前往补剂页核对名称、剂量和时间后记录。')).toBeTruthy();
 
     fireEvent.press(getByText('去补剂页记录'));
     expect(onAction).toHaveBeenCalledWith(

@@ -435,6 +435,8 @@ def test_inline_cards_builds_medication_draft_for_medication_intake():
     assert cards[0]["data"]["medication_name"] == "替普瑞酮胶囊（施维舒）"
     assert cards[0]["data"]["source"] == "chat"
     assert cards[0]["data"]["confidence"] == 0.9
+    assert cards[0]["data"]["presentation_state"] == "suggestion"
+    assert "尚未写入" in cards[0]["data"]["boundary"]
     assert _without_kernel_action_policy(cards[0]["actions"]) == [
         {
             "id": "open-medication-draft",
@@ -479,6 +481,8 @@ def test_inline_cards_builds_supplement_draft_for_supplement_intake():
     assert cards[0]["data"]["supplement_name"] == "鱼油"
     assert cards[0]["data"]["source"] == "chat"
     assert cards[0]["data"]["confidence"] == 0.82
+    assert cards[0]["data"]["presentation_state"] == "suggestion"
+    assert "尚未写入" in cards[0]["data"]["boundary"]
     assert _without_kernel_action_policy(cards[0]["actions"]) == [
         {
             "id": "open-supplement-draft",

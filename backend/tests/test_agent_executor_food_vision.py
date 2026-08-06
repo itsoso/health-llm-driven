@@ -605,7 +605,8 @@ def test_agent_missing_any_food_confidence_requires_confirmation(
     assert db.query(DietRecord).count() == 0
 
 
-def test_agent_photo_persistence_failure_never_falls_back_to_unverified_write(
+@pytest.mark.asyncio
+async def test_agent_photo_persistence_failure_never_falls_back_to_unverified_write(
     db, tmp_path, monkeypatch
 ):
     from app.services.contextual_meal_photo_service import (
@@ -633,8 +634,65 @@ def test_agent_photo_persistence_failure_never_falls_back_to_unverified_write(
 
     assert capture is None
     assert db.query(DietRecord).count() == 0
+    assert executor._turn_contextual_diet_write_blocked_reason == "capture_failed"
     assert "严禁调用 health_record" in context
     assert "请调用 health_record" not in context
+
+    post = AsyncMock()
+    monkeypatch.setattr(executor, "_api_post_json", post)
+    record_result = await executor._exec_health_record("http://test", {}, {
+        "record_type": "diet",
+        "data": {"meal_type": "breakfast", "food_items": "鸡胸肉"},
+    })
+    manage_result = await executor._exec_health_manage("http://test", {}, {
+        "record_type": "diet",
+        "operation": "update",
+        "record_id": 123,
+        "data": {"food_items": "鸡胸肉"},
+    })
+
+    assert "contextual_diet_write_blocked" in record_result
+    assert "contextual_diet_write_blocked" in manage_result
+    post.assert_not_awaited()
+    assert db.query(DietRecord).count() == 0
+
+
+@pytest.mark.asyncio
+async def test_agent_pending_photo_draft_closes_model_diet_write_adapters(
+    db, tmp_path, monkeypatch
+):
+    executor, _user = _food_photo_executor(db, tmp_path, monkeypatch)
+    executor._agent_kernel_reference_now = lambda: datetime(
+        2026, 7, 20, 3, 30, tzinfo=timezone.utc,
+    )
+
+    capture = executor._capture_contextual_meal_photo(
+        "",
+        _food_result(),
+        image_index=0,
+    )
+
+    assert capture is not None
+    assert capture.photo_draft is not None
+    assert executor._turn_contextual_diet_write_blocked_reason == "confirmation_pending"
+
+    post = AsyncMock()
+    monkeypatch.setattr(executor, "_api_post_json", post)
+    record_result = await executor._exec_health_record("http://test", {}, {
+        "record_type": "diet",
+        "data": {"meal_type": "breakfast", "food_items": "鸡胸肉"},
+    })
+    manage_result = await executor._exec_health_manage("http://test", {}, {
+        "record_type": "diet",
+        "operation": "update",
+        "record_id": 123,
+        "data": {"food_items": "鸡胸肉"},
+    })
+
+    assert "contextual_diet_write_blocked" in record_result
+    assert "contextual_diet_write_blocked" in manage_result
+    post.assert_not_awaited()
+    assert db.query(DietRecord).count() == 0
 
 
 @pytest.mark.asyncio
