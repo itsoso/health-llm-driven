@@ -252,10 +252,12 @@ def validate_privacy_policy_copy(web_copy: str, mobile_copy: str) -> list[str]:
     for required in (
         "小巴",
         "睿为健康",
-        "2026-07-14",
+        "2026-08-05",
         "HealthKit",
         "AI 模型服务",
         "精确位置",
+        "语音音频",
+        "客户端事件",
         "删除账号与数据",
         "删除请求编号",
         "7 天",
@@ -276,8 +278,10 @@ def validate_app_store_privacy_declaration(
     privacy: dict,
     review_notes: str,
     diet_service: str,
+    transcribe_service: str | None = None,
+    client_events_api: str | None = None,
 ) -> list[str]:
-    """Keep the checked-in App Privacy answers aligned with production image flow."""
+    """Keep checked-in App Privacy answers aligned with production upload flows."""
     failures: list[str] = []
     remote_meal_photo_flow = (
         "/diet/recognize" in diet_service and "image_base64" in diet_service
@@ -337,6 +341,78 @@ def validate_app_store_privacy_declaration(
         failures.append(
             "App Privacy User Content must explicitly disclose uploaded meal/report images"
         )
+
+    if transcribe_service is not None:
+        remote_audio_flow = (
+            "/chat/transcribe" in transcribe_service
+            and "audio_base64" in transcribe_service
+        )
+        if not remote_audio_flow:
+            failures.append(
+                "cannot verify production cloud transcription upload contract "
+                "in mobile/services/transcribe.ts"
+            )
+        elif "Audio Data" not in apple_data_types:
+            failures.append(
+                "App Privacy User Content must include Apple data type 'Audio Data' "
+                "for cloud transcription"
+            )
+        elif not any(
+            "voice_audio_uploaded_to_authenticated_service_for_transcription"
+            in str(example)
+            for example in examples
+        ):
+            failures.append(
+                "App Privacy User Content must explicitly disclose voice audio "
+                "uploaded for cloud transcription"
+            )
+        else:
+            audio_details = user_content.get("apple_data_type_details", {}).get(
+                "Audio Data",
+                {},
+            )
+            if (
+                "app_functionality" not in audio_details.get("purpose", [])
+                or audio_details.get("linked_to_user") is not True
+                or audio_details.get("used_for_tracking") is not False
+            ):
+                failures.append(
+                    "App Privacy Audio Data must be linked to the user, used for "
+                    "App Functionality, and not used for tracking"
+                )
+
+    if client_events_api is not None:
+        linked_client_event_flow = (
+            "ClientEvent(" in client_events_api
+            and "user_id=current_user.id" in client_events_api
+        )
+        if not linked_client_event_flow:
+            failures.append(
+                "cannot verify authenticated client-event persistence contract "
+                "in backend/app/api/client_events.py"
+            )
+        else:
+            usage_data = next(
+                (
+                    entry
+                    for entry in privacy.get("data_types", [])
+                    if isinstance(entry, dict) and entry.get("category") == "Usage Data"
+                ),
+                {},
+            )
+            usage_types = usage_data.get("apple_data_types", [])
+            if (
+                "Product Interaction" not in usage_types
+                or usage_data.get("linked_to_user") is not True
+            ):
+                failures.append(
+                    "App Privacy must include Usage Data -> Product Interaction "
+                    "linked to the user for authenticated client events"
+                )
+            if "analytics" not in usage_data.get("purpose", []):
+                failures.append(
+                    "App Privacy Product Interaction must declare the Analytics purpose"
+                )
     return failures
 
 
@@ -740,6 +816,8 @@ def main() -> int:
     submission = read_text("docs/release/app-store/submission-pack.md")
     review_notes = read_text("docs/release/app-store/review-notes.zh-CN.md")
     diet_service = read_text("mobile/services/diet.ts")
+    transcribe_service = read_text("mobile/services/transcribe.ts")
+    client_events_api = read_text("backend/app/api/client_events.py")
     screenshot_runbook = read_text("docs/release/app-store/screenshot-runbook.md")
     privacy_page = read_text("frontend/src/app/privacy/page.tsx")
     mobile_privacy_page = read_text("mobile/app/privacy-policy.tsx")
@@ -788,7 +866,16 @@ def main() -> int:
         failures.append("HealthKit advertising use must remain false")
 
     categories = {item.get("category") for item in privacy.get("data_types", [])}
-    for category in {"Health", "Fitness", "User Content", "Contact Info", "Identifiers", "Diagnostics"}:
+    for category in {
+        "Health",
+        "Fitness",
+        "User Content",
+        "Contact Info",
+        "Identifiers",
+        "Usage Data",
+        "Diagnostics",
+        "Location",
+    }:
         if category not in categories:
             failures.append(f"privacy nutrition missing category: {category}")
     failures.extend(
@@ -796,6 +883,8 @@ def main() -> int:
             privacy=privacy,
             review_notes=review_notes,
             diet_service=diet_service,
+            transcribe_service=transcribe_service,
+            client_events_api=client_events_api,
         )
     )
 

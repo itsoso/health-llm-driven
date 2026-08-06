@@ -138,6 +138,15 @@ This harness covers launch, authenticated Agent access, briefing interaction, fo
 
 Use `docs/release/app-store/privacy-nutrition-label.draft.json` as the working source. App Store Connect remains the final source of truth after manual entry.
 
+The 1.3.3 declaration covers 12 data types. Email Address, Health, Fitness,
+Precise Location, Photos or Videos, Audio Data, Other User Content, User ID,
+Device ID, and Product Interaction are linked to the user's identity. Crash Data
+and Performance Data are not linked. None is used for tracking. The checked-in
+JSON is the purpose-level source of truth; in particular, cloud transcription
+requires `User Content -> Audio Data` for App Functionality, and authenticated
+client-event telemetry requires linked `Usage Data -> Product Interaction` for
+App Functionality and Analytics.
+
 Before final submission, compare every App Store Connect data type and purpose with the checked-in declaration, click Publish, and set `APP_STORE_PRIVACY_RESPONSES_PUBLISHED=1` only after the published product-page preview is visible.
 
 ## Regulated Medical Device Declaration

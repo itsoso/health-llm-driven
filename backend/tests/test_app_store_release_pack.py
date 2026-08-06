@@ -222,6 +222,55 @@ def test_app_store_privacy_declaration_fails_closed_when_image_flow_is_unrecogni
     assert "cannot verify production meal-photo upload contract" in "\n".join(failures)
 
 
+def test_app_store_privacy_declaration_requires_audio_data_for_cloud_transcription():
+    failures = validate_app_store_privacy_declaration(
+        privacy={
+            "data_types": [
+                {
+                    "category": "User Content",
+                    "apple_data_types": ["Other User Content", "Photos or Videos"],
+                    "examples": ["meal_images_uploaded_to_service"],
+                }
+            ],
+        },
+        review_notes=(
+            "The submitted binary does not bundle an on-device inference model "
+            "or expose an account-free local mode."
+        ),
+        diet_service="api.post('/diet/recognize', { image_base64: imageBase64 })",
+        transcribe_service="api.post('/chat/transcribe', { audio_base64: base64 })",
+    )
+
+    joined = "\n".join(failures)
+    assert "Audio Data" in joined
+    assert "cloud transcription" in joined
+
+
+def test_app_store_privacy_declaration_requires_product_interaction_for_client_events():
+    failures = validate_app_store_privacy_declaration(
+        privacy={
+            "data_types": [
+                {
+                    "category": "User Content",
+                    "apple_data_types": ["Other User Content", "Photos or Videos"],
+                    "examples": ["meal_images_uploaded_to_service"],
+                }
+            ],
+        },
+        review_notes=(
+            "The submitted binary does not bundle an on-device inference model "
+            "or expose an account-free local mode."
+        ),
+        diet_service="api.post('/diet/recognize', { image_base64: imageBase64 })",
+        client_events_api="ClientEvent(user_id=current_user.id, event_name=body.event_name)",
+    )
+
+    joined = "\n".join(failures)
+    assert "Usage Data" in joined
+    assert "Product Interaction" in joined
+    assert "linked to the user" in joined
+
+
 def test_privacy_policy_copy_rejects_stale_brand_and_missing_controls():
     failures = validate_privacy_policy_copy(
         "隐私政策 | 健康助理\n最近更新: 2026-06-28\nHealthKit",
@@ -230,14 +279,16 @@ def test_privacy_policy_copy_rejects_stale_brand_and_missing_controls():
 
     joined = "\n".join(failures)
     assert "stale privacy-policy brand" in joined
-    assert "2026-07-14" in joined
+    assert "2026-08-05" in joined
     assert "精确位置" in joined
+    assert "语音音频" in joined
+    assert "客户端事件" in joined
     assert "删除请求编号" in joined
 
 
 def test_privacy_policy_copy_accepts_current_web_and_mobile_contract():
     required = (
-        "小巴 睿为健康 2026-07-14 HealthKit AI 模型服务 精确位置 "
+        "小巴 睿为健康 2026-08-05 HealthKit AI 模型服务 精确位置 语音音频 客户端事件 "
         "删除账号与数据 删除请求编号 7 天 support@executor.life 广告 营销 不提供诊断 处方 药物剂量调整"
     )
 

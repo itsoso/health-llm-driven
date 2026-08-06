@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | S5 · T0–T3.5/T6 complete；T4/T5 人工项 pending |
+| 当前阶段 | S5 · T0–T3.5/T6 complete；T4/T5 进行中 |
 | 状态 | implementing |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -110,6 +110,9 @@
   - `23e095ff1`：关闭依赖审计子闸并记录独立兼容性/安全评审证据。
   - `55f2ca457`：把 ASC 草稿升级为 1.3.3 后，同步审核材料、T4/T5 部分验收和人工阻塞项。
 - 当前断点：T0–T3.5/T6 完成；T4/T5 进行中。EAS Store Build 仍须等待 T4/T5 通过。
+- T4 真机自动子集已连接物理 iPhone，当前安装的是历史 1.3.2 Build 240，只用于审核账号/导航路径预验，不能替代 T8 的 1.3.3 精确候选验收；自动化仍等待设备保持解锁，其他语音、相机、分享、写入/纠正/删除项目仍须按同一候选人工验收。
+- T5 ASC 已保存年龄分级问卷（当前结果 16+，无分级覆盖），并保存 `Regulated Medical Devices: No`；1.3.3 已改为审核通过后手动发布，未添加构建、未提交审核。
+- T5 App Privacy 复核发现旧的“未收集数据”与生产事实不符，立即停止发布。根因是隐私 taxonomy 漂移闸只覆盖饮食照片，未绑定 `/chat/transcribe` 的云端音频出口和持久化的认证客户端事件。已按 TDD 增加跨代码/声明/政策防漂移闸，并在 ASC 配置 12 个数据类型；待更正后的公开隐私政策上线并验证后再发布隐私答案。
 - 2026-08-05 T4/T5 进行中证据（`2026-08-05T11:25:22Z`）：
   - 审核账号凭证仅存在受控发布环境，未复制进 worktree 或 Git；production live gate 验证账号密码登录、`/auth/me` 身份、今日计划和每日工件均 PASS。
   - 虚构数据 seeder 契约 4/4 PASS；生产 seeder 与评审版本 SHA-256 一致，无需重置正式审核账号或轮换密码。
@@ -140,6 +143,7 @@
   - Mobile Jest 293/293 suites、2,403 passed / 1 skipped（2,404 total）；TypeScript PASS；lint 0 errors / 92 baseline warnings；npm full / production audit 与 policy gate 均 PASS、0 vulnerabilities。
   - App Store release-pack 测试 41/41 PASS；基础 checker、iOS submission preflight、doc drift 和 `git diff --check` PASS。
   - 主干 CI run `31003555856`（commit `642740f3729bd81ba599d94eefced38d2a1241be`）`completed/success`，44/44 jobs 成功，0 failed；包含 G4 隐私/精确构建整改及 41 项 release-pack 测试。
+- 2026-08-05 T5 隐私漂移整改：先新增云端语音和客户端事件漏报回归测试并确认红灯，再更新声明、Web/Mobile 隐私政策和机器闸；针对性 4/4、release-pack 43/43、基础 checker 与 `git diff --check` PASS。完整 CI 仍须在提交后复验。
 - **裁决**：完整 G3 PASS；T6 complete。仍须等 T4/T5 通过后才能进入 EAS Store Build。
 
 ## G4 · 安全闸
@@ -153,6 +157,7 @@
 - G4 第一次复评仍 `NO-GO`：发现旧 device-only 声明的拒绝依赖 Review Notes 英文原句，改写文案可绕过。第二轮整改将旧 `strict_local` / `local_first` / 餐食照片 / 端上推理 markers 直接绑定 production `/diet/recognize` 上传事实；Review Notes 缺无本地模型边界或代码无法识别图片上传流时均 fail-closed。7 个针对性测试及 release-pack 41/41 PASS。
 - 首轮其余评审项均 GO：鼻炎卡无内置处方/剂量/自动写入，production 无 Watch/Rokid/Siri/background，secret pattern scan 无命中，npm/pip audit 为 0，人工项保持 fail-closed pending。
 - G4 第三轮独立复评：`GO`，Critical / Important / Minor 均无；实际重放 Review Notes 文案漂移与无法识别图片上传流两种绕过，均 fail-closed。release-pack 41/41、基础 checker、iOS preflight、Ruff、`git diff --check` PASS；错误 EAS UUID / 完整 source SHA 均被拒绝。
+- T5 ASC 人工复核补充发现两条未声明的数据出口：录音经认证 API 发送到云端 ASR，客户端交互事件按 `user_id` 持久化。整改后声明新增 `Audio Data`（linked / App Functionality）和 `Product Interaction`（linked / App Functionality + Analytics），诊断数据仅保留 unlinked Crash/Performance；全部类型均为 not tracking。对应防漂移测试直接绑定 production 代码路径，避免再次回退为“未收集数据”。
 - **裁决**：完整 G4 PASS；仍须等待整改提交的新主干 CI 复绿，并完成 T4/T5，方可构建。
 
 ## S6 · 部署
