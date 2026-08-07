@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | S5 · 发布阻断热修复本地 G3 PASS；最终 G4 GO，待主干 CI/G5 |
+| 当前阶段 | S5 · 发布阻断热修复与聊天层级优化本地验证完成；最终 G4 GO，待主干 CI/精确包真机/G5 |
 | 状态 | implementing |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -61,6 +61,8 @@
 
 - Design: `docs/plans/2026-08-05-ios-1-3-3-app-store-release-design.md`
 - Implementation: `docs/plans/2026-08-05-ios-1-3-3-app-store-release.md`
+- 发布前聊天视觉层级 Design: `docs/plans/2026-08-06-mobile-chat-visual-hierarchy-design.md`
+- 发布前聊天视觉层级 Implementation: `docs/plans/2026-08-06-mobile-chat-visual-hierarchy.md`
 - 分阶段：功能冻结 → 医疗风险修复 → 发布闸补强 → 材料 → G3/G4 → EAS Build → 精确包真机 → 提交 → 手动发布/G6。
 - 反馈环路由：本地/Jest → EAS Store Build（原生版本变更）→ TestFlight → App Store；审核期间 production OTA 冻结。
 - 长杆：Apple 审核时长、TestFlight 处理、审核账号稳定、截图/隐私/年龄分级人工确认。
@@ -110,7 +112,10 @@
   - `23e095ff1`：关闭依赖审计子闸并记录独立兼容性/安全评审证据。
   - `55f2ca457`：把 ASC 草稿升级为 1.3.3 后，同步审核材料、T4/T5 部分验收和人工阻塞项。
   - `ac1695445`：补齐云端语音转写和 linked Product Interaction 隐私披露，更新 Web/Mobile 政策并加固 release-pack 漂移闸。
-- 当前断点：T0–T6 完成；审核账号固定简报 live gate 已补强并通过。生产早餐图片烟测发现的领域误路由已修复；安全评审又要求把 AIGC 外发前的完整提示词审阅、一次性 owner-bound review token、客户端 fail-closed 和通用 action 防绕过焊成同一确认链。整改与本地回归已完成，等待最终 G4；EAS Store Build 仍不得开始。
+  - `4af790ecc` / `2a7577c3a`：冻结发布前聊天视觉层级设计与实施计划，范围仅限标题、第一排焦点条、助手身份和输入栏的层级/间距。
+  - `38186b9fe` / `c8736d717` / `7af1d1b3f` / `0182e9c2f`：按“舒展易读”方案完成聊天界面视觉优化；保持正文 15/23、44pt 触控目标、业务行为、API、健康数据与写入流程不变。
+  - `9d8416b11`：清理新增测试的 lint warning，保持 Mobile 既有 92 warnings 基线不增长。
+- 当前断点：T0–T6 完成；审核账号固定简报 live gate、生产早餐图片领域路由和 AIGC 外发确认链整改均已完成，最终 G4 GO。发布前聊天视觉层级优化已通过自动测试和 Release 模拟器构建/启动预验；登录态聊天页的物理 iPhone 视觉烟测、新提交主干 CI、EAS Store Build 与精确候选 T8 仍为阻断项。
 - T4 物理 iPhone（历史 1.3.2 Build 240，仅作预验）执行 7 项自动子集：5 passed / 2 failed。双冷启动首次失败于第二次恢复登录超过 30 秒，隔离重跑 1/1 PASS，判定为一次性恢复超时；会话用例稳定失败，因为设备保留旧 conversation 且生产 19 个会话里不存在最新固定演示会话。服务端 live gate 先前只验证今日计划/每日工件非空，错误放过了这个缺口。语音、相机、分享、写入/纠正/删除仍须在 T8 对同一 1.3.3 候选人工验收。
 - T5 ASC 已保存年龄分级问卷（结果 16+，无分级覆盖）、`Regulated Medical Devices: No` 和审核通过后手动发布。App Privacy 已按 checked-in JSON 发布 12 个数据类型，产品页预览可见；公开隐私政策已部署并验证 2026-08-05、云端语音音频和 linked 客户端事件文案。未添加构建、未提交审核。
 - T5 App Privacy 复核发现旧的“未收集数据”与生产事实不符，立即停止发布。根因是隐私 taxonomy 漂移闸只覆盖饮食照片，未绑定 `/chat/transcribe` 的云端音频出口和持久化的认证客户端事件。已按 TDD 增加跨代码/声明/政策防漂移闸并发布更正答案。
@@ -148,6 +153,7 @@
 - 2026-08-05 T5 隐私漂移整改：先新增云端语音和客户端事件漏报回归测试并确认红灯，再更新声明、Web/Mobile 隐私政策和机器闸；针对性 4/4、release-pack 43/43、基础 checker 与 `git diff --check` PASS。主干 CI run `31067249388`（commit `ac1695445666658863d8ef5935820b0a2329cf18`）`completed/success`，44/44 jobs 成功，0 failed。
 - 2026-08-06 发布阻断热修复本地证据：媒体授权对抗聚焦集 280 passed；餐食图片领域/工具裁剪/Agent food vision 路由广集 1057 passed；用药与 release gate 聚焦集 126 passed；基础 release-pack checker 及审核账号 live gate PASS。新提交的主干 CI 真实色仍待取得。
 - 2026-08-06 AIGC 外发确认整改最终证据：后端确认/令牌/API/网关/能力/force 聚焦集 660 passed，分类器广集 579 passed；Mobile 卡片与通用 action 115 passed，Web 卡片 40 passed 且无 jsdom 网络噪声；release-pack 48 passed。Backend Ruff、Mobile/Web TypeScript、两端 lint（0 errors）、基础 App Store checker/preflight 和 `git diff --check` 均 PASS。generated OpenAPI types 已同步到 Mobile/Web 并由 worktree venv 临时全量重生成逐字节复核；主干 CI 真实色仍待取得。
+- 2026-08-07 聊天视觉层级优化证据：相关 Mobile Jest 197/197 PASS；完整 `scripts/mobile-fast-test.sh --all` PASS，TypeScript PASS，lint 0 errors / 92 baseline warnings，设计漂移检查 PASS。iPhone 17 Pro Max / iOS 26.5 模拟器 Release 构建成功并完成安装、冷启动到登录页，无启动崩溃；本地 QA 仅通过 `SENTRY_DISABLE_AUTO_UPLOAD=true` 关闭无发布凭据的符号上传，未修改或弱化正式归档配置。模拟器无审核账号登录态，且物理 iPhone 当前不可用，因此登录态聊天页视觉烟测与同一精确 Store 候选验收仍保持 pending。
 - **裁决**：历史 T6 完整 G3 PASS；当前热修复 G3 pending，须等新主干 CI 复绿后才能进入 EAS Store Build。
 
 ## G4 · 安全闸
@@ -184,6 +190,7 @@
 
 - IPA toolchain/version/build/commit：待精确候选。
 - TestFlight processing + physical iPhone + backend health：待执行。
+- 本地原生预验：iOS 26.5 Release 模拟器构建、安装和启动 PASS；该产物为 development 变体且禁用本地 Sentry 符号上传，只证明当前原生工程可编译/启动，不替代 production Store Build、TestFlight、精确 commit/Build 绑定或 T8 物理真机证据。
 - **裁决**：pending。
 
 ## S7 · 上线验证
@@ -198,6 +205,7 @@
 ## S8 · 沉淀
 
 - 新坑：年龄分级和审核期间 OTA 冻结已进入 final-submit 机器闸；精确 IPA 工具链和 app/build 对齐也已 fail-closed。
+- 本地 iOS 构建若只配置 macOS 系统代理，CocoaPods/Expo 子进程仍可能因 shell 无代理变量而误报依赖不可解析；先验证代理出口并显式传递 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`。无 Sentry 发布凭据的本地模拟器 QA 可用 `SENTRY_DISABLE_AUTO_UPLOAD=true`，但正式 Store 归档不得沿用该临时设置。
 - 新坑：发布规划文档提交也会触发实时依赖 advisory；必须把最新主干 CI 颜色作为预构建 Gate，锁文件安全修复不得延后到构建后。
 - 文档同步：若架构计数未变化，无 system-map 生成物变更；最终以 doc-drift 为准。
 - 状态：待 shipped。
