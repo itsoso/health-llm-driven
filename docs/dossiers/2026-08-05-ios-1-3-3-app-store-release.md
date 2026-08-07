@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | S5 · 发布阻断热修复与聊天层级优化本地验证完成；最终 G4 GO，待主干 CI/精确包真机/G5 |
+| 当前阶段 | S5 · 聊天层级优化已推主干；新 CI 发现依赖 advisory 与两条后端回归，修复本地复验完成，待主干 CI 复绿/精确包真机/G5 |
 | 状态 | implementing |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -115,7 +115,7 @@
   - `4af790ecc` / `2a7577c3a`：冻结发布前聊天视觉层级设计与实施计划，范围仅限标题、第一排焦点条、助手身份和输入栏的层级/间距。
   - `38186b9fe` / `c8736d717` / `7af1d1b3f` / `0182e9c2f`：按“舒展易读”方案完成聊天界面视觉优化；保持正文 15/23、44pt 触控目标、业务行为、API、健康数据与写入流程不变。
   - `9d8416b11`：清理新增测试的 lint warning，保持 Mobile 既有 92 warnings 基线不增长。
-- 当前断点：T0–T6 完成；审核账号固定简报 live gate、生产早餐图片领域路由和 AIGC 外发确认链整改均已完成，最终 G4 GO。发布前聊天视觉层级优化已通过自动测试和 Release 模拟器构建/启动预验；登录态聊天页的物理 iPhone 视觉烟测、新提交主干 CI、EAS Store Build 与精确候选 T8 仍为阻断项。
+- 当前断点：T0–T6 完成；审核账号固定简报 live gate、生产早餐图片领域路由和 AIGC 外发确认链整改均已完成，最终 G4 GO。发布前聊天视觉层级优化已通过自动测试和 Release 模拟器构建/启动预验并推送主干；新主干 CI 发现当日新增依赖 advisory 与两条后端安全边界回归，修复及本地重放已完成。登录态聊天页的物理 iPhone 视觉烟测、新修复提交主干 CI 复绿、EAS Store Build 与精确候选 T8 仍为阻断项。
 - T4 物理 iPhone（历史 1.3.2 Build 240，仅作预验）执行 7 项自动子集：5 passed / 2 failed。双冷启动首次失败于第二次恢复登录超过 30 秒，隔离重跑 1/1 PASS，判定为一次性恢复超时；会话用例稳定失败，因为设备保留旧 conversation 且生产 19 个会话里不存在最新固定演示会话。服务端 live gate 先前只验证今日计划/每日工件非空，错误放过了这个缺口。语音、相机、分享、写入/纠正/删除仍须在 T8 对同一 1.3.3 候选人工验收。
 - T5 ASC 已保存年龄分级问卷（结果 16+，无分级覆盖）、`Regulated Medical Devices: No` 和审核通过后手动发布。App Privacy 已按 checked-in JSON 发布 12 个数据类型，产品页预览可见；公开隐私政策已部署并验证 2026-08-05、云端语音音频和 linked 客户端事件文案。未添加构建、未提交审核。
 - T5 App Privacy 复核发现旧的“未收集数据”与生产事实不符，立即停止发布。根因是隐私 taxonomy 漂移闸只覆盖饮食照片，未绑定 `/chat/transcribe` 的云端音频出口和持久化的认证客户端事件。已按 TDD 增加跨代码/声明/政策防漂移闸并发布更正答案。
@@ -154,6 +154,8 @@
 - 2026-08-06 发布阻断热修复本地证据：媒体授权对抗聚焦集 280 passed；餐食图片领域/工具裁剪/Agent food vision 路由广集 1057 passed；用药与 release gate 聚焦集 126 passed；基础 release-pack checker 及审核账号 live gate PASS。新提交的主干 CI 真实色仍待取得。
 - 2026-08-06 AIGC 外发确认整改最终证据：后端确认/令牌/API/网关/能力/force 聚焦集 660 passed，分类器广集 579 passed；Mobile 卡片与通用 action 115 passed，Web 卡片 40 passed 且无 jsdom 网络噪声；release-pack 48 passed。Backend Ruff、Mobile/Web TypeScript、两端 lint（0 errors）、基础 App Store checker/preflight 和 `git diff --check` 均 PASS。generated OpenAPI types 已同步到 Mobile/Web 并由 worktree venv 临时全量重生成逐字节复核；主干 CI 真实色仍待取得。
 - 2026-08-07 聊天视觉层级优化证据：相关 Mobile Jest 197/197 PASS；完整 `scripts/mobile-fast-test.sh --all` PASS，TypeScript PASS，lint 0 errors / 92 baseline warnings，设计漂移检查 PASS。iPhone 17 Pro Max / iOS 26.5 模拟器 Release 构建成功并完成安装、冷启动到登录页，无启动崩溃；本地 QA 仅通过 `SENTRY_DISABLE_AUTO_UPLOAD=true` 关闭无发布凭据的符号上传，未修改或弱化正式归档配置。模拟器无审核账号登录态，且物理 iPhone 当前不可用，因此登录态聊天页视觉烟测与同一精确 Store 候选验收仍保持 pending。
+- 2026-08-07 主干 CI run `31169318136`（commit `1767cfd7b52678fcca8a8290da14a91e1cbce797`）`completed/failure`：44 jobs 中 39 success、5 failure；实质红灯为 `backend-quality` 的 `h2 4.3.0 / CVE-2026-71554`、`mobile-typecheck` 的 `js-yaml / GHSA-5p4m-2wfm-xmqj`，以及两个 agent-executor 分片各 1 条回归，汇总 job 随之失败。G3 据此保持 pending，未启动 EAS。
+- 2026-08-07 CI 整改本地证据：`h2` 精确锁定 4.4.1，`js-yaml` 两条兼容 major 分别锁定 3.15.1 / 4.3.1；Python hashed lock audit、Mobile full/production audit 与空例外策略闸均为 0 known vulnerabilities。复杂来源图片创作仍保持 G4 审定的通用工具集且不强制外发，但媒体生成意图在更早阶段明确跳过餐食识别；两个原失败 CI 分片 340/340、329/329 PASS，G4 分类/能力矩阵 1184/1184 PASS，依赖契约 21/21、完整 Mobile gate PASS。新修复提交的主干 CI 真实色仍待取得。
 - **裁决**：历史 T6 完整 G3 PASS；当前热修复 G3 pending，须等新主干 CI 复绿后才能进入 EAS Store Build。
 
 ## G4 · 安全闸
