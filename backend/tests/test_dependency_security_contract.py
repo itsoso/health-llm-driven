@@ -15,6 +15,7 @@ def test_production_dependencies_pin_patched_security_versions():
         "pillow==12.3.0",
         "cryptography==50.0.0",
         "aiohttp==3.14.3",
+        "h2==4.4.1",
         "pyjwt==2.13.0",
         "garminconnect==0.3.6",
         "curl_cffi==0.15.0",

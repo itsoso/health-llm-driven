@@ -1,6 +1,6 @@
 # App Store Production Dependency Risk Review
 
-Review date: 2026-08-05
+Review date: 2026-08-07
 
 ## Decision
 
@@ -10,8 +10,10 @@ backend hashed production lock also reports zero known vulnerabilities under
 
 The newly disclosed `brace-expansion` advisories are remediated across every locked
 major line used by Mobile (`1.1.18`, `2.1.4`, and `5.0.9`). PostCSS is pinned to the
-patched `8.5.23`. Backend remediation pins `aiohttp==3.14.3` and
-`cryptography==50.0.0`.
+patched `8.5.23`. The 2026-08-06 `js-yaml` omap advisory is remediated on both
+locked major lines (`3.15.1` and `4.3.1`). Backend remediation pins
+`aiohttp==3.14.3`, `cryptography==50.0.0`, and `h2==4.4.1` for the duplicate Host
+header request-smuggling advisory.
 
 No dependency-audit exception remains. The release may proceed to the next gate;
 App Review is still blocked by exact-build CI, build, and real-device evidence, not
@@ -23,7 +25,8 @@ by a known dependency finding.
 - Automatic linkification, typographer transformations and raw HTML parsing are disabled.
 - Render input is capped at 50,000 characters before parsing.
 - Direct Markdown render sites pass both the shared parser and the bounded source string.
-- Production overrides pin patched XML, PostCSS, UUID and `brace-expansion` dependencies.
+- Production overrides pin patched XML, PostCSS, UUID, `brace-expansion`, and
+  both locked `js-yaml` major lines.
 - Both full-tree `npm audit` and `npm audit --omit=dev` are part of the release evidence.
 - Mobile CI runs `scripts/npm-audit-gate.mjs` against an empty-exception
   `mobile/npm-audit-policy.json`. The gate resolves every high/critical transitive

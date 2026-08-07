@@ -101,6 +101,8 @@
     "brace-expansion@<2.0.0": "1.1.18",
     "brace-expansion@>=2.0.0 <3.0.0": "2.1.4",
     "brace-expansion@>=5.0.0": "5.0.9",
+    "js-yaml@>=3.0.0 <4.0.0": "3.15.1",
+    "js-yaml@>=4.0.0 <5.0.0": "4.3.1",
     "body-parser": "2.3.0",
     "markdown-it": "npm:@rexovolt/markdown-it@14.2.1"
   },

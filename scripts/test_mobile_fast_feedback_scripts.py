@@ -17,6 +17,8 @@ def test_mobile_dependency_overrides_preserve_brace_expansion_major_compatibilit
     assert overrides["brace-expansion@<2.0.0"] == "1.1.18"
     assert overrides["brace-expansion@>=2.0.0 <3.0.0"] == "2.1.4"
     assert overrides["brace-expansion@>=5.0.0"] == "5.0.9"
+    assert overrides["js-yaml@>=3.0.0 <4.0.0"] == "3.15.1"
+    assert overrides["js-yaml@>=4.0.0 <5.0.0"] == "4.3.1"
 
 
 def run_fast_test(*args: str, changed_files: str = "") -> subprocess.CompletedProcess[str]:
