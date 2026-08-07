@@ -100,8 +100,8 @@ def test_gate_keeps_reliable_request_model(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_explicit_aigc_turn_forces_draft_on_the_reliable_fallback_model(monkeypatch):
-    """AIGC creation must survive an unreliable user-selected chat model."""
+async def test_complex_aigc_turn_does_not_force_draft_on_reliable_fallback_model(monkeypatch):
+    """Complex source-image prompts keep the reviewed general-tool boundary."""
     captured = {}
 
     class ReliableProvider:
@@ -128,11 +128,8 @@ async def test_explicit_aigc_turn_forces_draft_on_the_reliable_fallback_model(mo
 
     _events = [event async for event in ex._call_llm_stream([{"role": "user", "content": "创作"}], tools)]
 
-    assert captured["tool_choice"] == {
-        "type": "function",
-        "function": {"name": "draft_aigc_media"},
-    }
-    assert captured["enable_thinking"] is False
+    assert "tool_choice" not in captured
+    assert "enable_thinking" not in captured
 
 
 def test_gate_skips_when_no_tools(monkeypatch):

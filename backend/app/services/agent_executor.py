@@ -14801,10 +14801,17 @@ class AgentExecutor:
             message,
             reference_now=self._agent_kernel_reference_now(),
         )
-        if _is_explicit_aigc_media_draft_turn(message):
+        if (
+            intent.primary == "write"
+            and intent.is_write
+            and intent.domain == "aigc_media"
+            and intent.operation == "create"
+            and intent.reason == "media_generation_request"
+        ):
             # The AIGC service binds the uploaded image to its confirmation
-            # record. Running food recognition here could turn an unrelated
-            # photo into a diet candidate before that isolated flow begins.
+            # record. This boundary is intentionally broader than the closed
+            # force-tool grammar: complex creative prompts keep the general
+            # toolset, but must still never become diet candidates first.
             return False
         return (
             not self._should_send_raw_images_to_primary_model(user_id)
