@@ -59,6 +59,7 @@ export default function ChatTodayFocusCard({
         />
       ) : null}
       <View
+        testID="chat-today-focus-icon"
         style={[
           styles.iconWrap,
           isTurnStatus ? styles.turnStatusIconWrap : styles.contextIconWrap,
@@ -168,7 +169,7 @@ const styles = StyleSheet.create({
     elevation: 0,
   } as ViewStyle,
   contextStrip: {
-    minHeight: 40,
+    minHeight: 44,
     paddingLeft: 4,
     gap: 6,
   },
@@ -188,8 +189,8 @@ const styles = StyleSheet.create({
     borderRadius: revaRadii.xs,
   },
   contextIconWrap: {
-    width: 24,
-    height: 24,
+    width: 28,
+    height: 28,
   },
   turnStatusIconWrap: {
     width: 28,
@@ -198,7 +199,7 @@ const styles = StyleSheet.create({
   contextButton: {
     flex: 1,
     minWidth: 0,
-    minHeight: 38,
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -210,8 +211,8 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   iconButton: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -232,16 +233,16 @@ const styles = StyleSheet.create({
 const txt = {
   label: {
     fontFamily: revaFonts.sans,
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 14,
+    lineHeight: 19,
     fontWeight: '800',
   } as TextStyle,
   title: {
     flex: 1,
     minWidth: 0,
     fontFamily: revaFonts.sans,
-    fontSize: 14,
-    lineHeight: 19,
+    fontSize: 15,
+    lineHeight: 20,
     fontWeight: '700',
     color: C.ink1,
   } as TextStyle,

@@ -69,15 +69,23 @@ describe('ChatTodayFocusCard', () => {
       title: '复查血脂四项',
       tone: 'caution',
     };
-    const { getByTestId } = render(
+    const { getByLabelText, getByTestId, getByText } = render(
       <ChatTodayFocusCard model={model} />,
     );
 
     const stripStyle = StyleSheet.flatten(getByTestId('chat-today-focus-card').props.style);
     const accentStyle = StyleSheet.flatten(getByTestId('chat-today-focus-accent').props.style);
+    const iconStyle = StyleSheet.flatten(getByTestId('chat-today-focus-icon').props.style);
     expect(stripStyle.backgroundColor).toBe(C.surface2);
-    expect(stripStyle.minHeight).toBeLessThanOrEqual(42);
+    expect(stripStyle.minHeight).toBe(44);
     expect(accentStyle.backgroundColor).toBe(revaSemantic.caution.fg);
+    expect(iconStyle).toEqual(expect.objectContaining({ width: 28, height: 28 }));
+    expect(StyleSheet.flatten(getByText('待处理').props.style)).toEqual(
+      expect.objectContaining({ fontSize: 14, lineHeight: 19 }),
+    );
+    expect(StyleSheet.flatten(getByText('复查血脂四项').props.style)).toEqual(
+      expect.objectContaining({ fontSize: 15, lineHeight: 20 }),
+    );
   });
 
   it('opens Today and lets the parent dismiss an action without a launcher state', () => {
@@ -91,10 +99,15 @@ describe('ChatTodayFocusCard', () => {
       />,
     );
 
-    fireEvent.press(getByLabelText('打开今日计划'));
+    const openButton = getByLabelText('打开今日计划');
+    expect(StyleSheet.flatten(openButton.props.style).minHeight).toBe(44);
+    fireEvent.press(openButton);
     expect(onOpenToday).toHaveBeenCalledTimes(1);
     const dismissButton = getByLabelText('关闭当前提示');
     expect(dismissButton.props.hitSlop).toBe(4);
+    expect(StyleSheet.flatten(dismissButton.props.style)).toEqual(
+      expect.objectContaining({ width: 44, height: 44 }),
+    );
     fireEvent.press(dismissButton);
     expect(onDismiss).toHaveBeenCalledTimes(1);
     expect(queryByText('已隐藏，点此展开')).toBeNull();
