@@ -69,7 +69,7 @@ describe('ChatTodayFocusCard', () => {
       title: '复查血脂四项',
       tone: 'caution',
     };
-    const { getByLabelText, getByTestId, getByText } = render(
+    const { getByTestId, getByText } = render(
       <ChatTodayFocusCard model={model} />,
     );
 
