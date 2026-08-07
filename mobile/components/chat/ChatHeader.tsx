@@ -50,7 +50,7 @@ export default function ChatHeader({
   return (
     <View style={styles.headerWrap}>
       <View testID="chat-header-surface" style={styles.headerSurface}>
-        <XiaoBaAvatar size={32} />
+        <XiaoBaAvatar size={30} />
         <LlmModelPicker
           variant="header"
           currentLabel={headerLlmLabel}
@@ -70,7 +70,7 @@ export default function ChatHeader({
               accessibilityLabel="新建对话"
               accessibilityRole="button"
             >
-              <Ionicons name="pencil-outline" size={18} color={C.ink2} />
+              <Ionicons name="pencil-outline" size={19} color={C.ink2} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={onOpenHistory}
@@ -81,7 +81,7 @@ export default function ChatHeader({
               accessibilityHint="查看和切换历史对话"
               accessibilityRole="button"
             >
-              <Ionicons name="time-outline" size={18} color={C.ink2} />
+              <Ionicons name="time-outline" size={19} color={C.ink2} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={onOpenToolMenu}
@@ -92,7 +92,7 @@ export default function ChatHeader({
               accessibilityHint="打开设置与更多操作"
               accessibilityRole="button"
             >
-              <Ionicons name="settings-outline" size={18} color={C.ink2} />
+              <Ionicons name="settings-outline" size={19} color={C.ink2} />
             </TouchableOpacity>
           </View>
         </View>
@@ -126,8 +126,9 @@ const styles = StyleSheet.create({
   headerActionGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
-    padding: 3,
+    minHeight: 44,
+    gap: 0,
+    padding: 2,
     backgroundColor: C.paper2,
     borderRadius: revaSpacing.s6,
     borderWidth: StyleSheet.hairlineWidth,
@@ -139,8 +140,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: C.surface2,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
   },
 });

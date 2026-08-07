@@ -5,7 +5,7 @@ import { StyleSheet } from 'react-native';
 import ChatHeader from '../ChatHeader';
 
 describe('ChatHeader', () => {
-  it('shows 小巴 as a branded assistant avatar beside the header title', () => {
+  it('keeps the branded assistant identity compact in the header', () => {
     const { getByLabelText, getByText } = render(
       <ChatHeader
         activeLlmLabel="Qwen3.7 Plus"
@@ -23,10 +23,8 @@ describe('ChatHeader', () => {
 
     const avatarStyle = StyleSheet.flatten(getByLabelText('小巴形象').props.style);
     const titleStyle = StyleSheet.flatten(getByText('小巴').props.style);
-    expect(avatarStyle.width).toBeGreaterThanOrEqual(32);
-    expect(avatarStyle.height).toBeGreaterThanOrEqual(32);
-    expect(titleStyle.fontSize).toBeGreaterThanOrEqual(28);
-    expect(titleStyle.lineHeight).toBeGreaterThanOrEqual(34);
+    expect(avatarStyle).toEqual(expect.objectContaining({ width: 30, height: 30 }));
+    expect(titleStyle).toEqual(expect.objectContaining({ fontSize: 24, lineHeight: 30 }));
   });
 
   it('keeps streaming state inside the active assistant turn instead of the header', () => {
@@ -68,19 +66,26 @@ describe('ChatHeader', () => {
     const groupStyle = StyleSheet.flatten(getByTestId('chat-header-action-group').props.style);
     expect(groupStyle.flexDirection).toBe('row');
     expect(groupStyle.borderRadius).toBeGreaterThanOrEqual(16);
-    expect(groupStyle.padding).toBeGreaterThanOrEqual(2);
-    expect(StyleSheet.flatten(getByLabelText('新建对话').props.style).backgroundColor).toBeTruthy();
-    expect(StyleSheet.flatten(getByLabelText('对话历史').props.style).borderWidth).toBeGreaterThan(0);
+    expect(groupStyle.minHeight).toBe(44);
+    expect(groupStyle.padding).toBe(2);
     expect(getByTestId('icon-pencil-outline')).toBeTruthy();
     expect(getByTestId('icon-time-outline')).toBeTruthy();
     expect(getByTestId('icon-settings-outline')).toBeTruthy();
 
     expect(StyleSheet.flatten(getByLabelText('新建对话').props.style)).toEqual(
-      expect.objectContaining({ width: 44, height: 44 }),
+      expect.objectContaining({
+        width: 44,
+        height: 44,
+        backgroundColor: 'transparent',
+        borderWidth: 0,
+      }),
     );
     expect(StyleSheet.flatten(getByLabelText('对话历史').props.style)).toEqual(
       expect.objectContaining({ width: 44, height: 44 }),
     );
+    expect(getByTestId('icon-pencil-outline').props.size).toBe(19);
+    expect(getByTestId('icon-time-outline').props.size).toBe(19);
+    expect(getByTestId('icon-settings-outline').props.size).toBe(19);
     expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style)).toEqual(
       expect.objectContaining({ width: 44, height: 44 }),
     );
