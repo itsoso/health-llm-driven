@@ -465,8 +465,14 @@ describe('ChatInputBar', () => {
       node.props.hitSlop?.bottom ?? 0,
       node.props.hitSlop?.left ?? 0,
     );
+    const composerSurface = StyleSheet.flatten(getByTestId('chat-composer-surface').props.style);
+    const inputSurface = StyleSheet.flatten(getByTestId('wechat-composer-input').props.style);
+    const textInput = StyleSheet.flatten(getByLabelText('消息输入框').props.style);
 
     // 2026-07-05 工学契约翻转: 拇指高度对齐 GPT — 场 ≥48, 钮 ≥40(hitSlop 补足 44 有效)
+    expect(composerSurface.borderTopWidth).toBe(StyleSheet.hairlineWidth);
+    expect(inputSurface.borderRadius).toBe(14);
+    expect(textInput.fontSize).toBe(16);
     expect(styleOf(getByLabelText('附件菜单')).width).toBeGreaterThanOrEqual(40);
     expect(styleOf(getByLabelText('切换到语音输入')).height).toBeGreaterThanOrEqual(40);
     expect(StyleSheet.flatten(getByTestId('wechat-composer-input').props.style).minHeight).toBeGreaterThanOrEqual(48);
@@ -485,7 +491,7 @@ describe('ChatInputBar', () => {
     expect(queryByLabelText('按住说话')).toBeNull();
     const inputSurface = StyleSheet.flatten(getByTestId('wechat-composer-input').props.style);
     expect(inputSurface.flexDirection).toBe('row');
-    expect(inputSurface.borderRadius).toBeLessThanOrEqual(10);
+    expect(inputSurface.borderRadius).toBe(14);
   });
 
   it('keeps an empty text composer compact on focus without starting cloud ASR', () => {

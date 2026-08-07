@@ -1435,7 +1435,7 @@ const styles = StyleSheet.create({
   inputWrap: {
     minHeight: 48,
     flex: 1, flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COMPOSER_INPUT_BG, borderRadius: 8,
+    backgroundColor: COMPOSER_INPUT_BG, borderRadius: revaRadii.md,
     borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
     paddingLeft: 14, paddingRight: 4, paddingVertical: 3,
   },
