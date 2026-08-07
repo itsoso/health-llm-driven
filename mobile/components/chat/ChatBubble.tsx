@@ -2011,7 +2011,7 @@ export default ChatBubble;
 const summaryStyles = StyleSheet.create({
   conclusion: {
     marginBottom: 10,
-    gap: 4,
+    gap: 8,
   },
   conclusionLabelRow: {
     flexDirection: 'row',
@@ -2019,16 +2019,16 @@ const summaryStyles = StyleSheet.create({
     gap: 5,
   },
   conclusionDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: C.green500,
   },
   conclusionLabel: {
     fontFamily: revaFonts.sans,
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '600',
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '700',
     letterSpacing: 0,
     color: C.green600,
   } as TextStyle,

@@ -417,25 +417,27 @@ ${sectionTitle}
     expect(actionTitleStyle.color).toBe('#16201B');
   });
 
-  it('keeps the assistant conclusion at a calm reading scale', () => {
+  it('promotes the assistant identity without changing the conclusion reading scale', () => {
     const { getByText, getByTestId } = renderBubble('今晚先补水 300ml，再散步 10 分钟。');
 
     const label = getByText('小巴');
     const dot = getByTestId('assistant-conclusion-dot');
+    const container = getByTestId('assistant-conclusion');
     const conclusion = getByText('今晚先补水 300ml，再散步 10 分钟。');
     const labelStyle = StyleSheet.flatten(label.props.style);
     const dotStyle = StyleSheet.flatten(dot.props.style);
+    const containerStyle = StyleSheet.flatten(container.props.style);
     const conclusionStyle = StyleSheet.flatten(conclusion.props.style);
     expect(labelStyle).toMatchObject({
-      fontSize: 13,
-      lineHeight: 18,
-      fontWeight: '600',
+      fontSize: 16,
+      lineHeight: 22,
+      fontWeight: '700',
       color: '#176F49',
     });
     expect(dotStyle).toMatchObject({
-      width: 4,
-      height: 4,
-      borderRadius: 2,
+      width: 6,
+      height: 6,
+      borderRadius: 3,
       backgroundColor: '#1F8A5B',
     });
     expect(conclusionStyle).toMatchObject({
@@ -443,6 +445,7 @@ ${sectionTitle}
       lineHeight: 23,
       fontWeight: '400',
     });
+    expect(containerStyle.gap).toBe(8);
     expect(label.props.allowFontScaling).not.toBe(false);
     expect(conclusion.props.allowFontScaling).not.toBe(false);
     expect(conclusion.props.numberOfLines).toBeUndefined();
