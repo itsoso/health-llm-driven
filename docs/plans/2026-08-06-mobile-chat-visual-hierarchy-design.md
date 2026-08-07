@@ -1,7 +1,7 @@
 # Mobile Chat Visual Hierarchy Design
 
-**Date:** 2026-08-06  
-**Status:** Approved (方案 B：舒展易读)  
+**Date:** 2026-08-06
+**Status:** Approved (方案 B：舒展易读)
 **Release target:** iOS 1.3.3
 
 ## Problem
