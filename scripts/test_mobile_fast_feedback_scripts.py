@@ -19,6 +19,16 @@ def test_mobile_dependency_overrides_preserve_brace_expansion_major_compatibilit
     assert overrides["brace-expansion@>=5.0.0"] == "5.0.9"
     assert overrides["js-yaml@>=3.0.0 <4.0.0"] == "3.15.1"
     assert overrides["js-yaml@>=4.0.0 <5.0.0"] == "4.3.1"
+    assert overrides["nanoid"] == "3.3.18"
+    assert overrides["postcss"] == "8.5.26"
+
+
+def test_frontend_dependency_overrides_close_nanoid_and_postcss_advisories() -> None:
+    package_json = json.loads((ROOT / "frontend" / "package.json").read_text())
+
+    assert package_json["devDependencies"]["postcss"] == "8.5.26"
+    assert package_json["overrides"]["postcss"] == "8.5.26"
+    assert package_json["overrides"]["nanoid"] == "3.3.18"
 
 
 def run_fast_test(*args: str, changed_files: str = "") -> subprocess.CompletedProcess[str]:

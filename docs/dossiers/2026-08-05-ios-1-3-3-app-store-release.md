@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | S6 · 1.3.3 Build 241 已完成 EAS Store Build、TestFlight 处理与精确 IPA 校验；T8 自动子集 6/7，通过后发现固定会话新鲜度与测试日志凭据泄露阻塞，整改及重验中 |
+| 当前阶段 | S6 · 1.3.3 Build 241 已完成 EAS Store Build、TestFlight 处理与精确 IPA 校验；T8 流程整改已完成本地验证，新依赖 advisory 已修复，待主干 CI 复绿后部署与安全重验 |
 | 状态 | implementing |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -115,6 +115,7 @@
   - `4af790ecc` / `2a7577c3a`：冻结发布前聊天视觉层级设计与实施计划，范围仅限标题、第一排焦点条、助手身份和输入栏的层级/间距。
   - `38186b9fe` / `c8736d717` / `7af1d1b3f` / `0182e9c2f`：按“舒展易读”方案完成聊天界面视觉优化；保持正文 15/23、44pt 触控目标、业务行为、API、健康数据与写入流程不变。
   - `9d8416b11`：清理新增测试的 lint warning，保持 Mobile 既有 92 warnings 基线不增长。
+  - `2677a4d44`：真机验收改为人工预登录、禁止 XCUITest 接收审核凭据；live gate 要求固定简报是默认最新且只有精确两条消息；新增 revision/发布锁约束的非敏感生产重置入口。
 - 当前断点：T0–T7 完成；审核账号固定简报 live gate、生产早餐图片领域路由和 AIGC 外发确认链整改均已完成，最终 G4 GO。发布前聊天视觉层级优化、当日新增依赖 advisory 与两条后端安全边界回归均已整改；真实 LLM 评测通过，最新完整主干 CI 44/44 通过，G3 PASS。1.3.3 Build 241 已完成 EAS Store Build、ASC/TestFlight 处理与精确 IPA 校验；登录态聊天页及写入/纠正/删除等同一精确候选物理 iPhone T8 仍为 G5/App Review 阻断项。
 - 2026-08-07 Build 241 物理 iPhone 自动子集第二轮共 7 项：6 PASS、1 FAIL。安装包版本/Build 与候选一致；双冷启动登录态、Agent 入口、Today 打开/关闭、未发送草稿前后台保留、隐私和账号删除入口均通过。唯一失败是默认打开了审核账号中更新的普通会话，而不是固定简报；Mobile 按服务端 `updated_at` 打开最新会话属于正确产品行为，根因是 live gate 只证明固定会话存在、未证明它是默认最新且未被追加消息。
 - 同轮发现 XCUITest 自动输入正式审核密码会把输入保留在 Xcode 控制台/结果包。该方式立即停用：自动子集改为仅接受人工预登录态，并在发现审核凭据环境变量时 fail closed；固定会话 live gate 改为校验未过滤会话列表首项和精确两条消息；生产重置新增受发布锁和精确 revision 约束的 `deploy.sh --reset-app-store-review` 模式，不轮换密码且只输出非识别性验证结果。正式审核密码须在 App Review 前由发布负责人轮换并重新手工登录，旧密码不得再用于最终证据。
@@ -162,6 +163,8 @@
 - 2026-08-07 真实 LLM 评测证据：`APP_ENV=test DATABASE_URL=sqlite:///:memory: backend/venv/bin/python scripts/harness_llm_regression_gate.py --include-live-llm --json` exit 0；`invariants` 12/12、`health_agent_core` 50/50、真实 `orchestrator` 5/5，平均分 0.94，相对 `main` 无 regression；轨迹契约 12/12、金标 9/9。实际模型为 `MiniMax-M2.5`；临时 SQLite 未建 usage telemetry 表产生非生产旁路告警，但真实模型生成、LLM judge 与 Gate 结果均成功。一次性 `HARNESS_LIVE_LLM_EVAL_CONFIRMED=1` 只允许用于承载本证据的下一轮 CI，终态后必须删除并复证不存在。
 - 2026-08-07 证据提交 CI run `31179125236`（commit `561b01c2750580b3e4a57943a85211c376915cde`）`completed/success`：44/44 jobs success、0 failure。一次性 `HARNESS_LIVE_LLM_EVAL_CONFIRMED` 已在终态后删除，仓库变量按名称复证为 0 条；后续 LLM 高风险改动重新默认阻断。
 - 2026-08-07 G3 收口提交 CI run `31180977412`（commit `c109e934c4b2c633979bd5c0a7cd97a8f62e570d`）`completed/success`：44/44 jobs success、0 failure；该 commit 是 Build 241 的精确 EAS source commit。
+- 2026-08-07 T8 流程整改本地证据：真机验收/部署脚本 135/135 PASS；审核账号/发布包 55/55 PASS；Ruff、shell/Ruby 语法、基础 release-pack、doc drift 与 `git diff --check` PASS。线上新 live gate 在重置前按预期 FAIL 1 项，证明旧检查的假绿已被关闭。
+- 2026-08-07 提交 `2677a4d44` 的 CI run `31234249896` 出现新的 registry advisory 红灯：Frontend `nanoid <3.3.17` 高危及旧 PostCSS 链，Mobile 同源依赖审计失败；按 Gate 停止部署。两个树已统一锁定到兼容 patch `nanoid 3.3.18`、`postcss 8.5.26`；完整及 production audit 均为 0，审计策略 4/4、版本契约 18/18 PASS。Mobile 全量 293/293 suites、2,407 passed / 1 skipped，TypeScript 与 lint（0 errors / 92 baseline warnings）PASS；Frontend 57/57 files、338/338 tests PASS，production build/TypeScript/73 个静态页面与 lint（0 errors / 33 baseline warnings）PASS。Frontend 首轮全量有 1 条异步加载测试波动，隔离 10/10 及第二轮全量均 PASS，未修改该非相关 surface。待新主干 CI 复绿。
 - **裁决**：当前发布候选 G3 PASS，可进入 EAS Store Build；同一精确候选的物理 iPhone T8 与 G5 仍须完成，不能据此提交 App Review。
 
 ## G4 · 安全闸
