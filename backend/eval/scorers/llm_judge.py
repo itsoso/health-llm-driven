@@ -125,7 +125,19 @@ def score_llm_judge(
                 "judge_score": 0, "judge_reason": f"judge call 失败: {e}",
                 "assertions": {}, "assertion_failures": list(assertions)}
 
-    raw_score = int(verdict.get("score", 0))
+    try:
+        if not isinstance(verdict, dict):
+            raise TypeError(f"expected object, got {type(verdict).__name__}")
+        raw_score = int(verdict.get("score", 0))
+    except (TypeError, ValueError, AttributeError) as e:
+        return {
+            "passed": False,
+            "score": 0.0,
+            "judge_score": 0,
+            "judge_reason": f"judge verdict 无效: {e}",
+            "assertions": {},
+            "assertion_failures": list(assertions),
+        }
     judge_score = max(1, min(5, raw_score)) if raw_score else 0
     verdict_assertions = verdict.get("assertions")
     if not isinstance(verdict_assertions, dict):

@@ -275,6 +275,29 @@ class TestLlmJudgeScorer:
         assert r["passed"] is True
         assert r["assertion_failures"] == []
 
+    @pytest.mark.parametrize(
+        "verdict",
+        (
+            [],
+            {"score": "high", "assertions": {"required_action": True}},
+        ),
+    )
+    def test_malformed_judge_verdict_fails_closed(self, verdict):
+        async def fake_judge(q, a, model=None):
+            return verdict
+
+        r = score_llm_judge(
+            "Q?",
+            "A.",
+            {
+                "llm_judge_assertions": {"required_action": "必须给出明确行动"},
+            },
+            judge_call=fake_judge,
+        )
+        assert r["passed"] is False
+        assert r["assertion_failures"] == ["required_action"]
+        assert "verdict 无效" in r["judge_reason"]
+
 
 # ============= orchestrator runner (mock LLM) =============
 
@@ -291,6 +314,32 @@ class TestOrchestratorRunner:
                 "交给用户自行判断均不满足。"
             )
         }
+
+    def test_assertion_only_case_cannot_skip_semantic_judge(self, monkeypatch):
+        async def fake_call_llm(system_prompt, user_prompt):
+            return "建议复测，但没有必要就医。"
+
+        async def fake_judge(q, a, model=None):
+            return {
+                "score": 5,
+                "reason": "没有肯定转介",
+                "assertions": {"affirmative_medical_referral": False},
+            }
+
+        from app.orchestrator import orchestrator as orc
+        from eval.scorers import llm_judge as lj_mod
+        monkeypatch.setattr(orc, "_call_llm", fake_call_llm)
+        monkeypatch.setattr(lj_mod, "_call_judge", fake_judge)
+
+        cases = load_suite("orchestrator")
+        bp_case = next(c for c in cases if c.id == "bp_concern_no_med_advice")
+        assertion_only = bp_case.model_copy(deep=True)
+        assertion_only.expected.pop("llm_judge_min_score")
+
+        result = run_case(assertion_only)
+        assert result.passed is False
+        semantic = result.details["scorers"]["llm_judge"]
+        assert semantic["assertion_failures"] == ["affirmative_medical_referral"]
 
     def test_orchestrator_case_runs_with_mocked_llm(self, monkeypatch):
         """挂个假的 _call_llm, 验证 runner 能跑通 _build_synthesis_prompt + 评分."""

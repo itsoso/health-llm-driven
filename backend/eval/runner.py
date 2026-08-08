@@ -201,7 +201,10 @@ def _score_orchestrator(case: GoldenCase, output: Dict[str, Any]) -> Dict[str, D
     text = output.get("synthesis", "")
     query = output.get("query", "")
     results = {"keywords": score_keywords(text, case.expected)}
-    if "llm_judge_min_score" in case.expected:
+    if (
+        "llm_judge_min_score" in case.expected
+        or "llm_judge_assertions" in case.expected
+    ):
         evidence = {
             "health_twin": case.inputs.get("twin", {}),
             "specialist_findings": case.inputs.get("findings", []),
