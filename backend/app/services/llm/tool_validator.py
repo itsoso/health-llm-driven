@@ -40,6 +40,10 @@ BEIJING_TZ = timezone(timedelta(hours=8))
 logger = logging.getLogger(__name__)
 
 
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"Unsupported JSON constant: {value}")
+
+
 def _flatten_text(value: Any) -> str:
     if isinstance(value, (list, tuple, set)):
         return " ".join(_flatten_text(item) for item in value if item is not None)
@@ -832,7 +836,7 @@ def _validate_health_manage(
         raw_data = args.get("data")
         if isinstance(raw_data, str):
             try:
-                decoded_data = json.loads(raw_data)
+                decoded_data = json.loads(raw_data, parse_constant=_reject_json_constant)
             except (json.JSONDecodeError, TypeError, ValueError):
                 decoded_data = None
             if isinstance(decoded_data, dict):

@@ -522,6 +522,16 @@ class TestDispatcher:
         })
         assert v["error"]
 
+    @pytest.mark.parametrize("constant", ("NaN", "Infinity", "-Infinity"))
+    def test_health_manage_update_rejects_non_finite_json_object_values(self, constant):
+        v = validate_tool_call("health_manage", {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": f'{{"amount": {constant}}}',
+        })
+        assert v["error"]
+
 
 class TestQueryGuard:
     def test_unknown_dimension_coerced(self):
