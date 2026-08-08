@@ -3311,6 +3311,98 @@ async def test_agent_stream_repaired_missing_argument_clears_scope_rejection(
 
 
 @pytest.mark.asyncio
+async def test_update_json_object_string_is_normalized_without_delete_fallback(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    dispatched = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            arguments = {
+                "record_type": "water",
+                "operation": "list",
+            }
+        elif llm_calls == 2:
+            arguments = {
+                "record_type": "water",
+                "operation": "update",
+                "record_id": 718,
+                "data": '{"amount": 350}',
+            }
+        else:
+            return {
+                "content": "已将这条饮水记录改为 350ml。",
+                "finish_reason": "stop",
+            }
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": f"water-{llm_calls}",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps(arguments, ensure_ascii=False),
+                },
+            }],
+        }
+
+    async def fake_health_manage(_base_url, _headers, parsed):
+        dispatched.append(parsed)
+        if parsed["operation"] == "list":
+            return json.dumps([{
+                "id": 718,
+                "amount": 300,
+                "record_date": "2026-08-08",
+            }])
+        if parsed["operation"] == "delete":
+            raise AssertionError("update trajectory must never dispatch delete")
+        return json.dumps({
+            "id": parsed["record_id"],
+            "record_id": parsed["record_id"],
+            "resource_type": "water_record",
+            "amount": parsed["data"]["amount"],
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_exec_health_manage", fake_health_manage)
+    monkeypatch.setattr(
+        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
+        lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="把刚才 300ml 改成 350ml",
+            user_auth_token="test-token",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert [item["operation"] for item in dispatched] == ["list", "update"]
+    assert dispatched[-1]["data"] == {"amount": 350}
+    assert done["data"]["turn_outcome"]["category"] != "tool_blocked"
+    assert done["data"]["completion_status"] == "complete"
+    assert len(done["data"]["write_receipts"]) == 1
+    assert done["data"]["write_receipts"][0]["resource_id"] == "718"
+    assert "这次没有写入" not in rendered
+    assert "另有" not in rendered
+    assert "已将这条饮水记录改为 350ml" in rendered
+
+
+@pytest.mark.asyncio
 async def test_update_retry_never_deletes_and_reports_verified_update(
     db, auth_user_and_headers, monkeypatch
 ):
@@ -3323,9 +3415,15 @@ async def test_update_retry_never_deletes_and_reports_verified_update(
         nonlocal llm_calls
         llm_calls += 1
         if llm_calls == 1:
-            operation = "delete"
+            operation = "list"
             data = None
         elif llm_calls == 2:
+            operation = "update"
+            data = "not-json"
+        elif llm_calls == 3:
+            operation = "delete"
+            data = None
+        elif llm_calls == 4:
             operation = "update"
             data = {"amount": 350}
         else:
@@ -3336,8 +3434,9 @@ async def test_update_retry_never_deletes_and_reports_verified_update(
         arguments = {
             "record_type": "water",
             "operation": operation,
-            "record_id": 718,
         }
+        if operation != "list":
+            arguments["record_id"] = 718
         if data is not None:
             arguments["data"] = data
         return {
@@ -3353,6 +3452,13 @@ async def test_update_retry_never_deletes_and_reports_verified_update(
         }
 
     async def fake_health_manage(_base_url, _headers, parsed):
+        if parsed["operation"] == "list":
+            dispatched.append(parsed)
+            return json.dumps([{
+                "id": 718,
+                "amount": 300,
+                "record_date": "2026-08-08",
+            }])
         if parsed["operation"] == "delete":
             raise AssertionError("blocked delete must not reach the adapter")
         dispatched.append(parsed)
@@ -3386,12 +3492,14 @@ async def test_update_retry_never_deletes_and_reports_verified_update(
     )
     done = next(event for event in events if event.get("event") == "done")
 
-    assert [item["operation"] for item in dispatched] == ["update"]
+    assert [item["operation"] for item in dispatched] == ["list", "update"]
+    assert dispatched[-1]["data"] == {"amount": 350}
     assert done["data"]["turn_outcome"]["category"] != "tool_blocked"
     assert done["data"]["completion_status"] == "complete"
     assert len(done["data"]["write_receipts"]) == 1
     assert done["data"]["write_receipts"][0]["resource_id"] == "718"
     assert "这次没有写入" not in rendered
+    assert "另有" not in rendered
     assert "已将这条饮水记录改为 350ml" in rendered
 
 
