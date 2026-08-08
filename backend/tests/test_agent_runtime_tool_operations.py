@@ -1623,9 +1623,18 @@ async def test_executor_ledgers_health_manage_mutations_with_typed_receipt(
         suffix=f"{record_type}-{operation_name}",
     )
     runtime.mark_running(admission.context)
+    record_id = 55
+    record_label = {
+        "supplement_definition": "补剂定义",
+        "medication_log": "用药日志",
+    }[record_type]
     executor = AgentExecutor(db)
     executor._current_user_id = user.id
-    executor._current_turn_user_message = "调整补剂定义"
+    executor._current_turn_user_message = (
+        f"删除{record_label}记录 {record_id}"
+        if operation_name == "delete"
+        else f"更新{record_label}记录 {record_id}"
+    )
     executor._runtime_run_id = admission.context.run_id
     executor._runtime_attempt_id = admission.context.attempt_id
     executor._runtime_managed = True
@@ -1648,7 +1657,7 @@ async def test_executor_ledgers_health_manage_mutations_with_typed_receipt(
     args = {
         "record_type": record_type,
         "operation": operation_name,
-        "record_id": 55,
+        "record_id": record_id,
         "data": {"dosage": "1000IU"},
     }
 
