@@ -386,6 +386,8 @@ async def test_execute_tool_blocks_health_manage_delete_in_update_turn(db, monke
     (
         "把上一条饮水记录里的备注去掉",
         "把上一条饮水记录备注删掉",
+        "从上一条饮水记录里把备注去掉",
+        "从上一条饮水记录中把说明删掉",
     ),
 )
 async def test_execute_tool_blocks_field_removal_from_deleting_record(

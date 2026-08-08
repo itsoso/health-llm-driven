@@ -118,12 +118,10 @@ _RECORD_FIELD_TARGET_PATTERN = "|".join(
     re.escape(target)
     for target in sorted(_RECORD_FIELD_TARGETS, key=len, reverse=True)
 )
-_RECORD_FIELD_LOCATION_PATTERN = r"(?:里(?:面)?|上(?:面)?|内|中)(?:的)?"
 _FIELD_DELETE_TARGET_RE = re.compile(
-    rf"(?:记录|条目)(?:{_RECORD_FIELD_LOCATION_PATTERN}|的)?"
-    rf"(?:{_RECORD_FIELD_TARGET_PATTERN})"
+    rf"(?:记录|条目)[^，。；！？]{{0,16}}(?:{_RECORD_FIELD_TARGET_PATTERN})"
     rf"|(?:{_RECORD_FIELD_TARGET_PATTERN})从[^，。；！？]{{0,24}}"
-    rf"(?:记录|条目)(?:{_RECORD_FIELD_LOCATION_PATTERN})?"
+    rf"(?:记录|条目)"
 )
 _WHOLE_RECORD_TARGET_RE = re.compile(
     r"(?:上一条|前一条|这条|那条|最后一条|刚才(?:那)?条|"
