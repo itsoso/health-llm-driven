@@ -47,6 +47,22 @@ def test_compound_revocation_deferred_condition_and_third_party_have_no_authoriz
         "假使我喝了300ml水，就帮我记录饮水300ml",
         "表妹体重71kg，记录一下",
         "岳父感冒了，帮忙记录感冒",
+        "护士提及：帮我记录感冒",
+        "客服转达的原话是：帮我记录感冒",
+        "护士提及帮我记录感冒",
+        "客服转达原话帮我记录感冒",
+        "一旦我确诊感冒，就记录感冒",
+        "等我有空的时候，帮我记录感冒",
+        "记录饮水300ml，当我没说",
+        "记录饮水300ml，忽略刚才那句",
+        "我对象体重71kg，记录一下",
+        "我对象感冒了，记录一下",
+        "邻居感冒了，帮忙记录感冒",
+        "小明感冒了，帮忙记录感冒",
+        "张三体重71kg，记录一下",
+        "我的朋友小明感冒了，记录一下",
+        "王五喝了300ml水，记录一下",
+        "我的同事李雷吃了米饭，记录午餐",
     ),
 )
 def test_revoked_reported_hypothetical_and_third_party_frames_have_no_authority(
@@ -61,6 +77,8 @@ def test_revoked_reported_hypothetical_and_third_party_frames_have_no_authority(
     (
         ("记录体重71kg，不对，改成70kg", "记录体重70kg"),
         ("记录口腔溃疡，不对，应该是感冒", "记录感冒"),
+        ("记录体重71kg，口误，是70kg", "记录体重70kg"),
+        ("记录感冒，抱歉说反了，是口腔溃疡", "记录口腔溃疡"),
     ),
 )
 def test_correction_replaces_the_superseded_authorized_clause(
@@ -448,6 +466,8 @@ def test_unpunctuated_later_direct_request_has_its_own_scope(text: str) -> None:
         "假如方便，帮我记录体重71kg",
         "请先告诉我今天还差多少水，然后记录体重71kg",
         "不要告诉我今天的热量，然后记录体重71kg",
+        "计算热量和营养并记录饮食",
+        "识别这顿饭同时记录晚餐",
     ),
 )
 def test_polite_conditions_do_not_turn_direct_requests_into_quotations(text: str) -> None:

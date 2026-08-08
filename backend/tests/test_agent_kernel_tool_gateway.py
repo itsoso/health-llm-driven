@@ -436,6 +436,65 @@ async def test_gateway_never_dispatches_non_authorizing_health_record_frames(
             "岳父感冒了，帮忙记录感冒",
             {"record_type": "illness", "data": {"name": "感冒"}},
         ),
+        (
+            "护士提及：帮我记录感冒",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+        (
+            "客服转达的原话是：帮我记录感冒",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+        (
+            "护士提及帮我记录感冒",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+        (
+            "客服转达原话帮我记录感冒",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+        (
+            "一旦我确诊感冒，就记录感冒",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+        (
+            "等我有空的时候，帮我记录感冒",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+        (
+            "记录饮水300ml，当我没说",
+            {"record_type": "water", "data": {"amount": 300}},
+        ),
+        (
+            "记录饮水300ml，忽略刚才那句",
+            {"record_type": "water", "data": {"amount": 300}},
+        ),
+        (
+            "我对象体重71kg，记录一下",
+            {"record_type": "weight", "data": {"weight": 71}},
+        ),
+        (
+            "邻居感冒了，帮忙记录感冒",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+        (
+            "小明感冒了，帮忙记录感冒",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+        (
+            "张三体重71kg，记录一下",
+            {"record_type": "weight", "data": {"weight": 71}},
+        ),
+        (
+            "王五喝了300ml水，记录一下",
+            {"record_type": "water", "data": {"amount": 300}},
+        ),
+        (
+            "我的同事李雷吃了米饭，记录午餐",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "lunch", "food_items": "米饭"},
+            },
+        ),
     ),
 )
 async def test_gateway_exact_semantic_non_authority_cases_never_reach_dispatch(
@@ -475,6 +534,16 @@ async def test_gateway_exact_semantic_non_authority_cases_never_reach_dispatch(
             "记录口腔溃疡，不对，应该是感冒",
             {"record_type": "illness", "data": {"name": "口腔溃疡"}},
             {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+        (
+            "记录体重71kg，口误，是70kg",
+            {"record_type": "weight", "data": {"weight": 71}},
+            {"record_type": "weight", "data": {"weight": 70}},
+        ),
+        (
+            "记录感冒，抱歉说反了，是口腔溃疡",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
         ),
     ),
 )
@@ -547,6 +616,36 @@ async def test_gateway_dispatches_canonical_record_date_not_ignored_alias():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    "record_args",
+    (
+        {"record_type": "water", "data": {"amount": 300}},
+        {"record_type": "water", "data": {"amount_ml": 300}},
+        {"record_type": "water", "amount": 300},
+    ),
+)
+async def test_gateway_dispatches_one_canonical_water_payload(record_args):
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "ok"
+
+    result = await ToolGateway(_snapshot("记录饮水300ml")).execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments=record_args,
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [{"record_type": "water", "data": {"amount": 300}}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
     ("message", "denied_args", "authorized_args"),
     (
         (
@@ -598,7 +697,7 @@ async def test_gateway_dispatches_only_the_concrete_authorized_target(
     assert json.loads(denied.content)["dispatch_started"] is False
     assert authorized.decision is not None
     assert authorized.decision.action == "allow"
-    assert calls == [authorized_args]
+    assert calls == [authorized.decision.normalized_args]
 
 
 @pytest.mark.asyncio

@@ -62,8 +62,8 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v6"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v5"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v7"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v6"
 _HEALTH_RECORD_DOMAIN_TYPES = {
     "diet": "diet",
     "water": "water",
@@ -74,6 +74,15 @@ _HEALTH_RECORD_DOMAIN_TYPES = {
     "mood": "mood",
     "exercise": "exercise",
     "sleep": "sleep",
+}
+_NUMERIC_DISPATCH_ALIAS_GROUPS = {
+    "water": (("amount", ("amount", "amount_ml", "ml")),),
+    "weight": (("weight", ("weight", "value", "weight_kg", "体重")),),
+    "blood_pressure": (
+        ("systolic", ("systolic",)),
+        ("diastolic", ("diastolic",)),
+    ),
+    "waist": (("waist_cm", ("waist_cm", "waist", "value", "腰围")),),
 }
 _METRIC_RECORD_TYPE_TERMS = (
     ("blood_pressure", ("血压", "高压", "低压", "收缩压", "舒张压")),
@@ -179,6 +188,15 @@ _MEDICATION_STRENGTH_RE = re.compile(
     r"(?P<value>\d+(?:\.\d+)?|[一二两三四五六七八九十])\s*"
     r"(?P<unit>mg|g|mcg|ug|μg|毫克|克|ml|毫升)",
     re.IGNORECASE,
+)
+_SUPPLEMENT_DOSE_RE = re.compile(
+    r"(?:(?:剂量|用量|每次|服用|吃)(?:是|为)?)?"
+    r"(?P<value>\d+(?:\.\d+)?|[一二两三四五六七八九十半]+)\s*"
+    r"(?P<unit>片|粒|丸|袋|支|颗|滴|喷|ml|毫升|mg|毫克|g|克)",
+    re.IGNORECASE,
+)
+_SUPPLEMENT_TIMING_RE = re.compile(
+    r"(?:早上|早晨|上午|中午|午间|晚上|晚间|睡前)(?:吃|服用)?"
 )
 _MEDICATION_NAME_SUFFIX_RE = re.compile(
     r"(?:霉素|必利|瑞酮|二甲双胍|沙坦|普利|洛尔|他汀|唑仑|西泮)$"
@@ -293,13 +311,23 @@ def decide_tool_capability(
     """
     tool_name = str(request.tool_name or "").strip()
     args = _parse_args(request.arguments)
+    health_record_alias_conflict = False
     if tool_name == "health_record":
+        health_record_alias_conflict = health_record_dispatch_aliases_conflict(args)
         args = normalize_health_record_dispatch_args(args)
     primary = snapshot.intent.primary
     health_record_target_authorized = False
 
     if not tool_name:
         return _decision("block", "missing_tool_name", tool_name, args)
+    if health_record_alias_conflict:
+        return _decision(
+            "block",
+            "health_record_target_mismatch",
+            tool_name,
+            args,
+            receipt_required=True,
+        )
 
     mutating_request = _is_mutating_request(tool_name, args)
     if (
@@ -696,6 +724,16 @@ def normalize_health_record_dispatch_args(
     normalized.pop("kind", None)
     data.pop("record_type", None)
 
+    for canonical_key, aliases in _NUMERIC_DISPATCH_ALIAS_GROUPS.get(
+        record_type, ()
+    ):
+        _canonicalize_named_field(
+            normalized,
+            data,
+            canonical_key=canonical_key,
+            aliases=aliases,
+        )
+
     if record_type == "illness":
         canonical_key = "start_date"
         candidates = (
@@ -912,6 +950,45 @@ def medication_dispatch_aliases_conflict(args: dict[str, Any]) -> bool:
         if _normalize_medication_dosage(value)
     }
     return len(normalized_actual) > 1 or len(normalized_strengths) > 1
+
+
+def health_record_dispatch_aliases_conflict(args: dict[str, Any]) -> bool:
+    """Reject contradictory aliases before collapsing them to one payload."""
+    if medication_dispatch_aliases_conflict(args):
+        return True
+    data = args.get("data") if isinstance(args.get("data"), dict) else {}
+    record_type_values = (
+        args.get("record_type"),
+        args.get("type"),
+        args.get("kind"),
+        data.get("record_type"),
+    )
+    if not any(value not in (None, "") for value in record_type_values):
+        # Nested ``type``/``kind`` are legacy record-type aliases only when no
+        # unambiguous type exists. Several adapters use ``data.type`` as an
+        # ordinary selector (for example excretion type).
+        record_type_values = (data.get("type"), data.get("kind"))
+    record_types = tuple(
+        _RECIPE_RECORD_TYPE_ALIASES.get(normalized, normalized)
+        for value in record_type_values
+        if value not in (None, "")
+        if (normalized := str(value).strip().lower())
+    )
+    if len(set(record_types)) > 1:
+        return True
+    record_type = record_types[0] if record_types else ""
+    for _canonical_key, aliases in _NUMERIC_DISPATCH_ALIAS_GROUPS.get(
+        record_type, ()
+    ):
+        values = [
+            container[key]
+            for container in (data, args)
+            for key in aliases
+            if key in container and container[key] not in (None, "", [])
+        ]
+        if values and any(not _numbers_match(values[0], value) for value in values[1:]):
+            return True
+    return False
 
 
 def recipe_replay_record_type(args: dict[str, Any]) -> str:
@@ -1182,13 +1259,7 @@ def _deterministic_target_values(
         names = _named_item_targets(clause, record_type)
         if names:
             values["names"] = names
-        dosage_match = re.search(
-            r"(?:剂量|每次|服用|吃)(?:是|为)?"
-            r"(?P<value>\d+(?:\.\d+)?|[一二两三四五六七八九十半]+)\s*"
-            r"(?P<unit>片|粒|丸|袋|支|颗|滴|喷|ml|毫升|mg|毫克|g|克)",
-            clause,
-            re.IGNORECASE,
-        )
+        dosage_match = _SUPPLEMENT_DOSE_RE.search(clause)
         if dosage_match is not None:
             values["dosage"] = _canonical_medication_dosage(dosage_match)
         timing = next(
@@ -1365,6 +1436,10 @@ def _named_item_targets(clause: str, record_type: str) -> tuple[str, ...]:
         candidate,
     )
     candidate = re.split(r"(?:，|,|然后|并且|再)", candidate, maxsplit=1)[0]
+    if record_type == "supplement":
+        candidate = _SUPPLEMENT_DOSE_RE.sub("", candidate)
+        candidate = _SUPPLEMENT_TIMING_RE.sub("", candidate)
+        candidate = re.sub(r"(?:吃|服用)$", "", candidate)
     candidate = candidate.strip("的了，,。.!！；;：: ")
     if candidate:
         return (candidate,)
@@ -2064,7 +2139,56 @@ def _target_values_mismatch(
         effective_date = requested_date or str(expected.get("default_date") or "")
         if str(expected.get("target_date") or "") != effective_date:
             return True
+    _project_authorized_dispatch_payload(record_type, expected, args, data)
     return False
+
+
+def _project_authorized_dispatch_payload(
+    record_type: str,
+    expected: dict[str, Any],
+    args: dict[str, Any],
+    data: dict[str, Any],
+) -> None:
+    """Emit the one payload shape inspected and consumed for this target."""
+    numeric_fields = {
+        "water": (("amount", "amount_ml"),),
+        "weight": (("weight", "weight"),),
+        "blood_pressure": (
+            ("systolic", "systolic"),
+            ("diastolic", "diastolic"),
+        ),
+        "waist": (("waist_cm", "waist_cm"),),
+    }
+    if record_type in numeric_fields:
+        requested_date = _effective_record_date(record_type, args, data)
+        projected = {
+            output_key: _canonical_numeric_value(expected[expected_key])
+            for output_key, expected_key in numeric_fields[record_type]
+        }
+        if requested_date:
+            projected["record_date"] = str(expected.get("target_date") or "")
+        args.clear()
+        args.update({"record_type": record_type, "data": projected})
+        return
+
+    if record_type == "supplement":
+        names = tuple(expected.get("names") or ())
+        projected: dict[str, Any] = {}
+        if names:
+            projected["supplement_name"] = names[0]
+        for field in ("dosage", "timing", "category", "description"):
+            if expected.get(field) not in (None, "", []):
+                projected[field] = expected[field]
+        args.clear()
+        args.update({"record_type": record_type, "data": projected})
+
+
+def _canonical_numeric_value(value: Any) -> int | float | Any:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return value
+    return int(numeric) if numeric.is_integer() else numeric
 
 
 def _medication_actual_dosage_values(

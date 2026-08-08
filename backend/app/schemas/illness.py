@@ -37,7 +37,9 @@ class IllnessEpisodeCreate(BaseModel):
 
 class IllnessEpisodePatch(BaseModel):
     severity: Optional[int] = Field(None, ge=1, le=10)
-    status: Optional[str] = None
+    # Omitted status stays untouched via exclude_unset; explicit null must not
+    # cross into the database's non-null status column.
+    status: str = Field(None)
     end_date: Optional[date] = None
     notes: Optional[str] = None
 

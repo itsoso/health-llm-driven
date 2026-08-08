@@ -1612,6 +1612,37 @@ def test_explicit_supplement_definition_fields_are_bound_and_preserved():
     assert wrong.action == "block"
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录鱼油，每次2粒，晚上吃",
+        "记录鱼油2粒晚上吃",
+    ),
+)
+def test_compact_supplement_name_dosage_and_timing_are_bound(message):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {
+                "record_type": "supplement",
+                "data": {
+                    "supplement_name": "鱼油",
+                    "dosage": "2粒",
+                    "timing": "evening",
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args["data"] == {
+        "supplement_name": "鱼油",
+        "dosage": "2粒",
+        "timing": "evening",
+    }
+
+
 def test_food_conjunction_does_not_collapse_wagyu_lexeme():
     decision = decide_tool_capability(
         _snapshot("记录早餐米饭和和牛200g"),
@@ -1708,6 +1739,76 @@ def test_health_authorization_binds_explicit_severity(
     assert matching.action == "allow"
     assert wrong.action == "block"
     assert wrong.reason == "health_record_target_mismatch"
+
+
+@pytest.mark.parametrize(
+    "record_args",
+    (
+        {"record_type": "water", "data": {"amount": 300}},
+        {"record_type": "water", "data": {"amount_ml": 300}},
+        {"record_type": "water", "amount": 300},
+    ),
+)
+def test_water_aliases_produce_one_executor_consumable_payload(record_args):
+    decision = decide_tool_capability(
+        _snapshot("记录饮水300ml"),
+        _request("health_record", record_args),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args == {
+        "record_type": "water",
+        "data": {"amount": 300},
+    }
+
+
+def test_unmentioned_water_type_is_projected_out():
+    decision = decide_tool_capability(
+        _snapshot("记录饮水300ml"),
+        _request(
+            "health_record",
+            {
+                "record_type": "water",
+                "data": {"amount": 300, "drink_type": "烈酒"},
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args["data"] == {"amount": 300}
+
+
+def test_conflicting_water_aliases_fail_closed():
+    decision = decide_tool_capability(
+        _snapshot("记录饮水300ml"),
+        _request(
+            "health_record",
+            {
+                "record_type": "water",
+                "amount": 300,
+                "data": {"amount_ml": 500},
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "health_record_target_mismatch"
+
+
+def test_conflicting_record_type_aliases_fail_closed_before_projection():
+    decision = decide_tool_capability(
+        _snapshot("记录饮水300ml"),
+        _request(
+            "health_record",
+            {
+                "record_type": "water",
+                "data": {"record_type": "weight", "amount": 300},
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "health_record_target_mismatch"
 
 
 def test_fractional_severity_is_explicit_and_bound():
@@ -3022,9 +3123,9 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v6"
+    assert payload["contract_version"] == "agent-capability-policy-v7"
     assert payload["health_record_target_binding"] == {
-        "version": "authorized-target-set-v5",
+        "version": "authorized-target-set-v6",
         "domain_types": {
             "diet": "diet",
             "exercise": "exercise",

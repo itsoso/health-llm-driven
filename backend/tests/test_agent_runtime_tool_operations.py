@@ -404,6 +404,19 @@ def test_runtime_write_fingerprint_canonicalizes_supported_aliases():
     assert _runtime_write_operation_fingerprint(
         "health_record", date_alias
     ) == _runtime_write_operation_fingerprint("health_record", canonical_date)
+    water_aliases = (
+        {"record_type": "water", "data": {"amount": 300}},
+        {"record_type": "water", "data": {"amount_ml": 300}},
+        {"record_type": "water", "amount": 300},
+    )
+    assert len({
+        _write_operation_fingerprint("health_record", value)
+        for value in water_aliases
+    }) == 1
+    assert len({
+        _runtime_write_operation_fingerprint("health_record", value)
+        for value in water_aliases
+    }) == 1
     assert _runtime_write_operation_fingerprint(
         "intervention_cycle",
         {"action": "start", "confirm": True, "days": 90},

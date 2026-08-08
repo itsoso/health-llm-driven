@@ -26438,7 +26438,7 @@ export interface components {
             /** Severity */
             severity?: number | null;
             /** Status */
-            status?: string | null;
+            status?: string;
             /** End Date */
             end_date?: string | null;
             /** Notes */

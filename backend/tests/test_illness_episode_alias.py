@@ -66,3 +66,28 @@ def test_episode_patch_can_explicitly_clear_severity(client, auth_headers):
 
     assert patched.status_code == 200, patched.text
     assert patched.json()["severity"] is None
+
+
+def test_episode_patch_rejects_null_status_without_mutating_record(
+    client, auth_headers
+):
+    created = client.post(
+        "/api/v1/illness/episodes",
+        headers=auth_headers,
+        json={"name": "感冒", "start_date": "2026-08-08"},
+    )
+    assert created.status_code in (200, 201), created.text
+
+    rejected = client.patch(
+        f"/api/v1/illness/episodes/{created.json()['id']}",
+        headers=auth_headers,
+        json={"status": None},
+    )
+
+    assert rejected.status_code == 422, rejected.text
+    fetched = client.get(
+        f"/api/v1/illness/episodes/{created.json()['id']}",
+        headers=auth_headers,
+    )
+    assert fetched.status_code == 200, fetched.text
+    assert fetched.json()["status"] == "active"

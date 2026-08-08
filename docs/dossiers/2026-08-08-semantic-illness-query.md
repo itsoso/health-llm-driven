@@ -278,6 +278,39 @@ validation and no-match honesty address those risks.
   coverage cache. Targeted Ruff, Python compilation, diff validation,
   generated system-map drift and Dossier consistency gates also pass. Fresh
   exact-commit reviews remain required.
+- Fresh safety and code reviews of exact commit `bc4906d26` both returned
+  NO-GO, so release again remained stopped. Real ToolGateway counterexamples
+  showed that colonless and colon-introduced reported commands, deferred
+  conditions, trailing withdrawal and arbitrary named third-party subjects
+  could still dispatch. The reviewers also found unlisted correction forms,
+  water aliases whose inspected and consumed payloads differed, invented
+  adapter fields, lost compact supplement dosage/timing, and explicit null
+  status reaching a non-null database column.
+- The thirteenth remediation makes ownership a predicate relation rather than
+  a list of people or kinship nouns. A health observation authorizes a trailing
+  helper only when its governing subject reduces to the current user; an
+  attributed colon is a provenance boundary; deferred, revoked and corrected
+  frames are resolved before target compilation. Direct compound requests such
+  as `计算热量和营养并记录饮食` remain writable without lending authority to
+  reported commands.
+- Numeric record aliases are now conflict-checked, collapsed and projected to
+  the one field shape consumed by each adapter. Model-invented fields are
+  discarded before dispatch and retry fingerprinting. Explicit and compact
+  supplement phrases preserve canonical name, dosage and timing. The
+  capability boundary is versioned as `agent-capability-policy-v7` /
+  `authorized-target-set-v6`.
+- Illness PATCH distinguishes omission from explicit null: omission leaves
+  status untouched, while JSON null is rejected before it can reach the
+  non-null column. Generated Web and Mobile contracts expose `status?: string`
+  and retain nullable severity. The expanded semantic/policy/gateway group
+  passes 2,040 tests; the first 2,824-test aggregate found one over-blocked
+  positive compound diet request, which now has a focused regression and
+  passes with the shared authority suite.
+- The clean final single-process semantic/classifier/policy/gateway/query/API/
+  adapter/migration/runtime aggregate passes 2,827/2,827 tests. Targeted Ruff,
+  Python compilation, diff validation, generated system-map drift and Dossier
+  consistency checks also pass. This is the G3 evidence for the next exact
+  commit; two brand-new G4 reviewers remain mandatory.
 
 ### G4 Safety Review: PENDING
 
@@ -463,6 +496,16 @@ Retry identity is computed after canonicalization. Paired migrations and a
 target-aware live-data probe make nullable severity safe in both forward
 migration and old-code rollback. New independent reviews of the next exact
 commit are mandatory before G4 may pass.
+
+Fresh safety and code reviews of exact commit `bc4906d26` returned NO-GO and no
+deployment was attempted. They demonstrated actual dispatch across reported,
+deferred, revoked and arbitrary-subject frames, plus payload identity gaps in
+water and supplement writes and an API nullability mismatch for illness status.
+The thirteenth remediation resolves grammatical owner/provenance relations
+before compilation, projects numeric and supplement writes into exact
+adapter-consumed payloads, and makes PATCH status optional but non-null. A clean
+G3 rerun and two brand-new exact-commit reviewers are mandatory; neither prior
+review can be reused.
 
 ### G5 Deployment Health: PENDING
 

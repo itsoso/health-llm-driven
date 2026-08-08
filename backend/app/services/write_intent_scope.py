@@ -154,7 +154,10 @@ _TRAILING_REVOCATION_ATOM = (
     r"等一下再说|稍后再说|先放一放|(?:这件事)?作罢|"
     r"(?:先)?不(?:要)?(?:再)?(?:记|记录|保存|录入|写入|新增|打卡)了|"
     r"别(?:再)?(?:记|记录|保存|录入|写入|新增|打卡)了|"
-    r"先不要了|不要了|我不同意|不行|(?:我)?改主意了|(?:这次)?别弄了)"
+    r"先不要了|不要了|我不同意|不行|(?:我)?改主意了|(?:这次)?别弄了|"
+    r"(?:就)?当(?:我)?没说|"
+    r"忽略(?:掉)?(?:刚才|前面|上面|之前)?(?:那|这)?(?:句|条|个)?"
+    r"(?:话|请求|指令)?)"
 )
 _TRAILING_REVOCATION_CLAUSE_RE = re.compile(
     rf"^(?:{_TRAILING_REVOCATION_ATOM})+$"
@@ -216,6 +219,10 @@ _POLITE_CONDITIONAL_PREFIX_RE = re.compile(
 )
 _DEFERRED_CONDITION_PREFIX_RE = re.compile(
     r"^(?:"
+    r"(?:一旦|只要|除非|等到|待到).{0,64}"
+    r"|(?:等|待)(?!一下(?:[，,]|$)|一会儿(?:[，,]|$)|会儿(?:[，,]|$))"
+    r".{0,64}(?:时|时候)"
+    r"|"
     r"(?:等|待)(?!一下(?:[，,]|$)|一会儿(?:[，,]|$)|会儿(?:[，,]|$))"
     r".{0,48}(?:后|以后|之后)(?:.{0,16}(?:再|才))?"
     r"|.{1,40}(?:后|以后|之后)(?:再|才)(?:帮我|请)?"
@@ -251,13 +258,18 @@ _THIRD_PARTY_HEALTH_SUBJECT_RE = re.compile(
     rf"(?:我(?:的)?)?[\u4e00-\u9fff]{{0,6}}{_THIRD_PARTY_ROLE_SUFFIX}(?:的)?"
     rf"{_THIRD_PARTY_HEALTH_FACT}"
 )
-_CORRECTION_MARKER_RE = re.compile(r"^(?:嗯)?(?:不对|错了|说错了|更正一下)$")
+_CORRECTION_MARKER_RE = re.compile(
+    r"^(?:嗯|抱歉|不好意思)?(?:不对|错了|说错了|说反了|讲反了|口误|笔误|更正一下)$"
+)
 _CORRECTION_VALUE_RE = re.compile(
     r"^(?:(?:不对|错了|说错了|更正一下)[，,]?)?"
     r"(?:改成|改为|更正为|应该是|应为|其实是)(?P<value>.+)$"
 )
+_CORRECTION_PENDING_VALUE_RE = re.compile(
+    r"^(?:是|应是|应该是|其实是)(?P<value>.+)$"
+)
 _WRITE_ATTRIBUTE_CONTINUATION_RE = re.compile(
-    r"^(?:(?:备注|注释|说明|严重度|严重程度|剂量|用量)"
+    r"^(?:(?:备注|注释|说明|严重度|严重程度|剂量|用量|每次)"
     r"(?:是|为|：|:)?\S+|(?:早上|早晨|上午|中午|午间|晚上|晚间|睡前)"
     r"(?:吃|服用)?)"
 )
@@ -268,6 +280,20 @@ _DIRECT_HEALTH_OBSERVATION_RE = re.compile(
     r"(?:头痛|头疼|胸痛|腹痛|眼痒|嗓子疼|感冒|流感|发烧|生病)(?:了|中|$)|"
     r"(?:提醒|闹钟|目标|准备开始睡觉|开始睡觉|入睡|起床|"
     r"心情|情绪|排便|大便|便秘|腹泻|俯卧撑|瑜伽|跑步))"
+)
+_HEALTH_OBSERVATION_PREDICATE_RE = re.compile(
+    r"(?:吃了|吃的是|不想吃|食欲|不舒服|(?:不)?严重|喝了|服了|服用(?:了)?|用了|"
+    r"体重|血压|腰围|头痛|头疼|胸痛|腹痛|疼|眼痒|嗓子疼|"
+    r"感冒|流感|发烧|生病|口腔溃疡|湿疹|咳嗽|症状|用药|服药)"
+)
+_CURRENT_USER_SUBJECT_NOISE_RE = re.compile(
+    r"(?:今天|今日|刚才|刚刚|方才|现在|目前|早上|早晨|上午|"
+    r"中午|下午|晚上|晚间|昨晚|今早|这次|这会儿|这几天|最近几天|"
+    r"早餐|早饭|午餐|午饭|中饭|晚餐|晚饭|加餐|零食|夜宵|本人|自己)"
+)
+_COMPOUND_DIRECT_REQUEST_PREFIX_RE = re.compile(
+    r"^(?:请|帮我)?(?:计算|分析|识别|估算|整理|总结).{0,48}"
+    r"(?:并|然后|再|同时)$"
 )
 _POST_ATTRIBUTION_RE = re.compile(
     r"(?:这是|这只是|上面是|前面是).{0,12}(?:说的|写的|提到的)?"
@@ -802,6 +828,75 @@ def governing_authorized_write_clause(value: str) -> str | None:
     return clauses[-1] if clauses else None
 
 
+def _has_untrusted_colon_command(value: str) -> bool:
+    """Return whether a colon introduces a command without direct authority.
+
+    A colon after a direct write action remains part of that action's target
+    (``记录疾病：感冒``). A colon whose left side has no write action is a
+    quotation/provenance boundary, so a command on the right cannot inherit
+    current-user authority from the surrounding turn.
+    """
+    for match in re.finditer(r"[:：]", value):
+        if (
+            match.start() > 0
+            and match.end() < len(value)
+            and value[match.start() - 1].isdigit()
+            and value[match.end()].isdigit()
+        ):
+            continue
+        left = value[:match.start()]
+        right = value[match.end():]
+        if _colon_extends_write_target(left):
+            continue
+        if (
+            _HEALTH_OBSERVATION_PREDICATE_RE.search(left)
+            and not _observation_has_non_current_subject(left)
+        ):
+            continue
+        if (
+            _last_write_signal_in_clause(left) is None
+            and _last_write_signal_in_clause(right) is not None
+        ):
+            return True
+    return False
+
+
+def _observation_has_non_current_subject(clause: str) -> bool:
+    """Fail closed when a health observation names an unowned subject.
+
+    This deliberately does not try to enumerate kinship roles or names. The
+    prefix governing the health predicate must reduce to the current user (or
+    a subjectless shorthand); otherwise a later ``记录一下`` cannot turn that
+    fact into the current user's record.
+    """
+    match = _HEALTH_OBSERVATION_PREDICATE_RE.search(clause)
+    if match is None:
+        return False
+    if (
+        clause.startswith(("把", "将"))
+        and _last_write_signal_in_clause(clause) is not None
+    ):
+        return False
+    if clause.startswith(
+        ("创建目标", "设定目标", "设置目标", "新增目标", "记录目标")
+    ):
+        return False
+    colon = re.search(r"[:：]", clause)
+    if colon is not None and _colon_extends_write_target(clause[:colon.start()]):
+        return False
+    prefix = clause[:match.start()]
+    if _last_write_signal_in_clause(prefix) is not None:
+        return False
+    reduced = _CURRENT_USER_SUBJECT_NOISE_RE.sub("", prefix)
+    reduced = re.sub(
+        r"(?:已经|又|还|正|正在|刚|有点|突然|最近|不是很|不太|比较|特别|很)",
+        "",
+        reduced,
+    )
+    reduced = reduced.strip("的了，,。.!！；;：: ")
+    return reduced not in {"", "我"}
+
+
 def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
     """Return every direct clause that may own one concrete health write.
 
@@ -829,6 +924,8 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
     for contrast_segment in _CONTRAST_SCOPE_RE.split(text):
         if not contrast_segment:
             continue
+        if _has_untrusted_colon_command(contrast_segment):
+            continue
         segment_start = len(authorized)
         reported_scope = False
         hypothetical_scope = False
@@ -840,6 +937,8 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
                 correction_pending = True
                 continue
             correction_match = _CORRECTION_VALUE_RE.fullmatch(raw_clause)
+            if correction_match is None and correction_pending:
+                correction_match = _CORRECTION_PENDING_VALUE_RE.fullmatch(raw_clause)
             if correction_match is not None and (correction_pending or clauses):
                 if clauses:
                     clauses[-1] = _corrected_write_clause(
@@ -906,6 +1005,7 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
             if (
                 _THIRD_PARTY_WRITE_SUBJECT_RE.search(clause)
                 or _THIRD_PARTY_HEALTH_SUBJECT_RE.search(clause)
+                or _observation_has_non_current_subject(clause)
             ):
                 third_party_scope = True
 
@@ -1046,6 +1146,27 @@ def _strip_direct_request_prefix(clause: str) -> str:
     return remainder
 
 
+def _helper_owner_is_current_user(before_action: str) -> bool:
+    """Validate the subject governing a trailing direct-request helper."""
+    if _COMPOUND_DIRECT_REQUEST_PREFIX_RE.fullmatch(before_action):
+        return True
+    helpers = tuple(
+        sorted((*_DIRECT_REQUEST_HELPERS, *WRITE_COMMAND_PREFIXES), key=len, reverse=True)
+    )
+    helper = next(
+        (candidate for candidate in helpers if before_action.endswith(candidate)),
+        None,
+    )
+    if helper is None:
+        return False
+    owner_context = before_action[:-len(helper)]
+    if not owner_context:
+        return True
+    if _HEALTH_OBSERVATION_PREDICATE_RE.search(owner_context):
+        return not _observation_has_non_current_subject(owner_context)
+    return False
+
+
 def has_explicit_authorizing_write_request(value: str) -> bool:
     """Require a positive, direct speech act before authorizing health writes.
 
@@ -1060,6 +1181,8 @@ def has_explicit_authorizing_write_request(value: str) -> bool:
     if (
         _DEFERRED_CONDITION_PREFIX_RE.search(normalized)
         or _THIRD_PARTY_WRITE_SUBJECT_RE.search(normalized)
+        or _has_untrusted_colon_command(normalized)
+        or _observation_has_non_current_subject(normalized)
         or (
             _HYPOTHETICAL_PREFIX_RE.search(normalized)
             and not _POLITE_CONDITIONAL_PREFIX_RE.search(normalized)
@@ -1091,6 +1214,4 @@ def has_explicit_authorizing_write_request(value: str) -> bool:
     if direct_clause.startswith(("把", "将")) and action in direct_clause:
         return action != "记录" or after_action.startswith(("下来", "到", "为"))
     before_action = clause[:start]
-    return start == 0 or before_action.endswith(
-        (*_DIRECT_REQUEST_HELPERS, *WRITE_COMMAND_PREFIXES)
-    )
+    return start == 0 or _helper_owner_is_current_user(before_action)

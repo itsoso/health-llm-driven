@@ -122,6 +122,18 @@ retrieval. The boundary makes both responsibilities explicit and testable.
 - Arbitrary-source attributed commands and observation facts share the same
   non-authorizing provenance rule. Trailing pause/revocation invalidates the
   preceding clause; polite conditions remain direct requests.
+- Subject ownership is relation-based, not a vocabulary of roles or names. A
+  trailing `记录一下` may inherit a health observation only when the governing
+  subject reduces to the current user. Attributed colons, deferred conditions,
+  withdrawals and corrections are resolved before target compilation. A
+  compound current-user request such as `计算热量和营养并记录饮食` remains a
+  positive control.
+- Numeric aliases are conflict-checked before collapse and then projected to
+  the one canonical field shape the adapter consumes. Equivalent top-level and
+  nested aliases therefore share dispatch and retry identity; contradictory
+  aliases fail closed. Adapter fields absent from the authorized target are
+  removed. Compact supplement name/dose/timing phrases are projected with the
+  same rule.
 - Ambiguity degrades to read-only or clarification, never mutation.
 
 ### 4.2 Semantic query plan
@@ -167,9 +179,12 @@ registered dimensions.
 
 ## 6. Compatibility
 
-The final payload-exactness remediation includes a paired PostgreSQL/SQLite managed migration
-that makes illness severity nullable and a matching generated Web API type
-change. Existing `health_manage(record_type=illness)` update/delete flows remain unchanged.
+The final payload-exactness remediation includes a paired PostgreSQL/SQLite
+managed migration that makes illness severity nullable and matching generated
+Web/Mobile API type changes. PATCH fields may accept explicit null only when
+the storage column is nullable: severity may be cleared, while omitted status
+is untouched and explicit null status is rejected. Existing
+`health_manage(record_type=illness)` update/delete flows remain unchanged.
 Existing valid `health_query` dimensions and explicit recording utterances must
 retain their current behavior.
 

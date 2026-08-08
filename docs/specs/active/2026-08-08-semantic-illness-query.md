@@ -189,6 +189,22 @@ authority. This applies equally to commands and observation facts such as
 preceding authority. Polite conditions such as `如果可以，请记录体重71kg` remain
 direct requests rather than being flattened into hypothetical examples.
 
+The ownership check is not limited to known roles: the subject governing a
+health predicate must reduce to the current user before a trailing helper can
+authorize a write. Names and previously unseen relations therefore fail closed
+without a growing person-word list. Colon-introduced attribution, deferred
+conditions, withdrawal and correction relations are resolved before the
+authorized target set is compiled. Direct compound requests such as
+`计算热量和营养并记录饮食` remain positive current-user actions.
+
+For numeric record families, equivalent top-level and nested aliases collapse
+to one adapter-consumed field and one retry identity; contradictory values are
+blocked before collapse. The gate projects only authorized fields, so a model
+cannot smuggle an invented water type or other unused field through a payload
+the adapter interprets differently. Supplement name, compact dose and timing
+use the same exact projection. Illness PATCH status is optional but non-null:
+omission preserves the stored status, while explicit JSON null is rejected.
+
 Illness windows use the Agent turn's frozen user-local date, not the service
 process date. This keeps Web, Mobile and Mac results aligned at timezone day
 boundaries. The same date is also an inclusive upper bound, so a future-dated
@@ -352,6 +368,42 @@ Given an arbitrary source says "朋友说我午餐吃了米饭"
 When the model requests health_record anyway
 Then the attributed observation has no current-user authority and dispatch never starts
 
+Given a previously unseen subject says "王五喝了300ml水，记录一下"
+When the model requests health_record anyway
+Then relation-based ownership blocks it without relying on a name allowlist or denylist
+
+Given an attributed command says "护士提及：帮我记录感冒"
+When the model requests health_record anyway
+Then the colon provenance boundary prevents dispatch
+
+Given a user says "记录饮水300ml，当我没说"
+When the model requests health_record anyway
+Then withdrawal removes the prior authority and dispatch never starts
+
+Given a user says "记录体重71kg，口误，是70kg"
+When the model requests a health_record
+Then only the corrected 70kg target can dispatch
+
+Given equivalent water arguments use data.amount, data.amount_ml or a top-level amount
+When the deterministic gate accepts the request
+Then all forms dispatch the same canonical data.amount payload and retry identity
+
+Given a water proposal includes an unrequested drink_type
+When the deterministic gate accepts the authorized amount
+Then the unrequested field is removed before dispatch
+
+Given a user says "记录鱼油2粒晚上吃"
+When the model requests a supplement write
+Then canonical name, dosage and timing survive together in the dispatched payload
+
+Given a user submits illness PATCH with status null
+When request validation runs
+Then it returns a validation error and does not mutate the non-null status column
+
+Given a user asks "计算热量和营养并记录饮食"
+When the positive speech-act parser processes the compound request
+Then the diet write remains authorized under its exact target binding
+
 Given a user says "记录体重71kg，算了吧"
 When the classifier and ToolGateway process the trailing revocation
 Then the preceding write authority is revoked and dispatch never starts
@@ -440,3 +492,4 @@ These questions do not block the illness slice.
 | 2026-08-08 | Bound authority to the concrete clause and target | Fresh reviews proved that arbitrary reports, observation facts and denied sibling targets could inherit whole-turn write authority. |
 | 2026-08-09 | Upgraded authorization to an exact target set | Fresh reviews found multi-target, alias, meal/date/entity and medication-dose gaps in single-clause binding. |
 | 2026-08-09 | Canonicalized and projected the dispatch payload | Fresh exact-commit reviews found composed revocation, deferred/third-party authority, adapter-alias, date, reminder, meal and model-invented-field gaps. |
+| 2026-08-09 | Made ownership relational and payload aliases adapter-exact | Fresh exact-commit reviews found arbitrary subjects, attribution/revocation/correction gaps, water/supplement payload drift and non-null PATCH status mismatch. |
