@@ -388,6 +388,7 @@ async def test_structured_symptom_write_uses_current_statement_before_api(
         "data": {
             "body_part": "musculoskeletal",
             "description": "还是有腰疼的症状",
+            "record_date": executor._agent_kernel_reference_now().date().isoformat(),
         },
     }
 

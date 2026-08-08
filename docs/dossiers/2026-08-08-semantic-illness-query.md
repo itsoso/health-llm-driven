@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS after dual NO-GO remediation; new exact-commit G4 pending |
+| current_stage | G3 PASS after second dual NO-GO remediation; new exact-commit G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -380,6 +380,37 @@ validation and no-match honesty address those risks.
   returned `401 invalid_api_key`. This run is recorded as externally blocked,
   not as a model pass or failure; the earlier valid live evidence remains
   historical evidence only.
+- Fresh safety and code reviews of exact commit `b7f88e64e` both returned
+  NO-GO, so push and deployment remained stopped. They proved that update
+  speech acts still accepted quoted, hypothetical and posterior third-party
+  ownership; arbitrary proposed IDs could bypass owner-scoped discovery;
+  shadow mode could dispatch a blocked health write; reminder continuation
+  could inherit stale assistant prose; illness updates used substring matching
+  and overclaimed partial recovery; and several legitimate record families
+  either failed closed or dropped explicit exercise values.
+- The sixteenth remediation versions the boundary as
+  `agent-capability-policy-v12` / `authorized-target-set-v8` /
+  `record-update-evidence-v3`. Update authorization now requires a direct,
+  affirmative, current-user speech act plus a same-turn owner-scoped list and
+  an exact server-projected patch. Illness identity uses normalized equality;
+  partial recovery maps to `improving`; all blocked health-record decisions are
+  hard denials in both enforce and shadow modes. Reminder continuation is
+  valid only for an adjacent user create request followed by the assistant's
+  direct schedule question, and title/interval authority comes only from the
+  user's text.
+- Deterministic creation projection now covers `remember`, `event`,
+  `supplement_group`, rhinitis check-ins and exercise distance/repetitions/sets
+  without retaining model-invented fields. Real Gateway and full executor
+  regressions prove owner-scoped illness list → exact update, stale reminder
+  rejection, posterior ownership revocation and zero dispatch for semantic
+  denials in both policy modes.
+- The clean, single-process post-remediation aggregate passes 3,681/3,681
+  Backend tests in 186.77 seconds. Targeted Ruff, Python compilation and
+  `git diff --check` pass. Latest `origin/main` commit `140bd788a` was then
+  merged; it changes only the iOS privacy-manifest release surface. Its Backend
+  App Store preflight passes 4/4 and Mobile app-config suite passes 17/17.
+  Structural document checks and two brand-new exact-commit reviews remain
+  required.
 
 ### G4 Safety Review: PENDING
 
@@ -609,6 +640,25 @@ user authority. Real Gateway and executor regressions cover both negative
 attacks and legitimate water, illness, meal-estimate, sleep-start and reminder
 continuation controls. The clean G3 aggregate is green; a new exact commit and
 two different independent reviewers remain mandatory before G4 may pass.
+
+Fresh safety and code reviews of exact commit `b7f88e64e` both returned NO-GO
+before push or deployment. The safety review reproduced update dispatch across
+quoted, hypothetical, third-party and arbitrary-ID frames, plus a shadow-mode
+health-write bypass and false revocation of explicit current-user ownership.
+The code review reproduced missing rhinitis/event/remember/supplement-group
+writes, stale reminder continuation, substring illness identity, partial
+recovery overclaim, dropped exercise selectors and a test fixture that bypassed
+the real Gateway.
+
+The sixteenth remediation closes those findings at the semantic choke point.
+Updates require direct current-user authorization, owner-scoped identity and an
+exact projected patch; the same hard denial applies in shadow mode. Reminder
+continuations require adjacent user and assistant turns and derive authority
+only from the user's request. Supported non-numeric record families now receive
+server-owned deterministic payloads, and real Gateway/executor tests replace
+the bypassing fixture. The clean 3,681-test G3 aggregate and latest-main release
+checks are green. A new exact commit and two brand-new reviewers are mandatory;
+neither reviewer of `b7f88e64e` may be reused.
 
 ### G5 Deployment Health: PENDING
 

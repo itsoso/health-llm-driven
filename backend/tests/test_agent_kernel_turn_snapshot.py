@@ -144,6 +144,10 @@ def test_reminder_time_follow_up_refines_only_an_active_reminder_continuation(
     executor._current_turn_user_message = "9点到20点"
     executor._current_turn_recent_messages = [
         {
+            "role": "user",
+            "content": "每隔两小时提醒我喝水",
+        },
+        {
             "role": "assistant",
             "content": "我会设置循环饮水提醒。请告诉我开始和结束时间。",
         }

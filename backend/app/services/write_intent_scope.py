@@ -303,9 +303,9 @@ _SUBJECT_RELATION_NOISE_RE = re.compile(
     r"\d+(?:\.\d+)?(?:kg|公斤|千克|斤|cm|厘米|mmhg|毫米汞柱|ml|毫升)?|"
     r"已经|又|还|正|正在|刚|有点|突然|最近|不是很|不太|比较|特别|很|"
     r"痊愈|康复|好转|恢复|同时|然后|并且|而且|另外|还有|以及|"
-    r"和|与|及|了|的|是)"
+    r"和|与|及|都|全|全部|了|的|是)"
 )
-_DIRECT_TARGET_LABEL_RE = re.compile(r"(?:疾病|病情|症状|内容|数据|数值)")
+_DIRECT_TARGET_LABEL_RE = re.compile(r"(?:疾病|病情|症状|补剂|内容|数据|数值)")
 _DIRECT_BODY_LOCATION_RE = re.compile(
     r"(?:(?:左|右|上|下|内|外|前|后)(?:侧)?)?"
     r"(?:口腔|口|嘴|舌|牙|颚|唇|头|颈|肩|胸|腹|腰|背|"
@@ -325,21 +325,35 @@ _POST_ATTRIBUTION_RE = re.compile(
     r"(?:说的|写的|提到的).{0,4}(?:例句|原话|内容|话)"
 )
 _POST_CURRENT_USER_OWNERSHIP_DENIAL_RE = re.compile(
-    r"^(?:这(?:条|个)(?:记录|数据)?(?:其实|实际上)?(?:是)?)?"
+    r"^(?:这(?:条|个)?(?:记录|数据)?(?:其实|实际上)?)?"
+    r"不是(?:我|本人|自己)(?:的)?"
+    r"(?:而是|是|而属于|属于|归于|归)(?P<owner>[\u4e00-\u9fff]{1,12})(?:的)?$"
+)
+_POST_CURRENT_USER_OWNERSHIP_ONLY_DENIAL_RE = re.compile(
+    r"^(?:这(?:条|个)?(?:记录|数据)?(?:其实|实际上)?)?"
     r"不是(?:我|本人|自己)(?:的)?$"
 )
 _POST_OWNERSHIP_RE = re.compile(
     r"^(?:实际上|其实|原来)?"
-    r"(?:这是|这(?:条|个)(?:记录|数据)?(?:是|属于|归于|归)|"
-    r"是|属于|归于|归|给)"
+    r"(?:这(?:条|个)?(?:记录|数据)?)?(?:其实|实际上)?"
+    r"(?:是|属于|归于|归|给)"
     r"(?P<owner>[\u4e00-\u9fff]{1,12})(?:的)?$"
 )
-_NON_OWNER_WORDS = frozenset({
+_POST_BARE_OWNER_RE = re.compile(
+    r"^(?P<owner>[\u4e00-\u9fff]{2,4})的$"
+)
+_CURRENT_OWNER_WORDS = frozenset({
     "我",
     "我的",
     "本人",
+    "我本人",
     "自己",
+    "我自己",
     "自己的",
+    "我自己的",
+})
+_NON_OWNER_WORDS = frozenset({
+    *_CURRENT_OWNER_WORDS,
     "今天",
     "昨天",
     "前天",
@@ -348,6 +362,13 @@ _NON_OWNER_WORDS = frozenset({
     "上次",
     "这次",
 })
+_UPDATE_ACTION_RE = re.compile(
+    r"(?:改成|改为|更正为|修正为|调整为|更新为|修改(?:为|成)?)"
+)
+_THIRD_PARTY_UPDATE_ORDER_RE = re.compile(
+    r"^(?!我(?:要|想|来|自己|本人))"
+    r"[\u4e00-\u9fff]{2,8}(?:让我|叫我|要求我|嘱咐我|让小巴|让系统)"
+)
 _BACKFILL_DATE_SIGNALS = (
     "发作日期",
     "开始日期",
@@ -564,7 +585,15 @@ def _colon_extends_denial_scope(left: str) -> bool:
 
 def _colon_extends_write_target(left: str) -> bool:
     if left.endswith(
-        ("创建目标", "设定目标", "设置目标", "新增目标", "记录目标")
+        (
+            "创建目标",
+            "设定目标",
+            "设置目标",
+            "新增目标",
+            "记录目标",
+            "记录事件",
+            "记录生活事件",
+        )
     ):
         return True
     action = _last_write_signal_in_clause(left)
@@ -771,6 +800,13 @@ def is_historical_write_reference(value: str) -> bool:
         return False
     context = _last_write_action_context(value)
     if context is None:
+        return False
+    normalized = normalize_write_scope_text(value)
+    if (
+        "补剂" in normalized
+        and any(term in normalized for term in ("都吃了", "全吃了", "全部吃了", "都服了", "全部服了"))
+        and context[2] > normalized.find("补剂")
+    ):
         return False
     clause, action, start = context
     after = clause[start + len(action):]
@@ -1134,12 +1170,19 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
 
 def _is_post_attributed_to_non_current_owner(clause: str) -> bool:
     normalized = clause.strip("，,。.!！；;：: ")
-    if _POST_CURRENT_USER_OWNERSHIP_DENIAL_RE.fullmatch(normalized):
+    if _POST_CURRENT_USER_OWNERSHIP_ONLY_DENIAL_RE.fullmatch(normalized):
         return True
-    match = _POST_OWNERSHIP_RE.fullmatch(normalized)
+    denial_match = _POST_CURRENT_USER_OWNERSHIP_DENIAL_RE.fullmatch(normalized)
+    match = (
+        denial_match
+        or _POST_OWNERSHIP_RE.fullmatch(normalized)
+        or _POST_BARE_OWNER_RE.fullmatch(normalized)
+    )
     if match is None:
         return False
-    owner = match.group("owner").strip()
+    owner = match.group("owner").strip().removesuffix("的")
+    if owner in _CURRENT_OWNER_WORDS:
+        return False
     if owner in _NON_OWNER_WORDS:
         return False
     if owner.startswith(("我朋友", "我的朋友", "我孩子", "我的孩子")):
@@ -1150,6 +1193,40 @@ def _is_post_attributed_to_non_current_owner(clause: str) -> bool:
     # a health attribute.  Longer free text remains unresolved and therefore
     # does not receive this specialized classification.
     return 2 <= len(owner.removesuffix("的")) <= 4
+
+
+def has_explicit_authorizing_update_request(value: str) -> bool:
+    """Authorize only a direct current-user correction speech act.
+
+    Mutation intent from the classifier is necessary but not sufficient: a
+    quoted example, hypothetical, third-party instruction, or later ownership
+    correction must not lend authority to an otherwise parseable value patch.
+    """
+    normalized = normalize_write_scope_text(value)
+    if not _UPDATE_ACTION_RE.search(normalized):
+        return False
+    if (
+        _DEFERRED_CONDITION_PREFIX_RE.search(normalized)
+        or _THIRD_PARTY_UPDATE_ORDER_RE.search(normalized)
+        or _THIRD_PARTY_WRITE_SUBJECT_RE.search(normalized)
+        or _segment_has_non_current_subject(normalized)
+        or (
+            _HYPOTHETICAL_PREFIX_RE.search(normalized)
+            and not _POLITE_CONDITIONAL_PREFIX_RE.search(normalized)
+        )
+        or is_reported_write_reference(normalized)
+    ):
+        return False
+    clauses = split_write_clauses(normalized)
+    if any(_is_post_attributed_to_non_current_owner(clause) for clause in clauses):
+        return False
+    if any(
+        re.search(r"(?:不要|不用|无需|先别|暂不|勿|甭|禁止|拒绝|停止).{0,24}", clause)
+        and _UPDATE_ACTION_RE.search(clause)
+        for clause in clauses
+    ):
+        return False
+    return True
 
 
 def _corrected_write_clause(previous: str, corrected_value: str) -> str:

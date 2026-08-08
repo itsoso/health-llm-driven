@@ -4461,15 +4461,14 @@ def _enrich_reminder_window_from_turn(
     if not start or not end:
         return out
 
-    context = "\n".join(
-        str(message.get("content") or "")
-        for message in recent_messages[-6:]
-        if isinstance(message, dict)
-    )
+    pending = _pending_reminder_schedule_context(recent_messages)
+    if pending is None:
+        return out
+    authority_text = str(pending["user_text"])
     interval_minutes = out.get("interval_minutes")
     if interval_minutes in (None, ""):
         interval_minutes = _interval_minutes_from_reminder_context(
-            f"{context}\n{user_message}"
+            f"{authority_text}\n{user_message}"
         )
 
     out["start_time"] = start
@@ -4497,14 +4496,13 @@ def _bind_server_authorized_reminder_continuation(
     if not isinstance(data, dict):
         return args
 
-    context = "\n".join(
-        str(message.get("content") or "")
-        for message in recent_messages[-6:]
-        if isinstance(message, dict)
-    )
+    pending = _pending_reminder_schedule_context(recent_messages)
+    if pending is None:
+        return args
+    authority_text = str(pending["user_text"])
     authorized: dict[str, Any] = {}
     recovered_interval = _interval_minutes_from_reminder_context(
-        f"{context}\n{user_message}"
+        f"{authority_text}\n{user_message}"
     )
     if (
         recovered_interval is not None
@@ -4514,11 +4512,15 @@ def _bind_server_authorized_reminder_continuation(
 
     title = str(data.get("title") or "").strip()
     title_core = re.sub(r"(?:定时|循环|健康|日常|提醒|闹钟)", "", title)
-    if title_core and "".join(title_core.split()) in "".join(context.split()):
+    if title_core and "".join(title_core.split()) in "".join(authority_text.split()):
         authorized["reminder_title"] = title
 
     recurrence = _normalize_recurrence(data.get("recurrence"))
-    if recurrence == "daily" and re.search(r"每天|每日|天天|every\s*day", context, re.I):
+    if recurrence == "daily" and re.search(
+        r"每天|每日|天天|every\s*day",
+        authority_text,
+        re.I,
+    ):
         authorized["reminder_recurrence"] = "daily"
 
     return bind_server_authorized_health_record_fields(args, **authorized)
@@ -7506,6 +7508,13 @@ def _prepare_health_record_args_for_validation(
     if rtype == "symptom":
         _normalize_symptom_body_part(data)
 
+    if rtype == "reminder":
+        args["data"] = _normalize_reminder_record_data(
+            data,
+            reference_now=reference_now,
+        )
+        data = args["data"]
+
     # 相对日期字面量归一 (record_date/start_date/end_date): 弱模型把 '昨天'/'前天' 当字面
     # 塞进 data。health_query/health_manage 早在工具边界过 _normalize_relative_date, 但 record
     # 创建路径漏了 —— 结果 diet/sleep 等 record_date='昨天' 被 _validate_date 静默吞成今天
@@ -7531,11 +7540,7 @@ def _apply_server_health_record_provenance(
     user_message: str,
 ) -> Any:
     """Replace model-authored diet provenance with server-known turn provenance."""
-    if (
-        tool_name != "health_record"
-        or not isinstance(args, dict)
-        or _fast_record_kind(args) != "diet"
-    ):
+    if tool_name != "health_record" or not isinstance(args, dict):
         return args
 
     data = args.get("data")
@@ -7546,6 +7551,23 @@ def _apply_server_health_record_provenance(
     # provenance.  Remove it first; the opaque marker below can only be created
     # inside this process and is consumed (then stripped) by capability policy.
     bind_server_authorized_health_record_fields(args)
+    record_type = _fast_record_kind(args)
+    if record_type == "rhinitis":
+        authorization = _extract_clear_rhinitis_record(user_message)
+        if authorization:
+            canonical_rhinitis = {
+                "sneezing": int(authorization.get("sneezing", 0)),
+                "congestion": int(authorization.get("congestion", 0)),
+                "runny_nose": int(authorization.get("runny_nose", 0)),
+            }
+            return bind_server_authorized_health_record_fields(
+                args,
+                rhinitis_payload=canonical_rhinitis,
+            )
+        return args
+    if record_type != "diet":
+        return args
+
     data.pop("source", None)
 
     if execution_source == "procedure_recipe_replay":
@@ -7698,14 +7720,51 @@ def _is_reminder_schedule_continuation(
         return False
     if not any(marker in text for marker in ("点", ":", "到", "至", "-", "~")):
         return False
-    if not isinstance(recent_messages, list):
-        return False
-    assistant_context = " ".join(
-        str(item.get("content") or "")
-        for item in recent_messages
-        if isinstance(item, dict) and item.get("role") == "assistant"
-    ).lower()
-    return any(marker in assistant_context for marker in ("提醒", "闹钟", "提醒时间", "开始和结束", "时间段"))
+    return _pending_reminder_schedule_context(recent_messages) is not None
+
+
+def _pending_reminder_schedule_context(
+    recent_messages: Any,
+) -> Optional[Dict[str, str]]:
+    """Return the immediately pending reminder request from user-owned text.
+
+    Assistant prose is not write authority. The last two completed messages
+    must be the user's explicit reminder request followed by a direct schedule
+    question; any intervening topic change invalidates the continuation.
+    """
+    if not isinstance(recent_messages, list) or len(recent_messages) < 2:
+        return None
+    user_turn, assistant_turn = recent_messages[-2:]
+    if not (
+        isinstance(user_turn, dict)
+        and user_turn.get("role") == "user"
+        and isinstance(assistant_turn, dict)
+        and assistant_turn.get("role") == "assistant"
+    ):
+        return None
+    user_text = str(user_turn.get("content") or "").strip()
+    assistant_text = str(assistant_turn.get("content") or "").strip()
+    intent = classify_agent_utterance(user_text)
+    if not (
+        intent.primary == "write"
+        and intent.operation == "create"
+        and intent.domain == "reminder"
+        and intent.is_write
+    ):
+        return None
+    if not any(
+        marker in assistant_text
+        for marker in (
+            "开始和结束",
+            "开始时间",
+            "结束时间",
+            "时间段",
+            "几点开始",
+            "几点结束",
+        )
+    ):
+        return None
+    return {"user_text": user_text}
 
 
 def _query_only_health_manage_scope(

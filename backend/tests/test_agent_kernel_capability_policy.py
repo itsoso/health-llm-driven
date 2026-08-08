@@ -2420,6 +2420,83 @@ def test_contextual_goal_target_remains_authoritative_when_clause_is_deictic():
     assert matching.action == "allow"
 
 
+@pytest.mark.parametrize(
+    ("message", "arguments", "expected_data"),
+    (
+        (
+            "记一下我鞋码42.5",
+            {
+                "record_type": "remember",
+                "data": {
+                    "predicate": "鞋码",
+                    "object_value": "42.5",
+                    "subject": "张三",
+                    "is_sensitive": True,
+                },
+            },
+            {"subject": "用户", "predicate": "鞋码", "object_value": "42.5"},
+        ),
+        (
+            "记录生活事件：落地北京",
+            {
+                "record_type": "event",
+                "data": {"title": "落地北京", "notes": "MODEL"},
+            },
+            {"title": "落地北京"},
+        ),
+        (
+            "早上的补剂都吃了，记录一下",
+            {
+                "record_type": "supplement_group",
+                "data": {"timing": "morning", "notes": "MODEL"},
+            },
+            {"timing": "morning"},
+        ),
+        (
+            "记录跑步30分钟5公里",
+            {
+                "record_type": "exercise",
+                "data": {
+                    "exercise_type": "跑步",
+                    "duration": 30,
+                    "distance": 5,
+                    "calories_burned": 9999,
+                },
+            },
+            {"exercise_type": "跑步", "duration": 30, "distance": 5},
+        ),
+        (
+            "记录俯卧撑10个做3组",
+            {
+                "record_type": "exercise",
+                "data": {
+                    "exercise_type": "俯卧撑",
+                    "reps": 10,
+                    "sets": 3,
+                    "notes": "MODEL",
+                },
+            },
+            {"exercise_type": "俯卧撑", "reps": 10, "sets": 3},
+        ),
+    ),
+)
+def test_supported_record_families_project_only_user_evidenced_fields(
+    message,
+    arguments,
+    expected_data,
+):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request("health_record", arguments),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args == {
+        "record_type": arguments["record_type"],
+        "data": expected_data,
+    }
+
+
 def test_read_turn_allows_health_manage_list():
     decision = decide_tool_capability(
         _snapshot("列出今天饮食记录"),
@@ -2567,6 +2644,64 @@ def test_update_without_owner_scoped_list_or_explicit_id_is_blocked():
     assert decision.reason == "update_requires_exact_target_evidence"
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "小明让我把刚才300ml改成350ml",
+        "假设把刚才300ml改成350ml",
+        "我说“把刚才300ml改成350ml”只是举例",
+        "把刚才300ml改成350ml，这是小明的",
+        "把刚才300ml改成350ml，不是我的，是小明的",
+    ),
+)
+def test_update_requires_direct_current_user_semantic_authority(message):
+    snapshot = replace(
+        _snapshot(message),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "water",
+                    "records": ({"id": 718, "amount": 300},),
+                },
+            ),
+        ),
+    )
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "water",
+                "operation": "update",
+                "record_id": 718,
+                "data": {"amount": 350},
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "update_requires_exact_target_evidence"
+
+
+def test_explicit_update_id_still_requires_owner_scoped_candidate():
+    decision = decide_tool_capability(
+        _snapshot("把饮水记录999999的300ml改成350ml"),
+        _request(
+            "health_manage",
+            {
+                "record_type": "water",
+                "operation": "update",
+                "record_id": 999999,
+                "data": {"amount": 350},
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "update_requires_exact_target_evidence"
+
+
 def test_illness_resolution_binds_owner_scoped_record_and_exact_patch():
     snapshot = replace(
         _snapshot("舌尖溃疡昨天好了，修改记录"),
@@ -2648,6 +2783,82 @@ def test_illness_resolution_rejects_wrong_identity_or_invented_patch(arguments):
     decision = decide_tool_capability(
         snapshot,
         _request("health_manage", arguments),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "update_requires_exact_target_evidence"
+
+
+@pytest.mark.parametrize("phrase", ("好了点", "好了一些", "好了一半"))
+def test_illness_partial_recovery_is_improving_not_resolved(phrase):
+    snapshot = replace(
+        _snapshot(f"舌尖溃疡昨天{phrase}，修改记录"),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "illness",
+                    "records": (
+                        {"id": 71, "name": "舌尖溃疡", "status": "active"},
+                    ),
+                },
+            ),
+        ),
+    )
+    improving = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "illness",
+                "operation": "update",
+                "record_id": 71,
+                "data": {"status": "improving"},
+            },
+        ),
+    )
+    resolved = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "illness",
+                "operation": "update",
+                "record_id": 71,
+                "data": {"status": "resolved", "end_date": "2026-07-16"},
+            },
+        ),
+    )
+
+    assert improving.action == "allow"
+    assert improving.normalized_args["data"] == {"status": "improving"}
+    assert resolved.action == "block"
+
+
+def test_illness_update_does_not_bind_generic_list_name_to_specific_user_entity():
+    snapshot = replace(
+        _snapshot("舌尖溃疡昨天好了，修改记录"),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "illness",
+                    "records": ({"id": 71, "name": "溃疡", "status": "active"},),
+                },
+            ),
+        ),
+    )
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "illness",
+                "operation": "update",
+                "record_id": 71,
+                "data": {"status": "resolved", "end_date": "2026-07-16"},
+            },
+        ),
     )
 
     assert decision.action == "block"
@@ -3717,9 +3928,9 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v11"
+    assert payload["contract_version"] == "agent-capability-policy-v12"
     assert payload["health_record_target_binding"] == {
-        "version": "authorized-target-set-v7",
+        "version": "authorized-target-set-v8",
         "domain_types": {
             "diet": "diet",
             "exercise": "exercise",
@@ -3738,7 +3949,7 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
     )
     assert (
         payload["health_manage_update_evidence_version"]
-        == "record-update-evidence-v2"
+        == "record-update-evidence-v3"
     )
     assert payload["known_tools"]
     assert payload["recipe_record_types"]

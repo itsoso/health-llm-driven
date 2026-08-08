@@ -584,10 +584,13 @@ async def test_reminder_follow_up_recovers_explicit_window_and_prior_interval(db
     executor._current_turn_user_message = "9点到20点”"
     executor._current_turn_recent_messages = [
         {
-            "role": "assistant",
-            "content": "我会为你生成每天每 1.5 小时一次的循环饮水提醒。请告诉我开始和结束时间。",
+            "role": "user",
+            "content": "帮我设置每天每1.5小时一次的循环饮水提醒",
         },
-        {"role": "user", "content": "9点到20点”"},
+        {
+            "role": "assistant",
+            "content": "请告诉我开始和结束时间。",
+        },
     ]
     captured = {}
 
@@ -633,10 +636,13 @@ async def test_reminder_follow_up_cannot_replace_prior_target(db):
     executor._current_turn_user_message = "9点到20点"
     executor._current_turn_recent_messages = [
         {
-            "role": "assistant",
-            "content": "我会为你生成每天每 1.5 小时一次的循环饮水提醒。请告诉我开始和结束时间。",
+            "role": "user",
+            "content": "帮我设置每天每1.5小时一次的循环饮水提醒",
         },
-        {"role": "user", "content": "9点到20点"},
+        {
+            "role": "assistant",
+            "content": "请告诉我开始和结束时间。",
+        },
     ]
 
     with patch.object(executor, "_api_post", new=AsyncMock()) as post:
@@ -660,6 +666,48 @@ async def test_reminder_follow_up_cannot_replace_prior_target(db):
     assert rejection["status"] == "rejected"
     assert rejection["dispatch_started"] is False
     assert rejection["error_code"] == "health_record_authorization_target_unresolved"
+
+
+@pytest.mark.asyncio
+async def test_reminder_follow_up_ignores_stale_assistant_reminder_text(db):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "9点到20点"
+    executor._current_turn_recent_messages = [
+        {
+            "role": "user",
+            "content": "帮我设置每天每2小时一次的循环服药提醒",
+        },
+        {
+            "role": "assistant",
+            "content": "请告诉我开始和结束时间。",
+        },
+        {"role": "user", "content": "先看看我的睡眠"},
+        {"role": "assistant", "content": "我们先看一下你的睡眠数据。"},
+    ]
+
+    with patch.object(executor, "_api_post", new=AsyncMock()) as post:
+        result = await executor._execute_tool(
+            tool_name="health_record",
+            args_raw=json.dumps({
+                "record_type": "reminder",
+                "data": {
+                    "title": "服药提醒",
+                    "start_time": "09:00",
+                    "end_time": "20:00",
+                    "interval_minutes": 120,
+                    "recurrence": "daily",
+                },
+            }, ensure_ascii=False),
+            user_token="test-token",
+        )
+
+    post.assert_not_awaited()
+    rejection = json.loads(result)
+    assert rejection["status"] == "rejected"
+    assert rejection["dispatch_started"] is False
 
 
 @pytest.mark.asyncio

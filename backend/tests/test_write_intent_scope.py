@@ -80,6 +80,10 @@ def test_compound_revocation_deferred_condition_and_third_party_have_no_authoriz
         "记录感冒，实际上是妈妈的",
         "记录感冒，不是我的，是小明的",
         "记录感冒，这条属于张三",
+        "记录感冒，这个其实是小明的",
+        "记录感冒，这条其实属于小明",
+        "记录感冒，这不是我的而是小明的",
+        "记录感冒，这其实是我孩子的",
     ),
 )
 def test_revoked_reported_hypothetical_and_third_party_frames_have_no_authority(
@@ -87,6 +91,19 @@ def test_revoked_reported_hypothetical_and_third_party_frames_have_no_authority(
 ) -> None:
     assert authorized_health_record_clauses(text) == ()
     assert has_explicit_authorizing_write_request(text) is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "记录感冒，这是我本人的",
+        "记录感冒，这是我自己的",
+        "记录感冒，这条属于我本人",
+    ),
+)
+def test_posterior_current_user_ownership_keeps_authority(text: str) -> None:
+    assert authorized_health_record_clauses(text)
+    assert has_explicit_authorizing_write_request(text) is True
 
 
 @pytest.mark.parametrize(

@@ -1782,6 +1782,8 @@ async def test_executor_does_not_verify_or_replay_health_manage_wrong_target(
 
     async def fake_manage(base_url, headers, args):
         calls.append(args)
+        if args.get("operation") == "list":
+            return '[{"id":55,"amount":300,"record_date":"2026-08-08"}]'
         return '{"id":56,"resource_type":"water_record"}'
 
     monkeypatch.setattr(executor, "_exec_health_manage", fake_manage)
@@ -1793,6 +1795,14 @@ async def test_executor_does_not_verify_or_replay_health_manage_wrong_target(
     if operation_name == "update":
         args["data"] = {"amount": 350}
 
+    # Exercise the real authorization chain before testing receipt mismatch:
+    # updates must be bound to an owner-scoped target discovered this turn.
+    await executor._execute_tool(
+        "health_manage",
+        {"record_type": "water", "operation": "list"},
+        None,
+    )
+    calls.clear()
     first = await executor._execute_tool("health_manage", args, None)
     replay = await executor._execute_tool("health_manage", args, None)
 
@@ -1808,9 +1818,10 @@ async def test_executor_does_not_verify_or_replay_health_manage_wrong_target(
         for event in executor._agent_kernel_event_bus.events
         if event.name == "agent.tool_result"
     ]
-    assert len(tool_results) == 2
-    assert all(event.data["success"] is False for event in tool_results)
-    assert all("receipt" not in event.data for event in tool_results)
+    assert len(tool_results) == 3
+    assert tool_results[0].data["success"] is True
+    assert all(event.data["success"] is False for event in tool_results[1:])
+    assert all("receipt" not in event.data for event in tool_results[1:])
 
 
 @pytest.mark.asyncio

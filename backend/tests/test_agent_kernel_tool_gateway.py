@@ -1,6 +1,6 @@
 import json
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -1097,7 +1097,7 @@ async def test_gateway_execute_blocks_enforced_denial_without_dispatch():
 
 
 @pytest.mark.asyncio
-async def test_gateway_execute_shadow_denial_still_dispatches_once():
+async def test_gateway_execute_shadow_health_write_denial_is_hard_blocked():
     gateway = ToolGateway(_snapshot("列出今天的饮食记录", policy_mode="shadow"))
     calls = []
     request = ToolExecutionRequest(
@@ -1111,10 +1111,10 @@ async def test_gateway_execute_shadow_denial_still_dispatches_once():
 
     result = await gateway.execute(request, dispatch)
 
-    assert len(calls) == 1
+    assert calls == []
     assert result.decision is not None
     assert result.decision.action == "block"
-    assert '"id": 2' in result.content
+    assert json.loads(result.content)["dispatch_started"] is False
 
 
 @pytest.mark.asyncio
@@ -1188,6 +1188,256 @@ async def test_gateway_never_dispatches_update_outside_owner_scoped_exact_eviden
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "小明让我把刚才300ml改成350ml",
+        "假设把刚才300ml改成350ml",
+        "我说“把刚才300ml改成350ml”只是举例",
+        "把刚才300ml改成350ml，这是小明的",
+        "把刚才300ml改成350ml，不是我的，是小明的",
+    ),
+)
+async def test_gateway_update_semantic_denials_never_dispatch(
+    policy_mode,
+    message,
+):
+    snapshot = replace(
+        _snapshot(message, policy_mode=policy_mode),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "water",
+                    "records": ({"id": 718, "amount": 300},),
+                },
+            ),
+        ),
+    )
+    gateway = ToolGateway(snapshot)
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_manage",
+            arguments={
+                "record_type": "water",
+                "operation": "update",
+                "record_id": 718,
+                "data": {"amount": 350},
+            },
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.reason == "update_requires_exact_target_evidence"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录感冒，这个其实是小明的",
+        "记录感冒，这条其实属于小明",
+        "记录感冒，这不是我的而是小明的",
+        "记录感冒，这其实是我孩子的",
+    ),
+)
+async def test_gateway_posterior_third_party_owner_never_dispatches_health_write(
+    policy_mode,
+    message,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+
+
+@pytest.mark.asyncio
+async def test_gateway_current_user_posterior_owner_keeps_health_write_authority():
+    gateway = ToolGateway(_snapshot("记录感冒，这是我本人的"))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return '{"id": 1}'
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [{"record_type": "illness", "data": {"name": "感冒"}}]
+
+
+@pytest.mark.asyncio
+async def test_gateway_explicit_update_id_without_owner_candidate_never_dispatches():
+    gateway = ToolGateway(_snapshot("把饮水记录999999的300ml改成350ml"))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_manage",
+            arguments={
+                "record_type": "water",
+                "operation": "update",
+                "record_id": 999999,
+                "data": {"amount": 350},
+            },
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.reason == "update_requires_exact_target_evidence"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "arguments", "expected_data"),
+    (
+        (
+            "记一下我鞋码42.5",
+            {
+                "record_type": "remember",
+                "data": {"predicate": "鞋码", "object_value": "42.5", "subject": "模型"},
+            },
+            {"subject": "用户", "predicate": "鞋码", "object_value": "42.5"},
+        ),
+        (
+            "记录生活事件：落地北京",
+            {"record_type": "event", "data": {"title": "落地北京", "notes": "模型"}},
+            {"title": "落地北京"},
+        ),
+        (
+            "早上的补剂都吃了，记录一下",
+            {"record_type": "supplement_group", "data": {"timing": "morning"}},
+            {"timing": "morning"},
+        ),
+        (
+            "记录跑步30分钟5公里",
+            {
+                "record_type": "exercise",
+                "data": {"exercise_type": "跑步", "duration": 30, "distance": 5},
+            },
+            {"exercise_type": "跑步", "duration": 30, "distance": 5},
+        ),
+    ),
+)
+async def test_gateway_dispatches_supported_family_canonical_projection(
+    message,
+    arguments,
+    expected_data,
+):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return '{"id": 1}'
+
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name="health_record", arguments=arguments),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [{"record_type": arguments["record_type"], "data": expected_data}]
+
+
+@pytest.mark.asyncio
+async def test_executor_lists_owner_illness_before_exact_resolution_update(
+    db,
+    monkeypatch,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_channel = "typed"
+    executor._current_turn_user_message = "舌尖溃疡昨天好了，修改记录"
+    expected_end_date = (
+        executor._agent_kernel_reference_now().date() - timedelta(days=1)
+    ).isoformat()
+    calls = []
+
+    async def fake_exec(_base, _headers, arguments):
+        calls.append(arguments)
+        if arguments["operation"] == "list":
+            return json.dumps(
+                [{"id": 71, "name": "舌尖溃疡", "status": "active"}],
+                ensure_ascii=False,
+            )
+        return json.dumps(
+            {
+                "id": 71,
+                "record_id": 71,
+                "resource_type": "illness_episode",
+                "status": "resolved",
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(executor, "_exec_health_manage", fake_exec)
+
+    await executor._execute_tool(
+        "health_manage",
+        {"record_type": "illness", "operation": "list"},
+        "test-token",
+    )
+    result = await executor._execute_tool(
+        "health_manage",
+        {
+            "record_type": "illness",
+            "operation": "update",
+            "record_id": 71,
+            "data": {"status": "resolved", "end_date": expected_end_date},
+        },
+        "test-token",
+    )
+
+    assert [call["operation"] for call in calls] == ["list", "update"]
+    assert calls[-1] == {
+        "record_type": "illness",
+        "operation": "update",
+        "record_id": 71,
+        "data": {"status": "resolved", "end_date": expected_end_date},
+    }
+    assert json.loads(result)["record_id"] == 71
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("message", "expected_reason"),
     (
@@ -1226,6 +1476,46 @@ async def test_gateway_execute_shadow_hard_destructive_denial_never_dispatches(
     payload = json.loads(result.content)
     assert payload["status"] == "rejected"
     assert payload["dispatch_started"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "arguments"),
+    (
+        (
+            "记录感冒",
+            {
+                "record_type": "illness",
+                "data": {"name": "感冒", "severity": 9, "notes": "MODEL"},
+            },
+        ),
+        (
+            "记录跑步30分钟",
+            {"record_type": "illness", "data": {"name": "流感"}},
+        ),
+    ),
+)
+async def test_gateway_shadow_never_dispatches_rejected_health_record_targets(
+    message,
+    arguments,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode="shadow"))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name="health_record", arguments=arguments),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert result.decision.reason == "health_record_target_mismatch"
+    assert json.loads(result.content)["dispatch_started"] is False
 
 
 @pytest.mark.asyncio
@@ -1938,7 +2228,7 @@ async def test_recorded_health_write_with_verified_receipt_is_telemetry_success(
 
 
 @pytest.mark.asyncio
-async def test_shadow_policy_observes_denied_write_without_blocking_dispatch(db, monkeypatch):
+async def test_shadow_policy_hard_blocks_denied_health_write(db, monkeypatch):
     executor = AgentExecutor(db)
     executor._current_user_id = 1
     executor._current_turn_user_message = "列出今天的饮食记录"
@@ -1961,10 +2251,7 @@ async def test_shadow_policy_observes_denied_write_without_blocking_dispatch(db,
         None,
     )
 
-    assert calls == [{
-        "record_type": "diet",
-        "data": {"food_items": "牛肉面", "source": "agent_text"},
-    }]
+    assert calls == []
     assert executor._agent_kernel_event_bus is not None
     assert "agent.tool_blocked" in [event.name for event in executor._agent_kernel_event_bus.events]
 

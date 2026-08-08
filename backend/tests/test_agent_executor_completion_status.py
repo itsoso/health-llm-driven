@@ -3800,9 +3800,12 @@ async def test_update_wrong_result_id_does_not_recover_same_target_mismatch(
         nonlocal llm_calls
         llm_calls += 1
         if llm_calls == 1:
-            operation = "delete"
+            operation = "list"
             data = None
         elif llm_calls == 2:
+            operation = "delete"
+            data = None
+        elif llm_calls == 3:
             operation = "update"
             data = {"amount": 350}
         else:
@@ -3813,8 +3816,9 @@ async def test_update_wrong_result_id_does_not_recover_same_target_mismatch(
         arguments = {
             "record_type": "water",
             "operation": operation,
-            "record_id": 718,
         }
+        if operation != "list":
+            arguments["record_id"] = 718
         if data is not None:
             arguments["data"] = data
         return {
@@ -3831,6 +3835,12 @@ async def test_update_wrong_result_id_does_not_recover_same_target_mismatch(
 
     async def fake_health_manage(_base_url, _headers, parsed):
         dispatched.append(parsed)
+        if parsed["operation"] == "list":
+            return json.dumps([{
+                "id": 718,
+                "amount": 300,
+                "record_date": "2026-08-08",
+            }], ensure_ascii=False)
         return json.dumps({
             "id": 719,
             "record_id": 719,
@@ -3858,13 +3868,13 @@ async def test_update_wrong_result_id_does_not_recover_same_target_mismatch(
     done = next(event for event in events if event.get("event") == "done")
     tool_results = _tool_results(events)
 
-    assert [item["operation"] for item in dispatched] == ["update"]
-    assert len(tool_results) == 2
+    assert [item["operation"] for item in dispatched] == ["list", "update"]
+    assert len(tool_results) == 3
     _assert_pre_dispatch_rejection(
-        tool_results[0],
+        tool_results[1],
         error_code="manage_operation_mismatch",
     )
-    wrong_target_result = tool_results[1]
+    wrong_target_result = tool_results[2]
     assert wrong_target_result["write_completed"] is False
     assert wrong_target_result["write_outcome"] == "uncertain"
     assert wrong_target_result["dispatch_started"] is None
