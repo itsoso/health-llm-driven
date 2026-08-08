@@ -117,6 +117,9 @@ def test_read_only_diet_record_noun_is_not_a_write_intent():
         "最近半年口腔溃疡有哪些记录",
         "上一次感冒记录是什么时候？",
         "不要帮我记录，我只是想查上一次口腔溃疡是什么时候",
+        "记录过口腔溃疡吗？",
+        "记录了几次口腔溃疡？",
+        "记录口腔溃疡的历史有哪些？",
     ),
 )
 def test_historical_record_questions_are_read_only(message):
@@ -153,6 +156,10 @@ def test_real_record_command_is_write_intent():
         "帮忙记录口腔溃疡可以吗？",
         "可以帮忙记录口腔溃疡吗？",
         "替我保存体重70kg可以吗？",
+        "请帮忙记录口腔溃疡可以吗？",
+        "请替我保存体重70kg可以吗？",
+        "麻烦可以帮忙记录口腔溃疡吗？",
+        "我想请你帮忙记录口腔溃疡，可以吗？",
     ),
 )
 def test_polite_record_requests_remain_write_intents(message):
@@ -177,8 +184,18 @@ def test_record_capability_questions_do_not_authorize_writes(message):
     assert intent.is_write is False
 
 
-def test_negated_polite_record_request_does_not_authorize_write():
-    intent = classify_agent_utterance("不要帮忙记录口腔溃疡")
+@pytest.mark.parametrize(
+    "message",
+    (
+        "不要帮忙记录口腔溃疡",
+        "不要再帮我记录口腔溃疡",
+        "请不要再帮我记录口腔溃疡",
+        "别再帮忙记录口腔溃疡",
+        "不用再替我保存体重",
+    ),
+)
+def test_negated_polite_record_request_does_not_authorize_write(message):
+    intent = classify_agent_utterance(message)
 
     assert intent.primary == "chat"
     assert intent.is_write is False

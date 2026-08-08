@@ -40,6 +40,29 @@ def test_tool_gateway_blocks_recovered_health_record_in_read_turn():
     assert decision.receipt_required is True
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录过口腔溃疡吗？",
+        "记录了几次口腔溃疡？",
+        "记录口腔溃疡的历史有哪些？",
+    ),
+)
+def test_tool_gateway_blocks_write_for_historical_record_questions(message):
+    gateway = ToolGateway(_snapshot(message))
+
+    decision = gateway.preflight(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={"record_type": "illness", "data": {"name": "口腔溃疡"}},
+            source="structured",
+        )
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "write_tool_without_write_intent"
+
+
 def test_blocked_tool_result_includes_a_recovery_instruction_for_the_agent():
     gateway = ToolGateway(_snapshot("今天我的饮食的记录，帮我列个表格出来。"))
     decision = gateway.preflight(

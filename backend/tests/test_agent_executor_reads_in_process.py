@@ -932,7 +932,14 @@ def test_illness_query_window_uses_frozen_user_date(db):
         status="resolved",
         severity=2,
     )
-    db.add_all([included, excluded])
+    future = IllnessEpisode(
+        user_id=user.id,
+        name="口腔溃疡",
+        start_date=reference_now.date() + timedelta(days=1),
+        status="active",
+        severity=2,
+    )
+    db.add_all([included, excluded, future])
     db.commit()
     db.refresh(included)
 

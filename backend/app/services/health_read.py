@@ -107,7 +107,10 @@ def read_illness_episodes(
     from app.models.illness import IllnessEpisode
 
     try:
-        query = db.query(IllnessEpisode).filter(IllnessEpisode.user_id == user_id)
+        query = db.query(IllnessEpisode).filter(
+            IllnessEpisode.user_id == user_id,
+            IllnessEpisode.start_date <= today,
+        )
         if since is not None:
             query = query.filter(IllnessEpisode.start_date >= since)
         if name:

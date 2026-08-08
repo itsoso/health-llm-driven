@@ -129,7 +129,8 @@ a fixed user-safe error and log only a content-free error type.
 
 Illness windows use the Agent turn's frozen user-local date, not the service
 process date. This keeps Web, Mobile and Mac results aligned at timezone day
-boundaries.
+boundaries. The same date is also an inclusive upper bound, so a future-dated
+episode cannot become the reported latest occurrence.
 
 ## 10. AI Behavior
 
@@ -149,9 +150,17 @@ Given a user asks "我上一次口腔溃疡是什么时候 最近半年分别有
 When the shared classifier processes the turn
 Then it is read-only and no write tool is authorized
 
+Given a historical question begins with "记录" such as "记录过口腔溃疡吗"
+When the shared classifier processes the turn
+Then the question remains read-only and health_record is blocked before dispatch
+
 Given matching oral-ulcer episodes belong to the current user
 When health_query runs with dimension illness and a six-month window
 Then it returns only the current user's matching episodes newest first
+
+Given a matching episode is dated after the Agent turn's frozen user-local date
+When health_query reads bounded or full illness history
+Then the future-dated episode is excluded
 
 Given the user asks only for the last oral-ulcer episode without a time window
 When health_query omits days
@@ -176,6 +185,14 @@ Then the existing explicit write behavior remains authorized
 Given a user politely asks "能帮我记录体重70kg吗"
 When the classifier processes the turn
 Then it remains an explicit write and follows the existing confirmation policy
+
+Given a user combines bounded request words in "我想请你帮忙记录口腔溃疡，可以吗"
+When the classifier processes the turn
+Then it remains an explicit write and follows the existing confirmation policy
+
+Given a user says "请不要再帮我记录口腔溃疡"
+When the classifier and capability gate process the turn
+Then no write tool is authorized
 
 Given a user asks whether the product can record illness data
 When the classifier processes "小巴能记录口腔溃疡吗"

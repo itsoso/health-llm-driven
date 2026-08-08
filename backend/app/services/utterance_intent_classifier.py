@@ -226,17 +226,28 @@ WRITE_COMMAND_ACTIONS = (
     "存下来",
 )
 WRITE_REQUEST_HELPERS = (
+    "我想请你",
+    "我想请",
+    "我想",
     "麻烦帮我",
     "麻烦你",
+    "可不可以",
+    "请你",
     "帮我",
     "帮忙",
     "给我",
     "替我",
     "为我",
+    "可以",
+    "能否",
+    "可否",
     "麻烦",
+    "请",
+    "能",
 )
 POLITE_WRITE_PREFIXES = ("可以", "能否", "可否", "可不可以", "能")
 STRUCTURAL_WRITE_NEGATIONS = ("不要", "不用", "无需", "别", "勿", "甭")
+NEGATED_WRITE_MODIFIERS = ("继续", "自动", "暂时", "再", "先")
 
 
 def classify_agent_utterance(
@@ -554,13 +565,13 @@ def _is_explicit_write_action_at(
     after = text[start + len(action):]
     if action == "记录" and after.startswith(RECORD_NOUN_SUFFIXES):
         return False
+    if action == "记录" and after.startswith(("一下", "下来", "为", "到")):
+        return True
+    if action == "记录" and start == 0 and _has_question_signal(after):
+        return False
     return (
         start == 0
         or left_context.endswith(WRITE_COMMAND_PREFIXES)
-        or (
-            action == "记录"
-            and after.startswith(("一下", "下来", "为", "到"))
-        )
     )
 
 
@@ -634,8 +645,9 @@ def _has_negated_write(text: str) -> bool:
     for negation in STRUCTURAL_WRITE_NEGATIONS:
         start = text.find(negation)
         while start >= 0:
-            remainder = _strip_write_request_helper(
-                text[start + len(negation):]
+            remainder = _strip_leading_tokens(
+                text[start + len(negation):],
+                (*NEGATED_WRITE_MODIFIERS, *WRITE_REQUEST_HELPERS),
             )
             if remainder.startswith(WRITE_COMMAND_ACTIONS):
                 return True
@@ -644,10 +656,27 @@ def _has_negated_write(text: str) -> bool:
 
 
 def _strip_write_request_helper(text: str) -> str:
-    for helper in WRITE_REQUEST_HELPERS:
-        if text.startswith(helper):
-            return text[len(helper):]
-    return text
+    return _strip_leading_tokens(text, WRITE_REQUEST_HELPERS)
+
+
+def _strip_leading_tokens(
+    text: str,
+    tokens: tuple[str, ...],
+    *,
+    max_tokens: int = 8,
+) -> str:
+    """Consume a bounded sequence of request-grammar tokens from the left."""
+    remainder = text
+    ordered_tokens = tuple(sorted(tokens, key=len, reverse=True))
+    for _ in range(max_tokens):
+        matched = next(
+            (token for token in ordered_tokens if remainder.startswith(token)),
+            None,
+        )
+        if matched is None:
+            break
+        remainder = remainder[len(matched):]
+    return remainder
 
 
 def _has_explicit_write_command(text: str) -> bool:

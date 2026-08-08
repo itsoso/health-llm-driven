@@ -135,6 +135,7 @@ def test_illness_read_includes_all_episode_statuses(db):
 def test_illness_read_without_window_searches_full_history_directly(db):
     current_user = _make_user(db)
     old = _episode(db, current_user.id, "口腔溃疡", 400)
+    future = _episode(db, current_user.id, "口腔溃疡", -1)
 
     out = health_read.canonical_read(
         db,
@@ -145,6 +146,7 @@ def test_illness_read_without_window_searches_full_history_directly(db):
     rows = json.loads(out)
 
     assert [row["id"] for row in rows] == [old.id]
+    assert future.id not in {row["id"] for row in rows}
 
 
 def test_illness_read_sanitizes_database_errors(db, monkeypatch, caplog):

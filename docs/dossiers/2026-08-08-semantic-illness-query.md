@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS; G4 remediation complete, re-review pending |
+| current_stage | G3 PASS; G4 second remediation complete, final re-review pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -76,7 +76,7 @@ validation and no-match honesty address those risks.
 - Failure-first tests reproduced the original write misclassification, invalid
   dimension fallback, full-history omission, server-date boundary error,
   plaintext exception leak, unsupported batch shape and polite-write regression.
-- The post-remediation compatibility group passed 1,132 tests, including the
+- The first post-remediation compatibility group passed 1,132 tests, including the
   classifier, validator, canonical readers, batch planner, Agent executor,
   ToolGateway, health management, write-adapter rejection and behavior battery.
 - The requested live `qwen3.7-max` evaluation passed the exact query, paraphrase,
@@ -86,6 +86,10 @@ validation and no-match honesty address those risks.
 - After functional re-review found additional polite request forms, the
   classifier/capability/ToolGateway regression group passed 1,243 tests with a
   request/capability/negation grammar matrix.
+- After the next safety and code reviews found sentence-initial historical
+  questions, future-dated episodes, compositional request prefixes and modified
+  negations, failure-first tests reproduced all four boundaries. The expanded
+  related regression group now passes 1,758 tests.
 
 ### G4 Safety Review: PENDING
 
@@ -101,6 +105,15 @@ All findings now have failure-first regressions and code fixes. The exact
 screenshot query also has a real ToolGateway test proving a model-requested
 `health_record` is blocked before dispatch. Independent re-review is required
 before G4 may pass.
+
+The second safety re-review then returned NO-GO because sentence-initial
+historical questions such as `记录过口腔溃疡吗` still authorized writes and
+future-dated illness rows were not bounded above. A separate final code review
+also found that compositional polite requests could lose write intent and that
+negations containing `再` could gain it. These findings are now covered by a
+bounded compositional request grammar, a negation × helper × modifier matrix,
+ToolGateway preflight tests and a frozen-date inclusive upper bound. A fresh
+independent review of the new commit remains mandatory.
 
 ### G5 Deployment Health: PENDING
 

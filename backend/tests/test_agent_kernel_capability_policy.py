@@ -53,6 +53,52 @@ def test_read_turn_blocks_health_record_even_if_model_requests_it():
     assert decision.reason == "write_tool_without_write_intent"
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录过口腔溃疡吗？",
+        "记录了几次口腔溃疡？",
+        "记录口腔溃疡的历史有哪些？",
+    ),
+)
+def test_historical_record_questions_never_authorize_health_record(message):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "write_tool_without_write_intent"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "不要再帮我记录口腔溃疡",
+        "请不要再帮我记录口腔溃疡",
+        "别再帮忙记录口腔溃疡",
+        "不用再替我保存体重",
+    ),
+)
+def test_structurally_negated_requests_never_authorize_health_record(message):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason in {
+        "explicit_write_cancellation",
+        "write_tool_without_write_intent",
+    }
+
+
 def test_read_turn_allows_health_manage_list():
     decision = decide_tool_capability(
         _snapshot("列出今天饮食记录"),
