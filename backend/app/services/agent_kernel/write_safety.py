@@ -4,36 +4,12 @@ from __future__ import annotations
 import re
 import unicodedata
 
-from app.services.utterance_intent_lexicon import STRUCTURAL_WRITE_NEGATIONS
-
-
-_WRITE_NEGATION_PATTERN = "|".join(
-    re.escape(term) for term in STRUCTURAL_WRITE_NEGATIONS
-)
-
-_EXPLICIT_WRITE_CANCELLATION_RE = re.compile(
-    rf"(?:{_WRITE_NEGATION_PATTERN})"
-    r"(?:继续|自动|暂时|再|先|想|要|帮我|帮忙|替我|为我|给我|把|将|这|该|本|这次|本次|"
-    r"早餐|午餐|晚餐|加餐|饮食|一餐|这餐|条|份|个|次|"
-    r"[\s，,。.!！；;：:])*"
-    r"(?:记录|记一下|记下|记|保存|录入|写入|写回|添加|加到饮食)"
-)
+from app.services.write_intent_scope import has_negated_write_scope
 
 
 def is_explicit_write_cancellation(text: str) -> bool:
     """Match cancellation of a write action without matching food modifiers."""
-    normalized = str(text or "").strip()
-    return bool(
-        _EXPLICIT_WRITE_CANCELLATION_RE.search(normalized)
-        or re.search(
-            r"(?:取消|撤销)(?:这次|本次|该次)?(?:记录|保存|录入|写入)",
-            normalized,
-        )
-        or re.search(
-            r"(?:记录|保存|录入|写入)(?:这次|本次|该次)?(?:取消|撤销|算了)",
-            normalized,
-        )
-    )
+    return has_negated_write_scope(text)
 
 
 _AIGC_PROVIDER_TERMS_RE = re.compile(r"百炼|万相|wan", re.IGNORECASE)

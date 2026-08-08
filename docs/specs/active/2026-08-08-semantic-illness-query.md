@@ -4,7 +4,7 @@
 > Owner: Codex
 > Updated: 2026-08-08
 > Related PRD/PDD: `docs/plans/2026-08-08-semantic-illness-query-design.md`
-> Related code: `backend/app/services/utterance_intent_classifier.py`, `backend/app/services/tool_schema_registry.py`, `backend/app/services/health_read.py`, `backend/app/services/agent_executor.py`
+> Related code: `backend/app/services/write_intent_scope.py`, `backend/app/services/utterance_intent_classifier.py`, `backend/app/services/tool_schema_registry.py`, `backend/app/services/health_read.py`, `backend/app/services/agent_executor.py`
 
 ## 1. Decision
 
@@ -128,11 +128,13 @@ dimensions return an error instead of querying a different domain. User text and
 health results must not be added to new plaintext logs. Database failures return
 a fixed user-safe error and log only a content-free error type.
 
-Write authorization requires a bounded explicit request grammar or a concrete
-observation fact; the bare presence of `记录` is never sufficient. Completed
-forms (`记录过/记录了`), historical noun frames, product-capability questions and
-negated write clauses remain non-writing even without punctuation. Negation
-terms are shared by the classifier and the kernel's fail-closed write gate.
+Write authorization requires an explicit request speech act or a concrete
+observation fact; the bare presence of `记录` is never sufficient. A shared
+clause/scope parser separates clause-local negation, request modals,
+product-capability questions and completed/history references across every
+registered write-action synonym. The classifier and the kernel's fail-closed
+write gate consume the same result, so helper phrases cannot open a gap between
+routing and actual dispatch.
 
 Illness windows use the Agent turn's frozen user-local date, not the service
 process date. This keeps Web, Mobile and Mac results aligned at timezone day
@@ -205,6 +207,10 @@ Given a user says "请不要再帮我记录口腔溃疡"
 When the classifier and capability gate process the turn
 Then no write tool is authorized
 
+Given a negation contains an arbitrary bridge such as "不要让系统帮我记录口腔溃疡"
+When the classifier and ToolGateway process the turn
+Then the negation scopes over the write action and dispatch never starts
+
 Given a user says "勿帮我记录晚餐，分析一下热量"
 When the classifier and capability gate process the compound turn
 Then the analysis goal remains but no write tool is authorized
@@ -214,8 +220,20 @@ When the classifier processes separate clauses
 Then the first explicit write remains authorized under the existing confirmation policy
 
 Given a user asks whether the product can record illness data
-When the classifier processes "这个功能可以帮我记录口腔溃疡吗"
+When the classifier processes "请问小巴能帮我记录口腔溃疡吗"
 Then it remains a capability question and does not authorize a write
+
+Given a user directly asks "能不能帮我记录口腔溃疡"
+When the classifier processes the request
+Then it remains a write request under the existing confirmation policy
+
+Given the user says "不需要分析，记录口腔溃疡"
+When the classifier processes the separate clauses
+Then the first clause's negation does not cancel the later write request
+
+Given a completed-history question uses any registered write synonym
+When the classifier processes "保存过/录入过/新增过口腔溃疡吗"
+Then it remains read-only and health_record is blocked before dispatch
 
 Given a user asks for a two-year illness window
 When health_query validates days=730
@@ -231,6 +249,7 @@ Then the result explicitly states that it was truncated
 ```bash
 # Backend focused behavior
 /Users/liqiuhua/work/personal/health-llm-driven/backend/venv/bin/python -m pytest -q --no-cov \
+  tests/test_write_intent_scope.py \
   tests/test_utterance_intent_classifier.py \
   tests/test_health_read_illness.py \
   tests/test_tool_validator.py \
@@ -277,3 +296,4 @@ These questions do not block the illness slice.
 |---|---|---|
 | 2026-08-08 | Initial approved spec | User approved hybrid semantic planning with deterministic execution. |
 | 2026-08-08 | Hardened write grammar and time-window fidelity | Independent reviews found unpunctuated history, negated compound and long-window boundary gaps. |
+| 2026-08-08 | Unified write speech-act scope | Independent reviews found finite helper lists diverged between routing and ToolGateway enforcement. |

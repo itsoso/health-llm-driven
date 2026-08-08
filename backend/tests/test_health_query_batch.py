@@ -101,6 +101,8 @@ async def test_illness_dimension_fails_loud_before_fetch():
 
     assert out.startswith("Error:")
     assert "illness" in out
+    assert "单条 health_query" in out
+    assert "dimension='illness'" in out
     assert called["n"] == 0
     assert "illness" not in hqb.known_dimensions()
 

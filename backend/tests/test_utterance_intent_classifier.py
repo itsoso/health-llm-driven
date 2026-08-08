@@ -139,6 +139,14 @@ def test_historical_record_questions_are_read_only(message):
         "记录了口腔溃疡",
         "以前的口腔溃疡记录",
         "上一次口腔溃疡记录",
+        "记录口腔溃疡历史",
+        "记录列表",
+        "记录汇总",
+        "保存过口腔溃疡吗？",
+        "录入过口腔溃疡吗？",
+        "新增过口腔溃疡吗？",
+        "写入过口腔溃疡吗？",
+        "打卡过口腔溃疡吗？",
     ),
 )
 def test_unpunctuated_record_history_frames_never_authorize_write(message):
@@ -205,6 +213,9 @@ def test_polite_record_requests_remain_write_intents(message):
         "系统可以帮我记录口腔溃疡吗？",
         "小巴能记录口腔溃疡吗？",
         "小巴能帮我记录口腔溃疡吗？",
+        "请问小巴能帮我记录口腔溃疡吗？",
+        "请问系统可以帮我记录口腔溃疡吗？",
+        "我想问这个功能可以帮我记录口腔溃疡吗？",
     ),
 )
 def test_record_capability_questions_do_not_authorize_writes(message):
@@ -237,6 +248,13 @@ def test_negated_polite_record_request_does_not_authorize_write(message):
         "勿帮我记录晚餐，分析一下热量",
         "甭帮我记录晚餐，分析一下热量",
         "请勿帮我记录口腔溃疡，分析一下原因",
+        "不用让小巴帮我记录口腔溃疡，分析一下原因",
+        "不要让系统帮我记录口腔溃疡，分析一下原因",
+        "勿让小巴帮我记录晚餐，分析一下热量",
+        "请不要主动帮我记录口腔溃疡，分析一下原因",
+        "不要默默帮我记录口腔溃疡，分析一下原因",
+        "别总是帮我记录口腔溃疡，分析一下原因",
+        "请勿擅自帮我记录口腔溃疡，分析一下原因",
     ),
 )
 def test_negated_record_with_followup_advice_keeps_read_only_goal(message):
@@ -260,6 +278,24 @@ def test_explicit_record_clause_survives_followup_question(message):
 
     assert intent.primary == "write"
     assert intent.operation == "create"
+    assert intent.is_write is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "可不可以记录口腔溃疡？",
+        "能不能帮我记录口腔溃疡？",
+        "不需要分析，记录口腔溃疡",
+        "我今天不舒服帮我记录一下",
+        "这次不严重帮我记录下来",
+        "不是很疼帮我记录一下",
+    ),
+)
+def test_modal_or_later_clause_record_requests_remain_write(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "write"
     assert intent.is_write is True
 
 

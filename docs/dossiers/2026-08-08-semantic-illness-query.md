@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS; G4 third remediation complete, fresh final re-review pending |
+| current_stage | G3 PASS; G4 fifth remediation complete, fresh final re-review pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -97,6 +97,18 @@ validation and no-match honesty address those risks.
   tests cover each boundary; the final expanded compatibility group passes
   1,850 tests, including classifier, IntentFrame, CapabilityPolicy, ToolGateway,
   validator, canonical reader, goal spec and all prior behavior batteries.
+- Two further independent reviews found that finite helper stripping still
+  authorized negated bridge forms such as `不要让系统帮我记录`, capability
+  questions with `请问/我想问` wrappers, historical/completed forms using write
+  synonyms other than `记录`, and an undirected batch-query recovery message.
+  Failure-first coverage reproduced the gaps. The replacement shared
+  clause/scope parser now drives both the classifier and the kernel preflight,
+  and the expanded related compatibility group passes 1,969 tests.
+- The shared-parser contract also passes a generated matrix covering every
+  registered write action across 350 negation/bridge combinations, plus
+  positive modal, cross-clause, completed-history, capability-question and
+  lexical-collision controls. The exact screenshot query is not mistaken for a
+  cancellation merely because `分别` contains the character `别`.
 
 ### G4 Safety Review: PENDING
 
@@ -136,6 +148,27 @@ analysis goal after write cancellation, supports illness windows through 36,500
 days with fail-loud bounds, and discloses 100-row truncation. Real ToolGateway
 dispatch spies prove the new historical, negated and capability cases never
 cross the adapter boundary. A new independent review is still required.
+
+The following independent safety and code reviews again returned NO-GO before
+deployment. They showed that finite helper lists did not compose with
+`让小巴帮我/让系统帮我`, inquiry wrappers could hide product-capability
+questions, completed forms such as `保存过/录入过/新增过` could still authorize
+writes, and illness submitted to the batch tool lacked a directional recovery
+contract. Deployment remained stopped.
+
+The fifth remediation replaces the duplicated finite negation logic with one
+shared clause/scope parser used by both intent classification and the final
+ToolGateway write backstop. It separates clause-local negation, non-negating
+modal questions, product-capability subjects, completed/history frames and
+lexical containers; write actions come from one shared registry. The batch
+validator now directs the model to a single
+`health_query(dimension='illness', keyword=..., days=...)` and forbids switching
+domains. Focused tests first failed, then the related suite passed 1,951 tests;
+Ruff, compilation, generated system-map drift, dossier consistency and diff
+checks also pass. Positive controls where `不` belongs to a symptom description
+rather than the later write action pass separately at classifier and capability
+layers. A brand-new independent review of this implementation remains
+mandatory before G4 can pass.
 
 ### G5 Deployment Health: PENDING
 

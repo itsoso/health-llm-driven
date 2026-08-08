@@ -30,7 +30,7 @@ Implement the first vertical slice of a hybrid semantic-query architecture:
 
 ```text
 natural language
-  -> deterministic speech-act/write-authorization frame
+  -> shared deterministic clause/scope and write-authorization frame
   -> LLM semantic query plan expressed as typed health_query arguments
   -> deterministic query compiler and owner-scoped canonical reader
   -> structured facts
@@ -81,6 +81,11 @@ retrieval. The boundary makes both responsibilities explicit and testable.
 ### 4.1 Speech act and write authorization
 
 - A question/list request with no explicit imperative write frame is `read`.
+- Clause-local negation, request modals, capability questions and
+  completed/history references are parsed once and reused by both the
+  classifier and final ToolGateway preflight.
+- Write actions come from one shared registry; intervening helper text must not
+  change the scope of an earlier negation.
 - `记录` followed by noun evidence such as `的/里/中/有哪些` is not write
   authorization.
 - Explicit commands such as `记录体重70kg`, `帮我录入血压120/80` and factual
@@ -152,6 +157,8 @@ Verification must include:
 - an end-to-end tool-loop regression with a model-provided semantic query plan;
 - qwen-max-3.7 evaluation over query/write/negation/advice contrasts using
   anonymized fixtures; and
+- a generated negation × bridge × write-action matrix plus positive modal and
+  cross-clause controls;
 - repository drift, lint and focused/full regression gates required by the
   project pipeline.
 

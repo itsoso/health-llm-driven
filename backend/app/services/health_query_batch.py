@@ -130,6 +130,12 @@ def validate_plan(
         dim = normalized.get("dimension")
         if not isinstance(dim, str) or not dim.strip():
             return None, None, f"Error: queries[{i}] 缺 dimension 字段。" + _EXAMPLE_HINT
+        if dim.strip().lower() in BATCH_UNSUPPORTED_DIMENSIONS:
+            return None, None, (
+                f"Error: queries[{i}] 的 dimension '{dim}' 不支持批查询。"
+                "病症名称与时间窗必须改用单条 health_query(dimension='illness', "
+                "keyword=..., days=...)，不得改查其他数据域。"
+            )
         canonical = lc_map.get(dim.strip().lower())
         if canonical is None:
             return None, None, (

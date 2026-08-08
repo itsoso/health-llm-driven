@@ -4,7 +4,7 @@
 
 **Goal:** Make historical illness questions compile into owner-scoped canonical reads while preserving explicit health-record writes and failing loudly on invalid semantic dimensions.
 
-**Architecture:** The shared utterance classifier remains the deterministic write-authorization boundary and gives interrogative speech acts read priority unless an explicit write command exists. The LLM expresses entity/time meaning through `health_query(dimension="illness", keyword=..., days=...)`; validation accepts only registered dimensions, and `health_read` compiles illness queries directly to an owner-filtered `IllnessEpisode` query. Existing Agent tool execution and answer synthesis remain unchanged.
+**Architecture:** A shared clause/scope parser feeds both the utterance classifier and the final ToolGateway write backstop, separating negation, request modals, capability questions and completed/history references before authorization. The LLM expresses entity/time meaning through `health_query(dimension="illness", keyword=..., days=...)`; validation accepts only registered dimensions, and `health_read` compiles illness queries directly to an owner-filtered `IllnessEpisode` query. Existing Agent answer synthesis remains unchanged.
 
 **Tech Stack:** Python 3.12, FastAPI, SQLAlchemy, Pydantic tool schemas, pytest, Ruff, existing AgentExecutor/ToolGateway.
 
