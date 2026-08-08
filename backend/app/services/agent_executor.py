@@ -103,12 +103,14 @@ from app.services.agent_kernel.tool_registry import (
     requires_verified_receipt,
 )
 from app.services.agent_kernel.types import (
+    ActionableReference,
     CapabilityDecision,
     GoalSpec,
     ToolExecutionRequest,
     TurnSnapshot,
 )
 from app.services.agent_kernel.capability_policy import (
+    bind_server_authorized_health_record_fields,
     canonical_health_manage_record_id,
     canonical_health_manage_record_type,
 )
@@ -4482,6 +4484,46 @@ def _enrich_reminder_window_from_turn(
     return out
 
 
+def _bind_server_authorized_reminder_continuation(
+    args: dict[str, Any],
+    *,
+    user_message: str,
+    recent_messages: list[dict],
+) -> dict[str, Any]:
+    """Bind only reminder fields recoverable from the active continuation."""
+    if not _is_reminder_schedule_continuation(user_message, recent_messages):
+        return args
+    data = args.get("data")
+    if not isinstance(data, dict):
+        return args
+
+    context = "\n".join(
+        str(message.get("content") or "")
+        for message in recent_messages[-6:]
+        if isinstance(message, dict)
+    )
+    authorized: dict[str, Any] = {}
+    recovered_interval = _interval_minutes_from_reminder_context(
+        f"{context}\n{user_message}"
+    )
+    if (
+        recovered_interval is not None
+        and data.get("interval_minutes") == recovered_interval
+    ):
+        authorized["reminder_interval_minutes"] = recovered_interval
+
+    title = str(data.get("title") or "").strip()
+    title_core = re.sub(r"(?:定时|循环|健康|日常|提醒|闹钟)", "", title)
+    if title_core and "".join(title_core.split()) in "".join(context.split()):
+        authorized["reminder_title"] = title
+
+    recurrence = _normalize_recurrence(data.get("recurrence"))
+    if recurrence == "daily" and re.search(r"每天|每日|天天|every\s*day", context, re.I):
+        authorized["reminder_recurrence"] = "daily"
+
+    return bind_server_authorized_health_record_fields(args, **authorized)
+
+
 def _normalize_reminder_record_data(
     data: dict,
     *,
@@ -7500,10 +7542,23 @@ def _apply_server_health_record_provenance(
     if not isinstance(data, dict):
         return args
 
+    # A model can emit arbitrary JSON keys, so raw ``data.source`` never proves
+    # provenance.  Remove it first; the opaque marker below can only be created
+    # inside this process and is consumed (then stripped) by capability policy.
+    bind_server_authorized_health_record_fields(args)
+    data.pop("source", None)
+
     if execution_source == "procedure_recipe_replay":
-        if data.get("source") == "agent_text":
-            data["source"] = "procedure_recipe"
-        return args
+        data["source"] = "procedure_recipe"
+        return bind_server_authorized_health_record_fields(
+            args,
+            source="procedure_recipe",
+            **{
+                field: data[field]
+                for field in ("calories", "protein", "carbs", "fat", "fiber")
+                if data.get(field) not in (None, "", [])
+            },
+        )
 
     if execution_source != "structured_or_recovered":
         return args
@@ -7512,15 +7567,30 @@ def _apply_server_health_record_provenance(
         # Contextual capture already persisted the authoritative meal. This
         # redundant model call must reach _exec_health_record so it can replay
         # that verified receipt instead of failing nutrition validation.
-        data["source"] = "contextual_diet_replay"
+        source = "contextual_diet_replay"
     elif has_attachment or diet_photo_auto_save:
         # Auto-save intent proves an attachment turn even on legacy clients
         # that omitted the explicit has_attachment flag. If capture failed,
         # the fallback still has to provide complete estimated nutrition.
-        data["source"] = "agent_attachment"
+        source = "agent_attachment"
     elif str(user_message or "").strip():
-        data["source"] = "agent_text"
-    return args
+        source = "agent_text"
+    else:
+        source = ""
+    if source:
+        # The validator needs the canonical source to apply source-specific
+        # completeness checks. Capability policy still requires the opaque
+        # marker below and removes any unmarked/model-authored source.
+        data["source"] = source
+    return bind_server_authorized_health_record_fields(
+        args,
+        source=source,
+        **{
+            field: data[field]
+            for field in ("calories", "protein", "carbs", "fat", "fiber")
+            if data.get(field) not in (None, "", [])
+        },
+    )
 
 
 # 2026-05-14 #4 可解释性 — tool 名 → 中文标签
@@ -8463,6 +8533,9 @@ class AgentExecutor:
         self._agent_kernel_tool_failure_tools: List[str] = []
         self._agent_kernel_pending_confirmation_tools: List[str] = []
         self._agent_kernel_tool_retry_count = 0
+        self._agent_kernel_manage_list_references: dict[
+            str, ActionableReference
+        ] = {}
         self._runtime_run_id: Optional[str] = None
         self._runtime_attempt_id: Optional[str] = None
         self._runtime_managed = False
@@ -8503,6 +8576,7 @@ class AgentExecutor:
         self._agent_kernel_tool_failure_tools = []
         self._agent_kernel_pending_confirmation_tools = []
         self._agent_kernel_tool_retry_count = 0
+        self._agent_kernel_manage_list_references = {}
         self._agent_kernel_event_bus.turn_started()
         self._agent_kernel_event_bus.intent_decided()
         return self._refine_agent_kernel_continuation(self._agent_kernel_snapshot)
@@ -8679,6 +8753,11 @@ class AgentExecutor:
         if bus is None:
             return result
         parsed_args = args if isinstance(args, dict) else {}
+        self._capture_owner_scoped_manage_list_reference(
+            tool_name,
+            parsed_args,
+            result,
+        )
         decision = self._agent_kernel_last_decision
         result_text = str(result or "").lstrip()
         snapshot = self._agent_kernel_snapshot
@@ -8769,6 +8848,94 @@ class AgentExecutor:
             receipt=receipt,
         )
         return result
+
+    def _capture_owner_scoped_manage_list_reference(
+        self,
+        tool_name: str,
+        args: dict[str, Any],
+        result: str,
+    ) -> None:
+        """Bind a successful owner-scoped list result as update identity evidence."""
+        if (
+            tool_name != "health_manage"
+            or str(args.get("operation") or "").strip().lower() != "list"
+        ):
+            return
+        record_type = canonical_health_manage_record_type(args.get("record_type"))
+        if record_type is None or str(result or "").startswith("Error:"):
+            return
+        try:
+            payload = json.loads(result)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return
+        if isinstance(payload, dict):
+            payload = next(
+                (
+                    payload.get(key)
+                    for key in ("records", "items", "data")
+                    if isinstance(payload.get(key), list)
+                ),
+                [],
+            )
+        if not isinstance(payload, list):
+            return
+        allowed_fields = {
+            "id",
+            "record_id",
+            "amount",
+            "weight",
+            "waist_cm",
+            "systolic",
+            "diastolic",
+            "record_date",
+            "meal_type",
+            "food_items",
+            "name",
+            "status",
+        }
+        records = tuple(
+            {
+                key: item[key]
+                for key in allowed_fields
+                if key in item
+            }
+            for item in payload[:100]
+            if isinstance(item, dict)
+            and canonical_health_manage_record_id(
+                item.get("id", item.get("record_id"))
+            ) is not None
+        )
+        if not records:
+            return
+        reference = ActionableReference(
+            kind="owner_scoped_health_manage_list",
+            data={"record_type": record_type, "records": records},
+        )
+        self._agent_kernel_manage_list_references[record_type] = reference
+        snapshot = self._agent_kernel_snapshot
+        if snapshot is None:
+            return
+        retained = tuple(
+            item
+            for item in snapshot.actionable_references
+            if not (
+                item.kind == "owner_scoped_health_manage_list"
+                and item.data.get("record_type") == record_type
+            )
+        )
+        rebound = replace(
+            snapshot,
+            actionable_references=(
+                *retained,
+                *self._agent_kernel_manage_list_references.values(),
+            ),
+        )
+        self._agent_kernel_snapshot = rebound
+        if self._agent_kernel_event_bus is not None:
+            self._agent_kernel_event_bus.rebind_snapshot(
+                rebound,
+                reason="owner_scoped_manage_list_resolved",
+            )
 
     def _display_model_name_for_id(self, model_id: Optional[str]) -> Optional[str]:
         if not model_id:
@@ -18085,6 +18252,15 @@ class AgentExecutor:
                     [],
                 ),
                 reference_now=self._agent_kernel_reference_now(),
+            )
+            args = _bind_server_authorized_reminder_continuation(
+                args,
+                user_message=getattr(self, "_current_turn_user_message", ""),
+                recent_messages=getattr(
+                    self,
+                    "_current_turn_recent_messages",
+                    [],
+                ),
             )
         v = validate_tool_call(
             tool_name,

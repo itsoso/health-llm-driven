@@ -7,6 +7,8 @@ import pytest
 @pytest.fixture(autouse=True)
 def _declare_explicit_turn_for_raw_manage_handler_contracts(monkeypatch):
     from app.services.agent_executor import AgentExecutor
+    from app.services.agent_kernel.tool_gateway import ToolGateway
+    from app.services.agent_kernel.types import ToolExecutionResult
 
     original = AgentExecutor._execute_tool
 
@@ -19,6 +21,22 @@ def _declare_explicit_turn_for_raw_manage_handler_contracts(monkeypatch):
         return await original(self, tool_name, args_raw, user_token)
 
     monkeypatch.setattr(AgentExecutor, "_execute_tool", with_explicit_test_turn)
+
+    async def dispatch_adapter_contract(
+        self,
+        request,
+        dispatch,
+        *,
+        on_decision=None,
+    ):
+        return ToolExecutionResult(
+            tool_name=request.tool_name,
+            content=await dispatch(request),
+        )
+
+    # This file verifies URL/payload adapter contracts. Capability authorization
+    # and real zero-dispatch behavior are covered separately by kernel tests.
+    monkeypatch.setattr(ToolGateway, "execute", dispatch_adapter_contract)
 
 
 @pytest.mark.asyncio

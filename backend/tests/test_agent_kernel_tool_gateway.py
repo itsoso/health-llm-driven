@@ -14,7 +14,7 @@ from app.services.agent_kernel.tool_gateway import (
     ToolPreflightError,
     blocked_tool_result,
 )
-from app.services.agent_kernel.types import AgentEnvelope, ExecutionContext, ToolExecutionRequest, TurnSnapshot
+from app.services.agent_kernel.types import ActionableReference, AgentEnvelope, ExecutionContext, ToolExecutionRequest, TurnSnapshot
 from app.services.utterance_intent_lexicon import WRITE_COMMAND_ACTIONS
 
 
@@ -1145,6 +1145,46 @@ async def test_gateway_update_intent_blocks_health_record_recreate_fallback(
     payload = json.loads(result.content)
     assert payload["status"] == "rejected"
     assert payload["dispatch_started"] is False
+
+
+@pytest.mark.asyncio
+async def test_gateway_never_dispatches_update_outside_owner_scoped_exact_evidence():
+    snapshot = replace(
+        _snapshot("把刚才 300ml 改成 350ml"),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "water",
+                    "records": ({"id": 718, "amount": 300},),
+                },
+            ),
+        ),
+    )
+    gateway = ToolGateway(snapshot)
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_manage",
+            arguments={
+                "record_type": "illness",
+                "operation": "update",
+                "record_id": 999999,
+                "data": {"status": "resolved"},
+            },
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert result.decision.reason == "update_requires_exact_target_evidence"
 
 
 @pytest.mark.asyncio

@@ -15,6 +15,7 @@ from app.services.agent_kernel.intent_frame import build_intent_frame
 from app.services.agent_kernel.goal_spec import compile_goal_spec
 from app.services.agent_kernel.write_safety import is_explicit_aigc_media_provider_veto
 from app.services.agent_kernel.types import (
+    ActionableReference,
     AgentEnvelope,
     ExecutionContext,
     ToolExecutionRequest,
@@ -1903,9 +1904,9 @@ def test_medication_authorization_supports_multiple_explicit_targets():
     ("message", "matching_args", "mismatching_args"),
     (
         (
-            "记录心情平静",
-            {"record_type": "mood", "data": {"mood": "calm"}},
-            {"record_type": "mood", "data": {"mood": "焦虑"}},
+            "记录心情4分",
+            {"record_type": "mood", "data": {"mood_score": 4}},
+            {"record_type": "mood", "data": {"mood_score": 2}},
         ),
         (
             "记录排便一次",
@@ -1932,21 +1933,25 @@ def test_medication_authorization_supports_multiple_explicit_targets():
             },
         ),
         (
-            "创建目标：90天把腰围降到82cm",
+            "创建目标：每日体重降到70kg",
             {
                 "record_type": "goal",
                 "data": {
-                    "title": "90天把腰围降到82cm",
-                    "target_value": 82,
-                    "target_unit": "cm",
+                    "title": "每日体重降到70kg",
+                    "goal_type": "weight",
+                    "goal_period": "daily",
+                    "target_value": 70,
+                    "target_unit": "kg",
                 },
             },
             {
                 "record_type": "goal",
                 "data": {
-                    "title": "90天把腰围降到80cm",
+                    "title": "每日体重降到80kg",
+                    "goal_type": "weight",
+                    "goal_period": "daily",
                     "target_value": 80,
-                    "target_unit": "cm",
+                    "target_unit": "kg",
                 },
             },
         ),
@@ -1988,6 +1993,189 @@ def test_standard_health_writes_bind_every_semantic_selector(
     assert matching.action == "allow"
     assert mismatching.action == "block"
     assert mismatching.reason == "health_record_target_mismatch"
+
+
+@pytest.mark.parametrize(
+    ("message", "arguments", "expected_data"),
+    (
+        (
+            "记录跑步30分钟",
+            {
+                "record_type": "exercise",
+                "data": {
+                    "exercise_type": "跑步",
+                    "duration": 30,
+                    "distance": 100,
+                    "calories_burned": 4999,
+                    "notes": "model invented",
+                },
+            },
+            {
+                "exercise_type": "跑步",
+                "duration": 30,
+            },
+        ),
+        (
+            "记录头痛",
+            {
+                "record_type": "symptom",
+                "data": {
+                    "body_part": "head",
+                    "description": "头痛",
+                    "triggers": ["熬夜"],
+                    "duration_minutes": 600,
+                    "notes": "model invented",
+                    "source": "siri",
+                },
+            },
+            {
+                "body_part": "head",
+                "description": "头痛",
+                "record_date": "2026-07-17",
+            },
+        ),
+        (
+            "记录排便一次",
+            {
+                "record_type": "excretion",
+                "data": {
+                    "type": "bowel",
+                    "stool_type": 7,
+                    "blood_present": True,
+                    "pain_level": 5,
+                    "notes": "model invented",
+                },
+            },
+            {"type": "bowel"},
+        ),
+        (
+            "设置每天10:30臀中肌训练提醒",
+            {
+                "record_type": "reminder",
+                "data": {
+                    "title": "臀中肌训练",
+                    "time": "10:30",
+                    "recurrence": "daily",
+                    "message": "model invented",
+                    "priority": "urgent",
+                },
+            },
+            {
+                "title": "臀中肌训练",
+                "time": "10:30",
+                "recurrence": "daily",
+            },
+        ),
+    ),
+)
+def test_health_write_projection_drops_model_invented_persisted_fields(
+    message,
+    arguments,
+    expected_data,
+):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request("health_record", arguments),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args == {
+        "record_type": arguments["record_type"],
+        "data": expected_data,
+    }
+
+
+def test_mood_label_without_explicit_score_cannot_use_model_invented_required_value():
+    decision = decide_tool_capability(
+        _snapshot("记录心情平静"),
+        _request(
+            "health_record",
+            {
+                "record_type": "mood",
+                "data": {"mood": "calm", "mood_score": 5},
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "health_record_authorization_target_unresolved"
+
+
+def test_goal_without_explicit_type_and_period_cannot_persist_model_defaults():
+    decision = decide_tool_capability(
+        _snapshot("创建目标：90天把腰围降到82cm"),
+        _request(
+            "health_record",
+            {
+                "record_type": "goal",
+                "data": {
+                    "title": "90天把腰围降到82cm",
+                    "goal_type": "weight",
+                    "goal_period": "daily",
+                    "target_value": 82,
+                    "target_unit": "cm",
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "health_record_authorization_target_unresolved"
+
+
+def test_sleep_start_projects_out_model_invented_time_and_notes():
+    decision = decide_tool_capability(
+        _snapshot("准备开始睡觉了"),
+        _request(
+            "health_record",
+            {
+                "record_type": "sleep",
+                "data": {
+                    "bedtime": "2099-01-01T23:59:00+08:00",
+                    "notes": "model invented",
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args == {
+        "record_type": "sleep",
+        "data": {"title": "准备开始睡觉"},
+    }
+
+
+def test_reminder_window_is_rebuilt_from_explicit_user_schedule():
+    decision = decide_tool_capability(
+        _snapshot("设置定时饮水提醒每天9点到20点每隔1.5小时一次"),
+        _request(
+            "health_record",
+            {
+                "record_type": "reminder",
+                "data": {
+                    "title": "定时饮水",
+                    "message": "model invented",
+                    "start_time": "09:00",
+                    "end_time": "20:00",
+                    "interval_minutes": 90,
+                    "recurrence": "daily",
+                    "priority": "urgent",
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args == {
+        "record_type": "reminder",
+        "data": {
+            "title": "定时饮水",
+            "start_time": "09:00",
+            "end_time": "20:00",
+            "interval_minutes": 90,
+            "recurrence": "daily",
+        },
+    }
 
 
 def test_diet_write_keeps_food_continuation_after_meal_comma():
@@ -2279,8 +2467,20 @@ def test_update_turn_blocks_health_manage_delete_with_receipt():
 
 
 def test_update_turn_allows_health_manage_update_with_receipt():
-    decision = decide_tool_capability(
+    snapshot = replace(
         _snapshot("把刚才 300ml 改成 350ml"),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "water",
+                    "records": ({"id": 718, "amount": 300},),
+                },
+            ),
+        ),
+    )
+    decision = decide_tool_capability(
+        snapshot,
         _request(
             "health_manage",
             {
@@ -2294,7 +2494,164 @@ def test_update_turn_allows_health_manage_update_with_receipt():
 
     assert decision.action == "allow"
     assert decision.reason == "explicit_mutation_intent"
+    assert decision.normalized_args == {
+        "record_type": "water",
+        "operation": "update",
+        "record_id": 718,
+        "data": {"amount": 350},
+    }
     assert decision.receipt_required is True
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    (
+        {
+            "record_type": "illness",
+            "operation": "update",
+            "record_id": 999999,
+            "data": {"status": "resolved"},
+        },
+        {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 719,
+            "data": {"amount": 350},
+        },
+        {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": {"amount": 999},
+        },
+    ),
+)
+def test_update_requires_owner_scoped_identity_and_exact_user_patch(arguments):
+    snapshot = replace(
+        _snapshot("把刚才 300ml 改成 350ml"),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "water",
+                    "records": ({"id": 718, "amount": 300},),
+                },
+            ),
+        ),
+    )
+
+    decision = decide_tool_capability(
+        snapshot,
+        _request("health_manage", arguments),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "update_requires_exact_target_evidence"
+
+
+def test_update_without_owner_scoped_list_or_explicit_id_is_blocked():
+    decision = decide_tool_capability(
+        _snapshot("把刚才 300ml 改成 350ml"),
+        _request(
+            "health_manage",
+            {
+                "record_type": "water",
+                "operation": "update",
+                "record_id": 718,
+                "data": {"amount": 350},
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "update_requires_exact_target_evidence"
+
+
+def test_illness_resolution_binds_owner_scoped_record_and_exact_patch():
+    snapshot = replace(
+        _snapshot("舌尖溃疡昨天好了，修改记录"),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "illness",
+                    "records": (
+                        {"id": 71, "name": "舌尖溃疡", "status": "active"},
+                    ),
+                },
+            ),
+        ),
+    )
+
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "illness",
+                "operation": "update",
+                "record_id": 71,
+                "data": {
+                    "status": "resolved",
+                    "end_date": "2026-07-16",
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args == {
+        "record_type": "illness",
+        "operation": "update",
+        "record_id": 71,
+        "data": {"status": "resolved", "end_date": "2026-07-16"},
+    }
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    (
+        {
+            "record_type": "illness",
+            "operation": "update",
+            "record_id": 999999,
+            "data": {"status": "resolved", "end_date": "2026-07-16"},
+        },
+        {
+            "record_type": "illness",
+            "operation": "update",
+            "record_id": 71,
+            "data": {
+                "status": "resolved",
+                "end_date": "2026-07-16",
+                "severity": 1,
+            },
+        },
+    ),
+)
+def test_illness_resolution_rejects_wrong_identity_or_invented_patch(arguments):
+    snapshot = replace(
+        _snapshot("舌尖溃疡昨天好了，修改记录"),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "illness",
+                    "records": (
+                        {"id": 71, "name": "舌尖溃疡", "status": "active"},
+                    ),
+                },
+            ),
+        ),
+    )
+
+    decision = decide_tool_capability(
+        snapshot,
+        _request("health_manage", arguments),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "update_requires_exact_target_evidence"
 
 
 @pytest.mark.parametrize(
@@ -3360,7 +3717,7 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v9"
+    assert payload["contract_version"] == "agent-capability-policy-v11"
     assert payload["health_record_target_binding"] == {
         "version": "authorized-target-set-v7",
         "domain_types": {
@@ -3378,6 +3735,10 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
     assert (
         payload["whole_record_delete_evidence_version"]
         == "record-delete-evidence-v2"
+    )
+    assert (
+        payload["health_manage_update_evidence_version"]
+        == "record-update-evidence-v2"
     )
     assert payload["known_tools"]
     assert payload["recipe_record_types"]

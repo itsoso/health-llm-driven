@@ -441,6 +441,7 @@ async def test_mood_record_does_not_throw_on_missing_amount(db):
 
     executor = AgentExecutor(db)
     executor._current_user_id = 1
+    executor._current_turn_user_message = "记录心情4分"
 
     captured = {}
 
@@ -454,13 +455,13 @@ async def test_mood_record_does_not_throw_on_missing_amount(db):
             tool_name="health_record",
             args_raw=json.dumps({
                 "record_type": "mood",
-                "data": {"mood": "calm", "note": "睡前"},
+                "data": {"mood_score": 4},
             }),
             user_token=None,
         )
 
     assert "/mood/records" in captured.get("url", "")
-    assert captured["payload"]["mood"] == "calm"
+    assert captured["payload"]["mood_score"] == 4
 
 
 @pytest.mark.asyncio
@@ -494,6 +495,7 @@ async def test_reminder_record_normalizes_daily_time_without_extra_confirmation(
 
     executor = AgentExecutor(db)
     executor._current_user_id = 1
+    executor._current_turn_user_message = "设置每天10:30臀中肌训练提醒"
 
     captured = {}
 
@@ -521,7 +523,7 @@ async def test_reminder_record_normalizes_daily_time_without_extra_confirmation(
     assert "Error" not in str(result)
     assert captured["url"].endswith("/reminders/me")
     assert captured["payload"]["title"] == "臀中肌训练"
-    assert captured["payload"]["message"] == "蚌式开合、侧卧抬腿、臀桥"
+    assert captured["payload"]["message"] == "臀中肌训练"
     assert captured["payload"]["recurrence"] == "daily"
 
 
@@ -532,6 +534,9 @@ async def test_reminder_record_routes_interval_window_as_one_atomic_write(db):
 
     executor = AgentExecutor(db)
     executor._current_user_id = 1
+    executor._current_turn_user_message = (
+        "设置定时饮水提醒每天9点到20点每隔1.5小时一次"
+    )
     captured = {}
 
     async def fake_post(url, headers, payload):
@@ -551,7 +556,7 @@ async def test_reminder_record_routes_interval_window_as_one_atomic_write(db):
             args_raw=json.dumps({
                 "record_type": "reminder",
                 "data": {
-                    "title": "定时饮水提醒",
+                    "title": "定时饮水",
                     "message": "少量多次饮水",
                     "start_time": "9点",
                     "end_time": "20点",
@@ -617,6 +622,44 @@ async def test_reminder_follow_up_recovers_explicit_window_and_prior_interval(db
     assert captured["payload"]["end_time"] == "20:00"
     assert captured["payload"]["interval_minutes"] == 90
     assert "remind_at" not in captured["payload"]
+
+
+@pytest.mark.asyncio
+async def test_reminder_follow_up_cannot_replace_prior_target(db):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "9点到20点"
+    executor._current_turn_recent_messages = [
+        {
+            "role": "assistant",
+            "content": "我会为你生成每天每 1.5 小时一次的循环饮水提醒。请告诉我开始和结束时间。",
+        },
+        {"role": "user", "content": "9点到20点"},
+    ]
+
+    with patch.object(executor, "_api_post", new=AsyncMock()) as post:
+        result = await executor._execute_tool(
+            tool_name="health_record",
+            args_raw=json.dumps({
+                "record_type": "reminder",
+                "data": {
+                    "title": "服药提醒",
+                    "start_time": "09:00",
+                    "end_time": "20:00",
+                    "interval_minutes": 90,
+                    "recurrence": "daily",
+                },
+            }, ensure_ascii=False),
+            user_token="test-token",
+        )
+
+    post.assert_not_awaited()
+    rejection = json.loads(result)
+    assert rejection["status"] == "rejected"
+    assert rejection["dispatch_started"] is False
+    assert rejection["error_code"] == "health_record_authorization_target_unresolved"
 
 
 @pytest.mark.asyncio
@@ -723,7 +766,7 @@ async def test_agent_health_record_sleep_start_intent_records_life_event(db):
     assert "Error" not in str(result)
     assert captured["url"].endswith("/episodes/life-event")
     assert captured["payload"]["title"] == "准备开始睡觉"
-    assert captured["payload"]["occurred_at"] == "2026-07-17T22:57:00+08:00"
+    assert "occurred_at" not in captured["payload"]
     receipt = _write_receipt_from_tool_result("health_record", "sleep", result)
     assert receipt is not None
     assert receipt["resource_type"] == "health_episode"

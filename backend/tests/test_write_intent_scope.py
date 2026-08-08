@@ -75,6 +75,11 @@ def test_compound_revocation_deferred_condition_and_third_party_have_no_authoriz
         "记录左丘明体重71kg",
         "小明还是有腰疼的症状",
         "记录小明右侧腰疼",
+        "记录感冒，这是小明的",
+        "记录感冒，这是我孩子的",
+        "记录感冒，实际上是妈妈的",
+        "记录感冒，不是我的，是小明的",
+        "记录感冒，这条属于张三",
     ),
 )
 def test_revoked_reported_hypothetical_and_third_party_frames_have_no_authority(

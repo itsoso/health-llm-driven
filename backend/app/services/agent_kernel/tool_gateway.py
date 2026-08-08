@@ -19,6 +19,7 @@ _VALID_POLICY_MODES = frozenset({"enforce", "shadow"})
 _HARD_BLOCK_REASONS = frozenset({
     "manage_operation_mismatch",
     "delete_requires_explicit_whole_record_intent",
+    "update_requires_exact_target_evidence",
 })
 
 
@@ -108,6 +109,7 @@ def blocked_tool_result(decision: CapabilityDecision) -> str:
         "manage_write_without_mutate_intent": "先确认用户要修改或删除哪条记录，再执行变更。",
         "manage_operation_mismatch": "保留现有记录，仅重试用户明确要求的操作，不要改用其他变更方式。",
         "delete_requires_explicit_whole_record_intent": "保留整条记录；如用户只要去掉备注等字段，仅移除字段，否则先请用户明确是否删除整条记录。",
+        "update_requires_exact_target_evidence": "先查询当前用户的候选记录，由系统绑定唯一记录和用户明确的新值；不要让模型选择记录 ID 或补写字段。",
         "unknown_intervention_action": "先向用户说明该干预动作暂不支持，不要猜测 action。",
         "unknown_tool": "不要猜测工具名称，改用已注册能力或直接说明暂时无法完成。",
     }.get(

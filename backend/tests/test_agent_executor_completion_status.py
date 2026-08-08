@@ -1090,6 +1090,9 @@ async def test_sealed_planned_only_checkpoint_can_resume_before_any_dispatch(
 async def test_all_planned_writes_are_checkpointed_before_first_dispatch(
     db, auth_user_and_headers, monkeypatch
 ):
+    from app.services.agent_kernel.tool_gateway import ToolGateway
+    from app.services.agent_kernel.types import ToolExecutionResult
+
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     first_args = {
@@ -1153,6 +1156,22 @@ async def test_all_planned_writes_are_checkpointed_before_first_dispatch(
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_llm_call))
     monkeypatch.setattr(executor, "_exec_health_manage", fake_health_manage)
     monkeypatch.setattr(executor, "_persist_turn_write_state", crash_before_second_dispatch)
+
+    async def dispatch_checkpoint_contract(
+        self,
+        request,
+        dispatch,
+        *,
+        on_decision=None,
+    ):
+        return ToolExecutionResult(
+            tool_name=request.tool_name,
+            content=await dispatch(request),
+        )
+
+    # The test isolates pre-dispatch checkpoint ordering; capability evidence is
+    # exercised in dedicated ToolGateway and correction-flow tests.
+    monkeypatch.setattr(ToolGateway, "execute", dispatch_checkpoint_contract)
 
     with pytest.raises(WorkerCrashed):
         [
@@ -3583,7 +3602,7 @@ async def test_update_retry_never_deletes_and_reports_verified_update(
 
 
 @pytest.mark.asyncio
-async def test_update_retry_different_target_does_not_recover_blocked_delete(
+async def test_update_retry_different_target_is_blocked_without_owner_scoped_evidence(
     db, auth_user_and_headers, monkeypatch
 ):
     user, _headers = auth_user_and_headers
@@ -3661,17 +3680,19 @@ async def test_update_retry_different_target_does_not_recover_blocked_delete(
     done = next(event for event in events if event.get("event") == "done")
     tool_results = _tool_results(events)
 
-    assert [item["record_id"] for item in dispatched] == [719]
+    assert dispatched == []
     assert len(tool_results) == 2
     _assert_pre_dispatch_rejection(
         tool_results[0],
         error_code="manage_operation_mismatch",
     )
-    _assert_verified_write(tool_results[1], resource_id="719")
+    _assert_pre_dispatch_rejection(
+        tool_results[1],
+        error_code="update_requires_exact_target_evidence",
+    )
     assert done["data"]["turn_outcome"]["category"] == "tool_blocked"
     assert done["data"]["turn_outcome"]["reason_code"] == "manage_operation_mismatch"
-    assert len(done["data"]["write_receipts"]) == 1
-    assert done["data"]["write_receipts"][0]["resource_id"] == "719"
+    assert done["data"]["write_receipts"] == []
 
 
 @pytest.mark.asyncio

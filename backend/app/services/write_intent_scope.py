@@ -324,6 +324,30 @@ _POST_ATTRIBUTION_RE = re.compile(
     r"(?:朋友|同事|医生|家人|妈妈|爸爸|文档|报告).{0,8}"
     r"(?:说的|写的|提到的).{0,4}(?:例句|原话|内容|话)"
 )
+_POST_CURRENT_USER_OWNERSHIP_DENIAL_RE = re.compile(
+    r"^(?:这(?:条|个)(?:记录|数据)?(?:其实|实际上)?(?:是)?)?"
+    r"不是(?:我|本人|自己)(?:的)?$"
+)
+_POST_OWNERSHIP_RE = re.compile(
+    r"^(?:实际上|其实|原来)?"
+    r"(?:这是|这(?:条|个)(?:记录|数据)?(?:是|属于|归于|归)|"
+    r"是|属于|归于|归|给)"
+    r"(?P<owner>[\u4e00-\u9fff]{1,12})(?:的)?$"
+)
+_NON_OWNER_WORDS = frozenset({
+    "我",
+    "我的",
+    "本人",
+    "自己",
+    "自己的",
+    "今天",
+    "昨天",
+    "前天",
+    "刚才",
+    "刚刚",
+    "上次",
+    "这次",
+})
 _BACKFILL_DATE_SIGNALS = (
     "发作日期",
     "开始日期",
@@ -1044,6 +1068,14 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
                 clauses.append(raw_clause)
         third_party_scope = False
         for clause in clauses:
+            if _is_post_attributed_to_non_current_owner(clause):
+                # Ownership stated later in the same semantic segment governs
+                # the earlier health fact too.  It must be able to revoke a
+                # provisional ``记录感冒`` authorization instead of being
+                # appended as a harmless follow-up clause.
+                del authorized[segment_start:]
+                third_party_scope = True
+                continue
             if _TRAILING_REVOCATION_CLAUSE_RE.fullmatch(clause):
                 while authorized:
                     candidate = authorized.pop()
@@ -1098,6 +1130,26 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
                 continue
             authorized.append(clause)
     return tuple(authorized)
+
+
+def _is_post_attributed_to_non_current_owner(clause: str) -> bool:
+    normalized = clause.strip("，,。.!！；;：: ")
+    if _POST_CURRENT_USER_OWNERSHIP_DENIAL_RE.fullmatch(normalized):
+        return True
+    match = _POST_OWNERSHIP_RE.fullmatch(normalized)
+    if match is None:
+        return False
+    owner = match.group("owner").strip()
+    if owner in _NON_OWNER_WORDS:
+        return False
+    if owner.startswith(("我朋友", "我的朋友", "我孩子", "我的孩子")):
+        return True
+    if re.search(_THIRD_PARTY_SUBJECT, owner):
+        return True
+    # A short Han name after an explicit ownership predicate is an owner, not
+    # a health attribute.  Longer free text remains unresolved and therefore
+    # does not receive this specialized classification.
+    return 2 <= len(owner.removesuffix("的")) <= 4
 
 
 def _corrected_write_clause(previous: str, corrected_value: str) -> str:
@@ -1256,6 +1308,10 @@ def has_explicit_authorizing_write_request(value: str) -> bool:
         or _THIRD_PARTY_WRITE_SUBJECT_RE.search(normalized)
         or _has_untrusted_colon_command(normalized)
         or _segment_has_non_current_subject(governing_segment)
+        or any(
+            _is_post_attributed_to_non_current_owner(clause)
+            for clause in split_write_clauses(governing_segment)
+        )
         or (
             _HYPOTHETICAL_PREFIX_RE.search(normalized)
             and not _POLITE_CONDITIONAL_PREFIX_RE.search(normalized)

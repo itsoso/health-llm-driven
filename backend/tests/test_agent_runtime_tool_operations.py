@@ -6,6 +6,21 @@ import hashlib
 import pytest
 
 
+async def _dispatch_runtime_contract_without_capability(
+    self,
+    request,
+    dispatch,
+    *,
+    on_decision=None,
+):
+    from app.services.agent_kernel.types import ToolExecutionResult
+
+    return ToolExecutionResult(
+        tool_name=request.tool_name,
+        content=await dispatch(request),
+    )
+
+
 def _run(db, user_id: int, *, suffix: str = "one"):
     from app.services.agent_runtime import AgentRuntimeCoordinator
 
@@ -1685,6 +1700,10 @@ async def test_executor_ledgers_health_manage_mutations_with_typed_receipt(
         "app.services.agent_executor.settings.agent_runtime_mode", "enforce"
     )
     monkeypatch.setattr(
+        "app.services.agent_kernel.tool_gateway.ToolGateway.execute",
+        _dispatch_runtime_contract_without_capability,
+    )
+    monkeypatch.setattr(
         "app.services.llm.tool_validator.validate_tool_call",
         lambda tool_name, args, db, user_id, reference_now=None: {
             "error": None,
@@ -1743,7 +1762,7 @@ async def test_executor_does_not_verify_or_replay_health_manage_wrong_target(
     executor._current_turn_user_message = (
         "删除饮水记录 55"
         if operation_name == "delete"
-        else "更新饮水记录 55"
+        else "把饮水记录 55 改成 350ml"
     )
     executor._runtime_run_id = admission.context.run_id
     executor._runtime_attempt_id = admission.context.attempt_id

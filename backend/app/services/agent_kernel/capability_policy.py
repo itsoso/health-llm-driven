@@ -6,7 +6,7 @@ import json
 import math
 import re
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from app.services.agent_kernel.tool_registry import (
@@ -64,8 +64,12 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v9"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v11"
 _HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v7"
+_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v2"
+_SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = (
+    "_server_authorized_health_record_fields"
+)
 _HEALTH_RECORD_DOMAIN_TYPES = {
     "diet": "diet",
     "water": "water",
@@ -77,6 +81,38 @@ _HEALTH_RECORD_DOMAIN_TYPES = {
     "exercise": "exercise",
     "sleep": "sleep",
 }
+
+
+@dataclass(frozen=True)
+class _ServerAuthorizedHealthRecordFields:
+    """Opaque executor-to-policy authority that model JSON cannot construct."""
+
+    values: tuple[tuple[str, Any], ...]
+
+
+def bind_server_authorized_health_record_fields(
+    args: dict[str, Any],
+    **values: Any,
+) -> dict[str, Any]:
+    """Replace any untrusted marker and bind executor-derived record fields."""
+    args.pop(_SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY, None)
+    authorized = tuple(
+        (key, value)
+        for key, value in values.items()
+        if value not in (None, "", [])
+    )
+    if authorized:
+        args[_SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY] = (
+            _ServerAuthorizedHealthRecordFields(authorized)
+        )
+    return args
+
+
+def _server_authorized_health_record_fields(args: dict[str, Any]) -> dict[str, Any]:
+    marker = args.get(_SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY)
+    if not isinstance(marker, _ServerAuthorizedHealthRecordFields):
+        return {}
+    return dict(marker.values)
 _NUMERIC_DISPATCH_ALIAS_GROUPS = {
     "water": (("amount", ("amount", "amount_ml", "ml")),),
     "weight": (("weight", ("weight", "value", "weight_kg", "体重")),),
@@ -261,6 +297,11 @@ _EXCRETION_TARGET_ALIASES = {
     "腹泻": "diarrhea",
 }
 _CLOCK_RE = re.compile(r"(?<!\d)(?P<hour>[01]?\d|2[0-3])[:：点](?P<minute>[0-5]\d)?")
+_REMINDER_INTERVAL_RE = re.compile(
+    r"(?:每隔|每|间隔)\s*(?P<value>\d+(?:\.\d+)?)\s*"
+    r"(?P<unit>分钟|小时|分|h)(?:一次)?",
+    re.IGNORECASE,
+)
 _SLEEP_QUALITY_RE = re.compile(r"(?:睡眠)?质量.{0,3}(?P<value>[1-5])\s*分?")
 _SEVERITY_TARGET_RE = re.compile(
     r"(?:严重程度|严重度|程度|强度)?\s*(?P<value>10|[1-9])\s*"
@@ -455,6 +496,14 @@ _EXACT_RECORD_TARGET_RE = re.compile(
     r"(?:记录|条目)#?(?P<record_id>\d+)$",
     re.IGNORECASE,
 )
+_EXACT_RECORD_TARGET_SEARCH_RE = re.compile(
+    rf"(?P<record_type_alias>{_DELETE_RECORD_TYPE_TEXT_ALIAS_PATTERN})"
+    r"(?:记录|条目)#?(?P<record_id>\d+)",
+    re.IGNORECASE,
+)
+_UPDATE_VALUE_MARKER_RE = re.compile(
+    r"(?:改成|改为|更正为|修正为|调整为|更新为|应该是|实际是|其实是)"
+)
 
 
 @dataclass(frozen=True)
@@ -549,12 +598,216 @@ def _delete_evidence_authorizes_request(
     )
 
 
+def _authorized_health_manage_update_args(
+    snapshot: TurnSnapshot,
+    args: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Bind an update to owner-scoped identity and a user-owned exact patch.
+
+    The model may propose an ID and patch, but neither becomes authority.  For
+    the first supported correction family (water), the record identity comes
+    from an explicit user-visible ID or a successful owner-scoped list result;
+    the replacement amount is parsed independently from the user's correction.
+    Unsupported/ambiguous update families fail closed until they have an
+    equivalent deterministic evidence extractor.
+    """
+    requested_type = canonical_health_manage_record_type(args.get("record_type"))
+    requested_id = canonical_health_manage_record_id(args.get("record_id"))
+    if requested_id is None:
+        return None
+
+    if requested_type == "illness":
+        return _authorized_illness_update_args(snapshot, args, requested_id)
+    if requested_type != "water":
+        return None
+
+    parsed_values = _water_update_values(snapshot.envelope.text)
+    if parsed_values is None:
+        return None
+    old_amount, new_amount = parsed_values
+    data = args.get("data") if isinstance(args.get("data"), dict) else {}
+    requested_amount = next(
+        (
+            value
+            for value in (data.get("amount"), data.get("amount_ml"))
+            if value not in (None, "", [])
+        ),
+        None,
+    )
+    if requested_amount is None or not _numbers_match(new_amount, requested_amount):
+        return None
+
+    explicit_target = _explicit_update_target(snapshot.envelope.text)
+    if explicit_target is not None:
+        if explicit_target != (requested_type, requested_id):
+            return None
+    else:
+        records = _owner_scoped_manage_list_records(snapshot, requested_type)
+        if not records:
+            return None
+        candidates = [
+            record
+            for record in records
+            if old_amount is not None
+            and _numbers_match(old_amount, record.get("amount"))
+        ]
+        if not candidates and old_amount is None and re.search(
+            r"(?:刚才|刚刚|上一条|最近一条)", snapshot.envelope.text
+        ):
+            candidates = records[:1]
+        candidate_ids = {
+            canonical_health_manage_record_id(
+                candidate.get("id", candidate.get("record_id"))
+            )
+            for candidate in candidates
+        }
+        candidate_ids.discard(None)
+        if candidate_ids != {requested_id}:
+            return None
+
+    return {
+        "record_type": "water",
+        "operation": "update",
+        "record_id": requested_id,
+        "data": {"amount": _canonical_numeric_value(new_amount)},
+    }
+
+
+def _authorized_illness_update_args(
+    snapshot: TurnSnapshot,
+    args: dict[str, Any],
+    requested_id: int,
+) -> dict[str, Any] | None:
+    patch = _illness_update_patch(snapshot)
+    requested_data = args.get("data")
+    if patch is None or not isinstance(requested_data, dict):
+        return None
+    if requested_data != patch:
+        return None
+
+    explicit_target = _explicit_update_target(snapshot.envelope.text)
+    if explicit_target is not None:
+        if explicit_target != ("illness", requested_id):
+            return None
+    else:
+        records = _owner_scoped_manage_list_records(snapshot, "illness")
+        normalized_text = _normalize_entity_name(snapshot.envelope.text)
+        candidates = [
+            record
+            for record in records
+            if _normalize_entity_name(record.get("name"))
+            and _normalize_entity_name(record.get("name")) in normalized_text
+        ]
+        candidate_ids = {
+            canonical_health_manage_record_id(
+                candidate.get("id", candidate.get("record_id"))
+            )
+            for candidate in candidates
+        }
+        candidate_ids.discard(None)
+        if candidate_ids != {requested_id}:
+            return None
+
+    return {
+        "record_type": "illness",
+        "operation": "update",
+        "record_id": requested_id,
+        "data": patch,
+    }
+
+
+def _illness_update_patch(snapshot: TurnSnapshot) -> dict[str, Any] | None:
+    text = "".join(str(snapshot.envelope.text or "").split())
+    patch: dict[str, Any] = {}
+    if any(marker in text for marker in ("已痊愈", "痊愈", "已经好了", "已好了", "好了", "康复")):
+        patch["status"] = "resolved"
+    elif any(marker in text for marker in ("好转", "改善中", "缓解中")):
+        patch["status"] = "improving"
+    elif any(marker in text for marker in ("发作中", "还没好", "仍未好")):
+        patch["status"] = "active"
+    else:
+        return None
+
+    if patch["status"] == "resolved":
+        day_offset = next(
+            (
+                offset
+                for marker, offset in (
+                    ("前天", -2),
+                    ("昨天", -1),
+                    ("今日", 0),
+                    ("今天", 0),
+                )
+                if marker in text
+            ),
+            None,
+        )
+        if day_offset is not None:
+            patch["end_date"] = (
+                snapshot.context.current_time.date()
+                + timedelta(days=day_offset)
+            ).isoformat()
+    return patch
+
+
+def _water_update_values(text: str) -> tuple[float | None, float] | None:
+    normalized = "".join(str(text or "").split())
+    markers = tuple(_UPDATE_VALUE_MARKER_RE.finditer(normalized))
+    if not markers:
+        return None
+    marker = markers[-1]
+    new_matches = tuple(_WATER_TARGET_RE.finditer(normalized[marker.end():]))
+    if not new_matches:
+        return None
+    new_amount = _water_match_amount_ml(new_matches[0])
+    old_matches = tuple(_WATER_TARGET_RE.finditer(normalized[:marker.start()]))
+    old_amount = _water_match_amount_ml(old_matches[-1]) if old_matches else None
+    return old_amount, new_amount
+
+
+def _water_match_amount_ml(match: re.Match[str]) -> float:
+    amount = float(match.group("value"))
+    return amount * 1000 if match.group("unit").lower() in {"l", "升"} else amount
+
+
+def _explicit_update_target(text: str) -> tuple[str, int] | None:
+    matches = tuple(_EXACT_RECORD_TARGET_SEARCH_RE.finditer("".join(str(text or "").split())))
+    if len(matches) != 1:
+        return None
+    match = matches[0]
+    record_type = _DELETE_RECORD_TYPE_TEXT_ALIASES.get(
+        match.group("record_type_alias").lower()
+    )
+    record_id = canonical_health_manage_record_id(match.group("record_id"))
+    if record_type is None or record_id is None:
+        return None
+    return record_type, record_id
+
+
+def _owner_scoped_manage_list_records(
+    snapshot: TurnSnapshot,
+    record_type: str,
+) -> list[dict[str, Any]]:
+    for reference in reversed(snapshot.actionable_references):
+        if reference.kind != "owner_scoped_health_manage_list":
+            continue
+        if canonical_health_manage_record_type(reference.data.get("record_type")) != record_type:
+            continue
+        records = reference.data.get("records")
+        if isinstance(records, (list, tuple)):
+            return [dict(item) for item in records if isinstance(item, dict)]
+    return []
+
+
 def capability_policy_contract_payload() -> dict[str, Any]:
     """Return static, content-free metadata that governs tool authorization."""
     return {
         "contract_version": _CAPABILITY_POLICY_CONTRACT_VERSION,
         "whole_record_delete_evidence_version": (
             _WHOLE_RECORD_DELETE_EVIDENCE_VERSION
+        ),
+        "health_manage_update_evidence_version": (
+            _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION
         ),
         "read_only_tools": sorted(READ_ONLY_TOOLS),
         "specialist_read_only_tools": sorted(SPECIALIST_READ_ONLY_TOOLS),
@@ -834,6 +1087,20 @@ def decide_tool_capability(
             )
         if operation in MANAGE_WRITE_OPERATIONS:
             if primary == "mutate" and snapshot.intent.operation == operation:
+                if operation == "update":
+                    authorized_update = _authorized_health_manage_update_args(
+                        snapshot,
+                        args,
+                    )
+                    if authorized_update is None:
+                        return _decision(
+                            "block",
+                            "update_requires_exact_target_evidence",
+                            tool_name,
+                            args,
+                            receipt_required=True,
+                        )
+                    args = authorized_update
                 return _decision(
                     "allow",
                     "explicit_mutation_intent",
@@ -1001,11 +1268,21 @@ def _decision(
     *,
     receipt_required: bool = False,
 ) -> CapabilityDecision:
+    normalized_args = dict(args)
+    marker = normalized_args.pop(
+        _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY,
+        None,
+    )
+    if isinstance(marker, _ServerAuthorizedHealthRecordFields):
+        raw_data = normalized_args.get("data")
+        data = dict(raw_data) if isinstance(raw_data, dict) else {}
+        data.update(dict(marker.values))
+        normalized_args["data"] = data
     return CapabilityDecision(
         action=action,
         reason=reason,
         normalized_tool_name=tool_name or None,
-        normalized_args=args,
+        normalized_args=normalized_args,
         receipt_required=receipt_required,
     )
 
@@ -1437,6 +1714,19 @@ def _health_record_target_status(
             and "continuation:reminder_schedule" in clause_intent.evidence
         ):
             expected_values["contextual_continuation"] = True
+            server_authorized = _server_authorized_health_record_fields(args)
+            if server_authorized.get("reminder_title"):
+                expected_values["titles"] = (
+                    server_authorized["reminder_title"],
+                )
+            if server_authorized.get("reminder_interval_minutes") is not None:
+                expected_values["interval_minutes"] = server_authorized[
+                    "reminder_interval_minutes"
+                ]
+            if server_authorized.get("reminder_recurrence"):
+                expected_values["recurrence"] = server_authorized[
+                    "reminder_recurrence"
+                ]
         if (
             requested_type == "diet"
             and snapshot.envelope.media
@@ -1653,6 +1943,39 @@ def _deterministic_target_values(
         title = _target_text_after_marker(clause, "目标")
         if title:
             values["titles"] = (title,)
+        goal_type = next(
+            (
+                canonical
+                for terms, canonical in (
+                    (("饮水", "喝水"), "water"),
+                    (("体重", "腰围"), "weight"),
+                    (("运动", "锻炼", "训练", "跑步", "步行", "快走"), "exercise"),
+                    (("睡眠", "睡觉", "入睡"), "sleep"),
+                    (("饮食", "早餐", "午餐", "晚餐"), "diet"),
+                    (("补剂", "维生素", "鱼油"), "supplement"),
+                    (("户外", "晒太阳"), "outdoor"),
+                )
+                if any(term in clause for term in terms)
+            ),
+            "",
+        )
+        if goal_type:
+            values["goal_type"] = goal_type
+        goal_period = next(
+            (
+                canonical
+                for terms, canonical in (
+                    (("每天", "每日"), "daily"),
+                    (("每周", "每星期"), "weekly"),
+                    (("每月",), "monthly"),
+                    (("每年",), "yearly"),
+                )
+                if any(term in clause for term in terms)
+            ),
+            "",
+        )
+        if goal_period:
+            values["goal_period"] = goal_period
         target_match = re.search(
             r"(?:降到|减到|达到|目标值)(?P<value>\d+(?:\.\d+)?)"
             r"(?P<unit>kg|公斤|千克|斤|cm|厘米|%|次|分钟)?",
@@ -1674,6 +1997,11 @@ def _deterministic_target_values(
                 f"{int(match.group('minute') or 0):02d}"
                 for match in clocks
             )
+        if interval_match := _REMINDER_INTERVAL_RE.search(clause):
+            interval = float(interval_match.group("value"))
+            if interval_match.group("unit").lower() in {"小时", "h"}:
+                interval *= 60
+            values["interval_minutes"] = _canonical_numeric_value(interval)
         if any(term in clause for term in ("每天", "每日")):
             values["recurrence"] = "daily"
     if (
@@ -1922,13 +2250,11 @@ def _authorization_target_complete(
         "exercise": ("exercise_types",),
         "mood": ("mood_score",),
         "excretion": ("excretion_types",),
-        "goal": ("titles",),
+        "goal": ("titles", "goal_type", "goal_period"),
     }
     if record_type == "diet" and expected.get("meal_food_targets"):
         return True
     if record_type == "diet" and expected.get("attachment_authorized"):
-        return True
-    if record_type == "mood" and expected.get("mood_values"):
         return True
     if record_type == "sleep" and (
         expected.get("sleep_start")
@@ -1940,10 +2266,15 @@ def _authorization_target_complete(
     ):
         return True
     if record_type == "reminder":
-        has_title = bool(expected.get("titles")) or bool(
-            expected.get("contextual_continuation")
+        # A continuation still needs a server-recovered target from prior
+        # context; the model cannot supply a new title in a time-only reply.
+        has_title = bool(expected.get("titles"))
+        times = tuple(expected.get("times") or ())
+        return (
+            has_title
+            and bool(times)
+            and (len(times) < 2 or expected.get("interval_minutes") is not None)
         )
-        return has_title and bool(expected.get("times"))
     fields = required.get(record_type)
     if fields is None:
         return False
@@ -2386,6 +2717,18 @@ def _target_values_mismatch(
         }
         if _normalize_entity_name(requested_title) not in allowed_titles:
             return True
+        for field in ("goal_type", "goal_period"):
+            requested_value = str(
+                _effective_argument_value(
+                    args,
+                    data,
+                    data_keys=(field,),
+                    arg_keys=(field,),
+                )
+                or ""
+            ).strip().lower()
+            if requested_value != str(expected.get(field) or "").strip().lower():
+                return True
         if expected.get("target_value") is not None:
             requested_target = _effective_argument_value(
                 args,
@@ -2451,6 +2794,18 @@ def _target_values_mismatch(
             ).strip().lower()
             if requested_recurrence != expected["recurrence"]:
                 return True
+        if expected.get("interval_minutes") is not None:
+            requested_interval = _effective_argument_value(
+                args,
+                data,
+                data_keys=("interval_minutes",),
+                arg_keys=("interval_minutes",),
+            )
+            if requested_interval is None or not _numbers_match(
+                expected["interval_minutes"],
+                requested_interval,
+            ):
+                return True
 
     skip_default_recurring_date = (
         record_type == "reminder"
@@ -2474,6 +2829,7 @@ def _project_authorized_dispatch_payload(
     data: dict[str, Any],
 ) -> None:
     """Emit the one payload shape inspected and consumed for this target."""
+    server_authorized = _server_authorized_health_record_fields(args)
     numeric_fields = {
         "water": (("amount", "amount_ml"),),
         "weight": (("weight", "weight"),),
@@ -2505,6 +2861,138 @@ def _project_authorized_dispatch_payload(
                 projected[field] = expected[field]
         args.clear()
         args.update({"record_type": record_type, "data": projected})
+        return
+
+    projected: dict[str, Any] = {}
+    target_date = str(expected.get("target_date") or "")
+    if record_type == "diet":
+        requested_meal = _effective_argument_value(
+            args, data, data_keys=("meal_type",), arg_keys=("meal_type",)
+        )
+        requested_food = _effective_argument_value(
+            args, data, data_keys=("food_items",), arg_keys=("food_items",)
+        )
+        projected = {"meal_type": requested_meal, "food_items": requested_food}
+        if server_authorized.get("source") in {
+            "agent_text",
+            "agent_attachment",
+            "contextual_diet_replay",
+            "procedure_recipe",
+        }:
+            projected["source"] = server_authorized["source"]
+        for field in ("calories", "protein", "carbs", "fat", "fiber"):
+            if server_authorized.get(field) not in (None, "", []):
+                projected[field] = server_authorized[field]
+        if _effective_record_date(record_type, args, data):
+            projected["record_date"] = target_date
+    elif record_type == "illness":
+        names = tuple(expected.get("names") or ())
+        if names:
+            projected["name"] = names[0]
+        if _effective_record_date(record_type, args, data):
+            projected["start_date"] = target_date
+        if expected.get("status"):
+            projected["status"] = str(expected["status"])
+        elif str(
+            _effective_argument_value(
+                args,
+                data,
+                data_keys=("status",),
+                arg_keys=("status",),
+            )
+            or ""
+        ).strip().lower() == "active":
+            projected["status"] = "active"
+        for field in ("severity", "notes"):
+            if expected.get(field) not in (None, "", []):
+                projected[field] = expected[field]
+    elif record_type == "symptom":
+        requested_description = _effective_argument_value(
+            args,
+            data,
+            data_keys=("description",),
+            arg_keys=("description",),
+        )
+        projected = {
+            "body_part": expected.get("body_part"),
+            "description": requested_description,
+        }
+        if expected.get("canonical_occurred_at"):
+            projected["occurred_at"] = expected["canonical_occurred_at"]
+        elif target_date:
+            projected["record_date"] = target_date
+        if expected.get("severity") is not None:
+            projected["severity"] = expected["severity"]
+    elif record_type == "medication":
+        names = tuple(expected.get("names") or ())
+        if names:
+            name = names[0]
+            projected["medication_name"] = name
+            dosage = (expected.get("dosages") or {}).get(name)
+            strength = (expected.get("observed_strengths") or {}).get(name)
+            if dosage:
+                projected["actual_dosage"] = dosage
+            if strength:
+                projected["observed_strength"] = strength
+    elif record_type == "exercise":
+        exercises = tuple(expected.get("exercise_types") or ())
+        if exercises:
+            projected["exercise_type"] = exercises[0]
+        if expected.get("duration_minutes") is not None:
+            projected["duration"] = _canonical_numeric_value(
+                expected["duration_minutes"]
+            )
+        if _effective_record_date(record_type, args, data):
+            projected["record_date"] = target_date
+    elif record_type == "mood":
+        projected["mood_score"] = int(expected["mood_score"])
+        if _effective_record_date(record_type, args, data):
+            projected["record_date"] = target_date
+    elif record_type == "excretion":
+        kinds = tuple(expected.get("excretion_types") or ())
+        if kinds:
+            projected["type"] = _EXCRETION_TARGET_ALIASES.get(kinds[0], kinds[0])
+        if _effective_record_date(record_type, args, data):
+            projected["record_date"] = target_date
+    elif record_type == "sleep":
+        if expected.get("sleep_start"):
+            projected["title"] = "准备开始睡觉"
+        else:
+            for field in ("bedtime", "wake_time", "sleep_quality"):
+                if expected.get(field) not in (None, "", []):
+                    projected[field] = expected[field]
+            if _effective_record_date(record_type, args, data):
+                projected["record_date"] = target_date
+    elif record_type == "goal":
+        titles = tuple(expected.get("titles") or ())
+        if titles:
+            projected["title"] = titles[0]
+        for field in ("goal_type", "goal_period", "target_value", "target_unit"):
+            if expected.get(field) not in (None, "", []):
+                projected[field] = expected[field]
+        if target_date:
+            projected["start_date"] = target_date
+    elif record_type == "reminder":
+        titles = tuple(expected.get("titles") or ())
+        if titles:
+            projected["title"] = titles[0]
+        times = tuple(expected.get("times") or ())
+        if len(times) == 1:
+            projected["time"] = times[0]
+        elif len(times) >= 2:
+            projected["start_time"] = times[0]
+            projected["end_time"] = times[-1]
+            projected["interval_minutes"] = expected.get("interval_minutes")
+        if expected.get("recurrence"):
+            projected["recurrence"] = expected["recurrence"]
+
+    projected = {
+        key: value
+        for key, value in projected.items()
+        if value not in (None, "", [])
+    }
+    args.clear()
+    args.update({"record_type": record_type, "data": projected})
 
 
 def _canonical_numeric_value(value: Any) -> int | float | Any:

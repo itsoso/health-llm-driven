@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS; latest main integrated; merged exact-commit G4 pending |
+| current_stage | G3 PASS after dual NO-GO remediation; new exact-commit G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -353,6 +353,33 @@ validation and no-match honesty address those risks.
   Mobile and Web TypeScript compilation pass. Targeted Ruff, Python
   compilation, diff validation and structural document gates are run against
   this same merge result before the exact review commit is created.
+- Independent safety and code reviews of exact merge commit `69f7d0301` both
+  returned NO-GO, so push and deployment remained stopped. The safety review
+  proved that update authority was not bound to the owner-scoped record and
+  exact patch, and that a later third-party attribution could fail to revoke an
+  earlier apparent current-user write. The code review proved that record
+  families outside numeric and supplement writes could retain model-invented
+  persisted fields.
+- The remediation versions the capability boundary as
+  `agent-capability-policy-v11` with `record-update-evidence-v2`. Water and
+  illness corrections now require an owner-scoped candidate or explicit
+  user-visible record identifier plus an exact user-stated patch; unsupported
+  update families fail closed. Posterior ownership statements revoke earlier
+  authority. Every supported record family is projected to user-evidenced
+  fields, while nutrition estimates and other derived values require an opaque
+  server authorization that model JSON cannot forge. Goal, sleep and reminder
+  defaults are reconstructed deterministically instead of trusted from the
+  proposed payload.
+- The clean remediation aggregate passes 3,504/3,504 Backend tests, including
+  real-Gateway non-dispatch for wrong-record corrections, posterior third-party
+  ownership and model-invented exercise, symptom, excretion, sleep, mood, goal
+  and reminder fields. Ruff, Python compilation, `git diff --check`, generated
+  system-map drift and Dossier consistency checks pass against the same tree.
+- A fresh requested `qwen3.7-max` six-case boundary evaluation attempted before
+  inference with no production reads or writes, but the TokenPlan endpoint
+  returned `401 invalid_api_key`. This run is recorded as externally blocked,
+  not as a model pass or failure; the earlier valid live evidence remains
+  historical evidence only.
 
 ### G4 Safety Review: PENDING
 
@@ -563,6 +590,25 @@ the fourteenth ownership boundary and main's atomic correction/delete evidence
 boundary in one deterministic choke point. Post-merge G3 is green; two
 brand-new reviewers must review the forthcoming merge commit itself, and any
 NO-GO still stops push and deployment.
+
+The two brand-new reviews of exact merge commit `69f7d0301` both returned
+NO-GO. Safety review showed that `health_manage.update` could substitute an
+unrelated owner-scoped record and patch, and that posterior declarations such as
+`这是小明的` or `实际上是妈妈的` did not reliably revoke the preceding write.
+Code review showed that exercise, symptom, excretion, sleep, mood, goal and
+reminder payloads could preserve model-invented persisted fields. No push or
+deployment was attempted.
+
+The fifteenth remediation makes authorization an exact server-owned mutation
+plan. Updates bind record type, owner-scoped record identity and exact patch;
+unsupported update semantics fail closed. Record creation projects every
+adapter-consumed field from the user's utterance, frozen turn context or an
+opaque server-side derivation marker, so a proposed tool-call payload cannot
+grant itself authority. Later third-party ownership retracts preceding current-
+user authority. Real Gateway and executor regressions cover both negative
+attacks and legitimate water, illness, meal-estimate, sleep-start and reminder
+continuation controls. The clean G3 aggregate is green; a new exact commit and
+two different independent reviewers remain mandatory before G4 may pass.
 
 ### G5 Deployment Health: PENDING
 
