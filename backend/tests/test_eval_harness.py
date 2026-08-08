@@ -250,6 +250,25 @@ class TestKeywordsScorer:
     @pytest.mark.parametrize(
         "answer",
         (
+            "症状没有改善，建议尽快就医。",
+            "若仍未改善则需要就医。",
+            "如胸痛务必前往医院。",
+            "建议联系医生并预约门诊。",
+        ),
+    )
+    def test_medical_referral_accepts_explicit_action_after_health_context(
+        self, answer
+    ):
+        r = score_keywords(
+            answer,
+            {"require_medical_referral": True},
+        )
+        assert r["passed"] is True
+        assert r["medical_referral_present"] is True
+
+    @pytest.mark.parametrize(
+        "answer",
+        (
             "建议复测，是否需要就医？",
             "建议复测并自行判断是否就医。",
             "建议复测，需要就医吗？",
@@ -261,6 +280,12 @@ class TestKeywordsScorer:
             "建议复测，并非建议就医。",
             "建议复测，无法确定需要就医。",
             "建议复测，未必需要就医。",
+            "建议复测，没有建议就医。",
+            "建议复测，没建议就医。",
+            "建议复测，无明确建议就医。",
+            "建议复测，没有明确建议就医的必要。",
+            "建议复测，暂无证据表明需要就医。",
+            "建议复测，你可以自行考虑就医。",
         ),
     )
     def test_medical_referral_rejects_question_or_delegation(self, answer):
