@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +30,19 @@ def test_frontend_dependency_overrides_close_nanoid_and_postcss_advisories() -> 
     assert package_json["devDependencies"]["postcss"] == "8.5.26"
     assert package_json["overrides"]["postcss"] == "8.5.26"
     assert package_json["overrides"]["nanoid"] == "3.3.18"
+
+
+def test_committed_npm_lockfiles_only_use_the_public_registry() -> None:
+    allowed_hosts = {"registry.npmjs.org", "registry.npmmirror.com"}
+
+    for app_dir in ("frontend", "mobile"):
+        lockfile = json.loads((ROOT / app_dir / "package-lock.json").read_text())
+
+        for package in lockfile["packages"].values():
+            if resolved := package.get("resolved"):
+                source = urlparse(resolved)
+                assert source.scheme == "https"
+                assert source.hostname in allowed_hosts
 
 
 def run_fast_test(*args: str, changed_files: str = "") -> subprocess.CompletedProcess[str]:
