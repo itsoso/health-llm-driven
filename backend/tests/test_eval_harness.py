@@ -236,6 +236,38 @@ class TestKeywordsScorer:
         assert r["passed"] is True
         assert r["medical_referral_present"] is True
 
+    def test_medical_referral_accepts_conditional_action(self):
+        r = score_keywords(
+            "建议一周内复测三次，必要时就医。",
+            {
+                "must_contain": ["复测"],
+                "require_medical_referral": True,
+            },
+        )
+        assert r["passed"] is True
+        assert r["medical_referral_present"] is True
+
+    @pytest.mark.parametrize(
+        "answer",
+        (
+            "建议复测，是否需要就医？",
+            "建议复测并自行判断是否就医。",
+            "建议复测，需要就医吗？",
+            "建议复测，应不应该就医？",
+            "建议复测，如何就医？",
+        ),
+    )
+    def test_medical_referral_rejects_question_or_delegation(self, answer):
+        r = score_keywords(
+            answer,
+            {
+                "must_contain": ["复测"],
+                "require_medical_referral": True,
+            },
+        )
+        assert r["passed"] is False
+        assert r["medical_referral_present"] is False
+
 
 # ============= llm_judge scorer 单元测试 (用 mock judge) =============
 

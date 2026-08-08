@@ -13,14 +13,22 @@ _MEDICAL_REFERRAL_ACTION = re.compile(
     r"(?:前往|去|到|预约|挂号|咨询|联系)[^，,。；;！？!?]{0,10}"
     r"(?:医院|门诊|科))"
 )
-_AFFIRMATIVE_MEDICAL_REFERRAL = re.compile(
-    r"(?:(?:建议|请|应当|应该|应|需要|需|尽快|及时|务必|最好|"
-    r"可以考虑|考虑|推荐)[^，,。；;！？!?]{0,20}"
-    + _MEDICAL_REFERRAL_ACTION.pattern
-    + r"|(?:如|若|如果|一旦|仍|持续|继续|高于|超过)"
-    r"[^，,。；;！？!?]{0,24}"
-    + _MEDICAL_REFERRAL_ACTION.pattern
-    + r")"
+_AFFIRMATIVE_REFERRAL_MARKER = re.compile(
+    r"(?:可以考虑|建议|推荐|应当|应该|需要|尽快|及时|务必|最好|考虑|请|应|需)"
+)
+_CONDITIONAL_REFERRAL_MARKER = re.compile(
+    r"(?:必要时|如果|一旦|持续|继续|高于|超过|仍|如|若)"
+)
+_NON_AFFIRMATIVE_REFERRAL_CONTEXT = re.compile(
+    r"(?:需不需要|应不应该|是否|要不要|该不该|能否|可否|如何|"
+    r"自行\s*(?:判断|决定)|自己\s*(?:判断|决定)|取决于|"
+    r"可能|也许|或许|了解|学习|知识|流程|信息|讨论)"
+)
+_NEGATED_REFERRAL_MARKER_PREFIX = re.compile(
+    r"(?:不|别|无需|无须|没(?:有)?必要)\s*$"
+)
+_NON_ACTION_REFERRAL_SUFFIX = re.compile(
+    r"^\s*(?:吗|么|否|还是|流程|知识|信息|政策|指南|方式|条件)"
 )
 _NEGATED_MEDICAL_REFERRAL = re.compile(
     r"(?:暂时|目前|现在|先)?\s*"
@@ -36,11 +44,29 @@ _REFERRAL_CLAUSE_SPLIT = re.compile(
 
 def _has_positive_medical_referral(actual: str) -> bool:
     for clause in _REFERRAL_CLAUSE_SPLIT.split(actual or ""):
-        if (
-            _AFFIRMATIVE_MEDICAL_REFERRAL.search(clause)
-            and not _NEGATED_MEDICAL_REFERRAL.search(clause)
-        ):
-            return True
+        negated_spans = [match.span() for match in _NEGATED_MEDICAL_REFERRAL.finditer(clause)]
+        for action in _MEDICAL_REFERRAL_ACTION.finditer(clause):
+            if any(start <= action.start() < end for start, end in negated_spans):
+                continue
+            if _NON_ACTION_REFERRAL_SUFFIX.search(clause[action.end() :]):
+                continue
+
+            prefix = clause[: action.start()]
+            marker_groups = (
+                (_AFFIRMATIVE_REFERRAL_MARKER, 20),
+                (_CONDITIONAL_REFERRAL_MARKER, 24),
+            )
+            for marker_pattern, max_gap in marker_groups:
+                for marker in reversed(list(marker_pattern.finditer(prefix))):
+                    if action.start() - marker.end() > max_gap:
+                        continue
+                    marker_prefix = prefix[max(0, marker.start() - 12) : marker.start()]
+                    marker_to_action = prefix[max(0, marker.start() - 12) :]
+                    if _NEGATED_REFERRAL_MARKER_PREFIX.search(marker_prefix):
+                        continue
+                    if _NON_AFFIRMATIVE_REFERRAL_CONTEXT.search(marker_to_action):
+                        continue
+                    return True
     return False
 
 
