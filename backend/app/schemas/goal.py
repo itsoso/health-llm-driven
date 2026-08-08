@@ -7,6 +7,8 @@ from app.models.goal import GoalType, GoalPeriod, GoalStatus
 
 class GoalCreate(BaseModel):
     """创建目标"""
+    model_config = ConfigDict(allow_inf_nan=False)
+
     user_id: Optional[int] = None  # 可选，API 端点会自动设置为当前用户
     goal_type: GoalType
     goal_period: GoalPeriod
@@ -24,6 +26,8 @@ class GoalCreate(BaseModel):
 
 class GoalUpdate(BaseModel):
     """更新目标"""
+    model_config = ConfigDict(allow_inf_nan=False)
+
     goal_type: Optional[GoalType] = None
     goal_period: Optional[GoalPeriod] = None
     title: Optional[str] = None

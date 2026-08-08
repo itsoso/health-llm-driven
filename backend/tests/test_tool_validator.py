@@ -616,6 +616,95 @@ class TestDispatcher:
         assert v["error"] is None
         assert v["data"]["data"] == expected
 
+    @pytest.mark.parametrize(
+        "value",
+        ("Infinity", "-Infinity", "NaN", "1e309", "-1e309"),
+    )
+    def test_health_manage_weight_update_rejects_coerced_non_finite_strings(
+        self,
+        value,
+    ):
+        v = validate_tool_call("health_manage", {
+            "record_type": "weight",
+            "operation": "update",
+            "record_id": 718,
+            "data": {"weight": value},
+        })
+        assert v["error"]
+
+    @pytest.mark.parametrize(
+        "value",
+        ("Infinity", "-Infinity", "NaN", "1e309", "-1e309"),
+    )
+    def test_health_manage_diet_update_rejects_coerced_non_finite_strings(
+        self,
+        value,
+    ):
+        v = validate_tool_call("health_manage", {
+            "record_type": "diet",
+            "operation": "update",
+            "record_id": 719,
+            "data": {"calories": value},
+        })
+        assert v["error"]
+
+    @pytest.mark.parametrize(
+        ("record_type", "field"),
+        (
+            ("waist", "waist_cm"),
+            ("exercise", "distance"),
+            ("goal", "target_value"),
+        ),
+    )
+    def test_health_manage_float_update_schemas_reject_coerced_non_finite_strings(
+        self,
+        record_type,
+        field,
+    ):
+        v = validate_tool_call("health_manage", {
+            "record_type": record_type,
+            "operation": "update",
+            "record_id": 718,
+            "data": {field: "1e309"},
+        })
+        assert v["error"]
+
+    @pytest.mark.parametrize(
+        ("record_type", "data"),
+        (
+            (
+                "weight",
+                {
+                    "weight": "71.4",
+                    "notes": "Infinity 和 NaN 是本条备注里的普通单词",
+                },
+            ),
+            (
+                "diet",
+                {
+                    "calories": "3.8e2",
+                    "ai_raw_result": {
+                        "ocr": {"headline": "Infinity", "detail": "NaN"},
+                    },
+                },
+            ),
+        ),
+    )
+    def test_health_manage_update_preserves_finite_strings_and_text_fields(
+        self,
+        record_type,
+        data,
+    ):
+        original = data.copy()
+        v = validate_tool_call("health_manage", {
+            "record_type": record_type,
+            "operation": "update",
+            "record_id": 718,
+            "data": data,
+        })
+        assert v["error"] is None
+        assert v["data"]["data"] == original
+
 
 class TestQueryGuard:
     def test_unknown_dimension_coerced(self):

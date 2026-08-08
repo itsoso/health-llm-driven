@@ -31,6 +31,13 @@ import re
 from datetime import datetime, date, timedelta, timezone
 from typing import Any, Dict, Optional
 
+from pydantic import ValidationError
+
+from app.schemas.daily_health import ExerciseRecordUpdate
+from app.schemas.diet import DietRecordUpdate
+from app.schemas.goal import GoalUpdate
+from app.schemas.waist import WaistRecordUpdate
+from app.schemas.weight import WeightRecordUpdate
 from app.services.agent_kernel.capability_policy import (
     canonical_health_manage_record_id,
 )
@@ -629,6 +636,18 @@ _MANAGE_OPERATIONS = {"list", "update", "delete"}
 _CARD_TYPES = {"plan", "insight", "recommendation"}
 _TARGET_WEEKS = {"current", "next"}
 
+# Only schemas with float fields need this extra guard. Pydantic already rejects
+# non-finite strings for int fields (water, blood pressure, mood, etc.). Reuse the
+# API update models so text fields remain text and future field constraints stay
+# aligned with the actual endpoint contract.
+_FINITE_HEALTH_MANAGE_UPDATE_MODELS = {
+    "diet": DietRecordUpdate,
+    "exercise": ExerciseRecordUpdate,
+    "goal": GoalUpdate,
+    "waist": WaistRecordUpdate,
+    "weight": WeightRecordUpdate,
+}
+
 _INDICATOR_ALLOWED_DIMS = {"medical_exam", "genetic"}
 
 
@@ -640,6 +659,20 @@ def _metric(tool: str, field: str, reason: str, *, action: str = "coerced") -> N
     """
     logger.info("metric: tool_validator_%s tool=%s field=%s reason=%s",
                 action, tool, field, reason)
+
+
+def _health_manage_update_has_finiteness_error(
+    record_type: str,
+    data: Dict[str, Any],
+) -> bool:
+    model_type = _FINITE_HEALTH_MANAGE_UPDATE_MODELS.get(record_type)
+    if model_type is None:
+        return False
+    try:
+        model_type.model_validate(data)
+    except ValidationError as exc:
+        return any(error.get("type") == "finite_number" for error in exc.errors())
+    return False
 
 
 def _coerce_enum(
@@ -871,6 +904,12 @@ def _validate_health_manage(
             logger.warning(msg)
             _metric("health_manage", "data", "non_finite", action="rejected")
             return "Error: health_manage.update 的 data 必须只包含有限数值."
+        if _health_manage_update_has_finiteness_error(rtype, data):
+            msg = "[tool_validator] health_manage.update.data 数值字段会转为非有限值, 拒绝"
+            warnings.append(msg)
+            logger.warning(msg)
+            _metric("health_manage", "data", "coerced_non_finite", action="rejected")
+            return "Error: health_manage.update 的数值字段必须只包含有限数值."
         args["data"] = data
 
     if isinstance(args.get("date"), str) and len(args["date"]) > 10:

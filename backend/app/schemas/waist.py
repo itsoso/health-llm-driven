@@ -7,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class WaistRecordInput(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     record_date: date
     waist_cm: float = Field(..., gt=30, lt=200)
     source: Optional[str] = Field("manual", max_length=50)
@@ -14,6 +16,8 @@ class WaistRecordInput(BaseModel):
 
 
 class WaistRecordUpdate(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     record_date: Optional[date] = None
     waist_cm: Optional[float] = Field(None, gt=30, lt=200)
     source: Optional[str] = Field(None, max_length=50)
