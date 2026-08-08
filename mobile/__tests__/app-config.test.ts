@@ -264,11 +264,46 @@ describe('app.config app links', () => {
       'NSPrivacyCollectedDataTypeUserID',
       'NSPrivacyCollectedDataTypeOtherUserContent',
       'NSPrivacyCollectedDataTypePhotosorVideos',
+      'NSPrivacyCollectedDataTypeAudioData',
       'NSPrivacyCollectedDataTypePreciseLocation',
+      'NSPrivacyCollectedDataTypeDeviceID',
+      'NSPrivacyCollectedDataTypeProductInteraction',
       'NSPrivacyCollectedDataTypeCrashData',
       'NSPrivacyCollectedDataTypePerformanceData',
     ]));
     expect(collected.every((entry: any) => entry.NSPrivacyCollectedDataTypeTracking === false)).toBe(true);
+    expect(collected).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypeAudioData',
+        NSPrivacyCollectedDataTypeLinked: true,
+        NSPrivacyCollectedDataTypePurposes: [
+          'NSPrivacyCollectedDataTypePurposeAppFunctionality',
+        ],
+      }),
+      expect.objectContaining({
+        NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypeDeviceID',
+        NSPrivacyCollectedDataTypeLinked: true,
+        NSPrivacyCollectedDataTypePurposes: [
+          'NSPrivacyCollectedDataTypePurposeAppFunctionality',
+        ],
+      }),
+      expect.objectContaining({
+        NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypeUserID',
+        NSPrivacyCollectedDataTypeLinked: true,
+        NSPrivacyCollectedDataTypePurposes: [
+          'NSPrivacyCollectedDataTypePurposeAppFunctionality',
+          'NSPrivacyCollectedDataTypePurposeAnalytics',
+        ],
+      }),
+      expect.objectContaining({
+        NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypeProductInteraction',
+        NSPrivacyCollectedDataTypeLinked: true,
+        NSPrivacyCollectedDataTypePurposes: [
+          'NSPrivacyCollectedDataTypePurposeAnalytics',
+          'NSPrivacyCollectedDataTypePurposeAppFunctionality',
+        ],
+      }),
+    ]));
   });
 
   it('enables Expo privacy manifest aggregation for native dependencies', () => {

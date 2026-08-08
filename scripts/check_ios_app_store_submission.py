@@ -33,17 +33,28 @@ FORBIDDEN_PRODUCTION_PLUGINS = {
 
 EXPECTED_APP_NAME = "小巴"
 
-REQUIRED_PRIVACY_DATA_TYPES = {
-    "NSPrivacyCollectedDataTypeHealth",
-    "NSPrivacyCollectedDataTypeFitness",
-    "NSPrivacyCollectedDataTypeEmailAddress",
-    "NSPrivacyCollectedDataTypeUserID",
-    "NSPrivacyCollectedDataTypeOtherUserContent",
-    "NSPrivacyCollectedDataTypePhotosorVideos",
-    "NSPrivacyCollectedDataTypePreciseLocation",
-    "NSPrivacyCollectedDataTypeCrashData",
-    "NSPrivacyCollectedDataTypePerformanceData",
+APPLE_PRIVACY_TYPE_TO_MANIFEST_TYPE = {
+    "Health": "NSPrivacyCollectedDataTypeHealth",
+    "Fitness": "NSPrivacyCollectedDataTypeFitness",
+    "Email Address": "NSPrivacyCollectedDataTypeEmailAddress",
+    "User ID": "NSPrivacyCollectedDataTypeUserID",
+    "Device ID": "NSPrivacyCollectedDataTypeDeviceID",
+    "Other User Content": "NSPrivacyCollectedDataTypeOtherUserContent",
+    "Photos or Videos": "NSPrivacyCollectedDataTypePhotosorVideos",
+    "Audio Data": "NSPrivacyCollectedDataTypeAudioData",
+    "Precise Location": "NSPrivacyCollectedDataTypePreciseLocation",
+    "Product Interaction": "NSPrivacyCollectedDataTypeProductInteraction",
+    "Crash Data": "NSPrivacyCollectedDataTypeCrashData",
+    "Performance Data": "NSPrivacyCollectedDataTypePerformanceData",
 }
+
+PRIVACY_PURPOSE_TO_MANIFEST_PURPOSE = {
+    "app_functionality": "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+    "personalization": "NSPrivacyCollectedDataTypePurposeProductPersonalization",
+    "analytics": "NSPrivacyCollectedDataTypePurposeAnalytics",
+}
+
+REQUIRED_PRIVACY_DATA_TYPES = set(APPLE_PRIVACY_TYPE_TO_MANIFEST_TYPE.values())
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -52,6 +63,172 @@ def read_json(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"{path} must contain a JSON object")
     return payload
+
+
+def expected_privacy_manifest_entries(
+    privacy: dict[str, Any],
+) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    expected: dict[str, dict[str, Any]] = {}
+    failures: list[str] = []
+
+    data_types = privacy.get("data_types")
+    if not isinstance(data_types, list):
+        return {}, ["App Store privacy label data_types must be an array"]
+
+    for category in data_types:
+        if not isinstance(category, dict):
+            failures.append("App Store privacy label data_types entries must be objects")
+            continue
+        apple_types = category.get("apple_data_types")
+        if (
+            not isinstance(apple_types, list)
+            or not apple_types
+            or any(not isinstance(apple_type, str) for apple_type in apple_types)
+            or len(apple_types) != len(set(apple_types))
+        ):
+            failures.append("App Store privacy label apple_data_types must be unique non-empty strings")
+            continue
+        details_by_type = category.get("apple_data_type_details", {})
+        if not isinstance(details_by_type, dict):
+            failures.append("App Store privacy label apple_data_type_details must be an object")
+            continue
+        unknown_detail_types = set(details_by_type) - set(apple_types)
+        if unknown_detail_types:
+            failures.append(
+                "App Store privacy label has details for undeclared Apple data types: "
+                + ", ".join(sorted(unknown_detail_types))
+            )
+        for apple_type in apple_types:
+            manifest_type = APPLE_PRIVACY_TYPE_TO_MANIFEST_TYPE.get(apple_type)
+            if manifest_type is None:
+                failures.append(f"App Store privacy label has unmapped Apple data type: {apple_type!r}")
+                continue
+            details = details_by_type.get(apple_type, category)
+            if not isinstance(details, dict):
+                failures.append(f"App Store privacy label details must be an object: {apple_type!r}")
+                continue
+            linked = details.get("linked_to_user")
+            tracking = details.get("used_for_tracking")
+            if not isinstance(linked, bool) or not isinstance(tracking, bool):
+                failures.append(
+                    f"App Store privacy label linked/tracking flags must be booleans: {apple_type!r}"
+                )
+                continue
+            if tracking is not False:
+                failures.append(
+                    f"App Store privacy label data types must not be used for tracking: {apple_type!r}"
+                )
+            purposes = details.get("purpose")
+            if (
+                not isinstance(purposes, list)
+                or not purposes
+                or any(not isinstance(purpose, str) for purpose in purposes)
+                or len(purposes) != len(set(purposes))
+            ):
+                failures.append(
+                    f"App Store privacy label purposes must be unique non-empty strings: {apple_type!r}"
+                )
+                continue
+            manifest_purposes: set[str] = set()
+            for purpose in purposes:
+                manifest_purpose = PRIVACY_PURPOSE_TO_MANIFEST_PURPOSE.get(purpose)
+                if manifest_purpose is None:
+                    failures.append(
+                        f"App Store privacy label has unmapped purpose {purpose!r} for {apple_type!r}"
+                    )
+                    continue
+                manifest_purposes.add(manifest_purpose)
+            if manifest_type in expected:
+                failures.append(f"App Store privacy label declares duplicate data type: {apple_type!r}")
+                continue
+            expected[manifest_type] = {
+                "NSPrivacyCollectedDataTypeLinked": linked,
+                "NSPrivacyCollectedDataTypeTracking": tracking,
+                "NSPrivacyCollectedDataTypePurposes": manifest_purposes,
+            }
+
+    return expected, failures
+
+
+def validate_privacy_manifest_against_label(
+    privacy_manifest: dict[str, Any],
+    privacy: dict[str, Any],
+) -> list[str]:
+    failures: list[str] = []
+    label_tracking = privacy.get("tracking")
+    if not isinstance(label_tracking, bool):
+        failures.append("App Store privacy label tracking must be a boolean")
+    elif label_tracking is not False:
+        failures.append("App Store privacy label must disable tracking for this release")
+    if privacy.get("data_not_used_for_tracking") is not True:
+        failures.append("App Store privacy label must confirm data is not used for tracking")
+    if privacy_manifest.get("NSPrivacyTracking") is not False:
+        failures.append("iOS privacy manifest tracking does not match App Store privacy label")
+    if privacy_manifest.get("NSPrivacyTrackingDomains") != []:
+        failures.append("iOS privacy manifest must not declare tracking domains")
+
+    collected_entries = privacy_manifest.get("NSPrivacyCollectedDataTypes")
+    if not isinstance(collected_entries, list):
+        return failures + ["iOS privacy manifest collected data types must be an array"]
+
+    collected_by_type: dict[str, dict[str, Any]] = {}
+    for entry in collected_entries:
+        if not isinstance(entry, dict):
+            failures.append("iOS privacy manifest collected data entries must be objects")
+            continue
+        manifest_type = entry.get("NSPrivacyCollectedDataType")
+        if not isinstance(manifest_type, str):
+            failures.append("iOS privacy manifest collected data type must be a string")
+            continue
+        if manifest_type in collected_by_type:
+            failures.append(f"iOS privacy manifest declares duplicate collected data type: {manifest_type}")
+            continue
+        collected_by_type[manifest_type] = entry
+
+    expected_entries, expected_entry_failures = expected_privacy_manifest_entries(privacy)
+    failures.extend(expected_entry_failures)
+    collected_types = set(collected_by_type)
+    expected_types = set(expected_entries)
+    if expected_types != REQUIRED_PRIVACY_DATA_TYPES:
+        failures.append(
+            "App Store privacy label data types do not match the required production inventory"
+        )
+    missing_privacy_types = expected_types - collected_types
+    if missing_privacy_types:
+        failures.append(
+            "iOS privacy manifest is missing collected data types: "
+            + ", ".join(sorted(missing_privacy_types))
+        )
+    unexpected_privacy_types = collected_types - expected_types
+    if unexpected_privacy_types:
+        failures.append(
+            "App Store privacy label is missing iOS manifest data types: "
+            + ", ".join(sorted(unexpected_privacy_types))
+        )
+
+    for manifest_type, expected_entry in expected_entries.items():
+        actual_entry = collected_by_type.get(manifest_type)
+        if actual_entry is None:
+            continue
+        for key in ("NSPrivacyCollectedDataTypeLinked", "NSPrivacyCollectedDataTypeTracking"):
+            actual_flag = actual_entry.get(key)
+            if not isinstance(actual_flag, bool) or actual_flag is not expected_entry[key]:
+                failures.append(
+                    f"iOS privacy manifest {manifest_type} {key} does not match App Store privacy label"
+                )
+        actual_purposes = actual_entry.get("NSPrivacyCollectedDataTypePurposes")
+        if (
+            not isinstance(actual_purposes, list)
+            or not actual_purposes
+            or any(not isinstance(purpose, str) for purpose in actual_purposes)
+            or len(actual_purposes) != len(set(actual_purposes))
+            or set(actual_purposes) != expected_entry["NSPrivacyCollectedDataTypePurposes"]
+        ):
+            failures.append(
+                f"iOS privacy manifest {manifest_type} purposes do not match App Store privacy label"
+            )
+
+    return failures
 
 
 def plugin_names(plugins: list[Any]) -> set[str]:
@@ -110,28 +287,7 @@ def validate(require_asc_credentials: bool) -> list[str]:
         failures.append("ITSAppUsesNonExemptEncryption must be false or explicitly reviewed before submission")
 
     privacy_manifest = ios.get("privacyManifests", {})
-    if privacy_manifest.get("NSPrivacyTracking") is not False:
-        failures.append("iOS privacy manifest must explicitly disable tracking")
-    if privacy_manifest.get("NSPrivacyTrackingDomains") != []:
-        failures.append("iOS privacy manifest must not declare tracking domains")
-    collected_entries = privacy_manifest.get("NSPrivacyCollectedDataTypes", [])
-    collected_types = {
-        entry.get("NSPrivacyCollectedDataType")
-        for entry in collected_entries
-        if isinstance(entry, dict)
-    }
-    missing_privacy_types = REQUIRED_PRIVACY_DATA_TYPES - collected_types
-    if missing_privacy_types:
-        failures.append(
-            "iOS privacy manifest is missing collected data types: "
-            + ", ".join(sorted(missing_privacy_types))
-        )
-    for entry in collected_entries:
-        if isinstance(entry, dict) and entry.get("NSPrivacyCollectedDataTypeTracking") is not False:
-            failures.append(
-                "collected data type must explicitly disable tracking: "
-                f"{entry.get('NSPrivacyCollectedDataType')!r}"
-            )
+    failures.extend(validate_privacy_manifest_against_label(privacy_manifest, privacy))
 
     privacy_categories = {
         entry.get("category")

@@ -87,6 +87,15 @@
             "NSPrivacyCollectedDataTypeLinked": true,
             "NSPrivacyCollectedDataTypeTracking": false,
             "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+              "NSPrivacyCollectedDataTypePurposeAnalytics"
+            ]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeDeviceID",
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
               "NSPrivacyCollectedDataTypePurposeAppFunctionality"
             ]
           },
@@ -109,12 +118,29 @@
             ]
           },
           {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeAudioData",
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ]
+          },
+          {
             "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypePreciseLocation",
             "NSPrivacyCollectedDataTypeLinked": true,
             "NSPrivacyCollectedDataTypeTracking": false,
             "NSPrivacyCollectedDataTypePurposes": [
               "NSPrivacyCollectedDataTypePurposeAppFunctionality",
               "NSPrivacyCollectedDataTypePurposeProductPersonalization"
+            ]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeProductInteraction",
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAnalytics",
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
             ]
           },
           {
