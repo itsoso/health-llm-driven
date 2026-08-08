@@ -62,8 +62,8 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v5"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v4"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v6"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v5"
 _HEALTH_RECORD_DOMAIN_TYPES = {
     "diet": "diet",
     "water": "water",
@@ -243,7 +243,8 @@ _EXCRETION_TARGET_ALIASES = {
 _CLOCK_RE = re.compile(r"(?<!\d)(?P<hour>[01]?\d|2[0-3])[:：点](?P<minute>[0-5]\d)?")
 _SLEEP_QUALITY_RE = re.compile(r"(?:睡眠)?质量.{0,3}(?P<value>[1-5])\s*分?")
 _SEVERITY_TARGET_RE = re.compile(
-    r"(?:严重程度|严重度|程度|强度)?\s*(?P<value>10|[1-9])\s*(?:分(?!钟)|级)"
+    r"(?:严重程度|严重度|程度|强度)?\s*(?P<value>10|[1-9])\s*"
+    r"(?:分(?!钟)|级|/\s*10)"
 )
 
 
@@ -689,6 +690,11 @@ def normalize_health_record_dispatch_args(
     raw_data = normalized.get("data")
     data = dict(raw_data) if isinstance(raw_data, dict) else {}
     record_type = recipe_replay_record_type(normalized)
+    if record_type:
+        normalized["record_type"] = record_type
+    normalized.pop("type", None)
+    normalized.pop("kind", None)
+    data.pop("record_type", None)
 
     if record_type == "illness":
         canonical_key = "start_date"
@@ -777,9 +783,11 @@ def normalize_health_record_dispatch_args(
             canonical_key="supplement_name",
             aliases=("supplement_name", "name"),
         )
-        for container in (data, normalized):
-            for key in ("dosage", "timing", "category", "description"):
-                container.pop(key, None)
+        _canonicalize_top_level_fields(
+            normalized,
+            data,
+            ("dosage", "timing", "category", "description"),
+        )
 
     if isinstance(raw_data, dict) or data:
         normalized["data"] = data
@@ -1174,6 +1182,29 @@ def _deterministic_target_values(
         names = _named_item_targets(clause, record_type)
         if names:
             values["names"] = names
+        dosage_match = re.search(
+            r"(?:剂量|每次|服用|吃)(?:是|为)?"
+            r"(?P<value>\d+(?:\.\d+)?|[一二两三四五六七八九十半]+)\s*"
+            r"(?P<unit>片|粒|丸|袋|支|颗|滴|喷|ml|毫升|mg|毫克|g|克)",
+            clause,
+            re.IGNORECASE,
+        )
+        if dosage_match is not None:
+            values["dosage"] = _canonical_medication_dosage(dosage_match)
+        timing = next(
+            (
+                canonical
+                for terms, canonical in (
+                    (("晚上", "晚间", "睡前"), "evening"),
+                    (("早上", "早晨", "上午"), "morning"),
+                    (("中午", "午间"), "noon"),
+                )
+                if any(term in clause for term in terms)
+            ),
+            "",
+        )
+        if timing:
+            values["timing"] = timing
     elif record_type == "symptom" and (clocks := tuple(_CLOCK_RE.finditer(clause))):
         match = clocks[-1]
         values["occurred_clock"] = (
@@ -1381,14 +1412,32 @@ def _medication_item_details(clause: str) -> dict[str, dict[str, str]]:
         if not item:
             continue
         strength_matches = tuple(_MEDICATION_STRENGTH_RE.finditer(item))
-        observed_strength = (
+        explicit_strength = (
             _canonical_medication_dosage(strength_matches[-1])
             if strength_matches
             else ""
         )
         item_without_strength = _MEDICATION_STRENGTH_RE.sub("", item)
         dose_matches = tuple(_MEDICATION_DOSE_RE.finditer(item_without_strength))
-        dosage = _canonical_medication_dosage(dose_matches[0]) if dose_matches else ""
+        count_matches = tuple(
+            match
+            for match in dose_matches
+            if match.group("unit").lower() in {"片", "粒", "丸", "袋", "支"}
+        )
+        mass_matches = tuple(
+            match for match in dose_matches if match not in count_matches
+        )
+        dosage_match = count_matches[0] if count_matches else (
+            dose_matches[0] if dose_matches else None
+        )
+        dosage = (
+            _canonical_medication_dosage(dosage_match) if dosage_match else ""
+        )
+        observed_strength = explicit_strength or (
+            _canonical_medication_dosage(mass_matches[0])
+            if count_matches and mass_matches
+            else ""
+        )
         name = _MEDICATION_DOSE_RE.sub("", item_without_strength)
         name = re.sub(r"^(?:我)?(?:吃了|吃的|服了|服用(?:了|的)?|用了)", "", name)
         name = name.strip("的了，,。.!！；;：: ")
@@ -1797,6 +1846,31 @@ def _target_values_mismatch(
                     return True
             elif normalized_requested_strength:
                 return True
+        else:
+            for field in ("dosage", "timing", "category", "description"):
+                requested_value = _effective_argument_value(
+                    args,
+                    data,
+                    data_keys=(field,),
+                    arg_keys=(field,),
+                )
+                expected_value = expected.get(field)
+                if expected_value not in (None, "", []):
+                    if field == "dosage":
+                        matches = _normalize_medication_dosage(
+                            requested_value
+                        ) == _normalize_medication_dosage(expected_value)
+                    else:
+                        matches = _normalize_entity_name(
+                            requested_value
+                        ) == _normalize_entity_name(expected_value)
+                    if not matches:
+                        return True
+                    data[field] = expected_value
+                    args.pop(field, None)
+                else:
+                    data.pop(field, None)
+                    args.pop(field, None)
     if record_type == "exercise":
         requested_exercise = str(
             _effective_argument_value(
@@ -2100,13 +2174,22 @@ def _food_targets_match(expected: Any, requested: Any) -> bool:
     def split_text(value: Any) -> list[str]:
         raw_parts: list[str] = []
         for punct_part in re.split(r"[,，、;；/|+＋]", str(value or "")):
-            # Protect lexical ``和牛`` before splitting conjunctions.  This
-            # distinguishes ``米饭和和牛`` (two foods) from ``米饭和牛`` (one
-            # malformed/other entity) and avoids collapsing both into 牛.
-            placeholder = "\uf8ffWAGYU\uf8ff"
-            protected = punct_part.replace("和牛", placeholder)
+            # Protect lexical compounds, but only protect ``和牛`` when it is
+            # itself an item (segment-initial or followed by quantity/end).
+            # Thus ``米饭和牛肉`` uses 和 as a conjunction, while
+            # ``米饭和和牛200g`` keeps the second 和 inside the Wagyu lexeme.
+            wagyu = "\uf8ffWAGYU\uf8ff"
+            wafuu = "\uf8ffWAFUU\uf8ff"
+            protected = punct_part.replace("和风", wafuu)
+            if protected.startswith("和牛"):
+                protected = wagyu + protected[2:]
+            protected = re.sub(
+                r"和牛(?=(?:\d|[一二两三四五六七八九十百半]|$))",
+                wagyu,
+                protected,
+            )
             raw_parts.extend(
-                part.replace(placeholder, "和牛")
+                part.replace(wagyu, "和牛").replace(wafuu, "和风")
                 for part in re.split(r"(?<=.)[和与及](?=.)", protected)
             )
         return raw_parts

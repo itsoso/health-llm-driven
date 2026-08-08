@@ -377,7 +377,10 @@ def test_logical_operation_key_cannot_change_arguments_inside_one_attempt(
 
 
 def test_runtime_write_fingerprint_canonicalizes_supported_aliases():
-    from app.services.agent_executor import _runtime_write_operation_fingerprint
+    from app.services.agent_executor import (
+        _runtime_write_operation_fingerprint,
+        _write_operation_fingerprint,
+    )
 
     diet_data = {"food_items": "牛肉面", "calories": 520}
     assert _runtime_write_operation_fingerprint(
@@ -387,6 +390,20 @@ def test_runtime_write_fingerprint_canonicalizes_supported_aliases():
         "health_record",
         {"record_type": "diet", "data": diet_data},
     )
+    date_alias = {
+        "record_type": "weight",
+        "data": {"weight": 71, "date": "2026-08-08"},
+    }
+    canonical_date = {
+        "record_type": "weight",
+        "data": {"weight": 71, "record_date": "2026-08-08"},
+    }
+    assert _write_operation_fingerprint(
+        "health_record", date_alias
+    ) == _write_operation_fingerprint("health_record", canonical_date)
+    assert _runtime_write_operation_fingerprint(
+        "health_record", date_alias
+    ) == _runtime_write_operation_fingerprint("health_record", canonical_date)
     assert _runtime_write_operation_fingerprint(
         "intervention_cycle",
         {"action": "start", "confirm": True, "days": 90},

@@ -114,7 +114,7 @@ backward_compatibility:
   - all existing valid dimensions retain behavior
   - health_manage illness CRUD remains unchanged
   - health_query_batch rejects illness until its subquery shape can preserve keyword and full-history semantics
-migration: managed PostgreSQL migration drops the illness severity default and NOT NULL
+migration: paired managed PostgreSQL/SQLite migration drops the illness severity default and NOT NULL
 ```
 
 ## 9. Safety, Privacy, And Medical Boundary
@@ -176,7 +176,8 @@ source aliases are removed before retry fingerprinting and dispatch. Medication
 actual dose and observed strength use the same alias parser in policy and
 executor. A date-only symptom is stored with the authorized server date and no
 model-authored clock; an explicit clock is rebuilt using the frozen user-local
-timezone. Unmentioned supplement dosage/timing/category/description fields are
+timezone. Explicit supplement dosage and timing are bound and preserved for
+auto-created definitions; only fields absent from the user's request are
 discarded. Unknown illness severity remains database `null`, is exposed as
 nullable in generated API types, and is rendered as `未记录` rather than a
 fabricated score.
@@ -405,15 +406,18 @@ reported G3/G6 blocker rather than a silently skipped check.
 
 ## 13. Rollout And Rollback
 
-Deploy the managed PostgreSQL migration before the Backend release, then deploy
+Deploy the paired managed migration before the Backend release, then deploy
 the generated-contract-compatible Web release after focused/full regression and
 safety review. Verify one read-only production turn and inspect executed tool
 metadata.
 
 Rollback to the previous Backend/Web release if invalid-dimension errors or
-illness query selection regress. Keep the relaxed nullable column during code
-rollback unless all newly created null-severity rows have an explicitly approved
-backfill; never recreate a default score of 5 silently.
+illness query selection regress. The staged target-runtime schema probe checks
+live data against that target's non-null contracts before any socket or writer
+starts; it must block an old release when null-severity rows exist. Historical
+scores of 5 are preserved because their old-default provenance cannot be
+reliably inferred. Never invent or silently backfill a score to make rollback
+pass.
 
 ## 14. Open Questions
 

@@ -100,7 +100,7 @@ def patch_episode(
     if not episode:
         raise HTTPException(status_code=404, detail="病症记录不存在")
 
-    for field, value in data.model_dump(exclude_none=True).items():
+    for field, value in data.model_dump(exclude_unset=True).items():
         setattr(episode, field, value)
 
     # 标记痊愈时自动设置结束日期

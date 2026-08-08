@@ -876,6 +876,37 @@ def test_same_clause_correction_authorizes_only_the_corrected_value():
     assert corrected.action == "allow"
 
 
+@pytest.mark.parametrize(
+    ("message", "superseded_args", "corrected_args"),
+    (
+        (
+            "记录体重71kg，不对，改成70kg",
+            {"record_type": "weight", "data": {"weight": 71}},
+            {"record_type": "weight", "data": {"weight": 70}},
+        ),
+        (
+            "记录口腔溃疡，不对，应该是感冒",
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+    ),
+)
+def test_followup_correction_replaces_prior_target(
+    message, superseded_args, corrected_args
+):
+    snapshot = _snapshot(message)
+
+    superseded = decide_tool_capability(
+        snapshot, _request("health_record", superseded_args)
+    )
+    corrected = decide_tool_capability(
+        snapshot, _request("health_record", corrected_args)
+    )
+
+    assert superseded.action == "block"
+    assert corrected.action == "allow"
+
+
 def test_observed_water_amount_is_bound_to_the_dispatched_value():
     snapshot = _snapshot("我喝了300ml水")
 
@@ -1540,6 +1571,47 @@ def test_unmentioned_supplement_definition_fields_are_projected_out():
     assert decision.normalized_args["data"] == {"supplement_name": "鱼油"}
 
 
+def test_explicit_supplement_definition_fields_are_bound_and_preserved():
+    snapshot = _snapshot("记录鱼油，剂量2粒，晚上吃")
+    matching = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "supplement",
+                "data": {
+                    "supplement_name": "鱼油",
+                    "dosage": "2粒",
+                    "timing": "evening",
+                    "category": "invented",
+                },
+            },
+        ),
+    )
+    wrong = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "supplement",
+                "data": {
+                    "supplement_name": "鱼油",
+                    "dosage": "4粒",
+                    "timing": "morning",
+                },
+            },
+        ),
+    )
+
+    assert matching.action == "allow"
+    assert matching.normalized_args["data"] == {
+        "supplement_name": "鱼油",
+        "dosage": "2粒",
+        "timing": "evening",
+    }
+    assert wrong.action == "block"
+
+
 def test_food_conjunction_does_not_collapse_wagyu_lexeme():
     decision = decide_tool_capability(
         _snapshot("记录早餐米饭和和牛200g"),
@@ -1557,6 +1629,31 @@ def test_food_conjunction_does_not_collapse_wagyu_lexeme():
 
     assert decision.action == "block"
     assert decision.reason == "health_record_target_mismatch"
+
+
+@pytest.mark.parametrize(
+    ("message", "food_items"),
+    (
+        ("记录晚餐，吃了日式和风沙拉", "日式和风沙拉"),
+        ("记录早餐米饭和牛肉", "米饭、牛肉"),
+        ("记录早餐米饭和和牛200g", "米饭、和牛200g"),
+    ),
+)
+def test_food_conjunction_parser_distinguishes_lexemes_from_item_boundaries(
+    message, food_items
+):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "dinner" if "晚餐" in message else "breakfast", "food_items": food_items},
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
 
 
 @pytest.mark.parametrize(
@@ -1611,6 +1708,58 @@ def test_health_authorization_binds_explicit_severity(
     assert matching.action == "allow"
     assert wrong.action == "block"
     assert wrong.reason == "health_record_target_mismatch"
+
+
+def test_fractional_severity_is_explicit_and_bound():
+    snapshot = _snapshot("记录口腔溃疡，严重程度7/10")
+    matching = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "illness", "data": {"name": "口腔溃疡", "severity": 7}},
+        ),
+    )
+    wrong = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "illness", "data": {"name": "口腔溃疡", "severity": 5}},
+        ),
+    )
+
+    assert matching.action == "allow"
+    assert wrong.action == "block"
+
+
+def test_medication_count_is_actual_dosage_and_mass_is_strength():
+    snapshot = _snapshot("记录阿奇霉素250mg两片")
+    matching = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "medication",
+                "data": {
+                    "medication_name": "阿奇霉素",
+                    "actual_dosage": "2片",
+                    "observed_strength": "250mg",
+                },
+            },
+        ),
+    )
+    wrong = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "medication",
+                "data": {"medication_name": "阿奇霉素", "actual_dosage": "250mg"},
+            },
+        ),
+    )
+
+    assert matching.action == "allow"
+    assert wrong.action == "block"
 
 
 def test_medication_authorization_supports_multiple_explicit_targets():
@@ -2873,9 +3022,9 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v5"
+    assert payload["contract_version"] == "agent-capability-policy-v6"
     assert payload["health_record_target_binding"] == {
-        "version": "authorized-target-set-v4",
+        "version": "authorized-target-set-v5",
         "domain_types": {
             "diet": "diet",
             "exercise": "exercise",

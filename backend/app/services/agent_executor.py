@@ -3179,10 +3179,17 @@ def _write_operation_fingerprint(
 ) -> str:
     from app.services.agent_runtime_identity import runtime_hmac_digest
 
+    canonical_args = dict(parsed_args)
+    if tool_name == "health_record":
+        from app.services.agent_kernel.capability_policy import (
+            normalize_health_record_dispatch_args,
+        )
+
+        canonical_args = normalize_health_record_dispatch_args(canonical_args)
     return runtime_hmac_digest(
         "write-operation-fingerprint-v1",
         tool_name,
-        parsed_args,
+        canonical_args,
     )
 
 
@@ -3200,6 +3207,11 @@ def _runtime_write_operation_fingerprint(
     """
     canonical_args = dict(parsed_args)
     if tool_name == "health_record":
+        from app.services.agent_kernel.capability_policy import (
+            normalize_health_record_dispatch_args,
+        )
+
+        canonical_args = normalize_health_record_dispatch_args(canonical_args)
         record_type = (
             canonical_args.get("record_type")
             or canonical_args.get("type")

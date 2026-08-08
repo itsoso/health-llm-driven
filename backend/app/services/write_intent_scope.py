@@ -154,7 +154,7 @@ _TRAILING_REVOCATION_ATOM = (
     r"等一下再说|稍后再说|先放一放|(?:这件事)?作罢|"
     r"(?:先)?不(?:要)?(?:再)?(?:记|记录|保存|录入|写入|新增|打卡)了|"
     r"别(?:再)?(?:记|记录|保存|录入|写入|新增|打卡)了|"
-    r"先不要了|不要了|我不同意|不行)"
+    r"先不要了|不要了|我不同意|不行|(?:我)?改主意了|(?:这次)?别弄了)"
 )
 _TRAILING_REVOCATION_CLAUSE_RE = re.compile(
     rf"^(?:{_TRAILING_REVOCATION_ATOM})+$"
@@ -186,6 +186,7 @@ _REPORTING_VERBS = (
     "引用",
     "告诉",
     "告知",
+    "透露",
 )
 _METALANGUAGE_ACTIONS = (
     "转告",
@@ -208,7 +209,7 @@ _METALANGUAGE_ACTIONS = (
     "是什么意思",
 )
 _HYPOTHETICAL_PREFIX_RE = re.compile(
-    r"^(?:如果|假如|假设|假定|设想|倘若|若是|万一)"
+    r"^(?:如果|假如|假使|假设|假定|设想|倘若|若是|万一)"
 )
 _POLITE_CONDITIONAL_PREFIX_RE = re.compile(
     r"^(?:如果|假如)(?:可以|方便|方便的话|你方便|你可以|你能|小巴可以|小巴能)"
@@ -226,6 +227,10 @@ _THIRD_PARTY_SUBJECT = (
     r"老公|老婆|孩子|儿子|女儿|室友|同学|领导|老板|客户|"
     r"他|她|别人|患者)"
 )
+_THIRD_PARTY_ROLE_SUFFIX = (
+    r"(?:父|母|爸|妈|妹|姐|兄|弟|妻|夫|友|同事|医生|医师|"
+    r"营养师|教练|患者|客户|室友|同学|领导|老板|孩子|儿子|女儿)"
+)
 _THIRD_PARTY_HEALTH_FACT = (
     r"(?:感冒|流感|发烧|生病|口腔溃疡|湿疹|血压|体重|腰围|"
     r"头痛|头疼|胸痛|腹痛|咳嗽|症状|用药|服药)"
@@ -238,10 +243,23 @@ _THIRD_PARTY_WRITE_SUBJECT_RE = re.compile(
     rf"(?:{_WRITE_ACTION_PATTERN}(?:一下)?(?:我(?:的)?)?"
     rf"{_THIRD_PARTY_SUBJECT}(?:的)?(?={_THIRD_PARTY_HEALTH_FACT}))|"
     rf"(?:(?:我(?:的)?)?{_THIRD_PARTY_SUBJECT}(?:的)?"
+    rf"{_THIRD_PARTY_HEALTH_FACT}.{{0,20}}{_WRITE_ACTION_PATTERN})|"
+    rf"(?:(?:我(?:的)?)?[\u4e00-\u9fff]{{0,6}}{_THIRD_PARTY_ROLE_SUFFIX}(?:的)?"
     rf"{_THIRD_PARTY_HEALTH_FACT}.{{0,20}}{_WRITE_ACTION_PATTERN})"
 )
+_THIRD_PARTY_HEALTH_SUBJECT_RE = re.compile(
+    rf"(?:我(?:的)?)?[\u4e00-\u9fff]{{0,6}}{_THIRD_PARTY_ROLE_SUFFIX}(?:的)?"
+    rf"{_THIRD_PARTY_HEALTH_FACT}"
+)
+_CORRECTION_MARKER_RE = re.compile(r"^(?:嗯)?(?:不对|错了|说错了|更正一下)$")
+_CORRECTION_VALUE_RE = re.compile(
+    r"^(?:(?:不对|错了|说错了|更正一下)[，,]?)?"
+    r"(?:改成|改为|更正为|应该是|应为|其实是)(?P<value>.+)$"
+)
 _WRITE_ATTRIBUTE_CONTINUATION_RE = re.compile(
-    r"^(?:备注|注释|说明|严重度|严重程度)(?:是|为|：|:)?\S+"
+    r"^(?:(?:备注|注释|说明|严重度|严重程度|剂量|用量)"
+    r"(?:是|为|：|:)?\S+|(?:早上|早晨|上午|中午|午间|晚上|晚间|睡前)"
+    r"(?:吃|服用)?)"
 )
 _DIRECT_HEALTH_OBSERVATION_RE = re.compile(
     r"(?:吃了|喝了|服了|服用(?:了)?|用了|刚吃|刚喝|"
@@ -816,7 +834,20 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
         hypothetical_scope = False
         raw_clauses = split_write_clauses(contrast_segment)
         clauses: list[str] = []
+        correction_pending = False
         for raw_clause in raw_clauses:
+            if _CORRECTION_MARKER_RE.fullmatch(raw_clause):
+                correction_pending = True
+                continue
+            correction_match = _CORRECTION_VALUE_RE.fullmatch(raw_clause)
+            if correction_match is not None and (correction_pending or clauses):
+                if clauses:
+                    clauses[-1] = _corrected_write_clause(
+                        clauses[-1], correction_match.group("value")
+                    )
+                correction_pending = False
+                continue
+            correction_pending = False
             raw_action = _last_action_in_clause(raw_clause)
             bare_followup_write = False
             if raw_action is not None:
@@ -844,6 +875,7 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
                 clauses[-1] = f"{clauses[-1]}，{raw_clause}"
             else:
                 clauses.append(raw_clause)
+        third_party_scope = False
         for clause in clauses:
             if _TRAILING_REVOCATION_CLAUSE_RE.fullmatch(clause):
                 while authorized:
@@ -872,9 +904,15 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
                     del authorized[segment_start:]
 
             if (
+                _THIRD_PARTY_WRITE_SUBJECT_RE.search(clause)
+                or _THIRD_PARTY_HEALTH_SUBJECT_RE.search(clause)
+            ):
+                third_party_scope = True
+
+            if (
                 reported_scope
                 or hypothetical_scope
-                or _THIRD_PARTY_WRITE_SUBJECT_RE.search(clause)
+                or third_party_scope
             ):
                 continue
             if (
@@ -891,6 +929,24 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
                 continue
             authorized.append(clause)
     return tuple(authorized)
+
+
+def _corrected_write_clause(previous: str, corrected_value: str) -> str:
+    """Replace a superseded target while retaining only necessary type context."""
+    action_context = _last_action_in_clause(previous)
+    if action_context is None:
+        return corrected_value
+    action, _position = action_context
+    value = corrected_value.strip("的了，,。.!！；;：: ")
+    metric_prefix = next(
+        (
+            metric
+            for metric in ("体重", "腰围", "血压", "高压", "低压")
+            if metric in previous and metric not in value
+        ),
+        "",
+    )
+    return f"{action}{metric_prefix}{value}"
 
 
 def _is_meal_slot_write_clause(clause: str) -> bool:
@@ -1004,6 +1060,10 @@ def has_explicit_authorizing_write_request(value: str) -> bool:
     if (
         _DEFERRED_CONDITION_PREFIX_RE.search(normalized)
         or _THIRD_PARTY_WRITE_SUBJECT_RE.search(normalized)
+        or (
+            _HYPOTHETICAL_PREFIX_RE.search(normalized)
+            and not _POLITE_CONDITIONAL_PREFIX_RE.search(normalized)
+        )
     ):
         return False
     if has_negated_write_scope(value):

@@ -95,6 +95,28 @@ def test_runtime_schema_probe_fails_when_declared_column_is_missing():
         )
 
 
+def test_runtime_schema_probe_blocks_old_nonnullable_model_when_live_rows_are_null():
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text(
+            "CREATE TABLE probe_records (id INTEGER PRIMARY KEY, value VARCHAR(20))"
+        ))
+        connection.execute(text(
+            "INSERT INTO probe_records (id, value) VALUES (1, NULL)"
+        ))
+    factory = sessionmaker(bind=engine)
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"non-null runtime contract violated: probe_records\.value",
+    ):
+        verify_runtime_schema_compatibility(
+            engine=engine,
+            metadata=ProbeBase.metadata,
+            session_factory=factory,
+        )
+
+
 def test_runtime_schema_probe_fails_when_bowel_timer_table_is_missing():
     from app.database import Base
 

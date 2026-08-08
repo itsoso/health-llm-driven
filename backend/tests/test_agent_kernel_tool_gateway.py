@@ -413,6 +413,106 @@ async def test_gateway_never_dispatches_non_authorizing_health_record_frames(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "record_args"),
+    (
+        (
+            "记录饮水300ml，嗯，我改主意了，这次别弄了",
+            {"record_type": "water", "data": {"amount_ml": 300}},
+        ),
+        (
+            "营养师透露我喝了300ml水",
+            {"record_type": "water", "data": {"amount_ml": 300}},
+        ),
+        (
+            "假使我喝了300ml水，就帮我记录饮水300ml",
+            {"record_type": "water", "data": {"amount_ml": 300}},
+        ),
+        (
+            "表妹体重71kg，记录一下",
+            {"record_type": "weight", "data": {"weight": 71}},
+        ),
+        (
+            "岳父感冒了，帮忙记录感冒",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+    ),
+)
+async def test_gateway_exact_semantic_non_authority_cases_never_reach_dispatch(
+    message, record_args
+):
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    result = await ToolGateway(_snapshot(message)).execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments=record_args,
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert json.loads(result.content)["dispatch_started"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "superseded_args", "corrected_args"),
+    (
+        (
+            "记录体重71kg，不对，改成70kg",
+            {"record_type": "weight", "data": {"weight": 71}},
+            {"record_type": "weight", "data": {"weight": 70}},
+        ),
+        (
+            "记录口腔溃疡，不对，应该是感冒",
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+    ),
+)
+async def test_gateway_correction_dispatches_only_replacement_target(
+    message, superseded_args, corrected_args
+):
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "ok"
+
+    gateway = ToolGateway(_snapshot(message))
+    superseded = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments=superseded_args,
+            source="structured",
+        ),
+        dispatch,
+    )
+    corrected = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments=corrected_args,
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert superseded.decision is not None
+    assert superseded.decision.action == "block"
+    assert corrected.decision is not None
+    assert corrected.decision.action == "allow"
+    assert calls == [corrected_args]
+
+
+@pytest.mark.asyncio
 async def test_gateway_dispatches_canonical_record_date_not_ignored_alias():
     calls = []
 
@@ -726,6 +826,45 @@ async def test_gateway_projects_unmentioned_supplement_definition_fields():
         {
             "record_type": "supplement",
             "data": {"supplement_name": "鱼油"},
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_gateway_preserves_only_explicit_supplement_definition_fields():
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "ok"
+
+    result = await ToolGateway(_snapshot("记录鱼油，剂量2粒，晚上吃")).execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={
+                "record_type": "supplement",
+                "data": {
+                    "supplement_name": "鱼油",
+                    "dosage": "2粒",
+                    "timing": "evening",
+                    "category": "invented",
+                },
+            },
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [
+        {
+            "record_type": "supplement",
+            "data": {
+                "supplement_name": "鱼油",
+                "dosage": "2粒",
+                "timing": "evening",
+            },
         }
     ]
 

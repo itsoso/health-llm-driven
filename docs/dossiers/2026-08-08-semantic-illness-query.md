@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS; G4 eleventh remediation complete, fresh exact-commit re-review pending |
+| current_stage | G3 PASS; exact-commit G4 re-review pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -65,8 +65,8 @@ their current confirmation boundary.
 ### G2 Feasibility And Risk: PASS
 
 The classifier, schema, validator, executor and illness API/model paths were
-inspected. Preserving an unknown illness severity requires one managed
-PostgreSQL migration plus the generated Web API contract update. Main risks are
+inspected. Preserving an unknown illness severity requires one paired managed
+PostgreSQL/SQLite migration plus the generated Web API contract update. Main risks are
 false suppression of legitimate writes, cross-user illness disclosure,
 semantic fallback into the wrong data family, and a model omitting the illness
 name. Failure-first contrast tests, explicit owner filters, fail-loud dimension
@@ -246,6 +246,38 @@ validation and no-match honesty address those risks.
   inference. This is recorded as an external evaluation blocker, not as a model
   pass or a product regression; the earlier valid 11/11 live run remains the
   latest completed model evidence.
+- Fresh exact-commit safety and code reviews of `ed073c499` both returned
+  NO-GO, and release remained stopped. They reproduced actual dispatch after
+  conversational withdrawal, reported and hypothetical facts, third-party
+  subjects, and follow-up corrections; incorrect medication count/strength and
+  supplement-field semantics; food-conjunction ambiguity; non-canonical retry
+  fingerprints; inability to clear illness severity; a missing SQLite
+  migration pair; and unsafe rollback to an old non-null runtime after null
+  rows exist.
+- The twelfth remediation treats correction, ownership and provenance as
+  relations in the authority set. A correction replaces the prior target and
+  inherits only its write action/type context; report, hypothetical and
+  third-party scope persist across adjacent clauses; explicit medication,
+  severity and supplement facts are bound to the canonical dispatch payload.
+  Food conjunctions preserve lexical compounds without protecting ordinary
+  `米饭和牛肉`. Both turn-local and durable retry fingerprints now consume that
+  same canonical payload.
+- Nullable illness severity is now operationally complete: PATCH can
+  explicitly clear it; PostgreSQL and SQLite have a paired managed migration;
+  SQLite reconstruction preserves parent episodes, child progress rows,
+  indexes and live foreign keys; historical score 5 rows remain unchanged
+  because their provenance cannot be inferred; and the target-runtime rollback
+  probe fails closed before starting an old writer if live rows violate its
+  non-null contract. The capability
+  boundary is versioned as `agent-capability-policy-v6` /
+  `authorized-target-set-v5`.
+- The final related semantic/classifier/policy/gateway/query/API/adapter/
+  migration/rollback suite passes 2,757/2,757 tests in one process with
+  coverage collection disabled. This clean run replaces the earlier parallel
+  group evidence whose successful test processes contended only on the local
+  coverage cache. Targeted Ruff, Python compilation, diff validation,
+  generated system-map drift and Dossier consistency gates also pass. Fresh
+  exact-commit reviews remain required.
 
 ### G4 Safety Review: PENDING
 
@@ -422,6 +454,16 @@ cross-client contract instead of a hidden score of 5. A managed PostgreSQL
 migration and matching Web/API types are part of the same release. Fresh exact-
 commit safety and code reviews are still mandatory before G4 may pass.
 
+Fresh safety and code reviews of exact commit `ed073c499` returned NO-GO and no
+deployment was attempted. The twelfth remediation replaces the remaining
+surface patches with relation-aware authority: later corrections supersede the
+old target, source ownership and hypothetical/report scope cross clause
+boundaries, and explicit values survive only through one canonical payload.
+Retry identity is computed after canonicalization. Paired migrations and a
+target-aware live-data probe make nullable severity safe in both forward
+migration and old-code rollback. New independent reviews of the next exact
+commit are mandatory before G4 may pass.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.
@@ -434,8 +476,9 @@ write attempt. No health record may be created for the drill.
 ## Rollback
 
 Rollback is the prior Backend and Web release. The migration only relaxes the
-illness severity column and removes its default, so code rollback is compatible
-with existing non-null rows but not with newly created null-severity rows. A
-rollback must therefore either keep the nullable column or first backfill those
-rows with an explicitly approved value; it must never silently recreate 5 as a
-health fact.
+illness severity column and removes its default. The immutable target-runtime
+probe inspects live rows while sockets and writers are stopped; an older target
+whose model requires non-null severity is rejected if any null row exists.
+Historical score 5 rows are preserved because old-default provenance is not
+recoverable. Rollback must never silently recreate or backfill 5 as a health
+fact.

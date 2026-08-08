@@ -2,23 +2,117 @@ import json
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 
 from app.services.managed_migrations import _split_sql_statements, apply_managed_migrations
 
 
 def test_illness_optional_severity_has_production_migration():
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
     migration = (
-        Path(__file__).resolve().parents[1]
-        / "migrations"
-        / "managed"
+        migrations_dir
         / "20260809_070000_make_illness_severity_optional.postgresql.sql"
+    )
+    sqlite_migration = (
+        migrations_dir
+        / "20260809_070000_make_illness_severity_optional.sqlite.sql"
     )
 
     sql = migration.read_text(encoding="utf-8")
+    sqlite_sql = sqlite_migration.read_text(encoding="utf-8")
     assert "ALTER TABLE illness_episodes" in sql
     assert "ALTER COLUMN severity DROP DEFAULT" in sql
     assert "ALTER COLUMN severity DROP NOT NULL" in sql
+    assert "illness_episodes_nullable_severity" in sqlite_sql
+    assert "severity INTEGER" in sqlite_sql
+
+
+def test_illness_optional_severity_sqlite_migration_preserves_history_and_allows_null(
+    tmp_path: Path,
+):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    migration = migrations_dir / "20260809_070000_make_illness_severity_optional.sqlite.sql"
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / migration.name).write_text(
+        migration.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    engine = create_engine("sqlite:///:memory:")
+    event.listen(
+        engine,
+        "connect",
+        lambda dbapi_connection, _record: dbapi_connection.execute(
+            "PRAGMA foreign_keys=ON"
+        ),
+    )
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY)"))
+        connection.execute(text("INSERT INTO users (id) VALUES (1)"))
+        connection.execute(text(
+            "CREATE TABLE illness_episodes ("
+            "id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), "
+            "name VARCHAR(100) NOT NULL, "
+            "start_date DATE NOT NULL, end_date DATE, status VARCHAR(20) NOT NULL, "
+            "severity INTEGER NOT NULL DEFAULT 5, notes TEXT, created_at DATETIME, "
+            "updated_at DATETIME)"
+        ))
+        connection.execute(text(
+            "CREATE TABLE illness_updates ("
+            "id INTEGER PRIMARY KEY, "
+            "episode_id INTEGER NOT NULL REFERENCES illness_episodes(id), "
+            "user_id INTEGER NOT NULL REFERENCES users(id), update_date DATE NOT NULL, "
+            "severity INTEGER, status VARCHAR(20), notes TEXT, created_at DATETIME)"
+        ))
+        connection.execute(text(
+            "INSERT INTO illness_episodes "
+            "(id, user_id, name, start_date, status, severity) "
+            "VALUES (1, 1, '历史记录', '2026-08-01', 'active', 5)"
+        ))
+        connection.execute(text(
+            "INSERT INTO illness_updates "
+            "(id, episode_id, user_id, update_date, severity, status) "
+            "VALUES (1, 1, 1, '2026-08-02', 4, 'improving')"
+        ))
+
+    apply_managed_migrations(engine, isolated)
+
+    severity_column = next(
+        column
+        for column in inspect(engine).get_columns("illness_episodes")
+        if column["name"] == "severity"
+    )
+    assert severity_column["nullable"] is True
+    assert {
+        "ix_illness_episodes_id",
+        "ix_illness_episodes_user_id",
+        "idx_illness_episode_user_status",
+    } <= {
+        index["name"] for index in inspect(engine).get_indexes("illness_episodes")
+    }
+    assert {
+        "ix_illness_updates_id",
+        "ix_illness_updates_episode_id",
+        "ix_illness_updates_user_id",
+        "idx_illness_update_episode_date",
+    } <= {
+        index["name"] for index in inspect(engine).get_indexes("illness_updates")
+    }
+    with engine.begin() as connection:
+        historical = connection.execute(text(
+            "SELECT severity FROM illness_episodes WHERE id = 1"
+        )).scalar_one()
+        historical_update = connection.execute(text(
+            "SELECT episode_id, severity, status FROM illness_updates WHERE id = 1"
+        )).one()
+        foreign_key_errors = connection.execute(text("PRAGMA foreign_key_check")).all()
+        connection.execute(text(
+            "INSERT INTO illness_episodes "
+            "(id, user_id, name, start_date, status, severity) "
+            "VALUES (2, 1, '未知严重度', '2026-08-08', 'active', NULL)"
+        ))
+    assert historical == 5
+    assert historical_update == (1, 4, "improving")
+    assert foreign_key_errors == []
 
 
 def test_clinician_gated_outcome_migration_has_managed_dialect_pair():

@@ -39,6 +39,37 @@ def test_compound_revocation_deferred_condition_and_third_party_have_no_authoriz
     assert has_explicit_authorizing_write_request(text) is False
 
 
+@pytest.mark.parametrize(
+    "text",
+    (
+        "记录饮水300ml，嗯，我改主意了，这次别弄了",
+        "营养师透露我喝了300ml水",
+        "假使我喝了300ml水，就帮我记录饮水300ml",
+        "表妹体重71kg，记录一下",
+        "岳父感冒了，帮忙记录感冒",
+    ),
+)
+def test_revoked_reported_hypothetical_and_third_party_frames_have_no_authority(
+    text: str,
+) -> None:
+    assert authorized_health_record_clauses(text) == ()
+    assert has_explicit_authorizing_write_request(text) is False
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    (
+        ("记录体重71kg，不对，改成70kg", "记录体重70kg"),
+        ("记录口腔溃疡，不对，应该是感冒", "记录感冒"),
+    ),
+)
+def test_correction_replaces_the_superseded_authorized_clause(
+    text: str,
+    expected: str,
+) -> None:
+    assert authorized_health_record_clauses(text) == (expected,)
+
+
 def test_negation_composes_across_bridges_and_all_write_actions() -> None:
     negations = ("不要", "不用", "无需", "先别", "暂不", "勿", "甭")
     bridges = (

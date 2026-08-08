@@ -48,3 +48,21 @@ def test_episode_without_severity_persists_unknown_instead_of_midpoint(
 
     assert r.status_code in (200, 201), r.text
     assert r.json()["severity"] is None
+
+
+def test_episode_patch_can_explicitly_clear_severity(client, auth_headers):
+    created = client.post(
+        "/api/v1/illness/episodes",
+        headers=auth_headers,
+        json={"name": "感冒", "start_date": "2026-08-08", "severity": 7},
+    )
+    assert created.status_code in (200, 201), created.text
+
+    patched = client.patch(
+        f"/api/v1/illness/episodes/{created.json()['id']}",
+        headers=auth_headers,
+        json={"severity": None},
+    )
+
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["severity"] is None

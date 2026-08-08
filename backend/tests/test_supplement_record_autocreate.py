@@ -43,11 +43,17 @@ async def test_unregistered_supplement_autocreates_then_taps(db):
          patch.object(ex, "_api_post", new=AsyncMock(side_effect=fake_post)):
         result = await ex._exec_health_record("http://x", {}, {
             "record_type": "supplement",
-            "data": {"supplement_name": "正官庄红参液", "dosage": "10mL", "category": "herbal"},
+            "data": {
+                "supplement_name": "正官庄红参液",
+                "dosage": "10mL",
+                "timing": "evening",
+                "category": "herbal",
+            },
         })
 
     assert create_payload.get("name") == "正官庄红参液"
     assert create_payload.get("dosage") == "10mL"
+    assert create_payload.get("timing") == "evening"
     assert tap_payload.get("supplement_id") == 88
     parsed = json.loads(result)
     assert "加入补剂库" in parsed["message"]

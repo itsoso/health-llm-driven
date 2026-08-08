@@ -167,7 +167,7 @@ registered dimensions.
 
 ## 6. Compatibility
 
-The final payload-exactness remediation includes a managed PostgreSQL migration
+The final payload-exactness remediation includes a paired PostgreSQL/SQLite managed migration
 that makes illness severity nullable and a matching generated Web API type
 change. Existing `health_manage(record_type=illness)` update/delete flows remain unchanged.
 Existing valid `health_query` dimensions and explicit recording utterances must

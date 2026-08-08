@@ -13,18 +13,24 @@ def verify_runtime_schema_compatibility(*, engine, metadata, session_factory) ->
     inspector = inspect(engine)
     missing_tables: list[str] = []
     missing_columns: list[str] = []
+    relaxed_nonnullable_columns: list[tuple[object, object]] = []
 
     for table in metadata.sorted_tables:
         if not inspector.has_table(table.name, schema=table.schema):
             missing_tables.append(table.fullname)
             continue
         actual_columns = {
-            column["name"]
+            column["name"]: column
             for column in inspector.get_columns(table.name, schema=table.schema)
         }
         for column in table.columns:
             if column.name not in actual_columns:
                 missing_columns.append(f"{table.fullname}.{column.name}")
+            elif (
+                column.nullable is False
+                and actual_columns[column.name].get("nullable") is True
+            ):
+                relaxed_nonnullable_columns.append((table, column))
 
     if missing_tables:
         raise RuntimeError(f"missing tables: {', '.join(sorted(missing_tables))}")
@@ -34,6 +40,19 @@ def verify_runtime_schema_compatibility(*, engine, metadata, session_factory) ->
     checked = 0
     session = session_factory()
     try:
+        incompatible_nulls = [
+            f"{table.fullname}.{column.name}"
+            for table, column in relaxed_nonnullable_columns
+            if session.execute(
+                select(column).where(column.is_(None)).limit(1)
+            ).first()
+            is not None
+        ]
+        if incompatible_nulls:
+            raise RuntimeError(
+                "non-null runtime contract violated: "
+                + ", ".join(sorted(incompatible_nulls))
+            )
         for table in metadata.sorted_tables:
             session.execute(select(table).limit(0))
             writable = next(
