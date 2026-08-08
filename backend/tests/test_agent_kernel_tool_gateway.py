@@ -495,6 +495,46 @@ async def test_gateway_never_dispatches_non_authorizing_health_record_frames(
                 "data": {"meal_type": "lunch", "food_items": "米饭"},
             },
         ),
+        (
+            "记录张三体重71kg",
+            {"record_type": "weight", "data": {"weight": 71}},
+        ),
+        (
+            "请记录小明体重71kg",
+            {"record_type": "weight", "data": {"weight": 71}},
+        ),
+        (
+            "记录小明感冒",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+        (
+            "记录邻居感冒",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+        (
+            "我感冒了同时小明体重71kg帮我记录一下",
+            {"record_type": "weight", "data": {"weight": 71}},
+        ),
+        (
+            "医生建议我记录体重71kg",
+            {"record_type": "weight", "data": {"weight": 71}},
+        ),
+        (
+            "小明让我记录体重71kg",
+            {"record_type": "weight", "data": {"weight": 71}},
+        ),
+        (
+            "记录疾病：张三感冒",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+        (
+            "记录上官婉儿感冒",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+        (
+            "记录左丘明体重71kg",
+            {"record_type": "weight", "data": {"weight": 71}},
+        ),
     ),
 )
 async def test_gateway_exact_semantic_non_authority_cases_never_reach_dispatch(

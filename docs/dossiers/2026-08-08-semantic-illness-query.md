@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS; exact-commit G4 re-review pending |
+| current_stage | G3 PASS; fourteenth remediation exact-commit G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -311,6 +311,30 @@ validation and no-match honesty address those risks.
   Python compilation, diff validation, generated system-map drift and Dossier
   consistency checks also pass. This is the G3 evidence for the next exact
   commit; two brand-new G4 reviewers remain mandatory.
+- A brand-new code reviewer of exact commit `56e35be86` returned NO-GO and
+  release remained stopped. The reviewer proved that a direct command could
+  place an arbitrary subject between the write action and health predicate:
+  `记录张三体重71kg`, `请记录小明体重71kg` and `记录邻居感冒` all reached the
+  real Gateway and would write into the authenticated user's records. This was
+  not a vocabulary miss; the owner parser incorrectly treated any predicate
+  preceded by a write verb as current-user owned.
+- The fourteenth remediation parses both sides of the relation. The initiator
+  before a write action must reduce to a direct current-user request, and the
+  subject between the action and each health predicate must reduce to the
+  current user, time modifiers or structural labels. Every later predicate in
+  the same clause is checked again, so a second arbitrary subject cannot borrow
+  the first current-user fact. Denied observations and attribute continuations
+  do not poison a later legitimate write. The boundary is versioned as
+  `agent-capability-policy-v8` / `authorized-target-set-v7`; clean aggregate
+  evidence and two new exact-commit reviews are pending.
+- The fourteenth remediation's clean single-process semantic/classifier/policy/
+  gateway/query/API/adapter/migration/runtime aggregate passes 2,850/2,850
+  tests. This includes real Gateway non-dispatch for direct and colon-introduced
+  arbitrary subjects (including compound surnames that begin with direction
+  characters), legal current-user object and body-location requests,
+  inline tool-call recovery, historical backfills and all previous alias/
+  migration/rollback controls. Targeted static and structural gates must pass
+  before the new exact commit is created.
 
 ### G4 Safety Review: PENDING
 
@@ -506,6 +530,15 @@ before compilation, projects numeric and supplement writes into exact
 adapter-consumed payloads, and makes PATCH status optional but non-null. A clean
 G3 rerun and two brand-new exact-commit reviewers are mandatory; neither prior
 review can be reused.
+
+A fresh code review of exact commit `56e35be86` returned NO-GO before push or
+deployment. Direct-object forms such as `记录张三体重71kg` bypassed ownership by
+placing the third-party name after the action and before the health predicate.
+Failure-first tests reproduced real Gateway dispatch. The fourteenth
+remediation validates action initiator and target subject separately, carries
+ownership across clauses, rechecks every health predicate, and retains current-
+user direct, object-fronted, contrast, historical-backfill and attribute
+continuation positives. A new commit and two brand-new reviewers are required.
 
 ### G5 Deployment Health: PENDING
 

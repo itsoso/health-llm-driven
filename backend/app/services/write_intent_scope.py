@@ -282,14 +282,35 @@ _DIRECT_HEALTH_OBSERVATION_RE = re.compile(
     r"心情|情绪|排便|大便|便秘|腹泻|俯卧撑|瑜伽|跑步))"
 )
 _HEALTH_OBSERVATION_PREDICATE_RE = re.compile(
-    r"(?:吃了|吃的是|不想吃|食欲|不舒服|(?:不)?严重|喝了|服了|服用(?:了)?|用了|"
+    r"(?:吃了|吃的是|不想吃|食欲|不舒服|(?:不)?严重|喝了|喝水|饮水|"
+    r"服了|服用(?:了)?|用了|"
     r"体重|血压|腰围|头痛|头疼|胸痛|腹痛|疼|眼痒|嗓子疼|"
     r"感冒|流感|发烧|生病|口腔溃疡|湿疹|咳嗽|症状|用药|服药)"
 )
 _CURRENT_USER_SUBJECT_NOISE_RE = re.compile(
     r"(?:今天|今日|刚才|刚刚|方才|现在|目前|早上|早晨|上午|"
-    r"中午|下午|晚上|晚间|昨晚|今早|这次|这会儿|这几天|最近几天|"
-    r"早餐|早饭|午餐|午饭|中饭|晚餐|晚饭|加餐|零食|夜宵|本人|自己)"
+    r"中午|下午|晚上|晚间|昨天|前天|昨晚|今早|这次|上次|上回|"
+    r"上一次|以前|既往|过程中|这会儿|这几天|最近几天|"
+    r"过去(?:一|二|两|三|四|五|六|七|八|九|十|\d+)天|"
+    r"最近(?:一|二|两|三|四|五|六|七|八|九|十|\d+)天|"
+    r"早餐|早饭|午餐|午饭|中饭|晚餐|晚饭|加餐|零食|夜宵|"
+    r"本人|自己|一下)"
+)
+_SUBJECT_RELATION_NOISE_RE = re.compile(
+    r"(?:\d{1,2}点(?:\d{1,2}分)?|"
+    r"\d+(?:\.\d+)?(?:kg|公斤|千克|斤|cm|厘米|mmhg|毫米汞柱|ml|毫升)?|"
+    r"已经|又|还|正|正在|刚|有点|突然|最近|不是很|不太|比较|特别|很|"
+    r"痊愈|康复|好转|恢复|同时|然后|并且|而且|另外|还有|以及|"
+    r"和|与|及|了|的|是)"
+)
+_DIRECT_TARGET_LABEL_RE = re.compile(r"(?:疾病|病情|症状|内容|数据|数值)")
+_DIRECT_BODY_LOCATION_RE = re.compile(
+    r"(?:左|右|上|下|内|外|前|后)?"
+    r"(?:口腔|口|嘴|舌|牙|颚|唇|头|颈|肩|胸|腹|腰|背|"
+    r"手|脚|腿|膝|皮肤).{0,48}(?:的)?"
+)
+_SUBJECT_ACTION_SCOPE_BOUNDARY_RE = re.compile(
+    r"(?:[，,；;。.!！?？：:]|但是|但|而是|然后)"
 )
 _COMPOUND_DIRECT_REQUEST_PREFIX_RE = re.compile(
     r"^(?:请|帮我)?(?:计算|分析|识别|估算|整理|总结).{0,48}"
@@ -846,6 +867,11 @@ def _has_untrusted_colon_command(value: str) -> bool:
             continue
         left = value[:match.start()]
         right = value[match.end():]
+        if (
+            _last_write_signal_in_clause(left) is not None
+            and _observation_has_non_current_subject(right)
+        ):
+            return True
         if _colon_extends_write_target(left):
             continue
         if (
@@ -869,32 +895,54 @@ def _observation_has_non_current_subject(clause: str) -> bool:
     a subjectless shorthand); otherwise a later ``记录一下`` cannot turn that
     fact into the current user's record.
     """
-    match = _HEALTH_OBSERVATION_PREDICATE_RE.search(clause)
-    if match is None:
-        return False
-    if (
-        clause.startswith(("把", "将"))
-        and _last_write_signal_in_clause(clause) is not None
-    ):
+    matches = tuple(_HEALTH_OBSERVATION_PREDICATE_RE.finditer(clause))
+    if not matches:
         return False
     if clause.startswith(
         ("创建目标", "设定目标", "设置目标", "新增目标", "记录目标")
     ):
         return False
-    colon = re.search(r"[:：]", clause)
-    if colon is not None and _colon_extends_write_target(clause[:colon.start()]):
-        return False
-    prefix = clause[:match.start()]
-    if _last_write_signal_in_clause(prefix) is not None:
-        return False
-    reduced = _CURRENT_USER_SUBJECT_NOISE_RE.sub("", prefix)
-    reduced = re.sub(
-        r"(?:已经|又|还|正|正在|刚|有点|突然|最近|不是很|不太|比较|特别|很)",
-        "",
-        reduced,
-    )
-    reduced = reduced.strip("的了，,。.!！；;：: ")
-    return reduced not in {"", "我"}
+    previous_end = 0
+    for match in matches:
+        prefix = clause[previous_end:match.start()]
+        if previous_end and re.search(r"(?:备注|注释|说明|描述)", prefix):
+            previous_end = match.end()
+            continue
+        action_context = _last_write_signal_in_clause(prefix)
+        if action_context is not None:
+            action, action_start = action_context
+            initiator = _SUBJECT_ACTION_SCOPE_BOUNDARY_RE.split(
+                prefix[:action_start]
+            )[-1]
+            if _strip_direct_request_prefix(initiator).strip(
+                "，,。.!！；;：: "
+            ) not in {"", "我"}:
+                return True
+            prefix = prefix[action_start + len(action):]
+        prefix = prefix.lstrip("把将")
+        if _DIRECT_BODY_LOCATION_RE.fullmatch(prefix):
+            prefix = ""
+        reduced = _CURRENT_USER_SUBJECT_NOISE_RE.sub("", prefix)
+        reduced = _DIRECT_TARGET_LABEL_RE.sub("", reduced)
+        reduced = _SUBJECT_RELATION_NOISE_RE.sub("", reduced)
+        reduced = reduced.strip("、，,。.!！；;：:?？ ")
+        if reduced not in {"", "我", "我的", "本人", "自己", "自己的"}:
+            return True
+        previous_end = match.end()
+    return False
+
+
+def _segment_has_non_current_subject(segment: str) -> bool:
+    """Carry subject ownership across clauses, excluding denied observations."""
+    for clause in split_write_clauses(segment):
+        if (
+            has_negated_write_scope(clause)
+            or _WRITE_ATTRIBUTE_CONTINUATION_RE.fullmatch(clause)
+        ):
+            continue
+        if _observation_has_non_current_subject(clause):
+            return True
+    return False
 
 
 def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
@@ -1002,7 +1050,8 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
                 if _POST_ATTRIBUTION_RE.search(clause):
                     del authorized[segment_start:]
 
-            if (
+            clause_negated = has_negated_write_scope(clause)
+            if not clause_negated and (
                 _THIRD_PARTY_WRITE_SUBJECT_RE.search(clause)
                 or _THIRD_PARTY_HEALTH_SUBJECT_RE.search(clause)
                 or _observation_has_non_current_subject(clause)
@@ -1020,7 +1069,7 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
                 or is_historical_write_reference(clause)
                 or is_read_action_write_reference(clause)
                 or is_write_result_check(clause)
-                or has_negated_write_scope(clause)
+                or clause_negated
             ):
                 continue
 
@@ -1178,11 +1227,15 @@ def has_explicit_authorizing_write_request(value: str) -> bool:
     if context is None:
         return False
     normalized = normalize_write_scope_text(value)
+    contrast_segments = tuple(
+        segment for segment in _CONTRAST_SCOPE_RE.split(normalized) if segment
+    )
+    governing_segment = contrast_segments[-1] if contrast_segments else context[0]
     if (
         _DEFERRED_CONDITION_PREFIX_RE.search(normalized)
         or _THIRD_PARTY_WRITE_SUBJECT_RE.search(normalized)
         or _has_untrusted_colon_command(normalized)
-        or _observation_has_non_current_subject(normalized)
+        or _segment_has_non_current_subject(governing_segment)
         or (
             _HYPOTHETICAL_PREFIX_RE.search(normalized)
             and not _POLITE_CONDITIONAL_PREFIX_RE.search(normalized)

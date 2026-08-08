@@ -197,6 +197,14 @@ conditions, withdrawal and correction relations are resolved before the
 authorized target set is compiled. Direct compound requests such as
 `计算热量和营养并记录饮食` remain positive current-user actions.
 
+For a direct command, the parser validates both the initiator before the action
+and the subject between the action and every health predicate. A write verb is
+not itself proof of current-user ownership. Therefore `记录我的体重71kg` and
+`把我的体重71kg记录下来` remain valid, while `记录张三体重71kg`,
+`医生建议我记录体重71kg` and a second named subject in a compound observation
+fail closed without a name or relationship list. Denied observations and
+notes/attribute continuations do not contaminate a later legitimate target.
+
 For numeric record families, equivalent top-level and nested aliases collapse
 to one adapter-consumed field and one retry identity; contradictory values are
 blocked before collapse. The gate projects only authorized fields, so a model
@@ -372,6 +380,18 @@ Given a previously unseen subject says "王五喝了300ml水，记录一下"
 When the model requests health_record anyway
 Then relation-based ownership blocks it without relying on a name allowlist or denylist
 
+Given a direct command says "记录张三体重71kg"
+When the model requests a weight write for 71kg
+Then the subject between action and predicate prevents dispatch to the current user's record
+
+Given an attributed initiator says "医生建议我记录体重71kg"
+When the model requests health_record anyway
+Then the non-user initiator prevents dispatch
+
+Given a direct command says "记录我的体重71kg"
+When the model requests the matching current-user weight write
+Then the write remains authorized under the exact target binding
+
 Given an attributed command says "护士提及：帮我记录感冒"
 When the model requests health_record anyway
 Then the colon provenance boundary prevents dispatch
@@ -493,3 +513,4 @@ These questions do not block the illness slice.
 | 2026-08-09 | Upgraded authorization to an exact target set | Fresh reviews found multi-target, alias, meal/date/entity and medication-dose gaps in single-clause binding. |
 | 2026-08-09 | Canonicalized and projected the dispatch payload | Fresh exact-commit reviews found composed revocation, deferred/third-party authority, adapter-alias, date, reminder, meal and model-invented-field gaps. |
 | 2026-08-09 | Made ownership relational and payload aliases adapter-exact | Fresh exact-commit reviews found arbitrary subjects, attribution/revocation/correction gaps, water/supplement payload drift and non-null PATCH status mismatch. |
+| 2026-08-09 | Bound both initiator and direct-object subject | Fresh review found arbitrary names between a write action and health predicate inherited current-user authority. |

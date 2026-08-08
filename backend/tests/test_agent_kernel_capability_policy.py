@@ -3123,9 +3123,9 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v7"
+    assert payload["contract_version"] == "agent-capability-policy-v8"
     assert payload["health_record_target_binding"] == {
-        "version": "authorized-target-set-v6",
+        "version": "authorized-target-set-v7",
         "domain_types": {
             "diet": "diet",
             "exercise": "exercise",

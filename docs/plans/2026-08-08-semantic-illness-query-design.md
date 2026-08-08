@@ -128,6 +128,12 @@ retrieval. The boundary makes both responsibilities explicit and testable.
   withdrawals and corrections are resolved before target compilation. A
   compound current-user request such as `计算热量和营养并记录饮食` remains a
   positive control.
+- Direct commands validate both sides of the write relation. Text before the
+  action must reduce to a current-user request scaffold; text between the
+  action and every health predicate must reduce to the current user, date/time
+  modifiers or structural field labels. Thus `记录我的体重71kg` remains valid,
+  while `记录张三体重71kg`, `医生建议我记录体重71kg` and a second subject in a
+  compound observation fail closed without enumerating names.
 - Numeric aliases are conflict-checked before collapse and then projected to
   the one canonical field shape the adapter consumes. Equivalent top-level and
   nested aliases therefore share dispatch and retry identity; contradictory

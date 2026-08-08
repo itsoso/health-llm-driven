@@ -62,8 +62,8 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v7"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v6"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v8"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v7"
 _HEALTH_RECORD_DOMAIN_TYPES = {
     "diet": "diet",
     "water": "water",

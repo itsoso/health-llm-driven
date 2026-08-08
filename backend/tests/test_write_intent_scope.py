@@ -63,6 +63,16 @@ def test_compound_revocation_deferred_condition_and_third_party_have_no_authoriz
         "我的朋友小明感冒了，记录一下",
         "王五喝了300ml水，记录一下",
         "我的同事李雷吃了米饭，记录午餐",
+        "记录张三体重71kg",
+        "请记录小明体重71kg",
+        "记录小明感冒",
+        "记录邻居感冒",
+        "我感冒了同时小明体重71kg帮我记录一下",
+        "医生建议我记录体重71kg",
+        "小明让我记录体重71kg",
+        "记录疾病：张三感冒",
+        "记录上官婉儿感冒",
+        "记录左丘明体重71kg",
     ),
 )
 def test_revoked_reported_hypothetical_and_third_party_frames_have_no_authority(
@@ -491,6 +501,9 @@ def test_polite_conditions_do_not_turn_direct_requests_into_quotations(text: str
         "请务必记录口腔溃疡",
         "帮我把今天午餐记录下来",
         "把口腔溃疡记录下来",
+        "记录我的体重71kg",
+        "请记录我今天体重71kg",
+        "把我的体重71kg记录下来",
     ),
 )
 def test_direct_vocative_backfill_and_lexical_guards_authorize(text: str) -> None:
