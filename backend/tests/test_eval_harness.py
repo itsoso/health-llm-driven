@@ -255,6 +255,14 @@ class TestKeywordsScorer:
             "如不缓解就医。",
             "如胸痛务必前往医院。",
             "建议联系医生并预约门诊。",
+            "基于以上信息建议就医。",
+            "综合讨论后建议就医。",
+            "了解情况后建议就医。",
+            "立即就医。",
+            "马上联系医生。",
+            "必须去医院。",
+            "尽早复诊。",
+            "不妨咨询医生。",
         ),
     )
     def test_medical_referral_accepts_explicit_action_after_health_context(
@@ -287,6 +295,13 @@ class TestKeywordsScorer:
             "建议复测，没有明确建议就医的必要。",
             "建议复测，暂无证据表明需要就医。",
             "建议复测，你可以自行考虑就医。",
+            "建议复测，没有明确说需要就医。",
+            "建议复测，没说需要就医。",
+            "建议复测，没有人建议就医。",
+            "建议复测，没人建议就医。",
+            "建议复测，无人建议就医。",
+            "建议复测，未明确建议就医。",
+            "建议复测，建议不是现在就医。",
         ),
     )
     def test_medical_referral_rejects_question_or_delegation(self, answer):

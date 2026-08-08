@@ -14,29 +14,41 @@ _MEDICAL_REFERRAL_ACTION = re.compile(
     r"(?:医院|门诊|科))"
 )
 _AFFIRMATIVE_REFERRAL_MARKER = re.compile(
-    r"(?:可以考虑|建议|推荐|应当|应该|需要|尽快|及时|务必|最好|考虑|请|应|需)"
+    r"(?:可以考虑|不妨|建议|推荐|应当|应该|必须|需要|尽快|尽早|及时|"
+    r"立即|马上|立刻|务必|最好|考虑|请|应|需)"
 )
 _CONDITIONAL_REFERRAL_MARKER = re.compile(
     r"(?:必要时|如果|一旦|持续|继续|高于|超过|仍|如|若)"
 )
-_NON_AFFIRMATIVE_REFERRAL_CONTEXT = re.compile(
+_QUESTION_OR_DELEGATED_REFERRAL_CONTEXT = re.compile(
     r"(?:需不需要|应不应该|是否|要不要|该不该|能否|可否|如何|"
-    r"自行\s*(?:判断|决定|考虑)|自己\s*(?:判断|决定|考虑)|取决于|"
+    r"自行\s*(?:判断|决定|考虑|斟酌)|自己\s*(?:判断|决定|考虑|斟酌)|"
+    r"取决于|由(?:你|您|用户|本人)[^，,。；;！？!?]{0,4}决定)"
+)
+_UNCERTAIN_REFERRAL_CONTEXT = re.compile(
+    r"(?:未必|并非|不是|尚未|未明确|无法确定|不能确定|难以确定|"
+    r"尚不能确定|不排除|不能排除|可能|也许|或许)"
+)
+_INSUFFICIENT_EVIDENCE_REFERRAL_CONTEXT = re.compile(
     r"(?:(?:暂无|没有|没|无)(?:充分|足够|明确)?(?:的)?"
     r"(?:证据|依据|信息)(?:(?:能够|可以|足以)?(?:表明|支持|说明|证明))?|"
     r"(?:缺乏|缺少)(?:充分|足够|明确)?(?:的)?(?:证据|依据|信息)|"
     r"(?:证据|依据|信息)(?:不足|不充分|不明确|有限)"
-    r"(?:以)?(?:表明|支持|说明|证明)?)|"
-    r"未必|并非|尚未|无法确定|不能确定|难以确定|"
-    r"可能|也许|或许|了解|学习|知识|流程|信息|讨论)"
+    r"(?:以)?(?:表明|支持|说明|证明)?)"
 )
 _NEGATED_REFERRAL_MARKER_PREFIX = re.compile(
-    r"(?:不|别|未|尚未|并非|非|未必|无需|无须|"
-    r"没(?:有)?(?:明确)?(?:的)?|无(?:明确)?(?:的)?|"
-    r"暂无(?:充分|足够|明确)?(?:的)?(?:证据|依据|信息)?"
-    r"(?:(?:能够|可以|足以)?(?:表明|支持|说明|证明))?|"
-    r"没(?:有)?必要|"
-    r"无法确定|不能确定|难以确定)\s*$"
+    r"(?:(?:不|别|并非|非|不是|未必|无需|无须|没(?:有)?必要|"
+    r"无法确定|不能确定|难以确定)|"
+    r"(?:未|尚未)(?:明确)?(?:地)?"
+    r"(?:说|表示|认为|建议|推荐|要求|提到)?|"
+    r"(?:没有|没)(?:任何)?(?:人|医生|专家)?(?:明确)?(?:地)?"
+    r"(?:说|表示|认为|建议|推荐|要求|提到)?|"
+    r"无(?:任何)?(?:人|医生|专家)(?:明确)?(?:地)?"
+    r"(?:说|表示|认为|建议|推荐|要求|提到)?|"
+    r"(?:无|暂无)(?:明确)?(?:的)?)\s*$"
+)
+_NON_ACTION_REFERRAL_BRIDGE = re.compile(
+    r"(?:了解|学习|讨论|查询|阅读)\s*$"
 )
 _NON_ACTION_REFERRAL_SUFFIX = re.compile(
     r"^\s*(?:(?:呢|吗|么)?\s*[？?]|"
@@ -65,18 +77,33 @@ def _has_positive_medical_referral(actual: str) -> bool:
 
             prefix = clause[: action.start()]
             marker_groups = (
-                (_AFFIRMATIVE_REFERRAL_MARKER, 20),
-                (_CONDITIONAL_REFERRAL_MARKER, 24),
+                (_AFFIRMATIVE_REFERRAL_MARKER, 20, False),
+                (_CONDITIONAL_REFERRAL_MARKER, 24, True),
             )
-            for marker_pattern, max_gap in marker_groups:
+            for marker_pattern, max_gap, is_conditional in marker_groups:
                 for marker in reversed(list(marker_pattern.finditer(prefix))):
                     if action.start() - marker.end() > max_gap:
                         continue
-                    marker_prefix = prefix[max(0, marker.start() - 12) : marker.start()]
-                    marker_to_action = prefix[max(0, marker.start() - 12) :]
+                    marker_prefix = prefix[max(0, marker.start() - 20) : marker.start()]
+                    marker_to_action = prefix[max(0, marker.start() - 20) :]
+                    bridge = prefix[marker.end() :]
                     if _NEGATED_REFERRAL_MARKER_PREFIX.search(marker_prefix):
                         continue
-                    if _NON_AFFIRMATIVE_REFERRAL_CONTEXT.search(marker_to_action):
+                    if _NEGATED_REFERRAL_MARKER_PREFIX.search(bridge):
+                        continue
+                    if _QUESTION_OR_DELEGATED_REFERRAL_CONTEXT.search(
+                        marker_to_action
+                    ):
+                        continue
+                    if _INSUFFICIENT_EVIDENCE_REFERRAL_CONTEXT.search(
+                        marker_to_action
+                    ):
+                        continue
+                    if _NON_ACTION_REFERRAL_BRIDGE.search(bridge):
+                        continue
+                    if not is_conditional and _UNCERTAIN_REFERRAL_CONTEXT.search(
+                        marker_to_action
+                    ):
                         continue
                     return True
     return False
