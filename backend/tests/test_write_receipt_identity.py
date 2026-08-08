@@ -406,6 +406,45 @@ def test_health_manage_receipt_marks_verified_operation(operation):
     assert receipt["action"] == operation
 
 
+def test_health_manage_receipt_normalizes_operation_case_and_whitespace():
+    receipt = _write_receipt_from_tool_result(
+        "health_manage",
+        {"record_type": "water", "operation": " UPDATE "},
+        json.dumps({"id": 718, "resource_type": "water_record"}),
+    )
+
+    assert receipt is not None
+    assert receipt["action"] == "update"
+
+
+def test_health_manage_receipt_does_not_expose_unreachable_create_action():
+    receipt = _write_receipt_from_tool_result(
+        "health_manage",
+        {"record_type": "water", "operation": "create"},
+        json.dumps({"id": 718, "resource_type": "water_record"}),
+    )
+
+    assert receipt is not None
+    assert "action" not in receipt
+
+
+def test_health_manage_receipt_uses_args_action_over_result_payload_action():
+    receipt = _write_receipt_from_tool_result(
+        "health_manage",
+        {"record_type": "water", "operation": "update"},
+        json.dumps(
+            {
+                "id": 718,
+                "resource_type": "water_record",
+                "action": "delete",
+            }
+        ),
+    )
+
+    assert receipt is not None
+    assert receipt["action"] == "update"
+
+
 def test_health_manage_receipt_ignores_invalid_operation_action():
     receipt = _write_receipt_from_tool_result(
         "health_manage",

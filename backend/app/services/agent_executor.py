@@ -3920,7 +3920,7 @@ def _write_receipt_from_tool_result(
         receipt_action = "create"
     elif has_structured_args and tool_name == "health_manage":
         normalized_operation = str(args.get("operation") or "").strip().lower()
-        if normalized_operation in {"create", "update", "delete"}:
+        if normalized_operation in {"update", "delete"}:
             receipt_action = normalized_operation
     if receipt_action:
         receipt["action"] = receipt_action
