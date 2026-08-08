@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS; G4 ninth remediation complete, fresh exact-commit re-review pending |
+| current_stage | G3 PASS; G4 eleventh remediation complete, fresh exact-commit re-review pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -65,7 +65,8 @@ their current confirmation boundary.
 ### G2 Feasibility And Risk: PASS
 
 The classifier, schema, validator, executor and illness API/model paths were
-inspected. The change needs no database or client migration. Main risks are
+inspected. Preserving an unknown illness severity requires one managed
+PostgreSQL migration plus the generated Web API contract update. Main risks are
 false suppression of legitimate writes, cross-user illness disclosure,
 semantic fallback into the wrong data family, and a model omitting the illness
 name. Failure-first contrast tests, explicit owner filters, fail-loud dimension
@@ -216,6 +217,35 @@ validation and no-match honesty address those risks.
   omitted from that create-only tool set. After field projection, the final 11
   valid query/write/revocation/deferred/third-party/date/reminder/multi-write
   cases pass 11/11 with zero database reads or writes.
+- Fresh exact-commit safety and code reviews of `a7280179e` both returned
+  NO-GO, so release again remained stopped. They reproduced revocation clauses
+  separated from the write by conversational filler, implicit third-party
+  subjects without `的`, policy/executor disagreement over legacy medication
+  `dosage`, model-invented timestamps on date-only symptoms, unbound supplement
+  fields, an API-level illness severity default, unstable aliases in the
+  normalized payload and lexical `和牛` target collapse.
+- The eleventh remediation treats the model output as a proposal and emits one
+  server-owned canonical payload. Revocation walks back to the most recent real
+  authority instead of treating filler as authority; subject ownership covers
+  implicit friend/family forms; medication aliases share one parser in policy
+  and executor; symptom timestamps are rebuilt from the frozen user timezone;
+  supplement extras are projected out; canonical aliases are deleted after
+  projection; and lexical `和牛` is protected before conjunction splitting.
+- Unknown illness severity is now truly unknown end to end: schema and model
+  use nullable severity, a managed PostgreSQL migration drops the old default
+  and `NOT NULL`, generated Web types accept `null`, the illness page renders
+  `未记录`, and Agent context never emits `None/10` or invents `5/10`.
+  The capability boundary is versioned as `agent-capability-policy-v5` /
+  `authorized-target-set-v4`.
+- The final expanded classifier/query/policy/gateway/adapter/runtime/context
+  suite passes 2,745 tests in three isolated groups (2,148 + 373 + 224), and
+  Web TypeScript compilation plus page lint pass. A requested fresh
+  `qwen3.7-max` 15-case
+  run was attempted with synthetic text and zero database I/O, but the current
+  TokenPlan credential returned `401 invalid_api_key` for every request before
+  inference. This is recorded as an external evaluation blocker, not as a model
+  pass or a product regression; the earlier valid 11/11 live run remains the
+  latest completed model evidence.
 
 ### G4 Safety Review: PENDING
 
@@ -373,6 +403,25 @@ authority. The capability contract is now `agent-capability-policy-v4` with
 `authorized-target-set-v3`. Fresh exact-commit safety and code reviews remain
 mandatory before G4 may pass.
 
+Fresh safety and code reviews of exact commit `a7280179e` returned NO-GO and no
+deployment was attempted. Their concrete counterexamples crossed both semantic
+ownership and payload-identity boundaries: conversational filler hid a later
+revocation, implicit friend/family subjects gained current-user authority,
+medication `dosage` meant different things to policy and executor, a date-only
+symptom retained a model-invented time zone, and nullable/user-omitted fields
+were still defaulted or consumed downstream.
+
+The eleventh remediation makes payload identity and claim ownership explicit.
+The authorization set revokes the nearest actual authority through filler;
+third-party fact ownership handles omitted possessive particles; every consumed
+medication alias goes through one shared canonical parser; symptom dates and
+times are reconstructed from the frozen turn context; unmentioned supplement
+and illness fields are projected out; and canonical aliases are removed before
+fingerprinting and dispatch. Illness severity now has a real `null` storage and
+cross-client contract instead of a hidden score of 5. A managed PostgreSQL
+migration and matching Web/API types are part of the same release. Fresh exact-
+commit safety and code reviews are still mandatory before G4 may pass.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.
@@ -384,5 +433,9 @@ write attempt. No health record may be created for the drill.
 
 ## Rollback
 
-Rollback is the prior Backend release. There is no schema migration or data
-backfill, so rollback requires no data repair.
+Rollback is the prior Backend and Web release. The migration only relaxes the
+illness severity column and removes its default, so code rollback is compatible
+with existing non-null rows but not with newly created null-severity rows. A
+rollback must therefore either keep the nullable column or first backfill those
+rows with an explicitly approved value; it must never silently recreate 5 as a
+health fact.

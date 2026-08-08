@@ -439,7 +439,6 @@ async def test_gateway_dispatches_canonical_record_date_not_ignored_alias():
             "record_type": "weight",
             "data": {
                 "weight": 70,
-                "date": "2026-07-16",
                 "record_date": "2026-07-16",
             },
         }
@@ -693,6 +692,78 @@ async def test_gateway_strips_unmentioned_illness_severity_before_dispatch():
             "data": {"name": "口腔溃疡", "status": "active"},
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_gateway_projects_unmentioned_supplement_definition_fields():
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "ok"
+
+    result = await ToolGateway(_snapshot("记录鱼油")).execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={
+                "record_type": "supplement",
+                "data": {
+                    "supplement_name": "鱼油",
+                    "dosage": "4粒",
+                    "timing": "bedtime",
+                    "category": "药物",
+                    "description": "治疗高血压",
+                },
+            },
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [
+        {
+            "record_type": "supplement",
+            "data": {"supplement_name": "鱼油"},
+        }
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录口腔溃疡，不，还是别记录了",
+        "记录口腔溃疡，先等等，别记了",
+        "记录我朋友感冒",
+        "我朋友感冒了，记录一下",
+        "记录妈妈感冒",
+        "我妈妈感冒了，记录一下",
+    ),
+)
+async def test_gateway_never_dispatches_fillers_or_implicit_third_party_subjects(
+    message,
+):
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    result = await ToolGateway(_snapshot(message)).execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={"record_type": "illness", "data": {"name": "感冒"}},
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert json.loads(result.content)["dispatch_started"] is False
 
 
 @pytest.mark.asyncio

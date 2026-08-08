@@ -167,8 +167,9 @@ registered dimensions.
 
 ## 6. Compatibility
 
-No database migration or public client API change is required. Existing
-`health_manage(record_type=illness)` update/delete flows remain unchanged.
+The final payload-exactness remediation includes a managed PostgreSQL migration
+that makes illness severity nullable and a matching generated Web API type
+change. Existing `health_manage(record_type=illness)` update/delete flows remain unchanged.
 Existing valid `health_query` dimensions and explicit recording utterances must
 retain their current behavior.
 
@@ -204,10 +205,12 @@ Verification must include:
 
 ## 8. Rollout
 
-Ship the new dimension and fail-loud validator in one backend release. The
-change is backward compatible for valid calls. Production verification uses a
+Apply the nullable-severity migration, then ship the new dimension and
+fail-loud validator with the matching Web contract. Valid existing calls remain
+backward compatible. Production verification uses a
 read-only synthetic illness fixture or an explicitly authorized owner account;
 no health record is created during the read drill.
 
-Rollback is the prior backend release. Because there is no schema migration,
-rollback requires no data repair.
+Rollback is the prior backend/Web release while retaining the relaxed column.
+Restoring `NOT NULL` requires an explicitly approved backfill for any new null
+rows; the system must not silently invent a default severity.

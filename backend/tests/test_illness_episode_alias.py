@@ -13,7 +13,9 @@ def auth_headers(client, db):
         username="illnessuser", email="illness@example.com",
         hashed_password="x", name="病程测试", is_active=True, is_approved=True,
     )
-    db.add(user); db.commit(); db.refresh(user)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
     from app.services.auth import auth_service
     return {"Authorization": f"Bearer {auth_service.create_access_token({'sub': str(user.id)})}"}
 
@@ -33,3 +35,16 @@ def test_episode_still_accepts_canonical_name(client, auth_headers):
                     json={"name": "感冒", "start_date": "2026-06-10", "severity": 5})
     assert r.status_code in (200, 201), r.text
     assert r.json()["name"] == "感冒"
+
+
+def test_episode_without_severity_persists_unknown_instead_of_midpoint(
+    client, auth_headers
+):
+    r = client.post(
+        "/api/v1/illness/episodes",
+        headers=auth_headers,
+        json={"name": "口腔溃疡", "start_date": "2026-07-17"},
+    )
+
+    assert r.status_code in (200, 201), r.text
+    assert r.json()["severity"] is None

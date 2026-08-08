@@ -497,7 +497,12 @@ def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> s
         illness_strs = []
         for ill in illnesses:
             days = (today - ill.start_date).days if ill.start_date else 0
-            illness_strs.append(f"{ill.name}(第{days}天, {ill.severity}/10)")
+            severity_text = (
+                f"{ill.severity}/10"
+                if ill.severity is not None
+                else "严重度未记录"
+            )
+            illness_strs.append(f"{ill.name}(第{days}天, {severity_text})")
         parts.append(f"当前病症: {', '.join(illness_strs)}")
         parts.append("急性状态约束: 生病/感冒/发热期间不要求完成运动训练目标, 优先恢复、补水、睡眠和症状观察。")
 
@@ -588,7 +593,7 @@ def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> s
         recent_alerts = db.query(AnomalyAlert).filter(
             AnomalyAlert.user_id == user_id,
             AnomalyAlert.detection_date >= today - timedelta(days=3),
-            AnomalyAlert.acknowledged == False
+            AnomalyAlert.acknowledged.is_(False)
         ).order_by(AnomalyAlert.detection_date.desc()).limit(3).all()
 
         if recent_alerts:
@@ -612,7 +617,7 @@ def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> s
 
         total_templates = db.query(CheckinTemplate).filter(
             CheckinTemplate.user_id == user_id,
-            CheckinTemplate.is_active == True
+            CheckinTemplate.is_active.is_(True)
         ).count()
 
         if total_templates > 0:
@@ -630,14 +635,14 @@ def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> s
         from app.models.supplement import SupplementDefinition, SupplementRecord
         active_supps = db.query(SupplementDefinition).filter(
             SupplementDefinition.user_id == user_id,
-            SupplementDefinition.is_active == True
+            SupplementDefinition.is_active.is_(True)
         ).order_by(SupplementDefinition.sort_order).all()
 
         if active_supps:
             taken_ids = {r.supplement_id for r in db.query(SupplementRecord).filter(
                 SupplementRecord.user_id == user_id,
                 SupplementRecord.record_date == today,
-                SupplementRecord.taken == True
+                SupplementRecord.taken.is_(True)
             ).all()}
             taken = len(taken_ids)
             total = len(active_supps)
@@ -662,7 +667,7 @@ def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> s
         from app.models.medication import Medication, MedicationLog
         active_meds = db.query(Medication).filter(
             Medication.user_id == user_id,
-            Medication.is_active == True
+            Medication.is_active.is_(True)
         ).all()
 
         if active_meds:

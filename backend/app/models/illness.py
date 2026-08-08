@@ -17,7 +17,7 @@ class IllnessEpisode(Base):
     start_date = Column(Date, nullable=False)            # 发作日期
     end_date = Column(Date, nullable=True)              # 痊愈日期，null 表示仍在发作
     status = Column(String(20), nullable=False, default="active")  # active/improving/resolved
-    severity = Column(Integer, nullable=False, default=5)           # 当前严重程度 1-10
+    severity = Column(Integer, nullable=True)             # 当前严重程度 1-10；未知为 null
     notes = Column(Text, nullable=True)                 # 备注
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

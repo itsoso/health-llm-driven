@@ -814,6 +814,14 @@ async def test_illness_record_accepts_name_payload(db):
     assert captured["payload"]["severity"] == 4
 
 
+def test_illness_schema_preserves_unknown_severity_as_null():
+    from app.schemas.illness import IllnessEpisodeCreate
+
+    payload = IllnessEpisodeCreate(name="口腔溃疡", start_date="2026-07-17")
+
+    assert payload.severity is None
+
+
 @pytest.mark.asyncio
 async def test_run_stream_with_extra_context_does_not_crash_before_first_event(db):
     """Regression: sources_used must be initialized before data-source inspection.

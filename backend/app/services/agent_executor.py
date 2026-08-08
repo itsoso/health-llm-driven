@@ -7338,10 +7338,13 @@ def _apply_authorized_symptom_payload(
         "description": authorization["description"],
     }
     raw_data = args.get("data")
-    if isinstance(raw_data, dict):
-        for key in ("record_date", "occurred_at", "severity"):
-            if raw_data.get(key) not in (None, "", []):
-                data[key] = raw_data[key]
+    raw_data = raw_data if isinstance(raw_data, dict) else {}
+    for key in ("date", "record_date", "occurred_at", "severity"):
+        value = raw_data.get(key)
+        if value in (None, "", []):
+            value = args.get(key)
+        if value not in (None, "", []):
+            data[key] = value
     authorized_args: Dict[str, Any] = {"record_type": "symptom", "data": data}
     # This flag is injected by the server-side channel gate. Preserve only the
     # fail-closed True value while replacing all model-authored health fields.
@@ -18660,30 +18663,19 @@ class AgentExecutor:
             except (json.JSONDecodeError, TypeError, ValueError):
                 raw_data = {}
         data = raw_data if isinstance(raw_data, dict) else {}
-        med_name = str(
-            data.get("medication_name")
-            or data.get("name")
-            or args.get("medication_name")
-            or args.get("name")
-            or ""
-        ).strip()
-        actual_dosage = str(
-            data.get("actual_dosage")
-            or args.get("actual_dosage")
-            or data.get("dose")
-            or args.get("dose")
-            or ""
-        ).strip()
-        legacy_dosage = str(
-            data.get("dosage") or args.get("dosage") or ""
-        ).strip()
-        if not actual_dosage and re.fullmatch(
-            r"(?:\d+(?:\.\d+)?|[一二两三四五六七八九十半])"
-            r"(?:粒|片|袋|支|丸|颗|滴|喷|毫升|ml|单位|iu|u)",
-            legacy_dosage,
-            flags=re.IGNORECASE,
-        ):
-            actual_dosage = legacy_dosage
+        from app.services.agent_kernel.capability_policy import (
+            medication_dispatch_aliases_conflict,
+            normalize_health_record_dispatch_args,
+        )
+
+        canonical_input = dict(args)
+        canonical_input["data"] = dict(data)
+        if medication_dispatch_aliases_conflict(canonical_input):
+            return None, "medication 参数包含互相冲突的服量或规格"
+        canonical = normalize_health_record_dispatch_args(canonical_input)
+        data = canonical.get("data") if isinstance(canonical.get("data"), dict) else {}
+        med_name = str(data.get("medication_name") or "").strip()
+        actual_dosage = str(data.get("actual_dosage") or "").strip()
         if not med_name:
             return None, "需要提供药物名称（medication_name）"
         if not actual_dosage:
@@ -18691,17 +18683,7 @@ class AgentExecutor:
                 "medication 记录必须提供本次实际服量 actual_dosage"
                 "（例如 1粒/2片），不能从药品规格或处方默认值推断。"
             )
-        observed_strength = str(
-            data.get("observed_strength")
-            or args.get("observed_strength")
-            or data.get("strength")
-            or args.get("strength")
-            or (
-                legacy_dosage
-                if legacy_dosage and legacy_dosage != actual_dosage
-                else ""
-            )
-        ).strip()
+        observed_strength = str(data.get("observed_strength") or "").strip()
         return {
             "medication_name": med_name,
             "actual_dosage": actual_dosage,

@@ -57,11 +57,17 @@ def _attachment_snapshot(text: str) -> TurnSnapshot:
     "message",
     (
         "记录口腔溃疡，算了吧不要记了",
+        "记录口腔溃疡，不，还是别记录了",
+        "记录口腔溃疡，先等等，别记了",
         "等我确诊后再记录感冒",
         "等以后如果我确诊感冒，再记录感冒",
         "确诊后再记录感冒",
         "请记录朋友的感冒",
         "帮我记录我妈妈的感冒",
+        "记录我朋友感冒",
+        "我朋友感冒了，记录一下",
+        "记录妈妈感冒",
+        "我妈妈感冒了，记录一下",
     ),
 )
 def test_non_authorizing_semantic_frames_block_health_record(message):
@@ -1209,6 +1215,29 @@ def test_illness_create_allows_safe_active_default_and_explicit_severity():
     assert decision.action == "allow"
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录口腔溃疡严重度6级",
+        "记录口腔溃疡，严重度6分",
+    ),
+)
+def test_illness_explicit_severity_variants_survive_projection(message):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {
+                "record_type": "illness",
+                "data": {"name": "口腔溃疡", "severity": 6},
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args["data"]["severity"] == 6
+
+
 def test_illness_create_binds_explicit_notes_and_rejects_invented_notes():
     snapshot = _snapshot("记录口腔溃疡，备注舌尖疼")
 
@@ -1290,6 +1319,244 @@ def test_medication_authorization_binds_observed_strength_separately_from_dosage
     assert matching.action == "allow"
     assert wrong_strength.action == "block"
     assert wrong_strength.reason == "health_record_target_mismatch"
+
+
+def test_medication_legacy_dosage_is_canonicalized_to_exact_consumed_field():
+    unmentioned_dose = decide_tool_capability(
+        _snapshot("记录阿莫西林"),
+        _request(
+            "health_record",
+            {
+                "record_type": "medication",
+                "data": {"medication_name": "阿莫西林", "dosage": "10ml"},
+            },
+        ),
+    )
+    unmentioned_strength = decide_tool_capability(
+        _snapshot("记录我吃了阿奇霉素2粒"),
+        _request(
+            "health_record",
+            {
+                "record_type": "medication",
+                "data": {
+                    "medication_name": "阿奇霉素",
+                    "actual_dosage": "2粒",
+                    "dosage": "250mg",
+                },
+            },
+        ),
+    )
+    explicit_strength = decide_tool_capability(
+        _snapshot("记录阿奇霉素2粒每粒250mg"),
+        _request(
+            "health_record",
+            {
+                "record_type": "medication",
+                "data": {
+                    "medication_name": "阿奇霉素",
+                    "actual_dosage": "2粒",
+                    "dosage": "250mg",
+                },
+            },
+        ),
+    )
+
+    assert unmentioned_dose.action == "block"
+    assert unmentioned_strength.action == "block"
+    assert explicit_strength.action == "allow"
+    assert explicit_strength.normalized_args["data"] == {
+        "medication_name": "阿奇霉素",
+        "actual_dosage": "2粒",
+        "observed_strength": "250mg",
+    }
+
+
+def test_executor_medication_plan_uses_the_same_canonical_alias_parser():
+    from app.services.agent_executor import AgentExecutor
+
+    item, error = AgentExecutor._medication_item_from_health_record_args(
+        {
+            "record_type": "medication",
+            "data": {
+                "medication_name": "阿奇霉素",
+                "actual_dosage": "2粒",
+                "dosage": "250mg",
+            },
+        }
+    )
+    conflict_item, conflict_error = (
+        AgentExecutor._medication_item_from_health_record_args(
+            {
+                "record_type": "medication",
+                "data": {
+                    "medication_name": "阿奇霉素",
+                    "actual_dosage": "2粒",
+                    "dose": "10粒",
+                },
+            }
+        )
+    )
+    legacy_count_conflict_item, legacy_count_conflict_error = (
+        AgentExecutor._medication_item_from_health_record_args(
+            {
+                "record_type": "medication",
+                "data": {
+                    "medication_name": "阿奇霉素",
+                    "actual_dosage": "2粒",
+                    "dosage": "10粒",
+                },
+            }
+        )
+    )
+
+    assert error is None
+    assert item == {
+        "medication_name": "阿奇霉素",
+        "actual_dosage": "2粒",
+        "observed_strength": "250mg",
+    }
+    assert conflict_item is None
+    assert "冲突" in str(conflict_error)
+    assert legacy_count_conflict_item is None
+    assert "冲突" in str(legacy_count_conflict_error)
+
+
+def test_medication_legacy_count_alias_cannot_override_actual_dosage():
+    decision = decide_tool_capability(
+        _snapshot("记录我吃了阿奇霉素2粒"),
+        _request(
+            "health_record",
+            {
+                "record_type": "medication",
+                "data": {
+                    "medication_name": "阿奇霉素",
+                    "actual_dosage": "2粒",
+                    "dosage": "10粒",
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "health_record_target_mismatch"
+
+
+def test_date_aliases_canonicalize_to_one_stable_dispatch_payload():
+    snapshot = _snapshot("记录昨天体重70kg")
+    via_alias = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "weight",
+                "data": {"weight": 70, "date": "2026-07-16"},
+            },
+        ),
+    )
+    via_canonical = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "weight",
+                "data": {"weight": 70, "record_date": "2026-07-16"},
+            },
+        ),
+    )
+
+    assert via_alias.action == "allow"
+    assert via_alias.normalized_args == via_canonical.normalized_args
+    assert via_alias.normalized_args["data"] == {
+        "weight": 70,
+        "record_date": "2026-07-16",
+    }
+
+
+def test_date_only_symptom_projects_model_timestamp_to_server_owned_date():
+    decision = decide_tool_capability(
+        _snapshot("记录昨天头痛"),
+        _request(
+            "health_record",
+            {
+                "record_type": "symptom",
+                "data": {
+                    "body_part": "head",
+                    "description": "头痛",
+                    "occurred_at": "2026-07-16T23:59:59-12:00",
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args["data"] == {
+        "body_part": "head",
+        "description": "头痛",
+        "record_date": "2026-07-16",
+    }
+
+
+def test_explicit_symptom_clock_is_canonicalized_in_user_timezone():
+    decision = decide_tool_capability(
+        _snapshot("记录昨天9点头痛"),
+        _request(
+            "health_record",
+            {
+                "record_type": "symptom",
+                "data": {
+                    "body_part": "head",
+                    "description": "头痛",
+                    "occurred_at": "2026-07-16T09:00:00-12:00",
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args["data"]["occurred_at"] == (
+        "2026-07-16T09:00:00+08:00"
+    )
+
+
+def test_unmentioned_supplement_definition_fields_are_projected_out():
+    decision = decide_tool_capability(
+        _snapshot("记录鱼油"),
+        _request(
+            "health_record",
+            {
+                "record_type": "supplement",
+                "data": {
+                    "supplement_name": "鱼油",
+                    "dosage": "4粒",
+                    "timing": "bedtime",
+                    "category": "药物",
+                    "description": "治疗高血压",
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args["data"] == {"supplement_name": "鱼油"}
+
+
+def test_food_conjunction_does_not_collapse_wagyu_lexeme():
+    decision = decide_tool_capability(
+        _snapshot("记录早餐米饭和和牛200g"),
+        _request(
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "breakfast",
+                    "food_items": "米饭和牛200g",
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "health_record_target_mismatch"
 
 
 @pytest.mark.parametrize(
@@ -2606,9 +2873,9 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v4"
+    assert payload["contract_version"] == "agent-capability-policy-v5"
     assert payload["health_record_target_binding"] == {
-        "version": "authorized-target-set-v3",
+        "version": "authorized-target-set-v4",
         "domain_types": {
             "diet": "diet",
             "exercise": "exercise",

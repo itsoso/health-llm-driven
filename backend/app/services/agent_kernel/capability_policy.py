@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import date
 from typing import Any
 
 from app.services.agent_kernel.tool_registry import (
@@ -61,8 +62,8 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v4"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v3"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v5"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v4"
 _HEALTH_RECORD_DOMAIN_TYPES = {
     "diet": "diet",
     "water": "water",
@@ -242,7 +243,7 @@ _EXCRETION_TARGET_ALIASES = {
 _CLOCK_RE = re.compile(r"(?<!\d)(?P<hour>[01]?\d|2[0-3])[:：点](?P<minute>[0-5]\d)?")
 _SLEEP_QUALITY_RE = re.compile(r"(?:睡眠)?质量.{0,3}(?P<value>[1-5])\s*分?")
 _SEVERITY_TARGET_RE = re.compile(
-    r"(?:严重程度|严重度|程度|强度)?\s*(?P<value>10|[1-9])\s*分(?!钟)"
+    r"(?:严重程度|严重度|程度|强度)?\s*(?P<value>10|[1-9])\s*(?:分(?!钟)|级)"
 )
 
 
@@ -699,13 +700,29 @@ def normalize_health_record_dispatch_args(
             normalized.get("record_date"),
             normalized.get("date"),
         )
-        for key in ("status", "notes"):
-            if data.get(key) in (None, "", []) and normalized.get(key) not in (
-                None,
-                "",
-                [],
-            ):
-                data[key] = normalized[key]
+        name = next(
+            (
+                value
+                for value in (
+                    data.get("name"),
+                    data.get("illness_name"),
+                    normalized.get("name"),
+                    normalized.get("illness_name"),
+                )
+                if value not in (None, "", [])
+            ),
+            None,
+        )
+        for container in (data, normalized):
+            container.pop("name", None)
+            container.pop("illness_name", None)
+        if name is not None:
+            data["name"] = name
+        _canonicalize_top_level_fields(
+            normalized,
+            data,
+            ("status", "notes", "severity", "end_date"),
+        )
     elif record_type == "symptom":
         canonical_key = "record_date"
         candidates = (
@@ -713,6 +730,11 @@ def normalize_health_record_dispatch_args(
             data.get("date"),
             normalized.get("record_date"),
             normalized.get("date"),
+        )
+        _canonicalize_top_level_fields(
+            normalized,
+            data,
+            ("body_part", "description", "severity", "occurred_at"),
         )
     elif record_type == "reminder":
         candidates = ()
@@ -730,11 +752,158 @@ def normalize_health_record_dispatch_args(
         None,
     )
     if canonical_key and canonical_date is not None:
+        date_aliases = (
+            ("start_date", "record_date", "date")
+            if record_type == "illness"
+            else ("record_date", "date")
+        )
+        for container in (data, normalized):
+            for alias in date_aliases:
+                container.pop(alias, None)
         data[canonical_key] = canonical_date
+
+    if record_type == "medication":
+        _canonicalize_named_field(
+            normalized,
+            data,
+            canonical_key="medication_name",
+            aliases=("medication_name", "name"),
+        )
+        _canonicalize_medication_aliases(normalized, data)
+    elif record_type == "supplement":
+        _canonicalize_named_field(
+            normalized,
+            data,
+            canonical_key="supplement_name",
+            aliases=("supplement_name", "name"),
+        )
+        for container in (data, normalized):
+            for key in ("dosage", "timing", "category", "description"):
+                container.pop(key, None)
 
     if isinstance(raw_data, dict) or data:
         normalized["data"] = data
     return normalized
+
+
+def _canonicalize_top_level_fields(
+    args: dict[str, Any],
+    data: dict[str, Any],
+    keys: tuple[str, ...],
+) -> None:
+    for key in keys:
+        value = data.get(key)
+        if value in (None, "", []):
+            value = args.get(key)
+        args.pop(key, None)
+        if value not in (None, "", []):
+            data[key] = value
+
+
+def _canonicalize_named_field(
+    args: dict[str, Any],
+    data: dict[str, Any],
+    *,
+    canonical_key: str,
+    aliases: tuple[str, ...],
+) -> None:
+    value = next(
+        (
+            container.get(alias)
+            for container in (data, args)
+            for alias in aliases
+            if container.get(alias) not in (None, "", [])
+        ),
+        None,
+    )
+    for container in (data, args):
+        for alias in aliases:
+            container.pop(alias, None)
+    if value is not None:
+        data[canonical_key] = value
+
+
+_MEDICATION_ACTUAL_VALUE_RE = re.compile(
+    r"(?:\d+(?:\.\d+)?|[一二两三四五六七八九十半])\s*"
+    r"(?:粒|片|袋|支|丸|颗|滴|喷|毫升|ml|单位|iu|u)",
+    re.IGNORECASE,
+)
+
+
+def _medication_alias_values(
+    args: dict[str, Any],
+    data: dict[str, Any],
+) -> tuple[tuple[Any, ...], tuple[Any, ...]]:
+    actual: list[Any] = []
+    strengths: list[Any] = []
+    for container in (data, args):
+        for key in ("actual_dosage", "dose"):
+            value = container.get(key)
+            if value not in (None, "", []):
+                actual.append(value)
+        for key in ("observed_strength", "strength"):
+            value = container.get(key)
+            if value not in (None, "", []):
+                strengths.append(value)
+
+    for container in (data, args):
+        legacy = container.get("dosage")
+        if legacy in (None, "", []):
+            continue
+        if _MEDICATION_ACTUAL_VALUE_RE.fullmatch(str(legacy).strip()):
+            actual.append(legacy)
+        else:
+            strengths.append(legacy)
+    return tuple(actual), tuple(strengths)
+
+
+def _canonicalize_medication_aliases(
+    args: dict[str, Any],
+    data: dict[str, Any],
+) -> None:
+    actual_values, strength_values = _medication_alias_values(args, data)
+    normalized_actual = {
+        _normalize_medication_dosage(value)
+        for value in actual_values
+        if _normalize_medication_dosage(value)
+    }
+    normalized_strengths = {
+        _normalize_medication_dosage(value)
+        for value in strength_values
+        if _normalize_medication_dosage(value)
+    }
+    if len(normalized_actual) > 1 or len(normalized_strengths) > 1:
+        return
+    for container in (data, args):
+        for key in (
+            "actual_dosage",
+            "dose",
+            "dosage",
+            "observed_strength",
+            "strength",
+        ):
+            container.pop(key, None)
+    if actual_values:
+        data["actual_dosage"] = actual_values[0]
+    if strength_values:
+        data["observed_strength"] = strength_values[0]
+
+
+def medication_dispatch_aliases_conflict(args: dict[str, Any]) -> bool:
+    """Return whether model aliases express multiple consumed medication values."""
+    data = args.get("data") if isinstance(args.get("data"), dict) else {}
+    actual_values, strength_values = _medication_alias_values(args, data)
+    normalized_actual = {
+        _normalize_medication_dosage(value)
+        for value in actual_values
+        if _normalize_medication_dosage(value)
+    }
+    normalized_strengths = {
+        _normalize_medication_dosage(value)
+        for value in strength_values
+        if _normalize_medication_dosage(value)
+    }
+    return len(normalized_actual) > 1 or len(normalized_strengths) > 1
 
 
 def recipe_replay_record_type(args: dict[str, Any]) -> str:
@@ -867,6 +1036,23 @@ def _health_record_target_status(
             expected_values["attachment_authorized"] = True
         expected_values["target_date"] = clause_goal.target_date or default_date
         expected_values["default_date"] = default_date
+        if requested_type == "symptom" and expected_values.get("occurred_clock"):
+            target_day = date.fromisoformat(expected_values["target_date"])
+            hour, minute = (
+                int(value)
+                for value in str(expected_values["occurred_clock"]).split(":", 1)
+            )
+            expected_values["canonical_occurred_at"] = (
+                snapshot.context.current_time.replace(
+                    year=target_day.year,
+                    month=target_day.month,
+                    day=target_day.day,
+                    hour=hour,
+                    minute=minute,
+                    second=0,
+                    microsecond=0,
+                ).isoformat()
+            )
         if not _authorization_target_complete(requested_type, expected_values):
             incomplete_target_seen = True
             continue
@@ -988,6 +1174,12 @@ def _deterministic_target_values(
         names = _named_item_targets(clause, record_type)
         if names:
             values["names"] = names
+    elif record_type == "symptom" and (clocks := tuple(_CLOCK_RE.finditer(clause))):
+        match = clocks[-1]
+        values["occurred_clock"] = (
+            f"{int(match.group('hour')):02d}:"
+            f"{int(match.group('minute') or 0):02d}"
+        )
     elif record_type == "exercise":
         exercise_types = tuple(
             term for term in _EXERCISE_TARGET_TERMS if term in clause
@@ -1492,6 +1684,28 @@ def _target_values_mismatch(
             expected_description not in normalized_description
         ):
             return True
+        canonical_occurred_at = str(
+            expected.get("canonical_occurred_at") or ""
+        ).strip()
+        if canonical_occurred_at:
+            requested_occurred_at = _effective_argument_value(
+                args,
+                data,
+                data_keys=("occurred_at",),
+                arg_keys=("occurred_at",),
+            )
+            if _normalize_clock_value(requested_occurred_at) != str(
+                expected.get("occurred_clock") or ""
+            ):
+                return True
+            data.pop("record_date", None)
+            data["occurred_at"] = canonical_occurred_at
+        else:
+            data.pop("occurred_at", None)
+            data["record_date"] = str(expected.get("target_date") or "")
+        args.pop("occurred_at", None)
+        args.pop("record_date", None)
+        args.pop("date", None)
     if record_type in {"illness", "symptom"}:
         requested_severity = _effective_argument_value(
             args,
@@ -1562,12 +1776,15 @@ def _target_values_mismatch(
                     expected.get("observed_strengths") or {}
                 ).items()
             }
-            requested_strength = _effective_argument_value(
-                args,
-                data,
-                data_keys=("observed_strength", "strength"),
-                arg_keys=("observed_strength", "strength"),
-            )
+            strength_values = _medication_observed_strength_values(args, data)
+            normalized_strength_values = {
+                _normalize_medication_dosage(value)
+                for value in strength_values
+                if _normalize_medication_dosage(value)
+            }
+            if len(normalized_strength_values) > 1:
+                return True
+            requested_strength = strength_values[0] if strength_values else None
             normalized_requested_strength = _normalize_medication_dosage(
                 requested_strength
             )
@@ -1780,21 +1997,16 @@ def _medication_actual_dosage_values(
     args: dict[str, Any],
     data: dict[str, Any],
 ) -> tuple[Any, ...]:
-    values: list[Any] = []
-    for container in (data, args):
-        for key in ("actual_dosage", "dose"):
-            value = container.get(key)
-            if value not in (None, "", []):
-                values.append(value)
-        legacy = container.get("dosage")
-        if legacy not in (None, "", []) and re.fullmatch(
-            r"(?:\d+(?:\.\d+)?|[一二两三四五六七八九十半])\s*"
-            r"(?:粒|片|袋|支|丸|颗|滴|喷|单位|iu|u)",
-            str(legacy).strip(),
-            flags=re.IGNORECASE,
-        ):
-            values.append(legacy)
-    return tuple(values)
+    values, _strengths = _medication_alias_values(args, data)
+    return values
+
+
+def _medication_observed_strength_values(
+    args: dict[str, Any],
+    data: dict[str, Any],
+) -> tuple[Any, ...]:
+    _actual, values = _medication_alias_values(args, data)
+    return values
 
 
 def _effective_argument_value(
@@ -1888,10 +2100,14 @@ def _food_targets_match(expected: Any, requested: Any) -> bool:
     def split_text(value: Any) -> list[str]:
         raw_parts: list[str] = []
         for punct_part in re.split(r"[,，、;；/|+＋]", str(value or "")):
-            # A conjunction is a separator only when it has an entity on both
-            # sides.  This preserves lexical prefixes such as ``和牛``.
+            # Protect lexical ``和牛`` before splitting conjunctions.  This
+            # distinguishes ``米饭和和牛`` (two foods) from ``米饭和牛`` (one
+            # malformed/other entity) and avoids collapsing both into 牛.
+            placeholder = "\uf8ffWAGYU\uf8ff"
+            protected = punct_part.replace("和牛", placeholder)
             raw_parts.extend(
-                re.split(r"(?<=.)[和与及](?=.)", punct_part)
+                part.replace(placeholder, "和牛")
+                for part in re.split(r"(?<=.)[和与及](?=.)", protected)
             )
         return raw_parts
 

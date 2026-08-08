@@ -19,11 +19,17 @@ from app.services.write_intent_scope import (
     (
         "记录口腔溃疡，算了吧不要记了",
         "记录体重71kg，撤销吧别记录了",
+        "记录口腔溃疡，不，还是别记录了",
+        "记录口腔溃疡，先等等，别记了",
         "等我确诊后再记录感冒",
         "等以后如果我确诊感冒，再记录感冒",
         "确诊后再记录感冒",
         "请记录朋友的感冒",
         "帮我记录我妈妈的血压120/80",
+        "记录我朋友感冒",
+        "我朋友感冒了，记录一下",
+        "记录妈妈感冒",
+        "我妈妈感冒了，记录一下",
     ),
 )
 def test_compound_revocation_deferred_condition_and_third_party_have_no_authorized_clause(

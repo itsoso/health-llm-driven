@@ -30,7 +30,7 @@ class IllnessEpisodeCreate(BaseModel):
     name: str = Field(..., max_length=100,
                       validation_alias=AliasChoices("name", "illness_name"))
     start_date: date = Field(default_factory=date.today)
-    severity: int = Field(5, ge=1, le=10)
+    severity: Optional[int] = Field(None, ge=1, le=10)
     status: str = Field("active")
     notes: Optional[str] = None
 
@@ -48,7 +48,7 @@ class IllnessEpisodeListResponse(BaseModel):
     start_date: date
     end_date: Optional[date]
     status: str
-    severity: int
+    severity: Optional[int]
     notes: Optional[str]
     created_at: datetime
     updated_at: Optional[datetime]

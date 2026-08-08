@@ -200,6 +200,28 @@ class TestHealthContextLite:
         assert "第3天" in ctx
         assert "6/10" in ctx
 
+    def test_with_illness_without_severity_does_not_invent_a_score(
+        self, db, test_user, test_profile
+    ):
+        """未知严重度必须明确保留未知，不能回填或展示伪造的 5/10。"""
+        from app.services.health_context_lite_service import build_lite_health_context
+
+        illness = IllnessEpisode(
+            user_id=test_user.id,
+            name="口腔溃疡",
+            start_date=date.today() - timedelta(days=1),
+            status="active",
+            severity=None,
+        )
+        db.add(illness)
+        db.commit()
+
+        ctx = build_lite_health_context(db, test_user.id)
+
+        assert "口腔溃疡(第1天, 严重度未记录)" in ctx
+        assert "口腔溃疡(第1天, None/10)" not in ctx
+        assert "口腔溃疡(第1天, 5/10)" not in ctx
+
     def test_no_garmin_data(self, db, test_user, test_profile):
         """没有 Garmin 设备时优雅降级"""
         from app.services.health_context_lite_service import build_lite_health_context

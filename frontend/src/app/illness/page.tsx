@@ -20,7 +20,7 @@ interface IllnessEpisode {
   start_date: string;
   end_date: string | null;
   status: Status;
-  severity: number;
+  severity: number | null;
   notes: string | null;
   created_at: string;
   updates?: IllnessUpdate[];
@@ -44,6 +44,15 @@ function daysSince(dateStr: string) {
 
 function today() {
   return format(new Date(), 'yyyy-MM-dd');
+}
+
+function severityText(severity: number | null) {
+  return severity === null ? '未记录' : `${severity}/10`;
+}
+
+function adjustedSeverity(severity: number | null, delta: number) {
+  if (severity === null) return undefined;
+  return Math.max(1, Math.min(10, severity + delta));
 }
 
 export default function IllnessPage() {
@@ -130,7 +139,7 @@ export default function IllnessPage() {
           <div className="flex flex-wrap gap-4 text-sm text-slate-300">
             <span>📅 发作：{detail.start_date}</span>
             <span>⏱ {days} 天</span>
-            <span>严重度：{detail.severity}/10</span>
+            <span>严重度：{severityText(detail.severity)}</span>
             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[detail.status]}`}>
               {STATUS_LABEL[detail.status]}
             </span>
@@ -141,23 +150,23 @@ export default function IllnessPage() {
         {/* 严重度条 */}
         <div className="bg-slate-800 rounded-xl p-4 mb-4">
           <div className="flex justify-between text-xs text-slate-400 mb-1">
-            <span>严重程度</span><span>{detail.severity}/10</span>
+            <span>严重程度</span><span>{severityText(detail.severity)}</span>
           </div>
           <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
             <div
               className="h-full rounded-full bg-gradient-to-r from-green-400 via-yellow-400 to-red-400"
-              style={{ width: `${detail.severity * 10}%` }}
+              style={{ width: `${(detail.severity ?? 0) * 10}%` }}
             />
           </div>
         </div>
 
         {detail.status !== 'resolved' && (
           <div className="flex gap-2 mb-4 flex-wrap">
-            <button onClick={() => quickUpdate(detail, 'improving', Math.max(1, detail.severity - 2))}
+            <button onClick={() => quickUpdate(detail, 'improving', adjustedSeverity(detail.severity, -2))}
               className="px-4 py-2 rounded-lg bg-yellow-500/10 text-yellow-400 text-sm">好转了</button>
             <button onClick={() => quickUpdate(detail, 'resolved')}
               className="px-4 py-2 rounded-lg bg-green-500/10 text-green-400 text-sm">已痊愈</button>
-            <button onClick={() => quickUpdate(detail, 'active', Math.min(10, detail.severity + 1))}
+            <button onClick={() => quickUpdate(detail, 'active', adjustedSeverity(detail.severity, 1))}
               className="px-4 py-2 rounded-lg bg-red-500/10 text-red-400 text-sm">加重了</button>
           </div>
         )}
@@ -278,9 +287,9 @@ export default function IllnessPage() {
               key={ep.id}
               episode={ep}
               onDetail={() => { setDetailId(ep.id); setView('detail'); }}
-              onImprove={() => quickUpdate(ep, 'improving', Math.max(1, ep.severity - 2))}
+              onImprove={() => quickUpdate(ep, 'improving', adjustedSeverity(ep.severity, -2))}
               onResolve={() => quickUpdate(ep, 'resolved')}
-              onWorsen={() => quickUpdate(ep, 'active', Math.min(10, ep.severity + 1))}
+              onWorsen={() => quickUpdate(ep, 'active', adjustedSeverity(ep.severity, 1))}
               onDelete={() => { if (confirm('确认删除？')) deleteMutation.mutate(ep.id); }}
             />
           ))}
@@ -336,12 +345,12 @@ function EpisodeCard({
 
       <div className="mb-2">
         <div className="flex justify-between text-xs text-slate-400 mb-1">
-          <span>严重程度</span><span>{episode.severity}/10</span>
+          <span>严重程度</span><span>{severityText(episode.severity)}</span>
         </div>
         <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
           <div
             className="h-full rounded-full bg-gradient-to-r from-green-400 via-yellow-400 to-red-400"
-            style={{ width: `${episode.severity * 10}%` }}
+            style={{ width: `${(episode.severity ?? 0) * 10}%` }}
           />
         </div>
       </div>

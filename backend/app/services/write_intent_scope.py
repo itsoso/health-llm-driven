@@ -221,17 +221,35 @@ _DEFERRED_CONDITION_PREFIX_RE = re.compile(
     r"(?:记|记录|保存|录入|写入|新增|打卡)"
     r")"
 )
+_THIRD_PARTY_SUBJECT = (
+    r"(?:朋友|同事|医生|家人|妈妈|母亲|爸爸|父亲|妻子|丈夫|"
+    r"老公|老婆|孩子|儿子|女儿|室友|同学|领导|老板|客户|"
+    r"他|她|别人|患者)"
+)
+_THIRD_PARTY_HEALTH_FACT = (
+    r"(?:感冒|流感|发烧|生病|口腔溃疡|湿疹|血压|体重|腰围|"
+    r"头痛|头疼|胸痛|腹痛|咳嗽|症状|用药|服药)"
+)
+_WRITE_ACTION_PATTERN = r"(?:记|记录|保存|录入|写入|新增|打卡)"
 _THIRD_PARTY_WRITE_SUBJECT_RE = re.compile(
-    r"(?:(?:给|替|为)(?:我(?:的)?)?"
-    r"(?:朋友|同事|医生|家人|妈妈|母亲|爸爸|父亲|妻子|丈夫|"
-    r"孩子|儿子|女儿|他|她|别人|患者).{0,12}"
-    r"(?:记|记录|保存|录入|写入|新增|打卡))|"
-    r"(?:(?:我(?:的)?)?"
-    r"(?:朋友|同事|医生|家人|妈妈|母亲|爸爸|父亲|妻子|丈夫|"
-    r"孩子|儿子|女儿|他|她|别人|患者)的)"
+    rf"(?:(?:给|替|为)(?:我(?:的)?)?{_THIRD_PARTY_SUBJECT}.{{0,12}}"
+    rf"{_WRITE_ACTION_PATTERN})|"
+    rf"(?:(?:我(?:的)?)?{_THIRD_PARTY_SUBJECT}的)|"
+    rf"(?:{_WRITE_ACTION_PATTERN}(?:一下)?(?:我(?:的)?)?"
+    rf"{_THIRD_PARTY_SUBJECT}(?:的)?(?={_THIRD_PARTY_HEALTH_FACT}))|"
+    rf"(?:(?:我(?:的)?)?{_THIRD_PARTY_SUBJECT}(?:的)?"
+    rf"{_THIRD_PARTY_HEALTH_FACT}.{{0,20}}{_WRITE_ACTION_PATTERN})"
 )
 _WRITE_ATTRIBUTE_CONTINUATION_RE = re.compile(
-    r"^(?:备注|注释|说明)(?:是|为|：|:)?\S+"
+    r"^(?:备注|注释|说明|严重度|严重程度)(?:是|为|：|:)?\S+"
+)
+_DIRECT_HEALTH_OBSERVATION_RE = re.compile(
+    r"(?:吃了|喝了|服了|服用(?:了)?|用了|刚吃|刚喝|"
+    r"(?:早餐|早饭|午餐|午饭|中饭|晚餐|晚饭|加餐|零食|夜宵)吃|"
+    r"(?:体重|血压|腰围)\s*\d|"
+    r"(?:头痛|头疼|胸痛|腹痛|眼痒|嗓子疼|感冒|流感|发烧|生病)(?:了|中|$)|"
+    r"(?:提醒|闹钟|目标|准备开始睡觉|开始睡觉|入睡|起床|"
+    r"心情|情绪|排便|大便|便秘|腹泻|俯卧撑|瑜伽|跑步))"
 )
 _POST_ATTRIBUTION_RE = re.compile(
     r"(?:这是|这只是|上面是|前面是).{0,12}(?:说的|写的|提到的)?"
@@ -828,8 +846,13 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
                 clauses.append(raw_clause)
         for clause in clauses:
             if _TRAILING_REVOCATION_CLAUSE_RE.fullmatch(clause):
-                if authorized:
-                    authorized.pop()
+                while authorized:
+                    candidate = authorized.pop()
+                    if (
+                        _last_write_signal_in_clause(candidate) is not None
+                        or _DIRECT_HEALTH_OBSERVATION_RE.search(candidate)
+                    ):
+                        break
                 continue
 
             polite_condition = bool(_POLITE_CONDITIONAL_PREFIX_RE.search(clause))

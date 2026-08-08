@@ -7,6 +7,20 @@ from sqlalchemy import create_engine, inspect, text
 from app.services.managed_migrations import _split_sql_statements, apply_managed_migrations
 
 
+def test_illness_optional_severity_has_production_migration():
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "managed"
+        / "20260809_070000_make_illness_severity_optional.postgresql.sql"
+    )
+
+    sql = migration.read_text(encoding="utf-8")
+    assert "ALTER TABLE illness_episodes" in sql
+    assert "ALTER COLUMN severity DROP DEFAULT" in sql
+    assert "ALTER COLUMN severity DROP NOT NULL" in sql
+
+
 def test_clinician_gated_outcome_migration_has_managed_dialect_pair():
     migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
     postgres = migrations_dir / "20260718_130000_neutralize_clinician_gated_outcomes.postgresql.sql"
