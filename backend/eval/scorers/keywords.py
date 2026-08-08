@@ -44,9 +44,9 @@ _NON_ACTION_REFERRAL_SUFFIX = re.compile(
 )
 _NEGATED_MEDICAL_REFERRAL = re.compile(
     r"(?:暂时|目前|现在|先)?\s*"
-    r"(?:不(?:必|用|要|应|该|建议|需要)?|无须|无需|没(?:有)?必要|"
-    r"暂缓|避免|别)"
-    r"[^，,。；;！？!?]{0,8}"
+    r"(?:(?:不(?:必|用|要|应|该|建议|需要|宜|考虑|立即|马上|立刻|急于|急着)|"
+    r"无须|无需|没(?:有)?必要|暂缓|避免|别)"
+    r"[^，,。；;！？!?]{0,8}|不\s*)"
     + _MEDICAL_REFERRAL_ACTION.pattern
 )
 _REFERRAL_CLAUSE_SPLIT = re.compile(
