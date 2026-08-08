@@ -15,6 +15,7 @@ from app.services.agent_executor import (
     _completion_status_from_finish_reason,
     _recoverable_write_operation_key,
     _write_checkpoint_status_after_dispatch,
+    _write_outcome_event_fields,
     _write_result_is_pre_dispatch_validation_error,
     _write_tool_completed,
 )
@@ -59,6 +60,40 @@ def _stream_from(fake_call_llm):
 
 async def _no_simple_diet_nutrition_estimate(_food_items):
     return None
+
+
+def _tool_results(events):
+    return [
+        event["data"]
+        for event in events
+        if event.get("event") == "tool_result"
+    ]
+
+
+def _assert_pre_dispatch_rejection(tool_result, *, error_code):
+    assert tool_result["write_outcome"] == "rejected"
+    assert tool_result["write_completed"] is False
+    assert tool_result["dispatch_started"] is False
+    assert tool_result["resubmit_safe"] is True
+    assert tool_result["error_code"] == error_code
+    assert "receipt" not in tool_result
+
+
+def _assert_pre_dispatch_outcome(write_outcome, *, error_code):
+    assert write_outcome["write_outcome"] == "rejected"
+    assert write_outcome["dispatch_started"] is False
+    assert write_outcome["resubmit_safe"] is True
+    assert write_outcome["error_code"] == error_code
+    assert write_outcome["receipt"] is None
+
+
+def _assert_verified_write(tool_result, *, resource_id):
+    assert tool_result["write_outcome"] == "verified"
+    assert tool_result["dispatch_started"] is True
+    assert tool_result["resubmit_safe"] is False
+    assert tool_result["error_code"] is None
+    assert tool_result["receipt"]["verified"] is True
+    assert tool_result["receipt"]["resource_id"] == resource_id
 
 
 @pytest.fixture(autouse=True)
@@ -3360,7 +3395,12 @@ async def test_update_json_object_string_is_normalized_without_delete_fallback(
                 "record_date": "2026-08-08",
             }])
         if parsed["operation"] == "delete":
-            raise AssertionError("update trajectory must never dispatch delete")
+            return json.dumps({
+                "id": parsed["record_id"],
+                "record_id": parsed["record_id"],
+                "resource_type": "water_record",
+                "message": "删除成功",
+            }, ensure_ascii=False)
         return json.dumps({
             "id": parsed["record_id"],
             "record_id": parsed["record_id"],
@@ -3390,9 +3430,11 @@ async def test_update_json_object_string_is_normalized_without_delete_fallback(
         if event.get("event") == "token"
     )
     done = next(event for event in events if event.get("event") == "done")
-
+    tool_results = _tool_results(events)
     assert [item["operation"] for item in dispatched] == ["list", "update"]
     assert dispatched[-1]["data"] == {"amount": 350}
+    assert len(tool_results) == 2
+    _assert_verified_write(tool_results[1], resource_id="718")
     assert done["data"]["turn_outcome"]["category"] != "tool_blocked"
     assert done["data"]["completion_status"] == "complete"
     assert len(done["data"]["write_receipts"]) == 1
@@ -3410,6 +3452,12 @@ async def test_update_retry_never_deletes_and_reports_verified_update(
     executor = AgentExecutor(db)
     llm_calls = 0
     dispatched = []
+    write_outcomes = []
+
+    def capture_write_outcome(result, receipt):
+        fields = _write_outcome_event_fields(result, receipt)
+        write_outcomes.append({**fields, "receipt": receipt})
+        return fields
 
     async def fake_call_llm(messages, tools):
         nonlocal llm_calls
@@ -3452,16 +3500,20 @@ async def test_update_retry_never_deletes_and_reports_verified_update(
         }
 
     async def fake_health_manage(_base_url, _headers, parsed):
+        dispatched.append(parsed)
         if parsed["operation"] == "list":
-            dispatched.append(parsed)
             return json.dumps([{
                 "id": 718,
                 "amount": 300,
                 "record_date": "2026-08-08",
             }])
         if parsed["operation"] == "delete":
-            raise AssertionError("blocked delete must not reach the adapter")
-        dispatched.append(parsed)
+            return json.dumps({
+                "id": parsed["record_id"],
+                "record_id": parsed["record_id"],
+                "resource_type": "water_record",
+                "message": "删除成功",
+            }, ensure_ascii=False)
         return json.dumps({
             "id": parsed["record_id"],
             "record_id": parsed["record_id"],
@@ -3472,6 +3524,10 @@ async def test_update_retry_never_deletes_and_reports_verified_update(
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
     monkeypatch.setattr(executor, "_exec_health_manage", fake_health_manage)
+    monkeypatch.setattr(
+        "app.services.agent_executor._write_outcome_event_fields",
+        capture_write_outcome,
+    )
     monkeypatch.setattr(
         "app.services.agent_executor._normalize_goal_guarded_tool_calls",
         lambda tool_calls, *args, **kwargs: tool_calls,
@@ -3491,9 +3547,23 @@ async def test_update_retry_never_deletes_and_reports_verified_update(
         if event.get("event") == "token"
     )
     done = next(event for event in events if event.get("event") == "done")
+    tool_results = _tool_results(events)
 
     assert [item["operation"] for item in dispatched] == ["list", "update"]
     assert dispatched[-1]["data"] == {"amount": 350}
+    # Recoverable validation failures are intentionally withheld from the UI
+    # event stream, so capture the exact outcome fields before that suppression.
+    assert len(write_outcomes) == 4
+    _assert_pre_dispatch_outcome(
+        write_outcomes[1],
+        error_code="tool_validation_failed",
+    )
+    assert len(tool_results) == 3
+    _assert_pre_dispatch_rejection(
+        tool_results[1],
+        error_code="manage_operation_mismatch",
+    )
+    _assert_verified_write(tool_results[2], resource_id="718")
     assert done["data"]["turn_outcome"]["category"] != "tool_blocked"
     assert done["data"]["completion_status"] == "complete"
     assert len(done["data"]["write_receipts"]) == 1
@@ -3548,9 +3618,14 @@ async def test_update_retry_different_target_does_not_recover_blocked_delete(
         }
 
     async def fake_health_manage(_base_url, _headers, parsed):
-        if parsed["operation"] == "delete":
-            raise AssertionError("blocked delete must not reach the adapter")
         dispatched.append(parsed)
+        if parsed["operation"] == "delete":
+            return json.dumps({
+                "id": parsed["record_id"],
+                "record_id": parsed["record_id"],
+                "resource_type": "water_record",
+                "message": "删除成功",
+            }, ensure_ascii=False)
         return json.dumps({
             "id": parsed["record_id"],
             "record_id": parsed["record_id"],
@@ -3575,8 +3650,15 @@ async def test_update_retry_different_target_does_not_recover_blocked_delete(
         )
     ]
     done = next(event for event in events if event.get("event") == "done")
+    tool_results = _tool_results(events)
 
     assert [item["record_id"] for item in dispatched] == [719]
+    assert len(tool_results) == 2
+    _assert_pre_dispatch_rejection(
+        tool_results[0],
+        error_code="manage_operation_mismatch",
+    )
+    _assert_verified_write(tool_results[1], resource_id="719")
     assert done["data"]["turn_outcome"]["category"] == "tool_blocked"
     assert done["data"]["turn_outcome"]["reason_code"] == "manage_operation_mismatch"
     assert len(done["data"]["write_receipts"]) == 1
@@ -3628,9 +3710,14 @@ async def test_delete_retry_recovers_same_target_operation_mismatch(
         }
 
     async def fake_health_manage(_base_url, _headers, parsed):
-        if parsed["operation"] == "update":
-            raise AssertionError("blocked update must not reach the adapter")
         dispatched.append(parsed)
+        if parsed["operation"] == "update":
+            return json.dumps({
+                "id": parsed["record_id"],
+                "record_id": parsed["record_id"],
+                "resource_type": "water_record",
+                "amount": parsed["data"]["amount"],
+            }, ensure_ascii=False)
         return json.dumps({
             "id": parsed["record_id"],
             "record_id": parsed["record_id"],
@@ -3655,8 +3742,15 @@ async def test_delete_retry_recovers_same_target_operation_mismatch(
         )
     ]
     done = next(event for event in events if event.get("event") == "done")
+    tool_results = _tool_results(events)
 
     assert [item["operation"] for item in dispatched] == ["delete"]
+    assert len(tool_results) == 2
+    _assert_pre_dispatch_rejection(
+        tool_results[0],
+        error_code="manage_operation_mismatch",
+    )
+    _assert_verified_write(tool_results[1], resource_id="718")
     assert done["data"]["turn_outcome"]["category"] != "tool_blocked"
     assert done["data"]["completion_status"] == "complete"
     assert len(done["data"]["write_receipts"]) == 1
@@ -3708,9 +3802,14 @@ async def test_delete_retry_different_target_keeps_operation_mismatch_blocked(
         }
 
     async def fake_health_manage(_base_url, _headers, parsed):
-        if parsed["operation"] == "update":
-            raise AssertionError("blocked update must not reach the adapter")
         dispatched.append(parsed)
+        if parsed["operation"] == "update":
+            return json.dumps({
+                "id": parsed["record_id"],
+                "record_id": parsed["record_id"],
+                "resource_type": "water_record",
+                "amount": parsed["data"]["amount"],
+            }, ensure_ascii=False)
         return json.dumps({
             "id": parsed["record_id"],
             "record_id": parsed["record_id"],
@@ -3735,8 +3834,15 @@ async def test_delete_retry_different_target_keeps_operation_mismatch_blocked(
         )
     ]
     done = next(event for event in events if event.get("event") == "done")
+    tool_results = _tool_results(events)
 
     assert [item["record_id"] for item in dispatched] == [719]
+    assert len(tool_results) == 2
+    _assert_pre_dispatch_rejection(
+        tool_results[0],
+        error_code="manage_operation_mismatch",
+    )
+    _assert_verified_write(tool_results[1], resource_id="719")
     assert done["data"]["turn_outcome"]["category"] == "tool_blocked"
     assert done["data"]["turn_outcome"]["reason_code"] == "manage_operation_mismatch"
     assert len(done["data"]["write_receipts"]) == 1
