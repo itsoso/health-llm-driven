@@ -174,6 +174,28 @@ class TestKeywordsScorer:
         r = score_keywords("", {"must_contain": ["x"]})
         assert not r["passed"]
 
+    def test_must_contain_any_accepts_semantic_alternative(self):
+        r = score_keywords(
+            "建议一周内复测三次，仍偏高请尽快就诊。",
+            {
+                "must_contain": ["复测"],
+                "must_contain_any": ["医", "就诊", "心内科"],
+            },
+        )
+        assert r["passed"] is True
+        assert r["any_present"] == ["就诊"]
+
+    def test_must_contain_any_requires_at_least_one_alternative(self):
+        r = score_keywords(
+            "建议一周内复测三次。",
+            {
+                "must_contain": ["复测"],
+                "must_contain_any": ["医", "就诊", "心内科"],
+            },
+        )
+        assert r["passed"] is False
+        assert r["any_present"] == []
+
 
 # ============= llm_judge scorer 单元测试 (用 mock judge) =============
 
