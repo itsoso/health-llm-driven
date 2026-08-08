@@ -1649,8 +1649,10 @@ async def test_executor_ledgers_health_manage_mutations_with_typed_receipt(
             "data": args,
         },
     )
+    calls = []
 
     async def fake_manage(base_url, headers, args):
+        calls.append(args)
         return '{"id":55,"message":"操作成功"}'
 
     monkeypatch.setattr(executor, "_exec_health_manage", fake_manage)
@@ -1661,12 +1663,93 @@ async def test_executor_ledgers_health_manage_mutations_with_typed_receipt(
         "data": {"dosage": "1000IU"},
     }
 
-    await executor._execute_tool("health_manage", args, None)
+    first = await executor._execute_tool("health_manage", args, None)
+    replay = await executor._execute_tool("health_manage", args, None)
 
     stored = db.query(AgentToolOperation).one()
+    assert len(calls) == 1
+    assert '"id":55' in first
+    assert '"resource_id": "55"' in replay
+    assert '"replayed": true' in replay
     assert stored.status == "succeeded"
     assert stored.resource_type == expected_resource_type
     assert stored.resource_id == "55"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation_name", ["update", "delete"])
+async def test_executor_does_not_verify_or_replay_health_manage_wrong_target(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    operation_name,
+):
+    from app.models.agent_runtime import AgentToolOperation
+    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    runtime = AgentRuntimeCoordinator(db)
+    admission = _run(
+        db,
+        user.id,
+        suffix=f"health-manage-wrong-target-{operation_name}",
+    )
+    runtime.mark_running(admission.context)
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._current_turn_user_message = (
+        "删除饮水记录 55"
+        if operation_name == "delete"
+        else "更新饮水记录 55"
+    )
+    executor._runtime_run_id = admission.context.run_id
+    executor._runtime_attempt_id = admission.context.attempt_id
+    executor._runtime_managed = True
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_runtime_mode", "enforce"
+    )
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+    calls = []
+
+    async def fake_manage(base_url, headers, args):
+        calls.append(args)
+        return '{"id":56,"resource_type":"water_record"}'
+
+    monkeypatch.setattr(executor, "_exec_health_manage", fake_manage)
+    args = {
+        "record_type": "water",
+        "operation": operation_name,
+        "record_id": 55,
+    }
+    if operation_name == "update":
+        args["data"] = {"amount": 350}
+
+    first = await executor._execute_tool("health_manage", args, None)
+    replay = await executor._execute_tool("health_manage", args, None)
+
+    stored = db.query(AgentToolOperation).one()
+    assert len(calls) == 1
+    assert '"id":56' in first
+    assert '"status": "uncertain"' in replay
+    assert stored.status == "reconciliation_required"
+    assert stored.resource_id is None
+    assert executor._agent_kernel_event_bus is not None
+    tool_results = [
+        event
+        for event in executor._agent_kernel_event_bus.events
+        if event.name == "agent.tool_result"
+    ]
+    assert len(tool_results) == 2
+    assert all(event.data["success"] is False for event in tool_results)
+    assert all("receipt" not in event.data for event in tool_results)
 
 
 @pytest.mark.asyncio

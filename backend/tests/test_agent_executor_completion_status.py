@@ -249,7 +249,7 @@ def test_unstructured_write_result_is_never_reported_as_completed(result):
 def test_structured_write_result_with_resource_identity_is_completed():
     assert _write_tool_completed(
         "health_manage",
-        {"record_type": "diet", "operation": "update"},
+        {"record_type": "diet", "operation": "update", "record_id": 42},
         '{"success":true,"id":42}',
     ) is True
 
@@ -3757,6 +3757,103 @@ async def test_delete_retry_recovers_same_target_operation_mismatch(
     assert done["data"]["completion_status"] == "complete"
     assert len(done["data"]["write_receipts"]) == 1
     assert done["data"]["write_receipts"][0]["resource_id"] == "718"
+
+
+@pytest.mark.asyncio
+async def test_update_wrong_result_id_does_not_recover_same_target_mismatch(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    dispatched = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            operation = "delete"
+            data = None
+        elif llm_calls == 2:
+            operation = "update"
+            data = {"amount": 350}
+        else:
+            return {
+                "content": "已将饮水记录 718 改为 350ml。",
+                "finish_reason": "stop",
+            }
+        arguments = {
+            "record_type": "water",
+            "operation": operation,
+            "record_id": 718,
+        }
+        if data is not None:
+            arguments["data"] = data
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": f"water-{operation}-718",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps(arguments, ensure_ascii=False),
+                },
+            }],
+        }
+
+    async def fake_health_manage(_base_url, _headers, parsed):
+        dispatched.append(parsed)
+        return json.dumps({
+            "id": 719,
+            "record_id": 719,
+            "resource_type": "water_record",
+            "status": "updated",
+            "amount": parsed["data"]["amount"],
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_exec_health_manage", fake_health_manage)
+    monkeypatch.setattr(
+        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
+        lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="把饮水记录 718 改成 350ml",
+            user_auth_token="test-token",
+        )
+    ]
+    done = next(event for event in events if event.get("event") == "done")
+    tool_results = _tool_results(events)
+
+    assert [item["operation"] for item in dispatched] == ["update"]
+    assert len(tool_results) == 2
+    _assert_pre_dispatch_rejection(
+        tool_results[0],
+        error_code="manage_operation_mismatch",
+    )
+    wrong_target_result = tool_results[1]
+    assert wrong_target_result["write_completed"] is False
+    assert wrong_target_result["write_outcome"] == "uncertain"
+    assert wrong_target_result["dispatch_started"] is None
+    assert wrong_target_result["resubmit_safe"] is False
+    assert wrong_target_result["error_code"] == "missing_receipt"
+    assert "receipt" not in wrong_target_result
+    assert done["data"]["turn_outcome"]["category"] == (
+        "write_reconciliation_required"
+    )
+    assert done["data"]["turn_outcome"]["reason_code"] == "missing_receipt"
+    assert done["data"]["write_receipts"] == []
+    assert ("water", 718) in (
+        executor._agent_kernel_unresolved_manage_mismatch_targets
+    )
+    assert "manage_operation_mismatch" not in (
+        executor._agent_kernel_recovered_capability_block_reasons
+    )
 
 
 @pytest.mark.asyncio

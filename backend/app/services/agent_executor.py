@@ -3847,6 +3847,7 @@ def _write_receipt_from_tool_result(
         args.get("record_type") or args.get("type") or ""
     ).strip().lower()
     normalized_action = str(args.get("action") or "").strip().lower()
+    normalized_operation = str(args.get("operation") or "").strip().lower()
     if tool_name in {"health_record", "health_manage"}:
         expected_resource_type = expected_receipt_resource_type(tool_name, args)
     elif tool_name == "manage_plan":
@@ -3894,6 +3895,21 @@ def _write_receipt_from_tool_result(
         return None
     if not is_valid_receipt_resource_id(tool_name, resource_id):
         return None
+    if (
+        has_structured_args
+        and tool_name == "health_manage"
+        and normalized_operation in {"update", "delete"}
+    ):
+        requested_record_id = canonical_health_manage_record_id(
+            args.get("record_id")
+        )
+        result_record_id = canonical_health_manage_record_id(resource_id)
+        if (
+            requested_record_id is None
+            or result_record_id is None
+            or requested_record_id != result_record_id
+        ):
+            return None
     target_date, target_date_conflict = _receipt_target_date(payload, args)
     if target_date_conflict:
         return None
@@ -3919,7 +3935,6 @@ def _write_receipt_from_tool_result(
     if has_structured_args and tool_name == "health_record":
         receipt_action = "create"
     elif has_structured_args and tool_name == "health_manage":
-        normalized_operation = str(args.get("operation") or "").strip().lower()
         if normalized_operation in {"update", "delete"}:
             receipt_action = normalized_operation
     if receipt_action:
