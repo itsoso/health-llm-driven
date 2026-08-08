@@ -77,7 +77,54 @@ _DELETE_MIXED_UPDATE_MARKERS = (
     "调整",
     "修正",
 )
-_FIELD_DELETE_TARGET_RE = re.compile(r"(?:记录|条目)\s*(?:的|中(?:的)?)")
+_RECORD_FIELD_TARGETS = (
+    "备注",
+    "注释",
+    "说明",
+    "字段",
+    "内容",
+    "饮水量",
+    "水量",
+    "食物内容",
+    "食物",
+    "卡路里",
+    "热量",
+    "餐次",
+    "体重",
+    "腰围",
+    "收缩压",
+    "舒张压",
+    "高压",
+    "低压",
+    "睡眠时长",
+    "时长",
+    "状态",
+    "严重度",
+    "药名",
+    "补剂名",
+    "名称",
+    "名字",
+    "剂量",
+    "服用状态",
+    "次数",
+    "组数",
+    "跳过原因",
+    "标题",
+    "优先级",
+    "日期",
+    "时间",
+)
+_RECORD_FIELD_TARGET_PATTERN = "|".join(
+    re.escape(target)
+    for target in sorted(_RECORD_FIELD_TARGETS, key=len, reverse=True)
+)
+_RECORD_FIELD_LOCATION_PATTERN = r"(?:里(?:面)?|上(?:面)?|内|中)(?:的)?"
+_FIELD_DELETE_TARGET_RE = re.compile(
+    rf"(?:记录|条目)(?:{_RECORD_FIELD_LOCATION_PATTERN}|的)?"
+    rf"(?:{_RECORD_FIELD_TARGET_PATTERN})"
+    rf"|(?:{_RECORD_FIELD_TARGET_PATTERN})从[^，。；！？]{{0,24}}"
+    rf"(?:记录|条目)(?:{_RECORD_FIELD_LOCATION_PATTERN})?"
+)
 _WHOLE_RECORD_TARGET_RE = re.compile(
     r"(?:上一条|前一条|这条|那条|最后一条|刚才(?:那)?条|"
     r"第[一二三四五六七八九十百\d]+条)[^，。；！？]{0,16}(?:记录|条目)"

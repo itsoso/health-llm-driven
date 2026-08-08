@@ -381,10 +381,21 @@ async def test_execute_tool_blocks_health_manage_delete_in_update_turn(db, monke
 
 
 @pytest.mark.asyncio
-async def test_execute_tool_blocks_field_removal_from_deleting_record(db, monkeypatch):
+@pytest.mark.parametrize(
+    "message",
+    (
+        "把上一条饮水记录里的备注去掉",
+        "把上一条饮水记录备注删掉",
+    ),
+)
+async def test_execute_tool_blocks_field_removal_from_deleting_record(
+    db,
+    monkeypatch,
+    message,
+):
     executor = AgentExecutor(db)
     executor._current_user_id = 1
-    executor._current_turn_user_message = "把上一条饮水记录的备注去掉"
+    executor._current_turn_user_message = message
 
     monkeypatch.setattr(
         "app.services.llm.tool_validator.validate_tool_call",
