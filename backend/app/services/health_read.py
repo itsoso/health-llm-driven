@@ -22,6 +22,7 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional
@@ -70,9 +71,76 @@ def canonical_read(
             uploaded_since=uploaded_since,
             uploaded_days=uploaded_days,
         )
+    if dimension == "illness":
+        return read_illness_episodes(
+            db,
+            user_id,
+            days=days,
+            keyword=keyword,
+        )
     if dimension in _WEARABLE_DIMS:
         return read_wearable_daily(db, user_id, days=days, focus=dimension)
     return None
+
+
+# ── 病症发作 → IllnessEpisode ────────────────────────────────────────────
+def read_illness_episodes(
+    db: Session,
+    user_id: Optional[int],
+    *,
+    days=183,
+    keyword: str = "",
+) -> str:
+    """Read owner-scoped illness episodes for a typed semantic query plan."""
+    if user_id is None:
+        return "Error: 当前会话无 user_id, 无法查询病症记录"
+
+    window_days = min(_window_days(days, floor=1), 365)
+    since = date.today() - timedelta(days=window_days)
+    name = (keyword or "").strip()
+
+    from app.models.illness import IllnessEpisode
+
+    try:
+        query = db.query(IllnessEpisode).filter(
+            IllnessEpisode.user_id == user_id,
+            IllnessEpisode.start_date >= since,
+        )
+        if name:
+            query = query.filter(IllnessEpisode.name.ilike(f"%{name}%"))
+        rows = (
+            query.order_by(
+                sa_desc(IllnessEpisode.start_date),
+                sa_desc(IllnessEpisode.id),
+            )
+            .limit(100)
+            .all()
+        )
+        if not rows:
+            target = f"「{name}」" if name else "病症"
+            return f"未找到{target}记录 (最近 {window_days} 天内)。"
+
+        payload = [
+            {
+                "id": row.id,
+                "name": row.name,
+                "start_date": row.start_date.isoformat() if row.start_date else None,
+                "end_date": row.end_date.isoformat() if row.end_date else None,
+                "status": row.status,
+                "severity": row.severity,
+                "notes": row.notes,
+            }
+            for row in rows
+        ]
+        return json.dumps(payload, ensure_ascii=False)
+    except Exception as e:
+        logger.error(
+            "[health_read] 查询 IllnessEpisode 失败 user_id=%s: %s",
+            user_id,
+            e,
+        )
+        _safe_rollback(db)
+        return f"Error: 查询病症记录失败: {e}"
 
 
 # ── 化验/体检 → MedicalIndicator (与 Twin fetch_latest_labs 同源) ─────────
