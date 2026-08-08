@@ -639,49 +639,45 @@ def validate_demo_account_live(
             return ["live demo account daily artifact has no reviewer-visible top action"]
 
         title_prefix, expected_user, expected_assistant = _load_demo_conversation_fixture()
-        encoded_title = urllib.parse.quote(title_prefix, safe="")
         conversation_list = _request_json(
-            f"{base}/agent/conversations?limit=100&offset=0&title_like={encoded_title}",
+            f"{base}/agent/conversations?limit=100&offset=0",
             token=token,
         )
         items = conversation_list.get("items")
-        candidates = [
-            item
-            for item in items
-            if isinstance(item, dict)
-            and str(item.get("title") or "").strip().startswith(title_prefix)
-            and isinstance(item.get("id"), int)
-        ] if isinstance(items, list) else []
-        if not candidates:
+        if not isinstance(items, list) or not items:
             return ["live demo account has no fixed daily briefing conversation for App Review"]
-
-        seeded_pair_found = False
-        for candidate in candidates:
-            detail = _request_json(
-                f"{base}/agent/conversations/{candidate['id']}?limit=200",
-                token=token,
-            )
-            messages = detail.get("messages")
-            if not isinstance(messages, list):
-                continue
-            nonempty = [
-                message
-                for message in messages
-                if isinstance(message, dict)
-                and str(message.get("content") or "").strip()
+        latest = items[0]
+        if (
+            not isinstance(latest, dict)
+            or not isinstance(latest.get("id"), int)
+            or not str(latest.get("title") or "").strip().startswith(title_prefix)
+        ):
+            return [
+                "live demo account fixed briefing is not the default latest conversation"
             ]
-            for user_message, assistant_message in zip(nonempty, nonempty[1:]):
-                if (
-                    user_message.get("role") == "user"
-                    and str(user_message.get("content") or "").strip() == expected_user
-                    and assistant_message.get("role") == "assistant"
-                    and str(assistant_message.get("content") or "").strip() == expected_assistant
-                ):
-                    seeded_pair_found = True
-                    break
-            if seeded_pair_found:
-                break
-        if not seeded_pair_found:
+
+        detail = _request_json(
+            f"{base}/agent/conversations/{latest['id']}?limit=200",
+            token=token,
+        )
+        messages = detail.get("messages")
+        nonempty = [
+            message
+            for message in messages
+            if isinstance(message, dict)
+            and str(message.get("content") or "").strip()
+        ] if isinstance(messages, list) else []
+        if len(nonempty) != 2:
+            return [
+                "live demo account fixed briefing must contain exactly the two seeded messages"
+            ]
+        user_message, assistant_message = nonempty
+        if not (
+            user_message.get("role") == "user"
+            and str(user_message.get("content") or "").strip() == expected_user
+            and assistant_message.get("role") == "assistant"
+            and str(assistant_message.get("content") or "").strip() == expected_assistant
+        ):
             return [
                 "live demo account fixed daily briefing is missing the safe seeded message pair"
             ]

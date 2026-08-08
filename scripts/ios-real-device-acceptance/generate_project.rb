@@ -2,6 +2,14 @@ require "fileutils"
 require "pathname"
 require "xcodeproj"
 
+credential_keys = %w[
+  APP_STORE_REVIEW_DEMO_ACCOUNT
+  APP_STORE_REVIEW_DEMO_PASSWORD
+]
+if credential_keys.any? { |key| !ENV.fetch(key, "").strip.empty? }
+  abort("Review credentials are forbidden in the Xcode UI-test scheme; pre-authenticate manually")
+end
+
 output_dir = Pathname.new(ARGV.fetch(0)).expand_path
 source_path = Pathname.new(__dir__).join("XiaobaAcceptanceUITests.swift")
 project_path = output_dir.join("XiaobaAcceptance.xcodeproj")
@@ -36,21 +44,6 @@ end
 scheme = Xcodeproj::XCScheme.new
 scheme.add_build_target(target)
 scheme.add_test_target(target)
-
-review_environment = %w[
-  APP_STORE_REVIEW_DEMO_ACCOUNT
-  APP_STORE_REVIEW_DEMO_PASSWORD
-].each_with_object([]) do |key, variables|
-  value = ENV.fetch(key, "").strip
-  next if value.empty?
-
-  variables << { :key => key, :value => value, :enabled => true }
-end
-unless review_environment.empty?
-  scheme.test_action.should_use_launch_scheme_args_env = false
-  scheme.test_action.environment_variables =
-    Xcodeproj::XCScheme::EnvironmentVariables.new(review_environment)
-end
 
 scheme.save_as(project_path.to_s, "XiaobaAcceptanceUITests", true)
 

@@ -132,7 +132,14 @@ scripts/run_ios_real_device_acceptance.sh \
   /secure/path/XiaobaAcceptance-<build-id>.xcresult
 ```
 
-This harness covers launch, authenticated Agent access, briefing interaction, foreground draft recovery, and the privacy/account-deletion entries. It does not replace the dedicated physical checks for voice, camera, sharing, health writes, correction/deletion idempotency, or completed account deletion.
+Before running it, sign in to the review account manually on the iPhone and confirm the Agent screen is visible. Never export or pass the review account/password to this XCUITest harness: Xcode result bundles and console output can retain typed text. The harness fails closed when those credential variables are present and covers only the pre-authenticated session: launch, cold-start persistence, Agent access, latest fixed briefing, Today interaction, foreground draft recovery, and privacy/account-deletion entries. Record the manual signed-out login check separately in the external evidence file. It does not replace the dedicated physical checks for voice, camera, sharing, health writes, correction/deletion idempotency, or completed account deletion.
+
+Immediately before final device acceptance, restore the deterministic review data through the guarded deployment entry point, then run the live release-pack check. The reset is revision-locked, uses the server-side secret store, prints only non-identifying pass evidence, preserves the existing password, and makes the fixed briefing the default latest conversation:
+
+```bash
+./deploy.sh --reset-app-store-review
+python3 scripts/check_app_store_release_pack.py
+```
 
 ## Privacy Nutrition Label
 

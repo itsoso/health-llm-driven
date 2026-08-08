@@ -22,8 +22,10 @@ Environment:
   REVA_IOS_DEVICE_ID
   REVA_IOS_RESULT_PATH
   REVA_IOS_DESTINATION_PLATFORM
-  APP_STORE_REVIEW_DEMO_ACCOUNT
-  APP_STORE_REVIEW_DEMO_PASSWORD
+
+Safety:
+  The installed app must be pre-authenticated manually. Review credentials are
+  never accepted by this harness because Xcode result bundles retain typed text.
 EOF
 }
 
@@ -93,12 +95,20 @@ if [[ -e "${RESULT_PATH}" ]]; then
   exit 2
 fi
 
+if [[ -n "${APP_STORE_REVIEW_DEMO_ACCOUNT:-}" ||
+      -n "${APP_STORE_REVIEW_DEMO_PASSWORD:-}" ]]; then
+  echo "Refusing review credentials; the installed app must be pre-authenticated manually." >&2
+  exit 2
+fi
+
 HARNESS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/xiaoba-acceptance.XXXXXX")"
 trap 'rm -rf "${HARNESS_DIR}"' EXIT
 
-ruby "${HARNESS_SOURCE_DIR}/generate_project.rb" "${HARNESS_DIR}"
+env -u APP_STORE_REVIEW_DEMO_ACCOUNT -u APP_STORE_REVIEW_DEMO_PASSWORD \
+  ruby "${HARNESS_SOURCE_DIR}/generate_project.rb" "${HARNESS_DIR}"
 
-xcodebuild \
+env -u APP_STORE_REVIEW_DEMO_ACCOUNT -u APP_STORE_REVIEW_DEMO_PASSWORD \
+  xcodebuild \
   -project "${HARNESS_DIR}/XiaobaAcceptance.xcodeproj" \
   -scheme XiaobaAcceptanceUITests \
   -destination "platform=${DESTINATION_PLATFORM},id=${DEVICE_ID}" \

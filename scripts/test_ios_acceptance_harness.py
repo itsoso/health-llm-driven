@@ -41,18 +41,23 @@ def test_generator_omits_review_credentials_when_not_configured(tmp_path: Path) 
     assert "APP_STORE_REVIEW_DEMO_PASSWORD" not in scheme
 
 
-def test_generator_injects_review_credentials_into_ephemeral_scheme(tmp_path: Path) -> None:
-    scheme = _generate(
-        tmp_path,
-        account="review@example.test",
-        password='secret<&"',
+def test_generator_refuses_review_credentials_in_xcode_scheme(tmp_path: Path) -> None:
+    env = os.environ.copy()
+    env["APP_STORE_REVIEW_DEMO_ACCOUNT"] = "review@example.test"
+    env["APP_STORE_REVIEW_DEMO_PASSWORD"] = "private-password"
+
+    result = subprocess.run(
+        ["ruby", str(GENERATOR), str(tmp_path)],
+        cwd=ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
     )
 
-    assert "APP_STORE_REVIEW_DEMO_ACCOUNT" in scheme
-    assert "review@example.test" in scheme
-    assert "APP_STORE_REVIEW_DEMO_PASSWORD" in scheme
-    assert "secret&lt;&amp;&quot;" in scheme
-    assert 'shouldUseLaunchSchemeArgsEnv = "NO"' in scheme
+    assert result.returncode != 0
+    assert "credentials" in result.stderr.lower()
+    assert "private-password" not in result.stdout + result.stderr
 
 
 def test_runner_accepts_simulator_destination_platform() -> None:
@@ -66,6 +71,27 @@ def test_runner_accepts_simulator_destination_platform() -> None:
 
     assert "--platform" in result.stdout
     assert "iOS Simulator" in result.stdout
+    assert "pre-authenticated" in result.stdout
+    assert "APP_STORE_REVIEW_DEMO_PASSWORD" not in result.stdout
+
+
+def test_runner_refuses_review_credentials_before_invoking_xcodebuild() -> None:
+    env = os.environ.copy()
+    env["APP_STORE_REVIEW_DEMO_ACCOUNT"] = "review@example.test"
+    env["APP_STORE_REVIEW_DEMO_PASSWORD"] = "private-password"
+
+    result = subprocess.run(
+        ["bash", str(RUNNER), "not-a-real-device"],
+        cwd=ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "pre-authenticated" in result.stderr
+    assert "private-password" not in result.stdout + result.stderr
 
 
 def test_composer_selector_accepts_ios_placeholder_augmented_label() -> None:
@@ -91,16 +117,15 @@ def test_settings_acceptance_uses_accessible_buttons_and_scrolls_them_visible() 
     assert "scrollToElement(" in source
 
 
-def test_review_login_acceptance_exercises_a_real_signed_out_session() -> None:
+def test_automated_acceptance_requires_pre_authenticated_session_without_typing_secrets() -> None:
     source = UI_TEST_SOURCE.read_text(encoding="utf-8")
 
-    assert "logoutCurrentSessionIfNeeded(" in source
-    assert "replaceFieldText(accountField, with: credentials.account)" in source
-    assert "replaceFieldText(passwordField, with: credentials.password)" in source
-    assert 'label == %@", "退出登录"' in source
-    assert 'app.alerts["退出登录"]' in source
-    assert 'buttons["退出"]' in source
-    assert "test01ReviewAccountCanLoginFromSignedOutState" in source
+    assert "test00AuthenticatedSessionPersistsAcrossTwoColdLaunches" in source
+    assert "requireAuthenticatedChat()" in source
+    assert "reviewCredentials" not in source
+    assert "APP_STORE_REVIEW_DEMO_PASSWORD" not in source
+    assert "test01ReviewAccountCanLoginFromSignedOutState" not in source
+    assert "credentials.password" not in source
 
 
 def test_latest_message_acceptance_checks_seeded_markdown_at_the_bottom() -> None:

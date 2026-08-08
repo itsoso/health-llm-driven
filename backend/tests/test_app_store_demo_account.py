@@ -116,6 +116,29 @@ def test_demo_conversation_is_safe_and_review_ready(db):
     assert "治愈" not in messages[1].content
 
 
+def test_secret_free_seed_summary_excludes_account_and_health_details(db):
+    from scripts.seed_demo_account import _build_secret_free_summary
+
+    summary = seed_demo(
+        db,
+        email="review-secret-free@reva.health",
+        password="Demo1234!",
+        name="演示",
+        days=1,
+    )
+
+    public = _build_secret_free_summary(summary)
+
+    assert set(public) == {
+        "verification",
+        "daily_plan_actions",
+        "timeline_events",
+        "demo_conversation_messages",
+    }
+    assert public["verification"] == "PASS"
+    assert "review-secret-free@reva.health" not in str(public)
+
+
 def test_demo_seed_does_not_silently_rotate_an_existing_password(db):
     email = "review-password-policy@reva.health"
     original = "unique-original-review-password"

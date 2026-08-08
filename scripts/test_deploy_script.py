@@ -2467,6 +2467,22 @@ def test_cli_has_dedicated_health_evidence_activation_mode():
     assert "activate_health_evidence_runtime" in script
 
 
+def test_cli_has_secret_free_app_store_review_reset_mode():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    start = script.index("reset_app_store_review_demo() {")
+    end = script.index("\n# 查看服务状态", start)
+    body = script[start:end]
+
+    assert "--reset-app-store-review" in script
+    assert 'DEPLOY_MODE="app-store-review-reset"' in script
+    assert "verify_deployed_revision" in body
+    assert "APP_STORE_REVIEW_DEMO_ACCOUNT" in body
+    assert "APP_STORE_REVIEW_DEMO_PASSWORD" in body
+    assert "--secret-free" in body
+    assert "APP_STORE_REVIEW_RESET_OK" in body
+    assert "--rotate-password" not in body
+
+
 def test_health_evidence_flag_parser_only_accepts_one_canonical_assignment(
     tmp_path,
 ):
@@ -2539,7 +2555,10 @@ def test_mutating_deploy_modes_acquire_server_release_lease():
     execute = main_body.index("# 执行对应操作")
 
     assert acquire < execute
-    assert '"all"|"frontend"|"backend"|"env"|"health-evidence"|"restart"' in main_body
+    assert (
+        '"all"|"frontend"|"backend"|"env"|"health-evidence"|"app-store-review-reset"|"restart"'
+        in main_body
+    )
     assert "assert_remote_release_lock" in main_body[acquire:execute]
     assert "push" not in main_body[acquire - 100 : acquire]
 
@@ -2594,7 +2613,15 @@ test ! -e "$REMOTE_RELEASE_LOCK_DIR"
 
 @pytest.mark.parametrize(
     "mode",
-    ("all", "frontend", "backend", "env", "health-evidence", "restart"),
+    (
+        "all",
+        "frontend",
+        "backend",
+        "env",
+        "health-evidence",
+        "app-store-review-reset",
+        "restart",
+    ),
 )
 def test_each_terminal_release_mode_arms_adopted_stage_cleanup(
     tmp_path: Path,

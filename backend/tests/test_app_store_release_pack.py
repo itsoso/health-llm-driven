@@ -697,7 +697,7 @@ def test_live_demo_account_gate_proves_login_identity_and_seeded_review_surfaces
         (
             "GET",
             "https://health.example.test/api/v1/agent/conversations"
-            "?limit=100&offset=0&title_like=%E6%AF%8F%E6%97%A5%E5%81%A5%E5%BA%B7%E7%AE%80%E6%8A%A5",
+            "?limit=100&offset=0",
         ),
         ("GET", "https://health.example.test/api/v1/agent/conversations/91?limit=200"),
     ]
@@ -812,6 +812,92 @@ def test_live_demo_account_gate_fails_closed_without_seeded_briefing(monkeypatch
     )
 
     assert "fixed daily briefing conversation" in "\n".join(failures)
+
+
+def test_live_demo_account_gate_rejects_fixture_that_is_not_default_latest(monkeypatch):
+    def fake_request(url, *, method="GET", token=None, payload=None, timeout=10):
+        if url.endswith("/auth/login/json"):
+            return {"access_token": "token", "user": {"id": 17}}
+        if url.endswith("/auth/me"):
+            return {"id": 17}
+        if url.endswith("/daily-plan/me"):
+            return {"actions": [{"title": "今日重点"}]}
+        if url.endswith("/daily-artifact/me"):
+            return {"top_action": {"title": "晨起记录"}}
+        if "/agent/conversations?" in url:
+            return {
+                "items": [
+                    {"id": 92, "title": "普通测试会话"},
+                    {"id": 91, "title": "每日健康简报 · 08-06"},
+                ]
+            }
+        raise AssertionError(url)
+
+    monkeypatch.setattr(
+        "scripts.check_app_store_release_pack._request_json",
+        fake_request,
+    )
+
+    failures = validate_demo_account_live(
+        "reviewer@example.com",
+        "private-password",
+        api_base="https://health.example.test/api/v1",
+    )
+
+    assert "default latest conversation" in "\n".join(failures)
+
+
+def test_live_demo_account_gate_rejects_mutated_fixed_conversation(monkeypatch):
+    def fake_request(url, *, method="GET", token=None, payload=None, timeout=10):
+        if url.endswith("/auth/login/json"):
+            return {"access_token": "token", "user": {"id": 17}}
+        if url.endswith("/auth/me"):
+            return {"id": 17}
+        if url.endswith("/daily-plan/me"):
+            return {"actions": [{"title": "今日重点"}]}
+        if url.endswith("/daily-artifact/me"):
+            return {"top_action": {"title": "晨起记录"}}
+        if "/agent/conversations?" in url:
+            return {"items": [{"id": 91, "title": "每日健康简报 · 08-06"}]}
+        if url.endswith("/agent/conversations/91?limit=200"):
+            return {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "结合最近一周的数据，我今天最值得做什么？",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": (
+                            "## 今天优先完成两件事\n\n"
+                            "1. **午餐后快走 15 分钟**：延续每天约 8,000 步的活动节奏，"
+                            "餐后走动更容易执行。\n"
+                            "2. **把饮水分散到白天**：上午和下午各补水 2 次，"
+                            "避免临睡前集中饮水。\n\n"
+                            "### 最近一周\n\n"
+                            "- 平均睡眠约 **7 小时 48 分钟**，睡眠评分约 **82 分**\n"
+                            "- 日均步数约 **8,000 步**，恢复节奏整体稳定\n\n"
+                            "今天不用增加复杂任务，先把这两件事做完。完成后告诉我，"
+                            "我会根据执行结果调整明天的安排。"
+                        ),
+                    },
+                    {"role": "user", "content": "后来追加的消息"},
+                ]
+            }
+        raise AssertionError(url)
+
+    monkeypatch.setattr(
+        "scripts.check_app_store_release_pack._request_json",
+        fake_request,
+    )
+
+    failures = validate_demo_account_live(
+        "reviewer@example.com",
+        "private-password",
+        api_base="https://health.example.test/api/v1",
+    )
+
+    assert "exactly the two seeded messages" in "\n".join(failures)
 
 
 def test_live_demo_account_gate_fails_closed_on_non_fixture_messages(monkeypatch):

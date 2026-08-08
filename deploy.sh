@@ -144,7 +144,7 @@ arm_remote_release_cleanup_after_terminal_mode_success() {
     local mode="$1"
 
     case "$mode" in
-        all|frontend|backend|env|health-evidence|restart) ;;
+        all|frontend|backend|env|health-evidence|app-store-review-reset|restart) ;;
         *) return 0 ;;
     esac
     if [[ "${_REMOTE_RELEASE_LOCK_ACQUIRED:-0}" != "1" ]]; then
@@ -1013,6 +1013,7 @@ show_help() {
     echo "  -b, --backend   仅部署后端"
     echo "  -e, --env       仅同步 .env 到服务器"
     echo "  -H, --activate-health-evidence  受控启用健康证据运行时"
+    echo "  -R, --reset-app-store-review  重置 App Store 审核演示数据（不改密码）"
     echo "  -r, --restart   仅重启服务 (不拉取代码)"
     echo "  -p, --push      仅推送代码到 GitHub (不部署)"
     echo "  -s, --status    查看服务器服务状态"
@@ -1030,6 +1031,7 @@ show_help() {
     echo "  ./deploy.sh -b        # 仅部署后端"
     echo "  ./deploy.sh -e        # 仅同步环境变量"
     echo "  ./deploy.sh -H        # 启用并验证健康证据运行时，失败自动恢复"
+    echo "  ./deploy.sh -R        # 受控重置审核账号演示数据与默认会话"
     echo "  ./deploy.sh -r        # 仅重启服务"
     echo "  ./deploy.sh -s        # 查看服务状态"
 }
@@ -3898,6 +3900,83 @@ activate_health_evidence_runtime() {
     return 1
 }
 
+reset_app_store_review_demo() {
+    local reset_output
+
+    DEPLOY_EXPECTED_SHA="$(git -C "$SCRIPT_DIR" rev-parse HEAD)"
+    if ! [[ "$DEPLOY_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+        print_error "无法确定本地发布 commit"
+        return 1
+    fi
+    assert_remote_release_lock
+    verify_deployed_revision
+    print_step "重置 App Store 审核演示数据..."
+
+    if ! reset_output=$(ssh "$SERVER" bash -s -- \
+        "$REMOTE_PATH" \
+        "$DEPLOY_EXPECTED_SHA" \
+        "$REMOTE_RELEASE_LOCK_DIR" \
+        "$REMOTE_RELEASE_LOCK_TOKEN" <<'REMOTE_APP_STORE_REVIEW_RESET'
+set -euo pipefail
+repo_path="$1"
+expected_sha="$2"
+release_lock_dir="$3"
+release_lock_token="$4"
+
+test -r "$release_lock_dir/token"
+test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
+test "$(git -C "$repo_path" rev-parse HEAD)" = "$expected_sha"
+cd "$repo_path/backend"
+test -x venv/bin/python
+test -r .env
+set -a
+set +u
+source .env
+set -u
+set +a
+: "${APP_STORE_REVIEW_DEMO_ACCOUNT:?missing review account in backend env}"
+: "${APP_STORE_REVIEW_DEMO_PASSWORD:?missing review password in backend env}"
+
+summary_path="$(mktemp /tmp/reva-app-store-review-reset.XXXXXX)"
+chmod 600 "$summary_path"
+trap 'rm -f -- "$summary_path"' EXIT
+PYTHONPATH=. venv/bin/python scripts/seed_demo_account.py --secret-free >"$summary_path"
+venv/bin/python - "$summary_path" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    summary = json.load(handle)
+expected_keys = {
+    "verification",
+    "daily_plan_actions",
+    "timeline_events",
+    "demo_conversation_messages",
+}
+if set(summary) != expected_keys:
+    raise SystemExit("unexpected secret-free summary schema")
+if summary["verification"] != "PASS":
+    raise SystemExit("demo verification did not pass")
+if not isinstance(summary["daily_plan_actions"], int) or summary["daily_plan_actions"] < 1:
+    raise SystemExit("daily plan is empty")
+if not isinstance(summary["timeline_events"], int) or summary["timeline_events"] < 1:
+    raise SystemExit("timeline is empty")
+if summary["demo_conversation_messages"] != 2:
+    raise SystemExit("fixed conversation is not pristine")
+print("APP_STORE_REVIEW_RESET_OK")
+PY
+REMOTE_APP_STORE_REVIEW_RESET
+    ); then
+        print_error "App Store 审核演示数据重置失败"
+        return 1
+    fi
+    if [[ "$reset_output" != "APP_STORE_REVIEW_RESET_OK" ]]; then
+        print_error "App Store 审核演示数据重置缺少精确成功证明"
+        return 1
+    fi
+    print_success "App Store 审核演示数据已重置并通过非敏感验证"
+}
+
 # 查看服务状态
 check_status() {
     print_step "服务器服务状态..."
@@ -4026,6 +4105,10 @@ main() {
                 DEPLOY_MODE="health-evidence"
                 shift
                 ;;
+            -R|--reset-app-store-review)
+                DEPLOY_MODE="app-store-review-reset"
+                shift
+                ;;
             -r|--restart)
                 DEPLOY_MODE="restart"
                 shift
@@ -4059,12 +4142,12 @@ main() {
     done
 
     case $DEPLOY_MODE in
-        "all"|"frontend"|"backend"|"env"|"health-evidence"|"restart"|"push")
+        "all"|"frontend"|"backend"|"env"|"health-evidence"|"app-store-review-reset"|"restart"|"push")
             acquire_release_lock "deploy:${DEPLOY_MODE}"
             ;;
     esac
     case $DEPLOY_MODE in
-        "all"|"frontend"|"backend"|"env"|"health-evidence"|"restart")
+        "all"|"frontend"|"backend"|"env"|"health-evidence"|"app-store-review-reset"|"restart")
             acquire_remote_release_lock "deploy:${DEPLOY_MODE}"
             install_release_cleanup_traps
             assert_remote_release_lock
@@ -4106,6 +4189,9 @@ main() {
         "health-evidence")
             push_code
             activate_health_evidence_runtime
+            ;;
+        "app-store-review-reset")
+            reset_app_store_review_demo
             ;;
         "restart")
             if ! require_health_evidence_flag_value false; then

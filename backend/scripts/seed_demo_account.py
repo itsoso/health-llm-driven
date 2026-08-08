@@ -57,6 +57,16 @@ DEFAULT_DAYS = 7
 DEMO_CONVERSATION_SESSION_KEY = "app-store-review-demo"
 
 
+def _build_secret_free_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    """Return only non-identifying release-gate facts safe for CI/SSH logs."""
+    return {
+        "verification": summary["verification"],
+        "daily_plan_actions": summary["daily_plan_actions"],
+        "timeline_events": summary["timeline_events"],
+        "demo_conversation_messages": summary["demo_conversation_messages"],
+    }
+
+
 def _load_fixture() -> dict[str, Any]:
     with open(FIXTURE_PATH, encoding="utf-8") as fh:
         return json.load(fh)
@@ -375,7 +385,10 @@ def seed_demo(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Seed an App Store review demo account.")
-    parser.add_argument("--email", default=DEFAULT_EMAIL)
+    parser.add_argument(
+        "--email",
+        default=os.getenv("APP_STORE_REVIEW_DEMO_ACCOUNT", DEFAULT_EMAIL),
+    )
     parser.add_argument("--password", default=os.getenv("APP_STORE_REVIEW_DEMO_PASSWORD"))
     parser.add_argument(
         "--rotate-password",
@@ -384,6 +397,11 @@ def main() -> int:
     )
     parser.add_argument("--name", default=DEFAULT_NAME)
     parser.add_argument("--days", type=int, default=DEFAULT_DAYS, help="Days of synthetic observations (1-30)")
+    parser.add_argument(
+        "--secret-free",
+        action="store_true",
+        help="Print only non-identifying verification counts for release logs",
+    )
     args = parser.parse_args()
     if not args.password:
         parser.error(
@@ -409,7 +427,8 @@ def main() -> int:
     finally:
         db.close()
 
-    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    output = _build_secret_free_summary(summary) if args.secret_free else summary
+    print(json.dumps(output, ensure_ascii=False, indent=2))
     return 0
 
 
