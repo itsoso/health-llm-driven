@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from app.services.agent_kernel.tool_registry import (
@@ -57,6 +59,83 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "bloodpressure": "blood_pressure",
 }
 _CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v1"
+_WHOLE_RECORD_DELETE_EVIDENCE_VERSION = "record-delete-evidence-v1"
+_HEALTH_MANAGE_RECORD_TYPE_ALIASES = {
+    "diet": "diet",
+    "food": "diet",
+    "foods": "diet",
+    "meal": "diet",
+    "meals": "diet",
+    "nutrition": "diet",
+    "饮食": "diet",
+    "膳食": "diet",
+    "餐食": "diet",
+    "早餐": "diet",
+    "午餐": "diet",
+    "晚餐": "diet",
+    "water": "water",
+    "hydration": "water",
+    "饮水": "water",
+    "喝水": "water",
+    "weight": "weight",
+    "体重": "weight",
+    "waist": "waist",
+    "腰围": "waist",
+    "blood_pressure": "blood_pressure",
+    "blood-pressure": "blood_pressure",
+    "bloodpressure": "blood_pressure",
+    "bp": "blood_pressure",
+    "血压": "blood_pressure",
+    "sleep": "sleep",
+    "睡眠": "sleep",
+    "mood": "mood",
+    "心情": "mood",
+    "情绪": "mood",
+    "excretion": "excretion",
+    "bowel": "excretion",
+    "排便": "excretion",
+    "大便": "excretion",
+    "exercise": "exercise",
+    "workout": "exercise",
+    "运动": "exercise",
+    "锻炼": "exercise",
+    "illness": "illness",
+    "生病": "illness",
+    "symptom": "symptom",
+    "symptoms": "symptom",
+    "症状": "symptom",
+    "medication_log": "medication_log",
+    "medication-log": "medication_log",
+    "用药日志": "medication_log",
+    "服药日志": "medication_log",
+    "medication": "medication",
+    "medications": "medication",
+    "medicine": "medication",
+    "meds": "medication",
+    "用药": "medication",
+    "药物": "medication",
+    "supplement_definition": "supplement_definition",
+    "supplement-definition": "supplement_definition",
+    "补剂定义": "supplement_definition",
+    "supplement": "supplement",
+    "supplements": "supplement",
+    "补剂": "supplement",
+    "reminder": "reminder",
+    "提醒": "reminder",
+    "goal": "goal",
+    "目标": "goal",
+    "medical_exam": "medical_exam",
+    "medical-exam": "medical_exam",
+    "labs": "medical_exam",
+    "lab": "medical_exam",
+    "体检": "medical_exam",
+    "化验": "medical_exam",
+    "event": "event",
+    "events": "event",
+    "事件": "event",
+    "rhinitis": "rhinitis",
+    "鼻炎": "rhinitis",
+}
 _WHOLE_RECORD_DELETE_VERBS = (
     "删除",
     "删掉",
@@ -77,13 +156,33 @@ _DELETE_MIXED_UPDATE_MARKERS = (
     "调整",
     "修正",
 )
-_WHOLE_RECORD_TARGET_PATTERN = (
-    r"(?:上一条|前一条|这条|那条|最后一条|刚才(?:那)?条|"
+_DELETE_TARGET_EXCLUSION_MARKERS = (
+    "不是",
+    "并非",
+    "而非",
+    "以外",
+    "之外",
+)
+_SINGULAR_RECORD_TARGET_PATTERN = (
+    r"(?:上一条|前一条|这条|那条|最后一条|刚才(?:那)?条|刚才的|"
     r"第[一二三四五六七八九十百\d]+条)[^，。；！？]{0,16}(?:记录|条目)"
-    r"|(?:[一二三四五六七八九十百两\d]+条)[^，。；！？]{0,16}(?:记录|条目)"
-    r"|(?:记录|条目)#?\d+"
-    r"|(?:上一餐|前一餐|这一餐|那一餐|上顿|这顿|那顿|"
+)
+_COUNTED_RECORD_TARGET_PATTERN = (
+    r"(?:[一二三四五六七八九十百两\d]+条)"
+    r"[^，。；！？]{0,16}(?:记录|条目)"
+)
+_EXPLICIT_ID_TARGET_PATTERN = (
+    r"(?:[^，。；！？#\d]{1,16})?(?:记录|条目)#?\d+"
+)
+_MEAL_RECORD_TARGET_PATTERN = (
+    r"(?:上一餐|前一餐|这一餐|那一餐|上顿|这顿|那顿|"
     r"上一次|前一次|这一次|那一次)"
+)
+_WHOLE_RECORD_TARGET_PATTERN = (
+    rf"(?:{_SINGULAR_RECORD_TARGET_PATTERN})"
+    rf"|(?:{_COUNTED_RECORD_TARGET_PATTERN})"
+    rf"|(?:{_EXPLICIT_ID_TARGET_PATTERN})"
+    rf"|(?:{_MEAL_RECORD_TARGET_PATTERN})"
 )
 _DELETE_REQUEST_PREFIXES = (
     "请你帮我",
@@ -106,6 +205,9 @@ _DELETE_REQUEST_PREFIXES = (
     "能不能",
     "可以",
     "替我",
+    "我要",
+    "给我",
+    "确认",
     "请",
 )
 _DELETE_REQUEST_PREFIX_PATTERN = "|".join(
@@ -121,33 +223,163 @@ _DELETE_REQUEST_SUFFIX_PATTERN = (
     r"(?:[,，]?(?:谢谢(?:你)?|可以吗|好吗|行吗))?"
     r"[。.!！?？]*(?:🩺)?"
 )
-_WHOLE_RECORD_DELETE_RE = re.compile(
+_WHOLE_RECORD_DELETE_VERB_FIRST_RE = re.compile(
     rf"^(?:(?:{_DELETE_REQUEST_PREFIX_PATTERN}))?"
-    rf"(?:"
-    rf"(?:{_WHOLE_RECORD_DELETE_VERB_PATTERN})(?:{_WHOLE_RECORD_TARGET_PATTERN})"
-    rf"|(?:把|将)(?:{_WHOLE_RECORD_TARGET_PATTERN})"
     rf"(?:{_WHOLE_RECORD_DELETE_VERB_PATTERN})"
-    rf")"
+    rf"(?P<target>{_WHOLE_RECORD_TARGET_PATTERN})"
     rf"{_DELETE_REQUEST_SUFFIX_PATTERN}$"
+)
+_WHOLE_RECORD_DELETE_TARGET_FIRST_RE = re.compile(
+    rf"^(?:(?:{_DELETE_REQUEST_PREFIX_PATTERN}))?"
+    rf"(?:把|将)(?P<target>{_WHOLE_RECORD_TARGET_PATTERN})"
+    rf"(?:{_WHOLE_RECORD_DELETE_VERB_PATTERN})"
+    rf"{_DELETE_REQUEST_SUFFIX_PATTERN}$"
+)
+_SINGULAR_RECORD_TARGET_RE = re.compile(
+    rf"^(?:{_SINGULAR_RECORD_TARGET_PATTERN})$"
+)
+_COUNTED_RECORD_TARGET_RE = re.compile(
+    rf"^(?:{_COUNTED_RECORD_TARGET_PATTERN})$"
+)
+_EXPLICIT_ID_TARGET_RE = re.compile(
+    r"^(?P<label>[^，。；！？#\d]{1,16})?"
+    r"(?:记录|条目)#?(?P<record_id>\d+)$"
+)
+_MEAL_RECORD_TARGET_RE = re.compile(
+    rf"^(?:{_MEAL_RECORD_TARGET_PATTERN})$"
 )
 
 
-def _has_explicit_whole_record_delete_intent(text: str) -> bool:
-    """Require user-authored evidence for deleting an entire record."""
+@dataclass(frozen=True)
+class _WholeRecordDeleteEvidence:
+    """Content-free authorization evidence derived only from the user turn."""
+
+    target_kind: str
+    record_type: str | None = None
+    record_id: int | None = None
+
+
+def canonical_health_manage_record_id(value: Any) -> int | None:
+    """Return a strict positive-integer record identity, or fail closed."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        normalized = value
+    elif isinstance(value, float):
+        if not math.isfinite(value) or not value.is_integer():
+            return None
+        normalized = int(value)
+    elif isinstance(value, str):
+        stripped = value.strip()
+        if re.fullmatch(r"\d+", stripped) is None:
+            return None
+        normalized = int(stripped)
+    else:
+        return None
+    return normalized if normalized > 0 else None
+
+
+def canonical_health_manage_record_type(value: Any) -> str | None:
+    """Normalize only known health_manage record-type names and aliases."""
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return None
+    return _HEALTH_MANAGE_RECORD_TYPE_ALIASES.get(normalized)
+
+
+def _record_type_from_delete_target(target: str) -> str | None:
+    lowered = target.lower()
+    for alias in sorted(
+        _HEALTH_MANAGE_RECORD_TYPE_ALIASES,
+        key=len,
+        reverse=True,
+    ):
+        if alias.isascii():
+            if re.search(
+                rf"(?<![a-z0-9_]){re.escape(alias)}(?![a-z0-9_])",
+                lowered,
+            ):
+                return _HEALTH_MANAGE_RECORD_TYPE_ALIASES[alias]
+        elif alias in lowered:
+            return _HEALTH_MANAGE_RECORD_TYPE_ALIASES[alias]
+    return None
+
+
+def _whole_record_delete_evidence(
+    text: str,
+) -> _WholeRecordDeleteEvidence | None:
+    """Extract content-free target evidence from a closed delete grammar."""
     normalized = "".join(str(text or "").split())
     if not normalized:
-        return False
+        return None
     if any(marker in normalized for marker in _DELETE_UNDO_MARKERS):
-        return False
+        return None
     if any(marker in normalized for marker in _DELETE_MIXED_UPDATE_MARKERS):
+        return None
+    match = _WHOLE_RECORD_DELETE_VERB_FIRST_RE.fullmatch(normalized)
+    if match is None:
+        match = _WHOLE_RECORD_DELETE_TARGET_FIRST_RE.fullmatch(normalized)
+    if match is None:
+        return None
+
+    target = match.group("target")
+    if any(marker in target for marker in _DELETE_TARGET_EXCLUSION_MARKERS):
+        return None
+    explicit_id = _EXPLICIT_ID_TARGET_RE.fullmatch(target)
+    if explicit_id is not None:
+        return _WholeRecordDeleteEvidence(
+            target_kind="explicit_id",
+            record_type=_record_type_from_delete_target(target),
+            record_id=canonical_health_manage_record_id(
+                explicit_id.group("record_id")
+            ),
+        )
+    if _COUNTED_RECORD_TARGET_RE.fullmatch(target) is not None:
+        return _WholeRecordDeleteEvidence(
+            target_kind="plural_unresolved",
+            record_type=_record_type_from_delete_target(target),
+        )
+    if _MEAL_RECORD_TARGET_RE.fullmatch(target) is not None:
+        return _WholeRecordDeleteEvidence(
+            target_kind="singular_relative",
+            record_type="diet",
+        )
+    if _SINGULAR_RECORD_TARGET_RE.fullmatch(target) is not None:
+        return _WholeRecordDeleteEvidence(
+            target_kind="singular_relative",
+            record_type=_record_type_from_delete_target(target),
+        )
+    return _WholeRecordDeleteEvidence(target_kind="generic_unresolved")
+
+
+def _delete_evidence_authorizes_request(
+    evidence: _WholeRecordDeleteEvidence | None,
+    args: dict[str, Any],
+) -> bool:
+    if evidence is None or evidence.target_kind == "plural_unresolved":
         return False
-    return _WHOLE_RECORD_DELETE_RE.fullmatch(normalized) is not None
+    requested_type = canonical_health_manage_record_type(args.get("record_type"))
+    requested_id = canonical_health_manage_record_id(args.get("record_id"))
+    if requested_type is None or requested_id is None:
+        return False
+    if evidence.record_id is not None:
+        if evidence.record_id != requested_id:
+            return False
+        return evidence.record_type in (None, requested_type)
+    return (
+        evidence.target_kind == "singular_relative"
+        and evidence.record_type is not None
+        and evidence.record_type == requested_type
+    )
 
 
 def capability_policy_contract_payload() -> dict[str, Any]:
     """Return static, content-free metadata that governs tool authorization."""
     return {
         "contract_version": _CAPABILITY_POLICY_CONTRACT_VERSION,
+        "whole_record_delete_evidence_version": (
+            _WHOLE_RECORD_DELETE_EVIDENCE_VERSION
+        ),
         "read_only_tools": sorted(READ_ONLY_TOOLS),
         "specialist_read_only_tools": sorted(SPECIALIST_READ_ONLY_TOOLS),
         "write_tools": sorted(WRITE_TOOL_NAMES),
@@ -327,8 +559,9 @@ def decide_tool_capability(
             if primary == "mutate" and snapshot.intent.operation == operation:
                 if (
                     operation == "delete"
-                    and not _has_explicit_whole_record_delete_intent(
-                        snapshot.envelope.text
+                    and not _delete_evidence_authorizes_request(
+                        _whole_record_delete_evidence(snapshot.envelope.text),
+                        args,
                     )
                 ):
                     return _decision(

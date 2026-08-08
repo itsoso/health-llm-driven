@@ -501,6 +501,24 @@ class TestDispatcher:
         assert v["error"] is None
         assert v["data"]["record_id"] == 605
 
+    def test_health_manage_integral_float_record_id_coerced_to_int(self):
+        v = validate_tool_call("health_manage", {
+            "record_type": "diet",
+            "operation": "delete",
+            "record_id": 605.0,
+        })
+        assert v["error"] is None
+        assert v["data"]["record_id"] == 605
+
+    @pytest.mark.parametrize("record_id", (True, False, 605.5, "605.0", "605.5"))
+    def test_health_manage_rejects_noncanonical_record_id(self, record_id):
+        v = validate_tool_call("health_manage", {
+            "record_type": "diet",
+            "operation": "delete",
+            "record_id": record_id,
+        })
+        assert v["error"]
+
     def test_health_manage_update_parses_json_object_string(self):
         v = validate_tool_call("health_manage", {
             "record_type": "water",

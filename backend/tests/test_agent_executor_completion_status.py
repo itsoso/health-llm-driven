@@ -1059,13 +1059,15 @@ async def test_all_planned_writes_are_checkpointed_before_first_dispatch(
     executor = AgentExecutor(db)
     first_args = {
         "record_type": "diet",
-        "operation": "delete",
+        "operation": "update",
         "record_id": 1001,
+        "data": {"notes": "第一条已核对"},
     }
     second_args = {
         "record_type": "diet",
-        "operation": "delete",
+        "operation": "update",
         "record_id": 1002,
+        "data": {"notes": "第二条已核对"},
     }
 
     async def fake_llm_call(messages, tools):
@@ -1122,7 +1124,7 @@ async def test_all_planned_writes_are_checkpointed_before_first_dispatch(
             event
             async for event in executor.run_stream(
                 user_id=user.id,
-                message="删除两条饮食记录",
+                message="修改两条饮食记录",
                 user_auth_token="test-token",
                 client_turn_id="turn-two-planned-writes",
             )
@@ -1130,7 +1132,7 @@ async def test_all_planned_writes_are_checkpointed_before_first_dispatch(
 
     user_message = db.query(AgentMessage).filter(
         AgentMessage.role == "user",
-        AgentMessage.content == "删除两条饮食记录",
+        AgentMessage.content == "修改两条饮食记录",
     ).one()
     operations = user_message.meta["write_operations"]
     assert len(operations) == 2
@@ -3461,6 +3463,166 @@ async def test_update_retry_different_target_does_not_recover_blocked_delete(
         async for event in executor.run_stream(
             user_id=user.id,
             message="把刚才 300ml 改成 350ml",
+            user_auth_token="test-token",
+        )
+    ]
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert [item["record_id"] for item in dispatched] == [719]
+    assert done["data"]["turn_outcome"]["category"] == "tool_blocked"
+    assert done["data"]["turn_outcome"]["reason_code"] == "manage_operation_mismatch"
+    assert len(done["data"]["write_receipts"]) == 1
+    assert done["data"]["write_receipts"][0]["resource_id"] == "719"
+
+
+@pytest.mark.asyncio
+async def test_delete_retry_recovers_same_target_operation_mismatch(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    dispatched = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            operation = "update"
+            record_id = 718
+            data = {"amount": 350}
+        elif llm_calls == 2:
+            operation = "delete"
+            record_id = 718
+            data = None
+        else:
+            return {
+                "content": "已删除上一条饮水记录。",
+                "finish_reason": "stop",
+            }
+        arguments = {
+            "record_type": "water",
+            "operation": operation,
+            "record_id": record_id,
+        }
+        if data is not None:
+            arguments["data"] = data
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": f"water-{operation}-{record_id}",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps(arguments, ensure_ascii=False),
+                },
+            }],
+        }
+
+    async def fake_health_manage(_base_url, _headers, parsed):
+        if parsed["operation"] == "update":
+            raise AssertionError("blocked update must not reach the adapter")
+        dispatched.append(parsed)
+        return json.dumps({
+            "id": parsed["record_id"],
+            "record_id": parsed["record_id"],
+            "resource_type": "water_record",
+            "message": "删除成功",
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_exec_health_manage", fake_health_manage)
+    monkeypatch.setattr(
+        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
+        lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="删除上一条饮水记录",
+            user_auth_token="test-token",
+        )
+    ]
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert [item["operation"] for item in dispatched] == ["delete"]
+    assert done["data"]["turn_outcome"]["category"] != "tool_blocked"
+    assert done["data"]["completion_status"] == "complete"
+    assert len(done["data"]["write_receipts"]) == 1
+    assert done["data"]["write_receipts"][0]["resource_id"] == "718"
+
+
+@pytest.mark.asyncio
+async def test_delete_retry_different_target_keeps_operation_mismatch_blocked(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    dispatched = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            operation = "update"
+            record_id = 718
+            data = {"amount": 350}
+        elif llm_calls == 2:
+            operation = "delete"
+            record_id = 719
+            data = None
+        else:
+            return {
+                "content": "已完成删除。",
+                "finish_reason": "stop",
+            }
+        arguments = {
+            "record_type": "water",
+            "operation": operation,
+            "record_id": record_id,
+        }
+        if data is not None:
+            arguments["data"] = data
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": f"water-{operation}-{record_id}",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps(arguments, ensure_ascii=False),
+                },
+            }],
+        }
+
+    async def fake_health_manage(_base_url, _headers, parsed):
+        if parsed["operation"] == "update":
+            raise AssertionError("blocked update must not reach the adapter")
+        dispatched.append(parsed)
+        return json.dumps({
+            "id": parsed["record_id"],
+            "record_id": parsed["record_id"],
+            "resource_type": "water_record",
+            "message": "删除成功",
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_exec_health_manage", fake_health_manage)
+    monkeypatch.setattr(
+        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
+        lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="删除上一条饮水记录",
             user_auth_token="test-token",
         )
     ]

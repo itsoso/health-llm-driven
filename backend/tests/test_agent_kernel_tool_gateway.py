@@ -393,6 +393,8 @@ async def test_execute_tool_blocks_health_manage_delete_in_update_turn(db, monke
         "把上一条运动记录里的距离去掉",
         "把来源从上一条饮水记录里删除",
         "把上一条运动记录中的速度删掉",
+        "删除上一条不是饮水的记录",
+        "删除上一条饮水以外的记录",
     ),
 )
 async def test_execute_tool_blocks_field_removal_from_deleting_record(
@@ -430,14 +432,68 @@ async def test_execute_tool_blocks_field_removal_from_deleting_record(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    ("message", "record_type", "record_id"),
+    (
+        ("删除上一条饮水记录", "medication", 718),
+        ("清掉记录 718", "water", 719),
+        ("删除饮水记录 718", "weight", 718),
+        ("删除饮水记录 718", "water", 719),
+        ("删除第一条记录", "water", 718),
+        ("删除两条饮水记录", "water", 718),
+    ),
+)
+async def test_execute_tool_blocks_delete_when_text_does_not_bind_target(
+    db,
+    monkeypatch,
+    message,
+    record_type,
+    record_id,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = message
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    async def should_not_run(*args, **kwargs):
+        raise AssertionError("_exec_health_manage should not run")
+
+    monkeypatch.setattr(executor, "_exec_health_manage", should_not_run)
+
+    result = await executor._execute_tool(
+        "health_manage",
+        {
+            "record_type": record_type,
+            "operation": "delete",
+            "record_id": record_id,
+        },
+        None,
+    )
+
+    payload = json.loads(result)
+    assert payload["status"] == "rejected"
+    assert payload["dispatch_started"] is False
+    assert payload["error_code"] == "delete_requires_explicit_whole_record_intent"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
     ("message", "record_type"),
     (
         ("删除上一条饮水记录", "water"),
         ("请帮我删除上一条体重记录", "weight"),
         ("把上一条饮食记录删了", "diet"),
         ("清掉记录 718", "water"),
-        ("删除两条饮水记录", "water"),
+        ("删除饮水记录 718", "water"),
         ("删除上一餐", "diet"),
+        ("请您删除这条用药记录", "medication"),
+        ("删除上一条 meal 记录", "diet"),
     ),
 )
 async def test_execute_tool_dispatches_closed_grammar_record_delete(

@@ -27,6 +27,7 @@ async def test_health_manage_deletes_diet_record_by_id(db):
 
     executor = AgentExecutor(db)
     executor._current_user_id = 3
+    executor._current_turn_user_message = "删除饮食记录 605"
 
     captured = {}
 
@@ -192,6 +193,7 @@ async def test_health_manage_deletes_exercise_record_by_id(db):
 
     executor = AgentExecutor(db)
     executor._current_user_id = 3
+    executor._current_turn_user_message = "删除运动记录 42"
 
     captured = {}
 
@@ -376,6 +378,7 @@ async def test_health_manage_updates_and_deletes_supplement_record_by_id(db):
             user_token="test-token",
         )
     with patch.object(executor, "_api_delete", new=AsyncMock(side_effect=fake_delete)):
+        executor._current_turn_user_message = "删除补剂记录 15"
         deleted = await executor._execute_tool(
             tool_name="health_manage",
             args_raw=json.dumps({
@@ -541,6 +544,7 @@ async def test_health_manage_lists_updates_and_deletes_goals(db):
             user_token="test-token",
         )
     with patch.object(executor, "_api_delete", new=AsyncMock(side_effect=fake_delete)):
+        executor._current_turn_user_message = "删除目标记录 22"
         deleted = await executor._execute_tool(
             tool_name="health_manage",
             args_raw=json.dumps({

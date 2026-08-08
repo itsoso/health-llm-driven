@@ -108,6 +108,10 @@ from app.services.agent_kernel.types import (
     ToolExecutionRequest,
     TurnSnapshot,
 )
+from app.services.agent_kernel.capability_policy import (
+    canonical_health_manage_record_id,
+    canonical_health_manage_record_type,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -2125,16 +2129,13 @@ def _parse_tool_arguments_for_telemetry(args_raw: Any) -> dict[str, Any]:
 
 def _health_manage_target_key(
     args: Mapping[str, Any],
-) -> Optional[tuple[str, str]]:
+) -> Optional[tuple[str, int]]:
     """Return a content-minimal identity for one managed health record."""
-    record_type = str(args.get("record_type") or "").strip().lower()
-    record_id = args.get("record_id")
-    if not record_type or isinstance(record_id, bool) or record_id in (None, ""):
+    record_type = canonical_health_manage_record_type(args.get("record_type"))
+    record_id = canonical_health_manage_record_id(args.get("record_id"))
+    if record_type is None or record_id is None:
         return None
-    normalized_id = str(record_id).strip()
-    if not normalized_id:
-        return None
-    return record_type, normalized_id
+    return record_type, record_id
 
 
 def _text_tool_call_write_is_authorized(
@@ -8393,7 +8394,7 @@ class AgentExecutor:
         self._agent_kernel_capability_block_reasons: List[str] = []
         self._agent_kernel_recovered_capability_block_reasons: List[str] = []
         self._agent_kernel_unresolved_manage_mismatch_targets: set[
-            tuple[str, str]
+            tuple[str, int]
         ] = set()
         self._agent_kernel_tool_failure_tools: List[str] = []
         self._agent_kernel_pending_confirmation_tools: List[str] = []
@@ -8644,8 +8645,9 @@ class AgentExecutor:
             and decision is not None
             and decision.action == "allow"
             and tool_name == "health_manage"
+            and snapshot is not None
             and str(parsed_args.get("operation") or "").strip().lower()
-            == "update"
+            == snapshot.intent.operation
             and write_outcome is not None
             and write_outcome.status == "verified"
         ):

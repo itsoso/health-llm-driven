@@ -31,6 +31,9 @@ import re
 from datetime import datetime, date, timedelta, timezone
 from typing import Any, Dict, Optional
 
+from app.services.agent_kernel.capability_policy import (
+    canonical_health_manage_record_id,
+)
 from app.services.health_query_dimensions import normalize_health_query_args
 from app.services.intake_intent_classifier import classify_intake_intent
 
@@ -824,12 +827,12 @@ def _validate_health_manage(
         record_id = args.get("record_id")
         if record_id is None:
             return f"Error: health_manage.{operation} 必须提供 record_id. 先 list 查候选记录, 不要编造 ID."
-        try:
-            record_id_int = int(record_id)
-        except (TypeError, ValueError):
-            return f"Error: health_manage.record_id 必须是整数, 收到 {record_id!r}."
-        if record_id_int <= 0:
-            return f"Error: health_manage.record_id 必须为正整数, 收到 {record_id_int}."
+        record_id_int = canonical_health_manage_record_id(record_id)
+        if record_id_int is None:
+            return (
+                "Error: health_manage.record_id 必须为正整数, "
+                f"收到 {record_id!r}."
+            )
         args["record_id"] = record_id_int
 
     if operation == "update":

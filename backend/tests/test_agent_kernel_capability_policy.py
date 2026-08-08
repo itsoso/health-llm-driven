@@ -5,6 +5,7 @@ import re
 
 import pytest
 
+from app.services.agent_kernel import capability_policy as capability_policy_module
 from app.services.agent_kernel.capability_policy import (
     capability_policy_contract_payload,
     capability_policy_digest,
@@ -140,6 +141,10 @@ def test_update_turn_allows_health_manage_update_with_receipt():
         "撤销刚才对饮水记录的修改",
         "删除上一条饮水记录并改成 350ml",
         "删除饮水记录",
+        "删除第一条记录",
+        "删除两条饮水记录",
+        "删除上一条不是饮水的记录",
+        "删除上一条饮水以外的记录",
     ),
 )
 def test_delete_requires_explicit_whole_record_intent(message):
@@ -157,32 +162,139 @@ def test_delete_requires_explicit_whole_record_intent(message):
 
 
 @pytest.mark.parametrize(
-    "message",
+    ("message", "record_type"),
     (
-        "删除上一条饮水记录",
-        "删除上一条体重记录",
-        "请帮我删除上一条体重记录",
-        "把上一条饮食记录删了",
-        "把上一条饮水记录删了",
-        "清掉记录 718",
-        "删除两条饮水记录",
-        "删除上一餐",
-        "删除这一餐",
-        "把上一餐删掉",
+        ("删除上一条饮水记录", "water"),
+        ("删除上一条体重记录", "weight"),
+        ("请帮我删除上一条体重记录", "weight"),
+        ("把上一条饮食记录删了", "diet"),
+        ("把上一条饮水记录删了", "water"),
+        ("清掉记录 718", "water"),
+        ("删除饮水记录 718", "water"),
+        ("删除上一餐", "diet"),
+        ("删除这一餐", "diet"),
+        ("把上一餐删掉", "diet"),
+        ("我要删除上一条饮水记录", "water"),
+        ("删除刚才的饮水记录", "water"),
+        ("给我删除上一条饮水记录", "water"),
+        ("确认删除上一条饮水记录", "water"),
+        ("删除上一条 bp 记录", "blood_pressure"),
+        ("删除上一条 blood_pressure 记录", "bp"),
+        ("删除上一条 medication 记录", "medication"),
+        ("删除上一条用药记录", "meds"),
+        ("删除上一条 meal 记录", "diet"),
+        ("删除上一条饮食记录", "meal"),
     ),
 )
-def test_explicit_whole_record_delete_remains_allowed(message):
+def test_explicit_whole_record_delete_remains_allowed(message, record_type):
     decision = decide_tool_capability(
         _snapshot(message),
         _request(
             "health_manage",
-            {"record_type": "water", "operation": "delete", "record_id": 718},
+            {
+                "record_type": record_type,
+                "operation": "delete",
+                "record_id": 718,
+            },
         ),
     )
 
     assert decision.action == "allow"
     assert decision.reason == "explicit_mutation_intent"
     assert decision.receipt_required is True
+
+
+@pytest.mark.parametrize(
+    ("message", "record_type", "record_id"),
+    (
+        ("删除上一条饮水记录", "medication", 718),
+        ("清掉记录 718", "water", 719),
+        ("删除饮水记录 718", "weight", 718),
+        ("删除饮水记录 718", "water", 719),
+        ("删除第一条记录", "water", 718),
+        ("删除两条饮水记录", "water", 718),
+    ),
+)
+def test_delete_evidence_must_bind_to_requested_target(
+    message,
+    record_type,
+    record_id,
+):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_manage",
+            {
+                "record_type": record_type,
+                "operation": "delete",
+                "record_id": record_id,
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "delete_requires_explicit_whole_record_intent"
+    assert decision.receipt_required is True
+
+
+@pytest.mark.parametrize("record_id", (718, "718", 718.0))
+def test_explicit_delete_id_accepts_canonical_positive_integer_forms(record_id):
+    decision = decide_tool_capability(
+        _snapshot("清掉记录 718"),
+        _request(
+            "health_manage",
+            {
+                "record_type": "water",
+                "operation": "delete",
+                "record_id": record_id,
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+
+
+@pytest.mark.parametrize(
+    "record_id",
+    (None, False, 0, -1, 718.5, "718.0", "718.5", "invalid"),
+)
+def test_explicit_delete_id_rejects_noncanonical_or_nonpositive_values(record_id):
+    decision = decide_tool_capability(
+        _snapshot("清掉记录 718"),
+        _request(
+            "health_manage",
+            {
+                "record_type": "water",
+                "operation": "delete",
+                "record_id": record_id,
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "delete_requires_explicit_whole_record_intent"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    (
+        (718, 718),
+        ("718", 718),
+        (718.0, 718),
+        (None, None),
+        (False, None),
+        (0, None),
+        (-1, None),
+        (718.5, None),
+        ("718.0", None),
+        ("invalid", None),
+    ),
+)
+def test_health_manage_record_id_canonicalization_is_strict(value, expected):
+    assert (
+        capability_policy_module.canonical_health_manage_record_id(value)
+        == expected
+    )
 
 
 def test_write_turn_allows_health_record_with_receipt():
@@ -1031,6 +1143,10 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
     assert payload["contract_version"] == "agent-capability-policy-v1"
+    assert (
+        payload["whole_record_delete_evidence_version"]
+        == "record-delete-evidence-v1"
+    )
     assert payload["known_tools"]
     assert payload["recipe_record_types"]
     serialized = repr(payload).lower()
