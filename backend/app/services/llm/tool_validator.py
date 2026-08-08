@@ -24,12 +24,23 @@ LLM Tool Call 守门 — 所有 health_record / record_type=X 的参数过这一
 """
 from __future__ import annotations
 
+import json
 import logging
 import math
 import re
 from datetime import datetime, date, timedelta, timezone
 from typing import Any, Dict, Optional
 
+from pydantic import ValidationError
+
+from app.schemas.daily_health import ExerciseRecordUpdate
+from app.schemas.diet import DietRecordUpdate
+from app.schemas.goal import GoalUpdate
+from app.schemas.waist import WaistRecordUpdate
+from app.schemas.weight import WeightRecordUpdate
+from app.services.agent_kernel.capability_policy import (
+    canonical_health_manage_record_id,
+)
 from app.services.health_query_dimensions import (
     ILLNESS_MAX_QUERY_DAYS,
     normalize_health_query_args,
@@ -40,6 +51,25 @@ from app.services.intake_intent_classifier import classify_intake_intent
 BEIJING_TZ = timezone(timedelta(hours=8))
 
 logger = logging.getLogger(__name__)
+
+
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"Unsupported JSON constant: {value}")
+
+
+def _contains_non_finite_float(value: Any) -> bool:
+    """Return whether a JSON-shaped value contains NaN or either infinity."""
+    if isinstance(value, float):
+        return not math.isfinite(value)
+    if isinstance(value, dict):
+        return any(
+            _contains_non_finite_float(item)
+            for pair in value.items()
+            for item in pair
+        )
+    if isinstance(value, (list, tuple)):
+        return any(_contains_non_finite_float(item) for item in value)
+    return False
 
 
 def _flatten_text(value: Any) -> str:
@@ -609,6 +639,18 @@ _MANAGE_OPERATIONS = {"list", "update", "delete"}
 _CARD_TYPES = {"plan", "insight", "recommendation"}
 _TARGET_WEEKS = {"current", "next"}
 
+# Only schemas with float fields need this extra guard. Pydantic already rejects
+# non-finite strings for int fields (water, blood pressure, mood, etc.). Reuse the
+# API update models so text fields remain text and future field constraints stay
+# aligned with the actual endpoint contract.
+_FINITE_HEALTH_MANAGE_UPDATE_MODELS = {
+    "diet": DietRecordUpdate,
+    "exercise": ExerciseRecordUpdate,
+    "goal": GoalUpdate,
+    "waist": WaistRecordUpdate,
+    "weight": WeightRecordUpdate,
+}
+
 _INDICATOR_ALLOWED_DIMS = {"medical_exam", "genetic"}
 
 
@@ -620,6 +662,20 @@ def _metric(tool: str, field: str, reason: str, *, action: str = "coerced") -> N
     """
     logger.info("metric: tool_validator_%s tool=%s field=%s reason=%s",
                 action, tool, field, reason)
+
+
+def _health_manage_update_has_finiteness_error(
+    record_type: str,
+    data: Dict[str, Any],
+) -> bool:
+    model_type = _FINITE_HEALTH_MANAGE_UPDATE_MODELS.get(record_type)
+    if model_type is None:
+        return False
+    try:
+        model_type.model_validate(data)
+    except ValidationError as exc:
+        return any(error.get("type") == "finite_number" for error in exc.errors())
+    return False
 
 
 def _coerce_enum(
@@ -843,20 +899,41 @@ def _validate_health_manage(
         record_id = args.get("record_id")
         if record_id is None:
             return f"Error: health_manage.{operation} 必须提供 record_id. 先 list 查候选记录, 不要编造 ID."
-        try:
-            record_id_int = int(record_id)
-        except (TypeError, ValueError):
-            return f"Error: health_manage.record_id 必须是整数, 收到 {record_id!r}."
-        if record_id_int <= 0:
-            return f"Error: health_manage.record_id 必须为正整数, 收到 {record_id_int}."
+        record_id_int = canonical_health_manage_record_id(record_id)
+        if record_id_int is None:
+            return (
+                "Error: health_manage.record_id 必须为正整数, "
+                f"收到 {record_id!r}."
+            )
         args["record_id"] = record_id_int
 
     if operation == "update":
-        data = args.get("data") or {}
+        raw_data = args.get("data")
+        if isinstance(raw_data, str):
+            try:
+                decoded_data = json.loads(raw_data, parse_constant=_reject_json_constant)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                decoded_data = None
+            if isinstance(decoded_data, dict):
+                raw_data = decoded_data
+                args["data"] = decoded_data
+        data = raw_data or {}
         if not isinstance(data, dict):
             return "Error: health_manage.update 的 data 必须是对象."
         if not data:
             return "Error: health_manage.update 必须提供 data 补丁字段."
+        if _contains_non_finite_float(data):
+            msg = "[tool_validator] health_manage.update.data 包含非有限数值, 拒绝"
+            warnings.append(msg)
+            logger.warning(msg)
+            _metric("health_manage", "data", "non_finite", action="rejected")
+            return "Error: health_manage.update 的 data 必须只包含有限数值."
+        if _health_manage_update_has_finiteness_error(rtype, data):
+            msg = "[tool_validator] health_manage.update.data 数值字段会转为非有限值, 拒绝"
+            warnings.append(msg)
+            logger.warning(msg)
+            _metric("health_manage", "data", "coerced_non_finite", action="rejected")
+            return "Error: health_manage.update 的数值字段必须只包含有限数值."
         args["data"] = data
 
     if isinstance(args.get("date"), str) and len(args["date"]) > 10:

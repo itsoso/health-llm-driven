@@ -292,6 +292,41 @@ def test_runtime_unknown_error_code_is_coarsened(db, auth_user_and_headers):
     assert run.error_code == "unclassified_error"
 
 
+@pytest.mark.parametrize(
+    "error_code",
+    (
+        "manage_operation_mismatch",
+        "delete_requires_explicit_whole_record_intent",
+    ),
+)
+def test_runtime_preserves_health_manage_policy_error_codes(
+    db,
+    auth_user_and_headers,
+    error_code,
+):
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    runtime = AgentRuntimeCoordinator(db)
+    admission = runtime.create_or_resume_run(
+        run_id=f"run-{error_code}",
+        attempt_id=f"attempt-{error_code}",
+        user_id=user.id,
+        conversation_id=None,
+        client_turn_id=f"turn-{error_code}",
+        origin="test",
+    )
+    runtime.mark_running(admission.context)
+    runtime.complete(
+        admission.context,
+        status="waiting_for_user",
+        error_code=error_code,
+    )
+
+    run = runtime.get_run(user.id, admission.context.run_id)
+    assert run.error_code == error_code
+
+
 def test_terminal_run_allows_next_input_sequence(db, auth_user_and_headers):
     from app.services.agent_runtime import AgentRuntimeCoordinator
 

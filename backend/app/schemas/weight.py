@@ -1,11 +1,13 @@
 """体重追踪模式"""
 from pydantic import BaseModel, ConfigDict
-from typing import Optional, List
+from typing import Optional
 from datetime import date, datetime
 
 
 class WeightRecordBase(BaseModel):
     """体重记录基础"""
+    model_config = ConfigDict(allow_inf_nan=False)
+
     record_date: date
     weight: float
     body_fat_percentage: Optional[float] = None
@@ -25,6 +27,8 @@ class WeightRecordCreate(WeightRecordBase):
 
 class WeightRecordUpdate(BaseModel):
     """更新体重记录"""
+    model_config = ConfigDict(allow_inf_nan=False)
+
     weight: Optional[float] = None
     body_fat_percentage: Optional[float] = None
     muscle_mass: Optional[float] = None

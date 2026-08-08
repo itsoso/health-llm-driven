@@ -1118,6 +1118,97 @@ async def test_gateway_execute_shadow_denial_still_dispatches_once():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+async def test_gateway_update_intent_blocks_health_record_recreate_fallback(
+    policy_mode,
+):
+    gateway = ToolGateway(
+        _snapshot("把刚才 300ml 改成 350ml", policy_mode=policy_mode)
+    )
+    dispatched = False
+    request = ToolExecutionRequest(
+        tool_name="health_record",
+        arguments={"record_type": "water", "data": {"amount": 350}},
+    )
+
+    async def dispatch(_request):
+        nonlocal dispatched
+        dispatched = True
+        return "unexpected"
+
+    result = await gateway.execute(request, dispatch)
+
+    assert dispatched is False
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert result.decision.reason == "write_tool_without_write_intent"
+    payload = json.loads(result.content)
+    assert payload["status"] == "rejected"
+    assert payload["dispatch_started"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "expected_reason"),
+    (
+        ("把刚才 300ml 改成 350ml", "manage_operation_mismatch"),
+        (
+            "删除上一条饮水记录",
+            "delete_requires_explicit_whole_record_intent",
+        ),
+    ),
+)
+async def test_gateway_execute_shadow_hard_destructive_denial_never_dispatches(
+    message,
+    expected_reason,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode="shadow"))
+    dispatched = False
+    request = ToolExecutionRequest(
+        tool_name="health_manage",
+        arguments={
+            "record_type": "water",
+            "operation": "delete",
+            "record_id": 718,
+        },
+    )
+
+    async def dispatch(_request):
+        nonlocal dispatched
+        dispatched = True
+        return "unexpected"
+
+    result = await gateway.execute(request, dispatch)
+
+    assert dispatched is False
+    assert result.decision is not None
+    assert result.decision.reason == expected_reason
+    payload = json.loads(result.content)
+    assert payload["status"] == "rejected"
+    assert payload["dispatch_started"] is False
+
+
+@pytest.mark.asyncio
+async def test_gateway_execute_unknown_policy_mode_fails_closed_before_dispatch():
+    gateway = ToolGateway(_snapshot("记录午餐吃了牛肉面", policy_mode="enfroce"))
+    dispatched = False
+    request = ToolExecutionRequest(
+        tool_name="health_record",
+        arguments={"record_type": "diet", "data": {"food_items": "牛肉面"}},
+    )
+
+    async def dispatch(_request):
+        nonlocal dispatched
+        dispatched = True
+        return "unexpected"
+
+    with pytest.raises(ToolPreflightError, match="tool_preflight_failed"):
+        await gateway.execute(request, dispatch)
+
+    assert dispatched is False
+
+
+@pytest.mark.asyncio
 async def test_execute_tool_blocks_policy_denied_health_record_before_dispatch(db, monkeypatch):
     executor = AgentExecutor(db)
     executor._current_user_id = 1
@@ -1345,6 +1436,209 @@ async def test_execute_tool_blocks_health_manage_update_in_read_turn(db, monkeyp
     assert payload["status"] == "rejected"
     assert payload["dispatch_started"] is False
     assert payload["error_code"] == "manage_write_without_mutate_intent"
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_blocks_health_manage_delete_in_update_turn(db, monkeypatch):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "把刚才 300ml 改成 350ml"
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {"error": None, "data": args},
+    )
+
+    async def should_not_run(*args, **kwargs):
+        raise AssertionError("_exec_health_manage should not run")
+
+    monkeypatch.setattr(executor, "_exec_health_manage", should_not_run)
+
+    result = await executor._execute_tool(
+        "health_manage",
+        {"record_type": "water", "operation": "delete", "record_id": 718},
+        None,
+    )
+
+    payload = json.loads(result)
+    assert payload["status"] == "rejected"
+    assert payload["dispatch_started"] is False
+    assert payload["error_code"] == "manage_operation_mismatch"
+    assert "保留现有记录" in payload["recovery_guidance"]
+    assert "用户明确要求的操作" in payload["recovery_guidance"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    (
+        "把上一条饮水记录里的备注去掉",
+        "把上一条饮水记录备注删掉",
+        "从上一条饮水记录里把备注去掉",
+        "从上一条饮水记录中把说明删掉",
+        "把备注在上一条饮水记录里去掉",
+        "把上一条饮水记录里的单位去掉",
+        "把上一条运动记录里的距离去掉",
+        "把来源从上一条饮水记录里删除",
+        "把上一条运动记录中的速度删掉",
+        "删除上一条不是饮水的记录",
+        "删除上一条饮水以外的记录",
+        "删除上一条非饮水记录",
+        "删除上一条除饮水外的记录",
+        "删除上一条不含饮水的记录",
+        "删除饮水记录 718 的备注",
+        "撤销删除饮水记录 718",
+        "删除饮水记录 718 并改成 350ml",
+    ),
+)
+async def test_execute_tool_blocks_field_removal_from_deleting_record(
+    db,
+    monkeypatch,
+    message,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = message
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {"error": None, "data": args},
+    )
+
+    async def should_not_run(*args, **kwargs):
+        raise AssertionError("_exec_health_manage should not run")
+
+    monkeypatch.setattr(executor, "_exec_health_manage", should_not_run)
+
+    result = await executor._execute_tool(
+        "health_manage",
+        {"record_type": "water", "operation": "delete", "record_id": 718},
+        None,
+    )
+
+    payload = json.loads(result)
+    assert payload["status"] == "rejected"
+    assert payload["dispatch_started"] is False
+    assert payload["error_code"] == "delete_requires_explicit_whole_record_intent"
+    assert "保留整条记录" in payload["recovery_guidance"]
+    assert "仅移除字段" in payload["recovery_guidance"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "record_type", "record_id"),
+    (
+        ("删除上一条饮水记录", "medication", 718),
+        ("删除上一条饮水记录", "water", 718),
+        ("清掉记录 718", "medication", 718),
+        ("清掉记录 718", "water", 718),
+        ("清掉记录 718", "water", 719),
+        ("删除饮水记录 718", "weight", 718),
+        ("删除饮水记录 718", "water", 719),
+        ("删除第一条记录", "water", 718),
+        ("删除两条饮水记录", "water", 718),
+        ("删除饮水或用药记录 718", "water", 718),
+        ("删除饮水用药记录 718", "water", 718),
+        ("删除第1条或第2条饮水记录", "water", 718),
+        ("删除所有饮水记录 718", "water", 718),
+        ("删除上一条非饮水记录", "water", 718),
+        ("删除上一条除饮水外的记录", "water", 718),
+        ("删除上一条不含饮水的记录", "water", 718),
+    ),
+)
+async def test_execute_tool_blocks_delete_when_text_does_not_bind_target(
+    db,
+    monkeypatch,
+    message,
+    record_type,
+    record_id,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = message
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    async def should_not_run(*args, **kwargs):
+        raise AssertionError("_exec_health_manage should not run")
+
+    monkeypatch.setattr(executor, "_exec_health_manage", should_not_run)
+
+    result = await executor._execute_tool(
+        "health_manage",
+        {
+            "record_type": record_type,
+            "operation": "delete",
+            "record_id": record_id,
+        },
+        None,
+    )
+
+    payload = json.loads(result)
+    assert payload["status"] == "rejected"
+    assert payload["dispatch_started"] is False
+    assert payload["error_code"] == "delete_requires_explicit_whole_record_intent"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "record_type"),
+    (
+        ("删除饮水记录 718", "water"),
+        ("请帮我删除体重记录 718", "weight"),
+        ("把饮食记录 718 删了", "diet"),
+        ("请您删除用药记录 718", "medication"),
+        ("删除 meal 记录 718", "diet"),
+    ),
+)
+async def test_execute_tool_dispatches_closed_grammar_record_delete(
+    db,
+    monkeypatch,
+    message,
+    record_type,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = message
+    calls = []
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    async def fake_exec(base, headers, args):
+        calls.append(args)
+        return json.dumps({
+            "id": args["record_id"],
+            "record_id": args["record_id"],
+            "resource_type": f"{record_type}_record",
+            "message": "删除成功",
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_exec_health_manage", fake_exec)
+
+    result = await executor._execute_tool(
+        "health_manage",
+        {"record_type": record_type, "operation": "delete", "record_id": 718},
+        None,
+    )
+
+    assert calls == [{
+        "record_type": record_type,
+        "operation": "delete",
+        "record_id": 718,
+    }]
+    assert '"record_id": 718' in result
 
 
 @pytest.mark.asyncio

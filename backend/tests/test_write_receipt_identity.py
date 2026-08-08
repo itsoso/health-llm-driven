@@ -353,17 +353,25 @@ def test_polymorphic_write_tools_derive_resource_type_from_arguments():
     cases = [
         (
             "health_manage",
-            {"record_type": "supplement_definition", "operation": "update"},
+            {
+                "record_type": "supplement_definition",
+                "operation": "update",
+                "record_id": 55,
+            },
             "supplement_definition",
         ),
         (
             "health_manage",
-            {"record_type": "medication", "operation": "update"},
+            {"record_type": "medication", "operation": "update", "record_id": 55},
             "medication",
         ),
         (
             "health_manage",
-            {"record_type": "medication_log", "operation": "update"},
+            {
+                "record_type": "medication_log",
+                "operation": "update",
+                "record_id": 55,
+            },
             "medication_log",
         ),
         ("manage_plan", {"action": "generate_weekly"}, "smart_plan"),
@@ -381,3 +389,129 @@ def test_polymorphic_write_tools_derive_resource_type_from_arguments():
         assert receipt is not None
         assert receipt["resource_type"] == expected_resource_type
         assert receipt["resource_id"] == "55"
+
+
+def test_health_record_receipt_marks_verified_mapping_args_as_create():
+    receipt = _write_receipt_from_tool_result(
+        "health_record",
+        {"record_type": "water"},
+        json.dumps({"id": 718, "resource_type": "water_record"}),
+    )
+
+    assert receipt is not None
+    assert receipt["action"] == "create"
+
+
+@pytest.mark.parametrize("operation", ["update", "delete"])
+def test_health_manage_receipt_marks_verified_operation(operation):
+    receipt = _write_receipt_from_tool_result(
+        "health_manage",
+        {"record_type": "water", "operation": operation, "record_id": 718},
+        json.dumps({"id": 718, "resource_type": "water_record"}),
+    )
+
+    assert receipt is not None
+    assert receipt["action"] == operation
+
+
+@pytest.mark.parametrize("operation", ["update", "delete"])
+def test_health_manage_receipt_rejects_result_for_a_different_record(operation):
+    args = {
+        "record_type": "water",
+        "operation": operation,
+        "record_id": 718,
+    }
+    result = json.dumps(
+        {
+            "id": 719,
+            "resource_type": "water_record",
+            "operation_id": "health_manage:water_record:718",
+        },
+    )
+
+    assert _write_receipt_from_tool_result("health_manage", args, result) is None
+    assert _write_tool_completed("health_manage", args, result) is False
+
+
+@pytest.mark.parametrize("operation", ["update", "delete"])
+def test_health_manage_receipt_accepts_canonically_equal_record_id(operation):
+    receipt = _write_receipt_from_tool_result(
+        "health_manage",
+        {
+            "record_type": "water",
+            "operation": operation,
+            "record_id": "0718",
+        },
+        json.dumps({"record_id": 718, "resource_type": "water_record"}),
+    )
+
+    assert receipt is not None
+    assert receipt["resource_id"] == "718"
+    assert receipt["action"] == operation
+
+
+def test_health_manage_receipt_normalizes_operation_case_and_whitespace():
+    receipt = _write_receipt_from_tool_result(
+        "health_manage",
+        {"record_type": "water", "operation": " UPDATE ", "record_id": 718},
+        json.dumps({"id": 718, "resource_type": "water_record"}),
+    )
+
+    assert receipt is not None
+    assert receipt["action"] == "update"
+
+
+def test_health_manage_receipt_does_not_expose_unreachable_create_action():
+    receipt = _write_receipt_from_tool_result(
+        "health_manage",
+        {"record_type": "water", "operation": "create"},
+        json.dumps({"id": 718, "resource_type": "water_record"}),
+    )
+
+    assert receipt is not None
+    assert "action" not in receipt
+
+
+def test_health_manage_receipt_uses_args_action_over_result_payload_action():
+    receipt = _write_receipt_from_tool_result(
+        "health_manage",
+        {"record_type": "water", "operation": "update", "record_id": 718},
+        json.dumps(
+            {
+                "id": 718,
+                "resource_type": "water_record",
+                "action": "delete",
+            }
+        ),
+    )
+
+    assert receipt is not None
+    assert receipt["action"] == "update"
+
+
+def test_health_manage_receipt_ignores_invalid_operation_action():
+    receipt = _write_receipt_from_tool_result(
+        "health_manage",
+        {"record_type": "water", "operation": "replace"},
+        json.dumps(
+            {
+                "id": 718,
+                "resource_type": "water_record",
+                "action": "delete",
+            }
+        ),
+    )
+
+    assert receipt is not None
+    assert "action" not in receipt
+
+
+def test_legacy_health_record_context_does_not_invent_action():
+    receipt = _write_receipt_from_tool_result(
+        "health_record",
+        "water",
+        json.dumps({"id": 718, "resource_type": "water_record"}),
+    )
+
+    assert receipt is not None
+    assert "action" not in receipt

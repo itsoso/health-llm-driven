@@ -15,6 +15,26 @@ from app.services.agent_kernel.types import (
 
 logger = logging.getLogger(__name__)
 
+_VALID_POLICY_MODES = frozenset({"enforce", "shadow"})
+_HARD_BLOCK_REASONS = frozenset({
+    "manage_operation_mismatch",
+    "delete_requires_explicit_whole_record_intent",
+})
+
+
+def _is_hard_policy_denial(
+    snapshot: TurnSnapshot,
+    decision: CapabilityDecision,
+) -> bool:
+    if decision.reason in _HARD_BLOCK_REASONS:
+        return True
+    return (
+        decision.reason == "write_tool_without_write_intent"
+        and decision.normalized_tool_name == "health_record"
+        and snapshot.intent.primary == "mutate"
+        and snapshot.intent.operation == "update"
+    )
+
 
 class ToolPreflightError(RuntimeError):
     """A tool failed before its dispatch boundary was crossed."""
@@ -27,6 +47,8 @@ class ToolGateway:
         self.snapshot = snapshot
 
     def preflight(self, request: ToolExecutionRequest) -> CapabilityDecision:
+        if self.snapshot.policy_mode not in _VALID_POLICY_MODES:
+            raise ToolPreflightError("invalid_agent_kernel_policy_mode")
         decision = decide_tool_capability(self.snapshot, request)
         logger.info(
             "[agent_kernel.tool_gateway] action=%s reason=%s tool=%s user=%s channel=%s intent=%s/%s/%s source=%s",
@@ -56,7 +78,10 @@ class ToolGateway:
                 on_decision(decision)
         except Exception as exc:  # noqa: BLE001 - preserve the dispatch boundary
             raise ToolPreflightError("tool_preflight_failed") from exc
-        if decision.action == "block" and self.snapshot.policy_mode == "enforce":
+        if decision.action == "block" and (
+            self.snapshot.policy_mode == "enforce"
+            or _is_hard_policy_denial(self.snapshot, decision)
+        ):
             return ToolExecutionResult(
                 tool_name=decision.normalized_tool_name or request.tool_name,
                 content=blocked_tool_result(decision),
@@ -81,6 +106,8 @@ def blocked_tool_result(decision: CapabilityDecision) -> str:
     recovery_guidance = {
         "write_tool_without_write_intent": "先澄清用户是要查询、记录还是修改，未明确保存意图前不要写入。",
         "manage_write_without_mutate_intent": "先确认用户要修改或删除哪条记录，再执行变更。",
+        "manage_operation_mismatch": "保留现有记录，仅重试用户明确要求的操作，不要改用其他变更方式。",
+        "delete_requires_explicit_whole_record_intent": "保留整条记录；如用户只要去掉备注等字段，仅移除字段，否则先请用户明确是否删除整条记录。",
         "unknown_intervention_action": "先向用户说明该干预动作暂不支持，不要猜测 action。",
         "unknown_tool": "不要猜测工具名称，改用已注册能力或直接说明暂时无法完成。",
     }.get(

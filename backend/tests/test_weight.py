@@ -1,7 +1,10 @@
 """体重记录API测试"""
 import pytest
 from datetime import date, timedelta
+from pydantic import ValidationError
+
 from app.models.user import User
+from app.schemas.weight import WeightRecordInput, WeightRecordUpdate
 
 
 @pytest.fixture
@@ -175,6 +178,59 @@ class TestWeightAPI:
 
 class TestWeightValidation:
     """体重记录验证测试"""
+
+    @pytest.mark.parametrize(
+        "value",
+        ("Infinity", "-Infinity", "NaN", "1e309", "-1e309"),
+    )
+    def test_weight_schemas_reject_coerced_non_finite_values(self, value):
+        with pytest.raises(ValidationError):
+            WeightRecordInput.model_validate({
+                "record_date": str(date.today()),
+                "weight": value,
+            })
+        with pytest.raises(ValidationError):
+            WeightRecordUpdate.model_validate({"weight": value})
+
+    @pytest.mark.parametrize(
+        "value",
+        ("Infinity", "-Infinity", "NaN", "1e309", "-1e309"),
+    )
+    def test_weight_api_rejects_coerced_non_finite_values(
+        self,
+        client,
+        auth_headers,
+        sample_weight_data,
+        value,
+    ):
+        create_response = client.post(
+            "/api/v1/weight/records",
+            json={**sample_weight_data, "weight": value},
+            headers=auth_headers,
+        )
+        assert create_response.status_code == 422
+
+        created = client.post(
+            "/api/v1/weight/records",
+            json=sample_weight_data,
+            headers=auth_headers,
+        )
+        assert created.status_code == 200
+        update_response = client.put(
+            f"/api/v1/weight/records/{created.json()['id']}",
+            json={"weight": value},
+            headers=auth_headers,
+        )
+        assert update_response.status_code == 422
+
+    def test_weight_schemas_preserve_finite_numeric_strings_and_notes(self):
+        payload = {
+            "weight": "71.4",
+            "notes": "Infinity 和 NaN 是本条备注里的普通单词",
+        }
+        parsed = WeightRecordUpdate.model_validate(payload)
+        assert parsed.weight == 71.4
+        assert parsed.notes == payload["notes"]
 
     def test_negative_weight(self, client, auth_headers):
         """测试负数体重（应该失败）"""

@@ -15,6 +15,7 @@ from app.services.agent_executor import (
     _completion_status_from_finish_reason,
     _recoverable_write_operation_key,
     _write_checkpoint_status_after_dispatch,
+    _write_outcome_event_fields,
     _write_result_is_pre_dispatch_validation_error,
     _write_tool_completed,
 )
@@ -59,6 +60,40 @@ def _stream_from(fake_call_llm):
 
 async def _no_simple_diet_nutrition_estimate(_food_items):
     return None
+
+
+def _tool_results(events):
+    return [
+        event["data"]
+        for event in events
+        if event.get("event") == "tool_result"
+    ]
+
+
+def _assert_pre_dispatch_rejection(tool_result, *, error_code):
+    assert tool_result["write_outcome"] == "rejected"
+    assert tool_result["write_completed"] is False
+    assert tool_result["dispatch_started"] is False
+    assert tool_result["resubmit_safe"] is True
+    assert tool_result["error_code"] == error_code
+    assert "receipt" not in tool_result
+
+
+def _assert_pre_dispatch_outcome(write_outcome, *, error_code):
+    assert write_outcome["write_outcome"] == "rejected"
+    assert write_outcome["dispatch_started"] is False
+    assert write_outcome["resubmit_safe"] is True
+    assert write_outcome["error_code"] == error_code
+    assert write_outcome["receipt"] is None
+
+
+def _assert_verified_write(tool_result, *, resource_id):
+    assert tool_result["write_outcome"] == "verified"
+    assert tool_result["dispatch_started"] is True
+    assert tool_result["resubmit_safe"] is False
+    assert tool_result["error_code"] is None
+    assert tool_result["receipt"]["verified"] is True
+    assert tool_result["receipt"]["resource_id"] == resource_id
 
 
 @pytest.fixture(autouse=True)
@@ -214,7 +249,7 @@ def test_unstructured_write_result_is_never_reported_as_completed(result):
 def test_structured_write_result_with_resource_identity_is_completed():
     assert _write_tool_completed(
         "health_manage",
-        {"record_type": "diet", "operation": "update"},
+        {"record_type": "diet", "operation": "update", "record_id": 42},
         '{"success":true,"id":42}',
     ) is True
 
@@ -1059,13 +1094,15 @@ async def test_all_planned_writes_are_checkpointed_before_first_dispatch(
     executor = AgentExecutor(db)
     first_args = {
         "record_type": "diet",
-        "operation": "delete",
+        "operation": "update",
         "record_id": 1001,
+        "data": {"notes": "第一条已核对"},
     }
     second_args = {
         "record_type": "diet",
-        "operation": "delete",
+        "operation": "update",
         "record_id": 1002,
+        "data": {"notes": "第二条已核对"},
     }
 
     async def fake_llm_call(messages, tools):
@@ -1122,7 +1159,7 @@ async def test_all_planned_writes_are_checkpointed_before_first_dispatch(
             event
             async for event in executor.run_stream(
                 user_id=user.id,
-                message="删除两条饮食记录",
+                message="修改两条饮食记录",
                 user_auth_token="test-token",
                 client_turn_id="turn-two-planned-writes",
             )
@@ -1130,7 +1167,7 @@ async def test_all_planned_writes_are_checkpointed_before_first_dispatch(
 
     user_message = db.query(AgentMessage).filter(
         AgentMessage.role == "user",
-        AgentMessage.content == "删除两条饮食记录",
+        AgentMessage.content == "修改两条饮食记录",
     ).one()
     operations = user_message.meta["write_operations"]
     assert len(operations) == 2
@@ -2392,6 +2429,7 @@ async def test_agent_stream_executes_inline_diet_record_json_with_nutrition(db, 
         and event["data"]["write_completed"] is True
         and event["data"]["receipt"]["resource_type"] == "diet_record"
         and event["data"]["receipt"]["resource_id"] == "701"
+        and event["data"]["receipt"]["action"] == "create"
         and event["data"]["receipt"]["verified"] is True
         and event["data"]["result"] == (
             '{"id":701,"message":"已记录晚餐：约 520 kcal，蛋白质 32g",'
@@ -2408,6 +2446,7 @@ async def test_agent_stream_executes_inline_diet_record_json_with_nutrition(db, 
             "resource_id": "701",
             "completed_at": done["data"]["write_receipts"][0]["completed_at"],
             "verified": True,
+            "action": "create",
         }
     ]
     from app.models.agent_conversation import AgentMessage
@@ -3316,6 +3355,607 @@ async def test_agent_stream_repaired_missing_argument_clears_scope_rejection(
 
 
 @pytest.mark.asyncio
+async def test_update_json_object_string_is_normalized_without_delete_fallback(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    dispatched = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            arguments = {
+                "record_type": "water",
+                "operation": "list",
+            }
+        elif llm_calls == 2:
+            arguments = {
+                "record_type": "water",
+                "operation": "update",
+                "record_id": 718,
+                "data": '{"amount": 350}',
+            }
+        else:
+            return {
+                "content": "已将这条饮水记录改为 350ml。",
+                "finish_reason": "stop",
+            }
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": f"water-{llm_calls}",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps(arguments, ensure_ascii=False),
+                },
+            }],
+        }
+
+    async def fake_health_manage(_base_url, _headers, parsed):
+        dispatched.append(parsed)
+        if parsed["operation"] == "list":
+            return json.dumps([{
+                "id": 718,
+                "amount": 300,
+                "record_date": "2026-08-08",
+            }])
+        if parsed["operation"] == "delete":
+            return json.dumps({
+                "id": parsed["record_id"],
+                "record_id": parsed["record_id"],
+                "resource_type": "water_record",
+                "message": "删除成功",
+            }, ensure_ascii=False)
+        return json.dumps({
+            "id": parsed["record_id"],
+            "record_id": parsed["record_id"],
+            "resource_type": "water_record",
+            "amount": parsed["data"]["amount"],
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_exec_health_manage", fake_health_manage)
+    monkeypatch.setattr(
+        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
+        lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="把刚才 300ml 改成 350ml",
+            user_auth_token="test-token",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+    tool_results = _tool_results(events)
+    assert [item["operation"] for item in dispatched] == ["list", "update"]
+    assert dispatched[-1]["data"] == {"amount": 350}
+    assert len(tool_results) == 2
+    _assert_verified_write(tool_results[1], resource_id="718")
+    assert done["data"]["turn_outcome"]["category"] != "tool_blocked"
+    assert done["data"]["completion_status"] == "complete"
+    assert len(done["data"]["write_receipts"]) == 1
+    assert done["data"]["write_receipts"][0]["resource_id"] == "718"
+    assert "这次没有写入" not in rendered
+    assert "另有" not in rendered
+    assert "已将这条饮水记录改为 350ml" in rendered
+
+
+@pytest.mark.asyncio
+async def test_update_retry_never_deletes_and_reports_verified_update(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    dispatched = []
+    write_outcomes = []
+
+    def capture_write_outcome(result, receipt):
+        fields = _write_outcome_event_fields(result, receipt)
+        write_outcomes.append({**fields, "receipt": receipt})
+        return fields
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            operation = "list"
+            data = None
+        elif llm_calls == 2:
+            operation = "update"
+            data = "not-json"
+        elif llm_calls == 3:
+            operation = "delete"
+            data = None
+        elif llm_calls == 4:
+            operation = "update"
+            data = {"amount": 350}
+        else:
+            return {
+                "content": "已将这条饮水记录改为 350ml。",
+                "finish_reason": "stop",
+            }
+        arguments = {
+            "record_type": "water",
+            "operation": operation,
+        }
+        if operation != "list":
+            arguments["record_id"] = 718
+        if data is not None:
+            arguments["data"] = data
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": f"water-{operation}",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps(arguments, ensure_ascii=False),
+                },
+            }],
+        }
+
+    async def fake_health_manage(_base_url, _headers, parsed):
+        dispatched.append(parsed)
+        if parsed["operation"] == "list":
+            return json.dumps([{
+                "id": 718,
+                "amount": 300,
+                "record_date": "2026-08-08",
+            }])
+        if parsed["operation"] == "delete":
+            return json.dumps({
+                "id": parsed["record_id"],
+                "record_id": parsed["record_id"],
+                "resource_type": "water_record",
+                "message": "删除成功",
+            }, ensure_ascii=False)
+        return json.dumps({
+            "id": parsed["record_id"],
+            "record_id": parsed["record_id"],
+            "resource_type": "water_record",
+            "amount": parsed["data"]["amount"],
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_exec_health_manage", fake_health_manage)
+    monkeypatch.setattr(
+        "app.services.agent_executor._write_outcome_event_fields",
+        capture_write_outcome,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
+        lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="把刚才 300ml 改成 350ml",
+            user_auth_token="test-token",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+    tool_results = _tool_results(events)
+
+    assert [item["operation"] for item in dispatched] == ["list", "update"]
+    assert dispatched[-1]["data"] == {"amount": 350}
+    # Recoverable validation failures are intentionally withheld from the UI
+    # event stream, so capture the exact outcome fields before that suppression.
+    assert len(write_outcomes) == 4
+    _assert_pre_dispatch_outcome(
+        write_outcomes[1],
+        error_code="tool_validation_failed",
+    )
+    assert len(tool_results) == 3
+    _assert_pre_dispatch_rejection(
+        tool_results[1],
+        error_code="manage_operation_mismatch",
+    )
+    _assert_verified_write(tool_results[2], resource_id="718")
+    assert done["data"]["turn_outcome"]["category"] != "tool_blocked"
+    assert done["data"]["completion_status"] == "complete"
+    assert len(done["data"]["write_receipts"]) == 1
+    assert done["data"]["write_receipts"][0]["resource_id"] == "718"
+    assert "这次没有写入" not in rendered
+    assert "另有" not in rendered
+    assert "已将这条饮水记录改为 350ml" in rendered
+
+
+@pytest.mark.asyncio
+async def test_update_retry_different_target_does_not_recover_blocked_delete(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    dispatched = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            operation = "delete"
+            record_id = 718
+            data = None
+        elif llm_calls == 2:
+            operation = "update"
+            record_id = 719
+            data = {"amount": 350}
+        else:
+            return {
+                "content": "已完成修改。",
+                "finish_reason": "stop",
+            }
+        arguments = {
+            "record_type": "water",
+            "operation": operation,
+            "record_id": record_id,
+        }
+        if data is not None:
+            arguments["data"] = data
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": f"water-{operation}-{record_id}",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps(arguments, ensure_ascii=False),
+                },
+            }],
+        }
+
+    async def fake_health_manage(_base_url, _headers, parsed):
+        dispatched.append(parsed)
+        if parsed["operation"] == "delete":
+            return json.dumps({
+                "id": parsed["record_id"],
+                "record_id": parsed["record_id"],
+                "resource_type": "water_record",
+                "message": "删除成功",
+            }, ensure_ascii=False)
+        return json.dumps({
+            "id": parsed["record_id"],
+            "record_id": parsed["record_id"],
+            "resource_type": "water_record",
+            "amount": parsed["data"]["amount"],
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_exec_health_manage", fake_health_manage)
+    monkeypatch.setattr(
+        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
+        lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="把刚才 300ml 改成 350ml",
+            user_auth_token="test-token",
+        )
+    ]
+    done = next(event for event in events if event.get("event") == "done")
+    tool_results = _tool_results(events)
+
+    assert [item["record_id"] for item in dispatched] == [719]
+    assert len(tool_results) == 2
+    _assert_pre_dispatch_rejection(
+        tool_results[0],
+        error_code="manage_operation_mismatch",
+    )
+    _assert_verified_write(tool_results[1], resource_id="719")
+    assert done["data"]["turn_outcome"]["category"] == "tool_blocked"
+    assert done["data"]["turn_outcome"]["reason_code"] == "manage_operation_mismatch"
+    assert len(done["data"]["write_receipts"]) == 1
+    assert done["data"]["write_receipts"][0]["resource_id"] == "719"
+
+
+@pytest.mark.asyncio
+async def test_delete_retry_recovers_same_target_operation_mismatch(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    dispatched = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            operation = "update"
+            record_id = 718
+            data = {"amount": 350}
+        elif llm_calls == 2:
+            operation = "delete"
+            record_id = 718
+            data = None
+        else:
+            return {
+                "content": "已删除上一条饮水记录。",
+                "finish_reason": "stop",
+            }
+        arguments = {
+            "record_type": "water",
+            "operation": operation,
+            "record_id": record_id,
+        }
+        if data is not None:
+            arguments["data"] = data
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": f"water-{operation}-{record_id}",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps(arguments, ensure_ascii=False),
+                },
+            }],
+        }
+
+    async def fake_health_manage(_base_url, _headers, parsed):
+        dispatched.append(parsed)
+        if parsed["operation"] == "update":
+            return json.dumps({
+                "id": parsed["record_id"],
+                "record_id": parsed["record_id"],
+                "resource_type": "water_record",
+                "amount": parsed["data"]["amount"],
+            }, ensure_ascii=False)
+        return json.dumps({
+            "id": parsed["record_id"],
+            "record_id": parsed["record_id"],
+            "resource_type": "water_record",
+            "message": "删除成功",
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_exec_health_manage", fake_health_manage)
+    monkeypatch.setattr(
+        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
+        lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="删除饮水记录 718",
+            user_auth_token="test-token",
+        )
+    ]
+    done = next(event for event in events if event.get("event") == "done")
+    tool_results = _tool_results(events)
+
+    assert [item["operation"] for item in dispatched] == ["delete"]
+    assert len(tool_results) == 2
+    _assert_pre_dispatch_rejection(
+        tool_results[0],
+        error_code="manage_operation_mismatch",
+    )
+    _assert_verified_write(tool_results[1], resource_id="718")
+    assert done["data"]["turn_outcome"]["category"] != "tool_blocked"
+    assert done["data"]["completion_status"] == "complete"
+    assert len(done["data"]["write_receipts"]) == 1
+    assert done["data"]["write_receipts"][0]["resource_id"] == "718"
+
+
+@pytest.mark.asyncio
+async def test_update_wrong_result_id_does_not_recover_same_target_mismatch(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    dispatched = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            operation = "delete"
+            data = None
+        elif llm_calls == 2:
+            operation = "update"
+            data = {"amount": 350}
+        else:
+            return {
+                "content": "已将饮水记录 718 改为 350ml。",
+                "finish_reason": "stop",
+            }
+        arguments = {
+            "record_type": "water",
+            "operation": operation,
+            "record_id": 718,
+        }
+        if data is not None:
+            arguments["data"] = data
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": f"water-{operation}-718",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps(arguments, ensure_ascii=False),
+                },
+            }],
+        }
+
+    async def fake_health_manage(_base_url, _headers, parsed):
+        dispatched.append(parsed)
+        return json.dumps({
+            "id": 719,
+            "record_id": 719,
+            "resource_type": "water_record",
+            "status": "updated",
+            "amount": parsed["data"]["amount"],
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_exec_health_manage", fake_health_manage)
+    monkeypatch.setattr(
+        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
+        lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="把饮水记录 718 改成 350ml",
+            user_auth_token="test-token",
+        )
+    ]
+    done = next(event for event in events if event.get("event") == "done")
+    tool_results = _tool_results(events)
+
+    assert [item["operation"] for item in dispatched] == ["update"]
+    assert len(tool_results) == 2
+    _assert_pre_dispatch_rejection(
+        tool_results[0],
+        error_code="manage_operation_mismatch",
+    )
+    wrong_target_result = tool_results[1]
+    assert wrong_target_result["write_completed"] is False
+    assert wrong_target_result["write_outcome"] == "uncertain"
+    assert wrong_target_result["dispatch_started"] is None
+    assert wrong_target_result["resubmit_safe"] is False
+    assert wrong_target_result["error_code"] == "missing_receipt"
+    assert "receipt" not in wrong_target_result
+    assert done["data"]["turn_outcome"]["category"] == (
+        "write_reconciliation_required"
+    )
+    assert done["data"]["turn_outcome"]["reason_code"] == "missing_receipt"
+    assert done["data"]["write_receipts"] == []
+    assert ("water", 718) in (
+        executor._agent_kernel_unresolved_manage_mismatch_targets
+    )
+    assert "manage_operation_mismatch" not in (
+        executor._agent_kernel_recovered_capability_block_reasons
+    )
+
+
+@pytest.mark.asyncio
+async def test_delete_retry_different_target_keeps_operation_mismatch_blocked(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    dispatched = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            operation = "update"
+            record_id = 718
+            data = {"amount": 350}
+        elif llm_calls == 2:
+            operation = "delete"
+            record_id = 719
+            data = None
+        else:
+            return {
+                "content": "已完成删除。",
+                "finish_reason": "stop",
+            }
+        arguments = {
+            "record_type": "water",
+            "operation": operation,
+            "record_id": record_id,
+        }
+        if data is not None:
+            arguments["data"] = data
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": f"water-{operation}-{record_id}",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps(arguments, ensure_ascii=False),
+                },
+            }],
+        }
+
+    async def fake_health_manage(_base_url, _headers, parsed):
+        dispatched.append(parsed)
+        if parsed["operation"] == "update":
+            return json.dumps({
+                "id": parsed["record_id"],
+                "record_id": parsed["record_id"],
+                "resource_type": "water_record",
+                "amount": parsed["data"]["amount"],
+            }, ensure_ascii=False)
+        return json.dumps({
+            "id": parsed["record_id"],
+            "record_id": parsed["record_id"],
+            "resource_type": "water_record",
+            "message": "删除成功",
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_exec_health_manage", fake_health_manage)
+    monkeypatch.setattr(
+        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
+        lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="删除饮水记录 719",
+            user_auth_token="test-token",
+        )
+    ]
+    done = next(event for event in events if event.get("event") == "done")
+    tool_results = _tool_results(events)
+
+    assert [item["record_id"] for item in dispatched] == [719]
+    assert len(tool_results) == 2
+    _assert_pre_dispatch_rejection(
+        tool_results[0],
+        error_code="manage_operation_mismatch",
+    )
+    _assert_verified_write(tool_results[1], resource_id="719")
+    assert done["data"]["turn_outcome"]["category"] == "tool_blocked"
+    assert done["data"]["turn_outcome"]["reason_code"] == "manage_operation_mismatch"
+    assert len(done["data"]["write_receipts"]) == 1
+    assert done["data"]["write_receipts"][0]["resource_id"] == "719"
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_repaired_diet_nutrition_clears_older_scope_rejection(
     db, auth_user_and_headers, monkeypatch
 ):
@@ -3423,6 +4063,108 @@ async def test_agent_stream_repaired_diet_nutrition_clears_older_scope_rejection
         and (card.get("data") or {}).get("type") == "diet"
         for card in done["data"].get("cards", [])
     )
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_repaired_diet_name_cannot_expand_authorized_target(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    dispatched = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            data = {
+                "meal_type": "snack",
+                "food_items": "坚果 20g",
+            }
+        elif llm_calls == 2:
+            data = {
+                "meal_type": "snack",
+                "food_items": "洽洽小黄袋每日坚果 20g",
+                "calories": 131,
+                "protein": 2.9,
+                "carbs": 3.2,
+                "fat": 11.8,
+                "fiber": 1.5,
+            }
+        else:
+            return {
+                "content": "已记录加餐。",
+                "finish_reason": "stop",
+            }
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": f"nuts-{llm_calls}",
+                "function": {
+                    "name": "health_record",
+                    "arguments": json.dumps({
+                        "record_type": "diet",
+                        "data": data,
+                    }, ensure_ascii=False),
+                },
+            }],
+        }
+
+    async def fake_dispatch(request, user_token):
+        dispatched.append(request.arguments)
+        return json.dumps(
+            {
+                "id": 903,
+                "meal_type": request.arguments["data"]["meal_type"],
+                "food_items": request.arguments["data"]["food_items"],
+                "calories": request.arguments["data"]["calories"],
+                "protein": request.arguments["data"]["protein"],
+                "carbs": request.arguments["data"]["carbs"],
+                "fat": request.arguments["data"]["fat"],
+                "fiber": request.arguments["data"]["fiber"],
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        _no_simple_diet_nutrition_estimate,
+    )
+    monkeypatch.setattr(executor, "_dispatch_tool_request", fake_dispatch)
+    monkeypatch.setattr(
+        "app.services.agent_executor._post_record_quality_response",
+        lambda *args, **kwargs: None,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录这餐 20 克坚果，并按营养成分表计算。",
+            user_auth_token="test-token",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+
+    tool_results = _tool_results(events)
+
+    assert dispatched == []
+    assert "这次没有写入" in rendered
+    assert len(tool_results) == 1
+    _assert_pre_dispatch_rejection(
+        tool_results[-1],
+        error_code="health_record_authorization_target_unresolved",
+    )
+    assert done["data"]["write_receipts"] == []
 
 
 def test_multi_meal_goal_cannot_clear_another_diet_rejection():

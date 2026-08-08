@@ -19,6 +19,7 @@ import type { MedicationDecisionStatus, UIMessage } from '../../hooks/useChatEng
 import { speakWithUserVoice, type SpeakHandle } from '../../services/speakWithUserVoice';
 import { dispatchChatCardAction, type ChatCardActionResult } from '../../services/chatCardActions';
 import { rememberVerifiedWriteReceipt } from '../../services/conversationContinuity';
+import { formatWriteReceipt } from '../../services/writeReceipt';
 import {
   buildCardActionReceiptIdentity,
   loadCardActionCompletion,
@@ -1264,15 +1265,16 @@ function MessageTime({ label, isUser }: { label: string; isUser: boolean }) {
 }
 
 function WriteReceiptLine({ receipt }: { receipt: WriteReceipt }) {
+  const label = formatWriteReceipt(receipt);
   return (
     <View
       testID="write-receipt"
       style={styles.writeReceipt}
       accessibilityRole="text"
-      accessibilityLabel={formatWriteReceipt(receipt)}
+      accessibilityLabel={label}
     >
       <Ionicons name="checkmark-circle" size={14} color={C.green600} />
-      <Text style={styles.writeReceiptText}>{formatWriteReceipt(receipt)}</Text>
+      <Text style={styles.writeReceiptText}>{label}</Text>
     </View>
   );
 }
@@ -1460,26 +1462,6 @@ function isWriteCardAction(action: ChatCardActionDescriptor): boolean {
     'write_intent.confirm',
     'aigc_media.confirm',
   ].includes(action.action);
-}
-
-function formatWriteReceipt(receipt: WriteReceipt): string {
-  if (receipt.resourceType === 'diet_record') {
-    return receipt.status === 'dismissed'
-      ? `已忽略 · 饮食记录 #${receipt.resourceId}`
-      : `已保存到今日饮食 · 记录 #${receipt.resourceId}`;
-  }
-  const resourceLabels: Record<string, string> = {
-    agenda_event: '今日行动',
-    intervention_event: '今日行动',
-    diet_record: '饮食记录',
-    write_intent: '待确认项',
-    smart_reminder: '提醒',
-    health_record: '健康记录',
-    medication_log: '用药记录',
-  };
-  const verb = receipt.status === 'dismissed' ? '已忽略' : '已写入';
-  const resourceLabel = resourceLabels[receipt.resourceType] || '健康数据';
-  return `${verb} · ${resourceLabel} #${receipt.resourceId}`;
 }
 
 function getCardActionSuccessMessage(

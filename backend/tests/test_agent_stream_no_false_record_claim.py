@@ -298,6 +298,7 @@ async def test_water_record_without_model_tool_call_uses_one_deterministic_write
         "resource_id": "801",
         "completed_at": done["data"]["write_receipts"][0]["completed_at"],
         "verified": True,
+        "action": "create",
         "date": executor._agent_kernel_reference_now().date().isoformat(),
     }]
 

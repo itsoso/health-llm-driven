@@ -108,6 +108,10 @@ from app.services.agent_kernel.types import (
     ToolExecutionRequest,
     TurnSnapshot,
 )
+from app.services.agent_kernel.capability_policy import (
+    canonical_health_manage_record_id,
+    canonical_health_manage_record_type,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -2123,6 +2127,17 @@ def _parse_tool_arguments_for_telemetry(args_raw: Any) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _health_manage_target_key(
+    args: Mapping[str, Any],
+) -> Optional[tuple[str, int]]:
+    """Return a content-minimal identity for one managed health record."""
+    record_type = canonical_health_manage_record_type(args.get("record_type"))
+    record_id = canonical_health_manage_record_id(args.get("record_id"))
+    if record_type is None or record_id is None:
+        return None
+    return record_type, record_id
+
+
 def _text_tool_call_write_is_authorized(
     call: Dict[str, Any],
     user_message: Optional[str],
@@ -3835,7 +3850,8 @@ def _write_receipt_from_tool_result(
     """Build a persistence receipt from structured tool output only."""
     if tool_name not in _WRITE_RECEIPT_TOOL_NAMES:
         return None
-    if isinstance(receipt_context, Mapping):
+    has_structured_args = isinstance(receipt_context, Mapping)
+    if has_structured_args:
         args = dict(receipt_context)
     else:
         args = {"record_type": receipt_context}
@@ -3843,6 +3859,7 @@ def _write_receipt_from_tool_result(
         args.get("record_type") or args.get("type") or ""
     ).strip().lower()
     normalized_action = str(args.get("action") or "").strip().lower()
+    normalized_operation = str(args.get("operation") or "").strip().lower()
     if tool_name in {"health_record", "health_manage"}:
         expected_resource_type = expected_receipt_resource_type(tool_name, args)
     elif tool_name == "manage_plan":
@@ -3890,6 +3907,21 @@ def _write_receipt_from_tool_result(
         return None
     if not is_valid_receipt_resource_id(tool_name, resource_id):
         return None
+    if (
+        has_structured_args
+        and tool_name == "health_manage"
+        and normalized_operation in {"update", "delete"}
+    ):
+        requested_record_id = canonical_health_manage_record_id(
+            args.get("record_id")
+        )
+        result_record_id = canonical_health_manage_record_id(resource_id)
+        if (
+            requested_record_id is None
+            or result_record_id is None
+            or requested_record_id != result_record_id
+        ):
+            return None
     target_date, target_date_conflict = _receipt_target_date(payload, args)
     if target_date_conflict:
         return None
@@ -3911,6 +3943,14 @@ def _write_receipt_from_tool_result(
         "completed_at": str(completed_at),
         "verified": True,
     }
+    receipt_action: Optional[str] = None
+    if has_structured_args and tool_name == "health_record":
+        receipt_action = "create"
+    elif has_structured_args and tool_name == "health_manage":
+        if normalized_operation in {"update", "delete"}:
+            receipt_action = normalized_operation
+    if receipt_action:
+        receipt["action"] = receipt_action
     if target_date:
         receipt["date"] = target_date
     return receipt
@@ -8417,6 +8457,9 @@ class AgentExecutor:
         self._agent_kernel_last_decision: Optional[CapabilityDecision] = None
         self._agent_kernel_capability_block_reasons: List[str] = []
         self._agent_kernel_recovered_capability_block_reasons: List[str] = []
+        self._agent_kernel_unresolved_manage_mismatch_targets: set[
+            tuple[str, int]
+        ] = set()
         self._agent_kernel_tool_failure_tools: List[str] = []
         self._agent_kernel_pending_confirmation_tools: List[str] = []
         self._agent_kernel_tool_retry_count = 0
@@ -8456,6 +8499,7 @@ class AgentExecutor:
         self._agent_kernel_last_decision = None
         self._agent_kernel_capability_block_reasons = []
         self._agent_kernel_recovered_capability_block_reasons = []
+        self._agent_kernel_unresolved_manage_mismatch_targets = set()
         self._agent_kernel_tool_failure_tools = []
         self._agent_kernel_pending_confirmation_tools = []
         self._agent_kernel_tool_retry_count = 0
@@ -8670,6 +8714,33 @@ class AgentExecutor:
             if decision is not None and decision.receipt_required
             else None
         )
+        if (
+            not policy_blocked
+            and decision is not None
+            and decision.action == "allow"
+            and tool_name == "health_manage"
+            and snapshot is not None
+            and str(parsed_args.get("operation") or "").strip().lower()
+            == snapshot.intent.operation
+            and write_outcome is not None
+            and write_outcome.status == "verified"
+        ):
+            target = _health_manage_target_key(parsed_args)
+            unresolved_targets = (
+                self._agent_kernel_unresolved_manage_mismatch_targets
+            )
+            if target in unresolved_targets:
+                unresolved_targets.discard(target)
+                reason = "manage_operation_mismatch"
+                if (
+                    not unresolved_targets
+                    and reason in self._agent_kernel_capability_block_reasons
+                    and reason
+                    not in self._agent_kernel_recovered_capability_block_reasons
+                ):
+                    self._agent_kernel_recovered_capability_block_reasons.append(
+                        reason
+                    )
         if (
             policy_blocked
             and snapshot is not None
@@ -18355,6 +18426,17 @@ class AgentExecutor:
             return
         if decision.reason not in self._agent_kernel_capability_block_reasons:
             self._agent_kernel_capability_block_reasons.append(decision.reason)
+        if decision.reason == "manage_operation_mismatch":
+            target = _health_manage_target_key(decision.normalized_args)
+            if target is not None:
+                self._agent_kernel_unresolved_manage_mismatch_targets.add(target)
+                if (
+                    decision.reason
+                    in self._agent_kernel_recovered_capability_block_reasons
+                ):
+                    self._agent_kernel_recovered_capability_block_reasons.remove(
+                        decision.reason
+                    )
         logger.warning(
             "[agent_kernel] blocked tool=%s user=%s reason=%s intent=%s/%s/%s",
             requested_tool_name,

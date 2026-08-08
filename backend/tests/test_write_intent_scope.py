@@ -73,6 +73,8 @@ def test_compound_revocation_deferred_condition_and_third_party_have_no_authoriz
         "记录疾病：张三感冒",
         "记录上官婉儿感冒",
         "记录左丘明体重71kg",
+        "小明还是有腰疼的症状",
+        "记录小明右侧腰疼",
     ),
 )
 def test_revoked_reported_hypothetical_and_third_party_frames_have_no_authority(
@@ -504,7 +506,15 @@ def test_polite_conditions_do_not_turn_direct_requests_into_quotations(text: str
         "记录我的体重71kg",
         "请记录我今天体重71kg",
         "把我的体重71kg记录下来",
+        "记录我的右侧腰疼",
+        "记录2026年8月7日午餐吃了三明治",
     ),
 )
 def test_direct_vocative_backfill_and_lexical_guards_authorize(text: str) -> None:
     assert has_explicit_authorizing_write_request(text) is True
+
+
+def test_current_user_body_observation_has_concrete_authority() -> None:
+    text = "还是有腰疼的症状"
+
+    assert authorized_health_record_clauses(text) == (text,)

@@ -151,6 +151,8 @@ class GarminDataResponse(_CoerceIntMixin, BaseModel):
 
 class ExerciseRecordCreate(BaseModel):
     """创建锻炼记录"""
+    model_config = ConfigDict(allow_inf_nan=False)
+
     record_date: date
     exercise_type: str
     duration: Optional[int] = None              # 分钟
@@ -165,6 +167,8 @@ class ExerciseRecordCreate(BaseModel):
 
 class ExerciseRecordUpdate(BaseModel):
     """更新锻炼记录"""
+    model_config = ConfigDict(allow_inf_nan=False)
+
     record_date: Optional[date] = None
     exercise_type: Optional[str] = None
     duration: Optional[int] = None

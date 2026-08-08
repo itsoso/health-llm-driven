@@ -1093,7 +1093,7 @@ async def test_medical_instruction_basis_blocks_direct_destructive_dispatch(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "message",
-    ("请您删除这条用药记录", "请您删除这条用药记录🩺"),
+    ("请您删除用药记录 1", "请您删除用药记录 1🩺"),
 )
 async def test_ordinary_delete_without_clinician_basis_dispatches(
     db,

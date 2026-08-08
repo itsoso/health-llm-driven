@@ -1,7 +1,7 @@
 """应用配置"""
 from pydantic_settings import BaseSettings
 from pydantic import ConfigDict
-from typing import Optional, List
+from typing import List, Literal, Optional
 
 
 class Settings(BaseSettings):
@@ -257,7 +257,7 @@ class Settings(BaseSettings):
     analysis_turn_tool_subset: bool = False
     # XiaoBa Agent Kernel: shadow keeps decisions observable but does not block;
     # enforce blocks policy-denied write tools at the single execution choke point.
-    agent_kernel_policy_mode: str = "enforce"
+    agent_kernel_policy_mode: Literal["enforce", "shadow"] = "enforce"
     # Agent Runtime control plane. off=仅贯通 canonical Run identity,不写新表;
     # canary=稳定分桶命中的用户写 Run Ledger; enforce=全部云端请求写 Ledger。
     # 严格本地 iPhone 执行不调用云端 Agent API,因此不会创建服务端 Run。

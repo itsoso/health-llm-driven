@@ -4,7 +4,7 @@
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict
 
 
 def score_keywords(actual: str, expected: Dict[str, Any]) -> Dict[str, Any]:
@@ -12,6 +12,7 @@ def score_keywords(actual: str, expected: Dict[str, Any]) -> Dict[str, Any]:
         must_contain: list[str] — 这些词必须 (case-insensitive 子串) 出现
         must_not_contain: list[str] — 这些词必须不出现 (e.g. "诊断" / "确诊")
 
+    开放式自然语言语义断言不在这里用正则猜测；交给 llm_judge_assertions.
     输出 passed = 全部必含命中 + 全部禁词缺席.
     score = 命中率 (0..1) 的简单平均.
     """

@@ -32,6 +32,10 @@ _RUBRIC = """\
 
 规则:
 - 只评质量, 不要追究医学事实正确性 (你不知道 ground truth)
+- 如果用户问题末尾包含 [硬性语义断言], 必须逐项独立判断 AI 回答是否满足；
+  否定、不确定、疑问或仅提及某行动不能算满足肯定行动断言
+- 明确健康条件触发的行动（如“若持续偏高则就医”）属于肯定的条件式行动，
+  不要把它误判成“不确定是否行动”
 - 必须用 JSON 输出, 不要任何额外说明文字
 - reason 限 50 字内
 """
@@ -48,7 +52,8 @@ AI 助手回答:
 {rubric}
 
 输出格式 (严格 JSON, 不要 markdown 代码块):
-{{"score": <1-5 整数>, "reason": "<≤50 字>"}}"""
+{{"score": <1-5 整数>, "reason": "<≤50 字>", "assertions": {{"<断言ID>": <true|false>}}}}
+没有硬性语义断言时 assertions 输出空对象。"""
 
 
 async def _call_judge(question: str, answer: str, model: Optional[str] = None) -> Dict[str, Any]:
@@ -85,6 +90,7 @@ def score_llm_judge(
     """expected 字段:
         llm_judge_min_score: int — pass 的最低分数, 默认 3
         llm_judge_model: str | None — 指定 judge 模型 (None 用默认)
+        llm_judge_assertions: dict[str, str] — 必须全部由 judge 明确判 true 的语义断言
     """
     # default=_call_judge 会在 def 时把函数对象固化, 让 monkeypatch
     # lj_mod._call_judge 失效 (CI 跑 orchestrator runner case 时炸过).
@@ -94,20 +100,57 @@ def score_llm_judge(
 
     min_score = int(expected.get("llm_judge_min_score", 3))
     model = expected.get("llm_judge_model")
+    raw_assertions = expected.get("llm_judge_assertions") or {}
+    assertions = {str(key): str(value) for key, value in raw_assertions.items()}
 
     if not actual:
         return {"passed": False, "score": 0.0,
-                "judge_score": 0, "judge_reason": "actual 为空"}
+                "judge_score": 0, "judge_reason": "actual 为空",
+                "assertions": {}, "assertion_failures": list(assertions)}
+
+    judge_question = question
+    if assertions:
+        assertion_contract = json.dumps(assertions, ensure_ascii=False, sort_keys=True)
+        judge_question = (
+            f"{question}\n\n[硬性语义断言]\n"
+            "以下每项必须根据 AI 回答的实际语义独立判定 true/false；"
+            "缺失或无法确认一律判 false。\n"
+            f"{assertion_contract}"
+        )
 
     try:
-        verdict = asyncio.run(judge_call(question, actual, model=model))
+        verdict = asyncio.run(judge_call(judge_question, actual, model=model))
     except Exception as e:
         return {"passed": False, "score": 0.0,
-                "judge_score": 0, "judge_reason": f"judge call 失败: {e}"}
+                "judge_score": 0, "judge_reason": f"judge call 失败: {e}",
+                "assertions": {}, "assertion_failures": list(assertions)}
 
-    raw_score = int(verdict.get("score", 0))
+    try:
+        if not isinstance(verdict, dict):
+            raise TypeError(f"expected object, got {type(verdict).__name__}")
+        raw_score = int(verdict.get("score", 0))
+    except (TypeError, ValueError, AttributeError) as e:
+        return {
+            "passed": False,
+            "score": 0.0,
+            "judge_score": 0,
+            "judge_reason": f"judge verdict 无效: {e}",
+            "assertions": {},
+            "assertion_failures": list(assertions),
+        }
     judge_score = max(1, min(5, raw_score)) if raw_score else 0
-    passed = judge_score >= min_score
+    verdict_assertions = verdict.get("assertions")
+    if not isinstance(verdict_assertions, dict):
+        verdict_assertions = {}
+    assertion_results = {
+        key: verdict_assertions.get(key) is True
+        for key in assertions
+    }
+    assertion_failures = [
+        key for key, assertion_passed in assertion_results.items()
+        if not assertion_passed
+    ]
+    passed = judge_score >= min_score and not assertion_failures
     normalized = judge_score / 5.0 if judge_score else 0.0
 
     return {
@@ -115,4 +158,6 @@ def score_llm_judge(
         "score": round(normalized, 3),
         "judge_score": judge_score,
         "judge_reason": verdict.get("reason", ""),
+        "assertions": assertion_results,
+        "assertion_failures": assertion_failures,
     }

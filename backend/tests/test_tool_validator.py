@@ -501,6 +501,210 @@ class TestDispatcher:
         assert v["error"] is None
         assert v["data"]["record_id"] == 605
 
+    def test_health_manage_integral_float_record_id_coerced_to_int(self):
+        v = validate_tool_call("health_manage", {
+            "record_type": "diet",
+            "operation": "delete",
+            "record_id": 605.0,
+        })
+        assert v["error"] is None
+        assert v["data"]["record_id"] == 605
+
+    @pytest.mark.parametrize("record_id", (True, False, 605.5, "605.0", "605.5"))
+    def test_health_manage_rejects_noncanonical_record_id(self, record_id):
+        v = validate_tool_call("health_manage", {
+            "record_type": "diet",
+            "operation": "delete",
+            "record_id": record_id,
+        })
+        assert v["error"]
+
+    def test_health_manage_update_parses_json_object_string(self):
+        v = validate_tool_call("health_manage", {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": "718",
+            "data": '{"amount": 350}',
+        })
+        assert v["error"] is None
+        assert v["data"]["record_id"] == 718
+        assert v["data"]["data"] == {"amount": 350}
+
+    @pytest.mark.parametrize("data", ('[350]', '350', 'not-json', '{}'))
+    def test_health_manage_update_rejects_non_object_or_empty_json(self, data):
+        v = validate_tool_call("health_manage", {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": data,
+        })
+        assert v["error"]
+
+    @pytest.mark.parametrize("constant", ("NaN", "Infinity", "-Infinity"))
+    def test_health_manage_update_rejects_non_finite_json_object_values(self, constant):
+        v = validate_tool_call("health_manage", {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": f'{{"amount": {constant}}}',
+        })
+        assert v["error"]
+
+    @pytest.mark.parametrize("overflow", ("1e309", "-1e309"))
+    def test_health_manage_update_rejects_json_exponent_overflow(self, overflow):
+        v = validate_tool_call("health_manage", {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": f'{{"amount": {overflow}}}',
+        })
+        assert v["error"]
+
+    @pytest.mark.parametrize(
+        "data",
+        (
+            '{"amount": 350, "metadata": {"reading": 1e309}}',
+            '{"amount": 350, "samples": [200, -1e309]}',
+        ),
+    )
+    def test_health_manage_update_rejects_nested_json_exponent_overflow(self, data):
+        v = validate_tool_call("health_manage", {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": data,
+        })
+        assert v["error"]
+
+    @pytest.mark.parametrize(
+        "data",
+        (
+            {"amount": float("inf")},
+            {"amount": float("-inf")},
+            {"amount": float("nan")},
+            {"amount": 350, "metadata": {"reading": float("inf")}},
+            {"amount": 350, "samples": [200, float("nan")]},
+        ),
+    )
+    def test_health_manage_update_rejects_non_finite_values_in_parsed_objects(self, data):
+        v = validate_tool_call("health_manage", {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": data,
+        })
+        assert v["error"]
+
+    @pytest.mark.parametrize(
+        ("data", "expected"),
+        (
+            ('{"amount": 1e2}', {"amount": 100.0}),
+            ({"amount": 350, "confirmed": True}, {"amount": 350, "confirmed": True}),
+        ),
+    )
+    def test_health_manage_update_accepts_finite_exponents_and_preserves_booleans(
+        self,
+        data,
+        expected,
+    ):
+        v = validate_tool_call("health_manage", {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": data,
+        })
+        assert v["error"] is None
+        assert v["data"]["data"] == expected
+
+    @pytest.mark.parametrize(
+        "value",
+        ("Infinity", "-Infinity", "NaN", "1e309", "-1e309"),
+    )
+    def test_health_manage_weight_update_rejects_coerced_non_finite_strings(
+        self,
+        value,
+    ):
+        v = validate_tool_call("health_manage", {
+            "record_type": "weight",
+            "operation": "update",
+            "record_id": 718,
+            "data": {"weight": value},
+        })
+        assert v["error"]
+
+    @pytest.mark.parametrize(
+        "value",
+        ("Infinity", "-Infinity", "NaN", "1e309", "-1e309"),
+    )
+    def test_health_manage_diet_update_rejects_coerced_non_finite_strings(
+        self,
+        value,
+    ):
+        v = validate_tool_call("health_manage", {
+            "record_type": "diet",
+            "operation": "update",
+            "record_id": 719,
+            "data": {"calories": value},
+        })
+        assert v["error"]
+
+    @pytest.mark.parametrize(
+        ("record_type", "field"),
+        (
+            ("waist", "waist_cm"),
+            ("exercise", "distance"),
+            ("goal", "target_value"),
+        ),
+    )
+    def test_health_manage_float_update_schemas_reject_coerced_non_finite_strings(
+        self,
+        record_type,
+        field,
+    ):
+        v = validate_tool_call("health_manage", {
+            "record_type": record_type,
+            "operation": "update",
+            "record_id": 718,
+            "data": {field: "1e309"},
+        })
+        assert v["error"]
+
+    @pytest.mark.parametrize(
+        ("record_type", "data"),
+        (
+            (
+                "weight",
+                {
+                    "weight": "71.4",
+                    "notes": "Infinity 和 NaN 是本条备注里的普通单词",
+                },
+            ),
+            (
+                "diet",
+                {
+                    "calories": "3.8e2",
+                    "ai_raw_result": {
+                        "ocr": {"headline": "Infinity", "detail": "NaN"},
+                    },
+                },
+            ),
+        ),
+    )
+    def test_health_manage_update_preserves_finite_strings_and_text_fields(
+        self,
+        record_type,
+        data,
+    ):
+        original = data.copy()
+        v = validate_tool_call("health_manage", {
+            "record_type": record_type,
+            "operation": "update",
+            "record_id": 718,
+            "data": data,
+        })
+        assert v["error"] is None
+        assert v["data"]["data"] == original
+
 
 class TestQueryGuard:
     def test_illness_query_dimension_is_registered(self):

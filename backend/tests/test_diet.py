@@ -958,6 +958,37 @@ class TestDietAPI:
         assert update_response.json()["meal_time"] == "18:30:00"
         assert update_response.json()["notes"] == "更新后的备注"
 
+    @pytest.mark.parametrize(
+        "value",
+        ("Infinity", "-Infinity", "NaN", "1e309", "-1e309"),
+    )
+    def test_diet_api_rejects_coerced_non_finite_nutrition(
+        self,
+        client,
+        auth_headers,
+        sample_diet_data,
+        value,
+    ):
+        create_response = client.post(
+            "/api/v1/diet/records",
+            json={**sample_diet_data, "calories": value},
+            headers=auth_headers,
+        )
+        assert create_response.status_code == 422
+
+        created = client.post(
+            "/api/v1/diet/records",
+            json=sample_diet_data,
+            headers=auth_headers,
+        )
+        assert created.status_code == 200
+        update_response = client.put(
+            f"/api/v1/diet/records/{created.json()['id']}",
+            json={"calories": value},
+            headers=auth_headers,
+        )
+        assert update_response.status_code == 422
+
     def test_public_source_cannot_bypass_stale_nutrition_invalidation(
         self, client, auth_headers, sample_diet_data
     ):

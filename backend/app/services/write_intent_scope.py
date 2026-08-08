@@ -288,13 +288,15 @@ _HEALTH_OBSERVATION_PREDICATE_RE = re.compile(
     r"感冒|流感|发烧|生病|口腔溃疡|湿疹|咳嗽|症状|用药|服药)"
 )
 _CURRENT_USER_SUBJECT_NOISE_RE = re.compile(
-    r"(?:今天|今日|刚才|刚刚|方才|现在|目前|早上|早晨|上午|"
+    r"(?:(?:\d{4}年)?\d{1,2}月\d{1,2}日|"
+    r"\d{4}[-/]\d{1,2}[-/]\d{1,2}|"
+    r"今天|今日|刚才|刚刚|方才|现在|目前|早上|早晨|上午|"
     r"中午|下午|晚上|晚间|昨天|前天|昨晚|今早|这次|上次|上回|"
     r"上一次|以前|既往|过程中|这会儿|这几天|最近几天|"
     r"过去(?:一|二|两|三|四|五|六|七|八|九|十|\d+)天|"
     r"最近(?:一|二|两|三|四|五|六|七|八|九|十|\d+)天|"
     r"早餐|早饭|午餐|午饭|中饭|晚餐|晚饭|加餐|零食|夜宵|"
-    r"本人|自己|一下)"
+    r"还是有|仍然有|仍有|还有|本人|自己|一下)"
 )
 _SUBJECT_RELATION_NOISE_RE = re.compile(
     r"(?:\d{1,2}点(?:\d{1,2}分)?|"
@@ -305,7 +307,7 @@ _SUBJECT_RELATION_NOISE_RE = re.compile(
 )
 _DIRECT_TARGET_LABEL_RE = re.compile(r"(?:疾病|病情|症状|内容|数据|数值)")
 _DIRECT_BODY_LOCATION_RE = re.compile(
-    r"(?:左|右|上|下|内|外|前|后)?"
+    r"(?:(?:左|右|上|下|内|外|前|后)(?:侧)?)?"
     r"(?:口腔|口|嘴|舌|牙|颚|唇|头|颈|肩|胸|腹|腰|背|"
     r"手|脚|腿|膝|皮肤).{0,48}(?:的)?"
 )
@@ -902,6 +904,17 @@ def _observation_has_non_current_subject(clause: str) -> bool:
         ("创建目标", "设定目标", "设置目标", "新增目标", "记录目标")
     ):
         return False
+    if (
+        any(term in clause for term in ("提醒", "闹钟"))
+        and (
+            _last_write_signal_in_clause(clause) is not None
+            or re.search(r"(?:设置|设定|创建|新增|安排)", clause)
+        )
+    ):
+        # A phrase such as ``饮水提醒`` names the reminder topic, not the
+        # owner of a health observation. Reminder title/time identity is bound
+        # separately by CapabilityPolicy before dispatch.
+        return False
     previous_end = 0
     for match in matches:
         prefix = clause[previous_end:match.start()]
@@ -926,6 +939,13 @@ def _observation_has_non_current_subject(clause: str) -> bool:
         reduced = _DIRECT_TARGET_LABEL_RE.sub("", reduced)
         reduced = _SUBJECT_RELATION_NOISE_RE.sub("", reduced)
         reduced = reduced.strip("、，,。.!！；;：:?？ ")
+        reduced = re.sub(
+            r"^(?:我(?:的)?|本人(?:的)?|自己(?:的)?)",
+            "",
+            reduced,
+        )
+        if _DIRECT_BODY_LOCATION_RE.fullmatch(reduced):
+            reduced = ""
         if reduced not in {"", "我", "我的", "本人", "自己", "自己的"}:
             return True
         previous_end = match.end()

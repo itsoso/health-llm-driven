@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS; fourteenth remediation exact-commit G4 pending |
+| current_stage | G3 PASS; latest main integrated; merged exact-commit G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -335,6 +335,24 @@ validation and no-match honesty address those risks.
   inline tool-call recovery, historical backfills and all previous alias/
   migration/rollback controls. Targeted static and structural gates must pass
   before the new exact commit is created.
+- Before final review, latest `origin/main` commit `f65c4055d` was merged so the
+  semantic boundary is reviewed together with the newly released atomic health
+  correction, receipt-identity, non-finite numeric and whole-record deletion
+  protections. The combined capability contract is now
+  `agent-capability-policy-v9`: it retains `authorized-target-set-v7` and also
+  exposes `record-delete-evidence-v2`.
+- Merge-focused tests first found policy-reason precedence conflicts and stale
+  adapter fixtures. The resolution keeps exact whole-record delete grammar
+  authoritative only for true delete/cancellation frames, while update,
+  clinician-provenance and recipe-replay denials keep their narrower reasons.
+  It also treats current-user body locations, absolute dates and reminder
+  schedule text as target context rather than third-party subjects; named
+  third-party body observations still produce no authority.
+- The final post-merge single-process compatibility run passes 3,482/3,482
+  Backend tests. Mobile structured receipt/card regressions pass 111/111;
+  Mobile and Web TypeScript compilation pass. Targeted Ruff, Python
+  compilation, diff validation and structural document gates are run against
+  this same merge result before the exact review commit is created.
 
 ### G4 Safety Review: PENDING
 
@@ -539,6 +557,12 @@ remediation validates action initiator and target subject separately, carries
 ownership across clauses, rechecks every health predicate, and retains current-
 user direct, object-fronted, contrast, historical-backfill and attribute
 continuation positives. A new commit and two brand-new reviewers are required.
+
+Latest main is now integrated before that final review. The merged policy keeps
+the fourteenth ownership boundary and main's atomic correction/delete evidence
+boundary in one deterministic choke point. Post-merge G3 is green; two
+brand-new reviewers must review the forthcoming merge commit itself, and any
+NO-GO still stops push and deployment.
 
 ### G5 Deployment Health: PENDING
 
