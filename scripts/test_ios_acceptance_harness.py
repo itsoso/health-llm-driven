@@ -11,6 +11,7 @@ RUNNER = ROOT / "scripts/run_ios_real_device_acceptance.sh"
 UI_TEST_SOURCE = (
     ROOT / "scripts/ios-real-device-acceptance/XiaobaAcceptanceUITests.swift"
 )
+README = ROOT / "scripts/ios-real-device-acceptance/README.md"
 
 
 def _generate(tmp_path: Path, *, account: str = "", password: str = "") -> str:
@@ -92,6 +93,14 @@ def test_runner_refuses_review_credentials_before_invoking_xcodebuild() -> None:
     assert result.returncode == 2
     assert "pre-authenticated" in result.stderr
     assert "private-password" not in result.stdout + result.stderr
+
+
+def test_readme_requires_manual_pre_authentication_without_sourcing_credentials() -> None:
+    readme = README.read_text(encoding="utf-8")
+
+    assert "manually pre-authenticated" in readme
+    assert "source /secure/path/to/release.env" not in readme
+    assert "copied\nonly into the temporary generated Xcode scheme" not in readme
 
 
 def test_composer_selector_accepts_ios_placeholder_augmented_label() -> None:

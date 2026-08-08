@@ -6,7 +6,7 @@ This harness runs non-destructive App Review checks against the already installe
 It currently verifies:
 
 - the installed app reaches either the authenticated Agent or login surface;
-- when review credentials are provided, login persists across two terminate/cold-launch cycles;
+- a manually pre-authenticated session persists across two terminate/cold-launch cycles;
 - the authenticated session exposes the Agent composer;
 - today's briefing can expand and collapse when present;
 - an unsent text draft survives background/foreground without being sent;
@@ -25,21 +25,20 @@ scripts/run_ios_real_device_acceptance.sh \
   /tmp/XiaobaAcceptance-Build237.xcresult
 ```
 
-Run the same non-destructive harness against an installed simulator build:
+Run the same non-destructive harness against a manually pre-authenticated
+simulator build:
 
 ```bash
-set -a
-source /secure/path/to/release.env
-set +a
 scripts/run_ios_real_device_acceptance.sh \
   --platform "iOS Simulator" \
   --device 3A80E7F0-3F0D-4BAF-B80D-587C827B5C3A \
   --result /tmp/XiaobaAcceptance-Simulator-Build237.xcresult
 ```
 
-`APP_STORE_REVIEW_DEMO_ACCOUNT` and `APP_STORE_REVIEW_DEMO_PASSWORD` are copied
-only into the temporary generated Xcode scheme and removed with the harness
-directory after the run. They must never be committed or printed.
+Before running, open the installed app and sign in manually. The harness rejects
+`APP_STORE_REVIEW_DEMO_ACCOUNT` and `APP_STORE_REVIEW_DEMO_PASSWORD`; never pass
+review credentials to Xcode UI tests because typed text is retained in result
+bundles and console logs.
 
 The command fails when the device is offline, the installed app is unavailable,
 or an assertion fails. Never pipe it through `tail`; the `xcodebuild` exit code is
