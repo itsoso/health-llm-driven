@@ -22,6 +22,20 @@ _HARD_BLOCK_REASONS = frozenset({
 })
 
 
+def _is_hard_policy_denial(
+    snapshot: TurnSnapshot,
+    decision: CapabilityDecision,
+) -> bool:
+    if decision.reason in _HARD_BLOCK_REASONS:
+        return True
+    return (
+        decision.reason == "write_tool_without_write_intent"
+        and decision.normalized_tool_name == "health_record"
+        and snapshot.intent.primary == "mutate"
+        and snapshot.intent.operation == "update"
+    )
+
+
 class ToolPreflightError(RuntimeError):
     """A tool failed before its dispatch boundary was crossed."""
 
@@ -66,7 +80,7 @@ class ToolGateway:
             raise ToolPreflightError("tool_preflight_failed") from exc
         if decision.action == "block" and (
             self.snapshot.policy_mode == "enforce"
-            or decision.reason in _HARD_BLOCK_REASONS
+            or _is_hard_policy_denial(self.snapshot, decision)
         ):
             return ToolExecutionResult(
                 tool_name=decision.normalized_tool_name or request.tool_name,

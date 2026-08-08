@@ -165,6 +165,36 @@ async def test_gateway_execute_shadow_denial_still_dispatches_once():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+async def test_gateway_update_intent_blocks_health_record_recreate_fallback(
+    policy_mode,
+):
+    gateway = ToolGateway(
+        _snapshot("把刚才 300ml 改成 350ml", policy_mode=policy_mode)
+    )
+    dispatched = False
+    request = ToolExecutionRequest(
+        tool_name="health_record",
+        arguments={"record_type": "water", "data": {"amount": 350}},
+    )
+
+    async def dispatch(_request):
+        nonlocal dispatched
+        dispatched = True
+        return "unexpected"
+
+    result = await gateway.execute(request, dispatch)
+
+    assert dispatched is False
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert result.decision.reason == "write_tool_without_write_intent"
+    payload = json.loads(result.content)
+    assert payload["status"] == "rejected"
+    assert payload["dispatch_started"] is False
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("message", "expected_reason"),
     (
