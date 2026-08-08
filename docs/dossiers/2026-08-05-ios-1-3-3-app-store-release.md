@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | G3 · 健康纠正原子性与回执真值修复的本地回归、独立评审和真实模型闸均通过；Build 241 已被取代，App Review 冻结，待整合最新主干、G4、后端部署恢复审核数据并生成/验收 Build 242 |
+| 当前阶段 | G4 · 健康纠正原子性与回执真值修复已整合最新主干，G3 与真实模型闸通过；Build 241 已被取代，App Review 冻结，待本轮独立安全评审、后端部署恢复审核数据并生成/验收 Build 242 |
 | 状态 | implementing |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -179,7 +179,8 @@
 - 2026-08-08 修复链：`b8f2976a6` / `b6286ac3b` 安全归一化对象形 JSON 且拒绝非有限常量；`a92e09526` 至 `152f030bd` 把更新/删除意图与操作锁定，并将删除授权收紧为用户原话中的唯一类型 + 精确正整数 ID 双匹配；`7fd8e0fa3` / `42319786b` 对齐旧测试契约；`b46032557` / `caee793e1` 增加生产轨迹与 mutation-proof 逐轮证据；`f00ad1fc4` / `1b2629b90` 增加并加固 create/update/delete 回执动作与 Mobile“已更新/已删除”显示。Build 241 无法显示新 action，已被 Build 242+ 取代；本变更禁止通过 production OTA 送达。
 - 2026-08-08 独立双评审：Task 2 spec GO（网关矩阵 16/16、相关 1,004），quality GO（策略 40/40、真实 Executor 11/11、相关 973，Critical/Important/Minor 均 0）；Task 3 spec GO（focused 6/6、相关 274），quality GO（focused 5/5、相关 274，两次强制放行 mutation 均按预期失败，Critical/Important/Minor 均 0）；Task 4 spec GO（Backend 52、runtime 4、Mobile 111、TypeScript PASS），quality GO（Backend 262、runtime + write adapter 244、Mobile 111、存储恢复 48、TypeScript PASS，Critical/Important/Minor 均 0）。
 - 2026-08-08 G3 本地合跑：Agent 安全/行为 11 文件在 CI 模式下 1,392 passed；分支补充 2 文件 48 passed；Mobile 6 suites 235/235；TypeScript、doc drift、基础 release-pack 和 iOS submission preflight 均 PASS。真实模型闸使用固定合成数据通过：invariants 12/12、health_agent_core 50/50、orchestrator 5/5（平均 0.94）、trajectory 12/12、goldens 9/9，模型 `MiniMax-M2.5`；一次性确认只在本地进程使用，未写入远端变量。
-- 2026-08-08 发布阻断：严格 final-submit checker 仍按设计 FAIL，缺少 Build 242+ 的 EAS/source/IPA、同一精确候选物理 iPhone、ASC 人工确认与最终截图材料。当前分支还需整合 `origin/main` 的 TokenPlan 目录提交；该主干提交最新 CI 的实质红灯同为尚未携带一次性 live-eval 证据，其余测试 jobs 为绿。App Review 保持冻结，以上发布材料与新主干 CI 未全绿前不得部署或提交审核。
+- 2026-08-08 主干整合复验：无冲突合并 `origin/main` 的 TokenPlan 模型目录提交；后端模型目录 + 参数校验 + capability/gateway + 回执 884/884、Mobile 模型目录 + 回执 + ChatBubble 114/114、TypeScript 与 doc drift 均 PASS。首次合并后 live-eval 因命令未显式覆盖 `.env` 的本地 PostgreSQL 连接而 fail-closed，orchestrator 0/5；改用 `APP_ENV=test DATABASE_URL=sqlite:///:memory:` 后真实 TokenPlan `MiniMax-M2.5` 复验 PASS：invariants 12/12、health_agent_core 50/50、orchestrator 5/5（平均 0.96）、trajectory 12/12、goldens 9/9。本地一次性确认的 live-change gate PASS，未设置远端变量。
+- 2026-08-08 发布阻断：严格 final-submit checker 仍按设计 FAIL，缺少 Build 242+ 的 EAS/source/IPA、同一精确候选物理 iPhone、ASC 人工确认与最终截图材料。App Review 保持冻结，以上发布材料、新提交远端 CI 与 G4 未全绿前不得部署或提交审核。
 - **裁决**：实现级 G3 与真实模型回归 PASS；发布级 final-submit / T7.1 保持 BLOCK。先整合最新主干并复验，再进入独立 G4、后端部署和 Build 242，不能据此提交 App Review。
 
 ## G4 · 安全闸
