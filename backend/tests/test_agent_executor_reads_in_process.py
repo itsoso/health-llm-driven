@@ -914,6 +914,41 @@ def test_illness_query_without_time_window_searches_full_history(db):
     assert [row["id"] for row in rows] == [old.id]
 
 
+def test_illness_query_window_uses_frozen_user_date(db):
+    user = _make_user(db)
+    reference_now = datetime(2030, 1, 2, 0, 30, tzinfo=BEIJING_TZ)
+    boundary = reference_now.date() - timedelta(days=183)
+    included = IllnessEpisode(
+        user_id=user.id,
+        name="口腔溃疡",
+        start_date=boundary,
+        status="resolved",
+        severity=2,
+    )
+    excluded = IllnessEpisode(
+        user_id=user.id,
+        name="口腔溃疡",
+        start_date=boundary - timedelta(days=1),
+        status="resolved",
+        severity=2,
+    )
+    db.add_all([included, excluded])
+    db.commit()
+    db.refresh(included)
+
+    ex = AgentExecutor(db)
+    ex._current_user_id = user.id
+    ex._agent_kernel_reference_now = lambda: reference_now
+    out = _run(ex._exec_health_query(
+        "http://x/api/v1",
+        {},
+        {"dimension": "illness", "days": 183, "keyword": "口腔溃疡"},
+    ))
+    rows = json.loads(out)
+
+    assert [row["id"] for row in rows] == [included.id]
+
+
 # ── sleep(Garmin 睡眠质量分析,无 response_model → dict)────────────────────────────
 
 

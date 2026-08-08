@@ -97,7 +97,6 @@ illness 问"上一次"且没有给时间窗时省略 days, 后端查询全部病
                     },
                     "days": {
                         "type": "integer",
-                        "default": 7,
                         "description": "查询最近几天. 昨天=1, 最近/本周=7, 本月=30；"
                         "illness 问上一次且未给时间窗时省略，查询全部历史",
                     },
@@ -138,7 +137,8 @@ illness 问"上一次"且没有给时间窗时省略 days, 后端查询全部病
 plan 结构:
 - queries: 1-6 条子查询, 每条 = {dimension, days, agg?}
     - dimension: 与 health_query 同一套维度枚举 (sleep/hrv/activity/heart_rate/
-      blood_pressure/weight/diet/medication/medical_exam/...)。
+      blood_pressure/weight/diet/medication/medical_exam/...)；暂不支持 illness，
+      病症名称和“上一次”语义必须用单条 health_query 保留 keyword/全历史窗口。
     - days: 最近几天 (默认 7)。注意: 是"最近 N 天窗口", 不是任意日期区间。
     - agg (可选): latest | avg | min | max | trend。trend = 首尾差 (最新 - 最早)。
       **数值聚合仅对可穿戴日指标有效**: activity(步数) / heart_rate / hrv /

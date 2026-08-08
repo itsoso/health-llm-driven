@@ -54,19 +54,21 @@ def canonical_read(
     user_id: Optional[int],
     dimension: str,
     *,
-    days=7,
+    days=None,
     indicator: str = "",
     keyword: str = "",
     uploaded_since: str = "",
     uploaded_days=None,
+    reference_date: Optional[date] = None,
 ) -> Optional[str]:
     """统一 canonical 读入口. 返回紧凑文本; None = 此维度未迁移(调用方回退旧路径)."""
+    defaulted_days = 7 if days is None else days
     if dimension == "medical_exam":
         return read_medical_indicators(
             db,
             user_id,
             indicator=indicator,
-            days=days,
+            days=defaulted_days,
             keyword=keyword,
             uploaded_since=uploaded_since,
             uploaded_days=uploaded_days,
@@ -77,9 +79,10 @@ def canonical_read(
             user_id,
             days=days,
             keyword=keyword,
+            reference_date=reference_date,
         )
     if dimension in _WEARABLE_DIMS:
-        return read_wearable_daily(db, user_id, days=days, focus=dimension)
+        return read_wearable_daily(db, user_id, days=defaulted_days, focus=dimension)
     return None
 
 
@@ -90,13 +93,15 @@ def read_illness_episodes(
     *,
     days=None,
     keyword: str = "",
+    reference_date: Optional[date] = None,
 ) -> str:
     """Read owner-scoped illness episodes for a typed semantic query plan."""
     if user_id is None:
         return "Error: 当前会话无 user_id, 无法查询病症记录"
 
     window_days = None if days is None else min(_window_days(days, floor=1), 365)
-    since = date.today() - timedelta(days=window_days) if window_days is not None else None
+    today = reference_date or date.today()
+    since = today - timedelta(days=window_days) if window_days is not None else None
     name = (keyword or "").strip()
 
     from app.models.illness import IllnessEpisode
@@ -135,12 +140,12 @@ def read_illness_episodes(
         return json.dumps(payload, ensure_ascii=False)
     except Exception as e:
         logger.error(
-            "[health_read] 查询 IllnessEpisode 失败 user_id=%s: %s",
+            "[health_read] illness query failed user_id=%s error_type=%s",
             user_id,
-            e,
+            type(e).__name__,
         )
         _safe_rollback(db)
-        return f"Error: 查询病症记录失败: {e}"
+        return "Error: 病症记录查询暂时失败，请稍后重试。"
 
 
 # ── 化验/体检 → MedicalIndicator (与 Twin fetch_latest_labs 同源) ─────────

@@ -18433,6 +18433,7 @@ class AgentExecutor:
             keyword=str(keyword or ""),
             uploaded_since=str(uploaded_since or ""),
             uploaded_days=uploaded_days,
+            reference_date=self._agent_kernel_reference_now().date(),
         )
         if canonical is not None:
             return with_blood_pressure_safety(canonical)

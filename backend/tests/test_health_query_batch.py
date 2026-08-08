@@ -85,6 +85,26 @@ async def test_unknown_dimension_fails_loud_and_lists_valid():
     assert called["n"] == 0  # 绝不静默跳过某条: 一条坏 → 整个 plan 不执行
 
 
+@pytest.mark.asyncio
+async def test_illness_dimension_fails_loud_before_fetch():
+    called = {"n": 0}
+
+    async def _fetch(dimension, days):  # noqa: ARG001
+        called["n"] += 1
+        return hqb.BatchFetchResult(raw="must not fetch")
+
+    out = await hqb.execute_batch(
+        {"queries": [{"dimension": "illness"}]},
+        _fetch,
+        valid_dimensions=VALID,
+    )
+
+    assert out.startswith("Error:")
+    assert "illness" in out
+    assert called["n"] == 0
+    assert "illness" not in hqb.known_dimensions()
+
+
 # ── 3. 超 6 条 → fail-loud ───────────────────────────────────────────────────
 @pytest.mark.asyncio
 async def test_too_many_queries_fails_loud():

@@ -201,6 +201,47 @@ async def test_execute_tool_blocks_policy_denied_health_record_before_dispatch(d
 
 
 @pytest.mark.asyncio
+async def test_exact_historical_illness_query_blocks_model_write_before_dispatch(
+    db,
+    monkeypatch,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = (
+        "我上一次口腔溃疡是什么时候 最近半年分别有哪些记录"
+    )
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    async def should_not_run(*args, **kwargs):
+        raise AssertionError("_exec_health_record should not run")
+
+    monkeypatch.setattr(executor, "_exec_health_record", should_not_run)
+    result = await executor._execute_tool(
+        "health_record",
+        json.dumps(
+            {
+                "record_type": "illness",
+                "data": {"name": "口腔溃疡", "status": "active"},
+            },
+            ensure_ascii=False,
+        ),
+        None,
+    )
+
+    payload = json.loads(result)
+    assert payload["status"] == "rejected"
+    assert payload["dispatch_started"] is False
+    assert payload["error_code"] == "write_tool_without_write_intent"
+
+
+@pytest.mark.asyncio
 async def test_execute_tool_decision_failure_is_structured_pre_dispatch_rejection(
     db,
     monkeypatch,

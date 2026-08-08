@@ -401,6 +401,7 @@ def classify_agent_utterance(
 
     if has_read or question_without_write_command or (
         _is_data_question(normalized, domain, has_question)
+        and not has_write_command
         and not _looks_like_observation_statement(normalized, domain, has_question)
         and not (
             domain == "symptom"
@@ -627,6 +628,18 @@ def _has_explicit_write_command(text: str) -> bool:
         "写入",
         "存下来",
     )
+    polite_prefixes = ("可以", "能否", "可否", "可不可以", "能")
+    polite_helpers = ("帮我", "给我", "替我", "为我")
+    for prefix in polite_prefixes:
+        if not text.startswith(prefix):
+            continue
+        remainder = text[len(prefix):]
+        for helper in polite_helpers:
+            if remainder.startswith(helper):
+                remainder = remainder[len(helper):]
+                break
+        if remainder.startswith(command_actions):
+            return True
     for action in command_actions:
         start = text.find(action)
         while start >= 0:

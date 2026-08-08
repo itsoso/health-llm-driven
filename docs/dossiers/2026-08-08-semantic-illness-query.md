@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G2 PASS; design and implementation plan approved |
+| current_stage | G3 PASS; G4 remediation complete, re-review pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -71,17 +71,33 @@ semantic fallback into the wrong data family, and a model omitting the illness
 name. Failure-first contrast tests, explicit owner filters, fail-loud dimension
 validation and no-match honesty address those risks.
 
-### G3 Tests: PENDING
+### G3 Tests: PASS
 
-TDD red/green evidence and the requested `qwen3.7-max` live behavior evaluation
-are complete. Focused regression and static/repository checks remain before the
-gate can pass.
+- Failure-first tests reproduced the original write misclassification, invalid
+  dimension fallback, full-history omission, server-date boundary error,
+  plaintext exception leak, unsupported batch shape and polite-write regression.
+- The post-remediation compatibility group passed 1,132 tests, including the
+  classifier, validator, canonical readers, batch planner, Agent executor,
+  ToolGateway, health management, write-adapter rejection and behavior battery.
+- The requested live `qwen3.7-max` evaluation passed the exact query, paraphrase,
+  negated-write query, explicit-write contrast and no-window latest query.
+- Targeted Ruff, Python compilation, `git diff --check`, doc drift and dossier
+  consistency all passed.
 
 ### G4 Safety Review: PENDING
 
-Required because this crosses the L3 health read and write-authorization
-boundary. Review must verify owner isolation, zero-write behavior for queries
-and preservation of true write commands.
+The first independent review returned NO-GO and deployment stopped. It found:
+
+- SQLAlchemy exception text could expose an illness keyword in logs/output;
+- illness windows used the service date instead of the frozen user date;
+- `health_query_batch` inherited illness without keyword/full-history support;
+  and
+- polite explicit write questions could be classified as reads.
+
+All findings now have failure-first regressions and code fixes. The exact
+screenshot query also has a real ToolGateway test proving a model-requested
+`health_record` is blocked before dispatch. Independent re-review is required
+before G4 may pass.
 
 ### G5 Deployment Health: PENDING
 

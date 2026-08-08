@@ -144,6 +144,22 @@ def test_real_record_command_is_write_intent():
     assert intent.is_write is True
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "能帮我记录口腔溃疡吗？",
+        "可以记录口腔溃疡吗？",
+        "能帮我记录体重70kg吗？",
+    ),
+)
+def test_polite_record_requests_remain_write_intents(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "write"
+    assert intent.operation == "create"
+    assert intent.is_write is True
+
+
 def test_known_medication_intake_outranks_generic_diet_verb():
     intent = classify_agent_utterance("记录我吃了两粒阿奇霉素")
 

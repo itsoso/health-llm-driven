@@ -111,6 +111,7 @@ enums:
 backward_compatibility:
   - all existing valid dimensions retain behavior
   - health_manage illness CRUD remains unchanged
+  - health_query_batch rejects illness until its subquery shape can preserve keyword and full-history semantics
 migration: none
 ```
 
@@ -123,7 +124,12 @@ medical claim and triggers no prescription behavior.
 The deterministic capability gate remains authoritative: a read intent cannot
 execute `health_record` or mutating `health_manage` operations. Invalid semantic
 dimensions return an error instead of querying a different domain. User text and
-health results must not be added to new plaintext logs.
+health results must not be added to new plaintext logs. Database failures return
+a fixed user-safe error and log only a content-free error type.
+
+Illness windows use the Agent turn's frozen user-local date, not the service
+process date. This keeps Web, Mobile and Mac results aligned at timezone day
+boundaries.
 
 ## 10. AI Behavior
 
@@ -159,9 +165,17 @@ Given a model submits health_query dimension symptom
 When the validator processes the call
 Then it returns an invalid-dimension error and does not substitute comprehensive
 
+Given a model submits illness through health_query_batch
+When the batch validator processes the plan
+Then it fails before fetching and directs the model to single health_query
+
 Given a user says "记录体重70kg"
 When the classifier processes the turn
 Then the existing explicit write behavior remains authorized
+
+Given a user politely asks "能帮我记录体重70kg吗"
+When the classifier processes the turn
+Then it remains an explicit write and follows the existing confirmation policy
 ```
 
 ## 12. Verification Plan

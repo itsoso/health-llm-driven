@@ -38,6 +38,7 @@ MAX_QUERIES = 6
 _NUMERIC_AGGS = ("latest", "avg", "min", "max", "trend")
 VALID_AGGS = _NUMERIC_AGGS
 VALID_COMPARE_OPS = ("diff", "ratio")
+BATCH_UNSUPPORTED_DIMENSIONS = frozenset({"illness"})
 
 _EXAMPLE_HINT = (
     ' 示例: {"queries":[{"dimension":"hrv","days":7,"agg":"avg"},'
@@ -93,7 +94,7 @@ def known_dimensions() -> frozenset[str]:
         if fn.get("name") == "health_query":
             props = (fn.get("parameters") or {}).get("properties") or {}
             enum = (props.get("dimension") or {}).get("enum") or []
-            return frozenset(str(e) for e in enum)
+            return frozenset(str(e) for e in enum) - BATCH_UNSUPPORTED_DIMENSIONS
     return frozenset()
 
 

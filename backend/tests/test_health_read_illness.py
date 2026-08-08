@@ -1,7 +1,10 @@
 """Canonical illness query: semantic filters, chronology and owner isolation."""
 import json
+import logging
 import uuid
 from datetime import date, timedelta
+
+from sqlalchemy.exc import OperationalError
 
 from app.models.illness import IllnessEpisode
 from app.models.user import User
@@ -127,3 +130,39 @@ def test_illness_read_includes_all_episode_statuses(db):
     rows = json.loads(out)
 
     assert {row["status"] for row in rows} == {"active", "improving", "resolved"}
+
+
+def test_illness_read_without_window_searches_full_history_directly(db):
+    current_user = _make_user(db)
+    old = _episode(db, current_user.id, "口腔溃疡", 400)
+
+    out = health_read.canonical_read(
+        db,
+        current_user.id,
+        "illness",
+        keyword="口腔溃疡",
+    )
+    rows = json.loads(out)
+
+    assert [row["id"] for row in rows] == [old.id]
+
+
+def test_illness_read_sanitizes_database_errors(db, monkeypatch, caplog):
+    keyword = "口腔溃疡"
+
+    def fail_query(*args, **kwargs):  # noqa: ARG001
+        raise OperationalError(
+            "SELECT * FROM illness_episodes WHERE name ILIKE %(keyword)s",
+            {"keyword": f"%{keyword}%"},
+            RuntimeError("database unavailable"),
+        )
+
+    monkeypatch.setattr(db, "query", fail_query)
+    with caplog.at_level(logging.ERROR, logger="app.services.health_read"):
+        out = health_read.read_illness_episodes(db, 42, keyword=keyword)
+
+    assert out == "Error: 病症记录查询暂时失败，请稍后重试。"
+    assert keyword not in out
+    assert keyword not in caplog.text
+    assert "SELECT" not in caplog.text
+    assert "OperationalError" in caplog.text
