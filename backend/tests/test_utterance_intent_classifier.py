@@ -129,6 +129,25 @@ def test_historical_record_questions_are_read_only(message):
     assert intent.is_write is False
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录过口腔溃疡没有",
+        "记录过口腔溃疡没",
+        "记录过口腔溃疡",
+        "记录了口腔溃疡没有",
+        "记录了口腔溃疡",
+        "以前的口腔溃疡记录",
+        "上一次口腔溃疡记录",
+    ),
+)
+def test_unpunctuated_record_history_frames_never_authorize_write(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.is_write is False
+    assert intent.primary != "write"
+
+
 def test_contrastive_correction_stays_read_only():
     intent = classify_agent_utterance("不是记录，是列出我今天吃的所有东西。")
 
@@ -144,6 +163,14 @@ def test_real_record_command_is_write_intent():
     assert intent.primary == "write"
     assert intent.domain == "diet"
     assert intent.operation == "create"
+    assert intent.is_write is True
+
+
+def test_declarative_meal_observation_remains_a_write_intent():
+    intent = classify_agent_utterance("午餐吃了牛肉面")
+
+    assert intent.primary == "write"
+    assert intent.domain == "diet"
     assert intent.is_write is True
 
 
@@ -174,7 +201,10 @@ def test_polite_record_requests_remain_write_intents(message):
     "message",
     (
         "这个功能可以记录口腔溃疡吗？",
+        "这个功能可以帮我记录口腔溃疡吗？",
+        "系统可以帮我记录口腔溃疡吗？",
         "小巴能记录口腔溃疡吗？",
+        "小巴能帮我记录口腔溃疡吗？",
     ),
 )
 def test_record_capability_questions_do_not_authorize_writes(message):
@@ -199,6 +229,38 @@ def test_negated_polite_record_request_does_not_authorize_write(message):
 
     assert intent.primary == "chat"
     assert intent.is_write is False
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "勿帮我记录晚餐，分析一下热量",
+        "甭帮我记录晚餐，分析一下热量",
+        "请勿帮我记录口腔溃疡，分析一下原因",
+    ),
+)
+def test_negated_record_with_followup_advice_keeps_read_only_goal(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "advice"
+    assert intent.operation == "analyze"
+    assert intent.is_write is False
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录口腔溃疡，然后告诉我为什么会复发",
+        "记录口腔溃疡，再分析一下为什么会复发",
+        "记录午餐吃了牛肉面，再告诉我热量是多少",
+    ),
+)
+def test_explicit_record_clause_survives_followup_question(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "write"
+    assert intent.operation == "create"
+    assert intent.is_write is True
 
 
 def test_known_medication_intake_outranks_generic_diet_verb():

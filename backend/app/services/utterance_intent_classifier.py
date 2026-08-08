@@ -34,6 +34,8 @@ from app.services.utterance_intent_lexicon import (
     RECORD_NOUN_SUFFIXES,
     REMINDER_CREATE_ACTIONS,
     REMINDER_TERMS,
+    STRUCTURAL_WRITE_NEGATION_MODIFIERS,
+    STRUCTURAL_WRITE_NEGATIONS,
     WRITE_ACTIONS,
     WRITE_COMMAND_PREFIXES,
     WRITE_NEGATION_EXCEPTIONS,
@@ -225,7 +227,16 @@ WRITE_COMMAND_ACTIONS = (
     "写入",
     "存下来",
 )
+DECLARATIVE_OBSERVATION_ACTIONS = (
+    "吃了",
+    "喝了",
+    "服药",
+    "已服用",
+    "已吃",
+    "已喝",
+)
 WRITE_REQUEST_HELPERS = (
+    "别忘了",
     "我想请你",
     "我想请",
     "我想",
@@ -246,8 +257,19 @@ WRITE_REQUEST_HELPERS = (
     "能",
 )
 POLITE_WRITE_PREFIXES = ("可以", "能否", "可否", "可不可以", "能")
-STRUCTURAL_WRITE_NEGATIONS = ("不要", "不用", "无需", "别", "勿", "甭")
-NEGATED_WRITE_MODIFIERS = ("继续", "自动", "暂时", "再", "先")
+WRITE_CAPABILITY_SUBJECTS = ("这个功能", "该功能", "系统", "小巴")
+WRITE_CLAUSE_BOUNDARIES = (
+    "然后",
+    "再分析",
+    "再告诉我",
+    "并分析",
+    "并告诉我",
+    "，",
+    ",",
+    "。",
+    "；",
+    ";",
+)
 
 
 def classify_agent_utterance(
@@ -265,7 +287,9 @@ def classify_agent_utterance(
     if not normalized:
         return _intent(raw, normalized, "unknown", "unknown", "none", 0.0, "empty")
 
-    has_read = _has_any(normalized, READ_ACTIONS)
+    has_read = _has_any(normalized, READ_ACTIONS) or _has_record_history_reference(
+        normalized
+    )
     scope = _build_scope(
         normalized,
         focus=(_read_focus(normalized) if has_read else None),
@@ -420,6 +444,17 @@ def classify_agent_utterance(
         # 但 ToolGateway 会把 health_record 当成 advice 回合的越权写入而拦掉，
         # 用户最终只看到拒答。带问号的“吃了某药有什么副作用”仍是纯问答，
         # 不应因为“吃了”这个观察词而误记一笔健康记录。
+        if has_negated_write:
+            return _intent(
+                raw,
+                normalized,
+                "advice",
+                domain,
+                "analyze",
+                0.9,
+                "negated_write_advice_frame",
+                scope,
+            )
         if has_write_command:
             return _intent(
                 raw,
@@ -434,6 +469,20 @@ def classify_agent_utterance(
                 requires_reliable_tool_model=True,
             )
         return _intent(raw, normalized, "advice", domain, "analyze", 0.86, "advice_frame", scope)
+
+    if has_read and has_write_command and not has_negated_write:
+        return _intent(
+            raw,
+            normalized,
+            "write",
+            domain,
+            "create",
+            0.88,
+            "compound_write_read_frame",
+            scope,
+            is_write=True,
+            requires_reliable_tool_model=True,
+        )
 
     if has_read or question_without_write_command or (
         _is_data_question(normalized, domain, has_question)
@@ -465,7 +514,8 @@ def classify_agent_utterance(
         return _intent(raw, normalized, "chat", domain, "none", 0.78, "negated_write", scope)
 
     if (
-        has_write
+        has_write_command
+        or _has_any(normalized, DECLARATIVE_OBSERVATION_ACTIONS)
         or _has_explicit_observation_write(normalized, domain)
         or _has_explicit_symptom_observation(normalized, domain, has_question)
         or _has_explicit_event_write(normalized)
@@ -565,9 +615,12 @@ def _is_explicit_write_action_at(
     after = text[start + len(action):]
     if action == "记录" and after.startswith(RECORD_NOUN_SUFFIXES):
         return False
+    if action == "记录" and after.startswith(("过", "了")):
+        return False
     if action == "记录" and after.startswith(("一下", "下来", "为", "到")):
         return True
-    if action == "记录" and start == 0 and _has_question_signal(after):
+    local_after = _before_first_boundary(after, WRITE_CLAUSE_BOUNDARIES)
+    if action == "记录" and start == 0 and _has_question_signal(local_after):
         return False
     return (
         start == 0
@@ -647,7 +700,7 @@ def _has_negated_write(text: str) -> bool:
         while start >= 0:
             remainder = _strip_leading_tokens(
                 text[start + len(negation):],
-                (*NEGATED_WRITE_MODIFIERS, *WRITE_REQUEST_HELPERS),
+                (*STRUCTURAL_WRITE_NEGATION_MODIFIERS, *WRITE_REQUEST_HELPERS),
             )
             if remainder.startswith(WRITE_COMMAND_ACTIONS):
                 return True
@@ -679,6 +732,38 @@ def _strip_leading_tokens(
     return remainder
 
 
+def _before_first_boundary(text: str, boundaries: tuple[str, ...]) -> str:
+    positions = [text.find(boundary) for boundary in boundaries]
+    found = [position for position in positions if position >= 0]
+    return text if not found else text[:min(found)]
+
+
+def _is_write_capability_question(text: str) -> bool:
+    if not _has_question_signal(text):
+        return False
+    subject = next(
+        (candidate for candidate in WRITE_CAPABILITY_SUBJECTS if text.startswith(candidate)),
+        None,
+    )
+    if subject is None:
+        return False
+    after_subject = text[len(subject):]
+    if after_subject.startswith(("，", ",", "：", ":")):
+        return False
+    action_position = min(
+        (
+            position
+            for action in WRITE_COMMAND_ACTIONS
+            if (position := after_subject.find(action)) >= 0
+        ),
+        default=-1,
+    )
+    if action_position < 0:
+        return False
+    before_action = after_subject[:action_position]
+    return _has_any(before_action, POLITE_WRITE_PREFIXES)
+
+
 def _has_explicit_write_command(text: str) -> bool:
     """Distinguish a record command from a record used as evidence or a noun.
 
@@ -688,6 +773,8 @@ def _has_explicit_write_command(text: str) -> bool:
     This stays deliberately lexical and structural rather than falling back to
     a broad regex keyword router.
     """
+    if _is_write_capability_question(text):
+        return False
     direct_request = _strip_write_request_helper(text)
     if direct_request != text and direct_request.startswith(WRITE_COMMAND_ACTIONS):
         return True
@@ -704,6 +791,20 @@ def _has_explicit_write_command(text: str) -> bool:
                 return True
             start = text.find(action, start + len(action))
     return False
+
+
+def _has_record_history_reference(text: str) -> bool:
+    """Recognize completed or explicitly historical uses of the noun/verb 记录."""
+    start = text.find("记录")
+    while start >= 0:
+        after = text[start + len("记录"):]
+        if after.startswith(("过", "了")):
+            return True
+        start = text.find("记录", start + len("记录"))
+    return "记录" in text and _has_any(
+        text,
+        ("以前", "上一次", "历史", "既往", "曾经"),
+    )
 
 
 def _mutation_operation(text: str) -> Optional[str]:

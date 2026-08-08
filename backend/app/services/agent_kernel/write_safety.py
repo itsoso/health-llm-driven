@@ -4,10 +4,16 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from app.services.utterance_intent_lexicon import STRUCTURAL_WRITE_NEGATIONS
+
+
+_WRITE_NEGATION_PATTERN = "|".join(
+    re.escape(term) for term in STRUCTURAL_WRITE_NEGATIONS
+)
 
 _EXPLICIT_WRITE_CANCELLATION_RE = re.compile(
-    r"(?:先不要|暂不|不需要|不要|不用|无需|先别|别|不)"
-    r"(?:再|先|想|要|帮我|给我|把|将|这|该|本|这次|本次|"
+    rf"(?:{_WRITE_NEGATION_PATTERN})"
+    r"(?:继续|自动|暂时|再|先|想|要|帮我|帮忙|替我|为我|给我|把|将|这|该|本|这次|本次|"
     r"早餐|午餐|晚餐|加餐|饮食|一餐|这餐|条|份|个|次|"
     r"[\s，,。.!！；;：:])*"
     r"(?:记录|记一下|记下|记|保存|录入|写入|写回|添加|加到饮食)"

@@ -97,6 +97,30 @@ WRITE_NEGATION_EXCEPTIONS = (
     "别记录成",
 )
 
+STRUCTURAL_WRITE_NEGATIONS = (
+    "先不要",
+    "不需要",
+    "不要",
+    "不用",
+    "无需",
+    "先别",
+    "暂不",
+    "别",
+    "勿",
+    "甭",
+    "不",
+)
+
+STRUCTURAL_WRITE_NEGATION_MODIFIERS = (
+    "继续",
+    "自动",
+    "暂时",
+    "再",
+    "先",
+    "想",
+    "要",
+)
+
 WRITE_COMMAND_PREFIXES = (
     "帮我",
     "请",

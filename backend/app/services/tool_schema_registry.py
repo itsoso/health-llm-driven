@@ -98,7 +98,7 @@ illness 问"上一次"且没有给时间窗时省略 days, 后端查询全部病
                     "days": {
                         "type": "integer",
                         "description": "查询最近几天. 昨天=1, 最近/本周=7, 本月=30；"
-                        "illness 问上一次且未给时间窗时省略，查询全部历史",
+                        "illness 支持最长 36500 天；问上一次且未给时间窗时省略，查询全部历史",
                     },
                     "indicator": {
                         "type": "string",

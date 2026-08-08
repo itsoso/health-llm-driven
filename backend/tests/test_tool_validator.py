@@ -547,6 +547,24 @@ class TestQueryGuard:
         v = validate_tool_call("health_query", {"dimension": "sleep", "days": 99999})
         assert v["data"]["days"] == 7
 
+    @pytest.mark.parametrize("days", (365, 366, 730))
+    def test_illness_days_preserves_long_history_windows(self, days):
+        v = validate_tool_call(
+            "health_query",
+            {"dimension": "illness", "keyword": "口腔溃疡", "days": days},
+        )
+
+        assert v["error"] is None
+        assert v["data"]["days"] == days
+
+    def test_illness_days_above_supported_history_fails_loudly(self):
+        v = validate_tool_call(
+            "health_query",
+            {"dimension": "illness", "keyword": "口腔溃疡", "days": 36501},
+        )
+
+        assert v["error"].startswith("Error:")
+
     def test_days_zero_coerced(self):
         v = validate_tool_call("health_query", {"dimension": "sleep", "days": 0})
         assert v["data"]["days"] == 7

@@ -30,7 +30,10 @@ import re
 from datetime import datetime, date, timedelta, timezone
 from typing import Any, Dict, Optional
 
-from app.services.health_query_dimensions import normalize_health_query_args
+from app.services.health_query_dimensions import (
+    ILLNESS_MAX_QUERY_DAYS,
+    normalize_health_query_args,
+)
 from app.services.intake_intent_classifier import classify_intake_intent
 
 # 北京时区 (UTC+8) — 用户活动以中国本地日期为准
@@ -679,7 +682,21 @@ def _validate_query(
             f"Error: 未知 health_query dimension {dimension!r}. "
             f"已注册维度: {valid}. 请按用户语义重新规划查询，不能改查其他数据域。"
         )
-    _coerce_int_range("health_query", args, "days", 1, 365, 7, warnings)
+    if dimension == "illness" and "days" in args:
+        try:
+            illness_days = int(args["days"])
+        except (TypeError, ValueError):
+            _metric("health_query", "days", "not_integer", action="rejected")
+            return "Error: illness 查询天数必须是整数，请按用户时间范围重新规划。"
+        if not 1 <= illness_days <= ILLNESS_MAX_QUERY_DAYS:
+            _metric("health_query", "days", "out_of_range", action="rejected")
+            return (
+                "Error: illness 查询天数超出支持范围 "
+                f"[1,{ILLNESS_MAX_QUERY_DAYS}]，请缩小时间范围或省略 days 查询全部历史。"
+            )
+        args["days"] = illness_days
+    else:
+        _coerce_int_range("health_query", args, "days", 1, 365, 7, warnings)
     _coerce_int_range("health_query", args, "uploaded_days", 1, 365, 1, warnings)
     # indicator 只在 medical_exam / genetic 有意义, 其余 dim silent drop
     if args.get("indicator") and args.get("dimension") not in _INDICATOR_ALLOWED_DIMS:

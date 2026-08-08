@@ -78,6 +78,7 @@ HEALTH_QUERY_DIM_ALIASES: Dict[str, str] = {
 }
 
 HEALTH_QUERY_DIM_KEYS = ("dimension", "type", "query_type", "category", "kind")
+ILLNESS_MAX_QUERY_DAYS = 36500
 
 
 def normalize_health_query_args(args: Dict[str, Any]) -> Dict[str, Any]:

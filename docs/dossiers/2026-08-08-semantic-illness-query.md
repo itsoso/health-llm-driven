@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS; G4 second remediation complete, final re-review pending |
+| current_stage | G3 PASS; G4 third remediation complete, fresh final re-review pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -90,6 +90,13 @@ validation and no-match honesty address those risks.
   questions, future-dated episodes, compositional request prefixes and modified
   negations, failure-first tests reproduced all four boundaries. The expanded
   related regression group now passes 1,758 tests.
+- A subsequent NO-GO exposed unpunctuated Mobile speech-history frames, a bare
+  `has_write` fallback, negated write + advice compounds, product-capability
+  questions with helpers, cross-clause question leakage, long illness windows
+  silently becoming seven days, and undisclosed 100-row truncation. Failure-first
+  tests cover each boundary; the final expanded compatibility group passes
+  1,850 tests, including classifier, IntentFrame, CapabilityPolicy, ToolGateway,
+  validator, canonical reader, goal spec and all prior behavior batteries.
 
 ### G4 Safety Review: PENDING
 
@@ -114,6 +121,21 @@ negations containing `再` could gain it. These findings are now covered by a
 bounded compositional request grammar, a negation × helper × modifier matrix,
 ToolGateway preflight tests and a frozen-date inclusive upper bound. A fresh
 independent review of the new commit remains mandatory.
+
+The next independent safety review returned NO-GO because unpunctuated forms
+such as `记录过口腔溃疡没有` and historical noun fragments could still pass the
+bare `has_write` fallback. Its companion code review also found negated compound
+turns (`勿/甭...记录，分析...`) could write, explicit writes could be cancelled by
+a question in a later clause, helper-bearing capability questions could write,
+and `days=730` silently became seven days. Deployment remained stopped.
+
+The remediation removes bare-token write authorization, recognizes completed
+and historical `记录` frames, parses bounded clauses and request prefixes,
+shares structural negation terms with the kernel backstop, preserves a remaining
+analysis goal after write cancellation, supports illness windows through 36,500
+days with fail-loud bounds, and discloses 100-row truncation. Real ToolGateway
+dispatch spies prove the new historical, negated and capability cases never
+cross the adapter boundary. A new independent review is still required.
 
 ### G5 Deployment Health: PENDING
 

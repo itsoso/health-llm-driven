@@ -31,6 +31,8 @@ from sqlalchemy import func, or_
 from sqlalchemy import desc as sa_desc
 from sqlalchemy.orm import Session
 
+from app.services.health_query_dimensions import ILLNESS_MAX_QUERY_DAYS
+
 logger = logging.getLogger(__name__)
 
 
@@ -99,7 +101,15 @@ def read_illness_episodes(
     if user_id is None:
         return "Error: 当前会话无 user_id, 无法查询病症记录"
 
-    window_days = None if days is None else min(_window_days(days, floor=1), 365)
+    if days is None:
+        window_days = None
+    else:
+        try:
+            window_days = int(days)
+        except (TypeError, ValueError):
+            return "Error: illness 查询天数必须是整数"
+        if not 1 <= window_days <= ILLNESS_MAX_QUERY_DAYS:
+            return "Error: illness 查询天数超出支持范围"
     today = reference_date or date.today()
     since = today - timedelta(days=window_days) if window_days is not None else None
     name = (keyword or "").strip()
@@ -120,7 +130,7 @@ def read_illness_episodes(
                 sa_desc(IllnessEpisode.start_date),
                 sa_desc(IllnessEpisode.id),
             )
-            .limit(100)
+            .limit(101)
             .all()
         )
         if not rows:
@@ -128,6 +138,7 @@ def read_illness_episodes(
             window = f"最近 {window_days} 天内" if window_days is not None else "全部历史中"
             return f"未找到{target}记录 ({window})。"
 
+        truncated = len(rows) > 100
         payload = [
             {
                 "id": row.id,
@@ -138,9 +149,12 @@ def read_illness_episodes(
                 "severity": row.severity,
                 "notes": row.notes,
             }
-            for row in rows
+            for row in rows[:100]
         ]
-        return json.dumps(payload, ensure_ascii=False)
+        serialized = json.dumps(payload, ensure_ascii=False)
+        if truncated:
+            return "注意：匹配记录超过 100 条，以下仅为最近 100 条，结果已截断。\n" + serialized
+        return serialized
     except Exception as e:
         logger.error(
             "[health_read] illness query failed user_id=%s error_type=%s",

@@ -99,6 +99,66 @@ def test_structurally_negated_requests_never_authorize_health_record(message):
     }
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "勿帮我记录晚餐，分析一下热量",
+        "甭帮我记录晚餐，分析一下热量",
+        "请勿帮我记录口腔溃疡，分析一下原因",
+        "这个功能可以帮我记录口腔溃疡吗？",
+        "系统可以帮我记录口腔溃疡吗？",
+        "小巴能帮我记录口腔溃疡吗？",
+    ),
+)
+def test_negated_or_capability_questions_block_health_record(message):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
+        ),
+    )
+
+    assert decision.action == "block"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "勿帮我记录晚餐，分析一下热量",
+        "甭帮我记录晚餐，分析一下热量",
+        "请勿帮我记录口腔溃疡，分析一下原因",
+    ),
+)
+def test_negated_write_preserves_followup_advice_goal(message):
+    snapshot = _snapshot(message)
+
+    assert snapshot.intent.primary == "advice"
+    assert snapshot.intent.operation == "analyze"
+    assert snapshot.intent.is_write is False
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录口腔溃疡，然后告诉我为什么会复发",
+        "记录口腔溃疡，再分析一下为什么会复发",
+        "记录午餐吃了牛肉面，再告诉我热量是多少",
+    ),
+)
+def test_explicit_record_with_followup_question_allows_health_record(message):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.reason == "explicit_create_intent"
+
+
 def test_read_turn_allows_health_manage_list():
     decision = decide_tool_capability(
         _snapshot("列出今天饮食记录"),

@@ -63,6 +63,80 @@ def test_tool_gateway_blocks_write_for_historical_record_questions(message):
     assert decision.reason == "write_tool_without_write_intent"
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录过口腔溃疡没有",
+        "记录过口腔溃疡没",
+        "记录过口腔溃疡",
+        "记录了口腔溃疡没有",
+        "记录了口腔溃疡",
+        "以前的口腔溃疡记录",
+        "上一次口腔溃疡记录",
+    ),
+)
+@pytest.mark.asyncio
+async def test_gateway_blocks_write_for_unpunctuated_record_history(message):
+    gateway = ToolGateway(_snapshot(message))
+
+    dispatched = False
+
+    async def dispatch(_request):
+        nonlocal dispatched
+        dispatched = True
+        return "unexpected"
+
+    request = ToolExecutionRequest(
+        tool_name="health_record",
+        arguments={"record_type": "illness", "data": {"name": "口腔溃疡"}},
+        source="structured",
+    )
+
+    result = await gateway.execute(request, dispatch)
+
+    assert dispatched is False
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert result.decision.reason == "write_tool_without_write_intent"
+    assert json.loads(result.content)["dispatch_started"] is False
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "勿帮我记录晚餐，分析一下热量",
+        "甭帮我记录晚餐，分析一下热量",
+        "请勿帮我记录口腔溃疡，分析一下原因",
+        "这个功能可以帮我记录口腔溃疡吗？",
+        "系统可以帮我记录口腔溃疡吗？",
+        "小巴能帮我记录口腔溃疡吗？",
+    ),
+)
+@pytest.mark.asyncio
+async def test_gateway_never_dispatches_negated_or_capability_writes(message):
+    gateway = ToolGateway(_snapshot(message))
+    dispatched = False
+
+    async def dispatch(_request):
+        nonlocal dispatched
+        dispatched = True
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={"record_type": "illness", "data": {"name": "口腔溃疡"}},
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert dispatched is False
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert json.loads(result.content)["dispatch_started"] is False
+
+
 def test_blocked_tool_result_includes_a_recovery_instruction_for_the_agent():
     gateway = ToolGateway(_snapshot("今天我的饮食的记录，帮我列个表格出来。"))
     decision = gateway.preflight(

@@ -149,6 +149,40 @@ def test_illness_read_without_window_searches_full_history_directly(db):
     assert future.id not in {row["id"] for row in rows}
 
 
+def test_illness_read_supports_two_year_window(db):
+    current_user = _make_user(db)
+    included = _episode(db, current_user.id, "口腔溃疡", 700)
+
+    out = health_read.canonical_read(
+        db,
+        current_user.id,
+        "illness",
+        days=730,
+        keyword="口腔溃疡",
+    )
+    rows = json.loads(out)
+
+    assert [row["id"] for row in rows] == [included.id]
+
+
+def test_illness_read_discloses_when_results_are_truncated(db):
+    current_user = _make_user(db)
+    for offset in range(101):
+        _episode(db, current_user.id, "口腔溃疡", offset)
+
+    out = health_read.canonical_read(
+        db,
+        current_user.id,
+        "illness",
+        keyword="口腔溃疡",
+    )
+    notice, serialized_rows = out.split("\n", 1)
+
+    assert "最近 100 条" in notice
+    assert "已截断" in notice
+    assert len(json.loads(serialized_rows)) == 100
+
+
 def test_illness_read_sanitizes_database_errors(db, monkeypatch, caplog):
     keyword = "口腔溃疡"
 

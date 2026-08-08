@@ -37,12 +37,13 @@ def build_intent_frame(
     if intent.scope:
         evidence.extend(f"scope:{key}={value}" for key, value in sorted(intent.scope.items()))
 
+    cancelled_write_intent = write_cancelled and intent.is_write
     return IntentFrame(
         raw=intent.raw,
         normalized=intent.normalized,
-        primary="chat" if write_cancelled else intent.primary,
+        primary="chat" if cancelled_write_intent else intent.primary,
         domain=intent.domain,
-        operation="none" if write_cancelled else intent.operation,
+        operation="none" if cancelled_write_intent else intent.operation,
         confidence=intent.confidence,
         evidence=tuple(evidence),
         ambiguity=tuple(ambiguity),

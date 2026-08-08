@@ -105,6 +105,7 @@ fields:
   - health_query.dimension gains illness
   - health_query.keyword applies to illness name
   - health_query.days applies to illness start-date window
+  - illness days accepts 1..36500 without silently changing the requested window
   - omitted health_query.days means full history for illness only
 enums:
   - health_query.dimension: add illness
@@ -126,6 +127,12 @@ execute `health_record` or mutating `health_manage` operations. Invalid semantic
 dimensions return an error instead of querying a different domain. User text and
 health results must not be added to new plaintext logs. Database failures return
 a fixed user-safe error and log only a content-free error type.
+
+Write authorization requires a bounded explicit request grammar or a concrete
+observation fact; the bare presence of `记录` is never sufficient. Completed
+forms (`记录过/记录了`), historical noun frames, product-capability questions and
+negated write clauses remain non-writing even without punctuation. Negation
+terms are shared by the classifier and the kernel's fail-closed write gate.
 
 Illness windows use the Agent turn's frozen user-local date, not the service
 process date. This keeps Web, Mobile and Mac results aligned at timezone day
@@ -153,6 +160,10 @@ Then it is read-only and no write tool is authorized
 Given a historical question begins with "记录" such as "记录过口腔溃疡吗"
 When the shared classifier processes the turn
 Then the question remains read-only and health_record is blocked before dispatch
+
+Given Mobile speech transcription omits punctuation in "记录过口腔溃疡没有"
+When the classifier and ToolGateway process the turn
+Then the completed historical frame cannot dispatch health_record
 
 Given matching oral-ulcer episodes belong to the current user
 When health_query runs with dimension illness and a six-month window
@@ -194,9 +205,25 @@ Given a user says "请不要再帮我记录口腔溃疡"
 When the classifier and capability gate process the turn
 Then no write tool is authorized
 
+Given a user says "勿帮我记录晚餐，分析一下热量"
+When the classifier and capability gate process the compound turn
+Then the analysis goal remains but no write tool is authorized
+
+Given a user says "记录口腔溃疡，然后告诉我为什么会复发"
+When the classifier processes separate clauses
+Then the first explicit write remains authorized under the existing confirmation policy
+
 Given a user asks whether the product can record illness data
-When the classifier processes "小巴能记录口腔溃疡吗"
+When the classifier processes "这个功能可以帮我记录口腔溃疡吗"
 Then it remains a capability question and does not authorize a write
+
+Given a user asks for a two-year illness window
+When health_query validates days=730
+Then it preserves 730 rather than silently changing the query to seven days
+
+Given more than 100 illness episodes match
+When the canonical reader returns the newest 100
+Then the result explicitly states that it was truncated
 ```
 
 ## 12. Verification Plan
@@ -249,3 +276,4 @@ These questions do not block the illness slice.
 | Date | Change | Reason |
 |---|---|---|
 | 2026-08-08 | Initial approved spec | User approved hybrid semantic planning with deterministic execution. |
+| 2026-08-08 | Hardened write grammar and time-window fidelity | Independent reviews found unpunctuated history, negated compound and long-window boundary gaps. |
