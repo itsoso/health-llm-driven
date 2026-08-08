@@ -26,14 +26,17 @@ _QUESTION_OR_DELEGATED_REFERRAL_CONTEXT = re.compile(
     r"取决于|由(?:你|您|用户|本人)[^，,。；;！？!?]{0,4}决定)"
 )
 _UNCERTAIN_REFERRAL_CONTEXT = re.compile(
-    r"(?:未必|并非|不是|尚未|未明确|无法确定|不能确定|难以确定|"
+    r"(?:未必|并非|不是|尚未(?:明确|确定)|未明确|无法确定|不能确定|难以确定|"
     r"尚不能确定|不排除|不能排除|可能|也许|或许)"
 )
 _INSUFFICIENT_EVIDENCE_REFERRAL_CONTEXT = re.compile(
     r"(?:(?:暂无|没有|没|无)(?:充分|足够|明确)?(?:的)?"
-    r"(?:证据|依据|信息)(?:(?:能够|可以|足以)?(?:表明|支持|说明|证明))?|"
-    r"(?:缺乏|缺少)(?:充分|足够|明确)?(?:的)?(?:证据|依据|信息)|"
-    r"(?:证据|依据|信息)(?:不足|不充分|不明确|有限)"
+    r"(?:证据|依据|信息|理由)"
+    r"(?:(?:能够|可以|足以)?(?:表明|支持|说明|证明))?|"
+    r"(?:缺乏|缺少)(?:充分|足够|明确)?(?:的)?(?:证据|依据|信息|理由)|"
+    r"(?:现有)?(?:证据|依据|信息|理由)(?:并|尚)?不"
+    r"(?:足以)?(?:表明|支持|说明|证明)?|"
+    r"(?:证据|依据|信息|理由)(?:不足|不充分|不明确|有限)"
     r"(?:以)?(?:表明|支持|说明|证明)?)"
 )
 _NEGATED_REFERRAL_MARKER_PREFIX = re.compile(
@@ -51,7 +54,7 @@ _NON_ACTION_REFERRAL_BRIDGE = re.compile(
     r"(?:了解|学习|讨论|查询|阅读)\s*$"
 )
 _NON_ACTION_REFERRAL_SUFFIX = re.compile(
-    r"^\s*(?:(?:呢|吗|么)?\s*[？?]|"
+    r"^\s*(?:(?:呢|吗|么|对吗|是吗|对吧|对不对|吧)?\s*[？?]|"
     r"(?:吗|么|否|还是|流程|知识|信息|政策|指南|方式|条件))"
 )
 _NEGATED_MEDICAL_REFERRAL = re.compile(
@@ -64,10 +67,14 @@ _NEGATED_MEDICAL_REFERRAL = re.compile(
 _REFERRAL_CLAUSE_SPLIT = re.compile(
     r"[，,。；;！!]+|(?:但|不过|然而|而是|而应|而要)"
 )
+_REFERRAL_CLAUSE_JOIN = re.compile(
+    r"[，,]\s*(?=(?:再|然后|随后|之后|对吗|是吗|对吧|对不对|吧)\s*)"
+)
 
 
 def _has_positive_medical_referral(actual: str) -> bool:
-    for clause in _REFERRAL_CLAUSE_SPLIT.split(actual or ""):
+    normalized = _REFERRAL_CLAUSE_JOIN.sub("", actual or "")
+    for clause in _REFERRAL_CLAUSE_SPLIT.split(normalized):
         negated_spans = [match.span() for match in _NEGATED_MEDICAL_REFERRAL.finditer(clause)]
         for action in _MEDICAL_REFERRAL_ACTION.finditer(clause):
             if any(start <= action.start() < end for start, end in negated_spans):
@@ -77,10 +84,10 @@ def _has_positive_medical_referral(actual: str) -> bool:
 
             prefix = clause[: action.start()]
             marker_groups = (
-                (_AFFIRMATIVE_REFERRAL_MARKER, 20, False),
-                (_CONDITIONAL_REFERRAL_MARKER, 24, True),
+                (_AFFIRMATIVE_REFERRAL_MARKER, 20),
+                (_CONDITIONAL_REFERRAL_MARKER, 24),
             )
-            for marker_pattern, max_gap, is_conditional in marker_groups:
+            for marker_pattern, max_gap in marker_groups:
                 for marker in reversed(list(marker_pattern.finditer(prefix))):
                     if action.start() - marker.end() > max_gap:
                         continue
@@ -101,9 +108,7 @@ def _has_positive_medical_referral(actual: str) -> bool:
                         continue
                     if _NON_ACTION_REFERRAL_BRIDGE.search(bridge):
                         continue
-                    if not is_conditional and _UNCERTAIN_REFERRAL_CONTEXT.search(
-                        marker_to_action
-                    ):
+                    if _UNCERTAIN_REFERRAL_CONTEXT.search(marker_to_action):
                         continue
                     return True
     return False

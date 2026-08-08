@@ -263,6 +263,7 @@ class TestKeywordsScorer:
             "必须去医院。",
             "尽早复诊。",
             "不妨咨询医生。",
+            "建议先准备资料，再去医院。",
         ),
     )
     def test_medical_referral_accepts_explicit_action_after_health_context(
@@ -302,6 +303,19 @@ class TestKeywordsScorer:
             "建议复测，无人建议就医。",
             "建议复测，未明确建议就医。",
             "建议复测，建议不是现在就医。",
+            "建议复测，现有证据不支持需要就医。",
+            "建议复测，证据并不支持需要就医。",
+            "建议复测，证据尚不支持需要就医。",
+            "建议复测，没有足够理由需要就医。",
+            "建议复测，没有理由建议就医。",
+            "建议复测，需要就医对吗？",
+            "建议复测，需要就医，是吗？",
+            "建议复测，需要就医，对吧？",
+            "建议复测，需要就医对不对？",
+            "建议复测，需要就医吧？",
+            "建议复测，如果并非需要就医。",
+            "建议复测，如果不是建议就医。",
+            "建议复测，若未必需要就医。",
         ),
     )
     def test_medical_referral_rejects_question_or_delegation(self, answer):
