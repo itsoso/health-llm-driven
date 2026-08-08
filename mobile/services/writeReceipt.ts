@@ -1,10 +1,22 @@
 export type WriteReceiptStatus = 'verified' | 'dismissed';
+export type WriteReceiptAction = 'create' | 'update' | 'delete';
+
+const WRITE_RECEIPT_RESOURCE_LABELS: Readonly<Record<string, string>> = {
+  agenda_event: '今日行动',
+  intervention_event: '今日行动',
+  diet_record: '饮食记录',
+  write_intent: '待确认项',
+  smart_reminder: '提醒',
+  health_record: '健康记录',
+  medication_log: '用药记录',
+};
 
 export interface WriteReceipt {
   operationId: string;
   status: WriteReceiptStatus;
   resourceType: string;
   resourceId: string;
+  action?: WriteReceiptAction;
   executedRef?: string;
   completedAt: string;
   verified: true;
@@ -61,13 +73,38 @@ export function normalizeWriteReceipt(raw: unknown): WriteReceipt | undefined {
     return undefined;
   }
   const executedRef = String(source.executedRef ?? source.executed_ref ?? '').trim();
+  const action = source.action === 'create' || source.action === 'update' || source.action === 'delete'
+    ? source.action
+    : undefined;
   return {
     operationId,
     status,
     resourceType,
     resourceId,
+    ...(action ? { action } : {}),
     ...(executedRef ? { executedRef } : {}),
     completedAt,
     verified: true,
   };
+}
+
+export function formatWriteReceipt(receipt: WriteReceipt): string {
+  const resourceLabel = receiptResourceLabel(receipt.resourceType);
+  if (receipt.status === 'dismissed') {
+    return `已忽略 · ${resourceLabel} #${receipt.resourceId}`;
+  }
+  if (receipt.action === 'update') {
+    return `已更新 · ${resourceLabel} #${receipt.resourceId}`;
+  }
+  if (receipt.action === 'delete') {
+    return `已删除 · ${resourceLabel} #${receipt.resourceId}`;
+  }
+  if (receipt.resourceType === 'diet_record') {
+    return `已保存到今日饮食 · 记录 #${receipt.resourceId}`;
+  }
+  return `已写入 · ${resourceLabel} #${receipt.resourceId}`;
+}
+
+function receiptResourceLabel(resourceType: string): string {
+  return WRITE_RECEIPT_RESOURCE_LABELS[resourceType] || '健康数据';
 }

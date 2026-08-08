@@ -142,12 +142,17 @@ function renderBubble(content: string) {
   );
 }
 
-function verifiedReceipt(resourceType = 'diet_record', resourceId = '77') {
+function verifiedReceipt(
+  resourceType = 'diet_record',
+  resourceId = '77',
+  action?: 'create' | 'update' | 'delete',
+) {
   return {
     operationId: `${resourceType}:${resourceId}`,
     status: 'verified' as const,
     resourceType,
     resourceId,
+    ...(action ? { action } : {}),
     completedAt: '2026-07-09T12:00:00.000Z',
     verified: true as const,
   };
@@ -1103,6 +1108,52 @@ ${sectionTitle}
 
     expect(getByTestId('write-receipt')).toBeTruthy();
     expect(getByText('已保存到今日饮食 · 记录 #701')).toBeTruthy();
+  });
+
+  it('shows the actual action for verified health update and delete receipts', () => {
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-health-manage-action-receipts',
+      role: 'assistant',
+      content: '健康记录已处理。',
+      streaming: false,
+      writeReceipts: [
+        verifiedReceipt('water_record', '718', 'update'),
+        verifiedReceipt('water_record', '719', 'delete'),
+      ],
+    };
+
+    const { getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    expect(getByText('已更新 · 健康数据 #718')).toBeTruthy();
+    expect(getByText('已删除 · 健康数据 #719')).toBeTruthy();
+  });
+
+  it('falls back to the legacy label for an unsupported receipt action', () => {
+    const qc = new QueryClient();
+    const receipt = {
+      ...verifiedReceipt('water_record', '720'),
+      action: 'replace',
+    } as any;
+    const message: UIMessage = {
+      id: 'assistant-invalid-health-receipt-action',
+      role: 'assistant',
+      content: '健康记录已处理。',
+      streaming: false,
+      writeReceipts: [receipt],
+    };
+
+    const { getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    expect(getByText('已写入 · 健康数据 #720')).toBeTruthy();
   });
 
   it('keeps an AIGC draft receipt internal because the confirmation card owns visible state', () => {

@@ -2429,6 +2429,7 @@ async def test_agent_stream_executes_inline_diet_record_json_with_nutrition(db, 
         and event["data"]["write_completed"] is True
         and event["data"]["receipt"]["resource_type"] == "diet_record"
         and event["data"]["receipt"]["resource_id"] == "701"
+        and event["data"]["receipt"]["action"] == "create"
         and event["data"]["receipt"]["verified"] is True
         and event["data"]["result"] == (
             '{"id":701,"message":"已记录晚餐：约 520 kcal，蛋白质 32g",'
@@ -2445,6 +2446,7 @@ async def test_agent_stream_executes_inline_diet_record_json_with_nutrition(db, 
             "resource_id": "701",
             "completed_at": done["data"]["write_receipts"][0]["completed_at"],
             "verified": True,
+            "action": "create",
         }
     ]
     from app.models.agent_conversation import AgentMessage

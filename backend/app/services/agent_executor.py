@@ -3838,7 +3838,8 @@ def _write_receipt_from_tool_result(
     """Build a persistence receipt from structured tool output only."""
     if tool_name not in _WRITE_RECEIPT_TOOL_NAMES:
         return None
-    if isinstance(receipt_context, Mapping):
+    has_structured_args = isinstance(receipt_context, Mapping)
+    if has_structured_args:
         args = dict(receipt_context)
     else:
         args = {"record_type": receipt_context}
@@ -3914,6 +3915,15 @@ def _write_receipt_from_tool_result(
         "completed_at": str(completed_at),
         "verified": True,
     }
+    receipt_action: Optional[str] = None
+    if has_structured_args and tool_name == "health_record":
+        receipt_action = "create"
+    elif has_structured_args and tool_name == "health_manage":
+        normalized_operation = str(args.get("operation") or "").strip().lower()
+        if normalized_operation in {"create", "update", "delete"}:
+            receipt_action = normalized_operation
+    if receipt_action:
+        receipt["action"] = receipt_action
     if target_date:
         receipt["date"] = target_date
     return receipt
