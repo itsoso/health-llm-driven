@@ -395,6 +395,12 @@ async def test_execute_tool_blocks_health_manage_delete_in_update_turn(db, monke
         "把上一条运动记录中的速度删掉",
         "删除上一条不是饮水的记录",
         "删除上一条饮水以外的记录",
+        "删除上一条非饮水记录",
+        "删除上一条除饮水外的记录",
+        "删除上一条不含饮水的记录",
+        "删除饮水记录 718 的备注",
+        "撤销删除饮水记录 718",
+        "删除饮水记录 718 并改成 350ml",
     ),
 )
 async def test_execute_tool_blocks_field_removal_from_deleting_record(
@@ -435,11 +441,21 @@ async def test_execute_tool_blocks_field_removal_from_deleting_record(
     ("message", "record_type", "record_id"),
     (
         ("删除上一条饮水记录", "medication", 718),
+        ("删除上一条饮水记录", "water", 718),
+        ("清掉记录 718", "medication", 718),
+        ("清掉记录 718", "water", 718),
         ("清掉记录 718", "water", 719),
         ("删除饮水记录 718", "weight", 718),
         ("删除饮水记录 718", "water", 719),
         ("删除第一条记录", "water", 718),
         ("删除两条饮水记录", "water", 718),
+        ("删除饮水或用药记录 718", "water", 718),
+        ("删除饮水用药记录 718", "water", 718),
+        ("删除第1条或第2条饮水记录", "water", 718),
+        ("删除所有饮水记录 718", "water", 718),
+        ("删除上一条非饮水记录", "water", 718),
+        ("删除上一条除饮水外的记录", "water", 718),
+        ("删除上一条不含饮水的记录", "water", 718),
     ),
 )
 async def test_execute_tool_blocks_delete_when_text_does_not_bind_target(
@@ -486,14 +502,11 @@ async def test_execute_tool_blocks_delete_when_text_does_not_bind_target(
 @pytest.mark.parametrize(
     ("message", "record_type"),
     (
-        ("删除上一条饮水记录", "water"),
-        ("请帮我删除上一条体重记录", "weight"),
-        ("把上一条饮食记录删了", "diet"),
-        ("清掉记录 718", "water"),
         ("删除饮水记录 718", "water"),
-        ("删除上一餐", "diet"),
-        ("请您删除这条用药记录", "medication"),
-        ("删除上一条 meal 记录", "diet"),
+        ("请帮我删除体重记录 718", "weight"),
+        ("把饮食记录 718 删了", "diet"),
+        ("请您删除用药记录 718", "medication"),
+        ("删除 meal 记录 718", "diet"),
     ),
 )
 async def test_execute_tool_dispatches_closed_grammar_record_delete(

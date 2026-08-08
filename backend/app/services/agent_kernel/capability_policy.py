@@ -59,8 +59,30 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "bloodpressure": "blood_pressure",
 }
 _CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v1"
-_WHOLE_RECORD_DELETE_EVIDENCE_VERSION = "record-delete-evidence-v1"
-_HEALTH_MANAGE_RECORD_TYPE_ALIASES = {
+_WHOLE_RECORD_DELETE_EVIDENCE_VERSION = "record-delete-evidence-v2"
+_HEALTH_MANAGE_CANONICAL_RECORD_TYPES = frozenset({
+    "diet",
+    "water",
+    "weight",
+    "waist",
+    "blood_pressure",
+    "sleep",
+    "mood",
+    "excretion",
+    "exercise",
+    "illness",
+    "symptom",
+    "medication",
+    "medication_log",
+    "supplement",
+    "supplement_definition",
+    "reminder",
+    "goal",
+    "medical_exam",
+    "event",
+    "rhinitis",
+})
+_DELETE_RECORD_TYPE_TEXT_ALIASES = {
     "diet": "diet",
     "food": "diet",
     "foods": "diet",
@@ -156,33 +178,17 @@ _DELETE_MIXED_UPDATE_MARKERS = (
     "调整",
     "修正",
 )
-_DELETE_TARGET_EXCLUSION_MARKERS = (
-    "不是",
-    "并非",
-    "而非",
-    "以外",
-    "之外",
+_DELETE_RECORD_TYPE_TEXT_ALIAS_PATTERN = "|".join(
+    re.escape(alias)
+    for alias in sorted(
+        _DELETE_RECORD_TYPE_TEXT_ALIASES,
+        key=len,
+        reverse=True,
+    )
 )
-_SINGULAR_RECORD_TARGET_PATTERN = (
-    r"(?:上一条|前一条|这条|那条|最后一条|刚才(?:那)?条|刚才的|"
-    r"第[一二三四五六七八九十百\d]+条)[^，。；！？]{0,16}(?:记录|条目)"
-)
-_COUNTED_RECORD_TARGET_PATTERN = (
-    r"(?:[一二三四五六七八九十百两\d]+条)"
-    r"[^，。；！？]{0,16}(?:记录|条目)"
-)
-_EXPLICIT_ID_TARGET_PATTERN = (
-    r"(?:[^，。；！？#\d]{1,16})?(?:记录|条目)#?\d+"
-)
-_MEAL_RECORD_TARGET_PATTERN = (
-    r"(?:上一餐|前一餐|这一餐|那一餐|上顿|这顿|那顿|"
-    r"上一次|前一次|这一次|那一次)"
-)
-_WHOLE_RECORD_TARGET_PATTERN = (
-    rf"(?:{_SINGULAR_RECORD_TARGET_PATTERN})"
-    rf"|(?:{_COUNTED_RECORD_TARGET_PATTERN})"
-    rf"|(?:{_EXPLICIT_ID_TARGET_PATTERN})"
-    rf"|(?:{_MEAL_RECORD_TARGET_PATTERN})"
+_EXACT_RECORD_TARGET_PATTERN = (
+    rf"(?:{_DELETE_RECORD_TYPE_TEXT_ALIAS_PATTERN})"
+    rf"(?:记录|条目)#?\d+"
 )
 _DELETE_REQUEST_PREFIXES = (
     "请你帮我",
@@ -226,27 +232,21 @@ _DELETE_REQUEST_SUFFIX_PATTERN = (
 _WHOLE_RECORD_DELETE_VERB_FIRST_RE = re.compile(
     rf"^(?:(?:{_DELETE_REQUEST_PREFIX_PATTERN}))?"
     rf"(?:{_WHOLE_RECORD_DELETE_VERB_PATTERN})"
-    rf"(?P<target>{_WHOLE_RECORD_TARGET_PATTERN})"
-    rf"{_DELETE_REQUEST_SUFFIX_PATTERN}$"
+    rf"(?P<target>{_EXACT_RECORD_TARGET_PATTERN})"
+    rf"{_DELETE_REQUEST_SUFFIX_PATTERN}$",
+    re.IGNORECASE,
 )
 _WHOLE_RECORD_DELETE_TARGET_FIRST_RE = re.compile(
     rf"^(?:(?:{_DELETE_REQUEST_PREFIX_PATTERN}))?"
-    rf"(?:把|将)(?P<target>{_WHOLE_RECORD_TARGET_PATTERN})"
+    rf"(?:把|将)(?P<target>{_EXACT_RECORD_TARGET_PATTERN})"
     rf"(?:{_WHOLE_RECORD_DELETE_VERB_PATTERN})"
-    rf"{_DELETE_REQUEST_SUFFIX_PATTERN}$"
+    rf"{_DELETE_REQUEST_SUFFIX_PATTERN}$",
+    re.IGNORECASE,
 )
-_SINGULAR_RECORD_TARGET_RE = re.compile(
-    rf"^(?:{_SINGULAR_RECORD_TARGET_PATTERN})$"
-)
-_COUNTED_RECORD_TARGET_RE = re.compile(
-    rf"^(?:{_COUNTED_RECORD_TARGET_PATTERN})$"
-)
-_EXPLICIT_ID_TARGET_RE = re.compile(
-    r"^(?P<label>[^，。；！？#\d]{1,16})?"
-    r"(?:记录|条目)#?(?P<record_id>\d+)$"
-)
-_MEAL_RECORD_TARGET_RE = re.compile(
-    rf"^(?:{_MEAL_RECORD_TARGET_PATTERN})$"
+_EXACT_RECORD_TARGET_RE = re.compile(
+    rf"^(?P<record_type_alias>{_DELETE_RECORD_TYPE_TEXT_ALIAS_PATTERN})"
+    r"(?:记录|条目)#?(?P<record_id>\d+)$",
+    re.IGNORECASE,
 )
 
 
@@ -280,29 +280,13 @@ def canonical_health_manage_record_id(value: Any) -> int | None:
 
 
 def canonical_health_manage_record_type(value: Any) -> str | None:
-    """Normalize only known health_manage record-type names and aliases."""
+    """Accept only production-supported canonical health_manage types."""
     normalized = str(value or "").strip().lower()
-    if not normalized:
-        return None
-    return _HEALTH_MANAGE_RECORD_TYPE_ALIASES.get(normalized)
-
-
-def _record_type_from_delete_target(target: str) -> str | None:
-    lowered = target.lower()
-    for alias in sorted(
-        _HEALTH_MANAGE_RECORD_TYPE_ALIASES,
-        key=len,
-        reverse=True,
-    ):
-        if alias.isascii():
-            if re.search(
-                rf"(?<![a-z0-9_]){re.escape(alias)}(?![a-z0-9_])",
-                lowered,
-            ):
-                return _HEALTH_MANAGE_RECORD_TYPE_ALIASES[alias]
-        elif alias in lowered:
-            return _HEALTH_MANAGE_RECORD_TYPE_ALIASES[alias]
-    return None
+    return (
+        normalized
+        if normalized in _HEALTH_MANAGE_CANONICAL_RECORD_TYPES
+        else None
+    )
 
 
 def _whole_record_delete_evidence(
@@ -322,54 +306,39 @@ def _whole_record_delete_evidence(
     if match is None:
         return None
 
-    target = match.group("target")
-    if any(marker in target for marker in _DELETE_TARGET_EXCLUSION_MARKERS):
+    exact_target = _EXACT_RECORD_TARGET_RE.fullmatch(match.group("target"))
+    if exact_target is None:
         return None
-    explicit_id = _EXPLICIT_ID_TARGET_RE.fullmatch(target)
-    if explicit_id is not None:
-        return _WholeRecordDeleteEvidence(
-            target_kind="explicit_id",
-            record_type=_record_type_from_delete_target(target),
-            record_id=canonical_health_manage_record_id(
-                explicit_id.group("record_id")
-            ),
-        )
-    if _COUNTED_RECORD_TARGET_RE.fullmatch(target) is not None:
-        return _WholeRecordDeleteEvidence(
-            target_kind="plural_unresolved",
-            record_type=_record_type_from_delete_target(target),
-        )
-    if _MEAL_RECORD_TARGET_RE.fullmatch(target) is not None:
-        return _WholeRecordDeleteEvidence(
-            target_kind="singular_relative",
-            record_type="diet",
-        )
-    if _SINGULAR_RECORD_TARGET_RE.fullmatch(target) is not None:
-        return _WholeRecordDeleteEvidence(
-            target_kind="singular_relative",
-            record_type=_record_type_from_delete_target(target),
-        )
-    return _WholeRecordDeleteEvidence(target_kind="generic_unresolved")
+    record_id = canonical_health_manage_record_id(
+        exact_target.group("record_id")
+    )
+    if record_id is None:
+        return None
+    record_type = _DELETE_RECORD_TYPE_TEXT_ALIASES.get(
+        exact_target.group("record_type_alias").lower()
+    )
+    if record_type is None:
+        return None
+    return _WholeRecordDeleteEvidence(
+        target_kind="exact_record",
+        record_type=record_type,
+        record_id=record_id,
+    )
 
 
 def _delete_evidence_authorizes_request(
     evidence: _WholeRecordDeleteEvidence | None,
     args: dict[str, Any],
 ) -> bool:
-    if evidence is None or evidence.target_kind == "plural_unresolved":
+    if evidence is None or evidence.target_kind != "exact_record":
         return False
     requested_type = canonical_health_manage_record_type(args.get("record_type"))
     requested_id = canonical_health_manage_record_id(args.get("record_id"))
     if requested_type is None or requested_id is None:
         return False
-    if evidence.record_id is not None:
-        if evidence.record_id != requested_id:
-            return False
-        return evidence.record_type in (None, requested_type)
     return (
-        evidence.target_kind == "singular_relative"
-        and evidence.record_type is not None
-        and evidence.record_type == requested_type
+        evidence.record_type == requested_type
+        and evidence.record_id == requested_id
     )
 
 

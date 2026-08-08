@@ -3542,7 +3542,7 @@ async def test_delete_retry_recovers_same_target_operation_mismatch(
         event
         async for event in executor.run_stream(
             user_id=user.id,
-            message="删除上一条饮水记录",
+            message="删除饮水记录 718",
             user_auth_token="test-token",
         )
     ]
@@ -3622,7 +3622,7 @@ async def test_delete_retry_different_target_keeps_operation_mismatch_blocked(
         event
         async for event in executor.run_stream(
             user_id=user.id,
-            message="删除上一条饮水记录",
+            message="删除饮水记录 719",
             user_auth_token="test-token",
         )
     ]
