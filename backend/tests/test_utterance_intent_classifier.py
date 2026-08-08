@@ -109,6 +109,22 @@ def test_read_only_diet_record_noun_is_not_a_write_intent():
     assert intent.is_write is False
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "我上一次口腔溃疡是什么时候 最近半年分别有哪些记录",
+        "我以前有没有口腔溃疡记录？",
+        "最近半年口腔溃疡有哪些记录",
+        "上一次感冒记录是什么时候？",
+    ),
+)
+def test_historical_record_questions_are_read_only(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "read"
+    assert intent.is_write is False
+
+
 def test_contrastive_correction_stays_read_only():
     intent = classify_agent_utterance("不是记录，是列出我今天吃的所有东西。")
 

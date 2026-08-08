@@ -250,6 +250,7 @@ def classify_agent_utterance(
         mutation = "update"
     has_negated_mutation = _has_negated_mutation(normalized, mutation)
     has_advice = _has_any(normalized, ADVICE_ACTIONS)
+    question_without_write_command = has_question and not has_write_command
 
     if _is_media_generation_request(media_control_text):
         return _intent(
@@ -398,7 +399,7 @@ def classify_agent_utterance(
             )
         return _intent(raw, normalized, "advice", domain, "analyze", 0.86, "advice_frame", scope)
 
-    if has_read or (
+    if has_read or question_without_write_command or (
         _is_data_question(normalized, domain, has_question)
         and not _looks_like_observation_statement(normalized, domain, has_question)
         and not (
