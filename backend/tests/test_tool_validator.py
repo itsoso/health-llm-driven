@@ -501,6 +501,27 @@ class TestDispatcher:
         assert v["error"] is None
         assert v["data"]["record_id"] == 605
 
+    def test_health_manage_update_parses_json_object_string(self):
+        v = validate_tool_call("health_manage", {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": "718",
+            "data": '{"amount": 350}',
+        })
+        assert v["error"] is None
+        assert v["data"]["record_id"] == 718
+        assert v["data"]["data"] == {"amount": 350}
+
+    @pytest.mark.parametrize("data", ('[350]', '350', 'not-json', '{}'))
+    def test_health_manage_update_rejects_non_object_or_empty_json(self, data):
+        v = validate_tool_call("health_manage", {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": data,
+        })
+        assert v["error"]
+
 
 class TestQueryGuard:
     def test_unknown_dimension_coerced(self):

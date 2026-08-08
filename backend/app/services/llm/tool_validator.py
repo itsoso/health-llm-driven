@@ -24,6 +24,7 @@ LLM Tool Call 守门 — 所有 health_record / record_type=X 的参数过这一
 """
 from __future__ import annotations
 
+import json
 import logging
 import math
 import re
@@ -828,7 +829,16 @@ def _validate_health_manage(
         args["record_id"] = record_id_int
 
     if operation == "update":
-        data = args.get("data") or {}
+        raw_data = args.get("data")
+        if isinstance(raw_data, str):
+            try:
+                decoded_data = json.loads(raw_data)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                decoded_data = None
+            if isinstance(decoded_data, dict):
+                raw_data = decoded_data
+                args["data"] = decoded_data
+        data = raw_data or {}
         if not isinstance(data, dict):
             return "Error: health_manage.update 的 data 必须是对象."
         if not data:
