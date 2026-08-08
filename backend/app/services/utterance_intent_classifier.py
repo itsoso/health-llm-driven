@@ -213,6 +213,31 @@ MEAL_TYPES = {
     "snack": ("加餐", "零食", "夜宵", "下午茶"),
 }
 
+WRITE_COMMAND_ACTIONS = (
+    "记录",
+    "记一下",
+    "记下",
+    "打个卡",
+    "打卡",
+    "新增",
+    "录入",
+    "保存",
+    "写入",
+    "存下来",
+)
+WRITE_REQUEST_HELPERS = (
+    "麻烦帮我",
+    "麻烦你",
+    "帮我",
+    "帮忙",
+    "给我",
+    "替我",
+    "为我",
+    "麻烦",
+)
+POLITE_WRITE_PREFIXES = ("可以", "能否", "可否", "可不可以", "能")
+STRUCTURAL_WRITE_NEGATIONS = ("不要", "不用", "无需", "别", "勿", "甭")
+
 
 def classify_agent_utterance(
     message: Any,
@@ -604,7 +629,25 @@ def _wants_table_or_list(text: str) -> bool:
 def _has_negated_write(text: str) -> bool:
     if _has_any(text, WRITE_NEGATION_EXCEPTIONS):
         return False
-    return _has_any(text, WRITE_NEGATIONS)
+    if _has_any(text, WRITE_NEGATIONS):
+        return True
+    for negation in STRUCTURAL_WRITE_NEGATIONS:
+        start = text.find(negation)
+        while start >= 0:
+            remainder = _strip_write_request_helper(
+                text[start + len(negation):]
+            )
+            if remainder.startswith(WRITE_COMMAND_ACTIONS):
+                return True
+            start = text.find(negation, start + len(negation))
+    return False
+
+
+def _strip_write_request_helper(text: str) -> str:
+    for helper in WRITE_REQUEST_HELPERS:
+        if text.startswith(helper):
+            return text[len(helper):]
+    return text
 
 
 def _has_explicit_write_command(text: str) -> bool:
@@ -616,31 +659,16 @@ def _has_explicit_write_command(text: str) -> bool:
     This stays deliberately lexical and structural rather than falling back to
     a broad regex keyword router.
     """
-    command_actions = (
-        "记录",
-        "记一下",
-        "记下",
-        "打个卡",
-        "打卡",
-        "新增",
-        "录入",
-        "保存",
-        "写入",
-        "存下来",
-    )
-    polite_prefixes = ("可以", "能否", "可否", "可不可以", "能")
-    polite_helpers = ("帮我", "给我", "替我", "为我")
-    for prefix in polite_prefixes:
+    direct_request = _strip_write_request_helper(text)
+    if direct_request != text and direct_request.startswith(WRITE_COMMAND_ACTIONS):
+        return True
+    for prefix in POLITE_WRITE_PREFIXES:
         if not text.startswith(prefix):
             continue
-        remainder = text[len(prefix):]
-        for helper in polite_helpers:
-            if remainder.startswith(helper):
-                remainder = remainder[len(helper):]
-                break
-        if remainder.startswith(command_actions):
+        remainder = _strip_write_request_helper(text[len(prefix):])
+        if remainder.startswith(WRITE_COMMAND_ACTIONS):
             return True
-    for action in command_actions:
+    for action in WRITE_COMMAND_ACTIONS:
         start = text.find(action)
         while start >= 0:
             if _is_explicit_write_action_at(text, action, start):

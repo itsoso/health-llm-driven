@@ -150,6 +150,9 @@ def test_real_record_command_is_write_intent():
         "能帮我记录口腔溃疡吗？",
         "可以记录口腔溃疡吗？",
         "能帮我记录体重70kg吗？",
+        "帮忙记录口腔溃疡可以吗？",
+        "可以帮忙记录口腔溃疡吗？",
+        "替我保存体重70kg可以吗？",
     ),
 )
 def test_polite_record_requests_remain_write_intents(message):
@@ -158,6 +161,27 @@ def test_polite_record_requests_remain_write_intents(message):
     assert intent.primary == "write"
     assert intent.operation == "create"
     assert intent.is_write is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "这个功能可以记录口腔溃疡吗？",
+        "小巴能记录口腔溃疡吗？",
+    ),
+)
+def test_record_capability_questions_do_not_authorize_writes(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "read"
+    assert intent.is_write is False
+
+
+def test_negated_polite_record_request_does_not_authorize_write():
+    intent = classify_agent_utterance("不要帮忙记录口腔溃疡")
+
+    assert intent.primary == "chat"
+    assert intent.is_write is False
 
 
 def test_known_medication_intake_outranks_generic_diet_verb():

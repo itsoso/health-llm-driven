@@ -83,6 +83,9 @@ validation and no-match honesty address those risks.
   negated-write query, explicit-write contrast and no-window latest query.
 - Targeted Ruff, Python compilation, `git diff --check`, doc drift and dossier
   consistency all passed.
+- After functional re-review found additional polite request forms, the
+  classifier/capability/ToolGateway regression group passed 1,243 tests with a
+  request/capability/negation grammar matrix.
 
 ### G4 Safety Review: PENDING
 

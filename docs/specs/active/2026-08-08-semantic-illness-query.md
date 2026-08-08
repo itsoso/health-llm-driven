@@ -176,6 +176,10 @@ Then the existing explicit write behavior remains authorized
 Given a user politely asks "能帮我记录体重70kg吗"
 When the classifier processes the turn
 Then it remains an explicit write and follows the existing confirmation policy
+
+Given a user asks whether the product can record illness data
+When the classifier processes "小巴能记录口腔溃疡吗"
+Then it remains a capability question and does not authorize a write
 ```
 
 ## 12. Verification Plan
