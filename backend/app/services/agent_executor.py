@@ -6751,6 +6751,7 @@ def _simple_record_goal_arguments(
     if goal.target_record_type == "symptom":
         body_part = str(values.get("body_part") or "").strip()
         description = str(values.get("description") or "").strip()
+        record_date = str(goal.target_date or "").strip()
         if (
             body_part not in {
                 "eye",
@@ -6763,13 +6764,19 @@ def _simple_record_goal_arguments(
                 "other",
             }
             or not description
+            or not record_date
         ):
+            return None
+        try:
+            canonical_date = date.fromisoformat(record_date).isoformat()
+        except (TypeError, ValueError):
             return None
         return {
             "record_type": "symptom",
             "data": {
                 "body_part": body_part,
                 "description": description[:500],
+                "record_date": canonical_date,
             },
         }
     if goal.target_record_type == "diet":
@@ -7330,6 +7337,11 @@ def _apply_authorized_symptom_payload(
         "body_part": authorization["body_part"],
         "description": authorization["description"],
     }
+    raw_data = args.get("data")
+    if isinstance(raw_data, dict):
+        for key in ("record_date", "occurred_at", "severity"):
+            if raw_data.get(key) not in (None, "", []):
+                data[key] = raw_data[key]
     authorized_args: Dict[str, Any] = {"record_type": "symptom", "data": data}
     # This flag is injected by the server-side channel gate. Preserve only the
     # fail-closed True value while replacing all model-authored health fields.
@@ -7374,6 +7386,18 @@ def _prepare_health_record_args_for_validation(
             args["data"] = data
         except (json.JSONDecodeError, ValueError):
             data = None
+    if not isinstance(data, dict):
+        return args
+
+    # One canonical alias normalizer feeds both validation and the later
+    # capability gateway.  The validator must inspect the same record_date /
+    # start_date that policy authorizes and the adapter eventually persists.
+    from app.services.agent_kernel.capability_policy import (
+        normalize_health_record_dispatch_args,
+    )
+
+    args = normalize_health_record_dispatch_args(args)
+    data = args.get("data")
     if not isinstance(data, dict):
         return args
 
@@ -19753,6 +19777,22 @@ class AgentExecutor:
             # typed 聊天=manual;siri=siri;其余(语音/未声明)=voice。此前硬编码
             # voice 把打字记录也标成语音,污染任何依赖 source 的下游区分。
             payload = dict(data)
+            raw_record_date = str(payload.pop("record_date", "") or "").strip()
+            if raw_record_date and not payload.get("occurred_at"):
+                try:
+                    target_date = date.fromisoformat(raw_record_date[:10])
+                except ValueError:
+                    return local_write_rejection(
+                        "symptom_record_date_invalid",
+                        message="症状记录日期无效。",
+                        recovery_guidance="请使用 YYYY-MM-DD 或今天、昨天等明确日期。",
+                    )
+                reference_now = self._agent_kernel_reference_now()
+                payload["occurred_at"] = reference_now.replace(
+                    year=target_date.year,
+                    month=target_date.month,
+                    day=target_date.day,
+                ).isoformat()
             channel = getattr(self, "_turn_channel", None)
             default_source = "manual" if channel == "typed" else ("siri" if channel == "siri" else "voice")
             if payload.get("source") not in ("manual", "voice", "siri"):

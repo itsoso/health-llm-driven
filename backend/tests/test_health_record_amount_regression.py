@@ -71,7 +71,13 @@ def _semantic_health_record_turn(args_raw):
         }.get(str(data.get("type") or ""), "排便")
         return f"记录{date_prefix}{kind}"
     if record_type == "illness":
-        return f"记录{data.get('name') or data.get('illness_name') or '疾病'}"
+        name = data.get("name") or data.get("illness_name") or "疾病"
+        severity = data.get("severity")
+        return (
+            f"记录{name}严重度{severity}分"
+            if severity not in (None, "")
+            else f"记录{name}"
+        )
     if record_type == "medication":
         name = data.get("medication_name") or data.get("name") or "药"
         dosage = data.get("actual_dosage") or data.get("dosage") or ""

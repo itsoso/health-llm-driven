@@ -314,6 +314,26 @@ def test_simple_symptom_goal_binds_the_current_user_observation():
     assert "只创建 1 条 symptom" in prompt
 
 
+def test_historical_symptom_goal_keeps_the_user_owned_date():
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(
+        user_id=1,
+        channel="mobile",
+        text="记录昨天头痛",
+    )
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind == "simple_health_record"
+    assert goal.target_record_type == "symptom"
+    assert goal.target_date == "2026-07-16"
+
+
 def test_simple_diet_goal_binds_explicit_meal_and_foods_from_current_turn():
     context = ExecutionContext.for_test(user_id=1, channel="mobile")
     envelope = AgentEnvelope(

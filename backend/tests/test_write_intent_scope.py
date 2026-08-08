@@ -2,6 +2,7 @@ import pytest
 
 from app.services.utterance_intent_lexicon import WRITE_COMMAND_ACTIONS
 from app.services.write_intent_scope import (
+    authorized_health_record_clauses,
     has_explicit_authorizing_write_request,
     has_negated_write_scope,
     is_historical_write_reference,
@@ -11,6 +12,25 @@ from app.services.write_intent_scope import (
     is_write_result_check,
     split_write_clauses,
 )
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "记录口腔溃疡，算了吧不要记了",
+        "记录体重71kg，撤销吧别记录了",
+        "等我确诊后再记录感冒",
+        "等以后如果我确诊感冒，再记录感冒",
+        "确诊后再记录感冒",
+        "请记录朋友的感冒",
+        "帮我记录我妈妈的血压120/80",
+    ),
+)
+def test_compound_revocation_deferred_condition_and_third_party_have_no_authorized_clause(
+    text: str,
+) -> None:
+    assert authorized_health_record_clauses(text) == ()
+    assert has_explicit_authorizing_write_request(text) is False
 
 
 def test_negation_composes_across_bridges_and_all_write_actions() -> None:

@@ -276,11 +276,7 @@ def _compile_simple_health_record_goal(
         kind="simple_health_record",
         domain=intent.domain,
         operation="create",
-        target_date=(
-            _target_date(text, context, ())
-            if record_type in {"diet", "water"}
-            else context.current_time.date().isoformat()
-        ),
+        target_date=_target_date(text, context, ()),
         target_meal_types=target_meal_types,
         target_record_type=record_type,
         target_values=target_values,

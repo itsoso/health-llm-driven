@@ -38,6 +38,73 @@ def _snapshot(text: str, channel: str = "chat") -> TurnSnapshot:
     )
 
 
+def _attachment_snapshot(text: str) -> TurnSnapshot:
+    context = ExecutionContext.for_test(user_id=1, channel="chat")
+    envelope = AgentEnvelope(
+        user_id=1,
+        channel="chat",
+        text=text,
+        media=({"kind": "image"},),
+    )
+    return TurnSnapshot(
+        envelope=envelope,
+        context=context,
+        intent=build_intent_frame(envelope, context),
+    )
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录口腔溃疡，算了吧不要记了",
+        "等我确诊后再记录感冒",
+        "等以后如果我确诊感冒，再记录感冒",
+        "确诊后再记录感冒",
+        "请记录朋友的感冒",
+        "帮我记录我妈妈的感冒",
+    ),
+)
+def test_non_authorizing_semantic_frames_block_health_record(message):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+    )
+
+    assert decision.action == "block"
+
+
+def test_attachment_diet_authorization_still_binds_explicit_meal_slot():
+    snapshot = _attachment_snapshot("记录早餐这餐")
+
+    matching = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "breakfast", "food_items": "鸡蛋"},
+            },
+        ),
+    )
+    wrong_meal = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "dinner", "food_items": "鸡蛋"},
+            },
+        ),
+    )
+
+    assert matching.action == "allow"
+    assert wrong_meal.action == "block"
+    assert wrong_meal.reason == "health_record_target_mismatch"
+
+
 def _request(name: str, args: dict, *, source: str = "structured") -> ToolExecutionRequest:
     return ToolExecutionRequest(tool_name=name, arguments=args, source=source)
 
@@ -1007,6 +1074,187 @@ def test_medication_authorization_binds_name_and_dosage():
     assert wrong_dose.reason == "health_record_target_mismatch"
 
 
+@pytest.mark.parametrize(
+    "conflicting_args",
+    (
+        {
+            "record_type": "medication",
+            "data": {
+                "medication_name": "阿奇霉素",
+                "actual_dosage": "2粒",
+                "dose": "10粒",
+            },
+        },
+        {
+            "record_type": "medication",
+            "data": {
+                "medication_name": "阿奇霉素",
+                "dosage": "2粒",
+            },
+            "dose": "10粒",
+        },
+    ),
+)
+def test_medication_authorization_rejects_conflicting_execution_aliases(
+    conflicting_args,
+):
+    decision = decide_tool_capability(
+        _snapshot("记录我吃了阿奇霉素2粒"),
+        _request("health_record", conflicting_args),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "health_record_target_mismatch"
+
+
+def test_record_date_alias_is_canonicalized_before_the_gateway_dispatches():
+    decision = decide_tool_capability(
+        _snapshot("记录昨天体重70kg"),
+        _request(
+            "health_record",
+            {
+                "record_type": "weight",
+                "data": {"weight": 70, "date": "2026-07-16"},
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args["data"]["record_date"] == "2026-07-16"
+
+
+def test_record_date_alias_cannot_move_a_historical_write_to_today():
+    decision = decide_tool_capability(
+        _snapshot("记录昨天体重70kg"),
+        _request(
+            "health_record",
+            {
+                "record_type": "weight",
+                "data": {"weight": 70, "date": "2026-07-17"},
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "health_record_target_mismatch"
+
+
+@pytest.mark.parametrize(
+    "extra_data",
+    (
+        {"status": "resolved"},
+        {"end_date": "2026-07-17"},
+    ),
+)
+def test_illness_create_rejects_model_invented_health_fields(extra_data):
+    decision = decide_tool_capability(
+        _snapshot("记录口腔溃疡"),
+        _request(
+            "health_record",
+            {
+                "record_type": "illness",
+                "data": {"name": "口腔溃疡", **extra_data},
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "health_record_target_mismatch"
+
+
+@pytest.mark.parametrize("record_type", ("illness", "symptom"))
+def test_unmentioned_model_severity_is_removed_from_normalized_dispatch(
+    record_type,
+):
+    if record_type == "illness":
+        message = "记录口腔溃疡"
+        data = {"name": "口腔溃疡", "severity": 5}
+    else:
+        message = "记录头痛"
+        data = {
+            "body_part": "head",
+            "description": "头痛",
+            "severity": 5,
+        }
+
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {"record_type": record_type, "severity": 5, "data": data},
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert "severity" not in decision.normalized_args
+    assert "severity" not in decision.normalized_args["data"]
+
+
+def test_illness_create_allows_safe_active_default_and_explicit_severity():
+    decision = decide_tool_capability(
+        _snapshot("记录口腔溃疡严重度6分"),
+        _request(
+            "health_record",
+            {
+                "record_type": "illness",
+                "data": {
+                    "name": "口腔溃疡",
+                    "severity": 6,
+                    "status": "active",
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+
+
+def test_illness_create_binds_explicit_notes_and_rejects_invented_notes():
+    snapshot = _snapshot("记录口腔溃疡，备注舌尖疼")
+
+    matching = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "illness",
+                "data": {"name": "口腔溃疡", "notes": "舌尖疼"},
+            },
+        ),
+    )
+    invented = decide_tool_capability(
+        _snapshot("记录口腔溃疡"),
+        _request(
+            "health_record",
+            {
+                "record_type": "illness",
+                "data": {"name": "口腔溃疡", "notes": "舌尖疼"},
+            },
+        ),
+    )
+
+    assert matching.action == "allow"
+    assert invented.action == "block"
+    assert invented.reason == "health_record_target_mismatch"
+
+
+def test_illness_explicit_status_alias_is_canonicalized_for_dispatch():
+    decision = decide_tool_capability(
+        _snapshot("记录已经痊愈的感冒"),
+        _request(
+            "health_record",
+            {
+                "record_type": "illness",
+                "status": "resolved",
+                "data": {"name": "感冒"},
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args["data"]["status"] == "resolved"
+
+
 def test_medication_authorization_binds_observed_strength_separately_from_dosage():
     snapshot = _snapshot("记录阿奇霉素2粒每粒250mg")
 
@@ -1335,6 +1583,99 @@ def test_diet_write_normalizes_equivalent_food_quantities_and_separators():
     )
 
     assert decision.action == "allow"
+
+
+def test_compound_diet_write_preserves_food_names_that_start_with_conjunction_character():
+    snapshot = _snapshot("记录早餐和牛200g，并记录喝水300ml")
+
+    matching = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "breakfast", "food_items": "和牛200g"},
+            },
+        ),
+    )
+    truncated = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "breakfast", "food_items": "牛200g"},
+            },
+        ),
+    )
+
+    assert matching.action == "allow"
+    assert truncated.action == "block"
+    assert truncated.reason == "health_record_target_mismatch"
+
+
+@pytest.mark.parametrize(
+    ("message", "data"),
+    (
+        (
+            "明天9点吃药提醒",
+            {
+                "title": "吃药",
+                "remind_at": "2026-07-18T09:00:00+08:00",
+            },
+        ),
+        (
+            "每天9点提醒我吃药",
+            {"title": "吃药", "time": "09:00", "recurrence": "daily"},
+        ),
+    ),
+)
+def test_reminder_binding_supports_scheduled_date_and_post_marker_title(
+    message, data
+):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request("health_record", {"record_type": "reminder", "data": data}),
+    )
+
+    assert decision.action == "allow"
+
+
+def test_recurring_reminder_binds_explicit_start_date():
+    snapshot = _snapshot("从明天开始每天9点提醒我吃药")
+
+    matching = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "reminder",
+                "data": {
+                    "title": "吃药",
+                    "remind_at": "2026-07-18T09:00:00+08:00",
+                    "recurrence": "daily",
+                },
+            },
+        ),
+    )
+    wrong_start = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "reminder",
+                "data": {
+                    "title": "吃药",
+                    "remind_at": "2026-07-19T09:00:00+08:00",
+                    "recurrence": "daily",
+                },
+            },
+        ),
+    )
+
+    assert matching.action == "allow"
+    assert wrong_start.action == "block"
+    assert wrong_start.reason == "health_record_target_mismatch"
 
 
 def test_contextual_goal_target_remains_authoritative_when_clause_is_deictic():
@@ -2265,9 +2606,9 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v3"
+    assert payload["contract_version"] == "agent-capability-policy-v4"
     assert payload["health_record_target_binding"] == {
-        "version": "authorized-target-set-v2",
+        "version": "authorized-target-set-v3",
         "domain_types": {
             "diet": "diet",
             "exercise": "exercise",

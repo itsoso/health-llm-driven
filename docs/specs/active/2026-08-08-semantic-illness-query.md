@@ -160,6 +160,16 @@ unresolvable positive target fails closed to clarification. Object-fronted
 direct commands such as `把口腔溃疡记录下来` remain writable; read requests such
 as `请查询口腔溃疡记录` do not.
 
+The target-set boundary also treats deferred conditions (`确诊后再记录`),
+third-party subjects and composed revocations as non-authorizing. Argument
+aliases are canonicalized before validation and the same normalized payload is
+then dispatched, so a field cannot be accepted under one alias and ignored by
+the adapter. User-supplied illness status, severity and notes are bound exactly.
+When a model fills an optional severity that the user never stated, the gate
+projects that field out before dispatch rather than persisting an invented
+health fact or rejecting the otherwise exact write. Non-default status,
+end-date, entity, quantity and date drift still fail closed.
+
 Attribution is grammatical rather than source-allowlisted: arbitrary subjects
 such as `朋友/同事/体检报告` plus a reporting predicate do not gain current-user
 authority. This applies equally to commands and observation facts such as
@@ -412,3 +422,4 @@ These questions do not block the illness slice.
 | 2026-08-08 | Made write authorization positive and action-scoped | Fresh reviews proved that finite veto matching still dispatched reads, result checks, reported speech and trailing revocations. |
 | 2026-08-08 | Bound authority to the concrete clause and target | Fresh reviews proved that arbitrary reports, observation facts and denied sibling targets could inherit whole-turn write authority. |
 | 2026-08-09 | Upgraded authorization to an exact target set | Fresh reviews found multi-target, alias, meal/date/entity and medication-dose gaps in single-clause binding. |
+| 2026-08-09 | Canonicalized and projected the dispatch payload | Fresh exact-commit reviews found composed revocation, deferred/third-party authority, adapter-alias, date, reminder, meal and model-invented-field gaps. |

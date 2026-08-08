@@ -68,6 +68,7 @@ def test_symptom_goal_replaces_model_invented_symptom_with_current_turn_payload(
         kind="simple_health_record",
         domain="symptom",
         operation="create",
+        target_date="2026-07-26",
         target_record_type="symptom",
         target_values=(
             ("body_part", "respiratory"),
@@ -95,6 +96,7 @@ def test_symptom_goal_replaces_model_invented_symptom_with_current_turn_payload(
         "data": {
             "body_part": "respiratory",
             "description": "记录刚才打了一个喷嚏",
+            "record_date": "2026-07-26",
         },
     }
 

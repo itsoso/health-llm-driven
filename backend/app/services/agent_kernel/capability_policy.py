@@ -61,8 +61,8 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v3"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v2"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v4"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v3"
 _HEALTH_RECORD_DOMAIN_TYPES = {
     "diet": "diet",
     "water": "water",
@@ -291,6 +291,8 @@ def decide_tool_capability(
     """
     tool_name = str(request.tool_name or "").strip()
     args = _parse_args(request.arguments)
+    if tool_name == "health_record":
+        args = normalize_health_record_dispatch_args(args)
     primary = snapshot.intent.primary
     health_record_target_authorized = False
 
@@ -672,6 +674,69 @@ def _parse_args(raw: Any) -> dict[str, Any]:
         return {}
 
 
+def normalize_health_record_dispatch_args(
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    """Canonicalize aliases before both policy comparison and dispatch.
+
+    The gateway dispatches ``CapabilityDecision.normalized_args``.  This makes
+    the exact payload inspected by the authorization policy the payload later
+    consumed by the executor, instead of merely *recognizing* aliases that an
+    adapter would ignore.
+    """
+    normalized = dict(args)
+    raw_data = normalized.get("data")
+    data = dict(raw_data) if isinstance(raw_data, dict) else {}
+    record_type = recipe_replay_record_type(normalized)
+
+    if record_type == "illness":
+        canonical_key = "start_date"
+        candidates = (
+            data.get("start_date"),
+            data.get("record_date"),
+            data.get("date"),
+            normalized.get("start_date"),
+            normalized.get("record_date"),
+            normalized.get("date"),
+        )
+        for key in ("status", "notes"):
+            if data.get(key) in (None, "", []) and normalized.get(key) not in (
+                None,
+                "",
+                [],
+            ):
+                data[key] = normalized[key]
+    elif record_type == "symptom":
+        canonical_key = "record_date"
+        candidates = (
+            data.get("record_date"),
+            data.get("date"),
+            normalized.get("record_date"),
+            normalized.get("date"),
+        )
+    elif record_type == "reminder":
+        candidates = ()
+        canonical_key = ""
+    else:
+        canonical_key = "record_date"
+        candidates = (
+            data.get("record_date"),
+            data.get("date"),
+            normalized.get("record_date"),
+            normalized.get("date"),
+        )
+    canonical_date = next(
+        (value for value in candidates if value not in (None, "", [])),
+        None,
+    )
+    if canonical_key and canonical_date is not None:
+        data[canonical_key] = canonical_date
+
+    if isinstance(raw_data, dict) or data:
+        normalized["data"] = data
+    return normalized
+
+
 def recipe_replay_record_type(args: dict[str, Any]) -> str:
     """Return the normalized health_record type used by recipe policy checks."""
     data = args.get("data") if isinstance(args.get("data"), dict) else {}
@@ -888,6 +953,14 @@ def _deterministic_target_values(
         targets = _illness_targets(clause)
         if targets:
             values["names"] = targets
+        if notes := _target_text_after_marker(clause, "备注"):
+            values["notes"] = notes
+        if any(term in clause for term in ("已痊愈", "痊愈", "已经好了", "已好了")):
+            values["status"] = "resolved"
+        elif any(term in clause for term in ("好转", "改善中")):
+            values["status"] = "improving"
+        elif any(term in clause for term in ("发作中", "还没好", "仍未好")):
+            values["status"] = "active"
     elif record_type == "diet":
         meal_food_targets = _diet_meal_food_targets(clause)
         if meal_food_targets:
@@ -973,7 +1046,7 @@ def _deterministic_target_values(
             if target_match.group("unit"):
                 values["target_unit"] = target_match.group("unit").lower()
     elif record_type == "reminder":
-        title = _target_text_before_marker(clause, "提醒")
+        title = _reminder_target_title(clause)
         if title:
             values["titles"] = (title,)
         clocks = tuple(_CLOCK_RE.finditer(clause))
@@ -1012,8 +1085,22 @@ def _target_text_before_marker(clause: str, marker: str) -> str:
         value,
     )
     value = _CLOCK_RE.sub("", value)
-    value = re.sub(r"^(?:从)?(?:到|至)?", "", value)
+    value = re.sub(
+        r"^(?:从)?(?:今天|今日|明天|明日|后天)(?:开始|起)?",
+        "",
+        value,
+    )
+    value = re.sub(r"^(?:从)?(?:到|至)?(?:每天|每日)?", "", value)
     return value.strip("是为：:，,。.!！；;的 ")
+
+
+def _reminder_target_title(clause: str) -> str:
+    title = _target_text_before_marker(clause, "提醒")
+    if title:
+        return title
+    title = _target_text_after_marker(clause, "提醒")
+    title = re.sub(r"^(?:一下)?(?:我|自己)", "", title)
+    return title.strip("是为：:，,。.!！；;的 ")
 
 
 def _diet_meal_food_targets(clause: str) -> dict[str, str]:
@@ -1242,10 +1329,7 @@ def _target_values_mismatch(
             ).strip().lower(),
             "",
         )
-        if expected.get("attachment_authorized"):
-            if not requested_meal:
-                return True
-        else:
+        if expected.get("meal_types"):
             allowed_meals = {
                 _MEAL_TYPE_ALIASES.get(
                     str(value).strip().lower(), str(value).strip().lower()
@@ -1254,6 +1338,8 @@ def _target_values_mismatch(
             }
             if not requested_meal or requested_meal not in allowed_meals:
                 return True
+        elif expected.get("attachment_authorized") and not requested_meal:
+            return True
         requested_food = _effective_argument_value(
             args,
             data,
@@ -1337,6 +1423,46 @@ def _target_values_mismatch(
         }
         if not requested_name or _normalize_entity_name(requested_name) not in allowed_names:
             return True
+        requested_status = str(
+            _effective_argument_value(
+                args,
+                data,
+                data_keys=("status",),
+                arg_keys=("status",),
+            )
+            or ""
+        ).strip().lower()
+        expected_status = str(expected.get("status") or "").strip().lower()
+        if expected_status:
+            if requested_status != expected_status:
+                return True
+        elif requested_status and requested_status != "active":
+            return True
+        requested_end_date = _effective_argument_value(
+            args,
+            data,
+            data_keys=("end_date",),
+            arg_keys=("end_date",),
+        )
+        if requested_end_date not in (None, "", []):
+            return True
+        requested_notes = str(
+            _effective_argument_value(
+                args,
+                data,
+                data_keys=("notes",),
+                arg_keys=("notes",),
+            )
+            or ""
+        ).strip()
+        expected_notes = str(expected.get("notes") or "").strip()
+        if expected_notes:
+            if _normalize_entity_name(requested_notes) != _normalize_entity_name(
+                expected_notes
+            ):
+                return True
+        elif requested_notes:
+            return True
     if record_type == "symptom":
         requested_body_part = str(
             _effective_argument_value(
@@ -1366,18 +1492,27 @@ def _target_values_mismatch(
             expected_description not in normalized_description
         ):
             return True
-    if record_type in {"illness", "symptom"} and expected.get("severity") is not None:
+    if record_type in {"illness", "symptom"}:
         requested_severity = _effective_argument_value(
             args,
             data,
             data_keys=("severity",),
             arg_keys=("severity",),
         )
-        if requested_severity is None or not _numbers_match(
-            expected["severity"],
-            requested_severity,
-        ):
-            return True
+        if expected.get("severity") is not None:
+            if requested_severity is None or not _numbers_match(
+                expected["severity"],
+                requested_severity,
+            ):
+                return True
+        elif requested_severity not in (None, "", []):
+            # Severity has no safe semantic default.  The model frequently
+            # fills the optional schema field with a plausible midpoint even
+            # when the user never supplied one.  Project that untrusted field
+            # out of the dispatch payload instead of either persisting an
+            # invented health fact or rejecting an otherwise exact write.
+            data.pop("severity", None)
+            args.pop("severity", None)
     if record_type in {"medication", "supplement"}:
         if record_type == "medication":
             name_keys = ("medication_name", "name")
@@ -1403,12 +1538,15 @@ def _target_values_mismatch(
                 _normalize_entity_name(name): _normalize_medication_dosage(dosage)
                 for name, dosage in (expected.get("dosages") or {}).items()
             }
-            requested_dosage = _effective_argument_value(
-                args,
-                data,
-                data_keys=("actual_dosage", "dosage"),
-                arg_keys=("actual_dosage", "dosage"),
-            )
+            dosage_values = _medication_actual_dosage_values(args, data)
+            normalized_dosage_values = {
+                _normalize_medication_dosage(value)
+                for value in dosage_values
+                if _normalize_medication_dosage(value)
+            }
+            if len(normalized_dosage_values) > 1:
+                return True
+            requested_dosage = dosage_values[0] if dosage_values else None
             normalized_requested_dosage = _normalize_medication_dosage(
                 requested_dosage
             )
@@ -1624,11 +1762,39 @@ def _target_values_mismatch(
             if requested_recurrence != expected["recurrence"]:
                 return True
 
-    requested_date = _effective_record_date(record_type, args, data)
-    effective_date = requested_date or str(expected.get("default_date") or "")
-    if str(expected.get("target_date") or "") != effective_date:
-        return True
+    skip_default_recurring_date = (
+        record_type == "reminder"
+        and bool(expected.get("recurrence"))
+        and str(expected.get("target_date") or "")
+        == str(expected.get("default_date") or "")
+    )
+    if not skip_default_recurring_date:
+        requested_date = _effective_record_date(record_type, args, data)
+        effective_date = requested_date or str(expected.get("default_date") or "")
+        if str(expected.get("target_date") or "") != effective_date:
+            return True
     return False
+
+
+def _medication_actual_dosage_values(
+    args: dict[str, Any],
+    data: dict[str, Any],
+) -> tuple[Any, ...]:
+    values: list[Any] = []
+    for container in (data, args):
+        for key in ("actual_dosage", "dose"):
+            value = container.get(key)
+            if value not in (None, "", []):
+                values.append(value)
+        legacy = container.get("dosage")
+        if legacy not in (None, "", []) and re.fullmatch(
+            r"(?:\d+(?:\.\d+)?|[一二两三四五六七八九十半])\s*"
+            r"(?:粒|片|袋|支|丸|颗|滴|喷|单位|iu|u)",
+            str(legacy).strip(),
+            flags=re.IGNORECASE,
+        ):
+            values.append(legacy)
+    return tuple(values)
 
 
 def _effective_argument_value(
@@ -1655,14 +1821,28 @@ def _effective_record_date(
             args,
             data,
             data_keys=("start_date",),
-            arg_keys=("start_date",),
+            arg_keys=(),
+        )
+    elif record_type == "symptom":
+        value = _effective_argument_value(
+            args,
+            data,
+            data_keys=("occurred_at", "record_date"),
+            arg_keys=(),
+        )
+    elif record_type == "reminder":
+        value = _effective_argument_value(
+            args,
+            data,
+            data_keys=("remind_at",),
+            arg_keys=(),
         )
     else:
         value = _effective_argument_value(
             args,
             data,
-            data_keys=("record_date", "date"),
-            arg_keys=("record_date", "date"),
+            data_keys=("record_date",),
+            arg_keys=(),
         )
     return str(value or "").strip()[:10]
 
@@ -1705,6 +1885,16 @@ def _normalize_reminder_title(value: Any) -> str:
 
 
 def _food_targets_match(expected: Any, requested: Any) -> bool:
+    def split_text(value: Any) -> list[str]:
+        raw_parts: list[str] = []
+        for punct_part in re.split(r"[,，、;；/|+＋]", str(value or "")):
+            # A conjunction is a separator only when it has an entity on both
+            # sides.  This preserves lexical prefixes such as ``和牛``.
+            raw_parts.extend(
+                re.split(r"(?<=.)[和与及](?=.)", punct_part)
+            )
+        return raw_parts
+
     def parts(value: Any) -> tuple[str, ...]:
         if isinstance(value, (list, tuple)):
             raw_parts = []
@@ -1718,14 +1908,9 @@ def _food_targets_match(expected: Any, requested: Any) -> bool:
                     elif name:
                         raw_parts.append(str(name))
                     continue
-                raw_parts.extend(
-                    re.split(r"[,，、;；/|+＋]|(?:和|与|及)", str(item))
-                )
+                raw_parts.extend(split_text(item))
         else:
-            raw_parts = re.split(
-                r"[,，、;；/|+＋]|(?:和|与|及)",
-                str(value or ""),
-            )
+            raw_parts = split_text(value)
         return tuple(
             sorted(
                 _canonical_food_part(part)

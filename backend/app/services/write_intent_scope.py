@@ -148,13 +148,16 @@ _POST_ACTION_DENIAL_RE = re.compile(
     r"先不要了|不要了|未获授权|没有授权|未经授权|不被允许|"
     r"是不允许的?|是不可以的?|不允许|我不同意|不行)"
 )
-_TRAILING_REVOCATION_CLAUSE_RE = re.compile(
-    r"^(?:还是)?(?:算了(?:吧)?|取消(?:吧|了|这件事|刚才的请求)?|"
+_TRAILING_REVOCATION_ATOM = (
+    r"(?:还是)?(?:算了(?:吧)?|取消(?:吧|了|这件事|刚才的请求)?|"
     r"撤销(?:吧|了)?|撤回|暂缓|搁置|缓一缓|先缓缓|推迟|"
     r"等一下再说|稍后再说|先放一放|(?:这件事)?作罢|"
-    r"先不(?:记|记录|保存|录入|写入|新增|打卡)了|"
-    r"别(?:记|记录|保存|录入|写入|新增|打卡)了|"
-    r"先不要了|不要了|我不同意|不行)$"
+    r"(?:先)?不(?:要)?(?:再)?(?:记|记录|保存|录入|写入|新增|打卡)了|"
+    r"别(?:再)?(?:记|记录|保存|录入|写入|新增|打卡)了|"
+    r"先不要了|不要了|我不同意|不行)"
+)
+_TRAILING_REVOCATION_CLAUSE_RE = re.compile(
+    rf"^(?:{_TRAILING_REVOCATION_ATOM})+$"
 )
 _RESULT_CHECK_LEADS = (
     "确认",
@@ -209,6 +212,26 @@ _HYPOTHETICAL_PREFIX_RE = re.compile(
 )
 _POLITE_CONDITIONAL_PREFIX_RE = re.compile(
     r"^(?:如果|假如)(?:可以|方便|方便的话|你方便|你可以|你能|小巴可以|小巴能)"
+)
+_DEFERRED_CONDITION_PREFIX_RE = re.compile(
+    r"^(?:"
+    r"(?:等|待)(?!一下(?:[，,]|$)|一会儿(?:[，,]|$)|会儿(?:[，,]|$))"
+    r".{0,48}(?:后|以后|之后)(?:.{0,16}(?:再|才))?"
+    r"|.{1,40}(?:后|以后|之后)(?:再|才)(?:帮我|请)?"
+    r"(?:记|记录|保存|录入|写入|新增|打卡)"
+    r")"
+)
+_THIRD_PARTY_WRITE_SUBJECT_RE = re.compile(
+    r"(?:(?:给|替|为)(?:我(?:的)?)?"
+    r"(?:朋友|同事|医生|家人|妈妈|母亲|爸爸|父亲|妻子|丈夫|"
+    r"孩子|儿子|女儿|他|她|别人|患者).{0,12}"
+    r"(?:记|记录|保存|录入|写入|新增|打卡))|"
+    r"(?:(?:我(?:的)?)?"
+    r"(?:朋友|同事|医生|家人|妈妈|母亲|爸爸|父亲|妻子|丈夫|"
+    r"孩子|儿子|女儿|他|她|别人|患者)的)"
+)
+_WRITE_ATTRIBUTE_CONTINUATION_RE = re.compile(
+    r"^(?:备注|注释|说明)(?:是|为|：|:)?\S+"
 )
 _POST_ATTRIBUTION_RE = re.compile(
     r"(?:这是|这只是|上面是|前面是).{0,12}(?:说的|写的|提到的)?"
@@ -799,6 +822,8 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
                 clauses[-1] = f"{clauses[-1]}，{raw_clause}"
             elif clauses and bare_followup_write:
                 clauses[-1] = f"{clauses[-1]}，{raw_clause}"
+            elif clauses and _WRITE_ATTRIBUTE_CONTINUATION_RE.fullmatch(raw_clause):
+                clauses[-1] = f"{clauses[-1]}，{raw_clause}"
             else:
                 clauses.append(raw_clause)
         for clause in clauses:
@@ -808,7 +833,13 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
                 continue
 
             polite_condition = bool(_POLITE_CONDITIONAL_PREFIX_RE.search(clause))
-            if _HYPOTHETICAL_PREFIX_RE.search(clause) and not polite_condition:
+            if (
+                _DEFERRED_CONDITION_PREFIX_RE.search(clause)
+                or (
+                    _HYPOTHETICAL_PREFIX_RE.search(clause)
+                    and not polite_condition
+                )
+            ):
                 hypothetical_scope = True
 
             reported_clause = is_reported_write_reference(clause)
@@ -817,7 +848,11 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
                 if _POST_ATTRIBUTION_RE.search(clause):
                     del authorized[segment_start:]
 
-            if reported_scope or hypothetical_scope:
+            if (
+                reported_scope
+                or hypothetical_scope
+                or _THIRD_PARTY_WRITE_SUBJECT_RE.search(clause)
+            ):
                 continue
             if (
                 is_write_capability_question(clause)
@@ -941,6 +976,12 @@ def has_explicit_authorizing_write_request(value: str) -> bool:
     """
     context = _last_write_action_context(value)
     if context is None:
+        return False
+    normalized = normalize_write_scope_text(value)
+    if (
+        _DEFERRED_CONDITION_PREFIX_RE.search(normalized)
+        or _THIRD_PARTY_WRITE_SUBJECT_RE.search(normalized)
+    ):
         return False
     if has_negated_write_scope(value):
         return False

@@ -1,11 +1,13 @@
 import json
 from dataclasses import replace
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
 
 from app.services.agent_executor import AgentExecutor
 from app.services.agent_kernel.intent_frame import build_intent_frame
+from app.services.agent_kernel.context import build_turn_snapshot
 from app.services.agent_kernel.goal_spec import compile_goal_spec
 from app.services.agent_kernel.tool_gateway import (
     ToolGateway,
@@ -375,6 +377,11 @@ def test_gateway_mixed_polarity_turn_binds_the_positive_target() -> None:
         "记录体重71kg，取消这件事",
         "记录体重71kg，撤回",
         "帮我记录口腔溃疡暂缓",
+        "记录口腔溃疡，算了吧不要记了",
+        "等我确诊后再记录感冒",
+        "等以后如果我确诊感冒，再记录感冒",
+        "请记录朋友的感冒",
+        "帮我记录我妈妈的感冒",
     ),
 )
 async def test_gateway_never_dispatches_non_authorizing_health_record_frames(
@@ -403,6 +410,40 @@ async def test_gateway_never_dispatches_non_authorizing_health_record_frames(
     assert result.decision is not None
     assert result.decision.action == "block"
     assert json.loads(result.content)["dispatch_started"] is False
+
+
+@pytest.mark.asyncio
+async def test_gateway_dispatches_canonical_record_date_not_ignored_alias():
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "ok"
+
+    result = await ToolGateway(_snapshot("记录昨天体重70kg")).execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={
+                "record_type": "weight",
+                "data": {"weight": 70, "date": "2026-07-16"},
+            },
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [
+        {
+            "record_type": "weight",
+            "data": {
+                "weight": 70,
+                "date": "2026-07-16",
+                "record_date": "2026-07-16",
+            },
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -617,6 +658,41 @@ async def test_gateway_execute_dispatches_allowed_request_exactly_once():
     assert result.content == '{"id": 1, "resource_type": "diet_record"}'
     assert result.decision is not None
     assert result.decision.action == "allow"
+
+
+@pytest.mark.asyncio
+async def test_gateway_strips_unmentioned_illness_severity_before_dispatch():
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "ok"
+
+    result = await ToolGateway(_snapshot("记录口腔溃疡")).execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={
+                "record_type": "illness",
+                "severity": 5,
+                "data": {
+                    "name": "口腔溃疡",
+                    "severity": 5,
+                    "status": "active",
+                },
+            },
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [
+        {
+            "record_type": "illness",
+            "data": {"name": "口腔溃疡", "status": "active"},
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -958,6 +1034,145 @@ async def test_execute_tool_allows_explicit_health_record_write(db, monkeypatch)
         },
     }]
     assert '"id": 1' in result
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_persists_historical_symptom_on_the_authorized_date(
+    db,
+    monkeypatch,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_channel = "typed"
+    executor._current_turn_user_message = "记录昨天头痛"
+    executor._agent_kernel_snapshot = build_turn_snapshot(
+        db,
+        user_id=1,
+        channel="typed",
+        text="记录昨天头痛",
+        now_utc=datetime(2026, 7, 17, 4, 0, tzinfo=timezone.utc),
+    )
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+    captured = {}
+
+    async def fake_post(url, headers, payload):
+        captured["url"] = url
+        captured["payload"] = payload
+        return '{"id": 1, "resource_type": "symptom_entry"}'
+
+    monkeypatch.setattr(executor, "_api_post", fake_post)
+
+    await executor._execute_tool(
+        "health_record",
+        {
+            "record_type": "symptom",
+            "data": {
+                "body_part": "head",
+                "description": "头痛",
+                "record_date": "2026-07-16",
+            },
+        },
+        None,
+    )
+
+    assert captured["url"].endswith("/symptoms")
+    assert captured["payload"]["occurred_at"].startswith("2026-07-16T")
+    assert "record_date" not in captured["payload"]
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_validates_and_dispatches_the_same_canonical_date_alias(
+    db,
+    monkeypatch,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_channel = "typed"
+    executor._current_turn_user_message = "记录昨天体重70kg"
+    executor._agent_kernel_snapshot = build_turn_snapshot(
+        db,
+        user_id=1,
+        channel="typed",
+        text="记录昨天体重70kg",
+        now_utc=datetime(2026, 7, 17, 4, 0, tzinfo=timezone.utc),
+    )
+    validated = []
+    dispatched = []
+
+    def fake_validate(tool_name, args, db, user_id, reference_now=None):
+        validated.append(dict(args["data"]))
+        return {"error": None, "data": args}
+
+    async def fake_exec(base, headers, args):
+        dispatched.append(dict(args["data"]))
+        return '{"id": 1, "resource_type": "weight_record"}'
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        fake_validate,
+    )
+    monkeypatch.setattr(executor, "_exec_health_record", fake_exec)
+
+    await executor._execute_tool(
+        "health_record",
+        {
+            "record_type": "weight",
+            "data": {"weight": 70, "date": "2026-07-16"},
+        },
+        None,
+    )
+
+    assert validated[0]["record_date"] == "2026-07-16"
+    assert dispatched[0]["record_date"] == "2026-07-16"
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_never_dispatches_conflicting_medication_dose_aliases(
+    db,
+    monkeypatch,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_channel = "typed"
+    executor._current_turn_user_message = "记录我吃了阿奇霉素2粒"
+    dispatched = []
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    async def fake_exec(base, headers, args):
+        dispatched.append(args)
+        return "unexpected"
+
+    monkeypatch.setattr(executor, "_exec_health_record", fake_exec)
+
+    result = await executor._execute_tool(
+        "health_record",
+        {
+            "record_type": "medication",
+            "data": {
+                "medication_name": "阿奇霉素",
+                "dosage": "2粒",
+                "dose": "10粒",
+            },
+        },
+        None,
+    )
+
+    assert dispatched == []
+    assert json.loads(result)["error_code"] == "health_record_target_mismatch"
 
 
 @pytest.mark.asyncio

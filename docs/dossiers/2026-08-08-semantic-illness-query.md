@@ -194,6 +194,28 @@ validation and no-match honesty address those risks.
   retry recovery, write-outcome honesty and medication confirmation flows.
   Targeted Ruff, Python compilation, diff checks, generated system-map drift
   and Dossier consistency gates also pass.
+- Fresh exact-commit reviews of `5491261b4` returned NO-GO before release.
+  They reproduced composed revocations, deferred future conditions and
+  third-party writes; conflicting medication aliases; dates recognized by the
+  gate but ignored by adapters; model-invented illness fields; attachment meal
+  drift; lost historical symptom dates; lexical `和牛` splitting; and reminder
+  title/start-date drift. Deployment remained stopped.
+- The tenth remediation versions the boundary as
+  `agent-capability-policy-v4` / `authorized-target-set-v3`. One canonicalizer
+  now runs before validator, policy and adapter dispatch. The exact normalized
+  payload binds date aliases, medication dose aliases, illness status/notes,
+  attachment meal slot, recurring reminder start and historical symptom date.
+  Deferred/third-party/revoked clauses contribute no authority. An optional
+  model-invented severity is projected out before dispatch, preserving the
+  user's exact write without persisting a fabricated health fact.
+- The current focused target-set suite passes 1,260 tests and the expanded
+  classifier/query/validator/runtime compatibility suite passes 2,389 tests.
+  The requested live `qwen3.7-max` evaluation first retained a red 9/12 run:
+  two valid illness writes were rejected because the model invented severity,
+  and one resolved-illness case actually required the manage/list workflow
+  omitted from that create-only tool set. After field projection, the final 11
+  valid query/write/revocation/deferred/third-party/date/reminder/multi-write
+  cases pass 11/11 with zero database reads or writes.
 
 ### G4 Safety Review: PENDING
 
@@ -330,6 +352,25 @@ unresolvable selectors fail closed. Multi-write turns retain separate targets;
 mixed-polarity turns cannot be collapsed into one canonical write. The
 capability contract is now `agent-capability-policy-v3` with
 `authorized-target-set-v2`. Fresh exact-commit safety and code reviews remain
+mandatory before G4 may pass.
+
+Fresh independent safety and code reviews of exact commit `5491261b4` returned
+NO-GO. In addition to authority leaks through combined revocation, deferred
+conditions and third-party subjects, they found mismatches between fields the
+gate inspected and fields the adapter consumed. Medication dose aliases,
+illness optional fields, attachment meal slots, symptom dates, reminder
+titles/start dates and lexical food splitting could therefore block legitimate
+writes or dispatch different semantics. No deployment was attempted.
+
+The tenth remediation makes the post-policy payload itself the authority:
+aliases are canonicalized before validation, target comparison can remove only
+safe unmentioned optional fields, and ToolGateway dispatches that same projected
+payload. Historical symptom dates now survive through the real adapter;
+recurring reminder dates, illness status/notes, attachment meal slots and
+medication dosage conflicts are bound exactly. Combined revocations, future
+conditions and third-party health subjects have no current-user write
+authority. The capability contract is now `agent-capability-policy-v4` with
+`authorized-target-set-v3`. Fresh exact-commit safety and code reviews remain
 mandatory before G4 may pass.
 
 ### G5 Deployment Health: PENDING
