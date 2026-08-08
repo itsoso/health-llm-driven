@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G2 PASS; design approved; implementation plan pending |
+| current_stage | G2 PASS; design and implementation plan approved |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem

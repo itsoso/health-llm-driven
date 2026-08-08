@@ -165,7 +165,7 @@ Then the existing explicit write behavior remains authorized
 # Backend focused behavior
 /Users/liqiuhua/work/personal/health-llm-driven/backend/venv/bin/python -m pytest -q --no-cov \
   tests/test_utterance_intent_classifier.py \
-  tests/test_health_read.py \
+  tests/test_health_read_illness.py \
   tests/test_tool_validator.py \
   tests/test_agent_executor_reads_in_process.py \
   tests/test_agent_executor_fast_routing.py
