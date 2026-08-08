@@ -77,59 +77,58 @@ _DELETE_MIXED_UPDATE_MARKERS = (
     "调整",
     "修正",
 )
-_RECORD_FIELD_TARGETS = (
-    "备注",
-    "注释",
-    "说明",
-    "字段",
-    "内容",
-    "饮水量",
-    "水量",
-    "食物内容",
-    "食物",
-    "卡路里",
-    "热量",
-    "餐次",
-    "体重",
-    "腰围",
-    "收缩压",
-    "舒张压",
-    "高压",
-    "低压",
-    "睡眠时长",
-    "时长",
-    "状态",
-    "严重度",
-    "药名",
-    "补剂名",
-    "名称",
-    "名字",
-    "剂量",
-    "服用状态",
-    "次数",
-    "组数",
-    "跳过原因",
-    "标题",
-    "优先级",
-    "日期",
-    "时间",
-)
-_RECORD_FIELD_TARGET_PATTERN = "|".join(
-    re.escape(target)
-    for target in sorted(_RECORD_FIELD_TARGETS, key=len, reverse=True)
-)
-_FIELD_DELETE_TARGET_RE = re.compile(
-    rf"(?:记录|条目)[^，。；！？]{{0,16}}(?:{_RECORD_FIELD_TARGET_PATTERN})"
-    rf"|(?:{_RECORD_FIELD_TARGET_PATTERN})从[^，。；！？]{{0,24}}"
-    rf"(?:记录|条目)"
-)
-_WHOLE_RECORD_TARGET_RE = re.compile(
+_WHOLE_RECORD_TARGET_PATTERN = (
     r"(?:上一条|前一条|这条|那条|最后一条|刚才(?:那)?条|"
     r"第[一二三四五六七八九十百\d]+条)[^，。；！？]{0,16}(?:记录|条目)"
     r"|(?:[一二三四五六七八九十百两\d]+条)[^，。；！？]{0,16}(?:记录|条目)"
-    r"|(?:记录|条目)\s*#?\s*\d+"
+    r"|(?:记录|条目)#?\d+"
     r"|(?:上一餐|前一餐|这一餐|那一餐|上顿|这顿|那顿|"
     r"上一次|前一次|这一次|那一次)"
+)
+_DELETE_REQUEST_PREFIXES = (
+    "请你帮我",
+    "麻烦你帮我",
+    "麻烦帮我",
+    "可以帮我",
+    "能否帮我",
+    "能不能帮我",
+    "请帮我",
+    "请你",
+    "请您",
+    "麻烦你",
+    "请帮忙",
+    "麻烦帮忙",
+    "请替我",
+    "帮我",
+    "帮忙",
+    "麻烦",
+    "能否",
+    "能不能",
+    "可以",
+    "替我",
+    "请",
+)
+_DELETE_REQUEST_PREFIX_PATTERN = "|".join(
+    re.escape(prefix)
+    for prefix in sorted(_DELETE_REQUEST_PREFIXES, key=len, reverse=True)
+)
+_WHOLE_RECORD_DELETE_VERB_PATTERN = "|".join(
+    re.escape(verb)
+    for verb in sorted(_WHOLE_RECORD_DELETE_VERBS, key=len, reverse=True)
+)
+_DELETE_REQUEST_SUFFIX_PATTERN = (
+    r"(?:一下)?(?:吧)?"
+    r"(?:[,，]?(?:谢谢(?:你)?|可以吗|好吗|行吗))?"
+    r"[。.!！?？]*(?:🩺)?"
+)
+_WHOLE_RECORD_DELETE_RE = re.compile(
+    rf"^(?:(?:{_DELETE_REQUEST_PREFIX_PATTERN}))?"
+    rf"(?:"
+    rf"(?:{_WHOLE_RECORD_DELETE_VERB_PATTERN})(?:{_WHOLE_RECORD_TARGET_PATTERN})"
+    rf"|(?:把|将)(?:{_WHOLE_RECORD_TARGET_PATTERN})"
+    rf"(?:{_WHOLE_RECORD_DELETE_VERB_PATTERN})"
+    rf")"
+    rf"{_DELETE_REQUEST_SUFFIX_PATTERN}$"
 )
 
 
@@ -138,15 +137,11 @@ def _has_explicit_whole_record_delete_intent(text: str) -> bool:
     normalized = "".join(str(text or "").split())
     if not normalized:
         return False
-    if not any(marker in normalized for marker in _WHOLE_RECORD_DELETE_VERBS):
-        return False
     if any(marker in normalized for marker in _DELETE_UNDO_MARKERS):
         return False
     if any(marker in normalized for marker in _DELETE_MIXED_UPDATE_MARKERS):
         return False
-    if _FIELD_DELETE_TARGET_RE.search(normalized):
-        return False
-    return _WHOLE_RECORD_TARGET_RE.search(normalized) is not None
+    return _WHOLE_RECORD_DELETE_RE.fullmatch(normalized) is not None
 
 
 def capability_policy_contract_payload() -> dict[str, Any]:

@@ -388,6 +388,11 @@ async def test_execute_tool_blocks_health_manage_delete_in_update_turn(db, monke
         "把上一条饮水记录备注删掉",
         "从上一条饮水记录里把备注去掉",
         "从上一条饮水记录中把说明删掉",
+        "把备注在上一条饮水记录里去掉",
+        "把上一条饮水记录里的单位去掉",
+        "把上一条运动记录里的距离去掉",
+        "把来源从上一条饮水记录里删除",
+        "把上一条运动记录中的速度删掉",
     ),
 )
 async def test_execute_tool_blocks_field_removal_from_deleting_record(
@@ -421,6 +426,62 @@ async def test_execute_tool_blocks_field_removal_from_deleting_record(
     assert payload["error_code"] == "delete_requires_explicit_whole_record_intent"
     assert "保留整条记录" in payload["recovery_guidance"]
     assert "仅移除字段" in payload["recovery_guidance"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "record_type"),
+    (
+        ("删除上一条饮水记录", "water"),
+        ("请帮我删除上一条体重记录", "weight"),
+        ("把上一条饮食记录删了", "diet"),
+        ("清掉记录 718", "water"),
+        ("删除两条饮水记录", "water"),
+        ("删除上一餐", "diet"),
+    ),
+)
+async def test_execute_tool_dispatches_closed_grammar_record_delete(
+    db,
+    monkeypatch,
+    message,
+    record_type,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = message
+    calls = []
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    async def fake_exec(base, headers, args):
+        calls.append(args)
+        return json.dumps({
+            "id": args["record_id"],
+            "record_id": args["record_id"],
+            "resource_type": f"{record_type}_record",
+            "message": "删除成功",
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_exec_health_manage", fake_exec)
+
+    result = await executor._execute_tool(
+        "health_manage",
+        {"record_type": record_type, "operation": "delete", "record_id": 718},
+        None,
+    )
+
+    assert calls == [{
+        "record_type": record_type,
+        "operation": "delete",
+        "record_id": 718,
+    }]
+    assert '"record_id": 718' in result
 
 
 @pytest.mark.asyncio

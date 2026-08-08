@@ -132,6 +132,11 @@ def test_update_turn_allows_health_manage_update_with_receipt():
         "从上一条饮食记录里将热量删除",
         "把上一条体重记录这个体重字段删掉",
         "删除上一条饮食记录热量",
+        "把备注在上一条饮水记录里去掉",
+        "把上一条饮水记录里的单位去掉",
+        "把上一条运动记录里的距离去掉",
+        "把来源从上一条饮水记录里删除",
+        "把上一条运动记录中的速度删掉",
         "撤销刚才对饮水记录的修改",
         "删除上一条饮水记录并改成 350ml",
         "删除饮水记录",
@@ -156,10 +161,14 @@ def test_delete_requires_explicit_whole_record_intent(message):
     (
         "删除上一条饮水记录",
         "删除上一条体重记录",
+        "请帮我删除上一条体重记录",
         "把上一条饮食记录删了",
         "把上一条饮水记录删了",
         "清掉记录 718",
         "删除两条饮水记录",
+        "删除上一餐",
+        "删除这一餐",
+        "把上一餐删掉",
     ),
 )
 def test_explicit_whole_record_delete_remains_allowed(message):
