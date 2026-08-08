@@ -285,8 +285,10 @@ class TestOrchestratorRunner:
         assert "require_medical_referral" not in bp_case.expected
         assert bp_case.expected["llm_judge_assertions"] == {
             "affirmative_medical_referral": (
-                "回答必须明确、肯定地建议用户就医、就诊或咨询医生；"
-                "否定、不确定、疑问、仅讨论是否就医均不满足。"
+                "回答必须明确给出肯定或由具体健康条件触发的就医、就诊、"
+                "去医院或咨询医生行动；例如‘若未缓解请就医’和‘高于此值"
+                "就去医院’满足。否定、证据不支持、不确定是否行动、疑问或"
+                "交给用户自行判断均不满足。"
             )
         }
 
