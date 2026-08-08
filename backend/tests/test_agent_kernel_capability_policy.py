@@ -236,20 +236,31 @@ def test_negated_write_preserves_followup_advice_goal(message):
 
 
 @pytest.mark.parametrize(
-    "message",
+    ("message", "record_args"),
     (
-        "记录口腔溃疡，然后告诉我为什么会复发",
-        "记录口腔溃疡，再分析一下为什么会复发",
-        "记录午餐吃了牛肉面，再告诉我热量是多少",
-    ),
-)
-def test_explicit_record_with_followup_question_allows_health_record(message):
-    decision = decide_tool_capability(
-        _snapshot(message),
-        _request(
-            "health_record",
+        (
+            "记录口腔溃疡，然后告诉我为什么会复发",
             {"record_type": "illness", "data": {"name": "口腔溃疡"}},
         ),
+        (
+            "记录口腔溃疡，再分析一下为什么会复发",
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
+        ),
+        (
+            "记录午餐吃了牛肉面，再告诉我热量是多少",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "lunch", "food_items": "牛肉面"},
+            },
+        ),
+    ),
+)
+def test_explicit_record_with_followup_question_allows_health_record(
+    message, record_args
+):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request("health_record", record_args),
     )
 
     assert decision.action == "allow"
@@ -264,18 +275,13 @@ def test_explicit_record_with_followup_question_allows_health_record(message):
         "不需要分析，记录口腔溃疡",
         "我今天不舒服帮我记录一下",
         "这次不严重帮我记录下来",
-        "不是很疼帮我记录一下",
         "这几天不想吃东西但请记录食欲下降",
         "我不能集中注意力但帮我记录一下",
         "这几天不想吃东西：请记录食欲下降",
         "这几天不想吃东西只是请记录食欲下降",
         "记录过敏反应",
-        "请分别记录早餐和午餐",
         "请记录我上一次口腔溃疡，发作日期是7月1日",
         "把以前的口腔溃疡记录下来，开始日期是7月1日",
-        "帮我保存既往感冒记录，起病日期是6月3日",
-        "不要记录口腔溃疡但记录今天晚餐",
-        "别保存早餐而是记录午餐",
         "不用录入昨天的但请录入今天的口腔溃疡",
         "不是不让你记录是请你记录口腔溃疡",
         "小巴你能帮我记录一下口腔溃疡吗",
@@ -285,10 +291,8 @@ def test_explicit_record_with_followup_question_allows_health_record(message):
         "口腔溃疡上次发作日期是7月1日请记录一下",
         "请记录过量饮酒",
         "帮我记录过去三天的食欲下降",
-        "请记录过程中的头痛",
         "我想让你记录口腔溃疡",
         "请务必记录口腔溃疡",
-        "帮我把今天午餐记录下来",
         "把口腔溃疡记录下来",
     ),
 )
@@ -299,6 +303,68 @@ def test_modal_or_later_clause_write_allows_health_record(message):
             "health_record",
             {"record_type": "illness", "data": {"name": "口腔溃疡"}},
         ),
+    )
+
+    assert decision.action == "allow"
+
+
+@pytest.mark.parametrize(
+    ("message", "record_args"),
+    (
+        (
+            "不是很疼帮我记录一下",
+            {"record_type": "symptom", "data": {"description": "疼痛"}},
+        ),
+        (
+            "请分别记录早餐和午餐",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "lunch", "food_items": "未指定"},
+            },
+        ),
+        (
+            "不要记录口腔溃疡但记录今天晚餐",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "dinner", "food_items": "未指定"},
+            },
+        ),
+        (
+            "别保存早餐而是记录午餐",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "lunch", "food_items": "未指定"},
+            },
+        ),
+        (
+            "请记录过程中的头痛",
+            {
+                "record_type": "symptom",
+                "data": {"body_part": "head", "description": "头痛"},
+            },
+        ),
+        (
+            "帮我保存既往感冒记录，起病日期是6月3日",
+            {
+                "record_type": "illness",
+                "data": {"name": "感冒", "start_date": "2026-06-03"},
+            },
+        ),
+        (
+            "帮我把今天午餐记录下来",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "lunch", "food_items": "未指定"},
+            },
+        ),
+    ),
+)
+def test_direct_write_authorization_allows_only_its_semantic_target(
+    message, record_args
+):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request("health_record", record_args),
     )
 
     assert decision.action == "allow"
@@ -333,6 +399,162 @@ def test_positive_contrast_clause_cannot_authorize_the_denied_target():
     assert denied_target.action == "block"
     assert denied_target.reason == "health_record_target_mismatch"
     assert authorized_target.action == "allow"
+
+
+@pytest.mark.parametrize(
+    ("message", "denied_args", "authorized_args"),
+    (
+        (
+            "不要记录口腔溃疡但记录体重71kg",
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
+            {"record_type": "weight", "data": {"weight": 71, "unit": "kg"}},
+        ),
+        (
+            "不要记录午餐但记录晚餐吃了米饭",
+            {"record_type": "diet", "data": {"meal_type": "lunch", "food_items": "米饭"}},
+            {"record_type": "diet", "data": {"meal_type": "dinner", "food_items": "米饭"}},
+        ),
+        (
+            "不要记录喝水300ml但记录晚餐吃了米饭",
+            {"record_type": "water", "data": {"amount_ml": 300}},
+            {"record_type": "diet", "data": {"meal_type": "dinner", "food_items": "米饭"}},
+        ),
+    ),
+)
+def test_health_record_authorization_binds_the_final_positive_clause_target(
+    message, denied_args, authorized_args
+):
+    snapshot = _snapshot(message)
+
+    denied = decide_tool_capability(snapshot, _request("health_record", denied_args))
+    authorized = decide_tool_capability(
+        snapshot, _request("health_record", authorized_args)
+    )
+
+    assert denied.action == "block"
+    assert denied.reason == "health_record_target_mismatch"
+    assert authorized.action == "allow"
+
+
+def test_direct_metric_authorization_cannot_be_reused_for_an_illness_write():
+    snapshot = _snapshot("记录体重71kg")
+
+    mismatch = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
+        ),
+    )
+    matching = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "weight", "data": {"weight": 71, "unit": "kg"}},
+        ),
+    )
+    wrong_value = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "weight", "data": {"weight": 72, "unit": "kg"}},
+        ),
+    )
+
+    assert mismatch.action == "block"
+    assert mismatch.reason == "health_record_target_mismatch"
+    assert matching.action == "allow"
+    assert wrong_value.action == "block"
+    assert wrong_value.reason == "health_record_target_mismatch"
+
+
+def test_illness_authorization_cannot_be_reused_for_another_illness_name():
+    snapshot = _snapshot("记录口腔溃疡")
+
+    mismatch = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+    )
+    matching = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
+        ),
+    )
+
+    assert mismatch.action == "block"
+    assert mismatch.reason == "health_record_target_mismatch"
+    assert matching.action == "allow"
+
+
+def test_one_direct_clause_can_authorize_each_explicit_metric_target():
+    snapshot = _snapshot("记录体重71kg和血压120/80")
+
+    weight = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "weight", "data": {"weight": 71}},
+        ),
+    )
+    blood_pressure = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "blood_pressure",
+                "data": {"systolic": 120, "diastolic": 80},
+            },
+        ),
+    )
+    unrelated = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
+        ),
+    )
+
+    assert weight.action == "allow"
+    assert blood_pressure.action == "allow"
+    assert unrelated.action == "block"
+    assert unrelated.reason == "health_record_target_mismatch"
+
+
+def test_contextual_goal_target_remains_authoritative_when_clause_is_deictic():
+    snapshot = _snapshot("记录这个")
+    fallback_goal = compile_goal_spec(
+        envelope=snapshot.envelope,
+        context=snapshot.context,
+        intent=snapshot.intent,
+    )
+    snapshot = replace(
+        snapshot,
+        goal=replace(fallback_goal, target_record_type="weight"),
+    )
+
+    mismatch = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
+        ),
+    )
+    matching = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "weight", "data": {"weight": 71}},
+        ),
+    )
+
+    assert mismatch.action == "block"
+    assert mismatch.reason == "health_record_target_mismatch"
+    assert matching.action == "allow"
 
 
 def test_read_turn_allows_health_manage_list():
@@ -1211,7 +1433,17 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v1"
+    assert payload["contract_version"] == "agent-capability-policy-v2"
+    assert payload["health_record_target_binding"] == {
+        "version": "clause-target-v1",
+        "domain_types": {
+            "diet": "diet",
+            "medication": "medication",
+            "supplement": "supplement",
+            "symptom": "symptom",
+            "water": "water",
+        },
+    }
     assert payload["known_tools"]
     assert payload["recipe_record_types"]
     serialized = repr(payload).lower()

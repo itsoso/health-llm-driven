@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any
 
 from app.services.agent_kernel.tool_registry import (
@@ -10,7 +11,12 @@ from app.services.agent_kernel.tool_registry import (
     get_tool_spec,
     list_tool_specs,
 )
-from app.services.agent_kernel.types import CapabilityDecision, ToolExecutionRequest, TurnSnapshot
+from app.services.agent_kernel.types import (
+    AgentEnvelope,
+    CapabilityDecision,
+    ToolExecutionRequest,
+    TurnSnapshot,
+)
 from app.services.agent_kernel.write_safety import (
     has_mixed_health_record_authorization,
     is_explicit_aigc_media_provider_veto,
@@ -58,13 +64,58 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v1"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v2"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "clause-target-v1"
 _HEALTH_RECORD_DOMAIN_TYPES = {
     "diet": "diet",
     "water": "water",
     "medication": "medication",
     "supplement": "supplement",
+    "symptom": "symptom",
 }
+_METRIC_RECORD_TYPE_TERMS = (
+    ("blood_pressure", ("血压", "高压", "低压", "收缩压", "舒张压")),
+    ("weight", ("体重", "称重", "kg", "公斤", "千克", "斤")),
+    ("waist", ("腰围",)),
+    ("sleep", ("睡眠", "入睡", "起床")),
+    ("exercise", ("运动", "训练", "跑步", "步数", "走了")),
+)
+_ILLNESS_TARGET_TERMS = (
+    "口腔溃疡",
+    "舌尖溃疡",
+    "嘴唇起泡",
+    "麦粒肿",
+    "甲沟炎",
+    "带状疱疹",
+    "感冒",
+    "流感",
+    "湿疹",
+    "烫伤",
+    "水泡",
+    "伤口",
+    "痘痘发作",
+)
+_MEAL_TYPE_ALIASES = {
+    "breakfast": "breakfast",
+    "早餐": "breakfast",
+    "早饭": "breakfast",
+    "lunch": "lunch",
+    "午餐": "lunch",
+    "午饭": "lunch",
+    "中饭": "lunch",
+    "dinner": "dinner",
+    "晚餐": "dinner",
+    "晚饭": "dinner",
+    "snack": "snack",
+    "加餐": "snack",
+    "零食": "snack",
+    "夜宵": "snack",
+}
+_WEIGHT_TARGET_RE = re.compile(
+    r"(?P<value>\d+(?:\.\d+)?)(?P<unit>kg|公斤|千克|斤)", re.IGNORECASE
+)
+_BLOOD_PRESSURE_TARGET_RE = re.compile(r"(?P<systolic>\d{2,3})[/／](?P<diastolic>\d{2,3})")
+_WAIST_TARGET_RE = re.compile(r"腰围(?P<value>\d+(?:\.\d+)?)(?:cm|厘米)?", re.IGNORECASE)
 
 
 def capability_policy_contract_payload() -> dict[str, Any]:
@@ -79,6 +130,10 @@ def capability_policy_contract_payload() -> dict[str, Any]:
         "intervention_write_actions": sorted(INTERVENTION_WRITE_ACTIONS),
         "intervention_read_actions": sorted(INTERVENTION_READ_ACTIONS),
         "manage_plan_actions": sorted(MANAGE_PLAN_ACTIONS),
+        "health_record_target_binding": {
+            "version": _HEALTH_RECORD_TARGET_BINDING_VERSION,
+            "domain_types": dict(sorted(_HEALTH_RECORD_DOMAIN_TYPES.items())),
+        },
         "recipe_record_types": sorted(RECIPE_REPLAY_ALLOWED_RECORD_TYPES),
         "recipe_record_type_aliases": dict(
             sorted(_RECIPE_RECORD_TYPE_ALIASES.items())
@@ -159,24 +214,23 @@ def decide_tool_capability(
             args,
             receipt_required=True,
         )
-    if tool_name == "health_record" and snapshot.goal is not None:
-        requested_record_type = recipe_replay_record_type(args)
-        goal_record_type = str(snapshot.goal.target_record_type or "").strip().lower()
-        if not goal_record_type and has_mixed_health_record_authorization(
-            snapshot.envelope.text
-        ):
-            goal_record_type = _HEALTH_RECORD_DOMAIN_TYPES.get(
-                snapshot.intent.domain,
-                "",
-            )
-        if (
-            requested_record_type
-            and goal_record_type
-            and requested_record_type != goal_record_type
-        ):
+    if (
+        tool_name == "health_record"
+        and request.source != "procedure_recipe_replay"
+    ):
+        target_status = _health_record_target_status(snapshot, args)
+        if target_status == "mismatch":
             return _decision(
                 "block",
                 "health_record_target_mismatch",
+                tool_name,
+                args,
+                receipt_required=True,
+            )
+        if target_status == "unresolved":
+            return _decision(
+                "block",
+                "health_record_authorization_target_unresolved",
                 tool_name,
                 args,
                 receipt_required=True,
@@ -494,3 +548,187 @@ def recipe_replay_record_type(args: dict[str, Any]) -> str:
             record_type = str(value).strip().lower()
             return _RECIPE_RECORD_TYPE_ALIASES.get(record_type, record_type)
     return ""
+
+
+def _health_record_target_status(
+    snapshot: TurnSnapshot,
+    args: dict[str, Any],
+) -> str:
+    """Bind a health_record request to the final direct authorized clause."""
+    from app.services.agent_kernel.goal_spec import compile_goal_spec
+    from app.services.agent_kernel.intent_frame import build_intent_frame
+    from app.services.write_intent_scope import governing_authorized_write_clause
+
+    clause = governing_authorized_write_clause(snapshot.envelope.text)
+    if not clause:
+        return "unresolved" if has_mixed_health_record_authorization(
+            snapshot.envelope.text
+        ) else "unknown"
+
+    clause_envelope = AgentEnvelope(
+        user_id=snapshot.envelope.user_id,
+        channel=snapshot.envelope.channel,
+        text=clause,
+        source_message_id=snapshot.envelope.source_message_id,
+        client_capabilities=snapshot.envelope.client_capabilities,
+        client_time_context=snapshot.envelope.client_time_context,
+        client_turn_id=snapshot.envelope.client_turn_id,
+    )
+    clause_intent = build_intent_frame(clause_envelope, snapshot.context)
+    clause_goal = compile_goal_spec(
+        envelope=clause_envelope,
+        context=snapshot.context,
+        intent=clause_intent,
+    )
+    expected_types = _authorized_record_types(
+        clause,
+        clause_intent.domain,
+        str(clause_goal.target_record_type or "").strip().lower(),
+    )
+    mixed_polarity = has_mixed_health_record_authorization(
+        snapshot.envelope.text
+    )
+    snapshot_goal_type = (
+        str(snapshot.goal.target_record_type or "").strip().lower()
+        if snapshot.goal is not None
+        else ""
+    )
+    if not expected_types and snapshot_goal_type and not mixed_polarity:
+        expected_types = frozenset({snapshot_goal_type})
+    if not expected_types:
+        return "unresolved" if mixed_polarity else "unknown"
+
+    requested_type = recipe_replay_record_type(args)
+    if requested_type and requested_type not in expected_types:
+        return "mismatch"
+    if not requested_type:
+        return "match"
+
+    clause_goal_type = str(clause_goal.target_record_type or "").strip().lower()
+    expected_values = dict(clause_goal.target_values) if (
+        requested_type == clause_goal_type
+    ) else {}
+    if (
+        not expected_values
+        and snapshot.goal is not None
+        and not mixed_polarity
+        and requested_type == snapshot_goal_type
+    ):
+        expected_values = dict(snapshot.goal.target_values)
+    if requested_type == "diet" and clause_goal.target_meal_types:
+        expected_values["meal_types"] = clause_goal.target_meal_types
+    elif requested_type == "diet" and clause_intent.scope.get("meal_type"):
+        expected_values["meal_types"] = (clause_intent.scope["meal_type"],)
+    expected_values.update(
+        _deterministic_target_values(clause, requested_type)
+    )
+    return (
+        "mismatch"
+        if _target_values_mismatch(requested_type, expected_values, args)
+        else "match"
+    )
+
+
+def _authorized_record_types(
+    clause: str,
+    domain: str,
+    goal_record_type: str,
+) -> frozenset[str]:
+    record_types: set[str] = set()
+    if goal_record_type:
+        record_types.add(goal_record_type)
+    if "鼻炎" in clause:
+        record_types.add("rhinitis")
+    if any(term in clause for term in _ILLNESS_TARGET_TERMS):
+        record_types.add("illness")
+    for record_type, terms in _METRIC_RECORD_TYPE_TERMS:
+        if any(term in clause for term in terms):
+            record_types.add(record_type)
+    if domain in _HEALTH_RECORD_DOMAIN_TYPES:
+        record_types.add(_HEALTH_RECORD_DOMAIN_TYPES[domain])
+    return frozenset(record_types)
+
+
+def _deterministic_target_values(
+    clause: str,
+    record_type: str,
+) -> dict[str, Any]:
+    values: dict[str, Any] = {}
+    if record_type == "weight" and (match := _WEIGHT_TARGET_RE.search(clause)):
+        weight = float(match.group("value"))
+        if match.group("unit") == "斤":
+            weight /= 2
+        values["weight"] = weight
+    elif record_type == "blood_pressure" and (
+        match := _BLOOD_PRESSURE_TARGET_RE.search(clause)
+    ):
+        values["systolic"] = int(match.group("systolic"))
+        values["diastolic"] = int(match.group("diastolic"))
+    elif record_type == "waist" and (match := _WAIST_TARGET_RE.search(clause)):
+        values["waist_cm"] = float(match.group("value"))
+    elif record_type == "illness":
+        illness = next(
+            (term for term in _ILLNESS_TARGET_TERMS if term in clause),
+            "",
+        )
+        if illness:
+            values["name"] = illness
+    return values
+
+
+def _target_values_mismatch(
+    record_type: str,
+    expected: dict[str, Any],
+    args: dict[str, Any],
+) -> bool:
+    data = args.get("data") if isinstance(args.get("data"), dict) else {}
+    if record_type == "diet" and expected.get("meal_types"):
+        requested_meal = _MEAL_TYPE_ALIASES.get(
+            str(data.get("meal_type") or args.get("meal_type") or "").strip().lower(),
+            "",
+        )
+        allowed_meals = {
+            _MEAL_TYPE_ALIASES.get(str(value).strip().lower(), str(value).strip().lower())
+            for value in expected["meal_types"]
+        }
+        if requested_meal and requested_meal not in allowed_meals:
+            return True
+
+    numeric_keys = {
+        "water": (("amount_ml", "amount"), expected.get("amount_ml")),
+        "weight": (("weight",), expected.get("weight")),
+        "blood_pressure": (("systolic",), expected.get("systolic")),
+        "waist": (("waist_cm",), expected.get("waist_cm")),
+    }
+    if record_type in numeric_keys:
+        keys, expected_number = numeric_keys[record_type]
+        requested_number = next(
+            (data[key] for key in keys if data.get(key) is not None),
+            None,
+        )
+        if (
+            expected_number is not None
+            and requested_number is not None
+            and not _numbers_match(expected_number, requested_number)
+        ):
+            return True
+    if record_type == "blood_pressure" and expected.get("diastolic") is not None:
+        requested_diastolic = data.get("diastolic")
+        if requested_diastolic is not None and not _numbers_match(
+            expected["diastolic"], requested_diastolic
+        ):
+            return True
+    if record_type == "illness" and expected.get("name"):
+        requested_name = str(
+            data.get("name") or data.get("illness_name") or ""
+        ).strip()
+        if requested_name and expected["name"] not in requested_name:
+            return True
+    return False
+
+
+def _numbers_match(expected: Any, requested: Any) -> bool:
+    try:
+        return abs(float(expected) - float(requested)) < 1e-6
+    except (TypeError, ValueError):
+        return str(expected).strip() == str(requested).strip()

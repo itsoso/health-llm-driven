@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS; G4 seventh remediation complete, fresh final re-review pending |
+| current_stage | G3 PASS; G4 eighth remediation complete, fresh final re-review pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -137,6 +137,28 @@ validation and no-match honesty address those risks.
   document text. The deterministic classifier/gate converted that exact case
   to read/block before dispatch. For a fully specified direct meal request, the
   forced write-tool path returned `health_record(record_type=diet)` with data.
+- Fresh reviews of the seventh remediation returned NO-GO before release. Real
+  ToolGateway spies proved that arbitrary-source reported commands and health
+  observations, ordinary read transformations over historical `记录` nouns,
+  trailing pause/revocation language, and mixed-polarity target transfer could
+  still cross dispatch. The same reviews also caught false rejection of polite
+  conditional requests.
+- The eighth remediation compiles one concrete governing authorization clause
+  and binds it to `record_type`, meal target, named illness and deterministic
+  numeric values before `health_record` can execute. Reported commands and
+  observations share the same provenance gate; historical record nouns and
+  trailing revocations cannot produce authority. The capability contract is
+  versioned as `agent-capability-policy-v2` with `clause-target-v1` binding.
+- Failure-first coverage now includes 120 command-speech combinations across
+  every registered write synonym, 12 attributed/hypothetical observation
+  combinations, real dispatch spies, mixed meal/type/value transfer and legal
+  conditional/cross-clause controls. The complete related compatibility group
+  passes 2,701 tests; targeted Ruff also passes.
+- The requested live `qwen3.7-max` system challenge passed 9/9 synthetic cases:
+  the exact query produced typed illness reads, history analysis stayed read
+  only, reported and revoked frames made no write call, and direct/mixed writes
+  selected only the authorized illness, weight or dinner target. No production
+  account or database record was read or written.
 
 ### G4 Safety Review: PENDING
 
@@ -233,6 +255,29 @@ to the deterministic goal where available. Failure-first tests, a real gateway
 dispatch matrix, 2,369 related regressions and the live qwen challenge all pass
 at the system boundary. A brand-new independent safety and code review of the
 new commit remains mandatory before G4 can pass.
+
+Fresh independent safety and code reviews of commit `878e44c5e` both returned
+NO-GO and deployment remained stopped. They reproduced actual dispatch for
+arbitrary-source reports (`朋友说/同事转告`), attributed observation facts,
+historical analysis/summarization whose object ended in `记录`, common trailing
+pause/revocation language, and authorization transfer between denied and
+permitted targets. A single full-turn domain could neither distinguish
+breakfast from dinner nor bind `记录体重71kg` to weight 71. The reviews also found
+that bare `如果/假如` metalinguistic matching rejected legitimate conditional
+requests.
+
+The eighth remediation changes the policy boundary from a whole-turn boolean
+to a concrete governing clause. Provenance, polarity, historical/read role and
+revocation are resolved before target compilation. The final ToolGateway then
+reclassifies only that authorized clause and matches the requested record type,
+meal selector, named illness and deterministic water/weight/blood-pressure/waist
+values. Mixed polarity with no resolvable positive target fails closed to
+clarification. Procedure recipes retain their separately prevalidated contract.
+The classifier and final gate now share attributed-command and attributed-
+observation handling, while polite conditional and read-then-write controls
+remain writable. All local and live evidence is green, but a brand-new
+independent safety and code review of the next exact commit remains mandatory
+before G4 can pass.
 
 ### G5 Deployment Health: PENDING
 

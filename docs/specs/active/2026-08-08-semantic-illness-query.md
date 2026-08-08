@@ -146,11 +146,22 @@ queries, while an explicit dated backfill and a command to record a just-observe
 event remain writes under the existing confirmation contract.
 
 In mixed contrast turns, the governing later action can supersede an earlier
-denial without authorizing the denied target. When a deterministic goal supplies
-a target record type, the final capability gate requires the model-selected
-`health_record.record_type` to match it. Object-fronted direct commands such as
-`把口腔溃疡记录下来` remain writable; read requests such as
-`请查询口腔溃疡记录` do not.
+denial without authorizing the denied target. The parser returns the concrete
+governing clause rather than a whole-turn boolean. The final capability gate
+classifies only that clause and binds the model request to its record type and,
+where deterministic, its meal selector, named illness or numeric value. Thus a
+weight authorization cannot write illness, dinner cannot write lunch, and
+`记录体重71kg` cannot write another weight value. Mixed polarity with an
+unresolvable positive target fails closed to clarification. Object-fronted
+direct commands such as `把口腔溃疡记录下来` remain writable; read requests such
+as `请查询口腔溃疡记录` do not.
+
+Attribution is grammatical rather than source-allowlisted: arbitrary subjects
+such as `朋友/同事/体检报告` plus a reporting predicate do not gain current-user
+authority. This applies equally to commands and observation facts such as
+`朋友说我喝了300ml水`. Common trailing pause/revocation language invalidates the
+preceding authority. Polite conditions such as `如果可以，请记录体重71kg` remain
+direct requests rather than being flattened into hypothetical examples.
 
 Illness windows use the Agent turn's frozen user-local date, not the service
 process date. This keeps Web, Mobile and Mac results aligned at timezone day
@@ -283,6 +294,26 @@ Given a user says "不要记录口腔溃疡但记录今天晚餐"
 When the model requests a health_record
 Then diet may be authorized but illness is blocked as a target mismatch
 
+Given a user says "不要记录午餐但记录晚餐吃了米饭"
+When the model requests a diet health_record
+Then dinner may be authorized but lunch is blocked as a target mismatch
+
+Given a user says "记录体重71kg"
+When the model requests illness or a different weight value
+Then the concrete target binding blocks it before dispatch
+
+Given an arbitrary source says "朋友说我午餐吃了米饭"
+When the model requests health_record anyway
+Then the attributed observation has no current-user authority and dispatch never starts
+
+Given a user says "记录体重71kg，算了吧"
+When the classifier and ToolGateway process the trailing revocation
+Then the preceding write authority is revoked and dispatch never starts
+
+Given a user says "如果可以，请记录体重71kg"
+When the positive speech-act parser processes the polite condition
+Then it remains a direct current request and may write only weight 71kg
+
 Given a user says "把口腔溃疡记录下来"
 When the positive speech-act parser processes the object-fronted request
 Then it remains a direct write under the existing confirmation policy
@@ -355,3 +386,4 @@ These questions do not block the illness slice.
 | 2026-08-08 | Unified write speech-act scope | Independent reviews found finite helper lists diverged between routing and ToolGateway enforcement. |
 | 2026-08-08 | Added clause-semantic contrasts | Fresh reviews found denial controls, post-object completion, colon scope, capability paraphrases and dated-backfill contrasts. |
 | 2026-08-08 | Made write authorization positive and action-scoped | Fresh reviews proved that finite veto matching still dispatched reads, result checks, reported speech and trailing revocations. |
+| 2026-08-08 | Bound authority to the concrete clause and target | Fresh reviews proved that arbitrary reports, observation facts and denied sibling targets could inherit whole-turn write authority. |

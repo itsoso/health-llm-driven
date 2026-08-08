@@ -103,9 +103,16 @@ retrieval. The boundary makes both responsibilities explicit and testable.
 - Advice such as `该不该记录今天腰痛6分` remains advice, not a write.
 - `记录刚才打了一个喷嚏` and a request with a concrete historical onset date
   remain writes; history protection must not suppress explicit backfill.
-- For a mixed denied/positive turn, a compiled goal constrains the selected
-  `health_record.record_type`; a positive meal clause cannot authorize writing
-  the illness named in the denied clause.
+- Authorization produces a concrete governing clause rather than a whole-turn
+  boolean. The final capability gate reclassifies only that clause and binds the
+  selected `health_record` to its record type plus deterministic meal, named-
+  illness and numeric selectors.
+- For a mixed denied/positive turn, the positive clause cannot authorize the
+  denied record type, meal or value. If the positive target cannot be resolved,
+  the write fails closed to clarification.
+- Arbitrary-source attributed commands and observation facts share the same
+  non-authorizing provenance rule. Trailing pause/revocation invalidates the
+  preceding clause; polite conditions remain direct requests.
 - Ambiguity degrades to read-only or clarification, never mutation.
 
 ### 4.2 Semantic query plan
@@ -175,6 +182,9 @@ Verification must include:
 - a system-level model challenge proving that a model-selected write for quoted
   speech is still blocked by deterministic policy, while an explicit direct
   write remains available through the forced write-tool path;
+- a real ToolGateway matrix covering arbitrary reports and every registered
+  command synonym, attributed observations, target/value mismatch and trailing
+  revocation without entering dispatch;
 - a generated negation × bridge × write-action matrix plus positive modal and
   cross-clause controls;
 - repository drift, lint and focused/full regression gates required by the

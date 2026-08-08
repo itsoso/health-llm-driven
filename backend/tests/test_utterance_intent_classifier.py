@@ -272,6 +272,20 @@ def test_record_capability_questions_do_not_authorize_writes(message):
         "“帮我记录口腔溃疡”是什么意思",
         "文档写着：我午餐吃了米饭",
         "假设我午餐吃了米饭会怎样",
+        "朋友说帮我记录口腔溃疡",
+        "同事转告我：帮我记录口腔溃疡",
+        "例如：帮我记录口腔溃疡",
+        "朋友说我喝了300ml水",
+        "文档称我午餐吃了米饭",
+        "假定我午餐吃了米饭",
+        "模拟场景：我喝了300ml水",
+        "朋友说我头痛",
+        "体检报告写着体重71kg",
+        "请分析昨天的口腔溃疡记录",
+        "帮我总结上次口腔溃疡记录",
+        "帮我把昨天的口腔溃疡记录整理一下",
+        "请比较上次和这次口腔溃疡记录",
+        "麻烦解释一下之前的口腔溃疡记录",
     ),
 )
 def test_read_result_and_reported_record_language_never_writes(message):
@@ -279,6 +293,23 @@ def test_read_result_and_reported_record_language_never_writes(message):
 
     assert intent.primary != "write"
     assert intent.is_write is False
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "如果可以，请记录体重71kg",
+        "假如方便，帮我记录体重71kg",
+        "不要保存早餐请记录午餐",
+        "请先告诉我今天还差多少水，然后记录体重71kg",
+        "不要告诉我今天的热量，然后记录体重71kg",
+    ),
+)
+def test_direct_request_after_condition_or_unpunctuated_contrast_writes(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "write"
+    assert intent.is_write is True
 
 
 @pytest.mark.parametrize(

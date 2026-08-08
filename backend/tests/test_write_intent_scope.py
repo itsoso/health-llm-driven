@@ -306,6 +306,15 @@ def test_result_checks_are_not_new_write_authorizations(text: str) -> None:
         "“帮我记录口腔溃疡”是什么意思",
         "文档写着：我午餐吃了米饭",
         "假设我午餐吃了米饭会怎样",
+        "朋友说帮我记录口腔溃疡",
+        "同事转告我：帮我记录口腔溃疡",
+        "例如：帮我记录口腔溃疡",
+        "朋友说我喝了300ml水",
+        "文档称我午餐吃了米饭",
+        "假定我午餐吃了米饭",
+        "模拟场景：我喝了300ml水",
+        "朋友说我头痛",
+        "体检报告写着体重71kg",
     ),
 )
 def test_reported_or_quoted_write_language_is_not_authorization(text: str) -> None:
@@ -324,6 +333,16 @@ def test_reported_or_quoted_write_language_is_not_authorization(text: str) -> No
         "记录口腔溃疡未获授权",
         "记录口腔溃疡，还是算了",
         "记录口腔溃疡，取消吧",
+        "记录体重71kg，算了吧",
+        "记录体重71kg，取消这件事",
+        "记录体重71kg，撤回",
+        "记录体重71kg，不过算了吧",
+        "帮我记录口腔溃疡暂缓",
+        "记录口腔溃疡等一下再说",
+        "记录口腔溃疡先放一放",
+        "记录口腔溃疡是不可以的",
+        "记录口腔溃疡我不同意",
+        "记录口腔溃疡不行",
         "不要做这件事：帮我记录口腔溃疡",
         "我从未叫你帮我记录口腔溃疡",
         "我可没让你帮我记录口腔溃疡",
@@ -350,6 +369,32 @@ def test_preconditions_and_trailing_revocations_deny_write(text: str) -> None:
 )
 def test_last_positive_contrast_clause_authorizes_its_write(text: str) -> None:
     assert has_negated_write_scope(text) is False
+    assert has_explicit_authorizing_write_request(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "不要保存早餐请记录午餐",
+        "不要记录喝水300ml请记录晚餐",
+    ),
+)
+def test_unpunctuated_later_direct_request_has_its_own_scope(text: str) -> None:
+    assert has_negated_write_scope(text) is False
+    assert has_explicit_authorizing_write_request(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "如果可以，请记录体重71kg",
+        "假如方便，帮我记录体重71kg",
+        "请先告诉我今天还差多少水，然后记录体重71kg",
+        "不要告诉我今天的热量，然后记录体重71kg",
+    ),
+)
+def test_polite_conditions_do_not_turn_direct_requests_into_quotations(text: str) -> None:
+    assert is_reported_write_reference(text) is False
     assert has_explicit_authorizing_write_request(text) is True
 
 

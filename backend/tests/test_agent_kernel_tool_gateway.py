@@ -248,6 +248,10 @@ async def test_gateway_adversarial_speech_act_matrix_never_dispatches() -> None:
         "你帮我{action}口腔溃疡了吗？",
         "系统是否会帮我{action}口腔溃疡？",
         "我想知道小巴能不能帮我{action}口腔溃疡",
+        "朋友说帮我{action}口腔溃疡",
+        "同事转告我：帮我{action}口腔溃疡",
+        "例如：帮我{action}口腔溃疡",
+        "帮我{action}口腔溃疡暂缓",
     )
 
     for frame in frames:
@@ -262,6 +266,46 @@ async def test_gateway_adversarial_speech_act_matrix_never_dispatches() -> None:
 
             gateway = ToolGateway(_snapshot(message))
             result = await gateway.execute(
+                ToolExecutionRequest(
+                    tool_name="health_record",
+                    arguments={
+                        "record_type": "illness",
+                        "data": {"name": "口腔溃疡"},
+                    },
+                    source="structured",
+                ),
+                dispatch,
+            )
+
+            assert dispatched is False, message
+            assert result.decision is not None
+            assert result.decision.action == "block", message
+            assert json.loads(result.content)["dispatch_started"] is False
+
+
+@pytest.mark.asyncio
+async def test_gateway_reported_observation_matrix_never_dispatches() -> None:
+    observations = (
+        "午餐吃了米饭",
+        "喝了300ml水",
+        "服药1片",
+        "已服用药物1片",
+        "已吃午餐",
+        "已喝300ml水",
+    )
+    frames = ("朋友说我{observation}", "假定我{observation}")
+
+    for frame in frames:
+        for observation in observations:
+            message = frame.format(observation=observation)
+            dispatched = False
+
+            async def dispatch(_request):
+                nonlocal dispatched
+                dispatched = True
+                return "unexpected"
+
+            result = await ToolGateway(_snapshot(message)).execute(
                 ToolExecutionRequest(
                     tool_name="health_record",
                     arguments={
@@ -312,6 +356,109 @@ def test_gateway_mixed_polarity_turn_binds_the_positive_target() -> None:
     assert denied_target.action == "block"
     assert denied_target.reason == "health_record_target_mismatch"
     assert authorized_target.action == "allow"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    (
+        "朋友说帮我记录口腔溃疡",
+        "同事转告我：帮我记录口腔溃疡",
+        "例如：帮我记录口腔溃疡",
+        "朋友说我午餐吃了米饭",
+        "小王表示我喝了300ml水",
+        "朋友说我头痛",
+        "体检报告写着体重71kg",
+        "请分析昨天的口腔溃疡记录",
+        "帮我总结上次口腔溃疡记录",
+        "记录体重71kg，算了吧",
+        "记录体重71kg，取消这件事",
+        "记录体重71kg，撤回",
+        "帮我记录口腔溃疡暂缓",
+    ),
+)
+async def test_gateway_never_dispatches_non_authorizing_health_record_frames(
+    message,
+):
+    dispatched = False
+
+    async def dispatch(_request):
+        nonlocal dispatched
+        dispatched = True
+        return "unexpected"
+
+    result = await ToolGateway(_snapshot(message)).execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={
+                "record_type": "illness",
+                "data": {"name": "口腔溃疡"},
+            },
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert dispatched is False
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert json.loads(result.content)["dispatch_started"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "denied_args", "authorized_args"),
+    (
+        (
+            "记录体重71kg",
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
+            {"record_type": "weight", "data": {"weight": 71, "unit": "kg"}},
+        ),
+        (
+            "不要记录早餐但记录午餐吃了米饭",
+            {"record_type": "diet", "data": {"meal_type": "breakfast", "food_items": "米饭"}},
+            {"record_type": "diet", "data": {"meal_type": "lunch", "food_items": "米饭"}},
+        ),
+        (
+            "不要记录喝水300ml但记录晚餐吃了米饭",
+            {"record_type": "water", "data": {"amount_ml": 300}},
+            {"record_type": "diet", "data": {"meal_type": "dinner", "food_items": "米饭"}},
+        ),
+    ),
+)
+async def test_gateway_dispatches_only_the_concrete_authorized_target(
+    message, denied_args, authorized_args
+):
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "ok"
+
+    gateway = ToolGateway(_snapshot(message))
+    denied = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments=denied_args,
+            source="structured",
+        ),
+        dispatch,
+    )
+    authorized = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments=authorized_args,
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert denied.decision is not None
+    assert denied.decision.action == "block"
+    assert json.loads(denied.content)["dispatch_started"] is False
+    assert authorized.decision is not None
+    assert authorized.decision.action == "allow"
+    assert calls == [authorized_args]
 
 
 def test_blocked_tool_result_includes_a_recovery_instruction_for_the_agent():

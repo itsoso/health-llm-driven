@@ -17,7 +17,9 @@ from app.services.utterance_intent_lexicon import (
 
 _CLAUSE_BOUNDARY_RE = re.compile(
     r"[，,。.!！；;]|但是|但|不过|然而|可是|只是|却|而是|"
-    r"是(?=请(?:你)?)|然后|接着|随后"
+    r"是(?=请(?:你)?)|然后|接着|随后|"
+    r"(?<=.)(?=请(?:你)?"
+    r"(?:记录|记一下|记下|打个卡|打卡|新增|录入|保存|写入|存下来))"
 )
 _CONTEXTUAL_DENIAL_COMMA_RE = re.compile(
     r"((?:没有|没|未|未经|无).{0,12}(?:同意|授权|许可|允许)"
@@ -136,13 +138,15 @@ _COMPLETED_TAILS = ("了", "过", "没有", "没")
 _NON_ASPECT_GUARDS = ("过敏", "过量", "过高", "过低", "过去", "过程")
 _COMPLETION_TRAILING_PARTICLES = "?？啊呀呢么嘛吗"
 _POST_ACTION_DENIAL_RE = re.compile(
-    r"(?:还是)?(?:算了|取消(?:吧|了)?|撤销(?:吧|了)?|作罢|就免了|免了|"
+    r"(?:还是)?(?:算了(?:吧)?|取消(?:吧|了|这件事)?|撤销(?:吧|了)?|撤回|"
+    r"暂缓|搁置|缓一缓|先缓缓|推迟|等一下再说|先放一放|作罢|就免了|免了|"
     r"先不要了|不要了|未获授权|没有授权|未经授权|不被允许|"
-    r"是不允许的?|不允许)"
+    r"是不允许的?|是不可以的?|不允许|我不同意|不行)"
 )
 _TRAILING_REVOCATION_CLAUSE_RE = re.compile(
-    r"^(?:还是)?(?:算了|取消(?:吧|了)?|撤销(?:吧|了)?|"
-    r"(?:这件事)?作罢|先不要了|不要了)$"
+    r"^(?:还是)?(?:算了(?:吧)?|取消(?:吧|了|这件事)?|撤销(?:吧|了)?|撤回|"
+    r"暂缓|搁置|缓一缓|先缓缓|推迟|等一下再说|先放一放|"
+    r"(?:这件事)?作罢|先不要了|不要了|我不同意|不行)$"
 )
 _RESULT_CHECK_LEADS = (
     "确认",
@@ -156,19 +160,22 @@ _RESULT_CHECK_LEADS = (
 )
 _RESULT_STATE_MARKERS = ("有没有", "是否", "是否已", "是否已经", "已经", "已")
 _RESULT_TAIL_MARKERS = ("成功", "完成", "生效", "写进", "写到", "存进", "存到")
-_REPORTING_SOURCES = (
-    "客服",
-    "文档",
-    "原文",
+_REPORTING_VERBS = (
+    "说",
+    "表示",
+    "称",
+    "写着",
+    "写道",
+    "提到",
+    "显示",
     "提示",
-    "通知",
-    "系统消息",
-    "他说",
-    "她说",
-    "对方说",
-    "我说",
+    "转告",
+    "转述",
+    "复述",
+    "引用",
+    "告诉",
+    "告知",
 )
-_REPORTING_VERBS = ("说", "表示", "写着", "写道", "提到", "显示", "提示")
 _METALANGUAGE_ACTIONS = (
     "转述",
     "复述",
@@ -177,9 +184,12 @@ _METALANGUAGE_ACTIONS = (
     "引用",
     "举例",
     "例子",
+    "例如",
+    "比如",
+    "譬如",
     "假设",
-    "假如",
-    "如果",
+    "假定",
+    "模拟场景",
     "这句话",
     "是什么意思",
 )
@@ -356,6 +366,17 @@ def _last_action_in_clause(clause: str) -> tuple[str, int] | None:
     return context
 
 
+def _last_write_signal_in_clause(clause: str) -> tuple[str, int] | None:
+    context: tuple[str, int] | None = None
+    for signal in _ORDERED_WRITE_SIGNALS:
+        start = clause.rfind(signal)
+        if start < 0:
+            continue
+        if context is None or start > context[1]:
+            context = (signal, start)
+    return context
+
+
 def _last_write_action_context(value: str) -> tuple[str, str, int] | None:
     last_context: tuple[str, str, int] | None = None
     for clause in split_write_clauses(value):
@@ -382,7 +403,7 @@ def _write_clause_denials(value: str) -> tuple[bool, ...]:
     denials: list[bool] = []
     for raw_clause in split_write_clauses(text):
         clause = _clean_negation_clause(raw_clause)
-        action_context = _last_action_in_clause(clause)
+        action_context = _last_write_signal_in_clause(clause)
         if action_context is None:
             if (
                 denials
@@ -480,20 +501,34 @@ def _is_explicit_dated_backfill(value: str) -> bool:
         return False
     if any(signal in text for signal in QUESTION_SIGNALS):
         return False
-    context = _last_write_action_context(text)
-    if context is None:
-        return False
-    clause, action, action_position = context
-    before_action = clause[:action_position]
-    after_action = clause[action_position + len(action):]
-    if action == "记录" and after_action.startswith(RECORD_NOUN_SUFFIXES):
-        return False
-    return (
-        action_position == 0
-        or before_action.startswith(_BACKFILL_REQUEST_MARKERS)
-        or before_action.endswith(_BACKFILL_REQUEST_MARKERS)
-        or after_action.startswith(("一下", "下来"))
-    )
+    for clause in split_write_clauses(text):
+        candidates: list[tuple[int, str]] = []
+        for action in _ORDERED_WRITE_ACTIONS:
+            start = clause.find(action)
+            while start >= 0:
+                candidates.append((start, action))
+                start = clause.find(action, start + len(action))
+        for action_position, action in sorted(candidates):
+            before_action = clause[:action_position]
+            after_action = clause[action_position + len(action):]
+            if action == "记录" and (
+                after_action.startswith(RECORD_NOUN_SUFFIXES)
+                or (
+                    not after_action
+                    and any(
+                        earlier_position < action_position
+                        for earlier_position, _earlier_action in candidates
+                    )
+                )
+            ):
+                continue
+            if (
+                action_position == 0
+                or before_action.endswith(_BACKFILL_REQUEST_MARKERS)
+                or after_action.startswith(("一下", "下来"))
+            ):
+                return True
+    return False
 
 
 def is_historical_write_reference(value: str) -> bool:
@@ -551,25 +586,82 @@ def is_write_result_check(value: str) -> bool:
 def is_reported_write_reference(value: str) -> bool:
     """Recognize attributed, quoted, or metalinguistic write language."""
     text = normalize_write_scope_text(value)
-    action_positions = [
-        position
-        for action in _ORDERED_WRITE_SIGNALS
-        if (position := text.rfind(action)) >= 0
-    ]
-    if not action_positions:
-        return False
-    action_position = max(action_positions)
-    before_action = text[:action_position]
-    after_action = text[action_position:]
-    if any(action in before_action for action in _METALANGUAGE_ACTIONS):
-        return True
-    if any(mark in before_action for mark in ('"', "“", "「", "『")) and any(
-        mark in after_action for mark in ('"', "”", "」", "』")
+    if any(mark in text for mark in ('"', "“", "「", "『")) and any(
+        mark in text for mark in ('"', "”", "」", "』")
     ):
         return True
-    return any(source in before_action for source in _REPORTING_SOURCES) and any(
-        verb in before_action for verb in _REPORTING_VERBS
+
+    clauses = split_write_clauses(text)
+    if not clauses:
+        return False
+    signal_index = next(
+        (
+            index
+            for index in range(len(clauses) - 1, -1, -1)
+            if _last_write_signal_in_clause(clauses[index]) is not None
+        ),
+        len(clauses) - 1,
     )
+    candidate_indices = (signal_index - 1, signal_index)
+    for index in candidate_indices:
+        if index < 0:
+            continue
+        segment = clauses[index]
+        signal = (
+            _last_write_signal_in_clause(segment)
+            if index == signal_index
+            else None
+        )
+        before_signal = segment[:signal[1]] if signal is not None else segment
+        if any(action in before_signal for action in _METALANGUAGE_ACTIONS):
+            return True
+        for verb in _REPORTING_VERBS:
+            verb_position = before_signal.find(verb)
+            if verb_position < 0:
+                continue
+            subject = before_signal[:verb_position]
+            if (
+                subject
+                and not any(negation in subject for negation in _ORDERED_NEGATIONS)
+                and _strip_direct_request_prefix(subject)
+            ):
+                return True
+    return False
+
+
+def governing_authorized_write_clause(value: str) -> str | None:
+    """Return the concrete current clause that owns health-write authority.
+
+    The result is intentionally clause-scoped.  It never returns quoted,
+    reported, historical, denied, result-check, or revoked language.  Callers
+    can classify this clause to bind a tool request to its concrete target
+    instead of inheriting a boolean authorization from the whole turn.
+    """
+    text = normalize_write_scope_text(value)
+    if not text or has_negated_write_scope(text):
+        return None
+    if (
+        is_write_capability_question(text)
+        or is_historical_write_reference(text)
+        or is_read_action_write_reference(text)
+        or is_write_result_check(text)
+        or is_reported_write_reference(text)
+    ):
+        return None
+
+    clauses = split_write_clauses(text)
+    for clause in reversed(clauses):
+        if _last_write_signal_in_clause(clause) is not None:
+            if _last_action_in_clause(clause) is not None and not (
+                has_explicit_authorizing_write_request(text)
+            ):
+                return None
+            return clause
+
+    # Metric, symptom and event observations can be write speech acts without
+    # a lexical write verb.  The intent frame decides whether that final clause
+    # is an observation; this parser only guarantees direct provenance.
+    return clauses[-1] if clauses else None
 
 
 def has_write_action_mention(value: str) -> bool:
