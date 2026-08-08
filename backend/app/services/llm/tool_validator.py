@@ -587,7 +587,7 @@ _QUERY_DIMENSIONS = {
     "supplements", "water", "diet", "exercise", "workout", "manual_exercise",
     "body_battery", "stress",
     "medical_exam", "genetic", "genetic_cognitive", "genetic_personality",
-    "genetic_comprehensive", "medication", "events",
+    "genetic_comprehensive", "medication", "illness", "events",
 }
 _ANALYSIS_TYPES = {
     "comprehensive", "sleep_insight", "heart_rate_insight",
@@ -669,7 +669,16 @@ def _validate_query(
     normalized = normalize_health_query_args(args)
     args.clear()
     args.update(normalized)
-    _coerce_enum("health_query", args, "dimension", _QUERY_DIMENSIONS, "comprehensive", warnings)
+    dimension = args.get("dimension")
+    if not dimension:
+        args["dimension"] = "comprehensive"
+    elif dimension not in _QUERY_DIMENSIONS:
+        valid = ", ".join(sorted(_QUERY_DIMENSIONS))
+        _metric("health_query", "dimension", "enum_out_of_range", action="rejected")
+        return (
+            f"Error: 未知 health_query dimension {dimension!r}. "
+            f"已注册维度: {valid}. 请按用户语义重新规划查询，不能改查其他数据域。"
+        )
     _coerce_int_range("health_query", args, "days", 1, 365, 7, warnings)
     _coerce_int_range("health_query", args, "uploaded_days", 1, 365, 1, warnings)
     # indicator 只在 medical_exam / genetic 有意义, 其余 dim silent drop
@@ -680,8 +689,6 @@ def _validate_query(
     if isinstance(args.get("indicator"), str) and len(args["indicator"]) > 64:
         args["indicator"] = args["indicator"][:64]
         warnings.append("[tool_validator] health_query.indicator 截断到 64 字符")
-    if not args.get("dimension"):
-        args["dimension"] = "comprehensive"  # 必填, required 检查
     return None
 
 

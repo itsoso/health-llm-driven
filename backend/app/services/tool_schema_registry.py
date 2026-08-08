@@ -63,6 +63,12 @@ dimension 选择指南 (按场景):
   genetic_cognitive / genetic_personality / genetic_comprehensive — 整合性基因解读
   medication       — 用药清单 (非单次服药, 是长期用药列表)
 
+【病症发作历史】
+  illness          — 有起病与痊愈周期的病症发作记录 (如口腔溃疡、感冒).
+                     问"我上一次口腔溃疡是什么时候" → dimension='illness', keyword='口腔溃疡'.
+                     问"最近半年口腔溃疡有哪些记录" → dimension='illness', keyword='口腔溃疡', days=183.
+                     这是只读查询；新增/修改病症仍分别用 health_record / health_manage.
+
 【生活事件时间线 / 行程 / 各节点几点】
   events           — 用户日常生活事件的**真实时间戳**时间线 (出发/到达/购买/收货/症状起点/
                      日常), 落 HealthEpisode 情景账本, 带诚实发生时间与精度 (精确/约/日期级).
@@ -85,7 +91,7 @@ days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 
                                  "body_battery", "stress",
                                  "medical_exam", "genetic",
                                  "genetic_cognitive", "genetic_personality", "genetic_comprehensive",
-                                 "medication", "events"],
+                                 "medication", "illness", "events"],
                         "description": "数据维度. 见 function description 里的选择指南",
                     },
                     "days": {
@@ -99,7 +105,7 @@ days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 
                     },
                     "keyword": {
                         "type": "string",
-                        "description": "体检/影像报告关键词 (仅 medical_exam). 例: 膝关节MRI, 核磁, 胃镜, CT",
+                        "description": "名称关键词 (medical_exam / illness). 例: 膝关节MRI, 胃镜, 口腔溃疡, 感冒",
                     },
                     "uploaded_days": {
                         "type": "integer",

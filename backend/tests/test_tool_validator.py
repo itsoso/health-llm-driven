@@ -503,10 +503,26 @@ class TestDispatcher:
 
 
 class TestQueryGuard:
-    def test_unknown_dimension_coerced(self):
-        v = validate_tool_call("health_query", {"dimension": "foo"})
-        assert v["data"]["dimension"] == "comprehensive"
-        assert any("dimension" in w for w in v["warnings"])
+    def test_illness_query_dimension_is_registered(self):
+        v = validate_tool_call("health_query", {
+            "dimension": "illness",
+            "days": 183,
+            "keyword": "口腔溃疡",
+        })
+
+        assert v["error"] is None
+        assert v["data"] == {
+            "dimension": "illness",
+            "days": 183,
+            "keyword": "口腔溃疡",
+        }
+
+    def test_unknown_query_dimension_fails_loudly(self):
+        v = validate_tool_call("health_query", {"dimension": "symptom"})
+
+        assert "未知" in (v["error"] or "")
+        assert v["data"]["dimension"] == "symptom"
+        assert v["data"]["dimension"] != "comprehensive"
 
     def test_query_dimension_alias_normalized_before_enum_guard(self):
         v = validate_tool_call("health_query", {"type": "medical_records", "days": 1})
