@@ -81,6 +81,40 @@ def test_mutation_turn_allows_health_manage_delete_with_receipt():
     )
 
     assert decision.action == "allow"
+    assert decision.reason == "explicit_mutation_intent"
+    assert decision.receipt_required is True
+
+
+def test_update_turn_blocks_health_manage_delete_with_receipt():
+    decision = decide_tool_capability(
+        _snapshot("把刚才 300ml 改成 350ml"),
+        _request(
+            "health_manage",
+            {"record_type": "water", "operation": "delete", "record_id": 718},
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "manage_operation_mismatch"
+    assert decision.receipt_required is True
+
+
+def test_update_turn_allows_health_manage_update_with_receipt():
+    decision = decide_tool_capability(
+        _snapshot("把刚才 300ml 改成 350ml"),
+        _request(
+            "health_manage",
+            {
+                "record_type": "water",
+                "operation": "update",
+                "record_id": 718,
+                "data": {"amount": 350},
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.reason == "explicit_mutation_intent"
     assert decision.receipt_required is True
 
 

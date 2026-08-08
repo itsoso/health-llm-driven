@@ -351,6 +351,36 @@ async def test_execute_tool_blocks_health_manage_update_in_read_turn(db, monkeyp
 
 
 @pytest.mark.asyncio
+async def test_execute_tool_blocks_health_manage_delete_in_update_turn(db, monkeypatch):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "把刚才 300ml 改成 350ml"
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {"error": None, "data": args},
+    )
+
+    async def should_not_run(*args, **kwargs):
+        raise AssertionError("_exec_health_manage should not run")
+
+    monkeypatch.setattr(executor, "_exec_health_manage", should_not_run)
+
+    result = await executor._execute_tool(
+        "health_manage",
+        {"record_type": "water", "operation": "delete", "record_id": 718},
+        None,
+    )
+
+    payload = json.loads(result)
+    assert payload["status"] == "rejected"
+    assert payload["dispatch_started"] is False
+    assert payload["error_code"] == "manage_operation_mismatch"
+    assert "保留现有记录" in payload["recovery_guidance"]
+    assert "用户明确要求的操作" in payload["recovery_guidance"]
+
+
+@pytest.mark.asyncio
 async def test_execute_tool_allows_explicit_health_record_write(db, monkeypatch):
     executor = AgentExecutor(db)
     executor._current_user_id = 1

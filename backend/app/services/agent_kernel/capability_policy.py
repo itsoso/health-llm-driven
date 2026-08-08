@@ -238,10 +238,18 @@ def decide_tool_capability(
         if operation == "list":
             return _decision("allow", "health_manage_list_is_read_only", tool_name, args)
         if operation in MANAGE_WRITE_OPERATIONS:
-            if primary == "mutate" and snapshot.intent.operation in MANAGE_WRITE_OPERATIONS:
+            if primary == "mutate" and snapshot.intent.operation == operation:
                 return _decision(
                     "allow",
                     "explicit_mutation_intent",
+                    tool_name,
+                    args,
+                    receipt_required=True,
+                )
+            if primary == "mutate" and snapshot.intent.operation in MANAGE_WRITE_OPERATIONS:
+                return _decision(
+                    "block",
+                    "manage_operation_mismatch",
                     tool_name,
                     args,
                     receipt_required=True,
