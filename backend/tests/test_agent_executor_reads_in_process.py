@@ -889,6 +889,31 @@ def test_illness_query_uses_canonical_reader_without_wearable_http(db):
     assert "sleep" not in out.lower()
 
 
+def test_illness_query_without_time_window_searches_full_history(db):
+    user = _make_user(db)
+    old = IllnessEpisode(
+        user_id=user.id,
+        name="口腔溃疡",
+        start_date=date.today() - timedelta(days=400),
+        status="resolved",
+        severity=2,
+    )
+    db.add(old)
+    db.commit()
+    db.refresh(old)
+
+    ex = AgentExecutor(db)
+    ex._current_user_id = user.id
+    out = _run(ex._exec_health_query(
+        "http://x/api/v1",
+        {},
+        {"dimension": "illness", "keyword": "口腔溃疡"},
+    ))
+    rows = json.loads(out)
+
+    assert [row["id"] for row in rows] == [old.id]
+
+
 # ── sleep(Garmin 睡眠质量分析,无 response_model → dict)────────────────────────────
 
 

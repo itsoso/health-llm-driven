@@ -27,6 +27,14 @@ data.
   result.
 - The clean-worktree baseline passed 601 existing classifier and illness-manage
   tests before implementation.
+- A live `qwen3.7-max` TokenPlan evaluation selected
+  `health_query(dimension=illness, keyword=口腔溃疡, days=183)` for the exact
+  query, its paraphrase and a negated-write query. The read capability gate
+  exposed no `health_record` tool. The explicit-write contrast selected
+  `health_record(record_type=illness)`.
+- A separate no-window evaluation selected `health_query(dimension=illness,
+  keyword=口腔溃疡)` without `days`; the deterministic reader now interprets
+  that shape as full illness history rather than the generic seven-day default.
 
 No production health record was read or copied during diagnosis. The only
 health phrase retained is the user-provided reproduction required for tests.
@@ -65,8 +73,9 @@ validation and no-match honesty address those risks.
 
 ### G3 Tests: PENDING
 
-TDD red/green evidence, focused regression, static checks and qwen-max-3.7
-behavior evaluation are required.
+TDD red/green evidence and the requested `qwen3.7-max` live behavior evaluation
+are complete. Focused regression and static/repository checks remain before the
+gate can pass.
 
 ### G4 Safety Review: PENDING
 

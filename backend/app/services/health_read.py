@@ -88,24 +88,23 @@ def read_illness_episodes(
     db: Session,
     user_id: Optional[int],
     *,
-    days=183,
+    days=None,
     keyword: str = "",
 ) -> str:
     """Read owner-scoped illness episodes for a typed semantic query plan."""
     if user_id is None:
         return "Error: 当前会话无 user_id, 无法查询病症记录"
 
-    window_days = min(_window_days(days, floor=1), 365)
-    since = date.today() - timedelta(days=window_days)
+    window_days = None if days is None else min(_window_days(days, floor=1), 365)
+    since = date.today() - timedelta(days=window_days) if window_days is not None else None
     name = (keyword or "").strip()
 
     from app.models.illness import IllnessEpisode
 
     try:
-        query = db.query(IllnessEpisode).filter(
-            IllnessEpisode.user_id == user_id,
-            IllnessEpisode.start_date >= since,
-        )
+        query = db.query(IllnessEpisode).filter(IllnessEpisode.user_id == user_id)
+        if since is not None:
+            query = query.filter(IllnessEpisode.start_date >= since)
         if name:
             query = query.filter(IllnessEpisode.name.ilike(f"%{name}%"))
         rows = (
@@ -118,7 +117,8 @@ def read_illness_episodes(
         )
         if not rows:
             target = f"「{name}」" if name else "病症"
-            return f"未找到{target}记录 (最近 {window_days} 天内)。"
+            window = f"最近 {window_days} 天内" if window_days is not None else "全部历史中"
+            return f"未找到{target}记录 ({window})。"
 
         payload = [
             {

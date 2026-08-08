@@ -134,7 +134,7 @@ cases:
 
   - id: query_illness_negated_write
     family: query
-    query: 不要记录，只查询我以前的口腔溃疡历史
+    query: 不要帮我记录，我只是想查最近半年口腔溃疡有哪些记录
     checks:
       - { type: agent_intent, primary: read, is_write: false }
       - { type: prefer_fast_record, expect: false }

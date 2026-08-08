@@ -18398,7 +18398,9 @@ class AgentExecutor:
         """执行健康数据查询"""
         args = _normalize_health_query_args(args)
         dim = args.get("dimension", "comprehensive")
-        days = args.get("days", 7)
+        days = args.get("days")
+        if days is None and dim != "illness":
+            days = 7
         indicator = args.get("indicator", "")
         keyword = args.get("keyword") or args.get("keywords") or args.get("query") or ""
         if isinstance(keyword, list):

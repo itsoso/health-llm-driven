@@ -105,6 +105,7 @@ fields:
   - health_query.dimension gains illness
   - health_query.keyword applies to illness name
   - health_query.days applies to illness start-date window
+  - omitted health_query.days means full history for illness only
 enums:
   - health_query.dimension: add illness
 backward_compatibility:
@@ -145,6 +146,10 @@ Then it is read-only and no write tool is authorized
 Given matching oral-ulcer episodes belong to the current user
 When health_query runs with dimension illness and a six-month window
 Then it returns only the current user's matching episodes newest first
+
+Given the user asks only for the last oral-ulcer episode without a time window
+When health_query omits days
+Then the illness reader searches the user's full persisted illness history
 
 Given another user has a newer matching episode
 When the current user runs the same query

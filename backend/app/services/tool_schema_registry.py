@@ -78,6 +78,7 @@ dimension 选择指南 (按场景):
                      worked example: 用户问"整理今天下午的时间线" → health_query(dimension='events', days=1)
 
 days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 问"这月" → days=30.
+illness 问"上一次"且没有给时间窗时省略 days, 后端查询全部病症历史.
 """,
             "parameters": {
                 "type": "object",
@@ -97,7 +98,8 @@ days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 
                     "days": {
                         "type": "integer",
                         "default": 7,
-                        "description": "查询最近几天. 昨天=1, 最近/本周=7, 本月=30",
+                        "description": "查询最近几天. 昨天=1, 最近/本周=7, 本月=30；"
+                        "illness 问上一次且未给时间窗时省略，查询全部历史",
                     },
                     "indicator": {
                         "type": "string",

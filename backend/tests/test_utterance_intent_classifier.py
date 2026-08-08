@@ -116,6 +116,7 @@ def test_read_only_diet_record_noun_is_not_a_write_intent():
         "我以前有没有口腔溃疡记录？",
         "最近半年口腔溃疡有哪些记录",
         "上一次感冒记录是什么时候？",
+        "不要帮我记录，我只是想查上一次口腔溃疡是什么时候",
     ),
 )
 def test_historical_record_questions_are_read_only(message):
