@@ -550,6 +550,72 @@ class TestDispatcher:
         })
         assert v["error"]
 
+    @pytest.mark.parametrize("overflow", ("1e309", "-1e309"))
+    def test_health_manage_update_rejects_json_exponent_overflow(self, overflow):
+        v = validate_tool_call("health_manage", {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": f'{{"amount": {overflow}}}',
+        })
+        assert v["error"]
+
+    @pytest.mark.parametrize(
+        "data",
+        (
+            '{"amount": 350, "metadata": {"reading": 1e309}}',
+            '{"amount": 350, "samples": [200, -1e309]}',
+        ),
+    )
+    def test_health_manage_update_rejects_nested_json_exponent_overflow(self, data):
+        v = validate_tool_call("health_manage", {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": data,
+        })
+        assert v["error"]
+
+    @pytest.mark.parametrize(
+        "data",
+        (
+            {"amount": float("inf")},
+            {"amount": float("-inf")},
+            {"amount": float("nan")},
+            {"amount": 350, "metadata": {"reading": float("inf")}},
+            {"amount": 350, "samples": [200, float("nan")]},
+        ),
+    )
+    def test_health_manage_update_rejects_non_finite_values_in_parsed_objects(self, data):
+        v = validate_tool_call("health_manage", {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": data,
+        })
+        assert v["error"]
+
+    @pytest.mark.parametrize(
+        ("data", "expected"),
+        (
+            ('{"amount": 1e2}', {"amount": 100.0}),
+            ({"amount": 350, "confirmed": True}, {"amount": 350, "confirmed": True}),
+        ),
+    )
+    def test_health_manage_update_accepts_finite_exponents_and_preserves_booleans(
+        self,
+        data,
+        expected,
+    ):
+        v = validate_tool_call("health_manage", {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": data,
+        })
+        assert v["error"] is None
+        assert v["data"]["data"] == expected
+
 
 class TestQueryGuard:
     def test_unknown_dimension_coerced(self):

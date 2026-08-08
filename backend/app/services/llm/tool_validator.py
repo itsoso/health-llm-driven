@@ -47,6 +47,21 @@ def _reject_json_constant(value: str) -> None:
     raise ValueError(f"Unsupported JSON constant: {value}")
 
 
+def _contains_non_finite_float(value: Any) -> bool:
+    """Return whether a JSON-shaped value contains NaN or either infinity."""
+    if isinstance(value, float):
+        return not math.isfinite(value)
+    if isinstance(value, dict):
+        return any(
+            _contains_non_finite_float(item)
+            for pair in value.items()
+            for item in pair
+        )
+    if isinstance(value, (list, tuple)):
+        return any(_contains_non_finite_float(item) for item in value)
+    return False
+
+
 def _flatten_text(value: Any) -> str:
     if isinstance(value, (list, tuple, set)):
         return " ".join(_flatten_text(item) for item in value if item is not None)
@@ -850,6 +865,12 @@ def _validate_health_manage(
             return "Error: health_manage.update 的 data 必须是对象."
         if not data:
             return "Error: health_manage.update 必须提供 data 补丁字段."
+        if _contains_non_finite_float(data):
+            msg = "[tool_validator] health_manage.update.data 包含非有限数值, 拒绝"
+            warnings.append(msg)
+            logger.warning(msg)
+            _metric("health_manage", "data", "non_finite", action="rejected")
+            return "Error: health_manage.update 的 data 必须只包含有限数值."
         args["data"] = data
 
     if isinstance(args.get("date"), str) and len(args["date"]) > 10:
