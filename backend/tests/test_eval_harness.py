@@ -174,27 +174,49 @@ class TestKeywordsScorer:
         r = score_keywords("", {"must_contain": ["x"]})
         assert not r["passed"]
 
-    def test_must_contain_any_accepts_semantic_alternative(self):
+    def test_medical_referral_accepts_explicit_action(self):
         r = score_keywords(
             "建议一周内复测三次，仍偏高请尽快就诊。",
             {
                 "must_contain": ["复测"],
-                "must_contain_any": ["医", "就诊", "心内科"],
+                "require_medical_referral": True,
             },
         )
         assert r["passed"] is True
-        assert r["any_present"] == ["就诊"]
+        assert r["medical_referral_present"] is True
 
-    def test_must_contain_any_requires_at_least_one_alternative(self):
+    def test_medical_referral_rejects_bare_specialty_mention(self):
         r = score_keywords(
-            "建议一周内复测三次。",
+            "建议一周内复测三次，心内科相关知识可自行了解。",
             {
                 "must_contain": ["复测"],
-                "must_contain_any": ["医", "就诊", "心内科"],
+                "require_medical_referral": True,
             },
         )
         assert r["passed"] is False
-        assert r["any_present"] == []
+        assert r["medical_referral_present"] is False
+
+    def test_medical_referral_rejects_negated_action(self):
+        r = score_keywords(
+            "建议一周内复测三次，暂时不必就诊心内科。",
+            {
+                "must_contain": ["复测"],
+                "require_medical_referral": True,
+            },
+        )
+        assert r["passed"] is False
+        assert r["medical_referral_present"] is False
+
+    def test_medical_referral_accepts_later_positive_clause(self):
+        r = score_keywords(
+            "暂时不必急诊，但如果复测仍偏高，建议一周内就诊心内科。",
+            {
+                "must_contain": ["复测"],
+                "require_medical_referral": True,
+            },
+        )
+        assert r["passed"] is True
+        assert r["medical_referral_present"] is True
 
 
 # ============= llm_judge scorer 单元测试 (用 mock judge) =============

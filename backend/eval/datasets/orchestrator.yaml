@@ -46,7 +46,7 @@ cases:
             action: "建议 1 周内复测 3 次, 高于此值就诊心内科"
     expected:
       must_contain: ["复测"]
-      must_contain_any: ["医", "就诊", "心内科"]
+      require_medical_referral: true
       must_not_contain: ["mg", "片", "建议服用"]
       llm_judge_min_score: 3
 
