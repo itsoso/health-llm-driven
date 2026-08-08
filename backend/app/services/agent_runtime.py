@@ -123,6 +123,8 @@ _KNOWN_ERROR_CODES = frozenset(
         "runtime_control_unavailable",
         "aigc_media_turn_disallows_health_write",
         "ambiguous_intent_requires_clarification",
+        "delete_requires_explicit_whole_record_intent",
+        "manage_operation_mismatch",
         "manage_write_without_mutate_intent",
         "write_tool_without_write_intent",
     }

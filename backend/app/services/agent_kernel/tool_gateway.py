@@ -82,6 +82,7 @@ def blocked_tool_result(decision: CapabilityDecision) -> str:
         "write_tool_without_write_intent": "先澄清用户是要查询、记录还是修改，未明确保存意图前不要写入。",
         "manage_write_without_mutate_intent": "先确认用户要修改或删除哪条记录，再执行变更。",
         "manage_operation_mismatch": "保留现有记录，仅重试用户明确要求的操作，不要改用其他变更方式。",
+        "delete_requires_explicit_whole_record_intent": "保留整条记录；如用户只要去掉备注等字段，仅移除字段，否则先请用户明确是否删除整条记录。",
         "unknown_intervention_action": "先向用户说明该干预动作暂不支持，不要猜测 action。",
         "unknown_tool": "不要猜测工具名称，改用已注册能力或直接说明暂时无法完成。",
     }.get(

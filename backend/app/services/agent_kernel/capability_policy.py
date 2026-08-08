@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any
 
 from app.services.agent_kernel.tool_registry import (
@@ -56,6 +57,51 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "bloodpressure": "blood_pressure",
 }
 _CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v1"
+_WHOLE_RECORD_DELETE_VERBS = (
+    "删除",
+    "删掉",
+    "删去",
+    "删了",
+    "移除",
+    "清除",
+    "清掉",
+    "去掉",
+)
+_DELETE_UNDO_MARKERS = ("撤销", "取消", "恢复", "还原", "回退")
+_DELETE_MIXED_UPDATE_MARKERS = (
+    "修改",
+    "更改",
+    "更新",
+    "改成",
+    "改为",
+    "调整",
+    "修正",
+)
+_FIELD_DELETE_TARGET_RE = re.compile(r"(?:记录|条目)\s*(?:的|中(?:的)?)")
+_WHOLE_RECORD_TARGET_RE = re.compile(
+    r"(?:上一条|前一条|这条|那条|最后一条|刚才(?:那)?条|"
+    r"第[一二三四五六七八九十百\d]+条)[^，。；！？]{0,16}(?:记录|条目)"
+    r"|(?:[一二三四五六七八九十百两\d]+条)[^，。；！？]{0,16}(?:记录|条目)"
+    r"|(?:记录|条目)\s*#?\s*\d+"
+    r"|(?:上一餐|前一餐|这一餐|那一餐|上顿|这顿|那顿|"
+    r"上一次|前一次|这一次|那一次)"
+)
+
+
+def _has_explicit_whole_record_delete_intent(text: str) -> bool:
+    """Require user-authored evidence for deleting an entire record."""
+    normalized = "".join(str(text or "").split())
+    if not normalized:
+        return False
+    if not any(marker in normalized for marker in _WHOLE_RECORD_DELETE_VERBS):
+        return False
+    if any(marker in normalized for marker in _DELETE_UNDO_MARKERS):
+        return False
+    if any(marker in normalized for marker in _DELETE_MIXED_UPDATE_MARKERS):
+        return False
+    if _FIELD_DELETE_TARGET_RE.search(normalized):
+        return False
+    return _WHOLE_RECORD_TARGET_RE.search(normalized) is not None
 
 
 def capability_policy_contract_payload() -> dict[str, Any]:
@@ -239,6 +285,19 @@ def decide_tool_capability(
             return _decision("allow", "health_manage_list_is_read_only", tool_name, args)
         if operation in MANAGE_WRITE_OPERATIONS:
             if primary == "mutate" and snapshot.intent.operation == operation:
+                if (
+                    operation == "delete"
+                    and not _has_explicit_whole_record_delete_intent(
+                        snapshot.envelope.text
+                    )
+                ):
+                    return _decision(
+                        "block",
+                        "delete_requires_explicit_whole_record_intent",
+                        tool_name,
+                        args,
+                        receipt_required=True,
+                    )
                 return _decision(
                     "allow",
                     "explicit_mutation_intent",

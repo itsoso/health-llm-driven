@@ -118,6 +118,52 @@ def test_update_turn_allows_health_manage_update_with_receipt():
     assert decision.receipt_required is True
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "把上一条饮水记录的备注去掉",
+        "撤销刚才对饮水记录的修改",
+        "删除上一条饮水记录并改成 350ml",
+        "删除饮水记录",
+    ),
+)
+def test_delete_requires_explicit_whole_record_intent(message):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_manage",
+            {"record_type": "water", "operation": "delete", "record_id": 718},
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "delete_requires_explicit_whole_record_intent"
+    assert decision.receipt_required is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "删除上一条饮水记录",
+        "把上一条饮水记录删了",
+        "清掉记录 718",
+        "删除两条饮水记录",
+    ),
+)
+def test_explicit_whole_record_delete_remains_allowed(message):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_manage",
+            {"record_type": "water", "operation": "delete", "record_id": 718},
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.reason == "explicit_mutation_intent"
+    assert decision.receipt_required is True
+
+
 def test_write_turn_allows_health_record_with_receipt():
     decision = decide_tool_capability(
         _snapshot("记录午餐吃了牛肉面"),

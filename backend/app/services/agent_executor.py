@@ -2123,6 +2123,20 @@ def _parse_tool_arguments_for_telemetry(args_raw: Any) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _health_manage_target_key(
+    args: Mapping[str, Any],
+) -> Optional[tuple[str, str]]:
+    """Return a content-minimal identity for one managed health record."""
+    record_type = str(args.get("record_type") or "").strip().lower()
+    record_id = args.get("record_id")
+    if not record_type or isinstance(record_id, bool) or record_id in (None, ""):
+        return None
+    normalized_id = str(record_id).strip()
+    if not normalized_id:
+        return None
+    return record_type, normalized_id
+
+
 def _text_tool_call_write_is_authorized(
     call: Dict[str, Any],
     user_message: Optional[str],
@@ -8378,6 +8392,9 @@ class AgentExecutor:
         self._agent_kernel_last_decision: Optional[CapabilityDecision] = None
         self._agent_kernel_capability_block_reasons: List[str] = []
         self._agent_kernel_recovered_capability_block_reasons: List[str] = []
+        self._agent_kernel_unresolved_manage_mismatch_targets: set[
+            tuple[str, str]
+        ] = set()
         self._agent_kernel_tool_failure_tools: List[str] = []
         self._agent_kernel_pending_confirmation_tools: List[str] = []
         self._agent_kernel_tool_retry_count = 0
@@ -8417,6 +8434,7 @@ class AgentExecutor:
         self._agent_kernel_last_decision = None
         self._agent_kernel_capability_block_reasons = []
         self._agent_kernel_recovered_capability_block_reasons = []
+        self._agent_kernel_unresolved_manage_mismatch_targets = set()
         self._agent_kernel_tool_failure_tools = []
         self._agent_kernel_pending_confirmation_tools = []
         self._agent_kernel_tool_retry_count = 0
@@ -8621,6 +8639,32 @@ class AgentExecutor:
             if decision is not None and decision.receipt_required
             else None
         )
+        if (
+            not policy_blocked
+            and decision is not None
+            and decision.action == "allow"
+            and tool_name == "health_manage"
+            and str(parsed_args.get("operation") or "").strip().lower()
+            == "update"
+            and write_outcome is not None
+            and write_outcome.status == "verified"
+        ):
+            target = _health_manage_target_key(parsed_args)
+            unresolved_targets = (
+                self._agent_kernel_unresolved_manage_mismatch_targets
+            )
+            if target in unresolved_targets:
+                unresolved_targets.discard(target)
+                reason = "manage_operation_mismatch"
+                if (
+                    not unresolved_targets
+                    and reason in self._agent_kernel_capability_block_reasons
+                    and reason
+                    not in self._agent_kernel_recovered_capability_block_reasons
+                ):
+                    self._agent_kernel_recovered_capability_block_reasons.append(
+                        reason
+                    )
         if (
             policy_blocked
             and snapshot is not None
@@ -18287,6 +18331,17 @@ class AgentExecutor:
             return
         if decision.reason not in self._agent_kernel_capability_block_reasons:
             self._agent_kernel_capability_block_reasons.append(decision.reason)
+        if decision.reason == "manage_operation_mismatch":
+            target = _health_manage_target_key(decision.normalized_args)
+            if target is not None:
+                self._agent_kernel_unresolved_manage_mismatch_targets.add(target)
+                if (
+                    decision.reason
+                    in self._agent_kernel_recovered_capability_block_reasons
+                ):
+                    self._agent_kernel_recovered_capability_block_reasons.remove(
+                        decision.reason
+                    )
         logger.warning(
             "[agent_kernel] blocked tool=%s user=%s reason=%s intent=%s/%s/%s",
             requested_tool_name,
