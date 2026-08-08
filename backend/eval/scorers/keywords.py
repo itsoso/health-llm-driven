@@ -13,9 +13,19 @@ _MEDICAL_REFERRAL_ACTION = re.compile(
     r"(?:前往|去|到|预约|挂号|咨询|联系)[^，,。；;！？!?]{0,10}"
     r"(?:医院|门诊|科))"
 )
+_AFFIRMATIVE_MEDICAL_REFERRAL = re.compile(
+    r"(?:(?:建议|请|应当|应该|应|需要|需|尽快|及时|务必|最好|"
+    r"可以考虑|考虑|推荐)[^，,。；;！？!?]{0,20}"
+    + _MEDICAL_REFERRAL_ACTION.pattern
+    + r"|(?:如|若|如果|一旦|仍|持续|继续|高于|超过)"
+    r"[^，,。；;！？!?]{0,24}"
+    + _MEDICAL_REFERRAL_ACTION.pattern
+    + r")"
+)
 _NEGATED_MEDICAL_REFERRAL = re.compile(
-    r"(?:暂时|目前|现在)?\s*"
-    r"(?:不(?:必|用|要|应|该|建议|需要)?|无须|无需|没必要|暂缓|避免)"
+    r"(?:暂时|目前|现在|先)?\s*"
+    r"(?:不(?:必|用|要|应|该|建议|需要)?|无须|无需|没(?:有)?必要|"
+    r"暂缓|避免|别)"
     r"[^，,。；;！？!?]{0,8}"
     + _MEDICAL_REFERRAL_ACTION.pattern
 )
@@ -27,7 +37,7 @@ _REFERRAL_CLAUSE_SPLIT = re.compile(
 def _has_positive_medical_referral(actual: str) -> bool:
     for clause in _REFERRAL_CLAUSE_SPLIT.split(actual or ""):
         if (
-            _MEDICAL_REFERRAL_ACTION.search(clause)
+            _AFFIRMATIVE_MEDICAL_REFERRAL.search(clause)
             and not _NEGATED_MEDICAL_REFERRAL.search(clause)
         ):
             return True

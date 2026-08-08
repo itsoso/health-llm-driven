@@ -207,6 +207,24 @@ class TestKeywordsScorer:
         assert r["passed"] is False
         assert r["medical_referral_present"] is False
 
+    @pytest.mark.parametrize(
+        "answer",
+        (
+            "建议一周内复测三次，没有必要就医。",
+            "建议一周内复测三次，先别看医生。",
+        ),
+    )
+    def test_medical_referral_rejects_common_negative_phrasing(self, answer):
+        r = score_keywords(
+            answer,
+            {
+                "must_contain": ["复测"],
+                "require_medical_referral": True,
+            },
+        )
+        assert r["passed"] is False
+        assert r["medical_referral_present"] is False
+
     def test_medical_referral_accepts_later_positive_clause(self):
         r = score_keywords(
             "暂时不必急诊，但如果复测仍偏高，建议一周内就诊心内科。",
