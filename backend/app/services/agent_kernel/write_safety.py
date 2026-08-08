@@ -5,9 +5,15 @@ import re
 import unicodedata
 
 from app.services.write_intent_scope import (
+    has_explicit_authorizing_write_request,
+    has_mixed_write_polarity,
     has_negated_write_scope,
+    has_write_action_mention,
     is_historical_write_reference,
+    is_read_action_write_reference,
+    is_reported_write_reference,
     is_write_capability_question,
+    is_write_result_check,
 )
 
 
@@ -18,7 +24,25 @@ def is_explicit_write_cancellation(text: str) -> bool:
 
 def is_non_authorizing_write_reference(text: str) -> bool:
     """Fail closed on questions/history that mention a write action."""
-    return is_write_capability_question(text) or is_historical_write_reference(text)
+    return (
+        is_write_capability_question(text)
+        or is_historical_write_reference(text)
+        or is_read_action_write_reference(text)
+        or is_write_result_check(text)
+        or is_reported_write_reference(text)
+    )
+
+
+def lacks_positive_health_record_authorization(text: str) -> bool:
+    """Require direct positive authorization when a record action is mentioned."""
+    return has_write_action_mention(text) and not has_explicit_authorizing_write_request(
+        text
+    )
+
+
+def has_mixed_health_record_authorization(text: str) -> bool:
+    """Return whether one turn contains denied and positive write clauses."""
+    return has_mixed_write_polarity(text)
 
 
 _AIGC_PROVIDER_TERMS_RE = re.compile(r"百炼|万相|wan", re.IGNORECASE)

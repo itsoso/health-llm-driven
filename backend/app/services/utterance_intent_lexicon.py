@@ -113,6 +113,7 @@ WRITE_NEGATION_EXCEPTIONS = (
 STRUCTURAL_WRITE_NEGATIONS = (
     "先不要",
     "不需要",
+    "不必",
     "不要",
     "不用",
     "无需",
@@ -146,6 +147,7 @@ STRUCTURAL_WRITE_NEGATIONS = (
     "严禁",
     "拒绝",
     "避免",
+    "杜绝",
     "停止",
     "暂停",
     "终止",

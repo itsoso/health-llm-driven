@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS; G4 sixth remediation complete, fresh final re-review pending |
+| current_stage | G3 PASS; G4 seventh remediation complete, fresh final re-review pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -117,6 +117,26 @@ validation and no-match honesty address those risks.
   suite passes 2,098 tests. A real ToolGateway adversarial matrix also proves 80
   denial/history/capability combinations across every registered write synonym
   return `dispatch_started=false`.
+- Fresh reviews of commit `2430ba16a` then reproduced ordinary read verbs,
+  result-state checks, reported/quoted speech, precondition and trailing
+  revocations, capability complements, mixed-polarity clauses, vocative direct
+  requests and punctuation-free backfills crossing or losing the write boundary.
+  Failure-first coverage reproduced the defects before implementation.
+- The seventh remediation makes authorization positive rather than veto-based.
+  One shared speech-act parser now requires the governing action to be direct,
+  affirmative and current; read, capability, result, history, report, quote,
+  example and hypothetical frames are non-authorizing. It also preserves
+  object-fronted commands, lexical `过` collisions, dated backfills and later
+  positive contrast clauses. A compiled goal constrains mixed-polarity writes
+  so the model cannot use the positive target to write the denied target.
+- The expanded related regression suite passes 2,369 tests. Targeted Ruff,
+  Python compilation and diff checks pass. Real ToolGateway spies prove all new
+  non-authorizing examples return `dispatch_started=false`.
+- A fresh live `qwen3.7-max` challenge deliberately exposed why the model is not
+  the authority: its raw auto selection chose `health_record` for quoted
+  document text. The deterministic classifier/gate converted that exact case
+  to read/block before dispatch. For a fully specified direct meal request, the
+  forced write-tool path returned `health_record(record_type=diet)` with data.
 
 ### G4 Safety Review: PENDING
 
@@ -195,6 +215,24 @@ The final capability gate independently blocks capability/history frames even
 if a future classifier regression labels them as writes. Failure-first cases,
 the 2,098-test related suite, Ruff, compilation and repository structural gates
 must all pass before another brand-new independent review may decide G4.
+
+The two fresh reviews of commit `2430ba16a` returned NO-GO and deployment again
+stopped. They demonstrated actual ToolGateway dispatch for basic read requests,
+prior-result checks, reported speech, capability complements, independent
+denial paraphrases and trailing revocations. They also found that one global
+negation boolean blocked legitimate later writes, while vocative requests,
+object-fronted commands, lexical `过*` words and punctuation-free backfills could
+lose basic write behavior.
+
+The seventh remediation replaces fail-open veto matching with positive,
+action-scoped authorization shared by routing and the final tool gate. The last
+write-bearing clause determines current polarity; quoted, attributed,
+hypothetical, result, capability, history and read frames cannot authorize a
+write. Mixed denied/positive turns additionally bind the requested record type
+to the deterministic goal where available. Failure-first tests, a real gateway
+dispatch matrix, 2,369 related regressions and the live qwen challenge all pass
+at the system boundary. A brand-new independent safety and code review of the
+new commit remains mandatory before G4 can pass.
 
 ### G5 Deployment Health: PENDING
 

@@ -1,4 +1,4 @@
-"""Shared clause/scope parser for deterministic health-write authorization."""
+"""Shared speech-act parser for deterministic health-write authorization."""
 from __future__ import annotations
 
 import re
@@ -6,13 +6,22 @@ import unicodedata
 
 from app.services.utterance_intent_lexicon import (
     QUESTION_SIGNALS,
+    READ_ACTIONS,
+    RECORD_NOUN_SUFFIXES,
     STRUCTURAL_WRITE_NEGATIONS,
+    WRITE_ACTIONS,
     WRITE_COMMAND_ACTIONS,
+    WRITE_COMMAND_PREFIXES,
     WRITE_NEGATION_EXCEPTIONS,
 )
 
 _CLAUSE_BOUNDARY_RE = re.compile(
-    r"[，,。.!！；;]|但是|但|不过|然而|却|而是|然后|接着|随后"
+    r"[，,。.!！；;]|但是|但|不过|然而|可是|只是|却|而是|"
+    r"是(?=请(?:你)?)|然后|接着|随后"
+)
+_CONTEXTUAL_DENIAL_COMMA_RE = re.compile(
+    r"((?:没有|没|未|未经|无).{0,12}(?:同意|授权|许可|允许)"
+    r".{0,8}(?:情况下|情形下|前提下))[，,]"
 )
 _CAPABILITY_INQUIRY_PREFIXES = (
     "我想问一下",
@@ -29,14 +38,37 @@ _CAPABILITY_INQUIRY_PREFIXES = (
     "想了解",
     "我想确认",
     "想确认",
+    "请确认",
+    "确认",
+    "请说明",
+    "说明",
 )
-_CAPABILITY_SUBJECTS = ("这个功能", "该功能", "系统", "小巴")
+_CAPABILITY_SUBJECTS = (
+    "这个功能",
+    "该功能",
+    "这个系统",
+    "该系统",
+    "这个服务",
+    "该服务",
+    "这个应用",
+    "该应用",
+    "这个助手",
+    "该助手",
+    "系统",
+    "小巴",
+    "应用",
+    "平台",
+    "这个",
+    "它",
+)
 _CAPABILITY_MODALS = (
     "可不可以",
     "能不能",
     "会不会",
     "是否会",
     "有没有",
+    "具不具备",
+    "具备",
     "可以",
     "能否",
     "可否",
@@ -66,6 +98,14 @@ _NEGATION_LEXICAL_CONTAINERS = (
     "告别",
 )
 _POSITIVE_REMINDER_RE = re.compile(r"(?:不要|别|勿|甭)(?:忘记|忘了|忘)")
+_NEGATED_CONTROL_RE = re.compile(
+    r"(?:不|没有|没|未曾|未|未经|无).{0,3}"
+    r"(?:同意|允许|授权|许可|准许|要求|希望|愿意|乐意|打算|考虑|"
+    r"接受|赞成|想|让|叫|肯)"
+)
+_DIRECT_DENIAL_SCOPE_RE = re.compile(
+    r"(?:反对|抗拒|抵制).{0,12}(?:让|由|帮我|替我|为我)"
+)
 _HISTORY_NOUN_TERMS = ("历史", "列表", "汇总")
 _PAST_TIME_TERMS = (
     "以前",
@@ -74,11 +114,75 @@ _PAST_TIME_TERMS = (
     "上回",
     "之前",
     "刚才",
+    "刚刚",
+    "方才",
+    "昨天",
+    "前天",
+    "大前天",
+    "上周",
+    "上个月",
+    "去年",
+    "那次",
+    "当时",
+    "此前",
+    "先前",
+    "早先",
+    "最近一次",
     "既往",
     "曾经",
 )
 _HISTORY_TERMS = (*_HISTORY_NOUN_TERMS, *_PAST_TIME_TERMS)
-_COMPLETED_QUESTION_SUFFIXES = ("了吗", "了没", "了没有", "过吗", "过没", "过没有")
+_COMPLETED_TAILS = ("了", "过", "没有", "没")
+_NON_ASPECT_GUARDS = ("过敏", "过量", "过高", "过低", "过去", "过程")
+_COMPLETION_TRAILING_PARTICLES = "?？啊呀呢么嘛吗"
+_POST_ACTION_DENIAL_RE = re.compile(
+    r"(?:还是)?(?:算了|取消(?:吧|了)?|撤销(?:吧|了)?|作罢|就免了|免了|"
+    r"先不要了|不要了|未获授权|没有授权|未经授权|不被允许|"
+    r"是不允许的?|不允许)"
+)
+_TRAILING_REVOCATION_CLAUSE_RE = re.compile(
+    r"^(?:还是)?(?:算了|取消(?:吧|了)?|撤销(?:吧|了)?|"
+    r"(?:这件事)?作罢|先不要了|不要了)$"
+)
+_RESULT_CHECK_LEADS = (
+    "确认",
+    "核对",
+    "查查",
+    "检查",
+    "验证",
+    "查看",
+    "看看",
+    "查一下",
+)
+_RESULT_STATE_MARKERS = ("有没有", "是否", "是否已", "是否已经", "已经", "已")
+_RESULT_TAIL_MARKERS = ("成功", "完成", "生效", "写进", "写到", "存进", "存到")
+_REPORTING_SOURCES = (
+    "客服",
+    "文档",
+    "原文",
+    "提示",
+    "通知",
+    "系统消息",
+    "他说",
+    "她说",
+    "对方说",
+    "我说",
+)
+_REPORTING_VERBS = ("说", "表示", "写着", "写道", "提到", "显示", "提示")
+_METALANGUAGE_ACTIONS = (
+    "转述",
+    "复述",
+    "翻译",
+    "解释这句话",
+    "引用",
+    "举例",
+    "例子",
+    "假设",
+    "假如",
+    "如果",
+    "这句话",
+    "是什么意思",
+)
 _BACKFILL_DATE_SIGNALS = (
     "发作日期",
     "开始日期",
@@ -89,7 +193,65 @@ _BACKFILL_DATE_SIGNALS = (
     "时间是",
     "时间为",
 )
-_BACKFILL_REQUEST_MARKERS = ("请", "帮我", "把", "麻烦", "替我", "给我", "为我")
+_BACKFILL_REQUEST_MARKERS = (
+    "请",
+    "帮我",
+    "把",
+    "麻烦",
+    "替我",
+    "给我",
+    "为我",
+    "补充",
+)
+_DIRECT_REQUEST_HELPERS = (
+    "别忘了",
+    "我想请你",
+    "我想让你",
+    "我希望你",
+    "我需要你",
+    "我想请",
+    "麻烦帮我",
+    "麻烦你",
+    "请你",
+    "帮我",
+    "帮忙",
+    "给我",
+    "替我",
+    "为我",
+    "麻烦",
+    "劳烦",
+    "请",
+    "我想",
+    "希望",
+    "需要",
+    "想",
+    "能帮我",
+    "可以帮我",
+)
+_DIRECT_REQUEST_MODIFIERS = (
+    "可不可以",
+    "能不能",
+    "不得不",
+    "不能不",
+    "不妨",
+    "可以",
+    "能否",
+    "可否",
+    "能",
+    "分别",
+    "顺便",
+    "现在",
+    "立即",
+    "马上",
+    "主动",
+    "务必",
+    "然后",
+    "再",
+    "先",
+    "就",
+    "你",
+)
+_VOCATIVE_PREFIXES = ("小巴你", "小巴", "助手你", "助手")
 _DENIAL_SCOPE_INTRO_ENDINGS = (
     "执行",
     "执行以下操作",
@@ -98,12 +260,26 @@ _DENIAL_SCOPE_INTRO_ENDINGS = (
     "如下操作",
     "这些操作",
     "这项操作",
+    "以下行为",
+    "如下行为",
+    "这些行为",
+    "这项行为",
+    "以下事项",
+    "如下事项",
+    "以下内容",
+    "如下内容",
+    "以下动作",
+    "如下动作",
+    "这件事",
+    "该件事",
+    "这回事",
 )
 _DIRECT_DENIAL_PREDICATES = (
     "禁止",
     "严禁",
     "拒绝",
     "避免",
+    "杜绝",
     "停止",
     "暂停",
     "终止",
@@ -113,6 +289,7 @@ _DIRECT_DENIAL_PREDICATES = (
     "谢绝",
 )
 _ORDERED_WRITE_ACTIONS = tuple(sorted(WRITE_COMMAND_ACTIONS, key=len, reverse=True))
+_ORDERED_WRITE_SIGNALS = tuple(sorted(WRITE_ACTIONS, key=len, reverse=True))
 _ORDERED_NEGATIONS = tuple(sorted(STRUCTURAL_WRITE_NEGATIONS, key=len, reverse=True))
 _ORDERED_NON_NEGATING_MODALS = tuple(
     sorted(_NON_NEGATING_MODALS, key=len, reverse=True)
@@ -126,6 +303,7 @@ def normalize_write_scope_text(value: str) -> str:
 
 def split_write_clauses(value: str) -> tuple[str, ...]:
     text = normalize_write_scope_text(value)
+    text = _CONTEXTUAL_DENIAL_COMMA_RE.sub(r"\1", text)
     colon_scoped: list[str] = []
     current = ""
     for character in text:
@@ -148,59 +326,112 @@ def split_write_clauses(value: str) -> tuple[str, ...]:
 
 
 def _colon_extends_denial_scope(left: str) -> bool:
+    if any(predicate in left for predicate in _DIRECT_DENIAL_PREDICATES):
+        return True
     if not any(negation in left for negation in _ORDERED_NEGATIONS):
         return False
-    return left.endswith(_DENIAL_SCOPE_INTRO_ENDINGS) or left.endswith(
-        _DIRECT_DENIAL_PREDICATES
+    return left.endswith(_DENIAL_SCOPE_INTRO_ENDINGS)
+
+
+def _clean_negation_clause(raw_clause: str) -> str:
+    clause = raw_clause
+    for exception in WRITE_NEGATION_EXCEPTIONS:
+        clause = clause.replace(exception, "")
+    clause = _POSITIVE_REMINDER_RE.sub("", clause)
+    for container in _NEGATION_LEXICAL_CONTAINERS:
+        clause = clause.replace(container, "")
+    for modal in _ORDERED_NON_NEGATING_MODALS:
+        clause = clause.replace(modal, "")
+    return clause
+
+
+def _last_action_in_clause(clause: str) -> tuple[str, int] | None:
+    context: tuple[str, int] | None = None
+    for action in _ORDERED_WRITE_ACTIONS:
+        start = clause.rfind(action)
+        if start < 0:
+            continue
+        if context is None or start > context[1]:
+            context = (action, start)
+    return context
+
+
+def _last_write_action_context(value: str) -> tuple[str, str, int] | None:
+    last_context: tuple[str, str, int] | None = None
+    for clause in split_write_clauses(value):
+        action_context = _last_action_in_clause(clause)
+        if action_context is not None:
+            action, start = action_context
+            last_context = (clause, action, start)
+    return last_context
+
+
+def _starts_with_completed_aspect(after_action: str) -> bool:
+    if after_action.startswith("了"):
+        return True
+    return after_action.startswith("过") and not after_action.startswith(
+        _NON_ASPECT_GUARDS
     )
 
 
-def has_negated_write_scope(value: str) -> bool:
-    """Return true when a negation precedes a write action in one clause."""
+def _write_clause_denials(value: str) -> tuple[bool, ...]:
     text = normalize_write_scope_text(value)
     if not text:
-        return False
-    if re.search(r"(?:取消|撤销)(?:这次|本次|该次)?(?:记录|保存|录入|写入)", text):
-        return True
-    if re.search(r"(?:记录|保存|录入|写入)(?:这次|本次|该次)?(?:取消|撤销|算了)", text):
-        return True
+        return ()
 
+    denials: list[bool] = []
     for raw_clause in split_write_clauses(text):
-        clause = raw_clause
-        for exception in WRITE_NEGATION_EXCEPTIONS:
-            clause = clause.replace(exception, "")
-        clause = _POSITIVE_REMINDER_RE.sub("", clause)
-        for container in _NEGATION_LEXICAL_CONTAINERS:
-            clause = clause.replace(container, "")
-        for modal in _ORDERED_NON_NEGATING_MODALS:
-            clause = clause.replace(modal, "")
-        action_positions = [
-            position
-            for action in _ORDERED_WRITE_ACTIONS
-            if (position := clause.find(action)) >= 0
-        ]
-        if not action_positions:
+        clause = _clean_negation_clause(raw_clause)
+        action_context = _last_action_in_clause(clause)
+        if action_context is None:
+            if (
+                denials
+                and _TRAILING_REVOCATION_CLAUSE_RE.fullmatch(clause)
+            ):
+                denials[-1] = True
             continue
-        first_action = min(action_positions)
-        if any(clause.find(negation, 0, first_action) >= 0 for negation in _ORDERED_NEGATIONS):
-            return True
-    return False
+        _action, action_position = action_context
+        before_action = clause[:action_position]
+        after_action = clause[action_position:]
+        denials.append(
+            bool(
+                any(
+                    clause.find(negation, 0, action_position) >= 0
+                    for negation in _ORDERED_NEGATIONS
+                )
+                or _NEGATED_CONTROL_RE.search(before_action)
+                or _DIRECT_DENIAL_SCOPE_RE.search(before_action)
+                or _POST_ACTION_DENIAL_RE.search(after_action)
+            )
+        )
+    return tuple(denials)
+
+
+def has_negated_write_scope(value: str) -> bool:
+    """Return whether the governing write-bearing clause denies authorization.
+
+    Contrast clauses are evaluated in order. A later positive write clause can
+    supersede an earlier refusal, while a trailing revocation applies to the
+    most recent write clause.
+    """
+    denials = _write_clause_denials(value)
+    return bool(denials and denials[-1])
+
+
+def has_mixed_write_polarity(value: str) -> bool:
+    """Return true when denied and authorized write clauses coexist."""
+    denials = _write_clause_denials(value)
+    return any(denials) and any(not denied for denied in denials)
 
 
 def is_write_capability_question(value: str) -> bool:
     """Recognize product-capability questions without treating them as requests."""
-    text = normalize_write_scope_text(value)
-    action_position = min(
-        (
-            position
-            for action in _ORDERED_WRITE_ACTIONS
-            if (position := text.find(action)) >= 0
-        ),
-        default=-1,
-    )
-    if action_position < 0:
+    context = _last_write_action_context(value)
+    if context is None:
         return False
-    before_action = text[:action_position]
+    clause, action, action_position = context
+    before_action = clause[:action_position]
+    after_action = clause[action_position + len(action):]
     has_inquiry_cue = any(
         cue in before_action for cue in _CAPABILITY_INQUIRY_PREFIXES
     )
@@ -214,27 +445,25 @@ def is_write_capability_question(value: str) -> bool:
     )
     if subject_match is None:
         return has_inquiry_cue and (
-            any(signal.lower() in text for signal in QUESTION_SIGNALS)
+            any(signal.lower() in clause for signal in QUESTION_SIGNALS)
             or any(modal in before_action for modal in _CAPABILITY_MODALS)
         )
     subject_position, subject = subject_match
-    after_subject = text[subject_position + len(subject):]
-    if after_subject.startswith(("，", ",", "：", ":")):
-        if subject_position == 0 and not has_inquiry_cue:
-            return False
-        after_subject = after_subject[1:]
-
-    subject_action_position = min(
-        (
-            position
-            for action in _ORDERED_WRITE_ACTIONS
-            if (position := after_subject.find(action)) >= 0
-        ),
-        default=-1,
-    )
+    after_subject = clause[subject_position + len(subject):]
+    subject_action_position = after_subject.find(action)
     if subject_action_position < 0:
         return False
     before_subject_action = after_subject[:subject_action_position]
+    if (
+        subject == "小巴"
+        and not has_inquiry_cue
+        and (
+            "你能帮我" in before_action
+            or "你可以帮我" in before_action
+            or after_action.startswith(("一下", "下来"))
+        )
+    ):
+        return False
     return has_inquiry_cue or any(
         modal in before_subject_action for modal in _CAPABILITY_MODALS
     )
@@ -244,53 +473,175 @@ def _is_explicit_dated_backfill(value: str) -> bool:
     text = normalize_write_scope_text(value)
     if not any(term in text for term in _HISTORY_TERMS):
         return False
-    if not any(signal in text for signal in _BACKFILL_DATE_SIGNALS):
+    if not (
+        any(signal in text for signal in _BACKFILL_DATE_SIGNALS)
+        or any(term in text for term in _PAST_TIME_TERMS)
+    ):
         return False
     if any(signal in text for signal in QUESTION_SIGNALS):
         return False
-    action_position = min(
-        (
-            position
-            for action in _ORDERED_WRITE_ACTIONS
-            if (position := text.find(action)) >= 0
-        ),
-        default=-1,
-    )
-    if action_position < 0:
+    context = _last_write_action_context(text)
+    if context is None:
         return False
-    before_action = text[:action_position]
-    after_action = text[action_position:]
+    clause, action, action_position = context
+    before_action = clause[:action_position]
+    after_action = clause[action_position + len(action):]
+    if action == "记录" and after_action.startswith(RECORD_NOUN_SUFFIXES):
+        return False
     return (
         action_position == 0
         or before_action.startswith(_BACKFILL_REQUEST_MARKERS)
-        or after_action.startswith(("记录下来", "记下来", "存下来"))
+        or before_action.endswith(_BACKFILL_REQUEST_MARKERS)
+        or after_action.startswith(("一下", "下来"))
     )
 
 
 def is_historical_write_reference(value: str) -> bool:
-    """Recognize completed actions and historical/list noun frames."""
+    """Recognize completion and historical/list noun frames for the last action."""
     if _is_explicit_dated_backfill(value):
         return False
-    for clause in split_write_clauses(value):
-        for action in _ORDERED_WRITE_ACTIONS:
-            start = clause.find(action)
-            while start >= 0:
-                after = clause[start + len(action):]
-                if after.startswith(("过", "了")):
-                    return True
-                completed_tail = after.rstrip("?？")
-                if completed_tail.endswith(_COMPLETED_QUESTION_SUFFIXES):
-                    return True
-                if any(term in clause for term in _HISTORY_NOUN_TERMS):
-                    return True
-                has_question = any(
-                    signal.lower() in clause for signal in QUESTION_SIGNALS
+    context = _last_write_action_context(value)
+    if context is None:
+        return False
+    clause, action, start = context
+    after = clause[start + len(action):]
+    if _starts_with_completed_aspect(after):
+        return True
+    completed_tail = after.rstrip(_COMPLETION_TRAILING_PARTICLES)
+    if completed_tail.endswith(_COMPLETED_TAILS):
+        return True
+    if any(term in clause for term in _HISTORY_NOUN_TERMS):
+        return True
+    has_question = any(signal.lower() in clause for signal in QUESTION_SIGNALS)
+    return any(
+        (term_position := clause.find(term)) >= 0
+        and (term_position < start or has_question)
+        for term in _PAST_TIME_TERMS
+    )
+
+
+def is_read_action_write_reference(value: str) -> bool:
+    """Return true when a read verb governs a later write-action noun."""
+    context = _last_write_action_context(value)
+    if context is None:
+        return False
+    clause, _action, start = context
+    return any(
+        (read_position := clause.find(read_action)) >= 0 and read_position < start
+        for read_action in READ_ACTIONS
+    )
+
+
+def is_write_result_check(value: str) -> bool:
+    """Recognize checks of an earlier write's completion or persistence state."""
+    context = _last_write_action_context(value)
+    if context is None:
+        return False
+    clause, action, start = context
+    before_action = clause[:start]
+    after_action = clause[start + len(action):]
+    has_check_lead = any(cue in before_action for cue in _RESULT_CHECK_LEADS)
+    has_state = any(marker in before_action for marker in _RESULT_STATE_MARKERS)
+    has_result_tail = any(marker in after_action for marker in _RESULT_TAIL_MARKERS)
+    return (has_check_lead and (has_state or has_result_tail)) or (
+        has_result_tail and any(signal in clause for signal in QUESTION_SIGNALS)
+    )
+
+
+def is_reported_write_reference(value: str) -> bool:
+    """Recognize attributed, quoted, or metalinguistic write language."""
+    text = normalize_write_scope_text(value)
+    action_positions = [
+        position
+        for action in _ORDERED_WRITE_SIGNALS
+        if (position := text.rfind(action)) >= 0
+    ]
+    if not action_positions:
+        return False
+    action_position = max(action_positions)
+    before_action = text[:action_position]
+    after_action = text[action_position:]
+    if any(action in before_action for action in _METALANGUAGE_ACTIONS):
+        return True
+    if any(mark in before_action for mark in ('"', "“", "「", "『")) and any(
+        mark in after_action for mark in ('"', "”", "」", "』")
+    ):
+        return True
+    return any(source in before_action for source in _REPORTING_SOURCES) and any(
+        verb in before_action for verb in _REPORTING_VERBS
+    )
+
+
+def has_write_action_mention(value: str) -> bool:
+    """Return whether user text mentions a registered health-write action."""
+    text = normalize_write_scope_text(value)
+    return any(action in text for action in _ORDERED_WRITE_ACTIONS)
+
+
+def _strip_direct_request_prefix(clause: str) -> str:
+    remainder = clause
+    for vocative in _VOCATIVE_PREFIXES:
+        if remainder.startswith(vocative):
+            remainder = remainder[len(vocative):]
+            break
+    tokens = tuple(
+        sorted(
+            (
+                token
+                for token in (
+                *_DIRECT_REQUEST_HELPERS,
+                *_DIRECT_REQUEST_MODIFIERS,
+                *WRITE_COMMAND_PREFIXES,
                 )
-                if any(
-                    (term_position := clause.find(term)) >= 0
-                    and (term_position < start or has_question)
-                    for term in _PAST_TIME_TERMS
-                ):
-                    return True
-                start = clause.find(action, start + len(action))
-    return False
+                if token != "把"
+            ),
+            key=len,
+            reverse=True,
+        )
+    )
+    for _ in range(12):
+        matched = next((token for token in tokens if remainder.startswith(token)), None)
+        if matched is None:
+            break
+        remainder = remainder[len(matched):]
+    return remainder
+
+
+def has_explicit_authorizing_write_request(value: str) -> bool:
+    """Require a positive, direct speech act before authorizing health writes.
+
+    The classifier and final tool gate share this positive predicate. Mentions,
+    questions, reported text, completed-state checks, and denied clauses are
+    fail-closed instead of becoming authorized merely because no veto matched.
+    """
+    context = _last_write_action_context(value)
+    if context is None:
+        return False
+    if has_negated_write_scope(value):
+        return False
+    if (
+        is_write_capability_question(value)
+        or is_historical_write_reference(value)
+        or is_read_action_write_reference(value)
+        or is_write_result_check(value)
+        or is_reported_write_reference(value)
+    ):
+        return False
+    if _is_explicit_dated_backfill(value):
+        return True
+
+    clause, action, start = context
+    after_action = clause[start + len(action):]
+    if action == "记录" and after_action.startswith(RECORD_NOUN_SUFFIXES):
+        return False
+    if _starts_with_completed_aspect(after_action):
+        return False
+    direct_clause = _strip_direct_request_prefix(clause)
+    if direct_clause.startswith(action):
+        return True
+    if direct_clause.startswith(("把", "将")) and action in direct_clause:
+        return action != "记录" or after_action.startswith(("下来", "到", "为"))
+    before_action = clause[:start]
+    return start == 0 or before_action.endswith(
+        (*_DIRECT_REQUEST_HELPERS, *WRITE_COMMAND_PREFIXES)
+    )

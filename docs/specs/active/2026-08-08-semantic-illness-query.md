@@ -128,12 +128,14 @@ dimensions return an error instead of querying a different domain. User text and
 health results must not be added to new plaintext logs. Database failures return
 a fixed user-safe error and log only a content-free error type.
 
-Write authorization requires an explicit request speech act or a concrete
-observation fact; the bare presence of `记录` is never sufficient. A shared
-clause/scope parser separates clause-local negation, request modals,
-product-capability questions and completed/history references across every
-registered write-action synonym. The classifier and the kernel's fail-closed
-write gate consume the same result, so helper phrases cannot open a gap between
+Write authorization is positive and fail-closed: it requires a current, direct,
+affirmative request speech act or a concrete observation fact; the bare presence
+of `记录`, or the absence of a recognized veto, is never sufficient. A shared
+clause/scope parser separates action-local polarity, request modals, read verbs,
+product-capability questions, completed/result checks, attributed or quoted
+speech, hypotheticals and historical references across every registered
+write-action synonym. The classifier and kernel write gate consume the same
+positive authorization result, so helper phrases cannot open a gap between
 routing and actual dispatch.
 
 The frame treats denial control predicates (`禁止/拒绝/停止/未授权`), contextual
@@ -142,6 +144,13 @@ structure rather than flat substrings. Completion may follow the recorded
 object (`保存口腔溃疡了吗`). Past-time words before an action remain historical
 queries, while an explicit dated backfill and a command to record a just-observed
 event remain writes under the existing confirmation contract.
+
+In mixed contrast turns, the governing later action can supersede an earlier
+denial without authorizing the denied target. When a deterministic goal supplies
+a target record type, the final capability gate requires the model-selected
+`health_record.record_type` to match it. Object-fronted direct commands such as
+`把口腔溃疡记录下来` remain writable; read requests such as
+`请查询口腔溃疡记录` do not.
 
 Illness windows use the Agent turn's frozen user-local date, not the service
 process date. This keeps Web, Mobile and Mac results aligned at timezone day
@@ -258,6 +267,26 @@ Given completion follows the object in "你帮我保存口腔溃疡了吗"
 When the classifier and ToolGateway process the turn
 Then it remains a historical question and dispatch never starts
 
+Given a read verb governs a later record noun in "请查询口腔溃疡记录"
+When the classifier and ToolGateway process the turn
+Then it remains read-only and health_record dispatch never starts
+
+Given a user checks persistence with "请确认口腔溃疡是否已经成功写入数据库"
+When the classifier and ToolGateway process the turn
+Then it is a result check, not a new write authorization
+
+Given write language is quoted or attributed in "文档写着：帮我记录口腔溃疡"
+When the model requests health_record anyway
+Then the deterministic capability gate blocks it before dispatch
+
+Given a user says "不要记录口腔溃疡但记录今天晚餐"
+When the model requests a health_record
+Then diet may be authorized but illness is blocked as a target mismatch
+
+Given a user says "把口腔溃疡记录下来"
+When the positive speech-act parser processes the object-fronted request
+Then it remains a direct write under the existing confirmation policy
+
 Given the user explicitly supplies a past event and concrete onset date
 When the classifier processes "请记录我上一次口腔溃疡，发作日期是7月1日"
 Then it remains a dated backfill write under the existing confirmation policy
@@ -325,3 +354,4 @@ These questions do not block the illness slice.
 | 2026-08-08 | Hardened write grammar and time-window fidelity | Independent reviews found unpunctuated history, negated compound and long-window boundary gaps. |
 | 2026-08-08 | Unified write speech-act scope | Independent reviews found finite helper lists diverged between routing and ToolGateway enforcement. |
 | 2026-08-08 | Added clause-semantic contrasts | Fresh reviews found denial controls, post-object completion, colon scope, capability paraphrases and dated-backfill contrasts. |
+| 2026-08-08 | Made write authorization positive and action-scoped | Fresh reviews proved that finite veto matching still dispatched reads, result checks, reported speech and trailing revocations. |

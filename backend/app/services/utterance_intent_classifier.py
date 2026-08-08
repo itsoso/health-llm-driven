@@ -31,17 +31,18 @@ from app.services.utterance_intent_lexicon import (
     PLAN_UPDATE_ACTIONS,
     QUESTION_SIGNALS,
     READ_ACTIONS,
-    RECORD_NOUN_SUFFIXES,
     REMINDER_CREATE_ACTIONS,
     REMINDER_TERMS,
     WRITE_ACTIONS,
-    WRITE_COMMAND_ACTIONS,
-    WRITE_COMMAND_PREFIXES,
 )
 from app.services.write_intent_scope import (
+    has_explicit_authorizing_write_request,
     has_negated_write_scope,
     is_historical_write_reference,
+    is_read_action_write_reference,
+    is_reported_write_reference,
     is_write_capability_question,
+    is_write_result_check,
 )
 
 BJ = timezone(timedelta(hours=8))
@@ -225,49 +226,6 @@ DECLARATIVE_OBSERVATION_ACTIONS = (
     "已吃",
     "已喝",
 )
-WRITE_REQUEST_HELPERS = (
-    "别忘了",
-    "我想请你",
-    "我想请",
-    "我想",
-    "麻烦帮我",
-    "麻烦你",
-    "可不可以",
-    "能不能",
-    "请你",
-    "帮我",
-    "帮忙",
-    "给我",
-    "替我",
-    "为我",
-    "可以",
-    "能否",
-    "可否",
-    "麻烦",
-    "请",
-    "能",
-)
-POLITE_WRITE_PREFIXES = ("可以", "能否", "可否", "可不可以", "能不能", "能")
-WRITE_CLAUSE_BOUNDARIES = (
-    "然后",
-    "再分析",
-    "再告诉我",
-    "并分析",
-    "并告诉我",
-    "，",
-    ",",
-    "。",
-    "；",
-    ";",
-    "但是",
-    "但",
-    "不过",
-    "然而",
-    "却",
-    "而是",
-)
-
-
 def classify_agent_utterance(
     message: Any,
     *,
@@ -287,6 +245,9 @@ def classify_agent_utterance(
     has_read = (
         _has_any(normalized, READ_ACTIONS)
         or is_historical_write_reference(normalized)
+        or is_read_action_write_reference(normalized)
+        or is_write_result_check(normalized)
+        or is_reported_write_reference(normalized)
         or write_capability_question
     )
     scope = _build_scope(
@@ -605,31 +566,6 @@ def _has_any(text: str, phrases: tuple[str, ...]) -> bool:
     return any(phrase.lower() in text for phrase in phrases)
 
 
-def _is_explicit_write_action_at(
-    text: str,
-    action: str,
-    start: int,
-) -> bool:
-    left_context = text[:start]
-    after = text[start + len(action):]
-    if action == "记录" and after.startswith(RECORD_NOUN_SUFFIXES):
-        return False
-    if after.startswith(("过", "了")):
-        return False
-    if action == "记录" and after.startswith(("一下", "下来", "为", "到")):
-        return True
-    local_after = _before_first_boundary(after, WRITE_CLAUSE_BOUNDARIES)
-    if action == "记录" and start == 0 and _has_question_signal(local_after):
-        return False
-    clause_left = _after_last_boundary(left_context, WRITE_CLAUSE_BOUNDARIES)
-    return (
-        start == 0
-        or not clause_left
-        or clause_left.startswith((*WRITE_REQUEST_HELPERS, *WRITE_COMMAND_PREFIXES))
-        or left_context.endswith(WRITE_COMMAND_PREFIXES)
-    )
-
-
 def _has_bounded_water_marker(
     text: str,
     markers: tuple[str, ...],
@@ -696,45 +632,6 @@ def _has_negated_write(text: str) -> bool:
     return has_negated_write_scope(text)
 
 
-def _strip_write_request_helper(text: str) -> str:
-    return _strip_leading_tokens(text, WRITE_REQUEST_HELPERS)
-
-
-def _strip_leading_tokens(
-    text: str,
-    tokens: tuple[str, ...],
-    *,
-    max_tokens: int = 8,
-) -> str:
-    """Consume a bounded sequence of request-grammar tokens from the left."""
-    remainder = text
-    ordered_tokens = tuple(sorted(tokens, key=len, reverse=True))
-    for _ in range(max_tokens):
-        matched = next(
-            (token for token in ordered_tokens if remainder.startswith(token)),
-            None,
-        )
-        if matched is None:
-            break
-        remainder = remainder[len(matched):]
-    return remainder
-
-
-def _before_first_boundary(text: str, boundaries: tuple[str, ...]) -> str:
-    positions = [text.find(boundary) for boundary in boundaries]
-    found = [position for position in positions if position >= 0]
-    return text if not found else text[:min(found)]
-
-
-def _after_last_boundary(text: str, boundaries: tuple[str, ...]) -> str:
-    end_positions = [
-        position + len(boundary)
-        for boundary in boundaries
-        if (position := text.rfind(boundary)) >= 0
-    ]
-    return text if not end_positions else text[max(end_positions):]
-
-
 def _has_explicit_write_command(text: str) -> bool:
     """Distinguish a record command from a record used as evidence or a noun.
 
@@ -744,24 +641,7 @@ def _has_explicit_write_command(text: str) -> bool:
     This stays deliberately lexical and structural rather than falling back to
     a broad regex keyword router.
     """
-    if is_write_capability_question(text) or is_historical_write_reference(text):
-        return False
-    direct_request = _strip_write_request_helper(text)
-    if direct_request != text and direct_request.startswith(WRITE_COMMAND_ACTIONS):
-        return True
-    for prefix in POLITE_WRITE_PREFIXES:
-        if not text.startswith(prefix):
-            continue
-        remainder = _strip_write_request_helper(text[len(prefix):])
-        if remainder.startswith(WRITE_COMMAND_ACTIONS):
-            return True
-    for action in WRITE_COMMAND_ACTIONS:
-        start = text.find(action)
-        while start >= 0:
-            if _is_explicit_write_action_at(text, action, start):
-                return True
-            start = text.find(action, start + len(action))
-    return False
+    return has_explicit_authorizing_write_request(text)
 
 
 def _mutation_operation(text: str) -> Optional[str]:

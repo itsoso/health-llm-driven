@@ -1,10 +1,12 @@
 import json
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
 
 from app.services.agent_executor import AgentExecutor
 from app.services.agent_kernel.intent_frame import build_intent_frame
+from app.services.agent_kernel.goal_spec import compile_goal_spec
 from app.services.agent_kernel.tool_gateway import (
     ToolGateway,
     ToolPreflightError,
@@ -154,6 +156,60 @@ async def test_gateway_blocks_write_for_unpunctuated_record_history(message):
         "不要执行：记录一下口腔溃疡",
         "请勿执行以下操作：记录一下今天晚餐",
         "禁止：记录口腔溃疡",
+        "我从未同意系统帮我记录口腔溃疡",
+        "我没有同意小巴帮我记录口腔溃疡",
+        "我从没允许系统帮我记录口腔溃疡",
+        "我没让系统帮我记录口腔溃疡",
+        "我从没想过让系统帮我记录口腔溃疡",
+        "我并没有要求系统帮我记录口腔溃疡",
+        "我不乐意让小巴帮我记录口腔溃疡",
+        "我无意让小巴帮我记录口腔溃疡",
+        "我反对让系统帮我记录口腔溃疡",
+        "未经我同意小巴帮我记录口腔溃疡",
+        "严禁以下行为：记录口腔溃疡",
+        "不要执行以下行为：记录口腔溃疡",
+        "你帮我记录口腔溃疡没有",
+        "你帮我保存口腔溃疡没有啊",
+        "昨天帮我记录的口腔溃疡",
+        "这个能帮我记录口腔溃疡吗？",
+        "它能帮我记录口腔溃疡吗？",
+        "请查询口腔溃疡记录",
+        "请查看我的口腔溃疡记录",
+        "请帮我确认有没有记录成功",
+        "麻烦查查保存成功不成功",
+        "帮我核对一下是否新增成功",
+        "请查看口腔溃疡是否已录入",
+        "客服说请记录口腔溃疡",
+        "文档写着：帮我记录口腔溃疡",
+        "他说记录一下口腔溃疡",
+        "请转述这句话：记录口腔溃疡",
+        "请复述“帮我记录口腔溃疡”",
+        "请不必帮我记录口腔溃疡",
+        "请杜绝系统自动记录口腔溃疡",
+        "在没有得到我同意的情况下，记录口腔溃疡是不允许的",
+        "记录口腔溃疡就免了",
+        "记录口腔溃疡这件事作罢",
+        "记录口腔溃疡未获授权",
+        "记录口腔溃疡，还是算了",
+        "记录口腔溃疡，取消吧",
+        "不要做这件事：帮我记录口腔溃疡",
+        "我从未叫你帮我记录口腔溃疡",
+        "我可没让你帮我记录口腔溃疡",
+        "未经我许可就帮我记录口腔溃疡",
+        "我并不乐意让你帮我记录口腔溃疡",
+        "请确认小巴具备记录健康数据的能力",
+        "请说明小巴具不具备记录口腔溃疡的能力",
+        "请确认它会自动记录口腔溃疡",
+        "帮我看看昨天口腔溃疡是否已经记录",
+        "请查一下上周那次口腔溃疡是否已保存",
+        "请确认口腔溃疡是否已经成功写入数据库",
+        "帮我核对口腔溃疡是否已经保存到病历中",
+        "我只是举个例子：帮我记录口腔溃疡",
+        "假设我说“帮我记录口腔溃疡”",
+        "如果以后我说帮我记录口腔溃疡会怎样",
+        "“帮我记录口腔溃疡”是什么意思",
+        "文档写着：我午餐吃了米饭",
+        "假设我午餐吃了米饭会怎样",
     ),
 )
 @pytest.mark.asyncio
@@ -221,6 +277,41 @@ async def test_gateway_adversarial_speech_act_matrix_never_dispatches() -> None:
             assert result.decision is not None
             assert result.decision.action == "block", message
             assert json.loads(result.content)["dispatch_started"] is False
+
+
+def test_gateway_mixed_polarity_turn_binds_the_positive_target() -> None:
+    snapshot = _snapshot("不要记录口腔溃疡但记录今天晚餐")
+    goal = compile_goal_spec(
+        envelope=snapshot.envelope,
+        context=snapshot.context,
+        intent=snapshot.intent,
+    )
+    gateway = ToolGateway(replace(snapshot, goal=goal))
+
+    denied_target = gateway.preflight(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={
+                "record_type": "illness",
+                "data": {"name": "口腔溃疡"},
+            },
+            source="structured",
+        )
+    )
+    authorized_target = gateway.preflight(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={
+                "record_type": "diet",
+                "data": {"meal_type": "dinner"},
+            },
+            source="structured",
+        )
+    )
+
+    assert denied_target.action == "block"
+    assert denied_target.reason == "health_record_target_mismatch"
+    assert authorized_target.action == "allow"
 
 
 def test_blocked_tool_result_includes_a_recovery_instruction_for_the_agent():

@@ -2,9 +2,13 @@ import pytest
 
 from app.services.utterance_intent_lexicon import WRITE_COMMAND_ACTIONS
 from app.services.write_intent_scope import (
+    has_explicit_authorizing_write_request,
     has_negated_write_scope,
     is_historical_write_reference,
+    is_read_action_write_reference,
+    is_reported_write_reference,
     is_write_capability_question,
+    is_write_result_check,
     split_write_clauses,
 )
 
@@ -49,6 +53,18 @@ def test_negation_composes_across_bridges_and_all_write_actions() -> None:
         "不要执行：记录一下口腔溃疡",
         "请勿执行以下操作：记录一下今天晚餐",
         "禁止：记录口腔溃疡",
+        "我从未同意系统帮我记录口腔溃疡",
+        "我没有同意小巴帮我记录口腔溃疡",
+        "我从没允许系统帮我记录口腔溃疡",
+        "我没让系统帮我记录口腔溃疡",
+        "我从没想过让系统帮我记录口腔溃疡",
+        "我并没有要求系统帮我记录口腔溃疡",
+        "我不乐意让小巴帮我记录口腔溃疡",
+        "我无意让小巴帮我记录口腔溃疡",
+        "我反对让系统帮我记录口腔溃疡",
+        "未经我同意小巴帮我记录口腔溃疡",
+        "严禁以下行为：记录口腔溃疡",
+        "不要执行以下行为：记录口腔溃疡",
     ),
 )
 def test_negation_scopes_over_arbitrary_helpers_before_write_action(text: str) -> None:
@@ -75,6 +91,8 @@ def test_negation_scopes_over_arbitrary_helpers_before_write_action(text: str) -
         "这几天不想吃东西但请记录食欲下降",
         "我不能集中注意力但帮我记录一下",
         "这几天不想吃东西：请记录食欲下降",
+        "这几天不想吃东西只是请记录食欲下降",
+        "记录过敏反应",
         "不需要分析，记录口腔溃疡",
         "不要分析；然后记录口腔溃疡",
         "别忘了记录口腔溃疡",
@@ -128,11 +146,26 @@ def test_negating_control_predicates_scope_over_write_actions(text: str) -> None
         "这个功能支持帮我记录口腔溃疡吗？",
         "系统有没有帮我记录口腔溃疡的功能？",
         "请问能否记录口腔溃疡？",
+        "这个能帮我记录口腔溃疡吗？",
+        "它能帮我记录口腔溃疡吗？",
         "该功能能否保存病症记录？",
     ),
 )
 def test_capability_questions_are_distinct_from_write_requests(text: str) -> None:
     assert is_write_capability_question(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "请确认小巴具备记录健康数据的能力",
+        "请说明小巴具不具备记录口腔溃疡的能力",
+        "请确认它会自动记录口腔溃疡",
+    ),
+)
+def test_capability_complements_are_not_direct_requests(text: str) -> None:
+    assert is_write_capability_question(text) is True
+    assert has_explicit_authorizing_write_request(text) is False
 
 
 @pytest.mark.parametrize(
@@ -191,6 +224,9 @@ def test_independent_history_frames_cover_all_write_actions() -> None:
         "之前帮我记录口腔溃疡了吗？",
         "刚才帮我记录口腔溃疡了吗？",
         "你帮我保存口腔溃疡了吗？",
+        "你帮我记录口腔溃疡没有",
+        "你帮我保存口腔溃疡没有啊",
+        "昨天帮我记录的口腔溃疡",
     ),
 )
 def test_completed_and_history_frames_are_read_references(text: str) -> None:
@@ -203,6 +239,7 @@ def test_completed_and_history_frames_are_read_references(text: str) -> None:
         "记录口腔溃疡",
         "保存今天的晚餐",
         "打卡刚喝的水",
+        "记录刚才打了一个喷嚏",
     ),
 )
 def test_current_write_commands_are_not_history_references(text: str) -> None:
@@ -215,7 +252,124 @@ def test_current_write_commands_are_not_history_references(text: str) -> None:
         "请记录我上一次口腔溃疡，发作日期是7月1日",
         "把以前的口腔溃疡记录下来，开始日期是7月1日",
         "帮我保存既往感冒记录，起病日期是6月3日",
+        "昨天喝水很多 补充记录 1200 毫升",
     ),
 )
 def test_explicit_dated_backfill_is_not_a_history_query(text: str) -> None:
     assert is_historical_write_reference(text) is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "请查询口腔溃疡记录",
+        "请查看我的口腔溃疡记录",
+        "帮我列出口腔溃疡记录",
+        "麻烦显示口腔溃疡记录",
+        "帮我看看口腔溃疡记录",
+    ),
+)
+def test_read_actions_govern_later_record_nouns(text: str) -> None:
+    assert is_read_action_write_reference(text) is True
+    assert has_explicit_authorizing_write_request(text) is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "请帮我确认有没有记录成功",
+        "麻烦查查保存成功不成功",
+        "帮我核对一下是否新增成功",
+        "请查看口腔溃疡是否已录入",
+        "请确认口腔溃疡是否已经成功写入数据库",
+        "帮我核对口腔溃疡是否已经保存到病历中",
+        "帮我看看昨天口腔溃疡是否已经记录",
+        "请查一下上周那次口腔溃疡是否已保存",
+    ),
+)
+def test_result_checks_are_not_new_write_authorizations(text: str) -> None:
+    assert is_write_result_check(text) is True
+    assert has_explicit_authorizing_write_request(text) is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "客服说请记录口腔溃疡",
+        "文档写着：帮我记录口腔溃疡",
+        "他说记录一下口腔溃疡",
+        "请转述这句话：记录口腔溃疡",
+        "请复述“帮我记录口腔溃疡”",
+        "我只是举个例子：帮我记录口腔溃疡",
+        "假设我说“帮我记录口腔溃疡”",
+        "如果以后我说帮我记录口腔溃疡会怎样",
+        "“帮我记录口腔溃疡”是什么意思",
+        "文档写着：我午餐吃了米饭",
+        "假设我午餐吃了米饭会怎样",
+    ),
+)
+def test_reported_or_quoted_write_language_is_not_authorization(text: str) -> None:
+    assert is_reported_write_reference(text) is True
+    assert has_explicit_authorizing_write_request(text) is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "请不必帮我记录口腔溃疡",
+        "请杜绝系统自动记录口腔溃疡",
+        "在没有得到我同意的情况下，记录口腔溃疡是不允许的",
+        "记录口腔溃疡就免了",
+        "记录口腔溃疡这件事作罢",
+        "记录口腔溃疡未获授权",
+        "记录口腔溃疡，还是算了",
+        "记录口腔溃疡，取消吧",
+        "不要做这件事：帮我记录口腔溃疡",
+        "我从未叫你帮我记录口腔溃疡",
+        "我可没让你帮我记录口腔溃疡",
+        "未经我许可就帮我记录口腔溃疡",
+        "我并不乐意让你帮我记录口腔溃疡",
+    ),
+)
+def test_preconditions_and_trailing_revocations_deny_write(text: str) -> None:
+    assert has_negated_write_scope(text) is True
+    assert has_explicit_authorizing_write_request(text) is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "不要记录口腔溃疡但记录今天晚餐",
+        "别保存早餐而是记录午餐",
+        "不用录入昨天的但请录入今天的口腔溃疡",
+        "不是不让你记录是请你记录口腔溃疡",
+        "不要记录上一条，但是请记录这次口腔溃疡",
+        "虽然以前不想记录，但是现在请记录这次口腔溃疡",
+        "不是不要记录口腔溃疡，而是现在就记录",
+    ),
+)
+def test_last_positive_contrast_clause_authorizes_its_write(text: str) -> None:
+    assert has_negated_write_scope(text) is False
+    assert has_explicit_authorizing_write_request(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "小巴你能帮我记录一下口腔溃疡吗",
+        "小巴麻烦你记录口腔溃疡",
+        "小巴请你记录口腔溃疡",
+        "小巴替我记录口腔溃疡",
+        "口腔溃疡上次发作日期是7月1日请记录一下",
+        "记录过敏反应",
+        "请记录过量饮酒",
+        "帮我记录过去三天的食欲下降",
+        "请记录过程中的头痛",
+        "我想让你记录口腔溃疡",
+        "请务必记录口腔溃疡",
+        "帮我把今天午餐记录下来",
+        "把口腔溃疡记录下来",
+    ),
+)
+def test_direct_vocative_backfill_and_lexical_guards_authorize(text: str) -> None:
+    assert has_explicit_authorizing_write_request(text) is True

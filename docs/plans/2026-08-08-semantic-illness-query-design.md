@@ -80,22 +80,32 @@ retrieval. The boundary makes both responsibilities explicit and testable.
 
 ### 4.1 Speech act and write authorization
 
-- A question/list request with no explicit imperative write frame is `read`.
-- Clause-local negation, request modals, capability questions and
-  completed/history references are parsed once and reused by both the
-  classifier and final ToolGateway preflight.
-- The frame carries semantic relations that flat token matching loses:
-  denial-control predicates, contextual colon scope, adversative boundaries,
-  post-object completion and the position of past-time phrases.
+- Health-record authorization is positive and fail-closed: the parser must find
+  a current, direct, affirmative write speech act. Merely failing to recognize a
+  veto is never authorization.
+- Clauses are evaluated in order and the governing write action carries its own
+  polarity. A later affirmative contrast can supersede an earlier refusal;
+  trailing revocation applies to the preceding action.
+- Read verbs, capability discussion, completed/result checks, attributed or
+  quoted speech, examples, hypotheticals and other metalinguistic mentions are
+  non-authorizing references. The same result is reused by the classifier and
+  final ToolGateway preflight.
+- The frame preserves relations that flat token matching loses: denial-control
+  predicates, contextual colon scope, adversative boundaries, post-object
+  completion, past-time position and object-fronted direct requests.
 - Write actions come from one shared registry; intervening helper text must not
-  change the scope of an earlier negation.
+  change the scope of an earlier negation or turn a read verb into a write.
 - `记录` followed by noun evidence such as `的/里/中/有哪些` is not write
   authorization.
 - Explicit commands such as `记录体重70kg`, `帮我录入血压120/80` and factual
-  intake observations retain their current write behavior.
+  intake observations retain their current write behavior. Object-fronted forms
+  such as `把口腔溃疡记录下来` remain direct writes.
 - Advice such as `该不该记录今天腰痛6分` remains advice, not a write.
 - `记录刚才打了一个喷嚏` and a request with a concrete historical onset date
   remain writes; history protection must not suppress explicit backfill.
+- For a mixed denied/positive turn, a compiled goal constrains the selected
+  `health_record.record_type`; a positive meal clause cannot authorize writing
+  the illness named in the denied clause.
 - Ambiguity degrades to read-only or clarification, never mutation.
 
 ### 4.2 Semantic query plan
@@ -162,6 +172,9 @@ Verification must include:
 - an end-to-end tool-loop regression with a model-provided semantic query plan;
 - qwen-max-3.7 evaluation over query/write/negation/advice contrasts using
   anonymized fixtures; and
+- a system-level model challenge proving that a model-selected write for quoted
+  speech is still blocked by deterministic policy, while an explicit direct
+  write remains available through the forced write-tool path;
 - a generated negation × bridge × write-action matrix plus positive modal and
   cross-clause controls;
 - repository drift, lint and focused/full regression gates required by the

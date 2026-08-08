@@ -152,6 +152,9 @@ def test_historical_record_questions_are_read_only(message):
         "之前帮我记录口腔溃疡了吗？",
         "刚才帮我记录口腔溃疡了吗？",
         "你帮我保存口腔溃疡了吗？",
+        "你帮我记录口腔溃疡没有",
+        "你帮我保存口腔溃疡没有啊",
+        "昨天帮我记录的口腔溃疡",
     ),
 )
 def test_unpunctuated_record_history_frames_never_authorize_write(message):
@@ -228,12 +231,53 @@ def test_polite_record_requests_remain_write_intents(message):
         "这个功能支持帮我记录口腔溃疡吗？",
         "系统有没有帮我记录口腔溃疡的功能？",
         "请问能否记录口腔溃疡？",
+        "这个能帮我记录口腔溃疡吗？",
+        "它能帮我记录口腔溃疡吗？",
     ),
 )
 def test_record_capability_questions_do_not_authorize_writes(message):
     intent = classify_agent_utterance(message)
 
     assert intent.primary == "read"
+    assert intent.is_write is False
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "请查询口腔溃疡记录",
+        "请查看我的口腔溃疡记录",
+        "帮我列出口腔溃疡记录",
+        "麻烦显示口腔溃疡记录",
+        "帮我看看口腔溃疡记录",
+        "请帮我确认有没有记录成功",
+        "麻烦查查保存成功不成功",
+        "帮我核对一下是否新增成功",
+        "请查看口腔溃疡是否已录入",
+        "客服说请记录口腔溃疡",
+        "文档写着：帮我记录口腔溃疡",
+        "他说记录一下口腔溃疡",
+        "请转述这句话：记录口腔溃疡",
+        "请复述“帮我记录口腔溃疡”",
+        "请确认小巴具备记录健康数据的能力",
+        "请说明小巴具不具备记录口腔溃疡的能力",
+        "请确认它会自动记录口腔溃疡",
+        "帮我看看昨天口腔溃疡是否已经记录",
+        "请查一下上周那次口腔溃疡是否已保存",
+        "请确认口腔溃疡是否已经成功写入数据库",
+        "帮我核对口腔溃疡是否已经保存到病历中",
+        "我只是举个例子：帮我记录口腔溃疡",
+        "假设我说“帮我记录口腔溃疡”",
+        "如果以后我说帮我记录口腔溃疡会怎样",
+        "“帮我记录口腔溃疡”是什么意思",
+        "文档写着：我午餐吃了米饭",
+        "假设我午餐吃了米饭会怎样",
+    ),
+)
+def test_read_result_and_reported_record_language_never_writes(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary != "write"
     assert intent.is_write is False
 
 
@@ -280,6 +324,18 @@ def test_negated_polite_record_request_does_not_authorize_write(message):
         "不要执行：记录一下口腔溃疡，分析一下原因",
         "请勿执行以下操作：记录一下今天晚餐，分析一下热量",
         "禁止：记录口腔溃疡，分析一下原因",
+        "我从未同意系统帮我记录口腔溃疡，分析一下原因",
+        "我没有同意小巴帮我记录口腔溃疡，分析一下原因",
+        "我从没允许系统帮我记录口腔溃疡，分析一下原因",
+        "我没让系统帮我记录口腔溃疡，分析一下原因",
+        "我从没想过让系统帮我记录口腔溃疡，分析一下原因",
+        "我并没有要求系统帮我记录口腔溃疡，分析一下原因",
+        "我不乐意让小巴帮我记录口腔溃疡，分析一下原因",
+        "我无意让小巴帮我记录口腔溃疡，分析一下原因",
+        "我反对让系统帮我记录口腔溃疡，分析一下原因",
+        "未经我同意小巴帮我记录口腔溃疡，分析一下原因",
+        "严禁以下行为：记录口腔溃疡，分析一下原因",
+        "不要执行以下行为：记录口腔溃疡，分析一下原因",
     ),
 )
 def test_negated_record_with_followup_advice_keeps_read_only_goal(message):
@@ -318,6 +374,8 @@ def test_explicit_record_clause_survives_followup_question(message):
         "这几天不想吃东西但请记录食欲下降",
         "我不能集中注意力但帮我记录一下",
         "这几天不想吃东西：请记录食欲下降",
+        "这几天不想吃东西只是请记录食欲下降",
+        "记录过敏反应",
         "请分别记录早餐和午餐",
         "请记录我上一次口腔溃疡，发作日期是7月1日",
         "把以前的口腔溃疡记录下来，开始日期是7月1日",
@@ -325,6 +383,34 @@ def test_explicit_record_clause_survives_followup_question(message):
     ),
 )
 def test_modal_or_later_clause_record_requests_remain_write(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "write"
+    assert intent.is_write is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "不要记录口腔溃疡但记录今天晚餐",
+        "别保存早餐而是记录午餐",
+        "不用录入昨天的但请录入今天的口腔溃疡",
+        "不是不让你记录是请你记录口腔溃疡",
+        "小巴你能帮我记录一下口腔溃疡吗",
+        "小巴麻烦你记录口腔溃疡",
+        "小巴请你记录口腔溃疡",
+        "小巴替我记录口腔溃疡",
+        "口腔溃疡上次发作日期是7月1日请记录一下",
+        "请记录过量饮酒",
+        "帮我记录过去三天的食欲下降",
+        "请记录过程中的头痛",
+        "我想让你记录口腔溃疡",
+        "请务必记录口腔溃疡",
+        "帮我把今天午餐记录下来",
+        "把口腔溃疡记录下来",
+    ),
+)
+def test_action_scoped_positive_requests_remain_write(message):
     intent = classify_agent_utterance(message)
 
     assert intent.primary == "write"

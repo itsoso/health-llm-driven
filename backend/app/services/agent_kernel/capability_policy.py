@@ -12,9 +12,11 @@ from app.services.agent_kernel.tool_registry import (
 )
 from app.services.agent_kernel.types import CapabilityDecision, ToolExecutionRequest, TurnSnapshot
 from app.services.agent_kernel.write_safety import (
+    has_mixed_health_record_authorization,
     is_explicit_aigc_media_provider_veto,
     is_non_authorizing_write_reference,
     is_explicit_write_cancellation,
+    lacks_positive_health_record_authorization,
 )
 from app.services.clinician_provenance_guard import classify_clinician_turn
 
@@ -57,6 +59,12 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "bloodpressure": "blood_pressure",
 }
 _CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v1"
+_HEALTH_RECORD_DOMAIN_TYPES = {
+    "diet": "diet",
+    "water": "water",
+    "medication": "medication",
+    "supplement": "supplement",
+}
 
 
 def capability_policy_contract_payload() -> dict[str, Any]:
@@ -129,23 +137,50 @@ def decide_tool_capability(
             receipt_required=True,
         )
     if (
-        mutating_request
+        tool_name == "health_record"
         and is_non_authorizing_write_reference(snapshot.envelope.text)
     ):
-        reason = (
-            "manage_write_without_mutate_intent"
-            if tool_name == "health_manage"
-            and str(args.get("operation") or "").strip().lower()
-            in MANAGE_WRITE_OPERATIONS
-            else "write_tool_without_write_intent"
-        )
         return _decision(
             "block",
-            reason,
+            "write_tool_without_write_intent",
             tool_name,
             args,
             receipt_required=True,
         )
+    if (
+        tool_name == "health_record"
+        and primary == "write"
+        and lacks_positive_health_record_authorization(snapshot.envelope.text)
+    ):
+        return _decision(
+            "block",
+            "write_tool_without_direct_authorization",
+            tool_name,
+            args,
+            receipt_required=True,
+        )
+    if tool_name == "health_record" and snapshot.goal is not None:
+        requested_record_type = recipe_replay_record_type(args)
+        goal_record_type = str(snapshot.goal.target_record_type or "").strip().lower()
+        if not goal_record_type and has_mixed_health_record_authorization(
+            snapshot.envelope.text
+        ):
+            goal_record_type = _HEALTH_RECORD_DOMAIN_TYPES.get(
+                snapshot.intent.domain,
+                "",
+            )
+        if (
+            requested_record_type
+            and goal_record_type
+            and requested_record_type != goal_record_type
+        ):
+            return _decision(
+                "block",
+                "health_record_target_mismatch",
+                tool_name,
+                args,
+                receipt_required=True,
+            )
     if (
         mutating_request
         and snapshot.goal is not None

@@ -151,6 +151,60 @@ def test_structurally_negated_requests_never_authorize_health_record(message):
         "不要执行：记录一下口腔溃疡",
         "请勿执行以下操作：记录一下今天晚餐",
         "禁止：记录口腔溃疡",
+        "我从未同意系统帮我记录口腔溃疡",
+        "我没有同意小巴帮我记录口腔溃疡",
+        "我从没允许系统帮我记录口腔溃疡",
+        "我没让系统帮我记录口腔溃疡",
+        "我从没想过让系统帮我记录口腔溃疡",
+        "我并没有要求系统帮我记录口腔溃疡",
+        "我不乐意让小巴帮我记录口腔溃疡",
+        "我无意让小巴帮我记录口腔溃疡",
+        "我反对让系统帮我记录口腔溃疡",
+        "未经我同意小巴帮我记录口腔溃疡",
+        "严禁以下行为：记录口腔溃疡",
+        "不要执行以下行为：记录口腔溃疡",
+        "你帮我记录口腔溃疡没有",
+        "你帮我保存口腔溃疡没有啊",
+        "昨天帮我记录的口腔溃疡",
+        "这个能帮我记录口腔溃疡吗？",
+        "它能帮我记录口腔溃疡吗？",
+        "请查询口腔溃疡记录",
+        "请查看我的口腔溃疡记录",
+        "请帮我确认有没有记录成功",
+        "麻烦查查保存成功不成功",
+        "帮我核对一下是否新增成功",
+        "请查看口腔溃疡是否已录入",
+        "客服说请记录口腔溃疡",
+        "文档写着：帮我记录口腔溃疡",
+        "他说记录一下口腔溃疡",
+        "请转述这句话：记录口腔溃疡",
+        "请复述“帮我记录口腔溃疡”",
+        "请不必帮我记录口腔溃疡",
+        "请杜绝系统自动记录口腔溃疡",
+        "在没有得到我同意的情况下，记录口腔溃疡是不允许的",
+        "记录口腔溃疡就免了",
+        "记录口腔溃疡这件事作罢",
+        "记录口腔溃疡未获授权",
+        "记录口腔溃疡，还是算了",
+        "记录口腔溃疡，取消吧",
+        "不要做这件事：帮我记录口腔溃疡",
+        "我从未叫你帮我记录口腔溃疡",
+        "我可没让你帮我记录口腔溃疡",
+        "未经我许可就帮我记录口腔溃疡",
+        "我并不乐意让你帮我记录口腔溃疡",
+        "请确认小巴具备记录健康数据的能力",
+        "请说明小巴具不具备记录口腔溃疡的能力",
+        "请确认它会自动记录口腔溃疡",
+        "帮我看看昨天口腔溃疡是否已经记录",
+        "请查一下上周那次口腔溃疡是否已保存",
+        "请确认口腔溃疡是否已经成功写入数据库",
+        "帮我核对口腔溃疡是否已经保存到病历中",
+        "我只是举个例子：帮我记录口腔溃疡",
+        "假设我说“帮我记录口腔溃疡”",
+        "如果以后我说帮我记录口腔溃疡会怎样",
+        "“帮我记录口腔溃疡”是什么意思",
+        "文档写着：我午餐吃了米饭",
+        "假设我午餐吃了米饭会怎样",
     ),
 )
 def test_negated_or_capability_questions_block_health_record(message):
@@ -214,10 +268,28 @@ def test_explicit_record_with_followup_question_allows_health_record(message):
         "这几天不想吃东西但请记录食欲下降",
         "我不能集中注意力但帮我记录一下",
         "这几天不想吃东西：请记录食欲下降",
+        "这几天不想吃东西只是请记录食欲下降",
+        "记录过敏反应",
         "请分别记录早餐和午餐",
         "请记录我上一次口腔溃疡，发作日期是7月1日",
         "把以前的口腔溃疡记录下来，开始日期是7月1日",
         "帮我保存既往感冒记录，起病日期是6月3日",
+        "不要记录口腔溃疡但记录今天晚餐",
+        "别保存早餐而是记录午餐",
+        "不用录入昨天的但请录入今天的口腔溃疡",
+        "不是不让你记录是请你记录口腔溃疡",
+        "小巴你能帮我记录一下口腔溃疡吗",
+        "小巴麻烦你记录口腔溃疡",
+        "小巴请你记录口腔溃疡",
+        "小巴替我记录口腔溃疡",
+        "口腔溃疡上次发作日期是7月1日请记录一下",
+        "请记录过量饮酒",
+        "帮我记录过去三天的食欲下降",
+        "请记录过程中的头痛",
+        "我想让你记录口腔溃疡",
+        "请务必记录口腔溃疡",
+        "帮我把今天午餐记录下来",
+        "把口腔溃疡记录下来",
     ),
 )
 def test_modal_or_later_clause_write_allows_health_record(message):
@@ -230,6 +302,37 @@ def test_modal_or_later_clause_write_allows_health_record(message):
     )
 
     assert decision.action == "allow"
+
+
+def test_positive_contrast_clause_cannot_authorize_the_denied_target():
+    snapshot = _snapshot("不要记录口腔溃疡但记录今天晚餐")
+    goal = compile_goal_spec(
+        envelope=snapshot.envelope,
+        context=snapshot.context,
+        intent=snapshot.intent,
+    )
+    snapshot = replace(snapshot, goal=goal)
+
+    denied_target = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
+        ),
+    )
+    authorized_target = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "diet", "data": {"meal_type": "dinner"}},
+        ),
+    )
+
+    assert goal is not None
+    assert goal.domain == "diet"
+    assert denied_target.action == "block"
+    assert denied_target.reason == "health_record_target_mismatch"
+    assert authorized_target.action == "allow"
 
 
 def test_read_turn_allows_health_manage_list():
