@@ -36,6 +36,9 @@ from app.services.utterance_intent_lexicon import (
     WRITE_ACTIONS,
 )
 from app.services.write_intent_scope import (
+    direct_event_values,
+    direct_remember_fact_values,
+    direct_supplement_group_values,
     has_explicit_authorizing_write_request,
     has_negated_write_scope,
     is_historical_write_reference,
@@ -505,6 +508,8 @@ def classify_agent_utterance(
         or _has_explicit_observation_write(normalized, domain)
         or _has_explicit_symptom_observation(normalized, domain, has_question)
         or _has_explicit_event_write(normalized)
+        or direct_remember_fact_values(normalized) is not None
+        or direct_supplement_group_values(normalized) is not None
     ):
         return _intent(
             raw,
@@ -2403,7 +2408,7 @@ def _has_explicit_symptom_observation(
 
 
 def _has_explicit_event_write(text: str) -> bool:
-    return any(
+    return direct_event_values(text) is not None or any(
         phrase in text
         for phrase in (
             "准备开始睡觉",

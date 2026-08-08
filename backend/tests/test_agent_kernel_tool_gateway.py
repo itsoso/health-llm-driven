@@ -1195,8 +1195,14 @@ async def test_gateway_never_dispatches_update_outside_owner_scoped_exact_eviden
         "小明让我把刚才300ml改成350ml",
         "假设把刚才300ml改成350ml",
         "我说“把刚才300ml改成350ml”只是举例",
+        "原文如下：把刚才300ml改成350ml",
+        "要是把刚才300ml改成350ml会怎样",
+        "老婆希望把刚才300ml改成350ml",
+        "把刚才300ml改成350ml，先保持原样",
+        "把刚才300ml改成350ml，哦不，是400ml",
         "把刚才300ml改成350ml，这是小明的",
         "把刚才300ml改成350ml，不是我的，是小明的",
+        "把刚才300ml改成350ml，这杯水属于小明",
     ),
 )
 async def test_gateway_update_semantic_denials_never_dispatch(
@@ -1298,6 +1304,136 @@ async def test_gateway_current_user_posterior_owner_keeps_health_write_authority
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "arguments"),
+    (
+        (
+            "小明早上的药都吃了，记录一下",
+            {"record_type": "supplement_group", "data": {"timing": "morning"}},
+        ),
+        (
+            "记住小明不吃香菜",
+            {
+                "record_type": "remember",
+                "data": {"predicate": "忌口", "object_value": "不吃香菜"},
+            },
+        ),
+        (
+            "小明到杭州了",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+        ),
+    ),
+)
+async def test_gateway_public_record_contract_never_borrows_third_party_subject(
+    message,
+    arguments,
+):
+    calls = []
+    gateway = ToolGateway(_snapshot(message))
+
+    async def dispatch(request):
+        calls.append(request)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name="health_record", arguments=arguments),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+
+
+@pytest.mark.asyncio
+async def test_gateway_update_self_correction_authorizes_only_final_value():
+    snapshot = replace(
+        _snapshot("把刚才300ml改成350ml，哦不，是400ml"),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "water",
+                    "records": ({"id": 718, "amount": 300},),
+                },
+            ),
+        ),
+    )
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return '{"id": 718, "record_id": 718, "resource_type": "water_record"}'
+
+    result = await ToolGateway(snapshot).execute(
+        ToolExecutionRequest(
+            tool_name="health_manage",
+            arguments={
+                "record_type": "water",
+                "operation": "update",
+                "record_id": 718,
+                "data": {"amount": 400},
+            },
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [{
+        "record_type": "water",
+        "operation": "update",
+        "record_id": 718,
+        "data": {"amount": 400},
+    }]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+async def test_executor_quoted_update_never_reaches_real_water_put(
+    db,
+    monkeypatch,
+    policy_mode,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_channel = "typed"
+    executor._current_turn_user_message = "原文如下：把刚才300ml改成350ml"
+    calls = []
+
+    async def fake_get(url, _headers):
+        calls.append(("GET", url, None))
+        return '[{"id": 718, "amount": 300}]'
+
+    async def fake_put(url, _headers, payload):
+        calls.append(("PUT", url, payload))
+        return "unexpected"
+
+    monkeypatch.setattr("app.services.agent_executor.settings.agent_kernel_policy_mode", policy_mode)
+    monkeypatch.setattr(executor, "_api_get", fake_get)
+    monkeypatch.setattr(executor, "_api_put", fake_put)
+
+    await executor._execute_tool(
+        "health_manage",
+        {"record_type": "water", "operation": "list"},
+        "test-token",
+    )
+    result = await executor._execute_tool(
+        "health_manage",
+        {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": {"amount": 350},
+        },
+        "test-token",
+    )
+
+    assert [method for method, _url, _payload in calls] == ["GET"]
+    assert json.loads(result)["dispatch_started"] is False
+
+
+@pytest.mark.asyncio
 async def test_gateway_explicit_update_id_without_owner_candidate_never_dispatches():
     gateway = ToolGateway(_snapshot("把饮水记录999999的300ml改成350ml"))
     calls = []
@@ -1347,6 +1483,24 @@ async def test_gateway_explicit_update_id_without_owner_candidate_never_dispatch
             {"timing": "morning"},
         ),
         (
+            "早上的药都吃了，记录一下",
+            {"record_type": "supplement_group", "data": {"timing": "morning"}},
+            {"timing": "morning"},
+        ),
+        (
+            "记住我不吃香菜",
+            {
+                "record_type": "remember",
+                "data": {"predicate": "忌口", "object_value": "不吃香菜"},
+            },
+            {"subject": "用户", "predicate": "忌口", "object_value": "不吃香菜"},
+        ),
+        (
+            "到杭州了",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {"title": "到达杭州"},
+        ),
+        (
             "记录跑步30分钟5公里",
             {
                 "record_type": "exercise",
@@ -1376,6 +1530,69 @@ async def test_gateway_dispatches_supported_family_canonical_projection(
     assert result.decision is not None
     assert result.decision.action == "allow"
     assert calls == [{"record_type": arguments["record_type"], "data": expected_data}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "arguments", "expected_path", "expected_payload"),
+    (
+        (
+            "早上的药都吃了，记录一下",
+            {"record_type": "supplement_group", "data": {"timing": "morning"}},
+            "/nfc/tap",
+            {"action": "supplement_group", "timing": "morning"},
+        ),
+        (
+            "记住我不吃香菜",
+            {
+                "record_type": "remember",
+                "data": {"predicate": "忌口", "object_value": "不吃香菜"},
+            },
+            "/memory-facts",
+            {
+                "tier": "semantic",
+                "subject": "用户",
+                "predicate": "忌口",
+                "object_value": "不吃香菜",
+                "object_unit": None,
+                "confidence": 0.9,
+                "is_sensitive": False,
+            },
+        ),
+        (
+            "到杭州了",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {"title": "到达杭州"},
+        ),
+    ),
+)
+async def test_executor_dispatches_public_record_contract_through_real_gateway(
+    db,
+    monkeypatch,
+    message,
+    arguments,
+    expected_path,
+    expected_payload,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_channel = "typed"
+    executor._current_turn_user_message = message
+    executor._current_turn_recent_messages = []
+    calls = []
+
+    async def fake_post(url, _headers, payload):
+        calls.append((url, payload))
+        return '{"id": 91, "record_id": 91, "status": "recorded"}'
+
+    monkeypatch.setattr(executor, "_api_post", fake_post)
+
+    result = await executor._execute_tool("health_record", arguments, "test-token")
+
+    assert calls and calls[0][0].endswith(expected_path)
+    assert calls[0][1] == expected_payload
+    assert json.loads(result)["id"] == 91
 
 
 @pytest.mark.asyncio

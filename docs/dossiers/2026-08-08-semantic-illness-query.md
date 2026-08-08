@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS after second dual NO-GO remediation; new exact-commit G4 pending |
+| current_stage | G3 PASS after third dual NO-GO remediation; new exact-commit G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -409,8 +409,29 @@ validation and no-match honesty address those risks.
   `git diff --check` pass. Latest `origin/main` commit `140bd788a` was then
   merged; it changes only the iOS privacy-manifest release surface. Its Backend
   App Store preflight passes 4/4 and Mobile app-config suite passes 17/17.
-  Structural document checks and two brand-new exact-commit reviews remain
-  required.
+  Structural document checks passed against the exact merge tree.
+- Fresh code and safety reviews of exact commit `aa766b59c` both returned
+  NO-GO, so push and deployment remained stopped. The code review found that
+  colloquial partial recovery could be overclaimed as resolved, three public
+  record contracts were incorrectly blocked, and the new contract tests did
+  not reach the real executor adapters. The safety review reproduced real
+  update dispatch for quoted, hypothetical, third-party, revoked, corrected
+  and posterior-owner utterances in enforce and shadow modes.
+- The seventeenth remediation versions the boundary as
+  `agent-capability-policy-v13` / `authorized-target-set-v9` /
+  `record-update-evidence-v4`. Update authority now rejects metalinguistic and
+  quoted text, expanded hypothetical and third-party frames, posterior water
+  ownership and trailing keep-original revocations. Self-correction authorizes
+  only the final value. Colloquial `好了…` modifiers remain `improving`, while
+  terminal or explicit complete recovery may resolve an episode.
+- Deterministic current-user contracts now cover subjectless batch medicine
+  intake, stable preference memory and lifecycle arrival events while matching
+  named third-party subjects fails closed. Real executor tests prove these
+  positive contracts reach their actual adapters, and quoted updates perform
+  no PUT in either policy mode. The clean single-process compatibility run
+  passes 3,707/3,707 Backend tests in 190.50 seconds. Targeted Ruff, Python
+  compilation and `git diff --check` pass; repository structural gates and two
+  brand-new exact-commit reviews remain required.
 
 ### G4 Safety Review: PENDING
 
@@ -659,6 +680,24 @@ server-owned deterministic payloads, and real Gateway/executor tests replace
 the bypassing fixture. The clean 3,681-test G3 aggregate and latest-main release
 checks are green. A new exact commit and two brand-new reviewers are mandatory;
 neither reviewer of `b7f88e64e` may be reused.
+
+Fresh code and safety reviews of exact commit `aa766b59c` both returned NO-GO
+before push or deployment. The code review reproduced an overclaim from
+`好了一丢丢`, false denials for the public medicine-batch, memory and event
+contracts, and insufficient executor-path coverage. The safety review
+reproduced update dispatch from `原文如下`, `要是…会怎样`, third-party wishes,
+`先保持原样`, superseded values and posterior `这杯水属于小明` ownership; quoted
+text reached a real PUT in both enforce and shadow modes.
+
+The seventeenth remediation compiles update authority from the user's final,
+direct, current-user speech act rather than the presence of an update phrase.
+Quoted/metalinguistic, hypothetical, third-party, revoked and posterior-owner
+frames cannot authorize dispatch; an explicit correction binds only its final
+value. Subjectless public record phrases receive narrowly typed deterministic
+payloads and named third-party variants fail closed. Real Gateway and executor
+adapter tests cover both directions. The clean 3,707-test G3 aggregate is green;
+a new exact commit and two brand-new reviewers who did not review
+`aa766b59c` are mandatory before G4 may pass.
 
 ### G5 Deployment Health: PENDING
 

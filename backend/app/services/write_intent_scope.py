@@ -155,7 +155,8 @@ _TRAILING_REVOCATION_ATOM = (
     r"(?:先)?不(?:要)?(?:再)?(?:记|记录|保存|录入|写入|新增|打卡)了|"
     r"别(?:再)?(?:记|记录|保存|录入|写入|新增|打卡)了|"
     r"先不要了|不要了|我不同意|不行|(?:我)?改主意了|(?:这次)?别弄了|"
-    r"(?:就)?当(?:我)?没说|"
+    r"(?:就)?当(?:我)?没说|(?:先)?保持原样|(?:先)?维持原样|"
+    r"(?:先)?(?:不要|别)改了|不改了|"
     r"忽略(?:掉)?(?:刚才|前面|上面|之前)?(?:那|这)?(?:句|条|个)?"
     r"(?:话|请求|指令)?)"
 )
@@ -212,7 +213,7 @@ _METALANGUAGE_ACTIONS = (
     "是什么意思",
 )
 _HYPOTHETICAL_PREFIX_RE = re.compile(
-    r"^(?:如果|假如|假使|假设|假定|设想|倘若|若是|万一)"
+    r"^(?:如果|假如|假使|假设|假定|设想|倘若|若是|要是|万一)"
 )
 _POLITE_CONDITIONAL_PREFIX_RE = re.compile(
     r"^(?:如果|假如)(?:可以|方便|方便的话|你方便|你可以|你能|小巴可以|小巴能)"
@@ -335,7 +336,7 @@ _POST_CURRENT_USER_OWNERSHIP_ONLY_DENIAL_RE = re.compile(
 )
 _POST_OWNERSHIP_RE = re.compile(
     r"^(?:实际上|其实|原来)?"
-    r"(?:这(?:条|个)?(?:记录|数据)?)?(?:其实|实际上)?"
+    r"(?:这(?:条|个)?(?:记录|数据|饮水)?|这杯水)?(?:其实|实际上)?"
     r"(?:是|属于|归于|归|给)"
     r"(?P<owner>[\u4e00-\u9fff]{1,12})(?:的)?$"
 )
@@ -367,7 +368,25 @@ _UPDATE_ACTION_RE = re.compile(
 )
 _THIRD_PARTY_UPDATE_ORDER_RE = re.compile(
     r"^(?!我(?:要|想|来|自己|本人))"
-    r"[\u4e00-\u9fff]{2,8}(?:让我|叫我|要求我|嘱咐我|让小巴|让系统)"
+    r"[\u4e00-\u9fff]{1,12}(?:希望|想|要求|建议|指示|让我|叫我|嘱咐我|让小巴|让系统)"
+)
+_UPDATE_METALANGUAGE_PREFIX_RE = re.compile(
+    r"^(?:原文|原话|例句|例子|引用|转述|假设)(?:如下|是|为)?[:：]"
+)
+_UPDATE_CORRECTION_VALUE_RE = re.compile(
+    r"(?:哦不|不对|错了|说错了|更正一下)[，,]?"
+    r"(?:应该|应当)?(?:是|为|改成|改为)"
+    r"(?P<value>\d+(?:\.\d+)?)\s*(?:ml|毫升)"
+)
+_DIRECT_REMEMBER_AVOID_RE = re.compile(
+    r"^(?:请|帮我)?记住(?:我|我的)?(?P<value>不吃[^，,。.!！；;：:?？]{1,80})$"
+)
+_DIRECT_EVENT_ARRIVAL_RE = re.compile(
+    r"^(?:我)?(?:已经|刚刚|刚)?到(?P<place>[^，,。.!！；;：:?？]{1,20})了$"
+)
+_DIRECT_EVENT_DEPARTURE_RE = re.compile(r"^(?:我)?飞机准备起飞(?:了)?$")
+_DIRECT_EVENT_EN_ROUTE_RE = re.compile(
+    r"^(?:我)?在去(?P<place>[^，,。.!！；;：:?？]{1,20})路上$"
 )
 _BACKFILL_DATE_SIGNALS = (
     "发作日期",
@@ -803,7 +822,7 @@ def is_historical_write_reference(value: str) -> bool:
         return False
     normalized = normalize_write_scope_text(value)
     if (
-        "补剂" in normalized
+        any(term in normalized for term in ("补剂", "药"))
         and any(term in normalized for term in ("都吃了", "全吃了", "全部吃了", "都服了", "全部服了"))
         and context[2] > normalized.find("补剂")
     ):
@@ -959,6 +978,8 @@ def _observation_has_non_current_subject(clause: str) -> bool:
     """
     matches = tuple(_HEALTH_OBSERVATION_PREDICATE_RE.finditer(clause))
     if not matches:
+        return False
+    if direct_supplement_group_values(clause) is not None:
         return False
     if clause.startswith(
         ("创建目标", "设定目标", "设置目标", "新增目标", "记录目标")
@@ -1205,6 +1226,10 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
     normalized = normalize_write_scope_text(value)
     if not _UPDATE_ACTION_RE.search(normalized):
         return False
+    if _UPDATE_METALANGUAGE_PREFIX_RE.search(normalized):
+        return False
+    if any(mark in normalized for mark in ('"', "“", "”", "「", "」", "『", "』")):
+        return False
     if (
         _DEFERRED_CONDITION_PREFIX_RE.search(normalized)
         or _THIRD_PARTY_UPDATE_ORDER_RE.search(normalized)
@@ -1220,6 +1245,8 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
     clauses = split_write_clauses(normalized)
     if any(_is_post_attributed_to_non_current_owner(clause) for clause in clauses):
         return False
+    if any(_TRAILING_REVOCATION_CLAUSE_RE.fullmatch(clause) for clause in clauses):
+        return False
     if any(
         re.search(r"(?:不要|不用|无需|先别|暂不|勿|甭|禁止|拒绝|停止).{0,24}", clause)
         and _UPDATE_ACTION_RE.search(clause)
@@ -1227,6 +1254,61 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
     ):
         return False
     return True
+
+
+def direct_remember_fact_values(value: str) -> dict[str, str] | None:
+    """Compile a direct stable-profile fact from user-owned text."""
+    normalized = normalize_write_scope_text(value).strip("，,。.!！；;：:?？")
+    match = _DIRECT_REMEMBER_AVOID_RE.fullmatch(normalized)
+    if match is None:
+        return None
+    return {"predicate": "忌口", "object_value": match.group("value")}
+
+
+def direct_event_values(value: str) -> dict[str, str] | None:
+    """Compile subjectless/current-user lifecycle events from public examples."""
+    normalized = normalize_write_scope_text(value).strip("，,。.!！；;：:?？")
+    if match := _DIRECT_EVENT_ARRIVAL_RE.fullmatch(normalized):
+        return {"title": f"到达{match.group('place')}"}
+    if _DIRECT_EVENT_DEPARTURE_RE.fullmatch(normalized):
+        return {"title": "航班起飞"}
+    if match := _DIRECT_EVENT_EN_ROUTE_RE.fullmatch(normalized):
+        return {"title": f"前往{match.group('place')}途中"}
+    return None
+
+
+def direct_supplement_group_values(value: str) -> dict[str, str] | None:
+    """Compile the public batch-intake phrase without treating 药 as one drug."""
+    normalized = normalize_write_scope_text(value)
+    if not re.fullmatch(
+        r"(?:我)?(?:早上|早晨|上午|中午|午间|晚上|晚间|睡前|临睡)的?"
+        r"(?:补剂|药)(?:都|全|全部)(?:吃|服)(?:了)?"
+        r"(?:[，,]?(?:记录|记一下|打卡)(?:一下)?)?",
+        normalized.strip("，,。.!！；;：:?？"),
+    ):
+        return None
+    timing = next(
+        (
+            canonical
+            for terms, canonical in (
+                (("睡前", "临睡"), "bedtime"),
+                (("晚上", "晚间"), "evening"),
+                (("中午", "午间"), "noon"),
+                (("早上", "早晨", "上午"), "morning"),
+            )
+            if any(term in normalized for term in terms)
+        ),
+        "",
+    )
+    return {"timing": timing} if timing else None
+
+
+def corrected_water_update_value(value: str) -> float | None:
+    """Return the user's final value after an explicit self-correction."""
+    matches = tuple(
+        _UPDATE_CORRECTION_VALUE_RE.finditer(normalize_write_scope_text(value))
+    )
+    return float(matches[-1].group("value")) if matches else None
 
 
 def _corrected_write_clause(previous: str, corrected_value: str) -> str:

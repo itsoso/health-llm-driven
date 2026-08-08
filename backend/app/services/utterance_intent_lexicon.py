@@ -54,6 +54,7 @@ QUESTION_SIGNALS = (
 )
 
 WRITE_ACTIONS = (
+    "记住",
     "记录",
     "打卡",
     "打个卡",
@@ -74,6 +75,7 @@ WRITE_ACTIONS = (
 )
 
 WRITE_COMMAND_ACTIONS = (
+    "记住",
     "记录",
     "记一下",
     "记下",

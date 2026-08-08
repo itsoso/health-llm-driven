@@ -64,9 +64,9 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v12"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v8"
-_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v3"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v13"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v9"
+_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v4"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = (
     "_server_authorized_health_record_fields"
 )
@@ -777,23 +777,19 @@ def _authorized_illness_update_args(
 def _illness_update_patch(snapshot: TurnSnapshot) -> dict[str, Any] | None:
     text = "".join(str(snapshot.envelope.text or "").split())
     patch: dict[str, Any] = {}
-    if any(
-        marker in text
-        for marker in (
-            "好了点",
-            "好了一点",
-            "好了一些",
-            "好了一半",
-            "有所好转",
-            "好转",
-            "改善中",
-            "缓解中",
-        )
+    terminal_recovery = re.search(r"好了(?=[，,。.!！；;]|$)", text)
+    partial_recovery = (
+        "好了" in text
+        and terminal_recovery is None
+        and not any(marker in text for marker in ("完全好了", "彻底好了"))
+    )
+    if partial_recovery or any(
+        marker in text for marker in ("有所好转", "好转", "改善中", "缓解中")
     ):
         patch["status"] = "improving"
     elif (
         any(marker in text for marker in ("已痊愈", "痊愈", "康复", "完全好了", "彻底好了"))
-        or re.search(r"(?:已经|已)?好了(?!点|一点|些|一些|一半|不少)", text)
+        or terminal_recovery is not None
     ):
         patch["status"] = "resolved"
     elif any(marker in text for marker in ("发作中", "还没好", "仍未好")):
@@ -835,7 +831,10 @@ def _water_update_values(text: str) -> tuple[float | None, float] | None:
     new_amount = _water_match_amount_ml(new_matches[0])
     old_matches = tuple(_WATER_TARGET_RE.finditer(normalized[:marker.start()]))
     old_amount = _water_match_amount_ml(old_matches[-1]) if old_matches else None
-    return old_amount, new_amount
+    from app.services.write_intent_scope import corrected_water_update_value
+
+    corrected_amount = corrected_water_update_value(text)
+    return old_amount, corrected_amount if corrected_amount is not None else new_amount
 
 
 def _water_match_amount_ml(match: re.Match[str]) -> float:
@@ -1857,21 +1856,25 @@ def _authorized_record_types(
     domain: str,
     goal_record_type: str,
 ) -> frozenset[str]:
+    from app.services.write_intent_scope import (
+        direct_event_values,
+        direct_remember_fact_values,
+        direct_supplement_group_values,
+    )
+
     record_types: set[str] = set()
     if goal_record_type:
         record_types.add(goal_record_type)
     if any(term in clause for term in ("提醒", "闹钟")):
         return frozenset({"reminder"})
-    if _REMEMBER_FACT_RE.search(clause):
+    if _REMEMBER_FACT_RE.search(clause) or direct_remember_fact_values(clause):
         record_types.add("remember")
-    if _EVENT_TARGET_RE.search(clause) or any(
+    if _EVENT_TARGET_RE.search(clause) or direct_event_values(clause) or any(
         term in clause
         for term in ("准备开始睡觉", "准备入睡", "开始睡眠", "开始入睡", "上床睡觉")
     ):
         record_types.add("event")
-    if "补剂" in clause and any(
-        term in clause for term in ("都吃了", "全吃了", "全部吃了", "都服了", "全部服了")
-    ):
+    if direct_supplement_group_values(clause):
         record_types.add("supplement_group")
     if "鼻炎" in clause:
         record_types.add("rhinitis")
@@ -1906,6 +1909,12 @@ def _deterministic_target_values(
     clause: str,
     record_type: str,
 ) -> dict[str, Any]:
+    from app.services.write_intent_scope import (
+        direct_event_values,
+        direct_remember_fact_values,
+        direct_supplement_group_values,
+    )
+
     values: dict[str, Any] = {}
     if record_type == "water" and (
         matches := tuple(_WATER_TARGET_RE.finditer(clause))
@@ -2114,6 +2123,8 @@ def _deterministic_target_values(
         if any(term in clause for term in ("每天", "每日")):
             values["recurrence"] = "daily"
     elif record_type == "supplement_group":
+        if direct_values := direct_supplement_group_values(clause):
+            return direct_values
         timing = next(
             (
                 canonical
@@ -2130,10 +2141,14 @@ def _deterministic_target_values(
         if timing:
             values["timing"] = timing
     elif record_type == "remember":
+        if direct_values := direct_remember_fact_values(clause):
+            return direct_values
         if remember_match := _REMEMBER_FACT_RE.search(clause):
             values["predicate"] = remember_match.group("predicate")
             values["object_value"] = remember_match.group("value").strip(".!！")
     elif record_type == "event":
+        if direct_values := direct_event_values(clause):
+            values.update(direct_values)
         if event_match := _EVENT_TARGET_RE.search(clause):
             values["title"] = event_match.group("title").strip()
         elif any(
