@@ -324,7 +324,7 @@ async def test_gateway_reported_observation_matrix_never_dispatches() -> None:
 
 
 def test_gateway_mixed_polarity_turn_binds_the_positive_target() -> None:
-    snapshot = _snapshot("不要记录口腔溃疡但记录今天晚餐")
+    snapshot = _snapshot("不要记录口腔溃疡但记录今天晚餐吃米饭")
     goal = compile_goal_spec(
         envelope=snapshot.envelope,
         context=snapshot.context,
@@ -347,7 +347,7 @@ def test_gateway_mixed_polarity_turn_binds_the_positive_target() -> None:
             tool_name="health_record",
             arguments={
                 "record_type": "diet",
-                "data": {"meal_type": "dinner"},
+                "data": {"meal_type": "dinner", "food_items": "米饭"},
             },
             source="structured",
         )
@@ -461,6 +461,110 @@ async def test_gateway_dispatches_only_the_concrete_authorized_target(
     assert calls == [authorized_args]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "record_args"),
+    (
+        ("记录体重71kg", {"record_type": "weight", "value": 72}),
+        ("记录喝水300ml", {"record_type": "water", "amount": 500}),
+        (
+            "记录血压120/80",
+            {
+                "record_type": "blood_pressure",
+                "systolic": 130,
+                "diastolic": 90,
+            },
+        ),
+        ("记录腰围80cm", {"record_type": "waist", "waist": 90}),
+        ("记录口腔溃疡", {"record_type": "illness", "name": "感冒"}),
+        (
+            "记录午餐吃米饭",
+            {"record_type": "diet", "data": {"food_items": "米饭"}},
+        ),
+        (
+            "不要记录晚餐面包但记录晚餐米饭",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "dinner", "food_items": "面包"},
+            },
+        ),
+    ),
+)
+async def test_gateway_never_dispatches_alias_or_selector_target_transfer(
+    message, record_args
+):
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    result = await ToolGateway(_snapshot(message)).execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments=record_args,
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert json.loads(result.content)["dispatch_started"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "record_args"),
+    (
+        (
+            "记录体重71kg改记录72kg",
+            {"record_type": "weight", "data": {"weight": 72}},
+        ),
+        (
+            "记录喝水300ml和晚餐吃了米饭",
+            {"record_type": "water", "data": {"amount": 300}},
+        ),
+        (
+            "记录喝水300ml和晚餐吃了米饭",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "dinner", "food_items": "米饭"},
+            },
+        ),
+        (
+            "不要记录午餐面包只记录晚餐米饭",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "dinner", "food_items": "米饭"},
+            },
+        ),
+    ),
+)
+async def test_gateway_dispatches_each_member_of_the_authorized_target_set(
+    message, record_args
+):
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "ok"
+
+    result = await ToolGateway(_snapshot(message)).execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments=record_args,
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [record_args]
+
+
 def test_blocked_tool_result_includes_a_recovery_instruction_for_the_agent():
     gateway = ToolGateway(_snapshot("今天我的饮食的记录，帮我列个表格出来。"))
     decision = gateway.preflight(
@@ -490,7 +594,10 @@ async def test_gateway_execute_dispatches_allowed_request_exactly_once():
     events = []
     request = ToolExecutionRequest(
         tool_name="health_record",
-        arguments={"record_type": "diet", "data": {"food_items": "牛肉面"}},
+        arguments={
+            "record_type": "diet",
+            "data": {"meal_type": "lunch", "food_items": "牛肉面"},
+        },
     )
 
     async def dispatch(normalized_request):
@@ -697,7 +804,10 @@ async def test_execute_tool_decision_failure_is_structured_pre_dispatch_rejectio
 
     result = await executor._execute_tool(
         "health_record",
-        {"record_type": "diet", "data": {"food_items": "牛肉面"}},
+        {
+            "record_type": "diet",
+            "data": {"meal_type": "lunch", "food_items": "牛肉面"},
+        },
         None,
     )
 
@@ -832,13 +942,20 @@ async def test_execute_tool_allows_explicit_health_record_write(db, monkeypatch)
 
     result = await executor._execute_tool(
         "health_record",
-        {"record_type": "diet", "data": {"food_items": "牛肉面"}},
+        {
+            "record_type": "diet",
+            "data": {"meal_type": "lunch", "food_items": "牛肉面"},
+        },
         None,
     )
 
     assert calls == [{
         "record_type": "diet",
-        "data": {"food_items": "牛肉面", "source": "agent_text"},
+        "data": {
+            "meal_type": "lunch",
+            "food_items": "牛肉面",
+            "source": "agent_text",
+        },
     }]
     assert '"id": 1' in result
 
@@ -861,7 +978,13 @@ async def test_execute_tool_emits_receipt_for_json_encoded_write_arguments(db, m
 
     await executor._execute_tool(
         "health_record",
-        json.dumps({"record_type": "diet", "data": {"food_items": "牛肉面"}}, ensure_ascii=False),
+        json.dumps(
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "lunch", "food_items": "牛肉面"},
+            },
+            ensure_ascii=False,
+        ),
         None,
     )
 
@@ -899,7 +1022,10 @@ async def test_recorded_health_write_with_verified_receipt_is_telemetry_success(
 
     await executor._execute_tool(
         "health_record",
-        {"record_type": "diet", "data": {"food_items": "牛肉面"}},
+        {
+            "record_type": "diet",
+            "data": {"meal_type": "lunch", "food_items": "牛肉面"},
+        },
         None,
     )
 

@@ -18,11 +18,8 @@ from app.services.agent_kernel.types import (
     TurnSnapshot,
 )
 from app.services.agent_kernel.write_safety import (
-    has_mixed_health_record_authorization,
     is_explicit_aigc_media_provider_veto,
-    is_non_authorizing_write_reference,
     is_explicit_write_cancellation,
-    lacks_positive_health_record_authorization,
 )
 from app.services.clinician_provenance_guard import classify_clinician_turn
 
@@ -64,21 +61,50 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v2"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "clause-target-v1"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v3"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v2"
 _HEALTH_RECORD_DOMAIN_TYPES = {
     "diet": "diet",
     "water": "water",
     "medication": "medication",
     "supplement": "supplement",
     "symptom": "symptom",
+    "reminder": "reminder",
+    "mood": "mood",
+    "exercise": "exercise",
+    "sleep": "sleep",
 }
 _METRIC_RECORD_TYPE_TERMS = (
     ("blood_pressure", ("血压", "高压", "低压", "收缩压", "舒张压")),
     ("weight", ("体重", "称重", "kg", "公斤", "千克", "斤")),
     ("waist", ("腰围",)),
-    ("sleep", ("睡眠", "入睡", "起床")),
+    ("sleep", ("睡眠", "睡觉", "入睡", "起床")),
     ("exercise", ("运动", "训练", "跑步", "步数", "走了")),
+)
+_EXPLICIT_RECORD_TYPE_TERMS = (
+    ("water", ("喝水", "饮水", "补水", "ml水", "毫升水")),
+    (
+        "diet",
+        (
+            "早餐",
+            "早饭",
+            "午餐",
+            "午饭",
+            "中饭",
+            "晚餐",
+            "晚饭",
+            "加餐",
+            "零食",
+            "夜宵",
+        ),
+    ),
+    ("medication", ("吃药", "服药", "用药", "药物", "药片", "胶囊")),
+    ("supplement", ("补剂", "维生素", "益生菌", "鱼油")),
+    ("symptom", ("头痛", "头疼", "眼痒", "嗓子疼", "不适", "症状")),
+    ("mood", ("心情", "情绪", "心境")),
+    ("excretion", ("排便", "大便", "便秘", "腹泻")),
+    ("reminder", ("提醒", "闹钟")),
+    ("goal", ("目标",)),
 )
 _ILLNESS_TARGET_TERMS = (
     "口腔溃疡",
@@ -116,6 +142,108 @@ _WEIGHT_TARGET_RE = re.compile(
 )
 _BLOOD_PRESSURE_TARGET_RE = re.compile(r"(?P<systolic>\d{2,3})[/／](?P<diastolic>\d{2,3})")
 _WAIST_TARGET_RE = re.compile(r"腰围(?P<value>\d+(?:\.\d+)?)(?:cm|厘米)?", re.IGNORECASE)
+_WATER_TARGET_RE = re.compile(
+    r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>ml|毫升|l|升)(?:的)?(?:水)?",
+    re.IGNORECASE,
+)
+_WRITE_TARGET_ACTION_RE = re.compile(
+    r"(?:记录|记一下|记下|打个卡|打卡|新增|录入|保存|写入|存下来)"
+)
+_ILLNESS_SUFFIX_RE = re.compile(
+    r"(?:炎|病|症|癌|疹|感染|溃疡|感冒|流感|疱疹|烫伤|水泡|伤口)$"
+)
+_SUPPLEMENT_TARGET_TERMS = (
+    "鱼油",
+    "维生素d",
+    "维d",
+    "维生素c",
+    "维c",
+    "复合维生素",
+    "益生菌",
+    "镁",
+    "钙",
+    "辅酶q10",
+    "红参液",
+)
+_MEDICATION_TARGET_TERMS = (
+    "二甲双胍",
+)
+_MEDICATION_DOSE_RE = re.compile(
+    r"(?P<value>\d+(?:\.\d+)?|[一二两三四五六七八九十])\s*"
+    r"(?P<unit>片|粒|丸|袋|支|mg|g|mcg|ug|μg|毫克|克|ml|毫升)",
+    re.IGNORECASE,
+)
+_MEDICATION_STRENGTH_RE = re.compile(
+    r"(?:每(?:片|粒|丸|袋|支)|规格(?:是|为)?)\s*"
+    r"(?P<value>\d+(?:\.\d+)?|[一二两三四五六七八九十])\s*"
+    r"(?P<unit>mg|g|mcg|ug|μg|毫克|克|ml|毫升)",
+    re.IGNORECASE,
+)
+_MEDICATION_NAME_SUFFIX_RE = re.compile(
+    r"(?:霉素|必利|瑞酮|二甲双胍|沙坦|普利|洛尔|他汀|唑仑|西泮)$"
+)
+_CHINESE_DOSE_NUMBERS = {
+    "一": "1",
+    "二": "2",
+    "两": "2",
+    "三": "3",
+    "四": "4",
+    "五": "5",
+    "六": "6",
+    "七": "7",
+    "八": "8",
+    "九": "9",
+    "十": "10",
+}
+_EXERCISE_TARGET_TERMS = (
+    "跑步",
+    "散步",
+    "走路",
+    "游泳",
+    "骑车",
+    "骑行",
+    "力量训练",
+    "瑜伽",
+)
+_EXERCISE_DURATION_RE = re.compile(
+    r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>分钟|小时|min|h)",
+    re.IGNORECASE,
+)
+_MOOD_SCORE_RE = re.compile(r"(?:心情|情绪|心境).{0,6}?(?P<value>[1-5])\s*分")
+_MOOD_TARGET_TERMS = (
+    "calm",
+    "平静",
+    "开心",
+    "愉快",
+    "低落",
+    "焦虑",
+    "烦躁",
+    "生气",
+)
+_MOOD_TARGET_ALIASES = {
+    "calm": "calm",
+    "平静": "calm",
+    "开心": "happy",
+    "愉快": "happy",
+    "低落": "low",
+    "焦虑": "anxious",
+    "烦躁": "irritable",
+    "生气": "angry",
+}
+_EXCRETION_TARGET_ALIASES = {
+    "bowel": "bowel",
+    "排便": "bowel",
+    "大便": "bowel",
+    "constipation": "constipation",
+    "便秘": "constipation",
+    "diarrhea": "diarrhea",
+    "腹泻": "diarrhea",
+}
+_CLOCK_RE = re.compile(r"(?<!\d)(?P<hour>[01]?\d|2[0-3])[:：点](?P<minute>[0-5]\d)?")
+_SLEEP_QUALITY_RE = re.compile(r"(?:睡眠)?质量.{0,3}(?P<value>[1-5])\s*分?")
+_SEVERITY_TARGET_RE = re.compile(
+    r"(?:严重程度|严重度|程度|强度)?\s*(?P<value>10|[1-9])\s*分(?!钟)"
+)
 
 
 def capability_policy_contract_payload() -> dict[str, Any]:
@@ -164,6 +292,7 @@ def decide_tool_capability(
     tool_name = str(request.tool_name or "").strip()
     args = _parse_args(request.arguments)
     primary = snapshot.intent.primary
+    health_record_target_authorized = False
 
     if not tool_name:
         return _decision("block", "missing_tool_name", tool_name, args)
@@ -180,36 +309,45 @@ def decide_tool_capability(
             args,
             receipt_required=True,
         )
+    if mutating_request and is_explicit_write_cancellation(
+        snapshot.envelope.text
+    ):
+        mixed_health_record_target = False
+        if tool_name == "health_record":
+            from app.services.write_intent_scope import (
+                authorized_health_record_clauses,
+            )
+
+            mixed_health_record_target = bool(
+                authorized_health_record_clauses(snapshot.envelope.text)
+            )
+        if not mixed_health_record_target:
+            return _decision(
+                "block",
+                "explicit_write_cancellation",
+                tool_name,
+                args,
+                receipt_required=True,
+            )
+    if (
+        tool_name == "health_record"
+        and snapshot.intent.domain == "aigc_media"
+    ):
+        return _decision(
+            "block",
+            "aigc_media_turn_disallows_health_write",
+            tool_name,
+            args,
+            receipt_required=True,
+        )
     if (
         mutating_request
-        and is_explicit_write_cancellation(snapshot.envelope.text)
+        and snapshot.goal is not None
+        and snapshot.goal.requires_clarification
     ):
         return _decision(
             "block",
-            "explicit_write_cancellation",
-            tool_name,
-            args,
-            receipt_required=True,
-        )
-    if (
-        tool_name == "health_record"
-        and is_non_authorizing_write_reference(snapshot.envelope.text)
-    ):
-        return _decision(
-            "block",
-            "write_tool_without_write_intent",
-            tool_name,
-            args,
-            receipt_required=True,
-        )
-    if (
-        tool_name == "health_record"
-        and primary == "write"
-        and lacks_positive_health_record_authorization(snapshot.envelope.text)
-    ):
-        return _decision(
-            "block",
-            "write_tool_without_direct_authorization",
+            "goal_requires_clarification",
             tool_name,
             args,
             receipt_required=True,
@@ -235,18 +373,19 @@ def decide_tool_capability(
                 args,
                 receipt_required=True,
             )
-    if (
-        mutating_request
-        and snapshot.goal is not None
-        and snapshot.goal.requires_clarification
-    ):
-        return _decision(
-            "block",
-            "goal_requires_clarification",
-            tool_name,
-            args,
-            receipt_required=True,
-        )
+        health_record_target_authorized = target_status == "match"
+        if target_status == "unauthorized":
+            return _decision(
+                "block",
+                (
+                    "ambiguous_intent_requires_clarification"
+                    if primary == "unknown"
+                    else "write_tool_without_write_intent"
+                ),
+                tool_name,
+                args,
+                receipt_required=True,
+            )
 
     # Procedure recipes are user-owned, exact-triggered, server-stored tool
     # sequences. Their AUTO/typed-only confirmation semantics are still applied
@@ -368,7 +507,7 @@ def decide_tool_capability(
         return _decision("block", "unknown_health_manage_operation", tool_name, args)
 
     if tool_name == "health_record":
-        if primary == "write" and snapshot.intent.operation == "create":
+        if health_record_target_authorized:
             return _decision(
                 "allow",
                 "explicit_create_intent",
@@ -554,79 +693,126 @@ def _health_record_target_status(
     snapshot: TurnSnapshot,
     args: dict[str, Any],
 ) -> str:
-    """Bind a health_record request to the final direct authorized clause."""
+    """Bind one request to one member of the direct authorized target set."""
     from app.services.agent_kernel.goal_spec import compile_goal_spec
     from app.services.agent_kernel.intent_frame import build_intent_frame
-    from app.services.write_intent_scope import governing_authorized_write_clause
+    from app.services.write_intent_scope import authorized_health_record_clauses
 
-    clause = governing_authorized_write_clause(snapshot.envelope.text)
-    if not clause:
-        return "unresolved" if has_mixed_health_record_authorization(
-            snapshot.envelope.text
-        ) else "unknown"
-
-    clause_envelope = AgentEnvelope(
-        user_id=snapshot.envelope.user_id,
-        channel=snapshot.envelope.channel,
-        text=clause,
-        source_message_id=snapshot.envelope.source_message_id,
-        client_capabilities=snapshot.envelope.client_capabilities,
-        client_time_context=snapshot.envelope.client_time_context,
-        client_turn_id=snapshot.envelope.client_turn_id,
-    )
-    clause_intent = build_intent_frame(clause_envelope, snapshot.context)
-    clause_goal = compile_goal_spec(
-        envelope=clause_envelope,
-        context=snapshot.context,
-        intent=clause_intent,
-    )
-    expected_types = _authorized_record_types(
-        clause,
-        clause_intent.domain,
-        str(clause_goal.target_record_type or "").strip().lower(),
-    )
-    mixed_polarity = has_mixed_health_record_authorization(
-        snapshot.envelope.text
-    )
-    snapshot_goal_type = (
-        str(snapshot.goal.target_record_type or "").strip().lower()
-        if snapshot.goal is not None
-        else ""
-    )
-    if not expected_types and snapshot_goal_type and not mixed_polarity:
-        expected_types = frozenset({snapshot_goal_type})
-    if not expected_types:
-        return "unresolved" if mixed_polarity else "unknown"
-
+    clauses = authorized_health_record_clauses(snapshot.envelope.text)
+    if not clauses:
+        return "unauthorized"
     requested_type = recipe_replay_record_type(args)
-    if requested_type and requested_type not in expected_types:
-        return "mismatch"
     if not requested_type:
-        return "match"
+        return "unresolved"
 
-    clause_goal_type = str(clause_goal.target_record_type or "").strip().lower()
-    expected_values = dict(clause_goal.target_values) if (
-        requested_type == clause_goal_type
-    ) else {}
-    if (
-        not expected_values
-        and snapshot.goal is not None
-        and not mixed_polarity
-        and requested_type == snapshot_goal_type
-    ):
-        expected_values = dict(snapshot.goal.target_values)
-    if requested_type == "diet" and clause_goal.target_meal_types:
-        expected_values["meal_types"] = clause_goal.target_meal_types
-    elif requested_type == "diet" and clause_intent.scope.get("meal_type"):
-        expected_values["meal_types"] = (clause_intent.scope["meal_type"],)
-    expected_values.update(
-        _deterministic_target_values(clause, requested_type)
-    )
-    return (
-        "mismatch"
-        if _target_values_mismatch(requested_type, expected_values, args)
-        else "match"
-    )
+    direct_write_seen = False
+    matching_type_seen = False
+    incomplete_target_seen = False
+    default_date = snapshot.context.current_time.date().isoformat()
+    for clause in clauses:
+        clause_envelope = AgentEnvelope(
+            user_id=snapshot.envelope.user_id,
+            channel=snapshot.envelope.channel,
+            text=clause,
+            media=snapshot.envelope.media,
+            source_message_id=snapshot.envelope.source_message_id,
+            client_capabilities=snapshot.envelope.client_capabilities,
+            client_time_context=snapshot.envelope.client_time_context,
+            client_turn_id=snapshot.envelope.client_turn_id,
+        )
+        if (
+            len(clauses) == 1
+            and "continuation:reminder_schedule" in snapshot.intent.evidence
+        ):
+            clause_intent = snapshot.intent
+        else:
+            clause_intent = build_intent_frame(clause_envelope, snapshot.context)
+        if (
+            not clause_intent.is_write
+            or clause_intent.primary not in {"write", "mutate"}
+            or clause_intent.operation != "create"
+        ):
+            continue
+        direct_write_seen = True
+        clause_goal = compile_goal_spec(
+            envelope=clause_envelope,
+            context=snapshot.context,
+            intent=clause_intent,
+        )
+        expected_types = _authorized_record_types(
+            clause,
+            clause_intent.domain,
+            str(clause_goal.target_record_type or "").strip().lower(),
+        )
+        if (
+            not expected_types
+            and len(clauses) == 1
+            and snapshot.goal is not None
+            and any(referent in clause for referent in ("这个", "这条", "它"))
+        ):
+            contextual_type = str(
+                snapshot.goal.target_record_type or ""
+            ).strip().lower()
+            if contextual_type:
+                expected_types = frozenset({contextual_type})
+        if requested_type not in expected_types:
+            continue
+        matching_type_seen = True
+
+        clause_goal_type = str(
+            clause_goal.target_record_type or ""
+        ).strip().lower()
+        expected_values = (
+            dict(clause_goal.target_values)
+            if requested_type == clause_goal_type
+            else {}
+        )
+        if (
+            not expected_values
+            and len(clauses) == 1
+            and snapshot.goal is not None
+            and requested_type
+            == str(snapshot.goal.target_record_type or "").strip().lower()
+            and any(referent in clause for referent in ("这个", "这条", "它"))
+        ):
+            expected_values = dict(snapshot.goal.target_values)
+        if requested_type == "diet" and clause_goal.target_meal_types:
+            expected_values["meal_types"] = clause_goal.target_meal_types
+        elif requested_type == "diet" and clause_intent.scope.get("meal_type"):
+            expected_values["meal_types"] = (
+                clause_intent.scope["meal_type"],
+            )
+        deterministic_values = _deterministic_target_values(
+            clause,
+            requested_type,
+        )
+        if requested_type == "diet" and expected_values.get("food_items"):
+            deterministic_values.pop("meal_food_targets", None)
+        expected_values.update(deterministic_values)
+        if (
+            requested_type == "reminder"
+            and "continuation:reminder_schedule" in clause_intent.evidence
+        ):
+            expected_values["contextual_continuation"] = True
+        if (
+            requested_type == "diet"
+            and snapshot.envelope.media
+            and any(referent in clause for referent in ("这餐", "这一餐", "这顿"))
+        ):
+            expected_values["attachment_authorized"] = True
+        expected_values["target_date"] = clause_goal.target_date or default_date
+        expected_values["default_date"] = default_date
+        if not _authorization_target_complete(requested_type, expected_values):
+            incomplete_target_seen = True
+            continue
+        if not _target_values_mismatch(requested_type, expected_values, args):
+            return "match"
+
+    if matching_type_seen and incomplete_target_seen:
+        return "unresolved"
+    if direct_write_seen:
+        return "mismatch"
+    return "unauthorized"
 
 
 def _authorized_record_types(
@@ -637,9 +823,26 @@ def _authorized_record_types(
     record_types: set[str] = set()
     if goal_record_type:
         record_types.add(goal_record_type)
+    if any(term in clause for term in ("提醒", "闹钟")):
+        return frozenset({"reminder"})
     if "鼻炎" in clause:
         record_types.add("rhinitis")
-    if any(term in clause for term in _ILLNESS_TARGET_TERMS):
+    for record_type, terms in _EXPLICIT_RECORD_TYPE_TERMS:
+        if any(term in clause for term in terms):
+            record_types.add(record_type)
+    if "药" in clause and not any(
+        term in clause for term in ("补剂", "维生素", "益生菌", "鱼油")
+    ):
+        record_types.add("medication")
+    if any(term in clause for term in _MEDICATION_TARGET_TERMS):
+        record_types.add("medication")
+    if _looks_like_medication_clause(clause):
+        record_types.add("medication")
+    illness_targets = _illness_targets(clause)
+    if illness_targets and not (
+        record_types & {"medication", "supplement"}
+        and all(f"{target}药" in clause for target in illness_targets)
+    ):
         record_types.add("illness")
     for record_type, terms in _METRIC_RECORD_TYPE_TERMS:
         if any(term in clause for term in terms):
@@ -654,26 +857,370 @@ def _deterministic_target_values(
     record_type: str,
 ) -> dict[str, Any]:
     values: dict[str, Any] = {}
-    if record_type == "weight" and (match := _WEIGHT_TARGET_RE.search(clause)):
+    if record_type == "water" and (
+        matches := tuple(_WATER_TARGET_RE.finditer(clause))
+    ):
+        match = matches[-1]
+        amount = float(match.group("value"))
+        if match.group("unit").lower() in {"l", "升"}:
+            amount *= 1000
+        values["amount_ml"] = amount
+    elif record_type == "weight" and (
+        matches := tuple(_WEIGHT_TARGET_RE.finditer(clause))
+    ):
+        match = matches[-1]
         weight = float(match.group("value"))
         if match.group("unit") == "斤":
             weight /= 2
         values["weight"] = weight
     elif record_type == "blood_pressure" and (
-        match := _BLOOD_PRESSURE_TARGET_RE.search(clause)
+        matches := tuple(_BLOOD_PRESSURE_TARGET_RE.finditer(clause))
     ):
+        match = matches[-1]
         values["systolic"] = int(match.group("systolic"))
         values["diastolic"] = int(match.group("diastolic"))
-    elif record_type == "waist" and (match := _WAIST_TARGET_RE.search(clause)):
+    elif record_type == "waist" and (
+        matches := tuple(_WAIST_TARGET_RE.finditer(clause))
+    ):
+        match = matches[-1]
         values["waist_cm"] = float(match.group("value"))
     elif record_type == "illness":
-        illness = next(
-            (term for term in _ILLNESS_TARGET_TERMS if term in clause),
-            "",
+        targets = _illness_targets(clause)
+        if targets:
+            values["names"] = targets
+    elif record_type == "diet":
+        meal_food_targets = _diet_meal_food_targets(clause)
+        if meal_food_targets:
+            values["meal_food_targets"] = meal_food_targets
+            values["meal_types"] = tuple(meal_food_targets)
+    elif record_type == "medication":
+        medication_details = _medication_item_details(clause)
+        if medication_details:
+            values["names"] = tuple(medication_details)
+            dosages = {
+                name: details["dosage"]
+                for name, details in medication_details.items()
+                if details.get("dosage")
+            }
+            if dosages:
+                values["dosages"] = dosages
+            strengths = {
+                name: details["observed_strength"]
+                for name, details in medication_details.items()
+                if details.get("observed_strength")
+            }
+            if strengths:
+                values["observed_strengths"] = strengths
+    elif record_type == "supplement":
+        names = _named_item_targets(clause, record_type)
+        if names:
+            values["names"] = names
+    elif record_type == "exercise":
+        exercise_types = tuple(
+            term for term in _EXERCISE_TARGET_TERMS if term in clause
         )
-        if illness:
-            values["name"] = illness
+        if exercise_types:
+            values["exercise_types"] = tuple(dict.fromkeys(exercise_types))
+        duration_matches = tuple(_EXERCISE_DURATION_RE.finditer(clause))
+        if duration_matches:
+            duration = float(duration_matches[-1].group("value"))
+            if duration_matches[-1].group("unit").lower() in {"小时", "h"}:
+                duration *= 60
+            values["duration_minutes"] = duration
+    elif record_type == "mood" and (match := _MOOD_SCORE_RE.search(clause)):
+        values["mood_score"] = int(match.group("value"))
+    elif record_type == "mood":
+        mood_values = tuple(term for term in _MOOD_TARGET_TERMS if term in clause)
+        if mood_values:
+            values["mood_values"] = tuple(dict.fromkeys(mood_values))
+    elif record_type == "excretion":
+        kinds: list[str] = []
+        if any(term in clause for term in ("排便", "大便")):
+            kinds.append("bowel")
+        if "便秘" in clause:
+            kinds.append("constipation")
+        if "腹泻" in clause:
+            kinds.append("diarrhea")
+        if kinds:
+            values["excretion_types"] = tuple(dict.fromkeys(kinds))
+    elif record_type == "sleep":
+        clocks = tuple(_CLOCK_RE.finditer(clause))
+        if clocks:
+            normalized_clocks = tuple(
+                f"{int(match.group('hour')):02d}:"
+                f"{int(match.group('minute') or 0):02d}"
+                for match in clocks
+            )
+            values["bedtime"] = normalized_clocks[0]
+            if len(normalized_clocks) > 1:
+                values["wake_time"] = normalized_clocks[-1]
+        if match := _SLEEP_QUALITY_RE.search(clause):
+            values["sleep_quality"] = int(match.group("value"))
+        if any(term in clause for term in ("准备开始睡觉", "开始睡觉", "要睡觉")):
+            values["sleep_start"] = True
+    elif record_type == "goal":
+        title = _target_text_after_marker(clause, "目标")
+        if title:
+            values["titles"] = (title,)
+        target_match = re.search(
+            r"(?:降到|减到|达到|目标值)(?P<value>\d+(?:\.\d+)?)"
+            r"(?P<unit>kg|公斤|千克|斤|cm|厘米|%|次|分钟)?",
+            clause,
+            re.IGNORECASE,
+        )
+        if target_match is not None:
+            values["target_value"] = float(target_match.group("value"))
+            if target_match.group("unit"):
+                values["target_unit"] = target_match.group("unit").lower()
+    elif record_type == "reminder":
+        title = _target_text_before_marker(clause, "提醒")
+        if title:
+            values["titles"] = (title,)
+        clocks = tuple(_CLOCK_RE.finditer(clause))
+        if clocks:
+            values["times"] = tuple(
+                f"{int(match.group('hour')):02d}:"
+                f"{int(match.group('minute') or 0):02d}"
+                for match in clocks
+            )
+        if any(term in clause for term in ("每天", "每日")):
+            values["recurrence"] = "daily"
+    if (
+        record_type in {"illness", "symptom"}
+        and (severity_match := _SEVERITY_TARGET_RE.search(clause))
+    ):
+        values["severity"] = int(severity_match.group("value"))
     return values
+
+
+def _target_text_after_marker(clause: str, marker: str) -> str:
+    marker_position = clause.rfind(marker)
+    if marker_position < 0:
+        return ""
+    value = clause[marker_position + len(marker):]
+    return value.strip("是为：:，,。.!！；;的 ")
+
+
+def _target_text_before_marker(clause: str, marker: str) -> str:
+    marker_position = clause.rfind(marker)
+    if marker_position < 0:
+        return ""
+    value = clause[:marker_position]
+    value = re.sub(
+        r"^(?:请|帮我|替我|为我|给我|设置|创建|新增|记录|每天|每日)+",
+        "",
+        value,
+    )
+    value = _CLOCK_RE.sub("", value)
+    value = re.sub(r"^(?:从)?(?:到|至)?", "", value)
+    return value.strip("是为：:，,。.!！；;的 ")
+
+
+def _diet_meal_food_targets(clause: str) -> dict[str, str]:
+    matches: list[tuple[int, int, str]] = []
+    for alias, meal_type in _MEAL_TYPE_ALIASES.items():
+        if not re.search(r"[\u4e00-\u9fff]", alias):
+            continue
+        start = clause.find(alias)
+        if start >= 0:
+            matches.append((start, start + len(alias), meal_type))
+    matches.sort()
+    targets: dict[str, str] = {}
+    for index, (_start, end, meal_type) in enumerate(matches):
+        next_start = matches[index + 1][0] if index + 1 < len(matches) else len(clause)
+        food = clause[end:next_start]
+        food = food.lstrip("，,：: ")
+        food = re.sub(r"^(?:我)?(?:吃了|吃的是|吃|有|是)?", "", food)
+        food = re.sub(
+            r"(?:然后|再)?(?:请|帮我|替我|为我)?"
+            r"(?:记录|记下|保存|录入|写入|打卡)(?:一下)?$",
+            "",
+            food,
+        )
+        food = food.strip("和与的了，,。.!！；;：: ")
+        if food and food not in {"饮食", "一餐", "饭", "食物"}:
+            targets[meal_type] = food[:1000]
+    return targets
+
+
+def _named_item_targets(clause: str, record_type: str) -> tuple[str, ...]:
+    if record_type == "medication":
+        return tuple(_medication_item_targets(clause))
+    action_matches = tuple(_WRITE_TARGET_ACTION_RE.finditer(clause))
+    candidate = clause[action_matches[-1].end():] if action_matches else clause
+    candidate = re.sub(
+        r"^(?:(?:一下|一条|一个|我的|我|今天|今日|已经|刚才|刚刚|"
+        r"吃了|服了|服用(?:了)?|用了))+",
+        "",
+        candidate,
+    )
+    candidate = re.split(r"(?:，|,|然后|并且|再)", candidate, maxsplit=1)[0]
+    candidate = candidate.strip("的了，,。.!！；;：: ")
+    if candidate:
+        return (candidate,)
+    if record_type == "supplement":
+        known = tuple(term for term in _SUPPLEMENT_TARGET_TERMS if term in clause)
+        return tuple(dict.fromkeys(known))
+    return ()
+
+
+def _looks_like_medication_clause(clause: str) -> bool:
+    from app.services.drug_lexicon import contains_medication_reference
+
+    if contains_medication_reference(clause):
+        return True
+    return any(
+        _MEDICATION_NAME_SUFFIX_RE.search(name)
+        for name in _medication_item_targets(clause)
+    )
+
+
+def _medication_item_targets(clause: str) -> dict[str, str]:
+    return {
+        name: details.get("dosage", "")
+        for name, details in _medication_item_details(clause).items()
+    }
+
+
+def _medication_item_details(clause: str) -> dict[str, dict[str, str]]:
+    action_matches = tuple(_WRITE_TARGET_ACTION_RE.finditer(clause))
+    candidate = clause[action_matches[-1].end():] if action_matches else clause
+    for _ in range(12):
+        stripped = re.sub(
+            r"^(?:一下|一条|一个|我的|我|今天|今日|已经|刚才|刚刚|"
+            r"吃了|吃的|服了|服用(?:了|的)?|用了|的)",
+            "",
+            candidate,
+        )
+        if stripped == candidate:
+            break
+        candidate = stripped
+    candidate = re.split(r"(?:然后|并且|再)", candidate, maxsplit=1)[0]
+    targets: dict[str, dict[str, str]] = {}
+    for raw_item in re.split(r"[、]|(?:和|与|及)", candidate):
+        item = raw_item.strip("的了，,。.!！；;：: ")
+        if not item:
+            continue
+        strength_matches = tuple(_MEDICATION_STRENGTH_RE.finditer(item))
+        observed_strength = (
+            _canonical_medication_dosage(strength_matches[-1])
+            if strength_matches
+            else ""
+        )
+        item_without_strength = _MEDICATION_STRENGTH_RE.sub("", item)
+        dose_matches = tuple(_MEDICATION_DOSE_RE.finditer(item_without_strength))
+        dosage = _canonical_medication_dosage(dose_matches[0]) if dose_matches else ""
+        name = _MEDICATION_DOSE_RE.sub("", item_without_strength)
+        name = re.sub(r"^(?:我)?(?:吃了|吃的|服了|服用(?:了|的)?|用了)", "", name)
+        name = name.strip("的了，,。.!！；;：: ")
+        if name and name not in {"药", "药物", "这次药", "那次药"}:
+            targets[name] = {
+                "dosage": dosage,
+                "observed_strength": observed_strength,
+            }
+    return targets
+
+
+def _canonical_medication_dosage(match: re.Match[str]) -> str:
+    value = match.group("value")
+    value = _CHINESE_DOSE_NUMBERS.get(value, value)
+    unit = match.group("unit").lower()
+    unit_aliases = {
+        "毫克": "mg",
+        "克": "g",
+        "毫升": "ml",
+        "μg": "mcg",
+        "ug": "mcg",
+    }
+    return f"{value}{unit_aliases.get(unit, unit)}"
+
+
+def _illness_targets(clause: str) -> tuple[str, ...]:
+    known = tuple(
+        term
+        for term in _ILLNESS_TARGET_TERMS
+        if term in clause and f"{term}药" not in clause
+    )
+    if known:
+        return tuple(dict.fromkeys(known))
+
+    action_matches = tuple(_WRITE_TARGET_ACTION_RE.finditer(clause))
+    candidate = ""
+    if action_matches:
+        action = action_matches[-1]
+        candidate = clause[action.end():]
+        candidate = re.sub(
+            r"^(?:一下|一条|一个|我的|我|今天|今日|昨天|昨日|以前的|既往)",
+            "",
+            candidate,
+        )
+        candidate = re.split(
+            r"(?:发作|开始|起病)?(?:日期|时间)(?:是|为)|然后|再分析|再告诉",
+            candidate,
+            maxsplit=1,
+        )[0]
+        candidate = candidate.removesuffix("下来")
+    if not candidate and action_matches:
+        before = clause[:action_matches[-1].start()]
+        match = re.search(r"(?:把|将)(?P<target>.+)$", before)
+        if match is not None:
+            candidate = match.group("target")
+    candidate = candidate.strip("的了，,。.!！；;：: ")
+    if not candidate or candidate in {"疾病", "不适", "症状", "健康数据", "数据"}:
+        return ()
+    parts = tuple(
+        part.strip()
+        for part in re.split(r"[、/]|(?:和|与)", candidate)
+        if part.strip()
+    )
+    if parts and all(_ILLNESS_SUFFIX_RE.search(part) for part in parts):
+        return tuple(dict.fromkeys(parts))
+    return ()
+
+
+def _authorization_target_complete(
+    record_type: str,
+    expected: dict[str, Any],
+) -> bool:
+    required = {
+        "water": ("amount_ml",),
+        "weight": ("weight",),
+        "blood_pressure": ("systolic", "diastolic"),
+        "waist": ("waist_cm",),
+        "illness": ("names",),
+        "diet": ("meal_types", "food_items"),
+        "symptom": ("body_part", "description"),
+        "medication": ("names",),
+        "supplement": ("names",),
+        "exercise": ("exercise_types",),
+        "mood": ("mood_score",),
+        "excretion": ("excretion_types",),
+        "goal": ("titles",),
+    }
+    if record_type == "diet" and expected.get("meal_food_targets"):
+        return True
+    if record_type == "diet" and expected.get("attachment_authorized"):
+        return True
+    if record_type == "mood" and expected.get("mood_values"):
+        return True
+    if record_type == "sleep" and (
+        expected.get("sleep_start")
+        or (
+            expected.get("bedtime")
+            and expected.get("wake_time")
+            and expected.get("sleep_quality") is not None
+        )
+    ):
+        return True
+    if record_type == "reminder":
+        has_title = bool(expected.get("titles")) or bool(
+            expected.get("contextual_continuation")
+        )
+        return has_title and bool(expected.get("times"))
+    fields = required.get(record_type)
+    if fields is None:
+        return False
+    return all(expected.get(field) not in (None, "", (), []) for field in fields)
 
 
 def _target_values_mismatch(
@@ -682,49 +1229,542 @@ def _target_values_mismatch(
     args: dict[str, Any],
 ) -> bool:
     data = args.get("data") if isinstance(args.get("data"), dict) else {}
-    if record_type == "diet" and expected.get("meal_types"):
+    if record_type == "diet":
         requested_meal = _MEAL_TYPE_ALIASES.get(
-            str(data.get("meal_type") or args.get("meal_type") or "").strip().lower(),
+            str(
+                _effective_argument_value(
+                    args,
+                    data,
+                    data_keys=("meal_type",),
+                    arg_keys=("meal_type",),
+                )
+                or ""
+            ).strip().lower(),
             "",
         )
-        allowed_meals = {
-            _MEAL_TYPE_ALIASES.get(str(value).strip().lower(), str(value).strip().lower())
-            for value in expected["meal_types"]
-        }
-        if requested_meal and requested_meal not in allowed_meals:
-            return True
+        if expected.get("attachment_authorized"):
+            if not requested_meal:
+                return True
+        else:
+            allowed_meals = {
+                _MEAL_TYPE_ALIASES.get(
+                    str(value).strip().lower(), str(value).strip().lower()
+                )
+                for value in expected["meal_types"]
+            }
+            if not requested_meal or requested_meal not in allowed_meals:
+                return True
+        requested_food = _effective_argument_value(
+            args,
+            data,
+            data_keys=("food_items",),
+            arg_keys=("food_items",),
+        )
+        if expected.get("attachment_authorized"):
+            if not str(requested_food or "").strip():
+                return True
+        else:
+            meal_food_targets = expected.get("meal_food_targets") or {}
+            expected_food = meal_food_targets.get(
+                requested_meal,
+                expected.get("food_items"),
+            )
+            if not _food_targets_match(expected_food, requested_food):
+                return True
 
     numeric_keys = {
-        "water": (("amount_ml", "amount"), expected.get("amount_ml")),
-        "weight": (("weight",), expected.get("weight")),
-        "blood_pressure": (("systolic",), expected.get("systolic")),
-        "waist": (("waist_cm",), expected.get("waist_cm")),
+        "water": (
+            ("amount", "amount_ml"),
+            ("amount", "amount_ml"),
+            expected.get("amount_ml"),
+        ),
+        "weight": (
+            ("weight", "value", "weight_kg"),
+            ("weight", "value", "weight_kg", "体重"),
+            expected.get("weight"),
+        ),
+        "blood_pressure": (
+            ("systolic",),
+            ("systolic",),
+            expected.get("systolic"),
+        ),
+        "waist": (
+            ("waist_cm", "waist", "value", "腰围"),
+            ("waist_cm", "waist", "value", "腰围"),
+            expected.get("waist_cm"),
+        ),
     }
     if record_type in numeric_keys:
-        keys, expected_number = numeric_keys[record_type]
-        requested_number = next(
-            (data[key] for key in keys if data.get(key) is not None),
-            None,
+        data_keys, arg_keys, expected_number = numeric_keys[record_type]
+        requested_number = _effective_argument_value(
+            args,
+            data,
+            data_keys=data_keys,
+            arg_keys=arg_keys,
         )
         if (
             expected_number is not None
-            and requested_number is not None
-            and not _numbers_match(expected_number, requested_number)
+            and (
+                requested_number is None
+                or not _numbers_match(expected_number, requested_number)
+            )
         ):
             return True
     if record_type == "blood_pressure" and expected.get("diastolic") is not None:
-        requested_diastolic = data.get("diastolic")
-        if requested_diastolic is not None and not _numbers_match(
-            expected["diastolic"], requested_diastolic
+        requested_diastolic = _effective_argument_value(
+            args,
+            data,
+            data_keys=("diastolic",),
+            arg_keys=("diastolic",),
+        )
+        if requested_diastolic is None or not _numbers_match(
+            expected["diastolic"],
+            requested_diastolic,
         ):
             return True
-    if record_type == "illness" and expected.get("name"):
+    if record_type == "illness" and expected.get("names"):
         requested_name = str(
-            data.get("name") or data.get("illness_name") or ""
+            _effective_argument_value(
+                args,
+                data,
+                data_keys=("name", "illness_name"),
+                arg_keys=("name", "illness_name"),
+            )
+            or ""
         ).strip()
-        if requested_name and expected["name"] not in requested_name:
+        allowed_names = {
+            _normalize_entity_name(value) for value in expected["names"]
+        }
+        if not requested_name or _normalize_entity_name(requested_name) not in allowed_names:
             return True
+    if record_type == "symptom":
+        requested_body_part = str(
+            _effective_argument_value(
+                args,
+                data,
+                data_keys=("body_part",),
+                arg_keys=("body_part",),
+            )
+            or ""
+        ).strip().lower()
+        requested_description = str(
+            _effective_argument_value(
+                args,
+                data,
+                data_keys=("description",),
+                arg_keys=("description",),
+            )
+            or ""
+        ).strip()
+        if requested_body_part != str(expected.get("body_part") or "").strip().lower():
+            return True
+        if not requested_description:
+            return True
+        expected_description = _normalize_entity_name(expected.get("description"))
+        normalized_description = _normalize_entity_name(requested_description)
+        if normalized_description not in expected_description and (
+            expected_description not in normalized_description
+        ):
+            return True
+    if record_type in {"illness", "symptom"} and expected.get("severity") is not None:
+        requested_severity = _effective_argument_value(
+            args,
+            data,
+            data_keys=("severity",),
+            arg_keys=("severity",),
+        )
+        if requested_severity is None or not _numbers_match(
+            expected["severity"],
+            requested_severity,
+        ):
+            return True
+    if record_type in {"medication", "supplement"}:
+        if record_type == "medication":
+            name_keys = ("medication_name", "name")
+        else:
+            name_keys = ("supplement_name", "name")
+        requested_name = str(
+            _effective_argument_value(
+                args,
+                data,
+                data_keys=name_keys,
+                arg_keys=name_keys,
+            )
+            or ""
+        )
+        allowed_names = {
+            _normalize_entity_name(value) for value in expected.get("names", ())
+        }
+        normalized_requested_name = _normalize_entity_name(requested_name)
+        if normalized_requested_name not in allowed_names:
+            return True
+        if record_type == "medication":
+            expected_dosages = {
+                _normalize_entity_name(name): _normalize_medication_dosage(dosage)
+                for name, dosage in (expected.get("dosages") or {}).items()
+            }
+            requested_dosage = _effective_argument_value(
+                args,
+                data,
+                data_keys=("actual_dosage", "dosage"),
+                arg_keys=("actual_dosage", "dosage"),
+            )
+            normalized_requested_dosage = _normalize_medication_dosage(
+                requested_dosage
+            )
+            expected_dosage = expected_dosages.get(normalized_requested_name, "")
+            if expected_dosage:
+                if normalized_requested_dosage != expected_dosage:
+                    return True
+            elif normalized_requested_dosage:
+                return True
+            expected_strengths = {
+                _normalize_entity_name(name): _normalize_medication_dosage(strength)
+                for name, strength in (
+                    expected.get("observed_strengths") or {}
+                ).items()
+            }
+            requested_strength = _effective_argument_value(
+                args,
+                data,
+                data_keys=("observed_strength", "strength"),
+                arg_keys=("observed_strength", "strength"),
+            )
+            normalized_requested_strength = _normalize_medication_dosage(
+                requested_strength
+            )
+            expected_strength = expected_strengths.get(
+                normalized_requested_name,
+                "",
+            )
+            if expected_strength:
+                if normalized_requested_strength != expected_strength:
+                    return True
+            elif normalized_requested_strength:
+                return True
+    if record_type == "exercise":
+        requested_exercise = str(
+            _effective_argument_value(
+                args,
+                data,
+                data_keys=("exercise_type", "type", "name"),
+                arg_keys=("exercise_type", "type", "name"),
+            )
+            or ""
+        )
+        allowed_exercises = {
+            _normalize_entity_name(value)
+            for value in expected.get("exercise_types", ())
+        }
+        if _normalize_entity_name(requested_exercise) not in allowed_exercises:
+            return True
+        if expected.get("duration_minutes") is not None:
+            requested_duration = _effective_argument_value(
+                args,
+                data,
+                data_keys=("duration", "duration_minutes", "minutes", "分钟"),
+                arg_keys=("duration", "duration_minutes", "minutes", "分钟"),
+            )
+            if requested_duration is None or not _numbers_match(
+                expected["duration_minutes"],
+                requested_duration,
+            ):
+                return True
+    if record_type == "mood":
+        if expected.get("mood_score") is not None:
+            requested_score = _effective_argument_value(
+                args,
+                data,
+                data_keys=("mood_score", "score"),
+                arg_keys=("mood_score", "score"),
+            )
+            if requested_score is None or not _numbers_match(
+                expected["mood_score"],
+                requested_score,
+            ):
+                return True
+        elif expected.get("mood_values"):
+            requested_mood = str(
+                _effective_argument_value(
+                    args,
+                    data,
+                    data_keys=("mood", "status", "mood_label"),
+                    arg_keys=("mood", "status", "mood_label"),
+                )
+                or ""
+            ).strip().lower()
+            allowed_moods = {
+                _MOOD_TARGET_ALIASES.get(str(value).strip().lower(), "")
+                for value in expected["mood_values"]
+            }
+            if _MOOD_TARGET_ALIASES.get(requested_mood, "") not in allowed_moods:
+                return True
+    if record_type == "excretion":
+        requested_type = str(
+            _effective_argument_value(
+                args,
+                data,
+                data_keys=("type", "excretion_type"),
+                arg_keys=("type", "excretion_type"),
+            )
+            or ""
+        ).strip().lower()
+        allowed_types = {
+            _EXCRETION_TARGET_ALIASES.get(str(value).strip().lower(), "")
+            for value in expected.get("excretion_types", ())
+        }
+        if _EXCRETION_TARGET_ALIASES.get(requested_type, "") not in allowed_types:
+            return True
+    if record_type == "sleep":
+        if expected.get("bedtime"):
+            requested_bedtime = _effective_argument_value(
+                args,
+                data,
+                data_keys=("bedtime",),
+                arg_keys=("bedtime",),
+            )
+            if _normalize_clock_value(requested_bedtime) != expected["bedtime"]:
+                return True
+        if expected.get("wake_time"):
+            requested_wake_time = _effective_argument_value(
+                args,
+                data,
+                data_keys=("wake_time",),
+                arg_keys=("wake_time",),
+            )
+            if _normalize_clock_value(requested_wake_time) != expected["wake_time"]:
+                return True
+        if expected.get("sleep_quality") is not None:
+            requested_quality = _effective_argument_value(
+                args,
+                data,
+                data_keys=("sleep_quality", "quality"),
+                arg_keys=("sleep_quality", "quality"),
+            )
+            if requested_quality is None or not _numbers_match(
+                expected["sleep_quality"],
+                requested_quality,
+            ):
+                return True
+    if record_type == "goal":
+        requested_title = _effective_argument_value(
+            args,
+            data,
+            data_keys=("title",),
+            arg_keys=("title",),
+        )
+        allowed_titles = {
+            _normalize_entity_name(value) for value in expected.get("titles", ())
+        }
+        if _normalize_entity_name(requested_title) not in allowed_titles:
+            return True
+        if expected.get("target_value") is not None:
+            requested_target = _effective_argument_value(
+                args,
+                data,
+                data_keys=("target_value",),
+                arg_keys=("target_value",),
+            )
+            if requested_target is None or not _numbers_match(
+                expected["target_value"],
+                requested_target,
+            ):
+                return True
+        if expected.get("target_unit"):
+            requested_unit = _effective_argument_value(
+                args,
+                data,
+                data_keys=("target_unit",),
+                arg_keys=("target_unit",),
+            )
+            if _normalize_unit(requested_unit) != _normalize_unit(
+                expected["target_unit"]
+            ):
+                return True
+    if record_type == "reminder":
+        if expected.get("titles"):
+            requested_title = _effective_argument_value(
+                args,
+                data,
+                data_keys=("title",),
+                arg_keys=("title",),
+            )
+            allowed_titles = {
+                _normalize_reminder_title(value) for value in expected["titles"]
+            }
+            if _normalize_reminder_title(requested_title) not in allowed_titles:
+                return True
+        requested_times = tuple(
+            clock
+            for clock in (
+                _normalize_clock_value(
+                    _effective_argument_value(
+                        args,
+                        data,
+                        data_keys=(key,),
+                        arg_keys=(key,),
+                    )
+                )
+                for key in ("time", "remind_at", "start_time", "end_time")
+            )
+            if clock
+        )
+        if set(requested_times) != set(expected.get("times", ())):
+            return True
+        if expected.get("recurrence"):
+            requested_recurrence = str(
+                _effective_argument_value(
+                    args,
+                    data,
+                    data_keys=("recurrence",),
+                    arg_keys=("recurrence",),
+                )
+                or ""
+            ).strip().lower()
+            if requested_recurrence != expected["recurrence"]:
+                return True
+
+    requested_date = _effective_record_date(record_type, args, data)
+    effective_date = requested_date or str(expected.get("default_date") or "")
+    if str(expected.get("target_date") or "") != effective_date:
+        return True
     return False
+
+
+def _effective_argument_value(
+    args: dict[str, Any],
+    data: dict[str, Any],
+    *,
+    data_keys: tuple[str, ...],
+    arg_keys: tuple[str, ...],
+) -> Any:
+    for container, keys in ((data, data_keys), (args, arg_keys)):
+        for key in keys:
+            if key in container and container[key] is not None:
+                return container[key]
+    return None
+
+
+def _effective_record_date(
+    record_type: str,
+    args: dict[str, Any],
+    data: dict[str, Any],
+) -> str:
+    if record_type == "illness":
+        value = _effective_argument_value(
+            args,
+            data,
+            data_keys=("start_date",),
+            arg_keys=("start_date",),
+        )
+    else:
+        value = _effective_argument_value(
+            args,
+            data,
+            data_keys=("record_date", "date"),
+            arg_keys=("record_date", "date"),
+        )
+    return str(value or "").strip()[:10]
+
+
+def _normalize_entity_name(value: Any) -> str:
+    return re.sub(r"[\s,，、。.!！;；:：]+", "", str(value or "")).casefold()
+
+
+def _normalize_medication_dosage(value: Any) -> str:
+    text = str(value or "").strip()
+    match = _MEDICATION_DOSE_RE.fullmatch(text)
+    if match is None:
+        return _normalize_entity_name(text)
+    return _canonical_medication_dosage(match)
+
+
+def _normalize_clock_value(value: Any) -> str:
+    match = _CLOCK_RE.search(str(value or ""))
+    if match is None:
+        return ""
+    return (
+        f"{int(match.group('hour')):02d}:"
+        f"{int(match.group('minute') or 0):02d}"
+    )
+
+
+def _normalize_unit(value: Any) -> str:
+    aliases = {
+        "厘米": "cm",
+        "公斤": "kg",
+        "千克": "kg",
+    }
+    normalized = str(value or "").strip().lower()
+    return aliases.get(normalized, normalized)
+
+
+def _normalize_reminder_title(value: Any) -> str:
+    normalized = _normalize_entity_name(value)
+    return re.sub(r"(?:提醒|闹钟)$", "", normalized)
+
+
+def _food_targets_match(expected: Any, requested: Any) -> bool:
+    def parts(value: Any) -> tuple[str, ...]:
+        if isinstance(value, (list, tuple)):
+            raw_parts = []
+            for item in value:
+                if isinstance(item, dict):
+                    name = item.get("name") or item.get("food_name")
+                    quantity = item.get("quantity")
+                    unit = item.get("unit")
+                    if name and quantity is not None and unit:
+                        raw_parts.append(f"{name}{quantity}{unit}")
+                    elif name:
+                        raw_parts.append(str(name))
+                    continue
+                raw_parts.extend(
+                    re.split(r"[,，、;；/|+＋]|(?:和|与|及)", str(item))
+                )
+        else:
+            raw_parts = re.split(
+                r"[,，、;；/|+＋]|(?:和|与|及)",
+                str(value or ""),
+            )
+        return tuple(
+            sorted(
+                _canonical_food_part(part)
+                for part in raw_parts
+                if _canonical_food_part(part)
+            )
+        )
+
+    return bool(parts(expected)) and parts(expected) == parts(requested)
+
+
+def _canonical_food_part(value: Any) -> str:
+    part = _normalize_entity_name(value)
+    if not part:
+        return ""
+    quantity = r"(?:\d+(?:\.\d+)?|[一二两三四五六七八九十百半]+)"
+    unit = r"(?:毫升|ml|克|g|碗|杯|份|个|只|枚|颗|片|块|根|条)"
+    leading = re.fullmatch(
+        rf"(?P<number>{quantity})(?P<unit>{unit})(?P<food>.+)",
+        part,
+        re.IGNORECASE,
+    )
+    trailing = re.fullmatch(
+        rf"(?P<food>.+?)(?P<number>{quantity})(?P<unit>{unit})",
+        part,
+        re.IGNORECASE,
+    )
+    match = leading or trailing
+    if match is None:
+        return part
+    unit_aliases = {"只": "个", "枚": "个", "颗": "个"}
+    normalized_number = _CHINESE_DOSE_NUMBERS.get(
+        match.group("number"),
+        match.group("number"),
+    )
+    return (
+        f"{match.group('food')}#{normalized_number}"
+        f"{unit_aliases.get(match.group('unit'), match.group('unit'))}"
+    ).casefold()
 
 
 def _numbers_match(expected: Any, requested: Any) -> bool:

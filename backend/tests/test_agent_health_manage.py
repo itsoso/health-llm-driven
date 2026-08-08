@@ -469,6 +469,7 @@ async def test_health_record_creates_goal(db):
 
     executor = AgentExecutor(db)
     executor._current_user_id = 3
+    executor._current_turn_user_message = "创建目标：90天把腰围降到82cm"
 
     captured = {}
 

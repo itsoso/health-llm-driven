@@ -19,7 +19,25 @@ def _declare_explicit_turn_for_raw_date_guard_contracts(monkeypatch):
     async def with_explicit_test_turn(self, tool_name, args_raw, user_token):
         self._current_user_id = self._current_user_id or 1
         if not getattr(self, "_current_turn_user_message", ""):
-            self._current_turn_user_message = "记录测试饮食"
+            args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+            data = args.get("data") if isinstance(args.get("data"), dict) else {}
+            record_date = str(data.get("record_date") or "")
+            if len(record_date) == 10 and record_date[4] == "-":
+                date_prefix = (
+                    f"{record_date[:4]}年{int(record_date[5:7])}月"
+                    f"{int(record_date[8:10])}日"
+                )
+            else:
+                date_prefix = ""
+            meal = {
+                "breakfast": "早餐",
+                "lunch": "午餐",
+                "dinner": "晚餐",
+                "snack": "加餐",
+            }.get(str(data.get("meal_type") or ""), "这餐")
+            self._current_turn_user_message = (
+                f"记录{date_prefix}{meal}吃了{data.get('food_items') or ''}"
+            )
         return await original(self, tool_name, args_raw, user_token)
 
     monkeypatch.setattr(AgentExecutor, "_execute_tool", with_explicit_test_turn)

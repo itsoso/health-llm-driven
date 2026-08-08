@@ -91,7 +91,10 @@ def test_health_record_diet_declares_reconcilable_resource_type():
     spec = get_tool_spec("health_record")
 
     assert spec.reconciliation_resource_type(
-        {"record_type": "diet", "data": {"food_items": "牛肉面"}}
+        {
+            "record_type": "diet",
+            "data": {"meal_type": "lunch", "food_items": "牛肉面"},
+        }
     ) == "diet_record"
     assert spec.reconciliation_resource_type(
         {"record_type": "weight", "data": {"weight": 71}}
@@ -1390,7 +1393,10 @@ async def test_executor_enforce_mode_ledgers_and_replays_verified_write(
         return '{"id": 829, "resource_type": "diet_record"}'
 
     monkeypatch.setattr(executor, "_exec_health_record", fake_write)
-    args = {"record_type": "diet", "data": {"food_items": "牛肉面"}}
+    args = {
+        "record_type": "diet",
+        "data": {"meal_type": "lunch", "food_items": "牛肉面"},
+    }
 
     first = await executor._execute_tool("health_record", args, None)
     replay = await executor._execute_tool("health_record", args, None)
@@ -1449,7 +1455,10 @@ async def test_executor_passes_runtime_operation_id_to_reconcilable_diet_write(
 
     await executor._execute_tool(
         "health_record",
-        {"record_type": "diet", "data": {"food_items": "牛肉面"}},
+        {
+            "record_type": "diet",
+            "data": {"meal_type": "lunch", "food_items": "牛肉面"},
+        },
         None,
     )
 
@@ -1583,7 +1592,10 @@ async def test_executor_canary_managed_run_ledgers_verified_write(
 
     await executor._execute_tool(
         "health_record",
-        {"record_type": "diet", "data": {"food_items": "牛肉面"}},
+        {
+            "record_type": "diet",
+            "data": {"meal_type": "lunch", "food_items": "牛肉面"},
+        },
         None,
     )
 
@@ -1696,7 +1708,10 @@ async def test_executor_enforce_mode_marks_missing_receipt_for_reconciliation(
     monkeypatch.setattr(executor, "_exec_health_record", uncertain_write)
     await executor._execute_tool(
         "health_record",
-        {"record_type": "diet", "data": {"food_items": "牛肉面"}},
+        {
+            "record_type": "diet",
+            "data": {"meal_type": "lunch", "food_items": "牛肉面"},
+        },
         None,
     )
 
@@ -1719,7 +1734,7 @@ async def test_executor_marks_local_medication_plan_rejection_failed_not_uncerta
     runtime.mark_running(admission.context)
     executor = AgentExecutor(db)
     executor._current_user_id = user.id
-    executor._current_turn_user_message = "记录本次服药"
+    executor._current_turn_user_message = "记录我吃了测试药物1片"
     executor._runtime_run_id = admission.context.run_id
     executor._runtime_attempt_id = admission.context.attempt_id
     executor._runtime_managed = True
@@ -1878,7 +1893,10 @@ async def test_executor_cancellation_marks_claimed_write_for_reconciliation(
     task = asyncio.create_task(
         executor._execute_tool(
             "health_record",
-            {"record_type": "diet", "data": {"food_items": "牛肉面"}},
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "lunch", "food_items": "牛肉面"},
+            },
             None,
         )
     )
@@ -1924,7 +1942,10 @@ async def test_executor_off_mode_keeps_runtime_operation_ledger_empty(
     monkeypatch.setattr(executor, "_exec_health_record", fake_write)
     result = await executor._execute_tool(
         "health_record",
-        {"record_type": "diet", "data": {"food_items": "牛肉面"}},
+        {
+            "record_type": "diet",
+            "data": {"meal_type": "lunch", "food_items": "牛肉面"},
+        },
         None,
     )
 
@@ -1973,7 +1994,10 @@ async def test_executor_exception_after_claim_is_marked_for_reconciliation(
     caplog.set_level(logging.ERROR, logger="app.services.agent_executor")
     result = await executor._execute_tool(
         "health_record",
-        {"record_type": "diet", "data": {"food_items": "牛肉面"}},
+        {
+            "record_type": "diet",
+            "data": {"meal_type": "lunch", "food_items": "牛肉面"},
+        },
         None,
     )
 
@@ -2028,7 +2052,10 @@ async def test_executor_http_timeout_after_claim_is_marked_for_reconciliation(
 
     result = await executor._execute_tool(
         "health_record",
-        {"record_type": "diet", "data": {"food_items": "牛肉面"}},
+        {
+            "record_type": "diet",
+            "data": {"meal_type": "lunch", "food_items": "牛肉面"},
+        },
         None,
     )
 

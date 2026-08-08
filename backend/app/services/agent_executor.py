@@ -8490,16 +8490,26 @@ class AgentExecutor:
             or self._turn_channel
             or (snapshot.context.channel if snapshot is not None else "chat")
         ).strip() or "chat"
+        has_attachment = bool(
+            getattr(self, "_current_turn_has_attachment", False)
+        )
+        fallback_media = (
+            ({"kind": "attachment"},)
+            if has_attachment and not (snapshot and snapshot.envelope.media)
+            else None
+        )
         if (
             snapshot is None
             or snapshot.context.user_id != user_id
             or snapshot.envelope.text != message
             or snapshot.context.channel != resolved_channel
+            or (has_attachment and not snapshot.envelope.media)
         ):
             return self._start_agent_kernel_turn(
                 user_id=user_id,
                 message=message,
                 channel=resolved_channel,
+                media=fallback_media,
             )
         return self._refine_agent_kernel_continuation(snapshot)
 
@@ -17947,6 +17957,25 @@ class AgentExecutor:
                 getattr(self, "_current_turn_user_message", "") or ""
             ),
         )
+        if (
+            tool_name == "health_record"
+            and isinstance(args, dict)
+            and _fast_record_kind(args) == "reminder"
+            and isinstance(args.get("data"), dict)
+        ):
+            # Canonicalize an explicitly supplied follow-up window before the
+            # capability gate.  The gate must inspect the same complete target
+            # that the adapter will dispatch, not a partial model placeholder.
+            args["data"] = _enrich_reminder_window_from_turn(
+                args["data"],
+                user_message=getattr(self, "_current_turn_user_message", ""),
+                recent_messages=getattr(
+                    self,
+                    "_current_turn_recent_messages",
+                    [],
+                ),
+                reference_now=self._agent_kernel_reference_now(),
+            )
         v = validate_tool_call(
             tool_name,
             args,

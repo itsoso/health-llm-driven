@@ -226,6 +226,18 @@ DECLARATIVE_OBSERVATION_ACTIONS = (
     "已吃",
     "已喝",
 )
+GOAL_TERMS = ("目标", "健康目标")
+GOAL_CREATE_ACTIONS = ("创建目标", "设定目标", "设置目标", "新增目标", "记录目标")
+GOAL_CREATE_NEGATIONS = (
+    "不要创建目标",
+    "别创建目标",
+    "无需创建目标",
+    "不用创建目标",
+    "不要设定目标",
+    "别设定目标",
+    "不要设置目标",
+    "别设置目标",
+)
 def classify_agent_utterance(
     message: Any,
     *,
@@ -316,6 +328,20 @@ def classify_agent_utterance(
         )
 
     plan_operation = _plan_operation(normalized, domain, has_question)
+
+    if _goal_operation(normalized, domain, has_question) == "create":
+        return _intent(
+            raw,
+            normalized,
+            "write",
+            "goal",
+            "create",
+            0.9,
+            "goal_write_frame",
+            scope,
+            is_write=True,
+            requires_reliable_tool_model=True,
+        )
 
     if plan_operation == "update":
         return _intent(
@@ -736,6 +762,8 @@ def _infer_domain(text: str) -> str:
         return "reminder"
     if _has_any(text, CLINICIAN_RECORD_REFERENCE_TERMS):
         return "clinical_context"
+    if _has_any(text, GOAL_TERMS) and _has_any(text, GOAL_CREATE_ACTIONS):
+        return "goal"
     if _has_water_signal(text):
         return "water"
     intake_kind = classify_intake_intent(text).kind
@@ -778,6 +806,21 @@ def _plan_operation(text: str, domain: str, has_question: bool) -> Optional[str]
     if _has_any(text, PLAN_UPDATE_ACTIONS):
         return "update"
     if _has_any(text, PLAN_CREATE_ACTIONS):
+        return "create"
+    return None
+
+
+def _goal_operation(
+    text: str,
+    domain: str,
+    has_question: bool,
+) -> Optional[str]:
+    """Recognize an explicit goal creation without promoting goal discussion."""
+    if domain != "goal" or has_question:
+        return None
+    if _has_any(text, GOAL_CREATE_NEGATIONS):
+        return None
+    if _has_any(text, GOAL_CREATE_ACTIONS):
         return "create"
     return None
 

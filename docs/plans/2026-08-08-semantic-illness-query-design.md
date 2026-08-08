@@ -103,10 +103,19 @@ retrieval. The boundary makes both responsibilities explicit and testable.
 - Advice such as `该不该记录今天腰痛6分` remains advice, not a write.
 - `记录刚才打了一个喷嚏` and a request with a concrete historical onset date
   remain writes; history protection must not suppress explicit backfill.
-- Authorization produces a concrete governing clause rather than a whole-turn
-  boolean. The final capability gate reclassifies only that clause and binds the
-  selected `health_record` to its record type plus deterministic meal, named-
-  illness and numeric selectors.
+- Authorization produces an ordered set of concrete positive clauses rather
+  than a whole-turn boolean. The final capability gate reclassifies those
+  clauses and binds each selected `health_record` to one member of the
+  authorized target set. Separate direct commands can therefore authorize
+  separate writes without allowing one target to borrow another target's type,
+  selector or value.
+- Target binding checks both top-level and nested aliases. It covers record
+  type, effective date, meal and food, illness/symptom entity, water and body
+  metrics, exercise, mood, excretion, sleep, goal, reminder, medication and
+  supplement selectors. Named medication writes additionally bind dosage.
+- Natural meal phrasing such as `记录早餐，吃了……` may supply food details to
+  the immediately preceding explicit meal command. That continuation grammar
+  excludes medication/supplement entities and later analysis clauses.
 - For a mixed denied/positive turn, the positive clause cannot authorize the
   denied record type, meal or value. If the positive target cannot be resolved,
   the write fails closed to clarification.
@@ -185,6 +194,9 @@ Verification must include:
 - a real ToolGateway matrix covering arbitrary reports and every registered
   command synonym, attributed observations, target/value mismatch and trailing
   revocation without entering dispatch;
+- multi-target, alias-bypass, date/meal/food, medication-dose and structured-
+  food regressions proving that the model payload cannot widen the authorized
+  target set;
 - a generated negation × bridge × write-action matrix plus positive modal and
   cross-clause controls;
 - repository drift, lint and focused/full regression gates required by the

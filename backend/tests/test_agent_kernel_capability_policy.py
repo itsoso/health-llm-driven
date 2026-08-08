@@ -273,24 +273,12 @@ def test_explicit_record_with_followup_question_allows_health_record(
         "可不可以记录口腔溃疡？",
         "能不能帮我记录口腔溃疡？",
         "不需要分析，记录口腔溃疡",
-        "我今天不舒服帮我记录一下",
-        "这次不严重帮我记录下来",
-        "这几天不想吃东西但请记录食欲下降",
-        "我不能集中注意力但帮我记录一下",
-        "这几天不想吃东西：请记录食欲下降",
-        "这几天不想吃东西只是请记录食欲下降",
-        "记录过敏反应",
-        "请记录我上一次口腔溃疡，发作日期是7月1日",
-        "把以前的口腔溃疡记录下来，开始日期是7月1日",
         "不用录入昨天的但请录入今天的口腔溃疡",
         "不是不让你记录是请你记录口腔溃疡",
         "小巴你能帮我记录一下口腔溃疡吗",
         "小巴麻烦你记录口腔溃疡",
         "小巴请你记录口腔溃疡",
         "小巴替我记录口腔溃疡",
-        "口腔溃疡上次发作日期是7月1日请记录一下",
-        "请记录过量饮酒",
-        "帮我记录过去三天的食欲下降",
         "我想让你记录口腔溃疡",
         "请务必记录口腔溃疡",
         "把口腔溃疡记录下来",
@@ -309,33 +297,65 @@ def test_modal_or_later_clause_write_allows_health_record(message):
 
 
 @pytest.mark.parametrize(
+    "message",
+    (
+        "我今天不舒服帮我记录一下",
+        "这次不严重帮我记录下来",
+        "这几天不想吃东西但请记录食欲下降",
+        "我不能集中注意力但帮我记录一下",
+        "这几天不想吃东西：请记录食欲下降",
+        "这几天不想吃东西只是请记录食欲下降",
+        "记录过敏反应",
+        "请记录过量饮酒",
+        "帮我记录过去三天的食欲下降",
+    ),
+)
+def test_direct_but_different_health_fact_cannot_authorize_oral_ulcer(message):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
+        ),
+    )
+
+    assert decision.action == "block"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "请记录我上一次口腔溃疡，发作日期是7月1日",
+        "把以前的口腔溃疡记录下来，开始日期是7月1日",
+        "口腔溃疡上次发作日期是7月1日请记录一下",
+    ),
+)
+def test_explicit_illness_backfill_binds_the_user_owned_start_date(message):
+    matching = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {
+                "record_type": "illness",
+                "data": {"name": "口腔溃疡", "start_date": "2026-07-01"},
+            },
+        ),
+    )
+    missing_date = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
+        ),
+    )
+
+    assert matching.action == "allow"
+    assert missing_date.action == "block"
+
+
+@pytest.mark.parametrize(
     ("message", "record_args"),
     (
-        (
-            "不是很疼帮我记录一下",
-            {"record_type": "symptom", "data": {"description": "疼痛"}},
-        ),
-        (
-            "请分别记录早餐和午餐",
-            {
-                "record_type": "diet",
-                "data": {"meal_type": "lunch", "food_items": "未指定"},
-            },
-        ),
-        (
-            "不要记录口腔溃疡但记录今天晚餐",
-            {
-                "record_type": "diet",
-                "data": {"meal_type": "dinner", "food_items": "未指定"},
-            },
-        ),
-        (
-            "别保存早餐而是记录午餐",
-            {
-                "record_type": "diet",
-                "data": {"meal_type": "lunch", "food_items": "未指定"},
-            },
-        ),
         (
             "请记录过程中的头痛",
             {
@@ -348,13 +368,6 @@ def test_modal_or_later_clause_write_allows_health_record(message):
             {
                 "record_type": "illness",
                 "data": {"name": "感冒", "start_date": "2026-06-03"},
-            },
-        ),
-        (
-            "帮我把今天午餐记录下来",
-            {
-                "record_type": "diet",
-                "data": {"meal_type": "lunch", "food_items": "未指定"},
             },
         ),
     ),
@@ -370,8 +383,32 @@ def test_direct_write_authorization_allows_only_its_semantic_target(
     assert decision.action == "allow"
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "请分别记录早餐和午餐",
+        "不要记录口腔溃疡但记录今天晚餐",
+        "别保存早餐而是记录午餐",
+        "帮我把今天午餐记录下来",
+    ),
+)
+def test_meal_slot_without_food_requires_clarification(message):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "lunch", "food_items": "未指定"},
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+
+
 def test_positive_contrast_clause_cannot_authorize_the_denied_target():
-    snapshot = _snapshot("不要记录口腔溃疡但记录今天晚餐")
+    snapshot = _snapshot("不要记录口腔溃疡但记录今天晚餐吃米饭")
     goal = compile_goal_spec(
         envelope=snapshot.envelope,
         context=snapshot.context,
@@ -390,7 +427,10 @@ def test_positive_contrast_clause_cannot_authorize_the_denied_target():
         snapshot,
         _request(
             "health_record",
-            {"record_type": "diet", "data": {"meal_type": "dinner"}},
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "dinner", "food_items": "米饭"},
+            },
         ),
     )
 
@@ -525,6 +565,778 @@ def test_one_direct_clause_can_authorize_each_explicit_metric_target():
     assert unrelated.reason == "health_record_target_mismatch"
 
 
+@pytest.mark.parametrize(
+    ("message", "record_args"),
+    (
+        ("记录体重71kg", {"record_type": "weight", "weight": 72}),
+        ("记录体重71kg", {"record_type": "weight", "value": 72}),
+        (
+            "记录体重71kg",
+            {"record_type": "weight", "data": {"weight_kg": 72}},
+        ),
+        ("记录喝水300ml", {"record_type": "water", "amount": 500}),
+        (
+            "记录血压120/80",
+            {
+                "record_type": "blood_pressure",
+                "systolic": 130,
+                "diastolic": 90,
+            },
+        ),
+        ("记录腰围80cm", {"record_type": "waist", "waist": 90}),
+        (
+            "记录腰围80cm",
+            {"record_type": "waist", "data": {"value": 90}},
+        ),
+        ("记录口腔溃疡", {"record_type": "illness", "name": "感冒"}),
+    ),
+)
+def test_health_record_target_binding_checks_every_executor_value_alias(
+    message, record_args
+):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request("health_record", record_args),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "health_record_target_mismatch"
+
+
+@pytest.mark.parametrize(
+    ("message", "record_args"),
+    (
+        (
+            "记录午餐吃米饭",
+            {"record_type": "diet", "data": {"food_items": "米饭"}},
+        ),
+        (
+            "不要记录晚餐面包但记录晚餐米饭",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "dinner", "food_items": "面包"},
+            },
+        ),
+        (
+            "不要记录昨天晚餐但记录今天晚餐吃米饭",
+            {
+                "record_type": "diet",
+                "data": {
+                    "record_date": "2026-07-16",
+                    "meal_type": "dinner",
+                    "food_items": "米饭",
+                },
+            },
+        ),
+    ),
+)
+def test_diet_authorization_binds_meal_food_and_date(message, record_args):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request("health_record", record_args),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "health_record_target_mismatch"
+
+
+@pytest.mark.parametrize(
+    ("message", "record_args"),
+    (
+        (
+            "记录体重71kg，然后记录血压120/80",
+            {"record_type": "weight", "data": {"weight": 71}},
+        ),
+        (
+            "记录体重71kg，然后记录血压120/80",
+            {
+                "record_type": "blood_pressure",
+                "data": {"systolic": 120, "diastolic": 80},
+            },
+        ),
+        (
+            "我喝了300ml水，午餐吃了米饭",
+            {"record_type": "water", "data": {"amount": 300}},
+        ),
+        (
+            "我喝了300ml水，午餐吃了米饭",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "lunch", "food_items": "米饭"},
+            },
+        ),
+    ),
+)
+def test_each_direct_positive_clause_owns_an_independent_authorized_target(
+    message, record_args
+):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request("health_record", record_args),
+    )
+
+    assert decision.action == "allow"
+
+
+def test_reported_context_does_not_poison_a_later_direct_contrast_request():
+    decision = decide_tool_capability(
+        _snapshot("朋友说我胖了，但请记录体重71kg"),
+        _request(
+            "health_record",
+            {"record_type": "weight", "data": {"weight": 71}},
+        ),
+    )
+
+    assert decision.action == "allow"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "朋友说，今天下午，帮我记录口腔溃疡",
+        "转告我：帮我记录口腔溃疡",
+    ),
+)
+def test_reported_context_spans_neutral_clauses_and_never_authorizes(message):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
+        ),
+    )
+
+    assert decision.action == "block"
+
+
+@pytest.mark.parametrize(
+    ("message", "record_args"),
+    (
+        (
+            "如果我喝了300ml水",
+            {"record_type": "water", "data": {"amount": 300}},
+        ),
+        (
+            "假如我体重71kg",
+            {"record_type": "weight", "data": {"weight": 71}},
+        ),
+        (
+            "假如帮我记录口腔溃疡",
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
+        ),
+    ),
+)
+def test_hypothetical_fact_or_command_never_authorizes_a_write(
+    message, record_args
+):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request("health_record", record_args),
+    )
+
+    assert decision.action == "block"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录体重71kg，先不记了",
+        "记录体重71kg，还是别记了",
+        "记录体重71kg，取消刚才的请求",
+        "记录体重71kg，稍后再说",
+    ),
+)
+def test_common_trailing_revocations_remove_write_authority(message):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {"record_type": "weight", "data": {"weight": 71}},
+        ),
+    )
+
+    assert decision.action == "block"
+
+
+def test_arbitrary_illness_name_is_bound_instead_of_failing_open():
+    snapshot = _snapshot("记录胃炎")
+
+    matching = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "illness", "data": {"name": "胃炎"}},
+        ),
+    )
+    mismatch = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "illness", "data": {"name": "高血压"}},
+        ),
+    )
+
+    assert matching.action == "allow"
+    assert mismatch.action == "block"
+    assert mismatch.reason == "health_record_target_mismatch"
+
+
+def test_same_clause_correction_authorizes_only_the_corrected_value():
+    snapshot = _snapshot("记录体重71kg改记录72kg")
+
+    superseded = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "weight", "data": {"weight": 71}},
+        ),
+    )
+    corrected = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "weight", "data": {"weight": 72}},
+        ),
+    )
+
+    assert superseded.action == "block"
+    assert corrected.action == "allow"
+
+
+def test_observed_water_amount_is_bound_to_the_dispatched_value():
+    snapshot = _snapshot("我喝了300ml水")
+
+    mismatch = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "water", "data": {"amount": 400}},
+        ),
+    )
+    matching = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "water", "data": {"amount": 300}},
+        ),
+    )
+
+    assert mismatch.action == "block"
+    assert matching.action == "allow"
+
+
+@pytest.mark.parametrize(
+    ("message", "record_args"),
+    (
+        (
+            "记录喝水300ml和晚餐吃了米饭",
+            {"record_type": "water", "data": {"amount": 300}},
+        ),
+        (
+            "记录喝水300ml和晚餐吃了米饭",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "dinner", "food_items": "米饭"},
+            },
+        ),
+        (
+            "记录口腔溃疡和湿疹",
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
+        ),
+        (
+            "记录口腔溃疡和湿疹",
+            {"record_type": "illness", "data": {"name": "湿疹"}},
+        ),
+        (
+            "不要记录午餐面包只记录晚餐米饭",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "dinner", "food_items": "米饭"},
+            },
+        ),
+    ),
+)
+def test_multi_target_and_limiting_language_preserves_each_final_target(
+    message, record_args
+):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request("health_record", record_args),
+    )
+
+    assert decision.action == "allow"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "帮我记录口腔溃疡，这是朋友说的例句",
+        "“我喝了300ml水",
+    ),
+)
+def test_post_attribution_or_unclosed_quote_never_authorizes_health_write(message):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {"record_type": "illness", "data": {"name": "口腔溃疡"}},
+        ),
+    )
+
+    assert decision.action == "block"
+
+
+@pytest.mark.parametrize(
+    ("message", "record_args"),
+    (
+        (
+            "记录心情3分",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+        (
+            "记录排便一次",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+        (
+            "记录提醒明早8点喝水",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+        (
+            "记录我吃了感冒药",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+        (
+            "记录跑步30分钟",
+            {"record_type": "illness", "data": {"name": "感冒"}},
+        ),
+    ),
+)
+def test_non_illness_target_never_fails_open_to_an_illness_write(
+    message, record_args
+):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request("health_record", record_args),
+    )
+
+    assert decision.action == "block"
+
+
+def test_supplement_authorization_binds_the_named_supplement():
+    snapshot = _snapshot("记录鱼油")
+
+    matching = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "supplement", "data": {"supplement_name": "鱼油"}},
+        ),
+    )
+    mismatch = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "supplement",
+                "data": {"supplement_name": "维生素D"},
+            },
+        ),
+    )
+
+    assert matching.action == "allow"
+    assert mismatch.action == "block"
+
+
+def test_supplement_authorization_preserves_the_full_named_supplement():
+    snapshot = _snapshot("记录甘氨酸镁")
+
+    matching = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "supplement",
+                "data": {"supplement_name": "甘氨酸镁"},
+            },
+        ),
+    )
+    shorter_alias = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "supplement", "data": {"supplement_name": "镁"}},
+        ),
+    )
+
+    assert matching.action == "allow"
+    assert shorter_alias.action == "block"
+
+
+def test_medication_authorization_binds_name_and_dosage():
+    snapshot = _snapshot("记录阿奇霉素2粒")
+
+    matching = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "medication",
+                "data": {
+                    "medication_name": "阿奇霉素",
+                    "actual_dosage": "2粒",
+                },
+            },
+        ),
+    )
+    wrong_dose = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "medication",
+                "data": {
+                    "medication_name": "阿奇霉素",
+                    "actual_dosage": "1粒",
+                },
+            },
+        ),
+    )
+
+    assert matching.action == "allow"
+    assert wrong_dose.action == "block"
+    assert wrong_dose.reason == "health_record_target_mismatch"
+
+
+def test_medication_authorization_binds_observed_strength_separately_from_dosage():
+    snapshot = _snapshot("记录阿奇霉素2粒每粒250mg")
+
+    matching = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "medication",
+                "data": {
+                    "medication_name": "阿奇霉素",
+                    "actual_dosage": "2粒",
+                    "observed_strength": "250mg",
+                },
+            },
+        ),
+    )
+    wrong_strength = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "medication",
+                "data": {
+                    "medication_name": "阿奇霉素",
+                    "actual_dosage": "2粒",
+                    "observed_strength": "500mg",
+                },
+            },
+        ),
+    )
+
+    assert matching.action == "allow"
+    assert wrong_strength.action == "block"
+    assert wrong_strength.reason == "health_record_target_mismatch"
+
+
+@pytest.mark.parametrize(
+    ("message", "matching_args", "wrong_severity_args"),
+    (
+        (
+            "记录头痛程度6分",
+            {
+                "record_type": "symptom",
+                "data": {
+                    "body_part": "head",
+                    "description": "头痛程度6分",
+                    "severity": 6,
+                },
+            },
+            {
+                "record_type": "symptom",
+                "data": {
+                    "body_part": "head",
+                    "description": "头痛程度6分",
+                    "severity": 3,
+                },
+            },
+        ),
+        (
+            "记录口腔溃疡严重程度5分",
+            {
+                "record_type": "illness",
+                "data": {"name": "口腔溃疡", "severity": 5},
+            },
+            {
+                "record_type": "illness",
+                "data": {"name": "口腔溃疡", "severity": 2},
+            },
+        ),
+    ),
+)
+def test_health_authorization_binds_explicit_severity(
+    message, matching_args, wrong_severity_args
+):
+    snapshot = _snapshot(message)
+
+    matching = decide_tool_capability(
+        snapshot,
+        _request("health_record", matching_args),
+    )
+    wrong = decide_tool_capability(
+        snapshot,
+        _request("health_record", wrong_severity_args),
+    )
+
+    assert matching.action == "allow"
+    assert wrong.action == "block"
+    assert wrong.reason == "health_record_target_mismatch"
+
+
+def test_medication_authorization_supports_multiple_explicit_targets():
+    snapshot = _snapshot("记录伊托必利1粒，记录替普瑞酮1粒")
+
+    for name in ("伊托必利", "替普瑞酮"):
+        decision = decide_tool_capability(
+            snapshot,
+            _request(
+                "health_record",
+                {
+                    "record_type": "medication",
+                    "data": {
+                        "medication_name": name,
+                        "actual_dosage": "1粒",
+                    },
+                },
+            ),
+        )
+        assert decision.action == "allow"
+
+    invented = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "medication",
+                "data": {
+                    "medication_name": "阿奇霉素",
+                    "actual_dosage": "1粒",
+                },
+            },
+        ),
+    )
+    assert invented.action == "block"
+
+
+@pytest.mark.parametrize(
+    ("message", "matching_args", "mismatching_args"),
+    (
+        (
+            "记录心情平静",
+            {"record_type": "mood", "data": {"mood": "calm"}},
+            {"record_type": "mood", "data": {"mood": "焦虑"}},
+        ),
+        (
+            "记录排便一次",
+            {"record_type": "excretion", "data": {"type": "bowel"}},
+            {"record_type": "excretion", "data": {"type": "diarrhea"}},
+        ),
+        (
+            "记录昨晚23点入睡今天7点起床睡眠质量4分",
+            {
+                "record_type": "sleep",
+                "data": {
+                    "bedtime": "2026-07-16T23:00:00+08:00",
+                    "wake_time": "2026-07-17T07:00:00+08:00",
+                    "sleep_quality": 4,
+                },
+            },
+            {
+                "record_type": "sleep",
+                "data": {
+                    "bedtime": "2026-07-16T22:00:00+08:00",
+                    "wake_time": "2026-07-17T07:00:00+08:00",
+                    "sleep_quality": 4,
+                },
+            },
+        ),
+        (
+            "创建目标：90天把腰围降到82cm",
+            {
+                "record_type": "goal",
+                "data": {
+                    "title": "90天把腰围降到82cm",
+                    "target_value": 82,
+                    "target_unit": "cm",
+                },
+            },
+            {
+                "record_type": "goal",
+                "data": {
+                    "title": "90天把腰围降到80cm",
+                    "target_value": 80,
+                    "target_unit": "cm",
+                },
+            },
+        ),
+        (
+            "设置每天10:30臀中肌训练提醒",
+            {
+                "record_type": "reminder",
+                "data": {
+                    "title": "臀中肌训练",
+                    "time": "10:30",
+                    "recurrence": "daily",
+                },
+            },
+            {
+                "record_type": "reminder",
+                "data": {
+                    "title": "臀中肌训练",
+                    "time": "11:30",
+                    "recurrence": "daily",
+                },
+            },
+        ),
+    ),
+)
+def test_standard_health_writes_bind_every_semantic_selector(
+    message, matching_args, mismatching_args
+):
+    snapshot = _snapshot(message)
+
+    matching = decide_tool_capability(
+        snapshot,
+        _request("health_record", matching_args),
+    )
+    mismatching = decide_tool_capability(
+        snapshot,
+        _request("health_record", mismatching_args),
+    )
+
+    assert matching.action == "allow"
+    assert mismatching.action == "block"
+    assert mismatching.reason == "health_record_target_mismatch"
+
+
+def test_diet_write_keeps_food_continuation_after_meal_comma():
+    snapshot = _snapshot("记录早餐，一个包子和一个茶叶蛋")
+
+    matching = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "breakfast",
+                    "food_items": "一个包子和一个茶叶蛋",
+                },
+            },
+        ),
+    )
+    invented = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "breakfast", "food_items": "一碗粥"},
+            },
+        ),
+    )
+
+    assert matching.action == "allow"
+    assert invented.action == "block"
+
+
+def test_diet_write_keeps_declarative_food_continuation_after_meal_comma():
+    snapshot = _snapshot(
+        "记录早餐，吃了一个包子、一个茶叶蛋、一碗粥，计算热量和营养成分。"
+    )
+
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "breakfast",
+                    "food_items": "一个包子、一个茶叶蛋、一碗粥",
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+
+
+def test_diet_write_does_not_absorb_medication_as_food_continuation():
+    snapshot = _snapshot("记录早餐，吃了二甲双胍")
+
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "breakfast",
+                    "food_items": "二甲双胍",
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+
+
+def test_diet_write_matches_structured_food_item_names():
+    snapshot = _snapshot("记录晚餐：牛排和蔬菜")
+
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "dinner",
+                    "food_items": [{"name": "牛排"}, {"name": "蔬菜"}],
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+
+
+def test_diet_write_normalizes_equivalent_food_quantities_and_separators():
+    snapshot = _snapshot("记录早餐，吃了一个包子、一碗粥")
+
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "breakfast",
+                    "food_items": "包子 1个 + 粥 1碗",
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+
+
 def test_contextual_goal_target_remains_authoritative_when_clause_is_deictic():
     snapshot = _snapshot("记录这个")
     fallback_goal = compile_goal_spec(
@@ -534,7 +1346,11 @@ def test_contextual_goal_target_remains_authoritative_when_clause_is_deictic():
     )
     snapshot = replace(
         snapshot,
-        goal=replace(fallback_goal, target_record_type="weight"),
+        goal=replace(
+            fallback_goal,
+            target_record_type="weight",
+            target_values=(("weight", "71"),),
+        ),
     )
 
     mismatch = decide_tool_capability(
@@ -591,7 +1407,13 @@ def test_mutation_turn_allows_health_manage_delete_with_receipt():
 def test_write_turn_allows_health_record_with_receipt():
     decision = decide_tool_capability(
         _snapshot("记录午餐吃了牛肉面"),
-        _request("health_record", {"record_type": "diet", "data": {"food_items": "牛肉面"}}),
+        _request(
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "lunch", "food_items": "牛肉面"},
+            },
+        ),
     )
 
     assert decision.action == "allow"
@@ -1018,11 +1840,15 @@ def test_explicit_record_cancellation_blocks_health_record(message):
     ),
 )
 def test_food_preferences_do_not_cancel_health_record(message):
+    food_items = message.removeprefix("记录午餐")
     decision = decide_tool_capability(
         _snapshot(message),
         _request(
             "health_record",
-            {"record_type": "diet", "data": {"food_items": message}},
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "lunch", "food_items": food_items},
+            },
         ),
     )
 
@@ -1078,7 +1904,13 @@ def test_explicit_aigc_photo_turn_blocks_health_record_even_if_model_requests_it
 def test_compound_write_and_analysis_turn_allows_health_record():
     decision = decide_tool_capability(
         _snapshot("记录晚餐牛肉面，帮我分析今天的热量和蛋白质"),
-        _request("health_record", {"record_type": "diet", "data": {"food_items": "牛肉面"}}),
+        _request(
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "dinner", "food_items": "牛肉面"},
+            },
+        ),
     )
 
     assert decision.action == "allow"
@@ -1433,12 +2265,16 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v2"
+    assert payload["contract_version"] == "agent-capability-policy-v3"
     assert payload["health_record_target_binding"] == {
-        "version": "clause-target-v1",
+        "version": "authorized-target-set-v2",
         "domain_types": {
             "diet": "diet",
+            "exercise": "exercise",
             "medication": "medication",
+            "mood": "mood",
+            "reminder": "reminder",
+            "sleep": "sleep",
             "supplement": "supplement",
             "symptom": "symptom",
             "water": "water",

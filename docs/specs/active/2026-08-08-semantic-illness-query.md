@@ -145,13 +145,17 @@ object (`保存口腔溃疡了吗`). Past-time words before an action remain his
 queries, while an explicit dated backfill and a command to record a just-observed
 event remain writes under the existing confirmation contract.
 
-In mixed contrast turns, the governing later action can supersede an earlier
-denial without authorizing the denied target. The parser returns the concrete
-governing clause rather than a whole-turn boolean. The final capability gate
-classifies only that clause and binds the model request to its record type and,
-where deterministic, its meal selector, named illness or numeric value. Thus a
-weight authorization cannot write illness, dinner cannot write lunch, and
-`记录体重71kg` cannot write another weight value. Mixed polarity with an
+In mixed or multi-action turns, the parser returns an ordered set of concrete
+positive clauses rather than a whole-turn boolean. The final capability gate
+binds every model request to one member of that authorized target set. A later
+positive action can supersede an earlier denial without authorizing the denied
+target, while two separate direct commands can each authorize their exact
+write. Binding includes record type, effective date and the deterministic
+selectors available for the record family, including meal/food, illness name,
+numeric value, sleep/reminder time, goal title and medication name/dose.
+Top-level argument aliases and nested `data` aliases are checked together.
+Thus a weight authorization cannot write illness, dinner cannot write lunch,
+and `记录体重71kg` cannot write another weight value. Mixed polarity with an
 unresolvable positive target fails closed to clarification. Object-fronted
 direct commands such as `把口腔溃疡记录下来` remain writable; read requests such
 as `请查询口腔溃疡记录` do not.
@@ -302,6 +306,26 @@ Given a user says "记录体重71kg"
 When the model requests illness or a different weight value
 Then the concrete target binding blocks it before dispatch
 
+Given a user says "记录早餐，吃了一个包子、一个茶叶蛋、一碗粥"
+When the model requests a diet write with the same meal and food set
+Then the declarative continuation supplies the explicit meal target and the write may proceed
+
+Given a user says "记录早餐，吃了二甲双胍"
+When the model attempts to treat the medication as breakfast food
+Then the food-continuation grammar rejects that target transfer
+
+Given a user says "记录阿奇霉素2粒"
+When the model requests another medication or another dosage
+Then the concrete target binding blocks it before dispatch
+
+Given a user says "记录伊托必利1粒，记录替普瑞酮1粒"
+When the model proposes the two matching medication drafts
+Then each request binds to its own authorized target and neither may invent a third target
+
+Given a model moves a selector between top-level arguments and nested data
+When the deterministic gate evaluates the request
+Then the alias cannot bypass type, value, date or entity binding
+
 Given an arbitrary source says "朋友说我午餐吃了米饭"
 When the model requests health_record anyway
 Then the attributed observation has no current-user authority and dispatch never starts
@@ -387,3 +411,4 @@ These questions do not block the illness slice.
 | 2026-08-08 | Added clause-semantic contrasts | Fresh reviews found denial controls, post-object completion, colon scope, capability paraphrases and dated-backfill contrasts. |
 | 2026-08-08 | Made write authorization positive and action-scoped | Fresh reviews proved that finite veto matching still dispatched reads, result checks, reported speech and trailing revocations. |
 | 2026-08-08 | Bound authority to the concrete clause and target | Fresh reviews proved that arbitrary reports, observation facts and denied sibling targets could inherit whole-turn write authority. |
+| 2026-08-09 | Upgraded authorization to an exact target set | Fresh reviews found multi-target, alias, meal/date/entity and medication-dose gaps in single-clause binding. |

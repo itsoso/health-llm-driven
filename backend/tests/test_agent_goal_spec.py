@@ -54,6 +54,28 @@ def _compile(case: dict):
     )
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "不要记录晚餐面包但记录晚餐米饭",
+        "不要记录昨天晚餐但记录今天晚餐吃米饭",
+    ),
+)
+def test_mixed_polarity_turn_never_builds_a_whole_turn_simple_write_goal(message):
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(user_id=1, channel="mobile", text=message)
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind != "simple_health_record"
+    assert goal.target_values == ()
+
+
 def test_stateful_agent_trajectory_cases_compile_expected_goal():
     for case in CASES:
         goal = _compile(case)

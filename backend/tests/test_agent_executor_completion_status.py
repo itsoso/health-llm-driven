@@ -3085,7 +3085,11 @@ async def test_agent_stream_keeps_independent_rejection_when_another_write_succe
             "name": "health_record",
             "arguments": json.dumps({
                 "record_type": "sleep",
-                "data": {"sleep_quality": 5},
+                "data": {
+                    "bedtime": "2026-07-16T23:00:00+08:00",
+                    "wake_time": "2026-07-17T07:00:00+08:00",
+                    "sleep_quality": 5,
+                },
             }),
         },
     }
@@ -3113,7 +3117,7 @@ async def test_agent_stream_keeps_independent_rejection_when_another_write_succe
         if request.arguments["record_type"] == "sleep":
             return local_write_rejection(
                 "tool_validation_failed",
-                message="睡眠记录缺少 bedtime、wake_time。",
+                message="睡眠记录暂时无法保存。",
             )
         return json.dumps({"id": 920, "amount": 500}, ensure_ascii=False)
 
@@ -3129,7 +3133,10 @@ async def test_agent_stream_keeps_independent_rejection_when_another_write_succe
         event
         async for event in executor.run_stream(
             user_id=user.id,
-            message="请完成两项健康记录。",
+            message=(
+                "记录喝水500ml，记录昨晚23点入睡今天7点起床"
+                "睡眠质量5分。"
+            ),
             user_auth_token="test-token",
         )
     ]
@@ -3142,7 +3149,7 @@ async def test_agent_stream_keeps_independent_rejection_when_another_write_succe
 
     assert len(dispatched) == 2
     assert "另有 1 项记录已完成并取得回执" in rendered
-    assert "缺少 bedtime、wake_time" in rendered
+    assert "睡眠记录暂时无法保存" in rendered
     assert "两项记录都已经保存好了" not in rendered
     assert done["data"]["completion_status"] == "error"
     assert len(done["data"]["write_receipts"]) == 1
@@ -3216,7 +3223,7 @@ async def test_agent_stream_same_type_success_does_not_clear_other_rejection(
         event
         async for event in executor.run_stream(
             user_id=user.id,
-            message="请完成两项饮水记录。",
+            message="记录喝水300ml，记录喝水500ml。",
             user_auth_token="test-token",
         )
     ]
@@ -3309,7 +3316,7 @@ async def test_agent_stream_repaired_missing_argument_clears_scope_rejection(
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_repaired_diet_name_clears_older_scope_rejection(
+async def test_agent_stream_repaired_diet_nutrition_clears_older_scope_rejection(
     db, auth_user_and_headers, monkeypatch
 ):
     user, _headers = auth_user_and_headers
@@ -3323,7 +3330,7 @@ async def test_agent_stream_repaired_diet_name_clears_older_scope_rejection(
         if llm_calls == 1:
             data = {
                 "meal_type": "snack",
-                "food_items": "坚果 20g",
+                "food_items": "洽洽小黄袋每日坚果 20g",
             }
         elif llm_calls == 2:
             data = {
@@ -3379,6 +3386,10 @@ async def test_agent_stream_repaired_diet_name_clears_older_scope_rejection(
     )
     monkeypatch.setattr(executor, "_dispatch_tool_request", fake_dispatch)
     monkeypatch.setattr(
+        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
+        lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+    monkeypatch.setattr(
         "app.services.agent_executor._post_record_quality_response",
         lambda *args, **kwargs: None,
     )
@@ -3387,7 +3398,10 @@ async def test_agent_stream_repaired_diet_name_clears_older_scope_rejection(
         event
         async for event in executor.run_stream(
             user_id=user.id,
-            message="记录这餐 20 克坚果，并按营养成分表计算。",
+            message=(
+                "记录加餐，洽洽小黄袋每日坚果 20g，"
+                "并按营养成分表计算。"
+            ),
             user_auth_token="test-token",
         )
     ]
@@ -3493,7 +3507,7 @@ async def test_agent_stream_same_round_success_does_not_clear_scope_rejection(
         event
         async for event in executor.run_stream(
             user_id=user.id,
-            message="请完成两项饮水记录。",
+            message="记录喝水300ml，记录喝水500ml。",
             user_auth_token="test-token",
         )
     ]
@@ -3560,7 +3574,7 @@ async def test_agent_stream_later_unrelated_success_does_not_clear_scope_rejecti
         event
         async for event in executor.run_stream(
             user_id=user.id,
-            message="请记录两项不同的健康数据。",
+            message="记录喝水300ml，记录喝水500ml。",
             user_auth_token="test-token",
         )
     ]
@@ -3601,7 +3615,11 @@ async def test_agent_stream_reports_every_independent_rejection(
                             "name": "health_record",
                             "arguments": json.dumps({
                                 "record_type": "sleep",
-                                "data": {"sleep_quality": 5},
+                                "data": {
+                                    "bedtime": "2026-07-16T23:00:00+08:00",
+                                    "wake_time": "2026-07-17T07:00:00+08:00",
+                                    "sleep_quality": 5,
+                                },
                             }),
                         },
                     },
@@ -3626,7 +3644,7 @@ async def test_agent_stream_reports_every_independent_rejection(
         if request.arguments["record_type"] == "sleep":
             return local_write_rejection(
                 "tool_validation_failed",
-                message="睡眠记录缺少 bedtime、wake_time。",
+                message="睡眠记录暂时无法保存。",
             )
         return local_write_rejection(
             "tool_validation_failed",
@@ -3645,7 +3663,10 @@ async def test_agent_stream_reports_every_independent_rejection(
         event
         async for event in executor.run_stream(
             user_id=user.id,
-            message="请完成两项健康记录。",
+            message=(
+                "记录喝水300ml，记录昨晚23点入睡今天7点起床"
+                "睡眠质量5分。"
+            ),
             user_auth_token="test-token",
         )
     ]
@@ -3656,7 +3677,7 @@ async def test_agent_stream_reports_every_independent_rejection(
     )
     done = next(event for event in events if event.get("event") == "done")
 
-    assert "睡眠记录缺少 bedtime、wake_time" in rendered
+    assert "睡眠记录暂时无法保存" in rendered
     assert "饮水记录暂时无法保存" in rendered
     assert done["data"]["completion_status"] == "error"
     assert done["data"]["write_receipts"] == []
@@ -3716,7 +3737,7 @@ async def test_agent_stream_keeps_same_message_for_independent_rejections(
         event
         async for event in executor.run_stream(
             user_id=user.id,
-            message="请完成两项饮水记录。",
+            message="记录喝水300ml，记录喝水500ml。",
             user_auth_token="test-token",
         )
     ]

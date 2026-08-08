@@ -762,7 +762,7 @@ async def test_proposal_failure_log_redacts_exception_text(
 async def test_llm_medication_tool_can_only_propose_a_server_owned_plan(
     db, auth_user_and_headers, monkeypatch
 ):
-    """Unparsed wording still works, but model ``confirmed`` never authorizes it."""
+    """Explicit wording works, but model ``confirmed`` never authorizes it."""
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
@@ -798,7 +798,7 @@ async def test_llm_medication_tool_can_only_propose_a_server_owned_plan(
     first = await _run(
         executor,
         user.id,
-        "帮我记录刚才那次服药",
+        "帮我记录刚才服用的阿奇霉素2粒",
         client_turn_id="med-tool-proposal",
     )
 
@@ -939,7 +939,7 @@ async def test_one_model_response_seals_two_medication_calls_before_preview(
     events = await _run(
         executor,
         user.id,
-        "帮我记录刚才吃的那两种药",
+        "记录伊托必利1粒，记录替普瑞酮1粒",
         client_turn_id="two-medication-tool-plan",
     )
 

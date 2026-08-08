@@ -19,6 +19,7 @@ from app.services.agent_kernel.types import (
     IntentFrame,
 )
 from app.services.agent_kernel.write_safety import is_explicit_write_cancellation
+from app.services.write_intent_scope import has_mixed_write_polarity
 
 
 MEAL_SIGNALS = {
@@ -235,6 +236,7 @@ def _compile_simple_health_record_goal(
         or intent.operation != "create"
         or not intent.is_write
         or _simple_record_write_is_negated(text)
+        or has_mixed_write_polarity(text)
         or _simple_record_is_question(text)
         or _is_compound_record_request(text, intent.domain)
     ):

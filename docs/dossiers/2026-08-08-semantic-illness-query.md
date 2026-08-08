@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS; G4 eighth remediation complete, fresh final re-review pending |
+| current_stage | G3 PASS; G4 ninth remediation complete, fresh exact-commit re-review pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -159,6 +159,41 @@ validation and no-match honesty address those risks.
   only, reported and revoked frames made no write call, and direct/mixed writes
   selected only the authorized illness, weight or dinner target. No production
   account or database record was read or written.
+- Fresh code and safety reviews of commit `9e4bcba9e` both returned NO-GO and
+  deployment remained stopped. They found that one governing clause could not
+  safely represent multiple writes, argument aliases and selectors were not
+  uniformly bound, meal/food/date and medication dosage could drift, and some
+  quoted, hypothetical, revoked or corrected forms could still resolve to the
+  wrong target.
+- The ninth remediation replaces single-clause binding with
+  `authorized-target-set-v2`. Every direct positive clause contributes at most
+  one exact target; reported, hypothetical, quoted, denied and revoked clauses
+  contribute none. The gate checks top-level and nested aliases and binds the
+  effective type/date plus deterministic selectors for diet, water, body
+  metrics, illness, symptom, medication, supplement, exercise, mood,
+  excretion, sleep, goal and reminder. Medication name and dosage are bound
+  together. Natural `记录早餐，吃了……` detail remains supported, while drug
+  entities cannot be absorbed as food.
+- Mixed-polarity turns no longer compile into a whole-turn simple record goal.
+  Retry recovery, structured food lists, attachment provenance and reminder
+  enrichment now reach the capability gate with the same concrete semantics
+  used by the downstream adapter.
+- The post-remediation live `qwen3.7-max` system evaluation first scored 8/9.
+  Its meal tool call dropped the explicit food quantities, and the deterministic
+  gate correctly blocked it with zero dispatches. That red result is retained.
+  Equivalent Chinese/Arabic quantity forms and the production `+` food
+  separator were then normalized without relaxing quantity equality. With the
+  real production tool schema and frozen current-date context, the complete
+  challenge reran at 9/9: two illness reads, quoted/revoked blocks, exact
+  illness/weight/mixed-meal writes, two separately bound medication drafts and
+  the declarative breakfast write. No production account, database read or
+  write adapter was used.
+- The final related compatibility run passed 2,911/2,911 tests. It includes the
+  shared speech-act grammar, target-set CapabilityPolicy, real ToolGateway,
+  typed illness reads, validator/date boundaries, runtime write operations,
+  retry recovery, write-outcome honesty and medication confirmation flows.
+  Targeted Ruff, Python compilation, diff checks, generated system-map drift
+  and Dossier consistency gates also pass.
 
 ### G4 Safety Review: PENDING
 
@@ -278,6 +313,24 @@ observation handling, while polite conditional and read-then-write controls
 remain writable. All local and live evidence is green, but a brand-new
 independent safety and code review of the next exact commit remains mandatory
 before G4 can pass.
+
+Fresh independent reviews of commit `9e4bcba9e` again returned NO-GO. The
+single governing target could not express two authorized writes, and the model
+could vary selectors through aliases, omit or change meal/date/food values,
+invent medication dosage, bind the wrong illness, or reuse an earlier corrected
+value. Additional hypothetical, quotation and revocation forms also required
+target-set-level provenance rather than a whole-turn goal. No deployment was
+attempted.
+
+The ninth remediation makes the authorized target set the only mutation
+authority. It computes all direct positive clauses, compiles each target
+independently, and compares the actual normalized request against type, entity,
+value, date and family-specific selectors before dispatch. Missing or
+unresolvable selectors fail closed. Multi-write turns retain separate targets;
+mixed-polarity turns cannot be collapsed into one canonical write. The
+capability contract is now `agent-capability-policy-v3` with
+`authorized-target-set-v2`. Fresh exact-commit safety and code reviews remain
+mandatory before G4 may pass.
 
 ### G5 Deployment Health: PENDING
 

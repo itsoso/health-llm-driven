@@ -12,6 +12,75 @@ from zoneinfo import ZoneInfo
 import pytest
 
 
+def _semantic_health_record_turn(args_raw):
+    """Describe the same target as the model payload for adapter-only tests."""
+    if isinstance(args_raw, str):
+        try:
+            args = json.loads(args_raw)
+        except json.JSONDecodeError:
+            return "记录健康数据"
+    else:
+        args = dict(args_raw or {})
+    data = args.get("data") if isinstance(args.get("data"), dict) else {}
+    record_type = str(args.get("record_type") or "").strip().lower()
+    record_date = str(data.get("record_date") or "")[:10]
+    date_prefix = (
+        f"{record_date[:4]}年{int(record_date[5:7])}月{int(record_date[8:10])}日"
+        if len(record_date) == 10
+        else ""
+    )
+    if record_type == "water":
+        amount = data.get("amount") or data.get("amount_ml")
+        return f"记录{date_prefix}喝水{amount}ml" if amount else "记录喝水"
+    if record_type == "diet":
+        meal = {
+            "breakfast": "早餐",
+            "lunch": "午餐",
+            "dinner": "晚餐",
+            "snack": "加餐",
+        }.get(str(data.get("meal_type") or "").lower(), "这餐")
+        food = str(data.get("food_items") or "").strip()
+        return f"记录{date_prefix}{meal}吃了{food}" if food else f"记录{meal}"
+    if record_type == "mood":
+        mood = {"calm": "平静"}.get(str(data.get("mood") or ""), data.get("mood"))
+        return f"记录心情{mood}" if mood else "记录心情"
+    if record_type == "reminder":
+        title = str(data.get("title") or "提醒事项")
+        start = data.get("start_time")
+        end = data.get("end_time")
+        clock = data.get("time") or data.get("remind_at")
+        if start and end:
+            return f"设置每天{start}到{end}{title}提醒"
+        return f"设置每天{clock}{title}提醒" if clock else f"设置{title}提醒"
+    if record_type == "waist":
+        return f"记录{date_prefix}腰围{data.get('waist_cm')}cm"
+    if record_type == "sleep":
+        bedtime = str(data.get("bedtime") or "")
+        wake_time = str(data.get("wake_time") or "")
+        if bedtime and wake_time:
+            return (
+                f"记录{date_prefix}{bedtime[11:16]}入睡"
+                f"{wake_time[11:16]}起床睡眠质量{data.get('sleep_quality')}分"
+            )
+        return "记录睡眠"
+    if record_type == "excretion":
+        kind = {
+            "bowel": "排便",
+            "constipation": "便秘",
+            "diarrhea": "腹泻",
+        }.get(str(data.get("type") or ""), "排便")
+        return f"记录{date_prefix}{kind}"
+    if record_type == "illness":
+        return f"记录{data.get('name') or data.get('illness_name') or '疾病'}"
+    if record_type == "medication":
+        name = data.get("medication_name") or data.get("name") or "药"
+        dosage = data.get("actual_dosage") or data.get("dosage") or ""
+        return f"记录我吃了{name}{dosage}"
+    if record_type == "supplement":
+        return f"记录{data.get('supplement_name') or data.get('name') or '补剂'}"
+    return "记录健康数据"
+
+
 @pytest.fixture(autouse=True)
 def _declare_explicit_turn_for_raw_record_handler_contracts(monkeypatch):
     """These legacy handler tests exercise transport/normalization, not intent."""
@@ -22,7 +91,9 @@ def _declare_explicit_turn_for_raw_record_handler_contracts(monkeypatch):
     async def with_explicit_test_turn(self, tool_name, args_raw, user_token):
         self._current_user_id = self._current_user_id or 1
         if not getattr(self, "_current_turn_user_message", ""):
-            self._current_turn_user_message = "记录测试健康数据"
+            self._current_turn_user_message = _semantic_health_record_turn(args_raw)
+        if getattr(self, "_diet_photo_auto_save", False):
+            self._current_turn_has_attachment = True
         return await original(self, tool_name, args_raw, user_token)
 
     monkeypatch.setattr(AgentExecutor, "_execute_tool", with_explicit_test_turn)
@@ -595,10 +666,10 @@ async def test_agent_health_record_sleep_missing_times_fails_loud(db):
     executor._current_user_id = 1
 
     with patch.object(executor, "_api_post", new=AsyncMock()) as post:
-        result = await executor._execute_tool(
-            tool_name="health_record",
-            args_raw=json.dumps({"record_type": "sleep", "data": {"sleep_quality": 4}}),
-            user_token=None,
+        result = await executor._exec_health_record(
+            "http://test",
+            {},
+            {"record_type": "sleep", "data": {"sleep_quality": 4}},
         )
 
     rejection = json.loads(result)

@@ -21,6 +21,11 @@ _CLAUSE_BOUNDARY_RE = re.compile(
     r"(?<=.)(?=请(?:你)?"
     r"(?:记录|记一下|记下|打个卡|打卡|新增|录入|保存|写入|存下来))"
 )
+_CONTRAST_SCOPE_RE = re.compile(r"但是|但|不过|然而|可是|而是|却")
+_LIMITING_WRITE_RE = re.compile(
+    r"只(?=(?:请(?:你)?|帮我|替我|为我|给我|麻烦)?"
+    r"(?:记录|记一下|记下|打个卡|打卡|新增|录入|保存|写入|存下来))"
+)
 _CONTEXTUAL_DENIAL_COMMA_RE = re.compile(
     r"((?:没有|没|未|未经|无).{0,12}(?:同意|授权|许可|允许)"
     r".{0,8}(?:情况下|情形下|前提下))[，,]"
@@ -144,9 +149,12 @@ _POST_ACTION_DENIAL_RE = re.compile(
     r"是不允许的?|是不可以的?|不允许|我不同意|不行)"
 )
 _TRAILING_REVOCATION_CLAUSE_RE = re.compile(
-    r"^(?:还是)?(?:算了(?:吧)?|取消(?:吧|了|这件事)?|撤销(?:吧|了)?|撤回|"
-    r"暂缓|搁置|缓一缓|先缓缓|推迟|等一下再说|先放一放|"
-    r"(?:这件事)?作罢|先不要了|不要了|我不同意|不行)$"
+    r"^(?:还是)?(?:算了(?:吧)?|取消(?:吧|了|这件事|刚才的请求)?|"
+    r"撤销(?:吧|了)?|撤回|暂缓|搁置|缓一缓|先缓缓|推迟|"
+    r"等一下再说|稍后再说|先放一放|(?:这件事)?作罢|"
+    r"先不(?:记|记录|保存|录入|写入|新增|打卡)了|"
+    r"别(?:记|记录|保存|录入|写入|新增|打卡)了|"
+    r"先不要了|不要了|我不同意|不行)$"
 )
 _RESULT_CHECK_LEADS = (
     "确认",
@@ -177,6 +185,7 @@ _REPORTING_VERBS = (
     "告知",
 )
 _METALANGUAGE_ACTIONS = (
+    "转告",
     "转述",
     "复述",
     "翻译",
@@ -189,9 +198,23 @@ _METALANGUAGE_ACTIONS = (
     "譬如",
     "假设",
     "假定",
+    "设想",
+    "倘若",
     "模拟场景",
     "这句话",
     "是什么意思",
+)
+_HYPOTHETICAL_PREFIX_RE = re.compile(
+    r"^(?:如果|假如|假设|假定|设想|倘若|若是|万一)"
+)
+_POLITE_CONDITIONAL_PREFIX_RE = re.compile(
+    r"^(?:如果|假如)(?:可以|方便|方便的话|你方便|你可以|你能|小巴可以|小巴能)"
+)
+_POST_ATTRIBUTION_RE = re.compile(
+    r"(?:这是|这只是|上面是|前面是).{0,12}(?:说的|写的|提到的)?"
+    r"(?:例句|例子|原话|转述|引用|假设)|"
+    r"(?:朋友|同事|医生|家人|妈妈|爸爸|文档|报告).{0,8}"
+    r"(?:说的|写的|提到的).{0,4}(?:例句|原话|内容|话)"
 )
 _BACKFILL_DATE_SIGNALS = (
     "发作日期",
@@ -202,6 +225,54 @@ _BACKFILL_DATE_SIGNALS = (
     "日期为",
     "时间是",
     "时间为",
+)
+_MEAL_SLOT_TERMS = (
+    "早餐",
+    "早饭",
+    "午餐",
+    "午饭",
+    "中饭",
+    "晚餐",
+    "晚饭",
+    "加餐",
+    "零食",
+    "夜宵",
+)
+_NON_FOOD_CONTINUATION_SIGNALS = (
+    *READ_ACTIONS,
+    *QUESTION_SIGNALS,
+    "分析",
+    "建议",
+    "评估",
+    "解释",
+    "为什么",
+    "怎么",
+    "如何",
+    "热量",
+    "营养",
+    "千卡",
+    "卡路里",
+    "蛋白质",
+    "碳水",
+    "脂肪",
+    "膳食纤维",
+    "纤维",
+    "转述",
+    "复述",
+    "引用",
+    "例句",
+    "例子",
+)
+_NON_FOOD_ENTITY_SIGNALS = (
+    "药",
+    "胶囊",
+    "补剂",
+    "维生素",
+    "益生菌",
+    "鱼油",
+)
+_DECLARATIVE_FOOD_CONTINUATION_RE = re.compile(
+    r"^(?:我)?(?:吃了|吃的是|吃|有|是).+"
 )
 _BACKFILL_REQUEST_MARKERS = (
     "请",
@@ -316,23 +387,39 @@ def split_write_clauses(value: str) -> tuple[str, ...]:
     text = _CONTEXTUAL_DENIAL_COMMA_RE.sub(r"\1", text)
     colon_scoped: list[str] = []
     current = ""
-    for character in text:
+    for position, character in enumerate(text):
         if character not in ("：", ":"):
             current += character
             continue
-        if _colon_extends_denial_scope(current):
+        clock_colon = bool(
+            current
+            and current[-1].isdigit()
+            and position + 1 < len(text)
+            and text[position + 1].isdigit()
+        )
+        if (
+            clock_colon
+            or _colon_extends_denial_scope(current)
+            or _colon_extends_write_target(current)
+        ):
+            if clock_colon:
+                current += character
             continue
         if current:
             colon_scoped.append(current)
         current = ""
     if current:
         colon_scoped.append(current)
-    return tuple(
-        clause
-        for segment in colon_scoped
-        for clause in _CLAUSE_BOUNDARY_RE.split(segment)
-        if clause
-    )
+    decimal_sentinel = "\ue001"
+    clauses: list[str] = []
+    for segment in colon_scoped:
+        protected = re.sub(r"(?<=\d)\.(?=\d)", decimal_sentinel, segment)
+        clauses.extend(
+            clause.replace(decimal_sentinel, ".")
+            for clause in _CLAUSE_BOUNDARY_RE.split(protected)
+            if clause
+        )
+    return tuple(clauses)
 
 
 def _colon_extends_denial_scope(left: str) -> bool:
@@ -341,6 +428,18 @@ def _colon_extends_denial_scope(left: str) -> bool:
     if not any(negation in left for negation in _ORDERED_NEGATIONS):
         return False
     return left.endswith(_DENIAL_SCOPE_INTRO_ENDINGS)
+
+
+def _colon_extends_write_target(left: str) -> bool:
+    if left.endswith(
+        ("创建目标", "设定目标", "设置目标", "新增目标", "记录目标")
+    ):
+        return True
+    action = _last_write_signal_in_clause(left)
+    if action is None:
+        return False
+    signal, _start = action
+    return left.endswith(signal)
 
 
 def _clean_negation_clause(raw_clause: str) -> str:
@@ -399,6 +498,9 @@ def _write_clause_denials(value: str) -> tuple[bool, ...]:
     text = normalize_write_scope_text(value)
     if not text:
         return ()
+    limiting_matches = tuple(_LIMITING_WRITE_RE.finditer(text))
+    if limiting_matches:
+        text = text[limiting_matches[-1].end():]
 
     denials: list[bool] = []
     for raw_clause in split_write_clauses(text):
@@ -637,31 +739,162 @@ def governing_authorized_write_clause(value: str) -> str | None:
     can classify this clause to bind a tool request to its concrete target
     instead of inheriting a boolean authorization from the whole turn.
     """
-    text = normalize_write_scope_text(value)
-    if not text or has_negated_write_scope(text):
-        return None
-    if (
-        is_write_capability_question(text)
-        or is_historical_write_reference(text)
-        or is_read_action_write_reference(text)
-        or is_write_result_check(text)
-        or is_reported_write_reference(text)
-    ):
-        return None
-
-    clauses = split_write_clauses(text)
-    for clause in reversed(clauses):
-        if _last_write_signal_in_clause(clause) is not None:
-            if _last_action_in_clause(clause) is not None and not (
-                has_explicit_authorizing_write_request(text)
-            ):
-                return None
-            return clause
-
-    # Metric, symptom and event observations can be write speech acts without
-    # a lexical write verb.  The intent frame decides whether that final clause
-    # is an observation; this parser only guarantees direct provenance.
+    clauses = authorized_health_record_clauses(value)
     return clauses[-1] if clauses else None
+
+
+def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
+    """Return every direct clause that may own one concrete health write.
+
+    Authorization is intentionally a set rather than a whole-turn boolean:
+    separate positive clauses can each authorize one target, while reported,
+    hypothetical, denied and later-revoked language contributes no authority.
+    The capability policy still has to classify each returned clause and bind
+    the actual tool payload to its type, selectors and values.
+    """
+    text = normalize_write_scope_text(value)
+    if not text:
+        return ()
+    limiting_matches = tuple(_LIMITING_WRITE_RE.finditer(text))
+    if limiting_matches:
+        text = text[limiting_matches[-1].end():]
+
+    # An unclosed quotation has no trustworthy return to the user's own voice.
+    quote_pairs = (("“", "”"), ("「", "」"), ("『", "』"))
+    if any(text.count(opening) > text.count(closing) for opening, closing in quote_pairs):
+        return ()
+    if text.count('"') % 2:
+        return ()
+
+    authorized: list[str] = []
+    for contrast_segment in _CONTRAST_SCOPE_RE.split(text):
+        if not contrast_segment:
+            continue
+        segment_start = len(authorized)
+        reported_scope = False
+        hypothetical_scope = False
+        raw_clauses = split_write_clauses(contrast_segment)
+        clauses: list[str] = []
+        for raw_clause in raw_clauses:
+            raw_action = _last_action_in_clause(raw_clause)
+            bare_followup_write = False
+            if raw_action is not None:
+                action, action_start = raw_action
+                after_action = raw_clause[action_start + len(action):]
+                bare_followup_write = after_action in {"", "一下", "下来", "一条"}
+            if (
+                clauses
+                and any(signal in raw_clause for signal in _BACKFILL_DATE_SIGNALS)
+                and _last_write_signal_in_clause(raw_clause) is None
+            ):
+                clauses[-1] = f"{clauses[-1]}，{raw_clause}"
+            elif (
+                clauses
+                and _is_meal_food_write_clause(clauses[-1])
+                and (
+                    _is_safe_food_continuation(raw_clause)
+                    or _is_safe_declarative_food_continuation(raw_clause)
+                )
+            ):
+                clauses[-1] = f"{clauses[-1]}，{raw_clause}"
+            elif clauses and bare_followup_write:
+                clauses[-1] = f"{clauses[-1]}，{raw_clause}"
+            else:
+                clauses.append(raw_clause)
+        for clause in clauses:
+            if _TRAILING_REVOCATION_CLAUSE_RE.fullmatch(clause):
+                if authorized:
+                    authorized.pop()
+                continue
+
+            polite_condition = bool(_POLITE_CONDITIONAL_PREFIX_RE.search(clause))
+            if _HYPOTHETICAL_PREFIX_RE.search(clause) and not polite_condition:
+                hypothetical_scope = True
+
+            reported_clause = is_reported_write_reference(clause)
+            if reported_clause:
+                reported_scope = True
+                if _POST_ATTRIBUTION_RE.search(clause):
+                    del authorized[segment_start:]
+
+            if reported_scope or hypothetical_scope:
+                continue
+            if (
+                is_write_capability_question(clause)
+                or is_historical_write_reference(clause)
+                or is_read_action_write_reference(clause)
+                or is_write_result_check(clause)
+                or has_negated_write_scope(clause)
+            ):
+                continue
+
+            action = _last_action_in_clause(clause)
+            if action is not None and not has_explicit_authorizing_write_request(clause):
+                continue
+            authorized.append(clause)
+    return tuple(authorized)
+
+
+def _is_meal_slot_write_clause(clause: str) -> bool:
+    action = _last_write_signal_in_clause(clause)
+    if action is None:
+        return False
+    meal_positions = tuple(
+        (clause.rfind(term), term)
+        for term in _MEAL_SLOT_TERMS
+        if term in clause
+    )
+    if not meal_positions:
+        return False
+    position, meal = max(meal_positions)
+    trailing = clause[position + len(meal):].strip("的一餐饭 ")
+    return trailing == ""
+
+
+def _is_meal_food_write_clause(clause: str) -> bool:
+    return (
+        _last_write_signal_in_clause(clause) is not None
+        and any(term in clause for term in _MEAL_SLOT_TERMS)
+    )
+
+
+def _is_safe_food_continuation(clause: str) -> bool:
+    if not clause or len(clause) > 1000:
+        return False
+    if _last_write_signal_in_clause(clause) is not None:
+        return False
+    if any(term in clause for term in _MEAL_SLOT_TERMS):
+        return False
+    if any(signal in clause for signal in _NON_FOOD_CONTINUATION_SIGNALS):
+        return False
+    if _HYPOTHETICAL_PREFIX_RE.search(clause) or is_reported_write_reference(clause):
+        return False
+    return not has_negated_write_scope(clause)
+
+
+def _is_safe_declarative_food_continuation(clause: str) -> bool:
+    """Accept a food observation as detail of an explicit meal write.
+
+    Chinese users naturally say ``记录早餐，吃了……``.  The completed-event
+    wording must not authorize a write by itself, but it may fill the food
+    selector of the immediately preceding explicit meal command.  Medication
+    and supplement wording stays outside this narrow continuation grammar.
+    """
+    if not clause or len(clause) > 1000:
+        return False
+    if not _DECLARATIVE_FOOD_CONTINUATION_RE.fullmatch(clause):
+        return False
+    if any(term in clause for term in (*_MEAL_SLOT_TERMS, *_NON_FOOD_ENTITY_SIGNALS)):
+        return False
+    from app.services.drug_lexicon import contains_drug_name
+
+    if contains_drug_name(clause):
+        return False
+    if any(signal in clause for signal in _NON_FOOD_CONTINUATION_SIGNALS):
+        return False
+    if _HYPOTHETICAL_PREFIX_RE.search(clause) or is_reported_write_reference(clause):
+        return False
+    return not has_negated_write_scope(clause)
 
 
 def has_write_action_mention(value: str) -> bool:
