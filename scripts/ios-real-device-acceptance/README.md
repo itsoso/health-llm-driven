@@ -21,7 +21,7 @@ Run:
 
 ```bash
 scripts/run_ios_real_device_acceptance.sh \
-  00008150-00112D220E32401C \
+  <physical-device-udid> \
   /tmp/XiaobaAcceptance-Build237.xcresult
 ```
 
@@ -31,7 +31,7 @@ simulator build:
 ```bash
 scripts/run_ios_real_device_acceptance.sh \
   --platform "iOS Simulator" \
-  --device 3A80E7F0-3F0D-4BAF-B80D-587C827B5C3A \
+  --device <simulator-udid> \
   --result /tmp/XiaobaAcceptance-Simulator-Build237.xcresult
 ```
 

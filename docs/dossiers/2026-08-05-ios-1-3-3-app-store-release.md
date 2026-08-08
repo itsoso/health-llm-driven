@@ -173,7 +173,7 @@
 - 2026-08-07 重置外键修复提交 `5d9283335` 的 CI run `31239215094` `completed/success`：44/44 jobs success、0 failure；包含真实 PostgreSQL 16 的审核账号子→父清理回归。随后精确 commit 通过正式 `deploy.sh --backend --yes` 上线：新数据库备份、237 表恢复演练、站外加密归档哈希/HMAC、回滚 schema、远端 revision、runtime-only KB guard/staged、Skills 22/22 和多轮健康度 60/60 全部 PASS，feature flag 继续为 false；备份轮换按保留 7 份策略自动淘汰 1 份最旧备份。
 - 2026-08-07 `deploy.sh --reset-app-store-review` 在精确 revision 与发布锁保护下成功；仅输出非敏感结果。生产 live gate 随后 PASS，证明审核账号登录、身份、每日计划、每日工件及默认最新固定简报均符合审核 fixture；未输出或提交账号、密码、令牌和合成健康内容。
 - 2026-08-07 发布证据提交 `01a45d9e8` 的 CI run `31241371975` `completed/success`：44/44 jobs success、0 failure。
-- 2026-08-07 真机验收安全说明漂移整改：runner 与 XCUITest 已正确禁止审核凭据，但 README 仍残留旧的 source 凭据和临时 scheme 注入说明；现统一改为人工预登录，并新增文档回归防止该高风险说明回归。验收 harness 聚焦测试 11/11 PASS。
+- 2026-08-07 真机验收安全说明漂移整改：runner 与 XCUITest 已正确禁止审核凭据，但 README 仍残留旧的 source 凭据、临时 scheme 注入说明和设备标识示例；现统一改为人工预登录及非识别性占位符，并新增文档回归防止高风险说明或设备 ID 回归。验收 harness 聚焦测试 11/11 PASS。
 - **裁决**：当前发布候选 G3 PASS，可进入 EAS Store Build；同一精确候选的物理 iPhone T8 与 G5 仍须完成，不能据此提交 App Review。
 
 ## G4 · 安全闸

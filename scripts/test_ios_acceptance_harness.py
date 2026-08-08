@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -101,6 +102,9 @@ def test_readme_requires_manual_pre_authentication_without_sourcing_credentials(
     assert "manually pre-authenticated" in readme
     assert "source /secure/path/to/release.env" not in readme
     assert "copied\nonly into the temporary generated Xcode scheme" not in readme
+    assert "<physical-device-udid>" in readme
+    assert "<simulator-udid>" in readme
+    assert re.search(r"\b[0-9A-F]{8}-[0-9A-F-]{20,}\b", readme, re.IGNORECASE) is None
 
 
 def test_composer_selector_accepts_ios_placeholder_augmented_label() -> None:
