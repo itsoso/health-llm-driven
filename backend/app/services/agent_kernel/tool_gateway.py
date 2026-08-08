@@ -15,6 +15,12 @@ from app.services.agent_kernel.types import (
 
 logger = logging.getLogger(__name__)
 
+_VALID_POLICY_MODES = frozenset({"enforce", "shadow"})
+_HARD_BLOCK_REASONS = frozenset({
+    "manage_operation_mismatch",
+    "delete_requires_explicit_whole_record_intent",
+})
+
 
 class ToolPreflightError(RuntimeError):
     """A tool failed before its dispatch boundary was crossed."""
@@ -27,6 +33,8 @@ class ToolGateway:
         self.snapshot = snapshot
 
     def preflight(self, request: ToolExecutionRequest) -> CapabilityDecision:
+        if self.snapshot.policy_mode not in _VALID_POLICY_MODES:
+            raise ToolPreflightError("invalid_agent_kernel_policy_mode")
         decision = decide_tool_capability(self.snapshot, request)
         logger.info(
             "[agent_kernel.tool_gateway] action=%s reason=%s tool=%s user=%s channel=%s intent=%s/%s/%s source=%s",
@@ -56,7 +64,10 @@ class ToolGateway:
                 on_decision(decision)
         except Exception as exc:  # noqa: BLE001 - preserve the dispatch boundary
             raise ToolPreflightError("tool_preflight_failed") from exc
-        if decision.action == "block" and self.snapshot.policy_mode == "enforce":
+        if decision.action == "block" and (
+            self.snapshot.policy_mode == "enforce"
+            or decision.reason in _HARD_BLOCK_REASONS
+        ):
             return ToolExecutionResult(
                 tool_name=decision.normalized_tool_name or request.tool_name,
                 content=blocked_tool_result(decision),

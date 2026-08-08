@@ -1,8 +1,14 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from app.config import Settings
+
+
+def test_settings_rejects_unknown_agent_kernel_policy_mode():
+    with pytest.raises(ValidationError, match="agent_kernel_policy_mode"):
+        Settings(_env_file=None, agent_kernel_policy_mode="enfroce")
 
 
 def test_settings_rejects_default_secret_key():

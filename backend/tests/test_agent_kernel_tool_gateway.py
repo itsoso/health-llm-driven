@@ -165,6 +165,67 @@ async def test_gateway_execute_shadow_denial_still_dispatches_once():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "expected_reason"),
+    (
+        ("把刚才 300ml 改成 350ml", "manage_operation_mismatch"),
+        (
+            "删除上一条饮水记录",
+            "delete_requires_explicit_whole_record_intent",
+        ),
+    ),
+)
+async def test_gateway_execute_shadow_hard_destructive_denial_never_dispatches(
+    message,
+    expected_reason,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode="shadow"))
+    dispatched = False
+    request = ToolExecutionRequest(
+        tool_name="health_manage",
+        arguments={
+            "record_type": "water",
+            "operation": "delete",
+            "record_id": 718,
+        },
+    )
+
+    async def dispatch(_request):
+        nonlocal dispatched
+        dispatched = True
+        return "unexpected"
+
+    result = await gateway.execute(request, dispatch)
+
+    assert dispatched is False
+    assert result.decision is not None
+    assert result.decision.reason == expected_reason
+    payload = json.loads(result.content)
+    assert payload["status"] == "rejected"
+    assert payload["dispatch_started"] is False
+
+
+@pytest.mark.asyncio
+async def test_gateway_execute_unknown_policy_mode_fails_closed_before_dispatch():
+    gateway = ToolGateway(_snapshot("记录午餐吃了牛肉面", policy_mode="enfroce"))
+    dispatched = False
+    request = ToolExecutionRequest(
+        tool_name="health_record",
+        arguments={"record_type": "diet", "data": {"food_items": "牛肉面"}},
+    )
+
+    async def dispatch(_request):
+        nonlocal dispatched
+        dispatched = True
+        return "unexpected"
+
+    with pytest.raises(ToolPreflightError, match="tool_preflight_failed"):
+        await gateway.execute(request, dispatch)
+
+    assert dispatched is False
+
+
+@pytest.mark.asyncio
 async def test_execute_tool_blocks_policy_denied_health_record_before_dispatch(db, monkeypatch):
     executor = AgentExecutor(db)
     executor._current_user_id = 1
