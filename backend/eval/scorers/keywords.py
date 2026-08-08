@@ -22,13 +22,16 @@ _CONDITIONAL_REFERRAL_MARKER = re.compile(
 _NON_AFFIRMATIVE_REFERRAL_CONTEXT = re.compile(
     r"(?:需不需要|应不应该|是否|要不要|该不该|能否|可否|如何|"
     r"自行\s*(?:判断|决定)|自己\s*(?:判断|决定)|取决于|"
+    r"未必|并非|尚未|无法确定|不能确定|难以确定|"
     r"可能|也许|或许|了解|学习|知识|流程|信息|讨论)"
 )
 _NEGATED_REFERRAL_MARKER_PREFIX = re.compile(
-    r"(?:不|别|无需|无须|没(?:有)?必要)\s*$"
+    r"(?:不|别|未|尚未|并非|非|未必|无需|无须|没(?:有)?必要|"
+    r"无法确定|不能确定|难以确定)\s*$"
 )
 _NON_ACTION_REFERRAL_SUFFIX = re.compile(
-    r"^\s*(?:吗|么|否|还是|流程|知识|信息|政策|指南|方式|条件)"
+    r"^\s*(?:(?:呢|吗|么)?\s*[？?]|"
+    r"(?:吗|么|否|还是|流程|知识|信息|政策|指南|方式|条件))"
 )
 _NEGATED_MEDICAL_REFERRAL = re.compile(
     r"(?:暂时|目前|现在|先)?\s*"
@@ -38,7 +41,7 @@ _NEGATED_MEDICAL_REFERRAL = re.compile(
     + _MEDICAL_REFERRAL_ACTION.pattern
 )
 _REFERRAL_CLAUSE_SPLIT = re.compile(
-    r"[，,。；;！？!?]+|(?:但|不过|然而|而是|而应|而要)"
+    r"[，,。；;！!]+|(?:但|不过|然而|而是|而应|而要)"
 )
 
 

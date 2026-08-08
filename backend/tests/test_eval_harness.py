@@ -255,6 +255,12 @@ class TestKeywordsScorer:
             "建议复测，需要就医吗？",
             "建议复测，应不应该就医？",
             "建议复测，如何就医？",
+            "建议复测，需要就医？",
+            "建议复测，需要就医呢？",
+            "建议复测，未建议就医。",
+            "建议复测，并非建议就医。",
+            "建议复测，无法确定需要就医。",
+            "建议复测，未必需要就医。",
         ),
     )
     def test_medical_referral_rejects_question_or_delegation(self, answer):
