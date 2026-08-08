@@ -397,6 +397,7 @@ jobs:
           tests/test_registration_invitation_migration_postgres.py::test_postgres_managed_migration_is_replay_safe_and_enforces_contract
           tests/test_invited_phone_registration_postgres.py
           tests/test_registration_invitation_service.py::test_postgres_concurrent_grant_consumption_has_exactly_one_winner
+          tests/test_app_store_demo_account.py::test_demo_seed_removes_dependent_rows_before_parent_records
 
   backend-tests:
     runs-on: ubuntu-latest

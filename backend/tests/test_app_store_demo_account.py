@@ -7,12 +7,19 @@ This test drives the EXACT seeder core (scripts.seed_demo_account.seed_demo)
 against the in-memory test DB and asserts all three are non-empty, so the
 synthetic dataset is proven to produce populated review surfaces.
 """
+from datetime import date
+
 # Importing ActionCard at module load registers the `action_cards` table on
 # Base.metadata BEFORE the `db` fixture runs create_all. The agenda/daily-plan
 # read chain queries action_cards; without this the in-memory schema lacks it.
 from app.models.action_card import ActionCard  # noqa: F401
 from app.models.agent_conversation import AgentConversation, AgentMessage
+from app.models.daily_health import WorkoutAnalysisResult, WorkoutRecord
+from app.models.daily_operating_plan import DailyOperatingPlan
+from app.models.intervention_event import InterventionEvent
+from app.models.medical_exam import MedicalExam, MedicalExamItem
 from app.models.user import User
+from app.models.workout_hr_zone import WorkoutHrZone
 from app.services.auth import AuthService
 
 import pytest
@@ -85,6 +92,83 @@ def test_demo_seed_is_idempotent(db):
         .title
         == "审核员自建对话"
     )
+
+
+def test_demo_seed_removes_dependent_rows_before_parent_records(db):
+    first = seed_demo(
+        db,
+        email="review-exam-reset@reva.health",
+        password="Demo1234!",
+        name="演示",
+        days=1,
+    )
+    exam = MedicalExam(
+        user_id=first["user_id"],
+        exam_date=date.today(),
+        exam_type="blood_routine",
+    )
+    db.add(exam)
+    db.flush()
+    db.add(
+        MedicalExamItem(
+            exam_id=exam.id,
+            item_name="血红蛋白",
+            value=140,
+            unit="g/L",
+        )
+    )
+    workout = (
+        db.query(WorkoutRecord)
+        .filter(WorkoutRecord.user_id == first["user_id"])
+        .first()
+    )
+    db.add(
+        WorkoutAnalysisResult(
+            workout_id=workout.id,
+            user_id=first["user_id"],
+            source="review-reset-test",
+        )
+    )
+    db.add(
+        WorkoutHrZone(
+            workout_id=workout.id,
+            zone_index=2,
+            seconds_in_zone=300,
+        )
+    )
+    plan = (
+        db.query(DailyOperatingPlan)
+        .filter(DailyOperatingPlan.user_id == first["user_id"])
+        .first()
+    )
+    db.add(
+        InterventionEvent(
+            user_id=first["user_id"],
+            plan_id=plan.id,
+            plan_date=plan.plan_date,
+            action_key="review-reset-test",
+            action_title="演示动作",
+            feedback_status="completed",
+            action_snapshot={},
+        )
+    )
+    db.commit()
+    db.expunge_all()
+
+    second = seed_demo(
+        db,
+        email="review-exam-reset@reva.health",
+        password="Demo1234!",
+        name="演示",
+        days=1,
+    )
+
+    assert second["verification"] == "PASS"
+    assert db.query(MedicalExam).filter(MedicalExam.user_id == first["user_id"]).count() == 0
+    assert db.query(MedicalExamItem).count() == 0
+    assert db.query(WorkoutAnalysisResult).count() == 0
+    assert db.query(WorkoutHrZone).count() == 0
+    assert db.query(InterventionEvent).count() == 0
 
 
 def test_demo_conversation_is_safe_and_review_ready(db):

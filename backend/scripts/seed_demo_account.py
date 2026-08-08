@@ -40,12 +40,14 @@ from sqlalchemy.orm import Session
 from app.models.action_card import ActionCard  # noqa: F401 - register lazily-loaded table
 from app.models.agent_conversation import AgentConversation, AgentMessage
 from app.models.blood_pressure import BloodPressureRecord
-from app.models.daily_health import GarminData, WaterIntake, WorkoutRecord
-from app.models.medical_exam import MedicalExam
+from app.models.daily_health import GarminData, WaterIntake, WorkoutAnalysisResult, WorkoutRecord
+from app.models.intervention_event import InterventionEvent
+from app.models.medical_exam import MedicalExam, MedicalExamItem
 from app.models.sleep_record import SleepRecord
 from app.models.user import User
 from app.models.user_profile import UserProfile
 from app.models.weight import WeightRecord
+from app.models.workout_hr_zone import WorkoutHrZone
 from app.services.auth import AuthService
 from app.services.onboarding_bootstrap import ensure_initial_health_loop
 
@@ -88,6 +90,23 @@ def _reset_synthetic_data(db: Session, user_id: int) -> None:
     plan/program/problem are upserted by ensure_initial_health_loop itself).
     """
     from app.models.daily_operating_plan import DailyOperatingPlan
+
+    exam_ids = db.query(MedicalExam.id).filter(MedicalExam.user_id == user_id)
+    db.query(MedicalExamItem).filter(
+        MedicalExamItem.exam_id.in_(exam_ids)
+    ).delete(synchronize_session=False)
+
+    workout_ids = db.query(WorkoutRecord.id).filter(WorkoutRecord.user_id == user_id)
+    db.query(WorkoutHrZone).filter(
+        WorkoutHrZone.workout_id.in_(workout_ids)
+    ).delete(synchronize_session=False)
+    db.query(WorkoutAnalysisResult).filter(
+        WorkoutAnalysisResult.user_id == user_id
+    ).delete(synchronize_session=False)
+
+    db.query(InterventionEvent).filter(
+        InterventionEvent.user_id == user_id
+    ).delete(synchronize_session=False)
 
     for model in (
         GarminData,

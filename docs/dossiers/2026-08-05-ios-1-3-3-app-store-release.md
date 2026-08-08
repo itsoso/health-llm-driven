@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | S6 · 1.3.3 Build 241 已完成 EAS Store Build、TestFlight 处理与精确 IPA 校验；T8 流程整改已完成本地验证，新增构建依赖 advisory 已防护，待主干 CI 复绿后部署与安全重验 |
+| 当前阶段 | S6 · 1.3.3 Build 241 已完成 EAS Store Build、TestFlight 处理与精确 IPA 校验；后端已部署并健康，审核账号重置外键修复已本地验证，待主干 CI、重部署与安全重验 |
 | 状态 | implementing |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -167,6 +167,9 @@
 - 2026-08-07 提交 `2677a4d44` 的 CI run `31234249896` 出现新的 registry advisory 红灯：Frontend `nanoid <3.3.17` 高危及旧 PostCSS 链，Mobile 同源依赖审计失败；按 Gate 停止部署。两个树已统一锁定到兼容 patch `nanoid 3.3.18`、`postcss 8.5.26`；完整及 production audit 均为 0，审计策略 4/4、版本契约 18/18 PASS。Mobile 全量 293/293 suites、2,407 passed / 1 skipped，TypeScript 与 lint（0 errors / 92 baseline warnings）PASS；Frontend 57/57 files、338/338 tests PASS，production build/TypeScript/73 个静态页面与 lint（0 errors / 33 baseline warnings）PASS。Frontend 首轮全量有 1 条异步加载测试波动，隔离 10/10 及第二轮全量均 PASS，未修改该非相关 surface。待新主干 CI 复绿。
 - 2026-08-07 提交 `a9bbc1d65` 的 CI run `31234813565` 在 Frontend/Mobile 安装依赖阶段 FAIL：两份锁文件仅有新补丁包的 4 条 `resolved` URL 被本机 npm 配置写成不可公开访问的内网镜像，GitHub runner 因 DNS `ENOTFOUND` 终止；不是代码、类型或新 advisory 红灯。已将 4 条 URL 校正到公共 npm registry，逐项核对上游 integrity 与锁文件一致，并新增锁文件不得包含内网或明文 HTTP 源的回归契约；两端从公共源完整 `npm ci` 与显式高危审计 exit 0。新主干 CI 复绿前继续禁止部署。
 - 2026-08-07 提交 `20fbf83fc` 的 CI run `31235170596` 证明公共源修复有效：Frontend 全流程 PASS，Mobile 成功安装后被新更新的 `image-size` 两条高危无限循环 advisory（`GHSA-w3rx-r6r6-pgpr`、`GHSA-5p2g-fcmc-qvqq`）阻断。上游截至本次核验没有已发布修复版本；该包仅由 Expo/Metro 构建工具链传递使用，不进入 iPhone 运行时。已对 ICNS 与 JXL/HEIF 零长度解析路径打最小本地补丁并用恶意输入子进程超时测试验证，干净 `npm ci` 证明 `patch-package` 自动应用；审计策略仅为这两个 GHSA 设置至 2026-08-14 的短期到期例外，未知、缺失和过期 advisory 继续 fail closed，npm 10.9.8（与 CI 一致）复验通过 11 条传递路径。补丁对抗测试 2/2、审计策略测试 5/5、Mobile 串行全量 293/293 suites（2,407 passed / 1 skipped）、TypeScript 与设计 token 闸均 PASS。新主干 CI 复绿前继续禁止部署。
+- 2026-08-07 安全修复提交 `5e7ce5651` 的 CI run `31235742871` `completed/success`：44/44 jobs success、0 failure；Mobile 新增恶意图片防死循环测试、短期审计策略、TypeScript、设计闸与 Jest 全部通过，Frontend、Mac、PostgreSQL 与全部后端分片同步通过。
+- 2026-08-07 后端部署证据：精确 commit `5e7ce5651` 通过正式 `deploy.sh` 上线；发布前数据库备份、237 表恢复演练、站外加密归档哈希/HMAC、回滚 schema、远端 revision 均通过，部署中/后多轮健康度 60/60，runtime-only KB guard/staged、Skills 22/22 通过，feature flag 继续为 false。部署脚本按保留 7 份策略自动淘汰 1 份最旧备份。
+- 2026-08-07 审核账号重置首次执行按 Gate FAIL 并回滚：生产已有 `medical_exam_items` 引用体检主记录，旧 seeder 先删父记录触发 PostgreSQL 外键保护，未留下半重置数据。修复按子→父顺序清理审核账号专属的体检明细、运动分析/心率区间与计划反馈；新回归先红后绿，审核账号 6/6、release-pack 50/50、部署脚本 125/125、Ruff PASS，并将该用例加入真实 PostgreSQL 16 CI 语义闸。新主干 CI、重部署与生产重置成功前继续阻断 T8/G5。
 - **裁决**：当前发布候选 G3 PASS，可进入 EAS Store Build；同一精确候选的物理 iPhone T8 与 G5 仍须完成，不能据此提交 App Review。
 
 ## G4 · 安全闸
@@ -205,7 +208,7 @@
 
 - IPA toolchain/version/build/commit：PASS。Build 241 精确 IPA SHA-256 `1a7f23ad4586922b8f6d07161bf4a56c404ceaa812064a05468954fdc07d0e12`；display name 小巴，bundle ID `life.executor.health`，版本 1.3.3（241），Xcode 26.2（17C52）/ iOS 26.2 SDK，MinimumOSVersion 16.0，iPhone-only、Mach-O arm64。`codesign --verify --deep --strict` PASS；production APNs、HealthKit、`applinks:health.executor.life`、beta reports entitlements 存在，`get-task-allow=false`。
 - TestFlight processing：PASS。Build 241 已 `VALID` 并进入 `IN_BETA_TESTING`，未过期；EAS Build/Submit 均 `FINISHED`，版本、Build、runtime、source commit 与 fingerprint 一致。
-- backend health：最近一次发布证据保持连续 60/60，线上 `/privacy` 与 `/api/v1/health` 已独立验证；G5 最终重验仍与 T8 同步执行。
+- backend health：commit `5e7ce5651` 已经正式部署，数据库备份/恢复/站外归档和多轮健康度 60/60 PASS；审核账号重置外键修复仍待新 CI、重部署与线上重验，G5 最终重验仍与 T8 同步执行。
 - physical iPhone：设备已恢复连接并确认安装小巴 1.3.3（241）。自动子集第二轮 7 项中 6 PASS、1 FAIL；失败由审核账号存在更新的普通会话触发，证明固定演示会话不是默认最新。语音、相机与照片持久化、分享、健康写入/纠正/删除等人工项仍未完成，不能以历史 Build 240、模拟器或本轮部分通过替代。
 - evidence security：第二轮原始 Xcode 结果包记录了自动输入的审核凭据并含合成健康内容，不得作为发布证据或上传；仅保留本 Dossier 的非敏感计数与根因。代码整改、生产固定会话重置、审核密码轮换、人工预登录和安全版自动重验全部完成前，T8/G5 保持阻断。
 - 本地原生预验：iOS 26.5 Release 模拟器构建、安装和启动 PASS；该产物为 development 变体且禁用本地 Sentry 符号上传，只证明当前原生工程可编译/启动，不替代 production Store Build、TestFlight、精确 commit/Build 绑定或 T8 物理真机证据。
