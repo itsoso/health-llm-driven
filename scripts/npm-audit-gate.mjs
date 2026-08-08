@@ -65,9 +65,13 @@ export function evaluateAuditReport(report, policy, now = new Date()) {
       continue;
     }
     const leaves = resolveLeaves(packageName, vulnerabilities);
+    const hasConcreteAdvisory = leaves.some((leaf) => !leaf.unresolved);
     const reasons = [];
     for (const leaf of leaves) {
       if (leaf.unresolved) {
+        if (hasConcreteAdvisory && leaf.unresolved.startsWith("cycle:")) {
+          continue;
+        }
         reasons.push(`unresolved ${leaf.unresolved}`);
         continue;
       }
@@ -132,7 +136,7 @@ function main() {
   }
   if (result.allowed.length > 0) {
     console.log(
-      `npm audit passed with one active, documented advisory exception across `
+      `npm audit passed with active, documented advisory exceptions across `
       + `${result.allowed.length} transitive package paths.`,
     );
   } else {

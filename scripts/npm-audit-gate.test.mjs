@@ -54,6 +54,38 @@ test("accepts a transitive chain rooted only in an active exception", () => {
   );
 });
 
+test("accepts an excepted advisory reached through a cyclic dependency graph", () => {
+  const report = reportWith({
+    "brace-expansion": {
+      name: "brace-expansion",
+      severity: "high",
+      via: [
+        {
+          source: 1124334,
+          name: "brace-expansion",
+          url: "https://github.com/advisories/GHSA-mh99-v99m-4gvg",
+          severity: "high",
+        },
+      ],
+    },
+    glob: {
+      name: "glob",
+      severity: "high",
+      via: ["brace-expansion", "minimatch"],
+    },
+    minimatch: {
+      name: "minimatch",
+      severity: "high",
+      via: ["glob"],
+    },
+  });
+
+  assert.deepEqual(
+    evaluateAuditReport(report, allowedPolicy, new Date("2026-07-25T00:00:00Z")),
+    { allowed: ["brace-expansion", "glob", "minimatch"], blocked: [] },
+  );
+});
+
 test("blocks an unknown high severity advisory", () => {
   const report = reportWith({
     unsafe: {

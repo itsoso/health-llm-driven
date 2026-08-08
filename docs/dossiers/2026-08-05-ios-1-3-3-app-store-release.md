@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | S6 · 1.3.3 Build 241 已完成 EAS Store Build、TestFlight 处理与精确 IPA 校验；T8 流程整改已完成本地验证，依赖与锁文件源污染已修复，待主干 CI 复绿后部署与安全重验 |
+| 当前阶段 | S6 · 1.3.3 Build 241 已完成 EAS Store Build、TestFlight 处理与精确 IPA 校验；T8 流程整改已完成本地验证，新增构建依赖 advisory 已防护，待主干 CI 复绿后部署与安全重验 |
 | 状态 | implementing |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -166,6 +166,7 @@
 - 2026-08-07 T8 流程整改本地证据：真机验收/部署脚本 135/135 PASS；审核账号/发布包 55/55 PASS；Ruff、shell/Ruby 语法、基础 release-pack、doc drift 与 `git diff --check` PASS。线上新 live gate 在重置前按预期 FAIL 1 项，证明旧检查的假绿已被关闭。
 - 2026-08-07 提交 `2677a4d44` 的 CI run `31234249896` 出现新的 registry advisory 红灯：Frontend `nanoid <3.3.17` 高危及旧 PostCSS 链，Mobile 同源依赖审计失败；按 Gate 停止部署。两个树已统一锁定到兼容 patch `nanoid 3.3.18`、`postcss 8.5.26`；完整及 production audit 均为 0，审计策略 4/4、版本契约 18/18 PASS。Mobile 全量 293/293 suites、2,407 passed / 1 skipped，TypeScript 与 lint（0 errors / 92 baseline warnings）PASS；Frontend 57/57 files、338/338 tests PASS，production build/TypeScript/73 个静态页面与 lint（0 errors / 33 baseline warnings）PASS。Frontend 首轮全量有 1 条异步加载测试波动，隔离 10/10 及第二轮全量均 PASS，未修改该非相关 surface。待新主干 CI 复绿。
 - 2026-08-07 提交 `a9bbc1d65` 的 CI run `31234813565` 在 Frontend/Mobile 安装依赖阶段 FAIL：两份锁文件仅有新补丁包的 4 条 `resolved` URL 被本机 npm 配置写成不可公开访问的内网镜像，GitHub runner 因 DNS `ENOTFOUND` 终止；不是代码、类型或新 advisory 红灯。已将 4 条 URL 校正到公共 npm registry，逐项核对上游 integrity 与锁文件一致，并新增锁文件不得包含内网或明文 HTTP 源的回归契约；两端从公共源完整 `npm ci` 与显式高危审计 exit 0。新主干 CI 复绿前继续禁止部署。
+- 2026-08-07 提交 `20fbf83fc` 的 CI run `31235170596` 证明公共源修复有效：Frontend 全流程 PASS，Mobile 成功安装后被新更新的 `image-size` 两条高危无限循环 advisory（`GHSA-w3rx-r6r6-pgpr`、`GHSA-5p2g-fcmc-qvqq`）阻断。上游截至本次核验没有已发布修复版本；该包仅由 Expo/Metro 构建工具链传递使用，不进入 iPhone 运行时。已对 ICNS 与 JXL/HEIF 零长度解析路径打最小本地补丁并用恶意输入子进程超时测试验证，干净 `npm ci` 证明 `patch-package` 自动应用；审计策略仅为这两个 GHSA 设置至 2026-08-14 的短期到期例外，未知、缺失和过期 advisory 继续 fail closed，npm 10.9.8（与 CI 一致）复验通过 11 条传递路径。补丁对抗测试 2/2、审计策略测试 5/5、Mobile 串行全量 293/293 suites（2,407 passed / 1 skipped）、TypeScript 与设计 token 闸均 PASS。新主干 CI 复绿前继续禁止部署。
 - **裁决**：当前发布候选 G3 PASS，可进入 EAS Store Build；同一精确候选的物理 iPhone T8 与 G5 仍须完成，不能据此提交 App Review。
 
 ## G4 · 安全闸

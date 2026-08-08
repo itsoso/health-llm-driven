@@ -473,6 +473,10 @@ jobs:
         working-directory: mobile
         run: npm ci
 
+      - name: Test patched image parser denial-of-service guards
+        working-directory: mobile
+        run: node --test scripts/image-size-security.node.js
+
       - name: Audit production dependencies
         working-directory: mobile
         run: node ../scripts/npm-audit-gate.mjs --policy npm-audit-policy.json

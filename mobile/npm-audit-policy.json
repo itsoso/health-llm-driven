@@ -1,3 +1,16 @@
 {
-  "exceptions": []
+  "exceptions": [
+    {
+      "advisory": "GHSA-w3rx-r6r6-pgpr",
+      "package": "image-size",
+      "expires_on": "2026-08-14",
+      "reason": "Expo/Metro build-only transitive dependency; upstream has no patched release. The ICNS loop is locally patched and exercised by mobile/scripts/image-size-security.node.js."
+    },
+    {
+      "advisory": "GHSA-5p2g-fcmc-qvqq",
+      "package": "image-size",
+      "expires_on": "2026-08-14",
+      "reason": "Expo/Metro build-only transitive dependency; upstream has no patched release. Zero-sized JXL/HEIF boxes are locally rejected and exercised by mobile/scripts/image-size-security.node.js."
+    }
+  ]
 }
