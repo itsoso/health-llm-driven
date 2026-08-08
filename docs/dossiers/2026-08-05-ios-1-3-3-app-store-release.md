@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | S6 · 1.3.3 Build 241 已完成 EAS Store Build、TestFlight 处理与精确 IPA 校验；后端已部署并健康，审核账号重置外键修复已本地验证，待主干 CI、重部署与安全重验 |
+| 当前阶段 | S6 · 1.3.3 Build 241 已完成 EAS Store Build、TestFlight 处理与精确 IPA 校验；后端精确版本已部署并健康，审核账号已重置且线上 live gate 通过；待审核密码轮换、人工预登录与安全版物理 iPhone T8 |
 | 状态 | implementing |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -116,7 +116,7 @@
   - `38186b9fe` / `c8736d717` / `7af1d1b3f` / `0182e9c2f`：按“舒展易读”方案完成聊天界面视觉优化；保持正文 15/23、44pt 触控目标、业务行为、API、健康数据与写入流程不变。
   - `9d8416b11`：清理新增测试的 lint warning，保持 Mobile 既有 92 warnings 基线不增长。
   - `2677a4d44`：真机验收改为人工预登录、禁止 XCUITest 接收审核凭据；live gate 要求固定简报是默认最新且只有精确两条消息；新增 revision/发布锁约束的非敏感生产重置入口。
-- 当前断点：T0–T7 完成；审核账号固定简报 live gate、生产早餐图片领域路由和 AIGC 外发确认链整改均已完成，最终 G4 GO。发布前聊天视觉层级优化、当日新增依赖 advisory 与两条后端安全边界回归均已整改；真实 LLM 评测通过，最新完整主干 CI 44/44 通过，G3 PASS。1.3.3 Build 241 已完成 EAS Store Build、ASC/TestFlight 处理与精确 IPA 校验；登录态聊天页及写入/纠正/删除等同一精确候选物理 iPhone T8 仍为 G5/App Review 阻断项。
+- 当前断点：T0–T7 完成；审核账号固定简报 live gate、生产早餐图片领域路由和 AIGC 外发确认链整改均已完成，最终 G4 GO。发布前聊天视觉层级优化、当日新增依赖 advisory 与两条后端安全边界回归均已整改；真实 LLM 评测通过，最新完整主干 CI 44/44 通过，G3 PASS。1.3.3 Build 241 已完成 EAS Store Build、ASC/TestFlight 处理与精确 IPA 校验；后端 `5d9283335` 已部署，生产审核账号已重置且 live gate PASS。审核密码轮换、人工预登录、登录态聊天页及写入/纠正/删除等同一精确候选物理 iPhone T8 仍为 G5/App Review 阻断项。
 - 2026-08-07 Build 241 物理 iPhone 自动子集第二轮共 7 项：6 PASS、1 FAIL。安装包版本/Build 与候选一致；双冷启动登录态、Agent 入口、Today 打开/关闭、未发送草稿前后台保留、隐私和账号删除入口均通过。唯一失败是默认打开了审核账号中更新的普通会话，而不是固定简报；Mobile 按服务端 `updated_at` 打开最新会话属于正确产品行为，根因是 live gate 只证明固定会话存在、未证明它是默认最新且未被追加消息。
 - 同轮发现 XCUITest 自动输入正式审核密码会把输入保留在 Xcode 控制台/结果包。该方式立即停用：自动子集改为仅接受人工预登录态，并在发现审核凭据环境变量时 fail closed；固定会话 live gate 改为校验未过滤会话列表首项和精确两条消息；生产重置新增受发布锁和精确 revision 约束的 `deploy.sh --reset-app-store-review` 模式，不轮换密码且只输出非识别性验证结果。正式审核密码须在 App Review 前由发布负责人轮换并重新手工登录，旧密码不得再用于最终证据。
 - T4 物理 iPhone（历史 1.3.2 Build 240，仅作预验）执行 7 项自动子集：5 passed / 2 failed。双冷启动首次失败于第二次恢复登录超过 30 秒，隔离重跑 1/1 PASS，判定为一次性恢复超时；会话用例稳定失败，因为设备保留旧 conversation 且生产 19 个会话里不存在最新固定演示会话。服务端 live gate 先前只验证今日计划/每日工件非空，错误放过了这个缺口。语音、相机、分享、写入/纠正/删除仍须在 T8 对同一 1.3.3 候选人工验收。
@@ -170,6 +170,8 @@
 - 2026-08-07 安全修复提交 `5e7ce5651` 的 CI run `31235742871` `completed/success`：44/44 jobs success、0 failure；Mobile 新增恶意图片防死循环测试、短期审计策略、TypeScript、设计闸与 Jest 全部通过，Frontend、Mac、PostgreSQL 与全部后端分片同步通过。
 - 2026-08-07 后端部署证据：精确 commit `5e7ce5651` 通过正式 `deploy.sh` 上线；发布前数据库备份、237 表恢复演练、站外加密归档哈希/HMAC、回滚 schema、远端 revision 均通过，部署中/后多轮健康度 60/60，runtime-only KB guard/staged、Skills 22/22 通过，feature flag 继续为 false。部署脚本按保留 7 份策略自动淘汰 1 份最旧备份。
 - 2026-08-07 审核账号重置首次执行按 Gate FAIL 并回滚：生产已有 `medical_exam_items` 引用体检主记录，旧 seeder 先删父记录触发 PostgreSQL 外键保护，未留下半重置数据。修复按子→父顺序清理审核账号专属的体检明细、运动分析/心率区间与计划反馈；新回归先红后绿，审核账号 6/6、release-pack 50/50、部署脚本 125/125、Ruff PASS，并将该用例加入真实 PostgreSQL 16 CI 语义闸。新主干 CI、重部署与生产重置成功前继续阻断 T8/G5。
+- 2026-08-07 重置外键修复提交 `5d9283335` 的 CI run `31239215094` `completed/success`：44/44 jobs success、0 failure；包含真实 PostgreSQL 16 的审核账号子→父清理回归。随后精确 commit 通过正式 `deploy.sh --backend --yes` 上线：新数据库备份、237 表恢复演练、站外加密归档哈希/HMAC、回滚 schema、远端 revision、runtime-only KB guard/staged、Skills 22/22 和多轮健康度 60/60 全部 PASS，feature flag 继续为 false；备份轮换按保留 7 份策略自动淘汰 1 份最旧备份。
+- 2026-08-07 `deploy.sh --reset-app-store-review` 在精确 revision 与发布锁保护下成功；仅输出非敏感结果。生产 live gate 随后 PASS，证明审核账号登录、身份、每日计划、每日工件及默认最新固定简报均符合审核 fixture；未输出或提交账号、密码、令牌和合成健康内容。
 - **裁决**：当前发布候选 G3 PASS，可进入 EAS Store Build；同一精确候选的物理 iPhone T8 与 G5 仍须完成，不能据此提交 App Review。
 
 ## G4 · 安全闸
@@ -208,11 +210,11 @@
 
 - IPA toolchain/version/build/commit：PASS。Build 241 精确 IPA SHA-256 `1a7f23ad4586922b8f6d07161bf4a56c404ceaa812064a05468954fdc07d0e12`；display name 小巴，bundle ID `life.executor.health`，版本 1.3.3（241），Xcode 26.2（17C52）/ iOS 26.2 SDK，MinimumOSVersion 16.0，iPhone-only、Mach-O arm64。`codesign --verify --deep --strict` PASS；production APNs、HealthKit、`applinks:health.executor.life`、beta reports entitlements 存在，`get-task-allow=false`。
 - TestFlight processing：PASS。Build 241 已 `VALID` 并进入 `IN_BETA_TESTING`，未过期；EAS Build/Submit 均 `FINISHED`，版本、Build、runtime、source commit 与 fingerprint 一致。
-- backend health：commit `5e7ce5651` 已经正式部署，数据库备份/恢复/站外归档和多轮健康度 60/60 PASS；审核账号重置外键修复仍待新 CI、重部署与线上重验，G5 最终重验仍与 T8 同步执行。
-- physical iPhone：设备已恢复连接并确认安装小巴 1.3.3（241）。自动子集第二轮 7 项中 6 PASS、1 FAIL；失败由审核账号存在更新的普通会话触发，证明固定演示会话不是默认最新。语音、相机与照片持久化、分享、健康写入/纠正/删除等人工项仍未完成，不能以历史 Build 240、模拟器或本轮部分通过替代。
-- evidence security：第二轮原始 Xcode 结果包记录了自动输入的审核凭据并含合成健康内容，不得作为发布证据或上传；仅保留本 Dossier 的非敏感计数与根因。代码整改、生产固定会话重置、审核密码轮换、人工预登录和安全版自动重验全部完成前，T8/G5 保持阻断。
+- backend health：commit `5d9283335` 已经正式部署；数据库备份、237 表恢复演练、站外加密归档、回滚 schema、精确 revision、runtime-only KB、Skills 22/22 与多轮健康度 60/60 PASS。审核账号生产重置及凭据不落盘的线上 live gate 均 PASS；后端子闸完成。
+- physical iPhone：设备已恢复连接并确认安装小巴 1.3.3（241）。自动子集第二轮 7 项中 6 PASS、1 FAIL；失败根因对应的生产固定会话新鲜度现已由重置及 live gate 修复，但必须在密码轮换和人工预登录后以不接收凭据的安全版自动子集复验。语音、相机与照片持久化、分享、健康写入/纠正/删除等人工项仍未完成，不能以历史 Build 240、模拟器或旧的部分通过替代。
+- evidence security：第二轮原始 Xcode 结果包记录了自动输入的审核凭据并含合成健康内容，不得作为发布证据或上传；仅保留本 Dossier 的非敏感计数与根因。代码整改和生产固定会话重置已完成；审核密码轮换、人工预登录和安全版自动重验完成前，T8/G5 保持阻断。
 - 本地原生预验：iOS 26.5 Release 模拟器构建、安装和启动 PASS；该产物为 development 变体且禁用本地 Sentry 符号上传，只证明当前原生工程可编译/启动，不替代 production Store Build、TestFlight、精确 commit/Build 绑定或 T8 物理真机证据。
-- **裁决**：pending —— 精确 IPA 与 TestFlight 子闸已通过；物理 iPhone T8 仍有固定会话新鲜度、审核密码轮换和人工项目未闭环，禁止提交 App Review。
+- **裁决**：pending —— 精确 IPA、TestFlight、后端健康、生产重置及 live gate 子闸已通过；物理 iPhone T8 的审核密码轮换、安全版自动复验和人工项目仍未闭环，禁止提交 App Review。
 
 ## S7 · 上线验证
 
