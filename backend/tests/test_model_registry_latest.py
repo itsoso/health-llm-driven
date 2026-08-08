@@ -4,6 +4,7 @@ from app.services.llm import model_registry as reg
 
 
 EXPECTED_MODELS = {
+    "qwen3.8-max": ("text_generation", "reasoning", "vision_understanding"),
     "qwen3.8-max-preview": ("text_generation", "reasoning", "vision_understanding"),
     "qwen3.7-plus": ("text_generation", "reasoning", "vision_understanding"),
     "qwen3.7-max": ("text_generation", "reasoning"),
@@ -11,6 +12,8 @@ EXPECTED_MODELS = {
     "qwen3.6-flash": ("text_generation", "reasoning", "vision_understanding"),
     "qwen-image-2.0": ("image_generation",),
     "qwen-image-2.0-pro": ("image_generation",),
+    "qwen-audio-3.0-tts-plus": ("speech_synthesis",),
+    "qwen-audio-3.0-realtime-plus": ("realtime_voice_conversation",),
     "wan2.7-image": ("image_generation",),
     "wan2.7-image-pro": ("image_generation",),
     "happyhorse-1.1-i2v": ("video_generation",),
@@ -18,6 +21,7 @@ EXPECTED_MODELS = {
     "happyhorse-1.1-r2v": ("video_generation",),
     "deepseek-v4-pro": ("text_generation", "reasoning"),
     "deepseek-v4-flash": ("text_generation", "reasoning"),
+    "deepseek-v4-flash-0731": ("text_generation", "reasoning"),
     "deepseek-v3.2": ("text_generation", "reasoning"),
     "kimi-k2.7-code": ("text_generation", "reasoning", "vision_understanding"),
     "kimi-k2.6": ("text_generation", "reasoning", "vision_understanding"),
@@ -33,6 +37,8 @@ EXPECTED_TOKENPLAN_IDS = set(EXPECTED_MODELS)
 NON_TEXT_MODELS = {
     "qwen-image-2.0",
     "qwen-image-2.0-pro",
+    "qwen-audio-3.0-tts-plus",
+    "qwen-audio-3.0-realtime-plus",
     "wan2.7-image",
     "wan2.7-image-pro",
     "happyhorse-1.1-i2v",
@@ -41,7 +47,7 @@ NON_TEXT_MODELS = {
 }
 
 TOP_CHAT_MODELS = {
-    "qwen3.8-max-preview",
+    "qwen3.8-max",
     "qwen3.7-plus",
     "qwen3.7-max",
     "deepseek-v4-pro",
@@ -52,9 +58,11 @@ TOP_CHAT_MODELS = {
 }
 
 HIDDEN_CHAT_VARIANTS = {
+    "qwen3.8-max-preview",
     "qwen3.6-plus",
     "qwen3.6-flash",
     "deepseek-v3.2",
+    "deepseek-v4-flash-0731",
     "kimi-k2.6",
     "kimi-k2.5",
     "glm-5.1",
@@ -103,14 +111,17 @@ def test_non_text_generation_models_are_not_chat_selectable():
         assert model_id not in chat_ids
 
 
-def test_qwen38_preview_uses_probe_verified_conservative_flags():
-    entry = reg.get_model("qwen3.8-max-preview")
+def test_qwen38_models_preserve_preview_compatibility_and_conservative_flags():
+    stable = reg.get_model("qwen3.8-max")
+    preview = reg.get_model("qwen3.8-max-preview")
 
-    assert entry is not None
-    assert entry.reliable_tool_calling is True
-    assert entry.supports_thinking_budget is False
-    assert entry.supports_forced_tool_choice is False
-    assert entry.supports_explicit_cache is False
+    assert stable is not None
+    assert stable.reliable_tool_calling is True
+    assert stable.supports_thinking_budget is False
+    assert stable.supports_forced_tool_choice is False
+    assert stable.supports_explicit_cache is False
+    assert preview is not None
+    assert preview.chat_selectable is False
 
 
 def test_only_top_tokenplan_chat_models_are_chat_selectable():
