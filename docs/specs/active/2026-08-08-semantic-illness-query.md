@@ -136,6 +136,13 @@ registered write-action synonym. The classifier and the kernel's fail-closed
 write gate consume the same result, so helper phrases cannot open a gap between
 routing and actual dispatch.
 
+The frame treats denial control predicates (`禁止/拒绝/停止/未授权`), contextual
+scope introducers (`不要执行：…`) and adversative boundaries (`…但请记录`) as
+structure rather than flat substrings. Completion may follow the recorded
+object (`保存口腔溃疡了吗`). Past-time words before an action remain historical
+queries, while an explicit dated backfill and a command to record a just-observed
+event remain writes under the existing confirmation contract.
+
 Illness windows use the Agent turn's frozen user-local date, not the service
 process date. This keeps Web, Mobile and Mac results aligned at timezone day
 boundaries. The same date is also an inclusive upper bound, so a future-dated
@@ -211,6 +218,14 @@ Given a negation contains an arbitrary bridge such as "不要让系统帮我记�
 When the classifier and ToolGateway process the turn
 Then the negation scopes over the write action and dispatch never starts
 
+Given the user says "请勿执行以下操作：记录一下今天晚餐"
+When the classifier and ToolGateway process the colon-introduced operation
+Then the prohibition continues across the colon and dispatch never starts
+
+Given the user says "我没有授权小巴帮我保存口腔溃疡"
+When the classifier and ToolGateway process the denial predicate
+Then no registered write synonym can cross the dispatch boundary
+
 Given a user says "勿帮我记录晚餐，分析一下热量"
 When the classifier and capability gate process the compound turn
 Then the analysis goal remains but no write tool is authorized
@@ -231,9 +246,21 @@ Given the user says "不需要分析，记录口腔溃疡"
 When the classifier processes the separate clauses
 Then the first clause's negation does not cancel the later write request
 
+Given the user says "这几天不想吃东西但请记录食欲下降"
+When the classifier processes the adversative clauses
+Then the symptom negation does not cancel the explicit write after `但`
+
 Given a completed-history question uses any registered write synonym
 When the classifier processes "保存过/录入过/新增过口腔溃疡吗"
 Then it remains read-only and health_record is blocked before dispatch
+
+Given completion follows the object in "你帮我保存口腔溃疡了吗"
+When the classifier and ToolGateway process the turn
+Then it remains a historical question and dispatch never starts
+
+Given the user explicitly supplies a past event and concrete onset date
+When the classifier processes "请记录我上一次口腔溃疡，发作日期是7月1日"
+Then it remains a dated backfill write under the existing confirmation policy
 
 Given a user asks for a two-year illness window
 When health_query validates days=730
@@ -297,3 +324,4 @@ These questions do not block the illness slice.
 | 2026-08-08 | Initial approved spec | User approved hybrid semantic planning with deterministic execution. |
 | 2026-08-08 | Hardened write grammar and time-window fidelity | Independent reviews found unpunctuated history, negated compound and long-window boundary gaps. |
 | 2026-08-08 | Unified write speech-act scope | Independent reviews found finite helper lists diverged between routing and ToolGateway enforcement. |
+| 2026-08-08 | Added clause-semantic contrasts | Fresh reviews found denial controls, post-object completion, colon scope, capability paraphrases and dated-backfill contrasts. |

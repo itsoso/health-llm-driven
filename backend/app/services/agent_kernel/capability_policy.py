@@ -13,6 +13,7 @@ from app.services.agent_kernel.tool_registry import (
 from app.services.agent_kernel.types import CapabilityDecision, ToolExecutionRequest, TurnSnapshot
 from app.services.agent_kernel.write_safety import (
     is_explicit_aigc_media_provider_veto,
+    is_non_authorizing_write_reference,
     is_explicit_write_cancellation,
 )
 from app.services.clinician_provenance_guard import classify_clinician_turn
@@ -123,6 +124,24 @@ def decide_tool_capability(
         return _decision(
             "block",
             "explicit_write_cancellation",
+            tool_name,
+            args,
+            receipt_required=True,
+        )
+    if (
+        mutating_request
+        and is_non_authorizing_write_reference(snapshot.envelope.text)
+    ):
+        reason = (
+            "manage_write_without_mutate_intent"
+            if tool_name == "health_manage"
+            and str(args.get("operation") or "").strip().lower()
+            in MANAGE_WRITE_OPERATIONS
+            else "write_tool_without_write_intent"
+        )
+        return _decision(
+            "block",
+            reason,
             tool_name,
             args,
             receipt_required=True,

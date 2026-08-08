@@ -84,6 +84,9 @@ retrieval. The boundary makes both responsibilities explicit and testable.
 - Clause-local negation, request modals, capability questions and
   completed/history references are parsed once and reused by both the
   classifier and final ToolGateway preflight.
+- The frame carries semantic relations that flat token matching loses:
+  denial-control predicates, contextual colon scope, adversative boundaries,
+  post-object completion and the position of past-time phrases.
 - Write actions come from one shared registry; intervening helper text must not
   change the scope of an earlier negation.
 - `记录` followed by noun evidence such as `的/里/中/有哪些` is not write
@@ -91,6 +94,8 @@ retrieval. The boundary makes both responsibilities explicit and testable.
 - Explicit commands such as `记录体重70kg`, `帮我录入血压120/80` and factual
   intake observations retain their current write behavior.
 - Advice such as `该不该记录今天腰痛6分` remains advice, not a write.
+- `记录刚才打了一个喷嚏` and a request with a concrete historical onset date
+  remain writes; history protection must not suppress explicit backfill.
 - Ambiguity degrades to read-only or clarification, never mutation.
 
 ### 4.2 Semantic query plan

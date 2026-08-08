@@ -11,6 +11,7 @@ from app.services.agent_kernel.tool_gateway import (
     blocked_tool_result,
 )
 from app.services.agent_kernel.types import AgentEnvelope, ExecutionContext, ToolExecutionRequest, TurnSnapshot
+from app.services.utterance_intent_lexicon import WRITE_COMMAND_ACTIONS
 
 
 def _snapshot(text: str, *, policy_mode: str = "enforce") -> TurnSnapshot:
@@ -128,6 +129,31 @@ async def test_gateway_blocks_write_for_unpunctuated_record_history(message):
         "新增过口腔溃疡吗？",
         "写入过口腔溃疡吗？",
         "打卡过口腔溃疡吗？",
+        "上次帮我记录口腔溃疡了吗？",
+        "上回帮我记录口腔溃疡了吗？",
+        "之前帮我记录口腔溃疡了吗？",
+        "刚才帮我记录口腔溃疡了吗？",
+        "你帮我保存口腔溃疡了吗？",
+        "我想知道小巴能不能帮我记录口腔溃疡",
+        "请告诉我小巴能否帮我记录口腔溃疡",
+        "系统是否会帮我记录口腔溃疡？",
+        "小巴会帮我记录口腔溃疡吗？",
+        "这个功能支持帮我记录口腔溃疡吗？",
+        "系统有没有帮我记录口腔溃疡的功能？",
+        "请问能否记录口腔溃疡？",
+        "无须让系统帮我记录口腔溃疡",
+        "禁止帮我记录口腔溃疡",
+        "我拒绝让系统帮我记录口腔溃疡",
+        "请停止帮我记录口腔溃疡",
+        "避免帮我记录口腔溃疡",
+        "我不愿意让小巴帮我记录口腔溃疡",
+        "我没有授权小巴帮我记录口腔溃疡",
+        "未授权系统帮我记录口腔溃疡",
+        "不一定要记录口腔溃疡",
+        "不一定需要记录口腔溃疡",
+        "不要执行：记录一下口腔溃疡",
+        "请勿执行以下操作：记录一下今天晚餐",
+        "禁止：记录口腔溃疡",
     ),
 )
 @pytest.mark.asyncio
@@ -153,6 +179,48 @@ async def test_gateway_never_dispatches_negated_or_capability_writes(message):
     assert result.decision is not None
     assert result.decision.action == "block"
     assert json.loads(result.content)["dispatch_started"] is False
+
+
+@pytest.mark.asyncio
+async def test_gateway_adversarial_speech_act_matrix_never_dispatches() -> None:
+    frames = (
+        "我拒绝让系统帮我{action}口腔溃疡",
+        "禁止帮我{action}口腔溃疡",
+        "请停止帮我{action}口腔溃疡",
+        "我没有授权小巴帮我{action}口腔溃疡",
+        "上次帮我{action}口腔溃疡了吗？",
+        "你帮我{action}口腔溃疡了吗？",
+        "系统是否会帮我{action}口腔溃疡？",
+        "我想知道小巴能不能帮我{action}口腔溃疡",
+    )
+
+    for frame in frames:
+        for action in WRITE_COMMAND_ACTIONS:
+            message = frame.format(action=action)
+            dispatched = False
+
+            async def dispatch(_request):
+                nonlocal dispatched
+                dispatched = True
+                return "unexpected"
+
+            gateway = ToolGateway(_snapshot(message))
+            result = await gateway.execute(
+                ToolExecutionRequest(
+                    tool_name="health_record",
+                    arguments={
+                        "record_type": "illness",
+                        "data": {"name": "口腔溃疡"},
+                    },
+                    source="structured",
+                ),
+                dispatch,
+            )
+
+            assert dispatched is False, message
+            assert result.decision is not None
+            assert result.decision.action == "block", message
+            assert json.loads(result.content)["dispatch_started"] is False
 
 
 def test_blocked_tool_result_includes_a_recovery_instruction_for_the_agent():

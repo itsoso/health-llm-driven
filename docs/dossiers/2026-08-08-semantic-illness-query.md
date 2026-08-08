@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS; G4 fifth remediation complete, fresh final re-review pending |
+| current_stage | G3 PASS; G4 sixth remediation complete, fresh final re-review pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -109,6 +109,14 @@ validation and no-match honesty address those risks.
   positive modal, cross-clause, completed-history, capability-question and
   lexical-collision controls. The exact screenshot query is not mistaken for a
   cancellation merely because `分别` contains the character `别`.
+- The next independent reviews supplied semantic classes not derived from the
+  implementation vocabulary. Failure-first tests reproduced 110 failures across
+  post-object completed questions, denial predicates, unpunctuated capability
+  inquiries, colon-introduced prohibited actions, adversative clause boundaries
+  and explicit historical backfill. After remediation, the expanded related
+  suite passes 2,098 tests. A real ToolGateway adversarial matrix also proves 80
+  denial/history/capability combinations across every registered write synonym
+  return `dispatch_started=false`.
 
 ### G4 Safety Review: PENDING
 
@@ -163,12 +171,30 @@ modal questions, product-capability subjects, completed/history frames and
 lexical containers; write actions come from one shared registry. The batch
 validator now directs the model to a single
 `health_query(dimension='illness', keyword=..., days=...)` and forbids switching
-domains. Focused tests first failed, then the related suite passed 1,951 tests;
+domains. Focused tests first failed, then the related suite passed 1,969 tests;
 Ruff, compilation, generated system-map drift, dossier consistency and diff
 checks also pass. Positive controls where `不` belongs to a symptom description
 rather than the later write action pass separately at classifier and capability
 layers. A brand-new independent review of this implementation remains
 mandatory before G4 can pass.
+
+The two fresh reviews of commit `393f1ebfe` returned NO-GO and deployment again
+stopped. They found that historical completion can appear after the object
+(`保存口腔溃疡了吗`), product-capability questions use predicates such as
+`会/支持/有没有…功能`, denial uses controls such as `禁止/拒绝/停止/未授权`,
+and a colon can introduce the operation covered by a prohibition. They also
+found the inverse risks: `但` must terminate an earlier symptom negation, and a
+clear dated historical backfill must remain writable.
+
+The sixth remediation extends the shared semantic frame rather than adding
+surface-specific routing. It now models denial-control predicates, contextual
+colon scope, adversative clause boundaries, capability subjects/predicates,
+post-object completion and past-time position. Explicit dated backfill and
+current-event commands such as `记录刚才打了一个喷嚏` are positive contrasts.
+The final capability gate independently blocks capability/history frames even
+if a future classifier regression labels them as writes. Failure-first cases,
+the 2,098-test related suite, Ruff, compilation and repository structural gates
+must all pass before another brand-new independent review may decide G4.
 
 ### G5 Deployment Health: PENDING
 

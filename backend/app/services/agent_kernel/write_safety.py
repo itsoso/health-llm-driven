@@ -4,12 +4,21 @@ from __future__ import annotations
 import re
 import unicodedata
 
-from app.services.write_intent_scope import has_negated_write_scope
+from app.services.write_intent_scope import (
+    has_negated_write_scope,
+    is_historical_write_reference,
+    is_write_capability_question,
+)
 
 
 def is_explicit_write_cancellation(text: str) -> bool:
     """Match cancellation of a write action without matching food modifiers."""
     return has_negated_write_scope(text)
+
+
+def is_non_authorizing_write_reference(text: str) -> bool:
+    """Fail closed on questions/history that mention a write action."""
+    return is_write_capability_question(text) or is_historical_write_reference(text)
 
 
 _AIGC_PROVIDER_TERMS_RE = re.compile(r"百炼|万相|wan", re.IGNORECASE)

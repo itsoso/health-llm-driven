@@ -147,6 +147,11 @@ def test_historical_record_questions_are_read_only(message):
         "新增过口腔溃疡吗？",
         "写入过口腔溃疡吗？",
         "打卡过口腔溃疡吗？",
+        "上次帮我记录口腔溃疡了吗？",
+        "上回帮我记录口腔溃疡了吗？",
+        "之前帮我记录口腔溃疡了吗？",
+        "刚才帮我记录口腔溃疡了吗？",
+        "你帮我保存口腔溃疡了吗？",
     ),
 )
 def test_unpunctuated_record_history_frames_never_authorize_write(message):
@@ -216,6 +221,13 @@ def test_polite_record_requests_remain_write_intents(message):
         "请问小巴能帮我记录口腔溃疡吗？",
         "请问系统可以帮我记录口腔溃疡吗？",
         "我想问这个功能可以帮我记录口腔溃疡吗？",
+        "我想知道小巴能不能帮我记录口腔溃疡",
+        "请告诉我小巴能否帮我记录口腔溃疡",
+        "系统是否会帮我记录口腔溃疡？",
+        "小巴会帮我记录口腔溃疡吗？",
+        "这个功能支持帮我记录口腔溃疡吗？",
+        "系统有没有帮我记录口腔溃疡的功能？",
+        "请问能否记录口腔溃疡？",
     ),
 )
 def test_record_capability_questions_do_not_authorize_writes(message):
@@ -255,6 +267,19 @@ def test_negated_polite_record_request_does_not_authorize_write(message):
         "不要默默帮我记录口腔溃疡，分析一下原因",
         "别总是帮我记录口腔溃疡，分析一下原因",
         "请勿擅自帮我记录口腔溃疡，分析一下原因",
+        "无须让系统帮我记录口腔溃疡，分析一下原因",
+        "禁止帮我记录口腔溃疡，分析一下原因",
+        "我拒绝让系统帮我记录口腔溃疡，分析一下原因",
+        "请停止帮我记录口腔溃疡，分析一下原因",
+        "避免帮我记录口腔溃疡，分析一下原因",
+        "我不愿意让小巴帮我记录口腔溃疡，分析一下原因",
+        "我没有授权小巴帮我记录口腔溃疡，分析一下原因",
+        "未授权系统帮我记录口腔溃疡，分析一下原因",
+        "不一定要记录口腔溃疡，分析一下原因",
+        "不一定需要记录口腔溃疡，分析一下原因",
+        "不要执行：记录一下口腔溃疡，分析一下原因",
+        "请勿执行以下操作：记录一下今天晚餐，分析一下热量",
+        "禁止：记录口腔溃疡，分析一下原因",
     ),
 )
 def test_negated_record_with_followup_advice_keeps_read_only_goal(message):
@@ -290,6 +315,13 @@ def test_explicit_record_clause_survives_followup_question(message):
         "我今天不舒服帮我记录一下",
         "这次不严重帮我记录下来",
         "不是很疼帮我记录一下",
+        "这几天不想吃东西但请记录食欲下降",
+        "我不能集中注意力但帮我记录一下",
+        "这几天不想吃东西：请记录食欲下降",
+        "请分别记录早餐和午餐",
+        "请记录我上一次口腔溃疡，发作日期是7月1日",
+        "把以前的口腔溃疡记录下来，开始日期是7月1日",
+        "帮我保存既往感冒记录，起病日期是6月3日",
     ),
 )
 def test_modal_or_later_clause_record_requests_remain_write(message):

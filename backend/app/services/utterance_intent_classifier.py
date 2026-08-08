@@ -259,6 +259,12 @@ WRITE_CLAUSE_BOUNDARIES = (
     "。",
     "；",
     ";",
+    "但是",
+    "但",
+    "不过",
+    "然而",
+    "却",
+    "而是",
 )
 
 
@@ -277,8 +283,11 @@ def classify_agent_utterance(
     if not normalized:
         return _intent(raw, normalized, "unknown", "unknown", "none", 0.0, "empty")
 
-    has_read = _has_any(normalized, READ_ACTIONS) or is_historical_write_reference(
-        normalized
+    write_capability_question = is_write_capability_question(normalized)
+    has_read = (
+        _has_any(normalized, READ_ACTIONS)
+        or is_historical_write_reference(normalized)
+        or write_capability_question
     )
     scope = _build_scope(
         normalized,
@@ -286,7 +295,7 @@ def classify_agent_utterance(
         reference_now=reference_now,
     )
     domain = _infer_domain(normalized)
-    has_question = _has_question_signal(normalized)
+    has_question = _has_question_signal(normalized) or write_capability_question
     has_write = _has_any(normalized, WRITE_ACTIONS)
     has_write_command = _has_explicit_write_command(normalized)
     has_negated_write = _has_negated_write(normalized)
@@ -613,7 +622,12 @@ def _is_explicit_write_action_at(
     if action == "记录" and start == 0 and _has_question_signal(local_after):
         return False
     clause_left = _after_last_boundary(left_context, WRITE_CLAUSE_BOUNDARIES)
-    return start == 0 or not clause_left or left_context.endswith(WRITE_COMMAND_PREFIXES)
+    return (
+        start == 0
+        or not clause_left
+        or clause_left.startswith((*WRITE_REQUEST_HELPERS, *WRITE_COMMAND_PREFIXES))
+        or left_context.endswith(WRITE_COMMAND_PREFIXES)
+    )
 
 
 def _has_bounded_water_marker(
