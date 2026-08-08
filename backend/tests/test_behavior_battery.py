@@ -21,7 +21,7 @@ BATTERY = Path(__file__).resolve().parents[1] / "evals" / "behavior" / "xiaoba_c
 _KNOWN_CHECKS = {
     "intake_intent", "confirm_tier", "fallback_shape",
     "remember_redirect", "owns_visualization", "fast_subset",
-    "fast_context_retained", "prefer_fast_record",
+    "fast_context_retained", "prefer_fast_record", "agent_intent",
 }
 
 
@@ -114,6 +114,17 @@ def _run_check(case_id: str, query: str, chk: dict) -> None:
         assert got is chk["expect"], (
             f"{case_id}: prefer_fast_record={got},期望 {chk['expect']}"
             "(False=否定/疑问/分析→降级全模型,不被 R2 force 逼记)")
+
+    elif t == "agent_intent":
+        from app.services.utterance_intent_classifier import classify_agent_utterance
+
+        intent = classify_agent_utterance(query)
+        assert intent.primary == chk["primary"], (
+            f"{case_id}: primary={intent.primary},期望 {chk['primary']}"
+        )
+        assert intent.is_write is chk["is_write"], (
+            f"{case_id}: is_write={intent.is_write},期望 {chk['is_write']}"
+        )
 
     elif t == "fast_context_retained":
         # 实现语义:上轮 assistant **提问**时,把它折进末条 user 消息

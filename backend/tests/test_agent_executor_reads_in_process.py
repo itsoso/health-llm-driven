@@ -37,6 +37,7 @@ from app.models.daily_health import (
 )
 from app.models.episode import HealthEpisode
 from app.models.genetic_data import GeneticProfile, GeneticVariant
+from app.models.illness import IllnessEpisode
 from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.models.user import User
 from app.models.weight import WeightRecord
@@ -841,6 +842,51 @@ def test_comprehensive_killswitch_false_uses_http(db, monkeypatch):
     ex._api_get = fake_api_get
     _run(ex._exec_health_query("http://x/api/v1", {}, {"dimension": "comprehensive", "days": 14}))
     assert calls["url"].endswith("/garmin-analysis/me/comprehensive?days=14")
+
+
+# ── illness(语义病症查询, canonical owner-scoped reader)──────────────────────
+
+
+def test_illness_query_uses_canonical_reader_without_wearable_http(db):
+    user = _make_user(db)
+    other = _make_user(db)
+    own = IllnessEpisode(
+        user_id=user.id,
+        name="口腔溃疡",
+        start_date=date.today() - timedelta(days=12),
+        status="resolved",
+        severity=3,
+    )
+    db.add_all([
+        own,
+        IllnessEpisode(
+            user_id=other.id,
+            name="口腔溃疡",
+            start_date=date.today() - timedelta(days=1),
+            status="active",
+            severity=5,
+        ),
+    ])
+    db.commit()
+    db.refresh(own)
+
+    ex = AgentExecutor(db)
+    ex._current_user_id = user.id
+
+    async def _boom(*args, **kwargs):  # noqa: ARG001
+        raise AssertionError("illness canonical query must not call HTTP/wearable endpoints")
+
+    ex._api_get = _boom
+    out = _run(ex._exec_health_query(
+        "http://x/api/v1",
+        {},
+        {"dimension": "illness", "days": 183, "keyword": "口腔溃疡"},
+    ))
+    rows = json.loads(out)
+
+    assert [row["id"] for row in rows] == [own.id]
+    assert rows[0]["name"] == "口腔溃疡"
+    assert "sleep" not in out.lower()
 
 
 # ── sleep(Garmin 睡眠质量分析,无 response_model → dict)────────────────────────────

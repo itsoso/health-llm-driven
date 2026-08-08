@@ -24,12 +24,13 @@
 #     remember_redirect    — _remember_structured_medical_redirect(predicate,value) blocked/allowed
 #     owns_visualization   — _answer_owns_its_visualization(answer, tools) == expect(卡片抑制)
 #     fast_context_retained— _build_fast_record_messages 保留紧邻 assistant 回合
+#     agent_intent         — shared Agent intent frame 的 primary/is_write 契约
 #   notes              为什么选这条(锚定的真实场景/历史 bug)
 
 meta:
-  version: 1
+  version: 2
   purpose: deterministic-behavior-regression
-  quota: { record: 6, query: 4, analysis: 4, safety: 3, resolve: 2, profile: 2, multi_turn: 2 }
+  quota: { record: 7, query: 7, analysis: 4, safety: 3, resolve: 2, profile: 2, multi_turn: 2 }
 
 cases:
   # ───────────────── record ×5(记录意图正确分类 + 档位)─────────────────
@@ -69,6 +70,14 @@ cases:
       - { type: confirm_tier, kind: illness, expect: never_auto }
     notes: 病症=医疗级确认前置;分类指引已把局部愈合病灶归 illness(2026-07-16 修复)。
 
+  - id: record_illness_explicit_write
+    family: record
+    query: 记录口腔溃疡
+    checks:
+      - { type: agent_intent, primary: write, is_write: true }
+      - { type: confirm_tier, kind: illness, expect: never_auto }
+    notes: 显式祈使写入是查询反例;语义查询升级不得误杀真实病症记录命令。
+
   - id: record_negation_no_force
     family: record
     query: 储物柜密码4731,记在心里就行别记录
@@ -106,6 +115,30 @@ cases:
     checks:
       - { type: intake_intent, expect: unknown }
     notes: retro_3 回溯:食物抱怨/否定曾误建 diet 草稿;负向守卫必须拦住。
+
+  - id: query_illness_latest_and_history
+    family: query
+    query: 我上一次口腔溃疡是什么时候 最近半年分别有哪些记录
+    checks:
+      - { type: agent_intent, primary: read, is_write: false }
+      - { type: prefer_fast_record, expect: false }
+    notes: 生产截图精确回归;记录是历史对象名词,不是新增命令。
+
+  - id: query_illness_record_noun_paraphrase
+    family: query
+    query: 最近半年口腔溃疡有哪些记录
+    checks:
+      - { type: agent_intent, primary: read, is_write: false }
+      - { type: prefer_fast_record, expect: false }
+    notes: 去掉问号仍有“哪些”语义;不得依赖标点判断读写。
+
+  - id: query_illness_negated_write
+    family: query
+    query: 不要记录，只查询我以前的口腔溃疡历史
+    checks:
+      - { type: agent_intent, primary: read, is_write: false }
+      - { type: prefer_fast_record, expect: false }
+    notes: 明确否定写入并请求历史查询时,只读请求必须胜出。
 
   # ───────────────── analysis ×4(分析轮卡片门控)─────────────────
   - id: analysis_table_owns_visualization

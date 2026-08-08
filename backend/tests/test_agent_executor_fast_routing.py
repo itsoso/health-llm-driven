@@ -320,6 +320,67 @@ async def test_simple_query_turn_routes_to_fast_model(db, auth_user_and_headers,
 
 
 @pytest.mark.asyncio
+async def test_historical_illness_query_executes_read_plan_without_write(db, auth_user_and_headers):
+    """The model may infer query semantics; deterministic policy keeps the turn read-only."""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    rounds = 0
+    executed = []
+
+    async def fake_call_llm_stream(messages, tools):  # noqa: ARG001
+        nonlocal rounds
+        rounds += 1
+        if rounds == 1:
+            yield {
+                "type": "tool_calls",
+                "tool_calls": [{
+                    "id": "illness-query-1",
+                    "type": "function",
+                    "function": {
+                        "name": "health_query",
+                        "arguments": json.dumps({
+                            "dimension": "illness",
+                            "keyword": "口腔溃疡",
+                            "days": 183,
+                        }, ensure_ascii=False),
+                    },
+                }],
+            }
+            yield {"type": "finish", "finish_reason": "tool_calls"}
+            return
+        yield {"type": "content", "text": "最近半年有两次口腔溃疡记录。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):  # noqa: ARG001
+        args = json.loads(args_raw) if isinstance(args_raw, str) else dict(args_raw)
+        executed.append((tool_name, args))
+        return json.dumps([
+            {"id": 11, "name": "口腔溃疡", "start_date": "2026-07-20"},
+            {"id": 7, "name": "口腔溃疡", "start_date": "2026-04-03"},
+        ], ensure_ascii=False)
+
+    executor._call_llm_stream = fake_call_llm_stream
+    executor._execute_tool = fake_execute_tool
+
+    events = await _run(
+        executor,
+        "我上一次口腔溃疡是什么时候 最近半年分别有哪些记录",
+        user_id=user.id,
+    )
+    done = events[-1]["data"]
+
+    assert executed == [(
+        "health_query",
+        {"dimension": "illness", "keyword": "口腔溃疡", "days": 183},
+    )]
+    assert executor._prefer_fast_record_model is False
+    assert done["tools_used"] == ["health_query"]
+    assert done["write_receipts"] == []
+    assert done["pending_write_intent_ids"] == []
+    assert done["record_intent_no_tool"] is False
+
+
+@pytest.mark.asyncio
 async def test_analysis_turn_keeps_quality_model(db, auth_user_and_headers, monkeypatch):
     """(c) An analysis/复盘 turn → quality/preference model (NO fast override)."""
     user, _ = auth_user_and_headers
