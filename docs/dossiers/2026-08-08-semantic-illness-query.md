@@ -1426,6 +1426,11 @@ three Mobile chat suites pass 99/99 with the same visible pre-existing React
 formatting, Python compilation, architecture drift, 102-dossier consistency and
 `git diff --check` all pass. Fresh exact-commit dual review remains pending.
 
+The v30 implementation and all evidence above are fixed at exact commit
+`01af140b69e226c02ca93f2f3598c2c74861daa5`. Reviewers must evaluate the
+following documentation commit together with this exact implementation parent;
+neither commit has been pushed or deployed.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.
