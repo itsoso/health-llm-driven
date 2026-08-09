@@ -113,6 +113,13 @@ def test_composer_selector_accepts_ios_placeholder_augmented_label() -> None:
     assert 'label BEGINSWITH %@", "消息输入框"' in source
 
 
+def test_each_device_acceptance_starts_in_portrait() -> None:
+    source = UI_TEST_SOURCE.read_text(encoding="utf-8")
+
+    setup = source[source.index("override func setUpWithError"):source.index("private func attachScreenshot")]
+    assert "XCUIDevice.shared.orientation = .portrait" in setup
+
+
 def test_draft_replacement_selects_all_without_tapping_an_offscreen_key() -> None:
     source = UI_TEST_SOURCE.read_text(encoding="utf-8")
 
