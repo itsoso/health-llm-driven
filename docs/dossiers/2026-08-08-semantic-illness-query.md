@@ -1291,6 +1291,44 @@ The 42-case real Gateway boundary group is rerun on the merged tree, and two
 fresh reviewers must inspect the final documentation commit SHA rather than
 either parent.
 
+Fresh code and product-safety reviews of exact commit
+`3ae3924c128fe17af0da9abb91ac2ab22aeef67b` both returned NO-GO, so it was not
+pushed or deployed. Both reviewers independently reproduced wrong-domain
+dispatch for sparse metric questions, incorrect child-window binding when a
+time phrase followed its entity, and false denials for ordinary no-window
+illness reads. They also found relative-time pollution (`最近帕金森` becoming the
+keyword), missing `病历` and natural request wrappers, negated write/read turns
+separated by a line break or adversative, and a current-user event phrased as
+`我的行程今天到杭州了`. Unauthorized writes remained zero, but release stayed
+stopped because wrong reads and false denials are also G4 failures.
+
+The v28 remediation centralizes the read grammar used by scope selection,
+entity extraction and illness projection instead of maintaining divergent verb
+lists. Question punctuation and natural count/trend forms bind sparse metric
+asks to the dimension stated by the user; a conflicting model proposal is
+blocked in both enforce and shadow modes. Registered relative windows now have
+deterministic values and are removed from illness keywords. Multi-entity batch
+reads split at the coordination boundary, so a window may precede or follow its
+own entity without leaking to the next child. `病历` is a first-class history
+container. Negated writes select a later explicit read only when punctuation,
+a line boundary or an adversative proves the clause transition. Current-user
+event ownership recognizes `我的行程` / `我的这次行程` before generic relation
+noise is removed; named third-party controls remain closed. The contracts are
+now `agent-capability-policy-v28` / `authorized-target-set-v24` /
+`record-update-evidence-v19`.
+
+Failure-first coverage reproduced 36 failures in the new 40-case matrix before
+implementation. The remediated matrix passes 40/40; the existing natural
+single-scope group adds four passing compatibility cases. The complete 27-file
+related Backend gate passes 4,281/4,281 in one process with
+`TZ=Asia/Shanghai`, and the adjacent meal-photo compatibility file passes
+103/103. The three merged-main Mobile chat suites pass 99/99 with the same
+pre-existing visible React `act(...)` warnings, and the iOS acceptance harness
+passes. The earlier requested live `qwen3.7-max` six-case synthetic evaluation
+remains the latest model evidence and performed zero database I/O. Static and
+governance checks plus two fresh independent reviews of the final exact commit
+remain mandatory before G4 may pass.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.

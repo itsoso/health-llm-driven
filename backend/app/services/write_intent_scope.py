@@ -1225,6 +1225,8 @@ def _event_fact_has_non_current_subject(clause: str) -> bool:
         return False
     subject = _EVENT_WRITE_SCAFFOLD_RE.sub("", match.group("subject"), count=1)
     reduced = _CURRENT_USER_SUBJECT_NOISE_RE.sub("", subject)
+    if _is_current_user_event_parenthetical(reduced):
+        return False
     reduced = _SUBJECT_RELATION_NOISE_RE.sub("", reduced)
     reduced = re.sub(r"(?:终于|平安|顺利|安全)", "", reduced)
     reduced = reduced.strip("的，,。.!！；;：:?？ ")

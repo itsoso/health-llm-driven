@@ -4322,6 +4322,408 @@ async def test_additional_multi_entity_boundaries_never_collapse_to_one_keyword(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    ("message", "proposed_args"),
+    (
+        ("心率多少", {"dimension": "sleep", "days": 7}),
+        ("我的体重？", {"dimension": "sleep", "days": 7}),
+    ),
+)
+async def test_sparse_metric_question_never_dispatches_wrong_single_dimension(
+    policy_mode,
+    message,
+    proposed_args,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments=proposed_args,
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert result.decision.reason == "health_query_dimension_conflict"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "proposed_args", "expected_args"),
+    (
+        (
+            "心率多少",
+            {"dimension": "heart_rate", "days": 7},
+            {"dimension": "heart_rate", "days": 7},
+        ),
+        (
+            "我的体重？",
+            {"dimension": "weight", "days": 7},
+            {"dimension": "weight", "days": 7},
+        ),
+    ),
+)
+async def test_sparse_metric_question_keeps_matching_single_dimension(
+    message,
+    proposed_args,
+    expected_args,
+):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments=proposed_args,
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [expected_args]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    ("message", "plan"),
+    (
+        (
+            "HRV 是升还是降",
+            {"queries": [{"dimension": "sleep", "days": 7, "agg": "trend"}]},
+        ),
+        (
+            "最近一个月步数平均多少",
+            {"queries": [{"dimension": "sleep", "days": 30, "agg": "avg"}]},
+        ),
+    ),
+)
+async def test_sparse_batch_question_never_dispatches_wrong_dimension(
+    policy_mode,
+    message,
+    plan,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query_batch",
+            arguments=plan,
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert result.decision.reason == "health_query_dimension_conflict"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "plan"),
+    (
+        (
+            "HRV 是升还是降",
+            {"queries": [{"dimension": "hrv", "days": 7, "agg": "trend"}]},
+        ),
+        (
+            "最近一个月步数平均多少",
+            {"queries": [{"dimension": "activity", "days": 30, "agg": "avg"}]},
+        ),
+    ),
+)
+async def test_sparse_batch_question_keeps_matching_plan(message, plan):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query_batch",
+            arguments=plan,
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [plan]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    (
+        "查一下SLE",
+        "帮我查SLE",
+        "请列出SLE",
+        "回顾SLE",
+        "看看SLE",
+        "检索SLE",
+        "SLE有哪些记录",
+    ),
+)
+async def test_natural_no_window_illness_read_projects_exact_keyword(message):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments={"dimension": "illness", "keyword": "流感", "days": 7},
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [{"dimension": "illness", "keyword": "SLE"}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "proposed_args", "expected_args"),
+    (
+        (
+            "昨天睡眠怎么样",
+            {"dimension": "sleep", "days": 7},
+            {"dimension": "sleep", "days": 1},
+        ),
+        (
+            "上周HRV怎么样",
+            {"dimension": "hrv", "days": 30},
+            {"dimension": "hrv", "days": 7},
+        ),
+        (
+            "上个月步数如何",
+            {"dimension": "activity", "days": 7},
+            {"dimension": "activity", "days": 30},
+        ),
+        (
+            "最近帕金森怎样",
+            {"dimension": "illness", "keyword": "最近帕金森"},
+            {"dimension": "illness", "keyword": "帕金森", "days": 7},
+        ),
+        (
+            "近来新冠怎么样",
+            {"dimension": "illness", "keyword": "近来新冠"},
+            {"dimension": "illness", "keyword": "新冠", "days": 7},
+        ),
+    ),
+)
+async def test_registered_relative_query_window_projects_exactly(
+    message,
+    proposed_args,
+    expected_args,
+):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments=proposed_args,
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [expected_args]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    (
+        "比较睡眠近7天和HRV近30天",
+        "比较近7天的睡眠和HRV近30天",
+        "比较近7天睡眠和HRV近30天",
+    ),
+)
+async def test_entity_before_window_batch_comparison_binds_each_child(message):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+    plan = {
+        "queries": [
+            {"dimension": "sleep", "days": 7, "agg": "avg"},
+            {"dimension": "hrv", "days": 30, "agg": "avg"},
+        ]
+    }
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query_batch",
+            arguments=plan,
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [plan]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+async def test_entity_after_window_batch_never_accepts_wrong_child_window(policy_mode):
+    gateway = ToolGateway(
+        _snapshot("比较近7天睡眠和HRV近30天", policy_mode=policy_mode)
+    )
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query_batch",
+            arguments={
+                "queries": [
+                    {"dimension": "sleep", "days": 7, "agg": "avg"},
+                    {"dimension": "hrv", "days": 7, "agg": "avg"},
+                ]
+            },
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert result.decision.reason == "health_query_dimension_conflict"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "expected_args"),
+    (
+        (
+            "帮我看一下近半年脑梗记录",
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        (
+            "请帮我看一看近半年脑梗记录",
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        (
+            "帮我查一查近半年脑梗记录",
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        ("病历里脑梗有哪些记录", {"dimension": "illness", "keyword": "脑梗"}),
+        (
+            "请勿记录脑梗，只查询近半年脑梗记录",
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        (
+            "不要打卡脑梗，只查询近半年脑梗记录",
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        (
+            "不要记录脑梗\n只查询近半年脑梗记录",
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        (
+            "不要记录脑梗但查询近半年脑梗记录",
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        (
+            "不要记录脑梗，不过查询近半年脑梗记录",
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+    ),
+)
+async def test_natural_wrapper_or_negated_write_read_projects_exactly(
+    message,
+    expected_args,
+):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments={"dimension": "illness"},
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [expected_args]
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "我的行程今天到杭州了，记录生活事件：到达杭州",
+        "我的这次行程今天到杭州了，记录生活事件：到达杭州",
+    ),
+)
+def test_current_user_event_possessive_subject_before_arrival_is_authorized(message):
+    gateway = ToolGateway(_snapshot(message))
+
+    decision = gateway.preflight(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={"record_type": "event", "data": {"title": "到达杭州"}},
+            source="structured",
+        )
+    )
+
+    assert decision.action == "allow"
+
+
+@pytest.mark.asyncio
 async def test_executor_illness_query_payload_is_not_polluted_by_symptom_recovery(
     db,
     monkeypatch,

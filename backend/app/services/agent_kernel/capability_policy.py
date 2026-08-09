@@ -69,9 +69,9 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v27"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v23"
-_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v18"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v28"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v24"
+_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v19"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
 _HEALTH_RECORD_DOMAIN_TYPES = {
     "diet": "diet",
@@ -248,26 +248,30 @@ _QUERY_DIMENSION_ENTITY_SUFFIX_PATTERN = (
     r"变化|明细|详情|汇总|统计|清单|列表|次数|频率|总量|平均值|最高值|"
     r"最低值|波动|距离|摄入)?"
 )
+_READ_QUERY_VERB_PATTERN = (
+    r"(?:查询(?:一下)?|查找(?:一下)?|查看(?:一下)?|查到|查(?:一下|一查)?|"
+    r"找出|找一下|回顾(?:一下)?|回看(?:一下)?|检索(?:一下)?|列出|"
+    r"比较|对比|翻看(?:一下)?|翻一下|看(?:一下|一看|看)|调取)"
+)
+_READ_QUERY_VERB_RE = re.compile(_READ_QUERY_VERB_PATTERN)
 _HISTORY_QUERY_WINDOW_PATTERN = (
     r"(?:(?:最近|近|过去)(?:\d+|[一二两三四五六七八九十]+|半)"
     r"(?:个)?(?:天|周|月|年)(?:内|以来)?|"
-    r"(?:这|本)(?:一)?周|这个月|本月|今年|本年|今天|今日)"
+    r"(?:这|本)(?:一)?周|这个月|这月|本月|今年|本年|今天|今日|"
+    r"昨天|昨日|上周|上个月|最近|近来)"
 )
 _HISTORY_QUERY_WINDOW_RE = re.compile(_HISTORY_QUERY_WINDOW_PATTERN)
 _HISTORY_QUERY_QUESTION_RE = re.compile(
-    r"(?:上一次|是什么时候|在什么时候|何时|是几号|分别有哪些|有那些|"
-    r"有什么|有几条|有几次|有多少条|多少条|是多少|怎么样|怎样|如何)"
+    r"(?:上一次|是什么时候|在什么时候|何时|是几号|分别有哪些|有哪些|有那些|"
+    r"有什么|有几条|有几次|有多少条|多少条|是多少|平均多少|多少(?:呢)?|"
+    r"(?:是)?升还是降|上升还是下降|怎么样|怎样|如何|呢)"
 )
 _HISTORY_QUERY_MULTI_ENTITY_RE = re.compile(
     r"(?:还有|以及|并且|加上|外加|兼有|连同|伴有|伴随|并伴|合并|联合|"
     r"同时有|同时出现|并发|并存|伴发|共存|共患|同患|再加|且|"
     r"兼患|并患|同时患有|[、，,；;+/／|｜&＆和与及或跟—–])"
 )
-_HISTORY_QUERY_LEADING_VERB_RE = re.compile(
-    r"^(?:查询(?:一下)?|查找(?:一下)?|查看(?:一下)?|查一下|找出|找一下|"
-    r"回顾(?:一下)?|回看(?:一下)?|检索(?:一下)?|列出|比较|对比|翻看(?:一下)?|翻一下|"
-    r"调取|看看|查到|查|把)"
-)
+_HISTORY_QUERY_LEADING_VERB_RE = re.compile(rf"^(?:{_READ_QUERY_VERB_PATTERN}|把)")
 _HISTORY_QUERY_TRAILING_VERB_RE = re.compile(
     r"(?:(?:给我)?(?:找出来|查出来|列出来|调出来|找出|查看|看看))$"
 )
@@ -1100,10 +1104,12 @@ def _explicit_illness_record_ids(text: str) -> set[int]:
 def _project_illness_query_to_turn(text: str) -> dict[str, Any] | None:
     """Bind an illness-history read to the entity/window stated by the user."""
     normalized = _query_scope_text(text)
-    if not re.search(
-        r"(?:记录|病史|历史|上一次|最近|近来|过去|查询|查找|查看|调取|"
-        r"什么时候|何时|几次|有哪些|是多少|怎么样|怎样|如何)",
-        normalized,
+    if not (
+        re.search(r"(?:记录|病史|病历|历史)", normalized)
+        or _READ_QUERY_VERB_RE.search(normalized)
+        or _HISTORY_QUERY_WINDOW_RE.search(normalized)
+        or _HISTORY_QUERY_QUESTION_RE.search(normalized)
+        or re.search(r"[?？]\s*$", normalized)
     ):
         return None
     targets = _illness_query_entities(normalized)
@@ -1128,25 +1134,21 @@ def _normalize_query_text(text: str) -> str:
 def _query_scope_text(text: str) -> str:
     """Select an explicit read clause after a negated write, else the whole turn."""
     normalized = _normalize_query_text(text)
-    clauses = tuple(
-        clause for clause in re.split(r"[，,；;。.!！?？]+", normalized) if clause
-    )
-    if len(clauses) <= 1:
-        return normalized
     negated_write_re = re.compile(
-        r"(?:不要|别|不用|无需|不必)(?:再)?[^，,；;。.!！?？]{0,20}"
-        r"(?:记录|保存|新增|录入|写入|更新|修改)"
+        r"(?:不要|别|不用|无需|不必|请勿|勿|甭)(?:再)?"
+        r"[^，,；;。.!！?？、]{0,20}?"
+        r"(?:记录|保存|新增|录入|写入|更新|修改|打卡|记一下|记下)"
     )
-    read_clause_re = re.compile(
-        r"(?:查询|查找|查看|查一下|找出|回顾|回看|检索|列出|比较|对比|"
-        r"翻看|翻一下|调取|看看|查到|只查|"
-        rf"{_HISTORY_QUERY_WINDOW_PATTERN})"
-    )
-    prefix = ""
-    for clause in clauses:
-        if prefix and negated_write_re.search(prefix) and read_clause_re.search(clause):
-            return clause
-        prefix += clause
+    read_boundary_re = re.compile(r"(?:[，,；;。.!！?？、]|只|但|不过|然而|而是)")
+    for negated_write in negated_write_re.finditer(normalized):
+        suffix = normalized[negated_write.end() :]
+        candidates = list(_READ_QUERY_VERB_RE.finditer(suffix))
+        candidates.extend(_HISTORY_QUERY_WINDOW_RE.finditer(suffix))
+        candidates.sort(key=lambda match: match.start())
+        for read_match in candidates:
+            intervening = suffix[: read_match.start()]
+            if read_boundary_re.search(intervening):
+                return suffix[read_match.start() :]
     return normalized
 
 
@@ -1165,34 +1167,32 @@ def _illness_query_entities(text: str) -> tuple[str, ...]:
 
 def _history_query_entity_expression(text: str) -> str | None:
     """Reduce a read request to its entity expression, independent of wording."""
-    normalized = _query_scope_text(text).strip("。.!！?？")
-    has_read_verb = bool(
-        re.search(
-            r"(?:查询|查找|查看|查一下|找出|找一下|回顾|回看|检索|列出|"
-            r"比较|对比|翻看|翻一下|调取|看看|查到)",
-            normalized,
-        )
-    )
+    scoped = _query_scope_text(text)
+    has_question_punctuation = bool(re.search(r"[?？]\s*$", scoped))
+    normalized = scoped.strip("。.!！?？")
+    has_read_verb = bool(_READ_QUERY_VERB_RE.search(normalized))
     has_history_frame = bool(
-        re.search(r"(?:记录|病史|历史)", normalized)
+        re.search(r"(?:记录|病史|病历|历史)", normalized)
         or _HISTORY_QUERY_QUESTION_RE.search(normalized)
         or has_read_verb
+        or has_question_punctuation
     )
     has_read_semantics = bool(
-        re.search(r"(?:病史|历史)", normalized)
+        re.search(r"(?:病史|病历|历史)", normalized)
         or _HISTORY_QUERY_WINDOW_RE.search(normalized)
         or _HISTORY_QUERY_QUESTION_RE.search(normalized)
         or has_read_verb
+        or has_question_punctuation
     )
     if not has_history_frame or not has_read_semantics:
         return None
 
     history_container_match = re.search(
-        r"(?:记录|病史|历史)(?:里|中)(?:的)?"
-        r"(?:(?:找出|查找|查看|调取|列出|翻看)(?:一下)?)?"
+        r"(?:记录|病史|病历|历史)(?:里|中)(?:的)?"
+        rf"(?:{_READ_QUERY_VERB_PATTERN})?"
         r"(?P<entity>.{2,80}?)"
         r"(?:(?:分别|有哪些|有那些|有什么|有几条|有几次|有多少条|多少条)"
-        r"(?:记录|病史|历史)?|(?:记录|病史|历史))$",
+        r"(?:记录|病史|病历|历史)?|(?:记录|病史|病历|历史))$",
         normalized,
     )
     previous_match = re.search(
@@ -1214,7 +1214,7 @@ def _history_query_entity_expression(text: str) -> str | None:
                 _strip_history_query_request_prefix(normalized[: window_match.start()])
             )
             after_window = normalized[window_match.end() :]
-            history_marker = re.search(r"(?:记录|历史)", after_window)
+            history_marker = re.search(r"(?:记录|病史|病历|历史)", after_window)
             after_candidate = (
                 after_window[: history_marker.start()]
                 if history_marker is not None
@@ -1258,10 +1258,11 @@ def _clean_history_query_entity(value: str) -> str:
     """Remove only structural query decorators surrounding one entity span."""
     candidate = _HISTORY_QUERY_TRAILING_VERB_RE.sub("", value, count=1)
     candidate = _HISTORY_QUERY_WINDOW_RE.sub("", candidate)
-    candidate = re.sub(r"(?:的)?(?:记录|病史|历史).*$", "", candidate, count=1)
+    candidate = re.sub(r"(?:的)?(?:记录|病史|病历|历史).*$", "", candidate, count=1)
     candidate = re.sub(
         r"(?:所有|全部|分别|有哪些|有那些|有什么|有几条|有几次|有多少条|多少条|"
-        r"是什么时候|在什么时候|什么时候|何时|是几号|是多少|怎么样|怎样|如何)$",
+        r"是什么时候|在什么时候|什么时候|何时|是几号|是多少|平均多少|多少(?:呢)?|"
+        r"(?:是)?升还是降|上升还是下降|怎么样|怎样|如何|呢)$",
         "",
         candidate,
     )
@@ -1275,7 +1276,9 @@ def _history_query_has_multiple_scopes(text: str) -> bool:
     normalized = _query_scope_text(text)
     if len(tuple(_HISTORY_QUERY_WINDOW_RE.finditer(normalized))) > 1:
         return True
-    markers = tuple(re.finditer(r"(?:历史记录|记录历史|记录|病史|历史)", normalized))
+    markers = tuple(
+        re.finditer(r"(?:历史记录|记录历史|记录|病史|病历|历史)", normalized)
+    )
     if len(markers) <= 1:
         return False
     # “历史记录” and “历史中……有哪些记录” are one natural query frame, not
@@ -1283,10 +1286,11 @@ def _history_query_has_multiple_scopes(text: str) -> bool:
     # remain closed so a single tool call cannot silently choose one of them.
     return (
         re.search(
-            r"(?:记录|病史|历史)(?:里|中)(?:的)?"
-            r"(?:(?:找出|查找|查看|调取|列出|翻看)(?:一下)?)?"
+            r"(?:记录|病史|病历|历史)(?:里|中)(?:的)?"
+            rf"(?:{_READ_QUERY_VERB_PATTERN})?"
             r".{2,80}(?:(?:有哪些|有那些|有什么|有几条|有几次|"
-            r"有多少条|多少条)(?:记录|病史|历史)?|(?:记录|病史|历史))$",
+            r"有多少条|多少条)(?:记录|病史|病历|历史)?|"
+            r"(?:记录|病史|病历|历史))$",
             normalized,
         )
         is None
@@ -1385,14 +1389,16 @@ def _normalize_batch_query_plan(
 
 
 def _query_window_days(window_text: str) -> int | None:
-    if window_text in {"今天", "今日"}:
+    if window_text in {"今天", "今日", "昨天", "昨日"}:
         return 1
-    if window_text in {"这周", "这一周", "本周", "本一周"}:
+    if window_text in {"这周", "这一周", "本周", "本一周", "上周"}:
         return 7
-    if window_text in {"这个月", "本月"}:
+    if window_text in {"这个月", "这月", "本月", "上个月"}:
         return 30
     if window_text in {"今年", "本年"}:
         return 365
+    if window_text in {"最近", "近来"}:
+        return 7
     match = re.fullmatch(
         r"(?:最近|近|过去)(?P<value>\d+|[一二两三四五六七八九十]+|半)"
         r"(?:个)?(?P<unit>天|周|月|年)(?:内|以来)?",
@@ -1477,17 +1483,46 @@ def _batch_query_plan_bound_to_turn(
     else:
         normalized_text = _query_scope_text(text)
         search_text = normalized_text.casefold()
-        expected_pairs: list[tuple[str, int]] = []
+        entity_spans: list[tuple[int, int]] = []
         cursor = 0
-        for entity, dimension in zip(entities, entity_dimensions, strict=True):
+        for entity in entities:
             position = search_text.find(entity.casefold(), cursor)
             if position < 0:
                 return None
-            preceding = tuple(window for window in windows if window[1] <= position)
-            if not preceding:
-                return None
-            expected_pairs.append((dimension, preceding[-1][2]))
+            entity_spans.append((position, position + len(entity)))
             cursor = position + len(entity)
+
+        separators: list[tuple[int, int]] = []
+        for current_span, next_span in zip(entity_spans, entity_spans[1:]):
+            between_start = current_span[1]
+            between = normalized_text[between_start : next_span[0]]
+            separator_matches = tuple(_HISTORY_QUERY_MULTI_ENTITY_RE.finditer(between))
+            if not separator_matches:
+                return None
+            separator = separator_matches[-1]
+            separators.append(
+                (
+                    between_start + separator.start(),
+                    between_start + separator.end(),
+                )
+            )
+
+        expected_pairs: list[tuple[str, int]] = []
+        for index, dimension in enumerate(entity_dimensions):
+            segment_start = separators[index - 1][1] if index > 0 else 0
+            segment_end = (
+                separators[index][0]
+                if index < len(separators)
+                else len(normalized_text)
+            )
+            local_windows = tuple(
+                window
+                for window in windows
+                if window[0] >= segment_start and window[1] <= segment_end
+            )
+            if len(local_windows) != 1:
+                return None
+            expected_pairs.append((dimension, local_windows[0][2]))
         expected = Counter(expected_pairs)
     if Counter(proposed_bindings) != expected:
         return None
