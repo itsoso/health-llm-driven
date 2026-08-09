@@ -72,8 +72,8 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v34"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v30"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v35"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v31"
 _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v23"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
 _HEALTH_RECORD_DOMAIN_TYPES = {
@@ -342,7 +342,8 @@ _UNRESOLVED_QUERY_REFERENCE_TOKEN_RE = re.compile(
     r"(?:病|病症|疾病|症状|问题|记录|病例|情况|内容)?"
     r")"
     r"(?:上回|最近一次|再看下)?"
-    r"(?:MRI|核磁|磁共振|CT|检查|报告|检查报告)?$",
+    r"(?:(?:MRI|核磁|磁共振|CT|X光|B超)(?:检查报告|检查|报告)?|"
+    r"(?:检查报告|检查|报告))?$",
     re.IGNORECASE,
 )
 _LATEST_OCCURRENCE_MARKER_PATTERN = (
@@ -424,7 +425,9 @@ _WRITE_TARGET_ACTION_RE = re.compile(
     r"(?:记录|记一下|记下|打个卡|打卡|新增|录入|保存|写入|存下来)"
 )
 _ILLNESS_SUFFIX_RE = re.compile(
-    r"(?:炎|病|症|癌|疹|感染|溃疡|感冒|流感|疱疹|烫伤|水泡|伤口)$"
+    r"(?:炎|病|症|癌|疹|感染|溃疡|感冒|流感|疱疹|烫伤|水泡|伤口|"
+    r"脑梗|偏头痛|疼痛|高血压|低血压|哮喘|障碍|闭经|过敏|贫血|"
+    r"尿失禁|心率失常|焦虑|呼吸暂停)$"
 )
 _SUPPLEMENT_TARGET_TERMS = (
     "鱼油",
@@ -1188,7 +1191,9 @@ def _project_illness_query_to_turn(text: str) -> dict[str, Any] | None:
         return None
     if _is_unresolved_query_reference(targets[0]):
         return None
-    if _query_entity_known_dimensions(targets[0]):
+    if _query_entity_known_dimensions(targets[0]) and not _is_safe_illness_query_entity(
+        targets[0]
+    ):
         return None
     if not (
         re.search(r"(?:记录|病史|病历|病例|历史)", normalized)
@@ -1207,6 +1212,18 @@ def _project_illness_query_to_turn(text: str) -> dict[str, Any] | None:
     if window_days is not None:
         projected["days"] = window_days
     return projected
+
+
+def _is_safe_illness_query_entity(value: str) -> bool:
+    """Recognize disease morphology without trusting a model-selected domain."""
+    normalized = str(value or "").strip("的，,。.!！；;：:?？ ")
+    return bool(
+        2 <= len(normalized) <= 40
+        and (
+            _ILLNESS_SUFFIX_RE.search(normalized)
+            or _is_registered_illness_acronym(normalized)
+        )
+    )
 
 
 def _normalize_query_text(text: str) -> str:
@@ -2236,9 +2253,15 @@ def decide_tool_capability(
         proposed_dimension = str(canonical_args.get("dimension") or "").strip().lower()
         known_illness_entities = _illness_targets(turn_text)
         illness_query_entities = _illness_query_entities(turn_text)
+        has_safe_illness_entity = bool(
+            len(illness_query_entities) == 1
+            and _is_safe_illness_query_entity(illness_query_entities[0])
+        )
         known_non_illness_dimension = _query_entities_known_dimension(
             illness_query_entities
         )
+        if has_safe_illness_entity:
+            known_non_illness_dimension = None
         if known_non_illness_dimension is None and (
             not illness_query_entities
             or (
@@ -2293,6 +2316,7 @@ def decide_tool_capability(
             )
         elif illness_query_args is not None and (
             bool(known_illness_entities)
+            or has_safe_illness_entity
             or proposed_dimension == "illness"
             or _is_registered_illness_acronym(illness_query_args.get("keyword"))
         ):
@@ -2420,6 +2444,34 @@ def decide_tool_capability(
     if tool_name == "health_manage":
         operation = str(args.get("operation") or "").strip().lower()
         if operation == "list":
+            turn_text = snapshot.envelope.text
+            mutation_lookup = bool(
+                re.search(r"(?:改成|改为|修改|更新|删除)", turn_text)
+            )
+            guarding_user_read = primary != "mutate" and not mutation_lookup
+            if guarding_user_read and _health_read_cancelled_by_user(turn_text):
+                return _decision(
+                    "block",
+                    "health_query_cancelled_by_user",
+                    tool_name,
+                    args,
+                )
+            if guarding_user_read and _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE.search(
+                _query_scope_text(turn_text)
+            ):
+                return _decision(
+                    "block",
+                    "health_query_calendar_window_unsupported",
+                    tool_name,
+                    args,
+                )
+            if guarding_user_read and _query_contains_unresolved_reference(turn_text):
+                return _decision(
+                    "block",
+                    "health_query_semantics_unresolved",
+                    tool_name,
+                    args,
+                )
             return _decision(
                 "allow", "health_manage_list_is_read_only", tool_name, args
             )
