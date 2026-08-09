@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS after fifth dual NO-GO remediation; new exact-commit G4 pending |
+| current_stage | G3 PASS after latest dual NO-GO remediation; new exact-commit G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -485,6 +485,43 @@ validation and no-match honesty address those risks.
   battery. Targeted Ruff, Python compilation and `git diff --check` also pass.
   System-map drift and all 102 Dossier consistency checks also pass. Two fresh
   exact-commit G4 reviews remain required before release.
+- Fresh code and safety reviews of exact commit `b2daa542a` both returned
+  NO-GO before push or deployment. Real Executor probes found that source,
+  beneficiary, revocation and multi-target update frames could still reach PUT;
+  colon/message/log fragments and named subjects could reach event POST; water
+  corrections could retain the superseded value or wrong litre unit; uncertain
+  and relapsed illness states could be overclaimed; and one ordinary current-
+  user event plus explicit record-ID update were falsely denied.
+- The latest remediation replaces negative phrase accumulation with positive
+  authorization evidence. A water update must be a full direct current-user
+  request bound to either an exact owner-scoped record ID or a unique recent
+  owner-scoped value, plus one deterministic final amount. Illness updates bind
+  the exact owner record name and a narrow recovery-state compiler; negated,
+  relapsed or contradictory recovery fails closed. Implicit lifecycle events
+  cannot borrow authority from a message, log, example or another person's
+  subject. Goal destination language such as `达到` is structurally separated
+  from an arrival event. The code contract is
+  `agent-capability-policy-v16` / `authorized-target-set-v12` /
+  `record-update-evidence-v7`.
+- Failure-first coverage includes every new code/safety counterexample through
+  the real Gateway and Executor in both enforce and shadow modes, final-value
+  correction and litre-to-millilitre projection, exact/shorthand multi-ID
+  rejection, direct record-ID updates, negated illness recovery and positive
+  current-user event controls. The core policy/Gateway/scope group passes
+  1,786/1,786 tests; adjacent intent/write groups pass 842/842. The final
+  single-process integration aggregate passes 3,953/3,953 Backend tests in
+  210.47 seconds under the production `Asia/Shanghai` calendar basis. Targeted
+  Ruff, Python compilation and `git diff --check` pass on the same tree.
+- The requested live `qwen3.7-max` evaluation used synthetic text, the real
+  production tool schema and zero database I/O. It selected the intended tool
+  family in 6/6 cases: exact/paraphrased/negated illness history stayed on
+  `health_query`, quoted update text did not write, direct correction selected
+  owner-scoped `health_manage.list`, and explicit illness creation selected
+  `health_record`. In the create contrast it invented a `start_date`, which is
+  retained as evidence that model JSON is only a proposal and must be projected
+  by the deterministic gate. Strict automatic tool mode passed; forced
+  `tool_choice` returned endpoint `400 invalid_parameter_error`, an endpoint
+  limitation rather than a model or product inference failure.
 
 ### G4 Safety Review: PENDING
 
@@ -796,6 +833,22 @@ The contract is now `agent-capability-policy-v15` /
 `authorized-target-set-v11` / `record-update-evidence-v6`; the clean 3,830-test
 G3 run is green. Two fresh reviews of the forthcoming exact commit are still
 mandatory before G4 may pass.
+
+Fresh code and safety reviews of exact commit `b2daa542a` both returned NO-GO,
+so push and deployment remained stopped. The reviews crossed the real Executor
+with delegated/source/revoked and multi-ID updates, superseded correction
+values, quoted and attributed events, named third-party arrivals and uncertain
+illness recovery. They also caught false denials of a temporal current-user
+event and a natural explicit record-ID correction.
+
+The latest remediation makes direct positive evidence the authority rather
+than a growing blacklist. The model may choose a semantic tool, but only the
+deterministic policy may establish the current owner, exact record, operation
+and canonical patch. Exact visible IDs and uniquely resolved recent records are
+both supported; third-party, quotation, provenance, revocation and ambiguous
+target frames cannot satisfy the positive grammar. Illness and lifecycle-event
+state are compiled separately from the tool proposal. A new exact commit and
+two fresh independent reviews of that SHA are mandatory before G4 may pass.
 
 ### G5 Deployment Health: PENDING
 

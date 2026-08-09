@@ -64,9 +64,9 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v15"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v11"
-_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v6"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v16"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v12"
+_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v7"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = (
     "_server_authorized_health_record_fields"
 )
@@ -168,6 +168,11 @@ _ILLNESS_TARGET_TERMS = (
     "水泡",
     "伤口",
     "痘痘发作",
+)
+_NEGATED_ILLNESS_RECOVERY_RE = re.compile(
+    r"(?:(?:并|还|仍|目前|其实|实际上)?(?:没有|没|未|并未|还未)"
+    r".{0,4}(?:好转|改善|缓解|康复|痊愈|好))|"
+    r"(?:(?:好了|好转|改善|缓解).{0,8}(?:其实|实际上)?(?:并)?(?:没有|没))"
 )
 _MEAL_TYPE_ALIASES = {
     "breakfast": "breakfast",
@@ -521,7 +526,13 @@ _EXACT_RECORD_TARGET_SEARCH_RE = re.compile(
     re.IGNORECASE,
 )
 _UPDATE_VALUE_MARKER_RE = re.compile(
-    r"(?:改成|改为|更正为|修正为|调整为|更新为|应该是|实际是|其实是)"
+    r"(?:改成|改为|修改成|修改为|更正为|修正为|调整为|更新为|"
+    r"应该是|实际是|其实是)"
+)
+_RECORD_ID_CONTINUATION_RE = re.compile(
+    r"(?:和|与|及|、|,)(?:记录|条目)?#?(?P<record_id>\d+)"
+    r"(?!\d|\s*(?:ml|毫升|l|升|kg|公斤|千克|斤))",
+    re.IGNORECASE,
 )
 
 
@@ -636,12 +647,7 @@ def _authorized_health_manage_update_args(
 
     if not has_explicit_authorizing_update_request(snapshot.envelope.text):
         return None
-    explicit_target_matches = tuple(
-        _EXACT_RECORD_TARGET_SEARCH_RE.finditer(
-            "".join(str(snapshot.envelope.text or "").split())
-        )
-    )
-    if len(explicit_target_matches) > 1:
+    if len(_explicit_update_target_mentions(snapshot.envelope.text)) > 1:
         return None
     requested_type = canonical_health_manage_record_type(args.get("record_type"))
     requested_id = canonical_health_manage_record_id(args.get("record_id"))
@@ -726,13 +732,6 @@ def _authorized_illness_update_args(
     args: dict[str, Any],
     requested_id: int,
 ) -> dict[str, Any] | None:
-    patch = _illness_update_patch(snapshot)
-    requested_data = args.get("data")
-    if patch is None or not isinstance(requested_data, dict):
-        return None
-    if requested_data != patch:
-        return None
-
     records = _owner_scoped_manage_list_records(snapshot, "illness")
     requested_record = next(
         (
@@ -745,6 +744,18 @@ def _authorized_illness_update_args(
         None,
     )
     if requested_record is None:
+        return None
+    if not _illness_update_targets_owner(
+        snapshot.envelope.text,
+        str(requested_record.get("name") or ""),
+    ):
+        return None
+
+    patch = _illness_update_patch(snapshot)
+    requested_data = args.get("data")
+    if patch is None or not isinstance(requested_data, dict):
+        return None
+    if requested_data != patch:
         return None
 
     explicit_target = _explicit_update_target(snapshot.envelope.text)
@@ -784,23 +795,33 @@ def _authorized_illness_update_args(
 def _illness_update_patch(snapshot: TurnSnapshot) -> dict[str, Any] | None:
     text = "".join(str(snapshot.envelope.text or "").split())
     patch: dict[str, Any] = {}
-    terminal_recovery = re.search(r"好了(?=[，,。.!！；;]|$)", text)
-    uncertain_recovery = re.search(
-        r"(?:快|基本|大概|可能|也许|应该|差不多|快要|几乎|貌似|感觉|一点点).{0,3}"
-        r"好了(?=[，,。.!！；;]|$)",
-        text,
+    if (
+        _NEGATED_ILLNESS_RECOVERY_RE.search(text)
+        or any(
+            marker in text
+            for marker in ("又复发", "复发了", "再次复发", "一度好了又")
+        )
+    ):
+        return None
+
+    clear_terminal = any(
+        re.search(
+            rf"{re.escape(str(record.get('name') or ''))}"
+            r"(?:前天|昨天|今日|今天|刚刚|现在)?"
+            r"(?:已经)?(?:完全|彻底)?好了(?=[，,。.!！；;]|$)",
+            text,
+        )
+        for record in _owner_scoped_manage_list_records(snapshot, "illness")
+        if str(record.get("name") or "")
     )
-    partial_recovery = (
-        uncertain_recovery is not None
-        or ("好了" in text and terminal_recovery is None)
-    ) and not any(marker in text for marker in ("完全好了", "彻底好了"))
+    partial_recovery = "好了" in text and not clear_terminal
     if partial_recovery or any(
         marker in text for marker in ("有所好转", "好转", "改善中", "缓解中")
     ):
         patch["status"] = "improving"
     elif (
         any(marker in text for marker in ("已痊愈", "痊愈", "康复", "完全好了", "彻底好了"))
-        or (terminal_recovery is not None and uncertain_recovery is None)
+        or clear_terminal
     ):
         patch["status"] = "resolved"
     elif any(marker in text for marker in ("发作中", "还没好", "仍未好")):
@@ -858,18 +879,63 @@ def _water_match_amount_ml(match: re.Match[str]) -> float:
     return amount * 1000 if match.group("unit").lower() in {"l", "升"} else amount
 
 
+def _explicit_update_target_mentions(text: str) -> tuple[tuple[str, int], ...]:
+    normalized = "".join(str(text or "").split())
+    mentions: list[tuple[str, int]] = []
+    primary_matches = tuple(_EXACT_RECORD_TARGET_SEARCH_RE.finditer(normalized))
+    for match in primary_matches:
+        record_type = _DELETE_RECORD_TYPE_TEXT_ALIASES.get(
+            match.group("record_type_alias").lower()
+        )
+        record_id = canonical_health_manage_record_id(match.group("record_id"))
+        if record_type is not None and record_id is not None:
+            mentions.append((record_type, record_id))
+    if primary_matches:
+        first = primary_matches[0]
+        boundary = next(
+            (
+                marker.start()
+                for marker in _UPDATE_VALUE_MARKER_RE.finditer(normalized)
+                if marker.start() > first.end()
+            ),
+            len(normalized),
+        )
+        record_type = _DELETE_RECORD_TYPE_TEXT_ALIASES.get(
+            first.group("record_type_alias").lower()
+        )
+        if record_type is not None:
+            for match in _RECORD_ID_CONTINUATION_RE.finditer(
+                normalized[first.end():boundary]
+            ):
+                record_id = canonical_health_manage_record_id(match.group("record_id"))
+                if record_id is not None:
+                    mentions.append((record_type, record_id))
+    return tuple(dict.fromkeys(mentions))
+
+
 def _explicit_update_target(text: str) -> tuple[str, int] | None:
-    matches = tuple(_EXACT_RECORD_TARGET_SEARCH_RE.finditer("".join(str(text or "").split())))
-    if len(matches) != 1:
+    mentions = _explicit_update_target_mentions(text)
+    if len(mentions) != 1:
         return None
-    match = matches[0]
-    record_type = _DELETE_RECORD_TYPE_TEXT_ALIASES.get(
-        match.group("record_type_alias").lower()
+    return mentions[0]
+
+
+def _illness_update_targets_owner(text: str, record_name: str) -> bool:
+    normalized = "".join(str(text or "").split()).strip("。.!！?？")
+    name = "".join(str(record_name or "").split())
+    if not name:
+        return False
+    current_prefix = (
+        r"(?:(?:请|请你|麻烦|麻烦你|帮我|请帮我|请你帮我|麻烦帮我|"
+        r"可以帮我|能帮我|替我|给我|为我|"
+        r"我想|我想请你|我要|我希望|我需要))?"
     )
-    record_id = canonical_health_manage_record_id(match.group("record_id"))
-    if record_type is None or record_id is None:
-        return None
-    return record_type, record_id
+    return re.fullmatch(
+        rf"{current_prefix}(?:我(?:的)?)?{re.escape(name)}"
+        r"[^，,。.!！；;：:?？]{0,80}[，,]"
+        rf"{current_prefix}(?:修改|更新|更正)(?:一下)?(?:这条)?记录",
+        normalized,
+    ) is not None
 
 
 def _owner_scoped_manage_list_records(

@@ -2,6 +2,7 @@ import pytest
 
 from app.services.utterance_intent_lexicon import WRITE_COMMAND_ACTIONS
 from app.services.write_intent_scope import (
+    _event_fact_has_non_current_subject,
     authorized_health_record_clauses,
     has_explicit_authorizing_write_request,
     has_negated_write_scope,
@@ -540,3 +541,19 @@ def test_current_user_body_observation_has_concrete_authority() -> None:
     text = "还是有腰疼的症状"
 
     assert authorized_health_record_clauses(text) == (text,)
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "创建目标：体重达到理想范围",
+        "设置目标体重达到理想水平",
+        "我的目标是达到理想体重",
+    ),
+)
+def test_goal_destination_language_is_not_misread_as_third_party_arrival(
+    text: str,
+) -> None:
+    assert _event_fact_has_non_current_subject(text) is False
+    if text.startswith(("创建", "设置")):
+        assert authorized_health_record_clauses(text) != ()

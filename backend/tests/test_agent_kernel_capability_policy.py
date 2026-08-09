@@ -2548,7 +2548,11 @@ def test_update_turn_blocks_health_manage_delete_with_receipt():
     (
         "把刚才 300ml 改成 350ml",
         "把饮水记录718（300ml）改成350ml",
+        "把饮水记录718改成350ml",
         "把饮水记录718：300ml改成350ml",
+        "请把饮水记录718（300ml）修改为350ml",
+        "麻烦帮我把刚才300ml改成350ml",
+        "请你帮我把刚才300ml改成350ml",
     ),
 )
 def test_update_turn_allows_health_manage_update_with_receipt(message):
@@ -2809,6 +2813,13 @@ def test_illness_resolution_rejects_wrong_identity_or_invented_patch(arguments):
         "基本好了",
         "可能好了",
         "一点点好了",
+        "稍微好了",
+        "有点好了",
+        "大约好了",
+        "似乎好了",
+        "好像好了",
+        "算是好了",
+        "差点好了",
     ),
 )
 def test_illness_partial_recovery_is_improving_not_resolved(phrase):
@@ -2854,6 +2865,91 @@ def test_illness_partial_recovery_is_improving_not_resolved(phrase):
     assert improving.action == "allow"
     assert improving.normalized_args["data"] == {"status": "improving"}
     assert resolved.action == "block"
+
+
+@pytest.mark.parametrize("status", ("active", "improving", "resolved"))
+def test_illness_relapse_phrase_requires_clarification_instead_of_guessing(status):
+    snapshot = replace(
+        _snapshot("舌尖溃疡昨天一度好了又复发，修改记录"),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "illness",
+                    "records": (
+                        {"id": 71, "name": "舌尖溃疡", "status": "active"},
+                    ),
+                },
+            ),
+        ),
+    )
+    data = {"status": status}
+    if status == "resolved":
+        data["end_date"] = "2026-07-16"
+
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "illness",
+                "operation": "update",
+                "record_id": 71,
+                "data": data,
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "update_requires_exact_target_evidence"
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    (
+        "并没有好转",
+        "还没好转",
+        "看起来好了其实没有",
+    ),
+)
+@pytest.mark.parametrize("status", ("active", "improving", "resolved"))
+def test_negated_illness_recovery_requires_clarification_instead_of_guessing(
+    phrase,
+    status,
+):
+    snapshot = replace(
+        _snapshot(f"舌尖溃疡昨天{phrase}，修改记录"),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "illness",
+                    "records": (
+                        {"id": 71, "name": "舌尖溃疡", "status": "active"},
+                    ),
+                },
+            ),
+        ),
+    )
+    data = {"status": status}
+    if status == "resolved":
+        data["end_date"] = "2026-07-16"
+
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "illness",
+                "operation": "update",
+                "record_id": 71,
+                "data": data,
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "update_requires_exact_target_evidence"
 
 
 def test_illness_update_does_not_bind_generic_list_name_to_specific_user_entity():
@@ -3949,9 +4045,9 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v15"
+    assert payload["contract_version"] == "agent-capability-policy-v16"
     assert payload["health_record_target_binding"] == {
-        "version": "authorized-target-set-v11",
+        "version": "authorized-target-set-v12",
         "domain_types": {
             "diet": "diet",
             "exercise": "exercise",
@@ -3970,7 +4066,7 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
     )
     assert (
         payload["health_manage_update_evidence_version"]
-        == "record-update-evidence-v6"
+        == "record-update-evidence-v7"
     )
     assert payload["known_tools"]
     assert payload["recipe_record_types"]

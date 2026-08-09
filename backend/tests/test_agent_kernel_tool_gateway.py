@@ -1217,11 +1217,29 @@ async def test_gateway_never_dispatches_update_outside_owner_scoped_exact_eviden
         "把刚才300ml改成350ml会怎样",
         "替小明把刚才300ml改成350ml",
         "替我朋友把刚才300ml改成350ml",
+        "帮小明把刚才300ml改成350ml",
+        "帮小明把饮水记录718改成350ml",
+        "我帮小明把刚才300ml改成350ml",
+        "代小明把刚才300ml改成350ml",
+        "有人提议把刚才300ml改成350ml",
+        "有人提议把饮水记录718改成350ml",
+        "群里让把刚才300ml改成350ml",
+        "小明那杯刚才300ml，改成350ml",
+        "示例（把刚才300ml改成350ml）",
         "把刚才300ml改成350ml，还是300ml吧",
         "把刚才300ml改成350ml，照旧",
         "把刚才300ml改成350ml，别动",
         "把刚才300ml改成350ml，恢复成300ml",
+        "把刚才300ml改成350ml，这次不改",
+        "把刚才300ml改成350ml，先别这么改",
+        "把刚才300ml改成350ml，撤掉这次修改",
+        "把刚才300ml改成350ml，不用做这个更改",
+        "把刚才300ml改成350ml，等等，是400ml",
+        "把刚才300ml改成350ml，不，是400ml",
+        "把刚才300ml改成350ml，抱歉，是400ml",
         "把饮水记录999和饮水记录718的300ml改成350ml",
+        "把饮水记录718和719的300ml改成350ml",
+        "把饮水记录718、719的300ml改成350ml",
         "把刚才300ml改成350ml，哦不，400ml",
         "把刚才300ml改成350ml，哦不，是400",
         "把刚才300ml改成350ml，这是小明的",
@@ -1383,6 +1401,10 @@ async def test_gateway_current_user_posterior_owner_keeps_health_write_authority
             "小明到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
         ),
+        (
+            "他到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+        ),
     ),
 )
 async def test_gateway_public_record_contract_never_borrows_third_party_subject(
@@ -1413,6 +1435,10 @@ async def test_gateway_public_record_contract_never_borrows_third_party_subject(
         "把刚才300ml改成350ml，哦不，是400ml",
         "把刚才300ml改成350ml，哦不，400ml",
         "把刚才300ml改成350ml，哦不，是400",
+        "把刚才300ml改成350ml，等等，是400ml",
+        "把刚才300ml改成350ml，不，是400ml",
+        "把刚才300ml改成350ml，抱歉，是400ml",
+        "把刚才300ml改成350ml，哦不，是0.4升",
     ),
 )
 async def test_gateway_update_self_correction_authorizes_only_final_value(message):
@@ -1516,6 +1542,19 @@ async def test_executor_quoted_update_never_reaches_real_water_put(
         "把刚才300ml改成350ml，保持300ml不变",
         "把刚才300ml改成350ml，先不要执行这个修改",
         "替我朋友把刚才300ml改成350ml",
+        "帮小明把刚才300ml改成350ml",
+        "帮小明把饮水记录718改成350ml",
+        "我帮小明把刚才300ml改成350ml",
+        "代小明把刚才300ml改成350ml",
+        "有人提议把刚才300ml改成350ml",
+        "有人提议把饮水记录718改成350ml",
+        "群里让把刚才300ml改成350ml",
+        "小明那杯刚才300ml，改成350ml",
+        "示例（把刚才300ml改成350ml）",
+        "把刚才300ml改成350ml，这次不改",
+        "把刚才300ml改成350ml，先别这么改",
+        "把刚才300ml改成350ml，撤掉这次修改",
+        "把刚才300ml改成350ml，不用做这个更改",
         "请解释1：300ml改成350ml",
     ),
 )
@@ -1570,6 +1609,10 @@ async def test_executor_non_authorizing_update_never_reaches_real_water_put(
     (
         "把刚才300ml改成350ml，哦不，400ml",
         "把刚才300ml改成350ml，哦不，是400",
+        "把刚才300ml改成350ml，等等，是400ml",
+        "把刚才300ml改成350ml，不，是400ml",
+        "把刚才300ml改成350ml，抱歉，是400ml",
+        "把刚才300ml改成350ml，哦不，是0.4升",
     ),
 )
 async def test_executor_water_correction_dispatches_only_final_value(
@@ -1621,8 +1664,19 @@ async def test_executor_water_correction_dispatches_only_final_value(
         },
         "test-token",
     )
+    wrong_unit = await executor._execute_tool(
+        "health_manage",
+        {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": {"amount": 0.4},
+        },
+        "test-token",
+    )
 
     assert json.loads(rejected)["dispatch_started"] is False
+    assert json.loads(wrong_unit)["dispatch_started"] is False
     assert [call for call in calls if call[0] == "PUT"] == [
         ("PUT", "http://localhost:8000/api/v1/water/records/718", {"amount": 400})
     ]
@@ -1633,7 +1687,121 @@ async def test_executor_water_correction_dispatches_only_final_value(
 @pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
 @pytest.mark.parametrize(
     "message",
-    ("原文：到杭州了", "原话：到杭州了", "例句：到杭州了"),
+    (
+        "把刚才300ml改成350ml",
+        "请把饮水记录718（300ml）修改为350ml",
+    ),
+)
+async def test_executor_direct_water_update_syntax_dispatches_canonical_value(
+    db,
+    monkeypatch,
+    policy_mode,
+    message,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_channel = "typed"
+    executor._current_turn_user_message = message
+    calls = []
+
+    async def fake_get(url, _headers):
+        calls.append(("GET", url, None))
+        return '[{"id": 718, "amount": 300}]'
+
+    async def fake_put(url, _headers, payload):
+        calls.append(("PUT", url, payload))
+        return '{"id":718,"amount":350}'
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_kernel_policy_mode",
+        policy_mode,
+    )
+    monkeypatch.setattr(executor, "_api_get", fake_get)
+    monkeypatch.setattr(executor, "_api_put", fake_put)
+
+    await executor._execute_tool(
+        "health_manage",
+        {"record_type": "water", "operation": "list"},
+        "test-token",
+    )
+    result = await executor._execute_tool(
+        "health_manage",
+        {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": {"amount": 350},
+        },
+        "test-token",
+    )
+
+    assert [method for method, _url, _payload in calls] == ["GET", "PUT"]
+    assert calls[-1][2] == {"amount": 350}
+    assert json.loads(result)["amount"] == 350
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+async def test_executor_negated_illness_recovery_never_reaches_real_put(
+    db,
+    monkeypatch,
+    policy_mode,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_channel = "typed"
+    executor._current_turn_user_message = "舌尖溃疡昨天并没有好转，修改记录"
+    calls = []
+
+    async def fake_exec(_base, _headers, arguments):
+        calls.append(arguments)
+        if arguments["operation"] == "list":
+            return json.dumps(
+                [{"id": 71, "name": "舌尖溃疡", "status": "active"}],
+                ensure_ascii=False,
+            )
+        return "unexpected"
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_kernel_policy_mode",
+        policy_mode,
+    )
+    monkeypatch.setattr(executor, "_exec_health_manage", fake_exec)
+
+    await executor._execute_tool(
+        "health_manage",
+        {"record_type": "illness", "operation": "list"},
+        "test-token",
+    )
+    result = await executor._execute_tool(
+        "health_manage",
+        {
+            "record_type": "illness",
+            "operation": "update",
+            "record_id": 71,
+            "data": {"status": "improving"},
+        },
+        "test-token",
+    )
+
+    assert [call["operation"] for call in calls] == ["list"]
+    assert json.loads(result)["dispatch_started"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "原文：到杭州了",
+        "原话：到杭州了",
+        "例句：到杭州了",
+        "消息内容：到杭州了",
+        "示例文本：到杭州了",
+        "老婆发来消息：到杭州了",
+        "群消息：到杭州了",
+        "日志23:45，到杭州了",
+    ),
 )
 async def test_executor_metalinguistic_event_never_reaches_real_event_post(
     db,
@@ -1709,6 +1877,10 @@ async def test_executor_metalinguistic_event_never_reaches_real_event_post(
         ),
         (
             "小明到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+        ),
+        (
+            "他到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
         ),
     ),
@@ -1843,6 +2015,16 @@ async def test_gateway_explicit_update_id_without_owner_candidate_never_dispatch
             {"title": "到达杭州"},
         ),
         (
+            "今天到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {"title": "到达杭州"},
+        ),
+        (
+            "昨天早上到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {"title": "到达杭州"},
+        ),
+        (
             "记录跑步30分钟5公里",
             {
                 "record_type": "exercise",
@@ -1961,6 +2143,18 @@ async def test_gateway_dispatches_supported_family_canonical_projection(
         ),
         (
             "我刚到杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {"title": "到达杭州"},
+        ),
+        (
+            "今天到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {"title": "到达杭州"},
+        ),
+        (
+            "昨天早上到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             "/episodes/life-event",
             {"title": "到达杭州"},

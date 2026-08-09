@@ -386,9 +386,9 @@ _THIRD_PARTY_UPDATE_BENEFICIARY_RE = re.compile(
     r"^(?:替|给|为)(?!(?:我|本人|自己|我自己)(?:把|将))"
     r"[\u4e00-\u9fff]{1,12}(?:把|将)"
 )
-_THIRD_PARTY_EVENT_FACT_RE = re.compile(
-    r"^(?P<owner>(?!我|本人|自己|刚刚|已经)[\u4e00-\u9fff]{2,4})"
-    r"(?:已经|刚刚|刚)?到[^，,。.!！；;：:?？]{1,20}(?:了|$)"
+_EVENT_ARRIVAL_FACT_RE = re.compile(
+    r"^(?P<subject>.*?)到(?P<place>[\u4e00-\u9fff][^，,。.!！；;：:?？]{0,19})"
+    r"(?:了|$)"
 )
 _UPDATE_METALANGUAGE_PREFIX_RE = re.compile(
     r"^(?:以下(?:内容|文字)?(?:是|为)?)?"
@@ -419,11 +419,53 @@ _QUOTE_PAIRS = (
 )
 _PARENTHETICAL_PAIRS = (("（", "）"), ("(", ")"))
 _UPDATE_CORRECTION_VALUE_RE = re.compile(
-    r"(?:哦不|不对|错了|说错了|更正一下)[，,]?"
+    r"(?:^|[，,])(?:哦不|不对|错了|说错了|更正一下|等等|等一下|不|抱歉)"
+    r"[，,]?"
     r"(?:应该|应当)?(?:是|为|改成|改为)?"
-    r"(?P<value>\d+(?:\.\d+)?)\s*(?:ml|毫升)?"
+    r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>ml|毫升|l|升)?"
 )
-_UPDATE_CORRECTION_MARKER_RE = re.compile(r"(?:哦不|不对|错了|说错了|更正一下)")
+_UPDATE_CORRECTION_MARKER_RE = re.compile(
+    r"(?:^|[，,])(?:哦不|不对|错了|说错了|更正一下|等等|等一下|不|抱歉)"
+    r"(?:[，,]|$)"
+)
+_WATER_VALUE_TEXT_PATTERN = r"\d+(?:\.\d+)?(?:ml|毫升|l|升)"
+_WATER_CORRECTION_VALUE_TEXT_PATTERN = r"\d+(?:\.\d+)?(?:ml|毫升|l|升)?"
+_CURRENT_USER_UPDATE_PREFIX_PATTERN = (
+    r"(?:(?:请|请你|麻烦|麻烦你|帮我|请帮我|请你帮我|麻烦帮我|"
+    r"可以帮我|能帮我|替我|给我|为我|"
+    r"我想|我想请你|我要|我希望|我需要))?"
+)
+_DIRECT_WATER_UPDATE_RE = re.compile(
+    rf"^{_CURRENT_USER_UPDATE_PREFIX_PATTERN}(?:把|将)?"
+    rf"(?:"
+    rf"(?:刚才|刚刚|上一条|最近一条)(?:的)?"
+    rf"|(?:饮水|water)(?:记录|条目)#?\d+(?:的)?"
+    rf")"
+    rf"[：:]?[（(]?{_WATER_VALUE_TEXT_PATTERN}[）)]?"
+    rf"(?:的?(?:饮水量|水量|量))?"
+    rf"(?:改成|改为|更正为|修正为|调整为|更新为|修改为|修改成)"
+    rf"{_WATER_VALUE_TEXT_PATTERN}"
+    rf"(?:[，,](?:哦不|不对|错了|说错了|更正一下|等等|等一下|不|抱歉)"
+    rf"[，,]?(?:应该|应当)?(?:是|为|改成|改为)?"
+    rf"{_WATER_CORRECTION_VALUE_TEXT_PATTERN})?$",
+    re.IGNORECASE,
+)
+_DIRECT_WATER_ID_UPDATE_RE = re.compile(
+    rf"^{_CURRENT_USER_UPDATE_PREFIX_PATTERN}(?:把|将)?"
+    rf"(?:饮水|water)(?:记录|条目)#?\d+"
+    rf"(?:改成|改为|更正为|修正为|调整为|更新为|修改为|修改成)"
+    rf"{_WATER_VALUE_TEXT_PATTERN}"
+    rf"(?:[，,](?:哦不|不对|错了|说错了|更正一下|等等|等一下|不|抱歉)"
+    rf"[，,]?(?:应该|应当)?(?:是|为|改成|改为)?"
+    rf"{_WATER_CORRECTION_VALUE_TEXT_PATTERN})?$",
+    re.IGNORECASE,
+)
+_DIRECT_ILLNESS_UPDATE_RE = re.compile(
+    rf"^{_CURRENT_USER_UPDATE_PREFIX_PATTERN}"
+    r"(?P<statement>[^，,。.!！；;：:?？]{2,120})[，,]"
+    rf"{_CURRENT_USER_UPDATE_PREFIX_PATTERN}"
+    r"(?:修改|更新|更正)(?:一下)?(?:这条)?记录$"
+)
 _DIRECT_REMEMBER_AVOID_RE = re.compile(
     r"^(?:请)?(?:帮我)?记住(?:我|我的)?(?P<value>不吃[^，,。.!！；;：:?？]{1,80})$"
 )
@@ -1035,6 +1077,8 @@ def _has_untrusted_colon_command(value: str) -> bool:
             and _UPDATE_ACTION_RE.search(right) is not None
         ):
             return True
+        if direct_event_values(right) is not None:
+            return True
     return False
 
 
@@ -1106,7 +1150,7 @@ def _observation_has_non_current_subject(clause: str) -> bool:
 def _segment_has_non_current_subject(segment: str) -> bool:
     """Carry subject ownership across clauses, excluding denied observations."""
     for clause in split_write_clauses(segment):
-        if _THIRD_PARTY_EVENT_FACT_RE.search(clause):
+        if _event_fact_has_non_current_subject(clause):
             return True
         if (
             has_negated_write_scope(clause)
@@ -1116,6 +1160,32 @@ def _segment_has_non_current_subject(segment: str) -> bool:
         if _observation_has_non_current_subject(clause):
             return True
     return False
+
+
+def _event_fact_has_non_current_subject(clause: str) -> bool:
+    """Resolve an arrival fact's subject after removing time/aspect phrases."""
+    if "目标" in clause and re.search(
+        r"(?:达到|降到|减到|升到|调整到)",
+        clause,
+    ):
+        # ``达到目标值`` is a goal predicate, not the arrival verb ``到``.
+        # Let the goal compiler decide whether the target is complete enough.
+        return False
+    match = _EVENT_ARRIVAL_FACT_RE.fullmatch(clause)
+    if match is None:
+        return False
+    subject = match.group("subject")
+    if (
+        _last_write_signal_in_clause(subject) is not None
+        or _last_action_in_clause(subject) is not None
+    ):
+        return False
+    reduced = _CURRENT_USER_SUBJECT_NOISE_RE.sub("", subject)
+    reduced = _SUBJECT_RELATION_NOISE_RE.sub("", reduced)
+    reduced = re.sub(r"(?:终于|平安|顺利|安全)", "", reduced)
+    reduced = reduced.strip("的，,。.!！；;：:?？ ")
+    reduced = re.sub(r"^(?:我(?:本人|自己)?|本人|自己)$", "", reduced)
+    return bool(reduced)
 
 
 def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
@@ -1239,7 +1309,7 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
             if not clause_negated and (
                 _THIRD_PARTY_WRITE_SUBJECT_RE.search(clause)
                 or _THIRD_PARTY_HEALTH_SUBJECT_RE.search(clause)
-                or _THIRD_PARTY_EVENT_FACT_RE.search(clause)
+                or _event_fact_has_non_current_subject(clause)
                 or _observation_has_non_current_subject(clause)
             ):
                 third_party_scope = True
@@ -1261,6 +1331,12 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
 
             action = _last_action_in_clause(clause)
             if action is not None and not has_explicit_authorizing_write_request(clause):
+                continue
+            if (
+                action is None
+                and direct_event_values(clause) is not None
+                and direct_event_values(contrast_segment) is None
+            ):
                 continue
             authorized.append(clause)
     return tuple(authorized)
@@ -1303,6 +1379,11 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
     correction must not lend authority to an otherwise parseable value patch.
     """
     normalized = normalize_write_scope_text(value)
+    normalized_statement = normalized.strip("。.!！?？")
+    direct_water_update = any(
+        pattern.fullmatch(normalized_statement) is not None
+        for pattern in (_DIRECT_WATER_UPDATE_RE, _DIRECT_WATER_ID_UPDATE_RE)
+    )
     if not _UPDATE_ACTION_RE.search(normalized):
         return False
     if _UPDATE_METALANGUAGE_PREFIX_RE.search(normalized):
@@ -1320,7 +1401,10 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
         or _THIRD_PARTY_UPDATE_ORDER_RE.search(normalized)
         or _THIRD_PARTY_UPDATE_BENEFICIARY_RE.search(normalized)
         or _THIRD_PARTY_WRITE_SUBJECT_RE.search(normalized)
-        or _segment_has_non_current_subject(normalized)
+        or (
+            _segment_has_non_current_subject(normalized)
+            and not direct_water_update
+        )
         or (
             _HYPOTHETICAL_PREFIX_RE.search(normalized)
             and not _POLITE_CONDITIONAL_PREFIX_RE.search(normalized)
@@ -1340,7 +1424,10 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
         for clause in clauses
     ):
         return False
-    return True
+    return bool(
+        direct_water_update
+        or _DIRECT_ILLNESS_UPDATE_RE.fullmatch(normalized_statement)
+    )
 
 
 def direct_remember_fact_values(value: str) -> dict[str, str] | None:
@@ -1401,7 +1488,11 @@ def corrected_water_update_value(value: str) -> float | None:
     matches = tuple(
         _UPDATE_CORRECTION_VALUE_RE.finditer(normalize_write_scope_text(value))
     )
-    return float(matches[-1].group("value")) if matches else None
+    if not matches:
+        return None
+    match = matches[-1]
+    amount = float(match.group("value"))
+    return amount * 1000 if (match.group("unit") or "").lower() in {"l", "升"} else amount
 
 
 def has_water_update_correction(value: str) -> bool:
