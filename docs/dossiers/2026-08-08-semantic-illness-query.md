@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS on latest-main-synced tree; new exact-commit G4 pending |
+| current_stage | G3 PASS on implementation fb52914e8; fresh exact-commit G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -1497,6 +1497,78 @@ three core semantic files pass 1,469/1,469 and the upstream Mobile login suite
 passes 23/23. Reviewers must inspect the following documentation commit together
 with this exact merge parent. Nothing in the v31 chain has been pushed or
 deployed; G4 requires two new independent GO decisions on that exact commit.
+
+Fresh code and product-safety reviews of exact documentation commit
+`0a37cd5857bce2e85c8458140b41013d41927678` both returned NO-GO, so that SHA
+and its implementation parent were not pushed or deployed. The reviewers found
+unresolved discourse forms (`查刚才提的`, `查此病`, `查最后一条`), composable
+read cancellations and later-positive scope, disease names whose morphology
+contains metric words, a typed-goal/Gateway mismatch for arbitrary safe illness
+names, latest-occurrence variants, ratio language and MRI `调出` prefixes. The
+product-safety matrix additionally reproduced plural demonstratives such as
+`那些疾病最近一回呢`; all probes were synthetic and performed zero production
+database I/O.
+
+The v32 remediation moves these cases into compositional deterministic grammar.
+Unresolved demonstratives and discourse pointers hard-block in enforce and
+shadow modes. Read cancellation covers direct, modal, stop and revoke forms,
+while a later positive clause binds only its own exact disease. Metric-looking
+substrings inside disease morphology cannot grant metric-read authority.
+Latest-occurrence illness, ratio comparison and MRI request prefixes project to
+one exact server-owned plan. Explicit illness-name grammar is shared by GoalSpec
+and Gateway so `脑梗` and `睡眠呼吸暂停` no longer diverge. Its contracts were
+`agent-capability-policy-v32` / `authorized-target-set-v28` /
+`record-update-evidence-v23`.
+
+Failure-first coverage reproduced 59/59 new review counterexamples before the
+v32 implementation. Focused remediation groups then passed 62/62, 95/95 and
+98/98; the first complete run exposed and fixed one compatibility interaction
+with a resolved `我上一次…最近半年…` phrase plus the remaining composite
+demonstratives. The resulting 27-file Backend gate passed 4,575/4,575 with
+`TZ=Asia/Shanghai` and no coverage plugin overhead. Ruff, formatting, Python
+compilation, generated architecture drift, 102-dossier consistency and
+`git diff --check` all passed. That implementation was fixed at
+`ef336c05b97bd199b49c585eac4cb9c561458394`.
+
+The requested live `qwen3.7-max` evaluation on v32 initially scored 9/12 and
+was kept red. Qwen emitted two semantically equivalent reads for the compound
+original query and filled explicit disease creates with invented severity,
+start date and active status. The first issue is handled by the existing
+production semantic read fingerprint but was absent from the initial harness.
+The second exposed a real availability gap: policy safely rejected the invented
+health facts, but also lost an otherwise exact user command.
+
+The v33 correction limits recovery to one direct, current-user, name-only
+`记录疾病：<name>` clause whose proposed name exactly matches the validated
+target. It projects away model-owned severity and onset date, retains only the
+existing safe `active` default when proposed, and still blocks substituted
+names, richer or compound commands, quotations and attribution. Contracts are
+now `agent-capability-policy-v33` / `authorized-target-set-v29` /
+`record-update-evidence-v23`. Failure-first tests were 2 red / 1 safety control
+green; after correction, the core GoalSpec/Policy/Gateway/simple-record group
+passed 2,721/2,721 and the final single-process 27-file Backend gate passed
+4,578/4,578 with seven pre-existing deprecation warnings. Ruff, formatting,
+Python compilation, architecture drift, 102-dossier consistency and diff checks
+also pass.
+
+The final live `qwen3.7-max` system matrix on exact implementation commit
+`fb52914e83a160b8e2646986046291164b0c67fc` passes 12/12. It uses the real
+production tool schemas, Gateway semantic projection and production read
+fingerprint; model dispatch is replaced by a fake adapter. It covers the
+original illness history query, latest SLE, unresolved plural reference,
+cancelled read, later-positive cancellation scope, disease observation,
+arbitrary safe illness creates, ratio comparison, MRI request, quoted write and
+unsupported calendar read. The compound original emitted two reads that
+converged to one dispatch, and both illness creates dispatched only their exact
+names after safe-default normalization. The evaluator used an isolated synthetic
+runtime-identity key, an unreachable database URL and zero database I/O. A
+preceding harness attempt stopped before scoring because that synthetic HMAC key
+was absent; no product call or fallback was counted as success.
+
+No commit in the v32/v33 chain has been pushed or deployed. Reviewers must
+inspect the next documentation commit together with exact implementation parent
+`fb52914e83a160b8e2646986046291164b0c67fc`; two fresh independent GO decisions
+remain mandatory before G4 can pass.
 
 ### G5 Deployment Health: PENDING
 
