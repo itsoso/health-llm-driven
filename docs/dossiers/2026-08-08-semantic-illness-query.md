@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS after latest dual NO-GO remediation; new exact-commit G4 pending |
+| current_stage | G3 PASS on mainline-synced tree; new exact-commit G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -1279,6 +1279,17 @@ it used the production schema with zero database I/O and already demonstrated
 why model JSON is a proposal rather than authority. A new exact commit, mainline
 sync and two fresh independent reviews of the resulting exact SHA remain
 mandatory before G4 may pass.
+
+The latest clean `origin/main` commits `83d8403ed` and `359d6b819` were merged
+before final review. They restore Mobile chat history after cold launch and
+atomically clear stale turn recovery; their seven changed files do not overlap
+the Backend semantic-query boundary. On the merged tree, the three affected
+Mobile Jest suites pass 99/99 using the repository's pinned dependency tree,
+and the iOS acceptance-harness test passes. The pre-existing React test
+`act(...)` console warnings remain visible and are not treated as a silent pass.
+The 42-case real Gateway boundary group is rerun on the merged tree, and two
+fresh reviewers must inspect the final documentation commit SHA rather than
+either parent.
 
 ### G5 Deployment Health: PENDING
 
