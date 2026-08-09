@@ -198,8 +198,7 @@ def test_diet_goal_keeps_model_nutrition_when_food_list_replaces_conjunction():
             ("meal_type", "dinner"),
             (
                 "food_items",
-                "牛排和蔬菜，520千卡，蛋白质42克，碳水18克，"
-                "脂肪30克，膳食纤维5克",
+                "牛排和蔬菜，520千卡，蛋白质42克，碳水18克，脂肪30克，膳食纤维5克",
             ),
         ),
         requires_verification=True,
@@ -226,9 +225,7 @@ def test_diet_goal_keeps_model_nutrition_when_food_list_replaces_conjunction():
     ]
 
     normalized = _normalize_goal_guarded_tool_calls(calls, goal)
-    normalized_data = json.loads(
-        normalized[0]["function"]["arguments"]
-    )["data"]
+    normalized_data = json.loads(normalized[0]["function"]["arguments"])["data"]
 
     assert normalized_data["food_items"] == "牛排和蔬菜"
     assert normalized_data["calories"] == 520
@@ -272,9 +269,7 @@ def test_diet_goal_does_not_split_lexicalized_food_name_on_conjunction():
     ]
 
     normalized = _normalize_goal_guarded_tool_calls(calls, goal)
-    normalized_data = json.loads(
-        normalized[0]["function"]["arguments"]
-    )["data"]
+    normalized_data = json.loads(normalized[0]["function"]["arguments"])["data"]
 
     assert normalized_data["food_items"] == "牛肉和风沙拉"
     assert "calories" not in normalized_data
@@ -314,9 +309,7 @@ def test_diet_goal_rejects_model_nutrition_that_conflicts_with_user_values():
     ]
 
     normalized = _normalize_goal_guarded_tool_calls(calls, goal)
-    normalized_data = json.loads(
-        normalized[0]["function"]["arguments"]
-    )["data"]
+    normalized_data = json.loads(normalized[0]["function"]["arguments"])["data"]
 
     assert normalized_data["food_items"].startswith("牛排和蔬菜")
     assert "calories" not in normalized_data
@@ -406,9 +399,7 @@ def test_diet_goal_keeps_estimate_when_quantity_moves_after_food_name():
     ]
 
     normalized = _normalize_goal_guarded_tool_calls(calls, goal)
-    normalized_data = json.loads(
-        normalized[0]["function"]["arguments"]
-    )["data"]
+    normalized_data = json.loads(normalized[0]["function"]["arguments"])["data"]
 
     assert normalized_data["calories"] == 520
     assert normalized_data["protein"] == 20
@@ -448,9 +439,7 @@ def test_diet_goal_does_not_treat_lexicalized_dish_as_quantity_expression():
     ]
 
     normalized = _normalize_goal_guarded_tool_calls(calls, goal)
-    normalized_data = json.loads(
-        normalized[0]["function"]["arguments"]
-    )["data"]
+    normalized_data = json.loads(normalized[0]["function"]["arguments"])["data"]
 
     assert normalized_data["food_items"] == "三杯鸡"
     assert "calories" not in normalized_data
@@ -490,13 +479,14 @@ def test_diet_goal_builds_deterministic_write_when_model_omits_tool_call():
     }
 
 
-def test_illness_goal_builds_deterministic_write_when_model_omits_tool_call():
+@pytest.mark.parametrize("name", ("SLE", "脑梗", "睡眠呼吸暂停"))
+def test_illness_goal_builds_deterministic_write_when_model_omits_tool_call(name):
     goal = GoalSpec(
         kind="simple_health_record",
         domain="illness",
         operation="create",
         target_record_type="illness",
-        target_values=(("name", "SLE"),),
+        target_values=(("name", name),),
         requires_verification=True,
     )
 
@@ -509,7 +499,7 @@ def test_illness_goal_builds_deterministic_write_when_model_omits_tool_call():
     assert tool_call["function"]["name"] == "health_record"
     assert json.loads(tool_call["function"]["arguments"]) == {
         "record_type": "illness",
-        "data": {"name": "SLE"},
+        "data": {"name": name},
     }
 
 
@@ -644,9 +634,8 @@ async def test_diet_goal_reuses_one_estimate_for_duplicate_canonical_calls(
     assert attempted is True
     assert estimate_calls == ["一个桃子"]
     assert len(enriched) == 2
-    assert (
-        json.loads(enriched[0]["function"]["arguments"])
-        == json.loads(enriched[1]["function"]["arguments"])
+    assert json.loads(enriched[0]["function"]["arguments"]) == json.loads(
+        enriched[1]["function"]["arguments"]
     )
 
 
@@ -720,14 +709,19 @@ def test_simple_diet_nutrition_rejects_incomplete_or_unbounded_estimates(estimat
 
 
 def test_simple_diet_nutrition_accepts_alcohol_energy_with_zero_macros():
-    assert _simple_diet_nutrition_is_complete({
-        "calories": 105,
-        "protein": 0,
-        "carbs": 0,
-        "fat": 0,
-        "fiber": 0,
-        "alcohol_units": 1.5,
-    }) is True
+    assert (
+        _simple_diet_nutrition_is_complete(
+            {
+                "calories": 105,
+                "protein": 0,
+                "carbs": 0,
+                "fat": 0,
+                "fiber": 0,
+                "alcohol_units": 1.5,
+            }
+        )
+        is True
+    )
 
 
 @pytest.mark.asyncio
@@ -735,15 +729,17 @@ async def test_simple_diet_estimator_uses_sanitized_food_totals(monkeypatch):
     def fake_estimate(_food_items):
         return {
             "success": True,
-            "foods": [{
-                "name": "桃子",
-                "quantity": "1个",
-                "calories": 58,
-                "protein": 1.4,
-                "carbs": 14,
-                "fat": 0.4,
-                "fiber": 2.3,
-            }],
+            "foods": [
+                {
+                    "name": "桃子",
+                    "quantity": "1个",
+                    "calories": 58,
+                    "protein": 1.4,
+                    "carbs": 14,
+                    "fat": 0.4,
+                    "fiber": 2.3,
+                }
+            ],
             # These untrusted aggregate fields must not bypass sanitization.
             "total_calories": 4999,
             "total_protein": 999,
@@ -791,17 +787,13 @@ def test_equivalent_model_writes_share_one_canonical_fingerprint():
     ]
 
     normalized = _normalize_goal_guarded_tool_calls(calls, goal)
-    parsed = [
-        json.loads(call["function"]["arguments"])
-        for call in normalized
-    ]
+    parsed = [json.loads(call["function"]["arguments"]) for call in normalized]
 
     assert parsed[0] == parsed[1]
     assert parsed[0]["data"]["record_date"] == "2026-07-26"
-    assert (
-        _write_operation_fingerprint("health_record", parsed[0])
-        == _write_operation_fingerprint("health_record", parsed[1])
-    )
+    assert _write_operation_fingerprint(
+        "health_record", parsed[0]
+    ) == _write_operation_fingerprint("health_record", parsed[1])
 
 
 def test_invalid_simple_goal_blocks_model_write_instead_of_failing_open():
@@ -839,11 +831,13 @@ def test_read_only_goal_blocks_cross_domain_delete_tool_call():
         "type": "function",
         "function": {
             "name": "health_manage",
-            "arguments": json.dumps({
-                "record_type": "symptom",
-                "operation": "delete",
-                "record_id": 75,
-            }),
+            "arguments": json.dumps(
+                {
+                    "record_type": "symptom",
+                    "operation": "delete",
+                    "record_id": 75,
+                }
+            ),
         },
     }
 
@@ -862,11 +856,13 @@ def test_read_only_goal_keeps_read_tool_call():
         "type": "function",
         "function": {
             "name": "health_manage",
-            "arguments": json.dumps({
-                "record_type": "water",
-                "operation": "list",
-                "date": "2026-07-28",
-            }),
+            "arguments": json.dumps(
+                {
+                    "record_type": "water",
+                    "operation": "list",
+                    "date": "2026-07-28",
+                }
+            ),
         },
     }
 

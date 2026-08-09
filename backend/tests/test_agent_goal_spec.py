@@ -22,10 +22,7 @@ from app.services.agent_kernel.intent_frame import build_intent_frame
 
 CASES = yaml.safe_load(
     (
-        Path(__file__).parents[1]
-        / "eval"
-        / "datasets"
-        / "agent_trajectories.yaml"
+        Path(__file__).parents[1] / "eval" / "datasets" / "agent_trajectories.yaml"
     ).read_text(encoding="utf-8")
 )["cases"]
 
@@ -76,12 +73,13 @@ def test_mixed_polarity_turn_never_builds_a_whole_turn_simple_write_goal(message
     assert goal.target_values == ()
 
 
-def test_explicit_illness_create_compiles_to_one_typed_simple_record_goal():
+@pytest.mark.parametrize("name", ("SLE", "脑梗", "睡眠呼吸暂停"))
+def test_explicit_illness_create_compiles_to_one_typed_simple_record_goal(name):
     context = ExecutionContext.for_test(user_id=1, channel="mobile")
     envelope = AgentEnvelope(
         user_id=1,
         channel="mobile",
-        text="记录疾病：SLE",
+        text=f"记录疾病：{name}",
     )
     intent = build_intent_frame(envelope, context)
 
@@ -95,7 +93,7 @@ def test_explicit_illness_create_compiles_to_one_typed_simple_record_goal():
     assert goal.domain == "illness"
     assert goal.operation == "create"
     assert goal.target_record_type == "illness"
-    assert dict(goal.target_values) == {"name": "SLE"}
+    assert dict(goal.target_values) == {"name": name}
     assert goal.requires_verification is True
 
 
@@ -122,8 +120,7 @@ def test_illness_simple_goal_never_broadens_negated_reported_or_compound_scope(
     )
 
     assert not (
-        goal.kind == "simple_health_record"
-        and goal.target_record_type == "illness"
+        goal.kind == "simple_health_record" and goal.target_record_type == "illness"
     )
 
 
@@ -140,8 +137,12 @@ def test_stateful_agent_trajectory_cases_compile_expected_goal():
         assert goal.target_record_type == expected.get("target_record_type"), case["id"]
         assert dict(goal.target_values) == expected.get("target_values", {}), case["id"]
         assert goal.requires_lookup is expected["requires_lookup"], case["id"]
-        assert goal.requires_verification is expected["requires_verification"], case["id"]
-        assert list(goal.prohibited_operations) == expected["prohibited_operations"], case["id"]
+        assert goal.requires_verification is expected["requires_verification"], case[
+            "id"
+        ]
+        assert list(goal.prohibited_operations) == expected["prohibited_operations"], (
+            case["id"]
+        )
         assert goal.requires_clarification is expected["clarification"], case["id"]
 
 
@@ -301,16 +302,17 @@ def test_diet_goal_contract_is_registered_without_changing_public_facade():
         "simple_health_record",
     )
     assert "重新估算并更新" in format_goal_contract_prompt(goal)
-    assert format_goal_contract_prompt(
-        GoalSpec(kind="chat", domain="general", operation="none")
-    ) == ""
+    assert (
+        format_goal_contract_prompt(
+            GoalSpec(kind="chat", domain="general", operation="none")
+        )
+        == ""
+    )
 
 
 def test_simple_water_goal_keeps_exact_normalized_amount():
     water_case = next(
-        case
-        for case in CASES
-        if case["id"] == "water_record_explicit_chinese_amount"
+        case for case in CASES if case["id"] == "water_record_explicit_chinese_amount"
     )
 
     goal = _compile(water_case)
@@ -339,17 +341,16 @@ def test_historical_water_supplement_goal_keeps_amount_and_user_owned_date():
 
     assert goal.kind == "simple_health_record"
     assert goal.target_record_type == "water"
-    assert goal.target_date == (
-        context.current_time.date() - timedelta(days=1)
-    ).isoformat()
+    assert (
+        goal.target_date
+        == (context.current_time.date() - timedelta(days=1)).isoformat()
+    )
     assert dict(goal.target_values) == {"amount_ml": "1200"}
 
 
 def test_simple_symptom_goal_binds_the_current_user_observation():
     symptom_case = next(
-        case
-        for case in CASES
-        if case["id"] == "symptom_record_explicit_observation"
+        case for case in CASES if case["id"] == "symptom_record_explicit_observation"
     )
 
     goal = _compile(symptom_case)
@@ -466,9 +467,10 @@ def test_simple_diet_goal_uses_user_owned_relative_date():
     )
 
     assert goal.kind == "simple_health_record"
-    assert goal.target_date == (
-        context.current_time.date() - timedelta(days=1)
-    ).isoformat()
+    assert (
+        goal.target_date
+        == (context.current_time.date() - timedelta(days=1)).isoformat()
+    )
 
 
 def test_simple_diet_goal_requires_food_details():
@@ -641,9 +643,7 @@ def test_invalid_explicit_diet_date_requires_clarification(message):
         ("记录补水1千毫升", "1000"),
     ),
 )
-def test_simple_water_goal_normalizes_natural_amount_variants(
-    message, amount_ml
-):
+def test_simple_water_goal_normalizes_natural_amount_variants(message, amount_ml):
     context = ExecutionContext.for_test(user_id=1, channel="mobile")
     envelope = AgentEnvelope(
         user_id=1,

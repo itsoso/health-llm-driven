@@ -10,6 +10,10 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
 
+from app.services.agent_kernel.goal_spec import (
+    SIMPLE_ILLNESS_CREATE_RE,
+    SIMPLE_ILLNESS_NAME_RE,
+)
 from app.services.agent_kernel.tool_registry import (
     ToolRegistryError,
     get_tool_spec,
@@ -68,9 +72,9 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v31"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v27"
-_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v22"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v32"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v28"
+_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v23"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
 _HEALTH_RECORD_DOMAIN_TYPES = {
     "diet": "diet",
@@ -243,15 +247,15 @@ _QUERY_DIMENSION_TEXT_TERMS: dict[str, tuple[str, ...]] = {
 _QUERY_DIMENSION_SEMANTIC_ALIASES = {"exercise": "workout"}
 _QUERY_DIMENSION_ENTITY_PREFIX_PATTERN = r"(?:夜间|每日|日均|平均|静息|全天)?"
 _QUERY_DIMENSION_ENTITY_SUFFIX_PATTERN = (
-    r"(?:数据|指标|数值|读数|情况|状况|状态|评分|分数|质量|时长|时间|趋势|"
+    r"(?:(?:的)?(?:数据|指标|数值|读数|情况|状况|状态|评分|分数|质量|时长|时间|趋势|"
     r"变化|明细|详情|汇总|统计|清单|列表|次数|频率|总量|平均值|最高值|"
-    r"最低值|波动|距离|摄入|报告)?"
+    r"最低值|波动|距离|摄入|报告|倍数|比率|比例))?"
 )
 _READ_QUERY_VERB_PATTERN = (
     r"(?:查询(?:一下)?|查找(?:一下)?|查看(?:一下)?|查到|查下|查(?:一下|一查)?|"
-    r"找出|找一下|回顾(?:一下)?|回看(?:一下)?|检索(?:一下)?|列出|"
+    r"找出|找一下|找|回顾(?:一下)?|回看(?:一下)?|检索(?:一下)?|列出|"
     r"比较|对比|翻看(?:一下)?|翻一下|看(?:一下|一看|一眼|下|看)?|"
-    r"搜索(?:一下)?|搜(?:一下)?|调取)"
+    r"搜索(?:一下)?|搜(?:一下)?|调取|调出)"
 )
 _READ_QUERY_VERB_RE = re.compile(_READ_QUERY_VERB_PATTERN)
 _HISTORY_QUERY_WINDOW_PATTERN = (
@@ -259,7 +263,7 @@ _HISTORY_QUERY_WINDOW_PATTERN = (
     r"(?:个)?(?:天|周|月|年)(?:内|以来)?|"
     r"(?:这|本)(?:一)?周|这个月|这月|本月|今年|本年|今天|今日|"
     r"昨天|昨日|前天|昨晚|昨夜|上周|上一周|上个月|去年|"
-    r"最近(?!(?:一次|那次|一回))|近来)"
+    r"最近(?!(?:的)?(?:那)?(?:一)?(?:次|回))|近来)"
 )
 _HISTORY_QUERY_WINDOW_RE = re.compile(_HISTORY_QUERY_WINDOW_PATTERN)
 _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE = re.compile(
@@ -279,7 +283,12 @@ _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE = re.compile(
     r"(?:那天|当天)?"
     r")"
 )
-_NEGATED_READ_PREFIX_PATTERN = r"(?:不要|别|不用|无需|不必|请勿|勿|甭|不想|不打算|取消)"
+_NEGATED_READ_PREFIX_PATTERN = (
+    r"(?:(?:我)?(?:不要|别|不用|无需|不必|请勿|勿|甭|不想|不打算|"
+    r"取消|不需要|不希望|停止|撤销|"
+    r"不(?=查询|查找|查看|查到|查下|查|找出|找一下|找|回顾|回看|检索|"
+    r"列出|比较|对比|翻看|翻一下|看|搜索|搜|调取|调出)))"
+)
 _NEGATED_READ_INTERPOSER_PATTERN = (
     r"(?:(?:帮我|给我|替我|为我|麻烦你?|请你?|让你|你|再|去)){0,6}"
 )
@@ -301,26 +310,26 @@ _HISTORY_QUERY_MULTI_ENTITY_RE = re.compile(
 _HISTORY_QUERY_LEADING_VERB_RE = re.compile(rf"^(?:{_READ_QUERY_VERB_PATTERN}|把)")
 _HISTORY_QUERY_TRAILING_VERB_RE = re.compile(
     r"(?:[，,、]?(?:(?:给我)?(?:找出来|查出来|列出来|调出来|找出|查看|看看)|"
-    r"(?:对比|比较)(?:一下)?))$"
+    r"(?:对比|比较)(?:一下|倍数|比例|比率)?))$"
 )
 _ILLNESS_MEDICAL_ACRONYMS = frozenset({"sle"})
 _UNRESOLVED_QUERY_REFERENCE_RE = re.compile(
     r"^(?:"
-    r"(?:它|这些|那些)|"
-    r"(?:这|那)(?:一)?(?:个|条|项|次|份|种)?"
-    r"(?:病|病症|疾病|问题|记录|病例|情况)?|"
-    r"(?:前一|上一)(?:个|条|项|份)|(?:前一次|上一次)|"
-    r"(?:(?:之前|前文|前面|上面|刚刚|刚才|方才|刚)"
+    r"(?:它|这些|那些)(?:病|病症|疾病|症状|问题|记录|病例|情况|内容)?|"
+    r"(?:这|那|此|该)(?:一)?(?:个|条|项|次|份|种)?"
+    r"(?:病|病症|疾病|症状|问题|记录|病例|情况|内容)?|"
+    r"(?:前一|上一|最后一)(?:个|条|项|份|次)|(?:前一次|上一次)|"
+    r"(?:(?:你)?(?:之前|前文|前面|上面|刚刚|刚才|方才|刚)"
     r"(?:说|提|提到|提过)?(?:的)?)"
     r"(?:(?:这|那)(?:一)?(?:个|条|项|次|份|种)?"
-    r"(?:病|病症|疾病|问题|记录|病例|情况)?|"
-    r"(?:前一|上一)(?:个|条|项|份))"
-    r")(?:上回|上一回|最近一次|最后一次|发作)?$"
+    r"(?:病|病症|疾病|症状|问题|记录|病例|情况|内容)?|"
+    r"(?:病|病症|疾病|症状|问题|记录|病例|情况|内容))?"
+    r")$"
 )
 _LATEST_OCCURRENCE_MARKER_PATTERN = (
-    r"(?:上一次|最近一次|最近那次|最后一次|上次|上回|上一回|最近一回|最后一回)"
+    r"(?:(?:我)?(?:上(?:一)?|最近|最后)(?:的)?(?:那)?(?:一)?(?:次|回))"
 )
-_LATEST_OCCURRENCE_EVENT_PATTERN = r"(?:记录|发作|发生)?"
+_LATEST_OCCURRENCE_EVENT_PATTERN = r"(?:记录|发作|发生|复发)?"
 _LATEST_OCCURRENCE_QUESTION_PATTERN = (
     r"(?:(?:是)?(?:在|于)?(?:什么时候|什么时间|何时|哪天|哪一天|几号)|呢)"
 )
@@ -1325,7 +1334,9 @@ def _history_query_entity_expression(text: str) -> str | None:
 
 def _latest_occurrence_query_entity(text: str) -> str | None:
     """Extract one named entity from composable latest-occurrence grammar."""
-    normalized = text.strip("的，,。.!！；;：:?？ ")
+    normalized = _strip_history_query_request_prefix(
+        text.strip("的，,。.!！；;：:?？ ")
+    )
     marker_first = re.fullmatch(
         rf"{_LATEST_OCCURRENCE_MARKER_PATTERN}(?:的)?"
         rf"(?P<entity>.{{1,80}}?){_LATEST_OCCURRENCE_EVENT_PATTERN}"
@@ -1343,7 +1354,7 @@ def _latest_occurrence_query_entity(text: str) -> str | None:
     candidate = _strip_history_query_request_prefix(match.group("entity"))
     candidate = _clean_history_query_entity(candidate)
     if _is_unresolved_query_reference(candidate):
-        return None
+        return candidate
     return candidate if 2 <= len(candidate) <= 80 else None
 
 
@@ -1354,7 +1365,7 @@ def _strip_history_query_request_prefix(value: str) -> str:
         r"^(?:请问|请您|烦请|劳烦|有劳|劳驾|拜托|方便的话|请|您|麻烦你?|能不能|可不可以|"
         r"可以不可以|能否|可否|"
         r"(?:能|可以)(?=给我|帮我|帮忙|替我|为我|查询|查找|查看|查一下|"
-        r"找出|找一下|回顾|回看|检索|列出|翻一下|调取|看看|查|把)|"
+        r"找出|找一下|找|回顾|回看|检索|列出|翻一下|调取|调出|看看|查|把)|"
         r"我想(?:请你|知道)?|想知道|我希望|我需要|给我|帮我|帮忙|替我|只|"
         r"为我|你|把|我(?:的)?)"
     )
@@ -1372,6 +1383,7 @@ def _clean_history_query_entity(value: str) -> str:
     """Remove only structural query decorators surrounding one entity span."""
     candidate = _HISTORY_QUERY_TRAILING_VERB_RE.sub("", value, count=1)
     candidate = _HISTORY_QUERY_WINDOW_RE.sub("", candidate)
+    candidate = re.sub(r"(?:的)?(?:倍数|几倍|比例|比率)$", "", candidate)
     candidate = re.sub(
         r"(?:的)?(?:记录|病史|病历|病例|历史).*$", "", candidate, count=1
     )
@@ -1400,23 +1412,28 @@ def _is_unresolved_query_reference(value: str) -> bool:
 def _query_contains_unresolved_reference(text: str) -> bool:
     """Detect a discourse pointer that names no durable health entity."""
     scoped = _query_scope_text(text)
-    if _latest_occurrence_query_entity(scoped) is not None:
-        return False
+    latest_entity = _latest_occurrence_query_entity(scoped)
+    if latest_entity is not None:
+        return _is_unresolved_query_reference(latest_entity)
     candidate = _history_query_entity_expression(scoped)
-    if candidate is not None and _is_unresolved_query_reference(candidate):
-        return True
+    if candidate is not None:
+        return _is_unresolved_query_reference(candidate)
     normalized = scoped.strip("的，,。.!！；;：:?？ ")
-    if re.match(r"^(?:它|这些|那些|这病|那病)", normalized):
+    stripped = _strip_history_query_request_prefix(normalized)
+    stripped = _clean_history_query_entity(stripped)
+    if _is_unresolved_query_reference(stripped):
+        return True
+    if re.match(r"^(?:它|这些|那些|这病|那病|此病|该病|该疾病|那个症状)", stripped):
         return True
     discourse_reference = re.compile(
-        r"(?:前文|前面|上面|刚刚|刚才|方才|刚)"
+        r"(?:你)?(?:之前|前文|前面|上面|刚刚|刚才|方才|刚)"
         r"(?:说|提|提到|提过)?(?:的)?"
-        r"(?:这|那)(?:一)?(?:个|条|项|次|份|种)?"
-        r"(?:病|病症|疾病|问题|记录|病例|情况)?"
+        r"(?:(?:这|那)(?:一)?(?:个|条|项|次|份|种)?)?"
+        r"(?:病|病症|疾病|症状|问题|记录|病例|情况|内容)?"
     )
-    indexed_reference = re.compile(r"(?:前一|上一)(?:个|条|项|份)")
+    indexed_reference = re.compile(r"(?:前一|上一|最后一)(?:个|条|项|份|次)")
     return bool(
-        discourse_reference.search(normalized) or indexed_reference.search(normalized)
+        discourse_reference.search(stripped) or indexed_reference.search(stripped)
     )
 
 
@@ -1613,8 +1630,10 @@ def _query_dimension_match_embedded_in_illness_name(
     return bool(
         re.search(r"(?:患有|患的是|确诊为|诊断为|诊断是)$", prefix)
         or re.match(
+            r"(?:(?:相关|诱发|依赖|关联)?性)?"
             r"(?:呼吸暂停(?:综合征)?|"
-            r"[\u4e00-\u9fff]{0,12}(?:综合征|障碍|疾病|病|症))",
+            r"[\u4e00-\u9fff]{0,12}(?:哮喘|肾炎|癫痫|闭经|综合征|障碍|"
+            r"疾病|感染|溃疡|疱疹|脑梗|病|症|炎|癌|疹))",
             suffix,
         )
     )
@@ -1846,7 +1865,11 @@ def _batch_query_plan_bound_to_turn(
     global_agg = _query_requested_aggregate(normalized_text)
     compare = normalized_plan.get("compare")
     text_requests_comparison = bool(
-        re.search(r"(?:相比|对比|比较|[vV][sS])", normalized_text)
+        re.search(
+            r"(?:相比|对比|比较|倍数|几倍|比例|比率|ratio|[vV][sS])",
+            normalized_text,
+            re.IGNORECASE,
+        )
     )
     default_compare_agg = "avg" if text_requests_comparison else None
     if len(entity_dimensions) == 1:
@@ -3656,6 +3679,7 @@ def _illness_targets(clause: str) -> tuple[str, ...]:
     if known:
         return tuple(dict.fromkeys(known))
 
+    explicit_create = SIMPLE_ILLNESS_CREATE_RE.fullmatch(clause)
     action_matches = tuple(_WRITE_TARGET_ACTION_RE.finditer(clause))
     candidate = ""
     if action_matches:
@@ -3683,9 +3707,17 @@ def _illness_targets(clause: str) -> tuple[str, ...]:
     parts = tuple(
         part.strip() for part in re.split(r"[、/]|(?:和|与)", candidate) if part.strip()
     )
-    if parts and all(
-        _ILLNESS_SUFFIX_RE.search(part) or _is_registered_illness_acronym(part)
-        for part in parts
+    explicit_safe_name = bool(
+        explicit_create is not None
+        and len(parts) == 1
+        and SIMPLE_ILLNESS_NAME_RE.fullmatch(parts[0])
+    )
+    if parts and (
+        explicit_safe_name
+        or all(
+            _ILLNESS_SUFFIX_RE.search(part) or _is_registered_illness_acronym(part)
+            for part in parts
+        )
     ):
         return tuple(
             dict.fromkeys(
