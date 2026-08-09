@@ -114,6 +114,7 @@ env -u APP_STORE_REVIEW_DEMO_ACCOUNT -u APP_STORE_REVIEW_DEMO_PASSWORD \
   -destination "platform=${DESTINATION_PLATFORM},id=${DEVICE_ID}" \
   -derivedDataPath "${HARNESS_DIR}/DerivedData" \
   -resultBundlePath "${RESULT_PATH}" \
+  -collect-test-diagnostics never \
   test
 
 echo "${DESTINATION_PLATFORM} acceptance result: ${RESULT_PATH}"

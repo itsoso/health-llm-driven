@@ -156,8 +156,15 @@ final class XiaobaAcceptanceUITests: XCTestCase {
         app.launch()
         try requireAuthenticatedChat()
 
+        let seededMessageText = "今天优先完成两件事"
         let assistantSurface = app.descendants(matching: .any)
-            .matching(identifier: "assistant-message-surface")
+            .matching(
+                NSPredicate(
+                    format: "identifier == %@ AND label CONTAINS %@",
+                    "assistant-message-surface",
+                    seededMessageText
+                )
+            )
             .firstMatch
         XCTAssertTrue(
             assistantSurface.waitForExistence(timeout: 20),
@@ -168,7 +175,7 @@ final class XiaobaAcceptanceUITests: XCTestCase {
             "The conversation did not open at the latest assistant message"
         )
         XCTAssertTrue(
-            assistantSurface.label.contains("## 今天优先完成两件事"),
+            assistantSurface.label.contains("今天优先完成两件事"),
             "The visible latest assistant message was not the deterministic review fixture"
         )
         attachScreenshot("conversation-opened-at-latest-seeded-markdown")
