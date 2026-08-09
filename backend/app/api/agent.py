@@ -2474,6 +2474,7 @@ async def agent_send(
 
 @router.get("/conversations", summary="统一健康助理对话列表")
 async def list_conversations(
+    response: Response,
     limit: int = Query(30, ge=1, le=100),
     offset: int = Query(0, ge=0, description="分页偏移(翻页用)"),
     title_like: Optional[str] = Query(None, description="按标题模糊过滤(旧参数,仅标题)"),
@@ -2488,6 +2489,7 @@ async def list_conversations(
     AgentExecutor persists conversations through AgentConversationService so mobile/web
     can resume interrupted streams from the same durable message store.
     """
+    response.headers["Cache-Control"] = "no-store"
     from sqlalchemy import func
     from app.models.agent_conversation import AgentMessage
     from app.services.agent_conversation_service import AgentConversationService
@@ -2540,12 +2542,14 @@ async def list_conversations(
 @router.get("/conversations/{conversation_id}", summary="统一健康助理对话详情")
 async def get_conversation(
     conversation_id: int,
+    response: Response,
     days: Optional[int] = Query(None, ge=1, le=365, description="只返回最近 N 天的消息"),
     limit: Optional[int] = Query(None, ge=1, le=200, description="按消息 ID 取最近一页"),
     before_message_id: Optional[int] = Query(None, ge=1, description="只返回此消息 ID 之前的数据"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
+    response.headers["Cache-Control"] = "no-store"
     from app.models.agent_conversation import AgentConversation, AgentMessage
 
     conv = (
