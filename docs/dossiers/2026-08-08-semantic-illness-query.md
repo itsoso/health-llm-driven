@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS on mainline-synced tree; new exact-commit G4 pending |
+| current_stage | G3 PASS on latest-main-synced tree; new exact-commit G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -1430,6 +1430,73 @@ The v30 implementation and all evidence above are fixed at exact commit
 `01af140b69e226c02ca93f2f3598c2c74861daa5`. Reviewers must evaluate the
 following documentation commit together with this exact implementation parent;
 neither commit has been pushed or deployed.
+
+Fresh code and product-safety reviews of exact documentation commit
+`0e1134180f5eafd0e002f9f9b2a853a8bc4f370c` both returned NO-GO, so neither
+that commit nor its implementation parent was pushed or deployed. Their real
+Executor→Gateway→Policy matrices exposed unresolved-reference variants,
+composable natural negations, disease observations that inherited a metric
+substring, additional calendar dates/weekdays/months/quarters/festivals,
+incomplete or injected batch plans, an upload-window schema contradiction,
+latest-occurrence SLE keyword pollution, same-domain MRI target substitution,
+later positive read clauses and the current-user possessive transport form
+`我坐的动车`. The code review also showed that semantically equivalent model
+queries could survive executor dedup before policy projection. Both reviews
+remained synthetic and performed no production database I/O.
+
+The v31 remediation makes deterministic turn semantics the dispatch source of
+truth rather than a validator around model JSON. Read grammar now handles bare
+`看`, composable cancellation wrappers and later positive clauses; unresolved
+references and unsupported calendar expressions stay hard-blocked in enforce
+and shadow modes. Disease observations cannot authorize nested metric reads.
+Latest-occurrence illness grammar, exact MRI projection, upload windows,
+current-user event ownership and ordered comparison plans are compiled from the
+user turn. Batch overproposal is truncated to the exact authoritative prefix;
+missing or injected comparison/aggregation semantics cannot dispatch. Read-only
+dedup fingerprints use that same deterministic projection, so model paraphrases
+execute once.
+
+Explicit `记录疾病：SLE` now compiles to a typed `simple_health_record` goal.
+If the model emits no tool call, the existing server-owned simple-record path
+creates one minimal illness call and still passes it through the normal
+ToolGateway, receipt and verification machinery. If Qwen instead proposes a
+generic memory predicate (`确诊疾病` / `疾病` / `疾病史`), policy reconstructs an
+illness write only when one direct current-user disease clause and the proposed
+object match exactly (an explanatory parenthetical is tolerated). Wrong entity,
+concatenated entity, quotation, attribution, third party, negation and compound
+turns remain blocked. Optional model severity is discarded; only the existing
+safe `active` default may survive. Contracts are now
+`agent-capability-policy-v31` / `authorized-target-set-v27` /
+`record-update-evidence-v22`.
+
+Failure-first matrices reproduced the v31 review gaps before implementation.
+The final single-process 27-file Backend gate passes 4,512/4,512 with
+`TZ=Asia/Shanghai`; the stricter cross-domain regression matrix passes 43/43.
+Ruff lint, targeted formatting, Python compilation, generated architecture
+drift, 102-dossier consistency and `git diff --check` pass. Existing adjacent
+evidence remains green: contextual meal-photo compatibility 23/23, three Mobile
+chat suites 99/99 with only pre-existing visible React `act(...)` warnings, and
+the iOS acceptance harness exits zero.
+
+The requested live `qwen3.7-max` evaluation was then run as one ten-case system
+matrix with zero database I/O. It covered exact illness read, unresolved
+reference, negated read, unsupported calendar read, quoted write, disease
+observation, exact MRI query, current-user event, ordered comparison and illness
+create. A first 9/10 run revealed Qwen selecting `medical_exam` for `SLE`; the
+policy correctly blocked it. The final design corrects cross-domain projection
+only for a registered medical acronym with an exact user-owned query, while 43
+long-tail wrong-domain controls (including non-registered diseases) continue to
+block. On exact implementation commit
+`1c398236dff630c933bfb79a63c76cd0b90ee857`, the full live matrix passes 10/10
+and dispatches only the server-projected calls.
+
+Latest `origin/main` mobile-only commit `75f61f694` was merged after the
+implementation as `7d51ae7f1f46a1c6de44e14cafd853aeab314957`. It changes the
+account-login error UI and has no Backend overlap. On that merged tree, the
+three core semantic files pass 1,469/1,469 and the upstream Mobile login suite
+passes 23/23. Reviewers must inspect the following documentation commit together
+with this exact merge parent. Nothing in the v31 chain has been pushed or
+deployed; G4 requires two new independent GO decisions on that exact commit.
 
 ### G5 Deployment Health: PENDING
 
