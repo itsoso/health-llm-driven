@@ -1378,6 +1378,11 @@ meal-photo file passes 103/103, the three merged-main Mobile chat suites pass
 99/99 with the same pre-existing visible React `act(...)` warnings, and the iOS
 acceptance harness passes. Final exact-commit review remains pending.
 
+The v29 implementation, regression matrix and passing pre-commit gates are fixed
+at exact commit `b0c0815f06094abb2b9d6f7d3e2eb91c67fa8bcd`. Reviewers must evaluate the
+documentation commit that records this evidence together with that implementation
+parent; neither commit has been pushed or deployed.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.
