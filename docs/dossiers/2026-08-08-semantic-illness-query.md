@@ -611,6 +611,35 @@ validation and no-match honesty address those risks.
   compatibility file passes 103/103. Targeted Ruff, formatting, Python
   compilation and `git diff --check` pass on the same tree. Repository
   structural checks and two fresh exact-commit G4 reviews remain mandatory.
+- Fresh code and product-safety reviews of exact commit `fbd0b6314` both
+  returned NO-GO, so it was not pushed or deployed. Real Executor/Gateway
+  probes found more epistemic and relapse illness forms, bare/parenthetical
+  record IDs, source and owner relation variants, midnight/evening conversion,
+  long-tail query word order, and shadow-mode read blocks that still dispatched.
+  They also found one legitimate explicit current-user water correction was
+  falsely denied.
+- Latest `origin/main` commit `6a54bd054` was merged before remediation. It
+  changes only the separate iOS build-253 release-evidence Dossier and does not
+  overlap Backend runtime or tests.
+- The v21 remediation versions the boundary as
+  `agent-capability-policy-v21` / `authorized-target-set-v17` /
+  `record-update-evidence-v12`. A clause-local epistemic grammar now makes
+  uncertain recovery/active-state predicates non-authorizing, and broader
+  relapse morphology takes precedence over recovery. Generic visible `ID`
+  syntax remains an exact constraint. Event source and ownership are parsed as
+  source/owner/resource relations across determiners, ownership verbs and
+  owner-noun forms. Daypart normalization maps `凌晨十二点` to hour 00 and
+  `昨晚` to PM. Illness-query syntax supports entity-before-window and direct
+  history forms, uses conservative illness morphology when the model proposes
+  another domain, splits additional multi-entity connectors, and makes
+  clarification a hard denial in both enforce and shadow. Explicit owner-bound
+  water corrections may include a verified old value.
+- The final v21 policy/Gateway/scope group passes 2,190/2,190 tests. All 25
+  changed Backend feature-test files pass 3,823/3,823 in one process on the
+  production `Asia/Shanghai` calendar basis, and the adjacent meal-photo file
+  passes 103/103. The 268-case focused real-boundary matrix, targeted Ruff,
+  formatting, Python compilation and `git diff --check` also pass. Repository
+  structural checks and two fresh exact-commit reviews remain mandatory.
 
 ### G4 Safety Review: PENDING
 
@@ -990,6 +1019,16 @@ dispatch, adds failure-first real Executor coverage in enforce and shadow
 modes, and preserves positive controls for explicit current-user facts and
 unambiguous recovery. The clean G3 evidence is green; a new exact commit and two
 fresh independent reviews of that exact SHA are mandatory before G4 may pass.
+
+Fresh code and product-safety reviews of exact commit `fbd0b6314` both returned
+NO-GO, so push and deployment again remained stopped. They reproduced actual
+PUT/POST or broadened read dispatch for additional disease uncertainty/relapse,
+ID, event provenance/ownership, daypart and long-tail/multi-entity query forms;
+shadow mode executed an illness-query clarification block. Failure-first tests
+reproduced 47 boundary failures. The v21 remediation resolves each relation
+before dispatch and adds the reviewers' positive water/time/query controls. A
+new exact commit and two fresh independent reviews of that exact SHA are
+mandatory before G4 may pass.
 
 ### G5 Deployment Health: PENDING
 

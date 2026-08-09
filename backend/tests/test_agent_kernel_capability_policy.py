@@ -3027,6 +3027,18 @@ def test_negated_illness_recovery_requires_clarification_instead_of_guessing(
         "好转存疑",
         "还没好只是猜测",
         "正在发作中尚未确认",
+        "未能确认已经康复",
+        "康复还无法确定",
+        "好转与否还不确定",
+        "看似在好转",
+        "好转是假象",
+        "估计已经好转了",
+        "未必已经好转",
+        "大概快好了",
+        "估计还没好",
+        "未必还在发作中",
+        "昨天好了今天又长出来了",
+        "昨天好了但今天疼得更厉害",
     ),
 )
 @pytest.mark.parametrize("status", ("active", "improving", "resolved"))
@@ -3157,6 +3169,9 @@ def test_clear_illness_improvement_paraphrase_remains_supported(message):
         "舌尖溃疡记录编号为999昨天好了，修改记录",
         "舌尖溃疡第999条疾病记录昨天好了，修改记录",
         "舌尖溃疡疾病记录第999号昨天好了，修改记录",
+        "舌尖溃疡ID999昨天好转了，修改记录",
+        "舌尖溃疡疾病记录（ID999）昨天好了，修改记录",
+        "舌尖溃疡第999个疾病记录昨天好了，修改记录",
     ),
 )
 def test_visible_illness_record_id_cannot_fall_back_to_a_different_named_record(
@@ -4290,9 +4305,9 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v20"
+    assert payload["contract_version"] == "agent-capability-policy-v21"
     assert payload["health_record_target_binding"] == {
-        "version": "authorized-target-set-v16",
+        "version": "authorized-target-set-v17",
         "domain_types": {
             "diet": "diet",
             "exercise": "exercise",
@@ -4309,7 +4324,7 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
         payload["whole_record_delete_evidence_version"] == "record-delete-evidence-v2"
     )
     assert (
-        payload["health_manage_update_evidence_version"] == "record-update-evidence-v11"
+        payload["health_manage_update_evidence_version"] == "record-update-evidence-v12"
     )
     assert payload["known_tools"]
     assert payload["recipe_record_types"]

@@ -1,4 +1,5 @@
 """Tool preflight gateway for XiaoBa Agent Kernel."""
+
 from __future__ import annotations
 
 import json
@@ -16,11 +17,14 @@ from app.services.agent_kernel.types import (
 logger = logging.getLogger(__name__)
 
 _VALID_POLICY_MODES = frozenset({"enforce", "shadow"})
-_HARD_BLOCK_REASONS = frozenset({
-    "manage_operation_mismatch",
-    "delete_requires_explicit_whole_record_intent",
-    "update_requires_exact_target_evidence",
-})
+_HARD_BLOCK_REASONS = frozenset(
+    {
+        "manage_operation_mismatch",
+        "delete_requires_explicit_whole_record_intent",
+        "update_requires_exact_target_evidence",
+        "illness_query_entity_requires_clarification",
+    }
+)
 
 
 def _is_hard_policy_denial(

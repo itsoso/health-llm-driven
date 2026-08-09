@@ -1720,6 +1720,7 @@ async def test_executor_water_correction_dispatches_only_final_value(
         "请把我自己的饮水记录718改成350ml",
         "请把我个人的饮水记录718改成350ml",
         "请把属于我的饮水记录718改成350ml",
+        "请把属于我的饮水记录718从300ml改成350ml",
     ),
 )
 async def test_executor_direct_water_update_syntax_dispatches_canonical_value(
@@ -1867,6 +1868,21 @@ async def test_executor_negated_or_noop_water_correction_never_reaches_real_put(
         "舌尖溃疡好转存疑，修改记录",
         "舌尖溃疡还没好只是猜测，修改记录",
         "舌尖溃疡正在发作中尚未确认，修改记录",
+        "舌尖溃疡未能确认已经康复，修改记录",
+        "舌尖溃疡康复还无法确定，修改记录",
+        "舌尖溃疡好转与否还不确定，修改记录",
+        "舌尖溃疡看似在好转，修改记录",
+        "舌尖溃疡好转是假象，修改记录",
+        "舌尖溃疡估计已经好转了，修改记录",
+        "舌尖溃疡未必已经好转，修改记录",
+        "舌尖溃疡大概快好了，修改记录",
+        "舌尖溃疡估计还没好，修改记录",
+        "舌尖溃疡未必还在发作中，修改记录",
+        "舌尖溃疡昨天好了今天又长出来了，修改记录",
+        "舌尖溃疡昨天好了但今天疼得更厉害，修改记录",
+        "舌尖溃疡ID999昨天好转了，修改记录",
+        "舌尖溃疡疾病记录（ID999）昨天好了，修改记录",
+        "舌尖溃疡第999个疾病记录昨天好了，修改记录",
     ),
 )
 async def test_executor_unauthorized_or_ambiguous_illness_update_never_reaches_real_put(
@@ -2120,6 +2136,14 @@ async def test_executor_uncertain_or_negated_active_illness_never_puts(
         "今天到杭州了（朋友说的），记录生活事件：到达杭州",
         "今天到杭州了（本次旅程属于Alex），记录生活事件：到达杭州",
         "今天到杭州了（这次出行归小明），记录生活事件：到达杭州",
+        "今天到杭州了，以群消息为准，记录生活事件：到达杭州",
+        "今天到杭州了，从群消息得知，记录生活事件：到达杭州",
+        "我今天到杭州了，消息源是群聊，记录生活事件：到达杭州",
+        "今天到杭州了（该行程属于Alex），记录生活事件：到达杭州",
+        "今天到杭州了（此次出行属于小明），记录生活事件：到达杭州",
+        "今天到杭州了（旅程所有者Alex），记录生活事件：到达杭州",
+        "今天到杭州了（Alex名下的行程），记录生活事件：到达杭州",
+        "今天到杭州了（此次旅途系小明所有），记录生活事件：到达杭州",
     ),
 )
 async def test_executor_metalinguistic_event_never_reaches_real_event_post(
@@ -2384,6 +2408,22 @@ async def test_gateway_explicit_update_id_without_owner_candidate_never_dispatch
             },
         ),
         (
+            "昨天凌晨十二点半到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T00:30:00+08:00",
+            },
+        ),
+        (
+            "我昨晚十一点一刻到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T23:15:00+08:00",
+            },
+        ),
+        (
             "今天凌晨到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             {"title": "到达杭州"},
@@ -2605,6 +2645,24 @@ async def test_gateway_dispatches_supported_family_canonical_projection(
             {
                 "title": "到达杭州",
                 "occurred_at": "2026-07-16T13:30:00+08:00",
+            },
+        ),
+        (
+            "昨天凌晨十二点半到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T00:30:00+08:00",
+            },
+        ),
+        (
+            "我昨晚十一点一刻到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T23:15:00+08:00",
             },
         ),
         (
@@ -3038,6 +3096,21 @@ async def test_historical_illness_query_is_projected_to_turn_entity_and_window(
             {"dimension": "illness", "keyword": "扁桃体炎", "days": 183},
         ),
         (
+            "我上一次扁桃体炎是什么时候 最近半年分别有哪些记录",
+            {"dimension": "sleep", "days": 7},
+            {"dimension": "illness", "keyword": "扁桃体炎", "days": 183},
+        ),
+        (
+            "扁桃体炎最近半年有哪些记录",
+            {"dimension": "illness", "keyword": "感冒", "days": 7},
+            {"dimension": "illness", "keyword": "扁桃体炎", "days": 183},
+        ),
+        (
+            "查一下我近半年玫瑰糠疹的记录",
+            {"dimension": "sleep", "days": 7},
+            {"dimension": "illness", "keyword": "玫瑰糠疹", "days": 183},
+        ),
+        (
             "最近一年口腔溃疡有哪些记录？",
             {"dimension": "illness", "keyword": "口腔溃疡", "days": 365},
             {"dimension": "illness", "keyword": "口腔溃疡", "days": 365},
@@ -3076,8 +3149,20 @@ async def test_historical_illness_query_projects_arbitrary_entity_and_year_windo
 
 
 @pytest.mark.asyncio
-async def test_multi_entity_illness_query_never_falls_back_to_model_scope():
-    gateway = ToolGateway(_snapshot("最近半年口腔溃疡和湿疹有哪些记录？"))
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "最近半年口腔溃疡和湿疹有哪些记录？",
+        "最近半年扁桃体炎还有鼻窦炎有哪些记录？",
+        "过去三个月湿疹和流感有哪些记录？",
+    ),
+)
+async def test_multi_entity_illness_query_never_falls_back_to_model_scope(
+    policy_mode,
+    message,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
     calls = []
 
     async def dispatch(request):

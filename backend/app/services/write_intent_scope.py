@@ -346,20 +346,29 @@ _POST_OWNERSHIP_RE = re.compile(
 )
 _POST_BARE_OWNER_RE = re.compile(rf"^(?P<owner>{_OWNER_TOKEN_PATTERN})的$")
 _POST_OWNER_RESOURCE_RE = re.compile(
-    r"^(?:(?:这|本)(?:条|个|次|趟)?(?:记录|数据|行程|旅程|出行|事件)?(?:其实|实际上)?)?"
-    rf"(?:是|属于|归于|归|给)(?P<owner>{_OWNER_TOKEN_PATTERN})的"
-    r"(?:行程|旅程|出行|记录|数据|事件|饮水|药|补剂)$"
+    r"^(?:(?:这|本|该|此)(?:条|个|次|趟)?"
+    r"(?:记录|数据|行程|旅程|旅途|出行|事件)?(?:其实|实际上)?)?"
+    rf"(?:是|系|属于|归于|归|给)(?P<owner>{_OWNER_TOKEN_PATTERN})(?:所有)?的"
+    r"(?:行程|旅程|旅途|出行|记录|数据|事件|饮水|药|补剂)$"
 )
 _POST_BARE_OWNER_RESOURCE_RE = re.compile(
     rf"^(?P<owner>{_OWNER_TOKEN_PATTERN})"
     r"(?:的(?:(?:这|本)(?:条|个|次|趟)?)?"
-    r"(?:行程|旅程|出行|记录|数据|事件|饮水|药|补剂)|"
-    r"(?:行程|旅程|出行))$"
+    r"(?:行程|旅程|旅途|出行|记录|数据|事件|饮水|药|补剂)|"
+    r"(?:行程|旅程|旅途|出行)|名下的(?:行程|旅程|旅途|出行))$"
 )
 _POST_RESOURCE_OWNER_RE = re.compile(
-    r"^(?:(?:这|本)(?:个|次|趟|条)?)?"
-    r"(?:行程|旅程|出行|记录|数据|事件|饮水|药|补剂)"
-    rf"(?:是|属于|归于|归)(?P<owner>{_OWNER_TOKEN_PATTERN})(?:的)?$"
+    r"^(?:(?:这|本|该|此)(?:个|次|趟|条)?)?"
+    r"(?:行程|旅程|旅途|出行|记录|数据|事件|饮水|药|补剂)"
+    rf"(?:是|系|属于|归于|归)(?P<owner>{_OWNER_TOKEN_PATTERN})(?:所有)?(?:的)?$"
+)
+_POST_RESOURCE_OWNER_NOUN_RE = re.compile(
+    r"^(?:行程|旅程|旅途|出行|记录|数据|事件)"
+    rf"(?:的)?(?:所有者|归属人)(?P<owner>{_OWNER_TOKEN_PATTERN})$"
+)
+_POST_OWNER_NAMED_RESOURCE_RE = re.compile(
+    rf"^(?P<owner>{_OWNER_TOKEN_PATTERN})名下的"
+    r"(?:行程|旅程|旅途|出行|记录|数据|事件)$"
 )
 _POST_WRITE_BENEFICIARY_RE = re.compile(
     r"^(?:记录|记一下|记下|保存|录入|写入|新增|打卡)(?:一下)?"
@@ -420,7 +429,12 @@ _EXTERNAL_PROVENANCE_RE = re.compile(
     r"(?:消息|日志|聊天|群聊|群消息|通知|文本|原文|记录|微信|短信|邮件|"
     r"朋友|同事|家人)"
     r".{0,8}(?:截图|转达|转发|转述|引用)|"
-    r"(?:朋友|同事|家人|别人).{0,6}(?:说|称|告知|通知)(?:的)?(?:内容)?)"
+    r"(?:朋友|同事|家人|别人).{0,6}(?:说|称|告知|通知)(?:的)?(?:内容)?|"
+    r"(?:消息|信息|资料)(?:来)?源(?:是|为|来自|属于).{0,12}"
+    r"(?:消息|聊天|群聊|群消息|微信|短信|邮件)|"
+    r"以.{0,12}(?:消息|聊天|群聊|群消息|微信|短信|邮件)为准|"
+    r"从.{0,12}(?:消息|聊天|群聊|群消息|微信|短信|邮件)"
+    r"(?:得知|获悉|看到|听说))"
 )
 _PARENTHETICAL_PROVENANCE_RE = re.compile(
     r"(?:截图|转达|转发|转述|引用|摘录|取自|来自|来源|群消息|群聊|微信|"
@@ -496,6 +510,7 @@ _DIRECT_WATER_ID_UPDATE_RE = re.compile(
     rf"^{_CURRENT_USER_UPDATE_PREFIX_PATTERN}(?:把|将)?"
     rf"{_CURRENT_USER_RECORD_OWNER_PATTERN}"
     rf"(?:饮水|water)(?:记录|条目)#?\d+"
+    rf"(?:从[（(]?{_WATER_VALUE_TEXT_PATTERN}[）)]?)?"
     rf"(?:改成|改为|更正为|修正为|调整为|更新为|修改为|修改成)"
     rf"{_WATER_VALUE_TEXT_PATTERN}"
     rf"(?:[，,]{_UPDATE_CORRECTION_MARKER_PATTERN}"
@@ -1390,6 +1405,8 @@ def _is_post_attributed_to_non_current_owner(clause: str) -> bool:
         or _POST_OWNER_RESOURCE_RE.fullmatch(normalized)
         or _POST_BARE_OWNER_RESOURCE_RE.fullmatch(normalized)
         or _POST_RESOURCE_OWNER_RE.fullmatch(normalized)
+        or _POST_RESOURCE_OWNER_NOUN_RE.fullmatch(normalized)
+        or _POST_OWNER_NAMED_RESOURCE_RE.fullmatch(normalized)
         or _POST_WRITE_BENEFICIARY_RE.fullmatch(normalized)
         or _POST_OWNERSHIP_RE.fullmatch(normalized)
         or _POST_BARE_OWNER_RE.fullmatch(normalized)

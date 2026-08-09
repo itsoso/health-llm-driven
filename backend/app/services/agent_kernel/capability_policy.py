@@ -67,9 +67,9 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v20"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v16"
-_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v11"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v21"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v17"
+_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v12"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
 _HEALTH_RECORD_DOMAIN_TYPES = {
     "diet": "diet",
@@ -174,7 +174,8 @@ _ILLNESS_RECOVERY_RE = re.compile(r"(?:好转|改善|缓解|康复|痊愈|好了
 _ILLNESS_RELAPSE_OR_WORSENING_RE = re.compile(
     r"(?:复发|再发|重新发作|又发作|再次发作|又犯了|再犯|犯病|"
     r"加重|恶化|反复|反弹|更严重|严重了|变严重|越来越严重|"
-    r"又(?:疼|痛|肿|痒|破|起泡)(?:了)?)"
+    r"又(?:疼|痛|肿|痒|破|起泡|长(?:出来)?|生(?:出来)?|冒(?:出来)?|出现)(?:了)?|"
+    r"(?:疼|痛|肿|痒).{0,4}更(?:厉害|严重)|更(?:疼|痛|肿|痒|厉害|严重))"
 )
 _ILLNESS_ASSERTION_BOUNDARY_RE = re.compile(r"(?:但是|不过|然而|反而|但|却|就)")
 _ILLNESS_RECOVERY_UNCERTAIN_PREFIX_RE = re.compile(
@@ -216,6 +217,15 @@ _ILLNESS_ACTIVE_UNSAFE_PREFIX_RE = re.compile(
     r"(?:并非|不是|不算|算不上|无法确定|不能确定|"
     r"似乎|好像|貌似|可能|也许|或许|大概|大约|看起来)"
     r"(?:(?:已经|仍然|还|正在))*$"
+)
+_ILLNESS_EPISTEMIC_UNCERTAINTY_RE = re.compile(
+    r"(?:估计|推测|猜测|未必|看似|疑似|据说|听说|传言|可能|也许|或许|"
+    r"大概|大约|好像|貌似|似乎|不确定|无法确定|不能确定|未能确认|"
+    r"与否|存疑|假象|尚待确认)"
+)
+_ILLNESS_ENTITY_FORM_RE = re.compile(
+    r"(?:炎|疹|疮|癣|癌|瘤|病|症|综合征|感染|溃疡|哮喘|感冒|流感|"
+    r"水泡|伤口|烫伤|麦粒肿|甲沟炎|带状疱疹)$"
 )
 _MEAL_TYPE_ALIASES = {
     "breakfast": "breakfast",
@@ -931,7 +941,8 @@ def _illness_recovery_assertion(text: str) -> str:
         prefix = _assertion_prefix(text, match.start())
         suffix = text[match.end() : match.end() + 12]
         if (
-            _ILLNESS_RECOVERY_UNCERTAIN_PREFIX_RE.search(prefix)
+            _ILLNESS_EPISTEMIC_UNCERTAINTY_RE.search(prefix[-24:] + suffix)
+            or _ILLNESS_RECOVERY_UNCERTAIN_PREFIX_RE.search(prefix)
             or _ILLNESS_RECOVERY_NEGATED_PREFIX_RE.search(prefix)
             or _ILLNESS_RECOVERY_NEGATED_SUFFIX_RE.search(suffix)
         ):
@@ -947,9 +958,11 @@ def _illness_active_assertion(text: str) -> str:
     for match in matches:
         prefix = _assertion_prefix(text, match.start())
         suffix = text[match.end() : match.end() + 12]
-        if _ILLNESS_ACTIVE_UNSAFE_PREFIX_RE.search(
-            prefix
-        ) or _ILLNESS_RECOVERY_NEGATED_SUFFIX_RE.search(suffix):
+        if (
+            _ILLNESS_EPISTEMIC_UNCERTAINTY_RE.search(prefix[-24:] + suffix)
+            or _ILLNESS_ACTIVE_UNSAFE_PREFIX_RE.search(prefix)
+            or _ILLNESS_RECOVERY_NEGATED_SUFFIX_RE.search(suffix)
+        ):
             return "unsafe"
     return "positive"
 
@@ -1040,9 +1053,10 @@ def _explicit_illness_record_ids(text: str) -> set[int]:
     normalized = "".join(str(text or "").split())
     record_ids: set[int] = set()
     patterns = (
+        r"(?<![A-Za-z0-9])id[#：:]?(?P<record_id>\d+)(?!\d)",
         r"(?:疾病)?(?:记录|条目)(?:编号|id|号)?(?:是|为)?[#：:]?"
         r"(?P<record_id>\d+)(?!\d)",
-        r"第(?P<record_id>\d+)(?:号|条)(?:疾病)?(?:记录|条目)",
+        r"第(?P<record_id>\d+)(?:个|号|条)(?:疾病)?(?:记录|条目)",
         r"(?:疾病)?(?:记录|条目)第(?P<record_id>\d+)(?:号|条)?",
     )
     for pattern in patterns:
@@ -1086,19 +1100,37 @@ def _illness_query_entities(text: str) -> tuple[str, ...]:
         r"(?:个)?(?:天|周|月|年)(?:内|以来)?(?:分别)?"
         r"(?P<entities>[^?？，,。]{1,60}?)(?:有哪些|有那些|有什么|有几条|有几次)"
         r"(?:记录|历史)?",
+        r"(?P<entities>[^?？，,。]{2,60}?)(?:最近|近|过去)"
+        r"(?:\d+|[一二两三四五六七八九十]+|半)(?:个)?(?:天|周|月|年)"
+        r"(?:内|以来)?(?:分别)?(?:有哪些|有那些|有什么|有几条|有几次)"
+        r"(?:记录|历史)?",
+        r"^(?:查一下|查询|查看|帮我查一下|帮我查|请查一下|请查)?(?:我)?"
+        r"(?:最近|近|过去)(?:\d+|[一二两三四五六七八九十]+|半)"
+        r"(?:个)?(?:天|周|月|年)(?:内|以来)?"
+        r"(?P<entities>[^?？，,。]{2,60}?)(?:的)?(?:记录|历史)[?？]?$",
     )
     for pattern in patterns:
         match = re.search(pattern, normalized)
         if match is not None:
             candidates.append(match.group("entities"))
     for candidate in candidates:
-        for value in re.split(r"[、和与及]", candidate):
+        candidate = re.sub(
+            r"(?:有哪些|有那些|有什么|有几条|有几次)$",
+            "",
+            candidate,
+        )
+        for value in re.split(r"(?:还有|以及|[、和与及])", candidate):
             entity = re.sub(r"^(?:我(?:的)?|分别)", "", value).strip("的 ")
             if 2 <= len(entity) <= 40 and not re.search(
                 r"(?:记录|历史|什么时候|何时)", entity
             ):
                 entities.append(entity)
     return tuple(dict.fromkeys(entities))
+
+
+def _looks_like_illness_entity(value: str) -> bool:
+    normalized = _normalize_entity_name(value)
+    return bool(normalized and _ILLNESS_ENTITY_FORM_RE.search(normalized))
 
 
 def _explicit_illness_query_window_days(text: str) -> int | None:
@@ -1365,14 +1397,20 @@ def decide_tool_capability(
         turn_text = snapshot.envelope.text
         proposed_dimension = str(args.get("dimension") or "").strip().lower()
         known_illness_entities = _illness_targets(turn_text)
-        if known_illness_entities or proposed_dimension in {
-            "",
-            "illness",
-            "comprehensive",
-        }:
-            illness_query_entities = _illness_query_entities(
-                turn_text,
-            )
+        illness_query_entities = _illness_query_entities(turn_text)
+        structurally_illness = bool(illness_query_entities) and all(
+            _looks_like_illness_entity(entity) for entity in illness_query_entities
+        )
+        if (
+            known_illness_entities
+            or structurally_illness
+            or proposed_dimension
+            in {
+                "",
+                "illness",
+                "comprehensive",
+            }
+        ):
             if len(illness_query_entities) > 1:
                 return _decision(
                     "block",
@@ -3786,11 +3824,22 @@ def _clock_components(value: Any) -> tuple[int, int] | None:
     if not 0 <= hour <= 23 or not 0 <= minute <= 59:
         return None
     daypart_prefix = text[max(0, match_start - 6) : match_start]
-    if 1 <= hour <= 5 and "中午" in daypart_prefix:
+    if "凌晨" in daypart_prefix and hour == 12:
+        hour = 0
+    elif 1 <= hour <= 5 and "中午" in daypart_prefix:
         hour += 12
     elif hour < 12 and any(
         marker in daypart_prefix
-        for marker in ("下午", "傍晚", "晚上", "晚间", "夜里", "夜间")
+        for marker in (
+            "下午",
+            "傍晚",
+            "晚上",
+            "晚间",
+            "夜里",
+            "夜间",
+            "昨晚",
+            "今晚",
+        )
     ):
         hour += 12
     return hour, minute
