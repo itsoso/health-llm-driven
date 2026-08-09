@@ -1,10 +1,10 @@
 # Feature Spec: Semantic Illness Query
 
-> Status: approved_for_implementation
+> Status: implemented_g4_pending
 > Owner: Codex
-> Updated: 2026-08-08
+> Updated: 2026-08-09
 > Related PRD/PDD: `docs/plans/2026-08-08-semantic-illness-query-design.md`
-> Related code: `backend/app/services/write_intent_scope.py`, `backend/app/services/utterance_intent_classifier.py`, `backend/app/services/tool_schema_registry.py`, `backend/app/services/health_read.py`, `backend/app/services/agent_executor.py`
+> Related code: `backend/app/services/agent_kernel/health_semantics.py`, `backend/app/services/agent_kernel/goal_spec.py`, `backend/app/services/agent_kernel/capability_policy.py`, `backend/app/services/write_intent_scope.py`, `backend/app/services/utterance_intent_classifier.py`, `backend/app/services/tool_schema_registry.py`, `backend/app/services/health_read.py`, `backend/app/services/agent_executor.py`
 
 ## 1. Decision
 
@@ -76,12 +76,45 @@ RequirementAdmission:
 
 ```text
 user asks for latest + six-month oral-ulcer history
-  -> shared intent frame classifies the speech act as read-only
-  -> LLM expresses entity/time semantics in registered health_query arguments
-  -> deterministic compiler selects canonical illness reader
+  -> shared intent frame identifies a read speech act
+  -> deterministic semantics resolve cancellation, ownership and references
+  -> entity/domain projection binds the turn to illness and its exact window
+  -> LLM arguments are treated as a proposal and reconciled to that binding
+  -> capability policy authorizes only the matching read-only tool call
   -> owner-scoped IllnessEpisode rows are returned newest first
   -> answer states latest occurrence and lists matching persisted episodes
 ```
+
+### 6.1 Semantic Authorization Architecture
+
+The authorization boundary is a staged semantic compiler, not one keyword
+classifier and not an LLM verdict:
+
+```text
+speech act and cancellation
+  -> current-user ownership
+  -> durable entity versus unresolved discourse reference
+  -> health entity and record domain
+  -> exact server-owned query projection
+  -> tool capability and owner-scoped execution
+```
+
+`health_semantics.py` is the shared contract for illness terminology,
+third-party ownership and unresolved health references. Goal compilation and
+CapabilityPolicy consume that same contract, so direct, memory and fallback
+routes do not maintain separate disease or owner regexes. The terminology set
+is an authorization vocabulary rather than a diagnostic ontology: known
+ambiguous eponyms are explicit, medically shaped open-vocabulary entities are
+accepted, and non-health roots cannot gain illness authority merely by ending
+in words such as `异常` or `疼痛`.
+
+Every read surface uses the same Backend decision. A model-selected tool or
+dimension is only a proposal; the server projects illness and medical-exam
+queries from the active user clause, binds user-facing `health_manage(list)` to
+the domain actually named in the turn, and fails closed for third-party,
+cancelled, observational or unresolved-reference input. Internal list calls
+used to bind an already-authorized mutation remain distinct from user-facing
+history reads.
 
 ## 7. Surface Contract
 

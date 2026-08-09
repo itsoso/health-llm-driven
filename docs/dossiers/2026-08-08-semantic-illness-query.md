@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS on implementation e8be4f19b; fresh exact-commit G4 pending |
+| current_stage | G3 PASS on implementation f5497195b; fresh exact-commit G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -1751,6 +1751,59 @@ No v37 commit has been pushed or deployed. Reviewers must inspect the next
 documentation commit together with exact implementation parent
 `e8be4f19bc4a6f59d00842da2f341ce9a4140e6a`; two fresh independent GO decisions
 remain mandatory before G4 can pass.
+
+Fresh code and product-safety reviews of exact v37 documentation commit
+`432d8f7afe7d6f848b0a51199acd9483d4e80356` both returned NO-GO. They found
+that the remaining flat ownership/morphology rules still admitted third-party
+illness and medical-exam reads or writes under Unicode, Latin, role and rare
+name shapes; rejected legitimate rare diseases; treated non-health nouns with
+medical-looking suffixes as illness; and diverged across unresolved references,
+cancelled reads, observations, punctuated MRI identifiers and user-facing
+`health_manage(list)` domains. The candidate remained unpushed and undeployed.
+
+The v38 remediation moves shared health-read semantics into the versioned
+`health_semantics.py` contract. Goal compilation and CapabilityPolicy now use
+the same illness vocabulary, medical morphology, current-user ownership and
+unresolved-reference decisions. Authorization is staged as speech act and
+cancellation, owner, durable entity, health domain, exact projection and tool
+capability. Medical semantics no longer depend on splitting an owner suffix,
+so rare diseases remain readable while explicit third-party targets fail
+closed. The active-clause scope permits a later explicit self query after a
+cancelled third-party clause without lending authority to that earlier clause.
+
+User-facing `health_manage(list)` now requires real read semantics and must
+match the record family named in the turn; internal mutation lookup keeps its
+existing owner-scoped path. Observation-only phrases do not become reads.
+Medical-exam projection preserves identifiers such as `DWI/ADC`, `L4/5` and
+`3.0T`, while generic history wording cannot silently cross into a different
+record domain. The capability contract is `agent-capability-policy-v38`.
+
+The exact implementation is
+`f5497195bc4181d766dc3752d4ed9ddfb09b7877`. Its restored official 25-file
+Backend gate passes 5,611/5,611 with `TZ=Asia/Shanghai`; the separate food
+compatibility gate passes 103/103, and the production read-dedup regression
+passes 9/9. Ruff lint and formatting, Python compilation, generated system-map
+drift, Dossier consistency, commit hooks and `git diff --check` pass. An
+additional broad diagnostic exposed two unrelated stale tests; both failures
+reproduce on the v37 baseline, so they are recorded as baseline debt rather
+than counted as v38 G3 evidence.
+
+The authorized live `qwen3.7-max` evaluation uses 60 synthetic cases, the real
+production schemas and semantic projection, a fake terminal adapter, an
+isolated runtime-identity key and a database-connect tripwire. The first exact
+run scored 59/60 because Qwen emitted two identical reads for the original
+compound query; production already fingerprints and reuses duplicate read
+results, confirmed by the 9/9 regression. After wiring that production dedup
+step into the evaluator, the matrix passes 60/60 and both policy modes pass all
+120 route evaluations, with zero database connection attempts and no blocked
+unexpected network destinations. A configuration-only attempt without the
+synthetic identity key failed before read scoring and is not counted as product
+evidence.
+
+No v38 commit has been pushed or deployed. Two fresh independent reviewers must
+inspect the documentation commit together with implementation parent
+`f5497195bc4181d766dc3752d4ed9ddfb09b7877`; both must return GO before G4,
+push or deployment can proceed.
 
 ### G5 Deployment Health: PENDING
 
