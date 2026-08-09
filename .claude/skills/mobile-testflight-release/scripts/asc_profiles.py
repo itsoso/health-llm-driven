@@ -30,6 +30,11 @@ import urllib.request
 import jwt  # pyjwt
 
 
+def _decode_response(response):
+    payload = response.read()
+    return json.loads(payload) if payload else None
+
+
 def _local_dist_cert_serial() -> str:
     """本机钥匙串里 Apple Distribution 证书的序列号(去前导 0,大写)。"""
     pem = subprocess.run(
@@ -64,7 +69,7 @@ def main(bundle_ids):
         )
         try:
             with urllib.request.urlopen(r) as f:
-                return f.status, json.load(f)
+                return f.status, _decode_response(f)
         except urllib.error.HTTPError as e:
             return e.code, e.read().decode()[:500]
 
