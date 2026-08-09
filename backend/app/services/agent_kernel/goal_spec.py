@@ -108,45 +108,158 @@ SIMPLE_ILLNESS_CREATE_RE = re.compile(
     re.IGNORECASE,
 )
 SIMPLE_ILLNESS_NAME_RE = re.compile(
-    r"(?=.{2,80}$)[A-Za-z0-9\u0370-\u03ff\u4e00-\u9fff·+_./-]+",
+    r"(?=.{2,80}$)[\w·+./-]+",
     re.IGNORECASE,
 )
 SIMPLE_ILLNESS_ACRONYMS = frozenset({"sle"})
 _SIMPLE_ILLNESS_REFERENCE_RE = re.compile(
     r"^(?:"
-    r"(?:它|它们)|"
-    r"(?:这|那|此|该)(?:个|些)?(?:病|疾病|病症|症状)?|"
-    r"(?:这些|那些)(?:病|疾病|病症|症状)?|"
-    r"(?:(?:之前|此前|前面|上面|刚才|刚刚|方才)(?:说的|提的|提到的)?)?"
-    r"(?:这|那)(?:个|些)?(?:病|疾病|病症|症状)?|"
-    r"(?:前述|上述)(?:病|疾病|病症|症状|病例)?|"
-    r"(?:上次|上回|前次|前回|最近|最后)(?:的)?(?:这|那)?(?:一)?"
-    r"(?:个|条|项|次|份)?(?:病|疾病|病症|症状|记录)?|"
-    r"(?:前一|上一|最近一|最后一|第一|第二)(?:个|条|项|次|份)"
-    r"(?:病|疾病|病症|症状|记录)?|"
+    r"(?:它|它们|其)(?:的)?.*|"
+    r"(?:前者|后者)|"
+    r"(?:这|那|此|该)(?:一)?(?:个|些|条|项|次|份|张|种)?"
+    r"(?:病|疾病|病症|症状|记录|病历|病例|MRI|核磁|磁共振|CT|报告|结果)?|"
+    r"(?:这些|那些)(?:病|疾病|病症|症状|记录|病历|病例)?|"
+    r"(?:(?:之前|此前|先前|前面|上面|刚才|刚刚|方才|曾经)"
+    r"(?:说的|提的|提到的)?)?(?:这|那)(?:一)?(?:个|些|条|项|次|份|张|种)?"
+    r"(?:病|疾病|病症|症状|记录|病历|病例|MRI|核磁|磁共振|CT|报告|结果)?|"
+    r"(?:前述|上述)(?:病|疾病|病症|症状|病例|记录|MRI|核磁|CT|报告|结果)?|"
+    r"(?:末次|上次|上回|前次|前回|最近|最后|曾经)(?:的)?(?:这|那)?(?:一)?"
+    r"(?:个|条|项|次|份|张)?(?:病|疾病|病症|症状|记录|病历|病例)?|"
+    r"(?:(?:倒数)?第[零〇一二两三四五六七八九十百千万0-9]+|"
+    r"上+一?|前+一?|最近一|最后一|末)(?:个|条|项|次|份|张)"
+    r"(?:病|疾病|病症|症状|记录|病历|病例)?|"
     r"(?:最后那个|前一个疾病|该条记录)"
     r")$"
 )
-_SIMPLE_ILLNESS_THIRD_PARTY_RE = re.compile(
-    r"^(?:"
-    r"(?:我(?:的)?)?(?:朋友|同事|家人|爸|爸爸|父亲|妈|妈妈|母亲|"
-    r"祖父|祖母|爷爷|奶奶|外公|外婆|兄弟|姐妹|哥哥|姐姐|弟弟|妹妹|"
-    r"妻子|丈夫|老公|老婆|孩子|儿子|女儿|室友|同学|患者|病人|邻居)"
-    r"(?:的)?.+|"
-    r"(?:他|她|他们|她们|其)(?:的)?.+|"
-    r"(?:隔壁|邻居)(?:的)?(?:老|小)?[一-鿿]{1,3}.+|"
-    r"[一-鿿]{1,6}(?:患有|患的是|患).+|"
-    r"[一-鿿]{2,6}的.+"
-    r")$"
+_ILLNESS_SEMANTIC_SUFFIX_RE = re.compile(
+    r"(?:病|病症|症|综合征|炎|癌|瘤|肿瘤|疹|感染|溃疡|感冒|流感|"
+    r"疱疹|烫伤|水泡|伤口|脑梗|梗死|栓塞|偏头痛|头痛|疼痛|高血压|"
+    r"低血压|哮喘|障碍|闭经|过敏|贫血|失禁|失常|焦虑|呼吸暂停|"
+    r"瘫痪|晕厥|脂肪肝|血尿|便秘|痛风|甲亢|甲减|房颤|癫痫|磨牙|"
+    r"气胸|结石|息肉|出血|痘痘|结核|卒中|新冠|甲流|帕金森|红斑狼疮|"
+    r"白癜风|震颤|异常|头疼|疼)$",
+    re.IGNORECASE,
 )
-_SIMPLE_ILLNESS_COMMON_PERSON_TARGET_RE = re.compile(
-    r"^(?:"
-    r"(?:小|老)[一-鿿]{1,2}|"
-    r"[赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜]"
-    r"[一-鿿]{1,2}"
-    r")"
-    r"(?:感冒|高血压|低血压|脑梗|糖尿病|流感|湿疹|哮喘)$"
+_THIRD_PARTY_ROLE_PREFIX_RE = re.compile(
+    r"^(?:我(?:的)?)?(?:朋友|同事|家人|爸|爸爸|父亲|妈|妈妈|母亲|"
+    r"祖父|祖母|爷爷|奶奶|外公|外婆|岳父|岳母|公公|婆婆|叔叔|"
+    r"婶婶|舅舅|舅妈|姑姑|姑父|堂哥|堂弟|堂姐|堂妹|表哥|表弟|"
+    r"表姐|表妹|外甥|外甥女|兄弟|姐妹|哥哥|姐姐|弟弟|妹妹|妻子|"
+    r"丈夫|老公|老婆|孩子|儿子|女儿|室友|同学|患者|病人|邻居|"
+    r"老板|导师|教练|前任|客户|队友|保姆|阿姨)(?:的)?.+"
 )
+_COMMON_CHINESE_SINGLE_SURNAMES = frozenset(
+    "王李张刘陈杨黄赵吴周徐孙马朱胡郭何高林罗郑梁谢宋唐许韩冯邓"
+    "曹彭曾萧田董袁潘于蒋蔡余杜叶程苏魏吕丁任沈姚卢姜崔钟谭陆汪范"
+    "金石廖贾夏韦傅方白邹孟熊秦邱江尹薛闫段雷侯龙史陶黎贺顾毛郝龚"
+    "邵万钱严覃武戴莫孔向汤"
+)
+_CHINESE_COMPOUND_SURNAMES = (
+    "欧阳",
+    "太史",
+    "端木",
+    "上官",
+    "司马",
+    "东方",
+    "独孤",
+    "南宫",
+    "万俟",
+    "闻人",
+    "夏侯",
+    "诸葛",
+    "尉迟",
+    "公羊",
+    "赫连",
+    "澹台",
+    "皇甫",
+    "宗政",
+    "濮阳",
+    "公冶",
+    "太叔",
+    "申屠",
+    "公孙",
+    "慕容",
+    "仲孙",
+    "钟离",
+    "长孙",
+    "宇文",
+    "司徒",
+    "鲜于",
+    "司空",
+)
+
+
+def illness_entity_has_medical_semantics(value: str) -> bool:
+    """Require health meaning, not merely a string that is not a known metric."""
+    normalized = str(value or "").strip("的，,。.!！；;：:?？ ")
+    return bool(
+        normalized.casefold() in SIMPLE_ILLNESS_ACRONYMS
+        or re.fullmatch(r"[A-Z][A-Z0-9-]{1,15}", normalized)
+        or _ILLNESS_SEMANTIC_SUFFIX_RE.search(normalized)
+    )
+
+
+def illness_target_is_unowned_or_referential(value: str) -> bool:
+    """Reject targets that name another person or only point at prior discourse."""
+    candidate = str(value or "").strip("的了，,。.!！；;：:?？ ")
+    if not candidate:
+        return True
+    if _SIMPLE_ILLNESS_REFERENCE_RE.fullmatch(candidate):
+        return True
+    if _THIRD_PARTY_ROLE_PREFIX_RE.match(candidate):
+        return True
+    if re.match(r"^(?:他|她|他们|她们|其)(?:的)?.+", candidate):
+        return True
+    if re.match(r"^(?:隔壁|邻居)(?:的)?.+", candidate):
+        return True
+    person_prefix_lengths: set[int] = set()
+    if candidate and candidate[0] in _COMMON_CHINESE_SINGLE_SURNAMES:
+        person_prefix_lengths.update((2, 3))
+    for surname in _CHINESE_COMPOUND_SURNAMES:
+        if candidate.startswith(surname):
+            person_prefix_lengths.update((len(surname) + 1, len(surname) + 2))
+            break
+    if candidate.startswith(("小", "老", "阿")):
+        person_prefix_lengths.update((2, 3))
+    ascii_name = re.match(r"^[A-Z][a-z]{1,23}(?=[\u4e00-\u9fff])", candidate)
+    if ascii_name is not None:
+        person_prefix_lengths.add(ascii_name.end())
+    for prefix_length in sorted(person_prefix_lengths):
+        if not 1 < prefix_length < len(candidate):
+            continue
+        prefix = candidate[:prefix_length]
+        if prefix.endswith("氏"):
+            continue
+        if illness_entity_has_medical_semantics(candidate[prefix_length:]):
+            return True
+    return False
+
+
+def illness_read_has_unowned_subject(text: str) -> bool:
+    """Detect an explicit non-current-user subject in a health-history read."""
+    normalized = "".join(str(text or "").split()).strip("，,。.!！；;：:?？ ")
+    read_match = re.search(
+        r"(?:查询|查找|查看|查一下|查下|检索|搜索|调取|调出|调阅|回顾|"
+        r"看看|看一下|看下|查|找出)",
+        normalized,
+    )
+    body = normalized[read_match.end() :] if read_match is not None else normalized
+    body = re.sub(r"(?:的)?(?:记录|病史|病历|病例|历史).*$", "", body, count=1)
+    if not body:
+        return False
+    possessive = re.fullmatch(r"(?P<owner>.+?)的(?P<entity>.+)", body)
+    if possessive is not None:
+        owner = possessive.group("owner").strip()
+        entity = possessive.group("entity").strip()
+        if owner in {"我", "本人", "自己"}:
+            return False
+        if illness_entity_has_medical_semantics(entity):
+            return illness_target_is_unowned_or_referential(body)
+        return False
+    return bool(
+        illness_entity_has_medical_semantics(body)
+        and illness_target_is_unowned_or_referential(body)
+    )
 
 
 def compile_goal_spec(
@@ -277,6 +390,9 @@ def _compile_simple_health_record_goal(
     del actionable_references
     text = _normalize(envelope.text)
     illness_target = simple_illness_target(envelope.text)
+    explicit_illness_label = SIMPLE_ILLNESS_CREATE_RE.fullmatch(
+        "".join(str(envelope.text or "").split()).strip("，,。.!！；;：: ")
+    )
     common_guard = (
         envelope.media
         or _simple_record_write_is_negated(text)
@@ -295,6 +411,16 @@ def _compile_simple_health_record_goal(
             prohibited_operations=("update", "delete"),
             postconditions=("verified_receipt",),
             evidence=("current_user_turn",),
+        )
+    if explicit_illness_label is not None:
+        return GoalSpec(
+            kind="clarify",
+            domain="illness",
+            operation="none",
+            target_date=_target_date(text, context, ()),
+            requires_clarification=True,
+            prohibited_operations=("create", "update", "delete"),
+            evidence=("illness_target_not_current_user_or_unresolved",),
         )
     if (
         common_guard
@@ -369,11 +495,7 @@ def simple_illness_target(text: str) -> str | None:
         return acronym.upper()
     if SIMPLE_ILLNESS_NAME_RE.fullmatch(candidate) is None:
         return None
-    if _SIMPLE_ILLNESS_REFERENCE_RE.fullmatch(candidate):
-        return None
-    if _SIMPLE_ILLNESS_THIRD_PARTY_RE.fullmatch(candidate):
-        return None
-    if _SIMPLE_ILLNESS_COMMON_PERSON_TARGET_RE.fullmatch(candidate):
+    if illness_target_is_unowned_or_referential(candidate):
         return None
     return (
         candidate.upper()

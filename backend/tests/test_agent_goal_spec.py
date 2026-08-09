@@ -776,3 +776,85 @@ def test_simple_record_goal_does_not_collapse_compound_writes(message):
 
     assert goal.kind != "simple_health_record"
     assert goal.target_record_type is None
+
+
+@pytest.mark.parametrize(
+    "name",
+    (
+        "上官婉儿感冒",
+        "欧阳娜娜高血压",
+        "司马懿脑梗",
+        "慕容复哮喘",
+        "阿明感冒",
+        "Alice感冒",
+        "张三COVID-19肺炎",
+        "李雷IgA肾病",
+        "小明COVID-19肺炎",
+        "王五HIV感染",
+        "第三条记录",
+        "第3条记录",
+        "第四个疾病",
+        "上上一个疾病",
+        "倒数第一条记录",
+        "它的MRI",
+        "末次那个病",
+        "曾经那个病",
+        "倒数第二个病",
+        "小李帕金森病",
+        "老王克罗恩病",
+        "岳母乳腺癌",
+        "岳父脑梗",
+        "婆婆哮喘",
+        "叔叔痛风",
+        "婶婶甲亢",
+        "舅舅肝炎",
+        "舅妈甲减",
+        "姑姑红斑狼疮",
+        "姑父房颤",
+        "堂哥癫痫",
+        "表姐偏头痛",
+        "外甥哮喘",
+        "导师帕金森病",
+        "客户张先生糖尿病",
+        "队友小吴哮喘",
+        "教练老陈房颤",
+        "保姆阿姨流感",
+    ),
+)
+def test_v37_unowned_or_referential_illness_name_never_compiles_simple_goal(name):
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(
+        user_id=1,
+        channel="mobile",
+        text=f"记录疾病：{name}",
+    )
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind != "simple_health_record"
+    assert goal.target_record_type is None
+
+
+def test_v37_extended_latin_illness_name_preserves_exact_user_spelling():
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(
+        user_id=1,
+        channel="mobile",
+        text="记录疾病：Behçet病",
+    )
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind == "simple_health_record"
+    assert goal.target_record_type == "illness"
+    assert dict(goal.target_values) == {"name": "Behçet病"}

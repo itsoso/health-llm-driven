@@ -12,6 +12,9 @@ from typing import Any
 
 from app.services.agent_kernel.goal_spec import (
     SIMPLE_ILLNESS_CREATE_RE,
+    illness_entity_has_medical_semantics,
+    illness_read_has_unowned_subject,
+    illness_target_is_unowned_or_referential,
     simple_illness_target,
 )
 from app.services.agent_kernel.tool_registry import (
@@ -72,7 +75,7 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v36"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v37"
 _HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v31"
 _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v23"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
@@ -365,13 +368,32 @@ _UNRESOLVED_DISCOURSE_POINTER_IN_TEXT_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
+_UNRESOLVED_HEALTH_REFERENCE_GRAMMAR_RE = re.compile(
+    r"(?:"
+    r"(?:前者|后者)|"
+    r"(?:前述|上述)(?:病|疾病|病症|症状|病历|病例|记录|MRI|核磁|磁共振|CT|"
+    r"检查|报告|影像|结果)?|"
+    r"(?:之前|此前|先前|前面|上面|刚才|刚刚|方才|曾经)(?:的)?"
+    r"(?:这|那|此)(?:一)?(?:个|条|项|次|份|张|种)?"
+    r"(?:病|疾病|病症|症状|病历|病例|记录|MRI|核磁|磁共振|CT|检查|报告|影像|结果)|"
+    r"(?:这|那|此|该)(?:一)?(?:个|条|项|次|份|张|种)"
+    r"(?:病|疾病|病症|症状|病历|病例|记录|MRI|核磁|磁共振|CT|检查|报告|影像|结果)|"
+    r"(?:末次|曾经)(?:的)?(?:这|那)(?:一)?(?:个|条|项|次|份|张)?"
+    r"(?:病|疾病|病症|症状|病历|病例|记录)?|"
+    r"(?:(?:(?:倒数)?第[零〇一二两三四五六七八九十百千万0-9]+|"
+    r"上{1,4}(?:一)?|前{1,4}(?:一)?)(?:个|条|项|次|份|张)|"
+    r"(?:末|最后一|最近一)(?:个|条|项|份|张))"
+    r"(?:病|疾病|病症|症状|病历|病例|记录)"
+    r")",
+    re.IGNORECASE,
+)
 _LATEST_OCCURRENCE_MARKER_PATTERN = (
     r"(?:(?:我)?(?:(?:上(?:一)?|最近|最后)(?:的)?(?:那)?(?:一)?(?:次|回)|"
-    r"末次|最近(?=(?:的)?(?:记录|发作|发生|复发))))"
+    r"末次|最近(?=(?:的)?(?:记录|发作|发生|复发))|最近))"
 )
-_LATEST_OCCURRENCE_EVENT_PATTERN = r"(?:记录|发作|发生|复发)?"
+_LATEST_OCCURRENCE_EVENT_PATTERN = r"(?:记录|发作|发生|复发|出现|加重|犯过)?"
 _LATEST_OCCURRENCE_QUESTION_PATTERN = (
-    r"(?:(?:是)?(?:在|于)?(?:什么时候|什么时间|何时|哪天|哪一天|几号)|呢)"
+    r"(?:(?:是)?(?:在|于)?(?:什么时候|什么时间|何时|哪天|哪一天|几号|时间|日期)|呢)"
 )
 _ILLNESS_PARTIAL_RECOVERY_RE = re.compile(
     r"(?:好了点|好了一些|好了一半|好了一丢丢|好了一小点|快好了|基本好了|"
@@ -1219,6 +1241,7 @@ def _project_illness_query_to_turn(text: str) -> dict[str, Any] | None:
         return None
     if not _is_explicit_illness_query_entity(targets[0]):
         return None
+    latest_occurrence = _latest_occurrence_query_entity(normalized)
     if not (
         re.search(r"(?:记录|病史|病历|病例|历史)", normalized)
         or _READ_QUERY_VERB_RE.search(normalized)
@@ -1226,13 +1249,18 @@ def _project_illness_query_to_turn(text: str) -> dict[str, Any] | None:
         or _HISTORY_QUERY_QUESTION_RE.search(normalized)
         or re.search(r"[?？]\s*$", normalized)
         or _is_registered_illness_acronym(targets[0])
+        or latest_occurrence is not None
     ):
         return None
     projected: dict[str, Any] = {
         "dimension": "illness",
         "keyword": targets[0],
     }
-    window_days = _explicit_query_window_days(normalized)
+    window_days = (
+        None
+        if latest_occurrence is not None
+        else _explicit_query_window_days(normalized)
+    )
     if window_days is not None:
         projected["days"] = window_days
     return projected
@@ -1245,10 +1273,9 @@ def _is_explicit_illness_query_entity(value: str) -> bool:
         2 <= len(normalized) <= 80
         and normalized not in _NON_ILLNESS_QUERY_ENTITY_TERMS
         and not _query_entity_known_dimensions(normalized)
-        and re.fullmatch(
-            r"[A-Za-z0-9\u0370-\u03ff\u4e00-\u9fff·+_./-]+",
-            normalized,
-        )
+        and re.fullmatch(r"[\w·+./-]+", normalized)
+        and illness_entity_has_medical_semantics(normalized)
+        and not illness_target_is_unowned_or_referential(normalized)
     )
 
 
@@ -1290,9 +1317,18 @@ def _health_read_cancelled_by_user(text: str) -> bool:
     """Return whether the active read speech act is explicitly cancelled."""
     normalized = _normalize_query_text(text)
     negated_reads = tuple(_NEGATED_READ_QUERY_RE.finditer(normalized))
+    direct_revocations = tuple(
+        re.finditer(
+            r"(?:作废|取消|撤销|停止|暂停|终止|放弃)"
+            r"[^，,；;。.!！?？、]{0,24}(?:查询|查找|查看|检索|搜索|调取|调出)",
+            normalized,
+        )
+    )
+    if direct_revocations:
+        negated_reads = (*negated_reads, direct_revocations[-1])
     if not negated_reads:
         return False
-    last_negated = negated_reads[-1]
+    last_negated = max(negated_reads, key=lambda match: match.end())
     suffix = normalized[last_negated.end() :]
     boundary_re = re.compile(
         r"(?:[，,；;。.!！?？、]|但|不过|然而|而是|却|可是|然后|只)"
@@ -1304,14 +1340,17 @@ def _health_read_cancelled_by_user(text: str) -> bool:
     return True
 
 
-def _has_explicit_leading_read_request(text: str) -> bool:
-    """Identify an actual read command, not a read-like word inside an update."""
-    normalized = _normalize_query_text(text).lstrip("，,。.!！；;：:?？ ")
-    polite_prefix = re.compile(
-        r"^(?:(?:麻烦你|请问|请您|帮我|给我|替我|劳驾|烦请|小巴|麻烦|请|你))+"
-    )
-    normalized = polite_prefix.sub("", normalized, count=1)
-    return bool(re.match(rf"^(?:{_READ_QUERY_VERB_PATTERN})", normalized))
+def _has_explicit_read_request(text: str) -> bool:
+    """Identify an explicit read speech act anywhere in a compound request."""
+    normalized = _normalize_query_text(text)
+    for match in _READ_QUERY_VERB_RE.finditer(normalized):
+        if match.group() == "看" and re.match(
+            r"(?:似|来|着|上去|起来|不(?:出|到|见|清)|得出)",
+            normalized[match.end() :],
+        ):
+            continue
+        return True
+    return False
 
 
 def _query_scope_text(text: str) -> str:
@@ -1458,7 +1497,13 @@ def _latest_occurrence_query_entity(text: str) -> str | None:
         rf"{_LATEST_OCCURRENCE_EVENT_PATTERN}{_LATEST_OCCURRENCE_QUESTION_PATTERN}",
         normalized,
     )
-    match = marker_first or entity_first
+    flexible_entity_first = re.fullmatch(
+        rf"(?P<entity>.{{1,80}}?){_LATEST_OCCURRENCE_MARKER_PATTERN}(?:的)?"
+        rf"{_LATEST_OCCURRENCE_EVENT_PATTERN}{_LATEST_OCCURRENCE_QUESTION_PATTERN}?"
+        rf"{_LATEST_OCCURRENCE_EVENT_PATTERN}",
+        normalized,
+    )
+    match = marker_first or entity_first or flexible_entity_first
     if match is None:
         return None
     candidate = _strip_history_query_request_prefix(match.group("entity"))
@@ -1531,7 +1576,9 @@ def _is_unresolved_query_reference(value: str) -> bool:
 def _query_contains_unresolved_reference(text: str) -> bool:
     """Detect a discourse pointer that names no durable health entity."""
     scoped = _query_scope_text(text)
-    if _UNRESOLVED_DISCOURSE_POINTER_IN_TEXT_RE.search(scoped):
+    if _UNRESOLVED_DISCOURSE_POINTER_IN_TEXT_RE.search(
+        scoped
+    ) or _UNRESOLVED_HEALTH_REFERENCE_GRAMMAR_RE.search(scoped):
         return True
     latest_entity = _latest_occurrence_query_entity(scoped)
     if latest_entity is not None:
@@ -1621,7 +1668,7 @@ def _query_entities_match_dimension(
             any(
                 re.fullmatch(
                     rf"[\u4e00-\u9fffA-Za-z0-9]{{0,24}}{re.escape(term)}"
-                    r"(?:检查|报告|检查报告)?",
+                    r"(?:检查|报告|检查报告|影像|结果)?",
                     entity,
                     flags=re.IGNORECASE,
                 )
@@ -1710,7 +1757,7 @@ def _project_known_dimension_query_args(
         if len(entities) != 1:
             return None
         keyword = re.sub(
-            r"(?:检查报告|检查|报告)$",
+            r"(?:检查报告|检查|报告|影像|结果)$",
             "",
             entities[0],
             flags=re.IGNORECASE,
@@ -2330,6 +2377,13 @@ def decide_tool_capability(
                 tool_name,
                 canonical_args,
             )
+        if illness_read_has_unowned_subject(turn_text):
+            return _decision(
+                "block",
+                "health_query_subject_not_current_user",
+                tool_name,
+                canonical_args,
+            )
         if _is_non_read_health_observation(turn_text):
             return _decision(
                 "block",
@@ -2458,6 +2512,13 @@ def decide_tool_capability(
                 tool_name,
                 normalized_plan,
             )
+        if illness_read_has_unowned_subject(turn_text):
+            return _decision(
+                "block",
+                "health_query_subject_not_current_user",
+                tool_name,
+                normalized_plan,
+            )
         if _is_non_read_health_observation(turn_text):
             return _decision(
                 "block",
@@ -2546,8 +2607,8 @@ def decide_tool_capability(
                     tool_name,
                     args,
                 )
-            guarding_user_read = (
-                primary != "mutate" or _has_explicit_leading_read_request(turn_text)
+            guarding_user_read = primary != "mutate" or _has_explicit_read_request(
+                turn_text
             )
             if guarding_user_read and _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE.search(
                 _query_scope_text(turn_text)
@@ -2562,6 +2623,13 @@ def decide_tool_capability(
                 return _decision(
                     "block",
                     "health_query_semantics_unresolved",
+                    tool_name,
+                    args,
+                )
+            if guarding_user_read and illness_read_has_unowned_subject(turn_text):
+                return _decision(
+                    "block",
+                    "health_query_subject_not_current_user",
                     tool_name,
                     args,
                 )
