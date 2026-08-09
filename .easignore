@@ -1,0 +1,113 @@
+# Keep this section aligned with the repository .gitignore. EAS gives this file
+# priority over .gitignore when packaging the monorepo.
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+*.bak
+
+# Environment variables
+.env
+.env.local
+
+# Mobile OTA anchor
+.last-ota-commit
+.mobile-release-manifest.json
+
+# Local harness and install artifacts
+docs/_generated/harness-runs/
+artifacts/ios-local-install/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node
+node_modules/
+.next/
+out/
+*.log
+
+# SwiftPM
+.build/
+apps/mac/.build/
+
+# OS
+.DS_Store
+Thumbs.db
+
+.gitnexus
+.claude/
+backend/.coverage
+.coverage
+backend/.venv/
+
+# Runtime and local-only data
+backend/uploads/
+tmp/
+
+# Private and generated material
+docs/fundraising/
+design/fixtures/*.json
+!design/fixtures/SAMPLE-*.json
+docs/release/app-store/demo-credentials.local.md
+.env.backup*
+backups/
+*.sql.gz
+*.sql.gz.age
+design/screenshots/
+artifacts/
+
+# EAS packages from the repository root. Keep only the mobile app and the
+# apps/watch sources required by watch build profiles.
+/.git
+/.ruff_cache
+/.pytest_cache
+/.github
+/.agents
+/.cursor
+/htmlcov
+/backend
+/frontend
+/packages
+/docs
+/design
+/apps/mac
+/apps/rokid-pushup-glasses
+
+# Continuous Native Generation recreates these directories in EAS. Local
+# patches and the server-hosted Rokid APK are not inputs to the iOS build.
+/mobile/ios
+/mobile/android
+/mobile/patches
+/mobile/assets/rokid
