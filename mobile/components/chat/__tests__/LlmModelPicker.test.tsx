@@ -50,7 +50,7 @@ describe('Mobile LlmModelPicker', () => {
 
   it('renders the header 小巴 title with stronger brand scale', () => {
     const onSelect = jest.fn();
-    const { getByLabelText, getByText } = render(
+    const { getByLabelText, getByTestId, getByText } = render(
       <LlmModelPicker
         variant="header"
         currentLabel="Qwen3.7 Plus"
@@ -65,8 +65,8 @@ describe('Mobile LlmModelPicker', () => {
     const triggerStyle = StyleSheet.flatten(
       getByLabelText('切换 AI 模型，当前 Qwen3.7 Plus').props.style,
     );
-    expect(titleStyle.fontSize).toBeGreaterThanOrEqual(23);
-    expect(titleStyle.lineHeight).toBeGreaterThanOrEqual(29);
+    expect(titleStyle).toEqual(expect.objectContaining({ fontSize: 21, lineHeight: 26 }));
+    expect(getByTestId('icon-chevron-down').props.size).toBe(13);
     expect(triggerStyle.minHeight).toBeGreaterThanOrEqual(44);
   });
 
