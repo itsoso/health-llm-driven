@@ -715,6 +715,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     });
   }, []);
   const hydrationGateRef = useRef<{ promise: Promise<void>; resolve: () => void } | null>(null);
+  const activeTurnStorageGenerationRef = useRef(0);
+  const activeTurnStorageQueueRef = useRef<Promise<void>>(Promise.resolve());
   if (!hydrationGateRef.current) {
     let resolve!: () => void;
     const promise = new Promise<void>((ready) => { resolve = ready; });
@@ -725,6 +727,13 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     activeTurnRef.current = next;
     reduceAgentTurnDispatch(event);
     return next;
+  }, []);
+  const enqueueActiveTurnStorage = useCallback((task: () => Promise<void>) => {
+    activeTurnStorageQueueRef.current = activeTurnStorageQueueRef.current
+      .catch(() => undefined)
+      .then(task)
+      .catch(() => undefined);
+    return activeTurnStorageQueueRef.current;
   }, []);
   const [activeTurnHydrated, setActiveTurnHydrated] = useState(false);
   const [conversationId, setConversationId] = useState<number | undefined>(undefined);
@@ -767,13 +776,17 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
   useEffect(() => {
     if (!activeTurnHydrated) return;
-    void currentChatStorageKey(ACTIVE_TURN_KEY).then((key) => {
+    const storageGeneration = activeTurnStorageGenerationRef.current;
+    void enqueueActiveTurnStorage(async () => {
+      if (storageGeneration !== activeTurnStorageGenerationRef.current) return;
+      const key = await currentChatStorageKey(ACTIVE_TURN_KEY);
+      if (storageGeneration !== activeTurnStorageGenerationRef.current) return;
       if (activeTurn.turnId && activeTurn.recoverable && activeTurn.phase !== 'completed') {
         return AsyncStorage.setItem(key, JSON.stringify(activeTurn));
       }
       return AsyncStorage.removeItem(key);
-    }).catch(() => undefined);
-  }, [activeTurn, activeTurnHydrated]);
+    });
+  }, [activeTurn, activeTurnHydrated, enqueueActiveTurnStorage]);
   // 2026-05-14: 标记是否有正在进行的 stream — 离开页面回来时, 如果还在 stream
   // 后端 G-W9 bg task 还在跑), 重新 fetch 拉服务端最新消息.
   const streamingRef = useRef(false);
@@ -2351,14 +2364,16 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     setConversationId(undefined);
     historyBeforeMessageIdRef.current = undefined;
     setHasMoreHistory(false);
+    activeTurnStorageGenerationRef.current += 1;
     dispatchAgentTurn({ type: 'reset' });
     void forgetConversationId();
     void clearPendingStream();
-    void currentChatStorageKey(ACTIVE_TURN_KEY)
-      .then(key => AsyncStorage.removeItem(key))
-      .catch(() => undefined);
+    void enqueueActiveTurnStorage(async () => {
+      const key = await currentChatStorageKey(ACTIVE_TURN_KEY);
+      await AsyncStorage.removeItem(key);
+    });
     briefingInjected.current = false;
-  }, []);
+  }, [dispatchAgentTurn, enqueueActiveTurnStorage]);
 
   const deleteCurrentConversation = useCallback(async () => {
     if (!conversationId) return;

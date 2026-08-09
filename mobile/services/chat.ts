@@ -1,5 +1,5 @@
 import { getToken } from './auth';
-import { BASE_URL } from './api';
+import { BASE_URL, WEB_SESSION_AUTH_SENTINEL } from './api';
 import { buildClientCapsHeader } from './clientCaps';
 import { sanitizeChatErrorMessage } from '../utils/chatErrorMessage';
 import type { AgentPerfProfileLike } from '../utils/chatTransparency';
@@ -698,14 +698,17 @@ export async function getConversationsPage({
   titleLike,
   search,
 }: { offset?: number; limit?: number; titleLike?: string; search?: string } = {}): Promise<ConversationsPage> {
-  await enforceAppEgressAllowed();
   const token = await getToken();
+  await enforceAppEgressAllowed({
+    cloudCredentialPresent: Boolean(token && token !== WEB_SESSION_AUTH_SENTINEL),
+  });
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   // search 匹配标题 ∪ 消息正文(后端 _apply_search);title_like 仅标题(旧参数,search 优先)。
   if (search) params.set('search', search);
   else if (titleLike) params.set('title_like', titleLike);
   const res = await fetch(`${BASE_URL}/agent/conversations?${params}`, {
     headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
   });
   if (!res.ok) {
     throw new Error(`getConversationsPage failed: ${res.status}`);
@@ -738,8 +741,10 @@ export async function getConversationMessages(
   has_more?: boolean;
   oldest_message_id?: number;
 }> {
-  await enforceAppEgressAllowed();
   const token = await getToken();
+  await enforceAppEgressAllowed({
+    cloudCredentialPresent: Boolean(token && token !== WEB_SESSION_AUTH_SENTINEL),
+  });
   const params = new URLSearchParams();
   if (opts?.days) params.set('days', String(opts.days));
   if (opts?.limit) params.set('limit', String(opts.limit));
@@ -748,6 +753,7 @@ export async function getConversationMessages(
   const qs = query ? `?${query}` : '';
   const res = await fetch(`${BASE_URL}/agent/conversations/${conversationId}${qs}`, {
     headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
   });
   if (!res.ok) {
     throw new Error(`getConversationMessages failed: ${res.status}`);

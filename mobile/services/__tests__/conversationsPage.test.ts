@@ -39,6 +39,7 @@ describe('getConversationsPage', () => {
     expect(url).toContain('title_like=');
     // 中文 title 被 URL 编码
     expect(decodeURIComponent(url)).toContain('title_like=简报');
+    expect(fetchMock.mock.calls[0][1]?.cache).toBe('no-store');
   });
 
   it('passes search (title∪content) through as query param', async () => {
@@ -189,6 +190,7 @@ describe('getConversationMessages', () => {
     expect(fetchMock.mock.calls[0][0]).toBe(
       'https://example.test/api/v1/agent/conversations/7?limit=80&before_message_id=99',
     );
+    expect(fetchMock.mock.calls[0][1]?.cache).toBe('no-store');
     expect(page.has_more).toBe(true);
     expect(page.oldest_message_id).toBe(18);
   });

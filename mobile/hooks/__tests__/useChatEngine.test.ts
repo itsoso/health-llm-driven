@@ -1791,6 +1791,58 @@ describe('useChatEngine', () => {
     });
   });
 
+  it('does not let a delayed active-turn write revive recovery after starting a new chat', async () => {
+    mockStreamChat.mockImplementation(streamStatusThenWait);
+    let releaseDelayedWrite!: () => void;
+    let delayedWriteStarted!: () => void;
+    const delayedWrite = new Promise<void>((resolve) => { delayedWriteStarted = resolve; });
+    (AsyncStorage.setItem as jest.Mock).mockImplementation(async (key: string, value: string) => {
+      if (
+        key === scopedStorageKey('chat:active_turn:v1')
+        && JSON.parse(value)?.phase === 'running'
+      ) {
+        delayedWriteStarted();
+        await new Promise<void>((resolve) => { releaseDelayedWrite = resolve; });
+      }
+      mockAsyncStorage[key] = value;
+    });
+
+    const { result } = renderHook(() => useChatEngine());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    let sendPromise!: Promise<boolean>;
+    act(() => {
+      sendPromise = result.current.sendMessage('这一轮稍后不应再恢复');
+    });
+    await delayedWrite;
+
+    act(() => {
+      result.current.newChat();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      releaseDelayedWrite();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(mockAsyncStorage[scopedStorageKey('chat:active_turn:v1')]).toBeUndefined();
+    });
+
+    await act(async () => {
+      finishStream?.();
+      await sendPromise;
+    });
+  });
+
   it('does not gate the real request on an advisory network probe', async () => {
     mockStreamChat.mockImplementation(streamTokenBurstThenDone);
     const { result } = renderHook(() => useChatEngine());
