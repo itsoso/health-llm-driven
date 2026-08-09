@@ -1200,6 +1200,16 @@ async def test_gateway_never_dispatches_update_outside_owner_scoped_exact_eviden
         "老婆希望把刚才300ml改成350ml",
         "把刚才300ml改成350ml，先保持原样",
         "把刚才300ml改成350ml，哦不，是400ml",
+        "原文是把刚才300ml改成350ml",
+        "〈把刚才300ml改成350ml〉是例句",
+        "把刚才300ml改成350ml的话会怎样",
+        "把刚才300ml改成350ml，这杯是给小明的",
+        "把刚才300ml改成350ml，撤回这个修改",
+        "把刚才300ml改成350ml，忽略这个修改",
+        "把刚才300ml改成350ml，保持300ml不变",
+        "把刚才300ml改成350ml，先不要执行这个修改",
+        "把刚才300ml改成350ml，哦不，400ml",
+        "把刚才300ml改成350ml，哦不，是400",
         "把刚才300ml改成350ml，这是小明的",
         "把刚才300ml改成350ml，不是我的，是小明的",
         "把刚才300ml改成350ml，这杯水属于小明",
@@ -1243,7 +1253,10 @@ async def test_gateway_update_semantic_denials_never_dispatch(
 
     assert calls == []
     assert result.decision is not None
-    assert result.decision.reason == "update_requires_exact_target_evidence"
+    assert result.decision.reason in {
+        "update_requires_exact_target_evidence",
+        "manage_write_without_mutate_intent",
+    }
 
 
 @pytest.mark.asyncio
@@ -1319,6 +1332,13 @@ async def test_gateway_current_user_posterior_owner_keeps_health_write_authority
             },
         ),
         (
+            "记住不吃香菜的是小明",
+            {
+                "record_type": "remember",
+                "data": {"predicate": "忌口", "object_value": "不吃香菜的是小明"},
+            },
+        ),
+        (
             "小明到杭州了",
             {"record_type": "event", "data": {"title": "到达杭州"}},
         ),
@@ -1346,9 +1366,17 @@ async def test_gateway_public_record_contract_never_borrows_third_party_subject(
 
 
 @pytest.mark.asyncio
-async def test_gateway_update_self_correction_authorizes_only_final_value():
+@pytest.mark.parametrize(
+    "message",
+    (
+        "把刚才300ml改成350ml，哦不，是400ml",
+        "把刚才300ml改成350ml，哦不，400ml",
+        "把刚才300ml改成350ml，哦不，是400",
+    ),
+)
+async def test_gateway_update_self_correction_authorizes_only_final_value(message):
     snapshot = replace(
-        _snapshot("把刚才300ml改成350ml，哦不，是400ml"),
+        _snapshot(message),
         actionable_references=(
             ActionableReference(
                 kind="owner_scoped_health_manage_list",
@@ -1434,6 +1462,214 @@ async def test_executor_quoted_update_never_reaches_real_water_put(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "原文是把刚才300ml改成350ml",
+        "〈把刚才300ml改成350ml〉是例句",
+        "把刚才300ml改成350ml的话会怎样",
+        "把刚才300ml改成350ml，这杯是给小明的",
+        "把刚才300ml改成350ml，撤回这个修改",
+        "把刚才300ml改成350ml，忽略这个修改",
+        "把刚才300ml改成350ml，保持300ml不变",
+        "把刚才300ml改成350ml，先不要执行这个修改",
+    ),
+)
+async def test_executor_non_authorizing_update_never_reaches_real_water_put(
+    db,
+    monkeypatch,
+    policy_mode,
+    message,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_channel = "typed"
+    executor._current_turn_user_message = message
+    calls = []
+
+    async def fake_get(url, _headers):
+        calls.append(("GET", url, None))
+        return '[{"id": 718, "amount": 300}]'
+
+    async def fake_put(url, _headers, payload):
+        calls.append(("PUT", url, payload))
+        return "unexpected"
+
+    monkeypatch.setattr("app.services.agent_executor.settings.agent_kernel_policy_mode", policy_mode)
+    monkeypatch.setattr(executor, "_api_get", fake_get)
+    monkeypatch.setattr(executor, "_api_put", fake_put)
+
+    await executor._execute_tool(
+        "health_manage",
+        {"record_type": "water", "operation": "list"},
+        "test-token",
+    )
+    result = await executor._execute_tool(
+        "health_manage",
+        {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": {"amount": 350},
+        },
+        "test-token",
+    )
+
+    assert [method for method, _url, _payload in calls] == ["GET"]
+    assert json.loads(result)["dispatch_started"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "把刚才300ml改成350ml，哦不，400ml",
+        "把刚才300ml改成350ml，哦不，是400",
+    ),
+)
+async def test_executor_water_correction_dispatches_only_final_value(
+    db,
+    monkeypatch,
+    policy_mode,
+    message,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_channel = "typed"
+    executor._current_turn_user_message = message
+    calls = []
+
+    async def fake_get(url, _headers):
+        calls.append(("GET", url, None))
+        return '[{"id": 718, "amount": 300}]'
+
+    async def fake_put(url, _headers, payload):
+        calls.append(("PUT", url, payload))
+        return '{"id":718,"amount":400}'
+
+    monkeypatch.setattr("app.services.agent_executor.settings.agent_kernel_policy_mode", policy_mode)
+    monkeypatch.setattr(executor, "_api_get", fake_get)
+    monkeypatch.setattr(executor, "_api_put", fake_put)
+
+    await executor._execute_tool(
+        "health_manage",
+        {"record_type": "water", "operation": "list"},
+        "test-token",
+    )
+    rejected = await executor._execute_tool(
+        "health_manage",
+        {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": {"amount": 350},
+        },
+        "test-token",
+    )
+    accepted = await executor._execute_tool(
+        "health_manage",
+        {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": {"amount": 400},
+        },
+        "test-token",
+    )
+
+    assert json.loads(rejected)["dispatch_started"] is False
+    assert [call for call in calls if call[0] == "PUT"] == [
+        ("PUT", "http://localhost:8000/api/v1/water/records/718", {"amount": 400})
+    ]
+    assert json.loads(accepted)["amount"] == 400
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    "message",
+    ("原文：到杭州了", "原话：到杭州了", "例句：到杭州了"),
+)
+async def test_executor_metalinguistic_event_never_reaches_real_event_post(
+    db,
+    monkeypatch,
+    policy_mode,
+    message,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_channel = "typed"
+    executor._current_turn_user_message = message
+    calls = []
+
+    async def fake_post(url, _headers, payload):
+        calls.append((url, payload))
+        return "unexpected"
+
+    monkeypatch.setattr("app.services.agent_executor.settings.agent_kernel_policy_mode", policy_mode)
+    monkeypatch.setattr(executor, "_api_post", fake_post)
+
+    result = await executor._execute_tool(
+        "health_record",
+        {"record_type": "event", "data": {"title": "到达杭州"}},
+        "test-token",
+    )
+
+    assert calls == []
+    assert json.loads(result)["dispatch_started"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    ("message", "arguments"),
+    (
+        (
+            "记住不吃香菜的是小明",
+            {
+                "record_type": "remember",
+                "data": {"predicate": "忌口", "object_value": "不吃香菜的是小明"},
+            },
+        ),
+        (
+            "小明到杭州了",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+        ),
+        (
+            "小明早上的药都吃了，记录一下",
+            {"record_type": "supplement_group", "data": {"timing": "morning"}},
+        ),
+    ),
+)
+async def test_executor_third_party_public_contract_never_posts(
+    db,
+    monkeypatch,
+    policy_mode,
+    message,
+    arguments,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_channel = "typed"
+    executor._current_turn_user_message = message
+    calls = []
+
+    async def fake_post(url, _headers, payload):
+        calls.append((url, payload))
+        return "unexpected"
+
+    monkeypatch.setattr("app.services.agent_executor.settings.agent_kernel_policy_mode", policy_mode)
+    monkeypatch.setattr(executor, "_api_post", fake_post)
+
+    result = await executor._execute_tool("health_record", arguments, "test-token")
+
+    assert calls == []
+    assert json.loads(result)["dispatch_started"] is False
+
+
+@pytest.mark.asyncio
 async def test_gateway_explicit_update_id_without_owner_candidate_never_dispatches():
     gateway = ToolGateway(_snapshot("把饮水记录999999的300ml改成350ml"))
     calls = []
@@ -1488,6 +1724,11 @@ async def test_gateway_explicit_update_id_without_owner_candidate_never_dispatch
             {"timing": "morning"},
         ),
         (
+            "早上的药都吃完了，记录一下",
+            {"record_type": "supplement_group", "data": {"timing": "morning"}},
+            {"timing": "morning"},
+        ),
+        (
             "记住我不吃香菜",
             {
                 "record_type": "remember",
@@ -1496,7 +1737,20 @@ async def test_gateway_explicit_update_id_without_owner_candidate_never_dispatch
             {"subject": "用户", "predicate": "忌口", "object_value": "不吃香菜"},
         ),
         (
+            "请帮我记住我不吃香菜",
+            {
+                "record_type": "remember",
+                "data": {"predicate": "忌口", "object_value": "不吃香菜"},
+            },
+            {"subject": "用户", "predicate": "忌口", "object_value": "不吃香菜"},
+        ),
+        (
             "到杭州了",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {"title": "到达杭州"},
+        ),
+        (
+            "我到杭州了，记录一下",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             {"title": "到达杭州"},
         ),
@@ -1543,6 +1797,12 @@ async def test_gateway_dispatches_supported_family_canonical_projection(
             {"action": "supplement_group", "timing": "morning"},
         ),
         (
+            "早上的药都吃完了，记录一下",
+            {"record_type": "supplement_group", "data": {"timing": "morning"}},
+            "/nfc/tap",
+            {"action": "supplement_group", "timing": "morning"},
+        ),
+        (
             "记住我不吃香菜",
             {
                 "record_type": "remember",
@@ -1560,7 +1820,30 @@ async def test_gateway_dispatches_supported_family_canonical_projection(
             },
         ),
         (
+            "请帮我记住我不吃香菜",
+            {
+                "record_type": "remember",
+                "data": {"predicate": "忌口", "object_value": "不吃香菜"},
+            },
+            "/memory-facts",
+            {
+                "tier": "semantic",
+                "subject": "用户",
+                "predicate": "忌口",
+                "object_value": "不吃香菜",
+                "object_unit": None,
+                "confidence": 0.9,
+                "is_sensitive": False,
+            },
+        ),
+        (
             "到杭州了",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {"title": "到达杭州"},
+        ),
+        (
+            "我到杭州了，记录一下",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             "/episodes/life-event",
             {"title": "到达杭州"},

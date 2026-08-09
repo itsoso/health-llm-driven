@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS after third dual NO-GO remediation; new exact-commit G4 pending |
+| current_stage | G3 PASS after fourth dual NO-GO remediation; new exact-commit G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -432,6 +432,30 @@ validation and no-match honesty address those risks.
   passes 3,707/3,707 Backend tests in 190.50 seconds. Targeted Ruff, Python
   compilation and `git diff --check` pass; repository structural gates and two
   brand-new exact-commit reviews remain required.
+- Fresh code and safety reviews of exact commit `5e385effc` both returned
+  NO-GO, so push and deployment remained stopped. The safety review reproduced
+  real PUTs for additional metalinguistic, quotation, trailing-hypothetical,
+  posterior-owner and revocation forms; an incomplete correction wrote the
+  superseded value, and one health-manage block reason still dispatched in
+  shadow mode. It also reproduced POSTs from quoted implicit events. The code
+  review found uncertain recovery overclaimed as resolved, inverted third-party
+  preference ownership, and overly narrow public-contract phrasing.
+- The eighteenth remediation versions the boundary as
+  `agent-capability-policy-v14` / `authorized-target-set-v10` /
+  `record-update-evidence-v5`. It models quotation delimiters, metalinguistic
+  provenance, update-result hypotheticals, posterior ownership and revocation
+  as non-authorizing structures. A correction marker must compile a unique
+  final value or the update fails closed. Every blocked `health_record` and
+  `health_manage` decision is now a hard denial in both enforce and shadow.
+- Real executor regressions prove all review examples perform no forbidden PUT
+  or POST, while final-value corrections dispatch only the canonical final
+  payload. Current-user public phrases and natural variants reach the real
+  supplement-batch, memory and lifecycle-event adapters; named or inverted
+  third-party variants never post. Uncertain recovery remains `improving`.
+  The clean single-process compatibility run passes 3,771/3,771 Backend tests
+  in 189.36 seconds. Targeted Ruff, Python compilation and `git diff --check`
+  pass; repository structural gates and two brand-new exact-commit reviews
+  remain required.
 
 ### G4 Safety Review: PENDING
 
@@ -698,6 +722,26 @@ payloads and named third-party variants fail closed. Real Gateway and executor
 adapter tests cover both directions. The clean 3,707-test G3 aggregate is green;
 a new exact commit and two brand-new reviewers who did not review
 `aa766b59c` are mandatory before G4 may pass.
+
+Fresh safety and code reviews of exact commit `5e385effc` both returned NO-GO
+before push or deployment. The safety review crossed the real executor with
+additional quote, metalinguistic, conditional, posterior-owner and revocation
+forms, showed two shorthand corrections could write the superseded value, and
+showed a blocked `health_manage` call still dispatched in shadow. It also
+created implicit events from quoted examples. The code review reproduced
+uncertain recovery as resolved, inverted third-party preference ownership and
+false denials for natural variants of the three public record contracts.
+
+The eighteenth remediation treats those as relations rather than independent
+keywords. Provenance and quotation scope, hypothetical result framing,
+posterior ownership, revocation and correction supersession all participate in
+the same authorization decision. Any blocked health mutation is hard in shadow;
+an incomplete correction is non-authorizing. Deterministic helpers accept
+narrow current-user paraphrases but reject named or inverted third-party
+subjects. Real Gateway plus executor tests cover every reported attack and
+positive contract. The clean 3,771-test G3 aggregate is green; a new exact
+commit and two brand-new reviewers who did not review `5e385effc` are mandatory
+before G4 may pass.
 
 ### G5 Deployment Health: PENDING
 

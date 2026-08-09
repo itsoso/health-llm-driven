@@ -30,10 +30,10 @@ def _is_hard_policy_denial(
     # Shadow mode may observe compatibility policy, but it must never dispatch
     # a health write that deterministic target authorization rejected. Doing so
     # would turn telemetry rollout into real cross-domain or field expansion.
-    if (
-        decision.action == "block"
-        and decision.normalized_tool_name == "health_record"
-    ):
+    if decision.action == "block" and decision.normalized_tool_name in {
+        "health_record",
+        "health_manage",
+    }:
         return True
     if decision.reason in _HARD_BLOCK_REASONS:
         return True

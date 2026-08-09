@@ -2791,7 +2791,16 @@ def test_illness_resolution_rejects_wrong_identity_or_invented_patch(arguments):
 
 @pytest.mark.parametrize(
     "phrase",
-    ("好了点", "好了一些", "好了一半", "好了一丢丢", "好了一小点"),
+    (
+        "好了点",
+        "好了一些",
+        "好了一半",
+        "好了一丢丢",
+        "好了一小点",
+        "快好了",
+        "基本好了",
+        "可能好了",
+    ),
 )
 def test_illness_partial_recovery_is_improving_not_resolved(phrase):
     snapshot = replace(
@@ -3931,9 +3940,9 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v13"
+    assert payload["contract_version"] == "agent-capability-policy-v14"
     assert payload["health_record_target_binding"] == {
-        "version": "authorized-target-set-v9",
+        "version": "authorized-target-set-v10",
         "domain_types": {
             "diet": "diet",
             "exercise": "exercise",
@@ -3952,7 +3961,7 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
     )
     assert (
         payload["health_manage_update_evidence_version"]
-        == "record-update-evidence-v4"
+        == "record-update-evidence-v5"
     )
     assert payload["known_tools"]
     assert payload["recipe_record_types"]

@@ -193,6 +193,8 @@ _REPORTING_VERBS = (
     "透露",
 )
 _METALANGUAGE_ACTIONS = (
+    "原文",
+    "原话",
     "转告",
     "转述",
     "复述",
@@ -200,6 +202,7 @@ _METALANGUAGE_ACTIONS = (
     "解释这句话",
     "引用",
     "举例",
+    "例句",
     "例子",
     "例如",
     "比如",
@@ -336,7 +339,7 @@ _POST_CURRENT_USER_OWNERSHIP_ONLY_DENIAL_RE = re.compile(
 )
 _POST_OWNERSHIP_RE = re.compile(
     r"^(?:实际上|其实|原来)?"
-    r"(?:这(?:条|个)?(?:记录|数据|饮水)?|这杯水)?(?:其实|实际上)?"
+    r"(?:这(?:条|个)?(?:记录|数据|饮水)?|这杯(?:水)?)?(?:其实|实际上)?"
     r"(?:是|属于|归于|归|给)"
     r"(?P<owner>[\u4e00-\u9fff]{1,12})(?:的)?$"
 )
@@ -371,18 +374,39 @@ _THIRD_PARTY_UPDATE_ORDER_RE = re.compile(
     r"[\u4e00-\u9fff]{1,12}(?:希望|想|要求|建议|指示|让我|叫我|嘱咐我|让小巴|让系统)"
 )
 _UPDATE_METALANGUAGE_PREFIX_RE = re.compile(
-    r"^(?:原文|原话|例句|例子|引用|转述|假设)(?:如下|是|为)?[:：]"
+    r"^(?:以下(?:内容|文字)?(?:是|为)?)?"
+    r"(?:原文|原话|例句|例子|引用|转述|假设)(?:如下|是|为)?[:：]?"
+)
+_UPDATE_HYPOTHETICAL_SUFFIX_RE = re.compile(
+    r"(?:的话|会不会|是否会|可能会).{0,8}"
+    r"(?:会怎样|怎么样|怎样|如何|发生什么|有什么影响)[?？]?$"
+)
+_UPDATE_REVOCATION_RE = re.compile(
+    r"(?:撤回|撤销|取消|忽略|作废|停止|不要执行|不执行|不要应用|不应用)"
+    r".{0,10}(?:修改|更新|更改|请求|操作)|"
+    r"(?:保持|维持).{0,16}(?:原样|不变)"
+)
+_QUOTE_PAIRS = (
+    ('"', '"'),
+    ("“", "”"),
+    ("「", "」"),
+    ("『", "』"),
+    ("〈", "〉"),
+    ("《", "》"),
+    ("【", "】"),
 )
 _UPDATE_CORRECTION_VALUE_RE = re.compile(
     r"(?:哦不|不对|错了|说错了|更正一下)[，,]?"
-    r"(?:应该|应当)?(?:是|为|改成|改为)"
-    r"(?P<value>\d+(?:\.\d+)?)\s*(?:ml|毫升)"
+    r"(?:应该|应当)?(?:是|为|改成|改为)?"
+    r"(?P<value>\d+(?:\.\d+)?)\s*(?:ml|毫升)?"
 )
+_UPDATE_CORRECTION_MARKER_RE = re.compile(r"(?:哦不|不对|错了|说错了|更正一下)")
 _DIRECT_REMEMBER_AVOID_RE = re.compile(
-    r"^(?:请|帮我)?记住(?:我|我的)?(?P<value>不吃[^，,。.!！；;：:?？]{1,80})$"
+    r"^(?:请)?(?:帮我)?记住(?:我|我的)?(?P<value>不吃[^，,。.!！；;：:?？]{1,80})$"
 )
 _DIRECT_EVENT_ARRIVAL_RE = re.compile(
-    r"^(?:我)?(?:已经|刚刚|刚)?到(?P<place>[^，,。.!！；;：:?？]{1,20})了$"
+    r"^(?:我)?(?:已经|刚刚|刚)?到(?P<place>[^，,。.!！；;：:?？]{1,20})了"
+    r"(?:[，,]?(?:记录|记一下|打卡)(?:一下)?)?$"
 )
 _DIRECT_EVENT_DEPARTURE_RE = re.compile(r"^(?:我)?飞机准备起飞(?:了)?$")
 _DIRECT_EVENT_EN_ROUTE_RE = re.compile(
@@ -875,9 +899,7 @@ def is_write_result_check(value: str) -> bool:
 def is_reported_write_reference(value: str) -> bool:
     """Recognize attributed, quoted, or metalinguistic write language."""
     text = normalize_write_scope_text(value)
-    if any(mark in text for mark in ('"', "“", "「", "『")) and any(
-        mark in text for mark in ('"', "”", "」", "』")
-    ):
+    if any(opening in text and closing in text for opening, closing in _QUOTE_PAIRS):
         return True
 
     clauses = split_write_clauses(text)
@@ -948,6 +970,8 @@ def _has_untrusted_colon_command(value: str) -> bool:
             continue
         left = value[:match.start()]
         right = value[match.end():]
+        if any(action in left for action in _METALANGUAGE_ACTIONS):
+            return True
         if (
             _last_write_signal_in_clause(left) is not None
             and _observation_has_non_current_subject(right)
@@ -1063,7 +1087,7 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
         text = text[limiting_matches[-1].end():]
 
     # An unclosed quotation has no trustworthy return to the user's own voice.
-    quote_pairs = (("“", "”"), ("「", "」"), ("『", "』"))
+    quote_pairs = _QUOTE_PAIRS[1:]
     if any(text.count(opening) > text.count(closing) for opening, closing in quote_pairs):
         return ()
     if text.count('"') % 2:
@@ -1228,7 +1252,11 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
         return False
     if _UPDATE_METALANGUAGE_PREFIX_RE.search(normalized):
         return False
-    if any(mark in normalized for mark in ('"', "“", "”", "「", "」", "『", "』")):
+    if any(mark in normalized for pair in _QUOTE_PAIRS for mark in pair):
+        return False
+    if _UPDATE_HYPOTHETICAL_SUFFIX_RE.search(normalized):
+        return False
+    if _UPDATE_REVOCATION_RE.search(normalized):
         return False
     if (
         _DEFERRED_CONDITION_PREFIX_RE.search(normalized)
@@ -1262,6 +1290,8 @@ def direct_remember_fact_values(value: str) -> dict[str, str] | None:
     match = _DIRECT_REMEMBER_AVOID_RE.fullmatch(normalized)
     if match is None:
         return None
+    if any(marker in match.group("value") for marker in ("的是", "属于", "归于")):
+        return None
     return {"predicate": "忌口", "object_value": match.group("value")}
 
 
@@ -1282,7 +1312,7 @@ def direct_supplement_group_values(value: str) -> dict[str, str] | None:
     normalized = normalize_write_scope_text(value)
     if not re.fullmatch(
         r"(?:我)?(?:早上|早晨|上午|中午|午间|晚上|晚间|睡前|临睡)的?"
-        r"(?:补剂|药)(?:都|全|全部)(?:吃|服)(?:了)?"
+        r"(?:补剂|药)(?:都|全|全部)(?:吃|服)(?:完)?(?:了)?"
         r"(?:[，,]?(?:记录|记一下|打卡)(?:一下)?)?",
         normalized.strip("，,。.!！；;：:?？"),
     ):
@@ -1309,6 +1339,13 @@ def corrected_water_update_value(value: str) -> float | None:
         _UPDATE_CORRECTION_VALUE_RE.finditer(normalize_write_scope_text(value))
     )
     return float(matches[-1].group("value")) if matches else None
+
+
+def has_water_update_correction(value: str) -> bool:
+    """Return whether the user superseded an earlier proposed water value."""
+    return _UPDATE_CORRECTION_MARKER_RE.search(
+        normalize_write_scope_text(value)
+    ) is not None
 
 
 def _corrected_write_clause(previous: str, corrected_value: str) -> str:

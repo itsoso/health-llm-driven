@@ -64,9 +64,9 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v13"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v9"
-_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v4"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v14"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v10"
+_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v5"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = (
     "_server_authorized_health_record_fields"
 )
@@ -778,18 +778,22 @@ def _illness_update_patch(snapshot: TurnSnapshot) -> dict[str, Any] | None:
     text = "".join(str(snapshot.envelope.text or "").split())
     patch: dict[str, Any] = {}
     terminal_recovery = re.search(r"好了(?=[，,。.!！；;]|$)", text)
-    partial_recovery = (
-        "好了" in text
-        and terminal_recovery is None
-        and not any(marker in text for marker in ("完全好了", "彻底好了"))
+    uncertain_recovery = re.search(
+        r"(?:快|基本|大概|可能|也许|应该|差不多|快要|几乎|貌似|感觉).{0,3}"
+        r"好了(?=[，,。.!！；;]|$)",
+        text,
     )
+    partial_recovery = (
+        uncertain_recovery is not None
+        or ("好了" in text and terminal_recovery is None)
+    ) and not any(marker in text for marker in ("完全好了", "彻底好了"))
     if partial_recovery or any(
         marker in text for marker in ("有所好转", "好转", "改善中", "缓解中")
     ):
         patch["status"] = "improving"
     elif (
         any(marker in text for marker in ("已痊愈", "痊愈", "康复", "完全好了", "彻底好了"))
-        or terminal_recovery is not None
+        or (terminal_recovery is not None and uncertain_recovery is None)
     ):
         patch["status"] = "resolved"
     elif any(marker in text for marker in ("发作中", "还没好", "仍未好")):
@@ -831,9 +835,14 @@ def _water_update_values(text: str) -> tuple[float | None, float] | None:
     new_amount = _water_match_amount_ml(new_matches[0])
     old_matches = tuple(_WATER_TARGET_RE.finditer(normalized[:marker.start()]))
     old_amount = _water_match_amount_ml(old_matches[-1]) if old_matches else None
-    from app.services.write_intent_scope import corrected_water_update_value
+    from app.services.write_intent_scope import (
+        corrected_water_update_value,
+        has_water_update_correction,
+    )
 
     corrected_amount = corrected_water_update_value(text)
+    if has_water_update_correction(text) and corrected_amount is None:
+        return None
     return old_amount, corrected_amount if corrected_amount is not None else new_amount
 
 
