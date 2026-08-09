@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS on implementation fb52914e8; fresh exact-commit G4 pending |
+| current_stage | G3 PASS on implementation 2940d2fd3; fresh exact-commit G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -1565,9 +1565,76 @@ runtime-identity key, an unreachable database URL and zero database I/O. A
 preceding harness attempt stopped before scoring because that synthetic HMAC key
 was absent; no product call or fallback was counted as success.
 
-No commit in the v32/v33 chain has been pushed or deployed. Reviewers must
-inspect the next documentation commit together with exact implementation parent
-`fb52914e83a160b8e2646986046291164b0c67fc`; two fresh independent GO decisions
+Fresh code and product-safety reviews of exact documentation commit
+`75aefafd00d41dcd24c4a4746bad966abcd03f95` both returned NO-GO, so that SHA
+was not pushed or deployed. The code review ran 225 real
+Executor-to-Gateway-to-policy executions against fake terminal adapters and
+found 98 expectation mismatches. The safety review ran 196 unique cases in
+both enforce and shadow modes (392 executions) and found 27 unique failures.
+The shared classes were arbitrary safe illness names diverging between
+GoalSpec/direct/memory/fallback paths, unresolved discourse and MRI references,
+cancelled reads with later positive clauses, disease names containing metric
+tokens, latest-occurrence and natural ratio phrasing, and unsafe referential,
+third-party or rich-status illness creates. Both reviews used synthetic inputs
+and zero production database I/O.
+
+The v34 remediation established one shared exact illness-create target and
+expanded compositional read grammar across GoalSpec and policy. Its contracts
+were `agent-capability-policy-v34` / `authorized-target-set-v30` /
+`record-update-evidence-v23`. The fresh review matrix was failure-first:
+81/92 new cases failed while 11 safety controls remained green before the
+implementation. Afterwards the focused groups passed 92/92, 38/38 and 112/112;
+the final core suite passed 2,845/2,845 and the 27-file Backend gate passed
+4,702/4,702. Ruff, formatting, compilation, architecture drift,
+102-dossier consistency and diff checks passed. This candidate was frozen at
+`97bda51acbf16fd12e509c00430b50dbe7854317`.
+
+The first live 22-case `qwen3.7-max` system matrix on that exact v34 commit was
+kept red at 18/22, with zero database connection attempts. It exposed four
+cross-layer shapes missing from synthetic proposals: an unresolved illness
+ordinal escaping through `health_manage(list)`, an unresolved MRI reference
+escaping after the model shortened its keyword, a later positive disease
+blocked when Qwen chose `medical_exam`, and `妊娠高血压` blocked when Qwen chose
+`blood_pressure`. The v34 SHA therefore remains NO-GO and was not pushed or
+deployed.
+
+The v35 correction makes recognizable disease morphology a server-owned query
+fact instead of trusting the model-selected dimension, shares cancellation,
+unsupported-calendar and unresolved-reference denial across read tools, and
+parses modality-plus-report MRI references compositionally. Internal
+`health_manage(list)` lookups used to bind mutation candidates remain available;
+the new read guard applies only to user read semantics. Contracts are now
+`agent-capability-policy-v35` / `authorized-target-set-v31` /
+`record-update-evidence-v23`.
+
+All 14 exact live-failure reproductions were red before v35 and green after it.
+An initial full core run deliberately caught 160 regressions/contract conflicts
+from an overbroad list guard and old “always reject a wrong model dimension”
+assertions. The implementation was narrowed so mutation lookups remain intact;
+only explicit disease morphology now overrides a model dimension, while the
+existing sleep, diet, workout and other non-disease mismatch controls continue
+to block. The final core suite passes 2,859/2,859 and the single-process
+27-file Backend gate passes 4,716/4,716 with seven pre-existing deprecation
+warnings. Post-format core verification also passes 2,859/2,859. Ruff,
+formatting, Python compilation, architecture drift, 102-dossier consistency,
+pre-commit hooks and diff checks pass.
+
+The final requested live `qwen3.7-max` system matrix on exact implementation
+commit `2940d2fd31a86c37de3913ceea5a00a730662060` passes 22/22. It uses the real
+production tool schemas, typed GoalSpec, goal-call normalization, Gateway
+semantic projection, production read fingerprint and the production
+`structured_or_recovered` source; only the terminal adapter is fake. It covers
+the original compound query, SLE prefix/suffix latest forms, sleep-apnea and
+Parkinson latest reads, unresolved ordinal and MRI references, direct and
+later-positive cancellation, metric-looking disease observations, safe,
+referential, third-party and rich-status creates, two natural ratio forms, two
+MRI verbs, and arbitrary migraine/pregnancy-hypertension reads. The evaluator
+installed a database-connect tripwire, used an unreachable database URL and
+reported zero database connection attempts.
+
+No v32-v35 candidate has been pushed or deployed. Reviewers must inspect the
+next documentation commit together with exact implementation parent
+`2940d2fd31a86c37de3913ceea5a00a730662060`; two fresh independent GO decisions
 remain mandatory before G4 can pass.
 
 ### G5 Deployment Health: PENDING
