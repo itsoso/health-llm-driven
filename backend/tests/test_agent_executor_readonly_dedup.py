@@ -67,6 +67,23 @@ def test_fingerprint_distinguishes_different_health_query_batch_plans():
     assert _is_seen_readonly_call(second_call, seen) is False
 
 
+def test_fingerprint_canonicalizes_equivalent_health_query_batch_aliases():
+    aliased = {
+        "queries": [
+            {"type": "lab_results", "time_range": "14d", "agg": "AVG"},
+        ],
+    }
+    canonical = {
+        "queries": [
+            {"dimension": "medical_exam", "days": 14, "agg": "avg"},
+        ],
+    }
+
+    assert _read_operation_fingerprint(
+        "health_query_batch", aliased
+    ) == _read_operation_fingerprint("health_query_batch", canonical)
+
+
 def test_is_seen_readonly_classifies_health_manage_by_operation():
     list_args = {"record_type": "diet", "operation": "list", "date": "today"}
     seen = {

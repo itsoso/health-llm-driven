@@ -166,6 +166,22 @@ def validate_plan(
     return norm_queries, compare, None
 
 
+def normalize_plan_for_fingerprint(plan: Any) -> Any:
+    """Return the canonical plan shape actually consumed by the executor.
+
+    Valid aliases collapse to one fingerprint while distinct nested plans stay
+    distinct. Invalid plans retain their raw shape so separate validation errors
+    are not accidentally deduplicated before fail-loud handling.
+    """
+    queries, compare, error = validate_plan(plan, valid_dimensions=known_dimensions())
+    if error is not None or queries is None:
+        return plan
+    normalized: dict[str, Any] = {"queries": queries}
+    if compare is not None:
+        normalized["compare"] = compare
+    return normalized
+
+
 def _validate_compare(compare: Any, n: int) -> tuple[Optional[dict], Optional[str]]:
     if not isinstance(compare, dict):
         return None, "Error: compare 必须是对象 {a:<下标>, b:<下标>, op:'diff'|'ratio'}。"

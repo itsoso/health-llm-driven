@@ -1276,6 +1276,11 @@ def _is_current_user_event_parenthetical(content: str) -> bool:
     ):
         return True
     if re.fullmatch(
+        rf"{current_user}(?:的)?{scope}(?:的)?{event_noun}",
+        normalized,
+    ):
+        return True
+    if re.fullmatch(
         rf"{scope}?{event_noun}(?:属于|归属于|归|是){current_user}(?:的)?",
         normalized,
     ):

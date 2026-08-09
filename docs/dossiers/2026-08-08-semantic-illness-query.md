@@ -1199,6 +1199,47 @@ focused formatting, Python compilation and `git diff --check` pass. A new exact
 commit and two fresh independent reviews of that SHA remain mandatory before G4
 may pass.
 
+Fresh code and product-safety reviews of exact commit
+`c5450a72341ee7b7fee5c0e6f645461412f87e22` both returned NO-GO, so it was not
+pushed or deployed. The code review proved that `health_query_batch` bypassed
+the single-query turn/entity binding, equivalent batch aliases produced
+different convergence fingerprints, and unknown history entities still fell
+through to arbitrary non-illness dimensions. The safety review independently
+reproduced false dispatch for HRV, breakfast and MRI history when the model
+proposed illness, plus disease names beginning with ordinary metric words. Both
+reviews also found natural single-scope history phrasing, four coordination
+relations and one explicit current-user event-owner form that were incorrectly
+handled.
+
+The v26 remediation makes semantic scope one pre-dispatch contract for both
+single and batch reads. A positive closed mapping binds recognized non-illness
+entities to their canonical dimension; an unrecognized history entity cannot
+fall through to a model-selected metric. Known illness and long-tail illness
+reads continue through the exact illness projector. Batch plans must match the
+complete set of entities stated by the user, and an explicit turn time window
+overwrites model-proposed days for both single and batch reads. Valid nested
+batch aliases canonicalize before read convergence while distinct plans retain
+distinct fingerprints. Natural `历史记录` / `历史中……有哪些记录` frames remain
+one scope; separate scopes remain closed. The reviewed request wrappers,
+coordination relations and `我的这次行程` current-user ownership form are
+covered by real ToolGateway tests in enforce and shadow modes. The contracts
+are now `agent-capability-policy-v26` / `authorized-target-set-v22` /
+`record-update-evidence-v17`.
+
+Failure-first coverage reproduced 44 failures across the new query, batch,
+fingerprint, time-window and event-owner matrix. The remediated Gateway matrix
+passes 44/44 and the read-fingerprint group passes 4/4. The
+complete 27-file related Backend regression run passes 4,199/4,199 in one
+process with `TZ=Asia/Shanghai`, and the adjacent meal-photo compatibility file
+passes 103/103. The earlier requested live `qwen3.7-max` six-case synthetic
+evaluation remains green with zero database I/O: exact/paraphrased/negated
+illness history chose the illness reader, quoted update did not write, direct
+update chose list-first management, and explicit illness create chose the
+write tool. Targeted Ruff, focused formatting, Python compilation,
+`git diff --check`, generated system-map drift and Dossier consistency checks
+pass. A new exact commit and two fresh independent reviews of that SHA remain
+mandatory before G4 may pass.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.

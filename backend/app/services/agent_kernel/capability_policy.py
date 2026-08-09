@@ -68,9 +68,9 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v25"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v21"
-_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v16"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v26"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v22"
+_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v17"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
 _HEALTH_RECORD_DOMAIN_TYPES = {
     "diet": "diet",
@@ -177,22 +177,70 @@ _ILLNESS_ASSERTION_BOUNDARY_RE = re.compile(
 )
 _QUERY_DIMENSION_TEXT_TERMS: dict[str, tuple[str, ...]] = {
     "sleep": ("睡眠", "入睡", "起床", "睡觉"),
-    "diet": ("饮食", "餐", "吃", "热量", "营养"),
+    "diet": (
+        "饮食",
+        "餐",
+        "吃",
+        "热量",
+        "营养",
+        "早餐",
+        "早饭",
+        "午餐",
+        "午饭",
+        "晚餐",
+        "晚饭",
+        "加餐",
+        "零食",
+        "夜宵",
+    ),
     "water": ("饮水", "喝水", "补水"),
     "weight": ("体重", "称重"),
     "blood_pressure": ("血压", "收缩压", "舒张压"),
-    "exercise": ("运动", "跑步", "训练"),
+    "workout": (
+        "运动",
+        "跑步",
+        "跑步训练",
+        "骑行",
+        "游泳",
+        "训练",
+        "跑量",
+        "健身",
+    ),
+    "manual_exercise": ("俯卧撑", "瑜伽", "拉伸", "深蹲", "仰卧起坐"),
     "activity": ("步数", "活动", "日常活动", "活动分钟"),
     "heart_rate": ("心率", "静息心率", "平均心率"),
     "hrv": ("hrv", "心率变异性"),
     "spo2": ("血氧", "夜间血氧", "spo2"),
+    "spo2_sleep_correlation": ("睡眠血氧关联", "睡眠阶段血氧", "血氧睡眠关联"),
     "body_battery": ("身体电量", "电量"),
-    "stress": ("压力", "压力水平"),
+    "stress": ("压力", "压力水平", "心理压力"),
     "supplements": ("补剂", "补剂服用"),
     "medication": ("用药", "服药", "药物"),
     "events": ("行程", "事件", "时间线"),
-    "medical_exam": ("化验", "检查", "体检", "影像"),
+    "medical_exam": (
+        "化验",
+        "检查",
+        "体检",
+        "影像",
+        "MRI",
+        "MRI检查",
+        "MRI检查报告",
+        "核磁",
+        "磁共振",
+        "CT",
+        "CT报告",
+        "X光",
+        "B超",
+        "胃镜",
+        "检查报告",
+    ),
+    "genetic": ("基因", "基因位点"),
+    "genetic_cognitive": ("认知基因", "认知能力基因"),
+    "genetic_personality": ("人格基因", "性格基因"),
+    "genetic_comprehensive": ("综合基因", "基因综合解读"),
+    "comprehensive": ("健康", "健康数据", "健康指标", "综合健康"),
 }
+_QUERY_DIMENSION_SEMANTIC_ALIASES = {"exercise": "workout"}
 _QUERY_DIMENSION_ENTITY_PREFIX_PATTERN = r"(?:夜间|每日|日均|平均|静息|全天)?"
 _QUERY_DIMENSION_ENTITY_SUFFIX_PATTERN = (
     r"(?:数据|指标|数值|读数|情况|状况|状态|评分|分数|质量|时长|时间|趋势|"
@@ -208,17 +256,15 @@ _HISTORY_QUERY_QUESTION_RE = re.compile(
     r"(?:上一次|是什么时候|在什么时候|何时|是几号|分别有哪些|有那些|"
     r"有什么|有几条|有几次|有多少条|多少条)"
 )
-_HISTORY_QUERY_ILLNESS_LIKE_ENTITY_RE = re.compile(
-    r"(?:病|症|炎|癌|瘤|综合征|障碍|感染|溃疡|发作|疹|梗|痛|痛风|"
-    r"震颤|白癜风|哮喘|癫痫|结石|囊肿|息肉|骨折|扭伤|中毒)$"
-)
 _HISTORY_QUERY_MULTI_ENTITY_RE = re.compile(
     r"(?:还有|以及|并且|加上|外加|兼有|连同|伴有|伴随|并伴|合并|联合|"
-    r"同时有|同时出现|并发|共存|共患|再加|[、，,；;+/／|｜&＆和与及或跟])"
+    r"同时有|同时出现|并发|并存|伴发|共存|共患|同患|再加|且|"
+    r"[、，,；;+/／|｜&＆和与及或跟])"
 )
 _HISTORY_QUERY_LEADING_VERB_RE = re.compile(
     r"^(?:查询(?:一下)?|查找(?:一下)?|查看(?:一下)?|查一下|找出|找一下|"
-    r"回顾(?:一下)?|回看(?:一下)?|检索(?:一下)?|列出|翻一下|调取|看看|查|把)"
+    r"回顾(?:一下)?|回看(?:一下)?|检索(?:一下)?|列出|比较|对比|翻一下|"
+    r"调取|看看|查到|查|把)"
 )
 _HISTORY_QUERY_TRAILING_VERB_RE = re.compile(
     r"(?:(?:给我)?(?:找出来|查出来|列出来|调出来|找出|查看|看看))$"
@@ -1100,7 +1146,8 @@ def _history_query_entity_expression(text: str) -> str | None:
 
     history_container_match = re.search(
         r"(?:记录|历史)(?:里|中)?(?:的)?(?P<entity>.{2,80}?)"
-        r"(?:分别|有哪些|有那些|有什么|有几条|有几次|有多少条|多少条)$",
+        r"(?:分别|有哪些|有那些|有什么|有几条|有几次|有多少条|多少条)"
+        r"(?:记录|历史)?$",
         normalized,
     )
     previous_match = re.search(
@@ -1142,7 +1189,7 @@ def _strip_history_query_request_prefix(value: str) -> str:
     """Strip composable request scaffolding without enumerating whole sentences."""
     candidate = value
     prefix_component_re = re.compile(
-        r"^(?:请问|请您|烦请|劳驾|方便的话|请|您|麻烦你?|能不能|可不可以|"
+        r"^(?:请问|请您|烦请|劳驾|拜托|方便的话|请|您|麻烦你?|能不能|可不可以|"
         r"可以不可以|能否|可否|"
         r"(?:能|可以)(?=给我|帮我|帮忙|替我|为我|查询|查找|查看|查一下|"
         r"找出|找一下|回顾|回看|检索|列出|翻一下|调取|看看|查|把)|"
@@ -1177,16 +1224,21 @@ def _clean_history_query_entity(value: str) -> str:
 def _history_query_has_multiple_scopes(text: str) -> bool:
     """Reject history requests whose separate scopes need a batch/read plan."""
     normalized = "".join(str(text or "").split())
+    if len(tuple(_HISTORY_QUERY_WINDOW_RE.finditer(normalized))) > 1:
+        return True
+    markers = tuple(re.finditer(r"(?:历史记录|记录历史|记录|历史)", normalized))
+    if len(markers) <= 1:
+        return False
+    # “历史记录” and “历史中……有哪些记录” are one natural query frame, not
+    # two independently scoped reads. Separate repeated record/history clauses
+    # remain closed so a single tool call cannot silently choose one of them.
     return (
-        len(tuple(_HISTORY_QUERY_WINDOW_RE.finditer(normalized))) > 1
-        or len(tuple(re.finditer(r"(?:记录|历史)", normalized))) > 1
-    )
-
-
-def _query_entities_look_like_illness(entities: tuple[str, ...]) -> bool:
-    return bool(entities) and all(
-        _HISTORY_QUERY_ILLNESS_LIKE_ENTITY_RE.search(entity) is not None
-        for entity in entities
+        re.search(
+            r"历史(?:里|中).{2,80}(?:有哪些|有那些|有什么|有几条|有几次|"
+            r"有多少条|多少条)(?:记录)?$",
+            normalized,
+        )
+        is None
     )
 
 
@@ -1203,6 +1255,7 @@ def _query_entities_match_dimension(
                 rf"{_QUERY_DIMENSION_ENTITY_PREFIX_PATTERN}"
                 rf"{re.escape(term)}{_QUERY_DIMENSION_ENTITY_SUFFIX_PATTERN}",
                 entity,
+                flags=re.IGNORECASE,
             )
             for term in terms
         )
@@ -1217,6 +1270,60 @@ def _query_entities_known_dimension(entities: tuple[str, ...]) -> str | None:
         if _query_entities_match_dimension(entities, dimension)
     )
     return matches[0] if len(matches) == 1 else None
+
+
+def _semantic_query_dimension(dimension: str) -> str:
+    normalized = str(dimension or "").strip().lower()
+    return _QUERY_DIMENSION_SEMANTIC_ALIASES.get(normalized, normalized)
+
+
+def _query_entity_known_dimensions(entity: str) -> frozenset[str]:
+    return frozenset(
+        _semantic_query_dimension(dimension)
+        for dimension in _QUERY_DIMENSION_TEXT_TERMS
+        if _query_entities_match_dimension((entity,), dimension)
+    )
+
+
+def _batch_query_semantic_dimensions(args: dict[str, Any]) -> frozenset[str] | None:
+    queries = args.get("queries")
+    if not isinstance(queries, list) or not queries:
+        return None
+    dimensions: set[str] = set()
+    for query in queries:
+        if not isinstance(query, dict):
+            return None
+        canonical = normalize_health_query_args(query)
+        dimension = canonical.get("dimension")
+        if not isinstance(dimension, str) or not dimension.strip():
+            return None
+        dimensions.add(_semantic_query_dimension(dimension))
+    return frozenset(dimensions)
+
+
+def _normalize_batch_query_plan(
+    args: dict[str, Any],
+    *,
+    projected_days: int | None = None,
+) -> dict[str, Any]:
+    """Canonicalize a valid batch plan and bind an explicit turn window."""
+    try:
+        from app.services.health_query_batch import known_dimensions, validate_plan
+
+        queries, compare, error = validate_plan(
+            args,
+            valid_dimensions=known_dimensions(),
+        )
+    except Exception:  # noqa: BLE001 - validation still fails loud downstream
+        return args
+    if error is not None or queries is None:
+        return args
+    if projected_days is not None:
+        queries = [{**query, "days": projected_days} for query in queries]
+    normalized: dict[str, Any] = {"queries": queries}
+    if compare is not None:
+        normalized["compare"] = compare
+    return normalized
 
 
 def _explicit_illness_query_window_days(text: str) -> int | None:
@@ -1494,6 +1601,7 @@ def decide_tool_capability(
         known_non_illness_dimension = _query_entities_known_dimension(
             illness_query_entities
         )
+        proposed_semantic_dimension = _semantic_query_dimension(proposed_dimension)
         if (
             _history_query_has_multiple_scopes(turn_text)
             or len(illness_query_entities) > 1
@@ -1505,13 +1613,24 @@ def decide_tool_capability(
                 canonical_args,
             )
         if known_non_illness_dimension is not None:
-            if proposed_dimension != known_non_illness_dimension:
+            if proposed_semantic_dimension != _semantic_query_dimension(
+                known_non_illness_dimension
+            ):
                 return _decision(
                     "block",
                     "health_query_dimension_conflict",
                     tool_name,
                     canonical_args,
                 )
+            projected_days = _explicit_illness_query_window_days(turn_text)
+            if projected_days is not None:
+                canonical_args = {**canonical_args, "days": projected_days}
+            return _decision(
+                "allow",
+                "health_query_projected_to_turn_semantics",
+                tool_name,
+                canonical_args,
+            )
         elif known_illness_entities or proposed_dimension == "illness":
             illness_query_args = _project_illness_query_to_turn(
                 turn_text,
@@ -1529,14 +1648,7 @@ def decide_tool_capability(
                 tool_name,
                 canonical_args,
             )
-        elif _query_entities_look_like_illness(illness_query_entities):
-            return _decision(
-                "block",
-                "health_query_dimension_conflict",
-                tool_name,
-                canonical_args,
-            )
-        elif illness_query_entities and proposed_dimension in {"", "comprehensive"}:
+        elif illness_query_entities:
             return _decision(
                 "block",
                 "health_query_dimension_conflict",
@@ -1549,6 +1661,42 @@ def decide_tool_capability(
             tool_name,
             canonical_args,
         )
+
+    if tool_name == "health_query_batch":
+        turn_text = snapshot.envelope.text
+        query_entities = _illness_query_entities(turn_text)
+        normalized_plan = _normalize_batch_query_plan(
+            args,
+            projected_days=_explicit_illness_query_window_days(turn_text),
+        )
+        if query_entities:
+            if _history_query_has_multiple_scopes(turn_text):
+                return _decision(
+                    "block",
+                    "health_query_dimension_conflict",
+                    tool_name,
+                    normalized_plan,
+                )
+            expected_dimensions: set[str] = set()
+            for entity in query_entities:
+                entity_dimensions = _query_entity_known_dimensions(entity)
+                if len(entity_dimensions) != 1:
+                    return _decision(
+                        "block",
+                        "health_query_dimension_conflict",
+                        tool_name,
+                        normalized_plan,
+                    )
+                expected_dimensions.update(entity_dimensions)
+            proposed_dimensions = _batch_query_semantic_dimensions(normalized_plan)
+            if proposed_dimensions != frozenset(expected_dimensions):
+                return _decision(
+                    "block",
+                    "health_query_dimension_conflict",
+                    tool_name,
+                    normalized_plan,
+                )
+        return _decision("allow", "read_only_tool", tool_name, normalized_plan)
 
     if tool_name in READ_ONLY_TOOLS:
         return _decision("allow", "read_only_tool", tool_name, args)
