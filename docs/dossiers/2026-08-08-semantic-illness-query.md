@@ -696,6 +696,13 @@ validation and no-match honesty address those risks.
   103/103. Ruff, focused formatting, Python compilation and `git diff --check`
   pass. Repository structural checks and two new reviews of the next exact SHA
   remain mandatory.
+- Latest clean `origin/main` commit `32a216cb6` was merged before final review.
+  It adds authenticated conversation no-store headers and changes only
+  `backend/app/api/agent.py`, its 55-case API test file and two separate design
+  documents; it does not overlap the v23 semantic boundary. On the merged tree,
+  the conversation API suite passes 55/55 and the 163-case real semantic
+  boundary group remains 163/163. The merged SHA itself must receive both fresh
+  G4 reviews before push or deployment.
 
 ### G4 Safety Review: PENDING
 
