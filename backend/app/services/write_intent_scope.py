@@ -304,8 +304,9 @@ _CURRENT_USER_SUBJECT_NOISE_RE = re.compile(
     r"还是有|仍然有|仍有|还有|本人|自己|一下)"
 )
 _SUBJECT_RELATION_NOISE_RE = re.compile(
-    r"(?:\d{1,2}点(?:\d{1,2}分)?|"
-    r"[一二两三四五六七八九十]{1,3}点(?:[一二两三四五六七八九十]{1,3}分)?|"
+    r"(?:\d{1,2}点(?:(?:\d{1,2}分)|半|一刻|三刻)?|"
+    r"[零〇一二两三四五六七八九十]{1,3}点"
+    r"(?:(?:[零〇一二两三四五六七八九十]{1,3}分)|半|一刻|三刻)?|"
     r"\d+(?:\.\d+)?(?:kg|公斤|千克|斤|cm|厘米|mmhg|毫米汞柱|ml|毫升)?|"
     r"已经|又|还|正|正在|刚|有点|突然|最近|不是很|不太|比较|特别|很|"
     r"痊愈|康复|好转|恢复|同时|然后|并且|而且|另外|还有|以及|"
@@ -351,6 +352,10 @@ _POST_BARE_OWNER_RE = re.compile(
 _POST_OWNER_RESOURCE_RE = re.compile(
     r"^(?:这(?:条|个|次)?(?:记录|数据|行程|事件)?(?:其实|实际上)?)?"
     r"(?:是|属于|归于|归|给)(?P<owner>[\u4e00-\u9fff]{1,12})的"
+    r"(?:行程|记录|数据|事件|饮水|药|补剂)$"
+)
+_POST_BARE_OWNER_RESOURCE_RE = re.compile(
+    r"^(?P<owner>[\u4e00-\u9fff]{1,12})的"
     r"(?:行程|记录|数据|事件|饮水|药|补剂)$"
 )
 _POST_WRITE_BENEFICIARY_RE = re.compile(
@@ -399,7 +404,8 @@ _EVENT_WRITE_SCAFFOLD_RE = re.compile(
     r"(?:生活事件)?[：:]?"
 )
 _EXTERNAL_PROVENANCE_RE = re.compile(
-    r"(?:来自|来源于|摘自|转自|出自).{0,16}"
+    r"(?:(?:来自|来源于|摘(?:录)?自|转自|出自)|"
+    r"(?:根据|(?<!数)据)).{0,16}"
     r"(?:消息|日志|聊天|群聊|群消息|通知|文本|原文|记录)"
 )
 _UPDATE_METALANGUAGE_PREFIX_RE = re.compile(
@@ -448,7 +454,9 @@ _CURRENT_USER_UPDATE_PREFIX_PATTERN = (
     r"可以帮我|能帮我|替我|给我|为我|"
     r"我想|我想请你|我要|我希望|我需要))?"
 )
-_CURRENT_USER_RECORD_OWNER_PATTERN = r"(?:(?:我|本人|自己)(?:的)?)?"
+_CURRENT_USER_RECORD_OWNER_PATTERN = (
+    r"(?:(?:我(?:自己|本人)?|本人|自己)(?:的)?)?"
+)
 _DIRECT_WATER_UPDATE_RE = re.compile(
     rf"^{_CURRENT_USER_UPDATE_PREFIX_PATTERN}(?:把|将)?"
     rf"{_CURRENT_USER_RECORD_OWNER_PATTERN}"
@@ -1377,6 +1385,7 @@ def _is_post_attributed_to_non_current_owner(clause: str) -> bool:
     match = (
         denial_match
         or _POST_OWNER_RESOURCE_RE.fullmatch(normalized)
+        or _POST_BARE_OWNER_RESOURCE_RE.fullmatch(normalized)
         or _POST_WRITE_BENEFICIARY_RE.fullmatch(normalized)
         or _POST_OWNERSHIP_RE.fullmatch(normalized)
         or _POST_BARE_OWNER_RE.fullmatch(normalized)

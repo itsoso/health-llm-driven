@@ -64,9 +64,9 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v17"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v13"
-_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v8"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v18"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v14"
+_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v9"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = (
     "_server_authorized_health_record_fields"
 )
@@ -170,11 +170,13 @@ _ILLNESS_TARGET_TERMS = (
     "痘痘发作",
 )
 _NEGATED_ILLNESS_RECOVERY_RE = re.compile(
-    r"(?:(?:并非|并不是|不是|不算|毫无|谈不上|"
-    r"(?:并|还|仍|目前|其实|实际上)?(?:没有|没|未|并未|还未))"
+    r"(?:(?:并(?:非|不是|无|未|没有|没)|"
+    r"尚(?:无|未|没有|没)|仍(?:无|未|没有|没)|"
+    r"还(?:无|未|没有|没)|绝非|不是|不算|算不上|"
+    r"毫无|谈不上|无|未|没有|没)"
     r".{0,4}(?:好转|改善|缓解|康复|痊愈|好了?))|"
     r"(?:(?:好了|好转|改善|缓解|康复|痊愈).{0,8}"
-    r"(?:其实|实际上)?(?:并)?(?:没有|没))"
+    r"(?:不了|不成|(?:其实|实际上)?(?:并)?(?:没有|没)))"
 )
 _ILLNESS_RELAPSE_OR_WORSENING_RE = re.compile(
     r"(?:复发|再发|重新发作|又发作|再次发作|加重|恶化|反复)"
@@ -829,9 +831,7 @@ def _illness_update_patch(snapshot: TurnSnapshot) -> dict[str, Any] | None:
     )
     if not patch:
         partial_recovery = "好了" in text and not clear_terminal
-        if partial_recovery or any(
-            marker in text for marker in ("有所好转", "好转", "改善中", "缓解中")
-        ):
+        if partial_recovery or re.search(r"(?:好转|改善|缓解)", text):
             patch["status"] = "improving"
         elif (
             any(
@@ -940,8 +940,10 @@ def _explicit_illness_record_ids(text: str) -> set[int]:
     normalized = "".join(str(text or "").split())
     record_ids: set[int] = set()
     for match in re.finditer(
-        r"(?:疾病)?(?:记录|条目)#?(?P<record_id>\d+)(?!\d)",
+        r"(?:疾病)?(?:记录|条目)(?:编号|id|号)?[#：:]?"
+        r"(?P<record_id>\d+)(?!\d)",
         normalized,
+        re.IGNORECASE,
     ):
         record_id = canonical_health_manage_record_id(match.group("record_id"))
         if record_id is not None:

@@ -17199,12 +17199,7 @@ class AgentExecutor:
                 f"{record_data['food_items']}"
                 f"（按实际食用{consumed_fraction_label}计）"
             )
-        if semantic_intent.primary in {"read", "advice"}:
-            capture_instruction = (
-                "本轮仅用于分析或查询，严禁调用 health_record；"
-                "只解释识别结果、不确定性和可选建议。"
-            )
-        elif result.get("contextual_capture_write_blocked_reason"):
+        if result.get("contextual_capture_write_blocked_reason"):
             if result["contextual_capture_write_blocked_reason"] == "cancelled":
                 capture_instruction = (
                     "用户已明确取消本次记餐；严禁调用 health_record 或 "
@@ -17217,6 +17212,11 @@ class AgentExecutor:
                     "请让用户用明确已完成的事实句重述，例如“这餐只吃了1/2，"
                     "请记录”。"
                 )
+        elif semantic_intent.primary in {"read", "advice"}:
+            capture_instruction = (
+                "本轮仅用于分析或查询，严禁调用 health_record；"
+                "只解释识别结果、不确定性和可选建议。"
+            )
         elif result.get("contextual_capture_failed"):
             capture_instruction = (
                 "图片资产与饮食记录的原子保存没有完成；严禁调用 health_record "

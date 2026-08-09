@@ -2552,6 +2552,7 @@ def test_update_turn_blocks_health_manage_delete_with_receipt():
         "把饮水记录718：300ml改成350ml",
         "请把饮水记录718（300ml）修改为350ml",
         "请把我的饮水记录718改成350ml",
+        "请把我自己的饮水记录718改成350ml",
         "麻烦帮我把刚才300ml改成350ml",
         "请你帮我把刚才300ml改成350ml",
     ),
@@ -2962,6 +2963,11 @@ def test_negated_illness_recovery_requires_clarification_instead_of_guessing(
         "好转但今天加重了",
         "好了又发作了",
         "痊愈后今天复发",
+        "并无好转",
+        "尚无好转",
+        "绝非好转",
+        "算不上好转",
+        "好转不了",
     ),
 )
 @pytest.mark.parametrize("status", ("active", "improving", "resolved"))
@@ -3037,12 +3043,48 @@ def test_clear_active_illness_state_remains_a_supported_update():
     assert decision.normalized_args["data"] == {"status": "active"}
 
 
+def test_clear_illness_improvement_paraphrase_remains_supported():
+    snapshot = replace(
+        _snapshot("舌尖溃疡已经明显改善，修改记录"),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "illness",
+                    "records": (
+                        {"id": 71, "name": "舌尖溃疡", "status": "active"},
+                    ),
+                },
+            ),
+        ),
+    )
+
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "illness",
+                "operation": "update",
+                "record_id": 71,
+                "data": {"status": "improving"},
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args["data"] == {"status": "improving"}
+
+
 @pytest.mark.parametrize(
     "message",
     (
         "舌尖溃疡记录999昨天好了，修改记录",
         "舌尖溃疡条目999昨天好了，修改记录",
         "舌尖溃疡的疾病记录999昨天好了，修改记录",
+        "舌尖溃疡记录编号999昨天好了，修改记录",
+        "舌尖溃疡记录ID999昨天好了，修改记录",
+        "舌尖溃疡记录编号：999昨天好了，修改记录",
     ),
 )
 def test_visible_illness_record_id_cannot_fall_back_to_a_different_named_record(
@@ -4173,9 +4215,9 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v17"
+    assert payload["contract_version"] == "agent-capability-policy-v18"
     assert payload["health_record_target_binding"] == {
-        "version": "authorized-target-set-v13",
+        "version": "authorized-target-set-v14",
         "domain_types": {
             "diet": "diet",
             "exercise": "exercise",
@@ -4194,7 +4236,7 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
     )
     assert (
         payload["health_manage_update_evidence_version"]
-        == "record-update-evidence-v8"
+        == "record-update-evidence-v9"
     )
     assert payload["known_tools"]
     assert payload["recipe_record_types"]

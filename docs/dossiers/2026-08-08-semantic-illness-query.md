@@ -549,6 +549,37 @@ validation and no-match honesty address those risks.
   the production `Asia/Shanghai` calendar basis. Targeted Ruff, Python
   compilation and `git diff --check` pass. Repository structural gates and two
   fresh reviews of the next exact SHA remain mandatory.
+- Fresh exact-commit code and product-safety reviews of `00a63b19d` both
+  returned NO-GO, so it was not pushed or deployed. They reproduced generic
+  illness identifiers written as `记录编号/ID` falling back to a different
+  record, locally negated recovery (`并无/尚无/绝非/算不上/…不了`) reaching
+  PUT, external event provenance (`摘录自/据消息/据日志`) and bare
+  parenthetical ownership reaching POST, and false denial of the current-user
+  possessive `我自己的`, the positive state `明显改善`, and Chinese clock forms
+  such as `三点半/三点一刻/零点`.
+- The current remediation versions the deterministic boundary as
+  `agent-capability-policy-v18` / `authorized-target-set-v14` /
+  `record-update-evidence-v9`. Record identity now parses a structured generic
+  identifier marker independently of the illness name. Recovery compiles only
+  after local polarity and relapse checks; positive improvement predicates are
+  retained. Current-user possessives use one compositional owner grammar.
+  Event authority separately resolves source provenance, bare owner resources,
+  and Chinese numeral clock suffixes. Failure-first tests cover the reported
+  forms through the real Gateway and Executor in both enforce and shadow modes,
+  with positive controls for `我的行程` and explicit improvement. The updated
+  policy/Gateway/scope group passes 1,902/1,902 tests and the changed adjacent
+  execution/query/intent surface passes 1,633/1,633 tests.
+- A wider repository run exposed a stable compatibility regression in the
+  existing meal-photo contract: the newly classified hypothetical
+  `假设这餐吃了1/2` remained non-writing but received a generic read-only prompt
+  instead of the deterministic fraction-rejection reason. The same 31-case
+  subset passed on clean `origin/main`, proving it was branch-introduced. The
+  prompt compiler now gives an explicit safety-gate rejection precedence over
+  a generic read/advice classification; the complete meal-photo file passes
+  103/103. The final single-process feature integration aggregate passes
+  3,836/3,836 tests in 153.75 seconds on the production `Asia/Shanghai`
+  calendar basis. Structural gates and two new exact-commit G4 reviews remain
+  mandatory.
 
 ### G4 Safety Review: PENDING
 
