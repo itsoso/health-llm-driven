@@ -3995,7 +3995,17 @@ def test_ambiguous_health_observation_can_still_use_read_only_tools():
     )
 
     assert decision.action == "allow"
-    assert decision.reason == "read_only_tool"
+    assert decision.reason == "health_query_projected_to_turn_semantics"
+
+
+def test_ambiguous_health_observation_cannot_switch_read_domain():
+    decision = decide_tool_capability(
+        _snapshot("我昨晚睡了十个小时，睡眠很好"),
+        _request("health_query", {"dimension": "weight", "days": 1}),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "health_query_dimension_conflict"
 
 
 def test_health_query_policy_projects_only_public_schema_fields():
@@ -4337,9 +4347,9 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v28"
+    assert payload["contract_version"] == "agent-capability-policy-v29"
     assert payload["health_record_target_binding"] == {
-        "version": "authorized-target-set-v24",
+        "version": "authorized-target-set-v25",
         "domain_types": {
             "diet": "diet",
             "exercise": "exercise",
@@ -4356,7 +4366,7 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
         payload["whole_record_delete_evidence_version"] == "record-delete-evidence-v2"
     )
     assert (
-        payload["health_manage_update_evidence_version"] == "record-update-evidence-v19"
+        payload["health_manage_update_evidence_version"] == "record-update-evidence-v20"
     )
     assert payload["known_tools"]
     assert payload["recipe_record_types"]

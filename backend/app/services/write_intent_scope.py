@@ -1224,6 +1224,8 @@ def _event_fact_has_non_current_subject(clause: str) -> bool:
     if match is None:
         return False
     subject = _EVENT_WRITE_SCAFFOLD_RE.sub("", match.group("subject"), count=1)
+    if _is_current_user_event_parenthetical(subject):
+        return False
     reduced = _CURRENT_USER_SUBJECT_NOISE_RE.sub("", subject)
     if _is_current_user_event_parenthetical(reduced):
         return False
@@ -1262,13 +1264,18 @@ def _segment_has_untrusted_provenance_or_owner(segment: str) -> bool:
 
 def _is_current_user_event_parenthetical(content: str) -> bool:
     normalized = content.strip("，,。.!！；;：: ")
-    event_noun = r"(?:行程|旅程|旅途|旅行|出行|事件)"
+    normalized = re.sub(
+        r"(?:(?:\d{4}年)?\d{1,2}月\d{1,2}日|"
+        r"\d{4}[-/]\d{1,2}[-/]\d{1,2}|"
+        r"今天|今日|昨天|昨日|前天|昨晚|昨夜|现在|目前|刚才|刚刚)",
+        "",
+        normalized,
+    )
+    event_noun = r"(?:行程|旅程|旅途|旅行|出行|事件|航班|火车|列车|高铁)"
     current_user = r"(?:我(?:自己|本人|个人)?|本人|自己|个人)"
     scope = r"(?:(?:这|本|该|此)(?:次|趟|段)?)"
     if re.fullmatch(
-        rf"{scope}?"
-        r"(?:我(?:自己|本人|个人)?|本人|自己|个人)(?:的)?"
-        r"(?:行程|旅程|旅途|旅行|出行|事件)",
+        rf"{scope}?(?:我(?:自己|本人|个人)?|本人|自己|个人)(?:的)?{event_noun}",
         normalized,
     ):
         return True

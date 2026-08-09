@@ -40,6 +40,18 @@ def make_fetch(table):
 VALID = hqb.known_dimensions()
 
 
+def test_batch_tool_description_does_not_claim_unrepresentable_calendar_windows():
+    from app.services.tool_schema_registry import HEALTH_TOOLS
+
+    tool = next(
+        item for item in HEALTH_TOOLS if item["function"]["name"] == "health_query_batch"
+    )
+    description = tool["function"]["description"]
+
+    assert "这周和上周" not in description
+    assert "任意日期区间" in description
+
+
 # ── 1. 多维度正例 ────────────────────────────────────────────────────────────
 @pytest.mark.asyncio
 async def test_multi_metric_positive():

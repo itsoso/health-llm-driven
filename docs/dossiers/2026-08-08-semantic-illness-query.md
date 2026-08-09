@@ -1337,6 +1337,47 @@ tests pass 2/2. The worktree is clean after this evidence update, and both G4
 reviewers must inspect the resulting documentation commit SHA rather than the
 implementation or merge parent.
 
+Fresh code and product-safety reviews of exact commit
+`5cb0f2103f8efafdbc483a53b8c4240f5cf6b61d` both returned NO-GO, so it was not
+pushed or deployed. The code review ran 66 real Executor→Gateway→Policy
+executions and the safety review ran 358, all on synthetic adapters and mock
+database objects. Both independently proved that terse metric fragments could
+leave entity extraction empty and then fall through to a model-chosen read
+domain in enforce and shadow modes. They also found unmodeled comparison
+separators, additional relative/history/request forms, current-user event
+possessives, and a public tool description that advertised `这周和上周` even
+though the batch plan can express only rolling recent-N-day windows. Both
+reviews observed zero unauthorized writes and zero hard-denial shadow
+dispatches, but wrong-domain reads and false capability claims fail G4.
+
+The v29 remediation removes the generic read-authority fallback. A single or
+batch health query must now resolve deterministic turn semantics before it can
+reach an adapter; an empty parse is a block, not permission to trust model JSON.
+A sparse-entity path recognizes only exact registered dimensions or a registered
+medical acronym, while a longest-span dimension resolver supports observation
+sentences without letting nested aliases such as `心率` override
+`心率变异性`. Terse fragments, natural situation wrappers, `病例` containers,
+`最近一次`, extra relative forms, comparison separators and adversative
+boundaries now feed the same semantic contract. A same-dimension multi-window
+plan whose distinct phrases collapse to duplicate rolling windows is blocked as
+unrepresentable. The tool description now states that limitation and uses a
+representable 7-day/14-day example. Explicit current-user event nouns and the
+object-fronted `把SLE记录下来` form retain positive, exact write authority while
+third-party controls remain fail-closed. The contracts are now
+`agent-capability-policy-v29` / `authorized-target-set-v25` /
+`record-update-evidence-v20`.
+
+Failure-first coverage reproduced 49 failures in the new 61-case review matrix;
+the remediated matrix passes 61/61. A positive/negative observation-domain pair
+was added after the first related-suite run exposed one obsolete permissive
+expectation. The final complete 27-file Backend gate passes 4,344/4,344 in one
+process with `TZ=Asia/Shanghai`, including 1,232/1,232 ToolGateway cases. The
+final static gate passes Ruff checks, targeted formatting checks, Python compile,
+architecture drift, 102-dossier consistency and `git diff --check`. The adjacent
+meal-photo file passes 103/103, the three merged-main Mobile chat suites pass
+99/99 with the same pre-existing visible React `act(...)` warnings, and the iOS
+acceptance harness passes. Final exact-commit review remains pending.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.
