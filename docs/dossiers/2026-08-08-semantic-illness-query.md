@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS on implementation c91987361; fresh exact-commit G4 pending |
+| current_stage | G3 PASS on implementation e8be4f19b; fresh exact-commit G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -1690,6 +1690,66 @@ production health data was read or written.
 No v36 commit has been pushed or deployed. Reviewers must inspect the next
 documentation commit together with exact implementation parent
 `c919873618ed214bacf12b1252320e448d8cdb59`; two fresh independent GO decisions
+remain mandatory before G4 can pass.
+
+Fresh code and product-safety reviews of exact v36 documentation commit
+`966142dc5e7c7c29b78d10fe8814d22d36b91356` both returned NO-GO, so neither it
+nor implementation parent `c919873618ed214bacf12b1252320e448d8cdb59` was
+pushed or deployed. The code review executed 712 route evaluations and 686
+Executor runs: 470 passed and 242 failed, representing 121 route-path failures
+in both policy modes across 39 utterances. It reproduced unsafe concatenated
+owner and ordinal illness writes, mutation-word reads, unresolved MRI and
+illness pointers, ordinary metrics inheriting illness, and valid MRI image
+commands projecting incorrectly. Its database-connect tripwire remained zero.
+The safety review independently executed 520 unique synthetic cases in both
+modes (1,040 evaluations): 393 unique cases passed and 127 failed, or 786 pass
+and 254 failure evaluations. It found the same owner/reference boundary plus
+open-vocabulary non-health nouns, third-party reads, more ordinary metrics,
+latest-occurrence phrasing, cancelled reads and the valid `Behçet病` spelling.
+Its database-connect tripwire also remained zero.
+
+The v37 remediation separates entity morphology from ownership and discourse
+reference. Goal compilation and CapabilityPolicy now share one owner/reference
+validator; explicit invalid disease-create labels compile to clarification
+instead of falling into another record domain. Third-party health reads are a
+hard denial in enforce and shadow modes. Illness projection requires medical
+semantics and excludes registered health metrics, while exact Unicode disease
+spelling remains intact. Composable ordinals, prior MRI/report pointers,
+cancelled reads and latest-occurrence events are normalized before tool
+dispatch. `health_manage(list)` distinguishes a genuine user read speech act
+from the internal owner-scoped lookup needed to bind a mutation target, and
+observation predicates such as `看似` / `看不出` cannot masquerade as read
+commands. The capability contract is now `agent-capability-policy-v37`.
+
+The independent v37 review matrix was failure-first: all 449 selected
+GoalSpec/Gateway cases failed before the structural remediation. Afterwards the
+same matrix passes 449/449. The complete ToolGateway file passes 2,079/2,079;
+the final four-file GoalSpec/CapabilityPolicy/ToolGateway/simple-record suite
+passes 3,449/3,449; and the final single-process 27-file Backend gate passes
+5,306/5,306 with `TZ=Asia/Shanghai` and seven pre-existing warnings. Ruff lint,
+format checking, Python compilation, generated architecture drift,
+102-dossier consistency, pre-commit hooks and `git diff --check` all pass. The
+exact implementation is frozen at
+`e8be4f19bc4a6f59d00842da2f341ce9a4140e6a`.
+
+The requested live `qwen3.7-max` evaluation then ran 40 synthetic system cases
+against that exact implementation using the real TokenPlan provider and
+production tool schemas, typed GoalSpec, goal-call normalization,
+deterministic simple-record fallback, Gateway semantic projection, the
+production `structured_or_recovered` source and a fake terminal adapter. A
+first harness assertion reported 39/40 because the evaluator expected 92 days
+for `过去三个月`, while the existing product contract correctly normalizes it
+to 90 days; no product code changed. After correcting that evaluator
+expectation, the complete matrix passes 40/40 and both policy modes pass all 80
+route evaluations. It covers safe open-vocabulary disease reads and writes,
+latest occurrence, MRI images, third-party reads/writes, unresolved pointers,
+mutation-word reads, cancellation, multi-entity clarification and non-health
+controls. A database-connect tripwire reports zero attempts, and no production
+health data was read or written.
+
+No v37 commit has been pushed or deployed. Reviewers must inspect the next
+documentation commit together with exact implementation parent
+`e8be4f19bc4a6f59d00842da2f341ce9a4140e6a`; two fresh independent GO decisions
 remain mandatory before G4 can pass.
 
 ### G5 Deployment Health: PENDING
