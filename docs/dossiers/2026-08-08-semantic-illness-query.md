@@ -618,9 +618,9 @@ validation and no-match honesty address those risks.
   long-tail query word order, and shadow-mode read blocks that still dispatched.
   They also found one legitimate explicit current-user water correction was
   falsely denied.
-- Latest `origin/main` commit `6a54bd054` was merged before remediation. It
-  changes only the separate iOS build-253 release-evidence Dossier and does not
-  overlap Backend runtime or tests.
+- Latest `origin/main` commits `6a54bd054` and `72b678d32` were merged before
+  final review. They change only the separate iOS build-253 release-evidence
+  Dossier and do not overlap Backend runtime or tests.
 - The v21 remediation versions the boundary as
   `agent-capability-policy-v21` / `authorized-target-set-v17` /
   `record-update-evidence-v12`. A clause-local epistemic grammar now makes
