@@ -72,7 +72,7 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v35"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v36"
 _HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v31"
 _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v23"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
@@ -187,6 +187,10 @@ _QUERY_DIMENSION_TEXT_TERMS: dict[str, tuple[str, ...]] = {
         "吃",
         "热量",
         "营养",
+        "蛋白质",
+        "碳水",
+        "脂肪",
+        "膳食纤维",
         "早餐",
         "早饭",
         "午餐",
@@ -207,6 +211,7 @@ _QUERY_DIMENSION_TEXT_TERMS: dict[str, tuple[str, ...]] = {
         "骑行",
         "游泳",
         "训练",
+        "训练负荷",
         "跑量",
         "健身",
     ),
@@ -305,13 +310,13 @@ _HISTORY_QUERY_QUESTION_RE = re.compile(
 _HISTORY_QUERY_MULTI_ENTITY_RE = re.compile(
     r"(?:还有|以及|并且|加上|外加|兼有|连同|伴有|伴随|并伴|合并|联合|"
     r"同时有|同时出现|并发|并存|伴发|共存|共患|同患|再加|且|"
-    r"兼患|并患|同时患有|相比|相对|对比|比(?!(?:率|例|较))|是|"
+    r"兼患|并患|同时患有|相比|相对|对比|除以|占|比(?!(?:率|例|较))|是|"
     r"[vV][sS]|[、，,；;+/／|｜&＆和与及或跟—–])"
 )
 _HISTORY_QUERY_LEADING_VERB_RE = re.compile(rf"^(?:{_READ_QUERY_VERB_PATTERN}|把)")
 _HISTORY_QUERY_TRAILING_VERB_RE = re.compile(
     r"(?:[，,、]?(?:(?:给我)?(?:找出来|查出来|列出来|调出来|找出|查看|看看)|"
-    r"(?:对比|比较)(?:一下|倍数|比例|比率)?))$"
+    r"(?:打开|调出|调阅)(?:一下)?|(?:对比|比较)(?:一下|倍数|比例|比率)?))$"
 )
 _ILLNESS_MEDICAL_ACRONYMS = frozenset({"sle"})
 _UNRESOLVED_QUERY_REFERENCE_RE = re.compile(
@@ -346,8 +351,23 @@ _UNRESOLVED_QUERY_REFERENCE_TOKEN_RE = re.compile(
     r"(?:检查报告|检查|报告))?$",
     re.IGNORECASE,
 )
+_UNRESOLVED_DISCOURSE_POINTER_IN_TEXT_RE = re.compile(
+    r"(?:"
+    r"(?:它|它们|其)(?:的)?(?:MRI|核磁|磁共振|CT|X光|B超|检查|报告)|"
+    r"(?:刚才|刚刚|之前|此前|前面|上面)(?:修改|更新|删除)?(?:过)?(?:的)?"
+    r"(?:那|这)?(?:个|条|项|份)?(?:MRI|核磁|磁共振|CT|X光|B超|记录|检查|报告)|"
+    r"(?:上回|上次|前回|前次)(?:的)?(?:那|这)(?:个|条|项|份)?"
+    r"(?:MRI|核磁|磁共振|CT|X光|B超|病|疾病|记录|检查|报告)?|"
+    r"(?:第一|第二|第三|第[一二三四五六七八九十0-9]+|上一|前一|最后一)"
+    r"(?:个|条|项|份)(?:病|疾病|症状|记录|内容)?|"
+    r"最近一(?:个|条|项|份)(?:病|疾病|症状|记录|内容)|"
+    r"(?:最后那个|前一个疾病|该条记录)"
+    r")",
+    re.IGNORECASE,
+)
 _LATEST_OCCURRENCE_MARKER_PATTERN = (
-    r"(?:(?:我)?(?:(?:上(?:一)?|最近|最后)(?:的)?(?:那)?(?:一)?(?:次|回)|末次))"
+    r"(?:(?:我)?(?:(?:上(?:一)?|最近|最后)(?:的)?(?:那)?(?:一)?(?:次|回)|"
+    r"末次|最近(?=(?:的)?(?:记录|发作|发生|复发))))"
 )
 _LATEST_OCCURRENCE_EVENT_PATTERN = r"(?:记录|发作|发生|复发)?"
 _LATEST_OCCURRENCE_QUESTION_PATTERN = (
@@ -424,10 +444,16 @@ _WATER_TARGET_RE = re.compile(
 _WRITE_TARGET_ACTION_RE = re.compile(
     r"(?:记录|记一下|记下|打个卡|打卡|新增|录入|保存|写入|存下来)"
 )
-_ILLNESS_SUFFIX_RE = re.compile(
-    r"(?:炎|病|症|癌|疹|感染|溃疡|感冒|流感|疱疹|烫伤|水泡|伤口|"
-    r"脑梗|偏头痛|疼痛|高血压|低血压|哮喘|障碍|闭经|过敏|贫血|"
-    r"尿失禁|心率失常|焦虑|呼吸暂停)$"
+_NON_ILLNESS_QUERY_ENTITY_TERMS = frozenset(
+    {
+        "腰围",
+        "蛋白质",
+        "碳水",
+        "碳水化合物",
+        "脂肪",
+        "膳食纤维",
+        "训练负荷",
+    }
 )
 _SUPPLEMENT_TARGET_TERMS = (
     "鱼油",
@@ -1191,9 +1217,7 @@ def _project_illness_query_to_turn(text: str) -> dict[str, Any] | None:
         return None
     if _is_unresolved_query_reference(targets[0]):
         return None
-    if _query_entity_known_dimensions(targets[0]) and not _is_safe_illness_query_entity(
-        targets[0]
-    ):
+    if not _is_explicit_illness_query_entity(targets[0]):
         return None
     if not (
         re.search(r"(?:记录|病史|病历|病例|历史)", normalized)
@@ -1214,16 +1238,46 @@ def _project_illness_query_to_turn(text: str) -> dict[str, Any] | None:
     return projected
 
 
-def _is_safe_illness_query_entity(value: str) -> bool:
-    """Recognize disease morphology without trusting a model-selected domain."""
+def _is_explicit_illness_query_entity(value: str) -> bool:
+    """Classify one user-owned entity independently from model-selected domain."""
     normalized = str(value or "").strip("的，,。.!！；;：:?？ ")
     return bool(
-        2 <= len(normalized) <= 40
-        and (
-            _ILLNESS_SUFFIX_RE.search(normalized)
-            or _is_registered_illness_acronym(normalized)
+        2 <= len(normalized) <= 80
+        and normalized not in _NON_ILLNESS_QUERY_ENTITY_TERMS
+        and not _query_entity_known_dimensions(normalized)
+        and re.fullmatch(
+            r"[A-Za-z0-9\u0370-\u03ff\u4e00-\u9fff·+_./-]+",
+            normalized,
         )
     )
+
+
+def _is_non_read_health_observation(text: str) -> bool:
+    """Keep a present-tense health assertion from authorizing a read tool."""
+    normalized = _query_scope_text(text)
+    if (
+        _READ_QUERY_VERB_RE.search(normalized)
+        or re.search(r"(?:记录|病史|病历|病例|历史)", normalized)
+        or _HISTORY_QUERY_QUESTION_RE.search(normalized)
+        or re.search(r"[?？]\s*$", normalized)
+        or re.search(
+            r"(?:相比|相对|对比|比较|除以|之比|几倍|比例|比率|ratio|[vV][sS])",
+            normalized,
+            re.IGNORECASE,
+        )
+    ):
+        return False
+    has_current_time = bool(
+        re.search(r"(?:今天|今日|目前|现在|刚才|刚刚|最近|这两天)", normalized)
+    )
+    has_state_assertion = bool(
+        re.search(
+            r"(?:又)?(?:发作|复发|发生|加重|恶化|严重|乏力|晕厥|疼痛|不适|"
+            r"好转|改善|缓解|痊愈|康复)(?:了|中)?$",
+            normalized,
+        )
+    )
+    return has_current_time and has_state_assertion
 
 
 def _normalize_query_text(text: str) -> str:
@@ -1248,6 +1302,16 @@ def _health_read_cancelled_by_user(text: str) -> bool:
         if boundary_re.search(intervening):
             return False
     return True
+
+
+def _has_explicit_leading_read_request(text: str) -> bool:
+    """Identify an actual read command, not a read-like word inside an update."""
+    normalized = _normalize_query_text(text).lstrip("，,。.!！；;：:?？ ")
+    polite_prefix = re.compile(
+        r"^(?:(?:麻烦你|请问|请您|帮我|给我|替我|劳驾|烦请|小巴|麻烦|请|你))+"
+    )
+    normalized = polite_prefix.sub("", normalized, count=1)
+    return bool(re.match(rf"^(?:{_READ_QUERY_VERB_PATTERN})", normalized))
 
 
 def _query_scope_text(text: str) -> str:
@@ -1277,7 +1341,7 @@ def _query_scope_text(text: str) -> str:
 def _illness_query_entities(text: str) -> tuple[str, ...]:
     """Extract atomic entities from one closed health-query frame."""
     normalized = _query_scope_text(text)
-    entities = list(_illness_targets(normalized))
+    entities: list[str] = []
     candidate = _history_query_entity_expression(normalized)
     if candidate:
         for value in _HISTORY_QUERY_MULTI_ENTITY_RE.split(candidate):
@@ -1298,7 +1362,8 @@ def _history_query_entity_expression(text: str) -> str | None:
     has_read_verb = bool(_READ_QUERY_VERB_RE.search(normalized))
     has_comparison_frame = bool(
         re.search(
-            r"(?:相比|相对|对比|比较|比(?!(?:率|例|较))|倍数|几倍|比例|比率|ratio|[vV][sS])",
+            r"(?:相比|相对|对比|比较|除以|之比|占|[/／]|"
+            r"比(?!(?:率|例|较))|倍数|几倍|比例|比率|ratio|[vV][sS])",
             normalized,
             re.IGNORECASE,
         )
@@ -1429,7 +1494,7 @@ def _clean_history_query_entity(value: str) -> str:
     candidate = _HISTORY_QUERY_TRAILING_VERB_RE.sub("", value, count=1)
     candidate = _HISTORY_QUERY_WINDOW_RE.sub("", candidate)
     candidate = re.sub(
-        r"(?:的)?(?:倍数|几倍|比例|比率|ratio)$",
+        r"(?:的)?(?:倍数|几倍|比例|比率|ratio|之比|占比|占多少)$",
         "",
         candidate,
         flags=re.IGNORECASE,
@@ -1466,6 +1531,8 @@ def _is_unresolved_query_reference(value: str) -> bool:
 def _query_contains_unresolved_reference(text: str) -> bool:
     """Detect a discourse pointer that names no durable health entity."""
     scoped = _query_scope_text(text)
+    if _UNRESOLVED_DISCOURSE_POINTER_IN_TEXT_RE.search(scoped):
+        return True
     latest_entity = _latest_occurrence_query_entity(scoped)
     if latest_entity is not None:
         return _is_unresolved_query_reference(latest_entity)
@@ -1814,7 +1881,7 @@ def _explicit_query_windows(text: str) -> tuple[tuple[int, int, int], ...]:
     windows: list[tuple[int, int, int]] = []
     for match in _HISTORY_QUERY_WINDOW_RE.finditer(normalized):
         if match.group(0) == "最近" and normalized[match.end() :].startswith(
-            ("那次", "一回")
+            ("那次", "一回", "记录", "发作", "发生", "复发")
         ):
             continue
         days = _query_window_days(match.group(0))
@@ -1931,7 +1998,7 @@ def _batch_query_plan_bound_to_turn(
     compare = normalized_plan.get("compare")
     text_requests_comparison = bool(
         re.search(
-            r"(?:相比|对比|比较|倍数|几倍|比例|比率|ratio|[vV][sS])",
+            r"(?:相比|对比|比较|除以|之比|占|[/／]|倍数|几倍|比例|比率|ratio|[vV][sS])",
             normalized_text,
             re.IGNORECASE,
         )
@@ -1947,7 +2014,16 @@ def _batch_query_plan_bound_to_turn(
             for segment in entity_segments
         )
     proposed_aggs = tuple(agg for _dimension, _days, agg in authoritative_bindings)
-    if proposed_aggs != expected_aggs:
+    if text_requests_comparison:
+        # For an explicit user-owned comparison, ``avg`` is the deterministic
+        # default.  Models commonly omit that default from each batch member;
+        # project it here, but never accept a conflicting model-owned aggregate.
+        if any(
+            proposed not in {None, expected}
+            for proposed, expected in zip(proposed_aggs, expected_aggs, strict=True)
+        ):
+            return None
+    elif proposed_aggs != expected_aggs:
         return None
 
     projected_compare: dict[str, Any] | None = None
@@ -1956,7 +2032,11 @@ def _batch_query_plan_bound_to_turn(
             return None
         requested_op = (
             "ratio"
-            if re.search(r"(?:倍数|几倍|比例|比率|ratio)", normalized_text, re.I)
+            if re.search(
+                r"(?:除以|之比|占|[/／]|倍数|几倍|比例|比率|ratio)",
+                normalized_text,
+                re.I,
+            )
             else "diff"
         )
         projected_compare = {"a": 0, "b": 1, "op": requested_op}
@@ -2250,12 +2330,19 @@ def decide_tool_capability(
                 tool_name,
                 canonical_args,
             )
+        if _is_non_read_health_observation(turn_text):
+            return _decision(
+                "block",
+                "health_query_not_requested",
+                tool_name,
+                canonical_args,
+            )
         proposed_dimension = str(canonical_args.get("dimension") or "").strip().lower()
         known_illness_entities = _illness_targets(turn_text)
         illness_query_entities = _illness_query_entities(turn_text)
         has_safe_illness_entity = bool(
             len(illness_query_entities) == 1
-            and _is_safe_illness_query_entity(illness_query_entities[0])
+            and _is_explicit_illness_query_entity(illness_query_entities[0])
         )
         known_non_illness_dimension = _query_entities_known_dimension(
             illness_query_entities
@@ -2371,6 +2458,13 @@ def decide_tool_capability(
                 tool_name,
                 normalized_plan,
             )
+        if _is_non_read_health_observation(turn_text):
+            return _decision(
+                "block",
+                "health_query_not_requested",
+                tool_name,
+                normalized_plan,
+            )
         query_entities = _illness_query_entities(turn_text)
         if not query_entities:
             return _decision(
@@ -2445,17 +2539,16 @@ def decide_tool_capability(
         operation = str(args.get("operation") or "").strip().lower()
         if operation == "list":
             turn_text = snapshot.envelope.text
-            mutation_lookup = bool(
-                re.search(r"(?:改成|改为|修改|更新|删除)", turn_text)
-            )
-            guarding_user_read = primary != "mutate" and not mutation_lookup
-            if guarding_user_read and _health_read_cancelled_by_user(turn_text):
+            if _health_read_cancelled_by_user(turn_text):
                 return _decision(
                     "block",
                     "health_query_cancelled_by_user",
                     tool_name,
                     args,
                 )
+            guarding_user_read = (
+                primary != "mutate" or _has_explicit_leading_read_request(turn_text)
+            )
             if guarding_user_read and _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE.search(
                 _query_scope_text(turn_text)
             ):
@@ -3850,6 +3943,11 @@ def _canonical_medication_dosage(match: re.Match[str]) -> str:
 
 
 def _illness_targets(clause: str) -> tuple[str, ...]:
+    explicit_create_name = simple_illness_target(clause)
+    normalized_clause = "".join(str(clause or "").split()).strip("，,。.!！；;：: ")
+    if SIMPLE_ILLNESS_CREATE_RE.fullmatch(normalized_clause) is not None:
+        return (explicit_create_name,) if explicit_create_name is not None else ()
+
     known = tuple(
         term
         for term in _ILLNESS_TARGET_TERMS
@@ -3858,8 +3956,10 @@ def _illness_targets(clause: str) -> tuple[str, ...]:
     if known:
         return tuple(dict.fromkeys(known))
 
-    explicit_create_name = simple_illness_target(clause)
     action_matches = tuple(_WRITE_TARGET_ACTION_RE.finditer(clause))
+    if not action_matches:
+        return ()
+
     candidate = ""
     if action_matches:
         action = action_matches[-1]
@@ -3886,26 +3986,12 @@ def _illness_targets(clause: str) -> tuple[str, ...]:
     parts = tuple(
         part.strip() for part in re.split(r"[、/]|(?:和|与)", candidate) if part.strip()
     )
-    explicit_safe_name = bool(
-        explicit_create_name is not None
-        and len(parts) == 1
-        and _normalize_entity_name(parts[0])
-        == _normalize_entity_name(explicit_create_name)
-    )
-    if parts and (
-        explicit_safe_name
-        or all(
-            _ILLNESS_SUFFIX_RE.search(part) or _is_registered_illness_acronym(part)
-            for part in parts
-        )
-    ):
-        return tuple(
-            dict.fromkeys(
-                part.upper() if _is_registered_illness_acronym(part) else part
-                for part in parts
-            )
-        )
-    return ()
+    if explicit_create_name is not None and len(parts) == 1:
+        return (explicit_create_name,)
+    validated = tuple(simple_illness_target(f"记录疾病：{part}") for part in parts)
+    if not validated or any(value is None for value in validated):
+        return ()
+    return tuple(dict.fromkeys(value for value in validated if value is not None))
 
 
 def _authorization_target_complete(

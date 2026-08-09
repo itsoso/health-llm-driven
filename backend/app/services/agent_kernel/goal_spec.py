@@ -108,8 +108,7 @@ SIMPLE_ILLNESS_CREATE_RE = re.compile(
     re.IGNORECASE,
 )
 SIMPLE_ILLNESS_NAME_RE = re.compile(
-    r"(?:[a-z][a-z0-9-]{1,15}|"
-    r"[\u4e00-\u9fff][\u4e00-\u9fff0-9·+_-]{0,39})",
+    r"(?=.{2,80}$)[A-Za-z0-9\u0370-\u03ff\u4e00-\u9fff·+_./-]+",
     re.IGNORECASE,
 )
 SIMPLE_ILLNESS_ACRONYMS = frozenset({"sle"})
@@ -120,16 +119,33 @@ _SIMPLE_ILLNESS_REFERENCE_RE = re.compile(
     r"(?:这些|那些)(?:病|疾病|病症|症状)?|"
     r"(?:(?:之前|此前|前面|上面|刚才|刚刚|方才)(?:说的|提的|提到的)?)?"
     r"(?:这|那)(?:个|些)?(?:病|疾病|病症|症状)?|"
-    r"(?:前述|上述)(?:病|疾病|病症|症状|病例)?"
+    r"(?:前述|上述)(?:病|疾病|病症|症状|病例)?|"
+    r"(?:上次|上回|前次|前回|最近|最后)(?:的)?(?:这|那)?(?:一)?"
+    r"(?:个|条|项|次|份)?(?:病|疾病|病症|症状|记录)?|"
+    r"(?:前一|上一|最近一|最后一|第一|第二)(?:个|条|项|次|份)"
+    r"(?:病|疾病|病症|症状|记录)?|"
+    r"(?:最后那个|前一个疾病|该条记录)"
     r")$"
 )
 _SIMPLE_ILLNESS_THIRD_PARTY_RE = re.compile(
     r"^(?:"
     r"(?:我(?:的)?)?(?:朋友|同事|家人|爸|爸爸|父亲|妈|妈妈|母亲|"
-    r"妻子|丈夫|老公|老婆|孩子|儿子|女儿|室友|同学|患者|邻居)(?:的)?.+|"
+    r"祖父|祖母|爷爷|奶奶|外公|外婆|兄弟|姐妹|哥哥|姐姐|弟弟|妹妹|"
+    r"妻子|丈夫|老公|老婆|孩子|儿子|女儿|室友|同学|患者|病人|邻居)"
+    r"(?:的)?.+|"
+    r"(?:他|她|他们|她们|其)(?:的)?.+|"
+    r"(?:隔壁|邻居)(?:的)?(?:老|小)?[一-鿿]{1,3}.+|"
     r"[一-鿿]{1,6}(?:患有|患的是|患).+|"
     r"[一-鿿]{2,6}的.+"
     r")$"
+)
+_SIMPLE_ILLNESS_COMMON_PERSON_TARGET_RE = re.compile(
+    r"^(?:"
+    r"(?:小|老)[一-鿿]{1,2}|"
+    r"[赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜]"
+    r"[一-鿿]{1,2}"
+    r")"
+    r"(?:感冒|高血压|低血压|脑梗|糖尿病|流感|湿疹|哮喘)$"
 )
 
 
@@ -335,7 +351,7 @@ def _compile_simple_health_record_goal(
 
 def simple_illness_target(text: str) -> str | None:
     """Extract one exact user-owned target from an explicit disease label."""
-    normalized = _normalize(text).strip("，,。.!！；;：: ")
+    normalized = "".join(str(text or "").split()).strip("，,。.!！；;：: ")
     match = SIMPLE_ILLNESS_CREATE_RE.fullmatch(normalized)
     if match is None:
         return None
@@ -356,6 +372,8 @@ def simple_illness_target(text: str) -> str | None:
     if _SIMPLE_ILLNESS_REFERENCE_RE.fullmatch(candidate):
         return None
     if _SIMPLE_ILLNESS_THIRD_PARTY_RE.fullmatch(candidate):
+        return None
+    if _SIMPLE_ILLNESS_COMMON_PERSON_TARGET_RE.fullmatch(candidate):
         return None
     return (
         candidate.upper()

@@ -483,6 +483,13 @@ def test_diet_goal_builds_deterministic_write_when_model_omits_tool_call():
     "name",
     (
         "SLE",
+        "1型糖尿病",
+        "IgA肾病",
+        "β地中海贫血",
+        "HER2阳性乳腺癌",
+        "COVID-19肺炎",
+        "H1N1流感",
+        "HIV感染",
         "脑梗",
         "睡眠呼吸暂停",
         "偏头痛",

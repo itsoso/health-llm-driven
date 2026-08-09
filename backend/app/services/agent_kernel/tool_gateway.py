@@ -27,6 +27,7 @@ _HARD_BLOCK_REASONS = frozenset(
         "health_query_semantics_unresolved",
         "health_query_cancelled_by_user",
         "health_query_calendar_window_unsupported",
+        "health_query_not_requested",
     }
 )
 
