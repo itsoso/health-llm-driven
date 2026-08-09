@@ -580,6 +580,13 @@ validation and no-match honesty address those risks.
   3,836/3,836 tests in 153.75 seconds on the production `Asia/Shanghai`
   calendar basis. Structural gates and two new exact-commit G4 reviews remain
   mandatory.
+- Latest clean `origin/main` commit `a26477b30` was merged before G4. Its three
+  commits affect only mobile chat-header presentation, the iPhone acceptance
+  harness and planning documents; no Backend file overlaps this remediation.
+  On the merged tree, the Backend policy/Gateway/scope plus meal-photo
+  compatibility group passes 2,005/2,005, the changed mobile component suites
+  pass 8/8, and the iPhone acceptance harness passes 12/12. A new exact-commit
+  dual review remains mandatory before push or deployment.
 
 ### G4 Safety Review: PENDING
 
