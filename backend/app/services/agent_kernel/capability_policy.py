@@ -12,7 +12,7 @@ from typing import Any
 
 from app.services.agent_kernel.goal_spec import (
     SIMPLE_ILLNESS_CREATE_RE,
-    SIMPLE_ILLNESS_NAME_RE,
+    simple_illness_target,
 )
 from app.services.agent_kernel.tool_registry import (
     ToolRegistryError,
@@ -72,8 +72,8 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v33"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v29"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v34"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v30"
 _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v23"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
 _HEALTH_RECORD_DOMAIN_TYPES = {
@@ -253,9 +253,9 @@ _QUERY_DIMENSION_ENTITY_SUFFIX_PATTERN = (
 )
 _READ_QUERY_VERB_PATTERN = (
     r"(?:查询(?:一下)?|查找(?:一下)?|查看(?:一下)?|查到|查下|查(?:一下|一查)?|"
-    r"找出|找一下|找|回顾(?:一下)?|回看(?:一下)?|检索(?:一下)?|列出|"
+    r"改查|找出|找一下|找|回顾(?:一下)?|回看(?:一下)?|检索(?:一下)?|列出|"
     r"比较|对比|翻看(?:一下)?|翻一下|看(?:一下|一看|一眼|下|看)?|"
-    r"搜索(?:一下)?|搜(?:一下)?|调取|调出)"
+    r"搜索(?:一下)?|搜(?:一下)?|调取|调出|调阅|打开)"
 )
 _READ_QUERY_VERB_RE = re.compile(_READ_QUERY_VERB_PATTERN)
 _HISTORY_QUERY_WINDOW_PATTERN = (
@@ -285,7 +285,7 @@ _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE = re.compile(
 )
 _NEGATED_READ_PREFIX_PATTERN = (
     r"(?:(?:我)?(?:不要|别|不用|无需|不必|请勿|勿|甭|不想|不打算|"
-    r"取消|不需要|不希望|停止|撤销|"
+    r"取消|不需要|不希望|停止|撤销|暂停|终止|放弃|"
     r"不(?=查询|查找|查看|查到|查下|查|找出|找一下|找|回顾|回看|检索|"
     r"列出|比较|对比|翻看|翻一下|看|搜索|搜|调取|调出)))"
 )
@@ -305,7 +305,8 @@ _HISTORY_QUERY_QUESTION_RE = re.compile(
 _HISTORY_QUERY_MULTI_ENTITY_RE = re.compile(
     r"(?:还有|以及|并且|加上|外加|兼有|连同|伴有|伴随|并伴|合并|联合|"
     r"同时有|同时出现|并发|并存|伴发|共存|共患|同患|再加|且|"
-    r"兼患|并患|同时患有|相比|对比|[vV][sS]|[、，,；;+/／|｜&＆和与及或跟—–])"
+    r"兼患|并患|同时患有|相比|相对|对比|比(?!(?:率|例|较))|是|"
+    r"[vV][sS]|[、，,；;+/／|｜&＆和与及或跟—–])"
 )
 _HISTORY_QUERY_LEADING_VERB_RE = re.compile(rf"^(?:{_READ_QUERY_VERB_PATTERN}|把)")
 _HISTORY_QUERY_TRAILING_VERB_RE = re.compile(
@@ -315,19 +316,37 @@ _HISTORY_QUERY_TRAILING_VERB_RE = re.compile(
 _ILLNESS_MEDICAL_ACRONYMS = frozenset({"sle"})
 _UNRESOLVED_QUERY_REFERENCE_RE = re.compile(
     r"^(?:"
-    r"(?:它|这些|那些)(?:病|病症|疾病|症状|问题|记录|病例|情况|内容)?|"
+    r"(?:它|它们|这些|那些)(?:病|病症|疾病|症状|问题|记录|病例|情况|内容)?|"
     r"(?:这|那|此|该)(?:一)?(?:个|条|项|次|份|种)?"
     r"(?:病|病症|疾病|症状|问题|记录|病例|情况|内容)?|"
-    r"(?:前一|上一|最后一)(?:个|条|项|份|次)|(?:前一次|上一次)|"
-    r"(?:(?:你)?(?:之前|前文|前面|上面|刚刚|刚才|方才|刚)"
+    r"(?:前一|上一|最后一)(?:个|条|项|份|次)(?:病|疾病|症状|记录|内容)?|"
+    r"(?:前一次|上一次)|(?:最后那个)|"
+    r"(?:前述|上述)(?:病|病症|疾病|症状|病例|记录|内容)?|"
+    r"(?:(?:你)?(?:之前|此前|前文|前面|上面|刚刚|刚才|方才|刚)"
     r"(?:说|提|提到|提过)?(?:的)?)"
     r"(?:(?:这|那)(?:一)?(?:个|条|项|次|份|种)?"
     r"(?:病|病症|疾病|症状|问题|记录|病例|情况|内容)?|"
     r"(?:病|病症|疾病|症状|问题|记录|病例|情况|内容))?"
-    r")$"
+    r")(?:上回|最近一次|再看下)?$"
+)
+_UNRESOLVED_QUERY_REFERENCE_TOKEN_RE = re.compile(
+    r"^(?:"
+    r"(?:它|它们|这些|那些)(?:病|病症|疾病|症状|问题|记录|病例|情况|内容)?|"
+    r"(?:这|那|此|该)(?:一)?(?:个|条|项|次|份|种)?"
+    r"(?:病|病症|疾病|症状|问题|记录|病例|情况|内容)?|"
+    r"(?:前一|上一|最后一)(?:个|条|项|份|次)(?:病|疾病|症状|记录|内容)?|"
+    r"最后那个|(?:前述|上述)(?:病|病症|疾病|症状|病例|记录|内容)?|"
+    r"(?:(?:你)?(?:之前|此前|前文|前面|上面|刚刚|刚才|方才|刚)"
+    r"(?:说|提|提到|提过)?(?:的)?)"
+    r"(?:(?:这|那)(?:一)?(?:个|条|项|次|份|种)?)?"
+    r"(?:病|病症|疾病|症状|问题|记录|病例|情况|内容)?"
+    r")"
+    r"(?:上回|最近一次|再看下)?"
+    r"(?:MRI|核磁|磁共振|CT|检查|报告|检查报告)?$",
+    re.IGNORECASE,
 )
 _LATEST_OCCURRENCE_MARKER_PATTERN = (
-    r"(?:(?:我)?(?:上(?:一)?|最近|最后)(?:的)?(?:那)?(?:一)?(?:次|回))"
+    r"(?:(?:我)?(?:(?:上(?:一)?|最近|最后)(?:的)?(?:那)?(?:一)?(?:次|回)|末次))"
 )
 _LATEST_OCCURRENCE_EVENT_PATTERN = r"(?:记录|发作|发生|复发)?"
 _LATEST_OCCURRENCE_QUESTION_PATTERN = (
@@ -1260,10 +1279,18 @@ def _history_query_entity_expression(text: str) -> str | None:
     if latest_entity is not None:
         return latest_entity
     has_read_verb = bool(_READ_QUERY_VERB_RE.search(normalized))
+    has_comparison_frame = bool(
+        re.search(
+            r"(?:相比|相对|对比|比较|比(?!(?:率|例|较))|倍数|几倍|比例|比率|ratio|[vV][sS])",
+            normalized,
+            re.IGNORECASE,
+        )
+    )
     has_history_frame = bool(
         re.search(r"(?:记录|病史|病历|病例|历史)", normalized)
         or _HISTORY_QUERY_QUESTION_RE.search(normalized)
         or has_read_verb
+        or has_comparison_frame
         or has_question_punctuation
     )
     has_read_semantics = bool(
@@ -1271,6 +1298,7 @@ def _history_query_entity_expression(text: str) -> str | None:
         or _HISTORY_QUERY_WINDOW_RE.search(normalized)
         or _HISTORY_QUERY_QUESTION_RE.search(normalized)
         or has_read_verb
+        or has_comparison_frame
         or has_question_punctuation
     )
     if not has_history_frame or not has_read_semantics:
@@ -1383,7 +1411,13 @@ def _clean_history_query_entity(value: str) -> str:
     """Remove only structural query decorators surrounding one entity span."""
     candidate = _HISTORY_QUERY_TRAILING_VERB_RE.sub("", value, count=1)
     candidate = _HISTORY_QUERY_WINDOW_RE.sub("", candidate)
-    candidate = re.sub(r"(?:的)?(?:倍数|几倍|比例|比率)$", "", candidate)
+    candidate = re.sub(
+        r"(?:的)?(?:倍数|几倍|比例|比率|ratio)$",
+        "",
+        candidate,
+        flags=re.IGNORECASE,
+    )
+    candidate = candidate.removesuffix("是")
     candidate = re.sub(
         r"(?:的)?(?:记录|病史|病历|病例|历史).*$", "", candidate, count=1
     )
@@ -1406,7 +1440,10 @@ def _is_registered_illness_acronym(value: str) -> bool:
 
 def _is_unresolved_query_reference(value: str) -> bool:
     normalized = str(value or "").strip("的，,。.!！；;：:?？ ")
-    return bool(_UNRESOLVED_QUERY_REFERENCE_RE.fullmatch(normalized))
+    return bool(
+        _UNRESOLVED_QUERY_REFERENCE_RE.fullmatch(normalized)
+        or _UNRESOLVED_QUERY_REFERENCE_TOKEN_RE.fullmatch(normalized)
+    )
 
 
 def _query_contains_unresolved_reference(text: str) -> bool:
@@ -1422,6 +1459,8 @@ def _query_contains_unresolved_reference(text: str) -> bool:
     stripped = _strip_history_query_request_prefix(normalized)
     stripped = _clean_history_query_entity(stripped)
     if _is_unresolved_query_reference(stripped):
+        return True
+    if _UNRESOLVED_QUERY_REFERENCE_TOKEN_RE.fullmatch(stripped):
         return True
     if re.match(r"^(?:它|这些|那些|这病|那病|此病|该病|该疾病|那个症状)", stripped):
         return True
@@ -1629,11 +1668,20 @@ def _query_dimension_match_embedded_in_illness_name(
     suffix = text[end : end + 20]
     return bool(
         re.search(r"(?:患有|患的是|确诊为|诊断为|诊断是)$", prefix)
+        or (
+            re.search(r"[\u4e00-\u9fff]{1,12}$", prefix)
+            and re.match(
+                r"(?:(?:今天|今日|最近|目前|现在)(?:又|更)?)?"
+                r"(?:加重|恶化|复发|发作|更严重)",
+                suffix,
+            )
+        )
         or re.match(
             r"(?:(?:相关|诱发|依赖|关联)?性)?"
             r"(?:呼吸暂停(?:综合征)?|"
             r"[\u4e00-\u9fff]{0,12}(?:哮喘|肾炎|癫痫|闭经|综合征|障碍|"
-            r"疾病|感染|溃疡|疱疹|脑梗|病|症|炎|癌|疹))",
+            r"疾病|感染|溃疡|疱疹|脑梗|偏头痛|疼痛|过敏|贫血|尿失禁|"
+            r"心率失常|焦虑|病|症|炎|癌|疹|痛|敏|虑|禁|失常))",
             suffix,
         )
     )
@@ -2178,6 +2226,13 @@ def decide_tool_capability(
                 tool_name,
                 canonical_args,
             )
+        if _query_contains_unresolved_reference(turn_text):
+            return _decision(
+                "block",
+                "health_query_semantics_unresolved",
+                tool_name,
+                canonical_args,
+            )
         proposed_dimension = str(canonical_args.get("dimension") or "").strip().lower()
         known_illness_entities = _illness_targets(turn_text)
         illness_query_entities = _illness_query_entities(turn_text)
@@ -2282,6 +2337,13 @@ def decide_tool_capability(
             return _decision(
                 "block",
                 "health_query_calendar_window_unsupported",
+                tool_name,
+                normalized_plan,
+            )
+        if _query_contains_unresolved_reference(turn_text):
+            return _decision(
+                "block",
+                "health_query_semantics_unresolved",
                 tool_name,
                 normalized_plan,
             )
@@ -2917,12 +2979,34 @@ def _health_record_target_status(
     from app.services.agent_kernel.intent_frame import build_intent_frame
     from app.services.write_intent_scope import authorized_health_record_clauses
 
-    clauses = authorized_health_record_clauses(snapshot.envelope.text)
-    if not clauses:
-        return "unauthorized"
     requested_type = recipe_replay_record_type(args)
     if not requested_type:
         return "unresolved"
+    if requested_type == "illness":
+        normalized_turn = "".join(str(snapshot.envelope.text or "").split()).strip(
+            "，,。.!！；;：: "
+        )
+        explicit_label = SIMPLE_ILLNESS_CREATE_RE.fullmatch(normalized_turn)
+        if explicit_label is not None:
+            exact_name = simple_illness_target(snapshot.envelope.text)
+            if exact_name is None:
+                return "mismatch"
+            data = args.get("data") if isinstance(args.get("data"), dict) else {}
+            requested_name = _effective_argument_value(
+                args,
+                data,
+                data_keys=("name", "illness_name"),
+                arg_keys=("name", "illness_name"),
+            )
+            return (
+                "match"
+                if _normalize_entity_name(requested_name)
+                == _normalize_entity_name(exact_name)
+                else "mismatch"
+            )
+    clauses = authorized_health_record_clauses(snapshot.envelope.text)
+    if not clauses:
+        return "unauthorized"
 
     direct_write_seen = False
     matching_type_seen = False
@@ -3122,19 +3206,11 @@ def _recover_explicit_illness_create_from_generic_memory(
         arg_keys=("object_value", "value"),
     )
 
-    from app.services.write_intent_scope import authorized_health_record_clauses
-
-    clauses = authorized_health_record_clauses(snapshot.envelope.text)
-    if (
-        len(clauses) != 1
-        or re.search(r"(?:记录|新增|保存)(?:一下)?疾病", clauses[0]) is None
-    ):
-        return args
-    targets = _illness_targets(clauses[0])
-    if len(targets) != 1:
+    target_name = simple_illness_target(snapshot.envelope.text)
+    if target_name is None:
         return args
     proposed_text = "".join(str(proposed_name or "").split()).casefold()
-    target_text = "".join(str(targets[0]).split()).casefold()
+    target_text = "".join(str(target_name).split()).casefold()
     proposed_matches_target = proposed_text == target_text or bool(
         re.fullmatch(
             rf"{re.escape(target_text)}(?:\([^()（）]{{1,80}}\)|（[^()（）]{{1,80}}）)",
@@ -3143,7 +3219,7 @@ def _recover_explicit_illness_create_from_generic_memory(
     )
     if not proposed_matches_target:
         return args
-    return {"record_type": "illness", "data": {"name": targets[0]}}
+    return {"record_type": "illness", "data": {"name": target_name}}
 
 
 def _project_exact_illness_create_from_model_fields(
@@ -3170,16 +3246,8 @@ def _project_exact_illness_create_from_model_fields(
         arg_keys=("name", "illness_name"),
     )
 
-    from app.services.write_intent_scope import authorized_health_record_clauses
-
-    clauses = authorized_health_record_clauses(snapshot.envelope.text)
-    if len(clauses) != 1:
-        return args
-    match = SIMPLE_ILLNESS_CREATE_RE.fullmatch(clauses[0])
-    if match is None:
-        return args
-    target_name = match.group("name").strip("的了，,。.!！；;：: ")
-    if SIMPLE_ILLNESS_NAME_RE.fullmatch(target_name) is None:
+    target_name = simple_illness_target(snapshot.envelope.text)
+    if target_name is None:
         return args
     if _normalize_entity_name(proposed_name) != _normalize_entity_name(target_name):
         return args
@@ -3738,7 +3806,7 @@ def _illness_targets(clause: str) -> tuple[str, ...]:
     if known:
         return tuple(dict.fromkeys(known))
 
-    explicit_create = SIMPLE_ILLNESS_CREATE_RE.fullmatch(clause)
+    explicit_create_name = simple_illness_target(clause)
     action_matches = tuple(_WRITE_TARGET_ACTION_RE.finditer(clause))
     candidate = ""
     if action_matches:
@@ -3767,9 +3835,10 @@ def _illness_targets(clause: str) -> tuple[str, ...]:
         part.strip() for part in re.split(r"[、/]|(?:和|与)", candidate) if part.strip()
     )
     explicit_safe_name = bool(
-        explicit_create is not None
+        explicit_create_name is not None
         and len(parts) == 1
-        and SIMPLE_ILLNESS_NAME_RE.fullmatch(parts[0])
+        and _normalize_entity_name(parts[0])
+        == _normalize_entity_name(explicit_create_name)
     )
     if parts and (
         explicit_safe_name

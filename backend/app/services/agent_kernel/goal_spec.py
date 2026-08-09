@@ -1,4 +1,5 @@
 """Compile a user turn into a deterministic, verifiable task contract."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -20,7 +21,6 @@ from app.services.agent_kernel.types import (
 )
 from app.services.agent_kernel.write_safety import is_explicit_write_cancellation
 from app.services.write_intent_scope import (
-    authorized_health_record_clauses,
     has_mixed_write_polarity,
 )
 
@@ -113,6 +113,24 @@ SIMPLE_ILLNESS_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 SIMPLE_ILLNESS_ACRONYMS = frozenset({"sle"})
+_SIMPLE_ILLNESS_REFERENCE_RE = re.compile(
+    r"^(?:"
+    r"(?:它|它们)|"
+    r"(?:这|那|此|该)(?:个|些)?(?:病|疾病|病症|症状)?|"
+    r"(?:这些|那些)(?:病|疾病|病症|症状)?|"
+    r"(?:(?:之前|此前|前面|上面|刚才|刚刚|方才)(?:说的|提的|提到的)?)?"
+    r"(?:这|那)(?:个|些)?(?:病|疾病|病症|症状)?|"
+    r"(?:前述|上述)(?:病|疾病|病症|症状|病例)?"
+    r")$"
+)
+_SIMPLE_ILLNESS_THIRD_PARTY_RE = re.compile(
+    r"^(?:"
+    r"(?:我(?:的)?)?(?:朋友|同事|家人|爸|爸爸|父亲|妈|妈妈|母亲|"
+    r"妻子|丈夫|老公|老婆|孩子|儿子|女儿|室友|同学|患者|邻居)(?:的)?.+|"
+    r"[一-鿿]{1,6}(?:患有|患的是|患).+|"
+    r"[一-鿿]{2,6}的.+"
+    r")$"
+)
 
 
 def compile_goal_spec(
@@ -124,12 +142,9 @@ def compile_goal_spec(
 ) -> GoalSpec:
     """Create the executor contract without granting authority to visible data."""
     text = _normalize(envelope.text)
-    if (
-        intent.is_write
-        and _explicit_target_date_is_invalid(
-            text,
-            context.current_time.date(),
-        )
+    if intent.is_write and _explicit_target_date_is_invalid(
+        text,
+        context.current_time.date(),
     ):
         return GoalSpec(
             kind="clarify",
@@ -245,26 +260,38 @@ def _compile_simple_health_record_goal(
     """Compile narrow create-only records whose payload is user-owned."""
     del actionable_references
     text = _normalize(envelope.text)
-    if (
+    illness_target = simple_illness_target(envelope.text)
+    common_guard = (
         envelope.media
-        or intent.primary not in {"write", "mutate"}
-        or intent.operation != "create"
-        or not intent.is_write
         or _simple_record_write_is_negated(text)
         or has_mixed_write_polarity(text)
         or _simple_record_is_question(text)
+    )
+    if illness_target is not None and not common_guard:
+        return GoalSpec(
+            kind="simple_health_record",
+            domain="illness",
+            operation="create",
+            target_date=_target_date(text, context, ()),
+            target_record_type="illness",
+            target_values=(("name", illness_target),),
+            requires_verification=True,
+            prohibited_operations=("update", "delete"),
+            postconditions=("verified_receipt",),
+            evidence=("current_user_turn",),
+        )
+    if (
+        common_guard
+        or intent.primary not in {"write", "mutate"}
+        or intent.operation != "create"
+        or not intent.is_write
         or _is_compound_record_request(text, intent.domain)
     ):
         return None
 
     target_values: tuple[tuple[str, str], ...] = ()
     goal_domain = intent.domain
-    illness_target = _simple_illness_target(envelope.text)
-    if illness_target is not None:
-        record_type = "illness"
-        goal_domain = "illness"
-        target_values = (("name", illness_target),)
-    elif intent.domain == "water" and _has_any(text, WATER_SIGNALS):
+    if intent.domain == "water" and _has_any(text, WATER_SIGNALS):
         amount_ml = _water_amount_ml(text)
         if amount_ml is None:
             return None
@@ -289,9 +316,7 @@ def _compile_simple_health_record_goal(
         return None
 
     target_meal_types = (
-        (dict(target_values)["meal_type"],)
-        if record_type == "diet"
-        else ()
+        (dict(target_values)["meal_type"],) if record_type == "diet" else ()
     )
     return GoalSpec(
         kind="simple_health_record",
@@ -308,12 +333,10 @@ def _compile_simple_health_record_goal(
     )
 
 
-def _simple_illness_target(text: str) -> str | None:
+def simple_illness_target(text: str) -> str | None:
     """Extract one exact user-owned target from an explicit disease label."""
-    clauses = authorized_health_record_clauses(text)
-    if len(clauses) != 1:
-        return None
-    match = SIMPLE_ILLNESS_CREATE_RE.fullmatch(clauses[0])
+    normalized = _normalize(text).strip("，,。.!！；;：: ")
+    match = SIMPLE_ILLNESS_CREATE_RE.fullmatch(normalized)
     if match is None:
         return None
     candidate = match.group("name").strip("的了，,。.!！；;：: ")
@@ -329,6 +352,10 @@ def _simple_illness_target(text: str) -> str | None:
             return None
         return acronym.upper()
     if SIMPLE_ILLNESS_NAME_RE.fullmatch(candidate) is None:
+        return None
+    if _SIMPLE_ILLNESS_REFERENCE_RE.fullmatch(candidate):
+        return None
+    if _SIMPLE_ILLNESS_THIRD_PARTY_RE.fullmatch(candidate):
         return None
     return (
         candidate.upper()
@@ -399,8 +426,7 @@ def _format_diet_recalculation_prompt(goal: GoalSpec) -> str:
         "snack": "加餐",
     }
     targets = "、".join(
-        meal_labels.get(meal_type, meal_type)
-        for meal_type in goal.target_meal_types
+        meal_labels.get(meal_type, meal_type) for meal_type in goal.target_meal_types
     )
     return (
         "## 本轮任务契约（必须完整执行）\n"
@@ -421,8 +447,7 @@ def _format_simple_health_record_prompt(goal: GoalSpec) -> str:
         payload = f"，description={values['description']}"
     elif goal.target_record_type == "diet" and values.get("food_items"):
         payload = (
-            f"，meal_type={values.get('meal_type')}，"
-            f"food_items={values['food_items']}"
+            f"，meal_type={values.get('meal_type')}，food_items={values['food_items']}"
         )
         diet_estimation = (
             "- 饮食估算: 根据上述食物和份量给出合理估算，写入时必须同时包含 "
@@ -463,12 +488,15 @@ def _parse_number(value: str) -> float | None:
         value,
     )
     if mixed_unit is not None:
-        return float(mixed_unit.group("number")) * {
-            "十": 10,
-            "百": 100,
-            "千": 1000,
-            "万": 10000,
-        }[mixed_unit.group("unit")]
+        return (
+            float(mixed_unit.group("number"))
+            * {
+                "十": 10,
+                "百": 100,
+                "千": 1000,
+                "万": 10000,
+            }[mixed_unit.group("unit")]
+        )
     try:
         return float(value)
     except (TypeError, ValueError):
@@ -478,8 +506,7 @@ def _parse_number(value: str) -> float | None:
         integer, fraction = value.split("点", 1)
         integer_value = _parse_chinese_integer(integer)
         fraction_digits = "".join(
-            str(_CHINESE_DIGITS.get(char, ""))
-            for char in fraction
+            str(_CHINESE_DIGITS.get(char, "")) for char in fraction
         )
         if integer_value is None or not fraction_digits:
             return None
@@ -561,9 +588,7 @@ def _simple_diet_target(
         count=1,
     )
     foods = DIET_TRAILING_WRITE_RE.sub("", foods)
-    foods = DIET_TRAILING_ANALYSIS_RE.sub("", foods).strip(
-        " \t\r\n，,。.!！；;：:"
-    )
+    foods = DIET_TRAILING_ANALYSIS_RE.sub("", foods).strip(" \t\r\n，,。.!！；;：:")
     if (
         not foods
         or foods in {"饮食", "一餐", "这餐", "饭", "食物"}
@@ -739,9 +764,7 @@ def _explicit_target_date_status(
     iso_match = re.search(r"(?<!\d)(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})(?!\d)", text)
     if iso_match:
         try:
-            return True, date(
-                *(int(value) for value in iso_match.groups())
-            ).isoformat()
+            return True, date(*(int(value) for value in iso_match.groups())).isoformat()
         except ValueError:
             return True, None
 

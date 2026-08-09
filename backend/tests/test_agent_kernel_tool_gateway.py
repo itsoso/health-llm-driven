@@ -6443,6 +6443,365 @@ async def test_v32_medical_exam_request_prefix_never_pollutes_keyword(
     assert calls == [{"dimension": "medical_exam", "keyword": keyword}]
 
 
+# v34: fresh exact-commit G4 composition matrix. These cases deliberately use
+# unseen lexical combinations so policy changes must close semantic classes,
+# not add the reviewer sentences as one-off exceptions.
+@pytest.mark.parametrize(
+    "name",
+    (
+        "偏头痛",
+        "慢性疼痛",
+        "高血压",
+        "低血压",
+        "妊娠高血压",
+        "运动障碍",
+        "运动性哮喘",
+        "体重相关性闭经",
+        "运动诱发过敏",
+    ),
+)
+def test_v34_explicit_safe_illness_name_converges_direct_and_memory_paths(name):
+    gateway = ToolGateway(_snapshot(f"记录疾病：{name}"))
+
+    direct = gateway.preflight(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={"record_type": "illness", "data": {"name": name}},
+        )
+    )
+    memory = gateway.preflight(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={
+                "record_type": "remember",
+                "data": {"predicate": "疾病史", "object_value": name},
+            },
+        )
+    )
+
+    expected = {"record_type": "illness", "data": {"name": name}}
+    assert direct.action == "allow"
+    assert direct.normalized_args == expected
+    assert memory.action == "allow"
+    assert memory.normalized_args == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    "name",
+    (
+        "这个病",
+        "该病",
+        "此病",
+        "那个病",
+        "刚才那个",
+        "之前说的那个病",
+        "上面那个疾病",
+        "它",
+        "这些疾病",
+        "那些疾病",
+        "朋友脑梗",
+        "我爸脑梗",
+        "李雷患脑梗",
+        "张三的脑梗",
+    ),
+)
+async def test_v34_referential_or_third_party_illness_name_never_dispatches(
+    name,
+    policy_mode,
+):
+    gateway = ToolGateway(_snapshot(f"记录疾病：{name}", policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={
+                "record_type": "illness",
+                "data": {"name": name, "status": "active"},
+            },
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+async def test_v34_rich_illness_status_never_collapses_to_name_only_active(
+    policy_mode,
+):
+    gateway = ToolGateway(
+        _snapshot("记录疾病：脑梗，状态已痊愈", policy_mode=policy_mode)
+    )
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={
+                "record_type": "illness",
+                "data": {"name": "脑梗", "status": "active"},
+            },
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "查上一项内容",
+        "查最后那个",
+        "刚才那个再看下",
+        "查前述疾病",
+        "查上述病例",
+        "最后一条疾病记录是什么时候",
+        "该症状上回怎么样",
+        "它们最近一次呢",
+        "调出刚才那个MRI报告",
+        "请调出之前说的核磁检查",
+        "找出上面那份MRI报告",
+    ),
+)
+async def test_v34_composed_unresolved_read_reference_never_dispatches(
+    message,
+    policy_mode,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append((request.tool_name, request.arguments))
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments={"dimension": "illness", "keyword": message},
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize("verb", ("暂停", "终止", "放弃"))
+async def test_v34_composed_read_cancellation_never_dispatches(verb, policy_mode):
+    gateway = ToolGateway(_snapshot(f"{verb}查询SLE", policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments={"dimension": "illness", "keyword": "SLE"},
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("verb", ("暂停", "终止", "放弃"))
+async def test_v34_cancelled_read_preserves_later_positive_clause(verb):
+    gateway = ToolGateway(_snapshot(f"{verb}查询SLE，改查脑梗"))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments={"dimension": "illness", "keyword": "SLE"},
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [{"dimension": "illness", "keyword": "脑梗"}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    ("message", "dimension"),
+    (
+        ("高血压今天加重", "blood_pressure"),
+        ("心率失常今天加重", "heart_rate"),
+        ("压力性尿失禁今天加重", "stress"),
+        ("运动相关性偏头痛今天加重", "workout"),
+        ("饮食相关性过敏今天加重", "diet"),
+        ("运动相关性贫血今天乏力", "workout"),
+    ),
+)
+async def test_v34_disease_observation_never_authorizes_metric_substring(
+    message,
+    dimension,
+    policy_mode,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments={"dimension": dimension, "days": 1},
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "keyword"),
+    (
+        ("末次SLE发作是什么时候", "SLE"),
+        ("SLE末次发作在何时", "SLE"),
+        ("睡眠呼吸暂停最近一次发作是什么时候", "睡眠呼吸暂停"),
+        ("帕金森病末次复发在何时", "帕金森病"),
+    ),
+)
+async def test_v34_latest_occurrence_variants_project_exact_illness(
+    message,
+    keyword,
+):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments={"dimension": "illness", "keyword": "污染值", "days": 7},
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [{"dimension": "illness", "keyword": keyword}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    (
+        "近10天睡眠比近20天HRV是几倍",
+        "近10天睡眠是近20天HRV的几倍",
+        "近10天睡眠相对近20天HRV的比率",
+        "近10天睡眠vs近20天HRV ratio",
+    ),
+)
+async def test_v34_ratio_natural_language_projects_exact_batch(message):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query_batch",
+            arguments={
+                "queries": [
+                    {"dimension": "sleep", "days": 10, "agg": "avg"},
+                    {"dimension": "hrv", "days": 20, "agg": "avg"},
+                ],
+                "compare": {"a": 0, "b": 1, "op": "ratio"},
+            },
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [
+        {
+            "queries": [
+                {"dimension": "sleep", "days": 10, "agg": "avg"},
+                {"dimension": "hrv", "days": 20, "agg": "avg"},
+            ],
+            "compare": {"a": 0, "b": 1, "op": "ratio"},
+        }
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "keyword"),
+    (
+        ("调阅左肩MRI报告", "左肩MRI"),
+        ("打开颈椎核磁报告", "颈椎核磁"),
+    ),
+)
+async def test_v34_medical_exam_request_verbs_do_not_pollute_keyword(
+    message,
+    keyword,
+):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments={"dimension": "medical_exam", "keyword": "胃镜"},
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [{"dimension": "medical_exam", "keyword": keyword}]
+
+
 @pytest.mark.asyncio
 async def test_executor_illness_query_payload_is_not_polluted_by_symptom_recovery(
     db,

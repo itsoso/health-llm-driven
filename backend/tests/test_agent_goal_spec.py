@@ -73,7 +73,23 @@ def test_mixed_polarity_turn_never_builds_a_whole_turn_simple_write_goal(message
     assert goal.target_values == ()
 
 
-@pytest.mark.parametrize("name", ("SLE", "脑梗", "睡眠呼吸暂停"))
+@pytest.mark.parametrize(
+    "name",
+    (
+        "SLE",
+        "脑梗",
+        "睡眠呼吸暂停",
+        "偏头痛",
+        "慢性疼痛",
+        "高血压",
+        "低血压",
+        "妊娠高血压",
+        "运动障碍",
+        "运动性哮喘",
+        "体重相关性闭经",
+        "运动诱发过敏",
+    ),
+)
 def test_explicit_illness_create_compiles_to_one_typed_simple_record_goal(name):
     context = ExecutionContext.for_test(user_id=1, channel="mobile")
     envelope = AgentEnvelope(
@@ -95,6 +111,35 @@ def test_explicit_illness_create_compiles_to_one_typed_simple_record_goal(name):
     assert goal.target_record_type == "illness"
     assert dict(goal.target_values) == {"name": name}
     assert goal.requires_verification is True
+
+
+@pytest.mark.parametrize(
+    "name",
+    (
+        "这个病",
+        "该病",
+        "此病",
+        "那个病",
+        "刚才那个",
+        "之前说的那个病",
+        "上面那个疾病",
+        "它",
+        "这些疾病",
+        "那些疾病",
+        "朋友脑梗",
+        "我爸脑梗",
+        "李雷患脑梗",
+        "张三的脑梗",
+    ),
+)
+def test_referential_or_third_party_illness_name_never_compiles(name):
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(user_id=1, channel="mobile", text=f"记录疾病：{name}")
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(envelope=envelope, context=context, intent=intent)
+
+    assert goal is None or goal.kind != "simple_health_record"
 
 
 @pytest.mark.parametrize(

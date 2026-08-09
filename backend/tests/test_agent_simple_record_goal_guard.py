@@ -479,7 +479,23 @@ def test_diet_goal_builds_deterministic_write_when_model_omits_tool_call():
     }
 
 
-@pytest.mark.parametrize("name", ("SLE", "脑梗", "睡眠呼吸暂停"))
+@pytest.mark.parametrize(
+    "name",
+    (
+        "SLE",
+        "脑梗",
+        "睡眠呼吸暂停",
+        "偏头痛",
+        "慢性疼痛",
+        "高血压",
+        "低血压",
+        "妊娠高血压",
+        "运动障碍",
+        "运动性哮喘",
+        "体重相关性闭经",
+        "运动诱发过敏",
+    ),
+)
 def test_illness_goal_builds_deterministic_write_when_model_omits_tool_call(name):
     goal = GoalSpec(
         kind="simple_health_record",
