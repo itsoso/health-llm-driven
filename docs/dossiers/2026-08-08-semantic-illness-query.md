@@ -456,6 +456,10 @@ validation and no-match honesty address those risks.
   in 189.36 seconds. Targeted Ruff, Python compilation and `git diff --check`
   pass; repository structural gates and two brand-new exact-commit reviews
   remain required.
+- Latest `origin/main` commit `fb05eca0d` was integrated after G3. It changes
+  only the separate iOS build-245 verification Dossier; the Backend runtime and
+  test tree are byte-identical to the 3,771-test run. System-map drift and all
+  102 Dossier consistency checks pass on the merged tree.
 
 ### G4 Safety Review: PENDING
 
