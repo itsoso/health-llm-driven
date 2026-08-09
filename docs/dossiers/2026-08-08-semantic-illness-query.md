@@ -1240,6 +1240,46 @@ write tool. Targeted Ruff, focused formatting, Python compilation,
 pass. A new exact commit and two fresh independent reviews of that SHA remain
 mandatory before G4 may pass.
 
+Fresh code and product-safety reviews of exact commit
+`bcce47b98465d1c784743af1f5567cf51cf172bc` both returned NO-GO, so it was not
+pushed or deployed. Their independent real Executor/Gateway matrices agreed
+that the remaining problem was structural rather than a list of missing disease
+names. Ordinary metric questions without `记录/历史` could still trust a wrong
+model dimension; batch comparison used set equality and therefore lost omitted,
+duplicated or same-dimension entities; valid registered multi-window comparisons
+were rejected or had every child query overwritten with the first window; and
+natural wrappers, history containers, negated-write/read compounds, line breaks,
+em dashes and additional disease coordination relations could pollute or collapse
+the exact entity frame. The safety matrix passed 312/330 executions with zero
+writes but retained nine unique read failures; the companion 95-case matrix in
+both policy modes reproduced 38 failures. Release remained stopped.
+
+The v27 remediation promotes history extraction into one deterministic health-
+query frame. A normal question such as `我近一个月的HRV是多少` now binds the
+same exact entity/window contract as a `记录` query. Line breaks remain entity
+boundaries instead of disappearing during whitespace normalization. A negated
+write followed by an explicit read contributes only the read clause, while
+`病史中…有哪些记录`, `历史中找出…记录` and `记录里…有几条记录` remain one
+scope. Batch authorization now compares cardinality-preserving
+`(dimension, days)` bindings: omitted and duplicated children are blocked;
+unrepresentable breakfast+dinner, MRI+CT and run+cycle filters are not broadened;
+and representable 7-day/30-day comparisons remain available with each child
+bound to its own window. The contracts are now
+`agent-capability-policy-v27` / `authorized-target-set-v23` /
+`record-update-evidence-v18`.
+
+Failure-first coverage reproduced all 42 newly encoded review boundaries before
+implementation. The remediated focused matrix passes 42/42, the complete
+ToolGateway file passes 1,131/1,131, and the 27-file related Backend integration
+gate passes 4,241/4,241 in one process with `TZ=Asia/Shanghai`. The adjacent
+meal-photo compatibility file passes 103/103. Targeted Ruff, focused formatting,
+Python compilation and `git diff --check` pass. The earlier requested live
+`qwen3.7-max` six-case synthetic evaluation remains the latest model evidence;
+it used the production schema with zero database I/O and already demonstrated
+why model JSON is a proposal rather than authority. A new exact commit, mainline
+sync and two fresh independent reviews of the resulting exact SHA remain
+mandatory before G4 may pass.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.

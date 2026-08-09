@@ -4028,6 +4028,300 @@ def test_current_user_event_parenthetical_with_possessive_before_scope_is_author
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    ("message", "proposed_args"),
+    (
+        ("我近一个月的HRV是多少", {"dimension": "sleep", "days": 30}),
+        ("查询最近半年新冠", {"dimension": "sleep", "days": 183}),
+        ("查询新冠", {"dimension": "sleep"}),
+    ),
+)
+async def test_ordinary_query_without_history_noun_never_dispatches_wrong_domain(
+    policy_mode,
+    message,
+    proposed_args,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments=proposed_args,
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert result.decision.reason == "health_query_dimension_conflict"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "proposed_args", "expected_args"),
+    (
+        (
+            "我近一个月的HRV是多少",
+            {"dimension": "hrv", "days": 7},
+            {"dimension": "hrv", "days": 30},
+        ),
+        (
+            "查询最近半年新冠",
+            {"dimension": "illness", "keyword": "流感", "days": 7},
+            {"dimension": "illness", "keyword": "新冠", "days": 183},
+        ),
+        (
+            "查询新冠",
+            {"dimension": "illness", "keyword": "流感", "days": 7},
+            {"dimension": "illness", "keyword": "新冠"},
+        ),
+    ),
+)
+async def test_ordinary_query_without_history_noun_binds_entity_and_window(
+    message,
+    proposed_args,
+    expected_args,
+):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments=proposed_args,
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [expected_args]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    ("message", "plan"),
+    (
+        (
+            "比较近一周睡眠和步数",
+            {"queries": [{"dimension": "sleep", "days": 7, "agg": "avg"}]},
+        ),
+        (
+            "比较睡眠和步数",
+            {"queries": [{"dimension": "sleep", "days": 7, "agg": "avg"}]},
+        ),
+        (
+            "这周睡眠、HRV、步数怎么样",
+            {"queries": [{"dimension": "sleep", "days": 7, "agg": "avg"}]},
+        ),
+        (
+            "比较近一周早餐和晚餐记录",
+            {"queries": [{"dimension": "diet", "days": 7}]},
+        ),
+        (
+            "比较近一周早餐记录",
+            {
+                "queries": [
+                    {"dimension": "diet", "days": 7},
+                    {"dimension": "diet", "days": 7},
+                ]
+            },
+        ),
+        (
+            "比较近一周MRI和CT记录",
+            {"queries": [{"dimension": "medical_exam", "days": 7}]},
+        ),
+        (
+            "比较近一周跑步和骑行记录",
+            {"queries": [{"dimension": "workout", "days": 7}]},
+        ),
+    ),
+)
+async def test_batch_query_requires_complete_representable_entity_cardinality(
+    policy_mode,
+    message,
+    plan,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query_batch",
+            arguments=plan,
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert result.decision.reason == "health_query_dimension_conflict"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "plan"),
+    (
+        (
+            "比较近7天和近30天的HRV",
+            {
+                "queries": [
+                    {"dimension": "hrv", "days": 7, "agg": "avg"},
+                    {"dimension": "hrv", "days": 30, "agg": "avg"},
+                ]
+            },
+        ),
+        (
+            "比较近7天睡眠和近30天HRV",
+            {
+                "queries": [
+                    {"dimension": "sleep", "days": 7, "agg": "avg"},
+                    {"dimension": "hrv", "days": 30, "agg": "avg"},
+                ]
+            },
+        ),
+    ),
+)
+async def test_valid_multi_window_batch_comparison_remains_available(message, plan):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query_batch",
+            arguments=plan,
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [plan]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "expected_args"),
+    (
+        (
+            "劳烦替我查一下近半年克罗恩病记录",
+            {"dimension": "illness", "keyword": "克罗恩病", "days": 183},
+        ),
+        (
+            "有劳帮我调取近半年SLE历史",
+            {"dimension": "illness", "keyword": "SLE", "days": 183},
+        ),
+        (
+            "麻烦翻看一下近半年脑梗记录",
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        (
+            "过去半年病史中脑梗有哪些记录",
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        (
+            "从过去半年的历史中找出脑梗记录",
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        (
+            "过去半年记录里脑梗有几条记录",
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        (
+            "不要记录脑梗，只查询近半年脑梗记录",
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+    ),
+)
+async def test_additional_natural_single_query_frames_project_exactly(
+    message,
+    expected_args,
+):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments={"dimension": "illness"},
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [expected_args]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "查询近半年脑梗—偏头疼记录",
+        "查询近半年脑梗\n偏头疼记录",
+        "查询近半年偏头痛兼患痛风记录",
+        "查询近半年偏头痛并患痛风记录",
+        "查询近半年偏头痛同时患有痛风记录",
+    ),
+)
+async def test_additional_multi_entity_boundaries_never_collapse_to_one_keyword(
+    policy_mode,
+    message,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments={"dimension": "illness", "days": 183},
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert result.decision.reason == "illness_query_entity_requires_clarification"
+
+
+@pytest.mark.asyncio
 async def test_executor_illness_query_payload_is_not_polluted_by_symptom_recovery(
     db,
     monkeypatch,
