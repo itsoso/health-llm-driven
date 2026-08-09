@@ -773,6 +773,7 @@ def _colon_extends_write_target(left: str) -> bool:
             "设置目标",
             "新增目标",
             "记录目标",
+            "记录疾病",
             "记录事件",
             "记录生活事件",
         )
@@ -1271,9 +1272,14 @@ def _is_current_user_event_parenthetical(content: str) -> bool:
         "",
         normalized,
     )
-    event_noun = r"(?:行程|旅程|旅途|旅行|出行|事件|航班|火车|列车|高铁)"
+    event_noun = r"(?:行程|旅程|旅途|旅行|出行|事件|航班|火车|列车|高铁|动车)"
     current_user = r"(?:我(?:自己|本人|个人)?|本人|自己|个人)"
     scope = r"(?:(?:这|本|该|此)(?:次|趟|段)?)"
+    if re.fullmatch(
+        rf"{current_user}(?:乘坐|坐|搭乘|搭|乘)(?:的)?{event_noun}",
+        normalized,
+    ):
+        return True
     if re.fullmatch(
         rf"{scope}?(?:我(?:自己|本人|个人)?|本人|自己|个人)(?:的)?{event_noun}",
         normalized,

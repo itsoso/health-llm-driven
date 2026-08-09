@@ -217,3 +217,64 @@ async def test_different_readonly_queries_both_execute(db, auth_user_and_headers
 
     _ = [e async for e in executor.run_stream(user_id=user.id, message="查饮水和睡眠", user_auth_token=None)]
     assert len(exec_calls) == 2  # water + sleep 各一次, 不同参不被去重
+
+
+@pytest.mark.asyncio
+async def test_semantically_identical_illness_reads_execute_once(
+    db,
+    auth_user_and_headers,
+):
+    """Policy projection converges different model payloads before dedup."""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    exec_calls: list[tuple[str, object]] = []
+    model_round = 0
+
+    async def fake_call_llm(messages, tools):
+        nonlocal model_round
+        model_round += 1
+        if model_round > 1:
+            return "最近半年有口腔溃疡记录。"
+        return {
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "illness-1",
+                    "type": "function",
+                    "function": {
+                        "name": "health_query",
+                        "arguments": '{"dimension":"illness","keyword":"口腔溃疡"}',
+                    },
+                },
+                {
+                    "id": "illness-2",
+                    "type": "function",
+                    "function": {
+                        "name": "health_query",
+                        "arguments": (
+                            '{"dimension":"illness","keyword":"口腔溃疡",'
+                            '"days":183}'
+                        ),
+                    },
+                },
+            ],
+        }
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        exec_calls.append((tool_name, args_raw))
+        return "[]"
+
+    executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
+    executor._execute_tool = fake_execute_tool
+
+    _ = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="查询近半年口腔溃疡的记录",
+            user_auth_token=None,
+        )
+    ]
+
+    assert len(exec_calls) == 1

@@ -2,6 +2,7 @@
 
 供 Agent 执行器使用的结构化工具接口。覆盖所有健康数据的读/写/分析操作。
 """
+
 import logging
 from typing import List, Dict, Any, Optional
 
@@ -22,7 +23,7 @@ dimension 选择指南 (按场景):
   comprehensive — 综合多维度数据 (默认选这个, 不确定也选这个)
 
 【睡眠 / 休息】
-  sleep         — 睡眠评分, 时长, 深睡/REM 分布 (一般"昨晚睡得好吗"走这里)
+  sleep         — 睡眠评分, 时长, 深睡/REM 分布 (一般"近7天睡得好吗"走这里)
   spo2          — 夜间血氧逐分钟时间序列 + 平均/最低/ODI 氧减指数 (OSAHS 筛查)
   spo2_sleep_correlation — 睡眠阶段 (deep/rem/light/awake) × 血氧关联分析
 
@@ -38,10 +39,10 @@ dimension 选择指南 (按场景):
 【运动 — 这里容易选错, 仔细看】
   workout / exercise — 同义, Garmin 同步的**结构化运动** (跑步/骑行/游泳/HIIT),
                        有距离/配速/心率区间/卡路里.
-                       用户问"昨天的跑步"/"上周练了几次"/"跑量"选这个.
+                       用户问"近7天的跑步"/"最近30天跑量"选这个.
   manual_exercise    — 用户**手动录入**的简单锻炼 (俯卧撑 20 个 / 瑜伽 30 分钟 / 拉伸).
                        只有计次/时长, 没有 GPS 数据.
-                       用户问"这周做了多少俯卧撑"选这个.
+                       用户问"近7天做了多少俯卧撑"选这个.
   activity           — 步数 / 活动分钟数 / 日常活动 (读可穿戴 daily, 与上面同源)
 
 【体重 / 血压 / 饮食 / 饮水】
@@ -56,7 +57,7 @@ dimension 选择指南 (按场景):
                      不传 indicator → 返回用户全部化验指标清单 + 每项最新值 (问"我有哪些化验指标"走这里).
                      传 indicator (如 'HCY'/'LDL'/'HbA1c') → 返回该指标时间序列.
                      传 keyword (如 '膝关节MRI'/'核磁'/'影像') → 查询相关体检/影像条目.
-                     问"昨天上传的记录/最近导入的报告" → 用 dimension='medical_exam' + uploaded_days 或 uploaded_since,
+                     问"最近24小时上传的记录/最近导入的报告" → 用 dimension='medical_exam' + uploaded_days,
                      返回按上传/导入时间排序的体检/影像报告清单.
                      化验是低频数据, days 自动放宽到至少 365 天, 不会因 days 太小漏数据.
   genetic          — 基因位点 (必须配 indicator 参数, 如 'MTHFR', 'APOE')
@@ -87,14 +88,33 @@ illness 问"上一次"且没有给时间窗时省略 days, 后端查询全部病
                 "properties": {
                     "dimension": {
                         "type": "string",
-                        "enum": ["comprehensive", "sleep", "heart_rate", "hrv", "activity",
-                                 "spo2", "spo2_sleep_correlation", "weight", "blood_pressure",
-                                 "supplements", "water",
-                                 "diet", "exercise", "workout", "manual_exercise",
-                                 "body_battery", "stress",
-                                 "medical_exam", "genetic",
-                                 "genetic_cognitive", "genetic_personality", "genetic_comprehensive",
-                                 "medication", "illness", "events"],
+                        "enum": [
+                            "comprehensive",
+                            "sleep",
+                            "heart_rate",
+                            "hrv",
+                            "activity",
+                            "spo2",
+                            "spo2_sleep_correlation",
+                            "weight",
+                            "blood_pressure",
+                            "supplements",
+                            "water",
+                            "diet",
+                            "exercise",
+                            "workout",
+                            "manual_exercise",
+                            "body_battery",
+                            "stress",
+                            "medical_exam",
+                            "genetic",
+                            "genetic_cognitive",
+                            "genetic_personality",
+                            "genetic_comprehensive",
+                            "medication",
+                            "illness",
+                            "events",
+                        ],
                         "description": "数据维度. 见 function description 里的选择指南",
                     },
                     "days": {
@@ -112,11 +132,7 @@ illness 问"上一次"且没有给时间窗时省略 days, 后端查询全部病
                     },
                     "uploaded_days": {
                         "type": "integer",
-                        "description": "按上传/导入时间查询最近几天的体检/影像报告. 例: 昨天上传=1",
-                    },
-                    "uploaded_since": {
-                        "type": "string",
-                        "description": "按上传/导入时间查询, 起始 ISO 日期或时间. 例: 2026-07-02",
+                        "description": "按上传/导入时间查询最近 N×24 小时内的体检/影像报告；不能表达昨天等独立日历区间",
                     },
                 },
                 "required": ["dimension"],
@@ -131,7 +147,7 @@ illness 问"上一次"且没有给时间窗时省略 days, 后端查询全部病
 用本工具一次产出全部子查询, 后端确定性取数 + 聚合, **1 轮完成** —— 不要连发多次 health_query。
 
 何时用本工具 (而非 health_query):
-- 用户同时问 ≥2 个指标 ("这周的睡眠、HRV、步数怎么样")
+- 用户同时问 ≥2 个指标 ("近7天的睡眠、HRV、步数怎么样")
 - 要对比两个可表达的滚动窗口 ("近7天和近14天的 HRV")；当前 plan 的 days
   只能表示最近 N 天，不能表示上周、去年等任意日期区间
 - 要某指标的平均 / 最大 / 最小 / 趋势 ("最近一个月步数平均多少", "HRV 是升还是降")
@@ -148,7 +164,7 @@ plan 结构:
       sleep(睡眠评分) / body_battery / stress / spo2。其他维度 agg 会被忽略, 返回原始数据。
 - compare (可选): 对比两条子查询的标量。{a:<下标>, b:<下标>, op:'diff'|'ratio'}。diff=a-b, ratio=a/b。
 
-完整示例 (近7天 vs 近14天平均 HRV 之差 + 本周睡眠评分趋势 + 本周步数均值):
+完整示例 (近7天 vs 近14天平均 HRV 之差 + 近7天睡眠评分趋势 + 近7天步数均值):
 {
   "queries": [
     {"dimension": "hrv", "days": 7, "agg": "avg"},
@@ -191,7 +207,10 @@ plan 结构:
                         "type": "object",
                         "description": "可选: 对比两条子查询的标量值。diff=a-b, ratio=a/b。",
                         "properties": {
-                            "a": {"type": "integer", "description": "第一条子查询下标 (从 0 开始)"},
+                            "a": {
+                                "type": "integer",
+                                "description": "第一条子查询下标 (从 0 开始)",
+                            },
                             "b": {"type": "integer", "description": "第二条子查询下标"},
                             "op": {"type": "string", "enum": ["diff", "ratio"]},
                         },
@@ -224,11 +243,28 @@ plan 结构:
                 "properties": {
                     "record_type": {
                         "type": "string",
-                        "enum": ["water", "weight", "blood_pressure", "exercise",
-                                 "diet", "supplement", "supplement_group", "rhinitis",
-                                 "waist", "sleep", "excretion",
-                                 "mood", "medication", "illness", "symptom",
-                                 "garmin_sync", "reminder", "goal", "event", "remember"],
+                        "enum": [
+                            "water",
+                            "weight",
+                            "blood_pressure",
+                            "exercise",
+                            "diet",
+                            "supplement",
+                            "supplement_group",
+                            "rhinitis",
+                            "waist",
+                            "sleep",
+                            "excretion",
+                            "mood",
+                            "medication",
+                            "illness",
+                            "symptom",
+                            "garmin_sync",
+                            "reminder",
+                            "goal",
+                            "event",
+                            "remember",
+                        ],
                         "description": """记录类型:
 - water: 饮水 ("喝了杯水" / "喝了咖啡")
 - diet: 饮食 ("早餐吃了…" / "吃了牛排")
@@ -339,11 +375,26 @@ symptom 或没记过), 就直接 health_record(record_type='illness') 补一条 
                     "record_type": {
                         "type": "string",
                         "enum": [
-                            "diet", "water", "weight", "waist", "blood_pressure",
-                            "sleep", "mood", "excretion", "exercise", "illness",
-                            "symptom", "medication", "medication_log",
-                            "supplement", "supplement_definition", "reminder",
-                            "goal", "medical_exam", "event", "rhinitis",
+                            "diet",
+                            "water",
+                            "weight",
+                            "waist",
+                            "blood_pressure",
+                            "sleep",
+                            "mood",
+                            "excretion",
+                            "exercise",
+                            "illness",
+                            "symptom",
+                            "medication",
+                            "medication_log",
+                            "supplement",
+                            "supplement_definition",
+                            "reminder",
+                            "goal",
+                            "medical_exam",
+                            "event",
+                            "rhinitis",
                         ],
                         "description": "要管理的数据类型",
                     },
@@ -398,11 +449,11 @@ goal: {"title":"每日快走 30 分钟","status":"paused","notes":"膝盖恢复�
         "function": {
             "name": "health_analysis",
             "description": """深度健康分析 — 与 health_query 的区别:
-  health_query:    拉**数据** (昨晚睡了几小时, HRV 多少). 事实查询.
+  health_query:    拉**数据** (近7天睡了几小时, HRV 多少). 事实查询.
   health_analysis: 拉**解读** (HRV 下降和训练负荷有没有关系, 恢复得怎么样). 需要综合推理.
 
 选择指南:
-  用户问"昨晚怎么样 / 最近怎么样"        → health_query comprehensive
+  用户问"近7天怎么样 / 最近怎么样"       → health_query comprehensive
   用户问"为什么 / 和 X 有关系吗 / 要不要调整" → health_analysis
 
 当涉及跨领域 (睡眠 × 运动 × 饮食) 或要给建议时, 优先 analysis.
@@ -412,9 +463,16 @@ goal: {"title":"每日快走 30 分钟","status":"paused","notes":"膝盖恢复�
                 "properties": {
                     "analysis_type": {
                         "type": "string",
-                        "enum": ["comprehensive", "sleep_insight", "heart_rate_insight",
-                                 "recovery_status", "risk_factors", "trend",
-                                 "supplement_effectiveness", "orchestrator"],
+                        "enum": [
+                            "comprehensive",
+                            "sleep_insight",
+                            "heart_rate_insight",
+                            "recovery_status",
+                            "risk_factors",
+                            "trend",
+                            "supplement_effectiveness",
+                            "orchestrator",
+                        ],
                         "description": """分析类型:
 - comprehensive: 综合健康分析 (多维度联合 insight, 不确定选这个)
 - sleep_insight: 睡眠深度洞察 (阶段分布 + 质量评估)
@@ -453,7 +511,12 @@ goal: {"title":"每日快走 30 分钟","status":"paused","notes":"膝盖恢复�
                 "properties": {
                     "check_type": {
                         "type": "string",
-                        "enum": ["weather", "forecast", "air_quality", "outdoor_suitability"],
+                        "enum": [
+                            "weather",
+                            "forecast",
+                            "air_quality",
+                            "outdoor_suitability",
+                        ],
                         "description": "查询类型；明天或未来几天天气使用 forecast。",
                     },
                     "city": {
@@ -751,7 +814,7 @@ action 选择:
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "检索关键词,如\"脂肪肝管理\"\"红细胞增多 鉴别\"",
+                        "description": '检索关键词,如"脂肪肝管理""红细胞增多 鉴别"',
                     },
                     "n_results": {
                         "type": "integer",
@@ -825,7 +888,12 @@ action 选择:
                 "properties": {
                     "kind": {
                         "type": "string",
-                        "enum": ["text_to_image", "image_to_image", "text_to_video", "image_to_video"],
+                        "enum": [
+                            "text_to_image",
+                            "image_to_image",
+                            "text_to_video",
+                            "image_to_video",
+                        ],
                         "description": "生成类型。当前消息含图片时可选 image_to_image/image_to_video。",
                     },
                     "prompt": {
@@ -834,7 +902,13 @@ action 选择:
                     },
                     "purpose": {
                         "type": "string",
-                        "enum": ["meal_visual", "movement_routine", "hydration_reminder", "sleep_routine", "wellness_story"],
+                        "enum": [
+                            "meal_visual",
+                            "movement_routine",
+                            "hydration_reminder",
+                            "sleep_routine",
+                            "wellness_story",
+                        ],
                         "description": "健康行动沟通用途，用于服务端安全边界。",
                     },
                     "duration_seconds": {
@@ -899,8 +973,10 @@ def get_health_tools(subset: Optional[List[str]] = None) -> List[Dict[str, Any]]
         return [t for t in HEALTH_TOOLS if t["function"]["name"] in wanted]
     try:
         from app.config import settings
+
         if getattr(settings, "agent_specialist_tools", False):
             from app.services.specialist_tools import specialist_tool_schemas
+
             return HEALTH_TOOLS + specialist_tool_schemas()
     except Exception:  # noqa: BLE001 — 配置/导入异常不应影响主链路
         pass

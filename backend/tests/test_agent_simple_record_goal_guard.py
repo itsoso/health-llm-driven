@@ -490,6 +490,29 @@ def test_diet_goal_builds_deterministic_write_when_model_omits_tool_call():
     }
 
 
+def test_illness_goal_builds_deterministic_write_when_model_omits_tool_call():
+    goal = GoalSpec(
+        kind="simple_health_record",
+        domain="illness",
+        operation="create",
+        target_record_type="illness",
+        target_values=(("name", "SLE"),),
+        requires_verification=True,
+    )
+
+    tool_call = _build_deterministic_simple_record_tool_call(
+        goal,
+        write_receipts=[],
+    )
+
+    assert tool_call is not None
+    assert tool_call["function"]["name"] == "health_record"
+    assert json.loads(tool_call["function"]["arguments"]) == {
+        "record_type": "illness",
+        "data": {"name": "SLE"},
+    }
+
+
 @pytest.mark.asyncio
 async def test_diet_goal_server_fills_missing_nutrition_without_changing_food(
     monkeypatch,

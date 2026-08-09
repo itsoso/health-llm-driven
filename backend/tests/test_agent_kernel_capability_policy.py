@@ -4347,9 +4347,9 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v30"
+    assert payload["contract_version"] == "agent-capability-policy-v31"
     assert payload["health_record_target_binding"] == {
-        "version": "authorized-target-set-v26",
+        "version": "authorized-target-set-v27",
         "domain_types": {
             "diet": "diet",
             "exercise": "exercise",
@@ -4366,7 +4366,7 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
         payload["whole_record_delete_evidence_version"] == "record-delete-evidence-v2"
     )
     assert (
-        payload["health_manage_update_evidence_version"] == "record-update-evidence-v21"
+        payload["health_manage_update_evidence_version"] == "record-update-evidence-v22"
     )
     assert payload["known_tools"]
     assert payload["recipe_record_types"]

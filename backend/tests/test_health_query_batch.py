@@ -12,6 +12,7 @@
 
 fail-loud / 只读契约见 services/health_query_batch.py 顶部 docstring。
 """
+
 import json
 from datetime import date, timedelta
 
@@ -31,7 +32,9 @@ def make_fetch(table):
             return table[(dimension, days)]
         if dimension in table:
             return table[dimension]
-        return hqb.BatchFetchResult(series=[], raw=f"{dimension}: no data", aggregatable=True)
+        return hqb.BatchFetchResult(
+            series=[], raw=f"{dimension}: no data", aggregatable=True
+        )
 
     return _fetch
 
@@ -44,7 +47,9 @@ def test_batch_tool_description_does_not_claim_unrepresentable_calendar_windows(
     from app.services.tool_schema_registry import HEALTH_TOOLS
 
     tool = next(
-        item for item in HEALTH_TOOLS if item["function"]["name"] == "health_query_batch"
+        item
+        for item in HEALTH_TOOLS
+        if item["function"]["name"] == "health_query_batch"
     )
     description = tool["function"]["description"]
 
@@ -68,13 +73,43 @@ def test_single_query_tool_description_does_not_claim_calendar_days_aliases():
     assert "不能表达昨天/上周/去年" in days_description
 
 
+def test_query_schema_describes_only_rolling_upload_and_batch_windows():
+    from app.services.tool_schema_registry import HEALTH_TOOLS
+
+    single = next(
+        item for item in HEALTH_TOOLS if item["function"]["name"] == "health_query"
+    )
+    batch = next(
+        item
+        for item in HEALTH_TOOLS
+        if item["function"]["name"] == "health_query_batch"
+    )
+    uploaded_days = single["function"]["parameters"]["properties"]["uploaded_days"][
+        "description"
+    ]
+    single_properties = single["function"]["parameters"]["properties"]
+    batch_description = batch["function"]["description"]
+
+    assert "昨天上传=1" not in uploaded_days
+    assert "最近 N×24 小时" in uploaded_days
+    assert "uploaded_since" not in single_properties
+    assert "这周" not in batch_description
+    assert "本周" not in batch_description
+
+
 # ── 1. 多维度正例 ────────────────────────────────────────────────────────────
 @pytest.mark.asyncio
 async def test_multi_metric_positive():
     table = {
-        ("hrv", 7): hqb.BatchFetchResult(series=[50, 60, 70], unit="ms", aggregatable=True),
-        ("sleep", 7): hqb.BatchFetchResult(series=[70, 72, 80], unit="", aggregatable=True),
-        ("activity", 7): hqb.BatchFetchResult(series=[8000, 9000, 10000], unit="", aggregatable=True),
+        ("hrv", 7): hqb.BatchFetchResult(
+            series=[50, 60, 70], unit="ms", aggregatable=True
+        ),
+        ("sleep", 7): hqb.BatchFetchResult(
+            series=[70, 72, 80], unit="", aggregatable=True
+        ),
+        ("activity", 7): hqb.BatchFetchResult(
+            series=[8000, 9000, 10000], unit="", aggregatable=True
+        ),
     }
     plan = {
         "queries": [
@@ -87,7 +122,14 @@ async def test_multi_metric_positive():
     data = json.loads(out)
     q = data["queries"]
     assert len(q) == 3
-    assert q[0] == {"dimension": "hrv", "days": 7, "agg": "avg", "value": 60, "unit": "ms", "n": 3}
+    assert q[0] == {
+        "dimension": "hrv",
+        "days": 7,
+        "agg": "avg",
+        "value": 60,
+        "unit": "ms",
+        "n": 3,
+    }
     assert q[1]["agg"] == "trend" and q[1]["value"] == 10  # 80 - 70 首尾差
     assert q[2]["agg"] == "max" and q[2]["value"] == 10000
     assert data["meta"] == {"executed": 3, "failed": 0}
@@ -148,8 +190,12 @@ async def test_too_many_queries_fails_loud():
 @pytest.mark.asyncio
 async def test_compare_diff():
     table = {
-        ("hrv", 7): hqb.BatchFetchResult(series=[60, 60, 60], unit="ms", aggregatable=True),
-        ("hrv", 14): hqb.BatchFetchResult(series=[50, 50, 50], unit="ms", aggregatable=True),
+        ("hrv", 7): hqb.BatchFetchResult(
+            series=[60, 60, 60], unit="ms", aggregatable=True
+        ),
+        ("hrv", 14): hqb.BatchFetchResult(
+            series=[50, 50, 50], unit="ms", aggregatable=True
+        ),
     }
     plan = {
         "queries": [
@@ -158,15 +204,21 @@ async def test_compare_diff():
         ],
         "compare": {"a": 0, "b": 1, "op": "diff"},
     }
-    data = json.loads(await hqb.execute_batch(plan, make_fetch(table), valid_dimensions=VALID))
+    data = json.loads(
+        await hqb.execute_batch(plan, make_fetch(table), valid_dimensions=VALID)
+    )
     assert data["compare"] == {"a": 0, "b": 1, "op": "diff", "value": 10, "unit": "ms"}
 
 
 @pytest.mark.asyncio
 async def test_compare_ratio():
     table = {
-        ("activity", 7): hqb.BatchFetchResult(series=[10000], unit="", aggregatable=True),
-        ("activity", 30): hqb.BatchFetchResult(series=[8000], unit="", aggregatable=True),
+        ("activity", 7): hqb.BatchFetchResult(
+            series=[10000], unit="", aggregatable=True
+        ),
+        ("activity", 30): hqb.BatchFetchResult(
+            series=[8000], unit="", aggregatable=True
+        ),
     }
     plan = {
         "queries": [
@@ -175,7 +227,9 @@ async def test_compare_ratio():
         ],
         "compare": {"a": 0, "b": 1, "op": "ratio"},
     }
-    data = json.loads(await hqb.execute_batch(plan, make_fetch(table), valid_dimensions=VALID))
+    data = json.loads(
+        await hqb.execute_batch(plan, make_fetch(table), valid_dimensions=VALID)
+    )
     assert data["compare"]["op"] == "ratio"
     assert data["compare"]["value"] == 1.25  # 10000 / 8000
 
@@ -203,7 +257,9 @@ async def test_compare_ratio_divide_by_zero_is_note_not_crash():
         ],
         "compare": {"a": 0, "b": 1, "op": "ratio"},
     }
-    data = json.loads(await hqb.execute_batch(plan, make_fetch(table), valid_dimensions=VALID))
+    data = json.loads(
+        await hqb.execute_batch(plan, make_fetch(table), valid_dimensions=VALID)
+    )
     assert data["compare"]["value"] is None
     assert "0" in data["compare"]["note"]
 
@@ -243,7 +299,9 @@ async def test_alias_dimension_and_time_range_normalized():
 
     async def _fetch(dimension, days):
         captured.append((dimension, days))
-        return hqb.BatchFetchResult(series=[], raw=f"{dimension} raw", aggregatable=False)
+        return hqb.BatchFetchResult(
+            series=[], raw=f"{dimension} raw", aggregatable=False
+        )
 
     plan = {
         "queries": [
@@ -291,7 +349,9 @@ async def test_non_aggregatable_dimension_with_agg_gets_note():
         ),
     }
     plan = {"queries": [{"dimension": "diet", "days": 1, "agg": "avg"}]}
-    data = json.loads(await hqb.execute_batch(plan, make_fetch(table), valid_dimensions=VALID))
+    data = json.loads(
+        await hqb.execute_batch(plan, make_fetch(table), valid_dimensions=VALID)
+    )
     entry = data["queries"][0]
     assert entry["value"] is None
     assert "不支持数值聚合" in entry["note"]
@@ -350,10 +410,27 @@ def test_build_wearable_series_real_rows_ascending(db, batch_user):
     # 三天 HRV, 乱序插入 + 多源 (apple-watch 优先) —— 期望按日升序合并成 [50, 55, 60]。
     db.add_all(
         [
-            GarminData(user_id=batch_user.id, record_date=today, data_source="apple-watch", hrv=60.0),
-            GarminData(user_id=batch_user.id, record_date=today, data_source="garmin", hrv=None),
-            GarminData(user_id=batch_user.id, record_date=today - timedelta(days=2), data_source="garmin", hrv=50.0),
-            GarminData(user_id=batch_user.id, record_date=today - timedelta(days=1), data_source="garmin", hrv=55.0),
+            GarminData(
+                user_id=batch_user.id,
+                record_date=today,
+                data_source="apple-watch",
+                hrv=60.0,
+            ),
+            GarminData(
+                user_id=batch_user.id, record_date=today, data_source="garmin", hrv=None
+            ),
+            GarminData(
+                user_id=batch_user.id,
+                record_date=today - timedelta(days=2),
+                data_source="garmin",
+                hrv=50.0,
+            ),
+            GarminData(
+                user_id=batch_user.id,
+                record_date=today - timedelta(days=1),
+                data_source="garmin",
+                hrv=55.0,
+            ),
         ]
     )
     db.commit()
@@ -364,7 +441,9 @@ def test_build_wearable_series_real_rows_ascending(db, batch_user):
     assert "hrv" in raw
 
     # activity(步数)列全空 → 空序列 + note, 不抛 (rows 存在但该列均 None)。
-    empty_series, _, empty_raw = hqb.build_wearable_series(db, batch_user.id, "activity", 7)
+    empty_series, _, empty_raw = hqb.build_wearable_series(
+        db, batch_user.id, "activity", 7
+    )
     assert empty_series == []
     assert "无可穿戴数据" in empty_raw or "均为空" in empty_raw
 

@@ -19,7 +19,10 @@ from app.services.agent_kernel.types import (
     IntentFrame,
 )
 from app.services.agent_kernel.write_safety import is_explicit_write_cancellation
-from app.services.write_intent_scope import has_mixed_write_polarity
+from app.services.write_intent_scope import (
+    authorized_health_record_clauses,
+    has_mixed_write_polarity,
+)
 
 
 MEAL_SIGNALS = {
@@ -98,6 +101,18 @@ OTHER_RECORD_SIGNALS = {
     "exercise": ("运动", "跑步", "训练"),
     "sleep": ("睡觉", "入睡", "起床"),
 }
+SIMPLE_ILLNESS_CREATE_RE = re.compile(
+    r"^(?:请)?(?:(?:帮|替|给)我)?"
+    r"(?:记录|记下|记一下|新增|录入|保存|写入)(?:一下)?(?:一条|一个)?"
+    r"(?:我的)?疾病(?P<name>.+)$",
+    re.IGNORECASE,
+)
+SIMPLE_ILLNESS_NAME_RE = re.compile(
+    r"(?:[a-z][a-z0-9-]{1,15}|"
+    r"[\u4e00-\u9fff][\u4e00-\u9fff0-9·+_-]{0,39})",
+    re.IGNORECASE,
+)
+SIMPLE_ILLNESS_ACRONYMS = frozenset({"sle"})
 
 
 def compile_goal_spec(
@@ -243,7 +258,13 @@ def _compile_simple_health_record_goal(
         return None
 
     target_values: tuple[tuple[str, str], ...] = ()
-    if intent.domain == "water" and _has_any(text, WATER_SIGNALS):
+    goal_domain = intent.domain
+    illness_target = _simple_illness_target(envelope.text)
+    if illness_target is not None:
+        record_type = "illness"
+        goal_domain = "illness"
+        target_values = (("name", illness_target),)
+    elif intent.domain == "water" and _has_any(text, WATER_SIGNALS):
         amount_ml = _water_amount_ml(text)
         if amount_ml is None:
             return None
@@ -274,7 +295,7 @@ def _compile_simple_health_record_goal(
     )
     return GoalSpec(
         kind="simple_health_record",
-        domain=intent.domain,
+        domain=goal_domain,
         operation="create",
         target_date=_target_date(text, context, ()),
         target_meal_types=target_meal_types,
@@ -284,6 +305,35 @@ def _compile_simple_health_record_goal(
         prohibited_operations=("update", "delete"),
         postconditions=("verified_receipt",),
         evidence=("current_user_turn",),
+    )
+
+
+def _simple_illness_target(text: str) -> str | None:
+    """Extract one exact user-owned target from an explicit disease label."""
+    clauses = authorized_health_record_clauses(text)
+    if len(clauses) != 1:
+        return None
+    match = SIMPLE_ILLNESS_CREATE_RE.fullmatch(clauses[0])
+    if match is None:
+        return None
+    candidate = match.group("name").strip("的了，,。.!！；;：: ")
+    parenthetical = re.fullmatch(
+        r"(?P<acronym>[a-z][a-z0-9-]{1,15})"
+        r"(?:\([^()（）]{1,80}\)|（[^()（）]{1,80}）)",
+        candidate,
+        re.IGNORECASE,
+    )
+    if parenthetical is not None:
+        acronym = parenthetical.group("acronym").casefold()
+        if acronym not in SIMPLE_ILLNESS_ACRONYMS:
+            return None
+        return acronym.upper()
+    if SIMPLE_ILLNESS_NAME_RE.fullmatch(candidate) is None:
+        return None
+    return (
+        candidate.upper()
+        if candidate.casefold() in SIMPLE_ILLNESS_ACRONYMS
+        else candidate
     )
 
 
@@ -378,6 +428,8 @@ def _format_simple_health_record_prompt(goal: GoalSpec) -> str:
             "- 饮食估算: 根据上述食物和份量给出合理估算，写入时必须同时包含 "
             "calories/protein/carbs/fat/fiber；不得以 0 或缺失营养值冒充完成。\n"
         )
+    elif goal.target_record_type == "illness" and values.get("name"):
+        payload = f"，name={values['name']}"
     else:
         payload = ""
     return (

@@ -113,6 +113,7 @@ from app.services.agent_kernel.capability_policy import (
     bind_server_authorized_health_record_fields,
     canonical_health_manage_record_id,
     canonical_health_manage_record_type,
+    decide_tool_capability,
 )
 
 logger = logging.getLogger(__name__)
@@ -3740,12 +3741,37 @@ def _write_rejection_with_receipt_context(
 _READ_DEDUP_ENABLED = True
 
 
-def _read_operation_fingerprint(tool_name: str, parsed_args: Dict[str, Any]) -> str:
+def _read_operation_fingerprint(
+    tool_name: str,
+    parsed_args: Dict[str, Any],
+    *,
+    snapshot: Optional[TurnSnapshot] = None,
+) -> str:
     """只读工具去重指纹。单条 health_query 先归一以合并同义调用。
 
     health_query_batch 用自己的嵌套 plan 归一器：保留完整语义结构，同时让
     dimension/type、time_range/days 等等价别名收敛到同一指纹。
     """
+    if snapshot is not None:
+        try:
+            decision = decide_tool_capability(
+                snapshot,
+                ToolExecutionRequest(
+                    tool_name=tool_name,
+                    arguments=parsed_args,
+                    source="structured",
+                ),
+            )
+            if decision.action == "allow":
+                tool_name = decision.normalized_tool_name or tool_name
+                parsed_args = decision.normalized_args
+        except Exception as exc:  # noqa: BLE001 - raw fingerprint remains fail-safe
+            logger.warning(
+                "[agent_executor] read fingerprint semantic projection failed "
+                "tool=%s error=%s",
+                tool_name,
+                type(exc).__name__,
+            )
     if tool_name == "health_query":
         try:
             parsed_args = _normalize_health_query_args(parsed_args)
@@ -3769,7 +3795,12 @@ def _tool_call_is_read_only(tool_name: str, parsed_args: Dict[str, Any]) -> bool
         return False
 
 
-def _is_seen_readonly_call(tc: Dict[str, Any], seen_read_fps: Dict[str, Any]) -> bool:
+def _is_seen_readonly_call(
+    tc: Dict[str, Any],
+    seen_read_fps: Dict[str, Any],
+    *,
+    snapshot: Optional[TurnSnapshot] = None,
+) -> bool:
     """本轮 tool_call 是否是"本回合已跑过"的只读调用(收敛护栏用: 全是则强制进合成停 loop)。"""
     fn = tc.get("function") or {}
     name = fn.get("name")
@@ -3780,7 +3811,7 @@ def _is_seen_readonly_call(tc: Dict[str, Any], seen_read_fps: Dict[str, Any]) ->
         return False
     if not _tool_call_is_read_only(name, args):
         return False
-    return _read_operation_fingerprint(name, args) in seen_read_fps
+    return _read_operation_fingerprint(name, args, snapshot=snapshot) in seen_read_fps
 
 
 def _receipt_resource_identity(payload: Dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
@@ -6906,6 +6937,14 @@ def _simple_record_goal_arguments(
                 "food_items": food_items[:1000],
                 "source": "agent_text",
             },
+        }
+    if goal.target_record_type == "illness":
+        name = str(values.get("name") or "").strip()
+        if not name or len(name) > 80:
+            return None
+        return {
+            "record_type": "illness",
+            "data": {"name": name},
         }
     return None
 
@@ -12423,7 +12462,11 @@ class AgentExecutor:
                         _READ_DEDUP_ENABLED
                         and bool(tool_calls)
                         and all(
-                            _is_seen_readonly_call(tc, read_results_by_fingerprint)
+                            _is_seen_readonly_call(
+                                tc,
+                                read_results_by_fingerprint,
+                                snapshot=self._agent_kernel_snapshot,
+                            )
                             for tc in tool_calls
                         )
                     )
@@ -12516,7 +12559,11 @@ class AgentExecutor:
                             )
                         )
                         read_fingerprint = (
-                            _read_operation_fingerprint(func_name, parsed_tool_args)
+                            _read_operation_fingerprint(
+                                func_name,
+                                parsed_tool_args,
+                                snapshot=self._agent_kernel_snapshot,
+                            )
                             if read_attempted else None
                         )
                         replayed_read = bool(

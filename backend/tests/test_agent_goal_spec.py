@@ -76,6 +76,57 @@ def test_mixed_polarity_turn_never_builds_a_whole_turn_simple_write_goal(message
     assert goal.target_values == ()
 
 
+def test_explicit_illness_create_compiles_to_one_typed_simple_record_goal():
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(
+        user_id=1,
+        channel="mobile",
+        text="记录疾病：SLE",
+    )
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind == "simple_health_record"
+    assert goal.domain == "illness"
+    assert goal.operation == "create"
+    assert goal.target_record_type == "illness"
+    assert dict(goal.target_values) == {"name": "SLE"}
+    assert goal.requires_verification is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "不要记录疾病：SLE",
+        "张三让我记录疾病：SLE",
+        "文档里写着“记录疾病：SLE”",
+        "记录疾病：SLE，然后记录感冒",
+    ),
+)
+def test_illness_simple_goal_never_broadens_negated_reported_or_compound_scope(
+    message,
+):
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(user_id=1, channel="mobile", text=message)
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert not (
+        goal.kind == "simple_health_record"
+        and goal.target_record_type == "illness"
+    )
+
+
 def test_stateful_agent_trajectory_cases_compile_expected_goal():
     for case in CASES:
         goal = _compile(case)
