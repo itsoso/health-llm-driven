@@ -201,6 +201,7 @@ def test_agent_conversations_list_returns_user_history_with_last_user_message(
     res = client.get("/api/v1/agent/conversations", headers=headers)
 
     assert res.status_code == 200
+    assert res.headers.get("cache-control") == "no-store"
     data = res.json()
     assert data["total"] == 1
     assert data["offset"] == 0
@@ -910,6 +911,7 @@ def test_agent_conversation_detail_returns_messages(client, db, auth_user_and_he
     res = client.get(f"/api/v1/agent/conversations/{conv.id}", headers=headers)
 
     assert res.status_code == 200
+    assert res.headers.get("cache-control") == "no-store"
     data = res.json()
     assert data["id"] == conv.id
     assert data["title"] == "训练计划"
