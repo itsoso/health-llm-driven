@@ -2551,6 +2551,7 @@ def test_update_turn_blocks_health_manage_delete_with_receipt():
         "把饮水记录718改成350ml",
         "把饮水记录718：300ml改成350ml",
         "请把饮水记录718（300ml）修改为350ml",
+        "请把我的饮水记录718改成350ml",
         "麻烦帮我把刚才300ml改成350ml",
         "请你帮我把刚才300ml改成350ml",
     ),
@@ -2944,6 +2945,133 @@ def test_negated_illness_recovery_requires_clarification_instead_of_guessing(
                 "operation": "update",
                 "record_id": 71,
                 "data": data,
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "update_requires_exact_target_evidence"
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    (
+        "并非好转",
+        "不算好转",
+        "毫无好转",
+        "好转但今天加重了",
+        "好了又发作了",
+        "痊愈后今天复发",
+    ),
+)
+@pytest.mark.parametrize("status", ("active", "improving", "resolved"))
+def test_negated_worsening_or_recurrent_illness_never_compiles_a_patch(
+    phrase,
+    status,
+):
+    snapshot = replace(
+        _snapshot(f"舌尖溃疡昨天{phrase}，修改记录"),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "illness",
+                    "records": (
+                        {"id": 71, "name": "舌尖溃疡", "status": "active"},
+                    ),
+                },
+            ),
+        ),
+    )
+    data = {"status": status}
+    if status == "resolved":
+        data["end_date"] = "2026-07-16"
+
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "illness",
+                "operation": "update",
+                "record_id": 71,
+                "data": data,
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "update_requires_exact_target_evidence"
+
+
+def test_clear_active_illness_state_remains_a_supported_update():
+    snapshot = replace(
+        _snapshot("舌尖溃疡还没好，修改记录"),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "illness",
+                    "records": (
+                        {"id": 71, "name": "舌尖溃疡", "status": "improving"},
+                    ),
+                },
+            ),
+        ),
+    )
+
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "illness",
+                "operation": "update",
+                "record_id": 71,
+                "data": {"status": "active"},
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args["data"] == {"status": "active"}
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "舌尖溃疡记录999昨天好了，修改记录",
+        "舌尖溃疡条目999昨天好了，修改记录",
+        "舌尖溃疡的疾病记录999昨天好了，修改记录",
+    ),
+)
+def test_visible_illness_record_id_cannot_fall_back_to_a_different_named_record(
+    message,
+):
+    snapshot = replace(
+        _snapshot(message),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "illness",
+                    "records": (
+                        {"id": 71, "name": "舌尖溃疡", "status": "active"},
+                    ),
+                },
+            ),
+        ),
+    )
+
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "illness",
+                "operation": "update",
+                "record_id": 71,
+                "data": {"status": "improving"},
             },
         ),
     )
@@ -4045,9 +4173,9 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v16"
+    assert payload["contract_version"] == "agent-capability-policy-v17"
     assert payload["health_record_target_binding"] == {
-        "version": "authorized-target-set-v12",
+        "version": "authorized-target-set-v13",
         "domain_types": {
             "diet": "diet",
             "exercise": "exercise",
@@ -4066,7 +4194,7 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
     )
     assert (
         payload["health_manage_update_evidence_version"]
-        == "record-update-evidence-v7"
+        == "record-update-evidence-v8"
     )
     assert payload["known_tools"]
     assert payload["recipe_record_types"]

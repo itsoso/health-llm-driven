@@ -522,6 +522,33 @@ validation and no-match honesty address those risks.
   by the deterministic gate. Strict automatic tool mode passed; forced
   `tool_choice` returned endpoint `400 invalid_parameter_error`, an endpoint
   limitation rather than a model or product inference failure.
+- Fresh exact-commit code and safety reviews of `f4f8bde35` both returned
+  NO-GO, so it was not pushed or deployed. Through the real Gateway and
+  Executor in both policy modes they reproduced: visible illness record IDs
+  falling back to a different named owner record; negated, worsening and
+  recurrent illness being persisted as recovery; a write verb erasing a named
+  event owner; message and parenthetical-trip provenance reaching event POST;
+  negated water values or a correction back to the persisted value reaching
+  PUT; and false denial of `我的饮水记录`, clear active illness, and Chinese
+  arrival-time forms.
+- The next remediation versions the boundary as
+  `agent-capability-policy-v17` / `authorized-target-set-v13` /
+  `record-update-evidence-v8`. Visible identity is checked before name fallback.
+  Illness state uses an ordered closed compiler: relapse/worsening and
+  contradiction precede recovery, while an exact `还没好` remains a supported
+  active state. Event parsing removes only the request/action scaffold and then
+  resolves the remaining subject; external provenance and parenthetical owner
+  transfer govern the entire semantic segment. Water correction syntax now
+  distinguishes `不，是…` from `不是…`, and a final value equal to the verified
+  persisted amount is a non-dispatched no-op. Current-user possessives and
+  Chinese time-of-day/numeral clocks remain positive controls.
+- Failure-first coverage reproduced 39 review findings before implementation.
+  The post-remediation policy/Gateway/scope group passes 1,848/1,848 tests;
+  adjacent intent/write groups pass 842/842; and the final single-process
+  integration aggregate passes 4,006/4,006 Backend tests in 172.72 seconds on
+  the production `Asia/Shanghai` calendar basis. Targeted Ruff, Python
+  compilation and `git diff --check` pass. Repository structural gates and two
+  fresh reviews of the next exact SHA remain mandatory.
 
 ### G4 Safety Review: PENDING
 
@@ -849,6 +876,24 @@ both supported; third-party, quotation, provenance, revocation and ambiguous
 target frames cannot satisfy the positive grammar. Illness and lifecycle-event
 state are compiled separately from the tool proposal. A new exact commit and
 two fresh independent reviews of that SHA are mandatory before G4 may pass.
+
+Fresh code and safety reviews of exact commit `f4f8bde35` both returned NO-GO,
+so push and deployment again remained stopped. Both reviewers used the real
+Executor/Gateway with fake local adapters and no production data. Their
+findings crossed four authority relations rather than isolated wording:
+explicit identity could lose to name fallback; negative/contradictory disease
+state could lose to a positive substring; a write verb or later sourced text
+could grant event ownership; and correction syntax could turn a denial or
+return-to-current-value into a mutation. They also found legitimate current-
+user possessive, active-state and Chinese-time expressions were over-blocked.
+
+The v17 remediation gives each relation one deterministic owner. User-visible
+record IDs are authoritative constraints; the disease state compiler has
+priority-ordered terminal outcomes; event subject/provenance is evaluated over
+the whole semantic segment after removing only action scaffolding; and water
+correction compiles a unique changed value or no mutation at all. The clean
+4,006-test G3 aggregate is green. A new exact commit and two fresh independent
+reviews are mandatory; neither prior NO-GO can be reused.
 
 ### G5 Deployment Health: PENDING
 

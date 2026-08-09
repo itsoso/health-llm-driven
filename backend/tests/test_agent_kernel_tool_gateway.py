@@ -1690,6 +1690,7 @@ async def test_executor_water_correction_dispatches_only_final_value(
     (
         "把刚才300ml改成350ml",
         "请把饮水记录718（300ml）修改为350ml",
+        "请把我的饮水记录718改成350ml",
     ),
 )
 async def test_executor_direct_water_update_syntax_dispatches_canonical_value(
@@ -1742,15 +1743,84 @@ async def test_executor_direct_water_update_syntax_dispatches_canonical_value(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
-async def test_executor_negated_illness_recovery_never_reaches_real_put(
+@pytest.mark.parametrize(
+    ("message", "proposed_amount"),
+    (
+        ("把刚才300ml改成350ml，不是400ml", 400),
+        ("把刚才300ml改成350ml，不，是300ml", 300),
+    ),
+)
+async def test_executor_negated_or_noop_water_correction_never_reaches_real_put(
     db,
     monkeypatch,
     policy_mode,
+    message,
+    proposed_amount,
 ):
     executor = AgentExecutor(db)
     executor._current_user_id = 1
     executor._turn_channel = "typed"
-    executor._current_turn_user_message = "舌尖溃疡昨天并没有好转，修改记录"
+    executor._current_turn_user_message = message
+    calls = []
+
+    async def fake_get(url, _headers):
+        calls.append(("GET", url, None))
+        return '[{"id": 718, "amount": 300}]'
+
+    async def fake_put(url, _headers, payload):
+        calls.append(("PUT", url, payload))
+        return "unexpected"
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_kernel_policy_mode",
+        policy_mode,
+    )
+    monkeypatch.setattr(executor, "_api_get", fake_get)
+    monkeypatch.setattr(executor, "_api_put", fake_put)
+
+    await executor._execute_tool(
+        "health_manage",
+        {"record_type": "water", "operation": "list"},
+        "test-token",
+    )
+    result = await executor._execute_tool(
+        "health_manage",
+        {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": {"amount": proposed_amount},
+        },
+        "test-token",
+    )
+
+    assert [method for method, _url, _payload in calls] == ["GET"]
+    assert json.loads(result)["dispatch_started"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "舌尖溃疡昨天并没有好转，修改记录",
+        "舌尖溃疡昨天并非好转，修改记录",
+        "舌尖溃疡昨天好转但今天加重了，修改记录",
+        "舌尖溃疡昨天好了又发作了，修改记录",
+        "舌尖溃疡昨天痊愈后今天复发，修改记录",
+        "舌尖溃疡记录999昨天好了，修改记录",
+    ),
+)
+async def test_executor_unauthorized_or_ambiguous_illness_update_never_reaches_real_put(
+    db,
+    monkeypatch,
+    policy_mode,
+    message,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_channel = "typed"
+    executor._current_turn_user_message = message
     calls = []
 
     async def fake_exec(_base, _headers, arguments):
@@ -1790,6 +1860,55 @@ async def test_executor_negated_illness_recovery_never_reaches_real_put(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+async def test_executor_clear_active_illness_update_reaches_real_adapter(
+    db,
+    monkeypatch,
+    policy_mode,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_channel = "typed"
+    executor._current_turn_user_message = "舌尖溃疡还没好，修改记录"
+    calls = []
+
+    async def fake_exec(_base, _headers, arguments):
+        calls.append(arguments)
+        if arguments["operation"] == "list":
+            return json.dumps(
+                [{"id": 71, "name": "舌尖溃疡", "status": "improving"}],
+                ensure_ascii=False,
+            )
+        return json.dumps({"id": 71, "status": "active"}, ensure_ascii=False)
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_kernel_policy_mode",
+        policy_mode,
+    )
+    monkeypatch.setattr(executor, "_exec_health_manage", fake_exec)
+
+    await executor._execute_tool(
+        "health_manage",
+        {"record_type": "illness", "operation": "list"},
+        "test-token",
+    )
+    result = await executor._execute_tool(
+        "health_manage",
+        {
+            "record_type": "illness",
+            "operation": "update",
+            "record_id": 71,
+            "data": {"status": "active"},
+        },
+        "test-token",
+    )
+
+    assert [call["operation"] for call in calls] == ["list", "update"]
+    assert calls[-1]["data"] == {"status": "active"}
+    assert json.loads(result)["status"] == "active"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
 @pytest.mark.parametrize(
     "message",
     (
@@ -1801,6 +1920,9 @@ async def test_executor_negated_illness_recovery_never_reaches_real_put(
         "老婆发来消息：到杭州了",
         "群消息：到杭州了",
         "日志23:45，到杭州了",
+        "记录小明到杭州了，记录生活事件：到达杭州",
+        "今天到杭州了（这是小明的行程），记录生活事件：到达杭州",
+        "今天到杭州了，来自群消息，记录生活事件：到达杭州",
     ),
 )
 async def test_executor_metalinguistic_event_never_reaches_real_event_post(
@@ -2025,6 +2147,21 @@ async def test_gateway_explicit_update_id_without_owner_candidate_never_dispatch
             {"title": "到达杭州"},
         ),
         (
+            "昨天下午三点到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {"title": "到达杭州"},
+        ),
+        (
+            "今天凌晨到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {"title": "到达杭州"},
+        ),
+        (
+            "今天傍晚到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {"title": "到达杭州"},
+        ),
+        (
             "记录跑步30分钟5公里",
             {
                 "record_type": "exercise",
@@ -2155,6 +2292,24 @@ async def test_gateway_dispatches_supported_family_canonical_projection(
         ),
         (
             "昨天早上到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {"title": "到达杭州"},
+        ),
+        (
+            "昨天下午三点到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {"title": "到达杭州"},
+        ),
+        (
+            "今天凌晨到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {"title": "到达杭州"},
+        ),
+        (
+            "今天傍晚到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             "/episodes/life-event",
             {"title": "到达杭州"},

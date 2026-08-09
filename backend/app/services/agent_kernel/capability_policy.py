@@ -64,9 +64,9 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v16"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v12"
-_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v7"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v17"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v13"
+_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v8"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = (
     "_server_authorized_health_record_fields"
 )
@@ -170,9 +170,17 @@ _ILLNESS_TARGET_TERMS = (
     "痘痘发作",
 )
 _NEGATED_ILLNESS_RECOVERY_RE = re.compile(
-    r"(?:(?:并|还|仍|目前|其实|实际上)?(?:没有|没|未|并未|还未)"
-    r".{0,4}(?:好转|改善|缓解|康复|痊愈|好))|"
-    r"(?:(?:好了|好转|改善|缓解).{0,8}(?:其实|实际上)?(?:并)?(?:没有|没))"
+    r"(?:(?:并非|并不是|不是|不算|毫无|谈不上|"
+    r"(?:并|还|仍|目前|其实|实际上)?(?:没有|没|未|并未|还未))"
+    r".{0,4}(?:好转|改善|缓解|康复|痊愈|好了?))|"
+    r"(?:(?:好了|好转|改善|缓解|康复|痊愈).{0,8}"
+    r"(?:其实|实际上)?(?:并)?(?:没有|没))"
+)
+_ILLNESS_RELAPSE_OR_WORSENING_RE = re.compile(
+    r"(?:复发|再发|重新发作|又发作|再次发作|加重|恶化|反复)"
+)
+_CLEAR_ACTIVE_ILLNESS_RE = re.compile(
+    r"(?:还在发作中|发作中|还没好|仍未好)(?=[，,。.!！；;]|修改|更新|更正|$)"
 )
 _MEAL_TYPE_ALIASES = {
     "breakfast": "breakfast",
@@ -677,6 +685,10 @@ def _authorized_health_manage_update_args(
     if parsed_values is None:
         return None
     old_amount, new_amount = parsed_values
+    if _numbers_match(new_amount, requested_record.get("amount")):
+        # A correction back to the persisted value is a cancellation/no-op,
+        # not authority to emit a redundant mutation.
+        return None
     data = args.get("data") if isinstance(args.get("data"), dict) else {}
     requested_amount = next(
         (
@@ -750,6 +762,9 @@ def _authorized_illness_update_args(
         str(requested_record.get("name") or ""),
     ):
         return None
+    visible_ids = _explicit_illness_record_ids(snapshot.envelope.text)
+    if visible_ids and visible_ids != {requested_id}:
+        return None
 
     patch = _illness_update_patch(snapshot)
     requested_data = args.get("data")
@@ -795,13 +810,11 @@ def _authorized_illness_update_args(
 def _illness_update_patch(snapshot: TurnSnapshot) -> dict[str, Any] | None:
     text = "".join(str(snapshot.envelope.text or "").split())
     patch: dict[str, Any] = {}
-    if (
-        _NEGATED_ILLNESS_RECOVERY_RE.search(text)
-        or any(
-            marker in text
-            for marker in ("又复发", "复发了", "再次复发", "一度好了又")
-        )
-    ):
+    if _ILLNESS_RELAPSE_OR_WORSENING_RE.search(text):
+        return None
+    if _CLEAR_ACTIVE_ILLNESS_RE.search(text):
+        patch["status"] = "active"
+    elif _NEGATED_ILLNESS_RECOVERY_RE.search(text):
         return None
 
     clear_terminal = any(
@@ -814,20 +827,22 @@ def _illness_update_patch(snapshot: TurnSnapshot) -> dict[str, Any] | None:
         for record in _owner_scoped_manage_list_records(snapshot, "illness")
         if str(record.get("name") or "")
     )
-    partial_recovery = "好了" in text and not clear_terminal
-    if partial_recovery or any(
-        marker in text for marker in ("有所好转", "好转", "改善中", "缓解中")
-    ):
-        patch["status"] = "improving"
-    elif (
-        any(marker in text for marker in ("已痊愈", "痊愈", "康复", "完全好了", "彻底好了"))
-        or clear_terminal
-    ):
-        patch["status"] = "resolved"
-    elif any(marker in text for marker in ("发作中", "还没好", "仍未好")):
-        patch["status"] = "active"
-    else:
-        return None
+    if not patch:
+        partial_recovery = "好了" in text and not clear_terminal
+        if partial_recovery or any(
+            marker in text for marker in ("有所好转", "好转", "改善中", "缓解中")
+        ):
+            patch["status"] = "improving"
+        elif (
+            any(
+                marker in text
+                for marker in ("已痊愈", "痊愈", "康复", "完全好了", "彻底好了")
+            )
+            or clear_terminal
+        ):
+            patch["status"] = "resolved"
+        else:
+            return None
 
     if patch["status"] == "resolved":
         day_offset = next(
@@ -918,6 +933,20 @@ def _explicit_update_target(text: str) -> tuple[str, int] | None:
     if len(mentions) != 1:
         return None
     return mentions[0]
+
+
+def _explicit_illness_record_ids(text: str) -> set[int]:
+    """Return every user-visible generic record ID in an illness update."""
+    normalized = "".join(str(text or "").split())
+    record_ids: set[int] = set()
+    for match in re.finditer(
+        r"(?:疾病)?(?:记录|条目)#?(?P<record_id>\d+)(?!\d)",
+        normalized,
+    ):
+        record_id = canonical_health_manage_record_id(match.group("record_id"))
+        if record_id is not None:
+            record_ids.add(record_id)
+    return record_ids
 
 
 def _illness_update_targets_owner(text: str, record_name: str) -> bool:

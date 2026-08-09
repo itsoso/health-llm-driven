@@ -295,7 +295,8 @@ _CURRENT_USER_SUBJECT_NOISE_RE = re.compile(
     r"(?:(?:\d{4}年)?\d{1,2}月\d{1,2}日|"
     r"\d{4}[-/]\d{1,2}[-/]\d{1,2}|"
     r"今天|今日|刚才|刚刚|方才|现在|目前|早上|早晨|上午|"
-    r"中午|下午|晚上|晚间|昨天|前天|昨晚|今早|这次|上次|上回|"
+    r"中午|下午|晚上|晚间|凌晨|黎明|清晨|傍晚|夜里|夜间|半夜|午夜|"
+    r"昨天|前天|昨晚|今早|这次|上次|上回|"
     r"上一次|以前|既往|过程中|这会儿|这几天|最近几天|"
     r"过去(?:一|二|两|三|四|五|六|七|八|九|十|\d+)天|"
     r"最近(?:一|二|两|三|四|五|六|七|八|九|十|\d+)天|"
@@ -304,6 +305,7 @@ _CURRENT_USER_SUBJECT_NOISE_RE = re.compile(
 )
 _SUBJECT_RELATION_NOISE_RE = re.compile(
     r"(?:\d{1,2}点(?:\d{1,2}分)?|"
+    r"[一二两三四五六七八九十]{1,3}点(?:[一二两三四五六七八九十]{1,3}分)?|"
     r"\d+(?:\.\d+)?(?:kg|公斤|千克|斤|cm|厘米|mmhg|毫米汞柱|ml|毫升)?|"
     r"已经|又|还|正|正在|刚|有点|突然|最近|不是很|不太|比较|特别|很|"
     r"痊愈|康复|好转|恢复|同时|然后|并且|而且|另外|还有|以及|"
@@ -390,6 +392,16 @@ _EVENT_ARRIVAL_FACT_RE = re.compile(
     r"^(?P<subject>.*?)到(?P<place>[\u4e00-\u9fff][^，,。.!！；;：:?？]{0,19})"
     r"(?:了|$)"
 )
+_EVENT_WRITE_SCAFFOLD_RE = re.compile(
+    r"^(?:(?:请|请你|麻烦|麻烦你|帮我|请帮我|请你帮我|麻烦帮我|"
+    r"可以帮我|能帮我|替我|给我|为我|我想|我要|我希望|我需要))?"
+    r"(?:记录|记一下|记下|保存|录入|写入|新增|打卡)(?:一下)?"
+    r"(?:生活事件)?[：:]?"
+)
+_EXTERNAL_PROVENANCE_RE = re.compile(
+    r"(?:来自|来源于|摘自|转自|出自).{0,16}"
+    r"(?:消息|日志|聊天|群聊|群消息|通知|文本|原文|记录)"
+)
 _UPDATE_METALANGUAGE_PREFIX_RE = re.compile(
     r"^(?:以下(?:内容|文字)?(?:是|为)?)?"
     r"(?:原文|原话|例句|例子|引用|转述|假设)(?:如下|是|为)?[:：]?"
@@ -418,15 +430,16 @@ _QUOTE_PAIRS = (
     ("`", "`"),
 )
 _PARENTHETICAL_PAIRS = (("（", "）"), ("(", ")"))
+_UPDATE_CORRECTION_MARKER_PATTERN = (
+    r"(?:(?:哦不|不对|错了|说错了|更正一下|等等|等一下|抱歉)[，,]?|不[，,])"
+)
 _UPDATE_CORRECTION_VALUE_RE = re.compile(
-    r"(?:^|[，,])(?:哦不|不对|错了|说错了|更正一下|等等|等一下|不|抱歉)"
-    r"[，,]?"
+    rf"(?:^|[，,]){_UPDATE_CORRECTION_MARKER_PATTERN}"
     r"(?:应该|应当)?(?:是|为|改成|改为)?"
     r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>ml|毫升|l|升)?"
 )
 _UPDATE_CORRECTION_MARKER_RE = re.compile(
-    r"(?:^|[，,])(?:哦不|不对|错了|说错了|更正一下|等等|等一下|不|抱歉)"
-    r"(?:[，,]|$)"
+    rf"(?:^|[，,]){_UPDATE_CORRECTION_MARKER_PATTERN}(?:$|(?=应该|应当|是|为|改))"
 )
 _WATER_VALUE_TEXT_PATTERN = r"\d+(?:\.\d+)?(?:ml|毫升|l|升)"
 _WATER_CORRECTION_VALUE_TEXT_PATTERN = r"\d+(?:\.\d+)?(?:ml|毫升|l|升)?"
@@ -435,8 +448,10 @@ _CURRENT_USER_UPDATE_PREFIX_PATTERN = (
     r"可以帮我|能帮我|替我|给我|为我|"
     r"我想|我想请你|我要|我希望|我需要))?"
 )
+_CURRENT_USER_RECORD_OWNER_PATTERN = r"(?:(?:我|本人|自己)(?:的)?)?"
 _DIRECT_WATER_UPDATE_RE = re.compile(
     rf"^{_CURRENT_USER_UPDATE_PREFIX_PATTERN}(?:把|将)?"
+    rf"{_CURRENT_USER_RECORD_OWNER_PATTERN}"
     rf"(?:"
     rf"(?:刚才|刚刚|上一条|最近一条)(?:的)?"
     rf"|(?:饮水|water)(?:记录|条目)#?\d+(?:的)?"
@@ -445,18 +460,19 @@ _DIRECT_WATER_UPDATE_RE = re.compile(
     rf"(?:的?(?:饮水量|水量|量))?"
     rf"(?:改成|改为|更正为|修正为|调整为|更新为|修改为|修改成)"
     rf"{_WATER_VALUE_TEXT_PATTERN}"
-    rf"(?:[，,](?:哦不|不对|错了|说错了|更正一下|等等|等一下|不|抱歉)"
-    rf"[，,]?(?:应该|应当)?(?:是|为|改成|改为)?"
+    rf"(?:[，,]{_UPDATE_CORRECTION_MARKER_PATTERN}"
+    rf"(?:应该|应当)?(?:是|为|改成|改为)?"
     rf"{_WATER_CORRECTION_VALUE_TEXT_PATTERN})?$",
     re.IGNORECASE,
 )
 _DIRECT_WATER_ID_UPDATE_RE = re.compile(
     rf"^{_CURRENT_USER_UPDATE_PREFIX_PATTERN}(?:把|将)?"
+    rf"{_CURRENT_USER_RECORD_OWNER_PATTERN}"
     rf"(?:饮水|water)(?:记录|条目)#?\d+"
     rf"(?:改成|改为|更正为|修正为|调整为|更新为|修改为|修改成)"
     rf"{_WATER_VALUE_TEXT_PATTERN}"
-    rf"(?:[，,](?:哦不|不对|错了|说错了|更正一下|等等|等一下|不|抱歉)"
-    rf"[，,]?(?:应该|应当)?(?:是|为|改成|改为)?"
+    rf"(?:[，,]{_UPDATE_CORRECTION_MARKER_PATTERN}"
+    rf"(?:应该|应当)?(?:是|为|改成|改为)?"
     rf"{_WATER_CORRECTION_VALUE_TEXT_PATTERN})?$",
     re.IGNORECASE,
 )
@@ -1174,18 +1190,27 @@ def _event_fact_has_non_current_subject(clause: str) -> bool:
     match = _EVENT_ARRIVAL_FACT_RE.fullmatch(clause)
     if match is None:
         return False
-    subject = match.group("subject")
-    if (
-        _last_write_signal_in_clause(subject) is not None
-        or _last_action_in_clause(subject) is not None
-    ):
-        return False
+    subject = _EVENT_WRITE_SCAFFOLD_RE.sub("", match.group("subject"), count=1)
     reduced = _CURRENT_USER_SUBJECT_NOISE_RE.sub("", subject)
     reduced = _SUBJECT_RELATION_NOISE_RE.sub("", reduced)
     reduced = re.sub(r"(?:终于|平安|顺利|安全)", "", reduced)
     reduced = reduced.strip("的，,。.!！；;：:?？ ")
     reduced = re.sub(r"^(?:我(?:本人|自己)?|本人|自己)$", "", reduced)
     return bool(reduced)
+
+
+def _segment_has_untrusted_provenance_or_owner(segment: str) -> bool:
+    """Reject sourced facts and parenthetical ownership transfers as authority."""
+    if _EXTERNAL_PROVENANCE_RE.search(segment):
+        return True
+    for opening, closing in _PARENTHETICAL_PAIRS:
+        for match in re.finditer(
+            rf"{re.escape(opening)}(?P<content>.*?){re.escape(closing)}",
+            segment,
+        ):
+            if _is_post_attributed_to_non_current_owner(match.group("content")):
+                return True
+    return False
 
 
 def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
@@ -1216,6 +1241,8 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
         if not contrast_segment:
             continue
         if _has_untrusted_colon_command(contrast_segment):
+            continue
+        if _segment_has_untrusted_provenance_or_owner(contrast_segment):
             continue
         segment_start = len(authorized)
         reported_scope = False
