@@ -933,6 +933,30 @@ correction compiles a unique changed value or no mutation at all. The clean
 4,006-test G3 aggregate is green. A new exact commit and two fresh independent
 reviews are mandatory; neither prior NO-GO can be reused.
 
+Fresh code and safety reviews of exact commit `ceb8ae78c` both returned NO-GO,
+so push and deployment again remained stopped. The reviewers reproduced
+negative, uncertain, relapsed and contradictory illness language being written
+as recovery; additional visible-ID forms falling back to another record;
+third-party or sourced travel facts reaching POST; and Chinese event clocks
+being discarded. They also showed that a model proposal omitting the illness
+keyword/window could broaden the original read to all illness history, while
+ordinary first-person water-owner phrases were falsely denied.
+
+The v19 remediation compiles local predicate polarity before selecting an
+illness state, including explicit negation of worsening followed by a positive
+recovery assertion. Uncertain recovery remains non-authorizing. Generic record
+identity accepts the reviewed number forms but never falls back when an
+explicit ID conflicts. Illness reads are projected from the current turn to an
+exact `dimension + keyword + optional window` plan regardless of model JSON.
+Arrival facts and write actions may span clauses, but a clock is merged only
+when one trusted arrival clause names the same destination as the event title
+and contains one unique clock. Current-user water ownership and event
+third-party/provenance grammar are resolved independently of write verbs. The
+core policy/Gateway/scope suite passes 1,964/1,964 tests; all 25 changed feature
+test files pass 3,597/3,597; and the adjacent meal-photo compatibility file
+passes 103/103. A new exact commit and two fresh independent reviews of that
+SHA remain mandatory before G4 may pass.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.

@@ -2813,13 +2813,9 @@ def test_illness_resolution_rejects_wrong_identity_or_invented_patch(arguments):
         "好了一小点",
         "快好了",
         "基本好了",
-        "可能好了",
         "一点点好了",
         "稍微好了",
         "有点好了",
-        "大约好了",
-        "似乎好了",
-        "好像好了",
         "算是好了",
         "差点好了",
     ),
@@ -2867,6 +2863,47 @@ def test_illness_partial_recovery_is_improving_not_resolved(phrase):
     assert improving.action == "allow"
     assert improving.normalized_args["data"] == {"status": "improving"}
     assert resolved.action == "block"
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    ("可能好了", "似乎好了", "好像好了", "大约好了"),
+)
+@pytest.mark.parametrize("status", ("improving", "resolved"))
+def test_uncertain_illness_recovery_requires_clarification(phrase, status):
+    snapshot = replace(
+        _snapshot(f"舌尖溃疡昨天{phrase}，修改记录"),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "illness",
+                    "records": (
+                        {"id": 71, "name": "舌尖溃疡", "status": "active"},
+                    ),
+                },
+            ),
+        ),
+    )
+    data = {"status": status}
+    if status == "resolved":
+        data["end_date"] = "2026-07-16"
+
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "illness",
+                "operation": "update",
+                "record_id": 71,
+                "data": data,
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "update_requires_exact_target_evidence"
 
 
 @pytest.mark.parametrize("status", ("active", "improving", "resolved"))
@@ -2968,6 +3005,11 @@ def test_negated_illness_recovery_requires_clarification_instead_of_guessing(
         "绝非好转",
         "算不上好转",
         "好转不了",
+        "看不出好转",
+        "似乎好转",
+        "好了今天又犯了",
+        "好转同时今天更严重了",
+        "没有证据表明已经康复",
     ),
 )
 @pytest.mark.parametrize("status", ("active", "improving", "resolved"))
@@ -3043,9 +3085,17 @@ def test_clear_active_illness_state_remains_a_supported_update():
     assert decision.normalized_args["data"] == {"status": "active"}
 
 
-def test_clear_illness_improvement_paraphrase_remains_supported():
+@pytest.mark.parametrize(
+    "message",
+    (
+        "舌尖溃疡已经明显改善，修改记录",
+        "舌尖溃疡未用药就好转，修改记录",
+        "舌尖溃疡没有加重反而明显改善，修改记录",
+    ),
+)
+def test_clear_illness_improvement_paraphrase_remains_supported(message):
     snapshot = replace(
-        _snapshot("舌尖溃疡已经明显改善，修改记录"),
+        _snapshot(message),
         actionable_references=(
             ActionableReference(
                 kind="owner_scoped_health_manage_list",
@@ -3085,6 +3135,8 @@ def test_clear_illness_improvement_paraphrase_remains_supported():
         "舌尖溃疡记录编号999昨天好了，修改记录",
         "舌尖溃疡记录ID999昨天好了，修改记录",
         "舌尖溃疡记录编号：999昨天好了，修改记录",
+        "舌尖溃疡第999号记录昨天好了，修改记录",
+        "舌尖溃疡记录编号为999昨天好了，修改记录",
     ),
 )
 def test_visible_illness_record_id_cannot_fall_back_to_a_different_named_record(
@@ -4215,9 +4267,9 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v18"
+    assert payload["contract_version"] == "agent-capability-policy-v19"
     assert payload["health_record_target_binding"] == {
-        "version": "authorized-target-set-v14",
+        "version": "authorized-target-set-v15",
         "domain_types": {
             "diet": "diet",
             "exercise": "exercise",
@@ -4236,7 +4288,7 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
     )
     assert (
         payload["health_manage_update_evidence_version"]
-        == "record-update-evidence-v9"
+        == "record-update-evidence-v10"
     )
     assert payload["known_tools"]
     assert payload["recipe_record_types"]

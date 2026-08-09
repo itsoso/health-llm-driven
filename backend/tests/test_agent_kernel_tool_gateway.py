@@ -18,9 +18,14 @@ from app.services.agent_kernel.types import ActionableReference, AgentEnvelope, 
 from app.services.utterance_intent_lexicon import WRITE_COMMAND_ACTIONS
 
 
-def _snapshot(text: str, *, policy_mode: str = "enforce") -> TurnSnapshot:
-    envelope = AgentEnvelope(user_id=1, channel="chat", text=text)
-    context = ExecutionContext.for_test(user_id=1, channel="chat")
+def _snapshot(
+    text: str,
+    *,
+    policy_mode: str = "enforce",
+    channel: str = "chat",
+) -> TurnSnapshot:
+    envelope = AgentEnvelope(user_id=1, channel=channel, text=text)
+    context = ExecutionContext.for_test(user_id=1, channel=channel)
     return TurnSnapshot(
         envelope=envelope,
         context=context,
@@ -1692,6 +1697,8 @@ async def test_executor_water_correction_dispatches_only_final_value(
         "请把饮水记录718（300ml）修改为350ml",
         "请把我的饮水记录718改成350ml",
         "请把我自己的饮水记录718改成350ml",
+        "请把我个人的饮水记录718改成350ml",
+        "请把属于我的饮水记录718改成350ml",
     ),
 )
 async def test_executor_direct_water_update_syntax_dispatches_canonical_value(
@@ -1817,6 +1824,13 @@ async def test_executor_negated_or_noop_water_correction_never_reaches_real_put(
         "舌尖溃疡昨天好转不了，修改记录",
         "舌尖溃疡记录编号999昨天好了，修改记录",
         "舌尖溃疡记录ID999昨天好了，修改记录",
+        "舌尖溃疡昨天看不出好转，修改记录",
+        "舌尖溃疡昨天似乎好转，修改记录",
+        "舌尖溃疡昨天好了今天又犯了，修改记录",
+        "舌尖溃疡昨天好转同时今天更严重了，修改记录",
+        "舌尖溃疡没有证据表明已经康复，修改记录",
+        "舌尖溃疡第999号记录昨天好了，修改记录",
+        "舌尖溃疡记录编号为999昨天好了，修改记录",
     ),
 )
 async def test_executor_unauthorized_or_ambiguous_illness_update_never_reaches_real_put(
@@ -1917,15 +1931,24 @@ async def test_executor_clear_active_illness_update_reaches_real_adapter(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "舌尖溃疡已经明显改善，修改记录",
+        "舌尖溃疡未用药就好转，修改记录",
+        "舌尖溃疡没有加重反而明显改善，修改记录",
+    ),
+)
 async def test_executor_clear_improvement_paraphrase_reaches_real_adapter(
     db,
     monkeypatch,
     policy_mode,
+    message,
 ):
     executor = AgentExecutor(db)
     executor._current_user_id = 1
     executor._turn_channel = "typed"
-    executor._current_turn_user_message = "舌尖溃疡已经明显改善，修改记录"
+    executor._current_turn_user_message = message
     calls = []
 
     async def fake_exec(_base, _headers, arguments):
@@ -1984,6 +2007,12 @@ async def test_executor_clear_improvement_paraphrase_reaches_real_adapter(
         "今天到杭州了，摘录自群消息，记录生活事件：到达杭州",
         "今天到杭州了，据群消息，记录生活事件：到达杭州",
         "今天到杭州了，据日志，记录生活事件：到达杭州",
+        "今天到杭州了，按群消息，记录生活事件：到达杭州",
+        "今天到杭州了，按照群消息，记录生活事件：到达杭州",
+        "今天到杭州了（转发消息），记录生活事件：到达杭州",
+        "今天到杭州了（小明行程），记录生活事件：到达杭州",
+        "今天到杭州了（行程归小明），记录生活事件：到达杭州",
+        "今天到杭州了（行程属于小明），记录生活事件：到达杭州",
     ),
 )
 async def test_executor_metalinguistic_event_never_reaches_real_event_post(
@@ -2210,7 +2239,10 @@ async def test_gateway_explicit_update_id_without_owner_candidate_never_dispatch
         (
             "昨天下午三点到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
-            {"title": "到达杭州"},
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T15:00:00+08:00",
+            },
         ),
         (
             "今天凌晨到杭州了，记录生活事件：到达杭州",
@@ -2230,17 +2262,40 @@ async def test_gateway_explicit_update_id_without_owner_candidate_never_dispatch
         (
             "昨天凌晨三点半到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
-            {"title": "到达杭州"},
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T03:30:00+08:00",
+            },
         ),
         (
             "昨天凌晨三点一刻到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
-            {"title": "到达杭州"},
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T03:15:00+08:00",
+            },
         ),
         (
             "今天零点到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
-            {"title": "到达杭州"},
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-17T00:00:00+08:00",
+            },
+        ),
+        (
+            "昨天下午三点半钟到杭州了，记录生活事件：到达杭州",
+            {
+                "record_type": "event",
+                "data": {
+                    "title": "到达杭州",
+                    "occurred_at": "昨天15:30",
+                },
+            },
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T15:30:00+08:00",
+            },
         ),
         (
             "记录跑步30分钟5公里",
@@ -2381,7 +2436,10 @@ async def test_gateway_dispatches_supported_family_canonical_projection(
             "昨天下午三点到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             "/episodes/life-event",
-            {"title": "到达杭州"},
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T15:00:00+08:00",
+            },
         ),
         (
             "今天凌晨到杭州了，记录生活事件：到达杭州",
@@ -2405,19 +2463,43 @@ async def test_gateway_dispatches_supported_family_canonical_projection(
             "昨天凌晨三点半到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             "/episodes/life-event",
-            {"title": "到达杭州"},
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T03:30:00+08:00",
+            },
         ),
         (
             "昨天凌晨三点一刻到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             "/episodes/life-event",
-            {"title": "到达杭州"},
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T03:15:00+08:00",
+            },
         ),
         (
             "今天零点到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             "/episodes/life-event",
-            {"title": "到达杭州"},
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-17T00:00:00+08:00",
+            },
+        ),
+        (
+            "昨天下午三点半钟到杭州了，记录生活事件：到达杭州",
+            {
+                "record_type": "event",
+                "data": {
+                    "title": "到达杭州",
+                    "occurred_at": "昨天15:30",
+                },
+            },
+            "/episodes/life-event",
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T15:30:00+08:00",
+            },
         ),
     ),
 )
@@ -2434,6 +2516,8 @@ async def test_executor_dispatches_public_record_contract_through_real_gateway(
     executor._turn_channel = "typed"
     executor._current_turn_user_message = message
     executor._current_turn_recent_messages = []
+    if "occurred_at" in expected_payload:
+        executor._agent_kernel_snapshot = _snapshot(message, channel="typed")
     calls = []
 
     async def fake_post(url, _headers, payload):
@@ -2684,6 +2768,45 @@ async def test_exact_historical_illness_query_blocks_model_write_before_dispatch
     assert payload["status"] == "rejected"
     assert payload["dispatch_started"] is False
     assert payload["error_code"] == "write_tool_without_write_intent"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "proposed_args",
+    (
+        {"dimension": "illness"},
+        {"dimension": "illness", "keyword": "感冒", "days": 7},
+        {"dimension": "comprehensive"},
+    ),
+)
+async def test_historical_illness_query_is_projected_to_turn_entity_and_window(
+    proposed_args,
+):
+    gateway = ToolGateway(
+        _snapshot("最近半年口腔溃疡有哪些记录？")
+    )
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments=proposed_args,
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [{
+        "dimension": "illness",
+        "keyword": "口腔溃疡",
+        "days": 183,
+    }]
 
 
 @pytest.mark.asyncio

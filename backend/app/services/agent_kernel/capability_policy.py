@@ -64,9 +64,9 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v18"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v14"
-_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v9"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v19"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v15"
+_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v10"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = (
     "_server_authorized_health_record_fields"
 )
@@ -169,17 +169,36 @@ _ILLNESS_TARGET_TERMS = (
     "伤口",
     "痘痘发作",
 )
-_NEGATED_ILLNESS_RECOVERY_RE = re.compile(
-    r"(?:(?:并(?:非|不是|无|未|没有|没)|"
+_ILLNESS_RECOVERY_RE = re.compile(r"(?:好转|改善|缓解|康复|痊愈|好了?)")
+_ILLNESS_RELAPSE_OR_WORSENING_RE = re.compile(
+    r"(?:复发|再发|重新发作|又发作|再次发作|又犯了|再犯|犯病|"
+    r"加重|恶化|反复|反弹|更严重|严重了|变严重|越来越严重)"
+)
+_ILLNESS_ASSERTION_BOUNDARY_RE = re.compile(
+    r"(?:但是|不过|然而|反而|但|却|就)"
+)
+_ILLNESS_RECOVERY_UNCERTAIN_PREFIX_RE = re.compile(
+    r"(?:似乎|好像|貌似|可能|也许|或许|大概|大约|看起来|不确定|说不准)"
+    r"(?:已经|有些|有所|明显|完全|彻底)?$"
+)
+_ILLNESS_RECOVERY_NEGATED_PREFIX_RE = re.compile(
+    r"(?:看不出|看不到|无法判断|难以判断|不能确定|"
+    r"(?:没有|无|缺乏).{0,8}(?:证据|迹象|表现)"
+    r"(?:表明|显示|说明)?(?:已经|真正|完全)?|"
+    r"并(?:非|不是|无|未|没有|没)|"
     r"尚(?:无|未|没有|没)|仍(?:无|未|没有|没)|"
     r"还(?:无|未|没有|没)|绝非|不是|不算|算不上|"
     r"毫无|谈不上|无|未|没有|没)"
-    r".{0,4}(?:好转|改善|缓解|康复|痊愈|好了?))|"
-    r"(?:(?:好了|好转|改善|缓解|康复|痊愈).{0,8}"
-    r"(?:不了|不成|(?:其实|实际上)?(?:并)?(?:没有|没)))"
+    r"(?:任何|有|明显|真正|实质性|完全|彻底|已经)*$"
 )
-_ILLNESS_RELAPSE_OR_WORSENING_RE = re.compile(
-    r"(?:复发|再发|重新发作|又发作|再次发作|加重|恶化|反复)"
+_ILLNESS_RECOVERY_NEGATED_SUFFIX_RE = re.compile(
+    r"^(?:不了|不成|(?:其实|实际上)?(?:并)?(?:没有|没)|吗|么|[?？])"
+)
+_ILLNESS_WORSENING_NEGATED_PREFIX_RE = re.compile(
+    r"(?:并)?(?:没有|没|未|无|不)(?:再|继续|明显|进一步)?$"
+)
+_ILLNESS_WORSENING_UNCERTAIN_PREFIX_RE = re.compile(
+    r"(?:似乎|好像|可能|也许|或许|是否|不确定)$"
 )
 _CLEAR_ACTIVE_ILLNESS_RE = re.compile(
     r"(?:还在发作中|发作中|还没好|仍未好)(?=[，,。.!！；;]|修改|更新|更正|$)"
@@ -300,6 +319,10 @@ _EVENT_TARGET_RE = re.compile(
     r"(?:记录|新增|保存)(?:一下)?(?:生活)?事件(?:是|为)?[：:]?"
     r"(?P<title>[^，,。.!！；;]{1,80})"
 )
+_EVENT_ARRIVAL_FACT_RE = re.compile(
+    r"^(?P<subject>.*?)到(?P<place>[\u4e00-\u9fff][^，,。.!！；;：:?？]{0,19})"
+    r"(?:了|$)"
+)
 _MOOD_SCORE_RE = re.compile(r"(?:心情|情绪|心境).{0,6}?(?P<value>[1-5])\s*分")
 _MOOD_TARGET_TERMS = (
     "calm",
@@ -331,6 +354,10 @@ _EXCRETION_TARGET_ALIASES = {
     "腹泻": "diarrhea",
 }
 _CLOCK_RE = re.compile(r"(?<!\d)(?P<hour>[01]?\d|2[0-3])[:：点](?P<minute>[0-5]\d)?")
+_CHINESE_CLOCK_RE = re.compile(
+    r"(?P<hour>[零〇一二两三四五六七八九十]{1,3})点"
+    r"(?P<minute>半|一刻|三刻|[零〇一二两三四五六七八九十]{1,3}分)?(?:钟)?"
+)
 _REMINDER_INTERVAL_RE = re.compile(
     r"(?:每隔|每|间隔)\s*(?P<value>\d+(?:\.\d+)?)\s*"
     r"(?P<unit>分钟|小时|分|h)(?:一次)?",
@@ -812,11 +839,11 @@ def _authorized_illness_update_args(
 def _illness_update_patch(snapshot: TurnSnapshot) -> dict[str, Any] | None:
     text = "".join(str(snapshot.envelope.text or "").split())
     patch: dict[str, Any] = {}
-    if _ILLNESS_RELAPSE_OR_WORSENING_RE.search(text):
+    if _has_asserted_illness_worsening(text):
         return None
     if _CLEAR_ACTIVE_ILLNESS_RE.search(text):
         patch["status"] = "active"
-    elif _NEGATED_ILLNESS_RECOVERY_RE.search(text):
+    elif _illness_recovery_assertion(text) != "positive":
         return None
 
     clear_terminal = any(
@@ -864,6 +891,47 @@ def _illness_update_patch(snapshot: TurnSnapshot) -> dict[str, Any] | None:
                 + timedelta(days=day_offset)
             ).isoformat()
     return patch
+
+
+def _assertion_prefix(text: str, predicate_start: int) -> str:
+    clause_start = max(
+        (text.rfind(mark, 0, predicate_start) for mark in "，,。.!！；;：:"),
+        default=-1,
+    )
+    prefix = text[clause_start + 1:predicate_start]
+    boundaries = tuple(_ILLNESS_ASSERTION_BOUNDARY_RE.finditer(prefix))
+    if boundaries:
+        prefix = prefix[boundaries[-1].end():]
+    return prefix
+
+
+def _illness_recovery_assertion(text: str) -> str:
+    """Classify recovery predicates by their local grammatical polarity."""
+    matches = tuple(_ILLNESS_RECOVERY_RE.finditer(text))
+    if not matches:
+        return "none"
+    for match in matches:
+        prefix = _assertion_prefix(text, match.start())
+        suffix = text[match.end():match.end() + 12]
+        if (
+            _ILLNESS_RECOVERY_UNCERTAIN_PREFIX_RE.search(prefix)
+            or _ILLNESS_RECOVERY_NEGATED_PREFIX_RE.search(prefix)
+            or _ILLNESS_RECOVERY_NEGATED_SUFFIX_RE.search(suffix)
+        ):
+            return "unsafe"
+    return "positive"
+
+
+def _has_asserted_illness_worsening(text: str) -> bool:
+    """Return true for positive or uncertain worsening, not explicit denial."""
+    for match in _ILLNESS_RELAPSE_OR_WORSENING_RE.finditer(text):
+        prefix = _assertion_prefix(text, match.start())
+        if _ILLNESS_WORSENING_NEGATED_PREFIX_RE.search(prefix):
+            continue
+        if _ILLNESS_WORSENING_UNCERTAIN_PREFIX_RE.search(prefix):
+            return True
+        return True
+    return False
 
 
 def _water_update_values(text: str) -> tuple[float | None, float] | None:
@@ -939,16 +1007,60 @@ def _explicit_illness_record_ids(text: str) -> set[int]:
     """Return every user-visible generic record ID in an illness update."""
     normalized = "".join(str(text or "").split())
     record_ids: set[int] = set()
-    for match in re.finditer(
-        r"(?:疾病)?(?:记录|条目)(?:编号|id|号)?[#：:]?"
+    patterns = (
+        r"(?:疾病)?(?:记录|条目)(?:编号|id|号)?(?:是|为)?[#：:]?"
         r"(?P<record_id>\d+)(?!\d)",
-        normalized,
-        re.IGNORECASE,
-    ):
-        record_id = canonical_health_manage_record_id(match.group("record_id"))
-        if record_id is not None:
-            record_ids.add(record_id)
+        r"第(?P<record_id>\d+)号(?:疾病)?(?:记录|条目)",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, normalized, re.IGNORECASE):
+            record_id = canonical_health_manage_record_id(
+                match.group("record_id")
+            )
+            if record_id is not None:
+                record_ids.add(record_id)
     return record_ids
+
+
+def _project_illness_query_to_turn(text: str) -> dict[str, Any] | None:
+    """Bind an illness-history read to the entity/window stated by the user."""
+    normalized = "".join(str(text or "").split())
+    if not re.search(
+        r"(?:记录|历史|上一次|最近|近来|过去|什么时候|何时|几次|有哪些)",
+        normalized,
+    ):
+        return None
+    targets = tuple(dict.fromkeys(_illness_targets(normalized)))
+    if len(targets) != 1:
+        return None
+    projected: dict[str, Any] = {
+        "dimension": "illness",
+        "keyword": targets[0],
+    }
+    window_days = _explicit_illness_query_window_days(normalized)
+    if window_days is not None:
+        projected["days"] = window_days
+    return projected
+
+
+def _explicit_illness_query_window_days(text: str) -> int | None:
+    if re.search(r"(?:最近|近|过去)?半年|半年(?:内|以来)", text):
+        return 183
+    match = re.search(
+        r"(?:最近|近|过去)(?P<value>\d+|[一二两三四五六七八九十]+)"
+        r"(?:个)?(?P<unit>天|周|月)",
+        text,
+    )
+    if match is None:
+        return None
+    value = _parse_small_chinese_number(match.group("value"))
+    if value is None or value <= 0:
+        return None
+    if match.group("unit") == "周":
+        return value * 7
+    if match.group("unit") == "月":
+        return 183 if value == 6 else value * 30
+    return value
 
 
 def _illness_update_targets_owner(text: str, record_name: str) -> bool:
@@ -1193,6 +1305,18 @@ def decide_tool_capability(
             args,
             receipt_required=True,
         )
+
+    if tool_name == "health_query":
+        illness_query_args = _project_illness_query_to_turn(
+            snapshot.envelope.text,
+        )
+        if illness_query_args is not None:
+            return _decision(
+                "allow",
+                "illness_query_projected_to_turn_semantics",
+                tool_name,
+                illness_query_args,
+            )
 
     if tool_name in READ_ONLY_TOOLS:
         return _decision("allow", "read_only_tool", tool_name, args)
@@ -1898,6 +2022,19 @@ def _health_record_target_status(
             clause,
             requested_type,
         )
+        event_time_source = ""
+        if requested_type == "event" and not deterministic_values.get(
+            "occurred_clock"
+        ):
+            event_time_evidence = _related_event_time_evidence(
+                clauses,
+                str(deterministic_values.get("title") or ""),
+            )
+            if event_time_evidence is not None:
+                deterministic_values["occurred_clock"] = (
+                    event_time_evidence[0]
+                )
+                event_time_source = event_time_evidence[1]
         if requested_type == "diet" and expected_values.get("food_items"):
             deterministic_values.pop("meal_food_targets", None)
         expected_values.update(deterministic_values)
@@ -1934,8 +2071,18 @@ def _health_record_target_status(
             expected_values["attachment_authorized"] = True
         expected_values["target_date"] = clause_goal.target_date or default_date
         expected_values["default_date"] = default_date
-        if requested_type == "symptom" and expected_values.get("occurred_clock"):
-            target_day = date.fromisoformat(expected_values["target_date"])
+        if (
+            requested_type in {"symptom", "event"}
+            and expected_values.get("occurred_clock")
+        ):
+            target_day = (
+                _event_occurrence_date(
+                    event_time_source or clause,
+                    snapshot.context.current_time.date(),
+                )
+                if requested_type == "event"
+                else date.fromisoformat(expected_values["target_date"])
+            )
             hour, minute = (
                 int(value)
                 for value in str(expected_values["occurred_clock"]).split(":", 1)
@@ -2112,12 +2259,10 @@ def _deterministic_target_values(
         )
         if timing:
             values["timing"] = timing
-    elif record_type == "symptom" and (clocks := tuple(_CLOCK_RE.finditer(clause))):
-        match = clocks[-1]
-        values["occurred_clock"] = (
-            f"{int(match.group('hour')):02d}:"
-            f"{int(match.group('minute') or 0):02d}"
-        )
+    elif record_type == "symptom" and (
+        occurred_clock := _normalize_clock_value(clause)
+    ):
+        values["occurred_clock"] = occurred_clock
     elif record_type == "exercise":
         exercise_types = tuple(
             term for term in _EXERCISE_TARGET_TERMS if term in clause
@@ -2269,11 +2414,8 @@ def _deterministic_target_values(
             for term in ("准备开始睡觉", "准备入睡", "开始睡眠", "开始入睡", "上床睡觉")
         ):
             values["title"] = "准备开始睡觉"
-        if clock := _CLOCK_RE.search(clause):
-            values["occurred_at"] = (
-                f"{int(clock.group('hour')):02d}:"
-                f"{int(clock.group('minute') or 0):02d}"
-            )
+        if occurred_clock := _normalize_clock_value(clause):
+            values["occurred_clock"] = occurred_clock
         elif "刚才" in clause or "刚刚" in clause:
             values["occurred_at"] = "刚才"
     if (
@@ -2282,6 +2424,29 @@ def _deterministic_target_values(
     ):
         values["severity"] = int(severity_match.group("value"))
     return values
+
+
+def _related_event_time_evidence(
+    clauses: tuple[str, ...],
+    expected_title: str,
+) -> tuple[str, str] | None:
+    """Bind one arrival clock to the matching event title across clauses."""
+    normalized_title = _normalize_entity_name(expected_title)
+    if not normalized_title:
+        return None
+    candidates: list[tuple[str, str]] = []
+    for clause in clauses:
+        arrival = _EVENT_ARRIVAL_FACT_RE.fullmatch(clause)
+        if arrival is None:
+            continue
+        place = arrival.group("place").strip().removesuffix("了")
+        if _normalize_entity_name(f"到达{place}") != normalized_title:
+            continue
+        clock = _unique_clock_value(clause)
+        if clock:
+            candidates.append((clock, clause))
+    unique = tuple(dict.fromkeys(candidates))
+    return unique[0] if len(unique) == 1 else None
 
 
 def _target_text_after_marker(clause: str, marker: str) -> str:
@@ -3131,15 +3296,31 @@ def _target_values_mismatch(
             expected.get("title")
         ):
             return True
-        if expected.get("occurred_at"):
+        canonical_occurred_at = str(
+            expected.get("canonical_occurred_at") or ""
+        ).strip()
+        if canonical_occurred_at:
             requested_time = _effective_argument_value(
                 args,
                 data,
                 data_keys=("occurred_at",),
                 arg_keys=("occurred_at",),
             )
-            if _normalize_entity_name(requested_time) != _normalize_entity_name(
-                expected["occurred_at"]
+            if requested_time not in (None, "", []) and (
+                _normalize_clock_value(requested_time)
+                != str(expected.get("occurred_clock") or "")
+            ):
+                return True
+        elif expected.get("occurred_at"):
+            requested_time = _effective_argument_value(
+                args,
+                data,
+                data_keys=("occurred_at",),
+                arg_keys=("occurred_at",),
+            )
+            if requested_time not in (None, "", []) and (
+                _normalize_entity_name(requested_time)
+                != _normalize_entity_name(expected["occurred_at"])
             ):
                 return True
     if record_type == "rhinitis":
@@ -3338,7 +3519,9 @@ def _project_authorized_dispatch_payload(
         }
     elif record_type == "event":
         projected["title"] = expected.get("title")
-        if expected.get("occurred_at"):
+        if expected.get("canonical_occurred_at"):
+            projected["occurred_at"] = expected["canonical_occurred_at"]
+        elif expected.get("occurred_at"):
             projected["occurred_at"] = expected["occurred_at"]
     elif record_type == "rhinitis":
         projected = dict(expected.get("rhinitis_payload") or {})
@@ -3438,14 +3621,104 @@ def _normalize_medication_dosage(value: Any) -> str:
     return _canonical_medication_dosage(match)
 
 
+def _parse_small_chinese_number(value: Any) -> int | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.isdigit():
+        return int(text)
+    digits = {
+        "零": 0,
+        "〇": 0,
+        "一": 1,
+        "二": 2,
+        "两": 2,
+        "三": 3,
+        "四": 4,
+        "五": 5,
+        "六": 6,
+        "七": 7,
+        "八": 8,
+        "九": 9,
+    }
+    if "十" in text:
+        left, right = text.split("十", 1)
+        tens = digits.get(left, 1) if left else 1
+        ones = digits.get(right, 0) if right else 0
+        return tens * 10 + ones
+    if all(char in digits for char in text):
+        return int("".join(str(digits[char]) for char in text))
+    return None
+
+
+def _clock_components(value: Any) -> tuple[int, int] | None:
+    text = str(value or "")
+    match = _CLOCK_RE.search(text)
+    if match is not None:
+        hour = int(match.group("hour"))
+        minute = int(match.group("minute") or 0)
+        match_start = match.start()
+    else:
+        chinese_match = _CHINESE_CLOCK_RE.search(text)
+        if chinese_match is None:
+            return None
+        parsed_hour = _parse_small_chinese_number(chinese_match.group("hour"))
+        minute_text = str(chinese_match.group("minute") or "")
+        if parsed_hour is None:
+            return None
+        if minute_text == "半":
+            minute = 30
+        elif minute_text == "一刻":
+            minute = 15
+        elif minute_text == "三刻":
+            minute = 45
+        elif minute_text:
+            parsed_minute = _parse_small_chinese_number(
+                minute_text.removesuffix("分")
+            )
+            if parsed_minute is None:
+                return None
+            minute = parsed_minute
+        else:
+            minute = 0
+        hour = parsed_hour
+        match_start = chinese_match.start()
+    if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+        return None
+    daypart_prefix = text[max(0, match_start - 6):match_start]
+    if hour < 12 and any(
+        marker in daypart_prefix
+        for marker in ("下午", "傍晚", "晚上", "晚间", "夜里", "夜间")
+    ):
+        hour += 12
+    return hour, minute
+
+
 def _normalize_clock_value(value: Any) -> str:
-    match = _CLOCK_RE.search(str(value or ""))
-    if match is None:
+    components = _clock_components(value)
+    if components is None:
         return ""
-    return (
-        f"{int(match.group('hour')):02d}:"
-        f"{int(match.group('minute') or 0):02d}"
+    hour, minute = components
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _unique_clock_value(value: Any) -> str:
+    """Return a clock only when the text contains one unambiguous clock."""
+    text = str(value or "")
+    matches = tuple(_CLOCK_RE.finditer(text)) + tuple(
+        _CHINESE_CLOCK_RE.finditer(text)
     )
+    if len(matches) != 1:
+        return ""
+    return _normalize_clock_value(text)
+
+
+def _event_occurrence_date(text: str, current_date: date) -> date:
+    if "前天" in text:
+        return current_date - timedelta(days=2)
+    if any(marker in text for marker in ("昨天", "昨日", "昨晚")):
+        return current_date - timedelta(days=1)
+    return current_date
 
 
 def _normalize_unit(value: Any) -> str:
