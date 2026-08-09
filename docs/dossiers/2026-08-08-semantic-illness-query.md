@@ -1128,6 +1128,43 @@ Current-user event ownership and daypart conversion retain explicit positive
 controls. The clean G3 evidence is green; a new exact commit and two fresh
 independent reviews of that exact SHA are mandatory before G4 may pass.
 
+Fresh code and product-safety reviews of exact commit `9e7707565` both returned
+NO-GO, so it was not pushed or deployed. Their independent real
+Executor/Gateway matrices reproduced the same architectural gaps in enforce
+and shadow modes: natural request wrappers polluted the illness entity;
+coordination and punctuation could collapse several illnesses into one query;
+long-tail disease names containing words such as `睡眠`, `运动`, `药物` or
+`饮食` were mistaken for another data dimension; arbitrary model fields could
+reach the read adapter; and narrow valid ID, recovery-time and current-user
+event-owner forms were falsely denied.
+
+The v24 remediation removes those residual substring decisions. History
+entities are now extracted structurally from their position relative to the
+explicit time window and `记录/历史` frame, with a compositional request-prefix
+grammar and exact entity decorators. Known non-illness dimensions require a
+closed exact-entity or `dimension + metric descriptor` match; disease names
+merely containing another dimension word remain illnesses when the model
+proposes the illness reader. A closed atomicity grammar hard-blocks coordinated
+or punctuated multi-entity reads before any adapter call. Every `health_query`
+proposal is normalized and projected to the
+public schema (`dimension`, `days`, `indicator`, `keyword`, `uploaded_days`,
+`uploaded_since`) in both the shared normalizer and the capability policy, so
+write-shaped or invented fields cannot cross the read boundary. Visible IDs,
+illness time placement and explicit current-user event parentheticals use
+equally narrow positive grammars. The contracts are now
+`agent-capability-policy-v24` / `authorized-target-set-v20` /
+`record-update-evidence-v15`.
+
+Failure-first evidence reproduced 51 failures in the then-188-case focused
+matrix; the expanded remediated matrix passes 196/196. The core
+policy/Gateway/scope suite passes 2,435/2,435. All 26 changed and adjacent
+Backend feature-test files pass 4,081/4,081 in one process on the production
+`Asia/Shanghai` calendar basis;
+query normalization passes 13/13 and the adjacent meal-photo compatibility file
+passes 103/103. Targeted Ruff, focused formatting, Python compilation and
+`git diff --check` pass on the same tree. A new exact commit and two fresh
+independent reviews of that SHA are mandatory before G4 may pass.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.

@@ -26,6 +26,7 @@ from app.services.agent_kernel.write_safety import (
     is_explicit_write_cancellation,
 )
 from app.services.clinician_provenance_guard import classify_clinician_turn
+from app.services.health_query_dimensions import normalize_health_query_args
 
 READ_ONLY_TOOLS = frozenset(
     spec.name
@@ -67,9 +68,9 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v23"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v19"
-_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v14"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v24"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v20"
+_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v15"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
 _HEALTH_RECORD_DOMAIN_TYPES = {
     "diet": "diet",
@@ -182,6 +183,12 @@ _QUERY_DIMENSION_TEXT_TERMS: dict[str, tuple[str, ...]] = {
     "events": ("行程", "事件", "时间线"),
     "medical_exam": ("化验", "检查", "体检", "影像"),
 }
+_QUERY_DIMENSION_ENTITY_PREFIX_PATTERN = r"(?:夜间|每日|日均|平均|静息|全天)?"
+_QUERY_DIMENSION_ENTITY_SUFFIX_PATTERN = (
+    r"(?:数据|指标|数值|读数|情况|状况|状态|评分|分数|质量|时长|时间|趋势|"
+    r"变化|明细|详情|汇总|统计|清单|列表|次数|频率|总量|平均值|最高值|"
+    r"最低值|波动|距离|摄入)?"
+)
 _HISTORY_QUERY_WINDOW_PATTERN = (
     r"(?:最近|近|过去)(?:\d+|[一二两三四五六七八九十]+|半)"
     r"(?:个)?(?:天|周|月|年)(?:内|以来)?"
@@ -192,10 +199,12 @@ _HISTORY_QUERY_QUESTION_RE = re.compile(
     r"有什么|有几条|有几次|有多少条|多少条)"
 )
 _HISTORY_QUERY_MULTI_ENTITY_RE = re.compile(
-    r"(?:还有|以及|并且|加上|外加|兼有|[、，,/／和与及或跟])"
+    r"(?:还有|以及|并且|加上|外加|兼有|连同|伴有|合并|同时有|并发|共存|再加|"
+    r"[、，,；;+/／和与及或跟])"
 )
 _HISTORY_QUERY_LEADING_VERB_RE = re.compile(
-    r"^(?:查询|查找|查看|查一下|找出|找一下|回顾|回看|检索|列出|看看|查|把)"
+    r"^(?:查询(?:一下)?|查找(?:一下)?|查看(?:一下)?|查一下|找出|找一下|"
+    r"回顾(?:一下)?|回看(?:一下)?|检索(?:一下)?|列出|看看|查|把)"
 )
 _HISTORY_QUERY_TRAILING_VERB_RE = re.compile(
     r"(?:(?:给我)?(?:找出来|查出来|列出来|调出来|找出|查看|看看))$"
@@ -213,7 +222,7 @@ _ILLNESS_CLEAR_RESOLUTION_RE = re.compile(
 )
 _ILLNESS_CLEAR_ACTIVE_RE = re.compile(r"(?:还在发作中|发作中|还没好|仍未好)")
 _ILLNESS_STATE_TIME_PREFIX_RE = re.compile(
-    r"^(?:之前|此前|先前|前天|昨天|昨日|今日|今天|刚刚|刚才|现在|目前)"
+    r"^(?:在)?(?:之前|此前|先前|前天|昨天|昨日|今日|今天|刚刚|刚才|现在|目前)"
 )
 _ILLNESS_UPDATE_INSTRUCTION_SUFFIX_RE = re.compile(
     r"[，,。.!！；;]?(?:(?:请|请你|帮我|麻烦|麻烦你))?"
@@ -221,7 +230,7 @@ _ILLNESS_UPDATE_INSTRUCTION_SUFFIX_RE = re.compile(
 )
 _ILLNESS_RECORD_ID_PATTERNS = (
     re.compile(
-        r"(?<![A-Za-z0-9])(?:id|编号|#)(?:是|为|=|#|：|:)?"
+        r"(?<![A-Za-z0-9])(?:(?:id|编号)(?:号)?|#)(?:是|为|=|#|：|:)?"
         r"(?P<record_id>\d+)(?!\d)",
         re.IGNORECASE,
     ),
@@ -1075,21 +1084,70 @@ def _history_query_entity_expression(text: str) -> str | None:
     if not has_history_frame or not has_read_semantics:
         return None
 
-    candidate = re.sub(r"^(?:请|麻烦)?(?:给我|帮我|替我)?", "", normalized)
-    candidate = _HISTORY_QUERY_LEADING_VERB_RE.sub("", candidate, count=1)
-    candidate = re.sub(r"^(?:我(?:的)?)", "", candidate, count=1)
-    candidate = _HISTORY_QUERY_TRAILING_VERB_RE.sub("", candidate, count=1)
-    candidate = re.sub(r"(?:的)?(?:记录|历史)$", "", candidate, count=1)
-    candidate = _HISTORY_QUERY_WINDOW_RE.sub("", candidate)
+    previous_match = re.search(
+        r"上一次(?P<entity>.{2,80}?)(?:是什么时候|在什么时候|什么时候|何时|是几号)",
+        normalized,
+    )
+    if previous_match is not None:
+        candidate = previous_match.group("entity")
+    else:
+        window_match = _HISTORY_QUERY_WINDOW_RE.search(normalized)
+        candidate = normalized
+        if window_match is not None:
+            before_candidate = _clean_history_query_entity(
+                _strip_history_query_request_prefix(normalized[: window_match.start()])
+            )
+            after_window = normalized[window_match.end() :]
+            history_marker = re.search(r"(?:记录|历史)", after_window)
+            after_candidate = (
+                after_window[: history_marker.start()]
+                if history_marker is not None
+                else after_window
+            )
+            after_candidate = _clean_history_query_entity(after_candidate)
+            if before_candidate and after_candidate:
+                candidate = f"{before_candidate}和{after_candidate}"
+            else:
+                candidate = after_candidate or before_candidate
+
+    candidate = _strip_history_query_request_prefix(candidate)
+    candidate = _clean_history_query_entity(candidate)
+    return candidate if 2 <= len(candidate) <= 120 else None
+
+
+def _strip_history_query_request_prefix(value: str) -> str:
+    """Strip composable request scaffolding without enumerating whole sentences."""
+    candidate = value
+    prefix_component_re = re.compile(
+        r"^(?:请问|烦请|请|麻烦你?|能不能|可不可以|可以不可以|能否|可否|"
+        r"(?:能|可以)(?=给我|帮我|帮忙|替我|为我|查询|查找|查看|查一下|"
+        r"找出|找一下|回顾|回看|检索|列出|看看|查|把)|"
+        r"我想(?:请你|知道)?|想知道|我希望|我需要|给我|帮我|帮忙|替我|"
+        r"为我|你|把|我(?:的)?)"
+    )
+    while candidate:
+        candidate = candidate.lstrip("，,。.!！；;：:?？ ")
+        reduced = prefix_component_re.sub("", candidate, count=1)
+        reduced = _HISTORY_QUERY_LEADING_VERB_RE.sub("", reduced, count=1)
+        if reduced == candidate:
+            break
+        candidate = reduced
+    return candidate
+
+
+def _clean_history_query_entity(value: str) -> str:
+    """Remove only structural query decorators surrounding one entity span."""
+    candidate = _HISTORY_QUERY_TRAILING_VERB_RE.sub("", value, count=1)
+    candidate = re.sub(r"(?:的)?(?:记录|历史).*$", "", candidate, count=1)
     candidate = re.sub(
-        r"(?:上一次|分别|有哪些|有那些|有什么|有几条|有几次|有多少条|"
-        r"多少条|是什么时候|在什么时候|何时|是几号)",
+        r"(?:所有|全部|分别|有哪些|有那些|有什么|有几条|有几次|有多少条|多少条|"
+        r"是什么时候|在什么时候|什么时候|何时|是几号)$",
         "",
         candidate,
     )
-    candidate = re.sub(r"(?:的)?(?:记录|历史)", "", candidate)
-    candidate = candidate.strip("的，,。.!！；;：:?？ ")
-    return candidate if 2 <= len(candidate) <= 120 else None
+    candidate = re.sub(r"^(?:的|关于)+", "", candidate)
+    candidate = re.sub(r"(?:的|相关|吗)+$", "", candidate)
+    return candidate.strip("的，,。.!！；;：:?？ ")
 
 
 def _query_entities_match_dimension(
@@ -1099,7 +1157,17 @@ def _query_entities_match_dimension(
     terms = _QUERY_DIMENSION_TEXT_TERMS.get(dimension, ())
     if not terms:
         return False
-    return all(any(term in entity for term in terms) for entity in entities)
+    return all(
+        any(
+            re.fullmatch(
+                rf"{_QUERY_DIMENSION_ENTITY_PREFIX_PATTERN}"
+                rf"{re.escape(term)}{_QUERY_DIMENSION_ENTITY_SUFFIX_PATTERN}",
+                entity,
+            )
+            for term in terms
+        )
+        for entity in entities
+    )
 
 
 def _query_entities_known_dimension(entities: tuple[str, ...]) -> str | None:
@@ -1143,9 +1211,15 @@ def _illness_update_targets_owner(text: str, record_name: str) -> bool:
         r"可以帮我|能帮我|替我|给我|为我|"
         r"我想|我想请你|我要|我希望|我需要))?"
     )
+    time_prefix = (
+        r"(?:(?:在)?(?:之前|此前|先前|前天|昨天|昨日|今日|今天|刚刚|"
+        r"刚才|现在|目前))?"
+    )
+    current_owner = r"(?:我(?:的)?)?"
+    owner_and_time = rf"(?:{current_owner}{time_prefix}|{time_prefix}{current_owner})"
     return (
         re.fullmatch(
-            rf"{current_prefix}(?:我(?:的)?)?{re.escape(name)}"
+            rf"{current_prefix}{owner_and_time}{re.escape(name)}"
             r".{1,180}[，,]"
             rf"{current_prefix}(?:修改|更新|更正)(?:一下)?(?:这条)?记录",
             normalized,
@@ -1373,7 +1447,8 @@ def decide_tool_capability(
 
     if tool_name == "health_query":
         turn_text = snapshot.envelope.text
-        proposed_dimension = str(args.get("dimension") or "").strip().lower()
+        canonical_args = normalize_health_query_args(args)
+        proposed_dimension = str(canonical_args.get("dimension") or "").strip().lower()
         known_illness_entities = _illness_targets(turn_text)
         illness_query_entities = _illness_query_entities(turn_text)
         known_non_illness_dimension = _query_entities_known_dimension(
@@ -1392,7 +1467,7 @@ def decide_tool_capability(
                     "block",
                     "health_query_dimension_conflict",
                     tool_name,
-                    args,
+                    canonical_args,
                 )
         elif known_illness_entities or proposed_dimension == "illness":
             illness_query_args = _project_illness_query_to_turn(
@@ -1410,8 +1485,14 @@ def decide_tool_capability(
                 "block",
                 "health_query_dimension_conflict",
                 tool_name,
-                args,
+                canonical_args,
             )
+        return _decision(
+            "allow",
+            "read_only_tool",
+            tool_name,
+            canonical_args,
+        )
 
     if tool_name in READ_ONLY_TOOLS:
         return _decision("allow", "read_only_tool", tool_name, args)

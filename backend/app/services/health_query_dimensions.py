@@ -1,4 +1,5 @@
 """health_query dimension normalization shared by schema guard and executor."""
+
 from __future__ import annotations
 
 import re
@@ -78,11 +79,19 @@ HEALTH_QUERY_DIM_ALIASES: Dict[str, str] = {
 }
 
 HEALTH_QUERY_DIM_KEYS = ("dimension", "type", "query_type", "category", "kind")
+HEALTH_QUERY_CANONICAL_KEYS = (
+    "dimension",
+    "days",
+    "indicator",
+    "keyword",
+    "uploaded_days",
+    "uploaded_since",
+)
 ILLNESS_MAX_QUERY_DAYS = 36500
 
 
 def normalize_health_query_args(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Normalize model-generated health_query args without losing unknown fields."""
+    """Normalize and project model-generated args to the public query schema."""
     a = dict(args or {})
     if not a.get("dimension"):
         for key in HEALTH_QUERY_DIM_KEYS:
@@ -102,9 +111,18 @@ def normalize_health_query_args(args: Dict[str, Any]) -> Dict[str, Any]:
             if match:
                 a["days"] = int(match.group())
 
+    if not a.get("keyword"):
+        keyword = a.get("keywords") or a.get("query")
+        if keyword:
+            a["keyword"] = keyword
+
+    if not a.get("uploaded_since") and a.get("created_since"):
+        a["uploaded_since"] = a["created_since"]
+
     if not a.get("uploaded_days"):
         uploaded_range = (
-            a.get("uploaded_range")
+            a.get("created_days")
+            or a.get("uploaded_range")
             or a.get("upload_range")
             or a.get("created_range")
         )
@@ -113,4 +131,4 @@ def normalize_health_query_args(args: Dict[str, Any]) -> Dict[str, Any]:
             if match:
                 a["uploaded_days"] = int(match.group())
 
-    return a
+    return {key: a[key] for key in HEALTH_QUERY_CANONICAL_KEYS if key in a}

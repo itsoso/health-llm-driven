@@ -3,6 +3,7 @@
 实测 bug 回归:Claude-Opus-4.7 `health_query(type=lab_results, days=7)` /
 `health_query(query_type=lab_results, time_range=14d)` → 应归一到 dimension='medical_exam'。
 """
+
 from app.services.agent_executor import _normalize_health_query_args as norm
 
 
@@ -48,11 +49,41 @@ def test_dimension_wins_over_alias():
     assert a["dimension"] == "sleep"
 
 
+def test_unknown_payload_fields_are_not_forwarded_to_health_query():
+    a = norm(
+        {
+            "dimension": "sleep",
+            "days": 30,
+            "record_type": "symptom",
+            "data": {"description": "模型自造字段"},
+        }
+    )
+    assert a == {"dimension": "sleep", "days": 30}
+
+
+def test_supported_legacy_aliases_are_derived_before_schema_projection():
+    a = norm(
+        {
+            "type": "medical_records",
+            "query": "膝关节MRI",
+            "created_days": 3,
+            "created_since": "2026-08-01",
+        }
+    )
+    assert a == {
+        "dimension": "medical_exam",
+        "keyword": "膝关节MRI",
+        "uploaded_days": 3,
+        "uploaded_since": "2026-08-01",
+    }
+
+
 # ──── MRI 假阴回归(prod 实锤:Claude-4.7 内联 JSON + medical_records) ────
 
 
 def test_medical_records_and_imaging_aliases_normalize_to_medical_exam():
     from app.services.agent_executor import _normalize_health_query_args
+
     for raw in (
         "medical_records",
         "medical_record",
@@ -79,12 +110,17 @@ def test_uploaded_range_alias_normalizes_to_uploaded_days():
 
 def test_claude_inline_params_payload_recovers_end_to_end():
     # prod 日志原始形状:{"tool":..,"params":{...}} —— 恢复层曾只认 parameters/arguments
-    from app.services.agent_executor import _extract_inline_tool_call, _normalize_health_query_args
+    from app.services.agent_executor import (
+        _extract_inline_tool_call,
+        _normalize_health_query_args,
+    )
+
     text = '我先查一下你的膝关节MRI相关记录。\n{"tool":"health_query","params":{"type":"medical_records","keyword":"膝关节MRI"}}'
     tools = [{"function": {"name": "health_query"}}]
     call = _extract_inline_tool_call(text, tools)
     assert call is not None
     import json as _json
+
     args = _json.loads(call["function"]["arguments"])
     assert args.get("type") == "medical_records"  # params 容器被解开,参数不再丢失
     normalized = _normalize_health_query_args(args)
@@ -94,6 +130,7 @@ def test_claude_inline_params_payload_recovers_end_to_end():
 def test_anthropic_style_input_container_also_recovers():
     from app.services.agent_executor import _extract_inline_tool_call
     import json as _json
+
     text = '{"name":"health_query","input":{"dimension":"medical_exam"}}'
     call = _extract_inline_tool_call(text, [{"function": {"name": "health_query"}}])
     assert call is not None

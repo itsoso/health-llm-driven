@@ -1245,11 +1245,11 @@ def _segment_has_untrusted_provenance_or_owner(segment: str) -> bool:
             content = match.group("content")
             if _PARENTHETICAL_PROVENANCE_RE.search(content):
                 return True
+            if event_arrival_segment and _is_current_user_event_parenthetical(content):
+                continue
             if _is_post_attributed_to_non_current_owner(content):
                 return True
-            if event_arrival_segment and not _is_current_user_event_parenthetical(
-                content
-            ):
+            if event_arrival_segment:
                 # Event authority is positive: an unmodeled parenthetical may
                 # carry provenance or ownership and cannot be ignored.
                 return True
@@ -1260,10 +1260,24 @@ def _segment_has_untrusted_provenance_or_owner(segment: str) -> bool:
 
 def _is_current_user_event_parenthetical(content: str) -> bool:
     normalized = content.strip("，,。.!！；;：: ")
+    event_noun = r"(?:行程|旅程|旅途|旅行|出行|事件)"
+    current_user = r"(?:我(?:自己|本人|个人)?|本人|自己|个人)"
     if re.fullmatch(
         r"(?:(?:这|本|该|此)(?:次|趟|段)?)?"
         r"(?:我(?:自己|本人|个人)?|本人|自己|个人)(?:的)?"
         r"(?:行程|旅程|旅途|旅行|出行|事件)",
+        normalized,
+    ):
+        return True
+    if re.fullmatch(rf"{event_noun}(?:属于|归属于|归){current_user}", normalized):
+        return True
+    if re.fullmatch(
+        rf"(?:属于|归属于|归){current_user}(?:的)?{event_noun}",
+        normalized,
+    ):
+        return True
+    if re.fullmatch(
+        rf"(?:(?:这|本|该|此)(?:次|趟|段))(?:为|是){current_user}(?:的)?{event_noun}",
         normalized,
     ):
         return True

@@ -2518,6 +2518,21 @@ async def test_gateway_explicit_update_id_without_owner_candidate_never_dispatch
             {"title": "到达杭州"},
         ),
         (
+            "昨天到杭州了（行程属于我），记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {"title": "到达杭州"},
+        ),
+        (
+            "昨天到杭州了（属于我的行程），记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {"title": "到达杭州"},
+        ),
+        (
+            "昨天到杭州了（此次为本人行程），记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {"title": "到达杭州"},
+        ),
+        (
             "昨天凌晨三点半到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             {
@@ -2823,6 +2838,24 @@ async def test_gateway_dispatches_supported_family_canonical_projection(
             {"title": "到达杭州"},
         ),
         (
+            "昨天到杭州了（行程属于我），记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {"title": "到达杭州"},
+        ),
+        (
+            "昨天到杭州了（属于我的行程），记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {"title": "到达杭州"},
+        ),
+        (
+            "昨天到杭州了（此次为本人行程），记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {"title": "到达杭州"},
+        ),
+        (
             "昨天凌晨三点半到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             "/episodes/life-event",
@@ -2949,6 +2982,7 @@ async def test_executor_ambiguous_related_event_times_never_post(
         ("舌尖溃疡ID为71昨天好了，修改记录", "resolved", -1),
         ("舌尖溃疡ID是71昨天好了，修改记录", "resolved", -1),
         ("舌尖溃疡ID=71昨天好了，修改记录", "resolved", -1),
+        ("舌尖溃疡ID号为71昨天好了，修改记录", "resolved", -1),
         ("舌尖溃疡条目ID：71昨天好了，修改记录", "resolved", -1),
         ("舌尖溃疡疾病记录第71号昨天好了，修改记录", "resolved", -1),
         (
@@ -2957,6 +2991,9 @@ async def test_executor_ambiguous_related_event_times_never_post(
             0,
         ),
         ("舌尖溃疡昨天痊愈，不过今天还没好，修改记录", "active", None),
+        ("昨天舌尖溃疡已经痊愈，修改记录", "resolved", -1),
+        ("舌尖溃疡在昨天已经痊愈，修改记录", "resolved", -1),
+        ("昨天我的舌尖溃疡已经痊愈，修改记录", "resolved", -1),
     ),
 )
 async def test_executor_lists_owner_illness_before_exact_resolution_update(
@@ -3307,6 +3344,90 @@ async def test_historical_illness_query_is_projected_to_turn_entity_and_window(
             {"dimension": "illness", "keyword": "偏头疼", "days": 365},
         ),
         (
+            "我想查看桥本氏甲状腺炎过去三个月的记录",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "桥本氏甲状腺炎", "days": 90},
+        ),
+        (
+            "我想查看一下桥本氏甲状腺炎过去三个月的记录",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "桥本氏甲状腺炎", "days": 90},
+        ),
+        (
+            "麻烦你，帮我查一下脑梗过去三个月的记录",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "脑梗", "days": 90},
+        ),
+        (
+            "能量代谢异常过去三个月的记录",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "能量代谢异常", "days": 90},
+        ),
+        (
+            "能不能帮我查一下近两周脑梗历史",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "脑梗", "days": 14},
+        ),
+        (
+            "麻烦你把过去十天耳石症记录调出来",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "耳石症", "days": 10},
+        ),
+        (
+            "请帮我回顾一下过去半年的脑梗记录",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        (
+            "能帮我找出近半年的耳石症记录吗？",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "耳石症", "days": 183},
+        ),
+        (
+            "麻烦帮忙查一下过去一年的特发性震颤记录",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "特发性震颤", "days": 365},
+        ),
+        (
+            "请给我找出近半年关于脑梗的记录",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        (
+            "请把近半年的脑梗相关记录给我找出来",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        (
+            "近半年的脑梗记录帮我找出来",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        (
+            "查询近半年运动神经元病的记录",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "运动神经元病", "days": 183},
+        ),
+        (
+            "查询近半年睡眠呼吸暂停综合征的记录",
+            {"dimension": "illness"},
+            {
+                "dimension": "illness",
+                "keyword": "睡眠呼吸暂停综合征",
+                "days": 183,
+            },
+        ),
+        (
+            "查询近半年药物性肝炎的记录",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "药物性肝炎", "days": 183},
+        ),
+        (
+            "查询近半年饮食失调症的记录",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "饮食失调症", "days": 183},
+        ),
+        (
             "最近一年口腔溃疡有哪些记录？",
             {"dimension": "illness", "keyword": "口腔溃疡", "days": 365},
             {"dimension": "illness", "keyword": "口腔溃疡", "days": 365},
@@ -3368,6 +3489,14 @@ async def test_historical_illness_query_projects_arbitrary_entity_and_year_windo
         "查询近半年偏头痛/痛风的记录",
         "查询近半年偏头痛，痛风的记录",
         "把近半年脑梗与偏头疼的记录找出来",
+        "查询近半年脑梗连同偏头疼的记录",
+        "查询近半年偏头痛伴有痛风的记录",
+        "查询近半年偏头痛合并痛风的记录",
+        "查询近半年偏头痛同时有痛风的记录",
+        "查询近半年偏头痛并发痛风的记录",
+        "查询近半年偏头痛；痛风的记录",
+        "查询近半年偏头痛+痛风的记录",
+        "查询脑梗过去半年和痛风的记录",
     ),
 )
 async def test_multi_entity_illness_query_never_falls_back_to_model_scope(
@@ -3442,6 +3571,7 @@ async def test_long_tail_history_query_conflicting_model_dimension_never_dispatc
     "message",
     (
         "查一下我近半年睡眠的记录",
+        "查一下我近半年睡眠评分的记录",
         "回顾过去一个月饮水历史",
         "请给我找出最近半年的体重记录",
     ),
@@ -3478,6 +3608,10 @@ async def test_non_illness_history_never_projects_to_illness(
     ("message", "proposed_args"),
     (
         ("查一下我近半年睡眠的记录", {"dimension": "sleep", "days": 183}),
+        (
+            "查一下我近半年睡眠评分的记录",
+            {"dimension": "sleep", "days": 183},
+        ),
         ("回顾过去一个月饮水历史", {"dimension": "water", "days": 30}),
         ("请给我找出最近半年的体重记录", {"dimension": "weight", "days": 183}),
     ),
@@ -3538,6 +3672,33 @@ async def test_executor_illness_query_payload_is_not_polluted_by_symptom_recover
     )
 
     assert calls == [{"dimension": "illness", "keyword": "偏头疼", "days": 365}]
+
+
+@pytest.mark.asyncio
+async def test_executor_health_query_projects_schema_fields_only(db, monkeypatch):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "查一下我近半年睡眠的记录"
+    calls = []
+
+    async def fake_read(_base_url, _headers, args):
+        calls.append(args)
+        return "[]"
+
+    monkeypatch.setattr(executor, "_exec_health_query", fake_read)
+
+    await executor._execute_tool(
+        "health_query",
+        {
+            "dimension": "sleep",
+            "days": 183,
+            "record_type": "symptom",
+            "data": {"body_part": "head", "description": "假的"},
+        },
+        "test-token",
+    )
+
+    assert calls == [{"dimension": "sleep", "days": 183}]
 
 
 @pytest.mark.asyncio
