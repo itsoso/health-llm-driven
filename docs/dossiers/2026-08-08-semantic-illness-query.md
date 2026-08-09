@@ -640,6 +640,32 @@ validation and no-match honesty address those risks.
   passes 103/103. The 268-case focused real-boundary matrix, targeted Ruff,
   formatting, Python compilation and `git diff --check` also pass. Repository
   structural checks and two fresh exact-commit reviews remain mandatory.
+- Fresh code and product-safety reviews of exact commit `0cc687a2e` both
+  returned NO-GO, so it was not pushed or deployed. Real Executor/Gateway
+  probes found that uncertain or recurrent illness could still inherit a
+  recovery substring, generic visible ID forms could fall back to record 71,
+  sourced or third-party travel facts could reach POST, midnight/evening clocks
+  could be shifted by twelve hours, and arbitrary long-tail or multi-entity
+  illness reads could follow a conflicting model dimension.
+- The v22 remediation replaces the remaining negative-vocabulary approach with
+  closed positive authority. An illness update is compiled only from one
+  supported final state assertion; unknown qualifiers and extra clauses fail
+  closed, while a later explicit assertion governs both state and date. Any
+  generic visible identifier is an exact target constraint. Event segments may
+  contain only a current-user arrival/write relation and trusted time context;
+  unmodelled source, owner or parenthetical clauses cannot authorize POST.
+  Query syntax extracts an arbitrary single history entity from the user's
+  turn, projects it only through the illness reader, hard-blocks conflicting
+  model dimensions and requires clarification before any multi-entity read.
+  Dayparts use explicit night/afternoon categories, including `午夜十二点` and
+  `昨晚一点`. The boundary is versioned as `agent-capability-policy-v22` /
+  `authorized-target-set-v18` / `record-update-evidence-v13`.
+- The final v22 policy/Gateway/scope group passes 2,298/2,298 tests. All 25
+  changed Backend feature-test files pass 3,931/3,931 in one process on the
+  production `Asia/Shanghai` calendar basis, and the adjacent meal-photo file
+  passes 103/103. Ruff, focused formatting, Python compilation and
+  `git diff --check` pass. Repository structural checks and two new reviews of
+  the next exact SHA remain mandatory.
 
 ### G4 Safety Review: PENDING
 
@@ -1029,6 +1055,23 @@ reproduced 47 boundary failures. The v21 remediation resolves each relation
 before dispatch and adds the reviewers' positive water/time/query controls. A
 new exact commit and two fresh independent reviews of that exact SHA are
 mandatory before G4 may pass.
+
+Fresh code and product-safety reviews of exact commit `0cc687a2e` both returned
+NO-GO, so push and deployment again remained stopped. They crossed the real
+Executor/Gateway with synthetic owner-scoped records and fake adapters in both
+policy modes. The remaining failures were architectural: open-ended recovery
+substring inference, identifier-shape fallthrough, event clauses that retained
+unmodelled provenance or ownership, daypart conversion by blanket PM shifting,
+and long-tail illness reads that still trusted a conflicting model dimension.
+
+The v22 remediation makes every one of those relations positive and closed.
+The model proposes a semantic operation, but the deterministic compiler grants
+authority only to a supported final illness state, exact visible record,
+current-user event relation, normalized clock and one user-stated query entity.
+Unknown write clauses and conflicting or multi-entity reads are hard denials in
+both enforce and shadow. The clean G3 evidence is green; a new exact commit and
+two fresh independent reviews of that exact SHA are mandatory before G4 may
+pass.
 
 ### G5 Deployment Health: PENDING
 

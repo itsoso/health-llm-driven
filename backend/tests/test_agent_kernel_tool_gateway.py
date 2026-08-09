@@ -1883,6 +1883,20 @@ async def test_executor_negated_or_noop_water_correction_never_reaches_real_put(
         "舌尖溃疡ID999昨天好转了，修改记录",
         "舌尖溃疡疾病记录（ID999）昨天好了，修改记录",
         "舌尖溃疡第999个疾病记录昨天好了，修改记录",
+        "舌尖溃疡不一定已经康复，修改记录",
+        "舌尖溃疡好转尚待观察，修改记录",
+        "舌尖溃疡多半已经好转，修改记录",
+        "舌尖溃疡不排除已经好转，修改记录",
+        "舌尖溃疡昨天好了今天再疼起来，修改记录",
+        "舌尖溃疡昨天好了今天症状回来了，修改记录",
+        "舌尖溃疡ID=999昨天好转了，修改记录",
+        "舌尖溃疡ID为999昨天好转了，修改记录",
+        "舌尖溃疡ID是999昨天好转了，修改记录",
+        "舌尖溃疡编号999昨天好转了，修改记录",
+        "舌尖溃疡#999昨天好转了，修改记录",
+        "舌尖溃疡昨天好了今天又溃疡了，修改记录",
+        "舌尖溃疡昨天好了今天再次长出了，修改记录",
+        "舌尖溃疡昨天好了但同一处又红了，修改记录",
     ),
 )
 async def test_executor_unauthorized_or_ambiguous_illness_update_never_reaches_real_put(
@@ -2144,6 +2158,18 @@ async def test_executor_uncertain_or_negated_active_illness_never_puts(
         "今天到杭州了（旅程所有者Alex），记录生活事件：到达杭州",
         "今天到杭州了（Alex名下的行程），记录生活事件：到达杭州",
         "今天到杭州了（此次旅途系小明所有），记录生活事件：到达杭州",
+        "今天到杭州了，从群里得知，记录生活事件：到达杭州",
+        "今天到杭州了，由群消息提供，记录生活事件：到达杭州",
+        "我今天到杭州了，消息出处是群聊，记录生活事件：到达杭州",
+        "我今天到杭州了，从家人口中得知，记录生活事件：到达杭州",
+        "我今天到杭州了，从朋友圈得知，记录生活事件：到达杭州",
+        "今天到杭州了（该行程由小明所有），记录生活事件：到达杭州",
+        "今天到杭州了（此次旅途乃小明所有），记录生活事件：到达杭州",
+        "今天到杭州了（这段行程属于Alex），记录生活事件：到达杭州",
+        "今天到杭州了（那趟行程属于小明），记录生活事件：到达杭州",
+        "今天到杭州了（此次旅行属于Alex），记录生活事件：到达杭州",
+        "今天到杭州了（行程归属Alex），记录生活事件：到达杭州",
+        "今天到杭州了（Alex所有的行程），记录生活事件：到达杭州",
     ),
 )
 async def test_executor_metalinguistic_event_never_reaches_real_event_post(
@@ -2424,6 +2450,46 @@ async def test_gateway_explicit_update_id_without_owner_candidate_never_dispatch
             },
         ),
         (
+            "昨天午夜十二点半到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T00:30:00+08:00",
+            },
+        ),
+        (
+            "我昨夜十一点一刻到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T23:15:00+08:00",
+            },
+        ),
+        (
+            "我昨晚十二点半到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T00:30:00+08:00",
+            },
+        ),
+        (
+            "昨天夜里十二点半到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T00:30:00+08:00",
+            },
+        ),
+        (
+            "我昨晚一点到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T01:00:00+08:00",
+            },
+        ),
+        (
             "今天凌晨到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             {"title": "到达杭州"},
@@ -2666,6 +2732,51 @@ async def test_gateway_dispatches_supported_family_canonical_projection(
             },
         ),
         (
+            "昨天午夜十二点半到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T00:30:00+08:00",
+            },
+        ),
+        (
+            "我昨夜十一点一刻到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T23:15:00+08:00",
+            },
+        ),
+        (
+            "我昨晚十二点半到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T00:30:00+08:00",
+            },
+        ),
+        (
+            "昨天夜里十二点半到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T00:30:00+08:00",
+            },
+        ),
+        (
+            "我昨晚一点到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T01:00:00+08:00",
+            },
+        ),
+        (
             "今天凌晨到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             "/episodes/life-event",
@@ -2793,16 +2904,26 @@ async def test_executor_ambiguous_related_event_times_never_post(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "day_offset"),
+    (
+        ("舌尖溃疡昨天好了，修改记录", -1),
+        ("舌尖溃疡之前看似好转但今天已经完全好了，修改记录", 0),
+        ("舌尖溃疡昨天看似好转但今天已经完全好了，修改记录", 0),
+    ),
+)
 async def test_executor_lists_owner_illness_before_exact_resolution_update(
     db,
     monkeypatch,
+    message,
+    day_offset,
 ):
     executor = AgentExecutor(db)
     executor._current_user_id = 1
     executor._turn_channel = "typed"
-    executor._current_turn_user_message = "舌尖溃疡昨天好了，修改记录"
+    executor._current_turn_user_message = message
     expected_end_date = (
-        executor._agent_kernel_reference_now().date() - timedelta(days=1)
+        executor._agent_kernel_reference_now().date() + timedelta(days=day_offset)
     ).isoformat()
     calls = []
 
@@ -3096,19 +3217,29 @@ async def test_historical_illness_query_is_projected_to_turn_entity_and_window(
             {"dimension": "illness", "keyword": "扁桃体炎", "days": 183},
         ),
         (
-            "我上一次扁桃体炎是什么时候 最近半年分别有哪些记录",
-            {"dimension": "sleep", "days": 7},
-            {"dimension": "illness", "keyword": "扁桃体炎", "days": 183},
-        ),
-        (
             "扁桃体炎最近半年有哪些记录",
             {"dimension": "illness", "keyword": "感冒", "days": 7},
             {"dimension": "illness", "keyword": "扁桃体炎", "days": 183},
         ),
         (
             "查一下我近半年玫瑰糠疹的记录",
-            {"dimension": "sleep", "days": 7},
+            {"dimension": "illness", "keyword": "感冒", "days": 7},
             {"dimension": "illness", "keyword": "玫瑰糠疹", "days": 183},
+        ),
+        (
+            "查询我过去一年痛风的历史",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "痛风", "days": 365},
+        ),
+        (
+            "帮我查玫瑰糠疹近半年的记录",
+            {"dimension": "illness", "keyword": "感冒", "days": 7},
+            {"dimension": "illness", "keyword": "玫瑰糠疹", "days": 183},
+        ),
+        (
+            "扁桃体炎最近半年有多少条记录",
+            {"dimension": "illness", "keyword": "感冒", "days": 7},
+            {"dimension": "illness", "keyword": "扁桃体炎", "days": 183},
         ),
         (
             "最近一年口腔溃疡有哪些记录？",
@@ -3156,6 +3287,8 @@ async def test_historical_illness_query_projects_arbitrary_entity_and_year_windo
         "最近半年口腔溃疡和湿疹有哪些记录？",
         "最近半年扁桃体炎还有鼻窦炎有哪些记录？",
         "过去三个月湿疹和流感有哪些记录？",
+        "查询近半年偏头痛或痛风的记录",
+        "查询近半年偏头痛跟痛风的记录",
     ),
 )
 async def test_multi_entity_illness_query_never_falls_back_to_model_scope(
@@ -3182,6 +3315,42 @@ async def test_multi_entity_illness_query_never_falls_back_to_model_scope(
     assert result.decision is not None
     assert result.decision.action == "block"
     assert result.decision.reason == "illness_query_entity_requires_clarification"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "查一下我近半年偏头痛的记录",
+        "我上一次扁桃体炎是什么时候 最近半年分别有哪些记录",
+        "查一下我近半年玫瑰糠疹的记录",
+    ),
+)
+async def test_long_tail_history_query_conflicting_model_dimension_never_dispatches(
+    policy_mode,
+    message,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments={"dimension": "sleep", "days": 7},
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert result.decision.reason == "health_query_dimension_conflict"
 
 
 @pytest.mark.asyncio

@@ -23,6 +23,7 @@ _HARD_BLOCK_REASONS = frozenset(
         "delete_requires_explicit_whole_record_intent",
         "update_requires_exact_target_evidence",
         "illness_query_entity_requires_clarification",
+        "health_query_dimension_conflict",
     }
 )
 

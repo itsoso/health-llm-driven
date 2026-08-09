@@ -67,9 +67,9 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v21"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v17"
-_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v12"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v22"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v18"
+_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v13"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
 _HEALTH_RECORD_DOMAIN_TYPES = {
     "diet": "diet",
@@ -170,62 +170,43 @@ _ILLNESS_TARGET_TERMS = (
     "伤口",
     "痘痘发作",
 )
-_ILLNESS_RECOVERY_RE = re.compile(r"(?:好转|改善|缓解|康复|痊愈|好了?)")
-_ILLNESS_RELAPSE_OR_WORSENING_RE = re.compile(
-    r"(?:复发|再发|重新发作|又发作|再次发作|又犯了|再犯|犯病|"
-    r"加重|恶化|反复|反弹|更严重|严重了|变严重|越来越严重|"
-    r"又(?:疼|痛|肿|痒|破|起泡|长(?:出来)?|生(?:出来)?|冒(?:出来)?|出现)(?:了)?|"
-    r"(?:疼|痛|肿|痒).{0,4}更(?:厉害|严重)|更(?:疼|痛|肿|痒|厉害|严重))"
-)
 _ILLNESS_ASSERTION_BOUNDARY_RE = re.compile(r"(?:但是|不过|然而|反而|但|却|就)")
-_ILLNESS_RECOVERY_UNCERTAIN_PREFIX_RE = re.compile(
-    r"(?:似乎|好像|貌似|可能|也许|或许|大概|大约|看起来|不确定|说不准)"
-    r"(?:(?:已经|正在|逐步|慢慢|有些|有所|明显|完全|彻底))*$"
+_QUERY_DIMENSION_TEXT_TERMS: dict[str, tuple[str, ...]] = {
+    "sleep": ("睡眠", "入睡", "起床", "睡觉"),
+    "diet": ("饮食", "餐", "吃", "热量", "营养"),
+    "water": ("饮水", "喝水", "补水"),
+    "weight": ("体重", "称重"),
+    "blood_pressure": ("血压", "收缩压", "舒张压"),
+    "exercise": ("运动", "跑步", "训练", "步数"),
+    "medication": ("用药", "服药", "药物"),
+    "events": ("行程", "事件", "时间线"),
+    "medical_exam": ("化验", "检查", "体检", "影像"),
+}
+_ILLNESS_PARTIAL_RECOVERY_RE = re.compile(
+    r"(?:好了点|好了一些|好了一半|好了一丢丢|好了一小点|快好了|基本好了|"
+    r"一点点好了|稍微好了|有点好了|算是好了|差点好了)"
 )
-_ILLNESS_RECOVERY_NEGATED_PREFIX_RE = re.compile(
-    r"(?:看不出|看不到|无法判断|难以判断|不能确定|"
-    r"(?:不能|不足以)(?:说明|代表|证明|确认)|"
-    r"未(?:曾)?(?:见|见到|看到|出现|观察到)?|"
-    r"(?:没有|没)(?:看到|见到|出现|发现)?|"
-    r"不(?:代表|意味着?|说明|表明)|"
-    r"(?:没有|没)理由(?:相信|认为)|"
-    r"(?:没有|无|缺乏).{0,8}(?:证据|迹象|表现)"
-    r"(?:表明|显示|说明)?(?:已经|真正|完全)?|"
-    r"并(?:非|不是|无|未|没有|没)|"
-    r"尚(?:无|未|没有|没)|仍(?:无|未|没有|没)|"
-    r"还(?:无|未|没有|没)|绝非|不是|不算|算不上|"
-    r"毫无|谈不上|无|未|没有|没)"
-    r"(?:任何|有|明显|真正|实质性|完全|彻底|已经)*$"
+_ILLNESS_CLEAR_IMPROVEMENT_RE = re.compile(
+    r"(?:(?:已经|确实|真的)?(?:明显|有所|逐步|慢慢)?"
+    r"(?:好转|改善|缓解)(?:了)?|未用药(?:便|就)好转)"
 )
-_ILLNESS_RECOVERY_NEGATED_SUFFIX_RE = re.compile(
-    r"^(?:不了|不成|(?:其实|实际上)?(?:并)?(?:没有|没)|"
-    r"(?:尚未|还未|未)(?:得到)?(?:证实|确认|证明)|"
-    r"(?:未经|尚待)(?:证实|确认|证明)|"
-    r"存疑|(?:尚)?不确定|只是猜测|仅是猜测|吗|么|[?？])"
+_ILLNESS_CLEAR_RESOLUTION_RE = re.compile(
+    r"(?:(?:已经)?(?:完全|彻底)?好了|(?:已经)?(?:完全|彻底)?(?:康复|痊愈))"
 )
-_ILLNESS_WORSENING_NEGATED_PREFIX_RE = re.compile(
-    r"(?:并)?(?:没有|没|未|无|不)"
-    r"(?:(?:再|继续|明显|进一步|出现|发生|见到|看到))*$"
+_ILLNESS_CLEAR_ACTIVE_RE = re.compile(r"(?:还在发作中|发作中|还没好|仍未好)")
+_ILLNESS_STATE_TIME_PREFIX_RE = re.compile(
+    r"^(?:之前|此前|先前|前天|昨天|昨日|今日|今天|刚刚|刚才|现在|目前)"
 )
-_ILLNESS_WORSENING_UNCERTAIN_PREFIX_RE = re.compile(
-    r"(?:似乎|好像|可能|也许|或许|是否|不确定)$"
+_ILLNESS_UPDATE_INSTRUCTION_SUFFIX_RE = re.compile(
+    r"[，,。.!！；;]?(?:(?:请|请你|帮我|麻烦|麻烦你))?"
+    r"(?:修改|更新|更正)(?:一下)?(?:这条)?记录[。.!！]?$"
 )
-_CLEAR_ACTIVE_ILLNESS_RE = re.compile(
-    r"(?:还在发作中|发作中|还没好|仍未好)(?=[，,。.!！；;]|修改|更新|更正|$)"
-)
-_ILLNESS_ACTIVE_UNSAFE_PREFIX_RE = re.compile(
-    r"(?:并非|不是|不算|算不上|无法确定|不能确定|"
-    r"似乎|好像|貌似|可能|也许|或许|大概|大约|看起来)"
-    r"(?:(?:已经|仍然|还|正在))*$"
-)
-_ILLNESS_EPISTEMIC_UNCERTAINTY_RE = re.compile(
-    r"(?:估计|推测|猜测|未必|看似|疑似|据说|听说|传言|可能|也许|或许|"
-    r"大概|大约|好像|貌似|似乎|不确定|无法确定|不能确定|未能确认|"
-    r"与否|存疑|假象|尚待确认)"
-)
-_ILLNESS_ENTITY_FORM_RE = re.compile(
-    r"(?:炎|疹|疮|癣|癌|瘤|病|症|综合征|感染|溃疡|哮喘|感冒|流感|"
-    r"水泡|伤口|烫伤|麦粒肿|甲沟炎|带状疱疹)$"
+_ILLNESS_RECORD_REFERENCE_PREFIX_RE = re.compile(
+    r"^(?:的)?(?:"
+    r"(?:(?:疾病)?(?:记录|条目))?(?:编号|id|号|#)(?:是|为|=|：|:)?#?\d+|"
+    r"(?:疾病)?(?:记录|条目)(?:编号|id|号)?(?:是|为|=|：|:)?#?\d+|"
+    r"第\d+(?:个|号|条)(?:疾病)?(?:记录|条目)"
+    r")(?:的)?"
 )
 _MEAL_TYPE_ALIASES = {
     "breakfast": "breakfast",
@@ -863,56 +844,33 @@ def _authorized_illness_update_args(
 
 def _illness_update_patch(snapshot: TurnSnapshot) -> dict[str, Any] | None:
     text = "".join(str(snapshot.envelope.text or "").split())
-    patch: dict[str, Any] = {}
-    if _has_asserted_illness_worsening(text):
+    statement = _illness_governing_state_statement(snapshot, text)
+    if statement is None:
         return None
-    active_assertion = _illness_active_assertion(text)
-    if active_assertion == "unsafe":
+    patch: dict[str, Any]
+    if _ILLNESS_CLEAR_ACTIVE_RE.fullmatch(statement):
+        patch = {"status": "active"}
+    elif _ILLNESS_PARTIAL_RECOVERY_RE.fullmatch(statement):
+        patch = {"status": "improving"}
+    elif _ILLNESS_CLEAR_IMPROVEMENT_RE.fullmatch(statement):
+        patch = {"status": "improving"}
+    elif _ILLNESS_CLEAR_RESOLUTION_RE.fullmatch(statement):
+        patch = {"status": "resolved"}
+    else:
+        # Unknown qualifiers, uncertainty, relapse and additional semantic
+        # clauses never inherit authority from a recovery substring.
         return None
-    if active_assertion == "positive":
-        patch["status"] = "active"
-    elif _illness_recovery_assertion(text) != "positive":
-        return None
-
-    clear_terminal = any(
-        re.search(
-            rf"{re.escape(str(record.get('name') or ''))}"
-            r"(?:前天|昨天|今日|今天|刚刚|现在)?"
-            r"(?:已经)?(?:完全|彻底)?好了(?=[，,。.!！；;]|$)",
-            text,
-        )
-        for record in _owner_scoped_manage_list_records(snapshot, "illness")
-        if str(record.get("name") or "")
-    )
-    if not patch:
-        partial_recovery = "好了" in text and not clear_terminal
-        if partial_recovery or re.search(r"(?:好转|改善|缓解)", text):
-            patch["status"] = "improving"
-        elif (
-            any(
-                marker in text
-                for marker in ("已痊愈", "痊愈", "康复", "完全好了", "彻底好了")
-            )
-            or clear_terminal
-        ):
-            patch["status"] = "resolved"
-        else:
-            return None
 
     if patch["status"] == "resolved":
-        day_offset = next(
-            (
-                offset
-                for marker, offset in (
-                    ("前天", -2),
-                    ("昨天", -1),
-                    ("今日", 0),
-                    ("今天", 0),
-                )
-                if marker in text
-            ),
-            None,
-        )
+        day_offsets = {
+            "前天": -2,
+            "昨天": -1,
+            "昨日": -1,
+            "今日": 0,
+            "今天": 0,
+        }
+        time_markers = tuple(re.finditer(r"前天|昨天|昨日|今日|今天", text))
+        day_offset = day_offsets[time_markers[-1].group(0)] if time_markers else None
         if day_offset is not None:
             patch["end_date"] = (
                 snapshot.context.current_time.date() + timedelta(days=day_offset)
@@ -920,63 +878,31 @@ def _illness_update_patch(snapshot: TurnSnapshot) -> dict[str, Any] | None:
     return patch
 
 
-def _assertion_prefix(text: str, predicate_start: int) -> str:
-    clause_start = max(
-        (text.rfind(mark, 0, predicate_start) for mark in "，,。.!！；;：:"),
-        default=-1,
+def _illness_governing_state_statement(
+    snapshot: TurnSnapshot,
+    text: str,
+) -> str | None:
+    """Return one closed, final illness-state assertion or fail closed."""
+    record_names = sorted(
+        (
+            "".join(str(record.get("name") or "").split())
+            for record in _owner_scoped_manage_list_records(snapshot, "illness")
+        ),
+        key=len,
+        reverse=True,
     )
-    prefix = text[clause_start + 1 : predicate_start]
-    boundaries = tuple(_ILLNESS_ASSERTION_BOUNDARY_RE.finditer(prefix))
-    if boundaries:
-        prefix = prefix[boundaries[-1].end() :]
-    return prefix
-
-
-def _illness_recovery_assertion(text: str) -> str:
-    """Classify recovery predicates by their local grammatical polarity."""
-    matches = tuple(_ILLNESS_RECOVERY_RE.finditer(text))
-    if not matches:
-        return "none"
-    for match in matches:
-        prefix = _assertion_prefix(text, match.start())
-        suffix = text[match.end() : match.end() + 12]
-        if (
-            _ILLNESS_EPISTEMIC_UNCERTAINTY_RE.search(prefix[-24:] + suffix)
-            or _ILLNESS_RECOVERY_UNCERTAIN_PREFIX_RE.search(prefix)
-            or _ILLNESS_RECOVERY_NEGATED_PREFIX_RE.search(prefix)
-            or _ILLNESS_RECOVERY_NEGATED_SUFFIX_RE.search(suffix)
-        ):
-            return "unsafe"
-    return "positive"
-
-
-def _illness_active_assertion(text: str) -> str:
-    """Classify an active-state predicate without treating ``没好`` as denial."""
-    matches = tuple(_CLEAR_ACTIVE_ILLNESS_RE.finditer(text))
-    if not matches:
-        return "none"
-    for match in matches:
-        prefix = _assertion_prefix(text, match.start())
-        suffix = text[match.end() : match.end() + 12]
-        if (
-            _ILLNESS_EPISTEMIC_UNCERTAINTY_RE.search(prefix[-24:] + suffix)
-            or _ILLNESS_ACTIVE_UNSAFE_PREFIX_RE.search(prefix)
-            or _ILLNESS_RECOVERY_NEGATED_SUFFIX_RE.search(suffix)
-        ):
-            return "unsafe"
-    return "positive"
-
-
-def _has_asserted_illness_worsening(text: str) -> bool:
-    """Return true for positive or uncertain worsening, not explicit denial."""
-    for match in _ILLNESS_RELAPSE_OR_WORSENING_RE.finditer(text):
-        prefix = _assertion_prefix(text, match.start())
-        if _ILLNESS_WORSENING_NEGATED_PREFIX_RE.search(prefix):
-            continue
-        if _ILLNESS_WORSENING_UNCERTAIN_PREFIX_RE.search(prefix):
-            return True
-        return True
-    return False
+    target_name = next((name for name in record_names if name and name in text), "")
+    if not target_name:
+        return None
+    statement = text.split(target_name, 1)[1]
+    statement = _ILLNESS_UPDATE_INSTRUCTION_SUFFIX_RE.sub("", statement)
+    statement = statement.strip("，,。.!！；;：:")
+    statement = _ILLNESS_RECORD_REFERENCE_PREFIX_RE.sub("", statement, count=1)
+    governing_parts = _ILLNESS_ASSERTION_BOUNDARY_RE.split(statement)
+    statement = governing_parts[-1] if governing_parts else statement
+    statement = _ILLNESS_STATE_TIME_PREFIX_RE.sub("", statement, count=1)
+    statement = statement.strip("，,。.!！；;：:")
+    return statement or None
 
 
 def _water_update_values(text: str) -> tuple[float | None, float] | None:
@@ -1053,7 +979,8 @@ def _explicit_illness_record_ids(text: str) -> set[int]:
     normalized = "".join(str(text or "").split())
     record_ids: set[int] = set()
     patterns = (
-        r"(?<![A-Za-z0-9])id[#：:]?(?P<record_id>\d+)(?!\d)",
+        r"(?<![A-Za-z0-9])(?:id|编号|#)(?:是|为|=|#|：|:)?"
+        r"(?P<record_id>\d+)(?!\d)",
         r"(?:疾病)?(?:记录|条目)(?:编号|id|号)?(?:是|为)?[#：:]?"
         r"(?P<record_id>\d+)(?!\d)",
         r"第(?P<record_id>\d+)(?:个|号|条)(?:疾病)?(?:记录|条目)",
@@ -1102,12 +1029,17 @@ def _illness_query_entities(text: str) -> tuple[str, ...]:
         r"(?:记录|历史)?",
         r"(?P<entities>[^?？，,。]{2,60}?)(?:最近|近|过去)"
         r"(?:\d+|[一二两三四五六七八九十]+|半)(?:个)?(?:天|周|月|年)"
-        r"(?:内|以来)?(?:分别)?(?:有哪些|有那些|有什么|有几条|有几次)"
+        r"(?:内|以来)?(?:分别)?(?:有哪些|有那些|有什么|有几条|有几次|"
+        r"有多少条|多少条)"
         r"(?:记录|历史)?",
         r"^(?:查一下|查询|查看|帮我查一下|帮我查|请查一下|请查)?(?:我)?"
         r"(?:最近|近|过去)(?:\d+|[一二两三四五六七八九十]+|半)"
         r"(?:个)?(?:天|周|月|年)(?:内|以来)?"
         r"(?P<entities>[^?？，,。]{2,60}?)(?:的)?(?:记录|历史)[?？]?$",
+        r"^(?:查一下|查询|查看|帮我查一下|帮我查|请查一下|请查)?(?:我)?"
+        r"(?P<entities>[^?？，,。]{2,60}?)(?:最近|近|过去)"
+        r"(?:\d+|[一二两三四五六七八九十]+|半)(?:个)?(?:天|周|月|年)"
+        r"(?:内|以来)?(?:的)?(?:记录|历史)[?？]?$",
     )
     for pattern in patterns:
         match = re.search(pattern, normalized)
@@ -1115,11 +1047,16 @@ def _illness_query_entities(text: str) -> tuple[str, ...]:
             candidates.append(match.group("entities"))
     for candidate in candidates:
         candidate = re.sub(
-            r"(?:有哪些|有那些|有什么|有几条|有几次)$",
+            r"(?:有哪些|有那些|有什么|有几条|有几次|有多少条|多少条)$",
             "",
             candidate,
         )
-        for value in re.split(r"(?:还有|以及|[、和与及])", candidate):
+        candidate = re.sub(
+            r"^(?:查一下|查询|查看|帮我查一下|帮我查|请查一下|请查)+",
+            "",
+            candidate,
+        )
+        for value in re.split(r"(?:还有|以及|[、和与及或跟])", candidate):
             entity = re.sub(r"^(?:我(?:的)?|分别)", "", value).strip("的 ")
             if 2 <= len(entity) <= 40 and not re.search(
                 r"(?:记录|历史|什么时候|何时)", entity
@@ -1128,9 +1065,14 @@ def _illness_query_entities(text: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(entities))
 
 
-def _looks_like_illness_entity(value: str) -> bool:
-    normalized = _normalize_entity_name(value)
-    return bool(normalized and _ILLNESS_ENTITY_FORM_RE.search(normalized))
+def _query_entities_match_dimension(
+    entities: tuple[str, ...],
+    dimension: str,
+) -> bool:
+    terms = _QUERY_DIMENSION_TEXT_TERMS.get(dimension, ())
+    if not terms:
+        return False
+    return all(any(term in entity for term in terms) for entity in entities)
 
 
 def _explicit_illness_query_window_days(text: str) -> int | None:
@@ -1398,26 +1340,14 @@ def decide_tool_capability(
         proposed_dimension = str(args.get("dimension") or "").strip().lower()
         known_illness_entities = _illness_targets(turn_text)
         illness_query_entities = _illness_query_entities(turn_text)
-        structurally_illness = bool(illness_query_entities) and all(
-            _looks_like_illness_entity(entity) for entity in illness_query_entities
-        )
-        if (
-            known_illness_entities
-            or structurally_illness
-            or proposed_dimension
-            in {
-                "",
-                "illness",
-                "comprehensive",
-            }
-        ):
-            if len(illness_query_entities) > 1:
-                return _decision(
-                    "block",
-                    "illness_query_entity_requires_clarification",
-                    tool_name,
-                    args,
-                )
+        if len(illness_query_entities) > 1:
+            return _decision(
+                "block",
+                "illness_query_entity_requires_clarification",
+                tool_name,
+                args,
+            )
+        if known_illness_entities or proposed_dimension in {"", "illness"}:
             illness_query_args = _project_illness_query_to_turn(
                 turn_text,
             )
@@ -1428,6 +1358,16 @@ def decide_tool_capability(
                     tool_name,
                     illness_query_args,
                 )
+        elif illness_query_entities and not _query_entities_match_dimension(
+            illness_query_entities,
+            proposed_dimension,
+        ):
+            return _decision(
+                "block",
+                "health_query_dimension_conflict",
+                tool_name,
+                args,
+            )
 
     if tool_name in READ_ONLY_TOOLS:
         return _decision("allow", "read_only_tool", tool_name, args)
@@ -3823,24 +3763,31 @@ def _clock_components(value: Any) -> tuple[int, int] | None:
         match_start = chinese_match.start()
     if not 0 <= hour <= 23 or not 0 <= minute <= 59:
         return None
-    daypart_prefix = text[max(0, match_start - 6) : match_start]
-    if "凌晨" in daypart_prefix and hour == 12:
+    daypart_prefix = text[max(0, match_start - 8) : match_start]
+    night_markers = (
+        "晚上",
+        "晚间",
+        "夜里",
+        "夜间",
+        "夜晚",
+        "半夜",
+        "午夜",
+        "深夜",
+        "夜半",
+        "昨晚",
+        "今晚",
+        "昨夜",
+        "今夜",
+        "凌晨",
+    )
+    afternoon_markers = ("下午", "傍晚")
+    if any(marker in daypart_prefix for marker in night_markers) and hour == 12:
         hour = 0
     elif 1 <= hour <= 5 and "中午" in daypart_prefix:
         hour += 12
-    elif hour < 12 and any(
-        marker in daypart_prefix
-        for marker in (
-            "下午",
-            "傍晚",
-            "晚上",
-            "晚间",
-            "夜里",
-            "夜间",
-            "昨晚",
-            "今晚",
-        )
-    ):
+    elif hour < 12 and any(marker in daypart_prefix for marker in afternoon_markers):
+        hour += 12
+    elif 6 <= hour < 12 and any(marker in daypart_prefix for marker in night_markers):
         hour += 12
     return hour, minute
 
@@ -3872,7 +3819,7 @@ def _clock_match_count(value: Any) -> int:
 def _event_occurrence_date(text: str, current_date: date) -> date:
     if "前天" in text:
         return current_date - timedelta(days=2)
-    if any(marker in text for marker in ("昨天", "昨日", "昨晚")):
+    if any(marker in text for marker in ("昨天", "昨日", "昨晚", "昨夜")):
         return current_date - timedelta(days=1)
     return current_date
 

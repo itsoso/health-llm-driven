@@ -292,8 +292,9 @@ _CURRENT_USER_SUBJECT_NOISE_RE = re.compile(
     r"(?:(?:\d{4}年)?\d{1,2}月\d{1,2}日|"
     r"\d{4}[-/]\d{1,2}[-/]\d{1,2}|"
     r"今天|今日|刚才|刚刚|方才|现在|目前|早上|早晨|上午|"
-    r"中午|下午|晚上|晚间|凌晨|黎明|清晨|傍晚|夜里|夜间|半夜|午夜|"
-    r"昨天|前天|昨晚|今早|这次|上次|上回|"
+    r"中午|下午|晚上|晚间|凌晨|黎明|清晨|傍晚|夜里|夜间|夜晚|"
+    r"半夜|午夜|深夜|夜半|昨天|前天|昨晚|昨夜|今晚|今夜|今早|"
+    r"这次|上次|上回|"
     r"上一次|以前|既往|过程中|这会儿|这几天|最近几天|"
     r"过去(?:一|二|两|三|四|五|六|七|八|九|十|\d+)天|"
     r"最近(?:一|二|两|三|四|五|六|七|八|九|十|\d+)天|"
@@ -1231,6 +1232,7 @@ def _segment_has_untrusted_provenance_or_owner(segment: str) -> bool:
     """Reject sourced facts and parenthetical ownership transfers as authority."""
     if _EXTERNAL_PROVENANCE_RE.search(segment):
         return True
+    event_arrival_segment = _event_segment_contains_arrival(segment)
     for opening, closing in _PARENTHETICAL_PAIRS:
         for match in re.finditer(
             rf"{re.escape(opening)}(?P<content>.*?){re.escape(closing)}",
@@ -1241,6 +1243,59 @@ def _segment_has_untrusted_provenance_or_owner(segment: str) -> bool:
                 return True
             if _is_post_attributed_to_non_current_owner(content):
                 return True
+            if event_arrival_segment and not _is_current_user_event_parenthetical(
+                content
+            ):
+                # Event authority is positive: an unmodeled parenthetical may
+                # carry provenance or ownership and cannot be ignored.
+                return True
+    if event_arrival_segment and _event_segment_has_unmodeled_clause(segment):
+        return True
+    return False
+
+
+def _is_current_user_event_parenthetical(content: str) -> bool:
+    normalized = content.strip("，,。.!！；;：: ")
+    if re.fullmatch(
+        r"(?:(?:这|本|该|此)(?:次|趟|段)?)?"
+        r"(?:我|我的|本人|自己)(?:的)?(?:行程|旅程|旅途|旅行|出行|事件)",
+        normalized,
+    ):
+        return True
+    reduced = _CURRENT_USER_SUBJECT_NOISE_RE.sub("", normalized)
+    reduced = _SUBJECT_RELATION_NOISE_RE.sub("", reduced)
+    return not reduced.strip()
+
+
+def _event_segment_parts(segment: str) -> tuple[str, ...]:
+    without_parentheticals = segment
+    for opening, closing in _PARENTHETICAL_PAIRS:
+        without_parentheticals = re.sub(
+            rf"{re.escape(opening)}.*?{re.escape(closing)}",
+            "",
+            without_parentheticals,
+        )
+    return tuple(
+        part.strip()
+        for part in re.split(r"[，,。.!！；;]", without_parentheticals)
+        if part.strip()
+    )
+
+
+def _event_segment_contains_arrival(segment: str) -> bool:
+    return any(
+        _EVENT_ARRIVAL_FACT_RE.fullmatch(part) for part in _event_segment_parts(segment)
+    )
+
+
+def _event_segment_has_unmodeled_clause(segment: str) -> bool:
+    parts = _event_segment_parts(segment)
+    for part in parts:
+        if _EVENT_ARRIVAL_FACT_RE.fullmatch(part):
+            continue
+        if _EVENT_WRITE_SCAFFOLD_RE.match(part):
+            continue
+        return True
     return False
 
 
