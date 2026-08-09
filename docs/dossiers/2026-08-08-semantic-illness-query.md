@@ -1383,6 +1383,49 @@ at exact commit `b0c0815f06094abb2b9d6f7d3e2eb91c67fa8bcd`. Reviewers must evalu
 documentation commit that records this evidence together with that implementation
 parent; neither commit has been pushed or deployed.
 
+Fresh code and product-safety reviews of exact documentation commit
+`a0217e4c72d84d9ea96fdf24d7143c7bd02eb7ff` both returned NO-GO, so neither
+that commit nor its implementation parent was pushed or deployed. The code
+review crossed 96 synthetic read and 38 synthetic write executions through the
+real Executor→Gateway→Policy chain. It proved that the new unresolved-read
+denial was not a shadow hard block, negated reads still dispatched, batch
+authorization did not bind aggregation or child order, mixed-dimension calendar
+comparisons bypassed the unrepresentable-window check, and a valid MRI report
+query was falsely denied. The safety review independently ran 107 new cases in
+both modes (214 executions): 170 passed and 44 failed. Its 22 unique failures
+also proved one quoted-example write dispatched in both modes, disease names
+containing metric substrings authorized wrong-domain reads, unresolved
+demonstratives became illness keywords, calendar phrases were misrepresented as
+rolling days, and several natural latest-SLE forms polluted or lost the keyword.
+The safety matrix counted two unauthorized writes. Both reviews used mocks only
+and performed zero production-database I/O.
+
+The v30 remediation makes every unresolved/cancelled/calendar denial a shadow
+hard block and preserves quotation provenance before write-clause splitting.
+Read cancellation now has a scoped later-positive escape, so `不要查SLE，但查脑梗`
+binds only the latter query. Demonstratives cannot become health entities;
+metric substrings embedded in disease-name morphology do not grant metric read
+authority. Latest-occurrence parsing binds both prefix and suffix forms without
+leaking `记录` / `发作` into the illness keyword, while body-part-prefixed MRI
+queries resolve to the registered medical-exam dimension. Public query schemas
+now state that `days` means a rolling window containing today and cannot express
+昨天 / 上周 / 去年-style calendar intervals; policy blocks those phrases until
+an exact start/end contract exists. Batch authority now binds ordered
+dimension/window/aggregation triples, uses a deterministic average default for
+comparison speech acts, and rejects model-swapped children or aggregation
+injection. Contracts are now `agent-capability-policy-v30` /
+`authorized-target-set-v26` / `record-update-evidence-v21`.
+
+Failure-first evidence captured 56/56 failures in the new Gateway review matrix
+plus 2/2 quoted-write scope failures before implementation. After remediation,
+the same matrices pass, the complete capability-policy file passes 1,186/1,186,
+and the final single-process 27-file Backend gate passes 4,400/4,400 with
+`TZ=Asia/Shanghai`. Both adjacent contextual meal-photo files pass 23/23, the
+three Mobile chat suites pass 99/99 with the same visible pre-existing React
+`act(...)` warnings, and the iOS acceptance harness exits zero. Ruff, targeted
+formatting, Python compilation, architecture drift, 102-dossier consistency and
+`git diff --check` all pass. Fresh exact-commit dual review remains pending.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.

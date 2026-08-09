@@ -52,6 +52,22 @@ def test_batch_tool_description_does_not_claim_unrepresentable_calendar_windows(
     assert "任意日期区间" in description
 
 
+def test_single_query_tool_description_does_not_claim_calendar_days_aliases():
+    from app.services.tool_schema_registry import HEALTH_TOOLS
+
+    tool = next(
+        item for item in HEALTH_TOOLS if item["function"]["name"] == "health_query"
+    )
+    description = tool["function"]["description"]
+    days_description = tool["function"]["parameters"]["properties"]["days"][
+        "description"
+    ]
+
+    assert '问"昨天" → days=1' not in description
+    assert "不能表示昨天" in description
+    assert "不能表达昨天/上周/去年" in days_description
+
+
 # ── 1. 多维度正例 ────────────────────────────────────────────────────────────
 @pytest.mark.asyncio
 async def test_multi_metric_positive():

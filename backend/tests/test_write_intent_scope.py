@@ -432,6 +432,20 @@ def test_reported_or_quoted_write_language_is_not_authorization(text: str) -> No
     assert has_explicit_authorizing_write_request(text) is False
 
 
+def test_quoted_example_split_by_metalinguistic_suffix_has_no_write_authority():
+    text = "“请记录体重72kg”只是一个例句"
+
+    assert is_reported_write_reference(text) is True
+    assert has_explicit_authorizing_write_request(text) is False
+    assert authorized_health_record_clauses(text) == ()
+
+
+def test_quoted_example_does_not_revoke_later_direct_contrast_request():
+    text = "“请记录体重72kg”只是例句，但请记录我的体重73kg"
+
+    assert authorized_health_record_clauses(text) == ("请记录我的体重73kg",)
+
+
 @pytest.mark.parametrize(
     "text",
     (
@@ -505,7 +519,9 @@ def test_unpunctuated_later_direct_request_has_its_own_scope(text: str) -> None:
         "识别这顿饭同时记录晚餐",
     ),
 )
-def test_polite_conditions_do_not_turn_direct_requests_into_quotations(text: str) -> None:
+def test_polite_conditions_do_not_turn_direct_requests_into_quotations(
+    text: str,
+) -> None:
     assert is_reported_write_reference(text) is False
     assert has_explicit_authorizing_write_request(text) is True
 

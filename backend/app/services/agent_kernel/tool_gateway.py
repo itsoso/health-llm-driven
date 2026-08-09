@@ -24,6 +24,9 @@ _HARD_BLOCK_REASONS = frozenset(
         "update_requires_exact_target_evidence",
         "illness_query_entity_requires_clarification",
         "health_query_dimension_conflict",
+        "health_query_semantics_unresolved",
+        "health_query_cancelled_by_user",
+        "health_query_calendar_window_unsupported",
     }
 )
 

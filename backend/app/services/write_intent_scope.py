@@ -1370,6 +1370,11 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
     for contrast_segment in _CONTRAST_SCOPE_RE.split(text):
         if not contrast_segment:
             continue
+        # Preserve quotation / attribution provenance before clause splitting.
+        # A splitter may separate “只是一个例句” from the quoted command and
+        # must not thereby turn the command fragment into the user's own voice.
+        if is_reported_write_reference(contrast_segment):
+            continue
         if _has_untrusted_colon_command(contrast_segment):
             continue
         if _segment_has_untrusted_provenance_or_owner(contrast_segment):

@@ -6,7 +6,6 @@ import hashlib
 import json
 import math
 import re
-from collections import Counter
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
@@ -69,9 +68,9 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v29"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v25"
-_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v20"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v30"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v26"
+_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v21"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
 _HEALTH_RECORD_DOMAIN_TYPES = {
     "diet": "diet",
@@ -246,7 +245,7 @@ _QUERY_DIMENSION_ENTITY_PREFIX_PATTERN = r"(?:夜间|每日|日均|平均|静息
 _QUERY_DIMENSION_ENTITY_SUFFIX_PATTERN = (
     r"(?:数据|指标|数值|读数|情况|状况|状态|评分|分数|质量|时长|时间|趋势|"
     r"变化|明细|详情|汇总|统计|清单|列表|次数|频率|总量|平均值|最高值|"
-    r"最低值|波动|距离|摄入)?"
+    r"最低值|波动|距离|摄入|报告)?"
 )
 _READ_QUERY_VERB_PATTERN = (
     r"(?:查询(?:一下)?|查找(?:一下)?|查看(?:一下)?|查到|查下|查(?:一下|一查)?|"
@@ -263,8 +262,17 @@ _HISTORY_QUERY_WINDOW_PATTERN = (
     r"最近(?!一次)|近来)"
 )
 _HISTORY_QUERY_WINDOW_RE = re.compile(_HISTORY_QUERY_WINDOW_PATTERN)
+_UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE = re.compile(
+    r"(?:昨天|昨日|前天|昨晚|昨夜|(?:这|本)(?:一)?周|上周|上一周|"
+    r"这个月|这月|本月|上个月|今年|本年|去年)"
+)
+_NEGATED_READ_QUERY_RE = re.compile(
+    rf"(?:不要|别|不用|无需|不必|请勿|勿|甭)(?:再)?(?:帮我|给我)?"
+    rf"{_READ_QUERY_VERB_PATTERN}"
+)
 _HISTORY_QUERY_QUESTION_RE = re.compile(
-    r"(?:上一次|是什么时候|在什么时候|何时|是几号|分别有哪些|有哪些|有那些|"
+    r"(?:上一次|是什么时候|在什么时候|何时|在何时|是何时|是哪天|是几号|"
+    r"分别有哪些|有哪些|有那些|"
     r"有什么|有几条|有几次|有多少条|多少条|是多少|平均多少|多少(?:呢)?|"
     r"(?:是)?升还是降|上升还是下降|有多高|怎么样|怎样|如何|呢|最近一次)"
 )
@@ -279,6 +287,10 @@ _HISTORY_QUERY_TRAILING_VERB_RE = re.compile(
     r"(?:对比|比较)(?:一下)?))$"
 )
 _ILLNESS_MEDICAL_ACRONYMS = frozenset({"sle"})
+_UNRESOLVED_QUERY_REFERENCE_RE = re.compile(
+    r"^(?:(?:之前|前面|上面|刚才|方才)?(?:的)?(?:这|那)(?:个|条|次|份)?|"
+    r"(?:这|那)(?:个|条|次|份)(?:病|疾病|记录|病例)?|它)$"
+)
 _ILLNESS_PARTIAL_RECOVERY_RE = re.compile(
     r"(?:好了点|好了一些|好了一半|好了一丢丢|好了一小点|快好了|基本好了|"
     r"一点点好了|稍微好了|有点好了|算是好了|差点好了)"
@@ -1111,6 +1123,8 @@ def _project_illness_query_to_turn(text: str) -> dict[str, Any] | None:
     targets = _illness_query_entities(normalized)
     if len(targets) != 1:
         return None
+    if _is_unresolved_query_reference(targets[0]):
+        return None
     if _query_entity_known_dimensions(targets[0]):
         return None
     if not (
@@ -1138,19 +1152,38 @@ def _normalize_query_text(text: str) -> str:
     return re.sub(r"[ \t\f\v]+", "", with_boundaries)
 
 
-def _query_scope_text(text: str) -> str:
-    """Select an explicit read clause after a negated write, else the whole turn."""
+def _health_read_cancelled_by_user(text: str) -> bool:
+    """Return whether the active read speech act is explicitly cancelled."""
     normalized = _normalize_query_text(text)
-    negated_write_re = re.compile(
+    negated_reads = tuple(_NEGATED_READ_QUERY_RE.finditer(normalized))
+    if not negated_reads:
+        return False
+    last_negated = negated_reads[-1]
+    suffix = normalized[last_negated.end() :]
+    boundary_re = re.compile(
+        r"(?:[，,；;。.!！?？、]|但|不过|然而|而是|却|可是|然后|只)"
+    )
+    for positive_read in _READ_QUERY_VERB_RE.finditer(suffix):
+        intervening = suffix[: positive_read.start()]
+        if boundary_re.search(intervening):
+            return False
+    return True
+
+
+def _query_scope_text(text: str) -> str:
+    """Select a later positive read clause after a cancelled action."""
+    normalized = _normalize_query_text(text)
+    negated_action_re = re.compile(
         r"(?:不要|别|不用|无需|不必|请勿|勿|甭)(?:再)?"
         r"[^，,；;。.!！?？、]{0,20}?"
-        r"(?:记录|保存|新增|录入|写入|更新|修改|打卡|记一下|记下)"
+        rf"(?:记录|保存|新增|录入|写入|更新|修改|打卡|记一下|记下|"
+        rf"{_READ_QUERY_VERB_PATTERN})"
     )
     read_boundary_re = re.compile(
         r"(?:[，,；;。.!！?？、]|只|但|不过|然而|而是|却|可是|然后)"
     )
-    for negated_write in negated_write_re.finditer(normalized):
-        suffix = normalized[negated_write.end() :]
+    for negated_action in negated_action_re.finditer(normalized):
+        suffix = normalized[negated_action.end() :]
         candidates = list(_READ_QUERY_VERB_RE.finditer(suffix))
         candidates.extend(_HISTORY_QUERY_WINDOW_RE.finditer(suffix))
         candidates.sort(key=lambda match: match.start())
@@ -1206,21 +1239,22 @@ def _history_query_entity_expression(text: str) -> str | None:
         normalized,
     )
     previous_match = re.search(
-        r"(?:上一次|最近一次)(?P<entity>.{2,80}?)"
-        r"(?:是什么时候|在什么时候|什么时候|何时|是几号)",
+        r"(?:上一次|最近一次)(?:的)?(?P<entity>.{2,80}?)"
+        r"(?:是什么时候|在什么时候|什么时候|何时|在何时|是何时|是哪天|是几号)",
         normalized,
     )
     trailing_previous_match = re.search(
-        r"(?P<entity>.{2,80}?)(?:上一次|最近一次)"
-        r"(?:是什么时候|在什么时候|什么时候|何时|是几号)",
+        r"(?P<entity>.{2,80}?)(?:上一次|最近一次)(?:的)?"
+        r"(?:记录|发作)?(?:是什么时候|在什么时候|什么时候|何时|在何时|"
+        r"是何时|是哪天|是几号|呢)",
         normalized,
     )
     if history_container_match is not None:
         candidate = history_container_match.group("entity")
-    elif previous_match is not None:
-        candidate = previous_match.group("entity")
     elif trailing_previous_match is not None:
         candidate = trailing_previous_match.group("entity")
+    elif previous_match is not None:
+        candidate = previous_match.group("entity")
     else:
         window_matches = tuple(_HISTORY_QUERY_WINDOW_RE.finditer(normalized))
         window_match = window_matches[0] if window_matches else None
@@ -1296,6 +1330,11 @@ def _is_registered_illness_acronym(value: str) -> bool:
     return str(value or "").strip().casefold() in _ILLNESS_MEDICAL_ACRONYMS
 
 
+def _is_unresolved_query_reference(value: str) -> bool:
+    normalized = str(value or "").strip("的，,。.!！；;：:?？ ")
+    return bool(_UNRESOLVED_QUERY_REFERENCE_RE.fullmatch(normalized))
+
+
 def _sparse_health_query_entity_expression(text: str) -> str | None:
     """Recognize terse entity fragments without granting arbitrary model scope."""
     candidate = _strip_history_query_request_prefix(text)
@@ -1351,6 +1390,21 @@ def _query_entities_match_dimension(
     terms = _QUERY_DIMENSION_TEXT_TERMS.get(dimension, ())
     if not terms:
         return False
+    if dimension == "medical_exam":
+        modality_terms = ("MRI", "核磁", "磁共振", "CT", "X光", "B超", "胃镜")
+        if all(
+            any(
+                re.fullmatch(
+                    rf"[\u4e00-\u9fffA-Za-z0-9]{{0,24}}{re.escape(term)}"
+                    r"(?:检查|报告|检查报告)?",
+                    entity,
+                    flags=re.IGNORECASE,
+                )
+                for term in modality_terms
+            )
+            for entity in entities
+        ):
+            return True
     return all(
         any(
             re.fullmatch(
@@ -1384,6 +1438,11 @@ def _query_text_known_dimension(text: str) -> str | None:
             if len(term) < 2 and term.isascii() is False:
                 continue
             for match in re.finditer(re.escape(term), normalized, flags=re.IGNORECASE):
+                if _query_dimension_match_embedded_in_illness_name(
+                    normalized,
+                    match.end(),
+                ):
+                    continue
                 matches.append((match.start(), match.end(), semantic_dimension))
     selected: list[tuple[int, int, str]] = []
     for match in sorted(matches, key=lambda item: item[1] - item[0], reverse=True):
@@ -1394,6 +1453,17 @@ def _query_text_known_dimension(text: str) -> str | None:
         selected.append(match)
     dimensions = {dimension for _start, _end, dimension in selected}
     return next(iter(dimensions)) if len(dimensions) == 1 else None
+
+
+def _query_dimension_match_embedded_in_illness_name(text: str, end: int) -> bool:
+    """Reject metric substrings that are lexical parts of a disease name."""
+    suffix = text[end : end + 20]
+    return bool(
+        re.match(
+            r"[\u4e00-\u9fff]{0,12}(?:综合征|障碍|疾病|病|症)",
+            suffix,
+        )
+    )
 
 
 def _semantic_query_dimension(dimension: str) -> str:
@@ -1411,11 +1481,11 @@ def _query_entity_known_dimensions(entity: str) -> frozenset[str]:
 
 def _batch_query_semantic_bindings(
     args: dict[str, Any],
-) -> tuple[tuple[str, int], ...] | None:
+) -> tuple[tuple[str, int, str | None], ...] | None:
     queries = args.get("queries")
     if not isinstance(queries, list) or not queries:
         return None
-    bindings: list[tuple[str, int]] = []
+    bindings: list[tuple[str, int, str | None]] = []
     for query in queries:
         if not isinstance(query, dict):
             return None
@@ -1432,8 +1502,26 @@ def _batch_query_semantic_bindings(
             return None
         if normalized_days <= 0:
             return None
-        bindings.append((_semantic_query_dimension(dimension), normalized_days))
+        raw_agg = query.get("agg")
+        agg = str(raw_agg).strip().lower() if raw_agg not in (None, "") else None
+        bindings.append((_semantic_query_dimension(dimension), normalized_days, agg))
     return tuple(bindings)
+
+
+def _query_requested_aggregate(text: str) -> str | None:
+    """Resolve one explicit aggregation operation from a user-owned span."""
+    requested: set[str] = set()
+    patterns = {
+        "trend": r"(?:趋势|升还是降|上升还是下降)",
+        "avg": r"(?:平均(?:值)?|均值|日均)",
+        "min": r"(?:最低(?:值)?|最小(?:值)?)",
+        "max": r"(?:最高(?:值)?|最大(?:值)?)",
+        "latest": r"(?:最新(?:值)?|最近一个值)",
+    }
+    for agg, pattern in patterns.items():
+        if re.search(pattern, text):
+            requested.add(agg)
+    return next(iter(requested)) if len(requested) == 1 else None
 
 
 def _normalize_batch_query_plan(
@@ -1458,22 +1546,8 @@ def _normalize_batch_query_plan(
 
 
 def _query_window_days(window_text: str) -> int | None:
-    if window_text in {
-        "今天",
-        "今日",
-        "昨天",
-        "昨日",
-        "前天",
-        "昨晚",
-        "昨夜",
-    }:
+    if window_text in {"今天", "今日"}:
         return 1
-    if window_text in {"这周", "这一周", "本周", "本一周", "上周", "上一周"}:
-        return 7
-    if window_text in {"这个月", "这月", "本月", "上个月"}:
-        return 30
-    if window_text in {"今年", "本年", "去年"}:
-        return 365
     if window_text in {"最近", "近来"}:
         return 7
     match = re.fullmatch(
@@ -1537,33 +1611,18 @@ def _batch_query_plan_bound_to_turn(
         return None
 
     windows = _explicit_query_windows(text)
-    expected_dimension_count = Counter(entity_dimensions)
+    expected_dimensions = tuple(entity_dimensions)
     if len(windows) > 1 and len(entity_dimensions) == 1:
-        expected_dimension_count = Counter({entity_dimensions[0]: len(windows)})
-    if Counter(dimension for dimension, _days in proposed_bindings) != (
-        expected_dimension_count
-    ):
+        expected_dimensions = tuple(entity_dimensions[0] for _window in windows)
+    proposed_dimensions = tuple(
+        dimension for dimension, _days, _agg in proposed_bindings
+    )
+    if proposed_dimensions != expected_dimensions:
         return None
-    if not windows:
-        return normalized_plan
-    if len(windows) == 1:
-        projected_days = windows[0][2]
-        return {
-            **normalized_plan,
-            "queries": [{**query, "days": projected_days} for query in queries],
-        }
 
-    if len(entity_dimensions) == 1:
-        if len({days for _start, _end, days in windows}) != len(windows):
-            # The public plan can express only rolling recent-N-day windows.
-            # Two different phrases that collapse to the same N are not two
-            # independently representable calendar intervals.
-            return None
-        expected = Counter(
-            (entity_dimensions[0], days) for _start, _end, days in windows
-        )
-    else:
-        normalized_text = _query_scope_text(text)
+    normalized_text = _query_scope_text(text)
+    entity_segments = [normalized_text]
+    if len(entity_dimensions) > 1:
         search_text = normalized_text.casefold()
         entity_spans: list[tuple[int, int]] = []
         cursor = 0
@@ -1588,27 +1647,68 @@ def _batch_query_plan_bound_to_turn(
                     between_start + separator.end(),
                 )
             )
-
-        expected_pairs: list[tuple[str, int]] = []
-        for index, dimension in enumerate(entity_dimensions):
+        entity_segments = []
+        for index in range(len(entity_dimensions)):
             segment_start = separators[index - 1][1] if index > 0 else 0
             segment_end = (
                 separators[index][0]
                 if index < len(separators)
                 else len(normalized_text)
             )
-            local_windows = tuple(
-                window
-                for window in windows
-                if window[0] >= segment_start and window[1] <= segment_end
-            )
-            if len(local_windows) != 1:
+            entity_segments.append(normalized_text[segment_start:segment_end])
+
+    if not windows:
+        expected_days = tuple(7 for _dimension in expected_dimensions)
+    elif len(windows) == 1:
+        expected_days = tuple(windows[0][2] for _dimension in expected_dimensions)
+    elif len(entity_dimensions) == 1:
+        if len({days for _start, _end, days in windows}) != len(windows):
+            return None
+        expected_days = tuple(days for _start, _end, days in windows)
+    else:
+        local_days: list[int] = []
+        for segment in entity_segments:
+            segment_windows = _explicit_query_windows(segment)
+            if len(segment_windows) != 1:
                 return None
-            expected_pairs.append((dimension, local_windows[0][2]))
-        expected = Counter(expected_pairs)
-    if Counter(proposed_bindings) != expected:
+            local_days.append(segment_windows[0][2])
+        expected_days = tuple(local_days)
+
+    if (
+        len(windows) > 1
+        and tuple(days for _dimension, days, _agg in proposed_bindings) != expected_days
+    ):
         return None
-    return normalized_plan
+
+    global_agg = _query_requested_aggregate(normalized_text)
+    compare = normalized_plan.get("compare")
+    text_requests_comparison = bool(
+        re.search(r"(?:相比|对比|比较|[vV][sS])", normalized_text)
+    )
+    default_compare_agg = (
+        "avg" if compare is not None or text_requests_comparison else None
+    )
+    if len(entity_dimensions) == 1:
+        expected_aggs = tuple(
+            global_agg or default_compare_agg for _dimension in expected_dimensions
+        )
+    else:
+        expected_aggs = tuple(
+            _query_requested_aggregate(segment) or global_agg or default_compare_agg
+            for segment in entity_segments
+        )
+    proposed_aggs = tuple(agg for _dimension, _days, agg in proposed_bindings)
+    if proposed_aggs != expected_aggs:
+        return None
+
+    if compare is not None and text_requests_comparison:
+        if compare.get("a") != 0 or compare.get("b") != 1:
+            return None
+
+    projected_queries = [
+        {**query, "days": expected_days[index]} for index, query in enumerate(queries)
+    ]
+    return {**normalized_plan, "queries": projected_queries}
 
 
 def _illness_update_targets_owner(text: str, record_name: str) -> bool:
@@ -1858,6 +1958,20 @@ def decide_tool_capability(
     if tool_name == "health_query":
         turn_text = snapshot.envelope.text
         canonical_args = normalize_health_query_args(args)
+        if _health_read_cancelled_by_user(turn_text):
+            return _decision(
+                "block",
+                "health_query_cancelled_by_user",
+                tool_name,
+                canonical_args,
+            )
+        if _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE.search(_query_scope_text(turn_text)):
+            return _decision(
+                "block",
+                "health_query_calendar_window_unsupported",
+                tool_name,
+                canonical_args,
+            )
         proposed_dimension = str(canonical_args.get("dimension") or "").strip().lower()
         known_illness_entities = _illness_targets(turn_text)
         illness_query_entities = _illness_query_entities(turn_text)
@@ -1929,8 +2043,22 @@ def decide_tool_capability(
 
     if tool_name == "health_query_batch":
         turn_text = snapshot.envelope.text
-        query_entities = _illness_query_entities(turn_text)
         normalized_plan = _normalize_batch_query_plan(args)
+        if _health_read_cancelled_by_user(turn_text):
+            return _decision(
+                "block",
+                "health_query_cancelled_by_user",
+                tool_name,
+                normalized_plan,
+            )
+        if _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE.search(_query_scope_text(turn_text)):
+            return _decision(
+                "block",
+                "health_query_calendar_window_unsupported",
+                tool_name,
+                normalized_plan,
+            )
+        query_entities = _illness_query_entities(turn_text)
         if not query_entities:
             return _decision(
                 "block",
