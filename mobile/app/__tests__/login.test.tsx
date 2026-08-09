@@ -373,4 +373,16 @@ describe('LoginScreen invitation-gated phone auth', () => {
 
     await waitFor(() => expect(mockLogin).toHaveBeenCalledWith('alice', 'hunter2'));
   });
+
+  it('shows an inline error when account password login fails', async () => {
+    mockLogin.mockRejectedValueOnce({ response: { status: 401 } });
+    const view = render(<LoginScreen />);
+
+    fireEvent.press(view.getByText('账号密码登录'));
+    fireEvent.changeText(view.getByLabelText('用户名输入框'), 'alice');
+    fireEvent.changeText(view.getByLabelText('密码输入框'), 'wrong-password');
+    fireEvent.press(view.getByText('登录'));
+
+    expect(await view.findByRole('alert')).toHaveTextContent('登录失败，请检查账号信息。');
+  });
 });

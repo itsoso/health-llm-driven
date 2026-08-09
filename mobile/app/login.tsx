@@ -377,6 +377,11 @@ export default function LoginScreen({
                   />
                   <Text style={styles.rememberText}>记住密码</Text>
                 </Pressable>
+                {inlineError ? (
+                  <Text accessibilityRole="alert" style={styles.errorText}>
+                    {inlineError}
+                  </Text>
+                ) : null}
                 {renderPrimaryButton('登录', handleAccountLogin, loading)}
                 <Pressable
                   disabled={loading}
