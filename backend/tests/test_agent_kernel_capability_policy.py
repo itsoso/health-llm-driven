@@ -2543,9 +2543,17 @@ def test_update_turn_blocks_health_manage_delete_with_receipt():
     assert decision.receipt_required is True
 
 
-def test_update_turn_allows_health_manage_update_with_receipt():
+@pytest.mark.parametrize(
+    "message",
+    (
+        "把刚才 300ml 改成 350ml",
+        "把饮水记录718（300ml）改成350ml",
+        "把饮水记录718：300ml改成350ml",
+    ),
+)
+def test_update_turn_allows_health_manage_update_with_receipt(message):
     snapshot = replace(
-        _snapshot("把刚才 300ml 改成 350ml"),
+        _snapshot(message),
         actionable_references=(
             ActionableReference(
                 kind="owner_scoped_health_manage_list",
@@ -2800,6 +2808,7 @@ def test_illness_resolution_rejects_wrong_identity_or_invented_patch(arguments):
         "快好了",
         "基本好了",
         "可能好了",
+        "一点点好了",
     ),
 )
 def test_illness_partial_recovery_is_improving_not_resolved(phrase):
@@ -3940,9 +3949,9 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v14"
+    assert payload["contract_version"] == "agent-capability-policy-v15"
     assert payload["health_record_target_binding"] == {
-        "version": "authorized-target-set-v10",
+        "version": "authorized-target-set-v11",
         "domain_types": {
             "diet": "diet",
             "exercise": "exercise",
@@ -3961,7 +3970,7 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
     )
     assert (
         payload["health_manage_update_evidence_version"]
-        == "record-update-evidence-v5"
+        == "record-update-evidence-v6"
     )
     assert payload["known_tools"]
     assert payload["recipe_record_types"]

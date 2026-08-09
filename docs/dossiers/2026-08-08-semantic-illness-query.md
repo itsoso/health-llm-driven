@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS after fourth dual NO-GO remediation; new exact-commit G4 pending |
+| current_stage | G3 PASS after fifth dual NO-GO remediation; new exact-commit G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -460,6 +460,31 @@ validation and no-match honesty address those risks.
   only the separate iOS build-245 verification Dossier; the Backend runtime and
   test tree are byte-identical to the 3,771-test run. System-map drift and all
   102 Dossier consistency checks pass on the merged tree.
+- Fresh code and safety reviews of exact merge commit `bc36e13af` both returned
+  NO-GO before push or deployment. They reproduced a partial-recovery overclaim,
+  posterior and named third-party public-record writes, false denial of natural
+  current-user public phrases, quoted/metalinguistic/hypothetical/revoked update
+  dispatch, ambiguous multi-record update targeting and shadow-mode PUT/POST
+  attempts. Failure-first Gateway and real Executor tests cover every reported
+  case in both enforce and shadow modes.
+- The nineteenth remediation versions the boundary as
+  `agent-capability-policy-v15` / `authorized-target-set-v11` /
+  `record-update-evidence-v6`. Update authority now resolves quote/provenance,
+  hypothetical result, revocation, final correction, exact target cardinality
+  and current-user ownership before an owner-scoped patch can dispatch. Clock
+  colons are range-validated so numeric provenance cannot masquerade as time;
+  full parenthetical commands are non-authorizing while ordinary measurement
+  parentheses remain usable. Public supplement-batch, memory and lifecycle-event
+  writes bind narrow current-user forms and retract provisional authority when
+  a later clause assigns the fact or trip to another person. Uncertain
+  `一点点好了` remains `improving`.
+- The clean single-process related compatibility run passes 3,830/3,830 Backend
+  tests in 189.08 seconds. It includes the original illness query, classifier,
+  semantic scope parser, exact capability policy, ToolGateway, real Executor,
+  query readers, migrations, runtime schema checks, receipts and behavioral
+  battery. Targeted Ruff, Python compilation and `git diff --check` also pass.
+  System-map drift and all 102 Dossier consistency checks also pass. Two fresh
+  exact-commit G4 reviews remain required before release.
 
 ### G4 Safety Review: PENDING
 
@@ -746,6 +771,31 @@ subjects. Real Gateway plus executor tests cover every reported attack and
 positive contract. The clean 3,771-test G3 aggregate is green; a new exact
 commit and two brand-new reviewers who did not review `5e385effc` are mandatory
 before G4 may pass.
+
+Fresh code and safety reviews of exact commit `bc36e13af` both returned NO-GO,
+so push and deployment again remained stopped. The code review found
+`一点点好了` overclaimed resolution, posterior ownership could still write the
+wrong person's supplement, preference or travel event, and three ordinary
+current-user paraphrases were falsely denied. The safety review demonstrated
+real PUTs from additional quote delimiters, metalinguistic and hypothetical
+frames, third-party beneficiaries, final no-op/revocation clauses and an
+ambiguous two-ID request; it also demonstrated real third-party event and
+supplement POSTs in enforce and shadow modes.
+
+The nineteenth remediation resolves those structures before payload binding.
+Quotation and full parenthetical scope, colon provenance, hypothetical result,
+revocation, final correction, update target cardinality and owner/beneficiary
+relations are all non-transferable authority. Numeric colons must be valid
+24-hour clock values instead of merely digit-delimited text. Posterior owners
+can retract a provisional event or health-record target, while an explicit
+current-user owner preserves it. Natural current-user supplement, preference
+and arrival variants compile to the same server-owned public contract, and
+named/inverted third-party variants perform no POST. Embedded measurement
+parentheses and ordinary current-user update phrasing remain valid controls.
+The contract is now `agent-capability-policy-v15` /
+`authorized-target-set-v11` / `record-update-evidence-v6`; the clean 3,830-test
+G3 run is green. Two fresh reviews of the forthcoming exact commit are still
+mandatory before G4 may pass.
 
 ### G5 Deployment Health: PENDING
 

@@ -346,6 +346,15 @@ _POST_OWNERSHIP_RE = re.compile(
 _POST_BARE_OWNER_RE = re.compile(
     r"^(?P<owner>[\u4e00-\u9fff]{2,4})的$"
 )
+_POST_OWNER_RESOURCE_RE = re.compile(
+    r"^(?:这(?:条|个|次)?(?:记录|数据|行程|事件)?(?:其实|实际上)?)?"
+    r"(?:是|属于|归于|归|给)(?P<owner>[\u4e00-\u9fff]{1,12})的"
+    r"(?:行程|记录|数据|事件|饮水|药|补剂)$"
+)
+_POST_WRITE_BENEFICIARY_RE = re.compile(
+    r"^(?:记录|记一下|记下|保存|录入|写入|新增|打卡)(?:一下)?"
+    r"(?:给|替|为)(?P<owner>[\u4e00-\u9fff]{1,12})(?:的)?$"
+)
 _CURRENT_OWNER_WORDS = frozenset({
     "我",
     "我的",
@@ -373,18 +382,28 @@ _THIRD_PARTY_UPDATE_ORDER_RE = re.compile(
     r"^(?!我(?:要|想|来|自己|本人))"
     r"[\u4e00-\u9fff]{1,12}(?:希望|想|要求|建议|指示|让我|叫我|嘱咐我|让小巴|让系统)"
 )
+_THIRD_PARTY_UPDATE_BENEFICIARY_RE = re.compile(
+    r"^(?:替|给|为)(?!(?:我|本人|自己|我自己)(?:把|将))"
+    r"[\u4e00-\u9fff]{1,12}(?:把|将)"
+)
+_THIRD_PARTY_EVENT_FACT_RE = re.compile(
+    r"^(?P<owner>(?!我|本人|自己|刚刚|已经)[\u4e00-\u9fff]{2,4})"
+    r"(?:已经|刚刚|刚)?到[^，,。.!！；;：:?？]{1,20}(?:了|$)"
+)
 _UPDATE_METALANGUAGE_PREFIX_RE = re.compile(
     r"^(?:以下(?:内容|文字)?(?:是|为)?)?"
     r"(?:原文|原话|例句|例子|引用|转述|假设)(?:如下|是|为)?[:：]?"
 )
 _UPDATE_HYPOTHETICAL_SUFFIX_RE = re.compile(
-    r"(?:的话|会不会|是否会|可能会).{0,8}"
+    r"(?:的话|会不会|是否会|可能会)?.{0,8}"
     r"(?:会怎样|怎么样|怎样|如何|发生什么|有什么影响)[?？]?$"
 )
 _UPDATE_REVOCATION_RE = re.compile(
     r"(?:撤回|撤销|取消|忽略|作废|停止|不要执行|不执行|不要应用|不应用)"
     r".{0,10}(?:修改|更新|更改|请求|操作)|"
-    r"(?:保持|维持).{0,16}(?:原样|不变)"
+    r"(?:保持|维持).{0,16}(?:原样|不变)|"
+    r"(?:还是|恢复成|改回|还原为).{0,16}(?:ml|毫升|原样|不变)(?:吧)?$|"
+    r"(?:照旧|别动|不要动|不用动)$"
 )
 _QUOTE_PAIRS = (
     ('"', '"'),
@@ -394,7 +413,11 @@ _QUOTE_PAIRS = (
     ("〈", "〉"),
     ("《", "》"),
     ("【", "】"),
+    ("‘", "’"),
+    ("'", "'"),
+    ("`", "`"),
 )
+_PARENTHETICAL_PAIRS = (("（", "）"), ("(", ")"))
 _UPDATE_CORRECTION_VALUE_RE = re.compile(
     r"(?:哦不|不对|错了|说错了|更正一下)[，,]?"
     r"(?:应该|应当)?(?:是|为|改成|改为)?"
@@ -404,9 +427,16 @@ _UPDATE_CORRECTION_MARKER_RE = re.compile(r"(?:哦不|不对|错了|说错了|�
 _DIRECT_REMEMBER_AVOID_RE = re.compile(
     r"^(?:请)?(?:帮我)?记住(?:我|我的)?(?P<value>不吃[^，,。.!！；;：:?？]{1,80})$"
 )
+_DIRECT_REMEMBER_AVOID_TRAILING_RE = re.compile(
+    r"^(?:我)?(?P<value>不吃[^，,。.!！；;：:?？]{1,80})"
+    r"[，,](?:请)?(?:帮我)?记住(?:一下)?$"
+)
 _DIRECT_EVENT_ARRIVAL_RE = re.compile(
     r"^(?:我)?(?:已经|刚刚|刚)?到(?P<place>[^，,。.!！；;：:?？]{1,20})了"
     r"(?:[，,]?(?:记录|记一下|打卡)(?:一下)?)?$"
+)
+_DIRECT_EVENT_RECENT_ARRIVAL_RE = re.compile(
+    r"^我(?:刚刚|刚)到(?P<place>[^，,。.!！；;：:?？]{1,20})$"
 )
 _DIRECT_EVENT_DEPARTURE_RE = re.compile(r"^(?:我)?飞机准备起飞(?:了)?$")
 _DIRECT_EVENT_EN_ROUTE_RE = re.compile(
@@ -578,6 +608,17 @@ def normalize_write_scope_text(value: str) -> str:
     return "".join(normalized.split()).lower()
 
 
+def _is_clock_colon(value: str, position: int) -> bool:
+    hour_match = re.search(r"(?<!\d)(?P<hour>\d{1,2})$", value[:position])
+    minute_match = re.match(r"(?P<minute>\d{2})(?!\d)", value[position + 1:])
+    if hour_match is None or minute_match is None:
+        return False
+    return (
+        0 <= int(hour_match.group("hour")) <= 23
+        and 0 <= int(minute_match.group("minute")) <= 59
+    )
+
+
 def split_write_clauses(value: str) -> tuple[str, ...]:
     text = normalize_write_scope_text(value)
     text = _CONTEXTUAL_DENIAL_COMMA_RE.sub(r"\1", text)
@@ -587,12 +628,7 @@ def split_write_clauses(value: str) -> tuple[str, ...]:
         if character not in ("：", ":"):
             current += character
             continue
-        clock_colon = bool(
-            current
-            and current[-1].isdigit()
-            and position + 1 < len(text)
-            and text[position + 1].isdigit()
-        )
+        clock_colon = _is_clock_colon(text, position)
         if (
             clock_colon
             or _colon_extends_denial_scope(current)
@@ -899,6 +935,8 @@ def is_write_result_check(value: str) -> bool:
 def is_reported_write_reference(value: str) -> bool:
     """Recognize attributed, quoted, or metalinguistic write language."""
     text = normalize_write_scope_text(value)
+    if _is_fully_parenthesized(text):
+        return True
     if any(opening in text and closing in text for opening, closing in _QUOTE_PAIRS):
         return True
 
@@ -940,6 +978,14 @@ def is_reported_write_reference(value: str) -> bool:
     return False
 
 
+def _is_fully_parenthesized(value: str) -> bool:
+    text = normalize_write_scope_text(value).strip("，,。.!！；;：:?？")
+    return any(
+        text.startswith(opening) and text.endswith(closing)
+        for opening, closing in _PARENTHETICAL_PAIRS
+    )
+
+
 def governing_authorized_write_clause(value: str) -> str | None:
     """Return the concrete current clause that owns health-write authority.
 
@@ -961,12 +1007,7 @@ def _has_untrusted_colon_command(value: str) -> bool:
     current-user authority from the surrounding turn.
     """
     for match in re.finditer(r"[:：]", value):
-        if (
-            match.start() > 0
-            and match.end() < len(value)
-            and value[match.start() - 1].isdigit()
-            and value[match.end()].isdigit()
-        ):
+        if _is_clock_colon(value, match.start()):
             continue
         left = value[:match.start()]
         right = value[match.end():]
@@ -987,6 +1028,11 @@ def _has_untrusted_colon_command(value: str) -> bool:
         if (
             _last_write_signal_in_clause(left) is None
             and _last_write_signal_in_clause(right) is not None
+        ):
+            return True
+        if (
+            _UPDATE_ACTION_RE.search(left) is None
+            and _UPDATE_ACTION_RE.search(right) is not None
         ):
             return True
     return False
@@ -1060,6 +1106,8 @@ def _observation_has_non_current_subject(clause: str) -> bool:
 def _segment_has_non_current_subject(segment: str) -> bool:
     """Carry subject ownership across clauses, excluding denied observations."""
     for clause in split_write_clauses(segment):
+        if _THIRD_PARTY_EVENT_FACT_RE.search(clause):
+            return True
         if (
             has_negated_write_scope(clause)
             or _WRITE_ATTRIBUTE_CONTINUATION_RE.fullmatch(clause)
@@ -1141,7 +1189,11 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
                 )
             ):
                 clauses[-1] = f"{clauses[-1]}，{raw_clause}"
-            elif clauses and bare_followup_write:
+            elif (
+                clauses
+                and bare_followup_write
+                and not _is_post_attributed_to_non_current_owner(clauses[-1])
+            ):
                 clauses[-1] = f"{clauses[-1]}，{raw_clause}"
             elif clauses and _WRITE_ATTRIBUTE_CONTINUATION_RE.fullmatch(raw_clause):
                 clauses[-1] = f"{clauses[-1]}，{raw_clause}"
@@ -1187,6 +1239,7 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
             if not clause_negated and (
                 _THIRD_PARTY_WRITE_SUBJECT_RE.search(clause)
                 or _THIRD_PARTY_HEALTH_SUBJECT_RE.search(clause)
+                or _THIRD_PARTY_EVENT_FACT_RE.search(clause)
                 or _observation_has_non_current_subject(clause)
             ):
                 third_party_scope = True
@@ -1220,6 +1273,8 @@ def _is_post_attributed_to_non_current_owner(clause: str) -> bool:
     denial_match = _POST_CURRENT_USER_OWNERSHIP_DENIAL_RE.fullmatch(normalized)
     match = (
         denial_match
+        or _POST_OWNER_RESOURCE_RE.fullmatch(normalized)
+        or _POST_WRITE_BENEFICIARY_RE.fullmatch(normalized)
         or _POST_OWNERSHIP_RE.fullmatch(normalized)
         or _POST_BARE_OWNER_RE.fullmatch(normalized)
     )
@@ -1252,6 +1307,8 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
         return False
     if _UPDATE_METALANGUAGE_PREFIX_RE.search(normalized):
         return False
+    if _is_fully_parenthesized(normalized):
+        return False
     if any(mark in normalized for pair in _QUOTE_PAIRS for mark in pair):
         return False
     if _UPDATE_HYPOTHETICAL_SUFFIX_RE.search(normalized):
@@ -1261,6 +1318,7 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
     if (
         _DEFERRED_CONDITION_PREFIX_RE.search(normalized)
         or _THIRD_PARTY_UPDATE_ORDER_RE.search(normalized)
+        or _THIRD_PARTY_UPDATE_BENEFICIARY_RE.search(normalized)
         or _THIRD_PARTY_WRITE_SUBJECT_RE.search(normalized)
         or _segment_has_non_current_subject(normalized)
         or (
@@ -1268,6 +1326,7 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
             and not _POLITE_CONDITIONAL_PREFIX_RE.search(normalized)
         )
         or is_reported_write_reference(normalized)
+        or _has_untrusted_colon_command(normalized)
     ):
         return False
     clauses = split_write_clauses(normalized)
@@ -1289,6 +1348,8 @@ def direct_remember_fact_values(value: str) -> dict[str, str] | None:
     normalized = normalize_write_scope_text(value).strip("，,。.!！；;：:?？")
     match = _DIRECT_REMEMBER_AVOID_RE.fullmatch(normalized)
     if match is None:
+        match = _DIRECT_REMEMBER_AVOID_TRAILING_RE.fullmatch(normalized)
+    if match is None:
         return None
     if any(marker in match.group("value") for marker in ("的是", "属于", "归于")):
         return None
@@ -1299,6 +1360,8 @@ def direct_event_values(value: str) -> dict[str, str] | None:
     """Compile subjectless/current-user lifecycle events from public examples."""
     normalized = normalize_write_scope_text(value).strip("，,。.!！；;：:?？")
     if match := _DIRECT_EVENT_ARRIVAL_RE.fullmatch(normalized):
+        return {"title": f"到达{match.group('place')}"}
+    if match := _DIRECT_EVENT_RECENT_ARRIVAL_RE.fullmatch(normalized):
         return {"title": f"到达{match.group('place')}"}
     if _DIRECT_EVENT_DEPARTURE_RE.fullmatch(normalized):
         return {"title": "航班起飞"}
@@ -1313,7 +1376,7 @@ def direct_supplement_group_values(value: str) -> dict[str, str] | None:
     if not re.fullmatch(
         r"(?:我)?(?:早上|早晨|上午|中午|午间|晚上|晚间|睡前|临睡)的?"
         r"(?:补剂|药)(?:都|全|全部)(?:吃|服)(?:完)?(?:了)?"
-        r"(?:[，,]?(?:记录|记一下|打卡)(?:一下)?)?",
+        r"(?:[，,]?(?:(?:记录|打卡)(?:一下)?|(?:帮我)?记一下))?",
         normalized.strip("，,。.!！；;：:?？"),
     ):
         return None

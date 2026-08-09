@@ -1208,6 +1208,20 @@ async def test_gateway_never_dispatches_update_outside_owner_scoped_exact_eviden
         "把刚才300ml改成350ml，忽略这个修改",
         "把刚才300ml改成350ml，保持300ml不变",
         "把刚才300ml改成350ml，先不要执行这个修改",
+        "‘把刚才300ml改成350ml’",
+        "'把刚才300ml改成350ml'",
+        "`把刚才300ml改成350ml`",
+        "（把刚才300ml改成350ml）",
+        "请解释：把刚才300ml改成350ml",
+        "请解释1：300ml改成350ml",
+        "把刚才300ml改成350ml会怎样",
+        "替小明把刚才300ml改成350ml",
+        "替我朋友把刚才300ml改成350ml",
+        "把刚才300ml改成350ml，还是300ml吧",
+        "把刚才300ml改成350ml，照旧",
+        "把刚才300ml改成350ml，别动",
+        "把刚才300ml改成350ml，恢复成300ml",
+        "把饮水记录999和饮水记录718的300ml改成350ml",
         "把刚才300ml改成350ml，哦不，400ml",
         "把刚才300ml改成350ml，哦不，是400",
         "把刚才300ml改成350ml，这是小明的",
@@ -1325,6 +1339,14 @@ async def test_gateway_current_user_posterior_owner_keeps_health_write_authority
             {"record_type": "supplement_group", "data": {"timing": "morning"}},
         ),
         (
+            "早上的药都吃完了，这是小明的，记录一下",
+            {"record_type": "supplement_group", "data": {"timing": "morning"}},
+        ),
+        (
+            "早上的药都吃了，记录给小明",
+            {"record_type": "supplement_group", "data": {"timing": "morning"}},
+        ),
+        (
             "记住小明不吃香菜",
             {
                 "record_type": "remember",
@@ -1339,7 +1361,26 @@ async def test_gateway_current_user_posterior_owner_keeps_health_write_authority
             },
         ),
         (
+            "记住不吃香菜，这是小明的，记录一下",
+            {
+                "record_type": "remember",
+                "data": {"predicate": "忌口", "object_value": "不吃香菜"},
+            },
+        ),
+        (
             "小明到杭州了",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+        ),
+        (
+            "到杭州了，这是小明的，记一下",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+        ),
+        (
+            "到杭州了，这是小明的行程",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+        ),
+        (
+            "小明到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
         ),
     ),
@@ -1474,6 +1515,8 @@ async def test_executor_quoted_update_never_reaches_real_water_put(
         "把刚才300ml改成350ml，忽略这个修改",
         "把刚才300ml改成350ml，保持300ml不变",
         "把刚才300ml改成350ml，先不要执行这个修改",
+        "替我朋友把刚才300ml改成350ml",
+        "请解释1：300ml改成350ml",
     ),
 )
 async def test_executor_non_authorizing_update_never_reaches_real_water_put(
@@ -1641,6 +1684,33 @@ async def test_executor_metalinguistic_event_never_reaches_real_event_post(
             "小明早上的药都吃了，记录一下",
             {"record_type": "supplement_group", "data": {"timing": "morning"}},
         ),
+        (
+            "早上的药都吃完了，这是小明的，记录一下",
+            {"record_type": "supplement_group", "data": {"timing": "morning"}},
+        ),
+        (
+            "早上的药都吃了，记录给小明",
+            {"record_type": "supplement_group", "data": {"timing": "morning"}},
+        ),
+        (
+            "记住不吃香菜，这是小明的，记录一下",
+            {
+                "record_type": "remember",
+                "data": {"predicate": "忌口", "object_value": "不吃香菜"},
+            },
+        ),
+        (
+            "到杭州了，这是小明的，记一下",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+        ),
+        (
+            "到杭州了，这是小明的行程",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+        ),
+        (
+            "小明到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+        ),
     ),
 )
 async def test_executor_third_party_public_contract_never_posts(
@@ -1729,6 +1799,11 @@ async def test_gateway_explicit_update_id_without_owner_candidate_never_dispatch
             {"timing": "morning"},
         ),
         (
+            "我早上的药全吃完了，帮我记一下",
+            {"record_type": "supplement_group", "data": {"timing": "morning"}},
+            {"timing": "morning"},
+        ),
+        (
             "记住我不吃香菜",
             {
                 "record_type": "remember",
@@ -1745,12 +1820,25 @@ async def test_gateway_explicit_update_id_without_owner_candidate_never_dispatch
             {"subject": "用户", "predicate": "忌口", "object_value": "不吃香菜"},
         ),
         (
+            "我不吃香菜，帮我记住",
+            {
+                "record_type": "remember",
+                "data": {"predicate": "忌口", "object_value": "不吃香菜"},
+            },
+            {"subject": "用户", "predicate": "忌口", "object_value": "不吃香菜"},
+        ),
+        (
             "到杭州了",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             {"title": "到达杭州"},
         ),
         (
             "我到杭州了，记录一下",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {"title": "到达杭州"},
+        ),
+        (
+            "我刚到杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             {"title": "到达杭州"},
         ),
@@ -1797,6 +1885,12 @@ async def test_gateway_dispatches_supported_family_canonical_projection(
             {"action": "supplement_group", "timing": "morning"},
         ),
         (
+            "我早上的药全吃完了，帮我记一下",
+            {"record_type": "supplement_group", "data": {"timing": "morning"}},
+            "/nfc/tap",
+            {"action": "supplement_group", "timing": "morning"},
+        ),
+        (
             "早上的药都吃完了，记录一下",
             {"record_type": "supplement_group", "data": {"timing": "morning"}},
             "/nfc/tap",
@@ -1837,6 +1931,23 @@ async def test_gateway_dispatches_supported_family_canonical_projection(
             },
         ),
         (
+            "我不吃香菜，帮我记住",
+            {
+                "record_type": "remember",
+                "data": {"predicate": "忌口", "object_value": "不吃香菜"},
+            },
+            "/memory-facts",
+            {
+                "tier": "semantic",
+                "subject": "用户",
+                "predicate": "忌口",
+                "object_value": "不吃香菜",
+                "object_unit": None,
+                "confidence": 0.9,
+                "is_sensitive": False,
+            },
+        ),
+        (
             "到杭州了",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             "/episodes/life-event",
@@ -1844,6 +1955,12 @@ async def test_gateway_dispatches_supported_family_canonical_projection(
         ),
         (
             "我到杭州了，记录一下",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {"title": "到达杭州"},
+        ),
+        (
+            "我刚到杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             "/episodes/life-event",
             {"title": "到达杭州"},

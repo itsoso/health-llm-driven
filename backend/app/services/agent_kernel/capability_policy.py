@@ -64,9 +64,9 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v14"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v10"
-_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v5"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v15"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v11"
+_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v6"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = (
     "_server_authorized_health_record_fields"
 )
@@ -636,6 +636,13 @@ def _authorized_health_manage_update_args(
 
     if not has_explicit_authorizing_update_request(snapshot.envelope.text):
         return None
+    explicit_target_matches = tuple(
+        _EXACT_RECORD_TARGET_SEARCH_RE.finditer(
+            "".join(str(snapshot.envelope.text or "").split())
+        )
+    )
+    if len(explicit_target_matches) > 1:
+        return None
     requested_type = canonical_health_manage_record_type(args.get("record_type"))
     requested_id = canonical_health_manage_record_id(args.get("record_id"))
     if requested_id is None:
@@ -779,7 +786,7 @@ def _illness_update_patch(snapshot: TurnSnapshot) -> dict[str, Any] | None:
     patch: dict[str, Any] = {}
     terminal_recovery = re.search(r"好了(?=[，,。.!！；;]|$)", text)
     uncertain_recovery = re.search(
-        r"(?:快|基本|大概|可能|也许|应该|差不多|快要|几乎|貌似|感觉).{0,3}"
+        r"(?:快|基本|大概|可能|也许|应该|差不多|快要|几乎|貌似|感觉|一点点).{0,3}"
         r"好了(?=[，,。.!！；;]|$)",
         text,
     )
