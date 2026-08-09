@@ -1,4 +1,5 @@
 """Shared speech-act parser for deterministic health-write authorization."""
+
 from __future__ import annotations
 
 import re
@@ -160,9 +161,7 @@ _TRAILING_REVOCATION_ATOM = (
     r"忽略(?:掉)?(?:刚才|前面|上面|之前)?(?:那|这)?(?:句|条|个)?"
     r"(?:话|请求|指令)?)"
 )
-_TRAILING_REVOCATION_CLAUSE_RE = re.compile(
-    rf"^(?:{_TRAILING_REVOCATION_ATOM})+$"
-)
+_TRAILING_REVOCATION_CLAUSE_RE = re.compile(rf"^(?:{_TRAILING_REVOCATION_ATOM})+$")
 _RESULT_CHECK_LEADS = (
     "确认",
     "核对",
@@ -269,9 +268,7 @@ _CORRECTION_VALUE_RE = re.compile(
     r"^(?:(?:不对|错了|说错了|更正一下)[，,]?)?"
     r"(?:改成|改为|更正为|应该是|应为|其实是)(?P<value>.+)$"
 )
-_CORRECTION_PENDING_VALUE_RE = re.compile(
-    r"^(?:是|应是|应该是|其实是)(?P<value>.+)$"
-)
+_CORRECTION_PENDING_VALUE_RE = re.compile(r"^(?:是|应是|应该是|其实是)(?P<value>.+)$")
 _WRITE_ATTRIBUTE_CONTINUATION_RE = re.compile(
     r"^(?:(?:备注|注释|说明|严重度|严重程度|剂量|用量|每次)"
     r"(?:是|为|：|:)?\S+|(?:早上|早晨|上午|中午|午间|晚上|晚间|睡前)"
@@ -331,10 +328,11 @@ _POST_ATTRIBUTION_RE = re.compile(
     r"(?:朋友|同事|医生|家人|妈妈|爸爸|文档|报告).{0,8}"
     r"(?:说的|写的|提到的).{0,4}(?:例句|原话|内容|话)"
 )
+_OWNER_TOKEN_PATTERN = r"(?:[\u4e00-\u9fff]{1,12}|[A-Za-z][A-Za-z0-9_.-]{0,31})"
 _POST_CURRENT_USER_OWNERSHIP_DENIAL_RE = re.compile(
     r"^(?:这(?:条|个)?(?:记录|数据)?(?:其实|实际上)?)?"
     r"不是(?:我|本人|自己)(?:的)?"
-    r"(?:而是|是|而属于|属于|归于|归)(?P<owner>[\u4e00-\u9fff]{1,12})(?:的)?$"
+    rf"(?:而是|是|而属于|属于|归于|归)(?P<owner>{_OWNER_TOKEN_PATTERN})(?:的)?$"
 )
 _POST_CURRENT_USER_OWNERSHIP_ONLY_DENIAL_RE = re.compile(
     r"^(?:这(?:条|个)?(?:记录|数据)?(?:其实|实际上)?)?"
@@ -344,48 +342,53 @@ _POST_OWNERSHIP_RE = re.compile(
     r"^(?:实际上|其实|原来)?"
     r"(?:这(?:条|个)?(?:记录|数据|饮水)?|这杯(?:水)?)?(?:其实|实际上)?"
     r"(?:是|属于|归于|归|给)"
-    r"(?P<owner>[\u4e00-\u9fff]{1,12})(?:的)?$"
+    rf"(?P<owner>{_OWNER_TOKEN_PATTERN})(?:的)?$"
 )
-_POST_BARE_OWNER_RE = re.compile(
-    r"^(?P<owner>[\u4e00-\u9fff]{2,4})的$"
-)
+_POST_BARE_OWNER_RE = re.compile(rf"^(?P<owner>{_OWNER_TOKEN_PATTERN})的$")
 _POST_OWNER_RESOURCE_RE = re.compile(
-    r"^(?:这(?:条|个|次)?(?:记录|数据|行程|事件)?(?:其实|实际上)?)?"
-    r"(?:是|属于|归于|归|给)(?P<owner>[\u4e00-\u9fff]{1,12})的"
-    r"(?:行程|记录|数据|事件|饮水|药|补剂)$"
+    r"^(?:(?:这|本)(?:条|个|次|趟)?(?:记录|数据|行程|旅程|出行|事件)?(?:其实|实际上)?)?"
+    rf"(?:是|属于|归于|归|给)(?P<owner>{_OWNER_TOKEN_PATTERN})的"
+    r"(?:行程|旅程|出行|记录|数据|事件|饮水|药|补剂)$"
 )
 _POST_BARE_OWNER_RESOURCE_RE = re.compile(
-    r"^(?P<owner>[\u4e00-\u9fff]{1,12})"
-    r"(?:的(?:行程|记录|数据|事件|饮水|药|补剂)|行程)$"
+    rf"^(?P<owner>{_OWNER_TOKEN_PATTERN})"
+    r"(?:的(?:(?:这|本)(?:条|个|次|趟)?)?"
+    r"(?:行程|旅程|出行|记录|数据|事件|饮水|药|补剂)|"
+    r"(?:行程|旅程|出行))$"
 )
 _POST_RESOURCE_OWNER_RE = re.compile(
-    r"^(?:这(?:个|次|条)?)?(?:行程|记录|数据|事件|饮水|药|补剂)"
-    r"(?:是|属于|归于|归)(?P<owner>[\u4e00-\u9fff]{1,12})(?:的)?$"
+    r"^(?:(?:这|本)(?:个|次|趟|条)?)?"
+    r"(?:行程|旅程|出行|记录|数据|事件|饮水|药|补剂)"
+    rf"(?:是|属于|归于|归)(?P<owner>{_OWNER_TOKEN_PATTERN})(?:的)?$"
 )
 _POST_WRITE_BENEFICIARY_RE = re.compile(
     r"^(?:记录|记一下|记下|保存|录入|写入|新增|打卡)(?:一下)?"
-    r"(?:给|替|为)(?P<owner>[\u4e00-\u9fff]{1,12})(?:的)?$"
+    rf"(?:给|替|为)(?P<owner>{_OWNER_TOKEN_PATTERN})(?:的)?$"
 )
-_CURRENT_OWNER_WORDS = frozenset({
-    "我",
-    "我的",
-    "本人",
-    "我本人",
-    "自己",
-    "我自己",
-    "自己的",
-    "我自己的",
-})
-_NON_OWNER_WORDS = frozenset({
-    *_CURRENT_OWNER_WORDS,
-    "今天",
-    "昨天",
-    "前天",
-    "刚才",
-    "刚刚",
-    "上次",
-    "这次",
-})
+_CURRENT_OWNER_WORDS = frozenset(
+    {
+        "我",
+        "我的",
+        "本人",
+        "我本人",
+        "自己",
+        "我自己",
+        "自己的",
+        "我自己的",
+    }
+)
+_NON_OWNER_WORDS = frozenset(
+    {
+        *_CURRENT_OWNER_WORDS,
+        "今天",
+        "昨天",
+        "前天",
+        "刚才",
+        "刚刚",
+        "上次",
+        "这次",
+    }
+)
 _UPDATE_ACTION_RE = re.compile(
     r"(?:改成|改为|更正为|修正为|调整为|更新为|修改(?:为|成)?)"
 )
@@ -408,11 +411,20 @@ _EVENT_WRITE_SCAFFOLD_RE = re.compile(
     r"(?:生活事件)?[：:]?"
 )
 _EXTERNAL_PROVENANCE_RE = re.compile(
-    r"(?:(?:(?:来自|来源于|摘(?:录)?自|转自|出自|按|按照|依照|依据)|"
+    r"(?:(?:(?:来自|来源于|摘(?:录)?自|转自|出自|按|按照|依照|依据|"
+    r"参考|参照|照|基于|取自)|"
     r"(?:根据|(?<!数)据)).{0,16}"
-    r"(?:消息|日志|聊天|群聊|群消息|通知|文本|原文|记录)|"
+    r"(?:消息|日志|聊天|群聊|群消息|通知|文本|原文|记录|微信|短信|邮件)|"
     r"(?:转发|转述|引用)(?:的)?"
-    r"(?:消息|日志|聊天|群聊|群消息|通知|文本|原文|记录))"
+    r"(?:消息|日志|聊天|群聊|群消息|通知|文本|原文|记录|微信|短信|邮件)|"
+    r"(?:消息|日志|聊天|群聊|群消息|通知|文本|原文|记录|微信|短信|邮件|"
+    r"朋友|同事|家人)"
+    r".{0,8}(?:截图|转达|转发|转述|引用)|"
+    r"(?:朋友|同事|家人|别人).{0,6}(?:说|称|告知|通知)(?:的)?(?:内容)?)"
+)
+_PARENTHETICAL_PROVENANCE_RE = re.compile(
+    r"(?:截图|转达|转发|转述|引用|摘录|取自|来自|来源|群消息|群聊|微信|"
+    r"短信|邮件)|(?:朋友|同事|家人|别人).{0,6}(?:说|称|告知|通知)"
 )
 _UPDATE_METALANGUAGE_PREFIX_RE = re.compile(
     r"^(?:以下(?:内容|文字)?(?:是|为)?)?"
@@ -570,9 +582,7 @@ _NON_FOOD_ENTITY_SIGNALS = (
     "益生菌",
     "鱼油",
 )
-_DECLARATIVE_FOOD_CONTINUATION_RE = re.compile(
-    r"^(?:我)?(?:吃了|吃的是|吃|有|是).+"
-)
+_DECLARATIVE_FOOD_CONTINUATION_RE = re.compile(r"^(?:我)?(?:吃了|吃的是|吃|有|是).+")
 _BACKFILL_REQUEST_MARKERS = (
     "请",
     "帮我",
@@ -683,7 +693,7 @@ def normalize_write_scope_text(value: str) -> str:
 
 def _is_clock_colon(value: str, position: int) -> bool:
     hour_match = re.search(r"(?<!\d)(?P<hour>\d{1,2})$", value[:position])
-    minute_match = re.match(r"(?P<minute>\d{2})(?!\d)", value[position + 1:])
+    minute_match = re.match(r"(?P<minute>\d{2})(?!\d)", value[position + 1 :])
     if hour_match is None or minute_match is None:
         return False
     return (
@@ -813,17 +823,14 @@ def _write_clause_denials(value: str) -> tuple[bool, ...]:
         return ()
     limiting_matches = tuple(_LIMITING_WRITE_RE.finditer(text))
     if limiting_matches:
-        text = text[limiting_matches[-1].end():]
+        text = text[limiting_matches[-1].end() :]
 
     denials: list[bool] = []
     for raw_clause in split_write_clauses(text):
         clause = _clean_negation_clause(raw_clause)
         action_context = _last_write_signal_in_clause(clause)
         if action_context is None:
-            if (
-                denials
-                and _TRAILING_REVOCATION_CLAUSE_RE.fullmatch(clause)
-            ):
+            if denials and _TRAILING_REVOCATION_CLAUSE_RE.fullmatch(clause):
                 denials[-1] = True
             continue
         _action, action_position = action_context
@@ -867,10 +874,8 @@ def is_write_capability_question(value: str) -> bool:
         return False
     clause, action, action_position = context
     before_action = clause[:action_position]
-    after_action = clause[action_position + len(action):]
-    has_inquiry_cue = any(
-        cue in before_action for cue in _CAPABILITY_INQUIRY_PREFIXES
-    )
+    after_action = clause[action_position + len(action) :]
+    has_inquiry_cue = any(cue in before_action for cue in _CAPABILITY_INQUIRY_PREFIXES)
     subject_match = min(
         (
             (position, candidate)
@@ -885,7 +890,7 @@ def is_write_capability_question(value: str) -> bool:
             or any(modal in before_action for modal in _CAPABILITY_MODALS)
         )
     subject_position, subject = subject_match
-    after_subject = clause[subject_position + len(subject):]
+    after_subject = clause[subject_position + len(subject) :]
     subject_action_position = after_subject.find(action)
     if subject_action_position < 0:
         return False
@@ -925,7 +930,7 @@ def _is_explicit_dated_backfill(value: str) -> bool:
                 start = clause.find(action, start + len(action))
         for action_position, action in sorted(candidates):
             before_action = clause[:action_position]
-            after_action = clause[action_position + len(action):]
+            after_action = clause[action_position + len(action) :]
             if action == "记录" and (
                 after_action.startswith(RECORD_NOUN_SUFFIXES)
                 or (
@@ -956,12 +961,15 @@ def is_historical_write_reference(value: str) -> bool:
     normalized = normalize_write_scope_text(value)
     if (
         any(term in normalized for term in ("补剂", "药"))
-        and any(term in normalized for term in ("都吃了", "全吃了", "全部吃了", "都服了", "全部服了"))
+        and any(
+            term in normalized
+            for term in ("都吃了", "全吃了", "全部吃了", "都服了", "全部服了")
+        )
         and context[2] > normalized.find("补剂")
     ):
         return False
     clause, action, start = context
-    after = clause[start + len(action):]
+    after = clause[start + len(action) :]
     if _starts_with_completed_aspect(after):
         return True
     completed_tail = after.rstrip(_COMPLETION_TRAILING_PARTICLES)
@@ -996,7 +1004,7 @@ def is_write_result_check(value: str) -> bool:
         return False
     clause, action, start = context
     before_action = clause[:start]
-    after_action = clause[start + len(action):]
+    after_action = clause[start + len(action) :]
     has_check_lead = any(cue in before_action for cue in _RESULT_CHECK_LEADS)
     has_state = any(marker in before_action for marker in _RESULT_STATE_MARKERS)
     has_result_tail = any(marker in after_action for marker in _RESULT_TAIL_MARKERS)
@@ -1030,11 +1038,9 @@ def is_reported_write_reference(value: str) -> bool:
             continue
         segment = clauses[index]
         signal = (
-            _last_write_signal_in_clause(segment)
-            if index == signal_index
-            else None
+            _last_write_signal_in_clause(segment) if index == signal_index else None
         )
-        before_signal = segment[:signal[1]] if signal is not None else segment
+        before_signal = segment[: signal[1]] if signal is not None else segment
         if any(action in before_signal for action in _METALANGUAGE_ACTIONS):
             return True
         for verb in _REPORTING_VERBS:
@@ -1082,21 +1088,19 @@ def _has_untrusted_colon_command(value: str) -> bool:
     for match in re.finditer(r"[:：]", value):
         if _is_clock_colon(value, match.start()):
             continue
-        left = value[:match.start()]
-        right = value[match.end():]
+        left = value[: match.start()]
+        right = value[match.end() :]
         if any(action in left for action in _METALANGUAGE_ACTIONS):
             return True
-        if (
-            _last_write_signal_in_clause(left) is not None
-            and _observation_has_non_current_subject(right)
-        ):
+        if _last_write_signal_in_clause(
+            left
+        ) is not None and _observation_has_non_current_subject(right):
             return True
         if _colon_extends_write_target(left):
             continue
-        if (
-            _HEALTH_OBSERVATION_PREDICATE_RE.search(left)
-            and not _observation_has_non_current_subject(left)
-        ):
+        if _HEALTH_OBSERVATION_PREDICATE_RE.search(
+            left
+        ) and not _observation_has_non_current_subject(left):
             continue
         if (
             _last_write_signal_in_clause(left) is None
@@ -1126,16 +1130,11 @@ def _observation_has_non_current_subject(clause: str) -> bool:
         return False
     if direct_supplement_group_values(clause) is not None:
         return False
-    if clause.startswith(
-        ("创建目标", "设定目标", "设置目标", "新增目标", "记录目标")
-    ):
+    if clause.startswith(("创建目标", "设定目标", "设置目标", "新增目标", "记录目标")):
         return False
-    if (
-        any(term in clause for term in ("提醒", "闹钟"))
-        and (
-            _last_write_signal_in_clause(clause) is not None
-            or re.search(r"(?:设置|设定|创建|新增|安排)", clause)
-        )
+    if any(term in clause for term in ("提醒", "闹钟")) and (
+        _last_write_signal_in_clause(clause) is not None
+        or re.search(r"(?:设置|设定|创建|新增|安排)", clause)
     ):
         # A phrase such as ``饮水提醒`` names the reminder topic, not the
         # owner of a health observation. Reminder title/time identity is bound
@@ -1143,21 +1142,21 @@ def _observation_has_non_current_subject(clause: str) -> bool:
         return False
     previous_end = 0
     for match in matches:
-        prefix = clause[previous_end:match.start()]
+        prefix = clause[previous_end : match.start()]
         if previous_end and re.search(r"(?:备注|注释|说明|描述)", prefix):
             previous_end = match.end()
             continue
         action_context = _last_write_signal_in_clause(prefix)
         if action_context is not None:
             action, action_start = action_context
-            initiator = _SUBJECT_ACTION_SCOPE_BOUNDARY_RE.split(
-                prefix[:action_start]
-            )[-1]
+            initiator = _SUBJECT_ACTION_SCOPE_BOUNDARY_RE.split(prefix[:action_start])[
+                -1
+            ]
             if _strip_direct_request_prefix(initiator).strip(
                 "，,。.!！；;：: "
             ) not in {"", "我"}:
                 return True
-            prefix = prefix[action_start + len(action):]
+            prefix = prefix[action_start + len(action) :]
         prefix = prefix.lstrip("把将")
         if _DIRECT_BODY_LOCATION_RE.fullmatch(prefix):
             prefix = ""
@@ -1183,10 +1182,9 @@ def _segment_has_non_current_subject(segment: str) -> bool:
     for clause in split_write_clauses(segment):
         if _event_fact_has_non_current_subject(clause):
             return True
-        if (
-            has_negated_write_scope(clause)
-            or _WRITE_ATTRIBUTE_CONTINUATION_RE.fullmatch(clause)
-        ):
+        if has_negated_write_scope(
+            clause
+        ) or _WRITE_ATTRIBUTE_CONTINUATION_RE.fullmatch(clause):
             continue
         if _observation_has_non_current_subject(clause):
             return True
@@ -1223,7 +1221,10 @@ def _segment_has_untrusted_provenance_or_owner(segment: str) -> bool:
             rf"{re.escape(opening)}(?P<content>.*?){re.escape(closing)}",
             segment,
         ):
-            if _is_post_attributed_to_non_current_owner(match.group("content")):
+            content = match.group("content")
+            if _PARENTHETICAL_PROVENANCE_RE.search(content):
+                return True
+            if _is_post_attributed_to_non_current_owner(content):
                 return True
     return False
 
@@ -1242,11 +1243,13 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
         return ()
     limiting_matches = tuple(_LIMITING_WRITE_RE.finditer(text))
     if limiting_matches:
-        text = text[limiting_matches[-1].end():]
+        text = text[limiting_matches[-1].end() :]
 
     # An unclosed quotation has no trustworthy return to the user's own voice.
     quote_pairs = _QUOTE_PAIRS[1:]
-    if any(text.count(opening) > text.count(closing) for opening, closing in quote_pairs):
+    if any(
+        text.count(opening) > text.count(closing) for opening, closing in quote_pairs
+    ):
         return ()
     if text.count('"') % 2:
         return ()
@@ -1284,7 +1287,7 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
             bare_followup_write = False
             if raw_action is not None:
                 action, action_start = raw_action
-                after_action = raw_clause[action_start + len(action):]
+                after_action = raw_clause[action_start + len(action) :]
                 bare_followup_write = after_action in {"", "一下", "下来", "一条"}
             if (
                 clauses
@@ -1324,20 +1327,15 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
             if _TRAILING_REVOCATION_CLAUSE_RE.fullmatch(clause):
                 while authorized:
                     candidate = authorized.pop()
-                    if (
-                        _last_write_signal_in_clause(candidate) is not None
-                        or _DIRECT_HEALTH_OBSERVATION_RE.search(candidate)
-                    ):
+                    if _last_write_signal_in_clause(
+                        candidate
+                    ) is not None or _DIRECT_HEALTH_OBSERVATION_RE.search(candidate):
                         break
                 continue
 
             polite_condition = bool(_POLITE_CONDITIONAL_PREFIX_RE.search(clause))
-            if (
-                _DEFERRED_CONDITION_PREFIX_RE.search(clause)
-                or (
-                    _HYPOTHETICAL_PREFIX_RE.search(clause)
-                    and not polite_condition
-                )
+            if _DEFERRED_CONDITION_PREFIX_RE.search(clause) or (
+                _HYPOTHETICAL_PREFIX_RE.search(clause) and not polite_condition
             ):
                 hypothetical_scope = True
 
@@ -1356,11 +1354,7 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
             ):
                 third_party_scope = True
 
-            if (
-                reported_scope
-                or hypothetical_scope
-                or third_party_scope
-            ):
+            if reported_scope or hypothetical_scope or third_party_scope:
                 continue
             if (
                 is_write_capability_question(clause)
@@ -1372,7 +1366,9 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
                 continue
 
             action = _last_action_in_clause(clause)
-            if action is not None and not has_explicit_authorizing_write_request(clause):
+            if action is not None and not has_explicit_authorizing_write_request(
+                clause
+            ):
                 continue
             if (
                 action is None
@@ -1409,10 +1405,9 @@ def _is_post_attributed_to_non_current_owner(clause: str) -> bool:
         return True
     if re.search(_THIRD_PARTY_SUBJECT, owner):
         return True
-    # A short Han name after an explicit ownership predicate is an owner, not
-    # a health attribute.  Longer free text remains unresolved and therefore
-    # does not receive this specialized classification.
-    return 2 <= len(owner.removesuffix("的")) <= 4
+    # Every remaining token was captured from an explicit ownership grammar.
+    # It is therefore a non-current owner regardless of script or name length.
+    return True
 
 
 def has_explicit_authorizing_update_request(value: str) -> bool:
@@ -1445,10 +1440,7 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
         or _THIRD_PARTY_UPDATE_ORDER_RE.search(normalized)
         or _THIRD_PARTY_UPDATE_BENEFICIARY_RE.search(normalized)
         or _THIRD_PARTY_WRITE_SUBJECT_RE.search(normalized)
-        or (
-            _segment_has_non_current_subject(normalized)
-            and not direct_water_update
-        )
+        or (_segment_has_non_current_subject(normalized) and not direct_water_update)
         or (
             _HYPOTHETICAL_PREFIX_RE.search(normalized)
             and not _POLITE_CONDITIONAL_PREFIX_RE.search(normalized)
@@ -1469,8 +1461,7 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
     ):
         return False
     return bool(
-        direct_water_update
-        or _DIRECT_ILLNESS_UPDATE_RE.fullmatch(normalized_statement)
+        direct_water_update or _DIRECT_ILLNESS_UPDATE_RE.fullmatch(normalized_statement)
     )
 
 
@@ -1536,14 +1527,17 @@ def corrected_water_update_value(value: str) -> float | None:
         return None
     match = matches[-1]
     amount = float(match.group("value"))
-    return amount * 1000 if (match.group("unit") or "").lower() in {"l", "升"} else amount
+    return (
+        amount * 1000 if (match.group("unit") or "").lower() in {"l", "升"} else amount
+    )
 
 
 def has_water_update_correction(value: str) -> bool:
     """Return whether the user superseded an earlier proposed water value."""
-    return _UPDATE_CORRECTION_MARKER_RE.search(
-        normalize_write_scope_text(value)
-    ) is not None
+    return (
+        _UPDATE_CORRECTION_MARKER_RE.search(normalize_write_scope_text(value))
+        is not None
+    )
 
 
 def _corrected_write_clause(previous: str, corrected_value: str) -> str:
@@ -1569,21 +1563,18 @@ def _is_meal_slot_write_clause(clause: str) -> bool:
     if action is None:
         return False
     meal_positions = tuple(
-        (clause.rfind(term), term)
-        for term in _MEAL_SLOT_TERMS
-        if term in clause
+        (clause.rfind(term), term) for term in _MEAL_SLOT_TERMS if term in clause
     )
     if not meal_positions:
         return False
     position, meal = max(meal_positions)
-    trailing = clause[position + len(meal):].strip("的一餐饭 ")
+    trailing = clause[position + len(meal) :].strip("的一餐饭 ")
     return trailing == ""
 
 
 def _is_meal_food_write_clause(clause: str) -> bool:
-    return (
-        _last_write_signal_in_clause(clause) is not None
-        and any(term in clause for term in _MEAL_SLOT_TERMS)
+    return _last_write_signal_in_clause(clause) is not None and any(
+        term in clause for term in _MEAL_SLOT_TERMS
     )
 
 
@@ -1636,16 +1627,16 @@ def _strip_direct_request_prefix(clause: str) -> str:
     remainder = clause
     for vocative in _VOCATIVE_PREFIXES:
         if remainder.startswith(vocative):
-            remainder = remainder[len(vocative):]
+            remainder = remainder[len(vocative) :]
             break
     tokens = tuple(
         sorted(
             (
                 token
                 for token in (
-                *_DIRECT_REQUEST_HELPERS,
-                *_DIRECT_REQUEST_MODIFIERS,
-                *WRITE_COMMAND_PREFIXES,
+                    *_DIRECT_REQUEST_HELPERS,
+                    *_DIRECT_REQUEST_MODIFIERS,
+                    *WRITE_COMMAND_PREFIXES,
                 )
                 if token != "把"
             ),
@@ -1657,7 +1648,7 @@ def _strip_direct_request_prefix(clause: str) -> str:
         matched = next((token for token in tokens if remainder.startswith(token)), None)
         if matched is None:
             break
-        remainder = remainder[len(matched):]
+        remainder = remainder[len(matched) :]
     return remainder
 
 
@@ -1666,7 +1657,9 @@ def _helper_owner_is_current_user(before_action: str) -> bool:
     if _COMPOUND_DIRECT_REQUEST_PREFIX_RE.fullmatch(before_action):
         return True
     helpers = tuple(
-        sorted((*_DIRECT_REQUEST_HELPERS, *WRITE_COMMAND_PREFIXES), key=len, reverse=True)
+        sorted(
+            (*_DIRECT_REQUEST_HELPERS, *WRITE_COMMAND_PREFIXES), key=len, reverse=True
+        )
     )
     helper = next(
         (candidate for candidate in helpers if before_action.endswith(candidate)),
@@ -1674,7 +1667,7 @@ def _helper_owner_is_current_user(before_action: str) -> bool:
     )
     if helper is None:
         return False
-    owner_context = before_action[:-len(helper)]
+    owner_context = before_action[: -len(helper)]
     if not owner_context:
         return True
     if _HEALTH_OBSERVATION_PREDICATE_RE.search(owner_context):
@@ -1726,7 +1719,7 @@ def has_explicit_authorizing_write_request(value: str) -> bool:
         return True
 
     clause, action, start = context
-    after_action = clause[start + len(action):]
+    after_action = clause[start + len(action) :]
     if action == "记录" and after_action.startswith(RECORD_NOUN_SUFFIXES):
         return False
     if _starts_with_completed_aspect(after_action):

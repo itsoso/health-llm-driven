@@ -24,9 +24,7 @@ from app.services.agent_kernel.types import (
 
 
 CLINICIAN_GUARD_FIXTURE = (
-    Path(__file__).parent
-    / "fixtures"
-    / "clinician_provenance_guard_safety_cases.json"
+    Path(__file__).parent / "fixtures" / "clinician_provenance_guard_safety_cases.json"
 )
 
 
@@ -113,14 +111,18 @@ def test_attachment_diet_authorization_still_binds_explicit_meal_slot():
     assert wrong_meal.reason == "health_record_target_mismatch"
 
 
-def _request(name: str, args: dict, *, source: str = "structured") -> ToolExecutionRequest:
+def _request(
+    name: str, args: dict, *, source: str = "structured"
+) -> ToolExecutionRequest:
     return ToolExecutionRequest(tool_name=name, arguments=args, source=source)
 
 
 def test_read_turn_blocks_health_record_even_if_model_requests_it():
     decision = decide_tool_capability(
         _snapshot("今天我的饮食的记录，帮我列个表格出来。"),
-        _request("health_record", {"record_type": "diet", "data": {"food_items": "米饭"}}),
+        _request(
+            "health_record", {"record_type": "diet", "data": {"food_items": "米饭"}}
+        ),
     )
 
     assert decision.action == "block"
@@ -526,13 +528,22 @@ def test_positive_contrast_clause_cannot_authorize_the_denied_target():
         ),
         (
             "不要记录午餐但记录晚餐吃了米饭",
-            {"record_type": "diet", "data": {"meal_type": "lunch", "food_items": "米饭"}},
-            {"record_type": "diet", "data": {"meal_type": "dinner", "food_items": "米饭"}},
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "lunch", "food_items": "米饭"},
+            },
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "dinner", "food_items": "米饭"},
+            },
         ),
         (
             "不要记录喝水300ml但记录晚餐吃了米饭",
             {"record_type": "water", "data": {"amount_ml": 300}},
-            {"record_type": "diet", "data": {"meal_type": "dinner", "food_items": "米饭"}},
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "dinner", "food_items": "米饭"},
+            },
         ),
     ),
 )
@@ -801,9 +812,7 @@ def test_reported_context_spans_neutral_clauses_and_never_authorizes(message):
         ),
     ),
 )
-def test_hypothetical_fact_or_command_never_authorizes_a_write(
-    message, record_args
-):
+def test_hypothetical_fact_or_command_never_authorizes_a_write(message, record_args):
     decision = decide_tool_capability(
         _snapshot(message),
         _request("health_record", record_args),
@@ -1017,9 +1026,7 @@ def test_post_attribution_or_unclosed_quote_never_authorizes_health_write(messag
         ),
     ),
 )
-def test_non_illness_target_never_fails_open_to_an_illness_write(
-    message, record_args
-):
+def test_non_illness_target_never_fails_open_to_an_illness_write(message, record_args):
     decision = decide_tool_capability(
         _snapshot(message),
         _request("health_record", record_args),
@@ -1681,7 +1688,10 @@ def test_food_conjunction_parser_distinguishes_lexemes_from_item_boundaries(
             "health_record",
             {
                 "record_type": "diet",
-                "data": {"meal_type": "dinner" if "晚餐" in message else "breakfast", "food_items": food_items},
+                "data": {
+                    "meal_type": "dinner" if "晚餐" in message else "breakfast",
+                    "food_items": food_items,
+                },
             },
         ),
     )
@@ -2336,9 +2346,7 @@ def test_compound_diet_write_preserves_food_names_that_start_with_conjunction_ch
         ),
     ),
 )
-def test_reminder_binding_supports_scheduled_date_and_post_marker_title(
-    message, data
-):
+def test_reminder_binding_supports_scheduled_date_and_post_marker_title(message, data):
     decision = decide_tool_capability(
         _snapshot(message),
         _request("health_record", {"record_type": "reminder", "data": data}),
@@ -2510,7 +2518,10 @@ def test_read_turn_allows_health_manage_list():
 def test_read_turn_blocks_health_manage_update():
     decision = decide_tool_capability(
         _snapshot("列出今天饮食记录"),
-        _request("health_manage", {"record_type": "diet", "operation": "update", "record_id": 1}),
+        _request(
+            "health_manage",
+            {"record_type": "diet", "operation": "update", "record_id": 1},
+        ),
     )
 
     assert decision.action == "block"
@@ -2521,7 +2532,10 @@ def test_read_turn_blocks_health_manage_update():
 def test_mutation_turn_allows_health_manage_delete_with_receipt():
     decision = decide_tool_capability(
         _snapshot("删除饮食记录 1"),
-        _request("health_manage", {"record_type": "diet", "operation": "delete", "record_id": 1}),
+        _request(
+            "health_manage",
+            {"record_type": "diet", "operation": "delete", "record_id": 1},
+        ),
     )
 
     assert decision.action == "allow"
@@ -2724,9 +2738,7 @@ def test_illness_resolution_binds_owner_scoped_record_and_exact_patch():
                 kind="owner_scoped_health_manage_list",
                 data={
                     "record_type": "illness",
-                    "records": (
-                        {"id": 71, "name": "舌尖溃疡", "status": "active"},
-                    ),
+                    "records": ({"id": 71, "name": "舌尖溃疡", "status": "active"},),
                 },
             ),
         ),
@@ -2786,9 +2798,7 @@ def test_illness_resolution_rejects_wrong_identity_or_invented_patch(arguments):
                 kind="owner_scoped_health_manage_list",
                 data={
                     "record_type": "illness",
-                    "records": (
-                        {"id": 71, "name": "舌尖溃疡", "status": "active"},
-                    ),
+                    "records": ({"id": 71, "name": "舌尖溃疡", "status": "active"},),
                 },
             ),
         ),
@@ -2828,9 +2838,7 @@ def test_illness_partial_recovery_is_improving_not_resolved(phrase):
                 kind="owner_scoped_health_manage_list",
                 data={
                     "record_type": "illness",
-                    "records": (
-                        {"id": 71, "name": "舌尖溃疡", "status": "active"},
-                    ),
+                    "records": ({"id": 71, "name": "舌尖溃疡", "status": "active"},),
                 },
             ),
         ),
@@ -2878,9 +2886,7 @@ def test_uncertain_illness_recovery_requires_clarification(phrase, status):
                 kind="owner_scoped_health_manage_list",
                 data={
                     "record_type": "illness",
-                    "records": (
-                        {"id": 71, "name": "舌尖溃疡", "status": "active"},
-                    ),
+                    "records": ({"id": 71, "name": "舌尖溃疡", "status": "active"},),
                 },
             ),
         ),
@@ -2915,9 +2921,7 @@ def test_illness_relapse_phrase_requires_clarification_instead_of_guessing(statu
                 kind="owner_scoped_health_manage_list",
                 data={
                     "record_type": "illness",
-                    "records": (
-                        {"id": 71, "name": "舌尖溃疡", "status": "active"},
-                    ),
+                    "records": ({"id": 71, "name": "舌尖溃疡", "status": "active"},),
                 },
             ),
         ),
@@ -2963,9 +2967,7 @@ def test_negated_illness_recovery_requires_clarification_instead_of_guessing(
                 kind="owner_scoped_health_manage_list",
                 data={
                     "record_type": "illness",
-                    "records": (
-                        {"id": 71, "name": "舌尖溃疡", "status": "active"},
-                    ),
+                    "records": ({"id": 71, "name": "舌尖溃疡", "status": "active"},),
                 },
             ),
         ),
@@ -3010,6 +3012,21 @@ def test_negated_illness_recovery_requires_clarification_instead_of_guessing(
         "好了今天又犯了",
         "好转同时今天更严重了",
         "没有证据表明已经康复",
+        "未见好转",
+        "没有出现好转",
+        "康复尚未证实",
+        "没有理由认为已经康复",
+        "并非还在发作中",
+        "可能还没好",
+        "大概正在逐步好转",
+        "不代表已经好转",
+        "好了今天又疼了",
+        "尚未观察到好转",
+        "不能说明已经康复",
+        "据说已经好转",
+        "好转存疑",
+        "还没好只是猜测",
+        "正在发作中尚未确认",
     ),
 )
 @pytest.mark.parametrize("status", ("active", "improving", "resolved"))
@@ -3024,9 +3041,7 @@ def test_negated_worsening_or_recurrent_illness_never_compiles_a_patch(
                 kind="owner_scoped_health_manage_list",
                 data={
                     "record_type": "illness",
-                    "records": (
-                        {"id": 71, "name": "舌尖溃疡", "status": "active"},
-                    ),
+                    "records": ({"id": 71, "name": "舌尖溃疡", "status": "active"},),
                 },
             ),
         ),
@@ -3049,7 +3064,13 @@ def test_negated_worsening_or_recurrent_illness_never_compiles_a_patch(
     )
 
     assert decision.action == "block"
-    assert decision.reason == "update_requires_exact_target_evidence"
+    if phrase == "不能说明已经康复":
+        assert decision.reason in {
+            "manage_write_without_mutate_intent",
+            "update_requires_exact_target_evidence",
+        }
+    else:
+        assert decision.reason == "update_requires_exact_target_evidence"
 
 
 def test_clear_active_illness_state_remains_a_supported_update():
@@ -3060,9 +3081,7 @@ def test_clear_active_illness_state_remains_a_supported_update():
                 kind="owner_scoped_health_manage_list",
                 data={
                     "record_type": "illness",
-                    "records": (
-                        {"id": 71, "name": "舌尖溃疡", "status": "improving"},
-                    ),
+                    "records": ({"id": 71, "name": "舌尖溃疡", "status": "improving"},),
                 },
             ),
         ),
@@ -3091,6 +3110,7 @@ def test_clear_active_illness_state_remains_a_supported_update():
         "舌尖溃疡已经明显改善，修改记录",
         "舌尖溃疡未用药就好转，修改记录",
         "舌尖溃疡没有加重反而明显改善，修改记录",
+        "舌尖溃疡没有出现加重反而明显改善，修改记录",
     ),
 )
 def test_clear_illness_improvement_paraphrase_remains_supported(message):
@@ -3101,9 +3121,7 @@ def test_clear_illness_improvement_paraphrase_remains_supported(message):
                 kind="owner_scoped_health_manage_list",
                 data={
                     "record_type": "illness",
-                    "records": (
-                        {"id": 71, "name": "舌尖溃疡", "status": "active"},
-                    ),
+                    "records": ({"id": 71, "name": "舌尖溃疡", "status": "active"},),
                 },
             ),
         ),
@@ -3137,6 +3155,8 @@ def test_clear_illness_improvement_paraphrase_remains_supported(message):
         "舌尖溃疡记录编号：999昨天好了，修改记录",
         "舌尖溃疡第999号记录昨天好了，修改记录",
         "舌尖溃疡记录编号为999昨天好了，修改记录",
+        "舌尖溃疡第999条疾病记录昨天好了，修改记录",
+        "舌尖溃疡疾病记录第999号昨天好了，修改记录",
     ),
 )
 def test_visible_illness_record_id_cannot_fall_back_to_a_different_named_record(
@@ -3149,9 +3169,7 @@ def test_visible_illness_record_id_cannot_fall_back_to_a_different_named_record(
                 kind="owner_scoped_health_manage_list",
                 data={
                     "record_type": "illness",
-                    "records": (
-                        {"id": 71, "name": "舌尖溃疡", "status": "active"},
-                    ),
+                    "records": ({"id": 71, "name": "舌尖溃疡", "status": "active"},),
                 },
             ),
         ),
@@ -3400,10 +3418,7 @@ def test_explicit_delete_id_rejects_noncanonical_or_nonpositive_values(record_id
     ),
 )
 def test_health_manage_record_id_canonicalization_is_strict(value, expected):
-    assert (
-        capability_policy_module.canonical_health_manage_record_id(value)
-        == expected
-    )
+    assert capability_policy_module.canonical_health_manage_record_id(value) == expected
 
 
 def test_write_turn_allows_health_record_with_receipt():
@@ -3720,9 +3735,7 @@ def test_medical_basis_analysis_allows_reads_but_not_mutations(message):
 
 
 def test_doctor_feedback_tool_allows_explicit_save_after_clinician_report():
-    snapshot = _snapshot(
-        "医生说是臀肌无力。请记录医生诊断：臀肌无力导致腰痛"
-    )
+    snapshot = _snapshot("医生说是臀肌无力。请记录医生诊断：臀肌无力导致腰痛")
     decision = decide_tool_capability(
         snapshot,
         _request("record_doctor_feedback", {"assessment": "臀肌无力导致腰痛"}),
@@ -3895,7 +3908,9 @@ def test_invalid_explicit_date_goal_blocks_health_record(message):
 def test_explicit_aigc_photo_turn_blocks_health_record_even_if_model_requests_it():
     decision = decide_tool_capability(
         _snapshot("基于这张照片生成今天活动的短视频，以此照片为开头。"),
-        _request("health_record", {"record_type": "diet", "data": {"food_items": "米饭"}}),
+        _request(
+            "health_record", {"record_type": "diet", "data": {"food_items": "米饭"}}
+        ),
     )
 
     assert decision.action == "block"
@@ -3985,7 +4000,9 @@ def test_recipe_replay_source_cannot_authorize_other_write_tools():
 
 
 @pytest.mark.parametrize("record_type", ["reminder", "goal", "garmin_sync", "remember"])
-def test_recipe_replay_source_cannot_authorize_persistent_or_external_record_types(record_type):
+def test_recipe_replay_source_cannot_authorize_persistent_or_external_record_types(
+    record_type,
+):
     """精确短语只授权日常健康记录，不能创建长期副作用。"""
     decision = decide_tool_capability(
         _snapshot("晨间套餐", channel="typed"),
@@ -4093,7 +4110,9 @@ def test_complex_source_image_provider_confirmation_allows_model_selected_draft(
         "我确认把图片\n发送给万相",
     ),
 )
-def test_provider_confirmation_whitespace_cannot_authorize_model_selected_draft(message):
+def test_provider_confirmation_whitespace_cannot_authorize_model_selected_draft(
+    message,
+):
     snapshot = _snapshot(message)
     decision = decide_tool_capability(
         snapshot,
@@ -4209,7 +4228,9 @@ def test_media_provider_veto_blocks_model_selected_draft(message):
     ],
 )
 def test_mutating_tools_are_blocked_without_explicit_write_intent(tool_name, args):
-    decision = decide_tool_capability(_snapshot("帮我分析一下最近的健康情况"), _request(tool_name, args))
+    decision = decide_tool_capability(
+        _snapshot("帮我分析一下最近的健康情况"), _request(tool_name, args)
+    )
 
     assert decision.action == "block"
     assert decision.receipt_required is True
@@ -4254,7 +4275,9 @@ def test_intervention_cycle_unknown_action_is_blocked_fail_closed():
 
 
 def test_unknown_tool_is_blocked_fail_closed():
-    decision = decide_tool_capability(_snapshot("分析一下我的睡眠"), _request("future_tool", {}))
+    decision = decide_tool_capability(
+        _snapshot("分析一下我的睡眠"), _request("future_tool", {})
+    )
 
     assert decision.action == "block"
     assert decision.reason == "unknown_tool"
@@ -4267,9 +4290,9 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v19"
+    assert payload["contract_version"] == "agent-capability-policy-v20"
     assert payload["health_record_target_binding"] == {
-        "version": "authorized-target-set-v15",
+        "version": "authorized-target-set-v16",
         "domain_types": {
             "diet": "diet",
             "exercise": "exercise",
@@ -4283,12 +4306,10 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
         },
     }
     assert (
-        payload["whole_record_delete_evidence_version"]
-        == "record-delete-evidence-v2"
+        payload["whole_record_delete_evidence_version"] == "record-delete-evidence-v2"
     )
     assert (
-        payload["health_manage_update_evidence_version"]
-        == "record-update-evidence-v10"
+        payload["health_manage_update_evidence_version"] == "record-update-evidence-v11"
     )
     assert payload["known_tools"]
     assert payload["recipe_record_types"]

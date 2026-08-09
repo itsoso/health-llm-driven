@@ -14,7 +14,13 @@ from app.services.agent_kernel.tool_gateway import (
     ToolPreflightError,
     blocked_tool_result,
 )
-from app.services.agent_kernel.types import ActionableReference, AgentEnvelope, ExecutionContext, ToolExecutionRequest, TurnSnapshot
+from app.services.agent_kernel.types import (
+    ActionableReference,
+    AgentEnvelope,
+    ExecutionContext,
+    ToolExecutionRequest,
+    TurnSnapshot,
+)
 from app.services.utterance_intent_lexicon import WRITE_COMMAND_ACTIONS
 
 
@@ -700,13 +706,22 @@ async def test_gateway_dispatches_one_canonical_water_payload(record_args):
         ),
         (
             "不要记录早餐但记录午餐吃了米饭",
-            {"record_type": "diet", "data": {"meal_type": "breakfast", "food_items": "米饭"}},
-            {"record_type": "diet", "data": {"meal_type": "lunch", "food_items": "米饭"}},
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "breakfast", "food_items": "米饭"},
+            },
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "lunch", "food_items": "米饭"},
+            },
         ),
         (
             "不要记录喝水300ml但记录晚餐吃了米饭",
             {"record_type": "water", "data": {"amount_ml": 300}},
-            {"record_type": "diet", "data": {"meal_type": "dinner", "food_items": "米饭"}},
+            {
+                "record_type": "diet",
+                "data": {"meal_type": "dinner", "food_items": "米饭"},
+            },
         ),
     ),
 )
@@ -1127,9 +1142,7 @@ async def test_gateway_execute_shadow_health_write_denial_is_hard_blocked():
 async def test_gateway_update_intent_blocks_health_record_recreate_fallback(
     policy_mode,
 ):
-    gateway = ToolGateway(
-        _snapshot("把刚才 300ml 改成 350ml", policy_mode=policy_mode)
-    )
+    gateway = ToolGateway(_snapshot("把刚才 300ml 改成 350ml", policy_mode=policy_mode))
     dispatched = False
     request = ToolExecutionRequest(
         tool_name="health_record",
@@ -1480,12 +1493,14 @@ async def test_gateway_update_self_correction_authorizes_only_final_value(messag
 
     assert result.decision is not None
     assert result.decision.action == "allow"
-    assert calls == [{
-        "record_type": "water",
-        "operation": "update",
-        "record_id": 718,
-        "data": {"amount": 400},
-    }]
+    assert calls == [
+        {
+            "record_type": "water",
+            "operation": "update",
+            "record_id": 718,
+            "data": {"amount": 400},
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -1509,7 +1524,9 @@ async def test_executor_quoted_update_never_reaches_real_water_put(
         calls.append(("PUT", url, payload))
         return "unexpected"
 
-    monkeypatch.setattr("app.services.agent_executor.settings.agent_kernel_policy_mode", policy_mode)
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_kernel_policy_mode", policy_mode
+    )
     monkeypatch.setattr(executor, "_api_get", fake_get)
     monkeypatch.setattr(executor, "_api_put", fake_put)
 
@@ -1583,7 +1600,9 @@ async def test_executor_non_authorizing_update_never_reaches_real_water_put(
         calls.append(("PUT", url, payload))
         return "unexpected"
 
-    monkeypatch.setattr("app.services.agent_executor.settings.agent_kernel_policy_mode", policy_mode)
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_kernel_policy_mode", policy_mode
+    )
     monkeypatch.setattr(executor, "_api_get", fake_get)
     monkeypatch.setattr(executor, "_api_put", fake_put)
 
@@ -1640,7 +1659,9 @@ async def test_executor_water_correction_dispatches_only_final_value(
         calls.append(("PUT", url, payload))
         return '{"id":718,"amount":400}'
 
-    monkeypatch.setattr("app.services.agent_executor.settings.agent_kernel_policy_mode", policy_mode)
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_kernel_policy_mode", policy_mode
+    )
     monkeypatch.setattr(executor, "_api_get", fake_get)
     monkeypatch.setattr(executor, "_api_put", fake_put)
 
@@ -1831,6 +1852,21 @@ async def test_executor_negated_or_noop_water_correction_never_reaches_real_put(
         "舌尖溃疡没有证据表明已经康复，修改记录",
         "舌尖溃疡第999号记录昨天好了，修改记录",
         "舌尖溃疡记录编号为999昨天好了，修改记录",
+        "舌尖溃疡第999条疾病记录昨天好了，修改记录",
+        "舌尖溃疡疾病记录第999号昨天好了，修改记录",
+        "舌尖溃疡未见好转，修改记录",
+        "舌尖溃疡没有出现好转，修改记录",
+        "舌尖溃疡康复尚未证实，修改记录",
+        "舌尖溃疡没有理由认为已经康复，修改记录",
+        "舌尖溃疡大概正在逐步好转，修改记录",
+        "舌尖溃疡不代表已经好转，修改记录",
+        "舌尖溃疡昨天好了今天又疼了，修改记录",
+        "舌尖溃疡尚未观察到好转，修改记录",
+        "舌尖溃疡不能说明已经康复，修改记录",
+        "舌尖溃疡据说已经好转，修改记录",
+        "舌尖溃疡好转存疑，修改记录",
+        "舌尖溃疡还没好只是猜测，修改记录",
+        "舌尖溃疡正在发作中尚未确认，修改记录",
     ),
 )
 async def test_executor_unauthorized_or_ambiguous_illness_update_never_reaches_real_put(
@@ -1992,6 +2028,62 @@ async def test_executor_clear_improvement_paraphrase_reaches_real_adapter(
 @pytest.mark.parametrize(
     "message",
     (
+        "舌尖溃疡并非还在发作中，修改记录",
+        "舌尖溃疡可能还没好，修改记录",
+    ),
+)
+async def test_executor_uncertain_or_negated_active_illness_never_puts(
+    db,
+    monkeypatch,
+    policy_mode,
+    message,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_channel = "typed"
+    executor._current_turn_user_message = message
+    calls = []
+
+    async def fake_exec(_base, _headers, arguments):
+        calls.append(arguments)
+        if arguments["operation"] == "list":
+            return json.dumps(
+                [{"id": 71, "name": "舌尖溃疡", "status": "improving"}],
+                ensure_ascii=False,
+            )
+        return "unexpected"
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_kernel_policy_mode",
+        policy_mode,
+    )
+    monkeypatch.setattr(executor, "_exec_health_manage", fake_exec)
+
+    await executor._execute_tool(
+        "health_manage",
+        {"record_type": "illness", "operation": "list"},
+        "test-token",
+    )
+    result = await executor._execute_tool(
+        "health_manage",
+        {
+            "record_type": "illness",
+            "operation": "update",
+            "record_id": 71,
+            "data": {"status": "active"},
+        },
+        "test-token",
+    )
+
+    assert [call["operation"] for call in calls] == ["list"]
+    assert json.loads(result)["dispatch_started"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    "message",
+    (
         "原文：到杭州了",
         "原话：到杭州了",
         "例句：到杭州了",
@@ -2013,6 +2105,21 @@ async def test_executor_clear_improvement_paraphrase_reaches_real_adapter(
         "今天到杭州了（小明行程），记录生活事件：到达杭州",
         "今天到杭州了（行程归小明），记录生活事件：到达杭州",
         "今天到杭州了（行程属于小明），记录生活事件：到达杭州",
+        "今天到杭州了，参照群消息，记录生活事件：到达杭州",
+        "今天到杭州了，照群消息，记录生活事件：到达杭州",
+        "今天到杭州了，基于群消息，记录生活事件：到达杭州",
+        "今天到杭州了，参考群消息，记录生活事件：到达杭州",
+        "今天到杭州了（行程归Alex），记录生活事件：到达杭州",
+        "今天到杭州了（这趟行程归小明），记录生活事件：到达杭州",
+        "今天到杭州了（小明的这次行程），记录生活事件：到达杭州",
+        "今天到杭州了，记录生活事件（本次行程属于小明）",
+        "今天到杭州了（朋友转达），记录生活事件：到达杭州",
+        "今天到杭州了（群消息截图），记录生活事件：到达杭州",
+        "今天到杭州了（取自群聊），记录生活事件：到达杭州",
+        "今天到杭州了（微信截图），记录生活事件：到达杭州",
+        "今天到杭州了（朋友说的），记录生活事件：到达杭州",
+        "今天到杭州了（本次旅程属于Alex），记录生活事件：到达杭州",
+        "今天到杭州了（这次出行归小明），记录生活事件：到达杭州",
     ),
 )
 async def test_executor_metalinguistic_event_never_reaches_real_event_post(
@@ -2031,7 +2138,9 @@ async def test_executor_metalinguistic_event_never_reaches_real_event_post(
         calls.append((url, payload))
         return "unexpected"
 
-    monkeypatch.setattr("app.services.agent_executor.settings.agent_kernel_policy_mode", policy_mode)
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_kernel_policy_mode", policy_mode
+    )
     monkeypatch.setattr(executor, "_api_post", fake_post)
 
     result = await executor._execute_tool(
@@ -2114,7 +2223,9 @@ async def test_executor_third_party_public_contract_never_posts(
         calls.append((url, payload))
         return "unexpected"
 
-    monkeypatch.setattr("app.services.agent_executor.settings.agent_kernel_policy_mode", policy_mode)
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_kernel_policy_mode", policy_mode
+    )
     monkeypatch.setattr(executor, "_api_post", fake_post)
 
     result = await executor._execute_tool("health_record", arguments, "test-token")
@@ -2158,7 +2269,11 @@ async def test_gateway_explicit_update_id_without_owner_candidate_never_dispatch
             "记一下我鞋码42.5",
             {
                 "record_type": "remember",
-                "data": {"predicate": "鞋码", "object_value": "42.5", "subject": "模型"},
+                "data": {
+                    "predicate": "鞋码",
+                    "object_value": "42.5",
+                    "subject": "模型",
+                },
             },
             {"subject": "用户", "predicate": "鞋码", "object_value": "42.5"},
         ),
@@ -2242,6 +2357,30 @@ async def test_gateway_explicit_update_id_without_owner_candidate_never_dispatch
             {
                 "title": "到达杭州",
                 "occurred_at": "2026-07-16T15:00:00+08:00",
+            },
+        ),
+        (
+            "昨天下午3点半到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T15:30:00+08:00",
+            },
+        ),
+        (
+            "昨天下午3点一刻到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T15:15:00+08:00",
+            },
+        ),
+        (
+            "昨天中午一点半到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T13:30:00+08:00",
             },
         ),
         (
@@ -2442,6 +2581,33 @@ async def test_gateway_dispatches_supported_family_canonical_projection(
             },
         ),
         (
+            "昨天下午3点半到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T15:30:00+08:00",
+            },
+        ),
+        (
+            "昨天下午3点一刻到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T15:15:00+08:00",
+            },
+        ),
+        (
+            "昨天中午一点半到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T13:30:00+08:00",
+            },
+        ),
+        (
             "今天凌晨到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             "/episodes/life-event",
@@ -2531,6 +2697,41 @@ async def test_executor_dispatches_public_record_contract_through_real_gateway(
     assert calls and calls[0][0].endswith(expected_path)
     assert calls[0][1] == expected_payload
     assert json.loads(result)["id"] == 91
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+async def test_executor_ambiguous_related_event_times_never_post(
+    db,
+    monkeypatch,
+    policy_mode,
+):
+    message = "昨天下午三点到杭州了，今天下午四点到杭州了，记录生活事件：到达杭州"
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_channel = "typed"
+    executor._current_turn_user_message = message
+    executor._agent_kernel_snapshot = _snapshot(message, channel="typed")
+    calls = []
+
+    async def fake_post(url, _headers, payload):
+        calls.append((url, payload))
+        return "unexpected"
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_kernel_policy_mode",
+        policy_mode,
+    )
+    monkeypatch.setattr(executor, "_api_post", fake_post)
+
+    result = await executor._execute_tool(
+        "health_record",
+        {"record_type": "event", "data": {"title": "到达杭州"}},
+        "test-token",
+    )
+
+    assert calls == []
+    assert json.loads(result)["dispatch_started"] is False
 
 
 @pytest.mark.asyncio
@@ -2694,14 +2895,19 @@ async def test_gateway_execute_unknown_policy_mode_fails_closed_before_dispatch(
 
 
 @pytest.mark.asyncio
-async def test_execute_tool_blocks_policy_denied_health_record_before_dispatch(db, monkeypatch):
+async def test_execute_tool_blocks_policy_denied_health_record_before_dispatch(
+    db, monkeypatch
+):
     executor = AgentExecutor(db)
     executor._current_user_id = 1
     executor._current_turn_user_message = "今天我的饮食的记录，帮我列个表格出来。"
 
     monkeypatch.setattr(
         "app.services.llm.tool_validator.validate_tool_call",
-        lambda tool_name, args, db, user_id, reference_now=None: {"error": None, "data": args},
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
     )
 
     async def should_not_run(*args, **kwargs):
@@ -2711,7 +2917,9 @@ async def test_execute_tool_blocks_policy_denied_health_record_before_dispatch(d
 
     result = await executor._execute_tool(
         "health_record",
-        json.dumps({"record_type": "diet", "data": {"food_items": "米饭"}}, ensure_ascii=False),
+        json.dumps(
+            {"record_type": "diet", "data": {"food_items": "米饭"}}, ensure_ascii=False
+        ),
         None,
     )
 
@@ -2777,14 +2985,13 @@ async def test_exact_historical_illness_query_blocks_model_write_before_dispatch
         {"dimension": "illness"},
         {"dimension": "illness", "keyword": "感冒", "days": 7},
         {"dimension": "comprehensive"},
+        {"dimension": "sleep", "days": 7},
     ),
 )
 async def test_historical_illness_query_is_projected_to_turn_entity_and_window(
     proposed_args,
 ):
-    gateway = ToolGateway(
-        _snapshot("最近半年口腔溃疡有哪些记录？")
-    )
+    gateway = ToolGateway(_snapshot("最近半年口腔溃疡有哪些记录？"))
     calls = []
 
     async def dispatch(request):
@@ -2802,11 +3009,94 @@ async def test_historical_illness_query_is_projected_to_turn_entity_and_window(
 
     assert result.decision is not None
     assert result.decision.action == "allow"
-    assert calls == [{
-        "dimension": "illness",
-        "keyword": "口腔溃疡",
-        "days": 183,
-    }]
+    assert calls == [
+        {
+            "dimension": "illness",
+            "keyword": "口腔溃疡",
+            "days": 183,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "proposed_args", "expected_args"),
+    (
+        (
+            "我上一次扁桃体炎是什么时候 最近半年分别有哪些记录",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "扁桃体炎", "days": 183},
+        ),
+        (
+            "我上一次哮喘是什么时候 最近半年分别有哪些记录",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "哮喘", "days": 183},
+        ),
+        (
+            "我上一次扁桃体炎是什么时候 最近半年分别有哪些记录",
+            {"dimension": "illness", "keyword": "感冒", "days": 7},
+            {"dimension": "illness", "keyword": "扁桃体炎", "days": 183},
+        ),
+        (
+            "最近一年口腔溃疡有哪些记录？",
+            {"dimension": "illness", "keyword": "口腔溃疡", "days": 365},
+            {"dimension": "illness", "keyword": "口腔溃疡", "days": 365},
+        ),
+        (
+            "最近两年口腔溃疡有哪些记录？",
+            {"dimension": "illness", "keyword": "口腔溃疡", "days": 730},
+            {"dimension": "illness", "keyword": "口腔溃疡", "days": 730},
+        ),
+    ),
+)
+async def test_historical_illness_query_projects_arbitrary_entity_and_year_window(
+    message,
+    proposed_args,
+    expected_args,
+):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments=proposed_args,
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [expected_args]
+
+
+@pytest.mark.asyncio
+async def test_multi_entity_illness_query_never_falls_back_to_model_scope():
+    gateway = ToolGateway(_snapshot("最近半年口腔溃疡和湿疹有哪些记录？"))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments={"dimension": "comprehensive", "days": 7},
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert result.decision.reason == "illness_query_entity_requires_clarification"
 
 
 @pytest.mark.asyncio
@@ -2942,7 +3232,10 @@ async def test_execute_tool_blocks_health_manage_update_in_read_turn(db, monkeyp
 
     monkeypatch.setattr(
         "app.services.llm.tool_validator.validate_tool_call",
-        lambda tool_name, args, db, user_id, reference_now=None: {"error": None, "data": args},
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
     )
 
     async def should_not_run(*args, **kwargs):
@@ -2952,7 +3245,12 @@ async def test_execute_tool_blocks_health_manage_update_in_read_turn(db, monkeyp
 
     result = await executor._execute_tool(
         "health_manage",
-        {"record_type": "diet", "operation": "update", "record_id": 1, "data": {"meal_type": "lunch"}},
+        {
+            "record_type": "diet",
+            "operation": "update",
+            "record_id": 1,
+            "data": {"meal_type": "lunch"},
+        },
         None,
     )
 
@@ -2970,7 +3268,10 @@ async def test_execute_tool_blocks_health_manage_delete_in_update_turn(db, monke
 
     monkeypatch.setattr(
         "app.services.llm.tool_validator.validate_tool_call",
-        lambda tool_name, args, db, user_id, reference_now=None: {"error": None, "data": args},
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
     )
 
     async def should_not_run(*args, **kwargs):
@@ -3026,7 +3327,10 @@ async def test_execute_tool_blocks_field_removal_from_deleting_record(
 
     monkeypatch.setattr(
         "app.services.llm.tool_validator.validate_tool_call",
-        lambda tool_name, args, db, user_id, reference_now=None: {"error": None, "data": args},
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
     )
 
     async def should_not_run(*args, **kwargs):
@@ -3142,12 +3446,15 @@ async def test_execute_tool_dispatches_closed_grammar_record_delete(
 
     async def fake_exec(base, headers, args):
         calls.append(args)
-        return json.dumps({
-            "id": args["record_id"],
-            "record_id": args["record_id"],
-            "resource_type": f"{record_type}_record",
-            "message": "删除成功",
-        }, ensure_ascii=False)
+        return json.dumps(
+            {
+                "id": args["record_id"],
+                "record_id": args["record_id"],
+                "resource_type": f"{record_type}_record",
+                "message": "删除成功",
+            },
+            ensure_ascii=False,
+        )
 
     monkeypatch.setattr(executor, "_exec_health_manage", fake_exec)
 
@@ -3157,11 +3464,13 @@ async def test_execute_tool_dispatches_closed_grammar_record_delete(
         None,
     )
 
-    assert calls == [{
-        "record_type": record_type,
-        "operation": "delete",
-        "record_id": 718,
-    }]
+    assert calls == [
+        {
+            "record_type": record_type,
+            "operation": "delete",
+            "record_id": 718,
+        }
+    ]
     assert '"record_id": 718' in result
 
 
@@ -3174,7 +3483,10 @@ async def test_execute_tool_allows_explicit_health_record_write(db, monkeypatch)
 
     monkeypatch.setattr(
         "app.services.llm.tool_validator.validate_tool_call",
-        lambda tool_name, args, db, user_id, reference_now=None: {"error": None, "data": args},
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
     )
 
     async def fake_exec(base, headers, args):
@@ -3192,14 +3504,16 @@ async def test_execute_tool_allows_explicit_health_record_write(db, monkeypatch)
         None,
     )
 
-    assert calls == [{
-        "record_type": "diet",
-        "data": {
-            "meal_type": "lunch",
-            "food_items": "牛肉面",
-            "source": "agent_text",
-        },
-    }]
+    assert calls == [
+        {
+            "record_type": "diet",
+            "data": {
+                "meal_type": "lunch",
+                "food_items": "牛肉面",
+                "source": "agent_text",
+            },
+        }
+    ]
     assert '"id": 1' in result
 
 
@@ -3343,14 +3657,19 @@ async def test_execute_tool_never_dispatches_conflicting_medication_dose_aliases
 
 
 @pytest.mark.asyncio
-async def test_execute_tool_emits_receipt_for_json_encoded_write_arguments(db, monkeypatch):
+async def test_execute_tool_emits_receipt_for_json_encoded_write_arguments(
+    db, monkeypatch
+):
     executor = AgentExecutor(db)
     executor._current_user_id = 1
     executor._current_turn_user_message = "记录午餐吃了牛肉面"
 
     monkeypatch.setattr(
         "app.services.llm.tool_validator.validate_tool_call",
-        lambda tool_name, args, db, user_id, reference_now=None: {"error": None, "data": args},
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
     )
 
     async def fake_exec(base, headers, args):
@@ -3372,7 +3691,9 @@ async def test_execute_tool_emits_receipt_for_json_encoded_write_arguments(db, m
 
     assert executor._agent_kernel_event_bus is not None
     events = executor._agent_kernel_event_bus.events
-    receipt = next(event for event in events if event.name == "agent.write_receipt_verified")
+    receipt = next(
+        event for event in events if event.name == "agent.write_receipt_verified"
+    )
     assert receipt.data["operation_id"] == "health_record:diet_record:9"
     assert receipt.data["resource_id"] == "9"
 
@@ -3427,10 +3748,15 @@ async def test_shadow_policy_hard_blocks_denied_health_write(db, monkeypatch):
     executor._current_user_id = 1
     executor._current_turn_user_message = "列出今天的饮食记录"
     calls = []
-    monkeypatch.setattr("app.services.agent_executor.settings.agent_kernel_policy_mode", "shadow")
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_kernel_policy_mode", "shadow"
+    )
     monkeypatch.setattr(
         "app.services.llm.tool_validator.validate_tool_call",
-        lambda tool_name, args, db, user_id, reference_now=None: {"error": None, "data": args},
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
     )
 
     async def fake_exec(base, headers, args):
@@ -3447,14 +3773,20 @@ async def test_shadow_policy_hard_blocks_denied_health_write(db, monkeypatch):
 
     assert calls == []
     assert executor._agent_kernel_event_bus is not None
-    assert "agent.tool_blocked" in [event.name for event in executor._agent_kernel_event_bus.events]
+    assert "agent.tool_blocked" in [
+        event.name for event in executor._agent_kernel_event_bus.events
+    ]
 
 
 @pytest.mark.asyncio
-async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation_card(db, monkeypatch):
+async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation_card(
+    db, monkeypatch
+):
     executor = AgentExecutor(db)
     executor._current_user_id = 1
-    executor._current_turn_user_message = "确认把这张早餐图片发送给百炼，生成 5 秒竖屏短视频"
+    executor._current_turn_user_message = (
+        "确认把这张早餐图片发送给百炼，生成 5 秒竖屏短视频"
+    )
     executor._current_turn_source_message_id = 88
     executor._current_turn_image_urls = ["/api/v1/upload/files/chat/1/example.jpg"]
     executor._current_turn_conversation_id = 42
@@ -3505,38 +3837,43 @@ async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation
     assert FakeMediaService.requested[0] == 1
     assert FakeMediaService.requested[1].source_message_id == 88
     assert FakeMediaService.requested[2] == 42
-    assert executor._turn_aigc_media_cards == [{
-        "type": "aigc_media_confirmation",
-        "data": {
-            "confirmation_id": "aigc_confirm_0123456789abcdef0123456789abcdef",
-            "kind": "image_to_video",
-            "title": "短视频草稿",
-            "provider": "百炼 HappyHorse",
-            "source_attached": True,
-            "status": "pending",
-            "content_summary": "围绕补水生成健康行动短视频",
-            "content_topics": ["补水"],
-            "duration_seconds": 5,
-            "duration_options": [5, 8, 15],
-            "ratio": "9:16",
-            "resolution": "720P",
-            "generates_audio": True,
-        },
-        "actions": [{
-            "id": "aigc_media.confirm:aigc_confirm_0123456789abcdef0123456789abcdef",
-            "label": "确认并生成",
-            "action": "aigc_media.confirm",
-            "endpoint": "/aigc/media/confirmations/aigc_confirm_0123456789abcdef0123456789abcdef/confirm",
-            "requires_manual_confirm": True,
-            "capability_id": "aigc_media_confirmation.v1",
-            "required_receipt": True,
-            "autonomy_tier": "manual_confirm",
-            "policy_reason": "manual_confirm_write",
-        }],
-    }]
+    assert executor._turn_aigc_media_cards == [
+        {
+            "type": "aigc_media_confirmation",
+            "data": {
+                "confirmation_id": "aigc_confirm_0123456789abcdef0123456789abcdef",
+                "kind": "image_to_video",
+                "title": "短视频草稿",
+                "provider": "百炼 HappyHorse",
+                "source_attached": True,
+                "status": "pending",
+                "content_summary": "围绕补水生成健康行动短视频",
+                "content_topics": ["补水"],
+                "duration_seconds": 5,
+                "duration_options": [5, 8, 15],
+                "ratio": "9:16",
+                "resolution": "720P",
+                "generates_audio": True,
+            },
+            "actions": [
+                {
+                    "id": "aigc_media.confirm:aigc_confirm_0123456789abcdef0123456789abcdef",
+                    "label": "确认并生成",
+                    "action": "aigc_media.confirm",
+                    "endpoint": "/aigc/media/confirmations/aigc_confirm_0123456789abcdef0123456789abcdef/confirm",
+                    "requires_manual_confirm": True,
+                    "capability_id": "aigc_media_confirmation.v1",
+                    "required_receipt": True,
+                    "autonomy_tier": "manual_confirm",
+                    "policy_reason": "manual_confirm_write",
+                }
+            ],
+        }
+    ]
     assert executor._agent_kernel_event_bus is not None
     receipt = next(
-        event for event in executor._agent_kernel_event_bus.events
+        event
+        for event in executor._agent_kernel_event_bus.events
         if event.name == "agent.write_receipt_verified"
     )
     assert receipt.data["resource_id"] == (

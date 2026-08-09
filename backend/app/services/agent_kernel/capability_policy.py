@@ -1,4 +1,5 @@
 """Deterministic tool capability policy for XiaoBa Agent Kernel."""
+
 from __future__ import annotations
 
 import hashlib
@@ -46,30 +47,30 @@ MANAGE_PLAN_ACTIONS = get_tool_spec("manage_plan").write_actions
 # Procedure recipes are exact-triggered routines. Their scope is intentionally
 # narrower than normal one-shot health_record calls: no long-lived reminders or
 # goals, no account/profile mutation, and no external ingestion jobs.
-RECIPE_REPLAY_ALLOWED_RECORD_TYPES = frozenset({
-    "water",
-    "weight",
-    "blood_pressure",
-    "diet",
-    "exercise",
-    "waist",
-    "sleep",
-    "excretion",
-    "mood",
-    "symptom",
-    "rhinitis",
-})
+RECIPE_REPLAY_ALLOWED_RECORD_TYPES = frozenset(
+    {
+        "water",
+        "weight",
+        "blood_pressure",
+        "diet",
+        "exercise",
+        "waist",
+        "sleep",
+        "excretion",
+        "mood",
+        "symptom",
+        "rhinitis",
+    }
+)
 _RECIPE_RECORD_TYPE_ALIASES = {
     "bp": "blood_pressure",
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v19"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v15"
-_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v10"
-_SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = (
-    "_server_authorized_health_record_fields"
-)
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v20"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v16"
+_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v11"
+_SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
 _HEALTH_RECORD_DOMAIN_TYPES = {
     "diet": "diet",
     "water": "water",
@@ -97,9 +98,7 @@ def bind_server_authorized_health_record_fields(
     """Replace any untrusted marker and bind executor-derived record fields."""
     args.pop(_SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY, None)
     authorized = tuple(
-        (key, value)
-        for key, value in values.items()
-        if value not in (None, "", [])
+        (key, value) for key, value in values.items() if value not in (None, "", [])
     )
     if authorized:
         args[_SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY] = (
@@ -113,6 +112,8 @@ def _server_authorized_health_record_fields(args: dict[str, Any]) -> dict[str, A
     if not isinstance(marker, _ServerAuthorizedHealthRecordFields):
         return {}
     return dict(marker.values)
+
+
 _NUMERIC_DISPATCH_ALIAS_GROUPS = {
     "water": (("amount", ("amount", "amount_ml", "ml")),),
     "weight": (("weight", ("weight", "value", "weight_kg", "体重")),),
@@ -172,17 +173,21 @@ _ILLNESS_TARGET_TERMS = (
 _ILLNESS_RECOVERY_RE = re.compile(r"(?:好转|改善|缓解|康复|痊愈|好了?)")
 _ILLNESS_RELAPSE_OR_WORSENING_RE = re.compile(
     r"(?:复发|再发|重新发作|又发作|再次发作|又犯了|再犯|犯病|"
-    r"加重|恶化|反复|反弹|更严重|严重了|变严重|越来越严重)"
+    r"加重|恶化|反复|反弹|更严重|严重了|变严重|越来越严重|"
+    r"又(?:疼|痛|肿|痒|破|起泡)(?:了)?)"
 )
-_ILLNESS_ASSERTION_BOUNDARY_RE = re.compile(
-    r"(?:但是|不过|然而|反而|但|却|就)"
-)
+_ILLNESS_ASSERTION_BOUNDARY_RE = re.compile(r"(?:但是|不过|然而|反而|但|却|就)")
 _ILLNESS_RECOVERY_UNCERTAIN_PREFIX_RE = re.compile(
     r"(?:似乎|好像|貌似|可能|也许|或许|大概|大约|看起来|不确定|说不准)"
-    r"(?:已经|有些|有所|明显|完全|彻底)?$"
+    r"(?:(?:已经|正在|逐步|慢慢|有些|有所|明显|完全|彻底))*$"
 )
 _ILLNESS_RECOVERY_NEGATED_PREFIX_RE = re.compile(
     r"(?:看不出|看不到|无法判断|难以判断|不能确定|"
+    r"(?:不能|不足以)(?:说明|代表|证明|确认)|"
+    r"未(?:曾)?(?:见|见到|看到|出现|观察到)?|"
+    r"(?:没有|没)(?:看到|见到|出现|发现)?|"
+    r"不(?:代表|意味着?|说明|表明)|"
+    r"(?:没有|没)理由(?:相信|认为)|"
     r"(?:没有|无|缺乏).{0,8}(?:证据|迹象|表现)"
     r"(?:表明|显示|说明)?(?:已经|真正|完全)?|"
     r"并(?:非|不是|无|未|没有|没)|"
@@ -192,16 +197,25 @@ _ILLNESS_RECOVERY_NEGATED_PREFIX_RE = re.compile(
     r"(?:任何|有|明显|真正|实质性|完全|彻底|已经)*$"
 )
 _ILLNESS_RECOVERY_NEGATED_SUFFIX_RE = re.compile(
-    r"^(?:不了|不成|(?:其实|实际上)?(?:并)?(?:没有|没)|吗|么|[?？])"
+    r"^(?:不了|不成|(?:其实|实际上)?(?:并)?(?:没有|没)|"
+    r"(?:尚未|还未|未)(?:得到)?(?:证实|确认|证明)|"
+    r"(?:未经|尚待)(?:证实|确认|证明)|"
+    r"存疑|(?:尚)?不确定|只是猜测|仅是猜测|吗|么|[?？])"
 )
 _ILLNESS_WORSENING_NEGATED_PREFIX_RE = re.compile(
-    r"(?:并)?(?:没有|没|未|无|不)(?:再|继续|明显|进一步)?$"
+    r"(?:并)?(?:没有|没|未|无|不)"
+    r"(?:(?:再|继续|明显|进一步|出现|发生|见到|看到))*$"
 )
 _ILLNESS_WORSENING_UNCERTAIN_PREFIX_RE = re.compile(
     r"(?:似乎|好像|可能|也许|或许|是否|不确定)$"
 )
 _CLEAR_ACTIVE_ILLNESS_RE = re.compile(
     r"(?:还在发作中|发作中|还没好|仍未好)(?=[，,。.!！；;]|修改|更新|更正|$)"
+)
+_ILLNESS_ACTIVE_UNSAFE_PREFIX_RE = re.compile(
+    r"(?:并非|不是|不算|算不上|无法确定|不能确定|"
+    r"似乎|好像|貌似|可能|也许|或许|大概|大约|看起来)"
+    r"(?:(?:已经|仍然|还|正在))*$"
 )
 _MEAL_TYPE_ALIASES = {
     "breakfast": "breakfast",
@@ -222,8 +236,12 @@ _MEAL_TYPE_ALIASES = {
 _WEIGHT_TARGET_RE = re.compile(
     r"(?P<value>\d+(?:\.\d+)?)(?P<unit>kg|公斤|千克|斤)", re.IGNORECASE
 )
-_BLOOD_PRESSURE_TARGET_RE = re.compile(r"(?P<systolic>\d{2,3})[/／](?P<diastolic>\d{2,3})")
-_WAIST_TARGET_RE = re.compile(r"腰围(?P<value>\d+(?:\.\d+)?)(?:cm|厘米)?", re.IGNORECASE)
+_BLOOD_PRESSURE_TARGET_RE = re.compile(
+    r"(?P<systolic>\d{2,3})[/／](?P<diastolic>\d{2,3})"
+)
+_WAIST_TARGET_RE = re.compile(
+    r"腰围(?P<value>\d+(?:\.\d+)?)(?:cm|厘米)?", re.IGNORECASE
+)
 _WATER_TARGET_RE = re.compile(
     r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>ml|毫升|l|升)(?:的)?(?:水)?",
     re.IGNORECASE,
@@ -247,9 +265,7 @@ _SUPPLEMENT_TARGET_TERMS = (
     "辅酶q10",
     "红参液",
 )
-_MEDICATION_TARGET_TERMS = (
-    "二甲双胍",
-)
+_MEDICATION_TARGET_TERMS = ("二甲双胍",)
 _MEDICATION_DOSE_RE = re.compile(
     r"(?P<value>\d+(?:\.\d+)?|[一二两三四五六七八九十])\s*"
     r"(?P<unit>片|粒|丸|袋|支|mg|g|mcg|ug|μg|毫克|克|ml|毫升)",
@@ -353,7 +369,10 @@ _EXCRETION_TARGET_ALIASES = {
     "diarrhea": "diarrhea",
     "腹泻": "diarrhea",
 }
-_CLOCK_RE = re.compile(r"(?<!\d)(?P<hour>[01]?\d|2[0-3])[:：点](?P<minute>[0-5]\d)?")
+_CLOCK_RE = re.compile(
+    r"(?<!\d)(?P<hour>[01]?\d|2[0-3])[:：点]"
+    r"(?P<minute>[0-5]\d|半|一刻|三刻)?(?:钟)?"
+)
 _CHINESE_CLOCK_RE = re.compile(
     r"(?P<hour>[零〇一二两三四五六七八九十]{1,3})点"
     r"(?P<minute>半|一刻|三刻|[零〇一二两三四五六七八九十]{1,3}分)?(?:钟)?"
@@ -369,28 +388,30 @@ _SEVERITY_TARGET_RE = re.compile(
     r"(?:分(?!钟)|级|/\s*10)"
 )
 _WHOLE_RECORD_DELETE_EVIDENCE_VERSION = "record-delete-evidence-v2"
-_HEALTH_MANAGE_CANONICAL_RECORD_TYPES = frozenset({
-    "diet",
-    "water",
-    "weight",
-    "waist",
-    "blood_pressure",
-    "sleep",
-    "mood",
-    "excretion",
-    "exercise",
-    "illness",
-    "symptom",
-    "medication",
-    "medication_log",
-    "supplement",
-    "supplement_definition",
-    "reminder",
-    "goal",
-    "medical_exam",
-    "event",
-    "rhinitis",
-})
+_HEALTH_MANAGE_CANONICAL_RECORD_TYPES = frozenset(
+    {
+        "diet",
+        "water",
+        "weight",
+        "waist",
+        "blood_pressure",
+        "sleep",
+        "mood",
+        "excretion",
+        "exercise",
+        "illness",
+        "symptom",
+        "medication",
+        "medication_log",
+        "supplement",
+        "supplement_definition",
+        "reminder",
+        "goal",
+        "medical_exam",
+        "event",
+        "rhinitis",
+    }
+)
 _DELETE_RECORD_TYPE_TEXT_ALIASES = {
     "diet": "diet",
     "food": "diet",
@@ -605,11 +626,7 @@ def canonical_health_manage_record_id(value: Any) -> int | None:
 def canonical_health_manage_record_type(value: Any) -> str | None:
     """Accept only production-supported canonical health_manage types."""
     normalized = str(value or "").strip().lower()
-    return (
-        normalized
-        if normalized in _HEALTH_MANAGE_CANONICAL_RECORD_TYPES
-        else None
-    )
+    return normalized if normalized in _HEALTH_MANAGE_CANONICAL_RECORD_TYPES else None
 
 
 def _whole_record_delete_evidence(
@@ -632,9 +649,7 @@ def _whole_record_delete_evidence(
     exact_target = _EXACT_RECORD_TARGET_RE.fullmatch(match.group("target"))
     if exact_target is None:
         return None
-    record_id = canonical_health_manage_record_id(
-        exact_target.group("record_id")
-    )
+    record_id = canonical_health_manage_record_id(exact_target.group("record_id"))
     if record_id is None:
         return None
     record_type = _DELETE_RECORD_TYPE_TEXT_ALIASES.get(
@@ -659,10 +674,7 @@ def _delete_evidence_authorizes_request(
     requested_id = canonical_health_manage_record_id(args.get("record_id"))
     if requested_type is None or requested_id is None:
         return False
-    return (
-        evidence.record_type == requested_type
-        and evidence.record_id == requested_id
-    )
+    return evidence.record_type == requested_type and evidence.record_id == requested_id
 
 
 def _authorized_health_manage_update_args(
@@ -703,7 +715,8 @@ def _authorized_health_manage_update_args(
             for record in records
             if canonical_health_manage_record_id(
                 record.get("id", record.get("record_id"))
-            ) == requested_id
+            )
+            == requested_id
         ),
         None,
     )
@@ -746,8 +759,10 @@ def _authorized_health_manage_update_args(
             if old_amount is not None
             and _numbers_match(old_amount, record.get("amount"))
         ]
-        if not candidates and old_amount is None and re.search(
-            r"(?:刚才|刚刚|上一条|最近一条)", snapshot.envelope.text
+        if (
+            not candidates
+            and old_amount is None
+            and re.search(r"(?:刚才|刚刚|上一条|最近一条)", snapshot.envelope.text)
         ):
             candidates = records[:1]
         candidate_ids = {
@@ -780,7 +795,8 @@ def _authorized_illness_update_args(
             for record in records
             if canonical_health_manage_record_id(
                 record.get("id", record.get("record_id"))
-            ) == requested_id
+            )
+            == requested_id
         ),
         None,
     )
@@ -815,8 +831,7 @@ def _authorized_illness_update_args(
         candidates = [
             record
             for record in records
-            if _normalize_entity_name(record.get("name"))
-            in target_names
+            if _normalize_entity_name(record.get("name")) in target_names
         ]
         candidate_ids = {
             canonical_health_manage_record_id(
@@ -841,7 +856,10 @@ def _illness_update_patch(snapshot: TurnSnapshot) -> dict[str, Any] | None:
     patch: dict[str, Any] = {}
     if _has_asserted_illness_worsening(text):
         return None
-    if _CLEAR_ACTIVE_ILLNESS_RE.search(text):
+    active_assertion = _illness_active_assertion(text)
+    if active_assertion == "unsafe":
+        return None
+    if active_assertion == "positive":
         patch["status"] = "active"
     elif _illness_recovery_assertion(text) != "positive":
         return None
@@ -887,8 +905,7 @@ def _illness_update_patch(snapshot: TurnSnapshot) -> dict[str, Any] | None:
         )
         if day_offset is not None:
             patch["end_date"] = (
-                snapshot.context.current_time.date()
-                + timedelta(days=day_offset)
+                snapshot.context.current_time.date() + timedelta(days=day_offset)
             ).isoformat()
     return patch
 
@@ -898,10 +915,10 @@ def _assertion_prefix(text: str, predicate_start: int) -> str:
         (text.rfind(mark, 0, predicate_start) for mark in "，,。.!！；;：:"),
         default=-1,
     )
-    prefix = text[clause_start + 1:predicate_start]
+    prefix = text[clause_start + 1 : predicate_start]
     boundaries = tuple(_ILLNESS_ASSERTION_BOUNDARY_RE.finditer(prefix))
     if boundaries:
-        prefix = prefix[boundaries[-1].end():]
+        prefix = prefix[boundaries[-1].end() :]
     return prefix
 
 
@@ -912,12 +929,27 @@ def _illness_recovery_assertion(text: str) -> str:
         return "none"
     for match in matches:
         prefix = _assertion_prefix(text, match.start())
-        suffix = text[match.end():match.end() + 12]
+        suffix = text[match.end() : match.end() + 12]
         if (
             _ILLNESS_RECOVERY_UNCERTAIN_PREFIX_RE.search(prefix)
             or _ILLNESS_RECOVERY_NEGATED_PREFIX_RE.search(prefix)
             or _ILLNESS_RECOVERY_NEGATED_SUFFIX_RE.search(suffix)
         ):
+            return "unsafe"
+    return "positive"
+
+
+def _illness_active_assertion(text: str) -> str:
+    """Classify an active-state predicate without treating ``没好`` as denial."""
+    matches = tuple(_CLEAR_ACTIVE_ILLNESS_RE.finditer(text))
+    if not matches:
+        return "none"
+    for match in matches:
+        prefix = _assertion_prefix(text, match.start())
+        suffix = text[match.end() : match.end() + 12]
+        if _ILLNESS_ACTIVE_UNSAFE_PREFIX_RE.search(
+            prefix
+        ) or _ILLNESS_RECOVERY_NEGATED_SUFFIX_RE.search(suffix):
             return "unsafe"
     return "positive"
 
@@ -940,11 +972,11 @@ def _water_update_values(text: str) -> tuple[float | None, float] | None:
     if not markers:
         return None
     marker = markers[-1]
-    new_matches = tuple(_WATER_TARGET_RE.finditer(normalized[marker.end():]))
+    new_matches = tuple(_WATER_TARGET_RE.finditer(normalized[marker.end() :]))
     if not new_matches:
         return None
     new_amount = _water_match_amount_ml(new_matches[0])
-    old_matches = tuple(_WATER_TARGET_RE.finditer(normalized[:marker.start()]))
+    old_matches = tuple(_WATER_TARGET_RE.finditer(normalized[: marker.start()]))
     old_amount = _water_match_amount_ml(old_matches[-1]) if old_matches else None
     from app.services.write_intent_scope import (
         corrected_water_update_value,
@@ -988,7 +1020,7 @@ def _explicit_update_target_mentions(text: str) -> tuple[tuple[str, int], ...]:
         )
         if record_type is not None:
             for match in _RECORD_ID_CONTINUATION_RE.finditer(
-                normalized[first.end():boundary]
+                normalized[first.end() : boundary]
             ):
                 record_id = canonical_health_manage_record_id(match.group("record_id"))
                 if record_id is not None:
@@ -1010,13 +1042,12 @@ def _explicit_illness_record_ids(text: str) -> set[int]:
     patterns = (
         r"(?:疾病)?(?:记录|条目)(?:编号|id|号)?(?:是|为)?[#：:]?"
         r"(?P<record_id>\d+)(?!\d)",
-        r"第(?P<record_id>\d+)号(?:疾病)?(?:记录|条目)",
+        r"第(?P<record_id>\d+)(?:号|条)(?:疾病)?(?:记录|条目)",
+        r"(?:疾病)?(?:记录|条目)第(?P<record_id>\d+)(?:号|条)?",
     )
     for pattern in patterns:
         for match in re.finditer(pattern, normalized, re.IGNORECASE):
-            record_id = canonical_health_manage_record_id(
-                match.group("record_id")
-            )
+            record_id = canonical_health_manage_record_id(match.group("record_id"))
             if record_id is not None:
                 record_ids.add(record_id)
     return record_ids
@@ -1030,7 +1061,7 @@ def _project_illness_query_to_turn(text: str) -> dict[str, Any] | None:
         normalized,
     ):
         return None
-    targets = tuple(dict.fromkeys(_illness_targets(normalized)))
+    targets = _illness_query_entities(normalized)
     if len(targets) != 1:
         return None
     projected: dict[str, Any] = {
@@ -1043,12 +1074,39 @@ def _project_illness_query_to_turn(text: str) -> dict[str, Any] | None:
     return projected
 
 
+def _illness_query_entities(text: str) -> tuple[str, ...]:
+    """Extract illness entities from history syntax, including long-tail names."""
+    normalized = "".join(str(text or "").split())
+    entities = list(_illness_targets(normalized))
+    candidates: list[str] = []
+    patterns = (
+        r"(?:我)?上一次(?P<entities>[^?？，,。]{1,40}?)"
+        r"(?:是什么时候|在什么时候|何时|是几号)",
+        r"(?:最近|近|过去)(?:\d+|[一二两三四五六七八九十]+|半)"
+        r"(?:个)?(?:天|周|月|年)(?:内|以来)?(?:分别)?"
+        r"(?P<entities>[^?？，,。]{1,60}?)(?:有哪些|有那些|有什么|有几条|有几次)"
+        r"(?:记录|历史)?",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, normalized)
+        if match is not None:
+            candidates.append(match.group("entities"))
+    for candidate in candidates:
+        for value in re.split(r"[、和与及]", candidate):
+            entity = re.sub(r"^(?:我(?:的)?|分别)", "", value).strip("的 ")
+            if 2 <= len(entity) <= 40 and not re.search(
+                r"(?:记录|历史|什么时候|何时)", entity
+            ):
+                entities.append(entity)
+    return tuple(dict.fromkeys(entities))
+
+
 def _explicit_illness_query_window_days(text: str) -> int | None:
     if re.search(r"(?:最近|近|过去)?半年|半年(?:内|以来)", text):
         return 183
     match = re.search(
         r"(?:最近|近|过去)(?P<value>\d+|[一二两三四五六七八九十]+)"
-        r"(?:个)?(?P<unit>天|周|月)",
+        r"(?:个)?(?P<unit>天|周|月|年)",
         text,
     )
     if match is None:
@@ -1060,6 +1118,8 @@ def _explicit_illness_query_window_days(text: str) -> int | None:
         return value * 7
     if match.group("unit") == "月":
         return 183 if value == 6 else value * 30
+    if match.group("unit") == "年":
+        return value * 365
     return value
 
 
@@ -1073,12 +1133,15 @@ def _illness_update_targets_owner(text: str, record_name: str) -> bool:
         r"可以帮我|能帮我|替我|给我|为我|"
         r"我想|我想请你|我要|我希望|我需要))?"
     )
-    return re.fullmatch(
-        rf"{current_prefix}(?:我(?:的)?)?{re.escape(name)}"
-        r"[^，,。.!！；;：:?？]{0,80}[，,]"
-        rf"{current_prefix}(?:修改|更新|更正)(?:一下)?(?:这条)?记录",
-        normalized,
-    ) is not None
+    return (
+        re.fullmatch(
+            rf"{current_prefix}(?:我(?:的)?)?{re.escape(name)}"
+            r"[^，,。.!！；;：:?？]{0,80}[，,]"
+            rf"{current_prefix}(?:修改|更新|更正)(?:一下)?(?:这条)?记录",
+            normalized,
+        )
+        is not None
+    )
 
 
 def _owner_scoped_manage_list_records(
@@ -1088,7 +1151,10 @@ def _owner_scoped_manage_list_records(
     for reference in reversed(snapshot.actionable_references):
         if reference.kind != "owner_scoped_health_manage_list":
             continue
-        if canonical_health_manage_record_type(reference.data.get("record_type")) != record_type:
+        if (
+            canonical_health_manage_record_type(reference.data.get("record_type"))
+            != record_type
+        ):
             continue
         records = reference.data.get("records")
         if isinstance(records, (list, tuple)):
@@ -1100,9 +1166,7 @@ def capability_policy_contract_payload() -> dict[str, Any]:
     """Return static, content-free metadata that governs tool authorization."""
     return {
         "contract_version": _CAPABILITY_POLICY_CONTRACT_VERSION,
-        "whole_record_delete_evidence_version": (
-            _WHOLE_RECORD_DELETE_EVIDENCE_VERSION
-        ),
+        "whole_record_delete_evidence_version": (_WHOLE_RECORD_DELETE_EVIDENCE_VERSION),
         "health_manage_update_evidence_version": (
             _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION
         ),
@@ -1119,9 +1183,7 @@ def capability_policy_contract_payload() -> dict[str, Any]:
             "domain_types": dict(sorted(_HEALTH_RECORD_DOMAIN_TYPES.items())),
         },
         "recipe_record_types": sorted(RECIPE_REPLAY_ALLOWED_RECORD_TYPES),
-        "recipe_record_type_aliases": dict(
-            sorted(_RECIPE_RECORD_TYPE_ALIASES.items())
-        ),
+        "recipe_record_type_aliases": dict(sorted(_RECIPE_RECORD_TYPE_ALIASES.items())),
     }
 
 
@@ -1166,9 +1228,8 @@ def decide_tool_capability(
         )
 
     mutating_request = _is_mutating_request(tool_name, args)
-    if (
-        tool_name == "draft_aigc_media"
-        and is_explicit_aigc_media_provider_veto(snapshot.envelope.text)
+    if tool_name == "draft_aigc_media" and is_explicit_aigc_media_provider_veto(
+        snapshot.envelope.text
     ):
         return _decision(
             "block",
@@ -1202,10 +1263,7 @@ def decide_tool_capability(
                 args,
                 receipt_required=True,
             )
-    if (
-        tool_name == "health_record"
-        and snapshot.intent.domain == "aigc_media"
-    ):
+    if tool_name == "health_record" and snapshot.intent.domain == "aigc_media":
         return _decision(
             "block",
             "aigc_media_turn_disallows_health_write",
@@ -1225,10 +1283,7 @@ def decide_tool_capability(
             args,
             receipt_required=True,
         )
-    if (
-        tool_name == "health_record"
-        and request.source != "procedure_recipe_replay"
-    ):
+    if tool_name == "health_record" and request.source != "procedure_recipe_replay":
         target_status = _health_record_target_status(snapshot, args)
         if target_status == "mismatch":
             return _decision(
@@ -1307,16 +1362,34 @@ def decide_tool_capability(
         )
 
     if tool_name == "health_query":
-        illness_query_args = _project_illness_query_to_turn(
-            snapshot.envelope.text,
-        )
-        if illness_query_args is not None:
-            return _decision(
-                "allow",
-                "illness_query_projected_to_turn_semantics",
-                tool_name,
-                illness_query_args,
+        turn_text = snapshot.envelope.text
+        proposed_dimension = str(args.get("dimension") or "").strip().lower()
+        known_illness_entities = _illness_targets(turn_text)
+        if known_illness_entities or proposed_dimension in {
+            "",
+            "illness",
+            "comprehensive",
+        }:
+            illness_query_entities = _illness_query_entities(
+                turn_text,
             )
+            if len(illness_query_entities) > 1:
+                return _decision(
+                    "block",
+                    "illness_query_entity_requires_clarification",
+                    tool_name,
+                    args,
+                )
+            illness_query_args = _project_illness_query_to_turn(
+                turn_text,
+            )
+            if illness_query_args is not None:
+                return _decision(
+                    "allow",
+                    "illness_query_projected_to_turn_semantics",
+                    tool_name,
+                    illness_query_args,
+                )
 
     if tool_name in READ_ONLY_TOOLS:
         return _decision("allow", "read_only_tool", tool_name, args)
@@ -1368,7 +1441,9 @@ def decide_tool_capability(
     if tool_name == "health_manage":
         operation = str(args.get("operation") or "").strip().lower()
         if operation == "list":
-            return _decision("allow", "health_manage_list_is_read_only", tool_name, args)
+            return _decision(
+                "allow", "health_manage_list_is_read_only", tool_name, args
+            )
         if (
             operation == "delete"
             and not _delete_evidence_authorizes_request(
@@ -1376,10 +1451,7 @@ def decide_tool_capability(
                 args,
             )
             and (
-                (
-                    primary == "mutate"
-                    and snapshot.intent.operation == "delete"
-                )
+                (primary == "mutate" and snapshot.intent.operation == "delete")
                 or is_explicit_write_cancellation(snapshot.envelope.text)
             )
         ):
@@ -1417,7 +1489,10 @@ def decide_tool_capability(
                     args,
                     receipt_required=True,
                 )
-            if primary == "mutate" and snapshot.intent.operation in MANAGE_WRITE_OPERATIONS:
+            if (
+                primary == "mutate"
+                and snapshot.intent.operation in MANAGE_WRITE_OPERATIONS
+            ):
                 return _decision(
                     "block",
                     "manage_operation_mismatch",
@@ -1557,7 +1632,9 @@ def decide_tool_capability(
         )
 
     if tool_name in WRITE_TOOL_NAMES:
-        return _decision("block", "unhandled_write_tool", tool_name, args, receipt_required=True)
+        return _decision(
+            "block", "unhandled_write_tool", tool_name, args, receipt_required=True
+        )
 
     return _decision("block", "unknown_tool", tool_name, args, receipt_required=True)
 
@@ -1634,9 +1711,7 @@ def normalize_health_record_dispatch_args(
     normalized.pop("kind", None)
     data.pop("record_type", None)
 
-    for canonical_key, aliases in _NUMERIC_DISPATCH_ALIAS_GROUPS.get(
-        record_type, ()
-    ):
+    for canonical_key, aliases in _NUMERIC_DISPATCH_ALIAS_GROUPS.get(record_type, ()):
         _canonicalize_named_field(
             normalized,
             data,
@@ -1887,9 +1962,7 @@ def health_record_dispatch_aliases_conflict(args: dict[str, Any]) -> bool:
     if len(set(record_types)) > 1:
         return True
     record_type = record_types[0] if record_types else ""
-    for _canonical_key, aliases in _NUMERIC_DISPATCH_ALIAS_GROUPS.get(
-        record_type, ()
-    ):
+    for _canonical_key, aliases in _NUMERIC_DISPATCH_ALIAS_GROUPS.get(record_type, ()):
         values = [
             container[key]
             for container in (data, args)
@@ -1986,18 +2059,16 @@ def _health_record_target_status(
             and snapshot.goal is not None
             and any(referent in clause for referent in ("这个", "这条", "它"))
         ):
-            contextual_type = str(
-                snapshot.goal.target_record_type or ""
-            ).strip().lower()
+            contextual_type = (
+                str(snapshot.goal.target_record_type or "").strip().lower()
+            )
             if contextual_type:
                 expected_types = frozenset({contextual_type})
         if requested_type not in expected_types:
             continue
         matching_type_seen = True
 
-        clause_goal_type = str(
-            clause_goal.target_record_type or ""
-        ).strip().lower()
+        clause_goal_type = str(clause_goal.target_record_type or "").strip().lower()
         expected_values = (
             dict(clause_goal.target_values)
             if requested_type == clause_goal_type
@@ -2015,32 +2086,28 @@ def _health_record_target_status(
         if requested_type == "diet" and clause_goal.target_meal_types:
             expected_values["meal_types"] = clause_goal.target_meal_types
         elif requested_type == "diet" and clause_intent.scope.get("meal_type"):
-            expected_values["meal_types"] = (
-                clause_intent.scope["meal_type"],
-            )
+            expected_values["meal_types"] = (clause_intent.scope["meal_type"],)
         deterministic_values = _deterministic_target_values(
             clause,
             requested_type,
         )
         event_time_source = ""
-        if requested_type == "event" and not deterministic_values.get(
-            "occurred_clock"
-        ):
-            event_time_evidence = _related_event_time_evidence(
-                clauses,
-                str(deterministic_values.get("title") or ""),
-            )
-            if event_time_evidence is not None:
-                deterministic_values["occurred_clock"] = (
-                    event_time_evidence[0]
+        if requested_type == "event" and not deterministic_values.get("occurred_clock"):
+            event_time_status, event_time_clock, event_time_source = (
+                _related_event_time_evidence(
+                    clauses,
+                    str(deterministic_values.get("title") or ""),
                 )
-                event_time_source = event_time_evidence[1]
+            )
+            if event_time_status == "unique":
+                deterministic_values["occurred_clock"] = event_time_clock
+            elif event_time_status == "ambiguous":
+                deterministic_values["event_time_ambiguous"] = True
         if requested_type == "diet" and expected_values.get("food_items"):
             deterministic_values.pop("meal_food_targets", None)
         expected_values.update(deterministic_values)
-        if (
-            requested_type == "rhinitis"
-            and isinstance(server_authorized.get("rhinitis_payload"), dict)
+        if requested_type == "rhinitis" and isinstance(
+            server_authorized.get("rhinitis_payload"), dict
         ):
             expected_values["rhinitis_payload"] = dict(
                 server_authorized["rhinitis_payload"]
@@ -2052,17 +2119,13 @@ def _health_record_target_status(
             expected_values["contextual_continuation"] = True
             server_authorized = _server_authorized_health_record_fields(args)
             if server_authorized.get("reminder_title"):
-                expected_values["titles"] = (
-                    server_authorized["reminder_title"],
-                )
+                expected_values["titles"] = (server_authorized["reminder_title"],)
             if server_authorized.get("reminder_interval_minutes") is not None:
                 expected_values["interval_minutes"] = server_authorized[
                     "reminder_interval_minutes"
                 ]
             if server_authorized.get("reminder_recurrence"):
-                expected_values["recurrence"] = server_authorized[
-                    "reminder_recurrence"
-                ]
+                expected_values["recurrence"] = server_authorized["reminder_recurrence"]
         if (
             requested_type == "diet"
             and snapshot.envelope.media
@@ -2071,9 +2134,8 @@ def _health_record_target_status(
             expected_values["attachment_authorized"] = True
         expected_values["target_date"] = clause_goal.target_date or default_date
         expected_values["default_date"] = default_date
-        if (
-            requested_type in {"symptom", "event"}
-            and expected_values.get("occurred_clock")
+        if requested_type in {"symptom", "event"} and expected_values.get(
+            "occurred_clock"
         ):
             target_day = (
                 _event_occurrence_date(
@@ -2129,9 +2191,13 @@ def _authorized_record_types(
         return frozenset({"reminder"})
     if _REMEMBER_FACT_RE.search(clause) or direct_remember_fact_values(clause):
         record_types.add("remember")
-    if _EVENT_TARGET_RE.search(clause) or direct_event_values(clause) or any(
-        term in clause
-        for term in ("准备开始睡觉", "准备入睡", "开始睡眠", "开始入睡", "上床睡觉")
+    if (
+        _EVENT_TARGET_RE.search(clause)
+        or direct_event_values(clause)
+        or any(
+            term in clause
+            for term in ("准备开始睡觉", "准备入睡", "开始睡眠", "开始入睡", "上床睡觉")
+        )
     ):
         record_types.add("event")
     if direct_supplement_group_values(clause):
@@ -2176,9 +2242,7 @@ def _deterministic_target_values(
     )
 
     values: dict[str, Any] = {}
-    if record_type == "water" and (
-        matches := tuple(_WATER_TARGET_RE.finditer(clause))
-    ):
+    if record_type == "water" and (matches := tuple(_WATER_TARGET_RE.finditer(clause))):
         match = matches[-1]
         amount = float(match.group("value"))
         if match.group("unit").lower() in {"l", "升"}:
@@ -2304,9 +2368,7 @@ def _deterministic_target_values(
         clocks = tuple(_CLOCK_RE.finditer(clause))
         if clocks:
             normalized_clocks = tuple(
-                f"{int(match.group('hour')):02d}:"
-                f"{int(match.group('minute') or 0):02d}"
-                for match in clocks
+                _normalize_clock_value(match.group(0)) for match in clocks
             )
             values["bedtime"] = normalized_clocks[0]
             if len(normalized_clocks) > 1:
@@ -2369,9 +2431,7 @@ def _deterministic_target_values(
         clocks = tuple(_CLOCK_RE.finditer(clause))
         if clocks:
             values["times"] = tuple(
-                f"{int(match.group('hour')):02d}:"
-                f"{int(match.group('minute') or 0):02d}"
-                for match in clocks
+                _normalize_clock_value(match.group(0)) for match in clocks
             )
         if interval_match := _REMINDER_INTERVAL_RE.search(clause):
             interval = float(interval_match.group("value"))
@@ -2414,13 +2474,17 @@ def _deterministic_target_values(
             for term in ("准备开始睡觉", "准备入睡", "开始睡眠", "开始入睡", "上床睡觉")
         ):
             values["title"] = "准备开始睡觉"
-        if occurred_clock := _normalize_clock_value(clause):
+        event_clock_count = _clock_match_count(clause)
+        if event_clock_count == 1 and (
+            occurred_clock := _normalize_clock_value(clause)
+        ):
             values["occurred_clock"] = occurred_clock
+        elif event_clock_count > 1:
+            values["event_time_ambiguous"] = True
         elif "刚才" in clause or "刚刚" in clause:
             values["occurred_at"] = "刚才"
-    if (
-        record_type in {"illness", "symptom"}
-        and (severity_match := _SEVERITY_TARGET_RE.search(clause))
+    if record_type in {"illness", "symptom"} and (
+        severity_match := _SEVERITY_TARGET_RE.search(clause)
     ):
         values["severity"] = int(severity_match.group("value"))
     return values
@@ -2429,11 +2493,11 @@ def _deterministic_target_values(
 def _related_event_time_evidence(
     clauses: tuple[str, ...],
     expected_title: str,
-) -> tuple[str, str] | None:
+) -> tuple[str, str, str]:
     """Bind one arrival clock to the matching event title across clauses."""
     normalized_title = _normalize_entity_name(expected_title)
     if not normalized_title:
-        return None
+        return "none", "", ""
     candidates: list[tuple[str, str]] = []
     for clause in clauses:
         arrival = _EVENT_ARRIVAL_FACT_RE.fullmatch(clause)
@@ -2442,18 +2506,25 @@ def _related_event_time_evidence(
         place = arrival.group("place").strip().removesuffix("了")
         if _normalize_entity_name(f"到达{place}") != normalized_title:
             continue
+        clock_count = _clock_match_count(clause)
+        if clock_count > 1:
+            return "ambiguous", "", clause
         clock = _unique_clock_value(clause)
         if clock:
             candidates.append((clock, clause))
     unique = tuple(dict.fromkeys(candidates))
-    return unique[0] if len(unique) == 1 else None
+    if len(unique) == 1:
+        return "unique", unique[0][0], unique[0][1]
+    if len(unique) > 1:
+        return "ambiguous", "", ""
+    return "none", "", ""
 
 
 def _target_text_after_marker(clause: str, marker: str) -> str:
     marker_position = clause.rfind(marker)
     if marker_position < 0:
         return ""
-    value = clause[marker_position + len(marker):]
+    value = clause[marker_position + len(marker) :]
     return value.strip("是为：:，,。.!！；;的 ")
 
 
@@ -2517,7 +2588,7 @@ def _named_item_targets(clause: str, record_type: str) -> tuple[str, ...]:
     if record_type == "medication":
         return tuple(_medication_item_targets(clause))
     action_matches = tuple(_WRITE_TARGET_ACTION_RE.finditer(clause))
-    candidate = clause[action_matches[-1].end():] if action_matches else clause
+    candidate = clause[action_matches[-1].end() :] if action_matches else clause
     candidate = re.sub(
         r"^(?:(?:一下|一条|一个|我的|我|今天|今日|已经|刚才|刚刚|"
         r"吃了|服了|服用(?:了)?|用了))+",
@@ -2558,7 +2629,7 @@ def _medication_item_targets(clause: str) -> dict[str, str]:
 
 def _medication_item_details(clause: str) -> dict[str, dict[str, str]]:
     action_matches = tuple(_WRITE_TARGET_ACTION_RE.finditer(clause))
-    candidate = clause[action_matches[-1].end():] if action_matches else clause
+    candidate = clause[action_matches[-1].end() :] if action_matches else clause
     for _ in range(12):
         stripped = re.sub(
             r"^(?:一下|一条|一个|我的|我|今天|今日|已经|刚才|刚刚|"
@@ -2591,12 +2662,12 @@ def _medication_item_details(clause: str) -> dict[str, dict[str, str]]:
         mass_matches = tuple(
             match for match in dose_matches if match not in count_matches
         )
-        dosage_match = count_matches[0] if count_matches else (
-            dose_matches[0] if dose_matches else None
+        dosage_match = (
+            count_matches[0]
+            if count_matches
+            else (dose_matches[0] if dose_matches else None)
         )
-        dosage = (
-            _canonical_medication_dosage(dosage_match) if dosage_match else ""
-        )
+        dosage = _canonical_medication_dosage(dosage_match) if dosage_match else ""
         observed_strength = explicit_strength or (
             _canonical_medication_dosage(mass_matches[0])
             if count_matches and mass_matches
@@ -2640,7 +2711,7 @@ def _illness_targets(clause: str) -> tuple[str, ...]:
     candidate = ""
     if action_matches:
         action = action_matches[-1]
-        candidate = clause[action.end():]
+        candidate = clause[action.end() :]
         candidate = re.sub(
             r"^(?:一下|一条|一个|我的|我|今天|今日|昨天|昨日|以前的|既往)",
             "",
@@ -2653,7 +2724,7 @@ def _illness_targets(clause: str) -> tuple[str, ...]:
         )[0]
         candidate = candidate.removesuffix("下来")
     if not candidate and action_matches:
-        before = clause[:action_matches[-1].start()]
+        before = clause[: action_matches[-1].start()]
         match = re.search(r"(?:把|将)(?P<target>.+)$", before)
         if match is not None:
             candidate = match.group("target")
@@ -2661,9 +2732,7 @@ def _illness_targets(clause: str) -> tuple[str, ...]:
     if not candidate or candidate in {"疾病", "不适", "症状", "健康数据", "数据"}:
         return ()
     parts = tuple(
-        part.strip()
-        for part in re.split(r"[、/]|(?:和|与)", candidate)
-        if part.strip()
+        part.strip() for part in re.split(r"[、/]|(?:和|与)", candidate) if part.strip()
     )
     if parts and all(_ILLNESS_SUFFIX_RE.search(part) for part in parts):
         return tuple(dict.fromkeys(parts))
@@ -2716,6 +2785,8 @@ def _authorization_target_complete(
             and bool(times)
             and (len(times) < 2 or expected.get("interval_minutes") is not None)
         )
+    if record_type == "event" and expected.get("event_time_ambiguous"):
+        return False
     fields = required.get(record_type)
     if fields is None:
         return False
@@ -2738,7 +2809,9 @@ def _target_values_mismatch(
                     arg_keys=("meal_type",),
                 )
                 or ""
-            ).strip().lower(),
+            )
+            .strip()
+            .lower(),
             "",
         )
         if expected.get("meal_types"):
@@ -2800,12 +2873,9 @@ def _target_values_mismatch(
             data_keys=data_keys,
             arg_keys=arg_keys,
         )
-        if (
-            expected_number is not None
-            and (
-                requested_number is None
-                or not _numbers_match(expected_number, requested_number)
-            )
+        if expected_number is not None and (
+            requested_number is None
+            or not _numbers_match(expected_number, requested_number)
         ):
             return True
     if record_type == "blood_pressure" and expected.get("diastolic") is not None:
@@ -2830,20 +2900,25 @@ def _target_values_mismatch(
             )
             or ""
         ).strip()
-        allowed_names = {
-            _normalize_entity_name(value) for value in expected["names"]
-        }
-        if not requested_name or _normalize_entity_name(requested_name) not in allowed_names:
+        allowed_names = {_normalize_entity_name(value) for value in expected["names"]}
+        if (
+            not requested_name
+            or _normalize_entity_name(requested_name) not in allowed_names
+        ):
             return True
-        requested_status = str(
-            _effective_argument_value(
-                args,
-                data,
-                data_keys=("status",),
-                arg_keys=("status",),
+        requested_status = (
+            str(
+                _effective_argument_value(
+                    args,
+                    data,
+                    data_keys=("status",),
+                    arg_keys=("status",),
+                )
+                or ""
             )
-            or ""
-        ).strip().lower()
+            .strip()
+            .lower()
+        )
         expected_status = str(expected.get("status") or "").strip().lower()
         if expected_status:
             if requested_status != expected_status:
@@ -2876,15 +2951,19 @@ def _target_values_mismatch(
         elif requested_notes:
             return True
     if record_type == "symptom":
-        requested_body_part = str(
-            _effective_argument_value(
-                args,
-                data,
-                data_keys=("body_part",),
-                arg_keys=("body_part",),
+        requested_body_part = (
+            str(
+                _effective_argument_value(
+                    args,
+                    data,
+                    data_keys=("body_part",),
+                    arg_keys=("body_part",),
+                )
+                or ""
             )
-            or ""
-        ).strip().lower()
+            .strip()
+            .lower()
+        )
         requested_description = str(
             _effective_argument_value(
                 args,
@@ -2904,9 +2983,7 @@ def _target_values_mismatch(
             expected_description not in normalized_description
         ):
             return True
-        canonical_occurred_at = str(
-            expected.get("canonical_occurred_at") or ""
-        ).strip()
+        canonical_occurred_at = str(expected.get("canonical_occurred_at") or "").strip()
         if canonical_occurred_at:
             requested_occurred_at = _effective_argument_value(
                 args,
@@ -2981,9 +3058,7 @@ def _target_values_mismatch(
             if len(normalized_dosage_values) > 1:
                 return True
             requested_dosage = dosage_values[0] if dosage_values else None
-            normalized_requested_dosage = _normalize_medication_dosage(
-                requested_dosage
-            )
+            normalized_requested_dosage = _normalize_medication_dosage(requested_dosage)
             expected_dosage = expected_dosages.get(normalized_requested_name, "")
             if expected_dosage:
                 if normalized_requested_dosage != expected_dosage:
@@ -2992,9 +3067,7 @@ def _target_values_mismatch(
                 return True
             expected_strengths = {
                 _normalize_entity_name(name): _normalize_medication_dosage(strength)
-                for name, strength in (
-                    expected.get("observed_strengths") or {}
-                ).items()
+                for name, strength in (expected.get("observed_strengths") or {}).items()
             }
             strength_values = _medication_observed_strength_values(args, data)
             normalized_strength_values = {
@@ -3098,15 +3171,19 @@ def _target_values_mismatch(
             ):
                 return True
         elif expected.get("mood_values"):
-            requested_mood = str(
-                _effective_argument_value(
-                    args,
-                    data,
-                    data_keys=("mood", "status", "mood_label"),
-                    arg_keys=("mood", "status", "mood_label"),
+            requested_mood = (
+                str(
+                    _effective_argument_value(
+                        args,
+                        data,
+                        data_keys=("mood", "status", "mood_label"),
+                        arg_keys=("mood", "status", "mood_label"),
+                    )
+                    or ""
                 )
-                or ""
-            ).strip().lower()
+                .strip()
+                .lower()
+            )
             allowed_moods = {
                 _MOOD_TARGET_ALIASES.get(str(value).strip().lower(), "")
                 for value in expected["mood_values"]
@@ -3114,15 +3191,19 @@ def _target_values_mismatch(
             if _MOOD_TARGET_ALIASES.get(requested_mood, "") not in allowed_moods:
                 return True
     if record_type == "excretion":
-        requested_type = str(
-            _effective_argument_value(
-                args,
-                data,
-                data_keys=("type", "excretion_type"),
-                arg_keys=("type", "excretion_type"),
+        requested_type = (
+            str(
+                _effective_argument_value(
+                    args,
+                    data,
+                    data_keys=("type", "excretion_type"),
+                    arg_keys=("type", "excretion_type"),
+                )
+                or ""
             )
-            or ""
-        ).strip().lower()
+            .strip()
+            .lower()
+        )
         allowed_types = {
             _EXCRETION_TARGET_ALIASES.get(str(value).strip().lower(), "")
             for value in expected.get("excretion_types", ())
@@ -3173,15 +3254,19 @@ def _target_values_mismatch(
         if _normalize_entity_name(requested_title) not in allowed_titles:
             return True
         for field in ("goal_type", "goal_period"):
-            requested_value = str(
-                _effective_argument_value(
-                    args,
-                    data,
-                    data_keys=(field,),
-                    arg_keys=(field,),
+            requested_value = (
+                str(
+                    _effective_argument_value(
+                        args,
+                        data,
+                        data_keys=(field,),
+                        arg_keys=(field,),
+                    )
+                    or ""
                 )
-                or ""
-            ).strip().lower()
+                .strip()
+                .lower()
+            )
             if requested_value != str(expected.get(field) or "").strip().lower():
                 return True
         if expected.get("target_value") is not None:
@@ -3238,15 +3323,19 @@ def _target_values_mismatch(
         if set(requested_times) != set(expected.get("times", ())):
             return True
         if expected.get("recurrence"):
-            requested_recurrence = str(
-                _effective_argument_value(
-                    args,
-                    data,
-                    data_keys=("recurrence",),
-                    arg_keys=("recurrence",),
+            requested_recurrence = (
+                str(
+                    _effective_argument_value(
+                        args,
+                        data,
+                        data_keys=("recurrence",),
+                        arg_keys=("recurrence",),
+                    )
+                    or ""
                 )
-                or ""
-            ).strip().lower()
+                .strip()
+                .lower()
+            )
             if requested_recurrence != expected["recurrence"]:
                 return True
         if expected.get("interval_minutes") is not None:
@@ -3262,15 +3351,19 @@ def _target_values_mismatch(
             ):
                 return True
     if record_type == "supplement_group":
-        requested_timing = str(
-            _effective_argument_value(
-                args,
-                data,
-                data_keys=("timing",),
-                arg_keys=("timing",),
+        requested_timing = (
+            str(
+                _effective_argument_value(
+                    args,
+                    data,
+                    data_keys=("timing",),
+                    arg_keys=("timing",),
+                )
+                or ""
             )
-            or ""
-        ).strip().lower()
+            .strip()
+            .lower()
+        )
         if requested_timing != expected.get("timing"):
             return True
     if record_type == "remember":
@@ -3296,9 +3389,7 @@ def _target_values_mismatch(
             expected.get("title")
         ):
             return True
-        canonical_occurred_at = str(
-            expected.get("canonical_occurred_at") or ""
-        ).strip()
+        canonical_occurred_at = str(expected.get("canonical_occurred_at") or "").strip()
         if canonical_occurred_at:
             requested_time = _effective_argument_value(
                 args,
@@ -3414,15 +3505,20 @@ def _project_authorized_dispatch_payload(
             projected["start_date"] = target_date
         if expected.get("status"):
             projected["status"] = str(expected["status"])
-        elif str(
-            _effective_argument_value(
-                args,
-                data,
-                data_keys=("status",),
-                arg_keys=("status",),
+        elif (
+            str(
+                _effective_argument_value(
+                    args,
+                    data,
+                    data_keys=("status",),
+                    arg_keys=("status",),
+                )
+                or ""
             )
-            or ""
-        ).strip().lower() == "active":
+            .strip()
+            .lower()
+            == "active"
+        ):
             projected["status"] = "active"
         for field in ("severity", "notes"):
             if expected.get(field) not in (None, "", []):
@@ -3527,9 +3623,7 @@ def _project_authorized_dispatch_payload(
         projected = dict(expected.get("rhinitis_payload") or {})
 
     projected = {
-        key: value
-        for key, value in projected.items()
-        if value not in (None, "", [])
+        key: value for key, value in projected.items() if value not in (None, "", [])
     }
     args.clear()
     args.update({"record_type": record_type, "data": projected})
@@ -3656,7 +3750,15 @@ def _clock_components(value: Any) -> tuple[int, int] | None:
     match = _CLOCK_RE.search(text)
     if match is not None:
         hour = int(match.group("hour"))
-        minute = int(match.group("minute") or 0)
+        minute_text = str(match.group("minute") or "")
+        if minute_text == "半":
+            minute = 30
+        elif minute_text == "一刻":
+            minute = 15
+        elif minute_text == "三刻":
+            minute = 45
+        else:
+            minute = int(minute_text or 0)
         match_start = match.start()
     else:
         chinese_match = _CHINESE_CLOCK_RE.search(text)
@@ -3673,9 +3775,7 @@ def _clock_components(value: Any) -> tuple[int, int] | None:
         elif minute_text == "三刻":
             minute = 45
         elif minute_text:
-            parsed_minute = _parse_small_chinese_number(
-                minute_text.removesuffix("分")
-            )
+            parsed_minute = _parse_small_chinese_number(minute_text.removesuffix("分"))
             if parsed_minute is None:
                 return None
             minute = parsed_minute
@@ -3685,8 +3785,10 @@ def _clock_components(value: Any) -> tuple[int, int] | None:
         match_start = chinese_match.start()
     if not 0 <= hour <= 23 or not 0 <= minute <= 59:
         return None
-    daypart_prefix = text[max(0, match_start - 6):match_start]
-    if hour < 12 and any(
+    daypart_prefix = text[max(0, match_start - 6) : match_start]
+    if 1 <= hour <= 5 and "中午" in daypart_prefix:
+        hour += 12
+    elif hour < 12 and any(
         marker in daypart_prefix
         for marker in ("下午", "傍晚", "晚上", "晚间", "夜里", "夜间")
     ):
@@ -3705,12 +3807,17 @@ def _normalize_clock_value(value: Any) -> str:
 def _unique_clock_value(value: Any) -> str:
     """Return a clock only when the text contains one unambiguous clock."""
     text = str(value or "")
-    matches = tuple(_CLOCK_RE.finditer(text)) + tuple(
-        _CHINESE_CLOCK_RE.finditer(text)
-    )
+    matches = tuple(_CLOCK_RE.finditer(text)) + tuple(_CHINESE_CLOCK_RE.finditer(text))
     if len(matches) != 1:
         return ""
     return _normalize_clock_value(text)
+
+
+def _clock_match_count(value: Any) -> int:
+    text = str(value or "")
+    return len(tuple(_CLOCK_RE.finditer(text))) + len(
+        tuple(_CHINESE_CLOCK_RE.finditer(text))
+    )
 
 
 def _event_occurrence_date(text: str, current_date: date) -> date:

@@ -587,6 +587,30 @@ validation and no-match honesty address those risks.
   compatibility group passes 2,005/2,005, the changed mobile component suites
   pass 8/8, and the iPhone acceptance harness passes 12/12. A new exact-commit
   dual review remains mandatory before push or deployment.
+- Fresh code and product-safety reviews of exact commit `d857d9020` both
+  returned NO-GO, so push and deployment remained stopped. Real
+  Executor/Gateway probes exposed locally negated or uncertain illness states,
+  two additional visible record-ID shapes, sourced and third-party travel
+  ownership, long-tail or multi-entity illness reads, incorrect/missing read
+  windows, colloquial Chinese quarter/half-hour clocks and ambiguous related
+  event times.
+- The v20 remediation versions the boundary as
+  `agent-capability-policy-v20` / `authorized-target-set-v16` /
+  `record-update-evidence-v11`. Illness predicates are compiled from local
+  grammatical polarity and epistemic certainty; explicit visible IDs never
+  fall through to another owner record. Parenthetical/source provenance and
+  resource ownership use structural relations across `行程/旅程/出行`, including
+  Latin-script names. Numeric and Chinese half/quarter-hour clocks normalize to
+  one value, while multiple related clocks fail closed. Illness read syntax
+  projects one exact long-tail entity and year window from the current turn,
+  corrects a conflicting model proposal for known illness terms, and requires
+  clarification for multiple entities.
+- The final v20 policy/Gateway/scope group passes 2,091/2,091 tests. All 25
+  changed Backend feature-test files pass 3,724/3,724 in one process on the
+  production `Asia/Shanghai` calendar basis, and the adjacent meal-photo
+  compatibility file passes 103/103. Targeted Ruff, formatting, Python
+  compilation and `git diff --check` pass on the same tree. Repository
+  structural checks and two fresh exact-commit G4 reviews remain mandatory.
 
 ### G4 Safety Review: PENDING
 
@@ -956,6 +980,16 @@ core policy/Gateway/scope suite passes 1,964/1,964 tests; all 25 changed feature
 test files pass 3,597/3,597; and the adjacent meal-photo compatibility file
 passes 103/103. A new exact commit and two fresh independent reviews of that
 SHA remain mandatory before G4 may pass.
+
+Fresh code and product-safety reviews of exact commit `d857d9020` both returned
+NO-GO, so it was not pushed or deployed. The findings crossed the same four
+server-owned relations: illness-state polarity/certainty, exact visible record
+identity, event provenance/ownership/time and illness-read entity/window
+projection. The v20 remediation resolves those relations before adapter
+dispatch, adds failure-first real Executor coverage in enforce and shadow
+modes, and preserves positive controls for explicit current-user facts and
+unambiguous recovery. The clean G3 evidence is green; a new exact commit and two
+fresh independent reviews of that exact SHA are mandatory before G4 may pass.
 
 ### G5 Deployment Health: PENDING
 
