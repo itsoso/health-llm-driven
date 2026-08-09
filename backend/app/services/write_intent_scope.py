@@ -521,9 +521,13 @@ _DIRECT_WATER_ID_UPDATE_RE = re.compile(
 )
 _DIRECT_ILLNESS_UPDATE_RE = re.compile(
     rf"^{_CURRENT_USER_UPDATE_PREFIX_PATTERN}"
-    r"(?P<statement>[^，,。.!！；;：:?？]{2,120})[，,]"
+    r"(?P<statement>.{2,180})[，,]"
     rf"{_CURRENT_USER_UPDATE_PREFIX_PATTERN}"
     r"(?:修改|更新|更正)(?:一下)?(?:这条)?记录$"
+)
+_ILLNESS_RECORD_ID_COLON_RE = re.compile(
+    r"(?:(?:疾病)?(?:记录|条目))?(?:id|编号)[：:]\d+",
+    re.IGNORECASE,
 )
 _DIRECT_REMEMBER_AVOID_RE = re.compile(
     r"^(?:请)?(?:帮我)?记住(?:我|我的)?(?P<value>不吃[^，,。.!！；;：:?？]{1,80})$"
@@ -1258,7 +1262,8 @@ def _is_current_user_event_parenthetical(content: str) -> bool:
     normalized = content.strip("，,。.!！；;：: ")
     if re.fullmatch(
         r"(?:(?:这|本|该|此)(?:次|趟|段)?)?"
-        r"(?:我|我的|本人|自己)(?:的)?(?:行程|旅程|旅途|旅行|出行|事件)",
+        r"(?:我(?:自己|本人|个人)?|本人|自己|个人)(?:的)?"
+        r"(?:行程|旅程|旅途|旅行|出行|事件)",
         normalized,
     ):
         return True
@@ -1495,6 +1500,13 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
         pattern.fullmatch(normalized_statement) is not None
         for pattern in (_DIRECT_WATER_UPDATE_RE, _DIRECT_WATER_ID_UPDATE_RE)
     )
+    direct_illness_update = (
+        _DIRECT_ILLNESS_UPDATE_RE.fullmatch(normalized_statement) is not None
+    )
+    trusted_illness_id_colons = direct_illness_update and not re.search(
+        r"[：:]",
+        _ILLNESS_RECORD_ID_COLON_RE.sub("", normalized),
+    )
     if not _UPDATE_ACTION_RE.search(normalized):
         return False
     if _UPDATE_METALANGUAGE_PREFIX_RE.search(normalized):
@@ -1518,7 +1530,7 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
             and not _POLITE_CONDITIONAL_PREFIX_RE.search(normalized)
         )
         or is_reported_write_reference(normalized)
-        or _has_untrusted_colon_command(normalized)
+        or (_has_untrusted_colon_command(normalized) and not trusted_illness_id_colons)
     ):
         return False
     clauses = split_write_clauses(normalized)
@@ -1532,9 +1544,7 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
         for clause in clauses
     ):
         return False
-    return bool(
-        direct_water_update or _DIRECT_ILLNESS_UPDATE_RE.fullmatch(normalized_statement)
-    )
+    return bool(direct_water_update or direct_illness_update)
 
 
 def direct_remember_fact_values(value: str) -> dict[str, str] | None:

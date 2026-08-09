@@ -2490,6 +2490,14 @@ async def test_gateway_explicit_update_id_without_owner_candidate_never_dispatch
             },
         ),
         (
+            "我昨晚五点半到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T17:30:00+08:00",
+            },
+        ),
+        (
             "今天凌晨到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             {"title": "到达杭州"},
@@ -2501,6 +2509,11 @@ async def test_gateway_explicit_update_id_without_owner_candidate_never_dispatch
         ),
         (
             "昨天到杭州了（我的行程），记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {"title": "到达杭州"},
+        ),
+        (
+            "昨天到杭州了（我自己的行程），记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             {"title": "到达杭州"},
         ),
@@ -2777,6 +2790,15 @@ async def test_gateway_dispatches_supported_family_canonical_projection(
             },
         ),
         (
+            "我昨晚五点半到杭州了，记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {
+                "title": "到达杭州",
+                "occurred_at": "2026-07-16T17:30:00+08:00",
+            },
+        ),
+        (
             "今天凌晨到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             "/episodes/life-event",
@@ -2790,6 +2812,12 @@ async def test_gateway_dispatches_supported_family_canonical_projection(
         ),
         (
             "昨天到杭州了（我的行程），记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {"title": "到达杭州"},
+        ),
+        (
+            "昨天到杭州了（我自己的行程），记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             "/episodes/life-event",
             {"title": "到达杭州"},
@@ -2905,26 +2933,48 @@ async def test_executor_ambiguous_related_event_times_never_post(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("message", "day_offset"),
+    ("message", "expected_status", "day_offset"),
     (
-        ("舌尖溃疡昨天好了，修改记录", -1),
-        ("舌尖溃疡之前看似好转但今天已经完全好了，修改记录", 0),
-        ("舌尖溃疡昨天看似好转但今天已经完全好了，修改记录", 0),
+        ("舌尖溃疡昨天好了，修改记录", "resolved", -1),
+        (
+            "舌尖溃疡之前看似好转但今天已经完全好了，修改记录",
+            "resolved",
+            0,
+        ),
+        (
+            "舌尖溃疡昨天看似好转但今天已经完全好了，修改记录",
+            "resolved",
+            0,
+        ),
+        ("舌尖溃疡ID为71昨天好了，修改记录", "resolved", -1),
+        ("舌尖溃疡ID是71昨天好了，修改记录", "resolved", -1),
+        ("舌尖溃疡ID=71昨天好了，修改记录", "resolved", -1),
+        ("舌尖溃疡条目ID：71昨天好了，修改记录", "resolved", -1),
+        ("舌尖溃疡疾病记录第71号昨天好了，修改记录", "resolved", -1),
+        (
+            "舌尖溃疡昨天还没好，但是今天彻底康复，修改记录",
+            "resolved",
+            0,
+        ),
+        ("舌尖溃疡昨天痊愈，不过今天还没好，修改记录", "active", None),
     ),
 )
 async def test_executor_lists_owner_illness_before_exact_resolution_update(
     db,
     monkeypatch,
     message,
+    expected_status,
     day_offset,
 ):
     executor = AgentExecutor(db)
     executor._current_user_id = 1
     executor._turn_channel = "typed"
     executor._current_turn_user_message = message
-    expected_end_date = (
-        executor._agent_kernel_reference_now().date() + timedelta(days=day_offset)
-    ).isoformat()
+    expected_data = {"status": expected_status}
+    if day_offset is not None:
+        expected_data["end_date"] = (
+            executor._agent_kernel_reference_now().date() + timedelta(days=day_offset)
+        ).isoformat()
     calls = []
 
     async def fake_exec(_base, _headers, arguments):
@@ -2939,7 +2989,7 @@ async def test_executor_lists_owner_illness_before_exact_resolution_update(
                 "id": 71,
                 "record_id": 71,
                 "resource_type": "illness_episode",
-                "status": "resolved",
+                "status": expected_status,
             },
             ensure_ascii=False,
         )
@@ -2957,7 +3007,7 @@ async def test_executor_lists_owner_illness_before_exact_resolution_update(
             "record_type": "illness",
             "operation": "update",
             "record_id": 71,
-            "data": {"status": "resolved", "end_date": expected_end_date},
+            "data": expected_data,
         },
         "test-token",
     )
@@ -2967,7 +3017,7 @@ async def test_executor_lists_owner_illness_before_exact_resolution_update(
         "record_type": "illness",
         "operation": "update",
         "record_id": 71,
-        "data": {"status": "resolved", "end_date": expected_end_date},
+        "data": expected_data,
     }
     assert json.loads(result)["record_id"] == 71
 
@@ -3242,6 +3292,21 @@ async def test_historical_illness_query_is_projected_to_turn_entity_and_window(
             {"dimension": "illness", "keyword": "扁桃体炎", "days": 183},
         ),
         (
+            "请给我找出近半年的脑梗记录",
+            {"dimension": "illness", "keyword": "感冒", "days": 7},
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        (
+            "回顾过去半年的耳石症记录",
+            {"dimension": "illness", "keyword": "感冒", "days": 7},
+            {"dimension": "illness", "keyword": "耳石症", "days": 183},
+        ),
+        (
+            "把偏头疼过去一年的历史找出来",
+            {"dimension": "illness", "keyword": "感冒", "days": 7},
+            {"dimension": "illness", "keyword": "偏头疼", "days": 365},
+        ),
+        (
             "最近一年口腔溃疡有哪些记录？",
             {"dimension": "illness", "keyword": "口腔溃疡", "days": 365},
             {"dimension": "illness", "keyword": "口腔溃疡", "days": 365},
@@ -3282,6 +3347,13 @@ async def test_historical_illness_query_projects_arbitrary_entity_and_year_windo
 @pytest.mark.asyncio
 @pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
 @pytest.mark.parametrize(
+    "proposed_args",
+    (
+        {"dimension": "comprehensive", "days": 7},
+        {"dimension": "illness", "keyword": "偏头痛", "days": 7},
+    ),
+)
+@pytest.mark.parametrize(
     "message",
     (
         "最近半年口腔溃疡和湿疹有哪些记录？",
@@ -3289,10 +3361,18 @@ async def test_historical_illness_query_projects_arbitrary_entity_and_year_windo
         "过去三个月湿疹和流感有哪些记录？",
         "查询近半年偏头痛或痛风的记录",
         "查询近半年偏头痛跟痛风的记录",
+        "查询近半年偏头痛并且痛风的记录",
+        "查询近半年偏头痛加上痛风的记录",
+        "查询近半年偏头痛外加痛风的记录",
+        "查询近半年偏头痛兼有痛风的记录",
+        "查询近半年偏头痛/痛风的记录",
+        "查询近半年偏头痛，痛风的记录",
+        "把近半年脑梗与偏头疼的记录找出来",
     ),
 )
 async def test_multi_entity_illness_query_never_falls_back_to_model_scope(
     policy_mode,
+    proposed_args,
     message,
 ):
     gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
@@ -3305,7 +3385,7 @@ async def test_multi_entity_illness_query_never_falls_back_to_model_scope(
     result = await gateway.execute(
         ToolExecutionRequest(
             tool_name="health_query",
-            arguments={"dimension": "comprehensive", "days": 7},
+            arguments=proposed_args,
             source="structured",
         ),
         dispatch,
@@ -3325,6 +3405,8 @@ async def test_multi_entity_illness_query_never_falls_back_to_model_scope(
         "查一下我近半年偏头痛的记录",
         "我上一次扁桃体炎是什么时候 最近半年分别有哪些记录",
         "查一下我近半年玫瑰糠疹的记录",
+        "请给我找出近半年的脑梗记录",
+        "回顾过去半年的耳石症记录",
     ),
 )
 async def test_long_tail_history_query_conflicting_model_dimension_never_dispatches(
@@ -3351,6 +3433,111 @@ async def test_long_tail_history_query_conflicting_model_dimension_never_dispatc
     assert result.decision is not None
     assert result.decision.action == "block"
     assert result.decision.reason == "health_query_dimension_conflict"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize("proposed_args", ({"dimension": "illness"}, {}))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "查一下我近半年睡眠的记录",
+        "回顾过去一个月饮水历史",
+        "请给我找出最近半年的体重记录",
+    ),
+)
+async def test_non_illness_history_never_projects_to_illness(
+    policy_mode,
+    proposed_args,
+    message,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments=proposed_args,
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert result.decision.reason == "health_query_dimension_conflict"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "proposed_args"),
+    (
+        ("查一下我近半年睡眠的记录", {"dimension": "sleep", "days": 183}),
+        ("回顾过去一个月饮水历史", {"dimension": "water", "days": 30}),
+        ("请给我找出最近半年的体重记录", {"dimension": "weight", "days": 183}),
+    ),
+)
+async def test_non_illness_history_matching_dimension_remains_read_only(
+    message,
+    proposed_args,
+):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments=proposed_args,
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [proposed_args]
+
+
+@pytest.mark.asyncio
+async def test_executor_illness_query_payload_is_not_polluted_by_symptom_recovery(
+    db,
+    monkeypatch,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "把偏头疼过去一年的历史找出来"
+    calls = []
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    async def fake_read(_base_url, _headers, args):
+        calls.append(args)
+        return "[]"
+
+    monkeypatch.setattr(executor, "_exec_health_query", fake_read)
+
+    await executor._execute_tool(
+        "health_query",
+        {"dimension": "illness", "keyword": "感冒", "days": 7},
+        "test-token",
+    )
+
+    assert calls == [{"dimension": "illness", "keyword": "偏头疼", "days": 365}]
 
 
 @pytest.mark.asyncio

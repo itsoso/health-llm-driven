@@ -6732,9 +6732,9 @@ def _extract_clear_rhinitis_record(message: Any) -> Optional[Dict[str, int]]:
     return data or None
 
 
-def _recover_clear_symptom_args(args: Any, message: Any) -> Any:
+def _recover_clear_symptom_args(tool_name: str, args: Any, message: Any) -> Any:
     """Fill only missing symptom fields from an unambiguous user statement."""
-    if not isinstance(args, dict):
+    if tool_name != "health_record" or not isinstance(args, dict):
         return args
     extracted = _extract_clear_symptom_record(message)
     if not extracted:
@@ -12390,6 +12390,7 @@ class AgentExecutor:
                             )
                         parsed_planned_args = _parse_tool_arguments_for_telemetry(planned_args)
                         parsed_planned_args = _recover_clear_symptom_args(
+                            planned_name,
                             parsed_planned_args,
                             self._current_turn_user_message,
                         )
@@ -12458,6 +12459,7 @@ class AgentExecutor:
                             )
                         parsed_tool_args = _parse_tool_arguments_for_telemetry(func_args)
                         parsed_tool_args = _recover_clear_symptom_args(
+                            func_name,
                             parsed_tool_args,
                             self._current_turn_user_message,
                         )
@@ -18161,6 +18163,7 @@ class AgentExecutor:
         # 必填缺失或越权才返回 error 给 LLM (它会重试).
         from app.services.llm.tool_validator import validate_tool_call
         args = _recover_clear_symptom_args(
+            tool_name,
             args,
             getattr(self, "_current_turn_user_message", ""),
         )

@@ -67,9 +67,9 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v22"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v18"
-_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v13"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v23"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v19"
+_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v14"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
 _HEALTH_RECORD_DOMAIN_TYPES = {
     "diet": "diet",
@@ -182,6 +182,24 @@ _QUERY_DIMENSION_TEXT_TERMS: dict[str, tuple[str, ...]] = {
     "events": ("行程", "事件", "时间线"),
     "medical_exam": ("化验", "检查", "体检", "影像"),
 }
+_HISTORY_QUERY_WINDOW_PATTERN = (
+    r"(?:最近|近|过去)(?:\d+|[一二两三四五六七八九十]+|半)"
+    r"(?:个)?(?:天|周|月|年)(?:内|以来)?"
+)
+_HISTORY_QUERY_WINDOW_RE = re.compile(_HISTORY_QUERY_WINDOW_PATTERN)
+_HISTORY_QUERY_QUESTION_RE = re.compile(
+    r"(?:上一次|是什么时候|在什么时候|何时|是几号|分别有哪些|有那些|"
+    r"有什么|有几条|有几次|有多少条|多少条)"
+)
+_HISTORY_QUERY_MULTI_ENTITY_RE = re.compile(
+    r"(?:还有|以及|并且|加上|外加|兼有|[、，,/／和与及或跟])"
+)
+_HISTORY_QUERY_LEADING_VERB_RE = re.compile(
+    r"^(?:查询|查找|查看|查一下|找出|找一下|回顾|回看|检索|列出|看看|查|把)"
+)
+_HISTORY_QUERY_TRAILING_VERB_RE = re.compile(
+    r"(?:(?:给我)?(?:找出来|查出来|列出来|调出来|找出|查看|看看))$"
+)
 _ILLNESS_PARTIAL_RECOVERY_RE = re.compile(
     r"(?:好了点|好了一些|好了一半|好了一丢丢|好了一小点|快好了|基本好了|"
     r"一点点好了|稍微好了|有点好了|算是好了|差点好了)"
@@ -201,12 +219,25 @@ _ILLNESS_UPDATE_INSTRUCTION_SUFFIX_RE = re.compile(
     r"[，,。.!！；;]?(?:(?:请|请你|帮我|麻烦|麻烦你))?"
     r"(?:修改|更新|更正)(?:一下)?(?:这条)?记录[。.!！]?$"
 )
-_ILLNESS_RECORD_REFERENCE_PREFIX_RE = re.compile(
-    r"^(?:的)?(?:"
-    r"(?:(?:疾病)?(?:记录|条目))?(?:编号|id|号|#)(?:是|为|=|：|:)?#?\d+|"
-    r"(?:疾病)?(?:记录|条目)(?:编号|id|号)?(?:是|为|=|：|:)?#?\d+|"
-    r"第\d+(?:个|号|条)(?:疾病)?(?:记录|条目)"
-    r")(?:的)?"
+_ILLNESS_RECORD_ID_PATTERNS = (
+    re.compile(
+        r"(?<![A-Za-z0-9])(?:id|编号|#)(?:是|为|=|#|：|:)?"
+        r"(?P<record_id>\d+)(?!\d)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:疾病)?(?:记录|条目)(?:编号|id|号)?(?:是|为|=)?[#：:]?"
+        r"(?P<record_id>\d+)(?!\d)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"第(?P<record_id>\d+)(?:个|号|条)(?:疾病)?(?:记录|条目)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:疾病)?(?:记录|条目)第(?P<record_id>\d+)(?:号|条)?",
+        re.IGNORECASE,
+    ),
 )
 _MEAL_TYPE_ALIASES = {
     "breakfast": "breakfast",
@@ -897,12 +928,21 @@ def _illness_governing_state_statement(
     statement = text.split(target_name, 1)[1]
     statement = _ILLNESS_UPDATE_INSTRUCTION_SUFFIX_RE.sub("", statement)
     statement = statement.strip("，,。.!！；;：:")
-    statement = _ILLNESS_RECORD_REFERENCE_PREFIX_RE.sub("", statement, count=1)
+    statement = _strip_illness_record_reference(statement)
     governing_parts = _ILLNESS_ASSERTION_BOUNDARY_RE.split(statement)
     statement = governing_parts[-1] if governing_parts else statement
     statement = _ILLNESS_STATE_TIME_PREFIX_RE.sub("", statement, count=1)
     statement = statement.strip("，,。.!！；;：:")
     return statement or None
+
+
+def _strip_illness_record_reference(statement: str) -> str:
+    candidate = statement.lstrip("的")
+    for pattern in _ILLNESS_RECORD_ID_PATTERNS:
+        match = pattern.match(candidate)
+        if match is not None:
+            return candidate[match.end() :].lstrip("的")
+    return candidate
 
 
 def _water_update_values(text: str) -> tuple[float | None, float] | None:
@@ -978,16 +1018,8 @@ def _explicit_illness_record_ids(text: str) -> set[int]:
     """Return every user-visible generic record ID in an illness update."""
     normalized = "".join(str(text or "").split())
     record_ids: set[int] = set()
-    patterns = (
-        r"(?<![A-Za-z0-9])(?:id|编号|#)(?:是|为|=|#|：|:)?"
-        r"(?P<record_id>\d+)(?!\d)",
-        r"(?:疾病)?(?:记录|条目)(?:编号|id|号)?(?:是|为)?[#：:]?"
-        r"(?P<record_id>\d+)(?!\d)",
-        r"第(?P<record_id>\d+)(?:个|号|条)(?:疾病)?(?:记录|条目)",
-        r"(?:疾病)?(?:记录|条目)第(?P<record_id>\d+)(?:号|条)?",
-    )
-    for pattern in patterns:
-        for match in re.finditer(pattern, normalized, re.IGNORECASE):
+    for pattern in _ILLNESS_RECORD_ID_PATTERNS:
+        for match in pattern.finditer(normalized):
             record_id = canonical_health_manage_record_id(match.group("record_id"))
             if record_id is not None:
                 record_ids.add(record_id)
@@ -1016,53 +1048,48 @@ def _project_illness_query_to_turn(text: str) -> dict[str, Any] | None:
 
 
 def _illness_query_entities(text: str) -> tuple[str, ...]:
-    """Extract illness entities from history syntax, including long-tail names."""
+    """Extract atomic entities from one closed health-history query frame."""
     normalized = "".join(str(text or "").split())
     entities = list(_illness_targets(normalized))
-    candidates: list[str] = []
-    patterns = (
-        r"(?:我)?上一次(?P<entities>[^?？，,。]{1,40}?)"
-        r"(?:是什么时候|在什么时候|何时|是几号)",
-        r"(?:最近|近|过去)(?:\d+|[一二两三四五六七八九十]+|半)"
-        r"(?:个)?(?:天|周|月|年)(?:内|以来)?(?:分别)?"
-        r"(?P<entities>[^?？，,。]{1,60}?)(?:有哪些|有那些|有什么|有几条|有几次)"
-        r"(?:记录|历史)?",
-        r"(?P<entities>[^?？，,。]{2,60}?)(?:最近|近|过去)"
-        r"(?:\d+|[一二两三四五六七八九十]+|半)(?:个)?(?:天|周|月|年)"
-        r"(?:内|以来)?(?:分别)?(?:有哪些|有那些|有什么|有几条|有几次|"
-        r"有多少条|多少条)"
-        r"(?:记录|历史)?",
-        r"^(?:查一下|查询|查看|帮我查一下|帮我查|请查一下|请查)?(?:我)?"
-        r"(?:最近|近|过去)(?:\d+|[一二两三四五六七八九十]+|半)"
-        r"(?:个)?(?:天|周|月|年)(?:内|以来)?"
-        r"(?P<entities>[^?？，,。]{2,60}?)(?:的)?(?:记录|历史)[?？]?$",
-        r"^(?:查一下|查询|查看|帮我查一下|帮我查|请查一下|请查)?(?:我)?"
-        r"(?P<entities>[^?？，,。]{2,60}?)(?:最近|近|过去)"
-        r"(?:\d+|[一二两三四五六七八九十]+|半)(?:个)?(?:天|周|月|年)"
-        r"(?:内|以来)?(?:的)?(?:记录|历史)[?？]?$",
-    )
-    for pattern in patterns:
-        match = re.search(pattern, normalized)
-        if match is not None:
-            candidates.append(match.group("entities"))
-    for candidate in candidates:
-        candidate = re.sub(
-            r"(?:有哪些|有那些|有什么|有几条|有几次|有多少条|多少条)$",
-            "",
-            candidate,
-        )
-        candidate = re.sub(
-            r"^(?:查一下|查询|查看|帮我查一下|帮我查|请查一下|请查)+",
-            "",
-            candidate,
-        )
-        for value in re.split(r"(?:还有|以及|[、和与及或跟])", candidate):
-            entity = re.sub(r"^(?:我(?:的)?|分别)", "", value).strip("的 ")
-            if 2 <= len(entity) <= 40 and not re.search(
-                r"(?:记录|历史|什么时候|何时)", entity
-            ):
+    candidate = _history_query_entity_expression(normalized)
+    if candidate:
+        for value in _HISTORY_QUERY_MULTI_ENTITY_RE.split(candidate):
+            entity = value.strip("的，,。.!！；;：:?？ ")
+            if 2 <= len(entity) <= 40:
                 entities.append(entity)
     return tuple(dict.fromkeys(entities))
+
+
+def _history_query_entity_expression(text: str) -> str | None:
+    """Reduce a history request to its entity expression, independent of wording."""
+    normalized = "".join(str(text or "").split()).strip("。.!！?？")
+    has_history_frame = bool(
+        re.search(r"(?:记录|历史)", normalized)
+        or _HISTORY_QUERY_QUESTION_RE.search(normalized)
+    )
+    has_read_semantics = bool(
+        "历史" in normalized
+        or _HISTORY_QUERY_WINDOW_RE.search(normalized)
+        or _HISTORY_QUERY_QUESTION_RE.search(normalized)
+    )
+    if not has_history_frame or not has_read_semantics:
+        return None
+
+    candidate = re.sub(r"^(?:请|麻烦)?(?:给我|帮我|替我)?", "", normalized)
+    candidate = _HISTORY_QUERY_LEADING_VERB_RE.sub("", candidate, count=1)
+    candidate = re.sub(r"^(?:我(?:的)?)", "", candidate, count=1)
+    candidate = _HISTORY_QUERY_TRAILING_VERB_RE.sub("", candidate, count=1)
+    candidate = re.sub(r"(?:的)?(?:记录|历史)$", "", candidate, count=1)
+    candidate = _HISTORY_QUERY_WINDOW_RE.sub("", candidate)
+    candidate = re.sub(
+        r"(?:上一次|分别|有哪些|有那些|有什么|有几条|有几次|有多少条|"
+        r"多少条|是什么时候|在什么时候|何时|是几号)",
+        "",
+        candidate,
+    )
+    candidate = re.sub(r"(?:的)?(?:记录|历史)", "", candidate)
+    candidate = candidate.strip("的，,。.!！；;：:?？ ")
+    return candidate if 2 <= len(candidate) <= 120 else None
 
 
 def _query_entities_match_dimension(
@@ -1073,6 +1100,15 @@ def _query_entities_match_dimension(
     if not terms:
         return False
     return all(any(term in entity for term in terms) for entity in entities)
+
+
+def _query_entities_known_dimension(entities: tuple[str, ...]) -> str | None:
+    matches = tuple(
+        dimension
+        for dimension in _QUERY_DIMENSION_TEXT_TERMS
+        if _query_entities_match_dimension(entities, dimension)
+    )
+    return matches[0] if len(matches) == 1 else None
 
 
 def _explicit_illness_query_window_days(text: str) -> int | None:
@@ -1110,7 +1146,7 @@ def _illness_update_targets_owner(text: str, record_name: str) -> bool:
     return (
         re.fullmatch(
             rf"{current_prefix}(?:我(?:的)?)?{re.escape(name)}"
-            r"[^，,。.!！；;：:?？]{0,80}[，,]"
+            r".{1,180}[，,]"
             rf"{current_prefix}(?:修改|更新|更正)(?:一下)?(?:这条)?记录",
             normalized,
         )
@@ -1340,6 +1376,9 @@ def decide_tool_capability(
         proposed_dimension = str(args.get("dimension") or "").strip().lower()
         known_illness_entities = _illness_targets(turn_text)
         illness_query_entities = _illness_query_entities(turn_text)
+        known_non_illness_dimension = _query_entities_known_dimension(
+            illness_query_entities
+        )
         if len(illness_query_entities) > 1:
             return _decision(
                 "block",
@@ -1347,7 +1386,15 @@ def decide_tool_capability(
                 tool_name,
                 args,
             )
-        if known_illness_entities or proposed_dimension in {"", "illness"}:
+        if known_non_illness_dimension is not None:
+            if proposed_dimension != known_non_illness_dimension:
+                return _decision(
+                    "block",
+                    "health_query_dimension_conflict",
+                    tool_name,
+                    args,
+                )
+        elif known_illness_entities or proposed_dimension == "illness":
             illness_query_args = _project_illness_query_to_turn(
                 turn_text,
             )
@@ -1358,10 +1405,7 @@ def decide_tool_capability(
                     tool_name,
                     illness_query_args,
                 )
-        elif illness_query_entities and not _query_entities_match_dimension(
-            illness_query_entities,
-            proposed_dimension,
-        ):
+        elif illness_query_entities:
             return _decision(
                 "block",
                 "health_query_dimension_conflict",
@@ -3787,7 +3831,7 @@ def _clock_components(value: Any) -> tuple[int, int] | None:
         hour += 12
     elif hour < 12 and any(marker in daypart_prefix for marker in afternoon_markers):
         hour += 12
-    elif 6 <= hour < 12 and any(marker in daypart_prefix for marker in night_markers):
+    elif 5 <= hour < 12 and any(marker in daypart_prefix for marker in night_markers):
         hour += 12
     return hour, minute
 

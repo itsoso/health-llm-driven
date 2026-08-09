@@ -666,6 +666,36 @@ validation and no-match honesty address those risks.
   passes 103/103. Ruff, focused formatting, Python compilation and
   `git diff --check` pass. Repository structural checks and two new reviews of
   the next exact SHA remain mandatory.
+- Fresh code and product-safety reviews of exact commit `3f3119834` both
+  returned NO-GO, so it was not pushed or deployed. They found that a generic
+  non-illness history could be projected into illness, natural read wrappers
+  and additional multi-entity relations could fall through to the model scope,
+  symptom-write recovery could pollute a read payload, and supported exact-ID,
+  latest-state, current-user parenthetical and early-evening forms were falsely
+  denied or normalized incorrectly. Their real-chain matrices used only
+  synthetic owner records and fake adapters in enforce and shadow modes.
+- The v23 remediation reduces the complete history request to one residual
+  entity expression before considering model JSON. A known non-illness entity
+  conflicts with an illness or missing-dimension proposal; an unknown single
+  long-tail entity may project only when the model proposes illness; any
+  coordination relation or punctuation that yields multiple entities is a
+  hard clarification block. Symptom-field recovery is tool-local to
+  `health_record`, so a read payload cannot acquire write fields. One shared
+  visible-ID parser now both constrains the owner record and removes the ID from
+  the final-state assertion. Direct update scope may carry adversative clauses,
+  but only the closed final-state compiler can produce the exact patch. Trusted
+  ID colons, current-user event parentheticals and the night/early-evening clock
+  boundary are separately modeled. The contract is
+  `agent-capability-policy-v23` / `authorized-target-set-v19` /
+  `record-update-evidence-v14`.
+- Failure-first coverage reproduced 59 review failures in a 163-case real
+  Gateway/Executor boundary group; the group now passes 163/163. The complete
+  policy/Gateway/scope group passes 2,367/2,367 tests. All 25 changed Backend
+  feature-test files pass 4,003/4,003 in one process on the production
+  `Asia/Shanghai` calendar basis, and the adjacent meal-photo file passes
+  103/103. Ruff, focused formatting, Python compilation and `git diff --check`
+  pass. Repository structural checks and two new reviews of the next exact SHA
+  remain mandatory.
 
 ### G4 Safety Review: PENDING
 
@@ -1072,6 +1102,24 @@ Unknown write clauses and conflicting or multi-entity reads are hard denials in
 both enforce and shadow. The clean G3 evidence is green; a new exact commit and
 two fresh independent reviews of that exact SHA are mandatory before G4 may
 pass.
+
+Fresh code and product-safety reviews of exact commit `3f3119834` both returned
+NO-GO, so push and deployment again remained stopped. Their independent real
+Executor/Gateway matrices agreed that generic history extraction still trusted
+an illness proposal too early, natural read wrappers and coordination relations
+could bypass the intended entity plan, symptom recovery was not bound to a
+write tool, and several legitimate exact-ID, latest-state, current-user event
+and early-evening controls were over-blocked or mis-normalized.
+
+The v23 remediation makes the history frame, known domain, entity cardinality
+and model proposal separate evidence. A proposed tool can no longer choose a
+dimension that conflicts with a known entity, omit the user's long-tail entity,
+or carry symptom-write fields into a read. Exact ID syntax and state-prefix
+stripping share one parser; a broadened direct speech-act frame still cannot
+write until the closed final-state compiler matches the exact canonical patch.
+Current-user event ownership and daypart conversion retain explicit positive
+controls. The clean G3 evidence is green; a new exact commit and two fresh
+independent reviews of that exact SHA are mandatory before G4 may pass.
 
 ### G5 Deployment Health: PENDING
 
