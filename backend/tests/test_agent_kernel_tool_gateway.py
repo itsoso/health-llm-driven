@@ -6284,6 +6284,54 @@ def test_v32_explicit_disease_label_authorizes_exact_illness_name(name):
     assert generic_memory.normalized_args == decision.normalized_args
 
 
+@pytest.mark.parametrize("name", ("脑梗", "睡眠呼吸暂停"))
+def test_v33_explicit_disease_label_discards_model_invented_health_fields(name):
+    gateway = ToolGateway(_snapshot(f"记录疾病：{name}"))
+
+    decision = gateway.preflight(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={
+                "record_type": "illness",
+                "data": {
+                    "name": name,
+                    "severity": 5,
+                    "start_date": "2026-01-13",
+                    "status": "active",
+                },
+            },
+        )
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args == {
+        "record_type": "illness",
+        "data": {"name": name, "status": "active"},
+    }
+
+
+def test_v33_explicit_disease_label_never_projects_a_substituted_name():
+    gateway = ToolGateway(_snapshot("记录疾病：脑梗"))
+
+    decision = gateway.preflight(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={
+                "record_type": "illness",
+                "data": {
+                    "name": "睡眠呼吸暂停",
+                    "severity": 5,
+                    "start_date": "2026-01-13",
+                    "status": "active",
+                },
+            },
+        )
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "health_record_target_mismatch"
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "message",

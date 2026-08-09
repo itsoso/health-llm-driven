@@ -72,8 +72,8 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v32"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v28"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v33"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v29"
 _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v23"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
 _HEALTH_RECORD_DOMAIN_TYPES = {
@@ -2025,6 +2025,7 @@ def decide_tool_capability(
         )
     if tool_name == "health_record" and request.source != "procedure_recipe_replay":
         args = _recover_explicit_illness_create_from_generic_memory(snapshot, args)
+        args = _project_exact_illness_create_from_model_fields(snapshot, args)
 
     mutating_request = _is_mutating_request(tool_name, args)
     if tool_name == "draft_aigc_media" and is_explicit_aigc_media_provider_veto(
@@ -3143,6 +3144,64 @@ def _recover_explicit_illness_create_from_generic_memory(
     if not proposed_matches_target:
         return args
     return {"record_type": "illness", "data": {"name": targets[0]}}
+
+
+def _project_exact_illness_create_from_model_fields(
+    snapshot: TurnSnapshot,
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    """Keep only the illness name from one exact name-only create command.
+
+    Qwen can populate optional illness fields with plausible-looking defaults
+    even when the user supplied only a disease name.  Those values are health
+    facts, so neither persisting them nor using them to reject an otherwise
+    exact command is acceptable.  Projection is deliberately limited to a
+    single direct ``记录疾病：<name>`` clause whose proposed name matches the
+    validated user-owned name.  Richer, substituted, quoted or compound turns
+    continue through the normal mismatch checks.
+    """
+    if recipe_replay_record_type(args) != "illness":
+        return args
+    data = args.get("data") if isinstance(args.get("data"), dict) else {}
+    proposed_name = _effective_argument_value(
+        args,
+        data,
+        data_keys=("name", "illness_name"),
+        arg_keys=("name", "illness_name"),
+    )
+
+    from app.services.write_intent_scope import authorized_health_record_clauses
+
+    clauses = authorized_health_record_clauses(snapshot.envelope.text)
+    if len(clauses) != 1:
+        return args
+    match = SIMPLE_ILLNESS_CREATE_RE.fullmatch(clauses[0])
+    if match is None:
+        return args
+    target_name = match.group("name").strip("的了，,。.!！；;：: ")
+    if SIMPLE_ILLNESS_NAME_RE.fullmatch(target_name) is None:
+        return args
+    if _normalize_entity_name(proposed_name) != _normalize_entity_name(target_name):
+        return args
+    if _is_registered_illness_acronym(target_name):
+        target_name = target_name.upper()
+    projected_data = {"name": target_name}
+    proposed_status = (
+        str(
+            _effective_argument_value(
+                args,
+                data,
+                data_keys=("status",),
+                arg_keys=("status",),
+            )
+            or ""
+        )
+        .strip()
+        .lower()
+    )
+    if proposed_status == "active":
+        projected_data["status"] = "active"
+    return {"record_type": "illness", "data": projected_data}
 
 
 def _authorized_record_types(
