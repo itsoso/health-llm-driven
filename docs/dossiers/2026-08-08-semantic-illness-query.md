@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS on implementation 2940d2fd3; fresh exact-commit G4 pending |
+| current_stage | G3 PASS on implementation c91987361; fresh exact-commit G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -1635,6 +1635,61 @@ reported zero database connection attempts.
 No v32-v35 candidate has been pushed or deployed. Reviewers must inspect the
 next documentation commit together with exact implementation parent
 `2940d2fd31a86c37de3913ceea5a00a730662060`; two fresh independent GO decisions
+remain mandatory before G4 can pass.
+
+Fresh code and product-safety reviews of exact documentation commit
+`54052afdcffab94735f82bc81df4ecddb454c5ca` both returned NO-GO, so neither it
+nor its v35 implementation parent was pushed or deployed. The code review
+proved 42/42 unsafe referential or third-party illness writes could reach a fake
+adapter, ten mutation-word `health_manage(list)` phrases could bypass the read
+guard, and unresolved ordinal/MRI pointers could dispatch in enforce and shadow
+modes. It also found mixed-script illness names being rejected or case-folded
+and one valid MRI command being blocked. The safety review independently ran
+337 unique cases in both modes (674 executions): 530 executions passed and 144
+failed, representing 72 unique failures across unsafe writes, exact disease
+names, unresolved references, disease observations, ordinary metrics,
+long-tail diseases, latest-occurrence language and natural ratios. Both reviews
+used synthetic inputs and fake terminal adapters with zero production database,
+network or external writes.
+
+The v36 remediation separates three decisions that v35 had coupled: whether the
+user made a read request, whether the named entity is an illness, and whether a
+write target belongs to the current user. Explicit disease reads now accept one
+user-owned open-vocabulary entity while registered metrics and a narrow
+non-illness deny set remain outside illness projection. Exact mixed Latin,
+numeric and Greek disease names preserve user spelling and case. Illness writes
+share one owner/reference validator across typed goals and policy. Present-tense
+health observations do not authorize reads; cancellation and unresolved raw
+discourse pointers are hard denials across query and manage-list paths. Natural
+ratio operators compile to one ordered batch plan. If Qwen omits only the
+user-owned comparison default, policy supplies deterministic `avg`; any
+conflicting aggregate remains blocked. The capability contract is now
+`agent-capability-policy-v36`.
+
+The independent v36 review matrix was failure-first: 127/173 selected cases
+failed before implementation. After remediation, all selected cases passed.
+The final four-file GoalSpec/CapabilityPolicy/ToolGateway/simple-record suite
+passes 3,000/3,000, and the final single-process 27-file Backend gate passes
+4,857/4,857 with `TZ=Asia/Shanghai` and seven pre-existing warnings. Ruff lint,
+format checking, Python compilation, generated architecture drift,
+102-dossier consistency, pre-commit hooks and `git diff --check` all pass.
+
+The requested live `qwen3.7-max` evaluation was then run as a 40-case synthetic
+system matrix using the real TokenPlan provider and production tool schemas,
+typed GoalSpec, goal-call normalization, deterministic simple-record fallback,
+Gateway semantic projection, production read fingerprint and the production
+`structured_or_recovered` source. Only the terminal adapter was fake. A first
+39/40 run exposed one legitimate ratio request where Qwen omitted per-query
+`avg` and top-level `compare`; policy safely blocked it. After the narrow
+server-owned default projection plus a conflicting-aggregate negative control,
+the full matrix passes 40/40 on exact implementation commit
+`c919873618ed214bacf12b1252320e448d8cdb59`, including the previously failing
+shape. A database-connect tripwire reports zero connection attempts. No
+production health data was read or written.
+
+No v36 commit has been pushed or deployed. Reviewers must inspect the next
+documentation commit together with exact implementation parent
+`c919873618ed214bacf12b1252320e448d8cdb59`; two fresh independent GO decisions
 remain mandatory before G4 can pass.
 
 ### G5 Deployment Health: PENDING
