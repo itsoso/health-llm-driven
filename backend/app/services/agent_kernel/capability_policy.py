@@ -17,6 +17,10 @@ from app.services.agent_kernel.goal_spec import (
     illness_target_is_unowned_or_referential,
     simple_illness_target,
 )
+from app.services.agent_kernel.health_semantics import (
+    health_read_cancelled,
+    is_unresolved_health_reference,
+)
 from app.services.agent_kernel.tool_registry import (
     ToolRegistryError,
     get_tool_spec,
@@ -75,7 +79,7 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v37"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v38"
 _HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v31"
 _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v23"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
@@ -263,7 +267,8 @@ _READ_QUERY_VERB_PATTERN = (
     r"(?:查询(?:一下)?|查找(?:一下)?|查看(?:一下)?|查到|查下|查(?:一下|一查)?|"
     r"改查|找出|找一下|找|回顾(?:一下)?|回看(?:一下)?|检索(?:一下)?|列出|"
     r"比较|对比|翻看(?:一下)?|翻一下|看(?:一下|一看|一眼|下|看)?|"
-    r"搜索(?:一下)?|搜(?:一下)?|调取|调出|调阅|打开)"
+    r"搜索(?:一下)?|搜(?:一下)?|调取|调出|调阅|打开|"
+    r"展示(?:一下)?|拉出来|发我|发给我|呈现)"
 )
 _READ_QUERY_VERB_RE = re.compile(_READ_QUERY_VERB_PATTERN)
 _HISTORY_QUERY_WINDOW_PATTERN = (
@@ -306,6 +311,7 @@ _NEGATED_READ_QUERY_RE = re.compile(
 )
 _HISTORY_QUERY_QUESTION_RE = re.compile(
     r"(?:上一次|是什么时候|在什么时候|何时|在何时|是何时|是哪天|是几号|"
+    r"哪天|哪一天|几号|时间|日期|"
     r"分别有哪些|有哪些|有那些|"
     r"有什么|有几条|有几次|有多少条|多少条|是多少|平均多少|多少(?:呢)?|"
     r"(?:是)?升还是降|上升还是下降|有多高|怎么样|怎样|如何|呢|最近一次)"
@@ -319,7 +325,8 @@ _HISTORY_QUERY_MULTI_ENTITY_RE = re.compile(
 _HISTORY_QUERY_LEADING_VERB_RE = re.compile(rf"^(?:{_READ_QUERY_VERB_PATTERN}|把)")
 _HISTORY_QUERY_TRAILING_VERB_RE = re.compile(
     r"(?:[，,、]?(?:(?:给我)?(?:找出来|查出来|列出来|调出来|找出|查看|看看)|"
-    r"(?:打开|调出|调阅)(?:一下)?|(?:对比|比较)(?:一下|倍数|比例|比率)?))$"
+    r"(?:打开|调出|调阅|展示)(?:一下)?|拉出来|发我|发给我|"
+    r"(?:对比|比较)(?:一下|倍数|比例|比率)?))$"
 )
 _ILLNESS_MEDICAL_ACRONYMS = frozenset({"sle"})
 _UNRESOLVED_QUERY_REFERENCE_RE = re.compile(
@@ -1295,12 +1302,15 @@ def _is_non_read_health_observation(text: str) -> bool:
     ):
         return False
     has_current_time = bool(
-        re.search(r"(?:今天|今日|目前|现在|刚才|刚刚|最近|这两天)", normalized)
+        re.search(
+            r"(?:今天|今日|目前|现在|刚才|刚刚|最近|这两天|上回|上次)",
+            normalized,
+        )
     )
     has_state_assertion = bool(
         re.search(
-            r"(?:又)?(?:发作|复发|发生|加重|恶化|严重|乏力|晕厥|疼痛|不适|"
-            r"好转|改善|缓解|痊愈|康复)(?:了|中)?$",
+            r"(?:又)?(?:发作|复发|发生|出现|犯了|犯过|犯|加重|恶化|严重|厉害|"
+            r"乏力|晕厥|疼痛|不适|好转|改善|缓解|痊愈|康复)(?:了|中)?$",
             normalized,
         )
     )
@@ -1315,6 +1325,8 @@ def _normalize_query_text(text: str) -> str:
 
 def _health_read_cancelled_by_user(text: str) -> bool:
     """Return whether the active read speech act is explicitly cancelled."""
+    if health_read_cancelled(text):
+        return True
     normalized = _normalize_query_text(text)
     negated_reads = tuple(_NEGATED_READ_QUERY_RE.finditer(normalized))
     direct_revocations = tuple(
@@ -1576,6 +1588,8 @@ def _is_unresolved_query_reference(value: str) -> bool:
 def _query_contains_unresolved_reference(text: str) -> bool:
     """Detect a discourse pointer that names no durable health entity."""
     scoped = _query_scope_text(text)
+    if is_unresolved_health_reference(scoped):
+        return True
     if _UNRESOLVED_DISCOURSE_POINTER_IN_TEXT_RE.search(
         scoped
     ) or _UNRESOLVED_HEALTH_REFERENCE_GRAMMAR_RE.search(scoped):
@@ -1766,6 +1780,83 @@ def _project_known_dimension_query_args(
             return None
         projected["keyword"] = keyword
     return projected
+
+
+def _project_medical_exam_query_to_turn(text: str) -> dict[str, Any] | None:
+    """Project one explicitly named imaging/exam entity from the user's span.
+
+    Imaging identifiers commonly contain punctuation (``DWI/ADC``, ``L4/5``)
+    and spaces (``T2-FLAIR MRI``).  They are therefore parsed as one typed exam
+    span before the generic multi-entity splitter sees ``/`` as a comparison
+    separator.
+    """
+    candidate = str(text or "").strip("，,。.!！；;：:?？ ")
+    candidate = re.sub(
+        r"^(?:请问|请您|烦请|劳烦|劳驾|拜托|请|麻烦你?|能不能|"
+        r"可不可以|能否|可否|给我|帮我|替我|为我|把|我的?)*",
+        "",
+        candidate,
+    ).strip()
+    candidate = re.sub(rf"^(?:{_READ_QUERY_VERB_PATTERN})", "", candidate).strip()
+    if re.search(r"(?:记录|历史)$", candidate) or _HISTORY_QUERY_WINDOW_RE.search(
+        candidate
+    ):
+        return None
+    candidate = re.sub(
+        r"(?:拉出来|发给我|发我|给我看看|给我看|找出来|查出来|"
+        r"列出来|调出来|打开|调出|调阅|展示(?:一下)?|看看)$",
+        "",
+        candidate,
+    ).strip()
+    exam_suffix_re = re.compile(
+        r"(?:检查报告|检查结果|影像结果|扫描结果|影像报告|"
+        r"检查|报告|影像|结果|扫描|图像|成像|片子|片)$",
+        re.IGNORECASE,
+    )
+    previous = None
+    while candidate and candidate != previous:
+        previous = candidate
+        candidate = exam_suffix_re.sub("", candidate).strip()
+    if not candidate or len(candidate) > 80:
+        return None
+    if re.fullmatch(r"[\w\u4e00-\u9fff·+./\-\s]+", candidate) is None:
+        return None
+    if re.search(r"(?:MRI|核磁|磁共振|CT|X光|B超|胃镜)", candidate, re.I) is None:
+        return None
+    if re.search(
+        r"(?:和|与|以及|、|，|,).*(?:睡眠|心率|HRV|跑步|饮食)", candidate, re.I
+    ):
+        return None
+    return {"dimension": "medical_exam", "keyword": candidate}
+
+
+def _manage_list_turn_record_type(text: str) -> str | None:
+    """Bind a user-facing manage-list call to the domain named in the turn."""
+    if _project_medical_exam_query_to_turn(text) is not None:
+        return "medical_exam"
+    entities = _illness_query_entities(text)
+    dimension = _query_entities_known_dimension(entities)
+    if dimension is None:
+        dimension = _query_text_known_dimension(text)
+    semantic_dimension = _semantic_query_dimension(dimension or "")
+    record_type_by_dimension = {
+        "diet": "diet",
+        "water": "water",
+        "weight": "weight",
+        "blood_pressure": "blood_pressure",
+        "sleep": "sleep",
+        "workout": "exercise",
+        "manual_exercise": "exercise",
+        "medication": "medication",
+        "supplements": "supplement",
+        "medical_exam": "medical_exam",
+        "events": "event",
+    }
+    if semantic_dimension in record_type_by_dimension:
+        return record_type_by_dimension[semantic_dimension]
+    if _project_illness_query_to_turn(text) is not None:
+        return "illness"
+    return None
 
 
 def _projected_uploaded_days(text: str) -> int | None:
@@ -2356,6 +2447,8 @@ def decide_tool_capability(
     if tool_name == "health_query":
         turn_text = snapshot.envelope.text
         canonical_args = normalize_health_query_args(args)
+        proposed_dimension = str(canonical_args.get("dimension") or "").strip().lower()
+        medical_exam_args = _project_medical_exam_query_to_turn(turn_text)
         if _health_read_cancelled_by_user(turn_text):
             return _decision(
                 "block",
@@ -2363,7 +2456,9 @@ def decide_tool_capability(
                 tool_name,
                 canonical_args,
             )
-        if _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE.search(_query_scope_text(turn_text)):
+        if medical_exam_args is None and _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE.search(
+            _query_scope_text(turn_text)
+        ):
             return _decision(
                 "block",
                 "health_query_calendar_window_unsupported",
@@ -2377,7 +2472,7 @@ def decide_tool_capability(
                 tool_name,
                 canonical_args,
             )
-        if illness_read_has_unowned_subject(turn_text):
+        if illness_read_has_unowned_subject(_query_scope_text(turn_text)):
             return _decision(
                 "block",
                 "health_query_subject_not_current_user",
@@ -2391,7 +2486,13 @@ def decide_tool_capability(
                 tool_name,
                 canonical_args,
             )
-        proposed_dimension = str(canonical_args.get("dimension") or "").strip().lower()
+        if medical_exam_args is not None and _has_explicit_read_request(turn_text):
+            return _decision(
+                "allow",
+                "health_query_projected_to_turn_semantics",
+                tool_name,
+                medical_exam_args,
+            )
         known_illness_entities = _illness_targets(turn_text)
         illness_query_entities = _illness_query_entities(turn_text)
         has_safe_illness_entity = bool(
@@ -2498,7 +2599,11 @@ def decide_tool_capability(
                 tool_name,
                 normalized_plan,
             )
-        if _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE.search(_query_scope_text(turn_text)):
+        if _project_medical_exam_query_to_turn(
+            turn_text
+        ) is None and _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE.search(
+            _query_scope_text(turn_text)
+        ):
             return _decision(
                 "block",
                 "health_query_calendar_window_unsupported",
@@ -2512,7 +2617,7 @@ def decide_tool_capability(
                 tool_name,
                 normalized_plan,
             )
-        if illness_read_has_unowned_subject(turn_text):
+        if illness_read_has_unowned_subject(_query_scope_text(turn_text)):
             return _decision(
                 "block",
                 "health_query_subject_not_current_user",
@@ -2607,11 +2712,54 @@ def decide_tool_capability(
                     tool_name,
                     args,
                 )
-            guarding_user_read = primary != "mutate" or _has_explicit_read_request(
+            mutation_lookup_cancelled = is_explicit_write_cancellation(
                 turn_text
+            ) or bool(
+                re.search(
+                    r"(?:先不要|暂不)[^，,。.!！?？;；]{0,16}执行",
+                    turn_text,
+                )
             )
-            if guarding_user_read and _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE.search(
-                _query_scope_text(turn_text)
+            internal_mutation_lookup = not mutation_lookup_cancelled and (
+                primary == "mutate"
+                or (
+                    not _has_explicit_read_request(turn_text)
+                    and bool(
+                        re.search(
+                            r"(?:修改|更新|更正|删除|删掉|移除)(?:一下|下)?(?:记录)?",
+                            turn_text,
+                        )
+                    )
+                )
+            )
+            guarding_user_read = not internal_mutation_lookup
+            if _query_contains_unresolved_reference(turn_text) and (
+                guarding_user_read or _has_explicit_read_request(turn_text)
+            ):
+                return _decision(
+                    "block",
+                    "health_query_semantics_unresolved",
+                    tool_name,
+                    args,
+                )
+            if guarding_user_read and not (
+                _has_explicit_read_request(turn_text)
+                or primary == "read"
+                or _HISTORY_QUERY_QUESTION_RE.search(_query_scope_text(turn_text))
+                or re.search(r"[?？]\s*$", turn_text)
+            ):
+                return _decision(
+                    "block",
+                    "health_query_not_requested",
+                    tool_name,
+                    args,
+                )
+            if (
+                guarding_user_read
+                and _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE.search(
+                    _query_scope_text(turn_text)
+                )
+                and _project_medical_exam_query_to_turn(turn_text) is None
             ):
                 return _decision(
                     "block",
@@ -2619,20 +2767,37 @@ def decide_tool_capability(
                     tool_name,
                     args,
                 )
-            if guarding_user_read and _query_contains_unresolved_reference(turn_text):
-                return _decision(
-                    "block",
-                    "health_query_semantics_unresolved",
-                    tool_name,
-                    args,
-                )
-            if guarding_user_read and illness_read_has_unowned_subject(turn_text):
+            if guarding_user_read and illness_read_has_unowned_subject(
+                _query_scope_text(turn_text)
+            ):
                 return _decision(
                     "block",
                     "health_query_subject_not_current_user",
                     tool_name,
                     args,
                 )
+            if guarding_user_read and _is_non_read_health_observation(turn_text):
+                return _decision(
+                    "block",
+                    "health_query_not_requested",
+                    tool_name,
+                    args,
+                )
+            if guarding_user_read:
+                expected_record_type = _manage_list_turn_record_type(turn_text)
+                requested_record_type = canonical_health_manage_record_type(
+                    args.get("record_type")
+                )
+                if (
+                    expected_record_type is None
+                    or expected_record_type != requested_record_type
+                ):
+                    return _decision(
+                        "block",
+                        "health_query_dimension_conflict",
+                        tool_name,
+                        args,
+                    )
             return _decision(
                 "allow", "health_manage_list_is_read_only", tool_name, args
             )

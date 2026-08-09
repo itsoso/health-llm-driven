@@ -858,3 +858,76 @@ def test_v37_extended_latin_illness_name_preserves_exact_user_spelling():
     assert goal.kind == "simple_health_record"
     assert goal.target_record_type == "illness"
     assert dict(goal.target_values) == {"name": "Behçet病"}
+
+
+# v38: G4 demonstrated that surname/role enumeration cannot distinguish an
+# arbitrary third-party subject from a rare eponym disease.  The compiler now
+# consumes a closed semantic entity decision instead of treating either a
+# medical-looking suffix or a finite surname list as authority.
+@pytest.mark.parametrize(
+    "name",
+    (
+        "令狐冲感冒",
+        "霍去病哮喘",
+        "郗超偏头痛",
+        "仇英帕金森病",
+        "缪雪克罗恩病",
+        "alice感冒",
+        "ALICE感冒",
+        "José痛风",
+        "Mary-Jane哮喘",
+        "房东感冒",
+        "值班护士偏头痛",
+        "HR高血压",
+        "物业经理脑梗",
+        "网友糖尿病",
+    ),
+)
+def test_v38_semantic_third_party_target_never_compiles(name):
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(user_id=1, channel="mobile", text=f"记录疾病：{name}")
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(envelope=envelope, context=context, intent=intent)
+
+    assert goal.kind == "clarify"
+    assert goal.requires_clarification is True
+    assert goal.target_record_type is None
+
+
+@pytest.mark.parametrize(
+    "name",
+    (
+        "马凡综合征",
+        "马方综合征",
+        "白塞病",
+        "阿尔茨海默病",
+        "小儿麻痹症",
+        "张力性气胸",
+        "高原病",
+        "高山病",
+        "胡桃夹综合征",
+        "何杰金淋巴瘤",
+        "李斯特菌病",
+        "马拉色菌毛囊炎",
+        "小细胞肺癌",
+        "雷诺病",
+        "范可尼贫血",
+        "史蒂文斯-约翰逊综合征",
+        "夏科-马里-图斯病",
+        "李-佛美尼综合征",
+        "杜氏肌营养不良症",
+        "林奇综合征",
+        "高胱氨酸尿症",
+    ),
+)
+def test_v38_curated_rare_disease_preserves_exact_user_name(name):
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(user_id=1, channel="mobile", text=f"记录疾病：{name}")
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(envelope=envelope, context=context, intent=intent)
+
+    assert goal.kind == "simple_health_record"
+    assert goal.target_record_type == "illness"
+    assert dict(goal.target_values) == {"name": name}
