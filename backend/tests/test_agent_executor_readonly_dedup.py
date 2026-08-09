@@ -45,6 +45,28 @@ def test_fingerprint_distinguishes_different_args():
     assert a != c
 
 
+def test_fingerprint_distinguishes_different_health_query_batch_plans():
+    first = {
+        "queries": [{"dimension": "sleep", "days": 7, "agg": "avg"}],
+    }
+    second = {
+        "queries": [{"dimension": "activity", "days": 30, "agg": "sum"}],
+    }
+
+    first_fingerprint = _read_operation_fingerprint("health_query_batch", first)
+    second_fingerprint = _read_operation_fingerprint("health_query_batch", second)
+
+    assert first_fingerprint != second_fingerprint
+    seen = {first_fingerprint: ("sleep-result", "sleep-result")}
+    second_call = {
+        "function": {
+            "name": "health_query_batch",
+            "arguments": '{"queries":[{"dimension":"activity","days":30,"agg":"sum"}]}',
+        }
+    }
+    assert _is_seen_readonly_call(second_call, seen) is False
+
+
 def test_is_seen_readonly_classifies_health_manage_by_operation():
     list_args = {"record_type": "diet", "operation": "list", "date": "today"}
     seen = {

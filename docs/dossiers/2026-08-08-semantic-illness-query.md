@@ -1165,6 +1165,40 @@ passes 103/103. Targeted Ruff, focused formatting, Python compilation and
 `git diff --check` pass on the same tree. A new exact commit and two fresh
 independent reviews of that SHA are mandatory before G4 may pass.
 
+Fresh code and product-safety reviews of exact commit `8344a02ca` both returned
+NO-GO, so it was not pushed or deployed. Both real-chain matrices confirmed all
+prior `9e7707565` blockers were fixed, but exposed new structural gaps. Most
+critically, the single-query schema projector was also applied to
+`health_query_batch` read fingerprints, collapsing distinct nested plans to the
+same empty-argument dedup key. The remaining findings were multi-window or
+post-`记录` query scopes, additional coordination symbols/relations and request
+wrappers, over-blocking of valid registered dimensions, and narrow positive
+illness-update or current-user event-owner forms.
+
+The v25 remediation separates single-query canonicalization from batch-plan
+identity: batch fingerprints retain the complete nested plan, while each batch
+subquery still uses the batch validator's own canonicalizer. History reads now
+model scope cardinality separately from entity cardinality; multiple windows or
+multiple history frames require plan decomposition before dispatch. A
+post-history container form can still project one exact entity. Registered
+non-illness dimensions are allowed after schema validation unless a closed
+positive dimension grammar proves a conflict or the entity has an illness
+morphology; this preserves activity, heart-rate, HRV, SpO2, body-battery,
+supplement, diet and workout reads without reintroducing substring collisions.
+The request scaffold, atomicity, exact-ID/time/state and current-user event
+grammars cover the independently reviewed relations. The contracts are now
+`agent-capability-policy-v25` / `authorized-target-set-v21` /
+`record-update-evidence-v16`.
+
+The fresh failure-first review matrix reproduced 70 failures; the remediated
+expanded matrix passes 267/267. The core policy/Gateway/scope/read-dedup suite
+passes 2,508/2,508. All 27 changed and adjacent Backend feature-test files pass
+4,154/4,154 in one process on the production `Asia/Shanghai` calendar basis,
+and the adjacent meal-photo compatibility file passes 103/103. Targeted Ruff,
+focused formatting, Python compilation and `git diff --check` pass. A new exact
+commit and two fresh independent reviews of that SHA remain mandatory before G4
+may pass.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.

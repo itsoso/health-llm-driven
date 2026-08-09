@@ -3741,9 +3741,12 @@ _READ_DEDUP_ENABLED = True
 
 
 def _read_operation_fingerprint(tool_name: str, parsed_args: Dict[str, Any]) -> str:
-    """只读工具去重指纹。health_query/batch 先归一(维度别名 / time_range→days),避免
-    "同义不同字面"漏判;归一失败退回原参(fail-open,宁多跑一次别漏数据)。"""
-    if tool_name in ("health_query", "health_query_batch"):
+    """只读工具去重指纹。单条 health_query 先归一以合并同义调用。
+
+    health_query_batch 保留完整 plan；它有独立的嵌套 schema，不能用单条查询的
+    投影器，否则不同批计划会坍缩成同一个空参数指纹。
+    """
+    if tool_name == "health_query":
         try:
             parsed_args = _normalize_health_query_args(parsed_args)
         except Exception:  # noqa: BLE001

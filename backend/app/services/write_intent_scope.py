@@ -1262,14 +1262,23 @@ def _is_current_user_event_parenthetical(content: str) -> bool:
     normalized = content.strip("，,。.!！；;：: ")
     event_noun = r"(?:行程|旅程|旅途|旅行|出行|事件)"
     current_user = r"(?:我(?:自己|本人|个人)?|本人|自己|个人)"
+    scope = r"(?:(?:这|本|该|此)(?:次|趟|段)?)"
     if re.fullmatch(
-        r"(?:(?:这|本|该|此)(?:次|趟|段)?)?"
+        rf"{scope}?"
         r"(?:我(?:自己|本人|个人)?|本人|自己|个人)(?:的)?"
         r"(?:行程|旅程|旅途|旅行|出行|事件)",
         normalized,
     ):
         return True
-    if re.fullmatch(rf"{event_noun}(?:属于|归属于|归){current_user}", normalized):
+    if re.fullmatch(
+        rf"{current_user}{scope}(?:的)?{event_noun}",
+        normalized,
+    ):
+        return True
+    if re.fullmatch(
+        rf"{scope}?{event_noun}(?:属于|归属于|归|是){current_user}(?:的)?",
+        normalized,
+    ):
         return True
     if re.fullmatch(
         rf"(?:属于|归属于|归){current_user}(?:的)?{event_noun}",
@@ -1277,7 +1286,7 @@ def _is_current_user_event_parenthetical(content: str) -> bool:
     ):
         return True
     if re.fullmatch(
-        rf"(?:(?:这|本|该|此)(?:次|趟|段))(?:为|是){current_user}(?:的)?{event_noun}",
+        rf"{scope}(?:为|是){current_user}(?:的)?{event_noun}",
         normalized,
     ):
         return True

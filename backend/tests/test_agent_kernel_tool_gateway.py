@@ -2533,6 +2533,26 @@ async def test_gateway_explicit_update_id_without_owner_candidate_never_dispatch
             {"title": "到达杭州"},
         ),
         (
+            "昨天到杭州了（该行程是我本人的），记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {"title": "到达杭州"},
+        ),
+        (
+            "昨天到杭州了（本次出行归我），记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {"title": "到达杭州"},
+        ),
+        (
+            "昨天到杭州了（我这次的行程），记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {"title": "到达杭州"},
+        ),
+        (
+            "昨天到杭州了（此次行程是我的），记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            {"title": "到达杭州"},
+        ),
+        (
             "昨天凌晨三点半到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             {
@@ -2856,6 +2876,30 @@ async def test_gateway_dispatches_supported_family_canonical_projection(
             {"title": "到达杭州"},
         ),
         (
+            "昨天到杭州了（该行程是我本人的），记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {"title": "到达杭州"},
+        ),
+        (
+            "昨天到杭州了（本次出行归我），记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {"title": "到达杭州"},
+        ),
+        (
+            "昨天到杭州了（我这次的行程），记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {"title": "到达杭州"},
+        ),
+        (
+            "昨天到杭州了（此次行程是我的），记录生活事件：到达杭州",
+            {"record_type": "event", "data": {"title": "到达杭州"}},
+            "/episodes/life-event",
+            {"title": "到达杭州"},
+        ),
+        (
             "昨天凌晨三点半到杭州了，记录生活事件：到达杭州",
             {"record_type": "event", "data": {"title": "到达杭州"}},
             "/episodes/life-event",
@@ -2983,6 +3027,7 @@ async def test_executor_ambiguous_related_event_times_never_post(
         ("舌尖溃疡ID是71昨天好了，修改记录", "resolved", -1),
         ("舌尖溃疡ID=71昨天好了，修改记录", "resolved", -1),
         ("舌尖溃疡ID号为71昨天好了，修改记录", "resolved", -1),
+        ("舌尖溃疡记录ID号为71昨天好了，修改记录", "resolved", -1),
         ("舌尖溃疡条目ID：71昨天好了，修改记录", "resolved", -1),
         ("舌尖溃疡疾病记录第71号昨天好了，修改记录", "resolved", -1),
         (
@@ -2994,6 +3039,8 @@ async def test_executor_ambiguous_related_event_times_never_post(
         ("昨天舌尖溃疡已经痊愈，修改记录", "resolved", -1),
         ("舌尖溃疡在昨天已经痊愈，修改记录", "resolved", -1),
         ("昨天我的舌尖溃疡已经痊愈，修改记录", "resolved", -1),
+        ("舌尖溃疡于昨日已经痊愈，修改记录", "resolved", -1),
+        ("舌尖溃疡昨天还没好，可今天已经痊愈，修改记录", "resolved", 0),
     ),
 )
 async def test_executor_lists_owner_illness_before_exact_resolution_update(
@@ -3364,6 +3411,41 @@ async def test_historical_illness_query_is_projected_to_turn_entity_and_window(
             {"dimension": "illness", "keyword": "能量代谢异常", "days": 90},
         ),
         (
+            "我想在过去半年查看脑梗记录",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        (
+            "在过去半年里脑梗有哪些记录",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        (
+            "请查脑梗在过去半年的记录",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        (
+            "劳驾帮我翻一下白癜风过去三个月的记录",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "白癜风", "days": 90},
+        ),
+        (
+            "请您替我调取近半年耳石症记录",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "耳石症", "days": 183},
+        ),
+        (
+            "方便的话帮我看看过去半年脑梗记录",
+            {"dimension": "illness"},
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        (
+            "过去半年记录里的脑梗有哪些",
+            {"dimension": "illness", "keyword": "感冒", "days": 7},
+            {"dimension": "illness", "keyword": "脑梗", "days": 183},
+        ),
+        (
             "能不能帮我查一下近两周脑梗历史",
             {"dimension": "illness"},
             {"dimension": "illness", "keyword": "脑梗", "days": 14},
@@ -3497,6 +3579,16 @@ async def test_historical_illness_query_projects_arbitrary_entity_and_year_windo
         "查询近半年偏头痛；痛风的记录",
         "查询近半年偏头痛+痛风的记录",
         "查询脑梗过去半年和痛风的记录",
+        "查询近半年偏头痛伴随痛风的记录",
+        "查询近半年偏头痛联合痛风的记录",
+        "查询近半年偏头痛&痛风的记录",
+        "查询近半年偏头痛|痛风的记录",
+        "查询近半年脑梗｜偏头疼的记录",
+        "查询近半年脑梗并伴偏头疼的记录",
+        "查询近半年偏头痛同时出现痛风的记录",
+        "查询近半年偏头痛共患痛风的记录",
+        "脑梗过去三个月的记录，痛风过去一个月的记录",
+        "过去三个月脑梗记录以及过去一年痛风记录",
     ),
 )
 async def test_multi_entity_illness_query_never_falls_back_to_model_scope(
@@ -3614,6 +3706,32 @@ async def test_non_illness_history_never_projects_to_illness(
         ),
         ("回顾过去一个月饮水历史", {"dimension": "water", "days": 30}),
         ("请给我找出最近半年的体重记录", {"dimension": "weight", "days": 183}),
+        (
+            "查询近一周每日步数数据记录",
+            {"dimension": "activity", "days": 7},
+        ),
+        (
+            "查询近一周静息心率记录",
+            {"dimension": "heart_rate", "days": 7},
+        ),
+        ("查询近一周HRV趋势记录", {"dimension": "hrv", "days": 7}),
+        (
+            "查询近一周夜间血氧趋势记录",
+            {"dimension": "spo2", "days": 7},
+        ),
+        (
+            "查询近一周身体电量记录",
+            {"dimension": "body_battery", "days": 7},
+        ),
+        (
+            "查询近一周补剂服用记录",
+            {"dimension": "supplements", "days": 7},
+        ),
+        ("查询近半年早餐记录", {"dimension": "diet", "days": 183}),
+        (
+            "查询近半年跑步训练记录",
+            {"dimension": "workout", "days": 183},
+        ),
     ),
 )
 async def test_non_illness_history_matching_dimension_remains_read_only(
