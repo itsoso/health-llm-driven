@@ -50,7 +50,7 @@ export default function ChatHeader({
   return (
     <View style={styles.headerWrap}>
       <View testID="chat-header-surface" style={styles.headerSurface}>
-        <XiaoBaAvatar size={30} />
+        <XiaoBaAvatar size={24} />
         <LlmModelPicker
           variant="header"
           currentLabel={headerLlmLabel}

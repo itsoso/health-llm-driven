@@ -4,6 +4,11 @@
 **Status:** Approved (方案 B：舒展易读)
 **Release target:** iOS 1.3.3
 
+**2026-08-08 follow-up:** The connected-device review found the 30pt header avatar
+and 24pt title still too visually dominant. The approved compact correction uses a
+24pt avatar, 21pt / 26pt “小巴” title, and 13pt chevron. The 44pt controls, colors,
+accessibility labels, and behavior remain unchanged.
+
 ## Problem
 
 The current chat screen gives the top chrome too much visual weight: the 28pt “小巴” title and three individually filled 44pt action circles dominate the first row. At the same time, the assistant identity inside the conversation is too quiet, so the hierarchy reverses where it matters. The task strip, utility rail, and composer also use slightly different visual densities.
@@ -24,8 +29,9 @@ Use a restrained, comfortable hierarchy:
 
 ### Header
 
-- `XiaoBaAvatar`: 30pt visual size.
-- “小巴”: 24pt / 30pt, weight 800. The model chevron becomes 15pt and stays vertically centered.
+- `XiaoBaAvatar`: 24pt visual size, preserving the brand mark without competing
+  with the page content.
+- “小巴”: 21pt / 26pt, weight 800. The model chevron is 13pt and stays vertically centered.
 - The row remains a single line with 16pt horizontal page padding.
 - New chat, history, and settings retain at least a 44×44pt effective hit target. Their visible controls become a lighter segmented toolbar instead of three heavy nested circles.
 - Use one outer paper-toned container, hairline border, 2pt internal padding, and consistent 18–19pt outline icons.

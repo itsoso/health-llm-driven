@@ -88,7 +88,7 @@ export default function LlmModelPicker({
             {savingModelId ? (
               <ActivityIndicator size="small" color={C.ink3} />
             ) : (
-              <Ionicons name="chevron-down" size={15} color={C.ink3} />
+              <Ionicons name="chevron-down" size={13} color={C.ink3} />
             )}
           </View>
         ) : (
@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
 });
 
 const txt = {
-  headerTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 24, fontWeight: '800', lineHeight: 30 } as TextStyle,
+  headerTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 21, fontWeight: '800', lineHeight: 26 } as TextStyle,
   triggerTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 15, fontWeight: '700' } as TextStyle,
   triggerModel: { fontFamily: revaFonts.sans, color: C.ink3, fontSize: 13, flexShrink: 1 } as TextStyle,
   sheetTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 17, fontWeight: '700' } as TextStyle,

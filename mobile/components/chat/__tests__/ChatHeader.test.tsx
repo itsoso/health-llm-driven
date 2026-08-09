@@ -23,8 +23,8 @@ describe('ChatHeader', () => {
 
     const avatarStyle = StyleSheet.flatten(getByLabelText('小巴形象').props.style);
     const titleStyle = StyleSheet.flatten(getByText('小巴').props.style);
-    expect(avatarStyle).toEqual(expect.objectContaining({ width: 30, height: 30 }));
-    expect(titleStyle).toEqual(expect.objectContaining({ fontSize: 24, lineHeight: 30 }));
+    expect(avatarStyle).toEqual(expect.objectContaining({ width: 24, height: 24 }));
+    expect(titleStyle).toEqual(expect.objectContaining({ fontSize: 21, lineHeight: 26 }));
   });
 
   it('keeps streaming state inside the active assistant turn instead of the header', () => {

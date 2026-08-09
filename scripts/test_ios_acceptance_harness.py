@@ -146,7 +146,15 @@ def test_latest_message_acceptance_checks_seeded_markdown_at_the_bottom() -> Non
 
     assert "testConversationOpensAtLatestSeededMessage" in source
     assert '"assistant-message-surface"' in source
-    assert 'assistantSurface.label.contains("## 今天优先完成两件事")' in source
+    assert 'label CONTAINS %@' in source
+    assert '"今天优先完成两件事"' in source
+    assert 'assistantSurface.label.contains("今天优先完成两件事")' in source
+
+
+def test_runner_disables_interactive_device_diagnostics() -> None:
+    runner = RUNNER.read_text(encoding="utf-8")
+
+    assert "-collect-test-diagnostics never" in runner
 
 
 def test_today_context_acceptance_matches_the_current_agent_native_surface() -> None:
