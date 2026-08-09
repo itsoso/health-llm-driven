@@ -1329,6 +1329,14 @@ remains the latest model evidence and performed zero database I/O. Static and
 governance checks plus two fresh independent reviews of the final exact commit
 remain mandatory before G4 may pass.
 
+Before final review, latest `origin/main` commit `db1faad7d` was merged as
+`fab1afdc4`. It changes only App Store Connect response handling and its script
+tests, with no overlap in the semantic-query boundary. On the merged tree, the
+44-case focused Gateway group passes 44/44 and the new upstream release-script
+tests pass 2/2. The worktree is clean after this evidence update, and both G4
+reviewers must inspect the resulting documentation commit SHA rather than the
+implementation or merge parent.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.
