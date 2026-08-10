@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | Build 256 已完成 EAS/ASC/TestFlight、精确 IPA、ASC 绑定、审核账号真实登录及物理 iPhone 6/6 安全自动子集；人工相机/照片草稿与冷启动持久化通过，但照片发送暴露 provider 流总时限缺口，Backend 修复已按 TDD 完成、待部署复验；语音/分享/健康写入与最终截图仍待完成，App Review 继续冻结 |
+| 当前阶段 | Build 256 已完成 EAS/ASC/TestFlight、精确 IPA、ASC 绑定、审核账号真实登录及物理 iPhone 6/6 安全自动子集；人工相机/照片草稿与冷启动持久化通过，照片发送 provider 流总时限修复已部署且生产健康闸通过，待同一 Build 真机终态复验；语音/分享/健康写入与最终截图仍待完成，App Review 继续冻结 |
 | 状态 | implementing |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -97,7 +97,7 @@
   - [x] T7.1 Build 242+ EAS Store Build / IPA / TestFlight（Build 245 已构建、上传、通过精确 IPA 二进制闸并进入内部 TestFlight）
   - [x] T7.2 紧凑聊天头部候选归档 / IPA / ASC 上传（Build 253 已完成本地 Xcode 正式归档、精确 IPA 闸和上传；Apple processing 尚待确认）
   - [x] T7.3 Build 254 本地 Xcode 候选 / ASC / TestFlight / 物理 iPhone 自动验收（6/6 PASS；因无 EAS Build ID，仅作功能与二进制证据，不替代最终 EAS 候选）
-  - [ ] T7.4 照片发送 provider 流总时限 Backend 修复 / 部署 / Build 256 复验（代码与本地回归已完成，部署和真机终态待完成）
+  - [ ] T7.4 照片发送 provider 流总时限 Backend 修复 / 部署 / Build 256 复验（代码、本地回归与生产部署已完成；真机终态待完成）
   - [ ] T8 精确 Build 真机与截图
   - [ ] T9 final-submit / App Review
   - [ ] T10 手动发布 / production G6
@@ -258,6 +258,7 @@
 - TestFlight processing：PASS。Build 241 已 `VALID` 并进入 `IN_BETA_TESTING`，未过期；EAS Build/Submit 均 `FINISHED`，版本、Build、runtime、source commit 与 fingerprint 一致。
 - Build 245 TestFlight processing：PASS。ASC API 只读复验 Build 245 为 `VALID`、`IN_BETA_TESTING`、未过期，外部状态 `READY_FOR_BETA_SUBMISSION`；EAS source/build/runtime 与精确 IPA 证据一致。
 - backend health：commit `f65c4055d` 已经正式部署；数据库备份、237 表恢复演练、站外加密归档、回滚 schema、精确 revision、runtime-only KB、Skills 22/22 与多轮健康度 60/60 PASS。审核密码轮换、秘密源对齐、生产重置、固定简报 live gate 及 `#727` 350ml 正常 API 恢复均 PASS；后端子闸完成。
+- 照片发送 provider 流总时限 Backend 部署：PASS。候选 `f229e46c2b85ffdef8ef6393e4e13da144887977` 的主干 CI `31350335613` 44/44 success；一次性 live-change 确认变量在 CI 终态后已删除并复证不存在。`./deploy.sh -b -y` exit 0：生产备份约 42MB（0600）、237 表恢复演练、站外 age 加密归档哈希/HMAC、旧版本 `db1faad7d` 回滚 schema、候选 202 表 schema、精确 revision、runtime-only KB guard/staged、Skills 22/22 和多轮健康度 60/60 均 PASS，运行时 feature flag 保持 false。独立部署后复查确认公开 health 的 API/PostgreSQL/Redis/Celery 全 healthy，Backend/Worker/Beat 均 active，远端工作树干净且 revision 精确匹配。
 - physical iPhone：设备已恢复连接并确认安装小巴 1.3.3（241）。自动子集第二轮 7 项中 6 PASS、1 FAIL；失败根因对应的生产固定会话新鲜度现已由重置及 live gate 修复，但必须在密码轮换和人工预登录后以不接收凭据的安全版自动子集复验。语音、相机与照片持久化、分享、健康写入/纠正/删除等人工项仍未完成，不能以历史 Build 240、模拟器或旧的部分通过替代。
 - evidence security：第二轮原始 Xcode 结果包记录了自动输入的审核凭据并含合成健康内容，不得作为发布证据或上传；仅保留本 Dossier 的非敏感计数与根因。审核密码已轮换并进入钥匙串/受控秘密源，代码整改和生产固定会话重置已完成；Build 242+ 上使用新密码人工预登录和安全版自动重验完成前，T8/G5 保持阻断。
 - Build 241 supersession：健康纠正原子性后端变更与 action-aware Mobile 回执均晚于 Build 241；该包不再是可提交候选。后续 IPA、TestFlight、真机与 ASC 证据必须全部绑定 Build 242+ 的同一 source commit，不得沿用 Build 241 的通过项代替。
@@ -269,8 +270,8 @@
 - 物理 iPhone UI 预验：开发签名的同源码 Build 253 已安装并启动；真机截图确认 24pt 头像、21/26 标题和 13pt 箭头形成紧凑品牌组，44pt 触控目标由源码/自动测试保持。安全自动子集 5/6：双冷启动登录态、草稿前后台保留、入口、Today、隐私与账号删除通过；固定审核简报用例失败，因为实际可访问层级中不存在预期的“今天优先完成两件事”消息。原始结果包含合成健康内容与测试草稿，只保留本地、不上传；最终须在受控审核账号重置后对 TestFlight 精确 Build 253 重跑，开发签名预验不替代 T8。
 - 本地原生预验：iOS 26.5 Release 模拟器构建、安装和启动 PASS；该产物为 development 变体且禁用本地 Sentry 符号上传，只证明当前原生工程可编译/启动，不替代 production Store Build、TestFlight、精确 commit/Build 绑定或 T8 物理真机证据。
 - Build 256 exact IPA / TestFlight / physical iPhone 自动子闸：PASS。真机确认安装 1.3.3（256）；审核账号真实登录在生产日志返回 200，随后首页、会话和时间线接口均为 200。首次安全自动子集 5/6 的唯一失败是人工使用后普通会话成为默认最新；受部署 revision/发布锁保护的审核演示数据重置恢复精确两条固定会话后，同一包复验 6/6 PASS、0 failure、0 skip，覆盖双冷启动登录态、固定会话、未发送草稿前后台保留、入口、Today 打开/关闭、隐私政策与账号删除入口。结果包只保留本机，不上传。
-- Build 256 人工相机 / 照片持久化子闸：PARTIAL PASS。系统相机、照片草稿和冷启动恢复已通过；发送后的助手终态因 Backend provider 流总时限缺口失败。修复已本地完成，但生产部署、终态、后续无 409 循环及再次冷启动回读尚未复验，因此该子闸仍 BLOCK。
-- **裁决**：BLOCK（范围已缩小）—— Build 256 的 EAS/IPA/ASC/TestFlight、真实登录、安全自动子闸及照片本地持久化均通过；仍须完成 Backend 修复部署和照片终态复验，并对同一包完成人工语音、分享、健康写入/纠正/删除及最终截图。完成前继续冻结 production OTA 和 App Review 提交。
+- Build 256 人工相机 / 照片持久化子闸：PARTIAL PASS。系统相机、照片草稿和冷启动恢复已通过；发送后的助手终态曾因 Backend provider 流总时限缺口失败。修复现已完成生产部署且健康闸全绿，但照片终态、后续无 409 循环及再次冷启动回读尚未在同一真机 Build 复验，因此该子闸仍 BLOCK。
+- **裁决**：BLOCK（范围已缩小）—— Build 256 的 EAS/IPA/ASC/TestFlight、真实登录、安全自动子闸、照片本地持久化及 Backend 修复部署均通过；仍须完成照片终态复验，并对同一包完成人工语音、分享、健康写入/纠正/删除及最终截图。完成前继续冻结 production OTA 和 App Review 提交。
 
 ## S7 · 上线验证
 
