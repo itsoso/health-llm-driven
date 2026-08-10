@@ -416,6 +416,11 @@ _TOOL_TIMEOUT_OVERRIDES: Dict[str, float] = {
     if spec.timeout_seconds != _TOOL_TIMEOUT_DEFAULT_S
 }
 
+# HTTP read timeout 只能限制相邻响应字节的空闲间隔；provider 若持续吐 reasoning / keepalive
+# 但永不结束，仍可一直占住 conversation。每次流式 provider 尝试另设 wall-clock 总预算：
+# 主 provider 超时后可用剩余 runtime 预算回退一次，fallback 自己也受同样边界保护。
+_LLM_STREAM_ATTEMPT_TIMEOUT_S = 120.0
+
 # 最终用户回复的 token 上限。健康养护/操作清单类回复常 >4000 token,
 # 旧值 4000 会把 Opus 4.7 的长回复硬截断(用户需手动点"继续")。
 # Opus 4.7 / GPT-5.5 / Gemini 3.1 均支持远高于此, 8000 覆盖绝大多数长方案。
@@ -15740,6 +15745,16 @@ class AgentExecutor:
             )
             return await fb.chat(**chat_kwargs)
 
+    @staticmethod
+    async def _iterate_provider_stream_with_deadline(
+        provider: Any,
+        stream_kwargs: Dict[str, Any],
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Bound complete stream iteration, not merely the idle time between bytes."""
+        async with asyncio.timeout(_LLM_STREAM_ATTEMPT_TIMEOUT_S):
+            async for event in provider.chat_stream(**stream_kwargs):
+                yield event
+
     async def _call_llm_stream(
         self, messages: List[Dict], tools: List[Dict],
     ) -> AsyncGenerator[Dict[str, Any], None]:
@@ -15834,11 +15849,22 @@ class AgentExecutor:
 
         emitted_content = False
         try:
-            async for evt in provider.chat_stream(**stream_kwargs):
+            async for evt in self._iterate_provider_stream_with_deadline(
+                provider,
+                stream_kwargs,
+            ):
                 if isinstance(evt, dict) and evt.get("type") == "content" and evt.get("text"):
                     emitted_content = True
                 yield evt
         except Exception as e:  # noqa: BLE001
+            if isinstance(e, TimeoutError):
+                logger.warning(
+                    "[agent_executor] provider stream total deadline exceeded "
+                    "timeout_s=%.0f provider=%s emitted_content=%s",
+                    _LLM_STREAM_ATTEMPT_TIMEOUT_S,
+                    self._last_provider_model_name,
+                    emitted_content,
+                )
             if emitted_content:
                 # 已经向用户发出部分内容 → 不能再切 provider 重发 (会重复)。
                 # 优雅收尾: 记日志 + 发一个带 error finish_reason 的事件让上层感知。
@@ -16077,10 +16103,20 @@ class AgentExecutor:
                 async for evt in self._result_to_stream_events(result):
                     yield evt
             else:
-                async for evt in fb.chat_stream(**stream_kwargs):
+                async for evt in self._iterate_provider_stream_with_deadline(
+                    fb,
+                    stream_kwargs,
+                ):
                     yield evt
         except Exception as e:  # noqa: BLE001
             # 回退也失败: 绝不把回合打死 — 发一个 error finish, 上层空回复重试链接管。
+            if isinstance(e, TimeoutError):
+                logger.warning(
+                    "[agent_executor] fallback stream total deadline exceeded "
+                    "timeout_s=%.0f provider=%s",
+                    _LLM_STREAM_ATTEMPT_TIMEOUT_S,
+                    getattr(fb, "model", None) or getattr(fb, "provider_name", None),
+                )
             logger.warning("[agent_executor] 稳定回退 provider 也失败: %s", e)
             yield {"type": "finish", "finish_reason": "error"}
 
