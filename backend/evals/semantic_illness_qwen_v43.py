@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-# Environment and network tripwires must be installed before application imports.
+# v43: environment and network tripwires must precede application imports.
 # ruff: noqa: E402
 
 import asyncio
+from datetime import datetime, timezone
 import json
 import os
 import socket
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,6 +19,25 @@ from dotenv import load_dotenv
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND_ROOT.parent
+EVALUATED_COMMIT = subprocess.check_output(
+    ["git", "rev-parse", "HEAD"],
+    cwd=REPO_ROOT,
+    text=True,
+).strip()
+EXPECTED_COMMIT = os.environ.get("SEMANTIC_EVAL_EXPECTED_COMMIT", "").strip()
+if not EXPECTED_COMMIT:
+    raise SystemExit("SEMANTIC_EVAL_EXPECTED_COMMIT is required")
+if EVALUATED_COMMIT != EXPECTED_COMMIT:
+    raise SystemExit(
+        f"candidate mismatch: expected {EXPECTED_COMMIT}, got {EVALUATED_COMMIT}"
+    )
+GIT_STATUS_BEFORE_RUN = subprocess.check_output(
+    ["git", "status", "--porcelain", "--untracked-files=all"],
+    cwd=REPO_ROOT,
+    text=True,
+)
+if GIT_STATUS_BEFORE_RUN:
+    raise SystemExit("semantic evaluation requires an exact clean candidate")
 ENV_FILE = os.environ.get("SEMANTIC_EVAL_ENV_FILE")
 load_dotenv(Path(ENV_FILE) if ENV_FILE else REPO_ROOT / ".env", override=False)
 os.environ["DATABASE_URL"] = "postgresql://semantic_eval:blocked@127.0.0.1:1/blocked"
@@ -516,7 +537,107 @@ CASES = (
     mutation("v42_delete_8704", "将本人病历记录8704清除", "illness"),
 )
 
-assert len(CASES) == 179
+V43_PREFIXES = (
+    "MIA2显微镜下多血管炎",
+    "LI-1显微镜下多血管炎",
+    "ANA::1显微镜下多血管炎",
+    "API2显微镜下多血管炎",
+    "CACHE-1显微镜下多血管炎",
+    "R2D2显微镜下多血管炎",
+    "MIA2痛风",
+    "HTTP2痛风",
+    "MODEL7脑膜炎",
+)
+V43_NON_AUTHORIZING_READS = (
+    "查询我的痛风记录，先放一放",
+    "查询我的痛风记录，晚点再说",
+    "查询我的痛风记录，先等等",
+    "查询我的痛风记录，暂时不用",
+    "查询我的痛风记录，回头再说",
+    "查询我的痛风记录已经做完了",
+    "我的痛风记录查完了",
+    "查询我的痛风记录早就结束了",
+    "查询我的痛风记录刚完成",
+    "查询我的痛风记录是测试用例",
+    "查询我的痛风记录仅供演示",
+    "查询我的痛风记录只是为了测试",
+    "查询我的痛风记录是文档里的命令",
+    "查询我的痛风记录的话会怎么样",
+    "查询我的痛风记录会不会有结果",
+    "查询我的痛风记录是假设，不要执行",
+    "查询我的痛风记录？不，这是测试",
+    "查询我的痛风记录是反例",
+    "查询我的痛风记录是否安全",
+)
+V43_REVIEWED_BIOMEDICAL_ENTITIES = (
+    "ALK融合阳性肺癌",
+    "EGFR-L858R阳性肺腺癌",
+    "ROS1融合阳性肺癌",
+    "RET融合阳性甲状腺癌",
+    "JAK2-V617F阳性真性红细胞增多症",
+    "CALR外显子9突变骨髓增殖性肿瘤",
+    "FGFR3融合阳性膀胱癌",
+    "IDH1-R132H阳性胶质瘤",
+    "H3K27M弥漫性中线胶质瘤",
+    "NPM1突变急性髓系白血病",
+    "FLT3-ITD阳性急性髓系白血病",
+    "BRCA1相关遗传性乳腺癌",
+    "LMNA相关扩张型心肌病",
+    "SCN5A相关Brugada综合征",
+    "TSC1相关结节性硬化症",
+    "HTT-CAG重复扩增亨廷顿病",
+    "SMN1相关脊髓性肌萎缩症",
+    "ATP7B相关威尔逊病",
+    "PKD1相关常染色体显性多囊肾病",
+    "anti-GBM抗体病",
+    "AQP4-IgG阳性视神经脊髓炎谱系病",
+    "NMOSD",
+    "Duchenne型肌营养不良",
+    "MYH7相关肥厚型心肌病",
+    "KCNQ1相关长QT综合征",
+    "RYR1相关恶性高热易感症",
+    "ABCD1相关X连锁肾上腺脑白质营养不良",
+    "COL4A5相关Alport综合征",
+    "VHL相关肿瘤综合征",
+    "MEN2A型多发性内分泌腺瘤病",
+    "APOL1相关肾病",
+    "BRAF-V600E阳性黑色素瘤",
+    "FBN1相关马凡综合征",
+    "GBA1相关帕金森病",
+    "HLA-B51相关Behçet病",
+)
+CASES = CASES + tuple(
+    blocked_read(f"v43_prefix_read_{index}", f"查询{entity}记录")
+    for index, entity in enumerate(V43_PREFIXES, 1)
+) + tuple(
+    blocked_manage(f"v43_prefix_list_{index}", f"列出{entity}病史")
+    for index, entity in enumerate(V43_PREFIXES, 1)
+) + tuple(
+    blocked_write(f"v43_prefix_write_{index}", f"记录疾病{entity}", entity)
+    for index, entity in enumerate(V43_PREFIXES, 1)
+) + tuple(
+    blocked_read(f"v43_nonauth_read_{index}", text)
+    for index, text in enumerate(V43_NON_AUTHORIZING_READS, 1)
+) + tuple(
+    blocked_manage(f"v43_nonauth_list_{index}", text)
+    for index, text in enumerate(V43_NON_AUTHORIZING_READS, 1)
+) + tuple(
+    read(f"v43_biomedical_{index}", f"查询我的{entity}记录", entity)
+    for index, entity in enumerate(V43_REVIEWED_BIOMEDICAL_ENTITIES, 1)
+) + (
+    read(
+        "v43_restart_after_completed",
+        "前一个查询已经完成；现在查询我的房颤记录",
+        "房颤",
+    ),
+    read(
+        "v43_restart_after_deferred",
+        "明天再查痛风记录，现在先查我的房颤记录",
+        "房颤",
+    ),
+)
+
+assert len(CASES) == 281
 
 
 base_host = urlparse(str(settings.tokenplan_base_url)).hostname
@@ -775,23 +896,40 @@ async def main() -> None:
             f"calls={','.join(result['model_calls'])} abstained={result['model_abstained']} "
             f"reasons={','.join(result['reasons'])}"
         )
-    print(
-        json.dumps(
-            {
-                "model": "qwen3.7-max",
-                "cases_passed": len(results) - len(failures),
-                "cases_total": len(results),
-                "route_evaluations": len(results) * 2,
-                "database_attempts": database["attempts"],
-                "provider_calls": len(results),
-                "allowed_socket_connections": network["allowed_connections"],
-                "unexpected_network_blocked": network["blocked_unexpected"],
-                "failures": [result["label"] for result in failures],
-            },
-            ensure_ascii=False,
-            sort_keys=True,
+    summary = {
+        "model": "qwen3.7-max",
+        "cases_passed": len(results) - len(failures),
+        "cases_total": len(results),
+        "route_evaluations": len(results) * 2,
+        "database_connection_attempts": database["attempts"],
+        "provider_calls": len(results),
+        "allowed_socket_connections": network["allowed_connections"],
+        "unexpected_network_blocked": network["blocked_unexpected"],
+        "failures": [result["label"] for result in failures],
+    }
+    print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
+    result_path_value = os.environ.get("SEMANTIC_EVAL_RESULT_PATH", "").strip()
+    if result_path_value:
+        result_path = Path(result_path_value)
+        if not result_path.is_absolute():
+            result_path = REPO_ROOT / result_path
+        artifact = {
+            "schema_version": 2,
+            "evaluator": str(Path(__file__).relative_to(REPO_ROOT)),
+            "evaluator_revision": "v43",
+            "candidate_commit": EVALUATED_COMMIT,
+            "expected_commit": EXPECTED_COMMIT,
+            "git_clean_before_run": not GIT_STATUS_BEFORE_RUN,
+            "evaluated_at": datetime.now(timezone.utc).isoformat(),
+            "dispatch_adapter": "synthetic; policy path is real, persistence is blocked",
+            "network_allowlist": [base_host],
+            "summary": summary,
+            "cases": results,
+        }
+        result_path.write_text(
+            json.dumps(artifact, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
         )
-    )
     if failures or database["attempts"] or network["blocked_unexpected"]:
         raise SystemExit(1)
 

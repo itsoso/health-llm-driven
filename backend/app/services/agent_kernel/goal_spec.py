@@ -127,7 +127,7 @@ SIMPLE_ILLNESS_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 SIMPLE_ILLNESS_ACRONYMS = frozenset({"sle"})
-GOAL_SPEC_CONTRACT_VERSION = "goal-spec-v42"
+GOAL_SPEC_CONTRACT_VERSION = "goal-spec-v43"
 HEALTH_MANAGE_MUTATION_COMMAND_RE = re.compile(
     r"(?:"
     r"^(?:请(?:你|您)?|麻烦(?:你|您)?|请帮我|帮我|给我|替我)?"
@@ -632,18 +632,12 @@ def _format_health_manage_mutation_prompt(goal: GoalSpec) -> str:
     )
 
 
-GOAL_SPEC_AUTHORIZATION_FUNCTIONS = tuple(
-    sorted(
-        set(authorization_module_behavior_names(globals(), __name__))
-        | {
-            "compile_goal_spec",
-            "explicit_whole_record_delete_target",
-            "extract_owned_illness_entity",
-            "has_explicit_authorizing_update_request",
-            "has_mixed_write_polarity",
-            "is_explicit_write_cancellation",
-        }
-    )
+GOAL_SPEC_IMPORTED_AUTHORIZATION_FUNCTIONS = (
+    "explicit_whole_record_delete_target",
+    "extract_owned_illness_entity",
+    "has_explicit_authorizing_update_request",
+    "has_mixed_write_polarity",
+    "is_explicit_write_cancellation",
 )
 
 
@@ -653,7 +647,13 @@ def goal_spec_contract_payload() -> dict[str, str]:
         "version": GOAL_SPEC_CONTRACT_VERSION,
         "grammar_digest": authorization_grammar_digest(globals()),
         "behavior_digest": authorization_behavior_digest(
-            globals(), GOAL_SPEC_AUTHORIZATION_FUNCTIONS
+            globals(),
+            tuple(
+                sorted(
+                    set(authorization_module_behavior_names(globals(), __name__))
+                    | set(GOAL_SPEC_IMPORTED_AUTHORIZATION_FUNCTIONS)
+                )
+            ),
         ),
         "update_authorization_grammar_digest": authorization_grammar_digest(
             vars(write_intent_scope_module)

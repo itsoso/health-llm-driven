@@ -7908,7 +7908,7 @@ async def test_execute_tool_blocks_delete_when_text_does_not_bind_target(
         ("删除 meal 记录 718", "diet"),
     ),
 )
-async def test_execute_tool_dispatches_closed_grammar_record_delete(
+async def test_execute_tool_blocks_exact_delete_without_owner_lookup(
     db,
     monkeypatch,
     message,
@@ -7917,6 +7917,54 @@ async def test_execute_tool_dispatches_closed_grammar_record_delete(
     executor = AgentExecutor(db)
     executor._current_user_id = 1
     executor._current_turn_user_message = message
+
+    async def should_not_run(*args, **kwargs):
+        raise AssertionError("_exec_health_manage should not run")
+
+    monkeypatch.setattr(executor, "_exec_health_manage", should_not_run)
+
+    result = await executor._execute_tool(
+        "health_manage",
+        {"record_type": record_type, "operation": "delete", "record_id": 718},
+        None,
+    )
+
+    payload = json.loads(result)
+    assert payload["status"] == "rejected"
+    assert payload["dispatch_started"] is False
+    assert payload["error_code"] == "delete_requires_exact_target_evidence"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "record_type"),
+    (
+        ("删除饮水记录 718", "water"),
+        ("请帮我删除体重记录 718", "weight"),
+        ("把饮食记录 718 删了", "diet"),
+        ("请您删除用药记录 718", "medication"),
+        ("删除 meal 记录 718", "diet"),
+    ),
+)
+async def test_execute_tool_dispatches_closed_grammar_record_delete_after_owner_lookup(
+    db,
+    monkeypatch,
+    message,
+    record_type,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = message
+    executor._start_agent_kernel_turn(
+        user_id=1,
+        message=message,
+        channel="chat",
+    )
+    executor._capture_owner_scoped_manage_list_reference(
+        "health_manage",
+        {"record_type": record_type, "operation": "list"},
+        json.dumps([{"id": 718}], ensure_ascii=False),
+    )
     calls = []
 
     monkeypatch.setattr(

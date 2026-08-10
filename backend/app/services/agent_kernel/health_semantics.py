@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v4"
+HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v5"
 
 
 @dataclass(frozen=True)
@@ -247,6 +247,41 @@ CANONICAL_ILLNESS_ENTITIES = frozenset(
         "抗gad65自身免疫性脑炎",
         "lamp2抗体相关坏死性肾小球肾炎",
         "m.3243a>g相关melas综合征",
+        "alk融合阳性肺癌",
+        "egfr-l858r阳性肺腺癌",
+        "ros1融合阳性肺癌",
+        "ret融合阳性甲状腺癌",
+        "jak2-v617f阳性真性红细胞增多症",
+        "calr外显子9突变骨髓增殖性肿瘤",
+        "fgfr3融合阳性膀胱癌",
+        "idh1-r132h阳性胶质瘤",
+        "h3k27m弥漫性中线胶质瘤",
+        "npm1突变急性髓系白血病",
+        "flt3-itd阳性急性髓系白血病",
+        "brca1相关遗传性乳腺癌",
+        "lmna相关扩张型心肌病",
+        "scn5a相关brugada综合征",
+        "tsc1相关结节性硬化症",
+        "htt-cag重复扩增亨廷顿病",
+        "smn1相关脊髓性肌萎缩症",
+        "atp7b相关威尔逊病",
+        "pkd1相关常染色体显性多囊肾病",
+        "anti-gbm抗体病",
+        "aqp4-igg阳性视神经脊髓炎谱系病",
+        "nmosd",
+        "duchenne型肌营养不良",
+        "myh7相关肥厚型心肌病",
+        "kcnq1相关长qt综合征",
+        "ryr1相关恶性高热易感症",
+        "abcd1相关x连锁肾上腺脑白质营养不良",
+        "col4a5相关alport综合征",
+        "vhl相关肿瘤综合征",
+        "men2a型多发性内分泌腺瘤病",
+        "apol1相关肾病",
+        "braf-v600e阳性黑色素瘤",
+        "fbn1相关马凡综合征",
+        "gba1相关帕金森病",
+        "hla-b51相关behçet病",
     }
 )
 
@@ -606,7 +641,10 @@ READ_CANCELLATION_RE = re.compile(
 
 READ_TRAILING_WITHDRAWAL_RE = re.compile(
     r"(?:先别继续(?:查|看|查询|查看)?了|暂且作罢|先缓一缓|先停一停|"
-    r"暂时别继续|先不要继续|到这儿(?:吧)?)[，,。.!！?？\s]*$",
+    r"暂时别继续|先不要继续|到这儿(?:吧)?|先放一放|先搁着|先等等|"
+    r"暂时不用|回头再说|晚点再说|稍后再说|不要执行|别执行|不执行|"
+    r"打住|叫停|作罢|算了|停止|停下|中止|终止)"
+    r"[，,。.!！?？\s]*$",
     re.IGNORECASE,
 )
 READ_DEFERRED_ACTION_RE = re.compile(
@@ -616,12 +654,15 @@ READ_DEFERRED_ACTION_RE = re.compile(
 )
 READ_NON_AUTHORIZING_RE = re.compile(
     r"(?:"
-    r"(?:已经|已)(?:查询|查找|查看|搜索|检索|翻看|调取|打开|查|看)?"
-    r"(?:完成|结束)(?:了)?|"
-    r"这(?:件事|次查询|次查看)(?:已经|已)?(?:完成|结束)(?:了)?|"
-    r"(?:只是|仅是|不过是)(?:一个|一句)?(?:示例|例子|演示)|"
+    r"(?:(?:已经|已|早就|刚)(?:查询|查找|查看|搜索|检索|翻看|调取|打开|查|看)?"
+    r"(?:完成|结束|做完|查完|搞定)(?:了)?|"
+    r"(?:查询|查找|查看|搜索|检索|翻看|调取|打开|查|看)(?:完|完成|结束|做完)(?:了)?)|"
+    r"这(?:件事|次查询|次查看)(?:已经|已|早就|刚)?(?:完成|结束|做完|搞定)(?:了)?|"
+    r"(?:只是|仅是|不过是|只是为了|仅供|是)(?:一个|一句|为了)?"
+    r"(?:示例|例子|演示|测试|测试用例|反例|假设|教程|文档里的命令)|"
     r"(?:这句(?:话)?|这个指令|该指令)(?:来自|出自)|"
-    r"会(?:发生什么|怎样|如何|有什么(?:结果|影响)?)"
+    r"(?:的话)?会(?:不会)?(?:发生什么|怎样|怎么样|如何|有(?:什么)?(?:结果|影响)?)|"
+    r"是否安全"
     r")",
     re.IGNORECASE,
 )
@@ -659,7 +700,13 @@ EXACT_MEDICAL_EXAM_ENTITY_RE = re.compile(
     re.IGNORECASE,
 )
 _READ_SCOPE_BOUNDARY_RE = re.compile(
-    r"(?:[\n\r，,；;。.!！?？、]|但|不过|然而|而是|却|可是|然后|改为|改查)"
+    r"(?:[\n\r，,；;。!！?？、]|(?<!\d)\.(?!\d)|"
+    r"但|不过|然而|而是|却|可是|然后|改为)"
+)
+READ_ACT_LEADING_SCAFFOLD_RE = re.compile(
+    r"(?:(?:请(?:你|您)?|麻烦(?:你|您)?|现在|马上|立即|先|再|仅|只|"
+    r"还是|接着)\s*)*",
+    re.IGNORECASE,
 )
 
 
@@ -675,36 +722,84 @@ def _illness_lookup_key(value: str) -> str:
 
 
 def resolve_health_read_act(text: str) -> HealthReadActResolution:
-    """Resolve cancellation and a later replacement read as one speech act."""
+    """Resolve read authority clause by clause, with later clauses winning."""
     normalized = str(text or "").strip()
-    has_read_verb = has_positive_health_read_verb(normalized)
-    if has_read_verb and READ_NON_AUTHORIZING_RE.search(normalized):
+    if not normalized:
+        return HealthReadActResolution("none")
+
+    clause_spans: list[tuple[int, int]] = []
+    cursor = 0
+    for boundary in _READ_SCOPE_BOUNDARY_RE.finditer(normalized):
+        if normalized[cursor : boundary.start()].strip("，,。.!！；;：:?？ "):
+            clause_spans.append((cursor, boundary.start()))
+        cursor = boundary.end()
+    if normalized[cursor:].strip("，,。.!！；;：:?？ "):
+        clause_spans.append((cursor, len(normalized)))
+
+    status = "none"
+    active_start: int | None = None
+    authority_was_reset = False
+    saw_read = False
+    for clause_start, clause_end in clause_spans:
+        clause = normalized[clause_start:clause_end].strip("，,。.!！；;：:?？ ")
+        read_match = next(iter(READ_VERB_RE.finditer(clause)), None)
+        has_read = read_match is not None and has_positive_health_read_verb(clause)
+        saw_read = saw_read or has_read
+        cancelled = bool(
+            READ_CANCELLATION_RE.search(clause)
+            or NEGATED_HEALTH_ACTION_RE.search(clause)
+            or READ_TRAILING_WITHDRAWAL_RE.search(clause)
+        )
+        non_authorizing = READ_NON_AUTHORIZING_RE.search(clause) is not None
+        deferred = READ_DEFERRED_ACTION_RE.search(clause) is not None
+
+        if has_read:
+            if cancelled:
+                status = "cancelled"
+                active_start = None
+                authority_was_reset = True
+            elif non_authorizing:
+                status = "none"
+                active_start = None
+                authority_was_reset = True
+            elif deferred:
+                if status != "cancelled":
+                    status = "none"
+                active_start = None
+                authority_was_reset = True
+            else:
+                if status != "active":
+                    # Preserve leading time/object scope for the first active
+                    # read. After a cancellation/completion/deferment, begin at
+                    # the later clause that explicitly restarts authority. A
+                    # pure discourse prefix ("现在再查") is not part of the
+                    # entity scope; object-before-verb text ("把 MRI 发我") is.
+                    if authority_was_reset and READ_ACT_LEADING_SCAFFOLD_RE.fullmatch(
+                        clause[: read_match.start()]
+                    ):
+                        active_start = clause_start + read_match.start()
+                    else:
+                        active_start = clause_start if authority_was_reset else 0
+                status = "active"
+            continue
+
+        if cancelled:
+            status = "cancelled"
+            active_start = None
+            authority_was_reset = True
+        elif non_authorizing or READ_TRAILING_WITHDRAWAL_RE.search(clause):
+            status = "none"
+            active_start = None
+            authority_was_reset = True
+
+    if status == "none" and not saw_read:
         return HealthReadActResolution("none", normalized)
-    cancellations = tuple(READ_CANCELLATION_RE.finditer(normalized)) + tuple(
-        NEGATED_HEALTH_ACTION_RE.finditer(normalized)
+    active_clause = (
+        normalized[active_start:].strip("，,。.!！；;：:?？ ")
+        if status == "active" and active_start is not None
+        else ""
     )
-    trailing_withdrawal = READ_TRAILING_WITHDRAWAL_RE.search(normalized)
-    if has_read_verb and trailing_withdrawal is not None:
-        cancellations += (trailing_withdrawal,)
-    if not cancellations:
-        if READ_DEFERRED_ACTION_RE.search(normalized):
-            return HealthReadActResolution("none", normalized)
-        if has_read_verb:
-            return HealthReadActResolution("active", normalized)
-        return HealthReadActResolution("none", normalized)
-    last_cancellation = max(cancellations, key=lambda match: match.end())
-    suffix = normalized[last_cancellation.end() :]
-    for positive in READ_VERB_RE.finditer(suffix):
-        preceding = suffix[: positive.start()]
-        if (
-            _READ_SCOPE_BOUNDARY_RE.search(preceding)
-            and READ_DEFERRED_ACTION_RE.search(suffix) is None
-        ):
-            return HealthReadActResolution(
-                "active",
-                suffix[positive.start() :].strip("，,。.!！；;：:?？ "),
-            )
-    return HealthReadActResolution("cancelled")
+    return HealthReadActResolution(status, active_clause)
 
 
 def has_positive_health_read_verb(text: str) -> bool:
@@ -808,9 +903,7 @@ def resolve_illness_entity(value: str) -> HealthEntityResolution:
         prefix = candidate[: len(candidate) - len(suffix)].strip("-· ")
         if not prefix:
             continue
-        if CLINICAL_MODIFIER_RE.fullmatch(prefix) or BIOMEDICAL_MODIFIER_RE.fullmatch(
-            prefix
-        ):
+        if CLINICAL_MODIFIER_RE.fullmatch(prefix):
             return HealthEntityResolution("exact", candidate)
         return HealthEntityResolution("nonself")
     if re.fullmatch(r"[A-Z][A-Z0-9-]{1,15}", candidate):

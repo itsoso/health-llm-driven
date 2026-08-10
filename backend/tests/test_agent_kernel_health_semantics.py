@@ -172,7 +172,7 @@ def test_v39_medical_exam_resolution_rejects_unpunctuated_nonself_subject(text):
 def test_v39_health_semantics_contract_is_versioned_and_content_digested():
     payload = semantics.health_semantics_contract_payload()
 
-    assert payload["version"] == "health-semantics-v4"
+    assert payload["version"] == "health-semantics-v5"
     assert re.fullmatch(r"[0-9a-f]{64}", payload["content_digest"])
 
 
@@ -403,6 +403,24 @@ def test_v42_ascii_owner_or_system_prefix_is_not_open_illness_authority(entity):
 @pytest.mark.parametrize(
     "entity",
     (
+        "MIA2显微镜下多血管炎",
+        "LI-1显微镜下多血管炎",
+        "ANA::1显微镜下多血管炎",
+        "API2显微镜下多血管炎",
+        "CACHE-1显微镜下多血管炎",
+        "R2D2显微镜下多血管炎",
+        "MIA2痛风",
+        "HTTP2痛风",
+        "MODEL7脑膜炎",
+    ),
+)
+def test_v43_biomedical_shaped_owner_prefix_cannot_borrow_disease_tail(entity):
+    assert semantics.resolve_illness_entity(entity).status != "exact"
+
+
+@pytest.mark.parametrize(
+    "entity",
+    (
         "显微镜下多血管炎",
         "HLA-B27相关脊柱关节炎",
         "MOG抗体相关疾病",
@@ -441,6 +459,50 @@ def test_v42_versioned_biomedical_terminology_is_exact(entity):
 
 
 @pytest.mark.parametrize(
+    "entity",
+    (
+        "ALK融合阳性肺癌",
+        "EGFR-L858R阳性肺腺癌",
+        "ROS1融合阳性肺癌",
+        "RET融合阳性甲状腺癌",
+        "JAK2-V617F阳性真性红细胞增多症",
+        "CALR外显子9突变骨髓增殖性肿瘤",
+        "FGFR3融合阳性膀胱癌",
+        "IDH1-R132H阳性胶质瘤",
+        "H3K27M弥漫性中线胶质瘤",
+        "NPM1突变急性髓系白血病",
+        "FLT3-ITD阳性急性髓系白血病",
+        "BRCA1相关遗传性乳腺癌",
+        "LMNA相关扩张型心肌病",
+        "SCN5A相关Brugada综合征",
+        "TSC1相关结节性硬化症",
+        "HTT-CAG重复扩增亨廷顿病",
+        "SMN1相关脊髓性肌萎缩症",
+        "ATP7B相关威尔逊病",
+        "PKD1相关常染色体显性多囊肾病",
+        "anti-GBM抗体病",
+        "AQP4-IgG阳性视神经脊髓炎谱系病",
+        "NMOSD",
+        "Duchenne型肌营养不良",
+        "MYH7相关肥厚型心肌病",
+        "KCNQ1相关长QT综合征",
+        "RYR1相关恶性高热易感症",
+        "ABCD1相关X连锁肾上腺脑白质营养不良",
+        "COL4A5相关Alport综合征",
+        "VHL相关肿瘤综合征",
+        "MEN2A型多发性内分泌腺瘤病",
+        "APOL1相关肾病",
+        "BRAF-V600E阳性黑色素瘤",
+        "FBN1相关马凡综合征",
+        "GBA1相关帕金森病",
+        "HLA-B51相关Behçet病",
+    ),
+)
+def test_v43_versioned_biomedical_registry_accepts_reviewed_entities(entity):
+    assert semantics.resolve_illness_entity(entity).status == "exact"
+
+
+@pytest.mark.parametrize(
     "text",
     (
         "先别查老师的痛风；明天再查我的房颤记录",
@@ -468,6 +530,52 @@ def test_v42_deferred_or_trailing_cancelled_read_has_no_active_clause(text):
 )
 def test_v42_completed_reported_or_hypothetical_read_is_not_active(text):
     assert semantics.resolve_health_read_act(text).status == "none"
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "查询我的痛风记录，先放一放",
+        "查询我的痛风记录，晚点再说",
+        "查询我的痛风记录，先等等",
+        "查询我的痛风记录，暂时不用",
+        "查询我的痛风记录，回头再说",
+        "查询我的痛风记录已经做完了",
+        "我的痛风记录查完了",
+        "查询我的痛风记录早就结束了",
+        "查询我的痛风记录刚完成",
+        "查询我的痛风记录是测试用例",
+        "查询我的痛风记录仅供演示",
+        "查询我的痛风记录只是为了测试",
+        "查询我的痛风记录是文档里的命令",
+        "查询我的痛风记录的话会怎么样",
+        "查询我的痛风记录会不会有结果",
+        "查询我的痛风记录是假设，不要执行",
+        "查询我的痛风记录？不，这是测试",
+        "查询我的痛风记录是反例",
+        "查询我的痛风记录是否安全",
+    ),
+)
+def test_v43_non_authorizing_read_language_has_no_active_clause(text):
+    assert semantics.resolve_health_read_act(text).status != "active"
+    assert semantics.active_health_read_clause(text) == ""
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    (
+        ("前一个查询已经完成；现在查询我的房颤记录", "查询我的房颤记录"),
+        ("明天再查痛风记录，现在先查我的房颤记录", "查我的房颤记录"),
+    ),
+)
+def test_v43_later_active_read_survives_prior_completed_or_deferred_clause(
+    text,
+    expected,
+):
+    resolution = semantics.resolve_health_read_act(text)
+
+    assert resolution.status == "active"
+    assert resolution.active_clause == expected
 
 
 def test_v42_semantic_digest_is_stable_after_authorization_execution():

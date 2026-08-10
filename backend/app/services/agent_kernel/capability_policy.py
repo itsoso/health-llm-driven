@@ -92,7 +92,7 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v42"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v43"
 _HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v31"
 _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v24"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
@@ -570,7 +570,7 @@ _SEVERITY_TARGET_RE = re.compile(
     r"(?:严重程度|严重度|程度|强度)?\s*(?P<value>10|[1-9])\s*"
     r"(?:分(?!钟)|级|/\s*10)"
 )
-_WHOLE_RECORD_DELETE_EVIDENCE_VERSION = "record-delete-evidence-v3"
+_WHOLE_RECORD_DELETE_EVIDENCE_VERSION = "record-delete-evidence-v4"
 _HEALTH_MANAGE_CANONICAL_RECORD_TYPES = frozenset(
     {
         "diet",
@@ -831,6 +831,7 @@ def _whole_record_delete_evidence(
 
 
 def _delete_evidence_authorizes_request(
+    snapshot: TurnSnapshot,
     evidence: _WholeRecordDeleteEvidence | None,
     args: dict[str, Any],
 ) -> bool:
@@ -840,7 +841,28 @@ def _delete_evidence_authorizes_request(
     requested_id = canonical_health_manage_record_id(args.get("record_id"))
     if requested_type is None or requested_id is None:
         return False
-    return evidence.record_type == requested_type and evidence.record_id == requested_id
+    if evidence.record_type != requested_type or evidence.record_id != requested_id:
+        return False
+    return any(
+        canonical_health_manage_record_id(record.get("id", record.get("record_id")))
+        == requested_id
+        for record in _owner_scoped_manage_list_records(snapshot, requested_type)
+    )
+
+
+def _delete_evidence_matches_request(
+    evidence: _WholeRecordDeleteEvidence | None,
+    args: dict[str, Any],
+) -> bool:
+    """Return exact user-text/argument identity without granting owner authority."""
+    if evidence is None or evidence.target_kind != "exact_record":
+        return False
+    return (
+        evidence.record_type
+        == canonical_health_manage_record_type(args.get("record_type"))
+        and evidence.record_id
+        == canonical_health_manage_record_id(args.get("record_id"))
+    )
 
 
 def _authorized_health_manage_update_args(
@@ -2106,11 +2128,21 @@ def _owner_scoped_manage_list_records(
     return []
 
 
-CAPABILITY_AUTHORIZATION_FUNCTIONS = tuple(
-    sorted(
-        set(authorization_module_behavior_names(globals(), __name__))
-        | {"decide_tool_capability"}
-    )
+CAPABILITY_IMPORTED_AUTHORIZATION_FUNCTIONS = (
+    "active_health_read_clause",
+    "extract_owned_illness_entity",
+    "has_explicit_health_read_request",
+    "health_read_cancelled",
+    "illness_entity_has_medical_semantics",
+    "illness_read_has_unowned_subject",
+    "illness_target_is_unowned_or_referential",
+    "is_explicit_aigc_media_provider_veto",
+    "is_explicit_write_cancellation",
+    "is_unresolved_health_reference",
+    "normalize_health_query_args",
+    "resolve_health_read_act",
+    "resolve_medical_exam_query",
+    "simple_illness_target",
 )
 
 
@@ -2138,7 +2170,13 @@ def capability_policy_contract_payload() -> dict[str, Any]:
         "goal_spec": goal_spec_contract_payload(),
         "authorization_grammar_digest": authorization_grammar_digest(globals()),
         "authorization_behavior_digest": authorization_behavior_digest(
-            globals(), CAPABILITY_AUTHORIZATION_FUNCTIONS
+            globals(),
+            tuple(
+                sorted(
+                    set(authorization_module_behavior_names(globals(), __name__))
+                    | set(CAPABILITY_IMPORTED_AUTHORIZATION_FUNCTIONS)
+                )
+            ),
         ),
         "recipe_record_types": sorted(RECIPE_REPLAY_ALLOWED_RECORD_TYPES),
         "recipe_record_type_aliases": dict(sorted(_RECIPE_RECORD_TYPE_ALIASES.items())),
@@ -2686,6 +2724,7 @@ def decide_tool_capability(
         delete_authorized = (
             operation == "delete"
             and _delete_evidence_authorizes_request(
+                snapshot,
                 _whole_record_delete_evidence(snapshot.envelope.text),
                 args,
             )
@@ -2708,7 +2747,14 @@ def decide_tool_capability(
             # their more specific policy reasons below.
             return _decision(
                 "block",
-                "delete_requires_explicit_whole_record_intent",
+                (
+                    "delete_requires_exact_target_evidence"
+                    if _delete_evidence_matches_request(
+                        _whole_record_delete_evidence(snapshot.envelope.text),
+                        args,
+                    )
+                    else "delete_requires_explicit_whole_record_intent"
+                ),
                 tool_name,
                 args,
                 receipt_required=True,

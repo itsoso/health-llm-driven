@@ -10,6 +10,7 @@ import pytest
 
 from app.services.agent_kernel import capability_policy as capability_policy_module
 from app.services.agent_kernel import goal_spec as goal_spec_module
+from app.services.agent_kernel import health_semantics as semantics
 from app.services import write_intent_scope as write_intent_scope_module
 from app.services.agent_kernel.capability_policy import (
     bind_server_authorized_manage_lookup,
@@ -2536,8 +2537,17 @@ def test_read_turn_blocks_health_manage_update():
 
 
 def test_mutation_turn_allows_health_manage_delete_with_receipt():
-    decision = decide_tool_capability(
+    snapshot = replace(
         _snapshot("删除饮食记录 1"),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={"record_type": "diet", "records": ({"id": 1},)},
+            ),
+        ),
+    )
+    decision = decide_tool_capability(
+        snapshot,
         _request(
             "health_manage",
             {"record_type": "diet", "operation": "delete", "record_id": 1},
@@ -3375,8 +3385,17 @@ def test_delete_requires_explicit_whole_record_intent(message):
     ),
 )
 def test_explicit_whole_record_delete_remains_allowed(message, record_type):
-    decision = decide_tool_capability(
+    snapshot = replace(
         _snapshot(message),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={"record_type": record_type, "records": ({"id": 718},)},
+            ),
+        ),
+    )
+    decision = decide_tool_capability(
+        snapshot,
         _request(
             "health_manage",
             {
@@ -3437,8 +3456,17 @@ def test_delete_evidence_must_bind_to_requested_target(
 
 @pytest.mark.parametrize("record_id", (718, "718", 718.0))
 def test_explicit_delete_id_accepts_canonical_positive_integer_forms(record_id):
-    decision = decide_tool_capability(
+    snapshot = replace(
         _snapshot("清掉饮水记录 718"),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={"record_type": "water", "records": ({"id": 718},)},
+            ),
+        ),
+    )
+    decision = decide_tool_capability(
+        snapshot,
         _request(
             "health_manage",
             {
@@ -3683,7 +3711,15 @@ def test_medical_instruction_basis_cannot_authorize_destructive_manage(
 def test_ordinary_delete_without_clinician_basis_keeps_manage_capability(
     message,
 ):
-    snapshot = _snapshot(message)
+    snapshot = replace(
+        _snapshot(message),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={"record_type": "medication", "records": ({"id": 1},)},
+            ),
+        ),
+    )
     decision = decide_tool_capability(
         snapshot,
         _request(
@@ -4389,8 +4425,8 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v42"
-    assert payload["health_semantics"]["version"] == "health-semantics-v4"
+    assert payload["contract_version"] == "agent-capability-policy-v43"
+    assert payload["health_semantics"]["version"] == "health-semantics-v5"
     assert re.fullmatch(r"[0-9a-f]{64}", payload["health_semantics"]["content_digest"])
     assert payload["health_record_target_binding"] == {
         "version": "authorized-target-set-v31",
@@ -4407,7 +4443,7 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
         },
     }
     assert (
-        payload["whole_record_delete_evidence_version"] == "record-delete-evidence-v3"
+        payload["whole_record_delete_evidence_version"] == "record-delete-evidence-v4"
     )
     assert (
         payload["health_manage_update_evidence_version"] == "record-update-evidence-v24"
@@ -4566,8 +4602,17 @@ def test_v41_typed_mutation_lookup_gets_server_authority(message):
     ),
 )
 def test_v41_disease_alias_supports_exact_whole_record_delete(message, record_id):
-    decision = decide_tool_capability(
+    snapshot = replace(
         _snapshot(message),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={"record_type": "illness", "records": ({"id": record_id},)},
+            ),
+        ),
+    )
+    decision = decide_tool_capability(
+        snapshot,
         _request(
             "health_manage",
             {
@@ -4836,10 +4881,193 @@ def test_v42_capability_digest_tracks_transitive_delete_helper(monkeypatch):
     monkeypatch.setattr(
         capability_policy_module,
         "_delete_evidence_authorizes_request",
-        lambda _evidence, _args: False,
+        lambda _snapshot, _evidence, _args: False,
     )
 
     assert capability_policy_digest() != before
+
+
+def test_v43_direct_delete_requires_owner_scoped_lookup_evidence():
+    decision = decide_tool_capability(
+        _snapshot("删除疾病记录 8701"),
+        _request(
+            "health_manage",
+            {
+                "record_type": "illness",
+                "operation": "delete",
+                "record_id": 8701,
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "delete_requires_exact_target_evidence"
+
+
+def test_v43_capability_digest_tracks_late_local_authorization_helper(monkeypatch):
+    before = capability_policy_digest()
+
+    monkeypatch.setattr(goal_spec_module, "_water_amount_ml", lambda _text: 999)
+
+    assert capability_policy_digest() != before
+
+
+def test_v43_capability_digest_tracks_imported_authorization_binding(monkeypatch):
+    before = capability_policy_digest()
+
+    monkeypatch.setattr(
+        capability_policy_module,
+        "resolve_health_read_act",
+        lambda _text: semantics.HealthReadActResolution("none"),
+    )
+
+    assert capability_policy_digest() != before
+
+
+@pytest.mark.parametrize(
+    "entity",
+    (
+        "MIA2显微镜下多血管炎",
+        "LI-1显微镜下多血管炎",
+        "ANA::1显微镜下多血管炎",
+        "API2显微镜下多血管炎",
+        "CACHE-1显微镜下多血管炎",
+        "R2D2显微镜下多血管炎",
+        "MIA2痛风",
+        "HTTP2痛风",
+        "MODEL7脑膜炎",
+    ),
+)
+def test_v43_biomedical_shaped_owner_prefix_blocks_every_illness_surface(entity):
+    requests = (
+        (
+            f"查询{entity}记录",
+            "health_query",
+            {"dimension": "illness", "keyword": entity},
+        ),
+        (
+            f"列出{entity}病史",
+            "health_manage",
+            {"record_type": "illness", "operation": "list"},
+        ),
+        (
+            f"记录疾病{entity}",
+            "health_record",
+            {"record_type": "illness", "data": {"name": entity}},
+        ),
+    )
+
+    for message, tool_name, arguments in requests:
+        decision = decide_tool_capability(
+            _snapshot(message),
+            _request(tool_name, arguments),
+        )
+        assert decision.action == "block", (message, tool_name, decision.reason)
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "查询我的痛风记录，先放一放",
+        "查询我的痛风记录，晚点再说",
+        "查询我的痛风记录，先等等",
+        "查询我的痛风记录，暂时不用",
+        "查询我的痛风记录，回头再说",
+        "查询我的痛风记录已经做完了",
+        "我的痛风记录查完了",
+        "查询我的痛风记录早就结束了",
+        "查询我的痛风记录刚完成",
+        "查询我的痛风记录是测试用例",
+        "查询我的痛风记录仅供演示",
+        "查询我的痛风记录只是为了测试",
+        "查询我的痛风记录是文档里的命令",
+        "查询我的痛风记录的话会怎么样",
+        "查询我的痛风记录会不会有结果",
+        "查询我的痛风记录是假设，不要执行",
+        "查询我的痛风记录？不，这是测试",
+        "查询我的痛风记录是反例",
+        "查询我的痛风记录是否安全",
+    ),
+)
+def test_v43_non_authorizing_read_blocks_query_and_manage_list(message):
+    requests = (
+        ("health_query", {"dimension": "illness", "keyword": "痛风"}),
+        ("health_manage", {"record_type": "illness", "operation": "list"}),
+    )
+
+    for tool_name, arguments in requests:
+        decision = decide_tool_capability(
+            _snapshot(message),
+            _request(tool_name, arguments),
+        )
+        assert decision.action == "block", (tool_name, decision.reason)
+
+
+@pytest.mark.parametrize(
+    "entity",
+    (
+        "ALK融合阳性肺癌",
+        "EGFR-L858R阳性肺腺癌",
+        "ROS1融合阳性肺癌",
+        "RET融合阳性甲状腺癌",
+        "JAK2-V617F阳性真性红细胞增多症",
+        "CALR外显子9突变骨髓增殖性肿瘤",
+        "FGFR3融合阳性膀胱癌",
+        "IDH1-R132H阳性胶质瘤",
+        "H3K27M弥漫性中线胶质瘤",
+        "NPM1突变急性髓系白血病",
+        "FLT3-ITD阳性急性髓系白血病",
+        "BRCA1相关遗传性乳腺癌",
+        "LMNA相关扩张型心肌病",
+        "SCN5A相关Brugada综合征",
+        "TSC1相关结节性硬化症",
+        "HTT-CAG重复扩增亨廷顿病",
+        "SMN1相关脊髓性肌萎缩症",
+        "ATP7B相关威尔逊病",
+        "PKD1相关常染色体显性多囊肾病",
+        "anti-GBM抗体病",
+        "AQP4-IgG阳性视神经脊髓炎谱系病",
+        "NMOSD",
+        "Duchenne型肌营养不良",
+        "MYH7相关肥厚型心肌病",
+        "KCNQ1相关长QT综合征",
+        "RYR1相关恶性高热易感症",
+        "ABCD1相关X连锁肾上腺脑白质营养不良",
+        "COL4A5相关Alport综合征",
+        "VHL相关肿瘤综合征",
+        "MEN2A型多发性内分泌腺瘤病",
+        "APOL1相关肾病",
+        "BRAF-V600E阳性黑色素瘤",
+        "FBN1相关马凡综合征",
+        "GBA1相关帕金森病",
+        "HLA-B51相关Behçet病",
+    ),
+)
+def test_v43_reviewed_biomedical_registry_routes_all_illness_surfaces(entity):
+    requests = (
+        (
+            f"查询我的{entity}记录",
+            "health_query",
+            {"dimension": "illness", "keyword": entity},
+        ),
+        (
+            f"列出我的{entity}病史",
+            "health_manage",
+            {"record_type": "illness", "operation": "list"},
+        ),
+        (
+            f"记录疾病：{entity}",
+            "health_record",
+            {"record_type": "illness", "data": {"name": entity}},
+        ),
+    )
+
+    for message, tool_name, arguments in requests:
+        decision = decide_tool_capability(
+            _snapshot(message),
+            _request(tool_name, arguments),
+        )
+        assert decision.action == "allow", (message, tool_name, decision.reason)
 
 
 @pytest.mark.parametrize(
@@ -4955,8 +5183,17 @@ def test_v42_exact_delete_grammar_and_capability_share_one_target(
     message,
     record_id,
 ):
-    decision = decide_tool_capability(
+    snapshot = replace(
         _snapshot(message),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={"record_type": "illness", "records": ({"id": record_id},)},
+            ),
+        ),
+    )
+    decision = decide_tool_capability(
+        snapshot,
         _request(
             "health_manage",
             {

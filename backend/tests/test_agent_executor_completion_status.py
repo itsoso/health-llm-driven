@@ -3768,6 +3768,24 @@ async def test_delete_retry_recovers_same_target_operation_mismatch(
         "app.services.agent_executor._normalize_goal_guarded_tool_calls",
         lambda tool_calls, *args, **kwargs: tool_calls,
     )
+    original_bind_references = executor._bind_agent_kernel_actionable_references
+
+    def bind_owner_reference(references):
+        original_bind_references(
+            tuple(references or ())
+            + (
+                SimpleNamespace(
+                    kind="owner_scoped_health_manage_list",
+                    data={"record_type": "water", "records": ({"id": 718},)},
+                ),
+            )
+        )
+
+    monkeypatch.setattr(
+        executor,
+        "_bind_agent_kernel_actionable_references",
+        bind_owner_reference,
+    )
 
     events = [
         event
@@ -3966,6 +3984,24 @@ async def test_delete_retry_different_target_keeps_operation_mismatch_blocked(
     monkeypatch.setattr(
         "app.services.agent_executor._normalize_goal_guarded_tool_calls",
         lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+    original_bind_references = executor._bind_agent_kernel_actionable_references
+
+    def bind_owner_reference(references):
+        original_bind_references(
+            tuple(references or ())
+            + (
+                SimpleNamespace(
+                    kind="owner_scoped_health_manage_list",
+                    data={"record_type": "water", "records": ({"id": 719},)},
+                ),
+            )
+        )
+
+    monkeypatch.setattr(
+        executor,
+        "_bind_agent_kernel_actionable_references",
+        bind_owner_reference,
     )
 
     events = [
