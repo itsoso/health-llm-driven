@@ -120,9 +120,11 @@ The digest covers every module-level authorization grammar, including nested
 regex collections used by record identity, mutation and delete evidence. Illness
 recognition combines an explicit terminology set with a closed compositional
 grammar: a suffix such as `炎`, `癌` or `异常` grants no authority unless every
-preceding span is a recognized clinical modifier or medical body token. Exact
-canonical disease tails also define an owner boundary, so an arbitrary Unicode
-name or unknown relationship concatenated before a valid disease cannot be
+preceding span is a recognized clinical modifier or medical body token. An
+ASCII/digit biomedical prefix is authorized only as an exact canonical term;
+it cannot borrow authority from a valid trailing disease. Exact canonical
+disease tails also define an owner boundary, so an arbitrary Unicode name or
+unknown relationship concatenated before a valid disease cannot be
 reinterpreted as part of the current user's illness.
 
 Every read surface uses the same Backend decision. A model-selected tool or
@@ -140,26 +142,34 @@ lookup only while that marker is present and strips it before adapter dispatch.
 Observation-only phrases therefore become neither reads nor mutation lookups.
 
 Read speech-act resolution is clause structured. It identifies withdrawal,
-deferment, completed narration and an explicitly restarted active clause before
-ownership or entity resolution. The shared illness extractor also serves
+deferment, completed narration, examples, hypotheticals and an explicitly
+restarted active clause before ownership or entity resolution. A control clause
+resets earlier authority, while a later affirmative read starts a new scope.
+The surviving scope retains leading time windows, multi-object structure and
+decimal medical-exam identifiers. The shared illness extractor also serves
 mutation targeting, so reads and writes accept the same valid long-tail disease
 vocabulary instead of a finite mutation-only list. Indicators such as blood
 pressure or glucose followed by `异常` remain metric entities, not illnesses;
-biomedical modifiers such as `HLA-B27`, `BCR::ABL1`, `IgG4`, `anti-NMDA` and
-`β2` are preserved without allowing arbitrary names to borrow a disease tail.
+canonical biomedical entities such as `HLA-B27`, `BCR::ABL1`, `IgG4`,
+`anti-NMDA` and `β2` are preserved without allowing arbitrary names to borrow a
+disease tail.
 
 Published authorization digests cover behavior as well as grammar constants.
-The semantic, GoalSpec and CapabilityPolicy payloads fingerprint normalized
-function source plus the authoritative write-intent and write-safety
-functions. This is stable across interpreter quickening while still making a
-logic-only authorization change observable when no regex changes.
+The semantic, GoalSpec and CapabilityPolicy payloads discover every local
+helper when the payload is requested and fingerprint normalized function source
+plus imported authoritative write-intent, write-safety and semantic bindings.
+Late helper additions and binding substitutions therefore alter the digest.
+This is stable across interpreter quickening while still making a logic-only
+authorization change observable when no regex changes.
 
 For a typed `health_manage_mutation` goal, AgentExecutor canonicalizes every
 initial model proposal—including a direct write or wrong-domain list—to the
 server-owned same-domain owner lookup. Only after successful lookup may the
 existing owner-reference capability authorize the exact target ID. GoalSpec,
 CapabilityPolicy and write-intent scope consume one closed whole-record delete
-grammar, so aliases, revocations and undo requests cannot diverge by layer.
+grammar, so aliases, revocations and undo requests cannot diverge by layer. An
+exact ID in user text is necessary but not sufficient for delete: the same-type
+owner-scoped list must also contain that ID before dispatch.
 
 ## 7. Surface Contract
 
@@ -532,6 +542,18 @@ Given a user says "别查了" or "先不用继续查口腔溃疡记录"
 When the model proposes any illness read or manage-list call
 Then cancellation wins and dispatch never starts
 
+Given a user says "查询我的痛风记录仅供演示" or states that the query is complete
+When the model proposes any illness read or manage-list call
+Then the non-authorizing narration wins and dispatch never starts
+
+Given a proposed illness entity is "MIA2显微镜下多血管炎"
+When any query, manage-list or create surface evaluates it
+Then the unknown prefix cannot borrow the canonical disease tail and dispatch is blocked
+
+Given a user explicitly requests deletion of record 718
+When no same-type owner-scoped list result contains record 718
+Then exact text alone is insufficient and delete dispatch never starts
+
 Given a user says "我的血压异常记录有哪些"
 When semantic projection resolves the requested record family
 Then `异常` does not reclassify the metric as an illness
@@ -610,3 +632,4 @@ These questions do not block the illness slice.
 | 2026-08-09 | Made semantic ownership compositional and fully fingerprinted | Fresh v39 reviews found arbitrary Unicode owner prefixes, postpositive cancellation, completed-narration list reads, long-tail/Unicode false denials and authorization grammar omitted from published digests. |
 | 2026-08-09 | Bound mutation lookup to a typed server-owned goal | Fresh v40 reviews found mutation-text lookup bypasses, incomplete cancellation/completion scope, indicator collisions, long-tail/biomedical false denials and behavior omitted from published digests. |
 | 2026-08-10 | Canonicalized typed mutations and stabilized semantic evidence | Fresh v41 reviews found ASCII owner-tail bypasses, cancellation/completion gaps, exact mutation false denials, unstable bytecode digests and unpersisted model evidence. |
+| 2026-08-10 | Closed v43 read, owner and evidence boundaries | Fresh v42 reviews found uppercase/digit owner-tail bypasses, non-authorizing reads, owner-unverified delete, biomedical false denials and incomplete candidate/digest evidence. |

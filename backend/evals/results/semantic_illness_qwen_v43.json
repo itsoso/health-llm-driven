@@ -1,0 +1,3398 @@
+{
+  "candidate_commit": "b1abfe8168437356b1507cc6bc393444a4404ba2",
+  "cases": [
+    {
+      "label": "original",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "latest_sle",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "behcet",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "tonsillitis",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "pityriasis",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "bppv",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "ehlers",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "goodpasture",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "diet_disorder",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "exercise_syncope",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "write_ms",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "explicit_create_intent",
+        "explicit_create_intent"
+      ]
+    },
+    {
+      "label": "write_ehlers",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "explicit_create_intent",
+        "explicit_create_intent"
+      ]
+    },
+    {
+      "label": "write_behcet",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "explicit_create_intent",
+        "explicit_create_intent"
+      ]
+    },
+    {
+      "label": "write_bppv",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "explicit_create_intent",
+        "explicit_create_intent"
+      ]
+    },
+    {
+      "label": "write_sleep_paralysis",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "explicit_create_intent",
+        "explicit_create_intent"
+      ]
+    },
+    {
+      "label": "write_syncope",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "explicit_create_intent",
+        "explicit_create_intent"
+      ]
+    },
+    {
+      "label": "write_constipation",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "explicit_create_intent",
+        "explicit_create_intent"
+      ]
+    },
+    {
+      "label": "write_pityriasis",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "explicit_create_intent",
+        "explicit_create_intent"
+      ]
+    },
+    {
+      "label": "owner_ouyang",
+      "model_abstained": true,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "owner_xavier",
+      "model_abstained": true,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "owner_ivan",
+      "model_abstained": true,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "owner_jose",
+      "model_abstained": true,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "owner_manager",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "owner_teacher",
+      "model_abstained": true,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "owner_roommate",
+      "model_abstained": true,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "owner_nurse",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "read_xavier",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "read_manager",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "read_olga",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "read_jose",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "read_ivan",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "read_teacher",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "read_patient",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "read_roommate",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "exam_olga",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "exam_jose",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "exam_ivan",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_calendar_window_unsupported",
+        "health_query_calendar_window_unsupported"
+      ]
+    },
+    {
+      "label": "exam_manager",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "exam_roommate",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "exam_barista",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "exam_dwi",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "exam_lumbar",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "exam_3t",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "exam_flair",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "exam_gre",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "exam_adc",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "ref_head",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_semantics_unresolved",
+        "health_query_semantics_unresolved"
+      ]
+    },
+    {
+      "label": "ref_rare_number",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_semantics_unresolved",
+        "health_query_semantics_unresolved"
+      ]
+    },
+    {
+      "label": "ref_previous",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_semantics_unresolved",
+        "health_query_semantics_unresolved"
+      ]
+    },
+    {
+      "label": "ref_discourse",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_semantics_unresolved",
+        "health_query_semantics_unresolved"
+      ]
+    },
+    {
+      "label": "ref_old",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_semantics_unresolved",
+        "health_query_semantics_unresolved"
+      ]
+    },
+    {
+      "label": "ref_double_previous",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_semantics_unresolved",
+        "health_query_semantics_unresolved"
+      ]
+    },
+    {
+      "label": "nonhealth_pipeline",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_entity_requires_clarification",
+        "illness_query_entity_requires_clarification"
+      ]
+    },
+    {
+      "label": "nonhealth_server",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_entity_requires_clarification",
+        "illness_query_entity_requires_clarification"
+      ]
+    },
+    {
+      "label": "metric_glucose",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_dimension_conflict",
+        "health_query_dimension_conflict"
+      ]
+    },
+    {
+      "label": "metric_alt",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_dimension_conflict",
+        "health_query_dimension_conflict"
+      ]
+    },
+    {
+      "label": "cancel_read",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "later_self",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "completed_update",
+      "model_abstained": true,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "completed_delete",
+      "model_abstained": true,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v40_polyarteritis",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v40_angioedema",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v40_pnh",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v40_adult_still",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_manage_list_is_read_only",
+        "health_manage_list_is_read_only"
+      ]
+    },
+    {
+      "label": "v40_aldosterone",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_manage_list_is_read_only",
+        "health_manage_list_is_read_only"
+      ]
+    },
+    {
+      "label": "v40_cjd",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v40_beta",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v40_covid_hyphen",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v40_her2",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v40_nmo",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v40_owner_greek_write",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v40_owner_avery_write",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v40_owner_greek_read",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v40_owner_oleg_read",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v40_owner_guardian_read",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v40_nonhealth_neural",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_dimension_conflict",
+        "health_query_dimension_conflict"
+      ]
+    },
+    {
+      "label": "v40_nonhealth_genetic",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_entity_requires_clarification",
+        "illness_query_entity_requires_clarification"
+      ]
+    },
+    {
+      "label": "v40_nonhealth_virus",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_dimension_conflict",
+        "health_query_dimension_conflict"
+      ]
+    },
+    {
+      "label": "v40_cancel_stop",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v40_cancel_shelve",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v40_cancel_retrieve",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v40_later_withdraw",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v40_later_teacher",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v40_completed_changed",
+      "model_abstained": true,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v40_completed_removed",
+      "model_abstained": true,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v40_completed_updated",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v41_iga",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v41_cns_lymphoma",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v41_cidp",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v41_hht",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v41_huntington",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v41_sca",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v41_mpa",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v41_nmda",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v41_igg4",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v41_hla",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v41_bcr",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v41_beta2",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v41_cancel_hold",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v41_cancel_defer",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v41_cancel_stop_continue",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v41_cancel_here",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v41_update_illness",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_manage_list_is_read_only",
+        "health_manage_list_is_read_only"
+      ]
+    },
+    {
+      "label": "v41_update_water",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_manage_list_is_read_only",
+        "health_manage_list_is_read_only"
+      ]
+    },
+    {
+      "label": "v41_delete_illness_id",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_manage_list_is_read_only",
+        "health_manage_list_is_read_only"
+      ]
+    },
+    {
+      "label": "v41_remove_whole_illness",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_manage_list_is_read_only",
+        "health_manage_list_is_read_only"
+      ]
+    },
+    {
+      "label": "v42_apla2",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v42_ntrk",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v42_mpl",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v42_hla_dq",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v42_anti_mda5",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v42_gfap",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v42_syngap1",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v42_piga",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v42_c9orf72",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v42_pr3",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v42_a20",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v42_ada2",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v42_nlrp3",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v42_pax6",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v42_lam_tsc2",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v42_wt1",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v42_mog_igg",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v42_gad65",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v42_lamp2",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v42_melas",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v42_owner_mia_mpa_read",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v42_owner_mira_mpa_read",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v42_owner_ari_mpa_read",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v42_owner_noa_mpa_read",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v42_owner_ria_mpa_read",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v42_owner_ana_hla_read",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v42_owner_nia_hla_read",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v42_owner_lia_hla_read",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v42_owner_mio_hla_read",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v42_owner_tia_hla_read",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v42_owner_mia_mpa_write",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v42_owner_mira_mpa_write",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v42_owner_ari_mpa_write",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v42_owner_noa_mpa_write",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v42_owner_ria_mpa_write",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v42_owner_ana_hla_write",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v42_owner_nia_hla_write",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v42_owner_lia_hla_write",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v42_owner_mio_hla_write",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v42_owner_tia_hla_write",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v42_owner_mia_update",
+      "model_abstained": true,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v42_owner_ana_update",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v42_delete_keep_1",
+      "model_abstained": true,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v42_delete_keep_2",
+      "model_abstained": true,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v42_delete_keep_3",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "delete_requires_explicit_whole_record_intent",
+        "delete_requires_explicit_whole_record_intent"
+      ]
+    },
+    {
+      "label": "v42_delete_keep_4",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v42_delete_keep_5",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "delete_requires_explicit_whole_record_intent",
+        "delete_requires_explicit_whole_record_intent"
+      ]
+    },
+    {
+      "label": "v42_delete_keep_6",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "delete_requires_explicit_whole_record_intent",
+        "delete_requires_explicit_whole_record_intent"
+      ]
+    },
+    {
+      "label": "v42_delete_keep_7",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "delete_requires_explicit_whole_record_intent",
+        "delete_requires_explicit_whole_record_intent"
+      ]
+    },
+    {
+      "label": "v42_delete_keep_8",
+      "model_abstained": true,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v42_delete_keep_9",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v42_delete_keep_10",
+      "model_abstained": true,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v42_delete_keep_11",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "delete_requires_explicit_whole_record_intent",
+        "delete_requires_explicit_whole_record_intent"
+      ]
+    },
+    {
+      "label": "v42_delete_keep_12",
+      "model_abstained": true,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v42_delete_keep_13",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "delete_requires_explicit_whole_record_intent",
+        "delete_requires_explicit_whole_record_intent"
+      ]
+    },
+    {
+      "label": "v42_delete_keep_14",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v42_delete_keep_15",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "delete_requires_explicit_whole_record_intent",
+        "delete_requires_explicit_whole_record_intent"
+      ]
+    },
+    {
+      "label": "v42_delete_keep_16",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "delete_requires_explicit_whole_record_intent",
+        "delete_requires_explicit_whole_record_intent"
+      ]
+    },
+    {
+      "label": "v42_read_deferred_1",
+      "model_abstained": true,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v42_read_deferred_2",
+      "model_abstained": true,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v42_read_trailing_cancel",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v42_read_completed",
+      "model_abstained": true,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v42_read_example",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v42_read_reported",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v42_read_hypothetical",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v42_update_id_81",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_manage_list_is_read_only",
+        "health_manage_list_is_read_only"
+      ]
+    },
+    {
+      "label": "v42_update_id_82",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_manage_list_is_read_only",
+        "health_manage_list_is_read_only"
+      ]
+    },
+    {
+      "label": "v42_update_id_83",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_manage_list_is_read_only",
+        "health_manage_list_is_read_only"
+      ]
+    },
+    {
+      "label": "v42_update_bcr",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_manage_list_is_read_only",
+        "health_manage_list_is_read_only"
+      ]
+    },
+    {
+      "label": "v42_delete_8701",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_manage_list_is_read_only",
+        "health_manage_list_is_read_only"
+      ]
+    },
+    {
+      "label": "v42_delete_8702",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_manage_list_is_read_only",
+        "health_manage_list_is_read_only"
+      ]
+    },
+    {
+      "label": "v42_delete_8703",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_manage_list_is_read_only",
+        "health_manage_list_is_read_only"
+      ]
+    },
+    {
+      "label": "v42_delete_8704",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_manage_list_is_read_only",
+        "health_manage_list_is_read_only"
+      ]
+    },
+    {
+      "label": "v43_prefix_read_1",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v43_prefix_read_2",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v43_prefix_read_3",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v43_prefix_read_4",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v43_prefix_read_5",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v43_prefix_read_6",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v43_prefix_read_7",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v43_prefix_read_8",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v43_prefix_read_9",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v43_prefix_list_1",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v43_prefix_list_2",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v43_prefix_list_3",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v43_prefix_list_4",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v43_prefix_list_5",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v43_prefix_list_6",
+      "model_abstained": true,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v43_prefix_list_7",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v43_prefix_list_8",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v43_prefix_list_9",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ]
+    },
+    {
+      "label": "v43_prefix_write_1",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v43_prefix_write_2",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v43_prefix_write_3",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v43_prefix_write_4",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v43_prefix_write_5",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v43_prefix_write_6",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v43_prefix_write_7",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v43_prefix_write_8",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v43_prefix_write_9",
+      "model_abstained": false,
+      "model_calls": [
+        "health_record"
+      ],
+      "passed": true,
+      "reasons": [
+        "goal_requires_clarification",
+        "goal_requires_clarification"
+      ]
+    },
+    {
+      "label": "v43_nonauth_read_1",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v43_nonauth_read_2",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v43_nonauth_read_3",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v43_nonauth_read_4",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v43_nonauth_read_5",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v43_nonauth_read_6",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_read_7",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_read_8",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_read_9",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_read_10",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_read_11",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_read_12",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_read_13",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_read_14",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_read_15",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_read_16",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v43_nonauth_read_17",
+      "model_abstained": true,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_read_18",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_read_19",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_list_1",
+      "model_abstained": true,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v43_nonauth_list_2",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v43_nonauth_list_3",
+      "model_abstained": true,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v43_nonauth_list_4",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v43_nonauth_list_5",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v43_nonauth_list_6",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_list_7",
+      "model_abstained": true,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_list_8",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_list_9",
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_list_10",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_list_11",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_list_12",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_list_13",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_list_14",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_list_15",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_list_16",
+      "model_abstained": true,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user"
+      ]
+    },
+    {
+      "label": "v43_nonauth_list_17",
+      "model_abstained": true,
+      "model_calls": [
+        "health_manage"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_list_18",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_nonauth_list_19",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ]
+    },
+    {
+      "label": "v43_biomedical_1",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_2",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_3",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_4",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_5",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_6",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_7",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_8",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_9",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_10",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_11",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_12",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_13",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_14",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_15",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_16",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_17",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_18",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_19",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_20",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_21",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_22",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_23",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_24",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_25",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_26",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_27",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_28",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_29",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_30",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_31",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_32",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_33",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_34",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_biomedical_35",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_restart_after_completed",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    },
+    {
+      "label": "v43_restart_after_deferred",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "illness_query_projected_to_turn_semantics",
+        "illness_query_projected_to_turn_semantics"
+      ]
+    }
+  ],
+  "dispatch_adapter": "synthetic; policy path is real, persistence is blocked",
+  "evaluated_at": "2026-08-10T11:47:20.037158+00:00",
+  "evaluator": "backend/evals/semantic_illness_qwen_v43.py",
+  "evaluator_revision": "v43",
+  "expected_commit": "b1abfe8168437356b1507cc6bc393444a4404ba2",
+  "git_clean_before_run": true,
+  "network_allowlist": [
+    "token-plan.cn-beijing.maas.aliyuncs.com"
+  ],
+  "schema_version": 2,
+  "summary": {
+    "allowed_socket_connections": 4,
+    "cases_passed": 281,
+    "cases_total": 281,
+    "database_connection_attempts": 0,
+    "failures": [],
+    "model": "qwen3.7-max",
+    "provider_calls": 281,
+    "route_evaluations": 562,
+    "unexpected_network_blocked": 0
+  }
+}

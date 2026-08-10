@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS on v42 implementation candidate 3d7034c19; fresh exact-commit dual G4 pending |
+| current_stage | G3 PASS on v43 implementation candidate b1abfe816; fresh exact-commit dual G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -2013,6 +2013,48 @@ The persisted per-case evidence is
 `backend/evals/results/semantic_illness_qwen_v42.json`. No v42 commit has been
 pushed or deployed. Two fresh independent reviewers must both return GO on the
 next exact documentation/evidence commit before G4, push or deployment.
+
+Fresh exact-commit v42 reviews returned NO-GO. They reproduced arbitrary
+uppercase/digit prefixes such as `MIA2` and `CACHE-1` borrowing valid disease
+tails across read and write surfaces; completed, deferred, example and
+hypothetical read phrases still dispatching; direct exact-ID delete bypassing
+owner lookup; 31 of 35 legitimate reviewed biomedical disease names being
+denied; and evaluator/digest evidence that was not mechanically closed over the
+exact candidate and every late authorization helper. The v42 candidate remained
+unpushed and undeployed.
+
+The v43 remediation replaces suffix-based biomedical authorization with exact
+canonical terminology plus the closed clinical modifier grammar. The 35-name
+reviewed biomedical set is explicit, while nine owner-shaped prefixes are
+denied across query, manage-list and create. Read authority is resolved as an
+ordered clause state machine: completion, deferment, examples, hypotheticals
+and trailing withdrawal reset authority; a later explicit read can restart it;
+and the surviving clause retains leading time/object scope and decimal medical
+exam identifiers. An exact whole-record delete now also requires a successful
+same-type owner-scoped list reference containing the requested ID.
+
+GoalSpec and CapabilityPolicy behavior digests now discover every local helper
+at payload generation time and include the imported authorization bindings that
+can change a decision. The v43 evaluator itself requires an expected exact Git
+SHA and a clean worktree before application import, and mechanically emits the
+per-case JSON artifact with both SHA values, clean-state evidence, actual model
+calls, route decisions and tripwire counters.
+
+The exact v43 implementation candidate is
+`b1abfe8168437356b1507cc6bc393444a4404ba2`. The authorization/write core
+passes 5,173/5,173 and the complete AgentExecutor compatibility set passes
+686/686; the focused reviewer-boundary matrix passes 63/63. Ruff, Python
+compilation and `git diff --check` pass, and commit hooks pass doc drift and
+Dossier consistency.
+
+The authorized live `qwen3.7-max` v43 evaluation ran on that exact clean
+candidate with 281 anonymous synthetic utterances and 562 enforce/shadow route
+evaluations. It passes 281/281 and 562/562, with zero database connection
+attempts, zero unexpected network destinations and only the configured
+TokenPlan endpoint reachable. Mechanically generated evidence is
+`backend/evals/results/semantic_illness_qwen_v43.json`. No v43 commit has been
+pushed or deployed. The next documentation/evidence commit must receive two
+fresh independent GO decisions before G4, push or deployment.
 
 ### G5 Deployment Health: PENDING
 
