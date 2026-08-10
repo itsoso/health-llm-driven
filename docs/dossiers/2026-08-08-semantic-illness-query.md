@@ -1936,7 +1936,7 @@ Semantic, GoalSpec and CapabilityPolicy payloads now fingerprint selected
 authorization function bytecode as well as all authoritative grammar inputs.
 
 The exact v41 implementation is
-`b6a7c79f7b1d8091a0dc69eaec401423cbcc7adb`. Failure-first tests cover the
+`b6a7c79f7e967cca59124373cf2867aa90621ab7`. Failure-first tests cover the
 server-only marker, forged-marker stripping, typed mutation goals, cancellation,
 completed narration, long-tail/eponym and biomedical diseases, metric
 collisions, Unicode punctuation, exact delete and direct illness-state update.
@@ -1959,7 +1959,7 @@ reachable.
 
 No v41 commit has been pushed or deployed. Two fresh independent reviewers must
 inspect the next documentation commit together with exact implementation parent
-`b6a7c79f7b1d8091a0dc69eaec401423cbcc7adb`; both must return GO before G4,
+`b6a7c79f7e967cca59124373cf2867aa90621ab7`; both must return GO before G4,
 push or deployment can proceed.
 
 Before G4, latest `origin/main` commit
