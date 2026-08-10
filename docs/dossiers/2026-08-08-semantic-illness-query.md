@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS on implementation 824d9e7f7; fresh exact-commit G4 pending |
+| current_stage | G3 PASS on implementation 3eaa5cd3e; fresh exact-commit G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -1847,6 +1847,64 @@ the Backend module path; the corrected launch is the reported product evidence.
 No v39 commit has been pushed or deployed. Two fresh independent reviewers must
 inspect the next documentation commit together with exact implementation parent
 `824d9e7f72b99c6a5d833bae10fecf4ece9d3390`; both must return GO before G4,
+push or deployment can proceed.
+
+Fresh code and product-safety reviews of exact v39 documentation commit
+`077ee04d3c4bb555f675c05e4cdb6c7155fde9a3` both returned NO-GO. Independent
+GoalSpec-to-ToolGateway matrices found arbitrary Unicode and unknown-role owner
+prefixes still absorbed into illness labels, postpositive cancellation and
+later-self scope gaps, completed update/delete narration triggering an
+unsolicited manage-list lookup, legitimate long-tail and Unicode disease false
+denials, and authorization regexes that could change without changing either
+published digest. The candidate remained unpushed and undeployed.
+
+The v40 remediation upgrades the shared contract to `health-semantics-v2` and
+the capability contract to `agent-capability-policy-v40`. Illness authorization
+now uses exact terminology plus a closed compositional medical grammar: every
+span before a disease suffix must be explained by a clinical modifier or body
+token. Canonical disease tails form owner boundaries automatically, so arbitrary
+Latin, Greek, Cyrillic, Arabic, CJK and unknown-role prefixes cannot inherit a
+valid disease suffix. Unicode hyphens and explicit biomedical aliases normalize
+for matching without changing the user-visible query.
+
+Cancellation recognizes both leading and postpositive withdrawal language and
+selects only a later, explicitly restarted read clause. Completed mutation
+narration requires an action-relative completion marker, preventing both
+unsolicited list reads and false suppression of live corrections such as
+changing a just-recorded water amount. The contract digest now walks every
+module-level grammar constant, including nested regex tuples, so ownership,
+reference, read-scope, record-ID, delete and simple-illness-create grammar
+mutations all change observable policy evidence.
+
+The exact v40 implementation is
+`3eaa5cd3ee773a0488bbdbdbea8510b62262bf02`. Failure-first coverage initially
+passed only 4/128 new cases; after remediation it passes 128/128. The expanded
+shared semantic suite passes 135/135, and capability-digest mutation tests cover
+both shared and policy-local grammar. The GoalSpec, CapabilityPolicy,
+ToolGateway and simple-record aggregate passes 4,113/4,113. A separate generated
+matrix of previously unseen multilingual owners, unknown relationships,
+compositional diseases and non-health collisions passes 534/534 through both
+policy modes with fake adapters.
+
+The restored official 25-file Backend gate passes 5,730/5,730 with
+`TZ=Asia/Shanghai`; food compatibility passes 103/103; and production read
+deduplication passes 9/9. Ruff lint and formatting, Python compilation,
+`git diff --check`, generated system-map drift, 102-Dossier consistency and
+implementation commit hooks pass.
+
+The authorized live `qwen3.7-max` v40 evaluation expands to 86 synthetic
+utterances and 172 enforce/shadow route evaluations. Its first run reported
+84/86 because two legitimate named illness reads used the existing same-domain
+read-only `health_manage(list)` capability while the evaluator accepted only
+`health_query`; no write or cross-domain dispatch occurred. The corrected
+capability-level assertion accepts either exact illness query or same-domain
+read-only list, and the full matrix passes 86/86 and 172/172. Database attempts
+remain zero and no network destination outside the configured TokenPlan endpoint
+was reached.
+
+No v40 commit has been pushed or deployed. Two fresh independent reviewers must
+inspect the next documentation commit together with exact implementation parent
+`3eaa5cd3ee773a0488bbdbdbea8510b62262bf02`; both must return GO before G4,
 push or deployment can proceed.
 
 ### G5 Deployment Health: PENDING

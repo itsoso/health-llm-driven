@@ -115,6 +115,15 @@ references, illness morphology, medical-exam identifiers or clause connectors
 therefore changes one observable contract rather than silently diverging across
 GoalSpec and CapabilityPolicy.
 
+The digest covers every module-level authorization grammar, including nested
+regex collections used by record identity, mutation and delete evidence. Illness
+recognition combines an explicit terminology set with a closed compositional
+grammar: a suffix such as `炎`, `癌` or `异常` grants no authority unless every
+preceding span is a recognized clinical modifier or medical body token. Exact
+canonical disease tails also define an owner boundary, so an arbitrary Unicode
+name or unknown relationship concatenated before a valid disease cannot be
+reinterpreted as part of the current user's illness.
+
 Every read surface uses the same Backend decision. A model-selected tool or
 dimension is only a proposal; the server projects illness and medical-exam
 queries from the active user clause, binds user-facing `health_manage(list)` to
@@ -555,3 +564,4 @@ These questions do not block the illness slice.
 | 2026-08-09 | Made ownership relational and payload aliases adapter-exact | Fresh exact-commit reviews found arbitrary subjects, attribution/revocation/correction gaps, water/supplement payload drift and non-null PATCH status mismatch. |
 | 2026-08-09 | Bound both initiator and direct-object subject | Fresh review found arbitrary names between a write action and health predicate inherited current-user authority. |
 | 2026-08-09 | Versioned the shared semantic authorization contract | Fresh v38 reviews found duplicate grammars, arbitrary-owner read/write bypasses, long-tail false denials, suffix false positives, unresolved references and observation-only manage-list leakage. |
+| 2026-08-09 | Made semantic ownership compositional and fully fingerprinted | Fresh v39 reviews found arbitrary Unicode owner prefixes, postpositive cancellation, completed-narration list reads, long-tail/Unicode false denials and authorization grammar omitted from published digests. |
