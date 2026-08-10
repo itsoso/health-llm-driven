@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | Build 255 已完成 EAS/ASC/TestFlight、精确 IPA、ASC 绑定及物理 iPhone 6/6 安全自动子集，但真机账号密码失败时暴露“错误状态未渲染”的发布阻断；修复不得通过 production OTA 送达，须以 Build 256 重建并重做精确候选证据，App Review 继续冻结 |
+| 当前阶段 | Build 256 已完成 EAS/ASC/TestFlight、精确 IPA、ASC 绑定、审核账号真实登录及物理 iPhone 6/6 安全自动子集；人工相机/照片草稿与冷启动持久化通过，照片发送 provider 流总时限修复已部署且生产健康闸通过，待同一 Build 真机终态复验；语音/分享/健康写入与最终截图仍待完成，App Review 继续冻结 |
 | 状态 | implementing |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -63,6 +63,8 @@
 - Implementation: `docs/plans/2026-08-05-ios-1-3-3-app-store-release.md`
 - 发布前聊天视觉层级 Design: `docs/plans/2026-08-06-mobile-chat-visual-hierarchy-design.md`
 - 发布前聊天视觉层级 Implementation: `docs/plans/2026-08-06-mobile-chat-visual-hierarchy.md`
+- Provider 流总时限 Design: `docs/plans/2026-08-09-provider-stream-total-deadline-design.md`
+- Provider 流总时限 Implementation: `docs/plans/2026-08-09-provider-stream-total-deadline-implementation.md`
 - 分阶段：功能冻结 → 医疗风险修复 → 发布闸补强 → 材料 → G3/G4 → EAS Build → 精确包真机 → 提交 → 手动发布/G6。
 - 反馈环路由：本地/Jest → EAS Store Build（原生版本变更）→ TestFlight → App Store；审核期间 production OTA 冻结。
 - 长杆：Apple 审核时长、TestFlight 处理、审核账号稳定、截图/隐私/年龄分级人工确认。
@@ -95,6 +97,7 @@
   - [x] T7.1 Build 242+ EAS Store Build / IPA / TestFlight（Build 245 已构建、上传、通过精确 IPA 二进制闸并进入内部 TestFlight）
   - [x] T7.2 紧凑聊天头部候选归档 / IPA / ASC 上传（Build 253 已完成本地 Xcode 正式归档、精确 IPA 闸和上传；Apple processing 尚待确认）
   - [x] T7.3 Build 254 本地 Xcode 候选 / ASC / TestFlight / 物理 iPhone 自动验收（6/6 PASS；因无 EAS Build ID，仅作功能与二进制证据，不替代最终 EAS 候选）
+  - [ ] T7.4 照片发送 provider 流总时限 Backend 修复 / 部署 / Build 256 复验（代码、本地回归与生产部署已完成；真机终态待完成）
   - [ ] T8 精确 Build 真机与截图
   - [ ] T9 final-submit / App Review
   - [ ] T10 手动发布 / production G6
@@ -121,6 +124,9 @@
   - `2677a4d44`：真机验收改为人工预登录、禁止 XCUITest 接收审核凭据；live gate 要求固定简报是默认最新且只有精确两条消息；新增 revision/发布锁约束的非敏感生产重置入口。
   - `140bd788a`：补齐 AudioData、DeviceID、ProductInteraction 和 UserID Analytics；把 iOS preflight 加固为固定 12 类 inventory、草稿↔manifest 精确集合、linked/tracking/purposes 逐项一致及 schema/unknown/duplicate fail-closed。
   - `0da9ddd0b` / `b8c318157` / `a26477b30`：冻结紧凑聊天头部规格，补强确定性真机验收；将头像收至 24pt、标题收至 21/26、标题箭头收至 13pt，同时保留 44pt 触控目标和既有行为。
+  - `a1d6f7d16` / `30fdc3f90` / `27f9d458c`：冻结照片发送卡流修复设计与实施计划；为主 streaming provider 和 streaming stable fallback 分别增加 120 秒 wall-clock 总时限。主 provider 未发正文时复用既有稳定降级；已发正文时只 error finish、不换模型重复回答；fallback 再卡住时也必须终止并释放回合。Mobile、数据库、健康写入与回执契约均未改变。
+- 2026-08-09 Build 256 人工照片验收中间证据：系统相机入口 PASS；照片草稿及发送文案在强制终止/冷启动后仍保留，证明图片资产与用户 turn 已持久化。生产侧内容最小化证据显示 vision 已完成、上游 streaming 请求已返回 HTTP 200，但模型流在持续非终态分片后未结束，直到外层约五分钟 deadline 才释放；后续同会话发送在此期间按设计返回 409。用户消息和图片已持久化，助手终态缺失，故根因不是上传或本地草稿丢失。
+- 根因修复选择经用户确认采用服务端方案 A：HTTP per-read timeout 只能约束相邻字节的空闲时间，不能约束持续 keepalive/reasoning 的总迭代时间；`27f9d458c` 在 executor 的两个 streaming 边界统一加入独立总预算。该改动不需要新 iOS Build 或 production OTA，部署与同一 Build 256 真机复验完成前仍视为发布阻断。
 - 当前断点：后端与生产合成审核数据均已恢复；Build 245 的精确 IPA / TestFlight 子闸虽已通过，但已被紧凑聊天头部源码 `a26477b3000b9b44c53e8c20fc0f19904b3a7f03` 取代。Build 253 已通过本地 Xcode 26.5 正式归档、精确 IPA 哈希/验签/版本/能力/12 类隐私语义闸，并由 Organizer 上传 Apple；Apple processing、内部 TestFlight 和精确候选物理 iPhone T8 尚未确认。开发签名的同源码 Build 253 已在物理 iPhone 启动并完成紧凑头部视觉预验；安全自动子集 5/6，通过项不替代精确候选证据。以上证据未全绿前 App Review 继续冻结。
 - 2026-08-09 Build 254 精确候选复验：ASC processing 完成并进入内部 TestFlight；物理 iPhone 安装后由应用诊断确认 1.3.3（254）、embedded production runtime，未被旧 OTA 覆盖。首次 4 PASS / 1 FAIL / 1 SKIP 的根因不是代码或审核数据：手机仍登录另一账号，该账号访问的会话不属于受控审核账号；切换到受控审核账号后，最新固定简报和 Today 上下文均出现，完整安全自动子集 6/6 PASS、0 failure、0 skip。原始结果包仅保留本机，不上传；档案只记录非敏感汇总。
 - 2026-08-07 Build 241 物理 iPhone 自动子集第二轮共 7 项：6 PASS、1 FAIL。安装包版本/Build 与候选一致；双冷启动登录态、Agent 入口、Today 打开/关闭、未发送草稿前后台保留、隐私和账号删除入口均通过。唯一失败是默认打开了审核账号中更新的普通会话，而不是固定简报；Mobile 按服务端 `updated_at` 打开最新会话属于正确产品行为，根因是 live gate 只证明固定会话存在、未证明它是默认最新且未被追加消息。
@@ -172,6 +178,7 @@
 - 2026-08-07 证据提交 CI run `31179125236`（commit `561b01c2750580b3e4a57943a85211c376915cde`）`completed/success`：44/44 jobs success、0 failure。一次性 `HARNESS_LIVE_LLM_EVAL_CONFIRMED` 已在终态后删除，仓库变量按名称复证为 0 条；后续 LLM 高风险改动重新默认阻断。
 - 2026-08-07 G3 收口提交 CI run `31180977412`（commit `c109e934c4b2c633979bd5c0a7cd97a8f62e570d`）`completed/success`：44/44 jobs success、0 failure；该 commit 是 Build 241 的精确 EAS source commit。
 - 2026-08-07 T8 流程整改本地证据：真机验收/部署脚本 135/135 PASS；审核账号/发布包 55/55 PASS；Ruff、shell/Ruby 语法、基础 release-pack、doc drift 与 `git diff --check` PASS。线上新 live gate 在重置前按预期 FAIL 1 项，证明旧检查的假绿已被关闭。
+- 2026-08-09 登录失败提示热修复：账户密码分支原先只写入 `inlineError`，但 JSX 未渲染该状态；新增 `accessibilityRole="alert"` 的内联提示并按 TDD 先确认回归用例失败、再修复为通过。聚焦登录测试 23/23、Mobile 全量 293/293 suites（2,444 passed / 1 skipped）、TypeScript、lint 0 errors / 92 baseline warnings、App Store release pack、doc drift 和 `git diff --check` 均 PASS；主干 CI run `31325643220` 在 commit `75f61f694c4711a7b349eb63fb7af5e48d9f9012` 上 44/44 jobs success。
 - 2026-08-07 提交 `2677a4d44` 的 CI run `31234249896` 出现新的 registry advisory 红灯：Frontend `nanoid <3.3.17` 高危及旧 PostCSS 链，Mobile 同源依赖审计失败；按 Gate 停止部署。两个树已统一锁定到兼容 patch `nanoid 3.3.18`、`postcss 8.5.26`；完整及 production audit 均为 0，审计策略 4/4、版本契约 18/18 PASS。Mobile 全量 293/293 suites、2,407 passed / 1 skipped，TypeScript 与 lint（0 errors / 92 baseline warnings）PASS；Frontend 57/57 files、338/338 tests PASS，production build/TypeScript/73 个静态页面与 lint（0 errors / 33 baseline warnings）PASS。Frontend 首轮全量有 1 条异步加载测试波动，隔离 10/10 及第二轮全量均 PASS，未修改该非相关 surface。待新主干 CI 复绿。
 - 2026-08-07 提交 `a9bbc1d65` 的 CI run `31234813565` 在 Frontend/Mobile 安装依赖阶段 FAIL：两份锁文件仅有新补丁包的 4 条 `resolved` URL 被本机 npm 配置写成不可公开访问的内网镜像，GitHub runner 因 DNS `ENOTFOUND` 终止；不是代码、类型或新 advisory 红灯。已将 4 条 URL 校正到公共 npm registry，逐项核对上游 integrity 与锁文件一致，并新增锁文件不得包含内网或明文 HTTP 源的回归契约；两端从公共源完整 `npm ci` 与显式高危审计 exit 0。新主干 CI 复绿前继续禁止部署。
 - 2026-08-07 提交 `20fbf83fc` 的 CI run `31235170596` 证明公共源修复有效：Frontend 全流程 PASS，Mobile 成功安装后被新更新的 `image-size` 两条高危无限循环 advisory（`GHSA-w3rx-r6r6-pgpr`、`GHSA-5p2g-fcmc-qvqq`）阻断。上游截至本次核验没有已发布修复版本；该包仅由 Expo/Metro 构建工具链传递使用，不进入 iPhone 运行时。已对 ICNS 与 JXL/HEIF 零长度解析路径打最小本地补丁并用恶意输入子进程超时测试验证，干净 `npm ci` 证明 `patch-package` 自动应用；审计策略仅为这两个 GHSA 设置至 2026-08-14 的短期到期例外，未知、缺失和过期 advisory 继续 fail closed，npm 10.9.8（与 CI 一致）复验通过 11 条传递路径。补丁对抗测试 2/2、审计策略测试 5/5、Mobile 串行全量 293/293 suites（2,407 passed / 1 skipped）、TypeScript 与设计 token 闸均 PASS。新主干 CI 复绿前继续禁止部署。
@@ -190,6 +197,8 @@
 - 2026-08-08 G4 整改后组合 G3：后端策略/校验/回执/运行时 15 文件 1,386/1,386，Mobile 回执/ChatBubble/模型目录与 ChatScreen 202/202，TypeScript、Ruff、py_compile、doc drift、基础 release-pack、iOS submission preflight 和 `git diff --check` 均 PASS。严格 final-submit 继续按设计 FAIL 于 Build 242+、精确 EAS/source/IPA、物理 iPhone、ASC 人工确认和截图材料。首次最终树 live-eval 为 4/5（平均 0.91），定位为回答明确使用“就诊”且 LLM judge 5/5、旧关键词却只认“医”的评测假阴性；`0037d23e5` 以红灯测试增加等价医疗转介表达的任一命中语义。修正后 eval 聚焦 68/68，最终真实模型闸 PASS：invariants 12/12、health_agent_core 50/50、orchestrator 5/5（平均 0.90）、trajectory 12/12、goldens 9/9；live-change gate PASS。本地非生产 SQLite 缺 usage telemetry 表仅产生已知旁路告警，不改变 Gate 裁决，未设置远端确认变量。
 - 2026-08-08 最终 G4 树真实模型复验：`APP_ENV=test DATABASE_URL=sqlite:///:memory:` 下 live regression exit 0；invariants 12/12、health_agent_core 50/50、orchestrator 5/5（平均 0.94）、trajectory 12/12、goldens 9/9，且 `HARNESS_LIVE_LLM_EVAL_CONFIRMED=1` 的本地 change gate PASS。非生产临时 SQLite 缺 usage telemetry 表只产生旁路告警；模型调用、语义 judge 和最终 Gate 均真实完成。
 - 2026-08-08 发布阻断：严格 final-submit checker 仍按设计 FAIL，缺少 Build 242+ 的 EAS/source/IPA、同一精确候选物理 iPhone、ASC 人工确认与最终截图材料。App Review 保持冻结，新提交远端 CI 与以上发布材料未全绿前不得提交审核。
+- 2026-08-09 provider 流总时限 TDD：新增三条异步回归。旧代码下“只有 reasoning、无终态”和“已发部分正文后持续非终态”均由测试看门狗按预期判红；实现后主 provider 无正文超时→稳定降级、已有正文超时→不降级只收尾、fallback 自身超时→单一 error finish 三项全部 PASS。完整 `test_agent_executor_failover_gate.py` 13/13 PASS；更广 Backend 闸与生产部署证据仍待本轮后续补齐。
+- 2026-08-09 部署前 CI 复盘：首次承载提交 `e6bc777f0` 的 CI `31347865871` 因两项历史测试时间边界和预期的 live-change 确认闸失败，未进入部署。Frontend 注册邀请测试写死的 `2026-08-09T20:00` 到期时间已改为稳定未来值，聚焦测试 21/21 PASS；WSCLA 聚合测试在 UTC 周一凌晨把 `now - 2h` 错算到上周，已改用相对 `week_start` 的确定性本周时间，聚焦测试 PASS。真实模型回归在 `APP_ENV=test DATABASE_URL=sqlite:///:memory:` 下 exit 0：invariants 12/12、health_agent_core 50/50、真实 orchestrator 5/5（平均 0.98）、trajectory 12/12、goldens 9/9，且无 regression；实际模型为 `MiniMax-M2.5`。临时 SQLite 未建 usage telemetry 表只产生已知旁路告警，不影响真实模型生成、judge 或 Gate 结果。远端一次性确认变量只允许覆盖承载本证据的下一轮 CI，终态后必须删除并复证不存在。
 - **裁决**：实现级 G3、真实模型回归与独立 G4 均 PASS；发布级 final-submit / T7.1 保持 BLOCK。下一步依次取得远端主干 CI、后端部署与生产恢复证据，再生成 Build 242+，不能据此直接提交 App Review。
 
 ## G4 · 安全闸
@@ -220,7 +229,7 @@
 - 同一独立 reviewer 最终复评：`G4: GO`（Critical 0 / Important 0 / Minor 1）；医疗转介 fail-closed 对抗矩阵 12/12，明确/健康条件触发的就医动作通过，否定/询问/不确定表达被拒绝，断言-only 路径不可绕过。唯一非阻断 Minor：配置可读取 `llm_judge_model`，但 `_call_judge` 尚未把该可选 override 传给 provider；当前数据集不使用该字段，登记为发布后 backlog，不在 GO 后扩大本轮变更。
 - 2026-08-08 Build 244 精确二进制隐私复评：IPA `18cd5357aaa5c57a02bfb23db741ae0889f84108e2fc5c676501f433f2c9fc10` 的主 App PrivacyInfo 仅 9 类，缺 AudioData、DeviceID、ProductInteraction，UserID 还缺 Analytics purpose；这些分别绑定实际云端 ASR、APNs device token 和认证客户端事件数据流。独立 G4 判定 Important/BLOCK、`Build 244: NO-GO`。源码整改补齐 12 类及 UserID Analytics，并将 iOS preflight 改为固定 production inventory、草稿↔manifest 精确集合、linked/tracking/purposes 逐项一致及 unknown/duplicate/schema fail-closed；变异测试覆盖双方同删、双方同翻 tracking、目的增删/重复等假绿路径。源码复评 `GO`，但必须用新原生 Build 再验包内 manifest，不能 OTA 修复或沿用 244。
 - 2026-08-08 Build 245 精确二进制复验：EAS 元数据绑定 source `140bd788a722cbcf25c203552444b72a9f010bc5`；IPA SHA-256 `bb355a4a4c9dea5de30d60468c5844e551f18c693a82636cbbb414b1dae85180`，主 App PrivacyInfo SHA-256 `2f3b255686e1a62f95eb7d85a889a12c77eb4ea0dd0efecfc4255d4c7e1251ae`。同一语义 helper 对包内 12 类数据、linked/tracking/purposes 与 checked-in App Privacy 草稿逐项校验返回零失败；版本 1.3.3（245）、bundle ID、iPhone-only arm64、production APNs、HealthKit、Universal Link、beta reports、`get-task-allow=false` 和严格验签全部 PASS。Build 244 的二进制隐私阻断已由新原生包消除。
-- **当前裁决**：`Build 245 G4: GO`，Build 244 继续 `NO-GO` 且不得绑定 App Review。G5/G6 与严格 final-submit 仍为 BLOCK，Build 245 的物理 iPhone、ASC 人工确认及截图证据未全绿前不得提交 App Review。
+- **当前裁决**：`Build 256 G4: GO`；登录错误提示修复不改变医疗、数据写入、隐私 manifest 或外发边界，精确二进制的 12 类隐私语义继续通过。Build 244 继续 `NO-GO` 且不得绑定 App Review；G5 的人工 T8/截图和 G6 未全绿前不得提交 App Review。
 
 ## S6 · 部署
 
@@ -240,6 +249,7 @@
 - Build 254：source commit `359d6b819caf8e04a9b8531b9f2441f36fecc1bb`，随后只增加发布工具兼容提交 `db1faad7dea1fcea479be88d008b9fd528a5c7e2`；Xcode 26.5 / iOS 26.5 SDK 本地正式归档，IPA SHA-256 `a21f263fb157545a7943b1ab84cf6f5b0f4666161b73b56c1f42ba2c78d659c0`，版本 1.3.3（254），严格验签与 production 能力闸 PASS。ASC Build `47b7c6b5-526d-491b-80c2-e88b1b5ad53c` 已完成 processing 并进入内部 TestFlight；审核账号物理 iPhone 安全自动子集 6/6 PASS。该包没有 EAS Build ID，严格 final-submit 的候选绑定契约仍 BLOCK；EAS 255 作为最终候选重试中。
 - EAS 255 上传前归档整改：两次尚未创建远端 Build 的上传分别在 12.8/50.8MB 与 50.6/50.8MB 处 `EPIPE`。`eas build:inspect` 证明 EAS 以 monorepo 根目录归档，原 `mobile/.easignore` 未能排除仓库级内容；新增根 `.easignore`（完整继承 `.gitignore`）后，检查归档由 144MB 降至 19MB，精确排除 `.git`、105MB `htmlcov`、后端/网页/无关 App、原生生成目录和 20MB Rokid APK，同时保留 `apps/watch`。契约测试与精确归档检查 PASS；远端 Build 号须先回置 254，再由 `autoIncrement` 创建唯一 Build 255。
 - Build 255：EAS Build `c7e11863-40c5-4717-a853-04b902aa88fa` 与 Submit `b9cbcd59-1e2e-4282-8657-f6c34d237a8e` 均完成；版本 1.3.3（255）、runtime 1.3.3、source `bb00e9dd0711537de3b9c5d49cb62390f7778ae8`。精确 IPA 签名/能力/12 类隐私语义、ASC processing/TestFlight、物理 iPhone 安全自动子集 6/6 及 ASC 版本绑定均 PASS，且未点击提交审核。随后人工登录失败路径发现账号表单未显示已有错误状态；该发布阻断必须进入新 Store Build，production OTA 继续冻结，Build 255 不得送审。
+- Build 256：EAS Build `f43f71df-2d12-4a5e-a0a0-64995bbcc654` 与 Submit `065bde9d-81d4-48dc-bfe0-ea09555dce88` 均 `FINISHED`；版本 1.3.3（256）、runtime 1.3.3、source `75f61f694c4711a7b349eb63fb7af5e48d9f9012`、fingerprint `000a731cb304b5da1d8eddfe8c707b59c129c565`。ASC Build `c2349268-3b14-4ad5-aaad-3698e1ebb71e` processing 完成并进入内部 TestFlight；版本页已移除 Build 255、绑定并保存 Build 256。审核信息保持“需要登录”，用户名与受控审核账号一致，ASC 密码与线上验证成功的钥匙串秘密逐字节一致；页面保存按钮为禁用态、“添加以供审核”为可用态，未点击提交。精确 IPA SHA-256 `2064483bd16a107601b8e27d4275a7bf9f829c0d2d9e32025753f0766e72e051`，PrivacyInfo SHA-256 `2f3b255686e1a62f95eb7d85a889a12c77eb4ea0dd0efecfc4255d4c7e1251ae`；严格验签、版本/Build/bundle、iPhone-only arm64、MinimumOSVersion 16.0、production APNs、HealthKit、Universal Link、beta reports、`get-task-allow=false` 与 12 类隐私语义全部 PASS。
 - 回滚点：上一 Store Build 240（EAS `a62a4dc5-f542-4cfe-bc87-8eb0d84a7ff4`）；App Review 尚未提交，当前无需执行回滚。
 
 ## G5 · 部署健康闸
@@ -248,6 +258,7 @@
 - TestFlight processing：PASS。Build 241 已 `VALID` 并进入 `IN_BETA_TESTING`，未过期；EAS Build/Submit 均 `FINISHED`，版本、Build、runtime、source commit 与 fingerprint 一致。
 - Build 245 TestFlight processing：PASS。ASC API 只读复验 Build 245 为 `VALID`、`IN_BETA_TESTING`、未过期，外部状态 `READY_FOR_BETA_SUBMISSION`；EAS source/build/runtime 与精确 IPA 证据一致。
 - backend health：commit `f65c4055d` 已经正式部署；数据库备份、237 表恢复演练、站外加密归档、回滚 schema、精确 revision、runtime-only KB、Skills 22/22 与多轮健康度 60/60 PASS。审核密码轮换、秘密源对齐、生产重置、固定简报 live gate 及 `#727` 350ml 正常 API 恢复均 PASS；后端子闸完成。
+- 照片发送 provider 流总时限 Backend 部署：PASS。候选 `f229e46c2b85ffdef8ef6393e4e13da144887977` 的主干 CI `31350335613` 44/44 success；一次性 live-change 确认变量在 CI 终态后已删除并复证不存在。`./deploy.sh -b -y` exit 0：生产备份约 42MB（0600）、237 表恢复演练、站外 age 加密归档哈希/HMAC、旧版本 `db1faad7d` 回滚 schema、候选 202 表 schema、精确 revision、runtime-only KB guard/staged、Skills 22/22 和多轮健康度 60/60 均 PASS，运行时 feature flag 保持 false。独立部署后复查确认公开 health 的 API/PostgreSQL/Redis/Celery 全 healthy，Backend/Worker/Beat 均 active，远端工作树干净且 revision 精确匹配。
 - physical iPhone：设备已恢复连接并确认安装小巴 1.3.3（241）。自动子集第二轮 7 项中 6 PASS、1 FAIL；失败根因对应的生产固定会话新鲜度现已由重置及 live gate 修复，但必须在密码轮换和人工预登录后以不接收凭据的安全版自动子集复验。语音、相机与照片持久化、分享、健康写入/纠正/删除等人工项仍未完成，不能以历史 Build 240、模拟器或旧的部分通过替代。
 - evidence security：第二轮原始 Xcode 结果包记录了自动输入的审核凭据并含合成健康内容，不得作为发布证据或上传；仅保留本 Dossier 的非敏感计数与根因。审核密码已轮换并进入钥匙串/受控秘密源，代码整改和生产固定会话重置已完成；Build 242+ 上使用新密码人工预登录和安全版自动重验完成前，T8/G5 保持阻断。
 - Build 241 supersession：健康纠正原子性后端变更与 action-aware Mobile 回执均晚于 Build 241；该包不再是可提交候选。后续 IPA、TestFlight、真机与 ASC 证据必须全部绑定 Build 242+ 的同一 source commit，不得沿用 Build 241 的通过项代替。
@@ -258,7 +269,9 @@
 - Build 254 exact IPA / TestFlight / physical iPhone：PASS。ASC processing、embedded production runtime、6/6 安全自动验收均已闭环；首次错误/跳过由设备登录错账号造成，切换到受控审核账号后同一包复验全绿。该事实证明功能候选可用，但本地归档缺少严格 final-submit 要求的 EAS Build UUID / source 绑定，因此仍不允许提交审核。
 - 物理 iPhone UI 预验：开发签名的同源码 Build 253 已安装并启动；真机截图确认 24pt 头像、21/26 标题和 13pt 箭头形成紧凑品牌组，44pt 触控目标由源码/自动测试保持。安全自动子集 5/6：双冷启动登录态、草稿前后台保留、入口、Today、隐私与账号删除通过；固定审核简报用例失败，因为实际可访问层级中不存在预期的“今天优先完成两件事”消息。原始结果包含合成健康内容与测试草稿，只保留本地、不上传；最终须在受控审核账号重置后对 TestFlight 精确 Build 253 重跑，开发签名预验不替代 T8。
 - 本地原生预验：iOS 26.5 Release 模拟器构建、安装和启动 PASS；该产物为 development 变体且禁用本地 Sentry 符号上传，只证明当前原生工程可编译/启动，不替代 production Store Build、TestFlight、精确 commit/Build 绑定或 T8 物理真机证据。
-- **裁决**：BLOCK —— Build 255 的 EAS/IPA/ASC/TestFlight/物理 iPhone 安全自动子闸虽已绿，但已被账号密码错误提示热修复取代；必须生成 Build 256 并重做同一包 T8、截图、ASC 绑定及人工项目，禁止 production OTA 和 App Review 提交。
+- Build 256 exact IPA / TestFlight / physical iPhone 自动子闸：PASS。真机确认安装 1.3.3（256）；审核账号真实登录在生产日志返回 200，随后首页、会话和时间线接口均为 200。首次安全自动子集 5/6 的唯一失败是人工使用后普通会话成为默认最新；受部署 revision/发布锁保护的审核演示数据重置恢复精确两条固定会话后，同一包复验 6/6 PASS、0 failure、0 skip，覆盖双冷启动登录态、固定会话、未发送草稿前后台保留、入口、Today 打开/关闭、隐私政策与账号删除入口。结果包只保留本机，不上传。
+- Build 256 人工相机 / 照片持久化子闸：PARTIAL PASS。系统相机、照片草稿和冷启动恢复已通过；发送后的助手终态曾因 Backend provider 流总时限缺口失败。修复现已完成生产部署且健康闸全绿，但照片终态、后续无 409 循环及再次冷启动回读尚未在同一真机 Build 复验，因此该子闸仍 BLOCK。
+- **裁决**：BLOCK（范围已缩小）—— Build 256 的 EAS/IPA/ASC/TestFlight、真实登录、安全自动子闸、照片本地持久化及 Backend 修复部署均通过；仍须完成照片终态复验，并对同一包完成人工语音、分享、健康写入/纠正/删除及最终截图。完成前继续冻结 production OTA 和 App Review 提交。
 
 ## S7 · 上线验证
 

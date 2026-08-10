@@ -70,12 +70,12 @@ describe('RegistrationInvitationPanel', () => {
     vi.mocked(api.post).mockResolvedValue({ data: prepared }); render(<RegistrationInvitationPanel />); await screen.findByText('+86 138****8000');
     fireEvent.change(screen.getByLabelText('受邀手机号'), { target: { value: '+8613800138000' } });
     fireEvent.change(screen.getByLabelText('备注'), { target: { value: '产品内测' } });
-    fireEvent.change(screen.getByLabelText('有效期'), { target: { value: '2026-08-09T20:00' } });
+    fireEvent.change(screen.getByLabelText('有效期'), { target: { value: '2999-08-09T20:00' } });
     fireEvent.click(screen.getByRole('button', { name: '预览并确认' }));
     const confirmation = screen.getByRole('dialog', { name: '确认创建手机号注册邀请' });
     expect(within(confirmation).getByText('+86 138****8000')).toBeInTheDocument(); expect(within(confirmation).queryByText('+8613800138000')).not.toBeInTheDocument();
     fireEvent.click(within(confirmation).getByRole('button', { name: '确认创建并发送' }));
-    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/admin/registration-invitations', { phone: '+8613800138000', note: '产品内测', expires_at: new Date('2026-08-09T20:00').toISOString() }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/admin/registration-invitations', { phone: '+8613800138000', note: '产品内测', expires_at: new Date('2999-08-09T20:00').toISOString() }));
     expect(await screen.findByRole('dialog', { name: '一次性注册凭据' })).toBeInTheDocument(); expect(Storage.prototype.setItem).not.toHaveBeenCalled();
   });
 
@@ -161,7 +161,7 @@ describe('RegistrationInvitationPanel', () => {
   it('traps confirmation focus, closes on Escape, and restores its trigger without submitting', async () => {
     render(<RegistrationInvitationPanel />); await screen.findByText('+86 138****8000');
     fireEvent.change(screen.getByLabelText('受邀手机号'), { target: { value: '+8613800138000' } });
-    fireEvent.change(screen.getByLabelText('有效期'), { target: { value: '2026-08-09T20:00' } });
+    fireEvent.change(screen.getByLabelText('有效期'), { target: { value: '2999-08-09T20:00' } });
     const trigger = screen.getByRole('button', { name: '预览并确认' }); trigger.focus(); fireEvent.click(trigger);
     const dialog = screen.getByRole('dialog', { name: '确认创建手机号注册邀请' });
     expect(dialog).toHaveAttribute('aria-describedby', 'confirm-invitation-description');

@@ -11,6 +11,7 @@ chat_stream 每轮死等 ~19s, 降级落到 MiniMax 弱工具模型吐 XML 文�
         产出适配回流式事件; 内容完整。
   flag 缺省 (可流式模型 + 无死亡备忘) 行为零变化。
 """
+import asyncio
 from unittest.mock import MagicMock
 
 import pytest
@@ -297,3 +298,167 @@ async def test_streaming_model_still_streams(monkeypatch):
     content = "".join(e.get("text", "") for e in events if e.get("type") == "content")
     assert content == "流式 分片"
     assert stream_called["n"] == 1
+
+
+@pytest.mark.asyncio
+async def test_stream_total_deadline_falls_back_after_reasoning_only_stall(monkeypatch):
+    """持续有非正文分片也必须受总时限约束；未出正文时只回退一次。"""
+    fallback_calls = {"n": 0}
+
+    class StalledProvider:
+        model = "qwen3.7-max"
+
+        async def chat_stream(self, **kwargs):
+            while True:
+                await asyncio.sleep(0.002)
+                yield {"type": "reasoning", "text": "仍在思考"}
+
+    class StableProvider:
+        model = "qwen3.7-plus"
+
+        async def chat_stream(self, **kwargs):
+            yield {"type": "content", "text": "稳定回复"}
+            yield {"type": "finish", "finish_reason": "stop"}
+
+    ex = _executor()
+    ex._request_model_id = "qwen3.7-max"
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_model_id",
+        lambda mid: StalledProvider(),
+    )
+
+    def stable_fallback(*_args, **_kwargs):
+        fallback_calls["n"] += 1
+        return StableProvider()
+
+    monkeypatch.setattr(ex, "_stable_fallback_provider", stable_fallback)
+    import app.services.agent_executor as agent_executor_module
+    monkeypatch.setattr(
+        agent_executor_module,
+        "_LLM_STREAM_ATTEMPT_TIMEOUT_S",
+        0.02,
+        raising=False,
+    )
+    monkeypatch.setattr(agent_executor_module.settings, "agent_base_url", None, raising=False)
+    monkeypatch.setattr(agent_executor_module.settings, "agent_api_key", None, raising=False)
+
+    events = await asyncio.wait_for(
+        _drain(ex._call_llm_stream([{"role": "user", "content": "hi"}], [])),
+        timeout=0.2,
+    )
+
+    visible_content = "".join(
+        event.get("text", "")
+        for event in events
+        if event.get("type") == "content"
+    )
+    assert fallback_calls["n"] == 1
+    assert visible_content == "稳定回复"
+    assert events[-1] == {"type": "finish", "finish_reason": "stop"}
+
+
+@pytest.mark.asyncio
+async def test_stream_total_deadline_does_not_fallback_after_partial_content(monkeypatch):
+    """已发用户可见正文后超时只能收尾，不能换模型重发造成重复。"""
+    fallback_calls = {"n": 0}
+
+    class PartialThenStalledProvider:
+        model = "qwen3.7-max"
+
+        async def chat_stream(self, **kwargs):
+            yield {"type": "content", "text": "部分"}
+            while True:
+                await asyncio.sleep(0.002)
+                yield {"type": "reasoning", "text": "仍在思考"}
+
+    ex = _executor()
+    ex._request_model_id = "qwen3.7-max"
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_model_id",
+        lambda mid: PartialThenStalledProvider(),
+    )
+
+    def stable_fallback(*_args, **_kwargs):
+        fallback_calls["n"] += 1
+        raise AssertionError("partial content must not trigger provider fallback")
+
+    monkeypatch.setattr(ex, "_stable_fallback_provider", stable_fallback)
+    import app.services.agent_executor as agent_executor_module
+    monkeypatch.setattr(
+        agent_executor_module,
+        "_LLM_STREAM_ATTEMPT_TIMEOUT_S",
+        0.02,
+        raising=False,
+    )
+    monkeypatch.setattr(agent_executor_module.settings, "agent_base_url", None, raising=False)
+    monkeypatch.setattr(agent_executor_module.settings, "agent_api_key", None, raising=False)
+
+    events = await asyncio.wait_for(
+        _drain(ex._call_llm_stream([{"role": "user", "content": "hi"}], [])),
+        timeout=0.2,
+    )
+
+    visible_content = "".join(
+        event.get("text", "")
+        for event in events
+        if event.get("type") == "content"
+    )
+    assert visible_content == "部分"
+    assert fallback_calls["n"] == 0
+    assert events[-1] == {"type": "finish", "finish_reason": "error"}
+
+
+@pytest.mark.asyncio
+async def test_stable_fallback_stream_has_its_own_total_deadline(monkeypatch):
+    """主 provider 失败后，fallback 卡流也必须及时 error finish 并释放回合。"""
+    fallback_calls = {"n": 0}
+
+    class FailedProvider:
+        model = "qwen3.7-max"
+
+        async def chat_stream(self, **kwargs):
+            raise RuntimeError("selected provider failed")
+            yield  # pragma: no cover
+
+    class StalledFallbackProvider:
+        model = "qwen3.7-plus"
+
+        async def chat_stream(self, **kwargs):
+            while True:
+                await asyncio.sleep(0.002)
+                yield {"type": "reasoning", "text": "仍在思考"}
+
+    ex = _executor()
+    ex._request_model_id = "qwen3.7-max"
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_model_id",
+        lambda mid: FailedProvider(),
+    )
+
+    def stable_fallback(*_args, **_kwargs):
+        fallback_calls["n"] += 1
+        return StalledFallbackProvider()
+
+    monkeypatch.setattr(ex, "_stable_fallback_provider", stable_fallback)
+    import app.services.agent_executor as agent_executor_module
+    monkeypatch.setattr(
+        agent_executor_module,
+        "_LLM_STREAM_ATTEMPT_TIMEOUT_S",
+        0.02,
+    )
+    monkeypatch.setattr(agent_executor_module.settings, "agent_base_url", None, raising=False)
+    monkeypatch.setattr(agent_executor_module.settings, "agent_api_key", None, raising=False)
+
+    events = await asyncio.wait_for(
+        _drain(ex._call_llm_stream([{"role": "user", "content": "hi"}], [])),
+        timeout=0.2,
+    )
+
+    error_finishes = [
+        event
+        for event in events
+        if event == {"type": "finish", "finish_reason": "error"}
+    ]
+    assert fallback_calls["n"] == 1
+    assert len(error_finishes) == 1
+    assert events[-1] == {"type": "finish", "finish_reason": "error"}
