@@ -48,7 +48,7 @@ export function looksLikeNonDietIntake(value: string): boolean {
   if (/鱼油|维生素|维\s*d|d3|d2|b族|益生菌|辅酶\s*q?\s*10|甘氨酸镁|钙片|叶酸|锌片/i.test(value)) {
     return true;
   }
-  return /(^|[^a-z0-9])(?:nac|magnesium|glycinate)(?=$|[^a-z0-9])/i.test(value);
+  return /(^|[^a-z0-9])(?:nac|magnesium|glycinate|fish\s*oil|omega(?:\s*-?\s*3)?)(?=$|[^a-z0-9]|\d+\s*(?:粒|片|颗|袋|包))/i.test(value);
 }
 
 function looksLikeOnlyAmbiguousPhotoSlice(value: string): boolean {

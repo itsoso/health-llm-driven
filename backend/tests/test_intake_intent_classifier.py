@@ -57,6 +57,31 @@ def test_known_medicines_with_bare_tablet_units_are_not_diet(query):
     assert result.kind == "medication"
 
 
+@pytest.mark.parametrize("query", [
+    "华法林 1片",
+    "warfarin 1片",
+    "warfarin1片",
+    "aspirin 1片",
+    "aspirin1片",
+    "azithromycin 1片",
+    "azithromycin1片",
+])
+def test_named_medicines_keep_ascii_boundaries_around_dose_tokens(query):
+    assert classify_intake_intent(query).kind == "medication"
+
+
+@pytest.mark.parametrize("query", [
+    "fish oil 2粒",
+    "fish oil2粒",
+    "omega-3 2粒",
+    "omega-32粒",
+    "magnesium 2粒",
+    "magnesium2粒",
+])
+def test_named_supplements_keep_ascii_boundaries_around_dose_tokens(query):
+    assert classify_intake_intent(query).kind == "supplement"
+
+
 # ──── "打卡:X"/"记录 X" 前缀清洗(mac medication_draft 实锤) ────
 def test_bare_checkin_prefix_with_colon_strips_verb():
     intent = classify_intake_intent("打卡：替普瑞酮胶囊")

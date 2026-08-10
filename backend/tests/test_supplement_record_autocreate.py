@@ -20,7 +20,7 @@ def _executor(db):
 @pytest.mark.asyncio
 async def test_unregistered_supplement_autocreates_then_taps(db):
     ex = _executor(db)
-    ex._current_turn_user_message = "记录正官庄红参液 10mL"
+    ex._current_turn_user_message = "帮我记录：正官庄红参液 10mL，确认打卡"
     create_payload: dict = {}
     tap_payload: dict = {}
 
@@ -147,6 +147,46 @@ async def test_generic_current_turn_words_cannot_become_supplement_names(
     user_message,
     model_name,
 ):
+    ex = _executor(db)
+    ex._current_turn_user_message = user_message
+    ex._current_turn_has_attachment = False
+    lookup = AsyncMock(return_value=([], None))
+    create = AsyncMock(return_value=({"id": 73, "name": model_name}, None))
+    tap = AsyncMock(return_value='{"record_id": 1073}')
+
+    with patch.object(ex, "_api_get_json", new=lookup), \
+         patch.object(ex, "_api_post_json", new=create), \
+         patch.object(ex, "_api_post", new=tap):
+        result = await ex._exec_health_record("http://x", {}, {
+            "record_type": "supplement",
+            "data": {"supplement_name": model_name},
+        })
+
+    parsed = json.loads(result)
+    assert parsed["error_code"] == "supplement_name_not_user_grounded"
+    assert parsed["dispatch_started"] is False
+    lookup.assert_not_awaited()
+    create.assert_not_awaited()
+    tap.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("user_message", "model_name"), [
+    ("记录维生素D并且帮我打卡", "维生素D并且帮我打卡"),
+    ("记录这个补剂维生素D", "这个补剂维生素D"),
+    ("记录维生素D和鱼油", "维生素D和鱼油"),
+    ("记录维生素D每天1片", "维生素D每天1片"),
+    ("记录 vitamin D and fish oil", "vitamin D and fish oil"),
+    ("记录 this supplement vitamin D", "this supplement vitamin D"),
+    ("记录 vitamin D and log it", "vitamin D and log it"),
+    ("记录 supplement", "supplement"),
+])
+async def test_directive_or_multi_entity_superstrings_cannot_become_supplement_names(
+    db,
+    user_message,
+    model_name,
+):
+    """当前回合出现同一长串，也不能把指令、剂量或多实体当成补剂名。"""
     ex = _executor(db)
     ex._current_turn_user_message = user_message
     ex._current_turn_has_attachment = False

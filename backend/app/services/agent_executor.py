@@ -4338,7 +4338,8 @@ _EXPLICIT_SUPPLEMENT_NAME_RE = re.compile(
 )
 _SUPPLEMENT_AMOUNT_TOKEN = (
     r"(?:约|大约)?\s*(?:\d+(?:\.\d+)?|[零一二两三四五六七八九十百半]+)\s*"
-    r"(?:ml|毫升|mg|毫克|μg|ug|iu|单位|g|克|片|粒|颗|袋|包|滴|勺|支|瓶)"
+    r"(?:ml|毫升|mg|毫克|mcg|μg|ug|iu|单位|g|克|片|粒|颗|袋|包|滴|勺|支|瓶|"
+    r"tablets?|capsules?|softgels?)"
 )
 _SUPPLEMENT_LEADING_AMOUNT_RE = re.compile(rf"^{_SUPPLEMENT_AMOUNT_TOKEN}\s*", re.IGNORECASE)
 _SUPPLEMENT_TRAILING_AMOUNT_RE = re.compile(rf"\s*{_SUPPLEMENT_AMOUNT_TOKEN}$", re.IGNORECASE)
@@ -4348,6 +4349,49 @@ _GENERIC_SUPPLEMENT_ENTITY_RE = re.compile(
     r"记录|打卡|识别|图|图片|照片|"
     r"帮我|给我|请|一下|的|并且|和|要|想|需要))+$"
 )
+_INVALID_SUPPLEMENT_ENTITY_RESIDUAL_RE = re.compile(
+    r"(?:这个|那个|这些|那些|图中|图片中|包装上|上面|里面|"
+    r"补剂|保健品|营养品|营养补充剂|东西|产品|"
+    r"并且|然后|帮我|给我|请|打卡|记录|录入|识别|"
+    r"每天|每日|每晚|每早|以及|或者|和|跟|与)"
+)
+_GENERIC_SUPPLEMENT_ASCII_ENTITIES = frozenset(
+    {
+        "supplement",
+        "supplements",
+        "vitamin",
+        "mineral",
+        "product",
+        "image",
+        "photo",
+        "record",
+        "log",
+        "checkin",
+    }
+)
+_INVALID_SUPPLEMENT_ENTITY_ASCII_RESIDUAL_RE = re.compile(
+    r"\b(?:this|that|these|those|supplements?|products?|and|or|then|please|"
+    r"record|log|check\s*in|daily|every\s+day|every\s+morning|every\s+night|"
+    r"for\s+me|help\s+me|identify)\b",
+    re.IGNORECASE,
+)
+
+
+def _supplement_entity_is_generic(raw: Any) -> bool:
+    normalized = _normalized_current_turn_entity_text(raw)
+    return bool(
+        _GENERIC_SUPPLEMENT_ENTITY_RE.fullmatch(normalized)
+        or normalized in _GENERIC_SUPPLEMENT_ASCII_ENTITIES
+    )
+
+
+def _supplement_entity_has_directive_residual(raw: Any) -> bool:
+    boundary_preserving = unicodedata.normalize("NFKC", str(raw or "")).casefold()
+    normalized = _normalized_current_turn_entity_text(boundary_preserving)
+    return bool(
+        _INVALID_SUPPLEMENT_ENTITY_RESIDUAL_RE.search(normalized)
+        or _INVALID_SUPPLEMENT_ENTITY_ASCII_RESIDUAL_RE.search(boundary_preserving)
+    )
 
 
 def _explicit_supplement_names_in_current_turn(user_message: Any) -> tuple[str, ...]:
@@ -4360,7 +4404,9 @@ def _explicit_supplement_names_in_current_turn(user_message: Any) -> tuple[str, 
         normalized_candidate = _normalized_current_turn_entity_text(candidate)
         if len(normalized_candidate) < 2:
             continue
-        if _GENERIC_SUPPLEMENT_ENTITY_RE.fullmatch(normalized_candidate):
+        if _supplement_entity_is_generic(candidate):
+            continue
+        if _supplement_entity_has_directive_residual(candidate):
             continue
         names.append(normalized_candidate)
     return tuple(names)
@@ -4373,7 +4419,9 @@ def _supplement_name_is_grounded_in_current_turn(
     normalized_name = _normalized_current_turn_entity_text(supplement_name)
     if len(normalized_name) < 2:
         return False
-    if _GENERIC_SUPPLEMENT_ENTITY_RE.fullmatch(normalized_name):
+    if _supplement_entity_is_generic(supplement_name):
+        return False
+    if _supplement_entity_has_directive_residual(supplement_name):
         return False
     return normalized_name in _explicit_supplement_names_in_current_turn(user_message)
 

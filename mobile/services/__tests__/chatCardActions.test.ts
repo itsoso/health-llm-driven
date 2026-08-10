@@ -651,7 +651,17 @@ describe('dispatchChatCardAction', () => {
   it.each([
     ['阿司匹林 1片'],
     ['阿奇霉素 1片'],
+    ['华法林 1片'],
+    ['warfarin 1片'],
+    ['warfarin1片'],
+    ['aspirin 1片'],
+    ['azithromycin1片'],
     ['维生素D 1片'],
+    ['fish oil 2粒'],
+    ['fish oil2粒'],
+    ['omega-3 2粒'],
+    ['magnesium2粒'],
+    ['胡萝卜 约3片 + warfarin 1片'],
   ])('rejects non-diet intake even with an owner-bound photo token: %s', async (foodItems) => {
     await expect(dispatchChatCardAction({
       label: '确认记录',

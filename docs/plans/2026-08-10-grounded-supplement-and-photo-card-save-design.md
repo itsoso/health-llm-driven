@@ -20,7 +20,7 @@ Use the release-safe, confirmation-first design approved by the user on 2026-08-
 
 1. A single-supplement write must be grounded in the current user turn.
 2. If the current turn contains an attachment, `health_record(record_type=supplement)` cannot auto-create or tap a supplement. The tool returns a structured rejection asking the user to verify the recognized name in a new text message.
-3. If the current turn has no attachment, the normalized supplement name supplied by the model must exactly equal a concrete entity extracted after an explicit record/intake action in the current user message. Leading/trailing dosage is removed deterministically; generic category, image, pronoun, and action terms such as `补剂`, `图`, `打卡`, `这个补剂`, or bare `维生素` are rejected before any supplement lookup, definition creation, or tap request.
+3. If the current turn has no attachment, the normalized supplement name supplied by the model must exactly equal one bounded concrete entity extracted after an explicit record/intake action in the current user message. Leading/trailing dosage is removed deterministically; generic category, image, pronoun, directive, conjunction, frequency, multi-entity, and residual-dose forms such as `补剂`, `图`, `打卡`, `这个补剂维生素D`, `维生素D并且帮我打卡`, `维生素D和鱼油`, `维生素D每天1片`, `this supplement vitamin D`, `vitamin D and fish oil`, or bare `维生素` / `supplement` are rejected before any supplement lookup, definition creation, or tap request.
 4. Direct text such as `记录正官庄红参液 10mL` remains an immediate write, preserving the existing low-friction text workflow.
 5. Group check-ins remain unchanged; this fix only covers `record_type=supplement`.
 
@@ -30,14 +30,14 @@ This release does not add a new supplement-image draft table or autonomous confi
 
 1. Mobile must preserve a valid `photo_draft_token` from a deterministic server card when posting `/diet/records`.
 2. For an owner-bound photo draft, Mobile keeps the management-intent and health-metric checks and defers only an Arabic-number slice unit such as `胡萝卜 约3片`. It removes that one ambiguous unit and reruns medication/supplement detection; any remaining strong signal still fails before posting.
-3. Backend authenticates the owner-bound token and applies its canonical diet intake guard, including the shared complete-drug lexicon. A valid photo token cannot turn a known medicine or supplement into diet data.
+3. Backend authenticates the owner-bound token and applies its canonical diet intake guard, including shared complete-name drug and supplement lexicons with boundary-preserving handling of spaced or unspaced doses. A valid photo token cannot turn `华法林` / `warfarin`, `aspirin`, `azithromycin`, `fish oil`, `omega-3`, `magnesium`, or a mixed food-plus-drug payload into diet data.
 4. Text-only diet cards retain the existing client-side medication/supplement guard.
 5. The exact production phrase containing `胡萝卜 约3片` becomes a regression test.
 6. Card failures continue to fail visibly; known local validation and HTTP failures emit only a content-free stable error code.
 
 ## Data integrity correction
 
-After code gates pass, remove supplement definition `73` through the authenticated owner-scoped supplement API. Its existing cascade removes record `1073`. Verify both resources are absent using read-only owner-scoped queries. Do not mutate production tables directly.
+After code gates pass, authenticate as the owning user and read all owner-scoped records whose `supplement_id` is `73`. Continue only if the definition belongs to that same owner and the exact record-id set equals `{1073}`; any additional record or ownership mismatch aborts cleanup. Then remove definition `73` through the authenticated owner-scoped supplement API, whose existing cascade removes record `1073`. Verify both resources are absent using read-only owner-scoped queries. Do not mutate production tables directly.
 
 ## Safety and privacy
 
@@ -54,10 +54,10 @@ After code gates pass, remove supplement definition `73` through the authenticat
 3. An explicit text-only supplement name still auto-creates and taps exactly once.
 4. The production meal phrase with `胡萝卜 约3片` posts successfully when accompanied by a valid photo draft token.
 5. The same phrase without a photo draft token remains subject to the existing client guard.
-6. Known medicines and supplements remain rejected with or without a valid photo draft token.
+6. Known medicines and supplements, including Chinese/English names, spaced/unspaced doses, and mixed food-plus-drug payloads, remain rejected with or without a valid photo draft token; Backend creates no diet row and Mobile sends no request.
 7. The photo draft token is sent to `/diet/records`, allowing the backend to bind the retained image and enforce idempotency.
 8. Focused Backend and Mobile suites, typecheck, safety review, deploy health gates, and production smoke tests pass.
-9. Supplement definition `73` and record `1073` are no longer present after controlled cleanup.
+9. Cleanup first proves the exact owner-scoped record-id set `{1073}` for definition `73`, aborts on any mismatch, and only then removes definition `73`; both resources are absent afterward.
 
 ## Release impact
 

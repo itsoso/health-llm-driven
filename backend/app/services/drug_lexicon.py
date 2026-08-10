@@ -290,6 +290,37 @@ def contains_drug_name(text: str | None) -> bool:
     return _drug_name_free_text_pattern().search(str(text).lower()) is not None
 
 
+@lru_cache(maxsize=1)
+def supplement_name_free_text_terms() -> FrozenSet[str]:
+    """完整补剂名探测词；排除会把普通食物误判为补剂的草药/食物类。"""
+    terms = set(_flatten_aliases(
+        SUPPLEMENT_CLASS_ALIASES,
+        exclude_classes=_FREE_TEXT_EXCLUDED_SUPPLEMENT_CLASSES,
+    ))
+    terms -= _FREE_TEXT_AMBIGUOUS_TERMS
+    collapsed = {t.replace(" ", "") for t in terms if " " in t and _has_cjk(t)}
+    return frozenset(t for t in (terms | collapsed) if t)
+
+
+@lru_cache(maxsize=1)
+def _supplement_name_free_text_pattern() -> Pattern[str]:
+    alternatives: list[str] = []
+    for term in sorted(supplement_name_free_text_terms(), key=lambda value: (-len(value), value)):
+        escaped = re.escape(term)
+        if term.isascii():
+            alternatives.append(rf"(?<![a-z0-9]){escaped}(?![a-z0-9])")
+        else:
+            alternatives.append(escaped)
+    return re.compile("|".join(alternatives), re.IGNORECASE)
+
+
+def contains_supplement_name(text: str | None) -> bool:
+    """识别自由文本中的完整补剂名，并保留 ASCII 词边界。"""
+    if not text:
+        return False
+    return _supplement_name_free_text_pattern().search(str(text).lower()) is not None
+
+
 def drug_name_spans(text: str | None) -> tuple[tuple[int, int], ...]:
     """返回完整药名在自由文本中的位置，供子句级安全语义判断使用。"""
     if not text:

@@ -44,6 +44,8 @@ Update the existing auto-create test so the current user message explicitly cont
 
 Add zero-dispatch adversarial cases for model names such as `补剂`, `图`, `打卡`, `这个补剂`, and bare `维生素`. Add canonical Backend rejection cases for `阿司匹林 1片` and `阿奇霉素 1片`.
 
+After the second independent review, add zero-dispatch cases for directive/generic superstrings (`维生素D并且帮我打卡`, `这个补剂维生素D`, `this supplement vitamin D`), conjunction/multi-entity input (`维生素D和鱼油`, `vitamin D and fish oil`), and residual frequency/dose input (`维生素D每天1片`). Add classifier and API no-row cases for Chinese/English drugs and supplements, spaced/unspaced doses, and mixed food-plus-drug payloads. The Mobile owner-bound-token matrix must prove the same inputs produce zero POSTs.
+
 **Step 2: Write the failing contextual meal-photo test**
 
 Use the production food phrase containing `胡萝卜 约3片`, a valid `photo_draft_token`, and the registered diet-card write policy. Assert that dispatch resolves, posts exactly once, and includes the same token.
@@ -197,7 +199,7 @@ fix(agent): ground supplement writes and photo saves
 
 **Step 5: Obtain an independent safety review**
 
-The reviewer must inspect the committed diff for supplement write authority, owner isolation, photo draft ownership/expiry, diet guard preservation, receipt truthfulness, and privacy-safe telemetry. The first review returned BLOCK because arbitrary message substrings and whole-guard bypasses remained possible; this plan therefore requires a new reviewer to inspect the corrected committed diff. Any BLOCK returns to implementation; only GO permits deploy.
+The reviewer must inspect the committed diff for supplement write authority, owner isolation, photo draft ownership/expiry, diet guard preservation, receipt truthfulness, and privacy-safe telemetry. The first review returned BLOCK because arbitrary message substrings and whole-guard bypasses remained possible. The second review also returned BLOCK because directive/multi-entity superstrings remained groundable and owner-bound photo tokens still admitted English named medicines/supplements with dose text. Each BLOCK returns to implementation; a fresh independent reviewer must inspect the final committed tree, and only GO permits deploy.
 
 ### Task 5: Push, deploy, correct the bad record, and verify production
 
@@ -218,7 +220,7 @@ Use the deploy health gate and read-only probes to confirm backend, PostgreSQL, 
 
 **Step 4: Remove the exact erroneous resources through the owner-scoped API**
 
-Authenticate as the owning review user without printing credentials or tokens. Resolve supplement definition `73` and record `1073` again, then call the existing authenticated delete endpoint for definition `73`. Do not use direct SQL mutation.
+Authenticate as the owning review user without printing credentials or tokens. Resolve supplement definition `73`, then list every owner-scoped record with `supplement_id=73`. Assert the definition owner matches and the exact record-id set is `{1073}`; abort on any extra record or ownership mismatch. Only then call the existing authenticated delete endpoint for definition `73`. Do not use direct SQL mutation.
 
 **Step 5: Verify cleanup**
 

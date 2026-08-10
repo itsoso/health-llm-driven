@@ -12,6 +12,7 @@ from app.services.drug_lexicon import (
     _FREE_TEXT_AMBIGUOUS_TERMS,
     _FREE_TEXT_EXCLUDED_SUPPLEMENT_CLASSES,
     contains_drug_name,
+    contains_supplement_name,
     drug_name_spans,
     drug_name_free_text_terms,
     prescriptive_free_text_terms,
@@ -83,6 +84,14 @@ def test_drug_name_detector_covers_complete_names_without_short_substring_false_
     assert len(drug_name_spans("把二甲双胍换成格列美脲")) == 2
     assert contains_drug_name("停用跑步机，改为户外步行") is False
     assert contains_drug_name("停用睡前闹钟") is False
+
+
+def test_supplement_name_detector_uses_complete_names_without_food_or_substring_false_positives():
+    assert contains_supplement_name("fish oil 2粒") is True
+    assert contains_supplement_name("omega-3 2粒") is True
+    assert contains_supplement_name("magnesium 2粒") is True
+    assert contains_supplement_name("environment monitoring") is False
+    assert contains_supplement_name("garlic bread") is False
 
 
 # 迁移前 kb_reconciliation_merge 手抄的处方 term 全集(2026-07 迁到 drug_lexicon 前)。
