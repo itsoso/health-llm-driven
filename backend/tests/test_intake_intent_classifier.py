@@ -47,10 +47,17 @@ def test_extracts_basic_intake_slots():
     assert diet.slots["meal_type"] == "dinner"
 
 
+@pytest.mark.parametrize("query", [
+    "阿司匹林 1片",
+    "阿奇霉素 1片",
+])
+def test_known_medicines_with_bare_tablet_units_are_not_diet(query):
+    result = classify_intake_intent(query)
+
+    assert result.kind == "medication"
+
+
 # ──── "打卡:X"/"记录 X" 前缀清洗(mac medication_draft 实锤) ────
-from app.services.intake_intent_classifier import classify_intake_intent
-
-
 def test_bare_checkin_prefix_with_colon_strips_verb():
     intent = classify_intake_intent("打卡：替普瑞酮胶囊")
     assert intent.kind == "medication"

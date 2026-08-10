@@ -10,6 +10,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
+from app.services.drug_lexicon import contains_drug_name
+
 
 @dataclass(frozen=True)
 class IntakeIntent:
@@ -261,7 +263,7 @@ def _extract_water_amount(normalized: str) -> int | None:
 
 
 def _looks_like_medication(normalized: str) -> bool:
-    if _has_any(normalized, MEDICATION_MARKERS):
+    if _has_any(normalized, MEDICATION_MARKERS) or contains_drug_name(normalized):
         return True
     return bool(
         _MEDICATION_ACTION_RE.search(normalized)

@@ -4326,13 +4326,56 @@ def _normalized_current_turn_entity_text(raw: Any) -> str:
     )
 
 
+_EXPLICIT_SUPPLEMENT_NAME_RE = re.compile(
+    r"(?:^|[，,;；。.!！?？])\s*"
+    r"(?:请|麻烦)?\s*(?:帮我|给我)?\s*"
+    r"(?:"
+    r"(?:记录|打卡|录入)(?:一下)?\s*(?:我\s*)?(?:刚才|刚|今天)?\s*"
+    r"(?:吃了|服用了|服用|吃|用了|用药|补了|喝了)?"
+    r"|(?:我\s*)?(?:刚才|刚|今天)?\s*(?:吃了|服用了|服用|用了|补了|喝了)"
+    r")\s*[:：]?\s*(?P<name>[^，,;；。.!！?？]+)",
+    re.IGNORECASE,
+)
+_SUPPLEMENT_AMOUNT_TOKEN = (
+    r"(?:约|大约)?\s*(?:\d+(?:\.\d+)?|[零一二两三四五六七八九十百半]+)\s*"
+    r"(?:ml|毫升|mg|毫克|μg|ug|iu|单位|g|克|片|粒|颗|袋|包|滴|勺|支|瓶)"
+)
+_SUPPLEMENT_LEADING_AMOUNT_RE = re.compile(rf"^{_SUPPLEMENT_AMOUNT_TOKEN}\s*", re.IGNORECASE)
+_SUPPLEMENT_TRAILING_AMOUNT_RE = re.compile(rf"\s*{_SUPPLEMENT_AMOUNT_TOKEN}$", re.IGNORECASE)
+_GENERIC_SUPPLEMENT_ENTITY_RE = re.compile(
+    r"^(?:(?:这个|那个|这些|那些|一种|一个|图中|图片中|包装上|上面|里面|"
+    r"补剂|保健品|营养品|营养补充剂|维生素|矿物质|营养素|草本|东西|产品|"
+    r"记录|打卡|识别|图|图片|照片|"
+    r"帮我|给我|请|一下|的|并且|和|要|想|需要))+$"
+)
+
+
+def _explicit_supplement_names_in_current_turn(user_message: Any) -> tuple[str, ...]:
+    raw_message = unicodedata.normalize("NFKC", str(user_message or ""))
+    names: list[str] = []
+    for match in _EXPLICIT_SUPPLEMENT_NAME_RE.finditer(raw_message):
+        candidate = match.group("name").strip(" ：:，,;；。.!！?？")
+        candidate = _SUPPLEMENT_LEADING_AMOUNT_RE.sub("", candidate)
+        candidate = _SUPPLEMENT_TRAILING_AMOUNT_RE.sub("", candidate)
+        normalized_candidate = _normalized_current_turn_entity_text(candidate)
+        if len(normalized_candidate) < 2:
+            continue
+        if _GENERIC_SUPPLEMENT_ENTITY_RE.fullmatch(normalized_candidate):
+            continue
+        names.append(normalized_candidate)
+    return tuple(names)
+
+
 def _supplement_name_is_grounded_in_current_turn(
     supplement_name: Any,
     user_message: Any,
 ) -> bool:
     normalized_name = _normalized_current_turn_entity_text(supplement_name)
-    normalized_message = _normalized_current_turn_entity_text(user_message)
-    return bool(normalized_name and normalized_name in normalized_message)
+    if len(normalized_name) < 2:
+        return False
+    if _GENERIC_SUPPLEMENT_ENTITY_RE.fullmatch(normalized_name):
+        return False
+    return normalized_name in _explicit_supplement_names_in_current_turn(user_message)
 
 
 def _fast_record_kind(args: dict) -> str:

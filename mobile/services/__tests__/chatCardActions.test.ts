@@ -648,6 +648,29 @@ describe('dispatchChatCardAction', () => {
     expect(mockApiPost).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['阿司匹林 1片'],
+    ['阿奇霉素 1片'],
+    ['维生素D 1片'],
+  ])('rejects non-diet intake even with an owner-bound photo token: %s', async (foodItems) => {
+    await expect(dispatchChatCardAction({
+      label: '确认记录',
+      action: 'diet_record.create',
+      endpoint: '/diet/records',
+      requires_manual_confirm: true,
+      ...DIET_WRITE_POLICY,
+      payload: {
+        record: {
+          meal_type: 'lunch',
+          food_items: foodItems,
+          photo_draft_token: 'photo-draft-token-1234567890',
+        },
+      },
+    })).rejects.toThrow('invalid_diet_food_items_non_diet');
+
+    expect(mockApiPost).not.toHaveBeenCalled();
+  });
+
   it('normalizes structured food arrays before creating diet records', async () => {
     mockApiPost.mockResolvedValueOnce({ data: { id: 78 } });
 

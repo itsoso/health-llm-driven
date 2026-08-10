@@ -133,6 +133,44 @@ async def test_model_inferred_supplement_name_is_rejected_before_dispatch(db):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("user_message", "model_name"), [
+    ("识别图中的补剂并且帮我打卡", "补剂"),
+    ("识别图中的补剂并且帮我打卡", "图"),
+    ("识别图中的补剂并且帮我打卡", "打卡"),
+    ("记录这个补剂", "记录"),
+    ("记录这个补剂", "这个"),
+    ("记录这个补剂", "这个补剂"),
+    ("记录维生素", "维生素"),
+])
+async def test_generic_current_turn_words_cannot_become_supplement_names(
+    db,
+    user_message,
+    model_name,
+):
+    ex = _executor(db)
+    ex._current_turn_user_message = user_message
+    ex._current_turn_has_attachment = False
+    lookup = AsyncMock(return_value=([], None))
+    create = AsyncMock(return_value=({"id": 73, "name": model_name}, None))
+    tap = AsyncMock(return_value='{"record_id": 1073}')
+
+    with patch.object(ex, "_api_get_json", new=lookup), \
+         patch.object(ex, "_api_post_json", new=create), \
+         patch.object(ex, "_api_post", new=tap):
+        result = await ex._exec_health_record("http://x", {}, {
+            "record_type": "supplement",
+            "data": {"supplement_name": model_name},
+        })
+
+    parsed = json.loads(result)
+    assert parsed["error_code"] == "supplement_name_not_user_grounded"
+    assert parsed["dispatch_started"] is False
+    lookup.assert_not_awaited()
+    create.assert_not_awaited()
+    tap.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_attachment_supplement_write_requires_text_confirmation(db):
     ex = _executor(db)
     ex._current_turn_user_message = "识别并记录维生素D"

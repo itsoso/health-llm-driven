@@ -7,11 +7,15 @@ export function assertDietFoodItemsAllowed(
   if (looksLikeDietManagementIntent(foodItems)) {
     throw new Error('invalid_diet_food_items_management');
   }
-  // Server-bound photo drafts are owner-scoped, expiring capabilities. Their
-  // canonical backend guard remains authoritative; the broad local `片`
-  // heuristic must not reject valid food portions before the request exists.
-  if (!options.ownerBoundPhotoDraft && looksLikeNonDietIntake(foodItems)) {
-    throw new Error('invalid_diet_food_items_non_diet');
+  if (looksLikeNonDietIntake(foodItems)) {
+    // Owner-bound photo drafts may contain food slice counts such as `胡萝卜
+    // 约3片`. Defer only that ambiguous unit; known medication/supplement
+    // signals remain blocked locally and by the canonical backend guard.
+    const onlyAmbiguousPhotoSlice = options.ownerBoundPhotoDraft
+      && looksLikeOnlyAmbiguousPhotoSlice(foodItems);
+    if (!onlyAmbiguousPhotoSlice) {
+      throw new Error('invalid_diet_food_items_non_diet');
+    }
   }
   if (looksLikeHealthMetricIntent(foodItems)) {
     throw new Error('invalid_diet_food_items_health_metric');
@@ -45,6 +49,12 @@ export function looksLikeNonDietIntake(value: string): boolean {
     return true;
   }
   return /(^|[^a-z0-9])(?:nac|magnesium|glycinate)(?=$|[^a-z0-9])/i.test(value);
+}
+
+function looksLikeOnlyAmbiguousPhotoSlice(value: string): boolean {
+  const withoutNumericSlices = value.replace(/(?:约|大约)?\s*\d+(?:\.\d+)?\s*片/g, ' ');
+  if (withoutNumericSlices === value) return false;
+  return !looksLikeNonDietIntake(withoutNumericSlices);
 }
 
 export function looksLikeHealthMetricIntent(value: string): boolean {

@@ -61,4 +61,15 @@ describe('dietIntakeGuard', () => {
       ownerBoundPhotoDraft: true,
     })).toThrow(errorCode);
   });
+
+  it.each([
+    ['阿司匹林 1片'],
+    ['阿奇霉素 1片'],
+    ['维生素D 1片'],
+    ['鱼油 2粒'],
+  ])('keeps strong medication and supplement guards for photo drafts: %s', (text) => {
+    expect(() => assertDietFoodItemsAllowed(text, {
+      ownerBoundPhotoDraft: true,
+    })).toThrow('invalid_diet_food_items_non_diet');
+  });
 });

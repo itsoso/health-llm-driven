@@ -4,7 +4,7 @@
 
 **Goal:** Prevent ungrounded supplement writes and make owner-bound contextual meal-photo cards save successfully without weakening the authoritative backend intake guard.
 
-**Architecture:** Add a narrow server-side grounding choke point immediately before the existing supplement lookup/create/tap path. Preserve owner-bound photo draft identity in Mobile and defer only the noisy client non-diet heuristic to the backend for that server-bound path; text-only cards retain the current defense-in-depth checks.
+**Architecture:** Add a narrow server-side grounding choke point immediately before the existing supplement lookup/create/tap path. A model-provided name must exactly equal a concrete, action-bound entity extracted from the current text-only message after dosage removal; generic category, image, pronoun, and action terms fail closed. Preserve owner-bound photo draft identity in Mobile, but defer only an Arabic-number food-slice `片` signal; Mobile retains strong medication/supplement blocking and Backend reuses the canonical complete-drug lexicon.
 
 **Tech Stack:** FastAPI/SQLAlchemy/Pytest, React Native/TypeScript/Jest, existing `AgentExecutor`, `photo_draft_token`, client terminal telemetry, controlled production deploy tooling.
 
@@ -14,7 +14,10 @@
 
 **Files:**
 - Modify: `backend/tests/test_supplement_record_autocreate.py`
+- Modify: `backend/tests/test_intake_intent_classifier.py`
+- Modify: `backend/tests/test_diet.py`
 - Modify: `mobile/services/__tests__/chatCardActions.test.ts`
+- Modify: `mobile/utils/__tests__/dietIntakeGuard.test.ts`
 
 **Step 1: Write the failing supplement grounding tests**
 
@@ -38,6 +41,8 @@ async def test_attachment_supplement_write_requires_text_confirmation(db):
 ```
 
 Update the existing auto-create test so the current user message explicitly contains `正官庄红参液`.
+
+Add zero-dispatch adversarial cases for model names such as `补剂`, `图`, `打卡`, `这个补剂`, and bare `维生素`. Add canonical Backend rejection cases for `阿司匹林 1片` and `阿奇霉素 1片`.
 
 **Step 2: Write the failing contextual meal-photo test**
 
@@ -87,7 +92,8 @@ def _normalized_current_turn_entity_text(value: Any) -> str:
 For `rtype == "supplement"`:
 
 - reject current attachment turns with `supplement_image_confirmation_required`;
-- reject an empty normalized name or a name not contained in the normalized current user message with `supplement_name_not_user_grounded`;
+- extract only an entity following an explicit current-turn record/intake action, remove a leading/trailing quantity and dosage, and require exact normalized equality with the model-provided name;
+- reject empty, one-character, generic category, image, pronoun, and action-only names with `supplement_name_not_user_grounded`;
 - return through `local_write_rejection`, ensuring `dispatch_started=false`.
 
 **Step 3: Update the runtime skill contract**
@@ -111,9 +117,9 @@ Expected: all selected tests pass, and the existing text-only auto-create receip
 - Modify: `mobile/utils/dietIntakeGuard.ts`
 - Test: `mobile/services/__tests__/chatCardActions.test.ts`
 
-**Step 1: Add a narrow guard option**
+**Step 1: Add a narrow photo-slice guard option**
 
-Extend `assertDietFoodItemsAllowed` with an optional `ownerBoundPhotoDraft` flag. Always reject management and health-metric inputs. Skip only `looksLikeNonDietIntake` when the flag is true; the backend remains authoritative.
+Extend `assertDietFoodItemsAllowed` with an optional `ownerBoundPhotoDraft` flag. Always reject management and health-metric inputs. When the flag is true and the only non-diet signal is an Arabic-number slice unit such as `约3片`, remove only that unit and rerun the non-diet classifier. Any remaining medication or supplement signal still rejects before the request; the backend remains authoritative.
 
 ```typescript
 export function assertDietFoodItemsAllowed(
@@ -121,7 +127,7 @@ export function assertDietFoodItemsAllowed(
   options: { ownerBoundPhotoDraft?: boolean } = {},
 ): void {
   if (looksLikeDietManagementIntent(foodItems)) throw ...;
-  if (!options.ownerBoundPhotoDraft && looksLikeNonDietIntake(foodItems)) throw ...;
+  if (looksLikeNonDietIntake(foodItems) && !onlyAmbiguousNumericPhotoSlice(foodItems, options)) throw ...;
   if (looksLikeHealthMetricIntent(foodItems)) throw ...;
 }
 ```
@@ -132,7 +138,7 @@ Read the token before food-item validation. Accept only `^[A-Za-z0-9_-]{24,64}$`
 
 **Step 3: Keep text-only defenses unchanged**
 
-The existing medication/supplement rejection cases without a photo draft token must still fail before any API request.
+The existing medication/supplement rejection cases without a photo draft token must still fail before any API request. With a valid token, known medicines and supplements must also fail before posting. Backend must classify complete drug names from its canonical lexicon so owner-bound requests cannot bypass the authoritative guard.
 
 **Step 4: Run the Mobile focused tests and verify GREEN**
 
@@ -191,7 +197,7 @@ fix(agent): ground supplement writes and photo saves
 
 **Step 5: Obtain an independent safety review**
 
-The reviewer must inspect the committed diff for supplement write authority, owner isolation, photo draft ownership/expiry, diet guard preservation, receipt truthfulness, and privacy-safe telemetry. Any BLOCK returns to implementation; only GO permits deploy.
+The reviewer must inspect the committed diff for supplement write authority, owner isolation, photo draft ownership/expiry, diet guard preservation, receipt truthfulness, and privacy-safe telemetry. The first review returned BLOCK because arbitrary message substrings and whole-guard bypasses remained possible; this plan therefore requires a new reviewer to inspect the corrected committed diff. Any BLOCK returns to implementation; only GO permits deploy.
 
 ### Task 5: Push, deploy, correct the bad record, and verify production
 
