@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v1"
+HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v2"
 
 
 @dataclass(frozen=True)
@@ -177,8 +177,33 @@ CANONICAL_ILLNESS_ENTITIES = frozenset(
         "玫瑰糠疹",
         "耳石症",
         "白癜风",
+        "结节性多动脉炎",
+        "遗传性血管性水肿",
+        "阵发性睡眠性血红蛋白尿",
+        "成人斯蒂尔病",
+        "原发性醛固酮增多症",
+        "克雅氏病",
+        "特发性血小板减少性紫癜",
+        "贝赫切特病",
+        "法布雷病",
+        "戈谢病",
+        "庞贝病",
+        "威尔逊病",
+        "美尼尔病",
+        "still病",
+        "nmo谱系病",
+        "cadasil病",
+        "原发性胆汁性胆管炎",
+        "桥本氏甲状腺炎",
+        "运动神经元病",
+        "饮食失调症",
     }
 )
+
+ILLNESS_ENTITY_ALIASES = {
+    "β-地中海贫血": "β地中海贫血",
+    "her2+乳腺癌": "her2阳性乳腺癌",
+}
 
 # A complete disease tail is strong evidence that an unknown preceding span is
 # a separate subject. Generic morphology such as ``综合征`` is deliberately not
@@ -247,7 +272,8 @@ OWNER_BOUNDARY_DISEASE_TAILS = tuple(
             "新冠",
             "白癜风",
             "溃疡",
-        },
+        }
+        | {entity for entity in CANONICAL_ILLNESS_ENTITIES if len(entity) >= 3},
         key=len,
         reverse=True,
     )
@@ -259,7 +285,7 @@ MEDICAL_MORPHOLOGY_RE = re.compile(
     r"低血压|哮喘|障碍|闭经|过敏|贫血|呼吸暂停|瘫痪|晕厥|"
     r"脂肪肝|血尿|便秘|失禁|异常|头疼|痛风|甲亢|甲减|房颤|癫痫|"
     r"磨牙|气胸|结石|息肉|出血|结核|卒中|新冠|帕金森(?:病)?|"
-    r"红斑狼疮|白癜风|震颤)$",
+    r"红斑狼疮|白癜风|震颤|麻痹|变性|萎缩)$",
     re.IGNORECASE,
 )
 
@@ -361,7 +387,7 @@ THIRD_PARTY_ROLE_RE = re.compile(
 
 CLINICAL_MODIFIER_RE = re.compile(
     r"(?:急性|慢性|复发性|原发性|继发性|遗传性|特发性|罕见|重症|"
-    r"阵发性|系统性|多发性|缺铁性|溶血性|抗磷脂|"
+    r"阵发性|系统性|多发性|结节性|减少性|增多性|缺铁性|溶血性|抗磷脂|"
     r"运动性|运动诱发|睡眠相关|体重相关(?:性)?|妊娠|小儿|"
     r"新生儿|老年性|青少年|职业性|季节性|过敏性|病毒性|"
     r"细菌性|真菌性|免疫性|自身免疫性|代谢性|神经性|"
@@ -376,6 +402,30 @@ CLINICAL_MORPHEME_RE = re.compile(
     r"免疫|磷脂|胶质|黑色素|淋巴|代谢|饮食|呼吸|尿|蛋白|血管|"
     r"细胞|细菌|病毒|真菌|遗传|缺铁|溶血|阵发|纤维化|肉芽肿|"
     r"硬化|肌无力|萎缩|白血|脑膜|皮肌|心肌|骨髓)",
+    re.IGNORECASE,
+)
+
+# Open-vocabulary disease authorization is deliberately compositional and
+# closed over medical tokens. A clinical-looking suffix alone is insufficient:
+# every character before the suffix must be explained by a medical modifier or
+# body token. This keeps ``遗传算法炎`` and arbitrary-owner prefixes closed while
+# permitting well-formed new compounds without an ever-growing sentence regex.
+OPEN_ILLNESS_ENTITY_RE = re.compile(
+    r"^(?:(?:急性|慢性|复发性|原发性|继发性|遗传性|特发性|重症|阵发性|"
+    r"系统性|多发性|结节性|减少性|增多性|血管性|睡眠性|免疫性|"
+    r"自身免疫性|代谢性|神经性|缺血性|出血性|阻塞性|感染性|"
+    r"药物性|创伤性|活动性|压力性|病毒性|细菌性|真菌性|过敏性|"
+    r"进行性|硬化性|肉芽肿性|嗜酸性|粒细胞性|多|"
+    r"妊娠|小儿|新生儿|青少年|成人|老年性|职业性|季节性))*"
+    r"(?:(?:脑|颅|心|肺|肝|胆|胆汁|胆管|胰|肾|胃|肠|血|血管|动脉|"
+    r"主动脉|多血管|静脉|血小板|血红|红蛋白|骨|骨髓|肌|神经|"
+    r"视神经|脊髓|核上性|核上|结节|肉芽肿|粒细胞|多系统|淀粉样|皮肤|关节|脊柱|"
+    r"甲状腺|乳腺|子宫|卵巢|前列腺|幽门|螺杆菌|扁桃体|耳石|"
+    r"免疫|磷脂|胶质|黑色素|淋巴|呼吸|尿|蛋白|细胞|细菌|病毒|"
+    r"真菌|醛固酮|纤维|肉芽|肌无力|萎缩|白血|脑膜|皮肌|心肌))+"
+    r"(?:病|病症|综合征|炎|癌|瘤|淋巴瘤|感染|紫癜|水肿|蛋白尿|"
+    r"贫血|纤维化|硬化症|增多症|减少症|失禁|闭经|血尿|异常|"
+    r"麻痹|变性|萎缩)$",
     re.IGNORECASE,
 )
 
@@ -471,19 +521,23 @@ HEALTH_ENTITY_CONNECTOR_RE = re.compile(
     r"(?:还有|以及|并且|加上|外加|兼有|连同|伴有|伴随|并伴|合并|联合|"
     r"同时有|同时出现|并发|并存|伴发|共存|共患|同患|再加|且|兼患|并患|"
     r"同时患有|相比|相对|对比|除以|占|比(?!(?:率|例|较))|是|"
-    r"[vV][sS]|[、，,；;+/／|｜&＆和与及或跟—–])"
+    r"[vV][sS]|(?<![A-Za-z0-9])\+|\+(?![\u4e00-\u9fff])|"
+    r"[、，,；;/／|｜&＆和与及或跟—–])"
 )
 
 READ_CANCELLATION_RE = re.compile(
     r"(?:"
-    r"(?:搁置|作废|取消|撤销|撤掉|停掉|停止|停下|(?<!呼吸)暂停|中止|中断|"
+    r"(?:搁置|搁一搁|作废|作罢|取消|撤销|撤掉|撤回|叫停|停掉|停止|停下|(?<!呼吸)暂停|中止|中断|"
     r"终止|终结|放弃|算了|放一边)[^,.!，。！？?;；、]{0,32}"
     r"(?:查询|查找|查看|搜索|检索|翻查|翻看|调取|调出|调阅|打开|"
     r"展示|发我|发给我|查|搜|看|记录)|"
     r"(?:查询|查找|查看|搜索|检索|翻查|翻看|调取|调出|调阅|打开|"
     r"展示|发我|发给我|查|搜|看|记录)"
-    r"[^,.!，。！？?;；、]{0,32}(?:作废|取消|撤销|停掉|停止|停下|"
-    r"(?<!呼吸)暂停|中止|中断|终止|终结|算了|放一边|别再翻了)"
+    r"[^,.!，。！？?;；、]{0,32}(?:作废|作罢|取消|撤销|撤回|叫停|停掉|停止|停下|"
+    r"(?<!呼吸)暂停|中止|中断|终止|终结|算了|放一边|到此为止|"
+    r"这事先搁一搁|先搁一搁|别再(?:翻|调|查|看|打开)了)|"
+    r"(?:别再|不再)[^,.!，。！？?;；、]{0,12}"
+    r"(?:查询|查找|查看|搜索|检索|翻查|翻看|调取|调出|调阅|打开|调|查|看)(?:了)?"
     r")",
     re.IGNORECASE,
 )
@@ -527,7 +581,13 @@ _READ_SCOPE_BOUNDARY_RE = re.compile(
 
 def normalize_entity(value: str) -> str:
     """Normalize for comparison without changing the user-visible spelling."""
-    return unicodedata.normalize("NFKC", str(value or "")).strip()
+    normalized = unicodedata.normalize("NFKC", str(value or "")).strip()
+    return normalized.translate(str.maketrans("‐‑‒–—−", "------"))
+
+
+def _illness_lookup_key(value: str) -> str:
+    normalized = normalize_entity(value).casefold()
+    return ILLNESS_ENTITY_ALIASES.get(normalized, normalized)
 
 
 def active_health_read_clause(text: str) -> str:
@@ -591,7 +651,7 @@ def is_unresolved_health_reference(value: str) -> bool:
 
 
 def _known_illness(value: str) -> bool:
-    return normalize_entity(value).casefold() in CANONICAL_ILLNESS_ENTITIES
+    return _illness_lookup_key(value) in CANONICAL_ILLNESS_ENTITIES
 
 
 def _nonhealth_root(value: str) -> bool:
@@ -635,7 +695,7 @@ def resolve_illness_entity(value: str) -> HealthEntityResolution:
         if owner not in CURRENT_USER_OWNERS and entity_resolution.status == "exact":
             return HealthEntityResolution("nonself")
         return entity_resolution
-    folded = candidate.casefold()
+    folded = _illness_lookup_key(candidate)
     for suffix in OWNER_BOUNDARY_DISEASE_TAILS:
         if not folded.endswith(suffix.casefold()) or len(candidate) <= len(suffix):
             continue
@@ -649,9 +709,9 @@ def resolve_illness_entity(value: str) -> HealthEntityResolution:
         return HealthEntityResolution("nonhealth")
     if not MEDICAL_MORPHOLOGY_RE.search(candidate):
         return HealthEntityResolution("nonhealth")
-    if CLINICAL_MORPHEME_RE.search(candidate):
+    if OPEN_ILLNESS_ENTITY_RE.fullmatch(candidate):
         return HealthEntityResolution("exact", candidate)
-    return HealthEntityResolution("ambiguous")
+    return HealthEntityResolution("nonhealth")
 
 
 def illness_entity_has_medical_semantics(value: str) -> bool:
@@ -667,9 +727,10 @@ def illness_target_is_unowned_or_referential(value: str) -> bool:
 def _strip_exam_request_scaffolding(value: str) -> str:
     candidate = value.strip("，,。.!！；;：:?？ ")
     prefix_re = re.compile(
-        r"^(?:然后|但|不过|而是|方便的话|请问|请您|烦请|劳烦|劳驾|"
+        r"^(?:然后|但|不过|而是|方便的话|请问|请您|烦请|劳烦|有劳|劳驾|"
         r"拜托|请|麻烦你?|能不能|可不可以|能否|可否|我想(?:在)?|"
-        r"想(?:在)?|给我|帮我|帮忙|替我|为我|把)"
+        r"想(?:在)?|能(?=给我|帮我|帮忙|替我|为我|查询|查找|查看|找出|"
+        r"翻看|调取|调出|查|看)|给我|帮我|帮忙|替我|为我|把|仅|只|再)"
     )
     while candidate:
         reduced = prefix_re.sub("", candidate, count=1).lstrip()
@@ -762,7 +823,8 @@ def _health_read_entity_expression(text: str) -> str:
     )
     candidate = _strip_exam_request_scaffolding(candidate)
     candidate = re.sub(
-        r"^(?:上一次|最近一次|最后一次)(?:的)?",
+        r"^(?:上一次|最近一次|最后一次|最近那次|最后一回|最近一回|"
+        r"上回|上次|末次)(?:的)?",
         "",
         candidate,
     )
@@ -770,8 +832,8 @@ def _health_read_entity_expression(text: str) -> str:
         r"(?:的)?(?:记录|病史|病历|病例|历史).*$", "", candidate, count=1
     )
     candidate = re.sub(
-        r"(?:是什么时候|在什么时候|什么时候|何时|在何时|是哪天|哪天|"
-        r"日期|时间|分别有哪些|有哪些|怎么样|怎样|如何)$",
+        r"(?:是什么时候|在什么时候|什么时候|何时|在何时|是哪一天|是哪天|"
+        r"是几号|哪天|日期|时间|分别有哪些|有哪些|怎么样|怎样|如何|呢)$",
         "",
         candidate,
     )
@@ -802,10 +864,60 @@ def health_read_has_nonself_subject(text: str) -> bool:
     )
 
 
+_UNSUPPORTED_CONTRACT_VALUE = object()
+
+
+def _encode_contract_value(value: object) -> object:
+    """Encode content-free grammar constants for deterministic drift evidence."""
+    if isinstance(value, re.Pattern):
+        return {"pattern": value.pattern, "flags": value.flags}
+    if isinstance(value, dict):
+        encoded_items: dict[str, object] = {}
+        for key, item in sorted(value.items(), key=lambda pair: str(pair[0])):
+            encoded = _encode_contract_value(item)
+            if encoded is _UNSUPPORTED_CONTRACT_VALUE:
+                return _UNSUPPORTED_CONTRACT_VALUE
+            encoded_items[str(key)] = encoded
+        return encoded_items
+    if isinstance(value, (set, frozenset)):
+        encoded_items = [_encode_contract_value(item) for item in value]
+        if any(item is _UNSUPPORTED_CONTRACT_VALUE for item in encoded_items):
+            return _UNSUPPORTED_CONTRACT_VALUE
+        return sorted(encoded_items, key=lambda item: json.dumps(item, sort_keys=True))
+    if isinstance(value, (tuple, list)):
+        encoded_items = [_encode_contract_value(item) for item in value]
+        if any(item is _UNSUPPORTED_CONTRACT_VALUE for item in encoded_items):
+            return _UNSUPPORTED_CONTRACT_VALUE
+        return encoded_items
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return _UNSUPPORTED_CONTRACT_VALUE
+
+
+def authorization_grammar_digest(namespace: dict[str, object]) -> str:
+    """Digest every module-level grammar constant, including nested regexes."""
+    grammar: dict[str, object] = {}
+    for name, value in sorted(namespace.items()):
+        if not name.lstrip("_").isupper():
+            continue
+        encoded = _encode_contract_value(value)
+        if encoded is not _UNSUPPORTED_CONTRACT_VALUE:
+            grammar[name] = encoded
+    payload = json.dumps(
+        grammar,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def health_semantics_contract_payload() -> dict[str, str]:
     """Return versioned static evidence included in the capability digest."""
     content = {
+        "authorization_grammar_digest": authorization_grammar_digest(globals()),
         "illness_entities": sorted(CANONICAL_ILLNESS_ENTITIES),
+        "illness_aliases": dict(sorted(ILLNESS_ENTITY_ALIASES.items())),
         "owner_boundary_tails": list(OWNER_BOUNDARY_DISEASE_TAILS),
         "medical_morphology": MEDICAL_MORPHOLOGY_RE.pattern,
         "clinical_morphemes": CLINICAL_MORPHEME_RE.pattern,
@@ -830,4 +942,5 @@ def health_semantics_contract_payload() -> dict[str, str]:
     return {
         "version": HEALTH_SEMANTICS_CONTRACT_VERSION,
         "content_digest": hashlib.sha256(encoded).hexdigest(),
+        "authorization_grammar_digest": content["authorization_grammar_digest"],
     }

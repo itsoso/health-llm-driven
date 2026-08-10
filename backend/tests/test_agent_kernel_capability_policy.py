@@ -4347,8 +4347,8 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v39"
-    assert payload["health_semantics"]["version"] == "health-semantics-v1"
+    assert payload["contract_version"] == "agent-capability-policy-v40"
+    assert payload["health_semantics"]["version"] == "health-semantics-v2"
     assert re.fullmatch(r"[0-9a-f]{64}", payload["health_semantics"]["content_digest"])
     assert payload["health_record_target_binding"] == {
         "version": "authorized-target-set-v31",
@@ -4376,3 +4376,25 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
     assert "prompt" not in serialized
     assert "user_id" not in serialized
     assert "health_value" not in serialized
+
+
+@pytest.mark.parametrize(
+    ("name", "replacement"),
+    (
+        ("_HISTORY_QUERY_QUESTION_RE", re.compile(r"$^")),
+        ("_READ_QUERY_VERB_RE", re.compile(r"$^")),
+        ("_ILLNESS_RECORD_ID_PATTERNS", (re.compile(r"$^"),)),
+        ("_WHOLE_RECORD_DELETE_VERB_FIRST_RE", re.compile(r"$^")),
+        ("SIMPLE_ILLNESS_CREATE_RE", re.compile(r"$^")),
+    ),
+)
+def test_v40_capability_digest_changes_with_authorization_grammar(
+    monkeypatch,
+    name,
+    replacement,
+):
+    before = capability_policy_digest()
+
+    monkeypatch.setattr(capability_policy_module, name, replacement)
+
+    assert capability_policy_digest() != before

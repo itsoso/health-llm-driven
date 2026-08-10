@@ -21,6 +21,7 @@ from app.services.agent_kernel.health_semantics import (
     HEALTH_ENTITY_CONNECTOR_RE,
     READ_VERB_RE,
     active_health_read_clause,
+    authorization_grammar_digest,
     has_explicit_health_read_request,
     health_read_cancelled,
     health_semantics_contract_payload,
@@ -85,7 +86,7 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v39"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v40"
 _HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v31"
 _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v23"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
@@ -1197,7 +1198,6 @@ def _is_explicit_illness_query_entity(value: str) -> bool:
         2 <= len(normalized) <= 80
         and normalized not in _NON_ILLNESS_QUERY_ENTITY_TERMS
         and not _query_entity_known_dimensions(normalized)
-        and re.fullmatch(r"[\w·+./-]+", normalized)
         and illness_entity_has_medical_semantics(normalized)
         and not illness_target_is_unowned_or_referential(normalized)
     )
@@ -1661,14 +1661,18 @@ def _manage_list_turn_record_type(text: str) -> str | None:
 
 def _is_completed_health_mutation_observation(text: str) -> bool:
     """Keep completed-state narration from authorizing an internal lookup."""
-    normalized = _normalize_query_text(text)
+    normalized = _normalize_query_text(text).strip("，,。.!！?？;； ")
+    mutation = r"(?:更新|修改|删除|删掉|移除|更正|修正|调整|改成|改为)"
     return bool(
         re.search(
-            r"(?:"
-            r"(?:刚|刚刚|已经|已|上次|之前)[^，,。.!！?？;；]{0,20}"
-            r"(?:更新|修改|删除|更正)(?:完|完了|完毕|好了?|了|的是)|"
-            r"(?:更新|修改|删除|更正)(?:完|完了|完毕|好了?|了)"
-            r")",
+            rf"(?:刚|刚刚|已经|已|昨天|前天|上次|之前)"
+            rf"[^，,。.!！?？;；]{{0,48}}{mutation}"
+            r"(?:完|完了|完毕|好了?|的是)",
+            normalized,
+        )
+        or re.search(
+            rf"(?:被)?{mutation}[^，,。.!！?？;；]{{0,20}}"
+            r"(?:完|完了|完毕|好了|结束|了)$",
             normalized,
         )
     )
@@ -2078,6 +2082,7 @@ def capability_policy_contract_payload() -> dict[str, Any]:
             "domain_types": dict(sorted(_HEALTH_RECORD_DOMAIN_TYPES.items())),
         },
         "health_semantics": health_semantics_contract_payload(),
+        "authorization_grammar_digest": authorization_grammar_digest(globals()),
         "recipe_record_types": sorted(RECIPE_REPLAY_ALLOWED_RECORD_TYPES),
         "recipe_record_type_aliases": dict(sorted(_RECIPE_RECORD_TYPE_ALIASES.items())),
     }

@@ -365,7 +365,7 @@ def simple_illness_target(text: str) -> str | None:
         if acronym not in SIMPLE_ILLNESS_ACRONYMS:
             return None
         return acronym.upper()
-    if SIMPLE_ILLNESS_NAME_RE.fullmatch(candidate) is None:
+    if not 2 <= len(candidate) <= 80:
         return None
     if illness_target_is_unowned_or_referential(candidate):
         return None
