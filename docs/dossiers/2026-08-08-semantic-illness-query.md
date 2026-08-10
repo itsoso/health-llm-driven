@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS on implementation b6a7c79f7; fresh exact-commit G4 pending |
+| current_stage | G3 PASS on integrated candidate 6f994e994; fresh exact-commit G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -1961,6 +1961,16 @@ No v41 commit has been pushed or deployed. Two fresh independent reviewers must
 inspect the next documentation commit together with exact implementation parent
 `b6a7c79f7b1d8091a0dc69eaec401423cbcc7adb`; both must return GO before G4,
 push or deployment can proceed.
+
+Before G4, latest `origin/main` commit
+`77bad47c1a1b696df8c88cd4daf5852d50486cf6` was merged into exact integrated
+candidate `6f994e9949fe485fa512413e660b7a4f975677bf`. The upstream overlap was the
+AgentExecutor provider-stream deadline repair and merged without conflict. On
+the integrated candidate, the official Backend gate again passes 5,813/5,813;
+the direct semantic suite passes 164/164; food compatibility passes 123/123;
+read deduplication passes 9/9; and the full `qwen3.7-max` matrix again passes
+106/106 plus 212/212 enforce/shadow routes with zero database attempts and zero
+unexpected network destinations. Compile, Ruff and diff checks also pass.
 
 ### G5 Deployment Health: PENDING
 

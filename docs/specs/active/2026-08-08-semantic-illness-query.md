@@ -2,7 +2,7 @@
 
 > Status: implemented_g4_pending
 > Owner: Codex
-> Updated: 2026-08-10
+> Updated: 2026-08-09
 > Related PRD/PDD: `docs/plans/2026-08-08-semantic-illness-query-design.md`
 > Related code: `backend/app/services/agent_kernel/health_semantics.py`, `backend/app/services/agent_kernel/goal_spec.py`, `backend/app/services/agent_kernel/capability_policy.py`, `backend/app/services/write_intent_scope.py`, `backend/app/services/utterance_intent_classifier.py`, `backend/app/services/tool_schema_registry.py`, `backend/app/services/health_read.py`, `backend/app/services/agent_executor.py`
 
@@ -599,4 +599,4 @@ These questions do not block the illness slice.
 | 2026-08-09 | Bound both initiator and direct-object subject | Fresh review found arbitrary names between a write action and health predicate inherited current-user authority. |
 | 2026-08-09 | Versioned the shared semantic authorization contract | Fresh v38 reviews found duplicate grammars, arbitrary-owner read/write bypasses, long-tail false denials, suffix false positives, unresolved references and observation-only manage-list leakage. |
 | 2026-08-09 | Made semantic ownership compositional and fully fingerprinted | Fresh v39 reviews found arbitrary Unicode owner prefixes, postpositive cancellation, completed-narration list reads, long-tail/Unicode false denials and authorization grammar omitted from published digests. |
-| 2026-08-10 | Bound mutation lookup to a typed server-owned goal | Fresh v40 reviews found mutation-text lookup bypasses, incomplete cancellation/completion scope, indicator collisions, long-tail/biomedical false denials and behavior omitted from published digests. |
+| 2026-08-09 | Bound mutation lookup to a typed server-owned goal | Fresh v40 reviews found mutation-text lookup bypasses, incomplete cancellation/completion scope, indicator collisions, long-tail/biomedical false denials and behavior omitted from published digests. |
