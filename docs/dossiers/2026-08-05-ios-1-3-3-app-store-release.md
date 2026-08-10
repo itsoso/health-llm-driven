@@ -198,6 +198,7 @@
 - 2026-08-08 最终 G4 树真实模型复验：`APP_ENV=test DATABASE_URL=sqlite:///:memory:` 下 live regression exit 0；invariants 12/12、health_agent_core 50/50、orchestrator 5/5（平均 0.94）、trajectory 12/12、goldens 9/9，且 `HARNESS_LIVE_LLM_EVAL_CONFIRMED=1` 的本地 change gate PASS。非生产临时 SQLite 缺 usage telemetry 表只产生旁路告警；模型调用、语义 judge 和最终 Gate 均真实完成。
 - 2026-08-08 发布阻断：严格 final-submit checker 仍按设计 FAIL，缺少 Build 242+ 的 EAS/source/IPA、同一精确候选物理 iPhone、ASC 人工确认与最终截图材料。App Review 保持冻结，新提交远端 CI 与以上发布材料未全绿前不得提交审核。
 - 2026-08-09 provider 流总时限 TDD：新增三条异步回归。旧代码下“只有 reasoning、无终态”和“已发部分正文后持续非终态”均由测试看门狗按预期判红；实现后主 provider 无正文超时→稳定降级、已有正文超时→不降级只收尾、fallback 自身超时→单一 error finish 三项全部 PASS。完整 `test_agent_executor_failover_gate.py` 13/13 PASS；更广 Backend 闸与生产部署证据仍待本轮后续补齐。
+- 2026-08-09 部署前 CI 复盘：首次承载提交 `e6bc777f0` 的 CI `31347865871` 因两项历史测试时间边界和预期的 live-change 确认闸失败，未进入部署。Frontend 注册邀请测试写死的 `2026-08-09T20:00` 到期时间已改为稳定未来值，聚焦测试 21/21 PASS；WSCLA 聚合测试在 UTC 周一凌晨把 `now - 2h` 错算到上周，已改用相对 `week_start` 的确定性本周时间，聚焦测试 PASS。真实模型回归在 `APP_ENV=test DATABASE_URL=sqlite:///:memory:` 下 exit 0：invariants 12/12、health_agent_core 50/50、真实 orchestrator 5/5（平均 0.98）、trajectory 12/12、goldens 9/9，且无 regression；实际模型为 `MiniMax-M2.5`。临时 SQLite 未建 usage telemetry 表只产生已知旁路告警，不影响真实模型生成、judge 或 Gate 结果。远端一次性确认变量只允许覆盖承载本证据的下一轮 CI，终态后必须删除并复证不存在。
 - **裁决**：实现级 G3、真实模型回归与独立 G4 均 PASS；发布级 final-submit / T7.1 保持 BLOCK。下一步依次取得远端主干 CI、后端部署与生产恢复证据，再生成 Build 242+，不能据此直接提交 App Review。
 
 ## G4 · 安全闸

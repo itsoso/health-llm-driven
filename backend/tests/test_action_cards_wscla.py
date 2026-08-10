@@ -146,6 +146,7 @@ def test_wscla_aggregation_only_counts_full_closed_loop(db):
     week_start = (now - timedelta(days=now.weekday())).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
+    in_week = week_start + timedelta(minutes=1)
     last_week = week_start - timedelta(days=3)
 
     # 1. 本周完整闭环 improved → 计入
@@ -170,7 +171,7 @@ def test_wscla_aggregation_only_counts_full_closed_loop(db):
             user_decision="accepted",
             decided_at=last_week,
             completed_at=now - timedelta(days=1),
-            graded_at=now - timedelta(hours=2),
+            graded_at=in_week,
             outcome="unchanged",
         )
     )
