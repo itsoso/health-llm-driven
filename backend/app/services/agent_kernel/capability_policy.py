@@ -24,11 +24,13 @@ from app.services.agent_kernel.health_semantics import (
     active_health_read_clause,
     authorization_behavior_digest,
     authorization_grammar_digest,
+    authorization_module_behavior_names,
     extract_owned_illness_entity,
     has_explicit_health_read_request,
     health_read_cancelled,
     health_semantics_contract_payload,
     is_unresolved_health_reference,
+    resolve_health_read_act,
     resolve_medical_exam_query,
 )
 from app.services.agent_kernel.tool_registry import (
@@ -90,9 +92,9 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v41"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v42"
 _HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v31"
-_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v23"
+_HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v24"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
 _SERVER_AUTHORIZED_MANAGE_LOOKUP_KEY = "_server_authorized_manage_lookup"
 _HEALTH_RECORD_DOMAIN_TYPES = {
@@ -568,7 +570,7 @@ _SEVERITY_TARGET_RE = re.compile(
     r"(?:严重程度|严重度|程度|强度)?\s*(?P<value>10|[1-9])\s*"
     r"(?:分(?!钟)|级|/\s*10)"
 )
-_WHOLE_RECORD_DELETE_EVIDENCE_VERSION = "record-delete-evidence-v2"
+_WHOLE_RECORD_DELETE_EVIDENCE_VERSION = "record-delete-evidence-v3"
 _HEALTH_MANAGE_CANONICAL_RECORD_TYPES = frozenset(
     {
         "diet",
@@ -816,34 +818,15 @@ def _whole_record_delete_evidence(
     text: str,
 ) -> _WholeRecordDeleteEvidence | None:
     """Extract content-free target evidence from a closed delete grammar."""
-    normalized = "".join(str(text or "").split())
-    if not normalized:
-        return None
-    if any(marker in normalized for marker in _DELETE_UNDO_MARKERS):
-        return None
-    if any(marker in normalized for marker in _DELETE_MIXED_UPDATE_MARKERS):
-        return None
-    match = _WHOLE_RECORD_DELETE_VERB_FIRST_RE.fullmatch(normalized)
-    if match is None:
-        match = _WHOLE_RECORD_DELETE_TARGET_FIRST_RE.fullmatch(normalized)
-    if match is None:
-        return None
+    from app.services.write_intent_scope import explicit_whole_record_delete_target
 
-    exact_target = _EXACT_RECORD_TARGET_RE.fullmatch(match.group("target"))
-    if exact_target is None:
-        return None
-    record_id = canonical_health_manage_record_id(exact_target.group("record_id"))
-    if record_id is None:
-        return None
-    record_type = _DELETE_RECORD_TYPE_TEXT_ALIASES.get(
-        exact_target.group("record_type_alias").lower()
-    )
-    if record_type is None:
+    target = explicit_whole_record_delete_target(text)
+    if target is None:
         return None
     return _WholeRecordDeleteEvidence(
         target_kind="exact_record",
-        record_type=record_type,
-        record_id=record_id,
+        record_type=target[0],
+        record_id=target[1],
     )
 
 
@@ -985,16 +968,16 @@ def _authorized_illness_update_args(
     )
     if requested_record is None:
         return None
-    if not _illness_update_targets_owner(
+    visible_ids = _explicit_illness_record_ids(snapshot.envelope.text)
+    if visible_ids and visible_ids != {requested_id}:
+        return None
+    if not visible_ids and not _illness_update_targets_owner(
         snapshot.envelope.text,
         str(requested_record.get("name") or ""),
     ):
         return None
-    visible_ids = _explicit_illness_record_ids(snapshot.envelope.text)
-    if visible_ids and visible_ids != {requested_id}:
-        return None
 
-    patch = _illness_update_patch(snapshot)
+    patch = _illness_update_patch(snapshot, requested_id)
     requested_data = args.get("data")
     if patch is None or not isinstance(requested_data, dict):
         return None
@@ -1034,9 +1017,12 @@ def _authorized_illness_update_args(
     }
 
 
-def _illness_update_patch(snapshot: TurnSnapshot) -> dict[str, Any] | None:
+def _illness_update_patch(
+    snapshot: TurnSnapshot,
+    requested_id: int | None = None,
+) -> dict[str, Any] | None:
     text = "".join(str(snapshot.envelope.text or "").split())
-    statement = _illness_governing_state_statement(snapshot, text)
+    statement = _illness_governing_state_statement(snapshot, text, requested_id)
     if statement is None:
         return None
     patch: dict[str, Any]
@@ -1073,6 +1059,7 @@ def _illness_update_patch(snapshot: TurnSnapshot) -> dict[str, Any] | None:
 def _illness_governing_state_statement(
     snapshot: TurnSnapshot,
     text: str,
+    requested_id: int | None = None,
 ) -> str | None:
     """Return one closed, final illness-state assertion or fail closed."""
     record_names = sorted(
@@ -1084,9 +1071,22 @@ def _illness_governing_state_statement(
         reverse=True,
     )
     target_name = next((name for name in record_names if name and name in text), "")
-    if not target_name:
-        return None
-    statement = text.split(target_name, 1)[1]
+    if target_name:
+        statement = text.split(target_name, 1)[1]
+    else:
+        target_match = next(
+            (
+                match
+                for pattern in _ILLNESS_RECORD_ID_PATTERNS
+                for match in pattern.finditer(text)
+                if canonical_health_manage_record_id(match.group("record_id"))
+                == requested_id
+            ),
+            None,
+        )
+        if target_match is None:
+            return None
+        statement = text[target_match.end() :]
     statement = _ILLNESS_UPDATE_INSTRUCTION_SUFFIX_RE.sub("", statement)
     statement = statement.strip("，,。.!！；;：:")
     statement = _strip_illness_record_reference(statement)
@@ -1282,6 +1282,14 @@ def _health_read_cancelled_by_user(text: str) -> bool:
 def _has_explicit_read_request(text: str) -> bool:
     """Identify an explicit read speech act anywhere in a compound request."""
     return has_explicit_health_read_request(text)
+
+
+def _health_read_is_explicitly_non_authorizing(text: str) -> bool:
+    """Reject deferred, completed, reported or hypothetical read wording."""
+    resolution = resolve_health_read_act(text)
+    return (
+        resolution.status == "none" and READ_VERB_RE.search(str(text or "")) is not None
+    )
 
 
 def _query_scope_text(text: str) -> str:
@@ -1668,6 +1676,8 @@ def _manage_list_turn_record_type(text: str) -> str | None:
     """Bind a user-facing manage-list call to the domain named in the turn."""
     if _project_medical_exam_query_to_turn(text) is not None:
         return "medical_exam"
+    if _project_illness_query_to_turn(text) is not None:
+        return "illness"
     entities = _illness_query_entities(text)
     dimension = _query_entities_known_dimension(entities)
     if dimension is None:
@@ -1688,8 +1698,6 @@ def _manage_list_turn_record_type(text: str) -> str | None:
     }
     if semantic_dimension in record_type_by_dimension:
         return record_type_by_dimension[semantic_dimension]
-    if _project_illness_query_to_turn(text) is not None:
-        return "illness"
     return None
 
 
@@ -2098,17 +2106,11 @@ def _owner_scoped_manage_list_records(
     return []
 
 
-CAPABILITY_AUTHORIZATION_FUNCTIONS = (
-    "_authorized_illness_update_args",
-    "_authorized_health_manage_update_args",
-    "_health_read_cancelled_by_user",
-    "_illness_update_patch",
-    "_illness_update_targets_owner",
-    "_illness_targets",
-    "_manage_list_turn_record_type",
-    "_whole_record_delete_evidence",
-    "bind_server_authorized_manage_lookup",
-    "decide_tool_capability",
+CAPABILITY_AUTHORIZATION_FUNCTIONS = tuple(
+    sorted(
+        set(authorization_module_behavior_names(globals(), __name__))
+        | {"decide_tool_capability"}
+    )
 )
 
 
@@ -2332,6 +2334,13 @@ def decide_tool_capability(
                 tool_name,
                 canonical_args,
             )
+        if _health_read_is_explicitly_non_authorizing(turn_text):
+            return _decision(
+                "block",
+                "health_query_not_requested",
+                tool_name,
+                canonical_args,
+            )
         if medical_exam_args is None and _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE.search(
             _query_scope_text(turn_text)
         ):
@@ -2475,6 +2484,13 @@ def decide_tool_capability(
                 tool_name,
                 normalized_plan,
             )
+        if _health_read_is_explicitly_non_authorizing(turn_text):
+            return _decision(
+                "block",
+                "health_query_not_requested",
+                tool_name,
+                normalized_plan,
+            )
         if _project_medical_exam_query_to_turn(
             turn_text
         ) is None and _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE.search(
@@ -2590,6 +2606,15 @@ def decide_tool_capability(
                 )
             internal_mutation_lookup = _server_authorized_manage_lookup(args)
             guarding_user_read = not internal_mutation_lookup
+            if guarding_user_read and _health_read_is_explicitly_non_authorizing(
+                turn_text
+            ):
+                return _decision(
+                    "block",
+                    "health_query_not_requested",
+                    tool_name,
+                    args,
+                )
             if _query_contains_unresolved_reference(turn_text) and (
                 guarding_user_read or _has_explicit_read_request(turn_text)
             ):
@@ -2658,16 +2683,24 @@ def decide_tool_capability(
             return _decision(
                 "allow", "health_manage_list_is_read_only", tool_name, args
             )
-        if (
+        delete_authorized = (
             operation == "delete"
-            and not _delete_evidence_authorizes_request(
+            and _delete_evidence_authorizes_request(
                 _whole_record_delete_evidence(snapshot.envelope.text),
                 args,
             )
-            and (
-                (primary == "mutate" and snapshot.intent.operation == "delete")
-                or is_explicit_write_cancellation(snapshot.envelope.text)
+        )
+        if operation == "delete" and delete_authorized:
+            return _decision(
+                "allow",
+                "explicit_mutation_intent",
+                tool_name,
+                args,
+                receipt_required=True,
             )
+        if operation == "delete" and (
+            (primary == "mutate" and snapshot.intent.operation == "delete")
+            or is_explicit_write_cancellation(snapshot.envelope.text)
         ):
             # Undo/field-removal language may intentionally classify as chat,
             # but a model-proposed whole-record delete must still receive the

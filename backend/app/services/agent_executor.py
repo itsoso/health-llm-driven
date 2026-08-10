@@ -5597,22 +5597,17 @@ def _build_deterministic_goal_lookup_tool_call(
     write_receipts: Sequence[dict[str, Any]],
     has_attachment: bool = False,
 ) -> Optional[Dict[str, Any]]:
-    """Start a typed recalculation task with the required authoritative lookup."""
+    """Start a typed mutation task with its required authoritative lookup."""
     if (
         goal is None
-        or goal.kind != "diet_recalculate_update"
         or not goal.requires_lookup
         or write_receipts
         or has_attachment
-        or not goal.target_date
     ):
         return None
-    arguments = {
-        "record_type": "diet",
-        "operation": "list",
-        "date": goal.target_date,
-        "limit": 20,
-    }
+    arguments = _goal_lookup_arguments(goal)
+    if arguments is None:
+        return None
     return {
         "id": f"goal-lookup-{_sha12(repr(goal))}",
         "type": "function",
@@ -5621,6 +5616,50 @@ def _build_deterministic_goal_lookup_tool_call(
             "arguments": json.dumps(arguments, ensure_ascii=False),
         },
     }
+
+
+def _goal_lookup_arguments(goal: Optional[GoalSpec]) -> Optional[Dict[str, Any]]:
+    """Return the server-owned lookup scope for a closed typed mutation goal."""
+    if goal is None or not goal.requires_lookup:
+        return None
+    if goal.kind == "diet_recalculate_update" and goal.target_date:
+        return {
+            "record_type": "diet",
+            "operation": "list",
+            "date": goal.target_date,
+            "limit": 20,
+        }
+    if (
+        goal.kind == "health_manage_mutation"
+        and goal.operation in {"update", "delete"}
+        and "explicit_current_turn_mutation" in goal.evidence
+    ):
+        record_type = canonical_health_manage_record_type(goal.target_record_type)
+        if record_type is not None:
+            return {
+                "record_type": record_type,
+                "operation": "list",
+                "limit": 20,
+            }
+    return None
+
+
+def _goal_lookup_call_matches(
+    goal: Optional[GoalSpec],
+    args: Dict[str, Any],
+) -> bool:
+    """Recognize only the lookup scope compiled by the server for this goal."""
+    expected = _goal_lookup_arguments(goal)
+    if expected is None:
+        return False
+    requested_type = canonical_health_manage_record_type(args.get("record_type"))
+    if requested_type != expected["record_type"]:
+        return False
+    if str(args.get("operation") or "").strip().lower() != "list":
+        return False
+    if goal is not None and goal.kind == "diet_recalculate_update":
+        return _normalize_relative_date(args.get("date")) == expected.get("date")
+    return True
 
 
 def _build_goal_verification_tool_call(
@@ -5792,6 +5831,38 @@ def _normalize_goal_guarded_tool_calls(
                 },
             })
         return normalized
+    if goal.kind == "health_manage_mutation":
+        if lookup_completed:
+            return tool_calls
+        lookup_args = _goal_lookup_arguments(goal)
+        if lookup_args is None:
+            logger.error(
+                "[agent_executor] blocked mutation with invalid lookup goal "
+                "record_type=%s operation=%s",
+                goal.target_record_type,
+                goal.operation,
+            )
+            return []
+        seed_call = tool_calls[0] if tool_calls else {
+            "id": f"goal-lookup-{_sha12(repr(goal))}",
+            "type": "function",
+            "function": {},
+        }
+        function = seed_call.get("function") or {}
+        logger.warning(
+            "[agent_executor] typed mutation canonicalized to owner lookup "
+            "record_type=%s operation=%s",
+            goal.target_record_type,
+            goal.operation,
+        )
+        return [{
+            **seed_call,
+            "function": {
+                **function,
+                "name": "health_manage",
+                "arguments": json.dumps(lookup_args, ensure_ascii=False),
+            },
+        }]
     if goal.kind != "diet_recalculate_update":
         return tool_calls
     lookup_args = {
@@ -10025,8 +10096,14 @@ class AgentExecutor:
                                 write_results_by_fingerprint[write_fingerprint] = result
                         if (
                             fn == "health_manage"
-                            and parsed_args.get("record_type") == "diet"
-                            and parsed_args.get("operation") == "list"
+                            and _goal_lookup_call_matches(
+                                (
+                                    self._agent_kernel_snapshot.goal
+                                    if self._agent_kernel_snapshot is not None
+                                    else None
+                                ),
+                                parsed_args,
+                            )
                             and not str(result or "").startswith("Error")
                         ):
                             goal_lookup_completed = True
@@ -12720,8 +12797,14 @@ class AgentExecutor:
                             )
                         if (
                             func_name == "health_manage"
-                            and parsed_tool_args.get("record_type") == "diet"
-                            and parsed_tool_args.get("operation") == "list"
+                            and _goal_lookup_call_matches(
+                                (
+                                    self._agent_kernel_snapshot.goal
+                                    if self._agent_kernel_snapshot is not None
+                                    else None
+                                ),
+                                parsed_tool_args,
+                            )
                             and not str(result or "").startswith("Error")
                         ):
                             goal_lookup_completed = True

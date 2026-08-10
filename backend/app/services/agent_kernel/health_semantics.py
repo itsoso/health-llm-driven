@@ -16,14 +16,13 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
-import marshal
 import re
 import unicodedata
 from dataclasses import dataclass
 from typing import Literal
 
 
-HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v3"
+HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v4"
 
 
 @dataclass(frozen=True)
@@ -212,6 +211,42 @@ CANONICAL_ILLNESS_ENTITIES = frozenset(
         # biomedical grammar below.
         "亨廷顿病",
         "脊髓小脑性共济失调",
+        "显微镜下多血管炎",
+        "免疫球蛋白a肾病",
+        "igg4相关性疾病",
+        "hla-b27相关脊柱关节炎",
+        "bcr::abl1阳性白血病",
+        "β2微球蛋白淀粉样变性",
+        "mog抗体相关疾病",
+        "eb病毒感染",
+        "sjögren综合征",
+        "guillain-barré综合征",
+        "α1抗胰蛋白酶缺乏症",
+        "c3肾小球病",
+        "pla2r相关膜性肾病",
+        "抗mda5阳性皮肌炎",
+        "抗lgi1抗体脑炎",
+        "抗nmda受体脑炎",
+        "抗磷脂酶a2受体阳性膜性肾病",
+        "ntrk融合阳性实体瘤",
+        "mpl-w515l阳性骨髓增殖性肿瘤",
+        "hla-dq2.5相关乳糜泻",
+        "anti-mda5阳性皮肌炎",
+        "gfap-igg阳性星形胶质细胞病",
+        "syngap1相关神经发育障碍",
+        "piga相关阵发性睡眠性血红蛋白尿",
+        "c9orf72相关额颞叶痴呆",
+        "pr3-anca阳性肉芽肿性多血管炎",
+        "a20单倍剂量不足综合征",
+        "ada2缺乏症",
+        "nlrp3相关自身炎症性疾病",
+        "pax6相关无虹膜症",
+        "lam-tsc2相关肺淋巴管肌瘤病",
+        "wt1相关肾病综合征",
+        "mog-igg相关皮质脑炎",
+        "抗gad65自身免疫性脑炎",
+        "lamp2抗体相关坏死性肾小球肾炎",
+        "m.3243a>g相关melas综合征",
     }
 )
 
@@ -289,8 +324,7 @@ OWNER_BOUNDARY_DISEASE_TAILS = tuple(
             "溃疡",
         }
         | {entity for entity in CANONICAL_ILLNESS_ENTITIES if len(entity) >= 3},
-        key=len,
-        reverse=True,
+        key=lambda value: (-len(value), value),
     )
 )
 
@@ -449,13 +483,10 @@ OPEN_ILLNESS_ENTITY_RE = re.compile(
     r"免疫|磷脂|胶质|黑色素|淋巴|呼吸|尿|蛋白|细胞|细菌|病毒|"
     r"真菌|醛固酮|纤维|肉芽|肌无力|萎缩|白血|脑膜|皮肌|心肌|"
     r"免疫球蛋白A?|中枢神经系统|炎症|脱髓鞘|毛细血管|共济|"
-    r"显微镜下|受体|微球蛋白|淀粉样|脊髓|小脑|多血管|"
-    r"(?:抗)?(?:[A-Z][A-Z0-9]*(?:(?:-|::|:|\+)[A-Z0-9]+)*|IgG\d*|β\d*)"
-    r"(?:相关性?|阳性|受体)?))+"
+    r"显微镜下|受体|微球蛋白|淀粉样|脊髓|小脑|多血管))+"
     r"(?:病|病症|综合征|炎|癌|瘤|淋巴瘤|感染|紫癜|水肿|蛋白尿|"
     r"贫血|纤维化|硬化症|增多症|减少症|失禁|闭经|血尿|"
     r"麻痹|变性|萎缩|失调|扩张症|疾病)$",
-    re.IGNORECASE,
 )
 
 HEALTH_METRIC_ENTITY_RE = re.compile(
@@ -573,6 +604,28 @@ READ_CANCELLATION_RE = re.compile(
     re.IGNORECASE,
 )
 
+READ_TRAILING_WITHDRAWAL_RE = re.compile(
+    r"(?:先别继续(?:查|看|查询|查看)?了|暂且作罢|先缓一缓|先停一停|"
+    r"暂时别继续|先不要继续|到这儿(?:吧)?)[，,。.!！?？\s]*$",
+    re.IGNORECASE,
+)
+READ_DEFERRED_ACTION_RE = re.compile(
+    rf"(?:明天|稍后|晚点|以后|之后|改天|回头|待会儿|等(?:我)?.{{0,12}}后)"
+    rf"(?:再)?[^,.!，。！？?;；、]{{0,12}}(?:{READ_VERB_RE.pattern})",
+    re.IGNORECASE,
+)
+READ_NON_AUTHORIZING_RE = re.compile(
+    r"(?:"
+    r"(?:已经|已)(?:查询|查找|查看|搜索|检索|翻看|调取|打开|查|看)?"
+    r"(?:完成|结束)(?:了)?|"
+    r"这(?:件事|次查询|次查看)(?:已经|已)?(?:完成|结束)(?:了)?|"
+    r"(?:只是|仅是|不过是)(?:一个|一句)?(?:示例|例子|演示)|"
+    r"(?:这句(?:话)?|这个指令|该指令)(?:来自|出自)|"
+    r"会(?:发生什么|怎样|如何|有什么(?:结果|影响)?)"
+    r")",
+    re.IGNORECASE,
+)
+
 _NEGATED_READ_PREFIX_PATTERN = (
     r"(?:(?:我)?(?:不要|别|不用|无需|不必|请勿|勿|甭|不想|不打算|"
     r"取消|不需要|不希望|停止|撤销|暂停|终止|放弃|"
@@ -624,17 +677,29 @@ def _illness_lookup_key(value: str) -> str:
 def resolve_health_read_act(text: str) -> HealthReadActResolution:
     """Resolve cancellation and a later replacement read as one speech act."""
     normalized = str(text or "").strip()
+    has_read_verb = has_positive_health_read_verb(normalized)
+    if has_read_verb and READ_NON_AUTHORIZING_RE.search(normalized):
+        return HealthReadActResolution("none", normalized)
     cancellations = tuple(READ_CANCELLATION_RE.finditer(normalized)) + tuple(
         NEGATED_HEALTH_ACTION_RE.finditer(normalized)
     )
+    trailing_withdrawal = READ_TRAILING_WITHDRAWAL_RE.search(normalized)
+    if has_read_verb and trailing_withdrawal is not None:
+        cancellations += (trailing_withdrawal,)
     if not cancellations:
-        if has_positive_health_read_verb(normalized):
+        if READ_DEFERRED_ACTION_RE.search(normalized):
+            return HealthReadActResolution("none", normalized)
+        if has_read_verb:
             return HealthReadActResolution("active", normalized)
         return HealthReadActResolution("none", normalized)
     last_cancellation = max(cancellations, key=lambda match: match.end())
     suffix = normalized[last_cancellation.end() :]
     for positive in READ_VERB_RE.finditer(suffix):
-        if _READ_SCOPE_BOUNDARY_RE.search(suffix[: positive.start()]):
+        preceding = suffix[: positive.start()]
+        if (
+            _READ_SCOPE_BOUNDARY_RE.search(preceding)
+            and READ_DEFERRED_ACTION_RE.search(suffix) is None
+        ):
             return HealthReadActResolution(
                 "active",
                 suffix[positive.start() :].strip("，,。.!！；;：:?？ "),
@@ -1003,17 +1068,35 @@ def authorization_behavior_digest(
     namespace: dict[str, object],
     function_names: tuple[str, ...],
 ) -> str:
-    """Fingerprint selected authorization code, including monkeypatches."""
+    """Fingerprint authorization source without CPython quickening state."""
     behavior: dict[str, object] = {}
+
+    def encode_runtime_value(candidate: object) -> object:
+        encoded_candidate = _encode_contract_value(candidate)
+        if encoded_candidate is _UNSUPPORTED_CONTRACT_VALUE:
+            return f"{type(candidate).__module__}.{type(candidate).__qualname__}"
+        return encoded_candidate
+
     for name in sorted(function_names):
         value = namespace.get(name)
         code = getattr(value, "__code__", None)
         if code is not None:
-            encoded = marshal.dumps(code)
+            try:
+                source = inspect.getsource(value)
+            except (OSError, TypeError):
+                source = ""
             behavior[name] = {
                 "module": getattr(value, "__module__", ""),
                 "qualname": getattr(value, "__qualname__", ""),
-                "code": hashlib.sha256(encoded).hexdigest(),
+                "source": source,
+                "fallback_code": "" if source else code.co_code.hex(),
+                "fallback_consts": (
+                    None if source else encode_runtime_value(code.co_consts)
+                ),
+                "defaults": encode_runtime_value(getattr(value, "__defaults__", None)),
+                "kwdefaults": encode_runtime_value(
+                    getattr(value, "__kwdefaults__", None)
+                ),
             }
         else:
             behavior[name] = {
@@ -1031,15 +1114,24 @@ def authorization_behavior_digest(
     return hashlib.sha256(payload).hexdigest()
 
 
-HEALTH_SEMANTICS_AUTHORIZATION_FUNCTIONS = (
-    "active_health_read_clause",
-    "extract_owned_illness_entity",
-    "has_explicit_health_read_request",
-    "health_read_cancelled",
-    "health_read_has_nonself_subject",
-    "resolve_health_read_act",
-    "resolve_illness_entity",
-    "resolve_medical_exam_query",
+def authorization_module_behavior_names(
+    namespace: dict[str, object],
+    module_name: str,
+) -> tuple[str, ...]:
+    """Return every function defined by one authorization module."""
+    return tuple(
+        sorted(
+            name
+            for name, value in namespace.items()
+            if inspect.isfunction(value)
+            and getattr(value, "__module__", "") == module_name
+        )
+    )
+
+
+HEALTH_SEMANTICS_AUTHORIZATION_FUNCTIONS = authorization_module_behavior_names(
+    globals(),
+    __name__,
 )
 
 

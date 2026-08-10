@@ -9,6 +9,7 @@ import json
 import re
 
 from app.services import write_intent_scope as write_intent_scope_module
+from app.services.agent_kernel import write_safety as write_safety_module
 from app.services.agent_kernel.goal_registry import (
     GoalCompilerRegistry,
     GoalCompilerSpec,
@@ -18,6 +19,7 @@ from app.services.agent_kernel.goal_registry import (
 from app.services.agent_kernel.health_semantics import (
     authorization_behavior_digest,
     authorization_grammar_digest,
+    authorization_module_behavior_names,
     extract_owned_illness_entity,
     health_read_has_nonself_subject,
     illness_entity_has_medical_semantics as _semantic_illness_entity,
@@ -32,6 +34,7 @@ from app.services.agent_kernel.types import (
 )
 from app.services.agent_kernel.write_safety import is_explicit_write_cancellation
 from app.services.write_intent_scope import (
+    explicit_whole_record_delete_target,
     has_explicit_authorizing_update_request,
     has_mixed_write_polarity,
 )
@@ -124,7 +127,7 @@ SIMPLE_ILLNESS_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 SIMPLE_ILLNESS_ACRONYMS = frozenset({"sle"})
-GOAL_SPEC_CONTRACT_VERSION = "goal-spec-v41"
+GOAL_SPEC_CONTRACT_VERSION = "goal-spec-v42"
 HEALTH_MANAGE_MUTATION_COMMAND_RE = re.compile(
     r"(?:"
     r"^(?:请(?:你|您)?|麻烦(?:你|您)?|请帮我|帮我|给我|替我)?"
@@ -409,23 +412,34 @@ def _compile_health_manage_mutation_goal(
     """Compile only an explicit current-turn update/delete needing owner lookup."""
     del actionable_references
     text = "".join(str(envelope.text or "").split()).strip()
+    delete_target = (
+        explicit_whole_record_delete_target(text) if not envelope.media else None
+    )
+    mutation_operation = "delete" if delete_target is not None else intent.operation
     if (
         envelope.media
-        or intent.primary != "mutate"
-        or intent.operation not in {"update", "delete"}
-        or not intent.is_write
+        or (delete_target is None and intent.primary != "mutate")
+        or mutation_operation not in {"update", "delete"}
+        or (delete_target is None and not intent.is_write)
         or is_explicit_write_cancellation(text)
         or has_mixed_write_polarity(text)
         or (
-            intent.operation == "update"
+            mutation_operation == "update"
             and not has_explicit_authorizing_update_request(text)
         )
-        or HEALTH_MANAGE_MUTATION_COMMAND_RE.search(text) is None
+        or (mutation_operation == "delete" and delete_target is None)
+        or (
+            mutation_operation != "delete"
+            and HEALTH_MANAGE_MUTATION_COMMAND_RE.search(text) is None
+        )
     ):
         return None
 
     target_record_type: str | None = None
     target_values: list[tuple[str, str]] = []
+    if delete_target is not None:
+        target_record_type = delete_target[0]
+        target_values.append(("record_id", str(delete_target[1])))
     illness_entity = extract_owned_illness_entity(text)
     if illness_entity is not None:
         target_record_type = "illness"
@@ -460,7 +474,7 @@ def _compile_health_manage_mutation_goal(
     return GoalSpec(
         kind="health_manage_mutation",
         domain=target_record_type,
-        operation=intent.operation,
+        operation=mutation_operation,
         target_date=_target_date(_normalize(text), context, ()),
         target_record_type=target_record_type,
         target_values=tuple(dict.fromkeys(target_values)),
@@ -468,7 +482,7 @@ def _compile_health_manage_mutation_goal(
         requires_verification=True,
         prohibited_operations=(
             ("create", "delete")
-            if intent.operation == "update"
+            if mutation_operation == "update"
             else ("create", "update")
         ),
         postconditions=("owner_scoped_lookup", "verified_receipt"),
@@ -618,11 +632,18 @@ def _format_health_manage_mutation_prompt(goal: GoalSpec) -> str:
     )
 
 
-GOAL_SPEC_AUTHORIZATION_FUNCTIONS = (
-    "_compile_health_manage_mutation_goal",
-    "_compile_simple_health_record_goal",
-    "compile_goal_spec",
-    "simple_illness_target",
+GOAL_SPEC_AUTHORIZATION_FUNCTIONS = tuple(
+    sorted(
+        set(authorization_module_behavior_names(globals(), __name__))
+        | {
+            "compile_goal_spec",
+            "explicit_whole_record_delete_target",
+            "extract_owned_illness_entity",
+            "has_explicit_authorizing_update_request",
+            "has_mixed_write_polarity",
+            "is_explicit_write_cancellation",
+        }
+    )
 )
 
 
@@ -639,7 +660,20 @@ def goal_spec_contract_payload() -> dict[str, str]:
         ),
         "update_authorization_behavior_digest": authorization_behavior_digest(
             vars(write_intent_scope_module),
-            ("has_explicit_authorizing_update_request",),
+            authorization_module_behavior_names(
+                vars(write_intent_scope_module),
+                write_intent_scope_module.__name__,
+            ),
+        ),
+        "write_safety_grammar_digest": authorization_grammar_digest(
+            vars(write_safety_module)
+        ),
+        "write_safety_behavior_digest": authorization_behavior_digest(
+            vars(write_safety_module),
+            authorization_module_behavior_names(
+                vars(write_safety_module),
+                write_safety_module.__name__,
+            ),
         ),
     }
     encoded = json.dumps(

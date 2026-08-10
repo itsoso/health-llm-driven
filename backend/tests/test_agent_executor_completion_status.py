@@ -39,6 +39,7 @@ def _stream_from(fake_call_llm):
     run_stream 第一轮走 _call_llm_stream (真流式 seam); 空回复重试/兜底仍走
     _call_llm。共用同一个 fake_call_llm 保证调用计数序列不变。
     """
+
     async def fake_call_llm_stream(messages, tools):
         result = await fake_call_llm(messages, tools)
         if isinstance(result, dict):
@@ -63,11 +64,7 @@ async def _no_simple_diet_nutrition_estimate(_food_items):
 
 
 def _tool_results(events):
-    return [
-        event["data"]
-        for event in events
-        if event.get("event") == "tool_result"
-    ]
+    return [event["data"] for event in events if event.get("event") == "tool_result"]
 
 
 def _assert_pre_dispatch_rejection(tool_result, *, error_code):
@@ -144,10 +141,7 @@ def test_positive_write_status_is_treated_as_unverified_success(message):
 
 
 def test_unrelated_earlier_negation_does_not_hide_unverified_success():
-    assert (
-        _claims_unverified_write_success("没有其他问题且早餐已记录。")
-        is True
-    )
+    assert _claims_unverified_write_success("没有其他问题且早餐已记录。") is True
 
 
 def test_diet_repair_key_ignores_equivalent_food_item_container_format():
@@ -234,32 +228,44 @@ def test_terminal_legacy_policy_rejection_is_not_hidden_from_user(result):
     assert _write_result_is_pre_dispatch_validation_error(result) is False
 
 
-@pytest.mark.parametrize("result", [
-    "未找到活跃药物",
-    "写入完成",
-])
+@pytest.mark.parametrize(
+    "result",
+    [
+        "未找到活跃药物",
+        "写入完成",
+    ],
+)
 def test_unstructured_write_result_is_never_reported_as_completed(result):
-    assert _write_tool_completed(
-        "health_manage",
-        {"operation": "update"},
-        result,
-    ) is False
+    assert (
+        _write_tool_completed(
+            "health_manage",
+            {"operation": "update"},
+            result,
+        )
+        is False
+    )
 
 
 def test_structured_write_result_with_resource_identity_is_completed():
-    assert _write_tool_completed(
-        "health_manage",
-        {"record_type": "diet", "operation": "update", "record_id": 42},
-        '{"success":true,"id":42}',
-    ) is True
+    assert (
+        _write_tool_completed(
+            "health_manage",
+            {"record_type": "diet", "operation": "update", "record_id": 42},
+            '{"success":true,"id":42}',
+        )
+        is True
+    )
 
 
 def test_structured_write_result_without_resource_identity_is_not_completed():
-    assert _write_tool_completed(
-        "health_manage",
-        {"record_type": "diet", "operation": "delete", "record_id": 42},
-        '{"message":"Record deleted successfully"}',
-    ) is False
+    assert (
+        _write_tool_completed(
+            "health_manage",
+            {"record_type": "diet", "operation": "delete", "record_id": 42},
+            '{"message":"Record deleted successfully"}',
+        )
+        is False
+    )
 
 
 @pytest.mark.asyncio
@@ -277,17 +283,21 @@ async def test_identityless_write_result_cannot_render_or_finish_as_success(
             return {
                 "content": "",
                 "finish_reason": "tool_calls",
-                "tool_calls": [{
-                    "id": "delete-1",
-                    "function": {
-                        "name": "health_manage",
-                        "arguments": json.dumps({
-                            "record_type": "diet",
-                            "operation": "delete",
-                            "record_id": 42,
-                        }),
-                    },
-                }],
+                "tool_calls": [
+                    {
+                        "id": "delete-1",
+                        "function": {
+                            "name": "health_manage",
+                            "arguments": json.dumps(
+                                {
+                                    "record_type": "diet",
+                                    "operation": "delete",
+                                    "record_id": 42,
+                                }
+                            ),
+                        },
+                    }
+                ],
             }
         return {"content": "已经删除。", "finish_reason": "stop"}
 
@@ -295,7 +305,9 @@ async def test_identityless_write_result_cannot_render_or_finish_as_success(
         return '{"message":"Record deleted successfully"}'
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools", lambda subset=None: []
+    )
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -344,23 +356,27 @@ async def test_later_verified_same_write_clears_uncertain_checkpoint(
                         "id": "delete-no-receipt",
                         "function": {
                             "name": "health_manage",
-                            "arguments": json.dumps({
-                                "record_type": "diet",
-                                "operation": "delete",
-                                "record_id": 829,
-                            }),
+                            "arguments": json.dumps(
+                                {
+                                    "record_type": "diet",
+                                    "operation": "delete",
+                                    "record_id": 829,
+                                }
+                            ),
                         },
                     },
                     {
                         "id": "delete-with-receipt",
                         "function": {
                             "name": "health_manage",
-                            "arguments": json.dumps({
-                                "record_type": "diet",
-                                "operation": "delete",
-                                "record_id": 829,
-                                "confirmed": True,
-                            }),
+                            "arguments": json.dumps(
+                                {
+                                    "record_type": "diet",
+                                    "operation": "delete",
+                                    "record_id": 829,
+                                    "confirmed": True,
+                                }
+                            ),
                         },
                     },
                 ],
@@ -383,7 +399,9 @@ async def test_later_verified_same_write_clears_uncertain_checkpoint(
         )
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools", lambda subset=None: []
+    )
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -431,14 +449,17 @@ async def test_contextual_diet_receipt_does_not_emit_second_diet_card(
                         "id": "contextual-diet-replay",
                         "function": {
                             "name": "health_record",
-                            "arguments": json.dumps({
-                                "record_type": "diet",
-                                "data": {
-                                    "meal_type": "dinner",
-                                    "food_items": "烤鱼和炸鱼块",
-                                    "calories": 605,
+                            "arguments": json.dumps(
+                                {
+                                    "record_type": "diet",
+                                    "data": {
+                                        "meal_type": "dinner",
+                                        "food_items": "烤鱼和炸鱼块",
+                                        "calories": 605,
+                                    },
                                 },
-                            }, ensure_ascii=False),
+                                ensure_ascii=False,
+                            ),
                         },
                     }
                 ],
@@ -447,27 +468,34 @@ async def test_contextual_diet_receipt_does_not_emit_second_diet_card(
 
     async def fake_execute_tool(name, args, token):
         assert name == "health_record"
-        executor._turn_contextual_diet_cards.append({
-            "type": "diet_draft",
-            "data": {
-                "recorded": True,
+        executor._turn_contextual_diet_cards.append(
+            {
+                "type": "diet_draft",
+                "data": {
+                    "recorded": True,
+                    "record_id": 830,
+                    "meal_type": "dinner",
+                    "food_items": "烤鱼和炸鱼块",
+                    "receipt_message": "已保存到今日饮食，餐食照片已关联到这条记录。",
+                },
+                "actions": [],
+            }
+        )
+        return json.dumps(
+            {
+                "id": 830,
                 "record_id": 830,
-                "meal_type": "dinner",
-                "food_items": "烤鱼和炸鱼块",
-                "receipt_message": "已保存到今日饮食，餐食照片已关联到这条记录。",
+                "resource_type": "diet_record",
+                "operation_id": "contextual_meal_photo:830",
+                "status": "recorded",
             },
-            "actions": [],
-        })
-        return json.dumps({
-            "id": 830,
-            "record_id": 830,
-            "resource_type": "diet_record",
-            "operation_id": "contextual_meal_photo:830",
-            "status": "recorded",
-        }, ensure_ascii=False)
+            ensure_ascii=False,
+        )
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools", lambda subset=None: []
+    )
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -484,7 +512,8 @@ async def test_contextual_diet_receipt_does_not_emit_second_diet_card(
 
     done = next(event for event in events if event.get("event") == "done")
     diet_cards = [
-        card for card in done["data"]["cards"]
+        card
+        for card in done["data"]["cards"]
         if card.get("type") in {"diet_draft", "record_quality"}
         and (card.get("data") or {}).get("domain", "diet") == "diet"
     ]
@@ -506,23 +535,29 @@ async def test_http_500_after_dispatched_write_is_uncertain_and_orphan_retry_doe
         return {
             "content": "",
             "finish_reason": "tool_calls",
-            "tool_calls": [{
-                "id": "write-500",
-                "function": {
-                    "name": "health_record",
-                    "arguments": json.dumps({
-                        "record_type": "diet",
-                        "data": {"food_items": "鸡胸肉", "meal_type": "lunch"},
-                    }),
-                },
-            }],
+            "tool_calls": [
+                {
+                    "id": "write-500",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps(
+                            {
+                                "record_type": "diet",
+                                "data": {"food_items": "鸡胸肉", "meal_type": "lunch"},
+                            }
+                        ),
+                    },
+                }
+            ],
         }
 
     async def committed_then_500(name, args, token):
         return "Error: upstream returned 500 after request dispatch"
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools", lambda subset=None: []
+    )
     monkeypatch.setattr(executor, "_call_llm", first_llm_call)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(first_llm_call))
     monkeypatch.setattr(executor, "_execute_tool", committed_then_500)
@@ -536,20 +571,31 @@ async def test_http_500_after_dispatched_write_is_uncertain_and_orphan_retry_doe
             client_turn_id=turn_id,
         )
     ]
-    assert next(event for event in events if event.get("event") == "done")["data"][
-        "completion_status"
-    ] == "error"
+    assert (
+        next(event for event in events if event.get("event") == "done")["data"][
+            "completion_status"
+        ]
+        == "error"
+    )
 
-    user_message = db.query(AgentMessage).filter(
-        AgentMessage.role == "user",
-        AgentMessage.content == message,
-    ).one()
+    user_message = (
+        db.query(AgentMessage)
+        .filter(
+            AgentMessage.role == "user",
+            AgentMessage.content == message,
+        )
+        .one()
+    )
     assert user_message.meta["write_state"]["status"] == "uncertain"
 
-    for assistant in db.query(AgentMessage).filter(
-        AgentMessage.role == "assistant",
-        AgentMessage.conversation_id == user_message.conversation_id,
-    ).all():
+    for assistant in (
+        db.query(AgentMessage)
+        .filter(
+            AgentMessage.role == "assistant",
+            AgentMessage.conversation_id == user_message.conversation_id,
+        )
+        .all()
+    ):
         db.delete(assistant)
     db.commit()
 
@@ -561,9 +607,13 @@ async def test_http_500_after_dispatched_write_is_uncertain_and_orphan_retry_doe
         retry_llm_calls += 1
         return {"content": "不应再次进入模型或写工具", "finish_reason": "stop"}
 
-    monkeypatch.setattr(retry_executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr(
+        retry_executor, "_build_system_prompt", lambda *args, **kwargs: "SYS"
+    )
     monkeypatch.setattr(retry_executor, "_call_llm", retry_llm_call)
-    monkeypatch.setattr(retry_executor, "_call_llm_stream", _stream_from(retry_llm_call))
+    monkeypatch.setattr(
+        retry_executor, "_call_llm_stream", _stream_from(retry_llm_call)
+    )
     retry_events = [
         event
         async for event in retry_executor.run_stream(
@@ -602,16 +652,20 @@ async def test_pre_dispatch_sleep_validation_returns_to_model_without_unverified
             return {
                 "content": "",
                 "finish_reason": "tool_calls",
-                "tool_calls": [{
-                    "id": "sleep-missing-times",
-                    "function": {
-                        "name": "health_record",
-                        "arguments": json.dumps({
-                            "record_type": "sleep",
-                            "data": {"sleep_quality": 5},
-                        }),
-                    },
-                }],
+                "tool_calls": [
+                    {
+                        "id": "sleep-missing-times",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": json.dumps(
+                                {
+                                    "record_type": "sleep",
+                                    "data": {"sleep_quality": 5},
+                                }
+                            ),
+                        },
+                    }
+                ],
             }
         return {
             "content": "还缺少入睡时间和起床时间，请补充这两个时间。",
@@ -623,7 +677,9 @@ async def test_pre_dispatch_sleep_validation_returns_to_model_without_unverified
         return validation_error
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools", lambda subset=None: []
+    )
     monkeypatch.setattr(
         "app.services.agent_executor._has_fast_record_write_intent",
         lambda _message: False,
@@ -659,10 +715,14 @@ async def test_pre_dispatch_sleep_validation_returns_to_model_without_unverified
         for event in events
     )
 
-    user_message = db.query(AgentMessage).filter(
-        AgentMessage.role == "user",
-        AgentMessage.content == "记录已经睡了十个小时，睡眠非常好，估计有九十五分",
-    ).one()
+    user_message = (
+        db.query(AgentMessage)
+        .filter(
+            AgentMessage.role == "user",
+            AgentMessage.content == "记录已经睡了十个小时，睡眠非常好，估计有九十五分",
+        )
+        .one()
+    )
     assert user_message.meta["write_state"]["status"] == "rejected"
 
 
@@ -683,16 +743,20 @@ async def test_pre_dispatch_validation_rejects_model_success_claim_without_recei
             return {
                 "content": "",
                 "finish_reason": "tool_calls",
-                "tool_calls": [{
-                    "id": "sleep-missing-times-success-claim",
-                    "function": {
-                        "name": "health_record",
-                        "arguments": json.dumps({
-                            "record_type": "sleep",
-                            "data": {"sleep_quality": 5},
-                        }),
-                    },
-                }],
+                "tool_calls": [
+                    {
+                        "id": "sleep-missing-times-success-claim",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": json.dumps(
+                                {
+                                    "record_type": "sleep",
+                                    "data": {"sleep_quality": 5},
+                                }
+                            ),
+                        },
+                    }
+                ],
             }
         return {
             "content": "睡眠记录已经保存好了。",
@@ -707,7 +771,9 @@ async def test_pre_dispatch_validation_rejects_model_success_claim_without_recei
         )
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools", lambda subset=None: []
+    )
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -744,11 +810,13 @@ async def test_duplicate_writes_in_one_model_response_execute_once(
     executor = AgentExecutor(db)
     llm_calls = 0
     tool_calls = 0
-    arguments = json.dumps({
-        "record_type": "diet",
-        "operation": "delete",
-        "record_id": 900,
-    })
+    arguments = json.dumps(
+        {
+            "record_type": "diet",
+            "operation": "delete",
+            "record_id": 900,
+        }
+    )
 
     async def fake_llm_call(messages, tools):
         nonlocal llm_calls
@@ -758,8 +826,14 @@ async def test_duplicate_writes_in_one_model_response_execute_once(
                 "content": "",
                 "finish_reason": "tool_calls",
                 "tool_calls": [
-                    {"id": "duplicate-1", "function": {"name": "health_manage", "arguments": arguments}},
-                    {"id": "duplicate-2", "function": {"name": "health_manage", "arguments": arguments}},
+                    {
+                        "id": "duplicate-1",
+                        "function": {"name": "health_manage", "arguments": arguments},
+                    },
+                    {
+                        "id": "duplicate-2",
+                        "function": {"name": "health_manage", "arguments": arguments},
+                    },
                 ],
             }
         return {"content": "记录已删除。", "finish_reason": "stop"}
@@ -767,17 +841,27 @@ async def test_duplicate_writes_in_one_model_response_execute_once(
     async def fake_execute_tool(name, args, token):
         nonlocal tool_calls
         tool_calls += 1
-        return json.dumps({
-            "id": 900,
-            "record_id": 900,
-            "resource_type": "diet_record",
-        })
+        return json.dumps(
+            {
+                "id": 900,
+                "record_id": 900,
+                "resource_type": "diet_record",
+            }
+        )
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools", lambda subset=None: []
+    )
     monkeypatch.setattr(executor, "_call_llm", fake_llm_call)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_llm_call))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+    # This test isolates same-response write replay. Typed mutation lookup is
+    # covered separately by the goal-guard and end-to-end update tests.
+    monkeypatch.setattr(
+        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
+        lambda tool_calls, *args, **kwargs: tool_calls,
+    )
 
     events = [
         event
@@ -791,9 +875,7 @@ async def test_duplicate_writes_in_one_model_response_execute_once(
 
     assert tool_calls == 1
     tool_results = [
-        event["data"]
-        for event in events
-        if event.get("event") == "tool_result"
+        event["data"] for event in events if event.get("event") == "tool_result"
     ]
     assert len(tool_results) == 2
     assert tool_results[1]["replayed"] is True
@@ -819,7 +901,9 @@ async def test_client_turn_lock_is_released_when_post_acquire_lookup_raises(
             return None
         raise RuntimeError("post-acquire lookup failed")
 
-    monkeypatch.setattr(AgentConversationService, "find_user_message_by_client_turn", fake_find_user)
+    monkeypatch.setattr(
+        AgentConversationService, "find_user_message_by_client_turn", fake_find_user
+    )
     monkeypatch.setattr(
         AgentConversationService,
         "find_assistant_message_by_client_turn",
@@ -833,7 +917,9 @@ async def test_client_turn_lock_is_released_when_post_acquire_lookup_raises(
     monkeypatch.setattr(
         AgentConversationService,
         "release_client_turn_execution",
-        lambda self, user_id, client_turn_id: releases.append((user_id, client_turn_id)),
+        lambda self, user_id, client_turn_id: releases.append(
+            (user_id, client_turn_id)
+        ),
     )
 
     with pytest.raises(RuntimeError, match="post-acquire lookup failed"):
@@ -896,9 +982,12 @@ async def test_recovery_reports_partial_when_one_of_multiple_writes_is_uncertain
             "turn-partial-multi-write",
         )
     ]
-    assert "部分写入获得回执" in next(
-        event for event in events if event.get("event") == "token"
-    )["data"]["content"]
+    assert (
+        "部分写入获得回执"
+        in next(event for event in events if event.get("event") == "token")["data"][
+            "content"
+        ]
+    )
     assert events[-1]["data"]["completion_status"] == "error"
 
 
@@ -910,7 +999,9 @@ async def test_recovery_reports_terminal_rejection_instead_of_unknown_write(
 
     user, _ = auth_user_and_headers
     service = AgentConversationService(db)
-    conversation = service.get_or_create_conversation(user.id, None, title="拒绝写入恢复")
+    conversation = service.get_or_create_conversation(
+        user.id, None, title="拒绝写入恢复"
+    )
     user_message, _ = service.save_user_message_once(
         conversation.id,
         user.id,
@@ -942,9 +1033,9 @@ async def test_recovery_reports_terminal_rejection_instead_of_unknown_write(
             "turn-rejected-write-recovery",
         )
     ]
-    content = next(
-        event for event in events if event.get("event") == "token"
-    )["data"]["content"]
+    content = next(event for event in events if event.get("event") == "token")["data"][
+        "content"
+    ]
 
     assert "状态未知" not in content
     assert "未执行" in content or "拒绝" in content
@@ -1002,9 +1093,12 @@ async def test_legacy_verified_checkpoint_without_sealed_plan_never_reports_comp
     ]
 
     assert events[-1]["data"]["completion_status"] == "error"
-    assert "部分写入获得回执" in next(
-        event for event in events if event.get("event") == "token"
-    )["data"]["content"]
+    assert (
+        "部分写入获得回执"
+        in next(event for event in events if event.get("event") == "token")["data"][
+            "content"
+        ]
+    )
 
 
 @pytest.mark.asyncio
@@ -1047,27 +1141,33 @@ async def test_sealed_planned_only_checkpoint_can_resume_before_any_dispatch(
             return {
                 "content": "",
                 "finish_reason": "tool_calls",
-                "tool_calls": [{
-                    "id": "resume-write",
-                    "function": {
-                        "name": "health_manage",
-                        "arguments": json.dumps(write_args),
-                    },
-                }],
+                "tool_calls": [
+                    {
+                        "id": "resume-write",
+                        "function": {
+                            "name": "health_manage",
+                            "arguments": json.dumps(write_args),
+                        },
+                    }
+                ],
             }
         return {"content": "已删除。", "finish_reason": "stop"}
 
     async def fake_execute_tool(name, args, token):
         nonlocal tool_calls
         tool_calls += 1
-        return json.dumps({
-            "id": 902,
-            "record_id": 902,
-            "resource_type": "diet_record",
-        })
+        return json.dumps(
+            {
+                "id": 902,
+                "record_id": 902,
+                "resource_type": "diet_record",
+            }
+        )
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools", lambda subset=None: []
+    )
     monkeypatch.setattr(executor, "_call_llm", fake_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_llm))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -1131,11 +1231,13 @@ async def test_all_planned_writes_are_checkpointed_before_first_dispatch(
         }
 
     async def fake_health_manage(base_url, headers, parsed):
-        return json.dumps({
-            "id": parsed["record_id"],
-            "record_id": parsed["record_id"],
-            "resource_type": "diet_record",
-        })
+        return json.dumps(
+            {
+                "id": parsed["record_id"],
+                "record_id": parsed["record_id"],
+                "resource_type": "diet_record",
+            }
+        )
 
     class WorkerCrashed(BaseException):
         pass
@@ -1151,11 +1253,15 @@ async def test_all_planned_writes_are_checkpointed_before_first_dispatch(
         return original_persist(user_message, **kwargs)
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools", lambda subset=None: []
+    )
     monkeypatch.setattr(executor, "_call_llm", fake_llm_call)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_llm_call))
     monkeypatch.setattr(executor, "_exec_health_manage", fake_health_manage)
-    monkeypatch.setattr(executor, "_persist_turn_write_state", crash_before_second_dispatch)
+    monkeypatch.setattr(
+        executor, "_persist_turn_write_state", crash_before_second_dispatch
+    )
 
     async def dispatch_checkpoint_contract(
         self,
@@ -1184,10 +1290,14 @@ async def test_all_planned_writes_are_checkpointed_before_first_dispatch(
             )
         ]
 
-    user_message = db.query(AgentMessage).filter(
-        AgentMessage.role == "user",
-        AgentMessage.content == "修改两条饮食记录",
-    ).one()
+    user_message = (
+        db.query(AgentMessage)
+        .filter(
+            AgentMessage.role == "user",
+            AgentMessage.content == "修改两条饮食记录",
+        )
+        .one()
+    )
     operations = user_message.meta["write_operations"]
     assert len(operations) == 2
     assert sorted(operation["status"] for operation in operations.values()) == [
@@ -1223,7 +1333,9 @@ async def test_all_planned_writes_are_checkpointed_before_first_dispatch(
 
 
 @pytest.mark.asyncio
-async def test_health_query_blood_pressure_uses_existing_records_endpoint(db, monkeypatch):
+async def test_health_query_blood_pressure_uses_existing_records_endpoint(
+    db, monkeypatch
+):
     # D1(garmin-sync 治理 Wave 3)把 blood_pressure 读维度默认迁到进程内直读;本测试守的是
     # killswitch 关闭时的 HTTP 回退路径仍映射到正确的 records 端点(limit=10)。进程内路径的
     # 数据等价 + 默认零 HTTP 由 test_agent_executor_reads_in_process.py 覆盖。
@@ -1245,7 +1357,9 @@ async def test_health_query_blood_pressure_uses_existing_records_endpoint(db, mo
         {"dimension": "blood_pressure", "days": 7},
     )
 
-    assert captured_urls == ["http://testserver/api/v1/blood-pressure/records/me?limit=10"]
+    assert captured_urls == [
+        "http://testserver/api/v1/blood-pressure/records/me?limit=10"
+    ]
 
 
 @pytest.mark.asyncio
@@ -1254,22 +1368,24 @@ async def test_query_lab_indicators_bridges_blood_pressure_alias_to_standardized
     auth_user_and_headers,
 ):
     user, _headers = auth_user_and_headers
-    db.add_all([
-        BloodPressureRecord(
-            user_id=user.id,
-            record_date=date.today(),
-            systolic=119,
-            diastolic=75,
-            pulse=64,
-        ),
-        BloodPressureRecord(
-            user_id=user.id,
-            record_date=date.today() - timedelta(days=1),
-            systolic=124,
-            diastolic=78,
-            pulse=66,
-        ),
-    ])
+    db.add_all(
+        [
+            BloodPressureRecord(
+                user_id=user.id,
+                record_date=date.today(),
+                systolic=119,
+                diastolic=75,
+                pulse=64,
+            ),
+            BloodPressureRecord(
+                user_id=user.id,
+                record_date=date.today() - timedelta(days=1),
+                systolic=124,
+                diastolic=78,
+                pulse=66,
+            ),
+        ]
+    )
     db.commit()
 
     executor = AgentExecutor(db)
@@ -1303,12 +1419,14 @@ async def test_query_lab_indicators_severe_bp_appends_recheck_and_symptom_triage
     auth_user_and_headers,
 ):
     user, _headers = auth_user_and_headers
-    db.add(BloodPressureRecord(
-        user_id=user.id,
-        record_date=date.today(),
-        systolic=185,
-        diastolic=85,
-    ))
+    db.add(
+        BloodPressureRecord(
+            user_id=user.id,
+            record_date=date.today(),
+            systolic=185,
+            diastolic=85,
+        )
+    )
     db.commit()
 
     executor = AgentExecutor(db)
@@ -1322,7 +1440,9 @@ async def test_query_lab_indicators_severe_bp_appends_recheck_and_symptom_triage
 
 
 @pytest.mark.asyncio
-async def test_agent_call_llm_omits_empty_tools_for_commercial_retries(db, auth_user_and_headers, monkeypatch):
+async def test_agent_call_llm_omits_empty_tools_for_commercial_retries(
+    db, auth_user_and_headers, monkeypatch
+):
     """Empty no-tool retry must not send tools=[] to OpenAI-compatible gateways."""
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
@@ -1347,7 +1467,9 @@ async def test_agent_call_llm_omits_empty_tools_for_commercial_retries(db, auth_
 
 
 @pytest.mark.asyncio
-async def test_agent_call_llm_keeps_user_model_for_pure_record_turns(db, auth_user_and_headers, monkeypatch):
+async def test_agent_call_llm_keeps_user_model_for_pure_record_turns(
+    db, auth_user_and_headers, monkeypatch
+):
     """Pure record turns may use compact prompts, but must not override the user's model."""
     user, _headers = auth_user_and_headers
     db.add(UserProfile(user_id=user.id, llm_model_id="qwen3.6-plus"))
@@ -1397,7 +1519,9 @@ async def test_agent_call_llm_keeps_user_model_for_pure_record_turns(db, auth_us
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_finishes_pure_record_turn_from_tool_result(db, auth_user_and_headers):
+async def test_agent_stream_finishes_pure_record_turn_from_tool_result(
+    db, auth_user_and_headers
+):
     """Pure record turns should not spend another LLM round synthesizing success text."""
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
@@ -1414,13 +1538,16 @@ async def test_agent_stream_finishes_pure_record_turn_from_tool_result(db, auth_
                     "type": "function",
                     "function": {
                         "name": "health_record",
-                        "arguments": json.dumps({
-                            "record_type": "diet",
-                            "data": {
-                                "meal_type": "dinner",
-                                "food_items": "牛肉饭",
+                        "arguments": json.dumps(
+                            {
+                                "record_type": "diet",
+                                "data": {
+                                    "meal_type": "dinner",
+                                    "food_items": "牛肉饭",
+                                },
                             },
-                        }, ensure_ascii=False),
+                            ensure_ascii=False,
+                        ),
                     },
                 },
             ],
@@ -1428,7 +1555,9 @@ async def test_agent_stream_finishes_pure_record_turn_from_tool_result(db, auth_
 
     async def fake_execute_tool(tool_name, args_raw, user_token):
         assert tool_name == "health_record"
-        return json.dumps({"id": 101, "message": "已记录晚餐：牛肉饭"}, ensure_ascii=False)
+        return json.dumps(
+            {"id": 101, "message": "已记录晚餐：牛肉饭"}, ensure_ascii=False
+        )
 
     executor._call_llm = fake_call_llm
     executor._call_llm_stream = _stream_from(fake_call_llm)
@@ -1475,26 +1604,32 @@ async def test_agent_stream_marks_missing_write_receipt_non_retryable(
         return {
             "content": "",
             "finish_reason": "tool_calls",
-            "tool_calls": [{
-                "id": "call_uncertain_water",
-                "type": "function",
-                "function": {
-                    "name": "health_record",
-                    "arguments": json.dumps({
-                        "record_type": "water",
-                        "data": {"amount": 1200},
-                    }),
-                },
-            }],
+            "tool_calls": [
+                {
+                    "id": "call_uncertain_water",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps(
+                            {
+                                "record_type": "water",
+                                "data": {"amount": 1200},
+                            }
+                        ),
+                    },
+                }
+            ],
         }
 
     async def fake_execute_tool(tool_name, args_raw, user_token):
         assert tool_name == "health_record"
-        return json.dumps({
-            "status": "uncertain",
-            "error_code": "missing_receipt",
-            "dispatch_started": True,
-        })
+        return json.dumps(
+            {
+                "status": "uncertain",
+                "error_code": "missing_receipt",
+                "dispatch_started": True,
+            }
+        )
 
     executor._call_llm = fake_call_llm
     executor._call_llm_stream = _stream_from(fake_call_llm)
@@ -1540,25 +1675,30 @@ async def test_agent_stream_runtime_control_block_is_one_attempt_terminal(
             return {
                 "content": "",
                 "finish_reason": "tool_calls",
-                "tool_calls": [{
-                    "id": "call_blocked_peach",
-                    "type": "function",
-                    "function": {
-                        "name": "health_record",
-                        "arguments": json.dumps({
-                            "record_type": "diet",
-                            "data": {
-                                "meal_type": "snack",
-                                "food_items": "一个桃子",
-                                "calories": 60,
-                                "protein": 1,
-                                "carbs": 15,
-                                "fat": 0.2,
-                                "fiber": 2,
-                            },
-                        }, ensure_ascii=False),
-                    },
-                }],
+                "tool_calls": [
+                    {
+                        "id": "call_blocked_peach",
+                        "type": "function",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": json.dumps(
+                                {
+                                    "record_type": "diet",
+                                    "data": {
+                                        "meal_type": "snack",
+                                        "food_items": "一个桃子",
+                                        "calories": 60,
+                                        "protein": 1,
+                                        "carbs": 15,
+                                        "fat": 0.2,
+                                        "fiber": 2,
+                                    },
+                                },
+                                ensure_ascii=False,
+                            ),
+                        },
+                    }
+                ],
             }
         return {
             "content": "请补充要记录的类型和值。",
@@ -1612,7 +1752,9 @@ async def test_agent_stream_runtime_control_block_is_one_attempt_terminal(
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_reports_tools_used_in_done_and_meta(db, auth_user_and_headers):
+async def test_agent_stream_reports_tools_used_in_done_and_meta(
+    db, auth_user_and_headers
+):
     """done 事件 + 持久化 meta 都暴露本轮调用过的工具名 (tools_used), 供 mac/mobile 展示。"""
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
@@ -1631,7 +1773,9 @@ async def test_agent_stream_reports_tools_used_in_done_and_meta(db, auth_user_an
                         "type": "function",
                         "function": {
                             "name": "health_query",
-                            "arguments": json.dumps({"metric": "heart_rate"}, ensure_ascii=False),
+                            "arguments": json.dumps(
+                                {"metric": "heart_rate"}, ensure_ascii=False
+                            ),
                         },
                     },
                 ],
@@ -1668,7 +1812,9 @@ async def test_agent_stream_reports_tools_used_in_done_and_meta(db, auth_user_an
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_tools_used_empty_when_no_tool_call(db, auth_user_and_headers):
+async def test_agent_stream_tools_used_empty_when_no_tool_call(
+    db, auth_user_and_headers
+):
     """无 tool call 的纯问答轮, tools_used 为 []。"""
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
@@ -1698,7 +1844,9 @@ async def test_agent_stream_tools_used_empty_when_no_tool_call(db, auth_user_and
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_auto_confirms_fast_record_tool_calls(db, auth_user_and_headers):
+async def test_agent_stream_auto_confirms_fast_record_tool_calls(
+    db, auth_user_and_headers
+):
     """Fast record turns should complete simple logging without a second confirmation round."""
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
@@ -1714,10 +1862,13 @@ async def test_agent_stream_auto_confirms_fast_record_tool_calls(db, auth_user_a
                     "type": "function",
                     "function": {
                         "name": "health_record",
-                        "arguments": json.dumps({
-                            "record_type": "water",
-                            "data": {"amount": 1000},
-                        }, ensure_ascii=False),
+                        "arguments": json.dumps(
+                            {
+                                "record_type": "water",
+                                "data": {"amount": 1000},
+                            },
+                            ensure_ascii=False,
+                        ),
                     },
                 },
             ],
@@ -1732,7 +1883,9 @@ async def test_agent_stream_auto_confirms_fast_record_tool_calls(db, auth_user_a
                 "[NEEDS_CONFIRMATION] 我准备记录: 喝水 1000ml. "
                 "请向用户复述并问一次'是这样吗？'"
             )
-        return json.dumps({"id": 102, "message": "已记录饮水 1000ml"}, ensure_ascii=False)
+        return json.dumps(
+            {"id": 102, "message": "已记录饮水 1000ml"}, ensure_ascii=False
+        )
 
     executor._call_llm = fake_call_llm
     executor._call_llm_stream = _stream_from(fake_call_llm)
@@ -1788,13 +1941,16 @@ async def test_two_medications_pending_confirmation_is_not_overwritten_by_record
                         "type": "function",
                         "function": {
                             "name": "health_record",
-                            "arguments": json.dumps({
-                                "record_type": "medication",
-                                "data": {
-                                    "medication_name": "伊托必利",
-                                    "actual_dosage": "1粒",
+                            "arguments": json.dumps(
+                                {
+                                    "record_type": "medication",
+                                    "data": {
+                                        "medication_name": "伊托必利",
+                                        "actual_dosage": "1粒",
+                                    },
                                 },
-                            }, ensure_ascii=False),
+                                ensure_ascii=False,
+                            ),
                         },
                     },
                     {
@@ -1802,13 +1958,16 @@ async def test_two_medications_pending_confirmation_is_not_overwritten_by_record
                         "type": "function",
                         "function": {
                             "name": "health_record",
-                            "arguments": json.dumps({
-                                "record_type": "medication",
-                                "data": {
-                                    "medication_name": "替普瑞酮",
-                                    "actual_dosage": "1粒",
+                            "arguments": json.dumps(
+                                {
+                                    "record_type": "medication",
+                                    "data": {
+                                        "medication_name": "替普瑞酮",
+                                        "actual_dosage": "1粒",
+                                    },
                                 },
-                            }, ensure_ascii=False),
+                                ensure_ascii=False,
+                            ),
                         },
                     },
                 ],
@@ -1870,7 +2029,9 @@ async def test_two_medications_pending_confirmation_is_not_overwritten_by_record
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_emits_record_card_after_fast_diet_record(db, auth_user_and_headers):
+async def test_agent_stream_emits_record_card_after_fast_diet_record(
+    db, auth_user_and_headers
+):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
 
@@ -1884,13 +2045,16 @@ async def test_agent_stream_emits_record_card_after_fast_diet_record(db, auth_us
                     "type": "function",
                     "function": {
                         "name": "health_record",
-                        "arguments": json.dumps({
-                            "record_type": "diet",
-                            "data": {
-                                "food_items": "两个鸡蛋,一杯牛奶",
-                                "meal_type": "breakfast",
+                        "arguments": json.dumps(
+                            {
+                                "record_type": "diet",
+                                "data": {
+                                    "food_items": "两个鸡蛋,一杯牛奶",
+                                    "meal_type": "breakfast",
+                                },
                             },
-                        }, ensure_ascii=False),
+                            ensure_ascii=False,
+                        ),
                     },
                 },
             ],
@@ -1900,7 +2064,9 @@ async def test_agent_stream_emits_record_card_after_fast_diet_record(db, auth_us
         assert tool_name == "health_record"
         parsed = json.loads(args_raw)
         assert parsed["confirmed"] is True
-        return json.dumps({"id": 103, "message": "已记录早餐：两个鸡蛋,一杯牛奶"}, ensure_ascii=False)
+        return json.dumps(
+            {"id": 103, "message": "已记录早餐：两个鸡蛋,一杯牛奶"}, ensure_ascii=False
+        )
 
     executor._call_llm = fake_call_llm
     executor._call_llm_stream = _stream_from(fake_call_llm)
@@ -1929,21 +2095,31 @@ async def test_agent_stream_emits_record_card_after_fast_diet_record(db, auth_us
     actions = card.get("actions") or []
     assert actions, "record_quality 卡必须带 actions"
     for action in actions:
-        assert action["action"] in CLIENT_ACTION_ALLOWLIST, f"客户端会丢弃越界 action: {action}"
+        assert action["action"] in CLIENT_ACTION_ALLOWLIST, (
+            f"客户端会丢弃越界 action: {action}"
+        )
         assert action.get("id") and action.get("label"), f"action 缺 id/label: {action}"
     assert card_events[0]["data"]["anchor"] == "post_record_quality"
-    assert events.index(card_events[0]) > next(i for i, e in enumerate(events) if e.get("event") == "tool_result")
+    assert events.index(card_events[0]) > next(
+        i for i, e in enumerate(events) if e.get("event") == "tool_result"
+    )
     done_idx = next(i for i, e in enumerate(events) if e.get("event") == "done")
     assert events.index(card_events[0]) < done_idx
     assert events[done_idx]["data"]["cards"] == [card]
 
-    saved = db.query(AgentMessage).filter_by(id=events[done_idx]["data"]["message_id"]).first()
+    saved = (
+        db.query(AgentMessage)
+        .filter_by(id=events[done_idx]["data"]["message_id"])
+        .first()
+    )
     assert saved is not None
     assert saved.meta["cards"] == [card]
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_emits_safety_card_after_record_safety_alert(db, auth_user_and_headers, monkeypatch):
+async def test_agent_stream_emits_safety_card_after_record_safety_alert(
+    db, auth_user_and_headers, monkeypatch
+):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
 
@@ -1957,13 +2133,16 @@ async def test_agent_stream_emits_safety_card_after_record_safety_alert(db, auth
                     "type": "function",
                     "function": {
                         "name": "health_record",
-                        "arguments": json.dumps({
-                            "record_type": "diet",
-                            "data": {
-                                "food_items": "牛肉面",
-                                "meal_type": "dinner",
+                        "arguments": json.dumps(
+                            {
+                                "record_type": "diet",
+                                "data": {
+                                    "food_items": "牛肉面",
+                                    "meal_type": "dinner",
+                                },
                             },
-                        }, ensure_ascii=False),
+                            ensure_ascii=False,
+                        ),
                     },
                 },
             ],
@@ -1973,7 +2152,9 @@ async def test_agent_stream_emits_safety_card_after_record_safety_alert(db, auth
         assert tool_name == "health_record"
         parsed = json.loads(args_raw)
         assert parsed["confirmed"] is True
-        return json.dumps({"id": 104, "message": "已记录晚餐：牛肉面"}, ensure_ascii=False)
+        return json.dumps(
+            {"id": 104, "message": "已记录晚餐：牛肉面"}, ensure_ascii=False
+        )
 
     safety_alert = Alert(
         rule_id="training.high_intensity_not_recommended",
@@ -1984,7 +2165,9 @@ async def test_agent_stream_emits_safety_card_after_record_safety_alert(db, auth
         action="改为 20 分钟低强度步行或拉伸",
         requires_medical_attention=True,
     )
-    monkeypatch.setattr("app.twin.builder.build_twin", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(
+        "app.twin.builder.build_twin", lambda *_args, **_kwargs: object()
+    )
     monkeypatch.setattr(
         "app.agents.safety_guardian.evaluate_safety",
         lambda _twin: SimpleNamespace(alerts=[safety_alert]),
@@ -2017,7 +2200,9 @@ async def test_agent_stream_emits_safety_card_after_record_safety_alert(db, auth
     assert record_card["data"]["boundary"], "非诊断边界声明不允许缺失"
     assert record_card.get("actions"), "record_quality 卡必须带 actions"
     for action in record_card["actions"]:
-        assert action["action"] in CLIENT_ACTION_ALLOWLIST, f"客户端会丢弃越界 action: {action}"
+        assert action["action"] in CLIENT_ACTION_ALLOWLIST, (
+            f"客户端会丢弃越界 action: {action}"
+        )
 
     # 安全卡是确定性裁决输出 — 每个承重字段显式断言, 覆盖面不缩水(加层不减层)。
     assert safety_card["type"] == "safety"
@@ -2026,12 +2211,16 @@ async def test_agent_stream_emits_safety_card_after_record_safety_alert(db, auth
     assert safety_data["severity"] == "high"
     assert safety_data["summary"] == "睡眠不足且 HRV 明显低于近期基线，建议把训练降级。"
     assert safety_data["recommendations"] == ["改为 20 分钟低强度步行或拉伸"]
-    assert safety_data["boundary"] == "这不是诊断；如出现急性不适或持续症状，请及时就医。"
+    assert (
+        safety_data["boundary"] == "这不是诊断；如出现急性不适或持续症状，请及时就医。"
+    )
     assert safety_data["requires_medical_attention"] is True
     assert safety_data["rule_id"] == "training.high_intensity_not_recommended"
     assert safety_data["category"] == "training_load"
     for action in safety_card.get("actions") or []:
-        assert action["action"] in CLIENT_ACTION_ALLOWLIST, f"客户端会丢弃越界 action: {action}"
+        assert action["action"] in CLIENT_ACTION_ALLOWLIST, (
+            f"客户端会丢弃越界 action: {action}"
+        )
 
     assert card_events[0]["data"]["anchor"] == "post_record_quality"
     assert card_events[1]["data"]["anchor"] == "safety_alert"
@@ -2039,13 +2228,19 @@ async def test_agent_stream_emits_safety_card_after_record_safety_alert(db, auth
     done_idx = next(i for i, e in enumerate(events) if e.get("event") == "done")
     assert events[done_idx]["data"]["cards"] == [record_card, safety_card]
 
-    saved = db.query(AgentMessage).filter_by(id=events[done_idx]["data"]["message_id"]).first()
+    saved = (
+        db.query(AgentMessage)
+        .filter_by(id=events[done_idx]["data"]["message_id"])
+        .first()
+    )
     assert saved is not None
     assert saved.meta["cards"] == [record_card, safety_card]
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_keeps_safety_text_visible_for_old_clients(db, auth_user_and_headers, monkeypatch):
+async def test_agent_stream_keeps_safety_text_visible_for_old_clients(
+    db, auth_user_and_headers, monkeypatch
+):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
 
@@ -2059,13 +2254,16 @@ async def test_agent_stream_keeps_safety_text_visible_for_old_clients(db, auth_u
                     "type": "function",
                     "function": {
                         "name": "health_record",
-                        "arguments": json.dumps({
-                            "record_type": "diet",
-                            "data": {
-                                "food_items": "牛肉面",
-                                "meal_type": "dinner",
+                        "arguments": json.dumps(
+                            {
+                                "record_type": "diet",
+                                "data": {
+                                    "food_items": "牛肉面",
+                                    "meal_type": "dinner",
+                                },
                             },
-                        }, ensure_ascii=False),
+                            ensure_ascii=False,
+                        ),
                     },
                 },
             ],
@@ -2086,7 +2284,9 @@ async def test_agent_stream_keeps_safety_text_visible_for_old_clients(db, auth_u
         message="睡眠不足且 HRV 明显低于近期基线，建议把训练降级。",
         action="改为 20 分钟低强度步行或拉伸",
     )
-    monkeypatch.setattr("app.twin.builder.build_twin", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(
+        "app.twin.builder.build_twin", lambda *_args, **_kwargs: object()
+    )
     monkeypatch.setattr(
         "app.agents.safety_guardian.evaluate_safety",
         lambda _twin: SimpleNamespace(alerts=[safety_alert]),
@@ -2115,7 +2315,9 @@ async def test_agent_stream_keeps_safety_text_visible_for_old_clients(db, auth_u
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_marks_length_limited_answer_as_interrupted(db, auth_user_and_headers):
+async def test_agent_stream_marks_length_limited_answer_as_interrupted(
+    db, auth_user_and_headers
+):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
 
@@ -2130,12 +2332,14 @@ async def test_agent_stream_marks_length_limited_answer_as_interrupted(db, auth_
     executor._build_system_knowledge_evidence_card = lambda *args, **kwargs: {
         "type": "system_knowledge_evidence",
         "data": {"entity": {"title": "不完整证据"}, "claims": []},
-        "actions": [{
-            "id": "unsafe-open",
-            "label": "继续操作",
-            "action": "route.open",
-            "payload": {"route": "/knowledge"},
-        }],
+        "actions": [
+            {
+                "id": "unsafe-open",
+                "label": "继续操作",
+                "action": "route.open",
+                "payload": {"route": "/knowledge"},
+            }
+        ],
     }
 
     events = [
@@ -2166,7 +2370,9 @@ async def test_agent_stream_marks_length_limited_answer_as_interrupted(db, auth_
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_retries_when_model_returns_empty_visible_reply(db, auth_user_and_headers):
+async def test_agent_stream_retries_when_model_returns_empty_visible_reply(
+    db, auth_user_and_headers
+):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     calls = []
@@ -2175,7 +2381,10 @@ async def test_agent_stream_retries_when_model_returns_empty_visible_reply(db, a
         calls.append({"messages": messages, "tool_count": len(tools or [])})
         if len(calls) == 1:
             return {"content": "", "finish_reason": "stop"}
-        return {"content": "补发回答：基于 9p21 和运动数据，先保持二区有氧。", "finish_reason": "stop"}
+        return {
+            "content": "补发回答：基于 9p21 和运动数据，先保持二区有氧。",
+            "finish_reason": "stop",
+        }
 
     executor._call_llm = fake_call_llm
     executor._call_llm_stream = _stream_from(fake_call_llm)
@@ -2201,17 +2410,26 @@ async def test_agent_stream_retries_when_model_returns_empty_visible_reply(db, a
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_injects_mac_desktop_markdown_instruction(db, auth_user_and_headers, monkeypatch):
+async def test_agent_stream_injects_mac_desktop_markdown_instruction(
+    db, auth_user_and_headers, monkeypatch
+):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     calls = []
 
-    monkeypatch.setattr(executor, "_build_system_prompt", lambda *_args, **_kwargs: "你是健康助理。")
-    monkeypatch.setattr(executor, "_build_system_knowledge_prompt_context", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(
+        executor, "_build_system_prompt", lambda *_args, **_kwargs: "你是健康助理。"
+    )
+    monkeypatch.setattr(
+        executor, "_build_system_knowledge_prompt_context", lambda *_args, **_kwargs: ""
+    )
 
     async def fake_call_llm(messages, tools):
         calls.append({"messages": messages, "tool_count": len(tools or [])})
-        return {"content": "## 关键结论\n\n- 已按桌面端 Markdown 输出。", "finish_reason": "stop"}
+        return {
+            "content": "## 关键结论\n\n- 已按桌面端 Markdown 输出。",
+            "finish_reason": "stop",
+        }
 
     executor._call_llm = fake_call_llm
     executor._call_llm_stream = _stream_from(fake_call_llm)
@@ -2222,10 +2440,12 @@ async def test_agent_stream_injects_mac_desktop_markdown_instruction(db, auth_us
             user_id=user.id,
             message="分析最近饮食趋势",
             user_auth_token=None,
-            extra_context=json.dumps({
-                "client": "mac",
-                "desktop_markdown_response_instruction": "请用 Markdown 分段，不要输出密集长段落。",
-            }),
+            extra_context=json.dumps(
+                {
+                    "client": "mac",
+                    "desktop_markdown_response_instruction": "请用 Markdown 分段，不要输出密集长段落。",
+                }
+            ),
         )
     ]
 
@@ -2241,7 +2461,9 @@ async def test_agent_stream_injects_mac_desktop_markdown_instruction(db, auth_us
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_compacts_context_after_repeated_empty_visible_reply(db, auth_user_and_headers, monkeypatch):
+async def test_agent_stream_compacts_context_after_repeated_empty_visible_reply(
+    db, auth_user_and_headers, monkeypatch
+):
     """Commercial gateways can return stop+empty for long system prompts."""
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
@@ -2256,13 +2478,18 @@ async def test_agent_stream_compacts_context_after_repeated_empty_visible_reply(
             + ("睡眠、血压、运动、饮食和基因风险需要综合评估。\n" * 260)
         ),
     )
-    monkeypatch.setattr(executor, "_build_system_knowledge_prompt_context", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(
+        executor, "_build_system_knowledge_prompt_context", lambda *_args, **_kwargs: ""
+    )
 
     async def fake_call_llm(messages, tools):
         calls.append({"messages": messages, "tool_count": len(tools or [])})
         if len(calls) <= 2:
             return {"content": "", "finish_reason": "stop"}
-        return {"content": "压缩上下文后回答：先关注睡眠、血压和今天的第一项任务。", "finish_reason": "stop"}
+        return {
+            "content": "压缩上下文后回答：先关注睡眠、血压和今天的第一项任务。",
+            "finish_reason": "stop",
+        }
 
     executor._call_llm = fake_call_llm
     executor._call_llm_stream = _stream_from(fake_call_llm)
@@ -2285,12 +2512,16 @@ async def test_agent_stream_compacts_context_after_repeated_empty_visible_reply(
     assert "压缩上下文后回答" in rendered
     assert len(calls) == 3
     assert calls[2]["tool_count"] == 0
-    assert len(calls[2]["messages"][0]["content"]) < len(calls[0]["messages"][0]["content"])
+    assert len(calls[2]["messages"][0]["content"]) < len(
+        calls[0]["messages"][0]["content"]
+    )
     assert "## 用户健康档案" in calls[2]["messages"][0]["content"]
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_falls_back_to_stable_provider_when_compact_retry_is_empty(db, auth_user_and_headers, monkeypatch):
+async def test_agent_stream_falls_back_to_stable_provider_when_compact_retry_is_empty(
+    db, auth_user_and_headers, monkeypatch
+):
     """If the selected commercial model keeps returning empty, use a stable fallback."""
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
@@ -2306,7 +2537,9 @@ async def test_agent_stream_falls_back_to_stable_provider_when_compact_retry_is_
             + ("睡眠、血压、运动、饮食和基因风险需要综合评估。\n" * 260)
         ),
     )
-    monkeypatch.setattr(executor, "_build_system_knowledge_prompt_context", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(
+        executor, "_build_system_knowledge_prompt_context", lambda *_args, **_kwargs: ""
+    )
 
     async def fake_call_llm(messages, tools):
         calls.append({"messages": messages, "tool_count": len(tools or [])})
@@ -2314,7 +2547,10 @@ async def test_agent_stream_falls_back_to_stable_provider_when_compact_retry_is_
 
     async def fake_fallback(messages):
         fallback_calls.append(messages)
-        return {"content": "稳定模型兜底回答：先处理血压、睡眠和低风险运动。", "finish_reason": "stop"}
+        return {
+            "content": "稳定模型兜底回答：先处理血压、睡眠和低风险运动。",
+            "finish_reason": "stop",
+        }
 
     executor._call_llm = fake_call_llm
     executor._call_llm_stream = _stream_from(fake_call_llm)
@@ -2342,7 +2578,9 @@ async def test_agent_stream_falls_back_to_stable_provider_when_compact_retry_is_
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_executes_inline_tool_json_instead_of_rendering_it(db, auth_user_and_headers):
+async def test_agent_stream_executes_inline_tool_json_instead_of_rendering_it(
+    db, auth_user_and_headers
+):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     calls = []
@@ -2384,15 +2622,24 @@ async def test_agent_stream_executes_inline_tool_json_instead_of_rendering_it(db
     )
 
     assert executed == [
-        ("health_manage", '{"record_type": "diet", "operation": "delete", "record_id": 625}', "test-token")
+        (
+            "health_manage",
+            '{"record_type": "diet", "operation": "delete", "record_id": 625}',
+            "test-token",
+        )
     ]
-    assert any(event.get("event") == "tool_call" and event["data"]["tool"] == "health_manage" for event in events)
+    assert any(
+        event.get("event") == "tool_call" and event["data"]["tool"] == "health_manage"
+        for event in events
+    )
     assert "已删除最后一条饮食记录" in rendered
     assert '"name":"health_manage"' not in rendered
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_executes_inline_diet_record_json_with_nutrition(db, auth_user_and_headers):
+async def test_agent_stream_executes_inline_diet_record_json_with_nutrition(
+    db, auth_user_and_headers
+):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     executed = []
@@ -2408,7 +2655,10 @@ async def test_agent_stream_executes_inline_diet_record_json_with_nutrition(db, 
                 ),
                 "finish_reason": "stop",
             }
-        return {"content": "已记录晚餐：约 520 kcal，蛋白质 32g。", "finish_reason": "stop"}
+        return {
+            "content": "已记录晚餐：约 520 kcal，蛋白质 32g。",
+            "finish_reason": "stop",
+        }
 
     async def fake_execute_tool(tool_name, args_raw, user_token):
         args = json.loads(args_raw)
@@ -2450,7 +2700,8 @@ async def test_agent_stream_executes_inline_diet_record_json_with_nutrition(db, 
         and event["data"]["receipt"]["resource_id"] == "701"
         and event["data"]["receipt"]["action"] == "create"
         and event["data"]["receipt"]["verified"] is True
-        and event["data"]["result"] == (
+        and event["data"]["result"]
+        == (
             '{"id":701,"message":"已记录晚餐：约 520 kcal，蛋白质 32g",'
             '"food_items":"鳕鱼 100g + 米饭 150g + 青菜 100g","calories":520}'
         )
@@ -2548,7 +2799,9 @@ async def test_agent_stream_executes_founder_sneeze_tool_code_and_returns_receip
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_strips_leading_inline_tool_json_then_prose(db, auth_user_and_headers):
+async def test_agent_stream_strips_leading_inline_tool_json_then_prose(
+    db, auth_user_and_headers
+):
     """Regression: weaker fast-record models emit the tool-call JSON FIRST and a
     human-readable confirmation/analysis AFTER it. Previously the inline extractor
     bailed on any trailing text, so the raw JSON leaked to the user AND the tool
@@ -2613,7 +2866,9 @@ async def test_agent_stream_strips_leading_inline_tool_json_then_prose(db, auth_
 
 
 @pytest.mark.asyncio
-async def test_record_intent_with_no_tool_executed_is_flagged(db, auth_user_and_headers):
+async def test_record_intent_with_no_tool_executed_is_flagged(
+    db, auth_user_and_headers
+):
     """#3 guard: a record-intent turn where the model only SAYS '已记录' but calls no
     tool must be flagged (record_intent_no_tool=True) so silent data loss is observable
     instead of looking like success."""
@@ -2636,7 +2891,9 @@ async def test_record_intent_with_no_tool_executed_is_flagged(db, auth_user_and_
     events = [
         event
         async for event in executor.run_stream(
-            user_id=user.id, message="记录晚餐", user_auth_token="test-token",
+            user_id=user.id,
+            message="记录晚餐",
+            user_auth_token="test-token",
         )
     ]
 
@@ -2686,7 +2943,9 @@ async def test_negated_mutation_read_only_turn_completes_without_tool_failure(
 
 
 @pytest.mark.asyncio
-async def test_record_intent_with_tool_executed_is_not_flagged(db, auth_user_and_headers):
+async def test_record_intent_with_tool_executed_is_not_flagged(
+    db, auth_user_and_headers
+):
     """Counterpart: when a record turn actually executes a write tool, the guard stays
     off (record_intent_no_tool=False)."""
     user, _headers = auth_user_and_headers
@@ -2699,22 +2958,32 @@ async def test_record_intent_with_tool_executed_is_not_flagged(db, auth_user_and
             return {
                 "content": "",
                 "finish_reason": "tool_calls",
-                "tool_calls": [{
-                    "id": "c1",
-                    "type": "function",
-                    "function": {
-                        "name": "health_record",
-                        "arguments": json.dumps(
-                            {"record_type": "diet", "data": {"meal_type": "dinner", "food_items": "牛肉饭"}},
-                            ensure_ascii=False,
-                        ),
-                    },
-                }],
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": json.dumps(
+                                {
+                                    "record_type": "diet",
+                                    "data": {
+                                        "meal_type": "dinner",
+                                        "food_items": "牛肉饭",
+                                    },
+                                },
+                                ensure_ascii=False,
+                            ),
+                        },
+                    }
+                ],
             }
         return {"content": "已记录晚餐。", "finish_reason": "stop"}
 
     async def fake_execute_tool(tool_name, args_raw, user_token):
-        return json.dumps({"id": 107, "message": "已记录晚餐：牛肉饭"}, ensure_ascii=False)
+        return json.dumps(
+            {"id": 107, "message": "已记录晚餐：牛肉饭"}, ensure_ascii=False
+        )
 
     executor._call_llm = fake_call_llm
     executor._call_llm_stream = _stream_from(fake_call_llm)
@@ -2723,7 +2992,9 @@ async def test_record_intent_with_tool_executed_is_not_flagged(db, auth_user_and
     events = [
         event
         async for event in executor.run_stream(
-            user_id=user.id, message="记录晚餐 牛肉饭", user_auth_token="test-token",
+            user_id=user.id,
+            message="记录晚餐 牛肉饭",
+            user_auth_token="test-token",
         )
     ]
 
@@ -2732,7 +3003,9 @@ async def test_record_intent_with_tool_executed_is_not_flagged(db, auth_user_and
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_falls_back_to_tool_result_when_model_synthesis_is_empty(db, auth_user_and_headers):
+async def test_agent_stream_falls_back_to_tool_result_when_model_synthesis_is_empty(
+    db, auth_user_and_headers
+):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     calls = []
@@ -2749,13 +3022,16 @@ async def test_agent_stream_falls_back_to_tool_result_when_model_synthesis_is_em
                         "type": "function",
                         "function": {
                             "name": "health_record",
-                            "arguments": json.dumps({
-                                "record_type": "diet",
-                                "data": {
-                                    "meal_type": "breakfast",
-                                    "food_items": "两个豆腐包子",
+                            "arguments": json.dumps(
+                                {
+                                    "record_type": "diet",
+                                    "data": {
+                                        "meal_type": "breakfast",
+                                        "food_items": "两个豆腐包子",
+                                    },
                                 },
-                            }, ensure_ascii=False),
+                                ensure_ascii=False,
+                            ),
                         },
                     },
                 ],
@@ -2765,12 +3041,15 @@ async def test_agent_stream_falls_back_to_tool_result_when_model_synthesis_is_em
     async def fake_execute_tool(tool_name, args_raw, user_token):
         args = json.loads(args_raw)
         assert tool_name == "health_record"
-        return json.dumps({
-            "id": 108,
-            "message": "已记录早餐：两个豆腐包子",
-            "record_type": args["record_type"],
-            "food_items": args["data"]["food_items"],
-        }, ensure_ascii=False)
+        return json.dumps(
+            {
+                "id": 108,
+                "message": "已记录早餐：两个豆腐包子",
+                "record_type": args["record_type"],
+                "food_items": args["data"]["food_items"],
+            },
+            ensure_ascii=False,
+        )
 
     executor._call_llm = fake_call_llm
     executor._call_llm_stream = _stream_from(fake_call_llm)
@@ -2820,24 +3099,29 @@ async def test_agent_stream_saves_explicit_text_diet_when_model_omits_tool_call(
             return {
                 "content": "",
                 "finish_reason": "tool_calls",
-                "tool_calls": [{
-                    "id": "estimated-breakfast",
-                    "function": {
-                        "name": "health_record",
-                        "arguments": json.dumps({
-                            "record_type": "diet",
-                            "data": {
-                                "meal_type": "breakfast",
-                                "food_items": "一个包子、一个茶叶蛋、一碗粥",
-                                "calories": 520,
-                                "protein": 20,
-                                "carbs": 72,
-                                "fat": 17,
-                                "fiber": 4,
-                            },
-                        }, ensure_ascii=False),
-                    },
-                }],
+                "tool_calls": [
+                    {
+                        "id": "estimated-breakfast",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": json.dumps(
+                                {
+                                    "record_type": "diet",
+                                    "data": {
+                                        "meal_type": "breakfast",
+                                        "food_items": "一个包子、一个茶叶蛋、一碗粥",
+                                        "calories": 520,
+                                        "protein": 20,
+                                        "carbs": 72,
+                                        "fat": 17,
+                                        "fiber": 4,
+                                    },
+                                },
+                                ensure_ascii=False,
+                            ),
+                        },
+                    }
+                ],
             }
         return {
             "content": "早餐已记录，并完成热量和营养估算。",
@@ -2873,28 +3157,28 @@ async def test_agent_stream_saves_explicit_text_diet_when_model_omits_tool_call(
         if event.get("event") == "token"
     )
     done = next(event for event in events if event.get("event") == "done")
-    expected_record_date = (
-        executor._agent_kernel_reference_now().date().isoformat()
-    )
+    expected_record_date = executor._agent_kernel_reference_now().date().isoformat()
 
-    assert dispatched == [(
-        "health_record",
-        {
-            "record_type": "diet",
-            "data": {
-                "record_date": expected_record_date,
-                "meal_type": "breakfast",
-                "food_items": "一个包子、一个茶叶蛋、一碗粥",
-                "source": "agent_text",
-                "calories": 520,
-                "protein": 20,
-                "carbs": 72,
-                "fat": 17,
-                "fiber": 4,
+    assert dispatched == [
+        (
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {
+                    "record_date": expected_record_date,
+                    "meal_type": "breakfast",
+                    "food_items": "一个包子、一个茶叶蛋、一碗粥",
+                    "source": "agent_text",
+                    "calories": 520,
+                    "protein": 20,
+                    "carbs": 72,
+                    "fat": 17,
+                    "fiber": 4,
+                },
             },
-        },
-        "test-token",
-    )]
+            "test-token",
+        )
+    ]
     assert "已记录早餐" in rendered
     assert "补充记录类型和值" not in rendered
     assert not any(
@@ -2923,19 +3207,24 @@ async def test_agent_stream_enriches_anchor_peach_before_single_dispatch(
             return {
                 "content": "",
                 "finish_reason": "tool_calls",
-                "tool_calls": [{
-                    "id": "peach-without-nutrition",
-                    "function": {
-                        "name": "health_record",
-                        "arguments": json.dumps({
-                            "record_type": "diet",
-                            "data": {
-                                "meal_type": "snack",
-                                "food_items": "一个桃子",
-                            },
-                        }, ensure_ascii=False),
-                    },
-                }],
+                "tool_calls": [
+                    {
+                        "id": "peach-without-nutrition",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": json.dumps(
+                                {
+                                    "record_type": "diet",
+                                    "data": {
+                                        "meal_type": "snack",
+                                        "food_items": "一个桃子",
+                                    },
+                                },
+                                ensure_ascii=False,
+                            ),
+                        },
+                    }
+                ],
             }
         return {
             "content": "已记录加餐。",
@@ -3066,19 +3355,24 @@ async def test_agent_stream_reports_last_nutrition_error_when_all_rounds_reject(
         return {
             "content": "",
             "finish_reason": "tool_calls",
-            "tool_calls": [{
-                "id": f"incomplete-breakfast-{llm_calls}",
-                "function": {
-                    "name": "health_record",
-                    "arguments": json.dumps({
-                        "record_type": "diet",
-                        "data": {
-                            "meal_type": "breakfast",
-                            "food_items": "一个包子、一个茶叶蛋、一碗粥",
-                        },
-                    }, ensure_ascii=False),
-                },
-            }],
+            "tool_calls": [
+                {
+                    "id": f"incomplete-breakfast-{llm_calls}",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps(
+                            {
+                                "record_type": "diet",
+                                "data": {
+                                    "meal_type": "breakfast",
+                                    "food_items": "一个包子、一个茶叶蛋、一碗粥",
+                                },
+                            },
+                            ensure_ascii=False,
+                        ),
+                    },
+                }
+            ],
         }
 
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
@@ -3131,24 +3425,28 @@ async def test_agent_stream_keeps_independent_rejection_when_another_write_succe
         "id": "water-write",
         "function": {
             "name": "health_record",
-            "arguments": json.dumps({
-                "record_type": "water",
-                "data": {"amount": 500},
-            }),
+            "arguments": json.dumps(
+                {
+                    "record_type": "water",
+                    "data": {"amount": 500},
+                }
+            ),
         },
     }
     rejected_sleep_call = {
         "id": "sleep-write",
         "function": {
             "name": "health_record",
-            "arguments": json.dumps({
-                "record_type": "sleep",
-                "data": {
-                    "bedtime": "2026-07-16T23:00:00+08:00",
-                    "wake_time": "2026-07-17T07:00:00+08:00",
-                    "sleep_quality": 5,
-                },
-            }),
+            "arguments": json.dumps(
+                {
+                    "record_type": "sleep",
+                    "data": {
+                        "bedtime": "2026-07-16T23:00:00+08:00",
+                        "wake_time": "2026-07-17T07:00:00+08:00",
+                        "sleep_quality": 5,
+                    },
+                }
+            ),
         },
     }
 
@@ -3156,10 +3454,14 @@ async def test_agent_stream_keeps_independent_rejection_when_another_write_succe
         nonlocal llm_calls
         llm_calls += 1
         if llm_calls == 1:
-            calls = [rejected_sleep_call, water_call] if rejected_first else [
-                water_call,
-                rejected_sleep_call,
-            ]
+            calls = (
+                [rejected_sleep_call, water_call]
+                if rejected_first
+                else [
+                    water_call,
+                    rejected_sleep_call,
+                ]
+            )
             return {
                 "content": "",
                 "finish_reason": "tool_calls",
@@ -3191,10 +3493,7 @@ async def test_agent_stream_keeps_independent_rejection_when_another_write_succe
         event
         async for event in executor.run_stream(
             user_id=user.id,
-            message=(
-                "记录喝水500ml，记录昨晚23点入睡今天7点起床"
-                "睡眠质量5分。"
-            ),
+            message=("记录喝水500ml，记录昨晚23点入睡今天7点起床睡眠质量5分。"),
             user_auth_token="test-token",
         )
     ]
@@ -3236,20 +3535,26 @@ async def test_agent_stream_same_type_success_does_not_clear_other_rejection(
                         "id": "water-300-rejected",
                         "function": {
                             "name": "health_record",
-                            "arguments": json.dumps({
-                                "record_type": "water",
-                                "data": {"amount": 300},
-                            }, ensure_ascii=False),
+                            "arguments": json.dumps(
+                                {
+                                    "record_type": "water",
+                                    "data": {"amount": 300},
+                                },
+                                ensure_ascii=False,
+                            ),
                         },
                     },
                     {
                         "id": "water-500-saved",
                         "function": {
                             "name": "health_record",
-                            "arguments": json.dumps({
-                                "record_type": "water",
-                                "data": {"amount": 500},
-                            }, ensure_ascii=False),
+                            "arguments": json.dumps(
+                                {
+                                    "record_type": "water",
+                                    "data": {"amount": 500},
+                                },
+                                ensure_ascii=False,
+                            ),
                         },
                     },
                 ],
@@ -3323,18 +3628,20 @@ async def test_agent_stream_repaired_missing_argument_clears_scope_rejection(
         return {
             "content": "",
             "finish_reason": "tool_calls",
-            "tool_calls": [{
-                "id": f"water-{llm_calls}",
-                "function": {
-                    "name": "health_record",
-                    "arguments": json.dumps({
-                        "record_type": "water",
-                        "data": (
-                            {} if amount is None else {"amount": amount}
+            "tool_calls": [
+                {
+                    "id": f"water-{llm_calls}",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps(
+                            {
+                                "record_type": "water",
+                                "data": ({} if amount is None else {"amount": amount}),
+                            }
                         ),
-                    }),
-                },
-            }],
+                    },
+                }
+            ],
         }
 
     async def fake_dispatch(request, user_token):
@@ -3364,10 +3671,12 @@ async def test_agent_stream_repaired_missing_argument_clears_scope_rejection(
     )
     done = next(event for event in events if event.get("event") == "done")
 
-    assert dispatched == [{
-        "record_type": "water",
-        "data": {"amount": 500},
-    }]
+    assert dispatched == [
+        {
+            "record_type": "water",
+            "data": {"amount": 500},
+        }
+    ]
     assert "这次没有写入" not in rendered
     assert done["data"]["completion_status"] != "error"
     assert len(done["data"]["write_receipts"]) == 1
@@ -3405,44 +3714,52 @@ async def test_update_json_object_string_is_normalized_without_delete_fallback(
         return {
             "content": "",
             "finish_reason": "tool_calls",
-            "tool_calls": [{
-                "id": f"water-{llm_calls}",
-                "function": {
-                    "name": "health_manage",
-                    "arguments": json.dumps(arguments, ensure_ascii=False),
-                },
-            }],
+            "tool_calls": [
+                {
+                    "id": f"water-{llm_calls}",
+                    "function": {
+                        "name": "health_manage",
+                        "arguments": json.dumps(arguments, ensure_ascii=False),
+                    },
+                }
+            ],
         }
 
     async def fake_health_manage(_base_url, _headers, parsed):
         dispatched.append(parsed)
         if parsed["operation"] == "list":
-            return json.dumps([{
-                "id": 718,
-                "amount": 300,
-                "record_date": "2026-08-08",
-            }])
+            return json.dumps(
+                [
+                    {
+                        "id": 718,
+                        "amount": 300,
+                        "record_date": "2026-08-08",
+                    }
+                ]
+            )
         if parsed["operation"] == "delete":
-            return json.dumps({
+            return json.dumps(
+                {
+                    "id": parsed["record_id"],
+                    "record_id": parsed["record_id"],
+                    "resource_type": "water_record",
+                    "message": "删除成功",
+                },
+                ensure_ascii=False,
+            )
+        return json.dumps(
+            {
                 "id": parsed["record_id"],
                 "record_id": parsed["record_id"],
                 "resource_type": "water_record",
-                "message": "删除成功",
-            }, ensure_ascii=False)
-        return json.dumps({
-            "id": parsed["record_id"],
-            "record_id": parsed["record_id"],
-            "resource_type": "water_record",
-            "amount": parsed["data"]["amount"],
-        }, ensure_ascii=False)
+                "amount": parsed["data"]["amount"],
+            },
+            ensure_ascii=False,
+        )
 
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
     monkeypatch.setattr(executor, "_exec_health_manage", fake_health_manage)
-    monkeypatch.setattr(
-        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
-        lambda tool_calls, *args, **kwargs: tool_calls,
-    )
 
     events = [
         event
@@ -3518,36 +3835,48 @@ async def test_update_retry_never_deletes_and_reports_verified_update(
         return {
             "content": "",
             "finish_reason": "tool_calls",
-            "tool_calls": [{
-                "id": f"water-{operation}",
-                "function": {
-                    "name": "health_manage",
-                    "arguments": json.dumps(arguments, ensure_ascii=False),
-                },
-            }],
+            "tool_calls": [
+                {
+                    "id": f"water-{operation}",
+                    "function": {
+                        "name": "health_manage",
+                        "arguments": json.dumps(arguments, ensure_ascii=False),
+                    },
+                }
+            ],
         }
 
     async def fake_health_manage(_base_url, _headers, parsed):
         dispatched.append(parsed)
         if parsed["operation"] == "list":
-            return json.dumps([{
-                "id": 718,
-                "amount": 300,
-                "record_date": "2026-08-08",
-            }])
+            return json.dumps(
+                [
+                    {
+                        "id": 718,
+                        "amount": 300,
+                        "record_date": "2026-08-08",
+                    }
+                ]
+            )
         if parsed["operation"] == "delete":
-            return json.dumps({
+            return json.dumps(
+                {
+                    "id": parsed["record_id"],
+                    "record_id": parsed["record_id"],
+                    "resource_type": "water_record",
+                    "message": "删除成功",
+                },
+                ensure_ascii=False,
+            )
+        return json.dumps(
+            {
                 "id": parsed["record_id"],
                 "record_id": parsed["record_id"],
                 "resource_type": "water_record",
-                "message": "删除成功",
-            }, ensure_ascii=False)
-        return json.dumps({
-            "id": parsed["record_id"],
-            "record_id": parsed["record_id"],
-            "resource_type": "water_record",
-            "amount": parsed["data"]["amount"],
-        }, ensure_ascii=False)
+                "amount": parsed["data"]["amount"],
+            },
+            ensure_ascii=False,
+        )
 
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
@@ -3636,30 +3965,38 @@ async def test_update_retry_different_target_is_blocked_without_owner_scoped_evi
         return {
             "content": "",
             "finish_reason": "tool_calls",
-            "tool_calls": [{
-                "id": f"water-{operation}-{record_id}",
-                "function": {
-                    "name": "health_manage",
-                    "arguments": json.dumps(arguments, ensure_ascii=False),
-                },
-            }],
+            "tool_calls": [
+                {
+                    "id": f"water-{operation}-{record_id}",
+                    "function": {
+                        "name": "health_manage",
+                        "arguments": json.dumps(arguments, ensure_ascii=False),
+                    },
+                }
+            ],
         }
 
     async def fake_health_manage(_base_url, _headers, parsed):
         dispatched.append(parsed)
         if parsed["operation"] == "delete":
-            return json.dumps({
+            return json.dumps(
+                {
+                    "id": parsed["record_id"],
+                    "record_id": parsed["record_id"],
+                    "resource_type": "water_record",
+                    "message": "删除成功",
+                },
+                ensure_ascii=False,
+            )
+        return json.dumps(
+            {
                 "id": parsed["record_id"],
                 "record_id": parsed["record_id"],
                 "resource_type": "water_record",
-                "message": "删除成功",
-            }, ensure_ascii=False)
-        return json.dumps({
-            "id": parsed["record_id"],
-            "record_id": parsed["record_id"],
-            "resource_type": "water_record",
-            "amount": parsed["data"]["amount"],
-        }, ensure_ascii=False)
+                "amount": parsed["data"]["amount"],
+            },
+            ensure_ascii=False,
+        )
 
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
@@ -3667,6 +4004,10 @@ async def test_update_retry_different_target_is_blocked_without_owner_scoped_evi
     monkeypatch.setattr(
         "app.services.agent_executor._normalize_goal_guarded_tool_calls",
         lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_executor._build_deterministic_goal_lookup_tool_call",
+        lambda *args, **kwargs: None,
     )
 
     events = [
@@ -3730,30 +4071,38 @@ async def test_delete_retry_recovers_same_target_operation_mismatch(
         return {
             "content": "",
             "finish_reason": "tool_calls",
-            "tool_calls": [{
-                "id": f"water-{operation}-{record_id}",
-                "function": {
-                    "name": "health_manage",
-                    "arguments": json.dumps(arguments, ensure_ascii=False),
-                },
-            }],
+            "tool_calls": [
+                {
+                    "id": f"water-{operation}-{record_id}",
+                    "function": {
+                        "name": "health_manage",
+                        "arguments": json.dumps(arguments, ensure_ascii=False),
+                    },
+                }
+            ],
         }
 
     async def fake_health_manage(_base_url, _headers, parsed):
         dispatched.append(parsed)
         if parsed["operation"] == "update":
-            return json.dumps({
+            return json.dumps(
+                {
+                    "id": parsed["record_id"],
+                    "record_id": parsed["record_id"],
+                    "resource_type": "water_record",
+                    "amount": parsed["data"]["amount"],
+                },
+                ensure_ascii=False,
+            )
+        return json.dumps(
+            {
                 "id": parsed["record_id"],
                 "record_id": parsed["record_id"],
                 "resource_type": "water_record",
-                "amount": parsed["data"]["amount"],
-            }, ensure_ascii=False)
-        return json.dumps({
-            "id": parsed["record_id"],
-            "record_id": parsed["record_id"],
-            "resource_type": "water_record",
-            "message": "删除成功",
-        }, ensure_ascii=False)
+                "message": "删除成功",
+            },
+            ensure_ascii=False,
+        )
 
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
@@ -3824,30 +4173,40 @@ async def test_update_wrong_result_id_does_not_recover_same_target_mismatch(
         return {
             "content": "",
             "finish_reason": "tool_calls",
-            "tool_calls": [{
-                "id": f"water-{operation}-718",
-                "function": {
-                    "name": "health_manage",
-                    "arguments": json.dumps(arguments, ensure_ascii=False),
-                },
-            }],
+            "tool_calls": [
+                {
+                    "id": f"water-{operation}-718",
+                    "function": {
+                        "name": "health_manage",
+                        "arguments": json.dumps(arguments, ensure_ascii=False),
+                    },
+                }
+            ],
         }
 
     async def fake_health_manage(_base_url, _headers, parsed):
         dispatched.append(parsed)
         if parsed["operation"] == "list":
-            return json.dumps([{
-                "id": 718,
-                "amount": 300,
-                "record_date": "2026-08-08",
-            }], ensure_ascii=False)
-        return json.dumps({
-            "id": 719,
-            "record_id": 719,
-            "resource_type": "water_record",
-            "status": "updated",
-            "amount": parsed["data"]["amount"],
-        }, ensure_ascii=False)
+            return json.dumps(
+                [
+                    {
+                        "id": 718,
+                        "amount": 300,
+                        "record_date": "2026-08-08",
+                    }
+                ],
+                ensure_ascii=False,
+            )
+        return json.dumps(
+            {
+                "id": 719,
+                "record_id": 719,
+                "resource_type": "water_record",
+                "status": "updated",
+                "amount": parsed["data"]["amount"],
+            },
+            ensure_ascii=False,
+        )
 
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
@@ -3881,14 +4240,10 @@ async def test_update_wrong_result_id_does_not_recover_same_target_mismatch(
     assert wrong_target_result["resubmit_safe"] is False
     assert wrong_target_result["error_code"] == "missing_receipt"
     assert "receipt" not in wrong_target_result
-    assert done["data"]["turn_outcome"]["category"] == (
-        "write_reconciliation_required"
-    )
+    assert done["data"]["turn_outcome"]["category"] == ("write_reconciliation_required")
     assert done["data"]["turn_outcome"]["reason_code"] == "missing_receipt"
     assert done["data"]["write_receipts"] == []
-    assert ("water", 718) in (
-        executor._agent_kernel_unresolved_manage_mismatch_targets
-    )
+    assert ("water", 718) in (executor._agent_kernel_unresolved_manage_mismatch_targets)
     assert "manage_operation_mismatch" not in (
         executor._agent_kernel_recovered_capability_block_reasons
     )
@@ -3929,30 +4284,38 @@ async def test_delete_retry_different_target_keeps_operation_mismatch_blocked(
         return {
             "content": "",
             "finish_reason": "tool_calls",
-            "tool_calls": [{
-                "id": f"water-{operation}-{record_id}",
-                "function": {
-                    "name": "health_manage",
-                    "arguments": json.dumps(arguments, ensure_ascii=False),
-                },
-            }],
+            "tool_calls": [
+                {
+                    "id": f"water-{operation}-{record_id}",
+                    "function": {
+                        "name": "health_manage",
+                        "arguments": json.dumps(arguments, ensure_ascii=False),
+                    },
+                }
+            ],
         }
 
     async def fake_health_manage(_base_url, _headers, parsed):
         dispatched.append(parsed)
         if parsed["operation"] == "update":
-            return json.dumps({
+            return json.dumps(
+                {
+                    "id": parsed["record_id"],
+                    "record_id": parsed["record_id"],
+                    "resource_type": "water_record",
+                    "amount": parsed["data"]["amount"],
+                },
+                ensure_ascii=False,
+            )
+        return json.dumps(
+            {
                 "id": parsed["record_id"],
                 "record_id": parsed["record_id"],
                 "resource_type": "water_record",
-                "amount": parsed["data"]["amount"],
-            }, ensure_ascii=False)
-        return json.dumps({
-            "id": parsed["record_id"],
-            "record_id": parsed["record_id"],
-            "resource_type": "water_record",
-            "message": "删除成功",
-        }, ensure_ascii=False)
+                "message": "删除成功",
+            },
+            ensure_ascii=False,
+        )
 
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
@@ -4021,16 +4384,21 @@ async def test_agent_stream_repaired_diet_nutrition_clears_older_scope_rejection
         return {
             "content": "",
             "finish_reason": "tool_calls",
-            "tool_calls": [{
-                "id": f"nuts-{llm_calls}",
-                "function": {
-                    "name": "health_record",
-                    "arguments": json.dumps({
-                        "record_type": "diet",
-                        "data": data,
-                    }, ensure_ascii=False),
-                },
-            }],
+            "tool_calls": [
+                {
+                    "id": f"nuts-{llm_calls}",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps(
+                            {
+                                "record_type": "diet",
+                                "data": data,
+                            },
+                            ensure_ascii=False,
+                        ),
+                    },
+                }
+            ],
         }
 
     async def fake_dispatch(request, user_token):
@@ -4069,10 +4437,7 @@ async def test_agent_stream_repaired_diet_nutrition_clears_older_scope_rejection
         event
         async for event in executor.run_stream(
             user_id=user.id,
-            message=(
-                "记录加餐，洽洽小黄袋每日坚果 20g，"
-                "并按营养成分表计算。"
-            ),
+            message=("记录加餐，洽洽小黄袋每日坚果 20g，并按营养成分表计算。"),
             user_auth_token="test-token",
         )
     ]
@@ -4090,8 +4455,7 @@ async def test_agent_stream_repaired_diet_nutrition_clears_older_scope_rejection
     assert done["data"]["completion_status"] != "error"
     assert len(done["data"]["write_receipts"]) == 1
     assert any(
-        card.get("type") == "record"
-        and (card.get("data") or {}).get("type") == "diet"
+        card.get("type") == "record" and (card.get("data") or {}).get("type") == "diet"
         for card in done["data"].get("cards", [])
     )
 
@@ -4131,16 +4495,21 @@ async def test_agent_stream_repaired_diet_name_cannot_expand_authorized_target(
         return {
             "content": "",
             "finish_reason": "tool_calls",
-            "tool_calls": [{
-                "id": f"nuts-{llm_calls}",
-                "function": {
-                    "name": "health_record",
-                    "arguments": json.dumps({
-                        "record_type": "diet",
-                        "data": data,
-                    }, ensure_ascii=False),
-                },
-            }],
+            "tool_calls": [
+                {
+                    "id": f"nuts-{llm_calls}",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps(
+                            {
+                                "record_type": "diet",
+                                "data": data,
+                            },
+                            ensure_ascii=False,
+                        ),
+                    },
+                }
+            ],
         }
 
     async def fake_dispatch(request, user_token):
@@ -4209,17 +4578,20 @@ def test_multi_meal_goal_cannot_clear_another_diet_rejection():
         target_meal_types=("breakfast", "lunch"),
     )
 
-    assert _goal_binds_recoverable_write(
-        goal,
-        "health_record",
-        {
-            "record_type": "diet",
-            "data": {
-                "meal_type": "lunch",
-                "food_items": "鸡胸肉 100g",
+    assert (
+        _goal_binds_recoverable_write(
+            goal,
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "lunch",
+                    "food_items": "鸡胸肉 100g",
+                },
             },
-        },
-    ) is False
+        )
+        is False
+    )
 
 
 @pytest.mark.asyncio
@@ -4242,20 +4614,24 @@ async def test_agent_stream_same_round_success_does_not_clear_scope_rejection(
                         "id": "water-missing",
                         "function": {
                             "name": "health_record",
-                            "arguments": json.dumps({
-                                "record_type": "water",
-                                "data": {},
-                            }),
+                            "arguments": json.dumps(
+                                {
+                                    "record_type": "water",
+                                    "data": {},
+                                }
+                            ),
                         },
                     },
                     {
                         "id": "water-saved",
                         "function": {
                             "name": "health_record",
-                            "arguments": json.dumps({
-                                "record_type": "water",
-                                "data": {"amount": 500},
-                            }),
+                            "arguments": json.dumps(
+                                {
+                                    "record_type": "water",
+                                    "data": {"amount": 500},
+                                }
+                            ),
                         },
                     },
                 ],
@@ -4320,16 +4696,20 @@ async def test_agent_stream_later_unrelated_success_does_not_clear_scope_rejecti
         return {
             "content": "",
             "finish_reason": "tool_calls",
-            "tool_calls": [{
-                "id": f"water-{llm_calls}",
-                "function": {
-                    "name": "health_record",
-                    "arguments": json.dumps({
-                        "record_type": "water",
-                        "data": data,
-                    }),
-                },
-            }],
+            "tool_calls": [
+                {
+                    "id": f"water-{llm_calls}",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps(
+                            {
+                                "record_type": "water",
+                                "data": data,
+                            }
+                        ),
+                    },
+                }
+            ],
         }
 
     async def fake_dispatch(request, user_token):
@@ -4386,24 +4766,29 @@ async def test_agent_stream_reports_every_independent_rejection(
                         "id": "sleep-rejected",
                         "function": {
                             "name": "health_record",
-                            "arguments": json.dumps({
-                                "record_type": "sleep",
-                                "data": {
-                                    "bedtime": "2026-07-16T23:00:00+08:00",
-                                    "wake_time": "2026-07-17T07:00:00+08:00",
-                                    "sleep_quality": 5,
-                                },
-                            }),
+                            "arguments": json.dumps(
+                                {
+                                    "record_type": "sleep",
+                                    "data": {
+                                        "bedtime": "2026-07-16T23:00:00+08:00",
+                                        "wake_time": "2026-07-17T07:00:00+08:00",
+                                        "sleep_quality": 5,
+                                    },
+                                }
+                            ),
                         },
                     },
                     {
                         "id": "water-rejected",
                         "function": {
                             "name": "health_record",
-                            "arguments": json.dumps({
-                                "record_type": "water",
-                                "data": {"amount": 300},
-                            }, ensure_ascii=False),
+                            "arguments": json.dumps(
+                                {
+                                    "record_type": "water",
+                                    "data": {"amount": 300},
+                                },
+                                ensure_ascii=False,
+                            ),
                         },
                     },
                 ],
@@ -4436,10 +4821,7 @@ async def test_agent_stream_reports_every_independent_rejection(
         event
         async for event in executor.run_stream(
             user_id=user.id,
-            message=(
-                "记录喝水300ml，记录昨晚23点入睡今天7点起床"
-                "睡眠质量5分。"
-            ),
+            message=("记录喝水300ml，记录昨晚23点入睡今天7点起床睡眠质量5分。"),
             user_auth_token="test-token",
         )
     ]
@@ -4478,10 +4860,12 @@ async def test_agent_stream_keeps_same_message_for_independent_rejections(
                         "id": f"water-{amount}",
                         "function": {
                             "name": "health_record",
-                            "arguments": json.dumps({
-                                "record_type": "water",
-                                "data": {"amount": amount},
-                            }),
+                            "arguments": json.dumps(
+                                {
+                                    "record_type": "water",
+                                    "data": {"amount": amount},
+                                }
+                            ),
                         },
                     }
                     for amount in (300, 500)
@@ -4525,7 +4909,9 @@ async def test_agent_stream_keeps_same_message_for_independent_rejections(
 
 
 @pytest.mark.asyncio
-async def test_langbridge_commercial_model_receives_raw_image_parts(db, auth_user_and_headers):
+async def test_langbridge_commercial_model_receives_raw_image_parts(
+    db, auth_user_and_headers
+):
     user, _headers = auth_user_and_headers
     db.add(UserProfile(user_id=user.id, llm_model_id="gemini-3.1-pro"))
     db.commit()
@@ -4567,4 +4953,6 @@ async def test_langbridge_commercial_model_receives_raw_image_parts(db, auth_use
     assert isinstance(last_user["content"], list)
     assert last_user["content"][0] == {"type": "text", "text": "这张照片里是什么建筑？"}
     assert last_user["content"][1]["type"] == "image_url"
-    assert last_user["content"][1]["image_url"]["url"] == "data:image/jpeg;base64,YWJjMTIz"
+    assert (
+        last_user["content"][1]["image_url"]["url"] == "data:image/jpeg;base64,YWJjMTIz"
+    )

@@ -1,7 +1,10 @@
 from dataclasses import replace
 import json
+import os
 from pathlib import Path
 import re
+import subprocess
+import sys
 
 import pytest
 
@@ -4386,8 +4389,8 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v41"
-    assert payload["health_semantics"]["version"] == "health-semantics-v3"
+    assert payload["contract_version"] == "agent-capability-policy-v42"
+    assert payload["health_semantics"]["version"] == "health-semantics-v4"
     assert re.fullmatch(r"[0-9a-f]{64}", payload["health_semantics"]["content_digest"])
     assert payload["health_record_target_binding"] == {
         "version": "authorized-target-set-v31",
@@ -4404,10 +4407,10 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
         },
     }
     assert (
-        payload["whole_record_delete_evidence_version"] == "record-delete-evidence-v2"
+        payload["whole_record_delete_evidence_version"] == "record-delete-evidence-v3"
     )
     assert (
-        payload["health_manage_update_evidence_version"] == "record-update-evidence-v23"
+        payload["health_manage_update_evidence_version"] == "record-update-evidence-v24"
     )
     assert payload["known_tools"]
     assert payload["recipe_record_types"]
@@ -4682,3 +4685,372 @@ def test_v41_indicator_abnormality_never_dispatches_as_illness(
     )
 
     assert decision.action == "block"
+
+
+@pytest.mark.parametrize(
+    "entity",
+    (
+        "Mia显微镜下多血管炎",
+        "AnaHLA-B27相关脊柱关节炎",
+        "CACHE血管炎",
+        "API肾病",
+    ),
+)
+@pytest.mark.parametrize(
+    ("tool_name", "arguments", "template"),
+    (
+        (
+            "health_query",
+            {"dimension": "illness", "keyword": "MODEL"},
+            "翻看{}近三年的病历",
+        ),
+        (
+            "health_manage",
+            {"record_type": "illness", "operation": "list"},
+            "列出{}病史",
+        ),
+        (
+            "health_record",
+            {"record_type": "illness", "data": {"name": "MODEL"}},
+            "记录疾病{}",
+        ),
+    ),
+)
+def test_v42_ascii_owner_or_system_prefix_never_dispatches_as_illness(
+    entity,
+    tool_name,
+    arguments,
+    template,
+):
+    proposed = json.loads(
+        json.dumps(arguments, ensure_ascii=False).replace("MODEL", entity)
+    )
+    decision = decide_tool_capability(
+        _snapshot(template.format(entity)),
+        _request(tool_name, proposed),
+    )
+
+    assert decision.action == "block"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "删除疾病记录8406，不删了",
+        "删除疾病记录8406，别删",
+        "删除疾病记录8406，保留",
+        "删除疾病记录8406，先保留",
+        "删除疾病记录8406，暂时保留",
+        "删除疾病记录8406，我反悔了",
+        "删除疾病记录8406，刚才那句不算",
+        "删除疾病记录8406，不用删",
+        "删除疾病记录8406，先别删",
+        "删除疾病记录8406，等一下",
+        "删除疾病记录8406，等会儿",
+        "删除疾病记录8406，还是留着吧",
+        "删除疾病记录8406，别动它",
+        "删除疾病记录8406，先不要动",
+        "删除疾病记录8406，改天再说",
+        "删除疾病记录8406，容我再想想",
+    ),
+)
+def test_v42_revoked_delete_never_receives_server_lookup_marker(message):
+    snapshot = _snapshot(message)
+    goal = compile_goal_spec(
+        envelope=snapshot.envelope,
+        context=snapshot.context,
+        intent=snapshot.intent,
+    )
+    args = bind_server_authorized_manage_lookup(
+        {"record_type": "illness", "operation": "list"},
+        goal,
+    )
+    decision = decide_tool_capability(
+        replace(snapshot, goal=goal),
+        _request("health_manage", args),
+    )
+
+    assert goal.kind != "health_manage_mutation"
+    assert decision.action == "block"
+
+
+@pytest.mark.parametrize(
+    ("message", "record_id", "status"),
+    (
+        ("把疾病记录81的状态改成已康复", 81, "resolved"),
+        ("把我的疾病记录82状态改为已痊愈", 82, "resolved"),
+        ("疾病记录83已经好了，请更新记录", 83, "resolved"),
+    ),
+)
+def test_v42_exact_illness_record_id_authorizes_owner_scoped_update(
+    message,
+    record_id,
+    status,
+):
+    snapshot = replace(
+        _snapshot(message),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "illness",
+                    "records": (
+                        {"id": record_id, "name": "克雅氏病", "status": "active"},
+                    ),
+                },
+            ),
+        ),
+    )
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "illness",
+                "operation": "update",
+                "record_id": record_id,
+                "data": {"status": status},
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args["record_id"] == record_id
+
+
+def test_v42_capability_digest_is_stable_after_authorization_execution():
+    before = capability_policy_digest()
+
+    for _ in range(100):
+        decide_tool_capability(
+            _snapshot("查询我的克雅氏病记录"),
+            _request("health_query", {"dimension": "illness", "keyword": "MODEL"}),
+        )
+
+    assert capability_policy_digest() == before
+
+
+def test_v42_capability_digest_tracks_transitive_delete_helper(monkeypatch):
+    before = capability_policy_digest()
+
+    monkeypatch.setattr(
+        capability_policy_module,
+        "_delete_evidence_authorizes_request",
+        lambda _evidence, _args: False,
+    )
+
+    assert capability_policy_digest() != before
+
+
+@pytest.mark.parametrize(
+    "name",
+    (
+        "显微镜下多血管炎",
+        "HLA-B27相关脊柱关节炎",
+        "MOG抗体相关疾病",
+        "EB病毒感染",
+        "Sjögren综合征",
+        "Guillain-Barré综合征",
+        "α1抗胰蛋白酶缺乏症",
+        "C3肾小球病",
+        "PLA2R相关膜性肾病",
+        "抗MDA5阳性皮肌炎",
+        "抗LGI1抗体脑炎",
+        "抗磷脂酶A2受体阳性膜性肾病",
+        "NTRK融合阳性实体瘤",
+        "MPL-W515L阳性骨髓增殖性肿瘤",
+        "HLA-DQ2.5相关乳糜泻",
+        "anti-MDA5阳性皮肌炎",
+        "GFAP-IgG阳性星形胶质细胞病",
+        "SYNGAP1相关神经发育障碍",
+        "PIGA相关阵发性睡眠性血红蛋白尿",
+        "C9orf72相关额颞叶痴呆",
+        "PR3-ANCA阳性肉芽肿性多血管炎",
+        "A20单倍剂量不足综合征",
+        "ADA2缺乏症",
+        "NLRP3相关自身炎症性疾病",
+        "PAX6相关无虹膜症",
+        "LAM-TSC2相关肺淋巴管肌瘤病",
+        "WT1相关肾病综合征",
+        "MOG-IgG相关皮质脑炎",
+        "抗GAD65自身免疫性脑炎",
+        "LAMP2抗体相关坏死性肾小球肾炎",
+        "m.3243A>G相关MELAS综合征",
+    ),
+)
+@pytest.mark.parametrize(
+    ("tool_name", "arguments", "template"),
+    (
+        (
+            "health_query",
+            {"dimension": "illness", "keyword": "MODEL"},
+            "翻看我自己的{}病史",
+        ),
+        (
+            "health_manage",
+            {"record_type": "illness", "operation": "list"},
+            "列出本人{}记录",
+        ),
+        (
+            "health_record",
+            {"record_type": "illness", "data": {"name": "MODEL"}},
+            "记录疾病{}",
+        ),
+    ),
+)
+def test_v42_versioned_biomedical_terminology_routes_without_false_denial(
+    name,
+    tool_name,
+    arguments,
+    template,
+):
+    proposed = json.loads(
+        json.dumps(arguments, ensure_ascii=False).replace("MODEL", name)
+    )
+    decision = decide_tool_capability(
+        _snapshot(template.format(name)),
+        _request(tool_name, proposed),
+    )
+
+    assert decision.action == "allow"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "把Mia显微镜下多血管炎状态改成已康复",
+        "把AnaHLA-B27相关脊柱关节炎状态改成已康复",
+    ),
+)
+def test_v42_ascii_owner_prefix_never_gets_mutation_lookup_authority(message):
+    snapshot = _snapshot(message)
+    goal = compile_goal_spec(
+        envelope=snapshot.envelope,
+        context=snapshot.context,
+        intent=snapshot.intent,
+    )
+    args = bind_server_authorized_manage_lookup(
+        {"record_type": "illness", "operation": "list"},
+        goal,
+    )
+    decision = decide_tool_capability(
+        replace(snapshot, goal=goal),
+        _request("health_manage", args),
+    )
+
+    assert goal.kind != "health_manage_mutation"
+    assert decision.action == "block"
+
+
+@pytest.mark.parametrize(
+    ("message", "record_id"),
+    (
+        ("请彻底删除疾病记录8701", 8701),
+        ("麻烦移除疾病条目8702", 8702),
+        ("把我的疾病记录8703删掉", 8703),
+        ("将本人病历记录8704清除", 8704),
+    ),
+)
+def test_v42_exact_delete_grammar_and_capability_share_one_target(
+    message,
+    record_id,
+):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_manage",
+            {
+                "record_type": "illness",
+                "operation": "delete",
+                "record_id": record_id,
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+
+
+def test_v42_biomedical_colon_illness_update_remains_authorized():
+    message = "我自己的BCR::ABL1阳性白血病仍未好，修改记录"
+    snapshot = replace(
+        _snapshot(message),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "illness",
+                    "records": (
+                        {
+                            "id": 8604,
+                            "name": "BCR::ABL1阳性白血病",
+                            "status": "improving",
+                        },
+                    ),
+                },
+            ),
+        ),
+    )
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "illness",
+                "operation": "update",
+                "record_id": 8604,
+                "data": {"status": "active"},
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "先别查老师的痛风；明天再查我的房颤记录",
+        "暂缓查看同事MRI；稍后再打开我的左膝MRI",
+        "查询我的克雅氏病记录，先别继续了",
+        "我的痛风记录已经查询完成",
+        "查询我的痛风记录只是一个示例",
+        "查询我的痛风记录这句话来自教程",
+        "查询我的痛风记录会发生什么",
+    ),
+)
+def test_v42_non_authorizing_read_never_dispatches_manage_list(message):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_manage",
+            {"record_type": "illness", "operation": "list"},
+        ),
+    )
+
+    assert decision.action == "block"
+
+
+def test_v42_capability_digest_is_stable_across_fresh_processes():
+    backend_root = Path(__file__).parents[1]
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(backend_root)
+    command = [
+        sys.executable,
+        "-c",
+        (
+            "from app.services.agent_kernel.capability_policy import "
+            "capability_policy_digest; print(capability_policy_digest())"
+        ),
+    ]
+
+    digests = {
+        subprocess.check_output(
+            command,
+            cwd=backend_root,
+            env=environment,
+            text=True,
+        ).strip()
+        for _ in range(3)
+    }
+
+    assert len(digests) == 1

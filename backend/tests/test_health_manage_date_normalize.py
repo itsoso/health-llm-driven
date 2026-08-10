@@ -3,6 +3,7 @@
 founder 实测: health_manage(record_type='diet', operation='list', date='today') → 端点
 把 'today' 当 start_date 解析 → 422 date_from_datetime_parsing → 修改失败。
 """
+
 from datetime import date, datetime, timedelta, timezone
 import json
 from unittest.mock import AsyncMock, MagicMock
@@ -51,6 +52,21 @@ def _diet_recalculate_goal() -> GoalSpec:
     )
 
 
+def _illness_update_goal() -> GoalSpec:
+    return GoalSpec(
+        kind="health_manage_mutation",
+        domain="illness",
+        operation="update",
+        target_record_type="illness",
+        target_values=(("record_id", "81"),),
+        requires_lookup=True,
+        requires_verification=True,
+        prohibited_operations=("create", "delete"),
+        postconditions=("owner_scoped_lookup", "verified_receipt"),
+        evidence=("explicit_current_turn_mutation",),
+    )
+
+
 def test_recalculate_goal_starts_with_one_deterministic_database_lookup():
     call = _build_deterministic_goal_lookup_tool_call(
         _diet_recalculate_goal(),
@@ -67,19 +83,118 @@ def test_recalculate_goal_starts_with_one_deterministic_database_lookup():
     }
 
 
+def test_manage_mutation_goal_starts_with_owner_scoped_lookup():
+    call = _build_deterministic_goal_lookup_tool_call(
+        _illness_update_goal(),
+        write_receipts=[],
+    )
+
+    assert call is not None
+    assert call["function"]["name"] == "health_manage"
+    assert json.loads(call["function"]["arguments"]) == {
+        "record_type": "illness",
+        "operation": "list",
+        "limit": 20,
+    }
+
+
+def test_manage_mutation_direct_write_is_canonicalized_to_lookup_first():
+    call = {
+        "id": "unsafe-direct-update",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps(
+                {
+                    "record_type": "illness",
+                    "operation": "update",
+                    "record_id": 81,
+                    "data": {"status": "resolved"},
+                }
+            ),
+        },
+    }
+
+    normalized = _normalize_goal_guarded_tool_calls(
+        [call],
+        _illness_update_goal(),
+    )
+
+    assert len(normalized) == 1
+    assert normalized[0]["id"] == "unsafe-direct-update"
+    assert json.loads(normalized[0]["function"]["arguments"]) == {
+        "record_type": "illness",
+        "operation": "list",
+        "limit": 20,
+    }
+
+
+def test_manage_mutation_wrong_domain_lookup_is_rebound_to_typed_target():
+    call = {
+        "id": "wrong-domain-list",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps(
+                {
+                    "record_type": "sleep",
+                    "operation": "list",
+                }
+            ),
+        },
+    }
+
+    normalized = _normalize_goal_guarded_tool_calls(
+        [call],
+        _illness_update_goal(),
+    )
+
+    assert json.loads(normalized[0]["function"]["arguments"]) == {
+        "record_type": "illness",
+        "operation": "list",
+        "limit": 20,
+    }
+
+
+def test_manage_mutation_write_is_not_rewritten_after_owner_lookup():
+    call = {
+        "id": "verified-update",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps(
+                {
+                    "record_type": "illness",
+                    "operation": "update",
+                    "record_id": 81,
+                    "data": {"status": "resolved"},
+                }
+            ),
+        },
+    }
+
+    assert _normalize_goal_guarded_tool_calls(
+        [call],
+        _illness_update_goal(),
+        lookup_completed=True,
+    ) == [call]
+
+
 def test_recalculate_goal_never_allows_model_to_create_duplicate_diet_record():
     call = {
         "id": "unsafe-create",
         "type": "function",
         "function": {
             "name": "health_record",
-            "arguments": json.dumps({
-                "record_type": "diet",
-                "data": {
-                    "meal_type": "breakfast",
-                    "food_items": "豆腐脑约1碗 + 小笼包1个",
-                },
-            }),
+            "arguments": json.dumps(
+                {
+                    "record_type": "diet",
+                    "data": {
+                        "meal_type": "breakfast",
+                        "food_items": "豆腐脑约1碗 + 小笼包1个",
+                    },
+                }
+            ),
         },
     }
 
@@ -103,11 +218,13 @@ def test_recalculate_goal_never_allows_model_to_delete_existing_diet_record():
         "type": "function",
         "function": {
             "name": "health_manage",
-            "arguments": json.dumps({
-                "record_type": "diet",
-                "operation": "delete",
-                "record_id": 101,
-            }),
+            "arguments": json.dumps(
+                {
+                    "record_type": "diet",
+                    "operation": "delete",
+                    "record_id": 101,
+                }
+            ),
         },
     }
 
@@ -127,12 +244,14 @@ def test_recalculate_goal_only_updates_ids_resolved_from_target_meals():
         "type": "function",
         "function": {
             "name": "health_manage",
-            "arguments": json.dumps({
-                "record_type": "diet",
-                "operation": "update",
-                "record_id": 303,
-                "data": {"meal_type": "breakfast", "calories": 410},
-            }),
+            "arguments": json.dumps(
+                {
+                    "record_type": "diet",
+                    "operation": "update",
+                    "record_id": 303,
+                    "data": {"meal_type": "breakfast", "calories": 410},
+                }
+            ),
         },
     }
 
@@ -153,12 +272,14 @@ def test_recalculate_goal_allows_only_a_resolved_target_record_update():
         "type": "function",
         "function": {
             "name": "health_manage",
-            "arguments": json.dumps({
-                "record_type": "diet",
-                "operation": "update",
-                "record_id": 101,
-                "data": {"meal_type": "breakfast", "calories": 410},
-            }),
+            "arguments": json.dumps(
+                {
+                    "record_type": "diet",
+                    "operation": "update",
+                    "record_id": 101,
+                    "data": {"meal_type": "breakfast", "calories": 410},
+                }
+            ),
         },
     }
 
@@ -173,40 +294,48 @@ def test_recalculate_goal_allows_only_a_resolved_target_record_update():
 
 
 def test_recalculate_goal_resolves_ids_only_when_every_target_meal_is_unique():
-    result = json.dumps([
-        {"id": 101, "meal_type": "breakfast"},
-        {"id": 102, "meal_type": "lunch"},
-        {"id": 103, "meal_type": "dinner"},
-    ])
+    result = json.dumps(
+        [
+            {"id": 101, "meal_type": "breakfast"},
+            {"id": 102, "meal_type": "lunch"},
+            {"id": 103, "meal_type": "dinner"},
+        ]
+    )
 
     assert _goal_target_record_ids(_diet_recalculate_goal(), result) == {"101", "102"}
 
 
 def test_recalculate_goal_rejects_the_whole_batch_when_a_target_is_ambiguous():
-    result = json.dumps([
-        {"id": 101, "meal_type": "breakfast"},
-        {"id": 111, "meal_type": "breakfast"},
-        {"id": 102, "meal_type": "lunch"},
-    ])
+    result = json.dumps(
+        [
+            {"id": 101, "meal_type": "breakfast"},
+            {"id": 111, "meal_type": "breakfast"},
+            {"id": 102, "meal_type": "lunch"},
+        ]
+    )
 
     assert _goal_target_record_ids(_diet_recalculate_goal(), result) == set()
 
 
 def test_recalculate_goal_rejects_the_whole_batch_when_a_target_is_missing():
-    result = json.dumps([
-        {"id": 101, "meal_type": "breakfast"},
-        {"id": 103, "meal_type": "dinner"},
-    ])
+    result = json.dumps(
+        [
+            {"id": 101, "meal_type": "breakfast"},
+            {"id": 103, "meal_type": "dinner"},
+        ]
+    )
 
     assert _goal_target_record_ids(_diet_recalculate_goal(), result) == set()
 
 
 def test_recalculate_goal_explains_ambiguous_targets_without_allowing_a_write():
-    result = json.dumps([
-        {"id": 101, "meal_type": "breakfast"},
-        {"id": 111, "meal_type": "breakfast"},
-        {"id": 102, "meal_type": "lunch"},
-    ])
+    result = json.dumps(
+        [
+            {"id": 101, "meal_type": "breakfast"},
+            {"id": 111, "meal_type": "breakfast"},
+            {"id": 102, "meal_type": "lunch"},
+        ]
+    )
 
     prompt = _goal_lookup_resolution_prompt(_diet_recalculate_goal(), result)
 
@@ -216,9 +345,11 @@ def test_recalculate_goal_explains_ambiguous_targets_without_allowing_a_write():
 
 
 def test_recalculate_goal_explains_missing_targets_without_generic_failure():
-    result = json.dumps([
-        {"id": 101, "meal_type": "breakfast"},
-    ])
+    result = json.dumps(
+        [
+            {"id": 101, "meal_type": "breakfast"},
+        ]
+    )
 
     prompt = _goal_lookup_resolution_prompt(_diet_recalculate_goal(), result)
 
@@ -227,19 +358,24 @@ def test_recalculate_goal_explains_missing_targets_without_generic_failure():
 
 
 def test_recalculate_goal_adds_no_resolution_prompt_for_unique_targets():
-    result = json.dumps([
-        {"id": 101, "meal_type": "breakfast"},
-        {"id": 102, "meal_type": "lunch"},
-    ])
+    result = json.dumps(
+        [
+            {"id": 101, "meal_type": "breakfast"},
+            {"id": 102, "meal_type": "lunch"},
+        ]
+    )
 
     assert _goal_lookup_resolution_prompt(_diet_recalculate_goal(), result) == ""
 
 
 def test_recalculate_goal_does_not_mislabel_a_tool_error_as_missing_records():
-    assert _goal_lookup_resolution_prompt(
-        _diet_recalculate_goal(),
-        "Error: database unavailable",
-    ) == ""
+    assert (
+        _goal_lookup_resolution_prompt(
+            _diet_recalculate_goal(),
+            "Error: database unavailable",
+        )
+        == ""
+    )
 
 
 def test_recalculate_goal_reads_back_after_all_target_updates_have_receipts():
@@ -260,11 +396,14 @@ def test_recalculate_goal_reads_back_after_all_target_updates_have_receipts():
         "date": "2026-07-24",
         "limit": 20,
     }
-    assert _build_goal_verification_tool_call(
-        goal,
-        write_receipts=[{"resource_type": "diet", "resource_id": 101}],
-        already_attempted=False,
-    ) is None
+    assert (
+        _build_goal_verification_tool_call(
+            goal,
+            write_receipts=[{"resource_type": "diet", "resource_id": 101}],
+            already_attempted=False,
+        )
+        is None
+    )
 
 
 def test_today_resolves_to_iso_date():
@@ -277,7 +416,9 @@ def test_today_resolves_to_iso_date():
 def test_relative_words():
     today = datetime.now(BJ).date()
     assert _normalize_relative_date("昨天") == (today - timedelta(days=1)).isoformat()
-    assert _normalize_relative_date("yesterday") == (today - timedelta(days=1)).isoformat()
+    assert (
+        _normalize_relative_date("yesterday") == (today - timedelta(days=1)).isoformat()
+    )
     assert _normalize_relative_date("前天") == (today - timedelta(days=2)).isoformat()
     assert _normalize_relative_date("明天") == (today + timedelta(days=1)).isoformat()
 
@@ -401,9 +542,10 @@ def test_partial_meal_advice_question_is_not_parsed_as_a_correction():
 
 
 def test_fraction_before_the_correction_clause_is_not_used_as_consumed_amount():
-    assert _parse_explicit_diet_correction(
-        "晚餐四分之一是肉，我没吃那么多，只吃了蔬菜"
-    ) is None
+    assert (
+        _parse_explicit_diet_correction("晚餐四分之一是肉，我没吃那么多，只吃了蔬菜")
+        is None
+    )
 
 
 def test_partial_meal_correction_builds_a_deterministic_lookup_tool_call():
@@ -424,35 +566,52 @@ def test_partial_meal_correction_builds_a_deterministic_lookup_tool_call():
 
 
 def test_deterministic_partial_meal_lookup_is_not_repeated_after_a_write_receipt():
-    assert _build_deterministic_diet_correction_tool_call(
-        "晚饭实际只吃了一半，帮我按实际摄入修正",
-        write_receipts=[{"operation_id": "existing"}],
-    ) is None
+    assert (
+        _build_deterministic_diet_correction_tool_call(
+            "晚饭实际只吃了一半，帮我按实际摄入修正",
+            write_receipts=[{"operation_id": "existing"}],
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
 async def test_explicit_diet_correction_resolves_list_to_one_verified_update():
     executor = AgentExecutor(MagicMock())
     executor._current_turn_user_message = "修改早餐：一碗小米粥 一个蔬菜饼"
-    executor._api_get_json = AsyncMock(return_value=([{
-        "id": 821,
-        "meal_type": "breakfast",
-        "food_items": "西米露 约1碗 + 炒饭 约1份",
-    }], None))
+    executor._api_get_json = AsyncMock(
+        return_value=(
+            [
+                {
+                    "id": 821,
+                    "meal_type": "breakfast",
+                    "food_items": "西米露 约1碗 + 炒饭 约1份",
+                }
+            ],
+            None,
+        )
+    )
 
-    calls = await executor._normalize_explicit_diet_update_tool_calls([{
-        "id": "call-1",
-        "type": "function",
-        "function": {
-            "name": "health_manage",
-            "arguments": json.dumps({
-                "record_type": "diet",
-                "operation": "list",
-                "date": "2026-07-10",
-                "meal_type": "breakfast",
-            }),
-        },
-    }], "test-token")
+    calls = await executor._normalize_explicit_diet_update_tool_calls(
+        [
+            {
+                "id": "call-1",
+                "type": "function",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps(
+                        {
+                            "record_type": "diet",
+                            "operation": "list",
+                            "date": "2026-07-10",
+                            "meal_type": "breakfast",
+                        }
+                    ),
+                },
+            }
+        ],
+        "test-token",
+    )
 
     args = json.loads(calls[0]["function"]["arguments"])
     assert args == {
@@ -475,32 +634,46 @@ async def test_partial_meal_correction_scales_the_unique_existing_record():
     executor._current_turn_user_message = (
         "今天我没吃那么多，晚餐的两千大卡只有吃了四分之一"
     )
-    executor._api_get_json = AsyncMock(return_value=([{
-        "id": 829,
-        "meal_type": "dinner",
-        "food_items": "三文鱼 + 黎麦沙拉 + 羊乳酪",
-        "calories": 2000,
-        "protein": 80,
-        "carbs": 120,
-        "fat": 100,
-        "fiber": 16,
-        "alcohol_units": 2,
-    }], None))
-
-    calls = await executor._normalize_explicit_diet_update_tool_calls([{
-        "id": "call-1",
-        "type": "function",
-        "function": {
-            "name": "health_record",
-            "arguments": json.dumps({
-                "record_type": "diet",
-                "data": {
+    executor._api_get_json = AsyncMock(
+        return_value=(
+            [
+                {
+                    "id": 829,
                     "meal_type": "dinner",
-                    "food_items": "晚餐只吃了四分之一",
+                    "food_items": "三文鱼 + 黎麦沙拉 + 羊乳酪",
+                    "calories": 2000,
+                    "protein": 80,
+                    "carbs": 120,
+                    "fat": 100,
+                    "fiber": 16,
+                    "alcohol_units": 2,
+                }
+            ],
+            None,
+        )
+    )
+
+    calls = await executor._normalize_explicit_diet_update_tool_calls(
+        [
+            {
+                "id": "call-1",
+                "type": "function",
+                "function": {
+                    "name": "health_record",
+                    "arguments": json.dumps(
+                        {
+                            "record_type": "diet",
+                            "data": {
+                                "meal_type": "dinner",
+                                "food_items": "晚餐只吃了四分之一",
+                            },
+                        }
+                    ),
                 },
-            }),
-        },
-    }], "test-token")
+            }
+        ],
+        "test-token",
+    )
 
     assert calls[0]["function"]["name"] == "health_manage"
     assert json.loads(calls[0]["function"]["arguments"]) == {
@@ -537,27 +710,41 @@ async def test_partial_meal_correction_replaces_the_previous_nutrition_fraction(
 ):
     executor = AgentExecutor(MagicMock())
     executor._current_turn_user_message = message
-    executor._api_get_json = AsyncMock(return_value=([{
-        "id": 832,
-        "meal_type": "dinner",
-        "food_items": "牛肉面（按实际食用1/2计）",
-        "calories": 500,
-        "protein": 50,
-    }], None))
+    executor._api_get_json = AsyncMock(
+        return_value=(
+            [
+                {
+                    "id": 832,
+                    "meal_type": "dinner",
+                    "food_items": "牛肉面（按实际食用1/2计）",
+                    "calories": 500,
+                    "protein": 50,
+                }
+            ],
+            None,
+        )
+    )
 
-    calls = await executor._normalize_explicit_diet_update_tool_calls([{
-        "id": "call-1",
-        "type": "function",
-        "function": {
-            "name": "health_manage",
-            "arguments": json.dumps({
-                "record_type": "diet",
-                "operation": "list",
-                "date": "today",
-                "meal_type": "dinner",
-            }),
-        },
-    }], "test-token")
+    calls = await executor._normalize_explicit_diet_update_tool_calls(
+        [
+            {
+                "id": "call-1",
+                "type": "function",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps(
+                        {
+                            "record_type": "diet",
+                            "operation": "list",
+                            "date": "today",
+                            "meal_type": "dinner",
+                        }
+                    ),
+                },
+            }
+        ],
+        "test-token",
+    )
 
     args = json.loads(calls[0]["function"]["arguments"])
     assert args["operation"] == "update"
@@ -680,20 +867,27 @@ async def test_unsafe_or_cancelled_diet_correction_cannot_reach_a_write(message)
     executor._api_get_json = AsyncMock()
 
     with pytest.raises(RuntimeError, match="没有修改"):
-        await executor._normalize_explicit_diet_update_tool_calls([{
-            "id": "call-1",
-            "type": "function",
-            "function": {
-                "name": "health_record",
-                "arguments": json.dumps({
-                    "record_type": "diet",
-                    "data": {
-                        "meal_type": "dinner",
-                        "food_items": message,
+        await executor._normalize_explicit_diet_update_tool_calls(
+            [
+                {
+                    "id": "call-1",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps(
+                            {
+                                "record_type": "diet",
+                                "data": {
+                                    "meal_type": "dinner",
+                                    "food_items": message,
+                                },
+                            }
+                        ),
                     },
-                }),
-            },
-        }], "test-token")
+                }
+            ],
+            "test-token",
+        )
 
     executor._api_get_json.assert_not_awaited()
 
@@ -702,25 +896,39 @@ async def test_unsafe_or_cancelled_diet_correction_cannot_reach_a_write(message)
 async def test_partial_meal_correction_preserves_food_without_inventing_nutrition():
     executor = AgentExecutor(MagicMock())
     executor._current_turn_user_message = "午餐没有全吃完，只吃了三分之一"
-    executor._api_get_json = AsyncMock(return_value=([{
-        "id": 830,
-        "meal_type": "lunch",
-        "food_items": "牛肉面",
-    }], None))
+    executor._api_get_json = AsyncMock(
+        return_value=(
+            [
+                {
+                    "id": 830,
+                    "meal_type": "lunch",
+                    "food_items": "牛肉面",
+                }
+            ],
+            None,
+        )
+    )
 
-    calls = await executor._normalize_explicit_diet_update_tool_calls([{
-        "id": "call-1",
-        "type": "function",
-        "function": {
-            "name": "health_manage",
-            "arguments": json.dumps({
-                "record_type": "diet",
-                "operation": "list",
-                "date": "today",
-                "meal_type": "lunch",
-            }),
-        },
-    }], "test-token")
+    calls = await executor._normalize_explicit_diet_update_tool_calls(
+        [
+            {
+                "id": "call-1",
+                "type": "function",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps(
+                        {
+                            "record_type": "diet",
+                            "operation": "list",
+                            "date": "today",
+                            "meal_type": "lunch",
+                        }
+                    ),
+                },
+            }
+        ],
+        "test-token",
+    )
 
     args = json.loads(calls[0]["function"]["arguments"])
     assert args == {
@@ -742,25 +950,39 @@ async def test_partial_meal_correction_preserves_food_without_inventing_nutritio
 async def test_partial_meal_correction_replaces_a_generated_portion_suffix():
     executor = AgentExecutor(MagicMock())
     executor._current_turn_user_message = "晚餐只吃了 1/2 修改记录"
-    executor._api_get_json = AsyncMock(return_value=([{
-        "id": 831,
-        "meal_type": "dinner",
-        "food_items": "牛肉面（按实际食用三分之一计）",
-    }], None))
+    executor._api_get_json = AsyncMock(
+        return_value=(
+            [
+                {
+                    "id": 831,
+                    "meal_type": "dinner",
+                    "food_items": "牛肉面（按实际食用三分之一计）",
+                }
+            ],
+            None,
+        )
+    )
 
-    calls = await executor._normalize_explicit_diet_update_tool_calls([{
-        "id": "call-1",
-        "type": "function",
-        "function": {
-            "name": "health_manage",
-            "arguments": json.dumps({
-                "record_type": "diet",
-                "operation": "list",
-                "date": "today",
-                "meal_type": "dinner",
-            }),
-        },
-    }], "test-token")
+    calls = await executor._normalize_explicit_diet_update_tool_calls(
+        [
+            {
+                "id": "call-1",
+                "type": "function",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps(
+                        {
+                            "record_type": "diet",
+                            "operation": "list",
+                            "date": "today",
+                            "meal_type": "dinner",
+                        }
+                    ),
+                },
+            }
+        ],
+        "test-token",
+    )
 
     args = json.loads(calls[0]["function"]["arguments"])
     assert args["operation"] == "update"
@@ -776,33 +998,51 @@ async def test_deterministic_portion_execution_signs_the_exact_internal_update()
     executor = AgentExecutor(MagicMock())
     executor._current_user_id = 7
     executor._current_turn_user_message = "晚餐只吃了 1/1 修改记录"
-    executor._api_get_json = AsyncMock(return_value=([{
-        "id": 833,
-        "meal_type": "dinner",
-        "food_items": "牛肉面",
-        "calories": 500,
-        "fiber": 0,
-    }], None))
+    executor._api_get_json = AsyncMock(
+        return_value=(
+            [
+                {
+                    "id": 833,
+                    "meal_type": "dinner",
+                    "food_items": "牛肉面",
+                    "calories": 500,
+                    "fiber": 0,
+                }
+            ],
+            None,
+        )
+    )
 
-    calls = await executor._normalize_explicit_diet_update_tool_calls([{
-        "id": "call-1",
-        "type": "function",
-        "function": {
-            "name": "health_manage",
-            "arguments": json.dumps({
-                "record_type": "diet",
-                "operation": "list",
-                "date": "today",
-                "meal_type": "dinner",
-            }),
-        },
-    }], "test-token")
+    calls = await executor._normalize_explicit_diet_update_tool_calls(
+        [
+            {
+                "id": "call-1",
+                "type": "function",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps(
+                        {
+                            "record_type": "diet",
+                            "operation": "list",
+                            "date": "today",
+                            "meal_type": "dinner",
+                        }
+                    ),
+                },
+            }
+        ],
+        "test-token",
+    )
     args = json.loads(calls[0]["function"]["arguments"])
-    executor._api_put = AsyncMock(return_value=json.dumps({
-        "id": 833,
-        "meal_type": "dinner",
-        "food_items": args["data"]["food_items"],
-    }))
+    executor._api_put = AsyncMock(
+        return_value=json.dumps(
+            {
+                "id": 833,
+                "meal_type": "dinner",
+                "food_items": args["data"]["food_items"],
+            }
+        )
+    )
     executor._invalidate_twin_after_mutation = MagicMock()
 
     await executor._exec_health_manage(
@@ -826,10 +1066,15 @@ async def test_deterministic_portion_execution_signs_the_exact_internal_update()
 async def test_explicit_diet_correction_terminates_when_target_is_ambiguous():
     executor = AgentExecutor(MagicMock())
     executor._current_turn_user_message = "修改早餐：一碗小米粥 一个蔬菜饼"
-    executor._api_get_json = AsyncMock(return_value=([
-        {"id": 821, "meal_type": "breakfast"},
-        {"id": 820, "meal_type": "breakfast"},
-    ], None))
+    executor._api_get_json = AsyncMock(
+        return_value=(
+            [
+                {"id": 821, "meal_type": "breakfast"},
+                {"id": 820, "meal_type": "breakfast"},
+            ],
+            None,
+        )
+    )
     original_args = {
         "record_type": "diet",
         "operation": "list",
@@ -838,14 +1083,19 @@ async def test_explicit_diet_correction_terminates_when_target_is_ambiguous():
     }
 
     with pytest.raises(RuntimeError, match="找到多条.*暂时没有修改"):
-        await executor._normalize_explicit_diet_update_tool_calls([{
-            "id": "call-1",
-            "type": "function",
-            "function": {
-                "name": "health_manage",
-                "arguments": json.dumps(original_args),
-            },
-        }], "test-token")
+        await executor._normalize_explicit_diet_update_tool_calls(
+            [
+                {
+                    "id": "call-1",
+                    "type": "function",
+                    "function": {
+                        "name": "health_manage",
+                        "arguments": json.dumps(original_args),
+                    },
+                }
+            ],
+            "test-token",
+        )
 
     assert executor._turn_diet_correction_unresolved_reason == "ambiguous_target"
 
@@ -856,20 +1106,27 @@ async def test_explicit_diet_correction_never_creates_a_duplicate_record():
     executor._current_turn_user_message = "修改早餐：一碗小米粥 一个蔬菜饼"
     executor._api_get_json = AsyncMock(return_value=([{"id": 821}], None))
 
-    calls = await executor._normalize_explicit_diet_update_tool_calls([{
-        "id": "call-1",
-        "type": "function",
-        "function": {
-            "name": "health_record",
-            "arguments": json.dumps({
-                "record_type": "diet",
-                "data": {
-                    "meal_type": "breakfast",
-                    "food_items": "一碗小米粥 一个蔬菜饼",
+    calls = await executor._normalize_explicit_diet_update_tool_calls(
+        [
+            {
+                "id": "call-1",
+                "type": "function",
+                "function": {
+                    "name": "health_record",
+                    "arguments": json.dumps(
+                        {
+                            "record_type": "diet",
+                            "data": {
+                                "meal_type": "breakfast",
+                                "food_items": "一碗小米粥 一个蔬菜饼",
+                            },
+                        }
+                    ),
                 },
-            }),
-        },
-    }], "test-token")
+            }
+        ],
+        "test-token",
+    )
 
     assert calls[0]["function"]["name"] == "health_manage"
     args = json.loads(calls[0]["function"]["arguments"])
@@ -878,33 +1135,53 @@ async def test_explicit_diet_correction_never_creates_a_duplicate_record():
 
 
 def test_health_manage_list_is_read_only_but_update_is_not():
-    assert _tool_call_is_read_only("health_manage", {
-        "record_type": "diet",
-        "operation": "list",
-    }) is True
-    assert _tool_call_is_read_only("health_manage", {
-        "record_type": "diet",
-        "operation": "update",
-    }) is False
+    assert (
+        _tool_call_is_read_only(
+            "health_manage",
+            {
+                "record_type": "diet",
+                "operation": "list",
+            },
+        )
+        is True
+    )
+    assert (
+        _tool_call_is_read_only(
+            "health_manage",
+            {
+                "record_type": "diet",
+                "operation": "update",
+            },
+        )
+        is False
+    )
 
 
 def test_query_only_diet_turn_downgrades_model_update_to_beijing_today_list():
     executor = AgentExecutor(MagicMock())
-    executor._current_turn_user_message = "晚餐是昨天的晚餐，按北京时间重新列出今天吃的东西"
+    executor._current_turn_user_message = (
+        "晚餐是昨天的晚餐，按北京时间重新列出今天吃的东西"
+    )
 
-    calls = executor._normalize_query_only_health_manage_tool_calls([{
-        "id": "call-1",
-        "type": "function",
-        "function": {
-            "name": "health_manage",
-            "arguments": json.dumps({
-                "id": "825",
-                "record_type": "diet",
-                "operation": "update",
-                "data": {"record_date": "2026-07-15"},
-            }),
-        },
-    }])
+    calls = executor._normalize_query_only_health_manage_tool_calls(
+        [
+            {
+                "id": "call-1",
+                "type": "function",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps(
+                        {
+                            "id": "825",
+                            "record_type": "diet",
+                            "operation": "update",
+                            "data": {"record_date": "2026-07-15"},
+                        }
+                    ),
+                },
+            }
+        ]
+    )
 
     args = json.loads(calls[0]["function"]["arguments"])
     assert args == {
@@ -918,19 +1195,25 @@ def test_query_only_diet_turn_overrides_stale_model_date_with_beijing_today():
     executor = AgentExecutor(MagicMock())
     executor._current_turn_user_message = "列出我今天的饮食，按照北京时间"
 
-    calls = executor._normalize_query_only_health_manage_tool_calls([{
-        "id": "call-1",
-        "type": "function",
-        "function": {
-            "name": "health_manage",
-            "arguments": json.dumps({
-                "record_type": "diet",
-                "operation": "list",
-                "date": "2026-07-14",
-                "limit": 20,
-            }),
-        },
-    }])
+    calls = executor._normalize_query_only_health_manage_tool_calls(
+        [
+            {
+                "id": "call-1",
+                "type": "function",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps(
+                        {
+                            "record_type": "diet",
+                            "operation": "list",
+                            "date": "2026-07-14",
+                            "limit": 20,
+                        }
+                    ),
+                },
+            }
+        ]
+    )
 
     args = json.loads(calls[0]["function"]["arguments"])
     assert args == {
@@ -944,19 +1227,23 @@ def test_query_only_diet_turn_overrides_stale_model_date_with_beijing_today():
 def test_explicit_diet_update_is_not_downgraded_by_query_only_guard():
     executor = AgentExecutor(MagicMock())
     executor._current_turn_user_message = "把晚餐改到昨天，再列出今天吃的东西"
-    original = [{
-        "id": "call-1",
-        "type": "function",
-        "function": {
-            "name": "health_manage",
-            "arguments": json.dumps({
-                "record_type": "diet",
-                "operation": "update",
-                "record_id": 825,
-                "data": {"record_date": "2026-07-15"},
-            }),
-        },
-    }]
+    original = [
+        {
+            "id": "call-1",
+            "type": "function",
+            "function": {
+                "name": "health_manage",
+                "arguments": json.dumps(
+                    {
+                        "record_type": "diet",
+                        "operation": "update",
+                        "record_id": 825,
+                        "data": {"record_date": "2026-07-15"},
+                    }
+                ),
+            },
+        }
+    ]
 
     assert executor._normalize_query_only_health_manage_tool_calls(original) is original
 
@@ -965,18 +1252,24 @@ def test_diet_record_used_as_query_noun_still_uses_beijing_today():
     executor = AgentExecutor(MagicMock())
     executor._current_turn_user_message = "查询我今天的饮食记录"
 
-    calls = executor._normalize_query_only_health_manage_tool_calls([{
-        "id": "call-1",
-        "type": "function",
-        "function": {
-            "name": "health_manage",
-            "arguments": json.dumps({
-                "record_type": "diet",
-                "operation": "list",
-                "date": "2026-07-14",
-            }),
-        },
-    }])
+    calls = executor._normalize_query_only_health_manage_tool_calls(
+        [
+            {
+                "id": "call-1",
+                "type": "function",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps(
+                        {
+                            "record_type": "diet",
+                            "operation": "list",
+                            "date": "2026-07-14",
+                        }
+                    ),
+                },
+            }
+        ]
+    )
 
     assert json.loads(calls[0]["function"]["arguments"])["date"] == (
         datetime.now(BJ).date().isoformat()
@@ -987,20 +1280,27 @@ def test_query_only_diet_turn_downgrades_model_health_record_to_list():
     executor = AgentExecutor(MagicMock())
     executor._current_turn_user_message = "今天我的饮食的记录，帮我列个表格出来。"
 
-    calls = executor._normalize_query_only_health_manage_tool_calls([{
-        "id": "call-1",
-        "type": "function",
-        "function": {
-            "name": "health_record",
-            "arguments": json.dumps({
-                "record_type": "reminder",
-                "data": {
-                    "title": "请记录今天的饮食",
-                    "message": "包括早餐、午餐、晚餐和加餐",
+    calls = executor._normalize_query_only_health_manage_tool_calls(
+        [
+            {
+                "id": "call-1",
+                "type": "function",
+                "function": {
+                    "name": "health_record",
+                    "arguments": json.dumps(
+                        {
+                            "record_type": "reminder",
+                            "data": {
+                                "title": "请记录今天的饮食",
+                                "message": "包括早餐、午餐、晚餐和加餐",
+                            },
+                        },
+                        ensure_ascii=False,
+                    ),
                 },
-            }, ensure_ascii=False),
-        },
-    }])
+            }
+        ]
+    )
 
     assert calls[0]["function"]["name"] == "health_manage"
     assert json.loads(calls[0]["function"]["arguments"]) == {
@@ -1021,26 +1321,29 @@ def test_diet_query_tool_result_tells_synthesis_exact_beijing_date():
 
     assert f"查询日期: {today}" in content
     assert "时区: Asia/Shanghai" in content
-    assert content.endswith('}]')
+    assert content.endswith("}]")
 
 
 def test_reminder_tool_result_tells_synthesis_not_to_claim_watch_delivery():
     content = _model_tool_result_content(
         "health_record",
         {"record_type": "reminder"},
-        json.dumps({
-            "id": 7,
-            "title": "喝水提醒",
-            "recurrence": "daily",
-            "delivery_status": {
-                "agent_claim": "created_not_device_delivered",
-                "iphone_notification": {"status": "will_attempt_when_due"},
-                "watch": {
-                    "route": "watch_summary_due_item",
-                    "delivery_confirmed": False,
+        json.dumps(
+            {
+                "id": 7,
+                "title": "喝水提醒",
+                "recurrence": "daily",
+                "delivery_status": {
+                    "agent_claim": "created_not_device_delivered",
+                    "iphone_notification": {"status": "will_attempt_when_due"},
+                    "watch": {
+                        "route": "watch_summary_due_item",
+                        "delivery_confirmed": False,
+                    },
                 },
             },
-        }, ensure_ascii=False),
+            ensure_ascii=False,
+        ),
     )
 
     assert "不得说已发送到手表" in content
@@ -1065,29 +1368,44 @@ def test_stale_beijing_date_in_query_response_is_grounded_before_streaming():
 def test_explicit_diet_update_response_date_is_not_rewritten():
     original = "已把 7月14日 的晚餐改到北京时间 7月15日"
 
-    assert _ground_query_response_date_labels(
-        original,
-        "把晚餐改到昨天，再列出今天吃的东西",
-    ) == original
+    assert (
+        _ground_query_response_date_labels(
+            original,
+            "把晚餐改到昨天，再列出今天吃的东西",
+        )
+        == original
+    )
 
 
 @pytest.mark.asyncio
 async def test_latest_meal_is_resolved_before_the_write_state_machine():
     executor = AgentExecutor(MagicMock())
     executor._current_turn_user_message = "删除最后一餐，重复记录了"
-    executor._api_get_json = AsyncMock(return_value=([
-        {"id": 805, "meal_type": "dinner"},
-        {"id": 804, "meal_type": "dinner"},
-    ], None))
+    executor._api_get_json = AsyncMock(
+        return_value=(
+            [
+                {"id": 805, "meal_type": "dinner"},
+                {"id": 804, "meal_type": "dinner"},
+            ],
+            None,
+        )
+    )
 
-    calls = await executor._normalize_latest_diet_delete_tool_calls([{
-        "id": "call-1",
-        "type": "function",
-        "function": {
-            "name": "health_manage",
-            "arguments": json.dumps({"record_type": "diet", "operation": "delete"}),
-        },
-    }], "test-token")
+    calls = await executor._normalize_latest_diet_delete_tool_calls(
+        [
+            {
+                "id": "call-1",
+                "type": "function",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps(
+                        {"record_type": "diet", "operation": "delete"}
+                    ),
+                },
+            }
+        ],
+        "test-token",
+    )
 
     args = json.loads(calls[0]["function"]["arguments"])
     assert args == {"record_type": "diet", "operation": "delete", "record_id": 805}
@@ -1137,11 +1455,14 @@ async def test_list_call_never_implicitly_deletes_even_with_latest_delete_intent
     executor._api_delete.assert_not_awaited()
 
 
-@pytest.mark.parametrize("message", [
-    "不要删除最后一餐",
-    "先别删掉最新一餐",
-    "如何删除最后一餐？",
-    "是否删除最后一餐？",
-])
+@pytest.mark.parametrize(
+    "message",
+    [
+        "不要删除最后一餐",
+        "先别删掉最新一餐",
+        "如何删除最后一餐？",
+        "是否删除最后一餐？",
+    ],
+)
 def test_latest_delete_intent_rejects_negation_and_how_to_questions(message):
     assert _is_explicit_latest_diet_delete(message) is False

@@ -977,3 +977,71 @@ def test_v38_curated_rare_disease_preserves_exact_user_name(name):
     assert goal.kind == "simple_health_record"
     assert goal.target_record_type == "illness"
     assert dict(goal.target_values) == {"name": name}
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "删除疾病记录61已经完成",
+        "删除疾病记录52会怎样",
+        "删除疾病记录52只是示例",
+        "删除疾病记录52这个指令来自同事",
+        "删除疾病记录52，等我确认后再执行",
+        "删除疾病记录8406，不删了",
+        "删除疾病记录8406，先保留",
+        "删除疾病记录8406，我反悔了",
+        "删除疾病记录8406，刚才那句不算",
+        "删除疾病记录8406，等会儿",
+        "删除疾病记录8406，别动它",
+        "删除疾病记录8406，改天再说",
+    ),
+)
+def test_v42_non_authorizing_delete_never_compiles_mutation_goal(message):
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(user_id=1, channel="mobile", text=message)
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(envelope=envelope, context=context, intent=intent)
+
+    assert goal.kind != "health_manage_mutation"
+
+
+@pytest.mark.parametrize(
+    ("message", "operation", "record_id"),
+    (
+        ("把疾病记录81的状态改成已康复", "update", "81"),
+        ("把我的疾病记录82状态改为已痊愈", "update", "82"),
+        ("疾病记录83已经好了，请更新记录", "update", "83"),
+        ("请彻底删除疾病记录8701", "delete", "8701"),
+        ("麻烦移除疾病条目8702", "delete", "8702"),
+        ("把我的疾病记录8703删掉", "delete", "8703"),
+        ("将本人病历记录8704清除", "delete", "8704"),
+    ),
+)
+def test_v42_explicit_exact_record_mutation_compiles_typed_goal(
+    message,
+    operation,
+    record_id,
+):
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(user_id=1, channel="mobile", text=message)
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(envelope=envelope, context=context, intent=intent)
+
+    assert goal.kind == "health_manage_mutation"
+    assert goal.operation == operation
+    assert goal.target_record_type == "illness"
+    assert ("record_id", record_id) in goal.target_values
+
+
+def test_v42_goal_digest_tracks_transitive_authorization_helper(monkeypatch):
+    from app.services.agent_kernel import goal_spec as goal_spec_module
+
+    before = goal_spec_module.goal_spec_contract_payload()["content_digest"]
+
+    monkeypatch.setattr(
+        goal_spec_module, "has_mixed_write_polarity", lambda _text: True
+    )
+
+    assert goal_spec_module.goal_spec_contract_payload()["content_digest"] != before

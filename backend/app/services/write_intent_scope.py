@@ -538,6 +538,130 @@ _ILLNESS_RECORD_ID_COLON_RE = re.compile(
     r"(?:(?:疾病)?(?:记录|条目))?(?:id|编号)[：:]\d+",
     re.IGNORECASE,
 )
+_ILLNESS_RECORD_ID_REFERENCE_RE = re.compile(
+    r"(?:疾病|病历)(?:记录|条目)?(?:ID|编号|#|第)?[：:=（(]?\d+[）)]?"
+    r"(?:号|条|项)?",
+    re.IGNORECASE,
+)
+_DIRECT_ILLNESS_ID_STATE_UPDATE_RE = re.compile(
+    rf"^{_CURRENT_USER_UPDATE_PREFIX_PATTERN}(?:把|将)?"
+    rf"{_CURRENT_USER_RECORD_OWNER_PATTERN}"
+    r"(?:疾病|病历)(?:记录|条目)?(?:ID|编号|#|第)?[：:=（(]?\d+[）)]?"
+    r"(?:号|条|项)?(?:的)?(?:记录)?状态?"
+    r"(?:改成|改为|更正为|修正为|调整为|更新为|修改为|修改成)"
+    r"(?:已经|已)?(?:完全|彻底)?"
+    r"(?:康复|痊愈|好了|好转|改善|缓解|发作中|还没好|仍未好)$",
+    re.IGNORECASE,
+)
+
+_EXPLICIT_DELETE_RECORD_TYPE_ALIASES = {
+    "diet": "diet",
+    "food": "diet",
+    "foods": "diet",
+    "meal": "diet",
+    "meals": "diet",
+    "nutrition": "diet",
+    "膳食": "diet",
+    "餐食": "diet",
+    "早餐": "diet",
+    "午餐": "diet",
+    "晚餐": "diet",
+    "疾病": "illness",
+    "病历": "illness",
+    "illness": "illness",
+    "饮水": "water",
+    "喝水": "water",
+    "water": "water",
+    "体重": "weight",
+    "weight": "weight",
+    "waist": "waist",
+    "腰围": "waist",
+    "blood_pressure": "blood_pressure",
+    "blood-pressure": "blood_pressure",
+    "bloodpressure": "blood_pressure",
+    "bp": "blood_pressure",
+    "血压": "blood_pressure",
+    "饮食": "diet",
+    "症状": "symptom",
+    "symptom": "symptom",
+    "symptoms": "symptom",
+    "睡眠": "sleep",
+    "sleep": "sleep",
+    "运动": "exercise",
+    "exercise": "exercise",
+    "workout": "exercise",
+    "锻炼": "exercise",
+    "用药": "medication",
+    "medication": "medication",
+    "medications": "medication",
+    "medicine": "medication",
+    "meds": "medication",
+    "药物": "medication",
+    "medication_log": "medication_log",
+    "medication-log": "medication_log",
+    "用药日志": "medication_log",
+    "服药日志": "medication_log",
+    "supplement": "supplement",
+    "supplements": "supplement",
+    "补剂": "supplement",
+    "supplement_definition": "supplement_definition",
+    "supplement-definition": "supplement_definition",
+    "补剂定义": "supplement_definition",
+    "mood": "mood",
+    "心情": "mood",
+    "情绪": "mood",
+    "excretion": "excretion",
+    "bowel": "excretion",
+    "排便": "excretion",
+    "大便": "excretion",
+    "reminder": "reminder",
+    "提醒": "reminder",
+    "goal": "goal",
+    "目标": "goal",
+    "medical_exam": "medical_exam",
+    "medical-exam": "medical_exam",
+    "labs": "medical_exam",
+    "lab": "medical_exam",
+    "体检": "medical_exam",
+    "化验": "medical_exam",
+    "event": "event",
+    "events": "event",
+    "事件": "event",
+    "rhinitis": "rhinitis",
+    "鼻炎": "rhinitis",
+}
+_EXPLICIT_DELETE_RECORD_TYPE_PATTERN = "|".join(
+    re.escape(alias)
+    for alias in sorted(
+        _EXPLICIT_DELETE_RECORD_TYPE_ALIASES,
+        key=lambda value: (-len(value), value),
+    )
+)
+_EXPLICIT_DELETE_TARGET_PATTERN = (
+    rf"(?:我的|本人)?(?:整条|整项|整份)?"
+    rf"(?:{_EXPLICIT_DELETE_RECORD_TYPE_PATTERN})(?:记录|条目)?"
+    rf"(?:ID|编号|#|第)?[：:=（(]?\d+[）)]?(?:号|条|项)?"
+)
+_EXPLICIT_DELETE_TARGET_RE = re.compile(
+    rf"(?:我的|本人)?(?:整条|整项|整份)?"
+    rf"(?P<record_type>{_EXPLICIT_DELETE_RECORD_TYPE_PATTERN})(?:记录|条目)?"
+    rf"(?:ID|编号|#|第)?[：:=（(]?(?P<record_id>\d+)[）)]?(?:号|条|项)?",
+    re.IGNORECASE,
+)
+_EXPLICIT_WHOLE_RECORD_DELETE_RE = re.compile(
+    rf"^(?:请你帮我|麻烦你帮我|麻烦帮我|可以帮我|能否帮我|"
+    rf"能不能帮我|请帮我|请你|请您|麻烦你|请帮忙|麻烦帮忙|"
+    rf"请替我|帮我|帮忙|麻烦|能否|能不能|可以|替我|我要|给我|确认|请)?"
+    rf"(?:"
+    rf"(?:彻底)?(?:删除|删掉|删去|删了|移除|清除|清掉|去掉)"
+    rf"{_EXPLICIT_DELETE_TARGET_PATTERN}|"
+    rf"(?:把|将)?{_EXPLICIT_DELETE_TARGET_PATTERN}(?:彻底)?"
+    rf"(?:删除|删掉|删去|删了|移除|清除|清掉|去掉)"
+    rf")(?:一下|下)?(?:吧)?"
+    rf"(?:[,，]?(?:谢谢(?:你)?|可以吗|好吗|行吗))?"
+    rf"[。.!！?？]*(?:🩺)?$",
+    re.IGNORECASE,
+)
 _DIRECT_REMEMBER_AVOID_RE = re.compile(
     r"^(?:请)?(?:帮我)?记住(?:我|我的)?(?P<value>不吃[^，,。.!！；;：:?？]{1,80})$"
 )
@@ -1116,6 +1240,12 @@ def _has_untrusted_colon_command(value: str) -> bool:
     current-user authority from the surrounding turn.
     """
     for match in re.finditer(r"[:：]", value):
+        if (match.start() > 0 and value[match.start() - 1] in ":：") or (
+            match.end() < len(value) and value[match.end()] in ":："
+        ):
+            # Biomedical fusion notation (for example BCR::ABL1) is not a
+            # quotation or command boundary.
+            continue
         if _is_clock_colon(value, match.start()):
             continue
         left = value[: match.start()]
@@ -1544,6 +1674,25 @@ def _is_post_attributed_to_non_current_owner(clause: str) -> bool:
     return True
 
 
+def explicit_whole_record_delete_target(value: str) -> tuple[str, int] | None:
+    """Return one exact direct delete target, or fail closed."""
+    normalized = "".join(normalize_write_scope_text(value).split()).strip(
+        "，,。.!！；;：:?？ "
+    )
+    if _EXPLICIT_WHOLE_RECORD_DELETE_RE.fullmatch(normalized) is None:
+        return None
+    target = _EXPLICIT_DELETE_TARGET_RE.search(normalized)
+    if target is None:
+        return None
+    record_type = _EXPLICIT_DELETE_RECORD_TYPE_ALIASES.get(
+        target.group("record_type").casefold()
+    )
+    record_id = int(target.group("record_id"))
+    if record_type is None or record_id <= 0:
+        return None
+    return record_type, record_id
+
+
 def has_explicit_authorizing_update_request(value: str) -> bool:
     """Authorize only a direct current-user correction speech act.
 
@@ -1563,6 +1712,13 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
     direct_illness_state_update = (
         _DIRECT_ILLNESS_STATE_UPDATE_RE.fullmatch(normalized_statement) is not None
     )
+    direct_illness_id_state_update = (
+        _DIRECT_ILLNESS_ID_STATE_UPDATE_RE.fullmatch(normalized_statement) is not None
+    )
+    direct_illness_id_update = direct_illness_id_state_update or (
+        direct_illness_update
+        and _ILLNESS_RECORD_ID_REFERENCE_RE.search(normalized_statement) is not None
+    )
     direct_current_illness_update = False
     if direct_illness_update or direct_illness_state_update:
         from app.services.agent_kernel.health_semantics import (
@@ -1572,8 +1728,11 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
         direct_current_illness_update = (
             extract_owned_illness_entity(normalized_statement) is not None
         )
+    direct_current_illness_update = (
+        direct_current_illness_update or direct_illness_id_update
+    )
     trusted_illness_id_colons = (
-        direct_illness_update or direct_illness_state_update
+        direct_illness_update or direct_illness_state_update or direct_illness_id_update
     ) and not re.search(
         r"[：:]",
         _ILLNESS_RECORD_ID_COLON_RE.sub("", normalized),
@@ -1620,7 +1779,10 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
     ):
         return False
     return bool(
-        direct_water_update or direct_illness_update or direct_illness_state_update
+        direct_water_update
+        or direct_illness_update
+        or direct_illness_state_update
+        or direct_illness_id_update
     )
 
 

@@ -172,7 +172,7 @@ def test_v39_medical_exam_resolution_rejects_unpunctuated_nonself_subject(text):
 def test_v39_health_semantics_contract_is_versioned_and_content_digested():
     payload = semantics.health_semantics_contract_payload()
 
-    assert payload["version"] == "health-semantics-v3"
+    assert payload["version"] == "health-semantics-v4"
     assert re.fullmatch(r"[0-9a-f]{64}", payload["content_digest"])
 
 
@@ -371,5 +371,118 @@ def test_v41_contract_digest_changes_when_authorization_function_changes(monkeyp
     before = semantics.health_semantics_contract_payload()["content_digest"]
 
     monkeypatch.setattr(semantics, "health_read_cancelled", lambda _text: False)
+
+    assert semantics.health_semantics_contract_payload()["content_digest"] != before
+
+
+@pytest.mark.parametrize(
+    "entity",
+    (
+        "Mia显微镜下多血管炎",
+        "Noah免疫球蛋白A肾病",
+        "AvaIgG4相关性疾病",
+        "LeoHLA-B27相关脊柱关节炎",
+        "Noahβ2微球蛋白淀粉样变性",
+        "CACHE血管炎",
+        "API肾病",
+        "MODEL脑炎",
+        "SERVER血管炎",
+        "INDEX神经病",
+        "QUEUE肺炎",
+        "ROUTER胆管炎",
+        "HTTP肠炎",
+        "CPU肌病",
+        "GPU脑病",
+        "QA肺病",
+    ),
+)
+def test_v42_ascii_owner_or_system_prefix_is_not_open_illness_authority(entity):
+    assert semantics.resolve_illness_entity(entity).status != "exact"
+
+
+@pytest.mark.parametrize(
+    "entity",
+    (
+        "显微镜下多血管炎",
+        "HLA-B27相关脊柱关节炎",
+        "MOG抗体相关疾病",
+        "EB病毒感染",
+        "Sjögren综合征",
+        "Guillain-Barré综合征",
+        "α1抗胰蛋白酶缺乏症",
+        "C3肾小球病",
+        "PLA2R相关膜性肾病",
+        "抗MDA5阳性皮肌炎",
+        "抗LGI1抗体脑炎",
+        "抗磷脂酶A2受体阳性膜性肾病",
+        "NTRK融合阳性实体瘤",
+        "MPL-W515L阳性骨髓增殖性肿瘤",
+        "HLA-DQ2.5相关乳糜泻",
+        "anti-MDA5阳性皮肌炎",
+        "GFAP-IgG阳性星形胶质细胞病",
+        "SYNGAP1相关神经发育障碍",
+        "PIGA相关阵发性睡眠性血红蛋白尿",
+        "C9orf72相关额颞叶痴呆",
+        "PR3-ANCA阳性肉芽肿性多血管炎",
+        "A20单倍剂量不足综合征",
+        "ADA2缺乏症",
+        "NLRP3相关自身炎症性疾病",
+        "PAX6相关无虹膜症",
+        "LAM-TSC2相关肺淋巴管肌瘤病",
+        "WT1相关肾病综合征",
+        "MOG-IgG相关皮质脑炎",
+        "抗GAD65自身免疫性脑炎",
+        "LAMP2抗体相关坏死性肾小球肾炎",
+        "m.3243A>G相关MELAS综合征",
+    ),
+)
+def test_v42_versioned_biomedical_terminology_is_exact(entity):
+    assert semantics.resolve_illness_entity(entity).status == "exact"
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "先别查老师的痛风；明天再查我的房颤记录",
+        "暂缓查看同事MRI；稍后再打开我的左膝MRI",
+        "查询我的克雅氏病记录，先别继续了",
+        "查看我的痛风记录，暂且作罢",
+        "列出我的亨廷顿病记录，先缓一缓",
+    ),
+)
+def test_v42_deferred_or_trailing_cancelled_read_has_no_active_clause(text):
+    assert semantics.active_health_read_clause(text) == ""
+    assert semantics.health_read_cancelled(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "我的痛风记录已经查询完成",
+        "查看我的痛风记录已经完成",
+        "查我的痛风记录这件事已经结束了",
+        "查询我的痛风记录只是一个示例",
+        "查询我的痛风记录这句话来自教程",
+        "查询我的痛风记录会发生什么",
+    ),
+)
+def test_v42_completed_reported_or_hypothetical_read_is_not_active(text):
+    assert semantics.resolve_health_read_act(text).status == "none"
+
+
+def test_v42_semantic_digest_is_stable_after_authorization_execution():
+    before = semantics.health_semantics_contract_payload()["content_digest"]
+
+    for _ in range(100):
+        semantics.resolve_illness_entity("HLA-B27相关脊柱关节炎")
+        semantics.resolve_health_read_act("查询我的克雅氏病记录")
+
+    assert semantics.health_semantics_contract_payload()["content_digest"] == before
+
+
+def test_v42_semantic_digest_tracks_transitive_local_helper(monkeypatch):
+    before = semantics.health_semantics_contract_payload()["content_digest"]
+
+    monkeypatch.setattr(semantics, "has_positive_health_read_verb", lambda _text: False)
 
     assert semantics.health_semantics_contract_payload()["content_digest"] != before
