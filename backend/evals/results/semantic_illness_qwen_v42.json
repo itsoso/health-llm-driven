@@ -1,0 +1,742 @@
+{
+  "schema_version": 1,
+  "evaluator": "backend/evals/semantic_illness_qwen_v42.py",
+  "candidate_commit": "3d7034c194188ee130e96773a638433821e65766",
+  "evaluated_at": "2026-08-10T16:01:00+08:00",
+  "timezone": "Asia/Shanghai",
+  "model": "qwen3.7-max",
+  "environment": {
+    "database_url": "blocked loopback tripwire",
+    "database_attempts": 0,
+    "provider_network_allowlist": [
+      "TokenPlan"
+    ],
+    "allowed_socket_connections": 4,
+    "unexpected_network_blocked": 0
+  },
+  "summary": {
+    "cases_total": 179,
+    "cases_passed": 179,
+    "route_evaluations": 358,
+    "provider_calls": 179,
+    "failures": []
+  },
+  "cases": [
+    {
+      "label": "original",
+      "status": "PASS"
+    },
+    {
+      "label": "latest_sle",
+      "status": "PASS"
+    },
+    {
+      "label": "behcet",
+      "status": "PASS"
+    },
+    {
+      "label": "tonsillitis",
+      "status": "PASS"
+    },
+    {
+      "label": "pityriasis",
+      "status": "PASS"
+    },
+    {
+      "label": "bppv",
+      "status": "PASS"
+    },
+    {
+      "label": "ehlers",
+      "status": "PASS"
+    },
+    {
+      "label": "goodpasture",
+      "status": "PASS"
+    },
+    {
+      "label": "diet_disorder",
+      "status": "PASS"
+    },
+    {
+      "label": "exercise_syncope",
+      "status": "PASS"
+    },
+    {
+      "label": "write_ms",
+      "status": "PASS"
+    },
+    {
+      "label": "write_ehlers",
+      "status": "PASS"
+    },
+    {
+      "label": "write_behcet",
+      "status": "PASS"
+    },
+    {
+      "label": "write_bppv",
+      "status": "PASS"
+    },
+    {
+      "label": "write_sleep_paralysis",
+      "status": "PASS"
+    },
+    {
+      "label": "write_syncope",
+      "status": "PASS"
+    },
+    {
+      "label": "write_constipation",
+      "status": "PASS"
+    },
+    {
+      "label": "write_pityriasis",
+      "status": "PASS"
+    },
+    {
+      "label": "owner_ouyang",
+      "status": "PASS"
+    },
+    {
+      "label": "owner_xavier",
+      "status": "PASS"
+    },
+    {
+      "label": "owner_ivan",
+      "status": "PASS"
+    },
+    {
+      "label": "owner_jose",
+      "status": "PASS"
+    },
+    {
+      "label": "owner_manager",
+      "status": "PASS"
+    },
+    {
+      "label": "owner_teacher",
+      "status": "PASS"
+    },
+    {
+      "label": "owner_roommate",
+      "status": "PASS"
+    },
+    {
+      "label": "owner_nurse",
+      "status": "PASS"
+    },
+    {
+      "label": "read_xavier",
+      "status": "PASS"
+    },
+    {
+      "label": "read_manager",
+      "status": "PASS"
+    },
+    {
+      "label": "read_olga",
+      "status": "PASS"
+    },
+    {
+      "label": "read_jose",
+      "status": "PASS"
+    },
+    {
+      "label": "read_ivan",
+      "status": "PASS"
+    },
+    {
+      "label": "read_teacher",
+      "status": "PASS"
+    },
+    {
+      "label": "read_patient",
+      "status": "PASS"
+    },
+    {
+      "label": "read_roommate",
+      "status": "PASS"
+    },
+    {
+      "label": "exam_olga",
+      "status": "PASS"
+    },
+    {
+      "label": "exam_jose",
+      "status": "PASS"
+    },
+    {
+      "label": "exam_ivan",
+      "status": "PASS"
+    },
+    {
+      "label": "exam_manager",
+      "status": "PASS"
+    },
+    {
+      "label": "exam_roommate",
+      "status": "PASS"
+    },
+    {
+      "label": "exam_barista",
+      "status": "PASS"
+    },
+    {
+      "label": "exam_dwi",
+      "status": "PASS"
+    },
+    {
+      "label": "exam_lumbar",
+      "status": "PASS"
+    },
+    {
+      "label": "exam_3t",
+      "status": "PASS"
+    },
+    {
+      "label": "exam_flair",
+      "status": "PASS"
+    },
+    {
+      "label": "exam_gre",
+      "status": "PASS"
+    },
+    {
+      "label": "exam_adc",
+      "status": "PASS"
+    },
+    {
+      "label": "ref_head",
+      "status": "PASS"
+    },
+    {
+      "label": "ref_rare_number",
+      "status": "PASS"
+    },
+    {
+      "label": "ref_previous",
+      "status": "PASS"
+    },
+    {
+      "label": "ref_discourse",
+      "status": "PASS"
+    },
+    {
+      "label": "ref_old",
+      "status": "PASS"
+    },
+    {
+      "label": "ref_double_previous",
+      "status": "PASS"
+    },
+    {
+      "label": "nonhealth_pipeline",
+      "status": "PASS"
+    },
+    {
+      "label": "nonhealth_server",
+      "status": "PASS"
+    },
+    {
+      "label": "metric_glucose",
+      "status": "PASS"
+    },
+    {
+      "label": "metric_alt",
+      "status": "PASS"
+    },
+    {
+      "label": "cancel_read",
+      "status": "PASS"
+    },
+    {
+      "label": "later_self",
+      "status": "PASS"
+    },
+    {
+      "label": "completed_update",
+      "status": "PASS"
+    },
+    {
+      "label": "completed_delete",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_polyarteritis",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_angioedema",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_pnh",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_adult_still",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_aldosterone",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_cjd",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_beta",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_covid_hyphen",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_her2",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_nmo",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_owner_greek_write",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_owner_avery_write",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_owner_greek_read",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_owner_oleg_read",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_owner_guardian_read",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_nonhealth_neural",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_nonhealth_genetic",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_nonhealth_virus",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_cancel_stop",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_cancel_shelve",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_cancel_retrieve",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_later_withdraw",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_later_teacher",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_completed_changed",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_completed_removed",
+      "status": "PASS"
+    },
+    {
+      "label": "v40_completed_updated",
+      "status": "PASS"
+    },
+    {
+      "label": "v41_iga",
+      "status": "PASS"
+    },
+    {
+      "label": "v41_cns_lymphoma",
+      "status": "PASS"
+    },
+    {
+      "label": "v41_cidp",
+      "status": "PASS"
+    },
+    {
+      "label": "v41_hht",
+      "status": "PASS"
+    },
+    {
+      "label": "v41_huntington",
+      "status": "PASS"
+    },
+    {
+      "label": "v41_sca",
+      "status": "PASS"
+    },
+    {
+      "label": "v41_mpa",
+      "status": "PASS"
+    },
+    {
+      "label": "v41_nmda",
+      "status": "PASS"
+    },
+    {
+      "label": "v41_igg4",
+      "status": "PASS"
+    },
+    {
+      "label": "v41_hla",
+      "status": "PASS"
+    },
+    {
+      "label": "v41_bcr",
+      "status": "PASS"
+    },
+    {
+      "label": "v41_beta2",
+      "status": "PASS"
+    },
+    {
+      "label": "v41_cancel_hold",
+      "status": "PASS"
+    },
+    {
+      "label": "v41_cancel_defer",
+      "status": "PASS"
+    },
+    {
+      "label": "v41_cancel_stop_continue",
+      "status": "PASS"
+    },
+    {
+      "label": "v41_cancel_here",
+      "status": "PASS"
+    },
+    {
+      "label": "v41_update_illness",
+      "status": "PASS"
+    },
+    {
+      "label": "v41_update_water",
+      "status": "PASS"
+    },
+    {
+      "label": "v41_delete_illness_id",
+      "status": "PASS"
+    },
+    {
+      "label": "v41_remove_whole_illness",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_apla2",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_ntrk",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_mpl",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_hla_dq",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_anti_mda5",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_gfap",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_syngap1",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_piga",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_c9orf72",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_pr3",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_a20",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_ada2",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_nlrp3",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_pax6",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_lam_tsc2",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_wt1",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_mog_igg",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_gad65",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_lamp2",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_melas",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_mia_mpa_read",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_mira_mpa_read",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_ari_mpa_read",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_noa_mpa_read",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_ria_mpa_read",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_ana_hla_read",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_nia_hla_read",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_lia_hla_read",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_mio_hla_read",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_tia_hla_read",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_mia_mpa_write",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_mira_mpa_write",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_ari_mpa_write",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_noa_mpa_write",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_ria_mpa_write",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_ana_hla_write",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_nia_hla_write",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_lia_hla_write",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_mio_hla_write",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_tia_hla_write",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_mia_update",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_owner_ana_update",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_delete_keep_1",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_delete_keep_2",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_delete_keep_3",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_delete_keep_4",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_delete_keep_5",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_delete_keep_6",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_delete_keep_7",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_delete_keep_8",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_delete_keep_9",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_delete_keep_10",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_delete_keep_11",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_delete_keep_12",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_delete_keep_13",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_delete_keep_14",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_delete_keep_15",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_delete_keep_16",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_read_deferred_1",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_read_deferred_2",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_read_trailing_cancel",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_read_completed",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_read_example",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_read_reported",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_read_hypothetical",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_update_id_81",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_update_id_82",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_update_id_83",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_update_bcr",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_delete_8701",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_delete_8702",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_delete_8703",
+      "status": "PASS"
+    },
+    {
+      "label": "v42_delete_8704",
+      "status": "PASS"
+    }
+  ]
+}

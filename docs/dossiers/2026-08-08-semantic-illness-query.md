@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS on integrated candidate 6f994e994; fresh exact-commit G4 pending |
+| current_stage | G3 PASS on v42 implementation candidate 3d7034c19; fresh exact-commit dual G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -1971,6 +1971,48 @@ the direct semantic suite passes 164/164; food compatibility passes 123/123;
 read deduplication passes 9/9; and the full `qwen3.7-max` matrix again passes
 106/106 plus 212/212 enforce/shadow routes with zero database attempts and zero
 unexpected network destinations. Compile, Ruff and diff checks also pass.
+
+Fresh v41 code and product-safety reviews both returned NO-GO. They reproduced
+short ASCII owner prefixes borrowing biomedical disease tails, incomplete
+read cancellation and completed-narration handling, legitimate long-tail
+disease false denials, exact illness update/delete false denials, an unstable
+bytecode-derived behavior digest, and missing persisted model-evaluation
+evidence. The v41 candidate remained unpushed and undeployed.
+
+The v42 remediation narrows illness authorization to a bounded canonical
+terminology registry plus a closed clinical composition grammar. It resolves
+read cancellation, deferment, completed narration, examples and hypotheticals
+at clause level before ownership/entity projection; ASCII owner prefixes can no
+longer borrow a biomedical tail. Authorization behavior digests now hash stable
+function source and include the GoalSpec, write-intent and write-safety
+functions that actually decide mutation authority.
+
+Typed `health_manage_mutation` goals are canonicalized by AgentExecutor to one
+server-owned, same-domain owner lookup before any update or delete. A direct or
+wrong-domain model proposal cannot skip that lookup; after lookup, the existing
+owner evidence gate restricts the mutation to the exact requested record ID.
+GoalSpec, CapabilityPolicy and write-intent scope share the same closed grammar
+for exact status updates, whole-record deletes, historical aliases and
+revocation/undo phrases. `BCR::ABL1` is preserved as biomedical syntax rather
+than being treated as a command boundary.
+
+The exact v42 implementation parent is
+`425b556c031ada68b352c8e6a2b4fe47b69ef93b`; test-only diff cleanup produces
+the exact evaluated candidate
+`3d7034c194188ee130e96773a638433821e65766`. The full affected Backend set
+passes 6,502/6,502, the authorization core passes 4,599/4,599, the compatibility
+set passes 517/517, and the focused canonical-lookup regression passes 7/7.
+Ruff, Python compilation, `git diff --check`, generated system-map drift and
+Dossier consistency pass.
+
+The authorized live `qwen3.7-max` v42 evaluation ran on that exact candidate
+with 179 synthetic utterances and 358 enforce/shadow route evaluations. It
+passes 179/179 and 358/358, with zero database attempts, zero unexpected
+network destinations and only the configured TokenPlan endpoint reachable.
+The persisted per-case evidence is
+`backend/evals/results/semantic_illness_qwen_v42.json`. No v42 commit has been
+pushed or deployed. Two fresh independent reviewers must both return GO on the
+next exact documentation/evidence commit before G4, push or deployment.
 
 ### G5 Deployment Health: PENDING
 

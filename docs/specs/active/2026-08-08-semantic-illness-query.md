@@ -104,9 +104,10 @@ third-party ownership and unresolved health references. Goal compilation and
 CapabilityPolicy consume that same contract, so direct, memory and fallback
 routes do not maintain separate disease or owner regexes. The terminology set
 is an authorization vocabulary rather than a diagnostic ontology: known
-ambiguous eponyms are explicit, medically shaped open-vocabulary entities are
-accepted, and non-health roots cannot gain illness authority merely by ending
-in words such as `异常` or `疼痛`.
+ambiguous eponyms and biomedical labels are explicit, while additional entities
+must satisfy a closed clinical composition grammar. Case-insensitive ASCII
+morphology alone never grants illness authority, and non-health roots cannot
+gain it merely by ending in words such as `异常` or `疼痛`.
 
 The shared contract is versioned and content-digested. Its resolver returns a
 typed semantic outcome before authorization, and the capability payload exposes
@@ -148,9 +149,17 @@ biomedical modifiers such as `HLA-B27`, `BCR::ABL1`, `IgG4`, `anti-NMDA` and
 `β2` are preserved without allowing arbitrary names to borrow a disease tail.
 
 Published authorization digests cover behavior as well as grammar constants.
-The semantic, GoalSpec and CapabilityPolicy payloads fingerprint selected
-function bytecode plus the authoritative write-intent grammar/functions, so a
-logic-only authorization change is observable even when no regex changes.
+The semantic, GoalSpec and CapabilityPolicy payloads fingerprint normalized
+function source plus the authoritative write-intent and write-safety
+functions. This is stable across interpreter quickening while still making a
+logic-only authorization change observable when no regex changes.
+
+For a typed `health_manage_mutation` goal, AgentExecutor canonicalizes every
+initial model proposal—including a direct write or wrong-domain list—to the
+server-owned same-domain owner lookup. Only after successful lookup may the
+existing owner-reference capability authorize the exact target ID. GoalSpec,
+CapabilityPolicy and write-intent scope consume one closed whole-record delete
+grammar, so aliases, revocations and undo requests cannot diverge by layer.
 
 ## 7. Surface Contract
 
@@ -600,3 +609,4 @@ These questions do not block the illness slice.
 | 2026-08-09 | Versioned the shared semantic authorization contract | Fresh v38 reviews found duplicate grammars, arbitrary-owner read/write bypasses, long-tail false denials, suffix false positives, unresolved references and observation-only manage-list leakage. |
 | 2026-08-09 | Made semantic ownership compositional and fully fingerprinted | Fresh v39 reviews found arbitrary Unicode owner prefixes, postpositive cancellation, completed-narration list reads, long-tail/Unicode false denials and authorization grammar omitted from published digests. |
 | 2026-08-09 | Bound mutation lookup to a typed server-owned goal | Fresh v40 reviews found mutation-text lookup bypasses, incomplete cancellation/completion scope, indicator collisions, long-tail/biomedical false denials and behavior omitted from published digests. |
+| 2026-08-10 | Canonicalized typed mutations and stabilized semantic evidence | Fresh v41 reviews found ASCII owner-tail bypasses, cancellation/completion gaps, exact mutation false denials, unstable bytecode digests and unpersisted model evidence. |
