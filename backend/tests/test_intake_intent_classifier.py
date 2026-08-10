@@ -83,6 +83,17 @@ def test_named_medicines_keep_ascii_boundaries_around_dose_tokens(query):
     "b122粒",
     "d3 2粒",
     "d32粒",
+    "Ｄ３2粒",
+    "ＣｏＱ１０2粒",
+    "Ｂ１２2粒",
+    "fish‑oil2粒",
+    "fish–oil2粒",
+    "fish​oil2粒",
+    "d₃2粒",
+    "coq₁₀2粒",
+    "vitaminDfishoil",
+    "vitamindandfishoil",
+    "d3-fish-oil",
 ])
 def test_named_supplements_keep_ascii_boundaries_around_dose_tokens(query):
     assert classify_intake_intent(query).kind == "supplement"

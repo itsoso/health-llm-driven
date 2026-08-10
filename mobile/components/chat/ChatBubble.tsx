@@ -535,12 +535,12 @@ function ChatBubbleInner({
         if (result.route) {
           router.push(result.route as any);
         }
-      } catch {
+      } catch (error) {
         cardActionLocksRef.current.delete(actionGroupKey);
         emitWriteTerminal('failed', false, 'card_action_failed');
         setGroupActionState('error');
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-        toast.show('操作失败，请稍后重试', 'error');
+        toast.show(cardActionErrorMessage(error), 'error');
         if (__DEV__) console.warn('[cards] action failed', descriptor.type, action.action);
       }
     };
@@ -1462,6 +1462,24 @@ function isWriteCardAction(action: ChatCardActionDescriptor): boolean {
     'write_intent.confirm',
     'aigc_media.confirm',
   ].includes(action.action);
+}
+
+function cardActionErrorMessage(error: unknown): string {
+  const data = (error as { response?: { data?: unknown } } | undefined)?.response?.data;
+  const detail = data && typeof data === 'object'
+    ? (data as { detail?: unknown }).detail
+    : undefined;
+  const text = Array.isArray(detail)
+    ? detail.map((item) => (
+      item && typeof item === 'object' && 'msg' in item
+        ? String((item as { msg?: unknown }).msg ?? '')
+        : ''
+    )).find(Boolean)
+    : typeof detail === 'string'
+      ? detail
+      : undefined;
+  const normalized = text?.trim();
+  return normalized ? normalized.slice(0, 80) : '操作失败，请稍后重试';
 }
 
 function getCardActionSuccessMessage(

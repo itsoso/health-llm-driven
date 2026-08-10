@@ -32,6 +32,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from functools import lru_cache
 from typing import Dict, FrozenSet, List, Pattern
 
@@ -269,11 +270,17 @@ def drug_name_free_text_terms() -> FrozenSet[str]:
 
 @lru_cache(maxsize=1)
 def _drug_name_free_text_pattern() -> Pattern[str]:
+    adjacent_dose = (
+        r"\d+(?:\.\d+)?\s*(?:ml|mg|mcg|μg|ug|iu|g|毫升|毫克|克|单位|"
+        r"片|粒|颗|袋|包|滴|支|瓶|tablets?|capsules?)"
+    )
     alternatives: list[str] = []
     for term in sorted(drug_name_free_text_terms(), key=lambda value: (-len(value), value)):
         escaped = re.escape(term)
         if term.isascii():
-            alternatives.append(rf"(?<![a-z0-9]){escaped}s?(?![a-z0-9])")
+            alternatives.append(
+                rf"(?<![a-z0-9]){escaped}s?(?=$|[^a-z0-9]|{adjacent_dose})"
+            )
         else:
             alternatives.append(escaped)
     return re.compile("|".join(alternatives), re.IGNORECASE)
@@ -289,7 +296,7 @@ def contains_drug_name(text: str | None) -> bool:
     """识别自由文本中的完整药名，并规避 iron/environment 等短词误配。"""
     if not text:
         return False
-    return _drug_name_free_text_pattern().search(str(text).lower()) is not None
+    return _drug_name_free_text_pattern().search(_normalize_intake_name_text(text)) is not None
 
 
 @lru_cache(maxsize=1)
@@ -312,6 +319,23 @@ def supplement_name_entity_terms() -> FrozenSet[str]:
     return frozenset(t for t in (terms | collapsed) if t)
 
 
+_UNICODE_NAME_DASH_RE = re.compile(r"[\u2010-\u2015\u2212\ufe58\ufe63\uff0d]")
+_UNICODE_NAME_INVISIBLE_RE = re.compile(r"[\u200b-\u200d\u2060\ufeff]")
+_COMPACT_MULTI_SUPPLEMENT_RE = re.compile(
+    r"(?<![a-z0-9])(?:"
+    r"(?:vitamind|d[23]|b12|coq10)(?:and)?(?:fishoil|magnesium|nac|omega3)|"
+    r"(?:fishoil|magnesium|nac|omega3)(?:and)?(?:vitamind|d[23]|b12|coq10)"
+    r")(?![a-z0-9])",
+    re.IGNORECASE,
+)
+
+
+def _normalize_intake_name_text(text: str | None) -> str:
+    normalized = unicodedata.normalize("NFKC", str(text or "")).casefold()
+    normalized = _UNICODE_NAME_DASH_RE.sub("-", normalized)
+    return _UNICODE_NAME_INVISIBLE_RE.sub("", normalized)
+
+
 def _compile_supplement_name_pattern(terms: FrozenSet[str]) -> Pattern[str]:
     adjacent_dose = (
         r"\d+(?:\.\d+)?\s*(?:ml|mg|mcg|μg|ug|iu|g|毫升|毫克|克|单位|"
@@ -319,7 +343,12 @@ def _compile_supplement_name_pattern(terms: FrozenSet[str]) -> Pattern[str]:
     )
     alternatives: list[str] = []
     for term in sorted(terms, key=lambda value: (-len(value), value)):
-        escaped = re.escape(term)
+        normalized_term = _normalize_intake_name_text(term)
+        escaped = r"[\s-]*".join(
+            re.escape(part)
+            for part in re.split(r"[\s-]+", normalized_term)
+            if part
+        )
         if term.isascii():
             alternatives.append(
                 rf"(?<![a-z0-9]){escaped}(?=$|[^a-z0-9]|{adjacent_dose})"
@@ -334,26 +363,15 @@ def _supplement_name_free_text_pattern() -> Pattern[str]:
     return _compile_supplement_name_pattern(supplement_name_free_text_terms())
 
 
-@lru_cache(maxsize=1)
-def _supplement_name_entity_pattern() -> Pattern[str]:
-    return _compile_supplement_name_pattern(supplement_name_entity_terms())
-
-
 def contains_supplement_name(text: str | None) -> bool:
     """识别自由文本中的完整补剂名，并保留 ASCII 词边界。"""
     if not text:
         return False
-    return _supplement_name_free_text_pattern().search(str(text).lower()) is not None
-
-
-def supplement_entity_name_spans(text: str | None) -> tuple[tuple[int, int], ...]:
-    """Return spans from the full exact-name lexicon, including food/herb classes."""
-    if not text:
-        return ()
-    return tuple(
-        (match.start(), match.end())
-        for match in _supplement_name_entity_pattern().finditer(str(text).lower())
-    )
+    normalized = _normalize_intake_name_text(text)
+    if _supplement_name_free_text_pattern().search(normalized) is not None:
+        return True
+    compact = re.sub(r"[\s-]+", "", normalized)
+    return _COMPACT_MULTI_SUPPLEMENT_RE.search(compact) is not None
 
 
 def drug_name_spans(text: str | None) -> tuple[tuple[int, int], ...]:

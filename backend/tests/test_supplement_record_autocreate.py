@@ -20,7 +20,7 @@ def _executor(db):
 @pytest.mark.asyncio
 async def test_unregistered_supplement_autocreates_then_taps(db):
     ex = _executor(db)
-    ex._current_turn_user_message = "帮我记录：正官庄红参液 10mL，确认打卡"
+    ex._current_turn_user_message = "帮我记录：「正官庄红参液」 10mL，确认打卡"
     create_payload: dict = {}
     tap_payload: dict = {}
 
@@ -56,9 +56,34 @@ async def test_unregistered_supplement_autocreates_then_taps(db):
 
 
 @pytest.mark.asyncio
+async def test_unquoted_unknown_supplement_requires_an_explicit_name_boundary(db):
+    ex = _executor(db)
+    ex._current_turn_user_message = "记录正官庄红参液 10mL"
+    lookup = AsyncMock(return_value=([], None))
+    create = AsyncMock(return_value=({"id": 88, "name": "正官庄红参液"}, None))
+    tap = AsyncMock(return_value='{"record_id": 1073}')
+
+    with patch.object(ex, "_api_get_json", new=lookup), \
+         patch.object(ex, "_api_post_json", new=create), \
+         patch.object(ex, "_api_post", new=tap):
+        result = await ex._exec_health_record("http://x", {}, {
+            "record_type": "supplement",
+            "data": {"supplement_name": "正官庄红参液", "dosage": "10mL"},
+        })
+
+    parsed = json.loads(result)
+    assert parsed["error_code"] == "supplement_name_not_user_grounded"
+    assert parsed["dispatch_started"] is False
+    assert "「正官庄红参液」" in parsed["recovery_guidance"]
+    lookup.assert_not_awaited()
+    create.assert_not_awaited()
+    tap.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_registered_supplement_taps_without_creating(db):
     ex = _executor(db)
-    ex._current_turn_user_message = "记录红参液"
+    ex._current_turn_user_message = "记录「红参液」"
     created = {"called": False}
 
     async def fake_get_json(url, headers):
@@ -117,7 +142,7 @@ async def test_multiple_trailing_amounts_are_removed_without_rejecting_the_name(
 @pytest.mark.asyncio
 async def test_autocreate_failure_gives_friendly_fallback_no_raw_error(db):
     ex = _executor(db)
-    ex._current_turn_user_message = "记录红参液"
+    ex._current_turn_user_message = "记录「红参液」"
 
     async def fake_get_json(url, headers):
         return [], None
@@ -225,6 +250,15 @@ async def test_generic_current_turn_words_cannot_become_supplement_names(
     ("记录 vitamin D after meals", "vitamin D after meals"),
     ("记录维生素D鱼油", "维生素D鱼油"),
     ("记录维生素D别忘了", "维生素D别忘了"),
+    ("记录帮忙维生素D", "帮忙维生素D"),
+    ("记录需要维生素D", "需要维生素D"),
+    ("记录vitaminDfishoil", "vitaminDfishoil"),
+    ("记录d3fishoil", "d3fishoil"),
+    ("记录coq10fishoil", "coq10fishoil"),
+    ("记录b12magnesium", "b12magnesium"),
+    ("记录vitamindandfishoil", "vitamindandfishoil"),
+    ("记录vitamin-d-fishoil", "vitamin-d-fishoil"),
+    ("记录d3-fish-oil", "d3-fish-oil"),
 ])
 async def test_directive_or_multi_entity_superstrings_cannot_become_supplement_names(
     db,

@@ -4,7 +4,7 @@
 
 **Goal:** Prevent ungrounded supplement writes and make owner-bound contextual meal-photo cards save successfully without weakening the authoritative backend intake guard.
 
-**Architecture:** Add a narrow server-side grounding choke point immediately before the existing supplement lookup/create/tap path. A model-provided name must exactly equal a concrete, action-bound entity extracted from the current text-only message after dosage removal; generic category, image, pronoun, and action terms fail closed. Preserve owner-bound photo draft identity in Mobile, but defer only an Arabic-number food-slice `片` signal; Mobile retains strong medication/supplement blocking and Backend reuses the canonical complete-drug lexicon.
+**Architecture:** Add a narrow server-side grounding choke point immediately before the existing supplement lookup/create/tap path. A canonical model-provided name must exactly equal an action-bound entity in the current text-only message after dosage removal; an unknown new product name additionally requires an explicit user quote boundary. Generic category, image, pronoun, directive, concatenated multi-entity, and unquoted unknown names fail closed. Preserve owner-bound photo draft identity in Mobile, but defer only an Arabic-number food-slice `片` signal; Mobile and Backend normalize Unicode compatibility/dash/invisible forms and retain strong medication/supplement blocking.
 
 **Tech Stack:** FastAPI/SQLAlchemy/Pytest, React Native/TypeScript/Jest, existing `AgentExecutor`, `photo_draft_token`, client terminal telemetry, controlled production deploy tooling.
 
@@ -47,6 +47,8 @@ Add zero-dispatch adversarial cases for model names such as `补剂`, `图`, `�
 After the second independent review, add zero-dispatch cases for directive/generic superstrings (`维生素D并且帮我打卡`, `这个补剂维生素D`, `this supplement vitamin D`), conjunction/multi-entity input (`维生素D和鱼油`, `vitamin D and fish oil`), and residual frequency/dose input (`维生素D每天1片`). Add classifier and API no-row cases for Chinese/English drugs and supplements, spaced/unspaced doses, and mixed food-plus-drug payloads. The Mobile owner-bound-token matrix must prove the same inputs produce zero POSTs.
 
 After the third independent review, add structural and concatenated multi-entity cases (`维生素D+鱼油`, `维生素D鱼油`, `vitamin D plus fish oil`), missed directive/frequency cases, and multiple trailing doses. Add numeric-ending supplement cases (`coq102粒`, `b122粒`, `d32粒`) to the shared lexicon, Backend API no-row, Mobile guard, and Mobile zero-POST matrices, plus benign ASCII continuation controls.
+
+After the fourth independent review, add fullwidth ASCII, Unicode dash, zero-width/invisible, and subscript-number cases on both the write-authority and diet-card paths. Add compact multi-supplement cases (`vitaminDfishoil`, `d3-fish-oil`, `coq10fishoil`), standard ASCII adjacent doses (`vitamin D1000IU`, `coq10200mg`, `b121000mcg`), and benign continuation controls. Replace the open unknown-name shape with a closed contract: canonical aliases may be unquoted, while every unknown new product name must be explicitly quoted by the user in the current text-only turn.
 
 **Step 2: Write the failing contextual meal-photo test**
 
@@ -102,7 +104,7 @@ For `rtype == "supplement"`:
 
 **Step 3: Update the runtime skill contract**
 
-Replace the instruction that photo-derived new supplements auto-create immediately. State that image-derived names must be repeated by the user in a text-only confirmation turn; explicit text names keep the existing auto-create behavior.
+Replace the instruction that photo-derived new supplements auto-create immediately. State that image-derived names must be repeated by the user in a new text-only confirmation turn; canonical names may be plain text and unknown new names must be explicitly quoted.
 
 **Step 4: Run the Backend focused tests and verify GREEN**
 
@@ -201,7 +203,7 @@ fix(agent): ground supplement writes and photo saves
 
 **Step 5: Obtain an independent safety review**
 
-The reviewer must inspect the committed diff for supplement write authority, owner isolation, photo draft ownership/expiry, diet guard preservation, receipt truthfulness, and privacy-safe telemetry. The first review returned BLOCK because arbitrary message substrings and whole-guard bypasses remained possible. The second review returned BLOCK because directive/multi-entity superstrings remained groundable and owner-bound photo tokens still admitted English named medicines/supplements with dose text. The third review returned BLOCK because structural connectors/multiple doses still passed and numeric-ending supplement names were broken by dose-boundary rewriting. Each BLOCK returns to implementation; a fresh independent reviewer must inspect the final committed tree, and only GO permits deploy.
+The reviewer must inspect the committed diff for supplement write authority, owner isolation, photo draft ownership/expiry, diet guard preservation, receipt truthfulness, and privacy-safe telemetry. The first review returned BLOCK because arbitrary message substrings and whole-guard bypasses remained possible. The second review returned BLOCK because directive/multi-entity superstrings remained groundable and owner-bound photo tokens still admitted English named medicines/supplements with dose text. The third review returned BLOCK because structural connectors/multiple doses still passed and numeric-ending supplement names were broken by dose-boundary rewriting. The fourth review returned BLOCK because Unicode-obfuscated/compact multi-entity names bypassed both surfaces, the open unknown-name shape remained forgeable, and Mobile missed standard ASCII adjacent doses. Each BLOCK returns to implementation; a fresh fifth reviewer must inspect the final committed tree, and only GO permits deploy.
 
 ### Task 5: Push, deploy, correct the bad record, and verify production
 

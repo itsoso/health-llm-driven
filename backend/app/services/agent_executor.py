@@ -37,7 +37,7 @@ from app.services.tool_schema_registry import (
 from app.services.lab_plausibility import annotate_if_implausible
 from app.services.llm.error_messages import safe_llm_error_message, safe_tool_error_message
 from app.services.health_query_dimensions import normalize_health_query_args
-from app.services.drug_lexicon import supplement_entity_name_spans, supplement_name_entity_terms
+from app.services.drug_lexicon import supplement_name_entity_terms
 from app.services.post_record_quality import (
     build_diet_adjust_action,
     build_post_record_quality_response,
@@ -4391,12 +4391,9 @@ _INVALID_SUPPLEMENT_ENTITY_ASCII_RESIDUAL_RE = re.compile(
 )
 _INVALID_SUPPLEMENT_ENTITY_STRUCTURE_RE = re.compile(r"[+＋&＆/／、|｜]")
 _SUPPLEMENT_RESIDUAL_AMOUNT_RE = re.compile(_SUPPLEMENT_AMOUNT_TOKEN, re.IGNORECASE)
-_UNKNOWN_SUPPLEMENT_ASCII_NAME_RE = re.compile(r"[a-z][a-z0-9-]{1,39}", re.IGNORECASE)
-_UNKNOWN_SUPPLEMENT_CJK_NAME_RE = re.compile(r"[\u3400-\u9fffA-Za-z0-9-]{2,40}")
-_UNKNOWN_SUPPLEMENT_CONCRETE_SUFFIX_RE = re.compile(
-    r"(?:维生素[A-Za-z0-9]*|鱼油|辅酶Q?10|益生菌|叶酸|叶黄素|"
-    r"钙|镁|锌|硒|铁|NAC|液|粉|片|丸|胶囊|软胶囊|滴剂|口服液|颗粒|冲剂)$",
-    re.IGNORECASE,
+_QUOTED_SUPPLEMENT_ENTITY_RE = re.compile(
+    r"^\s*(?:「(?P<corner>[^」]+)」|“(?P<curly>[^”]+)”|"
+    r"\"(?P<double>[^\"]+)\"|【(?P<bracket>[^】]+)】)\s*(?P<tail>.*)$"
 )
 
 
@@ -4419,24 +4416,13 @@ def _supplement_entity_has_directive_residual(raw: Any) -> bool:
     )
 
 
-def _supplement_entity_is_single_concrete_name(raw: Any) -> bool:
-    """Allow exact canonical terms or a tightly shaped single product name."""
-    boundary_preserving = unicodedata.normalize("NFKC", str(raw or "")).strip()
-    normalized = _normalized_current_turn_entity_text(boundary_preserving)
+def _supplement_entity_is_canonical_name(raw: Any) -> bool:
+    normalized = _normalized_current_turn_entity_text(raw)
     canonical = {
         _normalized_current_turn_entity_text(term)
         for term in supplement_name_entity_terms()
     }
-    if normalized in canonical:
-        return True
-    if len(supplement_entity_name_spans(boundary_preserving)) > 1:
-        return False
-    if _UNKNOWN_SUPPLEMENT_ASCII_NAME_RE.fullmatch(boundary_preserving):
-        return True
-    return bool(
-        _UNKNOWN_SUPPLEMENT_CJK_NAME_RE.fullmatch(boundary_preserving)
-        and _UNKNOWN_SUPPLEMENT_CONCRETE_SUFFIX_RE.search(boundary_preserving)
-    )
+    return normalized in canonical
 
 
 def _strip_supplement_edge_amounts(raw: str) -> str:
@@ -4450,12 +4436,31 @@ def _strip_supplement_edge_amounts(raw: str) -> str:
         candidate = stripped.strip()
 
 
+def _explicitly_quoted_supplement_entity(raw: str) -> Optional[str]:
+    match = _QUOTED_SUPPLEMENT_ENTITY_RE.fullmatch(raw)
+    if match is None:
+        return None
+    name = next(
+        (
+            match.group(group)
+            for group in ("corner", "curly", "double", "bracket")
+            if match.group(group) is not None
+        ),
+        "",
+    ).strip()
+    tail = _strip_supplement_edge_amounts(match.group("tail").strip())
+    if tail or len(name) > 80:
+        return None
+    return name
+
+
 def _explicit_supplement_names_in_current_turn(user_message: Any) -> tuple[str, ...]:
     raw_message = unicodedata.normalize("NFKC", str(user_message or ""))
     names: list[str] = []
     for match in _EXPLICIT_SUPPLEMENT_NAME_RE.finditer(raw_message):
         candidate = match.group("name").strip(" ：:，,;；。.!！?？")
-        candidate = _strip_supplement_edge_amounts(candidate)
+        quoted_candidate = _explicitly_quoted_supplement_entity(candidate)
+        candidate = quoted_candidate or _strip_supplement_edge_amounts(candidate)
         normalized_candidate = _normalized_current_turn_entity_text(candidate)
         if len(normalized_candidate) < 2:
             continue
@@ -4463,7 +4468,7 @@ def _explicit_supplement_names_in_current_turn(user_message: Any) -> tuple[str, 
             continue
         if _supplement_entity_has_directive_residual(candidate):
             continue
-        if not _supplement_entity_is_single_concrete_name(candidate):
+        if quoted_candidate is None and not _supplement_entity_is_canonical_name(candidate):
             continue
         names.append(normalized_candidate)
     return tuple(names)
@@ -4479,8 +4484,6 @@ def _supplement_name_is_grounded_in_current_turn(
     if _supplement_entity_is_generic(supplement_name):
         return False
     if _supplement_entity_has_directive_residual(supplement_name):
-        return False
-    if not _supplement_entity_is_single_concrete_name(supplement_name):
         return False
     return normalized_name in _explicit_supplement_names_in_current_turn(user_message)
 
@@ -19823,8 +19826,7 @@ class AgentExecutor:
                         "supplement_image_confirmation_required",
                         message="图片识别出的补剂尚未写入。",
                         recovery_guidance=(
-                            "请核对包装后，在不带图片的新消息中直接写出完整补剂名，"
-                            "例如“记录维生素D”。"
+                            "请核对包装后，在不带图片的新消息中发送“记录「包装上的完整名称」”。"
                         ),
                     )
                 if not _supplement_name_is_grounded_in_current_turn(
@@ -19842,7 +19844,8 @@ class AgentExecutor:
                         "supplement_name_not_user_grounded",
                         message="当前消息没有明确写出要记录的补剂名称，本次未写入。",
                         recovery_guidance=(
-                            "请重新发送清晰照片，或直接输入完整补剂名后再记录。"
+                            "标准补剂名可直接输入；新名称请用引号圈定，"
+                            "例如“记录「正官庄红参液」10mL”。"
                         ),
                     )
                 # 查找匹配的补剂定义 (走 _api_get_json: 拿干净可解析数据, 不被字符截断)
