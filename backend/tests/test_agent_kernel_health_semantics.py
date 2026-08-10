@@ -172,7 +172,7 @@ def test_v39_medical_exam_resolution_rejects_unpunctuated_nonself_subject(text):
 def test_v39_health_semantics_contract_is_versioned_and_content_digested():
     payload = semantics.health_semantics_contract_payload()
 
-    assert payload["version"] == "health-semantics-v2"
+    assert payload["version"] == "health-semantics-v3"
     assert re.fullmatch(r"[0-9a-f]{64}", payload["content_digest"])
 
 
@@ -291,5 +291,85 @@ def test_v40_contract_digest_changes_with_every_shared_authorization_regex(
     before = semantics.health_semantics_contract_payload()["content_digest"]
 
     monkeypatch.setattr(semantics, name, replacement)
+
+    assert semantics.health_semantics_contract_payload()["content_digest"] != before
+
+
+@pytest.mark.parametrize(
+    "entity",
+    (
+        "免疫球蛋白A肾病",
+        "原发性中枢神经系统淋巴瘤",
+        "慢性炎症性脱髓鞘性多发性神经病",
+        "遗传性出血性毛细血管扩张症",
+        "亨廷顿病",
+        "脊髓小脑性共济失调",
+        "显微镜下多血管炎",
+        "抗NMDA受体脑炎",
+        "IgG4相关性疾病",
+        "HLA-B27相关脊柱关节炎",
+        "BCR::ABL1阳性白血病",
+        "β2微球蛋白淀粉样变性",
+    ),
+)
+def test_v41_compositional_and_terminology_backed_disease_is_exact(entity):
+    assert semantics.resolve_illness_entity(entity).status == "exact"
+
+
+@pytest.mark.parametrize(
+    "entity",
+    (
+        "尿蛋白异常",
+        "血小板异常",
+        "红蛋白异常",
+        "淋巴细胞异常",
+        "血管异常",
+        "胆汁异常",
+        "心肌细胞异常",
+        "免疫细胞异常",
+    ),
+)
+def test_v41_indicator_abnormality_is_not_an_illness_entity(entity):
+    assert semantics.resolve_illness_entity(entity).status == "nonhealth"
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "查询我的房颤记录，打住",
+        "暂缓查看我的糖尿病记录",
+        "不用继续查询我的痛风记录",
+        "我的哮喘记录查到这儿",
+        "把我的糖尿病记录查询撤了吧",
+    ),
+)
+def test_v41_structured_read_act_resolves_more_cancellations(text):
+    resolution = semantics.resolve_health_read_act(text)
+
+    assert resolution.status == "cancelled"
+    assert resolution.active_clause == ""
+    assert semantics.health_read_cancelled(text) is True
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    (
+        ("查询老师的房颤，打住；再查我自己的房颤", "查我自己的房颤"),
+        ("暂缓调取同事的MRI，不过查看我的左膝MRI", "查看我的左膝MRI"),
+        ("不用继续查询室友痛风；然后查询我的痛风", "查询我的痛风"),
+    ),
+)
+def test_v41_structured_read_act_keeps_later_self_clause(text, expected):
+    resolution = semantics.resolve_health_read_act(text)
+
+    assert resolution.status == "active"
+    assert resolution.active_clause == expected
+    assert semantics.health_read_cancelled(text) is False
+
+
+def test_v41_contract_digest_changes_when_authorization_function_changes(monkeypatch):
+    before = semantics.health_semantics_contract_payload()["content_digest"]
+
+    monkeypatch.setattr(semantics, "health_read_cancelled", lambda _text: False)
 
     assert semantics.health_semantics_contract_payload()["content_digest"] != before

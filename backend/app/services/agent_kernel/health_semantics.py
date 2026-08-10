@@ -14,14 +14,16 @@ never becomes permission to read or write health data.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
+import marshal
 import re
 import unicodedata
 from dataclasses import dataclass
 from typing import Literal
 
 
-HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v2"
+HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v3"
 
 
 @dataclass(frozen=True)
@@ -38,6 +40,14 @@ class HealthEntityResolution:
         "ambiguous",
     ]
     entity: str | None = None
+
+
+@dataclass(frozen=True)
+class HealthReadActResolution:
+    """Resolved state of the user's read speech act."""
+
+    status: Literal["active", "cancelled", "none"]
+    active_clause: str = ""
 
 
 CURRENT_USER_OWNERS = frozenset({"我", "我的", "本人", "本人的", "自己", "自己的"})
@@ -197,6 +207,11 @@ CANONICAL_ILLNESS_ENTITIES = frozenset(
         "桥本氏甲状腺炎",
         "运动神经元病",
         "饮食失调症",
+        # Eponyms cannot be authorized from morphology alone. They live in the
+        # versioned terminology set while compositional entities use the
+        # biomedical grammar below.
+        "亨廷顿病",
+        "脊髓小脑性共济失调",
     }
 )
 
@@ -283,9 +298,9 @@ MEDICAL_MORPHOLOGY_RE = re.compile(
     r"(?:病|病症|症|综合征|炎|癌|瘤|淋巴瘤|疹|感染|溃疡|感冒|流感|"
     r"疱疹|烫伤|水泡|伤口|脑梗|梗死|栓塞|偏头痛|疼痛|高血压|"
     r"低血压|哮喘|障碍|闭经|过敏|贫血|呼吸暂停|瘫痪|晕厥|"
-    r"脂肪肝|血尿|便秘|失禁|异常|头疼|痛风|甲亢|甲减|房颤|癫痫|"
+    r"脂肪肝|血尿|便秘|失禁|头疼|痛风|甲亢|甲减|房颤|癫痫|"
     r"磨牙|气胸|结石|息肉|出血|结核|卒中|新冠|帕金森(?:病)?|"
-    r"红斑狼疮|白癜风|震颤|麻痹|变性|萎缩)$",
+    r"红斑狼疮|白癜风|震颤|麻痹|变性|萎缩|失调|扩张症)$",
     re.IGNORECASE,
 )
 
@@ -401,8 +416,17 @@ CLINICAL_MORPHEME_RE = re.compile(
     r"扁桃体|耳石|玫瑰糠|"
     r"免疫|磷脂|胶质|黑色素|淋巴|代谢|饮食|呼吸|尿|蛋白|血管|"
     r"细胞|细菌|病毒|真菌|遗传|缺铁|溶血|阵发|纤维化|肉芽肿|"
-    r"硬化|肌无力|萎缩|白血|脑膜|皮肌|心肌|骨髓)",
+    r"硬化|肌无力|萎缩|白血|脑膜|皮肌|心肌|骨髓|免疫球蛋白|"
+    r"中枢神经|炎症|脱髓鞘|毛细血管|共济|显微镜下|受体|微球蛋白|"
+    r"淀粉样|脊髓|小脑|胆管)",
     re.IGNORECASE,
+)
+
+BIOMEDICAL_MODIFIER_RE = re.compile(
+    r"(?:(?:抗[A-Z][A-Z0-9]*受体)|"
+    r"(?:[A-Z][A-Z0-9]*(?:(?:-|::|:|\+)[A-Z0-9]+)+)|"
+    r"(?:[A-Z]+\d+)|IgG\d*|IgA|β\d*|相关性?|阳性|受体|微球蛋白|"
+    r"淀粉样|显微镜下)+"
 )
 
 # Open-vocabulary disease authorization is deliberately compositional and
@@ -416,22 +440,28 @@ OPEN_ILLNESS_ENTITY_RE = re.compile(
     r"自身免疫性|代谢性|神经性|缺血性|出血性|阻塞性|感染性|"
     r"药物性|创伤性|活动性|压力性|病毒性|细菌性|真菌性|过敏性|"
     r"进行性|硬化性|肉芽肿性|嗜酸性|粒细胞性|多|"
-    r"妊娠|小儿|新生儿|青少年|成人|老年性|职业性|季节性))*"
+    r"妊娠|小儿|新生儿|青少年|成人|老年性|职业性|季节性|"
+    r"炎症性|脱髓鞘性|出血性|毛细血管|相关性|阳性|显微镜下))*"
     r"(?:(?:脑|颅|心|肺|肝|胆|胆汁|胆管|胰|肾|胃|肠|血|血管|动脉|"
     r"主动脉|多血管|静脉|血小板|血红|红蛋白|骨|骨髓|肌|神经|"
     r"视神经|脊髓|核上性|核上|结节|肉芽肿|粒细胞|多系统|淀粉样|皮肤|关节|脊柱|"
     r"甲状腺|乳腺|子宫|卵巢|前列腺|幽门|螺杆菌|扁桃体|耳石|"
     r"免疫|磷脂|胶质|黑色素|淋巴|呼吸|尿|蛋白|细胞|细菌|病毒|"
-    r"真菌|醛固酮|纤维|肉芽|肌无力|萎缩|白血|脑膜|皮肌|心肌))+"
+    r"真菌|醛固酮|纤维|肉芽|肌无力|萎缩|白血|脑膜|皮肌|心肌|"
+    r"免疫球蛋白A?|中枢神经系统|炎症|脱髓鞘|毛细血管|共济|"
+    r"显微镜下|受体|微球蛋白|淀粉样|脊髓|小脑|多血管|"
+    r"(?:抗)?(?:[A-Z][A-Z0-9]*(?:(?:-|::|:|\+)[A-Z0-9]+)*|IgG\d*|β\d*)"
+    r"(?:相关性?|阳性|受体)?))+"
     r"(?:病|病症|综合征|炎|癌|瘤|淋巴瘤|感染|紫癜|水肿|蛋白尿|"
-    r"贫血|纤维化|硬化症|增多症|减少症|失禁|闭经|血尿|异常|"
-    r"麻痹|变性|萎缩)$",
+    r"贫血|纤维化|硬化症|增多症|减少症|失禁|闭经|血尿|"
+    r"麻痹|变性|萎缩|失调|扩张症|疾病)$",
     re.IGNORECASE,
 )
 
 HEALTH_METRIC_ENTITY_RE = re.compile(
     r"^(?:ALT|AST|CRP|HRV|BMI|血糖|血压|心率|静息心率|呼吸率|"
-    r"体重|体脂率|肌肉量|骨量|卡路里|最大摄氧量|血氧|体温)"
+    r"体重|体脂率|肌肉量|骨量|卡路里|最大摄氧量|血氧|体温|"
+    r"尿蛋白|血小板|红蛋白|淋巴细胞|血管|胆汁|心肌细胞|免疫细胞)"
     r"(?:偏高|偏低|升高|降低|异常|障碍|疼痛|震颤)?$",
     re.IGNORECASE,
 )
@@ -522,20 +552,21 @@ HEALTH_ENTITY_CONNECTOR_RE = re.compile(
     r"同时有|同时出现|并发|并存|伴发|共存|共患|同患|再加|且|兼患|并患|"
     r"同时患有|相比|相对|对比|除以|占|比(?!(?:率|例|较))|是|"
     r"[vV][sS]|(?<![A-Za-z0-9])\+|\+(?![\u4e00-\u9fff])|"
-    r"[、，,；;/／|｜&＆和与及或跟—–])"
+    r"[、，,；;/／|｜&＆和与及或跟]|"
+    r"(?<=[\u4e00-\u9fff])[—–](?=[\u4e00-\u9fff]))"
 )
 
 READ_CANCELLATION_RE = re.compile(
     r"(?:"
-    r"(?:搁置|搁一搁|作废|作罢|取消|撤销|撤掉|撤回|叫停|停掉|停止|停下|(?<!呼吸)暂停|中止|中断|"
+    r"(?:搁置|搁一搁|作废|作罢|取消|撤销|撤掉|撤回|撤了|叫停|打住|暂缓|停掉|停止|停下|(?<!呼吸)暂停|中止|中断|"
     r"终止|终结|放弃|算了|放一边)[^,.!，。！？?;；、]{0,32}"
     r"(?:查询|查找|查看|搜索|检索|翻查|翻看|调取|调出|调阅|打开|"
     r"展示|发我|发给我|查|搜|看|记录)|"
     r"(?:查询|查找|查看|搜索|检索|翻查|翻看|调取|调出|调阅|打开|"
     r"展示|发我|发给我|查|搜|看|记录)"
-    r"[^,.!，。！？?;；、]{0,32}(?:作废|作罢|取消|撤销|撤回|叫停|停掉|停止|停下|"
+    r"[^,.!，。！？?;；、]{0,32}[\s，,]*(?:作废|作罢|取消|撤销|撤回|撤了(?:吧)?|叫停|打住|暂缓|停掉|停止|停下|"
     r"(?<!呼吸)暂停|中止|中断|终止|终结|算了|放一边|到此为止|"
-    r"这事先搁一搁|先搁一搁|别再(?:翻|调|查|看|打开)了)|"
+    r"这事先搁一搁|先搁一搁|到这儿|到这(?:里|儿)|别再(?:翻|调|查|看|打开)了)|"
     r"(?:别再|不再)[^,.!，。！？?;；、]{0,12}"
     r"(?:查询|查找|查看|搜索|检索|翻查|翻看|调取|调出|调阅|打开|调|查|看)(?:了)?"
     r")",
@@ -549,7 +580,7 @@ _NEGATED_READ_PREFIX_PATTERN = (
     r"列出|比较|对比|翻看|翻一下|看|搜索|搜|调取|调出)))"
 )
 _NEGATED_READ_INTERPOSER_PATTERN = (
-    r"(?:(?:帮我|给我|替我|为我|麻烦你?|请你?|让你|你|再|去)){0,6}"
+    r"(?:(?:帮我|给我|替我|为我|麻烦你?|请你?|让你|你|再|去|继续)){0,6}"
 )
 NEGATED_HEALTH_ACTION_RE = re.compile(
     rf"{_NEGATED_READ_PREFIX_PATTERN}{_NEGATED_READ_INTERPOSER_PATTERN}"
@@ -590,30 +621,47 @@ def _illness_lookup_key(value: str) -> str:
     return ILLNESS_ENTITY_ALIASES.get(normalized, normalized)
 
 
-def active_health_read_clause(text: str) -> str:
-    """Return the later positive read clause after the last read cancellation."""
+def resolve_health_read_act(text: str) -> HealthReadActResolution:
+    """Resolve cancellation and a later replacement read as one speech act."""
     normalized = str(text or "").strip()
     cancellations = tuple(READ_CANCELLATION_RE.finditer(normalized)) + tuple(
         NEGATED_HEALTH_ACTION_RE.finditer(normalized)
     )
     if not cancellations:
-        return normalized
+        if has_positive_health_read_verb(normalized):
+            return HealthReadActResolution("active", normalized)
+        return HealthReadActResolution("none", normalized)
     last_cancellation = max(cancellations, key=lambda match: match.end())
     suffix = normalized[last_cancellation.end() :]
     for positive in READ_VERB_RE.finditer(suffix):
         if _READ_SCOPE_BOUNDARY_RE.search(suffix[: positive.start()]):
-            return suffix[positive.start() :].strip("，,。.!！；;：:?？ ")
-    return ""
+            return HealthReadActResolution(
+                "active",
+                suffix[positive.start() :].strip("，,。.!！；;：:?？ "),
+            )
+    return HealthReadActResolution("cancelled")
+
+
+def has_positive_health_read_verb(text: str) -> bool:
+    """Return whether text contains a non-observational read verb."""
+    for match in READ_VERB_RE.finditer(str(text or "")):
+        if match.group() == "看" and re.match(
+            r"(?:似|来|着|上去|起来|不(?:出|到|见|清)|得出)",
+            str(text or "")[match.end() :],
+        ):
+            continue
+        return True
+    return False
+
+
+def active_health_read_clause(text: str) -> str:
+    """Return the active clause from the structured read-act resolution."""
+    return resolve_health_read_act(text).active_clause
 
 
 def health_read_cancelled(text: str) -> bool:
     """Identify a cancelled read unless a later clause starts a new read."""
-    normalized = str(text or "")
-    has_cancellation = bool(
-        READ_CANCELLATION_RE.search(normalized)
-        or NEGATED_HEALTH_ACTION_RE.search(normalized)
-    )
-    return has_cancellation and not active_health_read_clause(normalized)
+    return resolve_health_read_act(text).status == "cancelled"
 
 
 def has_explicit_health_read_request(text: str) -> bool:
@@ -621,14 +669,7 @@ def has_explicit_health_read_request(text: str) -> bool:
     scoped = active_health_read_clause(text)
     if not scoped:
         return False
-    for match in READ_VERB_RE.finditer(scoped):
-        if match.group() == "看" and re.match(
-            r"(?:似|来|着|上去|起来|不(?:出|到|见|清)|得出)",
-            scoped[match.end() :],
-        ):
-            continue
-        return True
-    return False
+    return has_positive_health_read_verb(scoped)
 
 
 def is_unresolved_health_reference(value: str) -> bool:
@@ -702,7 +743,9 @@ def resolve_illness_entity(value: str) -> HealthEntityResolution:
         prefix = candidate[: len(candidate) - len(suffix)].strip("-· ")
         if not prefix:
             continue
-        if CLINICAL_MODIFIER_RE.fullmatch(prefix):
+        if CLINICAL_MODIFIER_RE.fullmatch(prefix) or BIOMEDICAL_MODIFIER_RE.fullmatch(
+            prefix
+        ):
             return HealthEntityResolution("exact", candidate)
         return HealthEntityResolution("nonself")
     if re.fullmatch(r"[A-Z][A-Z0-9-]{1,15}", candidate):
@@ -712,6 +755,50 @@ def resolve_illness_entity(value: str) -> HealthEntityResolution:
     if OPEN_ILLNESS_ENTITY_RE.fullmatch(candidate):
         return HealthEntityResolution("exact", candidate)
     return HealthEntityResolution("nonhealth")
+
+
+_ILLNESS_MUTATION_LEADING_SCAFFOLD_RE = re.compile(
+    r"^(?:请(?:你|您)?|麻烦(?:你|您)?|小巴|你能|可不可以|能不能|可以|能|"
+    r"帮我|给我|替我|把|将|我想|"
+    r"更新|修改|更正|修正|调整|删除|删掉|移除|清除|清掉|"
+    r"记录一下|记一下|记录|记下|新增|录入|保存|写入|存下来|"
+    r"已经痊愈的|已痊愈的|已经康复的|已康复的|"
+    r"今天|今日|昨天|昨日|前天|近期|最近|目前|现在|"
+    r"以前的|既往|上一次|上次)+"
+)
+_ILLNESS_MUTATION_SUFFIX_RE = re.compile(
+    r"^(?:的)?(?:疾病)?(?:吗|了|记录|条目|病历|病例|状态|ID|编号|#|第|今天|"
+    r"昨日|昨天|前天|今早|今晚|目前|现在|近期|最近|上次|上一次|之前|在|于|"
+    r"起病|开始|发作|日期|时间|严重|程度|分|级|备注|症状|持续|已经|已|还|仍|"
+    r"完全|明显|逐渐|没有|没|未|好|好了|好转|改善|康复|痊愈|"
+    r"发作|复发|加重|更新|修改|更正|修正|调整|删除|删掉|移除|"
+    r"[0-9（()）=：:，,。.!！；;、\s]).*$",
+    re.IGNORECASE,
+)
+
+
+def extract_owned_illness_entity(text: str) -> str | None:
+    """Extract the leading current-user disease from a mutation statement.
+
+    Disease recognition is delegated to ``resolve_illness_entity``; this
+    function only removes command scaffolding and validates that the remaining
+    suffix is state/record syntax rather than an arbitrary concatenated owner.
+    """
+    candidate = "".join(normalize_entity(text).split()).strip("的了，,。.!！；;：:?？ ")
+    previous = None
+    while candidate and candidate != previous:
+        previous = candidate
+        candidate = _ILLNESS_MUTATION_LEADING_SCAFFOLD_RE.sub("", candidate, count=1)
+        candidate, _ = _strip_current_user_owner(candidate)
+    for end in range(len(candidate), 1, -1):
+        entity = candidate[:end].strip("的，,。.!！；;：:?？ ")
+        suffix = candidate[end:]
+        resolution = resolve_illness_entity(entity)
+        if resolution.status != "exact" or not resolution.entity:
+            continue
+        if not suffix or _ILLNESS_MUTATION_SUFFIX_RE.fullmatch(suffix):
+            return resolution.entity
+    return None
 
 
 def illness_entity_has_medical_semantics(value: str) -> bool:
@@ -912,10 +999,57 @@ def authorization_grammar_digest(namespace: dict[str, object]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def authorization_behavior_digest(
+    namespace: dict[str, object],
+    function_names: tuple[str, ...],
+) -> str:
+    """Fingerprint selected authorization code, including monkeypatches."""
+    behavior: dict[str, object] = {}
+    for name in sorted(function_names):
+        value = namespace.get(name)
+        code = getattr(value, "__code__", None)
+        if code is not None:
+            encoded = marshal.dumps(code)
+            behavior[name] = {
+                "module": getattr(value, "__module__", ""),
+                "qualname": getattr(value, "__qualname__", ""),
+                "code": hashlib.sha256(encoded).hexdigest(),
+            }
+        else:
+            behavior[name] = {
+                "module": getattr(value, "__module__", ""),
+                "qualname": getattr(value, "__qualname__", ""),
+                "type": f"{type(value).__module__}.{type(value).__qualname__}",
+                "source": inspect.getsource(value) if inspect.isfunction(value) else "",
+            }
+    payload = json.dumps(
+        behavior,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+HEALTH_SEMANTICS_AUTHORIZATION_FUNCTIONS = (
+    "active_health_read_clause",
+    "extract_owned_illness_entity",
+    "has_explicit_health_read_request",
+    "health_read_cancelled",
+    "health_read_has_nonself_subject",
+    "resolve_health_read_act",
+    "resolve_illness_entity",
+    "resolve_medical_exam_query",
+)
+
+
 def health_semantics_contract_payload() -> dict[str, str]:
     """Return versioned static evidence included in the capability digest."""
     content = {
         "authorization_grammar_digest": authorization_grammar_digest(globals()),
+        "authorization_behavior_digest": authorization_behavior_digest(
+            globals(), HEALTH_SEMANTICS_AUTHORIZATION_FUNCTIONS
+        ),
         "illness_entities": sorted(CANONICAL_ILLNESS_ENTITIES),
         "illness_aliases": dict(sorted(ILLNESS_ENTITY_ALIASES.items())),
         "owner_boundary_tails": list(OWNER_BOUNDARY_DISEASE_TAILS),

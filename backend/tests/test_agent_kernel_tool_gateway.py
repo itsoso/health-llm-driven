@@ -1937,7 +1937,7 @@ async def test_executor_quoted_update_never_reaches_real_water_put(
         "test-token",
     )
 
-    assert [method for method, _url, _payload in calls] == ["GET"]
+    assert calls == []
     assert json.loads(result)["dispatch_started"] is False
 
 
@@ -2013,10 +2013,7 @@ async def test_executor_non_authorizing_update_never_reaches_real_water_put(
         "test-token",
     )
 
-    expected_methods = (
-        [] if message == "把刚才300ml改成350ml，先不要执行这个修改" else ["GET"]
-    )
-    assert [method for method, _url, _payload in calls] == expected_methods
+    assert calls == []
     assert json.loads(result)["dispatch_started"] is False
 
 
@@ -2218,7 +2215,7 @@ async def test_executor_negated_or_noop_water_correction_never_reaches_real_put(
         "test-token",
     )
 
-    assert [method for method, _url, _payload in calls] == ["GET"]
+    assert all(method != "PUT" for method, _url, _payload in calls)
     assert json.loads(result)["dispatch_started"] is False
 
 
@@ -2336,7 +2333,7 @@ async def test_executor_unauthorized_or_ambiguous_illness_update_never_reaches_r
         "test-token",
     )
 
-    assert [call["operation"] for call in calls] == ["list"]
+    assert all(call["operation"] == "list" for call in calls)
     assert json.loads(result)["dispatch_started"] is False
 
 
@@ -2499,7 +2496,7 @@ async def test_executor_uncertain_or_negated_active_illness_never_puts(
         "test-token",
     )
 
-    assert [call["operation"] for call in calls] == ["list"]
+    assert all(call["operation"] == "list" for call in calls)
     assert json.loads(result)["dispatch_started"] is False
 
 

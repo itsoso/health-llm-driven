@@ -6,7 +6,10 @@ import re
 import pytest
 
 from app.services.agent_kernel import capability_policy as capability_policy_module
+from app.services.agent_kernel import goal_spec as goal_spec_module
+from app.services import write_intent_scope as write_intent_scope_module
 from app.services.agent_kernel.capability_policy import (
+    bind_server_authorized_manage_lookup,
     capability_policy_contract_payload,
     capability_policy_digest,
     decide_tool_capability,
@@ -2769,6 +2772,42 @@ def test_illness_resolution_binds_owner_scoped_record_and_exact_patch():
     }
 
 
+def test_v41_direct_illness_state_change_binds_exact_owned_record_and_patch():
+    snapshot = replace(
+        _snapshot("把我的克雅氏病状态改成已康复"),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "illness",
+                    "records": ({"id": 72, "name": "克雅氏病", "status": "active"},),
+                },
+            ),
+        ),
+    )
+
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "illness",
+                "operation": "update",
+                "record_id": 72,
+                "data": {"status": "resolved"},
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args == {
+        "record_type": "illness",
+        "operation": "update",
+        "record_id": 72,
+        "data": {"status": "resolved"},
+    }
+
+
 @pytest.mark.parametrize(
     "arguments",
     (
@@ -4347,8 +4386,8 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v40"
-    assert payload["health_semantics"]["version"] == "health-semantics-v2"
+    assert payload["contract_version"] == "agent-capability-policy-v41"
+    assert payload["health_semantics"]["version"] == "health-semantics-v3"
     assert re.fullmatch(r"[0-9a-f]{64}", payload["health_semantics"]["content_digest"])
     assert payload["health_record_target_binding"] == {
         "version": "authorized-target-set-v31",
@@ -4398,3 +4437,248 @@ def test_v40_capability_digest_changes_with_authorization_grammar(
     monkeypatch.setattr(capability_policy_module, name, replacement)
 
     assert capability_policy_digest() != before
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "列出我的血管拓扑同步异常记录",
+        "今早疾病记录42已调整为已康复",
+        "上周我删掉了疾病记录44",
+        "请调出上轮对话第二次提到的检查",
+    ),
+)
+def test_v41_unmarked_manage_list_never_inherits_mutation_authority(message):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_manage",
+            {"record_type": "illness", "operation": "list"},
+        ),
+    )
+
+    assert decision.action == "block"
+
+
+def test_v41_model_cannot_forge_internal_manage_lookup_marker():
+    decision = decide_tool_capability(
+        _snapshot("列出我的血管拓扑同步异常记录"),
+        _request(
+            "health_manage",
+            {
+                "record_type": "illness",
+                "operation": "list",
+                "_server_authorized_manage_lookup": {
+                    "record_type": "illness",
+                    "operation": "update",
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+
+
+def test_v41_server_bound_manage_lookup_requires_typed_goal():
+    snapshot = _snapshot("桥本甲状腺炎今天已经完全好了，更新记录")
+    goal = compile_goal_spec(
+        envelope=snapshot.envelope,
+        context=snapshot.context,
+        intent=snapshot.intent,
+    )
+    args = bind_server_authorized_manage_lookup(
+        {"record_type": "illness", "operation": "list"},
+        goal,
+    )
+    decision = decide_tool_capability(
+        replace(snapshot, goal=goal),
+        _request("health_manage", args),
+    )
+
+    assert goal.kind == "health_manage_mutation"
+    assert goal.target_record_type == "illness"
+    assert goal.requires_lookup is True
+    assert decision.action == "allow"
+    assert "_server_authorized_manage_lookup" not in decision.normalized_args
+
+
+def test_v41_capability_digest_tracks_authoritative_goal_grammar(monkeypatch):
+    before = capability_policy_digest()
+
+    monkeypatch.setattr(goal_spec_module, "SIMPLE_ILLNESS_CREATE_RE", re.compile(r"$^"))
+
+    assert capability_policy_digest() != before
+
+
+def test_v41_capability_digest_tracks_update_authorization_grammar(monkeypatch):
+    before = capability_policy_digest()
+
+    monkeypatch.setattr(
+        write_intent_scope_module,
+        "_DIRECT_ILLNESS_STATE_UPDATE_RE",
+        re.compile(r"$^"),
+    )
+
+    assert capability_policy_digest() != before
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "桥本甲状腺炎今天已经完全好了，更新记录",
+        "我的类风湿关节炎还没好，修改记录",
+        "把刚记录的300ml改为450ml",
+        "请删除疾病记录52",
+        "移除整条疾病记录53",
+    ),
+)
+def test_v41_typed_mutation_lookup_gets_server_authority(message):
+    snapshot = _snapshot(message)
+    goal = compile_goal_spec(
+        envelope=snapshot.envelope,
+        context=snapshot.context,
+        intent=snapshot.intent,
+    )
+    args = bind_server_authorized_manage_lookup(
+        {
+            "record_type": goal.target_record_type,
+            "operation": "list",
+        },
+        goal,
+    )
+    decision = decide_tool_capability(
+        replace(snapshot, goal=goal),
+        _request("health_manage", args),
+    )
+
+    assert goal.kind == "health_manage_mutation"
+    assert decision.action == "allow"
+
+
+@pytest.mark.parametrize(
+    ("message", "record_id"),
+    (
+        ("请删除疾病记录52", 52),
+        ("移除整条疾病记录53", 53),
+    ),
+)
+def test_v41_disease_alias_supports_exact_whole_record_delete(message, record_id):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_manage",
+            {
+                "record_type": "illness",
+                "operation": "delete",
+                "record_id": record_id,
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+
+
+@pytest.mark.parametrize(
+    "name",
+    (
+        "免疫球蛋白A肾病",
+        "原发性中枢神经系统淋巴瘤",
+        "慢性炎症性脱髓鞘性多发性神经病",
+        "遗传性出血性毛细血管扩张症",
+        "亨廷顿病",
+        "脊髓小脑性共济失调",
+        "显微镜下多血管炎",
+        "抗NMDA受体脑炎",
+        "IgG4相关性疾病",
+        "HLA-B27相关脊柱关节炎",
+        "BCR::ABL1阳性白血病",
+        "β2微球蛋白淀粉样变性",
+        "β—地中海贫血",
+        "COVID–19肺炎",
+    ),
+)
+@pytest.mark.parametrize(
+    ("tool_name", "arguments", "template"),
+    (
+        (
+            "health_query",
+            {"dimension": "illness", "keyword": "MODEL"},
+            "查询我的{}记录",
+        ),
+        (
+            "health_manage",
+            {"record_type": "illness", "operation": "list"},
+            "列出我的{}记录",
+        ),
+        (
+            "health_record",
+            {"record_type": "illness", "data": {"name": "MODEL"}},
+            "记录疾病：{}",
+        ),
+    ),
+)
+def test_v41_long_tail_disease_routes_preserve_exact_entity(
+    name,
+    tool_name,
+    arguments,
+    template,
+):
+    proposed = json.loads(
+        json.dumps(arguments, ensure_ascii=False).replace("MODEL", name)
+    )
+    decision = decide_tool_capability(
+        _snapshot(template.format(name)),
+        _request(tool_name, proposed),
+    )
+
+    assert decision.action == "allow"
+
+
+@pytest.mark.parametrize(
+    "name",
+    (
+        "尿蛋白异常",
+        "血小板异常",
+        "红蛋白异常",
+        "淋巴细胞异常",
+        "血管异常",
+        "胆汁异常",
+        "心肌细胞异常",
+        "免疫细胞异常",
+    ),
+)
+@pytest.mark.parametrize(
+    ("tool_name", "arguments", "template"),
+    (
+        (
+            "health_query",
+            {"dimension": "illness", "keyword": "MODEL"},
+            "查询我的{}记录",
+        ),
+        (
+            "health_manage",
+            {"record_type": "illness", "operation": "list"},
+            "列出我的{}记录",
+        ),
+        (
+            "health_record",
+            {"record_type": "illness", "data": {"name": "MODEL"}},
+            "记录疾病：{}",
+        ),
+    ),
+)
+def test_v41_indicator_abnormality_never_dispatches_as_illness(
+    name,
+    tool_name,
+    arguments,
+    template,
+):
+    proposed = json.loads(
+        json.dumps(arguments, ensure_ascii=False).replace("MODEL", name)
+    )
+    decision = decide_tool_capability(
+        _snapshot(template.format(name)),
+        _request(tool_name, proposed),
+    )
+
+    assert decision.action == "block"

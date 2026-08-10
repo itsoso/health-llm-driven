@@ -363,10 +363,12 @@ def test_diet_goal_contract_is_registered_without_changing_public_facade():
     assert registered_goal_compiler_names() == (
         "diet_recalculation",
         "simple_health_record",
+        "health_manage_mutation",
     )
     assert registered_goal_prompt_kinds() == (
         "diet_recalculate_update",
         "simple_health_record",
+        "health_manage_mutation",
     )
     assert "重新估算并更新" in format_goal_contract_prompt(goal)
     assert (
@@ -375,6 +377,27 @@ def test_diet_goal_contract_is_registered_without_changing_public_facade():
         )
         == ""
     )
+
+
+def test_v41_direct_illness_state_change_compiles_typed_mutation_goal():
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(
+        user_id=1,
+        channel="mobile",
+        text="把我的克雅氏病状态改成已康复",
+    )
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind == "health_manage_mutation"
+    assert goal.operation == "update"
+    assert goal.target_record_type == "illness"
+    assert ("name", "克雅氏病") in goal.target_values
 
 
 def test_simple_water_goal_keeps_exact_normalized_amount():

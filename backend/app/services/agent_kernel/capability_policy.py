@@ -12,6 +12,7 @@ from typing import Any
 
 from app.services.agent_kernel.goal_spec import (
     SIMPLE_ILLNESS_CREATE_RE,
+    goal_spec_contract_payload,
     illness_entity_has_medical_semantics,
     illness_read_has_unowned_subject,
     illness_target_is_unowned_or_referential,
@@ -21,7 +22,9 @@ from app.services.agent_kernel.health_semantics import (
     HEALTH_ENTITY_CONNECTOR_RE,
     READ_VERB_RE,
     active_health_read_clause,
+    authorization_behavior_digest,
     authorization_grammar_digest,
+    extract_owned_illness_entity,
     has_explicit_health_read_request,
     health_read_cancelled,
     health_semantics_contract_payload,
@@ -36,6 +39,7 @@ from app.services.agent_kernel.tool_registry import (
 from app.services.agent_kernel.types import (
     AgentEnvelope,
     CapabilityDecision,
+    GoalSpec,
     ToolExecutionRequest,
     TurnSnapshot,
 )
@@ -86,10 +90,11 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v40"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v41"
 _HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v31"
 _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v23"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
+_SERVER_AUTHORIZED_MANAGE_LOOKUP_KEY = "_server_authorized_manage_lookup"
 _HEALTH_RECORD_DOMAIN_TYPES = {
     "diet": "diet",
     "water": "water",
@@ -108,6 +113,44 @@ class _ServerAuthorizedHealthRecordFields:
     """Opaque executor-to-policy authority that model JSON cannot construct."""
 
     values: tuple[tuple[str, Any], ...]
+
+
+@dataclass(frozen=True)
+class _ServerAuthorizedManageLookup:
+    """Opaque authority for one server-compiled mutation lookup."""
+
+    record_type: str
+    operation: str
+
+
+def bind_server_authorized_manage_lookup(
+    args: dict[str, Any],
+    goal: GoalSpec | None,
+) -> dict[str, Any]:
+    """Replace model markers and bind only a typed mutation goal."""
+    args.pop(_SERVER_AUTHORIZED_MANAGE_LOOKUP_KEY, None)
+    requested_record_type = canonical_health_manage_record_type(args.get("record_type"))
+    if (
+        goal is not None
+        and goal.kind == "health_manage_mutation"
+        and goal.operation in MANAGE_WRITE_OPERATIONS
+        and goal.requires_lookup
+        and goal.target_record_type == requested_record_type
+        and str(args.get("operation") or "").strip().lower() == "list"
+        and "explicit_current_turn_mutation" in goal.evidence
+    ):
+        args[_SERVER_AUTHORIZED_MANAGE_LOOKUP_KEY] = _ServerAuthorizedManageLookup(
+            record_type=requested_record_type,
+            operation=goal.operation,
+        )
+    return args
+
+
+def _server_authorized_manage_lookup(
+    args: dict[str, Any],
+) -> _ServerAuthorizedManageLookup | None:
+    marker = args.get(_SERVER_AUTHORIZED_MANAGE_LOOKUP_KEY)
+    return marker if isinstance(marker, _ServerAuthorizedManageLookup) else None
 
 
 def bind_server_authorized_health_record_fields(
@@ -173,21 +216,6 @@ _EXPLICIT_RECORD_TYPE_TERMS = (
     ("excretion", ("排便", "大便", "便秘", "腹泻")),
     ("reminder", ("提醒", "闹钟")),
     ("goal", ("目标",)),
-)
-_ILLNESS_TARGET_TERMS = (
-    "口腔溃疡",
-    "舌尖溃疡",
-    "嘴唇起泡",
-    "麦粒肿",
-    "甲沟炎",
-    "带状疱疹",
-    "感冒",
-    "流感",
-    "湿疹",
-    "烫伤",
-    "水泡",
-    "伤口",
-    "痘痘发作",
 )
 _ILLNESS_ASSERTION_BOUNDARY_RE = re.compile(
     r"(?:但是|不过|然而|反而|可是|但|却|就|"
@@ -329,7 +357,7 @@ _ILLNESS_CLEAR_IMPROVEMENT_RE = re.compile(
     r"(?:好转|改善|缓解)(?:了)?|未用药(?:便|就)好转)"
 )
 _ILLNESS_CLEAR_RESOLUTION_RE = re.compile(
-    r"(?:(?:已经)?(?:完全|彻底)?好了|(?:已经)?(?:完全|彻底)?(?:康复|痊愈))"
+    r"(?:(?:已经|已)?(?:完全|彻底)?好了|(?:已经|已)?(?:完全|彻底)?(?:康复|痊愈))"
 )
 _ILLNESS_CLEAR_ACTIVE_RE = re.compile(r"(?:还在发作中|发作中|还没好|仍未好)")
 _ILLNESS_STATE_TIME_PREFIX_RE = re.compile(
@@ -338,6 +366,9 @@ _ILLNESS_STATE_TIME_PREFIX_RE = re.compile(
 _ILLNESS_UPDATE_INSTRUCTION_SUFFIX_RE = re.compile(
     r"[，,。.!！；;]?(?:(?:请|请你|帮我|麻烦|麻烦你))?"
     r"(?:修改|更新|更正)(?:一下)?(?:这条)?记录[。.!！]?$"
+)
+_ILLNESS_STATE_UPDATE_PREFIX_RE = re.compile(
+    r"^(?:的)?(?:记录)?状态?(?:改成|改为|更正为|修正为|调整为|更新为|修改为|修改成)"
 )
 _ILLNESS_RECORD_ID_PATTERNS = (
     re.compile(
@@ -603,6 +634,7 @@ _DELETE_RECORD_TYPE_TEXT_ALIASES = {
     "锻炼": "exercise",
     "illness": "illness",
     "生病": "illness",
+    "疾病": "illness",
     "symptom": "symptom",
     "symptoms": "symptom",
     "症状": "symptom",
@@ -712,13 +744,14 @@ _DELETE_REQUEST_SUFFIX_PATTERN = (
 _WHOLE_RECORD_DELETE_VERB_FIRST_RE = re.compile(
     rf"^(?:(?:{_DELETE_REQUEST_PREFIX_PATTERN}))?"
     rf"(?:{_WHOLE_RECORD_DELETE_VERB_PATTERN})"
+    rf"(?:整条|整项|整份)?"
     rf"(?P<target>{_EXACT_RECORD_TARGET_PATTERN})"
     rf"{_DELETE_REQUEST_SUFFIX_PATTERN}$",
     re.IGNORECASE,
 )
 _WHOLE_RECORD_DELETE_TARGET_FIRST_RE = re.compile(
     rf"^(?:(?:{_DELETE_REQUEST_PREFIX_PATTERN}))?"
-    rf"(?:把|将)(?P<target>{_EXACT_RECORD_TARGET_PATTERN})"
+    rf"(?:把|将)(?:整条|整项|整份)?(?P<target>{_EXACT_RECORD_TARGET_PATTERN})"
     rf"(?:{_WHOLE_RECORD_DELETE_VERB_PATTERN})"
     rf"{_DELETE_REQUEST_SUFFIX_PATTERN}$",
     re.IGNORECASE,
@@ -1057,6 +1090,7 @@ def _illness_governing_state_statement(
     statement = _ILLNESS_UPDATE_INSTRUCTION_SUFFIX_RE.sub("", statement)
     statement = statement.strip("，,。.!！；;：:")
     statement = _strip_illness_record_reference(statement)
+    statement = _ILLNESS_STATE_UPDATE_PREFIX_RE.sub("", statement, count=1)
     governing_parts = _ILLNESS_ASSERTION_BOUNDARY_RE.split(statement)
     statement = governing_parts[-1] if governing_parts else statement
     statement = _ILLNESS_STATE_TIME_PREFIX_RE.sub("", statement, count=1)
@@ -2021,6 +2055,9 @@ def _illness_update_targets_owner(text: str, record_name: str) -> bool:
     name = "".join(str(record_name or "").split())
     if not name:
         return False
+    extracted = extract_owned_illness_entity(normalized)
+    if _normalize_entity_name(extracted) == _normalize_entity_name(name):
+        return True
     current_prefix = (
         r"(?:(?:请|请你|麻烦|麻烦你|帮我|请帮我|请你帮我|麻烦帮我|"
         r"可以帮我|能帮我|替我|给我|为我|"
@@ -2061,6 +2098,20 @@ def _owner_scoped_manage_list_records(
     return []
 
 
+CAPABILITY_AUTHORIZATION_FUNCTIONS = (
+    "_authorized_illness_update_args",
+    "_authorized_health_manage_update_args",
+    "_health_read_cancelled_by_user",
+    "_illness_update_patch",
+    "_illness_update_targets_owner",
+    "_illness_targets",
+    "_manage_list_turn_record_type",
+    "_whole_record_delete_evidence",
+    "bind_server_authorized_manage_lookup",
+    "decide_tool_capability",
+)
+
+
 def capability_policy_contract_payload() -> dict[str, Any]:
     """Return static, content-free metadata that governs tool authorization."""
     return {
@@ -2082,7 +2133,11 @@ def capability_policy_contract_payload() -> dict[str, Any]:
             "domain_types": dict(sorted(_HEALTH_RECORD_DOMAIN_TYPES.items())),
         },
         "health_semantics": health_semantics_contract_payload(),
+        "goal_spec": goal_spec_contract_payload(),
         "authorization_grammar_digest": authorization_grammar_digest(globals()),
+        "authorization_behavior_digest": authorization_behavior_digest(
+            globals(), CAPABILITY_AUTHORIZATION_FUNCTIONS
+        ),
         "recipe_record_types": sorted(RECIPE_REPLAY_ALLOWED_RECORD_TYPES),
         "recipe_record_type_aliases": dict(sorted(_RECIPE_RECORD_TYPE_ALIASES.items())),
     }
@@ -2533,30 +2588,7 @@ def decide_tool_capability(
                     tool_name,
                     args,
                 )
-            mutation_lookup_cancelled = is_explicit_write_cancellation(
-                turn_text
-            ) or bool(
-                re.search(
-                    r"(?:先不要|暂不)[^，,。.!！?？;；]{0,16}执行",
-                    turn_text,
-                )
-            )
-            internal_mutation_lookup = (
-                not mutation_lookup_cancelled
-                and not _is_completed_health_mutation_observation(turn_text)
-                and (
-                    primary == "mutate"
-                    or (
-                        not _has_explicit_read_request(turn_text)
-                        and bool(
-                            re.search(
-                                r"(?:修改|更新|更正|删除|删掉|移除)(?:一下|下)?(?:记录)?",
-                                turn_text,
-                            )
-                        )
-                    )
-                )
-            )
+            internal_mutation_lookup = _server_authorized_manage_lookup(args)
             guarding_user_read = not internal_mutation_lookup
             if _query_contains_unresolved_reference(turn_text) and (
                 guarding_user_read or _has_explicit_read_request(turn_text)
@@ -2837,6 +2869,7 @@ def _decision(
     receipt_required: bool = False,
 ) -> CapabilityDecision:
     normalized_args = dict(args)
+    normalized_args.pop(_SERVER_AUTHORIZED_MANAGE_LOOKUP_KEY, None)
     marker = normalized_args.pop(
         _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY,
         None,
@@ -4006,13 +4039,9 @@ def _illness_targets(clause: str) -> tuple[str, ...]:
     if SIMPLE_ILLNESS_CREATE_RE.fullmatch(normalized_clause) is not None:
         return (explicit_create_name,) if explicit_create_name is not None else ()
 
-    known = tuple(
-        term
-        for term in _ILLNESS_TARGET_TERMS
-        if term in clause and f"{term}药" not in clause
-    )
-    if known:
-        return tuple(dict.fromkeys(known))
+    extracted = extract_owned_illness_entity(clause)
+    if extracted is not None and f"{extracted}药" not in clause:
+        return (extracted,)
 
     action_matches = tuple(_WRITE_TARGET_ACTION_RE.finditer(clause))
     if not action_matches:

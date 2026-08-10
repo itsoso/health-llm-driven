@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import date, timedelta
+import hashlib
+import json
 import re
 
+from app.services import write_intent_scope as write_intent_scope_module
 from app.services.agent_kernel.goal_registry import (
     GoalCompilerRegistry,
     GoalCompilerSpec,
@@ -13,6 +16,9 @@ from app.services.agent_kernel.goal_registry import (
     GoalPromptSpec,
 )
 from app.services.agent_kernel.health_semantics import (
+    authorization_behavior_digest,
+    authorization_grammar_digest,
+    extract_owned_illness_entity,
     health_read_has_nonself_subject,
     illness_entity_has_medical_semantics as _semantic_illness_entity,
     illness_target_is_unowned_or_referential as _semantic_unowned_target,
@@ -26,6 +32,7 @@ from app.services.agent_kernel.types import (
 )
 from app.services.agent_kernel.write_safety import is_explicit_write_cancellation
 from app.services.write_intent_scope import (
+    has_explicit_authorizing_update_request,
     has_mixed_write_polarity,
 )
 
@@ -117,6 +124,51 @@ SIMPLE_ILLNESS_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 SIMPLE_ILLNESS_ACRONYMS = frozenset({"sle"})
+GOAL_SPEC_CONTRACT_VERSION = "goal-spec-v41"
+HEALTH_MANAGE_MUTATION_COMMAND_RE = re.compile(
+    r"(?:"
+    r"^(?:请(?:你|您)?|麻烦(?:你|您)?|请帮我|帮我|给我|替我)?"
+    r"(?:把|将).+(?:改成|改为|修改|更新|更正|修正|调整|删除|删掉|移除|清除)|"
+    r"^(?:请(?:你|您)?|麻烦(?:你|您)?|请帮我|帮我|给我|替我)?"
+    r"(?:更新|修改|更正|修正|调整|删除|删掉|移除|清除|清掉)"
+    r"(?!了(?:吧)?(?:[，,。.!！；;]|$)).+|"
+    r"(?:[，,；;]?)(?:请)?(?:更新|修改|更正|修正|调整)(?:一下|下)?"
+    r"(?:这条|该条|我的)?(?:疾病)?记录$"
+    r")",
+    re.IGNORECASE,
+)
+HEALTH_MANAGE_MUTATION_RECORD_ID_RE = re.compile(
+    r"(?P<label>疾病|病历|illness|饮水|喝水|water|体重|weight|饮食|diet|"
+    r"症状|symptom|睡眠|sleep|运动|exercise|用药|medication)"
+    r"(?:的)?(?:记录|条目)?(?:ID|编号|#|第)?[：:=（(]?\d+",
+    re.IGNORECASE,
+)
+HEALTH_MANAGE_MUTATION_RECORD_TYPES = {
+    "疾病": "illness",
+    "病历": "illness",
+    "illness": "illness",
+    "饮水": "water",
+    "喝水": "water",
+    "water": "water",
+    "体重": "weight",
+    "weight": "weight",
+    "饮食": "diet",
+    "diet": "diet",
+    "症状": "symptom",
+    "symptom": "symptom",
+    "睡眠": "sleep",
+    "sleep": "sleep",
+    "运动": "exercise",
+    "exercise": "exercise",
+    "用药": "medication",
+    "medication": "medication",
+}
+WATER_MUTATION_RE = re.compile(
+    r"(?P<old>\d+(?:\.\d+)?)\s*(?:毫升|ml)"
+    r"[^，,。.!！；;]{0,24}(?:改成|改为|修改为|更新为|更正为|调整为)"
+    r"\s*(?P<new>\d+(?:\.\d+)?)\s*(?:毫升|ml)",
+    re.IGNORECASE,
+)
 
 
 def illness_entity_has_medical_semantics(value: str) -> bool:
@@ -347,6 +399,83 @@ def _compile_simple_health_record_goal(
     )
 
 
+def _compile_health_manage_mutation_goal(
+    *,
+    envelope: AgentEnvelope,
+    context: ExecutionContext,
+    intent: IntentFrame,
+    actionable_references: Sequence[ActionableReference],
+) -> GoalSpec | None:
+    """Compile only an explicit current-turn update/delete needing owner lookup."""
+    del actionable_references
+    text = "".join(str(envelope.text or "").split()).strip()
+    if (
+        envelope.media
+        or intent.primary != "mutate"
+        or intent.operation not in {"update", "delete"}
+        or not intent.is_write
+        or is_explicit_write_cancellation(text)
+        or has_mixed_write_polarity(text)
+        or (
+            intent.operation == "update"
+            and not has_explicit_authorizing_update_request(text)
+        )
+        or HEALTH_MANAGE_MUTATION_COMMAND_RE.search(text) is None
+    ):
+        return None
+
+    target_record_type: str | None = None
+    target_values: list[tuple[str, str]] = []
+    illness_entity = extract_owned_illness_entity(text)
+    if illness_entity is not None:
+        target_record_type = "illness"
+        target_values.append(("name", illness_entity))
+
+    record_id_match = HEALTH_MANAGE_MUTATION_RECORD_ID_RE.search(text)
+    if record_id_match is not None:
+        labelled_type = HEALTH_MANAGE_MUTATION_RECORD_TYPES.get(
+            record_id_match.group("label").casefold()
+        )
+        if target_record_type is not None and labelled_type != target_record_type:
+            return None
+        target_record_type = labelled_type
+        record_id = re.search(r"\d+", record_id_match.group())
+        if record_id is not None:
+            target_values.append(("record_id", record_id.group()))
+
+    water_match = WATER_MUTATION_RE.search(text)
+    if water_match is not None:
+        if target_record_type not in {None, "water"}:
+            return None
+        target_record_type = "water"
+        target_values.extend(
+            (
+                ("old_amount_ml", water_match.group("old")),
+                ("new_amount_ml", water_match.group("new")),
+            )
+        )
+
+    if target_record_type is None:
+        return None
+    return GoalSpec(
+        kind="health_manage_mutation",
+        domain=target_record_type,
+        operation=intent.operation,
+        target_date=_target_date(_normalize(text), context, ()),
+        target_record_type=target_record_type,
+        target_values=tuple(dict.fromkeys(target_values)),
+        requires_lookup=True,
+        requires_verification=True,
+        prohibited_operations=(
+            ("create", "delete")
+            if intent.operation == "update"
+            else ("create", "update")
+        ),
+        postconditions=("owner_scoped_lookup", "verified_receipt"),
+        evidence=("explicit_current_turn_mutation",),
+    )
+
+
 def simple_illness_target(text: str) -> str | None:
     """Extract one exact user-owned target from an explicit disease label."""
     normalized = "".join(str(text or "").split()).strip("，,。.!！；;：: ")
@@ -477,6 +606,49 @@ def _format_simple_health_record_prompt(goal: GoalSpec) -> str:
         "- 禁止: 改写、删除其他记录，或仅用文字声称已经记录。\n"
         "- 完成标准: 收到与目标记录类型一致的 verified write receipt 后才能确认成功。"
     )
+
+
+def _format_health_manage_mutation_prompt(goal: GoalSpec) -> str:
+    return (
+        "## 本轮任务契约（必须完整执行）\n"
+        f"- 目标: 仅对本人 {goal.target_record_type} 记录执行 {goal.operation}。\n"
+        "- 顺序: 先查询本人对应记录并确定唯一目标，再执行变更。\n"
+        "- 禁止: 查询其他记录类型、使用未出现在本人查询结果中的 ID，或新增记录。\n"
+        "- 完成标准: 收到匹配目标类型的 verified write receipt 后才能确认成功。"
+    )
+
+
+GOAL_SPEC_AUTHORIZATION_FUNCTIONS = (
+    "_compile_health_manage_mutation_goal",
+    "_compile_simple_health_record_goal",
+    "compile_goal_spec",
+    "simple_illness_target",
+)
+
+
+def goal_spec_contract_payload() -> dict[str, str]:
+    """Return code- and grammar-sensitive goal authorization evidence."""
+    content = {
+        "version": GOAL_SPEC_CONTRACT_VERSION,
+        "grammar_digest": authorization_grammar_digest(globals()),
+        "behavior_digest": authorization_behavior_digest(
+            globals(), GOAL_SPEC_AUTHORIZATION_FUNCTIONS
+        ),
+        "update_authorization_grammar_digest": authorization_grammar_digest(
+            vars(write_intent_scope_module)
+        ),
+        "update_authorization_behavior_digest": authorization_behavior_digest(
+            vars(write_intent_scope_module),
+            ("has_explicit_authorizing_update_request",),
+        ),
+    }
+    encoded = json.dumps(
+        content,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return {**content, "content_digest": hashlib.sha256(encoded).hexdigest()}
 
 
 def _water_amount_ml(text: str) -> int | None:
@@ -823,6 +995,10 @@ _GOAL_COMPILER_REGISTRY = GoalCompilerRegistry(
             name="simple_health_record",
             compiler=_compile_simple_health_record_goal,
         ),
+        GoalCompilerSpec(
+            name="health_manage_mutation",
+            compiler=_compile_health_manage_mutation_goal,
+        ),
     )
 )
 
@@ -835,6 +1011,10 @@ _GOAL_PROMPT_REGISTRY = GoalPromptRegistry(
         GoalPromptSpec(
             kind="simple_health_record",
             renderer=_format_simple_health_record_prompt,
+        ),
+        GoalPromptSpec(
+            kind="health_manage_mutation",
+            renderer=_format_health_manage_mutation_prompt,
         ),
     )
 )

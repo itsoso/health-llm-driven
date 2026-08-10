@@ -111,6 +111,7 @@ from app.services.agent_kernel.types import (
 )
 from app.services.agent_kernel.capability_policy import (
     bind_server_authorized_health_record_fields,
+    bind_server_authorized_manage_lookup,
     canonical_health_manage_record_id,
     canonical_health_manage_record_type,
     decide_tool_capability,
@@ -18395,6 +18396,9 @@ class AgentExecutor:
                 recovery_guidance="请修正参数后重新提交。",
             )
         args = v["data"]
+        if tool_name == "health_manage" and isinstance(args, dict):
+            snapshot = self._ensure_agent_kernel_turn()
+            args = bind_server_authorized_manage_lookup(args, snapshot.goal)
         if tool_name == "record_doctor_feedback":
             args = _canonicalize_doctor_feedback_args(
                 args,

@@ -400,7 +400,7 @@ _NON_OWNER_WORDS = frozenset(
     }
 )
 _UPDATE_ACTION_RE = re.compile(
-    r"(?:改成|改为|更正为|修正为|调整为|更新为|修改(?:为|成)?)"
+    r"(?:改成|改为|更正为|修正为|调整为|更新(?:为)?|修改(?:为|成)?)"
 )
 _THIRD_PARTY_UPDATE_ORDER_RE = re.compile(
     r"^(?!我(?:要|想|来|自己|本人))"
@@ -495,7 +495,7 @@ _DIRECT_WATER_UPDATE_RE = re.compile(
     rf"^{_CURRENT_USER_UPDATE_PREFIX_PATTERN}(?:把|将)?"
     rf"{_CURRENT_USER_RECORD_OWNER_PATTERN}"
     rf"(?:"
-    rf"(?:刚才|刚刚|上一条|最近一条)(?:的)?"
+    rf"(?:刚才|刚刚|上一条|最近一条|刚记录)(?:的)?"
     rf"|(?:饮水|water)(?:记录|条目)#?\d+(?:的)?"
     rf")"
     rf"[：:]?[（(]?{_WATER_VALUE_TEXT_PATTERN}[）)]?"
@@ -524,6 +524,15 @@ _DIRECT_ILLNESS_UPDATE_RE = re.compile(
     r"(?P<statement>.{2,180})[，,]"
     rf"{_CURRENT_USER_UPDATE_PREFIX_PATTERN}"
     r"(?:修改|更新|更正)(?:一下)?(?:这条)?记录$"
+)
+_DIRECT_ILLNESS_STATE_UPDATE_RE = re.compile(
+    rf"^{_CURRENT_USER_UPDATE_PREFIX_PATTERN}(?:把|将)?"
+    rf"{_CURRENT_USER_RECORD_OWNER_PATTERN}"
+    r"(?P<statement>.{2,160}?)(?:的)?(?:记录)?状态?"
+    r"(?:改成|改为|更正为|修正为|调整为|更新为|修改为|修改成)"
+    r"(?:已经|已)?(?:完全|彻底)?"
+    r"(?:康复|痊愈|好了|好转|改善|缓解|发作中|还没好|仍未好)$",
+    re.IGNORECASE,
 )
 _ILLNESS_RECORD_ID_COLON_RE = re.compile(
     r"(?:(?:疾病)?(?:记录|条目))?(?:id|编号)[：:]\d+",
@@ -1551,7 +1560,21 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
     direct_illness_update = (
         _DIRECT_ILLNESS_UPDATE_RE.fullmatch(normalized_statement) is not None
     )
-    trusted_illness_id_colons = direct_illness_update and not re.search(
+    direct_illness_state_update = (
+        _DIRECT_ILLNESS_STATE_UPDATE_RE.fullmatch(normalized_statement) is not None
+    )
+    direct_current_illness_update = False
+    if direct_illness_update or direct_illness_state_update:
+        from app.services.agent_kernel.health_semantics import (
+            extract_owned_illness_entity,
+        )
+
+        direct_current_illness_update = (
+            extract_owned_illness_entity(normalized_statement) is not None
+        )
+    trusted_illness_id_colons = (
+        direct_illness_update or direct_illness_state_update
+    ) and not re.search(
         r"[：:]",
         _ILLNESS_RECORD_ID_COLON_RE.sub("", normalized),
     )
@@ -1572,7 +1595,11 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
         or _THIRD_PARTY_UPDATE_ORDER_RE.search(normalized)
         or _THIRD_PARTY_UPDATE_BENEFICIARY_RE.search(normalized)
         or _THIRD_PARTY_WRITE_SUBJECT_RE.search(normalized)
-        or (_segment_has_non_current_subject(normalized) and not direct_water_update)
+        or (
+            _segment_has_non_current_subject(normalized)
+            and not direct_water_update
+            and not direct_current_illness_update
+        )
         or (
             _HYPOTHETICAL_PREFIX_RE.search(normalized)
             and not _POLITE_CONDITIONAL_PREFIX_RE.search(normalized)
@@ -1592,7 +1619,9 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
         for clause in clauses
     ):
         return False
-    return bool(direct_water_update or direct_illness_update)
+    return bool(
+        direct_water_update or direct_illness_update or direct_illness_state_update
+    )
 
 
 def direct_remember_fact_values(value: str) -> dict[str, str] | None:
