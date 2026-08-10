@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | Build 256 已完成 EAS/ASC/TestFlight、精确 IPA、ASC 绑定、审核账号真实登录及物理 iPhone 6/6 安全自动子集；自动候选证据全绿，仍待同一包人工相机/语音/分享/健康写入与最终截图，App Review 继续冻结 |
+| 当前阶段 | Build 256 已完成 EAS/ASC/TestFlight、精确 IPA、ASC 绑定、审核账号真实登录及物理 iPhone 6/6 安全自动子集；人工相机/照片草稿与冷启动持久化通过，但照片发送暴露 provider 流总时限缺口，Backend 修复已按 TDD 完成、待部署复验；语音/分享/健康写入与最终截图仍待完成，App Review 继续冻结 |
 | 状态 | implementing |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -63,6 +63,8 @@
 - Implementation: `docs/plans/2026-08-05-ios-1-3-3-app-store-release.md`
 - 发布前聊天视觉层级 Design: `docs/plans/2026-08-06-mobile-chat-visual-hierarchy-design.md`
 - 发布前聊天视觉层级 Implementation: `docs/plans/2026-08-06-mobile-chat-visual-hierarchy.md`
+- Provider 流总时限 Design: `docs/plans/2026-08-09-provider-stream-total-deadline-design.md`
+- Provider 流总时限 Implementation: `docs/plans/2026-08-09-provider-stream-total-deadline-implementation.md`
 - 分阶段：功能冻结 → 医疗风险修复 → 发布闸补强 → 材料 → G3/G4 → EAS Build → 精确包真机 → 提交 → 手动发布/G6。
 - 反馈环路由：本地/Jest → EAS Store Build（原生版本变更）→ TestFlight → App Store；审核期间 production OTA 冻结。
 - 长杆：Apple 审核时长、TestFlight 处理、审核账号稳定、截图/隐私/年龄分级人工确认。
@@ -95,6 +97,7 @@
   - [x] T7.1 Build 242+ EAS Store Build / IPA / TestFlight（Build 245 已构建、上传、通过精确 IPA 二进制闸并进入内部 TestFlight）
   - [x] T7.2 紧凑聊天头部候选归档 / IPA / ASC 上传（Build 253 已完成本地 Xcode 正式归档、精确 IPA 闸和上传；Apple processing 尚待确认）
   - [x] T7.3 Build 254 本地 Xcode 候选 / ASC / TestFlight / 物理 iPhone 自动验收（6/6 PASS；因无 EAS Build ID，仅作功能与二进制证据，不替代最终 EAS 候选）
+  - [ ] T7.4 照片发送 provider 流总时限 Backend 修复 / 部署 / Build 256 复验（代码与本地回归已完成，部署和真机终态待完成）
   - [ ] T8 精确 Build 真机与截图
   - [ ] T9 final-submit / App Review
   - [ ] T10 手动发布 / production G6
@@ -121,6 +124,9 @@
   - `2677a4d44`：真机验收改为人工预登录、禁止 XCUITest 接收审核凭据；live gate 要求固定简报是默认最新且只有精确两条消息；新增 revision/发布锁约束的非敏感生产重置入口。
   - `140bd788a`：补齐 AudioData、DeviceID、ProductInteraction 和 UserID Analytics；把 iOS preflight 加固为固定 12 类 inventory、草稿↔manifest 精确集合、linked/tracking/purposes 逐项一致及 schema/unknown/duplicate fail-closed。
   - `0da9ddd0b` / `b8c318157` / `a26477b30`：冻结紧凑聊天头部规格，补强确定性真机验收；将头像收至 24pt、标题收至 21/26、标题箭头收至 13pt，同时保留 44pt 触控目标和既有行为。
+  - `a1d6f7d16` / `30fdc3f90` / `27f9d458c`：冻结照片发送卡流修复设计与实施计划；为主 streaming provider 和 streaming stable fallback 分别增加 120 秒 wall-clock 总时限。主 provider 未发正文时复用既有稳定降级；已发正文时只 error finish、不换模型重复回答；fallback 再卡住时也必须终止并释放回合。Mobile、数据库、健康写入与回执契约均未改变。
+- 2026-08-09 Build 256 人工照片验收中间证据：系统相机入口 PASS；照片草稿及发送文案在强制终止/冷启动后仍保留，证明图片资产与用户 turn 已持久化。生产侧内容最小化证据显示 vision 已完成、上游 streaming 请求已返回 HTTP 200，但模型流在持续非终态分片后未结束，直到外层约五分钟 deadline 才释放；后续同会话发送在此期间按设计返回 409。用户消息和图片已持久化，助手终态缺失，故根因不是上传或本地草稿丢失。
+- 根因修复选择经用户确认采用服务端方案 A：HTTP per-read timeout 只能约束相邻字节的空闲时间，不能约束持续 keepalive/reasoning 的总迭代时间；`27f9d458c` 在 executor 的两个 streaming 边界统一加入独立总预算。该改动不需要新 iOS Build 或 production OTA，部署与同一 Build 256 真机复验完成前仍视为发布阻断。
 - 当前断点：后端与生产合成审核数据均已恢复；Build 245 的精确 IPA / TestFlight 子闸虽已通过，但已被紧凑聊天头部源码 `a26477b3000b9b44c53e8c20fc0f19904b3a7f03` 取代。Build 253 已通过本地 Xcode 26.5 正式归档、精确 IPA 哈希/验签/版本/能力/12 类隐私语义闸，并由 Organizer 上传 Apple；Apple processing、内部 TestFlight 和精确候选物理 iPhone T8 尚未确认。开发签名的同源码 Build 253 已在物理 iPhone 启动并完成紧凑头部视觉预验；安全自动子集 5/6，通过项不替代精确候选证据。以上证据未全绿前 App Review 继续冻结。
 - 2026-08-09 Build 254 精确候选复验：ASC processing 完成并进入内部 TestFlight；物理 iPhone 安装后由应用诊断确认 1.3.3（254）、embedded production runtime，未被旧 OTA 覆盖。首次 4 PASS / 1 FAIL / 1 SKIP 的根因不是代码或审核数据：手机仍登录另一账号，该账号访问的会话不属于受控审核账号；切换到受控审核账号后，最新固定简报和 Today 上下文均出现，完整安全自动子集 6/6 PASS、0 failure、0 skip。原始结果包仅保留本机，不上传；档案只记录非敏感汇总。
 - 2026-08-07 Build 241 物理 iPhone 自动子集第二轮共 7 项：6 PASS、1 FAIL。安装包版本/Build 与候选一致；双冷启动登录态、Agent 入口、Today 打开/关闭、未发送草稿前后台保留、隐私和账号删除入口均通过。唯一失败是默认打开了审核账号中更新的普通会话，而不是固定简报；Mobile 按服务端 `updated_at` 打开最新会话属于正确产品行为，根因是 live gate 只证明固定会话存在、未证明它是默认最新且未被追加消息。
@@ -191,6 +197,7 @@
 - 2026-08-08 G4 整改后组合 G3：后端策略/校验/回执/运行时 15 文件 1,386/1,386，Mobile 回执/ChatBubble/模型目录与 ChatScreen 202/202，TypeScript、Ruff、py_compile、doc drift、基础 release-pack、iOS submission preflight 和 `git diff --check` 均 PASS。严格 final-submit 继续按设计 FAIL 于 Build 242+、精确 EAS/source/IPA、物理 iPhone、ASC 人工确认和截图材料。首次最终树 live-eval 为 4/5（平均 0.91），定位为回答明确使用“就诊”且 LLM judge 5/5、旧关键词却只认“医”的评测假阴性；`0037d23e5` 以红灯测试增加等价医疗转介表达的任一命中语义。修正后 eval 聚焦 68/68，最终真实模型闸 PASS：invariants 12/12、health_agent_core 50/50、orchestrator 5/5（平均 0.90）、trajectory 12/12、goldens 9/9；live-change gate PASS。本地非生产 SQLite 缺 usage telemetry 表仅产生已知旁路告警，不改变 Gate 裁决，未设置远端确认变量。
 - 2026-08-08 最终 G4 树真实模型复验：`APP_ENV=test DATABASE_URL=sqlite:///:memory:` 下 live regression exit 0；invariants 12/12、health_agent_core 50/50、orchestrator 5/5（平均 0.94）、trajectory 12/12、goldens 9/9，且 `HARNESS_LIVE_LLM_EVAL_CONFIRMED=1` 的本地 change gate PASS。非生产临时 SQLite 缺 usage telemetry 表只产生旁路告警；模型调用、语义 judge 和最终 Gate 均真实完成。
 - 2026-08-08 发布阻断：严格 final-submit checker 仍按设计 FAIL，缺少 Build 242+ 的 EAS/source/IPA、同一精确候选物理 iPhone、ASC 人工确认与最终截图材料。App Review 保持冻结，新提交远端 CI 与以上发布材料未全绿前不得提交审核。
+- 2026-08-09 provider 流总时限 TDD：新增三条异步回归。旧代码下“只有 reasoning、无终态”和“已发部分正文后持续非终态”均由测试看门狗按预期判红；实现后主 provider 无正文超时→稳定降级、已有正文超时→不降级只收尾、fallback 自身超时→单一 error finish 三项全部 PASS。完整 `test_agent_executor_failover_gate.py` 13/13 PASS；更广 Backend 闸与生产部署证据仍待本轮后续补齐。
 - **裁决**：实现级 G3、真实模型回归与独立 G4 均 PASS；发布级 final-submit / T7.1 保持 BLOCK。下一步依次取得远端主干 CI、后端部署与生产恢复证据，再生成 Build 242+，不能据此直接提交 App Review。
 
 ## G4 · 安全闸
@@ -261,7 +268,8 @@
 - 物理 iPhone UI 预验：开发签名的同源码 Build 253 已安装并启动；真机截图确认 24pt 头像、21/26 标题和 13pt 箭头形成紧凑品牌组，44pt 触控目标由源码/自动测试保持。安全自动子集 5/6：双冷启动登录态、草稿前后台保留、入口、Today、隐私与账号删除通过；固定审核简报用例失败，因为实际可访问层级中不存在预期的“今天优先完成两件事”消息。原始结果包含合成健康内容与测试草稿，只保留本地、不上传；最终须在受控审核账号重置后对 TestFlight 精确 Build 253 重跑，开发签名预验不替代 T8。
 - 本地原生预验：iOS 26.5 Release 模拟器构建、安装和启动 PASS；该产物为 development 变体且禁用本地 Sentry 符号上传，只证明当前原生工程可编译/启动，不替代 production Store Build、TestFlight、精确 commit/Build 绑定或 T8 物理真机证据。
 - Build 256 exact IPA / TestFlight / physical iPhone 自动子闸：PASS。真机确认安装 1.3.3（256）；审核账号真实登录在生产日志返回 200，随后首页、会话和时间线接口均为 200。首次安全自动子集 5/6 的唯一失败是人工使用后普通会话成为默认最新；受部署 revision/发布锁保护的审核演示数据重置恢复精确两条固定会话后，同一包复验 6/6 PASS、0 failure、0 skip，覆盖双冷启动登录态、固定会话、未发送草稿前后台保留、入口、Today 打开/关闭、隐私政策与账号删除入口。结果包只保留本机，不上传。
-- **裁决**：BLOCK（范围已缩小）—— Build 256 的 EAS/IPA/ASC/TestFlight、真实登录和安全自动子闸全部通过；仍须对同一包完成人工相机/照片持久化、语音、分享、健康写入/纠正/删除及最终截图。完成前继续冻结 production OTA 和 App Review 提交。
+- Build 256 人工相机 / 照片持久化子闸：PARTIAL PASS。系统相机、照片草稿和冷启动恢复已通过；发送后的助手终态因 Backend provider 流总时限缺口失败。修复已本地完成，但生产部署、终态、后续无 409 循环及再次冷启动回读尚未复验，因此该子闸仍 BLOCK。
+- **裁决**：BLOCK（范围已缩小）—— Build 256 的 EAS/IPA/ASC/TestFlight、真实登录、安全自动子闸及照片本地持久化均通过；仍须完成 Backend 修复部署和照片终态复验，并对同一包完成人工语音、分享、健康写入/纠正/删除及最终截图。完成前继续冻结 production OTA 和 App Review 提交。
 
 ## S7 · 上线验证
 
