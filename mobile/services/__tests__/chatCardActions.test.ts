@@ -585,6 +585,69 @@ describe('dispatchChatCardAction', () => {
     );
   });
 
+  it('preserves an owner-bound photo draft when a food portion uses 片', async () => {
+    const photoDraftToken = 'photo-draft-token-1234567890';
+    const foodItems = '小米粥 约1碗 + 虾仁炒时蔬 约1小碗 + 煎蛋 1个 + 玉米 约1/4根 + 胡萝卜 约3片 + 南瓜 约2块';
+    mockApiPost.mockResolvedValueOnce({ data: { id: 1074 } });
+
+    await expect(dispatchChatCardAction({
+      id: `confirm-contextual-diet:${photoDraftToken}`,
+      label: '确认记录',
+      action: 'diet_record.create',
+      endpoint: '/diet/records',
+      requires_manual_confirm: true,
+      ...DIET_WRITE_POLICY,
+      payload: {
+        record: {
+          record_date: '2026-08-10',
+          meal_type: 'lunch',
+          food_items: foodItems,
+          calories: 610,
+          protein: 31,
+          carbs: 90,
+          fat: 15,
+          source: 'chat_photo',
+          photo_draft_token: photoDraftToken,
+        },
+      },
+    }, 'diet-photo-card-production-regression')).resolves.toEqual(expect.objectContaining({
+      status: 'completed',
+      receipt: expect.objectContaining({
+        resourceType: 'diet_record',
+        resourceId: '1074',
+        verified: true,
+      }),
+    }));
+
+    expect(mockApiPost).toHaveBeenCalledWith(
+      '/diet/records',
+      expect.objectContaining({
+        food_items: foodItems,
+        photo_draft_token: photoDraftToken,
+      }),
+      { headers: { 'Idempotency-Key': 'diet-photo-card-production-regression' } },
+    );
+  });
+
+  it('rejects malformed photo draft tokens before posting', async () => {
+    await expect(dispatchChatCardAction({
+      label: '确认记录',
+      action: 'diet_record.create',
+      endpoint: '/diet/records',
+      requires_manual_confirm: true,
+      ...DIET_WRITE_POLICY,
+      payload: {
+        record: {
+          meal_type: 'lunch',
+          food_items: '胡萝卜 约3片',
+          photo_draft_token: '../not-an-owner-token',
+        },
+      },
+    })).rejects.toThrow('invalid_diet_photo_draft_token');
+
+    expect(mockApiPost).not.toHaveBeenCalled();
+  });
+
   it('normalizes structured food arrays before creating diet records', async () => {
     mockApiPost.mockResolvedValueOnce({ data: { id: 78 } });
 

@@ -234,9 +234,11 @@ curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: a
   -d '{"record_date":"$(date +%Y-%m-%d)","checkins":[{"supplement_id":1,"taken":true},{"supplement_id":2,"taken":true}]}'
 ```
 
-### 补剂不在清单里?→ 先建档再打卡(不要报"未找到"放弃)
+### 补剂不在清单里?→ 明确文本名称后先建档再打卡
 
-用户拍照/口述的新补剂(如"记录这个补剂 正官庄红参液")若不在清单,先建档:
+用户在**当前纯文本消息**明确写出新补剂名称（如“记录正官庄红参液”）且不在清单时，先建档。
+图片识别结果不得直接创建或打卡：先向用户展示识别名称，请用户核对包装后在不带图片的新消息中
+直接写出完整补剂名；当前消息没有明确名称时也不得从历史上下文或模型推断名称。
 
 ```bash
 curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \

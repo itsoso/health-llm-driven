@@ -43,4 +43,22 @@ describe('dietIntakeGuard', () => {
   ])('allows real meals and beverages: %s', (text) => {
     expect(() => assertDietFoodItemsAllowed(text)).not.toThrow();
   });
+
+  it('defers the broad 片 heuristic only for owner-bound photo drafts', () => {
+    const text = '小米粥 约1碗 + 胡萝卜 约3片 + 南瓜 约2块';
+    expect(looksLikeNonDietIntake(text)).toBe(true);
+    expect(() => assertDietFoodItemsAllowed(text)).toThrow('invalid_diet_food_items_non_diet');
+    expect(() => assertDietFoodItemsAllowed(text, {
+      ownerBoundPhotoDraft: true,
+    })).not.toThrow();
+  });
+
+  it.each([
+    ['删除这一餐', 'invalid_diet_food_items_management'],
+    ['体重 73.1kg', 'invalid_diet_food_items_health_metric'],
+  ])('keeps non-intake guards for photo drafts: %s', (text, errorCode) => {
+    expect(() => assertDietFoodItemsAllowed(text, {
+      ownerBoundPhotoDraft: true,
+    })).toThrow(errorCode);
+  });
 });

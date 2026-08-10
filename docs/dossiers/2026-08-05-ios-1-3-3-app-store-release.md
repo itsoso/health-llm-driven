@@ -100,7 +100,7 @@
   - [x] T7.2 紧凑聊天头部候选归档 / IPA / ASC 上传（Build 253 已完成本地 Xcode 正式归档、精确 IPA 闸和上传；Apple processing 尚待确认）
   - [x] T7.3 Build 254 本地 Xcode 候选 / ASC / TestFlight / 物理 iPhone 自动验收（6/6 PASS；因无 EAS Build ID，仅作功能与二进制证据，不替代最终 EAS 候选）
   - [ ] T7.4 照片发送 provider 流总时限 Backend 修复 / 部署 / Build 256 复验（代码、本地回归与生产部署已完成；真机终态待完成）
-  - [ ] T7.5 无证据补剂写入阻断 / owner-bound 照片卡保存 / 错误记录受控撤销（根因与设计已确认，TDD 实现中）
+  - [ ] T7.5 无证据补剂写入阻断 / owner-bound 照片卡保存 / 错误记录受控撤销（根因与设计已确认，聚焦 TDD 与静态检查通过；待独立安全评审、部署和线上纠错）
   - [ ] T8 精确 Build 真机与截图
   - [ ] T9 final-submit / App Review
   - [ ] T10 手动发布 / production G6
@@ -130,6 +130,7 @@
   - `a1d6f7d16` / `30fdc3f90` / `27f9d458c`：冻结照片发送卡流修复设计与实施计划；为主 streaming provider 和 streaming stable fallback 分别增加 120 秒 wall-clock 总时限。主 provider 未发正文时复用既有稳定降级；已发正文时只 error finish、不换模型重复回答；fallback 再卡住时也必须终止并释放回合。Mobile、数据库、健康写入与回执契约均未改变。
 - 2026-08-09 Build 256 人工照片验收中间证据：系统相机入口 PASS；照片草稿及发送文案在强制终止/冷启动后仍保留，证明图片资产与用户 turn 已持久化。生产侧内容最小化证据显示 vision 已完成、上游 streaming 请求已返回 HTTP 200，但模型流在持续非终态分片后未结束，直到外层约五分钟 deadline 才释放；后续同会话发送在此期间按设计返回 409。用户消息和图片已持久化，助手终态缺失，故根因不是上传或本地草稿丢失。
 - 根因修复选择经用户确认采用服务端方案 A：HTTP per-read timeout 只能约束相邻字节的空闲时间，不能约束持续 keepalive/reasoning 的总迭代时间；`27f9d458c` 在 executor 的两个 streaming 边界统一加入独立总预算。该改动不需要新 iOS Build 或 production OTA，部署与同一 Build 256 真机复验完成前仍视为发布阻断。
+- 2026-08-10 生产补剂/饮食卡复验：补剂 turn `9081` 本轮 `has_image=false` 且用户未写出补剂名，模型却供应“维生素D”；Backend 随后成功创建 definition `73` 和 record `1073`，verified receipt 证明这是无证据成功误写，不是回执误报。随后 owner-bound 餐食照片卡的两次确认只产生 `card_action_failed` 客户端事件，Backend 没有收到 `/diet/records`；精确 payload 的“胡萝卜约3片”命中 Mobile 将任意“片”视作药片的宽启发式，同时 Mobile 丢弃已有 `photo_draft_token`。用户确认采用安全方案：补剂名必须出现于当前纯文本回合，附件回合只识别不写；照片饮食卡保留 owner-bound 草稿 token，由 Backend 所有者/过期/饮食分类闸继续裁决。代码已完成，错误生产记录保持原状直到 committed diff 通过独立安全评审后再走 owner-scoped API 撤销。
 - 当前断点：后端与生产合成审核数据均已恢复；Build 245 的精确 IPA / TestFlight 子闸虽已通过，但已被紧凑聊天头部源码 `a26477b3000b9b44c53e8c20fc0f19904b3a7f03` 取代。Build 253 已通过本地 Xcode 26.5 正式归档、精确 IPA 哈希/验签/版本/能力/12 类隐私语义闸，并由 Organizer 上传 Apple；Apple processing、内部 TestFlight 和精确候选物理 iPhone T8 尚未确认。开发签名的同源码 Build 253 已在物理 iPhone 启动并完成紧凑头部视觉预验；安全自动子集 5/6，通过项不替代精确候选证据。以上证据未全绿前 App Review 继续冻结。
 - 2026-08-09 Build 254 精确候选复验：ASC processing 完成并进入内部 TestFlight；物理 iPhone 安装后由应用诊断确认 1.3.3（254）、embedded production runtime，未被旧 OTA 覆盖。首次 4 PASS / 1 FAIL / 1 SKIP 的根因不是代码或审核数据：手机仍登录另一账号，该账号访问的会话不属于受控审核账号；切换到受控审核账号后，最新固定简报和 Today 上下文均出现，完整安全自动子集 6/6 PASS、0 failure、0 skip。原始结果包仅保留本机，不上传；档案只记录非敏感汇总。
 - 2026-08-07 Build 241 物理 iPhone 自动子集第二轮共 7 项：6 PASS、1 FAIL。安装包版本/Build 与候选一致；双冷启动登录态、Agent 入口、Today 打开/关闭、未发送草稿前后台保留、隐私和账号删除入口均通过。唯一失败是默认打开了审核账号中更新的普通会话，而不是固定简报；Mobile 按服务端 `updated_at` 打开最新会话属于正确产品行为，根因是 live gate 只证明固定会话存在、未证明它是默认最新且未被追加消息。
@@ -201,6 +202,7 @@
 - 2026-08-08 最终 G4 树真实模型复验：`APP_ENV=test DATABASE_URL=sqlite:///:memory:` 下 live regression exit 0；invariants 12/12、health_agent_core 50/50、orchestrator 5/5（平均 0.94）、trajectory 12/12、goldens 9/9，且 `HARNESS_LIVE_LLM_EVAL_CONFIRMED=1` 的本地 change gate PASS。非生产临时 SQLite 缺 usage telemetry 表只产生旁路告警；模型调用、语义 judge 和最终 Gate 均真实完成。
 - 2026-08-08 发布阻断：严格 final-submit checker 仍按设计 FAIL，缺少 Build 242+ 的 EAS/source/IPA、同一精确候选物理 iPhone、ASC 人工确认与最终截图材料。App Review 保持冻结，新提交远端 CI 与以上发布材料未全绿前不得提交审核。
 - 2026-08-09 provider 流总时限 TDD：新增三条异步回归。旧代码下“只有 reasoning、无终态”和“已发部分正文后持续非终态”均由测试看门狗按预期判红；实现后主 provider 无正文超时→稳定降级、已有正文超时→不降级只收尾、fallback 自身超时→单一 error finish 三项全部 PASS。完整 `test_agent_executor_failover_gate.py` 13/13 PASS；更广 Backend 闸与生产部署证据仍待本轮后续补齐。
+- 2026-08-10 补剂证据/照片卡 TDD：Backend 两条新回归在旧代码下均因拿到成功 payload 而按预期 RED，证明模型推断名称与附件回合仍会触达补剂 API；Mobile 生产餐食原句在旧代码下精确 RED 为 `invalid_diet_food_items_non_diet`。最小实现后 Backend 补剂/正向查找/回执相关 46/46 PASS，Mobile card action / diet guard / ChatBubble receipt 130/130 PASS；`npx tsc --noEmit`、changed-file ESLint 与 Ruff 全部 exit 0。新增 malformed photo token、文本补剂/药物仍拦、管理/指标即使带 photo token 仍拦的反例保持 fail-closed。G3 仍需 committed-diff 评审及发布前集成闸，不因聚焦测试绿而提前 PASS。
 - 2026-08-09 部署前 CI 复盘：首次承载提交 `e6bc777f0` 的 CI `31347865871` 因两项历史测试时间边界和预期的 live-change 确认闸失败，未进入部署。Frontend 注册邀请测试写死的 `2026-08-09T20:00` 到期时间已改为稳定未来值，聚焦测试 21/21 PASS；WSCLA 聚合测试在 UTC 周一凌晨把 `now - 2h` 错算到上周，已改用相对 `week_start` 的确定性本周时间，聚焦测试 PASS。真实模型回归在 `APP_ENV=test DATABASE_URL=sqlite:///:memory:` 下 exit 0：invariants 12/12、health_agent_core 50/50、真实 orchestrator 5/5（平均 0.98）、trajectory 12/12、goldens 9/9，且无 regression；实际模型为 `MiniMax-M2.5`。临时 SQLite 未建 usage telemetry 表只产生已知旁路告警，不影响真实模型生成、judge 或 Gate 结果。远端一次性确认变量只允许覆盖承载本证据的下一轮 CI，终态后必须删除并复证不存在。
 - **裁决**：实现级 G3、真实模型回归与独立 G4 均 PASS；发布级 final-submit / T7.1 保持 BLOCK。下一步依次取得远端主干 CI、后端部署与生产恢复证据，再生成 Build 242+，不能据此直接提交 App Review。
 

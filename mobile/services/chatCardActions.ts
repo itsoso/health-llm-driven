@@ -485,7 +485,10 @@ function readDietRecord(action: ChatCardActionDescriptor): Record<string, unknow
     throw new Error('invalid_diet_record_payload');
   }
   const source = raw as Record<string, unknown>;
-  const foodItems = readFoodItems(source.food_items);
+  const photoDraftToken = readPhotoDraftToken(source.photo_draft_token);
+  const foodItems = readFoodItems(source.food_items, {
+    ownerBoundPhotoDraft: Boolean(photoDraftToken),
+  });
   const mealType = readMealType(source.meal_type);
   const recordDate = readRecordDate(source.record_date);
   const out: Record<string, unknown> = {
@@ -501,6 +504,7 @@ function readDietRecord(action: ChatCardActionDescriptor): Record<string, unknow
   copyOptionalNumber(source, out, 'alcohol_units');
   const notes = optionalText(source.notes);
   if (notes) out.notes = notes;
+  if (photoDraftToken) out.photo_draft_token = photoDraftToken;
   return out;
 }
 
@@ -510,7 +514,9 @@ function needsNutritionEstimate(record: Record<string, unknown>): boolean {
 
 async function backfillEstimatedNutrition(recordId: number, record: Record<string, unknown>): Promise<DietNutritionStatus> {
   try {
-    const foodItems = readFoodItems(record.food_items);
+    const foodItems = readFoodItems(record.food_items, {
+      ownerBoundPhotoDraft: Boolean(readPhotoDraftToken(record.photo_draft_token)),
+    });
     const { data } = await api.post(`/diet/estimate-nutrition?food_description=${encodeURIComponent(foodItems)}`);
     const patch = readNutritionPatch(data, record);
     if (!Object.keys(patch).length) return 'estimate_failed';
@@ -556,19 +562,31 @@ function readRequiredText(raw: unknown, errorCode: string): string {
   return value;
 }
 
-function readFoodItems(raw: unknown): string {
+function readFoodItems(
+  raw: unknown,
+  options: { ownerBoundPhotoDraft?: boolean } = {},
+): string {
   let foodItems: string;
   if (Array.isArray(raw)) {
     const items = raw.map(optionalText).filter((item): item is string => Boolean(item));
     if (items.length > 0) {
       foodItems = items.slice(0, 8).join(' + ');
-      assertDietFoodItemsAllowed(foodItems);
+      assertDietFoodItemsAllowed(foodItems, options);
       return foodItems;
     }
   }
   foodItems = readRequiredText(raw, 'invalid_diet_food_items');
-  assertDietFoodItemsAllowed(foodItems);
+  assertDietFoodItemsAllowed(foodItems, options);
   return foodItems;
+}
+
+function readPhotoDraftToken(raw: unknown): string | undefined {
+  const token = optionalText(raw);
+  if (!token) return undefined;
+  if (!/^[A-Za-z0-9_-]{24,64}$/.test(token)) {
+    throw new Error('invalid_diet_photo_draft_token');
+  }
+  return token;
 }
 
 function optionalText(raw: unknown): string | undefined {

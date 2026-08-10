@@ -1,8 +1,7 @@
 """补剂记录自动建档(镜像 medication 先例)。
 
-用户拍照/口述一个不在补剂库里的新补剂("记录这个补剂")时,agent 应
-自动 POST /supplements/definitions 建档再打卡,而不是报"未找到名为 X
-的活跃补剂"把用户推去手动页面(实测:正官庄红参液 Royal Everytime)。
+用户在当前纯文本消息明确写出一个不在补剂库里的新补剂时,agent 应自动
+POST /supplements/definitions 建档再打卡；图片或历史上下文推断的名称不得写入。
 """
 import json
 from unittest.mock import AsyncMock, patch
@@ -21,6 +20,7 @@ def _executor(db):
 @pytest.mark.asyncio
 async def test_unregistered_supplement_autocreates_then_taps(db):
     ex = _executor(db)
+    ex._current_turn_user_message = "记录正官庄红参液 10mL"
     create_payload: dict = {}
     tap_payload: dict = {}
 
@@ -58,6 +58,7 @@ async def test_unregistered_supplement_autocreates_then_taps(db):
 @pytest.mark.asyncio
 async def test_registered_supplement_taps_without_creating(db):
     ex = _executor(db)
+    ex._current_turn_user_message = "记录红参液"
     created = {"called": False}
 
     async def fake_get_json(url, headers):
@@ -86,6 +87,7 @@ async def test_registered_supplement_taps_without_creating(db):
 @pytest.mark.asyncio
 async def test_autocreate_failure_gives_friendly_fallback_no_raw_error(db):
     ex = _executor(db)
+    ex._current_turn_user_message = "记录红参液"
 
     async def fake_get_json(url, headers):
         return [], None
@@ -103,3 +105,53 @@ async def test_autocreate_failure_gives_friendly_fallback_no_raw_error(db):
 
     assert "没成功" in result  # 友好兜底
     assert "Traceback" not in result
+
+
+@pytest.mark.asyncio
+async def test_model_inferred_supplement_name_is_rejected_before_dispatch(db):
+    ex = _executor(db)
+    ex._current_turn_user_message = "识别图中的补剂并且帮我打卡"
+    ex._current_turn_has_attachment = False
+    lookup = AsyncMock(return_value=([], None))
+    create = AsyncMock(return_value=({"id": 73, "name": "维生素D"}, None))
+    tap = AsyncMock(return_value='{"record_id": 1073}')
+
+    with patch.object(ex, "_api_get_json", new=lookup), \
+         patch.object(ex, "_api_post_json", new=create), \
+         patch.object(ex, "_api_post", new=tap):
+        result = await ex._exec_health_record("http://x", {}, {
+            "record_type": "supplement",
+            "data": {"supplement_name": "维生素D"},
+        })
+
+    parsed = json.loads(result)
+    assert parsed["error_code"] == "supplement_name_not_user_grounded"
+    assert parsed["dispatch_started"] is False
+    lookup.assert_not_awaited()
+    create.assert_not_awaited()
+    tap.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_attachment_supplement_write_requires_text_confirmation(db):
+    ex = _executor(db)
+    ex._current_turn_user_message = "识别并记录维生素D"
+    ex._current_turn_has_attachment = True
+    lookup = AsyncMock(return_value=([], None))
+    create = AsyncMock(return_value=({"id": 73, "name": "维生素D"}, None))
+    tap = AsyncMock(return_value='{"record_id": 1073}')
+
+    with patch.object(ex, "_api_get_json", new=lookup), \
+         patch.object(ex, "_api_post_json", new=create), \
+         patch.object(ex, "_api_post", new=tap):
+        result = await ex._exec_health_record("http://x", {}, {
+            "record_type": "supplement",
+            "data": {"supplement_name": "维生素D"},
+        })
+
+    parsed = json.loads(result)
+    assert parsed["error_code"] == "supplement_image_confirmation_required"
+    assert parsed["dispatch_started"] is False
+    lookup.assert_not_awaited()
+    create.assert_not_awaited()
+    tap.assert_not_awaited()

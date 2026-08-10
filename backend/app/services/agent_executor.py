@@ -4310,9 +4310,29 @@ _FAST_RECORD_KIND_ALIASES = {
     "life_event": "event",
     "life-event": "event",
 }
+
+
 def _normalize_fast_record_kind(raw: Any) -> str:
     kind = str(raw or "").strip().lower()
     return _FAST_RECORD_KIND_ALIASES.get(kind, kind)
+
+
+def _normalized_current_turn_entity_text(raw: Any) -> str:
+    """Normalize an entity mention without fuzzy inference or aliases."""
+    return "".join(
+        character
+        for character in unicodedata.normalize("NFKC", str(raw or "")).casefold()
+        if character.isalnum()
+    )
+
+
+def _supplement_name_is_grounded_in_current_turn(
+    supplement_name: Any,
+    user_message: Any,
+) -> bool:
+    normalized_name = _normalized_current_turn_entity_text(supplement_name)
+    normalized_message = _normalized_current_turn_entity_text(user_message)
+    return bool(normalized_name and normalized_name in normalized_message)
 
 
 def _fast_record_kind(args: dict) -> str:
@@ -19637,6 +19657,44 @@ class AgentExecutor:
         if rtype == "supplement":
             name = data.get("supplement_name", data.get("name", ""))
             if name:
+                current_message = getattr(
+                    self,
+                    "_current_turn_user_message",
+                    "",
+                )
+                if getattr(self, "_current_turn_has_attachment", False):
+                    logger.warning(
+                        "[health_record] blocked supplement write on attachment turn "
+                        "user=%s message_chars=%s",
+                        self._current_user_id,
+                        len(str(current_message or "")),
+                    )
+                    return local_write_rejection(
+                        "supplement_image_confirmation_required",
+                        message="图片识别出的补剂尚未写入。",
+                        recovery_guidance=(
+                            "请核对包装后，在不带图片的新消息中直接写出完整补剂名，"
+                            "例如“记录维生素D”。"
+                        ),
+                    )
+                if not _supplement_name_is_grounded_in_current_turn(
+                    name,
+                    current_message,
+                ):
+                    logger.warning(
+                        "[health_record] blocked ungrounded supplement name "
+                        "user=%s name_chars=%s message_chars=%s",
+                        self._current_user_id,
+                        len(str(name)),
+                        len(str(current_message or "")),
+                    )
+                    return local_write_rejection(
+                        "supplement_name_not_user_grounded",
+                        message="当前消息没有明确写出要记录的补剂名称，本次未写入。",
+                        recovery_guidance=(
+                            "请重新发送清晰照片，或直接输入完整补剂名后再记录。"
+                        ),
+                    )
                 # 查找匹配的补剂定义 (走 _api_get_json: 拿干净可解析数据, 不被字符截断)
                 supps, err = await self._api_get_json(f"{base}/supplements/me/definitions", headers)
                 if err:
@@ -19650,7 +19708,7 @@ class AgentExecutor:
                         {"action": "supplement", "supplement_id": matched["id"]}
                     )
                 # 没匹配到活跃补剂 → 自动建档再打卡(镜像 medication 先例,见下方 :4646)。
-                # 旧行为报"未找到"把用户推去手动页面 —— 拍照/口述识别出的新补剂
+                # 旧行为报"未找到"把用户推去手动页面 —— 当前文本明确写出的新补剂
                 # (实测:正官庄红参液)记录直接失败。建档可逆(补剂管理页可停用/删),
                 # 且新条目进入 DSI 安全规则覆盖面(加层不减层,只增覆盖)。
                 create_payload = {"name": name}

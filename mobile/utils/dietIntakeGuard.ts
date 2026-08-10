@@ -1,10 +1,16 @@
 import { isMedicationRecordItem } from '../services/medicationFilters';
 
-export function assertDietFoodItemsAllowed(foodItems: string): void {
+export function assertDietFoodItemsAllowed(
+  foodItems: string,
+  options: { ownerBoundPhotoDraft?: boolean } = {},
+): void {
   if (looksLikeDietManagementIntent(foodItems)) {
     throw new Error('invalid_diet_food_items_management');
   }
-  if (looksLikeNonDietIntake(foodItems)) {
+  // Server-bound photo drafts are owner-scoped, expiring capabilities. Their
+  // canonical backend guard remains authoritative; the broad local `片`
+  // heuristic must not reject valid food portions before the request exists.
+  if (!options.ownerBoundPhotoDraft && looksLikeNonDietIntake(foodItems)) {
     throw new Error('invalid_diet_food_items_non_diet');
   }
   if (looksLikeHealthMetricIntent(foodItems)) {

@@ -165,7 +165,7 @@ Run:
 
 ```bash
 cd mobile && npm test -- --runInBand services/__tests__/chatCardActions.test.ts components/chat/__tests__/ChatBubbleStructuredSummary.test.tsx
-cd mobile && npm run typecheck
+cd mobile && npx tsc --noEmit
 ```
 
 Expected: PASS.
