@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS on implementation f5497195b; fresh exact-commit G4 pending |
+| current_stage | G3 PASS on implementation 824d9e7f7; fresh exact-commit G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -1803,6 +1803,50 @@ evidence.
 No v38 commit has been pushed or deployed. Two fresh independent reviewers must
 inspect the documentation commit together with implementation parent
 `f5497195bc4181d766dc3752d4ed9ddfb09b7877`; both must return GO before G4,
+push or deployment can proceed.
+
+Fresh code and product-safety reviews of exact v38 documentation commit
+`2ea545906cdeb4c8a200383ee5cd3cead2d5f1d6` both returned NO-GO. Their
+generated challenge matrices found arbitrary-owner read/write bypasses,
+third-party medical-exam disclosure, false denials for valid long-tail disease
+names, non-health nouns admitted by medical-looking suffixes, unresolved
+references, cancelled or deferred clauses, and completed mutation observations
+leaking into user-facing manage-list reads. The candidate remained unpushed and
+undeployed.
+
+The v39 remediation makes `health_semantics.py` an explicitly versioned,
+content-digested authorization contract. GoalSpec and CapabilityPolicy now
+delegate read verbs, cancellation, references, ownership, illness entities,
+medical-exam projection and connector scope to that one contract instead of
+maintaining duplicate grammars. Entity resolution returns a typed outcome
+(`exact`, `nonself`, `nonhealth`, `unresolved`, `cancelled`, `ambiguous` or
+`not_applicable`) before a tool can be authorized. Long-tail disease morphology
+and exact medical identifiers remain available, while arbitrary names and
+roles, non-health roots, unsupported pointers and completed mutation statements
+fail closed. The capability contract is `agent-capability-policy-v39`; its
+payload exposes the semantic contract version and digest so drift is observable.
+
+The exact v39 implementation is
+`824d9e7f72b99c6a5d833bae10fecf4ece9d3390`. A new direct semantic-contract
+suite passes 83/83. The classifier, GoalSpec, CapabilityPolicy, ToolGateway and
+record-guard aggregate passes 3,986/3,986; the restored official 25-file Backend
+gate passes 5,641/5,641 with `TZ=Asia/Shanghai`; food compatibility passes
+103/103; and production read deduplication passes 9/9. Ruff lint and formatting,
+Python compilation, `git diff --check`, the generated system map, doc drift,
+Dossier consistency and implementation commit hooks pass.
+
+The authorized live `qwen3.7-max` v39 evaluation uses 60 synthetic utterances,
+real production tool schemas, GoalSpec normalization, deterministic fallback,
+ToolGateway enforcement, a fake terminal adapter and explicit database/network
+tripwires. It passes 60/60 cases and all 120 enforce/shadow route evaluations.
+The tripwires report zero database attempts and zero unexpected network
+destinations; only the configured TokenPlan endpoint was reachable. Its first
+launch failed before any model call because the temporary script did not include
+the Backend module path; the corrected launch is the reported product evidence.
+
+No v39 commit has been pushed or deployed. Two fresh independent reviewers must
+inspect the next documentation commit together with exact implementation parent
+`824d9e7f72b99c6a5d833bae10fecf4ece9d3390`; both must return GO before G4,
 push or deployment can proceed.
 
 ### G5 Deployment Health: PENDING

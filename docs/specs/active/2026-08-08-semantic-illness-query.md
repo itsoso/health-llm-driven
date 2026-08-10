@@ -108,6 +108,13 @@ ambiguous eponyms are explicit, medically shaped open-vocabulary entities are
 accepted, and non-health roots cannot gain illness authority merely by ending
 in words such as `异常` or `疼痛`.
 
+The shared contract is versioned and content-digested. Its resolver returns a
+typed semantic outcome before authorization, and the capability payload exposes
+both version and digest. A change to read verbs, cancellation, ownership,
+references, illness morphology, medical-exam identifiers or clause connectors
+therefore changes one observable contract rather than silently diverging across
+GoalSpec and CapabilityPolicy.
+
 Every read surface uses the same Backend decision. A model-selected tool or
 dimension is only a proposal; the server projects illness and medical-exam
 queries from the active user clause, binds user-facing `health_manage(list)` to
@@ -547,3 +554,4 @@ These questions do not block the illness slice.
 | 2026-08-09 | Canonicalized and projected the dispatch payload | Fresh exact-commit reviews found composed revocation, deferred/third-party authority, adapter-alias, date, reminder, meal and model-invented-field gaps. |
 | 2026-08-09 | Made ownership relational and payload aliases adapter-exact | Fresh exact-commit reviews found arbitrary subjects, attribution/revocation/correction gaps, water/supplement payload drift and non-null PATCH status mismatch. |
 | 2026-08-09 | Bound both initiator and direct-object subject | Fresh review found arbitrary names between a write action and health predicate inherited current-user authority. |
+| 2026-08-09 | Versioned the shared semantic authorization contract | Fresh v38 reviews found duplicate grammars, arbitrary-owner read/write bypasses, long-tail false denials, suffix false positives, unresolved references and observation-only manage-list leakage. |
