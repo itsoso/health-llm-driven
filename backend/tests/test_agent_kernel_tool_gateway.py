@@ -9328,3 +9328,298 @@ async def test_v38_manage_list_requires_matching_turn_domain(message, record_typ
     assert calls == []
     assert result.decision is not None
     assert result.decision.action == "block"
+
+
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    "entity",
+    (
+        "欧阳锋多发性硬化症",
+        "Xavier脑膜炎",
+        "Иван脑膜炎",
+        "产品经理脑膜炎",
+        "咖啡师黑色素瘤",
+    ),
+)
+@pytest.mark.asyncio
+async def test_v39_unpunctuated_third_party_illness_write_never_dispatches(
+    policy_mode,
+    entity,
+):
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request)
+        return "unexpected"
+
+    result = await ToolGateway(
+        _snapshot(f"记录疾病：{entity}", policy_mode=policy_mode)
+    ).execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={
+                "record_type": "illness",
+                "data": {"name": entity, "status": "active"},
+            },
+            source="structured_or_recovered",
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert json.loads(result.content)["dispatch_started"] is False
+
+
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    "entity",
+    (
+        "格林-巴利综合征",
+        "抗磷脂综合征",
+        "Rett综合征",
+        "缺铁性贫血",
+        "幽门螺杆菌感染",
+    ),
+)
+@pytest.mark.asyncio
+async def test_v39_long_tail_current_user_illness_write_dispatches_exactly(
+    policy_mode,
+    entity,
+):
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request)
+        return "ok"
+
+    result = await ToolGateway(
+        _snapshot(f"记录疾病：{entity}", policy_mode=policy_mode)
+    ).execute(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={
+                "record_type": "illness",
+                "data": {"name": entity, "status": "active"},
+            },
+            source="structured_or_recovered",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert len(calls) == 1
+    assert calls[0].arguments["data"]["name"] == entity
+
+
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "查Xavier脑膜炎记录",
+        "查产品经理脑膜炎记录",
+        "调出Ольга左膝MRI报告",
+        "查看José左膝DWI/ADC MRI",
+        "展示产品经理3.0T脑部MRI",
+    ),
+)
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    (
+        ("health_query", {"dimension": "illness", "keyword": "脑膜炎"}),
+        ("health_manage", {"record_type": "illness", "operation": "list"}),
+    ),
+)
+@pytest.mark.asyncio
+async def test_v39_unpunctuated_third_party_health_read_never_dispatches(
+    policy_mode,
+    message,
+    tool_name,
+    arguments,
+):
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request)
+        return "unexpected"
+
+    result = await ToolGateway(_snapshot(message, policy_mode=policy_mode)).execute(
+        ToolExecutionRequest(
+            tool_name=tool_name,
+            arguments=arguments,
+            source="structured_or_recovered",
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+
+
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "查路由器异常记录",
+        "查GPU异常记录",
+        "查脚本炎记录",
+        "查血糖异常记录",
+        "查ALT异常记录",
+    ),
+)
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    (
+        ("health_query", {"dimension": "illness", "keyword": "异常"}),
+        ("health_manage", {"record_type": "illness", "operation": "list"}),
+    ),
+)
+@pytest.mark.asyncio
+async def test_v39_nonhealth_suffix_collision_never_dispatches_illness_read(
+    policy_mode,
+    message,
+    tool_name,
+    arguments,
+):
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request)
+        return "unexpected"
+
+    result = await ToolGateway(_snapshot(message, policy_mode=policy_mode)).execute(
+        ToolExecutionRequest(
+            tool_name=tool_name,
+            arguments=arguments,
+            source="structured_or_recovered",
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+
+
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "查从后往前第二张MRI报告",
+        "查第N份CT",
+        "查第Ⅲ份MRI",
+        "查头一份MRI",
+        "查第卌份MRI",
+    ),
+)
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    (
+        ("health_query", {"dimension": "medical_exam", "keyword": "MRI"}),
+        (
+            "health_query_batch",
+            {"queries": [{"dimension": "medical_exam", "keyword": "MRI"}]},
+        ),
+        ("health_manage", {"record_type": "medical_exam", "operation": "list"}),
+    ),
+)
+@pytest.mark.asyncio
+async def test_v39_generalized_exam_reference_never_dispatches(
+    policy_mode,
+    message,
+    tool_name,
+    arguments,
+):
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request)
+        return "unexpected"
+
+    result = await ToolGateway(_snapshot(message, policy_mode=policy_mode)).execute(
+        ToolExecutionRequest(
+            tool_name=tool_name,
+            arguments=arguments,
+            source="structured_or_recovered",
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+
+
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    ("message", "keyword"),
+    (
+        ("撤掉张三MRI查询；然后查我的DWI/ADC脑MRI", "DWI/ADC脑MRI"),
+        ("取消老师房颤查询，改查我自己的房颤记录", "房颤"),
+        ("作废José CT查询；请展示我的L4/5腰椎MRI", "L4/5腰椎MRI"),
+    ),
+)
+@pytest.mark.asyncio
+async def test_v39_cancelled_third_party_then_self_read_dispatches_only_self_clause(
+    policy_mode,
+    message,
+    keyword,
+):
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request)
+        return "[]"
+
+    dimension = "medical_exam" if "MRI" in keyword else "illness"
+    result = await ToolGateway(_snapshot(message, policy_mode=policy_mode)).execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments={"dimension": dimension, "keyword": "wrong-model-value"},
+            source="structured_or_recovered",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert len(calls) == 1
+    assert calls[0].arguments["keyword"] == keyword
+
+
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "我刚更新完血压",
+        "MRI报告已经删除了",
+        "上次修改的是睡眠记录",
+        "体重记录刚更正完",
+    ),
+)
+@pytest.mark.asyncio
+async def test_v39_completed_mutation_statement_never_dispatches_manage_list(
+    policy_mode,
+    message,
+):
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request)
+        return "unexpected"
+
+    result = await ToolGateway(_snapshot(message, policy_mode=policy_mode)).execute(
+        ToolExecutionRequest(
+            tool_name="health_manage",
+            arguments={"record_type": "illness", "operation": "list"},
+            source="structured_or_recovered",
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"

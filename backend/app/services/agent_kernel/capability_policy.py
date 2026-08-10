@@ -18,8 +18,14 @@ from app.services.agent_kernel.goal_spec import (
     simple_illness_target,
 )
 from app.services.agent_kernel.health_semantics import (
+    HEALTH_ENTITY_CONNECTOR_RE,
+    READ_VERB_RE,
+    active_health_read_clause,
+    has_explicit_health_read_request,
     health_read_cancelled,
+    health_semantics_contract_payload,
     is_unresolved_health_reference,
+    resolve_medical_exam_query,
 )
 from app.services.agent_kernel.tool_registry import (
     ToolRegistryError,
@@ -79,7 +85,7 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v38"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v39"
 _HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v31"
 _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v23"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
@@ -263,14 +269,8 @@ _QUERY_DIMENSION_ENTITY_SUFFIX_PATTERN = (
     r"变化|明细|详情|汇总|统计|清单|列表|次数|频率|总量|平均值|最高值|"
     r"最低值|波动|距离|摄入|报告|倍数|比率|比例))?"
 )
-_READ_QUERY_VERB_PATTERN = (
-    r"(?:查询(?:一下)?|查找(?:一下)?|查看(?:一下)?|查到|查下|查(?:一下|一查)?|"
-    r"改查|找出|找一下|找|回顾(?:一下)?|回看(?:一下)?|检索(?:一下)?|列出|"
-    r"比较|对比|翻看(?:一下)?|翻一下|看(?:一下|一看|一眼|下|看)?|"
-    r"搜索(?:一下)?|搜(?:一下)?|调取|调出|调阅|打开|"
-    r"展示(?:一下)?|拉出来|发我|发给我|呈现)"
-)
-_READ_QUERY_VERB_RE = re.compile(_READ_QUERY_VERB_PATTERN)
+_READ_QUERY_VERB_PATTERN = READ_VERB_RE.pattern
+_READ_QUERY_VERB_RE = READ_VERB_RE
 _HISTORY_QUERY_WINDOW_PATTERN = (
     r"(?:(?:最近|近|过去)(?:\d+|[一二两三四五六七八九十]+|半)"
     r"(?:个)?(?:天|周|月|年)(?:内|以来)?|"
@@ -296,19 +296,6 @@ _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE = re.compile(
     r"(?:那天|当天)?"
     r")"
 )
-_NEGATED_READ_PREFIX_PATTERN = (
-    r"(?:(?:我)?(?:不要|别|不用|无需|不必|请勿|勿|甭|不想|不打算|"
-    r"取消|不需要|不希望|停止|撤销|暂停|终止|放弃|"
-    r"不(?=查询|查找|查看|查到|查下|查|找出|找一下|找|回顾|回看|检索|"
-    r"列出|比较|对比|翻看|翻一下|看|搜索|搜|调取|调出)))"
-)
-_NEGATED_READ_INTERPOSER_PATTERN = (
-    r"(?:(?:帮我|给我|替我|为我|麻烦你?|请你?|让你|你|再|去)){0,6}"
-)
-_NEGATED_READ_QUERY_RE = re.compile(
-    rf"{_NEGATED_READ_PREFIX_PATTERN}{_NEGATED_READ_INTERPOSER_PATTERN}"
-    rf"{_READ_QUERY_VERB_PATTERN}"
-)
 _HISTORY_QUERY_QUESTION_RE = re.compile(
     r"(?:上一次|是什么时候|在什么时候|何时|在何时|是何时|是哪天|是几号|"
     r"哪天|哪一天|几号|时间|日期|"
@@ -316,12 +303,7 @@ _HISTORY_QUERY_QUESTION_RE = re.compile(
     r"有什么|有几条|有几次|有多少条|多少条|是多少|平均多少|多少(?:呢)?|"
     r"(?:是)?升还是降|上升还是下降|有多高|怎么样|怎样|如何|呢|最近一次)"
 )
-_HISTORY_QUERY_MULTI_ENTITY_RE = re.compile(
-    r"(?:还有|以及|并且|加上|外加|兼有|连同|伴有|伴随|并伴|合并|联合|"
-    r"同时有|同时出现|并发|并存|伴发|共存|共患|同患|再加|且|"
-    r"兼患|并患|同时患有|相比|相对|对比|除以|占|比(?!(?:率|例|较))|是|"
-    r"[vV][sS]|[、，,；;+/／|｜&＆和与及或跟—–])"
-)
+_HISTORY_QUERY_MULTI_ENTITY_RE = HEALTH_ENTITY_CONNECTOR_RE
 _HISTORY_QUERY_LEADING_VERB_RE = re.compile(rf"^(?:{_READ_QUERY_VERB_PATTERN}|把)")
 _HISTORY_QUERY_TRAILING_VERB_RE = re.compile(
     r"(?:[，,、]?(?:(?:给我)?(?:找出来|查出来|列出来|调出来|找出|查看|看看)|"
@@ -329,71 +311,6 @@ _HISTORY_QUERY_TRAILING_VERB_RE = re.compile(
     r"(?:对比|比较)(?:一下|倍数|比例|比率)?))$"
 )
 _ILLNESS_MEDICAL_ACRONYMS = frozenset({"sle"})
-_UNRESOLVED_QUERY_REFERENCE_RE = re.compile(
-    r"^(?:"
-    r"(?:它|它们|这些|那些)(?:病|病症|疾病|症状|问题|记录|病例|情况|内容)?|"
-    r"(?:这|那|此|该)(?:一)?(?:个|条|项|次|份|种)?"
-    r"(?:病|病症|疾病|症状|问题|记录|病例|情况|内容)?|"
-    r"(?:前一|上一|最后一)(?:个|条|项|份|次)(?:病|疾病|症状|记录|内容)?|"
-    r"(?:前一次|上一次)|(?:最后那个)|"
-    r"(?:前述|上述)(?:病|病症|疾病|症状|病例|记录|内容)?|"
-    r"(?:(?:你)?(?:之前|此前|前文|前面|上面|刚刚|刚才|方才|刚)"
-    r"(?:说|提|提到|提过)?(?:的)?)"
-    r"(?:(?:这|那)(?:一)?(?:个|条|项|次|份|种)?"
-    r"(?:病|病症|疾病|症状|问题|记录|病例|情况|内容)?|"
-    r"(?:病|病症|疾病|症状|问题|记录|病例|情况|内容))?"
-    r")(?:上回|最近一次|再看下)?$"
-)
-_UNRESOLVED_QUERY_REFERENCE_TOKEN_RE = re.compile(
-    r"^(?:"
-    r"(?:它|它们|这些|那些)(?:病|病症|疾病|症状|问题|记录|病例|情况|内容)?|"
-    r"(?:这|那|此|该)(?:一)?(?:个|条|项|次|份|种)?"
-    r"(?:病|病症|疾病|症状|问题|记录|病例|情况|内容)?|"
-    r"(?:前一|上一|最后一)(?:个|条|项|份|次)(?:病|疾病|症状|记录|内容)?|"
-    r"最后那个|(?:前述|上述)(?:病|病症|疾病|症状|病例|记录|内容)?|"
-    r"(?:(?:你)?(?:之前|此前|前文|前面|上面|刚刚|刚才|方才|刚)"
-    r"(?:说|提|提到|提过)?(?:的)?)"
-    r"(?:(?:这|那)(?:一)?(?:个|条|项|次|份|种)?)?"
-    r"(?:病|病症|疾病|症状|问题|记录|病例|情况|内容)?"
-    r")"
-    r"(?:上回|最近一次|再看下)?"
-    r"(?:(?:MRI|核磁|磁共振|CT|X光|B超)(?:检查报告|检查|报告)?|"
-    r"(?:检查报告|检查|报告))?$",
-    re.IGNORECASE,
-)
-_UNRESOLVED_DISCOURSE_POINTER_IN_TEXT_RE = re.compile(
-    r"(?:"
-    r"(?:它|它们|其)(?:的)?(?:MRI|核磁|磁共振|CT|X光|B超|检查|报告)|"
-    r"(?:刚才|刚刚|之前|此前|前面|上面)(?:修改|更新|删除)?(?:过)?(?:的)?"
-    r"(?:那|这)?(?:个|条|项|份)?(?:MRI|核磁|磁共振|CT|X光|B超|记录|检查|报告)|"
-    r"(?:上回|上次|前回|前次)(?:的)?(?:那|这)(?:个|条|项|份)?"
-    r"(?:MRI|核磁|磁共振|CT|X光|B超|病|疾病|记录|检查|报告)?|"
-    r"(?:第一|第二|第三|第[一二三四五六七八九十0-9]+|上一|前一|最后一)"
-    r"(?:个|条|项|份)(?:病|疾病|症状|记录|内容)?|"
-    r"最近一(?:个|条|项|份)(?:病|疾病|症状|记录|内容)|"
-    r"(?:最后那个|前一个疾病|该条记录)"
-    r")",
-    re.IGNORECASE,
-)
-_UNRESOLVED_HEALTH_REFERENCE_GRAMMAR_RE = re.compile(
-    r"(?:"
-    r"(?:前者|后者)|"
-    r"(?:前述|上述)(?:病|疾病|病症|症状|病历|病例|记录|MRI|核磁|磁共振|CT|"
-    r"检查|报告|影像|结果)?|"
-    r"(?:之前|此前|先前|前面|上面|刚才|刚刚|方才|曾经)(?:的)?"
-    r"(?:这|那|此)(?:一)?(?:个|条|项|次|份|张|种)?"
-    r"(?:病|疾病|病症|症状|病历|病例|记录|MRI|核磁|磁共振|CT|检查|报告|影像|结果)|"
-    r"(?:这|那|此|该)(?:一)?(?:个|条|项|次|份|张|种)"
-    r"(?:病|疾病|病症|症状|病历|病例|记录|MRI|核磁|磁共振|CT|检查|报告|影像|结果)|"
-    r"(?:末次|曾经)(?:的)?(?:这|那)(?:一)?(?:个|条|项|次|份|张)?"
-    r"(?:病|疾病|病症|症状|病历|病例|记录)?|"
-    r"(?:(?:(?:倒数)?第[零〇一二两三四五六七八九十百千万0-9]+|"
-    r"上{1,4}(?:一)?|前{1,4}(?:一)?)(?:个|条|项|次|份|张)|"
-    r"(?:末|最后一|最近一)(?:个|条|项|份|张))"
-    r"(?:病|疾病|病症|症状|病历|病例|记录)"
-    r")",
-    re.IGNORECASE,
-)
 _LATEST_OCCURRENCE_MARKER_PATTERN = (
     r"(?:(?:我)?(?:(?:上(?:一)?|最近|最后)(?:的)?(?:那)?(?:一)?(?:次|回)|"
     r"末次|最近(?=(?:的)?(?:记录|发作|发生|复发))|最近))"
@@ -1325,68 +1242,17 @@ def _normalize_query_text(text: str) -> str:
 
 def _health_read_cancelled_by_user(text: str) -> bool:
     """Return whether the active read speech act is explicitly cancelled."""
-    if health_read_cancelled(text):
-        return True
-    normalized = _normalize_query_text(text)
-    negated_reads = tuple(_NEGATED_READ_QUERY_RE.finditer(normalized))
-    direct_revocations = tuple(
-        re.finditer(
-            r"(?:作废|取消|撤销|停止|暂停|终止|放弃)"
-            r"[^，,；;。.!！?？、]{0,24}(?:查询|查找|查看|检索|搜索|调取|调出)",
-            normalized,
-        )
-    )
-    if direct_revocations:
-        negated_reads = (*negated_reads, direct_revocations[-1])
-    if not negated_reads:
-        return False
-    last_negated = max(negated_reads, key=lambda match: match.end())
-    suffix = normalized[last_negated.end() :]
-    boundary_re = re.compile(
-        r"(?:[，,；;。.!！?？、]|但|不过|然而|而是|却|可是|然后|只)"
-    )
-    for positive_read in _READ_QUERY_VERB_RE.finditer(suffix):
-        intervening = suffix[: positive_read.start()]
-        if boundary_re.search(intervening):
-            return False
-    return True
+    return health_read_cancelled(text)
 
 
 def _has_explicit_read_request(text: str) -> bool:
     """Identify an explicit read speech act anywhere in a compound request."""
-    normalized = _normalize_query_text(text)
-    for match in _READ_QUERY_VERB_RE.finditer(normalized):
-        if match.group() == "看" and re.match(
-            r"(?:似|来|着|上去|起来|不(?:出|到|见|清)|得出)",
-            normalized[match.end() :],
-        ):
-            continue
-        return True
-    return False
+    return has_explicit_health_read_request(text)
 
 
 def _query_scope_text(text: str) -> str:
     """Select a later positive read clause after a cancelled action."""
-    normalized = _normalize_query_text(text)
-    negated_action_re = re.compile(
-        rf"{_NEGATED_READ_PREFIX_PATTERN}"
-        r"[^，,；;。.!！?？、]{0,20}?"
-        rf"(?:记录|保存|新增|录入|写入|更新|修改|打卡|记一下|记下|"
-        rf"{_READ_QUERY_VERB_PATTERN})"
-    )
-    read_boundary_re = re.compile(
-        r"(?:[，,；;。.!！?？、]|只|但|不过|然而|而是|却|可是|然后)"
-    )
-    for negated_action in negated_action_re.finditer(normalized):
-        suffix = normalized[negated_action.end() :]
-        candidates = list(_READ_QUERY_VERB_RE.finditer(suffix))
-        candidates.extend(_HISTORY_QUERY_WINDOW_RE.finditer(suffix))
-        candidates.sort(key=lambda match: match.start())
-        for read_match in candidates:
-            intervening = suffix[: read_match.start()]
-            if read_boundary_re.search(intervening):
-                return suffix[read_match.start() :]
-    return normalized
+    return _normalize_query_text(active_health_read_clause(text))
 
 
 def _illness_query_entities(text: str) -> tuple[str, ...]:
@@ -1534,7 +1400,7 @@ def _strip_history_query_request_prefix(value: str) -> str:
         r"(?:能|可以)(?=给我|帮我|帮忙|替我|为我|查询|查找|查看|查一下|"
         r"找出|找一下|找|回顾|回看|检索|列出|翻一下|调取|调出|看看|查|把)|"
         r"我想(?:请你|知道)?|想知道|我希望|我需要|给我|帮我|帮忙|替我|只|"
-        r"为我|你|把|我(?:的)?)"
+        r"为我|你|把|我自己的|自己的|本人(?:的)?|我(?:的)?)"
     )
     while candidate:
         candidate = candidate.lstrip("，,。.!！；;：:?？ ")
@@ -1578,11 +1444,7 @@ def _is_registered_illness_acronym(value: str) -> bool:
 
 
 def _is_unresolved_query_reference(value: str) -> bool:
-    normalized = str(value or "").strip("的，,。.!！；;：:?？ ")
-    return bool(
-        _UNRESOLVED_QUERY_REFERENCE_RE.fullmatch(normalized)
-        or _UNRESOLVED_QUERY_REFERENCE_TOKEN_RE.fullmatch(normalized)
-    )
+    return is_unresolved_health_reference(value)
 
 
 def _query_contains_unresolved_reference(text: str) -> bool:
@@ -1590,35 +1452,13 @@ def _query_contains_unresolved_reference(text: str) -> bool:
     scoped = _query_scope_text(text)
     if is_unresolved_health_reference(scoped):
         return True
-    if _UNRESOLVED_DISCOURSE_POINTER_IN_TEXT_RE.search(
-        scoped
-    ) or _UNRESOLVED_HEALTH_REFERENCE_GRAMMAR_RE.search(scoped):
-        return True
     latest_entity = _latest_occurrence_query_entity(scoped)
     if latest_entity is not None:
-        return _is_unresolved_query_reference(latest_entity)
+        return is_unresolved_health_reference(latest_entity)
     candidate = _history_query_entity_expression(scoped)
     if candidate is not None:
-        return _is_unresolved_query_reference(candidate)
-    normalized = scoped.strip("的，,。.!！；;：:?？ ")
-    stripped = _strip_history_query_request_prefix(normalized)
-    stripped = _clean_history_query_entity(stripped)
-    if _is_unresolved_query_reference(stripped):
-        return True
-    if _UNRESOLVED_QUERY_REFERENCE_TOKEN_RE.fullmatch(stripped):
-        return True
-    if re.match(r"^(?:它|这些|那些|这病|那病|此病|该病|该疾病|那个症状)", stripped):
-        return True
-    discourse_reference = re.compile(
-        r"(?:你)?(?:之前|前文|前面|上面|刚刚|刚才|方才|刚)"
-        r"(?:说|提|提到|提过)?(?:的)?"
-        r"(?:(?:这|那)(?:一)?(?:个|条|项|次|份|种)?)?"
-        r"(?:病|病症|疾病|症状|问题|记录|病例|情况|内容)?"
-    )
-    indexed_reference = re.compile(r"(?:前一|上一|最后一)(?:个|条|项|份|次)")
-    return bool(
-        discourse_reference.search(stripped) or indexed_reference.search(stripped)
-    )
+        return is_unresolved_health_reference(candidate)
+    return False
 
 
 def _sparse_health_query_entity_expression(text: str) -> str | None:
@@ -1783,51 +1623,11 @@ def _project_known_dimension_query_args(
 
 
 def _project_medical_exam_query_to_turn(text: str) -> dict[str, Any] | None:
-    """Project one explicitly named imaging/exam entity from the user's span.
-
-    Imaging identifiers commonly contain punctuation (``DWI/ADC``, ``L4/5``)
-    and spaces (``T2-FLAIR MRI``).  They are therefore parsed as one typed exam
-    span before the generic multi-entity splitter sees ``/`` as a comparison
-    separator.
-    """
-    candidate = str(text or "").strip("，,。.!！；;：:?？ ")
-    candidate = re.sub(
-        r"^(?:请问|请您|烦请|劳烦|劳驾|拜托|请|麻烦你?|能不能|"
-        r"可不可以|能否|可否|给我|帮我|替我|为我|把|我的?)*",
-        "",
-        candidate,
-    ).strip()
-    candidate = re.sub(rf"^(?:{_READ_QUERY_VERB_PATTERN})", "", candidate).strip()
-    if re.search(r"(?:记录|历史)$", candidate) or _HISTORY_QUERY_WINDOW_RE.search(
-        candidate
-    ):
+    """Project one exact current-user exam through the shared semantic contract."""
+    resolution = resolve_medical_exam_query(text)
+    if resolution.status != "exact" or not resolution.entity:
         return None
-    candidate = re.sub(
-        r"(?:拉出来|发给我|发我|给我看看|给我看|找出来|查出来|"
-        r"列出来|调出来|打开|调出|调阅|展示(?:一下)?|看看)$",
-        "",
-        candidate,
-    ).strip()
-    exam_suffix_re = re.compile(
-        r"(?:检查报告|检查结果|影像结果|扫描结果|影像报告|"
-        r"检查|报告|影像|结果|扫描|图像|成像|片子|片)$",
-        re.IGNORECASE,
-    )
-    previous = None
-    while candidate and candidate != previous:
-        previous = candidate
-        candidate = exam_suffix_re.sub("", candidate).strip()
-    if not candidate or len(candidate) > 80:
-        return None
-    if re.fullmatch(r"[\w\u4e00-\u9fff·+./\-\s]+", candidate) is None:
-        return None
-    if re.search(r"(?:MRI|核磁|磁共振|CT|X光|B超|胃镜)", candidate, re.I) is None:
-        return None
-    if re.search(
-        r"(?:和|与|以及|、|，|,).*(?:睡眠|心率|HRV|跑步|饮食)", candidate, re.I
-    ):
-        return None
-    return {"dimension": "medical_exam", "keyword": candidate}
+    return {"dimension": "medical_exam", "keyword": resolution.entity}
 
 
 def _manage_list_turn_record_type(text: str) -> str | None:
@@ -1857,6 +1657,21 @@ def _manage_list_turn_record_type(text: str) -> str | None:
     if _project_illness_query_to_turn(text) is not None:
         return "illness"
     return None
+
+
+def _is_completed_health_mutation_observation(text: str) -> bool:
+    """Keep completed-state narration from authorizing an internal lookup."""
+    normalized = _normalize_query_text(text)
+    return bool(
+        re.search(
+            r"(?:"
+            r"(?:刚|刚刚|已经|已|上次|之前)[^，,。.!！?？;；]{0,20}"
+            r"(?:更新|修改|删除|更正)(?:完|完了|完毕|好了?|了|的是)|"
+            r"(?:更新|修改|删除|更正)(?:完|完了|完毕|好了?|了)"
+            r")",
+            normalized,
+        )
+    )
 
 
 def _projected_uploaded_days(text: str) -> int | None:
@@ -2262,6 +2077,7 @@ def capability_policy_contract_payload() -> dict[str, Any]:
             "version": _HEALTH_RECORD_TARGET_BINDING_VERSION,
             "domain_types": dict(sorted(_HEALTH_RECORD_DOMAIN_TYPES.items())),
         },
+        "health_semantics": health_semantics_contract_payload(),
         "recipe_record_types": sorted(RECIPE_REPLAY_ALLOWED_RECORD_TYPES),
         "recipe_record_type_aliases": dict(sorted(_RECIPE_RECORD_TYPE_ALIASES.items())),
     }
@@ -2720,14 +2536,18 @@ def decide_tool_capability(
                     turn_text,
                 )
             )
-            internal_mutation_lookup = not mutation_lookup_cancelled and (
-                primary == "mutate"
-                or (
-                    not _has_explicit_read_request(turn_text)
-                    and bool(
-                        re.search(
-                            r"(?:修改|更新|更正|删除|删掉|移除)(?:一下|下)?(?:记录)?",
-                            turn_text,
+            internal_mutation_lookup = (
+                not mutation_lookup_cancelled
+                and not _is_completed_health_mutation_observation(turn_text)
+                and (
+                    primary == "mutate"
+                    or (
+                        not _has_explicit_read_request(turn_text)
+                        and bool(
+                            re.search(
+                                r"(?:修改|更新|更正|删除|删掉|移除)(?:一下|下)?(?:记录)?",
+                                turn_text,
+                            )
                         )
                     )
                 )
