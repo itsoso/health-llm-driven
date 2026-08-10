@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | Build 256 已完成 EAS/ASC/TestFlight、精确 IPA、ASC 绑定、审核账号真实登录及物理 iPhone 6/6 安全自动子集；人工相机/照片草稿与冷启动持久化通过，照片发送 provider 流总时限修复已部署且生产健康闸通过，待同一 Build 真机终态复验；语音/分享/健康写入与最终截图仍待完成，App Review 继续冻结 |
+| 当前阶段 | Build 256 已完成 EAS/ASC/TestFlight、精确 IPA、ASC 绑定、审核账号真实登录及物理 iPhone 6/6 安全自动子集；2026-08-10 生产复验发现无当前图片证据的补剂误写与 owner-bound 饮食照片卡客户端误拦，已完成根因证明和用户方案确认，进入 TDD 修复；App Review 与 production OTA 继续冻结 |
 | 状态 | implementing |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -65,6 +65,8 @@
 - 发布前聊天视觉层级 Implementation: `docs/plans/2026-08-06-mobile-chat-visual-hierarchy.md`
 - Provider 流总时限 Design: `docs/plans/2026-08-09-provider-stream-total-deadline-design.md`
 - Provider 流总时限 Implementation: `docs/plans/2026-08-09-provider-stream-total-deadline-implementation.md`
+- 补剂写入证据与照片卡保存 Design: `docs/plans/2026-08-10-grounded-supplement-and-photo-card-save-design.md`
+- 补剂写入证据与照片卡保存 Implementation: `docs/plans/2026-08-10-grounded-supplement-and-photo-card-save.md`
 - 分阶段：功能冻结 → 医疗风险修复 → 发布闸补强 → 材料 → G3/G4 → EAS Build → 精确包真机 → 提交 → 手动发布/G6。
 - 反馈环路由：本地/Jest → EAS Store Build（原生版本变更）→ TestFlight → App Store；审核期间 production OTA 冻结。
 - 长杆：Apple 审核时长、TestFlight 处理、审核账号稳定、截图/隐私/年龄分级人工确认。
@@ -98,6 +100,7 @@
   - [x] T7.2 紧凑聊天头部候选归档 / IPA / ASC 上传（Build 253 已完成本地 Xcode 正式归档、精确 IPA 闸和上传；Apple processing 尚待确认）
   - [x] T7.3 Build 254 本地 Xcode 候选 / ASC / TestFlight / 物理 iPhone 自动验收（6/6 PASS；因无 EAS Build ID，仅作功能与二进制证据，不替代最终 EAS 候选）
   - [ ] T7.4 照片发送 provider 流总时限 Backend 修复 / 部署 / Build 256 复验（代码、本地回归与生产部署已完成；真机终态待完成）
+  - [ ] T7.5 无证据补剂写入阻断 / owner-bound 照片卡保存 / 错误记录受控撤销（根因与设计已确认，TDD 实现中）
   - [ ] T8 精确 Build 真机与截图
   - [ ] T9 final-submit / App Review
   - [ ] T10 手动发布 / production G6
