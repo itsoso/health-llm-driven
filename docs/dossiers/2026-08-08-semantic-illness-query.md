@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS on implementation 3eaa5cd3e; fresh exact-commit G4 pending |
+| current_stage | G3 PASS on implementation b6a7c79f7; fresh exact-commit G4 pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -1905,6 +1905,61 @@ was reached.
 No v40 commit has been pushed or deployed. Two fresh independent reviewers must
 inspect the next documentation commit together with exact implementation parent
 `3eaa5cd3ee773a0488bbdbdbea8510b62262bf02`; both must return GO before G4,
+push or deployment can proceed.
+
+Fresh code and product-safety reviews of exact v40 documentation commit
+`9cf32fa1c654c6d13527157852d9d93ed376fe99` both returned NO-GO. Their
+independent matrices found that mutation-looking `health_manage(list)` calls
+could bypass illness read guards, common cancellation and completed-narration
+forms still leaked, indicator abnormalities could be reclassified as illness,
+valid long-tail and biomedical disease names were denied, legitimate exact
+updates/deletes were rejected, and published digests did not prove the behavior
+of the authoritative GoalSpec/write-intent functions. The candidate remained
+unpushed and undeployed.
+
+The v41 remediation removes text-derived internal lookup authority. GoalSpec
+compiles a typed `health_manage_mutation` goal only from explicit current-turn
+commands, with exact target and lookup/receipt postconditions. AgentExecutor
+binds an opaque server-only marker to that goal after schema validation;
+CapabilityPolicy accepts a mutation lookup only with that marker and removes it
+before adapter dispatch. A model cannot forge the marker through JSON, intent
+labels or mutation words.
+
+`health-semantics-v3` resolves cancellation, deferment, completed narration and
+the restarted active clause before ownership and entity projection. The shared
+illness extractor now serves both read and mutation targets, adds compositional
+long-tail/eponym and biomedical modifier support, preserves biomedical Unicode
+dashes, and explicitly separates metric abnormalities from illnesses. Exact
+current-user illness status updates and whole-record deletes remain available;
+third-party, quoted, hypothetical, revoked or ambiguous mutations fail closed.
+Semantic, GoalSpec and CapabilityPolicy payloads now fingerprint selected
+authorization function bytecode as well as all authoritative grammar inputs.
+
+The exact v41 implementation is
+`b6a7c79f7b1d8091a0dc69eaec401423cbcc7adb`. Failure-first tests cover the
+server-only marker, forged-marker stripping, typed mutation goals, cancellation,
+completed narration, long-tail/eponym and biomedical diseases, metric
+collisions, Unicode punctuation, exact delete and direct illness-state update.
+The shared semantic/GoalSpec/CapabilityPolicy/ToolGateway aggregate passes
+4,193/4,193. The restored official 25-file Backend gate passes 5,813/5,813
+with `TZ=Asia/Shanghai`; current food compatibility passes 123/123; and
+production read deduplication passes 9/9. Ruff lint and formatting, Python
+compilation, `git diff --check`, implementation commit hooks, doc drift and
+Dossier consistency pass.
+
+The authorized live `qwen3.7-max` v41 evaluation expands to 106 synthetic
+utterances and 212 enforce/shadow route evaluations. Its first run exposed one
+real direct-state-update gap plus evaluator assertions that were narrower than
+the production capability contract. The product gap was fixed with
+failure-first tests; the evaluator was corrected to accept the existing exact
+same-domain read/list and direct-delete capabilities. The complete rerun passes
+106/106 and 212/212. Database attempts remain zero, unexpected network
+destinations remain zero, and only the configured TokenPlan endpoint was
+reachable.
+
+No v41 commit has been pushed or deployed. Two fresh independent reviewers must
+inspect the next documentation commit together with exact implementation parent
+`b6a7c79f7b1d8091a0dc69eaec401423cbcc7adb`; both must return GO before G4,
 push or deployment can proceed.
 
 ### G5 Deployment Health: PENDING

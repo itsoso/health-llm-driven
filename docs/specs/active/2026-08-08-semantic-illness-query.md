@@ -2,7 +2,7 @@
 
 > Status: implemented_g4_pending
 > Owner: Codex
-> Updated: 2026-08-09
+> Updated: 2026-08-10
 > Related PRD/PDD: `docs/plans/2026-08-08-semantic-illness-query-design.md`
 > Related code: `backend/app/services/agent_kernel/health_semantics.py`, `backend/app/services/agent_kernel/goal_spec.py`, `backend/app/services/agent_kernel/capability_policy.py`, `backend/app/services/write_intent_scope.py`, `backend/app/services/utterance_intent_classifier.py`, `backend/app/services/tool_schema_registry.py`, `backend/app/services/health_read.py`, `backend/app/services/agent_executor.py`
 
@@ -128,9 +128,29 @@ Every read surface uses the same Backend decision. A model-selected tool or
 dimension is only a proposal; the server projects illness and medical-exam
 queries from the active user clause, binds user-facing `health_manage(list)` to
 the domain actually named in the turn, and fails closed for third-party,
-cancelled, observational or unresolved-reference input. Internal list calls
-used to bind an already-authorized mutation remain distinct from user-facing
-history reads.
+cancelled, observational or unresolved-reference input.
+
+Internal mutation lookup is not inferred from model-supplied operation fields,
+mutation-looking text or the broad intent classifier. GoalSpec first compiles a
+typed `health_manage_mutation` goal with exact current-turn authority, record
+family, target and receipt postconditions. The server then binds an opaque,
+non-JSON lookup marker to that goal. CapabilityPolicy accepts the owner-scoped
+lookup only while that marker is present and strips it before adapter dispatch.
+Observation-only phrases therefore become neither reads nor mutation lookups.
+
+Read speech-act resolution is clause structured. It identifies withdrawal,
+deferment, completed narration and an explicitly restarted active clause before
+ownership or entity resolution. The shared illness extractor also serves
+mutation targeting, so reads and writes accept the same valid long-tail disease
+vocabulary instead of a finite mutation-only list. Indicators such as blood
+pressure or glucose followed by `异常` remain metric entities, not illnesses;
+biomedical modifiers such as `HLA-B27`, `BCR::ABL1`, `IgG4`, `anti-NMDA` and
+`β2` are preserved without allowing arbitrary names to borrow a disease tail.
+
+Published authorization digests cover behavior as well as grammar constants.
+The semantic, GoalSpec and CapabilityPolicy payloads fingerprint selected
+function bytecode plus the authoritative write-intent grammar/functions, so a
+logic-only authorization change is observable even when no regex changes.
 
 ## 7. Surface Contract
 
@@ -161,7 +181,8 @@ enums:
   - health_query.dimension: add illness
 backward_compatibility:
   - all existing valid dimensions retain behavior
-  - health_manage illness CRUD remains unchanged
+  - health_manage illness CRUD retains confirmation and owner-scope boundaries
+  - explicit current-user illness status updates and exact-record deletes compile a mutation goal before lookup or dispatch
   - health_query_batch rejects illness until its subquery shape can preserve keyword and full-history semantics
 migration: paired managed PostgreSQL/SQLite migration drops the illness severity default and NOT NULL
 ```
@@ -493,6 +514,19 @@ Given a user asks for a two-year illness window
 When health_query validates days=730
 Then it preserves 730 rather than silently changing the query to seven days
 
+Given a user says "把我的克雅氏病状态改成已康复"
+When GoalSpec and CapabilityPolicy process the turn
+Then an exact owner-scoped illness lookup may bind the requested record and only
+that record's status may be patched
+
+Given a user says "别查了" or "先不用继续查口腔溃疡记录"
+When the model proposes any illness read or manage-list call
+Then cancellation wins and dispatch never starts
+
+Given a user says "我的血压异常记录有哪些"
+When semantic projection resolves the requested record family
+Then `异常` does not reclassify the metric as an illness
+
 Given more than 100 illness episodes match
 When the canonical reader returns the newest 100
 Then the result explicitly states that it was truncated
@@ -565,3 +599,4 @@ These questions do not block the illness slice.
 | 2026-08-09 | Bound both initiator and direct-object subject | Fresh review found arbitrary names between a write action and health predicate inherited current-user authority. |
 | 2026-08-09 | Versioned the shared semantic authorization contract | Fresh v38 reviews found duplicate grammars, arbitrary-owner read/write bypasses, long-tail false denials, suffix false positives, unresolved references and observation-only manage-list leakage. |
 | 2026-08-09 | Made semantic ownership compositional and fully fingerprinted | Fresh v39 reviews found arbitrary Unicode owner prefixes, postpositive cancellation, completed-narration list reads, long-tail/Unicode false denials and authorization grammar omitted from published digests. |
+| 2026-08-10 | Bound mutation lookup to a typed server-owned goal | Fresh v40 reviews found mutation-text lookup bypasses, incomplete cancellation/completion scope, indicator collisions, long-tail/biomedical false denials and behavior omitted from published digests. |
