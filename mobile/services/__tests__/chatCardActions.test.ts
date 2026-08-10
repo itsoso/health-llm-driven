@@ -661,6 +661,10 @@ describe('dispatchChatCardAction', () => {
     ['fish oil2粒'],
     ['omega-3 2粒'],
     ['magnesium2粒'],
+    ['coq102粒'],
+    ['b122粒'],
+    ['d32粒'],
+    ['胡萝卜 + coq102粒'],
     ['胡萝卜 约3片 + warfarin 1片'],
   ])('rejects non-diet intake even with an owner-bound photo token: %s', async (foodItems) => {
     await expect(dispatchChatCardAction({

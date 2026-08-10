@@ -288,7 +288,7 @@ def _looks_like_medication(raw: str, normalized: str) -> bool:
 def _looks_like_supplement(raw: str, normalized: str) -> bool:
     if re.search(r"维\s*c\s*(?:茶|饮|饮料|果汁|柠檬|柠)", raw, re.I):
         return False
-    if contains_supplement_name(_boundary_preserving_intake_text(raw)):
+    if contains_supplement_name(raw):
         return True
     for marker in SUPPLEMENT_MARKERS:
         lowered = marker.lower()

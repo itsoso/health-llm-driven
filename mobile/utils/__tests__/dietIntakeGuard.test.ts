@@ -44,6 +44,13 @@ describe('dietIntakeGuard', () => {
     expect(() => assertDietFoodItemsAllowed(text)).not.toThrow();
   });
 
+  it.each([
+    ['coq10environment salad'],
+    ['d32factor cereal'],
+  ])('keeps ASCII supplement boundaries for benign food text: %s', (text) => {
+    expect(looksLikeNonDietIntake(text)).toBe(false);
+  });
+
   it('defers the broad 片 heuristic only for owner-bound photo drafts', () => {
     const text = '小米粥 约1碗 + 胡萝卜 约3片 + 南瓜 约2块';
     expect(looksLikeNonDietIntake(text)).toBe(true);
@@ -76,6 +83,10 @@ describe('dietIntakeGuard', () => {
     ['fish oil2粒'],
     ['omega-3 2粒'],
     ['magnesium2粒'],
+    ['coq102粒'],
+    ['b122粒'],
+    ['d32粒'],
+    ['胡萝卜 + coq102粒'],
     ['胡萝卜 约3片 + warfarin 1片'],
   ])('keeps strong medication and supplement guards for photo drafts: %s', (text) => {
     expect(() => assertDietFoodItemsAllowed(text, {

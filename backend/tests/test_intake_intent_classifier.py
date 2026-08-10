@@ -77,6 +77,12 @@ def test_named_medicines_keep_ascii_boundaries_around_dose_tokens(query):
     "omega-32粒",
     "magnesium 2粒",
     "magnesium2粒",
+    "coq10 2粒",
+    "coq102粒",
+    "b12 2粒",
+    "b122粒",
+    "d3 2粒",
+    "d32粒",
 ])
 def test_named_supplements_keep_ascii_boundaries_around_dose_tokens(query):
     assert classify_intake_intent(query).kind == "supplement"

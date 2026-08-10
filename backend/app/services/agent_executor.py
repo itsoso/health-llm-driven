@@ -37,6 +37,7 @@ from app.services.tool_schema_registry import (
 from app.services.lab_plausibility import annotate_if_implausible
 from app.services.llm.error_messages import safe_llm_error_message, safe_tool_error_message
 from app.services.health_query_dimensions import normalize_health_query_args
+from app.services.drug_lexicon import supplement_entity_name_spans, supplement_name_entity_terms
 from app.services.post_record_quality import (
     build_diet_adjust_action,
     build_post_record_quality_response,
@@ -4337,7 +4338,8 @@ _EXPLICIT_SUPPLEMENT_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 _SUPPLEMENT_AMOUNT_TOKEN = (
-    r"(?:约|大约)?\s*(?:\d+(?:\.\d+)?|[零一二两三四五六七八九十百半]+)\s*"
+    r"(?:约|大约)?\s*(?:\d+(?:\.\d+)?|[零一二两三四五六七八九十百半]+|"
+    r"one|two|three|half)\s*"
     r"(?:ml|毫升|mg|毫克|mcg|μg|ug|iu|单位|g|克|片|粒|颗|袋|包|滴|勺|支|瓶|"
     r"tablets?|capsules?|softgels?)"
 )
@@ -4352,8 +4354,10 @@ _GENERIC_SUPPLEMENT_ENTITY_RE = re.compile(
 _INVALID_SUPPLEMENT_ENTITY_RESIDUAL_RE = re.compile(
     r"(?:这个|那个|这些|那些|图中|图片中|包装上|上面|里面|"
     r"补剂|保健品|营养品|营养补充剂|东西|产品|"
-    r"并且|然后|帮我|给我|请|打卡|记录|录入|识别|"
-    r"每天|每日|每晚|每早|以及|或者|和|跟|与)"
+    r"并且|然后|帮我|给我|请|确认|完成|保存|加入|新增|打卡|记录|录入|识别|"
+    r"每天|每日|每晚|每早|每周|每月|每次|一日|一次|两次|三次|隔日|"
+    r"饭前|饭后|餐前|餐后|睡前|早晚|"
+    r"以及|或者|还有|同时|再来|配合|加上|和|跟|与|及|加)"
 )
 _GENERIC_SUPPLEMENT_ASCII_ENTITIES = frozenset(
     {
@@ -4367,12 +4371,31 @@ _GENERIC_SUPPLEMENT_ASCII_ENTITIES = frozenset(
         "record",
         "log",
         "checkin",
+        "today",
+        "tomorrow",
+        "now",
+        "again",
+        "done",
+        "ok",
+        "okay",
+        "it",
     }
 )
 _INVALID_SUPPLEMENT_ENTITY_ASCII_RESIDUAL_RE = re.compile(
     r"\b(?:this|that|these|those|supplements?|products?|and|or|then|please|"
-    r"record|log|check\s*in|daily|every\s+day|every\s+morning|every\s+night|"
+    r"plus|with|confirm|complete|save|add|record|log|check\s*in|daily|weekly|"
+    r"monthly|nightly|once|twice|morning|evening|before|after|"
+    r"every\s+day|every\s+morning|every\s+night|per\s+day|times?|"
     r"for\s+me|help\s+me|identify)\b",
+    re.IGNORECASE,
+)
+_INVALID_SUPPLEMENT_ENTITY_STRUCTURE_RE = re.compile(r"[+＋&＆/／、|｜]")
+_SUPPLEMENT_RESIDUAL_AMOUNT_RE = re.compile(_SUPPLEMENT_AMOUNT_TOKEN, re.IGNORECASE)
+_UNKNOWN_SUPPLEMENT_ASCII_NAME_RE = re.compile(r"[a-z][a-z0-9-]{1,39}", re.IGNORECASE)
+_UNKNOWN_SUPPLEMENT_CJK_NAME_RE = re.compile(r"[\u3400-\u9fffA-Za-z0-9-]{2,40}")
+_UNKNOWN_SUPPLEMENT_CONCRETE_SUFFIX_RE = re.compile(
+    r"(?:维生素[A-Za-z0-9]*|鱼油|辅酶Q?10|益生菌|叶酸|叶黄素|"
+    r"钙|镁|锌|硒|铁|NAC|液|粉|片|丸|胶囊|软胶囊|滴剂|口服液|颗粒|冲剂)$",
     re.IGNORECASE,
 )
 
@@ -4389,9 +4412,42 @@ def _supplement_entity_has_directive_residual(raw: Any) -> bool:
     boundary_preserving = unicodedata.normalize("NFKC", str(raw or "")).casefold()
     normalized = _normalized_current_turn_entity_text(boundary_preserving)
     return bool(
-        _INVALID_SUPPLEMENT_ENTITY_RESIDUAL_RE.search(normalized)
+        _INVALID_SUPPLEMENT_ENTITY_STRUCTURE_RE.search(boundary_preserving)
+        or _INVALID_SUPPLEMENT_ENTITY_RESIDUAL_RE.search(normalized)
         or _INVALID_SUPPLEMENT_ENTITY_ASCII_RESIDUAL_RE.search(boundary_preserving)
+        or _SUPPLEMENT_RESIDUAL_AMOUNT_RE.search(boundary_preserving)
     )
+
+
+def _supplement_entity_is_single_concrete_name(raw: Any) -> bool:
+    """Allow exact canonical terms or a tightly shaped single product name."""
+    boundary_preserving = unicodedata.normalize("NFKC", str(raw or "")).strip()
+    normalized = _normalized_current_turn_entity_text(boundary_preserving)
+    canonical = {
+        _normalized_current_turn_entity_text(term)
+        for term in supplement_name_entity_terms()
+    }
+    if normalized in canonical:
+        return True
+    if len(supplement_entity_name_spans(boundary_preserving)) > 1:
+        return False
+    if _UNKNOWN_SUPPLEMENT_ASCII_NAME_RE.fullmatch(boundary_preserving):
+        return True
+    return bool(
+        _UNKNOWN_SUPPLEMENT_CJK_NAME_RE.fullmatch(boundary_preserving)
+        and _UNKNOWN_SUPPLEMENT_CONCRETE_SUFFIX_RE.search(boundary_preserving)
+    )
+
+
+def _strip_supplement_edge_amounts(raw: str) -> str:
+    """Remove every leading/trailing amount; embedded amounts remain invalid."""
+    candidate = raw
+    while True:
+        stripped = _SUPPLEMENT_LEADING_AMOUNT_RE.sub("", candidate)
+        stripped = _SUPPLEMENT_TRAILING_AMOUNT_RE.sub("", stripped)
+        if stripped == candidate:
+            return stripped
+        candidate = stripped.strip()
 
 
 def _explicit_supplement_names_in_current_turn(user_message: Any) -> tuple[str, ...]:
@@ -4399,14 +4455,15 @@ def _explicit_supplement_names_in_current_turn(user_message: Any) -> tuple[str, 
     names: list[str] = []
     for match in _EXPLICIT_SUPPLEMENT_NAME_RE.finditer(raw_message):
         candidate = match.group("name").strip(" ：:，,;；。.!！?？")
-        candidate = _SUPPLEMENT_LEADING_AMOUNT_RE.sub("", candidate)
-        candidate = _SUPPLEMENT_TRAILING_AMOUNT_RE.sub("", candidate)
+        candidate = _strip_supplement_edge_amounts(candidate)
         normalized_candidate = _normalized_current_turn_entity_text(candidate)
         if len(normalized_candidate) < 2:
             continue
         if _supplement_entity_is_generic(candidate):
             continue
         if _supplement_entity_has_directive_residual(candidate):
+            continue
+        if not _supplement_entity_is_single_concrete_name(candidate):
             continue
         names.append(normalized_candidate)
     return tuple(names)
@@ -4422,6 +4479,8 @@ def _supplement_name_is_grounded_in_current_turn(
     if _supplement_entity_is_generic(supplement_name):
         return False
     if _supplement_entity_has_directive_residual(supplement_name):
+        return False
+    if not _supplement_entity_is_single_concrete_name(supplement_name):
         return False
     return normalized_name in _explicit_supplement_names_in_current_turn(user_message)
 

@@ -85,6 +85,36 @@ async def test_registered_supplement_taps_without_creating(db):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("user_message", "model_name"), [
+    ("记录 vitamin D 1 capsule 500 IU", "vitamin D"),
+    ("记录维生素D1粒500IU", "维生素D"),
+])
+async def test_multiple_trailing_amounts_are_removed_without_rejecting_the_name(
+    db,
+    user_message,
+    model_name,
+):
+    ex = _executor(db)
+    ex._current_turn_user_message = user_message
+    lookup = AsyncMock(return_value=([{"id": 7, "name": model_name, "is_active": True}], None))
+    create = AsyncMock()
+    tap = AsyncMock(return_value='{"status": "ok"}')
+
+    with patch.object(ex, "_api_get_json", new=lookup), \
+         patch.object(ex, "_api_post_json", new=create), \
+         patch.object(ex, "_api_post", new=tap):
+        result = await ex._exec_health_record("http://x", {}, {
+            "record_type": "supplement",
+            "data": {"supplement_name": model_name},
+        })
+
+    assert "ok" in result
+    lookup.assert_awaited_once()
+    create.assert_not_awaited()
+    tap.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_autocreate_failure_gives_friendly_fallback_no_raw_error(db):
     ex = _executor(db)
     ex._current_turn_user_message = "记录红参液"
@@ -180,6 +210,21 @@ async def test_generic_current_turn_words_cannot_become_supplement_names(
     ("记录 this supplement vitamin D", "this supplement vitamin D"),
     ("记录 vitamin D and log it", "vitamin D and log it"),
     ("记录 supplement", "supplement"),
+    ("记录 today", "today"),
+    ("记录维生素D+鱼油", "维生素D+鱼油"),
+    ("记录 vitamin D plus fish oil", "vitamin D plus fish oil"),
+    ("记录维生素D确认", "维生素D确认"),
+    ("记录维生素D一日一次", "维生素D一日一次"),
+    ("记录 vitamin D 1 capsule 500 IU", "vitamin D 1 capsule"),
+    ("记录维生素D&鱼油", "维生素D&鱼油"),
+    ("记录维生素D／鱼油", "维生素D／鱼油"),
+    ("记录维生素D加鱼油", "维生素D加鱼油"),
+    ("记录维生素D还有鱼油", "维生素D还有鱼油"),
+    ("记录 vitamin D with fish oil", "vitamin D with fish oil"),
+    ("记录维生素D饭后", "维生素D饭后"),
+    ("记录 vitamin D after meals", "vitamin D after meals"),
+    ("记录维生素D鱼油", "维生素D鱼油"),
+    ("记录维生素D别忘了", "维生素D别忘了"),
 ])
 async def test_directive_or_multi_entity_superstrings_cannot_become_supplement_names(
     db,

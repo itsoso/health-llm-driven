@@ -108,7 +108,9 @@ SUPPLEMENT_CLASS_ALIASES: Dict[str, List[str]] = {
     "garlic": ["garlic", "大蒜"],
     "curcumin": ["curcumin", "姜黄素", "turmeric"],
     "coq10": ["coq10", "co-q10", "辅酶 q10", "辅酶q10", "ubiquinol"],
-    "vitamin_d": ["vitamin d", "维生素 d", "vitamin-d"],
+    "vitamin_d": [
+        "vitamin d", "维生素 d", "vitamin-d", "vitamin d3", "vitamin d2", "d3", "d2",
+    ],
     "b12": ["b12", "甲钴胺", "cyanocobalamin", "methylcobalamin"],
     "folate": ["folate", "叶酸", "methyl folate", "甲基叶酸"],
     "niacin": ["niacin", "烟酸", "nicotinic"],
@@ -303,15 +305,38 @@ def supplement_name_free_text_terms() -> FrozenSet[str]:
 
 
 @lru_cache(maxsize=1)
-def _supplement_name_free_text_pattern() -> Pattern[str]:
+def supplement_name_entity_terms() -> FrozenSet[str]:
+    """All exact supplement aliases for explicit entity validation."""
+    terms = set(_flatten_aliases(SUPPLEMENT_CLASS_ALIASES))
+    collapsed = {t.replace(" ", "") for t in terms if " " in t and _has_cjk(t)}
+    return frozenset(t for t in (terms | collapsed) if t)
+
+
+def _compile_supplement_name_pattern(terms: FrozenSet[str]) -> Pattern[str]:
+    adjacent_dose = (
+        r"\d+(?:\.\d+)?\s*(?:ml|mg|mcg|μg|ug|iu|g|毫升|毫克|克|单位|"
+        r"片|粒|颗|袋|包|滴|勺|支|瓶|tablets?|capsules?|softgels?)"
+    )
     alternatives: list[str] = []
-    for term in sorted(supplement_name_free_text_terms(), key=lambda value: (-len(value), value)):
+    for term in sorted(terms, key=lambda value: (-len(value), value)):
         escaped = re.escape(term)
         if term.isascii():
-            alternatives.append(rf"(?<![a-z0-9]){escaped}(?![a-z0-9])")
+            alternatives.append(
+                rf"(?<![a-z0-9]){escaped}(?=$|[^a-z0-9]|{adjacent_dose})"
+            )
         else:
             alternatives.append(escaped)
     return re.compile("|".join(alternatives), re.IGNORECASE)
+
+
+@lru_cache(maxsize=1)
+def _supplement_name_free_text_pattern() -> Pattern[str]:
+    return _compile_supplement_name_pattern(supplement_name_free_text_terms())
+
+
+@lru_cache(maxsize=1)
+def _supplement_name_entity_pattern() -> Pattern[str]:
+    return _compile_supplement_name_pattern(supplement_name_entity_terms())
 
 
 def contains_supplement_name(text: str | None) -> bool:
@@ -319,6 +344,16 @@ def contains_supplement_name(text: str | None) -> bool:
     if not text:
         return False
     return _supplement_name_free_text_pattern().search(str(text).lower()) is not None
+
+
+def supplement_entity_name_spans(text: str | None) -> tuple[tuple[int, int], ...]:
+    """Return spans from the full exact-name lexicon, including food/herb classes."""
+    if not text:
+        return ()
+    return tuple(
+        (match.start(), match.end())
+        for match in _supplement_name_entity_pattern().finditer(str(text).lower())
+    )
 
 
 def drug_name_spans(text: str | None) -> tuple[tuple[int, int], ...]:

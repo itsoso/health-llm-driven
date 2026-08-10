@@ -45,7 +45,10 @@ export function looksLikeNonDietIntake(value: string): boolean {
   if (isMedicationRecordItem({ name: value })) return true;
   // 饮品里常见的维 C 茶/柠檬饮料不应被补剂关键词误杀。
   if (/维\s*c\s*(?:茶|饮|饮料|果汁|柠檬|柠)/i.test(value)) return false;
-  if (/鱼油|维生素|维\s*d|d3|d2|b族|益生菌|辅酶\s*q?\s*10|甘氨酸镁|钙片|叶酸|锌片/i.test(value)) {
+  if (/鱼油|维生素|维\s*d|b族|益生菌|辅酶\s*q?\s*10|甘氨酸镁|钙片|叶酸|锌片/i.test(value)) {
+    return true;
+  }
+  if (/(^|[^a-z0-9])(?:d3|d2|b12|coq\s*-?\s*10)(?=$|[^a-z0-9]|\d+\s*(?:粒|片|颗|袋|包|滴|tablet|capsule|softgel))/i.test(value)) {
     return true;
   }
   return /(^|[^a-z0-9])(?:nac|magnesium|glycinate|fish\s*oil|omega(?:\s*-?\s*3)?)(?=$|[^a-z0-9]|\d+\s*(?:粒|片|颗|袋|包))/i.test(value);

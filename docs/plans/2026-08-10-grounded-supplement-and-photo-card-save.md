@@ -46,6 +46,8 @@ Add zero-dispatch adversarial cases for model names such as `补剂`, `图`, `�
 
 After the second independent review, add zero-dispatch cases for directive/generic superstrings (`维生素D并且帮我打卡`, `这个补剂维生素D`, `this supplement vitamin D`), conjunction/multi-entity input (`维生素D和鱼油`, `vitamin D and fish oil`), and residual frequency/dose input (`维生素D每天1片`). Add classifier and API no-row cases for Chinese/English drugs and supplements, spaced/unspaced doses, and mixed food-plus-drug payloads. The Mobile owner-bound-token matrix must prove the same inputs produce zero POSTs.
 
+After the third independent review, add structural and concatenated multi-entity cases (`维生素D+鱼油`, `维生素D鱼油`, `vitamin D plus fish oil`), missed directive/frequency cases, and multiple trailing doses. Add numeric-ending supplement cases (`coq102粒`, `b122粒`, `d32粒`) to the shared lexicon, Backend API no-row, Mobile guard, and Mobile zero-POST matrices, plus benign ASCII continuation controls.
+
 **Step 2: Write the failing contextual meal-photo test**
 
 Use the production food phrase containing `胡萝卜 约3片`, a valid `photo_draft_token`, and the registered diet-card write policy. Assert that dispatch resolves, posts exactly once, and includes the same token.
@@ -199,7 +201,7 @@ fix(agent): ground supplement writes and photo saves
 
 **Step 5: Obtain an independent safety review**
 
-The reviewer must inspect the committed diff for supplement write authority, owner isolation, photo draft ownership/expiry, diet guard preservation, receipt truthfulness, and privacy-safe telemetry. The first review returned BLOCK because arbitrary message substrings and whole-guard bypasses remained possible. The second review also returned BLOCK because directive/multi-entity superstrings remained groundable and owner-bound photo tokens still admitted English named medicines/supplements with dose text. Each BLOCK returns to implementation; a fresh independent reviewer must inspect the final committed tree, and only GO permits deploy.
+The reviewer must inspect the committed diff for supplement write authority, owner isolation, photo draft ownership/expiry, diet guard preservation, receipt truthfulness, and privacy-safe telemetry. The first review returned BLOCK because arbitrary message substrings and whole-guard bypasses remained possible. The second review returned BLOCK because directive/multi-entity superstrings remained groundable and owner-bound photo tokens still admitted English named medicines/supplements with dose text. The third review returned BLOCK because structural connectors/multiple doses still passed and numeric-ending supplement names were broken by dose-boundary rewriting. Each BLOCK returns to implementation; a fresh independent reviewer must inspect the final committed tree, and only GO permits deploy.
 
 ### Task 5: Push, deploy, correct the bad record, and verify production
 

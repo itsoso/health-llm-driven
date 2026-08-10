@@ -378,6 +378,10 @@ class TestDietAPI:
         "fish oil2粒",
         "omega-3 2粒",
         "magnesium2粒",
+        "coq102粒",
+        "b122粒",
+        "d32粒",
+        "胡萝卜 + coq102粒",
         "胡萝卜 约3片 + warfarin 1片",
         "晨跑 30 分钟",
         "体重 73.1kg 腰围 84cm",
@@ -409,6 +413,10 @@ class TestDietAPI:
         "fish oil2粒",
         "omega-3 2粒",
         "magnesium2粒",
+        "coq102粒",
+        "b122粒",
+        "d32粒",
+        "胡萝卜 + coq102粒",
         "胡萝卜 约3片 + warfarin 1片",
     ])
     def test_valid_photo_draft_cannot_bypass_named_non_food_guard(
