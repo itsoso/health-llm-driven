@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Pressable, TextStyle, Alert, ScrollView, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import api from '../services/api';
@@ -64,6 +64,10 @@ export default function SettingsScreen() {
 
   const { data: profile } = useQuery({ queryKey: queryKeys.profile, queryFn: () => api.get('/profile/me').then(r => r.data), staleTime: 600_000 });
   const city = useMemo(() => getSettingsLocationLabel(profile), [profile]);
+
+  useFocusEffect(useCallback(() => {
+    void qc.invalidateQueries({ queryKey: queryKeys.profile });
+  }, [qc]));
 
   const { data: garminStatus } = useQuery({
     queryKey: ['garminStatus'],

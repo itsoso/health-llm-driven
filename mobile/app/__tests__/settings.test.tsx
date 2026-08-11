@@ -10,6 +10,7 @@ const mockRequestAccountDeletion = jest.fn();
 const mockGetAccountDeletionRequest = jest.fn();
 const mockCheckNow = jest.fn();
 const mockApiPost = jest.fn();
+const mockInvalidateQueries = jest.fn();
 let mockGarminStatus: any = { health: 'healthy', minutes_since_last_sync: 3 };
 let mockProfile: any = {
   use_manual_location: false,
@@ -18,6 +19,7 @@ let mockProfile: any = {
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ back: mockBack, push: mockPush, canGoBack: () => false }),
+  useFocusEffect: (callback: () => void) => callback(),
 }));
 
 jest.mock('@tanstack/react-query', () => ({
@@ -31,7 +33,7 @@ jest.mock('@tanstack/react-query', () => ({
     }
     return { data: null, refetch: jest.fn() };
   },
-  useQueryClient: () => ({ invalidateQueries: jest.fn() }),
+  useQueryClient: () => ({ invalidateQueries: mockInvalidateQueries }),
 }));
 
 jest.mock('expo-haptics', () => ({
@@ -173,6 +175,12 @@ describe('SettingsScreen', () => {
     const { getByText } = render(<SettingsScreen />);
 
     expect(getByText('浙江')).toBeTruthy();
+  });
+
+  it('refreshes the cached profile whenever settings gains focus', () => {
+    render(<SettingsScreen />);
+
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['profile'] });
   });
 
   it('hides deferred native and experimental entries in the App Store production UI', () => {
