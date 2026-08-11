@@ -743,6 +743,18 @@ V44_REVIEWER_SELF_SCOPES = (
     ("午后", "血压", "blood_pressure"),
     ("夜间", "睡眠", "sleep"),
 )
+V45_OWNER_TEMPORAL_COMPOSITIONS = (
+    ("查询小明早上的血压记录", "blood_pressure"),
+    ("查询妈妈运动后的血压记录", "blood_pressure"),
+    ("查询Alice早餐后的血压记录", "blood_pressure"),
+    ("查询MIA2晚上测的血压记录", "blood_pressure"),
+    ("查询朋友睡前的血压记录", "blood_pressure"),
+    ("查询Alice今早的血压记录", "blood_pressure"),
+    ("查询小王运动后的血压记录", "blood_pressure"),
+    ("查询Bob夜间的睡眠记录", "sleep"),
+    ("查询Alice的运动后血压记录", "blood_pressure"),
+    ("查询Alice的睡前体重记录", "weight"),
+)
 CASES = CASES + tuple(
     blocked_read(f"v44_reviewer_nonauth_query_{index}", text)
     for index, text in enumerate(V44_REVIEWER_NON_AUTHORIZING_READS, 1)
@@ -764,9 +776,26 @@ CASES = CASES + tuple(
         record_type,
     )
     for index, (scope, entity, record_type) in enumerate(V44_REVIEWER_SELF_SCOPES, 1)
+) + tuple(
+    blocked_read(f"v45_owner_temporal_query_{index}", text)
+    for index, (text, _record_type) in enumerate(V45_OWNER_TEMPORAL_COMPOSITIONS, 1)
+) + tuple(
+    blocked_manage(f"v45_owner_temporal_manage_{index}", text, record_type)
+    for index, (text, record_type) in enumerate(V45_OWNER_TEMPORAL_COMPOSITIONS, 1)
+) + (
+    allow_manage(
+        "v45_blood_pressure_assessment_not_withdrawal",
+        "查询我的血压记录，看看哪些运动不允许",
+        "blood_pressure",
+    ),
+    read(
+        "v45_treatment_assessment_not_meta_query",
+        "查询我的痛风记录，看看治疗会不会成功",
+        "痛风",
+    ),
 )
 
-assert len(CASES) == 447
+assert len(CASES) == 469
 
 
 base_host = urlparse(str(settings.tokenplan_base_url)).hostname

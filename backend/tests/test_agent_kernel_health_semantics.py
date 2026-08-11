@@ -730,3 +730,29 @@ def test_v44_temporal_scope_is_not_an_other_owner(scope):
     assert semantics.health_read_has_nonself_subject(
         f"查询{scope}的{entity}记录"
     ) is False
+
+
+@pytest.mark.parametrize("owner", ("小明", "妈妈", "Alice", "MIA2", "朋友"))
+@pytest.mark.parametrize("scope", ("今早", "运动后", "早餐后", "晚上", "睡前"))
+@pytest.mark.parametrize(
+    "template",
+    (
+        "查询{owner}{scope}的血压记录",
+        "查询{owner}的{scope}血压记录",
+    ),
+)
+def test_v45_temporal_scope_does_not_hide_an_other_owner(owner, scope, template):
+    assert semantics.health_read_has_nonself_subject(
+        template.format(owner=owner, scope=scope)
+    ) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "查询我的血压记录，看看哪些运动不允许",
+        "查询我的痛风记录，看看治疗会不会成功",
+    ),
+)
+def test_v45_read_followed_by_health_assessment_remains_active(text):
+    assert semantics.resolve_health_read_act(text).status == "active"

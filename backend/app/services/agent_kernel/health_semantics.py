@@ -548,6 +548,20 @@ BODY_OR_TIME_OWNER_RE = re.compile(
     r"膝|左膝|右膝|膝盖|髋|手|脚|皮肤|口腔|鼻|眼|心脏)$"
 )
 
+HEALTH_READ_SCOPE_OWNER_RE = re.compile(
+    r"(?:今天|昨日|昨天|前天|近期|最近(?:[0-9一二两三四五六七八九十半]+)?"
+    r"(?:个)?(?:小时|天|周|月|年)?|过去.+|近.+|本周|上周|本月|"
+    r"今早|晨起|早上|上午|中午|午后|下午|晚上|夜间|运动后|锻炼后|"
+    r"服药后|早餐后|午餐后|晚餐后|餐后|睡前|起床后|醒来后)"
+    r"(?:测|测量|上传|生成)?$"
+)
+
+HEALTH_READ_LEADING_SCOPE_RE = re.compile(
+    r"^(?:今早|晨起|早上|上午|中午|午后|下午|晚上|夜间|运动后|锻炼后|"
+    r"服药后|早餐后|午餐后|晚餐后|餐后|睡前|起床后|醒来后)"
+    r"(?:测|测量)?(?:的)?"
+)
+
 _REFERENCE_NUMBER = r"(?:[0-9零〇一二两三四五六七八九十百千廿卅]+)"
 _REFERENCE_OBJECT = (
     r"(?:病|疾病|病症|症状|记录|病历|病例|MRI|核磁|磁共振|CT|"
@@ -675,7 +689,8 @@ READ_NON_AUTHORIZING_RE = re.compile(
     r"这(?:件事|次查询|次查看)(?:已经|已|早就|刚)?(?:完成|结束|做完|搞定)(?:了)?|"
     r"(?:这)?(?:只是|仅是|不过是|只是为了|仅供|仅用于|仅作|纯属|是|作为)"
     r"(?:一个|一句|个|为了|举个)?(?:示例|例子|举例|演示|测试|测试用例|反例|假设|教程|文档里的命令)|"
-    r"(?:仅供参考|意味着什么|会不会成功)|"
+    r"(?:仅供参考|意味着什么)|"
+    r"(?:记录|病史|病历)[^,.!，。！？?;；、]{0,12}会不会成功$|"
     r"(?:这句(?:话)?|这个指令|该指令)(?:来自|出自)|"
     r"(?:查询|查找|搜索|检索|调取|打开|查)"
     r"[^,.!，。！？?;；、]{0,64}(?:的话)?(?:可能)?(?:会|能)"
@@ -688,7 +703,8 @@ READ_NON_AUTHORIZING_RE = re.compile(
 )
 READ_AUTHORITY_WITHDRAWAL_RE = re.compile(
     r"(?:"
-    r"(?:我)?(?:没(?:有)?|未|并未|不)(?:明确)?(?:让(?:你)?|授权|同意|允许|批准)|"
+    r"我(?:没(?:有)?|未|并未|不)(?:明确)?(?:让(?:你)?|授权|同意|允许|批准)|"
+    r"(?:没有|未|并未)(?:明确)?授权|"
     r"未经(?:我)?(?:明确)?(?:授权|同意|允许|批准)|"
     r"(?:我)?拒绝|"
     r"(?:不用|无需|不必)(?:了|查|查询|查看|执行)?|"
@@ -1144,22 +1160,17 @@ def health_read_has_nonself_subject(text: str) -> bool:
     if possessive is not None:
         owner = possessive.group("owner").strip()
         target = possessive.group("target").strip()
-        target_resolution = resolve_illness_entity(target)
+        target_without_scope = HEALTH_READ_LEADING_SCOPE_RE.sub("", target, count=1)
+        target_resolution = resolve_illness_entity(target_without_scope)
         target_is_health = bool(
             target_resolution.status == "exact"
-            or HEALTH_METRIC_ENTITY_RE.fullmatch(target)
-            or HEALTH_RECORD_DOMAIN_ENTITY_RE.fullmatch(target)
-            or EXACT_MEDICAL_EXAM_ENTITY_RE.fullmatch(target)
+            or HEALTH_METRIC_ENTITY_RE.fullmatch(target_without_scope)
+            or HEALTH_RECORD_DOMAIN_ENTITY_RE.fullmatch(target_without_scope)
+            or EXACT_MEDICAL_EXAM_ENTITY_RE.fullmatch(target_without_scope)
         )
         owner_is_scope = bool(
             BODY_OR_TIME_OWNER_RE.fullmatch(owner)
-            or re.search(
-                r"(?:今天|昨日|昨天|前天|最近|过去|近\d|小时|天|周|月|年|"
-                r"今早|晨起|早上|上午|中午|午后|下午|晚上|夜间|运动后|"
-                r"锻炼后|服药后|餐后|睡前|起床后|醒来后|上传|生成|记录|"
-                r"查询|查看|调取|打开)",
-                owner,
-            )
+            or HEALTH_READ_SCOPE_OWNER_RE.fullmatch(owner)
         )
         owner_is_current_user_scope = bool(
             re.fullmatch(
@@ -1206,10 +1217,9 @@ def health_read_has_nonself_subject(text: str) -> bool:
             if not entity.endswith(target) or len(entity) <= len(target):
                 continue
             owner = entity[: -len(target)].strip("的-· ")
-            if owner and not re.search(
-                r"(?:今天|昨日|昨天|前天|最近|过去|近|早上|上午|中午|下午|晚上|"
-                r"运动后|锻炼后|餐后|睡前|醒来后|上传|生成|记录|查询|查看)",
-                owner,
+            if owner and not (
+                BODY_OR_TIME_OWNER_RE.fullmatch(owner)
+                or HEALTH_READ_SCOPE_OWNER_RE.fullmatch(owner)
             ) and not re.search(
                 r"(?:MRI|核磁|磁共振|CT|X光|B超|胃镜|HRV|头|肩|膝|腰|颈|胸|腹|和|与|及)",
                 owner,

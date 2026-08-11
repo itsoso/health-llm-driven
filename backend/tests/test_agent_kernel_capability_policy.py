@@ -5040,6 +5040,42 @@ def test_v44_other_owner_generic_health_manage_list_is_blocked(
     assert decision.reason == "health_query_subject_not_current_user"
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "查询小明早上的血压记录",
+        "查询妈妈运动后的血压记录",
+        "查询Alice早餐后的血压记录",
+        "查询MIA2晚上测的血压记录",
+        "查询朋友睡前的血压记录",
+        "查询Alice今早的血压记录",
+        "查询小王运动后的血压记录",
+        "查询Bob夜间的睡眠记录",
+        "查询Alice的运动后血压记录",
+        "查询Alice的睡前体重记录",
+    ),
+)
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    (
+        ("health_query", {"dimension": "blood_pressure"}),
+        ("health_manage", {"record_type": "blood_pressure", "operation": "list"}),
+    ),
+)
+def test_v45_other_owner_with_temporal_scope_blocks_read_surfaces(
+    message,
+    tool_name,
+    arguments,
+):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(tool_name, arguments),
+    )
+
+    assert decision.action == "block", decision.reason
+    assert decision.reason == "health_query_subject_not_current_user"
+
+
 @pytest.mark.parametrize("record_id", (None, 82))
 def test_v44_exact_id_mutation_lookup_rejects_missing_or_wrong_id(record_id):
     snapshot = _snapshot("把疾病记录81的状态改成已康复")
@@ -5099,6 +5135,34 @@ def test_v44_current_user_scope_modifier_is_not_third_party(message):
     ),
 )
 def test_v44_explicit_query_then_health_assessment_is_allowed(
+    message,
+    tool_name,
+    arguments,
+):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(tool_name, arguments),
+    )
+
+    assert decision.action == "allow", decision.reason
+
+
+@pytest.mark.parametrize(
+    ("message", "tool_name", "arguments"),
+    (
+        (
+            "查询我的血压记录，看看哪些运动不允许",
+            "health_manage",
+            {"record_type": "blood_pressure", "operation": "list"},
+        ),
+        (
+            "查询我的痛风记录，看看治疗会不会成功",
+            "health_query",
+            {"dimension": "illness", "keyword": "痛风"},
+        ),
+    ),
+)
+def test_v45_query_then_unrelated_assessment_language_is_allowed(
     message,
     tool_name,
     arguments,
