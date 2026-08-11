@@ -1068,9 +1068,13 @@ async def evaluate(case: Case, semaphore: asyncio.Semaphore) -> dict[str, Any]:
                         snap.goal.operation,
                     }
                 elif case.expected == "allow_manage":
-                    passed = passed and result.tool_name == "health_manage"
-                    passed = passed and normalized.get("record_type") == case.keyword
-                    passed = passed and normalized.get("operation") == "list"
+                    if result.tool_name == "health_manage":
+                        passed = passed and normalized.get("record_type") == case.keyword
+                        passed = passed and normalized.get("operation") == "list"
+                    elif result.tool_name == "health_query":
+                        passed = passed and normalized.get("dimension") == case.keyword
+                    else:
+                        passed = False
                 else:
                     data = (
                         normalized.get("data")
