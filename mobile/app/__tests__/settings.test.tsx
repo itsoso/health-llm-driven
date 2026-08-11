@@ -11,6 +11,10 @@ const mockGetAccountDeletionRequest = jest.fn();
 const mockCheckNow = jest.fn();
 const mockApiPost = jest.fn();
 let mockGarminStatus: any = { health: 'healthy', minutes_since_last_sync: 3 };
+let mockProfile: any = {
+  use_manual_location: false,
+  detected_location: { city: '杭州', region: '浙江' },
+};
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ back: mockBack, push: mockPush, canGoBack: () => false }),
@@ -20,12 +24,7 @@ jest.mock('@tanstack/react-query', () => ({
   useQuery: ({ queryKey }: { queryKey: unknown[] }) => {
     const key = Array.isArray(queryKey) ? queryKey.join(':') : String(queryKey);
     if (key.includes('profile')) {
-      return {
-        data: {
-          use_manual_location: false,
-          detected_location: { city: '杭州', region: '浙江' },
-        },
-      };
+      return { data: mockProfile };
     }
     if (key.includes('garminStatus')) {
       return { data: mockGarminStatus, refetch: jest.fn() };
@@ -123,6 +122,10 @@ describe('SettingsScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGarminStatus = { health: 'healthy', minutes_since_last_sync: 3 };
+    mockProfile = {
+      use_manual_location: false,
+      detected_location: { city: '杭州', region: '浙江' },
+    };
     mockRequestAccountDeletion.mockResolvedValue({
       status: 'requested',
       request_id: 42,
@@ -138,13 +141,38 @@ describe('SettingsScreen', () => {
     const { getByText } = render(<SettingsScreen />);
 
     expect(getByText('GPS / 城市定位')).toBeTruthy();
-    expect(getByText('浙江')).toBeTruthy();
+    expect(getByText('杭州')).toBeTruthy();
     expect(getByText('GPS 自动')).toBeTruthy();
     expect(getByText('用于天气 / 空气质量 / 户外建议')).toBeTruthy();
     expect(() => getByText('定位设置')).toThrow();
     fireEvent.press(getByText('GPS / 城市定位'));
 
     expect(mockPush).toHaveBeenCalledWith('/location');
+  });
+
+  it('uses the manual city only while manual location is enabled', () => {
+    mockProfile = {
+      use_manual_location: true,
+      manual_location: { city: '上海', region: null },
+      detected_location: { city: '杭州', region: '浙江' },
+    };
+
+    const { getByText, queryByText } = render(<SettingsScreen />);
+
+    expect(getByText('上海')).toBeTruthy();
+    expect(queryByText('杭州')).toBeNull();
+    expect(getByText('手动城市')).toBeTruthy();
+  });
+
+  it('falls back to the detected region only when the detected city is missing', () => {
+    mockProfile = {
+      use_manual_location: false,
+      detected_location: { city: null, region: '浙江省' },
+    };
+
+    const { getByText } = render(<SettingsScreen />);
+
+    expect(getByText('浙江')).toBeTruthy();
   });
 
   it('hides deferred native and experimental entries in the App Store production UI', () => {
