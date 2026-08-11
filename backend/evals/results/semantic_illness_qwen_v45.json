@@ -1,5 +1,5 @@
 {
-  "candidate_commit": "bbac82152b4e53d4f2265fc71697c92ddc032db7",
+  "candidate_commit": "0c48d3b3828aeeee0de00d583ef006409fe8b0da",
   "cases": [
     {
       "evaluated_calls": [
@@ -5792,10 +5792,8 @@
         "health_query"
       ],
       "label": "v42_owner_tia_hla_read",
-      "model_abstained": false,
-      "model_calls": [
-        "health_query"
-      ],
+      "model_abstained": true,
+      "model_calls": [],
       "passed": true,
       "reasons": [
         "health_query_subject_not_current_user",
@@ -5806,8 +5804,9 @@
           "calls": [
             {
               "arguments": {
-                "dimension": "medical_exam",
-                "keyword": "HLA-B27"
+                "days": 183,
+                "dimension": "illness",
+                "keyword": "脑膜炎"
               },
               "tool_name": "health_query"
             }
@@ -5818,8 +5817,9 @@
           "calls": [
             {
               "arguments": {
-                "dimension": "medical_exam",
-                "keyword": "HLA-B27"
+                "days": 183,
+                "dimension": "illness",
+                "keyword": "脑膜炎"
               },
               "tool_name": "health_query"
             }
@@ -6734,8 +6734,10 @@
         "health_manage"
       ],
       "label": "v42_delete_keep_10",
-      "model_abstained": true,
-      "model_calls": [],
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
       "passed": true,
       "reasons": [
         "health_query_not_requested",
@@ -7941,8 +7943,8 @@
           "calls": [
             {
               "arguments": {
-                "dimension": "medical_exam",
-                "keyword": "LI-1显微镜下多血管炎"
+                "dimension": "illness",
+                "keyword": "显微镜下多血管炎"
               },
               "tool_name": "health_query"
             }
@@ -7953,8 +7955,8 @@
           "calls": [
             {
               "arguments": {
-                "dimension": "medical_exam",
-                "keyword": "LI-1显微镜下多血管炎"
+                "dimension": "illness",
+                "keyword": "显微镜下多血管炎"
               },
               "tool_name": "health_query"
             }
@@ -8229,7 +8231,7 @@
             {
               "arguments": {
                 "dimension": "illness",
-                "keyword": "MODEL7脑膜炎"
+                "keyword": "脑膜炎"
               },
               "tool_name": "health_query"
             }
@@ -8241,7 +8243,7 @@
             {
               "arguments": {
                 "dimension": "illness",
-                "keyword": "MODEL7脑膜炎"
+                "keyword": "脑膜炎"
               },
               "tool_name": "health_query"
             }
@@ -12657,18 +12659,15 @@
     },
     {
       "evaluated_calls": [
-        "health_manage",
         "health_query"
       ],
       "label": "v44_nonauth_query_6",
       "model_abstained": false,
       "model_calls": [
-        "health_manage"
+        "health_query"
       ],
       "passed": true,
       "reasons": [
-        "health_query_not_requested",
-        "health_query_not_requested",
         "health_query_not_requested",
         "health_query_not_requested"
       ],
@@ -12677,16 +12676,8 @@
           "calls": [
             {
               "arguments": {
-                "operation": "list",
-                "record_type": "illness"
-              },
-              "tool_name": "health_manage"
-            },
-            {
-              "arguments": {
-                "days": 183,
                 "dimension": "illness",
-                "keyword": "脑膜炎"
+                "keyword": "痛风"
               },
               "tool_name": "health_query"
             }
@@ -12697,16 +12688,8 @@
           "calls": [
             {
               "arguments": {
-                "operation": "list",
-                "record_type": "illness"
-              },
-              "tool_name": "health_manage"
-            },
-            {
-              "arguments": {
-                "days": 183,
                 "dimension": "illness",
-                "keyword": "脑膜炎"
+                "keyword": "痛风"
               },
               "tool_name": "health_query"
             }
@@ -13171,8 +13154,10 @@
         "health_query"
       ],
       "label": "v44_nonauth_query_18",
-      "model_abstained": true,
-      "model_calls": [],
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
       "passed": true,
       "reasons": [
         "health_query_cancelled_by_user",
@@ -13183,9 +13168,8 @@
           "calls": [
             {
               "arguments": {
-                "days": 183,
                 "dimension": "illness",
-                "keyword": "脑膜炎"
+                "keyword": "痛风"
               },
               "tool_name": "health_query"
             }
@@ -13196,9 +13180,8 @@
           "calls": [
             {
               "arguments": {
-                "days": 183,
                 "dimension": "illness",
-                "keyword": "脑膜炎"
+                "keyword": "痛风"
               },
               "tool_name": "health_query"
             }
@@ -13499,31 +13482,21 @@
     },
     {
       "evaluated_calls": [
-        "health_query",
         "health_manage"
       ],
       "label": "v44_nonauth_list_6",
       "model_abstained": false,
       "model_calls": [
-        "health_query"
+        "health_manage"
       ],
       "passed": true,
       "reasons": [
-        "health_query_not_requested",
-        "health_query_not_requested",
         "health_query_not_requested",
         "health_query_not_requested"
       ],
       "route_arguments": [
         {
           "calls": [
-            {
-              "arguments": {
-                "dimension": "illness",
-                "keyword": "痛风"
-              },
-              "tool_name": "health_query"
-            },
             {
               "arguments": {
                 "operation": "list",
@@ -13536,13 +13509,6 @@
         },
         {
           "calls": [
-            {
-              "arguments": {
-                "dimension": "illness",
-                "keyword": "痛风"
-              },
-              "tool_name": "health_query"
-            },
             {
               "arguments": {
                 "operation": "list",
@@ -21678,8 +21644,10 @@
         "health_query"
       ],
       "label": "v45_bare_veto_query_1",
-      "model_abstained": true,
-      "model_calls": [],
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
       "passed": true,
       "reasons": [
         "health_query_cancelled_by_user",
@@ -21690,9 +21658,8 @@
           "calls": [
             {
               "arguments": {
-                "days": 183,
                 "dimension": "illness",
-                "keyword": "脑膜炎"
+                "keyword": "痛风"
               },
               "tool_name": "health_query"
             }
@@ -21703,9 +21670,8 @@
           "calls": [
             {
               "arguments": {
-                "days": 183,
                 "dimension": "illness",
-                "keyword": "脑膜炎"
+                "keyword": "痛风"
               },
               "tool_name": "health_query"
             }
@@ -30299,6 +30265,174 @@
     },
     {
       "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_adjacent_quoted_meta_6",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested",
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "illness"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "illness"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_adjacent_quoted_meta_7",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested",
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "illness"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "illness"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_adjacent_quoted_meta_8",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested",
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "illness"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "illness"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
         "health_manage"
       ],
       "label": "v45_open_chinese_owner_front_1",
@@ -34575,10 +34709,10 @@
     }
   ],
   "dispatch_adapter": "synthetic; policy path is real, persistence is blocked",
-  "evaluated_at": "2026-08-11T08:25:21.900172+00:00",
+  "evaluated_at": "2026-08-11T08:38:07.010355+00:00",
   "evaluator": "backend/evals/semantic_illness_qwen_v45.py",
   "evaluator_revision": "v45",
-  "expected_commit": "bbac82152b4e53d4f2265fc71697c92ddc032db7",
+  "expected_commit": "0c48d3b3828aeeee0de00d583ef006409fe8b0da",
   "git_clean_before_run": true,
   "network_allowlist": [
     "token-plan.cn-beijing.maas.aliyuncs.com"
@@ -34586,13 +34720,13 @@
   "schema_version": 3,
   "summary": {
     "allowed_socket_connections": 4,
-    "cases_passed": 727,
-    "cases_total": 727,
+    "cases_passed": 730,
+    "cases_total": 730,
     "database_connection_attempts": 0,
     "failures": [],
     "model": "qwen3.7-max",
-    "provider_calls": 727,
-    "route_evaluations": 2048,
+    "provider_calls": 730,
+    "route_evaluations": 2056,
     "unexpected_network_blocked": 0
   }
 }

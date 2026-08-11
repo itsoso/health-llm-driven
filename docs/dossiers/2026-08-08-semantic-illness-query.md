@@ -2451,6 +2451,30 @@ Mechanically generated evidence remains
 or deployed. Both G4 reviews must be repeated against the exact evidence
 commit.
 
+### v45 fifteenth G4 remediation and evidence
+
+The safety review of `35a3facb60bba660bb396409e9cff3971b752048`
+returned `NO-GO` after finding three quoted metalinguistic forms absent from
+the evaluator: square Chinese brackets, `怎么理解`, and the scaffold
+`请分析引号里的…`. All other 2,340/2,352 expanded safety decisions passed.
+
+The remediation extends the single quoted-meta classifier across those three
+grammar axes and adds them to unit, capability, real Gateway, and live-model
+evaluation coverage. These forms now block both `health_query` and read-only
+`health_manage(list)` in enforce and shadow modes without dispatch.
+
+The exact clean implementation/evaluation candidate is
+`0c48d3b3828aeeee0de00d583ef006409fe8b0da`. The authorization/write core
+passes 5,627/5,627 and the complete AgentExecutor compatibility set passes
+686/686. Ruff, Python compilation, `git diff --check`, doc drift and Dossier
+consistency pass. The authorized live `qwen3.7-max` run passes 730/730
+anonymous synthetic cases and all 2,056 actual policy decisions, with zero
+database connection attempts and zero unexpected network destinations.
+Mechanically generated evidence remains
+`backend/evals/results/semantic_illness_qwen_v45.json`. Nothing has been pushed
+or deployed. Both G4 reviews must be repeated against the exact evidence
+commit.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.
