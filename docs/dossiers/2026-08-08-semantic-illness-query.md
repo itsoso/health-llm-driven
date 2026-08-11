@@ -2475,6 +2475,33 @@ Mechanically generated evidence remains
 or deployed. Both G4 reviews must be repeated against the exact evidence
 commit.
 
+### v45 sixteenth G4 remediation and evidence
+
+Both reviews of `36b3c3088000fa4cbcd7127e44dd67b20222550c`
+returned `NO-GO` after independent orthogonal expansion. Equivalent quoted
+metalinguistic constructions varied the action, quotation indicator, location
+word and bracket style; fourteen common lab/exam terms were also absent from
+the centralized clinical report registry.
+
+The remediation replaces the remaining scaffold phrase with a controlled
+compositional grammar: explanation/analysis action × quotation indicator ×
+inside/location word × supported paired delimiter. The exact clinical report
+registry is expanded with the complete reviewed term set. All new quote axes
+block both read tools in both policy modes without dispatch, while all new
+clinical report terms project to a current-user `medical_exam` read.
+
+The exact clean implementation/evaluation candidate is
+`15916adcc13b98f0da203de4b3a38bd81ab95191`. The authorization/write core
+passes 5,739/5,739 and the complete AgentExecutor compatibility set passes
+686/686. Ruff, Python compilation, `git diff --check`, doc drift and Dossier
+consistency pass. The authorized live `qwen3.7-max` run passes 756/756
+anonymous synthetic cases and all 2,162 actual policy decisions, with zero
+database connection attempts and zero unexpected network destinations.
+Mechanically generated evidence remains
+`backend/evals/results/semantic_illness_qwen_v45.json`. Nothing has been pushed
+or deployed. Both G4 reviews must be repeated against the exact evidence
+commit.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.
