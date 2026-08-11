@@ -960,6 +960,9 @@ def test_v45_additional_meta_intent_forms_are_non_authorizing(text):
         "看看『这些结果是什么意思』这个问题怎么解读",
         "看看（这些结果是什么意思）这个问题怎么解读",
         '请解释"本次结果怎么理解"这句话',
+        "看看【这些结果是什么意思】这个问题怎么解读",
+        "看看“这些结果是什么意思”这个问题怎么理解",
+        "请分析引号里的“这些结果是什么意思”",
     ),
 )
 def test_v45_meta_command_language_never_authorizes_health_read(meta_text):

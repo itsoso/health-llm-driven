@@ -5832,6 +5832,9 @@ def test_v42_non_authorizing_read_never_dispatches_manage_list(message):
         "告诉我这个命令啥意思",
         "看看这个指令怎么用",
         "看看这个请求怎么执行",
+        "查询我的化验记录，看看【这些结果是什么意思】这个问题怎么解读",
+        "查询我的化验记录，看看“这些结果是什么意思”这个问题怎么理解",
+        "查询我的化验记录，请分析引号里的“这些结果是什么意思”",
     ),
 )
 @pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
