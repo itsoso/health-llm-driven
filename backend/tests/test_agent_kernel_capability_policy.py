@@ -5330,6 +5330,25 @@ def test_v45_bare_meta_objects_block_read(tool_name, meta_object):
     assert decision.action == "block", decision.reason
 
 
+@pytest.mark.parametrize(
+    "meta_clause",
+    ("指令是什么意思", "这个命令指的是什么", "请求怎么理解", "操作有什么用途"),
+)
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_meta_clause_without_lead_in_blocks_read(tool_name, meta_clause):
+    arguments = (
+        {"dimension": "illness", "keyword": "痛风"}
+        if tool_name == "health_query"
+        else {"record_type": "illness", "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot(f"查询我的痛风记录，{meta_clause}"),
+        _request(tool_name, arguments),
+    )
+
+    assert decision.action == "block", decision.reason
+
+
 @pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
 def test_v45_unpunctuated_metric_interpretation_allows_read(tool_name):
     arguments = (
@@ -5369,12 +5388,58 @@ def test_v45_extended_meta_object_and_intent_axes_block_read(text, tool_name):
     assert decision.action == "block", decision.reason
 
 
+@pytest.mark.parametrize(
+    "text",
+    (
+        "查询我的痛风记录，这个指令是什么意思",
+        "查询我的痛风记录，请解释这个指令是什么意思",
+        "查询我的痛风记录，看看这个指令表达什么",
+        "查询我的痛风记录，看看这番话是什么意思",
+    ),
+)
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_additional_meta_scaffolds_objects_and_intents_block_read(
+    text,
+    tool_name,
+):
+    arguments = (
+        {"dimension": "illness", "keyword": "痛风"}
+        if tool_name == "health_query"
+        else {"record_type": "illness", "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot(text),
+        _request(tool_name, arguments),
+    )
+
+    assert decision.action == "block", decision.reason
+
+
 @pytest.mark.parametrize("metric_object", ("这些指标", "这些数值", "这些读数"))
 @pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
 def test_v45_unpunctuated_metric_object_variants_allow_read(
     metric_object,
     tool_name,
 ):
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot(f"查询我的化验记录看看{metric_object}是什么意思"),
+        _request(tool_name, arguments),
+    )
+
+    assert decision.action == "allow", decision.reason
+
+
+@pytest.mark.parametrize(
+    "metric_object",
+    ("这些结果", "这些化验结果", "这些测量值", "这些检测值", "这些数据"),
+)
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_adjacent_clinical_data_objects_allow_read(metric_object, tool_name):
     arguments = (
         {"dimension": "medical_exam"}
         if tool_name == "health_query"

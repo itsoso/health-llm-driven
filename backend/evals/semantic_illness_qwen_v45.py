@@ -924,9 +924,39 @@ CASES = CASES + tuple(
         "medical_exam",
     )
     for index, metric_object in enumerate(("这些指标", "这些数值", "这些读数"), 1)
+) + tuple(
+    blocked_manage(
+        f"v45_meta_clause_without_lead_{index}",
+        f"查询我的痛风记录，{meta_clause}",
+    )
+    for index, meta_clause in enumerate(
+        ("指令是什么意思", "这个命令指的是什么", "请求怎么理解", "操作有什么用途"),
+        1,
+    )
+) + tuple(
+    blocked_manage(f"v45_additional_meta_axis_{index}", text)
+    for index, text in enumerate(
+        (
+            "查询我的痛风记录，这个指令是什么意思",
+            "查询我的痛风记录，请解释这个指令是什么意思",
+            "查询我的痛风记录，看看这个指令表达什么",
+            "查询我的痛风记录，看看这番话是什么意思",
+        ),
+        1,
+    )
+) + tuple(
+    allow_manage(
+        f"v45_adjacent_clinical_data_{index}",
+        f"查询我的化验记录看看{metric_object}是什么意思",
+        "medical_exam",
+    )
+    for index, metric_object in enumerate(
+        ("这些结果", "这些化验结果", "这些测量值", "这些检测值", "这些数据"),
+        1,
+    )
 )
 
-assert len(CASES) == 542
+assert len(CASES) == 555
 
 
 base_host = urlparse(str(settings.tokenplan_base_url)).hostname

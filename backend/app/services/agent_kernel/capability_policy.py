@@ -30,6 +30,7 @@ from app.services.agent_kernel.health_semantics import (
     has_explicit_health_read_request,
     health_read_cancelled,
     health_semantics_contract_payload,
+    is_clinical_result_interpretation,
     is_unresolved_health_reference,
     normalize_health_authorization_text,
     resolve_health_read_act,
@@ -2399,7 +2400,9 @@ def decide_tool_capability(
                 tool_name,
                 canonical_args,
             )
-        if _query_contains_unresolved_reference(turn_text):
+        if _query_contains_unresolved_reference(
+            turn_text
+        ) and not is_clinical_result_interpretation(turn_text):
             return _decision(
                 "block",
                 "health_query_semantics_unresolved",
@@ -2589,7 +2592,9 @@ def decide_tool_capability(
                 tool_name,
                 normalized_plan,
             )
-        if _query_contains_unresolved_reference(turn_text):
+        if _query_contains_unresolved_reference(
+            turn_text
+        ) and not is_clinical_result_interpretation(turn_text):
             return _decision(
                 "block",
                 "health_query_semantics_unresolved",
@@ -2702,8 +2707,10 @@ def decide_tool_capability(
                     tool_name,
                     args,
                 )
-            if _query_contains_unresolved_reference(turn_text) and (
-                guarding_user_read or _has_explicit_read_request(turn_text)
+            if (
+                _query_contains_unresolved_reference(turn_text)
+                and not is_clinical_result_interpretation(turn_text)
+                and (guarding_user_read or _has_explicit_read_request(turn_text))
             ):
                 return _decision(
                     "block",

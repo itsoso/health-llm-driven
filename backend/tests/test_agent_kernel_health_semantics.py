@@ -860,6 +860,16 @@ def test_v45_bare_meta_objects_revoke_read(meta_object):
     ).status != "active"
 
 
+@pytest.mark.parametrize(
+    "meta_clause",
+    ("指令是什么意思", "这个命令指的是什么", "请求怎么理解", "操作有什么用途"),
+)
+def test_v45_meta_clause_without_lead_in_revokes_read(meta_clause):
+    assert semantics.resolve_health_read_act(
+        f"查询我的痛风记录，{meta_clause}"
+    ).status != "active"
+
+
 def test_v45_unpunctuated_metric_interpretation_remains_active():
     assert semantics.resolve_health_read_act(
         "查询我的化验记录看看这些指标是什么意思"
@@ -879,8 +889,31 @@ def test_v45_extended_meta_object_and_intent_axes_revoke_read(text):
     assert semantics.resolve_health_read_act(text).status != "active"
 
 
+@pytest.mark.parametrize(
+    "text",
+    (
+        "查询我的痛风记录，这个指令是什么意思",
+        "查询我的痛风记录，请解释这个指令是什么意思",
+        "查询我的痛风记录，看看这个指令表达什么",
+        "查询我的痛风记录，看看这番话是什么意思",
+    ),
+)
+def test_v45_additional_meta_scaffolds_objects_and_intents_revoke_read(text):
+    assert semantics.resolve_health_read_act(text).status != "active"
+
+
 @pytest.mark.parametrize("metric_object", ("这些指标", "这些数值", "这些读数"))
 def test_v45_unpunctuated_metric_object_variants_remain_active(metric_object):
+    assert semantics.resolve_health_read_act(
+        f"查询我的化验记录看看{metric_object}是什么意思"
+    ).status == "active"
+
+
+@pytest.mark.parametrize(
+    "metric_object",
+    ("这些结果", "这些化验结果", "这些测量值", "这些检测值", "这些数据"),
+)
+def test_v45_adjacent_clinical_data_objects_remain_active(metric_object):
     assert semantics.resolve_health_read_act(
         f"查询我的化验记录看看{metric_object}是什么意思"
     ).status == "active"
