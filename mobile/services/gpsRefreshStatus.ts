@@ -11,6 +11,9 @@ export type GPSRefreshStatus = {
   errorKind?: 'permission_check' | 'location' | 'network_or_server';
 };
 
+type GPSRefreshStatusListener = (status: GPSRefreshStatus) => void;
+const listeners = new Set<GPSRefreshStatusListener>();
+
 const VALID_STATES = new Set<GPSRefreshState>([
   'idle',
   'refreshing',
@@ -31,8 +34,15 @@ export async function readGPSRefreshStatus(): Promise<GPSRefreshStatus> {
 }
 
 export async function writeGPSRefreshStatus(status: GPSRefreshStatus): Promise<void> {
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({
+  const next = {
     ...status,
     updatedAt: status.updatedAt ?? Date.now(),
-  }));
+  };
+  listeners.forEach(listener => listener(next));
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+}
+
+export function subscribeGPSRefreshStatus(listener: GPSRefreshStatusListener): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }

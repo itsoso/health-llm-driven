@@ -28,7 +28,11 @@ import { APP_DISPLAY_NAME } from '../constants/brand';
 import { AppleHealthRow } from '../components/AppleHealthRow';
 import { getReleaseCapabilities } from '../config/releaseCapabilities';
 import { getNativeVersionLabel } from '../services/appUpdate';
-import { readGPSRefreshStatus, type GPSRefreshState } from '../services/gpsRefreshStatus';
+import {
+  readGPSRefreshStatus,
+  subscribeGPSRefreshStatus,
+  type GPSRefreshState,
+} from '../services/gpsRefreshStatus';
 
 type SettingsLocationProfile = {
   use_manual_location?: boolean;
@@ -69,12 +73,16 @@ export default function SettingsScreen() {
 
   useFocusEffect(useCallback(() => {
     let active = true;
+    const unsubscribe = subscribeGPSRefreshStatus(status => {
+      if (active) setGPSRefreshState(status.state);
+    });
     void qc.invalidateQueries({ queryKey: queryKeys.profile });
     void readGPSRefreshStatus().then(status => {
       if (active) setGPSRefreshState(status.state);
     });
     return () => {
       active = false;
+      unsubscribe();
     };
   }, [qc]));
 
@@ -415,7 +423,8 @@ export default function SettingsScreen() {
         </View>
 
         {/* Logout */}
-        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
+        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}
+          accessibilityRole="button" accessibilityLabel="退出登录">
           <Text style={txt.logoutText}>退出登录</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -477,7 +486,9 @@ function LocationSettingsRow({
         : refreshState === 'error'
           ? '更新失败'
           : 'GPS 自动';
-  const modeColor = refreshState === 'error'
+  const modeColor = useManual
+    ? C.green500
+    : refreshState === 'error'
     ? revaSemantic.risk.fg
     : refreshState === 'permission_required' || refreshState === 'refreshing'
       ? revaSemantic.caution.fg
@@ -587,7 +598,7 @@ const styles = StyleSheet.create({
   locationStatus: { maxWidth: 104, flexShrink: 1, alignItems: 'flex-end', gap: 3 },
   logoutBtn: {
     backgroundColor: C.surface, borderRadius: revaRadii.lg,
-    paddingVertical: 14, alignItems: 'center', marginTop: revaSpacing.s5,
+    minHeight: 52, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', marginTop: revaSpacing.s5,
     ...revaShadows.sm,
   },
 });

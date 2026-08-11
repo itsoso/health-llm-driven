@@ -1,7 +1,8 @@
 /* eslint-disable import/first, @typescript-eslint/no-require-imports */
 import React from 'react';
 import { Alert, StyleSheet } from 'react-native';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { revaColors } from '../../constants/revaTheme';
 
 const mockBack = jest.fn();
 const mockPush = jest.fn();
@@ -13,6 +14,7 @@ const mockApiPost = jest.fn();
 const mockInvalidateQueries = jest.fn();
 const mockQueryClient = { invalidateQueries: mockInvalidateQueries };
 const mockReadGPSRefreshStatus = jest.fn();
+let mockGPSRefreshStatusListener: ((status: { state: string }) => void) | null = null;
 let mockGarminStatus: any = { health: 'healthy', minutes_since_last_sync: 3 };
 let mockProfile: any = {
   use_manual_location: false,
@@ -125,6 +127,12 @@ jest.mock('../../services/auth', () => ({
 
 jest.mock('../../services/gpsRefreshStatus', () => ({
   readGPSRefreshStatus: () => mockReadGPSRefreshStatus(),
+  subscribeGPSRefreshStatus: (listener: (status: { state: string }) => void) => {
+    mockGPSRefreshStatusListener = listener;
+    return () => {
+      mockGPSRefreshStatusListener = null;
+    };
+  },
 }));
 
 import SettingsScreen from '../settings';
@@ -147,6 +155,7 @@ describe('SettingsScreen', () => {
     mockCheckNow.mockResolvedValue('current');
     mockLogout.mockResolvedValue(undefined);
     mockReadGPSRefreshStatus.mockResolvedValue({ state: 'idle' });
+    mockGPSRefreshStatusListener = null;
   });
 
   it('surfaces GPS and city positioning as one explicit clickable entry', () => {
@@ -176,6 +185,19 @@ describe('SettingsScreen', () => {
     expect(getByText('手动城市')).toBeTruthy();
   });
 
+  it('keeps manual city status visually normal even after an automatic GPS error', async () => {
+    mockProfile = {
+      use_manual_location: true,
+      manual_location: { city: '上海' },
+      detected_location: { city: '杭州', region: '浙江' },
+    };
+    mockReadGPSRefreshStatus.mockResolvedValueOnce({ state: 'error' });
+
+    const { getByText } = render(<SettingsScreen />);
+    await waitFor(() => expect(StyleSheet.flatten(getByText('手动城市').props.style).color)
+      .toBe(revaColors.green500));
+  });
+
   it('falls back to the detected region only when the detected city is missing', () => {
     mockProfile = {
       use_manual_location: false,
@@ -203,6 +225,16 @@ describe('SettingsScreen', () => {
     const { getByText } = render(<SettingsScreen />);
 
     await waitFor(() => expect(getByText(label)).toBeTruthy());
+  });
+
+  it('updates GPS state while settings remains focused', async () => {
+    mockReadGPSRefreshStatus.mockResolvedValueOnce({ state: 'refreshing' });
+    const { getByText } = render(<SettingsScreen />);
+    await waitFor(() => expect(getByText('正在更新')).toBeTruthy());
+
+    act(() => mockGPSRefreshStatusListener?.({ state: 'ready' }));
+
+    expect(getByText('GPS 自动')).toBeTruthy();
   });
 
   it('hides deferred native and experimental entries in the App Store production UI', () => {
@@ -391,11 +423,13 @@ describe('SettingsScreen', () => {
     const { getByRole, getByTestId } = render(<SettingsScreen />);
     const middleRow = StyleSheet.flatten(getByRole('button', { name: '数据连接与授权' }).props.style);
     const lastRow = StyleSheet.flatten(getByRole('button', { name: '数据来源' }).props.style);
+    const logoutRow = StyleSheet.flatten(getByRole('button', { name: '退出登录' }).props.style);
     const locationStatus = StyleSheet.flatten(getByTestId('settings-location-status').props.style);
 
     expect(middleRow.minHeight).toBeGreaterThanOrEqual(48);
     expect(middleRow.borderBottomWidth).toBeGreaterThan(0);
     expect(lastRow.borderBottomWidth).toBe(0);
+    expect(logoutRow.minHeight).toBeGreaterThanOrEqual(48);
     expect(locationStatus.width).toBeUndefined();
     expect(locationStatus.flexShrink).toBe(1);
   });

@@ -98,6 +98,7 @@ describe('useGPSAutoRefresh', () => {
     renderHook(() => useGPSAutoRefresh(true), { wrapper });
     await new Promise(r => setTimeout(r, 50));
     expect(mockUpdateGPSLocation).not.toHaveBeenCalled();
+    expect(mockWriteGPSRefreshStatus).toHaveBeenCalledWith({ state: 'ready' });
   });
 
   it('breaks throttle when drift > 50km', async () => {
@@ -120,6 +121,16 @@ describe('useGPSAutoRefresh', () => {
     expect(mockWriteGPSRefreshStatus).toHaveBeenCalledWith(
       expect.objectContaining({ state: 'ready', lastSuccessAt: expect.any(Number) }),
     );
+  });
+
+  it('invalidates the profile used by settings after a successful refresh', async () => {
+    const invalidateSpy = jest.spyOn(QueryClient.prototype, 'invalidateQueries');
+
+    renderHook(() => useGPSAutoRefresh(true), { wrapper });
+
+    await waitFor(() => expect(mockUpdateGPSLocation).toHaveBeenCalled());
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['profile'] }));
+    invalidateSpy.mockRestore();
   });
 
   it('records an observable error without clearing the last city when refresh fails', async () => {

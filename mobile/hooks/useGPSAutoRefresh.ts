@@ -21,6 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQueryClient } from '@tanstack/react-query';
 import { updateGPSLocation, reverseGeocodeOnDevice } from '../services/location';
 import { writeGPSRefreshStatus, type GPSRefreshStatus } from '../services/gpsRefreshStatus';
+import { queryKeys } from '../applib/queryKeys';
 
 const MIN_INTERVAL_MS = 30 * 60 * 1000;  // 30min 节流
 const FORCE_REFRESH_KM = 50;             // 坐标漂移 >50km 直接破节流
@@ -97,6 +98,7 @@ export function useGPSAutoRefresh(enabled: boolean) {
           );
           if (drift < FORCE_REFRESH_KM) {
             if (__DEV__) console.log(`[GPS] 节流跳过: age=${Math.round(ageMs / 60000)}min drift=${drift.toFixed(1)}km`);
+            await recordStatus({ state: 'ready' });
             return;
           }
           if (__DEV__) console.log(`[GPS] 漂移破节流: drift=${drift.toFixed(1)}km`);
@@ -127,6 +129,7 @@ export function useGPSAutoRefresh(enabled: boolean) {
         // 也已变, 后端 forecast 数据可能更新.
         qc.invalidateQueries({ queryKey: ['profileLocation'] });
         qc.invalidateQueries({ queryKey: ['effectiveLocation'] });
+        qc.invalidateQueries({ queryKey: queryKeys.profile });
         qc.invalidateQueries({ queryKey: ['weather'] });
         qc.invalidateQueries({ queryKey: ['weatherForecast'] });
         qc.invalidateQueries({ queryKey: ['airQuality'] });
