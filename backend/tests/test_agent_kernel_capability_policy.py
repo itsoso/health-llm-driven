@@ -5847,6 +5847,11 @@ def test_v42_non_authorizing_read_never_dispatches_manage_list(message):
         "查询我的化验记录，看看〈这些结果是什么意思〉这个问题怎么解读",
         "查询我的化验记录，看看｛这些结果是什么意思｝这个问题怎么解读",
         "查询我的化验记录，看看「这些结果是什么意思」这个问题如何理解",
+        "查询我的化验记录，看看{这些结果是什么意思}这个问题怎么解读",
+        "查询我的化验记录，看看〔这些结果是什么意思〕这个问题怎么解读",
+        "查询我的化验记录，看看〖这些结果是什么意思〗这个问题怎么解读",
+        "查询我的化验记录，看看«这些结果是什么意思»这个问题怎么解读",
+        "查询我的化验记录，看看‹这些结果是什么意思›这个问题怎么解读",
     ),
 )
 @pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
@@ -6006,6 +6011,13 @@ def test_v45_explicit_self_generic_report_projects_medical_exam(text):
         "同型半胱氨酸", "降钙素原", "甲胎蛋白", "维生素B12", "叶酸",
         "尿酸", "肌酐", "尿微量白蛋白", "糖化血红蛋白", "白细胞",
         "促甲状腺激素", "游离甲状腺素", "铁蛋白", "前列腺特异抗原",
+        "总胆固醇", "甘油三酯", "高密度脂蛋白", "低密度脂蛋白",
+        "空腹血糖", "餐后血糖", "血红蛋白", "红细胞", "中性粒细胞",
+        "C反应蛋白", "超敏C反应蛋白", "肌酸激酶", "乳酸脱氢酶",
+        "碱性磷酸酶", "γ-谷氨酰转移酶", "总胆红素", "直接胆红素",
+        "尿素氮", "胱抑素C", "微量白蛋白", "维生素B9", "维生素B6",
+        "游离三碘甲状腺原氨酸", "甲状腺过氧化物酶抗体", "癌胚抗原",
+        "糖类抗原CA125",
     ),
 )
 @pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
@@ -6056,6 +6068,26 @@ def test_v45_self_report_clause_boundaries_allow_read(separator, tool_name):
         ),
         _request(tool_name, arguments),
     )
+    assert decision.action == "allow", decision.reason
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "查询我的化验记录，请分析[血红蛋白偏低]是什么意思",
+        "查询我的化验记录，请解读［ALT 86 U/L］怎么理解",
+        "查询我的化验记录，请说明〈肌酐 120 μmol/L〉有什么含义",
+        "查询我的化验记录，帮我分析｛空腹血糖 7.2 mmol/L｝怎么解读",
+    ),
+)
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_bracketed_clinical_values_remain_readable(text, tool_name):
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    decision = decide_tool_capability(_snapshot(text), _request(tool_name, arguments))
     assert decision.action == "allow", decision.reason
 
 

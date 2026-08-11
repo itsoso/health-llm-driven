@@ -1164,6 +1164,52 @@ CASES = CASES + tuple(
             "看看〈这些结果是什么意思〉这个问题怎么解读",
             "看看｛这些结果是什么意思｝这个问题怎么解读",
             "看看「这些结果是什么意思」这个问题如何理解",
+            "看看{这些结果是什么意思}这个问题怎么解读",
+            "看看〔这些结果是什么意思〕这个问题怎么解读",
+            "看看〖这些结果是什么意思〗这个问题怎么解读",
+            "看看«这些结果是什么意思»这个问题怎么解读",
+            "看看‹这些结果是什么意思›这个问题怎么解读",
+        ),
+        1,
+    )
+) + tuple(
+    allow_manage(
+        f"v45_bracketed_clinical_value_{index}", text, "medical_exam"
+    )
+    for index, text in enumerate(
+        (
+            "查询我的化验记录，请分析[血红蛋白偏低]是什么意思",
+            "查询我的化验记录，请解读［ALT 86 U/L］怎么理解",
+            "查询我的化验记录，请说明〈肌酐 120 μmol/L〉有什么含义",
+            "查询我的化验记录，帮我分析｛空腹血糖 7.2 mmol/L｝怎么解读",
+        ),
+        1,
+    )
+) + tuple(
+    blocked_manage(
+        f"v45_report_belongs_owner_{index}",
+        f"查询{term}检查报告，报告属于{owner}，这些结果是什么意思",
+        "medical_exam",
+    )
+    for index, (term, owner) in enumerate(
+        (("总胆固醇", "高飞"), ("尿酸", "Alice")),
+        1,
+    )
+) + tuple(
+    allow_manage(
+        f"v45_reviewed_common_clinical_{index}",
+        f"查询{term}检查报告，这些结果是什么意思",
+        "medical_exam",
+    )
+    for index, term in enumerate(
+        (
+            "总胆固醇", "甘油三酯", "高密度脂蛋白", "低密度脂蛋白",
+            "空腹血糖", "餐后血糖", "血红蛋白", "红细胞", "中性粒细胞",
+            "C反应蛋白", "超敏C反应蛋白", "肌酸激酶", "乳酸脱氢酶",
+            "碱性磷酸酶", "γ-谷氨酰转移酶", "总胆红素", "直接胆红素",
+            "尿素氮", "胱抑素C", "微量白蛋白", "维生素B9", "维生素B6",
+            "游离三碘甲状腺原氨酸", "甲状腺过氧化物酶抗体", "癌胚抗原",
+            "糖类抗原CA125",
         ),
         1,
     )
@@ -1280,7 +1326,7 @@ CASES = CASES + (
     )
 )
 
-assert len(CASES) == 756
+assert len(CASES) == 793
 
 
 base_host = urlparse(str(settings.tokenplan_base_url)).hostname

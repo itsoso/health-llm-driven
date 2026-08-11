@@ -829,15 +829,24 @@ META_COMMAND_INTENT_RE = re.compile(
 )
 QUOTED_META_COMMAND_RE = re.compile(
     r"(?:"
-    r"[“‘\"'《「『（(【\[［〈｛][^”’\"'》」』）)】\]］〉｝]{1,32}"
-    r"[”’\"'》」』）)】\]］〉｝]"
-    r"(?:这个)?(?:说法|表达|几个字|问题|这句话)?"
+    r"[“‘\"'《「『（(【\[［〈｛{〔〖«‹]"
+    r"[^”’\"'》」』）)】\]］〉｝}〕〗»›]{0,28}"
+    r"(?:什么|怎么|如何|为何|为什么|意思|含义|用法|用途)"
+    r"[^”’\"'》」』）)】\]］〉｝}〕〗»›]{0,28}"
+    r"[”’\"'》」』）)】\]］〉｝}〕〗»›]"
+    r"(?:这个|这)?(?:说法|表达|几个字|问题|这句话)?"
+    r"[^,.!，。！？?;；、]{0,16}(?:意思|含义|用法|用途|怎么用|怎么解读|怎么理解|如何理解|解释)|"
+    r"[“‘\"'《「『（(【\[［〈｛{〔〖«‹]"
+    r"[^”’\"'》」』）)】\]］〉｝}〕〗»›]{1,32}"
+    r"[”’\"'》」』）)】\]］〉｝}〕〗»›]"
+    r"(?:这个|这)?(?:说法|表达|几个字|问题|这句话)"
     r"[^,.!，。！？?;；、]{0,16}(?:意思|含义|用法|用途|怎么用|怎么解读|怎么理解|如何理解|解释)|"
     r"(?:请解释|解释(?:一下|下)?|帮我解释|"
     r"(?:请|帮我)?(?:分析|解读|说明)(?:一下|下)?"
     r"(?:(?:双)?引号(?:里|中|内)(?:的)?|这句))"
-    r"[^,.!，。！？?;；、]{0,8}[“‘\"'《「『（(【\[［〈｛]"
-    r"[^”’\"'》」』）)】\]］〉｝]{1,32}[”’\"'》」』）)】\]］〉｝]"
+    r"[^,.!，。！？?;；、]{0,8}[“‘\"'《「『（(【\[［〈｛{〔〖«‹]"
+    r"[^”’\"'》」』）)】\]］〉｝}〕〗»›]{1,32}"
+    r"[”’\"'》」』）)】\]］〉｝}〕〗»›]"
     r"(?:这句话|这个说法|这个表达)?"
     r")",
     re.IGNORECASE,
@@ -1307,13 +1316,20 @@ def has_explicit_nonself_health_owner(text: str) -> bool:
     """Detect explicit third-party ownership across natural clause orderings."""
     normalized = clinical_interpretation_query_scope(str(text or ""))
     owner_assertion = re.search(
-        r"这是(?P<owner>[^\n\r，,；;：:。.!！?？、]{1,32})的"
+        r"(?:这是(?P<asserted_owner>[^\n\r，,；;：:。.!！?？、]{1,32})的|"
+        r"报告属于(?P<belong_owner>[^\n\r，,；;：:。.!！?？、]{1,32}))"
         r"(?:[\n\r，,；;：:。.!！?？、]|$)",
         normalized,
     )
+    asserted_owner = (
+        owner_assertion.group("asserted_owner")
+        or owner_assertion.group("belong_owner")
+        if owner_assertion is not None
+        else ""
+    )
     asserted_nonself = bool(
         owner_assertion is not None
-        and not _is_current_user_scope_owner(owner_assertion.group("owner"))
+        and not _is_current_user_scope_owner(asserted_owner)
     )
     if asserted_nonself:
         return True
@@ -1384,6 +1400,13 @@ _CLINICAL_REPORT_BASE_TERMS = frozenset(
         "同型半胱氨酸", "降钙素原", "甲胎蛋白", "维生素B12", "叶酸",
         "尿酸", "肌酐", "尿微量白蛋白", "糖化血红蛋白", "白细胞",
         "促甲状腺激素", "游离甲状腺素", "铁蛋白", "前列腺特异抗原",
+        "总胆固醇", "甘油三酯", "高密度脂蛋白", "低密度脂蛋白",
+        "空腹血糖", "餐后血糖", "血红蛋白", "红细胞", "中性粒细胞",
+        "C反应蛋白", "超敏C反应蛋白", "肌酸激酶", "乳酸脱氢酶",
+        "碱性磷酸酶", "γ-谷氨酰转移酶", "总胆红素", "直接胆红素",
+        "尿素氮", "胱抑素C", "微量白蛋白", "维生素B9", "维生素B6",
+        "游离三碘甲状腺原氨酸", "甲状腺过氧化物酶抗体", "癌胚抗原",
+        "糖类抗原CA125",
     }
 )
 

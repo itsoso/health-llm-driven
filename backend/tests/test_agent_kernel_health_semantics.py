@@ -975,6 +975,11 @@ def test_v45_additional_meta_intent_forms_are_non_authorizing(text):
         "看看〈这些结果是什么意思〉这个问题怎么解读",
         "看看｛这些结果是什么意思｝这个问题怎么解读",
         "看看「这些结果是什么意思」这个问题如何理解",
+        "看看{这些结果是什么意思}这个问题怎么解读",
+        "看看〔这些结果是什么意思〕这个问题怎么解读",
+        "看看〖这些结果是什么意思〗这个问题怎么解读",
+        "看看«这些结果是什么意思»这个问题怎么解读",
+        "看看‹这些结果是什么意思›这个问题怎么解读",
     ),
 )
 def test_v45_meta_command_language_never_authorizes_health_read(meta_text):
@@ -1044,6 +1049,17 @@ def test_v45_trailing_self_does_not_override_front_third_party_owner():
     assert semantics.health_read_has_nonself_subject(
         "查询高飞的体检报告，这是我的，看看这些数据是什么意思"
     )
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "查询总胆固醇检查报告，报告属于高飞，这些结果是什么意思",
+        "查询尿酸检查报告，报告属于Alice，这些结果是什么意思",
+    ),
+)
+def test_v45_report_belongs_to_third_party_is_nonself(text):
+    assert semantics.health_read_has_nonself_subject(text)
 
 
 @pytest.mark.parametrize("self_owner", ("我本人的", "我个人的", "我自己的", "本人的"))
