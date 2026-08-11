@@ -48,7 +48,7 @@ export default function ChatHeader({
 }: ChatHeaderProps) {
   const headerLlmLabel = compactLlmHeaderLabel(activeLlmLabel);
   return (
-    <View style={styles.headerWrap}>
+    <View testID="chat-header-wrap" style={styles.headerWrap}>
       <View testID="chat-header-surface" style={styles.headerSurface}>
         <XiaoBaAvatar size={24} />
         <LlmModelPicker
@@ -64,35 +64,35 @@ export default function ChatHeader({
           <View testID="chat-header-action-group" style={styles.headerActionGroup}>
             <TouchableOpacity
               onPress={onNewChat}
-              hitSlop={8}
+              hitSlop={4}
               style={styles.headerAction}
               activeOpacity={0.55}
               accessibilityLabel="新建对话"
               accessibilityRole="button"
             >
-              <Ionicons name="pencil-outline" size={19} color={C.ink2} />
+              <Ionicons name="pencil-outline" size={18} color={C.ink2} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={onOpenHistory}
-              hitSlop={8}
+              hitSlop={4}
               style={styles.headerAction}
               activeOpacity={0.55}
               accessibilityLabel="对话历史"
               accessibilityHint="查看和切换历史对话"
               accessibilityRole="button"
             >
-              <Ionicons name="time-outline" size={19} color={C.ink2} />
+              <Ionicons name="time-outline" size={18} color={C.ink2} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={onOpenToolMenu}
-              hitSlop={8}
+              hitSlop={4}
               style={styles.headerAction}
               activeOpacity={0.55}
               accessibilityLabel="更多会诊操作"
               accessibilityHint="打开设置与更多操作"
               accessibilityRole="button"
             >
-              <Ionicons name="settings-outline" size={19} color={C.ink2} />
+              <Ionicons name="settings-outline" size={18} color={C.ink2} />
             </TouchableOpacity>
           </View>
         </View>
@@ -105,8 +105,8 @@ const styles = StyleSheet.create({
   headerWrap: {
     paddingHorizontal: revaSpacing.s4,
     // 与状态栏时钟留清晰呼吸(页面根用动态 top inset 托底 notch)。
-    paddingTop: 10,
-    paddingBottom: 4,
+    paddingTop: 8,
+    paddingBottom: 2,
   },
   // 平铺 header(2026-07-06 重设计):去掉带边框的「卡片」外壳 —— 它紧贴状态栏
   // 时钟显得挤、且和奶油底色打架。标题与操作直接落在 paper 背景上,更干净。
@@ -126,7 +126,7 @@ const styles = StyleSheet.create({
   headerActionGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 44,
+    minHeight: 40,
     gap: 0,
     padding: 2,
     backgroundColor: C.paper2,
@@ -135,9 +135,9 @@ const styles = StyleSheet.create({
     borderColor: C.line,
   },
   headerAction: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',

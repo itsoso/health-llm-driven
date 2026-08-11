@@ -63,10 +63,12 @@ describe('ChatHeader', () => {
       />,
     );
 
+    const wrapStyle = StyleSheet.flatten(getByTestId('chat-header-wrap').props.style);
     const groupStyle = StyleSheet.flatten(getByTestId('chat-header-action-group').props.style);
+    expect(wrapStyle).toEqual(expect.objectContaining({ paddingTop: 8, paddingBottom: 2 }));
     expect(groupStyle.flexDirection).toBe('row');
     expect(groupStyle.borderRadius).toBeGreaterThanOrEqual(16);
-    expect(groupStyle.minHeight).toBe(44);
+    expect(groupStyle.minHeight).toBe(40);
     expect(groupStyle.padding).toBe(2);
     expect(getByTestId('icon-pencil-outline')).toBeTruthy();
     expect(getByTestId('icon-time-outline')).toBeTruthy();
@@ -74,20 +76,21 @@ describe('ChatHeader', () => {
 
     expect(StyleSheet.flatten(getByLabelText('新建对话').props.style)).toEqual(
       expect.objectContaining({
-        width: 44,
-        height: 44,
+        width: 40,
+        height: 40,
         backgroundColor: 'transparent',
         borderWidth: 0,
       }),
     );
+    expect(getByLabelText('新建对话').props.hitSlop).toBe(4);
     expect(StyleSheet.flatten(getByLabelText('对话历史').props.style)).toEqual(
-      expect.objectContaining({ width: 44, height: 44 }),
+      expect.objectContaining({ width: 40, height: 40 }),
     );
-    expect(getByTestId('icon-pencil-outline').props.size).toBe(19);
-    expect(getByTestId('icon-time-outline').props.size).toBe(19);
-    expect(getByTestId('icon-settings-outline').props.size).toBe(19);
+    expect(getByTestId('icon-pencil-outline').props.size).toBe(18);
+    expect(getByTestId('icon-time-outline').props.size).toBe(18);
+    expect(getByTestId('icon-settings-outline').props.size).toBe(18);
     expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style)).toEqual(
-      expect.objectContaining({ width: 44, height: 44 }),
+      expect.objectContaining({ width: 40, height: 40 }),
     );
 
     fireEvent.press(getByLabelText('更多会诊操作'));
