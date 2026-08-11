@@ -34,7 +34,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 
 const mockUpdateGPSLocation: jest.Mock = jest.fn(async () => ({ city: '北京', region: null, country: null }));
 const mockReverseGeocodeOnDevice: jest.Mock = jest.fn(async () => ({ city: '北京', region: '北京市', country: '中国' }));
-const mockWriteGPSRefreshStatus = jest.fn(async () => undefined);
+const mockWriteGPSRefreshStatus: jest.Mock = jest.fn(async () => undefined);
 jest.mock('../../services/location', () => ({
   updateGPSLocation: (lat: number, lon: number, hint?: any) => mockUpdateGPSLocation(lat, lon, hint),
   reverseGeocodeOnDevice: (lat: number, lon: number) => mockReverseGeocodeOnDevice(lat, lon),
