@@ -752,7 +752,48 @@ def test_v45_temporal_scope_does_not_hide_an_other_owner(owner, scope, template)
     (
         "查询我的血压记录，看看哪些运动不允许",
         "查询我的痛风记录，看看治疗会不会成功",
+        "查询我的用药记录，看看医生不允许我吃什么",
     ),
 )
 def test_v45_read_followed_by_health_assessment_remains_active(text):
     assert semantics.resolve_health_read_act(text).status == "active"
+
+
+@pytest.mark.parametrize("self_owner", ("我", "本人", "我自己", "我个人", "我本人"))
+@pytest.mark.parametrize(
+    ("scope", "entity"),
+    (
+        ("今天", "血压"),
+        ("最近", "血压"),
+        ("今早", "血压"),
+        ("晨起", "血压"),
+        ("服药后", "血压"),
+        ("午后", "血压"),
+        ("夜间", "睡眠"),
+        ("起床后", "体重"),
+    ),
+)
+def test_v45_explicit_self_temporal_owner_is_current_user(
+    self_owner,
+    scope,
+    entity,
+):
+    assert semantics.health_read_has_nonself_subject(
+        f"查询{self_owner}{scope}的{entity}记录"
+    ) is False
+
+
+def test_v45_metric_interpretation_is_not_command_meta_discussion():
+    assert semantics.resolve_health_read_act(
+        "查询我的化验记录，看看这些指标意味着什么"
+    ).status == "active"
+
+
+@pytest.mark.parametrize(
+    "veto",
+    ("不允许", "不同意", "未同意", "没有批准", "不授权"),
+)
+def test_v45_bare_trailing_veto_revokes_read_authority(veto):
+    assert semantics.resolve_health_read_act(
+        f"查询我的痛风记录，{veto}"
+    ).status != "active"

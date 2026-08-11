@@ -5160,6 +5160,11 @@ def test_v44_explicit_query_then_health_assessment_is_allowed(
             "health_query",
             {"dimension": "illness", "keyword": "痛风"},
         ),
+        (
+            "查询我的用药记录，看看医生不允许我吃什么",
+            "health_manage",
+            {"record_type": "medication", "operation": "list"},
+        ),
     ),
 )
 def test_v45_query_then_unrelated_assessment_language_is_allowed(
@@ -5173,6 +5178,73 @@ def test_v45_query_then_unrelated_assessment_language_is_allowed(
     )
 
     assert decision.action == "allow", decision.reason
+
+
+@pytest.mark.parametrize(
+    ("message", "record_type"),
+    (
+        ("查询我今天的血压记录", "blood_pressure"),
+        ("查询我最近的血压记录", "blood_pressure"),
+        ("查询我今早的血压记录", "blood_pressure"),
+        ("查询本人晨起的血压记录", "blood_pressure"),
+        ("查询我服药后的血压记录", "blood_pressure"),
+        ("查询我午后的血压记录", "blood_pressure"),
+        ("查询我夜间的睡眠记录", "sleep"),
+        ("查询我起床后的体重记录", "weight"),
+        ("查询我的今早血压记录", "blood_pressure"),
+    ),
+)
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_explicit_self_temporal_read_is_allowed(
+    message,
+    record_type,
+    tool_name,
+):
+    arguments = (
+        {"dimension": record_type}
+        if tool_name == "health_query"
+        else {"record_type": record_type, "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(tool_name, arguments),
+    )
+
+    assert decision.action == "allow", decision.reason
+
+
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_metric_interpretation_after_read_is_allowed(tool_name):
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot("查询我的化验记录，看看这些指标意味着什么"),
+        _request(tool_name, arguments),
+    )
+
+    assert decision.action == "allow", decision.reason
+
+
+@pytest.mark.parametrize(
+    "veto",
+    ("不允许", "不同意", "未同意", "没有批准", "不授权"),
+)
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_bare_trailing_veto_blocks_read_surfaces(veto, tool_name):
+    arguments = (
+        {"dimension": "illness", "keyword": "痛风"}
+        if tool_name == "health_query"
+        else {"record_type": "illness", "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot(f"查询我的痛风记录，{veto}"),
+        _request(tool_name, arguments),
+    )
+
+    assert decision.action == "block", decision.reason
 
 
 @pytest.mark.parametrize(
