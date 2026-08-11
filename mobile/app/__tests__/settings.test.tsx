@@ -1,6 +1,6 @@
 /* eslint-disable import/first, @typescript-eslint/no-require-imports */
 import React from 'react';
-import { Alert } from 'react-native';
+import { Alert, StyleSheet } from 'react-native';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockBack = jest.fn();
@@ -385,5 +385,18 @@ describe('SettingsScreen', () => {
     await waitFor(() => expect(mockCheckNow).toHaveBeenCalledWith({ force: true }));
     expect(alertSpy).toHaveBeenCalledWith('已是最新版本', '当前没有需要下载的更新。');
     alertSpy.mockRestore();
+  });
+
+  it('keeps rows tappable, removes final dividers, and lets GPS status shrink', () => {
+    const { getByRole, getByTestId } = render(<SettingsScreen />);
+    const middleRow = StyleSheet.flatten(getByRole('button', { name: '数据连接与授权' }).props.style);
+    const lastRow = StyleSheet.flatten(getByRole('button', { name: '数据来源' }).props.style);
+    const locationStatus = StyleSheet.flatten(getByTestId('settings-location-status').props.style);
+
+    expect(middleRow.minHeight).toBeGreaterThanOrEqual(48);
+    expect(middleRow.borderBottomWidth).toBeGreaterThan(0);
+    expect(lastRow.borderBottomWidth).toBe(0);
+    expect(locationStatus.width).toBeUndefined();
+    expect(locationStatus.flexShrink).toBe(1);
   });
 });

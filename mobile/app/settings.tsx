@@ -266,6 +266,7 @@ export default function SettingsScreen() {
             value={connectionStatusSummary(dataConnections)}
             onPress={() => router.push('/data-connections' as any)} />
           <SettingRow icon="git-compare-outline" label="数据来源"
+            isLast
             onPress={() => router.push('/device-sources' as any)} />
         </View>
 
@@ -282,6 +283,7 @@ export default function SettingsScreen() {
           <SettingRow icon="cellular-outline" label="我的基因"
             onPress={() => router.push('/genetic-report' as any)} />
           <SettingRow icon="flag-outline" label="健康目标"
+            isLast
             onPress={() => router.push('/goals' as any)} />
         </View>
 
@@ -297,6 +299,7 @@ export default function SettingsScreen() {
             value="进展 / 代谢 / 趋势"
             onPress={() => router.push('/insights' as any)} />
           <SettingRow icon="medical-outline" label="医生回路"
+            isLast
             onPress={() => router.push('/doctor-loop' as any)} />
         </View>
 
@@ -309,14 +312,16 @@ export default function SettingsScreen() {
           <SettingRow icon="eye-outline" label="科学用眼 (20-20-20)"
             onPress={() => router.push('/eye-care' as any)} />
           <SettingRow icon="volume-high-outline" label="语音风格"
+            isLast={!releaseCapabilities.siri && !bioSupported}
             onPress={() => router.push('/voice-style' as any)} />
           {releaseCapabilities.siri ? (
             <SettingRow icon="mic-outline" label="Siri 语音记录"
               value="使用说明"
+              isLast={!bioSupported}
               onPress={showSiriInfo} />
           ) : null}
           {bioSupported && (
-            <View style={styles.settingRow}>
+            <View style={[styles.settingRow, styles.lastSettingRow]}>
               <Ionicons name="finger-print-outline" size={18} color={C.ink2} />
               <Text style={txt.settingLabel}>Face ID 锁定</Text>
               <Switch value={bioEnabled} onValueChange={toggleBio}
@@ -353,6 +358,7 @@ export default function SettingsScreen() {
                       ? '需联系支持'
                   : '请求删除'}
             destructive
+            isLast
             onPress={handleRequestAccountDeletion} />
         </View>
 
@@ -399,9 +405,11 @@ export default function SettingsScreen() {
           <SettingRow icon="cloud-download-outline" label="检查更新"
             value={updateStatusLabel}
             onPress={() => void handleCheckForUpdate()} />
-          <SettingRow icon="information-circle-outline" label="版本" value={getNativeVersionLabel()} />
+          <SettingRow icon="information-circle-outline" label="版本" value={getNativeVersionLabel()}
+            isLast={!releaseCapabilities.advancedSettings} />
           {releaseCapabilities.advancedSettings ? (
             <SettingRow icon="bug-outline" label="App 诊断"
+              isLast
               onPress={() => router.push('/app-diagnostics' as any)} />
           ) : null}
         </View>
@@ -421,18 +429,20 @@ function SettingRow({
   value,
   onPress,
   destructive = false,
+  isLast = false,
 }: {
   icon: any;
   label: string;
   value?: string;
   onPress?: () => void;
   destructive?: boolean;
+  isLast?: boolean;
 }) {
   const Wrapper = onPress ? TouchableOpacity : View;
   const color = destructive ? revaSemantic.risk.fg : C.ink2;
   return (
     <Wrapper
-      style={styles.settingRow}
+      style={[styles.settingRow, isLast && styles.lastSettingRow]}
       onPress={onPress}
       activeOpacity={0.6}
       accessibilityRole={onPress ? 'button' : undefined}
@@ -440,8 +450,8 @@ function SettingRow({
       accessibilityValue={onPress && value ? { text: value } : undefined}
     >
       <Ionicons name={icon} size={18} color={color} />
-      <Text style={[txt.settingLabel, destructive && { color }]}>{label}</Text>
-      <Text style={[txt.settingValue, destructive && { color }]}>{value || ''}</Text>
+      <Text style={[txt.settingLabel, destructive && { color }]} numberOfLines={1}>{label}</Text>
+      <Text style={[txt.settingValue, destructive && { color }]} numberOfLines={1}>{value || ''}</Text>
       {onPress && <Ionicons name="chevron-forward" size={14} color={C.ink3} />}
     </Wrapper>
   );
@@ -484,7 +494,7 @@ function LocationSettingsRow({
         <Text style={txt.locationTitle} numberOfLines={1}>GPS / 城市定位</Text>
         <Text style={txt.locationHint}>用于天气 / 空气质量 / 户外建议</Text>
       </View>
-      <View style={styles.locationStatus}>
+      <View testID="settings-location-status" style={styles.locationStatus}>
         <Text style={txt.locationCity} numberOfLines={1}>{city}</Text>
         <Text style={[txt.locationMode, { color: modeColor }]} numberOfLines={1}>{mode}</Text>
       </View>
@@ -558,11 +568,14 @@ const styles = StyleSheet.create({
   avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.green50, alignItems: 'center', justifyContent: 'center' },
   settingRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
+    minHeight: 52,
     paddingHorizontal: revaSpacing.s5, paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line,
   },
+  lastSettingRow: { borderBottomWidth: 0 },
   locationRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
+    minHeight: 64,
     paddingHorizontal: revaSpacing.s5, paddingVertical: 13,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line,
   },
@@ -571,7 +584,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', backgroundColor: C.green50,
   },
   locationCopy: { flex: 1, minWidth: 0 },
-  locationStatus: { width: 74, alignItems: 'flex-end', gap: 3 },
+  locationStatus: { maxWidth: 104, flexShrink: 1, alignItems: 'flex-end', gap: 3 },
   logoutBtn: {
     backgroundColor: C.surface, borderRadius: revaRadii.lg,
     paddingVertical: 14, alignItems: 'center', marginTop: revaSpacing.s5,
@@ -584,8 +597,8 @@ const txt = {
   title: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1, flex: 1, textAlign: 'center' } as TextStyle,
   name: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1 } as TextStyle,
   email: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, marginTop: 2 } as TextStyle,
-  settingLabel: { fontFamily: revaFonts.sans, fontSize: 15, color: C.ink1, flex: 1 } as TextStyle,
-  settingValue: { fontFamily: revaFonts.sans, fontSize: 14, color: C.ink3 } as TextStyle,
+  settingLabel: { fontFamily: revaFonts.sans, fontSize: 15, color: C.ink1, flex: 1, minWidth: 0 } as TextStyle,
+  settingValue: { fontFamily: revaFonts.sans, fontSize: 14, color: C.ink3, flexShrink: 1, maxWidth: '42%' } as TextStyle,
   sectionLabel: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '600', letterSpacing: 0.6, color: C.ink3, marginLeft: revaSpacing.s1, marginBottom: revaSpacing.s1, marginTop: revaSpacing.s1 } as TextStyle,
   locationTitle: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '700', color: C.ink1, flexShrink: 1 } as TextStyle,
   locationHint: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, marginTop: 3 } as TextStyle,
