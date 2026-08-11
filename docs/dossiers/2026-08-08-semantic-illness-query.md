@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | date | 2026-08-08 |
-| status | in_progress |
-| current_stage | G3 PASS on v45 candidate b121a7cdf; exact-commit dual G4 re-review pending |
+| status | shipped |
+| current_stage | G6 PASS on production Backend 2fb99184a |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -56,6 +56,8 @@ Implement the approved design in
 ## Gates
 
 ### G1 Product Admission: PASS
+
+**裁决**: PASS
 
 This repairs the existing review/converse loop and maps persisted illness
 episodes to read-only `ExecutionEvent` evidence. It creates no new medical
@@ -2549,14 +2551,37 @@ Gateway and 1,040 Executor known routes. Safety review replayed 1,240 Gateway
 and 584 real Executor routes, with zero database attempts. Neither review
 expanded the user-frozen semantic boundary.
 
-### G5 Deployment Health: PENDING
+### G5 Deployment Health: PASS
 
-Backend deploy and health checks have not started.
+**裁决**: PASS
 
-### G6 Production Verification: PENDING
+The standard Backend release deployed exact commit
+`2fb99184a520a346611238fc30a1d8acd4d2f65a`. Before release, the fail-closed
+rollback-schema probe identified four legacy null-contract violations. A
+versioned repair ran only after an exact-count dry run and a verified database
+backup: 31 check-in values, 12 template owners, 4 progress dates and 8 goal
+titles were deterministically derived from existing fields; 6 unowned and
+unreferenced orphan templates were deleted under explicit user authorization.
+The repair transaction required exact affected-row counts and left zero
+contract violations. Recovery remains available from
+`health_db_2026-08-11_18-12-23_3098804.sql.gz`.
 
-Requires a read-only production query showing an illness tool call and no
-write attempt. No health record may be created for the drill.
+The subsequent standard deployment created and restore-tested a fresh 42 MB
+backup, verified its encrypted offsite archive, applied the managed illness
+migration and rebuilt 906 System KB vectors. Three release health checks scored
+60/60. Exact revision, the runtime-only KB contract and the 22-skill manifest
+all passed.
+
+### G6 Production Verification: PASS
+
+**裁决**: PASS
+
+A five-minute server-local token issued one typed production turn for the
+original illness-history question. The endpoint returned HTTP 200 with a
+non-empty answer and `tools_used=[health_query]`. The authenticated owner's
+illness episode count remained 38 before and after the turn, and the run
+recorded zero non-read tool operations. No health record was created, modified
+or deleted by the verification turn.
 
 ## Rollback
 
