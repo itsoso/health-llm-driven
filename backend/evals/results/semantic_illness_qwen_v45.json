@@ -1,5 +1,5 @@
 {
-  "candidate_commit": "4036b491dbd40695ec02dae3f695a8c12ab6c3d4",
+  "candidate_commit": "bbac82152b4e53d4f2265fc71697c92ddc032db7",
   "cases": [
     {
       "evaluated_calls": [
@@ -1185,10 +1185,8 @@
         "health_query"
       ],
       "label": "read_manager",
-      "model_abstained": false,
-      "model_calls": [
-        "health_query"
-      ],
+      "model_abstained": true,
+      "model_calls": [],
       "passed": true,
       "reasons": [
         "health_query_subject_not_current_user",
@@ -1199,6 +1197,7 @@
           "calls": [
             {
               "arguments": {
+                "days": 183,
                 "dimension": "illness",
                 "keyword": "脑膜炎"
               },
@@ -1211,6 +1210,7 @@
           "calls": [
             {
               "arguments": {
+                "days": 183,
                 "dimension": "illness",
                 "keyword": "脑膜炎"
               },
@@ -1591,8 +1591,10 @@
         "health_query"
       ],
       "label": "exam_manager",
-      "model_abstained": true,
-      "model_calls": [],
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
       "passed": true,
       "reasons": [
         "health_query_subject_not_current_user",
@@ -1604,7 +1606,7 @@
             {
               "arguments": {
                 "dimension": "medical_exam",
-                "keyword": "MRI"
+                "keyword": "脑部MRI"
               },
               "tool_name": "health_query"
             }
@@ -1616,7 +1618,7 @@
             {
               "arguments": {
                 "dimension": "medical_exam",
-                "keyword": "MRI"
+                "keyword": "脑部MRI"
               },
               "tool_name": "health_query"
             }
@@ -6732,10 +6734,8 @@
         "health_manage"
       ],
       "label": "v42_delete_keep_10",
-      "model_abstained": false,
-      "model_calls": [
-        "health_manage"
-      ],
+      "model_abstained": true,
+      "model_calls": [],
       "passed": true,
       "reasons": [
         "health_query_not_requested",
@@ -6855,19 +6855,22 @@
         "health_manage"
       ],
       "label": "v42_delete_keep_13",
-      "model_abstained": true,
-      "model_calls": [],
+      "model_abstained": false,
+      "model_calls": [
+        "health_manage"
+      ],
       "passed": true,
       "reasons": [
-        "health_query_not_requested",
-        "health_query_not_requested"
+        "delete_requires_explicit_whole_record_intent",
+        "delete_requires_explicit_whole_record_intent"
       ],
       "route_arguments": [
         {
           "calls": [
             {
               "arguments": {
-                "operation": "list",
+                "operation": "delete",
+                "record_id": 8406,
                 "record_type": "illness"
               },
               "tool_name": "health_manage"
@@ -6879,7 +6882,8 @@
           "calls": [
             {
               "arguments": {
-                "operation": "list",
+                "operation": "delete",
+                "record_id": 8406,
                 "record_type": "illness"
               },
               "tool_name": "health_manage"
@@ -7937,8 +7941,8 @@
           "calls": [
             {
               "arguments": {
-                "dimension": "illness",
-                "keyword": "显微镜下多血管炎"
+                "dimension": "medical_exam",
+                "keyword": "LI-1显微镜下多血管炎"
               },
               "tool_name": "health_query"
             }
@@ -7949,8 +7953,8 @@
           "calls": [
             {
               "arguments": {
-                "dimension": "illness",
-                "keyword": "显微镜下多血管炎"
+                "dimension": "medical_exam",
+                "keyword": "LI-1显微镜下多血管炎"
               },
               "tool_name": "health_query"
             }
@@ -8060,7 +8064,7 @@
           "calls": [
             {
               "arguments": {
-                "dimension": "illness",
+                "dimension": "medical_exam",
                 "keyword": "CACHE-1显微镜下多血管炎"
               },
               "tool_name": "health_query"
@@ -8072,7 +8076,7 @@
           "calls": [
             {
               "arguments": {
-                "dimension": "illness",
+                "dimension": "medical_exam",
                 "keyword": "CACHE-1显微镜下多血管炎"
               },
               "tool_name": "health_query"
@@ -8385,7 +8389,7 @@
             {
               "arguments": {
                 "dimension": "medical_exam",
-                "keyword": "ANA::1显微镜下多血管炎"
+                "keyword": "ANA"
               },
               "tool_name": "health_query"
             },
@@ -8404,7 +8408,7 @@
             {
               "arguments": {
                 "dimension": "medical_exam",
-                "keyword": "ANA::1显微镜下多血管炎"
+                "keyword": "ANA"
               },
               "tool_name": "health_query"
             },
@@ -9346,18 +9350,15 @@
     },
     {
       "evaluated_calls": [
-        "health_manage",
         "health_query"
       ],
       "label": "v43_nonauth_read_6",
       "model_abstained": false,
       "model_calls": [
-        "health_manage"
+        "health_query"
       ],
       "passed": true,
       "reasons": [
-        "health_query_not_requested",
-        "health_query_not_requested",
         "health_query_not_requested",
         "health_query_not_requested"
       ],
@@ -9366,16 +9367,8 @@
           "calls": [
             {
               "arguments": {
-                "operation": "list",
-                "record_type": "illness"
-              },
-              "tool_name": "health_manage"
-            },
-            {
-              "arguments": {
-                "days": 183,
                 "dimension": "illness",
-                "keyword": "脑膜炎"
+                "keyword": "痛风"
               },
               "tool_name": "health_query"
             }
@@ -9386,16 +9379,8 @@
           "calls": [
             {
               "arguments": {
-                "operation": "list",
-                "record_type": "illness"
-              },
-              "tool_name": "health_manage"
-            },
-            {
-              "arguments": {
-                "days": 183,
                 "dimension": "illness",
-                "keyword": "脑膜炎"
+                "keyword": "痛风"
               },
               "tool_name": "health_query"
             }
@@ -13514,21 +13499,31 @@
     },
     {
       "evaluated_calls": [
+        "health_query",
         "health_manage"
       ],
       "label": "v44_nonauth_list_6",
       "model_abstained": false,
       "model_calls": [
-        "health_manage"
+        "health_query"
       ],
       "passed": true,
       "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested",
         "health_query_not_requested",
         "health_query_not_requested"
       ],
       "route_arguments": [
         {
           "calls": [
+            {
+              "arguments": {
+                "dimension": "illness",
+                "keyword": "痛风"
+              },
+              "tool_name": "health_query"
+            },
             {
               "arguments": {
                 "operation": "list",
@@ -13541,6 +13536,13 @@
         },
         {
           "calls": [
+            {
+              "arguments": {
+                "dimension": "illness",
+                "keyword": "痛风"
+              },
+              "tool_name": "health_query"
+            },
             {
               "arguments": {
                 "operation": "list",
@@ -15156,8 +15158,10 @@
         "health_query"
       ],
       "label": "v44_reviewer_nonauth_query_2",
-      "model_abstained": true,
-      "model_calls": [],
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
       "passed": true,
       "reasons": [
         "health_query_cancelled_by_user",
@@ -15168,9 +15172,8 @@
           "calls": [
             {
               "arguments": {
-                "days": 183,
                 "dimension": "illness",
-                "keyword": "脑膜炎"
+                "keyword": "痛风"
               },
               "tool_name": "health_query"
             }
@@ -15181,9 +15184,8 @@
           "calls": [
             {
               "arguments": {
-                "days": 183,
                 "dimension": "illness",
-                "keyword": "脑膜炎"
+                "keyword": "痛风"
               },
               "tool_name": "health_query"
             }
@@ -15607,10 +15609,8 @@
         "health_query"
       ],
       "label": "v44_reviewer_nonauth_query_13",
-      "model_abstained": false,
-      "model_calls": [
-        "health_query"
-      ],
+      "model_abstained": true,
+      "model_calls": [],
       "passed": true,
       "reasons": [
         "health_query_cancelled_by_user",
@@ -15621,8 +15621,9 @@
           "calls": [
             {
               "arguments": {
+                "days": 183,
                 "dimension": "illness",
-                "keyword": "痛风"
+                "keyword": "脑膜炎"
               },
               "tool_name": "health_query"
             }
@@ -15633,8 +15634,9 @@
           "calls": [
             {
               "arguments": {
+                "days": 183,
                 "dimension": "illness",
-                "keyword": "痛风"
+                "keyword": "脑膜炎"
               },
               "tool_name": "health_query"
             }
@@ -16422,19 +16424,31 @@
     },
     {
       "evaluated_calls": [
+        "health_query",
         "health_manage"
       ],
       "label": "v44_reviewer_nonauth_list_2",
-      "model_abstained": true,
-      "model_calls": [],
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
       "passed": true,
       "reasons": [
+        "health_query_cancelled_by_user",
+        "health_query_cancelled_by_user",
         "health_query_cancelled_by_user",
         "health_query_cancelled_by_user"
       ],
       "route_arguments": [
         {
           "calls": [
+            {
+              "arguments": {
+                "dimension": "illness",
+                "keyword": "痛风"
+              },
+              "tool_name": "health_query"
+            },
             {
               "arguments": {
                 "operation": "list",
@@ -16447,6 +16461,13 @@
         },
         {
           "calls": [
+            {
+              "arguments": {
+                "dimension": "illness",
+                "keyword": "痛风"
+              },
+              "tool_name": "health_query"
+            },
             {
               "arguments": {
                 "operation": "list",
@@ -20266,18 +20287,15 @@
     },
     {
       "evaluated_calls": [
-        "health_manage",
         "health_query"
       ],
       "label": "v45_owner_temporal_query_4",
       "model_abstained": false,
       "model_calls": [
-        "health_manage"
+        "health_query"
       ],
       "passed": true,
       "reasons": [
-        "health_query_subject_not_current_user",
-        "health_query_subject_not_current_user",
         "health_query_subject_not_current_user",
         "health_query_subject_not_current_user"
       ],
@@ -20286,16 +20304,7 @@
           "calls": [
             {
               "arguments": {
-                "operation": "list",
-                "record_type": "blood_pressure"
-              },
-              "tool_name": "health_manage"
-            },
-            {
-              "arguments": {
-                "days": 183,
-                "dimension": "illness",
-                "keyword": "脑膜炎"
+                "dimension": "blood_pressure"
               },
               "tool_name": "health_query"
             }
@@ -20306,16 +20315,7 @@
           "calls": [
             {
               "arguments": {
-                "operation": "list",
-                "record_type": "blood_pressure"
-              },
-              "tool_name": "health_manage"
-            },
-            {
-              "arguments": {
-                "days": 183,
-                "dimension": "illness",
-                "keyword": "脑膜炎"
+                "dimension": "blood_pressure"
               },
               "tool_name": "health_query"
             }
@@ -21678,10 +21678,8 @@
         "health_query"
       ],
       "label": "v45_bare_veto_query_1",
-      "model_abstained": false,
-      "model_calls": [
-        "health_query"
-      ],
+      "model_abstained": true,
+      "model_calls": [],
       "passed": true,
       "reasons": [
         "health_query_cancelled_by_user",
@@ -21692,8 +21690,9 @@
           "calls": [
             {
               "arguments": {
+                "days": 183,
                 "dimension": "illness",
-                "keyword": "痛风"
+                "keyword": "脑膜炎"
               },
               "tool_name": "health_query"
             }
@@ -21704,8 +21703,9 @@
           "calls": [
             {
               "arguments": {
+                "days": 183,
                 "dimension": "illness",
-                "keyword": "痛风"
+                "keyword": "脑膜炎"
               },
               "tool_name": "health_query"
             }
@@ -28821,30 +28821,19 @@
     },
     {
       "evaluated_calls": [
-        "health_query",
         "health_manage"
       ],
       "label": "v45_structural_meta_6",
-      "model_abstained": false,
-      "model_calls": [
-        "health_query"
-      ],
+      "model_abstained": true,
+      "model_calls": [],
       "passed": true,
       "reasons": [
-        "health_query_not_requested",
-        "health_query_not_requested",
         "health_query_not_requested",
         "health_query_not_requested"
       ],
       "route_arguments": [
         {
           "calls": [
-            {
-              "arguments": {
-                "dimension": "medical_exam"
-              },
-              "tool_name": "health_query"
-            },
             {
               "arguments": {
                 "operation": "list",
@@ -28857,12 +28846,6 @@
         },
         {
           "calls": [
-            {
-              "arguments": {
-                "dimension": "medical_exam"
-              },
-              "tool_name": "health_query"
-            },
             {
               "arguments": {
                 "operation": "list",
@@ -29984,6 +29967,286 @@
         "health_manage"
       ],
       "label": "v45_quoted_meta_question",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested",
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "illness"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "illness"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_adjacent_quoted_meta_1",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested",
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "illness"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "illness"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_adjacent_quoted_meta_2",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested",
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "illness"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "illness"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_adjacent_quoted_meta_3",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested",
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "illness"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "illness"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_adjacent_quoted_meta_4",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_not_requested",
+        "health_query_not_requested",
+        "health_query_not_requested",
+        "health_query_not_requested"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "illness"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "illness"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_adjacent_quoted_meta_5",
       "model_abstained": false,
       "model_calls": [
         "health_query"
@@ -32099,13 +32362,2223 @@
           "policy_mode": "shadow"
         }
       ]
+    },
+    {
+      "evaluated_calls": [
+        "health_manage"
+      ],
+      "label": "v45_conflicting_owner_trailing_self",
+      "model_abstained": true,
+      "model_calls": [],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_manage"
+      ],
+      "label": "v45_owner_semicolon_boundary",
+      "model_abstained": true,
+      "model_calls": [],
+      "passed": true,
+      "reasons": [
+        "health_query_subject_not_current_user",
+        "health_query_subject_not_current_user"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_manage_mri_image_t2",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam",
+                "keyword": "T2* GRE MRI"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam",
+                "keyword": "T2* GRE MRI"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_manage_mri_image_adc",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam",
+                "keyword": "ADC/DWI头颅MRI"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam",
+                "keyword": "ADC/DWI头颅MRI"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_implicit_clinical_report_1",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_implicit_clinical_report_2",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_implicit_clinical_report_3",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_implicit_clinical_report_4",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_implicit_clinical_report_5",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_implicit_clinical_report_6",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_implicit_clinical_report_7",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_implicit_clinical_report_8",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_implicit_clinical_report_9",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_implicit_clinical_report_10",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_implicit_clinical_report_11",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_implicit_clinical_report_12",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_implicit_clinical_report_13",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_implicit_clinical_report_14",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_implicit_clinical_report_15",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_implicit_clinical_report_16",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_expanded_self_owner_1",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_expanded_self_owner_2",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_expanded_self_owner_3",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_expanded_self_owner_4",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_expanded_self_owner_5",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_expanded_self_owner_6",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_self_report_separator_1",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_self_report_separator_2",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_self_report_separator_3",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_self_report_separator_4",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_self_report_separator_5",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_self_report_separator_6",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_self_report_separator_7",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_self_report_separator_8",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_self_report_separator_9",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_self_report_separator_10",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_self_report_separator_11",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_generic_self_report_1",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_generic_self_report_2",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
+    },
+    {
+      "evaluated_calls": [
+        "health_query",
+        "health_manage"
+      ],
+      "label": "v45_generic_self_report_3",
+      "model_abstained": false,
+      "model_calls": [
+        "health_query"
+      ],
+      "passed": true,
+      "reasons": [
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only",
+        "health_query_projected_to_turn_semantics",
+        "health_manage_list_is_read_only"
+      ],
+      "route_arguments": [
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "enforce"
+        },
+        {
+          "calls": [
+            {
+              "arguments": {
+                "dimension": "medical_exam"
+              },
+              "tool_name": "health_query"
+            },
+            {
+              "arguments": {
+                "operation": "list",
+                "record_type": "medical_exam"
+              },
+              "tool_name": "health_manage"
+            }
+          ],
+          "policy_mode": "shadow"
+        }
+      ]
     }
   ],
   "dispatch_adapter": "synthetic; policy path is real, persistence is blocked",
-  "evaluated_at": "2026-08-11T07:46:54.817591+00:00",
+  "evaluated_at": "2026-08-11T08:25:21.900172+00:00",
   "evaluator": "backend/evals/semantic_illness_qwen_v45.py",
   "evaluator_revision": "v45",
-  "expected_commit": "4036b491dbd40695ec02dae3f695a8c12ab6c3d4",
+  "expected_commit": "bbac82152b4e53d4f2265fc71697c92ddc032db7",
   "git_clean_before_run": true,
   "network_allowlist": [
     "token-plan.cn-beijing.maas.aliyuncs.com"
@@ -32113,13 +34586,13 @@
   "schema_version": 3,
   "summary": {
     "allowed_socket_connections": 4,
-    "cases_passed": 682,
-    "cases_total": 682,
+    "cases_passed": 727,
+    "cases_total": 727,
     "database_connection_attempts": 0,
     "failures": [],
     "model": "qwen3.7-max",
-    "provider_calls": 682,
-    "route_evaluations": 1874,
+    "provider_calls": 727,
+    "route_evaluations": 2048,
     "unexpected_network_blocked": 0
   }
 }

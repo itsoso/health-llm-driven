@@ -2422,6 +2422,35 @@ Mechanically generated evidence remains
 or deployed. Both G4 reviews must be repeated against the next exact evidence
 commit.
 
+### v45 fourteenth G4 remediation and evidence
+
+Both reviews of `04c9b23af9c5c6eb20e36c286164defb1d776b9d`
+returned `NO-GO`. Their complete matrices found alternate Chinese quote forms,
+conflicting and punctuation-separated owner assertions, incomplete clinical
+report terminology, expanded explicit-self wording, and read-only MRI image
+lists caught by the unrelated media-write guard.
+
+The remediation keeps target resolution ahead of owner inference and completes
+the shared contracts instead of adding sentence-specific exceptions. Quoted
+metalinguistic forms are normalized across Chinese and ASCII delimiters;
+third-party assertions remain fail-closed even when followed by a conflicting
+self assertion; all clause boundaries use one punctuation set. Explicit-self
+generic reports project to `medical_exam`, the exact clinical report registry
+covers the reviewed lab/exam terms, and `health_manage(operation=list)` remains
+read-only even when the object contains the word `图像`.
+
+The exact clean implementation/evaluation candidate is
+`bbac82152b4e53d4f2265fc71697c92ddc032db7`. The authorization/write core
+passes 5,606/5,606 and the complete AgentExecutor compatibility set passes
+686/686. Ruff, Python compilation, `git diff --check`, doc drift and Dossier
+consistency pass. The authorized live `qwen3.7-max` run passes 727/727
+anonymous synthetic cases and all 2,048 actual policy decisions, with zero
+database connection attempts and zero unexpected network destinations.
+Mechanically generated evidence remains
+`backend/evals/results/semantic_illness_qwen_v45.json`. Nothing has been pushed
+or deployed. Both G4 reviews must be repeated against the exact evidence
+commit.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.
