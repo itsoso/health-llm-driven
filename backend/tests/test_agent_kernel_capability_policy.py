@@ -5244,19 +5244,36 @@ def test_v45_metric_interpretation_after_read_is_allowed(tool_name):
     assert decision.action == "allow", decision.reason
 
 
+@pytest.mark.parametrize("meaning_phrase", ("意味着什么", "是什么意思", "是啥意思", "什么意思"))
 @pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
-def test_v45_later_command_meta_discussion_blocks_read(tool_name):
+def test_v45_later_command_meta_discussion_blocks_read(tool_name, meaning_phrase):
     arguments = (
         {"dimension": "illness", "keyword": "痛风"}
         if tool_name == "health_query"
         else {"record_type": "illness", "operation": "list"}
     )
     decision = decide_tool_capability(
-        _snapshot("查询我的痛风记录，看看这句话意味着什么"),
+        _snapshot(f"查询我的痛风记录，看看这个指令{meaning_phrase}"),
         _request(tool_name, arguments),
     )
 
     assert decision.action == "block", decision.reason
+
+
+@pytest.mark.parametrize("meaning_phrase", ("是什么意思", "是啥意思", "什么意思"))
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_metric_meaning_synonyms_allow_read(tool_name, meaning_phrase):
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot(f"查询我的化验记录，看看这些指标{meaning_phrase}"),
+        _request(tool_name, arguments),
+    )
+
+    assert decision.action == "allow", decision.reason
 
 
 @pytest.mark.parametrize(

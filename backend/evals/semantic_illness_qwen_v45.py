@@ -841,9 +841,28 @@ CASES = CASES + tuple(
         "v45_later_command_meta_manage",
         "查询我的痛风记录，看看这句话意味着什么",
     ),
+) + tuple(
+    blocked_read(
+        f"v45_command_meta_synonym_query_{index}",
+        f"查询我的痛风记录，看看这个指令{phrase}",
+    )
+    for index, phrase in enumerate(("是什么意思", "是啥意思", "什么意思"), 1)
+) + tuple(
+    blocked_manage(
+        f"v45_command_meta_synonym_manage_{index}",
+        f"查询我的痛风记录，看看这个指令{phrase}",
+    )
+    for index, phrase in enumerate(("是什么意思", "是啥意思", "什么意思"), 1)
+) + tuple(
+    allow_manage(
+        f"v45_metric_meaning_synonym_{index}",
+        f"查询我的化验记录，看看这些指标{phrase}",
+        "medical_exam",
+    )
+    for index, phrase in enumerate(("是什么意思", "是啥意思", "什么意思"), 1)
 )
 
-assert len(CASES) == 495
+assert len(CASES) == 504
 
 
 base_host = urlparse(str(settings.tokenplan_base_url)).hostname

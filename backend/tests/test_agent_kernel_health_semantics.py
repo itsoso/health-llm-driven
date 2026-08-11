@@ -800,10 +800,24 @@ def test_v45_metric_interpretation_is_not_command_meta_discussion():
     "meta_object",
     ("这句话", "这个指令", "该指令", "这次查询"),
 )
-def test_v45_later_command_meta_discussion_revokes_read(meta_object):
+@pytest.mark.parametrize(
+    "meaning_phrase",
+    ("意味着什么", "是什么意思", "是啥意思", "什么意思"),
+)
+def test_v45_later_command_meta_discussion_revokes_read(
+    meta_object,
+    meaning_phrase,
+):
     assert semantics.resolve_health_read_act(
-        f"查询我的痛风记录，看看{meta_object}意味着什么"
+        f"查询我的痛风记录，看看{meta_object}{meaning_phrase}"
     ).status != "active"
+
+
+@pytest.mark.parametrize("meaning_phrase", ("意味着什么", "是什么意思", "是啥意思", "什么意思"))
+def test_v45_metric_meaning_synonyms_remain_active(meaning_phrase):
+    assert semantics.resolve_health_read_act(
+        f"查询我的化验记录，看看这些指标{meaning_phrase}"
+    ).status == "active"
 
 
 @pytest.mark.parametrize(
