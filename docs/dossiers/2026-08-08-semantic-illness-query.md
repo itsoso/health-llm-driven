@@ -2181,6 +2181,33 @@ remains `backend/evals/results/semantic_illness_qwen_v45.json`. Nothing has
 been pushed or deployed. Two fresh independent reviews of the next exact
 documentation/evidence commit remain mandatory before G4 may pass.
 
+### v45 fifth G4 remediation and evidence
+
+Safety review of `a630b82270157a00c2f2f44480638a365e3efbe8`
+returned `GO`, while code review returned `NO-GO` after finding two additional
+composition boundaries. Owner-omitted `刚测`/`刚测量` forms were not consistent
+across the two read surfaces, and the later meta clause `这句话意味着什么`
+retained read authority even though the required clinical interpretation form
+`这些指标意味着什么` correctly remained active.
+
+The remediation adds the just-measured forms to the shared scope vocabulary
+and both read-surface projection rules. Meta interpretation now distinguishes
+discourse objects (`这句话`, `这个指令`, `该指令`, `这次查询`) from returned
+clinical metrics. Both sides have positive and negative regression tests and
+live-model cases.
+
+The exact clean implementation/evaluation candidate is
+`55c7a465d3fef65c7c562fb1e4d705f594d17a74`. The authorization/write core
+passes 5,243/5,243 and the complete AgentExecutor compatibility set passes
+686/686. Ruff, Python compilation, `git diff --check`, doc drift and Dossier
+consistency pass. The authorized live `qwen3.7-max` run passes 495/495
+anonymous synthetic cases and all 1,240 actual policy decisions, with zero
+database connection attempts and zero unexpected network destinations.
+Mechanically generated evidence remains
+`backend/evals/results/semantic_illness_qwen_v45.json`. Nothing has been pushed
+or deployed. Both G4 reviews must be repeated against the next exact evidence
+commit because implementation changed after the prior safety `GO`.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.
