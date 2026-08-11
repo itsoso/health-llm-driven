@@ -5213,6 +5213,22 @@ def test_v45_explicit_self_temporal_read_is_allowed(
     assert decision.action == "allow", decision.reason
 
 
+@pytest.mark.parametrize("scope", ("刚测", "刚刚测", "刚测量", "刚刚测量"))
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_recent_measurement_scope_read_is_allowed(scope, tool_name):
+    arguments = (
+        {"dimension": "blood_pressure"}
+        if tool_name == "health_query"
+        else {"record_type": "blood_pressure", "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot(f"查询{scope}的血压记录"),
+        _request(tool_name, arguments),
+    )
+
+    assert decision.action == "allow", decision.reason
+
+
 @pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
 def test_v45_metric_interpretation_after_read_is_allowed(tool_name):
     arguments = (
@@ -5226,6 +5242,21 @@ def test_v45_metric_interpretation_after_read_is_allowed(tool_name):
     )
 
     assert decision.action == "allow", decision.reason
+
+
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_later_command_meta_discussion_blocks_read(tool_name):
+    arguments = (
+        {"dimension": "illness", "keyword": "痛风"}
+        if tool_name == "health_query"
+        else {"record_type": "illness", "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot("查询我的痛风记录，看看这句话意味着什么"),
+        _request(tool_name, arguments),
+    )
+
+    assert decision.action == "block", decision.reason
 
 
 @pytest.mark.parametrize(

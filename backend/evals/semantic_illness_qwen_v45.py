@@ -764,6 +764,10 @@ V45_EXPLICIT_SELF_TEMPORAL_READS = (
     ("查询我午后的血压记录", "blood_pressure"),
     ("查询我夜间的睡眠记录", "sleep"),
     ("查询我起床后的体重记录", "weight"),
+    ("查询刚测的血压记录", "blood_pressure"),
+    ("查询刚刚测的血压记录", "blood_pressure"),
+    ("查询刚测量的血压记录", "blood_pressure"),
+    ("查询刚刚测量的血压记录", "blood_pressure"),
 )
 V45_BARE_TRAILING_VETOES = (
     "不允许",
@@ -829,9 +833,17 @@ CASES = CASES + tuple(
         "查询我的化验记录，看看这些指标意味着什么",
         "medical_exam",
     ),
+    blocked_read(
+        "v45_later_command_meta_query",
+        "查询我的痛风记录，看看这句话意味着什么",
+    ),
+    blocked_manage(
+        "v45_later_command_meta_manage",
+        "查询我的痛风记录，看看这句话意味着什么",
+    ),
 )
 
-assert len(CASES) == 489
+assert len(CASES) == 495
 
 
 base_host = urlparse(str(settings.tokenplan_base_url)).hostname
