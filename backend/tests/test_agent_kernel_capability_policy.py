@@ -5954,6 +5954,21 @@ def test_v45_clinical_interpretation_with_terminal_allows_read(terminal, tool_na
     assert decision.action == "allow", decision.reason
 
 
+@pytest.mark.parametrize(
+    "clinical_entity",
+    "PET-CT MRA HPV HIV ALT AST CRP HbA1c IgG4 BCR-ABL1 APOE MTHFR ANA HLA-B27 SLE CTA".split(),
+)
+def test_v45_explicit_self_clinical_entity_projects_medical_exam(clinical_entity):
+    decision = decide_tool_capability(
+        _snapshot(
+            f"查询我的{clinical_entity}检查报告，看看这些数据是什么意思"
+        ),
+        _request("health_query", {"dimension": "illness", "keyword": "SLE"}),
+    )
+    assert decision.action == "allow", decision.reason
+    assert decision.normalized_args == {"dimension": "medical_exam"}
+
+
 def test_v42_capability_digest_is_stable_across_fresh_processes():
     backend_root = Path(__file__).parents[1]
     environment = os.environ.copy()

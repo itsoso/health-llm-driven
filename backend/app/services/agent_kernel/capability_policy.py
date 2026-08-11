@@ -1710,9 +1710,11 @@ def _project_known_dimension_query_args(
 def _project_medical_exam_query_to_turn(text: str) -> dict[str, Any] | None:
     """Project one exact current-user exam through the shared semantic contract."""
     resolution = resolve_medical_exam_query(text)
-    if resolution.status != "exact" or not resolution.entity:
-        return None
-    return {"dimension": "medical_exam", "keyword": resolution.entity}
+    if resolution.status == "exact" and resolution.entity:
+        return {"dimension": "medical_exam", "keyword": resolution.entity}
+    if is_clinical_result_interpretation(text):
+        return {"dimension": "medical_exam"}
+    return None
 
 
 def _manage_list_turn_record_type(text: str) -> str | None:
