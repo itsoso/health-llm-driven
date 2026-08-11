@@ -821,6 +821,42 @@ def test_v45_metric_meaning_synonyms_remain_active(meaning_phrase):
 
 
 @pytest.mark.parametrize(
+    "meaning_phrase",
+    ("啥意思", "是什么含义", "含义是什么", "代表什么", "怎么理解", "什么意思呢", "是什么意思啊"),
+)
+def test_v45_adjacent_command_meta_meanings_revoke_read(meaning_phrase):
+    assert semantics.resolve_health_read_act(
+        f"查询我的痛风记录，看看这个指令{meaning_phrase}"
+    ).status != "active"
+
+
+@pytest.mark.parametrize(
+    "meaning_phrase",
+    ("啥意思", "是什么含义", "含义是什么", "代表什么", "怎么理解", "什么意思呢", "是什么意思啊"),
+)
+def test_v45_adjacent_metric_meanings_remain_active(meaning_phrase):
+    assert semantics.resolve_health_read_act(
+        f"查询我的化验记录，看看这些指标{meaning_phrase}"
+    ).status == "active"
+
+
+@pytest.mark.parametrize(
+    "meta_object",
+    ("这个命令", "这条命令", "该命令", "这个请求"),
+)
+def test_v45_adjacent_meta_object_variants_revoke_read(meta_object):
+    assert semantics.resolve_health_read_act(
+        f"查询我的痛风记录，看看{meta_object}是什么意思"
+    ).status != "active"
+
+
+def test_v45_unpunctuated_metric_interpretation_remains_active():
+    assert semantics.resolve_health_read_act(
+        "查询我的化验记录看看这些指标是什么意思"
+    ).status == "active"
+
+
+@pytest.mark.parametrize(
     "veto",
     ("不允许", "不同意", "未同意", "没有批准", "不授权"),
 )

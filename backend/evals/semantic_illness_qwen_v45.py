@@ -860,9 +860,49 @@ CASES = CASES + tuple(
         "medical_exam",
     )
     for index, phrase in enumerate(("是什么意思", "是啥意思", "什么意思"), 1)
+) + tuple(
+    blocked_read(
+        f"v45_adjacent_command_meta_query_{index}",
+        f"查询我的痛风记录，看看这个指令{phrase}",
+    )
+    for index, phrase in enumerate(
+        ("啥意思", "是什么含义", "含义是什么", "代表什么", "怎么理解", "什么意思呢", "是什么意思啊"),
+        1,
+    )
+) + tuple(
+    blocked_manage(
+        f"v45_adjacent_command_meta_manage_{index}",
+        f"查询我的痛风记录，看看这个指令{phrase}",
+    )
+    for index, phrase in enumerate(
+        ("啥意思", "是什么含义", "含义是什么", "代表什么", "怎么理解", "什么意思呢", "是什么意思啊"),
+        1,
+    )
+) + tuple(
+    allow_manage(
+        f"v45_adjacent_metric_meaning_{index}",
+        f"查询我的化验记录，看看这些指标{phrase}",
+        "medical_exam",
+    )
+    for index, phrase in enumerate(
+        ("啥意思", "是什么含义", "含义是什么", "代表什么", "怎么理解", "什么意思呢", "是什么意思啊"),
+        1,
+    )
+) + tuple(
+    blocked_manage(
+        f"v45_adjacent_meta_object_{index}",
+        f"查询我的痛风记录，看看{meta_object}是什么意思",
+    )
+    for index, meta_object in enumerate(("这个命令", "这条命令", "该命令", "这个请求"), 1)
+) + (
+    allow_manage(
+        "v45_unpunctuated_metric_interpretation",
+        "查询我的化验记录看看这些指标是什么意思",
+        "medical_exam",
+    ),
 )
 
-assert len(CASES) == 504
+assert len(CASES) == 530
 
 
 base_host = urlparse(str(settings.tokenplan_base_url)).hostname
