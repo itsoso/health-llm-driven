@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Doc-drift check: CLAUDE.md + ARCHITECTURE.md 里声明的架构数字是否与代码实际一致。
+Doc-drift check: generated system facts and active architecture narrative stay current.
 
 Background:
 历史上文档里硬编码的 "47 条安全规则"、"10 specialists"、"13 Twin 分区"
@@ -9,15 +9,16 @@ ARCHITECTURE.md 首次落地时 ("9 specialists" "12 分区" "75 mobile 路由")
 也立刻暴露出同样问题, 所以把文档里的数字也纳入校验。
 
 Mechanism:
-  - 脚本扫描代码得出"真实数字"
-  - 从 ARCHITECTURE.md / CLAUDE.md 里 grep 出对应断言
-  - 不一致 → exit 1, CI 挂掉
+  - 扫描代码并与 docs/_generated/system-map.json 做确定性等值比较
+  - 拒绝在 ARCHITECTURE.md 活跃叙事中复制可变架构计数
+  - 校验 Safety/Specialist/Twin 等显式治理契约
+  - 任一不一致 → exit 1, CI 挂掉
 
 When adding/removing a safety rule / specialist / twin partition / API 路由 /
 Celery 任务 / model / service / mobile route, you must:
   1. 让代码处于目标状态
-  2. 更新 CLAUDE.md / ARCHITECTURE.md 里对应数字
-  3. 本脚本会校验二者一致 —— 不要动本脚本的 EXPECTED, 除非代码数字故意变
+  2. 运行 python scripts/dump_system_map.py
+  3. 保持叙事只引用生成快照；只有治理契约故意变化时才更新 EXPECTED
 
 Usage:
   python scripts/check_doc_drift.py         # from repo root
@@ -170,45 +171,35 @@ def _doc_texts() -> dict[str, str]:
     return out
 
 
-def assert_doc_number(
-    failures: list[str],
-    *,
-    label: str,
-    expected: int,
-    patterns: list[str],
-    required_docs: tuple[str, ...] = ("docs/ARCHITECTURE.md",),
-) -> None:
-    r"""
-    每个 required_docs 里:
-      - 扫描全部 pattern 的所有命中 (把 {n} 换成 \d+)
-      - 如果一个命中都没有 → 漂移 (doc 里没声明这个数字)
-      - 只要有任何一个命中的数字 != expected → 漂移
+_MANUAL_ARCHITECTURE_COUNT_PATTERNS = (
+    r"\b\d+\s+Specialists?\b",
+    r"\b\d+\s*分区\b",
+    r"\b\d+\s*条\s*,\s*主要分\s*\d+\s*域",
+    r"\b\d+\s*页\s*,\s*主要分域",
+    r"Celery\s*调度\(\d+\s*个任务\)",
+    r"\b\d+\s*tab\b",
+    r"stack pages\s*[—-]\s*\d+\+",
+    r"AGENTS\.md`?\s*\|\s*AI Agent 开发规范,\s*\d+\s*行",
+    r"\b\d+\s*个模型\s+entry\b",
+    r"\b\d+\s*个\s+AppIntent\b",
+    r"\b\d+\s*个\s+specialist\s*单测\b",
+    r"\b\d+\s*API\s*路由\b",
+    r"\b\d+\s*Celery\s*任务\b",
+    r"\b\d+\s+(?:services?|models?)\b",
+    r"\b\d+\s*mobile\s*路由\b",
+    r"\b\d+\s*web\s*页\b",
+)
 
-    这样防止 "一处写对, 别处写错" 的部分漂移 (e.g. 同一份文档既说 42 又说 75 条路由).
-    """
-    docs = _doc_texts()
-    for doc_name in required_docs:
-        text = docs.get(doc_name)
-        if text is None:
-            failures.append(f"  {label}: {doc_name} 不存在, 无法校验")
-            continue
 
-        any_number_patterns = [p.replace("{n}", r"(\d+)") for p in patterns]
-        total_hits = 0
-        for np in any_number_patterns:
-            for m in re.finditer(np, text):
-                total_hits += 1
-                claimed = int(m.group(1))
-                if claimed != expected:
-                    failures.append(
-                        f"  {label}: {doc_name} 写着 '{m.group(0)}', "
-                        f"代码实际 {expected}"
-                    )
-        if total_hits == 0:
-            failures.append(
-                f"  {label}: {doc_name} 未找到关于 '{label}' 的数字声明 "
-                f"(期望模式: {patterns!r}, expected={expected})"
-            )
+def find_manual_architecture_counts(text: str) -> list[str]:
+    """Return mutable architecture counts that must come from system-map.json."""
+    active_text = text.partition("### 16.3 演进 log")[0]
+    matches = [
+        (match.start(), match.group(0))
+        for pattern in _MANUAL_ARCHITECTURE_COUNT_PATTERNS
+        for match in re.finditer(pattern, active_text)
+    ]
+    return [claim for _, claim in sorted(matches)]
 
 
 def main() -> int:
@@ -266,7 +257,12 @@ def main() -> int:
 
     # 4. Architecture counts are code-derived only. Narrative docs link to
     # docs/_generated/system-map.json instead of duplicating mutable numbers.
-    # The generated-map comparison below is the single documentation drift gate.
+    architecture_text = _doc_texts().get("docs/ARCHITECTURE.md", "")
+    for claim in find_manual_architecture_counts(architecture_text):
+        failures.append(
+            "  architecture narrative: mutable count "
+            f"'{claim}' must reference docs/_generated/system-map.json"
+        )
 
     # 4b. KB 对账 auto-approve τ 钉死 (founder ratified §10)。悄悄调低 τ 无 CI 拦 = 安全护栏缺口。
     judge_src = BACKEND / "app" / "services" / "kb_reconciliation_judge.py"

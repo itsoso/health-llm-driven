@@ -1,43 +1,38 @@
 ---
 name: doc-drift-fix
-description: "doc-drift 红了 / 加了 model·service·API路由·safety规则·twin分区·celery任务·mobile路由 后同步文档计数。当 CI 报 doc-drift、或新增上述任一类文件时使用,避免 CI 卡住。"
+description: Use when CI reports doc drift or code changes API routers, tasks, models, services, mobile/web routes, Safety rules, specialists, or HealthTwin partitions.
 ---
 
 # Doc-Drift Fix
 
-`scripts/check_doc_drift.py` 校验 CLAUDE.md + docs/ARCHITECTURE.md 里硬编码的架构数字与代码一致。加了东西就得同步,否则 CI 红。
+架构计数和 roster 的唯一文档真源是代码生成的 `docs/_generated/system-map.json`。叙事文档只写稳定职责、流程和代码锚点；不要手改动态数字。
 
-## 跑它
+## 标准修复
 
 ```bash
-cd backend && source venv/bin/activate
-python ../scripts/check_doc_drift.py     # exit 0 = 干净;非 0 = 列出每条漂移
+python scripts/dump_system_map.py
+python scripts/check_doc_drift.py
 ```
 
-## 它校验什么 + 漂移了改哪
+第一条从目标代码重新生成确定性快照，第二条校验快照、Safety 注册表和活跃架构叙事。两条都必须 exit 0。
 
-| 改了什么 | 改这里 |
+## 按报错处理
+
+| 报错 | 修复 |
 |---|---|
-| `safety_guardian/rules/*.py` 加/删 `@register` | `scripts/check_doc_drift.py` 的 `EXPECTED["safety_rules"]`(per-file 计数)+ CLAUDE.md 的「Safety Guardian 规则分类」表(total N + 该文件行)+ ARCHITECTURE.md「N 条规则」 |
-| **新增 rules/ 下的 .py(哪怕无 @register 的纯数据文件)** | **必须在 `EXPECTED["safety_rules"]` 登记**(数据文件登记为 `0`),否则报 `unknown rule file(s) not in EXPECTED`(踩过:`pgx_cpic_table`) |
-| 加/删 specialist | `EXPECTED["specialists_count"]` + ARCHITECTURE.md「13 个 Specialist」 |
-| HealthTwin 加/删**顶层分区**(非嵌套模型) | `EXPECTED["twin_partitions"]` + ARCHITECTURE.md「N 分区」。注:给现有分区加字段、加嵌套 BaseModel **不算**分区(分区 = HealthTwin 顶层字段数 − {meta, gene_config}) |
-| `backend/app/services/**/*.py` 加文件 | ARCHITECTURE.md 两处 `N services`(一页概览框 + 技术栈表) |
-| `app/api/main.py` 加 `include_router` | ARCHITECTURE.md `N API 路由` |
-| `app/models/*.py` 加文件 | ARCHITECTURE.md `N models` |
-| `app/tasks/**` 加 `@celery_app.task` | ARCHITECTURE.md `N Celery 任务` |
-| `mobile/app/**/*.tsx`(非 `_layout.tsx`)加路由 | ARCHITECTURE.md mobile 路由数 |
-| `frontend/src/app/**/page.tsx` 加页 | ARCHITECTURE.md web 页数 |
+| `system-map.json 与代码不符` | 确认代码是目标状态，运行生成器并提交更新后的 JSON |
+| `architecture narrative: mutable count` | 从活跃叙事删除手写动态计数，改为链接 `_generated/system-map.json`；不要把数字改成“当前正确值” |
+| `unknown rule file(s) not in EXPECTED` | 在 `EXPECTED["safety_rules"]` 登记新规则文件；纯数据文件登记为 `0` |
+| Safety/Specialist/Twin expected 与代码不符 | 先确认变更是故意的，再同步 `EXPECTED` 安全契约并重新生成 system-map |
+| 生成器 import 失败 | 修复依赖或环境问题；禁止空捕获、静默 fallback 或伪造快照 |
 
-## 工作法
+## 新增代码派生结构
 
-1. 让代码处于目标状态(加完文件)。
-2. 跑脚本 → 它**逐条**列出「doc 写着 X,代码实际 Y」。
-3. 按上表逐条改文档数字(`assert_doc_number` 会检查**所有**命中,防"一处对一处错"的部分漂移)。
-4. 重跑直到 exit 0。
+当一类结构会随代码变化时，在 `scripts/dump_system_map.py::build_map` 增加字段，并复用 `scripts/check_doc_drift.py` 的扫描器。不要把新计数放进 ARCHITECTURE、CLAUDE 或 system-map 叙事。
 
-## 注意
+## 提交前
 
-- ARCHITECTURE.md 常被并发改动(别的 agent 也在加),改前 `git pull --rebase`,改后以脚本输出的实际数字为准(别钉旧数)。
-- service 计数是 **recursive**(含 `cgm/`、`llm/`、`notification/` 等子目录)。
-- 不要为了过 CI 去改 `EXPECTED` 迁就错代码——`EXPECTED` 只在代码数字**故意**变时才动。
+- `git diff --check`
+- `python scripts/dump_system_map.py --check`
+- `python scripts/check_doc_drift.py`
+- 只提交本任务文件，不使用 `git add -A`

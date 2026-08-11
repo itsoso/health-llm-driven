@@ -1,6 +1,13 @@
+---
+doc: architecture
+last-reviewed: 2026-08-11
+generated-source: docs/_generated/system-map.json
+capability-map: docs/system-map/product-map.md
+---
+
 # health-llm-driven 架构文档
 
-**维护**: 每次 PR 涉及本文档列出的任一模块都应在**同一 PR** 里同步更新本文件。最后一次全量重写: 2026-05-08。
+**维护**: 每次 PR 涉及本文档列出的任一模块都应在**同一 PR** 里同步更新本文件。代码派生的计数与 roster 只引用 [`docs/_generated/system-map.json`](_generated/system-map.json)，不在叙事中手写。
 
 ---
 
@@ -10,7 +17,7 @@
                         ┌───────────────────────────────────────────┐
                         │  iPhone App (小巴 / 生产)                 │
  Voice ⇄ Siri ──▶       │   Expo SDK 55 + RN 0.83 + expo-router     │──────┐
-                        │   mobile/app/*.tsx (roster 见 system-map) │      │
+                        │   mobile/app/*.tsx (计数见 system-map)   │      │
                         └───────────────────────────────────────────┘      │
                                                                            │ HTTPS (JWT Bearer)
                         ┌───────────────────────────────────────────┐      │
@@ -21,7 +28,7 @@
                                                                            ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │                              Backend: FastAPI (Python 3.12)                          │
-│                  health-api.executor.life · roster 见生成的 system-map             │
+│                  health-api.executor.life · 规模见生成的 system-map               │
 │  ┌───────────┐  ┌──────────┐  ┌─────────────────┐  ┌────────────────────┐            │
 │  │ Auth+JWT  │  │ Router   │  │ Orchestrator    │  │ Agent Executor     │            │
 │  │           │  │ dispatch │  │ specialists     │  │ (tool-calling LLM) │            │
@@ -57,6 +64,65 @@
 - 数据源: Garmin 腕表为主, 加 Withings / CGM / 化验 / 基因 / 环境 / 补剂 / 药物 / Telegram 语音入口.
 - Swift 原生 Mac P0 方案见 `docs/plans/2026-05-23-swift-native-mac-health-agent.md`; Mac 只做原生 UX、文件导入、任务和 trace 查看, 后端仍是唯一健康推理与数据源。
 
+### 当前功能架构（2026-08-11 代码核验）
+
+```mermaid
+flowchart TB
+    subgraph CLIENTS["交互与执行端"]
+        MOBILE["Mobile<br/>今日 · 小巴 · 记录 · 我"]
+        DESKTOP["Mac / Web<br/>工作台 · 报告 · 管理"]
+        EDGE["Watch / 小程序 / Rokid<br/>低摩擦与免手执行"]
+        CHANNELS["Siri / Telegram / MCP<br/>外部受控入口"]
+    end
+
+    API["FastAPI /api/v1<br/>认证 · 用户隔离 · 限流 · 审计"]
+    DOMAIN_API["领域 API<br/>记录 · 计划 · 报告 · 设备 · 协作 · 运维"]
+    STREAM["Agent Stream<br/>SSE 对话 · 语音 · 动态卡片"]
+    SEMANTICS["Agent Kernel 语义层<br/>speech act · entity · time · target"]
+    POLICY["确定性能力闸<br/>GoalSpec · CapabilityPolicy · Validator"]
+    TOOLS["Tool Gateway<br/>query / batch / record / manage / analysis / AIGC draft"]
+    ORCH["深度分析路径<br/>Evidence Runtime · Orchestrator · Specialists"]
+    SERVICES["Health OS 服务层"]
+
+    subgraph CAPABILITIES["当前能力域（完整清单见 system-map/product-map.md）"]
+        RECORDS["健康记录与管理<br/>饮食 · 体征 · 睡眠 · 运动 · 症状/病症 · 用药/补剂"]
+        EXECUTION["日常执行闭环<br/>Today · Agenda · Timeline · Calendar · Goal · Reminder"]
+        INTELLIGENCE["健康智能<br/>Twin · Safety · 趋势 · 轨迹 · 评分 · 报告 · 个体结果"]
+        KNOWLEDGE["知识与记忆<br/>System KB · Evidence · Conversation / Fact / Episode Memory"]
+        COLLAB["协作与生成<br/>家庭/医生 · 社区 · 私有 AIGC · 分享"]
+        DATA["数据接入<br/>Garmin · Withings · HealthKit · CGM · 化验 · 基因 · 环境"]
+    end
+
+    RUNTIME["PostgreSQL · Redis · Celery"]
+    EXTERNAL["LLM / Wan · APNs · TTS · Garmin · Weather · WeChat / Telegram"]
+
+    MOBILE --> API
+    DESKTOP --> API
+    EDGE --> API
+    CHANNELS --> API
+    API --> DOMAIN_API
+    API --> STREAM
+    STREAM --> SEMANTICS --> POLICY --> TOOLS
+    TOOLS --> ORCH
+    DOMAIN_API --> SERVICES
+    TOOLS --> SERVICES
+    ORCH --> SERVICES
+    SERVICES --> RECORDS
+    SERVICES --> EXECUTION
+    SERVICES --> INTELLIGENCE
+    SERVICES --> KNOWLEDGE
+    SERVICES --> COLLAB
+    SERVICES --> DATA
+    RECORDS --> RUNTIME
+    EXECUTION --> RUNTIME
+    INTELLIGENCE --> RUNTIME
+    KNOWLEDGE --> RUNTIME
+    COLLAB --> EXTERNAL
+    DATA --> EXTERNAL
+```
+
+图中“当前能力域”的用户可见功能、代码锚点和主要 surface 以 [`docs/system-map/product-map.md`](system-map/product-map.md#3-当前功能清单代码核验) 为叙事真源；规模以生成的 system-map 为真源。
+
 ---
 
 ## 二、技术栈
@@ -64,10 +130,12 @@
 | 端 | Stack | 位置 | 规模 |
 |---|---|---|---|
 | **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 代码派生规模见 [`system-map.json`](_generated/system-map.json) |
-| **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 代码派生 roster 见 [`system-map.json`](_generated/system-map.json) |
-| **Mac Desktop** | Swift 6 + SwiftUI + URLSession async/await + Keychain + MenuBarExtra | `apps/mac/` | 原生桌面 P0: Today / Agent / Record / Import / Jobs / Trace |
-| **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 代码派生 roster 见 [`system-map.json`](_generated/system-map.json) |
-| **WeChat 小程序** | uni-app (pnpm workspace) | `packages/mini-program/` | 独立发布 |
+| **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 路由计数见 [`system-map.json`](_generated/system-map.json)，roster 见 `mobile/app/` |
+| **Mac Desktop** | Swift 6 + SwiftUI + URLSession async/await + Keychain + MenuBarExtra | `apps/mac/` | 桌面工作台:Agent / Today / Schedule / Record / Import / Jobs / Trace |
+| **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 页面计数见 [`system-map.json`](_generated/system-map.json)，roster 见 `frontend/src/app/` |
+| **WeChat 小程序** | Taro 4.1.10 (pnpm workspace) | `packages/mini-program/` | 微信内轻量入口 |
+| **Watch** | watchOS + SwiftUI | `apps/watch/` | 今日状态、推送、快速记录、complication |
+| **Rokid** | Android + Kotlin + Compose | `apps/rokid-pushup-glasses/` | CXR-L 眼镜免手俯卧撑教练 |
 | **MCP Server** | Python (独立) | `mcp-server/` | 受控外部工具入口 |
 | **Agent Skills** | Markdown | `backend/skills/` (随后端部署) | 第一方 Agent 运行时技能 |
 
@@ -116,12 +184,12 @@
 
 | 目录 | 职责 |
 |------|------|
-| `backend/app/api/*.py` | API 路由；roster 见生成的 system-map |
+| `backend/app/api/*.py` | API 路由；计数见生成的 system-map，roster 见 `app/api/main.py` |
 | `backend/app/services/*.py` | 业务服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/` / `genui/`;多源去重见 `device_source_priority` + `garmin_daily_merged`) |
-| `backend/app/tasks/*.py` | Celery 异步任务；roster 见生成的 system-map |
-| `frontend/src/app/*/page.tsx` | Web 页面；roster 见生成的 system-map |
+| `backend/app/tasks/*.py` | Celery 异步任务；计数见生成的 system-map，beat roster 见 `app/celery_app.py` |
+| `frontend/src/app/*/page.tsx` | Web 页面；计数见生成的 system-map，roster 见文件树 |
 | `frontend/src/components/*.tsx` | Web 组件 |
-| `mobile/app/` | RN 路由 + Agent Native 导航；roster 见生成的 system-map |
+| `mobile/app/` | RN 路由 + Agent Native 导航；计数见生成的 system-map，roster 见文件树 |
 | `mobile/components/` | RN 组件(按领域) |
 | `mobile/services/` + `mobile/hooks/` | RN API + React Query hooks |
 
@@ -130,7 +198,7 @@
 | 文件 | 职责 |
 |------|------|
 | `CLAUDE.md` | Claude Code 工作指南 |
-| `AGENTS.md` | AI Agent 开发规范(安全/日志/测试权威来源, 992 行) |
+| `AGENTS.md` | AI Agent 开发规范(安全/日志/测试权威来源) |
 | `docs/ARCHITECTURE.md` | **本文件** — 架构说明 |
 | `docs/HARNESS.md` | LLM Harness 设计方法论 |
 | `docs/FUTURE_ROADMAP.md` | 战略盘点 + 决策追踪 |
@@ -143,55 +211,47 @@
 ```
 用户对话框 (App / Web / Siri / Telegram)
         ↓
-┌────────────────────────────────────┐
-│  Agent Executor (agent_executor.py)│  ← 统一入口
-│  /api/v1/agent/stream  (SSE)       │
-│  - 循环: LLM call → tool → 再 LLM  │
-│  - 工具: health_record, health_query│
-│          health_advice, image_vision│
-└───────────────┬────────────────────┘
-                │ ("我这周恢复得怎么样" / "血压降了说明啥")
-                ▼
-┌────────────────────────────────────┐
-│  Orchestrator (orchestrator.py)    │  ← 深度分析路径
-│  - intent.py 关键字分类            │
-│  - specialists.py 注册表顺序调度   │
-│  - LLM 合成 + provider failover    │
-│  - Streaming SSE (stream_orchestrator)│
-└───────────────┬────────────────────┘
-                │
-                ▼
-┌────────────────────────────────────────────────────────────────┐
-│  13 Specialists                                               │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │ SafetyGuardian  — 确定性规则, 不调 LLM                 │   │
-│  │   分类/精确计数: docs/_generated/system-map.json       │   │
-│  ├─────────────────────────────────────────────────────────┤   │
-│  │ RecoveryCoach  · MovementCoach  · FuelStrategist        │   │
-│  │ MentalHealthCompanion · KnowledgeLibrarian              │   │
-│  │ LongitudinalAnalyst · LongevitySpecialist (PhenoAge)    │   │
-│  │ HypertensionSpecialist · MetabolicSpecialist            │   │
-│  │ RhinitisSpecialist · SupplementAdvisor                  │   │
-│  │ CrossSourceValidator (跨设备同指标一致性裁决)           │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│  共享 context: recovery.readiness_zone → movement_coach         │
-└───────────────┬────────────────────────────────────────────────┘
-                │
-                ▼
-┌────────────────────────────────────┐
-│  Digital Health Twin (15 分区)     │  ← 状态视图
-│  schema.py + builder.py (并行 fill)│
-│  - Redis 5min 缓存                 │
-│  - 降级: 失败 filler 不影响其它    │
-└───────────────┬────────────────────┘
-                │
-                ▼
-┌────────────────────────────────────┐
-│  Collectors + Services             │
-│  Garmin / Withings / CGM / 化验   │
-│  基因 / 环境 / 补剂 / 药物         │
-└────────────────────────────────────┘
+┌──────────────────────────────────────────┐
+│ Agent Executor /api/v1/agent/stream SSE │  ← 统一入口
+│ LLM call → tool proposal → result → LLM │
+└────────────────────┬─────────────────────┘
+                     ▼
+┌──────────────────────────────────────────┐
+│ Agent Kernel 确定性语义与授权层          │
+│ health_semantics / write_intent_scope    │
+│ GoalSpec → CapabilityPolicy → Validator  │
+│ - 区分读、写、管理、分析与取消           │
+│ - 绑定 owner / entity / time / target    │
+│ - 未知维度和不充分语义 fail loud         │
+└────────────────────┬─────────────────────┘
+                     ▼
+┌──────────────────────────────────────────┐
+│ Tool Gateway                             │
+│ health_query / health_query_batch        │
+│ health_record / health_manage            │
+│ health_analysis / knowledge / AIGC draft │
+└──────────────┬─────────────────┬─────────┘
+               │                 │ 深度分析
+               │                 ▼
+               │    ┌──────────────────────────────────────┐
+               │    │ Evidence Runtime + Orchestrator      │
+               │    │ Specialists + SafetyGuardian        │
+               │    │ roster/计数见生成的 system-map      │
+               │    └──────────────────┬───────────────────┘
+               ▼                       ▼
+┌──────────────────────────────────────────────────────────┐
+│ Health OS 服务层                                         │
+│ owner-scoped readers/writers · Plans · Reports · Memory  │
+│ Digital Health Twin (roster 见生成的 system-map)         │
+└──────────────────────────┬───────────────────────────────┘
+                           ▼
+┌──────────────────────────────────────────────────────────┐
+│ PostgreSQL / Redis / Celery + Collectors / Integrations  │
+│ Garmin / Withings / HealthKit / CGM / 化验 / 基因 / 环境│
+└──────────────────────────────────────────────────────────┘
 ```
+
+病症查询是这条链路的当前代表性读路径：`health_semantics.py` 保留“上一次、最近一段时间、分别有哪些”等实体与时间语义，`health_query(dimension=illness)` 编译到 owner-scoped canonical reader；未知维度不再降级成综合可穿戴数据。写入则必须由 `write_intent_scope.py` 编译出直接、肯定、当前且目标一致的授权集合，模型提案本身不构成写权限。
 
 ### Health Evidence Runtime（跨端健康建议真源）
 
@@ -234,7 +294,7 @@ IDs。后端自行读取配对问题和最小 verification proof，公开页每�
 可从新发马尾风险判断中排除；任何当前尿潴留、失禁、鞍区/会阴感觉变化或明确的
 新发/持续/复发/加重对比都会覆盖既往描述并进入急症分流。
 
-### HealthTwin 15 分区
+### HealthTwin 分区（roster 见生成的 system-map）
 
 `backend/app/twin/schema.py`:
 
@@ -386,27 +446,30 @@ Celery beat (每小时) → garmin_sync.sync_user_garmin_data(user_id)
 
 ## 六、API 路由(按域分组)
 
-132 条, 主要分 10 域:
+以下按稳定职责域索引；全量注册表见 `backend/app/api/main.py` 的 `include_router`，实时计数见生成的 system-map：
 
 | 域 | 路由前缀 | 关键端点 |
 |---|---|---|
 | **Auth** | `/auth` | `/login` `/register` `/refresh` |
-| **Agent/Chat** | `/agent` `/orchestrator` | `/agent/stream` (主对话入口) `/agent/conversations` (历史) `/orchestrator/chat/stream` (深度分析) |
+| **Agent/Chat** | `/agent` `/orchestrator` `/speech` `/dynamic-views` | `/agent/stream` (主对话入口) `/agent/conversations` (历史) `/orchestrator/chat/stream` (深度分析) |
 | **Twin/Safety** | `/twin` `/safety` | `/twin/me` `/safety/me` `/safety/audit` `/safety/explain` |
-| **Records** | `/diet` `/water` `/weight` `/waist` `/blood-pressure` `/exercise` `/checkin` `/medication` `/supplements` `/illness` | RESTful CRUD, `/records/me/date/{YYYY-MM-DD}` |
-| **Devices** | `/data-collection/garmin/me/*` `/cgm` | Garmin 同步 `/sync?days=N`, CGM batch |
+| **Records** | `/diet` `/water` `/weight` `/waist` `/blood-pressure` `/sleep-record` `/workout` `/symptoms` `/medication` `/supplements` `/illness` | owner-scoped CRUD；病症支持生命周期写入和“上一次/时间窗/分别有哪些”的语义读取 |
+| **Devices** | `/devices` `/data-collection/garmin/me/*` `/withings` `/cgm` | HealthKit/Garmin/Withings/CGM 接入、同步和设备授权 |
 | **Environment** | `/environment` | `/weather` `/air-quality` `/advice` `/exercise-suitability` |
 | **Analytics** | `/garmin-analysis` `/daily-health` `/spo2` `/health-analysis` `/personal-outcome` `/monthly-reports` | 聚合 + 趋势 |
 | **Trajectory** | `/trajectory` | `/trajectory/me` 疾病上游健康轨迹快照: 基因底图、甲基化缺口、临床锚点、实时状态、可干预变量; risk 携带 `evidence_tier/confidence/claim_boundary` |
 | **Operating Plan** | `/daily-plan` | `/daily-plan/me` 当前用户每日代谢健康操作计划; action 携带 `evidence_tier/confidence/claim_boundary` |
+| **Schedule/Goals** | `/agenda` `/timeline` `/calendar` `/schedule` `/goals` `/smart-reminder` | 今日执行、日程、目标、提醒及完成回执 |
 | **Fitness (P2)** | `/fitness` | `/fitness/weekly-plan` (T2 周健身计划:系统起草→确认排程) `/fitness/exercise-guide` (动作图文指导,确定性数据集) |
 | **Reorder/Commerce (P5/D2)** | `/reorder-intents` | 财务一等对象 `ReorderIntent`(复购下单,**SCAFFOLD 不真下单**):`POST /reorder-intents` (propose) `GET` (list) `/{id}/confirm` (T3 逐笔强确认→调快手电商 skill;**skill 契约未就绪→501**,意图停 user_confirmed,绝不 order_placed/扣款) `/{id}/cancel`。skill 网关 `services/kuaishou_skill_gateway.py::place_order` 恒抛 NotImplementedError(财务硬门可证惰性) |
 | **Write 层/External Action (P5)** | `/write-intents` | 写意图账本(系统起草→用户确认才执行,全 `trust_tier=manual_confirm` 不自治):`GET` (list,顺带跑各生成器含 `generate_doctor_booking_drafts`) `POST` (propose 外部动作,服务端 kind 白名单 alarm_set/food_order/doctor_booking,未知→422)`/{id}/confirm` `/{id}/dismiss`。external-action kinds:`alarm_set`(确认→建 SmartReminder,设备到点触发,后端只记录)、`doctor_booking`(扫 `ReviewSchedule` due 行→草稿,确认→「去 X 科预约复查」提醒,**不真挂号**)、`food_order`(**DRAFT ONLY**,确认惰性 acknowledged,**不下单/不付款/不存支付凭据**;摘要过 `guidance_validator` R4 守门)。inert 网关 `services/food_order_skill_gateway.py::place_order` 恒抛 NotImplementedError(财务路径可证惰性);全 R15 P1,绝不 P0 |
 | **Reminders/Notifications** | `/notification` `/smart-reminder` | `/bind/ios` `/bind/wechat` `/logs` |
 | **Voice/Briefing** | `/tts` `/briefing` `/pre-workout` `/clarification` | `/tts/synthesize` (CosyVoice 代理), briefing voice script |
+| **Knowledge/Memory** | `/system-knowledge` `/knowledge` `/memory-facts` `/conversation-memory` `/health-kg` | 受控知识、证据、事实与会话记忆、健康知识图谱 |
+| **Collaboration/Generation** | `/family` `/doctor-report` `/community` `/aigc/media` `/shared` | 家庭/医生协作、匿名同行支持、私有 AIGC、受控分享 |
 | **Admin** | `/admin` `/admin/llm` `/admin/observability` | `/admin/llm/models` `/admin/llm/select-model` `/admin/llm/benchmark/{id}` |
 
-路由全量表见 `backend/app/api/main.py` 的 `include_router` 列表。
+用户可见能力的完整分组和跨端入口见 [`docs/system-map/product-map.md`](system-map/product-map.md#3-当前功能清单代码核验)。
 
 ---
 
@@ -416,12 +479,13 @@ Celery beat (每小时) → garmin_sync.sync_user_garmin_data(user_id)
 
 ```
 app/_layout.tsx (root)
-├── (tabs)/  — 3 tab
+├── (tabs)/  — 可见主导航
 │   ├── index.tsx     — 今日 dashboard
+│   ├── chat.tsx      — 小巴健康参谋;历史/语音/新建/删除会话
 │   ├── record.tsx    — 健康记录 (VitalsGrid + ActivityRings + Sparklines + ...)
-│   └── chat.tsx      — 小巴健康参谋文字对话; header 提供历史 ConversationSheet / 语音 / 新建 / 删除
+│   └── me.tsx        — 个人档案、设置和数据入口
 │
-└── modal / stack pages — 40+
+└── modal / stack pages
     ├── voice-chat.tsx (带 ?conversation_id=X 历史恢复)
     ├── workout-detail.tsx · sleep.tsx · sleep-spo2-analysis.tsx
     ├── body-measurements.tsx  — 体重 + 腰围一屏录入; Daily Plan measurement action 直达
@@ -466,7 +530,7 @@ APNs topic 用 `ios_bundle_id` per-device (绑定 token 时上报), 防 `DeviceT
 
 ## 八、Web (Next.js 14)
 
-68 页, 主要分域(和 Mobile 有**显著 parity 缺口** — 详见 `docs/FUTURE_ROADMAP.md`):
+页面实时计数见生成的 system-map；主要分域如下(和 Mobile 有**显著 parity 缺口** — 详见 `docs/FUTURE_ROADMAP.md`):
 
 - **Daily** (有 mobile 对应): `/ai-assistant` `/checkin` `/diet` `/sleep` `/goals` `/workout` `/reminders` `/notifications` `/settings`
 - **Deep Analytics**: `/digital-twin` `/personal-outcome` `/health-report` `/health-trends`
@@ -480,9 +544,9 @@ APNs topic 用 `ios_bundle_id` per-device (绑定 token 时上报), 防 `DeviceT
 
 ---
 
-## 九、Celery 调度(69 个任务)
+## 九、Celery 调度
 
-`backend/app/celery_app.py` (北京时区 `Asia/Shanghai`, Redis broker):
+任务实时计数见生成的 system-map；beat roster 以 `backend/app/celery_app.py` 为准(北京时区 `Asia/Shanghai`, Redis broker):
 
 | 时间 | 任务 | 职责 |
 |---|---|---|
@@ -516,7 +580,7 @@ APNs topic 用 `ios_bundle_id` per-device (绑定 token 时上报), 防 `DeviceT
 
 `backend/app/services/llm/`:
 - `factory.py` — `get_llm_provider()` 单例, 读 `settings.llm_provider` 或 `model_registry.get_active_model_id()` (admin 切换)
-- `model_registry.py` — **单一真相源**, 9 个模型 entry (speed_tier fast/balanced/reasoning + requires_env 验证)
+- `model_registry.py` — **单一真相源**, model entry 携带 speed_tier 与 requires_env 验证
 - `providers/openai_provider.py` — 兼容 OpenAI 协议 (用于 gpt/qwen/glm/moonshot/zhipu, 都走 OpenAI 兼容)
 - `providers/ollama_provider.py` — 本地
 - `usage_tracker.py` — wrap provider, 记录 token 用量
@@ -671,7 +735,7 @@ frontend-only 不 checkout 共享仓库、不重启 backend/Celery、不更改 h
 
 - `modules/shared-keychain/` — 共享 keychain group 让 Siri AppIntent 拿 JWT
 - `plugins/withIntentsExtension.js` — Expo config plugin 生成 Siri Intents target
-- 3 个 AppIntent: `HealthCommandIntent` (不开 App, 语音记录), `HealthAnalysisIntent` (不开 App, 分析), `HealthAnalysisOpenIntent` (开 App 到 voice-chat)
+- AppIntent roster: `HealthCommandIntent` (不开 App, 语音记录), `HealthAnalysisIntent` (不开 App, 分析), `HealthAnalysisOpenIntent` (开 App 到 voice-chat)
 - 后端 `?source=siri` 走 fast path
 
 ### 13.3 语音对话 (voice-chat)
@@ -767,7 +831,7 @@ GARMIN_ENCRYPTION_KEY=mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
   - `test_twin_builder.py` — schema 默认值, builder 空/部分, formatter
   - `test_safety_guardian.py` — 规则正反例 + 严重度排序
   - `test_orchestrator.py` — intent 分类 + specialist 注册表 + e2e
-  - `test_specialists.py` — 5 个 specialist 单测 (Recovery/Fuel/Movement/Mental/Chronic 宏观覆盖)
+  - `test_specialists.py` — specialist 单测 (Recovery/Fuel/Movement/Mental/Chronic 宏观覆盖)
   - `test_smoke.py` — fixture-free `from main import app` 自检
 
 - **盲区**: Movement/Fuel/Longitudinal/Mental/Knowledge/ChronicSpecialists 缺 prompt 回归测试 (见 FUTURE_ROADMAP.md §盲点 3)
@@ -796,7 +860,7 @@ GARMIN_ENCRYPTION_KEY=mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
 |---|---|
 | 新增/删除 Specialist | §四, §四 Safety Guardian 规则分类 |
 | 新增/删除 API 路由 | §六 API 路由 |
-| Twin schema 新字段 | §四 HealthTwin 15 分区, §五 数据流 |
+| Twin schema 新字段 | §四 HealthTwin 分区, §五 数据流 |
 | Mobile 新路由 / 移除路由 | §七 Mobile 架构 |
 | Celery 新任务 | §九 Celery 调度 |
 | 新 LLM provider / model | §十 LLM Harness |
@@ -804,7 +868,7 @@ GARMIN_ENCRYPTION_KEY=mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
 | 部署脚本 / 健康度逻辑改动 | §十二 部署流水线 |
 | 新 env 字段 | §十四 配置与秘钥 |
 
-**自动校验**: `backend/scripts/check_doc_drift.py` (CI 执行) 校验关键数字, 不一致 fail CI。**新加专属计数指标时同步更新此脚本的 `EXPECTED` 常量**。
+**自动校验**: `scripts/check_doc_drift.py` (CI 执行) 比较代码与 `docs/_generated/system-map.json`，并拒绝把可变架构计数写回活跃叙事。新增代码派生结构时，在 `scripts/dump_system_map.py::build_map` 增加字段并重新生成快照。
 
 ### 16.2 文档分工
 
@@ -824,6 +888,7 @@ GARMIN_ENCRYPTION_KEY=mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
 
 | 日期 | 更新者 | 摘要 |
 |---|---|---|
+| 2026-08-11 | Codex GPT-5 | 依据当前代码补齐多端功能架构、Agent Kernel 确定性语义/能力闸、功能清单入口；移除活跃叙事中的手写动态计数并加漂移回归检查。 |
 | 2026-05-08 | Claude Opus 4.7 | 首次全量重写; 覆盖 Agent-Native 四层架构 / API / Mobile / Web / Celery / 13 Twin 分区 / 51 Safety 规则 / 3 push 通道 / 双通道 mobile 部署 / 9 LLM 模型注册表 (历史 116/44/68/41) |
 | 2026-05-08 | Claude Opus 4.7 | feat: SymptomEntry 通用症状录入 (Home + Record tab + voice); fix: 莫米松 checkin 字段不存在 → 改走 medication_logs; fix: 计划提醒推送前按今日实际天气校对 title (修"雨天力量维护日"但今天没下雨 badcase). 数字: API 116→117, models 68→69, mobile 42→43 |
 | 2026-05-09 | Claude Opus 4.6 | feat: Agent-Native v3 Episode 闭环 — Run Recovery Coach 落地 (Increment 1-3): backend/protocols/ YAML registry, services/episode/ planner+lifecycle, ActionGraph + 详情页 + Home OpenEpisodeCard, Garmin sync hook 推 episode_created 推送, Celery beat episode_scheduler 每分钟扫 due reminder + auto-expire + auto-close, 11 单测 + 4 scheduler 单测全绿. 数字: API 117→118, mobile 44→45, Celery 41→42, services 140→147 |
