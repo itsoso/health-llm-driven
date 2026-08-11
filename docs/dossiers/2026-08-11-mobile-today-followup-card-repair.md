@@ -4,7 +4,7 @@
 |---|---|
 | slug | `mobile-today-followup-card-repair` |
 | 创建日期 | 2026-08-11 |
-| 当前阶段 | S6（G4 GO，待 Backend deploy 与 Mobile 发布） |
+| 当前阶段 | S7（Backend / Mobile 已发布，待真机冷启动确认） |
 | 状态 | shipping |
 | 负责 | Codex |
 | 类型 | bugfix / medical-boundary UI / write-capability repair |
@@ -69,8 +69,14 @@
 
 ## G5 · 部署健康闸
 
-- 待 Backend 部署与健康检查。
+- Backend 从干净 `origin/main` 部署精确提交 `ac2e914dfd5b778897389c5956b65e47d279cbf9`；数据库备份、237 表恢复演练、Force-RLS 完整性与站外归档真实性检查通过，受管迁移无新增。
+- Backend / Celery 重启后健康度连续 `60/60 PASS`；Skills `22 = 22`；服务器 `/api/v1/daily-artifact/me` 未鉴权返回 401，证明新版本路由在线；远端 HEAD 与发布提交一致。
+- Mobile production OTA（iOS / runtime `1.3.3`）发布成功：group `fa8d410b-395e-4bf5-98cc-ed8d926999f5`，iOS update `019ff131-8e44-7f41-a26c-f99d33f66cc4`，commit `ac2e914dfd5b`。
+- EAS 两次 Hermes 资产处理超时后，发布脚本按契约切到 `--no-bytecode + --skip-bundler`；首次 fallback 超时，精确 bundle 重试复用已上传资产后成功，脚本回读 group/update ID 并原子更新发布 manifest 与 OTA anchor。
+- 回滚锚点：previous known-good group `f95091e9-a01c-4f05-b490-ebdb3a7f3314` / iOS update `019ff0d6-3212-71b1-afbe-9d67f9702819`。
+- **裁决: PASS。**
 
 ## G6 · 上线验证
 
-- 待 Mobile production OTA 与真机冷启动验证。
+- 工具侧已确认 Backend 精确 SHA、鉴权路由与 EAS production update manifest。
+- 待用户在 TestFlight / App Store build 完全杀进程后冷启动，确认卡片显示“复查完成情况”“处理复查”，点击进入复查页；支持完成的行动显示中文成功回执并从今日行动刷新。
