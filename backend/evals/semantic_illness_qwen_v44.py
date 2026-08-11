@@ -907,15 +907,20 @@ async def evaluate(case: Case, semaphore: asyncio.Semaphore) -> dict[str, Any]:
                     "data": patch or {},
                 }
             else:
+                new_amount = goal_values.get("new_amount_ml")
                 final_args = {
                     "record_type": case.keyword,
                     "operation": "update",
                     "record_id": record_id,
-                    "data": {
-                        key: int(value) if str(value).isdigit() else value
-                        for key, value in goal_values.items()
-                        if key not in {"record_id", "name"}
-                    },
+                    "data": (
+                        {"amount": int(new_amount)}
+                        if case.keyword == "water" and str(new_amount).isdigit()
+                        else {
+                            key: int(value) if str(value).isdigit() else value
+                            for key, value in goal_values.items()
+                            if key not in {"record_id", "name"}
+                        }
+                    ),
                 }
             final_result = await ToolGateway(owner_snapshot).execute(
                 ToolExecutionRequest(

@@ -730,7 +730,7 @@ _READ_SCOPE_BOUNDARY_RE = re.compile(
 )
 READ_ACT_LEADING_SCAFFOLD_RE = re.compile(
     r"(?:(?:请(?:你|您)?|麻烦(?:你|您)?|现在|马上|立即|先|再|仅|只|"
-    r"还是|接着)\s*)*",
+    r"还是|接着|真正)\s*)*",
     re.IGNORECASE,
 )
 
