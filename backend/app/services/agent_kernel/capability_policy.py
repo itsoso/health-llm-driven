@@ -2427,6 +2427,40 @@ def decide_tool_capability(
                 tool_name,
                 medical_exam_args,
             )
+        explicit_record_type = _manage_list_turn_record_type(turn_text)
+        scoped_metric_read = bool(
+            _has_explicit_read_request(turn_text)
+            and re.search(
+                r"(?:我(?:自己|个人|本人)?(?:早上|运动后|刚测|早餐后)?的|"
+                r"今早的|晨起的|运动后的|服药后的|睡前的|起床后的|午后的|夜间的)"
+                r"(?:血压|体重|睡眠)",
+                turn_text,
+            )
+        )
+        if (
+            scoped_metric_read
+            and explicit_record_type not in {None, "illness", "medical_exam"}
+        ):
+            expected_dimension = _semantic_query_dimension(explicit_record_type)
+            if _semantic_query_dimension(proposed_dimension) != expected_dimension:
+                return _decision(
+                    "block",
+                    "health_query_dimension_conflict",
+                    tool_name,
+                    canonical_args,
+                )
+            projected_args = _project_known_dimension_query_args(
+                turn_text,
+                (),
+                expected_dimension,
+            )
+            if projected_args is not None:
+                return _decision(
+                    "allow",
+                    "health_query_projected_to_turn_semantics",
+                    tool_name,
+                    projected_args,
+                )
         known_illness_entities = _illness_targets(turn_text)
         illness_query_entities = _illness_query_entities(turn_text)
         has_safe_illness_entity = bool(
