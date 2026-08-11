@@ -5852,7 +5852,12 @@ def test_v45_additional_meta_intent_forms_block_read(text, tool_name):
     "text",
     (
         "查询Alice的检查记录，看看这些数据是什么意思",
+        "查询Alice的体检报告，看看这些数据是什么意思",
+        "查询Alice的检验报告，看看上述检查结果是什么意思",
         "查询上一条化验记录，看看这些结果是什么意思",
+        "查询下一条化验记录，看看上述数据是什么意思",
+        "查询第一条化验记录，看看这些结果是什么意思",
+        "查询最近一条化验记录，看看这些检查结果是什么意思",
     ),
 )
 @pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
@@ -5867,6 +5872,46 @@ def test_v45_clinical_interpretation_does_not_bypass_scope_guards(text, tool_nam
         _request(tool_name, arguments),
     )
     assert decision.action == "block", decision.reason
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "查询上次检查记录，看看这些结果是什么意思",
+        "查询第二条化验记录，看看这些结果是什么意思",
+        "查询倒数第一条化验记录，看看这些结果是什么意思",
+    ),
+)
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_broader_record_pointers_remain_unresolved(text, tool_name):
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot(text),
+        _request(tool_name, arguments),
+    )
+    assert decision.action == "block", decision.reason
+
+
+@pytest.mark.parametrize(
+    "clinical_object",
+    ("这些检验结果", "这项指标", "本次结果", "这批数据", "报告数值", "检测结果", "数值结果"),
+)
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_broader_clinical_objects_allow_read(clinical_object, tool_name):
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot(f"查询我的化验记录看看{clinical_object}是什么意思"),
+        _request(tool_name, arguments),
+    )
+    assert decision.action == "allow", decision.reason
 
 
 def test_v42_capability_digest_is_stable_across_fresh_processes():

@@ -1532,6 +1532,14 @@ def _is_unresolved_query_reference(value: str) -> bool:
 def _query_contains_unresolved_reference(text: str) -> bool:
     """Detect a discourse pointer that names no durable health entity."""
     scoped = _query_scope_text(text)
+    if is_clinical_result_interpretation(text):
+        scoped = re.sub(
+            r"(?:，|,)?看看(?:(?:这些|上述|这项|本次|这批)?(?:指标|数值|读数|"
+            r"结果|化验结果|检查结果|检验结果|检测结果|数值结果|测量值|"
+            r"检测值|数据)|报告数值)[^,.!，。！？?;；、]{0,32}$",
+            "",
+            scoped,
+        )
     if is_unresolved_health_reference(scoped):
         return True
     latest_entity = _latest_occurrence_query_entity(scoped)
@@ -2400,9 +2408,7 @@ def decide_tool_capability(
                 tool_name,
                 canonical_args,
             )
-        if _query_contains_unresolved_reference(
-            turn_text
-        ) and not is_clinical_result_interpretation(turn_text):
+        if _query_contains_unresolved_reference(turn_text):
             return _decision(
                 "block",
                 "health_query_semantics_unresolved",
@@ -2592,9 +2598,7 @@ def decide_tool_capability(
                 tool_name,
                 normalized_plan,
             )
-        if _query_contains_unresolved_reference(
-            turn_text
-        ) and not is_clinical_result_interpretation(turn_text):
+        if _query_contains_unresolved_reference(turn_text):
             return _decision(
                 "block",
                 "health_query_semantics_unresolved",
@@ -2709,7 +2713,6 @@ def decide_tool_capability(
                 )
             if (
                 _query_contains_unresolved_reference(turn_text)
-                and not is_clinical_result_interpretation(turn_text)
                 and (guarding_user_read or _has_explicit_read_request(turn_text))
             ):
                 return _decision(

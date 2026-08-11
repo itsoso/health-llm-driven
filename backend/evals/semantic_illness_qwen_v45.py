@@ -986,9 +986,56 @@ CASES = CASES + tuple(
         "查询我的化验记录看看这些检查结果是什么意思",
         "medical_exam",
     ),
+    blocked_manage(
+        "v45_third_party_exam_report_interpretation",
+        "查询Alice的体检报告，看看这些数据是什么意思",
+        "medical_exam",
+    ),
+    blocked_manage(
+        "v45_third_party_lab_report_interpretation",
+        "查询Alice的检验报告，看看上述检查结果是什么意思",
+        "medical_exam",
+    ),
+    blocked_manage(
+        "v45_next_record_interpretation",
+        "查询下一条化验记录，看看上述数据是什么意思",
+        "medical_exam",
+    ),
+    blocked_manage(
+        "v45_first_record_interpretation",
+        "查询第一条化验记录，看看这些结果是什么意思",
+        "medical_exam",
+    ),
+    blocked_manage(
+        "v45_latest_record_interpretation",
+        "查询最近一条化验记录，看看这些检查结果是什么意思",
+        "medical_exam",
+    ),
 )
 
-assert len(CASES) == 565
+CASES = CASES + tuple(
+    blocked_manage(f"v45_broader_pointer_{index}", text, "medical_exam")
+    for index, text in enumerate(
+        (
+            "查询上次检查记录，看看这些结果是什么意思",
+            "查询第二条化验记录，看看这些结果是什么意思",
+            "查询倒数第一条化验记录，看看这些结果是什么意思",
+        ),
+        1,
+    )
+) + tuple(
+    allow_manage(
+        f"v45_broader_clinical_object_{index}",
+        f"查询我的化验记录看看{clinical_object}是什么意思",
+        "medical_exam",
+    )
+    for index, clinical_object in enumerate(
+        ("这些检验结果", "这项指标", "本次结果", "这批数据", "报告数值", "检测结果", "数值结果"),
+        1,
+    )
+)
+
+assert len(CASES) == 580
 
 
 base_host = urlparse(str(settings.tokenplan_base_url)).hostname

@@ -538,7 +538,8 @@ HEALTH_METRIC_ENTITY_RE = re.compile(
 HEALTH_RECORD_DOMAIN_ENTITY_RE = re.compile(
     r"^(?:饮食|餐食|饮水|喝水|体重|腰围|血压|睡眠|心情|情绪|排便|"
     r"运动|锻炼|症状|用药|药物|服药|补剂|营养补充剂|提醒|健康目标|"
-    r"体检|检查|医学检查|检查报告|化验|检验|病症|疾病|病史|病历)$",
+    r"体检|体检报告|检查|医学检查|检查报告|化验|化验报告|检验|检验报告|"
+    r"报告|病症|疾病|病史|病历)$",
     re.IGNORECASE,
 )
 
@@ -551,9 +552,9 @@ BODY_OR_TIME_OWNER_RE = re.compile(
 HEALTH_READ_SCOPE_OWNER_RE = re.compile(
     r"(?:今天|昨日|昨天|前天|近期|最近(?:[0-9一二两三四五六七八九十半]+)?"
     r"(?:个)?(?:小时|天|周|月|年)?|过去.+|近.+|本周|上周|本月|"
-    r"今早|晨起|早上|上午|中午|午后|下午|晚上|夜间|运动后|锻炼后|"
+    r"今早|晨起|早上|上午|中午|午后|下午|晚上|夜间|运动后|锻炼后|导入|"
     r"服药后|早餐后|午餐后|晚餐后|餐后|睡前|起床后|醒来后)"
-    r"(?:测|测量|上传|生成)?$|(?:刚测|刚刚测|刚测量|刚刚测量)$"
+    r"(?:测|测量|上传|导入|生成)?$|(?:刚测|刚刚测|刚测量|刚刚测量)$"
 )
 
 HEALTH_READ_LEADING_SCOPE_RE = re.compile(
@@ -712,23 +713,25 @@ READ_NON_AUTHORIZING_RE = re.compile(
     r"(?:这)?(?:只是|仅是|不过是|只是为了|仅供|仅用于|仅作|纯属|是|作为)"
     r"(?:一个|一句|个|为了|举个)?(?:示例|例子|举例|演示|测试|测试用例|反例|假设|教程|文档里的命令)|"
     r"仅供参考|"
-    r"(?:记录|病史|病历)(?![^,.!，。！？?;；、]{0,20}(?:这些|上述)?"
-    r"(?:指标|数值|读数|结果|化验结果|检查结果|测量值|检测值|数据))"
+    r"(?:记录|病史|病历)(?![^,.!，。！？?;；、]{0,20}(?:(?:这些|上述|这项|"
+    r"本次|这批)?(?:指标|数值|读数|结果|化验结果|检查结果|检验结果|"
+    r"检测结果|数值结果|测量值|检测值|数据)|报告数值))"
     r"[^,.!，。！？?;；、]{0,12}(?:意味着什么|是什么意思|是啥意思|什么意思)$|"
-    r"(?:(?:看看|请问|想知道|想问|我想了解|告诉我|请解释|"
+    r"(?:(?:看看|请问|想知道|想问|我想了解|告诉我|说说|请解释|"
     r"解释(?:一下|下)?|帮我解释)"
     r"[^,.!，。！？?;；、]{0,4}"
-    r"(?:这句(?:话)?|这段话|这番话|(?:(?:这个|这条|该|此|上述))?"
+    r"(?:这句(?:话)?|这段话|这番话|(?:(?:这个|这条|该|此|上述|前述|当前))?"
     r"(?:指令|命令|请求|查询|操作|语句|问题)|"
     r"(?:这次|本次)(?:查询|请求|操作))|"
-    r"^(?:这句(?:话)?|这段话|这番话|(?:(?:这个|这条|该|此|上述))?"
+    r"^(?:这句(?:话)?|这段话|这番话|(?:(?:这个|这条|该|此|上述|前述|当前))?"
     r"(?:指令|命令|请求|操作|语句|问题)|"
     r"(?:这次|本次)(?:查询|请求|操作)|"
-    r"查询(?![^,.!，。！？?;；、]{0,30}(?:这些|上述)"
-    r"(?:指标|数值|读数|结果|化验结果|检查结果|测量值|检测值|数据))))"
+    r"查询(?![^,.!，。！？?;；、]{0,30}(?:(?:这些|上述|这项|本次|这批)?"
+    r"(?:指标|数值|读数|结果|化验结果|检查结果|检验结果|检测结果|"
+    r"数值结果|测量值|检测值|数据)|报告数值))))"
     r"[^,.!，。！？?;；、]{0,20}"
     r"(?:意味|意思|含义|代表|表达|理解|解释|指|说什么|怎么回事|"
-    r"干嘛|做什么|作用|用途|怎么用|使用|怎么执行|执行)"
+    r"干嘛|做什么|作用|用途|怎么用|使用|怎么执行|执行|格式|语法|解读)"
     r"[^,.!，。！？?;；、]{0,6}$|"
     r"(?:请解释|解释(?:一下|下)?|帮我解释)[^,.!，。！？?;；、]{0,4}"
     r"(?:这句(?:话)?|这段话|这番话|(?:(?:这个|这条|该|此|上述))?"
@@ -911,8 +914,9 @@ def is_clinical_result_interpretation(text: str) -> bool:
     """Return whether a read asks to interpret the returned clinical data."""
     normalized = str(text or "")
     ownership_scope = re.split(
-        r"(?:，|,)?看看(?:这些|上述)(?:指标|数值|读数|结果|化验结果|"
-        r"检查结果|测量值|检测值|数据)",
+        r"(?:，|,)?看看(?:(?:这些|上述|这项|本次|这批)?(?:指标|数值|读数|"
+        r"结果|化验结果|检查结果|检验结果|检测结果|数值结果|测量值|"
+        r"检测值|数据)|报告数值)",
         normalized,
         maxsplit=1,
     )[0]
@@ -926,8 +930,9 @@ def is_clinical_result_interpretation(text: str) -> bool:
         )
         and re.search(r"(?:化验|检验|检查|体检|报告|结果)", normalized)
         and re.search(
-            r"(?:这些|上述)(?:指标|数值|读数|结果|化验结果|检查结果|"
-            r"测量值|检测值|数据)"
+            r"(?:(?:这些|上述|这项|本次|这批)?(?:指标|数值|读数|结果|"
+            r"化验结果|检查结果|检验结果|检测结果|数值结果|测量值|"
+            r"检测值|数据)|报告数值)"
             r"[^,.!，。！？?;；、]{0,20}"
             r"(?:意味|意思|含义|代表|表达|理解|解释|指|说什么|怎么回事|"
             r"干嘛|做什么|作用|用途)",
@@ -977,7 +982,14 @@ def is_unresolved_health_reference(value: str) -> bool:
     )
     scoped = READ_VERB_RE.sub("", scoped, count=1).strip("的，,。.!！；;：:?？ ")
     return bool(
-        GENERALIZED_INDEXED_HEALTH_REFERENCE_RE.search(normalized)
+        re.search(
+            r"(?:(?:上|下|前|后|最后|倒数)(?:一|两|二|三|四|五)?次|"
+            r"(?:第|倒数第?)[0-9一二两三四五六七八九十]+条|"
+            r"(?:上|下|前|后|最近|最后|倒数)(?:一|两|二|三|四|五)?条)"
+            r"(?:化验|检验|检查|体检|报告|记录|结果)",
+            normalized,
+        )
+        or GENERALIZED_INDEXED_HEALTH_REFERENCE_RE.search(normalized)
         or STRUCTURAL_HEALTH_REFERENCE_RE.search(normalized)
         or UNRESOLVED_HEALTH_REFERENCE_RE.fullmatch(scoped)
         or DISCOURSE_HEALTH_REFERENCE_RE.search(normalized)
@@ -1221,8 +1233,17 @@ def _health_read_entity_expression(text: str) -> str:
 
 def health_read_has_nonself_subject(text: str) -> bool:
     """Detect explicit or concatenated non-current-user health subjects."""
-    read_act = resolve_health_read_act(text)
-    scoped_text = read_act.active_clause if read_act.status == "active" else text
+    subject_scope = re.sub(
+        r"(?:，|,)?看看(?:(?:这些|上述|这项|本次|这批)?(?:指标|数值|读数|"
+        r"结果|化验结果|检查结果|检验结果|检测结果|数值结果|测量值|"
+        r"检测值|数据)|报告数值)[^,.!，。！？?;；、]{0,32}$",
+        "",
+        str(text or ""),
+    )
+    read_act = resolve_health_read_act(subject_scope)
+    scoped_text = (
+        read_act.active_clause if read_act.status == "active" else subject_scope
+    )
     exam = resolve_medical_exam_query(scoped_text)
     if exam.status == "nonself":
         return True
@@ -1274,8 +1295,12 @@ def health_read_has_nonself_subject(text: str) -> bool:
                     "饮水",
                     "运动",
                     "体检",
+                    "体检报告",
                     "检查",
                     "检查报告",
+                    "化验报告",
+                    "检验报告",
+                    "报告",
                 },
                 key=len,
                 reverse=True,
