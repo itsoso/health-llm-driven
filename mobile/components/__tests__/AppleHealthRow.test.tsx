@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet } from 'react-native';
 import { render } from '@testing-library/react-native';
+import { AppleHealthRow } from '../AppleHealthRow';
 
 jest.mock('../../services/appleHealth', () => ({
   isHealthKitAvailable: () => true,
@@ -16,8 +17,6 @@ jest.mock('../../services/appleHealth', () => ({
 jest.mock('../../services/dataConnections', () => ({
   ensureHealthKitServerConsent: jest.fn(),
 }));
-
-import { AppleHealthRow } from '../AppleHealthRow';
 
 describe('AppleHealthRow', () => {
   it('exposes a named button with a full-size touch target', () => {
