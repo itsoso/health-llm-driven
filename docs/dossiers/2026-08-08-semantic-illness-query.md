@@ -2310,6 +2310,34 @@ Mechanically generated evidence remains
 or deployed. Both G4 reviews must be repeated against the next exact evidence
 commit.
 
+### v45 tenth G4 remediation and evidence
+
+Both reviews of `771714ecbb56ff7cf62b1ceb8c7cc0ed25b39e31`
+returned `NO-GO`. Natural `请解释` requests and a bare `查询` meta object still
+retained authority. More importantly, the clinical-interpretation exemption
+could bypass third-party ownership for `Alice的检查记录` and unresolved record
+references such as `上一条化验记录`; adjacent clinical object vocabulary was
+also incomplete.
+
+The remediation adds natural meta-intent forms and keeps the initial read verb
+separate from a later bare meta `查询`. Clinical interpretation now derives an
+ownership-only scope before checking subject identity, explicitly rejects
+record-pointer references, and recognizes `检查` as a generic health-record
+domain. The exemption remains available only for current-user or owner-neutral
+resolved reads, and all unresolved choke points remain fail-closed.
+
+The exact clean implementation/evaluation candidate is
+`77c328d0f9f1b3b52378e4625b17ba737a5597f3`. The authorization/write core
+passes 5,416/5,416 and the complete AgentExecutor compatibility set passes
+686/686. Ruff, Python compilation, `git diff --check`, doc drift and Dossier
+consistency pass. The authorized live `qwen3.7-max` run passes 565/565
+anonymous synthetic cases and all 1,484 actual policy decisions, with zero
+database connection attempts and zero unexpected network destinations.
+Mechanically generated evidence remains
+`backend/evals/results/semantic_illness_qwen_v45.json`. Nothing has been pushed
+or deployed. Both G4 reviews must be repeated against the next exact evidence
+commit.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.
