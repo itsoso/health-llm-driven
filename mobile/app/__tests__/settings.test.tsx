@@ -11,6 +11,8 @@ const mockGetAccountDeletionRequest = jest.fn();
 const mockCheckNow = jest.fn();
 const mockApiPost = jest.fn();
 const mockInvalidateQueries = jest.fn();
+const mockQueryClient = { invalidateQueries: mockInvalidateQueries };
+const mockReadGPSRefreshStatus = jest.fn();
 let mockGarminStatus: any = { health: 'healthy', minutes_since_last_sync: 3 };
 let mockProfile: any = {
   use_manual_location: false,
@@ -19,7 +21,10 @@ let mockProfile: any = {
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ back: mockBack, push: mockPush, canGoBack: () => false }),
-  useFocusEffect: (callback: () => void) => callback(),
+  useFocusEffect: (callback: () => void) => {
+    const React = require('react');
+    React.useEffect(callback, [callback]);
+  },
 }));
 
 jest.mock('@tanstack/react-query', () => ({
@@ -33,7 +38,7 @@ jest.mock('@tanstack/react-query', () => ({
     }
     return { data: null, refetch: jest.fn() };
   },
-  useQueryClient: () => ({ invalidateQueries: mockInvalidateQueries }),
+  useQueryClient: () => mockQueryClient,
 }));
 
 jest.mock('expo-haptics', () => ({
@@ -118,6 +123,10 @@ jest.mock('../../services/auth', () => ({
   ),
 }));
 
+jest.mock('../../services/gpsRefreshStatus', () => ({
+  readGPSRefreshStatus: () => mockReadGPSRefreshStatus(),
+}));
+
 import SettingsScreen from '../settings';
 
 describe('SettingsScreen', () => {
@@ -137,6 +146,7 @@ describe('SettingsScreen', () => {
     mockGetAccountDeletionRequest.mockResolvedValue({ status: 'none' });
     mockCheckNow.mockResolvedValue('current');
     mockLogout.mockResolvedValue(undefined);
+    mockReadGPSRefreshStatus.mockResolvedValue({ state: 'idle' });
   });
 
   it('surfaces GPS and city positioning as one explicit clickable entry', () => {
@@ -181,6 +191,18 @@ describe('SettingsScreen', () => {
     render(<SettingsScreen />);
 
     expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['profile'] });
+  });
+
+  it.each([
+    ['permission_required', '需开启定位'],
+    ['refreshing', '正在更新'],
+    ['error', '更新失败'],
+  ])('shows truthful GPS state for %s', async (state, label) => {
+    mockReadGPSRefreshStatus.mockResolvedValueOnce({ state });
+
+    const { getByText } = render(<SettingsScreen />);
+
+    await waitFor(() => expect(getByText(label)).toBeTruthy());
   });
 
   it('hides deferred native and experimental entries in the App Store production UI', () => {

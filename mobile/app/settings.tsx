@@ -28,6 +28,7 @@ import { APP_DISPLAY_NAME } from '../constants/brand';
 import { AppleHealthRow } from '../components/AppleHealthRow';
 import { getReleaseCapabilities } from '../config/releaseCapabilities';
 import { getNativeVersionLabel } from '../services/appUpdate';
+import { readGPSRefreshStatus, type GPSRefreshState } from '../services/gpsRefreshStatus';
 
 type SettingsLocationProfile = {
   use_manual_location?: boolean;
@@ -57,6 +58,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { logout, user, isAuthenticated } = useAuth();
   const qc = useQueryClient();
+  const [gpsRefreshState, setGPSRefreshState] = useState<GPSRefreshState>('idle');
   const [deletionRequesting, setDeletionRequesting] = useState(false);
   const releaseCapabilities = getReleaseCapabilities();
   const { status: updateStatus, checkNow: checkForUpdate, applyUpdate } = useAppUpdate();
@@ -66,7 +68,14 @@ export default function SettingsScreen() {
   const city = useMemo(() => getSettingsLocationLabel(profile), [profile]);
 
   useFocusEffect(useCallback(() => {
+    let active = true;
     void qc.invalidateQueries({ queryKey: queryKeys.profile });
+    void readGPSRefreshStatus().then(status => {
+      if (active) setGPSRefreshState(status.state);
+    });
+    return () => {
+      active = false;
+    };
   }, [qc]));
 
   const { data: garminStatus } = useQuery({
@@ -246,6 +255,7 @@ export default function SettingsScreen() {
         <Text style={txt.sectionLabel}>数据连接</Text>
         <View style={styles.card}>
           <LocationSettingsRow city={city} useManual={profile?.use_manual_location === true}
+            refreshState={gpsRefreshState}
             onPress={() => router.push('/location' as any)} />
           <GarminStatusRow
             status={garminStatus}
@@ -437,8 +447,31 @@ function SettingRow({
   );
 }
 
-function LocationSettingsRow({ city, useManual, onPress }: { city: string; useManual: boolean; onPress: () => void }) {
-  const mode = useManual ? '手动城市' : 'GPS 自动';
+function LocationSettingsRow({
+  city,
+  useManual,
+  refreshState,
+  onPress,
+}: {
+  city: string;
+  useManual: boolean;
+  refreshState: GPSRefreshState;
+  onPress: () => void;
+}) {
+  const mode = useManual
+    ? '手动城市'
+    : refreshState === 'permission_required'
+      ? '需开启定位'
+      : refreshState === 'refreshing'
+        ? '正在更新'
+        : refreshState === 'error'
+          ? '更新失败'
+          : 'GPS 自动';
+  const modeColor = refreshState === 'error'
+    ? revaSemantic.risk.fg
+    : refreshState === 'permission_required' || refreshState === 'refreshing'
+      ? revaSemantic.caution.fg
+      : C.green500;
 
   return (
     <TouchableOpacity style={styles.locationRow} onPress={onPress} activeOpacity={0.72}
@@ -453,7 +486,7 @@ function LocationSettingsRow({ city, useManual, onPress }: { city: string; useMa
       </View>
       <View style={styles.locationStatus}>
         <Text style={txt.locationCity} numberOfLines={1}>{city}</Text>
-        <Text style={txt.locationMode} numberOfLines={1}>{mode}</Text>
+        <Text style={[txt.locationMode, { color: modeColor }]} numberOfLines={1}>{mode}</Text>
       </View>
       <Ionicons name="chevron-forward" size={14} color={C.ink3} />
     </TouchableOpacity>

@@ -20,6 +20,7 @@ import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQueryClient } from '@tanstack/react-query';
 import { updateGPSLocation, reverseGeocodeOnDevice } from '../services/location';
+import { writeGPSRefreshStatus, type GPSRefreshStatus } from '../services/gpsRefreshStatus';
 
 const MIN_INTERVAL_MS = 30 * 60 * 1000;  // 30min 节流
 const FORCE_REFRESH_KM = 50;             // 坐标漂移 >50km 直接破节流
@@ -47,14 +48,26 @@ export function useGPSAutoRefresh(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
 
+    const recordStatus = async (status: GPSRefreshStatus) => {
+      try {
+        await writeGPSRefreshStatus(status);
+      } catch (e) {
+        if (__DEV__) console.warn('[GPS] refresh status persistence failed:', e);
+      }
+    };
+
     const tryRefresh = async () => {
       if (inFlightRef.current) return;
 
       // 1. 只在已授权情况下跑, 不主动弹权限
       try {
         const { status } = await Location.getForegroundPermissionsAsync();
-        if (status !== 'granted') return;
+        if (status !== 'granted') {
+          await recordStatus({ state: 'permission_required' });
+          return;
+        }
       } catch {
+        await recordStatus({ state: 'error', errorKind: 'permission_check' });
         return;
       }
 
@@ -66,6 +79,7 @@ export function useGPSAutoRefresh(enabled: boolean) {
         });
       } catch (e) {
         if (__DEV__) console.warn('[GPS] getCurrentPosition failed:', e);
+        await recordStatus({ state: 'error', errorKind: 'location' });
         return;
       }
 
@@ -90,6 +104,8 @@ export function useGPSAutoRefresh(enabled: boolean) {
       } catch {
         // 旁路: AsyncStorage 读失败 → 当作没节流, 继续刷新.
       }
+
+      await recordStatus({ state: 'refreshing' });
 
       // 4. 客户端先反查 city (CLGeocoder 离线可用), 给 backend hint 让它跳过 qweather.
       //    失败不阻断 — backend 会自己用 qweather 兜底, 或没 city 也能正常存 lat/lon.
@@ -124,8 +140,10 @@ export function useGPSAutoRefresh(enabled: boolean) {
             if (__DEV__) console.log(`[GPS] 城市更新: ${prevCity || '(空)'} → ${loc.city}`);
           }
         }
+        await recordStatus({ state: 'ready', lastSuccessAt: Date.now() });
       } catch (e) {
         if (__DEV__) console.warn('[GPS] auto-refresh failed:', e);
+        await recordStatus({ state: 'error', errorKind: 'network_or_server' });
       } finally {
         inFlightRef.current = false;
       }

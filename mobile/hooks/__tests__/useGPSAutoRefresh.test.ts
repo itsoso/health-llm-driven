@@ -34,9 +34,13 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 
 const mockUpdateGPSLocation: jest.Mock = jest.fn(async () => ({ city: '北京', region: null, country: null }));
 const mockReverseGeocodeOnDevice: jest.Mock = jest.fn(async () => ({ city: '北京', region: '北京市', country: '中国' }));
+const mockWriteGPSRefreshStatus = jest.fn(async () => undefined);
 jest.mock('../../services/location', () => ({
   updateGPSLocation: (lat: number, lon: number, hint?: any) => mockUpdateGPSLocation(lat, lon, hint),
   reverseGeocodeOnDevice: (lat: number, lon: number) => mockReverseGeocodeOnDevice(lat, lon),
+}));
+jest.mock('../../services/gpsRefreshStatus', () => ({
+  writeGPSRefreshStatus: (status: unknown) => mockWriteGPSRefreshStatus(status),
 }));
 
 // AppState — 测时不触发 foreground 事件, 只跑 mount 时的 tryRefresh
@@ -63,7 +67,9 @@ describe('useGPSAutoRefresh', () => {
     mockPosition = { coords: { latitude: 39.9, longitude: 116.3 } };
     mockReverseGeocodeResult = [{ city: '北京', region: '北京市', country: '中国' }];
     mockUpdateGPSLocation.mockClear();
+    mockUpdateGPSLocation.mockResolvedValue({ city: '北京', region: null, country: null });
     mockReverseGeocodeOnDevice.mockClear();
+    mockWriteGPSRefreshStatus.mockClear();
     mockReverseGeocodeOnDevice.mockResolvedValue({ city: '北京', region: '北京市', country: '中国' });
   });
 
@@ -72,6 +78,9 @@ describe('useGPSAutoRefresh', () => {
     renderHook(() => useGPSAutoRefresh(true), { wrapper });
     await new Promise(r => setTimeout(r, 50));
     expect(mockUpdateGPSLocation).not.toHaveBeenCalled();
+    expect(mockWriteGPSRefreshStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ state: 'permission_required' }),
+    );
   });
 
   it('does not call backend when permission undetermined (onboarding owns first prompt)', async () => {
@@ -108,6 +117,22 @@ describe('useGPSAutoRefresh', () => {
       39.9, 116.3,
       expect.objectContaining({ city: '北京' }),
     );
+    expect(mockWriteGPSRefreshStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ state: 'ready', lastSuccessAt: expect.any(Number) }),
+    );
+  });
+
+  it('records an observable error without clearing the last city when refresh fails', async () => {
+    mockUpdateGPSLocation.mockRejectedValueOnce(new Error('offline'));
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    renderHook(() => useGPSAutoRefresh(true), { wrapper });
+
+    await waitFor(() => expect(mockWriteGPSRefreshStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ state: 'error', errorKind: 'network_or_server' }),
+    ));
+    expect(warnSpy).toHaveBeenCalledWith('[GPS] auto-refresh failed:', expect.any(Error));
+    warnSpy.mockRestore();
   });
 
   it('still posts lat/lon when reverseGeocode returns empty hint', async () => {
