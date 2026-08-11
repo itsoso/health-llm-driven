@@ -4425,8 +4425,8 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v44"
-    assert payload["health_semantics"]["version"] == "health-semantics-v6"
+    assert payload["contract_version"] == "agent-capability-policy-v45"
+    assert payload["health_semantics"]["version"] == "health-semantics-v7"
     assert re.fullmatch(r"[0-9a-f]{64}", payload["health_semantics"]["content_digest"])
     assert payload["health_record_target_binding"] == {
         "version": "authorized-target-set-v31",
@@ -4578,13 +4578,13 @@ def test_v41_typed_mutation_lookup_gets_server_authority(message):
         context=snapshot.context,
         intent=snapshot.intent,
     )
-    args = bind_server_authorized_manage_lookup(
-        {
-            "record_type": goal.target_record_type,
-            "operation": "list",
-        },
-        goal,
-    )
+    lookup_args = {
+        "record_type": goal.target_record_type,
+        "operation": "list",
+    }
+    if dict(goal.target_values).get("record_id"):
+        lookup_args["record_id"] = int(dict(goal.target_values)["record_id"])
+    args = bind_server_authorized_manage_lookup(lookup_args, goal)
     decision = decide_tool_capability(
         replace(snapshot, goal=goal),
         _request("health_manage", args),
@@ -4968,6 +4968,37 @@ def test_v44_capability_digest_tracks_all_imported_decision_bindings(
         "查询我的痛风记录？不",
         "查询我的痛风记录，我没有授权",
         "查询我的痛风记录，但不要真的执行",
+        "查询我的痛风记录？不用",
+        "查询我的痛风记录？不是",
+        "查询我的痛风记录？并不是",
+        "查询我的痛风记录？没有这个意思",
+        "查询我的痛风记录？我没让你查",
+        "查询我的痛风记录纯属假设",
+        "查询我的痛风记录仅作测试",
+        "查询我的痛风记录意味着什么",
+        "查询我的痛风记录仅供参考",
+        "查询我的痛风记录不代表要执行",
+        "查询我的痛风记录不是让你真的查",
+        "查询我的痛风记录？否",
+        "查询我的痛风记录？No",
+        "查询我的痛风记录，先不要",
+        "查询我的痛风记录，不用了",
+        "查询我的痛风记录，不必了",
+        "查询我的痛风记录，没必要",
+        "查询我的痛风记录，我没同意",
+        "查询我的痛风记录，我不允许",
+        "查询我的痛风记录，我拒绝",
+        "查询我的痛风记录，别真的查",
+        "查询我的痛风记录只是举个例子",
+        "查询我的痛风记录作为示例",
+        "查询我的痛风记录，过两天再说",
+        "查询我的痛风记录，晚些时候再说",
+        "查询我的痛风记录，有空再说",
+        "查询我的痛风记录会返回哪些数据",
+        "查询我的痛风记录会不会成功",
+        "查询我的痛风记录，我没授权",
+        "查询我的痛风记录，我不同意",
+        "查询我的痛风记录，未经我同意",
     ),
 )
 def test_v44_structural_non_authorizing_read_blocks_both_read_surfaces(message):
@@ -5007,6 +5038,49 @@ def test_v44_other_owner_generic_health_manage_list_is_blocked(
 
     assert decision.action == "block"
     assert decision.reason == "health_query_subject_not_current_user"
+
+
+@pytest.mark.parametrize("record_id", (None, 82))
+def test_v44_exact_id_mutation_lookup_rejects_missing_or_wrong_id(record_id):
+    snapshot = _snapshot("把疾病记录81的状态改成已康复")
+    goal = compile_goal_spec(
+        envelope=snapshot.envelope,
+        context=snapshot.context,
+        intent=snapshot.intent,
+    )
+    lookup_args = {"record_type": "illness", "operation": "list"}
+    if record_id is not None:
+        lookup_args["record_id"] = record_id
+    args = bind_server_authorized_manage_lookup(lookup_args, goal)
+    decision = decide_tool_capability(
+        replace(snapshot, goal=goal),
+        _request("health_manage", args),
+    )
+
+    assert decision.action == "block"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "查询我早上的血压记录",
+        "查询我运动后的血压记录",
+        "查询我个人的血压记录",
+        "查询我本人的血压记录",
+        "查询我刚测的血压记录",
+        "查询我早餐后的血压记录",
+    ),
+)
+def test_v44_current_user_scope_modifier_is_not_third_party(message):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_manage",
+            {"record_type": "blood_pressure", "operation": "list"},
+        ),
+    )
+
+    assert decision.action == "allow", decision.reason
 
 
 @pytest.mark.parametrize(

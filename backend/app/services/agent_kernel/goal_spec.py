@@ -130,7 +130,7 @@ SIMPLE_ILLNESS_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 SIMPLE_ILLNESS_ACRONYMS = frozenset({"sle"})
-GOAL_SPEC_CONTRACT_VERSION = "goal-spec-v44"
+GOAL_SPEC_CONTRACT_VERSION = "goal-spec-v45"
 HEALTH_MANAGE_MUTATION_COMMAND_RE = re.compile(
     r"(?:"
     r"^(?:请(?:你|您)?|麻烦(?:你|您)?|请帮我|帮我|给我|替我)?"
@@ -460,6 +460,15 @@ def _compile_health_manage_mutation_goal(
         record_id = re.search(r"\d+", record_id_match.group())
         if record_id is not None:
             target_values.append(("record_id", record_id.group()))
+    elif target_record_type == "illness":
+        illness_id_match = re.search(
+            r"(?:记录|条目)?(?:ID(?:号)?(?:为|是|=|：|:)?|编号|#|第)"
+            r"\s*(?P<record_id>\d+)(?:号|个)?",
+            text,
+            re.IGNORECASE,
+        )
+        if illness_id_match is not None:
+            target_values.append(("record_id", illness_id_match.group("record_id")))
 
     water_match = WATER_MUTATION_RE.search(text)
     if water_match is not None:

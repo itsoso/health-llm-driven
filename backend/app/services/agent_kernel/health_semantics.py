@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v6"
+HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v7"
 
 
 @dataclass(frozen=True)
@@ -653,7 +653,8 @@ READ_TRAILING_WITHDRAWAL_RE = re.compile(
     r"(?:先别继续(?:查|看|查询|查看)?了|暂且作罢|先缓一缓|先停一停|"
     r"暂时别继续|先不要继续|到这儿(?:吧)?|先放一放|先搁着|先等等|"
     r"暂时不用|回头再说|晚点再说|稍后再说|不要执行|别执行|不执行|"
-    r"改天再说|等会儿再说|待会儿再说|到时候再说|以后再说|"
+    r"改天再说|过(?:两|几)?天再说|等会儿再说|待会儿再说|到时候再说|"
+    r"以后再说|晚些时候再说|有空再说|"
     r"打住|叫停|作罢|算了|停止|停下|中止|终止)"
     r"[，,。.!！?？\s]*$",
     re.IGNORECASE,
@@ -672,13 +673,14 @@ READ_NON_AUTHORIZING_RE = re.compile(
     r"(?:记录|病史|病历|报告|结果)[^,.!，。！？?;；、]{0,12}"
     r"(?:查完|完成|结束|做完|搞定)(?:了)?$|"
     r"这(?:件事|次查询|次查看)(?:已经|已|早就|刚)?(?:完成|结束|做完|搞定)(?:了)?|"
-    r"(?:这)?(?:只是|仅是|不过是|只是为了|仅供|仅用于|是)"
-    r"(?:一个|一句|个|为了)?(?:示例|例子|举例|演示|测试|测试用例|反例|假设|教程|文档里的命令)|"
+    r"(?:这)?(?:只是|仅是|不过是|只是为了|仅供|仅用于|仅作|纯属|是|作为)"
+    r"(?:一个|一句|个|为了|举个)?(?:示例|例子|举例|演示|测试|测试用例|反例|假设|教程|文档里的命令)|"
+    r"(?:仅供参考|意味着什么|会不会成功)|"
     r"(?:这句(?:话)?|这个指令|该指令)(?:来自|出自)|"
     r"(?:查询|查找|搜索|检索|调取|打开|查)"
     r"[^,.!，。！？?;；、]{0,64}(?:的话)?(?:可能)?(?:会|能)"
-    r"(?:不会)?(?:发生什么|怎样|怎么样|如何|返回什么|得到什么(?:结果)?|"
-    r"有(?:什么)?(?:结果|影响)?)|"
+    r"(?:不会)?(?:发生什么|怎样|怎么样|如何|返回(?:什么|哪些数据)|"
+    r"得到什么(?:结果)?|会不会成功|有(?:什么)?(?:结果|影响)?)|"
     r"(?:查询|查找|搜索|检索|调取|打开|查)"
     r"[^,.!，。！？?;；、]{0,64}是否安全"
     r")",
@@ -686,8 +688,14 @@ READ_NON_AUTHORIZING_RE = re.compile(
 )
 READ_AUTHORITY_WITHDRAWAL_RE = re.compile(
     r"(?:"
-    r"(?:我)?(?:没有|未|并未)(?:明确)?(?:授权|同意|允许|批准)|"
-    r"(?:不要|别|不)(?:真的|实际|正式|继续)?执行"
+    r"(?:我)?(?:没(?:有)?|未|并未|不)(?:明确)?(?:让(?:你)?|授权|同意|允许|批准)|"
+    r"未经(?:我)?(?:明确)?(?:授权|同意|允许|批准)|"
+    r"(?:我)?拒绝|"
+    r"(?:不用|无需|不必)(?:了|查|查询|查看|执行)?|"
+    r"(?:不要|别|不)(?:真的|实际|正式|继续)?(?:查|查询|查看|执行)|"
+    r"不代表(?:要|需要|应该)?(?:查|查询|查看|执行)|"
+    r"不是(?:要|让你)(?:真的|实际|正式)?(?:查|查询|查看|执行)|"
+    r"^(?:不是|并不是|否|no|先不要|不用(?:了)?|不必(?:了)?|没必要|没有这个意思)$"
     r")",
     re.IGNORECASE,
 )
@@ -1147,17 +1155,29 @@ def health_read_has_nonself_subject(text: str) -> bool:
             BODY_OR_TIME_OWNER_RE.fullmatch(owner)
             or re.search(
                 r"(?:今天|昨日|昨天|前天|最近|过去|近\d|小时|天|周|月|年|"
-                r"上传|生成|记录|查询|查看|调取|打开)",
+                r"今早|晨起|早上|上午|中午|午后|下午|晚上|夜间|运动后|"
+                r"锻炼后|服药后|餐后|睡前|起床后|醒来后|上传|生成|记录|"
+                r"查询|查看|调取|打开)",
+                owner,
+            )
+        )
+        owner_is_current_user_scope = bool(
+            re.fullmatch(
+                r"(?:我|本人|我个人|我本人)(?:自己)?(?:早上|上午|中午|下午|晚上|"
+                r"刚测|刚刚测|运动后|锻炼后|早餐后|午餐后|晚餐后|睡前|醒来后|个人|本人)*",
                 owner,
             )
         )
         if (
             owner not in CURRENT_USER_OWNERS
+            and not owner_is_current_user_scope
             and not owner_is_scope
             and target_is_health
         ):
             return True
-    entity, _explicit_self = _strip_current_user_owner(entity)
+        if target_is_health and (owner_is_scope or owner_is_current_user_scope):
+            return False
+    entity, explicit_self = _strip_current_user_owner(entity)
     entity = re.sub(r"^(?:在|关于|有关)", "", entity)
     entity = _strip_exam_request_scaffolding(entity)
     entity = re.sub(
@@ -1165,6 +1185,37 @@ def health_read_has_nonself_subject(text: str) -> bool:
         "",
         entity,
     )
+    if not explicit_self and resolve_illness_entity(entity).status != "exact":
+        generic_targets = tuple(
+            sorted(
+                {
+                    "血压",
+                    "体重",
+                    "睡眠",
+                    "用药",
+                    "饮水",
+                    "运动",
+                    "体检",
+                    "检查报告",
+                },
+                key=len,
+                reverse=True,
+            )
+        )
+        for target in generic_targets:
+            if not entity.endswith(target) or len(entity) <= len(target):
+                continue
+            owner = entity[: -len(target)].strip("的-· ")
+            if owner and not re.search(
+                r"(?:今天|昨日|昨天|前天|最近|过去|近|早上|上午|中午|下午|晚上|"
+                r"运动后|锻炼后|餐后|睡前|醒来后|上传|生成|记录|查询|查看)",
+                owner,
+            ) and not re.search(
+                r"(?:MRI|核磁|磁共振|CT|X光|B超|胃镜|HRV|头|肩|膝|腰|颈|胸|腹|和|与|及)",
+                owner,
+                re.IGNORECASE,
+            ):
+                return True
     parts = HEALTH_ENTITY_CONNECTOR_RE.split(entity)
     return any(
         resolve_illness_entity(part).status == "nonself"

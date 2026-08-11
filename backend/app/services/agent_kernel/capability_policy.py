@@ -94,7 +94,7 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v44"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v45"
 _HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v31"
 _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v24"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
@@ -125,6 +125,7 @@ class _ServerAuthorizedManageLookup:
 
     record_type: str
     operation: str
+    record_id: int | None
 
 
 def bind_server_authorized_manage_lookup(
@@ -134,18 +135,28 @@ def bind_server_authorized_manage_lookup(
     """Replace model markers and bind only a typed mutation goal."""
     args.pop(_SERVER_AUTHORIZED_MANAGE_LOOKUP_KEY, None)
     requested_record_type = canonical_health_manage_record_type(args.get("record_type"))
+    requested_record_id = canonical_health_manage_record_id(args.get("record_id"))
+    goal_values = dict(goal.target_values) if goal is not None else {}
+    expected_record_id = canonical_health_manage_record_id(
+        goal_values.get("record_id")
+    )
+    authorized_lookup_record_id = (
+        expected_record_id if requested_record_type == "illness" else None
+    )
     if (
         goal is not None
         and goal.kind == "health_manage_mutation"
         and goal.operation in MANAGE_WRITE_OPERATIONS
         and goal.requires_lookup
         and goal.target_record_type == requested_record_type
+        and requested_record_id == authorized_lookup_record_id
         and str(args.get("operation") or "").strip().lower() == "list"
         and "explicit_current_turn_mutation" in goal.evidence
     ):
         args[_SERVER_AUTHORIZED_MANAGE_LOOKUP_KEY] = _ServerAuthorizedManageLookup(
             record_type=requested_record_type,
             operation=goal.operation,
+            record_id=expected_record_id,
         )
     return args
 
@@ -1706,6 +1717,16 @@ def _manage_list_turn_record_type(text: str) -> str | None:
         return "medical_exam"
     if _project_illness_query_to_turn(text) is not None:
         return "illness"
+    explicit_record_domains = (
+        (r"(?:血压|收缩压|舒张压)", "blood_pressure"),
+        (r"(?:体重|体脂率)", "weight"),
+        (r"(?:睡眠|入睡|醒来)", "sleep"),
+        (r"(?:用药|服药|药物)", "medication"),
+        (r"(?:饮水|喝水)", "water"),
+    )
+    for pattern, record_type in explicit_record_domains:
+        if re.search(pattern, _query_scope_text(text), re.IGNORECASE):
+            return record_type
     entities = _illness_query_entities(text)
     dimension = _query_entities_known_dimension(entities)
     if dimension is None:

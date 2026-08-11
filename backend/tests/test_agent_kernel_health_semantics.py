@@ -172,7 +172,7 @@ def test_v39_medical_exam_resolution_rejects_unpunctuated_nonself_subject(text):
 def test_v39_health_semantics_contract_is_versioned_and_content_digested():
     payload = semantics.health_semantics_contract_payload()
 
-    assert payload["version"] == "health-semantics-v6"
+    assert payload["version"] == "health-semantics-v7"
     assert re.fullmatch(r"[0-9a-f]{64}", payload["content_digest"])
 
 
@@ -662,3 +662,71 @@ def test_v44_generic_health_domain_explicit_other_owner_is_nonself(owner, entity
     assert semantics.health_read_has_nonself_subject(
         f"查询{owner}的{entity}记录"
     ) is True
+
+
+@pytest.mark.parametrize("owner", ("Alice", "MIA2", "CACHE-1", "小王"))
+@pytest.mark.parametrize("entity", ("血压", "体重", "睡眠", "用药"))
+def test_v44_generic_health_domain_concatenated_other_owner_is_nonself(owner, entity):
+    assert semantics.health_read_has_nonself_subject(
+        f"查询{owner}{entity}记录"
+    ) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "查询我的痛风记录？不用",
+        "查询我的痛风记录？我没让你查",
+        "查询我的痛风记录纯属假设",
+        "查询我的痛风记录仅作测试",
+        "查询我的痛风记录不代表要执行",
+        "查询我的痛风记录，我没同意",
+        "查询我的痛风记录，我不允许",
+        "查询我的痛风记录，我拒绝",
+        "查询我的痛风记录，别真的查",
+        "查询我的痛风记录？不是",
+        "查询我的痛风记录？并不是",
+        "查询我的痛风记录？没有这个意思",
+        "查询我的痛风记录意味着什么",
+        "查询我的痛风记录仅供参考",
+        "查询我的痛风记录不是让你真的查",
+        "查询我的痛风记录？否",
+        "查询我的痛风记录？No",
+        "查询我的痛风记录，先不要",
+        "查询我的痛风记录，不用了",
+        "查询我的痛风记录，不必了",
+        "查询我的痛风记录，没必要",
+        "查询我的痛风记录只是举个例子",
+        "查询我的痛风记录作为示例",
+        "查询我的痛风记录，过两天再说",
+        "查询我的痛风记录，晚些时候再说",
+        "查询我的痛风记录，有空再说",
+        "查询我的痛风记录会返回哪些数据",
+        "查询我的痛风记录会不会成功",
+        "查询我的痛风记录，我没授权",
+        "查询我的痛风记录，我不同意",
+        "查询我的痛风记录，未经我同意",
+    ),
+)
+def test_v44_generalized_read_veto_resets_authority(text):
+    assert semantics.resolve_health_read_act(text).status != "active"
+
+
+@pytest.mark.parametrize(
+    "scope",
+    (
+        "今早",
+        "晨起",
+        "运动后",
+        "服药后",
+        "睡前",
+        "起床后",
+        "午后",
+        "夜间",
+    ),
+)
+def test_v44_temporal_scope_is_not_an_other_owner(scope):
+    entity = "体重" if scope in {"睡前", "起床后"} else "血压"
+    assert semantics.health_read_has_nonself_subject(
+        f"查询{scope}的{entity}记录"
+    ) is False

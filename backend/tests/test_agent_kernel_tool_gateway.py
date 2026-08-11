@@ -3471,9 +3471,12 @@ async def test_executor_lists_owner_illness_before_exact_resolution_update(
 
     monkeypatch.setattr(executor, "_exec_health_manage", fake_exec)
 
+    lookup_args = {"record_type": "illness", "operation": "list"}
+    if "71" in message:
+        lookup_args["record_id"] = 71
     await executor._execute_tool(
         "health_manage",
-        {"record_type": "illness", "operation": "list"},
+        lookup_args,
         "test-token",
     )
     result = await executor._execute_tool(

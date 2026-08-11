@@ -5645,7 +5645,7 @@ def _goal_lookup_arguments(goal: Optional[GoalSpec]) -> Optional[Dict[str, Any]]
             record_id = canonical_health_manage_record_id(
                 target_values.get("record_id")
             )
-            if record_id is not None:
+            if record_type == "illness" and record_id is not None:
                 lookup.pop("limit", None)
                 lookup["record_id"] = record_id
             return lookup

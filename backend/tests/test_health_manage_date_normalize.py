@@ -66,6 +66,21 @@ def _illness_update_goal() -> GoalSpec:
     )
 
 
+def _water_delete_goal() -> GoalSpec:
+    return GoalSpec(
+        kind="health_manage_mutation",
+        domain="water",
+        operation="delete",
+        target_record_type="water",
+        target_values=(("record_id", "718"),),
+        requires_lookup=True,
+        requires_verification=True,
+        prohibited_operations=("create", "update"),
+        postconditions=("owner_scoped_lookup", "verified_receipt"),
+        evidence=("explicit_current_turn_mutation",),
+    )
+
+
 def test_recalculate_goal_starts_with_one_deterministic_database_lookup():
     call = _build_deterministic_goal_lookup_tool_call(
         _diet_recalculate_goal(),
@@ -94,6 +109,20 @@ def test_manage_mutation_goal_starts_with_owner_scoped_lookup():
         "record_type": "illness",
         "operation": "list",
         "record_id": 81,
+    }
+
+
+def test_non_illness_exact_id_mutation_uses_supported_collection_lookup():
+    call = _build_deterministic_goal_lookup_tool_call(
+        _water_delete_goal(),
+        write_receipts=[],
+    )
+
+    assert call is not None
+    assert json.loads(call["function"]["arguments"]) == {
+        "record_type": "water",
+        "operation": "list",
+        "limit": 20,
     }
 
 
