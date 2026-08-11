@@ -2149,6 +2149,38 @@ legitimate read-and-assess requests. Mechanically generated evidence remains
 or deployed. Two fresh independent reviews of the next exact
 documentation/evidence commit remain mandatory before G4 may pass.
 
+### v45 fourth G4 remediation and evidence
+
+Fresh code and safety review of
+`c7c9e42107367741cdb9420fd17c48b0357123f7` returned `NO-GO`. The reviewers
+found that explicit-self temporal forms such as `我今早` and `本人晨起` were
+falsely classified as non-self, that a later metric-interpretation clause was
+mistaken for discussion of the query command, and that bare trailing vetoes
+such as `不同意` were no longer cancelling the read. The code review also
+showed that cases labelled for `health_manage` could be satisfied only through
+a model-selected `health_query`, leaving the declared surface untested.
+
+The remediation introduces one whole-owner parser for explicit-self plus
+temporal scope, reuses the same scope vocabulary for owner and target layouts,
+and covers `刚测` without reopening substring-based third-party bypasses.
+Meta-command phrases must now remain structurally attached to a query object;
+bare veto clauses are exact-clause cancellations. The evaluator preserves the
+live model proposal and additionally runs the declared fallback surface when
+the model selected a different tool.
+
+The exact clean implementation/evaluation candidate is
+`7d8c6858d7b686e93d41660042dda71eb8c7c81f`. The authorization/write core
+passes 5,225/5,225 and the complete AgentExecutor compatibility set passes
+686/686. Ruff, Python compilation, `git diff --check`, doc drift and Dossier
+consistency pass. The authorized live `qwen3.7-max` run passes 489/489
+anonymous synthetic cases and all 1,208 actual policy decisions, with zero
+database connection attempts and zero unexpected network destinations. The
+expanded corpus covers explicit-self temporal reads, metric interpretation,
+bare vetoes and both declared read surfaces. Mechanically generated evidence
+remains `backend/evals/results/semantic_illness_qwen_v45.json`. Nothing has
+been pushed or deployed. Two fresh independent reviews of the next exact
+documentation/evidence commit remain mandatory before G4 may pass.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.
