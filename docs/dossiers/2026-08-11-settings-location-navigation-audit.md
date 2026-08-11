@@ -49,7 +49,7 @@
 
 - RED 已确认: 城市优先级、聚焦刷新、定位状态和生产入口点击矩阵在实现前按预期失败。
 - GREEN 已确认:
-  - 定向 Jest: 3 suites / 55 tests PASS。
+  - 定向 Jest: 3 suites / 56 tests PASS；包含初始持久状态读取晚于实时状态事件的乱序回归。
   - TypeScript `npx tsc --noEmit`: PASS。
   - ESLint: 0 error；92 条为仓库既有 warning，本切片未新增 error。
   - `npm run check:settings-routes`: PASS，39 条设置 push 路由均存在。

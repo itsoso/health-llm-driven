@@ -237,6 +237,22 @@ describe('SettingsScreen', () => {
     expect(getByText('GPS 自动')).toBeTruthy();
   });
 
+  it('does not let a stale initial read overwrite a newer live GPS state', async () => {
+    let resolveInitialRead: ((status: { state: string }) => void) | undefined;
+    mockReadGPSRefreshStatus.mockImplementationOnce(() => new Promise(resolve => {
+      resolveInitialRead = resolve;
+    }));
+    const { getByText, queryByText } = render(<SettingsScreen />);
+
+    act(() => mockGPSRefreshStatusListener?.({ state: 'ready' }));
+    expect(getByText('GPS 自动')).toBeTruthy();
+
+    await act(async () => resolveInitialRead?.({ state: 'error' }));
+
+    expect(getByText('GPS 自动')).toBeTruthy();
+    expect(queryByText('更新失败')).toBeNull();
+  });
+
   it('hides deferred native and experimental entries in the App Store production UI', () => {
     const { queryByText } = render(<SettingsScreen />);
 

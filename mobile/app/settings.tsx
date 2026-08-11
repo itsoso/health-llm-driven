@@ -73,12 +73,14 @@ export default function SettingsScreen() {
 
   useFocusEffect(useCallback(() => {
     let active = true;
+    let receivedLiveStatus = false;
     const unsubscribe = subscribeGPSRefreshStatus(status => {
+      receivedLiveStatus = true;
       if (active) setGPSRefreshState(status.state);
     });
     void qc.invalidateQueries({ queryKey: queryKeys.profile });
     void readGPSRefreshStatus().then(status => {
-      if (active) setGPSRefreshState(status.state);
+      if (active && !receivedLiveStatus) setGPSRefreshState(status.state);
     });
     return () => {
       active = false;
