@@ -2338,6 +2338,32 @@ Mechanically generated evidence remains
 or deployed. Both G4 reviews must be repeated against the next exact evidence
 commit.
 
+### v45 eleventh G4 remediation and evidence
+
+Both reviews of `636af860ae581b88d13938ea95bdbcd25a6a2a4d`
+returned `NO-GO`. Broader third-party report domains and ordinal record
+pointers still bypassed the clinical interpretation path; adjacent meta
+language and clinical object recall also remained incomplete.
+
+The remediation removes the global unresolved-reference exemption. Instead,
+only a verified current-user/owner-neutral clinical interpretation has its
+returned-data explanation suffix stripped before the ordinary unresolved
+guard runs on the original query target. Report domains now participate in
+the shared ownership parser, ordinal record-pointer grammar is generalized,
+and the meta and clinical object/intent axes are expanded independently.
+
+The exact clean implementation/evaluation candidate is
+`1cbe83150a28cc7560247f6fbb1401e6f11d5c2d`. The authorization/write core
+passes 5,446/5,446 and the complete AgentExecutor compatibility set passes
+686/686. Ruff, Python compilation, `git diff --check`, doc drift and Dossier
+consistency pass. The authorized live `qwen3.7-max` run passes 580/580
+anonymous synthetic cases and all 1,538 actual policy decisions, with zero
+database connection attempts and zero unexpected network destinations.
+Mechanically generated evidence remains
+`backend/evals/results/semantic_illness_qwen_v45.json`. Nothing has been pushed
+or deployed. Both G4 reviews must be repeated against the next exact evidence
+commit.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.
