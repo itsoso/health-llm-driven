@@ -585,10 +585,19 @@ def _is_current_user_scope_owner(owner: str) -> bool:
             return True
     return False
 
-_REFERENCE_NUMBER = r"(?:[0-9零〇一二两三四五六七八九十百千廿卅]+)"
+_REFERENCE_NUMBER = r"(?:[0-9零〇一二两三四五六七八九十百千廿卅卌]+)"
 _REFERENCE_OBJECT = (
     r"(?:病|疾病|病症|症状|记录|病历|病例|MRI|核磁|磁共振|CT|"
-    r"检查|报告|影像|结果)"
+    r"化验|检验|体检|检查|报告|影像|结果)"
+)
+GENERIC_RECORD_SELECTION_RE = re.compile(
+    rf"(?:"
+    rf"第{_REFERENCE_NUMBER}(?:次|条)|"
+    rf"(?:最近|最新|最早)(?:一)?(?:次|条)|末次|"
+    rf"(?:这|那|某)(?:次|条)|"
+    rf"(?:上述|前述|先前|刚才)(?:那)?(?:次|条)"
+    rf")(?:的)?(?:化验|检验|检查|体检)(?:记录|报告|结果)",
+    re.IGNORECASE,
 )
 GENERALIZED_INDEXED_HEALTH_REFERENCE_RE = re.compile(
     rf"(?:"
@@ -804,6 +813,37 @@ READ_ACT_LEADING_SCAFFOLD_RE = re.compile(
     r"还是|接着|真正)\s*)*",
     re.IGNORECASE,
 )
+META_COMMAND_OBJECT_RE = re.compile(
+    r"(?:"
+    r"(?:这|那|该|此|当前|上面|下面|刚才)(?:个|条|段|串)?(?:的)?"
+    r"(?:指令|命令|提示词|查询|话|文字|表达)|"
+    r"(?:这句话|这串话|这段文字)|"
+    r"(?:这个|这条|该|当前)(?:指令|命令|提示词|查询|表达)"
+    r")",
+    re.IGNORECASE,
+)
+META_COMMAND_INTENT_RE = re.compile(
+    r"(?:意思|含义|怎么操作|如何操作|怎么执行|如何执行|怎么用|用法|用途|"
+    r"会查什么|查什么|说的是啥|分析|说明|干什么|做什么|几个字|说法|表达)",
+    re.IGNORECASE,
+)
+QUOTED_META_COMMAND_RE = re.compile(
+    r"[“‘\"'][^”’\"']{1,32}[”’\"'](?:这个)?(?:说法|表达|几个字)?"
+    r"[^,.!，。！？?;；、]{0,16}(?:意思|含义|用法|用途|怎么用|解释)",
+    re.IGNORECASE,
+)
+
+
+def is_health_tool_meta_command(text: str) -> bool:
+    """Return whether the user is discussing language, not requesting a read."""
+    normalized = str(text or "")
+    return bool(
+        QUOTED_META_COMMAND_RE.search(normalized)
+        or (
+            META_COMMAND_OBJECT_RE.search(normalized)
+            and META_COMMAND_INTENT_RE.search(normalized)
+        )
+    )
 
 
 def normalize_entity(value: str) -> str:
@@ -828,6 +868,8 @@ def resolve_health_read_act(text: str) -> HealthReadActResolution:
     normalized = str(text or "").strip()
     if not normalized:
         return HealthReadActResolution("none")
+    if is_health_tool_meta_command(normalized):
+        return HealthReadActResolution("none", normalized)
 
     clause_spans: list[tuple[int, int]] = []
     cursor = 0
@@ -913,21 +955,11 @@ def resolve_health_read_act(text: str) -> HealthReadActResolution:
 def is_clinical_result_interpretation(text: str) -> bool:
     """Return whether a read asks to interpret the returned clinical data."""
     normalized = str(text or "")
-    ownership_scope = re.split(
-        r"(?:，|,)?看看(?:(?:这些|上述|这项|本次|这批)?(?:指标|数值|读数|"
-        r"结果|化验结果|检查结果|检验结果|检测结果|数值结果|测量值|"
-        r"检测值|数据)|报告数值)",
-        normalized,
-        maxsplit=1,
-    )[0]
+    ownership_scope = clinical_interpretation_query_scope(normalized)
     return bool(
         has_positive_health_read_verb(normalized)
         and not health_read_has_nonself_subject(ownership_scope)
-        and not re.search(
-            r"(?:上一条|下一条|前一条|后一条|这条|那条|某条|上述那条|前述那条)"
-            r"(?:化验|检验|检查|体检|报告|记录|结果)",
-            normalized,
-        )
+        and not is_unresolved_health_reference(ownership_scope)
         and re.search(r"(?:化验|检验|检查|体检|报告|结果)", normalized)
         and re.search(
             r"(?:(?:这些|上述|这项|本次|这批)?(?:指标|数值|读数|结果|"
@@ -939,6 +971,21 @@ def is_clinical_result_interpretation(text: str) -> bool:
             normalized,
         )
     )
+
+
+def clinical_interpretation_query_scope(text: str) -> str:
+    """Remove only a verified trailing clinical-explanation clause."""
+    return re.sub(
+        r"(?:，|,)?(?:看看)?"
+        r"(?:(?:这些|上述|这项|本次|这批)?(?:指标|数值|读数|结果|"
+        r"化验结果|检查结果|检验结果|检测结果|数值结果|测量值|"
+        r"检测值|数据)|报告数值)"
+        r"[^,.!，。！？?;；、]{0,20}"
+        r"(?:意味|意思|含义|代表|表达|理解|解释|指|说什么|怎么回事|"
+        r"干嘛|做什么|作用|用途)[^,.!，。！？?;；、]*$",
+        "",
+        str(text or ""),
+    ).strip()
 
 
 def has_positive_health_read_verb(text: str) -> bool:
@@ -989,6 +1036,13 @@ def is_unresolved_health_reference(value: str) -> bool:
             r"(?:化验|检验|检查|体检|报告|记录|结果)",
             normalized,
         )
+        or re.search(
+            r"(?:(?:这|那|末|该)(?:条|份|次)|本次|"
+            r"(?:先前|刚才|刚刚)(?:这|那)?(?:条|份|次))"
+            r"(?:化验|检验|检查|体检)(?:记录|报告|结果)",
+            normalized,
+        )
+        or GENERIC_RECORD_SELECTION_RE.search(normalized)
         or GENERALIZED_INDEXED_HEALTH_REFERENCE_RE.search(normalized)
         or STRUCTURAL_HEALTH_REFERENCE_RE.search(normalized)
         or UNRESOLVED_HEALTH_REFERENCE_RE.fullmatch(scoped)
@@ -1231,15 +1285,40 @@ def _health_read_entity_expression(text: str) -> str:
     return candidate.strip("的，,。.!！；;：:?？ ")
 
 
+_NONSELF_OWNER_TOKEN = (
+    r"(?:(?<![A-Za-z0-9_-])(?!(?:MRI|CT|SLE))"
+    r"[A-Za-z][A-Za-z0-9_-]{1,31}|"
+    r"(?:租户|患者)[A-Za-z0-9一-龥_-]+|"
+    r"我(?:朋友|同事|同学|家人|亲戚)|妈妈|爸爸|父亲|母亲|"
+    r"小[一-龥]|[赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦许何吕施张孔曹严华金魏陶姜]"
+    r"[一-龥]{1,2})"
+)
+_HEALTH_REPORT_DOMAIN = (
+    r"(?:医学检查报告|检查记录|体检报告|化验报告|检验报告|检查报告|"
+    r"检查结果|报告)"
+)
+EXPLICIT_NONSELF_HEALTH_OWNER_RE = re.compile(
+    rf"(?:"
+    rf"这是(?P<asserted>{_NONSELF_OWNER_TOKEN})的(?:[，,。]|$)|"
+    rf"帮(?P<helped>{_NONSELF_OWNER_TOKEN})查询{_HEALTH_REPORT_DOMAIN}|"
+    rf"查询刚导入的(?P<imported>{_NONSELF_OWNER_TOKEN}){_HEALTH_REPORT_DOMAIN}|"
+    rf"(?:查询)?(?P<owned>{_NONSELF_OWNER_TOKEN})(?:的|刚导入的)?"
+    rf"{_HEALTH_REPORT_DOMAIN}"
+    rf")",
+    re.IGNORECASE,
+)
+
+
+def has_explicit_nonself_health_owner(text: str) -> bool:
+    """Detect explicit third-party ownership across natural clause orderings."""
+    return EXPLICIT_NONSELF_HEALTH_OWNER_RE.search(str(text or "")) is not None
+
+
 def health_read_has_nonself_subject(text: str) -> bool:
     """Detect explicit or concatenated non-current-user health subjects."""
-    subject_scope = re.sub(
-        r"(?:，|,)?看看(?:(?:这些|上述|这项|本次|这批)?(?:指标|数值|读数|"
-        r"结果|化验结果|检查结果|检验结果|检测结果|数值结果|测量值|"
-        r"检测值|数据)|报告数值)[^,.!，。！？?;；、]{0,32}$",
-        "",
-        str(text or ""),
-    )
+    if has_explicit_nonself_health_owner(text):
+        return True
+    subject_scope = clinical_interpretation_query_scope(text)
     read_act = resolve_health_read_act(subject_scope)
     scoped_text = (
         read_act.active_clause if read_act.status == "active" else subject_scope

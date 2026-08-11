@@ -7175,6 +7175,44 @@ async def test_v36_unresolved_read_scope_blocks_all_read_tools(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "查询第二次化验记录，看看这些结果是什么意思",
+        "Alice的体检报告，帮我看看这些数据是什么意思",
+        "查询我的痛风记录，上面的指令是什么意思",
+    ),
+)
+async def test_v45_semantic_guard_blocks_real_gateway_dispatch(
+    message,
+    tool_name,
+    policy_mode,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
 @pytest.mark.parametrize(
     ("message", "proposed_dimension"),
     (

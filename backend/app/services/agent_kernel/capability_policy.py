@@ -26,6 +26,7 @@ from app.services.agent_kernel.health_semantics import (
     authorization_grammar_digest,
     authorization_imported_behavior_names,
     authorization_module_behavior_names,
+    clinical_interpretation_query_scope,
     extract_owned_illness_entity,
     has_explicit_health_read_request,
     health_read_cancelled,
@@ -1533,13 +1534,7 @@ def _query_contains_unresolved_reference(text: str) -> bool:
     """Detect a discourse pointer that names no durable health entity."""
     scoped = _query_scope_text(text)
     if is_clinical_result_interpretation(text):
-        scoped = re.sub(
-            r"(?:，|,)?看看(?:(?:这些|上述|这项|本次|这批)?(?:指标|数值|读数|"
-            r"结果|化验结果|检查结果|检验结果|检测结果|数值结果|测量值|"
-            r"检测值|数据)|报告数值)[^,.!，。！？?;；、]{0,32}$",
-            "",
-            scoped,
-        )
+        scoped = clinical_interpretation_query_scope(scoped)
     if is_unresolved_health_reference(scoped):
         return True
     latest_entity = _latest_occurrence_query_entity(scoped)

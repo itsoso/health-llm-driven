@@ -935,16 +935,114 @@ def test_v45_additional_meta_intent_forms_are_non_authorizing(text):
     assert semantics.resolve_health_read_act(text).status != "active"
 
 
+@pytest.mark.parametrize(
+    "meta_text",
+    (
+        "这条指令该怎么操作",
+        "上面的指令是什么意思",
+        "下面这条命令是什么意思",
+        "刚才的命令是什么意思",
+        "这个提示词是什么意思",
+        "这段查询是什么意思",
+        "该查询会查什么",
+        "这句话说的是啥",
+        "帮我分析这个命令",
+        "请说明这个指令",
+        "当前查询有何用途",
+        "这段文字是什么意思",
+        "这个表达什么意思",
+        "“本次结果”这个说法什么意思",
+        "解释“报告数值”的用法",
+        "看看“这些指标”这几个字是什么意思",
+    ),
+)
+def test_v45_meta_command_language_never_authorizes_health_read(meta_text):
+    text = f"查询我的化验记录，{meta_text}"
+    assert semantics.is_health_tool_meta_command(text)
+    assert semantics.resolve_health_read_act(text).status != "active"
+
+
 def test_v45_third_party_clinical_interpretation_is_not_current_user():
     assert semantics.is_clinical_result_interpretation(
         "查询Alice的检查记录，看看这些数据是什么意思"
     ) is False
 
 
+@pytest.mark.parametrize(
+    "text",
+    (
+        "查询检查记录，这是Alice的，看看这些数据是什么意思",
+        "MIA2的体检报告，帮我看看这些数据是什么意思",
+        "查询CACHE-1的化验报告，看看本次结果是什么意思",
+        "查询USER123检验报告，看看报告数值代表什么",
+        "帮小王查询检查报告，看看上述检查结果是什么意思",
+        "查询李雷刚导入的医学检查报告，看看这些数据是什么意思",
+        "查询刚导入的租户42报告，看看本次结果是什么意思",
+        "患者甲的检查结果，帮我看看这些数据是什么意思",
+        "我朋友的检查记录，帮我看看这些数据是什么意思",
+        "妈妈的体检报告，帮我看看这些数据是什么意思",
+    ),
+)
+def test_v45_natural_third_party_report_forms_are_nonself(text):
+    assert semantics.has_explicit_nonself_health_owner(text)
+    assert semantics.health_read_has_nonself_subject(text)
+    assert semantics.is_clinical_result_interpretation(text) is False
+
+
 def test_v45_unresolved_record_clinical_interpretation_is_not_resolved():
     assert semantics.is_clinical_result_interpretation(
         "查询上一条化验记录，看看这些结果是什么意思"
     ) is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "查询这条化验记录，看看上述数据是什么意思",
+        "查询末条化验记录，看看这些结果是什么意思",
+        "查询第卌份化验记录，看看这些检查结果是什么意思",
+        "查询先前那份化验记录，看看这些结果是什么意思",
+    ),
+)
+def test_v45_adjacent_unresolved_clinical_references_remain_unresolved(text):
+    assert semantics.is_unresolved_health_reference(text)
+    assert semantics.is_unresolved_health_reference(
+        semantics.clinical_interpretation_query_scope(text)
+    )
+    assert semantics.is_clinical_result_interpretation(text) is False
+
+
+@pytest.mark.parametrize(
+    "pointer",
+    (
+        "第一次化验记录",
+        "第二次化验记录",
+        "第十次化验记录",
+        "最近一次化验记录",
+        "最新一条化验记录",
+        "最早一次化验记录",
+        "末次化验记录",
+        "这次化验记录",
+        "那次化验记录",
+        "某次化验记录",
+        "上述那次化验记录",
+        "前述那条化验记录",
+        "刚才那次化验记录",
+    ),
+)
+def test_v45_generic_record_selection_is_unresolved(pointer):
+    assert semantics.is_unresolved_health_reference(f"查询{pointer}")
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "查询我的化验记录，这些结果是什么意思",
+        "查询我的化验记录这些结果是什么意思",
+    ),
+)
+def test_v45_clinical_interpretation_does_not_require_kankan_scaffold(text):
+    assert semantics.is_clinical_result_interpretation(text)
 
 
 @pytest.mark.parametrize(

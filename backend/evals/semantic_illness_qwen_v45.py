@@ -1035,7 +1035,94 @@ CASES = CASES + tuple(
     )
 )
 
-assert len(CASES) == 580
+CASES = CASES + tuple(
+    blocked_manage(
+        f"v45_structural_pointer_{index}",
+        f"查询{pointer}，看看上述数据代表什么",
+        "medical_exam",
+    )
+    for index, pointer in enumerate(
+        (
+            "第一次化验记录",
+            "第二次化验记录",
+            "第十次化验记录",
+            "最近一次化验记录",
+            "最新一条化验记录",
+            "最新一次化验记录",
+            "最早一条化验记录",
+            "最早一次化验记录",
+            "末次化验记录",
+            "这次化验记录",
+            "那次化验记录",
+            "某次化验记录",
+            "上述那次化验记录",
+            "前述那次化验记录",
+            "先前那次化验记录",
+            "刚才那次化验记录",
+            "这条化验记录",
+            "那条化验记录",
+            "某条化验记录",
+            "上述那条化验记录",
+            "前述那条化验记录",
+            "先前那条化验记录",
+        ),
+        1,
+    )
+) + tuple(
+    blocked_manage(f"v45_natural_third_party_{index}", text, "medical_exam")
+    for index, text in enumerate(
+        (
+            "查询检查记录，这是Alice的，看看这些数据是什么意思",
+            "MIA2的体检报告，帮我看看这些数据是什么意思",
+            "查询CACHE-1的化验报告，看看本次结果是什么意思",
+            "查询USER123检验报告，看看报告数值代表什么",
+            "帮小王查询检查报告，看看上述检查结果是什么意思",
+            "查询李雷刚导入的医学检查报告，看看这些数据是什么意思",
+            "查询刚导入的租户42报告，看看本次结果是什么意思",
+        ),
+        1,
+    )
+) + tuple(
+    blocked_manage(f"v45_structural_meta_{index}", f"查询我的化验记录，{text}")
+    for index, text in enumerate(
+        (
+            "这条指令该怎么操作",
+            "上面的指令是什么意思",
+            "下面这条命令是什么意思",
+            "刚才的命令是什么意思",
+            "那条命令是什么意思",
+            "这个提示词是什么意思",
+            "这段查询是什么意思",
+            "该查询会查什么",
+            "这句话说的是啥",
+            "帮我分析这个命令",
+            "请说明这个指令",
+            "这条命令是在干什么",
+            "当前查询有何用途",
+            "这串话是什么意思",
+            "这段文字是什么意思",
+            "这个表达什么意思",
+            "“本次结果”这个说法什么意思",
+            "解释“报告数值”的用法",
+            "看看“这些指标”这几个字是什么意思",
+            "帮我解释‘本次结果’这个表达",
+        ),
+        1,
+    )
+) + (
+    allow_manage(
+        "v45_clinical_without_kankan_comma",
+        "查询我的化验记录，这些结果是什么意思",
+        "medical_exam",
+    ),
+    allow_manage(
+        "v45_clinical_without_kankan_adjacent",
+        "查询我的化验记录这些结果是什么意思",
+        "medical_exam",
+    ),
+)
+
+assert len(CASES) == 631
 
 
 base_host = urlparse(str(settings.tokenplan_base_url)).hostname

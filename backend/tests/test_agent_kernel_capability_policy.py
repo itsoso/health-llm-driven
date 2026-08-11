@@ -5880,6 +5880,10 @@ def test_v45_clinical_interpretation_does_not_bypass_scope_guards(text, tool_nam
         "查询上次检查记录，看看这些结果是什么意思",
         "查询第二条化验记录，看看这些结果是什么意思",
         "查询倒数第一条化验记录，看看这些结果是什么意思",
+        "查询这条化验记录，看看上述数据是什么意思",
+        "查询末条化验记录，看看这些结果是什么意思",
+        "查询第卌份化验记录，看看这些检查结果是什么意思",
+        "查询先前那份化验记录，看看这些结果是什么意思",
     ),
 )
 @pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
@@ -5909,6 +5913,27 @@ def test_v45_broader_clinical_objects_allow_read(clinical_object, tool_name):
     )
     decision = decide_tool_capability(
         _snapshot(f"查询我的化验记录看看{clinical_object}是什么意思"),
+        _request(tool_name, arguments),
+    )
+    assert decision.action == "allow", decision.reason
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "查询我的化验记录，这些结果是什么意思",
+        "查询我的化验记录这些结果是什么意思",
+    ),
+)
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_clinical_interpretation_without_kankan_allows_read(text, tool_name):
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot(text),
         _request(tool_name, arguments),
     )
     assert decision.action == "allow", decision.reason
