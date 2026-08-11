@@ -1465,7 +1465,10 @@ function isWriteCardAction(action: ChatCardActionDescriptor): boolean {
 }
 
 function cardActionErrorMessage(error: unknown): string {
-  const data = (error as { response?: { data?: unknown } } | undefined)?.response?.data;
+  const response = (error as { response?: { status?: unknown; data?: unknown } } | undefined)?.response;
+  const status = typeof response?.status === 'number' ? response.status : undefined;
+  if (status == null || status < 400 || status >= 500) return '操作失败，请稍后重试';
+  const data = response?.data;
   const detail = data && typeof data === 'object'
     ? (data as { detail?: unknown }).detail
     : undefined;
@@ -1479,7 +1482,10 @@ function cardActionErrorMessage(error: unknown): string {
       ? detail
       : undefined;
   const normalized = text?.trim();
-  return normalized ? normalized.slice(0, 80) : '操作失败，请稍后重试';
+  if (!normalized || /(?:token|secret|password|traceback|stack|psycopg2|sqlalchemy|uniqueviolation|object|\{|\})/i.test(normalized)) {
+    return '操作失败，请稍后重试';
+  }
+  return normalized.slice(0, 80);
 }
 
 function getCardActionSuccessMessage(

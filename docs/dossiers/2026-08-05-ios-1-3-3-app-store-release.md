@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | Build 256 已完成 EAS/ASC/TestFlight、精确 IPA、ASC 绑定、审核账号真实登录及物理 iPhone 6/6 安全自动子集；补剂/照片卡第四轮独立安全评审仍为 BLOCK，已回到 S5 改为“canonical 名称可直写、未知新名称必须显式引号确认”，并在两端统一 Unicode/剂量/连写多实体保护；App Review、production OTA、部署及错误记录撤销继续冻结 |
+| 当前阶段 | Build 256 已完成 EAS/ASC/TestFlight、精确 IPA、ASC 绑定、审核账号真实登录及物理 iPhone 6/6 安全自动子集；补剂/照片卡第四轮独立安全评审 BLOCK 已整改，并追加修复照片餐食确认失败时的安全可读错误提示；第五轮独立 G4 裁决前，App Review、production OTA、部署及错误记录撤销继续冻结 |
 | 状态 | implementing |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -16,6 +16,7 @@
 - [x] Correction Block（2026-08-10）：T7.5 第二轮独立安全评审仍判定 `BLOCK`。动作绑定提取仍接受含指令、指代、多实体或频率剂量的长串；Backend 在移除空格后破坏英文词边界，Mobile 的强信号词又未覆盖 `warfarin` / `aspirin` / `azithromycin` / `fish oil` / `omega-3`，导致合法照片 token 下仍可写为饮食。范围再次退回 S5：单补剂只接受无残余的有界实体；Backend 使用保留边界的共享药品/补剂名称检测并安全分隔紧邻剂量，Mobile 同步 fail-closed。第三轮独立 G4 GO 前继续禁止部署、OTA、App Review 和生产删除。
 - [x] Correction Block（2026-08-10）：T7.5 第三轮独立安全评审仍判定 `BLOCK`。`+` / `plus`、遗漏指令/频率和多段剂量仍能成为补剂名；`coq10` / `b12` / `d3` 这类数字结尾名称紧邻数字剂量时又会被错误切分并穿透照片饮食保护。范围退回 S5：名称必须是完整 canonical alias 或满足受限单产品形态，拒绝结构连接符、多 canonical 实体和嵌入剂量；剂量边界改由词库 lookahead 识别而非改写名称，Mobile 同步完整 token 边界。新的 committed G3 与第四位独立 G4 GO 前继续禁止部署、OTA、App Review 和生产删除。
 - [x] Correction Block（2026-08-10）：T7.5 第四轮独立安全评审仍判定 `BLOCK`。全角 ASCII、Unicode dash、零宽字符及下标数字可绕过 Mobile/Backend 名称检测；未加分隔的英文多补剂串仍能被当作单一名称；Mobile 对 `vitamin D1000IU` / `coq10200mg` 等紧邻剂量识别不足，造成发起 POST 后由 Backend 拒绝的“保存失败”体验。范围退回 S5：两端统一 NFKC、Unicode dash 与 invisible-character 规范化；共享词库检测紧邻剂量和连写多实体；取消任意未知产品名的开放形态，只有 canonical 名称可直接写入，未知新名称必须由用户在当前纯文本消息中用明确引号包围。第五位独立 G4 GO 前继续禁止部署、OTA、App Review 和生产删除。
+- [x] Correction Block（2026-08-11）：照片餐食草稿确认仍出现“操作失败，请稍后重试”。新增回归覆盖 `胡萝卜 约3段 · 南瓜 约2块 · 红枣 约3颗 · 玉米 约1小段` 可确认入库、4xx 草稿业务错误可读、5xx/内部 DB 异常不得泄露到移动端 toast。后端 `POST /diet/records` 的内部异常 detail 改为通用文案，移动端仅展示安全 4xx `detail` 并对 token/stack/DB 关键词降级。第五位独立 G4 需同时审查该错误提示边界。
 
 ## S0 · 用户需求（逐字）
 
@@ -104,7 +105,7 @@
   - [x] T7.2 紧凑聊天头部候选归档 / IPA / ASC 上传（Build 253 已完成本地 Xcode 正式归档、精确 IPA 闸和上传；Apple processing 尚待确认）
   - [x] T7.3 Build 254 本地 Xcode 候选 / ASC / TestFlight / 物理 iPhone 自动验收（6/6 PASS；因无 EAS Build ID，仅作功能与二进制证据，不替代最终 EAS 候选）
   - [ ] T7.4 照片发送 provider 流总时限 Backend 修复 / 部署 / Build 256 复验（代码、本地回归与生产部署已完成；真机终态待完成）
-  - [ ] T7.5 无证据补剂写入阻断 / owner-bound 照片卡保存 / 错误记录受控撤销（第四轮独立安全评审 BLOCK；新增 Unicode 兼容形式、隐藏字符、连写多实体、紧邻剂量和未知名称显式引号对抗测试已先红后绿，待 commit 与第五位 reviewer GO；部署和线上纠错尚未开始）
+  - [ ] T7.5 无证据补剂写入阻断 / owner-bound 照片卡保存 / 错误记录受控撤销（第四轮独立安全评审 BLOCK 已整改；新增 Unicode 兼容形式、隐藏字符、连写多实体、紧邻剂量、未知名称显式引号、照片餐食 3段/2块/3颗/1小段保存与安全错误提示回归已通过，待第五位 reviewer GO；部署和线上纠错尚未开始）
   - [ ] T8 精确 Build 真机与截图
   - [ ] T9 final-submit / App Review
   - [ ] T10 手动发布 / production G6
@@ -246,7 +247,7 @@
 - 同一独立 reviewer 最终复评：`G4: GO`（Critical 0 / Important 0 / Minor 1）；医疗转介 fail-closed 对抗矩阵 12/12，明确/健康条件触发的就医动作通过，否定/询问/不确定表达被拒绝，断言-only 路径不可绕过。唯一非阻断 Minor：配置可读取 `llm_judge_model`，但 `_call_judge` 尚未把该可选 override 传给 provider；当前数据集不使用该字段，登记为发布后 backlog，不在 GO 后扩大本轮变更。
 - 2026-08-08 Build 244 精确二进制隐私复评：IPA `18cd5357aaa5c57a02bfb23db741ae0889f84108e2fc5c676501f433f2c9fc10` 的主 App PrivacyInfo 仅 9 类，缺 AudioData、DeviceID、ProductInteraction，UserID 还缺 Analytics purpose；这些分别绑定实际云端 ASR、APNs device token 和认证客户端事件数据流。独立 G4 判定 Important/BLOCK、`Build 244: NO-GO`。源码整改补齐 12 类及 UserID Analytics，并将 iOS preflight 改为固定 production inventory、草稿↔manifest 精确集合、linked/tracking/purposes 逐项一致及 unknown/duplicate/schema fail-closed；变异测试覆盖双方同删、双方同翻 tracking、目的增删/重复等假绿路径。源码复评 `GO`，但必须用新原生 Build 再验包内 manifest，不能 OTA 修复或沿用 244。
 - 2026-08-08 Build 245 精确二进制复验：EAS 元数据绑定 source `140bd788a722cbcf25c203552444b72a9f010bc5`；IPA SHA-256 `bb355a4a4c9dea5de30d60468c5844e551f18c693a82636cbbb414b1dae85180`，主 App PrivacyInfo SHA-256 `2f3b255686e1a62f95eb7d85a889a12c77eb4ea0dd0efecfc4255d4c7e1251ae`。同一语义 helper 对包内 12 类数据、linked/tracking/purposes 与 checked-in App Privacy 草稿逐项校验返回零失败；版本 1.3.3（245）、bundle ID、iPhone-only arm64、production APNs、HealthKit、Universal Link、beta reports、`get-task-allow=false` 和严格验签全部 PASS。Build 244 的二进制隐私阻断已由新原生包消除。
-- **当前裁决**：pending（T7.5 第四轮 `BLOCK` 已整改，等待第五位 reviewer）；历史 `Build 256 G4: GO` 仍只覆盖当时的精确二进制与登录修复，不能覆盖本次健康写入新 diff。新的独立 reviewer 给出 GO 前，不得部署、OTA、删除生产记录或提交 App Review。Build 244 继续 `NO-GO` 且不得绑定 App Review。
+- **当前裁决**：pending（T7.5 第四轮 `BLOCK` 已整改，并追加照片餐食保存失败安全提示修复，等待第五位 reviewer）；历史 `Build 256 G4: GO` 仍只覆盖当时的精确二进制与登录修复，不能覆盖本次健康写入新 diff。新的独立 reviewer 给出 GO 前，不得部署、OTA、删除生产记录或提交 App Review。Build 244 继续 `NO-GO` 且不得绑定 App Review。
 
 ## S6 · 部署
 

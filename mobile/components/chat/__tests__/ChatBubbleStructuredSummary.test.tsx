@@ -1011,6 +1011,51 @@ ${sectionTitle}
     });
   });
 
+  it('does not expose backend internals from a server error detail', async () => {
+    dispatchChatCardAction.mockRejectedValueOnce({
+      response: {
+        status: 500,
+        data: { detail: '创建记录失败: psycopg2.errors.UniqueViolation token=secret' },
+      },
+    });
+    renderCard.mockImplementationOnce((descriptor: any, options: any) => {
+      const { Pressable, Text } = require('react-native');
+      return (
+        <Pressable onPress={() => options.onAction(descriptor.actions[0], descriptor)}>
+          <Text>确认记录</Text>
+        </Pressable>
+      );
+    });
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-diet-card-server-error',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      cardType: 'diet_draft',
+      cardData: { food_items: '胡萝卜 约3段' },
+      cardActions: [{
+        label: '确认记录',
+        action: 'diet_record.create',
+        endpoint: '/diet/records',
+        requires_manual_confirm: true,
+        payload: { record: { food_items: '胡萝卜 约3段', meal_type: 'breakfast' } },
+      }],
+    };
+
+    const { getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.press(getByText('确认记录'));
+
+    await waitFor(() => {
+      expect(mockToastShow).toHaveBeenCalledWith('操作失败，请稍后重试', 'error');
+    });
+  });
+
   it('shows a verified resource receipt after a write card action completes', async () => {
     dispatchChatCardAction.mockResolvedValueOnce({
       status: 'completed',

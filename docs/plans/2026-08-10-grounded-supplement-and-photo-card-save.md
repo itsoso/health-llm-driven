@@ -233,7 +233,8 @@ Read back the owner-scoped supplement definition and record. Expected: neither r
 **Step 6: Verify the two user flows**
 
 - Ungrounded text `识别图中的补剂并且帮我打卡` with no current image: no write, explicit resend/type-name guidance.
-- Owner-bound contextual meal card containing `胡萝卜 约3片`: one diet write, verified receipt, retained image, no generic save-failure toast.
+- Owner-bound contextual meal cards containing `胡萝卜 约3片` or `胡萝卜 约3段 · 南瓜 约2块 · 红枣 约3颗 · 玉米 约1小段`: one diet write, verified receipt, retained image, no generic save-failure toast.
+- Diet-card confirmation failures show safe, user-actionable 4xx draft reasons, while 5xx/DB/internal details are never exposed in mobile toast or backend response bodies.
 
 **Step 7: Record Gate outcomes**
 

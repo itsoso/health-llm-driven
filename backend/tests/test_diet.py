@@ -118,6 +118,27 @@ class TestDietAPI:
         assert body["meal_type"] == "breakfast"
         assert body["calories"] == 655
 
+    def test_create_diet_record_internal_failure_uses_generic_detail(
+        self, client, auth_headers, sample_diet_data, monkeypatch
+    ):
+        """保存异常不能把 DB/对象内部细节透给移动端 toast。"""
+        from app.api import diet as diet_api
+
+        class ExplodingDietRecord:
+            def __init__(self, *args, **kwargs):
+                raise RuntimeError("psycopg2.errors.UniqueViolation token=secret")
+
+        monkeypatch.setattr(diet_api, "DietRecordModel", ExplodingDietRecord)
+
+        response = client.post(
+            "/api/v1/diet/records",
+            json=sample_diet_data,
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 500
+        assert response.json()["detail"] == "创建记录失败，请稍后重试"
+
     def test_direct_photo_record_creates_attached_photo_asset(
         self, client, db, auth_headers, sample_diet_data, tmp_path, monkeypatch
     ):
