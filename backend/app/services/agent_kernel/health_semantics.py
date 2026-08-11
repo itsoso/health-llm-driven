@@ -828,8 +828,8 @@ META_COMMAND_INTENT_RE = re.compile(
     re.IGNORECASE,
 )
 QUOTED_META_COMMAND_RE = re.compile(
-    r"[“‘\"'][^”’\"']{1,32}[”’\"'](?:这个)?(?:说法|表达|几个字)?"
-    r"[^,.!，。！？?;；、]{0,16}(?:意思|含义|用法|用途|怎么用|解释)",
+    r"[“‘\"'][^”’\"']{1,32}[”’\"'](?:这个)?(?:说法|表达|几个字|问题)?"
+    r"[^,.!，。！？?;；、]{0,16}(?:意思|含义|用法|用途|怎么用|怎么解读|解释)",
     re.IGNORECASE,
 )
 
@@ -982,7 +982,8 @@ def clinical_interpretation_query_scope(text: str) -> str:
         r"检测值|数据)|报告数值)"
         r"[^,.!，。！？?;；、]{0,20}"
         r"(?:意味|意思|含义|代表|表达|理解|解释|指|说什么|怎么回事|"
-        r"干嘛|做什么|作用|用途)[^,.!，。！？?;；、]*$",
+        r"干嘛|做什么|作用|用途)[^,.!，。！？?;；、]*"
+        r"[,.!，。！？?;；、]*$",
         "",
         str(text or ""),
     ).strip()
@@ -1285,33 +1286,112 @@ def _health_read_entity_expression(text: str) -> str:
     return candidate.strip("的，,。.!！；;：:?？ ")
 
 
-_NONSELF_OWNER_TOKEN = (
-    r"(?:(?<![A-Za-z0-9_-])(?!(?:MRI|CT|SLE))"
-    r"[A-Za-z][A-Za-z0-9_-]{1,31}|"
-    r"(?:租户|患者)[A-Za-z0-9一-龥_-]+|"
-    r"我(?:朋友|同事|同学|家人|亲戚)|妈妈|爸爸|父亲|母亲|"
-    r"小[一-龥]|[赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦许何吕施张孔曹严华金魏陶姜]"
-    r"[一-龥]{1,2})"
-)
 _HEALTH_REPORT_DOMAIN = (
     r"(?:医学检查报告|检查记录|体检报告|化验报告|检验报告|检查报告|"
     r"检查结果|报告)"
 )
-EXPLICIT_NONSELF_HEALTH_OWNER_RE = re.compile(
-    rf"(?:"
-    rf"这是(?P<asserted>{_NONSELF_OWNER_TOKEN})的(?:[，,。]|$)|"
-    rf"帮(?P<helped>{_NONSELF_OWNER_TOKEN})查询{_HEALTH_REPORT_DOMAIN}|"
-    rf"查询刚导入的(?P<imported>{_NONSELF_OWNER_TOKEN}){_HEALTH_REPORT_DOMAIN}|"
-    rf"(?:查询)?(?P<owned>{_NONSELF_OWNER_TOKEN})(?:的|刚导入的)?"
-    rf"{_HEALTH_REPORT_DOMAIN}"
-    rf")",
-    re.IGNORECASE,
+def has_explicit_nonself_health_owner(text: str) -> bool:
+    """Detect explicit third-party ownership across natural clause orderings."""
+    normalized = clinical_interpretation_query_scope(str(text or ""))
+    owner_assertion = re.search(r"这是(?P<owner>[^，,。]{1,32})的(?:[，,。]|$)", normalized)
+    if owner_assertion is not None:
+        return not _is_current_user_scope_owner(owner_assertion.group("owner"))
+
+    beneficiary = re.search(
+        rf"帮(?P<owner>[^，,。]{{1,32}}?)查询{_HEALTH_REPORT_DOMAIN}",
+        normalized,
+    )
+    if beneficiary is not None:
+        return not _is_current_user_scope_owner(beneficiary.group("owner"))
+
+    scoped = re.sub(
+        r"^(?:请|麻烦你?|帮我|给我|替我|为我|查询|查找|查看|调取|调出|"
+        r"调阅|打开|展示(?:一下)?|查(?:一下)?|看)+",
+        "",
+        normalized,
+    )
+    scoped = re.sub(
+        r"^(?:最近(?:\d+小时)?(?:上传|导入)的|"
+        r"近\d+(?:小时|天|周|月|年)(?:上传|导入)的|刚导入的)",
+        "",
+        scoped,
+    )
+    if THIRD_PARTY_ROLE_RE.match(scoped):
+        return True
+    scoped, explicit_self = _strip_current_user_owner(scoped)
+    if explicit_self:
+        return False
+    if re.fullmatch(_HEALTH_REPORT_DOMAIN, scoped):
+        return False
+
+    possessive = re.match(
+        rf"^(?P<owner>.+?)的(?P<target>{_HEALTH_REPORT_DOMAIN})(?:[，,。]|$)",
+        scoped,
+    )
+    if possessive is not None:
+        owner = possessive.group("owner").strip()
+        return not (
+            _is_current_user_scope_owner(owner)
+            or _is_exact_clinical_report_base(owner)
+        )
+
+    direct = re.match(
+        rf"^(?P<base>.+?)(?P<target>{_HEALTH_REPORT_DOMAIN})(?:[，,。]|$)",
+        scoped,
+    )
+    if direct is None:
+        return False
+    base = direct.group("base").strip()
+    if _is_exact_clinical_report_base(base):
+        return False
+    return bool(base)
+
+
+_CLINICAL_REPORT_BASE_TERMS = frozenset(
+    {
+        "PET-CT", "MRA", "MRI", "CT", "CTA", "SLE", "HPV", "HIV",
+        "ALT", "AST", "CRP", "HbA1c", "IgG4", "BCR-ABL1", "APOE",
+        "MTHFR", "ANA", "HLA-B27", "系统性红斑狼疮", "脑膜炎", "乳腺",
+        "肝功能", "甲状腺", "血常规", "肾功能", "心电图", "肺功能",
+        "凝血功能", "骨密度", "尿常规", "血脂", "血糖", "血压",
+    }
 )
 
 
-def has_explicit_nonself_health_owner(text: str) -> bool:
-    """Detect explicit third-party ownership across natural clause orderings."""
-    return EXPLICIT_NONSELF_HEALTH_OWNER_RE.search(str(text or "")) is not None
+def _is_exact_clinical_report_base(value: str) -> bool:
+    """Resolve a complete report modifier before interpreting any owner prefix."""
+    candidate = str(value or "").strip("的，,。.!！；;：:?？ ")
+    if not candidate:
+        return False
+    if candidate.casefold() in {term.casefold() for term in _CLINICAL_REPORT_BASE_TERMS}:
+        return True
+    return bool(
+        resolve_illness_entity(candidate).status == "exact"
+        or HEALTH_METRIC_ENTITY_RE.fullmatch(candidate)
+        or EXACT_MEDICAL_EXAM_ENTITY_RE.fullmatch(candidate)
+    )
+
+
+def _has_exact_clinical_report_target(text: str) -> bool:
+    scoped = clinical_interpretation_query_scope(text)
+    scoped = re.sub(
+        r"^(?:请|麻烦你?|帮我|给我|替我|为我|查询|查找|查看|调取|调出|"
+        r"调阅|打开|展示(?:一下)?|查(?:一下)?|看)+",
+        "",
+        scoped,
+    )
+    scoped = re.sub(
+        r"^(?:最近(?:\d+小时)?(?:上传|导入)的|"
+        r"近\d+(?:小时|天|周|月|年)(?:上传|导入)的|刚导入的)",
+        "",
+        scoped,
+    )
+    scoped, _explicit_self = _strip_current_user_owner(scoped)
+    match = re.match(
+        rf"^(?P<base>.+?)(?:的)?{_HEALTH_REPORT_DOMAIN}(?:[，,。]|$)",
+        scoped,
+    )
+    return bool(match and _is_exact_clinical_report_base(match.group("base")))
 
 
 def health_read_has_nonself_subject(text: str) -> bool:
@@ -1319,6 +1399,8 @@ def health_read_has_nonself_subject(text: str) -> bool:
     if has_explicit_nonself_health_owner(text):
         return True
     subject_scope = clinical_interpretation_query_scope(text)
+    if _has_exact_clinical_report_target(subject_scope):
+        return False
     read_act = resolve_health_read_act(subject_scope)
     scoped_text = (
         read_act.active_clause if read_act.status == "active" else subject_scope

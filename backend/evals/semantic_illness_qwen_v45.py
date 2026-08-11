@@ -1122,7 +1122,54 @@ CASES = CASES + tuple(
     ),
 )
 
-assert len(CASES) == 631
+CASES = CASES + tuple(
+    allow_manage(
+        f"v45_punctuated_clinical_{index}",
+        f"查询我的化验记录，看看这些结果{intent}{terminal}",
+        "medical_exam",
+    )
+    for index, (intent, terminal) in enumerate(
+        zip(("是什么意思", "意味着什么", "代表什么", "怎么理解"), ("？", "。", "?", "!")),
+        1,
+    )
+) + (
+    blocked_manage(
+        "v45_quoted_meta_question",
+        "查询我的化验记录，看看“这些结果是什么意思”这个问题怎么解读",
+    ),
+) + tuple(
+    blocked_manage(
+        f"v45_open_chinese_owner_front_{index}",
+        f"{owner}的体检报告，帮我看看这些数据是什么意思",
+        "medical_exam",
+    )
+    for index, owner in enumerate(
+        "高飞 林涛 郭靖 马云 胡歌 罗翔 梁静 宋江 谢娜 唐僧 邓超 叶问 方舟 杜甫 程浩".split(),
+        1,
+    )
+) + tuple(
+    blocked_manage(
+        f"v45_open_chinese_owner_post_{index}",
+        f"查询体检报告，这是{owner}的，看看这些数据是什么意思",
+        "medical_exam",
+    )
+    for index, owner in enumerate(
+        "高飞 林涛 郭靖 马云 胡歌 罗翔 梁静 宋江 谢娜 唐僧 邓超 叶问 方舟 杜甫 程浩".split(),
+        1,
+    )
+) + tuple(
+    allow_manage(
+        f"v45_explicit_self_clinical_entity_{index}",
+        f"查询我的{entity}检查报告，看看这些数据是什么意思",
+        "medical_exam",
+    )
+    for index, entity in enumerate(
+        "PET-CT MRA HPV HIV ALT AST CRP HbA1c IgG4 BCR-ABL1 APOE MTHFR ANA HLA-B27 SLE CTA".split(),
+        1,
+    )
+)
+
+assert len(CASES) == 682
 
 
 base_host = urlparse(str(settings.tokenplan_base_url)).hostname

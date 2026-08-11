@@ -954,6 +954,7 @@ def test_v45_additional_meta_intent_forms_are_non_authorizing(text):
         "“本次结果”这个说法什么意思",
         "解释“报告数值”的用法",
         "看看“这些指标”这几个字是什么意思",
+        "看看“这些结果是什么意思”这个问题怎么解读",
     ),
 )
 def test_v45_meta_command_language_never_authorizes_health_read(meta_text):
@@ -987,6 +988,29 @@ def test_v45_natural_third_party_report_forms_are_nonself(text):
     assert semantics.has_explicit_nonself_health_owner(text)
     assert semantics.health_read_has_nonself_subject(text)
     assert semantics.is_clinical_result_interpretation(text) is False
+
+
+@pytest.mark.parametrize(
+    "owner",
+    "高飞 林涛 郭靖 马云 胡歌 罗翔 梁静 宋江 谢娜 唐僧 邓超 叶问 方舟 杜甫 程浩".split(),
+)
+def test_v45_open_vocabulary_chinese_owner_is_nonself(owner):
+    assert semantics.health_read_has_nonself_subject(
+        f"{owner}的体检报告，帮我看看这些数据是什么意思"
+    )
+    assert semantics.health_read_has_nonself_subject(
+        f"查询体检报告，这是{owner}的，看看这些数据是什么意思"
+    )
+
+
+@pytest.mark.parametrize(
+    "clinical_entity",
+    "PET-CT MRA HPV HIV ALT AST CRP HbA1c IgG4 BCR-ABL1 APOE MTHFR ANA HLA-B27 SLE CTA".split(),
+)
+def test_v45_explicit_self_clinical_entity_is_not_an_owner(clinical_entity):
+    text = f"查询我的{clinical_entity}检查报告，看看这些数据是什么意思"
+    assert not semantics.has_explicit_nonself_health_owner(text)
+    assert not semantics.health_read_has_nonself_subject(text)
 
 
 def test_v45_unresolved_record_clinical_interpretation_is_not_resolved():
@@ -1042,6 +1066,14 @@ def test_v45_generic_record_selection_is_unresolved(pointer):
     ),
 )
 def test_v45_clinical_interpretation_does_not_require_kankan_scaffold(text):
+    assert semantics.is_clinical_result_interpretation(text)
+
+
+@pytest.mark.parametrize("intent", ("是什么意思", "意味着什么", "代表什么", "怎么理解"))
+@pytest.mark.parametrize("terminal", ("？", "。", "?", "!"))
+def test_v45_clinical_interpretation_accepts_terminal_punctuation(intent, terminal):
+    text = f"查询我的化验记录，看看这些结果{intent}{terminal}"
+    assert semantics.clinical_interpretation_query_scope(text) == "查询我的化验记录"
     assert semantics.is_clinical_result_interpretation(text)
 
 

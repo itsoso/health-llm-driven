@@ -5939,6 +5939,21 @@ def test_v45_clinical_interpretation_without_kankan_allows_read(text, tool_name)
     assert decision.action == "allow", decision.reason
 
 
+@pytest.mark.parametrize("terminal", ("？", "。", "?", "!"))
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_clinical_interpretation_with_terminal_allows_read(terminal, tool_name):
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot(f"查询我的化验记录，看看这些结果是什么意思{terminal}"),
+        _request(tool_name, arguments),
+    )
+    assert decision.action == "allow", decision.reason
+
+
 def test_v42_capability_digest_is_stable_across_fresh_processes():
     backend_root = Path(__file__).parents[1]
     environment = os.environ.copy()
