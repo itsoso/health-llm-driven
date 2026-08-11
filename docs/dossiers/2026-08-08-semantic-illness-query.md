@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS on v44 candidate 782054125; exact-commit dual G4 re-review pending |
+| current_stage | G3 PASS on v45 candidate b121a7cdf; exact-commit dual G4 re-review pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -2084,6 +2084,38 @@ connection attempts and zero unexpected network destinations. Mechanically
 generated evidence is
 `backend/evals/results/semantic_illness_qwen_v44.json`. No v44 commit has been
 pushed or deployed. Two fresh independent reviews of the next exact
+documentation/evidence commit remain mandatory before G4 may pass.
+
+### v45 second G4 remediation and evidence
+
+The fresh code and safety reviews of
+`51d762ee178ce066f3aa15c972abacd419e98e64` both returned `NO-GO`. They
+reproduced generalized post-command vetoes still dispatching, concatenated
+other-owner generic health reads failing open, exact-ID illness lookup scope
+being bypassable at the executable boundary, ordinary self time/context scopes
+being falsely denied, non-illness record types being routed to unsupported
+individual GET endpoints, and route-evaluation evidence being undercounted.
+
+The v45 remediation binds the opaque mutation-lookup authority to the exact
+GoalSpec record ID at the final executable boundary; only illness uses its
+supported individual GET while other record families use their owner-scoped
+collection endpoint. The read state machine now recognizes generalized veto,
+meta-example and deferment classes; generic owner detection covers possessive
+and concatenated forms while preserving self/time/context scopes. The evaluator
+uses the synthetic adapter's actual lookup response to create the second-stage
+owner reference, records normalized arguments for every route, and counts all
+policy decisions rather than assuming two per case.
+
+The exact clean implementation/evaluation candidate is
+`b121a7cdf48d4e2a146a97aa3432fd8ed790f4d2`. The authorization/write core passes
+5,354/5,354 and the complete AgentExecutor compatibility set passes 686/686.
+Ruff, Python compilation, `git diff --check`, doc drift and Dossier consistency
+pass. The authorized live `qwen3.7-max` v45 run passes 447/447 anonymous
+synthetic cases and all 922 actual policy decisions, with zero database
+connection attempts and zero unexpected network destinations. Mechanically
+generated evidence is
+`backend/evals/results/semantic_illness_qwen_v45.json`. Nothing from v45 has
+been pushed or deployed. Two fresh independent reviews of the next exact
 documentation/evidence commit remain mandatory before G4 may pass.
 
 ### G5 Deployment Health: PENDING
