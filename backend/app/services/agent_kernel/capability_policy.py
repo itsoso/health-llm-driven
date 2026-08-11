@@ -24,12 +24,14 @@ from app.services.agent_kernel.health_semantics import (
     active_health_read_clause,
     authorization_behavior_digest,
     authorization_grammar_digest,
+    authorization_imported_behavior_names,
     authorization_module_behavior_names,
     extract_owned_illness_entity,
     has_explicit_health_read_request,
     health_read_cancelled,
     health_semantics_contract_payload,
     is_unresolved_health_reference,
+    normalize_health_authorization_text,
     resolve_health_read_act,
     resolve_medical_exam_query,
 )
@@ -92,7 +94,7 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v43"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v44"
 _HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v31"
 _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v24"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
@@ -570,7 +572,7 @@ _SEVERITY_TARGET_RE = re.compile(
     r"(?:严重程度|严重度|程度|强度)?\s*(?P<value>10|[1-9])\s*"
     r"(?:分(?!钟)|级|/\s*10)"
 )
-_WHOLE_RECORD_DELETE_EVIDENCE_VERSION = "record-delete-evidence-v4"
+_WHOLE_RECORD_DELETE_EVIDENCE_VERSION = "record-delete-evidence-v5"
 _HEALTH_MANAGE_CANONICAL_RECORD_TYPES = frozenset(
     {
         "diet",
@@ -882,9 +884,10 @@ def _authorized_health_manage_update_args(
         has_explicit_authorizing_update_request,
     )
 
-    if not has_explicit_authorizing_update_request(snapshot.envelope.text):
+    turn_text = normalize_health_authorization_text(snapshot.envelope.text)
+    if not has_explicit_authorizing_update_request(turn_text):
         return None
-    if len(_explicit_update_target_mentions(snapshot.envelope.text)) > 1:
+    if len(_explicit_update_target_mentions(turn_text)) > 1:
         return None
     requested_type = canonical_health_manage_record_type(args.get("record_type"))
     requested_id = canonical_health_manage_record_id(args.get("record_id"))
@@ -976,6 +979,7 @@ def _authorized_illness_update_args(
     args: dict[str, Any],
     requested_id: int,
 ) -> dict[str, Any] | None:
+    turn_text = normalize_health_authorization_text(snapshot.envelope.text)
     records = _owner_scoped_manage_list_records(snapshot, "illness")
     requested_record = next(
         (
@@ -990,11 +994,11 @@ def _authorized_illness_update_args(
     )
     if requested_record is None:
         return None
-    visible_ids = _explicit_illness_record_ids(snapshot.envelope.text)
+    visible_ids = _explicit_illness_record_ids(turn_text)
     if visible_ids and visible_ids != {requested_id}:
         return None
     if not visible_ids and not _illness_update_targets_owner(
-        snapshot.envelope.text,
+        turn_text,
         str(requested_record.get("name") or ""),
     ):
         return None
@@ -1006,14 +1010,14 @@ def _authorized_illness_update_args(
     if requested_data != patch:
         return None
 
-    explicit_target = _explicit_update_target(snapshot.envelope.text)
+    explicit_target = _explicit_update_target(turn_text)
     if explicit_target is not None:
         if explicit_target != ("illness", requested_id):
             return None
     else:
         target_names = {
             _normalize_entity_name(name)
-            for name in _illness_targets(snapshot.envelope.text)
+            for name in _illness_targets(turn_text)
             if _normalize_entity_name(name)
         }
         candidates = [
@@ -1043,7 +1047,9 @@ def _illness_update_patch(
     snapshot: TurnSnapshot,
     requested_id: int | None = None,
 ) -> dict[str, Any] | None:
-    text = "".join(str(snapshot.envelope.text or "").split())
+    text = "".join(
+        normalize_health_authorization_text(snapshot.envelope.text).split()
+    )
     statement = _illness_governing_state_statement(snapshot, text, requested_id)
     if statement is None:
         return None
@@ -2128,24 +2134,6 @@ def _owner_scoped_manage_list_records(
     return []
 
 
-CAPABILITY_IMPORTED_AUTHORIZATION_FUNCTIONS = (
-    "active_health_read_clause",
-    "extract_owned_illness_entity",
-    "has_explicit_health_read_request",
-    "health_read_cancelled",
-    "illness_entity_has_medical_semantics",
-    "illness_read_has_unowned_subject",
-    "illness_target_is_unowned_or_referential",
-    "is_explicit_aigc_media_provider_veto",
-    "is_explicit_write_cancellation",
-    "is_unresolved_health_reference",
-    "normalize_health_query_args",
-    "resolve_health_read_act",
-    "resolve_medical_exam_query",
-    "simple_illness_target",
-)
-
-
 def capability_policy_contract_payload() -> dict[str, Any]:
     """Return static, content-free metadata that governs tool authorization."""
     return {
@@ -2174,7 +2162,9 @@ def capability_policy_contract_payload() -> dict[str, Any]:
             tuple(
                 sorted(
                     set(authorization_module_behavior_names(globals(), __name__))
-                    | set(CAPABILITY_IMPORTED_AUTHORIZATION_FUNCTIONS)
+                    | set(
+                        authorization_imported_behavior_names(globals(), __name__)
+                    )
                 )
             ),
         ),

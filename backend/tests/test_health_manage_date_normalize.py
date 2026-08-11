@@ -93,7 +93,7 @@ def test_manage_mutation_goal_starts_with_owner_scoped_lookup():
     assert json.loads(call["function"]["arguments"]) == {
         "record_type": "illness",
         "operation": "list",
-        "limit": 20,
+        "record_id": 81,
     }
 
 
@@ -124,7 +124,7 @@ def test_manage_mutation_direct_write_is_canonicalized_to_lookup_first():
     assert json.loads(normalized[0]["function"]["arguments"]) == {
         "record_type": "illness",
         "operation": "list",
-        "limit": 20,
+        "record_id": 81,
     }
 
 
@@ -151,8 +151,55 @@ def test_manage_mutation_wrong_domain_lookup_is_rebound_to_typed_target():
     assert json.loads(normalized[0]["function"]["arguments"]) == {
         "record_type": "illness",
         "operation": "list",
-        "limit": 20,
+        "record_id": 81,
     }
+
+
+@pytest.mark.asyncio
+async def test_exact_illness_owner_lookup_reads_only_requested_record():
+    executor = AgentExecutor(MagicMock())
+    executor._api_get = AsyncMock(
+        return_value=json.dumps(
+            {"id": 81, "name": "痛风", "status": "active"},
+            ensure_ascii=False,
+        )
+    )
+
+    result = await executor._exec_health_manage(
+        "https://example.test/api/v1",
+        {},
+        {"record_type": "illness", "operation": "list", "record_id": 81},
+    )
+
+    assert json.loads(result)["id"] == 81
+    executor._api_get.assert_awaited_once_with(
+        "https://example.test/api/v1/illness/episodes/81",
+        {},
+    )
+
+
+def test_exact_owner_lookup_response_is_captured_as_one_actionable_reference():
+    executor = AgentExecutor(MagicMock())
+    executor._current_user_id = 1
+    executor._start_agent_kernel_turn(
+        user_id=1,
+        message="删除疾病记录81",
+        channel="chat",
+    )
+
+    executor._capture_owner_scoped_manage_list_reference(
+        "health_manage",
+        {"record_type": "illness", "operation": "list", "record_id": 81},
+        json.dumps({"id": 81, "name": "痛风", "status": "active"}),
+    )
+
+    assert executor._agent_kernel_snapshot is not None
+    reference = executor._agent_kernel_snapshot.actionable_references[0]
+    assert reference.kind == "owner_scoped_health_manage_list"
+    assert reference.data["record_type"] == "illness"
+    assert reference.data["records"] == (
+        {"id": 81, "name": "痛风", "status": "active"},
+    )
 
 
 def test_manage_mutation_write_is_not_rewritten_after_owner_lookup():

@@ -5636,11 +5636,19 @@ def _goal_lookup_arguments(goal: Optional[GoalSpec]) -> Optional[Dict[str, Any]]
     ):
         record_type = canonical_health_manage_record_type(goal.target_record_type)
         if record_type is not None:
-            return {
+            lookup = {
                 "record_type": record_type,
                 "operation": "list",
                 "limit": 20,
             }
+            target_values = dict(goal.target_values)
+            record_id = canonical_health_manage_record_id(
+                target_values.get("record_id")
+            )
+            if record_id is not None:
+                lookup.pop("limit", None)
+                lookup["record_id"] = record_id
+            return lookup
     return None
 
 
@@ -5659,6 +5667,10 @@ def _goal_lookup_call_matches(
         return False
     if goal is not None and goal.kind == "diet_recalculate_update":
         return _normalize_relative_date(args.get("date")) == expected.get("date")
+    expected_record_id = canonical_health_manage_record_id(expected.get("record_id"))
+    requested_record_id = canonical_health_manage_record_id(args.get("record_id"))
+    if expected_record_id != requested_record_id:
+        return False
     return True
 
 
@@ -9054,13 +9066,23 @@ class AgentExecutor:
         except (json.JSONDecodeError, TypeError, ValueError):
             return
         if isinstance(payload, dict):
-            payload = next(
+            nested = next(
                 (
                     payload.get(key)
                     for key in ("records", "items", "data")
                     if isinstance(payload.get(key), list)
                 ),
-                [],
+                None,
+            )
+            payload = (
+                nested
+                if nested is not None
+                else [payload]
+                if canonical_health_manage_record_id(
+                    payload.get("id", payload.get("record_id"))
+                )
+                is not None
+                else []
             )
         if not isinstance(payload, list):
             return
@@ -20371,7 +20393,7 @@ class AgentExecutor:
         """
         record_type = args.get("record_type")
         operation = args.get("operation")
-        record_id = args.get("record_id")
+        record_id = canonical_health_manage_record_id(args.get("record_id"))
         data = args.get("data") or {}
         if (
             record_type == "diet"
@@ -20517,6 +20539,17 @@ class AgentExecutor:
             return json.dumps(payload, ensure_ascii=False)
 
         if operation == "list":
+            if record_id is not None:
+                path_tmpl = record_paths.get(record_type)
+                if not path_tmpl:
+                    return local_write_rejection(
+                        "record_type_query_unsupported",
+                        message="当前记录类型不支持按记录查询。",
+                    )
+                return await self._api_get(
+                    f"{base}{path_tmpl.format(id=record_id)}",
+                    headers,
+                )
             path = list_paths.get(record_type)
             if not path:
                 return local_write_rejection(

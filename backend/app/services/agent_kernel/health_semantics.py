@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v5"
+HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v6"
 
 
 @dataclass(frozen=True)
@@ -49,7 +49,9 @@ class HealthReadActResolution:
     active_clause: str = ""
 
 
-CURRENT_USER_OWNERS = frozenset({"我", "我的", "本人", "本人的", "自己", "自己的"})
+CURRENT_USER_OWNERS = frozenset(
+    {"我", "我的", "我自己", "我自己的", "本人", "本人的", "自己", "自己的"}
+)
 
 # This is an authorization vocabulary, not a diagnostic ontology.  It contains
 # entities supported by the illness-record product contract plus ambiguous
@@ -288,6 +290,7 @@ CANONICAL_ILLNESS_ENTITIES = frozenset(
 ILLNESS_ENTITY_ALIASES = {
     "β-地中海贫血": "β地中海贫血",
     "her2+乳腺癌": "her2阳性乳腺癌",
+    "bcr:abl1阳性白血病": "bcr::abl1阳性白血病",
 }
 
 # A complete disease tail is strong evidence that an unknown preceding span is
@@ -532,6 +535,13 @@ HEALTH_METRIC_ENTITY_RE = re.compile(
     re.IGNORECASE,
 )
 
+HEALTH_RECORD_DOMAIN_ENTITY_RE = re.compile(
+    r"^(?:饮食|餐食|饮水|喝水|体重|腰围|血压|睡眠|心情|情绪|排便|"
+    r"运动|锻炼|症状|用药|药物|服药|补剂|营养补充剂|提醒|健康目标|"
+    r"体检|医学检查|检查报告|化验|检验|病症|疾病|病史|病历)$",
+    re.IGNORECASE,
+)
+
 BODY_OR_TIME_OWNER_RE = re.compile(
     r"(?:今天|昨天|前天|近期|最近|过去.+|近.+|本周|上周|本月|"
     r"头|头部|颅脑|脑部|胸部|腹部|腰椎|颈椎|肩|左肩|右肩|"
@@ -643,6 +653,7 @@ READ_TRAILING_WITHDRAWAL_RE = re.compile(
     r"(?:先别继续(?:查|看|查询|查看)?了|暂且作罢|先缓一缓|先停一停|"
     r"暂时别继续|先不要继续|到这儿(?:吧)?|先放一放|先搁着|先等等|"
     r"暂时不用|回头再说|晚点再说|稍后再说|不要执行|别执行|不执行|"
+    r"改天再说|等会儿再说|待会儿再说|到时候再说|以后再说|"
     r"打住|叫停|作罢|算了|停止|停下|中止|终止)"
     r"[，,。.!！?？\s]*$",
     re.IGNORECASE,
@@ -656,13 +667,27 @@ READ_NON_AUTHORIZING_RE = re.compile(
     r"(?:"
     r"(?:(?:已经|已|早就|刚)(?:查询|查找|查看|搜索|检索|翻看|调取|打开|查|看)?"
     r"(?:完成|结束|做完|查完|搞定)(?:了)?|"
-    r"(?:查询|查找|查看|搜索|检索|翻看|调取|打开|查|看)(?:完|完成|结束|做完)(?:了)?)|"
+    r"(?:查询|查找|查看|搜索|检索|翻看|调取|打开|查|看)"
+    r"[^,.!，。！？?;；、]{0,64}(?:查完|完成|结束|做完|搞定)(?:了)?$)|"
+    r"(?:记录|病史|病历|报告|结果)[^,.!，。！？?;；、]{0,12}"
+    r"(?:查完|完成|结束|做完|搞定)(?:了)?$|"
     r"这(?:件事|次查询|次查看)(?:已经|已|早就|刚)?(?:完成|结束|做完|搞定)(?:了)?|"
-    r"(?:只是|仅是|不过是|只是为了|仅供|是)(?:一个|一句|为了)?"
-    r"(?:示例|例子|演示|测试|测试用例|反例|假设|教程|文档里的命令)|"
+    r"(?:这)?(?:只是|仅是|不过是|只是为了|仅供|仅用于|是)"
+    r"(?:一个|一句|个|为了)?(?:示例|例子|举例|演示|测试|测试用例|反例|假设|教程|文档里的命令)|"
     r"(?:这句(?:话)?|这个指令|该指令)(?:来自|出自)|"
-    r"(?:的话)?会(?:不会)?(?:发生什么|怎样|怎么样|如何|有(?:什么)?(?:结果|影响)?)|"
-    r"是否安全"
+    r"(?:查询|查找|搜索|检索|调取|打开|查)"
+    r"[^,.!，。！？?;；、]{0,64}(?:的话)?(?:可能)?(?:会|能)"
+    r"(?:不会)?(?:发生什么|怎样|怎么样|如何|返回什么|得到什么(?:结果)?|"
+    r"有(?:什么)?(?:结果|影响)?)|"
+    r"(?:查询|查找|搜索|检索|调取|打开|查)"
+    r"[^,.!，。！？?;；、]{0,64}是否安全"
+    r")",
+    re.IGNORECASE,
+)
+READ_AUTHORITY_WITHDRAWAL_RE = re.compile(
+    r"(?:"
+    r"(?:我)?(?:没有|未|并未)(?:明确)?(?:授权|同意|允许|批准)|"
+    r"(?:不要|别|不)(?:真的|实际|正式|继续)?执行"
     r")",
     re.IGNORECASE,
 )
@@ -716,6 +741,12 @@ def normalize_entity(value: str) -> str:
     return normalized.translate(str.maketrans("‐‑‒–—−", "------"))
 
 
+def normalize_health_authorization_text(value: str) -> str:
+    """Normalize equivalent biomedical punctuation before policy parsing."""
+    normalized = normalize_entity(value)
+    return re.sub(r"(?<=[A-Z]):(?=[A-Z])", "::", normalized)
+
+
 def _illness_lookup_key(value: str) -> str:
     normalized = normalize_entity(value).casefold()
     return ILLNESS_ENTITY_ALIASES.get(normalized, normalized)
@@ -749,6 +780,12 @@ def resolve_health_read_act(text: str) -> HealthReadActResolution:
             READ_CANCELLATION_RE.search(clause)
             or NEGATED_HEALTH_ACTION_RE.search(clause)
             or READ_TRAILING_WITHDRAWAL_RE.search(clause)
+            or READ_AUTHORITY_WITHDRAWAL_RE.search(clause)
+            or (
+                clause in {"不", "不要", "别"}
+                and saw_read
+                and status == "active"
+            )
         )
         non_authorizing = READ_NON_AUTHORIZING_RE.search(clause) is not None
         deferred = READ_DEFERRED_ACTION_RE.search(clause) is not None
@@ -1087,12 +1124,39 @@ def _health_read_entity_expression(text: str) -> str:
 
 def health_read_has_nonself_subject(text: str) -> bool:
     """Detect explicit or concatenated non-current-user health subjects."""
-    exam = resolve_medical_exam_query(text)
+    read_act = resolve_health_read_act(text)
+    scoped_text = read_act.active_clause if read_act.status == "active" else text
+    exam = resolve_medical_exam_query(scoped_text)
     if exam.status == "nonself":
         return True
-    entity = _health_read_entity_expression(text)
+    entity = _health_read_entity_expression(scoped_text)
     if not entity:
         return False
+    possessive = re.fullmatch(r"(?P<owner>.+?)的(?P<target>.+)", entity)
+    if possessive is not None:
+        owner = possessive.group("owner").strip()
+        target = possessive.group("target").strip()
+        target_resolution = resolve_illness_entity(target)
+        target_is_health = bool(
+            target_resolution.status == "exact"
+            or HEALTH_METRIC_ENTITY_RE.fullmatch(target)
+            or HEALTH_RECORD_DOMAIN_ENTITY_RE.fullmatch(target)
+            or EXACT_MEDICAL_EXAM_ENTITY_RE.fullmatch(target)
+        )
+        owner_is_scope = bool(
+            BODY_OR_TIME_OWNER_RE.fullmatch(owner)
+            or re.search(
+                r"(?:今天|昨日|昨天|前天|最近|过去|近\d|小时|天|周|月|年|"
+                r"上传|生成|记录|查询|查看|调取|打开)",
+                owner,
+            )
+        )
+        if (
+            owner not in CURRENT_USER_OWNERS
+            and not owner_is_scope
+            and target_is_health
+        ):
+            return True
     entity, _explicit_self = _strip_current_user_owner(entity)
     entity = re.sub(r"^(?:在|关于|有关)", "", entity)
     entity = _strip_exam_request_scaffolding(entity)
@@ -1218,6 +1282,22 @@ def authorization_module_behavior_names(
             for name, value in namespace.items()
             if inspect.isfunction(value)
             and getattr(value, "__module__", "") == module_name
+        )
+    )
+
+
+def authorization_imported_behavior_names(
+    namespace: dict[str, object],
+    module_name: str,
+) -> tuple[str, ...]:
+    """Return imported application functions that may affect local decisions."""
+    return tuple(
+        sorted(
+            name
+            for name, value in namespace.items()
+            if inspect.isfunction(value)
+            and getattr(value, "__module__", "") != module_name
+            and getattr(value, "__module__", "").startswith("app.")
         )
     )
 

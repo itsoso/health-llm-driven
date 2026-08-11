@@ -172,7 +172,7 @@ def test_v39_medical_exam_resolution_rejects_unpunctuated_nonself_subject(text):
 def test_v39_health_semantics_contract_is_versioned_and_content_digested():
     payload = semantics.health_semantics_contract_payload()
 
-    assert payload["version"] == "health-semantics-v5"
+    assert payload["version"] == "health-semantics-v6"
     assert re.fullmatch(r"[0-9a-f]{64}", payload["content_digest"])
 
 
@@ -594,3 +594,71 @@ def test_v42_semantic_digest_tracks_transitive_local_helper(monkeypatch):
     monkeypatch.setattr(semantics, "has_positive_health_read_verb", lambda _text: False)
 
     assert semantics.health_semantics_contract_payload()["content_digest"] != before
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "查询我的痛风记录完成了",
+        "查询我的痛风记录结束了",
+        "查询我的痛风记录做完了",
+        "查询我的痛风记录搞定了",
+        "查询我的痛风记录，改天再说",
+        "查询我的痛风记录，等会儿再说",
+        "查询我的痛风记录，到时候再说",
+        "查询我的痛风记录，这是个例子",
+        "查询我的痛风记录，这只是举例",
+        "查询我的痛风记录，仅用于演示",
+        "查询我的痛风记录是个测试用例",
+        "查询我的痛风记录仅用于测试",
+        "查询我的痛风记录是个假设",
+        "查询我的痛风记录可能会返回什么",
+        "查询我的痛风记录能得到什么结果",
+        "查询我的痛风记录？不",
+        "查询我的痛风记录，我没有授权",
+        "查询我的痛风记录，但不要真的执行",
+    ),
+)
+def test_v44_structural_non_authorizing_read_has_no_active_clause(text):
+    resolution = semantics.resolve_health_read_act(text)
+
+    assert resolution.status != "active"
+    assert resolution.active_clause == ""
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    (
+        "查询我的痛风记录完成了",
+        "查询我的痛风记录，这是个例子",
+        "查询我的痛风记录，改天再说",
+        "查询我的痛风记录能得到什么结果",
+    ),
+)
+def test_v44_later_explicit_read_restarts_after_meta_clause(prefix):
+    resolution = semantics.resolve_health_read_act(
+        f"{prefix}；现在查询我的房颤记录"
+    )
+
+    assert resolution.status == "active"
+    assert resolution.active_clause == "查询我的房颤记录"
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "查询我的血压记录，看看是否安全",
+        "查询我的血糖记录，看看会有什么影响",
+        "查询我的体重记录，看看会怎样变化",
+    ),
+)
+def test_v44_query_then_health_assessment_remains_active(text):
+    assert semantics.resolve_health_read_act(text).status == "active"
+
+
+@pytest.mark.parametrize("owner", ("Alice", "MIA2", "CACHE-1", "小王"))
+@pytest.mark.parametrize("entity", ("血压", "体重", "睡眠", "用药"))
+def test_v44_generic_health_domain_explicit_other_owner_is_nonself(owner, entity):
+    assert semantics.health_read_has_nonself_subject(
+        f"查询{owner}的{entity}记录"
+    ) is True

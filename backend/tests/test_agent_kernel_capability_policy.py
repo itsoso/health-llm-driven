@@ -347,7 +347,7 @@ def test_explicit_record_with_followup_question_allows_health_record(
         _request("health_record", record_args),
     )
 
-    assert decision.action == "allow"
+    assert decision.action == "allow", decision.reason
     assert decision.reason == "explicit_create_intent"
 
 
@@ -3173,7 +3173,7 @@ def test_clear_active_illness_state_remains_a_supported_update():
         ),
     )
 
-    assert decision.action == "allow"
+    assert decision.action == "allow", decision.reason
     assert decision.normalized_args["data"] == {"status": "active"}
 
 
@@ -4425,8 +4425,8 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v43"
-    assert payload["health_semantics"]["version"] == "health-semantics-v5"
+    assert payload["contract_version"] == "agent-capability-policy-v44"
+    assert payload["health_semantics"]["version"] == "health-semantics-v6"
     assert re.fullmatch(r"[0-9a-f]{64}", payload["health_semantics"]["content_digest"])
     assert payload["health_record_target_binding"] == {
         "version": "authorized-target-set-v31",
@@ -4443,7 +4443,7 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
         },
     }
     assert (
-        payload["whole_record_delete_evidence_version"] == "record-delete-evidence-v4"
+        payload["whole_record_delete_evidence_version"] == "record-delete-evidence-v5"
     )
     assert (
         payload["health_manage_update_evidence_version"] == "record-update-evidence-v24"
@@ -4925,6 +4925,119 @@ def test_v43_capability_digest_tracks_imported_authorization_binding(monkeypatch
 
 
 @pytest.mark.parametrize(
+    ("module", "name", "replacement"),
+    (
+        (capability_policy_module, "classify_clinician_turn", lambda *_a, **_k: None),
+        (capability_policy_module, "get_tool_spec", lambda *_a, **_k: None),
+        (goal_spec_module, "_semantic_illness_entity", lambda *_a, **_k: False),
+        (goal_spec_module, "_semantic_unowned_target", lambda *_a, **_k: True),
+        (goal_spec_module, "health_read_has_nonself_subject", lambda *_a, **_k: True),
+    ),
+)
+def test_v44_capability_digest_tracks_all_imported_decision_bindings(
+    monkeypatch,
+    module,
+    name,
+    replacement,
+):
+    before = capability_policy_digest()
+
+    monkeypatch.setattr(module, name, replacement)
+
+    assert capability_policy_digest() != before
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "查询我的痛风记录完成了",
+        "查询我的痛风记录结束了",
+        "查询我的痛风记录做完了",
+        "查询我的痛风记录搞定了",
+        "查询我的痛风记录，改天再说",
+        "查询我的痛风记录，等会儿再说",
+        "查询我的痛风记录，到时候再说",
+        "查询我的痛风记录，这是个例子",
+        "查询我的痛风记录，这只是举例",
+        "查询我的痛风记录，仅用于演示",
+        "查询我的痛风记录是个测试用例",
+        "查询我的痛风记录仅用于测试",
+        "查询我的痛风记录是个假设",
+        "查询我的痛风记录可能会返回什么",
+        "查询我的痛风记录能得到什么结果",
+        "查询我的痛风记录？不",
+        "查询我的痛风记录，我没有授权",
+        "查询我的痛风记录，但不要真的执行",
+    ),
+)
+def test_v44_structural_non_authorizing_read_blocks_both_read_surfaces(message):
+    for tool_name, arguments in (
+        ("health_query", {"dimension": "illness", "keyword": "痛风"}),
+        ("health_manage", {"record_type": "illness", "operation": "list"}),
+    ):
+        decision = decide_tool_capability(
+            _snapshot(message),
+            _request(tool_name, arguments),
+        )
+        assert decision.action == "block", (tool_name, decision.reason)
+
+
+@pytest.mark.parametrize("owner", ("Alice", "MIA2", "CACHE-1", "小王"))
+@pytest.mark.parametrize(
+    ("entity", "record_type"),
+    (
+        ("血压", "blood_pressure"),
+        ("体重", "weight"),
+        ("睡眠", "sleep"),
+        ("用药", "medication"),
+    ),
+)
+def test_v44_other_owner_generic_health_manage_list_is_blocked(
+    owner,
+    entity,
+    record_type,
+):
+    decision = decide_tool_capability(
+        _snapshot(f"查询{owner}的{entity}记录"),
+        _request(
+            "health_manage",
+            {"record_type": record_type, "operation": "list"},
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "health_query_subject_not_current_user"
+
+
+@pytest.mark.parametrize(
+    ("message", "tool_name", "arguments"),
+    (
+        (
+            "查询我的血压记录，看看是否安全",
+            "health_manage",
+            {"record_type": "blood_pressure", "operation": "list"},
+        ),
+        (
+            "查询我的体重记录，看看会怎样变化",
+            "health_manage",
+            {"record_type": "weight", "operation": "list"},
+        ),
+    ),
+)
+def test_v44_explicit_query_then_health_assessment_is_allowed(
+    message,
+    tool_name,
+    arguments,
+):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(tool_name, arguments),
+    )
+
+    assert decision.action == "allow", decision.reason
+
+
+@pytest.mark.parametrize(
     "entity",
     (
         "MIA2显微镜下多血管炎",
@@ -5140,7 +5253,7 @@ def test_v42_versioned_biomedical_terminology_routes_without_false_denial(
         _request(tool_name, proposed),
     )
 
-    assert decision.action == "allow"
+    assert decision.action == "allow", decision.reason
 
 
 @pytest.mark.parametrize(
@@ -5207,8 +5320,15 @@ def test_v42_exact_delete_grammar_and_capability_share_one_target(
     assert decision.action == "allow"
 
 
-def test_v42_biomedical_colon_illness_update_remains_authorized():
-    message = "我自己的BCR::ABL1阳性白血病仍未好，修改记录"
+@pytest.mark.parametrize(
+    "message",
+    (
+        "我自己的BCR::ABL1阳性白血病仍未好，修改记录",
+        "我自己的BCR：：ABL1阳性白血病仍未好，修改记录",
+        "我自己的BCR:ABL1阳性白血病仍未好，修改记录",
+    ),
+)
+def test_v44_biomedical_colon_illness_update_remains_authorized(message):
     snapshot = replace(
         _snapshot(message),
         actionable_references=(
@@ -5240,7 +5360,7 @@ def test_v42_biomedical_colon_illness_update_remains_authorized():
         ),
     )
 
-    assert decision.action == "allow"
+    assert decision.action == "allow", decision.reason
 
 
 @pytest.mark.parametrize(

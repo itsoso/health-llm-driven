@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import date, timedelta
 import hashlib
 import json
@@ -19,11 +20,13 @@ from app.services.agent_kernel.goal_registry import (
 from app.services.agent_kernel.health_semantics import (
     authorization_behavior_digest,
     authorization_grammar_digest,
+    authorization_imported_behavior_names,
     authorization_module_behavior_names,
     extract_owned_illness_entity,
     health_read_has_nonself_subject,
     illness_entity_has_medical_semantics as _semantic_illness_entity,
     illness_target_is_unowned_or_referential as _semantic_unowned_target,
+    normalize_health_authorization_text,
 )
 from app.services.agent_kernel.types import (
     ActionableReference,
@@ -127,7 +130,7 @@ SIMPLE_ILLNESS_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 SIMPLE_ILLNESS_ACRONYMS = frozenset({"sle"})
-GOAL_SPEC_CONTRACT_VERSION = "goal-spec-v43"
+GOAL_SPEC_CONTRACT_VERSION = "goal-spec-v44"
 HEALTH_MANAGE_MUTATION_COMMAND_RE = re.compile(
     r"(?:"
     r"^(?:请(?:你|您)?|麻烦(?:你|您)?|请帮我|帮我|给我|替我)?"
@@ -197,7 +200,8 @@ def compile_goal_spec(
     actionable_references: Sequence[ActionableReference] = (),
 ) -> GoalSpec:
     """Create the executor contract without granting authority to visible data."""
-    text = _normalize(envelope.text)
+    authorization_text = normalize_health_authorization_text(envelope.text)
+    text = _normalize(authorization_text)
     if intent.is_write and _explicit_target_date_is_invalid(
         text,
         context.current_time.date(),
@@ -213,7 +217,7 @@ def compile_goal_spec(
         )
 
     specialized = _GOAL_COMPILER_REGISTRY.compile(
-        envelope=envelope,
+        envelope=replace(envelope, text=authorization_text),
         context=context,
         intent=intent,
         actionable_references=actionable_references,
@@ -632,15 +636,6 @@ def _format_health_manage_mutation_prompt(goal: GoalSpec) -> str:
     )
 
 
-GOAL_SPEC_IMPORTED_AUTHORIZATION_FUNCTIONS = (
-    "explicit_whole_record_delete_target",
-    "extract_owned_illness_entity",
-    "has_explicit_authorizing_update_request",
-    "has_mixed_write_polarity",
-    "is_explicit_write_cancellation",
-)
-
-
 def goal_spec_contract_payload() -> dict[str, str]:
     """Return code- and grammar-sensitive goal authorization evidence."""
     content = {
@@ -651,7 +646,9 @@ def goal_spec_contract_payload() -> dict[str, str]:
             tuple(
                 sorted(
                     set(authorization_module_behavior_names(globals(), __name__))
-                    | set(GOAL_SPEC_IMPORTED_AUTHORIZATION_FUNCTIONS)
+                    | set(
+                        authorization_imported_behavior_names(globals(), __name__)
+                    )
                 )
             ),
         ),
