@@ -2208,6 +2208,31 @@ Mechanically generated evidence remains
 or deployed. Both G4 reviews must be repeated against the next exact evidence
 commit because implementation changed after the prior safety `GO`.
 
+### v45 sixth G4 remediation and evidence
+
+Both reviews of `330b0acd1e62f3865702d4c9bc6902f54f12ea32`
+returned `NO-GO` after fresh synonym fuzzing showed that command-meta objects
+combined with `是什么意思`, `是啥意思` or `什么意思` retained read authority.
+Clinical metric interpretation using the same endings correctly remained a
+valid read.
+
+The remediation extends the structural command-meta ending as one synonym
+class while continuing to require an attached discourse object. Positive
+metric controls and negative command controls cover all four endings on both
+read surfaces.
+
+The exact clean implementation/evaluation candidate is
+`55d2a1c4e48c6229dd12f4279f9eeae16b21c452`. The authorization/write core
+passes 5,271/5,271 and the complete AgentExecutor compatibility set passes
+686/686. Ruff, Python compilation, `git diff --check`, doc drift and Dossier
+consistency pass. The authorized live `qwen3.7-max` run passes 504/504
+anonymous synthetic cases and all 1,266 actual policy decisions, with zero
+database connection attempts and zero unexpected network destinations.
+Mechanically generated evidence remains
+`backend/evals/results/semantic_illness_qwen_v45.json`. Nothing has been pushed
+or deployed. Both G4 reviews must be repeated against the next exact evidence
+commit.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.
