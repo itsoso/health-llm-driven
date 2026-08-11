@@ -252,6 +252,42 @@ describe('SettingsScreen', () => {
     expect(mockPush).toHaveBeenCalledWith('/account-security');
   });
 
+  it.each([
+    ['GPS / 城市定位', '/location'],
+    ['Garmin', '/garmin-connection'],
+    ['数据连接与授权', '/data-connections'],
+    ['数据来源', '/device-sources'],
+    ['化验记录', '/medical-exams'],
+    ['导入体检报告', '/import'],
+    ['用药管理', '/medications'],
+    ['补剂库存', '/supplement-inventory'],
+    ['我的基因', '/genetic-report'],
+    ['健康目标', '/goals'],
+    ['今日议程', '/agenda'],
+    ['今日时间轴 · 工作时间', '/day-schedule'],
+    ['日历 · 日程 + 多源管理', '/calendar'],
+    ['健康分析', '/insights'],
+    ['医生回路', '/doctor-loop'],
+    ['安全告警', '/alerts'],
+    ['推送通知', '/notification-settings'],
+    ['科学用眼 (20-20-20)', '/eye-care'],
+    ['语音风格', '/voice-style'],
+    ['账号安全', '/account-security'],
+    ['隐私政策', '/privacy-policy'],
+    ['家庭健康', '/family'],
+    ['健康日记', '/journal'],
+    ['硬性指令', '/directives'],
+    ['数据自检', '/data-integrity'],
+  ])('opens production settings entry %s', (label, route) => {
+    const { getByText } = render(<SettingsScreen />);
+    mockPush.mockClear();
+
+    fireEvent.press(getByText(label));
+
+    expect(mockPush).toHaveBeenCalledTimes(1);
+    expect(mockPush).toHaveBeenCalledWith(route);
+  });
+
   it('explains that the user remains signed in when the logout barrier fails', async () => {
     mockLogout.mockRejectedValueOnce({ code: 'LOGOUT_BARRIER_FAILED' });
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((title, _message, buttons) => {
