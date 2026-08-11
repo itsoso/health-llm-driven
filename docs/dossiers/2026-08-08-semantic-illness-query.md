@@ -4,7 +4,7 @@
 |---|---|
 | date | 2026-08-08 |
 | status | in_progress |
-| current_stage | G3 PASS on v43 implementation candidate b1abfe816; fresh exact-commit dual G4 pending |
+| current_stage | G3 PASS on v44 candidate 782054125; exact-commit dual G4 re-review pending |
 | owner_surface | Backend Agent / Mobile, Mac and Web chat |
 
 ## Problem
@@ -2055,6 +2055,36 @@ TokenPlan endpoint reachable. Mechanically generated evidence is
 `backend/evals/results/semantic_illness_qwen_v43.json`. No v43 commit has been
 pushed or deployed. The next documentation/evidence commit must receive two
 fresh independent GO decisions before G4, push or deployment.
+
+### v44 G4 remediation and evidence
+
+The exact-review v43 candidate `7502fd1cb01707fd72289b86c4711866ab1b507a`
+received two independent `NO-GO` decisions. The blocking findings were:
+non-authorizing speech-act variants still dispatching; generic non-illness
+`health_manage list` requests for an explicit other owner reading current-user
+data; exact illness delete lookup reading the full illness collection; BCR
+fullwidth/single-colon update variants being falsely denied; imported decision
+bindings missing from behavior digests; and the evaluator reporting normalized
+calls as model calls while testing only mutation lookup, not final update/delete.
+
+The v44 candidate closes those findings with ordered speech-act resolution,
+generic explicit-owner detection across supported health domains, exact-ID
+owner lookup, biomedical punctuation normalization, dynamically discovered
+imported authorization bindings, and a two-stage mutation evaluation. The
+evaluation artifact now separates raw `model_calls` from post-normalization
+`evaluated_calls`.
+
+The exact clean implementation/evaluation candidate is
+`782054125bdb97f0b7c285cbaf02a47054560eb2`. The authorization/write core passes
+5,259/5,259 and the complete AgentExecutor compatibility set passes 686/686.
+Ruff, Python compilation, `git diff --check`, doc drift and Dossier consistency
+pass. The authorized live `qwen3.7-max` v44 run passes 337/337 anonymous
+synthetic cases and 674/674 enforce/shadow route evaluations, with zero database
+connection attempts and zero unexpected network destinations. Mechanically
+generated evidence is
+`backend/evals/results/semantic_illness_qwen_v44.json`. No v44 commit has been
+pushed or deployed. Two fresh independent reviews of the next exact
+documentation/evidence commit remain mandatory before G4 may pass.
 
 ### G5 Deployment Health: PENDING
 
