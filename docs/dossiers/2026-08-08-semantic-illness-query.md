@@ -2529,6 +2529,20 @@ Mechanically generated evidence remains
 or deployed. Both frozen-scope G4 reviews must be repeated against the exact
 evidence commit.
 
+### v45 post-main-merge verification
+
+Both frozen-scope G4 reviews returned `GO` for
+`c9e7c6764c9d355e2118665f6fabab7148f96559`. Latest local `main` at
+`aace9e9ad31d1bb2b3a62c4331e1efb83969eece` was then merged without conflict,
+producing candidate `871f18190211b7f1c311be9a30a3d4b5839d6594`.
+
+After the merge, the authorization/write core again passes 5,836/5,836 and
+the complete AgentExecutor compatibility set passes 686/686. The authorized
+live `qwen3.7-max` run again passes 793/793 cases and all 2,312 policy
+decisions, with zero database connection attempts and zero unexpected network
+destinations. The frozen review scope remains unchanged; this evidence exists
+only to verify integration with latest main before deployment.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.
