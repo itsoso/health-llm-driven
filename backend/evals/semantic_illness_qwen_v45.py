@@ -956,7 +956,39 @@ CASES = CASES + tuple(
     )
 )
 
-assert len(CASES) == 555
+CASES = CASES + tuple(
+    blocked_manage(f"v45_additional_meta_intent_{index}", text)
+    for index, text in enumerate(
+        (
+            "查询我的痛风记录，请解释这个指令",
+            "查询我的痛风记录，请解释这番话",
+            "查询我的痛风记录，查询表达什么",
+            "我想了解这个指令是什么意思",
+            "告诉我这个命令啥意思",
+            "看看这个指令怎么用",
+            "看看这个请求怎么执行",
+        ),
+        1,
+    )
+) + (
+    blocked_manage(
+        "v45_third_party_clinical_interpretation",
+        "查询Alice的检查记录，看看这些数据是什么意思",
+        "medical_exam",
+    ),
+    blocked_manage(
+        "v45_unresolved_clinical_interpretation",
+        "查询上一条化验记录，看看这些结果是什么意思",
+        "medical_exam",
+    ),
+    allow_manage(
+        "v45_check_result_interpretation",
+        "查询我的化验记录看看这些检查结果是什么意思",
+        "medical_exam",
+    ),
+)
+
+assert len(CASES) == 565
 
 
 base_host = urlparse(str(settings.tokenplan_base_url)).hostname

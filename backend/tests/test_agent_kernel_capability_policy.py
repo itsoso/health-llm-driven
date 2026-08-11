@@ -5822,6 +5822,53 @@ def test_v42_non_authorizing_read_never_dispatches_manage_list(message):
     assert decision.action == "block"
 
 
+@pytest.mark.parametrize(
+    "text",
+    (
+        "查询我的痛风记录，请解释这个指令",
+        "查询我的痛风记录，请解释这番话",
+        "查询我的痛风记录，查询表达什么",
+        "我想了解这个指令是什么意思",
+        "告诉我这个命令啥意思",
+        "看看这个指令怎么用",
+        "看看这个请求怎么执行",
+    ),
+)
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_additional_meta_intent_forms_block_read(text, tool_name):
+    arguments = (
+        {"dimension": "illness", "keyword": "痛风"}
+        if tool_name == "health_query"
+        else {"record_type": "illness", "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot(text),
+        _request(tool_name, arguments),
+    )
+    assert decision.action == "block", decision.reason
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "查询Alice的检查记录，看看这些数据是什么意思",
+        "查询上一条化验记录，看看这些结果是什么意思",
+    ),
+)
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_clinical_interpretation_does_not_bypass_scope_guards(text, tool_name):
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot(text),
+        _request(tool_name, arguments),
+    )
+    assert decision.action == "block", decision.reason
+
+
 def test_v42_capability_digest_is_stable_across_fresh_processes():
     backend_root = Path(__file__).parents[1]
     environment = os.environ.copy()

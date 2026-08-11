@@ -920,6 +920,34 @@ def test_v45_adjacent_clinical_data_objects_remain_active(metric_object):
 
 
 @pytest.mark.parametrize(
+    "text",
+    (
+        "查询我的痛风记录，请解释这个指令",
+        "查询我的痛风记录，请解释这番话",
+        "查询我的痛风记录，查询表达什么",
+        "我想了解这个指令是什么意思",
+        "告诉我这个命令啥意思",
+        "看看这个指令怎么用",
+        "看看这个请求怎么执行",
+    ),
+)
+def test_v45_additional_meta_intent_forms_are_non_authorizing(text):
+    assert semantics.resolve_health_read_act(text).status != "active"
+
+
+def test_v45_third_party_clinical_interpretation_is_not_current_user():
+    assert semantics.is_clinical_result_interpretation(
+        "查询Alice的检查记录，看看这些数据是什么意思"
+    ) is False
+
+
+def test_v45_unresolved_record_clinical_interpretation_is_not_resolved():
+    assert semantics.is_clinical_result_interpretation(
+        "查询上一条化验记录，看看这些结果是什么意思"
+    ) is False
+
+
+@pytest.mark.parametrize(
     "veto",
     ("不允许", "不同意", "未同意", "没有批准", "不授权"),
 )
