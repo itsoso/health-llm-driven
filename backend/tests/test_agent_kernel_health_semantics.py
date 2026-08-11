@@ -850,9 +850,39 @@ def test_v45_adjacent_meta_object_variants_revoke_read(meta_object):
     ).status != "active"
 
 
+@pytest.mark.parametrize(
+    "meta_object",
+    ("指令", "命令", "请求", "查询", "操作"),
+)
+def test_v45_bare_meta_objects_revoke_read(meta_object):
+    assert semantics.resolve_health_read_act(
+        f"查询我的痛风记录，看看{meta_object}怎么理解"
+    ).status != "active"
+
+
 def test_v45_unpunctuated_metric_interpretation_remains_active():
     assert semantics.resolve_health_read_act(
         "查询我的化验记录看看这些指标是什么意思"
+    ).status == "active"
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "查询我的痛风记录，看看这个命令指的是什么",
+        "查询我的痛风记录，看看这段话是什么意思",
+        "查询我的痛风记录，看看此命令是什么意思",
+        "查询我的痛风记录，看看上述指令怎么理解",
+    ),
+)
+def test_v45_extended_meta_object_and_intent_axes_revoke_read(text):
+    assert semantics.resolve_health_read_act(text).status != "active"
+
+
+@pytest.mark.parametrize("metric_object", ("这些指标", "这些数值", "这些读数"))
+def test_v45_unpunctuated_metric_object_variants_remain_active(metric_object):
+    assert semantics.resolve_health_read_act(
+        f"查询我的化验记录看看{metric_object}是什么意思"
     ).status == "active"
 
 

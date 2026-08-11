@@ -5314,6 +5314,22 @@ def test_v45_adjacent_meta_object_variants_block_read(tool_name, meta_object):
     assert decision.action == "block", decision.reason
 
 
+@pytest.mark.parametrize("meta_object", ("指令", "命令", "请求", "查询", "操作"))
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_bare_meta_objects_block_read(tool_name, meta_object):
+    arguments = (
+        {"dimension": "illness", "keyword": "痛风"}
+        if tool_name == "health_query"
+        else {"record_type": "illness", "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot(f"查询我的痛风记录，看看{meta_object}怎么理解"),
+        _request(tool_name, arguments),
+    )
+
+    assert decision.action == "block", decision.reason
+
+
 @pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
 def test_v45_unpunctuated_metric_interpretation_allows_read(tool_name):
     arguments = (
@@ -5323,6 +5339,49 @@ def test_v45_unpunctuated_metric_interpretation_allows_read(tool_name):
     )
     decision = decide_tool_capability(
         _snapshot("查询我的化验记录看看这些指标是什么意思"),
+        _request(tool_name, arguments),
+    )
+
+    assert decision.action == "allow", decision.reason
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "查询我的痛风记录，看看这个命令指的是什么",
+        "查询我的痛风记录，看看这段话是什么意思",
+        "查询我的痛风记录，看看此命令是什么意思",
+        "查询我的痛风记录，看看上述指令怎么理解",
+    ),
+)
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_extended_meta_object_and_intent_axes_block_read(text, tool_name):
+    arguments = (
+        {"dimension": "illness", "keyword": "痛风"}
+        if tool_name == "health_query"
+        else {"record_type": "illness", "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot(text),
+        _request(tool_name, arguments),
+    )
+
+    assert decision.action == "block", decision.reason
+
+
+@pytest.mark.parametrize("metric_object", ("这些指标", "这些数值", "这些读数"))
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_unpunctuated_metric_object_variants_allow_read(
+    metric_object,
+    tool_name,
+):
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot(f"查询我的化验记录看看{metric_object}是什么意思"),
         _request(tool_name, arguments),
     )
 
