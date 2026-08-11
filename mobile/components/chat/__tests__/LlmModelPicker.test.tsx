@@ -65,8 +65,8 @@ describe('Mobile LlmModelPicker', () => {
     const triggerStyle = StyleSheet.flatten(
       getByLabelText('切换 AI 模型，当前 Qwen3.7 Plus').props.style,
     );
-    expect(titleStyle).toEqual(expect.objectContaining({ fontSize: 21, lineHeight: 26 }));
-    expect(getByTestId('icon-chevron-down').props.size).toBe(13);
+    expect(titleStyle).toEqual(expect.objectContaining({ fontSize: 20, lineHeight: 25 }));
+    expect(getByTestId('icon-chevron-down').props.size).toBe(12);
     expect(triggerStyle.minHeight).toBeGreaterThanOrEqual(44);
   });
 

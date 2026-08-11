@@ -45,7 +45,7 @@ describe('ChatTodayFocusCard', () => {
   });
 
   it('renders a compact direct context strip without counts or an eyebrow', () => {
-    const { getByText, getByTestId, queryByText } = render(
+    const { getByText, getByTestId, queryByText, queryByTestId } = render(
       <ChatTodayFocusCard model={focusModel()} />,
     );
 
@@ -54,11 +54,13 @@ describe('ChatTodayFocusCard', () => {
     expect(queryByText('今日重点')).toBeNull();
     expect(queryByText(/接下来/)).toBeNull();
     expect(queryByText(/已完成/)).toBeNull();
+    expect(queryByTestId('chat-today-focus-icon')).toBeNull();
 
     const style = StyleSheet.flatten(getByTestId('chat-today-focus-card').props.style);
     expect(style.borderRadius).toBeLessThanOrEqual(10);
-    expect(style.minHeight).toBeLessThanOrEqual(48);
+    expect(style.minHeight).toBe(40);
     expect(style.shadowOpacity ?? 0).toBe(0);
+    expect(getByText('降低今天的训练强度').props.numberOfLines).toBe(2);
   });
 
   it('renders caution context as a neutral rail with semantic color only on the accent', () => {
@@ -75,11 +77,9 @@ describe('ChatTodayFocusCard', () => {
 
     const stripStyle = StyleSheet.flatten(getByTestId('chat-today-focus-card').props.style);
     const accentStyle = StyleSheet.flatten(getByTestId('chat-today-focus-accent').props.style);
-    const iconStyle = StyleSheet.flatten(getByTestId('chat-today-focus-icon').props.style);
     expect(stripStyle.backgroundColor).toBe(C.surface2);
-    expect(stripStyle.minHeight).toBe(44);
+    expect(stripStyle.minHeight).toBe(40);
     expect(accentStyle.backgroundColor).toBe(revaSemantic.caution.fg);
-    expect(iconStyle).toEqual(expect.objectContaining({ width: 28, height: 28 }));
     expect(StyleSheet.flatten(getByText('待处理').props.style)).toEqual(
       expect.objectContaining({ fontSize: 14, lineHeight: 19 }),
     );
@@ -100,13 +100,14 @@ describe('ChatTodayFocusCard', () => {
     );
 
     const openButton = getByLabelText('打开今日计划');
-    expect(StyleSheet.flatten(openButton.props.style).minHeight).toBe(44);
+    expect(StyleSheet.flatten(openButton.props.style).minHeight).toBe(40);
+    expect(openButton.props.hitSlop).toBe(4);
     fireEvent.press(openButton);
     expect(onOpenToday).toHaveBeenCalledTimes(1);
     const dismissButton = getByLabelText('关闭当前提示');
     expect(dismissButton.props.hitSlop).toBe(4);
     expect(StyleSheet.flatten(dismissButton.props.style)).toEqual(
-      expect.objectContaining({ width: 44, height: 44 }),
+      expect.objectContaining({ width: 40, height: 40 }),
     );
     fireEvent.press(dismissButton);
     expect(onDismiss).toHaveBeenCalledTimes(1);
@@ -114,7 +115,7 @@ describe('ChatTodayFocusCard', () => {
   });
 
   it('shows one transient Agent status instead of the timeline context', () => {
-    const { getByText, queryByText } = render(
+    const { getByText, getByTestId, queryByText } = render(
       <ChatTodayFocusCard
         model={focusModel()}
         turnStatus={{ label: '正在整理你的饮食记录…', tone: 'active' }}
@@ -124,6 +125,7 @@ describe('ChatTodayFocusCard', () => {
     expect(getByText('正在整理你的饮食记录…')).toBeTruthy();
     expect(queryByText('降低今天的训练强度')).toBeNull();
     expect(queryByText('今日重点')).toBeNull();
+    expect(getByTestId('chat-today-focus-card').props.accessibilityLiveRegion).toBe('polite');
   });
 
   it('keeps a high-severity context visible above an active Agent turn', () => {
@@ -134,7 +136,7 @@ describe('ChatTodayFocusCard', () => {
       title: '恢复状态明显下降',
       tone: 'risk',
     };
-    const { getByText, queryByText } = render(
+    const { getByText, getByTestId, queryByText } = render(
       <ChatTodayFocusCard
         model={model}
         turnStatus={{ label: '正在整理你的饮食记录…', tone: 'active' }}
@@ -143,6 +145,7 @@ describe('ChatTodayFocusCard', () => {
 
     expect(getByText('恢复状态明显下降')).toBeTruthy();
     expect(queryByText('正在整理你的饮食记录…')).toBeNull();
+    expect(getByTestId('chat-today-focus-icon')).toBeTruthy();
   });
 
   it('keeps a recoverable Agent failure visible with a retry command', () => {
