@@ -162,7 +162,12 @@ def test_smart_today_returns_ranked_executable_contract(monkeypatch):
     assert len(top) == 3
     assert top[0]["source"]["object_type"] == "health_problem"
     assert top[0]["why_now"].startswith("已逾期")
+    # HealthProblem 复查没有统一 agenda 完成写路径，不能给客户端一个必失败的“完成”能力。
+    assert top[0]["can_complete"] is False
+    protocol = next(i for i in top if i["source"]["object_type"] == "health_protocol")
+    assert protocol["can_complete"] is True
     daily = next(i for i in top if i["source"]["object_type"] == "daily_plan_action")
+    assert daily["can_complete"] is True
     assert daily["id"] == "smart_daily_plan_action_movement.moderate_activity"
     assert daily["why_now"] == "对齐每周 150 分钟中等强度活动的代谢健康目标。"
     assert daily["do_now"].startswith("执行: 累计 35-45")
@@ -268,6 +273,23 @@ def _proto_item(**kw):
     }
     base.update(kw)
     return base
+
+
+def test_smart_item_only_advertises_completion_when_a_write_path_exists():
+    follow_up = {
+        "type": "checkup",
+        "status": "overdue",
+        "source": {"object_type": "health_problem", "object_id": 9},
+    }
+    daily_plan = {
+        "type": "movement",
+        "status": "pending",
+        "source": {"object_type": "daily_plan_action", "object_id": "movement.walk"},
+    }
+
+    assert _smart(follow_up)["can_complete"] is False
+    assert _smart(_proto_item())["can_complete"] is True
+    assert _smart(daily_plan)["can_complete"] is True
 
 
 def test_voice_actionable_true_for_nonmedical_protocols():

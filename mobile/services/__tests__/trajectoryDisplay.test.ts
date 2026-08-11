@@ -62,6 +62,7 @@ describe('trajectoryDisplay', () => {
       expect(stateVariableLabel('diastolic_bp')).toBe('舒张压');
       expect(stateVariableLabel('body_fat_pct')).toBe('体脂率');
       expect(stateVariableLabel('waist_cm')).toBe('腰围');
+      expect(stateVariableLabel('follow_up_completed')).toBe('复查完成情况');
     });
 
     it('falls back to the raw key for unknown metrics (never crashes, never English fragment)', () => {
@@ -78,6 +79,15 @@ describe('trajectoryDisplay', () => {
       expect(summary).toBe('体重 / 腰围 / 收缩压');
       // 断言没有英文残留(排除 defect ② 的 "weight / 腰围 / systoli…" 泄漏)。
       expect(summary).not.toMatch(/[a-z_]/i);
+    });
+
+    it('renders follow-up verification without exposing the internal metric key', () => {
+      const summary = buildVerifySummary({
+        verify_by: { metrics: ['follow_up_completed'], window_days: 14 },
+      });
+
+      expect(summary).toBe('复查完成情况 · 14天');
+      expect(summary).not.toContain('follow_up_completed');
     });
   });
 });

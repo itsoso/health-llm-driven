@@ -3,6 +3,7 @@ import {
   getDailyArtifactDetail,
   getDailyArtifact,
   recordDailyArtifactEvent,
+  resolveDailyArtifactCompletionTarget,
 } from '../dailyArtifact';
 
 jest.mock('../api', () => ({
@@ -130,5 +131,26 @@ describe('dailyArtifact service', () => {
     await expect(recordDailyArtifactEvent({ eventType: 'skipped' }))
       .rejects.toThrow('skipReason is required');
     expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('resolves only completion sources that have a real write endpoint', () => {
+    expect(resolveDailyArtifactCompletionTarget({
+      id: 'protocol',
+      title: '饮水',
+      source: { object_type: 'health_protocol', object_id: 7, slot: '09:00' },
+    })).toEqual({
+      kind: 'agenda',
+      source: { object_type: 'health_protocol', object_id: 7, slot: '09:00' },
+    });
+    expect(resolveDailyArtifactCompletionTarget({
+      id: 'daily-plan',
+      title: '餐后步行',
+      source: { object_type: 'daily_plan_action', object_id: 'movement.walk_after_meal' },
+    })).toEqual({ kind: 'daily_plan_action', actionId: 'movement.walk_after_meal' });
+    expect(resolveDailyArtifactCompletionTarget({
+      id: 'follow-up',
+      title: '胃镜复查',
+      source: { object_type: 'health_problem', object_id: 9 },
+    })).toBeNull();
   });
 });

@@ -33,21 +33,24 @@ import { getSafetyReport, type SafetyAlert } from '../../services/safety';
 import api from '../../services/api';
 import { spacing } from '../../constants/theme';
 import { useFloatingTabBarHeight } from '../../hooks/useFloatingTabBarHeight';
+import { useToast } from '../../hooks/useToast';
 import { useDashboardData, useLatestGarmin } from '../../hooks/useDashboardData';
 import { useMedicationReminders } from '../../hooks/useMedicationReminders';
 import { useBehaviorLoopReminders } from '../../hooks/useBehaviorLoopReminders';
 import { useActiveCycle } from '../../hooks/useHealthOs';
 import { useCompleteAgendaItem, useTodayTimeline } from '../../hooks/useTodayTimeline';
 import type { TodayTimelineItem } from '../../services/todayTimeline';
-import type { AgendaSource, AgendaSkipReason } from '../../services/agenda';
+import type { AgendaSkipReason } from '../../services/agenda';
 import { garminSleepHours } from '../../types/garmin';
 import {
   getDailyOperatingPlan,
+  recordDailyPlanActionEvent,
   type DailyPlanAction,
 } from '../../services/dailyPlan';
 import {
   getDailyArtifact,
   recordDailyArtifactEvent,
+  resolveDailyArtifactCompletionTarget,
   type DailyArtifact,
   type DailyArtifactTopAction,
 } from '../../services/dailyArtifact';
@@ -127,6 +130,7 @@ export default function TodayContent({ mode = 'screen' }: { mode?: TodayContentM
   const isSheet = mode === 'sheet' || isInline;
   const router = useRouter();
   const qc = useQueryClient();
+  const toast = useToast();
   const revaFontsLoaded = useRevaFonts();
   // 悬浮胶囊 tab bar 是 absolute,不占布局流;底部内容须按其真实高度留白,
   // 否则最后一块快捷动作会被 tab bar 半遮盖(硬编码 110 在大安全区机型不够)。
@@ -344,36 +348,48 @@ export default function TodayContent({ mode = 'screen' }: { mode?: TodayContentM
     }).catch(() => {});
   }, []);
 
-  const onArtifactComplete = useCallback((action: DailyArtifactTopAction, artifactOverride?: DailyArtifact) => {
+  const onArtifactComplete = useCallback(async (action: DailyArtifactTopAction, artifactOverride?: DailyArtifact) => {
     if (artifactCompleting) return;
-    const source = agendaSourceFromArtifactAction(action);
+    const completionTarget = resolveDailyArtifactCompletionTarget(action);
     const artifact = artifactOverride ?? dailyArtifactQuery.data;
-    if (!source || !artifact) {
+    if (!completionTarget || !artifact) {
       Alert.alert('暂时不能完成', '这条行动还缺少可写入的来源。');
       return;
     }
     setArtifactCompleting(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    completeNow.mutate(source, {
-      onSuccess: () => {
-        recordDailyArtifactEvent({
-          eventType: 'completed',
-          artifactDate: artifact.artifact_date,
-          topActionId: action.id,
-          deliveredContext: dailyArtifactContext(artifact, 'home', { action: 'complete' }),
-        }).catch(() => {});
-        qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] });
-        qc.invalidateQueries({ queryKey: ['today-dynamic-view', 'mobile.today'] });
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-        setArtifactCompleting(false);
-      },
-      onError: () => {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-        Alert.alert('完成失败', '没有保存成功,请稍后重试。');
-        setArtifactCompleting(false);
-      },
-    });
-  }, [artifactCompleting, completeNow, dailyArtifactQuery.data, qc]);
+    try {
+      if (completionTarget.kind === 'daily_plan_action') {
+        await recordDailyPlanActionEvent(completionTarget.actionId, {
+          event_type: 'completed',
+          plan_date: artifact.artifact_date,
+          payload: { source: 'daily_artifact' },
+        });
+      } else {
+        await completeNow.mutateAsync(completionTarget.source);
+      }
+      recordDailyArtifactEvent({
+        eventType: 'completed',
+        artifactDate: artifact.artifact_date,
+        topActionId: action.id,
+        deliveredContext: dailyArtifactContext(artifact, 'home', { action: 'complete' }),
+      }).catch(() => {});
+      toast.show('已完成，正在刷新今日行动', 'success');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] }),
+        qc.invalidateQueries({ queryKey: ['today-dynamic-view', 'mobile.today'] }),
+        qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] }),
+        qc.invalidateQueries({ queryKey: ['timeline', 'today'] }),
+        qc.invalidateQueries({ queryKey: ['agenda', 'today'] }),
+      ]);
+    } catch {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      Alert.alert('完成失败', '没有保存成功,请稍后重试。');
+    } finally {
+      setArtifactCompleting(false);
+    }
+  }, [artifactCompleting, completeNow, dailyArtifactQuery.data, qc, toast]);
 
   const onArtifactSkip = useCallback((
     reason: AgendaSkipReason,
@@ -794,16 +810,6 @@ function shortSubtitle(raw: string | null | undefined): string | undefined {
   if (!s) return undefined;
   const cut = s.search(/[;；,，。.]/);
   return (cut > 0 ? s.slice(0, cut) : s).trim() || undefined;
-}
-
-function agendaSourceFromArtifactAction(action: DailyArtifactTopAction): AgendaSource | null {
-  const source = action.actions?.complete?.source ?? action.source;
-  if (!source?.object_type || source.object_id == null) return null;
-  return {
-    object_type: source.object_type,
-    object_id: source.object_id,
-    ...(source.slot ? { slot: source.slot } : {}),
-  };
 }
 
 function dailyArtifactContext(

@@ -14,6 +14,10 @@ import type {
   DailyArtifactTopAction,
 } from '../../services/dailyArtifact';
 import {
+  isDailyArtifactFollowUpAction,
+  resolveDailyArtifactCompletionTarget,
+} from '../../services/dailyArtifact';
+import {
   buildTrajectorySummary,
   buildVerifySummary,
   stateVariableLabel,
@@ -49,18 +53,29 @@ export default function DailyArtifactCard({
   const busy = completing || skipping;
   const trajectorySummary = topAction ? buildTrajectorySummary(topAction) : null;
   const verifySummary = topAction ? buildVerifySummary(topAction) : null;
-  // 「如何验证」用到的具体中文指标名(体重 / 腰围 / 收缩压…),用于把泛化 filler 换成实名句。
-  const verifyMetricNames = topAction ? verifyMetrics(topAction) : [];
+  // 「如何验证」先保留指标 key 做特殊语义判断，再统一映射成中文显示名。
+  const verifyMetricKeys = topAction ? verificationMetricKeys(topAction) : [];
+  const verifyMetricNames = verifyMetricKeys
+    .map((key) => stateVariableLabel(key))
+    .filter((label): label is string => Boolean(label));
   const visibleEvidence = topAction
     ? rewriteVerificationEvidence(
         buildVisibleEvidence(artifact?.evidence ?? [], topAction, trajectorySummary, verifySummary),
         verifyMetricNames,
+        verifyMetricKeys,
       )
     : [];
   const doNow = topAction ? conciseActionCopy(topAction.do_now, topAction.title) : null;
   const canComplete = Boolean(
-    topAction?.actions?.complete?.enabled && hasCompletionSource(topAction),
+    topAction?.actions?.complete?.enabled && resolveDailyArtifactCompletionTarget(topAction),
   );
+  const isFollowUp = isDailyArtifactFollowUpAction(topAction);
+  const primaryActionLabel = canComplete ? '完成' : isFollowUp ? '处理复查' : '去执行';
+  const primaryAccessibilityLabel = canComplete
+    ? '完成今日最重要行动'
+    : isFollowUp
+      ? '处理今日复查'
+      : '执行今日最重要行动';
 
   if (loading && !artifact) {
     return (
@@ -105,7 +120,7 @@ export default function DailyArtifactCard({
           <Text style={styles.title} numberOfLines={2}>{displayTitle || topAction.title}</Text>
           {doNow ? (
             <View style={styles.doNowRow}>
-              <Icon name={canComplete ? 'check-circle-2' : 'play-circle'} size={17} color={C.green600} />
+              <Icon name={canComplete ? 'check-circle-2' : isFollowUp ? 'calendar-check' : 'play-circle'} size={17} color={C.green600} />
               <Text style={styles.executeText} numberOfLines={2}>{doNow}</Text>
             </View>
           ) : null}
@@ -201,14 +216,14 @@ export default function DailyArtifactCard({
                 else onPressAction?.(topAction);
               }}
               accessibilityRole="button"
-              accessibilityLabel={canComplete ? '完成今日最重要行动' : '执行今日最重要行动'}
+              accessibilityLabel={primaryAccessibilityLabel}
             >
               {completing ? (
                 <ActivityIndicator size="small" color={C.greenOn} />
               ) : (
                 <>
-                  <Icon name={canComplete ? 'check' : 'play'} size={15} color={C.greenOn} />
-                  <Text style={styles.primaryText}>{canComplete ? '完成' : '去执行'}</Text>
+                  <Icon name={canComplete ? 'check' : isFollowUp ? 'calendar-check' : 'play'} size={15} color={C.greenOn} />
+                  <Text style={styles.primaryText}>{primaryActionLabel}</Text>
                 </>
               )}
             </Pressable>
@@ -292,11 +307,6 @@ function evidenceLabel(label: string): string {
     case 'Verification': return '如何验证';
     default: return label;
   }
-}
-
-function hasCompletionSource(action: DailyArtifactTopAction): boolean {
-  const source = action.actions?.complete?.source ?? action.source;
-  return Boolean(source?.object_type && source.object_id != null);
 }
 
 // do_now「执行」子行的 affordance 前缀:后端有时把整条标题原样塞进 do_now,再前缀
@@ -386,10 +396,14 @@ function evidencePriority(item: DailyArtifactEvidence): number {
 function rewriteVerificationEvidence(
   evidence: DailyArtifactEvidence[],
   metricNames: string[],
+  metricKeys: string[],
 ): DailyArtifactEvidence[] {
   return evidence.flatMap((item) => {
     if (!isVerificationEvidence(item)) return [item];
     if (metricNames.length === 0) return []; // 无指标 → 丢掉泛化 filler 行
+    if (metricKeys.includes('follow_up_completed')) {
+      return [{ ...item, summary: '后续确认复查是否完成。' }];
+    }
     return [{ ...item, summary: `后续观察 ${metricNames.join(' / ')} 的变化。` }];
   });
 }
@@ -398,9 +412,9 @@ function isVerificationEvidence(item: DailyArtifactEvidence): boolean {
   return `${item.kind} ${item.label}`.toLowerCase().includes('verification');
 }
 
-// 从 action 抽出用于验证的具体中文指标名列表(verify_by.metrics + target/verification 信号),
-// 去重、去空。走 stateVariableLabel 单一真相源;缺映射的 key 原样返回(不显示英文残缺词)。
-function verifyMetrics(action: DailyArtifactTopAction): string[] {
+// 从 action 抽出验证指标 key(verify_by.metrics + target/verification 信号),去重、去空；
+// 显示名在调用处统一走 stateVariableLabel 单一真相源。
+function verificationMetricKeys(action: DailyArtifactTopAction): string[] {
   const raw: (string | null | undefined)[] = [];
   const verifyBy = (action as { verify_by?: { metrics?: unknown } }).verify_by;
   if (Array.isArray(verifyBy?.metrics)) {
@@ -409,15 +423,15 @@ function verifyMetrics(action: DailyArtifactTopAction): string[] {
   raw.push(action.verification_signal ?? null);
   raw.push(action.target_state_variable ?? null);
   const seen = new Set<string>();
-  const names: string[] = [];
+  const keys: string[] = [];
   for (const key of raw) {
-    const label = stateVariableLabel(key ?? null);
-    if (label && !seen.has(label)) {
-      seen.add(label);
-      names.push(label);
+    const normalized = key?.trim();
+    if (normalized && !seen.has(normalized)) {
+      seen.add(normalized);
+      keys.push(normalized);
     }
   }
-  return names;
+  return keys;
 }
 
 function normalizeCopy(value?: string | null): string {

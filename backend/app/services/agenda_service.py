@@ -29,6 +29,12 @@ logger = logging.getLogger(__name__)
 # 时间窗排序(投影展示顺序)
 _TW_ORDER = {"morning": 0, "noon": 1, "afternoon": 2, "evening": 3, "bedtime": 4, "anytime": 5}
 _TERMINAL_STATUSES = agenda_contract.TERMINAL_ITEM_STATUSES
+_COMPLETABLE_SOURCE_TYPES = frozenset({
+    "health_protocol",
+    "medication",
+    "supplement",
+    "daily_plan_action",
+})
 _ACTIVE_TRAJECTORY_LEVELS = frozenset({"high", "attention"})
 _TRAJECTORY_ACTION_DOMAIN_MAP = {
     "metabolic_health": frozenset({"movement", "exercise", "training", "activity", "nutrition", "diet", "hydration"}),
@@ -852,6 +858,11 @@ def _to_smart_item(
             "confidence": trajectory.get("confidence"),
         }
     runtime_feedback = item.get("runtime_feedback") if isinstance(item.get("runtime_feedback"), dict) else None
+    source = item.get("source") if isinstance(item.get("source"), dict) else {}
+    can_complete = (
+        status in {"pending", "due", "overdue"}
+        and source.get("object_type") in _COMPLETABLE_SOURCE_TYPES
+    )
     if runtime_feedback:
         rank_reason["runtime_feedback"] = {
             "latest_status": runtime_feedback.get("latest_status"),
@@ -872,7 +883,7 @@ def _to_smart_item(
         "priority": item.get("priority") or 0,
         "rank_score": score,
         "rank_reason": rank_reason,
-        "source": item.get("source") or {},
+        "source": source,
         "why_now": _why_now(item),
         "do_now": _do_now(item),
         "verify_by": verify_by,
@@ -880,7 +891,7 @@ def _to_smart_item(
         "surface": _surface_for(item),
         "contract": agenda_contract.contract_metadata_for_item(item),
         "autonomy_tier": "confirm" if item.get("type") == "checkup" else "suggest",
-        "can_complete": status in {"pending", "due", "overdue"},
+        "can_complete": can_complete,
         "can_snooze": status in {"pending", "due", "overdue", "info"},
         "can_skip": status in {"pending", "info"},
         # 含糊语音(Rokid "确认/跳过")可否安全自动完成 —— 权威安全门,从 source_model 派生

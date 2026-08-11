@@ -36,6 +36,7 @@ const METRIC_LABELS: Record<string, string> = {
   spo2: '血氧',
   steps: '步数',
   resting_hr: '静息心率',
+  follow_up_completed: '复查完成情况',
 };
 
 export function stateVariableLabel(value?: string | null): string | null {

@@ -169,6 +169,44 @@ describe('DailyArtifactCard', () => {
     expect(onPressAction).toHaveBeenCalledWith(artifact.top_action);
   });
 
+  it('routes a medical follow-up to handling instead of the unsupported complete write', () => {
+    const onComplete = jest.fn();
+    const onPressAction = jest.fn();
+    const source = { object_type: 'health_problem', object_id: 9 };
+    const artifact = makeArtifact({
+      top_action: {
+        ...makeArtifact().top_action!,
+        type: 'checkup',
+        title: '复查:胃溃疡(Hp 阴性,胃窦后壁)',
+        source,
+        verify_by: { metrics: ['follow_up_completed'], window_days: 14 },
+        verification_signal: null,
+        target_state_variable: null,
+        actions: {
+          complete: { enabled: true, source },
+          skip: { requires_reason: true },
+        },
+      } as any,
+      evidence: [
+        { kind: 'verification', label: 'Verification', summary: '后续用这些信号验证是否有效。' },
+      ],
+    });
+
+    const { getByLabelText, getByText, queryByText } = render(
+      <DailyArtifactCard artifact={artifact} onComplete={onComplete} onPressAction={onPressAction} />,
+    );
+
+    expect(getByText('复查完成情况 · 14天')).toBeTruthy();
+    expect(getByText('后续确认复查是否完成。')).toBeTruthy();
+    expect(getByText('处理复查')).toBeTruthy();
+    expect(queryByText('follow_up_completed · 14天')).toBeNull();
+    expect(queryByText('完成')).toBeNull();
+
+    fireEvent.press(getByLabelText('处理今日复查'));
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(onPressAction).toHaveBeenCalledWith(artifact.top_action);
+  });
+
   it('uses 小巴 as the visible assistant persona for the ask action', () => {
     const { getByLabelText, getByText, queryByLabelText } = render(
       <DailyArtifactCard artifact={makeArtifact()} />,

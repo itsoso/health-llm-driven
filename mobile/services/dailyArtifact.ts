@@ -1,4 +1,4 @@
-import type { AgendaSkipReason, TrajectoryContext } from './agenda';
+import type { AgendaSkipReason, AgendaSource, TrajectoryContext } from './agenda';
 import api from './api';
 
 export type DailyArtifactEventType = 'impression' | 'accepted' | 'completed' | 'skipped';
@@ -72,6 +72,59 @@ export interface DailyArtifact {
     sources?: string[];
   };
   safety_boundary: string;
+}
+
+export type DailyArtifactCompletionTarget =
+  | { kind: 'agenda'; source: AgendaSource }
+  | { kind: 'daily_plan_action'; actionId: string };
+
+const AGENDA_COMPLETION_SOURCE_TYPES = new Set(['health_protocol', 'medication', 'supplement']);
+const DAILY_PLAN_ACTION_ID_RE = /^[A-Za-z0-9._:-]+$/;
+
+/**
+ * Resolve the actual write path for a Daily Artifact action.
+ *
+ * The backend may be older than the client and still advertise `enabled=true`
+ * for read-only projections such as HealthProblem follow-ups. Keep this client
+ * gate aligned with the real endpoints so a visible completion button never
+ * dispatches a request that is guaranteed to fail.
+ */
+export function resolveDailyArtifactCompletionTarget(
+  action: DailyArtifactTopAction | null | undefined,
+): DailyArtifactCompletionTarget | null {
+  const source = action?.actions?.complete?.source ?? action?.source;
+  const objectType = source?.object_type?.trim();
+  const objectId = source?.object_id;
+  if (!objectType || objectId == null) return null;
+
+  if (objectType === 'daily_plan_action') {
+    const actionId = String(objectId).trim();
+    if (!actionId || actionId.length > 160 || !DAILY_PLAN_ACTION_ID_RE.test(actionId)) return null;
+    return { kind: 'daily_plan_action', actionId };
+  }
+
+  if (!AGENDA_COMPLETION_SOURCE_TYPES.has(objectType)) return null;
+  if (!isPositiveNumericId(objectId)) return null;
+  return {
+    kind: 'agenda',
+    source: {
+      object_type: objectType,
+      object_id: objectId,
+      ...(source?.slot ? { slot: source.slot } : {}),
+    },
+  };
+}
+
+export function isDailyArtifactFollowUpAction(
+  action: DailyArtifactTopAction | null | undefined,
+): boolean {
+  const sourceType = action?.actions?.complete?.source?.object_type ?? action?.source?.object_type;
+  return action?.type === 'checkup' || sourceType === 'health_problem' || sourceType === 'review_schedule';
+}
+
+function isPositiveNumericId(value: number | string): boolean {
+  if (typeof value === 'number') return Number.isInteger(value) && value > 0;
+  return /^\d+$/.test(value.trim()) && Number(value) > 0;
 }
 
 export interface DailyArtifactEventRequest {

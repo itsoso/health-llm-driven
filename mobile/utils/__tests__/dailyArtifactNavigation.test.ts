@@ -154,6 +154,18 @@ describe('dailyArtifactNavigation', () => {
     expect(buildDailyArtifactExecuteRoute(artifact({ top_action: nutritionPlan }), nutritionPlan)).toBe('/diet-plan');
   });
 
+  it('opens the medical exam workflow for a due follow-up action', () => {
+    const followUp = action({
+      id: 'gastric-follow-up',
+      type: 'checkup',
+      title: '复查:胃溃疡(Hp 阴性,胃窦后壁)',
+      do_now: '安排检查或确认已完成。',
+      source: { object_type: 'health_problem', object_id: 9 },
+    });
+
+    expect(buildDailyArtifactExecuteRoute(artifact({ top_action: followUp }), followUp)).toBe('/medical-exams');
+  });
+
   it('falls back to Aheng chat, not timeline, for unsupported source-backed actions', () => {
     const unsupported = action({
       title: '核对一条健康建议',
