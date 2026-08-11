@@ -2283,6 +2283,33 @@ Mechanically generated evidence remains
 or deployed. Both G4 reviews must be repeated against the next exact evidence
 commit.
 
+### v45 ninth G4 remediation and evidence
+
+Both reviews of `9bb0cdb2ae92240edde0e3399f8c91fd55f2d9ef`
+returned `NO-GO`. Meta clauses without a lead-in still retained authority,
+additional scaffolds/objects/intents (`请解释`, `这番话`, `表达什么`) were
+uncovered, and clinical references using `结果`, `测量值`, `检测值` or `数据`
+were falsely treated as unresolved.
+
+The remediation accepts a meta object at the start of a later clause while
+excluding the initial read verb from that branch. It expands the orthogonal
+meta scaffold/object/intent vocabularies and introduces a shared clinical
+result-interpretation predicate. That predicate is used at every unresolved
+reference choke point on both read surfaces, preserving returned clinical data
+interpretation without weakening arbitrary referential reads.
+
+The exact clean implementation/evaluation candidate is
+`ce729be55356f3521582de298f519f1bc19970b1`. The authorization/write core
+passes 5,389/5,389 and the complete AgentExecutor compatibility set passes
+686/686. Ruff, Python compilation, `git diff --check`, doc drift and Dossier
+consistency pass. The authorized live `qwen3.7-max` run passes 555/555
+anonymous synthetic cases and all 1,454 actual policy decisions, with zero
+database connection attempts and zero unexpected network destinations.
+Mechanically generated evidence remains
+`backend/evals/results/semantic_illness_qwen_v45.json`. Nothing has been pushed
+or deployed. Both G4 reviews must be repeated against the next exact evidence
+commit.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.
