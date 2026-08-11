@@ -828,8 +828,15 @@ META_COMMAND_INTENT_RE = re.compile(
     re.IGNORECASE,
 )
 QUOTED_META_COMMAND_RE = re.compile(
-    r"[“‘\"'][^”’\"']{1,32}[”’\"'](?:这个)?(?:说法|表达|几个字|问题)?"
-    r"[^,.!，。！？?;；、]{0,16}(?:意思|含义|用法|用途|怎么用|怎么解读|解释)",
+    r"(?:"
+    r"[“‘\"'《「『（(][^”’\"'》」』）)]{1,32}[”’\"'》」』）)]"
+    r"(?:这个)?(?:说法|表达|几个字|问题|这句话)?"
+    r"[^,.!，。！？?;；、]{0,16}(?:意思|含义|用法|用途|怎么用|怎么解读|解释)|"
+    r"(?:请解释|解释(?:一下|下)?|帮我解释)"
+    r"[^,.!，。！？?;；、]{0,8}[“‘\"'《「『（(]"
+    r"[^”’\"'》」』）)]{1,32}[”’\"'》」』）)]"
+    r"(?:这句话|这个说法|这个表达)?"
+    r")",
     re.IGNORECASE,
 )
 
@@ -1064,7 +1071,10 @@ def _nonhealth_root(value: str) -> bool:
 
 
 def _strip_current_user_owner(value: str) -> tuple[str, bool]:
-    match = re.match(r"^(?:我自己(?:的)?|我(?:的)?|本人(?:的)?|自己(?:的)?)", value)
+    match = re.match(
+        r"^(?:我(?:自己|本人|个人)?(?:的)?|本人(?:的)?|自己(?:的)?)",
+        value,
+    )
     if match is None:
         return value, False
     return value[match.end() :], True
@@ -1293,12 +1303,21 @@ _HEALTH_REPORT_DOMAIN = (
 def has_explicit_nonself_health_owner(text: str) -> bool:
     """Detect explicit third-party ownership across natural clause orderings."""
     normalized = clinical_interpretation_query_scope(str(text or ""))
-    owner_assertion = re.search(r"这是(?P<owner>[^，,。]{1,32})的(?:[，,。]|$)", normalized)
-    if owner_assertion is not None:
-        return not _is_current_user_scope_owner(owner_assertion.group("owner"))
+    owner_assertion = re.search(
+        r"这是(?P<owner>[^\n\r，,；;：:。.!！?？、]{1,32})的"
+        r"(?:[\n\r，,；;：:。.!！?？、]|$)",
+        normalized,
+    )
+    asserted_nonself = bool(
+        owner_assertion is not None
+        and not _is_current_user_scope_owner(owner_assertion.group("owner"))
+    )
+    if asserted_nonself:
+        return True
 
     beneficiary = re.search(
-        rf"帮(?P<owner>[^，,。]{{1,32}}?)查询{_HEALTH_REPORT_DOMAIN}",
+        rf"帮(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)"
+        rf"查询{_HEALTH_REPORT_DOMAIN}",
         normalized,
     )
     if beneficiary is not None:
@@ -1320,12 +1339,13 @@ def has_explicit_nonself_health_owner(text: str) -> bool:
         return True
     scoped, explicit_self = _strip_current_user_owner(scoped)
     if explicit_self:
-        return False
+        return asserted_nonself
     if re.fullmatch(_HEALTH_REPORT_DOMAIN, scoped):
-        return False
+        return asserted_nonself
 
     possessive = re.match(
-        rf"^(?P<owner>.+?)的(?P<target>{_HEALTH_REPORT_DOMAIN})(?:[，,。]|$)",
+        rf"^(?P<owner>.+?)的(?P<target>{_HEALTH_REPORT_DOMAIN})"
+        rf"(?:[\n\r，,；;：:。.!！?？、]|$)",
         scoped,
     )
     if possessive is not None:
@@ -1336,7 +1356,8 @@ def has_explicit_nonself_health_owner(text: str) -> bool:
         )
 
     direct = re.match(
-        rf"^(?P<base>.+?)(?P<target>{_HEALTH_REPORT_DOMAIN})(?:[，,。]|$)",
+        rf"^(?P<base>.+?)(?P<target>{_HEALTH_REPORT_DOMAIN})"
+        rf"(?:[\n\r，,；;：:。.!！?？、]|$)",
         scoped,
     )
     if direct is None:
@@ -1344,7 +1365,7 @@ def has_explicit_nonself_health_owner(text: str) -> bool:
     base = direct.group("base").strip()
     if _is_exact_clinical_report_base(base):
         return False
-    return bool(base)
+    return asserted_nonself or bool(base)
 
 
 _CLINICAL_REPORT_BASE_TERMS = frozenset(
@@ -1354,6 +1375,9 @@ _CLINICAL_REPORT_BASE_TERMS = frozenset(
         "MTHFR", "ANA", "HLA-B27", "系统性红斑狼疮", "脑膜炎", "乳腺",
         "肝功能", "甲状腺", "血常规", "肾功能", "心电图", "肺功能",
         "凝血功能", "骨密度", "尿常规", "血脂", "血糖", "血压",
+        "肝脏", "肾脏", "乙肝五项", "D-二聚体", "血清铁蛋白", "维生素D",
+        "CA19-9", "CEA", "PSA", "TSH", "抗核抗体", "幽门螺杆菌",
+        "肝纤维化", "肺结节", "肿瘤标志物", "肌钙蛋白",
     }
 )
 
@@ -1388,7 +1412,8 @@ def _has_exact_clinical_report_target(text: str) -> bool:
     )
     scoped, _explicit_self = _strip_current_user_owner(scoped)
     match = re.match(
-        rf"^(?P<base>.+?)(?:的)?{_HEALTH_REPORT_DOMAIN}(?:[，,。]|$)",
+        rf"^(?P<base>.+?)(?:的)?{_HEALTH_REPORT_DOMAIN}"
+        rf"(?:[\n\r，,；;：:。.!！?？、]|$)",
         scoped,
     )
     return bool(match and _is_exact_clinical_report_base(match.group("base")))

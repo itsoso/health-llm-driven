@@ -7212,6 +7212,30 @@ async def test_v45_semantic_guard_blocks_real_gateway_dispatch(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("message", ("查T2* GRE MRI图像", "查ADC/DWI头颅MRI图像"))
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+async def test_v45_medical_image_manage_list_is_read_only(message, policy_mode):
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_manage",
+            arguments={"record_type": "medical_exam", "operation": "list"},
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [{"record_type": "medical_exam", "operation": "list"}]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
 @pytest.mark.parametrize(
     ("message", "proposed_dimension"),

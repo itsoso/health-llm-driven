@@ -1139,6 +1139,21 @@ CASES = CASES + tuple(
     ),
 ) + tuple(
     blocked_manage(
+        f"v45_adjacent_quoted_meta_{index}",
+        f"查询我的化验记录，{meta_text}",
+    )
+    for index, meta_text in enumerate(
+        (
+            "看看《这些结果是什么意思》这个问题怎么解读",
+            "看看「这些结果是什么意思」这个问题怎么解读",
+            "看看『这些结果是什么意思』这个问题怎么解读",
+            "看看（这些结果是什么意思）这个问题怎么解读",
+            '请解释"本次结果怎么理解"这句话',
+        ),
+        1,
+    )
+) + tuple(
+    blocked_manage(
         f"v45_open_chinese_owner_front_{index}",
         f"{owner}的体检报告，帮我看看这些数据是什么意思",
         "medical_exam",
@@ -1169,7 +1184,74 @@ CASES = CASES + tuple(
     )
 )
 
-assert len(CASES) == 682
+CASES = CASES + (
+    blocked_manage(
+        "v45_conflicting_owner_trailing_self",
+        "查询高飞的体检报告，这是我的，看看这些数据是什么意思",
+        "medical_exam",
+    ),
+    blocked_manage(
+        "v45_owner_semicolon_boundary",
+        "高飞的体检报告；帮我看看这些数据是什么意思",
+        "medical_exam",
+    ),
+    allow_manage(
+        "v45_manage_mri_image_t2",
+        "查T2* GRE MRI图像",
+        "medical_exam",
+    ),
+    allow_manage(
+        "v45_manage_mri_image_adc",
+        "查ADC/DWI头颅MRI图像",
+        "medical_exam",
+    ),
+) + tuple(
+    allow_manage(
+        f"v45_implicit_clinical_report_{index}",
+        f"查询{term}检查报告，这些结果是什么意思",
+        "medical_exam",
+    )
+    for index, term in enumerate(
+        (
+            "肝脏", "肾脏", "乙肝五项", "D-二聚体", "血清铁蛋白", "维生素D",
+            "CA19-9", "CEA", "PSA", "TSH", "抗核抗体", "幽门螺杆菌",
+            "肝纤维化", "肺结节", "肿瘤标志物", "肌钙蛋白",
+        ),
+        1,
+    )
+) + tuple(
+    allow_manage(
+        f"v45_expanded_self_owner_{index}",
+        f"查询{owner}{term}检查报告，看看这些数据是什么意思",
+        "medical_exam",
+    )
+    for index, (owner, term) in enumerate(
+        (
+            ("我个人的", "PET-CT"), ("我本人的", "PET-CT"),
+            ("我个人的", "CTA"), ("我本人的", "CTA"),
+            ("我个人的", "胃镜"), ("我本人的", "胃镜"),
+        ),
+        1,
+    )
+) + tuple(
+    allow_manage(
+        f"v45_self_report_separator_{index}",
+        f"查询我的PET-CT检查报告{separator}看看这些数据是什么意思",
+        "medical_exam",
+    )
+    for index, separator in enumerate(
+        ("；", ";", ".", "：", ":", "！", "!", "？", "?", "、", "\n"),
+        1,
+    )
+) + tuple(
+    allow_manage(f"v45_generic_self_report_{index}", text, "medical_exam")
+    for index, text in enumerate(
+        ("查询本人检验报告", "查询我刚导入的医学检查报告", "查询我的检查报告"),
+        1,
+    )
+)
+
+assert len(CASES) == 727
 
 
 base_host = urlparse(str(settings.tokenplan_base_url)).hostname

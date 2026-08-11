@@ -955,6 +955,11 @@ def test_v45_additional_meta_intent_forms_are_non_authorizing(text):
         "解释“报告数值”的用法",
         "看看“这些指标”这几个字是什么意思",
         "看看“这些结果是什么意思”这个问题怎么解读",
+        "看看《这些结果是什么意思》这个问题怎么解读",
+        "看看「这些结果是什么意思」这个问题怎么解读",
+        "看看『这些结果是什么意思』这个问题怎么解读",
+        "看看（这些结果是什么意思）这个问题怎么解读",
+        '请解释"本次结果怎么理解"这句话',
     ),
 )
 def test_v45_meta_command_language_never_authorizes_health_read(meta_text):
@@ -1011,6 +1016,26 @@ def test_v45_explicit_self_clinical_entity_is_not_an_owner(clinical_entity):
     text = f"查询我的{clinical_entity}检查报告，看看这些数据是什么意思"
     assert not semantics.has_explicit_nonself_health_owner(text)
     assert not semantics.health_read_has_nonself_subject(text)
+
+
+@pytest.mark.parametrize("separator", ("；", ";", "：", ":", "？", "！", "、", "\n"))
+def test_v45_owner_relation_uses_all_clause_boundaries(separator):
+    assert semantics.health_read_has_nonself_subject(
+        f"高飞的体检报告{separator}帮我看看这些数据是什么意思"
+    )
+
+
+def test_v45_trailing_self_does_not_override_front_third_party_owner():
+    assert semantics.health_read_has_nonself_subject(
+        "查询高飞的体检报告，这是我的，看看这些数据是什么意思"
+    )
+
+
+@pytest.mark.parametrize("self_owner", ("我本人的", "我个人的", "我自己的", "本人的"))
+def test_v45_expanded_self_owner_is_not_nonself(self_owner):
+    assert not semantics.health_read_has_nonself_subject(
+        f"查询{self_owner}PET-CT检查报告，看看这些数据是什么意思"
+    )
 
 
 def test_v45_unresolved_record_clinical_interpretation_is_not_resolved():

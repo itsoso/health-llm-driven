@@ -1714,6 +1714,12 @@ def _project_medical_exam_query_to_turn(text: str) -> dict[str, Any] | None:
         return {"dimension": "medical_exam", "keyword": resolution.entity}
     if is_clinical_result_interpretation(text):
         return {"dimension": "medical_exam"}
+    if _has_explicit_read_request(text) and re.search(
+        r"(?:我(?:自己|个人|本人)?|本人)(?:的)?(?:刚导入的)?"
+        r"(?:医学)?(?:检查|体检|化验|检验)?报告",
+        _query_scope_text(text),
+    ):
+        return {"dimension": "medical_exam"}
     return None
 
 
@@ -2649,6 +2655,10 @@ def decide_tool_capability(
         snapshot.intent.domain == "aigc_media"
         and tool_name in WRITE_TOOL_NAMES
         and tool_name != "draft_aigc_media"
+        and not (
+            tool_name == "health_manage"
+            and str(args.get("operation") or "").strip().lower() == "list"
+        )
     ):
         # An explicit AIGC request can create only a confirmation draft. It
         # must never be reinterpreted as consent to write health data merely

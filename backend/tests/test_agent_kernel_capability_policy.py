@@ -5969,6 +5969,78 @@ def test_v45_explicit_self_clinical_entity_projects_medical_exam(clinical_entity
     assert decision.normalized_args == {"dimension": "medical_exam"}
 
 
+@pytest.mark.parametrize(
+    "text",
+    ("查询本人检验报告", "查询我刚导入的医学检查报告", "查询我的检查报告"),
+)
+def test_v45_explicit_self_generic_report_projects_medical_exam(text):
+    decision = decide_tool_capability(
+        _snapshot(text),
+        _request("health_query", {"dimension": "illness", "keyword": "SLE"}),
+    )
+    assert decision.action == "allow", decision.reason
+    assert decision.normalized_args == {"dimension": "medical_exam"}
+
+
+@pytest.mark.parametrize(
+    "clinical_entity",
+    (
+        "肝脏", "肾脏", "乙肝五项", "D-二聚体", "血清铁蛋白", "维生素D",
+        "CA19-9", "CEA", "PSA", "TSH", "抗核抗体", "幽门螺杆菌",
+        "肝纤维化", "肺结节", "肿瘤标志物", "肌钙蛋白",
+    ),
+)
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_implicit_clinical_report_terms_allow_read(clinical_entity, tool_name):
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot(f"查询{clinical_entity}检查报告，这些结果是什么意思"),
+        _request(tool_name, arguments),
+    )
+    assert decision.action == "allow", decision.reason
+
+
+@pytest.mark.parametrize("clinical_entity", ("PET-CT", "CTA", "胃镜"))
+@pytest.mark.parametrize("self_owner", ("我个人的", "我本人的"))
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_expanded_explicit_self_clinical_reports_allow_read(
+    clinical_entity, self_owner, tool_name
+):
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot(
+            f"查询{self_owner}{clinical_entity}检查报告，看看这些数据是什么意思"
+        ),
+        _request(tool_name, arguments),
+    )
+    assert decision.action == "allow", decision.reason
+
+
+@pytest.mark.parametrize("separator", ("；", ";", ".", "：", ":", "！", "!", "？", "?", "、", "\n"))
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_v45_self_report_clause_boundaries_allow_read(separator, tool_name):
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    decision = decide_tool_capability(
+        _snapshot(
+            f"查询我的PET-CT检查报告{separator}看看这些数据是什么意思"
+        ),
+        _request(tool_name, arguments),
+    )
+    assert decision.action == "allow", decision.reason
+
+
 def test_v42_capability_digest_is_stable_across_fresh_processes():
     backend_root = Path(__file__).parents[1]
     environment = os.environ.copy()
