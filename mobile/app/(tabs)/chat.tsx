@@ -55,7 +55,7 @@ import {
   durableSelectedAgentMessageIds,
   isShareableChatMessage,
 } from '../../utils/chatShareSelection';
-import { captureRef } from 'react-native-view-shot';
+import { captureRef, releaseCapture } from 'react-native-view-shot';
 import ConversationShareImage, { type ShareImageMessage } from '../../components/chat/ConversationShareImage';
 import type { ChatMedicalExamImportSkillResult } from '../../services/chatMedicalExamImportSkill';
 import { loadAgentHomeBootstrap } from '../../services/agentHomeBootstrap';
@@ -202,6 +202,7 @@ export default function ChatScreen() {
   // 「选一段对话成图」离屏渲染层的数据 + 截图 ref(非空时挂载 ConversationShareImage)。
   const [imageExportMessages, setImageExportMessages] = useState<ShareImageMessage[] | null>(null);
   const shareImageRef = useRef<View>(null);
+  const imageExportCaptureStartedRef = useRef(false);
   const [toolMenuVisible, setToolMenuVisible] = useState(false);
   const [dismissedTodayFocusKey, setDismissedTodayFocusKey] = useState<string | null>(null);
 
@@ -846,32 +847,57 @@ export default function ChatScreen() {
     sharing,
   ]);
 
-  // 「选一段对话成图」:把选中消息渲染进离屏品牌长图 → captureRef 截 PNG → 分享/存图。
-  const exportSelectedImage = useCallback(async () => {
+  const captureSelectedImage = useCallback(async () => {
+    if (imageExportCaptureStartedRef.current) return;
+    const captureTarget = shareImageRef.current;
+    if (!captureTarget) return;
+
+    imageExportCaptureStartedRef.current = true;
+    let captureUri: string | null = null;
+    let failureStage: 'capture' | 'share' = 'capture';
+    try {
+      captureUri = await captureRef(captureTarget, {
+        format: 'png',
+        quality: 1,
+        result: 'tmpfile',
+        ...(Platform.OS === 'ios' ? { useRenderInContext: true } : {}),
+      });
+      failureStage = 'share';
+      await shareLocalImage(captureUri);
+      exitSelectionMode();
+    } catch (error) {
+      console.error('[chat] conversation long-image export failed', {
+        stage: failureStage,
+        error,
+      });
+      Alert.alert(
+        failureStage === 'capture' ? '生成长图失败' : '分享长图失败',
+        '请稍后重试',
+      );
+    } finally {
+      if (captureUri) {
+        try {
+          releaseCapture(captureUri);
+        } catch (error) {
+          if (__DEV__) console.warn('[chat] long-image temporary file cleanup failed', error);
+        }
+      }
+      setImageExportMessages(null);
+      setSharing(false);
+    }
+  }, [exitSelectionMode]);
+
+  // 「选一段对话成图」:先挂载离屏品牌长图，等完整 onLayout 后再截图和分享。
+  const exportSelectedImage = useCallback(() => {
     if (sharing) return;
     const selected: ShareImageMessage[] = messages
       .filter((m) => selectedMessageIds.has(m.id) && isShareableChatMessage(m))
       .map((m) => ({ id: m.id, role: m.role, content: m.content, imageUris: m.imageUris }));
     if (selected.length === 0) return;
+    imageExportCaptureStartedRef.current = false;
     setSharing(true);
     setImageExportMessages(selected);
-    // 等离屏层排版完(markdown/长内容异步),再截。捕获后清理离屏层。
-    setTimeout(async () => {
-      try {
-        if (!shareImageRef.current) throw new Error('share image not mounted');
-        const uri = await captureRef(shareImageRef.current, {
-          format: 'png', quality: 1, result: 'tmpfile',
-        });
-        await shareLocalImage(uri);
-        exitSelectionMode();
-      } catch {
-        Alert.alert('生成长图失败', '请稍后重试');
-      } finally {
-        setImageExportMessages(null);
-        setSharing(false);
-      }
-    }, 280);
-  }, [exitSelectionMode, messages, selectedMessageIds, sharing]);
+  }, [messages, selectedMessageIds, sharing]);
 
   const renderMessage = useCallback(({ item }: { item: ChatMessageListItem }) => {
     if (item.type === 'divider') {
@@ -1107,6 +1133,7 @@ export default function ChatScreen() {
               ref={shareImageRef}
               messages={imageExportMessages}
               dateLabel={new Date().toLocaleDateString('zh-CN')}
+              onReady={captureSelectedImage}
             />
           </View>
         )}

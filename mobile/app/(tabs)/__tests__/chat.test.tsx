@@ -18,6 +18,9 @@ const mockLoadLatestConversation = jest.fn();
 const mockLoadMoreHistory = jest.fn();
 const mockSaveChatImageToLibrary = jest.fn();
 const mockShareImage = jest.fn();
+const mockShareLocalImage = jest.fn();
+const mockCaptureRef = jest.fn();
+const mockReleaseCapture = jest.fn();
 let mockRouteParams: Record<string, string | undefined> = {};
 let mockLlmPreference: any = { model_id: null, options: [] };
 let mockMessages: any[] = [];
@@ -124,8 +127,13 @@ jest.mock('../../../services/chatImageSave', () => ({
 
 jest.mock('../../../utils/share', () => ({
   shareImage: (...args: any[]) => mockShareImage(...args),
-  shareLocalImage: jest.fn(),
+  shareLocalImage: (...args: any[]) => mockShareLocalImage(...args),
   sharePlainText: jest.fn(),
+}));
+
+jest.mock('react-native-view-shot', () => ({
+  captureRef: (...args: any[]) => mockCaptureRef(...args),
+  releaseCapture: (...args: any[]) => mockReleaseCapture(...args),
 }));
 
 jest.mock('../../../hooks/useTheme', () => ({
@@ -220,6 +228,8 @@ describe('ChatScreen', () => {
     mockLoadLatestConversation.mockResolvedValue(undefined);
     mockSaveChatImageToLibrary.mockResolvedValue(undefined);
     mockShareImage.mockResolvedValue(undefined);
+    mockShareLocalImage.mockResolvedValue(undefined);
+    mockCaptureRef.mockResolvedValue('/tmp/reva-conversation-long-image.png');
   });
 
   it('renders an edge-to-edge root surface for the whole chat page', async () => {
@@ -286,6 +296,44 @@ describe('ChatScreen', () => {
         headers: { Authorization: 'Bearer review-token' },
       },
     );
+  });
+
+  it('waits for a complete long-image layout and captures it once with the iOS large-view renderer', async () => {
+    mockMessages = [
+      { id: 'share-user', role: 'user', content: '如果感染了新冠，应该怎么办？' },
+      {
+        id: 'share-assistant',
+        role: 'assistant',
+        content: Array.from({ length: 80 }, (_, index) => `${index + 1}. 长内容建议`).join('\n'),
+      },
+    ];
+    const view = render(<ChatScreen />);
+
+    fireEvent(view.getByLabelText('message-share-user'), 'longPress');
+    fireEvent.press(view.getByLabelText('message-share-assistant'));
+    fireEvent.press(view.getByLabelText('选中消息生成长图'));
+
+    expect(mockCaptureRef).not.toHaveBeenCalled();
+
+    const shareImage = view.getByTestId('conversation-share-image');
+    fireEvent(shareImage, 'layout', {
+      nativeEvent: { layout: { x: 0, y: 0, width: 360, height: 2400 } },
+    });
+    fireEvent(shareImage, 'layout', {
+      nativeEvent: { layout: { x: 0, y: 0, width: 360, height: 2400 } },
+    });
+
+    await waitFor(() => {
+      expect(mockCaptureRef).toHaveBeenCalledTimes(1);
+      expect(mockCaptureRef).toHaveBeenCalledWith(expect.anything(), {
+        format: 'png',
+        quality: 1,
+        result: 'tmpfile',
+        useRenderInContext: true,
+      });
+      expect(mockShareLocalImage).toHaveBeenCalledWith('/tmp/reva-conversation-long-image.png');
+      expect(mockReleaseCapture).toHaveBeenCalledWith('/tmp/reva-conversation-long-image.png');
+    });
   });
 
   it('keeps one stable bootstrap shell until history, opener, and memory settle', async () => {

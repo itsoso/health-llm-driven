@@ -7,7 +7,7 @@
  * captureRef 能拿到完整高度(超屏也行)。
  */
 import React, { forwardRef } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import MarkdownText from '../shared/MarkdownText';
@@ -25,12 +25,24 @@ const CARD_WIDTH = 360;
 interface Props {
   messages: ShareImageMessage[];
   dateLabel?: string;
+  onReady?: () => void;
 }
 
 /** 离屏截图层 —— 固定宽度、内容自适应高度。ref 转发给外层容器供 captureRef。 */
-const ConversationShareImage = forwardRef<View, Props>(({ messages, dateLabel }, ref) => {
+const ConversationShareImage = forwardRef<View, Props>(({ messages, dateLabel, onReady }, ref) => {
+  const handleLayout = (event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    if (width > 0 && height > 0) onReady?.();
+  };
+
   return (
-    <View ref={ref} collapsable={false} style={styles.canvas}>
+    <View
+      ref={ref}
+      collapsable={false}
+      onLayout={handleLayout}
+      style={styles.canvas}
+      testID="conversation-share-image"
+    >
       {/* 头部 */}
       <View style={styles.header}>
         <View style={styles.brandDot}>
