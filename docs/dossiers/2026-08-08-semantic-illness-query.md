@@ -2118,6 +2118,37 @@ generated evidence is
 been pushed or deployed. Two fresh independent reviews of the next exact
 documentation/evidence commit remain mandatory before G4 may pass.
 
+### v45 third G4 remediation and evidence
+
+Fresh code and safety review of
+`62ad3a36a58d05b0d936af7c82d9efa291aee3c6` returned `NO-GO`. Both reviews
+reproduced a third-party read bypass when a name was composed with a temporal
+scope, such as `Alice今早` or `妈妈运动后`. The code review also found that
+unscoped `不允许` and `会不会成功` patterns falsely revoked an otherwise valid
+read when those phrases belonged to a later clinical assessment clause.
+
+The remediation makes time/context scope recognition a whole-owner match,
+normalizes a leading temporal modifier only on the health target, and applies
+the same whole-owner rule to concatenated generic domains. Read-authority
+withdrawal now requires an explicit current-user or authorization expression;
+the `会不会成功` meta-query form must remain attached to the queried record
+rather than an unrelated treatment assessment. Regression coverage includes
+both owner/scope layouts across both read surfaces, the reviewer examples, and
+the prior self-scope and veto matrices.
+
+The exact clean implementation/evaluation candidate is
+`bbc176c152ed13d593192230ec6382ab1f86bdf1`. The authorization/write selection
+passes 5,147/5,147 and the complete AgentExecutor compatibility selection
+passes. Ruff, Python compilation, `git diff --check`, doc drift and Dossier
+consistency pass. The authorized live `qwen3.7-max` run passes 469/469
+anonymous synthetic cases and all 966 actual policy decisions, with zero
+database connection attempts and zero unexpected network destinations. The
+expanded corpus adds the composed owner-plus-temporal attacks and the two
+legitimate read-and-assess requests. Mechanically generated evidence remains
+`backend/evals/results/semantic_illness_qwen_v45.json`. Nothing has been pushed
+or deployed. Two fresh independent reviews of the next exact
+documentation/evidence commit remain mandatory before G4 may pass.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.
