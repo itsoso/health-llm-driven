@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from app.services.system_knowledge_service import (
     attach_system_knowledge_evidence,
     evaluate_condition,
     format_system_knowledge_for_prompt,
+    format_system_knowledge_result_for_prompt,
     system_kb_twin_payload_from_health_twin,
     _select_claim_refs_for_specialist,
 )
@@ -403,6 +405,84 @@ def test_format_system_knowledge_for_prompt_is_bounded(db):
     assert "不替代医生诊断" in prompt_block
 
 
+def test_format_system_knowledge_result_for_prompt_matches_wrapper(monkeypatch, db):
+    lookup_result = {
+        "entities": [],
+        "contextual_entities": [],
+        "claims": [
+            {
+                "doc_id": "claim:c_first",
+                "title": "第一条知识",
+                "summary": "第一条摘要",
+                "confidence": 0.82,
+                "evidence_level": "A",
+                "sources": ["source:first"],
+            },
+            {
+                "doc_id": "claim:c_second",
+                "title": "第二条知识",
+                "summary": "第二条摘要",
+                "confidence": 0.71,
+                "evidence_level": "B",
+                "sources": ["source:second"],
+            },
+        ],
+        "claim_boundary": "ignored-wrapper-field",
+    }
+    original = deepcopy(lookup_result)
+    monkeypatch.setattr(
+        "app.services.system_knowledge_service.lookup_for_twin",
+        lambda _db, _twin: lookup_result,
+    )
+
+    pure = format_system_knowledge_result_for_prompt(lookup_result)
+    wrapped = format_system_knowledge_for_prompt(db, {"goals": {}})
+
+    assert pure == wrapped
+    assert lookup_result == original
+    assert pure.index("第一条知识") < pure.index("第二条知识")
+    assert "不替代医生诊断" in pure
+
+
+def test_format_system_knowledge_result_for_prompt_honors_limits_and_empty_result():
+    lookup_result = {
+        "claims": [
+            {
+                "doc_id": "claim:c_first",
+                "title": "第一条知识",
+                "summary": "第一条很长的摘要" * 20,
+                "confidence": 0.82,
+                "evidence_level": "A",
+                "sources": ["source:first"],
+            },
+            {
+                "doc_id": "claim:c_second",
+                "title": "第二条知识",
+                "summary": "第二条摘要",
+                "confidence": 0.71,
+                "evidence_level": "B",
+                "sources": ["source:second"],
+            },
+        ]
+    }
+
+    one_claim = format_system_knowledge_result_for_prompt(
+        lookup_result,
+        max_claims=1,
+    )
+    bounded = format_system_knowledge_result_for_prompt(
+        lookup_result,
+        max_claims=1,
+        max_chars=120,
+    )
+
+    assert "第一条知识" in one_claim
+    assert "第二条知识" not in one_claim
+    assert len(bounded) <= 120
+    assert bounded.endswith("...")
+    assert format_system_knowledge_result_for_prompt({"claims": []}) == ""
+
+
 def test_lookup_for_twin_matches_longevity_goal_to_aging_hallmark(db):
     db.add_all(
         [
@@ -506,6 +586,131 @@ def test_attach_system_knowledge_evidence_adds_claim_refs_to_specialist_findings
     assert finding.findings[0]["evidence_refs"] == [
         "claim:c_zone2_as_metabolic_base_not_when_recovery_low"
     ]
+
+
+def test_attach_system_knowledge_evidence_uses_single_lookup_for_multiple_findings(
+    db, monkeypatch
+):
+    lookup_calls = 0
+
+    def fake_lookup(_db, _twin):
+        nonlocal lookup_calls
+        lookup_calls += 1
+        return {
+            "entities": [],
+            "contextual_entities": [],
+            "claims": [
+                {
+                    "doc_id": "claim:c_recovery_low_reduce_intensity",
+                    "entity_type": "intervention",
+                    "entity_id": "recovery-training",
+                    "title": "恢复不足时降低跑步强度",
+                    "summary": "恢复不足时降低训练强度并改为恢复活动。",
+                    "metadata": {"domain": "movement"},
+                }
+            ],
+            "claim_boundary": "test-boundary",
+        }
+
+    monkeypatch.setattr(
+        "app.services.system_knowledge_service.lookup_for_twin",
+        fake_lookup,
+    )
+    findings = [
+        SpecialistFinding(
+            specialist_name="movement_coach",
+            category="movement",
+            summary="恢复不足，今天降低跑步强度",
+            findings=[{"title": "降低跑步强度", "action": "改为恢复活动"}],
+        ),
+        SpecialistFinding(
+            specialist_name="movement_coach",
+            category="movement",
+            summary="今天只做恢复活动，避免高强度跑步",
+            findings=[{"title": "恢复活动", "action": "避免高强度跑步"}],
+        ),
+    ]
+
+    result = attach_system_knowledge_evidence(db, {"wearable": {}}, findings)
+
+    assert lookup_calls == 1
+    assert result["findings_updated"] == 2
+    assert result["claim_refs"] == 1
+    assert all(
+        finding.evidence_refs == ["claim:c_recovery_low_reduce_intensity"]
+        for finding in findings
+    )
+    assert all(
+        finding.raw["evidence_resolution"]["support_status"] == "supported"
+        for finding in findings
+    )
+
+
+def test_attach_system_knowledge_evidence_precomputed_falsey_zero_hit_does_not_lookup(
+    db, monkeypatch
+):
+    def unexpected_lookup(*_args, **_kwargs):
+        raise AssertionError("precomputed zero-hit must not trigger another lookup")
+
+    monkeypatch.setattr(
+        "app.services.system_knowledge_service.lookup_for_twin",
+        unexpected_lookup,
+    )
+    finding = SpecialistFinding(
+        specialist_name="movement_coach",
+        category="movement",
+        summary="恢复不足，今天降低跑步强度",
+        findings=[{"title": "降低跑步强度"}],
+    )
+
+    result = attach_system_knowledge_evidence(
+        db,
+        {"wearable": {}},
+        [finding],
+        lookup_result={},
+    )
+
+    assert result["findings_updated"] == 0
+    assert result["claim_refs"] == 0
+    assert finding.evidence_refs == []
+    assert finding.raw["evidence_resolution"]["support_status"] == "model_inference"
+    assert finding.raw["unsupported"] is True
+
+
+def test_attach_system_knowledge_evidence_not_applicable_without_lookup(db, monkeypatch):
+    def unexpected_lookup(*_args, **_kwargs):
+        raise AssertionError("not-applicable findings must not query system knowledge")
+
+    monkeypatch.setattr(
+        "app.services.system_knowledge_service.lookup_for_twin",
+        unexpected_lookup,
+    )
+    record_finding = SpecialistFinding(
+        specialist_name="fuel_strategist",
+        category="nutrition",
+        summary="已记录晚餐",
+        findings=[{"type": "record", "title": "晚餐记录"}],
+        raw={"operation": "record_meal"},
+    )
+    gap_finding = SpecialistFinding(
+        specialist_name="longitudinal_analyst",
+        category="longitudinal",
+        summary="长期数据暂缺",
+        findings=[{"type": "data_gap", "title": "长期数据暂缺"}],
+        raw={"data_gap": True},
+    )
+
+    empty_result = attach_system_knowledge_evidence(db, {}, [])
+    not_applicable_result = attach_system_knowledge_evidence(
+        db,
+        {},
+        [record_finding, gap_finding],
+    )
+
+    assert empty_result == {"findings_updated": 0, "claim_refs": 0}
+    assert not_applicable_result == {"findings_updated": 0, "claim_refs": 0}
+    assert record_finding.raw["evidence_resolution"]["support_status"] == "not_applicable"
+    assert gap_finding.raw["evidence_resolution"]["support_status"] == "not_applicable"
 
 
 def test_attach_system_knowledge_evidence_marks_record_findings_not_applicable(db):

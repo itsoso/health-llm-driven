@@ -12,8 +12,10 @@ import json
 import logging
 import time
 from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
+from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -33,6 +35,18 @@ from app.twin.formatter import twin_to_prompt_blob
 from app.twin.schema import HealthTwin
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _TurnKBResolution:
+    """One immutable system-KB snapshot shared by a single Orchestrator turn."""
+
+    lookup_result: Dict[str, Any]
+    prompt_text: str
+    lookup_ms: int
+    lookup_count: int
+    lookup_ok: bool
+    claim_count: int
 
 # 2026-05-13: 用户级 LLM 偏好 — run_orchestrator / stream_orchestrator 入口 set,
 # _call_llm / _stream_llm 读取后调 create_provider_for_user. 避免 _call_llm 签名扩散.
@@ -616,18 +630,61 @@ def _build_persona_addendum(db: Session, user_id: int) -> str:
         return ""
 
 
+def _fallback_cross_review_block(
+    findings: List[SpecialistFinding],
+    twin: HealthTwin,
+    db: Optional[Session],
+    user_id: Optional[int],
+) -> str:
+    """Run the deterministic rule layer when no precomputed result exists."""
+
+    try:
+        from app.orchestrator.cross_review import detect_conflicts, render_conflicts_for_prompt
+
+        conflicts = detect_conflicts(findings, twin, db=db)
+        if not conflicts:
+            return ""
+        conflicts_text = render_conflicts_for_prompt(conflicts)
+        logger.info(
+            f"[orchestrator] cross_review 检测到 {len(conflicts)} 个 specialist 冲突 (fallback)"
+        )
+        try:
+            from app.agents.audit import log_cross_review_conflicts
+
+            log_cross_review_conflicts(
+                db,
+                user_id=user_id or twin.meta.user_id,
+                conflicts=[{
+                    "specialist_a": conflict.specialist_a,
+                    "specialist_b": conflict.specialist_b,
+                    "severity": conflict.severity,
+                    "description": conflict.description,
+                    "resolution_hint": conflict.resolution_hint,
+                } for conflict in conflicts],
+                used_specialists=[finding.specialist_name for finding in findings],
+            )
+        except Exception as audit_error:  # noqa: BLE001
+            logger.debug(f"[orchestrator] cross_review audit 失败: {audit_error}")
+        return conflicts_text
+    except Exception as error:  # noqa: BLE001
+        logger.debug(f"[orchestrator] cross_review 跳过: {error}")
+        return ""
+
+
 def _build_synthesis_prompt(
     query: str, twin: HealthTwin, findings: List[SpecialistFinding],
     db: Optional[Session] = None, user_id: Optional[int] = None,
-    conflict_arb_block: str = "",
+    conflict_arb_block: Optional[str] = None,
     realtime_evidence_block: str = "",
+    system_kb_text: Optional[str] = None,
     source: Optional[str] = None,
     lite_mode: bool = False,
 ) -> tuple[str, str]:
     """返回 (system_prompt, user_prompt).
 
     conflict_arb_block: 由调用方预先渲染的 cross_review + LLM 仲裁 markdown.
-    如果为空, 保留向下兼容: 内部跑一次 cross_review (无 LLM 仲裁).
+    None 表示未计算/检测失败, 保留向下兼容: 内部跑一次规则层 fallback.
+    空串表示已成功计算且无冲突, 不得重复检测.
 
     source: 'siri' → 走语音播报口语化 prompt (短句/无 markdown/数字口语化/250 字上限),
            其它值 (chat/widget/None) → 走常规详细 prompt.
@@ -647,8 +704,9 @@ def _build_synthesis_prompt(
 
     twin_blob = twin_to_prompt_blob(twin)
     personal_matrix_text = _format_personal_evidence_matrix_for_prompt(twin)
-    system_kb_text = ""
-    if not lite_mode and db is not None:
+    if lite_mode:
+        system_kb_text = ""
+    elif system_kb_text is None and db is not None:
         try:
             from app.services.system_knowledge_service import format_system_knowledge_for_prompt
 
@@ -659,6 +717,9 @@ def _build_synthesis_prompt(
             )
         except Exception as e:  # noqa: BLE001
             logger.debug(f"[orchestrator] system KB prompt injection skipped: {e}")
+            system_kb_text = ""
+    elif system_kb_text is None:
+        system_kb_text = ""
 
     findings_text_parts: List[str] = []
     for f in findings:
@@ -716,31 +777,9 @@ def _build_synthesis_prompt(
 
     # Cross-Review: specialist 之间矛盾检测 + audit log
     # 如果 caller 已经预渲染了 (含 LLM 仲裁), 直接用; 否则 fallback 跑规则层
-    conflicts_text = conflict_arb_block
-    if not conflicts_text:
-        try:
-            from app.orchestrator.cross_review import detect_conflicts, render_conflicts_for_prompt
-            conflicts = detect_conflicts(findings, twin, db=db)
-            if conflicts:
-                conflicts_text = render_conflicts_for_prompt(conflicts)
-                logger.info(f"[orchestrator] cross_review 检测到 {len(conflicts)} 个 specialist 冲突 (fallback)")
-                try:
-                    from app.agents.audit import log_cross_review_conflicts
-                    log_cross_review_conflicts(
-                        db, user_id=user_id or twin.meta.user_id,
-                        conflicts=[{
-                            "specialist_a": c.specialist_a,
-                            "specialist_b": c.specialist_b,
-                            "severity": c.severity,
-                            "description": c.description,
-                            "resolution_hint": c.resolution_hint,
-                        } for c in conflicts],
-                        used_specialists=[f.specialist_name for f in findings],
-                    )
-                except Exception as e_audit:  # noqa: BLE001
-                    logger.debug(f"[orchestrator] cross_review audit 失败: {e_audit}")
-        except Exception as e:  # noqa: BLE001
-            logger.debug(f"[orchestrator] cross_review 跳过: {e}")
+    conflicts_text = conflict_arb_block or ""
+    if conflict_arb_block is None:
+        conflicts_text = _fallback_cross_review_block(findings, twin, db, user_id)
 
     if source == "siri":
         system_prompt = (
@@ -903,17 +942,193 @@ def _system_kb_twin_payload(twin: HealthTwin) -> Dict[str, Any]:
     return system_kb_twin_payload_from_health_twin(twin)
 
 
+def _new_kb_lookup_session(
+    db: Session,
+    *,
+    fallback_user_id: int,
+) -> Session:
+    """Create a caller-bind-compatible Session with an independent transaction."""
+
+    bind = db.get_bind()
+    if isinstance(bind, Connection):
+        bind = bind.engine
+    lookup_db = Session(bind=bind, autoflush=False)
+    caller_info = getattr(db, "info", None)
+    tenant_id = (
+        caller_info.get("app_user_id")
+        if isinstance(caller_info, dict)
+        else None
+    )
+    lookup_db.info["app_user_id"] = (
+        int(tenant_id) if tenant_id is not None else int(fallback_user_id)
+    )
+    return lookup_db
+
+
+def _resolve_turn_system_knowledge(
+    db: Session,
+    twin: HealthTwin,
+    *,
+    enabled: bool,
+) -> _TurnKBResolution:
+    """Resolve one bounded KB snapshot, with one exceptional-path retry."""
+
+    empty_result: Dict[str, Any] = {
+        "entities": [],
+        "contextual_entities": [],
+        "claims": [],
+        "claim_boundary": "",
+    }
+    if not enabled:
+        return _TurnKBResolution(
+            lookup_result=empty_result,
+            prompt_text="",
+            lookup_ms=0,
+            lookup_count=0,
+            lookup_ok=True,
+            claim_count=0,
+        )
+
+    started = time.monotonic()
+    try:
+        from app.services.system_knowledge_service import (
+            format_system_knowledge_result_for_prompt,
+            lookup_for_twin,
+        )
+
+        payload = _system_kb_twin_payload(twin)
+    except Exception as error:  # noqa: BLE001
+        logger.warning(
+            "[orchestrator] system KB setup failed error_type=%s",
+            type(error).__name__,
+        )
+        return _TurnKBResolution(
+            lookup_result=empty_result,
+            prompt_text="",
+            lookup_ms=int((time.monotonic() - started) * 1000),
+            lookup_count=0,
+            lookup_ok=False,
+            claim_count=0,
+        )
+
+    lookup_count = 0
+    result: Optional[Dict[str, Any]] = None
+    for attempt in range(2):
+        lookup_db: Optional[Session] = None
+        try:
+            # KB resolution owns its transaction. This preserves the caller's
+            # pending unit of work and prevents a failed read from poisoning the
+            # Session used by later safety/context stages.
+            lookup_db = _new_kb_lookup_session(
+                db,
+                fallback_user_id=twin.meta.user_id,
+            )
+            lookup_count += 1
+            candidate = lookup_for_twin(lookup_db, payload)
+            if not isinstance(candidate, dict):
+                raise TypeError("lookup_for_twin returned a non-dict result")
+            result = candidate
+        except Exception as error:  # noqa: BLE001
+            logger.warning(
+                "[orchestrator] system KB lookup failed attempt=%s error_type=%s",
+                attempt + 1,
+                type(error).__name__,
+            )
+            if lookup_db is not None:
+                try:
+                    lookup_db.rollback()
+                except Exception as rollback_error:  # noqa: BLE001
+                    logger.warning(
+                        "[orchestrator] system KB lookup rollback failed "
+                        "attempt=%s error_type=%s",
+                        attempt + 1,
+                        type(rollback_error).__name__,
+                    )
+        finally:
+            if lookup_db is not None:
+                try:
+                    lookup_db.close()
+                except Exception as close_error:  # noqa: BLE001
+                    logger.warning(
+                        "[orchestrator] system KB lookup session close failed "
+                        "attempt=%s error_type=%s",
+                        attempt + 1,
+                        type(close_error).__name__,
+                    )
+        if result is not None:
+            break
+
+    if result is None:
+        return _TurnKBResolution(
+            lookup_result=empty_result,
+            prompt_text="",
+            lookup_ms=int((time.monotonic() - started) * 1000),
+            lookup_count=lookup_count,
+            lookup_ok=False,
+            claim_count=0,
+        )
+
+    claims = result.get("claims") or []
+    try:
+        prompt_text = format_system_knowledge_result_for_prompt(
+            result,
+            max_claims=6,
+        )
+    except Exception as error:  # noqa: BLE001
+        logger.warning(
+            "[orchestrator] system KB prompt formatting failed error_type=%s",
+            type(error).__name__,
+        )
+        prompt_text = ""
+    return _TurnKBResolution(
+        lookup_result=result,
+        prompt_text=prompt_text,
+        lookup_ms=int((time.monotonic() - started) * 1000),
+        lookup_count=lookup_count,
+        lookup_ok=True,
+        claim_count=len(claims),
+    )
+
+
 def _attach_kb_evidence_to_findings(
     db: Session,
     twin: HealthTwin,
     findings: List[SpecialistFinding],
-) -> None:
+    *,
+    lookup_result: Optional[Dict[str, Any]] = None,
+) -> Dict[str, int]:
     try:
         from app.services.system_knowledge_service import attach_system_knowledge_evidence
 
-        attach_system_knowledge_evidence(db, _system_kb_twin_payload(twin), findings)
+        return attach_system_knowledge_evidence(
+            db,
+            _system_kb_twin_payload(twin),
+            findings,
+            lookup_result=lookup_result,
+        )
     except Exception as e:  # noqa: BLE001
         logger.debug(f"[orchestrator] system KB evidence attach skipped: {e}")
+        return {"findings_updated": 0, "claim_refs": 0}
+
+
+def _count_avoided_kb_lookups(
+    findings: List[SpecialistFinding],
+    resolution: _TurnKBResolution,
+) -> int:
+    """Return legacy lookup attempts avoided by the shared turn snapshot."""
+
+    if not resolution.lookup_ok or resolution.lookup_count == 0:
+        return 0
+    applicable_findings = sum(
+        1
+        for finding in findings
+        if isinstance(finding.raw, dict)
+        and isinstance(finding.raw.get("evidence_resolution"), dict)
+        and finding.raw["evidence_resolution"].get("support_status")
+        != "not_applicable"
+    )
+    legacy_lookup_count = applicable_findings + 1  # per finding + prompt rendering
+    return max(0, legacy_lookup_count - resolution.lookup_count)
 
 
 def _apply_planner_evidence_policy(
@@ -1357,19 +1572,20 @@ async def _run_cross_review_and_arbitration(
     twin: HealthTwin,
     db: Optional[Session],
     user_id: Optional[int],
-) -> str:
+) -> Optional[str]:
     """检测 cross_review 冲突 → 达到门槛就 LLM 仲裁. 返回要注入 synthesis prompt 的渲染文本.
 
     - 有冲突 + 达到 LLM 触发门槛 (hard 或 >=2): await arbitrate_conflicts; 写 audit
     - 有冲突但未到门槛: 仅渲染 cross_review (规则层), 写 cross_review audit
     - 无冲突: 返回空串
+    - 检测失败: 返回 None, 由调用方执行一次规则层 fallback
     """
     try:
         from app.orchestrator.cross_review import detect_conflicts, render_conflicts_for_prompt
         conflicts = detect_conflicts(findings, twin, db=db)
     except Exception as e:  # noqa: BLE001
         logger.debug(f"[orchestrator] cross_review 跳过: {e}")
-        return ""
+        return None
 
     if not conflicts:
         return ""
@@ -1417,6 +1633,20 @@ async def _run_cross_review_and_arbitration(
 
     # 3) 回退: 仅规则层渲染
     return render_conflicts_for_prompt(conflicts)
+
+
+async def _resolve_cross_review_block(
+    findings: List[SpecialistFinding],
+    twin: HealthTwin,
+    db: Optional[Session],
+    user_id: Optional[int],
+) -> str:
+    """Resolve cross-review to one final string shared by every synthesis path."""
+
+    block = await _run_cross_review_and_arbitration(findings, twin, db, user_id)
+    if block is not None:
+        return block
+    return _fallback_cross_review_block(findings, twin, db, user_id)
 
 
 async def _stream_llm(
@@ -1620,14 +1850,29 @@ async def run_orchestrator(
     # 2026-05-13: set 用户偏好 ctx, _call_llm 内部读取.
     _user_pref_ctx.set((user_id, db))
     t_start = time.monotonic()
-    perf: Dict[str, Any] = {}
+    perf: Dict[str, Any] = {
+        "twin_wall_ms": 0,
+        "kb_lookup_ms": 0,
+        "kb_lookup_count": 0,
+        "kb_lookup_reuse_count": 0,
+        "kb_lookup_ok": True,
+        "kb_claim_count": 0,
+        "cross_review_ms": 0,
+        "iqs_ms": 0,
+    }
 
+    t_twin = time.monotonic()
     twin = build_twin(db, user_id)
+    perf["twin_wall_ms"] = int((time.monotonic() - t_twin) * 1000)
     t_intent = time.monotonic()
     intent = classify_intent(req.query)
     _task_tier_ctx.set(_tier_for_intent(intent))  # 成本路由(flag 默认关时无效)
     perf["intent_ms"] = int((time.monotonic() - t_intent) * 1000)
     specialists = _select_specialists(intent, twin, req.specialists)
+    # lite_mode 仍以是否选中 specialist 为准,不能改成 findings 是否为空:
+    # specialist 全失败时仍需保留存量 non-lite prompt/检索语义。
+    lite_mode = not specialists
+    perf["lite_mode"] = lite_mode
     # 注入 active case threads (STRATEGY 阶段 3): specialist 可读 context['recent_cases']
     # 了解用户有哪些"进行中的问题线"来决定是否开新 card / 避免重复.
     try:
@@ -1641,28 +1886,45 @@ async def run_orchestrator(
         timings=sp_timings,
     )
     perf["specialists"] = sp_timings
-    _attach_kb_evidence_to_findings(db, twin, findings)
+    kb_resolution = _resolve_turn_system_knowledge(
+        db,
+        twin,
+        enabled=not lite_mode,
+    )
+    perf["kb_lookup_ms"] = kb_resolution.lookup_ms
+    perf["kb_lookup_count"] = kb_resolution.lookup_count
+    perf["kb_lookup_ok"] = kb_resolution.lookup_ok
+    perf["kb_claim_count"] = kb_resolution.claim_count
+    _attach_kb_evidence_to_findings(
+        db,
+        twin,
+        findings,
+        lookup_result=kb_resolution.lookup_result,
+    )
+    perf["kb_lookup_reuse_count"] = _count_avoided_kb_lookups(
+        findings,
+        kb_resolution,
+    )
     findings, evidence_policy_trace = _apply_planner_evidence_policy(findings)
 
     # Cross-review + (可选) LLM 仲裁, 结果注入 synthesis prompt
-    conflict_arb_block = await _run_cross_review_and_arbitration(findings, twin, db, user_id)
-
-    # lite_mode: 无 specialist 时跳过 system_kb / credit / track / feedback / hybrid retrieve.
-    # 这是 trivial query 短路的下半场 — 上半场跳了 specialist, 下半场跳所有依赖 specialist
-    # 历史 / RAG 检索的 DB-heavy 块, 让 LLM 只看 twin + query.
-    lite_mode = not specialists
-    perf["lite_mode"] = lite_mode
+    t_cross_review = time.monotonic()
+    conflict_arb_block = await _resolve_cross_review_block(findings, twin, db, user_id)
+    perf["cross_review_ms"] = int((time.monotonic() - t_cross_review) * 1000)
 
     # IQS 实时检索 grounding — 非 lite / 非 siri 才取 (flag 关或失败则空, 不阻断)
     realtime_evidence_block = ""
     if not lite_mode and req.source != "siri":
         from app.services.iqs_search import fetch_realtime_evidence
+        t_iqs = time.monotonic()
         realtime_evidence_block = await fetch_realtime_evidence(req.query)
+        perf["iqs_ms"] = int((time.monotonic() - t_iqs) * 1000)
 
     system_prompt, user_prompt = _build_synthesis_prompt(
         req.query, twin, findings, db=db, user_id=user_id,
         conflict_arb_block=conflict_arb_block,
         realtime_evidence_block=realtime_evidence_block,
+        system_kb_text=kb_resolution.prompt_text,
         source=req.source,
         lite_mode=lite_mode,
     )
@@ -1774,9 +2036,13 @@ async def run_orchestrator(
     perf["total_ms"] = total_ms
     logger.info(
         f"[perf.orchestrator] user={user_id} mode=nonstream total={total_ms}ms "
-        f"twin={twin.meta.build_ms}ms intent={perf['intent_ms']}ms "
+        f"twin={twin.meta.build_ms}ms twin_wall={perf['twin_wall_ms']}ms "
+        f"intent={perf['intent_ms']}ms "
         f"sp_wall={sp_timings.get('parallel_wall_ms', 0)}ms "
         f"recovery={sp_timings.get('recovery_ms', 0)}ms "
+        f"kb={perf['kb_lookup_ms']}ms kb_calls={perf['kb_lookup_count']} "
+        f"kb_reuse={perf['kb_lookup_reuse_count']} "
+        f"cross_review={perf['cross_review_ms']}ms iqs={perf['iqs_ms']}ms "
         f"llm_full={perf['llm_full_ms']}ms "
         f"sp_count={len(specialists)} sp_failed={len(sp_timings.get('failed', []))} "
         f"lite={lite_mode}"
@@ -2065,13 +2331,26 @@ async def stream_orchestrator(
         try:
             try:
                 # perf 2026-05-28: 分阶段计时, 用于 done SSE + audit + 单行 grep 日志
-                perf: Dict[str, Any] = {}
+                perf: Dict[str, Any] = {
+                    "twin_wall_ms": 0,
+                    "kb_lookup_ms": 0,
+                    "kb_lookup_count": 0,
+                    "kb_lookup_reuse_count": 0,
+                    "kb_lookup_ok": True,
+                    "kb_claim_count": 0,
+                    "cross_review_ms": 0,
+                    "iqs_ms": 0,
+                }
+                t_twin = time.monotonic()
                 twin = build_twin(bg_db, user_id)
+                perf["twin_wall_ms"] = int((time.monotonic() - t_twin) * 1000)
                 t_intent = time.monotonic()
                 intent = classify_intent(req.query)
                 _task_tier_ctx.set(_tier_for_intent(intent))  # 成本路由(flag 默认关时无效)
                 perf["intent_ms"] = int((time.monotonic() - t_intent) * 1000)
                 specialists = _select_specialists(intent, twin, req.specialists)
+                lite_mode = not specialists
+                perf["lite_mode"] = lite_mode
                 try:
                     from app.services.clinical_journal_service import get_active_case_briefs
                     recent_cases = get_active_case_briefs(bg_db, user_id, limit=5)
@@ -2095,7 +2374,25 @@ async def stream_orchestrator(
                     timings=sp_timings,
                 )
                 perf["specialists"] = sp_timings
-                _attach_kb_evidence_to_findings(bg_db, twin, findings)
+                kb_resolution = _resolve_turn_system_knowledge(
+                    bg_db,
+                    twin,
+                    enabled=not lite_mode,
+                )
+                perf["kb_lookup_ms"] = kb_resolution.lookup_ms
+                perf["kb_lookup_count"] = kb_resolution.lookup_count
+                perf["kb_lookup_ok"] = kb_resolution.lookup_ok
+                perf["kb_claim_count"] = kb_resolution.claim_count
+                _attach_kb_evidence_to_findings(
+                    bg_db,
+                    twin,
+                    findings,
+                    lookup_result=kb_resolution.lookup_result,
+                )
+                perf["kb_lookup_reuse_count"] = _count_avoided_kb_lookups(
+                    findings,
+                    kb_resolution,
+                )
                 findings, evidence_policy_trace = _apply_planner_evidence_policy(findings)
                 if evidence_policy_trace.get("blocked_count"):
                     await chunk_queue.put(_sse(
@@ -2126,8 +2423,12 @@ async def stream_orchestrator(
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"[orchestrator.stream] memory extract 失败: {e}")
 
-                conflict_arb_block = await _run_cross_review_and_arbitration(
+                t_cross_review = time.monotonic()
+                conflict_arb_block = await _resolve_cross_review_block(
                     findings, twin, bg_db, user_id
+                )
+                perf["cross_review_ms"] = int(
+                    (time.monotonic() - t_cross_review) * 1000
                 )
 
                 try:
@@ -2140,21 +2441,19 @@ async def stream_orchestrator(
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"[orchestrator.stream] specialist_findings audit bypass 失败: {e}")
 
-                # lite_mode: 无 specialist 时跳过 system_kb / credit / track / feedback /
-                # hybrid retrieve (trivial query 短路下半场, 与 run_orchestrator 对齐).
-                lite_mode = not specialists
-                perf["lite_mode"] = lite_mode
-
                 # IQS 实时检索 grounding (与 run_orchestrator 对齐, flag 关/失败则空, 不阻断流)
                 realtime_evidence_block = ""
                 if not lite_mode and req.source != "siri":
                     from app.services.iqs_search import fetch_realtime_evidence
+                    t_iqs = time.monotonic()
                     realtime_evidence_block = await fetch_realtime_evidence(req.query)
+                    perf["iqs_ms"] = int((time.monotonic() - t_iqs) * 1000)
 
                 system_prompt, user_prompt = _build_synthesis_prompt(
                     req.query, twin, findings, db=bg_db, user_id=user_id,
                     conflict_arb_block=conflict_arb_block,
                     realtime_evidence_block=realtime_evidence_block,
+                    system_kb_text=kb_resolution.prompt_text,
                     source=req.source,
                     lite_mode=lite_mode,
                 )
@@ -2188,9 +2487,13 @@ async def stream_orchestrator(
                 # 单行 grep 日志, 在生产 journalctl 上方便 `grep '\[perf\.orchestrator\]'`
                 logger.info(
                     f"[perf.orchestrator] user={user_id} total={total_ms}ms "
-                    f"twin={twin.meta.build_ms}ms intent={perf['intent_ms']}ms "
+                    f"twin={twin.meta.build_ms}ms twin_wall={perf['twin_wall_ms']}ms "
+                    f"intent={perf['intent_ms']}ms "
                     f"sp_wall={sp_timings.get('parallel_wall_ms', 0)}ms "
                     f"recovery={sp_timings.get('recovery_ms', 0)}ms "
+                    f"kb={perf['kb_lookup_ms']}ms kb_calls={perf['kb_lookup_count']} "
+                    f"kb_reuse={perf['kb_lookup_reuse_count']} "
+                    f"cross_review={perf['cross_review_ms']}ms iqs={perf['iqs_ms']}ms "
                     f"llm_ttft={llm_ttft_ms}ms llm_full={perf['llm_full_ms']}ms "
                     f"sp_count={len(specialists)} sp_failed={len(sp_timings.get('failed', []))} "
                     f"lite={lite_mode}"
