@@ -92,6 +92,53 @@ class TestDietAPI:
         assert data["food_items"] == "米饭,青菜"
         assert data["calories"] is None
 
+    def test_photo_recognized_root_vegetable_portions_can_be_confirmed(
+        self, client, auth_headers
+    ):
+        """照片识别出的段/块/颗等食物份量必须能确认入库。"""
+        payload = {
+            "record_date": str(date.today()),
+            "meal_type": "breakfast",
+            "food_items": "胡萝卜 约3段 · 南瓜 约2块 · 红枣 约3颗 · 玉米 约1小段",
+            "calories": 655,
+            "protein": 19,
+            "carbs": 135,
+            "source": "chat_photo",
+        }
+
+        response = client.post(
+            "/api/v1/diet/records",
+            json=payload,
+            headers={**auth_headers, "Idempotency-Key": "diet-photo-card-breakfast-root-veg"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["food_items"] == payload["food_items"]
+        assert body["meal_type"] == "breakfast"
+        assert body["calories"] == 655
+
+    def test_create_diet_record_internal_failure_uses_generic_detail(
+        self, client, auth_headers, sample_diet_data, monkeypatch
+    ):
+        """保存异常不能把 DB/对象内部细节透给移动端 toast。"""
+        from app.api import diet as diet_api
+
+        class ExplodingDietRecord:
+            def __init__(self, *args, **kwargs):
+                raise RuntimeError("psycopg2.errors.UniqueViolation token=secret")
+
+        monkeypatch.setattr(diet_api, "DietRecordModel", ExplodingDietRecord)
+
+        response = client.post(
+            "/api/v1/diet/records",
+            json=sample_diet_data,
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 500
+        assert response.json()["detail"] == "创建记录失败，请稍后重试"
+
     def test_direct_photo_record_creates_attached_photo_asset(
         self, client, db, auth_headers, sample_diet_data, tmp_path, monkeypatch
     ):
@@ -367,6 +414,33 @@ class TestDietAPI:
         "保存并确认",
         "沃克",
         "伏诺拉生",
+        "阿司匹林 1片",
+        "阿奇霉素 1片",
+        "华法林 1片",
+        "warfarin 1片",
+        "warfarin1片",
+        "aspirin 1片",
+        "azithromycin1片",
+        "fish oil 2粒",
+        "fish oil2粒",
+        "omega-3 2粒",
+        "magnesium2粒",
+        "coq102粒",
+        "b122粒",
+        "d32粒",
+        "胡萝卜 + coq102粒",
+        "Ｄ３2粒",
+        "ＣｏＱ１０2粒",
+        "Ｂ１２2粒",
+        "fish‑oil2粒",
+        "fish–oil2粒",
+        "fish​oil2粒",
+        "d₃2粒",
+        "coq₁₀2粒",
+        "vitaminDfishoil",
+        "vitamindandfishoil",
+        "d3-fish-oil",
+        "胡萝卜 约3片 + warfarin 1片",
         "晨跑 30 分钟",
         "体重 73.1kg 腰围 84cm",
         "昨晚睡了 6 小时",
@@ -386,6 +460,70 @@ class TestDietAPI:
 
         assert response.status_code == 400
         assert "不能作为饮食记录" in response.json()["detail"]
+
+    @pytest.mark.parametrize("food_items", [
+        "华法林 1片",
+        "warfarin 1片",
+        "warfarin1片",
+        "aspirin 1片",
+        "azithromycin1片",
+        "fish oil 2粒",
+        "fish oil2粒",
+        "omega-3 2粒",
+        "magnesium2粒",
+        "coq102粒",
+        "b122粒",
+        "d32粒",
+        "胡萝卜 + coq102粒",
+        "Ｄ３2粒",
+        "ＣｏＱ１０2粒",
+        "Ｂ１２2粒",
+        "fish‑oil2粒",
+        "fish–oil2粒",
+        "fish​oil2粒",
+        "d₃2粒",
+        "coq₁₀2粒",
+        "vitaminDfishoil",
+        "vitamindandfishoil",
+        "d3-fish-oil",
+        "胡萝卜 约3片 + warfarin 1片",
+    ])
+    def test_valid_photo_draft_cannot_bypass_named_non_food_guard(
+        self,
+        client,
+        db,
+        auth_headers,
+        test_user,
+        food_items,
+    ):
+        token = "photo-draft-non-food-guard-0001"
+        db.add(DietPhotoDraft(
+            token=token,
+            user_id=test_user.id,
+            image_url=None,
+            image_type="jpeg",
+            recognition_result={"food_items": food_items},
+            status="pending",
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        ))
+        db.commit()
+        records_before = db.query(DietRecord).count()
+
+        response = client.post(
+            "/api/v1/diet/records",
+            json={
+                "record_date": str(date.today()),
+                "meal_type": "lunch",
+                "food_items": food_items,
+                "photo_draft_token": token,
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 400
+        assert "不能作为饮食记录" in response.json()["detail"]
+        assert db.query(DietRecord).count() == records_before
+        assert db.query(DietPhotoDraft).filter_by(token=token, status="pending").one()
 
     def test_image_persistence_failure_fails_the_write_without_creating_a_record(
         self, client, db, auth_headers, sample_diet_data, tmp_path, monkeypatch

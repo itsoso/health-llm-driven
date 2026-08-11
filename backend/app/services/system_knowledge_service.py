@@ -1969,7 +1969,21 @@ def format_system_knowledge_for_prompt(
     """Render a bounded system-KB block for Agent prompts."""
 
     result = lookup_for_twin(db, twin)
-    claims = result["claims"][:max_claims]
+    return format_system_knowledge_result_for_prompt(
+        result,
+        max_claims=max_claims,
+        max_chars=max_chars,
+    )
+
+
+def format_system_knowledge_result_for_prompt(
+    result: dict[str, Any],
+    max_claims: int = 6,
+    max_chars: int = 1500,
+) -> str:
+    """Render a bounded system-KB block from a precomputed lookup result."""
+
+    claims = (result.get("claims") or [])[:max_claims]
     if not claims:
         return ""
 
@@ -2459,6 +2473,7 @@ def attach_system_knowledge_evidence(
     findings: list[Any],
     *,
     max_refs_per_finding: int = 3,
+    lookup_result: dict[str, Any] | None = None,
 ) -> dict[str, int]:
     """Attach matched system-KB claim IDs to specialist findings.
 
@@ -2473,6 +2488,7 @@ def attach_system_knowledge_evidence(
         twin,
         findings,
         max_refs_per_finding=max_refs_per_finding,
+        lookup_result=lookup_result,
     )
 
 

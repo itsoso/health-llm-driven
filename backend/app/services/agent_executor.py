@@ -37,6 +37,7 @@ from app.services.tool_schema_registry import (
 from app.services.lab_plausibility import annotate_if_implausible
 from app.services.llm.error_messages import safe_llm_error_message, safe_tool_error_message
 from app.services.health_query_dimensions import normalize_health_query_args
+from app.services.drug_lexicon import supplement_name_entity_terms
 from app.services.post_record_quality import (
     build_diet_adjust_action,
     build_post_record_quality_response,
@@ -4366,9 +4367,181 @@ _FAST_RECORD_KIND_ALIASES = {
     "life_event": "event",
     "life-event": "event",
 }
+
+
 def _normalize_fast_record_kind(raw: Any) -> str:
     kind = str(raw or "").strip().lower()
     return _FAST_RECORD_KIND_ALIASES.get(kind, kind)
+
+
+def _normalized_current_turn_entity_text(raw: Any) -> str:
+    """Normalize an entity mention without fuzzy inference or aliases."""
+    return "".join(
+        character
+        for character in unicodedata.normalize("NFKC", str(raw or "")).casefold()
+        if character.isalnum()
+    )
+
+
+_EXPLICIT_SUPPLEMENT_NAME_RE = re.compile(
+    r"(?:^|[，,;；。.!！?？])\s*"
+    r"(?:请|麻烦)?\s*(?:帮我|给我)?\s*"
+    r"(?:"
+    r"(?:记录|打卡|录入)(?:一下)?\s*(?:我\s*)?(?:刚才|刚|今天)?\s*"
+    r"(?:吃了|服用了|服用|吃|用了|用药|补了|喝了)?"
+    r"|(?:我\s*)?(?:刚才|刚|今天)?\s*(?:吃了|服用了|服用|用了|补了|喝了)"
+    r")\s*[:：]?\s*(?P<name>[^，,;；。.!！?？]+)",
+    re.IGNORECASE,
+)
+_SUPPLEMENT_AMOUNT_TOKEN = (
+    r"(?:约|大约)?\s*(?:\d+(?:\.\d+)?|[零一二两三四五六七八九十百半]+|"
+    r"one|two|three|half)\s*"
+    r"(?:ml|毫升|mg|毫克|mcg|μg|ug|iu|单位|g|克|片|粒|颗|袋|包|滴|勺|支|瓶|"
+    r"tablets?|capsules?|softgels?)"
+)
+_SUPPLEMENT_LEADING_AMOUNT_RE = re.compile(rf"^{_SUPPLEMENT_AMOUNT_TOKEN}\s*", re.IGNORECASE)
+_SUPPLEMENT_TRAILING_AMOUNT_RE = re.compile(rf"\s*{_SUPPLEMENT_AMOUNT_TOKEN}$", re.IGNORECASE)
+_GENERIC_SUPPLEMENT_ENTITY_RE = re.compile(
+    r"^(?:(?:这个|那个|这些|那些|一种|一个|图中|图片中|包装上|上面|里面|"
+    r"补剂|保健品|营养品|营养补充剂|维生素|矿物质|营养素|草本|东西|产品|"
+    r"记录|打卡|识别|图|图片|照片|"
+    r"帮我|给我|请|一下|的|并且|和|要|想|需要))+$"
+)
+_INVALID_SUPPLEMENT_ENTITY_RESIDUAL_RE = re.compile(
+    r"(?:这个|那个|这些|那些|图中|图片中|包装上|上面|里面|"
+    r"补剂|保健品|营养品|营养补充剂|东西|产品|"
+    r"并且|然后|帮我|给我|请|确认|完成|保存|加入|新增|打卡|记录|录入|识别|"
+    r"每天|每日|每晚|每早|每周|每月|每次|一日|一次|两次|三次|隔日|"
+    r"饭前|饭后|餐前|餐后|睡前|早晚|"
+    r"以及|或者|还有|同时|再来|配合|加上|和|跟|与|及|加)"
+)
+_GENERIC_SUPPLEMENT_ASCII_ENTITIES = frozenset(
+    {
+        "supplement",
+        "supplements",
+        "vitamin",
+        "mineral",
+        "product",
+        "image",
+        "photo",
+        "record",
+        "log",
+        "checkin",
+        "today",
+        "tomorrow",
+        "now",
+        "again",
+        "done",
+        "ok",
+        "okay",
+        "it",
+    }
+)
+_INVALID_SUPPLEMENT_ENTITY_ASCII_RESIDUAL_RE = re.compile(
+    r"\b(?:this|that|these|those|supplements?|products?|and|or|then|please|"
+    r"plus|with|confirm|complete|save|add|record|log|check\s*in|daily|weekly|"
+    r"monthly|nightly|once|twice|morning|evening|before|after|"
+    r"every\s+day|every\s+morning|every\s+night|per\s+day|times?|"
+    r"for\s+me|help\s+me|identify)\b",
+    re.IGNORECASE,
+)
+_INVALID_SUPPLEMENT_ENTITY_STRUCTURE_RE = re.compile(r"[+＋&＆/／、|｜]")
+_SUPPLEMENT_RESIDUAL_AMOUNT_RE = re.compile(_SUPPLEMENT_AMOUNT_TOKEN, re.IGNORECASE)
+_QUOTED_SUPPLEMENT_ENTITY_RE = re.compile(
+    r"^\s*(?:「(?P<corner>[^」]+)」|“(?P<curly>[^”]+)”|"
+    r"\"(?P<double>[^\"]+)\"|【(?P<bracket>[^】]+)】)\s*(?P<tail>.*)$"
+)
+
+
+def _supplement_entity_is_generic(raw: Any) -> bool:
+    normalized = _normalized_current_turn_entity_text(raw)
+    return bool(
+        _GENERIC_SUPPLEMENT_ENTITY_RE.fullmatch(normalized)
+        or normalized in _GENERIC_SUPPLEMENT_ASCII_ENTITIES
+    )
+
+
+def _supplement_entity_has_directive_residual(raw: Any) -> bool:
+    boundary_preserving = unicodedata.normalize("NFKC", str(raw or "")).casefold()
+    normalized = _normalized_current_turn_entity_text(boundary_preserving)
+    return bool(
+        _INVALID_SUPPLEMENT_ENTITY_STRUCTURE_RE.search(boundary_preserving)
+        or _INVALID_SUPPLEMENT_ENTITY_RESIDUAL_RE.search(normalized)
+        or _INVALID_SUPPLEMENT_ENTITY_ASCII_RESIDUAL_RE.search(boundary_preserving)
+        or _SUPPLEMENT_RESIDUAL_AMOUNT_RE.search(boundary_preserving)
+    )
+
+
+def _supplement_entity_is_canonical_name(raw: Any) -> bool:
+    normalized = _normalized_current_turn_entity_text(raw)
+    canonical = {
+        _normalized_current_turn_entity_text(term)
+        for term in supplement_name_entity_terms()
+    }
+    return normalized in canonical
+
+
+def _strip_supplement_edge_amounts(raw: str) -> str:
+    """Remove every leading/trailing amount; embedded amounts remain invalid."""
+    candidate = raw
+    while True:
+        stripped = _SUPPLEMENT_LEADING_AMOUNT_RE.sub("", candidate)
+        stripped = _SUPPLEMENT_TRAILING_AMOUNT_RE.sub("", stripped)
+        if stripped == candidate:
+            return stripped
+        candidate = stripped.strip()
+
+
+def _explicitly_quoted_supplement_entity(raw: str) -> Optional[str]:
+    match = _QUOTED_SUPPLEMENT_ENTITY_RE.fullmatch(raw)
+    if match is None:
+        return None
+    name = next(
+        (
+            match.group(group)
+            for group in ("corner", "curly", "double", "bracket")
+            if match.group(group) is not None
+        ),
+        "",
+    ).strip()
+    tail = _strip_supplement_edge_amounts(match.group("tail").strip())
+    if tail or len(name) > 80:
+        return None
+    return name
+
+
+def _explicit_supplement_names_in_current_turn(user_message: Any) -> tuple[str, ...]:
+    raw_message = unicodedata.normalize("NFKC", str(user_message or ""))
+    names: list[str] = []
+    for match in _EXPLICIT_SUPPLEMENT_NAME_RE.finditer(raw_message):
+        candidate = match.group("name").strip(" ：:，,;；。.!！?？")
+        quoted_candidate = _explicitly_quoted_supplement_entity(candidate)
+        candidate = quoted_candidate or _strip_supplement_edge_amounts(candidate)
+        normalized_candidate = _normalized_current_turn_entity_text(candidate)
+        if len(normalized_candidate) < 2:
+            continue
+        if _supplement_entity_is_generic(candidate):
+            continue
+        if _supplement_entity_has_directive_residual(candidate):
+            continue
+        if quoted_candidate is None and not _supplement_entity_is_canonical_name(candidate):
+            continue
+        names.append(normalized_candidate)
+    return tuple(names)
+
+
+def _supplement_name_is_grounded_in_current_turn(
+    supplement_name: Any,
+    user_message: Any,
+) -> bool:
+    normalized_name = _normalized_current_turn_entity_text(supplement_name)
+    if len(normalized_name) < 2:
+        return False
+    if _supplement_entity_is_generic(supplement_name):
+        return False
+    if _supplement_entity_has_directive_residual(supplement_name):
+        return False
+    return normalized_name in _explicit_supplement_names_in_current_turn(user_message)
 
 
 def _fast_record_kind(args: dict) -> str:
@@ -20091,6 +20264,44 @@ class AgentExecutor:
         if rtype == "supplement":
             name = data.get("supplement_name", data.get("name", ""))
             if name:
+                current_message = getattr(
+                    self,
+                    "_current_turn_user_message",
+                    "",
+                )
+                if getattr(self, "_current_turn_has_attachment", False):
+                    logger.warning(
+                        "[health_record] blocked supplement write on attachment turn "
+                        "user=%s message_chars=%s",
+                        self._current_user_id,
+                        len(str(current_message or "")),
+                    )
+                    return local_write_rejection(
+                        "supplement_image_confirmation_required",
+                        message="图片识别出的补剂尚未写入。",
+                        recovery_guidance=(
+                            "请核对包装后，在不带图片的新消息中发送“记录「包装上的完整名称」”。"
+                        ),
+                    )
+                if not _supplement_name_is_grounded_in_current_turn(
+                    name,
+                    current_message,
+                ):
+                    logger.warning(
+                        "[health_record] blocked ungrounded supplement name "
+                        "user=%s name_chars=%s message_chars=%s",
+                        self._current_user_id,
+                        len(str(name)),
+                        len(str(current_message or "")),
+                    )
+                    return local_write_rejection(
+                        "supplement_name_not_user_grounded",
+                        message="当前消息没有明确写出要记录的补剂名称，本次未写入。",
+                        recovery_guidance=(
+                            "标准补剂名可直接输入；新名称请用引号圈定，"
+                            "例如“记录「正官庄红参液」10mL”。"
+                        ),
+                    )
                 # 查找匹配的补剂定义 (走 _api_get_json: 拿干净可解析数据, 不被字符截断)
                 supps, err = await self._api_get_json(f"{base}/supplements/me/definitions", headers)
                 if err:
@@ -20104,7 +20315,7 @@ class AgentExecutor:
                         {"action": "supplement", "supplement_id": matched["id"]}
                     )
                 # 没匹配到活跃补剂 → 自动建档再打卡(镜像 medication 先例,见下方 :4646)。
-                # 旧行为报"未找到"把用户推去手动页面 —— 拍照/口述识别出的新补剂
+                # 旧行为报"未找到"把用户推去手动页面 —— 当前文本明确写出的新补剂
                 # (实测:正官庄红参液)记录直接失败。建档可逆(补剂管理页可停用/删),
                 # 且新条目进入 DSI 安全规则覆盖面(加层不减层,只增覆盖)。
                 create_payload = {"name": name}

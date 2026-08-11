@@ -1037,6 +1037,7 @@ async def test_supplement_lookup_clean_json_matches(db):
     from app.services.agent_executor import AgentExecutor
     executor = AgentExecutor(db)
     executor._current_user_id = 1
+    executor._current_turn_user_message = "记录甘氨酸镁"
 
     class _Resp:
         status_code = 200

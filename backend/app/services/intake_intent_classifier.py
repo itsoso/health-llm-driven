@@ -10,6 +10,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
+from app.services.drug_lexicon import contains_drug_name, contains_supplement_name
+
 
 @dataclass(frozen=True)
 class IntakeIntent:
@@ -179,7 +181,7 @@ def classify_intake_intent(query: Any) -> IntakeIntent:
             slots["amount_ml"] = water_amount
         return IntakeIntent("water", 0.9, "water", raw, slots)
 
-    if _looks_like_medication(normalized):
+    if _looks_like_medication(raw, normalized):
         item = _extract_item_text(raw)
         if _is_pure_question_item(item):
             return IntakeIntent("unknown", 0.3, "intake_question", raw)
@@ -260,8 +262,20 @@ def _extract_water_amount(normalized: str) -> int | None:
         return None
 
 
-def _looks_like_medication(normalized: str) -> bool:
-    if _has_any(normalized, MEDICATION_MARKERS):
+_ADJACENT_NAMED_INTAKE_DOSE_RE = re.compile(
+    r"(?<=[a-z])(?=\d+(?:\.\d+)?\s*(?:mg|mcg|μg|ug|iu|ml|g|毫克|毫升|克|片|粒|颗|袋|包|滴|支|瓶))",
+    re.IGNORECASE,
+)
+
+
+def _boundary_preserving_intake_text(raw: str) -> str:
+    """Separate only an ASCII name followed immediately by a recognized dose."""
+    return _ADJACENT_NAMED_INTAKE_DOSE_RE.sub(" ", raw or "")
+
+
+def _looks_like_medication(raw: str, normalized: str) -> bool:
+    named_intake_text = _boundary_preserving_intake_text(raw)
+    if _has_any(normalized, MEDICATION_MARKERS) or contains_drug_name(named_intake_text):
         return True
     return bool(
         _MEDICATION_ACTION_RE.search(normalized)
@@ -274,6 +288,8 @@ def _looks_like_medication(normalized: str) -> bool:
 def _looks_like_supplement(raw: str, normalized: str) -> bool:
     if re.search(r"维\s*c\s*(?:茶|饮|饮料|果汁|柠檬|柠)", raw, re.I):
         return False
+    if contains_supplement_name(raw):
+        return True
     for marker in SUPPLEMENT_MARKERS:
         lowered = marker.lower()
         if lowered.isascii():

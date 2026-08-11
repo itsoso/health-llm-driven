@@ -1,11 +1,21 @@
 import { isMedicationRecordItem } from '../services/medicationFilters';
 
-export function assertDietFoodItemsAllowed(foodItems: string): void {
+export function assertDietFoodItemsAllowed(
+  foodItems: string,
+  options: { ownerBoundPhotoDraft?: boolean } = {},
+): void {
   if (looksLikeDietManagementIntent(foodItems)) {
     throw new Error('invalid_diet_food_items_management');
   }
   if (looksLikeNonDietIntake(foodItems)) {
-    throw new Error('invalid_diet_food_items_non_diet');
+    // Owner-bound photo drafts may contain food slice counts such as `胡萝卜
+    // 约3片`. Defer only that ambiguous unit; known medication/supplement
+    // signals remain blocked locally and by the canonical backend guard.
+    const onlyAmbiguousPhotoSlice = options.ownerBoundPhotoDraft
+      && looksLikeOnlyAmbiguousPhotoSlice(foodItems);
+    if (!onlyAmbiguousPhotoSlice) {
+      throw new Error('invalid_diet_food_items_non_diet');
+    }
   }
   if (looksLikeHealthMetricIntent(foodItems)) {
     throw new Error('invalid_diet_food_items_health_metric');
@@ -32,13 +42,27 @@ export function looksLikeDietManagementIntent(value: string): boolean {
 }
 
 export function looksLikeNonDietIntake(value: string): boolean {
-  if (isMedicationRecordItem({ name: value })) return true;
+  const normalizedValue = value
+    .normalize('NFKC')
+    .replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-')
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '');
+  if (isMedicationRecordItem({ name: normalizedValue })) return true;
   // 饮品里常见的维 C 茶/柠檬饮料不应被补剂关键词误杀。
-  if (/维\s*c\s*(?:茶|饮|饮料|果汁|柠檬|柠)/i.test(value)) return false;
-  if (/鱼油|维生素|维\s*d|d3|d2|b族|益生菌|辅酶\s*q?\s*10|甘氨酸镁|钙片|叶酸|锌片/i.test(value)) {
+  if (/维\s*c\s*(?:茶|饮|饮料|果汁|柠檬|柠)/i.test(normalizedValue)) return false;
+  if (/鱼油|维生素|维\s*d|b族|益生菌|辅酶\s*q?\s*10|甘氨酸镁|钙片|叶酸|锌片/i.test(normalizedValue)) {
     return true;
   }
-  return /(^|[^a-z0-9])(?:nac|magnesium|glycinate)(?=$|[^a-z0-9])/i.test(value);
+  const compactValue = normalizedValue.replace(/[\s-]+/g, '');
+  if (/(?:vitamind|d[23]|b12|coq10)(?:and)?(?:fishoil|magnesium|nac|omega3)|(?:fishoil|magnesium|nac|omega3)(?:and)?(?:vitamind|d[23]|b12|coq10)/i.test(compactValue)) {
+    return true;
+  }
+  return /(^|[^a-z0-9])(?:vitamin[\s-]*[a-z]\d*|d3|d2|b12|coq[\s-]*10|nac|magnesium|glycinate|fish[\s-]*oil|omega(?:[\s-]*3)?)(?=$|[^a-z0-9]|\d+(?:\.\d+)?\s*(?:mg|mcg|μg|ug|iu|ml|g|粒|片|颗|袋|包|滴|tablet|capsule|softgel))/i.test(normalizedValue);
+}
+
+function looksLikeOnlyAmbiguousPhotoSlice(value: string): boolean {
+  const withoutNumericSlices = value.replace(/(?:约|大约)?\s*\d+(?:\.\d+)?\s*片/g, ' ');
+  if (withoutNumericSlices === value) return false;
+  return !looksLikeNonDietIntake(withoutNumericSlices);
 }
 
 export function looksLikeHealthMetricIntent(value: string): boolean {

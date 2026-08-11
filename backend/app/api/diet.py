@@ -774,7 +774,7 @@ def _create_diet_record_locked(
             _remove_diet_image_file(created_image_path)
         except OSError as cleanup_error:
             logger.error("饮食图片失败回滚清理失败: %s", cleanup_error)
-        raise HTTPException(status_code=500, detail=f"创建记录失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="创建记录失败，请稍后重试")
 
 
 def _convert_to_response(record) -> DietRecordResponse:

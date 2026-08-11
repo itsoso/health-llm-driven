@@ -585,6 +585,172 @@ describe('dispatchChatCardAction', () => {
     );
   });
 
+  it('preserves an owner-bound photo draft when a food portion uses 片', async () => {
+    const photoDraftToken = 'photo-draft-token-1234567890';
+    const foodItems = '小米粥 约1碗 + 虾仁炒时蔬 约1小碗 + 煎蛋 1个 + 玉米 约1/4根 + 胡萝卜 约3片 + 南瓜 约2块';
+    mockApiPost.mockResolvedValueOnce({ data: { id: 1074 } });
+
+    await expect(dispatchChatCardAction({
+      id: `confirm-contextual-diet:${photoDraftToken}`,
+      label: '确认记录',
+      action: 'diet_record.create',
+      endpoint: '/diet/records',
+      requires_manual_confirm: true,
+      ...DIET_WRITE_POLICY,
+      payload: {
+        record: {
+          record_date: '2026-08-10',
+          meal_type: 'lunch',
+          food_items: foodItems,
+          calories: 610,
+          protein: 31,
+          carbs: 90,
+          fat: 15,
+          source: 'chat_photo',
+          photo_draft_token: photoDraftToken,
+        },
+      },
+    }, 'diet-photo-card-production-regression')).resolves.toEqual(expect.objectContaining({
+      status: 'completed',
+      receipt: expect.objectContaining({
+        resourceType: 'diet_record',
+        resourceId: '1074',
+        verified: true,
+      }),
+    }));
+
+    expect(mockApiPost).toHaveBeenCalledWith(
+      '/diet/records',
+      expect.objectContaining({
+        food_items: foodItems,
+        photo_draft_token: photoDraftToken,
+      }),
+      { headers: { 'Idempotency-Key': 'diet-photo-card-production-regression' } },
+    );
+  });
+
+  it('preserves photo draft foods with 段 块 颗 portions before posting', async () => {
+    const photoDraftToken = 'photo-draft-token-1234567890';
+    const foodItems = '胡萝卜 约3段 · 南瓜 约2块 · 红枣 约3颗 · 玉米 约1小段';
+    mockApiPost.mockResolvedValueOnce({ data: { id: 1075 } });
+
+    await expect(dispatchChatCardAction({
+      id: `confirm-contextual-diet:${photoDraftToken}`,
+      label: '确认记录',
+      action: 'diet_record.create',
+      endpoint: '/diet/records',
+      requires_manual_confirm: true,
+      ...DIET_WRITE_POLICY,
+      payload: {
+        record: {
+          record_date: '2026-08-10',
+          meal_type: 'breakfast',
+          food_items: foodItems,
+          calories: 655,
+          protein: 19,
+          carbs: 135,
+          source: 'chat_photo',
+          photo_draft_token: photoDraftToken,
+        },
+      },
+    }, 'diet-photo-card-breakfast-root-veg')).resolves.toEqual(expect.objectContaining({
+      status: 'completed',
+      receipt: expect.objectContaining({
+        resourceType: 'diet_record',
+        resourceId: '1075',
+        verified: true,
+      }),
+    }));
+
+    expect(mockApiPost).toHaveBeenCalledWith(
+      '/diet/records',
+      expect.objectContaining({
+        food_items: foodItems,
+        meal_type: 'breakfast',
+        calories: 655,
+        protein: 19,
+        carbs: 135,
+        photo_draft_token: photoDraftToken,
+      }),
+      { headers: { 'Idempotency-Key': 'diet-photo-card-breakfast-root-veg' } },
+    );
+  });
+
+  it('rejects malformed photo draft tokens before posting', async () => {
+    await expect(dispatchChatCardAction({
+      label: '确认记录',
+      action: 'diet_record.create',
+      endpoint: '/diet/records',
+      requires_manual_confirm: true,
+      ...DIET_WRITE_POLICY,
+      payload: {
+        record: {
+          meal_type: 'lunch',
+          food_items: '胡萝卜 约3片',
+          photo_draft_token: '../not-an-owner-token',
+        },
+      },
+    })).rejects.toThrow('invalid_diet_photo_draft_token');
+
+    expect(mockApiPost).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['阿司匹林 1片'],
+    ['阿奇霉素 1片'],
+    ['华法林 1片'],
+    ['warfarin 1片'],
+    ['warfarin1片'],
+    ['aspirin 1片'],
+    ['azithromycin1片'],
+    ['维生素D 1片'],
+    ['fish oil 2粒'],
+    ['fish oil2粒'],
+    ['omega-3 2粒'],
+    ['magnesium2粒'],
+    ['coq102粒'],
+    ['b122粒'],
+    ['d32粒'],
+    ['胡萝卜 + coq102粒'],
+    ['Ｄ３2粒'],
+    ['ＣｏＱ１０2粒'],
+    ['Ｂ１２2粒'],
+    ['fish‑oil2粒'],
+    ['fish–oil2粒'],
+    ['fish​oil2粒'],
+    ['d₃2粒'],
+    ['coq₁₀2粒'],
+    ['vitamin D 2粒'],
+    ['vitamin D1000IU'],
+    ['coq10200mg'],
+    ['b121000mcg'],
+    ['d31000IU'],
+    ['fish oil1000mg'],
+    ['magnesium500mg'],
+    ['nac600mg'],
+    ['vitaminDfishoil'],
+    ['vitamindandfishoil'],
+    ['d3-fish-oil'],
+    ['胡萝卜 约3片 + warfarin 1片'],
+  ])('rejects non-diet intake even with an owner-bound photo token: %s', async (foodItems) => {
+    await expect(dispatchChatCardAction({
+      label: '确认记录',
+      action: 'diet_record.create',
+      endpoint: '/diet/records',
+      requires_manual_confirm: true,
+      ...DIET_WRITE_POLICY,
+      payload: {
+        record: {
+          meal_type: 'lunch',
+          food_items: foodItems,
+          photo_draft_token: 'photo-draft-token-1234567890',
+        },
+      },
+    })).rejects.toThrow('invalid_diet_food_items_non_diet');
+
+    expect(mockApiPost).not.toHaveBeenCalled();
+  });
+
   it('normalizes structured food arrays before creating diet records', async () => {
     mockApiPost.mockResolvedValueOnce({ data: { id: 78 } });
 

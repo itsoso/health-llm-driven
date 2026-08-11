@@ -12,9 +12,11 @@ from app.services.drug_lexicon import (
     _FREE_TEXT_AMBIGUOUS_TERMS,
     _FREE_TEXT_EXCLUDED_SUPPLEMENT_CLASSES,
     contains_drug_name,
+    contains_supplement_name,
     drug_name_spans,
     drug_name_free_text_terms,
     prescriptive_free_text_terms,
+    supplement_name_entity_terms,
 )
 
 
@@ -83,6 +85,36 @@ def test_drug_name_detector_covers_complete_names_without_short_substring_false_
     assert len(drug_name_spans("把二甲双胍换成格列美脲")) == 2
     assert contains_drug_name("停用跑步机，改为户外步行") is False
     assert contains_drug_name("停用睡前闹钟") is False
+    assert contains_drug_name("ｗａｒｆａｒｉｎ1片") is True
+
+
+def test_supplement_name_detector_uses_complete_names_without_food_or_substring_false_positives():
+    assert contains_supplement_name("fish oil 2粒") is True
+    assert contains_supplement_name("omega-3 2粒") is True
+    assert contains_supplement_name("magnesium 2粒") is True
+    assert contains_supplement_name("coq102粒") is True
+    assert contains_supplement_name("b122粒") is True
+    assert contains_supplement_name("d32粒") is True
+    assert contains_supplement_name("Ｄ３2粒") is True
+    assert contains_supplement_name("ＣｏＱ１０2粒") is True
+    assert contains_supplement_name("Ｂ１２2粒") is True
+    assert contains_supplement_name("fish‑oil2粒") is True
+    assert contains_supplement_name("fish–oil2粒") is True
+    assert contains_supplement_name("fish​oil2粒") is True
+    assert contains_supplement_name("d₃2粒") is True
+    assert contains_supplement_name("coq₁₀2粒") is True
+    assert contains_supplement_name("vitaminDfishoil") is True
+    assert contains_supplement_name("vitamindandfishoil") is True
+    assert contains_supplement_name("d3-fish-oil") is True
+    assert contains_supplement_name("environment monitoring") is False
+    assert contains_supplement_name("garlic bread") is False
+    assert contains_supplement_name("coq10environment") is False
+    assert contains_supplement_name("d32factor") is False
+
+
+def test_explicit_supplement_entity_lexicon_keeps_exact_food_and_herb_names():
+    terms = supplement_name_entity_terms()
+    assert {"garlic", "姜黄素", "益生菌"} <= terms
 
 
 # 迁移前 kb_reconciliation_merge 手抄的处方 term 全集(2026-07 迁到 drug_lexicon 前)。

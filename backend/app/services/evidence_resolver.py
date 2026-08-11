@@ -39,6 +39,7 @@ class EvidenceResolver:
         finding: Any,
         *,
         max_refs: int = 3,
+        lookup_result: dict[str, Any] | None = None,
     ) -> EvidenceResolution:
         if _finding_is_evidence_not_applicable(finding):
             return EvidenceResolution(
@@ -54,7 +55,11 @@ class EvidenceResolver:
             _select_claim_refs_for_specialist,
         )
 
-        result = lookup_for_twin(self.db, twin)
+        result = (
+            lookup_for_twin(self.db, twin)
+            if lookup_result is None
+            else lookup_result
+        )
         claims = result.get("claims") or []
         refs = _select_claim_refs_for_specialist(finding, claims, max_refs)
         if refs:
@@ -79,16 +84,26 @@ class EvidenceResolver:
         findings: list[Any],
         *,
         max_refs_per_finding: int = 3,
+        lookup_result: dict[str, Any] | None = None,
     ) -> dict[str, int]:
         from app.services.system_knowledge_service import _dedupe_preserve_order
 
         updated = 0
         claim_refs = 0
+        batch_lookup_result = lookup_result
         for finding in findings:
+            if (
+                batch_lookup_result is None
+                and not _finding_is_evidence_not_applicable(finding)
+            ):
+                from app.services.system_knowledge_service import lookup_for_twin
+
+                batch_lookup_result = lookup_for_twin(self.db, twin)
             resolution = self.resolve_for_finding(
                 twin,
                 finding,
                 max_refs=max_refs_per_finding,
+                lookup_result=batch_lookup_result,
             )
             claim_refs = max(claim_refs, resolution.matched_claim_count)
             raw = getattr(finding, "raw", None)

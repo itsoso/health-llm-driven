@@ -32,6 +32,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from functools import lru_cache
 from typing import Dict, FrozenSet, List, Pattern
 
@@ -108,7 +109,9 @@ SUPPLEMENT_CLASS_ALIASES: Dict[str, List[str]] = {
     "garlic": ["garlic", "大蒜"],
     "curcumin": ["curcumin", "姜黄素", "turmeric"],
     "coq10": ["coq10", "co-q10", "辅酶 q10", "辅酶q10", "ubiquinol"],
-    "vitamin_d": ["vitamin d", "维生素 d", "vitamin-d"],
+    "vitamin_d": [
+        "vitamin d", "维生素 d", "vitamin-d", "vitamin d3", "vitamin d2", "d3", "d2",
+    ],
     "b12": ["b12", "甲钴胺", "cyanocobalamin", "methylcobalamin"],
     "folate": ["folate", "叶酸", "methyl folate", "甲基叶酸"],
     "niacin": ["niacin", "烟酸", "nicotinic"],
@@ -267,11 +270,17 @@ def drug_name_free_text_terms() -> FrozenSet[str]:
 
 @lru_cache(maxsize=1)
 def _drug_name_free_text_pattern() -> Pattern[str]:
+    adjacent_dose = (
+        r"\d+(?:\.\d+)?\s*(?:ml|mg|mcg|μg|ug|iu|g|毫升|毫克|克|单位|"
+        r"片|粒|颗|袋|包|滴|支|瓶|tablets?|capsules?)"
+    )
     alternatives: list[str] = []
     for term in sorted(drug_name_free_text_terms(), key=lambda value: (-len(value), value)):
         escaped = re.escape(term)
         if term.isascii():
-            alternatives.append(rf"(?<![a-z0-9]){escaped}s?(?![a-z0-9])")
+            alternatives.append(
+                rf"(?<![a-z0-9]){escaped}s?(?=$|[^a-z0-9]|{adjacent_dose})"
+            )
         else:
             alternatives.append(escaped)
     return re.compile("|".join(alternatives), re.IGNORECASE)
@@ -287,7 +296,82 @@ def contains_drug_name(text: str | None) -> bool:
     """识别自由文本中的完整药名，并规避 iron/environment 等短词误配。"""
     if not text:
         return False
-    return _drug_name_free_text_pattern().search(str(text).lower()) is not None
+    return _drug_name_free_text_pattern().search(_normalize_intake_name_text(text)) is not None
+
+
+@lru_cache(maxsize=1)
+def supplement_name_free_text_terms() -> FrozenSet[str]:
+    """完整补剂名探测词；排除会把普通食物误判为补剂的草药/食物类。"""
+    terms = set(_flatten_aliases(
+        SUPPLEMENT_CLASS_ALIASES,
+        exclude_classes=_FREE_TEXT_EXCLUDED_SUPPLEMENT_CLASSES,
+    ))
+    terms -= _FREE_TEXT_AMBIGUOUS_TERMS
+    collapsed = {t.replace(" ", "") for t in terms if " " in t and _has_cjk(t)}
+    return frozenset(t for t in (terms | collapsed) if t)
+
+
+@lru_cache(maxsize=1)
+def supplement_name_entity_terms() -> FrozenSet[str]:
+    """All exact supplement aliases for explicit entity validation."""
+    terms = set(_flatten_aliases(SUPPLEMENT_CLASS_ALIASES))
+    collapsed = {t.replace(" ", "") for t in terms if " " in t and _has_cjk(t)}
+    return frozenset(t for t in (terms | collapsed) if t)
+
+
+_UNICODE_NAME_DASH_RE = re.compile(r"[\u2010-\u2015\u2212\ufe58\ufe63\uff0d]")
+_UNICODE_NAME_INVISIBLE_RE = re.compile(r"[\u200b-\u200d\u2060\ufeff]")
+_COMPACT_MULTI_SUPPLEMENT_RE = re.compile(
+    r"(?<![a-z0-9])(?:"
+    r"(?:vitamind|d[23]|b12|coq10)(?:and)?(?:fishoil|magnesium|nac|omega3)|"
+    r"(?:fishoil|magnesium|nac|omega3)(?:and)?(?:vitamind|d[23]|b12|coq10)"
+    r")(?![a-z0-9])",
+    re.IGNORECASE,
+)
+
+
+def _normalize_intake_name_text(text: str | None) -> str:
+    normalized = unicodedata.normalize("NFKC", str(text or "")).casefold()
+    normalized = _UNICODE_NAME_DASH_RE.sub("-", normalized)
+    return _UNICODE_NAME_INVISIBLE_RE.sub("", normalized)
+
+
+def _compile_supplement_name_pattern(terms: FrozenSet[str]) -> Pattern[str]:
+    adjacent_dose = (
+        r"\d+(?:\.\d+)?\s*(?:ml|mg|mcg|μg|ug|iu|g|毫升|毫克|克|单位|"
+        r"片|粒|颗|袋|包|滴|勺|支|瓶|tablets?|capsules?|softgels?)"
+    )
+    alternatives: list[str] = []
+    for term in sorted(terms, key=lambda value: (-len(value), value)):
+        normalized_term = _normalize_intake_name_text(term)
+        escaped = r"[\s-]*".join(
+            re.escape(part)
+            for part in re.split(r"[\s-]+", normalized_term)
+            if part
+        )
+        if term.isascii():
+            alternatives.append(
+                rf"(?<![a-z0-9]){escaped}(?=$|[^a-z0-9]|{adjacent_dose})"
+            )
+        else:
+            alternatives.append(escaped)
+    return re.compile("|".join(alternatives), re.IGNORECASE)
+
+
+@lru_cache(maxsize=1)
+def _supplement_name_free_text_pattern() -> Pattern[str]:
+    return _compile_supplement_name_pattern(supplement_name_free_text_terms())
+
+
+def contains_supplement_name(text: str | None) -> bool:
+    """识别自由文本中的完整补剂名，并保留 ASCII 词边界。"""
+    if not text:
+        return False
+    normalized = _normalize_intake_name_text(text)
+    if _supplement_name_free_text_pattern().search(normalized) is not None:
+        return True
+    compact = re.sub(r"[\s-]+", "", normalized)
+    return _COMPACT_MULTI_SUPPLEMENT_RE.search(compact) is not None
 
 
 def drug_name_spans(text: str | None) -> tuple[tuple[int, int], ...]:

@@ -6,7 +6,7 @@ Agent 审计日志写入工具。
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -20,9 +20,9 @@ def log_safety_evaluation(
     result_summary: str,
     twin_build_ms: int,
     evaluate_ms: int,
-    twin_sources: List[str],
-    result_detail: Optional[Dict[str, Any]] = None,
-) -> Optional[int]:
+    twin_sources: list[str],
+    result_detail: dict[str, Any] | None = None,
+) -> int | None:
     """记录一次 Safety Guardian 评估。
 
     Returns:
@@ -47,16 +47,16 @@ def log_orchestrator_run(
     db: Session,
     user_id: int,
     query: str,
-    intent_categories: List[str],
-    used_specialists: List[str],
+    intent_categories: list[str],
+    used_specialists: list[str],
     findings_count: int,
     twin_build_ms: int,
     total_ms: int,
-    result_summary: Optional[str] = None,
-    source: Optional[str] = None,
-    memory_trace: Optional[Dict[str, Any]] = None,
-    output_text: Optional[str] = None,
-    perf_breakdown: Optional[Dict[str, Any]] = None,
+    result_summary: str | None = None,
+    source: str | None = None,
+    memory_trace: dict[str, Any] | None = None,
+    output_text: str | None = None,
+    perf_breakdown: dict[str, Any] | None = None,
 ) -> None:
     """记录一次 Orchestrator 综合调度。
 
@@ -74,7 +74,7 @@ def log_orchestrator_run(
     orchestrator audit 中无人能判断 memory 是否真被 LLM 引用 — 修复后看板能算
     "memory 引用率 (orchestrator run 中 LLM 真用上 memory 的百分比)".
     """
-    detail: Dict[str, Any] = {"used_specialists": used_specialists}
+    detail: dict[str, Any] = {"used_specialists": used_specialists}
     if source:
         detail["source"] = source
 
@@ -121,15 +121,15 @@ def log_shadow_synthesis(
     user_id: int,
     query: str,
     text: str,
-    meta: Dict[str, Any],
-) -> Optional[int]:
+    meta: dict[str, Any],
+) -> int | None:
     """记录一次 rank11 shadow 并行分段合成(off-line pairwise judge 用)。
 
     仅在 flag='shadow' 时写。mega-synthesis 服务用户, 本行是旁路影子样本:
     result_detail = {"text": <拼接文本[:4000]>, "wall_ms", "sections", ...meta}。
     失败静默(旁路), 绝不影响服务回合。
     """
-    detail: Dict[str, Any] = {"text": (text or "")[:4000]}
+    detail: dict[str, Any] = {"text": (text or "")[:4000]}
     if isinstance(meta, dict):
         detail.update({k: v for k, v in meta.items() if k != "text"})
     return _write(
@@ -148,8 +148,8 @@ def log_shadow_synthesis(
 def log_cross_review_conflicts(
     db: Session,
     user_id: int,
-    conflicts: List[Dict[str, Any]],
-    used_specialists: List[str],
+    conflicts: list[dict[str, Any]],
+    used_specialists: list[str],
 ) -> None:
     """记录一次 cross-review 检测到的 specialist 矛盾.
 
@@ -178,8 +178,8 @@ def log_cross_review_conflicts(
 def log_llm_arbitration(
     db: Session,
     user_id: int,
-    arbitration: Dict[str, Any],
-    conflicts_snapshot: List[Dict[str, Any]],
+    arbitration: dict[str, Any],
+    conflicts_snapshot: list[dict[str, Any]],
 ) -> None:
     """LLM 仲裁裁决 audit. arbitration = ArbitrationResult.to_dict().
 
@@ -211,9 +211,9 @@ def log_llm_arbitration(
 def log_specialist_findings(
     db: Session,
     user_id: int,
-    findings: List[Dict[str, Any]],
-    orchestrator_run_id: Optional[int] = None,
-) -> Optional[int]:
+    findings: list[dict[str, Any]],
+    orchestrator_run_id: int | None = None,
+) -> int | None:
     """记录一批 specialist 产出的 findings, 支持 /reasoning-trace/specialist/{audit_id} 反查.
 
     旁路, 失败不抛. Returns: 新写入的 audit_log.id, 方便调用方回写关联.
@@ -248,8 +248,8 @@ def log_specialist_findings(
 def log_memory_injection(
     db: Session,
     user_id: int,
-    trace: Dict[str, Any],
-) -> Optional[int]:
+    trace: dict[str, Any],
+) -> int | None:
     """记录一次 _inject_memory 的 stage-level 输出 (Memory 注入诊断).
 
     trace 形如:
@@ -302,7 +302,7 @@ def log_proactive_trigger(
     notable: bool,
     notified: bool,
     tier: str = "P1",
-) -> Optional[int]:
+) -> int | None:
     """泛型主动 Agent 触发埋点(longevity_watch / trajectory_watch 等共用)。
 
     eval 看板(agent_eval_service)按 agent_type ∈ {*_watch} 聚合 notable/推送率。
@@ -335,7 +335,7 @@ def log_longevity_trigger(
     delta_years: float,
     notable: bool,
     notified: bool,
-) -> Optional[int]:
+) -> int | None:
     """记录一次抗衰主动 Agent 的生物年龄变化触发 (Phase2 W6 eval)。
 
     agent_type='longevity_watch' — observability 据此算:
@@ -375,11 +375,11 @@ def log_bedroom_event(
     event_type: str,
     source: str,
     room_id: str = "bedroom",
-    reason: Optional[str] = None,
-    command_entity_id: Optional[str] = None,
-    command_mode: Optional[str] = None,
+    reason: str | None = None,
+    command_entity_id: str | None = None,
+    command_mode: str | None = None,
     manual_override: bool = False,
-) -> Optional[int]:
+) -> int | None:
     """记录一次卧室自动化事件摄入 (设计文档 §10/§11: 每条命令/事件写 AuditLog).
 
     agent_type='bedroom_automation' — Review / 审计可据此追溯"昨夜自动化"。
@@ -419,9 +419,9 @@ def log_watch_complete(
     protocol_id: int,
     source_model: str,
     linked_record_id: int,
-    taken_time: Optional[str] = None,
-    source_model_label: Optional[str] = None,
-) -> Optional[int]:
+    taken_time: str | None = None,
+    source_model_label: str | None = None,
+) -> int | None:
     """腕上一键完成用药/补剂依从的取证审计(D1 灌水的追溯手段)。
 
     依从是进临床推断的事实(喂 DDI/PGx/SafetyGuardian),要可追溯到「谁在何时把哪条
@@ -460,8 +460,8 @@ def log_reorder_intent(
     supplement_id: int,
     quantity: int,
     outcome: str,
-    kuaishou_order_id: Optional[str] = None,
-) -> Optional[int]:
+    kuaishou_order_id: str | None = None,
+) -> int | None:
     """P5(D2)复购下单逐笔确认的取证审计(财务面,可追溯可撤销)。
 
     确认下单是 human-in-the-loop 的财务动作,必须可追溯到「谁在何时确认了哪个复购意图、
@@ -502,9 +502,9 @@ def log_external_action_intent(
     intent_id: int,
     kind: str,
     outcome: str,
-    target_type: Optional[str] = None,
-    target_id: Optional[int] = None,
-) -> Optional[int]:
+    target_type: str | None = None,
+    target_id: int | None = None,
+) -> int | None:
     """P5 外部动作意图确认的取证审计。
 
     food_order 是财务相邻动作(audit_required),确认是 human-in-the-loop:必须可追溯到
@@ -546,9 +546,9 @@ def log_autonomous_write(
     *,
     intent_id: int,
     kind: str,
-    executed_ref: Optional[str],
+    executed_ref: str | None,
     trust_tier: str = "auto",
-) -> Optional[int]:
+) -> int | None:
     """Write 自治层每次"无人确认即写"的取证审计(NIT-3 / 治理一等记录)。
 
     这是系统**首次**在无人确认下执行写的能力 —— 自治写不能只留一条 WriteIntent
@@ -591,16 +591,16 @@ def _write(
     agent_type: str,
     action: str,
     result_summary: str = "",
-    query: Optional[str] = None,
+    query: str | None = None,
     alerts_count: int = 0,
     findings_count: int = 0,
-    twin_build_ms: Optional[int] = None,
-    evaluate_ms: Optional[int] = None,
-    total_ms: Optional[int] = None,
-    twin_sources: Optional[List[str]] = None,
-    intent_categories: Optional[List[str]] = None,
-    result_detail: Optional[Dict[str, Any]] = None,
-) -> Optional[int]:
+    twin_build_ms: int | None = None,
+    evaluate_ms: int | None = None,
+    total_ms: int | None = None,
+    twin_sources: list[str] | None = None,
+    intent_categories: list[str] | None = None,
+    result_detail: dict[str, Any] | None = None,
+) -> int | None:
     """底层写入。失败静默。返回新行 id (失败时 None)。"""
     try:
         from app.models.agent_audit_log import AgentAuditLog

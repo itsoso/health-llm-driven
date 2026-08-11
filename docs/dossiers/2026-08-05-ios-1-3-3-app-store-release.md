@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | Build 256 已完成 EAS/ASC/TestFlight、精确 IPA、ASC 绑定、审核账号真实登录及物理 iPhone 6/6 安全自动子集；人工相机/照片草稿与冷启动持久化通过，照片发送 provider 流总时限修复已部署且生产健康闸通过，待同一 Build 真机终态复验；语音/分享/健康写入与最终截图仍待完成，App Review 继续冻结 |
+| 当前阶段 | Build 256 已完成 EAS/ASC/TestFlight、精确 IPA、ASC 绑定、审核账号真实登录及物理 iPhone 6/6 安全自动子集；补剂/照片卡第四轮独立安全评审 BLOCK 已整改，并追加修复照片餐食确认失败时的安全可读错误提示；第五轮独立 G4 裁决前，App Review、production OTA、部署及错误记录撤销继续冻结 |
 | 状态 | implementing |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -12,6 +12,11 @@
 ## Correct Course
 
 - [x] Correction Block（2026-08-05）：最新 `main` CI 在依赖审计处失败；在 T4 前插入 T3.5 修复 Python 锁文件漏洞并重验 Mobile advisory，禁止带红进入原生构建。
+- [x] Correction Block（2026-08-10）：T7.5 首轮独立安全评审判定 `BLOCK`。旧基线“模型名称只要是当前消息任意子串即可信”可被“补剂/图/打卡”等通用词绕过；owner-bound photo token 又跳过整个 Mobile 非饮食闸，合法 token 配药名仍能进入提交。范围退回 S5：补剂只接受当前文本中动作绑定、去剂量后的具体实体完全匹配并拒绝通用类别/动作词；照片卡只豁免阿拉伯数字后的食物切片单位，药名/补剂名仍由 Mobile 与 Backend 词库双层拦截。重跑 G3 与新的独立 G4 前，禁止部署、OTA、App Review 和生产删除。
+- [x] Correction Block（2026-08-10）：T7.5 第二轮独立安全评审仍判定 `BLOCK`。动作绑定提取仍接受含指令、指代、多实体或频率剂量的长串；Backend 在移除空格后破坏英文词边界，Mobile 的强信号词又未覆盖 `warfarin` / `aspirin` / `azithromycin` / `fish oil` / `omega-3`，导致合法照片 token 下仍可写为饮食。范围再次退回 S5：单补剂只接受无残余的有界实体；Backend 使用保留边界的共享药品/补剂名称检测并安全分隔紧邻剂量，Mobile 同步 fail-closed。第三轮独立 G4 GO 前继续禁止部署、OTA、App Review 和生产删除。
+- [x] Correction Block（2026-08-10）：T7.5 第三轮独立安全评审仍判定 `BLOCK`。`+` / `plus`、遗漏指令/频率和多段剂量仍能成为补剂名；`coq10` / `b12` / `d3` 这类数字结尾名称紧邻数字剂量时又会被错误切分并穿透照片饮食保护。范围退回 S5：名称必须是完整 canonical alias 或满足受限单产品形态，拒绝结构连接符、多 canonical 实体和嵌入剂量；剂量边界改由词库 lookahead 识别而非改写名称，Mobile 同步完整 token 边界。新的 committed G3 与第四位独立 G4 GO 前继续禁止部署、OTA、App Review 和生产删除。
+- [x] Correction Block（2026-08-10）：T7.5 第四轮独立安全评审仍判定 `BLOCK`。全角 ASCII、Unicode dash、零宽字符及下标数字可绕过 Mobile/Backend 名称检测；未加分隔的英文多补剂串仍能被当作单一名称；Mobile 对 `vitamin D1000IU` / `coq10200mg` 等紧邻剂量识别不足，造成发起 POST 后由 Backend 拒绝的“保存失败”体验。范围退回 S5：两端统一 NFKC、Unicode dash 与 invisible-character 规范化；共享词库检测紧邻剂量和连写多实体；取消任意未知产品名的开放形态，只有 canonical 名称可直接写入，未知新名称必须由用户在当前纯文本消息中用明确引号包围。第五位独立 G4 GO 前继续禁止部署、OTA、App Review 和生产删除。
+- [x] Correction Block（2026-08-11）：照片餐食草稿确认仍出现“操作失败，请稍后重试”。新增回归覆盖 `胡萝卜 约3段 · 南瓜 约2块 · 红枣 约3颗 · 玉米 约1小段` 可确认入库、4xx 草稿业务错误可读、5xx/内部 DB 异常不得泄露到移动端 toast。后端 `POST /diet/records` 的内部异常 detail 改为通用文案，移动端仅展示安全 4xx `detail` 并对 token/stack/DB 关键词降级。第五位独立 G4 需同时审查该错误提示边界。
 
 ## S0 · 用户需求（逐字）
 
@@ -65,6 +70,8 @@
 - 发布前聊天视觉层级 Implementation: `docs/plans/2026-08-06-mobile-chat-visual-hierarchy.md`
 - Provider 流总时限 Design: `docs/plans/2026-08-09-provider-stream-total-deadline-design.md`
 - Provider 流总时限 Implementation: `docs/plans/2026-08-09-provider-stream-total-deadline-implementation.md`
+- 补剂写入证据与照片卡保存 Design: `docs/plans/2026-08-10-grounded-supplement-and-photo-card-save-design.md`
+- 补剂写入证据与照片卡保存 Implementation: `docs/plans/2026-08-10-grounded-supplement-and-photo-card-save.md`
 - 分阶段：功能冻结 → 医疗风险修复 → 发布闸补强 → 材料 → G3/G4 → EAS Build → 精确包真机 → 提交 → 手动发布/G6。
 - 反馈环路由：本地/Jest → EAS Store Build（原生版本变更）→ TestFlight → App Store；审核期间 production OTA 冻结。
 - 长杆：Apple 审核时长、TestFlight 处理、审核账号稳定、截图/隐私/年龄分级人工确认。
@@ -98,6 +105,7 @@
   - [x] T7.2 紧凑聊天头部候选归档 / IPA / ASC 上传（Build 253 已完成本地 Xcode 正式归档、精确 IPA 闸和上传；Apple processing 尚待确认）
   - [x] T7.3 Build 254 本地 Xcode 候选 / ASC / TestFlight / 物理 iPhone 自动验收（6/6 PASS；因无 EAS Build ID，仅作功能与二进制证据，不替代最终 EAS 候选）
   - [ ] T7.4 照片发送 provider 流总时限 Backend 修复 / 部署 / Build 256 复验（代码、本地回归与生产部署已完成；真机终态待完成）
+  - [ ] T7.5 无证据补剂写入阻断 / owner-bound 照片卡保存 / 错误记录受控撤销（第四轮独立安全评审 BLOCK 已整改；新增 Unicode 兼容形式、隐藏字符、连写多实体、紧邻剂量、未知名称显式引号、照片餐食 3段/2块/3颗/1小段保存与安全错误提示回归已通过，待第五位 reviewer GO；部署和线上纠错尚未开始）
   - [ ] T8 精确 Build 真机与截图
   - [ ] T9 final-submit / App Review
   - [ ] T10 手动发布 / production G6
@@ -127,6 +135,7 @@
   - `a1d6f7d16` / `30fdc3f90` / `27f9d458c`：冻结照片发送卡流修复设计与实施计划；为主 streaming provider 和 streaming stable fallback 分别增加 120 秒 wall-clock 总时限。主 provider 未发正文时复用既有稳定降级；已发正文时只 error finish、不换模型重复回答；fallback 再卡住时也必须终止并释放回合。Mobile、数据库、健康写入与回执契约均未改变。
 - 2026-08-09 Build 256 人工照片验收中间证据：系统相机入口 PASS；照片草稿及发送文案在强制终止/冷启动后仍保留，证明图片资产与用户 turn 已持久化。生产侧内容最小化证据显示 vision 已完成、上游 streaming 请求已返回 HTTP 200，但模型流在持续非终态分片后未结束，直到外层约五分钟 deadline 才释放；后续同会话发送在此期间按设计返回 409。用户消息和图片已持久化，助手终态缺失，故根因不是上传或本地草稿丢失。
 - 根因修复选择经用户确认采用服务端方案 A：HTTP per-read timeout 只能约束相邻字节的空闲时间，不能约束持续 keepalive/reasoning 的总迭代时间；`27f9d458c` 在 executor 的两个 streaming 边界统一加入独立总预算。该改动不需要新 iOS Build 或 production OTA，部署与同一 Build 256 真机复验完成前仍视为发布阻断。
+- 2026-08-10 生产补剂/饮食卡复验：补剂 turn `9081` 本轮 `has_image=false` 且用户未写出补剂名，模型却供应“维生素D”；Backend 随后成功创建 definition `73` 和 record `1073`，verified receipt 证明这是无证据成功误写，不是回执误报。随后 owner-bound 餐食照片卡的两次确认只产生 `card_action_failed` 客户端事件，Backend 没有收到 `/diet/records`；精确 payload 的“胡萝卜约3片”命中 Mobile 将任意“片”视作药片的宽启发式，同时 Mobile 丢弃已有 `photo_draft_token`。用户确认采用安全方案：补剂名必须出现于当前纯文本回合，附件回合只识别不写；照片饮食卡保留 owner-bound 草稿 token，由 Backend 所有者/过期/饮食分类闸继续裁决。代码已完成，错误生产记录保持原状直到 committed diff 通过独立安全评审后再走 owner-scoped API 撤销。
 - 当前断点：后端与生产合成审核数据均已恢复；Build 245 的精确 IPA / TestFlight 子闸虽已通过，但已被紧凑聊天头部源码 `a26477b3000b9b44c53e8c20fc0f19904b3a7f03` 取代。Build 253 已通过本地 Xcode 26.5 正式归档、精确 IPA 哈希/验签/版本/能力/12 类隐私语义闸，并由 Organizer 上传 Apple；Apple processing、内部 TestFlight 和精确候选物理 iPhone T8 尚未确认。开发签名的同源码 Build 253 已在物理 iPhone 启动并完成紧凑头部视觉预验；安全自动子集 5/6，通过项不替代精确候选证据。以上证据未全绿前 App Review 继续冻结。
 - 2026-08-09 Build 254 精确候选复验：ASC processing 完成并进入内部 TestFlight；物理 iPhone 安装后由应用诊断确认 1.3.3（254）、embedded production runtime，未被旧 OTA 覆盖。首次 4 PASS / 1 FAIL / 1 SKIP 的根因不是代码或审核数据：手机仍登录另一账号，该账号访问的会话不属于受控审核账号；切换到受控审核账号后，最新固定简报和 Today 上下文均出现，完整安全自动子集 6/6 PASS、0 failure、0 skip。原始结果包仅保留本机，不上传；档案只记录非敏感汇总。
 - 2026-08-07 Build 241 物理 iPhone 自动子集第二轮共 7 项：6 PASS、1 FAIL。安装包版本/Build 与候选一致；双冷启动登录态、Agent 入口、Today 打开/关闭、未发送草稿前后台保留、隐私和账号删除入口均通过。唯一失败是默认打开了审核账号中更新的普通会话，而不是固定简报；Mobile 按服务端 `updated_at` 打开最新会话属于正确产品行为，根因是 live gate 只证明固定会话存在、未证明它是默认最新且未被追加消息。
@@ -198,6 +207,11 @@
 - 2026-08-08 最终 G4 树真实模型复验：`APP_ENV=test DATABASE_URL=sqlite:///:memory:` 下 live regression exit 0；invariants 12/12、health_agent_core 50/50、orchestrator 5/5（平均 0.94）、trajectory 12/12、goldens 9/9，且 `HARNESS_LIVE_LLM_EVAL_CONFIRMED=1` 的本地 change gate PASS。非生产临时 SQLite 缺 usage telemetry 表只产生旁路告警；模型调用、语义 judge 和最终 Gate 均真实完成。
 - 2026-08-08 发布阻断：严格 final-submit checker 仍按设计 FAIL，缺少 Build 242+ 的 EAS/source/IPA、同一精确候选物理 iPhone、ASC 人工确认与最终截图材料。App Review 保持冻结，新提交远端 CI 与以上发布材料未全绿前不得提交审核。
 - 2026-08-09 provider 流总时限 TDD：新增三条异步回归。旧代码下“只有 reasoning、无终态”和“已发部分正文后持续非终态”均由测试看门狗按预期判红；实现后主 provider 无正文超时→稳定降级、已有正文超时→不降级只收尾、fallback 自身超时→单一 error finish 三项全部 PASS。完整 `test_agent_executor_failover_gate.py` 13/13 PASS；更广 Backend 闸与生产部署证据仍待本轮后续补齐。
+- 2026-08-10 补剂证据/照片卡 TDD：Backend 两条新回归在旧代码下均因拿到成功 payload 而按预期 RED，证明模型推断名称与附件回合仍会触达补剂 API；Mobile 生产餐食原句在旧代码下精确 RED 为 `invalid_diet_food_items_non_diet`。最小实现后 Backend 补剂/正向查找/回执相关 46/46 PASS，Mobile card action / diet guard / ChatBubble receipt 130/130 PASS；`npx tsc --noEmit`、changed-file ESLint 与 Ruff 全部 exit 0。新增 malformed photo token、文本补剂/药物仍拦、管理/指标即使带 photo token 仍拦的反例保持 fail-closed。G3 仍需 committed-diff 评审及发布前集成闸，不因聚焦测试绿而提前 PASS。
+- 2026-08-10 首轮 G4 BLOCK 后的整改 TDD：通用名称对抗矩阵先在已提交实现上 5/5 失败并实际进入 API 路径，随后裸 `维生素` 反例也先红；Backend `阿司匹林 1片` 先被判 `unknown`；Mobile 合法 owner-bound token 下药物/补剂 7 个真实路径断言先失败并走到提交。整改后补剂名称改为当前纯文本中“记录/服用”等动作绑定的具体实体完全匹配，去除前后剂量且拒绝通用类别/指代/动作词；Backend 复用完整药名词库，Mobile 只去除数字切片单位后复跑强信号。最终扩展回归 Backend 339/339、Mobile 222/222、App Store 发布包 54/54 PASS；`npx tsc --noEmit`、changed-file ESLint、Ruff、doc drift、101 份 Dossier 一致性闸及 `git diff --check` 全部 exit 0。重新独立 G4 尚未执行，当前仍为 pending，GO 前禁止进入 S6。
+- 2026-08-10 第二轮 G4 BLOCK 后的整改 TDD：补剂指令/指代/多实体长串在已提交实现上 3/4 实际进入 lookup/create/tap；英文具名药与补剂的 spaced/unspaced dose 12/13 被判 `unknown`；带合法照片草稿 token 的 REST no-row 用例在测试环境配置纠正后固定验证。整改新增共享完整补剂名检测、保留 ASCII 词边界的剂量分隔、Mobile 中英文强信号和长串实体残余拒绝。自查继续发现 4 个英文指令/多实体长串会进入成功路径，追加测试先 RED 后 8/8 GREEN。最终本地 G3：Backend 写入/分类/回执/饮食 288/288、Mobile card/client/guard/ChatBubble 191/191、App Store 发布检查 72/72 PASS；TypeScript、changed-file ESLint、Ruff、doc drift、Dossier 一致性闸及 `git diff --check` 全部 exit 0。最终 commit 与第三轮独立 G4 尚未完成，当前仍为 BLOCK。
+- 2026-08-10 第三轮 G4 BLOCK 后的整改 TDD：评审实际复现 `维生素D+鱼油`、`vitamin D plus fish oil`、遗漏指令/频率、多段剂量会 lookup/create/tap，且 `coq102粒` / `b122粒` / `d32粒` 可穿透权威饮食分类。真实路径测试先 RED：Backend 分类/词库出现 4 项失败，Mobile guard/card 出现 6 项失败。整改改为 exact canonical alias 或受限单产品形态，拒绝结构连接符、多个 canonical 名称及嵌入剂量，并以剂量 lookahead 保留数字结尾名称；Mobile 同步边界且增加良性子串反例。最终本地 G3：Backend 写入/分类/回执/饮食 320/320、Mobile card/client/guard/ChatBubble 201/201、App Store 发布检查 72/72 PASS；TypeScript、changed-file ESLint、Ruff、doc drift、Dossier 一致性闸及 `git diff --check` 全部 exit 0。commit 与第四轮独立 G4 尚待完成，当前仍为 BLOCK。
+- 2026-08-10 第四轮 G4 BLOCK 后的整改 TDD：评审在真实写入路径复现 `Ｄ３2粒`、`ＣｏＱ１０2粒`、Unicode dash/零宽字符/下标数字等 8 个变体可创建记录；`vitaminDfishoil`、`d3-fish-oil` 等连写多实体及宽松未知名称形态仍可取得写入权限；Mobile 对标准 ASCII 紧邻剂量会先 POST 再收到 Backend 400。对抗用例先 RED，整改后 Backend/Mobile 统一做 NFKC、dash 与 invisible-character 规范化，词库识别紧邻剂量和连写多实体；写入权限改为 canonical 名称可直写、未知新名称必须显式引号确认，图片回合只能提示用户在新纯文本回合确认。用户追加早餐照片卡“胡萝卜/南瓜/红枣/玉米”保存失败截图后，补充段/块/颗/小段份量确认回归，并把卡片失败 toast 改为展示后端 `detail` 的安全截断文案，避免只显示“操作失败”。最终本地 G3：Backend 写入/分类/饮食聚焦集 258/258、Mobile card/guard/ChatBubble 聚焦集 207/207、App Store 发布测试 50/50 与 release/preflight 脚本 PASS；TypeScript、changed-file ESLint、Ruff、doc drift、Dossier 一致性闸及 `git diff --check` 全部 exit 0。最终 commit 尚待完成，第五轮独立 G4 前仍为 BLOCK。
 - 2026-08-09 部署前 CI 复盘：首次承载提交 `e6bc777f0` 的 CI `31347865871` 因两项历史测试时间边界和预期的 live-change 确认闸失败，未进入部署。Frontend 注册邀请测试写死的 `2026-08-09T20:00` 到期时间已改为稳定未来值，聚焦测试 21/21 PASS；WSCLA 聚合测试在 UTC 周一凌晨把 `now - 2h` 错算到上周，已改用相对 `week_start` 的确定性本周时间，聚焦测试 PASS。真实模型回归在 `APP_ENV=test DATABASE_URL=sqlite:///:memory:` 下 exit 0：invariants 12/12、health_agent_core 50/50、真实 orchestrator 5/5（平均 0.98）、trajectory 12/12、goldens 9/9，且无 regression；实际模型为 `MiniMax-M2.5`。临时 SQLite 未建 usage telemetry 表只产生已知旁路告警，不影响真实模型生成、judge 或 Gate 结果。远端一次性确认变量只允许覆盖承载本证据的下一轮 CI，终态后必须删除并复证不存在。
 - **裁决**：实现级 G3、真实模型回归与独立 G4 均 PASS；发布级 final-submit / T7.1 保持 BLOCK。下一步依次取得远端主干 CI、后端部署与生产恢复证据，再生成 Build 242+，不能据此直接提交 App Review。
 
@@ -205,6 +219,10 @@
 
 - 触发：用药、健康写入、隐私、认证审核路径。
 - T3.5 依赖安全评审：`GO`，无阻断项；未修改用户数据、认证逻辑、医疗建议边界或 App Store 产品行为。
+- 2026-08-10 T7.5 首轮独立安全评审：`BLOCK`（High 1 / Medium 1）。High：任意子串依据允许模型把“补剂/图/打卡”等通用词创建为补剂；Medium：owner-bound photo token 关闭整个 Mobile 非饮食闸，且 Backend 当时把 `阿司匹林 1片` 判为 unknown。已按 Correction Block 逐条整改并加入零 dispatch/零 post 对抗测试；必须由新的独立 reviewer 审当前 committed diff，GO 前不得进入 S6 或删除 definition `73` / record `1073`。
+- 2026-08-10 T7.5 第二轮独立安全评审：`BLOCK`（High 2 / Medium 1）。High：`维生素D并且帮我打卡`、`这个补剂维生素D`、`维生素D和鱼油` 等残余长串仍可成为补剂名；合法照片 token 下 `warfarin` / `aspirin` / `azithromycin` 及 `fish oil` / `omega-3` / `magnesium` 的剂量文本仍可能落成饮食。Medium：线上清理前置条件必须断言 definition `73` 的 owner-scoped record-id 精确集合为 `{1073}`，有额外记录或 owner 不符即中止。整改与聚焦测试已完成；第三位 reviewer 必须审最终 committed tree 并给出 GO，之前不得进入 S6 或执行清理。
+- 2026-08-10 T7.5 第三轮独立安全评审：`BLOCK`（High 2）。High：`+` / `plus`、遗漏的确认/频率词与多段剂量仍能实际写入伪补剂；`coq10` / `b12` / `d3` 等数字结尾名称紧邻数字剂量时被边界改写破坏，合法照片 token 下可能落成饮食。其余附件闸、草稿 owner/expiry/idempotency、隐私 telemetry、良性词边界及精确 `{1073}` 清理方案通过只读复核。已再次退回实现；第四位 reviewer 必须审新的最终 committed tree 并给出 GO，之前不得进入 S6 或执行清理。
+- 2026-08-10 T7.5 第四轮独立安全评审：`BLOCK`（High 2 / Medium 1）。High：兼容全角、Unicode dash、零宽字符、下标数字可绕过两端补剂/药名边界，且宽松未知名称形态允许指令前缀或连写多实体取得写入权限；Medium：Mobile 漏识别标准 ASCII 名称紧邻剂量，导致请求发出后 Backend 400。评审确认附件闸、草稿 owner/expiry/idempotency、telemetry、回执与精确 `{1073}` 清理前置条件无新增阻断。已再次退回实现；第五位 reviewer 必须审新的最终 committed tree 并给出 GO，之前不得进入 S6 或执行清理。
 - 2026-08-05 完整 release diff 独立评审首轮：`NO-GO`，无 Critical，2 个 Important BLOCK：
   1. App Privacy 草稿错误声明未发布的 `strict_local` / `local_first` 与端上餐食推理，而 production 会把用户选择的图片上传到认证服务。
   2. final-submit 仅校验 EAS build ID / source SHA 格式，未把真机证据绑定到候选 EAS metadata。
@@ -229,7 +247,7 @@
 - 同一独立 reviewer 最终复评：`G4: GO`（Critical 0 / Important 0 / Minor 1）；医疗转介 fail-closed 对抗矩阵 12/12，明确/健康条件触发的就医动作通过，否定/询问/不确定表达被拒绝，断言-only 路径不可绕过。唯一非阻断 Minor：配置可读取 `llm_judge_model`，但 `_call_judge` 尚未把该可选 override 传给 provider；当前数据集不使用该字段，登记为发布后 backlog，不在 GO 后扩大本轮变更。
 - 2026-08-08 Build 244 精确二进制隐私复评：IPA `18cd5357aaa5c57a02bfb23db741ae0889f84108e2fc5c676501f433f2c9fc10` 的主 App PrivacyInfo 仅 9 类，缺 AudioData、DeviceID、ProductInteraction，UserID 还缺 Analytics purpose；这些分别绑定实际云端 ASR、APNs device token 和认证客户端事件数据流。独立 G4 判定 Important/BLOCK、`Build 244: NO-GO`。源码整改补齐 12 类及 UserID Analytics，并将 iOS preflight 改为固定 production inventory、草稿↔manifest 精确集合、linked/tracking/purposes 逐项一致及 unknown/duplicate/schema fail-closed；变异测试覆盖双方同删、双方同翻 tracking、目的增删/重复等假绿路径。源码复评 `GO`，但必须用新原生 Build 再验包内 manifest，不能 OTA 修复或沿用 244。
 - 2026-08-08 Build 245 精确二进制复验：EAS 元数据绑定 source `140bd788a722cbcf25c203552444b72a9f010bc5`；IPA SHA-256 `bb355a4a4c9dea5de30d60468c5844e551f18c693a82636cbbb414b1dae85180`，主 App PrivacyInfo SHA-256 `2f3b255686e1a62f95eb7d85a889a12c77eb4ea0dd0efecfc4255d4c7e1251ae`。同一语义 helper 对包内 12 类数据、linked/tracking/purposes 与 checked-in App Privacy 草稿逐项校验返回零失败；版本 1.3.3（245）、bundle ID、iPhone-only arm64、production APNs、HealthKit、Universal Link、beta reports、`get-task-allow=false` 和严格验签全部 PASS。Build 244 的二进制隐私阻断已由新原生包消除。
-- **当前裁决**：`Build 256 G4: GO`；登录错误提示修复不改变医疗、数据写入、隐私 manifest 或外发边界，精确二进制的 12 类隐私语义继续通过。Build 244 继续 `NO-GO` 且不得绑定 App Review；G5 的人工 T8/截图和 G6 未全绿前不得提交 App Review。
+- **当前裁决**：pending（T7.5 第四轮 `BLOCK` 已整改，并追加照片餐食保存失败安全提示修复，等待第五位 reviewer）；历史 `Build 256 G4: GO` 仍只覆盖当时的精确二进制与登录修复，不能覆盖本次健康写入新 diff。新的独立 reviewer 给出 GO 前，不得部署、OTA、删除生产记录或提交 App Review。Build 244 继续 `NO-GO` 且不得绑定 App Review。
 
 ## S6 · 部署
 
@@ -271,7 +289,7 @@
 - 本地原生预验：iOS 26.5 Release 模拟器构建、安装和启动 PASS；该产物为 development 变体且禁用本地 Sentry 符号上传，只证明当前原生工程可编译/启动，不替代 production Store Build、TestFlight、精确 commit/Build 绑定或 T8 物理真机证据。
 - Build 256 exact IPA / TestFlight / physical iPhone 自动子闸：PASS。真机确认安装 1.3.3（256）；审核账号真实登录在生产日志返回 200，随后首页、会话和时间线接口均为 200。首次安全自动子集 5/6 的唯一失败是人工使用后普通会话成为默认最新；受部署 revision/发布锁保护的审核演示数据重置恢复精确两条固定会话后，同一包复验 6/6 PASS、0 failure、0 skip，覆盖双冷启动登录态、固定会话、未发送草稿前后台保留、入口、Today 打开/关闭、隐私政策与账号删除入口。结果包只保留本机，不上传。
 - Build 256 人工相机 / 照片持久化子闸：PARTIAL PASS。系统相机、照片草稿和冷启动恢复已通过；发送后的助手终态曾因 Backend provider 流总时限缺口失败。修复现已完成生产部署且健康闸全绿，但照片终态、后续无 409 循环及再次冷启动回读尚未在同一真机 Build 复验，因此该子闸仍 BLOCK。
-- **裁决**：BLOCK（范围已缩小）—— Build 256 的 EAS/IPA/ASC/TestFlight、真实登录、安全自动子闸、照片本地持久化及 Backend 修复部署均通过；仍须完成照片终态复验，并对同一包完成人工语音、分享、健康写入/纠正/删除及最终截图。完成前继续冻结 production OTA 和 App Review 提交。
+- **裁决**：pending（既有 BLOCK 范围已缩小）—— Build 256 的 EAS/IPA/ASC/TestFlight、真实登录、安全自动子闸、照片本地持久化及 Backend 修复部署均通过；T7.5 尚未部署，且仍须完成照片终态复验，并对同一包完成人工语音、分享、健康写入/纠正/删除及最终截图。完成前继续冻结 production OTA 和 App Review 提交。
 
 ## S7 · 上线验证
 
