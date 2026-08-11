@@ -1,5 +1,6 @@
-import type { AgendaSkipReason, AgendaSource, TrajectoryContext } from './agenda';
+import { completeAgendaItem, type AgendaSkipReason, type AgendaSource, type TrajectoryContext } from './agenda';
 import api from './api';
+import { recordDailyPlanActionEvent } from './dailyPlan';
 
 export type DailyArtifactEventType = 'impression' | 'accepted' | 'completed' | 'skipped';
 export type DailyArtifactTone = 'neutral' | 'steady' | 'focused' | 'urgent' | string;
@@ -45,8 +46,11 @@ export interface DailyArtifactTopAction {
   runtime_context?: Record<string, unknown> | null;
   actions?: {
     complete?: {
+      method?: string | null;
+      endpoint?: string | null;
       enabled?: boolean;
       source?: DailyArtifactTopAction['source'];
+      payload?: Record<string, unknown> | null;
     } | null;
     skip?: {
       requires_reason?: boolean;
@@ -80,6 +84,7 @@ export type DailyArtifactCompletionTarget =
 
 const AGENDA_COMPLETION_SOURCE_TYPES = new Set(['health_protocol', 'medication', 'supplement']);
 const DAILY_PLAN_ACTION_ID_RE = /^[A-Za-z0-9._:-]+$/;
+const FOLLOW_UP_ACTION_WORDS = ['复查', '检查', '化验', '随访'];
 
 /**
  * Resolve the actual write path for a Daily Artifact action.
@@ -115,11 +120,31 @@ export function resolveDailyArtifactCompletionTarget(
   };
 }
 
+export async function completeDailyArtifactAction(
+  action: DailyArtifactTopAction,
+  artifactDate: string,
+): Promise<unknown> {
+  const target = resolveDailyArtifactCompletionTarget(action);
+  if (!target) throw new Error('daily_artifact_completion_not_supported');
+
+  if (target.kind === 'daily_plan_action') {
+    return recordDailyPlanActionEvent(target.actionId, {
+      event_type: 'completed',
+      plan_date: artifactDate,
+      payload: { source: 'daily_artifact' },
+    });
+  }
+  return completeAgendaItem(target.source, 'protocol');
+}
+
 export function isDailyArtifactFollowUpAction(
   action: DailyArtifactTopAction | null | undefined,
 ): boolean {
   const sourceType = action?.actions?.complete?.source?.object_type ?? action?.source?.object_type;
-  return action?.type === 'checkup' || sourceType === 'health_problem' || sourceType === 'review_schedule';
+  const text = `${action?.title ?? ''} ${action?.do_now ?? ''}`;
+  return action?.type === 'checkup'
+    || sourceType === 'review_schedule'
+    || (sourceType === 'health_problem' && FOLLOW_UP_ACTION_WORDS.some((word) => text.includes(word)));
 }
 
 function isPositiveNumericId(value: number | string): boolean {

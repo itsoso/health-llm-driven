@@ -3,6 +3,34 @@
 from datetime import date
 
 
+def test_daily_artifact_completion_contract_uses_the_owned_write_endpoint():
+    from app.services.daily_artifact_service import _top_action_view
+
+    daily_plan = _top_action_view({
+        "id": "smart_daily_plan_action_movement.walk_after_meal",
+        "title": "晚餐后步行 15 分钟",
+        "status": "pending",
+        "can_complete": True,
+        "source": {
+            "object_type": "daily_plan_action",
+            "object_id": "movement.walk_after_meal",
+        },
+    })
+    protocol = _top_action_view({
+        "id": "smart_health_protocol_7",
+        "title": "饮水",
+        "status": "pending",
+        "can_complete": True,
+        "source": {"object_type": "health_protocol", "object_id": 7},
+    })
+
+    assert daily_plan["actions"]["complete"]["endpoint"] == (
+        "/api/v1/daily-plan/actions/movement.walk_after_meal/events"
+    )
+    assert daily_plan["actions"]["complete"]["payload"] == {"event_type": "completed"}
+    assert protocol["actions"]["complete"]["endpoint"] == "/api/v1/agenda/complete"
+
+
 def test_daily_artifact_empty_state_degrades_cleanly(client, auth_user_and_headers, monkeypatch):
     from app.services import daily_artifact_service
 

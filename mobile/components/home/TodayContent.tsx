@@ -44,10 +44,10 @@ import type { AgendaSkipReason } from '../../services/agenda';
 import { garminSleepHours } from '../../types/garmin';
 import {
   getDailyOperatingPlan,
-  recordDailyPlanActionEvent,
   type DailyPlanAction,
 } from '../../services/dailyPlan';
 import {
+  completeDailyArtifactAction,
   getDailyArtifact,
   recordDailyArtifactEvent,
   resolveDailyArtifactCompletionTarget,
@@ -359,15 +359,7 @@ export default function TodayContent({ mode = 'screen' }: { mode?: TodayContentM
     setArtifactCompleting(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     try {
-      if (completionTarget.kind === 'daily_plan_action') {
-        await recordDailyPlanActionEvent(completionTarget.actionId, {
-          event_type: 'completed',
-          plan_date: artifact.artifact_date,
-          payload: { source: 'daily_artifact' },
-        });
-      } else {
-        await completeNow.mutateAsync(completionTarget.source);
-      }
+      await completeDailyArtifactAction(action, artifact.artifact_date);
       recordDailyArtifactEvent({
         eventType: 'completed',
         artifactDate: artifact.artifact_date,
@@ -389,7 +381,7 @@ export default function TodayContent({ mode = 'screen' }: { mode?: TodayContentM
     } finally {
       setArtifactCompleting(false);
     }
-  }, [artifactCompleting, completeNow, dailyArtifactQuery.data, qc, toast]);
+  }, [artifactCompleting, dailyArtifactQuery.data, qc, toast]);
 
   const onArtifactSkip = useCallback((
     reason: AgendaSkipReason,

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Any
+from urllib.parse import quote
 
 from sqlalchemy.orm import Session
 
@@ -149,6 +150,18 @@ def _top_action_view(item: dict[str, Any]) -> dict[str, Any]:
         or (trajectory or {}).get("verification_signal")
         or target_state_variable
     )
+    completion_action = {
+        "method": "POST",
+        "endpoint": "/api/v1/agenda/complete",
+        "enabled": bool(item.get("can_complete")),
+        "source": source,
+    }
+    if source.get("object_type") == "daily_plan_action":
+        action_id = quote(str(source.get("object_id") or "").strip(), safe="._-")
+        completion_action.update({
+            "endpoint": f"/api/v1/daily-plan/actions/{action_id}/events",
+            "payload": {"event_type": "completed"},
+        })
     view = {
         "id": str(item.get("id") or ""),
         "title": item.get("title") or "今日健康行动",
@@ -165,12 +178,7 @@ def _top_action_view(item: dict[str, Any]) -> dict[str, Any]:
         "verification_signal": verification_signal,
         "claim_boundary": item.get("claim_boundary"),
         "actions": {
-            "complete": {
-                "method": "POST",
-                "endpoint": "/api/v1/agenda/complete",
-                "enabled": bool(item.get("can_complete")),
-                "source": source,
-            },
+            "complete": completion_action,
             "skip": {
                 "method": "POST",
                 "endpoint": "/api/v1/daily-artifact/me/events",

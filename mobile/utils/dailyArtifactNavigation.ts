@@ -1,4 +1,5 @@
 import type { DailyArtifact, DailyArtifactTopAction } from '../services/dailyArtifact';
+import { isDailyArtifactFollowUpAction } from '../services/dailyArtifact';
 import {
   buildChatContextRoute,
   serializeAgentContext,
@@ -103,12 +104,20 @@ export function buildDailyArtifactExecuteRoute(
 ): DailyArtifactNavigationRoute {
   const text = actionText(action);
   const nutritionRoute = routeForNutritionActionText(text);
-  const explicit = firstUsableRoute(
-    explicitRouteFromAction(action),
-    options.nowDeepLink,
-  );
-  if (explicit) {
-    return normalizeHealthActionRoute(explicit, text) ?? explicit;
+  const actionRoute = firstUsableRoute(explicitRouteFromAction(action));
+  if (actionRoute) {
+    return normalizeHealthActionRoute(actionRoute, text) ?? actionRoute;
+  }
+
+  // nowDeepLink 属于时间线当前项，可能与 Daily Artifact 的重点行动不同。
+  // 医疗复查必须先按自身语义进入复查工作流，不能被补水等无关当前项劫持。
+  if (isDailyArtifactFollowUpAction(action) || EXAM_WORDS.some((word) => text.includes(word))) {
+    return '/medical-exams';
+  }
+
+  const contextualRoute = firstUsableRoute(options.nowDeepLink);
+  if (contextualRoute) {
+    return normalizeHealthActionRoute(contextualRoute, text) ?? contextualRoute;
   }
 
   const movementTarget = inferDailyArtifactMovementTarget(action);
@@ -119,8 +128,6 @@ export function buildDailyArtifactExecuteRoute(
 
   if (nutritionRoute) return nutritionRoute;
   if (MEDICATION_WORDS.some((word) => text.includes(word))) return '/medications';
-  if (EXAM_WORDS.some((word) => text.includes(word))) return '/medical-exams';
-
   return buildChatContextRoute({
     prompt: `请把这条今日行动拆成现在可执行的步骤: ${formatHealthActionTitle(action.title)}。如果它还不适合执行,请先问我必要的补充信息。`,
     context: createDailyArtifactChatContext(artifact, 'execute', action),

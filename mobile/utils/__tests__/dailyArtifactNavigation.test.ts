@@ -164,6 +164,11 @@ describe('dailyArtifactNavigation', () => {
     });
 
     expect(buildDailyArtifactExecuteRoute(artifact({ top_action: followUp }), followUp)).toBe('/medical-exams');
+    expect(buildDailyArtifactExecuteRoute(
+      artifact({ top_action: followUp }),
+      followUp,
+      { nowDeepLink: '/hydration' },
+    )).toBe('/medical-exams');
   });
 
   it('falls back to Aheng chat, not timeline, for unsupported source-backed actions', () => {

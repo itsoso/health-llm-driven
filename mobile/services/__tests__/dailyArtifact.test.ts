@@ -1,5 +1,6 @@
 import api from '../api';
 import {
+  completeDailyArtifactAction,
   getDailyArtifactDetail,
   getDailyArtifact,
   recordDailyArtifactEvent,
@@ -152,5 +153,43 @@ describe('dailyArtifact service', () => {
       title: '胃镜复查',
       source: { object_type: 'health_problem', object_id: 9 },
     })).toBeNull();
+  });
+
+  it('dispatches completion to the endpoint owned by each source type', async () => {
+    (api.post as jest.Mock).mockResolvedValue({ data: { ok: true } });
+
+    await completeDailyArtifactAction({
+      id: 'protocol',
+      title: '饮水',
+      source: { object_type: 'health_protocol', object_id: 7, slot: '09:00' },
+    }, '2026-08-11');
+    expect(api.post).toHaveBeenLastCalledWith('/agenda/complete', {
+      object_type: 'health_protocol',
+      object_id: 7,
+      status: 'done',
+      track: 'protocol',
+      value: null,
+      slot: '09:00',
+    });
+
+    await completeDailyArtifactAction({
+      id: 'daily-plan',
+      title: '餐后步行',
+      source: { object_type: 'daily_plan_action', object_id: 'movement.walk_after_meal' },
+    }, '2026-08-11');
+    expect(api.post).toHaveBeenLastCalledWith('/daily-plan/actions/movement.walk_after_meal/events', {
+      event_type: 'completed',
+      payload: { source: 'daily_artifact' },
+      plan_date: '2026-08-11',
+    });
+  });
+
+  it('rejects unsupported completion without dispatching a write', async () => {
+    await expect(completeDailyArtifactAction({
+      id: 'follow-up',
+      title: '胃镜复查',
+      source: { object_type: 'health_problem', object_id: 9 },
+    }, '2026-08-11')).rejects.toThrow('daily_artifact_completion_not_supported');
+    expect(api.post).not.toHaveBeenCalled();
   });
 });

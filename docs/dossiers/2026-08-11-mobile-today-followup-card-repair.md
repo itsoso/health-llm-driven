@@ -4,11 +4,17 @@
 |---|---|
 | slug | `mobile-today-followup-card-repair` |
 | 创建日期 | 2026-08-11 |
-| 当前阶段 | S5 实现完成，待 G4 独立安全评审 |
-| 状态 | building |
+| 当前阶段 | S3（首轮 G4 BLOCK 后回退，整改提交待复评） |
+| 状态 | defining |
 | 负责 | Codex |
 | 类型 | bugfix / medical-boundary UI / write-capability repair |
 | 计划 | `docs/plans/2026-08-11-mobile-today-followup-card-repair.md` |
+
+## Correct Course
+
+- [x] 2026-08-11 首轮独立 G4 评审判定 BLOCK：复查行动会无条件复用时间线 `nowItem.deep_link`，可能被同时存在的补水行动带到错误页面；Daily Plan 完成能力也仍向契约消费者声明 `/agenda/complete` 错误端点。
+- [x] 范围回退并整改：复查语义先于无来源关联的时间线深链；Daily Artifact 按来源声明并调用 Agenda / Daily Plan 各自的真实写端点；新增真实调用分流和错误深链回归。
+- [ ] 新提交后重新执行独立 G4；GO 前禁止 push、Backend deploy 与 production OTA。
 
 ## 需求与现象
 
@@ -45,17 +51,18 @@
   - Mobile 复现英文指标和错误“完成”按钮，3 个断言按预期失败。
   - Backend 纯函数断言复现 `health_problem.can_complete=True`。
 - GREEN 已确认:
-  - Mobile 定向回归: 5 suites / 45 tests PASS（行动卡、导航、指标文案、Daily Artifact 转换与 Dynamic Today Renderer）。
+  - Mobile 定向回归: 5 suites / 47 tests PASS（行动卡、错误深链防护、Agenda / Daily Plan 真实写入分流、指标文案、Daily Artifact 转换与 Dynamic Today Renderer）。
   - Mobile TypeScript `--noEmit`: PASS；变更文件 ESLint: PASS。
-  - Backend 新增能力契约测试直接执行: PASS；变更模块 `py_compile`: PASS。
+  - Backend 新增能力与端点所有权契约测试直接执行: PASS；变更模块 `py_compile`: PASS。
   - `scripts/check_doc_drift.py`: PASS；`git diff --check`: PASS。
 - 本地完整 FastAPI pytest fixture 启动未在合理时间内完成，原因是应用级 provider 初始化；本次不把它记为通过，发布阶段继续以 Backend 部署健康检查作为集成闸补充证据。
 - **裁决: PASS。** 本次变更路径的定向契约、静态检查与文档漂移检查均已覆盖。
 
 ## G4 · 安全闸
 
-- 待提交后独立 safety/privacy reviewer 裁决。
-- 重点: 不伪造复查完成；不改变 HealthProblem 状态；写入来源校验；失败可见。
+- 首轮独立 safety/privacy reviewer: BLOCK；发现复查路由可被无关 `nowDeepLink` 劫持，以及 Daily Plan 契约端点错误。
+- 整改已完成，待新提交后重新独立复评。
+- 重点: 不伪造复查完成；不改变 HealthProblem 状态；复查路由不受无关当前项影响；写入来源与端点严格一致；失败可见。
 
 ## G5 · 部署健康闸
 
