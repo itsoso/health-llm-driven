@@ -2502,6 +2502,33 @@ Mechanically generated evidence remains
 or deployed. Both G4 reviews must be repeated against the exact evidence
 commit.
 
+### v45 seventeenth frozen-scope G4 remediation and evidence
+
+Both reviews of `445df0ce9e03e59ddfc170b02927bc05d07a6798`
+returned `NO-GO`. The frozen review scope identified three concrete gaps:
+bracketed clinical values were over-classified as metalinguistic questions,
+the reviewed common clinical term set remained incomplete, and the relation
+`报告属于<owner>` was not part of the shared ownership grammar.
+
+The remediation distinguishes a quoted question or explicit meta marker from
+a bracketed clinical value, completes only the finite reviewed clinical term
+list, adds the reviewed delimiter pairs, and parses `报告属于<owner>` as an
+explicit owner assertion. Per user direction, no further semantic boundary
+exploration is part of this gate; review is limited to existing regressions and
+the enumerated blockers above.
+
+The exact clean implementation/evaluation candidate is
+`c7548537b09629da93e8b9a96d2fac44701e1546`. The authorization/write core
+passes 5,836/5,836 and the complete AgentExecutor compatibility set passes
+686/686. Ruff, Python compilation, `git diff --check`, doc drift and Dossier
+consistency pass. The authorized live `qwen3.7-max` run passes 793/793
+anonymous synthetic cases and all 2,312 actual policy decisions, with zero
+database connection attempts and zero unexpected network destinations.
+Mechanically generated evidence remains
+`backend/evals/results/semantic_illness_qwen_v45.json`. Nothing has been pushed
+or deployed. Both frozen-scope G4 reviews must be repeated against the exact
+evidence commit.
+
 ### G5 Deployment Health: PENDING
 
 Backend deploy and health checks have not started.
