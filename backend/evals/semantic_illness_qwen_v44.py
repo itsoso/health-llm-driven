@@ -879,7 +879,7 @@ async def evaluate(case: Case, semaphore: asyncio.Semaphore) -> dict[str, Any]:
             if goal_values.get("name"):
                 owner_record["name"] = goal_values["name"]
             if case.keyword == "water":
-                owner_record["amount_ml"] = 300
+                owner_record["amount"] = 300
             owner_snapshot = replace(
                 snap,
                 actionable_references=(
