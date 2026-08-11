@@ -110,3 +110,4 @@ bundle; no data migration is required.
 |---|---|---|
 | 2026-07-16 | Approved conditional context strip | Remove repeated first-screen UI while preserving timely state. |
 | 2026-07-17 | Restricted near-term strip to executable precise schedules | Keep time-window rhythm guidance from becoming a repetitive chat notification. |
+| 2026-08-11 | Approved visual refinement of the existing strip | Remove redundant normal-state iconography, support two-line task titles, and announce transient Agent status without changing visibility priority or source data. |

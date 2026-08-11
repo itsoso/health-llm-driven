@@ -145,3 +145,17 @@
 - 根因：90 分钟近期开关只检查 `scheduled_for`，没有排除 `status=info` 或不可执行的 advisory。
 - 调整：保留 90 分钟精确排程窗口，但仅允许 `pending + can_complete` 的可执行项进入 Agent 顶部；纯时间窗提示继续留在 Today 时间线。
 - 验证：Mobile context resolver / context strip 20 项测试通过，TypeScript 检查通过，diff 校验通过。
+
+## 2026-08-11 · 顶部 Chrome 顺序优化（Quick Flow）
+
+- 用户需求：按优先级继续优化顶部区域，并重新设计不够醒目的“新建会话”铅笔图标。
+- G1：PASS。复用 `HealthAgendaItem / LeverageAction` 的既有 Mobile 呈现，不新增产品对象、健康语义、写路径或自治行为。
+- 设计决策：条件状态条先去冗余、支持长标题和状态播报；新建会话采用“对话气泡 + 加号 + 浅绿首要态”；更多操作从齿轮改为省略号；小巴品牌区再轻量收紧。
+- 备选取舍：单独加号过于泛化；方框铅笔仍接近“编辑”；组合气泡加号最能表达“开启新会话”。
+- S2/S3：计划见 `docs/plans/2026-08-11-mobile-chat-chrome-refinement.md`。
+- G2：PASS。纯 React Native UI，保持现有 callback、数据源、风险优先级和写入边界；可 OTA，但 iOS 1.3.3 (256) 正在等待 App Review，本切片暂不发 production OTA。
+- 实现结果：普通/注意状态条去掉重复时钟图标并压至 40pt，支持两行标题；风险/错误仍保留状态图标；流式状态增加 polite live region。新建会话改为“对话气泡 + 加号”浅绿首要态，历史保持中性，更多操作改为省略号；小巴头像/标题/箭头收紧为 22/20/12pt，模型触发区仍保持至少 44pt。
+- G3：PASS。3 个定向 Jest suite 共 15 项通过；TypeScript `--noEmit`、定向 ESLint、设计 token 闸与 `git diff --check` 通过。
+- G4：PASS。只修改显示与触控反馈，callback、健康语义、用户隔离、写入和推送出口均未改变；风险态视觉优先级保留。
+- 模拟器复核：Release 原生构建、安装与启动通过（0 error，6 个既有 build warning）；干净模拟器停在登录页，未在无审核账号凭据的情况下越权进入会诊页，因此真实页面肉眼复核明确记为待后续已登录环境补做。组件层渲染、尺寸、图标、触控与无障碍契约已由 15 项测试覆盖。
+- 当前状态：S6，代码可集成；production OTA 继续暂停，避免 App Review 等待期出现审核包与线上 JS 差异。

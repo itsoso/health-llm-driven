@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import LlmModelPicker from './LlmModelPicker';
 import XiaoBaAvatar from './XiaoBaAvatar';
@@ -50,7 +50,7 @@ export default function ChatHeader({
   return (
     <View testID="chat-header-wrap" style={styles.headerWrap}>
       <View testID="chat-header-surface" style={styles.headerSurface}>
-        <XiaoBaAvatar size={24} />
+        <XiaoBaAvatar size={22} />
         <LlmModelPicker
           variant="header"
           currentLabel={headerLlmLabel}
@@ -62,38 +62,45 @@ export default function ChatHeader({
         />
         <View style={styles.headerRight}>
           <View testID="chat-header-action-group" style={styles.headerActionGroup}>
-            <TouchableOpacity
+            <Pressable
               onPress={onNewChat}
               hitSlop={4}
-              style={styles.headerAction}
-              activeOpacity={0.55}
+              style={({ pressed }) => [
+                styles.headerAction,
+                styles.primaryHeaderAction,
+                pressed && styles.primaryHeaderActionPressed,
+              ]}
               accessibilityLabel="新建对话"
+              accessibilityHint="开始一段新的健康会诊"
               accessibilityRole="button"
             >
-              <Ionicons name="pencil-outline" size={18} color={C.ink2} />
-            </TouchableOpacity>
-            <TouchableOpacity
+              <View style={styles.newChatGlyph}>
+                <Ionicons name="chatbubble-outline" size={18} color={C.green700} />
+                <View style={styles.newChatBadge}>
+                  <Ionicons name="add" size={9} color={C.greenOn} />
+                </View>
+              </View>
+            </Pressable>
+            <Pressable
               onPress={onOpenHistory}
               hitSlop={4}
-              style={styles.headerAction}
-              activeOpacity={0.55}
+              style={({ pressed }) => [styles.headerAction, pressed && styles.headerActionPressed]}
               accessibilityLabel="对话历史"
               accessibilityHint="查看和切换历史对话"
               accessibilityRole="button"
             >
               <Ionicons name="time-outline" size={18} color={C.ink2} />
-            </TouchableOpacity>
-            <TouchableOpacity
+            </Pressable>
+            <Pressable
               onPress={onOpenToolMenu}
               hitSlop={4}
-              style={styles.headerAction}
-              activeOpacity={0.55}
+              style={({ pressed }) => [styles.headerAction, pressed && styles.headerActionPressed]}
               accessibilityLabel="更多会诊操作"
-              accessibilityHint="打开设置与更多操作"
+              accessibilityHint="打开更多会诊操作"
               accessibilityRole="button"
             >
-              <Ionicons name="settings-outline" size={18} color={C.ink2} />
-            </TouchableOpacity>
+              <Ionicons name="ellipsis-horizontal" size={18} color={C.ink2} />
+            </Pressable>
           </View>
         </View>
       </View>
@@ -142,5 +149,33 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'transparent',
     borderWidth: 0,
+  },
+  headerActionPressed: {
+    backgroundColor: C.green50,
+  },
+  primaryHeaderAction: {
+    backgroundColor: C.green50,
+  },
+  primaryHeaderActionPressed: {
+    backgroundColor: C.green100,
+  },
+  newChatGlyph: {
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  newChatBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -3,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.green500,
+    borderWidth: 1,
+    borderColor: C.greenOn,
   },
 });

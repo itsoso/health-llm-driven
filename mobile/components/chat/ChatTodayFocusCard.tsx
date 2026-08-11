@@ -38,6 +38,7 @@ export default function ChatTodayFocusCard({
     : context?.tone ?? 'normal';
   const palette = tonePalette(tone);
   const isTurnStatus = !!visibleTurnStatus;
+  const showStatusIcon = isTurnStatus || tone === 'risk';
   const iconName = visibleTurnStatus
     ? (visibleTurnStatus.tone === 'error' ? 'alert-circle-outline' : 'sparkles-outline')
     : (tone === 'risk' ? 'alert-circle-outline' : 'time-outline');
@@ -46,6 +47,7 @@ export default function ChatTodayFocusCard({
     <View
       testID="chat-today-focus-card"
       accessibilityLabel={visibleTurnStatus?.label ?? `${context?.label}，${context?.title}`}
+      accessibilityLiveRegion={isTurnStatus ? 'polite' : 'none'}
       style={[
         styles.strip,
         isTurnStatus ? styles.turnStatusStrip : styles.contextStrip,
@@ -58,16 +60,18 @@ export default function ChatTodayFocusCard({
           style={[styles.contextAccent, { backgroundColor: palette.foreground }]}
         />
       ) : null}
-      <View
-        testID="chat-today-focus-icon"
-        style={[
-          styles.iconWrap,
-          isTurnStatus ? styles.turnStatusIconWrap : styles.contextIconWrap,
-          { backgroundColor: palette.iconBackground },
-        ]}
-      >
-        <Ionicons name={iconName} size={16} color={palette.foreground} />
-      </View>
+      {showStatusIcon ? (
+        <View
+          testID="chat-today-focus-icon"
+          style={[
+            styles.iconWrap,
+            isTurnStatus ? styles.turnStatusIconWrap : styles.contextIconWrap,
+            { backgroundColor: palette.iconBackground },
+          ]}
+        >
+          <Ionicons name={iconName} size={16} color={palette.foreground} />
+        </View>
+      ) : null}
 
       {visibleTurnStatus ? (
         <Text
@@ -80,6 +84,7 @@ export default function ChatTodayFocusCard({
       ) : (
         <TouchableOpacity
           style={styles.contextButton}
+          hitSlop={4}
           onPress={onOpenToday}
           disabled={!onOpenToday}
           activeOpacity={0.74}
@@ -94,7 +99,7 @@ export default function ChatTodayFocusCard({
             {context?.label}
           </Text>
           <View style={[styles.separator, { backgroundColor: palette.foreground }]} />
-          <Text maxFontSizeMultiplier={1.15} style={txt.title} numberOfLines={1}>
+          <Text maxFontSizeMultiplier={1.15} style={txt.title} numberOfLines={2}>
             {context?.title}
           </Text>
           {onOpenToday ? <Ionicons name="chevron-forward" size={16} color={C.ink3} /> : null}
@@ -169,12 +174,12 @@ const styles = StyleSheet.create({
     elevation: 0,
   } as ViewStyle,
   contextStrip: {
-    minHeight: 44,
+    minHeight: 40,
     paddingLeft: 4,
     gap: 6,
   },
   turnStatusStrip: {
-    minHeight: 44,
+    minHeight: 40,
     paddingLeft: revaSpacing.s2,
     gap: revaSpacing.s2,
   },
@@ -199,7 +204,7 @@ const styles = StyleSheet.create({
   contextButton: {
     flex: 1,
     minWidth: 0,
-    minHeight: 44,
+    minHeight: 40,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -211,8 +216,8 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   iconButton: {
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
