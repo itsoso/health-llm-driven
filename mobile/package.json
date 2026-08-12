@@ -16,7 +16,7 @@
     "design:check": "node scripts/check_design_tokens.js",
     "design:report": "node scripts/check_design_tokens.js --report --top",
     "check:settings-routes": "node scripts/check-settings-routes.mjs",
-    "generate-types": "cd ../backend && source venv/bin/activate && SKIP_DB_INIT=1 python3 -c 'import json; from main import app; json.dump(app.openapi(), open(\"/tmp/openapi.json\",\"w\"), ensure_ascii=False)' && cd ../mobile && npx openapi-typescript@7.13.0 /tmp/openapi.json -o types/api.generated.ts"
+    "generate-types": "../scripts/generate-api-types.sh"
   },
   "dependencies": {
     "@rexovolt/markdown-it": "14.2.1",

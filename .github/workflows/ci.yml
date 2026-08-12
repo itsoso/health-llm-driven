@@ -559,22 +559,12 @@ jobs:
           pip install --require-hashes -r requirements.lock
           pip install -r requirements-dev.txt
 
-      - name: Dump OpenAPI (no DB)
-        working-directory: backend
-        env:
-          SECRET_KEY: test-secret-key-32-chars-minimum!!
-          GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
-          DATABASE_URL: "sqlite:///:memory:"
-          SKIP_DB_INIT: "1"
-        run: python -c 'import json; from main import app; json.dump(app.openapi(), open("/tmp/openapi.json","w"), ensure_ascii=False)'
-
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
 
       - name: Regenerate client types + assert no drift
-        run: |
-          npx --yes openapi-typescript@7.13.0 /tmp/openapi.json -o mobile/types/api.generated.ts
-          npx --yes openapi-typescript@7.13.0 /tmp/openapi.json -o frontend/src/types/api.generated.ts
-          git diff --exit-code -- mobile/types/api.generated.ts frontend/src/types/api.generated.ts \
-            || { echo "::error::客户端类型与后端 OpenAPI 漂移 — 本地跑 'npm run generate-types'(mobile + frontend)并提交 api.generated.ts"; exit 1; }
+        env:
+          API_TYPES_USE_CURRENT_ENV: "1"
+          API_TYPES_PYTHON: python
+        run: ./scripts/generate-api-types.sh --check

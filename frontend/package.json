@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "audit": "npm audit",
-    "generate-types": "cd ../backend && source venv/bin/activate && SKIP_DB_INIT=1 python3 -c 'import json; from main import app; json.dump(app.openapi(), open(\"../frontend/openapi.json\",\"w\"), ensure_ascii=False)' && cd ../frontend && npx openapi-typescript@7.13.0 ./openapi.json -o src/types/api.generated.ts"
+    "generate-types": "../scripts/generate-api-types.sh"
   },
   "dependencies": {
     "@dnd-kit/core": "6.1.0",
