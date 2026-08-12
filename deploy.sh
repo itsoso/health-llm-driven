@@ -1892,8 +1892,8 @@ push_code() {
     fi
 
     CURRENT_BRANCH="$(git branch --show-current)"
-    if [[ "$CURRENT_BRANCH" != "main" ]]; then
-        print_error "生产部署只允许从 main 执行，当前分支: ${CURRENT_BRANCH:-detached}"
+    if [[ -n "$CURRENT_BRANCH" && "$CURRENT_BRANCH" != "main" ]]; then
+        print_error "生产部署只允许从 main 或 exact origin/main detached HEAD 执行，当前分支: $CURRENT_BRANCH"
         exit 1
     fi
     DEPLOY_EXPECTED_SHA="$(git rev-parse HEAD)"
@@ -1902,19 +1902,27 @@ push_code() {
         exit 1
     fi
 
-    git push origin HEAD:main
+    if [[ "$CURRENT_BRANCH" == "main" ]]; then
+        git push origin HEAD:main
+    else
+        print_step "detached release worktree：核验 exact origin/main（不执行 push）..."
+    fi
+    git fetch origin main --quiet
+    local local_origin_main_sha
+    local_origin_main_sha=$(git rev-parse refs/remotes/origin/main)
     local remote_main_sha
     remote_main_sha=$(git ls-remote origin refs/heads/main | awk 'NR==1 {print $1}')
-    if [[ "$remote_main_sha" != "$DEPLOY_EXPECTED_SHA" ]]; then
-        print_error "origin/main 与本地 HEAD 不一致，拒绝部署"
+    if [[ "$local_origin_main_sha" != "$DEPLOY_EXPECTED_SHA" ||
+          "$remote_main_sha" != "$DEPLOY_EXPECTED_SHA" ]]; then
+        print_error "origin/main 与本地 HEAD 不一致，拒绝部署 (local=${local_origin_main_sha:0:12} remote=${remote_main_sha:0:12})"
         exit 1
     fi
     compute_release_input_digests
-    print_success "代码已推送并核验 origin/main: ${DEPLOY_EXPECTED_SHA:0:12}"
+    print_success "发布源已核验为 exact origin/main: ${DEPLOY_EXPECTED_SHA:0:12}"
 
     # 同步到 kuaishou GitLab（静默，失败不影响部署）
     if git remote | grep -q kuaishou; then
-        git push kuaishou main 2>/dev/null && print_success "代码已同步到 kuaishou GitLab" || print_warning "kuaishou GitLab 同步失败（不影响部署）"
+        git push kuaishou HEAD:main 2>/dev/null && print_success "代码已同步到 kuaishou GitLab" || print_warning "kuaishou GitLab 同步失败（不影响部署）"
     fi
 }
 

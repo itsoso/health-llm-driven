@@ -1760,13 +1760,16 @@ def test_env_sync_stages_candidate_and_only_deactivation_atomically_installs_liv
     assert "install_candidate_env" in execution_body
 
 
-def test_deploy_requires_main_and_pushes_exact_head_to_origin_main():
+def test_deploy_accepts_main_or_detached_exact_origin_main_only():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
 
     assert 'CURRENT_BRANCH="$(git branch --show-current)"' in script
-    assert 'CURRENT_BRANCH" != "main"' in script
+    assert '[[ -n "$CURRENT_BRANCH" && "$CURRENT_BRANCH" != "main" ]]' in script
+    assert 'if [[ "$CURRENT_BRANCH" == "main" ]]' in script
     assert "git push origin HEAD:main" in script
+    assert 'git rev-parse refs/remotes/origin/main' in script
     assert "git ls-remote origin refs/heads/main" in script
+    assert "git push kuaishou HEAD:main" in script
 
 
 def test_remote_checkout_and_post_deploy_revision_match_expected_sha():
