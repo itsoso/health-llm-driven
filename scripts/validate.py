@@ -5,15 +5,15 @@
 **不重跑重型测试套件** —— 那是 `scripts/run-all-tests.sh` / CI 的活, 这里 --full 委托过去,
 不重造 (复用 > 重写)。
 
-  python scripts/validate.py          # 结构闸门: doc-drift + dossier-consistency (blocking) + ruff (report-only)
+  python scripts/validate.py          # 结构闸门: system-map + dossier-consistency (blocking) + ruff (report-only)
   python scripts/validate.py --full   # 额外委托 run-all-tests.sh 跑全栈测试
   python scripts/validate.py -v       # 打印失败检查的完整尾部输出
 
 退出码: 0 = 所有 blocking 检查通过; 1 = 有 blocking 失败。
 report-only 检查 (ruff) 不影响退出码, 只暴露给人看 (与 CI 的 non-blocking 立场一致)。
 
-注意: `check_doc_drift.py` 自己 setdefault 了 SECRET_KEY/GARMIN_ENCRYPTION_KEY/DATABASE_URL,
-所以本脚本无需手动 export 那串 env —— 这正是它要消除的反馈环摩擦。
+System Map 检查通过独立的 Python 3.12 `.venv` wrapper 执行，避免依赖调用
+`validate.py` 的系统 Python 环境。
 """
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ def main() -> int:
     args = ap.parse_args()
 
     checks = [
-        Check("doc-drift", [sys.executable, "scripts/check_doc_drift.py"], blocking=True),
+        Check("system-map", ["bash", "scripts/system-map-check.sh"], blocking=True),
         Check(
             "dossier-consistency",
             [sys.executable, "backend/scripts/check_dossier_consistency.py"],

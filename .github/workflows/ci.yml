@@ -181,6 +181,7 @@ jobs:
         run: |
           pip install --require-hashes -r requirements.lock
           pip install -r requirements-dev.txt
+          pip install -r ../scripts/system-map-requirements.txt
 
       - name: Audit production Python dependencies
         working-directory: backend
@@ -203,13 +204,13 @@ jobs:
           pip install ruff
           ruff check app/ --select F821,F822,E9 --output-format=github
 
-      - name: Check CLAUDE.md doc drift
+      - name: Check System Map and doc drift
         env:
           SECRET_KEY: test-secret-key-32-chars-minimum!!
           GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
           DATABASE_URL: "sqlite:///:memory:"
           TZ: Asia/Shanghai
-        run: python scripts/check_doc_drift.py
+        run: python scripts/check_system_map.py
 
       - name: Check dossier consistency
         env:

@@ -37,6 +37,11 @@ def test_validate_runs_dossier_consistency_as_blocking_gate(monkeypatch):
     assert dossier_checks[0].blocking is True
     assert dossier_checks[0].argv[-1] == "backend/scripts/check_dossier_consistency.py"
 
+    system_map_checks = [check for check in captured if check.name == "system-map"]
+    assert system_map_checks, "scripts/validate.py must run the central System Map gate"
+    assert system_map_checks[0].blocking is True
+    assert system_map_checks[0].argv[-1] == "scripts/system-map-check.sh"
+
 
 def test_validate_fails_when_dossier_consistency_fails(monkeypatch):
     validate = _load_validate_module()
@@ -55,7 +60,8 @@ def test_validate_fails_when_dossier_consistency_fails(monkeypatch):
 def test_pre_commit_runs_distributed_governance_gates():
     config = (ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
 
-    assert "entry: python3 scripts/check_doc_drift.py" in config
+    assert "entry: ./scripts/system-map-check.sh" in config
+    assert "entry: python3 scripts/check_doc_drift.py" not in config
     assert "entry: python3 backend/scripts/check_dossier_consistency.py" in config
     assert config.count("pass_filenames: false") >= 2
 
@@ -65,3 +71,12 @@ def test_ci_runs_dossier_consistency_gate():
 
     assert "Check dossier consistency" in workflow
     assert "python backend/scripts/check_dossier_consistency.py" in workflow
+
+
+def test_ci_runs_central_system_map_gate():
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "Check System Map and doc drift" in workflow
+    assert "python scripts/check_system_map.py" in workflow
+    assert "pip install -r ../scripts/system-map-requirements.txt" in workflow
+    assert "python scripts/check_doc_drift.py" not in workflow
