@@ -343,7 +343,12 @@ def test_python_dependency_profile_tracks_lock_toolchain_and_installed_set(
     backend = tmp_path / "backend"
     python = backend / "venv" / "bin" / "python"
     python.parent.mkdir(parents=True)
+    (backend / "scripts").mkdir()
     (backend / "requirements.lock").write_text("package==1 --hash=sha256:abc\n")
+    (backend / "scripts" / "verify_locked_requirements.py").write_text(
+        "# fixture verifier\n",
+        encoding="utf-8",
+    )
     _write_executable(
         python,
         "#!/bin/bash\n"
@@ -353,6 +358,8 @@ def test_python_dependency_profile_tracks_lock_toolchain_and_installed_set(
         "printf 'pip %s\\n' \"$FAKE_PIP_VERSION\"; exit; fi\n"
         'if [ "${1:-} ${2:-} ${3:-}" = "-m pip check" ]; then '
         'exit "${FAKE_PIP_CHECK_RC:-0}"; fi\n'
+        'if [ "${1:-}" = "scripts/verify_locked_requirements.py" ]; then '
+        'exit "${FAKE_LOCK_VERIFY_RC:-0}"; fi\n'
         'if [ "$1" = "-c" ]; then printf \'%s\\n\' "$FAKE_DISTRIBUTIONS"; exit; fi\n'
         "exit 90\n",
     )
@@ -387,7 +394,47 @@ def test_python_dependency_profile_tracks_lock_toolchain_and_installed_set(
     assert first.input_digest != lock_changed.input_digest
     assert lock_changed.toolchain_digest != toolchain_changed.toolchain_digest
     assert toolchain_changed.output_digest != output_changed.output_digest
-    assert first.postcondition == "pip-check-venv-owner-v1"
+    assert first.postcondition == "locked-requirements-pip-check-venv-owner-v1"
+
+
+def test_python_dependency_profile_rejects_lock_verifier_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    module = _load_module()
+    backend = tmp_path / "backend"
+    python = backend / "venv" / "bin" / "python"
+    verifier = backend / "scripts" / "verify_locked_requirements.py"
+    python.parent.mkdir(parents=True)
+    verifier.parent.mkdir()
+    (backend / "requirements.lock").write_text("package==1\n")
+    verifier.write_text("# fixture verifier\n", encoding="utf-8")
+    _write_executable(
+        python,
+        "#!/bin/bash\n"
+        'if [ "$1" = "--version" ]; then echo "Python 3.12"; exit; fi\n'
+        'if [ "${1:-} ${2:-} ${3:-}" = "-m pip --version" ]; then echo "pip 25"; exit; fi\n'
+        'if [ "${1:-} ${2:-} ${3:-}" = "-m pip check" ]; then exit 0; fi\n'
+        'if [ "$1" = "scripts/verify_locked_requirements.py" ]; then '
+        'exit "${FAKE_LOCK_VERIFY_RC:-0}"; fi\n'
+        'if [ "$1" = "-c" ]; then echo \'[["package","1"]]\'; exit; fi\n'
+        "exit 90\n",
+    )
+    monkeypatch.setenv("FAKE_LOCK_VERIFY_RC", "1")
+
+    material = module.collect_python_dependencies_material(
+        backend,
+        expected_uid=os.getuid(),
+        python_executable=python,
+        allow_missing_output=True,
+    )
+    assert material.output_digest == module.UNAVAILABLE_OUTPUT_DIGEST
+    with pytest.raises(module.ProfileUnavailable, match="locked requirements verifier"):
+        module.collect_python_dependencies_material(
+            backend,
+            expected_uid=os.getuid(),
+            python_executable=python,
+        )
 
 
 def test_python_profile_uses_non_reusable_output_when_pip_check_fails(
@@ -398,12 +445,18 @@ def test_python_profile_uses_non_reusable_output_when_pip_check_fails(
     backend = tmp_path / "backend"
     python = backend / "venv" / "bin" / "python"
     python.parent.mkdir(parents=True)
+    (backend / "scripts").mkdir()
     (backend / "requirements.lock").write_text("package==1\n")
+    (backend / "scripts" / "verify_locked_requirements.py").write_text(
+        "# fixture verifier\n",
+        encoding="utf-8",
+    )
     _write_executable(
         python,
         "#!/bin/bash\n"
         'if [ "$1" = "--version" ]; then echo \'Python 3.12\'; exit; fi\n'
         'if [ "${1:-} ${2:-} ${3:-}" = "-m pip --version" ]; then echo \'pip 25\'; exit; fi\n'
+        'if [ "${1:-}" = "scripts/verify_locked_requirements.py" ]; then exit 0; fi\n'
         'if [ "${1:-} ${2:-} ${3:-}" = "-m pip check" ]; then exit 1; fi\n'
         "exit 90\n",
     )
@@ -433,12 +486,18 @@ def test_python_profile_accepts_standard_venv_python_symlink(
     bin_dir.mkdir(parents=True)
     target = bin_dir / "python3"
     python = bin_dir / "python"
+    (backend / "scripts").mkdir()
     (backend / "requirements.lock").write_text("package==1\n")
+    (backend / "scripts" / "verify_locked_requirements.py").write_text(
+        "# fixture verifier\n",
+        encoding="utf-8",
+    )
     _write_executable(
         target,
         "#!/bin/bash\n"
         'if [ "${1:-}" = "--version" ]; then echo \'Python 3.12\'; exit; fi\n'
         'if [ "${1:-} ${2:-} ${3:-}" = "-m pip --version" ]; then echo \'pip 25\'; exit; fi\n'
+        'if [ "${1:-}" = "scripts/verify_locked_requirements.py" ]; then exit 0; fi\n'
         'if [ "${1:-} ${2:-} ${3:-}" = "-m pip check" ]; then exit 0; fi\n'
         'if [ "${1:-}" = "-c" ]; then echo \'[["package","1"]]\'; exit; fi\n'
         "exit 90\n",
@@ -488,7 +547,12 @@ def test_python_profile_rejects_group_writable_symlink_target(
     bin_dir.mkdir(parents=True)
     target = bin_dir / "python3"
     python = bin_dir / "python"
+    (backend / "scripts").mkdir()
     (backend / "requirements.lock").write_text("package==1\n")
+    (backend / "scripts" / "verify_locked_requirements.py").write_text(
+        "# fixture verifier\n",
+        encoding="utf-8",
+    )
     _write_executable(target, "#!/bin/sh\nexit 0\n")
     target.chmod(0o777)
     python.symlink_to("python3")

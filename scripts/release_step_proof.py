@@ -553,14 +553,22 @@ def collect_python_dependencies_material(
 ) -> ProofMaterial:
     workspace = Path(workspace)
     lock = workspace / "requirements.lock"
+    lock_verifier = workspace / "scripts" / "verify_locked_requirements.py"
     venv = workspace / "venv"
     executable = Path(python_executable or (venv / "bin" / "python"))
     input_digest = _digest_json(
-        _file_fingerprint(
-            lock,
-            expected_uid=expected_uid,
-            label="requirements.lock",
-        )
+        {
+            "requirements_lock": _file_fingerprint(
+                lock,
+                expected_uid=expected_uid,
+                label="requirements.lock",
+            ),
+            "locked_requirements_verifier": _file_fingerprint(
+                lock_verifier,
+                expected_uid=expected_uid,
+                label="verify_locked_requirements.py",
+            ),
+        }
     )
     _safe_path_info(
         venv,
@@ -588,6 +596,29 @@ def collect_python_dependencies_material(
             "executable": executable_identity,
         }
     )
+    locked_verify = subprocess.run(
+        [
+            str(executable),
+            "scripts/verify_locked_requirements.py",
+            "requirements.lock",
+        ],
+        cwd=workspace,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if locked_verify.returncode != 0:
+        if not allow_missing_output:
+            raise ProfileUnavailable(
+                "locked requirements verifier failed "
+                f"(exit={locked_verify.returncode})"
+            )
+        return ProofMaterial(
+            input_digest=input_digest,
+            toolchain_digest=toolchain_digest,
+            output_digest=UNAVAILABLE_OUTPUT_DIGEST,
+            postcondition="locked-requirements-pip-check-venv-owner-v1",
+        )
     pip_check = subprocess.run(
         [str(executable), "-m", "pip", "check"],
         text=True,
@@ -636,7 +667,7 @@ def collect_python_dependencies_material(
         input_digest=input_digest,
         toolchain_digest=toolchain_digest,
         output_digest=output_digest,
-        postcondition="pip-check-venv-owner-v1",
+        postcondition="locked-requirements-pip-check-venv-owner-v1",
     )
 
 
