@@ -1101,10 +1101,23 @@ async def test_ordinary_delete_without_clinician_basis_dispatches(
     message,
 ):
     from app.services.agent_executor import AgentExecutor
+    from app.services.agent_kernel.types import ActionableReference
 
     executor = AgentExecutor(db)
     executor._current_user_id = 1
     executor._current_turn_user_message = message
+    executor._ensure_agent_kernel_turn()
+    executor._bind_agent_kernel_actionable_references(
+        (
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "medication",
+                    "records": ({"id": 1},),
+                },
+            ),
+        )
+    )
     dispatch = AsyncMock(
         return_value=json.dumps({"success": True, "deleted_id": 1})
     )

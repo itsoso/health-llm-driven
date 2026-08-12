@@ -253,7 +253,7 @@ async def test_cloud_facade_blocks_duplicate_write_and_reconciles_cancelled_disp
     facade = CloudAgentRuntimeFacade(db)
     arguments = {
         "record_type": "diet",
-        "data": {"food_items": "牛肉面"},
+        "data": {"meal_type": "lunch", "food_items": "牛肉面"},
     }
     first = asyncio.create_task(
         facade.execute_tool(

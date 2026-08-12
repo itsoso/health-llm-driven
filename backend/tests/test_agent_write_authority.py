@@ -11,7 +11,7 @@ from app.services.agent_executor import AgentExecutor, _confirm_or_describe
 async def test_model_confirmation_fields_are_removed_before_dispatch(db, monkeypatch):
     executor = AgentExecutor(db)
     executor._current_user_id = 1
-    executor._current_turn_user_message = "记录刚吃了替普瑞酮"
+    executor._current_turn_user_message = "记录阿奇霉素"
     captured = {}
 
     monkeypatch.setattr(
@@ -30,7 +30,7 @@ async def test_model_confirmation_fields_are_removed_before_dispatch(db, monkeyp
         {
             "record_type": "medication",
             "confirmed": True,
-            "data": {"medication_name": "替普瑞酮", "confirm": True},
+            "data": {"medication_name": "阿奇霉素", "confirm": True},
         },
         None,
     )

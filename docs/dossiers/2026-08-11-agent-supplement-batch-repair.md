@@ -7,7 +7,7 @@
 | 当前阶段 | S5 实现 |
 | 状态 | building |
 | 负责 | Codex |
-| 反馈环 | Backend deploy + Mobile true-path verification |
+| 反馈环 | Backend deploy + Mobile OTA + true-path verification |
 
 ## S0 · 用户需求（逐字）
 
@@ -68,7 +68,7 @@
 
 - 设计: `docs/plans/2026-08-11-agent-supplement-batch-repair-design.md`
 - 实施计划: `docs/plans/2026-08-11-agent-supplement-batch-repair.md`。
-- 路由: Backend TDD → policy/executor implementation → safety review → main push → backend deploy → true-path verification。
+- 路由: Backend TDD → policy/executor implementation → Mobile 可点击性修复 → safety review → main push → backend deploy + Mobile OTA → true-path verification。
 - 长杆: 在不信任助手文本和模型字段的前提下传递“全部补剂”的 owner-scoped 授权集合。
 
 ## G2 · 可行性 + 安全压测
@@ -90,12 +90,12 @@
 - [x] T2 增加收紧的全量补剂续接与 owner-scoped 授权集合。
 - [x] T3 增加零工具调用时的一次性确定性补剂兜底。
 - [x] T4 集成测试、静态/治理检查、独立安全评审。
-- [ ] T5 main push、backend deploy、生产路径验证。
+- [ ] T5 关闭首次 main CI 暴露的集成闸、再次 push、backend deploy、Mobile OTA、生产路径验证。
 
 ## S5 · 实现
 
 - 分支: `main`（按项目默认工作流）。
-- commits: `7fa4a3851`（设计）、`2331b5419`（计划）、`01cf9e856`（多目标解析）、`cf4cc6d9c`（上下文批量持久化）；并通过 `3f568666b` 合并最新 `origin/main`。
+- commits: `7fa4a3851`（设计）、`2331b5419`（计划）、`01cf9e856`（多目标解析）、`cf4cc6d9c`（上下文批量持久化）、`0e50779de`（安全加固）；并通过 `3f568666b` 合并最新 `origin/main`。发布闸修复 commit 待生成。
 - 实现结果:
   - 显式多补剂语句按名称拆成独立、可去重的 `health_record(supplement)` 调用；不把单个剂量错误复制给多个目标。
   - “全部已服用”只在紧邻助手明确询问“是否全部记为已服用”时启用，目标由服务端按 `user_id + is_active` 查询补剂定义。
@@ -103,6 +103,8 @@
   - 模型未发工具或只发部分目标时，服务端一次性补齐确定性调用；已有写回执后不盲目重试，部分失败不会宣称全部成功。
   - 安全评审 fast-follow：全量确认必须锚定最后一问；计数目标使用独立实体边界，阻断 D/D3、D-3、铁/铁观音等短名吞长名；相似已登记名称先澄清，不自动创建重复定义。
   - 补剂打卡 INFO 日志仅记录用户 ID 和补剂定义 ID，不再输出完整补剂名称。
+  - Mobile 小巴页顶部三个操作保持 18px 视觉图标，但点击目标恢复到 iOS 建议的 44×44，并扩大 hit slop；避免视觉紧凑导致实际难点。
+  - 首次主干 CI 揭示的相邻真实入口一并收口：自然语言“登记”识别、容器量词饮水记录、illness canonical read registry；过期测试数据改为满足现行精确授权，不放宽生产 policy。
 
 ## G3 · 测试闸
 
@@ -110,9 +112,14 @@
   - 初始相关全量集成：`2479 passed, 7 warnings`（224.27s，0 failed）。
   - 合并远端主干后关键锚点：`11 passed, 6 warnings`（2.14s，0 failed）。
   - 安全修复后的最终相关集成：`2487 passed, 7 warnings`（105.95s，0 failed）。
+  - 首次 main push：CI run `31560724255` 如实失败；失败项包含主干既存的 Mobile 44pt 合同、OpenAPI 类型漂移、中文“登记”、自然饮水量词和若干已被精确写入授权淘汰的测试场景，未进入部署。
+  - CI 定向复核：agent f-h `297 passed`；voice/watch `162 passed`；Mobile Jest `295 suites / 2574 tests passed`；Mobile TypeScript 与 design token gate 通过。
+  - 最大 Agent i-z 分片第一次复核如实暴露 1 个过期测试目标（`6295 passed / 1 failed / 3 skipped`）；改为显式、可授权药名后第二次全量复核 `6296 passed / 3 skipped / 0 failed`（356.34s）。
+  - Frontend production build 通过；ESLint `0 errors`（33 个既存 warnings）；OpenAPI 两端类型由当前 schema 重新生成。
+  - 高风险 LLM live gate：invariants `12/12`、health agent core `50/50`、真实 orchestrator model `5/5`（avg score `0.92`）、trajectory contract `12/12`、trajectory goldens `9/9`，exit 0。
   - Ruff：`All checks passed!`。
   - 文档漂移：架构一致；dossier consistency：`105 份 dossier 全自洽`；`git diff --check`：通过。
-- main CI: pending。
+- main CI: 首次 run 已拦截；修复后重跑 pending。
 - **裁决**: 本地 PASS；等待 main push 后的真实 CI 状态。
 
 ## G4 · 安全闸
@@ -124,7 +131,7 @@
 
 ## S6 · 部署
 
-- 路由: backend-only deploy；无客户端代码变化，不需要 Mobile OTA。
+- 路由: 后端标准 deploy + Mobile production OTA（纯 TS/UI 点击目标修复）。
 - 部署 SHA / 回滚点: pending。
 
 ## G5 · 部署健康闸

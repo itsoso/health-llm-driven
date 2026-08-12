@@ -4107,7 +4107,12 @@ def _named_item_targets(clause: str, record_type: str) -> tuple[str, ...]:
         "",
         candidate,
     )
-    candidate = re.split(r"(?:然后|并且|再)", candidate, maxsplit=1)[0]
+    separator = (
+        r"(?:然后|并且|再)"
+        if record_type == "supplement"
+        else r"(?:，|,|然后|并且|再)"
+    )
+    candidate = re.split(separator, candidate, maxsplit=1)[0]
     if record_type == "supplement":
         candidate = _SUPPLEMENT_DOSE_RE.sub("", candidate)
         candidate = _SUPPLEMENT_TIMING_RE.sub("", candidate)

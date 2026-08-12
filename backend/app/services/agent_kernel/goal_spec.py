@@ -73,7 +73,15 @@ UPDATE_SIGNALS = (
 NEGATION_SIGNALS = ("先不要", "暂不", "不要", "不用", "无需", "先别", "别")
 QUESTION_SIGNALS = ("?", "？", "是否", "是不是", "需要", "吗")
 REFERENTIAL_SIGNALS = ("上面", "上述", "这两餐", "这些餐")
-WATER_SIGNALS = ("喝水", "饮水", "补水")
+WATER_SIGNALS = ("喝水", "饮水", "补水", "杯水", "瓶水")
+WATER_CONTAINER_AMOUNTS = (
+    ("一杯", 250),
+    ("两杯", 500),
+    ("三杯", 750),
+    ("半杯", 125),
+    ("一瓶", 500),
+    ("半瓶", 250),
+)
 WATER_AMOUNT_RE = re.compile(
     r"(?:喝水|饮水|补水)"
     r"(?:了)?(?:约|大约|差不多)?"
@@ -694,7 +702,15 @@ def goal_spec_contract_payload() -> dict[str, str]:
 def _water_amount_ml(text: str) -> int | None:
     match = WATER_AMOUNT_RE.search(text)
     if match is None:
-        return None
+        normalized = "".join(str(text or "").split())
+        return next(
+            (
+                amount_ml
+                for phrase, amount_ml in WATER_CONTAINER_AMOUNTS
+                if phrase in normalized
+            ),
+            None,
+        )
     parsed = _parse_number(match.group("amount"))
     if parsed is None:
         return None

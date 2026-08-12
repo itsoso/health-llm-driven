@@ -245,7 +245,7 @@ _THIRD_PARTY_HEALTH_FACT = (
     r"(?:感冒|流感|发烧|生病|口腔溃疡|湿疹|血压|体重|腰围|"
     r"头痛|头疼|胸痛|腹痛|咳嗽|症状|用药|服药)"
 )
-_WRITE_ACTION_PATTERN = r"(?:记|记录|保存|录入|写入|新增|打卡)"
+_WRITE_ACTION_PATTERN = r"(?:记|记录|保存|录入|登记|写入|新增|打卡)"
 _THIRD_PARTY_WRITE_SUBJECT_RE = re.compile(
     rf"(?:(?:给|替|为)(?:我(?:的)?)?{_THIRD_PARTY_SUBJECT}.{{0,12}}"
     rf"{_WRITE_ACTION_PATTERN})|"
@@ -937,7 +937,19 @@ def _last_action_in_clause(clause: str) -> tuple[str, int] | None:
         start = clause.rfind(action)
         if start < 0:
             continue
-        if context is None or start > context[1]:
+        if context is None:
+            context = (action, start)
+            continue
+        current_action, current_start = context
+        candidate_end = start + len(action)
+        current_end = current_start + len(current_action)
+        overlaps = start < current_end and current_start < candidate_end
+        if overlaps and (
+            start < current_start
+            or (start == current_start and len(action) > len(current_action))
+        ):
+            context = (action, start)
+        elif not overlaps and start > current_start:
             context = (action, start)
     return context
 

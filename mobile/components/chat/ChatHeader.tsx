@@ -64,7 +64,7 @@ export default function ChatHeader({
           <View testID="chat-header-action-group" style={styles.headerActionGroup}>
             <Pressable
               onPress={onNewChat}
-              hitSlop={4}
+              hitSlop={8}
               style={({ pressed }) => [
                 styles.headerAction,
                 styles.primaryHeaderAction,
@@ -83,7 +83,7 @@ export default function ChatHeader({
             </Pressable>
             <Pressable
               onPress={onOpenHistory}
-              hitSlop={4}
+              hitSlop={8}
               style={({ pressed }) => [styles.headerAction, pressed && styles.headerActionPressed]}
               accessibilityLabel="对话历史"
               accessibilityHint="查看和切换历史对话"
@@ -93,7 +93,7 @@ export default function ChatHeader({
             </Pressable>
             <Pressable
               onPress={onOpenToolMenu}
-              hitSlop={4}
+              hitSlop={8}
               style={({ pressed }) => [styles.headerAction, pressed && styles.headerActionPressed]}
               accessibilityLabel="更多会诊操作"
               accessibilityHint="打开更多会诊操作"
@@ -142,9 +142,9 @@ const styles = StyleSheet.create({
     borderColor: C.line,
   },
   headerAction: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',

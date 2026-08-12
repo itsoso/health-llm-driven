@@ -533,8 +533,8 @@ async def test_multi_model_partial_success_cannot_hide_independent_rejection(
                         "function": {
                             "name": "health_record",
                             "arguments": json.dumps({
-                                "record_type": "sleep",
-                                "data": {"sleep_quality": 5},
+                                "record_type": "water",
+                                "data": {"amount": 300},
                             }),
                         },
                     },
@@ -558,10 +558,10 @@ async def test_multi_model_partial_success_cannot_hide_independent_rejection(
 
     async def execute_mixed_writes(name, args, token):
         payload = json.loads(args)
-        if payload["record_type"] == "sleep":
+        if payload["data"]["amount"] == 300:
             return local_write_rejection(
                 "tool_validation_failed",
-                message="睡眠记录缺少 bedtime、wake_time。",
+                message="第一项饮水记录未通过校验。",
             )
         return json.dumps({
             "id": 921,
@@ -582,7 +582,7 @@ async def test_multi_model_partial_success_cannot_hide_independent_rejection(
         event
         async for event in executor._run_multi_model_stream(
             user.id,
-            "请完成两项健康记录。",
+            "记录喝水300ml，然后记录喝水500ml。",
             None,
             None,
             '{"multi_model": true}',
@@ -598,7 +598,7 @@ async def test_multi_model_partial_success_cannot_hide_independent_rejection(
     done = events[-1]["data"]
 
     assert "另有 1 项记录已完成并取得回执" in rendered
-    assert "缺少 bedtime、wake_time" in rendered
+    assert "第一项饮水记录未通过校验" in rendered
     assert "两项记录都已经保存好了" not in rendered
     assert done["completion_status"] == "error"
     assert len(done["write_receipts"]) == 1

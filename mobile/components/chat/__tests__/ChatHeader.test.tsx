@@ -78,22 +78,22 @@ describe('ChatHeader', () => {
 
     expect(StyleSheet.flatten(getByLabelText('新建对话').props.style)).toEqual(
       expect.objectContaining({
-        width: 40,
-        height: 40,
+        width: 44,
+        height: 44,
         backgroundColor: C.green50,
         borderWidth: 0,
       }),
     );
-    expect(getByLabelText('新建对话').props.hitSlop).toBe(4);
+    expect(getByLabelText('新建对话').props.hitSlop).toBe(8);
     expect(StyleSheet.flatten(getByLabelText('对话历史').props.style)).toEqual(
-      expect.objectContaining({ width: 40, height: 40 }),
+      expect.objectContaining({ width: 44, height: 44 }),
     );
     expect(getByTestId('icon-chatbubble-outline').props.size).toBe(18);
     expect(getByTestId('icon-add').props.size).toBe(9);
     expect(getByTestId('icon-time-outline').props.size).toBe(18);
     expect(getByTestId('icon-ellipsis-horizontal').props.size).toBe(18);
     expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style)).toEqual(
-      expect.objectContaining({ width: 40, height: 40 }),
+      expect.objectContaining({ width: 44, height: 44 }),
     );
 
     fireEvent.press(getByLabelText('更多会诊操作'));

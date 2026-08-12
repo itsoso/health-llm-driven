@@ -731,6 +731,8 @@ def test_invalid_explicit_diet_date_requires_clarification(message):
         ("记录喝水了大约五百毫升", "500"),
         ("记录饮水半升", "500"),
         ("记录补水1千毫升", "1000"),
+        ("喝了一杯水", "250"),
+        ("喝了半瓶水", "250"),
     ),
 )
 def test_simple_water_goal_normalizes_natural_amount_variants(message, amount_ml):
