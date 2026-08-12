@@ -9,7 +9,7 @@
 """
 import logging
 from datetime import date, datetime, time, timezone, timedelta
-from typing import Optional, List
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -251,7 +251,7 @@ def _record_supplement(db: Session, user_id: int, today: date, current_time: tim
     supp = db.query(SupplementDefinition).filter(
         SupplementDefinition.id == supplement_id,
         SupplementDefinition.user_id == user_id,
-        SupplementDefinition.is_active == True,
+        SupplementDefinition.is_active.is_(True),
     ).first()
     if not supp:
         raise HTTPException(status_code=404, detail=f"补剂 {supplement_id} 不存在或已停用")
@@ -276,7 +276,11 @@ def _record_supplement(db: Session, user_id: int, today: date, current_time: tim
     db.commit()
     db.refresh(record)
 
-    logger.info(f"NFC 补剂打卡: user={user_id}, {supp.name}")
+    logger.info(
+        "NFC 补剂打卡: user=%s, supplement_definition_id=%s",
+        user_id,
+        supplement_id,
+    )
     return NfcTapResponse(
         status="recorded",
         message=f"已打卡 {supp.name}（{supp.dosage or ''}）",
@@ -291,7 +295,7 @@ def _record_supplement_group(db: Session, user_id: int, today: date, current_tim
     supps = db.query(SupplementDefinition).filter(
         SupplementDefinition.user_id == user_id,
         SupplementDefinition.timing == timing,
-        SupplementDefinition.is_active == True,
+        SupplementDefinition.is_active.is_(True),
     ).all()
 
     if not supps:

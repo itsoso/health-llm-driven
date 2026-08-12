@@ -113,6 +113,62 @@ def test_all_taken_resolves_only_from_immediate_owner_scoped_supplement_context(
             {"role": "assistant", "content": "要把全部2种药物都记为已服用吗？"}
         ],
     ) == ()
+    assert ae._resolve_contextual_supplement_names(
+        db,
+        user_id=user.id,
+        message="全部已服用",
+        recent_messages=[
+            {
+                "role": "assistant",
+                "content": (
+                    "甘氨酸镁今天有记录。阿奇霉素和二甲双胍，"
+                    "要把全部2种都记为已服用吗？"
+                ),
+            }
+        ],
+    ) == ()
+    assert ae._resolve_contextual_supplement_names(
+        db,
+        user_id=user.id,
+        message="全部已服用",
+        recent_messages=[
+            {
+                "role": "assistant",
+                "content": (
+                    "甘氨酸镁和NOW Melatonin 3mg今天都有记录。"
+                    "要把全部2种维生素C和鱼油都记为已服用吗？"
+                ),
+            }
+        ],
+    ) == ()
+    assert ae._resolve_contextual_supplement_names(
+        db,
+        user_id=user.id,
+        message="全部已服用",
+        recent_messages=[
+            {
+                "role": "assistant",
+                "content": (
+                    "甘氨酸镁和NOW Melatonin 3mg今天都有记录。"
+                    "维生素C和鱼油，要把全部2种都记为已服用吗？"
+                ),
+            }
+        ],
+    ) == ()
+    assert ae._resolve_contextual_supplement_names(
+        db,
+        user_id=user.id,
+        message="全部已服用",
+        recent_messages=[
+            {
+                "role": "assistant",
+                "content": (
+                    "甘氨酸镁今天有记录。维生素C和鱼油，"
+                    "要把全部2种都记为已服用吗？"
+                ),
+            }
+        ],
+    ) == ()
 
 
 def test_all_taken_refines_kernel_to_a_supplement_write(
@@ -135,6 +191,57 @@ def test_all_taken_refines_kernel_to_a_supplement_write(
     assert snapshot.intent.operation == "create"
     assert snapshot.intent.is_write is True
     assert "continuation:supplement_all" in snapshot.intent.evidence
+
+
+@pytest.mark.parametrize(
+    "assistant_text",
+    [
+        "全部补剂已经列在上面。维生素C和鱼油，要把这2种记为已服用吗？",
+        "需要先核对全部补剂吗？维生素C和鱼油，要把这2种记为已服用吗？",
+        (
+            "甘氨酸镁和NOW Melatonin 3mg。要把全部2种都记为已服用吗？"
+            "维生素C和鱼油，要把这2种记为已服用吗？"
+        ),
+        (
+            "甘氨酸镁和NOW Melatonin 3mg。要把全部2种都记为已服用吗？"
+            "还是先看看明天的计划？"
+        ),
+    ],
+)
+def test_all_taken_requires_the_final_question_to_be_the_authorization(
+    assistant_text,
+):
+    assert ae._assistant_requests_all_supplements(
+        assistant_text,
+        ("甘氨酸镁", "NOW Melatonin 3mg"),
+    ) is False
+
+
+def test_all_taken_requires_independent_mentions_for_overlapping_names():
+    assert ae._assistant_requests_all_supplements(
+        "维生素D3和鱼油。要把全部2种都记为已服用吗？",
+        ("维生素D3", "维生素D"),
+    ) is False
+    assert ae._assistant_requests_all_supplements(
+        "维生素D3和维生素D。要把全部2种都记为已服用吗？",
+        ("维生素D3", "维生素D"),
+    ) is True
+    assert ae._assistant_requests_all_supplements(
+        "维生素D3和甘氨酸镁。要把全部2种都记为已服用吗？",
+        ("维生素D", "甘氨酸镁"),
+    ) is False
+    assert ae._assistant_requests_all_supplements(
+        "铁观音和甘氨酸镁。要把全部2种都记为已服用吗？",
+        ("铁", "甘氨酸镁"),
+    ) is False
+    assert ae._assistant_requests_all_supplements(
+        "维生素D-3和甘氨酸镁。要把全部2种都记为已服用吗？",
+        ("维生素D", "甘氨酸镁"),
+    ) is False
+    assert ae._assistant_requests_all_supplements(
+        "维生素D.3和甘氨酸镁。要把全部2种都记为已服用吗？",
+        ("维生素D", "甘氨酸镁"),
+    ) is False
 
 
 @pytest.mark.parametrize(

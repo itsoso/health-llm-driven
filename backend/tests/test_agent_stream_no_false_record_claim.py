@@ -437,6 +437,69 @@ async def test_all_taken_context_writes_each_active_owner_supplement_once(
     assert done["data"]["record_intent_no_tool"] is False
 
 
+async def test_multiple_supplements_partial_failure_keeps_turn_incomplete(
+    db,
+    auth_user_and_headers,
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+
+    async def fake_call_llm_stream(messages, tools):  # noqa: ARG001
+        yield {"type": "content", "text": "好的，已经记录。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):  # noqa: ARG001
+        args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+        calls.append((tool_name, args))
+        name = args["data"]["supplement_name"]
+        if name == "甘氨酸镁":
+            return json.dumps(
+                {
+                    "status": "failed",
+                    "success": False,
+                    "dispatch_started": False,
+                    "error_code": "supplement_tap_failed",
+                    "message": "甘氨酸镁没有写入。",
+                },
+                ensure_ascii=False,
+            )
+        return json.dumps(
+            {
+                "record_id": 922,
+                "resource_type": "supplement_log",
+                "status": "verified",
+                "success": True,
+                "message": "已记录补剂：褪黑素",
+            },
+            ensure_ascii=False,
+        )
+
+    executor._call_llm_stream = fake_call_llm_stream
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录下来，吃了一粒甘氨酸镁和一粒褪黑素。",
+            user_auth_token="test-token",
+        )
+    ]
+    done = next(event for event in events if event.get("event") == "done")
+    reply = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+    assert len(calls) == 2
+    assert len(done["data"]["write_receipts"]) == 1
+    assert done["data"]["completion_status"] == "error"
+    assert done["data"]["turn_outcome"]["category"] != "success"
+    assert "没有全部完成" in reply
+
+
 async def test_historical_water_supplement_uses_one_date_bound_write(
     db, auth_user_and_headers, monkeypatch
 ):

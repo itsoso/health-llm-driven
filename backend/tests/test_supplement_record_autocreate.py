@@ -89,7 +89,7 @@ async def test_unquoted_unknown_supplement_requires_an_explicit_name_boundary(db
 @pytest.mark.asyncio
 async def test_registered_supplement_taps_without_creating(db):
     ex = _executor(db)
-    ex._current_turn_user_message = "记录「红参液」"
+    ex._current_turn_user_message = "记录「正官庄红参液」"
     created = {"called": False}
 
     async def fake_get_json(url, headers):
@@ -108,11 +108,75 @@ async def test_registered_supplement_taps_without_creating(db):
          patch.object(ex, "_api_post", new=AsyncMock(side_effect=fake_post)):
         result = await ex._exec_health_record("http://x", {}, {
             "record_type": "supplement",
-            "data": {"supplement_name": "红参液"},
+            "data": {"supplement_name": "正官庄红参液"},
         })
 
     assert created["called"] is False  # 已注册 → 不重复建档
     assert "ok" in result
+
+
+@pytest.mark.asyncio
+async def test_short_name_matching_registered_supplement_requires_clarification(db):
+    ex = _executor(db)
+    ex._current_turn_user_message = "记录「红参液」"
+    create = AsyncMock(return_value=({"id": 88}, None))
+    tap = AsyncMock(return_value='{"record_id": 1073}')
+
+    with patch.object(
+        ex,
+        "_api_get_json",
+        new=AsyncMock(
+            return_value=([
+                {"id": 7, "name": "正官庄红参液", "is_active": True},
+            ], None)
+        ),
+    ), patch.object(ex, "_api_post_json", new=create), patch.object(
+        ex,
+        "_api_post",
+        new=tap,
+    ):
+        result = await ex._exec_health_record("http://x", {}, {
+            "record_type": "supplement",
+            "data": {"supplement_name": "红参液"},
+        })
+
+    parsed = json.loads(result)
+    assert parsed["status"] == "rejected"
+    assert parsed["error_code"] == "supplement_name_ambiguous"
+    assert parsed["dispatch_started"] is False
+    assert "正官庄红参液" in parsed["recovery_guidance"]
+    create.assert_not_awaited()
+    tap.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_overlapping_supplement_names_match_distinct_exact_definitions(db):
+    ex = _executor(db)
+    ex._current_turn_user_message = "记录维生素D3和维生素D"
+    ex._turn_contextual_supplement_names = ("维生素D3", "维生素D")
+    dispatched_ids: list[int] = []
+
+    async def fake_get_json(url, headers):  # noqa: ARG001
+        return [
+            {"id": 31, "name": "维生素D3", "is_active": True},
+            {"id": 32, "name": "维生素D", "is_active": True},
+        ], None
+
+    async def fake_post(url, headers, payload):  # noqa: ARG001
+        dispatched_ids.append(payload["supplement_id"])
+        return json.dumps({"record_id": 1000 + payload["supplement_id"]})
+
+    with patch.object(ex, "_api_get_json", new=AsyncMock(side_effect=fake_get_json)), \
+         patch.object(ex, "_api_post_json", new=AsyncMock()), \
+         patch.object(ex, "_api_post", new=AsyncMock(side_effect=fake_post)):
+        for name in ("维生素D3", "维生素D"):
+            result = await ex._exec_health_record("http://x", {}, {
+                "record_type": "supplement",
+                "data": {"supplement_name": name},
+            })
+            assert json.loads(result)["record_id"] == 1000 + dispatched_ids[-1]
+
+    assert dispatched_ids == [31, 32]
 
 
 @pytest.mark.asyncio

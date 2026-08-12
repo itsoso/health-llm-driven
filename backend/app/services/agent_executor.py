@@ -37,7 +37,10 @@ from app.services.tool_schema_registry import (
 from app.services.lab_plausibility import annotate_if_implausible
 from app.services.llm.error_messages import safe_llm_error_message, safe_tool_error_message
 from app.services.health_query_dimensions import normalize_health_query_args
-from app.services.drug_lexicon import supplement_name_entity_terms
+from app.services.drug_lexicon import (
+    contains_medication_reference,
+    supplement_name_entity_terms,
+)
 from app.services.post_record_quality import (
     build_diet_adjust_action,
     build_post_record_quality_response,
@@ -2832,6 +2835,28 @@ def _unverified_write_message(verified_receipts: Optional[List[Dict[str, Any]]] 
         "可能已提交但尚未拿到回执;"
         "为避免重复写入,我没有自动重试,请先查询该项现有记录,确认缺失后再补录。"
     )
+
+
+def _failed_write_message(
+    verified_receipts: Optional[List[Dict[str, Any]]] = None,
+    *,
+    also_unverified: bool = False,
+) -> str:
+    """Report a known batch failure without erasing verified sibling writes."""
+    verified_count = len(verified_receipts or [])
+    if verified_count:
+        message = (
+            f"本轮没有全部完成：已有 {verified_count} 项确认写入，"
+            "但至少一项明确没有写入。请核对失败项后再单独重试。"
+        )
+    else:
+        message = "本轮记录没有完成：至少一项明确没有写入。请核对后重试。"
+    if also_unverified:
+        message += (
+            "另外还有记录状态暂时无法确认；为避免重复写入，"
+            "请先查询现有记录，确认缺失后再补录。"
+        )
+    return message
 
 
 def _runtime_control_unavailable_message(
@@ -8190,6 +8215,69 @@ def _is_supplement_all_completion(message: Any) -> bool:
     return compact in _SUPPLEMENT_ALL_COMPLETION_PHRASES
 
 
+def _scope_mentions_each_supplement_once(
+    scope: Any,
+    active_names: Sequence[str],
+) -> bool:
+    """Require one independent, non-overlapping mention per active target."""
+    normalized_scope = "".join(
+        unicodedata.normalize("NFKC", str(scope or "")).casefold().split()
+    )
+    normalized_names = sorted(
+        {
+            "".join(
+                unicodedata.normalize("NFKC", str(name or "")).casefold().split()
+            )
+            for name in active_names
+            if _normalized_supplement_reference(name)
+        },
+        key=lambda value: (-len(value), value),
+    )
+    if not normalized_scope or len(normalized_names) != len(active_names):
+        return False
+
+    occupied: list[tuple[int, int]] = []
+    connector_chars = frozenset("和与及、，,；;：:·•&。！？?!()（）[]【】")
+    internal_punctuation = frozenset("-._－—–．＿")
+
+    def _is_entity_boundary(position: int, *, before: bool) -> bool:
+        if position < 0 or position >= len(normalized_scope):
+            return True
+        character = normalized_scope[position]
+        if character in connector_chars:
+            return True
+        if character in internal_punctuation:
+            outside_position = position - 1 if before else position + 1
+            if 0 <= outside_position < len(normalized_scope):
+                return not normalized_scope[outside_position].isalnum()
+            return True
+        return False
+
+    for normalized_name in normalized_names:
+        start = 0
+        matched_span: tuple[int, int] | None = None
+        while True:
+            index = normalized_scope.find(normalized_name, start)
+            if index < 0:
+                break
+            candidate = (index, index + len(normalized_name))
+            if (
+                _is_entity_boundary(index - 1, before=True)
+                and _is_entity_boundary(candidate[1], before=False)
+                and all(
+                    candidate[1] <= span[0] or candidate[0] >= span[1]
+                    for span in occupied
+                )
+            ):
+                matched_span = candidate
+                break
+            start = index + 1
+        if matched_span is None:
+            return False
+        occupied.append(matched_span)
+    return True
+
+
 def _assistant_requests_all_supplements(
     assistant_text: Any,
     active_names: Sequence[str],
@@ -8203,22 +8291,72 @@ def _assistant_requests_all_supplements(
         and any(marker in compact for marker in ("记为", "记录为", "打卡为"))
     ):
         return False
-    if re.search(r"(?:全部|所有)(?:的)?补剂", compact):
+    # A continuation that mentions a drug or generic medication category is
+    # not a supplement-only authorization.  Fail closed before binding the
+    # owner-scoped active supplement set.
+    if contains_medication_reference(text):
+        return False
+    if re.search(
+        r"(?:要把|是否把|是否要把|把|请把|请确认(?:是否)?把|"
+        r"想确认一下(?:是否)?把)?"
+        r"(?:全部|所有)(?:的)?补剂(?:都|也|一起|一并)?"
+        r"(?:记为|记录为|打卡为)已服用(?:吗|么|呢|吧)?[?？][。！!]*$",
+        compact,
+    ):
         return True
 
     count_match = re.search(
-        r"全部(?P<count>\d+)种.*?(?:记为|记录为|打卡为)已服用",
+        r"全部(?P<count>\d+)种(?:补剂)?(?:都|也|一起|一并)?"
+        r"(?:记为|记录为|打卡为)已服用(?:吗|么|呢|吧)?[?？][。！!]*$",
         compact,
     )
     if count_match is None or int(count_match.group("count")) != len(active_names):
         return False
-    normalized_assistant = _normalized_supplement_reference(text)
-    return any(
-        normalized_name
-        and normalized_name in normalized_assistant
-        for normalized_name in (
-            _normalized_supplement_reference(name) for name in active_names
+
+    # Bind the count to the actual confirmation question plus its immediately
+    # preceding enumeration, not to names mentioned anywhere in a long answer.
+    # Otherwise an unrelated earlier sentence can authorize the wrong list.
+    question_start = max(
+        (compact.rfind(marker, 0, count_match.start()) for marker in "。！？?!"),
+        default=-1,
+    )
+    question_prefix = compact[question_start + 1 : count_match.start()]
+    normalized_prefix = question_prefix.strip("：:")
+    safe_question_prefix = (
+        not normalized_prefix
+        or normalized_prefix
+        in {
+            "把",
+            "要把",
+            "是否把",
+            "是否要把",
+            "请把",
+            "请确认是否把",
+            "想确认一下是否把",
+        }
+        or (
+            normalized_prefix.startswith(
+                ("你是", "你想", "想确认一下：你是", "想确认一下:你是")
+            )
+            and normalized_prefix.endswith("还是")
         )
+    )
+    if not safe_question_prefix:
+        return False
+
+    before_question = compact[:question_start]
+    referent_start = max(
+        (before_question.rfind(marker) for marker in "。！？?!"),
+        default=-1,
+    )
+    local_scope = (
+        before_question[referent_start + 1 :]
+        + "。"
+        + compact[question_start + 1 :]
+    )
+    return _scope_mentions_each_supplement_once(
+        local_scope,
+        active_names,
     )
 
 
@@ -12141,6 +12279,7 @@ class AgentExecutor:
         # 只读工具回合级去重(同名+同参已跑过 → 复用结果, 不重复真执行)。回合级 local, 自然重置。
         read_results_by_fingerprint: Dict[str, tuple[str, str]] = {}
         unverified_write_operations: Dict[str, str] = {}
+        failed_write_operations: Dict[str, str] = {}
         pending_recoverable_write_rejections: dict[
             str, tuple[str, str]
         ] = {}
@@ -13434,6 +13573,10 @@ class AgentExecutor:
                                 )
                                 if runtime_write_fingerprint:
                                     if checkpoint_status == "uncertain":
+                                        failed_write_operations.pop(
+                                            runtime_write_fingerprint,
+                                            None,
+                                        )
                                         unverified_write_operations[
                                             runtime_write_fingerprint
                                         ] = func_name
@@ -13442,6 +13585,34 @@ class AgentExecutor:
                                             runtime_write_fingerprint,
                                             None,
                                         )
+                                        failed_write_operations.pop(
+                                            runtime_write_fingerprint,
+                                            None,
+                                        )
+                                    elif (
+                                        checkpoint_status in {"failed", "rejected"}
+                                        and not (
+                                            self._agent_kernel_last_decision is not None
+                                            and self._agent_kernel_last_decision.action
+                                            == "block"
+                                            and self._agent_kernel_snapshot is not None
+                                            and self._agent_kernel_snapshot.policy_mode
+                                            == "enforce"
+                                        )
+                                        and not _write_result_is_pre_dispatch_validation_error(
+                                            result_for_record_card
+                                        )
+                                        and not str(result_for_record_card or "")
+                                        .lstrip()
+                                        .startswith("[NEEDS_CONFIRMATION]")
+                                    ):
+                                        unverified_write_operations.pop(
+                                            runtime_write_fingerprint,
+                                            None,
+                                        )
+                                        failed_write_operations[
+                                            runtime_write_fingerprint
+                                        ] = func_name
                         record_card = None
                         quality_cards: list[dict] = []
                         transient_local_rejection = bool(
@@ -13635,6 +13806,21 @@ class AgentExecutor:
                                     "data": {"content": terminal_text[i:i + 20]},
                                 }
                         full_reply += terminal_text
+                        break
+
+                    if failed_write_operations:
+                        final_finish_reason = "error"
+                        failed_text = _failed_write_message(
+                            write_receipts,
+                            also_unverified=bool(unverified_write_operations),
+                        )
+                        if not health_advice_buffered:
+                            for i in range(0, len(failed_text), 20):
+                                yield {
+                                    "event": "token",
+                                    "data": {"content": failed_text[i:i + 20]},
+                                }
+                        full_reply += failed_text
                         break
 
                     if unverified_write_operations:
@@ -20641,11 +20827,53 @@ class AgentExecutor:
                     logger.warning(f"[health_record] supplement lookup 失败: {err}")
                     return f"补剂记录暂时没成功(查询补剂列表时{err}),你可以稍后再试一次。"
                 supps = supps if isinstance(supps, list) else (supps.get("data", []) if isinstance(supps, dict) else [])
-                matched = next((s for s in supps if s.get("is_active") and name.lower() in s.get("name", "").lower()), None)
+                normalized_name = _normalized_supplement_reference(name)
+                matched = next(
+                    (
+                        supplement
+                        for supplement in supps
+                        if supplement.get("is_active")
+                        and _normalized_supplement_reference(
+                            supplement.get("name")
+                        )
+                        == normalized_name
+                    ),
+                    None,
+                )
                 if matched:
                     return await self._api_post(
                         f"{base}/nfc/tap", headers,
                         {"action": "supplement", "supplement_id": matched["id"]}
+                    )
+                containing_candidates = []
+                for supplement in supps:
+                    candidate_normalized = _normalized_supplement_reference(
+                        supplement.get("name")
+                    )
+                    if (
+                        supplement.get("is_active")
+                        and normalized_name
+                        and candidate_normalized
+                        and (
+                            normalized_name in candidate_normalized
+                            or candidate_normalized in normalized_name
+                        )
+                    ):
+                        containing_candidates.append(supplement)
+                if containing_candidates:
+                    candidate_names = "、".join(
+                        f"「{str(supplement.get('name') or '').strip()}」"
+                        for supplement in containing_candidates[:3]
+                    )
+                    return local_write_rejection(
+                        "supplement_name_ambiguous",
+                        message=(
+                            "补剂名称与已登记条目相似，本次没有写入，"
+                            "也没有新建重复条目。"
+                        ),
+                        recovery_guidance=(
+                            f"请使用完整名称重新记录：{candidate_names}。"
+                        ),
                     )
                 # 没匹配到活跃补剂 → 自动建档再打卡(镜像 medication 先例,见下方 :4646)。
                 # 旧行为报"未找到"把用户推去手动页面 —— 当前文本明确写出的新补剂

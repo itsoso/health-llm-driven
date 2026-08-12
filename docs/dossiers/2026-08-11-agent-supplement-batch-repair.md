@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-supplement-batch-repair` |
 | 创建日期 | 2026-08-11 |
-| 当前阶段 | S3 规划 |
-| 状态 | defining |
+| 当前阶段 | S5 实现 |
+| 状态 | building |
 | 负责 | Codex |
 | 反馈环 | Backend deploy + Mobile true-path verification |
 
@@ -67,7 +67,7 @@
 ## S3 · 规划
 
 - 设计: `docs/plans/2026-08-11-agent-supplement-batch-repair-design.md`
-- 实施计划: pending。
+- 实施计划: `docs/plans/2026-08-11-agent-supplement-batch-repair.md`。
 - 路由: Backend TDD → policy/executor implementation → safety review → main push → backend deploy → true-path verification。
 - 长杆: 在不信任助手文本和模型字段的前提下传递“全部补剂”的 owner-scoped 授权集合。
 
@@ -86,29 +86,41 @@
 
 ## S4 · 研发任务分解
 
-- [ ] T1 修复多补剂目标解析和逐调用投影，补单元测试。
-- [ ] T2 增加收紧的全量补剂续接与 owner-scoped 授权集合。
-- [ ] T3 增加零工具调用时的一次性确定性补剂兜底。
-- [ ] T4 集成测试、静态/治理检查、独立安全评审。
+- [x] T1 修复多补剂目标解析和逐调用投影，补单元测试。
+- [x] T2 增加收紧的全量补剂续接与 owner-scoped 授权集合。
+- [x] T3 增加零工具调用时的一次性确定性补剂兜底。
+- [x] T4 集成测试、静态/治理检查、独立安全评审。
 - [ ] T5 main push、backend deploy、生产路径验证。
 
 ## S5 · 实现
 
 - 分支: `main`（按项目默认工作流）。
-- commits: pending。
-- 实现结果: pending。
+- commits: `7fa4a3851`（设计）、`2331b5419`（计划）、`01cf9e856`（多目标解析）、`cf4cc6d9c`（上下文批量持久化）；并通过 `3f568666b` 合并最新 `origin/main`。
+- 实现结果:
+  - 显式多补剂语句按名称拆成独立、可去重的 `health_record(supplement)` 调用；不把单个剂量错误复制给多个目标。
+  - “全部已服用”只在紧邻助手明确询问“是否全部记为已服用”时启用，目标由服务端按 `user_id + is_active` 查询补剂定义。
+  - owner-scoped 名称通过 opaque provenance 进入既有 policy、gateway、planned write 和 verified receipt 链路；集合外名称在 dispatch 前阻断。
+  - 模型未发工具或只发部分目标时，服务端一次性补齐确定性调用；已有写回执后不盲目重试，部分失败不会宣称全部成功。
+  - 安全评审 fast-follow：全量确认必须锚定最后一问；计数目标使用独立实体边界，阻断 D/D3、D-3、铁/铁观音等短名吞长名；相似已登记名称先澄清，不自动创建重复定义。
+  - 补剂打卡 INFO 日志仅记录用户 ID 和补剂定义 ID，不再输出完整补剂名称。
 
 ## G3 · 测试闸
 
-- targeted/integration/static/doc checks: pending。
+- targeted/integration/static/doc checks:
+  - 初始相关全量集成：`2479 passed, 7 warnings`（224.27s，0 failed）。
+  - 合并远端主干后关键锚点：`11 passed, 6 warnings`（2.14s，0 failed）。
+  - 安全修复后的最终相关集成：`2487 passed, 7 warnings`（105.95s，0 failed）。
+  - Ruff：`All checks passed!`。
+  - 文档漂移：架构一致；dossier consistency：`105 份 dossier 全自洽`；`git diff --check`：通过。
 - main CI: pending。
-- **裁决**: pending。
+- **裁决**: 本地 PASS；等待 main push 后的真实 CI 状态。
 
 ## G4 · 安全闸
 
 - 触发: 健康数据写入、上下文授权、用户数据隔离。
-- reviewer / findings: pending。
-- **裁决**: pending。
+- reviewer / findings: 独立 safety/privacy review；首轮发现并阻断 3 个 P1（混合语境误授权、子串匹配写错对象、部分失败误报完成）和 1 个日志隐私 P2，均已修复。后续对 10 组末问句、重叠名、Unicode/内部标点边界做对抗复核；最终无可达、可复现 P0/P1。
+- 复核证据: 对抗矩阵符合预期；审查定向测试 `9 passed`，`git diff --check` 通过；owner scope、短名澄清、精确分流和部分失败终态均保持有效。
+- **裁决**: GO。
 
 ## S6 · 部署
 
