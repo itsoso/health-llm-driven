@@ -174,7 +174,8 @@ def test_backend_and_release_preflight_selects_contract_gates() -> None:
 def test_preflight_uses_controlled_python_for_all_python_checks() -> None:
     script = PREFLIGHT.read_text(encoding="utf-8")
 
-    assert "python3.12" not in script
+    assert 'REVA_PREFLIGHT_PYTHON' in script
+    assert 'command -v python3.12' in script
     assert 'printf \'%s\\n\' "${CHANGED_FILES}"; } | "${PREFLIGHT_PYTHON}"' in script
     assert '"${PREFLIGHT_PYTHON}" - "${BASELINE_JSON}"' in script
     assert 'run "${PREFLIGHT_PYTHON}" "${REPO_ROOT}/scripts/check_secret_leaks.py"' in script

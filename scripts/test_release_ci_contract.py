@@ -7,13 +7,17 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 RELEASE_TESTS = (
+    "scripts/test_ci_change_scope.py",
     "scripts/test_deploy_script.py",
+    "scripts/test_generate_api_types.py",
     "scripts/test_health_evidence_activation_runner.py",
     "scripts/test_release_lock.py",
     "scripts/test_release_rollback.py",
     "scripts/test_infrastructure_security.py",
+    "scripts/test_mobile_fast_feedback_scripts.py",
     "scripts/test_runtime_state_release_transaction.py",
     "scripts/test_release_ci_contract.py",
+    "scripts/test_release_input_digest.py",
 )
 
 

@@ -8,7 +8,16 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BASE_REF="${REVA_PREFLIGHT_BASE_REF:-origin/main}"
 EVENT_NAME="${REVA_PREFLIGHT_EVENT_NAME:-push}"
 DRY_RUN="${REVA_PREFLIGHT_DRY_RUN:-0}"
-PREFLIGHT_PYTHON="${REVA_PREFLIGHT_PYTHON:-${REPO_ROOT}/backend/venv/bin/python}"
+if [[ -n "${REVA_PREFLIGHT_PYTHON:-}" ]]; then
+  PREFLIGHT_PYTHON="${REVA_PREFLIGHT_PYTHON}"
+elif [[ -x "${REPO_ROOT}/backend/venv/bin/python" ]]; then
+  PREFLIGHT_PYTHON="${REPO_ROOT}/backend/venv/bin/python"
+elif command -v python3.12 >/dev/null 2>&1; then
+  PREFLIGHT_PYTHON="$(command -v python3.12)"
+else
+  echo "preflight requires Python 3.12 with project check dependencies" >&2
+  exit 2
+fi
 
 if [[ "${DRY_RUN}" != "0" && "${DRY_RUN}" != "1" ]]; then
   echo "REVA_PREFLIGHT_DRY_RUN only accepts 0 or 1" >&2
