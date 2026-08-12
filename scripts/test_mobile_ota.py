@@ -408,6 +408,63 @@ def test_publish_verification_allows_channel_to_map_to_a_different_branch(
     assert "channel" in paused.stderr.lower()
 
 
+def test_publish_verification_rejects_a_multi_branch_rollout_as_singular_active(
+    tmp_path: Path,
+) -> None:
+    publish = tmp_path / "publish.json"
+    view = tmp_path / "view.json"
+    channel = tmp_path / "channel.json"
+    update = {
+        "id": UPDATE_ID,
+        "group": GROUP_ID,
+        "branch": "release-production",
+        "runtimeVersion": "1.3.3",
+        "platform": "ios",
+    }
+    publish.write_text(json.dumps([update]), encoding="utf-8")
+    view.write_text(json.dumps([update]), encoding="utf-8")
+    channel.write_text(
+        json.dumps(
+            {
+                "currentPage": {
+                    "name": "production",
+                    "isPaused": False,
+                    "updateBranches": [
+                        {
+                            "name": "release-production",
+                            "updateGroups": [{"id": GROUP_ID}],
+                        },
+                        {
+                            "name": "rollout-control",
+                            "updateGroups": [
+                                {"id": "77777777-7777-4777-8777-777777777777"}
+                            ],
+                        },
+                    ],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _verify(
+        "publish",
+        "--publish-json",
+        str(publish),
+        "--view-json",
+        str(view),
+        "--channel-json",
+        str(channel),
+        "--channel",
+        "production",
+        "--runtime-version",
+        "1.3.3",
+    )
+
+    assert result.returncode != 0
+    assert "channel" in result.stderr.lower()
+
+
 def test_rollback_source_pair_is_verified_within_a_mixed_platform_group(
     tmp_path: Path,
 ) -> None:

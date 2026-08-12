@@ -286,22 +286,25 @@ def _channel_points_to(
     ):
         return False
     branches = current.get("updateBranches")
-    if not isinstance(branches, list):
+    # This manifest stores one singular active identity. A channel with more
+    # than one branch is an EAS rollout, not a single active group; accepting
+    # any matching branch would overstate rollout completion.
+    if not isinstance(branches, list) or len(branches) != 1:
         return False
-    for candidate in branches:
-        if not isinstance(candidate, dict) or candidate.get("name") != branch:
-            continue
-        groups = candidate.get("updateGroups")
-        if not isinstance(groups, list):
-            continue
-        for group in groups:
-            if isinstance(group, dict) and group_id in {group.get("id"), group.get("group")}:
-                return True
-            if isinstance(group, list) and any(
-                isinstance(update, dict) and update.get("group") == group_id
-                for update in group
-            ):
-                return True
+    candidate = branches[0]
+    if not isinstance(candidate, dict) or candidate.get("name") != branch:
+        return False
+    groups = candidate.get("updateGroups")
+    if not isinstance(groups, list) or len(groups) != 1:
+        return False
+    group = groups[0]
+    if isinstance(group, dict) and group_id in {group.get("id"), group.get("group")}:
+        return True
+    if isinstance(group, list) and any(
+        isinstance(update, dict) and update.get("group") == group_id
+        for update in group
+    ):
+        return True
     return False
 
 
