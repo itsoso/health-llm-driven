@@ -1,3 +1,4 @@
+from glob import glob
 from pathlib import Path
 
 import yaml
@@ -138,6 +139,56 @@ def test_backend_aggregate_passes_explicit_docs_only_skip_but_not_red_backend():
     assert "TEST_SHARDS" in run
     assert "QUALITY_GATES" in run
     assert "RUNTIME_POSTGRES" in run
+
+
+def test_slow_shard_replacements_cover_predecessor_scopes_exactly_once():
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    entries = {
+        entry["label"]: entry
+        for entry in workflow["jobs"]["backend-test-shards"]["strategy"]["matrix"][
+            "include"
+        ]
+    }
+    backend = ROOT / "backend"
+
+    def expand(labels: tuple[str, ...]) -> list[Path]:
+        files: list[Path] = []
+        for label in labels:
+            for pattern in entries[label]["paths"].split():
+                files.extend(Path(path) for path in glob(str(backend / pattern)))
+        return files
+
+    executor_parts = expand(
+        (
+            "agent-executor-a-d",
+            "agent-executor-error-fast",
+            "agent-executor-food",
+            "agent-executor-g-h",
+        )
+    )
+    executor_original = {
+        Path(path)
+        for path in glob(str(backend / "tests/test_agent_executor_[a-h]*.py"))
+    }
+    assert set(executor_parts) == executor_original
+    assert len(executor_parts) == len(set(executor_parts))
+
+    qr_parts = expand(
+        (
+            "q",
+            "r-record-registration",
+            "r-runtime-recovery",
+            "r-other",
+        )
+    )
+    qr_original = {
+        Path(path) for path in glob(str(backend / "tests/test_[q-r]*.py"))
+    }
+    assert set(qr_parts) == qr_original
+    assert len(qr_parts) == len(set(qr_parts))
+
+    assert "agent-executor-a-h" not in entries
+    assert "q-r" not in entries
 
 
 def test_postgres_gate_runs_invitation_migration_and_merge_concurrency_without_skip():

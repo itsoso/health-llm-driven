@@ -110,8 +110,17 @@ jobs:
               tests/test_agent_event_stream.py
               tests/test_agent_evidence_card_memo.py
               tests/test_agent_explicit_cache_flag.py
-          - label: agent-executor-a-h
-            paths: "tests/test_agent_executor_[a-h]*.py"
+          - label: agent-executor-a-d
+            paths: "tests/test_agent_executor_[a-d]*.py"
+          - label: agent-executor-error-fast
+            paths: >-
+              tests/test_agent_executor_error_sanitization.py
+              tests/test_agent_executor_failover_gate.py
+              tests/test_agent_executor_fast_routing.py
+          - label: agent-executor-food
+            paths: "tests/test_agent_executor_food_vision.py"
+          - label: agent-executor-g-h
+            paths: "tests/test_agent_executor_[g-h]*.py"
           - label: agent-executor-i-z
             paths: "tests/test_agent_executor_[i-z]*.py"
           - label: agent-f-h
@@ -134,8 +143,32 @@ jobs:
             paths: "tests/test_o*.py"
           - label: p
             paths: "tests/test_p*.py"
-          - label: q-r
-            paths: "tests/test_[q-r]*.py"
+          - label: q
+            paths: "tests/test_q*.py"
+          - label: r-record-registration
+            paths: "tests/test_record*.py tests/test_registration*.py"
+          - label: r-runtime-recovery
+            paths: "tests/test_runtime*.py tests/test_recovery*.py"
+          - label: r-other
+            paths: >-
+              tests/test_r4*.py
+              tests/test_realtime*.py
+              tests/test_reasoning*.py
+              tests/test_recheck*.py
+              tests/test_redact*.py
+              tests/test_redis*.py
+              tests/test_regimen*.py
+              tests/test_reliable*.py
+              tests/test_release*.py
+              tests/test_remember*.py
+              tests/test_reminder*.py
+              tests/test_reorder*.py
+              tests/test_report*.py
+              tests/test_retrieval*.py
+              tests/test_reva*.py
+              tests/test_rhinitis*.py
+              tests/test_rokid*.py
+              tests/test_run_episode*.py
           # Keep telegram, timeline, and today families in separate pytest
           # processes. Linux runners can retain background process state between
           # these families; once the combined t-f-v shard grew to 279 tests it
