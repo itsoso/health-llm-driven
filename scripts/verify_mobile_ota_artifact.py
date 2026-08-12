@@ -186,6 +186,8 @@ def validate_manifest(path: Path, *, allow_missing: bool) -> dict[str, Any]:
         raise VerificationError(f"release manifest is unavailable: {exc}") from exc
     if stat.S_ISLNK(mode) or not stat.S_ISREG(mode):
         raise VerificationError("release manifest must be a regular non-symlink file")
+    if stat.S_IMODE(mode) & 0o077:
+        raise VerificationError("release manifest permissions must be 0600")
     payload = _read_json(path)
     if not isinstance(payload, dict):
         raise VerificationError("release manifest must be a JSON object")

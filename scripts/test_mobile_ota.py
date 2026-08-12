@@ -93,6 +93,11 @@ def _verify(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _write_private_manifest(path: Path, payload: dict[str, object]) -> None:
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    path.chmod(0o600)
+
+
 def _artifact(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return _verify("artifact", "--input-dir", str(root), "--platform", "ios", *args)
 
@@ -221,23 +226,44 @@ def test_existing_manifest_requires_one_consistent_active_identity(
 
 def test_manifest_accepts_a_legacy_rolled_back_identity_shape(tmp_path: Path) -> None:
     manifest = tmp_path / "manifest.json"
-    manifest.write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "status": "rolled_back",
-                "group_id": GROUP_ID,
-                "update_id": UPDATE_ID,
-                "active_group_id": "55555555-5555-4555-8555-555555555555",
-                "active_update_id": "66666666-6666-4666-8666-666666666666",
-            }
-        ),
-        encoding="utf-8",
+    _write_private_manifest(
+        manifest,
+        {
+            "schema_version": 1,
+            "status": "rolled_back",
+            "group_id": GROUP_ID,
+            "update_id": UPDATE_ID,
+            "active_group_id": "55555555-5555-4555-8555-555555555555",
+            "active_update_id": "66666666-6666-4666-8666-666666666666",
+        },
     )
 
     result = _verify("manifest", "--manifest-file", str(manifest))
 
     assert result.returncode == 0, result.stderr
+
+
+def test_manifest_rejects_group_or_world_permissions(tmp_path: Path) -> None:
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "status": "published",
+                "group_id": GROUP_ID,
+                "update_id": UPDATE_ID,
+                "active_group_id": GROUP_ID,
+                "active_update_id": UPDATE_ID,
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest.chmod(0o666)
+
+    result = _verify("manifest", "--manifest-file", str(manifest))
+
+    assert result.returncode != 0
+    assert "permission" in result.stderr.lower() or "0600" in result.stderr
 
 
 def test_transaction_lookup_requires_one_unique_matching_group(tmp_path: Path) -> None:
@@ -623,6 +649,7 @@ def _run_ota(
     manifest = tmp_path / "manifest.json"
     if existing_manifest is not None:
         manifest.write_text(existing_manifest, encoding="utf-8")
+        manifest.chmod(0o600)
     anchor = tmp_path / "anchor"
     calls = tmp_path / "calls.json"
     env = os.environ.copy()
@@ -857,9 +884,9 @@ else:
 
 def test_rollback_records_new_republish_ids_and_separate_source_ids(tmp_path: Path) -> None:
     manifest = tmp_path / "manifest.json"
-    manifest.write_text(
-        json.dumps(
-            {
+    _write_private_manifest(
+        manifest,
+        {
                 "schema_version": 2,
                 "status": "published",
                 "platform": "ios",
@@ -877,9 +904,7 @@ def test_rollback_records_new_republish_ids_and_separate_source_ids(tmp_path: Pa
                 "artifact_file_count": 4,
                 "artifact_total_bytes": 999,
                 "published_at": "2026-08-01T00:00:00+00:00",
-            }
-        ),
-        encoding="utf-8",
+        },
     )
     env = os.environ.copy()
     env.update(
@@ -930,17 +955,15 @@ def test_rollback_records_new_republish_ids_and_separate_source_ids(tmp_path: Pa
 
 def test_rollback_rejects_a_partial_explicit_source_pair(tmp_path: Path) -> None:
     manifest = tmp_path / "manifest.json"
-    manifest.write_text(
-        json.dumps(
-            {
+    _write_private_manifest(
+        manifest,
+        {
                 "schema_version": 1,
                 "active_group_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                 "active_update_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                 "previous_known_good_group_id": GROUP_ID,
                 "previous_known_good_update_id": UPDATE_ID,
-            }
-        ),
-        encoding="utf-8",
+        },
     )
     env = os.environ.copy()
     env.update(
@@ -977,7 +1000,7 @@ def test_rollback_rejects_source_pair_mismatch_before_republish(tmp_path: Path) 
         "previous_known_good_group_id": GROUP_ID,
         "previous_known_good_update_id": UPDATE_ID,
     }
-    manifest.write_text(json.dumps(original), encoding="utf-8")
+    _write_private_manifest(manifest, original)
     calls = tmp_path / "rollback-calls.json"
     env = os.environ.copy()
     env.update(
@@ -1009,9 +1032,9 @@ def test_rollback_adopts_a_unique_republish_when_response_is_lost(
     tmp_path: Path,
 ) -> None:
     manifest = tmp_path / "manifest.json"
-    manifest.write_text(
-        json.dumps(
-            {
+    _write_private_manifest(
+        manifest,
+        {
                 "schema_version": 2,
                 "runtime_version": "1.3.3",
                 "group_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -1020,9 +1043,7 @@ def test_rollback_adopts_a_unique_republish_when_response_is_lost(
                 "active_update_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                 "previous_known_good_group_id": GROUP_ID,
                 "previous_known_good_update_id": UPDATE_ID,
-            }
-        ),
-        encoding="utf-8",
+        },
     )
     calls = tmp_path / "rollback-calls.json"
     env = os.environ.copy()
@@ -1063,7 +1084,7 @@ def test_rollback_refuses_an_incomplete_active_pair_before_eas(tmp_path: Path) -
         "previous_known_good_group_id": GROUP_ID,
         "previous_known_good_update_id": UPDATE_ID,
     }
-    manifest.write_text(json.dumps(original), encoding="utf-8")
+    _write_private_manifest(manifest, original)
     calls = tmp_path / "rollback-calls.json"
     env = os.environ.copy()
     env.update(
