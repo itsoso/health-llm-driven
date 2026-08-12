@@ -22,11 +22,13 @@ STAGED_HASH_MANIFEST="$SCRIPT_DIR/staged.sha256"
 SCHEMA_PROBE="$SCRIPT_DIR/verify_runtime_schema_compatibility.py"
 KB_QUARANTINE="$SCRIPT_DIR/quarantine_runtime_only_kb.py"
 RUNTIME_STATE_RUNNER="$SCRIPT_DIR/runtime_state_release_transaction.py"
+LOCKED_REQUIREMENTS_VERIFIER="$SCRIPT_DIR/verify_locked_requirements.py"
 STAGED_BACKEND_ENV_ROLLBACK="$SCRIPT_DIR/backend.env.rollback"
 STAGED_BACKEND_ENV_CANDIDATE="$SCRIPT_DIR/backend.env.candidate"
 HEALTH_EVIDENCE_DURABLE_STATE_DIR="${HEALTH_EVIDENCE_DURABLE_STATE_DIR:-/var/lib/reva-health-evidence-runtime}"
 HEALTH_EVIDENCE_RUNTIME_STATE_DIR="${HEALTH_EVIDENCE_RUNTIME_STATE_DIR:-/run/reva-health-evidence-activation}"
 HEALTH_EVIDENCE_SYSTEMD_RUNTIME_DIR="${HEALTH_EVIDENCE_SYSTEMD_RUNTIME_DIR:-/run/systemd/system}"
+REMOTE_RELEASE_STATE_DIR="${REMOTE_RELEASE_STATE_DIR:-/var/lib/reva-release-state}"
 BACKEND_SOCKET="health-backend.socket"
 WRITER_SERVICES=(health-backend celery-worker celery-beat)
 SERVICES=("$BACKEND_SOCKET" "${WRITER_SERVICES[@]}")
@@ -37,6 +39,7 @@ REQUIRED_STAGED_ARTIFACTS=(
     archive_backup_offsite.sh
     rollback_release.sh
     activate_health_evidence_runtime.sh
+    verify_locked_requirements.py
     verify_runtime_schema_compatibility.py
     quarantine_runtime_only_kb.py
     runtime_state_release_transaction.py
@@ -156,6 +159,7 @@ test -r "$STAGED_REVIEW_MANIFEST"
 safe_absolute_path "$HEALTH_EVIDENCE_DURABLE_STATE_DIR"
 safe_absolute_path "$HEALTH_EVIDENCE_RUNTIME_STATE_DIR"
 safe_absolute_path "$HEALTH_EVIDENCE_SYSTEMD_RUNTIME_DIR"
+safe_absolute_path "$REMOTE_RELEASE_STATE_DIR"
 
 ROLLBACK_CGROUP_ROOT="${ROLLBACK_CGROUP_ROOT:-/sys/fs/cgroup}"
 ROLLBACK_PROC_ROOT="${ROLLBACK_PROC_ROOT:-/proc}"
@@ -520,11 +524,54 @@ select_release_env_for_runtime_result "$runtime_state_result"
 assert_release_lock
 
 backend/venv/bin/pip install --require-hashes -r backend/requirements.lock -q
+backend/venv/bin/python "$LOCKED_REQUIREMENTS_VERIFIER" \
+    backend/requirements.lock
+backend/venv/bin/python -m pip check
+
+requirements_digest="$(sha256sum backend/requirements.lock | awk '{print $1}')"
+requirements_marker="$REMOTE_RELEASE_STATE_DIR/requirements-lock.sha256"
+if [ ! -e "$REMOTE_RELEASE_STATE_DIR" ]; then
+    umask 077
+    mkdir "$REMOTE_RELEASE_STATE_DIR"
+    chmod 0700 "$REMOTE_RELEASE_STATE_DIR"
+fi
+test -d "$REMOTE_RELEASE_STATE_DIR"
+test ! -L "$REMOTE_RELEASE_STATE_DIR"
+test "$(stat -c '%U:%G:%a' "$REMOTE_RELEASE_STATE_DIR")" = \
+    "root:root:700"
+if [ -e "$requirements_marker" ] || [ -L "$requirements_marker" ]; then
+    test -f "$requirements_marker"
+    test ! -L "$requirements_marker"
+    test "$(stat -c '%U:%G:%a' "$requirements_marker")" = \
+        "root:root:600"
+    test "$(stat -c '%h' "$requirements_marker")" = "1"
+fi
+requirements_marker_tmp="$(
+    mktemp "$REMOTE_RELEASE_STATE_DIR/.requirements-lock.rollback.XXXXXX"
+)"
+printf '%s\n' "$requirements_digest" > "$requirements_marker_tmp"
+chmod 0600 "$requirements_marker_tmp"
+test "$(stat -c '%U:%G:%a' "$requirements_marker_tmp")" = \
+    "root:root:600"
+test "$(stat -c '%h' "$requirements_marker_tmp")" = "1"
+sync -f "$requirements_marker_tmp"
+mv -fT -- "$requirements_marker_tmp" "$requirements_marker"
+sync -f "$REMOTE_RELEASE_STATE_DIR"
 (
     cd backend
     PYTHONPATH=. venv/bin/python "$KB_QUARANTINE" "$STAGED_REVIEW_MANIFEST" \
         --actor "rollback:${ROLLBACK_COMMIT:0:12}"
 )
+system_kb_marker="$REMOTE_RELEASE_STATE_DIR/system-kb-input.sha256"
+if [ -e "$system_kb_marker" ] || [ -L "$system_kb_marker" ]; then
+    test -f "$system_kb_marker"
+    test ! -L "$system_kb_marker"
+    test "$(stat -c '%U:%G:%a' "$system_kb_marker")" = \
+        "root:root:600"
+    test "$(stat -c '%h' "$system_kb_marker")" = "1"
+    rm -f -- "$system_kb_marker"
+    sync -f "$REMOTE_RELEASE_STATE_DIR"
+fi
 assert_release_lock
 
 # Prove forward-only schema compatibility while every socket and writer is

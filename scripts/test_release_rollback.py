@@ -16,6 +16,7 @@ REQUIRED_ARTIFACT_NAMES = (
     "archive_backup_offsite.sh",
     "rollback_release.sh",
     "activate_health_evidence_runtime.sh",
+    "verify_locked_requirements.py",
     "verify_runtime_schema_compatibility.py",
     "quarantine_runtime_only_kb.py",
     "runtime_state_release_transaction.py",
@@ -152,6 +153,14 @@ print(f"RUNTIME_STATE_TRANSACTION_OK command={command} result={result}")
 """
 
 
+@pytest.fixture(autouse=True)
+def _isolate_release_state_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv(
+        "REMOTE_RELEASE_STATE_DIR",
+        str(tmp_path / "release-state"),
+    )
+
+
 def _write_executable(path: Path, body: str) -> None:
     path.write_text(body, encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IXUSR)
@@ -214,6 +223,25 @@ def test_rollback_restores_service_readable_env_metadata():
     assert 'chmod 0600 "$target_tmp"' not in select_body
 
 
+def test_rollback_rewrites_verified_dependency_marker_before_service_start():
+    script = ROLLBACK_SCRIPT.read_text(encoding="utf-8")
+    install = script.index(
+        "backend/venv/bin/pip install --require-hashes -r backend/requirements.lock"
+    )
+    exact = script.index('"$LOCKED_REQUIREMENTS_VERIFIER"', install)
+    pip_check = script.index("backend/venv/bin/python -m pip check", exact)
+    marker = script.index("requirements-lock.sha256", pip_check)
+    start = script.index('systemctl start "$BACKEND_SOCKET"', marker)
+
+    assert install < exact < pip_check < marker < start
+    assert "root:root:700" in script[install:start]
+    assert "root:root:600" in script[install:start]
+    assert "mv -fT --" in script[install:start]
+    quarantine = script.index('"$KB_QUARANTINE"', marker)
+    kb_invalidate = script.index("system-kb-input.sha256", quarantine)
+    assert marker < quarantine < kb_invalidate < start
+
+
 def test_rollback_proves_every_writer_process_flag_false_after_final_start():
     script = ROLLBACK_SCRIPT.read_text(encoding="utf-8")
     verify_start = script.index("verify_process_environment_false() {")
@@ -254,6 +282,14 @@ def _make_release_repo(tmp_path: Path) -> tuple[Path, str, str]:
         repo / "backend/venv/bin/python",
         """#!/bin/sh
 case "$1" in
+  *verify_locked_requirements.py)
+    exit 0
+    ;;
+  -m)
+    test "$2" = "pip"
+    test "$3" = "check"
+    exit 0
+    ;;
   *kb-quarantine*|*quarantine_runtime_only_kb.py)
     printf 'kb-quarantine-ran\n' >> "$FAKE_ROLLBACK_EVENT_LOG"
     if [ "${FAKE_QUARANTINE_FAIL:-0}" = "1" ]; then exit 1; fi
@@ -404,6 +440,9 @@ else
   mode=$(/usr/bin/stat -f '%Lp' "$3")
 fi
 case "$3" in
+  */release-state|*/release-state/*)
+    owner="root:root"
+    ;;
   */remote-release.lock)
     owner="${{FAKE_LOCK_OWNER:-root:root}}"
     ;;
@@ -913,11 +952,15 @@ def test_release_rollback_revokes_durable_authorization_before_checkout(
 
     assert result.returncode == 0, result.stderr
     assert not durable_enabled.exists()
-    assert sync_log.read_text(encoding="utf-8").splitlines() == [
+    sync_events = sync_log.read_text(encoding="utf-8").splitlines()
+    assert sync_events[:3] == [
         str(durable_dir),
         str(repo / "backend/.env.rollback-release.tmp"),
         str(repo / "backend"),
     ]
+    assert Path(sync_events[3]).parent == tmp_path / "release-state"
+    assert Path(sync_events[3]).name.startswith(".requirements-lock.rollback.")
+    assert sync_events[4] == str(tmp_path / "release-state")
     script = ROLLBACK_SCRIPT.read_text(encoding="utf-8")
     inactive = script.index("force_services_inactive")
     revoke = script.index("revoke_health_evidence_authorization", inactive)
@@ -1096,6 +1139,12 @@ def _run_rollback_with_env_snapshots(
     service_state.write_text("active\n", encoding="utf-8")
     event_log = tmp_path / "rollback-events"
     lock_args = _release_lock_args(tmp_path)
+    release_state_dir = tmp_path / "release-state"
+    system_kb_marker = release_state_dir / "system-kb-input.sha256"
+    if not release_state_dir.exists():
+        release_state_dir.mkdir(mode=0o700)
+        system_kb_marker.write_text("stale-after-quarantine\n", encoding="utf-8")
+        system_kb_marker.chmod(0o600)
     env = {
         **os.environ,
         **_process_proof_env(tmp_path),
@@ -1135,6 +1184,10 @@ def _run_rollback_with_env_snapshots(
         "event_log": event_log,
         "fake_owner": fake_owner,
         "redirected_env_dir": redirected_env_dir,
+        "requirements_marker": tmp_path
+        / "release-state"
+        / "requirements-lock.sha256",
+        "system_kb_marker": system_kb_marker,
     }
 
 
@@ -1162,6 +1215,11 @@ def test_release_rollback_restores_legacy_env_before_starting_old_services(
     assert "runtime_state=restored" in result.stdout
     restored_lines = paths["live_env"].read_text(encoding="utf-8").splitlines()
     assert restored_lines == expected_env.splitlines()
+    expected_lock_digest = hashlib.sha256(b"").hexdigest()
+    assert paths["requirements_marker"].read_text(encoding="utf-8") == (
+        expected_lock_digest + "\n"
+    )
+    assert not paths["system_kb_marker"].exists()
     assert restored_lines.count(
         "HEALTH_EVIDENCE_RUNTIME_ENABLED=false"
     ) == 1
@@ -1169,6 +1227,29 @@ def test_release_rollback_restores_legacy_env_before_starting_old_services(
     assert paths["fake_owner"].read_text(encoding="utf-8").strip() == (
         "root:health-app"
     )
+
+
+def test_release_rollback_rejects_symlinked_dependency_state_before_restart(
+    tmp_path: Path,
+):
+    attacker = tmp_path / "attacker-state"
+    attacker.mkdir()
+    state_dir = tmp_path / "release-state"
+    state_dir.symlink_to(attacker, target_is_directory=True)
+
+    result, paths = _run_rollback_with_env_snapshots(
+        tmp_path,
+        runtime_result="restored",
+        rollback_env="CONFIG_REVISION=old\n",
+        candidate_env=(
+            "CONFIG_REVISION=candidate\n"
+            "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n"
+        ),
+    )
+
+    assert result.returncode != 0
+    assert paths["service_state"].read_text(encoding="utf-8").strip() == "inactive"
+    assert list(attacker.iterdir()) == []
 
 
 def test_release_rollback_candidate_retained_never_overwrites_candidate_env(

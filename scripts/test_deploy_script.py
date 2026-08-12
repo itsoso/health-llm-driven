@@ -34,13 +34,200 @@ def test_backend_dependency_cache_is_lock_addressed_and_fail_closed():
     assert "requirements-lock.sha256" in body
     assert "REQUIREMENTS_LOCK_SHA" in body
     assert "pip install --require-hashes -r requirements.lock" in body
+    assert "scripts/verify_locked_requirements.py requirements.lock" in body
     assert "python -m pip check" in body
+    assert "root:root:700" in body
+    assert "root:root:600" in body
+    assert 'test ! -L "\\${requirements_marker}"' in body
+    assert "stat -c '%h'" in body
     assert "dependency lock unchanged; verified install reused" in body
     install = body.index("pip install --require-hashes")
     verified = body.index("python -m pip check", install)
-    marker_replace = body.index('mv "\\${requirements_marker_tmp}"')
+    marker_replace = body.index('mv -fT -- "\\${requirements_marker_tmp}"')
     assert install < verified < marker_replace
     assert "|| true" not in body
+
+
+def test_release_state_markers_are_verified_and_written_atomically():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    decide_start = script.index("determine_system_kb_activation_need() {")
+    decide_end = script.index("record_system_kb_input_digest() {", decide_start)
+    decide = script[decide_start:decide_end]
+    record_start = decide_end
+    record_end = script.index("# 部署后端", record_start)
+    record = script[record_start:record_end]
+
+    for body in (decide, record):
+        assert "root:root:700" in body
+        assert "root:root:600" in body
+        assert "stat -c '%h'" in body
+        assert "test ! -L" in body
+    assert "mktemp" in record
+    assert "mv -fT --" in record
+
+
+def test_dependency_marker_never_skips_an_unverified_or_symlinked_environment(
+    tmp_path: Path,
+):
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    install_log = tmp_path / "installs"
+    verifier_count = tmp_path / "verifier-count"
+    state_dir = tmp_path / "release-state"
+    digest = "a" * 64
+    _write_executable(
+        fake_bin / "stat",
+        """#!/usr/bin/env bash
+set -euo pipefail
+test "$1" = "-c"
+if [[ "$2" == "%h" ]]; then
+  /usr/bin/stat -f '%l' "$3"
+else
+  mode=$(/usr/bin/stat -f '%Lp' "$3")
+  printf 'root:root:%s\n' "$mode"
+fi
+""",
+    )
+    _write_executable(fake_bin / "sync", "#!/bin/sh\nexit 0\n")
+    _write_executable(
+        fake_bin / "mv",
+        """#!/bin/sh
+set -eu
+test "$1" = "-fT"
+test "$2" = "--"
+/bin/mv -f "$3" "$4"
+""",
+    )
+    _write_executable(
+        fake_bin / "pip",
+        """#!/bin/sh
+set -eu
+printf 'install\n' >> "$FAKE_INSTALL_LOG"
+""",
+    )
+    _write_executable(
+        fake_bin / "python",
+        """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "-m" ]]; then
+  test "$2" = "pip"
+  test "$3" = "check"
+  exit 0
+fi
+count=0
+[[ -f "$FAKE_VERIFIER_COUNT" ]] && count=$(cat "$FAKE_VERIFIER_COUNT")
+count=$((count + 1))
+printf '%s\n' "$count" > "$FAKE_VERIFIER_COUNT"
+if [[ "${FAKE_VERIFIER_FAIL_AT:-0}" == "$count" ]]; then
+  exit 1
+fi
+test "$1" = "scripts/verify_locked_requirements.py"
+test "$2" = "requirements.lock"
+""",
+    )
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+REMOTE_RELEASE_STATE_DIR={state_dir!s}
+REQUIREMENTS_LOCK_SHA={digest}
+dependency_command="$(remote_dependency_sync_command)"
+PATH="$FAKE_BIN:$PATH" bash -c "$dependency_command"
+test "$(cat '{state_dir!s}/requirements-lock.sha256')" = '{digest}'
+test "$(awk 'END {{ print NR + 0 }}' "$FAKE_INSTALL_LOG")" = 1
+PATH="$FAKE_BIN:$PATH" bash -c "$dependency_command"
+test "$(awk 'END {{ print NR + 0 }}' "$FAKE_INSTALL_LOG")" = 1
+FAKE_VERIFIER_FAIL_AT=3 PATH="$FAKE_BIN:$PATH" bash -c "$dependency_command"
+test "$(awk 'END {{ print NR + 0 }}' "$FAKE_INSTALL_LOG")" = 2
+rm -f '{state_dir!s}/requirements-lock.sha256'
+ln -s '{tmp_path!s}/attacker-marker' '{state_dir!s}/requirements-lock.sha256'
+if PATH="$FAKE_BIN:$PATH" bash -c "$dependency_command"; then exit 91; fi
+test "$(awk 'END {{ print NR + 0 }}' "$FAKE_INSTALL_LOG")" = 2
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "DEPLOY_ENV_FILE": str(env_file),
+            "FAKE_BIN": str(fake_bin),
+            "FAKE_INSTALL_LOG": str(install_log),
+            "FAKE_VERIFIER_COUNT": str(verifier_count),
+        },
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+
+
+def test_system_kb_marker_executes_missing_match_and_symlink_paths(tmp_path: Path):
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    state_dir = tmp_path / "release-state"
+    digest = "b" * 64
+    _write_executable(
+        fake_bin / "stat",
+        """#!/usr/bin/env bash
+set -euo pipefail
+test "$1" = "-c"
+if [[ "$2" == "%h" ]]; then
+  /usr/bin/stat -f '%l' "$3"
+else
+  mode=$(/usr/bin/stat -f '%Lp' "$3")
+  printf 'root:root:%s\n' "$mode"
+fi
+""",
+    )
+    _write_executable(fake_bin / "sync", "#!/bin/sh\nexit 0\n")
+    _write_executable(
+        fake_bin / "mv",
+        """#!/bin/sh
+set -eu
+test "$1" = "-fT"
+test "$2" = "--"
+/bin/mv -f "$3" "$4"
+""",
+    )
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+REMOTE_RELEASE_STATE_DIR={state_dir!s}
+SYSTEM_KB_INPUT_SHA={digest}
+ssh() {{ shift; PATH="$FAKE_BIN:$PATH" "$@"; }}
+determine_system_kb_activation_need
+test "$SYSTEM_KB_ACTIVATION_REQUIRED" = 1
+record_system_kb_input_digest
+determine_system_kb_activation_need
+test "$SYSTEM_KB_ACTIVATION_REQUIRED" = 0
+rm -f '{state_dir!s}/system-kb-input.sha256'
+ln -s '{tmp_path!s}/attacker-marker' '{state_dir!s}/system-kb-input.sha256'
+if determine_system_kb_activation_need; then exit 91; fi
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "DEPLOY_ENV_FILE": str(env_file),
+            "FAKE_BIN": str(fake_bin),
+        },
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
 
 
 def test_system_kb_cache_only_skips_mutation_and_keeps_post_gates():
@@ -903,6 +1090,28 @@ if [ "$1" = "scripts/apply_managed_migrations.py" ]; then
 fi
 """,
     )
+    _write_executable(
+        fake_bin / "stat",
+        """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$2" == "%h" ]]; then
+  /usr/bin/stat -f '%l' "$3"
+else
+  mode=$(/usr/bin/stat -f '%Lp' "$3")
+  printf 'root:root:%s\n' "$mode"
+fi
+""",
+    )
+    _write_executable(fake_bin / "sync", "#!/bin/sh\nexit 0\n")
+    _write_executable(
+        fake_bin / "mv",
+        """#!/bin/sh
+set -eu
+test "$1" = "-fT"
+test "$2" = "--"
+/bin/mv -f "$3" "$4"
+""",
+    )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
 DEPLOY_EXPECTED_SHA={'2' * 40}
@@ -910,6 +1119,7 @@ REQUIREMENTS_LOCK_SHA={'3' * 64}
 SYSTEM_KB_INPUT_SHA={'4' * 64}
 _REMOTE_RELEASE_LOCK_ACQUIRED=1
 REMOTE_RELEASE_LOCK_DIR={lease_dir!s}
+REMOTE_RELEASE_STATE_DIR={(tmp_path / 'release-state')!s}
 REMOTE_RELEASE_LOCK_TOKEN=lease-token
 REMOTE_BACKUP_PREFLIGHT_DIR={stage_dir!s}
 REMOTE_RUNTIME_STATE_RUNNER={runtime_helper!s}
@@ -1669,6 +1879,7 @@ def test_release_preflight_stages_rollback_code_and_failed_release_manifest():
     stage_body = script[stage_start:stage_end]
 
     assert "rollback_release.sh" in stage_body
+    assert "verify_locked_requirements.py" in stage_body
     assert "verify_runtime_schema_compatibility.py" in stage_body
     assert "quarantine_runtime_only_kb.py" in stage_body
     assert "review_manifest.json" in stage_body
@@ -1692,7 +1903,7 @@ def test_release_env_snapshots_are_sealed_into_verified_stage_before_deactivatio
     for snapshot in ("backend.env.rollback", "backend.env.candidate"):
         assert snapshot in seal_body
     assert "sha256sum --strict -c staged.sha256" in seal_body
-    assert '" = "14"' in seal_body
+    assert '" = "15"' in seal_body
     assert sync_body.index("upload_backend_env_file") < sync_body.index(
         "seal_release_env_snapshots"
     )
@@ -2827,6 +3038,10 @@ _ADOPTED_STAGE_ARTIFACTS = (
     ("verify_backup_restore.sh", "backend/scripts/verify_backup_restore.sh"),
     ("archive_backup_offsite.sh", "backend/scripts/archive_backup_offsite.sh"),
     ("rollback_release.sh", "backend/scripts/rollback_release.sh"),
+    (
+        "verify_locked_requirements.py",
+        "backend/scripts/verify_locked_requirements.py",
+    ),
     (
         "activate_health_evidence_runtime.sh",
         "backend/scripts/activate_health_evidence_runtime.sh",

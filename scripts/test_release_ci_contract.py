@@ -18,6 +18,7 @@ RELEASE_TESTS = (
     "scripts/test_runtime_state_release_transaction.py",
     "scripts/test_release_ci_contract.py",
     "scripts/test_release_input_digest.py",
+    "scripts/test_verify_locked_requirements.py",
 )
 
 

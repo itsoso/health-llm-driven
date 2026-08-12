@@ -350,6 +350,7 @@ stage_backup_preflight_scripts() {
         "$SCRIPT_DIR/backend/scripts/archive_backup_offsite.sh"
         "$SCRIPT_DIR/backend/scripts/rollback_release.sh"
         "$SCRIPT_DIR/backend/scripts/activate_health_evidence_runtime.sh"
+        "$SCRIPT_DIR/backend/scripts/verify_locked_requirements.py"
         "$SCRIPT_DIR/backend/scripts/verify_runtime_schema_compatibility.py"
         "$SCRIPT_DIR/backend/scripts/quarantine_runtime_only_kb.py"
         "$SCRIPT_DIR/backend/scripts/runtime_state_release_transaction.py"
@@ -394,6 +395,7 @@ for entry in "$stage_dir"/*; do
         archive_backup_offsite.sh|\
         rollback_release.sh|\
         activate_health_evidence_runtime.sh|\
+        verify_locked_requirements.py|\
         verify_runtime_schema_compatibility.py|\
         quarantine_runtime_only_kb.py|\
         runtime_state_release_transaction.py|\
@@ -438,6 +440,7 @@ test "$stage_artifact_count" = "$manifest_artifact_count"
         archive_backup_offsite.sh
         rollback_release.sh
         activate_health_evidence_runtime.sh
+        verify_locked_requirements.py
         verify_runtime_schema_compatibility.py
         quarantine_runtime_only_kb.py
         runtime_state_release_transaction.py
@@ -465,6 +468,7 @@ test "$stage_artifact_count" = "$manifest_artifact_count"
         $2 == "archive_backup_offsite.sh" ||
         $2 == "rollback_release.sh" ||
         $2 == "activate_health_evidence_runtime.sh" ||
+        $2 == "verify_locked_requirements.py" ||
         $2 == "verify_runtime_schema_compatibility.py" ||
         $2 == "quarantine_runtime_only_kb.py" ||
         $2 == "runtime_state_release_transaction.py" ||
@@ -505,8 +509,8 @@ test "$stage_artifact_count" = "$manifest_artifact_count"
                 backend_candidate == 0 &&
                 activation_candidate == 1 &&
                 activation_guard == 1
-            if (allowed != 12 &&
-                !(allowed == 14 && (backend_pair || activation_pair))) {
+            if (allowed != 13 &&
+                !(allowed == 15 && (backend_pair || activation_pair))) {
                 exit 1
             }
         }
@@ -566,6 +570,7 @@ REMOTE_REUSE_RELEASE_STAGE
                 archive_backup_offsite.sh \
                 rollback_release.sh \
                 activate_health_evidence_runtime.sh \
+                verify_locked_requirements.py \
                 verify_runtime_schema_compatibility.py \
                 quarantine_runtime_only_kb.py \
                 runtime_state_release_transaction.py \
@@ -850,7 +855,7 @@ inspect_runtime_state_transaction_before_deploy() {
         cd '$REMOTE_BACKUP_PREFLIGHT_DIR'
         test \"\$(
             awk 'NF { count += 1 } END { print count + 0 }' staged.sha256
-        )\" = 14
+        )\" = 15
         sha256sum --strict -c staged.sha256 >/dev/null
         test -f backend.env.candidate
         test ! -L backend.env.candidate
@@ -1142,7 +1147,7 @@ rollback_deploy() {
     local rollback_output
     _REMOTE_RELEASE_LOCK_DELEGATED=1
     if ! rollback_output=$(ssh "$SERVER" \
-        "bash '$REMOTE_ROLLBACK_RUNNER' '$REMOTE_PATH' '$ROLLBACK_COMMIT' '$REMOTE_RELEASE_LOCK_DIR' '$REMOTE_RELEASE_LOCK_TOKEN'" 2>&1); then
+        "REMOTE_RELEASE_STATE_DIR='$REMOTE_RELEASE_STATE_DIR' bash '$REMOTE_ROLLBACK_RUNNER' '$REMOTE_PATH' '$ROLLBACK_COMMIT' '$REMOTE_RELEASE_LOCK_DIR' '$REMOTE_RELEASE_LOCK_TOKEN'" 2>&1); then
         echo "$rollback_output" >&2
         print_error "自动回滚未通过 exact-SHA 或数据库兼容健康验证"
         _REMOTE_RELEASE_LOCK_ABANDONED=1
@@ -1461,7 +1466,7 @@ if [ -e "$rollback_snapshot" ]; then
             cd "$stage_dir"
             test "$(
                 awk 'NF { count += 1 } END { print count + 0 }' staged.sha256
-            )" = "14"
+            )" = "15"
             sha256sum --strict -c staged.sha256 >/dev/null
         )
         test -f "$candidate_snapshot"
@@ -1689,7 +1694,7 @@ test "$(sha256sum "$candidate_snapshot" | awk '{print $1}')" = \
     current_count="$(
         awk 'NF { count += 1 } END { print count + 0 }' staged.sha256
     )"
-    if [ "$current_count" = "14" ]; then
+    if [ "$current_count" = "15" ]; then
         for name in backend.env.rollback backend.env.candidate; do
             awk -v expected="$name" '
                 $2 == expected { matches += 1 }
@@ -1698,13 +1703,14 @@ test "$(sha256sum "$candidate_snapshot" | awk '{print $1}')" = \
         done
         exit 0
     fi
-    test "$current_count" = "12"
+    test "$current_count" = "13"
     sha256sum \
         backup_db.sh \
         verify_backup_restore.sh \
         archive_backup_offsite.sh \
         rollback_release.sh \
         activate_health_evidence_runtime.sh \
+        verify_locked_requirements.py \
         verify_runtime_schema_compatibility.py \
         quarantine_runtime_only_kb.py \
         runtime_state_release_transaction.py \
@@ -1726,7 +1732,7 @@ fi
     cd "$stage_dir"
     test "$(
         awk 'NF { count += 1 } END { print count + 0 }' staged.sha256
-    )" = "14"
+    )" = "15"
     sha256sum --strict -c staged.sha256 >/dev/null
 )
 test -r "$release_lock_dir/token"
@@ -2711,6 +2717,10 @@ deactivate_health_evidence_runtime_before_mutation() {
 remote_dependency_sync_command() {
     if [[ ! "$REMOTE_RELEASE_STATE_DIR" =~ ^/[A-Za-z0-9._/-]+$ ||
           "$REMOTE_RELEASE_STATE_DIR" = "/" ||
+          "$REMOTE_RELEASE_STATE_DIR" = *"/../"* ||
+          "$REMOTE_RELEASE_STATE_DIR" = *"/.." ||
+          "$REMOTE_RELEASE_STATE_DIR" = *"/./"* ||
+          "$REMOTE_RELEASE_STATE_DIR" = *"/." ||
           ! "$REQUIREMENTS_LOCK_SHA" =~ ^[0-9a-f]{64}$ ]]; then
         print_error "发布依赖状态目录或 requirements digest 非法"
         return 70
@@ -2721,21 +2731,49 @@ sync_backend_dependencies() {
     requirements_marker="\${release_state_dir}/requirements-lock.sha256"
     requirements_expected='$REQUIREMENTS_LOCK_SHA'
     umask 077
-    mkdir -p "\${release_state_dir}"
-    chmod 700 "\${release_state_dir}"
-    if [ -r "\${requirements_marker}" ] &&
+    if [ ! -e "\${release_state_dir}" ]; then
+        mkdir "\${release_state_dir}" || return 1
+        chmod 700 "\${release_state_dir}" || return 1
+    fi
+    if ! test -d "\${release_state_dir}" ||
+       ! test ! -L "\${release_state_dir}" ||
+       [ "\$(stat -c '%U:%G:%a' "\${release_state_dir}")" != 'root:root:700' ]; then
+        echo 'release state directory failed ownership/mode proof' >&2
+        return 1
+    fi
+    marker_exists=0
+    if [ -e "\${requirements_marker}" ] || [ -L "\${requirements_marker}" ]; then
+        if ! test -f "\${requirements_marker}" ||
+           ! test ! -L "\${requirements_marker}" ||
+           [ "\$(stat -c '%U:%G:%a' "\${requirements_marker}")" != 'root:root:600' ] ||
+           [ "\$(stat -c '%h' "\${requirements_marker}")" != '1' ]; then
+            echo 'requirements marker failed ownership/link proof' >&2
+            return 1
+        fi
+        marker_exists=1
+    fi
+    if [ "\${marker_exists}" = '1' ] &&
        [ "\$(cat "\${requirements_marker}")" = "\${requirements_expected}" ] &&
+       python scripts/verify_locked_requirements.py requirements.lock &&
        python -m pip check; then
         echo 'dependency lock unchanged; verified install reused'
         return 0
     fi
     echo '安装锁定依赖...'
-    pip install --require-hashes -r requirements.lock -q
-    python -m pip check
-    requirements_marker_tmp="\${requirements_marker}.tmp.\$\$"
-    printf '%s\n' "\${requirements_expected}" > "\${requirements_marker_tmp}"
-    chmod 600 "\${requirements_marker_tmp}"
-    mv "\${requirements_marker_tmp}" "\${requirements_marker}"
+    pip install --require-hashes -r requirements.lock -q || return 1
+    python scripts/verify_locked_requirements.py requirements.lock || return 1
+    python -m pip check || return 1
+    requirements_marker_tmp="\$(mktemp "\${release_state_dir}/.requirements-lock.XXXXXX")" || return 1
+    printf '%s\n' "\${requirements_expected}" > "\${requirements_marker_tmp}" || return 1
+    chmod 600 "\${requirements_marker_tmp}" || return 1
+    if [ "\$(stat -c '%U:%G:%a' "\${requirements_marker_tmp}")" != 'root:root:600' ] ||
+       [ "\$(stat -c '%h' "\${requirements_marker_tmp}")" != '1' ]; then
+        rm -f -- "\${requirements_marker_tmp}"
+        return 1
+    fi
+    sync -f "\${requirements_marker_tmp}" || return 1
+    mv -fT -- "\${requirements_marker_tmp}" "\${requirements_marker}" || return 1
+    sync -f "\${release_state_dir}" || return 1
 }
 sync_backend_dependencies
 REMOTE_DEPENDENCY_SYNC
@@ -2761,6 +2799,10 @@ determine_system_kb_activation_need() {
     local result
     if [[ ! "$REMOTE_RELEASE_STATE_DIR" =~ ^/[A-Za-z0-9._/-]+$ ||
           "$REMOTE_RELEASE_STATE_DIR" = "/" ||
+          "$REMOTE_RELEASE_STATE_DIR" = *"/../"* ||
+          "$REMOTE_RELEASE_STATE_DIR" = *"/.." ||
+          "$REMOTE_RELEASE_STATE_DIR" = *"/./"* ||
+          "$REMOTE_RELEASE_STATE_DIR" = *"/." ||
           ! "$SYSTEM_KB_INPUT_SHA" =~ ^[0-9a-f]{64}$ ]]; then
         print_error "System KB 状态目录或 digest 非法"
         return 70
@@ -2771,7 +2813,20 @@ set -euo pipefail
 state_dir="$1"
 expected="$2"
 marker="${state_dir}/system-kb-input.sha256"
-if [ -r "$marker" ] && [ "$(cat "$marker")" = "$expected" ]; then
+if [ ! -e "$state_dir" ]; then
+    printf '%s\n' MISMATCH
+    exit 0
+fi
+test -d "$state_dir"
+test ! -L "$state_dir"
+test "$(stat -c '%U:%G:%a' "$state_dir")" = 'root:root:700'
+if [ -e "$marker" ] || [ -L "$marker" ]; then
+    test -f "$marker"
+    test ! -L "$marker"
+    test "$(stat -c '%U:%G:%a' "$marker")" = 'root:root:600'
+    test "$(stat -c '%h' "$marker")" = '1'
+fi
+if [ -f "$marker" ] && [ "$(cat "$marker")" = "$expected" ]; then
     printf '%s\n' MATCH
 else
     printf '%s\n' MISMATCH
@@ -2798,7 +2853,13 @@ REMOTE_KB_DIGEST_CHECK
 }
 
 record_system_kb_input_digest() {
-    if [[ ! "$SYSTEM_KB_INPUT_SHA" =~ ^[0-9a-f]{64}$ ]]; then
+    if [[ ! "$REMOTE_RELEASE_STATE_DIR" =~ ^/[A-Za-z0-9._/-]+$ ||
+          "$REMOTE_RELEASE_STATE_DIR" = "/" ||
+          "$REMOTE_RELEASE_STATE_DIR" = *"/../"* ||
+          "$REMOTE_RELEASE_STATE_DIR" = *"/.." ||
+          "$REMOTE_RELEASE_STATE_DIR" = *"/./"* ||
+          "$REMOTE_RELEASE_STATE_DIR" = *"/." ||
+          ! "$SYSTEM_KB_INPUT_SHA" =~ ^[0-9a-f]{64}$ ]]; then
         print_error "拒绝记录非法 System KB digest"
         return 70
     fi
@@ -2808,13 +2869,30 @@ set -euo pipefail
 state_dir="$1"
 expected="$2"
 marker="${state_dir}/system-kb-input.sha256"
-marker_tmp="${marker}.tmp.$$"
 umask 077
-mkdir -p "$state_dir"
-chmod 700 "$state_dir"
+if [ ! -e "$state_dir" ]; then
+    mkdir "$state_dir"
+    chmod 700 "$state_dir"
+fi
+test -d "$state_dir"
+test ! -L "$state_dir"
+test "$(stat -c '%U:%G:%a' "$state_dir")" = 'root:root:700'
+if [ -e "$marker" ] || [ -L "$marker" ]; then
+    test -f "$marker"
+    test ! -L "$marker"
+    test "$(stat -c '%U:%G:%a' "$marker")" = 'root:root:600'
+    test "$(stat -c '%h' "$marker")" = '1'
+fi
+marker_tmp="$(mktemp "${state_dir}/.system-kb-input.XXXXXX")"
+trap 'rm -f -- "$marker_tmp"' EXIT
 printf '%s\n' "$expected" > "$marker_tmp"
 chmod 600 "$marker_tmp"
-mv "$marker_tmp" "$marker"
+test "$(stat -c '%U:%G:%a' "$marker_tmp")" = 'root:root:600'
+test "$(stat -c '%h' "$marker_tmp")" = '1'
+sync -f "$marker_tmp"
+mv -fT -- "$marker_tmp" "$marker"
+sync -f "$state_dir"
+trap - EXIT
 REMOTE_KB_DIGEST_WRITE
 }
 
@@ -3345,6 +3423,7 @@ rm -f "$stage_dir/staged.sha256"
         archive_backup_offsite.sh \
         rollback_release.sh \
         activate_health_evidence_runtime.sh \
+        verify_locked_requirements.py \
         verify_runtime_schema_compatibility.py \
         quarantine_runtime_only_kb.py \
         runtime_state_release_transaction.py \
@@ -3357,7 +3436,7 @@ rm -f "$stage_dir/staged.sha256"
         > staged.sha256
     chmod 0400 staged.sha256
     test "$(awk 'NF {count += 1} END {print count + 0}' staged.sha256)" \
-        -eq 14
+        -eq 15
     sha256sum -c staged.sha256 >/dev/null
 )
 
