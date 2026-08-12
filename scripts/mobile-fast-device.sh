@@ -46,7 +46,7 @@ if [[ "${MODE}" != "release" || "${#}" -gt 1 ]]; then
   exit 2
 fi
 
-if ! command -v xcodebuild >/dev/null 2>&1; then
+if [[ "${DRY_RUN}" != "1" ]] && ! command -v xcodebuild >/dev/null 2>&1; then
   echo "✗ Xcode command line tools are unavailable." >&2
   exit 1
 fi
