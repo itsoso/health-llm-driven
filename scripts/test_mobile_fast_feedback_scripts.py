@@ -184,6 +184,7 @@ count=0
 [[ -f \"${OTA_TEST_COUNTER}\" ]] && count=$(cat \"${OTA_TEST_COUNTER}\")
 count=$((count + 1))
 echo \"${count}\" > \"${OTA_TEST_COUNTER}\"
+printf '%s\\n' \"$*\" >> \"${OTA_TEST_EAS_ARGS}\"
 case \"${OTA_TEST_MODE}\" in
   transient)
     if [[ \"${count}\" == \"1\" ]]; then
@@ -192,7 +193,7 @@ case \"${OTA_TEST_MODE}\" in
     fi
     ;;
   asset-timeout)
-    if [[ \" $* \" != *\" --skip-bundler \"* ]]; then
+    if [[ \" $* \" != *\"reva-mobile-ota-js.\"* ]]; then
       echo \"Asset processing timed out for assets\" >&2
       exit 1
     fi
@@ -225,7 +226,12 @@ def run_ota(
     expo_runner.write_text(
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
-        "printf '%s\\n' \"$*\" > \"${OTA_TEST_EXPO_ARGS}\"\n"
+        "count=0\n"
+        "[[ -f \"${OTA_TEST_EXPO_COUNTER}\" ]] && "
+        "count=$(cat \"${OTA_TEST_EXPO_COUNTER}\")\n"
+        "count=$((count + 1))\n"
+        "echo \"${count}\" > \"${OTA_TEST_EXPO_COUNTER}\"\n"
+        "printf '%s\\n' \"$*\" >> \"${OTA_TEST_EXPO_ARGS}\"\n"
     )
     expo_runner.chmod(0o755)
     anchor = tmp_path / "last-ota-commit"
@@ -241,6 +247,9 @@ def run_ota(
             "OTA_TEST_COUNTER": str(counter),
             "OTA_TEST_MODE": mode,
             "OTA_TEST_EXPO_ARGS": str(tmp_path / "expo-args"),
+            "OTA_TEST_EXPO_COUNTER": str(tmp_path / "expo-attempts"),
+            "OTA_TEST_EAS_ARGS": str(tmp_path / "eas-args"),
+            "OTA_AUDIT_LOG": str(tmp_path / "ota-audit.jsonl"),
             "REVA_RELEASE_LOCK_DIR": str(tmp_path / "release-lock"),
             "OTA_FORCE_NO_BYTECODE": "1" if force_no_bytecode else "0",
             "PATH": "/usr/bin:/bin",
@@ -262,6 +271,12 @@ def test_ota_retries_one_transient_failure_and_verifies_ids(tmp_path: Path) -> N
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert counter.read_text().strip() == "2"
+    assert (tmp_path / "expo-attempts").read_text().strip() == "1"
+    eas_attempts = (tmp_path / "eas-args").read_text().splitlines()
+    assert len(eas_attempts) == 2
+    assert eas_attempts[0] == eas_attempts[1]
+    assert "--input-dir" in eas_attempts[0]
+    assert "--skip-bundler" in eas_attempts[0]
     assert "11111111-1111-4111-8111-111111111111" in result.stdout
     assert "22222222-2222-4222-8222-222222222222" in result.stdout
     assert anchor.exists()
@@ -277,8 +292,11 @@ def test_ota_falls_back_to_no_bytecode_after_repeated_asset_timeout(
     result, counter, anchor, manifest = run_ota(tmp_path, "asset-timeout")
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert counter.read_text().strip() == "3"
-    assert "--no-bytecode" in (tmp_path / "expo-args").read_text()
+    assert counter.read_text().strip() == "2"
+    assert (tmp_path / "expo-attempts").read_text().strip() == "2"
+    expo_attempts = (tmp_path / "expo-args").read_text().splitlines()
+    assert "--no-bytecode" not in expo_attempts[0]
+    assert "--no-bytecode" in expo_attempts[1]
     assert "--skip-bundler" in result.stdout
     assert anchor.exists()
     assert json.loads(manifest.read_text())["status"] == "published"
@@ -295,6 +313,7 @@ def test_ota_can_force_no_bytecode_without_repeating_hermes_attempts(
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert counter.read_text().strip() == "1"
+    assert (tmp_path / "expo-attempts").read_text().strip() == "1"
     assert "--no-bytecode" in (tmp_path / "expo-args").read_text()
     assert anchor.exists()
     assert json.loads(manifest.read_text())["status"] == "published"
@@ -307,6 +326,30 @@ def test_ota_does_not_retry_authentication_failures(tmp_path: Path) -> None:
     assert counter.read_text().strip() == "1"
     assert not anchor.exists()
     assert not manifest.exists()
+    audit_events = [
+        json.loads(line)
+        for line in (tmp_path / "ota-audit.jsonl").read_text().splitlines()
+    ]
+    assert audit_events[-1]["result"] == "failed"
+    assert audit_events[-1]["failure_class"] == "non_retryable"
+    assert set(audit_events[-1]) <= {
+        "schema_version",
+        "recorded_at",
+        "platform",
+        "channel",
+        "environment",
+        "runtime_version",
+        "source_commit_sha",
+        "main_commit_sha",
+        "mobile_tree_digest",
+        "artifact_variant",
+        "attempt",
+        "result",
+        "failure_class",
+        "duration_seconds",
+        "group_id",
+        "update_id",
+    }
 
 
 def test_ota_rejects_success_without_published_update_ids(tmp_path: Path) -> None:

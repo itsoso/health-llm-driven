@@ -68,128 +68,18 @@ echo "    environment: ${ENVIRONMENT}"
 echo "    message: ${MESSAGE}"
 echo ""
 
-# 不打 web bundle (react-native-maps 不支持 web)
-# --environment 对普通 channel 与 channel 名字对齐;Rokid 隔离 channel 复用生产/预览环境变量。
+# 不打 web bundle (react-native-maps 不支持 web)。先显式 export，再让所有
+# EAS 重试复用同一个 input-dir；资产处理超时不再重复打同一份 Hermes bundle。
 UPDATE_LOG="$(mktemp)"
+HERMES_DIR=""
 NO_BYTECODE_DIR=""
-cleanup_mobile_ota() {
-  rm -f "${UPDATE_LOG}"
-  if [[ -n "${NO_BYTECODE_DIR}" &&
-        "${NO_BYTECODE_DIR##*/}" == reva-mobile-ota-js.* ]]; then
-    rm -rf -- "${NO_BYTECODE_DIR}"
-  fi
-  release_release_lock
-}
-trap cleanup_mobile_ota EXIT
-
-run_update_attempt() {
-  set +e
-  if [[ -n "${OTA_EAS_RUNNER:-}" ]]; then
-    CI=1 "${OTA_EAS_RUNNER}" update --channel "${CHANNEL}" --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" 2>&1 | tee "${UPDATE_LOG}"
-  else
-    CI=1 npx eas-cli update --channel "${CHANNEL}" --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" 2>&1 | tee "${UPDATE_LOG}"
-  fi
-  local exit_code=$?
-  set -e
-  return "${exit_code}"
-}
-
-run_no_bytecode_update_attempt() {
-  NO_BYTECODE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/reva-mobile-ota-js.XXXXXX")"
-  echo "△ EAS did not process the Hermes bundle; retrying with official --no-bytecode export + --skip-bundler."
-
-  set +e
-  if [[ -n "${OTA_EXPO_RUNNER:-}" ]]; then
-    CI=1 "${OTA_EXPO_RUNNER}" export --platform ios \
-      --output-dir "${NO_BYTECODE_DIR}" --no-bytecode \
-      --dump-assetmap --source-maps 2>&1 | tee "${UPDATE_LOG}"
-  else
-    CI=1 npx expo export --platform ios \
-      --output-dir "${NO_BYTECODE_DIR}" --no-bytecode \
-      --dump-assetmap --source-maps 2>&1 | tee "${UPDATE_LOG}"
-  fi
-  local export_exit=$?
-  set -e
-  if [[ "${export_exit}" -ne 0 ]]; then
-    return "${export_exit}"
-  fi
-
-  set +e
-  if [[ -n "${OTA_EAS_RUNNER:-}" ]]; then
-    CI=1 "${OTA_EAS_RUNNER}" update --channel "${CHANNEL}" \
-      --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" \
-      --input-dir "${NO_BYTECODE_DIR}" --skip-bundler 2>&1 | tee "${UPDATE_LOG}"
-  else
-    CI=1 npx eas-cli update --channel "${CHANNEL}" \
-      --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" \
-      --input-dir "${NO_BYTECODE_DIR}" --skip-bundler 2>&1 | tee "${UPDATE_LOG}"
-  fi
-  local update_exit=$?
-  set -e
-  return "${update_exit}"
-}
-
-if [[ "${OTA_FORCE_NO_BYTECODE:-0}" != "0" &&
-      "${OTA_FORCE_NO_BYTECODE:-0}" != "1" ]]; then
-  echo "✗ OTA_FORCE_NO_BYTECODE 只接受 0/1。" >&2
-  exit 1
-fi
-
-if [[ "${OTA_FORCE_NO_BYTECODE:-0}" == "1" ]]; then
-  if run_no_bytecode_update_attempt; then
-    FALLBACK_EXIT=0
-  else
-    FALLBACK_EXIT=$?
-    echo "✗ Forced OTA no-bytecode update failed." >&2
-    exit "${FALLBACK_EXIT}"
-  fi
-elif run_update_attempt; then
-  FIRST_EXIT=0
-else
-  FIRST_EXIT=$?
-  if grep -Eiq 'Authentication|not authorized|invalid token|runtime version|bundle error|syntax error|Metro encountered' "${UPDATE_LOG}"; then
-    echo "✗ OTA failed with a non-retryable configuration or authentication error." >&2
-    exit "${FIRST_EXIT}"
-  fi
-  if grep -Eiq 'Asset processing timed out|ETIMEDOUT|ECONNRESET|Failed to upload|network.*timed out|request failed' "${UPDATE_LOG}"; then
-    echo "△ Temporary EAS upload failure; retrying once..." >&2
-    sleep "${OTA_RETRY_DELAY_SECONDS:-1}"
-    if run_update_attempt; then
-      SECOND_EXIT=0
-    else
-      SECOND_EXIT=$?
-      if grep -Eiq 'Asset processing timed out for assets' "${UPDATE_LOG}"; then
-        if run_no_bytecode_update_attempt; then
-          FALLBACK_EXIT=0
-        else
-          FALLBACK_EXIT=$?
-          echo "✗ OTA no-bytecode fallback failed." >&2
-          exit "${FALLBACK_EXIT}"
-        fi
-      else
-        echo "✗ OTA failed after one retry." >&2
-        exit "${SECOND_EXIT}"
-      fi
-    fi
-  else
-    echo "✗ OTA failed and was not safe to retry automatically." >&2
-    exit "${FIRST_EXIT}"
-  fi
-fi
-
-GROUP_ID="$(grep -Eio 'Update group ID[[:space:]:]+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' "${UPDATE_LOG}" | awk '{print $NF}' | sed -n '$p' || true)"
-IOS_UPDATE_ID="$(grep -Eio 'iOS update ID[[:space:]:]+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' "${UPDATE_LOG}" | awk '{print $NF}' | sed -n '$p' || true)"
-if [[ -z "${GROUP_ID}" || -z "${IOS_UPDATE_ID}" ]]; then
-  echo "✗ OTA command exited successfully, but published identifier verification failed." >&2
-  echo "  Refusing to update the production anchor without an EAS group ID and iOS update ID." >&2
-  exit 1
-fi
-
-echo "    verified update group: ${GROUP_ID}"
-echo "    verified iOS update: ${IOS_UPDATE_ID}"
-
-# 记录可审计的发布事实和上一组已知可回滚更新。文件默认被 gitignore，
-# 生产回滚只依赖 EAS group/update ID，不依赖当前工作树是否还保留发布代码。
+OTA_AUDIT_LOG="${OTA_AUDIT_LOG:-${REPO_ROOT}/.mobile-ota-audit.jsonl}"
+SOURCE_COMMIT_SHA="$(git -C "${REPO_ROOT}" rev-parse HEAD)"
+MAIN_COMMIT_SHA="$(git -C "${REPO_ROOT}" rev-parse origin/main 2>/dev/null || printf '%s' "${SOURCE_COMMIT_SHA}")"
+MOBILE_TREE_DIGEST="$({
+  git -C "${REPO_ROOT}" rev-parse "${SOURCE_COMMIT_SHA}:mobile"
+  git -C "${REPO_ROOT}" rev-parse "${SOURCE_COMMIT_SHA}:packages/shared" 2>/dev/null || printf '%s\n' missing
+} | shasum -a 256 | awk '{print $1}')"
 RUNTIME_VERSION="${MOBILE_RUNTIME_VERSION:-$(python3 - "${REPO_ROOT}/mobile/app.json" <<'PY'
 import json
 import sys
@@ -202,7 +92,275 @@ except (OSError, ValueError, TypeError):
 print(value or "unknown")
 PY
 )}"
-python3 - "${MANIFEST_FILE}" "${CHANNEL}" "${ENVIRONMENT}" "${GROUP_ID}" "${IOS_UPDATE_ID}" "$(git -C "${REPO_ROOT}" rev-parse HEAD)" "${RUNTIME_VERSION}" <<'PY'
+
+python3 - "${OTA_AUDIT_LOG}" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+path.parent.mkdir(parents=True, exist_ok=True)
+path.touch(exist_ok=True)
+PY
+
+cleanup_mobile_ota() {
+  rm -f "${UPDATE_LOG}"
+  if [[ -n "${HERMES_DIR}" &&
+        "${HERMES_DIR##*/}" == reva-mobile-ota-hermes.* ]]; then
+    rm -rf -- "${HERMES_DIR}"
+  fi
+  if [[ -n "${NO_BYTECODE_DIR}" &&
+        "${NO_BYTECODE_DIR##*/}" == reva-mobile-ota-js.* ]]; then
+    rm -rf -- "${NO_BYTECODE_DIR}"
+  fi
+  release_release_lock
+}
+trap cleanup_mobile_ota EXIT
+
+record_ota_audit() {
+  local artifact_variant="$1"
+  local attempt="$2"
+  local result="$3"
+  local failure_class="$4"
+  local duration_seconds="$5"
+  local group_id="${6:-}"
+  local update_id="${7:-}"
+  python3 - "${OTA_AUDIT_LOG}" "${CHANNEL}" "${ENVIRONMENT}" \
+    "${RUNTIME_VERSION}" "${SOURCE_COMMIT_SHA}" "${MAIN_COMMIT_SHA}" \
+    "${MOBILE_TREE_DIGEST}" "${artifact_variant}" "${attempt}" \
+    "${result}" "${failure_class}" "${duration_seconds}" \
+    "${group_id}" "${update_id}" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+(
+    path,
+    channel,
+    environment,
+    runtime_version,
+    source_commit_sha,
+    main_commit_sha,
+    mobile_tree_digest,
+    artifact_variant,
+    attempt,
+    result,
+    failure_class,
+    duration_seconds,
+    group_id,
+    update_id,
+) = sys.argv[1:]
+payload = {
+    "schema_version": 1,
+    "recorded_at": datetime.now(timezone.utc).isoformat(),
+    "platform": "ios",
+    "channel": channel,
+    "environment": environment,
+    "runtime_version": runtime_version,
+    "source_commit_sha": source_commit_sha,
+    "main_commit_sha": main_commit_sha,
+    "mobile_tree_digest": mobile_tree_digest,
+    "artifact_variant": artifact_variant,
+    "attempt": int(attempt),
+    "result": result,
+    "failure_class": failure_class or None,
+    "duration_seconds": int(duration_seconds),
+    "group_id": group_id or None,
+    "update_id": update_id or None,
+}
+with Path(path).open("a", encoding="utf-8") as handle:
+    handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+PY
+}
+
+export_artifact() {
+  local variant="$1"
+  local output_dir
+  local started_at
+  local export_exit
+  if [[ "${variant}" == "no-bytecode" ]]; then
+    if [[ -z "${NO_BYTECODE_DIR}" ]]; then
+      NO_BYTECODE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/reva-mobile-ota-js.XXXXXX")"
+    fi
+    output_dir="${NO_BYTECODE_DIR}"
+  else
+    if [[ -z "${HERMES_DIR}" ]]; then
+      HERMES_DIR="$(mktemp -d "${TMPDIR:-/tmp}/reva-mobile-ota-hermes.XXXXXX")"
+    fi
+    output_dir="${HERMES_DIR}"
+  fi
+  echo "==> Exporting ${variant} OTA artifact once: ${output_dir}"
+  started_at="$(date +%s)"
+  set +e
+  if [[ -n "${OTA_EXPO_RUNNER:-}" ]]; then
+    if [[ "${variant}" == "no-bytecode" ]]; then
+      CI=1 "${OTA_EXPO_RUNNER}" export --platform ios \
+        --output-dir "${output_dir}" --no-bytecode \
+        --dump-assetmap --source-maps 2>&1 | tee "${UPDATE_LOG}"
+    else
+      CI=1 "${OTA_EXPO_RUNNER}" export --platform ios \
+        --output-dir "${output_dir}" \
+        --dump-assetmap --source-maps 2>&1 | tee "${UPDATE_LOG}"
+    fi
+  elif [[ "${variant}" == "no-bytecode" ]]; then
+    CI=1 npx expo export --platform ios \
+      --output-dir "${output_dir}" --no-bytecode \
+      --dump-assetmap --source-maps 2>&1 | tee "${UPDATE_LOG}"
+  else
+    CI=1 npx expo export --platform ios \
+      --output-dir "${output_dir}" \
+      --dump-assetmap --source-maps 2>&1 | tee "${UPDATE_LOG}"
+  fi
+  export_exit=$?
+  set -e
+  LAST_ATTEMPT_DURATION="$(($(date +%s) - started_at))"
+  EXPORTED_ARTIFACT_DIR="${output_dir}"
+  return "${export_exit}"
+}
+
+run_update_attempt() {
+  local artifact_variant="$1"
+  local input_dir="$2"
+  local attempt="$3"
+  local started_at
+  local exit_code
+  echo "==> Upload attempt ${attempt}: variant=${artifact_variant} --input-dir ${input_dir} --skip-bundler"
+  started_at="$(date +%s)"
+  set +e
+  if [[ -n "${OTA_EAS_RUNNER:-}" ]]; then
+    CI=1 "${OTA_EAS_RUNNER}" update --channel "${CHANNEL}" \
+      --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" \
+      --input-dir "${input_dir}" --skip-bundler 2>&1 | tee "${UPDATE_LOG}"
+  else
+    CI=1 npx eas-cli update --channel "${CHANNEL}" \
+      --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" \
+      --input-dir "${input_dir}" --skip-bundler 2>&1 | tee "${UPDATE_LOG}"
+  fi
+  exit_code=$?
+  set -e
+  LAST_ATTEMPT_DURATION="$(($(date +%s) - started_at))"
+  return "${exit_code}"
+}
+
+classify_update_failure() {
+  if grep -Eiq 'Authentication|not authorized|invalid token|runtime version|bundle error|syntax error|Metro encountered' "${UPDATE_LOG}"; then
+    printf '%s\n' non_retryable
+  elif grep -Eiq 'Asset processing timed out for assets' "${UPDATE_LOG}"; then
+    printf '%s\n' asset_processing_timeout
+  elif grep -Eiq 'Asset processing timed out|ETIMEDOUT|ECONNRESET|Failed to upload|network.*timed out|request failed' "${UPDATE_LOG}"; then
+    printf '%s\n' transient
+  else
+    printf '%s\n' non_retryable
+  fi
+}
+
+if [[ "${OTA_FORCE_NO_BYTECODE:-0}" != "0" &&
+      "${OTA_FORCE_NO_BYTECODE:-0}" != "1" ]]; then
+  echo "✗ OTA_FORCE_NO_BYTECODE 只接受 0/1。" >&2
+  exit 1
+fi
+
+LAST_ATTEMPT_DURATION=0
+FINAL_VARIANT="hermes"
+FINAL_ATTEMPT=1
+if [[ "${OTA_FORCE_NO_BYTECODE:-0}" == "1" ]]; then
+  FINAL_VARIANT="no-bytecode"
+  if export_artifact "${FINAL_VARIANT}"; then
+    :
+  else
+    EXPORT_EXIT=$?
+    record_ota_audit "${FINAL_VARIANT}" 0 failed export_failed "${LAST_ATTEMPT_DURATION}"
+    echo "✗ Forced OTA no-bytecode export failed." >&2
+    exit "${EXPORT_EXIT}"
+  fi
+  if run_update_attempt "${FINAL_VARIANT}" "${EXPORTED_ARTIFACT_DIR}" 1; then
+    :
+  else
+    UPDATE_EXIT=$?
+    FAILURE_CLASS="$(classify_update_failure)"
+    record_ota_audit "${FINAL_VARIANT}" 1 failed "${FAILURE_CLASS}" "${LAST_ATTEMPT_DURATION}"
+    echo "✗ Forced OTA no-bytecode update failed." >&2
+    exit "${UPDATE_EXIT}"
+  fi
+else
+  if export_artifact hermes; then
+    :
+  else
+    EXPORT_EXIT=$?
+    record_ota_audit hermes 0 failed export_failed "${LAST_ATTEMPT_DURATION}"
+    echo "✗ OTA Hermes export failed." >&2
+    exit "${EXPORT_EXIT}"
+  fi
+  HERMES_ARTIFACT_DIR="${EXPORTED_ARTIFACT_DIR}"
+  if run_update_attempt hermes "${HERMES_ARTIFACT_DIR}" 1; then
+    FINAL_VARIANT="hermes"
+    FINAL_ATTEMPT=1
+  else
+    FIRST_EXIT=$?
+    FAILURE_CLASS="$(classify_update_failure)"
+    if [[ "${FAILURE_CLASS}" == "non_retryable" ]]; then
+      record_ota_audit hermes 1 failed "${FAILURE_CLASS}" "${LAST_ATTEMPT_DURATION}"
+      echo "✗ OTA failed with a non-retryable configuration or authentication error." >&2
+      exit "${FIRST_EXIT}"
+    fi
+    record_ota_audit hermes 1 attempt_failed "${FAILURE_CLASS}" "${LAST_ATTEMPT_DURATION}"
+    if [[ "${FAILURE_CLASS}" == "transient" ]]; then
+      echo "△ Temporary EAS upload failure; reusing the same Hermes artifact once..." >&2
+      sleep "${OTA_RETRY_DELAY_SECONDS:-1}"
+      FINAL_ATTEMPT=2
+      if run_update_attempt hermes "${HERMES_ARTIFACT_DIR}" "${FINAL_ATTEMPT}"; then
+        FINAL_VARIANT="hermes"
+      else
+        SECOND_EXIT=$?
+        FAILURE_CLASS="$(classify_update_failure)"
+        if [[ "${FAILURE_CLASS}" != "asset_processing_timeout" ]]; then
+          record_ota_audit hermes 2 failed "${FAILURE_CLASS}" "${LAST_ATTEMPT_DURATION}"
+          echo "✗ OTA failed after one artifact-reuse retry." >&2
+          exit "${SECOND_EXIT}"
+        fi
+        record_ota_audit hermes 2 attempt_failed "${FAILURE_CLASS}" "${LAST_ATTEMPT_DURATION}"
+      fi
+    fi
+    if [[ "${FAILURE_CLASS}" == "asset_processing_timeout" ]]; then
+      echo "△ EAS asset processing timed out; exporting one no-bytecode fallback." >&2
+      if export_artifact no-bytecode; then
+        :
+      else
+        EXPORT_EXIT=$?
+        record_ota_audit no-bytecode 0 failed export_failed "${LAST_ATTEMPT_DURATION}"
+        exit "${EXPORT_EXIT}"
+      fi
+      FINAL_VARIANT="no-bytecode"
+      FINAL_ATTEMPT=$((FINAL_ATTEMPT + 1))
+      if run_update_attempt no-bytecode "${EXPORTED_ARTIFACT_DIR}" "${FINAL_ATTEMPT}"; then
+        :
+      else
+        FALLBACK_EXIT=$?
+        FAILURE_CLASS="$(classify_update_failure)"
+        record_ota_audit no-bytecode "${FINAL_ATTEMPT}" failed "${FAILURE_CLASS}" "${LAST_ATTEMPT_DURATION}"
+        echo "✗ OTA no-bytecode fallback failed." >&2
+        exit "${FALLBACK_EXIT}"
+      fi
+    fi
+  fi
+fi
+
+GROUP_ID="$(grep -Eio 'Update group ID[[:space:]:]+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' "${UPDATE_LOG}" | awk '{print $NF}' | sed -n '$p' || true)"
+IOS_UPDATE_ID="$(grep -Eio 'iOS update ID[[:space:]:]+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' "${UPDATE_LOG}" | awk '{print $NF}' | sed -n '$p' || true)"
+if [[ -z "${GROUP_ID}" || -z "${IOS_UPDATE_ID}" ]]; then
+  record_ota_audit "${FINAL_VARIANT}" "${FINAL_ATTEMPT}" failed \
+    missing_identifiers "${LAST_ATTEMPT_DURATION}"
+  echo "✗ OTA command exited successfully, but published identifier verification failed." >&2
+  echo "  Refusing to update the production anchor without an EAS group ID and iOS update ID." >&2
+  exit 1
+fi
+
+echo "    verified update group: ${GROUP_ID}"
+echo "    verified iOS update: ${IOS_UPDATE_ID}"
+
+# 记录可审计的发布事实和上一组已知可回滚更新。文件默认被 gitignore，
+# 生产回滚只依赖 EAS group/update ID，不依赖当前工作树是否还保留发布代码。
+python3 - "${MANIFEST_FILE}" "${CHANNEL}" "${ENVIRONMENT}" "${GROUP_ID}" "${IOS_UPDATE_ID}" "${SOURCE_COMMIT_SHA}" "${RUNTIME_VERSION}" <<'PY'
 import json
 import os
 import sys
@@ -242,6 +400,8 @@ tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", en
 os.replace(tmp_path, manifest_path)
 PY
 echo "    release manifest 写入 ${MANIFEST_FILE}"
+record_ota_audit "${FINAL_VARIANT}" "${FINAL_ATTEMPT}" published "" \
+  "${LAST_ATTEMPT_DURATION}" "${GROUP_ID}" "${IOS_UPDATE_ID}"
 
 # 只有 EAS 标识验证和 manifest 原子写入都成功后，才记录这次 OTA 对应的
 # commit，避免 deploy.sh 把一条不完整的发布记录当作已发布状态。
