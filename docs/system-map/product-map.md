@@ -29,7 +29,7 @@ authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-invent
 ## 2. 每端 UI surface(roster;计数见 `_generated`)
 
 - **mobile**(`mobile/app/`):可见 tab 为今日 `index.tsx` · 小巴 `chat.tsx` · 记录 `record.tsx` · 我 `me.tsx`(隐藏:`alerts.tsx`/`journal/`)。日常非 tab:`reva.tsx`/`agenda.tsx`/`timeline.tsx`/`day-schedule.tsx`/`diet.tsx`/`symptom-record.tsx`/`medications.tsx`/`goals.tsx`/`reminders.tsx`/`voice-chat.tsx`;同行支持从已验证饮食卡的服务端 `route.open` 动态进入 `community.tsx`，因此静态导航抽取器不会生成入边。
-- **frontend**(`frontend/src/app/`):dashboard/digital-twin/health-trends/health-report/personal-outcome/admin/review/onboarding/family/… (全量计数 `_generated`)。
+- **frontend**(`frontend/src/app/`):dashboard/digital-twin/health-trends/health-report/personal-outcome/admin/review/onboarding/family/…；管理员系统结构统一从 `/admin/system-map` 查看，旧 `/admin/architecture` 仅重定向，不再维护重复架构事实 (全量计数 `_generated`)。
 - **mac**(`SidebarDestination.swift`):today/agenda/timeline/calendar/agent/record/data/dataSources/prescriptions/liver/healthExtras/genetics/knowledge/workouts/goals/jobs/trace/settings。
 - **watch**(`apps/watch/WatchApp/`):`TodayStatusView` · `PushListView` · `QuickRecordView` + complication `RevaComplication.swift`。(对话/记录扩展见 watch §13 实施规划)
 - **mini-program**(`src/pages/`):index/dashboard/checkin/settings(tabBar)+ diet/workout/heart-rate/medication/… 全量见 `app.config.ts`。
@@ -53,7 +53,7 @@ authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-invent
 | **知识、证据与记忆** | reviewed System KB、Health Evidence Runtime、知识/实时搜索、事实/会话/事件记忆、健康知识图谱、临床日记、用户指令 | `api/system_knowledge.py` · `api/knowledge.py` · `api/memory_facts.py` · `api/conversation_memory.py` · `api/health_kg.py` · `api/clinical_journal.py` · `api/user_directive.py` | Agent 回答 · Mac Knowledge · Web Knowledge/Review |
 | **通知、协作与生成** | 早晚/周/月简报、提醒与安全推送、Siri/Telegram/微信/MCP、家庭与医生协作、匿名同行支持、私有 AIGC 媒体、对话节选分享 | `api/notification.py` · `api/briefing.py` · `api/siri.py` · `api/telegram_webhook.py` · `api/family.py` · `api/community.py` · `api/aigc_media.py` · `mcp-server/server.py` | Mobile/Mac/Web · Watch · 小程序 · 外部 channel |
 | **后台自动化** | 设备同步、计划/简报/提醒生成、安全扫描、知识生命周期、记忆/梦周期、结局评分、数据完整性与维护 | `backend/app/tasks/` · `backend/app/celery_app.py` | 后台 worker/beat，无直接 UI |
-| **管理与治理** | Admin、模型选择与用量、监控/SLO/性能、数据健康、review/audit、发布策略、桌面与客户端观测 | `api/admin*.py` · `api/monitoring.py` · `api/performance.py` · `api/data_health.py` · `api/review.py` · `api/app_release_policy.py` · `api/client_events.py` | Web/Mobile admin · Mac Jobs/Trace/Settings |
+| **管理与治理** | Admin、只读 System Map、模型选择与用量、监控/SLO/性能、数据健康、review/audit、发布策略、桌面与客户端观测 | `api/admin_system_map.py` · `api/admin*.py` · `api/monitoring.py` · `api/performance.py` · `api/data_health.py` · `api/review.py` · `api/app_release_policy.py` · `api/client_events.py` | Web `/admin/system-map`/其他 admin · Mobile admin · Mac Jobs/Trace/Settings |
 
 ## 4. 业务流(用户视角 · client→backend→DB · file:symbol 锚点)
 
@@ -74,6 +74,7 @@ authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-invent
 - **多 agent 深度分析**(L4→L3→L2→L1):`health_analysis` → `backend/app/orchestrator/orchestrator.py` `run_orchestrator`/`stream_orchestrator` → `build_twin`(Redis 5min)→ `classify_intent` → `_select_specialists`(trivial 短路 lite)→ `_run_specialists`(并行 ThreadPool 12s 超时,recovery→movement readiness 传递)→ 交叉评审+仲裁 → LLM 合成。详图见 [`ARCHITECTURE.md`](../ARCHITECTURE.md) §四 + CLAUDE.md §Multi-Agent。
 - **请求流(Web)**:Browser → Next.js rewrites `/api/*` → backend `/api/v1/*`。
 - **Write 自治承重墙**:见 `backend/app/services/write_autonomy.py`(只 `measurement_prompt` 自治,NEVER 集封顶 manual_confirm)。
+- **管理员 System Map**:浏览器 `/admin/system-map` → 现有 `AuthContext` 管理员门 → `GET /api/v1/admin/system-map` → 后端 `get_admin_user` 再次强制管理员权限 → UTF-8 读取并语义校验 `docs/_generated/system-map.json`。缺失/损坏/契约失败显式 `503`，不返回空图或陈旧 fallback。
 
 ## 6. 视觉验证(怎么看每端真实页面 · 可重生成方法,不钉静态图)
 
@@ -93,5 +94,5 @@ authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-invent
 ## 维护
 
 - 端 roster / surface 名 / 流程改了 → 改本文 + bump `last-reviewed`(product-pipeline S8)。
-- 任何计数 → 改代码后跑 `python scripts/dump_system_map.py`,**别手打进本文**。
+- 任何生成结构变化 → 跑 `python3.12 scripts/dump_system_map.py`，再跑 `./scripts/system-map-check.sh`；**别把实时计数或 roster 手打进本文**。
 - 新端 / 新主流 → 同时更新本文 + surface-ownership-inventory。

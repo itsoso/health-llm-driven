@@ -1,6 +1,6 @@
 ---
 doc: agent-skill-binding
-last-reviewed: 2026-06-27
+last-reviewed: 2026-08-11
 scope: health-llm-driven
 ---
 
@@ -38,7 +38,7 @@ Codex 如果全局 openskills 已提供同名 skill,可以用 `npx openskills re
 | 改用药、基因、化验、CGM、消息、安全规则、认证、写路径或对外健康建议 | `.claude/skills/safety-gate/SKILL.md` | `AGENTS.md`, `docs/governance/security.md`, `docs/specs/reva-product-governance-spec.md` |
 | 新增/修改 DB schema 或迁移 | `.claude/skills/add-managed-migration/SKILL.md` | `AGENTS.md §9`, backend migrations, schema/type generation rules |
 | 新增 Safety 规则、specialist、agent 分区或相关注册表 | `.claude/skills/extend-safety-or-specialist/SKILL.md` | `scripts/check_doc_drift.py`, `docs/ARCHITECTURE.md`, `docs/_generated/system-map.json` |
-| CI/doc drift 红,或代码派生系统事实变化 | `.claude/skills/doc-drift-fix/SKILL.md` | `scripts/dump_system_map.py`, `scripts/check_doc_drift.py`, `docs/system-map/INDEX.md` |
+| CI/System Map/doc drift 红,或代码派生系统事实变化 | `.claude/skills/doc-drift-fix/SKILL.md` + `.claude/skills/system-map/SKILL.md` | `scripts/dump_system_map.py`, `./scripts/system-map-check.sh`, `docs/system-map/INDEX.md` |
 | 后端上线 | `.claude/skills/backend-deploy/SKILL.md` | `deploy.sh`, `docs/governance/deploy.md` |
 | Mobile JS/TS/UI 线上热更新 | `.claude/skills/mobile-ota/SKILL.md` | `scripts/mobile-ota.sh`, mobile release notes |
 | Mobile native / EAS / TestFlight 发版 | `.claude/skills/mobile-testflight-release/SKILL.md` | EAS profiles, iOS signing, user confirmation gates |
@@ -60,5 +60,5 @@ Codex 如果全局 openskills 已提供同名 skill,可以用 `npx openskills re
 - 小修可以降级,但仍要读 `AGENTS.md`,定位 system map,跑相关验证。
 - 非平凡产品行为必须进入 product governance 和 product pipeline,至少留下 Dossier 或明确引用已有 Dossier。
 - 任何带用户健康建议、写入、提醒、药物、疾病、基因、化验、CGM 的改动必须触发安全 Gate。
-- 任何会漂的结构数字必须进 `docs/_generated/system-map.json`,不得手写进叙事文档。
+- 任何会漂的结构数字必须进 `docs/_generated/system-map.json`,不得手写进叙事文档；本机统一用 `./scripts/system-map-check.sh`（独立 Python 3.12 `.venv`）验证。
 - 完成后提交前必须有新鲜验证证据;不要用 `| tail` 吞测试退出码。
