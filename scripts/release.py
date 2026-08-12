@@ -16,11 +16,17 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
+try:
+    import validation_credential
+except ModuleNotFoundError:
+    from scripts import validation_credential
+
 
 ROOT = Path(__file__).resolve().parents[1]
 STATE_SCHEMA_VERSION = 1
 STATE_DIRECTORY_NAME = "reva-release-state"
 STATE_FILE_NAME = "release-state.json"
+VALIDATION_PROFILE = "all"
 
 
 class ReleaseError(RuntimeError):
@@ -503,6 +509,47 @@ def ensure_release_worktree(
     return destination
 
 
+def _validation_commands() -> list[dict[str, Any]]:
+    return [
+        {
+            "name": "validation:all",
+            "argv": ["bash", "scripts/run-all-tests.sh"],
+            "cwd": ".",
+            "blocking": True,
+        }
+    ]
+
+
+def _running_in_ci() -> bool:
+    return os.environ.get("CI", "").strip().lower() not in {"", "0", "false", "no"}
+
+
+def _new_validation_log(repo: Path, profile: str) -> Path:
+    try:
+        state_dir = validation_credential.validation_state_dir(repo)
+        logs_dir = state_dir / "logs"
+        if logs_dir.is_symlink():
+            raise ValueError(f"refusing symlinked validation log directory: {logs_dir}")
+        logs_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if logs_dir.is_symlink() or not logs_dir.is_dir():
+            raise ValueError(f"validation log path is not a directory: {logs_dir}")
+        logs_dir.chmod(0o700)
+        run_dir = Path(tempfile.mkdtemp(prefix="release-validation-", dir=logs_dir))
+        run_dir.chmod(0o700)
+        return run_dir / f"{profile}.log"
+    except (OSError, RuntimeError, ValueError) as error:
+        raise ReleaseError(f"Cannot create private validation log: {error}") from error
+
+
+def _print_validation_log(log_path: Path) -> None:
+    try:
+        output = log_path.read_text(encoding="utf-8", errors="replace")
+    except OSError as error:
+        raise ReleaseError(f"Cannot read validation log {log_path}: {error}") from error
+    if output:
+        print(output, end="" if output.endswith("\n") else "\n")
+
+
 def run_validation(
     plan: ReleasePlan,
     repo: Path,
@@ -510,7 +557,94 @@ def run_validation(
     runner: Runner = subprocess.run,
 ) -> None:
     del plan
-    runner([str(repo / "scripts/run-all-tests.sh")], cwd=repo, check=True)
+    repo = _repository_root(repo)
+    profile = VALIDATION_PROFILE
+    commands = _validation_commands()
+    command = commands[0]["argv"]
+    in_ci = _running_in_ci()
+    credential_file: Path | None = None
+    toolchain: Mapping[str, str] | None = None
+
+    if in_ci:
+        print(
+            "[release] validation credential bypass: "
+            "CI requires commit-specific validation"
+        )
+    else:
+        try:
+            credential_file = validation_credential.credential_path(repo, profile)
+            toolchain = validation_credential.collect_toolchain(repo)
+            verdict = validation_credential.verify_credential(
+                repo=repo,
+                path=credential_file,
+                profile_name=profile,
+                profile_version=validation_credential.PROFILE_VERSION,
+                commands=commands,
+                toolchain=toolchain,
+            )
+        except (OSError, RuntimeError, ValueError) as error:
+            raise ReleaseError(
+                f"Validation credential check failed closed: {error}"
+            ) from error
+        if verdict.reusable:
+            print(
+                f"[release] validation credential hit: profile={profile} "
+                f"reason={verdict.reason}"
+            )
+            return
+        print(
+            f"[release] validation credential miss: profile={profile} "
+            f"reason={verdict.reason}"
+        )
+
+    log_path = _new_validation_log(repo, profile)
+    print(f"[release] validation running: profile={profile} log={log_path}")
+    try:
+        with log_path.open("x", encoding="utf-8") as log_handle:
+            log_path.chmod(0o600)
+            completed = runner(
+                command,
+                cwd=repo,
+                check=True,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+        if completed.returncode != 0:
+            raise subprocess.CalledProcessError(completed.returncode, command)
+    except subprocess.CalledProcessError:
+        print(f"[release] validation failed: profile={profile} log={log_path}")
+        _print_validation_log(log_path)
+        raise
+
+    _print_validation_log(log_path)
+    if in_ci:
+        print(
+            f"[release] validation passed: profile={profile}; "
+            "tree credential not issued in CI"
+        )
+        return
+
+    assert credential_file is not None
+    assert toolchain is not None
+    try:
+        credential = validation_credential.build_credential(
+            repo=repo,
+            profile_name=profile,
+            profile_version=validation_credential.PROFILE_VERSION,
+            commands=commands,
+            logs={commands[0]["name"]: log_path},
+            toolchain=toolchain,
+        )
+        validation_credential.write_credential_atomic(credential_file, credential)
+    except (OSError, RuntimeError, ValueError) as error:
+        raise ReleaseError(
+            f"Validation passed but credential issue failed closed: {error}"
+        ) from error
+    print(
+        f"[release] validation credential issued: profile={profile} "
+        f"path={credential_file}"
+    )
 
 
 def _state_completed_actions(

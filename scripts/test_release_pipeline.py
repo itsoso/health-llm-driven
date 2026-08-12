@@ -234,12 +234,216 @@ def test_completed_surface_is_not_repeated_after_partial_publish():
     assert plan.actions == ("validate", "mobile_ota")
 
 
-def test_validation_invokes_no_mutating_release_script(tmp_path: Path):
+def test_validation_credential_hit_skips_full_suite(
+    repository_with_origin: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
     release = _release_module()
-    commands: list[tuple[str, ...]] = []
+    repo, _origin = repository_with_origin
+    plan = release.build_plan(
+        (_change(release, "M", "backend/app/main.py"),),
+        base_sha="a" * 40,
+        target_sha=_git(repo, "rev-parse", "HEAD"),
+    )
+    verified: dict[str, object] = {}
+
+    def verify(**kwargs):
+        verified.update(kwargs)
+        return release.validation_credential.CredentialVerdict(
+            True, "reusable", {"result": "pass"}
+        )
+
+    monkeypatch.setattr(release.validation_credential, "verify_credential", verify)
+    monkeypatch.setattr(
+        release.validation_credential,
+        "collect_toolchain",
+        lambda _repo: {"python": "test"},
+    )
+
+    def runner(*_args, **_kwargs):
+        raise AssertionError("credential hit must not rerun validation")
+
+    release.run_validation(plan, repo, runner=runner)
+
+    assert verified["repo"] == repo
+    assert verified["profile_name"] == "all"
+    assert verified["profile_version"] == release.validation_credential.PROFILE_VERSION
+    assert verified["commands"] == [
+        {
+            "name": "validation:all",
+            "argv": ["bash", "scripts/run-all-tests.sh"],
+            "cwd": ".",
+            "blocking": True,
+        }
+    ]
+    assert verified["toolchain"] == {"python": "test"}
+    assert "validation credential hit" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "reason", ["credential missing", "credential is invalid JSON", "credential expired"]
+)
+def test_validation_credential_miss_runs_suite_then_atomically_issues(
+    reason: str,
+    repository_with_origin: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+    release = _release_module()
+    repo, _origin = repository_with_origin
+    plan = release.build_plan(
+        (_change(release, "M", "mobile/app/index.tsx"),),
+        base_sha="a" * 40,
+        target_sha=_git(repo, "rev-parse", "HEAD"),
+    )
+    calls: list[tuple[str, ...]] = []
+    built: dict[str, object] = {}
+    written: list[tuple[Path, dict[str, str]]] = []
+
+    monkeypatch.setattr(
+        release.validation_credential,
+        "verify_credential",
+        lambda **_kwargs: release.validation_credential.CredentialVerdict(
+            False, reason
+        ),
+    )
+    monkeypatch.setattr(
+        release.validation_credential,
+        "collect_toolchain",
+        lambda _repo: {"python": "test"},
+    )
+
+    def build(**kwargs):
+        built.update(kwargs)
+        return {"result": "pass"}
+
+    monkeypatch.setattr(release.validation_credential, "build_credential", build)
+    monkeypatch.setattr(
+        release.validation_credential,
+        "write_credential_atomic",
+        lambda path, payload: written.append((Path(path), payload)),
+    )
+
+    def runner(command, **kwargs):
+        calls.append(tuple(command))
+        kwargs["stdout"].write("all checks passed\n")
+        return subprocess.CompletedProcess(command, 0)
+
+    release.run_validation(plan, repo, runner=runner)
+
+    assert calls == [("bash", "scripts/run-all-tests.sh")]
+    assert built["repo"] == repo
+    assert built["profile_name"] == "all"
+    assert built["commands"] == [
+        {
+            "name": "validation:all",
+            "argv": ["bash", "scripts/run-all-tests.sh"],
+            "cwd": ".",
+            "blocking": True,
+        }
+    ]
+    log_path = Path(built["logs"]["validation:all"])
+    assert log_path.read_text(encoding="utf-8") == "all checks passed\n"
+    assert written == [
+        (release.validation_credential.credential_path(repo, "all"), {"result": "pass"})
+    ]
+    output = capsys.readouterr().out
+    assert f"validation credential miss: profile=all reason={reason}" in output
+    assert "validation credential issued" in output
+
+
+def test_failed_validation_never_writes_a_credential(
+    repository_with_origin: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    release = _release_module()
+    repo, _origin = repository_with_origin
+    plan = release.build_plan(
+        (_change(release, "M", "backend/app/main.py"),),
+        base_sha="a" * 40,
+        target_sha=_git(repo, "rev-parse", "HEAD"),
+    )
+    writes: list[object] = []
+    monkeypatch.setattr(
+        release.validation_credential,
+        "verify_credential",
+        lambda **_kwargs: release.validation_credential.CredentialVerdict(
+            False, "credential expired"
+        ),
+    )
+    monkeypatch.setattr(
+        release.validation_credential,
+        "collect_toolchain",
+        lambda _repo: {"python": "test"},
+    )
+    monkeypatch.setattr(
+        release.validation_credential,
+        "write_credential_atomic",
+        lambda *_args: writes.append(object()),
+    )
 
     def runner(command, **_kwargs):
+        raise subprocess.CalledProcessError(1, command)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        release.run_validation(plan, repo, runner=runner)
+
+    assert writes == []
+
+
+def test_ci_never_reuses_or_issues_tree_credential(
+    repository_with_origin: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+    release = _release_module()
+    repo, _origin = repository_with_origin
+    plan = release.build_plan(
+        (_change(release, "M", "backend/app/main.py"),),
+        base_sha="a" * 40,
+        target_sha=_git(repo, "rev-parse", "HEAD"),
+    )
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setenv("CI", "true")
+    monkeypatch.setattr(
+        release.validation_credential,
+        "verify_credential",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("CI must not load a tree credential")
+        ),
+    )
+    monkeypatch.setattr(
+        release.validation_credential,
+        "write_credential_atomic",
+        lambda *_args: (_ for _ in ()).throw(
+            AssertionError("CI must not issue a tree credential")
+        ),
+    )
+
+    def runner(command, **kwargs):
+        calls.append(tuple(command))
+        kwargs["stdout"].write("commit-specific checks passed\n")
+        return subprocess.CompletedProcess(command, 0)
+
+    release.run_validation(plan, repo, runner=runner)
+
+    assert calls == [("bash", "scripts/run-all-tests.sh")]
+    assert "CI requires commit-specific validation" in capsys.readouterr().out
+
+
+def test_validation_invokes_no_mutating_release_script(
+    repository_with_origin: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+):
+    release = _release_module()
+    repo, _origin = repository_with_origin
+    commands: list[tuple[str, ...]] = []
+
+    monkeypatch.setenv("CI", "true")
+
+    def runner(command, **kwargs):
         commands.append(tuple(str(part) for part in command))
+        kwargs["stdout"].write("checks passed\n")
         return subprocess.CompletedProcess(command, 0)
 
     plan = release.build_plan(
@@ -247,9 +451,9 @@ def test_validation_invokes_no_mutating_release_script(tmp_path: Path):
         base_sha="a" * 40,
         target_sha="b" * 40,
     )
-    release.run_validation(plan, tmp_path, runner=runner)
+    release.run_validation(plan, repo, runner=runner)
 
-    assert commands == [(str(tmp_path / "scripts/run-all-tests.sh"),)]
+    assert commands == [("bash", "scripts/run-all-tests.sh")]
     assert all("deploy.sh" not in part for command in commands for part in command)
     assert all(
         "mobile-ota.sh" not in part for command in commands for part in command
@@ -257,7 +461,7 @@ def test_validation_invokes_no_mutating_release_script(tmp_path: Path):
 
 
 def test_publish_rechecks_release_source_after_validation_before_mutation(
-    repository_with_origin: tuple[Path, Path]
+    repository_with_origin: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ):
     release = _release_module()
     repo, _origin = repository_with_origin
@@ -269,12 +473,15 @@ def test_publish_rechecks_release_source_after_validation_before_mutation(
     )
     commands: list[str] = []
 
+    def dirty_after_validation(_plan, _repo, **_kwargs):
+        (repo / "validation-generated.txt").write_text(
+            "unexpected\n", encoding="utf-8"
+        )
+
+    monkeypatch.setattr(release, "run_validation", dirty_after_validation)
+
     def runner(command, **_kwargs):
         commands.append(str(command[0]))
-        if str(command[0]).endswith("run-all-tests.sh"):
-            (repo / "validation-generated.txt").write_text(
-                "unexpected\n", encoding="utf-8"
-            )
         return subprocess.CompletedProcess(command, 0)
 
     with pytest.raises(release.ReleaseError, match="dirty"):
@@ -286,7 +493,7 @@ def test_publish_rechecks_release_source_after_validation_before_mutation(
             runner=runner,
         )
 
-    assert commands == [str(repo / "scripts/run-all-tests.sh")]
+    assert commands == []
 
 
 def test_release_worktree_is_detached_and_exactly_tracks_remote_main(
