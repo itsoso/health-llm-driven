@@ -16,10 +16,31 @@ description: "推 mobile JS 改动到生产 (OTA, eas update)。当用户说「�
 
 ```bash
 cd /Users/liqiuhua/work/personal/health-llm-driven
+# 跨端变更先让 planner 判路由；纯 Mobile JS 会只得到 mobile_ota action
+./scripts/release.sh plan --base <last-published-sha> --target origin/main
+
 ./scripts/mobile-ota.sh production "改动说明"
 # 也可:无参=用 commit msg 作 message;preview=内部 channel
 ```
-脚本 = `eas update --platform ios --channel <channel>`。**只发 iOS**(`react-native-maps` 会炸 web bundler,Android 也没分发)。
+也可以用 `release.sh publish` 让 planner 在验证通过后调用同一 OTA mutation authority。
+脚本只发 iOS；native/package/lock/Watch 命中时 planner 抑制 OTA 并要求原生发版。
+
+## 单次事务、复证与耗时证据
+
+`mobile-ota.sh` 每次生成唯一 transaction ID，在私有临时目录只 export 一次：
+
+- 明确的瞬时上传失败会先查询该 transaction；无唯一命中时才校验同一目录的
+  metadata/bundle/assets、source tree、runtime 和稳定 digest，并用 `--skip-bundler`
+  重试同一字节一次。禁止第三次盲发，禁止跨发布缓存 artifact。
+- auth、runtime、Metro、语法和配置错误不可重试。symlink、路径穿越、空/缺失资源、
+  source/artifact 漂移或 EAS 查询歧义都会停止，且不更新 anchor/manifest。
+- 成功必须同时通过结构化 publish JSON、`update:view` 与 `channel:view`；随后原子写
+  private schema-v2 manifest，包含 transaction、commit/tree/runtime、artifact digest、
+  active/known-good group+update、EAS CLI 和 UTC `published_at`。这里不得写健康内容、
+  用户标识或凭证。
+
+验证流水线会输出每项耗时、墙钟耗时和私有日志路径；OTA 以 transaction ID、
+`published_at` 和 manifest 作为时序/审计锚点。不要把发布命令接到 `tail`。
 
 ## 关键坑
 
@@ -27,6 +48,21 @@ cd /Users/liqiuhua/work/personal/health-llm-driven
 - **设备拉取时机**:cold start 或退后台 30s+ 才拉新 bundle。**下拉刷新只重取数据,不换 bundle**——验证 OTA 生效要杀进程重开。
 - runtime version 必须匹配(`app.json` runtimeVersion policy=appVersion);跨 runtime 的改动 OTA 推不动,要发新 build。
 - channels:`development`(dev client / sim 允许)· `preview`(内部分发)· `production`(App Store,见 `mobile/eas.json`)。
+
+## 回退与人工回滚
+
+失败若没有唯一远端 transaction 证明，保持当前 known-good，不写新 manifest。回滚先
+dry-run，再显式确认：
+
+```bash
+./scripts/mobile-ota-rollback.sh production
+./scripts/mobile-ota-rollback.sh production --confirm
+```
+
+回滚不是切回旧 ID，而是验证历史 source group/update 后 republish；脚本再校验新建
+active group/update 与 channel mapping，manifest 分开记录 source IDs 和新 active IDs。
+缺少/损坏 manifest 或 source pair 不完整时 fail closed；需要时可成对提供已验证的
+`--group` 与 `--update-id`。
 
 ## 和后端配套
 

@@ -53,20 +53,29 @@
 
 ## S4 · 研发任务
 
-- [ ] T1 变更分类与统一发布入口。
-- [ ] T2 永久干净 release worktree 与共享状态。
-- [ ] T3 并行验证与 tree-hash 凭证。
-- [ ] T4 OTA 单次导出复用、结构化复证与回滚修正。
+- [x] T1 变更分类与统一发布入口（`9ea95268a`）。
+- [x] T2 永久干净 release worktree 与共享状态（`9ea95268a`）。
+- [x] T3 并行验证与 tree-hash 凭证工具（`3daf17116`）。验证凭证已有独立
+  issue/verify 契约；当前 planner 仍无条件执行全量验证，不把“工具已存在”虚报为
+  自动 cache hit。
+- [x] T4 OTA 单次导出复用、结构化复证与回滚修正（`2c7733610`）。
 - [ ] T5 Python/frontend 服务端 step proof。
 - [ ] T6 System KB 增量更新与 proof。
-- [ ] T7 GPS/Settings 模拟器自动冒烟。
+- [x] T7 GPS/Settings 模拟器自动冒烟代码与安全分类（`cdc136370`）；真实 Simulator
+  XCTest 尚未执行，仍属于 G3 待完成证据。
 - [ ] T8 CI、文档、独立评审与发布验证。
 - 分支：`codex/release-pipeline-acceleration`，基线 `origin/main@ab0a07d93eba`。
 
 ## G3 · 测试闸
 
 - 基线：`scripts/test_mobile_fast_feedback_scripts.py` + `scripts/test_deploy_script.py`，144 passed。
-- 实施完成后待补全量结果。
+- 2026-08-12 focused release suite：
+  `python3 -m pytest -q scripts/test_release_pipeline.py scripts/test_run_all_tests.py scripts/test_validation_credential.py scripts/test_mobile_ota.py scripts/test_ios_acceptance_harness.py scripts/test_release_ci_contract.py`
+  → **92 passed in 123.79s**。
+- 以上只证明 T1–T4/T7 的脚本/合同；尚未包含 T5/T6 的
+  `scripts/test_release_step_proof.py`，也未执行真实 Simulator XCTest、`validate.py
+  --full` 或生产 shadow proof。
+- 当前裁决：**PENDING**；不得用 focused green 代替最终 G3。
 
 ## G4 · 安全闸
 

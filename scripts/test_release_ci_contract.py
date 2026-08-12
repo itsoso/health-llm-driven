@@ -16,6 +16,12 @@ RELEASE_TESTS = (
     "scripts/test_infrastructure_security.py",
     "scripts/test_mobile_fast_feedback_scripts.py",
     "scripts/test_runtime_state_release_transaction.py",
+    "scripts/test_release_pipeline.py",
+    "scripts/test_run_all_tests.py",
+    "scripts/test_validation_credential.py",
+    "scripts/test_mobile_ota.py",
+    "scripts/test_ios_acceptance_harness.py",
+    "scripts/test_release_step_proof.py",
     "scripts/test_release_ci_contract.py",
     "scripts/test_release_input_digest.py",
     "scripts/test_verify_locked_requirements.py",
@@ -37,6 +43,14 @@ def test_ci_blocks_on_release_invariants_and_exercises_macos_bash3():
     release_runs = _run_bodies(release_job)
 
     assert release_job["runs-on"] == "ubuntu-latest"
+    assert release_job.get("continue-on-error") is not True
+    release_test_step = next(
+        step
+        for step in release_job["steps"]
+        if step.get("name")
+        == "Run deployment, rollback, planner, OTA, and acceptance invariants"
+    )
+    assert release_test_step.get("continue-on-error") is not True
     for test_path in RELEASE_TESTS:
         assert test_path in release_runs
 

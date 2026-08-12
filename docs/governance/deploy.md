@@ -21,6 +21,101 @@
 ./deploy.sh -l        # 查看服务日志
 ```
 
+`deploy.sh` 仍是服务器 mutation 的唯一执行器；对一个已经提交的跨端变更，优先用
+source-aware planner 决定是否需要调用它：
+
+```bash
+# 只读计划；<baseline> 必须是可信的上一已发布 SHA/ref
+./scripts/release.sh plan --base <baseline> --target origin/main
+
+# 在永久 release worktree 中跑验证，不发布
+./scripts/release.sh validate --base <baseline> --target origin/main
+
+# 验证后按计划发布；server mutation 仍委托 deploy.sh，Mobile OTA 仍委托 mobile-ota.sh
+./scripts/release.sh publish --base <baseline> --target origin/main \
+  --message "release message"
+```
+
+planner 的安全边界：
+
+- `plan` 是只读操作，不创建运行状态；未知路径 fail closed。Mobile native、Watch、
+  Mac 或 package/lock/native 配置变化只给出人工发版路由，不会误发 OTA。
+- `validate` / `publish` 默认维护仓库旁的 `<repo>.release`：只接受干净、detached
+  （或严格的 `main`）且 `HEAD == local origin/main == remote origin/main` 的 worktree。
+  dirty worktree 或 feature branch 一律拒绝，脚本不会替操作者 reset/clean。
+- backend + Mobile JS 混合变更先发布 backend、再 OTA；frontend 新 SHA 使用
+  `deploy.sh --all`，避免 `--frontend` 在远端仍是旧 checkout 时构建错代码。
+- planner 在验证后及每次 mutation 前重验 release source。成功 surface 以
+  `base_sha + target_sha + completed_actions` 记录；同一事务重试只执行剩余 surface。
+
+### 8.1.1 共享发布状态、验证日志与耗时
+
+所有 worktree 通过 Git common dir 共享运行状态：
+
+```text
+<git-common-dir>/reva-release-state/
+  release-state.json
+  logs/
+  credentials/
+```
+
+目录必须为 `0700`、文件必须为 `0600`，拒绝 symlink；这里不存 `.env`、密钥或健康
+数据。生产配置由 owner workspace 的 `DEPLOY_ENV_FILE` 显式传给 `deploy.sh`，不得
+复制进 Git worktree。
+
+`scripts/run-all-tests.sh` 最多四路并行，每个 child 写独立私有日志，coordinator
+直接 `wait` 真实 PID/退出码；失败后才读取日志末段用于显示。它会输出每项耗时与
+日志路径。`python scripts/validate.py` 并发执行结构闸，`--full` 再委托全栈协调器，
+并输出墙钟耗时。禁止把正在运行的测试接到 `tail`。
+
+`scripts/validation_credential.py` 可签发/验证以 Git tree（不是 commit）、profile
+版本、精确命令、lockfile、toolchain、结果日志和 TTL 为身份的复用凭证。任一字段
+变化、日志缺失/漂移、过期或文件权限异常均为 miss；GitHub CI 仍以当前 commit 的
+blocking job 为准，不能用本地凭证替代。
+
+### 8.1.2 Server step proof 的渐进启用
+
+只有 Python dependencies、frontend dependencies、frontend build 和 System KB
+import 可以评估 step proof。receipt 位于 root-owned
+`/var/cache/health-app/release-proofs`，输入、toolchain、输出和 postcondition 必须
+全部匹配；缺失、损坏、权限过宽、symlink、漂移或无法观测都回退到原全量步骤。
+
+三种模式语义固定：
+
+- `off`：不读、不复用 proof，完整执行原步骤。
+- `shadow`：报告候选 hit/miss，但仍完整执行并在 postcondition 成功后记录 receipt。
+- `on`：仅完整 proof hit 时跳过该单步；miss 仍完整执行。失败步骤不得留下/沿用 receipt。
+
+生产首次落地必须保持 `shadow`，至少积累并人工核对三次生产部署证据，再逐个 step
+评审切到 `on`；System KB whole-import 最后启用。无论哪种模式，数据库备份与恢复
+演练、managed migrations、schema probe、release lease、runtime-state transaction、
+进程稳定性、revision、health score、rollback/finalize 始终无条件执行。
+
+### 8.1.3 回退与回滚
+
+- planner/classifier/credential/proof 任一判断不确定：停止发布，或执行原有完整步骤；
+  绝不把“没有证据”当作成功。
+- server mutation 失败：沿用下文持久 release journal、旧 SHA/env/upload authority
+  和健康闸的原子回滚流程；不要另起并发部署。
+- OTA 失败：同一事务只允许复用同一已校验 export 做一次瞬时网络重试；仍不确定时
+  查询 transaction，禁止第三次盲发。人工回滚先运行
+  `./scripts/mobile-ota-rollback.sh production` dry-run，再显式追加 `--confirm`。
+- 验证或发布失败时保留并报告真实退出码、私有日志、已完成/待完成 surface；修复
+  原因后用相同 `base`/`target` 重试，planner 会从共享状态恢复。
+
+### 8.1.4 iOS Simulator smoke 的边界
+
+`scripts/run_ios_real_device_acceptance.sh --platform "iOS Simulator"` 可以在已手动登录
+的 Simulator build 上遍历安全 Settings 路由；同时提供 `--location <lat,lon>` 与
+`--expected-city <city>` 时，会 grant/set 模拟位置，断言 GPS 自动城市与 ready
+状态，并在 `EXIT/INT/TERM` trap 中 clear。两个位置参数必须成对出现，且物理设备
+明确拒绝它们。
+
+自动化不得点击 Garmin、Apple Health、退出登录、账号删除、更新应用或其他第三方/
+破坏性动作。Simulator 不能替代 Garmin OAuth/MFA、HealthKit、APNs、camera、
+microphone、Keychain、后台执行、真实权限弹窗或最终 physical-iPhone gate；review
+credentials 也不得传给 XCTest/Xcode 日志，设备必须由人预先登录。
+
 ### 8.2 线上配置管理
 
 **配置文件: `.env`**

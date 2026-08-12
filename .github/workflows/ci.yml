@@ -379,7 +379,7 @@ jobs:
           pip install --require-hashes -r requirements.lock
           pip install -r requirements-dev.txt
 
-      - name: Run deployment and rollback invariants
+      - name: Run deployment, rollback, planner, OTA, and acceptance invariants
         run: >-
           python -m pytest -q --no-cov --tb=short --maxfail=1
           scripts/test_ci_change_scope.py
@@ -391,6 +391,12 @@ jobs:
           scripts/test_infrastructure_security.py
           scripts/test_mobile_fast_feedback_scripts.py
           scripts/test_runtime_state_release_transaction.py
+          scripts/test_release_pipeline.py
+          scripts/test_run_all_tests.py
+          scripts/test_validation_credential.py
+          scripts/test_mobile_ota.py
+          scripts/test_ios_acceptance_harness.py
+          scripts/test_release_step_proof.py
           scripts/test_release_ci_contract.py
           scripts/test_release_input_digest.py
           scripts/test_verify_locked_requirements.py

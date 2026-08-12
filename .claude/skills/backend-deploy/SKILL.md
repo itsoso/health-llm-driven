@@ -5,7 +5,9 @@ description: "部署后端到生产 (deploy.sh -b)。当用户说「部署后端
 
 # Backend Deploy
 
-后端上线唯一入口:`./deploy.sh -b`。**异步执行,触发后切别的活,别同步等。**
+后端服务器 mutation 的唯一入口:`./deploy.sh -b`。对已经提交的跨端变更，优先先让
+`scripts/release.sh` 做 source-aware 路由；它最终仍委托 `deploy.sh`。
+**异步执行长部署,触发后切别的活,别同步等。**
 
 ## 铁律:合并到 main ≠ 上线
 
@@ -19,9 +21,45 @@ cd /Users/liqiuhua/work/personal/health-llm-driven
 git push origin main          # 先 push(deploy 在服务器 git pull)
 ./deploy.sh -b                # 后台跑
 ```
+
+统一发布入口（推荐）：
+
+```bash
+./scripts/release.sh plan --base <last-published-sha> --target origin/main
+./scripts/release.sh validate --base <last-published-sha> --target origin/main
+./scripts/release.sh publish --base <last-published-sha> --target origin/main \
+  --message "release message"
+```
+
+- `plan` 只读；unknown path fail closed。backend + Mobile JS 会严格按 server-first、
+  OTA-second 排序；frontend 新 SHA 使用 full deploy。
+- `validate`/`publish` 使用仓库旁永久 `<repo>.release`，必须 clean、detached/main、
+  且精确等于本地和远端 `origin/main`。dirty/feature branch 不会被自动清理。
+- partial success 记录在 Git common dir 的 `reva-release-state/release-state.json`
+  （目录 `0700`、文件 `0600`）；重试同一 base/target 不重复成功 surface。
+- production `.env` 仍只从 owner workspace 通过 `DEPLOY_ENV_FILE` 传入，绝不放进
+  release worktree 或 shared state。
 `deploy.sh -b` 自动做:git pull → **应用 managed 迁移**(`backend/migrations/managed/*`)→ 重启 `health-backend` + Celery worker+beat → DB 备份 → 同步 `backend/skills/*/SKILL.md` 到 OpenClaw 网关 → 跑 `system_health_score.py`。
 
 **健康度门**:阈值 `DEPLOY_SCORE_THRESHOLD=35`(满分 60,skip-tests)。低于阈值**自动回滚到上一版本**。正常输出 `健康度: 60/60 ✅ PASS` + `Skills 同步: 本地 N = 线上 N`。
+
+## 提速 proof 的安全模式
+
+Python dependencies、frontend dependencies/build、System KB 只允许使用
+`off` / `shadow` / `on` 三态 proof：
+
+- `off` 完整执行；`shadow` 只报告候选 hit，仍完整执行；`on` 仅在输入、toolchain、
+  输出、postcondition 与 root-owned receipt 全部匹配时跳过该单步。
+- receipt 固定在 `/var/cache/health-app/release-proofs`（目录 `0700`、文件 `0600`）。
+  missing/corrupt/symlink/权限或任何 digest 漂移都 fail closed 到完整步骤；失败步骤
+  不得写入或保留 receipt。
+- 生产先保持 `shadow` 至少三次并人工核对，再逐 step 评审是否切 `on`；KB whole
+  import 最后启用。
+
+proof 永远不能跳过 DB backup/restore rehearsal、managed migrations、schema probe、
+release lease、runtime-state transaction、服务稳定窗口、revision、health score、
+rollback/finalize。并行验证的每项耗时与日志路径由 `run-all-tests.sh` / `validate.py`
+输出；禁止用 `tail` 管道包住运行中的测试。
 
 ## 部署后复验(必做)
 
