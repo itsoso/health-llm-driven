@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api import (
     auth,
     admin,
+    admin_system_map,
     admin_registration_invitations,
     admin_observability,
     admin_llm,
@@ -178,6 +179,11 @@ api_router.include_router(onboarding.router, tags=["onboarding"])
 
 # ── Admin & System ─────────────────────────────────────────────────
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
+api_router.include_router(
+    admin_system_map.router,
+    prefix="/admin/system-map",
+    tags=["admin-system-map"],
+)
 api_router.include_router(admin_registration_invitations.router)
 api_router.include_router(admin_observability.router, prefix="/admin/observability", tags=["admin-observability"])
 api_router.include_router(admin_llm.router)
