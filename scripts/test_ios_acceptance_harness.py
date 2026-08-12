@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import stat
 import subprocess
 from pathlib import Path
 
@@ -54,6 +55,11 @@ def _summary(*, passed: int, skipped: int, total: int) -> str:
             "totalTestCount": total,
         }
     )
+
+
+def _write_executable(path: Path, source: str) -> None:
+    path.write_text(source, encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IXUSR)
 
 
 def _generate(
@@ -144,6 +150,54 @@ def test_runner_documents_simulator_location_options() -> None:
     assert "--location <lat,lon>" in result.stdout
     assert "--expected-city <city>" in result.stdout
     assert "Simulator-only" in result.stdout
+
+
+def test_runner_passes_cli_expected_city_to_xcodebuild_environment(
+    tmp_path: Path,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    captured_city = tmp_path / "xcodebuild-expected-city.txt"
+
+    _write_executable(bin_dir / "ruby", "#!/bin/sh\nexit 0\n")
+    _write_executable(bin_dir / "xcrun", "#!/bin/sh\nexit 0\n")
+    _write_executable(bin_dir / "python3", "#!/bin/sh\nexit 0\n")
+    _write_executable(
+        bin_dir / "xcodebuild",
+        "#!/bin/sh\n"
+        'printf "%s" "${REVA_ACCEPTANCE_EXPECTED_CITY-}" '
+        '> "${REVA_TEST_ENV_CAPTURE}"\n',
+    )
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["REVA_TEST_ENV_CAPTURE"] = str(captured_city)
+    env.pop("REVA_ACCEPTANCE_EXPECTED_CITY", None)
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(RUNNER),
+            "--platform",
+            "iOS Simulator",
+            "--device",
+            "test-simulator",
+            "--location",
+            "30.2741,120.1551",
+            "--expected-city",
+            "杭州",
+            "--result",
+            str(tmp_path / "acceptance.xcresult"),
+        ],
+        cwd=ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert captured_city.read_text(encoding="utf-8") == "杭州"
 
 
 def test_verifier_expected_suite_matches_xctest_source() -> None:
