@@ -146,4 +146,3 @@
    applicable. Do not publish a Mobile OTA for release-script-only changes.
 6. Commit and push the release record through the lightweight documentation
    route, then verify that route's elapsed time.
-
