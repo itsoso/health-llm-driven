@@ -3219,16 +3219,13 @@ deploy_backend() {
         cd $REMOTE_PATH/backend && \
         source venv/bin/activate && \
         set -a && source .env && set +a && \
-        if [ '$SYSTEM_KB_ACTIVATION_REQUIRED' = '1' ]; then \
-            echo '补齐审核食物营养基准...' && \
-            python scripts/seed_food_nutrition.py && \
-            echo '写入系统知识库 Phase 0 种子...' && \
-            python scripts/seed_system_kb_phase0.py && \
-            echo '导入系统知识库 V2 扩展 artifacts...' && \
-            python scripts/import_system_kb_v2_artifacts.py; \
-        else \
-            echo 'System KB inputs unchanged; mutation skipped'; \
-        fi
+        echo '补齐审核食物营养基准...' && \
+        python scripts/seed_food_nutrition.py && \
+        echo '写入系统知识库 Phase 0 种子...' && \
+        python scripts/seed_system_kb_phase0.py && \
+        echo '导入系统知识库 V2 扩展 artifacts...' && \
+        SYSTEM_KB_IMPORT_PROOF_MODE="\${SYSTEM_KB_IMPORT_PROOF_MODE:-shadow}" \
+            python scripts/import_system_kb_v2_artifacts.py
     "
     KB_EXIT=$?
     set -e

@@ -88,7 +88,14 @@ def test_draft_artifacts_require_reviewer_gate_before_serving_import(tmp_path, d
 
     draft_import = import_system_kb_artifacts(db, artifact_dir, actor="test-draft-import")
 
-    assert draft_import == {"documents": 0, "edges": 0, "skipped_documents": 2, "skipped_edges": 1}
+    draft_counts = {
+        "documents": 0,
+        "edges": 0,
+        "skipped_documents": 2,
+        "skipped_edges": 1,
+    }
+    assert {key: draft_import[key] for key in draft_counts} == draft_counts
+    assert draft_import["changed_document_ids"] == []
     assert db.query(KBDocument).filter(KBDocument.doc_id == "claim:c_test_draft_gate").count() == 0
     assert db.query(KBEdge).count() == 0
 
@@ -111,7 +118,17 @@ def test_draft_artifacts_require_reviewer_gate_before_serving_import(tmp_path, d
 
     reviewed_import = import_system_kb_artifacts(db, artifact_dir, actor="test-reviewed-import")
 
-    assert reviewed_import == {"documents": 2, "edges": 1, "skipped_documents": 0, "skipped_edges": 0}
+    reviewed_counts = {
+        "documents": 2,
+        "edges": 1,
+        "skipped_documents": 0,
+        "skipped_edges": 0,
+    }
+    assert {key: reviewed_import[key] for key in reviewed_counts} == reviewed_counts
+    assert reviewed_import["changed_document_ids"] == [
+        "claim:c_test_draft_gate",
+        "entity:condition:test-draft-gate",
+    ]
     claim = db.query(KBDocument).filter(KBDocument.doc_id == "claim:c_test_draft_gate").one()
     edge = db.query(KBEdge).one()
     assert claim.metadata_json["review_status"] == "reviewed"

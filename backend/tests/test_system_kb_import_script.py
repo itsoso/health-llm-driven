@@ -8,10 +8,14 @@ def test_import_script_reindexes_after_artifact_import(monkeypatch):
 
     def fake_import(db, artifact_dir, *, actor):
         calls.append(("import", db, artifact_dir, actor))
-        return {"documents": 2, "edges": 1}
+        return {
+            "documents": 2,
+            "edges": 1,
+            "changed_document_ids": ["claim:one"],
+        }
 
-    def fake_reindex(db, *, actor):
-        calls.append(("reindex", db, actor))
+    def fake_reindex(db, *, actor, changed_document_ids):
+        calls.append(("reindex", db, actor, changed_document_ids))
         return {
             "reindex": {"documents": 2, "dense_vectors": 2},
             "pgvector": {"current_vector_backend": "pgvector:text-embedding-v3"},
@@ -35,7 +39,7 @@ def test_import_script_reindexes_after_artifact_import(monkeypatch):
 
     assert calls == [
         ("import", db, "/tmp/system-kb", "test:import"),
-        ("reindex", db, "test:import"),
+        ("reindex", db, "test:import", ["claim:one"]),
     ]
     assert result["import"]["documents"] == 2
     assert result["reindex"]["reindex"]["dense_vectors"] == 2
