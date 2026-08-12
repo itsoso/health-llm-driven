@@ -26,7 +26,7 @@ Usage:
 
 from __future__ import annotations
 
-import os
+import ast
 import re
 import sys
 from pathlib import Path
@@ -68,38 +68,58 @@ def count_register_decorators(rules_dir: Path) -> dict[str, int]:
     return out
 
 
-def _prime_env() -> None:
-    """Backend modules assert required env vars at import time."""
-    os.environ.setdefault("SECRET_KEY", "test-secret-key-32-chars-minimum!!")
-    os.environ.setdefault(
-        "GARMIN_ENCRYPTION_KEY", "mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU="
-    )
-    os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+def specialist_roster() -> list[str]:
+    """Return specialist constructors registered by ``_build_registry``.
+
+    This intentionally parses the registry instead of importing it: the doc/system-map
+    gate must not require application secrets, a database URL, or backend side effects.
+    """
+    path = BACKEND / "app" / "orchestrator" / "specialists.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name != "_build_registry":
+            continue
+        for child in ast.walk(node):
+            if not isinstance(child, ast.Return) or not isinstance(child.value, ast.List):
+                continue
+            names: list[str] = []
+            for item in child.value.elts:
+                if not isinstance(item, ast.Call):
+                    continue
+                if isinstance(item.func, ast.Name):
+                    names.append(item.func.id)
+                elif isinstance(item.func, ast.Attribute):
+                    names.append(item.func.attr)
+            if names:
+                return sorted(names)
+    raise RuntimeError(f"specialist registry return list not found: {path}")
+
+
+def twin_partition_roster() -> list[str]:
+    """Return annotated HealthTwin fields, excluding non-partition containers."""
+    path = BACKEND / "app" / "twin" / "schema.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef) or node.name != "HealthTwin":
+            continue
+        fields = {
+            item.target.id
+            for item in node.body
+            if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name)
+        }
+        return sorted(fields - {"meta", "gene_config"})
+    raise RuntimeError(f"HealthTwin class not found: {path}")
 
 
 def count_specialists() -> int:
-    _prime_env()
-    sys.path.insert(0, str(BACKEND))
-    try:
-        from app.orchestrator.specialists import all_specialists
-        return len(all_specialists())
-    finally:
-        if sys.path[0] == str(BACKEND):
-            sys.path.pop(0)
+    return len(specialist_roster())
 
 
 def count_twin_partitions() -> int:
     """HealthTwin fields minus container/meta fields."""
-    _prime_env()
-    sys.path.insert(0, str(BACKEND))
-    try:
-        from app.twin.schema import HealthTwin
-        fields = set(HealthTwin.model_fields.keys())
-        non_partitions = {"meta", "gene_config"}
-        return len(fields - non_partitions)
-    finally:
-        if sys.path[0] == str(BACKEND):
-            sys.path.pop(0)
+    return len(twin_partition_roster())
 
 
 # ---------- Code scanners (stateless, no import side-effects) ----------

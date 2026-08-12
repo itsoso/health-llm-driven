@@ -27,25 +27,11 @@ import check_doc_drift as cdd  # noqa: E402  复用扫描器,不复制计数逻�
 
 
 def _specialist_roster() -> list[str]:
-    cdd._prime_env()
-    sys.path.insert(0, str(cdd.BACKEND))
-    try:
-        from app.orchestrator.specialists import all_specialists
-        return sorted(type(s).__name__ for s in all_specialists())
-    finally:
-        if sys.path and sys.path[0] == str(cdd.BACKEND):
-            sys.path.pop(0)
+    return cdd.specialist_roster()
 
 
 def _twin_partition_roster() -> list[str]:
-    cdd._prime_env()
-    sys.path.insert(0, str(cdd.BACKEND))
-    try:
-        from app.twin.schema import HealthTwin
-        return sorted(set(HealthTwin.model_fields) - {"meta", "gene_config"})
-    finally:
-        if sys.path and sys.path[0] == str(cdd.BACKEND):
-            sys.path.pop(0)
+    return cdd.twin_partition_roster()
 
 
 def build_map() -> dict:
