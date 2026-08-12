@@ -32,25 +32,37 @@ MANIFEST_FILE="${OTA_MANIFEST_FILE:-${REPO_ROOT}/.mobile-release-manifest.json}"
 source "${REPO_ROOT}/scripts/release_lock.sh"
 acquire_release_lock "ota:${CHANNEL}"
 
-# ── 发版前置守卫(2026-07-11 评审加固):OTA 打的是**工作树**,不是 HEAD ──
-# 两类历史事故:① 脏树 WIP 泄进生产 bundle;② 落后 origin/main 的树整包回滚他人已上线工作。
-# 机械拦截,不再靠纪律。逃生口:OTA_ALLOW_DIRTY=1(仅限明知故犯的调试)。
+# ── 发版前置守卫:OTA 打的是**工作树**,不是 HEAD ──
+# main 只推进文档时，Mobile/shared 运行树相同即可继续；任何运行树差异或
+# 相关脏文件仍 fail closed。逃生口仅供显式调试，不用于正式 production。
 if [[ "${OTA_ALLOW_DIRTY:-0}" != "1" ]]; then
   git -C "${REPO_ROOT}" fetch origin --quiet
-  _HEAD="$(git -C "${REPO_ROOT}" rev-parse HEAD)"
-  _MAIN="$(git -C "${REPO_ROOT}" rev-parse origin/main)"
-  if [[ "${_HEAD}" != "${_MAIN}" ]]; then
-    echo "✗ OTA 拒绝:HEAD (${_HEAD:0:9}) ≠ origin/main (${_MAIN:0:9})。"
-    echo "  从落后/分叉的树发 OTA 会回滚已上线工作。请从干净的 origin/main worktree 发;明知故犯用 OTA_ALLOW_DIRTY=1。"
-    exit 1
-  fi
-  _DIRTY="$(git -C "${REPO_ROOT}" status --porcelain -- mobile/ packages/shared/ | head -5)"
-  if [[ -n "${_DIRTY}" ]]; then
-    echo "✗ OTA 拒绝:mobile/ 或 packages/shared/ 有未提交改动(会把 WIP 打进生产 bundle):"
-    echo "${_DIRTY}"
-    echo "  请 stash/提交后再发;明知故犯用 OTA_ALLOW_DIRTY=1。"
-    exit 1
-  fi
+  SOURCE_GUARD_FLAGS=()
+else
+  SOURCE_GUARD_FLAGS=(--allow-divergence --allow-dirty)
+fi
+SOURCE_GUARD_OUTPUT="$(python3 "${REPO_ROOT}/scripts/ota_source_guard.py" \
+  --repo "${REPO_ROOT}" --source HEAD --main origin/main --format shell \
+  "${SOURCE_GUARD_FLAGS[@]}")" || exit $?
+SOURCE_COMMIT_SHA=""
+MAIN_COMMIT_SHA=""
+RELEASE_COMMIT_SHA=""
+MOBILE_TREE_DIGEST=""
+MAIN_ADVANCED=0
+RUNTIME_EQUIVALENT=0
+while IFS='=' read -r key value; do
+  case "${key}" in
+    SOURCE_COMMIT_SHA) SOURCE_COMMIT_SHA="${value}" ;;
+    MAIN_COMMIT_SHA) MAIN_COMMIT_SHA="${value}" ;;
+    RELEASE_COMMIT_SHA) RELEASE_COMMIT_SHA="${value}" ;;
+    MOBILE_TREE_DIGEST) MOBILE_TREE_DIGEST="${value}" ;;
+    MAIN_ADVANCED) MAIN_ADVANCED="${value}" ;;
+    RUNTIME_EQUIVALENT) RUNTIME_EQUIVALENT="${value}" ;;
+    *) echo "✗ OTA source guard returned unknown field: ${key}" >&2; exit 1 ;;
+  esac
+done <<< "${SOURCE_GUARD_OUTPUT}"
+if [[ "${MAIN_ADVANCED}" == "1" && "${RUNTIME_EQUIVALENT}" == "1" ]]; then
+  echo "△ origin/main advanced without Mobile/shared changes; publishing the proven equivalent tree."
 fi
 
 cd "${REPO_ROOT}/mobile"
@@ -74,12 +86,6 @@ UPDATE_LOG="$(mktemp)"
 HERMES_DIR=""
 NO_BYTECODE_DIR=""
 OTA_AUDIT_LOG="${OTA_AUDIT_LOG:-${REPO_ROOT}/.mobile-ota-audit.jsonl}"
-SOURCE_COMMIT_SHA="$(git -C "${REPO_ROOT}" rev-parse HEAD)"
-MAIN_COMMIT_SHA="$(git -C "${REPO_ROOT}" rev-parse origin/main 2>/dev/null || printf '%s' "${SOURCE_COMMIT_SHA}")"
-MOBILE_TREE_DIGEST="$({
-  git -C "${REPO_ROOT}" rev-parse "${SOURCE_COMMIT_SHA}:mobile"
-  git -C "${REPO_ROOT}" rev-parse "${SOURCE_COMMIT_SHA}:packages/shared" 2>/dev/null || printf '%s\n' missing
-} | shasum -a 256 | awk '{print $1}')"
 RUNTIME_VERSION="${MOBILE_RUNTIME_VERSION:-$(python3 - "${REPO_ROOT}/mobile/app.json" <<'PY'
 import json
 import sys
@@ -360,14 +366,27 @@ echo "    verified iOS update: ${IOS_UPDATE_ID}"
 
 # 记录可审计的发布事实和上一组已知可回滚更新。文件默认被 gitignore，
 # 生产回滚只依赖 EAS group/update ID，不依赖当前工作树是否还保留发布代码。
-python3 - "${MANIFEST_FILE}" "${CHANNEL}" "${ENVIRONMENT}" "${GROUP_ID}" "${IOS_UPDATE_ID}" "${SOURCE_COMMIT_SHA}" "${RUNTIME_VERSION}" <<'PY'
+python3 - "${MANIFEST_FILE}" "${CHANNEL}" "${ENVIRONMENT}" "${GROUP_ID}" \
+  "${IOS_UPDATE_ID}" "${RELEASE_COMMIT_SHA}" "${RUNTIME_VERSION}" \
+  "${SOURCE_COMMIT_SHA}" "${MAIN_COMMIT_SHA}" "${MOBILE_TREE_DIGEST}" <<'PY'
 import json
 import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-path, channel, environment, group_id, update_id, commit_sha, runtime_version = sys.argv[1:]
+(
+    path,
+    channel,
+    environment,
+    group_id,
+    update_id,
+    commit_sha,
+    runtime_version,
+    source_commit_sha,
+    main_commit_sha,
+    mobile_tree_digest,
+) = sys.argv[1:]
 manifest_path = Path(path)
 previous = {}
 if manifest_path.exists():
@@ -390,6 +409,9 @@ payload = {
     "active_group_id": group_id,
     "active_update_id": update_id,
     "commit_sha": commit_sha,
+    "source_commit_sha": source_commit_sha,
+    "main_commit_sha": main_commit_sha,
+    "mobile_tree_digest": mobile_tree_digest,
     "published_at": datetime.now(timezone.utc).isoformat(),
     "previous_known_good_group_id": previous_group_id,
     "previous_known_good_update_id": previous_update_id,
@@ -406,9 +428,8 @@ record_ota_audit "${FINAL_VARIANT}" "${FINAL_ATTEMPT}" published "" \
 # 只有 EAS 标识验证和 manifest 原子写入都成功后，才记录这次 OTA 对应的
 # commit，避免 deploy.sh 把一条不完整的发布记录当作已发布状态。
 if [ "${CHANNEL}" = "production" ]; then
-  CURRENT_COMMIT=$(git -C "${REPO_ROOT}" rev-parse HEAD)
-  printf '%s\n' "${CURRENT_COMMIT}" > "${ANCHOR_FILE}"
-  echo "    anchor 写入 ${ANCHOR_FILE} (${CURRENT_COMMIT:0:8})"
+  printf '%s\n' "${RELEASE_COMMIT_SHA}" > "${ANCHOR_FILE}"
+  echo "    anchor 写入 ${ANCHOR_FILE} (${RELEASE_COMMIT_SHA:0:8})"
 fi
 
 echo ""

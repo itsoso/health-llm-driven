@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[1]
 FAST_TEST = ROOT / "scripts" / "mobile-fast-test.sh"
 FAST_DEVICE = ROOT / "scripts" / "mobile-fast-device.sh"
+OTA_SOURCE_GUARD = ROOT / "scripts" / "ota_source_guard.py"
 
 
 def test_mobile_dependency_overrides_preserve_brace_expansion_major_compatibility() -> None:
@@ -372,6 +373,107 @@ def test_ota_manifest_keeps_previous_known_good_update(tmp_path: Path) -> None:
     payload = json.loads(manifest.read_text())
     assert payload["previous_known_good_group_id"] == "11111111-1111-4111-8111-111111111111"
     assert payload["previous_known_good_update_id"] == "22222222-2222-4222-8222-222222222222"
+
+
+def _commit(repo: Path, message: str) -> str:
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", message], cwd=repo, check=True)
+    return subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+    ).strip()
+
+
+def _source_guard(
+    repo: Path,
+    source: str,
+    main: str,
+    *,
+    allow_divergence: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    command = [
+        "python3",
+        str(OTA_SOURCE_GUARD),
+        "--repo",
+        str(repo),
+        "--source",
+        source,
+        "--main",
+        main,
+        "--format",
+        "json",
+    ]
+    if allow_divergence:
+        command.append("--allow-divergence")
+    return subprocess.run(command, text=True, capture_output=True, check=False)
+
+
+def _make_source_guard_repo(tmp_path: Path) -> tuple[Path, str]:
+    repo = tmp_path / "repo"
+    (repo / "mobile").mkdir(parents=True)
+    (repo / "packages/shared").mkdir(parents=True)
+    (repo / "docs").mkdir()
+    (repo / "mobile/app.ts").write_text("export const version = 1;\n")
+    (repo / "packages/shared/types.ts").write_text("export type Id = string;\n")
+    (repo / "docs/readme.md").write_text("base\n")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "release@example.test"],
+        cwd=repo,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Release Test"], cwd=repo, check=True
+    )
+    return repo, _commit(repo, "base")
+
+
+def test_ota_source_guard_allows_docs_only_main_advancement(tmp_path: Path) -> None:
+    repo, source = _make_source_guard_repo(tmp_path)
+    (repo / "docs/readme.md").write_text("advanced docs\n")
+    main = _commit(repo, "docs only")
+
+    result = _source_guard(repo, source, main)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["source_commit_sha"] == source
+    assert payload["main_commit_sha"] == main
+    assert payload["release_commit_sha"] == main
+    assert payload["main_advanced"] is True
+    assert len(payload["mobile_tree_digest"]) == 64
+
+
+def test_ota_source_guard_rejects_mobile_divergence_and_dirty_paths(
+    tmp_path: Path,
+) -> None:
+    repo, source = _make_source_guard_repo(tmp_path)
+    (repo / "mobile/app.ts").write_text("export const version = 2;\n")
+    main = _commit(repo, "mobile change")
+
+    diverged = _source_guard(repo, source, main)
+    assert diverged.returncode != 0
+    assert "mobile/shared" in diverged.stderr.lower()
+
+    clean = _source_guard(repo, main, main)
+    assert clean.returncode == 0, clean.stderr
+    (repo / "packages/shared/types.ts").write_text("export type Id = number;\n")
+    dirty = _source_guard(repo, main, main)
+    assert dirty.returncode != 0
+    assert "uncommitted" in dirty.stderr.lower()
+
+
+def test_ota_manifest_records_source_main_and_relevant_tree(tmp_path: Path) -> None:
+    result, _, _, manifest = run_ota(tmp_path, "success")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(manifest.read_text())
+    assert len(payload["source_commit_sha"]) == 40
+    assert len(payload["main_commit_sha"]) == 40
+    assert len(payload["mobile_tree_digest"]) == 64
+    assert payload["commit_sha"] in {
+        payload["source_commit_sha"],
+        payload["main_commit_sha"],
+    }
 
 
 def test_ota_rollback_defaults_to_dry_run(tmp_path: Path) -> None:
