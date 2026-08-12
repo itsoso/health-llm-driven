@@ -7,6 +7,7 @@ System-map facet-6 的 mobile 动线骨架:节点 = expo-router 路由(mobile/ap
 
 Usage:
   python mobile/scripts/dump_nav_graph.py            # 写 JSON
+  python mobile/scripts/dump_nav_graph.py --check    # 只读检查生成物是否漂移
   python mobile/scripts/dump_nav_graph.py --summary  # 额外打印孤儿/死胡同摘要
 """
 from __future__ import annotations
@@ -146,6 +147,25 @@ def build_graph() -> dict:
 
 def main(argv: list[str]) -> int:
     g = build_graph()
+    if "--check" in argv:
+        if not OUT.exists():
+            print(f"❌ missing generated navigation graph: {OUT}", file=sys.stderr)
+            return 1
+        try:
+            committed = json.loads(OUT.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"❌ cannot read generated navigation graph {OUT}: {exc}", file=sys.stderr)
+            return 1
+        if committed != g:
+            print(
+                "❌ mobile navigation graph drifted; "
+                "run python mobile/scripts/dump_nav_graph.py and commit the result",
+                file=sys.stderr,
+            )
+            return 1
+        print("✅ mobile navigation graph is up to date")
+        return 0
+
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(g, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"✅ wrote {OUT.relative_to(MOBILE.parent)}")
