@@ -4,7 +4,7 @@
 |---|---|
 | slug | `release-pipeline-acceleration` |
 | 创建日期 | 2026-08-11 |
-| 当前阶段 | S4 分解 |
+| 当前阶段 | S5 实现/验证 |
 | 状态 | building |
 | 负责 | Codex |
 | 反馈环 | 本地脚本测试 / CI / Simulator / shadow production proofs |
@@ -53,18 +53,19 @@
 
 ## S4 · 研发任务
 
-- [x] T1 变更分类与统一发布入口（`9ea95268a`）。
-- [x] T2 永久干净 release worktree 与共享状态（`9ea95268a`）。
-- [x] T3 并行验证与 tree-hash 凭证工具（`3daf17116`）。验证凭证已有独立
-  issue/verify 契约；当前 planner 仍无条件执行全量验证，不把“工具已存在”虚报为
-  自动 cache hit。
-- [x] T4 OTA 单次导出复用、结构化复证与回滚修正（`2c7733610`）。
-- [ ] T5 Python/frontend 服务端 step proof。
-- [ ] T6 System KB 增量更新与 proof。
-- [x] T7 GPS/Settings 模拟器自动冒烟代码与安全分类（`cdc136370`）；真实 Simulator
+- [x] T1 变更分类与统一发布入口。
+- [x] T2 永久干净 release worktree、跨 worktree 发布锁与 schema-v2 共享事务状态。
+- [x] T3 并行验证与 tree-hash 凭证工具；planner 在本地可命中完整 tree/profile/
+  lock/toolchain/log/TTL 证明，CI 始终对当前 commit 重跑。
+- [x] T4 OTA 单次导出复用、结构化复证、私有审计与回滚修正。
+- [x] T5 Python/frontend 服务端 step proof（生产默认 shadow）。
+- [x] T6 System KB 增量 import/reindex 与 shadow whole-import proof；外部 digest marker
+  不再绕过 DB mutation phase。
+- [x] T7 GPS/Settings 模拟器自动冒烟代码与安全分类；真实 Simulator
   XCTest 尚未执行，仍属于 G3 待完成证据。
 - [ ] T8 CI、文档、独立评审与发布验证。
-- 分支：`codex/release-pipeline-acceleration`，基线 `origin/main@ab0a07d93eba`。
+- 分支：`codex/release-pipeline-acceleration`；已在 2026-08-12 重放到最新
+  `origin/main`，提交前还会再次 fetch/rebase 并重跑受影响 Gate。
 
 ## G3 · 测试闸
 
@@ -76,6 +77,18 @@
   `scripts/test_release_step_proof.py`，也未执行真实 Simulator XCTest、`validate.py
   --full` 或生产 shadow proof。
 - 当前裁决：**PENDING**；不得用 focused green 代替最终 G3。
+
+补充恢复后证据（2026-08-12）：
+
+- System KB 增量/导入/锁/协议聚焦回归：**56 passed, 2 skipped**；skip 仅为当前
+  非 PostgreSQL 环境不具备的真实 advisory-lock 并发用例。
+- 并行协调器、验证凭证、iOS harness 与 CI 接线：**59 passed**；随后协调器自身
+  9 项独立复跑通过。
+- OTA 合同回归：**58 passed**；部署/proof/System KB 合同回归：**170 passed**；
+  release transaction 完整回归：**139 passed**。三组漂移均已按 TDD 修复并独立提交。
+- `bash -n`（deploy/release/OTA/协调器）、Python 编译、Ruby harness 生成器语法与
+  `git diff --check` 已通过；完整 CI release invariant、`validate.py --full` 和真实
+  Simulator XCTest 仍待执行，因此 G3 保持 PENDING。
 
 ## G4 · 安全闸
 

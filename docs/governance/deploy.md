@@ -54,7 +54,9 @@ planner 的安全边界：
 
 ```text
 <git-common-dir>/reva-release-state/
-  release-state.json
+  release-state.json            # schema v2 当前/最近一次事务快照
+  release-transactions.jsonl    # append-only 私有阶段审计
+  release-publish.lock          # 跨 worktree 的生产发布互斥锁
   logs/
   credentials/
 ```
@@ -62,6 +64,19 @@ planner 的安全边界：
 目录必须为 `0700`、文件必须为 `0600`，拒绝 symlink；这里不存 `.env`、密钥或健康
 数据。生产配置由 owner workspace 的 `DEPLOY_ENV_FILE` 显式传给 `deploy.sh`，不得
 复制进 Git worktree。
+
+每次 `publish` 创建一个 transaction ID；同一 `base_sha + target_sha` 的失败或中断
+重试会复用这个 ID、增加 attempt，并把遗留的 running stage 明确标成 interrupted。
+状态记录每阶段开始/结束时间与耗时、失败阶段、已完成/待完成 surface 和精确的安全
+重试 argv。重试 argv 只包含 base/target、repo/worktree 和 `.env` **路径**，不持久化
+message、环境变量值、令牌或健康数据。已成功的 server surface 在同一事务重试时不会
+重复执行；corrupt/旧 schema、权限不为 `0600`、symlink、额外硬链接或参数漂移都
+fail closed。
+
+`release-publish.lock` 使用 Git common dir，因此 owner/release/其他 worktree 会争用同
+一个非阻塞锁；已有发布运行时，第二个 `publish` 必须立即停止，而不是排队后拿陈旧
+计划继续写生产。事务 JSONL 只允许固定字段并逐行 fsync，供失败定位与后续耗时分析，
+不能替代 GitHub 当前 commit 的 blocking CI 证据。
 
 `scripts/run-all-tests.sh` 最多四路并行，每个 child 写独立私有日志，coordinator
 直接 `wait` 真实 PID/退出码；失败后才读取日志末段用于显示。它会输出每项耗时与

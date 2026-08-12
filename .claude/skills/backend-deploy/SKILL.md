@@ -35,8 +35,13 @@ git push origin main          # 先 push(deploy 在服务器 git pull)
   OTA-second 排序；frontend 新 SHA 使用 full deploy。
 - `validate`/`publish` 使用仓库旁永久 `<repo>.release`，必须 clean、detached/main、
   且精确等于本地和远端 `origin/main`。dirty/feature branch 不会被自动清理。
-- partial success 记录在 Git common dir 的 `reva-release-state/release-state.json`
-  （目录 `0700`、文件 `0600`）；重试同一 base/target 不重复成功 surface。
+- partial success 记录在 Git common dir 的 schema-v2
+  `reva-release-state/release-state.json`，阶段审计追加到私有
+  `release-transactions.jsonl`；目录 `0700`、文件 `0600`，拒绝 symlink/额外硬链接。
+  重试同一 base/target 复用 transaction ID，只执行待完成 surface，并报告失败阶段、
+  阶段耗时、日志路径和不含 message/secret 的安全重试 argv。
+- `release-publish.lock` 在所有 worktree 间互斥生产发布；另一个事务正在运行时立即
+  fail closed，不能排队后用陈旧计划继续。
 - production `.env` 仍只从 owner workspace 通过 `DEPLOY_ENV_FILE` 传入，绝不放进
   release worktree 或 shared state。
 `deploy.sh -b` 自动做:git pull → **应用 managed 迁移**(`backend/migrations/managed/*`)→ 重启 `health-backend` + Celery worker+beat → DB 备份 → 同步 `backend/skills/*/SKILL.md` 到 OpenClaw 网关 → 跑 `system_health_score.py`。

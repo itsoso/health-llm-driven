@@ -187,6 +187,16 @@ def test_frontend_lint_failure_is_blocking_and_uses_real_exit_code(tmp_path: Pat
     assert "exit 7" in result.stdout
 
 
+def test_successful_checks_emit_one_summary_line_each(tmp_path: Path) -> None:
+    _, env = _init_fixture_repo(tmp_path)
+
+    result = _run("--backend", env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.count("Backend pytest (") == 1
+    assert result.stdout.count("Git whitespace check (") == 1
+
+
 def test_mobile_profile_includes_lint_design_and_settings_route_checks(tmp_path: Path) -> None:
     _, env = _init_fixture_repo(tmp_path)
 
