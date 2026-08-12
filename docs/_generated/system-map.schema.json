@@ -1,0 +1,127 @@
+{
+  "$defs": {
+    "coverageRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "limitations": {"type": "string"},
+        "source": {"minLength": 1, "type": "string"},
+        "status": {
+          "enum": ["complete", "partial", "declaration"],
+          "type": "string"
+        }
+      },
+      "required": ["source", "status"],
+      "type": "object"
+    },
+    "entity": {
+      "additionalProperties": false,
+      "properties": {
+        "coverage": {
+          "enum": ["complete", "partial", "declaration"],
+          "type": "string"
+        },
+        "data_classes": {
+          "items": {"enum": ["L1", "L2", "L3", "L4"], "type": "string"},
+          "type": "array",
+          "uniqueItems": true
+        },
+        "description": {"type": "string"},
+        "domain": {"type": "string"},
+        "id": {
+          "pattern": "^[a-z][a-z0-9._:/-]*$",
+          "type": "string"
+        },
+        "kind": {
+          "enum": ["component", "surface", "api", "resource", "job"],
+          "type": "string"
+        },
+        "lifecycle": {"type": "string"},
+        "name": {"minLength": 1, "type": "string"},
+        "owner": {"type": "string"},
+        "source": {"$ref": "#/$defs/source"},
+        "tags": {"items": {"type": "string"}, "type": "array"},
+        "trust_boundary": {"type": "string"}
+      },
+      "required": ["id", "kind", "name", "coverage", "source"],
+      "type": "object"
+    },
+    "relation": {
+      "additionalProperties": false,
+      "properties": {
+        "coverage": {
+          "enum": ["complete", "partial", "declaration"],
+          "type": "string"
+        },
+        "flows": {"items": {"minLength": 1, "type": "string"}, "type": "array"},
+        "from": {"minLength": 1, "type": "string"},
+        "source": {"$ref": "#/$defs/source"},
+        "to": {"minLength": 1, "type": "string"},
+        "type": {
+          "enum": [
+            "partOf",
+            "providesApi",
+            "consumesApi",
+            "dependsOn",
+            "readsFrom",
+            "writesTo",
+            "publishesTo",
+            "consumesFrom",
+            "renders"
+          ],
+          "type": "string"
+        }
+      },
+      "required": ["from", "type", "to", "coverage", "source"],
+      "type": "object"
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {"minLength": 1, "type": "string"},
+        "symbol": {"minLength": 1, "type": "string"},
+        "type": {
+          "enum": ["code", "generated", "declaration"],
+          "type": "string"
+        }
+      },
+      "required": ["type", "path"],
+      "type": "object"
+    }
+  },
+  "$id": "https://health.executor.life/schemas/system-map-v2.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "_note": {"type": "string"},
+    "counts": {
+      "additionalProperties": {"minimum": 0, "type": "integer"},
+      "type": "object"
+    },
+    "coverage": {
+      "additionalProperties": {"$ref": "#/$defs/coverageRecord"},
+      "type": "object"
+    },
+    "entities": {"items": {"$ref": "#/$defs/entity"}, "type": "array"},
+    "relations": {"items": {"$ref": "#/$defs/relation"}, "type": "array"},
+    "safety_rules_by_category": {
+      "additionalProperties": {"minimum": 0, "type": "integer"},
+      "type": "object"
+    },
+    "schema_version": {"const": "2.0", "type": "string"},
+    "specialists_roster": {"items": {"type": "string"}, "type": "array"},
+    "twin_partitions_roster": {"items": {"type": "string"}, "type": "array"}
+  },
+  "required": [
+    "_note",
+    "schema_version",
+    "entities",
+    "relations",
+    "coverage",
+    "counts",
+    "safety_rules_by_category",
+    "specialists_roster",
+    "twin_partitions_roster"
+  ],
+  "title": "Reva System Map v2",
+  "type": "object"
+}

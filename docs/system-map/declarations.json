@@ -1,0 +1,229 @@
+{
+  "coverage": {
+    "api_boundaries": {
+      "limitations": "首期登记稳定 API 边界，不枚举所有动态端点。",
+      "source": "backend/app/api/main.py",
+      "status": "declaration"
+    },
+    "celery_jobs": {
+      "source": "backend/app/tasks/",
+      "status": "complete"
+    },
+    "mobile_navigation": {
+      "limitations": "只包含静态字面量跳转；变量跳转和通知深链不在内。",
+      "source": "docs/_generated/mobile-nav-graph.json",
+      "status": "partial"
+    },
+    "mobile_surfaces": {
+      "source": "mobile/app/",
+      "status": "complete"
+    },
+    "runtime_dependencies": {
+      "limitations": "外部服务与关键数据资源由显式声明覆盖，运行时条件依赖可能不在内。",
+      "source": "docs/system-map/declarations.json",
+      "status": "partial"
+    },
+    "web_surfaces": {
+      "source": "frontend/src/app/",
+      "status": "complete"
+    }
+  },
+  "entities": [
+    {
+      "coverage": "declaration",
+      "data_classes": ["L1", "L2", "L3", "L4"],
+      "domain": "health-os",
+      "id": "component.backend-api",
+      "kind": "component",
+      "lifecycle": "production",
+      "name": "FastAPI Backend",
+      "owner": "backend",
+      "source": {"path": "backend/app/api/main.py", "type": "declaration"},
+      "trust_boundary": "health-backend"
+    },
+    {
+      "coverage": "declaration",
+      "domain": "health-os",
+      "id": "component.celery-beat",
+      "kind": "component",
+      "lifecycle": "production",
+      "name": "Celery Beat",
+      "owner": "backend",
+      "source": {"path": "backend/app/celery_app.py", "type": "declaration"}
+    },
+    {
+      "coverage": "declaration",
+      "data_classes": ["L2", "L3", "L4"],
+      "domain": "health-os",
+      "id": "component.celery-worker",
+      "kind": "component",
+      "lifecycle": "production",
+      "name": "Celery Worker",
+      "owner": "backend",
+      "source": {"path": "backend/app/celery_app.py", "type": "declaration"},
+      "trust_boundary": "health-backend"
+    },
+    {
+      "coverage": "declaration",
+      "data_classes": ["L1", "L2", "L3"],
+      "domain": "health-os",
+      "id": "component.frontend",
+      "kind": "component",
+      "lifecycle": "production",
+      "name": "Web Frontend",
+      "owner": "web",
+      "source": {"path": "frontend/src/app/", "type": "declaration"}
+    },
+    {
+      "coverage": "declaration",
+      "data_classes": ["L1", "L2", "L3"],
+      "domain": "health-os",
+      "id": "component.mac",
+      "kind": "component",
+      "lifecycle": "production",
+      "name": "Mac App",
+      "owner": "mac",
+      "source": {"path": "apps/mac/", "type": "declaration"}
+    },
+    {
+      "coverage": "declaration",
+      "data_classes": ["L1", "L2", "L3"],
+      "domain": "health-os",
+      "id": "component.mcp-server",
+      "kind": "component",
+      "lifecycle": "production",
+      "name": "MCP Server",
+      "owner": "backend",
+      "source": {"path": "mcp-server/server.py", "type": "declaration"}
+    },
+    {
+      "coverage": "declaration",
+      "data_classes": ["L1", "L2", "L3", "L4"],
+      "domain": "health-os",
+      "id": "component.mobile",
+      "kind": "component",
+      "lifecycle": "production",
+      "name": "Mobile App",
+      "owner": "mobile",
+      "source": {"path": "mobile/app/", "type": "declaration"},
+      "trust_boundary": "user-device"
+    },
+    {
+      "coverage": "declaration",
+      "data_classes": ["L1", "L2", "L3"],
+      "domain": "health-os",
+      "id": "component.watch",
+      "kind": "component",
+      "lifecycle": "production",
+      "name": "Watch App",
+      "owner": "watch",
+      "source": {"path": "apps/watch/", "type": "declaration"},
+      "trust_boundary": "user-device"
+    },
+    {
+      "coverage": "declaration",
+      "id": "api.health-v1",
+      "kind": "api",
+      "name": "Health API v1",
+      "source": {"path": "backend/app/api/main.py", "type": "declaration"}
+    },
+    {
+      "coverage": "declaration",
+      "id": "api.mcp",
+      "kind": "api",
+      "name": "Reva MCP Tools",
+      "source": {"path": "mcp-server/server.py", "type": "declaration"}
+    },
+    {
+      "coverage": "declaration",
+      "id": "resource.apns",
+      "kind": "resource",
+      "name": "Apple Push Notification Service",
+      "source": {"path": "backend/app/services/notification/", "type": "declaration"}
+    },
+    {
+      "coverage": "declaration",
+      "id": "resource.celery-queue",
+      "kind": "resource",
+      "name": "Celery Queue",
+      "source": {"path": "backend/app/celery_app.py", "type": "declaration"}
+    },
+    {
+      "coverage": "declaration",
+      "data_classes": ["L2", "L3"],
+      "id": "resource.chromadb",
+      "kind": "resource",
+      "name": "ChromaDB",
+      "source": {"path": "backend/app/services/", "type": "declaration"}
+    },
+    {
+      "coverage": "declaration",
+      "id": "resource.expo-updates",
+      "kind": "resource",
+      "name": "Expo Updates",
+      "source": {"path": "mobile/app.json", "type": "declaration"}
+    },
+    {
+      "coverage": "declaration",
+      "data_classes": ["L3"],
+      "id": "resource.garmin",
+      "kind": "resource",
+      "name": "Garmin",
+      "source": {"path": "backend/app/api/data_collection.py", "type": "declaration"}
+    },
+    {
+      "coverage": "declaration",
+      "data_classes": ["L3"],
+      "id": "resource.healthkit",
+      "kind": "resource",
+      "name": "Apple HealthKit",
+      "source": {"path": "mobile/services/appleHealth.ts", "type": "declaration"}
+    },
+    {
+      "coverage": "declaration",
+      "data_classes": ["L2", "L3"],
+      "id": "resource.llm-provider",
+      "kind": "resource",
+      "name": "LLM Provider Pool",
+      "source": {"path": "backend/app/services/llm/", "type": "declaration"}
+    },
+    {
+      "coverage": "declaration",
+      "data_classes": ["L1", "L2", "L3", "L4"],
+      "id": "resource.postgresql",
+      "kind": "resource",
+      "name": "PostgreSQL",
+      "source": {"path": "backend/app/database.py", "type": "declaration"},
+      "trust_boundary": "health-backend"
+    },
+    {
+      "coverage": "declaration",
+      "data_classes": ["L2", "L3"],
+      "id": "resource.redis",
+      "kind": "resource",
+      "name": "Redis",
+      "source": {"path": "backend/app/utils/redis_cache.py", "type": "declaration"},
+      "trust_boundary": "health-backend"
+    }
+  ],
+  "relations": [
+    {"coverage": "declaration", "flows": ["agent-chat", "health-record", "safety", "agenda", "device-sync"], "from": "component.backend-api", "source": {"path": "backend/app/api/main.py", "type": "declaration"}, "to": "api.health-v1", "type": "providesApi"},
+    {"coverage": "declaration", "flows": ["safety", "health-record", "agenda"], "from": "component.backend-api", "source": {"path": "backend/app/database.py", "type": "declaration"}, "to": "resource.postgresql", "type": "writesTo"},
+    {"coverage": "declaration", "flows": ["agent-chat", "safety"], "from": "component.backend-api", "source": {"path": "backend/app/utils/redis_cache.py", "type": "declaration"}, "to": "resource.redis", "type": "dependsOn"},
+    {"coverage": "declaration", "flows": ["agent-chat"], "from": "component.backend-api", "source": {"path": "backend/app/services/llm/", "type": "declaration"}, "to": "resource.llm-provider", "type": "dependsOn"},
+    {"coverage": "declaration", "flows": ["agent-chat"], "from": "component.backend-api", "source": {"path": "backend/app/services/", "type": "declaration"}, "to": "resource.chromadb", "type": "readsFrom"},
+    {"coverage": "declaration", "flows": ["device-sync"], "from": "component.backend-api", "source": {"path": "backend/app/api/data_collection.py", "type": "declaration"}, "to": "resource.garmin", "type": "dependsOn"},
+    {"coverage": "declaration", "flows": ["safety", "agenda"], "from": "component.backend-api", "source": {"path": "backend/app/services/notification/", "type": "declaration"}, "to": "resource.apns", "type": "dependsOn"},
+    {"coverage": "declaration", "flows": ["background-jobs"], "from": "component.celery-beat", "source": {"path": "backend/app/celery_app.py", "type": "declaration"}, "to": "resource.celery-queue", "type": "publishesTo"},
+    {"coverage": "declaration", "flows": ["background-jobs"], "from": "component.celery-worker", "source": {"path": "backend/app/celery_app.py", "type": "declaration"}, "to": "resource.celery-queue", "type": "consumesFrom"},
+    {"coverage": "declaration", "flows": ["background-jobs"], "from": "component.celery-worker", "source": {"path": "backend/app/database.py", "type": "declaration"}, "to": "resource.postgresql", "type": "writesTo"},
+    {"coverage": "declaration", "flows": ["health-record", "agenda", "safety"], "from": "component.frontend", "source": {"path": "frontend/src/services/", "type": "declaration"}, "to": "api.health-v1", "type": "consumesApi"},
+    {"coverage": "declaration", "flows": ["agent-chat", "health-record", "agenda", "safety"], "from": "component.mac", "source": {"path": "apps/mac/", "type": "declaration"}, "to": "api.health-v1", "type": "consumesApi"},
+    {"coverage": "declaration", "flows": ["mcp"], "from": "component.mcp-server", "source": {"path": "mcp-server/server.py", "type": "declaration"}, "to": "api.health-v1", "type": "consumesApi"},
+    {"coverage": "declaration", "flows": ["mcp"], "from": "component.mcp-server", "source": {"path": "mcp-server/server.py", "type": "declaration"}, "to": "api.mcp", "type": "providesApi"},
+    {"coverage": "declaration", "flows": ["agent-chat", "health-record", "agenda", "safety", "device-sync"], "from": "component.mobile", "source": {"path": "mobile/services/", "type": "declaration"}, "to": "api.health-v1", "type": "consumesApi"},
+    {"coverage": "declaration", "flows": ["device-sync"], "from": "component.mobile", "source": {"path": "mobile/services/appleHealth.ts", "type": "declaration"}, "to": "resource.healthkit", "type": "dependsOn"},
+    {"coverage": "declaration", "flows": ["mobile-ota"], "from": "component.mobile", "source": {"path": "mobile/app.json", "type": "declaration"}, "to": "resource.expo-updates", "type": "dependsOn"},
+    {"coverage": "declaration", "flows": ["health-record", "agenda", "safety"], "from": "component.watch", "source": {"path": "apps/watch/", "type": "declaration"}, "to": "api.health-v1", "type": "consumesApi"}
+  ]
+}

@@ -6,7 +6,7 @@
 
 **Architecture:** Keep `docs/_generated/system-map.json` as the canonical generated artifact, extend it with versioned entities, relations, and coverage, and preserve the existing count/roster fields. Serve the validated artifact through a FastAPI endpoint protected by `get_admin_user`; render it in the existing Next.js admin application with a dependency-free SVG graph and the existing `AuthContext` gate.
 
-**Tech Stack:** Python 3.12, AST/Pydantic, FastAPI, pytest, Next.js 16, React 18, TanStack Query, Vitest, Testing Library, SVG, pre-commit, GitHub Actions.
+**Tech Stack:** Python 3.12, AST/JSON Schema, FastAPI, pytest, Next.js 16, React 18, TanStack Query, Vitest, Testing Library, SVG, pre-commit, GitHub Actions.
 
 ---
 
@@ -162,9 +162,11 @@ RELATION_TYPES = {
 COVERAGE_VALUES = {"complete", "partial", "declaration"}
 ```
 
-Use Pydantic models to validate entities and relations and to generate
-`docs/_generated/system-map.schema.json`. Add a graph-level validation pass for unique IDs,
-unique relations, resolved endpoints, deterministic sort order, and forbidden sensitive keys.
+Keep the generator and graph-level contract on the Python standard library so discovery remains
+independent of backend imports and machine-specific Pydantic versions. Check in
+`docs/_generated/system-map.schema.json`, add semantic validation for unique IDs, unique
+relations, resolved endpoints and deterministic sort order, and use the pinned `jsonschema`
+runtime in Task 4 for Draft 2020-12 validation.
 
 **Step 4: Add minimal declarations**
 
@@ -296,13 +298,10 @@ Expected: FAIL because the harness files and wiring do not exist.
 
 **Step 3: Add the minimal pinned harness environment**
 
-Pin the direct validation dependencies already compatible with the repository lock:
+Pin the single Draft 2020-12 validator used only by the System Map harness:
 
 ```text
-pydantic==2.9.2
-pydantic-core==2.23.4
-annotated-types==0.7.0
-typing-extensions==4.16.0
+jsonschema==4.23.0
 ```
 
 `scripts/system-map-check.sh` must:
