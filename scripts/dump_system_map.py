@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate docs/_generated/system-map.json — 代码派生的系统事实(计数 + roster)。
+"""Generate the canonical System Map and its compact agent bootstrap.
 
 System-map 防漂移核心(见 .claude/skills/system-map/SKILL.md + docs/system-map/INDEX.md):
 一个事实只允许两种状态 —— ① 从代码生成进无人手改的文件,或 ② 带 last-reviewed 日期的纯叙事(显式不含 live 数字)。
@@ -9,7 +9,7 @@ System-map 防漂移核心(见 .claude/skills/system-map/SKILL.md + docs/system-
 committed 与代码不符即 CI 红(跑本脚本重新生成即修)。
 
 Usage:
-  python scripts/dump_system_map.py          # 写 docs/_generated/system-map.json
+  python scripts/dump_system_map.py           # 写两个 docs/_generated 产物
   python scripts/dump_system_map.py --check   # 只比对,不写(committed == fresh?)
 """
 from __future__ import annotations
@@ -23,10 +23,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "scripts"
 OUT = ROOT / "docs" / "_generated" / "system-map.json"
+AGENT_CONTEXT_OUT = ROOT / "docs" / "_generated" / "system-map-agent-context.md"
 DECLARATIONS = ROOT / "docs" / "system-map" / "declarations.json"
 
 sys.path.insert(0, str(SCRIPTS))
 import check_doc_drift as cdd  # noqa: E402  复用扫描器,不复制计数逻辑
+from system_map_context import render_agent_context  # noqa: E402
 from system_map_contract import validate_system_map  # noqa: E402
 
 
@@ -221,21 +223,50 @@ def _serialize(m: dict) -> str:
     return json.dumps(m, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
 
+def _display_path(path: Path) -> str:
+    try:
+        return path.relative_to(ROOT).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def write_artifacts(graph: dict) -> None:
+    """Write both generated views from the same validated graph."""
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text(_serialize(graph), encoding="utf-8")
+    AGENT_CONTEXT_OUT.write_text(render_agent_context(graph), encoding="utf-8")
+
+
+def check_artifacts(graph: dict) -> tuple[bool, str]:
+    """Compare both committed generated views without modifying them."""
+    if not OUT.exists():
+        return False, f"{_display_path(OUT)} 缺失；重新生成"
+    if not AGENT_CONTEXT_OUT.exists():
+        return False, f"{_display_path(AGENT_CONTEXT_OUT)} 缺失；重新生成"
+    committed = json.loads(OUT.read_text(encoding="utf-8"))
+    if committed != graph:
+        return False, f"{_display_path(OUT)} 与代码不符；重新生成"
+    expected_context = render_agent_context(graph)
+    if AGENT_CONTEXT_OUT.read_text(encoding="utf-8") != expected_context:
+        return False, (
+            f"{_display_path(AGENT_CONTEXT_OUT)} 与 canonical graph 不符；重新生成"
+        )
+    return True, ""
+
+
 def main(argv: list[str]) -> int:
     fresh = build_map()
     if "--check" in argv:
-        if not OUT.exists():
-            print(f"❌ {OUT} 缺失,跑 scripts/dump_system_map.py", file=sys.stderr)
-            return 1
-        committed = json.loads(OUT.read_text(encoding="utf-8"))
-        if committed != fresh:
-            print(f"❌ {OUT} 与代码不符,跑 scripts/dump_system_map.py 重新生成", file=sys.stderr)
+        matches, message = check_artifacts(fresh)
+        if not matches:
+            print(f"❌ {message}：跑 python3.12 scripts/dump_system_map.py", file=sys.stderr)
             return 1
         print(f"✅ {OUT.relative_to(ROOT)} 与代码一致")
+        print(f"✅ {AGENT_CONTEXT_OUT.relative_to(ROOT)} 与 canonical graph 一致")
         return 0
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(_serialize(fresh), encoding="utf-8")
+    write_artifacts(fresh)
     print(f"✅ wrote {OUT.relative_to(ROOT)}")
+    print(f"✅ wrote {AGENT_CONTEXT_OUT.relative_to(ROOT)}")
     print(_serialize(fresh["counts"]))
     return 0
 

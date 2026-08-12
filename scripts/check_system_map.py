@@ -16,8 +16,10 @@ ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "scripts"
 SYSTEM_MAP = ROOT / "docs" / "_generated" / "system-map.json"
 SYSTEM_MAP_SCHEMA = ROOT / "docs" / "_generated" / "system-map.schema.json"
+AGENT_CONTEXT = ROOT / "docs" / "_generated" / "system-map-agent-context.md"
 
 sys.path.insert(0, str(SCRIPTS))
+from system_map_context import SystemMapContextError, render_agent_context  # noqa: E402
 from system_map_contract import SystemMapContractError, validate_system_map  # noqa: E402
 
 
@@ -35,12 +37,24 @@ def validate_artifact() -> None:
     Draft202012Validator.check_schema(schema)
     Draft202012Validator(schema).validate(artifact)
     validate_system_map(artifact)
+    committed_context = AGENT_CONTEXT.read_text(encoding="utf-8")
+    if committed_context != render_agent_context(artifact):
+        raise SystemMapContextError(
+            "system-map-agent-context.md differs from the canonical System Map"
+        )
 
 
 def main() -> int:
     try:
         validate_artifact()
-    except (OSError, json.JSONDecodeError, SchemaError, ValidationError, SystemMapContractError) as exc:
+    except (
+        OSError,
+        json.JSONDecodeError,
+        SchemaError,
+        ValidationError,
+        SystemMapContractError,
+        SystemMapContextError,
+    ) as exc:
         print(f"❌ System Map contract validation failed: {exc}", file=sys.stderr)
         return 1
 

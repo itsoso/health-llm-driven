@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import builtins
 import importlib
+import json
 import sys
 from pathlib import Path
 
@@ -13,6 +14,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import check_doc_drift as cdd  # noqa: E402
 import dump_system_map as dsm  # noqa: E402
+from system_map_context import render_agent_context  # noqa: E402
 
 
 def _reject_backend_runtime_imports(monkeypatch) -> None:
@@ -93,6 +95,41 @@ def test_build_map_emits_sorted_v2_graph() -> None:
         result["relations"], key=lambda item: (item["from"], item["type"], item["to"])
     )
     contract.validate_system_map(result)
+
+
+def test_write_artifacts_writes_json_and_agent_context(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    graph_out = tmp_path / "system-map.json"
+    context_out = tmp_path / "system-map-agent-context.md"
+    monkeypatch.setattr(dsm, "OUT", graph_out)
+    monkeypatch.setattr(dsm, "AGENT_CONTEXT_OUT", context_out)
+    graph = dsm.build_map()
+
+    dsm.write_artifacts(graph)
+
+    assert json.loads(graph_out.read_text(encoding="utf-8")) == graph
+    assert context_out.read_text(encoding="utf-8") == render_agent_context(graph)
+
+
+def test_check_artifacts_rejects_stale_agent_context(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    graph_out = tmp_path / "system-map.json"
+    context_out = tmp_path / "system-map-agent-context.md"
+    monkeypatch.setattr(dsm, "OUT", graph_out)
+    monkeypatch.setattr(dsm, "AGENT_CONTEXT_OUT", context_out)
+    graph = dsm.build_map()
+    graph_out.write_text(dsm._serialize(graph), encoding="utf-8")
+    context_out.write_text("stale\n", encoding="utf-8")
+
+    matches, message = dsm.check_artifacts(graph)
+
+    assert matches is False
+    assert "system-map-agent-context.md" in message
+    assert "重新生成" in message
 
 
 def test_contract_rejects_dangling_relation() -> None:
