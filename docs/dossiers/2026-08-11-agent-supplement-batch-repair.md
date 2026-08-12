@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-supplement-batch-repair` |
 | 创建日期 | 2026-08-11 |
-| 当前阶段 | S5 实现 |
-| 状态 | building |
+| 当前阶段 | G5（Backend PASS；Mobile OTA BLOCKED） |
+| 状态 | blocked |
 | 负责 | Codex |
 | 反馈环 | Backend deploy + Mobile OTA + true-path verification |
 
@@ -90,12 +90,13 @@
 - [x] T2 增加收紧的全量补剂续接与 owner-scoped 授权集合。
 - [x] T3 增加零工具调用时的一次性确定性补剂兜底。
 - [x] T4 集成测试、静态/治理检查、独立安全评审。
-- [ ] T5 关闭首次 main CI 暴露的集成闸、再次 push、backend deploy、Mobile OTA、生产路径验证。
+- [x] T5 关闭首次 main CI 暴露的集成闸、再次 push、backend deploy。
+- [ ] T6 EAS 资产处理恢复后重试 Mobile OTA，并由用户完成真机验证。
 
 ## S5 · 实现
 
 - 分支: `main`（按项目默认工作流）。
-- commits: `7fa4a3851`（设计）、`2331b5419`（计划）、`01cf9e856`（多目标解析）、`cf4cc6d9c`（上下文批量持久化）、`0e50779de`（安全加固）；并通过 `3f568666b` 合并最新 `origin/main`。发布闸修复 commit 待生成。
+- commits: `7fa4a3851`（设计）、`2331b5419`（计划）、`01cf9e856`（多目标解析）、`cf4cc6d9c`（上下文批量持久化）、`0e50779de`（安全加固）、`2e21330bf`（发布闸修复）、`88fe449d6`（锁定依赖生成客户端类型）；并通过 `3f568666b` 合并当时的 `origin/main`。
 - 实现结果:
   - 显式多补剂语句按名称拆成独立、可去重的 `health_record(supplement)` 调用；不把单个剂量错误复制给多个目标。
   - “全部已服用”只在紧邻助手明确询问“是否全部记为已服用”时启用，目标由服务端按 `user_id + is_active` 查询补剂定义。
@@ -119,8 +120,8 @@
   - 高风险 LLM live gate：invariants `12/12`、health agent core `50/50`、真实 orchestrator model `5/5`（avg score `0.92`）、trajectory contract `12/12`、trajectory goldens `9/9`，exit 0。
   - Ruff：`All checks passed!`。
   - 文档漂移：架构一致；dossier consistency：`105 份 dossier 全自洽`；`git diff --check`：通过。
-- main CI: 首次 run 已拦截；修复后重跑 pending。
-- **裁决**: 本地 PASS；等待 main push 后的真实 CI 状态。
+- main CI: run `31563459784`，44/44 jobs 完成，结论 `success`。
+- **裁决**: PASS。
 
 ## G4 · 安全闸
 
@@ -132,24 +133,31 @@
 ## S6 · 部署
 
 - 路由: 后端标准 deploy + Mobile production OTA（纯 TS/UI 点击目标修复）。
-- 部署 SHA / 回滚点: pending。
+- Backend: 从干净主干部署精确 SHA `88fe449d6d903135dac2135beb46f2736100afc9`；发布后远端主干增加的 `0d26c23cf` / `d2b187a99` 只有文档，不改变运行包。
+- Backend 回滚点: `ab0a07d93eba5eaf43bfa8f2097c498195c7a3ee`，部署前 schema probe 通过。
+- Mobile OTA: production/runtime `1.3.3`。Hermes 首次上传、一次自动重试、no-bytecode fallback 和一次独立强制 no-bytecode 重试均被 EAS 资产处理超时拒绝；没有生成 group/update ID，manifest 与生产锚点未改写。
+- Mobile 当前已知可用回滚锚点: group `08d4b60a-19c2-4420-8e18-d92011ad8797` / iOS update `019ff3c1-413c-7c6d-851c-975617ecdc09`（commit `a0e9b3199a3c100f682f537464685272e4853ef7`）。
 
 ## G5 · 部署健康闸
 
-- 健康分 / startup scan / route smoke: pending。
-- **裁决**: pending。
+- Backend: 42MB 数据库备份、Force-RLS 完整性、237 表恢复演练、站外 age 归档哈希/HMAC 真实性全部通过；managed migrations 无新增。
+- Backend: 精确 SHA 核验，三轮健康度 `60/60 PASS`，runtime-only KB guard/staged contract 通过，906 文档/向量重建，Skills `22 = 22`，backend socket/service 与 Celery worker/beat 均 active。
+- External smoke: `/api/v1/health` 返回 200 healthy；未鉴权 admin system-map 与 voice write 均返回 401。
+- Mobile: EAS asset processing 连续超时，未形成可发布 artifact；旧 update 保持可用。
+- **裁决**: BLOCK —— Backend 子闸 PASS，但完整 release 的 Mobile OTA 未完成；回到 S6 等待 EAS 恢复后重试，不带红进入 G6。
 
 ## S7 · 上线验证
 
 - 锚点路径: “记录下来，吃了一粒甘氨酸镁和一粒褪黑素”与紧邻上下文后的“全部已服用”。
-- 结果 / 测试数据清理: pending。
+- 工具侧结果: Backend 路由在线且写入口保持鉴权；没有使用真实用户健康数据做自动 smoke，也没有产生待清理记录。
+- 真机结果: pending；等待 Mobile OTA 后由用户在真实账号验证。
 
 ## G6 · 验证闸（人在环）
 
 - production true path / 真机确认: pending。
-- **裁决**: pending。
+- **裁决**: BLOCKED by G5 Mobile OTA；尚未进入。
 
 ## S8 · 沉淀
 
-- system map / contracts / release notes: pending；若无架构结构变化只更新 dossier。
-- 状态: defining。
+- system map / contracts / release notes: 系统现状与功能/架构图已在同一主干的 System Map 系列提交更新；本切片无新架构计数，只更新 dossier。
+- 状态: Backend shipped；Mobile OTA blocked，保留可重试断点与回滚锚点。
