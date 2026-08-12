@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import JsonValue
 
 from app.api.admin import get_admin_user
 from app.models.user import User
@@ -25,7 +26,7 @@ from system_map_contract import SystemMapContractError, validate_system_map  # n
 router = APIRouter()
 
 
-def load_validated_system_map() -> dict:
+def load_validated_system_map() -> dict[str, JsonValue]:
     """Load the canonical artifact and fail closed when it is unavailable."""
     try:
         payload = json.loads(SYSTEM_MAP_PATH.read_text(encoding="utf-8"))
@@ -44,5 +45,5 @@ def load_validated_system_map() -> dict:
 
 
 @router.get("", summary="获取管理员系统地图")
-async def get_system_map(admin: User = Depends(get_admin_user)) -> dict:
+async def get_system_map(admin: User = Depends(get_admin_user)) -> dict[str, JsonValue]:
     return load_validated_system_map()

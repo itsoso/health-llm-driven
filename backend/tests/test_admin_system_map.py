@@ -46,6 +46,15 @@ def test_system_map_returns_valid_graph_to_admin(client, db, auth_user_and_heade
     assert payload["relations"]
 
 
+def test_system_map_openapi_describes_a_non_empty_json_object(client) -> None:
+    response_schema = client.app.openapi()["paths"][ENDPOINT]["get"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]
+
+    assert response_schema["type"] == "object"
+    assert response_schema.get("additionalProperties")
+
+
 @pytest.mark.parametrize(
     "content",
     [
