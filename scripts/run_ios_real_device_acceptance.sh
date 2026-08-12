@@ -169,4 +169,15 @@ env -u APP_STORE_REVIEW_DEMO_ACCOUNT -u APP_STORE_REVIEW_DEMO_PASSWORD \
   -collect-test-diagnostics never \
   test
 
+SUMMARY_PATH="${HARNESS_DIR}/test-summary.json"
+TESTS_PATH="${HARNESS_DIR}/tests.json"
+xcrun xcresulttool get test-results summary \
+  --path "${RESULT_PATH}" --compact > "${SUMMARY_PATH}"
+xcrun xcresulttool get test-results tests \
+  --path "${RESULT_PATH}" --compact > "${TESTS_PATH}"
+python3 "${ROOT_DIR}/scripts/verify_ios_acceptance_result.py" \
+  --summary "${SUMMARY_PATH}" \
+  --tests "${TESTS_PATH}" \
+  --allow-skip "testTodayContextCanOpenAndDismiss()"
+
 echo "${DESTINATION_PLATFORM} acceptance result: ${RESULT_PATH}"

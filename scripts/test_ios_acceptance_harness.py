@@ -13,12 +13,20 @@ UI_TEST_SOURCE = (
     ROOT / "scripts/ios-real-device-acceptance/XiaobaAcceptanceUITests.swift"
 )
 README = ROOT / "scripts/ios-real-device-acceptance/README.md"
+RESULT_VERIFIER = ROOT / "scripts/verify_ios_acceptance_result.py"
 
 
-def _generate(tmp_path: Path, *, account: str = "", password: str = "") -> str:
+def _generate(
+    tmp_path: Path,
+    *,
+    account: str = "",
+    password: str = "",
+    expected_city: str = "",
+) -> str:
     env = os.environ.copy()
     env["APP_STORE_REVIEW_DEMO_ACCOUNT"] = account
     env["APP_STORE_REVIEW_DEMO_PASSWORD"] = password
+    env["REVA_ACCEPTANCE_EXPECTED_CITY"] = expected_city
     subprocess.run(
         ["ruby", str(GENERATOR), str(tmp_path)],
         cwd=ROOT,
@@ -62,6 +70,13 @@ def test_generator_refuses_review_credentials_in_xcode_scheme(tmp_path: Path) ->
     assert "private-password" not in result.stdout + result.stderr
 
 
+def test_generator_persists_expected_city_in_xcode_scheme(tmp_path: Path) -> None:
+    scheme = _generate(tmp_path, expected_city="杭州")
+
+    assert "REVA_ACCEPTANCE_EXPECTED_CITY" in scheme
+    assert "杭州" in scheme
+
+
 def test_runner_accepts_simulator_destination_platform() -> None:
     result = subprocess.run(
         ["bash", str(RUNNER), "--help"],
@@ -100,6 +115,115 @@ def test_runner_manages_simulator_location_and_cleans_it_in_a_trap() -> None:
     assert "cleanup()" in runner
     assert "trap cleanup EXIT INT TERM" in runner
     assert "REVA_ACCEPTANCE_EXPECTED_CITY" in runner
+    assert "verify_ios_acceptance_result.py" in runner
+
+
+def test_result_verifier_rejects_skipped_authenticated_acceptance(tmp_path: Path) -> None:
+    summary = tmp_path / "summary.json"
+    tests = tmp_path / "tests.json"
+    summary.write_text(
+        '{"result":"Passed","failedTests":0,"passedTests":1,"skippedTests":1,"totalTestCount":2}',
+        encoding="utf-8",
+    )
+    tests.write_text(
+        '{"testNodes":[{"children":['
+        '{"name":"testInstalledBuildLaunchesExpectedEntrySurface()","nodeType":"Test Case","result":"Passed"},'
+        '{"name":"testProductionSettingsEntriesOpenAndReturn()","nodeType":"Test Case","result":"Skipped"}'
+        ']}]}',
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(RESULT_VERIFIER),
+            "--summary",
+            str(summary),
+            "--tests",
+            str(tests),
+            "--allow-skip",
+            "testTodayContextCanOpenAndDismiss()",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "skipped" in result.stderr.lower()
+
+
+def test_result_verifier_accepts_complete_green_summary(tmp_path: Path) -> None:
+    summary = tmp_path / "summary.json"
+    tests = tmp_path / "tests.json"
+    summary.write_text(
+        '{"result":"Passed","failedTests":0,"passedTests":8,"skippedTests":0,"totalTestCount":8}',
+        encoding="utf-8",
+    )
+    tests.write_text(
+        '{"testNodes":[{"children":['
+        + ",".join(
+            f'{{"name":"test{index}()","nodeType":"Test Case","result":"Passed"}}'
+            for index in range(8)
+        )
+        + ']}]}',
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(RESULT_VERIFIER),
+            "--summary",
+            str(summary),
+            "--tests",
+            str(tests),
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "8 passed" in result.stdout
+
+
+def test_result_verifier_accepts_only_an_explicitly_allowlisted_skip(tmp_path: Path) -> None:
+    summary = tmp_path / "summary.json"
+    tests = tmp_path / "tests.json"
+    summary.write_text(
+        '{"result":"Passed","failedTests":0,"passedTests":1,"skippedTests":1,"totalTestCount":2}',
+        encoding="utf-8",
+    )
+    tests.write_text(
+        '{"testNodes":[{"children":['
+        '{"name":"testInstalledBuildLaunchesExpectedEntrySurface()","nodeType":"Test Case","result":"Passed"},'
+        '{"name":"testTodayContextCanOpenAndDismiss()","nodeType":"Test Case","result":"Skipped"}'
+        ']}]}',
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(RESULT_VERIFIER),
+            "--summary",
+            str(summary),
+            "--tests",
+            str(tests),
+            "--allow-skip",
+            "testTodayContextCanOpenAndDismiss()",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "1 allowed skip" in result.stdout
 
 
 def test_runner_rejects_location_options_for_physical_devices() -> None:

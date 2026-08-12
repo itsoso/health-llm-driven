@@ -20,6 +20,10 @@ mark the full physical-device gate as passed. Voice, camera, sharing, write
 idempotency and deletion completion still require their dedicated acceptance
 checks.
 
+The runner fails when an authenticated test is skipped. Only the optional
+today-context check may skip when the signed-in account has no qualified current
+context; a missing login or GPS expectation is never treated as a green result.
+
 Run:
 
 ```bash
