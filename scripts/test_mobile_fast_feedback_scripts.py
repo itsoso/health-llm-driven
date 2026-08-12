@@ -11,6 +11,62 @@ FAST_DEVICE = ROOT / "scripts" / "mobile-fast-device.sh"
 OTA_SOURCE_GUARD = ROOT / "scripts" / "ota_source_guard.py"
 
 
+def _write_private_json(path: Path, payload: dict[str, object]) -> None:
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    path.chmod(0o600)
+
+
+def _write_rollback_runner(path: Path, calls_path: Path) -> None:
+    path.write_text(
+        f"""#!/usr/bin/env python3
+import json
+import os
+import sys
+from pathlib import Path
+
+args = sys.argv[1:]
+log = Path({str(calls_path)!r})
+calls = json.loads(log.read_text()) if log.exists() else []
+calls.append(args)
+log.write_text(json.dumps(calls))
+source = [{json.dumps({
+            'id': '22222222-2222-4222-8222-222222222222',
+            'group': '11111111-1111-4111-8111-111111111111',
+            'branch': 'production',
+            'message': 'known good',
+            'runtimeVersion': '1.3.3',
+            'platform': 'ios',
+            'gitCommitHash': '0' * 40,
+        })}]
+active = [{json.dumps({
+            'id': '44444444-4444-4444-8444-444444444444',
+            'group': '33333333-3333-4333-8333-333333333333',
+            'branch': {'name': 'production'},
+            'runtimeVersion': '1.3.3',
+            'platform': 'ios',
+            'gitCommitHash': 'a' * 40,
+        })}]
+active[0]["message"] = "[tx:" + os.environ["OTA_ROLLBACK_TRANSACTION_ID"] + "] rollback"
+if args[0] == "update:republish":
+    print(json.dumps(active))
+elif args[0] == "update:view":
+    print(json.dumps(source if args[1] == source[0]["group"] else active))
+elif args[0] == "channel:view":
+    print(json.dumps({{"currentPage": {{
+        "name": "production",
+        "isPaused": False,
+        "updateBranches": [{{
+            "name": "production",
+            "updateGroups": [{{"id": active[0]["group"], "group": active[0]["group"]}}],
+        }}],
+    }}}}))
+else:
+    raise SystemExit("unexpected command: " + repr(args))
+"""
+    )
+    path.chmod(0o755)
+
+
 def test_mobile_dependency_overrides_preserve_brace_expansion_major_compatibility() -> None:
     package_json = json.loads((ROOT / "mobile" / "package.json").read_text())
     overrides = package_json["overrides"]
@@ -179,37 +235,95 @@ def make_ota_runner(tmp_path: Path, mode: str) -> tuple[Path, Path]:
     runner = tmp_path / "fake-eas-update"
     counter = tmp_path / "attempts"
     runner.write_text(
-        """#!/usr/bin/env bash
-set -euo pipefail
-count=0
-[[ -f \"${OTA_TEST_COUNTER}\" ]] && count=$(cat \"${OTA_TEST_COUNTER}\")
-count=$((count + 1))
-echo \"${count}\" > \"${OTA_TEST_COUNTER}\"
-printf '%s\\n' \"$*\" >> \"${OTA_TEST_EAS_ARGS}\"
-case \"${OTA_TEST_MODE}\" in
-  transient)
-    if [[ \"${count}\" == \"1\" ]]; then
-      echo \"Asset processing timed out\" >&2
-      exit 1
-    fi
-    ;;
-  asset-timeout)
-    if [[ \" $* \" != *\"reva-mobile-ota-js.\"* ]]; then
-      echo \"Asset processing timed out for assets\" >&2
-      exit 1
-    fi
-    ;;
-  auth)
-    echo \"Authentication failed: invalid token\" >&2
-    exit 1
-    ;;
-  missing-ids)
-    echo \"Update command completed without identifiers\"
-    exit 0
-    ;;
-esac
-echo \"Update group ID  11111111-1111-4111-8111-111111111111\"
-echo \"iOS update ID    22222222-2222-4222-8222-222222222222\"
+        """#!/usr/bin/env python3
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+args = sys.argv[1:]
+with Path(os.environ["OTA_TEST_EAS_ARGS"]).open("a", encoding="utf-8") as log:
+    log.write(json.dumps(args) + "\\n")
+
+group = "11111111-1111-4111-8111-111111111111"
+update = "22222222-2222-4222-8222-222222222222"
+head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+runtime = json.loads(Path("app.json").read_text(encoding="utf-8"))["expo"]["version"]
+mode = os.environ["OTA_TEST_MODE"]
+
+
+def value(flag):
+    return args[args.index(flag) + 1]
+
+
+def write_export(path):
+    root = Path(path)
+    (root / "bundles").mkdir(parents=True, exist_ok=True)
+    (root / "assets").mkdir(parents=True, exist_ok=True)
+    (root / "bundles/ios-entry.js").write_bytes(b"bundle")
+    (root / "assets/image.png").write_bytes(b"asset")
+    (root / "metadata.json").write_text(json.dumps({
+        "version": 0,
+        "bundler": "metro",
+        "fileMetadata": {"ios": {
+            "bundle": "bundles/ios-entry.js",
+            "assets": [{"path": "assets/image.png", "ext": "png"}],
+        }},
+    }), encoding="utf-8")
+
+
+def published(message):
+    return [{
+        "id": update,
+        "group": group,
+        "branch": "production",
+        "message": message,
+        "runtimeVersion": runtime,
+        "platform": "ios",
+        "gitCommitHash": head,
+    }]
+
+
+if args[0] == "update":
+    counter = Path(os.environ["OTA_TEST_COUNTER"])
+    count = int(counter.read_text()) if counter.exists() else 0
+    count += 1
+    counter.write_text(str(count))
+    message = value("--message")
+    skip_bundler = "--skip-bundler" in args
+
+    if mode == "auth":
+        print("Authentication failed: invalid token", file=sys.stderr)
+        raise SystemExit(1)
+    if mode == "asset-timeout" and not skip_bundler:
+        print("Asset processing timed out for assets", file=sys.stderr)
+        raise SystemExit(1)
+
+    if not skip_bundler:
+        write_export(value("--input-dir"))
+    if mode == "transient" and count == 1:
+        print("Asset processing timed out", file=sys.stderr)
+        raise SystemExit(1)
+    if mode == "missing-ids":
+        print("[]")
+    else:
+        print(json.dumps(published(message)))
+elif args[0] == "update:list":
+    print(json.dumps({"currentPage": []}))
+elif args[0] == "update:view":
+    print(json.dumps(published("[tx:fast-feedback-tx] test update")))
+elif args[0] == "channel:view":
+    print(json.dumps({"currentPage": {
+        "name": "production",
+        "isPaused": False,
+        "updateBranches": [{
+            "name": "production",
+            "updateGroups": [{"id": group, "group": group}],
+        }],
+    }}))
+else:
+    raise SystemExit("unexpected command: " + repr(args))
 """
     )
     runner.chmod(0o755)
@@ -225,14 +339,31 @@ def run_ota(
     runner, counter = make_ota_runner(tmp_path, mode)
     expo_runner = tmp_path / "fake-expo-export"
     expo_runner.write_text(
-        "#!/usr/bin/env bash\n"
-        "set -euo pipefail\n"
-        "count=0\n"
-        "[[ -f \"${OTA_TEST_EXPO_COUNTER}\" ]] && "
-        "count=$(cat \"${OTA_TEST_EXPO_COUNTER}\")\n"
-        "count=$((count + 1))\n"
-        "echo \"${count}\" > \"${OTA_TEST_EXPO_COUNTER}\"\n"
-        "printf '%s\\n' \"$*\" >> \"${OTA_TEST_EXPO_ARGS}\"\n"
+        """#!/usr/bin/env python3
+import json
+import os
+import sys
+from pathlib import Path
+
+args = sys.argv[1:]
+counter = Path(os.environ["OTA_TEST_EXPO_COUNTER"])
+count = int(counter.read_text()) if counter.exists() else 0
+counter.write_text(str(count + 1))
+Path(os.environ["OTA_TEST_EXPO_ARGS"]).write_text(" ".join(args))
+root = Path(args[args.index("--output-dir") + 1])
+(root / "bundles").mkdir(parents=True, exist_ok=True)
+(root / "assets").mkdir(parents=True, exist_ok=True)
+(root / "bundles/ios-entry.js").write_bytes(b"bundle")
+(root / "assets/image.png").write_bytes(b"asset")
+(root / "metadata.json").write_text(json.dumps({
+    "version": 0,
+    "bundler": "metro",
+    "fileMetadata": {"ios": {
+        "bundle": "bundles/ios-entry.js",
+        "assets": [{"path": "assets/image.png", "ext": "png"}],
+    }},
+}), encoding="utf-8")
+"""
     )
     expo_runner.chmod(0o755)
     anchor = tmp_path / "last-ota-commit"
@@ -251,6 +382,10 @@ def run_ota(
             "OTA_TEST_EXPO_COUNTER": str(tmp_path / "expo-attempts"),
             "OTA_TEST_EAS_ARGS": str(tmp_path / "eas-args"),
             "OTA_AUDIT_LOG": str(tmp_path / "ota-audit.jsonl"),
+            "OTA_TRANSACTION_ID": "fast-feedback-tx",
+            "OTA_LOOKUP_ATTEMPTS": "1",
+            "OTA_LOOKUP_DELAY_SECONDS": "0",
+            "OTA_RETRY_DELAY_SECONDS": "0",
             "REVA_RELEASE_LOCK_DIR": str(tmp_path / "release-lock"),
             "OTA_FORCE_NO_BYTECODE": "1" if force_no_bytecode else "0",
             "PATH": "/usr/bin:/bin",
@@ -272,12 +407,17 @@ def test_ota_retries_one_transient_failure_and_verifies_ids(tmp_path: Path) -> N
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert counter.read_text().strip() == "2"
-    assert (tmp_path / "expo-attempts").read_text().strip() == "1"
-    eas_attempts = (tmp_path / "eas-args").read_text().splitlines()
-    assert len(eas_attempts) == 2
-    assert eas_attempts[0] == eas_attempts[1]
-    assert "--input-dir" in eas_attempts[0]
-    assert "--skip-bundler" in eas_attempts[0]
+    assert not (tmp_path / "expo-attempts").exists()
+    eas_calls = [
+        json.loads(line) for line in (tmp_path / "eas-args").read_text().splitlines()
+    ]
+    updates = [call for call in eas_calls if call[0] == "update"]
+    assert len(updates) == 2
+    assert "--skip-bundler" not in updates[0]
+    assert "--skip-bundler" in updates[1]
+    assert updates[0][updates[0].index("--input-dir") + 1] == updates[1][
+        updates[1].index("--input-dir") + 1
+    ]
     assert "11111111-1111-4111-8111-111111111111" in result.stdout
     assert "22222222-2222-4222-8222-222222222222" in result.stdout
     assert anchor.exists()
@@ -287,15 +427,15 @@ def test_ota_retries_one_transient_failure_and_verifies_ids(tmp_path: Path) -> N
     assert payload["previous_known_good_update_id"] is None
 
 
-def test_ota_falls_back_to_no_bytecode_after_repeated_asset_timeout(
+def test_ota_refuses_a_second_bundle_after_timeout_without_an_artifact(
     tmp_path: Path,
 ) -> None:
     result, counter, anchor, manifest = run_ota(tmp_path, "asset-timeout")
 
     assert result.returncode != 0
-    assert counter.read_text().strip() == "2"
-    assert (tmp_path / "expo-attempts").read_text().strip() == "1"
-    assert "--no-bytecode" not in (tmp_path / "expo-args").read_text()
+    assert counter.read_text().strip() == "1"
+    assert not (tmp_path / "expo-attempts").exists()
+    assert "no verifiable export" in (result.stdout + result.stderr).lower()
     assert not anchor.exists()
     assert not manifest.exists()
 
@@ -340,6 +480,7 @@ def test_ota_does_not_retry_authentication_failures(tmp_path: Path) -> None:
         "source_commit_sha",
         "main_commit_sha",
         "mobile_tree_digest",
+        "transaction_id",
         "artifact_variant",
         "attempt",
         "result",
@@ -348,6 +489,8 @@ def test_ota_does_not_retry_authentication_failures(tmp_path: Path) -> None:
         "group_id",
         "update_id",
     }
+    assert audit_events[-1]["transaction_id"] == "fast-feedback-tx"
+    assert (tmp_path / "ota-audit.jsonl").stat().st_mode & 0o777 == 0o600
 
 
 def test_ota_rejects_success_without_published_update_ids(tmp_path: Path) -> None:
@@ -475,19 +618,22 @@ def test_ota_manifest_records_source_main_and_relevant_tree(tmp_path: Path) -> N
 
 def test_ota_rollback_defaults_to_dry_run(tmp_path: Path) -> None:
     manifest = tmp_path / "release-manifest.json"
-    manifest.write_text(json.dumps({
+    _write_private_json(manifest, {
         "status": "published",
         "active_group_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         "active_update_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         "previous_known_good_group_id": "11111111-1111-4111-8111-111111111111",
         "previous_known_good_update_id": "22222222-2222-4222-8222-222222222222",
-    }))
+    })
     runner = tmp_path / "rollback-runner"
     called = tmp_path / "called"
-    runner.write_text(f"#!/usr/bin/env bash\nprintf '%s' \"$*\" > '{called}'\n")
-    runner.chmod(0o755)
+    _write_rollback_runner(runner, called)
     env = os.environ.copy()
-    env.update({"OTA_MANIFEST_FILE": str(manifest), "OTA_EAS_RUNNER": str(runner)})
+    env.update({
+        "OTA_MANIFEST_FILE": str(manifest),
+        "OTA_EAS_RUNNER": str(runner),
+        "REVA_RELEASE_LOCK_DIR": str(tmp_path / "release-lock"),
+    })
 
     result = subprocess.run(
         [str(ROOT / "scripts" / "mobile-ota-rollback.sh"), "production"],
@@ -501,11 +647,11 @@ def test_ota_rollback_defaults_to_dry_run(tmp_path: Path) -> None:
 
 def test_ota_rollback_explains_when_manifest_has_no_known_good_target(tmp_path: Path) -> None:
     manifest = tmp_path / "release-manifest.json"
-    manifest.write_text(json.dumps({
+    _write_private_json(manifest, {
         "status": "published",
         "active_group_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         "active_update_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-    }))
+    })
 
     env = os.environ.copy()
     env["OTA_MANIFEST_FILE"] = str(manifest)
@@ -520,19 +666,22 @@ def test_ota_rollback_explains_when_manifest_has_no_known_good_target(tmp_path: 
 
 def test_ota_rollback_confirm_republishes_and_records_state(tmp_path: Path) -> None:
     manifest = tmp_path / "release-manifest.json"
-    manifest.write_text(json.dumps({
+    _write_private_json(manifest, {
         "status": "published",
         "active_group_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         "active_update_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         "previous_known_good_group_id": "11111111-1111-4111-8111-111111111111",
         "previous_known_good_update_id": "22222222-2222-4222-8222-222222222222",
-    }))
+    })
     runner = tmp_path / "rollback-runner"
     called = tmp_path / "called"
-    runner.write_text(f"#!/usr/bin/env bash\nprintf '%s' \"$*\" > '{called}'\n")
-    runner.chmod(0o755)
+    _write_rollback_runner(runner, called)
     env = os.environ.copy()
-    env.update({"OTA_MANIFEST_FILE": str(manifest), "OTA_EAS_RUNNER": str(runner)})
+    env.update({
+        "OTA_MANIFEST_FILE": str(manifest),
+        "OTA_EAS_RUNNER": str(runner),
+        "REVA_RELEASE_LOCK_DIR": str(tmp_path / "release-lock"),
+    })
 
     result = subprocess.run(
         [str(ROOT / "scripts" / "mobile-ota-rollback.sh"), "production", "--confirm"],
@@ -540,10 +689,13 @@ def test_ota_rollback_confirm_republishes_and_records_state(tmp_path: Path) -> N
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    command = called.read_text()
-    assert "update:republish" in command
-    assert "--group 11111111-1111-4111-8111-111111111111" in command
-    assert "--destination-channel production" in command
+    calls = json.loads(called.read_text())
+    republish = next(call for call in calls if call[0] == "update:republish")
+    assert republish[republish.index("--group") + 1] == (
+        "11111111-1111-4111-8111-111111111111"
+    )
+    assert republish[republish.index("--destination-channel") + 1] == "production"
     payload = json.loads(manifest.read_text())
     assert payload["status"] == "rolled_back"
-    assert payload["active_update_id"] == "22222222-2222-4222-8222-222222222222"
+    assert payload["active_update_id"] == "44444444-4444-4444-8444-444444444444"
+    assert manifest.stat().st_mode & 0o777 == 0o600
