@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import builtins
 import importlib
+import json
 import sys
 from pathlib import Path
 
@@ -168,3 +169,133 @@ def test_agent_context_renderer_does_not_import_backend_runtime(
     context = importlib.import_module("system_map_context")
 
     assert "component.mobile" in context.render_agent_context(minimal_graph)
+
+
+def test_entity_query_includes_one_hop_neighbors(minimal_graph: dict) -> None:
+    context = importlib.import_module("system_map_context")
+
+    result = context.query_graph(minimal_graph, entity="component.mobile")
+
+    assert {item["id"] for item in result.entities} == {
+        "api.health-v1",
+        "component.mobile",
+        "surface.mobile.home",
+    }
+    assert result.relations
+    assert result.sources
+
+
+def test_flow_query_selects_only_that_flow(minimal_graph: dict) -> None:
+    context = importlib.import_module("system_map_context")
+
+    result = context.query_graph(minimal_graph, flow="agent-chat")
+
+    assert result.relations
+    assert all(
+        "agent-chat" in relation.get("flows", [])
+        for relation in result.relations
+    )
+
+
+def test_path_query_matches_entity_and_relation_source_prefix(
+    minimal_graph: dict,
+) -> None:
+    context = importlib.import_module("system_map_context")
+
+    result = context.query_graph(minimal_graph, path="mobile/")
+
+    assert {entity["id"] for entity in result.entities} >= {
+        "component.mobile",
+        "surface.mobile.home",
+    }
+
+
+def test_keyword_query_is_case_insensitive(minimal_graph: dict) -> None:
+    context = importlib.import_module("system_map_context")
+
+    result = context.query_graph(minimal_graph, keyword="POSTGRES")
+
+    assert any(entity["id"] == "resource.postgresql" for entity in result.entities)
+
+
+def test_declared_evidence_warns_and_points_to_sources(minimal_graph: dict) -> None:
+    context = importlib.import_module("system_map_context")
+
+    result = context.query_graph(minimal_graph, entity="component.mobile")
+    text = context.render_query_result(result)
+
+    assert "VERIFY SOURCE" in text
+    assert "mobile/app/" in text
+    assert all(source for source in result.sources)
+
+
+def test_query_fails_instead_of_returning_empty(minimal_graph: dict) -> None:
+    context = importlib.import_module("system_map_context")
+
+    with pytest.raises(context.SystemMapContextError, match="not indexed"):
+        context.query_graph(minimal_graph, keyword="does-not-exist")
+
+
+def test_query_requires_exactly_one_selector(minimal_graph: dict) -> None:
+    context = importlib.import_module("system_map_context")
+
+    with pytest.raises(context.SystemMapContextError, match="exactly one"):
+        context.query_graph(minimal_graph)
+    with pytest.raises(context.SystemMapContextError, match="exactly one"):
+        context.query_graph(
+            minimal_graph,
+            entity="component.mobile",
+            keyword="mobile",
+        )
+
+
+def test_query_rejects_depth_above_two(minimal_graph: dict) -> None:
+    context = importlib.import_module("system_map_context")
+
+    with pytest.raises(context.SystemMapContextError, match="depth"):
+        context.query_graph(minimal_graph, entity="component.mobile", depth=3)
+
+
+def test_query_fails_instead_of_truncating(minimal_graph: dict) -> None:
+    context = importlib.import_module("system_map_context")
+
+    with pytest.raises(context.SystemMapContextError, match="narrow"):
+        context.query_graph(minimal_graph, keyword="component", max_entities=1)
+
+
+def test_query_cli_prints_context_from_checked_in_shape(
+    minimal_graph: dict,
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    context = importlib.import_module("system_map_context")
+    artifact = tmp_path / "system-map.json"
+    artifact.write_text(json.dumps(minimal_graph), encoding="utf-8")
+    monkeypatch.setattr(context, "SYSTEM_MAP_PATH", artifact)
+
+    exit_code = context.main(["--entity", "component.mobile"])
+
+    output = capsys.readouterr()
+    assert exit_code == 0
+    assert "component.mobile" in output.out
+    assert output.err == ""
+
+
+def test_query_cli_returns_explicit_error_for_unknown_match(
+    minimal_graph: dict,
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    context = importlib.import_module("system_map_context")
+    artifact = tmp_path / "system-map.json"
+    artifact.write_text(json.dumps(minimal_graph), encoding="utf-8")
+    monkeypatch.setattr(context, "SYSTEM_MAP_PATH", artifact)
+
+    exit_code = context.main(["--keyword", "does-not-exist"])
+
+    output = capsys.readouterr()
+    assert exit_code == 2
+    assert "not indexed" in output.err
+    assert output.out == ""
