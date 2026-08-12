@@ -57,11 +57,15 @@ RUNTIME_STATE_RESUME_PHASE="NONE"
 RUNTIME_STATE_RESUME_TARGET="none"
 RUNTIME_STATE_ALREADY_FINALIZED=0
 REMOTE_RELEASE_LOCK_DIR="${REMOTE_RELEASE_LOCK_DIR:-/var/lock/health-app-release}"
+REMOTE_RELEASE_STATE_DIR="${REMOTE_RELEASE_STATE_DIR:-/var/lib/reva-release-state}"
 REMOTE_RELEASE_LOCK_TOKEN=""
 _REMOTE_RELEASE_LOCK_ACQUIRED=0
 _REMOTE_RELEASE_LOCK_DELEGATED=0
 _REMOTE_RELEASE_LOCK_ABANDONED=0
 _REMOTE_RELEASE_LOCK_ADOPTED=0
+REQUIREMENTS_LOCK_SHA=""
+SYSTEM_KB_INPUT_SHA=""
+SYSTEM_KB_ACTIVATION_REQUIRED=1
 
 set_remote_backup_preflight_dir() {
     local stage_dir="$1"
@@ -1899,6 +1903,7 @@ push_code() {
         print_error "origin/main 与本地 HEAD 不一致，拒绝部署"
         exit 1
     fi
+    compute_release_input_digests
     print_success "代码已推送并核验 origin/main: ${DEPLOY_EXPECTED_SHA:0:12}"
 
     # 同步到 kuaishou GitLab（静默，失败不影响部署）
@@ -2703,12 +2708,124 @@ deactivate_health_evidence_runtime_before_mutation() {
     return 1
 }
 
+remote_dependency_sync_command() {
+    if [[ ! "$REMOTE_RELEASE_STATE_DIR" =~ ^/[A-Za-z0-9._/-]+$ ||
+          "$REMOTE_RELEASE_STATE_DIR" = "/" ||
+          ! "$REQUIREMENTS_LOCK_SHA" =~ ^[0-9a-f]{64}$ ]]; then
+        print_error "发布依赖状态目录或 requirements digest 非法"
+        return 70
+    fi
+    cat <<REMOTE_DEPENDENCY_SYNC
+sync_backend_dependencies() {
+    release_state_dir='$REMOTE_RELEASE_STATE_DIR'
+    requirements_marker="\${release_state_dir}/requirements-lock.sha256"
+    requirements_expected='$REQUIREMENTS_LOCK_SHA'
+    umask 077
+    mkdir -p "\${release_state_dir}"
+    chmod 700 "\${release_state_dir}"
+    if [ -r "\${requirements_marker}" ] &&
+       [ "\$(cat "\${requirements_marker}")" = "\${requirements_expected}" ] &&
+       python -m pip check; then
+        echo 'dependency lock unchanged; verified install reused'
+        return 0
+    fi
+    echo '安装锁定依赖...'
+    pip install --require-hashes -r requirements.lock -q
+    python -m pip check
+    requirements_marker_tmp="\${requirements_marker}.tmp.\$\$"
+    printf '%s\n' "\${requirements_expected}" > "\${requirements_marker_tmp}"
+    chmod 600 "\${requirements_marker_tmp}"
+    mv "\${requirements_marker_tmp}" "\${requirements_marker}"
+}
+sync_backend_dependencies
+REMOTE_DEPENDENCY_SYNC
+}
+
+compute_release_input_digests() {
+    if [[ ! "$DEPLOY_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+        print_error "无法为非精确 candidate 计算发布输入摘要"
+        return 70
+    fi
+    REQUIREMENTS_LOCK_SHA="$(python3 "$SCRIPT_DIR/scripts/release_input_digest.py" \
+        --repo "$SCRIPT_DIR" --commit "$DEPLOY_EXPECTED_SHA" --kind requirements)" || return 1
+    SYSTEM_KB_INPUT_SHA="$(python3 "$SCRIPT_DIR/scripts/release_input_digest.py" \
+        --repo "$SCRIPT_DIR" --commit "$DEPLOY_EXPECTED_SHA" --kind system-kb)" || return 1
+    if [[ ! "$REQUIREMENTS_LOCK_SHA" =~ ^[0-9a-f]{64}$ ||
+          ! "$SYSTEM_KB_INPUT_SHA" =~ ^[0-9a-f]{64}$ ]]; then
+        print_error "发布输入摘要格式非法"
+        return 70
+    fi
+}
+
+determine_system_kb_activation_need() {
+    local result
+    if [[ ! "$REMOTE_RELEASE_STATE_DIR" =~ ^/[A-Za-z0-9._/-]+$ ||
+          "$REMOTE_RELEASE_STATE_DIR" = "/" ||
+          ! "$SYSTEM_KB_INPUT_SHA" =~ ^[0-9a-f]{64}$ ]]; then
+        print_error "System KB 状态目录或 digest 非法"
+        return 70
+    fi
+    result="$(ssh "$SERVER" bash -s -- \
+        "$REMOTE_RELEASE_STATE_DIR" "$SYSTEM_KB_INPUT_SHA" <<'REMOTE_KB_DIGEST_CHECK'
+set -euo pipefail
+state_dir="$1"
+expected="$2"
+marker="${state_dir}/system-kb-input.sha256"
+if [ -r "$marker" ] && [ "$(cat "$marker")" = "$expected" ]; then
+    printf '%s\n' MATCH
+else
+    printf '%s\n' MISMATCH
+fi
+REMOTE_KB_DIGEST_CHECK
+    )" || {
+        print_error "无法读取 System KB 发布输入状态"
+        return 1
+    }
+    case "$result" in
+        MATCH)
+            SYSTEM_KB_ACTIVATION_REQUIRED=0
+            print_success "System KB 输入摘要未变化，将跳过写入并保留只读验证"
+            ;;
+        MISMATCH)
+            SYSTEM_KB_ACTIVATION_REQUIRED=1
+            print_step "System KB 输入摘要已变化或 marker 缺失，将执行完整写入"
+            ;;
+        *)
+            print_error "System KB 输入状态返回非法: $result"
+            return 1
+            ;;
+    esac
+}
+
+record_system_kb_input_digest() {
+    if [[ ! "$SYSTEM_KB_INPUT_SHA" =~ ^[0-9a-f]{64}$ ]]; then
+        print_error "拒绝记录非法 System KB digest"
+        return 70
+    fi
+    ssh "$SERVER" bash -s -- \
+        "$REMOTE_RELEASE_STATE_DIR" "$SYSTEM_KB_INPUT_SHA" <<'REMOTE_KB_DIGEST_WRITE'
+set -euo pipefail
+state_dir="$1"
+expected="$2"
+marker="${state_dir}/system-kb-input.sha256"
+marker_tmp="${marker}.tmp.$$"
+umask 077
+mkdir -p "$state_dir"
+chmod 700 "$state_dir"
+printf '%s\n' "$expected" > "$marker_tmp"
+chmod 600 "$marker_tmp"
+mv "$marker_tmp" "$marker"
+REMOTE_KB_DIGEST_WRITE
+}
+
 # 部署后端
 deploy_backend() {
     local runtime_state_preflight_complete=0
+    local remote_dependency_sync
 
     print_step "部署后端..."
     assert_remote_release_lock_if_acquired
+    remote_dependency_sync="$(remote_dependency_sync_command)" || return 1
 
     # runtime-only 医疗知识必须先让 hold-aware 代码成为健康回滚地板，
     # 且首阶段禁止生成新 evidence answer。
@@ -2716,6 +2833,7 @@ deploy_backend() {
 
     # 1. 备份数据库 + 记录发布前回滚点
     backup_database
+    determine_system_kb_activation_need
     inspect_runtime_state_transaction_before_deploy
     if [[ "$RUNTIME_STATE_ALREADY_FINALIZED" = "1" ]]; then
         if ! prove_health_evidence_runtime_process_flag false ||
@@ -2727,6 +2845,7 @@ deploy_backend() {
             return 1
         fi
         wait_for_agent_skills_manifest
+        record_system_kb_input_digest
         print_success "持久事务已终结且 backend/System KB post-gates 复证通过"
         return 0
     fi
@@ -2816,8 +2935,7 @@ deploy_backend() {
         source venv/bin/activate && \
         echo '加载环境变量...' && \
         set -a && source .env && set +a && \
-        echo '安装依赖...' && \
-        pip install --require-hashes -r requirements.lock -q && \
+        $remote_dependency_sync && \
         echo '执行受控数据库迁移...' && \
         test -r /etc/health-app/migration.env && \
         set -a && source /etc/health-app/migration.env && set +a && \
@@ -2913,12 +3031,16 @@ deploy_backend() {
         cd $REMOTE_PATH/backend && \
         source venv/bin/activate && \
         set -a && source .env && set +a && \
-        echo '补齐审核食物营养基准...' && \
-        python scripts/seed_food_nutrition.py && \
-        echo '写入系统知识库 Phase 0 种子...' && \
-        python scripts/seed_system_kb_phase0.py && \
-        echo '导入系统知识库 V2 扩展 artifacts...' && \
-        python scripts/import_system_kb_v2_artifacts.py
+        if [ '$SYSTEM_KB_ACTIVATION_REQUIRED' = '1' ]; then \
+            echo '补齐审核食物营养基准...' && \
+            python scripts/seed_food_nutrition.py && \
+            echo '写入系统知识库 Phase 0 种子...' && \
+            python scripts/seed_system_kb_phase0.py && \
+            echo '导入系统知识库 V2 扩展 artifacts...' && \
+            python scripts/import_system_kb_v2_artifacts.py; \
+        else \
+            echo 'System KB inputs unchanged; mutation skipped'; \
+        fi
     "
     KB_EXIT=$?
     set -e
@@ -2977,6 +3099,14 @@ deploy_backend() {
         else
             print_error "最终 terminal gate 失败且恢复失败；服务已隔离或需人工隔离"
         fi
+        exit 1
+    fi
+
+    # 只有完整终态健康、revision 与 staged serving contract 都通过后，才
+    # 记录本次输入摘要；任何中途失败都保持 marker 陈旧，下一次自动重跑写入。
+    if ! record_system_kb_input_digest; then
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        print_error "System KB 输入摘要记录失败；发布锁与现场保留"
         exit 1
     fi
 

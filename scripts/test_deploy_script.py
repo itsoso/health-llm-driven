@@ -25,6 +25,47 @@ def test_backend_deploy_checks_health_before_skills_manifest():
     assert health_check < manifest_check
 
 
+def test_backend_dependency_cache_is_lock_addressed_and_fail_closed():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    start = script.index("remote_dependency_sync_command() {")
+    end = script.index("compute_release_input_digests() {", start)
+    body = script[start:end]
+
+    assert "requirements-lock.sha256" in body
+    assert "REQUIREMENTS_LOCK_SHA" in body
+    assert "pip install --require-hashes -r requirements.lock" in body
+    assert "python -m pip check" in body
+    assert "dependency lock unchanged; verified install reused" in body
+    install = body.index("pip install --require-hashes")
+    verified = body.index("python -m pip check", install)
+    marker_replace = body.index('mv "\\${requirements_marker_tmp}"')
+    assert install < verified < marker_replace
+    assert "|| true" not in body
+
+
+def test_system_kb_cache_only_skips_mutation_and_keeps_post_gates():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    deploy_start = script.index("deploy_backend() {")
+    deploy_end = script.index("render_backend_env_file() {", deploy_start)
+    deploy_body = script[deploy_start:deploy_end]
+
+    backup = deploy_body.index("backup_database")
+    decide = deploy_body.index("determine_system_kb_activation_need")
+    mutation = deploy_body.index("python scripts/seed_food_nutrition.py")
+    final_contract = deploy_body.rindex('verify_runtime_only_kb_contract "staged"')
+    record = deploy_body.index("record_system_kb_input_digest", final_contract)
+    finalize = deploy_body.index(
+        "finalize_runtime_state_transaction_after_all_gates", record
+    )
+
+    assert backup < decide < mutation < final_contract < record < finalize
+    assert "SYSTEM_KB_ACTIVATION_REQUIRED" in deploy_body
+    assert "System KB inputs unchanged; mutation skipped" in deploy_body
+    assert "system-kb-input.sha256" in script
+    assert "verify_deployment" in deploy_body
+    assert "verify_deployed_revision" in deploy_body
+
+
 def test_skills_manifest_check_uses_condition_wait_not_fixed_three_retries():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
 
@@ -749,11 +790,11 @@ def test_guard_probes_full_schema_before_starting_any_backend_writer():
         "systemctl stop celery-worker celery-beat"
     )
     checkout = guard_body.index("$remote_git_sync")
-    pip_install = guard_body.index("pip install --require-hashes")
+    dependency_sync = guard_body.index("$remote_dependency_sync")
     migration = guard_body.index("python scripts/apply_managed_migrations.py")
     lease_before_migration = guard_body.index(
         "test -r '$REMOTE_RELEASE_LOCK_DIR/token'",
-        pip_install,
+        dependency_sync,
     )
     stage_recheck = guard_body.index(
         "sha256sum --strict -c staged.sha256",
@@ -779,7 +820,7 @@ def test_guard_probes_full_schema_before_starting_any_backend_writer():
         < stop_backend
         < stop_celery
         < checkout
-        < pip_install
+        < dependency_sync
         < lease_before_migration
         < migration
         < stage_recheck
@@ -865,6 +906,8 @@ fi
     harness = f"""
 source {DEPLOY_SCRIPT!s}
 DEPLOY_EXPECTED_SHA={'2' * 40}
+REQUIREMENTS_LOCK_SHA={'3' * 64}
+SYSTEM_KB_INPUT_SHA={'4' * 64}
 _REMOTE_RELEASE_LOCK_ACQUIRED=1
 REMOTE_RELEASE_LOCK_DIR={lease_dir!s}
 REMOTE_RELEASE_LOCK_TOKEN=lease-token
@@ -874,6 +917,7 @@ validate_runtime_only_kb_staging() {{ :; }}
 assert_remote_release_lock_if_acquired() {{ :; }}
 assert_remote_release_lock() {{ :; }}
 backup_database() {{ :; }}
+determine_system_kb_activation_need() {{ SYSTEM_KB_ACTIVATION_REQUIRED=0; }}
 save_rollback_point() {{ ROLLBACK_CANDIDATE_COMMIT={'1' * 40}; }}
 verify_rollback_point_schema_compatibility() {{
     ROLLBACK_COMMIT="$ROLLBACK_CANDIDATE_COMMIT"
@@ -916,7 +960,14 @@ test ! -e "$REMOTE_RELEASE_LOCK_DIR/token"
     assert not migration_marker.exists()
     events = event_log.read_text(encoding="utf-8").splitlines()
     assert any(event.startswith("pip:") for event in events)
-    assert not any(event.startswith("python:") for event in events)
+    assert not any(
+        event.startswith("python:")
+        and (
+            "scripts/apply_managed_migrations.py" in event
+            or "verify_runtime_schema_compatibility.py" in event
+        )
+        for event in events
+    )
     assert not any("restart" in event for event in events)
     assert {
         event.removeprefix("systemctl:")
