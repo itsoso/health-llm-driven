@@ -1,7 +1,8 @@
 /* eslint-disable import/first, @typescript-eslint/no-require-imports */
 import React from 'react';
-import { Alert } from 'react-native';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { Alert, StyleSheet } from 'react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { revaColors } from '../../constants/revaTheme';
 
 const mockBack = jest.fn();
 const mockPush = jest.fn();
@@ -10,29 +11,36 @@ const mockRequestAccountDeletion = jest.fn();
 const mockGetAccountDeletionRequest = jest.fn();
 const mockCheckNow = jest.fn();
 const mockApiPost = jest.fn();
+const mockInvalidateQueries = jest.fn();
+const mockQueryClient = { invalidateQueries: mockInvalidateQueries };
+const mockReadGPSRefreshStatus = jest.fn();
+let mockGPSRefreshStatusListener: ((status: { state: string }) => void) | null = null;
 let mockGarminStatus: any = { health: 'healthy', minutes_since_last_sync: 3 };
+let mockProfile: any = {
+  use_manual_location: false,
+  detected_location: { city: '杭州', region: '浙江' },
+};
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ back: mockBack, push: mockPush, canGoBack: () => false }),
+  useFocusEffect: (callback: () => void) => {
+    const React = require('react');
+    React.useEffect(callback, [callback]);
+  },
 }));
 
 jest.mock('@tanstack/react-query', () => ({
   useQuery: ({ queryKey }: { queryKey: unknown[] }) => {
     const key = Array.isArray(queryKey) ? queryKey.join(':') : String(queryKey);
     if (key.includes('profile')) {
-      return {
-        data: {
-          use_manual_location: false,
-          detected_location: { city: '杭州', region: '浙江' },
-        },
-      };
+      return { data: mockProfile };
     }
     if (key.includes('garminStatus')) {
       return { data: mockGarminStatus, refetch: jest.fn() };
     }
     return { data: null, refetch: jest.fn() };
   },
-  useQueryClient: () => ({ invalidateQueries: jest.fn() }),
+  useQueryClient: () => mockQueryClient,
 }));
 
 jest.mock('expo-haptics', () => ({
@@ -117,12 +125,26 @@ jest.mock('../../services/auth', () => ({
   ),
 }));
 
+jest.mock('../../services/gpsRefreshStatus', () => ({
+  readGPSRefreshStatus: () => mockReadGPSRefreshStatus(),
+  subscribeGPSRefreshStatus: (listener: (status: { state: string }) => void) => {
+    mockGPSRefreshStatusListener = listener;
+    return () => {
+      mockGPSRefreshStatusListener = null;
+    };
+  },
+}));
+
 import SettingsScreen from '../settings';
 
 describe('SettingsScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGarminStatus = { health: 'healthy', minutes_since_last_sync: 3 };
+    mockProfile = {
+      use_manual_location: false,
+      detected_location: { city: '杭州', region: '浙江' },
+    };
     mockRequestAccountDeletion.mockResolvedValue({
       status: 'requested',
       request_id: 42,
@@ -132,19 +154,103 @@ describe('SettingsScreen', () => {
     mockGetAccountDeletionRequest.mockResolvedValue({ status: 'none' });
     mockCheckNow.mockResolvedValue('current');
     mockLogout.mockResolvedValue(undefined);
+    mockReadGPSRefreshStatus.mockResolvedValue({ state: 'idle' });
+    mockGPSRefreshStatusListener = null;
   });
 
   it('surfaces GPS and city positioning as one explicit clickable entry', () => {
     const { getByText } = render(<SettingsScreen />);
 
     expect(getByText('GPS / 城市定位')).toBeTruthy();
-    expect(getByText('浙江')).toBeTruthy();
+    expect(getByText('杭州')).toBeTruthy();
     expect(getByText('GPS 自动')).toBeTruthy();
     expect(getByText('用于天气 / 空气质量 / 户外建议')).toBeTruthy();
     expect(() => getByText('定位设置')).toThrow();
     fireEvent.press(getByText('GPS / 城市定位'));
 
     expect(mockPush).toHaveBeenCalledWith('/location');
+  });
+
+  it('uses the manual city only while manual location is enabled', () => {
+    mockProfile = {
+      use_manual_location: true,
+      manual_location: { city: '上海', region: null },
+      detected_location: { city: '杭州', region: '浙江' },
+    };
+
+    const { getByText, queryByText } = render(<SettingsScreen />);
+
+    expect(getByText('上海')).toBeTruthy();
+    expect(queryByText('杭州')).toBeNull();
+    expect(getByText('手动城市')).toBeTruthy();
+  });
+
+  it('keeps manual city status visually normal even after an automatic GPS error', async () => {
+    mockProfile = {
+      use_manual_location: true,
+      manual_location: { city: '上海' },
+      detected_location: { city: '杭州', region: '浙江' },
+    };
+    mockReadGPSRefreshStatus.mockResolvedValueOnce({ state: 'error' });
+
+    const { getByText } = render(<SettingsScreen />);
+    await waitFor(() => expect(StyleSheet.flatten(getByText('手动城市').props.style).color)
+      .toBe(revaColors.green500));
+  });
+
+  it('falls back to the detected region only when the detected city is missing', () => {
+    mockProfile = {
+      use_manual_location: false,
+      detected_location: { city: null, region: '浙江省' },
+    };
+
+    const { getByText } = render(<SettingsScreen />);
+
+    expect(getByText('浙江')).toBeTruthy();
+  });
+
+  it('refreshes the cached profile whenever settings gains focus', () => {
+    render(<SettingsScreen />);
+
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['profile'] });
+  });
+
+  it.each([
+    ['permission_required', '需开启定位'],
+    ['refreshing', '正在更新'],
+    ['error', '更新失败'],
+  ])('shows truthful GPS state for %s', async (state, label) => {
+    mockReadGPSRefreshStatus.mockResolvedValueOnce({ state });
+
+    const { getByText } = render(<SettingsScreen />);
+
+    await waitFor(() => expect(getByText(label)).toBeTruthy());
+  });
+
+  it('updates GPS state while settings remains focused', async () => {
+    mockReadGPSRefreshStatus.mockResolvedValueOnce({ state: 'refreshing' });
+    const { getByText } = render(<SettingsScreen />);
+    await waitFor(() => expect(getByText('正在更新')).toBeTruthy());
+
+    act(() => mockGPSRefreshStatusListener?.({ state: 'ready' }));
+
+    expect(getByText('GPS 自动')).toBeTruthy();
+  });
+
+  it('does not let a stale initial read overwrite a newer live GPS state', async () => {
+    let resolveInitialRead: ((status: { state: string }) => void) | undefined;
+    mockReadGPSRefreshStatus.mockImplementationOnce(() => new Promise(resolve => {
+      resolveInitialRead = resolve;
+    }));
+    const { getByText, queryByText } = render(<SettingsScreen />);
+
+    act(() => mockGPSRefreshStatusListener?.({ state: 'ready' }));
+    expect(getByText('GPS 自动')).toBeTruthy();
+
+    await act(async () => resolveInitialRead?.({ state: 'error' }));
+
+    expect(getByText('GPS 自动')).toBeTruthy();
+    expect(queryByText('更新失败')).toBeNull();
   });
 
   it('hides deferred native and experimental entries in the App Store production UI', () => {
@@ -192,6 +298,42 @@ describe('SettingsScreen', () => {
     fireEvent.press(getByText('账号安全'));
 
     expect(mockPush).toHaveBeenCalledWith('/account-security');
+  });
+
+  it.each([
+    ['GPS / 城市定位', '/location'],
+    ['Garmin', '/garmin-connection'],
+    ['数据连接与授权', '/data-connections'],
+    ['数据来源', '/device-sources'],
+    ['化验记录', '/medical-exams'],
+    ['导入体检报告', '/import'],
+    ['用药管理', '/medications'],
+    ['补剂库存', '/supplement-inventory'],
+    ['我的基因', '/genetic-report'],
+    ['健康目标', '/goals'],
+    ['今日议程', '/agenda'],
+    ['今日时间轴 · 工作时间', '/day-schedule'],
+    ['日历 · 日程 + 多源管理', '/calendar'],
+    ['健康分析', '/insights'],
+    ['医生回路', '/doctor-loop'],
+    ['安全告警', '/alerts'],
+    ['推送通知', '/notification-settings'],
+    ['科学用眼 (20-20-20)', '/eye-care'],
+    ['语音风格', '/voice-style'],
+    ['账号安全', '/account-security'],
+    ['隐私政策', '/privacy-policy'],
+    ['家庭健康', '/family'],
+    ['健康日记', '/journal'],
+    ['硬性指令', '/directives'],
+    ['数据自检', '/data-integrity'],
+  ])('opens production settings entry %s', (label, route) => {
+    const { getByText } = render(<SettingsScreen />);
+    mockPush.mockClear();
+
+    fireEvent.press(getByText(label));
+
+    expect(mockPush).toHaveBeenCalledTimes(1);
+    expect(mockPush).toHaveBeenCalledWith(route);
   });
 
   it('explains that the user remains signed in when the logout barrier fails', async () => {
@@ -291,5 +433,20 @@ describe('SettingsScreen', () => {
     await waitFor(() => expect(mockCheckNow).toHaveBeenCalledWith({ force: true }));
     expect(alertSpy).toHaveBeenCalledWith('已是最新版本', '当前没有需要下载的更新。');
     alertSpy.mockRestore();
+  });
+
+  it('keeps rows tappable, removes final dividers, and lets GPS status shrink', () => {
+    const { getByRole, getByTestId } = render(<SettingsScreen />);
+    const middleRow = StyleSheet.flatten(getByRole('button', { name: '数据连接与授权' }).props.style);
+    const lastRow = StyleSheet.flatten(getByRole('button', { name: '数据来源' }).props.style);
+    const logoutRow = StyleSheet.flatten(getByRole('button', { name: '退出登录' }).props.style);
+    const locationStatus = StyleSheet.flatten(getByTestId('settings-location-status').props.style);
+
+    expect(middleRow.minHeight).toBeGreaterThanOrEqual(48);
+    expect(middleRow.borderBottomWidth).toBeGreaterThan(0);
+    expect(lastRow.borderBottomWidth).toBe(0);
+    expect(logoutRow.minHeight).toBeGreaterThanOrEqual(48);
+    expect(locationStatus.width).toBeUndefined();
+    expect(locationStatus.flexShrink).toBe(1);
   });
 });

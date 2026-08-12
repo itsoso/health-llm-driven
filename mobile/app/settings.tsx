@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Pressable, TextStyle, Alert, ScrollView, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import api from '../services/api';
@@ -28,30 +28,65 @@ import { APP_DISPLAY_NAME } from '../constants/brand';
 import { AppleHealthRow } from '../components/AppleHealthRow';
 import { getReleaseCapabilities } from '../config/releaseCapabilities';
 import { getNativeVersionLabel } from '../services/appUpdate';
+import {
+  readGPSRefreshStatus,
+  subscribeGPSRefreshStatus,
+  type GPSRefreshState,
+} from '../services/gpsRefreshStatus';
+
+type SettingsLocationProfile = {
+  use_manual_location?: boolean;
+  manual_location?: { city?: string | null } | null;
+  detected_location?: { city?: string | null; region?: string | null } | null;
+  city?: string | null;
+} | null | undefined;
+
+function cleanLocationLabel(value: string | null | undefined): string | null {
+  const clean = value?.trim().replace(/[市省]$/, '');
+  return clean || null;
+}
+
+export function getSettingsLocationLabel(profile: SettingsLocationProfile): string {
+  if (profile?.use_manual_location === true) {
+    const manualCity = cleanLocationLabel(profile.manual_location?.city);
+    if (manualCity) return manualCity;
+  }
+
+  return cleanLocationLabel(profile?.detected_location?.city)
+    || cleanLocationLabel(profile?.detected_location?.region)
+    || cleanLocationLabel(profile?.city)
+    || '未设置';
+}
 
 export default function SettingsScreen() {
   const router = useRouter();
   const { logout, user, isAuthenticated } = useAuth();
   const qc = useQueryClient();
+  const [gpsRefreshState, setGPSRefreshState] = useState<GPSRefreshState>('idle');
   const [deletionRequesting, setDeletionRequesting] = useState(false);
   const releaseCapabilities = getReleaseCapabilities();
   const { status: updateStatus, checkNow: checkForUpdate, applyUpdate } = useAppUpdate();
   const { isEnabled: bioEnabled, isSupported: bioSupported, toggleEnabled: toggleBio } = useBiometricLock(isAuthenticated);
 
   const { data: profile } = useQuery({ queryKey: queryKeys.profile, queryFn: () => api.get('/profile/me').then(r => r.data), staleTime: 600_000 });
-  // 2026-05-16: 之前一直显示老 manual_city 是因为没看 use_manual_location flag —
-  // GPS 自动同步会把 flag 切 false 但不清旧 manual_city, 导致用户在杭州但显示"北京".
-  // 正确优先级: 手动模式开启 → manual; 否则用 detected (region 比 city 友好,
-  // qweather 给的 city 常是区/县名 "海淀"/"余杭", region 是"北京市"/"杭州市").
-  const city = useMemo(() => {
-    const useManual = profile?.use_manual_location === true;
-    if (useManual && profile?.manual_location?.city) return profile.manual_location.city;
-    const detected = profile?.detected_location;
-    if (detected?.region) return detected.region.replace(/[市省]$/, '');
-    if (detected?.city) return detected.city;
-    if (profile?.city) return profile.city;
-    return '未设置';
-  }, [profile]);
+  const city = useMemo(() => getSettingsLocationLabel(profile), [profile]);
+
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    let receivedLiveStatus = false;
+    const unsubscribe = subscribeGPSRefreshStatus(status => {
+      receivedLiveStatus = true;
+      if (active) setGPSRefreshState(status.state);
+    });
+    void qc.invalidateQueries({ queryKey: queryKeys.profile });
+    void readGPSRefreshStatus().then(status => {
+      if (active && !receivedLiveStatus) setGPSRefreshState(status.state);
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [qc]));
 
   const { data: garminStatus } = useQuery({
     queryKey: ['garminStatus'],
@@ -230,6 +265,7 @@ export default function SettingsScreen() {
         <Text style={txt.sectionLabel}>数据连接</Text>
         <View style={styles.card}>
           <LocationSettingsRow city={city} useManual={profile?.use_manual_location === true}
+            refreshState={gpsRefreshState}
             onPress={() => router.push('/location' as any)} />
           <GarminStatusRow
             status={garminStatus}
@@ -240,6 +276,7 @@ export default function SettingsScreen() {
             value={connectionStatusSummary(dataConnections)}
             onPress={() => router.push('/data-connections' as any)} />
           <SettingRow icon="git-compare-outline" label="数据来源"
+            isLast
             onPress={() => router.push('/device-sources' as any)} />
         </View>
 
@@ -256,6 +293,7 @@ export default function SettingsScreen() {
           <SettingRow icon="cellular-outline" label="我的基因"
             onPress={() => router.push('/genetic-report' as any)} />
           <SettingRow icon="flag-outline" label="健康目标"
+            isLast
             onPress={() => router.push('/goals' as any)} />
         </View>
 
@@ -271,6 +309,7 @@ export default function SettingsScreen() {
             value="进展 / 代谢 / 趋势"
             onPress={() => router.push('/insights' as any)} />
           <SettingRow icon="medical-outline" label="医生回路"
+            isLast
             onPress={() => router.push('/doctor-loop' as any)} />
         </View>
 
@@ -283,14 +322,16 @@ export default function SettingsScreen() {
           <SettingRow icon="eye-outline" label="科学用眼 (20-20-20)"
             onPress={() => router.push('/eye-care' as any)} />
           <SettingRow icon="volume-high-outline" label="语音风格"
+            isLast={!releaseCapabilities.siri && !bioSupported}
             onPress={() => router.push('/voice-style' as any)} />
           {releaseCapabilities.siri ? (
             <SettingRow icon="mic-outline" label="Siri 语音记录"
               value="使用说明"
+              isLast={!bioSupported}
               onPress={showSiriInfo} />
           ) : null}
           {bioSupported && (
-            <View style={styles.settingRow}>
+            <View style={[styles.settingRow, styles.lastSettingRow]}>
               <Ionicons name="finger-print-outline" size={18} color={C.ink2} />
               <Text style={txt.settingLabel}>Face ID 锁定</Text>
               <Switch value={bioEnabled} onValueChange={toggleBio}
@@ -327,6 +368,7 @@ export default function SettingsScreen() {
                       ? '需联系支持'
                   : '请求删除'}
             destructive
+            isLast
             onPress={handleRequestAccountDeletion} />
         </View>
 
@@ -373,15 +415,18 @@ export default function SettingsScreen() {
           <SettingRow icon="cloud-download-outline" label="检查更新"
             value={updateStatusLabel}
             onPress={() => void handleCheckForUpdate()} />
-          <SettingRow icon="information-circle-outline" label="版本" value={getNativeVersionLabel()} />
+          <SettingRow icon="information-circle-outline" label="版本" value={getNativeVersionLabel()}
+            isLast={!releaseCapabilities.advancedSettings} />
           {releaseCapabilities.advancedSettings ? (
             <SettingRow icon="bug-outline" label="App 诊断"
+              isLast
               onPress={() => router.push('/app-diagnostics' as any)} />
           ) : null}
         </View>
 
         {/* Logout */}
-        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
+        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}
+          accessibilityRole="button" accessibilityLabel="退出登录">
           <Text style={txt.logoutText}>退出登录</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -395,18 +440,20 @@ function SettingRow({
   value,
   onPress,
   destructive = false,
+  isLast = false,
 }: {
   icon: any;
   label: string;
   value?: string;
   onPress?: () => void;
   destructive?: boolean;
+  isLast?: boolean;
 }) {
   const Wrapper = onPress ? TouchableOpacity : View;
   const color = destructive ? revaSemantic.risk.fg : C.ink2;
   return (
     <Wrapper
-      style={styles.settingRow}
+      style={[styles.settingRow, isLast && styles.lastSettingRow]}
       onPress={onPress}
       activeOpacity={0.6}
       accessibilityRole={onPress ? 'button' : undefined}
@@ -414,15 +461,40 @@ function SettingRow({
       accessibilityValue={onPress && value ? { text: value } : undefined}
     >
       <Ionicons name={icon} size={18} color={color} />
-      <Text style={[txt.settingLabel, destructive && { color }]}>{label}</Text>
-      <Text style={[txt.settingValue, destructive && { color }]}>{value || ''}</Text>
+      <Text style={[txt.settingLabel, destructive && { color }]} numberOfLines={1}>{label}</Text>
+      <Text style={[txt.settingValue, destructive && { color }]} numberOfLines={1}>{value || ''}</Text>
       {onPress && <Ionicons name="chevron-forward" size={14} color={C.ink3} />}
     </Wrapper>
   );
 }
 
-function LocationSettingsRow({ city, useManual, onPress }: { city: string; useManual: boolean; onPress: () => void }) {
-  const mode = useManual ? '手动城市' : 'GPS 自动';
+function LocationSettingsRow({
+  city,
+  useManual,
+  refreshState,
+  onPress,
+}: {
+  city: string;
+  useManual: boolean;
+  refreshState: GPSRefreshState;
+  onPress: () => void;
+}) {
+  const mode = useManual
+    ? '手动城市'
+    : refreshState === 'permission_required'
+      ? '需开启定位'
+      : refreshState === 'refreshing'
+        ? '正在更新'
+        : refreshState === 'error'
+          ? '更新失败'
+          : 'GPS 自动';
+  const modeColor = useManual
+    ? C.green500
+    : refreshState === 'error'
+    ? revaSemantic.risk.fg
+    : refreshState === 'permission_required' || refreshState === 'refreshing'
+      ? revaSemantic.caution.fg
+      : C.green500;
 
   return (
     <TouchableOpacity style={styles.locationRow} onPress={onPress} activeOpacity={0.72}
@@ -435,9 +507,9 @@ function LocationSettingsRow({ city, useManual, onPress }: { city: string; useMa
         <Text style={txt.locationTitle} numberOfLines={1}>GPS / 城市定位</Text>
         <Text style={txt.locationHint}>用于天气 / 空气质量 / 户外建议</Text>
       </View>
-      <View style={styles.locationStatus}>
+      <View testID="settings-location-status" style={styles.locationStatus}>
         <Text style={txt.locationCity} numberOfLines={1}>{city}</Text>
-        <Text style={txt.locationMode} numberOfLines={1}>{mode}</Text>
+        <Text style={[txt.locationMode, { color: modeColor }]} numberOfLines={1}>{mode}</Text>
       </View>
       <Ionicons name="chevron-forward" size={14} color={C.ink3} />
     </TouchableOpacity>
@@ -509,11 +581,14 @@ const styles = StyleSheet.create({
   avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.green50, alignItems: 'center', justifyContent: 'center' },
   settingRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
+    minHeight: 52,
     paddingHorizontal: revaSpacing.s5, paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line,
   },
+  lastSettingRow: { borderBottomWidth: 0 },
   locationRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
+    minHeight: 64,
     paddingHorizontal: revaSpacing.s5, paddingVertical: 13,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line,
   },
@@ -522,10 +597,10 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', backgroundColor: C.green50,
   },
   locationCopy: { flex: 1, minWidth: 0 },
-  locationStatus: { width: 74, alignItems: 'flex-end', gap: 3 },
+  locationStatus: { maxWidth: 104, flexShrink: 1, alignItems: 'flex-end', gap: 3 },
   logoutBtn: {
     backgroundColor: C.surface, borderRadius: revaRadii.lg,
-    paddingVertical: 14, alignItems: 'center', marginTop: revaSpacing.s5,
+    minHeight: 52, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', marginTop: revaSpacing.s5,
     ...revaShadows.sm,
   },
 });
@@ -535,8 +610,8 @@ const txt = {
   title: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1, flex: 1, textAlign: 'center' } as TextStyle,
   name: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1 } as TextStyle,
   email: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, marginTop: 2 } as TextStyle,
-  settingLabel: { fontFamily: revaFonts.sans, fontSize: 15, color: C.ink1, flex: 1 } as TextStyle,
-  settingValue: { fontFamily: revaFonts.sans, fontSize: 14, color: C.ink3 } as TextStyle,
+  settingLabel: { fontFamily: revaFonts.sans, fontSize: 15, color: C.ink1, flex: 1, minWidth: 0 } as TextStyle,
+  settingValue: { fontFamily: revaFonts.sans, fontSize: 14, color: C.ink3, flexShrink: 1, maxWidth: '42%' } as TextStyle,
   sectionLabel: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '600', letterSpacing: 0.6, color: C.ink3, marginLeft: revaSpacing.s1, marginBottom: revaSpacing.s1, marginTop: revaSpacing.s1 } as TextStyle,
   locationTitle: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '700', color: C.ink1, flexShrink: 1 } as TextStyle,
   locationHint: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, marginTop: 3 } as TextStyle,

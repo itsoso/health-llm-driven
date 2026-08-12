@@ -200,13 +200,16 @@ export function AppleHealthRow({ onSyncComplete }: Props) {
       onPress={onPress}
       activeOpacity={0.6}
       disabled={state === 'syncing'}
+      accessibilityRole="button"
+      accessibilityLabel={`Apple Health，${statusText}`}
+      accessibilityState={{ disabled: state === 'syncing' }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
         <Ionicons name="heart-outline" size={18} color={C.ink2} />
         <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dotColor }} />
       </View>
       <Text style={styles.label}>Apple Health</Text>
-      <Text style={[styles.value, state === 'error' && { color: revaSemantic.risk.fg }]}>{statusText}</Text>
+      <Text numberOfLines={1} style={[styles.value, state === 'error' && { color: revaSemantic.risk.fg }]}>{statusText}</Text>
       {state === 'syncing' ? (
         <ActivityIndicator size="small" color={C.ink3} />
       ) : (
@@ -222,11 +225,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    minHeight: 52,
     paddingHorizontal: revaSpacing.s5,
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: C.line,
   },
   label: { fontFamily: revaFonts.sans, fontSize: 15, color: C.ink1, flex: 1 },
-  value: { fontFamily: revaFonts.sans, fontSize: 14, color: C.ink3 },
+  value: { fontFamily: revaFonts.sans, fontSize: 14, color: C.ink3, flexShrink: 1, maxWidth: '42%' },
 });
