@@ -1,8 +1,42 @@
 import XCTest
 
 final class XiaobaAcceptanceUITests: XCTestCase {
+    private struct SettingsEntry {
+        let label: String
+        let target: String
+    }
+
     private let app = XCUIApplication(bundleIdentifier: "life.executor.health")
     private let draftFixture = "UI自动验收草稿不发送"
+    private let safeSettingsEntries = [
+        SettingsEntry(label: "GPS / 城市定位", target: "位置设置"),
+        SettingsEntry(label: "数据连接与授权", target: "数据连接与授权"),
+        SettingsEntry(label: "数据来源", target: "数据来源"),
+        SettingsEntry(label: "化验记录", target: "体检记录"),
+        SettingsEntry(label: "导入体检报告", target: "导入体检报告"),
+        SettingsEntry(label: "用药管理", target: "用药管理"),
+        SettingsEntry(label: "补剂库存", target: "补剂库存"),
+        SettingsEntry(label: "健康目标", target: "健康目标"),
+        SettingsEntry(label: "健康分析", target: "健康分析"),
+        SettingsEntry(label: "医生回路", target: "医生回路"),
+        SettingsEntry(label: "推送通知", target: "推送通知"),
+        SettingsEntry(label: "科学用眼 (20-20-20)", target: "科学用眼"),
+        SettingsEntry(label: "语音风格", target: "语音风格"),
+        SettingsEntry(label: "账号安全", target: "账号安全"),
+        SettingsEntry(label: "隐私政策", target: "隐私政策"),
+        SettingsEntry(label: "家庭健康", target: "家庭健康"),
+        SettingsEntry(label: "硬性指令", target: "硬性指令"),
+        SettingsEntry(label: "数据自检", target: "数据自检"),
+    ]
+    // We only assert these rows exist. Tests never tap destructive or third-party Settings actions.
+    private let assertOnlySettingsEntries = [
+        "Garmin",
+        "Apple Health",
+        "删除账号与数据",
+        "检查更新",
+        "版本",
+        "退出登录",
+    ]
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -112,7 +146,66 @@ final class XiaobaAcceptanceUITests: XCTestCase {
             }
             app.swipeUp()
         }
+        // A prior matrix entry may leave Settings near the bottom. Search back
+        // toward the top before declaring a production-visible row missing.
+        for _ in 0..<(maxSwipes * 2) {
+            if element.exists && element.isHittable {
+                return true
+            }
+            app.swipeDown()
+        }
         return element.exists && element.isHittable
+    }
+
+    private func openSettings() throws {
+        app.launch()
+        try requireAuthenticatedChat()
+
+        let more = app.buttons["更多会诊操作"]
+        XCTAssertTrue(more.waitForExistence(timeout: 10), "More actions button was not exposed")
+        more.tap()
+
+        let personalCenter = app.buttons["我 · 个人中心与设置"]
+        XCTAssertTrue(personalCenter.waitForExistence(timeout: 5), "Settings entry was not exposed")
+        personalCenter.tap()
+
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label == %@ OR label == %@", "设置", "我"))
+                .firstMatch.waitForExistence(timeout: 10),
+            "Settings did not open"
+        )
+    }
+
+    private func settingsButton(label: String) -> XCUIElement {
+        if label == "Garmin" {
+            return app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Garmin 连接"))
+                .firstMatch
+        }
+        if label == "Apple Health" {
+            return app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Apple Health"))
+                .firstMatch
+        }
+        return app.buttons[label]
+    }
+
+    private func returnToSettings() {
+        let settingsTitle = app.staticTexts.matching(
+            NSPredicate(format: "label == %@ OR label == %@", "设置", "我")
+        ).firstMatch
+        let explicitBack = app.buttons["返回"]
+        if explicitBack.waitForExistence(timeout: 2) {
+            explicitBack.tap()
+        }
+        if !settingsTitle.waitForExistence(timeout: 3) {
+            app.swipeRight()
+        }
+        if !settingsTitle.waitForExistence(timeout: 3) {
+            app.swipeDown()
+        }
+        XCTAssertTrue(
+            settingsTitle.waitForExistence(timeout: 8),
+            "Could not return to Settings"
+        )
     }
 
     func testInstalledBuildLaunchesExpectedEntrySurface() throws {
@@ -292,5 +385,47 @@ final class XiaobaAcceptanceUITests: XCTestCase {
             "Privacy policy page did not open"
         )
         attachScreenshot("privacy-policy-page")
+    }
+
+    func testGPSAutoRefreshPublishesCityAndReadyState() throws {
+        guard let expectedCity = ProcessInfo.processInfo.environment["REVA_ACCEPTANCE_EXPECTED_CITY"],
+              !expectedCity.isEmpty else {
+            throw XCTSkip("Simulator GPS smoke requires REVA_ACCEPTANCE_EXPECTED_CITY")
+        }
+        try openSettings()
+
+        let location = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "GPS / 城市定位"))
+            .firstMatch
+        XCTAssertTrue(scrollToElement(location), "GPS Settings row was not exposed")
+        let cityAndReady = NSPredicate(
+            format: "label CONTAINS %@ AND label CONTAINS %@",
+            expectedCity,
+            "GPS 自动"
+        )
+        expectation(for: cityAndReady, evaluatedWith: location)
+        waitForExpectations(timeout: 45)
+        attachScreenshot("gps-auto-city-ready")
+    }
+
+    func testProductionSettingsEntriesOpenAndReturn() throws {
+        try openSettings()
+
+        for label in assertOnlySettingsEntries {
+            let row = settingsButton(label: label)
+            XCTAssertTrue(scrollToElement(row), "Assert-only Settings row missing: \(label)")
+        }
+
+        for entry in safeSettingsEntries {
+            let row = settingsButton(label: entry.label)
+            XCTAssertTrue(scrollToElement(row), "Settings row missing: \(entry.label)")
+            row.tap()
+            XCTAssertTrue(
+                app.staticTexts[entry.target].waitForExistence(timeout: 12) ||
+                    app.navigationBars[entry.target].waitForExistence(timeout: 2),
+                "Settings route \(entry.label) did not expose target \(entry.target)"
+            )
+            returnToSettings()
+        }
+        attachScreenshot("production-settings-navigation-matrix")
     }
 }

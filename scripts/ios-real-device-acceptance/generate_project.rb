@@ -45,6 +45,11 @@ scheme = Xcodeproj::XCScheme.new
 scheme.add_build_target(target)
 scheme.add_test_target(target)
 
+expected_city = ENV.fetch("REVA_ACCEPTANCE_EXPECTED_CITY", "").strip
+unless expected_city.empty?
+  scheme.test_action.environment_variables["REVA_ACCEPTANCE_EXPECTED_CITY"] = expected_city
+end
+
 scheme.save_as(project_path.to_s, "XiaobaAcceptanceUITests", true)
 
 project.save
