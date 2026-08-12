@@ -29,6 +29,11 @@ cd /Users/liqiuhua/work/personal/health-llm-driven
 
 `mobile-ota.sh` 每次生成唯一 transaction ID，在私有临时目录只 export 一次：
 
+- 任何新 `eas update` 前先用结构化 `update:list` 查询 transaction marker：0 个才允许
+  发布，1 个必须经 `update:view` + `channel:view` 复证后直接补齐本地
+  manifest/anchor/audit，多个匹配则 fail closed。这样 release transaction 因本地审计
+  追加失败而重入时不会重复发布。若上次进程退出前未留下 artifact，恢复的 manifest 会
+  明确记录 `artifact_evidence=unavailable_after_remote_adoption` 与空 digest，不伪造字节证据。
 - 明确的瞬时上传失败会先查询该 transaction；无唯一命中时才校验同一目录的
   metadata/bundle/assets、source tree、runtime 和稳定 digest，并用 `--skip-bundler`
   重试同一字节一次。禁止第三次盲发，禁止跨发布缓存 artifact。

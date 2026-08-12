@@ -610,10 +610,10 @@ elif args[0] == "update:list":
     page = json.loads(state.read_text()) if state.exists() else []
     list_attempts = sum(1 for call in calls if call and call[0] == "update:list")
     print(json.dumps({
-        "currentPage": page
-        if mode in {"first-ambiguous", "second-ambiguous"}
-        or (mode == "eventual-first" and list_attempts >= 2)
-        else []
+        "currentPage": []
+        if mode == "ambiguous-network"
+        or (mode == "eventual-first" and list_attempts < 2)
+        else page
     }))
 elif args[0] == "update:view":
     payload = json.loads(state.read_text())
@@ -644,6 +644,8 @@ def _run_ota(
     mode: str,
     *,
     existing_manifest: str | None = None,
+    audit_log: Path | None = None,
+    preexisting_updates: list[dict[str, object]] | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path, Path]:
     runner = _fake_eas_runner(tmp_path)
     manifest = tmp_path / "manifest.json"
@@ -652,6 +654,8 @@ def _run_ota(
         manifest.chmod(0o600)
     anchor = tmp_path / "anchor"
     calls = tmp_path / "calls.json"
+    if preexisting_updates is not None:
+        (tmp_path / "state.json").write_text(json.dumps(preexisting_updates))
     env = os.environ.copy()
     env.update(
         {
@@ -663,6 +667,7 @@ def _run_ota(
             "OTA_TEST_STATE": str(tmp_path / "state.json"),
             "OTA_TEST_MODE": mode,
             "OTA_TRANSACTION_ID": TRANSACTION_ID,
+            "OTA_AUDIT_LOG": str(audit_log or (tmp_path / "ota-audit.jsonl")),
             "OTA_RETRY_DELAY_SECONDS": "0.3" if mode == "mutate" else "0",
             "OTA_LOOKUP_ATTEMPTS": "3",
             "OTA_LOOKUP_DELAY_SECONDS": "0",
@@ -716,6 +721,147 @@ def test_ota_exports_once_and_retries_same_verified_directory(tmp_path: Path) ->
     assert anchor.read_text().strip() == payload["commit_sha"]
 
 
+def test_ota_cross_invocation_retry_adopts_postcommit_publish_without_republishing(
+    tmp_path: Path,
+) -> None:
+    audit_log = tmp_path / "ota-audit.jsonl"
+    audit_log.mkdir()
+
+    first, calls_path, manifest, anchor = _run_ota(
+        tmp_path,
+        "success",
+        audit_log=audit_log,
+    )
+
+    assert first.returncode != 0
+    assert manifest.exists()
+    assert anchor.exists()
+    first_manifest = json.loads(manifest.read_text())
+    assert len(
+        [call for call in json.loads(calls_path.read_text()) if call[0] == "update"]
+    ) == 1
+
+    audit_log.rmdir()
+    second, calls_path, retried_manifest, retried_anchor = _run_ota(
+        tmp_path,
+        "success",
+        audit_log=audit_log,
+    )
+
+    assert second.returncode == 0, second.stdout + second.stderr
+    calls = json.loads(calls_path.read_text())
+    assert len([call for call in calls if call[0] == "update"]) == 1
+    assert len([call for call in calls if call[0] == "update:list"]) >= 1
+    retried_payload = json.loads(retried_manifest.read_text())
+    assert retried_payload["transaction_id"] == TRANSACTION_ID
+    assert retried_payload["artifact_digest"] == first_manifest["artifact_digest"]
+    assert retried_payload["published_at"] == first_manifest["published_at"]
+    assert retried_anchor.exists()
+    audit_events = [
+        json.loads(line) for line in audit_log.read_text().splitlines() if line.strip()
+    ]
+    assert audit_events[-1]["result"] == "published"
+    assert audit_events[-1]["transaction_id"] == TRANSACTION_ID
+
+
+def _preexisting_transaction_update(
+    *,
+    group_id: str = GROUP_ID,
+    update_id: str = UPDATE_ID,
+) -> dict[str, object]:
+    return {
+        "id": update_id,
+        "group": group_id,
+        "branch": "production",
+        "message": f"[tx:{TRANSACTION_ID}] transaction test",
+        "runtimeVersion": "1.3.3",
+        "platform": "ios",
+        "gitCommitHash": subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+        ).strip(),
+    }
+
+
+def test_ota_preflight_adopts_one_remote_transaction_and_rebuilds_local_receipt(
+    tmp_path: Path,
+) -> None:
+    result, calls_path, manifest, anchor = _run_ota(
+        tmp_path,
+        "preexisting",
+        preexisting_updates=[_preexisting_transaction_update()],
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = json.loads(calls_path.read_text())
+    assert not [call for call in calls if call[0] == "update"]
+    assert any(call[0] == "update:list" for call in calls)
+    assert any(call[0] == "update:view" for call in calls)
+    assert any(call[0] == "channel:view" for call in calls)
+    payload = json.loads(manifest.read_text())
+    assert payload["transaction_id"] == TRANSACTION_ID
+    assert payload["active_group_id"] == GROUP_ID
+    assert payload["active_update_id"] == UPDATE_ID
+    assert payload["artifact_digest"] is None
+    assert payload["artifact_evidence"] == "unavailable_after_remote_adoption"
+    assert anchor.exists()
+    assert manifest.stat().st_mode & 0o777 == 0o600
+
+
+def test_ota_preflight_fails_closed_on_multiple_remote_transaction_groups(
+    tmp_path: Path,
+) -> None:
+    result, calls_path, manifest, anchor = _run_ota(
+        tmp_path,
+        "preexisting",
+        preexisting_updates=[
+            _preexisting_transaction_update(),
+            _preexisting_transaction_update(
+                group_id="33333333-3333-4333-8333-333333333333",
+                update_id="44444444-4444-4444-8444-444444444444",
+            ),
+        ],
+    )
+
+    assert result.returncode != 0
+    calls = json.loads(calls_path.read_text())
+    assert not [call for call in calls if call[0] == "update"]
+    assert "ambiguous" in (result.stdout + result.stderr).lower()
+    assert not manifest.exists()
+    assert not anchor.exists()
+
+
+def test_ota_preflight_refuses_same_transaction_manifest_identity_conflict(
+    tmp_path: Path,
+) -> None:
+    original = {
+        "schema_version": 2,
+        "status": "published",
+        "transaction_id": TRANSACTION_ID,
+        "group_id": GROUP_ID,
+        "update_id": UPDATE_ID,
+        "active_group_id": GROUP_ID,
+        "active_update_id": UPDATE_ID,
+    }
+    result, calls_path, manifest, anchor = _run_ota(
+        tmp_path,
+        "preexisting",
+        existing_manifest=json.dumps(original),
+        preexisting_updates=[
+            _preexisting_transaction_update(
+                group_id="33333333-3333-4333-8333-333333333333",
+                update_id="44444444-4444-4444-8444-444444444444",
+            )
+        ],
+    )
+
+    assert result.returncode != 0
+    calls = json.loads(calls_path.read_text())
+    assert not [call for call in calls if call[0] == "update"]
+    assert "conflict" in (result.stdout + result.stderr).lower()
+    assert json.loads(manifest.read_text()) == original
+    assert not anchor.exists()
+
+
 def test_ota_resolves_a_lost_second_publish_response_without_a_third_publish(
     tmp_path: Path,
 ) -> None:
@@ -724,7 +870,7 @@ def test_ota_resolves_a_lost_second_publish_response_without_a_third_publish(
     assert result.returncode == 0, result.stdout + result.stderr
     calls = json.loads(calls_path.read_text())
     assert len([call for call in calls if call[0] == "update"]) == 2
-    assert len([call for call in calls if call[0] == "update:list"]) == 4
+    assert len([call for call in calls if call[0] == "update:list"]) == 5
     assert json.loads(manifest.read_text())["active_group_id"] == GROUP_ID
     assert anchor.exists()
 
@@ -737,7 +883,7 @@ def test_ota_adopts_a_unique_first_publish_when_the_response_is_lost(
     assert result.returncode == 0, result.stdout + result.stderr
     calls = json.loads(calls_path.read_text())
     assert len([call for call in calls if call[0] == "update"]) == 1
-    assert len([call for call in calls if call[0] == "update:list"]) == 1
+    assert len([call for call in calls if call[0] == "update:list"]) == 2
     assert json.loads(manifest.read_text())["active_group_id"] == GROUP_ID
     assert anchor.exists()
 
@@ -761,7 +907,7 @@ def test_ota_does_not_republish_an_unresolved_ambiguous_network_failure(
     assert result.returncode != 0
     calls = json.loads(calls_path.read_text())
     assert len([call for call in calls if call[0] == "update"]) == 1
-    assert len([call for call in calls if call[0] == "update:list"]) == 3
+    assert len([call for call in calls if call[0] == "update:list"]) == 4
     assert "ambiguous" in (result.stdout + result.stderr).lower()
     assert not manifest.exists()
     assert not anchor.exists()

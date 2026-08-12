@@ -251,6 +251,7 @@ update = "22222222-2222-4222-8222-222222222222"
 head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
 runtime = json.loads(Path("app.json").read_text(encoding="utf-8"))["expo"]["version"]
 mode = os.environ["OTA_TEST_MODE"]
+remote_state = Path(os.environ["OTA_TEST_REMOTE_STATE"])
 
 
 def value(flag):
@@ -308,11 +309,14 @@ if args[0] == "update":
     if mode == "missing-ids":
         print("[]")
     else:
-        print(json.dumps(published(message)))
+        payload = published(message)
+        remote_state.write_text(json.dumps(payload))
+        print(json.dumps(payload))
 elif args[0] == "update:list":
-    print(json.dumps({"currentPage": []}))
+    page = json.loads(remote_state.read_text()) if remote_state.exists() else []
+    print(json.dumps({"currentPage": page}))
 elif args[0] == "update:view":
-    print(json.dumps(published("[tx:fast-feedback-tx] test update")))
+    print(remote_state.read_text())
 elif args[0] == "channel:view":
     print(json.dumps({"currentPage": {
         "name": "production",
@@ -381,6 +385,7 @@ root = Path(args[args.index("--output-dir") + 1])
             "OTA_TEST_EXPO_ARGS": str(tmp_path / "expo-args"),
             "OTA_TEST_EXPO_COUNTER": str(tmp_path / "expo-attempts"),
             "OTA_TEST_EAS_ARGS": str(tmp_path / "eas-args"),
+            "OTA_TEST_REMOTE_STATE": str(tmp_path / "remote-state.json"),
             "OTA_AUDIT_LOG": str(tmp_path / "ota-audit.jsonl"),
             "OTA_TRANSACTION_ID": "fast-feedback-tx",
             "OTA_LOOKUP_ATTEMPTS": "1",
@@ -503,16 +508,19 @@ def test_ota_rejects_success_without_published_update_ids(tmp_path: Path) -> Non
     assert not manifest.exists()
 
 
-def test_ota_manifest_keeps_previous_known_good_update(tmp_path: Path) -> None:
-    first, _, _, manifest = run_ota(tmp_path, "success")
+def test_ota_same_transaction_retry_adopts_remote_without_republishing(
+    tmp_path: Path,
+) -> None:
+    first, counter, _, manifest = run_ota(tmp_path, "success")
     assert first.returncode == 0, first.stdout + first.stderr
 
     second, _, _, _ = run_ota(tmp_path, "success")
     assert second.returncode == 0, second.stdout + second.stderr
 
     payload = json.loads(manifest.read_text())
-    assert payload["previous_known_good_group_id"] == "11111111-1111-4111-8111-111111111111"
-    assert payload["previous_known_good_update_id"] == "22222222-2222-4222-8222-222222222222"
+    assert counter.read_text().strip() == "1"
+    assert payload["previous_known_good_group_id"] is None
+    assert payload["previous_known_good_update_id"] is None
 
 
 def _commit(repo: Path, message: str) -> str:

@@ -373,12 +373,220 @@ publish_existing_artifact() {
     --environment "${ENVIRONMENT}" --input-dir "${INPUT_DIR}" --skip-bundler --json
 }
 
+manifest_transaction_id() {
+  python3 - "${MANIFEST_FILE}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if path.exists():
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    transaction_id = payload.get("transaction_id")
+    if isinstance(transaction_id, str):
+        print(transaction_id)
+PY
+}
+
+write_release_manifest() {
+  local artifact_evidence="$1"
+  local artifact_digest="${2:-}"
+  local artifact_json="${3:-}"
+  python3 - "${MANIFEST_FILE}" "${CHANNEL}" "${ENVIRONMENT}" "${GROUP_ID}" \
+    "${IOS_UPDATE_ID}" "${RELEASE_COMMIT_SHA}" "${SOURCE_TREE}" "${SOURCE_RUNTIME}" \
+    "${SOURCE_COMMIT_SHA}" "${MAIN_COMMIT_SHA}" "${MOBILE_TREE_DIGEST}" \
+    "${TRANSACTION_ID}" "${artifact_digest}" "${artifact_json}" "${EAS_CLI_ID}" \
+    "${artifact_evidence}" <<'PY'
+import json
+import os
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+(
+    path, channel, environment, group_id, update_id, commit_sha, source_tree,
+    runtime_version, source_commit_sha, main_commit_sha, mobile_tree_digest,
+    transaction_id, artifact_digest, artifact_json, eas_cli, artifact_evidence,
+) = sys.argv[1:]
+manifest_path = Path(path)
+previous = {}
+if manifest_path.exists():
+    previous = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+previous_active_group = previous.get("active_group_id") or previous.get("group_id")
+previous_active_update = previous.get("active_update_id") or previous.get("update_id")
+same_transaction_id = previous.get("transaction_id") == transaction_id
+same_transaction = (
+    same_transaction_id
+    and previous_active_group == group_id
+    and previous_active_update == update_id
+)
+
+if artifact_evidence != "verified_transaction_artifact" and same_transaction_id:
+    if not same_transaction:
+        raise SystemExit("remote adoption conflicts with the local transaction identity")
+    expected_fields = {
+        "channel": channel,
+        "environment": environment,
+        "runtime_version": runtime_version,
+        "commit_sha": commit_sha,
+        "source_commit_sha": source_commit_sha,
+        "main_commit_sha": main_commit_sha,
+        "mobile_tree_digest": mobile_tree_digest,
+        "source_tree": source_tree,
+    }
+    for field, expected in expected_fields.items():
+        actual = previous.get(field)
+        if actual is not None and actual != expected:
+            raise SystemExit(f"remote adoption conflicts with local manifest field {field}")
+
+if artifact_evidence == "verified_transaction_artifact":
+    if not artifact_digest or not artifact_json:
+        raise SystemExit("verified artifact evidence is incomplete")
+    artifact = json.loads(Path(artifact_json).read_text(encoding="utf-8"))
+    artifact_file_count = artifact.get("file_count")
+    artifact_total_bytes = artifact.get("total_bytes")
+    published_at = datetime.now(timezone.utc).isoformat()
+    previous_group = previous_active_group
+    previous_update = previous_active_update
+elif same_transaction:
+    artifact_digest = previous.get("artifact_digest")
+    artifact_file_count = previous.get("artifact_file_count")
+    artifact_total_bytes = previous.get("artifact_total_bytes")
+    artifact_evidence = previous.get("artifact_evidence") or (
+        "verified_transaction_artifact"
+        if artifact_digest
+        else "unavailable_after_remote_adoption"
+    )
+    published_at = previous.get("published_at") or datetime.now(timezone.utc).isoformat()
+    previous_group = previous.get("previous_known_good_group_id")
+    previous_update = previous.get("previous_known_good_update_id")
+else:
+    artifact_digest = None
+    artifact_file_count = None
+    artifact_total_bytes = None
+    artifact_evidence = "unavailable_after_remote_adoption"
+    published_at = datetime.now(timezone.utc).isoformat()
+    previous_group = previous_active_group
+    previous_update = previous_active_update
+
+payload = {
+    "schema_version": 2,
+    "status": "published",
+    "transaction_id": transaction_id,
+    "platform": "ios",
+    "channel": channel,
+    "environment": environment,
+    "runtime_version": runtime_version,
+    "group_id": group_id,
+    "update_id": update_id,
+    "active_group_id": group_id,
+    "active_update_id": update_id,
+    "commit_sha": commit_sha,
+    "source_commit_sha": source_commit_sha,
+    "main_commit_sha": main_commit_sha,
+    "mobile_tree_digest": mobile_tree_digest,
+    "source_tree": source_tree,
+    "artifact_digest": artifact_digest,
+    "artifact_file_count": artifact_file_count,
+    "artifact_total_bytes": artifact_total_bytes,
+    "artifact_evidence": artifact_evidence,
+    "eas_cli": eas_cli,
+    "remote_verification": {"update_view": True, "channel_mapping": True},
+    "published_at": published_at,
+    "previous_known_good_group_id": previous_group,
+    "previous_known_good_update_id": previous_update,
+}
+manifest_path.parent.mkdir(parents=True, exist_ok=True)
+tmp_path = manifest_path.with_name(f".{manifest_path.name}.{os.getpid()}.tmp")
+fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(fd, "w", encoding="utf-8") as handle:
+    json.dump(payload, handle, ensure_ascii=False, indent=2)
+    handle.write("\n")
+    handle.flush()
+    os.fsync(handle.fileno())
+os.replace(tmp_path, manifest_path)
+os.chmod(manifest_path, 0o600)
+PY
+}
+
+write_release_anchor() {
+  [[ "${CHANNEL}" == "production" ]] || return 0
+  python3 - "${ANCHOR_FILE}" "${RELEASE_COMMIT_SHA}" <<'PY'
+import os
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+path.parent.mkdir(parents=True, exist_ok=True)
+tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(fd, "w", encoding="utf-8") as handle:
+    handle.write(sys.argv[2] + "\n")
+    handle.flush()
+    os.fsync(handle.fileno())
+os.replace(tmp, path)
+os.chmod(path, 0o600)
+PY
+}
+
+verified_remote_ids() {
+  GROUP_ID="$(python3 - "${VERIFIED_JSON}" <<'PY'
+import json, sys
+print(json.load(open(sys.argv[1], encoding="utf-8"))["group_id"])
+PY
+)"
+  IOS_UPDATE_ID="$(python3 - "${VERIFIED_JSON}" <<'PY'
+import json, sys
+print(json.load(open(sys.argv[1], encoding="utf-8"))["update_id"])
+PY
+)"
+}
+
+EAS_CLI_ID="test-runner"
+if [[ -z "${OTA_EAS_RUNNER:-}" ]]; then
+  EAS_CLI_ID="eas-cli@${EAS_CLI_VERSION}"
+fi
+
 echo "==> EAS Update transaction ${TRANSACTION_ID} → channel=${CHANNEL}"
 echo "    environment: ${ENVIRONMENT}"
 echo "    runtime: ${SOURCE_RUNTIME}"
 echo "    source tree: ${SOURCE_TREE:0:12}"
 echo "    message: ${MESSAGE}"
 echo ""
+
+# A release transaction may be retried after the remote update and local
+# manifest/anchor were committed but a later local audit append failed. Query
+# the stable transaction marker before every new publish so that a retry
+# adopts exactly one verified remote update instead of publishing it twice.
+PREEXISTING_GROUP="$(find_ambiguous_publish)" || exit $?
+EXISTING_MANIFEST_TRANSACTION_ID="$(manifest_transaction_id)"
+if [[ -z "${PREEXISTING_GROUP}" &&
+      "${EXISTING_MANIFEST_TRANSACTION_ID}" == "${TRANSACTION_ID}" ]]; then
+  PREEXISTING_GROUP="$(find_publish_with_poll)" || exit $?
+  if [[ -z "${PREEXISTING_GROUP}" ]]; then
+    record_ota_audit 1 failed ambiguous_remote_outcome "$(ota_elapsed_seconds)"
+    echo "✗ Local manifest already records this transaction but EAS lookup found no unique remote update; refusing a duplicate publish." >&2
+    exit 1
+  fi
+fi
+if [[ -n "${PREEXISTING_GROUP}" ]]; then
+  echo "△ EAS preflight found this exact transaction; verifying and restoring local state without republishing."
+  run_eas_capture "${PUBLISH_JSON}" "${PUBLISH_ERR}" \
+    update:view "${PREEXISTING_GROUP}" --json || exit $?
+  ensure_source_unchanged
+  verify_remote_publish
+  verified_remote_ids
+  write_release_manifest remote_adoption
+  write_release_anchor
+  record_ota_audit 1 published "" "$(ota_elapsed_seconds)" "${GROUP_ID}" "${IOS_UPDATE_ID}"
+  echo "    verified update group: ${GROUP_ID}"
+  echo "    verified iOS update: ${IOS_UPDATE_ID}"
+  echo "    artifact evidence: remote transaction adopted"
+  echo "    release manifest: ${MANIFEST_FILE}"
+  echo "✓ 已复用远端 OTA 事务并补齐本地发布状态，未重复推送。"
+  exit 0
+fi
 
 PUBLISH_OK=0
 if [[ "${OTA_FORCE_NO_BYTECODE:-0}" == "1" ]]; then
@@ -463,97 +671,9 @@ else
 fi
 verify_remote_publish
 
-GROUP_ID="$(python3 - "${VERIFIED_JSON}" <<'PY'
-import json, sys
-print(json.load(open(sys.argv[1], encoding="utf-8"))["group_id"])
-PY
-)"
-IOS_UPDATE_ID="$(python3 - "${VERIFIED_JSON}" <<'PY'
-import json, sys
-print(json.load(open(sys.argv[1], encoding="utf-8"))["update_id"])
-PY
-)"
-EAS_CLI_ID="test-runner"
-if [[ -z "${OTA_EAS_RUNNER:-}" ]]; then
-  EAS_CLI_ID="eas-cli@${EAS_CLI_VERSION}"
-fi
-
-python3 - "${MANIFEST_FILE}" "${CHANNEL}" "${ENVIRONMENT}" "${GROUP_ID}" \
-  "${IOS_UPDATE_ID}" "${RELEASE_COMMIT_SHA}" "${SOURCE_TREE}" "${SOURCE_RUNTIME}" \
-  "${SOURCE_COMMIT_SHA}" "${MAIN_COMMIT_SHA}" "${MOBILE_TREE_DIGEST}" \
-  "${TRANSACTION_ID}" "${ARTIFACT_DIGEST}" "${ARTIFACT_JSON}" "${EAS_CLI_ID}" <<'PY'
-import json
-import os
-import sys
-from datetime import datetime, timezone
-from pathlib import Path
-
-(
-    path, channel, environment, group_id, update_id, commit_sha, source_tree,
-    runtime_version, source_commit_sha, main_commit_sha, mobile_tree_digest,
-    transaction_id, artifact_digest, artifact_json, eas_cli,
-) = sys.argv[1:]
-manifest_path = Path(path)
-previous = {}
-if manifest_path.exists():
-    previous = json.loads(manifest_path.read_text(encoding="utf-8"))
-artifact = json.loads(Path(artifact_json).read_text(encoding="utf-8"))
-previous_group = previous.get("active_group_id") or previous.get("group_id")
-previous_update = previous.get("active_update_id") or previous.get("update_id")
-payload = {
-    "schema_version": 2,
-    "status": "published",
-    "transaction_id": transaction_id,
-    "platform": "ios",
-    "channel": channel,
-    "environment": environment,
-    "runtime_version": runtime_version,
-    "group_id": group_id,
-    "update_id": update_id,
-    "active_group_id": group_id,
-    "active_update_id": update_id,
-    "commit_sha": commit_sha,
-    "source_commit_sha": source_commit_sha,
-    "main_commit_sha": main_commit_sha,
-    "mobile_tree_digest": mobile_tree_digest,
-    "source_tree": source_tree,
-    "artifact_digest": artifact_digest,
-    "artifact_file_count": artifact.get("file_count"),
-    "artifact_total_bytes": artifact.get("total_bytes"),
-    "eas_cli": eas_cli,
-    "remote_verification": {"update_view": True, "channel_mapping": True},
-    "published_at": datetime.now(timezone.utc).isoformat(),
-    "previous_known_good_group_id": previous_group,
-    "previous_known_good_update_id": previous_update,
-}
-manifest_path.parent.mkdir(parents=True, exist_ok=True)
-tmp_path = manifest_path.with_name(f".{manifest_path.name}.{os.getpid()}.tmp")
-fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-with os.fdopen(fd, "w", encoding="utf-8") as handle:
-    json.dump(payload, handle, ensure_ascii=False, indent=2)
-    handle.write("\n")
-    handle.flush()
-    os.fsync(handle.fileno())
-os.replace(tmp_path, manifest_path)
-os.chmod(manifest_path, 0o600)
-PY
-
-if [[ "${CHANNEL}" == "production" ]]; then
-  python3 - "${ANCHOR_FILE}" "${RELEASE_COMMIT_SHA}" <<'PY'
-import os, sys
-from pathlib import Path
-path = Path(sys.argv[1])
-path.parent.mkdir(parents=True, exist_ok=True)
-tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-with os.fdopen(fd, "w", encoding="utf-8") as handle:
-    handle.write(sys.argv[2] + "\n")
-    handle.flush()
-    os.fsync(handle.fileno())
-os.replace(tmp, path)
-os.chmod(path, 0o600)
-PY
-fi
+verified_remote_ids
+write_release_manifest verified_transaction_artifact "${ARTIFACT_DIGEST}" "${ARTIFACT_JSON}"
+write_release_anchor
 
 record_ota_audit 1 published "" "$(ota_elapsed_seconds)" "${GROUP_ID}" "${IOS_UPDATE_ID}"
 
