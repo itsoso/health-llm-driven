@@ -65,9 +65,6 @@ _REMOTE_RELEASE_LOCK_ACQUIRED=0
 _REMOTE_RELEASE_LOCK_DELEGATED=0
 _REMOTE_RELEASE_LOCK_ABANDONED=0
 _REMOTE_RELEASE_LOCK_ADOPTED=0
-REQUIREMENTS_LOCK_SHA=""
-SYSTEM_KB_INPUT_SHA=""
-SYSTEM_KB_ACTIVATION_REQUIRED=1
 
 set_remote_backup_preflight_dir() {
     local stage_dir="$1"
@@ -1934,7 +1931,6 @@ push_code() {
         print_error "origin/main 与本地 HEAD 不一致，拒绝部署 (local=${local_origin_main_sha:0:12} remote=${remote_main_sha:0:12})"
         exit 1
     fi
-    compute_release_input_digests
     print_success "发布源已核验为 exact origin/main: ${DEPLOY_EXPECTED_SHA:0:12}"
 
     # 同步到 kuaishou GitLab（静默，失败不影响部署）
@@ -2798,196 +2794,12 @@ deactivate_health_evidence_runtime_before_mutation() {
     return 1
 }
 
-remote_dependency_sync_command() {
-    if [[ ! "$REMOTE_RELEASE_STATE_DIR" =~ ^/[A-Za-z0-9._/-]+$ ||
-          "$REMOTE_RELEASE_STATE_DIR" = "/" ||
-          "$REMOTE_RELEASE_STATE_DIR" = *"/../"* ||
-          "$REMOTE_RELEASE_STATE_DIR" = *"/.." ||
-          "$REMOTE_RELEASE_STATE_DIR" = *"/./"* ||
-          "$REMOTE_RELEASE_STATE_DIR" = *"/." ||
-          ! "$REQUIREMENTS_LOCK_SHA" =~ ^[0-9a-f]{64}$ ]]; then
-        print_error "发布依赖状态目录或 requirements digest 非法"
-        return 70
-    fi
-    cat <<REMOTE_DEPENDENCY_SYNC
-sync_backend_dependencies() {
-    release_state_dir='$REMOTE_RELEASE_STATE_DIR'
-    requirements_marker="\${release_state_dir}/requirements-lock.sha256"
-    requirements_expected='$REQUIREMENTS_LOCK_SHA'
-    umask 077
-    if [ ! -e "\${release_state_dir}" ]; then
-        mkdir "\${release_state_dir}" || return 1
-        chmod 700 "\${release_state_dir}" || return 1
-    fi
-    if ! test -d "\${release_state_dir}" ||
-       ! test ! -L "\${release_state_dir}" ||
-       [ "\$(stat -c '%U:%G:%a' "\${release_state_dir}")" != 'root:root:700' ]; then
-        echo 'release state directory failed ownership/mode proof' >&2
-        return 1
-    fi
-    marker_exists=0
-    if [ -e "\${requirements_marker}" ] || [ -L "\${requirements_marker}" ]; then
-        if ! test -f "\${requirements_marker}" ||
-           ! test ! -L "\${requirements_marker}" ||
-           [ "\$(stat -c '%U:%G:%a' "\${requirements_marker}")" != 'root:root:600' ] ||
-           [ "\$(stat -c '%h' "\${requirements_marker}")" != '1' ]; then
-            echo 'requirements marker failed ownership/link proof' >&2
-            return 1
-        fi
-        marker_exists=1
-    fi
-    if [ "\${marker_exists}" = '1' ] &&
-       [ "\$(cat "\${requirements_marker}")" = "\${requirements_expected}" ] &&
-       python scripts/verify_locked_requirements.py requirements.lock &&
-       python -m pip check; then
-        echo 'dependency lock unchanged; verified install reused'
-        return 0
-    fi
-    echo '安装锁定依赖...'
-    pip install --require-hashes -r requirements.lock -q || return 1
-    python scripts/verify_locked_requirements.py requirements.lock || return 1
-    python -m pip check || return 1
-    requirements_marker_tmp="\$(mktemp "\${release_state_dir}/.requirements-lock.XXXXXX")" || return 1
-    printf '%s\n' "\${requirements_expected}" > "\${requirements_marker_tmp}" || return 1
-    chmod 600 "\${requirements_marker_tmp}" || return 1
-    if [ "\$(stat -c '%U:%G:%a' "\${requirements_marker_tmp}")" != 'root:root:600' ] ||
-       [ "\$(stat -c '%h' "\${requirements_marker_tmp}")" != '1' ]; then
-        rm -f -- "\${requirements_marker_tmp}"
-        return 1
-    fi
-    sync -f "\${requirements_marker_tmp}" || return 1
-    mv -fT -- "\${requirements_marker_tmp}" "\${requirements_marker}" || return 1
-    sync -f "\${release_state_dir}" || return 1
-}
-sync_backend_dependencies
-REMOTE_DEPENDENCY_SYNC
-}
-
-compute_release_input_digests() {
-    if [[ ! "$DEPLOY_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-        print_error "无法为非精确 candidate 计算发布输入摘要"
-        return 70
-    fi
-    REQUIREMENTS_LOCK_SHA="$(python3 "$SCRIPT_DIR/scripts/release_input_digest.py" \
-        --repo "$SCRIPT_DIR" --commit "$DEPLOY_EXPECTED_SHA" --kind requirements)" || return 1
-    SYSTEM_KB_INPUT_SHA="$(python3 "$SCRIPT_DIR/scripts/release_input_digest.py" \
-        --repo "$SCRIPT_DIR" --commit "$DEPLOY_EXPECTED_SHA" --kind system-kb)" || return 1
-    if [[ ! "$REQUIREMENTS_LOCK_SHA" =~ ^[0-9a-f]{64}$ ||
-          ! "$SYSTEM_KB_INPUT_SHA" =~ ^[0-9a-f]{64}$ ]]; then
-        print_error "发布输入摘要格式非法"
-        return 70
-    fi
-}
-
-determine_system_kb_activation_need() {
-    local result
-    if [[ ! "$REMOTE_RELEASE_STATE_DIR" =~ ^/[A-Za-z0-9._/-]+$ ||
-          "$REMOTE_RELEASE_STATE_DIR" = "/" ||
-          "$REMOTE_RELEASE_STATE_DIR" = *"/../"* ||
-          "$REMOTE_RELEASE_STATE_DIR" = *"/.." ||
-          "$REMOTE_RELEASE_STATE_DIR" = *"/./"* ||
-          "$REMOTE_RELEASE_STATE_DIR" = *"/." ||
-          ! "$SYSTEM_KB_INPUT_SHA" =~ ^[0-9a-f]{64}$ ]]; then
-        print_error "System KB 状态目录或 digest 非法"
-        return 70
-    fi
-    result="$(ssh "$SERVER" bash -s -- \
-        "$REMOTE_RELEASE_STATE_DIR" "$SYSTEM_KB_INPUT_SHA" <<'REMOTE_KB_DIGEST_CHECK'
-set -euo pipefail
-state_dir="$1"
-expected="$2"
-marker="${state_dir}/system-kb-input.sha256"
-if [ ! -e "$state_dir" ]; then
-    printf '%s\n' MISMATCH
-    exit 0
-fi
-test -d "$state_dir"
-test ! -L "$state_dir"
-test "$(stat -c '%U:%G:%a' "$state_dir")" = 'root:root:700'
-if [ -e "$marker" ] || [ -L "$marker" ]; then
-    test -f "$marker"
-    test ! -L "$marker"
-    test "$(stat -c '%U:%G:%a' "$marker")" = 'root:root:600'
-    test "$(stat -c '%h' "$marker")" = '1'
-fi
-if [ -f "$marker" ] && [ "$(cat "$marker")" = "$expected" ]; then
-    printf '%s\n' MATCH
-else
-    printf '%s\n' MISMATCH
-fi
-REMOTE_KB_DIGEST_CHECK
-    )" || {
-        print_error "无法读取 System KB 发布输入状态"
-        return 1
-    }
-    case "$result" in
-        MATCH)
-            SYSTEM_KB_ACTIVATION_REQUIRED=0
-            print_success "System KB 输入摘要未变化，将跳过写入并保留只读验证"
-            ;;
-        MISMATCH)
-            SYSTEM_KB_ACTIVATION_REQUIRED=1
-            print_step "System KB 输入摘要已变化或 marker 缺失，将执行完整写入"
-            ;;
-        *)
-            print_error "System KB 输入状态返回非法: $result"
-            return 1
-            ;;
-    esac
-}
-
-record_system_kb_input_digest() {
-    if [[ ! "$REMOTE_RELEASE_STATE_DIR" =~ ^/[A-Za-z0-9._/-]+$ ||
-          "$REMOTE_RELEASE_STATE_DIR" = "/" ||
-          "$REMOTE_RELEASE_STATE_DIR" = *"/../"* ||
-          "$REMOTE_RELEASE_STATE_DIR" = *"/.." ||
-          "$REMOTE_RELEASE_STATE_DIR" = *"/./"* ||
-          "$REMOTE_RELEASE_STATE_DIR" = *"/." ||
-          ! "$SYSTEM_KB_INPUT_SHA" =~ ^[0-9a-f]{64}$ ]]; then
-        print_error "拒绝记录非法 System KB digest"
-        return 70
-    fi
-    ssh "$SERVER" bash -s -- \
-        "$REMOTE_RELEASE_STATE_DIR" "$SYSTEM_KB_INPUT_SHA" <<'REMOTE_KB_DIGEST_WRITE'
-set -euo pipefail
-state_dir="$1"
-expected="$2"
-marker="${state_dir}/system-kb-input.sha256"
-umask 077
-if [ ! -e "$state_dir" ]; then
-    mkdir "$state_dir"
-    chmod 700 "$state_dir"
-fi
-test -d "$state_dir"
-test ! -L "$state_dir"
-test "$(stat -c '%U:%G:%a' "$state_dir")" = 'root:root:700'
-if [ -e "$marker" ] || [ -L "$marker" ]; then
-    test -f "$marker"
-    test ! -L "$marker"
-    test "$(stat -c '%U:%G:%a' "$marker")" = 'root:root:600'
-    test "$(stat -c '%h' "$marker")" = '1'
-fi
-marker_tmp="$(mktemp "${state_dir}/.system-kb-input.XXXXXX")"
-trap 'rm -f -- "$marker_tmp"' EXIT
-printf '%s\n' "$expected" > "$marker_tmp"
-chmod 600 "$marker_tmp"
-test "$(stat -c '%U:%G:%a' "$marker_tmp")" = 'root:root:600'
-test "$(stat -c '%h' "$marker_tmp")" = '1'
-sync -f "$marker_tmp"
-mv -fT -- "$marker_tmp" "$marker"
-sync -f "$state_dir"
-trap - EXIT
-REMOTE_KB_DIGEST_WRITE
-}
-
 # 部署后端
 deploy_backend() {
     local runtime_state_preflight_complete=0
-    local remote_dependency_sync
 
     print_step "部署后端..."
     assert_remote_release_lock_if_acquired
-    remote_dependency_sync="$(remote_dependency_sync_command)" || return 1
 
     # runtime-only 医疗知识必须先让 hold-aware 代码成为健康回滚地板，
     # 且首阶段禁止生成新 evidence answer。
@@ -2995,7 +2807,6 @@ deploy_backend() {
 
     # 1. 备份数据库 + 记录发布前回滚点
     backup_database
-    determine_system_kb_activation_need
     inspect_runtime_state_transaction_before_deploy
     if [[ "$RUNTIME_STATE_ALREADY_FINALIZED" = "1" ]]; then
         if ! prove_health_evidence_runtime_process_flag false ||
@@ -3007,7 +2818,6 @@ deploy_backend() {
             return 1
         fi
         wait_for_agent_skills_manifest
-        record_system_kb_input_digest
         print_success "持久事务已终结且 backend/System KB post-gates 复证通过"
         return 0
     fi
@@ -3105,7 +2915,12 @@ deploy_backend() {
                 --workspace '$REMOTE_PATH/backend' --root '$REMOTE_RELEASE_PROOF_ROOT' || \
                 python_dependency_proof_rc=\$?; \
             case \"\$python_dependency_proof_rc\" in \
-                0) echo '复用已验证的 Python 依赖' ;; \
+                0) \
+                    python scripts/verify_locked_requirements.py requirements.lock && \
+                    test -r '$REMOTE_RELEASE_LOCK_DIR/token' && \
+                    test \"\$(cat '$REMOTE_RELEASE_LOCK_DIR/token')\" = '$REMOTE_RELEASE_LOCK_TOKEN' && \
+                    echo '复用已验证的 Python 依赖' \
+                    ;; \
                 3) \
                     if [ '$RELEASE_STEP_PROOF_MODE' != off ]; then \
                         python ../scripts/release_step_proof.py \
@@ -3114,6 +2929,9 @@ deploy_backend() {
                     fi && \
                     echo '安装依赖...' && \
                     pip install --require-hashes -r requirements.lock -q && \
+                    test -r '$REMOTE_RELEASE_LOCK_DIR/token' && \
+                    test \"\$(cat '$REMOTE_RELEASE_LOCK_DIR/token')\" = '$REMOTE_RELEASE_LOCK_TOKEN' && \
+                    python scripts/verify_locked_requirements.py requirements.lock && \
                     python -m pip check && \
                     test -r '$REMOTE_RELEASE_LOCK_DIR/token' && \
                     test \"\$(cat '$REMOTE_RELEASE_LOCK_DIR/token')\" = '$REMOTE_RELEASE_LOCK_TOKEN' && \
@@ -3284,14 +3102,6 @@ deploy_backend() {
         else
             print_error "最终 terminal gate 失败且恢复失败；服务已隔离或需人工隔离"
         fi
-        exit 1
-    fi
-
-    # 只有完整终态健康、revision 与 staged serving contract 都通过后，才
-    # 记录本次输入摘要；任何中途失败都保持 marker 陈旧，下一次自动重跑写入。
-    if ! record_system_kb_input_digest; then
-        _REMOTE_RELEASE_LOCK_ABANDONED=1
-        print_error "System KB 输入摘要记录失败；发布锁与现场保留"
         exit 1
     fi
 

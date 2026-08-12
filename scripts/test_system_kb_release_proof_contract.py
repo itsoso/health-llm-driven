@@ -13,3 +13,14 @@ def test_backend_deploy_defaults_whole_kb_proof_to_shadow_mode():
     assert deploy.index("python scripts/seed_system_kb_phase0.py") < marker_index
     assert deploy.index("python scripts/import_system_kb_v2_artifacts.py") > marker_index
     assert deploy.find("verify_runtime_only_kb_contract \"staged\"", marker_index) > marker_index
+
+
+def test_backend_deploy_cannot_bypass_db_locked_incremental_import_with_digest_marker():
+    deploy = (ROOT / "deploy.sh").read_text(encoding="utf-8")
+    backend = deploy[deploy.index("deploy_backend() {") :]
+
+    assert "system-kb-input.sha256" not in deploy
+    assert "SYSTEM_KB_ACTIVATION_REQUIRED" not in deploy
+    assert "determine_system_kb_activation_need" not in deploy
+    assert "record_system_kb_input_digest" not in deploy
+    assert backend.count("python scripts/import_system_kb_v2_artifacts.py") == 1
