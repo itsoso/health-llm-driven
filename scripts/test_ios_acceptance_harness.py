@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +17,43 @@ UI_TEST_SOURCE = (
 )
 README = ROOT / "scripts/ios-real-device-acceptance/README.md"
 RESULT_VERIFIER = ROOT / "scripts/verify_ios_acceptance_result.py"
+EXPECTED_TESTS = (
+    "testInstalledBuildLaunchesExpectedEntrySurface()",
+    "test00AuthenticatedSessionPersistsAcrossTwoColdLaunches()",
+    "testConversationOpensAtLatestSeededMessage()",
+    "testTodayContextCanOpenAndDismiss()",
+    "testDraftSurvivesBackgroundWithoutSending()",
+    "testPrivacyAndAccountDeletionEntriesAreReachable()",
+    "testGPSAutoRefreshPublishesCityAndReadyState()",
+    "testProductionSettingsEntriesOpenAndReturn()",
+)
+
+
+def _test_results(cases: list[tuple[str, str]]) -> str:
+    return json.dumps(
+        {
+            "testNodes": [
+                {
+                    "children": [
+                        {"name": name, "nodeType": "Test Case", "result": result}
+                        for name, result in cases
+                    ]
+                }
+            ]
+        }
+    )
+
+
+def _summary(*, passed: int, skipped: int, total: int) -> str:
+    return json.dumps(
+        {
+            "result": "Passed",
+            "failedTests": 0,
+            "passedTests": passed,
+            "skippedTests": skipped,
+            "totalTestCount": total,
+        }
+    )
 
 
 def _generate(
@@ -106,6 +146,13 @@ def test_runner_documents_simulator_location_options() -> None:
     assert "Simulator-only" in result.stdout
 
 
+def test_verifier_expected_suite_matches_xctest_source() -> None:
+    source = UI_TEST_SOURCE.read_text(encoding="utf-8")
+    source_tests = set(re.findall(r"\bfunc\s+(test\w+\(\))\s+throws", source))
+
+    assert source_tests == set(EXPECTED_TESTS)
+
+
 def test_runner_manages_simulator_location_and_cleans_it_in_a_trap() -> None:
     runner = RUNNER.read_text(encoding="utf-8")
 
@@ -121,17 +168,10 @@ def test_runner_manages_simulator_location_and_cleans_it_in_a_trap() -> None:
 def test_result_verifier_rejects_skipped_authenticated_acceptance(tmp_path: Path) -> None:
     summary = tmp_path / "summary.json"
     tests = tmp_path / "tests.json"
-    summary.write_text(
-        '{"result":"Passed","failedTests":0,"passedTests":1,"skippedTests":1,"totalTestCount":2}',
-        encoding="utf-8",
-    )
-    tests.write_text(
-        '{"testNodes":[{"children":['
-        '{"name":"testInstalledBuildLaunchesExpectedEntrySurface()","nodeType":"Test Case","result":"Passed"},'
-        '{"name":"testProductionSettingsEntriesOpenAndReturn()","nodeType":"Test Case","result":"Skipped"}'
-        ']}]}',
-        encoding="utf-8",
-    )
+    cases = [(name, "Passed") for name in EXPECTED_TESTS]
+    cases[1] = (cases[1][0], "Skipped")
+    summary.write_text(_summary(passed=7, skipped=1, total=8), encoding="utf-8")
+    tests.write_text(_test_results(cases), encoding="utf-8")
 
     result = subprocess.run(
         [
@@ -141,9 +181,52 @@ def test_result_verifier_rejects_skipped_authenticated_acceptance(tmp_path: Path
             str(summary),
             "--tests",
             str(tests),
-            "--allow-skip",
-            "testTodayContextCanOpenAndDismiss()",
+            "--platform",
+            "iOS",
         ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "skipped" in result.stderr.lower()
+
+
+@pytest.mark.parametrize(
+    ("skipped_test", "platform", "expected_city"),
+    [
+        ("testTodayContextCanOpenAndDismiss()", "iOS", ""),
+        ("testGPSAutoRefreshPublishesCityAndReadyState()", "iOS Simulator", ""),
+    ],
+)
+def test_result_verifier_rejects_non_allowlisted_platform_skips(
+    tmp_path: Path,
+    skipped_test: str,
+    platform: str,
+    expected_city: str,
+) -> None:
+    summary = tmp_path / "summary.json"
+    tests = tmp_path / "tests.json"
+    cases = [(name, "Skipped" if name == skipped_test else "Passed") for name in EXPECTED_TESTS]
+    summary.write_text(_summary(passed=7, skipped=1, total=8), encoding="utf-8")
+    tests.write_text(_test_results(cases), encoding="utf-8")
+    command = [
+        "python3",
+        str(RESULT_VERIFIER),
+        "--summary",
+        str(summary),
+        "--tests",
+        str(tests),
+        "--platform",
+        platform,
+    ]
+    if expected_city:
+        command.extend(("--expected-city", expected_city))
+
+    result = subprocess.run(
+        command,
         cwd=ROOT,
         check=False,
         capture_output=True,
@@ -162,12 +245,7 @@ def test_result_verifier_accepts_complete_green_summary(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     tests.write_text(
-        '{"testNodes":[{"children":['
-        + ",".join(
-            f'{{"name":"test{index}()","nodeType":"Test Case","result":"Passed"}}'
-            for index in range(8)
-        )
-        + ']}]}',
+        _test_results([(name, "Passed") for name in EXPECTED_TESTS]),
         encoding="utf-8",
     )
 
@@ -179,6 +257,10 @@ def test_result_verifier_accepts_complete_green_summary(tmp_path: Path) -> None:
             str(summary),
             "--tests",
             str(tests),
+            "--platform",
+            "iOS Simulator",
+            "--expected-city",
+            "杭州",
         ],
         cwd=ROOT,
         check=False,
@@ -190,20 +272,14 @@ def test_result_verifier_accepts_complete_green_summary(tmp_path: Path) -> None:
     assert "8 passed" in result.stdout
 
 
-def test_result_verifier_accepts_only_an_explicitly_allowlisted_skip(tmp_path: Path) -> None:
+def test_result_verifier_allows_only_gps_skip_without_expected_city(tmp_path: Path) -> None:
     summary = tmp_path / "summary.json"
     tests = tmp_path / "tests.json"
-    summary.write_text(
-        '{"result":"Passed","failedTests":0,"passedTests":1,"skippedTests":1,"totalTestCount":2}',
-        encoding="utf-8",
-    )
-    tests.write_text(
-        '{"testNodes":[{"children":['
-        '{"name":"testInstalledBuildLaunchesExpectedEntrySurface()","nodeType":"Test Case","result":"Passed"},'
-        '{"name":"testTodayContextCanOpenAndDismiss()","nodeType":"Test Case","result":"Skipped"}'
-        ']}]}',
-        encoding="utf-8",
-    )
+    cases = [(name, "Passed") for name in EXPECTED_TESTS]
+    gps_index = EXPECTED_TESTS.index("testGPSAutoRefreshPublishesCityAndReadyState()")
+    cases[gps_index] = (cases[gps_index][0], "Skipped")
+    summary.write_text(_summary(passed=7, skipped=1, total=8), encoding="utf-8")
+    tests.write_text(_test_results(cases), encoding="utf-8")
 
     result = subprocess.run(
         [
@@ -213,8 +289,8 @@ def test_result_verifier_accepts_only_an_explicitly_allowlisted_skip(tmp_path: P
             str(summary),
             "--tests",
             str(tests),
-            "--allow-skip",
-            "testTodayContextCanOpenAndDismiss()",
+            "--platform",
+            "iOS",
         ],
         cwd=ROOT,
         check=False,
@@ -224,6 +300,104 @@ def test_result_verifier_accepts_only_an_explicitly_allowlisted_skip(tmp_path: P
 
     assert result.returncode == 0
     assert "1 allowed skip" in result.stdout
+
+
+def test_result_verifier_rejects_zero_test_false_green(tmp_path: Path) -> None:
+    summary = tmp_path / "summary.json"
+    tests = tmp_path / "tests.json"
+    summary.write_text(_summary(passed=0, skipped=0, total=0), encoding="utf-8")
+    tests.write_text(_test_results([]), encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(RESULT_VERIFIER),
+            "--summary",
+            str(summary),
+            "--tests",
+            str(tests),
+            "--platform",
+            "iOS",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "zero" in result.stderr.lower()
+
+
+def test_result_verifier_rejects_missing_and_unexpected_test_names(tmp_path: Path) -> None:
+    summary = tmp_path / "summary.json"
+    tests = tmp_path / "tests.json"
+    cases = [(name, "Passed") for name in EXPECTED_TESTS[:-1]]
+    cases.append(("testUnexpectedReleaseShortcut()", "Passed"))
+    summary.write_text(_summary(passed=8, skipped=0, total=8), encoding="utf-8")
+    tests.write_text(_test_results(cases), encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(RESULT_VERIFIER),
+            "--summary",
+            str(summary),
+            "--tests",
+            str(tests),
+            "--platform",
+            "iOS",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "missing" in result.stderr.lower()
+    assert "unexpected" in result.stderr.lower()
+
+
+def test_simulator_with_expected_city_rejects_skipped_gps_test(tmp_path: Path) -> None:
+    summary = tmp_path / "summary.json"
+    tests = tmp_path / "tests.json"
+    cases = [(name, "Passed") for name in EXPECTED_TESTS]
+    gps_index = EXPECTED_TESTS.index("testGPSAutoRefreshPublishesCityAndReadyState()")
+    cases[gps_index] = (cases[gps_index][0], "Skipped")
+    summary.write_text(_summary(passed=7, skipped=1, total=8), encoding="utf-8")
+    tests.write_text(_test_results(cases), encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(RESULT_VERIFIER),
+            "--summary",
+            str(summary),
+            "--tests",
+            str(tests),
+            "--platform",
+            "iOS Simulator",
+            "--expected-city",
+            "杭州",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "skipped" in result.stderr.lower()
+
+
+def test_runner_derives_skip_policy_from_platform_and_expected_city() -> None:
+    runner = RUNNER.read_text(encoding="utf-8")
+
+    assert '--platform "${DESTINATION_PLATFORM}"' in runner
+    assert 'if [[ -n "${EXPECTED_CITY}" ]]' in runner
+    assert '--expected-city "${EXPECTED_CITY}"' in runner
+    assert "--allow-skip" not in runner
 
 
 def test_runner_rejects_location_options_for_physical_devices() -> None:

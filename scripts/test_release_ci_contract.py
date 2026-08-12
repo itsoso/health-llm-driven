@@ -54,6 +54,22 @@ def test_ci_blocks_on_release_invariants_and_exercises_macos_bash3():
     for test_path in RELEASE_TESTS:
         assert test_path in release_runs
 
+    ruby_setup = next(
+        step
+        for step in release_job["steps"]
+        if str(step.get("uses", "")).startswith("ruby/setup-ruby@")
+    )
+    assert ruby_setup["with"]["ruby-version"] == "3.3"
+    xcodeproj_install = next(
+        step
+        for step in release_job["steps"]
+        if step.get("name") == "Install pinned xcodeproj dependency"
+    )
+    assert (
+        str(xcodeproj_install["run"]).strip()
+        == "gem install xcodeproj --version 1.27.0 --no-document"
+    )
+
     backend_needs = jobs["backend-tests"]["needs"]
     assert "release-invariants" in backend_needs
     assert (

@@ -11,10 +11,37 @@
 set -uo pipefail
 
 SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -n "${REVA_VALIDATION_ROOT:-}" ] &&
+   [ "${REVA_VALIDATION_ALLOW_ROOT_OVERRIDE_FOR_TESTS:-}" != "1" ]; then
+  echo "REVA_VALIDATION_ROOT is allowed only in explicit test mode" >&2
+  exit 2
+fi
 ROOT="${REVA_VALIDATION_ROOT:-$SCRIPT_ROOT}"
 if ! ROOT="$(cd "$ROOT" 2>/dev/null && pwd)"; then
   echo "Validation root does not exist: ${REVA_VALIDATION_ROOT:-$SCRIPT_ROOT}" >&2
   exit 2
+fi
+GIT_TOPLEVEL="$(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null)" || {
+  echo "Validation root is not a Git worktree: $ROOT" >&2
+  exit 2
+}
+if ! GIT_TOPLEVEL="$(cd "$GIT_TOPLEVEL" 2>/dev/null && pwd)"; then
+  echo "Cannot canonicalize validation Git root: $GIT_TOPLEVEL" >&2
+  exit 2
+fi
+if [ "$ROOT" != "$GIT_TOPLEVEL" ]; then
+  echo "Validation root must equal Git toplevel: root=$ROOT git=$GIT_TOPLEVEL" >&2
+  exit 2
+fi
+if [ -n "${REVA_VALIDATION_EXPECTED_ROOT:-}" ]; then
+  if ! EXPECTED_ROOT="$(cd "$REVA_VALIDATION_EXPECTED_ROOT" 2>/dev/null && pwd)"; then
+    echo "Expected validation root does not exist: $REVA_VALIDATION_EXPECTED_ROOT" >&2
+    exit 2
+  fi
+  if [ "$ROOT" != "$EXPECTED_ROOT" ]; then
+    echo "Validation root mismatch: expected=$EXPECTED_ROOT actual=$ROOT" >&2
+    exit 2
+  fi
 fi
 cd "$ROOT" || exit 2
 

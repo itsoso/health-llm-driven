@@ -373,6 +373,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+
+      - name: Install pinned xcodeproj dependency
+        run: gem install xcodeproj --version 1.27.0 --no-document
+
       - name: Install release-test dependencies
         working-directory: backend
         run: |

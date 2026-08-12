@@ -132,6 +132,7 @@ exec {sys.executable!s} {runner!s} "$label"
         **os.environ,
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
         "REVA_VALIDATION_ROOT": str(repo),
+        "REVA_VALIDATION_ALLOW_ROOT_OVERRIDE_FOR_TESTS": "1",
         "REVA_VALIDATION_LOG_DIR": str(log_root),
         "FAKE_CHECK_STATE": str(state_path),
         "FAKE_CHECK_SLEEP": "0.05",
@@ -200,6 +201,32 @@ def test_mobile_profile_includes_lint_design_and_settings_route_checks(tmp_path:
         "mobile-design",
         "mobile-settings-routes",
     }.issubset(state["labels"])
+
+
+def test_validation_root_override_is_rejected_without_explicit_test_mode(
+    tmp_path: Path,
+) -> None:
+    _, env = _init_fixture_repo(tmp_path)
+    env.pop("REVA_VALIDATION_ALLOW_ROOT_OVERRIDE_FOR_TESTS")
+    env["CI"] = "true"
+
+    result = _run("--mobile", env)
+
+    assert result.returncode == 2
+    assert "REVA_VALIDATION_ROOT" in result.stderr
+    assert "explicit test mode" in result.stderr
+
+
+def test_explicit_test_root_must_still_equal_its_git_toplevel(tmp_path: Path) -> None:
+    repo, env = _init_fixture_repo(tmp_path)
+    nested = repo / "nested"
+    nested.mkdir()
+    env["REVA_VALIDATION_ROOT"] = str(nested)
+
+    result = _run("--mobile", env)
+
+    assert result.returncode == 2
+    assert "must equal Git toplevel" in result.stderr
 
 
 @pytest.mark.parametrize(

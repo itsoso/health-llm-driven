@@ -33,6 +33,19 @@ SCHEMA_VERSION = 1
 DEFAULT_TTL_SECONDS = 6 * 60 * 60
 PROFILE_VERSION = "1"
 _SAFE_PROFILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$")
+_GIT_ENV_OVERRIDES = (
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_CONFIG_COUNT",
+    "GIT_CONFIG_GLOBAL",
+    "GIT_CONFIG_NOSYSTEM",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_SYSTEM",
+    "GIT_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_WORK_TREE",
+)
 _COMMON_LOCKFILES = ("pnpm-lock.yaml",)
 _PROFILE_LOCKFILES = {
     "backend": ("backend/requirements.lock",),
@@ -58,12 +71,21 @@ class CredentialVerdict:
 
 
 def _run_text(argv: Sequence[str], *, cwd: Path) -> str:
+    environment = os.environ.copy()
+    for name in _GIT_ENV_OVERRIDES:
+        environment.pop(name, None)
+    for name in tuple(environment):
+        if name.startswith("GIT_CONFIG_KEY_") or name.startswith(
+            "GIT_CONFIG_VALUE_"
+        ):
+            environment.pop(name, None)
     completed = subprocess.run(
         list(argv),
         cwd=cwd,
         text=True,
         capture_output=True,
         check=False,
+        env=environment,
     )
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout).strip()
@@ -132,6 +154,16 @@ def _private_regular_log(path: Path) -> tuple[bool, str]:
 
 
 def _command_version(argv: Sequence[str], *, cwd: Path) -> str:
+    environment = os.environ.copy()
+    for name in tuple(environment):
+        normalized = name.lower().replace("-", "_")
+        if name in {"NODE_OPTIONS", "NODE_PATH"} or normalized in {
+            "npm_config_globalconfig",
+            "npm_config_node_options",
+            "npm_config_script_shell",
+            "npm_config_userconfig",
+        }:
+            environment.pop(name, None)
     try:
         completed = subprocess.run(
             list(argv),
@@ -140,6 +172,7 @@ def _command_version(argv: Sequence[str], *, cwd: Path) -> str:
             capture_output=True,
             check=False,
             timeout=10,
+            env=environment,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return "__missing__"
@@ -151,13 +184,17 @@ def _command_version(argv: Sequence[str], *, cwd: Path) -> str:
 
 def collect_toolchain(repo: Path | str) -> dict[str, str]:
     repo_path = Path(repo).resolve()
-    return {
+    toolchain = {
         "python": platform.python_version(),
         "node": _command_version(["node", "--version"], cwd=repo_path),
         "npm": _command_version(["npm", "--version"], cwd=repo_path),
         "swift": _command_version(["swift", "--version"], cwd=repo_path),
         "os": platform.platform(),
     }
+    missing = sorted(name for name, value in toolchain.items() if value == "__missing__")
+    if missing:
+        raise RuntimeError("required toolchain command missing: " + ", ".join(missing))
+    return toolchain
 
 
 def _normalize_commands(commands: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:

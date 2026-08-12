@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -100,6 +101,99 @@ _ROOT_VALIDATION_FILES = {
     "deploy_production.sh",
     "deploy_to_server.sh",
 }
+_MOBILE_NATIVE_RESOURCE_PREFIXES = (
+    "mobile/assets/rokid/",
+    "mobile/vendor/",
+)
+_MOBILE_NATIVE_RESOURCE_SUFFIXES = (
+    ".aab",
+    ".apk",
+    ".aar",
+    ".dylib",
+    ".framework",
+    ".ipa",
+    ".jar",
+    ".mlmodel",
+    ".mlpackage",
+    ".metal",
+    ".appex",
+    ".bundle",
+    ".so",
+    ".storyboard",
+    ".xcassets",
+    ".xcframework",
+    ".xcprivacy",
+    ".xib",
+)
+_GIT_ENV_OVERRIDES = frozenset(
+    {
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_COMMON_DIR",
+        "GIT_CONFIG_COUNT",
+        "GIT_CONFIG_GLOBAL",
+        "GIT_CONFIG_NOSYSTEM",
+        "GIT_CONFIG_PARAMETERS",
+        "GIT_CONFIG_SYSTEM",
+        "GIT_DIR",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_WORK_TREE",
+    }
+)
+_VALIDATION_ENV_OVERRIDES = frozenset(
+    {
+        *_GIT_ENV_OVERRIDES,
+        "BASH_ENV",
+        "ENV",
+        "NODE_OPTIONS",
+        "NODE_PATH",
+        "NPM_CONFIG_GLOBALCONFIG",
+        "NPM_CONFIG_NODE_OPTIONS",
+        "NPM_CONFIG_SCRIPT_SHELL",
+        "NPM_CONFIG_USERCONFIG",
+        "PYTEST_ADDOPTS",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
+        "PYTEST_PLUGINS",
+        "PYTHONHOME",
+        "PYTHONPATH",
+        "PYTHONSTARTUP",
+        "npm_config_globalconfig",
+        "npm_config_node_options",
+        "npm_config_script_shell",
+        "npm_config_userconfig",
+        "REVA_VALIDATION_ALLOW_ROOT_OVERRIDE_FOR_TESTS",
+        "REVA_VALIDATION_LOG_DIR",
+        "REVA_VALIDATION_ROOT",
+    }
+)
+_MUTATION_ENV_OVERRIDES = frozenset(
+    {
+        *_GIT_ENV_OVERRIDES,
+        "BASH_ENV",
+        "ENV",
+        "NODE_OPTIONS",
+        "NODE_PATH",
+        "NPM_CONFIG_GLOBALCONFIG",
+        "NPM_CONFIG_NODE_OPTIONS",
+        "NPM_CONFIG_SCRIPT_SHELL",
+        "NPM_CONFIG_USERCONFIG",
+        "PYTHONHOME",
+        "PYTHONPATH",
+        "PYTHONSTARTUP",
+        "npm_config_globalconfig",
+        "npm_config_node_options",
+        "npm_config_script_shell",
+        "npm_config_userconfig",
+    }
+)
+_OTA_TEST_ENV_OVERRIDES = frozenset(
+    {
+        "OTA_ALLOW_DIRTY",
+        "OTA_EAS_RUNNER",
+        "OTA_EXPO_RUNNER",
+        "OTA_TEST_AFTER_ARTIFACT_VERIFIED",
+    }
+)
 
 
 def _git(
@@ -108,13 +202,42 @@ def _git(
     text: bool = True,
     check: bool = True,
 ) -> str | bytes:
+    environment = _git_environment()
     result = subprocess.run(
         ["git", "-C", str(repo), *args],
         check=check,
         capture_output=True,
         text=text,
+        env=environment,
     )
     return result.stdout.strip() if text else result.stdout
+
+
+def _scrub_environment(
+    environment: Mapping[str, str], names: Iterable[str]
+) -> dict[str, str]:
+    scrubbed = dict(environment)
+    npm_overrides = {
+        "npm_config_globalconfig",
+        "npm_config_node_options",
+        "npm_config_script_shell",
+        "npm_config_userconfig",
+    }
+    for name in names:
+        scrubbed.pop(name, None)
+    for name in tuple(scrubbed):
+        if (
+            name.startswith("BASH_FUNC_")
+            or name.startswith("GIT_CONFIG_KEY_")
+            or name.startswith("GIT_CONFIG_VALUE_")
+            or name.lower().replace("-", "_") in npm_overrides
+        ):
+            scrubbed.pop(name, None)
+    return scrubbed
+
+
+def _git_environment() -> dict[str, str]:
+    return _scrub_environment(os.environ, _GIT_ENV_OVERRIDES)
 
 
 def _decode_path(value: bytes) -> str:
@@ -183,8 +306,847 @@ def _is_test_or_fixture(path: str) -> bool:
     )
 
 
-def classify_path(path: str) -> str | None:
+def _normalize_mobile_asset_reference(value: object, *, source: str) -> str:
+    if not isinstance(value, str) or not value.startswith("./"):
+        raise ReleaseError(
+            f"{source} native asset reference must be a static local path"
+        )
+    relative = PurePosixPath(value[2:])
+    if not relative.parts or ".." in relative.parts or "." in relative.parts:
+        raise ReleaseError(f"{source} contains an unsafe native asset path: {value!r}")
+    return str(PurePosixPath("mobile", *relative.parts))
+
+
+def _local_plugin_references(value: str, *, source: str) -> set[str]:
+    exact = _normalize_mobile_asset_reference(value, source=source)
+    if PurePosixPath(exact).suffix:
+        return {exact}
+    extensions = (".js", ".ts", ".cjs", ".mjs")
+    return {
+        exact,
+        *(f"{exact}{extension}" for extension in extensions),
+        *(f"{exact}/index{extension}" for extension in extensions),
+    }
+
+
+def _app_json_native_assets(raw: str, *, source: str) -> set[str]:
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise ReleaseError(f"Cannot parse {source}: {error}") from error
+    if not isinstance(payload, dict) or not isinstance(payload.get("expo", {}), dict):
+        raise ReleaseError(f"{source} must contain an Expo config object")
+    expo = payload.get("expo", {})
+    references: list[tuple[str, object]] = []
+    direct_assets: set[str] = set()
+
+    def add(label: str, container: object, key: str) -> None:
+        if isinstance(container, dict) and key in container:
+            references.append((label, container[key]))
+
+    add("icon", expo, "icon")
+    splash = expo.get("splash", {}) if isinstance(expo, dict) else {}
+    add("splash.image", splash, "image")
+    android = expo.get("android", {}) if isinstance(expo, dict) else {}
+    add("android.icon", android, "icon")
+    add("android.googleServicesFile", android, "googleServicesFile")
+    android_splash = android.get("splash", {}) if isinstance(android, dict) else {}
+    for key in ("image", "mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"):
+        add(f"android.splash.{key}", android_splash, key)
+    android_splash_dark = (
+        android_splash.get("dark", {}) if isinstance(android_splash, dict) else {}
+    )
+    for key in ("image", "mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"):
+        add(f"android.splash.dark.{key}", android_splash_dark, key)
+    adaptive = android.get("adaptiveIcon", {}) if isinstance(android, dict) else {}
+    for key in ("foregroundImage", "backgroundImage", "monochromeImage"):
+        add(f"android.adaptiveIcon.{key}", adaptive, key)
+    notification = expo.get("notification", {}) if isinstance(expo, dict) else {}
+    add("notification.icon", notification, "icon")
+    ios = expo.get("ios", {}) if isinstance(expo, dict) else {}
+    add("ios.googleServicesFile", ios, "googleServicesFile")
+    ios_icon = ios.get("icon") if isinstance(ios, dict) else None
+    if isinstance(ios_icon, dict):
+        for key in ("light", "dark", "tinted"):
+            add(f"ios.icon.{key}", ios_icon, key)
+    else:
+        add("ios.icon", ios, "icon")
+    ios_splash = ios.get("splash", {}) if isinstance(ios, dict) else {}
+    for key in ("image", "tabletImage"):
+        add(f"ios.splash.{key}", ios_splash, key)
+    ios_splash_dark = (
+        ios_splash.get("dark", {}) if isinstance(ios_splash, dict) else {}
+    )
+    for key in ("image", "tabletImage"):
+        add(f"ios.splash.dark.{key}", ios_splash_dark, key)
+    web = expo.get("web", {}) if isinstance(expo, dict) else {}
+    add("web.favicon", web, "favicon")
+    web_splash = web.get("splash", {}) if isinstance(web, dict) else {}
+    add("web.splash.image", web_splash, "image")
+    updates = expo.get("updates", {}) if isinstance(expo, dict) else {}
+    add(
+        "updates.codeSigningCertificate",
+        updates,
+        "codeSigningCertificate",
+    )
+    locales = expo.get("locales", {}) if isinstance(expo, dict) else {}
+    if isinstance(locales, dict):
+        for locale, value in locales.items():
+            if isinstance(value, str):
+                references.append((f"locales.{locale}", value))
+    def add_local_values(label: str, value: object) -> None:
+        if isinstance(value, str) and value.startswith("./"):
+            references.append((label, value))
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                add_local_values(f"{label}[{index}]", item)
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                add_local_values(f"{label}.{key}", item)
+
+    plugins = expo.get("plugins", []) if isinstance(expo, dict) else []
+    if isinstance(plugins, list):
+        for index, plugin in enumerate(plugins):
+            if isinstance(plugin, str):
+                if plugin.startswith("./"):
+                    direct_assets.update(
+                        _local_plugin_references(
+                            plugin, source=f"{source}:plugins[{index}]"
+                        )
+                    )
+                continue
+            if not isinstance(plugin, list) or not plugin:
+                continue
+            name = plugin[0]
+            if not isinstance(name, str):
+                continue
+            options = plugin[1] if len(plugin) > 1 else None
+            add_local_values(f"plugins[{index}].{name}", options)
+            if name.startswith("./"):
+                direct_assets.update(
+                    _local_plugin_references(
+                        name, source=f"{source}:plugins[{index}]"
+                    )
+                )
+            if not isinstance(options, dict):
+                continue
+            if name == "expo-notifications":
+                add(f"plugins[{index}].expo-notifications.icon", options, "icon")
+            elif name == "expo-splash-screen":
+                add(f"plugins[{index}].expo-splash-screen.image", options, "image")
+                for platform_name in ("dark", "ios", "android"):
+                    platform_options = options.get(platform_name, {})
+                    add(
+                        f"plugins[{index}].expo-splash-screen.{platform_name}.image",
+                        platform_options,
+                        "image",
+                    )
+    return direct_assets | {
+        _normalize_mobile_asset_reference(value, source=f"{source}:{label}")
+        for label, value in references
+    }
+
+
+@dataclass(frozen=True)
+class _JsToken:
+    kind: str
+    value: str
+
+
+_JS_IDENTIFIER_START = re.compile(r"[A-Za-z_$]")
+_JS_IDENTIFIER_PART = re.compile(r"[A-Za-z0-9_$]")
+_NATIVE_CONFIG_PATHS = frozenset(
+    {
+        ("icon",),
+        ("ios", "icon"),
+        ("ios", "icon", "light"),
+        ("ios", "icon", "dark"),
+        ("ios", "icon", "tinted"),
+        ("ios", "googleServicesFile"),
+        ("android", "icon"),
+        ("android", "googleServicesFile"),
+        ("splash", "image"),
+        ("ios", "splash", "image"),
+        ("android", "splash", "image"),
+        ("android", "splash", "mdpi"),
+        ("android", "splash", "hdpi"),
+        ("android", "splash", "xhdpi"),
+        ("android", "splash", "xxhdpi"),
+        ("android", "splash", "xxxhdpi"),
+        ("android", "splash", "dark", "image"),
+        ("android", "splash", "dark", "mdpi"),
+        ("android", "splash", "dark", "hdpi"),
+        ("android", "splash", "dark", "xhdpi"),
+        ("android", "splash", "dark", "xxhdpi"),
+        ("android", "splash", "dark", "xxxhdpi"),
+        ("ios", "splash", "tabletImage"),
+        ("ios", "splash", "dark", "image"),
+        ("ios", "splash", "dark", "tabletImage"),
+        ("android", "adaptiveIcon", "foregroundImage"),
+        ("android", "adaptiveIcon", "backgroundImage"),
+        ("android", "adaptiveIcon", "monochromeImage"),
+        ("notification", "icon"),
+        ("web", "favicon"),
+        ("web", "splash", "image"),
+        ("updates", "codeSigningCertificate"),
+    }
+)
+_NATIVE_CONFIG_CONTAINERS = frozenset(
+    {
+        (),
+        ("ios",),
+        ("ios", "icon"),
+        ("ios", "splash"),
+        ("ios", "splash", "dark"),
+        ("android",),
+        ("android", "splash"),
+        ("android", "splash", "dark"),
+        ("android", "adaptiveIcon"),
+        ("splash",),
+        ("notification",),
+        ("web",),
+        ("web", "splash"),
+        ("updates",),
+        ("plugins",),
+        ("locales",),
+    }
+)
+_PLUGIN_ASSET_PATHS = {
+    "expo-notifications": frozenset({("icon",)}),
+    "expo-splash-screen": frozenset(
+        {
+            ("image",),
+            ("dark", "image"),
+            ("ios", "image"),
+            ("android", "image"),
+        }
+    ),
+}
+_EXPO_ROOT_CONFIG_KEYS = frozenset(
+    {
+        "name",
+        "slug",
+        "icon",
+        "ios",
+        "android",
+        "splash",
+        "notification",
+        "web",
+        "plugins",
+        "updates",
+        "locales",
+        "extra",
+    }
+)
+_AUDITED_APP_CONFIG_SHA256 = frozenset(
+    {
+        # mobile/app.config.ts at the reviewed release-pipeline baseline.
+        "8473ce0fa1743eb1a44e004b8250a321bc1d00b0f4677ca55dc9cb76a82bd8d4",
+    }
+)
+
+
+def _tokenize_app_config(raw: str, *, source: str) -> list[_JsToken]:
+    tokens: list[_JsToken] = []
+    index = 0
+    while index < len(raw):
+        char = raw[index]
+        if char.isspace():
+            index += 1
+            continue
+        if raw.startswith("//", index):
+            newline = raw.find("\n", index + 2)
+            index = len(raw) if newline < 0 else newline + 1
+            continue
+        if raw.startswith("/*", index):
+            end = raw.find("*/", index + 2)
+            if end < 0:
+                raise ReleaseError(f"{source} contains an unterminated comment")
+            index = end + 2
+            continue
+        if char in {"'", '"', "`"}:
+            quote = char
+            cursor = index + 1
+            value: list[str] = []
+            while cursor < len(raw):
+                current = raw[cursor]
+                if current == "\\":
+                    raise ReleaseError(
+                        f"{source} cannot prove escaped native asset strings"
+                    )
+                if current == quote:
+                    break
+                value.append(current)
+                cursor += 1
+            if cursor >= len(raw):
+                raise ReleaseError(f"{source} contains an unterminated string")
+            kind = "template" if quote == "`" else "string"
+            tokens.append(_JsToken(kind, "".join(value)))
+            index = cursor + 1
+            continue
+        if _JS_IDENTIFIER_START.fullmatch(char):
+            cursor = index + 1
+            while cursor < len(raw) and _JS_IDENTIFIER_PART.fullmatch(raw[cursor]):
+                cursor += 1
+            tokens.append(_JsToken("identifier", raw[index:cursor]))
+            index = cursor
+            continue
+        if raw.startswith("...", index):
+            tokens.append(_JsToken("punct", "..."))
+            index += 3
+            continue
+        tokens.append(_JsToken("punct", char))
+        index += 1
+    return tokens
+
+
+def _app_config_native_assets(raw: str, *, source: str) -> set[str]:
+    if hashlib.sha256(raw.encode("utf-8")).hexdigest() in _AUDITED_APP_CONFIG_SHA256:
+        return set()
+    tokens = _tokenize_app_config(raw, source=source)
+    pairs: dict[int, int] = {}
+    stack: list[tuple[str, int]] = []
+    closer = {"{": "}", "[": "]", "(": ")"}
+    for index, token in enumerate(tokens):
+        if token.value in closer:
+            stack.append((token.value, index))
+        elif token.value in closer.values():
+            if not stack or closer[stack[-1][0]] != token.value:
+                raise ReleaseError(f"{source} contains unbalanced delimiters")
+            _opening, opening_index = stack.pop()
+            pairs[opening_index] = index
+    if stack:
+        raise ReleaseError(f"{source} contains unbalanced delimiters")
+
+    assets: set[str] = set()
+    visited: set[int] = set()
+    proved_root_config = False
+
+    def relative_plugin_path(path: tuple[str, ...]) -> tuple[str, ...]:
+        if "plugins" not in path:
+            return path
+        return path[path.index("plugins") + 1 :]
+
+    def is_native_path(path: tuple[str, ...], plugin: str | None) -> bool:
+        if plugin:
+            return relative_plugin_path(path) in _PLUGIN_ASSET_PATHS.get(
+                plugin, frozenset()
+            )
+        return path in _NATIVE_CONFIG_PATHS or (
+            len(path) == 2 and path[0] == "locales"
+        )
+
+    def could_contain_native(path: tuple[str, ...], plugin: str | None) -> bool:
+        if plugin:
+            return True
+        return path in _NATIVE_CONFIG_CONTAINERS
+
+    def fail_unknown(path: tuple[str, ...]) -> None:
+        label = ".".join(path) or "<computed>"
+        raise ReleaseError(
+            f"{source} cannot prove native asset references for {label}"
+        )
+
+    def value_end(start: int, end: int) -> int:
+        cursor = start
+        while cursor < end:
+            token = tokens[cursor]
+            if token.value in {",", ";"}:
+                return cursor
+            if token.value in pairs:
+                cursor = pairs[cursor] + 1
+                continue
+            cursor += 1
+        return end
+
+    def unwrap_parentheses(start: int, end: int) -> tuple[int, int]:
+        while start < end and tokens[start].value == "(":
+            matching = pairs.get(start)
+            if matching != end - 1:
+                break
+            start += 1
+            end -= 1
+        return start, end
+
+    def config_passthrough_path(start: int, end: int) -> tuple[str, ...] | None:
+        start, end = unwrap_parentheses(start, end)
+        if start >= end or tokens[start].value != "config":
+            return None
+        cursor = start + 1
+        parts: list[str] = []
+        while cursor < end:
+            if tokens[cursor].value == ".":
+                cursor += 1
+            elif (
+                cursor + 1 < end
+                and tokens[cursor].value == "?"
+                and tokens[cursor + 1].value == "."
+            ):
+                cursor += 2
+            else:
+                break
+            if cursor >= end or tokens[cursor].kind != "identifier":
+                return None
+            parts.append(tokens[cursor].value)
+            cursor += 1
+        if cursor < end:
+            if (
+                cursor + 4 != end
+                or tokens[cursor].value != "?"
+                or tokens[cursor + 1].value != "?"
+                or tokens[cursor + 2].value != "{"
+                or pairs.get(cursor + 2) != end - 1
+            ):
+                return None
+        return tuple(parts)
+
+    def is_exact_object(start: int, end: int) -> bool:
+        start, end = unwrap_parentheses(start, end)
+        return (
+            start < end
+            and tokens[start].value == "{"
+            and pairs.get(start) == end - 1
+        )
+
+    def is_literal_object_spread(start: int, end: int) -> bool:
+        start, end = unwrap_parentheses(start, end)
+        if is_exact_object(start, end):
+            return True
+        question: int | None = None
+        colon: int | None = None
+        cursor = start
+        while cursor < end:
+            if tokens[cursor].value in pairs:
+                cursor = pairs[cursor] + 1
+                continue
+            if tokens[cursor].value == "?" and question is None:
+                question = cursor
+            elif tokens[cursor].value == ":" and question is not None:
+                colon = cursor
+                break
+            cursor += 1
+        return (
+            question is not None
+            and colon is not None
+            and is_exact_object(question + 1, colon)
+            and is_exact_object(colon + 1, end)
+        )
+
+    def record_scalar(start: int, end: int, path: tuple[str, ...]) -> None:
+        start, end = unwrap_parentheses(start, end)
+        if end - start == 1 and tokens[start].kind == "string":
+            assets.add(
+                _normalize_mobile_asset_reference(
+                    tokens[start].value, source=f"{source}:{'.'.join(path)}"
+                )
+            )
+            return
+        if config_passthrough_path(start, end) == path:
+            return
+        fail_unknown(path)
+
+    def walk_range(
+        start: int,
+        end: int,
+        path: tuple[str, ...],
+        plugin: str | None,
+    ) -> None:
+        if plugin:
+            for token in tokens[start:end]:
+                if token.kind == "string" and token.value.startswith("./"):
+                    assets.add(
+                        _normalize_mobile_asset_reference(
+                            token.value, source=f"{source}:plugins.{plugin}"
+                        )
+                    )
+        cursor = start
+        while cursor < end:
+            token = tokens[cursor]
+            if token.value == "{" and cursor in pairs:
+                walk_object(cursor, path, plugin)
+                cursor = pairs[cursor] + 1
+            elif token.value == "[" and cursor in pairs:
+                walk_array(cursor, path, plugin)
+                cursor = pairs[cursor] + 1
+            else:
+                cursor += 1
+
+    def walk_array(
+        opening: int,
+        path: tuple[str, ...],
+        plugin: str | None,
+    ) -> None:
+        if opening in visited:
+            return
+        visited.add(opening)
+        end = pairs[opening]
+        cursor = opening + 1
+        if plugin is not None:
+            while cursor < end:
+                token = tokens[cursor]
+                if token.value == ",":
+                    cursor += 1
+                    continue
+                if token.kind == "string":
+                    if token.value.startswith("./"):
+                        assets.add(
+                            _normalize_mobile_asset_reference(
+                                token.value,
+                                source=f"{source}:plugins.{plugin}",
+                            )
+                        )
+                    cursor += 1
+                    continue
+                if token.value == "{" and cursor in pairs:
+                    walk_object(cursor, path, plugin)
+                    cursor = pairs[cursor] + 1
+                    continue
+                if token.value == "[" and cursor in pairs:
+                    walk_array(cursor, path, plugin)
+                    cursor = pairs[cursor] + 1
+                    continue
+                if token.value in {"true", "false", "null"} or token.value in {
+                    "-",
+                    ".",
+                    *tuple("0123456789"),
+                }:
+                    cursor += 1
+                    continue
+                fail_unknown((*path, f"plugins.{plugin}"))
+            return
+        if path == ("plugins",) and plugin is None:
+            while cursor < end:
+                token = tokens[cursor]
+                if token.value == ",":
+                    cursor += 1
+                    continue
+                if token.kind == "string":
+                    if token.value.startswith("./"):
+                        assets.update(
+                            _local_plugin_references(
+                                token.value, source=f"{source}:plugins"
+                            )
+                        )
+                    cursor += 1
+                    continue
+                if token.value == "[" and cursor in pairs:
+                    tuple_end = pairs[cursor]
+                    name_index = cursor + 1
+                    if (
+                        name_index >= tuple_end
+                        or tokens[name_index].kind != "string"
+                    ):
+                        fail_unknown(("plugins", "<name>"))
+                    plugin_name = tokens[name_index].value
+                    if plugin_name.startswith("./"):
+                        assets.update(
+                            _local_plugin_references(
+                                plugin_name, source=f"{source}:plugins"
+                            )
+                        )
+                    comma = name_index + 1
+                    if comma < tuple_end and tokens[comma].value == ",":
+                        options_start = comma + 1
+                        options_end = value_end(options_start, tuple_end)
+                        if (
+                            options_start < options_end
+                            and tokens[options_start].value == "{"
+                        ):
+                            walk_object(
+                                options_start,
+                                ("plugins",),
+                                plugin_name,
+                            )
+                        else:
+                            fail_unknown(("plugins", plugin_name))
+                    visited.add(cursor)
+                    cursor = tuple_end + 1
+                    continue
+                fail_unknown(("plugins", "<entry>"))
+            return
+        first_plugin = (
+            tokens[cursor].value
+            if cursor < end and tokens[cursor].kind == "string"
+            else None
+        )
+        if first_plugin is not None:
+            comma = cursor + 1
+            if comma < end and tokens[comma].value == ",":
+                options_start = comma + 1
+                options_end = value_end(options_start, end)
+                if options_start < options_end and tokens[options_start].value == "{":
+                    walk_object(options_start, path, first_plugin)
+                elif "plugins" in path:
+                    fail_unknown((*path, first_plugin))
+        while cursor < end:
+            if tokens[cursor].value == "[" and cursor in pairs:
+                nested_end = pairs[cursor]
+                walk_array(cursor, path, plugin)
+                cursor = nested_end + 1
+                continue
+            if tokens[cursor].value == "{" and cursor in pairs:
+                walk_object(cursor, path, plugin)
+                cursor = pairs[cursor] + 1
+                continue
+            cursor += 1
+
+    def walk_object(
+        opening: int,
+        path: tuple[str, ...],
+        plugin: str | None,
+    ) -> None:
+        nonlocal proved_root_config
+        if opening in visited:
+            return
+        visited.add(opening)
+        end = pairs[opening]
+        cursor = opening + 1
+        property_start = True
+        while cursor < end:
+            token = tokens[cursor]
+            if token.value in {",", ";"}:
+                property_start = True
+                cursor += 1
+                continue
+            if property_start and token.value == "[" and cursor in pairs:
+                computed_end = pairs[cursor]
+                if (
+                    computed_end + 1 < end
+                    and tokens[computed_end + 1].value == ":"
+                    and could_contain_native(path, plugin)
+                ):
+                    fail_unknown(path)
+            if property_start and token.value == "...":
+                start = cursor + 1
+                stop = value_end(start, end)
+                if could_contain_native(path, plugin):
+                    passthrough = config_passthrough_path(start, stop)
+                    if passthrough != path and not is_literal_object_spread(
+                        start, stop
+                    ):
+                        expression = " ".join(
+                            token.value for token in tokens[start:stop]
+                        )[:120]
+                        fail_unknown((*path, f"<spread:{expression}>"))
+                    if not path and plugin is None:
+                        proved_root_config = True
+                walk_range(start, stop, path, plugin)
+                cursor = stop
+                property_start = False
+                continue
+            if property_start and token.kind in {"identifier", "string"}:
+                key = token.value
+                if cursor + 1 < end and tokens[cursor + 1].value == ":":
+                    if not path and plugin is None and key in _EXPO_ROOT_CONFIG_KEYS:
+                        proved_root_config = True
+                    start = cursor + 2
+                    stop = value_end(start, end)
+                    child_path = (*path, key)
+                    if plugin is not None:
+                        scalar = tokens[start:stop]
+                        if len(scalar) == 1 and scalar[0].kind == "string":
+                            if scalar[0].value.startswith("./"):
+                                assets.add(
+                                    _normalize_mobile_asset_reference(
+                                        scalar[0].value,
+                                        source=f"{source}:plugins.{plugin}.{key}",
+                                    )
+                                )
+                        elif start < stop and tokens[start].value == "{":
+                            walk_object(start, child_path, plugin)
+                        elif start < stop and tokens[start].value == "[":
+                            walk_array(start, child_path, plugin)
+                        elif not all(
+                            item.value in {"true", "false", "null", "-", "."}
+                            or item.value in set("0123456789")
+                            for item in scalar
+                        ):
+                            fail_unknown((*child_path, f"plugins.{plugin}"))
+                        cursor = stop
+                        property_start = False
+                        continue
+                    if is_native_path(child_path, plugin):
+                        if (
+                            start < stop
+                            and tokens[start].value == "{"
+                            and child_path == ("ios", "icon")
+                        ):
+                            walk_object(start, child_path, plugin)
+                        else:
+                            record_scalar(start, stop, child_path)
+                    elif start < stop:
+                        if tokens[start].value == "{":
+                            walk_object(start, child_path, plugin)
+                        elif tokens[start].value == "[":
+                            walk_array(start, child_path, plugin)
+                        elif could_contain_native(child_path, plugin):
+                            if config_passthrough_path(start, stop) != child_path:
+                                fail_unknown(child_path)
+                        else:
+                            walk_range(start, stop, child_path, plugin)
+                    cursor = stop
+                    property_start = False
+                    continue
+                if plugin is not None:
+                    fail_unknown((*path, f"plugins.{plugin}.{key}"))
+                if (
+                    (
+                        is_native_path((*path, key), plugin)
+                        or could_contain_native((*path, key), plugin)
+                    )
+                    and (cursor + 1 == end or tokens[cursor + 1].value in {",", "}"})
+                ):
+                    fail_unknown((*path, key))
+                if key in {"get", "set"} and could_contain_native(path, plugin):
+                    fail_unknown((*path, f"<{key}ter>"))
+            if token.value == "{" and cursor in pairs:
+                walk_object(cursor, path, plugin)
+                cursor = pairs[cursor] + 1
+                continue
+            if token.value == "[" and cursor in pairs:
+                walk_array(cursor, path, plugin)
+                cursor = pairs[cursor] + 1
+                continue
+            property_start = False
+            cursor += 1
+
+    export_starts: list[int] = []
+    for index in range(len(tokens)):
+        if (
+            tokens[index].value == "export"
+            and index + 1 < len(tokens)
+            and tokens[index + 1].value == "default"
+        ):
+            export_starts.append(index + 2)
+        elif (
+            tokens[index].value == "module"
+            and index + 3 < len(tokens)
+            and tokens[index + 1].value == "."
+            and tokens[index + 2].value == "exports"
+            and tokens[index + 3].value == "="
+        ):
+            export_starts.append(index + 4)
+    if len(export_starts) != 1:
+        fail_unknown(())
+    opening = export_starts[0]
+    if opening >= len(tokens) or tokens[opening].value != "{":
+        fail_unknown(())
+    closing = pairs.get(opening)
+    if closing is None or any(
+        token.value != ";" for token in tokens[closing + 1 :]
+    ):
+        fail_unknown(())
+    walk_object(opening, (), None)
+    if not proved_root_config:
+        fail_unknown(())
+    return assets
+
+
+def _show_optional(repo: Path, revision: str, path: str) -> str | None:
+    environment = _git_environment()
+    completed = subprocess.run(
+        ["git", "-C", str(repo), "show", f"{revision}:{path}"],
+        text=True,
+        capture_output=True,
+        check=False,
+        env=environment,
+    )
+    if completed.returncode == 0:
+        return completed.stdout
+    if (
+        "does not exist" in completed.stderr
+        or "exists on disk, but not in" in completed.stderr
+    ):
+        return None
+    raise ReleaseError(
+        f"Cannot inspect {path} at {revision}: {completed.stderr.strip()}"
+    )
+
+
+def _native_mobile_assets_for_refs(
+    repo: Path, revisions: Iterable[str]
+) -> frozenset[str]:
+    assets: set[str] = set()
+    for revision in dict.fromkeys(revisions):
+        app_json = _show_optional(repo, revision, "mobile/app.json")
+        if app_json is not None:
+            assets.update(
+                _app_json_native_assets(
+                    app_json, source=f"mobile/app.json@{revision}"
+                )
+            )
+        for config_path in ("mobile/app.config.js", "mobile/app.config.ts"):
+            dynamic = _show_optional(repo, revision, config_path)
+            if dynamic is not None:
+                assets.update(
+                    _app_config_native_assets(
+                        dynamic, source=f"{config_path}@{revision}"
+                    )
+                )
+    return frozenset(assets)
+
+
+def _working_tree_native_mobile_assets() -> frozenset[str]:
+    config = ROOT / "mobile/app.json"
+    if not config.is_file():
+        return frozenset()
+    return frozenset(
+        _app_json_native_assets(
+            config.read_text(encoding="utf-8"), source="mobile/app.json"
+        )
+    )
+
+
+def classify_path(
+    path: str, *, native_mobile_assets: frozenset[str] | None = None
+) -> str | None:
     """Classify a repository path; ``None`` means fail-closed/unknown."""
+
+    native_mobile_files = {
+        "mobile/app.json",
+        "mobile/app.config.js",
+        "mobile/app.config.ts",
+        "mobile/.easignore",
+        "mobile/eas.json",
+        "mobile/package.json",
+        "mobile/package-lock.json",
+        "mobile/yarn.lock",
+        "mobile/pnpm-lock.yaml",
+        "mobile/react-native.config.js",
+    }
+    native_mobile_prefixes = (
+        "apps/watch/",
+        "apps/rokid-pushup-glasses/",
+        "mobile/android/",
+        "mobile/ios/",
+        "mobile/modules/",
+        "mobile/native/",
+        "mobile/patches/",
+        "mobile/plugins/",
+    )
+    if path in native_mobile_files or path.startswith(native_mobile_prefixes):
+        return "mobile_native"
+
+    path_parts = PurePosixPath(path).parts
+    if path.startswith(_MOBILE_NATIVE_RESOURCE_PREFIXES) or (
+        path.startswith("mobile/")
+        and any(
+            part.lower().endswith(_MOBILE_NATIVE_RESOURCE_SUFFIXES)
+            for part in path_parts
+        )
+    ):
+        return "mobile_native"
+
+    referenced_assets = (
+        _working_tree_native_mobile_assets()
+        if native_mobile_assets is None
+        else native_mobile_assets
+    )
+    if path in referenced_assets:
+        return "mobile_native"
+
+    if path in _ROOT_MOBILE_NATIVE_INPUTS:
+        return "mobile_native"
 
     if _is_test_or_fixture(path):
         return "validation_only"
@@ -207,32 +1169,6 @@ def classify_path(path: str) -> str | None:
     if path.startswith("apps/mac/"):
         return "mac"
 
-    native_mobile_files = {
-        "mobile/app.json",
-        "mobile/app.config.js",
-        "mobile/app.config.ts",
-        "mobile/eas.json",
-        "mobile/package.json",
-        "mobile/package-lock.json",
-        "mobile/yarn.lock",
-        "mobile/pnpm-lock.yaml",
-    }
-    native_mobile_prefixes = (
-        "apps/watch/",
-        "apps/rokid-pushup-glasses/",
-        "mobile/android/",
-        "mobile/ios/",
-        "mobile/modules/",
-        "mobile/native/",
-        "mobile/patches/",
-        "mobile/plugins/",
-    )
-    if path in native_mobile_files or path.startswith(native_mobile_prefixes):
-        return "mobile_native"
-
-    if path in _ROOT_MOBILE_NATIVE_INPUTS:
-        return "mobile_native"
-
     if path.startswith("mobile/") or path.startswith("packages/shared/"):
         return "mobile_ota"
 
@@ -251,13 +1187,16 @@ def build_plan(
     base_sha: str,
     target_sha: str,
     completed_actions: Iterable[str] = (),
+    native_mobile_assets: frozenset[str] | None = None,
 ) -> ReleasePlan:
     changes_tuple = tuple(changes)
     surfaces_seen: set[str] = set()
     blocked_paths: set[str] = set()
     for change in changes_tuple:
         for path in change.paths:
-            surface = classify_path(path)
+            surface = classify_path(
+                path, native_mobile_assets=native_mobile_assets
+            )
             if surface is None:
                 blocked_paths.add(path)
             else:
@@ -404,13 +1343,16 @@ def _worktree_status(repo: Path) -> str:
 
 
 def _branch_name(repo: Path) -> str:
-    result = subprocess.run(
-        ["git", "-C", str(repo), "symbolic-ref", "--quiet", "--short", "HEAD"],
-        check=False,
-        capture_output=True,
-        text=True,
+    return str(
+        _git(
+            repo,
+            "symbolic-ref",
+            "--quiet",
+            "--short",
+            "HEAD",
+            check=False,
+        )
     )
-    return result.stdout.strip() if result.returncode == 0 else ""
 
 
 def _remote_main_sha(repo: Path) -> str:
@@ -475,10 +1417,7 @@ def ensure_release_worktree(
                 f"Release worktree is on forbidden branch {branch}; refusing checkout"
             )
 
-    subprocess.run(
-        ["git", "-C", str(source), "fetch", "--quiet", "origin", "main"],
-        check=True,
-    )
+    _git(source, "fetch", "--quiet", "origin", "main")
     local_main = str(_git(source, "rev-parse", "refs/remotes/origin/main"))
     remote_main = _remote_main_sha(source)
     if local_main != remote_main:
@@ -486,24 +1425,16 @@ def ensure_release_worktree(
 
     if not destination.exists():
         destination.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
-            [
-                "git",
-                "-C",
-                str(source),
-                "worktree",
-                "add",
-                "--detach",
-                str(destination),
-                local_main,
-            ],
-            check=True,
+        _git(
+            source,
+            "worktree",
+            "add",
+            "--detach",
+            str(destination),
+            local_main,
         )
     else:
-        subprocess.run(
-            ["git", "-C", str(destination), "checkout", "--detach", local_main],
-            check=True,
-        )
+        _git(destination, "checkout", "--detach", local_main)
 
     assert_release_source(destination)
     return destination
@@ -599,6 +1530,8 @@ def run_validation(
 
     log_path = _new_validation_log(repo, profile)
     print(f"[release] validation running: profile={profile} log={log_path}")
+    validation_env = _scrub_environment(os.environ, _VALIDATION_ENV_OVERRIDES)
+    validation_env["REVA_VALIDATION_EXPECTED_ROOT"] = str(repo)
     try:
         with log_path.open("x", encoding="utf-8") as log_handle:
             log_path.chmod(0o600)
@@ -609,6 +1542,7 @@ def run_validation(
                 stdout=log_handle,
                 stderr=subprocess.STDOUT,
                 text=True,
+                env=validation_env,
             )
         if completed.returncode != 0:
             raise subprocess.CalledProcessError(completed.returncode, command)
@@ -671,10 +1605,18 @@ def publish_plan(
     if not plan.publishable:
         details = ", ".join(plan.blocked_paths) or ", ".join(plan.surfaces)
         raise ReleaseError(f"Release requires manual routing before publish: {details}")
+    unsafe_overrides = sorted(
+        name for name in _OTA_TEST_ENV_OVERRIDES if os.environ.get(name)
+    )
+    if unsafe_overrides:
+        raise ReleaseError(
+            "Production release refuses OTA test/debug override(s): "
+            + ", ".join(unsafe_overrides)
+        )
     run_validation(plan, repo, runner=runner)
     assert_release_source(repo)
     completed = list(plan.completed_actions)
-    environment = os.environ.copy()
+    environment = _scrub_environment(os.environ, _MUTATION_ENV_OVERRIDES)
     deploy_env = env_file or Path(
         environment.get("DEPLOY_ENV_FILE", str(owner_repo / ".env"))
     )
@@ -722,11 +1664,13 @@ def _plan_for_refs(
         if include_partial_state
         else ()
     )
+    native_assets = _native_mobile_assets_for_refs(repo, (base_sha, target_sha))
     return build_plan(
         changes,
         base_sha=base_sha,
         target_sha=target_sha,
         completed_actions=completed,
+        native_mobile_assets=native_assets,
     )
 
 

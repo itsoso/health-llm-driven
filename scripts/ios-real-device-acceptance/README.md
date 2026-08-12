@@ -8,7 +8,7 @@ It currently verifies:
 - the installed app reaches either the authenticated Agent or login surface;
 - a manually pre-authenticated session persists across two terminate/cold-launch cycles;
 - the authenticated session exposes the Agent composer;
-- today's briefing can expand and collapse when present;
+- today's briefing expands and collapses;
 - an unsent text draft survives background/foreground without being sent;
 - privacy policy and account deletion entries are reachable.
 - Simulator-only GPS coordinates can prove the automatic city and ready state;
@@ -20,9 +20,11 @@ mark the full physical-device gate as passed. Voice, camera, sharing, write
 idempotency and deletion completion still require their dedicated acceptance
 checks.
 
-The runner fails when an authenticated test is skipped. Only the optional
-today-context check may skip when the signed-in account has no qualified current
-context; a missing login or GPS expectation is never treated as a green result.
+The runner fails when any required acceptance test is skipped. A physical iPhone
+without an expected-city assertion may skip only the GPS city test; the exact
+eight-test suite, including today's context, must otherwise pass. Simulator runs
+never accept a GPS skip, even when no expected city was provided. A missing login
+is never treated as a green result.
 
 Run:
 

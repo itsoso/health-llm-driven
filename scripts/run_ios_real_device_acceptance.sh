@@ -175,9 +175,14 @@ xcrun xcresulttool get test-results summary \
   --path "${RESULT_PATH}" --compact > "${SUMMARY_PATH}"
 xcrun xcresulttool get test-results tests \
   --path "${RESULT_PATH}" --compact > "${TESTS_PATH}"
-python3 "${ROOT_DIR}/scripts/verify_ios_acceptance_result.py" \
-  --summary "${SUMMARY_PATH}" \
-  --tests "${TESTS_PATH}" \
-  --allow-skip "testTodayContextCanOpenAndDismiss()"
+VERIFY_ARGS=(
+  --summary "${SUMMARY_PATH}"
+  --tests "${TESTS_PATH}"
+  --platform "${DESTINATION_PLATFORM}"
+)
+if [[ -n "${EXPECTED_CITY}" ]]; then
+  VERIFY_ARGS+=(--expected-city "${EXPECTED_CITY}")
+fi
+python3 "${ROOT_DIR}/scripts/verify_ios_acceptance_result.py" "${VERIFY_ARGS[@]}"
 
 echo "${DESTINATION_PLATFORM} acceptance result: ${RESULT_PATH}"

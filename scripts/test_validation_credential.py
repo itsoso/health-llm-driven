@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+import scripts.validation_credential as validation_credential
+
 from scripts.validation_credential import (
     build_credential,
     credential_path,
@@ -114,6 +116,35 @@ def test_same_tree_rebase_reuses_successful_credential(tmp_path: Path) -> None:
     ).strip() == original_tree
     verdict = _verify(repo, path)
     assert verdict.reusable, verdict.reason
+
+
+def test_credential_git_queries_ignore_inherited_config_rewrites(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _init_repo(tmp_path)
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.worktree")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "/tmp/attacker-worktree")
+    monkeypatch.setenv("GIT_CONFIG_PARAMETERS", "'core.bare'='true'")
+
+    assert validation_credential._run_text(
+        ["git", "rev-parse", "--show-toplevel"], cwd=repo
+    ) == str(repo)
+
+
+def test_toolchain_collection_scrubs_node_and_npm_execution_hooks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _init_repo(tmp_path)
+    poison = tmp_path / "exit-zero.js"
+    poison.write_text("process.exit(0);\n", encoding="utf-8")
+    monkeypatch.setenv("NODE_OPTIONS", f"--require={poison}")
+    monkeypatch.setenv("Npm_Config_Script-Shell", "/usr/bin/true")
+
+    toolchain = validation_credential.collect_toolchain(repo)
+
+    assert toolchain["node"] != "__missing__"
+    assert toolchain["npm"] != "__missing__"
 
 
 @pytest.mark.parametrize(
