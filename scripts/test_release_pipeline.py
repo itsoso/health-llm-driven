@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 import stat
 import subprocess
 import sys
@@ -27,9 +28,7 @@ def _change(release, status: str, *paths: str):
 
 
 def _git(repo: Path, *args: str) -> str:
-    return subprocess.check_output(
-        ["git", "-C", str(repo), *args], text=True
-    ).strip()
+    return subprocess.check_output(["git", "-C", str(repo), *args], text=True).strip()
 
 
 @pytest.fixture
@@ -52,8 +51,7 @@ def test_parses_git_name_status_with_rename_and_delete():
     release = _release_module()
 
     changes = release.parse_name_status(
-        b"R100\0backend/app/old.py\0mobile/app/new.tsx\0"
-        b"D\0mobile/app.json\0"
+        b"R100\0backend/app/old.py\0mobile/app/new.tsx\0D\0mobile/app.json\0"
     )
 
     assert changes == (
@@ -236,11 +234,7 @@ def _commit_mobile_config_fixture(
             "mobile/native.bin",
         ),
         (
-            {
-                "ios": {
-                    "splash": {"dark": {"tabletImage": "./native.bin"}}
-                }
-            },
+            {"ios": {"splash": {"dark": {"tabletImage": "./native.bin"}}}},
             "mobile/native.bin",
         ),
         ({"android": {"icon": "./native.bin"}}, "mobile/native.bin"),
@@ -273,75 +267,39 @@ def _commit_mobile_config_fixture(
             "mobile/native.bin",
         ),
         (
-            {
-                "android": {
-                    "splash": {"dark": {"image": "./native.bin"}}
-                }
-            },
+            {"android": {"splash": {"dark": {"image": "./native.bin"}}}},
             "mobile/native.bin",
         ),
         (
-            {
-                "android": {
-                    "splash": {"dark": {"mdpi": "./native.bin"}}
-                }
-            },
+            {"android": {"splash": {"dark": {"mdpi": "./native.bin"}}}},
             "mobile/native.bin",
         ),
         (
-            {
-                "android": {
-                    "splash": {"dark": {"hdpi": "./native.bin"}}
-                }
-            },
+            {"android": {"splash": {"dark": {"hdpi": "./native.bin"}}}},
             "mobile/native.bin",
         ),
         (
-            {
-                "android": {
-                    "splash": {"dark": {"xhdpi": "./native.bin"}}
-                }
-            },
+            {"android": {"splash": {"dark": {"xhdpi": "./native.bin"}}}},
             "mobile/native.bin",
         ),
         (
-            {
-                "android": {
-                    "splash": {"dark": {"xxhdpi": "./native.bin"}}
-                }
-            },
+            {"android": {"splash": {"dark": {"xxhdpi": "./native.bin"}}}},
             "mobile/native.bin",
         ),
         (
-            {
-                "android": {
-                    "splash": {"dark": {"xxxhdpi": "./native.bin"}}
-                }
-            },
+            {"android": {"splash": {"dark": {"xxxhdpi": "./native.bin"}}}},
             "mobile/native.bin",
         ),
         (
-            {
-                "android": {
-                    "adaptiveIcon": {"foregroundImage": "./native.bin"}
-                }
-            },
+            {"android": {"adaptiveIcon": {"foregroundImage": "./native.bin"}}},
             "mobile/native.bin",
         ),
         (
-            {
-                "android": {
-                    "adaptiveIcon": {"backgroundImage": "./native.bin"}
-                }
-            },
+            {"android": {"adaptiveIcon": {"backgroundImage": "./native.bin"}}},
             "mobile/native.bin",
         ),
         (
-            {
-                "android": {
-                    "adaptiveIcon": {"monochromeImage": "./native.bin"}
-                }
-            },
+            {"android": {"adaptiveIcon": {"monochromeImage": "./native.bin"}}},
             "mobile/native.bin",
         ),
         ({"notification": {"icon": "./native.bin"}}, "mobile/native.bin"),
@@ -370,19 +328,11 @@ def _commit_mobile_config_fixture(
             "mobile/native.bin",
         ),
         (
-            {
-                "plugins": [
-                    ["expo-splash-screen", {"dark": {"image": "./native.bin"}}]
-                ]
-            },
+            {"plugins": [["expo-splash-screen", {"dark": {"image": "./native.bin"}}]]},
             "mobile/native.bin",
         ),
         (
-            {
-                "plugins": [
-                    ["expo-splash-screen", {"ios": {"image": "./native.bin"}}]
-                ]
-            },
+            {"plugins": [["expo-splash-screen", {"ios": {"image": "./native.bin"}}]]},
             "mobile/native.bin",
         ),
         (
@@ -592,7 +542,9 @@ def test_unknown_dynamic_packaged_image_reference_fails_closed(
     _git(repo, "add", "mobile/assets/social/share.jpg")
     _git(repo, "commit", "-qm", "change asset with unresolved native config")
 
-    with pytest.raises(release.ReleaseError, match="cannot prove native asset references"):
+    with pytest.raises(
+        release.ReleaseError, match="cannot prove native asset references"
+    ):
         release._plan_for_refs(repo, base, "HEAD", include_partial_state=False)
 
 
@@ -610,7 +562,9 @@ def test_mismatched_dynamic_config_passthrough_fails_closed(
     _git(repo, "add", "mobile/assets/images/icon.png")
     _git(repo, "commit", "-qm", "change mismatched passthrough icon")
 
-    with pytest.raises(release.ReleaseError, match="cannot prove native asset references"):
+    with pytest.raises(
+        release.ReleaseError, match="cannot prove native asset references"
+    ):
         release._plan_for_refs(repo, base, "HEAD", include_partial_state=False)
 
 
@@ -632,7 +586,9 @@ def test_unresolved_dynamic_config_shape_fails_closed(
     _git(repo, "add", "mobile/assets/social/share.jpg")
     _git(repo, "commit", "-qm", "change asset with unsupported dynamic config")
 
-    with pytest.raises(release.ReleaseError, match="cannot prove native asset references"):
+    with pytest.raises(
+        release.ReleaseError, match="cannot prove native asset references"
+    ):
         release._plan_for_refs(repo, base, "HEAD", include_partial_state=False)
 
 
@@ -679,7 +635,9 @@ def test_unproved_dynamic_config_export_fails_closed(
     _git(repo, "add", "mobile/assets/social/share.jpg")
     _git(repo, "commit", "-qm", "change asset with unproved config export")
 
-    with pytest.raises(release.ReleaseError, match="cannot prove native asset references"):
+    with pytest.raises(
+        release.ReleaseError, match="cannot prove native asset references"
+    ):
         release._plan_for_refs(repo, base, "HEAD", include_partial_state=False)
 
 
@@ -1249,9 +1207,7 @@ def test_validation_invokes_no_mutating_release_script(
 
     assert commands == [("bash", "scripts/run-all-tests.sh")]
     assert all("deploy.sh" not in part for command in commands for part in command)
-    assert all(
-        "mobile-ota.sh" not in part for command in commands for part in command
-    )
+    assert all("mobile-ota.sh" not in part for command in commands for part in command)
 
 
 def test_publish_rechecks_release_source_after_validation_before_mutation(
@@ -1268,9 +1224,7 @@ def test_publish_rechecks_release_source_after_validation_before_mutation(
     commands: list[str] = []
 
     def dirty_after_validation(_plan, _repo, **_kwargs):
-        (repo / "validation-generated.txt").write_text(
-            "unexpected\n", encoding="utf-8"
-        )
+        (repo / "validation-generated.txt").write_text("unexpected\n", encoding="utf-8")
 
     monkeypatch.setattr(release, "run_validation", dirty_after_validation)
 
@@ -1463,13 +1417,14 @@ def test_release_worktree_is_detached_and_exactly_tracks_remote_main(
     prepared = release.ensure_release_worktree(repo, release_path=release_path)
 
     assert prepared == release_path.resolve()
-    assert subprocess.run(
-        ["git", "-C", str(prepared), "symbolic-ref", "-q", "HEAD"],
-        check=False,
-    ).returncode != 0
-    assert _git(prepared, "rev-parse", "HEAD") == _git(
-        repo, "rev-parse", "origin/main"
+    assert (
+        subprocess.run(
+            ["git", "-C", str(prepared), "symbolic-ref", "-q", "HEAD"],
+            check=False,
+        ).returncode
+        != 0
     )
+    assert _git(prepared, "rev-parse", "HEAD") == _git(repo, "rev-parse", "origin/main")
     release.assert_release_source(prepared)
 
 
@@ -1507,9 +1462,7 @@ def test_named_feature_branch_release_worktree_is_refused(
     with pytest.raises(release.ReleaseError, match="feature/not-production"):
         release.ensure_release_worktree(repo, release_path=release_path)
 
-    assert _git(release_path, "branch", "--show-current") == (
-        "feature/not-production"
-    )
+    assert _git(release_path, "branch", "--show-current") == ("feature/not-production")
 
 
 def test_shared_release_state_uses_git_common_dir_and_private_permissions(
@@ -1592,3 +1545,504 @@ def test_validate_runs_for_manual_native_plan_without_publishing(
 
     assert exit_code == 0, capsys.readouterr().err
     assert validations == [("mobile_native",)]
+
+
+def test_docs_only_publish_writes_private_schema_v2_state_and_transaction_log(
+    repository_with_origin: tuple[Path, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    release = _release_module()
+    repo, _origin = repository_with_origin
+    head = _git(repo, "rev-parse", "HEAD")
+    env_file = tmp_path / "production.env"
+    private_message = "PRIVATE_HEALTH_MESSAGE_DO_NOT_PERSIST"
+    private_environment = "PRIVATE_ENV_VALUE_DO_NOT_PERSIST"
+    monkeypatch.setenv("UNRELATED_PRIVATE_VALUE", private_environment)
+    monkeypatch.setattr(release, "run_validation", lambda *_args, **_kwargs: None)
+    plan = release.build_plan((), base_sha=head, target_sha=head)
+
+    release.publish_plan(
+        plan,
+        repo,
+        owner_repo=repo,
+        message=private_message,
+        env_file=env_file,
+    )
+
+    state = release.read_release_state(repo)
+    state_file = release.release_state_dir(repo) / release.STATE_FILE_NAME
+    transaction_log = (
+        release.release_state_dir(repo) / release.TRANSACTION_LOG_FILE_NAME
+    )
+    persisted = state_file.read_text(encoding="utf-8") + transaction_log.read_text(
+        encoding="utf-8"
+    )
+    assert release.STATE_SCHEMA_VERSION == 2
+    assert state["schema_version"] == 2
+    assert state["status"] == "succeeded"
+    assert state["attempt"] == 1
+    assert state["failed_stage"] is None
+    assert state["completed_actions"] == []
+    assert state["completed_surfaces"] == ["validation_only"]
+    assert state["pending_surfaces"] == []
+    assert state["stages"][0]["stage"] == "validate"
+    assert state["stages"][0]["status"] == "succeeded"
+    assert state["stages"][0]["attempt"] == 1
+    assert state["stages"][0]["elapsed_seconds"] >= 0
+    assert state["stages"][0]["started_at"]
+    assert state["stages"][0]["finished_at"]
+    assert state["safe_retry_command"] == [
+        sys.executable,
+        str(repo.resolve() / "scripts/release.py"),
+        "publish",
+        "--repo",
+        str(repo.resolve()),
+        "--base",
+        head,
+        "--target",
+        head,
+        "--release-worktree",
+        str(repo.resolve()),
+        "--env-file",
+        str(env_file.resolve()),
+    ]
+    assert stat.S_IMODE(state_file.stat().st_mode) == 0o600
+    assert stat.S_IMODE(transaction_log.stat().st_mode) == 0o600
+    assert private_message not in persisted
+    assert private_environment not in persisted
+    events = [json.loads(line) for line in transaction_log.read_text().splitlines()]
+    assert events[0]["event"] == "transaction_started"
+    assert events[-1]["event"] == "transaction_succeeded"
+    assert {event["transaction_id"] for event in events} == {state["transaction_id"]}
+
+
+def test_failed_publish_reuses_transaction_and_propagates_exact_id_to_ota_retry(
+    repository_with_origin: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    release = _release_module()
+    repo, _origin = repository_with_origin
+    head = _git(repo, "rev-parse", "HEAD")
+    changes = (
+        _change(release, "M", "backend/app/main.py"),
+        _change(release, "M", "mobile/app/index.tsx"),
+    )
+    plan = release.build_plan(changes, base_sha="a" * 40, target_sha=head)
+    monkeypatch.setenv("OTA_TRANSACTION_ID", "forged-parent-value")
+    monkeypatch.setattr(release, "run_validation", lambda *_args, **_kwargs: None)
+    observed_transaction_ids: list[str] = []
+    commands: list[str] = []
+
+    def first_runner(command, **kwargs):
+        commands.append(Path(command[0]).name)
+        observed_transaction_ids.append(kwargs["env"]["OTA_TRANSACTION_ID"])
+        if Path(command[0]).name == "mobile-ota.sh":
+            raise subprocess.CalledProcessError(23, command)
+        return subprocess.CompletedProcess(command, 0)
+
+    with pytest.raises(release.ReleaseError, match="failed_stage=mobile_ota"):
+        release.publish_plan(
+            plan,
+            repo,
+            owner_repo=repo,
+            message="PRIVATE_RETRY_MESSAGE",
+            runner=first_runner,
+        )
+
+    failed_state = release.read_release_state(repo)
+    transaction_id = failed_state["transaction_id"]
+    assert commands == ["deploy.sh", "mobile-ota.sh"]
+    assert observed_transaction_ids == [transaction_id, transaction_id]
+    assert failed_state["status"] == "failed"
+    assert failed_state["attempt"] == 1
+    assert failed_state["failed_stage"] == "mobile_ota"
+    assert (
+        failed_state["elapsed_seconds"] >= failed_state["stages"][-1]["elapsed_seconds"]
+    )
+    assert failed_state["completed_actions"] == ["deploy_backend"]
+    assert failed_state["completed_surfaces"] == ["backend"]
+    assert failed_state["pending_surfaces"] == ["mobile_ota"]
+    assert "PRIVATE_RETRY_MESSAGE" not in json.dumps(failed_state)
+
+    retry_plan = release.build_plan(
+        changes,
+        base_sha="a" * 40,
+        target_sha=head,
+        completed_actions=release._state_completed_actions(repo, "a" * 40, head),
+    )
+    retry_commands: list[str] = []
+
+    def retry_runner(command, **kwargs):
+        retry_commands.append(Path(command[0]).name)
+        assert kwargs["env"]["OTA_TRANSACTION_ID"] == transaction_id
+        return subprocess.CompletedProcess(command, 0)
+
+    release.publish_plan(
+        retry_plan,
+        repo,
+        owner_repo=repo,
+        message="different message must not affect identity",
+        runner=retry_runner,
+    )
+
+    succeeded_state = release.read_release_state(repo)
+    assert retry_commands == ["mobile-ota.sh"]
+    assert succeeded_state["transaction_id"] == transaction_id
+    assert succeeded_state["attempt"] == 2
+    assert succeeded_state["status"] == "succeeded"
+    assert succeeded_state["failed_stage"] is None
+    assert succeeded_state["completed_surfaces"] == ["backend", "mobile_ota"]
+    assert succeeded_state["pending_surfaces"] == []
+    assert [
+        (stage["stage"], stage["status"], stage["attempt"])
+        for stage in succeeded_state["stages"]
+    ] == [
+        ("validate", "succeeded", 1),
+        ("deploy_backend", "succeeded", 1),
+        ("mobile_ota", "failed", 1),
+        ("validate", "succeeded", 2),
+        ("mobile_ota", "succeeded", 2),
+    ]
+
+
+def test_validation_failure_records_private_log_path_without_child_output(
+    repository_with_origin: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    release = _release_module()
+    repo, _origin = repository_with_origin
+    head = _git(repo, "rev-parse", "HEAD")
+    plan = release.build_plan((), base_sha=head, target_sha=head)
+    child_output = "PRIVATE_CHILD_OUTPUT_DO_NOT_COPY"
+    monkeypatch.setenv("CI", "true")
+
+    def failing_runner(command, **kwargs):
+        kwargs["stdout"].write(child_output + "\n")
+        return subprocess.CompletedProcess(command, 7)
+
+    with pytest.raises(release.ReleaseError) as failure:
+        release.publish_plan(
+            plan,
+            repo,
+            owner_repo=repo,
+            message="not persisted",
+            runner=failing_runner,
+        )
+
+    state = release.read_release_state(repo)
+    failed_stage = state["stages"][-1]
+    validation_log = Path(failed_stage["log_path"])
+    transaction_log = (
+        release.release_state_dir(repo) / release.TRANSACTION_LOG_FILE_NAME
+    )
+    release_records = json.dumps(state) + transaction_log.read_text(encoding="utf-8")
+    assert state["status"] == "failed"
+    assert state["failed_stage"] == "validate"
+    assert validation_log.exists()
+    assert stat.S_IMODE(validation_log.stat().st_mode) == 0o600
+    assert child_output in validation_log.read_text(encoding="utf-8")
+    assert child_output not in release_records
+    assert str(validation_log) in str(failure.value)
+    assert "failed_stage=validate" in str(failure.value)
+
+
+def test_corrupt_matching_resumable_state_fails_closed(
+    repository_with_origin: tuple[Path, Path],
+):
+    release = _release_module()
+    repo, _origin = repository_with_origin
+    head = _git(repo, "rev-parse", "HEAD")
+    release.write_release_state(
+        repo,
+        {
+            "schema_version": 2,
+            "base_sha": head,
+            "target_sha": head,
+            "transaction_id": "not-a-valid-transaction-id",
+            "status": "failed",
+            "attempt": 1,
+            "completed_actions": ["deploy_backend", "malicious_action"],
+            "completed_surfaces": ["backend"],
+            "pending_surfaces": [],
+            "failed_stage": "mobile_ota",
+            "stages": "not-a-list",
+            "safe_retry_command": [],
+        },
+    )
+
+    with pytest.raises(release.ReleaseError, match="Corrupt resumable release state"):
+        release._state_completed_actions(repo, head, head)
+
+
+@pytest.mark.parametrize(
+    "corruption", ["unexpected_field", "unproven_completion", "missing_elapsed"]
+)
+def test_resumable_state_rejects_privacy_fields_and_unproven_completion(
+    corruption: str,
+    repository_with_origin: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    release = _release_module()
+    repo, _origin = repository_with_origin
+    head = _git(repo, "rev-parse", "HEAD")
+    plan = release.build_plan(
+        (_change(release, "M", "backend/app/main.py"),),
+        base_sha="a" * 40,
+        target_sha=head,
+    )
+    monkeypatch.setattr(release, "run_validation", lambda *_args, **_kwargs: None)
+
+    def failing_runner(command, **_kwargs):
+        raise subprocess.CalledProcessError(2, command)
+
+    with pytest.raises(release.ReleaseError):
+        release.publish_plan(
+            plan,
+            repo,
+            owner_repo=repo,
+            message="not persisted",
+            runner=failing_runner,
+        )
+    state = release.read_release_state(repo)
+    if corruption == "unexpected_field":
+        state["stages"][-1]["child_output"] = "PRIVATE_CHILD_OUTPUT"
+    elif corruption == "unproven_completion":
+        state["completed_actions"] = ["deploy_backend"]
+        state["completed_surfaces"] = ["backend"]
+        state["pending_surfaces"] = []
+    else:
+        state.pop("elapsed_seconds")
+    release.write_release_state(repo, state)
+
+    with pytest.raises(release.ReleaseError, match="Corrupt resumable release state"):
+        release._state_completed_actions(repo, "a" * 40, head)
+
+
+def test_legacy_schema_state_is_never_reused_as_completion_proof(
+    repository_with_origin: tuple[Path, Path],
+):
+    release = _release_module()
+    repo, _origin = repository_with_origin
+    head = _git(repo, "rev-parse", "HEAD")
+    state_dir = release.release_state_dir(repo)
+    legacy_path = state_dir / release.STATE_FILE_NAME
+    legacy_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "base_sha": head,
+                "target_sha": head,
+                "completed_actions": ["deploy_backend"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    legacy_path.chmod(0o600)
+
+    assert release._state_completed_actions(repo, head, head) == ()
+
+
+def test_republishing_succeeded_range_keeps_original_transaction_stage_proof(
+    repository_with_origin: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    release = _release_module()
+    repo, _origin = repository_with_origin
+    head = _git(repo, "rev-parse", "HEAD")
+    changes = (_change(release, "M", "backend/app/main.py"),)
+    monkeypatch.setattr(release, "run_validation", lambda *_args, **_kwargs: None)
+    first_plan = release.build_plan(changes, base_sha="a" * 40, target_sha=head)
+    first_commands: list[str] = []
+
+    release.publish_plan(
+        first_plan,
+        repo,
+        owner_repo=repo,
+        message="first",
+        runner=lambda command, **_kwargs: (
+            first_commands.append(Path(command[0]).name)
+            or subprocess.CompletedProcess(command, 0)
+        ),
+    )
+    first_state = release.read_release_state(repo)
+    second_plan = release.build_plan(
+        changes,
+        base_sha="a" * 40,
+        target_sha=head,
+        completed_actions=release._state_completed_actions(repo, "a" * 40, head),
+    )
+    second_commands: list[str] = []
+
+    release.publish_plan(
+        second_plan,
+        repo,
+        owner_repo=repo,
+        message="second",
+        runner=lambda command, **_kwargs: (
+            second_commands.append(Path(command[0]).name)
+            or subprocess.CompletedProcess(command, 0)
+        ),
+    )
+    second_state = release.read_release_state(repo)
+
+    assert first_commands == ["deploy.sh"]
+    assert second_commands == []
+    assert second_state["transaction_id"] == first_state["transaction_id"]
+    assert second_state["attempt"] == 2
+    assert release._state_completed_actions(repo, "a" * 40, head) == ("deploy_backend",)
+
+
+def test_interrupted_mutating_stage_requires_manual_reconciliation(
+    repository_with_origin: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    release = _release_module()
+    repo, _origin = repository_with_origin
+    head = _git(repo, "rev-parse", "HEAD")
+    plan = release.build_plan(
+        (_change(release, "M", "backend/app/main.py"),),
+        base_sha="a" * 40,
+        target_sha=head,
+    )
+    monkeypatch.setattr(release, "run_validation", lambda *_args, **_kwargs: None)
+
+    def failing_runner(command, **_kwargs):
+        raise subprocess.CalledProcessError(2, command)
+
+    with pytest.raises(release.ReleaseError):
+        release.publish_plan(
+            plan,
+            repo,
+            owner_repo=repo,
+            message="not persisted",
+            runner=failing_runner,
+        )
+    state = release.read_release_state(repo)
+    interrupted = state["stages"][-1]
+    interrupted["status"] = "running"
+    interrupted.pop("finished_at")
+    interrupted.pop("elapsed_seconds")
+    state["status"] = "running"
+    state["failed_stage"] = None
+    state.pop("finished_at")
+    state.pop("elapsed_seconds")
+    release.write_release_state(repo, state)
+
+    with pytest.raises(release.ReleaseError, match="manual reconciliation"):
+        release.publish_plan(
+            plan,
+            repo,
+            owner_repo=repo,
+            message="must not retry uncertain mutation",
+            runner=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("uncertain mutation must not repeat")
+            ),
+        )
+
+
+def test_publish_lock_is_private_nonblocking_and_covers_publish_transaction(
+    repository_with_origin: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    release = _release_module()
+    repo, _origin = repository_with_origin
+    head = _git(repo, "rev-parse", "HEAD")
+    plan = release.build_plan((), base_sha=head, target_sha=head)
+    monkeypatch.setattr(
+        release,
+        "run_validation",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("busy transaction must reject before validation")
+        ),
+    )
+
+    with release.release_publish_lock(repo):
+        lock_path = release.release_state_dir(repo) / release.LOCK_FILE_NAME
+        assert stat.S_IMODE(lock_path.stat().st_mode) == 0o600
+        with pytest.raises(release.ReleaseError, match="already active"):
+            release.publish_plan(
+                plan,
+                repo,
+                owner_repo=repo,
+                message="not reached",
+            )
+
+    assert release.read_release_state(repo) == {}
+
+
+@pytest.mark.parametrize("unsafe_kind", ["permissions", "symlink"])
+def test_publish_lock_refuses_unsafe_path_or_mode(
+    unsafe_kind: str,
+    repository_with_origin: tuple[Path, Path],
+    tmp_path: Path,
+):
+    release = _release_module()
+    repo, _origin = repository_with_origin
+    state_dir = release.release_state_dir(repo)
+    lock_path = state_dir / release.LOCK_FILE_NAME
+    if unsafe_kind == "permissions":
+        lock_path.write_text("unsafe\n", encoding="utf-8")
+        lock_path.chmod(0o644)
+    else:
+        target = tmp_path / "lock-target"
+        target.write_text("unsafe\n", encoding="utf-8")
+        os.symlink(target, lock_path)
+
+    with pytest.raises(release.ReleaseError, match="Unsafe release publish lock"):
+        with release.release_publish_lock(repo):
+            raise AssertionError("unsafe lock must never be acquired")
+
+
+def test_publish_cli_acquires_coordinator_lock_before_preparing_worktree(
+    repository_with_origin: tuple[Path, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    release = _release_module()
+    repo, _origin = repository_with_origin
+    head = _git(repo, "rev-parse", "HEAD")
+    lock_observed: list[bool] = []
+    publish_lock_flags: list[bool] = []
+
+    def ensure_while_locked(source, *, release_path=None):
+        del release_path
+        with pytest.raises(release.ReleaseError, match="already active"):
+            with release.release_publish_lock(source):
+                raise AssertionError("coordinator lock was not held")
+        lock_observed.append(True)
+        return repo
+
+    def publish_while_locked(_plan, _repo, **kwargs):
+        publish_lock_flags.append(kwargs["_lock_held"])
+        assert kwargs["owner_repo"] == repo
+
+    monkeypatch.setattr(release, "ensure_release_worktree", ensure_while_locked)
+    monkeypatch.setattr(release, "assert_release_source", lambda _repo: head)
+    monkeypatch.setattr(
+        release,
+        "_plan_for_refs",
+        lambda *_args, **_kwargs: release.build_plan(
+            (), base_sha=head, target_sha=head
+        ),
+    )
+    monkeypatch.setattr(release, "_print_plan", lambda _plan: None)
+    monkeypatch.setattr(release, "publish_plan", publish_while_locked)
+
+    result = release.main(
+        [
+            "publish",
+            "--repo",
+            str(repo),
+            "--base",
+            head,
+            "--target",
+            head,
+            "--release-worktree",
+            str(tmp_path / "release"),
+        ]
+    )
+
+    assert result == 0
+    assert lock_observed == [True]
+    assert publish_lock_flags == [True]

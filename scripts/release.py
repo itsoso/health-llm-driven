@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import errno
+import fcntl
 import hashlib
 import json
 import os
@@ -12,6 +14,9 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
+import uuid
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -24,9 +29,11 @@ except ModuleNotFoundError:
 
 
 ROOT = Path(__file__).resolve().parents[1]
-STATE_SCHEMA_VERSION = 1
+STATE_SCHEMA_VERSION = 2
 STATE_DIRECTORY_NAME = "reva-release-state"
 STATE_FILE_NAME = "release-state.json"
+TRANSACTION_LOG_FILE_NAME = "release-transactions.jsonl"
+LOCK_FILE_NAME = "release-publish.lock"
 VALIDATION_PROFILE = "all"
 
 
@@ -157,6 +164,7 @@ _VALIDATION_ENV_OVERRIDES = frozenset(
         "PYTHONHOME",
         "PYTHONPATH",
         "PYTHONSTARTUP",
+        "OTA_TRANSACTION_ID",
         "npm_config_globalconfig",
         "npm_config_node_options",
         "npm_config_script_shell",
@@ -180,6 +188,7 @@ _MUTATION_ENV_OVERRIDES = frozenset(
         "PYTHONHOME",
         "PYTHONPATH",
         "PYTHONSTARTUP",
+        "OTA_TRANSACTION_ID",
         "npm_config_globalconfig",
         "npm_config_node_options",
         "npm_config_script_shell",
@@ -268,13 +277,17 @@ def parse_name_status(raw: bytes) -> tuple[Change, ...]:
         path_count = 2 if status[0] in {"R", "C"} else 1
         if index + path_count > len(fields):
             raise ReleaseError(f"Incomplete Git change record for status {status}")
-        paths = tuple(_decode_path(value) for value in fields[index : index + path_count])
+        paths = tuple(
+            _decode_path(value) for value in fields[index : index + path_count]
+        )
         index += path_count
         changes.append(Change(status=status, paths=paths))
     return tuple(changes)
 
 
-def git_changes(repo: Path, base: str, target: str) -> tuple[str, str, tuple[Change, ...]]:
+def git_changes(
+    repo: Path, base: str, target: str
+) -> tuple[str, str, tuple[Change, ...]]:
     repo = _repository_root(repo)
     base_sha = str(_git(repo, "rev-parse", "--verify", f"{base}^{{commit}}"))
     target_sha = str(_git(repo, "rev-parse", "--verify", f"{target}^{{commit}}"))
@@ -374,9 +387,7 @@ def _app_json_native_assets(raw: str, *, source: str) -> set[str]:
     ios_splash = ios.get("splash", {}) if isinstance(ios, dict) else {}
     for key in ("image", "tabletImage"):
         add(f"ios.splash.{key}", ios_splash, key)
-    ios_splash_dark = (
-        ios_splash.get("dark", {}) if isinstance(ios_splash, dict) else {}
-    )
+    ios_splash_dark = ios_splash.get("dark", {}) if isinstance(ios_splash, dict) else {}
     for key in ("image", "tabletImage"):
         add(f"ios.splash.dark.{key}", ios_splash_dark, key)
     web = expo.get("web", {}) if isinstance(expo, dict) else {}
@@ -394,6 +405,7 @@ def _app_json_native_assets(raw: str, *, source: str) -> set[str]:
         for locale, value in locales.items():
             if isinstance(value, str):
                 references.append((f"locales.{locale}", value))
+
     def add_local_values(label: str, value: object) -> None:
         if isinstance(value, str) and value.startswith("./"):
             references.append((label, value))
@@ -424,9 +436,7 @@ def _app_json_native_assets(raw: str, *, source: str) -> set[str]:
             add_local_values(f"plugins[{index}].{name}", options)
             if name.startswith("./"):
                 direct_assets.update(
-                    _local_plugin_references(
-                        name, source=f"{source}:plugins[{index}]"
-                    )
+                    _local_plugin_references(name, source=f"{source}:plugins[{index}]")
                 )
             if not isinstance(options, dict):
                 continue
@@ -632,9 +642,7 @@ def _app_config_native_assets(raw: str, *, source: str) -> set[str]:
             return relative_plugin_path(path) in _PLUGIN_ASSET_PATHS.get(
                 plugin, frozenset()
             )
-        return path in _NATIVE_CONFIG_PATHS or (
-            len(path) == 2 and path[0] == "locales"
-        )
+        return path in _NATIVE_CONFIG_PATHS or (len(path) == 2 and path[0] == "locales")
 
     def could_contain_native(path: tuple[str, ...], plugin: str | None) -> bool:
         if plugin:
@@ -643,9 +651,7 @@ def _app_config_native_assets(raw: str, *, source: str) -> set[str]:
 
     def fail_unknown(path: tuple[str, ...]) -> None:
         label = ".".join(path) or "<computed>"
-        raise ReleaseError(
-            f"{source} cannot prove native asset references for {label}"
-        )
+        raise ReleaseError(f"{source} cannot prove native asset references for {label}")
 
     def value_end(start: int, end: int) -> int:
         cursor = start
@@ -703,9 +709,7 @@ def _app_config_native_assets(raw: str, *, source: str) -> set[str]:
     def is_exact_object(start: int, end: int) -> bool:
         start, end = unwrap_parentheses(start, end)
         return (
-            start < end
-            and tokens[start].value == "{"
-            and pairs.get(start) == end - 1
+            start < end and tokens[start].value == "{" and pairs.get(start) == end - 1
         )
 
     def is_literal_object_spread(start: int, end: int) -> bool:
@@ -832,10 +836,7 @@ def _app_config_native_assets(raw: str, *, source: str) -> set[str]:
                 if token.value == "[" and cursor in pairs:
                     tuple_end = pairs[cursor]
                     name_index = cursor + 1
-                    if (
-                        name_index >= tuple_end
-                        or tokens[name_index].kind != "string"
-                    ):
+                    if name_index >= tuple_end or tokens[name_index].kind != "string":
                         fail_unknown(("plugins", "<name>"))
                     plugin_name = tokens[name_index].value
                     if plugin_name.startswith("./"):
@@ -990,12 +991,9 @@ def _app_config_native_assets(raw: str, *, source: str) -> set[str]:
                 if plugin is not None:
                     fail_unknown((*path, f"plugins.{plugin}.{key}"))
                 if (
-                    (
-                        is_native_path((*path, key), plugin)
-                        or could_contain_native((*path, key), plugin)
-                    )
-                    and (cursor + 1 == end or tokens[cursor + 1].value in {",", "}"})
-                ):
+                    is_native_path((*path, key), plugin)
+                    or could_contain_native((*path, key), plugin)
+                ) and (cursor + 1 == end or tokens[cursor + 1].value in {",", "}"}):
                     fail_unknown((*path, key))
                 if key in {"get", "set"} and could_contain_native(path, plugin):
                     fail_unknown((*path, f"<{key}ter>"))
@@ -1032,9 +1030,7 @@ def _app_config_native_assets(raw: str, *, source: str) -> set[str]:
     if opening >= len(tokens) or tokens[opening].value != "{":
         fail_unknown(())
     closing = pairs.get(opening)
-    if closing is None or any(
-        token.value != ";" for token in tokens[closing + 1 :]
-    ):
+    if closing is None or any(token.value != ";" for token in tokens[closing + 1 :]):
         fail_unknown(())
     walk_object(opening, (), None)
     if not proved_root_config:
@@ -1071,9 +1067,7 @@ def _native_mobile_assets_for_refs(
         app_json = _show_optional(repo, revision, "mobile/app.json")
         if app_json is not None:
             assets.update(
-                _app_json_native_assets(
-                    app_json, source=f"mobile/app.json@{revision}"
-                )
+                _app_json_native_assets(app_json, source=f"mobile/app.json@{revision}")
             )
         for config_path in ("mobile/app.config.js", "mobile/app.config.ts"):
             dynamic = _show_optional(repo, revision, config_path)
@@ -1194,9 +1188,7 @@ def build_plan(
     blocked_paths: set[str] = set()
     for change in changes_tuple:
         for path in change.paths:
-            surface = classify_path(
-                path, native_mobile_assets=native_mobile_assets
-            )
+            surface = classify_path(path, native_mobile_assets=native_mobile_assets)
             if surface is None:
                 blocked_paths.add(path)
             else:
@@ -1230,9 +1222,7 @@ def build_plan(
         for action in actions
         if action == "validate" or action not in normalized_completed
     ]
-    publishable = not blocked_paths and not (
-        {"mobile_native", "mac"} & surfaces_seen
-    )
+    publishable = not blocked_paths and not ({"mobile_native", "mac"} & surfaces_seen)
     return ReleasePlan(
         base_sha=base_sha,
         target_sha=target_sha,
@@ -1280,7 +1270,9 @@ def release_state_dir(repo: Path) -> Path:
     try:
         state_dir.mkdir(mode=0o700, exist_ok=True)
     except OSError as error:
-        raise ReleaseError(f"Cannot create shared release state: {state_dir}") from error
+        raise ReleaseError(
+            f"Cannot create shared release state: {state_dir}"
+        ) from error
     mode = state_dir.lstat().st_mode
     if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
         raise ReleaseError(f"Unsafe shared release state path: {state_dir}")
@@ -1292,15 +1284,23 @@ def _state_path(repo: Path) -> Path:
     return _git_common_dir(repo) / STATE_DIRECTORY_NAME / STATE_FILE_NAME
 
 
+def _transaction_log_path(repo: Path) -> Path:
+    return _git_common_dir(repo) / STATE_DIRECTORY_NAME / TRANSACTION_LOG_FILE_NAME
+
+
 def write_release_state(repo: Path, state: Mapping[str, Any]) -> Path:
     directory = release_state_dir(repo)
     destination = directory / STATE_FILE_NAME
-    if destination.exists() and destination.is_symlink():
-        raise ReleaseError(f"Refusing to replace symlinked release state: {destination}")
+    if destination.is_symlink():
+        raise ReleaseError(
+            f"Refusing to replace symlinked release state: {destination}"
+        )
     payload = dict(state)
-    payload.setdefault("schema_version", STATE_SCHEMA_VERSION)
-    payload.setdefault("updated_at", datetime.now(timezone.utc).isoformat())
-    descriptor, temporary_name = tempfile.mkstemp(prefix=".release-state.", dir=directory)
+    payload["schema_version"] = STATE_SCHEMA_VERSION
+    payload["updated_at"] = datetime.now(timezone.utc).isoformat()
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".release-state.", dir=directory
+    )
     temporary = Path(temporary_name)
     try:
         os.fchmod(descriptor, 0o600)
@@ -1326,8 +1326,14 @@ def read_release_state(repo: Path) -> dict[str, Any]:
     path = _state_path(repo)
     if not path.exists():
         return {}
-    mode = path.lstat().st_mode
-    if stat.S_ISLNK(mode) or not stat.S_ISREG(mode):
+    metadata = path.lstat()
+    mode = metadata.st_mode
+    if (
+        stat.S_ISLNK(mode)
+        or not stat.S_ISREG(mode)
+        or stat.S_IMODE(mode) != 0o600
+        or metadata.st_nlink != 1
+    ):
         raise ReleaseError(f"Unsafe shared release state file: {path}")
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -1335,7 +1341,127 @@ def read_release_state(repo: Path) -> dict[str, Any]:
         raise ReleaseError(f"Corrupt shared release state file: {path}") from error
     if not isinstance(value, dict):
         raise ReleaseError(f"Invalid shared release state payload: {path}")
+    if value.get("schema_version") == 1:
+        return {}
+    if value.get("schema_version") != STATE_SCHEMA_VERSION:
+        raise ReleaseError(f"Unsupported shared release state schema: {path}")
     return value
+
+
+_TRANSACTION_EVENT_KEYS = frozenset(
+    {
+        "schema_version",
+        "event",
+        "event_at",
+        "transaction_id",
+        "base_sha",
+        "target_sha",
+        "stage",
+        "status",
+        "attempt",
+        "started_at",
+        "finished_at",
+        "elapsed_seconds",
+        "log_path",
+        "failed_stage",
+        "completed_surfaces",
+        "pending_surfaces",
+        "safe_retry_command",
+    }
+)
+
+
+def _append_transaction_event(repo: Path, event: Mapping[str, Any]) -> Path:
+    unexpected = set(event) - _TRANSACTION_EVENT_KEYS
+    if unexpected:
+        raise ReleaseError(
+            "Refusing unsafe release transaction event fields: "
+            + ", ".join(sorted(unexpected))
+        )
+    directory = release_state_dir(repo)
+    destination = directory / TRANSACTION_LOG_FILE_NAME
+    if destination.is_symlink():
+        raise ReleaseError(f"Unsafe release transaction log: {destination}")
+    payload = dict(event)
+    payload["schema_version"] = STATE_SCHEMA_VERSION
+    payload.setdefault("event_at", datetime.now(timezone.utc).isoformat())
+    encoded = (
+        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(destination, flags, 0o600)
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_nlink != 1
+        ):
+            raise ReleaseError(f"Unsafe release transaction log: {destination}")
+        view = memoryview(encoded)
+        while view:
+            written = os.write(descriptor, view)
+            if written <= 0:
+                raise OSError("short write to release transaction log")
+            view = view[written:]
+        os.fsync(descriptor)
+    except ReleaseError:
+        raise
+    except OSError as error:
+        raise ReleaseError(
+            f"Cannot append private release transaction log: {destination}"
+        ) from error
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    return destination
+
+
+@contextmanager
+def release_publish_lock(repo: Path):
+    """Hold one nonblocking, repository-wide production publish lock."""
+
+    directory = release_state_dir(repo)
+    destination = directory / LOCK_FILE_NAME
+    if destination.is_symlink():
+        raise ReleaseError(f"Unsafe release publish lock: {destination}")
+    flags = os.O_RDWR | os.O_CREAT
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    descriptor: int | None = None
+    locked = False
+    try:
+        try:
+            descriptor = os.open(destination, flags, 0o600)
+        except OSError as error:
+            raise ReleaseError(f"Unsafe release publish lock: {destination}") from error
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_nlink != 1
+        ):
+            raise ReleaseError(f"Unsafe release publish lock: {destination}")
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
+            if error.errno in {errno.EACCES, errno.EAGAIN}:
+                raise ReleaseError(
+                    "Another release publish transaction is already active"
+                ) from error
+            raise ReleaseError(
+                f"Cannot acquire release publish lock: {destination}"
+            ) from error
+        locked = True
+        yield destination
+    finally:
+        if descriptor is not None:
+            if locked:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
 
 
 def _worktree_status(repo: Path) -> str:
@@ -1405,7 +1531,9 @@ def ensure_release_worktree(
         if destination_root != destination:
             raise ReleaseError(f"Release path is not a worktree root: {destination}")
         if _git_common_dir(destination) != _git_common_dir(source):
-            raise ReleaseError(f"Release path belongs to a different repository: {destination}")
+            raise ReleaseError(
+                f"Release path belongs to a different repository: {destination}"
+            )
         dirty = _worktree_status(destination)
         if dirty:
             raise ReleaseError(
@@ -1486,7 +1614,7 @@ def run_validation(
     repo: Path,
     *,
     runner: Runner = subprocess.run,
-) -> None:
+) -> Path | None:
     del plan
     repo = _repository_root(repo)
     profile = VALIDATION_PROFILE
@@ -1522,7 +1650,7 @@ def run_validation(
                 f"[release] validation credential hit: profile={profile} "
                 f"reason={verdict.reason}"
             )
-            return
+            return None
         print(
             f"[release] validation credential miss: profile={profile} "
             f"reason={verdict.reason}"
@@ -1546,7 +1674,8 @@ def run_validation(
             )
         if completed.returncode != 0:
             raise subprocess.CalledProcessError(completed.returncode, command)
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as error:
+        setattr(error, "validation_log_path", str(log_path))
         print(f"[release] validation failed: profile={profile} log={log_path}")
         _print_validation_log(log_path)
         raise
@@ -1557,7 +1686,7 @@ def run_validation(
             f"[release] validation passed: profile={profile}; "
             "tree credential not issued in CI"
         )
-        return
+        return log_path
 
     assert credential_file is not None
     assert toolchain is not None
@@ -1579,18 +1708,534 @@ def run_validation(
         f"[release] validation credential issued: profile={profile} "
         f"path={credential_file}"
     )
+    return log_path
+
+
+_TRANSACTION_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+_TRANSACTION_STATUSES = frozenset({"running", "failed", "succeeded"})
+_STAGE_STATUSES = frozenset({"running", "failed", "succeeded", "interrupted"})
+_RELEASE_STATE_KEYS = frozenset(
+    {
+        "schema_version",
+        "updated_at",
+        "transaction_id",
+        "base_sha",
+        "target_sha",
+        "status",
+        "attempt",
+        "started_at",
+        "finished_at",
+        "elapsed_seconds",
+        "failed_stage",
+        "completed_actions",
+        "completed_surfaces",
+        "pending_surfaces",
+        "stages",
+        "safe_retry_command",
+    }
+)
+_STAGE_RECORD_KEYS = frozenset(
+    {
+        "stage",
+        "status",
+        "attempt",
+        "started_at",
+        "finished_at",
+        "elapsed_seconds",
+        "log_path",
+    }
+)
+
+
+def _valid_iso_timestamp(value: Any) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None
+
+
+def _validate_resumable_state(
+    state: Mapping[str, Any], base_sha: str, target_sha: str
+) -> None:
+    try:
+        if set(state) - _RELEASE_STATE_KEYS:
+            raise ValueError("unexpected release state fields")
+        transaction_id = state["transaction_id"]
+        status = state["status"]
+        attempt = state["attempt"]
+        completed_actions = state["completed_actions"]
+        completed_surfaces = state["completed_surfaces"]
+        pending_surfaces = state["pending_surfaces"]
+        failed_stage = state["failed_stage"]
+        stages = state["stages"]
+        retry_command = state["safe_retry_command"]
+        started_at = state["started_at"]
+        finished_at = state.get("finished_at")
+        elapsed_seconds = state.get("elapsed_seconds")
+        if state["base_sha"] != base_sha or state["target_sha"] != target_sha:
+            raise ValueError("reference mismatch")
+        if not isinstance(transaction_id, str) or not _TRANSACTION_ID_RE.fullmatch(
+            transaction_id
+        ):
+            raise ValueError("invalid transaction id")
+        if status not in _TRANSACTION_STATUSES:
+            raise ValueError("invalid transaction status")
+        if not isinstance(attempt, int) or isinstance(attempt, bool) or attempt < 1:
+            raise ValueError("invalid transaction attempt")
+        if not _valid_iso_timestamp(started_at):
+            raise ValueError("invalid transaction start")
+        if not isinstance(completed_actions, list) or any(
+            not isinstance(item, str)
+            or item not in _VALID_ACTIONS
+            or item == "validate"
+            for item in completed_actions
+        ):
+            raise ValueError("invalid completed actions")
+        if len(completed_actions) != len(set(completed_actions)):
+            raise ValueError("duplicate completed actions")
+        for surfaces in (completed_surfaces, pending_surfaces):
+            if not isinstance(surfaces, list) or any(
+                not isinstance(item, str) or item not in _SURFACE_ORDER
+                for item in surfaces
+            ):
+                raise ValueError("invalid surface list")
+            if len(surfaces) != len(set(surfaces)):
+                raise ValueError("duplicate surfaces")
+        if set(completed_surfaces) & set(pending_surfaces):
+            raise ValueError("overlapping surfaces")
+        if failed_stage is not None and failed_stage not in _VALID_ACTIONS:
+            raise ValueError("invalid failed stage")
+        if status == "failed" and failed_stage is None:
+            raise ValueError("missing failed stage")
+        if status != "failed" and failed_stage is not None:
+            raise ValueError("unexpected failed stage")
+        if status == "succeeded" and pending_surfaces:
+            raise ValueError("successful transaction has pending surfaces")
+        if status == "running":
+            if finished_at is not None or elapsed_seconds is not None:
+                raise ValueError("running transaction has completion timing")
+        else:
+            if not _valid_iso_timestamp(finished_at):
+                raise ValueError("invalid transaction finish")
+            if (
+                not isinstance(elapsed_seconds, (int, float))
+                or isinstance(elapsed_seconds, bool)
+                or elapsed_seconds < 0
+            ):
+                raise ValueError("invalid transaction elapsed time")
+        if not isinstance(stages, list):
+            raise ValueError("invalid stage list")
+        for stage in stages:
+            if not isinstance(stage, dict):
+                raise ValueError("invalid stage record")
+            if set(stage) - _STAGE_RECORD_KEYS:
+                raise ValueError("unexpected stage fields")
+            if stage.get("stage") not in _VALID_ACTIONS:
+                raise ValueError("invalid stage name")
+            if stage.get("status") not in _STAGE_STATUSES:
+                raise ValueError("invalid stage status")
+            stage_attempt = stage.get("attempt")
+            if (
+                not isinstance(stage_attempt, int)
+                or isinstance(stage_attempt, bool)
+                or stage_attempt < 1
+                or stage_attempt > attempt
+            ):
+                raise ValueError("invalid stage attempt")
+            if not _valid_iso_timestamp(stage.get("started_at")):
+                raise ValueError("invalid stage start")
+            if stage["status"] == "running":
+                if "finished_at" in stage or "elapsed_seconds" in stage:
+                    raise ValueError("running stage has completion timing")
+            else:
+                if not _valid_iso_timestamp(stage.get("finished_at")):
+                    raise ValueError("invalid stage finish")
+                elapsed = stage.get("elapsed_seconds")
+                if (
+                    not isinstance(elapsed, (int, float))
+                    or isinstance(elapsed, bool)
+                    or elapsed < 0
+                ):
+                    raise ValueError("invalid stage elapsed time")
+            log_path = stage.get("log_path")
+            if log_path is not None and (
+                not isinstance(log_path, str) or not Path(log_path).is_absolute()
+            ):
+                raise ValueError("invalid stage log path")
+        successful_actions = {
+            stage["stage"]
+            for stage in stages
+            if stage["status"] == "succeeded" and stage["stage"] != "validate"
+        }
+        if set(completed_actions) != successful_actions:
+            raise ValueError("completed actions lack successful stage proof")
+        if (
+            not isinstance(retry_command, list)
+            or not retry_command
+            or any(not isinstance(part, str) or not part for part in retry_command)
+        ):
+            raise ValueError("invalid safe retry command")
+        if "--message" in retry_command:
+            raise ValueError("retry command contains a message")
+        expected_options = {
+            "--base": base_sha,
+            "--target": target_sha,
+            "--release-worktree": None,
+            "--env-file": None,
+            "--repo": None,
+        }
+        for option, expected in expected_options.items():
+            if retry_command.count(option) != 1:
+                raise ValueError("retry command option mismatch")
+            index = retry_command.index(option)
+            if index + 1 >= len(retry_command):
+                raise ValueError("retry command option has no value")
+            if expected is not None and retry_command[index + 1] != expected:
+                raise ValueError("retry command reference mismatch")
+        if retry_command.count("publish") != 1:
+            raise ValueError("retry command is not publish")
+    except (KeyError, TypeError, ValueError):
+        raise ReleaseError("Corrupt resumable release state") from None
+
+
+def _matching_resumable_state(
+    repo: Path, base_sha: str, target_sha: str
+) -> dict[str, Any] | None:
+    state = read_release_state(repo)
+    if not state:
+        return None
+    if state.get("base_sha") != base_sha or state.get("target_sha") != target_sha:
+        return None
+    _validate_resumable_state(state, base_sha, target_sha)
+    return state
 
 
 def _state_completed_actions(
     repo: Path, base_sha: str, target_sha: str
 ) -> tuple[str, ...]:
-    state = read_release_state(repo)
-    if state.get("base_sha") != base_sha or state.get("target_sha") != target_sha:
+    state = _matching_resumable_state(repo, base_sha, target_sha)
+    if state is None:
         return ()
-    value = state.get("completed_actions", [])
-    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        raise ReleaseError("Invalid completed_actions in shared release state")
-    return tuple(value)
+    return tuple(state["completed_actions"])
+
+
+def _safe_retry_command(
+    *,
+    repo: Path,
+    owner_repo: Path,
+    base_sha: str,
+    target_sha: str,
+    env_file: Path,
+) -> list[str]:
+    return [
+        sys.executable,
+        str(repo / "scripts/release.py"),
+        "publish",
+        "--repo",
+        str(owner_repo),
+        "--base",
+        base_sha,
+        "--target",
+        target_sha,
+        "--release-worktree",
+        str(repo),
+        "--env-file",
+        str(env_file),
+    ]
+
+
+def _surfaces_for_completed_actions(
+    plan: ReleasePlan, completed_actions: Iterable[str]
+) -> list[str]:
+    actions = set(completed_actions)
+    surfaces: set[str] = set()
+    if "deploy_backend" in actions and "backend" in plan.surfaces:
+        surfaces.add("backend")
+    if "deploy_all" in actions:
+        surfaces.update(set(plan.surfaces) & {"backend", "frontend"})
+    if "mobile_ota" in actions and "mobile_ota" in plan.surfaces:
+        surfaces.add("mobile_ota")
+    return [surface for surface in _SURFACE_ORDER if surface in surfaces]
+
+
+def _elapsed_between(started_at: str, finished_at: str) -> float:
+    started = datetime.fromisoformat(started_at)
+    finished = datetime.fromisoformat(finished_at)
+    return round(max(0.0, (finished - started).total_seconds()), 6)
+
+
+def _begin_release_transaction(
+    plan: ReleasePlan,
+    repo: Path,
+    *,
+    owner_repo: Path,
+    env_file: Path,
+) -> dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat()
+    retry_command = _safe_retry_command(
+        repo=repo,
+        owner_repo=owner_repo,
+        base_sha=plan.base_sha,
+        target_sha=plan.target_sha,
+        env_file=env_file,
+    )
+    prior = _matching_resumable_state(repo, plan.base_sha, plan.target_sha)
+    resumable = prior is not None
+    if resumable:
+        assert prior is not None
+        if prior["safe_retry_command"] != retry_command:
+            raise ReleaseError(
+                "Release retry parameters differ from the resumable transaction"
+            )
+        stages = [dict(stage) for stage in prior["stages"]]
+        uncertain_mutations = [
+            stage["stage"]
+            for stage in stages
+            if stage["status"] == "running" and stage["stage"] != "validate"
+        ]
+        if uncertain_mutations:
+            raise ReleaseError(
+                "Interrupted mutating release stage requires manual reconciliation: "
+                + ", ".join(uncertain_mutations)
+            )
+        for stage in stages:
+            if stage["status"] == "running":
+                stage["status"] = "interrupted"
+                stage["finished_at"] = now
+                stage["elapsed_seconds"] = _elapsed_between(stage["started_at"], now)
+        transaction_id = prior["transaction_id"]
+        attempt = prior["attempt"] + 1
+        started_at = prior["started_at"]
+        prior_completed = list(prior["completed_actions"])
+    else:
+        stages = []
+        transaction_id = uuid.uuid4().hex
+        attempt = 1
+        started_at = now
+        prior_completed = []
+    completed_actions = list(dict.fromkeys([*prior_completed, *plan.completed_actions]))
+    completed_surfaces = _surfaces_for_completed_actions(plan, completed_actions)
+    pending_surfaces = [
+        surface for surface in plan.surfaces if surface not in completed_surfaces
+    ]
+    state: dict[str, Any] = {
+        "schema_version": STATE_SCHEMA_VERSION,
+        "transaction_id": transaction_id,
+        "base_sha": plan.base_sha,
+        "target_sha": plan.target_sha,
+        "status": "running",
+        "attempt": attempt,
+        "started_at": started_at,
+        "failed_stage": None,
+        "completed_actions": completed_actions,
+        "completed_surfaces": completed_surfaces,
+        "pending_surfaces": pending_surfaces,
+        "stages": stages,
+        "safe_retry_command": retry_command,
+    }
+    write_release_state(repo, state)
+    _append_transaction_event(
+        repo,
+        {
+            "event": "transaction_started",
+            "transaction_id": transaction_id,
+            "base_sha": plan.base_sha,
+            "target_sha": plan.target_sha,
+            "status": "running",
+            "attempt": attempt,
+            "started_at": now,
+            "completed_surfaces": completed_surfaces,
+            "pending_surfaces": pending_surfaces,
+            "safe_retry_command": retry_command,
+        },
+    )
+    return state
+
+
+def _start_release_stage(
+    repo: Path, state: dict[str, Any], stage: str
+) -> tuple[dict[str, Any], float]:
+    started_at = datetime.now(timezone.utc).isoformat()
+    record = {
+        "stage": stage,
+        "status": "running",
+        "attempt": state["attempt"],
+        "started_at": started_at,
+    }
+    state["stages"].append(record)
+    state["status"] = "running"
+    state["failed_stage"] = None
+    write_release_state(repo, state)
+    _append_transaction_event(
+        repo,
+        {
+            "event": "stage_started",
+            "transaction_id": state["transaction_id"],
+            "base_sha": state["base_sha"],
+            "target_sha": state["target_sha"],
+            "stage": stage,
+            "status": "running",
+            "attempt": state["attempt"],
+            "started_at": started_at,
+        },
+    )
+    return record, time.monotonic()
+
+
+def _finish_release_stage(
+    repo: Path,
+    state: dict[str, Any],
+    record: dict[str, Any],
+    started_monotonic: float,
+    *,
+    status: str,
+    log_path: str | None = None,
+) -> None:
+    finished_at = datetime.now(timezone.utc).isoformat()
+    elapsed = round(max(0.0, time.monotonic() - started_monotonic), 6)
+    record["status"] = status
+    record["finished_at"] = finished_at
+    record["elapsed_seconds"] = elapsed
+    if log_path is not None:
+        record["log_path"] = log_path
+    write_release_state(repo, state)
+    event: dict[str, Any] = {
+        "event": f"stage_{status}",
+        "transaction_id": state["transaction_id"],
+        "base_sha": state["base_sha"],
+        "target_sha": state["target_sha"],
+        "stage": record["stage"],
+        "status": status,
+        "attempt": state["attempt"],
+        "started_at": record["started_at"],
+        "finished_at": finished_at,
+        "elapsed_seconds": elapsed,
+        "completed_surfaces": state["completed_surfaces"],
+        "pending_surfaces": state["pending_surfaces"],
+    }
+    if log_path is not None:
+        event["log_path"] = log_path
+    _append_transaction_event(repo, event)
+
+
+def _mark_action_completed(
+    plan: ReleasePlan, state: dict[str, Any], action: str
+) -> None:
+    if action != "validate" and action not in state["completed_actions"]:
+        state["completed_actions"].append(action)
+    completed = set(state["completed_surfaces"])
+    if action == "validate" and plan.surfaces == ("validation_only",):
+        completed.add("validation_only")
+    elif action == "deploy_backend" and "backend" in plan.surfaces:
+        completed.add("backend")
+    elif action == "deploy_all":
+        completed.update(set(plan.surfaces) & {"backend", "frontend"})
+    elif action == "mobile_ota" and "mobile_ota" in plan.surfaces:
+        completed.add("mobile_ota")
+    state["completed_surfaces"] = [
+        surface for surface in _SURFACE_ORDER if surface in completed
+    ]
+    state["pending_surfaces"] = [
+        surface
+        for surface in plan.surfaces
+        if surface not in state["completed_surfaces"]
+    ]
+
+
+def _safe_failure_reason(error: Exception) -> str:
+    if isinstance(error, ReleaseError) and "dirty" in str(error).lower():
+        return "release_source_dirty"
+    if isinstance(error, subprocess.CalledProcessError):
+        return "command_failed"
+    return "stage_failed"
+
+
+def _fail_release_transaction(
+    repo: Path,
+    state: dict[str, Any],
+    record: dict[str, Any],
+    started_monotonic: float,
+    error: Exception,
+) -> ReleaseError:
+    log_path_value = getattr(error, "validation_log_path", None)
+    log_path = str(log_path_value) if log_path_value else None
+    state["status"] = "failed"
+    state["failed_stage"] = record["stage"]
+    state["finished_at"] = datetime.now(timezone.utc).isoformat()
+    state["elapsed_seconds"] = _elapsed_between(
+        state["started_at"], state["finished_at"]
+    )
+    _finish_release_stage(
+        repo,
+        state,
+        record,
+        started_monotonic,
+        status="failed",
+        log_path=log_path,
+    )
+    failed_record = state["stages"][-1]
+    _append_transaction_event(
+        repo,
+        {
+            "event": "transaction_failed",
+            "transaction_id": state["transaction_id"],
+            "base_sha": state["base_sha"],
+            "target_sha": state["target_sha"],
+            "status": "failed",
+            "attempt": state["attempt"],
+            "finished_at": state["finished_at"],
+            "elapsed_seconds": state["elapsed_seconds"],
+            "failed_stage": state["failed_stage"],
+            "completed_surfaces": state["completed_surfaces"],
+            "pending_surfaces": state["pending_surfaces"],
+            "safe_retry_command": state["safe_retry_command"],
+            **({"log_path": log_path} if log_path is not None else {}),
+        },
+    )
+    summary = (
+        "Release transaction failed: "
+        f"transaction_id={state['transaction_id']} "
+        f"failed_stage={state['failed_stage']} "
+        f"reason={_safe_failure_reason(error)} "
+        f"elapsed_seconds={failed_record['elapsed_seconds']} "
+        f"log={log_path or 'none'} "
+        "completed_surfaces="
+        f"{','.join(state['completed_surfaces']) or 'none'} "
+        "pending_surfaces="
+        f"{','.join(state['pending_surfaces']) or 'none'} "
+        "safe_retry_command="
+        + json.dumps(state["safe_retry_command"], ensure_ascii=False)
+    )
+    return ReleaseError(summary)
+
+
+def _succeed_release_transaction(repo: Path, state: dict[str, Any]) -> None:
+    state["status"] = "succeeded"
+    state["failed_stage"] = None
+    state["finished_at"] = datetime.now(timezone.utc).isoformat()
+    state["elapsed_seconds"] = _elapsed_between(
+        state["started_at"], state["finished_at"]
+    )
+    write_release_state(repo, state)
+    _append_transaction_event(
+        repo,
+        {
+            "event": "transaction_succeeded",
+            "transaction_id": state["transaction_id"],
+            "base_sha": state["base_sha"],
+            "target_sha": state["target_sha"],
+            "status": "succeeded",
+            "attempt": state["attempt"],
+            "finished_at": state["finished_at"],
+            "elapsed_seconds": state["elapsed_seconds"],
+            "completed_surfaces": state["completed_surfaces"],
+            "pending_surfaces": state["pending_surfaces"],
+            "safe_retry_command": state["safe_retry_command"],
+        },
+    )
 
 
 def publish_plan(
@@ -1601,7 +2246,21 @@ def publish_plan(
     message: str,
     env_file: Path | None = None,
     runner: Runner = subprocess.run,
+    _lock_held: bool = False,
 ) -> None:
+    repo = _repository_root(repo)
+    owner_repo = _repository_root(owner_repo)
+    if not _lock_held:
+        with release_publish_lock(repo):
+            return publish_plan(
+                plan,
+                repo,
+                owner_repo=owner_repo,
+                message=message,
+                env_file=env_file,
+                runner=runner,
+                _lock_held=True,
+            )
     if not plan.publishable:
         details = ", ".join(plan.blocked_paths) or ", ".join(plan.surfaces)
         raise ReleaseError(f"Release requires manual routing before publish: {details}")
@@ -1613,42 +2272,73 @@ def publish_plan(
             "Production release refuses OTA test/debug override(s): "
             + ", ".join(unsafe_overrides)
         )
-    run_validation(plan, repo, runner=runner)
     assert_release_source(repo)
-    completed = list(plan.completed_actions)
     environment = _scrub_environment(os.environ, _MUTATION_ENV_OVERRIDES)
     deploy_env = env_file or Path(
         environment.get("DEPLOY_ENV_FILE", str(owner_repo / ".env"))
     )
-    environment["DEPLOY_ENV_FILE"] = str(deploy_env.resolve())
+    deploy_env = deploy_env.resolve()
+    environment["DEPLOY_ENV_FILE"] = str(deploy_env)
+    state = _begin_release_transaction(
+        plan,
+        repo,
+        owner_repo=owner_repo,
+        env_file=deploy_env,
+    )
+    environment["OTA_TRANSACTION_ID"] = state["transaction_id"]
 
     for action in plan.actions:
-        if action == "validate":
+        if action != "validate" and action in state["completed_actions"]:
             continue
-        assert_release_source(repo)
-        if action == "deploy_backend":
-            command = [str(repo / "deploy.sh"), "--backend", "--yes"]
-        elif action == "deploy_all":
-            command = [str(repo / "deploy.sh"), "--all", "--yes"]
-        elif action == "mobile_ota":
-            command = [
-                str(repo / "scripts/mobile-ota.sh"),
-                "production",
-                message,
-            ]
-        else:
-            raise ReleaseError(f"Action is not safely publishable: {action}")
-        runner(command, cwd=repo, check=True, env=environment)
-        completed.append(action)
-        write_release_state(
+        stage_record, stage_started = _start_release_stage(repo, state, action)
+        log_path: str | None = None
+        try:
+            if action == "validate":
+                validation_log = run_validation(plan, repo, runner=runner)
+                if validation_log is not None:
+                    log_path = str(validation_log)
+                assert_release_source(repo)
+            else:
+                assert_release_source(repo)
+                if action == "deploy_backend":
+                    command = [str(repo / "deploy.sh"), "--backend", "--yes"]
+                elif action == "deploy_all":
+                    command = [str(repo / "deploy.sh"), "--all", "--yes"]
+                elif action == "mobile_ota":
+                    command = [
+                        str(repo / "scripts/mobile-ota.sh"),
+                        "production",
+                        message,
+                    ]
+                else:
+                    raise ReleaseError(f"Action is not safely publishable: {action}")
+                completed = runner(
+                    command,
+                    cwd=repo,
+                    check=True,
+                    env=environment,
+                )
+                if completed.returncode != 0:
+                    raise subprocess.CalledProcessError(completed.returncode, command)
+        except Exception as error:
+            raise _fail_release_transaction(
+                repo, state, stage_record, stage_started, error
+            ) from None
+        _mark_action_completed(plan, state, action)
+        _finish_release_stage(
             repo,
-            {
-                "schema_version": STATE_SCHEMA_VERSION,
-                "base_sha": plan.base_sha,
-                "target_sha": plan.target_sha,
-                "completed_actions": list(dict.fromkeys(completed)),
-            },
+            state,
+            stage_record,
+            stage_started,
+            status="succeeded",
+            log_path=log_path,
         )
+    if state["pending_surfaces"]:
+        raise ReleaseError(
+            "Release transaction finished actions with pending surfaces: "
+            + ", ".join(state["pending_surfaces"])
+        )
+    _succeed_release_transaction(repo, state)
 
 
 def _plan_for_refs(
@@ -1704,23 +2394,43 @@ def main(argv: Sequence[str] | None = None) -> int:
             _print_plan(plan)
             return 0 if plan.publishable else 2
 
-        release_repo = ensure_release_worktree(
-            repo, release_path=args.release_worktree
-        )
-        target_sha = str(_git(release_repo, "rev-parse", args.target))
-        exact_main = assert_release_source(release_repo)
-        if target_sha != exact_main:
-            raise ReleaseError("Validation/publish target must be exact origin/main")
-        plan = _plan_for_refs(
-            release_repo,
-            args.base,
-            exact_main,
-            include_partial_state=True,
-        )
-        _print_plan(plan)
         if args.command == "validate":
+            release_repo = ensure_release_worktree(
+                repo, release_path=args.release_worktree
+            )
+            target_sha = str(_git(release_repo, "rev-parse", args.target))
+            exact_main = assert_release_source(release_repo)
+            if target_sha != exact_main:
+                raise ReleaseError(
+                    "Validation/publish target must be exact origin/main"
+                )
+            plan = _plan_for_refs(
+                release_repo,
+                args.base,
+                exact_main,
+                include_partial_state=True,
+            )
+            _print_plan(plan)
             run_validation(plan, release_repo)
-        else:
+            return 0
+
+        with release_publish_lock(repo):
+            release_repo = ensure_release_worktree(
+                repo, release_path=args.release_worktree
+            )
+            target_sha = str(_git(release_repo, "rev-parse", args.target))
+            exact_main = assert_release_source(release_repo)
+            if target_sha != exact_main:
+                raise ReleaseError(
+                    "Validation/publish target must be exact origin/main"
+                )
+            plan = _plan_for_refs(
+                release_repo,
+                args.base,
+                exact_main,
+                include_partial_state=True,
+            )
+            _print_plan(plan)
             if not plan.publishable:
                 return 2
             publish_plan(
@@ -1729,6 +2439,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 owner_repo=_owner_repository(repo),
                 message=args.message,
                 env_file=args.env_file,
+                _lock_held=True,
             )
         return 0
     except (ReleaseError, subprocess.CalledProcessError, OSError) as error:
