@@ -1092,6 +1092,53 @@ def test_supplement_authorization_preserves_the_full_named_supplement():
     assert shorter_alias.action == "block"
 
 
+def test_multiple_supplements_are_independently_authorized_and_projected():
+    snapshot = _snapshot("记录下来，吃了一粒甘氨酸镁和一粒褪黑素。")
+
+    magnesium = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "supplement",
+                "data": {"supplement_name": "甘氨酸镁"},
+            },
+        ),
+    )
+    melatonin = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "supplement",
+                "data": {"supplement_name": "褪黑素"},
+            },
+        ),
+    )
+
+    assert magnesium.action == "allow"
+    assert magnesium.normalized_args["data"] == {
+        "supplement_name": "甘氨酸镁"
+    }
+    assert melatonin.action == "allow"
+    assert melatonin.normalized_args["data"] == {"supplement_name": "褪黑素"}
+
+
+def test_write_action_residue_is_not_authorized_as_a_supplement_name():
+    decision = decide_tool_capability(
+        _snapshot("记录下来，吃了一粒甘氨酸镁和一粒褪黑素。"),
+        _request(
+            "health_record",
+            {
+                "record_type": "supplement",
+                "data": {"supplement_name": "下来"},
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+
+
 def test_medication_authorization_binds_name_and_dosage():
     snapshot = _snapshot("记录阿奇霉素2粒")
 

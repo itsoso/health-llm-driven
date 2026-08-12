@@ -3787,7 +3787,7 @@ def _deterministic_target_values(
         if names:
             values["names"] = names
         dosage_match = _SUPPLEMENT_DOSE_RE.search(clause)
-        if dosage_match is not None:
+        if len(names) == 1 and dosage_match is not None:
             values["dosage"] = _canonical_medication_dosage(dosage_match)
         timing = next(
             (
@@ -4069,17 +4069,36 @@ def _named_item_targets(clause: str, record_type: str) -> tuple[str, ...]:
         return tuple(_medication_item_targets(clause))
     action_matches = tuple(_WRITE_TARGET_ACTION_RE.finditer(clause))
     candidate = clause[action_matches[-1].end() :] if action_matches else clause
+    if record_type == "supplement":
+        # ``记录下来`` is tokenized as the ``记录`` action plus ``下来``.
+        # The latter is grammar, not a user-owned supplement target.
+        candidate = re.sub(
+            r"^(?:下来|起来)(?=[，,。.!！；;：:\s]|$)",
+            "",
+            candidate,
+        ).lstrip("，,。.!！；;：: ")
     candidate = re.sub(
         r"^(?:(?:一下|一条|一个|我的|我|今天|今日|已经|刚才|刚刚|"
         r"吃了|服了|服用(?:了)?|用了))+",
         "",
         candidate,
     )
-    candidate = re.split(r"(?:，|,|然后|并且|再)", candidate, maxsplit=1)[0]
+    candidate = re.split(r"(?:然后|并且|再)", candidate, maxsplit=1)[0]
     if record_type == "supplement":
         candidate = _SUPPLEMENT_DOSE_RE.sub("", candidate)
         candidate = _SUPPLEMENT_TIMING_RE.sub("", candidate)
         candidate = re.sub(r"(?:吃|服用)$", "", candidate)
+        targets = tuple(
+            dict.fromkeys(
+                item
+                for raw_item in re.split(r"[、，,]|(?:以及|和|与|及)", candidate)
+                if (
+                    item := raw_item.strip("的了，,。.!！；;：: ")
+                )
+            )
+        )
+        if targets:
+            return targets
     candidate = candidate.strip("的了，,。.!！；;：: ")
     if candidate:
         return (candidate,)
@@ -4953,8 +4972,23 @@ def _project_authorized_dispatch_payload(
     if record_type == "supplement":
         names = tuple(expected.get("names") or ())
         projected: dict[str, Any] = {}
-        if names:
-            projected["supplement_name"] = names[0]
+        requested_name = _effective_argument_value(
+            args,
+            data,
+            data_keys=("supplement_name", "name"),
+            arg_keys=("supplement_name", "name"),
+        )
+        requested_normalized = _normalize_entity_name(requested_name)
+        canonical_name = next(
+            (
+                name
+                for name in names
+                if _normalize_entity_name(name) == requested_normalized
+            ),
+            None,
+        )
+        if canonical_name:
+            projected["supplement_name"] = canonical_name
         for field in ("dosage", "timing", "category", "description"):
             if expected.get(field) not in (None, "", []):
                 projected[field] = expected[field]
