@@ -9,7 +9,7 @@
     "service_files": 410,
     "specialists": 13,
     "twin_partitions": 15,
-    "web_pages": 72
+    "web_pages": 73
   },
   "coverage": {
     "api_boundaries": {
@@ -2859,6 +2859,20 @@
     },
     {
       "coverage": "complete",
+      "id": "surface.web.admin.system-map",
+      "kind": "surface",
+      "name": "Web /admin/system-map",
+      "owner": "web",
+      "source": {
+        "path": "frontend/src/app/admin/system-map/page.tsx",
+        "type": "code"
+      },
+      "tags": [
+        "web"
+      ]
+    },
+    {
+      "coverage": "complete",
       "id": "surface.web.admin.wscla",
       "kind": "surface",
       "name": "Web /admin/wscla",
@@ -3986,6 +4000,16 @@
         "type": "code"
       },
       "to": "surface.web.admin.performance",
+      "type": "renders"
+    },
+    {
+      "coverage": "complete",
+      "from": "component.frontend",
+      "source": {
+        "path": "frontend/src/app/admin/system-map/page.tsx",
+        "type": "code"
+      },
+      "to": "surface.web.admin.system-map",
       "type": "renders"
     },
     {

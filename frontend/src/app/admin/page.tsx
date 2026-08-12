@@ -393,8 +393,8 @@ export default function AdminPage() {
           <button onClick={() => router.push('/admin/llm-performance')} className="px-6 py-2 rounded-lg font-medium transition-colors bg-white/10 text-purple-200 hover:bg-white/20">
             🤖 LLM 性能
           </button>
-          <button onClick={() => router.push('/admin/architecture')} className="px-6 py-2 rounded-lg font-medium transition-colors bg-white/10 text-purple-200 hover:bg-white/20">
-            📐 技术架构
+          <button onClick={() => router.push('/admin/system-map')} className="px-6 py-2 rounded-lg font-medium transition-colors bg-white/10 text-purple-200 hover:bg-white/20">
+            🗺️ 系统地图
           </button>
           <button onClick={() => router.push('/admin/knowledge')} className="px-6 py-2 rounded-lg font-medium transition-colors bg-white/10 text-purple-200 hover:bg-white/20">
             📚 KB Review
