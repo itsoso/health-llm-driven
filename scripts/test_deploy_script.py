@@ -17,6 +17,28 @@ def _write_executable(path: Path, body: str) -> None:
     path.chmod(path.stat().st_mode | 0o100)
 
 
+def _write_root_owned_stat_shim(path: Path) -> None:
+    """Write the GNU-stat subset used by remote release-state harnesses."""
+    _write_executable(
+        path,
+        """#!/usr/bin/env python3
+import os
+import sys
+
+if len(sys.argv) != 4 or sys.argv[1] != "-c":
+    raise SystemExit(64)
+
+metadata = os.stat(sys.argv[3])
+if sys.argv[2] == "%h":
+    print(metadata.st_nlink)
+elif sys.argv[2] == "%U:%G:%a":
+    print(f"root:root:{metadata.st_mode & 0o7777:o}")
+else:
+    raise SystemExit(64)
+""",
+    )
+
+
 def test_backend_deploy_checks_health_before_skills_manifest():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
     health_check = script.index("if ! verify_deployment; then")
@@ -82,19 +104,7 @@ def test_dependency_marker_never_skips_an_unverified_or_symlinked_environment(
     verifier_count = tmp_path / "verifier-count"
     state_dir = tmp_path / "release-state"
     digest = "a" * 64
-    _write_executable(
-        fake_bin / "stat",
-        """#!/usr/bin/env bash
-set -euo pipefail
-test "$1" = "-c"
-if [[ "$2" == "%h" ]]; then
-  /usr/bin/stat -f '%l' "$3"
-else
-  mode=$(/usr/bin/stat -f '%Lp' "$3")
-  printf 'root:root:%s\n' "$mode"
-fi
-""",
-    )
+    _write_root_owned_stat_shim(fake_bin / "stat")
     _write_executable(fake_bin / "sync", "#!/bin/sh\nexit 0\n")
     _write_executable(
         fake_bin / "mv",
@@ -178,19 +188,7 @@ def test_system_kb_marker_executes_missing_match_and_symlink_paths(tmp_path: Pat
     fake_bin.mkdir()
     state_dir = tmp_path / "release-state"
     digest = "b" * 64
-    _write_executable(
-        fake_bin / "stat",
-        """#!/usr/bin/env bash
-set -euo pipefail
-test "$1" = "-c"
-if [[ "$2" == "%h" ]]; then
-  /usr/bin/stat -f '%l' "$3"
-else
-  mode=$(/usr/bin/stat -f '%Lp' "$3")
-  printf 'root:root:%s\n' "$mode"
-fi
-""",
-    )
+    _write_root_owned_stat_shim(fake_bin / "stat")
     _write_executable(fake_bin / "sync", "#!/bin/sh\nexit 0\n")
     _write_executable(
         fake_bin / "mv",
@@ -1090,18 +1088,7 @@ if [ "$1" = "scripts/apply_managed_migrations.py" ]; then
 fi
 """,
     )
-    _write_executable(
-        fake_bin / "stat",
-        """#!/usr/bin/env bash
-set -euo pipefail
-if [[ "$2" == "%h" ]]; then
-  /usr/bin/stat -f '%l' "$3"
-else
-  mode=$(/usr/bin/stat -f '%Lp' "$3")
-  printf 'root:root:%s\n' "$mode"
-fi
-""",
-    )
+    _write_root_owned_stat_shim(fake_bin / "stat")
     _write_executable(fake_bin / "sync", "#!/bin/sh\nexit 0\n")
     _write_executable(
         fake_bin / "mv",

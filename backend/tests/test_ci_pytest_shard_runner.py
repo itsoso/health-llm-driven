@@ -77,8 +77,20 @@ def test_agent_a_h_tests_run_in_bounded_ci_processes():
         "tests/test_agent_eval.py tests/test_agent_event_stream.py "
         "tests/test_agent_evidence_card_memo.py tests/test_agent_explicit_cache_flag.py"
     )
-    assert by_label["agent-executor-a-h"]["paths"] == (
-        "tests/test_agent_executor_[a-h]*.py"
+    assert "agent-executor-a-h" not in by_label
+    assert by_label["agent-executor-a-d"]["paths"] == (
+        "tests/test_agent_executor_[a-d]*.py"
+    )
+    assert by_label["agent-executor-error-fast"]["paths"] == (
+        "tests/test_agent_executor_error_sanitization.py "
+        "tests/test_agent_executor_failover_gate.py "
+        "tests/test_agent_executor_fast_routing.py"
+    )
+    assert by_label["agent-executor-food"]["paths"] == (
+        "tests/test_agent_executor_food_vision.py"
+    )
+    assert by_label["agent-executor-g-h"]["paths"] == (
+        "tests/test_agent_executor_[g-h]*.py"
     )
     assert by_label["agent-executor-i-z"]["paths"] == (
         "tests/test_agent_executor_[i-z]*.py"
