@@ -2,8 +2,9 @@
      叙事区改完更新本文件顶部 last-reviewed;代码派生数字**绝不手写在这里**,只引用 docs/_generated/。 -->
 ---
 doc: system-map/INDEX
-last-reviewed: 2026-08-11
+last-reviewed: 2026-08-12
 generated-source: docs/_generated/system-map.json
+generated-agent-context: docs/_generated/system-map-agent-context.md
 extend-via: docs/specs/product-pipeline-contract.md
 skill-binding: docs/agent-skill-binding.md
 ---
@@ -14,20 +15,24 @@ skill-binding: docs/agent-skill-binding.md
 
 ## READ ORDER FOR AGENTS(按需读,别全读)
 
-1. **想知道这系统是什么/能做什么** → 下方「facet 2 能力」+ [`product-map.md`](product-map.md#3-当前功能清单代码核验) 当前功能清单。
-2. **想知道某功能在哪个端/怎么连** → [`product-map.md`](product-map.md)(多端 × UI × 业务流 × 系统流)。
-3. **想确认地图此刻可不可信** → [`docs/_generated/system-map.json`](../_generated/system-map.json)(代码派生,CI 校验;它是其中所列计数与注册表的唯一真源)。
+1. **每个任务先加载全局认知** → 读 [`system-map-agent-context.md`](../_generated/system-map-agent-context.md)(有大小上限、从 canonical graph 生成,不展开全部页面/任务)。
+2. **再定位任务局部上下游** → 用 `python3.12 scripts/system_map_context.py --path/--entity/--flow/--keyword ...`;结果过大时缩小 selector 或改用 `--depth 0`,工具不会静默截断。
+3. **想知道这系统是什么/能做什么** → 下方「facet 2 能力」+ [`product-map.md`](product-map.md#3-当前功能清单代码核验) 当前功能清单。
+4. **想知道某功能在哪个端/怎么连** → [`product-map.md`](product-map.md)(多端 × UI × 业务流 × 系统流)。
+5. **想确认地图此刻可不可信** → [`docs/_generated/system-map.json`](../_generated/system-map.json)(代码派生,CI 校验;它是其中所列计数与注册表的唯一真源)。
    管理员需要可视化查看时 → `/admin/system-map`（复用现有管理员登录与权限；数据仍来自同一生成物）。
-4. **想扩一个功能** → [`product-pipeline-contract.md`](../specs/product-pipeline-contract.md)(需求→上线 6 道 Gate;S1 用本地图当现状输入)。
-5. **想知道当前在做什么** → `docs/dossiers/`(在途 feature)。
-6. **想知道本项目研发 skills 怎么触发/Claude-Codex 怎么共用** → [`docs/agent-skill-binding.md`](../agent-skill-binding.md)。
+6. **想扩一个功能** → [`product-pipeline-contract.md`](../specs/product-pipeline-contract.md)(需求→上线 6 道 Gate;S1 用本地图当现状输入)。
+7. **想知道当前在做什么** → `docs/dossiers/`(在途 feature)。
+8. **想知道本项目研发 skills 怎么触发/Claude-Codex 怎么共用** → [`docs/agent-skill-binding.md`](../agent-skill-binding.md)。
+
+**证据优先级：代码与测试 > 代码派生 System Map > 受审声明 > 带新鲜度的叙事。地图不能替代源码和测试验证。** 查询结果给出的是下一步应打开的 source path；命中 `partial`/`declaration` 时必须按警告回到源码。若摘要或地图缺失/陈旧,先跑 `./scripts/system-map-check.sh`;闸门仍失败则停用地图,直接调查代码、测试和注册表。CI 能验证生成物与接线,不能证明模型真的读过。
 
 ## 三层分治(防漂移的核心)
 
 | 层 | 哪些内容 | 真源 | 会漂吗 |
 |---|---|---|---|
 | **A 叙事** | 目标/规划理由/为什么/流程叙事 | 本文件 + 各 facet 文档(带 `last-reviewed`) | 靠新鲜度门 + S8 回写 |
-| **B 生成结构** | 代码派生计数/注册表 + v2 typed entities/relations/coverage | `docs/_generated/system-map.json`(`scripts/dump_system_map.py` 生成，中央 harness 校验) | 已纳入的生成字段等值防漂移 |
+| **B 生成结构** | 代码派生计数/注册表 + v2 typed entities/relations/coverage + Agent 轻量派生视图 | `docs/_generated/system-map.json`(canonical) + `docs/_generated/system-map-agent-context.md`(派生；同一生成器与中央 harness 校验) | 已纳入的生成字段等值防漂移 |
 | **C 在途** | 当前在做的 feature | `docs/dossiers/`(product-pipeline 脊柱) | 零(流水线在写) |
 
 **铁律**:任何计数(规则数/specialist 数/路由数/…)**只准从 `docs/_generated/system-map.json` 引用,绝不手打进任何叙事**。手打的数字必漂(实证:ARCHITECTURE 曾 `(51 条)`、PRODUCT_ROADMAP 当日写错 `56`)。
@@ -50,6 +55,6 @@ skill-binding: docs/agent-skill-binding.md
 
 ## 维护(不靠自觉 —— 见 SKILL)
 
-- **B 层**:改结构后跑 `python3.12 scripts/dump_system_map.py` 生成，再跑 `./scripts/system-map-check.sh`；它使用独立 Python 3.12 `.venv`，统一验证 Schema、语义、生成物等值、Mobile nav 与 doc drift。
+- **B 层**:改结构后跑 `python3.12 scripts/dump_system_map.py` 同时生成 canonical JSON 与 Agent 摘要,再跑 `./scripts/system-map-check.sh`；它使用独立 Python 3.12 `.venv`，统一验证 Schema、语义、两个生成物等值、Mobile nav 与 doc drift。
 - **A 层**:动了某 facet 域 → 更新该 facet 文档 + bump `last-reviewed`(product-pipeline S8)。
 - **新一类「会漂的结构」**:把它从 A 叙事挪进 B 生成结构，补静态扫描或受审 declaration、source/coverage、contract 测试与 drift 检查。

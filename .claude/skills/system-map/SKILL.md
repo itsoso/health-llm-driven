@@ -16,10 +16,12 @@ docs/system-map/
 └── product-map.md    ← 多端 × UI × 业务流 × 系统流(叙事 + last-reviewed)
 docs/_generated/
 ├── system-map.json          ← v2 生成物:计数/roster + typed entities/relations/coverage
+├── system-map-agent-context.md ← 每个 coding agent 开工必读的有界全局摘要(同图派生)
 ├── system-map.schema.json   ← Draft 2020-12 固定契约
 └── mobile-nav-graph.json    ← Mobile 页面与静态导航边
 docs/system-map/declarations.json ← 无法可靠扫描的稳定组件/资源/关系声明(不含计数)
 scripts/dump_system_map.py          ← 确定性生成器
+scripts/system_map_context.py       ← 只读局部图查询(path/entity/flow/keyword,0–2 层)
 scripts/check_system_map.py         ← JSON Schema + 语义 + 生成物 + Mobile nav + doc drift 中央闸
 scripts/system-map-check.sh         ← 本机 Python 3.12 独立 .venv 入口
 ```
@@ -57,7 +59,18 @@ scripts/system-map-check.sh         ← 本机 Python 3.12 独立 .venv 入口
 
 ## Agent 读法
 
-INDEX 顶部 READ ORDER:① 能力/目标 → INDEX 表;② 功能在哪/怎么连 → product-map;③ 生成结构 → `_generated/system-map.json`;④ 怎么扩 → product-pipeline 契约;⑤ 当前在做 → dossiers。管理员可在 `/admin/system-map` 查看同一份只读生成物；API `/api/v1/admin/system-map` 与页面都复用现有管理员权限，不能替代仓库文档的 agent 入口。
+所有 coding agent 固定按以下顺序启动:① `AGENTS.md`;② `docs/system-map/INDEX.md`;③ `docs/_generated/system-map-agent-context.md` 加载有界全局认知;④ 用 `python3.12 scripts/system_map_context.py` 按任务查询局部上下游;⑤ 打开结果中的 source path 和附近测试,再制定计划或形成结论。常用示例:
+
+```bash
+python3.12 scripts/system_map_context.py --entity component.mobile --depth 0
+python3.12 scripts/system_map_context.py --flow agent-chat
+python3.12 scripts/system_map_context.py --path backend/app/api/
+python3.12 scripts/system_map_context.py --keyword notification --depth 0
+```
+
+**证据优先级：代码与测试 > 代码派生 System Map > 受审声明 > 带新鲜度的叙事。地图不能替代源码和测试验证。** `partial`/`declaration` 命中必须按 `VERIFY SOURCE` 警告回到代码。宽查询超过上限会显式失败,agent 应缩小 selector/depth,不能要求静默截断。摘要/查询只是 canonical `_generated/system-map.json` 的派生视图,不构成第二真源。
+
+管理员可在 `/admin/system-map` 查看同一份 canonical 生成物；API `/api/v1/admin/system-map` 与页面都复用现有管理员权限。研发 agent 直接读仓库生成物,不调用管理员 API。CI 能验证摘要当前、确定且入口接线存在,但不能证明模型真的读过；地图闸门失败时停用地图并回到代码、测试和注册表调查。
 
 ## 加一类新「会漂的结构」时
 

@@ -1,6 +1,6 @@
 ---
 doc: agent-skill-binding
-last-reviewed: 2026-08-11
+last-reviewed: 2026-08-12
 scope: health-llm-driven
 ---
 
@@ -21,10 +21,14 @@ scope: health-llm-driven
 
 1. 读 `AGENTS.md`:安全、日志、测试、隐私、DB、提交、部署硬规则的最终裁判。
 2. 读 `docs/system-map/INDEX.md`:先知道系统目标、能力、架构、多端 surface、业务流和系统流。
-3. 按本文的 binding 表选择匹配的 `.claude/skills/<name>/SKILL.md`,并完整读完。
-4. 如果是产品/用户行为/跨端能力,继续读 `docs/specs/reva-product-governance-spec.md` 和 `docs/specs/product-pipeline-contract.md`。
-5. 如果进入完整需求生命周期,创建或接续 `docs/dossiers/<date>-<slug>.md`,按 6 道 Gate 留痕。
-6. 完成后按对应 skill 的 S8/沉淀规则更新 system map、PRD/Plan、doc drift 生成物或相关 agent 约束。
+3. 读 `docs/_generated/system-map-agent-context.md`:加载从 canonical graph 生成的轻量全局上下文。
+4. 用 `python3.12 scripts/system_map_context.py` 按任务查询局部实体、关系、流、覆盖度和 source path,再打开源码与测试验证。
+5. 按本文的 binding 表选择匹配的 `.claude/skills/<name>/SKILL.md`,并完整读完。
+6. 如果是产品/用户行为/跨端能力,继续读 `docs/specs/reva-product-governance-spec.md` 和 `docs/specs/product-pipeline-contract.md`。
+7. 如果进入完整需求生命周期,创建或接续 `docs/dossiers/<date>-<slug>.md`,按 6 道 Gate 留痕。
+8. 完成后按对应 skill 的 S8/沉淀规则更新 system map、PRD/Plan、doc drift 生成物或相关 agent 约束。
+
+轻量摘要与局部查询均为 `docs/_generated/system-map.json` 的派生视图；管理员在产品内通过 `/admin/system-map` 看同一 canonical graph,研发 agent 直接读仓库生成物。CI 只能验证生成物和入口接线,不能证明模型已阅读。
 
 Codex 如果全局 openskills 已提供同名 skill,可以用 `npx openskills read <skill-name>`;否则直接读取本仓库 `.claude/skills/<name>/SKILL.md`。在 health-llm-driven 内,本仓库文件优先于全局泛化经验。
 
@@ -32,7 +36,7 @@ Codex 如果全局 openskills 已提供同名 skill,可以用 `npx openskills re
 
 | 触发场景 | 必读研发 skill / 协议 | 后续权威文档 |
 |---|---|---|
-| Onboard 本项目、问“系统是什么/有哪些能力/架构/产品地图/当前现状” | `.claude/skills/system-map/SKILL.md` | `docs/system-map/INDEX.md`, `docs/system-map/product-map.md`, `docs/_generated/system-map.json` |
+| Onboard 本项目、问“系统是什么/有哪些能力/架构/产品地图/当前现状” | `.claude/skills/system-map/SKILL.md` | `docs/system-map/INDEX.md`, `docs/_generated/system-map-agent-context.md`, `docs/system-map/product-map.md`, `docs/_generated/system-map.json` |
 | 一句需求要走“需求→PRD→规划→研发→测试→部署→上线验证” | `.claude/skills/product-pipeline/SKILL.md` | `docs/specs/product-pipeline-contract.md`, `docs/specs/reva-product-governance-spec.md`, `docs/dossiers/` |
 | 需求已定,进入跨端实现或多 agent fan-out | `.claude/skills/health-harness-orchestrator/SKILL.md` | `CLAUDE.md` “代理团队 Harness”,对应 plan/spec |
 | 改用药、基因、化验、CGM、消息、安全规则、认证、写路径或对外健康建议 | `.claude/skills/safety-gate/SKILL.md` | `AGENTS.md`, `docs/governance/security.md`, `docs/specs/reva-product-governance-spec.md` |
@@ -57,7 +61,7 @@ Codex 如果全局 openskills 已提供同名 skill,可以用 `npx openskills re
 
 ## 最小执行标准
 
-- 小修可以降级,但仍要读 `AGENTS.md`,定位 system map,跑相关验证。
+- 小修可以降级产品流程,但仍要读 `AGENTS.md`、System Map INDEX 与轻量全局摘要,再定位局部代码并跑相关验证。
 - 非平凡产品行为必须进入 product governance 和 product pipeline,至少留下 Dossier 或明确引用已有 Dossier。
 - 任何带用户健康建议、写入、提醒、药物、疾病、基因、化验、CGM 的改动必须触发安全 Gate。
 - 任何会漂的结构数字必须进 `docs/_generated/system-map.json`,不得手写进叙事文档；本机统一用 `./scripts/system-map-check.sh`（独立 Python 3.12 `.venv`）验证。

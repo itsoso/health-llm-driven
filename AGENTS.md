@@ -617,6 +617,16 @@ class ExampleModel(Base):
 
 **开工前先读系统现状**:`docs/system-map/INDEX.md` 是「本系统有什么、在哪、怎么扩」的统一入口(目标/能力/规划/架构/未来 + 多端×UI×业务流×系统流);计数真源在 `docs/_generated/system-map.json`(代码派生,`check_doc_drift.py` CI 校验,**绝不手打计数进任何文档**)。
 
+**所有 coding agent 的固定启动顺序**:
+
+1. 读本 `AGENTS.md`,确认工程硬规则。
+2. 读 `docs/system-map/INDEX.md`,理解全局导航与可信度边界。
+3. 读 `docs/_generated/system-map-agent-context.md`,加载有大小上限的代码派生全局摘要。
+4. 用 `python3.12 scripts/system_map_context.py` 按 path/entity/flow/keyword 查询任务局部图谱；宽查询应缩小 selector 或使用 `--depth 0`,不得要求工具静默截断。
+5. 打开结果给出的 source path 和附近测试后,才能制定计划或形成技术结论。
+
+轻量摘要和查询结果只是 `docs/_generated/system-map.json` 的派生视图,不是新真源。CI 能验证产物当前、确定且入口接线存在,但不能证明模型真的读过。地图不可用或验证失败时,运行 `./scripts/system-map-check.sh`,并直接回到代码、测试和注册表调查。
+
 把一句用户需求走完整个生命周期（需求 → PRD → 规划 → 需求分解 → 研发 → 测试 → 部署 → 上线验证），或用户说「立项 / 走一遍流程 / 从需求到上线」时，**所有 coding agent（含 Codex / Cursor）必须遵循** agent 中立的流程契约 [`docs/specs/product-pipeline-contract.md`](docs/specs/product-pipeline-contract.md)：
 
 - **双环**：定义环（需求→PRD→规划，便宜可逆）+ 交付环（分解→实现→测试→部署→验证，昂贵有闸）。

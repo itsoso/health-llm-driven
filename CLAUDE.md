@@ -21,6 +21,8 @@ Claude Code 读本文件；Cursor 读 `.cursor/rules/00-agents-bootstrap.mdc` �
 | 改 Rokid CXR-L 集成（`mobile/modules/rokid-bridge/` · `rokid-health.tsx` · `apps/rokid-pushup-glasses/` · `backend/app/api/rokid.py`） | **先读结论**：`docs/plans/2026-06-24-rokid-codex-review-adjudication-conclusion.md`（终裁 + 修复顺序）+ `docs/plans/2026-06-24-rokid-sdk-doc-vs-code-architecture-review.md`（SDK×代码 F1-F5）；**再按需 grep SDK 原文**：`docs/vendor/rokid-cxr-l-sdk/`（CXR-L v1.0.3 官方知识库 32 篇，`README.md` 是索引——别整目录 `@`，会爆上下文） |
 | 新功能起步（四问 + ASCII 数据流） | `~/work/personal/PRACTICES/feature-plan.md` |
 
+**每个 coding task 的固定启动**:`AGENTS.md` → `docs/system-map/INDEX.md` → `docs/_generated/system-map-agent-context.md` → 用 `python3.12 scripts/system_map_context.py` 查询任务相关局部图谱 → 打开结果中的源码与测试再判断。摘要与查询结果都派生自 canonical `docs/_generated/system-map.json`,不能替代代码验证；若地图闸门失败,回到代码、测试和注册表调查。
+
 > 移动端构建方向以本文件 §"移动端构建方向" 为准（RN/Expo;Capacitor 已停用,README 现已与此一致）。
 >
 > 涉及产品定位或新需求时，先读 `docs/specs/reva-product-governance-spec.md`。`AGENTS.md` 管工程硬规则；该 Spec 管产品范围、需求准入和跨模型遵循协议。
