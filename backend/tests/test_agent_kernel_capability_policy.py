@@ -1139,6 +1139,53 @@ def test_write_action_residue_is_not_authorized_as_a_supplement_name():
     assert decision.action == "block"
 
 
+def test_server_authorized_supplement_all_continuation_allows_only_bound_name():
+    snapshot = _snapshot("全部已服用")
+    snapshot = replace(
+        snapshot,
+        intent=replace(
+            snapshot.intent,
+            primary="write",
+            domain="supplement",
+            operation="create",
+            evidence=(
+                *snapshot.intent.evidence,
+                "continuation:supplement_all",
+            ),
+            is_write=True,
+        ),
+    )
+    matching_args = capability_policy_module.bind_server_authorized_health_record_fields(
+        {
+            "record_type": "supplement",
+            "data": {"supplement_name": "甘氨酸镁"},
+        },
+        contextual_supplement_name="甘氨酸镁",
+    )
+    mismatch_args = capability_policy_module.bind_server_authorized_health_record_fields(
+        {
+            "record_type": "supplement",
+            "data": {"supplement_name": "褪黑素"},
+        },
+        contextual_supplement_name="甘氨酸镁",
+    )
+
+    matching = decide_tool_capability(
+        snapshot,
+        _request("health_record", matching_args),
+    )
+    mismatch = decide_tool_capability(
+        snapshot,
+        _request("health_record", mismatch_args),
+    )
+
+    assert matching.action == "allow"
+    assert matching.normalized_args["data"] == {
+        "supplement_name": "甘氨酸镁"
+    }
+    assert mismatch.action == "block"
+
+
 def test_medication_authorization_binds_name_and_dosage():
     snapshot = _snapshot("记录阿奇霉素2粒")
 

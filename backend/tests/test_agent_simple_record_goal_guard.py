@@ -4,6 +4,7 @@ import pytest
 
 from app.services.agent_executor import (
     _build_deterministic_simple_record_tool_call,
+    _build_deterministic_supplement_record_tool_calls,
     _enrich_simple_diet_goal_tool_calls,
     _estimate_simple_diet_nutrition,
     _normalize_goal_guarded_tool_calls,
@@ -477,6 +478,42 @@ def test_diet_goal_builds_deterministic_write_when_model_omits_tool_call():
             "source": "agent_text",
         },
     }
+
+
+def test_explicit_multiple_supplements_build_deterministic_calls():
+    calls = _build_deterministic_supplement_record_tool_calls(
+        "记录下来，吃了一粒甘氨酸镁和一粒褪黑素。",
+        write_receipts=[],
+    )
+
+    assert [
+        json.loads(call["function"]["arguments"])["data"]["supplement_name"]
+        for call in calls
+    ] == ["甘氨酸镁", "褪黑素"]
+    assert all(call["function"]["name"] == "health_record" for call in calls)
+
+
+def test_contextual_all_supplements_builds_only_owner_authorized_calls():
+    calls = _build_deterministic_supplement_record_tool_calls(
+        "全部已服用",
+        contextual_supplement_names=("NOW Melatonin 3mg", "甘氨酸镁"),
+        write_receipts=[],
+    )
+
+    assert [
+        json.loads(call["function"]["arguments"])["data"]["supplement_name"]
+        for call in calls
+    ] == ["NOW Melatonin 3mg", "甘氨酸镁"]
+    assert _build_deterministic_supplement_record_tool_calls(
+        "全部已服用",
+        contextual_supplement_names=(),
+        write_receipts=[],
+    ) == []
+    assert _build_deterministic_supplement_record_tool_calls(
+        "全部已服用",
+        contextual_supplement_names=("甘氨酸镁",),
+        write_receipts=[{"resource_id": "1", "verified": True}],
+    ) == []
 
 
 @pytest.mark.parametrize(

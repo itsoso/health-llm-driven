@@ -13,6 +13,7 @@ import json
 import pytest
 
 from app.services import agent_executor as ae
+from app.models.supplement import SupplementDefinition
 from app.services.agent_executor import (
     AgentExecutor,
     _build_fast_record_messages,
@@ -44,6 +45,96 @@ def test_record_intent_needs_detail_message_is_honest_and_actionable():
     empty = _record_intent_needs_detail_message("")
     assert "还没记下来" in empty
     assert "没有成功写入数据库" not in empty
+
+
+def test_all_taken_resolves_only_from_immediate_owner_scoped_supplement_context(
+    db,
+    auth_user_and_headers,
+):
+    user, _ = auth_user_and_headers
+    db.add_all(
+        [
+            SupplementDefinition(
+                user_id=user.id,
+                name="甘氨酸镁",
+                is_active=True,
+                sort_order=2,
+            ),
+            SupplementDefinition(
+                user_id=user.id,
+                name="NOW Melatonin 3mg",
+                is_active=True,
+                sort_order=1,
+            ),
+            SupplementDefinition(
+                user_id=user.id,
+                name="已停用鱼油",
+                is_active=False,
+                sort_order=0,
+            ),
+            SupplementDefinition(
+                user_id=user.id + 1000,
+                name="其他用户补剂",
+                is_active=True,
+                sort_order=0,
+            ),
+        ]
+    )
+    db.commit()
+    recent = [
+        {
+            "role": "assistant",
+            "content": (
+                "NOW Melatonin 3mg · 褪黑素；甘氨酸镁。"
+                "你是只记现在该吃的，还是全部2种都记为已服用？"
+            ),
+        }
+    ]
+
+    names = ae._resolve_contextual_supplement_names(
+        db,
+        user_id=user.id,
+        message="全部已服用",
+        recent_messages=recent,
+    )
+
+    assert names == ("NOW Melatonin 3mg", "甘氨酸镁")
+    assert ae._resolve_contextual_supplement_names(
+        db,
+        user_id=user.id,
+        message="全部已服用",
+        recent_messages=[],
+    ) == ()
+    assert ae._resolve_contextual_supplement_names(
+        db,
+        user_id=user.id,
+        message="全部已服用",
+        recent_messages=[
+            {"role": "assistant", "content": "要把全部2种药物都记为已服用吗？"}
+        ],
+    ) == ()
+
+
+def test_all_taken_refines_kernel_to_a_supplement_write(
+    db,
+    auth_user_and_headers,
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._current_turn_user_message = "全部已服用"
+    executor._current_turn_recent_messages = [
+        {"role": "assistant", "content": "要把全部补剂都记为已服用吗？"}
+    ]
+    executor._turn_contextual_supplement_names = ("甘氨酸镁", "褪黑素")
+
+    snapshot = executor._ensure_agent_kernel_turn()
+
+    assert snapshot.intent.primary == "write"
+    assert snapshot.intent.domain == "supplement"
+    assert snapshot.intent.operation == "create"
+    assert snapshot.intent.is_write is True
+    assert "continuation:supplement_all" in snapshot.intent.evidence
 
 
 @pytest.mark.parametrize(

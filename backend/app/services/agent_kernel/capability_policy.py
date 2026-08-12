@@ -3363,6 +3363,30 @@ def _health_record_target_status(
     requested_type = recipe_replay_record_type(args)
     if not requested_type:
         return "unresolved"
+    server_authorized = _server_authorized_health_record_fields(args)
+    contextual_supplement_name = str(
+        server_authorized.get("contextual_supplement_name") or ""
+    ).strip()
+    if (
+        requested_type == "supplement"
+        and contextual_supplement_name
+        and "continuation:supplement_all" in snapshot.intent.evidence
+    ):
+        default_date = snapshot.context.current_time.date().isoformat()
+        expected_values = {
+            "names": (contextual_supplement_name,),
+            "target_date": default_date,
+            "default_date": default_date,
+        }
+        return (
+            "mismatch"
+            if _target_values_mismatch(
+                requested_type,
+                expected_values,
+                args,
+            )
+            else "match"
+        )
     if requested_type == "illness":
         normalized_turn = "".join(str(snapshot.envelope.text or "").split()).strip(
             "，,。.!！；;：: "

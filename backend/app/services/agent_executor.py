@@ -7123,6 +7123,66 @@ def _build_deterministic_simple_record_tool_call(
     }
 
 
+def _build_deterministic_supplement_record_tool_calls(
+    message: Any,
+    *,
+    contextual_supplement_names: Sequence[str] = (),
+    write_receipts: Sequence[dict[str, Any]],
+    has_attachment: bool = False,
+) -> list[Dict[str, Any]]:
+    """Build the exact supplement writes explicitly authorized this turn."""
+    if write_receipts or has_attachment:
+        return []
+
+    if (
+        contextual_supplement_names
+        and _is_supplement_all_completion(message)
+    ):
+        raw_names = tuple(contextual_supplement_names)
+    else:
+        intent = classify_agent_utterance(message)
+        if not (
+            intent.primary == "write"
+            and intent.domain == "supplement"
+            and intent.operation == "create"
+            and intent.is_write
+        ):
+            return []
+        from app.services.agent_kernel.capability_policy import _named_item_targets
+
+        raw_names = _named_item_targets(str(message or ""), "supplement")
+
+    names: list[str] = []
+    seen: set[str] = set()
+    for raw_name in raw_names:
+        name = str(raw_name or "").strip()
+        normalized = _normalized_supplement_reference(name)
+        if not name or not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        names.append(name)
+    if not names or len(names) > 64:
+        return []
+
+    return [
+        {
+            "id": f"deterministic-supplement-{_sha12(name)}",
+            "type": "function",
+            "function": {
+                "name": "health_record",
+                "arguments": json.dumps(
+                    {
+                        "record_type": "supplement",
+                        "data": {"supplement_name": name},
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        }
+        for name in names
+    ]
+
+
 def _simple_record_goal_arguments(
     goal: Optional[GoalSpec],
 ) -> Optional[Dict[str, Any]]:
@@ -7848,9 +7908,10 @@ def _apply_server_health_record_provenance(
     has_attachment: bool,
     diet_photo_auto_save: bool,
     contextual_diet_recorded: bool,
+    contextual_supplement_names: Sequence[str],
     user_message: str,
 ) -> Any:
-    """Replace model-authored diet provenance with server-known turn provenance."""
+    """Bind only server-known health-record provenance and continuation targets."""
     if tool_name != "health_record" or not isinstance(args, dict):
         return args
 
@@ -7874,6 +7935,26 @@ def _apply_server_health_record_provenance(
             return bind_server_authorized_health_record_fields(
                 args,
                 rhinitis_payload=canonical_rhinitis,
+            )
+        return args
+    if record_type == "supplement":
+        requested_name = str(
+            data.get("supplement_name") or data.get("name") or ""
+        ).strip()
+        requested_normalized = _normalized_supplement_reference(requested_name)
+        canonical_name = next(
+            (
+                name
+                for name in contextual_supplement_names
+                if _normalized_supplement_reference(name)
+                == requested_normalized
+            ),
+            None,
+        )
+        if canonical_name:
+            return bind_server_authorized_health_record_fields(
+                args,
+                contextual_supplement_name=canonical_name,
             )
         return args
     if record_type != "diet":
@@ -8076,6 +8157,118 @@ def _pending_reminder_schedule_context(
     ):
         return None
     return {"user_text": user_text}
+
+
+_SUPPLEMENT_ALL_COMPLETION_PHRASES = frozenset(
+    {
+        "全部已服用",
+        "全部都已服用",
+        "都已服用",
+        "全都已服用",
+        "全部吃了",
+        "全部都吃了",
+        "都吃了",
+        "全都吃了",
+        "全部服用了",
+        "全部都服用了",
+        "都服用了",
+        "全都服用了",
+    }
+)
+
+
+def _normalized_supplement_reference(value: Any) -> str:
+    return re.sub(
+        r"[^0-9a-z\u4e00-\u9fff]+",
+        "",
+        str(value or "").casefold(),
+    )
+
+
+def _is_supplement_all_completion(message: Any) -> bool:
+    compact = "".join(str(message or "").split()).strip("，,。.!！；;：:?？")
+    return compact in _SUPPLEMENT_ALL_COMPLETION_PHRASES
+
+
+def _assistant_requests_all_supplements(
+    assistant_text: Any,
+    active_names: Sequence[str],
+) -> bool:
+    text = str(assistant_text or "").strip()
+    if not text or not re.search(r"[?？]", text):
+        return False
+    compact = "".join(text.split())
+    if not (
+        "已服用" in compact
+        and any(marker in compact for marker in ("记为", "记录为", "打卡为"))
+    ):
+        return False
+    if re.search(r"(?:全部|所有)(?:的)?补剂", compact):
+        return True
+
+    count_match = re.search(
+        r"全部(?P<count>\d+)种.*?(?:记为|记录为|打卡为)已服用",
+        compact,
+    )
+    if count_match is None or int(count_match.group("count")) != len(active_names):
+        return False
+    normalized_assistant = _normalized_supplement_reference(text)
+    return any(
+        normalized_name
+        and normalized_name in normalized_assistant
+        for normalized_name in (
+            _normalized_supplement_reference(name) for name in active_names
+        )
+    )
+
+
+def _resolve_contextual_supplement_names(
+    db: Session,
+    *,
+    user_id: int,
+    message: Any,
+    recent_messages: Any,
+) -> tuple[str, ...]:
+    """Resolve a tightly scoped ``all taken`` reply to owner-held definitions."""
+    if (
+        not _is_supplement_all_completion(message)
+        or not isinstance(recent_messages, list)
+        or not recent_messages
+    ):
+        return ()
+    assistant_turn = recent_messages[-1]
+    if not (
+        isinstance(assistant_turn, dict)
+        and assistant_turn.get("role") == "assistant"
+    ):
+        return ()
+
+    from app.models.supplement import SupplementDefinition
+
+    rows = (
+        db.query(SupplementDefinition.name)
+        .filter(
+            SupplementDefinition.user_id == user_id,
+            SupplementDefinition.is_active.is_(True),
+        )
+        .order_by(SupplementDefinition.sort_order, SupplementDefinition.id)
+        .all()
+    )
+    names: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        name = str(row[0] or "").strip()
+        normalized = _normalized_supplement_reference(name)
+        if not name or not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        names.append(name)
+    if not names or not _assistant_requests_all_supplements(
+        assistant_turn.get("content"),
+        names,
+    ):
+        return ()
+    return tuple(names)
 
 
 def _query_only_health_manage_scope(
@@ -8802,6 +8995,7 @@ class AgentExecutor:
         self._turn_channel: Optional[str] = None
         self._current_turn_user_message = ""
         self._current_turn_recent_messages: list[dict] = []
+        self._turn_contextual_supplement_names: tuple[str, ...] = ()
         self._current_turn_source_message_id: Optional[int] = None
         self._current_turn_media_source_message_id: Optional[int] = None
         self._current_turn_conversation_id: Optional[int] = None
@@ -9041,14 +9235,60 @@ class AgentExecutor:
         return self._refine_agent_kernel_continuation(snapshot)
 
     def _refine_agent_kernel_continuation(self, snapshot: TurnSnapshot) -> TurnSnapshot:
-        """Turn an explicit follow-up schedule into a typed continuation write.
+        """Turn an explicit follow-up answer into a typed continuation write.
 
         A reply such as ``9点到20点`` is intentionally ambiguous in isolation.
         It becomes a write only when the immediately preceding assistant turn
-        asked for reminder timing.  This is deterministic conversation state,
-        not a keyword authorization bypass; ToolGateway still evaluates the
-        resulting tool request and confirmation/receipt rules.
+        asked for reminder timing. ``全部已服用`` follows the same rule for an
+        immediately pending all-supplement question, with target names sourced
+        from owner-scoped active definitions. This is deterministic conversation
+        state, not a keyword authorization bypass; ToolGateway still evaluates
+        the resulting tool request and confirmation/receipt rules.
         """
+        contextual_supplement_names = tuple(
+            getattr(self, "_turn_contextual_supplement_names", ()) or ()
+        )
+        if (
+            contextual_supplement_names
+            and _is_supplement_all_completion(snapshot.envelope.text)
+        ):
+            if "continuation:supplement_all" in snapshot.intent.evidence:
+                return snapshot
+            refined_intent = replace(
+                snapshot.intent,
+                primary="write",
+                domain="supplement",
+                operation="create",
+                confidence=0.9,
+                evidence=(
+                    *snapshot.intent.evidence,
+                    "continuation:supplement_all",
+                ),
+                ambiguity=tuple(
+                    flag
+                    for flag in snapshot.intent.ambiguity
+                    if flag != "low_confidence"
+                ),
+                is_write=True,
+            )
+            refined_goal = compile_goal_spec(
+                envelope=snapshot.envelope,
+                context=snapshot.context,
+                intent=refined_intent,
+                actionable_references=snapshot.actionable_references,
+            )
+            refined = replace(
+                snapshot,
+                intent=refined_intent,
+                goal=refined_goal,
+            )
+            self._agent_kernel_snapshot = refined
+            if self._agent_kernel_event_bus is not None:
+                self._agent_kernel_event_bus.rebind_snapshot(
+                    refined,
+                    reason="supplement_all_continuation",
+                )
+            return refined
         if (
             snapshot.intent.primary != "unknown"
             or not _is_reminder_schedule_continuation(
@@ -9958,6 +10198,7 @@ class AgentExecutor:
             last_recoverable_write_rejection: Optional[str] = None
             last_recoverable_write_rejection_code: Optional[str] = None
             deterministic_diet_correction_fallback_attempted = False
+            deterministic_supplement_fallback_attempted = False
             deterministic_simple_record_fallback_attempted = False
             simple_diet_nutrition_estimation_attempted = False
             deterministic_goal_lookup_attempted = False
@@ -9998,6 +10239,29 @@ class AgentExecutor:
                         )})
                         continue
                     content = _strip_text_tool_call(content)
+                if not deterministic_supplement_fallback_attempted:
+                    deterministic_supplement_calls = (
+                        _build_deterministic_supplement_record_tool_calls(
+                            message,
+                            contextual_supplement_names=tuple(
+                                getattr(
+                                    self,
+                                    "_turn_contextual_supplement_names",
+                                    (),
+                                )
+                                or ()
+                            ),
+                            write_receipts=write_receipts,
+                        )
+                    )
+                    if deterministic_supplement_calls and (
+                        len(deterministic_supplement_calls) > 1
+                        or self._turn_contextual_supplement_names
+                        or not tool_calls
+                    ):
+                        deterministic_supplement_fallback_attempted = True
+                        tool_calls = deterministic_supplement_calls
+                        content = ""
                 if (
                     not tool_calls
                     and not deterministic_simple_record_fallback_attempted
@@ -10665,6 +10929,7 @@ class AgentExecutor:
         self._current_turn_user_message = message or ""
         self._trusted_diet_portion_update_keys.clear()
         self._current_turn_recent_messages = []
+        self._turn_contextual_supplement_names = ()
         self._current_turn_has_attachment = bool(images or file_base64)
         self._turn_pending_write_intent_ids = []
         self._turn_pending_write_intent_kinds = []
@@ -11635,6 +11900,16 @@ class AgentExecutor:
         self._current_turn_recent_messages = [
             dict(item) for item in recent_messages[-6:] if isinstance(item, dict)
         ]
+        self._turn_contextual_supplement_names = (
+            _resolve_contextual_supplement_names(
+                self.db,
+                user_id=user_id,
+                message=message,
+                recent_messages=self._current_turn_recent_messages,
+            )
+        )
+        if self._turn_contextual_supplement_names:
+            self._ensure_agent_kernel_turn(channel=channel)
         if retry_recovery is not None:
             for history_message in reversed(messages):
                 if history_message.get("role") == "user":
@@ -11843,6 +12118,7 @@ class AgentExecutor:
         tool_executed_count = 0
         deterministic_symptom_fallback_attempted = False
         deterministic_diet_correction_fallback_attempted = False
+        deterministic_supplement_fallback_attempted = False
         deterministic_simple_record_fallback_attempted = False
         simple_diet_nutrition_estimation_attempted = False
         deterministic_goal_lookup_attempted = False
@@ -12288,6 +12564,45 @@ class AgentExecutor:
                         continue  # 进入下一轮,模型用结构化 tool_calls 重试
                     # 轮次用尽仍是文本式 → 剥掉标记避免泄漏(用户至少不看到裸 "Tool calls:")。
                     response = {**response, "content": _strip_text_tool_call(botched)}
+
+                if (
+                    not health_advice_buffered
+                    and isinstance(response, dict)
+                    and not deterministic_supplement_fallback_attempted
+                ):
+                    deterministic_supplement_calls = (
+                        _build_deterministic_supplement_record_tool_calls(
+                            message,
+                            contextual_supplement_names=tuple(
+                                getattr(
+                                    self,
+                                    "_turn_contextual_supplement_names",
+                                    (),
+                                )
+                                or ()
+                            ),
+                            write_receipts=write_receipts,
+                            has_attachment=bool(images or file_base64),
+                        )
+                    )
+                    if deterministic_supplement_calls and (
+                        len(deterministic_supplement_calls) > 1
+                        or self._turn_contextual_supplement_names
+                        or not response.get("tool_calls")
+                    ):
+                        deterministic_supplement_fallback_attempted = True
+                        response = {
+                            **response,
+                            "content": "",
+                            "finish_reason": "tool_calls",
+                            "tool_calls": deterministic_supplement_calls,
+                        }
+                        logger.info(
+                            "[agent_executor] deterministic supplement fallback "
+                            "user=%s targets=%s",
+                            user_id,
+                            len(deterministic_supplement_calls),
+                        )
 
                 # 确定性症状写入兜底:当前用户句子已经被分类为明确症状陈述,
                 # 但模型只返回文字/只读查询时,不能把这条症状降级成“还没记下来”。
@@ -18664,6 +18979,9 @@ class AgentExecutor:
                 getattr(self, "_turn_contextual_diet_record_id", None)
                 is not None
             ),
+            contextual_supplement_names=tuple(
+                getattr(self, "_turn_contextual_supplement_names", ()) or ()
+            ),
             user_message=str(
                 getattr(self, "_current_turn_user_message", "") or ""
             ),
@@ -20283,9 +20601,24 @@ class AgentExecutor:
                             "请核对包装后，在不带图片的新消息中发送“记录「包装上的完整名称」”。"
                         ),
                     )
-                if not _supplement_name_is_grounded_in_current_turn(
-                    name,
-                    current_message,
+                context_authorized = any(
+                    _normalized_supplement_reference(name)
+                    == _normalized_supplement_reference(authorized_name)
+                    for authorized_name in tuple(
+                        getattr(
+                            self,
+                            "_turn_contextual_supplement_names",
+                            (),
+                        )
+                        or ()
+                    )
+                )
+                if not (
+                    context_authorized
+                    or _supplement_name_is_grounded_in_current_turn(
+                        name,
+                        current_message,
+                    )
                 ):
                     logger.warning(
                         "[health_record] blocked ungrounded supplement name "

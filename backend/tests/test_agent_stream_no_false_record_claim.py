@@ -35,7 +35,8 @@ import pytest
 
 from app.services.agent_executor import AgentExecutor
 from app.services.utterance_intent_classifier import classify_agent_utterance
-from app.models.agent_conversation import AgentMessage
+from app.models.agent_conversation import AgentConversation, AgentMessage
+from app.models.supplement import SupplementDefinition
 
 
 def _tokens(events) -> str:
@@ -301,6 +302,139 @@ async def test_water_record_without_model_tool_call_uses_one_deterministic_write
         "action": "create",
         "date": executor._agent_kernel_reference_now().date().isoformat(),
     }]
+
+
+async def test_multiple_supplements_without_model_tool_calls_write_every_item_once(
+    db,
+    auth_user_and_headers,
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+
+    async def fake_call_llm_stream(messages, tools):  # noqa: ARG001
+        for ch in "好的，已经记录。":
+            yield {"type": "content", "text": ch}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):  # noqa: ARG001
+        args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+        calls.append((tool_name, args))
+        name = args["data"]["supplement_name"]
+        record_id = 901 if name == "甘氨酸镁" else 902
+        return json.dumps(
+            {
+                "id": record_id,
+                "record_id": record_id,
+                "resource_type": "supplement_log",
+                "status": "verified",
+                "success": True,
+                "message": f"已记录补剂：{name}",
+            },
+            ensure_ascii=False,
+        )
+
+    executor._call_llm_stream = fake_call_llm_stream
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录下来，吃了一粒甘氨酸镁和一粒褪黑素。",
+            user_auth_token="test-token",
+        )
+    ]
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert [
+        args["data"]["supplement_name"] for _, args in calls
+    ] == ["甘氨酸镁", "褪黑素"]
+    assert all(tool_name == "health_record" for tool_name, _ in calls)
+    assert len(done["data"]["write_receipts"]) == 2
+    assert done["data"]["completion_status"] == "complete"
+    assert done["data"]["record_intent_no_tool"] is False
+
+
+async def test_all_taken_context_writes_each_active_owner_supplement_once(
+    db,
+    auth_user_and_headers,
+):
+    user, _headers = auth_user_and_headers
+    conversation = AgentConversation(
+        user_id=user.id,
+        title="补剂确认",
+        session_key=f"supplement-all-{user.id}",
+    )
+    db.add(conversation)
+    db.flush()
+    db.add_all(
+        [
+            AgentMessage(
+                conversation_id=conversation.id,
+                role="assistant",
+                content=(
+                    "NOW Melatonin 3mg 和甘氨酸镁。"
+                    "要把全部2种都记为已服用吗？"
+                ),
+            ),
+            SupplementDefinition(
+                user_id=user.id,
+                name="NOW Melatonin 3mg",
+                is_active=True,
+                sort_order=1,
+            ),
+            SupplementDefinition(
+                user_id=user.id,
+                name="甘氨酸镁",
+                is_active=True,
+                sort_order=2,
+            ),
+        ]
+    )
+    db.commit()
+    executor = AgentExecutor(db)
+    calls = []
+
+    async def fake_call_llm_stream(messages, tools):  # noqa: ARG001
+        yield {"type": "content", "text": "好的，已经记录。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):  # noqa: ARG001
+        args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+        calls.append((tool_name, args))
+        record_id = 910 + len(calls)
+        return json.dumps(
+            {
+                "record_id": record_id,
+                "resource_type": "supplement_log",
+                "status": "verified",
+                "success": True,
+                "message": f"已记录补剂：{args['data']['supplement_name']}",
+            },
+            ensure_ascii=False,
+        )
+
+    executor._call_llm_stream = fake_call_llm_stream
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            conversation_id=conversation.id,
+            message="全部已服用",
+            user_auth_token="test-token",
+        )
+    ]
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert [
+        args["data"]["supplement_name"] for _, args in calls
+    ] == ["NOW Melatonin 3mg", "甘氨酸镁"]
+    assert len(done["data"]["write_receipts"]) == 2
+    assert done["data"]["completion_status"] == "complete"
+    assert done["data"]["record_intent_no_tool"] is False
 
 
 async def test_historical_water_supplement_uses_one_date_bound_write(

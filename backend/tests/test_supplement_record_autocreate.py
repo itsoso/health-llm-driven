@@ -116,6 +116,71 @@ async def test_registered_supplement_taps_without_creating(db):
 
 
 @pytest.mark.asyncio
+async def test_contextual_all_taken_name_passes_gateway_and_taps_existing_definition(
+    db,
+):
+    ex = _executor(db)
+    ex._current_turn_user_message = "全部已服用"
+    ex._current_turn_recent_messages = [
+        {"role": "assistant", "content": "要把全部补剂都记为已服用吗？"}
+    ]
+    ex._turn_contextual_supplement_names = ("甘氨酸镁",)
+    lookup = AsyncMock(
+        return_value=([{"id": 7, "name": "甘氨酸镁", "is_active": True}], None)
+    )
+    tap = AsyncMock(return_value='{"record_id": 1073}')
+
+    with patch.object(ex, "_api_get_json", new=lookup), \
+         patch.object(ex, "_api_post_json", new=AsyncMock()), \
+         patch.object(ex, "_api_post", new=tap):
+        result = await ex._execute_tool(
+            "health_record",
+            {
+                "record_type": "supplement",
+                "data": {"supplement_name": "甘氨酸镁"},
+            },
+            "test-token",
+        )
+
+    assert json.loads(result)["record_id"] == 1073
+    lookup.assert_awaited_once()
+    tap.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_contextual_all_taken_rejects_name_outside_server_owned_set(db):
+    ex = _executor(db)
+    ex._current_turn_user_message = "全部已服用"
+    ex._current_turn_recent_messages = [
+        {"role": "assistant", "content": "要把全部补剂都记为已服用吗？"}
+    ]
+    ex._turn_contextual_supplement_names = ("甘氨酸镁",)
+    lookup = AsyncMock()
+    tap = AsyncMock()
+
+    with patch.object(ex, "_api_get_json", new=lookup), \
+         patch.object(ex, "_api_post_json", new=AsyncMock()), \
+         patch.object(ex, "_api_post", new=tap):
+        result = await ex._execute_tool(
+            "health_record",
+            {
+                "record_type": "supplement",
+                "data": {"supplement_name": "褪黑素"},
+            },
+            "test-token",
+        )
+
+    parsed = json.loads(result)
+    assert parsed["error_code"] in {
+        "health_record_target_mismatch",
+        "write_tool_without_write_intent",
+    }
+    assert parsed["dispatch_started"] is False
+    lookup.assert_not_awaited()
+    tap.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(("user_message", "model_name"), [
     ("记录 vitamin D 1 capsule 500 IU", "vitamin D"),
     ("记录维生素D1粒500IU", "维生素D"),
