@@ -4,8 +4,8 @@
 |---|---|
 | slug | `release-feedback-loop-efficiency` |
 | 创建日期 | 2026-08-12 |
-| 当前阶段 | S7（验证） |
-| 状态 | validating |
+| 当前阶段 | S8（沉淀） |
+| 状态 | complete |
 | 负责 | Codex |
 | 反馈环 | Local preflight → CI → release contract verification |
 
@@ -61,7 +61,7 @@
 - [x] 并发 main 运行树摘要保护。
 - [x] 后端依赖与 System KB 安全内容摘要。
 - [x] 完整代码 CI 验证与耗时复测。
-- [ ] 文档轻量 CI 实跑与记录。
+- [x] 文档轻量 CI 实跑与记录。
 
 ## G3 · 测试闸
 
@@ -105,7 +105,12 @@
   `122s`、macOS `112s`；这些闸已不再构成完整 CI 长尾。
 - 当前长尾转移到 `backend-test-k-m=530s` 与 `backend-test-agent-i-z=515s`，
   作为下一轮可量化优化候选，不扩大本次已确认范围。
-- 文档轻量 CI: 待本 dossier 提交触发后记录。
+- 文档轻量 CI:
+  [run 31581898387](https://github.com/itsoso/health-llm-driven/actions/runs/31581898387)
+  PASS，墙钟 `39s`；`classify-changes=10s`、`docs-quality=13s`、聚合闸 `2s`，
+  8 类昂贵 job 确定性 skipped。
+- 相比完整代码 CI 的 `554s`，本次文档路径墙钟缩短 `515s`（约 `93%`）；
+  验收标准满足，G6 PASS。
 
 ## S8 · 沉淀
 
@@ -113,4 +118,5 @@
   避免把“测试慢”笼统当作单一问题。
 - 默认安全边界不变: 未知路径走 full、类型环境必须匹配 lock、OTA 无标识不落锚、
   部署缓存无完整证明不命中、生产数据库与服务健康证明永不省略。
-- 待文档轻量 CI 实测通过后进入 S8 complete。
+- 本次七项优化已全部按顺序交付并写入 `main`；完整代码 CI 与文档轻量 CI
+  均有真实 run 证据，状态进入 S8 complete。
