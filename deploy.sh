@@ -34,6 +34,8 @@ fi
 # 从 .env 读取服务器配置
 SERVER=$(grep "^DEPLOY_SERVER=" "$ENV_FILE" | cut -d'=' -f2)
 REMOTE_PATH=$(grep "^DEPLOY_PATH=" "$ENV_FILE" | cut -d'=' -f2)
+RELEASE_STEP_PROOF_MODE="${RELEASE_STEP_PROOF_MODE:-shadow}"
+REMOTE_RELEASE_PROOF_ROOT="${REMOTE_RELEASE_PROOF_ROOT:-/var/cache/health-app/release-proofs}"
 REMOTE_DEPLOY_BUNDLE="/tmp/health-app-deploy-$$-$(date +%s).bundle"
 REMOTE_BACKUP_PREFLIGHT_DIR="/tmp/health-app-backup-preflight-$$-$(date +%s)"
 REMOTE_BACKUP_RUNNER="$REMOTE_BACKUP_PREFLIGHT_DIR/backup_db.sh"
@@ -99,6 +101,21 @@ if [[ ! "$SERVER" =~ ^[A-Za-z0-9._@:-]+$ ||
       "$REMOTE_PATH" = *"/./"* ||
       "$REMOTE_PATH" = *"/." ]]; then
     echo -e "${RED}✗${NC} 错误: DEPLOY_SERVER/DEPLOY_PATH 格式不安全"
+    exit 1
+fi
+case "$RELEASE_STEP_PROOF_MODE" in
+    off|shadow|on) ;;
+    *)
+        echo -e "${RED}✗${NC} 错误: RELEASE_STEP_PROOF_MODE 只接受 off/shadow/on"
+        exit 1
+        ;;
+esac
+if [[ ! "$REMOTE_RELEASE_PROOF_ROOT" =~ ^/var/cache/health-app/[A-Za-z0-9._/-]+$ ||
+      "$REMOTE_RELEASE_PROOF_ROOT" = *"/../"* ||
+      "$REMOTE_RELEASE_PROOF_ROOT" = *"/.." ||
+      "$REMOTE_RELEASE_PROOF_ROOT" = *"/./"* ||
+      "$REMOTE_RELEASE_PROOF_ROOT" = *"/." ]]; then
+    echo -e "${RED}✗${NC} 错误: REMOTE_RELEASE_PROOF_ROOT 格式不安全"
     exit 1
 fi
 
@@ -1942,20 +1959,79 @@ deploy_frontend() {
 
     _REMOTE_RELEASE_LOCK_DELEGATED=1
     if ! ssh $SERVER "
+        set -euo pipefail
         cd $REMOTE_PATH && \
         test \"\$(git rev-parse HEAD)\" = '$DEPLOY_EXPECTED_SHA' && \
         test -z \"\$(git status --porcelain --untracked-files=all)\" && \
+        test -r '$REMOTE_RELEASE_LOCK_DIR/token' && \
+        test \"\$(cat '$REMOTE_RELEASE_LOCK_DIR/token')\" = '$REMOTE_RELEASE_LOCK_TOKEN' && \
         cd frontend && \
-        echo '安装依赖...' && \
-        npm ci && \
-        echo '正在构建前端...' && \
-        npm run build && \
+        frontend_dependency_proof_rc=0 && \
+        python3 ../scripts/release_step_proof.py \
+            check --mode '$RELEASE_STEP_PROOF_MODE' --profile frontend-dependencies \
+            --workspace '$REMOTE_PATH/frontend' --root '$REMOTE_RELEASE_PROOF_ROOT' || \
+            frontend_dependency_proof_rc=\$? && \
+        case \"\$frontend_dependency_proof_rc\" in \
+            0) echo '复用已验证的前端依赖' ;; \
+            3) \
+                if [ '$RELEASE_STEP_PROOF_MODE' != off ]; then \
+                    python3 ../scripts/release_step_proof.py \
+                        invalidate --profile frontend-dependencies \
+                        --root '$REMOTE_RELEASE_PROOF_ROOT'; \
+                fi && \
+                echo '安装依赖...' && \
+                npm ci && \
+                test -r '$REMOTE_RELEASE_LOCK_DIR/token' && \
+                test \"\$(cat '$REMOTE_RELEASE_LOCK_DIR/token')\" = '$REMOTE_RELEASE_LOCK_TOKEN' && \
+                python3 ../scripts/release_step_proof.py \
+                    record --mode '$RELEASE_STEP_PROOF_MODE' --profile frontend-dependencies \
+                    --workspace '$REMOTE_PATH/frontend' --root '$REMOTE_RELEASE_PROOF_ROOT' \
+                ;; \
+            *) exit \"\$frontend_dependency_proof_rc\" ;; \
+        esac && \
+        frontend_build_proof_rc=0 && \
+        python3 ../scripts/release_step_proof.py \
+            check --mode '$RELEASE_STEP_PROOF_MODE' --profile frontend-build \
+            --workspace '$REMOTE_PATH/frontend' --root '$REMOTE_RELEASE_PROOF_ROOT' || \
+            frontend_build_proof_rc=\$? && \
+        frontend_build_receipt_pending=0 && \
+        case \"\$frontend_build_proof_rc\" in \
+            0) echo '复用已验证的前端构建产物' ;; \
+            3) \
+                if [ '$RELEASE_STEP_PROOF_MODE' != off ]; then \
+                    python3 ../scripts/release_step_proof.py \
+                        invalidate --profile frontend-build \
+                        --root '$REMOTE_RELEASE_PROOF_ROOT'; \
+                fi && \
+                echo '正在构建前端...' && \
+                npm run build && \
+                frontend_build_receipt_pending=1 \
+                ;; \
+            *) exit \"\$frontend_build_proof_rc\" ;; \
+        esac && \
         cd '$REMOTE_PATH' && \
         test \"\$(git rev-parse HEAD)\" = '$DEPLOY_EXPECTED_SHA' && \
         test -z \"\$(git status --porcelain --untracked-files=all)\" && \
         cd frontend && \
         echo '重启前端服务 (PM2)...' && \
-        pm2 restart health-frontend
+        pm2 restart health-frontend && \
+        pm2 describe health-frontend >/dev/null && \
+        frontend_http_ready=0 && \
+        for attempt in \$(seq 1 20); do \
+            if curl -fsS --max-time 10 http://127.0.0.1:3000/ >/dev/null; then \
+                frontend_http_ready=1; \
+                break; \
+            fi; \
+            sleep 1; \
+        done && \
+        test \"\$frontend_http_ready\" = 1 && \
+        test -r '$REMOTE_RELEASE_LOCK_DIR/token' && \
+        test \"\$(cat '$REMOTE_RELEASE_LOCK_DIR/token')\" = '$REMOTE_RELEASE_LOCK_TOKEN' && \
+        if [ \"\$frontend_build_receipt_pending\" = 1 ]; then \
+            python3 ../scripts/release_step_proof.py \
+                record --mode '$RELEASE_STEP_PROOF_MODE' --profile frontend-build \
+                --workspace '$REMOTE_PATH/frontend' --root '$REMOTE_RELEASE_PROOF_ROOT'; \
+        fi
     "; then
         _REMOTE_RELEASE_LOCK_ABANDONED=1
         print_error "前端构建/重启结果不明确；发布锁与现场保留"
@@ -3021,7 +3097,33 @@ deploy_backend() {
         source venv/bin/activate && \
         echo '加载环境变量...' && \
         set -a && source .env && set +a && \
-        $remote_dependency_sync && \
+        ( \
+            set -euo pipefail; \
+            python_dependency_proof_rc=0; \
+            python ../scripts/release_step_proof.py \
+                check --mode '$RELEASE_STEP_PROOF_MODE' --profile python-dependencies \
+                --workspace '$REMOTE_PATH/backend' --root '$REMOTE_RELEASE_PROOF_ROOT' || \
+                python_dependency_proof_rc=\$?; \
+            case \"\$python_dependency_proof_rc\" in \
+                0) echo '复用已验证的 Python 依赖' ;; \
+                3) \
+                    if [ '$RELEASE_STEP_PROOF_MODE' != off ]; then \
+                        python ../scripts/release_step_proof.py \
+                            invalidate --profile python-dependencies \
+                            --root '$REMOTE_RELEASE_PROOF_ROOT'; \
+                    fi && \
+                    echo '安装依赖...' && \
+                    pip install --require-hashes -r requirements.lock -q && \
+                    python -m pip check && \
+                    test -r '$REMOTE_RELEASE_LOCK_DIR/token' && \
+                    test \"\$(cat '$REMOTE_RELEASE_LOCK_DIR/token')\" = '$REMOTE_RELEASE_LOCK_TOKEN' && \
+                    python ../scripts/release_step_proof.py \
+                        record --mode '$RELEASE_STEP_PROOF_MODE' --profile python-dependencies \
+                        --workspace '$REMOTE_PATH/backend' --root '$REMOTE_RELEASE_PROOF_ROOT' \
+                    ;; \
+                *) exit \"\$python_dependency_proof_rc\" ;; \
+            esac \
+        ) && \
         echo '执行受控数据库迁移...' && \
         test -r /etc/health-app/migration.env && \
         set -a && source /etc/health-app/migration.env && set +a && \

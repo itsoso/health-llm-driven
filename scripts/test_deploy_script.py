@@ -39,6 +39,88 @@ else:
     )
 
 
+def test_release_step_proofs_default_to_shadow_in_private_server_cache():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert 'RELEASE_STEP_PROOF_MODE="${RELEASE_STEP_PROOF_MODE:-shadow}"' in script
+    assert (
+        'REMOTE_RELEASE_PROOF_ROOT="${REMOTE_RELEASE_PROOF_ROOT:-'
+        '/var/cache/health-app/release-proofs}"'
+    ) in script
+    assert 'off|shadow|on' in script
+
+
+def test_backend_dependency_proof_wraps_only_pip_and_records_after_postcondition():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    start = script.index("deploy_backend() {")
+    end = script.index("CODE_EXIT=$?", start)
+    guard = script[start:end]
+
+    check = guard.index("check --mode '$RELEASE_STEP_PROOF_MODE'")
+    invalidate = guard.index("invalidate --profile python-dependencies", check)
+    install = guard.index("pip install --require-hashes", invalidate)
+    pip_check = guard.index("python -m pip check", install)
+    lease_after_install = guard.index(
+        "test -r '$REMOTE_RELEASE_LOCK_DIR/token'", pip_check
+    )
+    record = guard.index("record --mode '$RELEASE_STEP_PROOF_MODE'", pip_check)
+    migration = guard.index("python scripts/apply_managed_migrations.py", record)
+
+    assert check < invalidate < install < pip_check < lease_after_install < record < migration
+
+
+def test_frontend_dependency_and_build_proofs_preserve_service_postconditions():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    start = script.index("deploy_frontend() {")
+    end = script.index("validate_runtime_only_kb_staging() {", start)
+    frontend = script[start:end]
+
+    dependency_check = frontend.index(
+        "check --mode '$RELEASE_STEP_PROOF_MODE' --profile frontend-dependencies"
+    )
+    npm_ci = frontend.index("npm ci", dependency_check)
+    dependency_record = frontend.index(
+        "record --mode '$RELEASE_STEP_PROOF_MODE' --profile frontend-dependencies",
+        npm_ci,
+    )
+    build_check = frontend.index(
+        "check --mode '$RELEASE_STEP_PROOF_MODE' --profile frontend-build",
+        dependency_record,
+    )
+    build = frontend.index("npm run build", build_check)
+    restart = frontend.index("pm2 restart health-frontend", build)
+    http_proof = frontend.index(
+        "curl -fsS --max-time 10 http://127.0.0.1:3000/", restart
+    )
+    build_record = frontend.index(
+        "record --mode '$RELEASE_STEP_PROOF_MODE' --profile frontend-build",
+        http_proof,
+    )
+
+    assert (
+        dependency_check < npm_ci < dependency_record < build_check < build
+        < restart < http_proof < build_record
+    )
+
+
+def test_release_proof_reuse_never_wraps_unconditional_server_gates():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    backend = script[script.index("deploy_backend() {"):]
+
+    assert backend.index("backup_database") < backend.index(
+        "check --mode '$RELEASE_STEP_PROOF_MODE'"
+    )
+    for gate in (
+        "python scripts/apply_managed_migrations.py",
+        "verify_runtime_schema_compatibility.py",
+        "systemctl restart health-backend.socket",
+        "verify_deployed_revision",
+        "verify_deployment",
+        "rollback_deploy",
+    ):
+        assert gate in backend
+
+
 def test_backend_deploy_checks_health_before_skills_manifest():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
     health_check = script.index("if ! verify_deployment; then")
