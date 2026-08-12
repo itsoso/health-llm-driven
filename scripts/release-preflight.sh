@@ -34,7 +34,7 @@ else
   CHANGED_FILES="$(git -C "${REPO_ROOT}" diff --name-only "${BASE_REF}...HEAD")"
 fi
 
-CLASSIFICATION="$({ printf '%s\n' "${CHANGED_FILES}"; } | python3.12 \
+CLASSIFICATION="$({ printf '%s\n' "${CHANGED_FILES}"; } | "${PREFLIGHT_PYTHON}" \
   "${REPO_ROOT}/scripts/ci_change_scope.py" \
   --event-name "${EVENT_NAME}" --format shell)"
 
@@ -71,7 +71,7 @@ if [[ "${DRY_RUN}" == "1" ]]; then
 elif command -v gh >/dev/null 2>&1; then
   BASELINE_JSON="$(gh run list --branch main --workflow CI --limit 1 \
     --json conclusion,status,headSha,url)"
-  python3.12 - "${BASELINE_JSON}" <<'PY'
+  "${PREFLIGHT_PYTHON}" - "${BASELINE_JSON}" <<'PY'
 import json
 import sys
 
@@ -95,9 +95,9 @@ else
 fi
 
 if [[ "${RUN_DOCS}" == "1" ]]; then
-  run python3.12 "${REPO_ROOT}/scripts/check_secret_leaks.py"
-  run python3.12 "${REPO_ROOT}/scripts/check_system_map.py"
-  run python3.12 "${REPO_ROOT}/backend/scripts/check_dossier_consistency.py"
+  run "${PREFLIGHT_PYTHON}" "${REPO_ROOT}/scripts/check_secret_leaks.py"
+  run "${PREFLIGHT_PYTHON}" "${REPO_ROOT}/scripts/check_system_map.py"
+  run "${PREFLIGHT_PYTHON}" "${REPO_ROOT}/backend/scripts/check_dossier_consistency.py"
 fi
 
 if [[ "${RUN_TYPE_DRIFT}" == "1" ]]; then
