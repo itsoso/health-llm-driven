@@ -8,9 +8,77 @@ on:
     branches: [main]
 
 jobs:
+  classify-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.scope.outputs.docs_only }}
+      run_docs: ${{ steps.scope.outputs.run_docs }}
+      run_backend: ${{ steps.scope.outputs.run_backend }}
+      run_frontend: ${{ steps.scope.outputs.run_frontend }}
+      run_mobile: ${{ steps.scope.outputs.run_mobile }}
+      run_mac: ${{ steps.scope.outputs.run_mac }}
+      run_type_drift: ${{ steps.scope.outputs.run_type_drift }}
+      run_release: ${{ steps.scope.outputs.run_release }}
+      full: ${{ steps.scope.outputs.full }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Classify changed paths
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          EVENT_NAME="${{ github.event_name }}"
+          BEFORE_SHA="${{ github.event.before }}"
+          BASE_REF="${{ github.base_ref }}"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            CHANGED_FILES=""
+          elif [[ "$EVENT_NAME" == "pull_request" ]]; then
+            CHANGED_FILES="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
+          elif [[ -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]] || \
+               ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            CHANGED_FILES=""
+          else
+            CHANGED_FILES="$(git diff --name-only "$BEFORE_SHA" HEAD)"
+          fi
+          printf '%s\n' "$CHANGED_FILES" | \
+            python3 scripts/ci_change_scope.py \
+              --event-name "$EVENT_NAME" --format github >> "$GITHUB_OUTPUT"
+
+  docs-quality:
+    runs-on: ubuntu-latest
+    needs: classify-changes
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install lightweight documentation dependencies
+        run: pip install -r scripts/system-map-requirements.txt
+
+      - name: Scan tracked files for high-confidence secrets
+        run: python scripts/check_secret_leaks.py
+
+      - name: Check System Map and doc drift
+        env:
+          SECRET_KEY: test-secret-key-32-chars-minimum!!
+          GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
+          DATABASE_URL: "sqlite:///:memory:"
+          TZ: Asia/Shanghai
+        run: python scripts/check_system_map.py
+
+      - name: Check dossier consistency
+        run: python backend/scripts/check_dossier_consistency.py
+
   backend-test-shards:
     name: backend-test-${{ matrix.label }}
     runs-on: ubuntu-latest
+    needs: classify-changes
+    if: ${{ needs.classify-changes.outputs.run_backend == 'true' }}
     # Allows one 10-minute process timeout plus a fresh retry and setup time.
     timeout-minutes: 25
     strategy:
@@ -164,13 +232,12 @@ jobs:
 
   backend-quality:
     runs-on: ubuntu-latest
+    needs: classify-changes
+    if: ${{ needs.classify-changes.outputs.run_backend == 'true' }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # LLM live-change gate needs a reliable base...HEAD diff
-
-      - name: Scan tracked files for high-confidence secrets
-        run: python scripts/check_secret_leaks.py
 
       - uses: actions/setup-python@v5
         with:
@@ -203,22 +270,6 @@ jobs:
         run: |
           pip install ruff
           ruff check app/ --select F821,F822,E9 --output-format=github
-
-      - name: Check System Map and doc drift
-        env:
-          SECRET_KEY: test-secret-key-32-chars-minimum!!
-          GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
-          DATABASE_URL: "sqlite:///:memory:"
-          TZ: Asia/Shanghai
-        run: python scripts/check_system_map.py
-
-      - name: Check dossier consistency
-        env:
-          SECRET_KEY: test-secret-key-32-chars-minimum!!
-          GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
-          DATABASE_URL: "sqlite:///:memory:"
-          TZ: Asia/Shanghai
-        run: python backend/scripts/check_dossier_consistency.py
 
       - name: LLM live-change regression gate
         env:
@@ -279,6 +330,8 @@ jobs:
   release-invariants:
     name: release-invariants
     runs-on: ubuntu-latest
+    needs: classify-changes
+    if: ${{ needs.classify-changes.outputs.run_release == 'true' }}
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
@@ -307,6 +360,8 @@ jobs:
   agent-runtime-postgres:
     name: agent-runtime-postgres
     runs-on: ubuntu-latest
+    needs: classify-changes
+    if: ${{ needs.classify-changes.outputs.run_backend == 'true' }}
     timeout-minutes: 20
     services:
       postgres:
@@ -403,6 +458,8 @@ jobs:
   backend-tests:
     runs-on: ubuntu-latest
     needs:
+      - classify-changes
+      - docs-quality
       - backend-test-shards
       - backend-quality
       - release-invariants
@@ -411,19 +468,34 @@ jobs:
     steps:
       - name: Enforce backend test and quality gates
         env:
+          RUN_BACKEND: ${{ needs.classify-changes.outputs.run_backend }}
+          RUN_RELEASE: ${{ needs.classify-changes.outputs.run_release }}
+          DOCS_QUALITY: ${{ needs.docs-quality.result }}
           TEST_SHARDS: ${{ needs.backend-test-shards.result }}
           QUALITY_GATES: ${{ needs.backend-quality.result }}
           RELEASE_INVARIANTS: ${{ needs.release-invariants.result }}
           RUNTIME_POSTGRES: ${{ needs.agent-runtime-postgres.result }}
         run: |
-          printf 'backend gates: test-shards=%s quality=%s release=%s runtime-postgres=%s\n' \
-            "$TEST_SHARDS" "$QUALITY_GATES" "$RELEASE_INVARIANTS" "$RUNTIME_POSTGRES"
-          if [[ "$TEST_SHARDS" != success || "$QUALITY_GATES" != success || "$RELEASE_INVARIANTS" != success || "$RUNTIME_POSTGRES" != success ]]; then
+          printf 'backend gates: selected=%s docs=%s test-shards=%s quality=%s release=%s runtime-postgres=%s\n' \
+            "$RUN_BACKEND" "$DOCS_QUALITY" "$TEST_SHARDS" "$QUALITY_GATES" "$RELEASE_INVARIANTS" "$RUNTIME_POSTGRES"
+          if [[ "$DOCS_QUALITY" != success ]]; then
+            exit 1
+          fi
+          if [[ "$RUN_BACKEND" != true ]]; then
+            echo "backend scope skipped by classifier"
+            exit 0
+          fi
+          if [[ "$TEST_SHARDS" != success || "$QUALITY_GATES" != success || "$RUNTIME_POSTGRES" != success ]]; then
+            exit 1
+          fi
+          if [[ "$RUN_RELEASE" == true && "$RELEASE_INVARIANTS" != success ]]; then
             exit 1
           fi
 
   frontend-build:
     runs-on: ubuntu-latest
+    needs: classify-changes
+    if: ${{ needs.classify-changes.outputs.run_frontend == 'true' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -462,6 +534,8 @@ jobs:
 
   mobile-typecheck:
     runs-on: ubuntu-latest
+    needs: classify-changes
+    if: ${{ needs.classify-changes.outputs.run_mobile == 'true' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -502,6 +576,8 @@ jobs:
     # Catches non-compiling mac app pushes that the ubuntu jobs can't (the app is
     # a SwiftPM package; only macOS runners have Swift + the SDKs to build it).
     runs-on: macos-latest
+    needs: classify-changes
+    if: ${{ needs.classify-changes.outputs.run_mac == 'true' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -546,6 +622,8 @@ jobs:
     # 两端类型并 git diff --exit-code,不一致即红;修复 = 本地 `cd mobile && npm run generate-types`
     # (frontend 同)并提交。SKIP_DB_INIT=1 让 app.openapi() dump 无需 DB(openapi 只读路由/模型)。
     runs-on: ubuntu-latest
+    needs: classify-changes
+    if: ${{ needs.classify-changes.outputs.run_type_drift == 'true' }}
     steps:
       - uses: actions/checkout@v4
 

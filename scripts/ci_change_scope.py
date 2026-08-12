@@ -88,6 +88,7 @@ def classify_changes(
         result["docs_only"] = False
         if path.startswith("backend/"):
             result["run_backend"] = True
+            result["run_release"] = True
             if path.startswith("backend/app/") or path == "backend/main.py":
                 result["run_type_drift"] = True
         elif path.startswith("frontend/"):

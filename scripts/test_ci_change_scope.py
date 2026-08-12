@@ -54,7 +54,12 @@ def test_backend_runtime_changes_include_locked_type_drift() -> None:
 
     assert result["docs_only"] is False
     assert result["run_docs"] is True
-    _assert_only_runtime_scopes(result, "run_backend", "run_type_drift")
+    _assert_only_runtime_scopes(
+        result,
+        "run_backend",
+        "run_type_drift",
+        "run_release",
+    )
 
 
 def test_surface_changes_select_only_their_runtime_gate() -> None:
