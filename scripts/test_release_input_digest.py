@@ -68,7 +68,7 @@ def test_release_input_digests_ignore_unrelated_docs_changes(tmp_path: Path) -> 
     assert _digest(repo, docs, "system-kb") == base_kb
 
 
-def test_release_input_digests_change_only_for_their_owned_inputs(
+def test_release_input_digests_change_for_owned_and_transitive_inputs(
     tmp_path: Path,
 ) -> None:
     repo, base = _repo(tmp_path)
@@ -85,3 +85,6 @@ def test_release_input_digests_change_only_for_their_owned_inputs(
     (repo / "backend/requirements.lock").write_text("fastapi==2.0\n")
     requirements_commit = _commit(repo, "requirements")
     assert _digest(repo, requirements_commit, "requirements") != base_requirements
+    assert _digest(repo, requirements_commit, "system-kb") != _digest(
+        repo, kb_commit, "system-kb"
+    )

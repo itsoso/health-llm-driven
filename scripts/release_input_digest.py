@@ -11,6 +11,7 @@ from pathlib import Path
 
 
 SYSTEM_KB_PATHS = (
+    "backend/requirements.lock",
     "backend/data/system_kb_v2_seed",
     "backend/data/food_nutrition_seed",
     "backend/knowledge",
@@ -19,8 +20,14 @@ SYSTEM_KB_PATHS = (
     "backend/scripts/seed_food_nutrition.py",
     "backend/scripts/seed_system_kb_phase0.py",
     "backend/scripts/import_system_kb_v2_artifacts.py",
+    "backend/app/config.py",
+    "backend/app/database.py",
     "backend/app/models/system_knowledge.py",
     "backend/app/models/food_nutrition.py",
+    "backend/app/services/clinical_claim_release.py",
+    "backend/app/services/kbase_review_workspace.py",
+    "backend/app/services/retrieval_guard.py",
+    "backend/app/services/system_knowledge_ingest.py",
     "backend/app/services/system_knowledge_release_policy.py",
     "backend/app/services/system_knowledge_graph.py",
     "backend/app/services/system_knowledge_importer.py",
