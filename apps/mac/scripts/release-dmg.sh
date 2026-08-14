@@ -902,8 +902,20 @@ fetch_public_proof() {
     echo "Public proof download did not create a safe regular file" >&2
     return 1
   fi
-  file_links="$(/usr/bin/stat -f '%l' "${partial}")"
-  actual_size="$(/usr/bin/stat -f '%z' "${partial}")"
+  if ! file_links="$(/usr/bin/stat -c '%h' "${partial}" 2>/dev/null)"; then
+    if ! file_links="$(/usr/bin/stat -f '%l' "${partial}" 2>/dev/null)"; then
+      /bin/rm -f -- "${partial}"
+      echo "Unable to inspect public proof link count" >&2
+      return 1
+    fi
+  fi
+  if ! actual_size="$(/usr/bin/stat -c '%s' "${partial}" 2>/dev/null)"; then
+    if ! actual_size="$(/usr/bin/stat -f '%z' "${partial}" 2>/dev/null)"; then
+      /bin/rm -f -- "${partial}"
+      echo "Unable to inspect public proof size" >&2
+      return 1
+    fi
+  fi
   if [[ "${file_links}" != "1" || ! "${actual_size}" =~ ^[0-9]+$ ]] || (( actual_size > maximum_bytes )); then
     /bin/rm -f -- "${partial}"
     echo "Public proof download exceeded its streaming bound" >&2
