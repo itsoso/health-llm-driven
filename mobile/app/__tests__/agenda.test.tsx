@@ -114,7 +114,10 @@ import AgendaScreen from '../agenda';
 describe('AgendaScreen', () => {
   beforeEach(() => {
     jest.useFakeTimers();
-    jest.setSystemTime(new Date('2026-07-20T09:00:00-04:00'));
+    // The grouping contract is device-local wall time.  Use a local Date
+    // constructor so the assertion remains valid under the canonical Shanghai
+    // validation TZ as well as developer machines in other time zones.
+    jest.setSystemTime(new Date(2026, 6, 20, 9, 0, 0));
     jest.clearAllMocks();
     mockCanGoBack = true;
     mockAgendaData = agendaData;

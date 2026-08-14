@@ -1,5 +1,11 @@
 # Feature Spec: Mobile Agent Context Strip
 
+> **Current release override (2026-08-12):** every OTA/rollback channel, repo-contained automatic
+> remote/vendor release entrypoint and local signing/install/automatic-provisioning entrypoint is
+> frozen. Validate with Metro/iOS Simulator/tests only; `npm run ios` uses the Simulator wrapper,
+> callers may not append npm/Expo `--device`, and the wrapper pins an exact available Simulator
+> UDID. Physical iOS repo CLI is frozen. Do not build/sign/install or publish/rollback an OTA.
+
 > Status: approved
 > Owner: Codex
 > Updated: 2026-07-16
@@ -100,9 +106,8 @@ Then no hidden placeholder replaces it and the full plan remains available at æ›
 ## 9. Verification And Rollout
 
 Run focused Jest tests, TypeScript, targeted ESLint, `git diff --check`, and
-iPhone simulator screenshots. This is a JS/TS/UI-only change and may roll out
-through the production Mobile OTA channel. Rollback restores the previous
-bundle; no data migration is required.
+iPhone simulator screenshots. This is a JS/TS/UI-only change but all OTA channels remain BLOCKED.
+There is no current rollout/rollback action; no data migration is required.
 
 ## 10. Changelog
 

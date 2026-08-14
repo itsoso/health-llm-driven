@@ -2,7 +2,13 @@
 
 **Date:** 2026-08-09  
 **Release:** iOS 1.3.3 / TestFlight Build 253  
-**Status:** Approved
+**Status:** Implemented historically; current release verification BLOCKED
+
+> **Current safety override (2026-08-12):** the historical production deploy, reinstall and
+> physical-device steps below are not executable. All repo-contained automatic remote/vendor
+> release entrypoints, local signing/install/automatic-provisioning entrypoints and OTA/rollback
+> channels are frozen. The repository XCUITest harness is Simulator-only. Physical acceptance may
+> resume only as separately authorized external manual evidence after the freeze is lifted.
 
 ## Problem
 
@@ -50,13 +56,17 @@ or mobile UI behavior.
    header is missing on both list and detail responses.
 2. Implement the response header and make both tests pass.
 3. Run the relevant Agent conversation API suite and release-pack checks.
-4. Deploy the backend through the guarded project deployment flow.
-5. Verify production returns `Cache-Control: no-store` without exposing review
-   credentials or health content.
-6. Reinstall TestFlight Build 253 once to remove the response cached before the
-   fix, then require the safe physical-device suite to pass all six tests.
+4. Run local tests and read-only release validation; the automatic backend release entrypoint is
+   frozen and this plan cannot authorize deployment.
+5. Observe production read-only only; do not interpret the current header as proof that this change
+   was deployed by the present transaction.
+6. Run the repository acceptance harness against iOS Simulator only. Do not reinstall or connect a
+   physical iPhone. Same-build physical acceptance remains BLOCKED until a future, separately
+   authorized external manual evidence process runs after the global freeze is lifted.
 
 ## Rollback
 
-Revert the backend commit and redeploy the previous revision. No schema,
-fixture, native binary, or stored health data migration is involved.
+The historical rollback would revert the backend commit and redeploy the previous revision. During
+the freeze, no repository deploy/rollback command is authorized; record BLOCK and route any future
+recovery through the newly approved external trust root. No schema, fixture, native binary, or
+stored health data migration is involved.

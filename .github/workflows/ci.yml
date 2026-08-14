@@ -33,19 +33,89 @@ jobs:
           EVENT_NAME="${{ github.event_name }}"
           BEFORE_SHA="${{ github.event.before }}"
           BASE_REF="${{ github.base_ref }}"
+          CHANGED_FILE="$(mktemp)"
+          trap 'rm -f "$CHANGED_FILE"' EXIT
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            CHANGED_FILES=""
+            : > "$CHANGED_FILE"
           elif [[ "$EVENT_NAME" == "pull_request" ]]; then
-            CHANGED_FILES="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
+            git diff --name-status -z --find-renames --find-copies \
+              "origin/${BASE_REF}...HEAD" > "$CHANGED_FILE"
           elif [[ -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]] || \
                ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
-            CHANGED_FILES=""
+            : > "$CHANGED_FILE"
           else
-            CHANGED_FILES="$(git diff --name-only "$BEFORE_SHA" HEAD)"
+            git diff --name-status -z --find-renames --find-copies \
+              "$BEFORE_SHA" HEAD > "$CHANGED_FILE"
           fi
-          printf '%s\n' "$CHANGED_FILES" | \
-            python3 scripts/ci_change_scope.py \
-              --event-name "$EVENT_NAME" --format github >> "$GITHUB_OUTPUT"
+          SCOPE_OUTPUT="$(python3 scripts/ci_change_scope.py \
+            --event-name "$EVENT_NAME" --input-format name-status-z \
+            --format github < "$CHANGED_FILE")"
+          export SCOPE_OUTPUT CHANGED_FILE EVENT_NAME
+          python3 - <<'PY'
+          import os
+          import re
+
+          expected_keys = {
+              "docs_only",
+              "run_docs",
+              "run_backend",
+              "run_frontend",
+              "run_mobile",
+              "run_mac",
+              "run_type_drift",
+              "run_release",
+              "full",
+          }
+          values = {}
+          for line in os.environ["SCOPE_OUTPUT"].splitlines():
+              key, separator, value = line.partition("=")
+              if separator != "=" or key in values or value not in {"true", "false"}:
+                  raise SystemExit("classifier returned malformed output")
+              values[key] = value == "true"
+          if set(values) != expected_keys:
+              raise SystemExit("classifier returned missing or unexpected outputs")
+
+          raw = open(os.environ["CHANGED_FILE"], "rb").read()
+          fields = raw.split(b"\0")
+          if fields and fields[-1] == b"":
+              fields.pop()
+          changed = []
+          index = 0
+          while index < len(fields):
+              try:
+                  status = fields[index].decode("ascii", errors="strict")
+              except UnicodeError as error:
+                  raise SystemExit("non-ASCII Git status") from error
+              index += 1
+              if re.fullmatch(r"[ACDMRTUXB][0-9]{0,3}", status) is None:
+                  raise SystemExit("malformed Git name-status input")
+              path_count = 2 if status[0] in {"R", "C"} else 1
+              if index + path_count > len(fields):
+                  raise SystemExit("incomplete Git name-status input")
+              for raw_path in fields[index:index + path_count]:
+                  path = raw_path.decode("utf-8", errors="surrogateescape")
+                  if not path or "\n" in path or "\r" in path:
+                      raise SystemExit("unsafe Git path")
+                  changed.append(path[2:] if path.startswith("./") else path)
+              index += path_count
+          critical_change = any(
+              path.startswith((".github/", "scripts/")) or path == "deploy.sh"
+              for path in changed
+          )
+          if (
+              os.environ["EVENT_NAME"] == "workflow_dispatch"
+              or not changed
+              or critical_change
+          ) and values["full"] is not True:
+              raise SystemExit("classifier failed the independent full-suite rule")
+          if values["full"] and (
+              values["docs_only"]
+              or values["run_docs"] is not True
+              or any(values[key] is not True for key in expected_keys if key.startswith("run_"))
+          ):
+              raise SystemExit("classifier returned an inconsistent full-suite result")
+          PY
+          printf '%s\n' "$SCOPE_OUTPUT" >> "$GITHUB_OUTPUT"
 
   docs-quality:
     runs-on: ubuntu-latest
@@ -58,7 +128,15 @@ jobs:
           python-version: "3.12"
 
       - name: Install lightweight documentation dependencies
-        run: pip install -r scripts/system-map-requirements.txt
+        run: |
+          pip install -r scripts/system-map-requirements.txt
+          pip install pytest==9.1.1 PyYAML==6.0.3
+
+      - name: Verify change classifier and required-gate contract
+        run: >-
+          python -m pytest -q
+          scripts/test_ci_change_scope.py
+          scripts/test_release_ci_contract.py
 
       - name: Scan tracked files for high-confidence secrets
         run: python scripts/check_secret_leaks.py
@@ -221,6 +299,8 @@ jobs:
           # exhausted both 600-second attempts before reporting assertions.
           - label: voice-watch
             paths: "tests/test_v*.py tests/test_wa*.py"
+          - label: web-session-security
+            paths: "tests/test_web_session_security.py"
           # Keep agenda/twin-heavy workday tests out of the same SQLite process
           # as wearable/report tests. Retained worker state can make the shared
           # process crash before pytest can report an assertion.
@@ -373,24 +453,48 @@ jobs:
         with:
           python-version: "3.12"
 
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+
+      - name: Install pinned xcodeproj dependency
+        run: gem install xcodeproj --version 1.27.0 --no-document
+
       - name: Install release-test dependencies
         working-directory: backend
         run: |
           pip install --require-hashes -r requirements.lock
           pip install -r requirements-dev.txt
 
-      - name: Run deployment and rollback invariants
+      - name: Run deployment, rollback, planner, OTA, and acceptance invariants
         run: >-
           python -m pytest -q --no-cov --tb=short --maxfail=1
+          scripts/test_asc_profiles.py
           scripts/test_ci_change_scope.py
           scripts/test_deploy_script.py
+          scripts/test_frozen_shell_entrypoints.py
           scripts/test_generate_api_types.py
           scripts/test_health_evidence_activation_runner.py
           scripts/test_release_lock.py
           scripts/test_release_rollback.py
           scripts/test_infrastructure_security.py
           scripts/test_mobile_fast_feedback_scripts.py
+          scripts/test_mobile_local_qr_script.py
           scripts/test_runtime_state_release_transaction.py
+          scripts/test_release_pipeline.py
+          scripts/test_run_all_tests.py
+          scripts/test_validation_credential.py
+          scripts/test_mobile_ota.py
+          scripts/test_mobile_native_ota_compatibility.py
+          scripts/test_ios_acceptance_harness.py
+          scripts/test_sim_build.py
+          scripts/test_release_production_state.py
+          scripts/test_app_store_privileged_cli_freeze.py
+          scripts/test_rokid_release_freeze.py
+          scripts/test_locked_eas_cli.py
+          scripts/test_mac_release_receipt.py
+          scripts/test_mac_release_nginx.py
+          scripts/test_release_step_proof.py
           scripts/test_release_ci_contract.py
           scripts/test_release_input_digest.py
           scripts/test_verify_locked_requirements.py
@@ -502,21 +606,62 @@ jobs:
       - backend-quality
       - release-invariants
       - agent-runtime-postgres
+      - mac-build
+      - type-drift
+      - frontend-build
+      - mobile-typecheck
     if: ${{ always() }}
     steps:
       - name: Enforce backend test and quality gates
         env:
+          CLASSIFIER_RESULT: ${{ needs.classify-changes.result }}
+          DOCS_ONLY: ${{ needs.classify-changes.outputs.docs_only }}
+          RUN_DOCS: ${{ needs.classify-changes.outputs.run_docs }}
           RUN_BACKEND: ${{ needs.classify-changes.outputs.run_backend }}
+          RUN_FRONTEND: ${{ needs.classify-changes.outputs.run_frontend }}
+          RUN_MOBILE: ${{ needs.classify-changes.outputs.run_mobile }}
           RUN_RELEASE: ${{ needs.classify-changes.outputs.run_release }}
+          RUN_MAC: ${{ needs.classify-changes.outputs.run_mac }}
+          RUN_TYPE_DRIFT: ${{ needs.classify-changes.outputs.run_type_drift }}
+          FULL: ${{ needs.classify-changes.outputs.full }}
           DOCS_QUALITY: ${{ needs.docs-quality.result }}
           TEST_SHARDS: ${{ needs.backend-test-shards.result }}
           QUALITY_GATES: ${{ needs.backend-quality.result }}
           RELEASE_INVARIANTS: ${{ needs.release-invariants.result }}
           RUNTIME_POSTGRES: ${{ needs.agent-runtime-postgres.result }}
+          MAC_BUILD: ${{ needs.mac-build.result }}
+          TYPE_DRIFT_RESULT: ${{ needs.type-drift.result }}
+          FRONTEND_BUILD: ${{ needs.frontend-build.result }}
+          MOBILE_TYPECHECK: ${{ needs.mobile-typecheck.result }}
         run: |
-          printf 'backend gates: selected=%s docs=%s test-shards=%s quality=%s release=%s runtime-postgres=%s\n' \
-            "$RUN_BACKEND" "$DOCS_QUALITY" "$TEST_SHARDS" "$QUALITY_GATES" "$RELEASE_INVARIANTS" "$RUNTIME_POSTGRES"
+          for value in "$DOCS_ONLY" "$RUN_DOCS" "$RUN_BACKEND" "$RUN_FRONTEND" "$RUN_MOBILE" "$RUN_RELEASE" "$RUN_MAC" "$RUN_TYPE_DRIFT" "$FULL"; do
+            if [[ "$value" != true && "$value" != false ]]; then
+              echo "invalid or missing classifier output" >&2
+              exit 1
+            fi
+          done
+          if [[ "$CLASSIFIER_RESULT" != success || "$RUN_DOCS" != true ]]; then
+            echo "classifier did not complete with a valid mandatory docs scope" >&2
+            exit 1
+          fi
+          printf 'required aggregate: backend=%s frontend=%s mobile=%s release=%s mac=%s type-drift=%s docs=%s test-shards=%s quality=%s release-result=%s runtime-postgres=%s frontend-result=%s mobile-result=%s mac-result=%s type-drift-result=%s\n' \
+            "$RUN_BACKEND" "$RUN_FRONTEND" "$RUN_MOBILE" "$RUN_RELEASE" "$RUN_MAC" "$RUN_TYPE_DRIFT" "$DOCS_QUALITY" "$TEST_SHARDS" "$QUALITY_GATES" "$RELEASE_INVARIANTS" "$RUNTIME_POSTGRES" "$FRONTEND_BUILD" "$MOBILE_TYPECHECK" "$MAC_BUILD" "$TYPE_DRIFT_RESULT"
           if [[ "$DOCS_QUALITY" != success ]]; then
+            exit 1
+          fi
+          if [[ "$RUN_RELEASE" == true && "$RELEASE_INVARIANTS" != success ]]; then
+            exit 1
+          fi
+          if [[ "$RUN_MAC" == true && "$MAC_BUILD" != success ]]; then
+            exit 1
+          fi
+          if [[ "$RUN_TYPE_DRIFT" == true && "$TYPE_DRIFT_RESULT" != success ]]; then
+            exit 1
+          fi
+          if [[ "$RUN_FRONTEND" == true && "$FRONTEND_BUILD" != success ]]; then
+            exit 1
+          fi
+          if [[ "$RUN_MOBILE" == true && "$MOBILE_TYPECHECK" != success ]]; then
             exit 1
           fi
           if [[ "$RUN_BACKEND" != true ]]; then
@@ -524,9 +669,6 @@ jobs:
             exit 0
           fi
           if [[ "$TEST_SHARDS" != success || "$QUALITY_GATES" != success || "$RUNTIME_POSTGRES" != success ]]; then
-            exit 1
-          fi
-          if [[ "$RUN_RELEASE" == true && "$RELEASE_INVARIANTS" != success ]]; then
             exit 1
           fi
 
@@ -633,7 +775,7 @@ jobs:
       - name: Exercise release shell contracts with macOS Bash 3
         run: |
           /bin/bash --version
-          /bin/bash -n deploy.sh backend/scripts/activate_health_evidence_runtime.sh backend/scripts/rollback_release.sh
+          /bin/bash -n deploy.sh backend/scripts/activate_health_evidence_runtime.sh backend/scripts/rollback_release.sh apps/mac/scripts/package-app.sh apps/mac/scripts/release-dmg.sh scripts/mac-release-nginx-bootstrap.sh
           python -m pip install -r backend/requirements-dev.txt
           python -m pytest -q --no-cov --tb=short --maxfail=1 \
             scripts/test_deploy_script.py::test_repository_trust_normalization_makes_tracked_seeds_readable_not_writable \

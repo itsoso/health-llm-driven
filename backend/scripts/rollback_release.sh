@@ -523,6 +523,7 @@ assert_release_lock
 select_release_env_for_runtime_result "$runtime_state_result"
 assert_release_lock
 
+backend/venv/bin/python -m venv --clear backend/venv
 backend/venv/bin/pip install --require-hashes -r backend/requirements.lock -q
 backend/venv/bin/python "$LOCKED_REQUIREMENTS_VERIFIER" \
     backend/requirements.lock

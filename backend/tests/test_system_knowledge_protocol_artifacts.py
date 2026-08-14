@@ -13,6 +13,28 @@ def _jsonl(path):
 
 
 SEED_DIR = Path(__file__).resolve().parents[1] / "data/system_kb_v2_seed"
+ARTIFACT_FILES = (
+    "entities.jsonl",
+    "claims.jsonl",
+    "pages.jsonl",
+    "protocols.jsonl",
+    "contraindications.jsonl",
+    "eval_cases.jsonl",
+    "relations.jsonl",
+)
+
+
+def _complete_artifact_manifest(artifact_dir: Path) -> None:
+    counts = {}
+    for file_name in ARTIFACT_FILES:
+        path = artifact_dir / file_name
+        if not path.exists():
+            path.write_text("", encoding="utf-8")
+        counts[Path(file_name).stem] = len(_jsonl(path))
+    (artifact_dir / "manifest.json").write_text(
+        json.dumps({"version": "test", "counts": counts}, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def test_seed_artifacts_do_not_leave_orphan_entities(db):
@@ -96,10 +118,22 @@ def test_import_system_kb_protocol_artifacts_preserves_contract_metadata(tmp_pat
         + "\n",
         encoding="utf-8",
     )
+    _complete_artifact_manifest(artifact_dir)
 
     result = import_system_kb_artifacts(db, artifact_dir, actor="test")
 
-    assert result == {"documents": 3, "edges": 0, "skipped_documents": 0, "skipped_edges": 0}
+    expected_counts = {
+        "documents": 3,
+        "edges": 0,
+        "skipped_documents": 0,
+        "skipped_edges": 0,
+    }
+    assert {key: result[key] for key in expected_counts} == expected_counts
+    assert result["changed_document_ids"] == [
+        "contra:training:low_recovery_high_intensity",
+        "eval:health_advice_verify_mthfr_001",
+        "protocol:sleep:caffeine_cutoff",
+    ]
     protocol = db.query(KBDocument).filter(KBDocument.doc_id == "protocol:sleep:caffeine_cutoff").one()
     contraindication = db.query(KBDocument).filter(
         KBDocument.doc_id == "contra:training:low_recovery_high_intensity"
@@ -210,10 +244,17 @@ def test_import_system_kb_artifacts_skips_non_reviewed_documents_and_edges(tmp_p
         + "\n",
         encoding="utf-8",
     )
+    _complete_artifact_manifest(artifact_dir)
 
     result = import_system_kb_artifacts(db, artifact_dir, actor="test")
 
-    assert result == {"documents": 2, "edges": 1, "skipped_documents": 2, "skipped_edges": 2}
+    expected_counts = {
+        "documents": 2,
+        "edges": 1,
+        "skipped_documents": 2,
+        "skipped_edges": 2,
+    }
+    assert {key: result[key] for key in expected_counts} == expected_counts
     assert db.query(KBDocument).filter(KBDocument.doc_id == "entity:condition:metabolic-health").count() == 1
     assert db.query(KBDocument).filter(KBDocument.doc_id == "claim:c_reviewed_imported").count() == 1
     assert db.query(KBDocument).filter(KBDocument.doc_id == "claim:c_draft_skipped").count() == 0

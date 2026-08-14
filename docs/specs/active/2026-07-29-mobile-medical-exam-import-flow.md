@@ -1,5 +1,8 @@
 # Feature Spec: Mobile Medical Exam Import Flow
 
+> **Current release override (2026-08-12):** every server/OTA/native writer is frozen. Validate
+> locally and keep manual release Gate BLOCKED; do not deploy, build/sign/install or call OTA.
+
 > Status: approved
 > Owner: Mobile / Medical Exams
 > Updated: 2026-07-29
@@ -155,9 +158,8 @@ git diff --check
 
 ## 13. Rollout And Rollback
 
-The change is backward compatible and can ship as a Mobile OTA after backend
-deployment. Rollback restores the previous Chat import sheet; existing import
-endpoints remain available. No database migration is required.
+Validate backward compatibility locally. Do not deploy backend or ship/rollback Mobile OTA; the
+existing production state remains unchanged. No database migration is required.
 
 ## 14. Open Questions
 

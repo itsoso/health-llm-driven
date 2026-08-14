@@ -20,7 +20,8 @@ description: "敏感改动上线前的 producer-reviewer 安全闭环。当改�
    - 改动摘要 + 背景硬约束(如「只随访不开方」「Garmin 血氧不准」)
    - **明确让它重点审的安全问题**(漏报?假阳性?越界开方?绕过某条 CRITICAL 规则?时区/单位?)
    - 要 **GO / NO-GO** 明确裁定
-3. **GO** → push + 部署(`backend-deploy`)。
+3. **GO** → 只表示安全评审通过；源码交付按授权执行。自动 release entrypoint 仍冻结，交
+   `backend-deploy` 记录 BLOCK，不得部署。
 4. **NO-GO** → 按阻断项**逐个修** + 补回归测试 → **重审**(起新 reviewer 读当前 diff;SendMessage 不可用时直接新起一个)。**反复 NO-GO 是正常的**(血氧改了三轮才 GO)。
 
 ## 为什么值得(本会话实战)
@@ -38,4 +39,5 @@ description: "敏感改动上线前的 producer-reviewer 安全闭环。当改�
 - ❌ 测试假绿:测了没命中真实代码路径的分支(血氧那次主分支零覆盖 → 假绿)。补测试要覆盖**用户真实会走的路径**。
 - ❌ 把"抑制告警"当小改动:从安全指标删源/降级,最危险是**漏报真急症**,必审方向。
 
-> 非安全面的普通改动不用走这个,直接 `backend-deploy`。代码质量(非 bug)用 `/code-review` 或 `/simplify`。
+> 非安全面的普通改动不用走本安全 Gate；发布仍交 `backend-deploy` 做冻结裁决。代码质量
+> (非 bug)用 `/code-review` 或 `/simplify`。

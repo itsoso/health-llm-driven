@@ -5,6 +5,17 @@
 > Updated: 2026-08-06
 > Related PRD/PDD: `docs/prd/reva-personal-health-os-prd.md` R5/R11/R12
 > Related code: `backend/app/services/agent_executor.py`, `backend/app/api/agent.py`, `backend/app/services/inline_cards.py`, `backend/app/services/medication_intake_batch.py`, `backend/app/services/contextual_meal_photo_service.py`, `frontend/src/components/assistant/inlineCards/cards.tsx`, `mobile/components/chat/cards/`
+>
+> **Current release override (2026-08-12):** all repo-contained automatic remote/vendor release
+> entrypoints, local signing/install/automatic-provisioning entrypoints and every OTA/rollback
+> channel are frozen. EAS preview/development cannot prove isolation because channel→branch mapping may
+> drift or be shared. Only local tests/Metro/iOS Simulator, offline evidence and public
+> unauthenticated HTTPS are allowed; release plan/validate and production network observation are
+> frozen, and no allowed evidence forms G5/G6;
+> `npm run ios` uses the Simulator wrapper, callers may not append npm/Expo `--device`, and the
+> wrapper pins an exact available Simulator UDID; physical iOS repo CLI is frozen;
+> archive/export/signing/provisioning is frozen. The release
+> Gate is BLOCK/STOP pending a new external trust-root dossier and independent G4.
 
 ## 1. Decision
 
@@ -53,7 +64,8 @@ RequirementAdmission:
 - 不扩展药名识别到任意未知字符串；确定性批次仅使用现有药物和受控别名字典。
 - 不重写 Agent 全部状态机，不新增数据库表或迁移。
 - 不改变营养估算模型或图片识别算法。
-- 不把本修复视为 App Store 已通过；正式版本仍需独立 G5/G6 和真机证据。
+- 不把本修复视为 App Store 已通过；正式版本仍需独立 G5/G6，以及解冻后由仓库外获权
+  人工流程生成的同包真机证据。当前物理 iOS Gate 保持 BLOCK。
 
 ## 5. Product Object Mapping
 
@@ -195,10 +207,11 @@ git diff --check
 
 ## 13. Rollout And Rollback
 
-- 先部署 Backend，使解析、外键顺序和卡片组合闸生效。
-- Web 随正常前端部署；Mobile 仅 JS/TS 展示语义变化，可走 production OTA，但 App Store 1.3.3 候选构建开始后必须遵守 production OTA freeze。
-- 回滚到部署前 commit；无数据库迁移和不可逆数据变更。
-- 若 G5/G6 失败，停止 iOS 1.3.3 构建/提交并回到 S5。
+- 本地验证 Backend 解析、外键顺序、卡片组合闸，以及 Web/Mobile 展示；不得部署任一端。
+- 所有 OTA/rollback channel 与 production native writer/observation 均冻结；existing
+  candidate 仅可从 already-downloaded IPA/已有本地 metadata 对账，人工发布 Gate 保持
+  BLOCK。
+- 无数据库迁移和不可逆数据变更；本地失败回 S5。G5/G6 因无获准部署保持 BLOCK。
 
 ## 14. Open Questions
 

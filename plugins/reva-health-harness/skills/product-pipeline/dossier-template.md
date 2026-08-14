@@ -13,7 +13,7 @@
 | 当前阶段 | S0 Intake · S1 Discovery · G1 · S2 PRD · S3 规划 · G2 · S4 分解 · S5 实现 · G3 · G4 · S6 部署 · G5 · S7 验证 · G6 · S8 沉淀 |
 | 状态 | intake / defining / building / shipping / **shipped** / **rejected** / **parked** |
 | 负责 | <human / agent> |
-| 反馈环 | 本地 Sim / OTA / EAS / backend deploy |
+| 反馈环 | Metro / Simulator / tests / offline evidence / public unauthenticated HTTPS / existing-IPA offline inspection |
 
 ## Correct Course
 <!-- correct-course 时追加一条 Correction Block,不要覆盖旧计划。旧基线要保留,新基线要指向需重跑的 Gate。 -->
@@ -89,23 +89,31 @@
 - 评审:☐ safety-gate ☐ safety-privacy-reviewer
 - **裁决**:☐ GO ☐ BLOCK→回 S5(阻断项 + 整改):
 
-## S6 · 部署
-- 路由:☐ backend-deploy ☐ mobile-ota ☐ mobile-testflight(异步)
-- 序:后端 deploy → generate-types(若改 schema)→ OTA
-- 部署 SHA / 回滚点:
+## S6 · 部署（CURRENT FREEZE）
+- 路由:☐ offline evidence/public unauthenticated HTTPS ☐ existing-IPA offline inspection ☐ BLOCK
+- 当前所有 repo 自动 server/Mobile/Mac/ASC release writer 与所有 OTA channel 均 exit 78；
+  manual release Gate=STOP/BLOCK。manual-admin utility 属独立事件且不得被自动 release 调用。
+- release plan/validate/publish、production-state network modes、deploy status/logs/inspect 与
+  App Store `--final-submit` 也冻结；offline/public observation 不形成 G5/G6。
+- rc78 仅是 ordinary-invocation tombstone；确认 shell writer legacy literal-false、语法级
+  不可达且 runtime/operator 未 source/extract/eval。隔离 marker fixture 测试不构成 release
+  proof。Mac `release-dmg.sh` 全入口冻结，不记 read-only PASS。
+- 只允许 `mobile-local-qr.sh --no-upload --ipa <EXISTING_IPA>` 生成离线 metadata/report；不
+  生成 install manifest、安装二维码或可安装承诺，不得自动 build/sign/install。
+- 部署 SHA / 回滚点:无（未部署）
 
 ## G5 · 部署健康闸
 - 健康分(阈值 35,低于自动回滚):/60
 - prod smoke(服务 active + 路由 200/401 + 启动日志无 error + 新表/列 ssh 实查):
-- **裁决**:☐ PASS ☐ 自动回滚→回 S5
+- **裁决**:☐ BLOCK（冻结期不得填 PASS）
 
 ## S7 · 上线验证
-- 真实路径验证(curl / 健康分 / 真机 / anchor 视角):
+- 真实路径验证(curl / 健康分 / anchor 视角；物理 iOS 当前冻结，未来仅仓库外人工证据):
 - 结果(相关非因果措辞):
 
 ## G6 · 验证闸(人在环)
 - 需求在 prod 对 anchor 用户真成立?:
-- 真机/发布用户确认:☐
+- 真机/发布用户确认:☐ BLOCK（冻结期不得执行或填 PASS）
 - **裁决**:☐ PASS(回路闭合) ☐ FAIL→回 S5/回滚
 
 ## S8 · 沉淀

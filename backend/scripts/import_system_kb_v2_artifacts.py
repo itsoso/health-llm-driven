@@ -27,7 +27,11 @@ def import_artifacts_and_optionally_reindex(
     if not skip_reindex:
         from app.services.system_knowledge_service import run_system_kb_reindex_report
 
-        reindex_report = run_system_kb_reindex_report(db, actor=actor)
+        reindex_report = run_system_kb_reindex_report(
+            db,
+            actor=actor,
+            changed_document_ids=counts.get("changed_document_ids", []),
+        )
     return {"import": counts, "reindex": reindex_report}
 
 
@@ -57,7 +61,14 @@ def main() -> int:
             skip_reindex=args.skip_reindex,
         )
         counts = result["import"]
-        print(f"imported system KB V2 artifacts: {counts['documents']} documents, {counts['edges']} edges")
+        proof = counts.get("proof") or {}
+        print(
+            "imported system KB V2 artifacts: "
+            f"{counts['documents']} documents, {counts['edges']} edges, "
+            f"changed={len(counts.get('changed_document_ids', []))}, "
+            f"deleted={len(counts.get('deleted_document_ids', []))}, "
+            f"proof={proof.get('mode', 'off')}:{proof.get('decision', 'unknown')}"
+        )
         reindex = result["reindex"]
         if reindex is None:
             print("skipped system KB reindex")

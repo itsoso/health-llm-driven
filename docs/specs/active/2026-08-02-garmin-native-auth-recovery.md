@@ -5,6 +5,14 @@
 > Updated: 2026-08-02
 > Related PRD/PDD: docs/prd/reva-personal-health-os-prd.md · docs/specs/active/2026-06-26-wearable-router-v1-productization.md
 > Related code: backend/app/services/data_collection/garmin_connect.py · backend/app/services/data_collection/garmin_mfa.py · backend/app/services/workout_sync.py · backend/app/tasks/garmin_sync.py · mobile/app/settings.tsx
+>
+> **Current release override (2026-08-12):** all repo-contained automatic remote/vendor release
+> entrypoints, local signing/install/automatic-provisioning entrypoints and every OTA/rollback
+> channel are frozen. Preview/development channel names do not prove isolation because EAS mapping may drift
+> or be shared. Production network observation and release plan/validate are also frozen. Use local
+> validation, offline evidence and public unauthenticated HTTPS only; none forms G5/G6. Manual
+> release Gate is BLOCK pending
+> a new repo-external trust-root dossier and independent G4.
 
 ## 1. Decision
 
@@ -187,9 +195,12 @@ repository test layout is confirmed; no listed gate may be silently skipped.
 
 ## 13. Rollout And Rollback
 
-Deploy the backend first and verify authenticated route health plus a
-secret-free native-token diagnostic. Publish the Mobile recovery screen by
-production OTA only after backend verification. Existing native envelopes stay
+Validate the backend contract, secret-free native-token diagnostic and Mobile recovery screen in
+iOS Simulator. `npm run ios` uses the Simulator wrapper; do not append npm/Expo `--device`. The
+wrapper pins an exact available Simulator UDID. Do not connect/install physical iOS, build/sign,
+deploy backend or
+call any OTA/rollback channel. Production native writers are also frozen; the release Gate remains
+BLOCKED regardless of existing candidate visibility. Existing native envelopes stay
 in the same database column, so no destructive rollback migration is required.
 A code rollback restores the prior non-working Garmin adapter but leaves the
 rest of the system and stored encrypted bytes intact; forward-fixing the adapter

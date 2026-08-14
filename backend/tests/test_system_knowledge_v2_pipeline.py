@@ -1,6 +1,7 @@
 from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
+import json
 
 from app.models.system_knowledge import KBDocument, KBEdge
 from app.services.system_knowledge_importer import import_system_kb_artifacts
@@ -364,13 +365,43 @@ def test_import_system_kb_artifacts_is_idempotent(tmp_path, db):
         '"dst_doc_id":"claim:c_weight_waist_tracking","relation":"has_claim",'
         '"confidence":0.88,"source_claim_id":"claim:c_weight_waist_tracking"}\n'
     )
-    (artifact_dir / "manifest.json").write_text('{"version":"2.0","counts":{"claims":1}}\n')
+    for file_name in (
+        "pages.jsonl",
+        "protocols.jsonl",
+        "contraindications.jsonl",
+        "eval_cases.jsonl",
+    ):
+        (artifact_dir / file_name).write_text("")
+    (artifact_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": "2.0",
+                "counts": {
+                    "entities": 1,
+                    "claims": 1,
+                    "pages": 0,
+                    "protocols": 0,
+                    "contraindications": 0,
+                    "eval_cases": 0,
+                    "relations": 1,
+                },
+            }
+        )
+        + "\n"
+    )
 
     first = import_system_kb_artifacts(db, artifact_dir, actor="test")
     second = import_system_kb_artifacts(db, artifact_dir, actor="test")
 
-    assert first == {"documents": 2, "edges": 1, "skipped_documents": 0, "skipped_edges": 0}
-    assert second == {"documents": 2, "edges": 1, "skipped_documents": 0, "skipped_edges": 0}
+    legacy_counts = {"documents": 2, "edges": 1, "skipped_documents": 0, "skipped_edges": 0}
+    assert {key: first[key] for key in legacy_counts} == legacy_counts
+    assert {key: second[key] for key in legacy_counts} == legacy_counts
+    assert first["changed_document_ids"] == [
+        "claim:c_weight_waist_tracking",
+        "entity:condition:metabolic-health",
+    ]
+    assert second["changed_document_ids"] == []
+    assert second["proof"]["decision"] == "miss"
     assert db.query(KBDocument).filter(KBDocument.doc_id == "claim:c_weight_waist_tracking").count() == 1
 
 

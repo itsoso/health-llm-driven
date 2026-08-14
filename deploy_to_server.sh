@@ -2,6 +2,14 @@
 # 一键远程部署脚本
 # 生成时间: 2026-01-22
 
+# This legacy entry point bypasses the canonical release source/lease checks.
+# Keep the guard above prompts, argument handling, and external commands.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  printf '%s\n' 'Production automatic writer is frozen; use the manual Gate.' >&2
+  exit 78
+fi
+
+if [[ 0 -eq 1 ]]; then
 set -e
 
 echo "=========================================="
@@ -127,4 +135,5 @@ else
     echo "  3. 确认有 sudo 权限"
     echo ""
     exit 1
+fi
 fi

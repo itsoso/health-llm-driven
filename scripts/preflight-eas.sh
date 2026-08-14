@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# preflight-eas.sh — EAS build / 本地 build 前的本地体检 (verify-only)
+# preflight-eas.sh — iOS Simulator / 静态验证前的本地体检
 #
-# 防止 native config 错了还触发昂贵的 EAS build (今天 LIFO 顺序错那次本来这一步能拦下来)
+# 只验证本地 native config；它不授权 EAS、真机签名或商店发布。
 #
 # 用法:
 #   ./scripts/preflight-eas.sh           # 只读检查现有 ios/
 #   ./scripts/preflight-eas.sh --rebuild # 跑一次 expo prebuild --clean 再检查 (会重置 ios/, 之后须 pod install)
 #
-# 默认不会改 ios/, 只读检查. 如果 ios/ 缺失 → 提示先跑 mobile-local-device.sh
+# 默认不会改 ios/, 只读检查。ios/ 缺失时使用受控 Simulator 工具生成。
 #
 # 检查项:
 #   - 当前 iOS 主应用目录的 Info.plist 含必须 key (NSHealthShareUsage / Camera / Microphone / Location)
@@ -43,7 +43,7 @@ for candidate in ios/app ios/HealthPilot; do
 done
 
 if [[ -z "${IOS_APP_DIR}" ]]; then
-  echo "✗ 未找到 iOS 主应用目录（已尝试 ios/app 和 ios/HealthPilot）— 先跑 ./scripts/mobile-local-device.sh 生成" >&2
+  echo "✗ 未找到 iOS 主应用目录（已尝试 ios/app 和 ios/HealthPilot）— 请使用受控 Simulator 工具生成" >&2
   exit 1
 fi
 
@@ -106,4 +106,5 @@ done
 [ ${fail} -eq 1 ] && exit 1
 
 echo ""
-echo "✓ preflight 全过, 可以放心触发 EAS / 本地 build"
+echo "✓ preflight 全过，仅证明本地 native config 可供 Simulator / 静态验证"
+echo "  不授权 EAS、真机签名、设备安装或商店发布。"

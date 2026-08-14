@@ -4,6 +4,20 @@
 > 上游:`docs/strategy-longevity-os.md` §7(抗衰抓手)
 > 本文定位:把"最该先抓的一个抓手"(PhenoAge + 生活方式四件套 + N-of-1)落成**可实现的工程设计**——真实接口、改动清单、边界、反馈环。
 > 纪律:遵循 `feature-plan.md` 四问;遵循仓库已有的 `evidence_tier / claim_boundary` 诚实纪律;**伪科学红线不可妥协**。
+>
+> **CURRENT RELEASE OVERRIDE (2026-08-12):** 所有 repo 内自动远程/供应商 release
+> entrypoint、本机 signing/install/automatic provisioning entrypoint 与所有 OTA/rollback
+> channel writer 均冻结；EAS
+> channel→branch 映射可能漂移或共用，preview/development 也
+> 不是安全隔离。本文的 OTA/部署措辞只表示产品兼容性或历史规划，当前只可做本地
+> Metro/iOS Simulator/test、只读 plan/proof 和
+> `mobile-local-qr.sh --no-upload --ipa <EXISTING_IPA>` 的离线 IPA metadata/report（无安装
+> manifest、安装二维码或可安装承诺）。bare `--no-upload` 与自动
+> archive/export/signing/provisioning 也冻结。`npm run ios` 固定走 Simulator wrapper，不得
+> 向 npm/Expo 追加 `--device`；wrapper 锁定 exact available Simulator UDID，物理 iOS repo
+> CLI、连接/安装/验收冻结。manual Gate 必须 BLOCK/STOP；解冻须新 dossier、
+> repo-external root-owned launcher、固定解释器、
+> `env -i`、repo-external canonical tree、source/artifact/recovery proof 与新独立 G4。
 
 ---
 
@@ -114,7 +128,7 @@ class LongevitySpecialist:
 
 ## 7. 对比卡 UI(mobile 优先)
 
-复用 `mobile/`:首页加"身体年龄卡"——大数字(47)+ 实足(42)+ delta(+5)+ 趋势 sparkline + claim_boundary 小字。周期复检后弹"你年轻了 X 岁"对比卡(信任时刻)。纯 RN,OTA 可发。
+复用 `mobile/`:首页加"身体年龄卡"——大数字(47)+ 实足(42)+ delta(+5)+ 趋势 sparkline + claim_boundary 小字。周期复检后弹"你年轻了 X 岁"对比卡(信任时刻)。纯 RN；当前只做本地验证，OTA writer 冻结。
 
 ---
 
@@ -133,7 +147,7 @@ LongevitySpecialist.run(twin)  ← 新建, 读 phenoage+四件套
     ↓ 12 周生活方式干预 (Movement/Fuel/Recovery/Mental 专家)
 复检 → 再算 PhenoAge → personal_outcome impact + 对比卡  ← 复用
     ↓
-mobile 首页"身体年龄卡" (OTA)
+mobile 首页"身体年龄卡" (本地验证；OTA 冻结)
 ```
 
 ---
@@ -154,7 +168,7 @@ mobile 首页"身体年龄卡" (OTA)
 | `app/agents/safety_guardian/engine.py` | import 新规则模块 | 🔧 |
 | `scripts/check_doc_drift.py` + `docs/ARCHITECTURE.md` | specialist 数 11→12、安全规则数同步 | 🔧 |
 | `tests/test_specialists.py` | LongevitySpecialist 单测 | 🔧 |
-| `mobile/` 首页 | 身体年龄卡 + 对比卡(OTA) | 🆕 |
+| `mobile/` 首页 | 身体年龄卡 + 对比卡(本地验证；OTA 冻结) | 🆕 |
 
 > 复杂度预算:每个新文件 < 500 行;phenoage.py 应 < 120 行。
 
@@ -164,7 +178,7 @@ mobile 首页"身体年龄卡" (OTA)
 
 - **Step 1(后端纯算,反馈环最短)**:`phenoage.py` + golden test。`pytest tests/test_phenoage.py` 秒级绿 = 抓手成立。
 - **Step 2**:labs 7 字段 + builder 填充 + LongevitySpecialist + 注册 + doc-drift。`GET /twin/me` 能看到 phenotypic_age。
-- **Step 3**:Episode outcome=phenotypic_age_delta 串通 + 对比卡 UI(OTA)。
+- **Step 3**:Episode outcome=phenotypic_age_delta 串通 + 对比卡 UI（本地 Metro/Simulator 验证）。
 - **Step 4(Phase 2)**:Safety 抗衰规则 + 硬件接入 + 主动 Agent。
 
 ---
@@ -190,8 +204,10 @@ mobile 首页"身体年龄卡" (OTA)
 ## 13. 反馈环
 - Step 1:本地 `pytest`,秒级(纯函数)。
 - Step 2-3 后端:`pytest` + `uvicorn` 本地打 `/twin/me`。
-- Mobile:OTA(纯 RN/TS,无 native 改动)→ `./scripts/mobile-ota.sh production`。
-- **无 EAS build 需求**(MVP 不碰 native)。
+- Mobile:纯 RN/TS、无 native 改动也只用本地 Metro/iOS Simulator/test；`npm run ios`
+  固定走 Simulator wrapper，不得向 npm/Expo 追加 `--device`；wrapper 锁定 exact available
+  Simulator UDID，物理 iOS repo CLI、连接/安装/验收冻结；所有
+  OTA/rollback channel 与 production native writer 均冻结，到 manual Gate 记录 BLOCK。
 
 ---
 

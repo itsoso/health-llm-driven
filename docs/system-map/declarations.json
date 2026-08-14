@@ -160,8 +160,40 @@
       "coverage": "declaration",
       "id": "resource.expo-updates",
       "kind": "resource",
-      "name": "Expo Updates",
+      "name": "Expo Updates (All Channel Writers and Network Observation Frozen; Local Evidence Only)",
       "source": {"path": "mobile/app.json", "type": "declaration"}
+    },
+    {
+      "coverage": "declaration",
+      "data_classes": ["L1"],
+      "id": "resource.ios-simulator-feedback",
+      "kind": "resource",
+      "name": "Mobile Local Feedback (iOS Exact-UDID Simulator Only; Physical iOS and Android Native Repo CLI Frozen)",
+      "source": {"path": "scripts/sim-build.sh", "type": "declaration"}
+    },
+    {
+      "coverage": "declaration",
+      "data_classes": ["L2"],
+      "id": "resource.release-coordinator",
+      "kind": "resource",
+      "name": "Release Control (All Network/Writer Modes Frozen; Shell Legacy Literal-False Tombstoned; RC78 Is Not Hostile Bootstrap Trust; Offline Evidence Only)",
+      "source": {"path": "deploy.sh", "type": "declaration"}
+    },
+    {
+      "coverage": "declaration",
+      "data_classes": ["L1"],
+      "id": "resource.rokid-native-feedback",
+      "kind": "resource",
+      "name": "Rokid Native Build/Install (Tracked Gradle, Debug-Sign Build and ADB Frozen; No Reviewed Unsigned Compile/Test Wrapper)",
+      "source": {"path": "apps/rokid-pushup-glasses/README.md", "type": "declaration"}
+    },
+    {
+      "coverage": "declaration",
+      "data_classes": ["L1"],
+      "id": "resource.mac-release-assets",
+      "kind": "resource",
+      "name": "Mac Developer ID Protocol Assets (release-dmg Shell Entirely Frozen; Writer-Free Checker Required; Fixed-Root Test Fixture/Local Candidate Only)",
+      "source": {"path": "apps/mac/scripts/release-dmg.sh", "type": "declaration"}
     },
     {
       "coverage": "declaration",
@@ -219,11 +251,18 @@
     {"coverage": "declaration", "flows": ["background-jobs"], "from": "component.celery-worker", "source": {"path": "backend/app/database.py", "type": "declaration"}, "to": "resource.postgresql", "type": "writesTo"},
     {"coverage": "declaration", "flows": ["health-record", "agenda", "safety"], "from": "component.frontend", "source": {"path": "frontend/src/services/", "type": "declaration"}, "to": "api.health-v1", "type": "consumesApi"},
     {"coverage": "declaration", "flows": ["agent-chat", "health-record", "agenda", "safety"], "from": "component.mac", "source": {"path": "apps/mac/", "type": "declaration"}, "to": "api.health-v1", "type": "consumesApi"},
+    {"coverage": "declaration", "flows": ["mac-release"], "from": "component.mac", "source": {"path": "apps/mac/scripts/release-dmg.sh", "type": "declaration"}, "to": "resource.mac-release-assets", "type": "dependsOn"},
+    {"coverage": "declaration", "flows": ["release-planning"], "from": "component.mac", "source": {"path": "apps/mac/scripts/release-dmg.sh", "type": "declaration"}, "to": "resource.release-coordinator", "type": "dependsOn"},
     {"coverage": "declaration", "flows": ["mcp"], "from": "component.mcp-server", "source": {"path": "mcp-server/server.py", "type": "declaration"}, "to": "api.health-v1", "type": "consumesApi"},
     {"coverage": "declaration", "flows": ["mcp"], "from": "component.mcp-server", "source": {"path": "mcp-server/server.py", "type": "declaration"}, "to": "api.mcp", "type": "providesApi"},
     {"coverage": "declaration", "flows": ["agent-chat", "health-record", "agenda", "safety", "device-sync"], "from": "component.mobile", "source": {"path": "mobile/services/", "type": "declaration"}, "to": "api.health-v1", "type": "consumesApi"},
     {"coverage": "declaration", "flows": ["device-sync"], "from": "component.mobile", "source": {"path": "mobile/services/appleHealth.ts", "type": "declaration"}, "to": "resource.healthkit", "type": "dependsOn"},
+    {"coverage": "declaration", "flows": ["mobile-simulator"], "from": "component.mobile", "source": {"path": "scripts/sim-build.sh", "type": "declaration"}, "to": "resource.ios-simulator-feedback", "type": "dependsOn"},
+    {"coverage": "declaration", "flows": ["rokid-glasses"], "from": "component.mobile", "source": {"path": "apps/rokid-pushup-glasses/README.md", "type": "declaration"}, "to": "resource.rokid-native-feedback", "type": "dependsOn"},
     {"coverage": "declaration", "flows": ["mobile-ota"], "from": "component.mobile", "source": {"path": "mobile/app.json", "type": "declaration"}, "to": "resource.expo-updates", "type": "dependsOn"},
+    {"coverage": "declaration", "flows": ["release-planning"], "from": "component.mobile", "source": {"path": "scripts/release.py", "type": "declaration"}, "to": "resource.release-coordinator", "type": "dependsOn"},
+    {"coverage": "declaration", "flows": ["release-planning"], "from": "component.backend-api", "source": {"path": "deploy.sh", "type": "declaration"}, "to": "resource.release-coordinator", "type": "dependsOn"},
+    {"coverage": "declaration", "flows": ["release-planning"], "from": "component.frontend", "source": {"path": "deploy.sh", "type": "declaration"}, "to": "resource.release-coordinator", "type": "dependsOn"},
     {"coverage": "declaration", "flows": ["health-record", "agenda", "safety"], "from": "component.watch", "source": {"path": "apps/watch/", "type": "declaration"}, "to": "api.health-v1", "type": "consumesApi"}
   ]
 }

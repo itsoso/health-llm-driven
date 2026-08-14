@@ -45,6 +45,17 @@ scheme = Xcodeproj::XCScheme.new
 scheme.add_build_target(target)
 scheme.add_test_target(target)
 
+expected_city = ENV.fetch("REVA_ACCEPTANCE_EXPECTED_CITY", "").strip
+unless expected_city.empty?
+  # Xcode 26 ignores TestAction-specific variables when this remains YES and
+  # the generated LaunchAction has no matching environment.  Keep the GPS
+  # assertion scoped to the test bundle by explicitly disabling inheritance.
+  scheme.test_action.should_use_launch_scheme_args_env = false
+  environment_variables = scheme.test_action.environment_variables
+  environment_variables["REVA_ACCEPTANCE_EXPECTED_CITY"] = expected_city
+  scheme.test_action.environment_variables = environment_variables
+end
+
 scheme.save_as(project_path.to_s, "XiaobaAcceptanceUITests", true)
 
 project.save

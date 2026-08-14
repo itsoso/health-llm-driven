@@ -2,12 +2,20 @@
 """Validate App Store release materials against mobile config."""
 from __future__ import annotations
 
+import sys
+
+if __name__ == "__main__" and "--final-submit" in sys.argv[1:]:
+    print(
+        "App Store final-submit is frozen; use the external trusted Gate",
+        file=sys.stderr,
+    )
+    raise SystemExit(78)
+
 import argparse
 import json
 import os
 import re
 import subprocess
-import sys
 import urllib.error
 import urllib.parse
 import urllib.request

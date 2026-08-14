@@ -27,4 +27,7 @@ model: opus
 - 跨端任务从 `backend-engineer` 拿 API shape,对齐 service 的 TS 类型,不自造字段。
 
 ## 团队通信协议
-改完 `SendMessage` 给 `qa-verifier` 跑前端闸门(它知道 page-freeze 这条);上线交 `release-engineer`(`deploy.sh -f` 前端;`-a` 全部)。结果回传 leader。
+改完 `SendMessage` 给 `qa-verifier` 跑前端闸门(它知道 page-freeze 这条)；发布请求交
+`release-engineer` 记录冻结裁决。不得运行 `deploy.sh -f/-a` 或 raw helper；production
+observation 与 release plan/validate 也冻结，manual Gate 固定 BLOCK。只可回传
+本地测试、offline evidence 或公开未认证 HTTPS 观察，且不得形成 G5/G6。

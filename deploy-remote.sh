@@ -3,6 +3,14 @@
 # 用法: ./deploy-remote.sh [服务器地址] [用户名]
 # 示例: ./deploy-remote.sh health.westwetlandtech.com root
 
+# This legacy entry point bypasses the canonical release source/lease checks.
+# Keep the guard above every argument default and external command.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  printf '%s\n' 'Production automatic writer is frozen; use the manual Gate.' >&2
+  exit 78
+fi
+
+if [[ 0 -eq 1 ]]; then
 set -e
 
 # 颜色定义
@@ -133,3 +141,4 @@ echo -e "${GREEN}   远程部署完成！${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "访问地址: https://${SERVER}"
+fi

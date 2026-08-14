@@ -210,7 +210,16 @@ def test_extraction_skips_non_owner_message(db):
 
 def test_extracted_events_readable_via_episodes_api(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
-    msg = _mk_user_message(db, user.id, "下午从家出发, 21:07落地北京", _MSG_CREATED_UTC)
+    # The API intentionally exposes at most the latest 30 days. Keep this
+    # integration fixture recent; fixed-clock parsing semantics are covered by
+    # the dedicated _resolve_time tests above.
+    recent_created_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    msg = _mk_user_message(
+        db,
+        user.id,
+        "下午从家出发, 21:07落地北京",
+        recent_created_utc,
+    )
     events = [
         {"title": "落地北京", "category": "arrival", "time_text": "21:07"},
         {"title": "从家出发", "category": "travel", "time_text": "下午"},
@@ -221,7 +230,7 @@ def test_extracted_events_readable_via_episodes_api(client, db, auth_user_and_he
     from tests.conftest import create_authenticated_user
 
     other, _ = create_authenticated_user(db)
-    omsg = _mk_user_message(db, other.id, "刚到机场", _MSG_CREATED_UTC)
+    omsg = _mk_user_message(db, other.id, "刚到机场", recent_created_utc)
     extract_life_events_from_message(
         db, other.id, omsg.id, llm_events=[{"title": "到机场", "category": "arrival", "time_text": ""}]
     )

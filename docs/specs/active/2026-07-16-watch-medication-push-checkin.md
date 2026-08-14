@@ -5,6 +5,15 @@
 > Updated: 2026-07-16
 > Related PRD/PDD: `docs/prd/reva-personal-health-os-prd.md` R4, R15
 > Related code: `backend/app/tasks/notifications.py`, `mobile/hooks/useNotifications.ts`
+>
+> **Current release override (2026-08-12):** all repo-contained automatic remote/vendor release
+> entrypoints, local signing/install/automatic-provisioning entrypoints and every OTA/rollback
+> channel are frozen. EAS channel→branch mapping may drift or be shared, so preview/development is not an
+> isolated exception. Production network observation and release plan/validate are also frozen.
+> Only local iOS Simulator/test, offline evidence and public unauthenticated HTTPS are allowed;
+> none forms G5/G6. Physical iOS
+> and Watch acceptance plus new archive/export/signing/provisioning are frozen. Watch/App release Gate is
+> BLOCK pending a new repo-external trust-root dossier and independent G4.
 
 ## 1. Decision
 
@@ -114,9 +123,13 @@ backend/venv/bin/python -m pytest backend/tests/test_push_privacy.py backend/tes
 git diff --check
 ```
 
-- Backend 文案随标准 backend deploy 发布；Mobile TS 通过 production OTA 发布，不需要新增原生模块。
-- 最终 G6 必须使用真实 iPhone + Apple Watch：锁屏提醒出现、腕上点击“服用”、数据库/今日用药显示同一时间槽已服。
-- OTA 回滚可恢复旧客户端行为；服务端幂等写入和手机内手工打卡始终保留。
+- 本地验证 Backend 文案、Mobile TS 与 iOS Simulator 行为；`npm run ios` 固定走
+  Simulator wrapper，不得向 npm/Expo 追加 `--device`；wrapper 锁定 exact available
+  Simulator UDID。不得连接/安装物理 iOS、构建/签名、backend deploy 或调用
+  任何 OTA/rollback channel，Watch automatic release entrypoint 也冻结。人工 Gate 固定 BLOCK。
+- 真实 iPhone + Apple Watch 验收是未来解冻后的外部人工证据要求；当前不可执行，G3 的
+  设备能力缺口与 G6 必须保持 BLOCK。
+- 服务端幂等写入和手机内手工打卡设计保持；当前没有发布或回滚动作。
 
 ## 9. Changelog
 

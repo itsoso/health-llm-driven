@@ -42,9 +42,11 @@ Claude Code 读本文件；Cursor 读 `.cursor/rules/00-agents-bootstrap.mdc` �
 - `frontend-engineer` — `frontend/` 实现(Next.js 14 Web;注意页面冻结 Phase 0-4)
 - `qa-verifier` — 跑闸门(pytest/doc-drift/tsc/jest/swift/前端 vitest+page-freeze)+ 跨界 shape 比对 + 真红/假红判别
 - `safety-privacy-reviewer` — AGENTS.md 硬规范 + 医疗安全/隐私评审(高风险必经)
-- `release-engineer` — deploy.sh / OTA / EAS TestFlight / mac 打包安装(先后端再 OTA)
+- `release-engineer` — production freeze 审计、offline evidence/公开未认证 HTTPS、本地
+  Metro/Simulator 与 existing-IPA offline inspection；所有 OTA/rollback 及 server/Mobile/Mac/ASC
+  自动远程/供应商 release entrypoint 与本机签名/安装/provisioning 入口均 BLOCK
 
-**专用 skill**:`mac-build-deploy`(apps/mac 的 swift build/test 闸门 + package-app.sh 安装 + CI 工具链坑)。
+**专用 skill**:`mac-build-deploy`(apps/mac 的 swift compile/test 闸门 + 冻结的 package/release 边界 + CI 工具链坑)。
 
 **项目 binding**:Claude/Codex/Cursor/其他 coding agent 如何共同触发这些研发 skills,见 `docs/agent-skill-binding.md`。全局层只管跨项目共性;health-llm-driven 内以该 binding + `AGENTS.md` 硬规则为准。
 
@@ -150,8 +152,8 @@ npm run test     # Vitest
 cd mobile
 npm install
 npm run start        # Expo dev server (Metro)
-npm run ios          # expo run:ios (requires Xcode)
-npm run android      # expo run:android
+npm run ios          # Simulator wrapper; resolves an available Simulator to an exact UDID
+npm run android      # FROZEN (exit 78): native generation/debug signing/ADB install
 ```
 
 The Expo app uses `expo-router` (file-based routing under `mobile/app/`), `@tanstack/react-query` for data, and `expo-secure-store` for tokens. React 19.1 with New Architecture enabled.
@@ -162,9 +164,14 @@ The Expo app uses `expo-router` (file-based routing under `mobile/app/`), `@tans
 - **API URL**: `services/api.ts` reads `EXPO_PUBLIC_API_URL` (defaults to `https://health.executor.life/api`). For local backend dev, export `EXPO_PUBLIC_API_URL=http://<your-lan-ip>:8000/api/v1` before `npm run start`.
 - **API 契约类型(防静默漂移)**: `mobile/types/api.generated.ts` 由后端 OpenAPI 生成(`npm run generate-types`,镜像 frontend)。**改了后端 request/response schema 后必须重跑 `npm run generate-types` 并提交**,否则 mobile 手写类型与后端漂移会静默坏(历史教训:`sleep_hours` vs `total_sleep_minutes`、float→int 422)。已接护栏的出口:`services/appleHealth.ts` 的 `toApiRecord` 把 import payload 标注为生成 schema——后端改名/删字段 → 该处 tsc 直接红。新增 mobile→backend 写接口时,同样用 `components['schemas'][...]` 标注出口 payload。
 
-#### iOS 反馈环：本地 Sim 默认，EAS / TestFlight 异步（2026-05-06 工作流）
+#### iOS 反馈环：本地 Sim 默认，自动 release entrypoint 冻结（2026-08-12）
 
-**默认路径**：`cd mobile && npm run ios` → 本地 Xcode build → iOS Simulator 验证。EAS build 只用于 (a) 真机功能验证 (b) TestFlight / App Store 发版，且必须**异步执行**（提交后切回 backend，不等）。
+**默认路径**：`cd mobile && npm run ios` → 本地 Xcode build → iOS Simulator 验证。
+所有 OTA/rollback 网络 writer 及 repo 内 server/Mobile/Mac/ASC 自动 release entrypoint 当前 fail
+closed。EAS channel→branch 映射可能漂移或共用，所以 preview/development 也不是安全的
+非生产隔离。existing candidate 只可从 already-downloaded IPA/已有本地 metadata 做 exact
+source/native identity 对账，不得联网查询、选择、分发或提交；App Store submission 固定
+BLOCK。
 
 **为什么**：本地 incremental build 30s–2min + Sim 热重载秒级；EAS production build 15–25 分钟 + 排队 + 装包，反馈环差 50–100 倍。Siri keychain bug 烧过 10+ 次 EAS build 才定位，本地 prebuild 几秒就能看到 `ios/Podfile.lock` 缺条目。
 
@@ -175,28 +182,21 @@ The Expo app uses `expo-router` (file-based routing under `mobile/app/`), `@tans
 | `.ts` / `.tsx` / `.js` / 样式 / 文案 / API 调用 / hooks | 本地 Sim | `npm run ios` |
 | RN 组件、navigation、React Query、状态管理 | 本地 Sim | `npm run ios` |
 | Dark mode、键盘行为、ScrollView、markdown 渲染 | 本地 Sim | `npm run ios` |
-| 已上线的真机功能微调（push payload、Siri response 文案） | OTA | `./scripts/mobile-ota.sh production "msg"` |
-| `app.json` plugins / `Info.plist` / Podfile / 新 native module | **必须** EAS build | 异步触发，**不要等** |
-| Expo SDK 升级、`expo-*` 大版本 bump | **必须** EAS build | 异步 |
-| Siri / AppShortcut / AppIntent（需真机 Apple ID） | 真机 dev build 或 TestFlight | 周末批量验 |
-| APNs production token / App Group / Face ID / Camera | 真机 dev build 或 TestFlight | 周末批量验 |
-| 发版 | EAS build production + submit | 异步 |
+| 需要物理 iOS 的功能微调 | Simulator 覆盖可测部分；其余 BLOCK | 不连接/安装物理设备，不构建/签名/调用 OTA writer |
+| `app.json` plugins / `Info.plist` / Podfile / 新 native module | Simulator/静态验证；发布 BLOCK | archive/export/signing/provisioning 冻结 |
+| Expo SDK 升级、`expo-*` 大版本 bump | Simulator/静态验证；发布 BLOCK | archive/export/signing/provisioning 冻结 |
+| Siri / AppShortcut / AppIntent（需真机 Apple ID） | 物理 iOS 验收冻结；保持 BLOCK | 不创建/签名/选择/安装 build |
+| APNs/App Group/Face ID/Camera | Simulator 可测部分；物理 iOS 缺口保持 BLOCK | 不连接/安装物理设备；production 分发 BLOCK |
+| 发版 | **BLOCK** | existing candidate 仅从已有本地材料对账 |
 
 **禁止反模式**：
 - ❌ 提交 → `eas build` → 等 20 分钟看 log → 改一行 → 再 `eas build` → 再等。任何超过 1 次的 EAS build 重跑都说明本地没复现就提了。
-- ❌ JS 改动用 `eas build`。永远走 OTA。
-- ❌ 同步等 EAS build。触发后立刻切别的活，build 完再回。
+- ❌ 把“纯 JS”或 preview/development channel 当成 OTA 写权限；所有 OTA channel 当前 BLOCK。
+- ❌ 直接调用 EAS CLI 创建 production build 或 submit，绕过冻结。
 
-**OTA 命令**：
-
-```bash
-./scripts/mobile-ota.sh                        # production channel, commit msg as message
-./scripts/mobile-ota.sh preview                # push to preview channel
-./scripts/mobile-ota.sh production "fix …"     # with explicit message
-```
-
-- **OTA (`scripts/mobile-ota.sh` → `eas update`)** — push 改过的 `.ts/.tsx/.js`。设备 cold start 或 30s+ 后台时拉。只发 iOS bundle (`--platform ios`)，`react-native-maps` 会炸 web bundler，Android 也没在分发。
-- **Channels**: `development` (dev client, iOS sim 允许), `preview` (内部分发), `production` (App Store, 自动 bump iOS build 号, `ascAppId=6763569720`)。见 `mobile/eas.json`。
+**OTA Gate**：`scripts/mobile-ota.sh` 与 `scripts/mobile-ota-rollback.sh` 的所有 channel
+网络写入均在 Git/状态/锁/EAS 前返回 78。配置中存在 development/preview/production
+profile 不等于 writer 获得授权；远端 channel→branch 映射可能漂移或共用。
 
 **本地 build 失败排查路径**（比 EAS log grep 快 10 倍）：
 1. `npx expo prebuild --platform ios --clean` 看是否报错
@@ -205,8 +205,11 @@ The Expo app uses `expo-router` (file-based routing under `mobile/app/`), `@tans
 
 #### Cross-platform asymmetries (know these before shipping Android)
 
+- Android is not a shipped, release-audited Mobile surface. `npm run android`/`expo run:android`
+  is frozen at exit 78 because it may generate native files, apply debug signing and install via
+  ADB without the exact-iOS-Simulator destination guard. No Android native repo CLI exception exists.
 - `modules/shared-keychain/` — custom native module for sharing the JWT with iOS app extensions (Siri / Widget). **iOS-only**; Android has no implementation. `index.ts` silently `noop`s on Android, so widget / extension features simply don't work there.
-- `mobile-ota.sh` pushes iOS-only (see above).
+- `mobile-ota.sh` 的协议目标曾为 iOS-only；当前所有 channel writer 均冻结（见上）。
 - Before treating Android as shipped, audit both of these.
 
 #### Feature parity status
@@ -240,26 +243,85 @@ python server.py     # See mcp-server/README.md for tool list
 
 ### Deployment
 
+> **Production release freeze（2026-08-12）**：仓库内 release bootstrap 不是可信根。
+> 同 UID 已可借 Git replace、共享 info attributes + filter、隐藏 untracked import shadow、
+> `BASH_ENV`、`PYTHONPATH`/`sitecustomize` 在 repo 内校验之前改变执行语义。因此所有
+> repo 内 server/Mobile/Mac/ASC 自动远程/供应商 release entrypoint、本机签名/安装/自动
+> provisioning 入口与发布旁路均返回 78；raw SSH、供应商 CLI、内部 helper 或环境变量
+> override 不是 release 兜底。人工 release Gate 只表示 STOP/BLOCK。
+> server-local DB migration/setup/admin utility 另属显式 manual admin Gate，只能在生产主机
+> 独立事件流程中运行，且不得被自动 release 入口调用。
+>
+> 仓库内 `exit 78` 仅是 ordinary invocation 的 tombstone/negative regression，不是 hostile
+> caller 的信任边界：`BASH_ENV` 可在 body 前运行，caller 也可预定义 `exit`/`builtin`
+> function。因此 `deploy.sh` 与 `_run-mobile-tf.sh` 的旧 writer 只能留在 literal-false、
+> 语法级不可达 tombstone；runtime/operator 路径严禁 source/extract/eval。隔离测试可抽取
+> marker fixture 做协议回归，但不得调用 writer/联网，也不构成 release proof。真正
+> bootstrap boundary 仍须
+> repo-external root-owned `env -i` launcher。
+
+当前 release surface 只允许下列**纯本地离线检视**路径：
+
 ```bash
-./deploy.sh -f   # Frontend only (most common)
-./deploy.sh -b   # Backend only (also syncs Skills, restarts Celery worker+beat, does DB backup)
-./deploy.sh -a   # Both (same as no flags)
-./deploy.sh -e   # Sync .env to server and restart
-./deploy.sh -r   # Restart services without pulling code
-./deploy.sh -p   # Push code to GitHub without deploying
-./deploy.sh -s   # Check service status
-./deploy.sh -l   # View logs
+./scripts/mobile-local-qr.sh --no-upload --ipa <EXISTING_IPA>
 ```
 
-Backend deploy validates the first-party `backend/skills/*/SKILL.md` manifest. Post-deploy, `backend/scripts/system_health_score.py` runs — on failure, deploy auto-rollbacks.
+`scripts/release.py` / `scripts/release.sh` 的 `plan`、`validate` 和 `publish` 会进入 root SSH
+或使用 `EXPO_TOKEN` 执行 EAS channel observation，全部须在网络/凭证读取前 earliest
+`exit 78`。`scripts/release_production_state.py` 的 `server`、`server-under-lock`、`mobile`
+联网模式也冻结；只保留消费调用方已有本地材料的 offline evidence parser。公开未认证
+HTTPS 可描述现状，但与离线证据一样不能形成 G5/G6。
 
-### Database Migrations
+Mobile 反馈只用本地 Metro、iOS Simulator 和本地测试；`npm run ios` 固定走 Simulator
+wrapper，不得向 npm/Expo 追加 `--device`。wrapper 只从 available Simulator inventory
+解析并锁定 exact Simulator UDID；物理 iOS repo CLI、连接/安装/验收冻结。上述
+该命令只能读取现成 IPA 并生成 metadata/report；不生成 install manifest/安装二维码，也不
+承诺可安装。禁止自动 archive/export/signing/provisioning，
+尤其禁止 `mobile-fast-device.sh`、`mobile-local-device.sh` 和
+`-allowProvisioningUpdates`。所有 OTA/rollback channel 的网络写入均冻结；不得
+把 preview/development 当作隔离兜底。
+
+Mac/nginx direct Python production CLI 也全部冻结。协议测试仅允许 strict non-root、
+explicit test mode 且所有路径位于固定 non-production roots（macOS `/private/tmp` 或
+`/private/var/folders`；其他平台 `/tmp`，忽略 caller `TMPDIR`）；本地 `create-candidate`
+也须满足相同隔离条件，只生成候选元数据，不签名、不发布。`deploy.sh --inspect-release-lock`
+也冻结并须在读取 lock/env 前 `exit 78`；应用层脱敏不能阻止 `SHELLOPTS=xtrace`/`BASH_ENV`
+在 repo guard 前捕获变量。等待 repo-external root-owned inspector，不得用 raw SSH/helper
+代查。
+
+`apps/mac/scripts/release-dmg.sh` 整个入口冻结，原 preflight/proof 模式也不能运行；含
+writer 代码的 shell 不得兼任 read-only checker。任何 Mac 只读 checker 必须是独立、无
+writer 代码的受审文件。test-only protocol fixture/local candidate 例外不授予该 shell
+可执行权。
+
+`deploy.sh` 的 status/logs/inspect 全部冻结；唯一 repo invocation 是 exact `-h` 或
+`--help` 的普通调用，用于输出静态帮助；它不构成 hostile caller trust proof。所有 production
+observation 等待 repo-external root-owned/restricted inspector。Rokid tracked
+`gradlew`/`gradlew.bat`、`assembleRelease` 与 ADB install 是 debug-sign/build/install 旁路，
+全部冻结；没有受审 unsigned compile/test wrapper，故不宣称本地 Rokid compile/test 可用。
+
+`scripts/check_app_store_release_pack.py --final-submit` 会登录 production reviewer 并取得
+可写 bearer token，也必须在登录/凭证读取前冻结。只可运行不带 `--final-submit` 的静态
+pack 校验和纯静态 `check_ios_app_store_submission.py`；不得把结果解释为 ASC/submission
+授权。
+
+本地验证、公开未认证 HTTPS 或离线 production evidence 不能授权后续 mutation，也不能
+形成 G5/G6。恢复 production
+发布必须新建 dossier，并由仓库外 root-owned launcher 使用固定解释器、`env -i`
+allowlist 与 canonical archive/tree materialization；独立 G4 通过前，App Store submission
+同样 BLOCK。源码 commit/PR/merge 只表示代码交付，不表示上线。
+
+### Database Migrations (local development only)
 
 No Alembic — migrations are manual SQL files in `backend/migrations/`:
 
 ```bash
-psql $DATABASE_URL -f backend/migrations/create_xxx_tables.sql
+psql "<LOCAL_DEVELOPMENT_DATABASE_URL>" -f backend/migrations/create_xxx_tables.sql
 ```
+
+Production migration/setup/admin utilities are not automatic release entrypoints. They may run only
+inside a separately authorized, explicit manual-admin event on the production host and must never be
+invoked by an automatic release entrypoint. Do not disguise a blocked release as such an event.
 
 ## Architecture
 
@@ -476,10 +538,8 @@ Root-level `docker-compose.yml`, `Dockerfile.backend`, `Dockerfile.frontend` for
 
 ### Logs
 
-```bash
-ssh root@39.98.206.178 "journalctl -u health-backend -n 50 --no-pager"
-ssh root@39.98.206.178 "pm2 logs health-frontend --lines 50"
-```
+`deploy.sh` status/logs/inspect 全部冻结。production observation 只能等待 repo-external
+root-owned/restricted inspector；不要以 raw SSH/PM2/systemctl/provider console 兜底。
 
 ## CI/CD
 
@@ -504,7 +564,8 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 | 处理敏感数据（基因、化验、CGM、消息） | `§5 数据安全与隐私` |
 | 写 commit / 发 PR | `§6 代码提交规范` |
 
-本文件范围内只记与架构相关的一条：所有后端路由挂在 `/api/v1` 下;生产密钥在 `.env`(不入库,`deploy.sh` 同步)。
+本文件范围内只记与架构相关的一条：所有后端路由挂在 `/api/v1` 下；生产密钥不入库。
+历史 `deploy.sh` env 同步当前随自动 release entrypoint 冻结。
 
 ## Complexity Budget (复杂度预算)
 
@@ -543,7 +604,9 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 ### System health score
 
 - **Script**: `backend/scripts/system_health_score.py`（项目的 "val_bpb"）
-- `deploy.sh` 部署后自动运行；阈值 `DEPLOY_SCORE_THRESHOLD=35`（满分 60，skip-tests 模式）。低于阈值自动回滚到上一版本。
+- 未来获权部署协议会在部署后运行该评分；历史阈值为 `DEPLOY_SCORE_THRESHOLD=35`
+  （满分 60，skip-tests 模式），低于阈值自动回滚。当前 `deploy.sh` 与 rollback 均冻结，
+  不能运行此生产 Gate。
 - 任何改动不应导致健康度评分下降。
 
 ## Architecture Layers (四层分离)
@@ -558,7 +621,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 | `backend/app/twin/schema.py` | Digital Health Twin Pydantic schema（14 分区） |
 | `backend/main.py` 中间件部分 | 安全头、CORS、限流、请求上下文 |
 | `backend/tests/conftest.py` | 测试基础设施 |
-| `deploy.sh` | 部署流程（含备份与回滚） |
+| `deploy.sh` | 历史部署流程（含备份与回滚）；当前 status/logs/inspect/writer 全冻结，仅 exact help 可用 |
 
 ### Agent 层 (Agent Fleet) — 确定性规则 + 结构化裁决
 

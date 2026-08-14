@@ -5,6 +5,14 @@
 > Updated: 2026-08-01
 > Related PRD/PDD: `docs/prd/2026-08-01-cross-surface-chat-continuity.md`
 > Related code: `backend/app/api/agent.py`, `frontend/src/app/ai-assistant/page.tsx`, `mobile/hooks/useChatEngine.ts`, `mobile/app/(tabs)/chat.tsx`
+>
+> **Current release override (2026-08-12):** all repo-contained automatic remote/vendor release
+> entrypoints, local signing/install/automatic-provisioning entrypoints and every OTA/rollback
+> channel are frozen. EAS channel→branch mapping can drift or be shared, so preview/development is not an
+> exception. Production network observation and release plan/validate are also frozen. Only local
+> validation, offline evidence and public unauthenticated HTTPS are allowed, and none forms G5/G6;
+> release is BLOCKED pending a new
+> repo-external trust-root dossier and independent G4.
 
 ## 1. Decision
 
@@ -167,10 +175,10 @@ the status-bar/full-screen and title hierarchy checks.
 
 ## 13. Rollout And Rollback
 
-No migration or feature flag is required. Web deploys with the normal frontend
-release; Mobile changes are JS/TS-only and use production OTA. Rollback restores
-the previous frontend build and Mobile bundle; durable conversation data is
-untouched.
+No migration or feature flag is required. Validate Web and Mobile locally; do not deploy frontend
+or call any OTA/rollback channel. The manual release Gate remains BLOCKED, and an existing candidate
+is read-only. There is no active production rollback writer; additive backend compatibility remains
+and durable conversation data is untouched.
 
 ## 14. Open Questions
 

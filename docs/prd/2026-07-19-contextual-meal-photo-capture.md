@@ -1,5 +1,16 @@
 # PRD: 上下文餐食照片采集
 
+> **CURRENT RELEASE OVERRIDE (2026-08-12):** 所有 repo 内自动远程/供应商 release
+> entrypoint、本机 signing/install/automatic provisioning entrypoint 与所有 OTA/rollback
+> channel writer 均冻结。EAS
+> preview/development 不能证明与 production 隔离。本文发布顺序
+> 当前仅作未来依赖设计；production network observation 与 release plan/validate 均冻结，
+> 只允许本地 Metro/iOS Simulator/test、offline evidence 与公开未认证 HTTPS，且不能形成
+> G5/G6。`npm run ios`
+> 固定走 Simulator wrapper，不得向 npm/Expo 追加 `--device`；wrapper 锁定 exact available
+> Simulator UDID，物理 iOS repo CLI 冻结。manual Gate 必须 BLOCK/STOP，直到
+> 新 dossier、repo-external root-owned launcher 和新独立 G4 完成。
+
 ## Goal
 
 让“小巴收到的食物照片”成为可解释、可复盘的饮食事实：在用户当地正常餐时，高可信餐食图可自动进入当天饮食；其余情境在当前对话内提供确认卡，而不是要求用户猜出“记录”口令。
@@ -133,4 +144,6 @@ Then it does not display “已记录” and preserves a recoverable pending dra
 - Photos stay private and owner-scoped; logs contain ids and reason codes, not food content, raw image or signed URLs.
 - Nutrition remains an estimate unless independently measured; no diagnosis, prescription, dose or causal claim is introduced.
 - Automatic writes are allowlisted to diet records only. Deletion continues through the existing owner-scoped diet-history flow; there is no new optimistic undo, automatic notification, sharing or external media transfer.
-- Deploy backend and migration first, generate Web/Mobile API types, then ship Mobile OTA. Existing `image_url` readers remain functional during phased client adoption.
+- Validate migration/backend compatibility and regenerate Web/Mobile API types locally. Do not deploy
+  backend/migration or call any OTA channel; existing `image_url` compatibility is a future rollout
+  invariant only, and the current release Gate remains BLOCKED.

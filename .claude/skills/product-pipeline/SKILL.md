@@ -12,6 +12,25 @@ description: "复元产品全生命周期总指挥:把一句用户需求,经『�
 > - **后半段(实现→测试→评审→部署→验证)委托给已有零件,绝不重造**:`health-harness-orchestrator`、`backend-deploy` / `mobile-ota` / `mobile-testflight-release`、`safety-gate` / `safety-privacy-reviewer`、`qa-verifier`、`council-review`。
 > - 何时**不**用本 skill:单文件小修 / 纯文档 / 机械改动 → 直接做或用单个 `Agent`;只做实现+上线(需求已定)→ 直接用 `health-harness-orchestrator`。
 
+> **当前 production freeze（2026-08-12，覆盖下文常规 S6–S8）**：同 UID writable repo
+> 可经 Git replace、shared info attributes+filter、隐藏 untracked import shadow、
+> `BASH_ENV`、`PYTHONPATH`/`sitecustomize` 越过 repo 内 bootstrap。server、Mobile、Mac、
+> ASC/App Review 与历史 release 旁路 writer 全部 exit 78；Mobile 所有 channel 的 OTA/rollback
+> 也冻结（channel→branch 映射可能漂移或共用）。`release.py`/`release.sh`
+> plan/validate/publish、`release_production_state` 联网模式与 deploy status/logs/inspect 也
+> 全部 earliest exit 78。只允许 offline evidence parser、公开未认证 HTTPS、本地
+> Metro/iOS Simulator/test，和
+> `mobile-local-qr.sh --no-upload --ipa <EXISTING_IPA>` 的离线 IPA metadata/report（无安装
+> manifest、安装二维码或可安装承诺）。禁止自动 archive/export/signing/
+> provisioning，bare `--no-upload` 也冻结。
+> manual Gate 是 STOP/BLOCK；G5、G6、App Store submission 均 BLOCK，S8 不得标 shipped。
+> server-local DB migration/setup/admin utilities 另属独立 manual-admin Gate，不得由本自动
+> release pipeline 调用，也不能把 release BLOCK 改名为 admin event。
+> repo rc78 仅是 ordinary-invocation tombstone：Bash caller 可经 `BASH_ENV` 覆盖
+> `exit`/`builtin`。`deploy.sh`/`_run-mobile-tf.sh` legacy 必须 literal-false、语法级不可达，
+> runtime/operator 不得 source/extract/eval；隔离测试 marker extraction 仅作无 writer/网络
+> fixture，不构成 proof。`release-dmg.sh` 整体冻结且不能兼任 checker；这些都不能替代外部 trust root。
+
 ## 核心理念(读这段就懂为什么这样设计)
 
 1. **Gate 而非 Stage**:每个阶段之间有一道**能失败、能 STOP** 的闸。流水线的价值在闸,不在线。
@@ -19,7 +38,9 @@ description: "复元产品全生命周期总指挥:把一句用户需求,经『�
 3. **最便宜的 kill 前置**:准入(G1)+ 可行性/安全压测(G2)在写代码前跑。
 4. **Dossier 作脊柱**:每 feature 一份档案,串起全链 + 每道 Gate 裁决 + 状态 → 追溯 + 可恢复。
 5. **人在环**:G1 准入、G2 待拍板、G5 真机/发布、G6 验证 —— 显式 STOP 问用户,不偷偷自治。
-6. **反馈环纪律**:长动作异步、OTA-vs-EAS 路由、测试不 `| tail`、部署前集成闸 + Codex capstone、部署后健康分自动回滚。
+6. **反馈环纪律**:测试不 `| tail`、部署前集成闸 + Codex capstone；冻结期只跑纯本地反馈
+   环、offline evidence parser 或公开未认证 HTTPS，不启动 release plan/validate、
+   OTA/rollback 或任何 production 长动作。
 
 ## 流水线总览
 
@@ -31,9 +52,9 @@ description: "复元产品全生命周期总指挥:把一句用户需求,经『�
                                                                                               │
               ┌──────────────── 交付环(昂贵 · 有闸)──────────────────────────────────────┘
               ▼
- S4 需求分解 ─▶ S5 实现 ─▶[G3 测试闸]─▶[G4 安全闸]─▶ S6 部署 ─▶[G5 部署健康闸]─▶ S7 上线验证 ─▶[G6 验证闸]─▶ S8 沉淀
-  plan→分支/任务  harness   集成闸+capstone  safety-gate   deploy/ota   健康分≥阈值     prod 验证        真机/anchor    memory+档案归档
-  (写进 Dossier)  orchestrator (真红回 S5)  (BLOCK 回 S5) testflight    (自动回滚)      +回路闭合       (FAIL→回滚)
+ S4 需求分解 ─▶ S5 实现 ─▶[G3 测试闸]─▶[G4 安全闸]─▶ S6 冻结 Gate ─▶[G5 BLOCK]─▶ S7 未准入 ─▶[G6 BLOCK]─▶ S8 仅沉淀
+  plan→分支/任务  harness   集成闸+capstone  safety-gate    writer=78      无部署事实      无 prod 验证     无上线裁决     dossier=blocked
+  (写进 Dossier)  orchestrator (真红回 S5)  (BLOCK 回 S5) 离线/纯本地       不得伪造健康分                 不得 shipped
 ```
 
 每道 Gate 失败 → 回到指定上游阶段,**绝不带红/带 BLOCK 往下走**。
@@ -125,26 +146,42 @@ python3 scripts/harness_workflow_trace.py init \
 - **裁决**:阻断项整改 + 复审才放行;新安全行为(如 on-watch LLM)需 spec + 对抗测试。**BLOCK 回 S5。**
 
 ### S6 · 部署 — **委托 deploy/ota/testflight skill**
-- **路由**(feature-plan 项目约束):
-  - 后端改动 → `backend-deploy`(`deploy.sh -b`,从干净 worktree track origin/main + scp 真 prod .env,[[project_deploy_b_from_clean_worktree]])。
-  - mobile JS/TS 改动 → `mobile-ota`(从 origin/main 干净 worktree 打整包,[[feedback_verify_agent_landed_and_ota_from_clean_main]])。
-  - native/app.json/Info.plist/新 module/SDK → `mobile-testflight-release`(EAS build,**异步,不等**)。
-- **序**:**先后端 deploy → `npm run generate-types`(若改 schema)→ 再 mobile OTA**。
-- **产出物**:部署 SHA + 回滚点写进 Dossier。
+- **当前路由**：repo 自动 server/Mobile production/Mac/ASC writer 以及 legacy raw
+  SSH/直传/服务器构建 release 旁路一律 `exit 78`。不得把“人工 release Gate”解释为直接运行供应商 CLI、release helper 或
+  production 控制台操作。
+- **shell tombstone**：rc78 仅是 ordinary invocation 的 negative marker；writer legacy 必须
+  语法级不可达，runtime/operator 不得 source/extract/eval。隔离 marker fixture 测试不是
+  release proof。Mac `release-dmg.sh` 不存在 read-only 模式。
+- **仍可执行**：offline evidence parser、公开未认证 HTTPS、本地 Mobile Metro/iOS
+  Simulator/test（`npm run ios` 固定走 wrapper，不得向 npm/Expo 追加
+  `--device`；wrapper 锁定 exact available Simulator UDID，物理 iOS repo CLI、连接/
+  安装/验收冻结），以及
+  `mobile-local-qr.sh --no-upload --ipa <EXISTING_IPA>` 的离线 IPA metadata/report（无安装
+  manifest、安装二维码或可安装承诺）。禁止自动 archive/export/signing/
+  provisioning（尤其 `-allowProvisioningUpdates`）。所有
+  OTA/rollback channel writer 均 BLOCK。
+- **产出物**：冻结原因、离线/公开现状、`G5=BLOCK`、`G6=BLOCK`、Store Gate 状态写进
+  Dossier；没有部署 SHA/回滚点时不得虚构。
+- **解冻**：另立 dossier，落地 repo-external root-owned launcher（固定解释器、
+  `env -i`、canonical archive/tree 仓库外 materialization）并通过新的独立 G4，才可重新
+  制定 S6 runbook。
 
 ### G5 · 部署健康 Gate
-- **做什么**:`deploy.sh` 部署后自动跑 `system_health_score.py`(阈值 `DEPLOY_SCORE_THRESHOLD=35`,低于自动回滚);+ prod 活体 smoke(`systemctl is-active` + 真实路由 curl 期望 200/401 + 启动日志无 error + 新迁移表/列 ssh 实查存在)。
-- **裁决**:健康分 < 阈值 → 已自动回滚 → 回 S5 修;smoke 异常 → 调查([[project_medication_phase_advance_blocked]] 的 deploy 复验范式)。
+- **当前裁决**：**BLOCK**。没有获准的 production mutation，就不存在可裁决的部署健康
+  Gate。offline evidence/公开未认证 HTTPS 只能描述现状，不能升级为 G5 PASS。
 
 ### S7 · 上线验证
-- **做什么**:在 prod 用**真实使用路径**验证需求达成(curl 关键端点 / 健康分 / **真机或 anchor 用户视角** —— mobile/watch 改动用户在真机验,见 Dossier 验收清单)。把结果归因「相关非因果」措辞。
-- **产出物**:验证记录写进 Dossier。
+- **当前状态**：未准入。可以保存 local/offline evidence 或公开未认证 HTTPS 结果，但必须
+  显式标为非生产、
+  非因果、非上线证据。
 
 ### G6 · 验证 Gate — **人在环(真机/发布由用户确认)**
-- **裁决**:需求在 prod 对 anchor 用户真成立 → **PASS(回路闭合)**;不成立 → 记缺口 → 回 S5 或回滚。真机/发布类必经用户确认([[feedback_mobile_testflight_use_local_archive]])。
+- **当前裁决**：**BLOCK**。用户确认不能替代可信 production launcher/G4，也不能把
+  existing candidate 或 Simulator 结果写成 public production 闭环；物理 iOS 验收当前
+  冻结，缺口必须保持 BLOCK。
 
 ### S8 · 沉淀
-- **做什么**:把本轮新坑沉淀回**对应 agent 定义 / 本 skill / memory**(harness 是演进系统);更新 `docs/ARCHITECTURE.md` + `check_doc_drift.py` EXPECTED(若加 model/规则/分区);更新 mobile/Web parity 表;Dossier 状态 → **shipped**。
+- **做什么**:把本轮新坑沉淀回**对应 agent 定义 / 本 skill / memory**(harness 是演进系统);更新 `docs/ARCHITECTURE.md` + System Map 生成物(若结构变化);更新 mobile/Web parity 表。冻结期 Dossier 保持 **blocked**，不得转 `shipped`/`complete`。
 - **摩擦检测**:需要判断是否该沉淀新规则时,先跑 `python3 scripts/harness_friction_scan.py --input docs/dossiers/<date>-<slug>.md --json`(也可指向会话导出/计划文件)。它只输出「用户重复/纠正真源/反复追问完成」等候选证据和 suggested_rule,**不自动改 memory 或 skill**;晋级仍必须走 reviewed gate / 手动记忆更新。
 
 ---
@@ -157,8 +194,8 @@ python3 scripts/harness_workflow_trace.py init \
 | G2 可行性+安全 | 平台不可行 / R4·R15·PIPL 违反 | 焊进规划 reframe;待拍板 STOP |
 | G3 测试 | 真红 / main CI 红 | 回 S5;**绝不 `\| tail` 吞退出码** |
 | G4 安全 | BLOCK 项 | 回 S5 整改 + 复审 |
-| G5 部署健康 | 健康分 < 35 | 已自动回滚 → 回 S5 |
-| G6 验证 | prod 不达成 | 记缺口 → 回 S5 或回滚 |
+| G5 部署健康 | 自动 release entrypoint/production observation 冻结，无可信部署事实 | **BLOCK**；不得用 offline/public observation 代替 |
+| G6 验证 | 未完成获准部署与 public/anchor 验证 | **BLOCK**；不得标 shipped |
 
 ## 降级与并行
 
@@ -166,7 +203,7 @@ python3 scripts/harness_workflow_trace.py init \
 - **单文件降级**:纯机械/纯文档/无用户行为改变的小修,可跳 S1 大 discovery(直接小范围 grep)、PRD+规划合一页、单 agent 实现。但 **Gate 不可跳**(尤其 G3/G4/G5)。
 - **升级为全流程**:Quick Flow 中一旦发现跨端契约、新写路径、认证/CORS、R4/R15/PIPL、安全规则、长期数据模型或无法在 1 页 tech-spec 内解释清楚,立即升级为全流程,回 S1/S2 补 discovery/PRD/规划。
 - **correct-course**:实现或评审中若发现旧基线错误、scope 必须变、Gate 假设被证伪,不要在原计划上静默漂移;在 Dossier 增加 **Correction Block**(触发/旧基线/新基线/回退阶段/需重跑 Gate),更新 PRD/Plan 后从指定阶段继续。若回到 S2/S3,必须重跑 G2 出口一致性闸。
-- **并行**:定义环的 discovery readers 并行;交付环的多端实现 fan-out 并行;长动作(EAS/deploy)异步触发不等。
+- **并行**:定义环的 discovery readers 并行;交付环的多端实现 fan-out 并行；冻结期不触发 EAS/deploy/ASC/Mac production 长动作。
 - **可恢复**:任何中断后,读 Dossier「当前阶段 + 状态」从断点续。
 
 ## 与现有 skill 的边界(别撞车)
@@ -175,7 +212,7 @@ python3 scripts/harness_workflow_trace.py init \
 |---|---|
 | 一句需求走完整个产品生命周期 | **本 skill** |
 | 需求已定,只做实现→上线 | `health-harness-orchestrator` |
-| 只部署后端 / 推 OTA / 发 TestFlight | `backend-deploy` / `mobile-ota` / `mobile-testflight-release` |
+| 上线/OTA/TestFlight 请求 | 对应 release skill 只做冻结裁决、offline evidence/public unauthenticated HTTPS 与纯本地路径 |
 | 只做敏感改动安全闭环 | `safety-gate` |
 | 只做三方对抗评审 | `council-review` |
 | 加 Safety 规则 / Specialist / 迁移 / 修 doc-drift | `extend-safety-or-specialist` / `add-managed-migration` / `doc-drift-fix` |

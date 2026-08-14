@@ -1,5 +1,10 @@
 # Feature Spec: Mobile 邀请制手机号注册
 
+> **Current release override (2026-08-12):** all repo-contained automatic remote/vendor release
+> entrypoints, local signing/install/automatic-provisioning entrypoints and OTA/rollback channels are
+> frozen. Validate locally only; do not deploy schema/API/Admin, publish OTA, build/sign/install, or toggle enforcement.
+> Manual release Gate is BLOCK pending a new external trust-root dossier and independent G4.
+
 > Status: approved_definition
 > Owner: Codex
 > Updated: 2026-08-01
@@ -152,14 +157,15 @@ Then the backend returns 403 and writes no invitation mutation
 # Mobile login/invite/deep-link/SecureStore tests + TypeScript
 # Frontend admin invitation tests + build
 # Repo doc drift + dossier consistency + git diff --check
-# iOS real-device OTP autofill, deep link, invited registration, old-user login
+# Future external manual iOS evidence: OTP autofill, deep link, invited registration, old-user login
+# Current physical iOS execution is frozen; Simulator results cannot satisfy this gap.
 ```
 
 ## 13. Rollout And Rollback
 
-使用 server-side enforcement flag 分阶段上线：Backend additive schema/API → Admin → Mobile OTA →
-覆盖率确认 → 禁止陌生手机号自动建号 → 移除默认邀请码旁路。回滚时关闭新用户注册，保留
-老用户手机号登录；绝不以重新开放无邀请注册作为自动回滚。
+当前不分阶段上线，也不修改 server-side enforcement flag；本地验证 additive schema/API、
+Admin 和 Mobile 契约后记录 BLOCK。未来获准 rollout 仍须保持 additive-first 与“不以重新
+开放无邀请注册作为自动回滚”的安全不变量。
 
 ## 14. Open Questions
 
@@ -170,4 +176,3 @@ Then the backend returns 403 and writes no invitation mutation
 | Date | Change | Reason |
 |---|---|---|
 | 2026-08-01 | Approved definition | 用户确认绑定手机号、短信+手工兜底、发邀即审批 |
-

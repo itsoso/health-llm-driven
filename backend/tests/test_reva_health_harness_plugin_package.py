@@ -58,6 +58,13 @@ def test_reva_health_harness_packages_core_project_skills():
         ).read_text(encoding="utf-8")
 
 
+def test_reva_health_harness_packages_product_pipeline_template():
+    packaged = PLUGIN / "skills" / "product-pipeline" / "dossier-template.md"
+    source = ROOT / ".claude" / "skills" / "product-pipeline" / "dossier-template.md"
+
+    assert packaged.read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
+
+
 def test_product_pipeline_documents_quick_flow_and_correct_course():
     skill = (ROOT / ".claude" / "skills" / "product-pipeline" / "SKILL.md").read_text(encoding="utf-8")
     template = (ROOT / ".claude" / "skills" / "product-pipeline" / "dossier-template.md").read_text(

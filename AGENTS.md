@@ -546,16 +546,16 @@ CREATE TABLE IF NOT EXISTS example_table (
 CREATE INDEX IF NOT EXISTS idx_example_name ON example_table(name);
 ```
 
-**执行迁移:**
+**执行迁移（仅本地开发 PostgreSQL）:**
 
 ```bash
-# 通过 psql 执行迁移
-psql $DATABASE_URL -f migrations/create_xxx_tables.sql
-
-# 或在服务器上
-cd /opt/health-app/backend
-psql "$DATABASE_URL" -f migrations/create_xxx_tables.sql
+# 明确传入本地开发库 URL；不要复用 production DATABASE_URL
+psql "<LOCAL_DEVELOPMENT_DATABASE_URL>" -f backend/migrations/create_xxx_tables.sql
 ```
+
+production migration/setup/admin utility 不属于自动发布器，只能在生产主机的**独立、显式
+manual admin 事件**中由获权操作者执行并留审计。任何 repo 内自动 release entrypoint 都
+不得调用它；发布 Gate 的 BLOCK 也不得借 raw SSH/直接 `psql` 偷换成 admin 事件。
 
 ### 9.4 PostgreSQL vs SQLite 语法差异
 
@@ -604,8 +604,74 @@ class ExampleModel(Base):
 
 - 后续开发默认直接在 `main` 分支进行，除非用户明确要求隔离分支或 worktree。
 - 完成代码修改后，默认执行必要验证、`git commit`、`git push`。
-- 需要上线的改动，按项目规范通过根目录 `deploy.sh` 部署并验证。
-- Mobile 端纯 JS/TS/UI 改动可使用 `scripts/mobile-ota.sh production "<message>"` 热更新；需要可扫码安装的新 iOS 包时，默认使用 `scripts/mobile-local-qr.sh` 生成二维码安装包。除非用户明确指定 TestFlight，否则不要走 TestFlight/EAS submit。
+- 提交或推送源码**不等于**获得生产发布授权；下面的冻结边界优先于任何历史部署偏好。
+- **Repo release entrypoint 冻结（2026-08-12）**：同 UID 可写仓库无法闭合 bootstrap
+  trust。已复现 Git replacement refs、共享 `.git/info/attributes` + local
+  clean/smudge filter、被 `.git/info/exclude` 隐藏的 untracked import shadow，以及
+  `BASH_ENV`、`PYTHONPATH`/`sitecustomize` 在 repo 内 guard 前执行。因而 clean status、
+  canonical SHA/tree、repo 内 lock/receipt/proof 都不能作为生产执行信任根。
+- 仓库入口观察到的 `exit 78` 只是 ordinary invocation 的负向回归/tombstone，不是 hostile
+  caller 下的安全边界：Bash caller 可用 `BASH_ENV` 并预定义同名 `exit`/`builtin` function，
+  在 script body 前改变语义。故 writer-bearing legacy 不能只靠顶部 guard；`deploy.sh` 与
+  `scripts/_run-mobile-tf.sh` 的历史实现必须留在 literal-false、语法级不可达 tombstone；
+  runtime/operator 路径严禁 source/extract/eval 后执行。测试可以在隔离 fixture 中抽取
+  marker block 做协议回归，但不得调用 writer、联网或把结果当 release proof。只有
+  repo-external root-owned launcher 的 `env -i` 等外部
+  控制能建立 bootstrap boundary。
+- 所有 repo 内自动远程/供应商 release entrypoint 均冻结：server backend/frontend/all、
+  env、health-evidence activation、App Review reset、restart、server push、release
+  coordinator；Mac route/publish/recover/rollback；Mobile **所有 channel** OTA/rollback 与
+  production native/EAS/ASC；以及作为发布旁路的 raw SSH/直传/server-build helper。它们
+  必须在 mutation 前 `exit 78`，不得靠环境变量、别名或 direct vendor CLI 绕过。
+- **边界例外**：server-local DB migration/setup/admin utilities 属独立 manual admin Gate，
+  不是自动 release entrypoint，不宣称冻结。它们只可在生产主机的显式人工变更/事件流程
+  中由获权操作者运行并留审计；任何自动 release 入口不得调用。release manual Gate 仍是
+  STOP/BLOCK，不能临时改名成 admin 事件。
+- `scripts/release.py` / `scripts/release.sh` 的 `plan`、`validate` 与 `publish` 都会进入 root
+  SSH 或带 `EXPO_TOKEN` 的 EAS channel observation，因此全部须在网络/凭证读取前 earliest
+  `exit 78`。`scripts/release_production_state.py` 的 `server`、`server-under-lock`、`mobile`
+  联网模式同样冻结；只保留对调用方已有本地材料的纯 offline evidence parser。允许公开、
+  未认证 HTTPS 观察，但它和离线证据都不能形成 G5/G6。
+- 当前纯本地允许面只有本地 Metro、iOS Simulator 和测试。`mobile/package.json` 的
+  `npm run ios` 固定走 Simulator wrapper；
+  不得向 npm/Expo 追加 `--device`。wrapper 只从可用 Simulator inventory 解析并锁定 exact
+  Simulator UDID；物理 iOS repo CLI、连接/安装/验收冻结。仅允许
+  `scripts/mobile-local-qr.sh --no-upload --ipa <EXISTING_IPA>` 对现成 IPA 生成离线检视
+  metadata/report；它不生成 install manifest、安装二维码，也不承诺可安装。
+  禁止 `mobile-fast-device.sh`、`mobile-local-device.sh` 及任何自动
+  archive/export/signing/provisioning/install（尤其 `-allowProvisioningUpdates`）。任何 EAS
+  channel→branch 外部映射都可能漂移或共用，故 preview/development 也不能证明不会触达
+  production，所有 OTA/rollback 网络 writer 均冻结。Mac 仅允许本地 compile/test；
+  ad-hoc/Developer ID 签名、公证与 package/install 不在允许面。
+- Android 尚不是 shipped/audited Mobile surface。`npm run android`/`expo run:android` 会
+  自动 native generation、debug signing 与 ADB install，且没有 exact-iOS-Simulator
+  目标守门，因此 repo entry 必须 earliest `exit 78`；冻结期无 Android native CLI 例外。
+- Mac/nginx direct Python production CLI 与 wrapper 同样冻结。协议代码只可在 strict
+  non-root + explicit test mode + 固定 non-production roots（macOS `/private/tmp` 或
+  `/private/var/folders`；其他平台 `/tmp`，忽略 caller `TMPDIR`）下运行测试；本地
+  `create-candidate` 也须满足相同隔离条件，只生成候选元数据，不发布、不取得
+  production authority。
+- `apps/mac/scripts/release-dmg.sh` 整个 shell entrypoint 冻结，原 preflight/proof 模式也
+  不例外；writer-bearing 文件不能兼任 read-only checker。Mac 只读检查必须迁到独立、无
+  writer 代码的受审文件；在它存在前不宣称 `release-dmg.sh` 有任何安全可执行模式。
+- `deploy.sh --inspect-release-lock` 也冻结并须在读取 lock/env 前 `exit 78`：即使应用层
+  脱敏，`SHELLOPTS=xtrace`/`BASH_ENV` 仍可能在 repo guard 前捕获变量。锁状态必须等待
+  repo-external root-owned inspector；不得用 shell trace、raw SSH 或本地 helper 代查。
+- `deploy.sh` 的 status/logs/inspect 全部冻结；唯一 repo entry 例外是 exact `-h` 或
+  `--help` 的普通调用，用于输出静态文本；它也不是 hostile caller 下的 trust proof。production
+  observation 也必须等待 repo-external root-owned/restricted inspector，不能由 repo CLI、
+  raw SSH 或 provider 控制台代查。
+- `scripts/check_app_store_release_pack.py --final-submit` 会登录 production reviewer 并取得
+  可写 bearer token，必须在登录/凭证读取前冻结。仅保留不带 `--final-submit` 的静态 pack
+  校验和纯静态 `check_ios_app_store_submission.py`；它们不授权 ASC mutation 或 submission。
+- Rokid tracked `gradlew`/`gradlew.bat` 可触发 release build 且 release 使用 debug signing，
+  README 的 ADB install 亦属本机 signing/install 旁路；这些入口全部冻结。若没有受审的
+  unsigned compile/test wrapper，不宣称本地 Rokid compile/test 可用，manual external Gate
+  固定 BLOCK。
+- 解冻必须另立 dossier，使用 **repo-external、root-owned launcher**，固定解释器并从
+  `env -i` allowlist 启动，在仓库外按 canonical Git archive/tree materialize 实际执行
+  字节；完成 source/artifact 复证与恢复演练后再过独立 G4。此前 G5、G6 与 App Store
+  submission 均为 **BLOCK**，Dossier 不得写 `shipped`/`complete`。
 
 ## 11. 产品治理 Spec
 

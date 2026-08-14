@@ -1,6 +1,6 @@
 ---
 doc: architecture
-last-reviewed: 2026-08-11
+last-reviewed: 2026-08-12
 generated-source: docs/_generated/system-map.json
 capability-map: docs/system-map/product-map.md
 ---
@@ -159,7 +159,7 @@ flowchart TB
 | `backend/app/twin/schema.py` | HealthTwin 分区 Pydantic schema |
 | `backend/main.py` 中间件 | 安全头 / CORS / 限流 / request context |
 | `backend/tests/conftest.py` | 测试基础设施 |
-| `deploy.sh` | 部署流程(备份+回滚) |
+| `deploy.sh` | 自动 remote release writer 与 status/log/inspect 全冻结；仅 exact `-h`/`--help` 静态帮助可用 |
 
 ### Layer 2 — Agent 层(Agent Fleet)
 
@@ -653,72 +653,96 @@ APNs payload `data.deep_link` → mobile `useNotifications` 接收 → `router.p
 
 ## 十二、部署流水线
 
-### 12.1 Backend (deploy.sh)
+### 12.1 自动 release entrypoint freeze（2026-08-12）
 
-```
-./deploy.sh -b
-    │
-    ├─ 获取本地 + 远端 release lease，冻结 exact expected SHA
-    ├─ 备份/恢复演练/站外归档预检，保存健康回滚点
-    ├─ 将候选 backend env 暂存在 root-only release stage
-    ├─ 停 socket/backend/Celery → 撤销 runtime 授权并 fsync
-    ├─ 原子安装规范 flag=false env → 重启并逐 cgroup PID 证明 false
-    ├─ exact SHA checkout（Git bundle 是 fetch 超时回退）+ locked 依赖 + migration
-    ├─ guard 健康/revision/通用 hold contract 通过后才导入 System KB
-    ├─ staged runtime-only KB contract + health score + skills manifest
-    └─ 成功时线上仍为 flag=false；医学运行时另走 ./deploy.sh -H
-```
+同 UID 可写仓库不能建立 production bootstrap trust。独立评审真实复现：
 
-健康度维度(总分 60 skip_tests 模式):
-- `health_check` (0-30): `/api/v1/health` HTTP 状态 + 延迟
-- `api_latency` (0-20): P95 延迟 (`/health`, `/admin/observability/health`)
-- `error_rate` (0-10): journalctl 近 200 行 `[ERROR]`/`[CRITICAL]` 占比
+1. Git replacement refs 在表面 HEAD SHA 不变时改变解析 tree；
+2. shared `.git/info/attributes` 配合 local clean/smudge filter，在 status clean、SHA/tree
+   看似 canonical 时替换 release worktree 的执行文件；
+3. `.git/info/exclude` 隐藏 untracked import shadow，在 `release.py` import 标准库前执行；
+4. `BASH_ENV`、`PYTHONPATH`/`sitecustomize` 在 repo 内 guard 之前执行。
 
-阈值调参: `scripts/system_health_score.py::FAIL_THRESHOLD` + 各 score 函数内部分段。
+因此 repo-contained source proof、Git common-dir lock/state、same-UID credential、root-owned
+远端 receipt 只能证明它们各自覆盖的阶段，不能证明启动它们的本地字节可信。当前冻结：
 
-`HEALTH_EVIDENCE_RUNTIME_ENABLED=true` 不能通过通用 env/restart 路径上线。受控
-`./deploy.sh -H` 先验证 exact revision、staged KB contract 和 systemd deadman
-能力，再用 `/run` drop-in 做 canary；所有健康、认证、score、语义 contract 通过后，
-才原子提交包含 commit 与 guard hash 的 durable authorization。去掉 canary 并重启
-后，还要证明 backend、Celery worker pool 与 beat 的全部 cgroup PID 都是唯一
-`flag=true`。任何失败必须自动恢复并证明 `flag=false`，否则隔离服务并保留远端
-lease/stage 供人工处置。
+Bash caller 还可在 `BASH_ENV` 中预定义 `exit`/`builtin` function。因此 repo 脚本顶部的
+rc78 只是 ordinary-invocation tombstone，不是 hostile source trust boundary；`deploy.sh`
+与 `_run-mobile-tf.sh` 的 legacy 必须放在 literal-false、语法级不可达 block；
+runtime/operator 禁止 source/extract/eval。隔离测试可抽取 marker fixture 做无 writer/网络的
+协议回归，但不构成 release proof。`release-dmg.sh` 整个入口冻结，writer-bearing shell 不得兼任 checker；
+Mac read-only checker 必须是独立、无 writer code 的受审文件。
 
-通用 deploy/env/restart/rollback 在改代码、配置或知识前都先撤销 durable/runtime
-authorization。SSH/HUP/INT/TERM 导致远端结果不明确时，发布端保留 lease 与 stage，
-禁止启动猜测性的并发 rollback；只有远端命令终止且 schema/auth/quarantine/逐 PID
-终态都已证明，rollback 才报告成功。
+- server backend/frontend/all、env、restart、push、health-evidence activation、App Review
+  reset 与 release-coordinator mutation；
+- Mobile 所有 channel 的 OTA/rollback、production native/EAS/ASC build/upload/
+  selection/submission；
+- Mac Developer ID writer、route bootstrap、publish/recover/rollback；
+- legacy remote deploy、raw SSH/SCP、local archive direct upload、server-side build/pull 等旁路。
 
-### 12.2 Frontend (`-f`)
+这些自动 release/本机签名安装入口在 mutation 前 `exit 78`。环境变量、别名 channel、
+release helper、供应商 CLI 或人工 SSH 发布均不是兜底；manual release Gate 表示
+STOP/BLOCK。server-local DB migration/setup/admin utilities 属独立 manual admin Gate：只可
+在生产主机显式获权事件中运行并留审计，且不得由任何自动 release entrypoint 调用。
 
-```
-./deploy.sh -f
-  → 证明服务器 checkout 是 expected SHA 且 clean
-  → npm ci → build → PM2 restart health-frontend
-  → 再证明 exact SHA/clean/revision
-```
-
-frontend-only 不 checkout 共享仓库、不重启 backend/Celery、不更改 health-evidence
-授权。要部署包含新前端 commit 的版本，必须先走 `--all`/backend 建立同 SHA 后端
-回滚地板。
-
-### 12.3 Mobile
-
-**双通道并行**(2026-05-06 新姿势, `feedback_mobile_dual_channel_parallel.md`):
+### 12.2 当前可用 release surface
 
 | 通道 | 适合 | 命令 |
 |---|---|---|
-| **本机 Simulator** | 日常 JS 迭代 (90%) | `cd mobile && npx expo start --dev-client` (Metro) + `npx expo run:ios --no-bundler` |
-| **OTA production** | JS-only 推已装 TestFlight | `./scripts/mobile-ota.sh production "msg"` (~30s) |
-| **EAS build production** | 有 native 改动 / 发版 | `eas build -p ios --profile production --auto-submit --non-interactive` (~20min) |
-| **EAS build development** | 真机 dev-client (热重载) | `eas build -p ios --profile development` (首次交互式配凭证) |
-| **TestFlight public QR** | 外部用户扫码安装 | `TESTFLIGHT_PUBLIC_LINK=https://testflight.apple.com/join/... node scripts/testflight-public-link.mjs` |
+| **本机 Simulator** | 日常 JS 迭代 (90%) | `cd mobile && npm run start` (Metro) + `npm run ios`（available inventory → exact Simulator UDID） |
+| **所有 OTA/rollback channel** | EAS mapping 不可信隔离 | **BLOCK；writer exit 78** |
+| **release plan/validate/publish** | root SSH / token-bearing EAS observation；repo bootstrap 不可信 | **BLOCK；network/credential 前 exit 78** |
+| **release production-state network modes** | `server` / `server-under-lock` / `mobile` | **BLOCK；仅 offline evidence parser 可用** |
+| **deploy status/log/inspect** | repo production observation | **BLOCK；ordinary exact help 不是 hostile trust proof** |
+| **Production Gate** | server/Mobile/Mac/ASC | **BLOCK；writer exit 78** |
+| **iOS IPA 离线检视** | 对现成 IPA 生成 metadata/report；不生成安装材料 | `./scripts/mobile-local-qr.sh --no-upload --ipa <EXISTING_IPA>` |
 
 **规矩**:
-- 有意义 commit 后默认并发启 production + development 两个 EAS build, 不等
+- EAS channel→branch 可能漂移或共用，preview/development 也不得写；offline evidence 或
+  公开未认证 HTTPS 不得写成生产部署、G5/G6 或 App Store submission 证据。
+- bare `--no-upload` 会触发 archive/export，故同样冻结；禁止 `mobile-fast-device.sh`、
+  `mobile-local-device.sh`、自动
+  archive/export/signing/provisioning 与 `-allowProvisioningUpdates`。
+- `npm run ios` 固定走 Simulator wrapper；不得向 npm/Expo 追加 `--device`。wrapper 从
+  available Simulator inventory 解析并锁定 exact Simulator UDID；物理 iOS repo CLI、
+  连接/安装/验收冻结。仓库内 acceptance harness 也只接受 exact available Simulator
+  UDID，不能形成物理设备或 App Store Gate 证据。
+- Android 尚非 shipped/audited Mobile surface；`npm run android`/`expo run:android` 因
+  native generation、debug signing 与 ADB install 必须 earliest `exit 78`，无 Android
+  native repo CLI 例外。
+- Mac/nginx direct Python production CLI 全冻结；只有 strict non-root + explicit test mode +
+  固定 non-production roots（macOS `/private/tmp` 或 `/private/var/folders`；其他平台
+  `/tmp`，忽略 caller `TMPDIR`）的 protocol test 与本地元数据 `create-candidate` 例外；
+  `create-candidate` 也须满足同一隔离条件，且二者均无 production authority。
+- `release-dmg.sh` shell 整体冻结；protocol fixture 必须走独立 test-only harness，read-only
+  checker 必须单独成文件且不含 writer code。
+- `deploy.sh --inspect-release-lock` 也必须在读取 lock/env 前 `exit 78`；应用层脱敏不能防止
+  `SHELLOPTS=xtrace`/`BASH_ENV` 在 repo guard 前捕获变量。等待 repo-external root-owned
+  inspector，禁止 raw SSH/helper 代查。
+- `check_app_store_release_pack.py --final-submit` 因 production reviewer 登录与可写 bearer
+  token 冻结；只保留 non-final-submit 静态 pack 与纯静态 iOS config check。
+- production candidate 只可从 already-downloaded IPA/已有本地 metadata 对账，不得联网
+  查询，也不授权 build selection、TestFlight 分发或审核提交。
+- Watch/Rokid/Siri extension 仍需各自 dossier/Gate；冻结期任何 profile 都不能创建正式候选。
+- Rokid tracked `gradlew`/`gradlew.bat`、release/debug-sign build 与 ADB install 全冻结；没有
+  受审 unsigned compile/test wrapper，不宣称本地 Rokid compile/test 可用。
 - Metro **必须独立长驻**, `expo run:ios --no-bundler` (否则 run:ios 退出带死 Metro)
-- App Store Connect API 可用时, `node scripts/testflight-public-link.mjs` 会尝试开启/读取 External Testing public link; 否则用 `TESTFLIGHT_PUBLIC_LINK` 生成 `artifacts/testflight/index.html` 扫码页
 - 细节见 `~/work/personal/PRACTICES/mobile-expo-dev-workflow.md`
+
+### 12.3 解冻架构
+
+解冻不是打开现有 flag。必须新建 dossier 并通过独立 G4，落地一个 repo-external、
+root-owned launcher：
+
+1. launcher 和信任配置不从 same-UID writable repository 加载；
+2. 使用固定绝对路径解释器/工具，`env -i` 启动并只放行审定环境变量；
+3. 从固定 canonical origin/object identity 取得 Git archive/tree，在 root-owned、repo 外
+   staging materialize 实际执行字节，拒绝 replace/info attributes/filter/untracked shadow；
+4. 独立绑定 source、artifact、配置、lease/recovery 与 production/ASC 终态；
+5. 新 G3/G4 通过并获人批准后，才编写新的 writer runbook。
+
+此前 G5、G6 与 App Store submission 均为 BLOCK，任何 Dossier 不得标
+`shipped`/`complete`。
 
 ---
 

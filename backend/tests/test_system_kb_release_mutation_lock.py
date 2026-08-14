@@ -30,18 +30,45 @@ SEED_MANIFEST = (
 )
 
 
-def _write_reviewed_claim(artifact_dir: Path) -> None:
-    artifact_dir.mkdir(parents=True)
+def _write_reviewed_claim(
+    artifact_dir: Path,
+    *,
+    doc_id: str = "claim:lock-probe",
+    title: str = "lock probe",
+) -> None:
+    artifact_dir.mkdir(parents=True, exist_ok=True)
     (artifact_dir / "claims.jsonl").write_text(
         json.dumps(
             {
-                "doc_id": "claim:lock-probe",
+                "doc_id": doc_id,
                 "doc_type": "claim",
-                "title": "lock probe",
+                "title": title,
                 "metadata": {"review_status": "reviewed"},
             }
         )
         + "\n",
+        encoding="utf-8",
+    )
+    counts = {
+        "entities": 0,
+        "claims": 1,
+        "pages": 0,
+        "protocols": 0,
+        "contraindications": 0,
+        "eval_cases": 0,
+        "relations": 0,
+    }
+    for file_name in (
+        "entities.jsonl",
+        "pages.jsonl",
+        "protocols.jsonl",
+        "contraindications.jsonl",
+        "eval_cases.jsonl",
+        "relations.jsonl",
+    ):
+        (artifact_dir / file_name).write_text("", encoding="utf-8")
+    (artifact_dir / "manifest.json").write_text(
+        json.dumps({"version": "test", "counts": counts}, sort_keys=True) + "\n",
         encoding="utf-8",
     )
 
@@ -166,19 +193,11 @@ def test_postgres_quarantine_finishes_after_an_inflight_import_and_wins(
         pytest.skip("transaction advisory lock concurrency requires PostgreSQL")
 
     artifact_dir = tmp_path / "artifacts"
-    artifact_dir.mkdir(parents=True)
     target_id = _manifest()["authority_packs"][0]["claim_ids"][0]
-    (artifact_dir / "claims.jsonl").write_text(
-        json.dumps(
-            {
-                "doc_id": target_id,
-                "doc_type": "claim",
-                "title": "sealed lock probe",
-                "metadata": {"review_status": "reviewed"},
-            }
-        )
-        + "\n",
-        encoding="utf-8",
+    _write_reviewed_claim(
+        artifact_dir,
+        doc_id=target_id,
+        title="sealed lock probe",
     )
 
     session_factory = sessionmaker(bind=db.get_bind())
@@ -272,18 +291,10 @@ def test_postgres_probe_vector_error_keeps_importer_blocked_until_outer_rollback
 
     artifact_dir = tmp_path / "artifacts"
     target_id = "claim:probe-vector-error-lock-survival"
-    artifact_dir.mkdir(parents=True)
-    (artifact_dir / "claims.jsonl").write_text(
-        json.dumps(
-            {
-                "doc_id": target_id,
-                "doc_type": "claim",
-                "title": "vector error lock survival",
-                "metadata": {"review_status": "reviewed"},
-            }
-        )
-        + "\n",
-        encoding="utf-8",
+    _write_reviewed_claim(
+        artifact_dir,
+        doc_id=target_id,
+        title="vector error lock survival",
     )
 
     session_factory = sessionmaker(bind=db.get_bind())

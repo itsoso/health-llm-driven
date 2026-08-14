@@ -2,10 +2,18 @@
 """Validate iOS App Store build and submit configuration without uploading."""
 from __future__ import annotations
 
+import sys
+
+if __name__ == "__main__" and "--require-asc-credentials" in sys.argv[1:]:
+    print(
+        "ASC credential validation is frozen; use the external trusted Gate",
+        file=sys.stderr,
+    )
+    raise SystemExit(78)
+
 import argparse
 import json
 import os
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -400,8 +408,13 @@ def validate(require_asc_credentials: bool) -> list[str]:
         failures.append("missing scripts/_run-mobile-tf.sh submission helper")
     else:
         script_text = run_mobile_tf.read_text(encoding="utf-8")
-        if "--profile production" not in script_text or "--auto-submit" not in script_text:
-            failures.append("scripts/_run-mobile-tf.sh must use production profile with --auto-submit")
+        if "--profile production" not in script_text:
+            failures.append("scripts/_run-mobile-tf.sh must use the production build profile")
+        if "--auto-submit" in script_text:
+            failures.append(
+                "scripts/_run-mobile-tf.sh must not auto-submit; build selection, "
+                "TestFlight submission, and App Review submission require separate gates"
+            )
 
     if require_asc_credentials:
         key_id = os.environ.get("ASC_KEY_ID") or os.environ.get("APP_STORE_CONNECT_API_KEY")

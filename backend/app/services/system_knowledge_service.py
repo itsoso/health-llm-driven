@@ -15,7 +15,7 @@ import re
 import threading
 from typing import Any
 
-from sqlalchemy import bindparam, desc, func, or_, text, update
+from sqlalchemy import bindparam, desc, func, or_, select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -1118,36 +1118,72 @@ def _lookup_graph_context_for_entities(
     ]
 
 
-def reindex_knowledge_documents(db: Session, actor: str = "system") -> dict[str, int]:
-    documents = db.query(KBDocument).filter(KBDocument.is_archived.is_(False)).all()
+def reindex_knowledge_documents(
+    db: Session,
+    actor: str = "system",
+    *,
+    changed_document_ids: list[str] | set[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    documents = (
+        db.query(KBDocument)
+        .filter(KBDocument.is_archived.is_(False))
+        .order_by(KBDocument.doc_id.asc())
+        .all()
+    )
     use_postgres_tsvector = _fts_backend_for_session(db) == "postgres_tsv"
     active_doc_ids = {document.doc_id for document in documents}
     searchable_by_doc_id: dict[str, tuple[str, str]] = {}
     pgvector_table_ready = _ensure_pgvector_table(db)
     for document in documents:
         searchable = _document_search_text(document)
-        content_hash = hashlib.sha256(searchable.encode("utf-8")).hexdigest()
+        content_hash = system_kb_document_content_hash(document, searchable=searchable)
         searchable_by_doc_id[document.doc_id] = (searchable, content_hash)
-        _upsert_document_vector(db, document.doc_id, searchable, content_hash)
-        if use_postgres_tsvector:
-            db.execute(_build_postgres_reindex_statement(document.doc_id, searchable, content_hash))
-            continue
-        document.tsv = searchable
-        document.content_hash = content_hash
 
-    dense_vectors = _reindex_pgvector_documents(
+    existing_sparse_vectors = {
+        vector.doc_id: vector
+        for vector in db.query(KBDocumentVector)
+        .filter(KBDocumentVector.doc_id.in_(active_doc_ids))
+        .all()
+    } if active_doc_ids else {}
+    indexed_document_ids: list[str] = []
+    for document in documents:
+        searchable, content_hash = searchable_by_doc_id[document.doc_id]
+        vector = existing_sparse_vectors.get(document.doc_id)
+        sparse_stale = (
+            vector is None
+            or vector.embedding_model != VECTOR_BACKEND
+            or vector.content_hash != content_hash
+            or not isinstance(vector.vector_json, dict)
+            or vector.magnitude is None
+        )
+        search_stale = document.content_hash != content_hash or document.tsv is None
+        if sparse_stale:
+            _upsert_document_vector(db, document.doc_id, searchable, content_hash)
+        if sparse_stale or search_stale:
+            indexed_document_ids.append(document.doc_id)
+        if use_postgres_tsvector:
+            if search_stale:
+                db.execute(_build_postgres_reindex_statement(document.doc_id, searchable, content_hash))
+            continue
+        if search_stale:
+            document.tsv = searchable
+            document.content_hash = content_hash
+
+    dense_report = _reindex_pgvector_documents(
         db,
         searchable_by_doc_id,
         table_ready=pgvector_table_ready,
     )
+    dense_vectors = int(dense_report["covered"])
 
-    if active_doc_ids:
-        db.query(KBDocumentVector).filter(KBDocumentVector.doc_id.notin_(active_doc_ids)).delete(
-            synchronize_session=False
-        )
-    else:
-        db.query(KBDocumentVector).delete(synchronize_session=False)
+    active_document_ids = select(KBDocument.doc_id).where(
+        KBDocument.is_archived.is_(False)
+    )
+    deleted_sparse_vectors = db.query(KBDocumentVector).filter(
+        KBDocumentVector.doc_id.notin_(active_document_ids)
+    ).delete(synchronize_session=False)
 
+    changed_hint = sorted({str(doc_id) for doc_id in changed_document_ids or []})
     db.add(
         KBAudit(
             doc_id=None,
@@ -1158,17 +1194,39 @@ def reindex_knowledge_documents(db: Session, actor: str = "system") -> dict[str,
                 "vector_backend": VECTOR_BACKEND,
                 "dense_vector_backend": _pgvector_backend_name(),
                 "dense_vectors": dense_vectors,
+                "dense_vectors_updated": int(dense_report["updated"]),
+                "deleted_dense_vectors": int(dense_report["deleted"]),
+                "indexed_document_ids": indexed_document_ids,
+                "changed_document_ids": changed_hint,
+                "deleted_sparse_vectors": int(deleted_sparse_vectors or 0),
             },
         )
     )
     db.commit()
-    return {"documents": len(documents), "dense_vectors": dense_vectors}
+    return {
+        "documents": len(documents),
+        "dense_vectors": dense_vectors,
+        "dense_vectors_updated": int(dense_report["updated"]),
+        "deleted_dense_vectors": int(dense_report["deleted"]),
+        "indexed_document_ids": indexed_document_ids,
+        "changed_document_ids": changed_hint,
+        "deleted_sparse_vectors": int(deleted_sparse_vectors or 0),
+    }
 
 
-def run_system_kb_reindex_report(db: Session, actor: str = "system") -> dict[str, Any]:
+def run_system_kb_reindex_report(
+    db: Session,
+    actor: str = "system",
+    *,
+    changed_document_ids: list[str] | set[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
     """Rebuild KB search indexes and persist an operations-grade health report."""
 
-    reindex = reindex_knowledge_documents(db, actor=actor)
+    reindex = reindex_knowledge_documents(
+        db,
+        actor=actor,
+        changed_document_ids=changed_document_ids,
+    )
     pgvector = get_system_kb_pgvector_health(db)
     report = {
         "reindex": reindex,
@@ -3511,24 +3569,121 @@ def _pgvector_literal(vector: list[float]) -> str:
     return "[" + ",".join(values) + "]"
 
 
+def _stale_pgvector_document_ids(
+    searchable_by_doc_id: dict[str, tuple[str, str]],
+    existing_state: dict[str, dict[str, Any]],
+    *,
+    embedding_model: str,
+    embedding_dimensions: int,
+) -> list[str]:
+    """Select only dense rows whose exact model/input/dimension proof is stale."""
+
+    stale: list[str] = []
+    for doc_id, (_searchable, content_hash) in searchable_by_doc_id.items():
+        state = existing_state.get(doc_id)
+        if (
+            state is None
+            or state.get("embedding_model") != embedding_model
+            or state.get("content_hash") != content_hash
+            or int(state.get("dimensions") or 0) != embedding_dimensions
+        ):
+            stale.append(doc_id)
+    return sorted(stale)
+
+
+def _load_pgvector_index_state(
+    db: Session,
+    doc_ids: list[str],
+) -> dict[str, dict[str, Any]]:
+    if not doc_ids:
+        return {}
+    statement = text(
+        f"""
+        SELECT doc_id, embedding_model, content_hash, vector_dims(embedding) AS dimensions
+        FROM {PGVECTOR_TABLE}
+        WHERE doc_id IN :doc_ids
+        """
+    ).bindparams(bindparam("doc_ids", expanding=True))
+    try:
+        engine = db.get_bind()
+        with engine.begin() as connection:
+            rows = connection.execute(statement, {"doc_ids": doc_ids}).fetchall()
+    except SQLAlchemyError as exc:
+        logger.warning("system KB pgvector state proof unavailable; all dense rows are stale: %s", exc)
+        return {}
+    return {
+        str(row._mapping["doc_id"]): {
+            "embedding_model": row._mapping["embedding_model"],
+            "content_hash": row._mapping["content_hash"],
+            "dimensions": int(row._mapping["dimensions"] or 0),
+        }
+        for row in rows
+    }
+
+
+def _delete_removed_pgvector_rows(db: Session) -> int:
+    # Evaluate liveness inside the DELETE statement rather than against the
+    # earlier Python snapshot. A concurrently committed active document can
+    # therefore never lose its dense row because another reindex started first.
+    statement = text(
+        f"""
+        DELETE FROM {PGVECTOR_TABLE} AS embedding
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM kb_documents AS document
+            WHERE document.doc_id = embedding.doc_id
+              AND document.is_archived IS FALSE
+        )
+        """
+    )
+    try:
+        engine = db.get_bind()
+        with engine.begin() as connection:
+            result = connection.execute(statement)
+            return int(result.rowcount or 0)
+    except SQLAlchemyError as exc:
+        logger.warning("system KB pgvector deletion cleanup unavailable: %s", exc)
+        return 0
+
+
 def _reindex_pgvector_documents(
     db: Session,
     searchable_by_doc_id: dict[str, tuple[str, str]],
     *,
     table_ready: bool | None = None,
-) -> int:
-    if not searchable_by_doc_id:
-        return 0
+) -> dict[str, int]:
     if table_ready is None:
         table_ready = _ensure_pgvector_table(db)
     if not table_ready:
-        return 0
+        return {"covered": 0, "updated": 0, "deleted": 0}
 
-    doc_ids = list(searchable_by_doc_id.keys())
+    active_doc_ids = sorted(searchable_by_doc_id)
+    deleted = _delete_removed_pgvector_rows(db)
+    if not active_doc_ids:
+        return {"covered": 0, "updated": 0, "deleted": deleted}
+
+    existing_state = _load_pgvector_index_state(db, active_doc_ids)
+    doc_ids = _stale_pgvector_document_ids(
+        searchable_by_doc_id,
+        existing_state,
+        embedding_model=settings.system_kb_embedding_model,
+        embedding_dimensions=int(settings.system_kb_embedding_dimensions),
+    )
+    covered_before = len(active_doc_ids) - len(doc_ids)
+    if not doc_ids:
+        return {
+            "covered": covered_before,
+            "updated": 0,
+            "deleted": deleted,
+        }
     texts = [searchable_by_doc_id[doc_id][0] for doc_id in doc_ids]
     embeddings = _embed_system_kb_texts(texts)
     if not embeddings:
-        return 0
+        return {
+            "covered": covered_before,
+            "updated": 0,
+            "deleted": deleted,
+        }
 
     upsert_sql = text(
         f"""
@@ -3553,7 +3708,11 @@ def _reindex_pgvector_documents(
         ]
     except ValueError as exc:
         logger.warning("system KB pgvector upsert skipped: %s", exc)
-        return 0
+        return {
+            "covered": covered_before,
+            "updated": 0,
+            "deleted": deleted,
+        }
 
     try:
         engine = db.get_bind()
@@ -3561,8 +3720,16 @@ def _reindex_pgvector_documents(
             connection.execute(upsert_sql, params)
     except SQLAlchemyError as exc:
         logger.warning("system KB pgvector upsert skipped; sparse vector fallback remains active: %s", exc)
-        return 0
-    return len(params)
+        return {
+            "covered": covered_before,
+            "updated": 0,
+            "deleted": deleted,
+        }
+    return {
+        "covered": covered_before + len(params),
+        "updated": len(params),
+        "deleted": deleted,
+    }
 
 
 def _rank_vector_documents(
@@ -3798,6 +3965,17 @@ def _document_search_text(document: KBDocument) -> str:
     except Exception:  # noqa: BLE001 - boot probe is the loud path; indexing stays resilient
         logger.warning("[system_kb] jieba segmentation unavailable in _document_search_text; indexing raw only")
     return raw
+
+
+def system_kb_document_content_hash(
+    document: KBDocument,
+    *,
+    searchable: str | None = None,
+) -> str:
+    """Return the canonical search-input hash used by every KB index backend."""
+
+    search_input = searchable if searchable is not None else _document_search_text(document)
+    return hashlib.sha256(search_input.encode("utf-8")).hexdigest()
 
 
 def _compact_issue(document: KBDocument) -> dict[str, Any]:

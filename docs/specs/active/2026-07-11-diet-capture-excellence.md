@@ -5,6 +5,13 @@
 > Updated: 2026-08-01
 > Related PRD/PDD: `docs/prd/2026-07-11-diet-capture-excellence.md`
 > Related code: `backend/app/api/diet.py`, `backend/app/services/ai/food_recognition.py`, `mobile/app/diet.tsx`
+>
+> **Current release override (2026-08-12):** all repo-contained automatic remote/vendor release
+> entrypoints, local signing/install/automatic-provisioning entrypoints and OTA/rollback channels
+> are frozen. Production network observation and release plan/validate are also frozen. Use only
+> local validation, offline evidence and public unauthenticated HTTPS; none forms G5/G6. Manual
+> release Gate is BLOCK pending a new
+> repo-external trust-root dossier and independent G4.
 
 ## 1. Decision
 
@@ -231,7 +238,9 @@ git diff --check
 
 ## 13. Rollout And Rollback
 
-Deploy backend additive response fields and the photo-asset migration before clients. Preserve legacy create payload and `image_url` cover compatibility until all clients consume `photo_assets`. Rollback removes client use of the new fields while legacy recognize/create remain available; it never copies signed URLs into stored data.
+Validate backend additive response fields, photo-asset migration and client compatibility locally;
+do not deploy them. Preserving legacy create payload and `image_url` cover compatibility remains a
+future rollout invariant. There is no current production rollback action.
 
 ## 14. Open Questions
 

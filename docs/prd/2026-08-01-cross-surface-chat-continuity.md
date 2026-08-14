@@ -3,6 +3,18 @@
 > Status: approved
 > Date: 2026-08-01
 > Feature Spec: `docs/specs/active/2026-08-01-cross-surface-chat-continuity.md`
+>
+> **Current release override (2026-08-12):** all repo-contained automatic remote/vendor release
+> entrypoints, local signing/install/automatic-provisioning entrypoints and all OTA/rollback
+> channels are frozen. EAS
+> preview/development is not a trusted boundary because channel→branch mappings may
+> drift or be shared. Production network observation and release plan/validate are also frozen.
+> Delivery currently stops after local tests/Metro/iOS Simulator, offline evidence and public
+> unauthenticated HTTPS; none forms G5/G6. `npm run ios` uses the Simulator wrapper, callers may not
+> append npm/Expo `--device`, and
+> the wrapper pins an exact available Simulator UDID; physical iOS repo CLI is frozen;
+> archive/export/signing/provisioning is frozen.
+> Manual Gate is BLOCK pending a new external trust-root dossier and independent G4.
 
 ## Outcome
 
@@ -87,5 +99,9 @@ pressure, and does not reduce the 44pt effective action targets.
 
 ## Delivery
 
-No backend or native dependency change. Web follows normal deployment; Mobile
-uses production OTA. True-device verification is required after release.
+No backend or native dependency change. Validate Web and Mobile locally, including Simulator or an
+Simulator check. `npm run ios` uses the Simulator wrapper; do not append npm/Expo `--device`. The
+wrapper pins an exact available Simulator UDID. Do not connect/install physical iOS, deploy Web,
+build/sign a binary, or use any OTA
+channel. Existing candidates are read-only;
+selection, distribution and promotion remain BLOCKED.

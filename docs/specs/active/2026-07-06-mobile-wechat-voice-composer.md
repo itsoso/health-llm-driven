@@ -1,5 +1,14 @@
 # Feature Spec: Mobile WeChat-Style Voice Composer
 
+> **Current release override (2026-08-12):** all repo-contained automatic remote/vendor release
+> entrypoints, local signing/install/automatic-provisioning entrypoints and OTA/rollback channels
+> are frozen. Production network observation and release plan/validate are also frozen. Use
+> Metro/iOS Simulator/tests, offline evidence and public unauthenticated HTTPS only; none forms
+> G5/G6. `npm run ios` uses the Simulator
+> wrapper, callers may not append npm/Expo `--device`, and the wrapper pins an exact available
+> Simulator UDID. Physical iOS repo CLI, connection/install/acceptance are frozen. Manual release
+> Gate is BLOCK.
+
 > Status: implementing
 > Owner: Codex
 > Updated: 2026-07-24
@@ -155,7 +164,9 @@ git diff --check
 
 ## 13. Rollout And Rollback
 
-The backend WebSocket proxy must deploy before the cloud composer is enabled. The provider contract is intentionally single-path: an upstream failure is surfaced to Mobile and can be retried, never silently routed to iPhone recognition or another ASR provider. The PCM capture module requires a new signed iOS build when it changes; Hook and UI changes can be repaired by OTA.
+Validate the backend WebSocket proxy, single-path provider contract and Mobile behavior locally; do
+not deploy the proxy. A changed PCM module would require a future signed build, but signing/build is
+currently frozen; Hook/UI changes also cannot use OTA. Preserve failures visibly and record BLOCK.
 
 ## 14. Open Questions
 

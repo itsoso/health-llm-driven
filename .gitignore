@@ -38,6 +38,7 @@ wheels/
 .last-ota-commit
 .mobile-release-manifest.json
 .mobile-ota-audit.jsonl
+.mobile-release-manifest.*.json
 
 # Local harness workflow traces; summarize run_path in Dossier instead of committing raw JSONL logs.
 docs/_generated/harness-runs/

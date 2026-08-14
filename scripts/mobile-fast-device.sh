@@ -1,9 +1,16 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Fast real-device loop. Reuses native state and Xcode DerivedData.
 #
 #   ./scripts/mobile-fast-device.sh metro [--tunnel]
 #   ./scripts/mobile-fast-device.sh release
 
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  builtin printf '%s\n' \
+    'mobile-fast-device writer entrypoint is frozen; use local simulator/Metro validation only.' >&2
+  exit 78
+fi
+
+if [[ 0 -eq 1 ]]; then
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -156,3 +163,4 @@ if ! run_in "${MOBILE_DIR}" xcrun devicectl device process launch --device "${DE
 fi
 
 echo "✓ Incremental Release build installed and launched."
+fi

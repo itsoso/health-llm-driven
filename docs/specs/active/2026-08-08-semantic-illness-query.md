@@ -5,6 +5,13 @@
 > Updated: 2026-08-09
 > Related PRD/PDD: `docs/plans/2026-08-08-semantic-illness-query-design.md`
 > Related code: `backend/app/services/agent_kernel/health_semantics.py`, `backend/app/services/agent_kernel/goal_spec.py`, `backend/app/services/agent_kernel/capability_policy.py`, `backend/app/services/write_intent_scope.py`, `backend/app/services/utterance_intent_classifier.py`, `backend/app/services/tool_schema_registry.py`, `backend/app/services/health_read.py`, `backend/app/services/agent_executor.py`
+>
+> **Current release override (2026-08-12):** all repo-contained automatic remote/vendor release
+> entrypoints, local signing/install/automatic-provisioning entrypoints and OTA/rollback channels
+> are frozen. Production network observation and release plan/validate are also frozen. Only local
+> validation, offline evidence and public unauthenticated HTTPS are allowed, and none forms G5/G6;
+> manual release Gate is BLOCK
+> pending a new repo-external trust-root dossier and independent G4.
 
 ## 1. Decision
 
@@ -592,18 +599,17 @@ reported G3/G6 blocker rather than a silently skipped check.
 
 ## 13. Rollout And Rollback
 
-Deploy the paired managed migration before the Backend release, then deploy
-the generated-contract-compatible Web release after focused/full regression and
-safety review. Verify one read-only production turn and inspect executed tool
-metadata.
+Validate the paired managed migration plus generated-contract-compatible Backend/Web locally after
+focused/full regression and safety review. Production network observation is frozen; offline
+evidence or public unauthenticated HTTPS may describe current state but cannot form G5/G6. Do not
+deploy migration, Backend or Web. There is no current rollback writer.
 
-Rollback to the previous Backend/Web release if invalid-dimension errors or
-illness query selection regress. The staged target-runtime schema probe checks
+For a future authorized rollout, the staged target-runtime schema probe checks
 live data against that target's non-null contracts before any socket or writer
 starts; it must block an old release when null-severity rows exist. Historical
 scores of 5 are preserved because their old-default provenance cannot be
 reliably inferred. Never invent or silently backfill a score to make rollback
-pass.
+pass. Current G5/G6 remain BLOCKED.
 
 ## 14. Open Questions
 
