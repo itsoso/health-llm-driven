@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import shlex
 import signal
 import stat
 import subprocess
@@ -1051,7 +1052,7 @@ def test_testflight_helper_uses_private_paths_and_sanitized_npm_config():
     assert "| tee " not in testflight
 
 
-def test_testflight_tool_selection_delegates_to_fixed_locked_eas_helper(
+def test_testflight_tooling_ignores_hostile_path_with_isolated_interpreter(
     tmp_path: Path,
 ):
     helper = ROOT / "scripts" / "_run-mobile-tf.sh"
@@ -1071,6 +1072,7 @@ def test_testflight_tool_selection_delegates_to_fixed_locked_eas_helper(
             "-c",
             (
                 f'PATH="{fake_bin}"; {TESTFLIGHT_SOURCE_FOR_TESTS}; '
+                f'PYTHON_BINARY={shlex.quote(sys.executable)}; '
                 'assert_testflight_tooling; '
                 'printf "%s\\n" "${PYTHON_BINARY}"'
             ),
@@ -1081,7 +1083,7 @@ def test_testflight_tool_selection_delegates_to_fixed_locked_eas_helper(
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert result.stdout.strip() == "/usr/local/bin/python3"
+    assert result.stdout.strip() == sys.executable
     assert not marker.exists()
 
 
