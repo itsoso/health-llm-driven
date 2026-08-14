@@ -1,11 +1,13 @@
 ---
 name: add-managed-migration
-description: "给 backend 加一个 managed DB 迁移(改表结构 / 加列 / 建表)。当要改 SQLAlchemy 模型对应的表结构时使用。本仓库无 Alembic,迁移是 pg+sqlite 双文件,deploy.sh -b 自动应用。"
+description: "给 backend 加 managed DB 迁移并做本地验证。自动 release 不得应用生产迁移；server-local manual-admin utility 单独获权。"
 ---
 
 # Add Managed Migration
 
-本仓库**无 Alembic**。结构迁移 = `backend/migrations/managed/` 下**成对的两个 SQL 文件**(PostgreSQL 生产 + SQLite 测试/CI),`deploy.sh -b` 自动应用(checksum 去重,已应用的跳过)。
+本仓库**无 Alembic**。结构迁移 = `backend/migrations/managed/` 下**成对的两个 SQL 文件**
+(PostgreSQL 生产 + SQLite 测试/CI)。历史自动协议由 `deploy.sh -b` 按 checksum 应用；当前
+该入口冻结，不能执行生产迁移。
 
 ## 何时需要
 
@@ -26,7 +28,9 @@ description: "给 backend 加一个 managed DB 迁移(改表结构 / 加列 / �
 3. **改模型**:`backend/app/models/*.py` 加对应 `Column(...)`(nullable / 有默认 → 向后兼容,旧行 NULL)。新类型记得 import(如 `Boolean`)。
 4. **改了 model 文件数** → 走 `doc-drift-fix`(ARCHITECTURE.md models 计数);改了 service 同理。
 5. **测试**:用 conftest 的 `db` fixture(in-memory sqlite 自动建表,但 managed 迁移**不**在测试里跑——测试靠 `Base.metadata.create_all`,所以**新列必须在模型上**才会出现在测试 sqlite 里。迁移文件是给生产/CI-真库的)。
-6. **上线**:`backend-deploy`(`deploy.sh -b` 自动 apply;日志出现 `managed migrations applied: <你的文件名>`)。
+6. **发布 Gate**：交 `backend-deploy` 记录 BLOCK；自动 `deploy.sh -b` 不得应用迁移。只
+   保留迁移文件、模型与本地测试证据。若另有 production migration 需求，必须进入生产
+   主机的独立、显式、获权 manual-admin 事件并留审计，且不能由自动 release 入口调用。
 
 ## 关键点
 
@@ -37,4 +41,6 @@ description: "给 backend 加一个 managed DB 迁移(改表结构 / 加列 / �
 
 ## 应用机制(排错用)
 
-`deploy.sh -b` → `backend/scripts/apply_managed_migrations.py`:扫 `migrations/managed/*.<dialect>.sql`,按 `schema_migrations` 表的 checksum 跳过已应用,新的按文件名顺序执行。`-b` 日志里 `managed migrations applied/skipped` 两行能看到结果。
+自动 release 的未来协议会由 managed runner 扫 `migrations/managed/*.<dialect>.sql` 并以
+`schema_migrations` checksum 去重；当前自动调用只作设计/测试参考。独立 manual-admin
+迁移事件不属于该自动发布机制，必须单独授权、解析目标并记录恢复/审计证据。

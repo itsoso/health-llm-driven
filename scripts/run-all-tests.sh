@@ -45,6 +45,24 @@ if [ -n "${REVA_VALIDATION_EXPECTED_ROOT:-}" ]; then
 fi
 cd "$ROOT" || exit 2
 
+# Direct invocations must be as deterministic as release.py: never let a
+# developer shell select a stale PostgreSQL test database, production config,
+# a different calendar day, or runtime injection hooks.  The canonical release
+# validation environment is mirrored here because this script is also a public
+# developer/CI entrypoint.
+unset TEST_DATABASE_URL NODE_OPTIONS NODE_PATH PYTEST_ADDOPTS \
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD PYTEST_PLUGINS PYTHONHOME PYTHONPATH \
+  PYTHONSTARTUP BASH_ENV ENV NPM_CONFIG_GLOBALCONFIG \
+  NPM_CONFIG_NODE_OPTIONS NPM_CONFIG_SCRIPT_SHELL NPM_CONFIG_USERCONFIG \
+  npm_config_globalconfig npm_config_node_options npm_config_script_shell \
+  npm_config_userconfig
+export APP_ENV="test"
+export DATABASE_URL="sqlite:///:memory:"
+export GARMIN_ENCRYPTION_KEY="mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU="
+export NODE_ENV="test"
+export SECRET_KEY="test-secret-key-32-chars-minimum!!"
+export TZ="Asia/Shanghai"
+
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'; NC='\033[0m'
 ok()   { echo -e "${GREEN}✓${NC} $*"; }
 fail() { echo -e "${RED}✗${NC} $*"; }
@@ -84,14 +102,31 @@ else
     echo "Cannot resolve Git common directory for validation logs" >&2
     exit 2
   }
-  LOG_DIR="$GIT_COMMON_DIR/reva-release-state/logs/validation-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  # Keep the transaction directory directly under Git's already-existing
+  # common directory so secure setup never has to create intermediate paths.
+  LOG_DIR="$GIT_COMMON_DIR/reva-validation-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 fi
-if [ -L "$LOG_DIR" ]; then
-  echo "Refusing symlinked validation log directory: $LOG_DIR" >&2
+# Canonicalise only an already-existing parent. This rejects any symlink in
+# the requested path before creating the final, transaction-owned directory.
+LOG_PARENT="$(dirname "$LOG_DIR")"
+LOG_NAME="$(basename "$LOG_DIR")"
+if [ "$LOG_NAME" = "." ] || [ "$LOG_NAME" = ".." ] || [ -z "$LOG_NAME" ]; then
+  echo "Validation log path must name a new directory: $LOG_DIR" >&2
   exit 2
 fi
-mkdir -p "$LOG_DIR" || exit 2
-chmod 700 "$LOG_DIR" || exit 2
+if ! LOG_PARENT_CANONICAL="$(cd "$LOG_PARENT" 2>/dev/null && pwd -P)"; then
+  echo "Validation log parent does not exist: $LOG_PARENT" >&2
+  exit 2
+fi
+if [ "$LOG_PARENT" != "$LOG_PARENT_CANONICAL" ]; then
+  echo "Refusing symlinked validation log parent: $LOG_PARENT" >&2
+  exit 2
+fi
+LOG_DIR="$LOG_PARENT_CANONICAL/$LOG_NAME"
+if ! mkdir -m 700 "$LOG_DIR" 2>/dev/null; then
+  echo "Validation log directory must be newly created: $LOG_DIR" >&2
+  exit 2
+fi
 if [ -L "$LOG_DIR" ] || [ ! -d "$LOG_DIR" ]; then
   echo "Validation log path is not a directory: $LOG_DIR" >&2
   exit 2
@@ -121,6 +156,19 @@ if $RUN_MOBILE; then
 fi
 add_check "git:diff-check" "Git whitespace check"
 
+# A caller-controlled validation directory must not let a precreated leaf
+# symlink redirect a log truncation into another file. Reject all collisions up
+# front; start_check also uses Bash noclobber for atomic creation after this
+# human-readable preflight.
+for check_id in "${CHECK_IDS[@]}"; do
+  safe_name="$(printf '%s' "$check_id" | tr ':/' '--')"
+  log_path="$LOG_DIR/${safe_name}.log"
+  if [ -e "$log_path" ] || [ -L "$log_path" ]; then
+    echo "Refusing pre-existing or symlinked validation log: $log_path" >&2
+    exit 2
+  fi
+done
+
 execute_check() {
   case "$1" in
     backend:pytest)
@@ -129,7 +177,10 @@ execute_check() {
         return 2
       fi
       cd backend || return 2
-      exec ./venv/bin/python -m pytest tests/ -q --no-cov --tb=line --ignore=tests/test_integration.py
+      # Reuse CI's exact shard matrix and process deadline locally. Keep its
+      # per-shard private logs nested under this validation transaction.
+      export REVA_BACKEND_SHARD_LOG_DIR="$LOG_DIR/backend-pytest-shards"
+      exec ./venv/bin/python scripts/run_local_pytest_matrix.py
       ;;
     frontend:vitest)
       [ -d frontend/node_modules ] || { echo "frontend/node_modules 不存在" >&2; return 2; }
@@ -199,18 +250,30 @@ terminate_tree() {
 cleanup_signal() {
   signal_name="$1"
   trap - INT TERM
-  for running_pid in "${PIDS[@]}"; do
-    if kill -0 "$running_pid" 2>/dev/null; then
-      terminate_tree "$running_pid"
-    fi
-  done
-  for running_pid in "${PIDS[@]}"; do
-    wait "$running_pid" 2>/dev/null || true
-  done
+  stop_running_checks
   if [ "$signal_name" = "INT" ]; then
     exit 130
   fi
   exit 143
+}
+
+stop_running_checks() {
+  running_index=0
+  while [ "$running_index" -lt "${#PIDS[@]}" ]; do
+    running_pid="${PIDS[$running_index]:-}"
+    if [ -n "$running_pid" ] && kill -0 "$running_pid" 2>/dev/null; then
+      terminate_tree "$running_pid"
+    fi
+    running_index=$((running_index + 1))
+  done
+  running_index=0
+  while [ "$running_index" -lt "${#PIDS[@]}" ]; do
+    running_pid="${PIDS[$running_index]:-}"
+    if [ -n "$running_pid" ]; then
+      wait "$running_pid" 2>/dev/null || true
+    fi
+    running_index=$((running_index + 1))
+  done
 }
 trap 'cleanup_signal INT' INT
 trap 'cleanup_signal TERM' TERM
@@ -220,11 +283,18 @@ start_check() {
   check_id="${CHECK_IDS[$index]}"
   safe_name="$(printf '%s' "$check_id" | tr ':/' '--')"
   log_path="$LOG_DIR/${safe_name}.log"
-  : > "$log_path"
-  chmod 600 "$log_path"
   STARTED_AT[$index]="$(date +%s)"
-  (execute_check "$check_id") >"$log_path" 2>&1 &
-  PIDS[$index]=$!
+  set -C
+  if ! { exec 9>"$log_path"; } 2>/dev/null; then
+    set +C
+    echo "Refusing validation log collision: $log_path" >&2
+    return 2
+  fi
+  set +C
+  (execute_check "$check_id") >&9 2>&1 &
+  child_pid=$!
+  exec 9>&-
+  PIDS[$index]="$child_pid"
   LOGS[$index]="$log_path"
 }
 
@@ -240,7 +310,10 @@ wait_check() {
     ok "${CHECK_TITLES[$index]} (${elapsed}s; log: ${LOGS[$index]})"
   else
     fail "${CHECK_IDS[$index]} — ${CHECK_TITLES[$index]} (exit ${child_status}; ${elapsed}s; log: ${LOGS[$index]})"
-    tail -n 20 "${LOGS[$index]}"
+    # Do not reopen a pathname that another process could have replaced after
+    # the check inherited its already-open log FD. The private log retains the
+    # full output for inspection by the owner.
+    echo "Check output retained in private log; automatic tail withheld"
   fi
 }
 
@@ -251,7 +324,10 @@ active=0
 total_checks=${#CHECK_IDS[@]}
 while [ "$completed" -lt "$total_checks" ]; do
   while [ "$launched" -lt "$total_checks" ] && [ "$active" -lt "$MAX_PARALLEL" ]; do
-    start_check "$launched"
+    if ! start_check "$launched"; then
+      stop_running_checks
+      exit 2
+    fi
     launched=$((launched + 1))
     active=$((active + 1))
   done

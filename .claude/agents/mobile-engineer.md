@@ -22,4 +22,16 @@ model: opus
 
 ## 协作 / 团队通信协议
 - 改完 `SendMessage` 给 `qa-verifier` 跑 mobile 闸门。
-- 发版/OTA 交给 `release-engineer`(纯 JS 改动走 OTA,native/app.json/Podfile 改动必须 EAS build)。
+- 发版/OTA 交给 `release-engineer` 做冻结裁决：EAS channel→branch 映射可能漂移或共用，
+  因此所有 OTA/rollback channel writer 均 exit 78；production native/EAS/ASC 也冻结。
+  只做本地 Metro/iOS Simulator/test；`npm run ios` 固定走 Simulator wrapper，不得向
+  npm/Expo 追加 `--device`；wrapper 锁定 exact available Simulator UDID，物理 iOS repo
+  CLI、连接/安装/验收冻结。existing-IPA 只可运行
+  `mobile-local-qr.sh --no-upload --ipa <EXISTING_IPA>` 生成离线 metadata/report（无安装
+  manifest、安装二维码或可安装承诺）。禁止自动 archive/export/signing/
+  provisioning/install、`mobile-fast-device.sh`、`mobile-local-device.sh`（尤其
+  `-allowProvisioningUpdates`）。到 manual Gate
+  记录 BLOCK 并停止；existing candidate 也只能从已有本地 IPA/metadata 对账，不得联网
+  查询、选择、分发或提交。
+- Android 尚非 shipped/audited surface；`npm run android`/`expo run:android` 因 native
+  generation、debug signing 和 ADB install 必须 earliest exit 78，无本地 native CLI 例外。

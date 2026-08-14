@@ -206,7 +206,7 @@ def test_ios_privacy_manifest_alignment_fails_closed_for_semantic_mutations():
     assert validate_privacy_manifest_against_label(manifest, unknown_purpose_label)
 
 
-def test_ios_app_store_submission_preflight_requires_asc_credentials_when_requested():
+def test_ios_app_store_submission_preflight_freezes_asc_credential_validation_when_requested():
     root = Path(__file__).resolve().parents[2]
     scrubbed_env = {
         key: value
@@ -228,5 +228,8 @@ def test_ios_app_store_submission_preflight_requires_asc_credentials_when_reques
         check=False,
     )
 
-    assert result.returncode == 1
-    assert "missing App Store Connect credentials" in result.stderr
+    assert result.returncode == 78
+    assert result.stdout == ""
+    assert result.stderr == (
+        "ASC credential validation is frozen; use the external trusted Gate\n"
+    )

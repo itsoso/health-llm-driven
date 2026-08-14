@@ -37,7 +37,7 @@ python3 scripts/harness_workflow_trace.py init \
 | frontend-engineer | 自定义 | `frontend/` 实现(Next.js 14 Web;注意页面冻结) |
 | qa-verifier | general-purpose | 跑闸门(pytest/doc-drift/tsc/jest/swift/前端 vitest+page-freeze)+ 跨界 shape 比对 + 真红/假红判别 |
 | safety-privacy-reviewer | 自定义 | AGENTS.md 硬规范 + 医疗安全/隐私评审(高风险改动必经) |
-| release-engineer | 自定义 | deploy.sh / OTA / EAS TestFlight,先后端再 OTA |
+| release-engineer | 自定义 | production freeze 审计；offline evidence/public unauthenticated HTTPS + Simulator/existing-IPA offline inspection |
 
 ## 工作流(混合:计划→实现 fan-out→增量 QA→评审→上线)
 
@@ -62,12 +62,31 @@ leader 拆任务 → `TaskCreate`。跨端任务先定 **API 契约**(请求/响
 触及敏感数据/用药/基因/安全规则/认证 → `safety-privacy-reviewer` 评审,阻断项整改 + 复审后才放行。
 
 ### Phase 5:交付 / 上线
-- 走 PR:开分支(off `origin/main`)→ push → `gh pr create` → CI 全绿 → `gh pr merge --squash --admin --delete-branch`。
-- 提交规范见 `§6`;commit 末尾 `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`。**不提交融资材料**。
-- 上线交 `release-engineer`:**先后端 `deploy.sh -b`,再移动端 OTA**;native/app.json 改动走 EAS build(异步)。
+- 源码分支/PR/CI 属于代码交付，不构成生产授权；是否提交、推送或合并仍按用户授权与
+  `AGENTS.md` 执行，不能让 `release-engineer` 把 GitHub 状态解释成已上线。
+- 上线交 `release-engineer` 时，`release.py`/`release.sh` plan/validate/publish 与所有
+  production network observation 固定 BLOCK；只做本地 Metro/iOS Simulator/test（`npm
+  run ios` 固定走 wrapper，不得向 npm/Expo 追加
+  `--device`；wrapper 锁定 exact available Simulator UDID，物理 iOS repo CLI、连接/
+  安装/验收冻结），或
+  `mobile-local-qr.sh --no-upload --ipa <EXISTING_IPA>` 的离线 metadata/report（无安装
+  manifest、安装二维码或可安装承诺）。禁止自动 archive/export/signing/
+  provisioning，尤其 `-allowProvisioningUpdates`。所有 OTA/rollback、server、Mobile production、Mac、ASC/App Review
+  自动 release writer 与历史 release 旁路全部 exit 78；manual release Gate 记录 BLOCK 后
+  停止，禁止 raw SSH 发布/CLI 兜底。server-local DB migration/setup/admin utility 只能进入
+  独立 manual-admin 事件，绝不能被该自动 release 流程调用。
+- 冻结原因是 same-UID writable repo bootstrap trust 无法闭合（Git replace/info
+  attributes+filter/untracked import shadow/BASH_ENV/PYTHONPATH/sitecustomize），不是 CI
+  是否为绿。解冻另立 dossier，并由 repo-external root-owned launcher 方案通过独立 G4。
+- repo rc78 仅是 ordinary-invocation tombstone；Bash caller 可覆盖 `exit`/`builtin`。
+  `deploy.sh`/`_run-mobile-tf.sh` legacy 必须 literal-false、语法级不可达且不得
+  source/extract/eval；`release-dmg.sh` 全入口冻结，不能兼任 checker。
 
 ### Phase 6:验证 + 沉淀
-生产 curl/健康分确认;把本次踩的新坑沉淀回对应 agent 定义或本 skill(harness 是演进系统,不是固定物)。
+公开未认证 HTTPS 或 offline evidence parser 可记录“观察到的现状”，但不能形成 G5/G6；
+不得运行带凭证的 production smoke/network mode。冻结期间必须写
+`G5=BLOCK`、`G6=BLOCK`、`App Store submission=BLOCK`，不得把协议测试或 local
+结果写成 `shipped`/`complete`；把 trust-root 缺口沉淀回 Dossier 与对应 skill。
 
 ## 何时降级为单代理
 单文件小修、纯文档、机械改动 —— 直接做或用单个 `Agent`,不必组队。

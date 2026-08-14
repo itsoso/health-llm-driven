@@ -1,10 +1,19 @@
 # Feature Spec: Agent 多药合并确认与可信写入
 
-> Status: shipping · G4 PASS, awaiting explicit G5 release approval
+> Status: blocked · G4 feature review passed historically; current release G4/G5 BLOCK
 > Owner: Codex
 > Updated: 2026-07-21
 > Related PRD/PDD: `docs/prd/reva-personal-health-os-prd.md` R4, R15, R16
 > Related code: `backend/app/services/agent_executor.py`, `backend/app/services/medication_intake_batch.py`, `backend/app/services/write_intent_service.py`, Mobile/Web/Mac chat clients
+>
+> **Current release override (2026-08-12):** all repo-contained automatic remote/vendor release
+> entrypoints, local signing/install/automatic-provisioning entrypoints and OTA/rollback channels
+> are frozen. Manual Gate means BLOCK/STOP; local checks cannot authorize deployment. Do not use
+> mobile device build/sign/install helpers. Production network observation and release
+> plan/validate are also frozen. Only Metro/iOS Simulator/tests, offline evidence, public
+> unauthenticated HTTPS and
+> `mobile-local-qr.sh --no-upload --ipa <EXISTING_IPA>` offline IPA metadata/report are allowed;
+> that command creates no install manifest, install QR, or installability claim.
 
 ## 1. Decision
 

@@ -61,4 +61,12 @@
 
 ## 发布边界
 
-本次为 Mobile JS/TS/UI 修复，不变更原生依赖、权限声明、runtime 或后端契约。验证通过后可对 runtime `1.3.3` 发布 production OTA；若排查发现原生权限配置或后端接口需要变化，则停止 OTA 路径，重新评估原生构建或后端部署。
+本次为 Mobile JS/TS/UI 修复，不变更原生依赖、权限声明、runtime 或后端契约。验证只能
+使用本地 Metro/iOS Simulator/test；`npm run ios` 固定走 Simulator wrapper，不得向
+npm/Expo 追加 `--device`；wrapper 锁定 exact available Simulator UDID，物理 iOS repo CLI、
+连接/安装/验收冻结。禁止 archive/export/signing/provisioning（尤其
+`-allowProvisioningUpdates`）。EAS channel→branch mapping 可能漂移或共用，故所有
+OTA/rollback channel 均冻结。到达发布 Gate 必须记录 **manual BLOCK 并停止**，不得改用
+EAS/ASC、原生构建、backend deploy 或 legacy/helper 旁路。未来解冻须另开 dossier，并使用仓库外 root-owned launcher、固定解释器、
+`env -i` allowlist、仓库外 canonical Git archive/tree materialization、完整
+source/artifact/recovery proof 和新的独立 G4。

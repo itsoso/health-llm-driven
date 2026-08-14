@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import importlib.util
+import stat
 import subprocess
 import sys
 import time
@@ -24,9 +26,153 @@ TRANSACTION_ID = "tx-test-1234"
 
 @pytest.mark.parametrize(
     ("script", "args"),
-    ((OTA, ("production", "test")), (ROLLBACK, ("production",))),
+    (
+        (OTA, ("production", "test")),
+        (OTA, ("rokid-production", "test")),
+        (OTA, ("watch-production", "test")),
+        (ROLLBACK, ("production", "--confirm")),
+        (ROLLBACK, ("rokid-production", "--confirm")),
+    ),
 )
-def test_ota_commands_require_an_exact_eas_cli_version(
+def test_production_ota_writers_are_frozen_even_with_a_caller_runner_override(
+    script: Path,
+    args: tuple[str, ...],
+    tmp_path: Path,
+) -> None:
+    marker = tmp_path / "runner-invoked"
+    fake_runner = tmp_path / "fake-eas"
+    fake_runner.write_text(
+        f"#!/bin/sh\nprintf invoked > {marker}\n",
+        encoding="utf-8",
+    )
+    fake_runner.chmod(0o700)
+
+    completed = subprocess.run(
+        [str(script), *args],
+        cwd=ROOT,
+        env={**os.environ, "OTA_EAS_RUNNER": str(fake_runner)},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 78
+    assert "已冻结" in completed.stderr
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize(
+    ("script", "args"),
+    (
+        (OTA, ("production",)),
+        (OTA, ("rokid-production",)),
+        (ROLLBACK, ("production", "--confirm")),
+        (ROLLBACK, ("rokid-production", "--confirm")),
+    ),
+)
+def test_production_channel_family_freezes_before_git_paths_lock_or_state(
+    script: Path,
+    args: tuple[str, ...],
+    tmp_path: Path,
+) -> None:
+    marker = tmp_path / "ambient-command-invoked"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    for command in ("git", "python3", "dirname"):
+        executable = fake_bin / command
+        executable.write_text(
+            f"#!/bin/sh\nprintf invoked > {marker}\nexit 91\n",
+            encoding="utf-8",
+        )
+        executable.chmod(0o700)
+
+    state_path = tmp_path / "must-not-exist"
+    completed = subprocess.run(
+        [str(script), *args],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
+            "REVA_RELEASE_LOCK_DIR": str(state_path / "lock"),
+            "OTA_MANIFEST_FILE": str(state_path / "manifest.json"),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 78
+    assert "冻结" in completed.stderr
+    assert not marker.exists()
+    assert not state_path.exists()
+
+
+@pytest.mark.parametrize(
+    "channel",
+    (
+        "development",
+        "preview",
+        "rokid-preview",
+        "production",
+        "live",
+        "prod",
+        "foo",
+        "watch-preview",
+    ),
+)
+@pytest.mark.parametrize("script", (OTA, ROLLBACK))
+def test_all_ota_channels_freeze_before_path_state_lock_or_runner(
+    script: Path,
+    channel: str,
+    tmp_path: Path,
+) -> None:
+    external_marker = tmp_path / "ambient-command-invoked"
+    runner_marker = tmp_path / "runner-invoked"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    for command in ("git", "python3", "dirname"):
+        executable = fake_bin / command
+        executable.write_text(
+            f"#!/bin/sh\nprintf invoked > {external_marker}\nexit 91\n",
+            encoding="utf-8",
+        )
+        executable.chmod(0o700)
+    fake_runner = tmp_path / "fake-eas"
+    fake_runner.write_text(
+        f"#!/bin/sh\nprintf invoked > {runner_marker}\nexit 92\n",
+        encoding="utf-8",
+    )
+    fake_runner.chmod(0o700)
+    state_path = tmp_path / "must-not-exist"
+    arguments = (channel, "test") if script == OTA else (channel, "--confirm")
+
+    result = subprocess.run(
+        [str(script), *arguments],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
+            "OTA_EAS_RUNNER": str(fake_runner),
+            "REVA_RELEASE_LOCK_DIR": str(state_path / "lock"),
+            "OTA_MANIFEST_FILE": str(state_path / "manifest.json"),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 78, result.stdout + result.stderr
+    assert "冻结" in result.stderr
+    assert not external_marker.exists()
+    assert not runner_marker.exists()
+    assert not state_path.exists()
+
+
+@pytest.mark.parametrize(
+    ("script", "args"),
+    ((OTA, ("preview", "test")), (ROLLBACK, ("preview",))),
+)
+def test_ota_freeze_precedes_eas_cli_version_validation(
     script: Path,
     args: tuple[str, ...],
 ) -> None:
@@ -42,10 +188,8 @@ def test_ota_commands_require_an_exact_eas_cli_version(
         check=False,
     )
 
-    assert result.returncode == 2
-    assert "exact" in (result.stdout + result.stderr).lower() or "精确" in (
-        result.stdout + result.stderr
-    )
+    assert result.returncode == 78
+    assert "冻结" in result.stderr
     source = script.read_text(encoding="utf-8")
     assert 'EAS_CLI_VERSION="${OTA_EAS_CLI_VERSION:-21.8.0}"' in source
     assert '"eas-cli@${EAS_CLI_VERSION}"' in source
@@ -61,6 +205,38 @@ def test_per_channel_release_manifests_are_private_runtime_files() -> None:
     )
 
     assert result.returncode == 0
+
+
+@pytest.mark.parametrize(
+    ("script", "arguments"),
+    (
+        (OTA, ("production", "frozen")),
+        (ROLLBACK, ("production", "--confirm")),
+    ),
+)
+def test_production_ota_writers_are_frozen_before_any_runner_call(
+    tmp_path: Path,
+    script: Path,
+    arguments: tuple[str, ...],
+) -> None:
+    marker = tmp_path / "runner-called"
+    runner = tmp_path / "fake-eas"
+    runner.write_text(
+        f"#!/bin/sh\n: > {str(marker)!r}\nexit 0\n",
+        encoding="utf-8",
+    )
+    runner.chmod(0o700)
+    completed = subprocess.run(
+        [str(script), *arguments],
+        cwd=ROOT,
+        env={**os.environ, "OTA_EAS_RUNNER": str(runner)},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 78
+    assert "冻结" in completed.stdout + completed.stderr
+    assert not marker.exists()
 
 
 def _write_export(root: Path, *, platforms: tuple[str, ...] = ("ios",)) -> None:
@@ -93,13 +269,178 @@ def _verify(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _artifact(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return _verify("artifact", "--input-dir", str(root), "--platform", "ios", *args)
+
+
 def _write_private_manifest(path: Path, payload: dict[str, object]) -> None:
+    if payload.get("schema_version") == 2:
+        payload.setdefault("channel", "production")
     path.write_text(json.dumps(payload), encoding="utf-8")
     path.chmod(0o600)
 
 
-def _artifact(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return _verify("artifact", "--input-dir", str(root), "--platform", "ios", *args)
+def _load_verify_module():
+    spec = importlib.util.spec_from_file_location("verify_mobile_ota_artifact", VERIFY)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _make_git_worktree_pair(tmp_path: Path) -> tuple[Path, Path, Path]:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (repository / "fixture.txt").write_text("fixture\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "ota-test@example.invalid"],
+        cwd=repository,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "OTA Test"], cwd=repository, check=True
+    )
+    subprocess.run(["git", "add", "fixture.txt"], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "commit", "-qm", "fixture"], cwd=repository, check=True
+    )
+    worktree_a = tmp_path / "worktree-a"
+    worktree_b = tmp_path / "worktree-b"
+    subprocess.run(
+        ["git", "worktree", "add", "-qb", "fixture-a", str(worktree_a)],
+        cwd=repository,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "worktree", "add", "-qb", "fixture-b", str(worktree_b)],
+        cwd=repository,
+        check=True,
+    )
+    return repository, worktree_a, worktree_b
+
+
+def _published_manifest(
+    *, group_id: str = GROUP_ID, update_id: str = UPDATE_ID
+) -> dict[str, object]:
+    return {
+        "schema_version": 2,
+        "status": "published",
+        "platform": "ios",
+        "channel": "production",
+        "environment": "production",
+        "runtime_version": "1.3.3",
+        "group_id": group_id,
+        "update_id": update_id,
+        "active_group_id": group_id,
+        "active_update_id": update_id,
+    }
+
+
+def test_shared_ota_state_migrates_one_valid_legacy_receipt(tmp_path: Path) -> None:
+    repository, worktree_a, _worktree_b = _make_git_worktree_pair(tmp_path)
+    legacy = repository / ".mobile-release-manifest.json"
+    legacy.write_text(json.dumps(_published_manifest()), encoding="utf-8")
+    legacy.chmod(0o644)
+
+    result = _verify(
+        "state-paths",
+        "--repo-root",
+        str(worktree_a),
+        "--channel",
+        "production",
+        "--scope",
+        "mobile",
+        "--migrate",
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    shared = Path(payload["manifest_file"])
+    assert shared == repository / ".git/reva-release-state/mobile-ota/manifest.production.json"
+    assert json.loads(shared.read_text()) == _published_manifest()
+    assert stat.S_IMODE(shared.stat().st_mode) == 0o600
+    assert not legacy.exists()
+
+
+def test_shared_ota_state_rejects_conflicting_legacy_receipts(tmp_path: Path) -> None:
+    repository, worktree_a, _worktree_b = _make_git_worktree_pair(tmp_path)
+    first = repository / ".mobile-release-manifest.json"
+    second = worktree_a / ".mobile-release-manifest.json"
+    first.write_text(json.dumps(_published_manifest()), encoding="utf-8")
+    second.write_text(
+        json.dumps(
+            _published_manifest(
+                group_id="55555555-5555-4555-8555-555555555555",
+                update_id="66666666-6666-4666-8666-666666666666",
+            )
+        ),
+        encoding="utf-8",
+    )
+    first.chmod(0o600)
+    second.chmod(0o600)
+
+    result = _verify(
+        "state-paths",
+        "--repo-root",
+        str(worktree_a),
+        "--channel",
+        "production",
+        "--scope",
+        "mobile",
+        "--migrate",
+    )
+
+    assert result.returncode != 0
+    assert "conflicting" in result.stderr.lower()
+    assert first.exists()
+    assert second.exists()
+    assert not (
+        repository / ".git/reva-release-state/mobile-ota/manifest.production.json"
+    ).exists()
+
+
+def test_shared_ota_state_rejects_nonprivate_state_directory(tmp_path: Path) -> None:
+    repository, worktree_a, _worktree_b = _make_git_worktree_pair(tmp_path)
+    state_root = repository / ".git/reva-release-state"
+    state_root.mkdir(mode=0o755)
+
+    result = _verify(
+        "state-paths",
+        "--repo-root",
+        str(worktree_a),
+        "--channel",
+        "production",
+        "--scope",
+        "mobile",
+        "--migrate",
+    )
+
+    assert result.returncode != 0
+    assert "0700" in result.stderr
+
+
+def test_shared_ota_state_rejects_unsafe_channel_before_any_state_write(
+    tmp_path: Path,
+) -> None:
+    repository, worktree_a, _worktree_b = _make_git_worktree_pair(tmp_path)
+    state_root = repository / ".git/reva-release-state"
+
+    result = _verify(
+        "state-paths",
+        "--repo-root",
+        str(worktree_a),
+        "--channel",
+        "../escape",
+        "--scope",
+        "mobile",
+        "--migrate",
+    )
+
+    assert result.returncode != 0
+    assert "channel" in result.stderr.lower()
+    assert not state_root.exists()
+
 
 
 def test_artifact_accepts_one_complete_ios_export_and_digest_is_stable(
@@ -264,6 +605,371 @@ def test_manifest_rejects_group_or_world_permissions(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "permission" in result.stderr.lower() or "0600" in result.stderr
+
+
+@pytest.mark.parametrize("unsafe_kind", ["owner_executable", "hardlink"])
+def test_manifest_requires_exact_private_single_link(
+    tmp_path: Path, unsafe_kind: str
+) -> None:
+    manifest = tmp_path / "manifest.json"
+    _write_private_manifest(
+        manifest,
+        {
+            "schema_version": 2,
+            "status": "published",
+            "group_id": GROUP_ID,
+            "update_id": UPDATE_ID,
+            "active_group_id": GROUP_ID,
+            "active_update_id": UPDATE_ID,
+        },
+    )
+    if unsafe_kind == "owner_executable":
+        manifest.chmod(0o700)
+    else:
+        os.link(manifest, tmp_path / "manifest-hardlink.json")
+
+    result = _verify("manifest", "--manifest-file", str(manifest))
+
+    assert result.returncode != 0
+    assert "0600" in result.stderr or "link" in result.stderr.lower()
+
+
+def test_manifest_rejects_a_symlinked_private_parent(tmp_path: Path) -> None:
+    private_parent = tmp_path / "private"
+    private_parent.mkdir(mode=0o700)
+    manifest = private_parent / "manifest.json"
+    _write_private_manifest(manifest, _published_manifest())
+    symlinked_parent = tmp_path / "manifest-parent"
+    symlinked_parent.symlink_to(private_parent, target_is_directory=True)
+
+    result = _verify(
+        "manifest",
+        "--manifest-file",
+        str(symlinked_parent / manifest.name),
+        "--expected-channel",
+        "production",
+    )
+
+    assert result.returncode != 0
+    assert "directory" in result.stderr.lower() or "symlink" in result.stderr.lower()
+
+
+def test_manifest_rejects_a_symlinked_final_file(tmp_path: Path) -> None:
+    target = tmp_path / "manifest-target.json"
+    _write_private_manifest(target, _published_manifest())
+    manifest = tmp_path / "manifest.json"
+    manifest.symlink_to(target)
+
+    result = _verify(
+        "manifest",
+        "--manifest-file",
+        str(manifest),
+        "--expected-channel",
+        "production",
+    )
+
+    assert result.returncode != 0
+    assert "manifest" in result.stderr.lower()
+
+
+def test_manifest_rejects_a_fifo_without_blocking(tmp_path: Path) -> None:
+    manifest = tmp_path / "manifest.json"
+    os.mkfifo(manifest, mode=0o600)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(VERIFY),
+            "manifest",
+            "--manifest-file",
+            str(manifest),
+            "--expected-channel",
+            "production",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+
+    assert result.returncode != 0
+    assert "regular" in result.stderr.lower()
+
+
+def test_manifest_rejects_a_nonprivate_parent_directory(tmp_path: Path) -> None:
+    private_parent = tmp_path / "manifest-parent"
+    private_parent.mkdir(mode=0o755)
+    manifest = private_parent / "manifest.json"
+    _write_private_manifest(manifest, _published_manifest())
+
+    result = _verify(
+        "manifest",
+        "--manifest-file",
+        str(manifest),
+        "--expected-channel",
+        "production",
+    )
+
+    assert result.returncode != 0
+    assert "0700" in result.stderr
+
+
+def test_manifest_rejects_a_non_current_owner_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = tmp_path / "manifest.json"
+    _write_private_manifest(manifest, _published_manifest())
+    verifier = _load_verify_module()
+    current_uid = os.getuid()
+    monkeypatch.setattr(verifier.os, "getuid", lambda: current_uid + 1)
+
+    with pytest.raises(verifier.VerificationError, match="owner"):
+        verifier.validate_manifest(
+            manifest,
+            allow_missing=False,
+            expected_channel="production",
+        )
+
+
+def test_manifest_rejects_oversized_json_before_parsing(tmp_path: Path) -> None:
+    manifest = tmp_path / "manifest.json"
+    payload = json.dumps(_published_manifest()).encode("utf-8")
+    manifest.write_bytes(payload + b" " * (1024 * 1024))
+    manifest.chmod(0o600)
+
+    result = _verify(
+        "manifest",
+        "--manifest-file",
+        str(manifest),
+        "--expected-channel",
+        "production",
+    )
+
+    assert result.returncode != 0
+    assert "large" in result.stderr.lower() or "size" in result.stderr.lower()
+
+
+def test_manifest_rejects_inode_swap_during_single_fd_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = tmp_path / "manifest.json"
+    _write_private_manifest(manifest, _published_manifest())
+    replacement = tmp_path / "replacement.json"
+    _write_private_manifest(
+        replacement,
+        _published_manifest(
+            group_id="55555555-5555-4555-8555-555555555555",
+            update_id="66666666-6666-4666-8666-666666666666",
+        ),
+    )
+    verifier = _load_verify_module()
+    real_read = verifier.os.read
+    swapped = False
+
+    def swap_after_read(descriptor: int, size: int) -> bytes:
+        nonlocal swapped
+        data = real_read(descriptor, size)
+        if not swapped:
+            os.replace(replacement, manifest)
+            swapped = True
+        return data
+
+    monkeypatch.setattr(verifier.os, "read", swap_after_read)
+
+    with pytest.raises(verifier.VerificationError, match="changed"):
+        verifier.validate_manifest(
+            manifest,
+            allow_missing=False,
+            expected_channel="production",
+        )
+
+
+def test_manifest_rejects_parent_mode_drift_during_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = tmp_path / "manifest.json"
+    _write_private_manifest(manifest, _published_manifest())
+    verifier = _load_verify_module()
+    real_read = verifier.os.read
+    changed = False
+
+    def make_parent_public(descriptor: int, size: int) -> bytes:
+        nonlocal changed
+        data = real_read(descriptor, size)
+        if not changed:
+            tmp_path.chmod(0o755)
+            changed = True
+        return data
+
+    monkeypatch.setattr(verifier.os, "read", make_parent_public)
+    try:
+        with pytest.raises(verifier.VerificationError, match="directory"):
+            verifier.validate_manifest(
+                manifest,
+                allow_missing=False,
+                expected_channel="production",
+            )
+    finally:
+        tmp_path.chmod(0o700)
+
+
+@pytest.mark.parametrize("unsafe_kind", ["symlink", "hardlink", "mode", "swap"])
+def test_manifest_writer_rejects_target_drift_after_snapshot(
+    tmp_path: Path, unsafe_kind: str
+) -> None:
+    manifest = tmp_path / "manifest.json"
+    original = _published_manifest()
+    _write_private_manifest(manifest, original)
+    verifier = _load_verify_module()
+    snapshot = verifier.validate_manifest(
+        manifest,
+        allow_missing=False,
+        expected_channel="production",
+    )
+    replacement = tmp_path / "replacement.json"
+    _write_private_manifest(
+        replacement,
+        _published_manifest(
+            group_id="55555555-5555-4555-8555-555555555555",
+            update_id="66666666-6666-4666-8666-666666666666",
+        ),
+    )
+    if unsafe_kind == "symlink":
+        manifest.unlink()
+        manifest.symlink_to(replacement)
+    elif unsafe_kind == "hardlink":
+        os.link(manifest, tmp_path / "manifest-hardlink.json")
+    elif unsafe_kind == "mode":
+        manifest.chmod(0o644)
+    else:
+        os.replace(replacement, manifest)
+
+    with pytest.raises(verifier.VerificationError):
+        verifier.replace_manifest_from_snapshot(
+            manifest,
+            snapshot=snapshot,
+            payload=_published_manifest(),
+            expected_channel="production",
+        )
+
+    if not manifest.is_symlink():
+        assert json.loads(manifest.read_text(encoding="utf-8")) != original or (
+            unsafe_kind in {"hardlink", "mode"}
+        )
+
+
+@pytest.mark.parametrize("unsafe_kind", ["symlink", "hardlink", "mode"])
+def test_private_receipt_writer_rejects_unsafe_existing_anchor(
+    tmp_path: Path, unsafe_kind: str
+) -> None:
+    anchor = tmp_path / "anchor.production"
+    anchor.write_text("a" * 40 + "\n", encoding="utf-8")
+    anchor.chmod(0o600)
+    target = tmp_path / "anchor-target"
+    if unsafe_kind == "symlink":
+        target.write_text("owner data\n", encoding="utf-8")
+        target.chmod(0o600)
+        anchor.unlink()
+        anchor.symlink_to(target)
+    elif unsafe_kind == "hardlink":
+        os.link(anchor, tmp_path / "anchor-hardlink")
+    else:
+        anchor.chmod(0o644)
+    verifier = _load_verify_module()
+
+    with pytest.raises(verifier.VerificationError):
+        verifier.replace_private_text_receipt(
+            anchor,
+            "b" * 40 + "\n",
+            label="OTA anchor",
+        )
+
+
+def test_legacy_manifest_validation_does_not_follow_a_scratch_symlink(
+    tmp_path: Path,
+) -> None:
+    verifier = _load_verify_module()
+    victim = tmp_path / "victim.txt"
+    victim.write_text("owner data\n", encoding="utf-8")
+    scratch = tmp_path / "scratch.json"
+    scratch.symlink_to(victim)
+
+    verifier._validate_receipt_payload(
+        "manifest",
+        json.dumps(_published_manifest()).encode("utf-8"),
+        scratch,
+        channel="production",
+    )
+
+    assert victim.read_text(encoding="utf-8") == "owner data\n"
+
+
+@pytest.mark.parametrize("script", [OTA, ROLLBACK])
+def test_ota_shells_consume_one_verified_manifest_snapshot(script: Path) -> None:
+    source = script.read_text(encoding="utf-8")
+
+    assert "MANIFEST_SNAPSHOT_JSON" in source
+    assert "json.loads(manifest_path.read_text" not in source
+    assert "manifest_path.read_bytes()" not in source
+
+
+@pytest.mark.parametrize(
+    "artifact_fields",
+    [
+        {
+            "artifact_evidence": "verified_transaction_artifact",
+            "artifact_digest": "not-a-sha256",
+            "artifact_file_count": 4,
+            "artifact_total_bytes": 999,
+        },
+        {
+            "artifact_evidence": "verified_transaction_artifact",
+            "artifact_digest": "d" * 64,
+            "artifact_file_count": -1,
+            "artifact_total_bytes": 999,
+        },
+        {
+            "artifact_evidence": "verified_transaction_artifact",
+            "artifact_digest": "d" * 64,
+            "artifact_file_count": 4,
+            "artifact_total_bytes": "bad",
+        },
+        {
+            "artifact_evidence": "verified_transaction_artifact",
+            "artifact_digest": "d" * 64,
+            "artifact_file_count": 4,
+            "artifact_total_bytes": 0,
+        },
+        {
+            "artifact_evidence": "unavailable_after_remote_adoption",
+            "artifact_digest": "d" * 64,
+            "artifact_file_count": 4,
+            "artifact_total_bytes": 999,
+        },
+    ],
+)
+def test_manifest_rejects_invalid_artifact_evidence_semantics(
+    tmp_path: Path, artifact_fields: dict[str, object]
+) -> None:
+    manifest = tmp_path / "manifest.json"
+    _write_private_manifest(
+        manifest,
+        {
+            "schema_version": 2,
+            "status": "published",
+            "group_id": GROUP_ID,
+            "update_id": UPDATE_ID,
+            "active_group_id": GROUP_ID,
+            "active_update_id": UPDATE_ID,
+            **artifact_fields,
+        },
+    )
+
+    result = _verify("manifest", "--manifest-file", str(manifest))
+
+    assert result.returncode != 0
+    assert "artifact" in result.stderr.lower()
 
 
 def test_transaction_lookup_requires_one_unique_matching_group(tmp_path: Path) -> None:
@@ -535,764 +1241,3 @@ def test_rollback_source_pair_is_verified_within_a_mixed_platform_group(
     )
     assert mismatch.returncode != 0
     assert "mismatch" in mismatch.stderr.lower()
-
-
-def _fake_eas_runner(tmp_path: Path) -> Path:
-    runner = tmp_path / "fake-eas"
-    runner.write_text(
-        """#!/usr/bin/env python3
-import json, os, subprocess, sys, time
-from pathlib import Path
-
-args = sys.argv[1:]
-log = Path(os.environ["OTA_TEST_CALLS"])
-calls = json.loads(log.read_text()) if log.exists() else []
-calls.append(args)
-log.write_text(json.dumps(calls))
-mode = os.environ.get("OTA_TEST_MODE", "transient")
-state = Path(os.environ["OTA_TEST_STATE"])
-group = "11111111-1111-4111-8111-111111111111"
-update = "22222222-2222-4222-8222-222222222222"
-head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-runtime = json.loads(Path("app.json").read_text())["expo"]["version"]
-
-def value(flag):
-    return args[args.index(flag) + 1]
-
-def write_export(path):
-    root = Path(path)
-    (root / "bundles").mkdir(parents=True, exist_ok=True)
-    (root / "assets").mkdir(parents=True, exist_ok=True)
-    (root / "bundles/ios-entry.js").write_bytes(b"bundle")
-    (root / "assets/image.png").write_bytes(b"asset")
-    (root / "metadata.json").write_text(json.dumps({
-        "version": 0,
-        "bundler": "metro",
-        "fileMetadata": {"ios": {
-            "bundle": "bundles/ios-entry.js",
-            "assets": [{"path": "assets/image.png", "ext": "png"}],
-        }},
-    }))
-
-if args[0] == "--version":
-    print("eas-cli/21.8.0")
-elif args[0] == "update":
-    attempts = sum(1 for call in calls if call and call[0] == "update")
-    input_dir = value("--input-dir")
-    message = value("--message")
-    payload = [{
-        "id": update,
-        "group": group,
-        "branch": "production",
-        "message": message,
-        "runtimeVersion": runtime,
-        "platform": "ios",
-        "gitCommitHash": head,
-    }]
-    if attempts == 1:
-        write_export(input_dir)
-        if mode == "ambiguous-network":
-            print("ECONNRESET while waiting for publish response", file=sys.stderr)
-            raise SystemExit(1)
-        if mode in {"first-ambiguous", "eventual-first"}:
-            state.write_text(json.dumps(payload))
-            print("Asset processing timed out after upload", file=sys.stderr)
-            raise SystemExit(1)
-        if mode in {"transient", "mutate", "second-ambiguous"}:
-            print("Asset processing timed out", file=sys.stderr)
-            raise SystemExit(1)
-    state.write_text(json.dumps(payload))
-    if mode == "second-ambiguous":
-        print("Asset processing timed out after upload", file=sys.stderr)
-        raise SystemExit(1)
-    print(json.dumps(payload))
-elif args[0] == "update:list":
-    page = json.loads(state.read_text()) if state.exists() else []
-    list_attempts = sum(1 for call in calls if call and call[0] == "update:list")
-    print(json.dumps({
-        "currentPage": []
-        if mode == "ambiguous-network"
-        or (mode == "eventual-first" and list_attempts < 2)
-        else page
-    }))
-elif args[0] == "update:view":
-    payload = json.loads(state.read_text())
-    if mode == "view-mismatch":
-        payload[0]["id"] = "99999999-9999-4999-8999-999999999999"
-    print(json.dumps(payload))
-elif args[0] == "channel:view":
-    payload = json.loads(state.read_text())[0]
-    print(json.dumps({"currentPage": {
-        "name": "production",
-        "isPaused": False,
-        "updateBranches": [{
-            "name": "production",
-            "updateGroups": [{"id": payload["group"], "group": payload["group"]}],
-        }],
-    }}))
-else:
-    raise SystemExit("unexpected command: " + repr(args))
-""",
-        encoding="utf-8",
-    )
-    runner.chmod(0o755)
-    return runner
-
-
-def _run_ota(
-    tmp_path: Path,
-    mode: str,
-    *,
-    existing_manifest: str | None = None,
-    audit_log: Path | None = None,
-    preexisting_updates: list[dict[str, object]] | None = None,
-) -> tuple[subprocess.CompletedProcess[str], Path, Path, Path]:
-    runner = _fake_eas_runner(tmp_path)
-    manifest = tmp_path / "manifest.json"
-    if existing_manifest is not None:
-        manifest.write_text(existing_manifest, encoding="utf-8")
-        manifest.chmod(0o600)
-    anchor = tmp_path / "anchor"
-    calls = tmp_path / "calls.json"
-    if preexisting_updates is not None:
-        (tmp_path / "state.json").write_text(json.dumps(preexisting_updates))
-    env = os.environ.copy()
-    env.update(
-        {
-            "OTA_ALLOW_DIRTY": "1",
-            "OTA_EAS_RUNNER": str(runner),
-            "OTA_MANIFEST_FILE": str(manifest),
-            "OTA_ANCHOR_FILE": str(anchor),
-            "OTA_TEST_CALLS": str(calls),
-            "OTA_TEST_STATE": str(tmp_path / "state.json"),
-            "OTA_TEST_MODE": mode,
-            "OTA_TRANSACTION_ID": TRANSACTION_ID,
-            "OTA_AUDIT_LOG": str(audit_log or (tmp_path / "ota-audit.jsonl")),
-            "OTA_RETRY_DELAY_SECONDS": "0.3" if mode == "mutate" else "0",
-            "OTA_LOOKUP_ATTEMPTS": "3",
-            "OTA_LOOKUP_DELAY_SECONDS": "0",
-            "REVA_RELEASE_LOCK_DIR": str(tmp_path / "release-lock"),
-        }
-    )
-    if mode == "mutate":
-        mutator = tmp_path / "mutate-artifact"
-        mutator.write_text(
-            "#!/usr/bin/env python3\n"
-            "import pathlib,sys\n"
-            "(pathlib.Path(sys.argv[1]) / 'bundles/ios-entry.js').write_bytes(b'mutated')\n",
-            encoding="utf-8",
-        )
-        mutator.chmod(0o755)
-        env["OTA_TEST_AFTER_ARTIFACT_VERIFIED"] = str(mutator)
-    result = subprocess.run(
-        [str(OTA), "production", "transaction test"],
-        cwd=ROOT,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    return result, calls, manifest, anchor
-
-
-def test_ota_exports_once_and_retries_same_verified_directory(tmp_path: Path) -> None:
-    result, calls_path, manifest, anchor = _run_ota(tmp_path, "transient")
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    calls = json.loads(calls_path.read_text())
-    updates = [call for call in calls if call[0] == "update"]
-    assert len(updates) == 2
-    assert "--skip-bundler" not in updates[0]
-    assert "--skip-bundler" in updates[1]
-    assert updates[0][updates[0].index("--input-dir") + 1] == updates[1][
-        updates[1].index("--input-dir") + 1
-    ]
-    assert "--emit-metadata" not in updates[0]
-    assert any(call[0] == "update:list" for call in calls)
-    assert any(call[0] == "update:view" for call in calls)
-    assert any(call[0] == "channel:view" for call in calls)
-    payload = json.loads(manifest.read_text())
-    assert payload["schema_version"] == 2
-    assert payload["transaction_id"] == TRANSACTION_ID
-    assert len(payload["artifact_digest"]) == 64
-    assert len(payload["source_tree"]) == 40
-    assert payload["active_group_id"] == GROUP_ID
-    assert payload["active_update_id"] == UPDATE_ID
-    assert anchor.read_text().strip() == payload["commit_sha"]
-
-
-def test_ota_cross_invocation_retry_adopts_postcommit_publish_without_republishing(
-    tmp_path: Path,
-) -> None:
-    audit_log = tmp_path / "ota-audit.jsonl"
-    audit_log.mkdir()
-
-    first, calls_path, manifest, anchor = _run_ota(
-        tmp_path,
-        "success",
-        audit_log=audit_log,
-    )
-
-    assert first.returncode != 0
-    assert manifest.exists()
-    assert anchor.exists()
-    first_manifest = json.loads(manifest.read_text())
-    assert len(
-        [call for call in json.loads(calls_path.read_text()) if call[0] == "update"]
-    ) == 1
-
-    audit_log.rmdir()
-    second, calls_path, retried_manifest, retried_anchor = _run_ota(
-        tmp_path,
-        "success",
-        audit_log=audit_log,
-    )
-
-    assert second.returncode == 0, second.stdout + second.stderr
-    calls = json.loads(calls_path.read_text())
-    assert len([call for call in calls if call[0] == "update"]) == 1
-    assert len([call for call in calls if call[0] == "update:list"]) >= 1
-    retried_payload = json.loads(retried_manifest.read_text())
-    assert retried_payload["transaction_id"] == TRANSACTION_ID
-    assert retried_payload["artifact_digest"] == first_manifest["artifact_digest"]
-    assert retried_payload["published_at"] == first_manifest["published_at"]
-    assert retried_anchor.exists()
-    audit_events = [
-        json.loads(line) for line in audit_log.read_text().splitlines() if line.strip()
-    ]
-    assert audit_events[-1]["result"] == "published"
-    assert audit_events[-1]["transaction_id"] == TRANSACTION_ID
-
-
-def _preexisting_transaction_update(
-    *,
-    group_id: str = GROUP_ID,
-    update_id: str = UPDATE_ID,
-) -> dict[str, object]:
-    return {
-        "id": update_id,
-        "group": group_id,
-        "branch": "production",
-        "message": f"[tx:{TRANSACTION_ID}] transaction test",
-        "runtimeVersion": "1.3.3",
-        "platform": "ios",
-        "gitCommitHash": subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
-        ).strip(),
-    }
-
-
-def test_ota_preflight_adopts_one_remote_transaction_and_rebuilds_local_receipt(
-    tmp_path: Path,
-) -> None:
-    result, calls_path, manifest, anchor = _run_ota(
-        tmp_path,
-        "preexisting",
-        preexisting_updates=[_preexisting_transaction_update()],
-    )
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    calls = json.loads(calls_path.read_text())
-    assert not [call for call in calls if call[0] == "update"]
-    assert any(call[0] == "update:list" for call in calls)
-    assert any(call[0] == "update:view" for call in calls)
-    assert any(call[0] == "channel:view" for call in calls)
-    payload = json.loads(manifest.read_text())
-    assert payload["transaction_id"] == TRANSACTION_ID
-    assert payload["active_group_id"] == GROUP_ID
-    assert payload["active_update_id"] == UPDATE_ID
-    assert payload["artifact_digest"] is None
-    assert payload["artifact_evidence"] == "unavailable_after_remote_adoption"
-    assert anchor.exists()
-    assert manifest.stat().st_mode & 0o777 == 0o600
-
-
-def test_ota_preflight_fails_closed_on_multiple_remote_transaction_groups(
-    tmp_path: Path,
-) -> None:
-    result, calls_path, manifest, anchor = _run_ota(
-        tmp_path,
-        "preexisting",
-        preexisting_updates=[
-            _preexisting_transaction_update(),
-            _preexisting_transaction_update(
-                group_id="33333333-3333-4333-8333-333333333333",
-                update_id="44444444-4444-4444-8444-444444444444",
-            ),
-        ],
-    )
-
-    assert result.returncode != 0
-    calls = json.loads(calls_path.read_text())
-    assert not [call for call in calls if call[0] == "update"]
-    assert "ambiguous" in (result.stdout + result.stderr).lower()
-    assert not manifest.exists()
-    assert not anchor.exists()
-
-
-def test_ota_preflight_refuses_same_transaction_manifest_identity_conflict(
-    tmp_path: Path,
-) -> None:
-    original = {
-        "schema_version": 2,
-        "status": "published",
-        "transaction_id": TRANSACTION_ID,
-        "group_id": GROUP_ID,
-        "update_id": UPDATE_ID,
-        "active_group_id": GROUP_ID,
-        "active_update_id": UPDATE_ID,
-    }
-    result, calls_path, manifest, anchor = _run_ota(
-        tmp_path,
-        "preexisting",
-        existing_manifest=json.dumps(original),
-        preexisting_updates=[
-            _preexisting_transaction_update(
-                group_id="33333333-3333-4333-8333-333333333333",
-                update_id="44444444-4444-4444-8444-444444444444",
-            )
-        ],
-    )
-
-    assert result.returncode != 0
-    calls = json.loads(calls_path.read_text())
-    assert not [call for call in calls if call[0] == "update"]
-    assert "conflict" in (result.stdout + result.stderr).lower()
-    assert json.loads(manifest.read_text()) == original
-    assert not anchor.exists()
-
-
-def test_ota_resolves_a_lost_second_publish_response_without_a_third_publish(
-    tmp_path: Path,
-) -> None:
-    result, calls_path, manifest, anchor = _run_ota(tmp_path, "second-ambiguous")
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    calls = json.loads(calls_path.read_text())
-    assert len([call for call in calls if call[0] == "update"]) == 2
-    assert len([call for call in calls if call[0] == "update:list"]) == 5
-    assert json.loads(manifest.read_text())["active_group_id"] == GROUP_ID
-    assert anchor.exists()
-
-
-def test_ota_adopts_a_unique_first_publish_when_the_response_is_lost(
-    tmp_path: Path,
-) -> None:
-    result, calls_path, manifest, anchor = _run_ota(tmp_path, "first-ambiguous")
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    calls = json.loads(calls_path.read_text())
-    assert len([call for call in calls if call[0] == "update"]) == 1
-    assert len([call for call in calls if call[0] == "update:list"]) == 2
-    assert json.loads(manifest.read_text())["active_group_id"] == GROUP_ID
-    assert anchor.exists()
-
-
-def test_ota_polls_until_a_first_publish_becomes_visible(tmp_path: Path) -> None:
-    result, calls_path, manifest, anchor = _run_ota(tmp_path, "eventual-first")
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    calls = json.loads(calls_path.read_text())
-    assert len([call for call in calls if call[0] == "update"]) == 1
-    assert len([call for call in calls if call[0] == "update:list"]) == 2
-    assert json.loads(manifest.read_text())["active_group_id"] == GROUP_ID
-    assert anchor.exists()
-
-
-def test_ota_does_not_republish_an_unresolved_ambiguous_network_failure(
-    tmp_path: Path,
-) -> None:
-    result, calls_path, manifest, anchor = _run_ota(tmp_path, "ambiguous-network")
-
-    assert result.returncode != 0
-    calls = json.loads(calls_path.read_text())
-    assert len([call for call in calls if call[0] == "update"]) == 1
-    assert len([call for call in calls if call[0] == "update:list"]) == 4
-    assert "ambiguous" in (result.stdout + result.stderr).lower()
-    assert not manifest.exists()
-    assert not anchor.exists()
-
-
-def test_ota_refuses_artifact_mutation_before_retry(tmp_path: Path) -> None:
-    result, calls_path, manifest, anchor = _run_ota(tmp_path, "mutate")
-
-    assert result.returncode != 0
-    calls = json.loads(calls_path.read_text())
-    assert len([call for call in calls if call[0] == "update"]) == 1
-    assert "digest" in (result.stdout + result.stderr).lower()
-    assert not manifest.exists()
-    assert not anchor.exists()
-
-
-def test_ota_refuses_structured_view_mismatch_before_manifest(tmp_path: Path) -> None:
-    result, _calls, manifest, anchor = _run_ota(tmp_path, "view-mismatch")
-
-    assert result.returncode != 0
-    assert "mismatch" in (result.stdout + result.stderr).lower()
-    assert not manifest.exists()
-    assert not anchor.exists()
-
-
-def test_ota_refuses_corrupt_existing_manifest_before_eas(tmp_path: Path) -> None:
-    result, calls, manifest, anchor = _run_ota(
-        tmp_path,
-        "transient",
-        existing_manifest="{corrupt",
-    )
-
-    assert result.returncode != 0
-    assert "manifest" in (result.stdout + result.stderr).lower()
-    assert not calls.exists()
-    assert manifest.read_text() == "{corrupt"
-    assert not anchor.exists()
-
-
-def test_ota_refuses_incomplete_legacy_manifest_pair_before_eas(tmp_path: Path) -> None:
-    result, calls, manifest, anchor = _run_ota(
-        tmp_path,
-        "transient",
-        existing_manifest=json.dumps(
-            {"schema_version": 1, "group_id": GROUP_ID, "update_id": None}
-        ),
-    )
-
-    assert result.returncode != 0
-    assert "manifest" in (result.stdout + result.stderr).lower()
-    assert not calls.exists()
-    assert json.loads(manifest.read_text())["group_id"] == GROUP_ID
-    assert not anchor.exists()
-
-
-def _fake_rollback_runner(tmp_path: Path) -> Path:
-    runner = tmp_path / "fake-rollback-eas"
-    runner.write_text(
-        f"""#!/usr/bin/env python3
-import json, os, sys
-args = sys.argv[1:]
-calls_path = os.environ.get("OTA_ROLLBACK_TEST_CALLS")
-if calls_path:
-    calls = json.loads(open(calls_path).read()) if os.path.exists(calls_path) else []
-    calls.append(args)
-    open(calls_path, "w").write(json.dumps(calls))
-source = [{{
-  "id": "{UPDATE_ID}",
-  "group": "{GROUP_ID}",
-  "branch": "production",
-  "message": "known good",
-  "runtimeVersion": "1.3.3",
-  "platform": "ios",
-  "gitCommitHash": "0000000000000000000000000000000000000000"
-}}]
-new = [{{
-  "id": "{ROLLBACK_UPDATE_ID}",
-  "group": "{ROLLBACK_GROUP_ID}",
-  "branch": {{"name": "production"}},
-  "message": "[tx:" + os.environ["OTA_ROLLBACK_TRANSACTION_ID"] + "] rollback",
-  "runtimeVersion": "1.3.3",
-  "platform": "ios",
-  "gitCommitHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-}}]
-if args[0] == "update:republish":
-    if os.environ.get("OTA_ROLLBACK_TEST_AMBIGUOUS") == "1":
-        print("ECONNRESET after republish", file=sys.stderr)
-        raise SystemExit(1)
-    print(json.dumps(new))
-elif args[0] == "update:list":
-    print(json.dumps({{"currentPage": [{{
-      "group": "{ROLLBACK_GROUP_ID}",
-      "branch": "production",
-      "message": new[0]["message"],
-      "runtimeVersion": "1.3.3"
-    }}]}}))
-elif args[0] == "update:view":
-    if args[1] == "{GROUP_ID}":
-        if os.environ.get("OTA_ROLLBACK_TEST_SOURCE_MISMATCH") == "1":
-            source[0]["id"] = "99999999-9999-4999-8999-999999999999"
-        print(json.dumps(source))
-    else:
-        print(json.dumps(new))
-elif args[0] == "channel:view":
-    print(json.dumps({{"currentPage": {{
-      "name": "production",
-      "isPaused": False,
-      "updateBranches": [{{"name": "production", "updateGroups": [{{
-        "id": "{ROLLBACK_GROUP_ID}", "group": "{ROLLBACK_GROUP_ID}"
-      }}]}}]
-    }}}}))
-else:
-    raise SystemExit("unexpected command")
-""",
-        encoding="utf-8",
-    )
-    runner.chmod(0o755)
-    return runner
-
-
-def test_rollback_records_new_republish_ids_and_separate_source_ids(tmp_path: Path) -> None:
-    manifest = tmp_path / "manifest.json"
-    _write_private_manifest(
-        manifest,
-        {
-                "schema_version": 2,
-                "status": "published",
-                "platform": "ios",
-                "channel": "production",
-                "environment": "production",
-                "runtime_version": "1.3.3",
-                "active_group_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                "active_update_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-                "previous_known_good_group_id": GROUP_ID,
-                "previous_known_good_update_id": UPDATE_ID,
-                "transaction_id": "old-bad-transaction",
-                "commit_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                "source_tree": "cccccccccccccccccccccccccccccccccccccccc",
-                "artifact_digest": "d" * 64,
-                "artifact_file_count": 4,
-                "artifact_total_bytes": 999,
-                "published_at": "2026-08-01T00:00:00+00:00",
-        },
-    )
-    env = os.environ.copy()
-    env.update(
-        {
-            "OTA_MANIFEST_FILE": str(manifest),
-            "OTA_EAS_RUNNER": str(_fake_rollback_runner(tmp_path)),
-            "REVA_RELEASE_LOCK_DIR": str(tmp_path / "release-lock"),
-            "OTA_ROLLBACK_TEST_CALLS": str(tmp_path / "rollback-calls.json"),
-        }
-    )
-
-    result = subprocess.run(
-        [str(ROLLBACK), "production", "--confirm"],
-        cwd=ROOT,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    payload = json.loads(manifest.read_text())
-    calls = json.loads((tmp_path / "rollback-calls.json").read_text())
-    assert calls[0][:2] == ["update:view", GROUP_ID]
-    assert calls[1][0] == "update:republish"
-    assert "--message" in calls[1]
-    assert calls[1][calls[1].index("--message") + 1].startswith("[tx:rollback-")
-    assert payload["schema_version"] == 2
-    assert payload["status"] == "rolled_back"
-    assert payload["rollback_source_group_id"] == GROUP_ID
-    assert payload["rollback_source_update_id"] == UPDATE_ID
-    assert payload["rollback_transaction_id"].startswith("rollback-")
-    assert payload["active_group_id"] == ROLLBACK_GROUP_ID
-    assert payload["active_update_id"] == ROLLBACK_UPDATE_ID
-    assert payload["rollback_from_group_id"] == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-    assert payload["rollback_from_update_id"] == "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-    assert payload["previous_known_good_group_id"] == GROUP_ID
-    assert payload["previous_known_good_update_id"] == UPDATE_ID
-    assert payload["commit_sha"] == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    assert "source_tree" not in payload
-    assert "artifact_digest" not in payload
-    assert "transaction_id" not in payload
-    assert "published_at" not in payload
-    assert payload["rollback_from_evidence"]["transaction_id"] == (
-        "old-bad-transaction"
-    )
-
-
-def test_rollback_rejects_a_partial_explicit_source_pair(tmp_path: Path) -> None:
-    manifest = tmp_path / "manifest.json"
-    _write_private_manifest(
-        manifest,
-        {
-                "schema_version": 1,
-                "active_group_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                "active_update_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-                "previous_known_good_group_id": GROUP_ID,
-                "previous_known_good_update_id": UPDATE_ID,
-        },
-    )
-    env = os.environ.copy()
-    env.update(
-        {
-            "OTA_MANIFEST_FILE": str(manifest),
-            "OTA_ROLLBACK_GROUP_ID": GROUP_ID,
-            "OTA_ROLLBACK_UPDATE_ID": "",
-        }
-    )
-
-    result = subprocess.run(
-        [str(ROLLBACK), "production"],
-        cwd=ROOT,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode != 0
-    assert "pair" in (result.stdout + result.stderr).lower() or "成对" in (
-        result.stdout + result.stderr
-    )
-
-
-def test_rollback_rejects_source_pair_mismatch_before_republish(tmp_path: Path) -> None:
-    manifest = tmp_path / "manifest.json"
-    original = {
-        "schema_version": 2,
-        "status": "published",
-        "runtime_version": "1.3.3",
-        "active_group_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        "active_update_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-        "previous_known_good_group_id": GROUP_ID,
-        "previous_known_good_update_id": UPDATE_ID,
-    }
-    _write_private_manifest(manifest, original)
-    calls = tmp_path / "rollback-calls.json"
-    env = os.environ.copy()
-    env.update(
-        {
-            "OTA_MANIFEST_FILE": str(manifest),
-            "OTA_EAS_RUNNER": str(_fake_rollback_runner(tmp_path)),
-            "OTA_ROLLBACK_TEST_CALLS": str(calls),
-            "OTA_ROLLBACK_TEST_SOURCE_MISMATCH": "1",
-            "REVA_RELEASE_LOCK_DIR": str(tmp_path / "release-lock"),
-        }
-    )
-
-    result = subprocess.run(
-        [str(ROLLBACK), "production", "--confirm"],
-        cwd=ROOT,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode != 0
-    assert "source" in (result.stdout + result.stderr).lower()
-    assert all(call[0] != "update:republish" for call in json.loads(calls.read_text()))
-    assert json.loads(manifest.read_text()) == original
-
-
-def test_rollback_adopts_a_unique_republish_when_response_is_lost(
-    tmp_path: Path,
-) -> None:
-    manifest = tmp_path / "manifest.json"
-    _write_private_manifest(
-        manifest,
-        {
-                "schema_version": 2,
-                "runtime_version": "1.3.3",
-                "group_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                "update_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-                "active_group_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                "active_update_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-                "previous_known_good_group_id": GROUP_ID,
-                "previous_known_good_update_id": UPDATE_ID,
-        },
-    )
-    calls = tmp_path / "rollback-calls.json"
-    env = os.environ.copy()
-    env.update(
-        {
-            "OTA_MANIFEST_FILE": str(manifest),
-            "OTA_EAS_RUNNER": str(_fake_rollback_runner(tmp_path)),
-            "OTA_ROLLBACK_TEST_CALLS": str(calls),
-            "OTA_ROLLBACK_TEST_AMBIGUOUS": "1",
-            "OTA_LOOKUP_DELAY_SECONDS": "0",
-            "REVA_RELEASE_LOCK_DIR": str(tmp_path / "release-lock"),
-        }
-    )
-
-    result = subprocess.run(
-        [str(ROLLBACK), "production", "--confirm"],
-        cwd=ROOT,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    logged = json.loads(calls.read_text())
-    assert len([call for call in logged if call[0] == "update:republish"]) == 1
-    assert len([call for call in logged if call[0] == "update:list"]) == 1
-    assert json.loads(manifest.read_text())["active_group_id"] == ROLLBACK_GROUP_ID
-
-
-def test_rollback_refuses_an_incomplete_active_pair_before_eas(tmp_path: Path) -> None:
-    manifest = tmp_path / "manifest.json"
-    original = {
-        "schema_version": 2,
-        "runtime_version": "1.3.3",
-        "active_group_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        "active_update_id": None,
-        "previous_known_good_group_id": GROUP_ID,
-        "previous_known_good_update_id": UPDATE_ID,
-    }
-    _write_private_manifest(manifest, original)
-    calls = tmp_path / "rollback-calls.json"
-    env = os.environ.copy()
-    env.update(
-        {
-            "OTA_MANIFEST_FILE": str(manifest),
-            "OTA_EAS_RUNNER": str(_fake_rollback_runner(tmp_path)),
-            "OTA_ROLLBACK_TEST_CALLS": str(calls),
-            "REVA_RELEASE_LOCK_DIR": str(tmp_path / "release-lock"),
-        }
-    )
-
-    result = subprocess.run(
-        [str(ROLLBACK), "production", "--confirm"],
-        cwd=ROOT,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode != 0
-    assert "manifest" in (result.stdout + result.stderr).lower()
-    assert not calls.exists()
-    assert json.loads(manifest.read_text()) == original
-
-
-def test_explicit_rollback_pair_can_create_a_missing_manifest(tmp_path: Path) -> None:
-    manifest = tmp_path / "manifest.json"
-    env = os.environ.copy()
-    env.update(
-        {
-            "OTA_MANIFEST_FILE": str(manifest),
-            "OTA_EAS_RUNNER": str(_fake_rollback_runner(tmp_path)),
-            "OTA_ROLLBACK_RUNTIME_VERSION": "1.3.3",
-            "REVA_RELEASE_LOCK_DIR": str(tmp_path / "release-lock"),
-        }
-    )
-
-    result = subprocess.run(
-        [
-            str(ROLLBACK),
-            "production",
-            "--group",
-            GROUP_ID,
-            "--update-id",
-            UPDATE_ID,
-            "--confirm",
-        ],
-        cwd=ROOT,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    payload = json.loads(manifest.read_text())
-    assert payload["active_group_id"] == ROLLBACK_GROUP_ID
-    assert payload["active_update_id"] == ROLLBACK_UPDATE_ID
-    assert payload["platform"] == "ios"
-    assert payload["runtime_version"] == "1.3.3"
-    assert payload["rollback_source_verification"] == {
-        "group_update_runtime": True,
-        "update_view": True,
-    }

@@ -104,6 +104,121 @@ class TestSchemaDefaults:
 
 
 class TestBuilderEmptyDB:
+    def test_sqlite_phase_b_reuses_caller_session_without_threads(self, db, monkeypatch):
+        """SQLite cannot safely run Twin fillers through independent worker sessions.
+
+        The full validation process uses an in-memory SQLite global engine.  Creating
+        several worker sessions there can make SingletonThreadPool close a connection
+        while another worker is using it, which deadlocks SQLite's mutex against the
+        Python GIL.  SQLite must therefore execute Phase B serially on the caller's
+        session; PostgreSQL keeps the parallel independent-session path.
+        """
+        import app.twin.builder as builder
+
+        class UnexpectedThreadPool:
+            def __init__(self, *args, **kwargs):
+                raise AssertionError("SQLite Twin build must not create a thread pool")
+
+        observed_sessions = []
+        monkeypatch.setattr(builder, "ThreadPoolExecutor", UnexpectedThreadPool)
+        monkeypatch.setattr(
+            builder,
+            "_fill_physiological_derived",
+            lambda session, user_id, twin: observed_sessions.append(session),
+        )
+
+        twin = builder.build_twin(db, user_id=9999, use_cache=False)
+
+        assert isinstance(twin, HealthTwin)
+        assert observed_sessions == [db]
+
+    def test_postgres_phase_b_uses_caller_engine_and_inherits_authenticated_tenant(
+        self, monkeypatch
+    ):
+        """Postgres workers keep parallel sessions without dropping RLS identity."""
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import Session
+
+        import app.twin.builder as builder
+
+        engine = create_engine("sqlite:///:memory:")
+        caller = Session(bind=engine)
+        caller.info["app_user_id"] = "187"
+        observed = []
+        monkeypatch.setattr(engine.dialect, "name", "postgresql")
+
+        try:
+            builder._run_phase_b_fillers(
+                caller,
+                [("probe", lambda session: observed.append(session))],
+                HealthTwin(meta=TwinMeta(user_id=187, generated_at=datetime.now(timezone.utc))),
+            )
+        finally:
+            caller.close()
+            engine.dispose()
+
+        assert len(observed) == 1
+        assert observed[0] is not caller
+        assert observed[0].get_bind() is engine
+        assert observed[0].info == {"app_user_id": 187}
+
+    def test_postgres_phase_b_does_not_invent_tenant_authority(self, monkeypatch):
+        """Missing caller authority stays missing; user_id is never an RLS fallback."""
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import Session
+
+        import app.twin.builder as builder
+
+        engine = create_engine("sqlite:///:memory:")
+        caller = Session(bind=engine)
+        observed = []
+        monkeypatch.setattr(engine.dialect, "name", "postgresql")
+
+        try:
+            builder._run_phase_b_fillers(
+                caller,
+                [("probe", lambda session: observed.append(dict(session.info)))],
+                HealthTwin(meta=TwinMeta(user_id=9999, generated_at=datetime.now(timezone.utc))),
+            )
+        finally:
+            caller.close()
+            engine.dispose()
+
+        assert observed == [{}]
+
+    def test_connection_bound_phase_b_reuses_caller_session_without_threads(
+        self, monkeypatch
+    ):
+        """A Session bound to one Connection cannot be shared across workers."""
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import Session
+
+        import app.twin.builder as builder
+
+        class UnexpectedThreadPool:
+            def __init__(self, *args, **kwargs):
+                raise AssertionError("connection-bound Twin build must stay serial")
+
+        engine = create_engine("sqlite:///:memory:")
+        connection = engine.connect()
+        caller = Session(bind=connection)
+        observed = []
+        monkeypatch.setattr(engine.dialect, "name", "postgresql")
+        monkeypatch.setattr(builder, "ThreadPoolExecutor", UnexpectedThreadPool)
+
+        try:
+            builder._run_phase_b_fillers(
+                caller,
+                [("probe", lambda session: observed.append(session))],
+                HealthTwin(meta=TwinMeta(user_id=1, generated_at=datetime.now(timezone.utc))),
+            )
+        finally:
+            caller.close()
+            connection.close()
+            engine.dispose()
+
+        assert observed == [caller]
+
     def test_build_on_empty_db_returns_valid_twin(self, db):
         """空数据库 + 不存在的用户 → 不抛异常，返回空 Twin。"""
         twin = build_twin(db, user_id=9999, use_cache=False)

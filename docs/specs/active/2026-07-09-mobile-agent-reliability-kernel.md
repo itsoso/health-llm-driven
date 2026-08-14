@@ -5,6 +5,14 @@
 > Updated: 2026-07-09
 > Related PRD/PDD: `docs/prd/2026-07-09-mobile-agent-reliability-kernel.md`
 > Related code: `mobile/hooks/useChatEngine.ts`, `mobile/components/chat/ChatInputBar.tsx`, `mobile/services/chatCardActions.ts`, `backend/app/services/agent_executor.py`
+>
+> **Current release override (2026-08-12):** all repo-contained automatic remote/vendor release
+> entrypoints, local signing/install/automatic-provisioning entrypoints and every OTA/rollback
+> channel are frozen. EAS channel→branch mapping can drift or be shared, so preview/development is not an
+> isolated exception. Production network observation and release plan/validate are also frozen.
+> Current delivery stops at local validation, offline evidence and public unauthenticated HTTPS;
+> none forms G5/G6. Manual Gate is
+> BLOCK pending a new repo-external trust-root dossier and independent G4.
 
 ## 1. Decision
 
@@ -188,9 +196,12 @@ Simulator matrix: text send, hold send, hold-to-text, cancel, realtime start/sto
 
 ## 13. Rollout And Rollback
 
-- Additive backend receipt deploys first.
-- Mobile JS/TS ships by production OTA after G3/G4 and simulator verification.
-- Rollback removes Mobile consumption while backend additive field remains harmless.
+- Validate the additive backend receipt and Mobile JS/TS locally through G3/G4 and iOS Simulator;
+  `npm run ios` uses the Simulator wrapper, callers may not append npm/Expo `--device`, and the
+  wrapper pins an exact available Simulator UDID. Do not connect/install physical iOS, deploy either
+  surface or build/sign a binary.
+- All OTA/rollback channels and production native writers remain frozen. The manual release Gate is
+  BLOCK regardless of existing candidate visibility; no production rollback writer is active.
 - Existing WeChat composer spec remains active; this spec replaces only its internal state ownership.
 
 ## 14. Open Questions

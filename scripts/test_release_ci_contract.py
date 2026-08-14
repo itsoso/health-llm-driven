@@ -1,5 +1,8 @@
 from glob import glob
+import os
 from pathlib import Path
+import subprocess
+import textwrap
 
 import yaml
 
@@ -8,19 +11,30 @@ ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 RELEASE_TESTS = (
     "scripts/test_ci_change_scope.py",
+    "scripts/test_asc_profiles.py",
     "scripts/test_deploy_script.py",
+    "scripts/test_frozen_shell_entrypoints.py",
     "scripts/test_generate_api_types.py",
     "scripts/test_health_evidence_activation_runner.py",
     "scripts/test_release_lock.py",
     "scripts/test_release_rollback.py",
     "scripts/test_infrastructure_security.py",
     "scripts/test_mobile_fast_feedback_scripts.py",
+    "scripts/test_mobile_local_qr_script.py",
     "scripts/test_runtime_state_release_transaction.py",
     "scripts/test_release_pipeline.py",
     "scripts/test_run_all_tests.py",
     "scripts/test_validation_credential.py",
     "scripts/test_mobile_ota.py",
+    "scripts/test_mobile_native_ota_compatibility.py",
     "scripts/test_ios_acceptance_harness.py",
+    "scripts/test_sim_build.py",
+    "scripts/test_release_production_state.py",
+    "scripts/test_app_store_privileged_cli_freeze.py",
+    "scripts/test_rokid_release_freeze.py",
+    "scripts/test_locked_eas_cli.py",
+    "scripts/test_mac_release_receipt.py",
+    "scripts/test_mac_release_nginx.py",
     "scripts/test_release_step_proof.py",
     "scripts/test_release_ci_contract.py",
     "scripts/test_release_input_digest.py",
@@ -34,6 +48,44 @@ def _run_bodies(job: dict) -> str:
         for step in job.get("steps", [])
         if isinstance(step, dict)
     )
+
+
+def _aggregate_environment(**overrides: str) -> dict[str, str]:
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "CLASSIFIER_RESULT": "success",
+            "DOCS_ONLY": "true",
+            "RUN_DOCS": "true",
+            "RUN_BACKEND": "false",
+            "RUN_FRONTEND": "false",
+            "RUN_MOBILE": "false",
+            "RUN_RELEASE": "false",
+            "RUN_MAC": "false",
+            "RUN_TYPE_DRIFT": "false",
+            "FULL": "false",
+            "DOCS_QUALITY": "success",
+            "TEST_SHARDS": "skipped",
+            "QUALITY_GATES": "skipped",
+            "RELEASE_INVARIANTS": "skipped",
+            "RUNTIME_POSTGRES": "skipped",
+            "MAC_BUILD": "skipped",
+            "TYPE_DRIFT_RESULT": "skipped",
+            "FRONTEND_BUILD": "skipped",
+            "MOBILE_TYPECHECK": "skipped",
+        }
+    )
+    environment.update(overrides)
+    return environment
+
+
+def _classifier_guard_source() -> str:
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    source = _run_bodies(workflow["jobs"]["classify-changes"])
+    marker = "python3 - <<'PY'\n"
+    start = source.index(marker) + len(marker)
+    end = source.index("\nPY\n", start)
+    return textwrap.dedent(source[start:end])
 
 
 def test_ci_blocks_on_release_invariants_and_exercises_macos_bash3():
@@ -72,13 +124,67 @@ def test_ci_blocks_on_release_invariants_and_exercises_macos_bash3():
 
     backend_needs = jobs["backend-tests"]["needs"]
     assert "release-invariants" in backend_needs
+    assert "mac-build" in backend_needs
+    assert "type-drift" in backend_needs
+    assert "frontend-build" in backend_needs
+    assert "mobile-typecheck" in backend_needs
     assert (
         "RELEASE_INVARIANTS"
         in jobs["backend-tests"]["steps"][0]["env"]
     )
+    assert "RUN_MAC" in jobs["backend-tests"]["steps"][0]["env"]
+    assert "MAC_BUILD" in jobs["backend-tests"]["steps"][0]["env"]
+    assert "RUN_TYPE_DRIFT" in jobs["backend-tests"]["steps"][0]["env"]
+    assert "TYPE_DRIFT_RESULT" in jobs["backend-tests"]["steps"][0]["env"]
+    assert "FRONTEND_BUILD" in jobs["backend-tests"]["steps"][0]["env"]
+    assert "MOBILE_TYPECHECK" in jobs["backend-tests"]["steps"][0]["env"]
+    for name in (
+        "DOCS_ONLY",
+        "RUN_DOCS",
+        "RUN_BACKEND",
+        "RUN_FRONTEND",
+        "RUN_MOBILE",
+        "RUN_RELEASE",
+        "RUN_MAC",
+        "RUN_TYPE_DRIFT",
+        "FULL",
+    ):
+        assert name in jobs["backend-tests"]["steps"][0]["env"]
+    aggregate = str(jobs["backend-tests"]["steps"][0]["run"])
+    classifier_check = aggregate.index(
+        'for value in "$DOCS_ONLY" "$RUN_DOCS" "$RUN_BACKEND" '
+    )
+    release_check = aggregate.index(
+        'if [[ "$RUN_RELEASE" == true && "$RELEASE_INVARIANTS" != success ]]'
+    )
+    mac_check = aggregate.index(
+        'if [[ "$RUN_MAC" == true && "$MAC_BUILD" != success ]]'
+    )
+    type_drift_check = aggregate.index(
+        'if [[ "$RUN_TYPE_DRIFT" == true && "$TYPE_DRIFT_RESULT" != success ]]'
+    )
+    frontend_check = aggregate.index(
+        'if [[ "$RUN_FRONTEND" == true && "$FRONTEND_BUILD" != success ]]'
+    )
+    mobile_check = aggregate.index(
+        'if [[ "$RUN_MOBILE" == true && "$MOBILE_TYPECHECK" != success ]]'
+    )
+    backend_skip = aggregate.index('if [[ "$RUN_BACKEND" != true ]]')
+    assert classifier_check < release_check
+    assert release_check < backend_skip
+    assert mac_check < backend_skip
+    assert type_drift_check < backend_skip
+    assert frontend_check < backend_skip
+    assert mobile_check < backend_skip
 
     mac_runs = _run_bodies(jobs["mac-build"])
     assert "/bin/bash --version" in mac_runs
+    for script_path in (
+        "apps/mac/scripts/package-app.sh",
+        "apps/mac/scripts/release-dmg.sh",
+        "scripts/mac-release-nginx-bootstrap.sh",
+    ):
+        assert script_path in mac_runs
     assert (
         "test_repository_trust_normalization_makes_tracked_seeds_"
         "readable_not_writable" in mac_runs
@@ -121,6 +227,95 @@ def test_ci_classifies_changes_before_selecting_expensive_jobs():
     assert "github.event.before" in runs
     assert "github.event_name" in runs
     assert "--format github" in runs
+    assert "git diff --name-status -z --find-renames" in runs
+    assert "git diff --name-only" not in runs
+    assert '--input-format name-status-z' in runs
+    assert '> "$CHANGED_FILE"' in runs
+    assert 'CHANGED_FILES="$(' not in runs
+    assert "expected_keys" in runs
+    assert "critical_change" in runs
+    assert 'path.startswith((".github/", "scripts/"))' in runs
+    assert 'path == "deploy.sh"' in runs
+    assert 'values["full"] is not True' in runs
+
+
+def test_classifier_guard_dynamically_rejects_false_scope_for_workflow_change(
+    tmp_path: Path,
+):
+    false_scope = "\n".join(
+        f"{name}=false"
+        for name in (
+            "docs_only",
+            "run_docs",
+            "run_backend",
+            "run_frontend",
+            "run_mobile",
+            "run_mac",
+            "run_type_drift",
+            "run_release",
+            "full",
+        )
+    )
+    changed_file = tmp_path / "changed.z"
+    changed_file.write_bytes(b"R100\0.github/workflows/ci.yml\0docs/ci.yml\0")
+    result = subprocess.run(
+        ["python3", "-c", _classifier_guard_source()],
+        env={
+            **os.environ,
+            "SCOPE_OUTPUT": false_scope,
+            "CHANGED_FILE": str(changed_file),
+            "EVENT_NAME": "push",
+        },
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "independent full-suite rule" in result.stderr
+
+
+def test_required_aggregate_rejects_missing_or_invalid_classifier_outputs():
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    aggregate = str(workflow["jobs"]["backend-tests"]["steps"][0]["run"])
+
+    valid = subprocess.run(
+        ["bash", "-c", aggregate],
+        env=_aggregate_environment(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert valid.returncode == 0, valid.stderr
+
+    for name, value in (("RUN_RELEASE", ""), ("RUN_MOBILE", "maybe"), ("FULL", "1")):
+        rejected = subprocess.run(
+            ["bash", "-c", aggregate],
+            env=_aggregate_environment(**{name: value}),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert rejected.returncode != 0, (name, value, rejected.stdout)
+        assert "invalid or missing classifier output" in rejected.stderr
+
+
+def test_required_aggregate_rejects_selected_frontend_or_mobile_failure():
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    aggregate = str(workflow["jobs"]["backend-tests"]["steps"][0]["run"])
+
+    for selected, result in (
+        ({"RUN_FRONTEND": "true"}, {"FRONTEND_BUILD": "failure"}),
+        ({"RUN_MOBILE": "true"}, {"MOBILE_TYPECHECK": "cancelled"}),
+    ):
+        rejected = subprocess.run(
+            ["bash", "-c", aggregate],
+            env=_aggregate_environment(**selected, **result),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert rejected.returncode != 0, (selected, result, rejected.stdout)
 
 
 def test_docs_quality_is_mandatory_and_owns_lightweight_doc_gates():
@@ -134,6 +329,10 @@ def test_docs_quality_is_mandatory_and_owns_lightweight_doc_gates():
     assert "check_secret_leaks.py" in docs_runs
     assert "check_system_map.py" in docs_runs
     assert "check_dossier_consistency.py" in docs_runs
+    assert "scripts/test_ci_change_scope.py" in docs_runs
+    assert "scripts/test_release_ci_contract.py" in docs_runs
+    assert "pytest==9.1.1" in docs_runs
+    assert "PyYAML==6.0.3" in docs_runs
     assert "check_secret_leaks.py" not in backend_runs
     assert "check_system_map.py" not in backend_runs
     assert "check_dossier_consistency.py" not in backend_runs

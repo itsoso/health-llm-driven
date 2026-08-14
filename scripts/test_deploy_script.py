@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -10,6 +11,21 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 DEPLOY_SCRIPT = ROOT / "deploy.sh"
+# Production argv are intentionally frozen before deploy.sh can be sourced.
+# Legacy function-level fault-injection tests extract only the unreachable
+# implementation; this test-only extraction creates no runtime bypass.
+DEPLOY_SOURCE_FOR_TESTS = (
+    "set -e\n"
+    ': "${DEPLOY_ENV_FILE:?tests must provide an isolated DEPLOY_ENV_FILE}"\n'
+    f"test \"$DEPLOY_ENV_FILE\" != {str(ROOT / '.env')!r}\n"
+    "set -- --status\n"
+    f"eval \"$(/usr/bin/sed -n '/^# BEGIN UNREACHABLE LEGACY DEPLOY IMPLEMENTATION$/,/^# END UNREACHABLE LEGACY DEPLOY IMPLEMENTATION$/p' "
+    f"{DEPLOY_SCRIPT!s} | /usr/bin/sed "
+    f"'s|${{BASH_SOURCE\\[0\\]}}|{DEPLOY_SCRIPT!s}|g')\"\n"
+    "SERVER=fake-server.invalid\n"
+    "ssh() { return 97; }\nscp() { return 97; }\nrsync() { return 97; }\n"
+    "set --"
+)
 
 
 def _write_executable(path: Path, body: str) -> None:
@@ -39,6 +55,116 @@ else:
     )
 
 
+@pytest.mark.parametrize(
+    "arguments",
+    (
+        (),
+        ("--status",),
+        ("--logs",),
+        ("--inspect-release-lock",),
+        ("--backend",),
+        ("--help", "--status"),
+    ),
+)
+def test_sourcing_deploy_cli_is_inert_and_caller_continues(
+    tmp_path: Path,
+    arguments: tuple[str, ...],
+) -> None:
+    after = tmp_path / "after"
+    marker = tmp_path / "external-called"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    for name in ("dirname", "grep", "git", "python3", "ssh"):
+        _write_executable(
+            fake_bin / name,
+            f"#!/bin/sh\nprintf called >> {marker!s}\nexit 91\n",
+        )
+    quoted = " ".join(subprocess.list2cmdline([part]) for part in arguments)
+    harness = (
+        f"set -- {quoted}\n" if quoted else "set --\n"
+    ) + f"source {DEPLOY_SCRIPT!s}\nprintf AFTER > {after!s}\n"
+
+    completed = subprocess.run(
+        ["/bin/bash", "-c", harness],
+        cwd=tmp_path,
+        env={
+            "PATH": str(fake_bin),
+            "DEPLOY_ENV_FILE": str(tmp_path / "must-not-read.env"),
+            "BASH_FUNC_ssh%%": f"() {{ printf called >> {marker!s}; }}",
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    assert after.read_text(encoding="utf-8") == "AFTER"
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize("help_flag", ("-h", "--help"))
+def test_sourcing_deploy_exact_help_is_inert_and_returns_to_caller(
+    tmp_path: Path,
+    help_flag: str,
+) -> None:
+    after = tmp_path / "after"
+    completed = subprocess.run(
+        [
+            "/bin/bash",
+            "-c",
+            f"set -- {help_flag}; source {DEPLOY_SCRIPT!s}; printf AFTER > {after!s}",
+        ],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+    assert after.read_text(encoding="utf-8") == "AFTER"
+
+
+def test_hostile_source_cannot_reach_deploy_legacy_even_if_builtins_are_shadowed(
+    tmp_path: Path,
+) -> None:
+    tool_marker = tmp_path / "external-called"
+    function_marker = tmp_path / "legacy-function-loaded"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    for name in ("dirname", "grep", "cut", "git", "python3", "ssh"):
+        _write_executable(
+            fake_bin / name,
+            f"#!/bin/sh\nprintf called >> {tool_marker!s}\nexit 91\n",
+        )
+    harness = f"""
+set -- --status
+exit() {{ return 0; }}
+builtin() {{ return 0; }}
+printf() {{ return 0; }}
+set() {{ return 0; }}
+source {DEPLOY_SCRIPT!s}
+if declare -F deploy_backend >/dev/null; then
+  : > {function_marker!s}
+fi
+"""
+    completed = subprocess.run(
+        ["/bin/bash", "-c", harness],
+        cwd=tmp_path,
+        env={
+            "PATH": str(fake_bin),
+            "DEPLOY_ENV_FILE": str(tmp_path / "must-not-read.env"),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    assert not tool_marker.exists()
+    assert not function_marker.exists()
+
+
 def test_release_step_proofs_default_to_shadow_in_private_server_cache():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
 
@@ -48,6 +174,1048 @@ def test_release_step_proofs_default_to_shadow_in_private_server_cache():
         '/var/cache/health-app/release-proofs}"'
     ) in script
     assert 'off|shadow|on' in script
+
+
+def test_production_remote_release_lock_path_cannot_be_overridden_by_ambient_env():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert (
+        'REMOTE_RELEASE_LOCK_DIR="/var/lib/health-app/release-state/deploy.lock"'
+        in script
+    )
+    assert 'REMOTE_RELEASE_LOCK_DIR="${REMOTE_RELEASE_LOCK_DIR:-' not in script
+
+
+def test_remote_release_lock_uses_a_256_bit_csprng_token() -> None:
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    acquire = script[
+        script.index("acquire_remote_release_lock() {") : script.index(
+            "remote_release_lock_command() {"
+        )
+    ]
+
+    assert "secrets.token_hex(32)" in acquire
+    assert '${RANDOM:-0}' not in acquire
+    assert '$$-' not in acquire
+
+
+def test_remote_release_coordinator_contract_has_explicit_v2_identity() -> None:
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    contract = script[
+        script.index("remote_release_lock_command() {") : script.index(
+            "show_remote_release_lock_handoff() {"
+        )
+    ]
+
+    assert '"surface"' in contract
+    assert '"operation"' in contract
+    assert '"channel"' in contract
+    assert '"transaction_id"' in contract
+    assert '"baseline_digest"' in contract
+    assert '"request_digest"' in contract
+    assert '"schema": "2"' in contract
+    assert 'value == "production"' in contract
+    assert 'operation == "bind"' in contract
+
+
+def test_deploy_help_does_not_expose_release_coordinator_authority(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["bash", str(DEPLOY_SCRIPT), "--help"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Production repository entrypoints are frozen" in result.stdout
+    assert "--release-coordinator" not in result.stdout
+
+
+def test_remote_release_coordinator_rejects_nonproduction_channel_before_ssh(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n",
+        encoding="utf-8",
+    )
+    ssh_log = tmp_path / "ssh.log"
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+REMOTE_RELEASE_LOCK_DIR={tmp_path / 'deploy.lock'!s}
+ssh() {{ printf 'called\n' >> {ssh_log!s}; return 99; }}
+REVA_RELEASE_COORDINATOR_SURFACE=mobile
+REVA_RELEASE_COORDINATOR_OPERATION=forward
+REVA_RELEASE_COORDINATOR_CHANNEL=preview
+REVA_RELEASE_COORDINATOR_TRANSACTION={'b' * 32}
+REVA_RELEASE_COORDINATOR_REQUEST_DIGEST={'c' * 64}
+declare -F begin_remote_release_coordinator >/dev/null
+set +e
+begin_remote_release_coordinator
+rc=$?
+set -e
+test "$rc" -eq 70
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert not ssh_log.exists()
+    assert "command not found" not in result.stderr
+    assert "固定 production 契约" in result.stdout
+
+
+@pytest.mark.parametrize("poison", ("wrong-origin", "url-rewrite", "replace-ref"))
+def test_release_coordinator_rejects_noncanonical_origin_before_network(
+    tmp_path: Path,
+    poison: str,
+) -> None:
+    repository = tmp_path / "source"
+    repository.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "release@example.invalid"],
+        cwd=repository,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Release Test"],
+        cwd=repository,
+        check=True,
+    )
+    (repository / "tracked.txt").write_text("clean\n", encoding="utf-8")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=repository, check=True)
+    subprocess.run(["git", "commit", "-qm", "fixture"], cwd=repository, check=True)
+    origin = (
+        "https://example.invalid/poisoned.git"
+        if poison == "wrong-origin"
+        else "https://github.com/itsoso/health-llm-driven.git"
+    )
+    subprocess.run(["git", "remote", "add", "origin", origin], cwd=repository, check=True)
+    if poison == "url-rewrite":
+        subprocess.run(
+            [
+                "git",
+                "config",
+                "url.https://example.invalid/.insteadOf",
+                "https://github.com/itsoso/",
+            ],
+            cwd=repository,
+            check=True,
+        )
+    if poison == "replace-ref":
+        head = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=repository, text=True
+        ).strip()
+        tree = subprocess.check_output(
+            ["git", "rev-parse", f"{head}^{{tree}}"], cwd=repository, text=True
+        ).strip()
+        replacement = subprocess.check_output(
+            ["git", "commit-tree", tree, "-m", "replacement"],
+            cwd=repository,
+            text=True,
+        ).strip()
+        subprocess.run(
+            ["git", "replace", head, replacement], cwd=repository, check=True
+        )
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\nDEPLOY_PATH=/tmp/fake-app\n",
+        encoding="utf-8",
+    )
+    network_log = tmp_path / "network.log"
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+SCRIPT_DIR={repository!s}
+trusted_release_network_git() {{
+    printf 'network\n' >> {network_log!s}
+    return 99
+}}
+set +e
+verify_release_coordinator_source
+rc=$?
+set -e
+test "$rc" -eq 70
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert not network_log.exists()
+
+
+def test_remote_release_coordinator_begin_bind_mutate_finish_exact_v2_lifecycle(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\nDEPLOY_PATH=/tmp/fake-app\n",
+        encoding="utf-8",
+    )
+    lock_dir = tmp_path / "deploy.lock"
+    transaction = "a" * 32
+    request_digest = "b" * 64
+    baseline_digest = "c" * 64
+    terminal_digest = "d" * 64
+
+    common = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+REMOTE_RELEASE_LOCK_DIR={lock_dir!s}
+ssh() {{ shift; "$@"; }}
+REVA_RELEASE_COORDINATOR_SURFACE=mobile
+REVA_RELEASE_COORDINATOR_OPERATION=forward
+REVA_RELEASE_COORDINATOR_CHANNEL=production
+REVA_RELEASE_COORDINATOR_TRANSACTION={transaction}
+REVA_RELEASE_COORDINATOR_REQUEST_DIGEST={request_digest}
+"""
+    clean_env = {
+        key: value
+        for key, value in {**os.environ, "DEPLOY_ENV_FILE": str(env_file)}.items()
+        if not key.startswith("REVA_RELEASE_COORDINATOR_")
+        and key
+        not in {
+            "REVA_REMOTE_RELEASE_LOCK_ADOPT",
+            "REVA_REMOTE_RELEASE_LOCK_ALLOW_ALLOCATING_ADOPT",
+            "REVA_REMOTE_RELEASE_LOCK_TOKEN",
+        }
+    }
+    begun = subprocess.run(
+        [
+            "bash",
+            "-c",
+            common
+            + "\nverify_release_coordinator_source() {\n"
+            + "  REVA_RELEASE_COORDINATOR_SOURCE_SHA=$(git -C \"$SCRIPT_DIR\" rev-parse HEAD)\n"
+            + "  REVA_RELEASE_COORDINATOR_SOURCE_TREE=$(git -C \"$SCRIPT_DIR\" rev-parse HEAD^{tree})\n"
+            + "  export REVA_RELEASE_COORDINATOR_SOURCE_SHA REVA_RELEASE_COORDINATOR_SOURCE_TREE\n"
+            + "}\nbegin_remote_release_coordinator\n",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        env=clean_env,
+    )
+    assert begun.returncode == 0, (begun.stdout, begun.stderr)
+    proof = re.search(
+        r"REVA_RELEASE_COORDINATOR_BEGIN token=([0-9a-f]{64}) "
+        r"stage=(/tmp/health-app-backup-preflight-[0-9a-f]{64}) "
+        r"source_sha=([0-9a-f]{40}) source_tree=([0-9a-f]{40}) "
+        r"surface=mobile operation=forward channel=production "
+        rf"transaction_id=({transaction}) request_digest=({request_digest})",
+        begun.stdout,
+    )
+    assert proof is not None, begun.stdout
+    token, stage, source_sha, source_tree, _, _ = proof.groups()
+    expected = {
+        "schema": "2",
+        "token": token,
+        "label": "coordinator:mobile:forward",
+        "stage": stage,
+        "source_sha": source_sha,
+        "source_tree": source_tree,
+        "state": "allocating",
+        "surface": "mobile",
+        "operation": "forward",
+        "channel": "production",
+        "transaction_id": transaction,
+        "baseline_digest": "-",
+        "request_digest": request_digest,
+        "terminal_digest": "-",
+    }
+    assert set(path.name for path in lock_dir.iterdir()) == {
+        *expected,
+        "started_at",
+    }
+    assert lock_dir.stat().st_mode & 0o7777 == 0o700
+    for name, value in expected.items():
+        path = lock_dir / name
+        assert path.read_text(encoding="ascii") == value + "\n"
+        assert path.stat().st_mode & 0o7777 == 0o600
+
+    continuation = common + f"""
+REVA_REMOTE_RELEASE_LOCK_TOKEN={token}
+REVA_RELEASE_COORDINATOR_STAGE={stage}
+REVA_RELEASE_COORDINATOR_SOURCE_SHA={source_sha}
+REVA_RELEASE_COORDINATOR_SOURCE_TREE={source_tree}
+REVA_RELEASE_COORDINATOR_BASELINE_DIGEST={baseline_digest}
+"""
+    bound = subprocess.run(
+        ["bash", "-c", continuation + "\nbind_remote_release_coordinator\n"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        env=clean_env,
+    )
+    assert bound.returncode == 0, (bound.stdout, bound.stderr)
+    assert "REMOTE_RELEASE_LOCK_BOUND state=sealed" in bound.stdout
+    assert (lock_dir / "baseline_digest").read_text(encoding="ascii") == (
+        baseline_digest + "\n"
+    )
+    assert (lock_dir / "state").read_text(encoding="ascii") == "sealed\n"
+
+    mutated = subprocess.run(
+        ["bash", "-c", continuation + "\nmutate_remote_release_coordinator\n"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        env=clean_env,
+    )
+    assert mutated.returncode == 0, (mutated.stdout, mutated.stderr)
+    assert (lock_dir / "state").read_text(encoding="ascii") == "mutating\n"
+
+    premature = subprocess.run(
+        ["bash", "-c", continuation + "\nfinish_remote_release_coordinator\n"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        env=clean_env,
+    )
+    assert premature.returncode == 70, (premature.stdout, premature.stderr)
+    assert lock_dir.exists()
+
+    finished = subprocess.run(
+        [
+            "bash",
+            "-c",
+            continuation
+            + f"\nREVA_RELEASE_COORDINATOR_TERMINAL_DIGEST={terminal_digest}"
+            + "\nfinish_remote_release_coordinator\n",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        env=clean_env,
+    )
+    assert finished.returncode == 0, (finished.stdout, finished.stderr)
+    assert "REVA_RELEASE_COORDINATOR_FINISHED" in finished.stdout
+    assert not lock_dir.exists()
+
+
+def test_deploy_help_does_not_expose_release_lock_handoff_entrypoint(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["bash", str(DEPLOY_SCRIPT), "--help"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "release-lock inspection" in result.stdout
+    assert "--inspect-release-lock" not in result.stdout
+
+
+def test_expected_server_surface_cas_runs_inside_remote_lease_before_other_work():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    main_body = script[script.index("main() {") :]
+    acquired = main_body.index('acquire_remote_release_lock "deploy:${DEPLOY_MODE}"')
+    asserted = main_body.index("assert_remote_release_lock", acquired)
+    cas = main_body.index("verify_expected_server_surfaces_under_lock", asserted)
+    ota_drift = main_body.index("confirm_ota_drift", cas)
+    execute = main_body.index("# 执行对应操作", ota_drift)
+
+    assert acquired < asserted < cas < ota_drift < execute
+
+
+def test_mac_route_bootstrap_is_an_explicit_non_daily_deploy_mode():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert "--bootstrap-mac-routes" in script
+    assert 'MAC_ROUTE_ACTION="apply"' in script
+    assert 'MAC_ROUTE_ACTION="rollback"' in script
+    assert 'scripts/mac-release-nginx-bootstrap.sh" "${MAC_ROUTE_ACTION}"' in script
+    all_mode = script[script.index('"all")') : script.index('"frontend")')]
+    assert "bootstrap_mac_release_routes" not in all_mode
+
+
+def test_mac_route_bootstrap_rechecks_exact_remote_main_under_server_lease():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    body = script[
+        script.index("bootstrap_mac_release_routes() {") : script.index(
+            "\n}\n\nverify_mac_route_release_source()",
+            script.index("bootstrap_mac_release_routes() {"),
+        )
+    ]
+
+    lease_assert = body.index("assert_remote_release_lock")
+    source_recheck = body.index("verify_mac_route_release_source", lease_assert)
+    snapshot = body.index("stage_mac_route_release_artifacts", source_recheck)
+    mutation = body.index("REVA_MAC_BOOTSTRAP_ENTRYPOINT=deploy.sh", snapshot)
+
+    assert lease_assert < source_recheck < snapshot < mutation
+
+
+def test_mac_route_wrapper_treats_nonterminal_output_as_ambiguous_and_retains_lease():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    body = script[
+        script.index("bootstrap_mac_release_routes() {") : script.index(
+            "\n}\n\nverify_mac_route_release_source()",
+            script.index("bootstrap_mac_release_routes() {"),
+        )
+    ]
+
+    assert "_REMOTE_RELEASE_LOCK_DELEGATED=1" in body
+    assert "MAC_NGINX_BOOTSTRAP_OK outcome=" in body
+    assert "_REMOTE_RELEASE_LOCK_ABANDONED=1" in body
+    assert "Mac nginx route outcome is ambiguous" in body
+    terminal = body.index("MAC_NGINX_BOOTSTRAP_OK outcome=")
+    assert body.index("assert_remote_release_lock", terminal) < body.index(
+        "_REMOTE_RELEASE_LOCK_DELEGATED=0", terminal
+    )
+
+
+def test_mac_route_bootstrap_help_documents_apply_and_explicit_rollback(tmp_path: Path):
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=root@39.98.206.178\n"
+        "DEPLOY_PATH=/opt/health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["bash", str(DEPLOY_SCRIPT), "--help"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Production repository entrypoints are frozen" in result.stdout
+    assert "--bootstrap-mac-routes" not in result.stdout
+
+
+def test_mac_release_mutations_have_supported_deploy_entrypoints(tmp_path: Path):
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=root@39.98.206.178\n"
+        "DEPLOY_PATH=/opt/health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["bash", str(DEPLOY_SCRIPT), "--help"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Production repository entrypoints are frozen" in result.stdout
+    assert "--publish-mac" not in result.stdout
+    assert "--recover-mac-release" not in result.stdout
+    assert "--rollback-mac-release" not in result.stdout
+
+
+def test_deploy_hard_blocks_mac_mutations_before_the_release_driver():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert "Mac 自动发布已冻结" in script
+    assert "Mac 自动恢复已冻结" in script
+    assert "Mac 自动回滚已冻结" in script
+    assert 'apps/mac/scripts/release-dmg.sh" publish' not in script
+    assert "acquire_release_lock \"deploy:mac-publish\"" not in script
+    assert "acquire_remote_release_lock \"deploy:mac-publish\"" not in script
+
+
+def test_deploy_hard_blocks_mac_route_bootstrap_before_lock_or_network():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    parse_end = script.index('if [[ "$DEPLOY_MODE" == "release-lock-inspect" ]]')
+    route_gate = script.index("Mac 下载路由变更已冻结")
+
+    assert route_gate < parse_end
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    (
+        ("--publish-mac", "--version", "1.2.3", "--build", "42"),
+        ("--recover-mac-release",),
+        ("--rollback-mac-release",),
+    ),
+)
+def test_mac_deploy_modes_exit_at_manual_gate_before_external_action(
+    tmp_path: Path,
+    arguments: tuple[str, ...],
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=root@39.98.206.178\nDEPLOY_PATH=/opt/health-app\n",
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        ["bash", str(DEPLOY_SCRIPT), *arguments],
+        cwd=ROOT,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 78
+    assert "Gate" in completed.stdout + completed.stderr
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    (
+        (),
+        ("--all",),
+        ("--frontend",),
+        ("--backend",),
+        ("--env",),
+        ("--activate-health-evidence",),
+        ("--reset-app-store-review",),
+        ("--restart",),
+        ("--push",),
+        ("--publish-mac", "--version", "1.2.3", "--build", "42"),
+        ("--recover-mac-release",),
+        ("--rollback-mac-release",),
+        ("--bootstrap-mac-routes",),
+        ("--release-coordinator-begin",),
+        ("--release-coordinator-bind",),
+        ("--release-coordinator-mutate",),
+        ("--release-coordinator-finish",),
+        ("--release-coordinator-abort",),
+        ("--release-coordinator-recover",),
+        ("--status",),
+        ("--logs",),
+        ("--inspect-release-lock",),
+        ("--help", "--status"),
+    ),
+)
+def test_production_deploy_freeze_precedes_top_level_tools_and_env_read(
+    tmp_path: Path,
+    arguments: tuple[str, ...],
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    marker = tmp_path / "external-called"
+    for name in ("dirname", "grep", "cut", "date", "pwd", "python3", "git", "ssh"):
+        _write_executable(
+            fake_bin / name,
+            f"#!/bin/sh\nprintf '%s' {name!r} >> {marker!s}\nexit 97\n",
+        )
+    completed = subprocess.run(
+        ["/bin/bash", str(DEPLOY_SCRIPT), *arguments],
+        cwd=tmp_path,
+        env={
+            "PATH": str(fake_bin),
+            "DEPLOY_ENV_FILE": str(tmp_path / "must-not-be-read.env"),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 78, completed.stdout + completed.stderr
+    assert "Gate" in completed.stdout + completed.stderr
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    (
+        "deploy-remote.sh",
+        "deploy_to_server.sh",
+        "packages/mini-program/build-on-server.sh",
+        "deploy_production.sh",
+        "scripts/mobile-local-archive.sh",
+        ".claude/skills/mobile-testflight-release/scripts/native-archive-asc.sh",
+    ),
+)
+def test_legacy_direct_production_writers_are_frozen_before_tools(
+    tmp_path: Path,
+    relative_path: str,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    marker = tmp_path / "external-called"
+    for name in (
+        "git",
+        "ssh",
+        "scp",
+        "rsync",
+        "dirname",
+        "rm",
+        "npm",
+        "python3",
+        "xcodebuild",
+        "xcrun",
+        "cat",
+    ):
+        _write_executable(
+            fake_bin / name,
+            f"#!/bin/sh\nprintf called >> {marker!s}\nexit 97\n",
+        )
+    result = subprocess.run(
+        ["/bin/bash", str(ROOT / relative_path)],
+        cwd=tmp_path,
+        env={"PATH": str(fake_bin)},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 78, result.stdout + result.stderr
+    assert "manual Gate" in result.stderr
+    assert not marker.exists()
+
+
+def test_deploy_exact_help_is_static_before_env_paths_functions_or_tools(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\nDEPLOY_PATH=/tmp/fake-health-app\n",
+        encoding="utf-8",
+    )
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    marker = tmp_path / "external-called"
+    for name in ("dirname", "grep", "cut", "date", "pwd", "python3", "git", "ssh"):
+        _write_executable(
+            fake_bin / name,
+            f"#!/bin/sh\nprintf called >> {marker!s}\nexit 97\n",
+        )
+
+    result = subprocess.run(
+        ["/bin/bash", str(DEPLOY_SCRIPT), "--help"],
+        cwd=tmp_path,
+        env={
+            "PATH": str(fake_bin),
+            "DEPLOY_ENV_FILE": str(env_file),
+            "BASH_FUNC_ssh%%": f"() {{ printf called >> {marker!s}; }}",
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == (
+        "Usage: ./deploy.sh -h|--help\n\n"
+        "Production repository entrypoints are frozen (exit 78).\n"
+        "Status, logs, release-lock inspection, deploy, restart, rollback, and publish "
+        "require an external trusted Gate.\n"
+    )
+    assert result.stderr == ""
+    assert "fake-server" not in result.stdout
+    assert str(env_file) not in result.stdout
+    assert not marker.exists()
+
+
+def _make_mac_route_source_repo(tmp_path: Path) -> tuple[Path, Path]:
+    remote = tmp_path / "remote.git"
+    repository = tmp_path / "repository"
+    subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+    repository.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "route-test@example.invalid"],
+        cwd=repository,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Route Test"], cwd=repository, check=True
+    )
+    for relative, content in (
+        ("scripts/mac-release-nginx-bootstrap.sh", "#!/bin/sh\n"),
+        ("scripts/mac_release_nginx_bootstrap.py", "# helper\n"),
+        ("infra/nginx/mac-release-routes.conf", "# snippet\n"),
+    ):
+        path = repository / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repository, check=True)
+    subprocess.run(["git", "commit", "-qm", "route source"], cwd=repository, check=True)
+    subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repository, check=True)
+    subprocess.run(["git", "push", "-q", "-u", "origin", "main"], cwd=repository, check=True)
+    return repository, remote
+
+
+def _run_mac_route_source_check(repository: Path, tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    env_file = tmp_path / "route-deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=root@39.98.206.178\n"
+        "DEPLOY_PATH=/opt/health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+SCRIPT_DIR={repository!s}
+verify_mac_route_release_source
+"""
+    return subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+
+@pytest.mark.parametrize(
+    "dirty_path",
+    [
+        "scripts/mac-release-nginx-bootstrap.sh",
+        "scripts/mac_release_nginx_bootstrap.py",
+        "infra/nginx/mac-release-routes.conf",
+    ],
+)
+def test_mac_route_source_rejects_dirty_operator_bytes(
+    tmp_path: Path, dirty_path: str
+) -> None:
+    repository, _ = _make_mac_route_source_repo(tmp_path)
+    with (repository / dirty_path).open("a", encoding="utf-8") as handle:
+        handle.write("dirty\n")
+
+    result = _run_mac_route_source_check(repository, tmp_path)
+
+    assert result.returncode != 0
+    assert "完全干净" in result.stdout
+
+
+def test_mac_route_source_rejects_remote_main_drift(tmp_path: Path) -> None:
+    repository, remote = _make_mac_route_source_repo(tmp_path)
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", "-q", str(remote), str(other)], check=True)
+    subprocess.run(["git", "checkout", "-q", "main"], cwd=other, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "route-test@example.invalid"],
+        cwd=other,
+        check=True,
+    )
+    subprocess.run(["git", "config", "user.name", "Route Test"], cwd=other, check=True)
+    (other / "remote-change").write_text("new\n", encoding="utf-8")
+    subprocess.run(["git", "add", "remote-change"], cwd=other, check=True)
+    subprocess.run(["git", "commit", "-qm", "advance remote"], cwd=other, check=True)
+    subprocess.run(["git", "push", "-q", "origin", "main"], cwd=other, check=True)
+
+    result = _run_mac_route_source_check(repository, tmp_path)
+
+    assert result.returncode != 0
+    assert "exact remote main" in result.stdout
+
+
+def test_mac_route_recovery_on_main_b_executes_exact_sealed_source_a(
+    tmp_path: Path,
+) -> None:
+    repository, _ = _make_mac_route_source_repo(tmp_path)
+    wrapper = repository / "scripts/mac-release-nginx-bootstrap.sh"
+    wrapper.write_text(
+        "#!/bin/bash\n"
+        "set -euo pipefail\n"
+        "printf 'A\\n' >> \"$MAC_ROUTE_VERSION_LOG\"\n"
+        "printf 'MAC_NGINX_BOOTSTRAP_OK outcome=recovered-applied\\n'\n",
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+    subprocess.run(["git", "add", "."], cwd=repository, check=True)
+    subprocess.run(["git", "commit", "-qm", "source A"], cwd=repository, check=True)
+    subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repository, check=True)
+    source_a = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repository, text=True
+    ).strip()
+    tree_a = subprocess.check_output(
+        ["git", "rev-parse", "HEAD^{tree}"], cwd=repository, text=True
+    ).strip()
+
+    stage = Path("/tmp") / (
+        f"health-app-backup-preflight-{os.getpid()}-{tmp_path.stat().st_ino}"
+    )
+    if stage.exists():
+        shutil.rmtree(stage)
+    stage.mkdir(mode=0o700)
+    for relative in (
+        "scripts/mac-release-nginx-bootstrap.sh",
+        "scripts/mac_release_nginx_bootstrap.py",
+        "infra/nginx/mac-release-routes.conf",
+    ):
+        target = stage / Path(relative).name
+        target.write_bytes(
+            subprocess.check_output(
+                ["git", "show", f"{source_a}:{relative}"], cwd=repository
+            )
+        )
+        target.chmod(0o700 if relative.endswith(".sh") else 0o600)
+    token = "mac-route-owner"
+    source_receipt = stage / "mac-routes.source"
+    source_receipt.write_text(
+        f"schema=1\ntoken={token}\nsource_sha={source_a}\nsource_tree={tree_a}\n",
+        encoding="ascii",
+    )
+    source_receipt.chmod(0o400)
+    manifest = stage / "mac-routes.sha256"
+    manifest.write_text(
+        "".join(
+            f"{hashlib.sha256((stage / name).read_bytes()).hexdigest()}  {name}\n"
+            for name in (
+                "mac-release-nginx-bootstrap.sh",
+                "mac_release_nginx_bootstrap.py",
+                "mac-release-routes.conf",
+                "mac-routes.source",
+            )
+        ),
+        encoding="ascii",
+    )
+    manifest.chmod(0o400)
+
+    # main advances to B after A has crossed the mutation boundary.
+    wrapper.write_text(
+        "#!/bin/bash\n"
+        "set -euo pipefail\n"
+        "printf 'B\\n' >> \"$MAC_ROUTE_VERSION_LOG\"\n"
+        "printf 'MAC_NGINX_BOOTSTRAP_OK outcome=applied\\n'\n",
+        encoding="utf-8",
+    )
+    (repository / "scripts/mac_release_nginx_bootstrap.py").write_text(
+        "# helper B\n", encoding="utf-8"
+    )
+    (repository / "infra/nginx/mac-release-routes.conf").write_text(
+        "# snippet B\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "add", "."], cwd=repository, check=True)
+    subprocess.run(["git", "commit", "-qm", "source B"], cwd=repository, check=True)
+    subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repository, check=True)
+
+    remote_lock = tmp_path / "deploy.lock"
+    _write_remote_release_lock(
+        remote_lock,
+        token=token,
+        label="deploy:mac-routes",
+        stage=stage,
+        source_sha=source_a,
+        source_tree=tree_a,
+        state="mutating",
+    )
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\nDEPLOY_PATH=/tmp/fake-app\n",
+        encoding="utf-8",
+    )
+    version_log = tmp_path / "executed-version.log"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_executable(
+        fake_bin / "stat",
+        """#!/usr/bin/env python3
+import os
+import stat
+import sys
+metadata = os.stat(sys.argv[-1])
+mode = stat.S_IMODE(metadata.st_mode)
+formats = {
+    '%U:%G:%a': f'root:root:{mode:o}',
+    '%U:%G:%h': f'root:root:{metadata.st_nlink}',
+    '%a': f'{mode:o}',
+    '%h': f'{metadata.st_nlink}',
+}
+print(formats[sys.argv[2]])
+""",
+        )
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+SCRIPT_DIR={repository!s}
+REMOTE_RELEASE_LOCK_DIR={remote_lock!s}
+REVA_REMOTE_RELEASE_LOCK_ADOPT=1
+REVA_REMOTE_RELEASE_LOCK_TOKEN={token}
+REVA_RELEASE_COORDINATOR_SOURCE_SHA={source_a}
+REVA_RELEASE_COORDINATOR_SOURCE_TREE={tree_a}
+REVA_RELEASE_COORDINATOR_SURFACE=server
+REVA_RELEASE_COORDINATOR_OPERATION=mac-routes
+REVA_RELEASE_COORDINATOR_CHANNEL=production
+REVA_RELEASE_COORDINATOR_TRANSACTION={'c' * 32}
+REVA_RELEASE_COORDINATOR_BASELINE_DIGEST={'d' * 64}
+REVA_RELEASE_COORDINATOR_REQUEST_DIGEST={'e' * 64}
+set_remote_backup_preflight_dir {stage!s}
+MAC_ROUTE_ACTION=apply
+ssh() {{ shift; "$@"; }}
+scp() {{
+    test "$#" -eq 2
+    source_path="$1"
+    target_path="$2"
+    case "$source_path" in
+      fake-server.invalid:*)
+        cp "${{source_path#fake-server.invalid:}}" "$target_path"
+        ;;
+      *) return 99 ;;
+    esac
+}}
+acquire_remote_release_lock deploy:mac-routes
+test "$DEPLOY_EXPECTED_SHA" = {source_a}
+bootstrap_mac_release_routes
+test "$DEPLOY_EXPECTED_SHA" = {source_a}
+test "$(cat "$MAC_ROUTE_VERSION_LOG")" = A
+release_remote_release_lock
+"""
+    try:
+        result = subprocess.run(
+            ["bash", "-c", harness],
+            cwd=repository,
+            text=True,
+            capture_output=True,
+            check=False,
+            env={
+                **os.environ,
+                "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                "DEPLOY_ENV_FILE": str(env_file),
+                "MAC_ROUTE_VERSION_LOG": str(version_log),
+            },
+        )
+    finally:
+        if stage.exists():
+            shutil.rmtree(stage)
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert version_log.read_text(encoding="utf-8") == "A\n"
+
+
+def _make_ota_drift_fixture(tmp_path: Path) -> tuple[Path, str]:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (repository / "mobile").mkdir()
+    (repository / "mobile/app.ts").write_text("export const value = 1;\n")
+    subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "deploy-test@example.invalid"],
+        cwd=repository,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Deploy Test"],
+        cwd=repository,
+        check=True,
+    )
+    subprocess.run(["git", "add", "mobile/app.ts"], cwd=repository, check=True)
+    subprocess.run(["git", "commit", "-qm", "mobile baseline"], cwd=repository, check=True)
+    anchor = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repository, text=True
+    ).strip()
+    (repository / "mobile/app.ts").write_text("export const value = 2;\n")
+    subprocess.run(["git", "add", "mobile/app.ts"], cwd=repository, check=True)
+    subprocess.run(["git", "commit", "-qm", "mobile pending"], cwd=repository, check=True)
+    return repository, anchor
+
+
+def test_ota_drift_reads_private_shared_anchor_from_git_common_dir(
+    tmp_path: Path,
+) -> None:
+    repository, anchor = _make_ota_drift_fixture(tmp_path)
+    state_root = repository / ".git/reva-release-state"
+    state_dir = state_root / "mobile-ota"
+    state_root.mkdir(mode=0o700)
+    state_dir.mkdir(mode=0o700)
+    anchor_file = state_dir / "anchor.production"
+    anchor_file.write_text(anchor + "\n", encoding="utf-8")
+    anchor_file.chmod(0o600)
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+SCRIPT_DIR={repository!s}
+AUTO_YES=1
+confirm_ota_drift
+"""
+
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert "mobile pending" in result.stdout
+    body = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    body = body[body.index("confirm_ota_drift() {") : body.index("\n}\n", body.index("confirm_ota_drift() {"))]
+    assert ".last-ota-commit" not in body
+    assert "anchor.production" in body
+
+
+def test_ota_drift_rejects_unsafe_shared_anchor_before_deploy(tmp_path: Path) -> None:
+    repository, anchor = _make_ota_drift_fixture(tmp_path)
+    state_root = repository / ".git/reva-release-state"
+    state_dir = state_root / "mobile-ota"
+    state_root.mkdir(mode=0o700)
+    state_dir.mkdir(mode=0o700)
+    target = tmp_path / "anchor-target"
+    target.write_text(anchor + "\n", encoding="utf-8")
+    (state_dir / "anchor.production").symlink_to(target)
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+SCRIPT_DIR={repository!s}
+AUTO_YES=1
+confirm_ota_drift
+"""
+
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode != 0
+    assert "anchor" in (result.stdout + result.stderr).lower()
 
 
 def test_backend_dependency_proof_wraps_only_pip_and_records_after_postcondition():
@@ -66,6 +1234,7 @@ def test_backend_dependency_proof_wraps_only_pip_and_records_after_postcondition
         locked_verify_on_hit,
     )
     invalidate = guard.index("invalidate --profile python-dependencies", check)
+    clean_venv = guard.index("python -m venv --clear venv", invalidate)
     install = guard.index("pip install --require-hashes", invalidate)
     lease_after_install = guard.index(
         "test -r '$REMOTE_RELEASE_LOCK_DIR/token'",
@@ -87,6 +1256,7 @@ def test_backend_dependency_proof_wraps_only_pip_and_records_after_postcondition
         < locked_verify_on_hit
         < lease_after_hit_verify
         < invalidate
+        < clean_venv
         < install
         < lease_after_install
         < locked_verify_after_install
@@ -129,6 +1299,44 @@ def test_frontend_dependency_and_build_proofs_preserve_service_postconditions():
         dependency_check < npm_ci < dependency_record < build_check < build
         < restart < http_proof < build_record
     )
+
+
+def test_frontend_runtime_receipt_is_root_owned_atomic_and_written_after_health():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    helper_start = script.index("write_frontend_runtime_receipt() {")
+    helper_end = script.index("\n}\n", helper_start)
+    helper = script[helper_start:helper_end]
+    deploy_start = script.index("deploy_frontend() {")
+    deploy_end = script.index("validate_runtime_only_kb_staging() {", deploy_start)
+    frontend = script[deploy_start:deploy_end]
+
+    assert "/var/lib/health-app/release-state/frontend-runtime.json" in helper
+    assert "os.O_NOFOLLOW" in helper
+    assert "stat.S_ISREG" in helper
+    assert "st_nlink" in helper
+    assert "st_uid" in helper
+    assert "0o600" in helper
+    assert "0o700" in helper
+    assert "pm2" in helper and "jlist" in helper
+    assert "pm_uptime" in helper
+    assert '"PM2_HOME": "/root/.pm2"' in helper
+    assert ".next/BUILD_ID" in helper
+    assert "os.replace" in helper
+    assert "os.fsync" in helper
+    assert "DEPLOY_EXPECTED_SHA" in helper
+    assert "REMOTE_RELEASE_LOCK_TOKEN" in helper
+
+    restart = frontend.index("pm2 restart health-frontend")
+    http_proof = frontend.index(
+        "curl -fsS --max-time 10 http://127.0.0.1:3000/", restart
+    )
+    build_record = frontend.index(
+        "record --mode '$RELEASE_STEP_PROOF_MODE' --profile frontend-build",
+        http_proof,
+    )
+    runtime_receipt = frontend.index("write_frontend_runtime_receipt", build_record)
+    final_revision = frontend.index("verify_deployed_revision", runtime_receipt)
+    assert restart < http_proof < build_record < runtime_receipt < final_revision
 
 
 def test_release_proof_reuse_never_wraps_unconditional_server_gates():
@@ -285,7 +1493,7 @@ def test_repository_trust_normalization_never_targets_ignored_runtime_data(
         encoding="utf-8",
     )
     harness = (
-        f"source {DEPLOY_SCRIPT!s}\n"
+        f"{DEPLOY_SOURCE_FOR_TESTS}\n"
         "remote_repository_trust_normalization_command\n"
     )
     generated = subprocess.run(
@@ -385,7 +1593,7 @@ def test_repository_trust_normalization_makes_tracked_seeds_readable_not_writabl
         encoding="utf-8",
     )
     harness = (
-        f"source {DEPLOY_SCRIPT!s}\n"
+        f"{DEPLOY_SOURCE_FOR_TESTS}\n"
         "remote_repository_trust_normalization_command\n"
     )
     generated = subprocess.run(
@@ -861,20 +2069,30 @@ def test_adopted_release_lock_is_preserved_before_transaction_inspection(
         "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
         encoding="utf-8",
     )
+    source_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+    ).strip()
+    source_tree = subprocess.check_output(
+        ["git", "rev-parse", "HEAD^{tree}"], cwd=ROOT, text=True
+    ).strip()
+    token = "a" * 64
+    transaction_id = "c" * 32
+    baseline_digest = "d" * 64
+    request_digest = "e" * 64
     harness = f"""
-source {DEPLOY_SCRIPT!s}
-REVA_RELEASE_LOCK_ADOPT=1
-REVA_RELEASE_LOCK_TOKEN=owner
+{DEPLOY_SOURCE_FOR_TESTS}
+REVA_REMOTE_RELEASE_LOCK_ADOPT=1
+REVA_REMOTE_RELEASE_LOCK_TOKEN={token}
 ssh() {{
-    printf 'ssh\\n' >> "$ADOPT_EVENT_LOG"
-    printf '%s\\n' \
-      'REMOTE_RELEASE_LOCK_ADOPTED stage={adopted_stage}'
+        printf 'ssh\\n' >> "$ADOPT_EVENT_LOG"
+        printf '%s\\n' \
+          'REMOTE_RELEASE_LOCK_ADOPTED state=sealed stage={adopted_stage} source_sha={source_sha} source_tree={source_tree} surface=server operation=backend channel=production transaction_id={transaction_id} baseline_digest={baseline_digest} request_digest={request_digest} terminal_digest=-'
 }}
 acquire_remote_release_lock deploy:backend
 test "$_REMOTE_RELEASE_LOCK_ADOPTED" -eq 1
 test "$_REMOTE_RELEASE_LOCK_ABANDONED" -eq 1
 cleanup_remote_release_artifacts
-test "$(wc -l < "$ADOPT_EVENT_LOG")" -eq 1
+test "$(wc -l < "$ADOPT_EVENT_LOG")" -eq 2
 """
     result = subprocess.run(
         ["bash", "-c", harness],
@@ -1061,7 +2279,7 @@ test "$2" = "--"
 """,
     )
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 DEPLOY_EXPECTED_SHA={'2' * 40}
 _REMOTE_RELEASE_LOCK_ACQUIRED=1
 REMOTE_RELEASE_LOCK_DIR={lease_dir!s}
@@ -1164,7 +2382,7 @@ def test_runtime_state_commit_disconnect_preserves_lease_without_rollback(
         encoding="utf-8",
     )
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 set +e
 _REMOTE_RELEASE_LOCK_ACQUIRED=1
 REMOTE_RELEASE_LOCK_TOKEN=owner
@@ -1217,7 +2435,7 @@ def test_runtime_state_finalize_disconnect_preserves_lease_without_rollback(
         encoding="utf-8",
     )
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 set +e
 _REMOTE_RELEASE_LOCK_ACQUIRED=1
 REMOTE_RELEASE_LOCK_TOKEN=owner
@@ -1271,7 +2489,7 @@ def test_runtime_state_status_adopts_journal_authoritative_release(
     old_sha = "a" * 40
     candidate_sha = "b" * 40
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 DEPLOY_EXPECTED_SHA={candidate_sha}
 run_runtime_state_transaction() {{
     printf '%s\\n' \
@@ -1311,7 +2529,7 @@ def test_runtime_state_status_rejects_other_candidate_and_preserves_lease(
         encoding="utf-8",
     )
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 DEPLOY_EXPECTED_SHA={'b' * 40}
 run_runtime_state_transaction() {{
     printf '%s\\n' \
@@ -1363,7 +2581,7 @@ def test_runtime_state_resume_proof_failure_preserves_stage_and_lease(
     old_sha = "a" * 40
     candidate_sha = "b" * 40
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 set +e
 DEPLOY_EXPECTED_SHA={candidate_sha}
 REMOTE_BACKUP_PREFLIGHT_DIR={stage!s}
@@ -1416,7 +2634,7 @@ def test_committed_journal_resumes_post_commit_gates_before_finalize(
     old_sha = "a" * 40
     candidate_sha = "b" * 40
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 DEPLOY_EXPECTED_SHA={candidate_sha}
 run_runtime_state_transaction() {{
     printf '%s\\n' "$1" >> "$STATUS_EVENT_LOG"
@@ -1464,7 +2682,7 @@ def test_terminal_marker_cleanup_is_idempotent_before_read_only_post_gates(
     old_sha = "a" * 40
     candidate_sha = "b" * 40
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 DEPLOY_EXPECTED_SHA={candidate_sha}
 assert_remote_release_lock() {{ :; }}
 run_runtime_state_transaction() {{
@@ -1519,7 +2737,7 @@ def test_remote_release_lock_rejects_shell_metacharacters_before_ssh(
         encoding="utf-8",
     )
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 REMOTE_RELEASE_LOCK_DIR="/tmp/release-lock';touch /tmp/injected"
 ssh() {{ : > "$SSH_MARKER"; }}
 set +e
@@ -1628,7 +2846,7 @@ def test_env_guard_requires_canonical_external_runtime_paths(
         encoding="utf-8",
     )
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 scp() {{ return 1; }}
 validate_env_sync_safety
 """
@@ -1721,13 +2939,78 @@ def test_env_sync_stages_candidate_and_only_deactivation_atomically_installs_liv
 def test_deploy_accepts_main_or_detached_exact_origin_main_only():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
 
-    assert 'CURRENT_BRANCH="$(git branch --show-current)"' in script
+    assert 'CURRENT_BRANCH="$(trusted_release_git branch --show-current)"' in script
     assert '[[ -n "$CURRENT_BRANCH" && "$CURRENT_BRANCH" != "main" ]]' in script
-    assert 'if [[ "$CURRENT_BRANCH" == "main" ]]' in script
-    assert "git push origin HEAD:main" in script
-    assert 'git rev-parse refs/remotes/origin/main' in script
-    assert "git ls-remote origin refs/heads/main" in script
-    assert "git push kuaishou HEAD:main" in script
+    assert "git push origin HEAD:main" not in script
+    assert "git ls-remote origin refs/heads/main" not in script
+    assert "git push kuaishou HEAD:main" not in script
+    assert 'trusted_release_git fetch --quiet --no-tags "$CANONICAL_RELEASE_ORIGIN_URL"' in script
+    assert 'trusted_release_network_git ls-remote --exit-code' in script
+
+
+def test_direct_server_release_proves_canonical_source_before_any_lock_or_network_mutation():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    main_start = script.index("main() {")
+    main_body = script[main_start:]
+
+    source_proof = main_body.index("verify_release_coordinator_source")
+    local_lock = main_body.index('acquire_release_lock "deploy:${DEPLOY_MODE}"')
+    remote_lock = main_body.index('acquire_remote_release_lock "deploy:${DEPLOY_MODE}"')
+    push = main_body.index("push_code", remote_lock)
+
+    assert source_proof < local_lock < remote_lock < push
+
+
+def test_direct_server_release_rejects_noncanonical_origin_before_lock(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "source"
+    repository.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "release@example.invalid"],
+        cwd=repository,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Release Test"],
+        cwd=repository,
+        check=True,
+    )
+    (repository / "tracked.txt").write_text("clean\n", encoding="utf-8")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=repository, check=True)
+    subprocess.run(["git", "commit", "-qm", "fixture"], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://attacker.invalid/repo.git"],
+        cwd=repository,
+        check=True,
+    )
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\nDEPLOY_PATH=/tmp/fake-app\n",
+        encoding="utf-8",
+    )
+    lock_marker = tmp_path / "lock-called"
+    network_marker = tmp_path / "network-called"
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+SCRIPT_DIR={repository!s}
+acquire_release_lock() {{ printf called > {lock_marker!s}; return 99; }}
+trusted_release_network_git() {{ printf called > {network_marker!s}; return 99; }}
+main --backend --yes
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 70, (result.stdout, result.stderr)
+    assert not lock_marker.exists()
+    assert not network_marker.exists()
 
 
 def test_remote_checkout_and_post_deploy_revision_match_expected_sha():
@@ -1786,7 +3069,7 @@ def test_automatic_rollback_accepts_only_terminal_runtime_state_values(
     if runtime_state_marker:
         marker += f" {runtime_state_marker}"
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 set +e
 ROLLBACK_COMMIT={rollback_commit}
 ssh() {{ printf '%s\\n' "$FAKE_ROLLBACK_OUTPUT"; }}
@@ -1879,16 +3162,23 @@ def test_all_mode_captures_old_backend_sha_before_frontend_checkout(tmp_path):
         encoding="utf-8",
     )
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 REMOTE_HEAD={old_sha}
+verify_release_coordinator_source() {{ :; }}
 acquire_release_lock() {{ :; }}
+capture_expected_server_surfaces_before_lock() {{ :; }}
 acquire_remote_release_lock() {{
     _REMOTE_RELEASE_LOCK_ACQUIRED=1
     _REMOTE_RELEASE_LOCK_DELEGATED=0
     _REMOTE_RELEASE_LOCK_ABANDONED=0
 }}
 install_release_cleanup_traps() {{ :; }}
+capture_expected_server_surfaces_under_lock() {{
+    ROLLBACK_CANDIDATE_COMMIT="$REMOTE_HEAD"
+}}
+bind_expected_server_surfaces_under_lock() {{ :; }}
 assert_remote_release_lock() {{ :; }}
+verify_expected_server_surfaces_under_lock() {{ :; }}
 confirm_ota_drift() {{ :; }}
 push_code() {{
     DEPLOY_EXPECTED_SHA={new_sha}
@@ -1944,7 +3234,7 @@ def test_frontend_build_refuses_revision_mismatch_before_npm_or_pm2(
         encoding="utf-8",
     )
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 DEPLOY_EXPECTED_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 assert_remote_release_lock_if_acquired() {{ :; }}
 verify_deployed_revision() {{ return 1; }}
@@ -1987,9 +3277,10 @@ def test_frontend_build_same_sha_does_not_mutate_runtime_or_backend_services(
         encoding="utf-8",
     )
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 DEPLOY_EXPECTED_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-assert_remote_release_lock_if_acquired() {{ :; }}
+    assert_remote_release_lock_if_acquired() {{ :; }}
+    mark_remote_release_mutation_started() {{ :; }}
 verify_deployed_revision() {{
     printf 'revision\\n' >> "$FRONTEND_EVENT_LOG"
 }}
@@ -2018,7 +3309,10 @@ deploy_frontend
     events = event_log.read_text(encoding="utf-8").splitlines()
     assert events[0] == "revision"
     assert events[-1] == "revision"
-    assert len([event for event in events if event.startswith("ssh:")]) == 1
+    ssh_events = [event for event in events if event.startswith("ssh:")]
+    assert len(ssh_events) == 2
+    assert "/usr/bin/python3 -" in ssh_events[1]
+    assert "frontend-runtime" not in ssh_events[0]
     assert all("systemctl" not in event for event in events)
     assert all("health-backend" not in event for event in events)
     assert all("celery" not in event for event in events)
@@ -2096,7 +3390,7 @@ fi
         "#!/bin/bash\nset -euo pipefail\ntest \"$1\" = -fT\n/bin/mv \"$2\" \"$3\"\n",
     )
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 REMOTE_BACKUP_PREFLIGHT_DIR={stage}
 REMOTE_BACKEND_ENV_CANDIDATE={stage / "backend.env.candidate"}
 REMOTE_RELEASE_LOCK_DIR={release_lock}
@@ -2691,6 +3985,70 @@ def test_cli_has_secret_free_app_store_review_reset_mode():
     assert "--secret-free" in body
     assert "APP_STORE_REVIEW_RESET_OK" in body
     assert "--rotate-password" not in body
+    mutation = body.index("mark_remote_release_mutation_started")
+    delegated = body.index("_REMOTE_RELEASE_LOCK_DELEGATED=1", mutation)
+    remote = body.index('reset_output=$(ssh "$SERVER"', delegated)
+    assert mutation < delegated < remote
+    assert "_REMOTE_RELEASE_LOCK_ABANDONED=1" in body[remote:]
+    assert body.index("_REMOTE_RELEASE_LOCK_DELEGATED=0", remote) > body.index(
+        '[[ "$reset_output" != "APP_STORE_REVIEW_RESET_OK" ]]', remote
+    )
+
+
+@pytest.mark.parametrize(
+    ("ssh_result", "expected_rc", "delegated", "abandoned"),
+    (("transport-failure", 1, "1", "1"), ("success", 0, "0", "0")),
+)
+def test_app_store_review_reset_retains_lease_until_exact_terminal_proof(
+    tmp_path: Path,
+    ssh_result: str,
+    expected_rc: int,
+    delegated: str,
+    abandoned: str,
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\nDEPLOY_PATH=/tmp/fake-app\n",
+        encoding="utf-8",
+    )
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+assert_remote_release_lock() {{ :; }}
+verify_deployed_revision() {{ :; }}
+mark_remote_release_mutation_started() {{ REMOTE_RELEASE_LOCK_STATE=mutating; }}
+ssh() {{
+    test "$_REMOTE_RELEASE_LOCK_DELEGATED" = 1
+    if test "$SSH_RESULT" = transport-failure; then
+        return 255
+    fi
+    cat >/dev/null
+    printf '%s\\n' APP_STORE_REVIEW_RESET_OK
+}}
+set +e
+reset_app_store_review_demo
+rc=$?
+set -e
+printf 'rc=%s delegated=%s abandoned=%s\\n' \
+    "$rc" "$_REMOTE_RELEASE_LOCK_DELEGATED" \
+    "$_REMOTE_RELEASE_LOCK_ABANDONED"
+test "$rc" = "$EXPECTED_RC"
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "DEPLOY_ENV_FILE": str(env_file),
+            "SSH_RESULT": ssh_result,
+            "EXPECTED_RC": str(expected_rc),
+        },
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert f"rc={expected_rc} delegated={delegated} abandoned={abandoned}" in result.stdout
 
 
 def test_health_evidence_flag_parser_only_accepts_one_canonical_assignment(
@@ -2725,7 +4083,7 @@ def test_health_evidence_flag_parser_only_accepts_one_canonical_assignment(
             encoding="utf-8",
         )
         harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 require_health_evidence_flag_value {expected}
 """
         result = subprocess.run(
@@ -2785,14 +4143,27 @@ def test_server_release_lease_rejects_second_owner_and_only_owner_can_release(
     )
     remote_lock = tmp_path / "remote-release.lock"
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
+REMOTE_RELEASE_LOCK_DIR={remote_lock!s}
 ssh() {{ shift; "$@"; }}
-REVA_RELEASE_LOCK_TOKEN=owner-one
+REVA_REMOTE_RELEASE_LOCK_TOKEN=owner-one
 acquire_remote_release_lock first
 first_token="$REMOTE_RELEASE_LOCK_TOKEN"
+first_label="$REMOTE_RELEASE_LOCK_LABEL"
+first_stage="$REMOTE_BACKUP_PREFLIGHT_DIR"
+first_state="$REMOTE_RELEASE_LOCK_STATE"
+first_source_sha="$REMOTE_RELEASE_SOURCE_SHA"
+first_source_tree="$REMOTE_RELEASE_SOURCE_TREE"
+first_surface="$REMOTE_RELEASE_SURFACE"
+first_operation="$REMOTE_RELEASE_OPERATION"
+first_channel="$REMOTE_RELEASE_CHANNEL"
+first_transaction="$REMOTE_RELEASE_TRANSACTION_ID"
+first_baseline="$REMOTE_RELEASE_BASELINE_DIGEST"
+first_request="$REMOTE_RELEASE_REQUEST_DIGEST"
+first_terminal="$REMOTE_RELEASE_TERMINAL_DIGEST"
 _REMOTE_RELEASE_LOCK_ACQUIRED=0
 REMOTE_RELEASE_LOCK_TOKEN=
-REVA_RELEASE_LOCK_TOKEN=owner-two
+REVA_REMOTE_RELEASE_LOCK_TOKEN=owner-two
 if acquire_remote_release_lock second; then
     exit 91
 fi
@@ -2803,6 +4174,18 @@ if release_remote_release_lock; then
 fi
 test -d "$REMOTE_RELEASE_LOCK_DIR"
 REMOTE_RELEASE_LOCK_TOKEN="$first_token"
+REMOTE_RELEASE_LOCK_LABEL="$first_label"
+set_remote_backup_preflight_dir "$first_stage"
+REMOTE_RELEASE_LOCK_STATE="$first_state"
+REMOTE_RELEASE_SOURCE_SHA="$first_source_sha"
+REMOTE_RELEASE_SOURCE_TREE="$first_source_tree"
+REMOTE_RELEASE_SURFACE="$first_surface"
+REMOTE_RELEASE_OPERATION="$first_operation"
+REMOTE_RELEASE_CHANNEL="$first_channel"
+REMOTE_RELEASE_TRANSACTION_ID="$first_transaction"
+REMOTE_RELEASE_BASELINE_DIGEST="$first_baseline"
+REMOTE_RELEASE_REQUEST_DIGEST="$first_request"
+REMOTE_RELEASE_TERMINAL_DIGEST="$first_terminal"
 release_remote_release_lock
 test ! -e "$REMOTE_RELEASE_LOCK_DIR"
 """
@@ -2814,11 +4197,1118 @@ test ! -e "$REMOTE_RELEASE_LOCK_DIR"
         env={
             **os.environ,
             "DEPLOY_ENV_FILE": str(env_file),
-            "REMOTE_RELEASE_LOCK_DIR": str(remote_lock),
         },
     )
 
     assert result.returncode == 0, (result.stdout, result.stderr)
+
+
+@pytest.mark.parametrize("unsafe_parent", ("world-writable", "symlink"))
+def test_remote_release_lock_rejects_unsafe_parent_without_creating_lock(
+    tmp_path: Path, unsafe_parent: str
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\nDEPLOY_PATH=/tmp/fake-app\n",
+        encoding="utf-8",
+    )
+    real_parent = tmp_path / "real-parent"
+    real_parent.mkdir(mode=0o700)
+    if unsafe_parent == "world-writable":
+        real_parent.chmod(0o777)
+        parent = real_parent
+    else:
+        parent = tmp_path / "linked-parent"
+        parent.symlink_to(real_parent, target_is_directory=True)
+    lock_dir = parent / "deploy.lock"
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+REMOTE_RELEASE_LOCK_DIR={lock_dir!s}
+REVA_REMOTE_RELEASE_LOCK_TOKEN=test-owner
+ssh() {{ shift; "$@"; }}
+if acquire_remote_release_lock deploy:backend; then
+    exit 91
+fi
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert not (real_parent / "deploy.lock").exists()
+
+
+def test_deploy_bundle_is_inside_root_only_stage_not_predictable_tmp_target():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    assert 'REMOTE_DEPLOY_BUNDLE="$REMOTE_BACKUP_PREFLIGHT_DIR/deploy.bundle"' in script
+    assert 'REMOTE_DEPLOY_BUNDLE="/tmp/health-app-deploy-' not in script
+    stage = script[
+        script.index("stage_backup_preflight_scripts() {") : script.index(
+            "\n}\n\nrun_runtime_state_transaction()",
+            script.index("stage_backup_preflight_scripts() {"),
+        )
+    ]
+    assert "mkdir '$REMOTE_BACKUP_PREFLIGHT_DIR'" in stage
+    assert "test ! -e '$REMOTE_DEPLOY_BUNDLE'" in stage
+    assert "test ! -L '$REMOTE_DEPLOY_BUNDLE'" in stage
+    assert "root:root:600:1" in stage
+    assert "sync -f '$REMOTE_DEPLOY_BUNDLE'" in stage
+
+
+@pytest.mark.parametrize("preexisting", ("regular", "symlink", "hardlink"))
+def test_preexisting_bundle_stage_is_not_overwritten(
+    tmp_path: Path, preexisting: str
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\nDEPLOY_PATH=/tmp/fake-app\n",
+        encoding="utf-8",
+    )
+    stage = Path("/tmp") / (
+        f"health-app-backup-preflight-{os.getpid()}-{tmp_path.stat().st_ino}"
+    )
+    if stage.exists():
+        shutil.rmtree(stage)
+    stage.mkdir(mode=0o700)
+    victim = tmp_path / "victim"
+    victim.write_bytes(b"must remain byte-for-byte\n")
+    bundle = stage / "deploy.bundle"
+    if preexisting == "regular":
+        bundle.write_bytes(b"preexisting partial bundle\n")
+    elif preexisting == "symlink":
+        bundle.symlink_to(victim)
+    else:
+        os.link(victim, bundle)
+    before_victim = victim.read_bytes()
+    before_bundle = bundle.read_bytes()
+    scp_log = tmp_path / "scp.log"
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+set_remote_backup_preflight_dir {stage!s}
+DEPLOY_EXPECTED_SHA=$(git -C "$SCRIPT_DIR" rev-parse HEAD)
+assert_remote_release_lock_if_acquired() {{ :; }}
+ssh() {{ shift; bash -c "$1"; }}
+scp() {{ printf '%s\\n' "$*" >> "$SCP_LOG"; return 99; }}
+if stage_backup_preflight_scripts; then
+    exit 91
+fi
+"""
+    try:
+        result = subprocess.run(
+            ["bash", "-c", harness],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+            env={
+                **os.environ,
+                "DEPLOY_ENV_FILE": str(env_file),
+                "SCP_LOG": str(scp_log),
+            },
+        )
+        assert result.returncode == 0, (result.stdout, result.stderr)
+        assert victim.read_bytes() == before_victim
+        assert bundle.read_bytes() == before_bundle
+        assert not scp_log.exists()
+    finally:
+        if stage.exists():
+            shutil.rmtree(stage)
+
+
+def _write_remote_release_lock(
+    lock_dir: Path,
+    *,
+    token: str,
+    label: str,
+    stage: Path,
+    source_sha: str = "a" * 40,
+    source_tree: str = "b" * 40,
+    state: str = "sealed",
+    surface: str = "server",
+    operation: str | None = None,
+    channel: str = "production",
+    transaction_id: str = "c" * 32,
+    baseline_digest: str = "d" * 64,
+    request_digest: str = "e" * 64,
+    terminal_digest: str = "-",
+) -> None:
+    if operation is None:
+        operation = label.removeprefix("deploy:")
+    lock_dir.mkdir(mode=0o700)
+    for name, value in (
+        ("schema", "2"),
+        ("token", token),
+        ("label", label),
+        ("stage", str(stage)),
+        ("started_at", "2026-08-12T00:00:00Z"),
+        ("source_sha", source_sha),
+        ("source_tree", source_tree),
+        ("state", state),
+        ("surface", surface),
+        ("operation", operation),
+        ("channel", channel),
+        ("transaction_id", transaction_id),
+        ("baseline_digest", baseline_digest),
+        ("request_digest", request_digest),
+        ("terminal_digest", terminal_digest),
+    ):
+        path = lock_dir / name
+        path.write_text(value + "\n", encoding="ascii")
+        path.chmod(0o600)
+
+
+def _remote_release_context_shell(
+    *,
+    token: str,
+    label: str,
+    stage: Path,
+    source_sha: str = "a" * 40,
+    source_tree: str = "b" * 40,
+    state: str = "sealed",
+    surface: str = "server",
+    operation: str | None = None,
+    channel: str = "production",
+    transaction_id: str = "c" * 32,
+    baseline_digest: str = "d" * 64,
+    request_digest: str = "e" * 64,
+    terminal_digest: str = "-",
+) -> str:
+    if operation is None:
+        operation = label.removeprefix("deploy:")
+    return f"""
+set_remote_backup_preflight_dir {stage!s}
+REMOTE_RELEASE_LOCK_TOKEN={token}
+REMOTE_RELEASE_LOCK_LABEL={label}
+REMOTE_RELEASE_LOCK_STATE={state}
+REMOTE_RELEASE_SOURCE_SHA={source_sha}
+REMOTE_RELEASE_SOURCE_TREE={source_tree}
+REMOTE_RELEASE_SURFACE={surface}
+REMOTE_RELEASE_OPERATION={operation}
+REMOTE_RELEASE_CHANNEL={channel}
+REMOTE_RELEASE_TRANSACTION_ID={transaction_id}
+REMOTE_RELEASE_BASELINE_DIGEST={baseline_digest}
+REMOTE_RELEASE_REQUEST_DIGEST={request_digest}
+REMOTE_RELEASE_TERMINAL_DIGEST={terminal_digest}
+"""
+
+
+def _release_lock_tree_bytes(parent: Path) -> dict[str, tuple[int, bytes]]:
+    return {
+        str(path.relative_to(parent)): (path.stat().st_mode & 0o7777, path.read_bytes())
+        for path in sorted(parent.rglob("*"))
+        if path.is_file()
+    }
+
+
+def test_remote_release_handoff_discovers_exact_active_owner_without_writes(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    stage = Path("/tmp") / (
+        f"health-app-backup-preflight-{os.getpid()}-{tmp_path.stat().st_ino}"
+    )
+    lock_dir = tmp_path / "remote-release.lock"
+    _write_remote_release_lock(
+        lock_dir,
+        token="durable-owner-token",
+        label="deploy:backend",
+        stage=stage,
+        state="sealed",
+    )
+    before = _release_lock_tree_bytes(tmp_path)
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+REMOTE_RELEASE_LOCK_DIR={lock_dir!s}
+ssh() {{ shift; "$@"; }}
+show_remote_release_lock_handoff
+"""
+
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 78, (result.stdout, result.stderr)
+    assert "检查已冻结" in result.stderr
+    assert "durable-owner-token" not in result.stdout + result.stderr
+    assert "REVA_REMOTE_RELEASE_LOCK" not in result.stdout
+    assert "export " not in result.stdout
+    assert str(stage) not in result.stdout
+    assert "重新执行原部署命令" not in result.stdout
+    assert _release_lock_tree_bytes(tmp_path) == before
+
+
+@pytest.mark.parametrize("kind", ("alloc", "state", "released"))
+def test_remote_release_handoff_discovers_interrupted_owner_residue_without_writes(
+    tmp_path: Path,
+    kind: str,
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    lock_path = tmp_path / "remote-release.lock"
+    residue = tmp_path / f".remote-release.lock.{kind}-orphan-owner-token"
+    if kind == "state":
+        residue.write_text("sealed\n", encoding="ascii")
+        residue.chmod(0o600)
+    else:
+        residue.mkdir(mode=0o700)
+        token_file = residue / "token"
+        token_file.write_text("orphan-owner-token\n", encoding="ascii")
+        token_file.chmod(0o600)
+    before = _release_lock_tree_bytes(tmp_path)
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+REMOTE_RELEASE_LOCK_DIR={lock_path!s}
+ssh() {{ shift; "$@"; }}
+show_remote_release_lock_handoff
+"""
+
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 78, (result.stdout, result.stderr)
+    assert "检查已冻结" in result.stderr
+    assert "orphan-owner-token" not in result.stdout + result.stderr
+    assert "REVA_REMOTE_RELEASE_LOCK" not in result.stdout
+    assert "export " not in result.stdout
+    assert _release_lock_tree_bytes(tmp_path) == before
+
+
+@pytest.mark.parametrize(
+    "raw",
+    (
+        "REMOTE_RELEASE_HANDOFF status=recovery kind=terminal token=secret-token label=deploy:backend",
+        "REMOTE_RELEASE_HANDOFF status=mac-recovery kind=phase token=secret-token",
+    ),
+)
+def test_remote_release_inspection_never_prints_reusable_recovery_authority(
+    tmp_path: Path,
+    raw: str,
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\nDEPLOY_PATH=/tmp/fake-health-app\n",
+        encoding="utf-8",
+    )
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+remote_release_lock_command() {{ builtin printf '%s\\n' {raw!r}; }}
+show_remote_release_lock_handoff
+"""
+
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 78, (result.stdout, result.stderr)
+    assert "检查已冻结" in result.stderr
+    assert "secret-token" not in result.stdout + result.stderr
+    assert "export " not in result.stdout
+    assert "REVA_REMOTE_RELEASE_LOCK" not in result.stdout
+    assert "--recover-mac-release" not in result.stdout
+    assert "重新执行" not in result.stdout
+
+
+def test_deploy_direct_inspect_freezes_before_env_paths_or_remote_tools(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    marker = tmp_path / "external-tool-called"
+    for name in ("dirname", "git", "python3", "ssh"):
+        tool = fake_bin / name
+        tool.write_text(
+            f'#!/bin/sh\nprintf called >> "{marker}"\nexit 91\n',
+            encoding="utf-8",
+        )
+        tool.chmod(0o755)
+    secret = "do-not-print-inspection-token"
+    result = subprocess.run(
+        ["/bin/bash", str(DEPLOY_SCRIPT), "--inspect-release-lock"],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:/usr/bin:/bin",
+            "SHELLOPTS": "xtrace",
+            "REVA_REMOTE_RELEASE_LOCK_TOKEN": secret,
+            "DEPLOY_ENV_FILE": str(tmp_path / "must-not-be-read.env"),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 78
+    assert "repository entrypoints are frozen" in result.stderr
+    assert secret not in result.stdout + result.stderr
+    assert not marker.exists()
+
+
+def test_remote_release_handoff_rejects_unknown_residue_without_writes(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n",
+        encoding="utf-8",
+    )
+    lock_path = tmp_path / "remote-release.lock"
+    residue = tmp_path / ".remote-release.lock.unrecognized-owner"
+    residue.write_bytes(b"preserve exactly\n")
+    residue.chmod(0o600)
+    before = _release_lock_tree_bytes(tmp_path)
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+REMOTE_RELEASE_LOCK_DIR={lock_path!s}
+ssh() {{ shift; "$@"; }}
+if show_remote_release_lock_handoff; then
+    exit 91
+fi
+"""
+
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert _release_lock_tree_bytes(tmp_path) == before
+
+
+@pytest.mark.parametrize(
+    "actual",
+    (
+        ["9" * 40, "b" * 64, "c" * 40, "d" * 64, "e" * 40, "f" * 64, "1" * 64],
+        ["a" * 40, "b" * 64, "c" * 40, "d" * 64, "9" * 40, "f" * 64, "1" * 64],
+    ),
+    ids=("same-surface-published", "different-surface-published"),
+)
+def test_server_surface_cas_blocks_intervening_publish_before_any_mutation(
+    tmp_path: Path,
+    actual: list[str],
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n",
+        encoding="utf-8",
+    )
+    expected = [
+        "a" * 40,
+        "b" * 64,
+        "c" * 40,
+        "d" * 64,
+        "e" * 40,
+        "f" * 64,
+        "1" * 64,
+    ]
+    mutation_log = tmp_path / "mutation.log"
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+REMOTE_RELEASE_LOCK_TOKEN=cas-owner
+_REMOTE_RELEASE_LOCK_ACQUIRED=1
+REVA_EXPECTED_SERVER_SURFACES='{json.dumps(expected, separators=(",", ":"))}'
+python3() {{
+    if [[ "$1" == *release_production_state.py ]]; then
+        printf '%s\\n' '{json.dumps(actual, separators=(",", ":"))}'
+        return 0
+    fi
+    command python3 "$@"
+}}
+mark_remote_release_mutation_started() {{ printf 'mutated\\n' > "$MUTATION_LOG"; }}
+if verify_expected_server_surfaces_under_lock; then
+    mark_remote_release_mutation_started
+    exit 91
+fi
+test ! -e "$MUTATION_LOG"
+"""
+
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "DEPLOY_ENV_FILE": str(env_file),
+            "MUTATION_LOG": str(mutation_log),
+        },
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert "服务器发布代际已变化" in result.stdout
+    assert not mutation_log.exists()
+
+
+def test_server_surface_cas_accepts_exact_generation_and_proof_identity(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n",
+        encoding="utf-8",
+    )
+    expected = [
+        "a" * 40,
+        "b" * 64,
+        None,
+        None,
+        "e" * 40,
+        "f" * 64,
+        "1" * 64,
+    ]
+    payload = json.dumps(expected, separators=(",", ":"))
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+REMOTE_RELEASE_LOCK_TOKEN=cas-owner
+_REMOTE_RELEASE_LOCK_ACQUIRED=1
+REVA_EXPECTED_SERVER_SURFACES='{payload}'
+python3() {{
+    if [[ "$1" == *release_production_state.py ]]; then
+        printf '%s\\n' '{payload}'
+        return 0
+    fi
+    command python3 "$@"
+}}
+verify_expected_server_surfaces_under_lock
+"""
+
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+
+
+def test_direct_server_deploy_binds_baseline_only_after_remote_lock() -> None:
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    main = script[script.index("main() {") :]
+
+    acquire = main.index('acquire_remote_release_lock "deploy:${DEPLOY_MODE}"')
+    capture = main.index("capture_expected_server_surfaces_under_lock", acquire)
+    bind = main.index("bind_expected_server_surfaces_under_lock", capture)
+    compare = main.index("verify_expected_server_surfaces_under_lock")
+    first_mutation = min(
+        main.index("push_code", compare),
+        main.index("sync_env", compare),
+        main.index("reset_app_store_review_demo", compare),
+    )
+
+    assert 'REVA_RELEASE_COORDINATOR_BASELINE_DIGEST="-"' in main[:acquire]
+    assert acquire < capture < bind < compare < first_mutation
+
+
+def test_direct_server_deploy_captures_quiescent_baseline_when_not_supplied(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n",
+        encoding="utf-8",
+    )
+    expected = [
+        "a" * 40,
+        "b" * 64,
+        None,
+        None,
+        "e" * 40,
+        "f" * 64,
+        "1" * 64,
+    ]
+    payload = json.dumps(expected, separators=(",", ":"))
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+unset REVA_EXPECTED_SERVER_SURFACES
+REMOTE_RELEASE_LOCK_TOKEN=exact-owner
+_REMOTE_RELEASE_LOCK_ACQUIRED=1
+python3() {{
+    if [[ "$1" = "$SCRIPT_DIR/scripts/release_production_state.py" ]]; then
+        test "$2" = server-under-lock
+        test "$3" = exact-owner
+        printf '%s\\n' '{payload}'
+        return
+    fi
+    command python3 "$@"
+}}
+capture_expected_server_surfaces_under_lock
+test "$REVA_EXPECTED_SERVER_SURFACES" = '{payload}'
+"""
+
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+
+
+def test_adopted_server_deploy_captures_baseline_with_exact_lock_token(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n",
+        encoding="utf-8",
+    )
+    expected = [
+        "a" * 40,
+        "b" * 64,
+        "c" * 40,
+        "d" * 64,
+        None,
+        None,
+        None,
+    ]
+    payload = json.dumps(expected, separators=(",", ":"))
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+unset REVA_EXPECTED_SERVER_SURFACES
+REVA_REMOTE_RELEASE_LOCK_ADOPT=1
+REVA_REMOTE_RELEASE_LOCK_TOKEN=handoff-token
+REMOTE_RELEASE_LOCK_TOKEN=handoff-token
+_REMOTE_RELEASE_LOCK_ACQUIRED=1
+python3() {{
+    if [[ "$1" = "$SCRIPT_DIR/scripts/release_production_state.py" ]]; then
+        test "$2" = server-under-lock
+        test "$3" = handoff-token
+        printf '%s\\n' '{payload}'
+        return
+    fi
+    command python3 "$@"
+}}
+capture_expected_server_surfaces_under_lock
+test "$REVA_EXPECTED_SERVER_SURFACES" = '{payload}'
+"""
+
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+
+
+def test_remote_unlock_rejects_unknown_entry_without_deleting_any_metadata(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    stage = Path("/tmp") / (
+        f"health-app-backup-preflight-{os.getpid()}-{tmp_path.stat().st_ino}"
+    )
+    lock_dir = tmp_path / "remote-release.lock"
+    _write_remote_release_lock(
+        lock_dir,
+        token="exact-owner",
+        label="deploy:backend",
+        stage=stage,
+    )
+    (lock_dir / "unexpected").write_text("do-not-delete\n", encoding="ascii")
+    before = {
+        path.name: path.read_bytes()
+        for path in lock_dir.iterdir()
+        if path.is_file()
+    }
+    context = _remote_release_context_shell(
+        token="exact-owner",
+        label="deploy:backend",
+        stage=stage,
+    )
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+REMOTE_RELEASE_LOCK_DIR={lock_dir!s}
+{context}
+_REMOTE_RELEASE_LOCK_ACQUIRED=1
+ssh() {{ shift; "$@"; }}
+if release_remote_release_lock; then
+    exit 91
+fi
+"""
+
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert lock_dir.is_dir()
+    assert {
+        path.name: path.read_bytes()
+        for path in lock_dir.iterdir()
+        if path.is_file()
+    } == before
+
+
+def test_remote_unlock_atomically_detaches_exact_token_bound_lock(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    stage = Path("/tmp") / (
+        f"health-app-backup-preflight-{os.getpid()}-{tmp_path.stat().st_ino}"
+    )
+    lock_dir = tmp_path / "remote-release.lock"
+    _write_remote_release_lock(
+        lock_dir,
+        token="exact-owner",
+        label="deploy:backend",
+        stage=stage,
+    )
+    context = _remote_release_context_shell(
+        token="exact-owner",
+        label="deploy:backend",
+        stage=stage,
+    )
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+REMOTE_RELEASE_LOCK_DIR={lock_dir!s}
+{context}
+_REMOTE_RELEASE_LOCK_ACQUIRED=1
+ssh() {{ shift; "$@"; }}
+release_remote_release_lock
+test ! -e {lock_dir!s}
+"""
+
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert not lock_dir.exists()
+
+
+@pytest.mark.parametrize("failure_point", ("acquire", "mkdir", "scp", "chmod", "manifest"))
+def test_abandoned_allocating_stage_is_safely_reaped_instead_of_wedging(
+    tmp_path: Path, failure_point: str,
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    stage = Path("/tmp") / (
+        f"health-app-backup-preflight-{os.getpid()}-{tmp_path.stat().st_ino}"
+    )
+    if stage.exists():
+        shutil.rmtree(stage)
+    if failure_point != "acquire":
+        stage.mkdir(mode=0o700)
+    if failure_point in {"scp", "chmod", "manifest"}:
+        partial = stage / "backup_db.sh"
+        partial.write_text("partial upload\n", encoding="utf-8")
+        partial.chmod(0o700 if failure_point != "scp" else 0o600)
+    if failure_point == "manifest":
+        partial_manifest = stage / "staged.sha256"
+        partial_manifest.write_text("partial manifest\n", encoding="utf-8")
+        partial_manifest.chmod(0o600)
+    lock_dir = tmp_path / "remote-release.lock"
+    _write_remote_release_lock(
+        lock_dir,
+        token="partial-owner",
+        label="deploy:backend",
+        stage=stage,
+        state="allocating",
+    )
+    context = _remote_release_context_shell(
+        token="partial-owner",
+        label="deploy:backend",
+        stage=stage,
+        state="allocating",
+    )
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+REMOTE_RELEASE_LOCK_DIR={lock_dir!s}
+{context}
+_REMOTE_RELEASE_LOCK_ACQUIRED=1
+_REMOTE_RELEASE_LOCK_ABANDONED=1
+_REMOTE_RELEASE_LOCK_DELEGATED=1
+ssh() {{ shift; "$@"; }}
+cleanup_remote_release_artifacts
+test ! -e {lock_dir!s}
+test ! -e {stage!s}
+"""
+    try:
+        result = subprocess.run(
+            ["bash", "-c", harness],
+            text=True,
+            capture_output=True,
+            check=False,
+            env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+        )
+    finally:
+        if stage.exists():
+            shutil.rmtree(stage)
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert not lock_dir.exists()
+
+
+def test_allocating_stage_with_unknown_entry_is_retained_byte_for_byte(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n",
+        encoding="utf-8",
+    )
+    stage = Path("/tmp") / (
+        f"health-app-backup-preflight-{os.getpid()}-{tmp_path.stat().st_ino}"
+    )
+    if stage.exists():
+        shutil.rmtree(stage)
+    stage.mkdir(mode=0o700)
+    unknown = stage / "attacker-file"
+    unknown.write_bytes(b"retain exactly\n")
+    unknown.chmod(0o600)
+    lock_dir = tmp_path / "remote-release.lock"
+    _write_remote_release_lock(
+        lock_dir,
+        token="partial-owner",
+        label="deploy:backend",
+        stage=stage,
+        state="allocating",
+    )
+    lock_before = {
+        path.name: path.read_bytes() for path in lock_dir.iterdir()
+    }
+    context = _remote_release_context_shell(
+        token="partial-owner",
+        label="deploy:backend",
+        stage=stage,
+        state="allocating",
+    )
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+REMOTE_RELEASE_LOCK_DIR={lock_dir!s}
+{context}
+_REMOTE_RELEASE_LOCK_ACQUIRED=1
+_REMOTE_RELEASE_LOCK_ABANDONED=1
+_REMOTE_RELEASE_LOCK_DELEGATED=1
+ssh() {{ shift; "$@"; }}
+cleanup_remote_release_artifacts
+"""
+    try:
+        result = subprocess.run(
+            ["bash", "-c", harness],
+            text=True,
+            capture_output=True,
+            check=False,
+            env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+        )
+        assert result.returncode == 0, (result.stdout, result.stderr)
+        assert unknown.read_bytes() == b"retain exactly\n"
+        assert {
+            path.name: path.read_bytes() for path in lock_dir.iterdir()
+        } == lock_before
+    finally:
+        if stage.exists():
+            shutil.rmtree(stage)
+
+
+def test_remote_lock_contract_pins_source_sha_and_lifecycle_state():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    acquire = script[
+        script.index("acquire_remote_release_lock() {") : script.index(
+            "assert_remote_release_lock() {"
+        )
+    ]
+
+    assert '"source_sha"' in acquire
+    assert '"source_tree"' in acquire
+    assert '"state"' in acquire
+    assert "REMOTE_RELEASE_LOCK_ADOPTED state=" in acquire
+    assert "git merge-base --is-ancestor" in script
+
+
+def test_mac_route_recovery_uses_a_sealed_token_bound_source_stage():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    bootstrap = script[
+        script.index("bootstrap_mac_release_routes() {") : script.index(
+            "\n}\n\nverify_mac_route_release_source()",
+            script.index("bootstrap_mac_release_routes() {"),
+        )
+    ]
+
+    assert "stage_mac_route_release_artifacts" in bootstrap
+    assert "mark_remote_release_mutation_started" in bootstrap
+    assert "mac-routes.source" in script
+    assert "mac-routes.sha256" in script
+    assert "REMOTE_RELEASE_SOURCE_TREE" in script
+    assert bootstrap.index("stage_mac_route_release_artifacts") < bootstrap.index(
+        "mark_remote_release_mutation_started"
+    )
+    assert bootstrap.index("mark_remote_release_mutation_started") < bootstrap.index(
+        'REVA_MAC_BOOTSTRAP_ENTRYPOINT=deploy.sh'
+    )
+
+
+def test_remote_lock_recovery_protocol_accounts_for_orphan_siblings():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    contract = script[
+        script.index("remote_release_lock_command() {") : script.index(
+            "\n}\n\nassert_remote_release_lock()",
+            script.index("remote_release_lock_command() {"),
+        )
+    ]
+
+    assert 'f".{lock_name}.released-{token}"' in contract
+    assert 'f".{lock_name}.alloc-{token}"' in contract
+    assert "inspect_orphan_siblings" in contract
+    assert "recover_orphan_for_explicit_owner" in contract
+
+
+def test_release_tombstone_blocks_new_owner_and_original_owner_recovers(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n",
+        encoding="utf-8",
+    )
+    stage = Path("/tmp") / (
+        f"health-app-backup-preflight-{os.getpid()}-{tmp_path.stat().st_ino}"
+    )
+    if stage.exists():
+        shutil.rmtree(stage)
+    stage.mkdir(mode=0o700)
+    payload = stage / "mac-routes.source"
+    payload.write_text("partial cleanup remains discoverable\n", encoding="ascii")
+    payload.chmod(0o600)
+    lock_dir = tmp_path / "remote-release.lock"
+    source_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+    ).strip()
+    source_tree = subprocess.check_output(
+        ["git", "rev-parse", "HEAD^{tree}"], cwd=ROOT, text=True
+    ).strip()
+    _write_remote_release_lock(
+        lock_dir,
+        token="original-owner",
+        label="deploy:backend",
+        stage=stage,
+        source_sha=source_sha,
+        source_tree=source_tree,
+        state="mutating",
+    )
+    tombstone = lock_dir.with_name(
+        f".{lock_dir.name}.released-original-owner"
+    )
+    lock_dir.rename(tombstone)
+    before_lock = {
+        path.name: path.read_bytes() for path in tombstone.iterdir()
+    }
+    before_stage = payload.read_bytes()
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+REMOTE_RELEASE_LOCK_DIR={lock_dir!s}
+ssh() {{ shift; "$@"; }}
+REVA_REMOTE_RELEASE_LOCK_TOKEN=new-owner
+if acquire_remote_release_lock deploy:backend; then
+    exit 91
+fi
+test -d {tombstone!s}
+test -d {stage!s}
+REVA_REMOTE_RELEASE_LOCK_ADOPT=1
+REVA_REMOTE_RELEASE_LOCK_TOKEN=original-owner
+acquire_remote_release_lock deploy:backend
+test "$_REMOTE_RELEASE_LOCK_ALREADY_RELEASED" = 1
+test ! -e {lock_dir!s}
+test ! -e {tombstone!s}
+test ! -e {stage!s}
+"""
+    try:
+        result = subprocess.run(
+            ["bash", "-c", harness],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+            env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+        )
+    finally:
+        if stage.exists():
+            shutil.rmtree(stage)
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert before_lock
+    assert before_stage == b"partial cleanup remains discoverable\n"
+    assert not lock_dir.exists()
+
+
+@pytest.mark.parametrize("kind", ("creating", "phase", "releasing"))
+def test_foreign_mac_lease_residue_blocks_generic_acquire_without_writes(
+    tmp_path: Path, kind: str
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\nDEPLOY_PATH=/tmp/fake-app\n",
+        encoding="utf-8",
+    )
+    lock_dir = tmp_path / "deploy.lock"
+    residue = lock_dir.with_name(f".{lock_dir.name}.mac-{kind}-mac-owner")
+    if kind == "phase":
+        residue.write_bytes(b"mac phase remains exactly\n")
+        residue.chmod(0o600)
+    else:
+        residue.mkdir(mode=0o700)
+        marker = residue / "marker"
+        marker.write_bytes(b"mac residue remains exactly\n")
+        marker.chmod(0o600)
+    before = (
+        residue.read_bytes()
+        if residue.is_file()
+        else {path.name: path.read_bytes() for path in residue.iterdir()}
+    )
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+REMOTE_RELEASE_LOCK_DIR={lock_dir!s}
+REVA_REMOTE_RELEASE_LOCK_TOKEN=generic-owner
+ssh() {{ shift; "$@"; }}
+if acquire_remote_release_lock deploy:backend; then
+    exit 91
+fi
+test ! -e {lock_dir!s}
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    after = (
+        residue.read_bytes()
+        if residue.is_file()
+        else {path.name: path.read_bytes() for path in residue.iterdir()}
+    )
+    assert after == before
+
+
+@pytest.mark.parametrize("remaining_field_count", (0, 1, 4, 7))
+def test_partial_release_tombstone_is_idempotently_reaped_by_original_owner(
+    tmp_path: Path, remaining_field_count: int
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\nDEPLOY_PATH=/tmp/fake-app\n",
+        encoding="utf-8",
+    )
+    lock_dir = tmp_path / "deploy.lock"
+    stage = Path("/tmp") / (
+        f"health-app-backup-preflight-{os.getpid()}-{tmp_path.stat().st_ino}"
+    )
+    source_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+    ).strip()
+    source_tree = subprocess.check_output(
+        ["git", "rev-parse", "HEAD^{tree}"], cwd=ROOT, text=True
+    ).strip()
+    _write_remote_release_lock(
+        lock_dir,
+        token="partial-owner",
+        label="deploy:backend",
+        stage=stage,
+        source_sha=source_sha,
+        source_tree=source_tree,
+        state="mutating",
+    )
+    tombstone = lock_dir.with_name(f".{lock_dir.name}.released-partial-owner")
+    lock_dir.rename(tombstone)
+    ordered = sorted(path.name for path in tombstone.iterdir())
+    for name in ordered[remaining_field_count:]:
+        (tombstone / name).unlink()
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+REMOTE_RELEASE_LOCK_DIR={lock_dir!s}
+REVA_REMOTE_RELEASE_LOCK_ADOPT=1
+REVA_REMOTE_RELEASE_LOCK_TOKEN=partial-owner
+ssh() {{ shift; "$@"; }}
+acquire_remote_release_lock deploy:backend
+test "$_REMOTE_RELEASE_LOCK_ALREADY_RELEASED" = 1
+test ! -e {lock_dir!s}
+test ! -e {tombstone!s}
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert not tombstone.exists()
+    assert not lock_dir.exists()
 
 
 @pytest.mark.parametrize(
@@ -2844,7 +5334,7 @@ def test_each_terminal_release_mode_arms_adopted_stage_cleanup(
         encoding="utf-8",
     )
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 _REMOTE_RELEASE_LOCK_ACQUIRED=1
 _REMOTE_RELEASE_LOCK_ADOPTED=1
 _REMOTE_RELEASE_LOCK_ABANDONED=1
@@ -2876,7 +5366,7 @@ def test_terminal_release_mode_preserves_adopted_stage_while_delegated(
         encoding="utf-8",
     )
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 set +e
 _REMOTE_RELEASE_LOCK_ACQUIRED=1
 _REMOTE_RELEASE_LOCK_ADOPTED=1
@@ -2913,18 +5403,19 @@ def test_adopted_terminal_activation_proof_removes_stage_state_and_lease(
         if path.exists():
             shutil.rmtree(path)
         path.mkdir(mode=0o700)
-    (stage / "sealed").write_text("immutable\n", encoding="utf-8")
+    (stage / "backup_db.sh").write_text("immutable\n", encoding="utf-8")
+    (stage / "backup_db.sh").chmod(0o600)
     (state_dir / "success").write_text("terminal\n", encoding="utf-8")
+    (state_dir / "success").chmod(0o600)
     remote_lock = tmp_path / "release.lock"
-    remote_lock.mkdir()
     token = "activation-owner"
-    for name, value in (
-        ("token", token),
-        ("label", "deploy:health-evidence"),
-        ("stage", str(stage)),
-        ("started_at", "2026-07-30T12:00:00Z"),
-    ):
-        (remote_lock / name).write_text(value + "\n", encoding="utf-8")
+    _write_remote_release_lock(
+        remote_lock,
+        token=token,
+        label="deploy:health-evidence",
+        stage=stage,
+        state="mutating",
+    )
     env_file = tmp_path / "deploy.env"
     env_file.write_text(
         "DEPLOY_SERVER=fake-server\n"
@@ -2932,23 +5423,23 @@ def test_adopted_terminal_activation_proof_removes_stage_state_and_lease(
         "HEALTH_EVIDENCE_RUNTIME_ENABLED=true\n",
         encoding="utf-8",
     )
+    release_context = _remote_release_context_shell(
+        token=token,
+        label="deploy:health-evidence",
+        stage=stage,
+        state="mutating",
+    )
     harness = f"""
-source {DEPLOY_SCRIPT!s}
-set_remote_backup_preflight_dir {stage}
+{DEPLOY_SOURCE_FOR_TESTS}
 REMOTE_RELEASE_LOCK_DIR={remote_lock}
-REMOTE_RELEASE_LOCK_TOKEN={token}
+{release_context}
 _REMOTE_RELEASE_LOCK_ACQUIRED=1
 _REMOTE_RELEASE_LOCK_ADOPTED=1
 _REMOTE_RELEASE_LOCK_ABANDONED=1
 DEPLOY_EXPECTED_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 ssh() {{
     shift
-    if [ "${{1:-}}" = bash ] && [ "${{2:-}}" = -s ]; then
-        "$@"
-    else
-        test "$#" -eq 1
-        bash -c "$1"
-    fi
+    "$@"
 }}
 require_health_evidence_flag_value() {{ return 0; }}
 verify_deployed_revision() {{ return 0; }}
@@ -3048,6 +5539,13 @@ def _write_immutable_adopted_stage(
         target = stage / name
         target.write_bytes(payload)
         target.chmod(0o400)
+    subprocess.run(
+        ["git", "bundle", "create", str(stage / "deploy.bundle"), "main"],
+        cwd=source_repo,
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    (stage / "deploy.bundle").chmod(0o600)
 
     manifest_lines = []
     for path in sorted(stage.iterdir(), key=lambda item: item.name):
@@ -3148,15 +5646,21 @@ def _run_adopted_release_stage_harness(
     (remote_path / "backend").mkdir(parents=True)
     (remote_path / "backend/.env").write_bytes(candidate_env)
     remote_lock = tmp_path / "remote-release.lock"
-    remote_lock.mkdir()
     token = "resume-owner"
     label = "deploy:backend"
-    (remote_lock / "token").write_text(token + "\n", encoding="utf-8")
-    (remote_lock / "label").write_text(label + "\n", encoding="utf-8")
-    (remote_lock / "stage").write_text(str(stage) + "\n", encoding="utf-8")
-    (remote_lock / "started_at").write_text(
-        "2026-07-30T12:00:00Z\n",
-        encoding="utf-8",
+    release_tree = subprocess.check_output(
+        ["git", "rev-parse", f"{release_sha}^{{tree}}"],
+        cwd=source_repo,
+        text=True,
+    ).strip()
+    _write_remote_release_lock(
+        remote_lock,
+        token=token,
+        label=label,
+        stage=stage,
+        source_sha=release_sha,
+        source_tree=release_tree,
+        state="sealed",
     )
 
     attempted_token = "wrong-owner" if scenario == "wrong-token" else token
@@ -3201,13 +5705,27 @@ exec /bin/mkdir "$@"
 """,
     )
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
+SCRIPT_DIR="$FAKE_SOURCE_REPO"
 REMOTE_RELEASE_LOCK_DIR="$FAKE_REMOTE_LOCK"
-REVA_RELEASE_LOCK_ADOPT=1
-REVA_RELEASE_LOCK_TOKEN="$ATTEMPTED_TOKEN"
+REVA_REMOTE_RELEASE_LOCK_ADOPT=1
+REVA_REMOTE_RELEASE_LOCK_TOKEN="$ATTEMPTED_TOKEN"
+set_remote_backup_preflight_dir "$FAKE_ADOPTED_STAGE"
+REVA_RELEASE_COORDINATOR_SOURCE_SHA="$EXPECTED_RELEASE_SHA"
+REVA_RELEASE_COORDINATOR_SOURCE_TREE="$EXPECTED_RELEASE_TREE"
+REVA_RELEASE_COORDINATOR_SURFACE=server
+REVA_RELEASE_COORDINATOR_OPERATION=backend
+REVA_RELEASE_COORDINATOR_CHANNEL=production
+REVA_RELEASE_COORDINATOR_TRANSACTION={'c' * 32}
+REVA_RELEASE_COORDINATOR_BASELINE_DIGEST={'d' * 64}
+REVA_RELEASE_COORDINATOR_REQUEST_DIGEST={'e' * 64}
 DEPLOY_EXPECTED_SHA="$EXPECTED_RELEASE_SHA"
 ssh() {{
     shift
+    if [ "${{1:-}}" = /usr/bin/python3 ]; then
+        "$@"
+        return
+    fi
     if [ "${{1:-}}" = bash ] && [ "${{2:-}}" = -s ]; then
         "$@"
         return
@@ -3278,6 +5796,7 @@ printf 'complete\\n' >> "$ADOPTION_EVENT_LOG"
                 "PATH": f"{fake_bin}:{os.environ['PATH']}",
                 "DEPLOY_ENV_FILE": str(env_file),
                 "FAKE_REMOTE_LOCK": str(remote_lock),
+                "FAKE_SOURCE_REPO": str(source_repo),
                 "FAKE_ADOPTED_STAGE": str(stage),
                 "FAKE_REMOTE_HEAD": old_sha,
                 "FAKE_MKDIR_LOG": str(mkdir_log),
@@ -3287,6 +5806,7 @@ printf 'complete\\n' >> "$ADOPTION_EVENT_LOG"
                 "ATTEMPTED_TOKEN": attempted_token,
                 "ATTEMPTED_LABEL": attempted_label,
                 "EXPECTED_RELEASE_SHA": release_sha,
+                "EXPECTED_RELEASE_TREE": release_tree,
                 "STATUS_OLD_SHA": old_sha,
                 "STATUS_CANDIDATE_SHA": status_candidate_sha,
             },
@@ -3320,6 +5840,112 @@ printf 'complete\\n' >> "$ADOPTION_EVENT_LOG"
         }
     finally:
         shutil.rmtree(stage)
+
+
+def test_remote_adoption_namespace_survives_the_real_local_lock_guardian(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    stage = Path("/tmp") / (
+        f"health-app-backup-preflight-{os.getpid()}-{tmp_path.stat().st_ino}"
+    )
+    lock_dir = tmp_path / "remote-release.lock"
+    token = "retained-owner-token"
+    source_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+    ).strip()
+    source_tree = subprocess.check_output(
+        ["git", "rev-parse", "HEAD^{tree}"], cwd=ROOT, text=True
+    ).strip()
+    _write_remote_release_lock(
+        lock_dir,
+        token=token,
+        label="deploy:backend",
+        stage=stage,
+        source_sha=source_sha,
+        source_tree=source_tree,
+        state="sealed",
+    )
+    harness = tmp_path / "guardian-entrypoint.sh"
+    _write_executable(
+        harness,
+        f"""#!/usr/bin/env bash
+set -euo pipefail
+{DEPLOY_SOURCE_FOR_TESTS}
+_REVA_RELEASE_CALLER="$0"
+_REVA_RELEASE_CALLER_ARGS=(resume)
+acquire_release_lock remote-adoption-entrypoint
+REMOTE_RELEASE_LOCK_DIR={lock_dir!s}
+set_remote_backup_preflight_dir {stage!s}
+REVA_RELEASE_COORDINATOR_SOURCE_SHA={source_sha}
+REVA_RELEASE_COORDINATOR_SOURCE_TREE={source_tree}
+REVA_RELEASE_COORDINATOR_SURFACE=server
+REVA_RELEASE_COORDINATOR_OPERATION=backend
+REVA_RELEASE_COORDINATOR_CHANNEL=production
+REVA_RELEASE_COORDINATOR_TRANSACTION={'c' * 32}
+REVA_RELEASE_COORDINATOR_BASELINE_DIGEST={'d' * 64}
+REVA_RELEASE_COORDINATOR_REQUEST_DIGEST={'e' * 64}
+ssh() {{ shift; "$@"; }}
+acquire_remote_release_lock deploy:backend
+test "$_REMOTE_RELEASE_LOCK_ADOPTED" = 1
+test "$REMOTE_RELEASE_LOCK_TOKEN" = {token}
+test "$REMOTE_BACKUP_PREFLIGHT_DIR" = {stage!s}
+_REMOTE_RELEASE_LOCK_ABANDONED=0
+release_remote_release_lock
+""",
+    )
+
+    result = subprocess.run(
+        [str(harness)],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "DEPLOY_ENV_FILE": str(env_file),
+            "REVA_REMOTE_RELEASE_LOCK_ADOPT": "1",
+            "REVA_REMOTE_RELEASE_LOCK_TOKEN": token,
+        },
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert not lock_dir.exists()
+
+
+def test_successful_entrypoint_reports_remote_unlock_failure(tmp_path: Path) -> None:
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n",
+        encoding="utf-8",
+    )
+    harness = f"""
+{DEPLOY_SOURCE_FOR_TESTS}
+_REMOTE_RELEASE_LOCK_ACQUIRED=1
+_REMOTE_RELEASE_LOCK_ABANDONED=0
+_REMOTE_RELEASE_LOCK_DELEGATED=0
+ssh() {{ return 0; }}
+release_remote_release_lock() {{ return 73; }}
+install_release_cleanup_traps
+exit 0
+"""
+
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 73, (result.stdout, result.stderr)
 
 
 def test_existing_remote_release_is_adopted_without_mutating_immutable_stage(
@@ -3457,6 +6083,13 @@ def _run_adopted_activation_stage_harness(
         target = stage / name
         target.write_bytes(payload)
         target.chmod(0o400)
+    subprocess.run(
+        ["git", "bundle", "create", str(stage / "deploy.bundle"), "main"],
+        cwd=source_repo,
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    (stage / "deploy.bundle").chmod(0o600)
     manifest_lines = [
         f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}"
         for path in sorted(stage.iterdir(), key=lambda item: item.name)
@@ -3490,9 +6123,19 @@ def _run_adopted_activation_stage_harness(
     (remote_path / "backend").mkdir(parents=True)
     (remote_path / "backend/.env").write_bytes(guard)
     remote_lock = tmp_path / "activation-release.lock"
-    remote_lock.mkdir()
-    (remote_lock / "token").write_text(
-        "activation-owner\n", encoding="utf-8"
+    release_tree = subprocess.check_output(
+        ["git", "rev-parse", f"{release_sha}^{{tree}}"],
+        cwd=source_repo,
+        text=True,
+    ).strip()
+    _write_remote_release_lock(
+        remote_lock,
+        token="activation-owner",
+        label="deploy:health-evidence",
+        stage=stage,
+        source_sha=release_sha,
+        source_tree=release_tree,
+        state="sealed",
     )
     env_file = tmp_path / "activation.env"
     env_file.write_bytes(
@@ -3533,12 +6176,19 @@ exec /bin/mkdir "$@"
     )
     stage_before = _immutable_stage_snapshot(stage)
     state_before = _immutable_stage_snapshot(state_dir)
+    release_context = _remote_release_context_shell(
+        token="activation-owner",
+        label="deploy:health-evidence",
+        stage=stage,
+        source_sha=release_sha,
+        source_tree=release_tree,
+        state="sealed",
+    )
     harness = f"""
-source {DEPLOY_SCRIPT!s}
-set_remote_backup_preflight_dir "$FAKE_ACTIVATION_STAGE"
+{DEPLOY_SOURCE_FOR_TESTS}
 DEPLOY_EXPECTED_SHA="$FAKE_ACTIVATION_SHA"
 REMOTE_RELEASE_LOCK_DIR="$FAKE_ACTIVATION_LOCK"
-REMOTE_RELEASE_LOCK_TOKEN=activation-owner
+{release_context}
 _REMOTE_RELEASE_LOCK_ACQUIRED=1
 _REMOTE_RELEASE_LOCK_ADOPTED=1
 _REMOTE_RELEASE_LOCK_ABANDONED=1
@@ -3546,6 +6196,10 @@ validate_env_sync_safety() {{ return 0; }}
 validate_langbridge_env() {{ return 0; }}
 ssh() {{
     shift
+    if [ "${{1:-}}" = /usr/bin/python3 ]; then
+        "$@"
+        return
+    fi
     if [ "${{1:-}}" = bash ] && [ "${{2:-}}" = -s ]; then
         "$@"
         return
@@ -3559,10 +6213,10 @@ scp() {{
     source_path="$1"
     target_path="$2"
     case "$source_path" in
-      fake-server:*)
-        printf 'download:%s\\n' "${{source_path#fake-server:}}" \
+      fake-server.invalid:*)
+        printf 'download:%s\\n' "${{source_path#fake-server.invalid:}}" \
             >> "$FAKE_ACTIVATION_SCP_LOG"
-        cp "${{source_path#fake-server:}}" "$target_path"
+        cp "${{source_path#fake-server.invalid:}}" "$target_path"
         ;;
       *)
         printf 'upload:%s\\n' "$source_path" \
@@ -3586,6 +6240,7 @@ stage_health_evidence_activation_artifacts
                 "DEPLOY_ENV_FILE": str(env_file),
                 "FAKE_ACTIVATION_STAGE": str(stage),
                 "FAKE_ACTIVATION_SHA": release_sha,
+                "FAKE_ACTIVATION_TREE": release_tree,
                 "FAKE_ACTIVATION_LOCK": str(remote_lock),
                 "FAKE_ACTIVATION_SCP_LOG": str(scp_log),
                 "FAKE_ACTIVATION_MKDIR_LOG": str(mkdir_log),
@@ -3649,7 +6304,7 @@ def _run_deactivation_orchestrator_harness(
         encoding="utf-8",
     )
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 set +e
 _REMOTE_RELEASE_LOCK_ACQUIRED=1
 REMOTE_RELEASE_LOCK_TOKEN=test-owner
@@ -4010,7 +6665,7 @@ test "$1" = "-fT"
         encoding="utf-8",
     )
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 REMOTE_BACKEND_ENV_CANDIDATE={candidate}
 REMOTE_BACKEND_ENV_CANDIDATE_SHA={candidate_hash}
 REMOTE_HEALTH_EVIDENCE_DURABLE_STATE_DIR={durable}
@@ -4307,12 +6962,20 @@ def _run_activation_orchestrator_harness(
         "HEALTH_EVIDENCE_RUNTIME_ENABLED=true\n",
         encoding="utf-8",
     )
+    coordinator_context = _remote_release_context_shell(
+        token="test-owner",
+        label="deploy:health-evidence",
+        stage=Path("/tmp/health-app-backup-preflight-4242-4242"),
+        source_sha="a" * 40,
+        source_tree="b" * 40,
+        state="sealed",
+    )
     harness = f"""
-source {DEPLOY_SCRIPT!s}
+{DEPLOY_SOURCE_FOR_TESTS}
 set +e
 DEPLOY_EXPECTED_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+{coordinator_context}
 _REMOTE_RELEASE_LOCK_ACQUIRED=1
-REMOTE_RELEASE_LOCK_TOKEN=test-owner
 _REMOTE_RELEASE_LOCK_ADOPTED={"1" if adopted else "0"}
 _REMOTE_RELEASE_LOCK_ABANDONED={"1" if adopted else "0"}
 verify_deployed_revision() {{ printf 'revision\\n' >> "$ACTIVATION_EVENT_LOG"; }}

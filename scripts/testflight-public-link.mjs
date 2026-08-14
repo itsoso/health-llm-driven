@@ -1,123 +1,36 @@
 #!/usr/bin/env node
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-const API_BASE = "https://api.appstoreconnect.apple.com/v1";
-const APP_ID = process.env.ASC_APP_ID || "6763569720";
-const GROUP_NAME = process.env.TESTFLIGHT_GROUP_NAME || "External Testers";
-const LINK_LIMIT = Number(process.env.TESTFLIGHT_PUBLIC_LINK_LIMIT || "10000");
 const OUTPUT_DIR = process.env.TESTFLIGHT_OUTPUT_DIR || "artifacts/testflight";
+const publicLink = process.env.TESTFLIGHT_PUBLIC_LINK || "";
 
-function base64url(input) {
-  return Buffer.from(input).toString("base64url");
+function fail(message) {
+  console.error(message);
+  process.exit(2);
 }
 
-function readPrivateKey() {
-  if (process.env.ASC_PRIVATE_KEY_BASE64) {
-    return Buffer.from(process.env.ASC_PRIVATE_KEY_BASE64, "base64").toString("utf8");
-  }
-  if (process.env.ASC_PRIVATE_KEY_PATH) {
-    return fs.readFileSync(process.env.ASC_PRIVATE_KEY_PATH, "utf8");
-  }
-  return "";
+function escapeHtml(value) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
 
-function makeJwt() {
-  const keyId = process.env.ASC_KEY_ID || process.env.APP_STORE_CONNECT_API_KEY;
-  const issuerId = process.env.ASC_ISSUER_ID || process.env.APP_STORE_CONNECT_ISSUER_ID;
-  const privateKey = readPrivateKey();
-  if (!keyId || !issuerId || !privateKey) {
-    throw new Error("Missing ASC_KEY_ID, ASC_ISSUER_ID, and ASC_PRIVATE_KEY_PATH or ASC_PRIVATE_KEY_BASE64");
-  }
-
-  const header = { alg: "ES256", kid: keyId, typ: "JWT" };
-  const payload = {
-    iss: issuerId,
-    aud: "appstoreconnect-v1",
-    exp: Math.floor(Date.now() / 1000) + 20 * 60,
-  };
-  const signingInput = `${base64url(JSON.stringify(header))}.${base64url(JSON.stringify(payload))}`;
-  const signature = crypto.sign("sha256", Buffer.from(signingInput), {
-    key: privateKey,
-    dsaEncoding: "ieee-p1363",
-  });
-  return `${signingInput}.${signature.toString("base64url")}`;
+if (!/^https:\/\/testflight\.apple\.com\/join\/[A-Za-z0-9]+$/.test(publicLink)) {
+  fail(
+    "TESTFLIGHT_PUBLIC_LINK 必须是 App Store Connect 已人工批准的 " +
+      "https://testflight.apple.com/join/... 链接；本工具不会创建测试组或开启公开链接。",
+  );
 }
 
-async function ascFetch(pathname, options = {}) {
-  const token = makeJwt();
-  const response = await fetch(`${API_BASE}${pathname}`, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-  });
-  const text = await response.text();
-  const body = text ? JSON.parse(text) : {};
-  if (!response.ok) {
-    throw new Error(`App Store Connect ${response.status}: ${JSON.stringify(body)}`);
-  }
-  return body;
-}
-
-async function findOrCreateExternalGroup() {
-  const query = new URLSearchParams({
-    "filter[app]": APP_ID,
-    "filter[isInternalGroup]": "false",
-    limit: "200",
-  });
-  const groups = await ascFetch(`/betaGroups?${query.toString()}`);
-  const existing = (groups.data || []).find((group) => group.attributes?.name === GROUP_NAME)
-    || (groups.data || [])[0];
-  if (existing) return existing;
-
-  const created = await ascFetch("/betaGroups", {
-    method: "POST",
-    body: JSON.stringify({
-      data: {
-        type: "betaGroups",
-        attributes: {
-          name: GROUP_NAME,
-          publicLinkEnabled: true,
-          publicLinkLimitEnabled: true,
-          publicLinkLimit: LINK_LIMIT,
-        },
-        relationships: {
-          app: { data: { type: "apps", id: APP_ID } },
-        },
-      },
-    }),
-  });
-  return created.data;
-}
-
-async function enablePublicLink(groupId) {
-  const updated = await ascFetch(`/betaGroups/${groupId}`, {
-    method: "PATCH",
-    body: JSON.stringify({
-      data: {
-        type: "betaGroups",
-        id: groupId,
-        attributes: {
-          publicLinkEnabled: true,
-          publicLinkLimitEnabled: true,
-          publicLinkLimit: LINK_LIMIT,
-        },
-      },
-    }),
-  });
-  return updated.data?.attributes?.publicLink;
-}
-
-function writeQrPage(publicLink) {
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-  const htmlPath = path.join(OUTPUT_DIR, "index.html");
-  const escapedLink = publicLink.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
-  const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${encodeURIComponent(publicLink)}`;
-  fs.writeFileSync(htmlPath, `<!doctype html>
+fs.mkdirSync(OUTPUT_DIR, { recursive: true, mode: 0o700 });
+const htmlPath = path.join(OUTPUT_DIR, "index.html");
+const escapedLink = escapeHtml(publicLink);
+fs.writeFileSync(
+  htmlPath,
+  `<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
@@ -134,31 +47,15 @@ function writeQrPage(publicLink) {
 <body>
   <main>
     <h1>TestFlight 下载</h1>
-    <p>用 iPhone 扫码安装 TestFlight 测试版。</p>
-    <img alt="TestFlight QR code" src="${qrSrc}">
+    <p>用 iPhone 扫码安装已批准的 TestFlight 测试版。</p>
+    <img alt="TestFlight QR code" src="./qr.png">
     <p><a href="${escapedLink}">${escapedLink}</a></p>
   </main>
 </body>
 </html>
-`, "utf8");
-  return htmlPath;
-}
+`,
+  { encoding: "utf8", mode: 0o600 },
+);
 
-async function main() {
-  let publicLink = process.env.TESTFLIGHT_PUBLIC_LINK || "";
-  if (!publicLink) {
-    const group = await findOrCreateExternalGroup();
-    publicLink = group.attributes?.publicLink || await enablePublicLink(group.id);
-  }
-  if (!publicLink) {
-    throw new Error("Public link is not available yet. Ensure the external group has an approved beta build.");
-  }
-  const htmlPath = writeQrPage(publicLink);
-  console.log(publicLink);
-  console.log(htmlPath);
-}
-
-main().catch((error) => {
-  console.error(error.message);
-  process.exit(1);
-});
+console.log(publicLink);
+console.log(htmlPath);

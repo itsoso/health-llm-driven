@@ -9,6 +9,7 @@ from app.database import Base
 from app.models.user import User
 from app.models.medication import Medication, MedicationLog
 from app.services.medication_service import MedicationService
+from app.utils.timezone import get_user_today
 
 
 @pytest.fixture
@@ -151,7 +152,7 @@ class TestMedicationService:
             status="taken",
         )
         assert log.status == "taken"
-        assert log.taken_date == date.today()
+        assert log.taken_date == get_user_today(med_db, med_user.id)
 
     def test_log_skipped(self, med_db, med_user, med_service, sample_medication):
         """测试跳过服药"""

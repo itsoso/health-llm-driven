@@ -49,16 +49,22 @@ def test_deploy_script_backs_up_remote_env_before_syncing():
     assert '"$REMOTE_BACKEND_ENV_CANDIDATE"' in upload_env
 
 
-def test_deploy_bundle_uses_a_unique_remote_path_and_cleans_it_up():
+def test_deploy_bundle_is_token_bound_inside_the_root_only_release_stage():
     deploy_script = (REPO_ROOT / "deploy.sh").read_text()
 
-    assert 'REMOTE_DEPLOY_BUNDLE="/tmp/health-app-deploy-$$-$(date +%s).bundle"' in deploy_script
+    assert (
+        'REMOTE_DEPLOY_BUNDLE="$REMOTE_BACKUP_PREFLIGHT_DIR/deploy.bundle"'
+        in deploy_script
+    )
     assert '"$SERVER:$REMOTE_DEPLOY_BUNDLE"' in deploy_script
     assert "git fetch '$REMOTE_DEPLOY_BUNDLE' HEAD" in deploy_script
     assert "git fetch $REMOTE_DEPLOY_BUNDLE HEAD" not in deploy_script
     assert "trap cleanup_remote_release_artifacts EXIT" in deploy_script
-    assert "rm -f '$REMOTE_DEPLOY_BUNDLE'" in deploy_script
-    assert "rm -rf '$REMOTE_BACKUP_PREFLIGHT_DIR'" in deploy_script
+    assert "test ! -e '$REMOTE_DEPLOY_BUNDLE'" in deploy_script
+    assert "test ! -L '$REMOTE_DEPLOY_BUNDLE'" in deploy_script
+    assert "root:root:600:1" in deploy_script
+    assert '"deploy.bundle"' in deploy_script
+    assert 'REMOTE_DEPLOY_BUNDLE="/tmp/health-app-deploy-' not in deploy_script
     assert '"$SERVER:/tmp/health-app-deploy.bundle"' not in deploy_script
 
 

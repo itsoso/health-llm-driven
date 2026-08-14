@@ -5,6 +5,14 @@
 > Updated: 2026-08-02
 > Related PRD/PDD: docs/specs/active/2026-07-17-xiaoba-agent-kernel.md · docs/specs/active/2026-07-25-agent-meal-capture-session.md
 > Related code: mobile/services/chat.ts · mobile/hooks/useChatEngine.ts · backend/app/services/agent_executor.py
+>
+> **Current release override (2026-08-12):** all repo-contained automatic remote/vendor release
+> entrypoints, local signing/install/automatic-provisioning entrypoints and every OTA/rollback
+> channel are frozen; preview/development is not isolated by name because EAS channel→branch mapping may
+> drift or be shared. Production network observation and release plan/validate are also frozen. Use
+> local validation, offline evidence and public unauthenticated HTTPS only; none forms G5/G6.
+> Release Gate is BLOCK/STOP pending
+> a new repo-external trust root and independent G4.
 
 ## 1. Decision
 
@@ -176,11 +184,13 @@ existing test path after the relevant harness is selected.
 
 ## 13. Rollout And Rollback
 
-Deploy Backend first, verify health and the deterministic correction contract,
-then publish Mobile through production OTA. No migration or feature flag is
-required. Backend and Mobile can each be reverted independently. If either
-release gate fails, preserve the last known-good artifact and report the split
-rollout state.
+Validate Backend and Mobile locally, including the deterministic correction contract and iOS
+Simulator behavior. `npm run ios` uses the Simulator wrapper; do not append npm/Expo `--device`.
+The wrapper pins an exact available Simulator UDID. Do not connect/install physical iOS, deploy
+Backend, build/sign a binary, or
+call any OTA/rollback channel. No migration or feature flag is required. The release Gate remains
+BLOCKED regardless of existing candidate
+visibility; preserve the current production state and report local evidence only.
 
 ## 14. Open Questions
 

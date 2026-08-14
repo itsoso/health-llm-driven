@@ -38,18 +38,26 @@
   source: `backend/app/celery_app.py [declaration]`
 - `resource.chromadb` — ChromaDB (kind=resource; coverage=declaration; data_classes=L2,L3)
   source: `backend/app/services/ [declaration]`
-- `resource.expo-updates` — Expo Updates (kind=resource; coverage=declaration)
+- `resource.expo-updates` — Expo Updates (All Channel Writers and Network Observation Frozen; Local Evidence Only) (kind=resource; coverage=declaration)
   source: `mobile/app.json [declaration]`
 - `resource.garmin` — Garmin (kind=resource; coverage=declaration; data_classes=L3)
   source: `backend/app/api/data_collection.py [declaration]`
 - `resource.healthkit` — Apple HealthKit (kind=resource; coverage=declaration; data_classes=L3)
   source: `mobile/services/appleHealth.ts [declaration]`
+- `resource.ios-simulator-feedback` — Mobile Local Feedback (iOS Exact-UDID Simulator Only; Physical iOS and Android Native Repo CLI Frozen) (kind=resource; coverage=declaration; data_classes=L1)
+  source: `scripts/sim-build.sh [declaration]`
 - `resource.llm-provider` — LLM Provider Pool (kind=resource; coverage=declaration; data_classes=L2,L3)
   source: `backend/app/services/llm/ [declaration]`
+- `resource.mac-release-assets` — Mac Developer ID Protocol Assets (release-dmg Shell Entirely Frozen; Writer-Free Checker Required; Fixed-Root Test Fixture/Local Candidate Only) (kind=resource; coverage=declaration; data_classes=L1)
+  source: `apps/mac/scripts/release-dmg.sh [declaration]`
 - `resource.postgresql` — PostgreSQL (kind=resource; coverage=declaration; trust_boundary=health-backend; data_classes=L1,L2,L3,L4)
   source: `backend/app/database.py [declaration]`
 - `resource.redis` — Redis (kind=resource; coverage=declaration; trust_boundary=health-backend; data_classes=L2,L3)
   source: `backend/app/utils/redis_cache.py [declaration]`
+- `resource.release-coordinator` — Release Control (All Network/Writer Modes Frozen; Shell Legacy Literal-False Tombstoned; RC78 Is Not Hostile Bootstrap Trust; Offline Evidence Only) (kind=resource; coverage=declaration; data_classes=L2)
+  source: `deploy.sh [declaration]`
+- `resource.rokid-native-feedback` — Rokid Native Build/Install (Tracked Gradle, Debug-Sign Build and ADB Frozen; No Reviewed Unsigned Compile/Test Wrapper) (kind=resource; coverage=declaration; data_classes=L1)
+  source: `apps/rokid-pushup-glasses/README.md [declaration]`
 
 ## Key flows
 
@@ -89,12 +97,27 @@
 - `component.mobile` --consumesApi--> `api.health-v1` (coverage=declaration; source=`mobile/services/ [declaration]`)
 - `component.watch` --consumesApi--> `api.health-v1` (coverage=declaration; source=`apps/watch/ [declaration]`)
 
+### mac-release
+- `component.mac` --dependsOn--> `resource.mac-release-assets` (coverage=declaration; source=`apps/mac/scripts/release-dmg.sh [declaration]`)
+
 ### mcp
 - `component.mcp-server` --consumesApi--> `api.health-v1` (coverage=declaration; source=`mcp-server/server.py [declaration]`)
 - `component.mcp-server` --providesApi--> `api.mcp` (coverage=declaration; source=`mcp-server/server.py [declaration]`)
 
 ### mobile-ota
 - `component.mobile` --dependsOn--> `resource.expo-updates` (coverage=declaration; source=`mobile/app.json [declaration]`)
+
+### mobile-simulator
+- `component.mobile` --dependsOn--> `resource.ios-simulator-feedback` (coverage=declaration; source=`scripts/sim-build.sh [declaration]`)
+
+### release-planning
+- `component.backend-api` --dependsOn--> `resource.release-coordinator` (coverage=declaration; source=`deploy.sh [declaration]`)
+- `component.frontend` --dependsOn--> `resource.release-coordinator` (coverage=declaration; source=`deploy.sh [declaration]`)
+- `component.mac` --dependsOn--> `resource.release-coordinator` (coverage=declaration; source=`apps/mac/scripts/release-dmg.sh [declaration]`)
+- `component.mobile` --dependsOn--> `resource.release-coordinator` (coverage=declaration; source=`scripts/release.py [declaration]`)
+
+### rokid-glasses
+- `component.mobile` --dependsOn--> `resource.rokid-native-feedback` (coverage=declaration; source=`apps/rokid-pushup-glasses/README.md [declaration]`)
 
 ### safety
 - `component.backend-api` --dependsOn--> `resource.apns` (coverage=declaration; source=`backend/app/services/notification/ [declaration]`)

@@ -1,11 +1,35 @@
 #!/usr/bin/env bash
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 set -euo pipefail
+
+EARLY_DESTINATION_PLATFORM="${REVA_IOS_DESTINATION_PLATFORM:-iOS Simulator}"
+EARLY_ARGUMENTS=("$@")
+for ((EARLY_INDEX = 0; EARLY_INDEX < ${#EARLY_ARGUMENTS[@]}; EARLY_INDEX++)); do
+  if [[ "${EARLY_ARGUMENTS[EARLY_INDEX]}" == "--platform" ]]; then
+    if ((EARLY_INDEX + 1 >= ${#EARLY_ARGUMENTS[@]})); then
+      builtin printf '%s\n' 'missing --platform value' >&2
+      exit 2
+    fi
+    EARLY_DESTINATION_PLATFORM="${EARLY_ARGUMENTS[EARLY_INDEX + 1]}"
+    ((EARLY_INDEX += 1))
+  fi
+done
+if [[ "${EARLY_DESTINATION_PLATFORM}" == "iOS" ]]; then
+  builtin printf '%s\n' \
+    'Physical iOS acceptance is frozen; use an iOS Simulator destination.' >&2
+  exit 78
+fi
+if [[ "${EARLY_DESTINATION_PLATFORM}" != "iOS Simulator" ]]; then
+  builtin printf '%s\n' \
+    "--platform must be \"iOS Simulator\": ${EARLY_DESTINATION_PLATFORM}" >&2
+  exit 2
+fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HARNESS_SOURCE_DIR="${ROOT_DIR}/scripts/ios-real-device-acceptance"
 DEVICE_ID="${REVA_IOS_DEVICE_ID:-}"
 RESULT_PATH="${REVA_IOS_RESULT_PATH:-/tmp/XiaobaAcceptance-$(date +%Y%m%d-%H%M%S).xcresult}"
-DESTINATION_PLATFORM="${REVA_IOS_DESTINATION_PLATFORM:-iOS}"
+DESTINATION_PLATFORM="${EARLY_DESTINATION_PLATFORM}"
 APP_BUNDLE_ID="life.executor.health"
 SIMULATED_LOCATION=""
 EXPECTED_CITY=""
@@ -18,9 +42,9 @@ Usage:
   scripts/run_ios_real_device_acceptance.sh [options] [device-udid] [result.xcresult]
 
 Options:
-  --device <udid>       Installed-app device or simulator UDID.
+  --device <udid>       Installed-app iOS Simulator UDID.
   --result <path>       Result bundle path ending in .xcresult.
-  --platform <name>     "iOS" for a physical iPhone or "iOS Simulator".
+  --platform <name>     Must be "iOS Simulator".
   --location <lat,lon>  Simulator-only coordinate injected before XCTest.
   --expected-city <city>
                         Simulator-only city expected after GPS refresh.
@@ -34,6 +58,7 @@ Environment:
   REVA_ACCEPTANCE_EXPECTED_CITY
 
 Safety:
+  Physical iOS acceptance is frozen; this runner is Simulator-only.
   The installed app must be pre-authenticated manually. Review credentials are
   never accepted by this harness because Xcode result bundles retain typed text.
 EOF
@@ -95,14 +120,6 @@ if [[ -z "${DEVICE_ID}" ]]; then
   exit 2
 fi
 
-case "${DESTINATION_PLATFORM}" in
-  iOS|"iOS Simulator") ;;
-  *)
-    echo "--platform must be \"iOS\" or \"iOS Simulator\": ${DESTINATION_PLATFORM}" >&2
-    exit 2
-    ;;
-esac
-
 SIMULATED_LOCATION="${SIMULATED_LOCATION:-${REVA_IOS_SIMULATED_LOCATION:-}}"
 EXPECTED_CITY="${EXPECTED_CITY:-${REVA_ACCEPTANCE_EXPECTED_CITY:-}}"
 
@@ -134,6 +151,16 @@ fi
 if [[ -n "${APP_STORE_REVIEW_DEMO_ACCOUNT:-}" ||
       -n "${APP_STORE_REVIEW_DEMO_PASSWORD:-}" ]]; then
   echo "Refusing review credentials; the installed app must be pre-authenticated manually." >&2
+  exit 2
+fi
+
+if ! SIMULATOR_INVENTORY="$(/usr/bin/xcrun simctl list devices available --json)"; then
+  echo "Unable to read the available iOS Simulator inventory." >&2
+  exit 2
+fi
+if ! RESOLVED_SIMULATOR_UDID="$(/usr/bin/python3 "${ROOT_DIR}/scripts/resolve_ios_simulator.py" "${DEVICE_ID}" <<<"${SIMULATOR_INVENTORY}")" ||
+   [[ "${RESOLVED_SIMULATOR_UDID}" != "${DEVICE_ID}" ]]; then
+  echo "Device '${DEVICE_ID}' is not an available iOS Simulator UDID." >&2
   exit 2
 fi
 
@@ -187,3 +214,4 @@ fi
 python3 "${ROOT_DIR}/scripts/verify_ios_acceptance_result.py" "${VERIFY_ARGS[@]}"
 
 echo "${DESTINATION_PLATFORM} acceptance result: ${RESULT_PATH}"
+fi

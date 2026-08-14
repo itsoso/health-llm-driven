@@ -6,7 +6,7 @@
     "mini": "cd packages/mini-program && npm run deploy",
     "mini:dev": "cd packages/mini-program && npm run dev:weapp",
     "check:exact-deps": "node scripts/check-exact-deps.mjs",
-    "testflight:public-link": "node scripts/testflight-public-link.mjs",
+    "testflight:public-link": "./scripts/testflight-qr.sh",
     "audit:pnpm": "pnpm audit --json | node scripts/pnpm-audit-allowlist.mjs"
   },
   "pnpm": {

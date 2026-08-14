@@ -3,6 +3,18 @@
 > **状态**: 设计草案 (2026-06-14)
 > **触发场景**: 创始人自身案例 —— 胃溃疡 / 幽门螺杆菌根除,需同时吃 3–4 种药,不同药相对吃饭的时点不同、一天多次、14 天后疗程还要换方。"怎么才能最无脑吃?"
 > **一句话**: 把医生开的复杂用药方案,一次性"录入"成一条可执行的时间线,之后系统全程接管 —— 该吃什么、何时吃(相对吃饭)、吃了没、疗程到点自动换方、结束自动约复查、引入新药先过相互作用闸门。用户只需对一条提醒点一下"已吃"。
+>
+> **CURRENT RELEASE OVERRIDE (2026-08-12):** 所有 repo 内自动远程/供应商 release
+> entrypoint、本机 signing/install/automatic provisioning entrypoint 与所有 OTA/rollback
+> channel writer 均冻结。EAS
+> channel→branch 映射可能漂移或共用，preview/development
+> 不是安全隔离；当前只做本地 Metro/iOS Simulator/test、只读
+> proof 和 `mobile-local-qr.sh --no-upload --ipa <EXISTING_IPA>`。bare `--no-upload` 与自动
+> archive/export/signing/provisioning 也冻结。`npm run ios` 固定走 Simulator wrapper，不得
+> 向 npm/Expo 追加 `--device`；wrapper 锁定 exact available Simulator UDID，物理 iOS repo
+> CLI、连接/安装/验收冻结。本文 rollout 中任何人工 Gate 都表示 BLOCK/STOP，
+> 不授权 EAS/ASC、server deploy、release helper 或 raw SSH 发布。server-local admin utility 只可进入独立获权事件，
+> 不得被本自动 release 流程调用。
 
 ---
 
@@ -53,7 +65,9 @@
 ### 1.4 风险 (What could go wrong)
 - **Schema 改动**: Medication 加列 + 新增 MedicationRegimen 表 → 手写 SQL 迁移(无 Alembic),`ADD COLUMN ... DEFAULT` 向后兼容,旧药记录 `timing_relation=NULL` 当"无要求"。
 - **安全边界**: 引入新药不过 DDI 校验 = 出人命级风险。校验必须是**写入前的硬闸门**,不是事后提醒。
-- **Native 依赖**: iOS 通知 action button(一键"已吃")属通知 category 配置,**需 EAS build**(改 `app.json` / 通知类目)→ 异步触发不等。纯排程逻辑/UI 走 OTA。
+- **Native 依赖**: iOS 通知 action button(一键"已吃")属通知 category 配置，需要原生
+  候选(改 `app.json` / 通知类目)。纯排程逻辑/UI 只做本地验证；所有 OTA/rollback channel
+  与 production native writer 均冻结，到人工 Gate 记录 BLOCK。
 - **复杂度预算**: 新代码拆分到 `medication_regimen_service.py` + `regimen_templates.py`,不堆进现有文件;Medication 模型加字段不算扩文件。
 - **doc-drift**: 新增 model(MedicationRegimen)+ 可能新增 safety rule(长期 PPI)→ 同 PR 更新 `scripts/check_doc_drift.py` EXPECTED + ARCHITECTURE.md。
 
@@ -167,7 +181,9 @@ medication_course_service 物化复查 ReviewSchedule
 > 💊 现在该吃 **PPI(雷贝拉唑)1 粒** —— **空腹/饭前 30 分钟**。还有 25 分钟可以吃早饭。
 > [已吃] [跳过] [推迟 10 分钟]
 
-`[已吃]` = 通知 action button 直接写 MedicationLog(无需进 App)。iOS category `MEDICATION_REMINDER` 已存在,加 action 需 EAS build。
+`[已吃]` = 通知 action button 直接写 MedicationLog(无需进 App)。iOS category
+`MEDICATION_REMINDER` 已存在；增加 action 属原生变更，当前只能进入 production 人工
+原生 Gate，不能自动创建 production build。
 
 **漏服智能补救(后果不对称)**:
 - PPI 漏服 → "补吃即可,别和下一次叠"。
@@ -225,9 +241,9 @@ DailyOperatingPlan.actions 注入当日用药条目(补 0% 缺口)
 
 | 阶段 | 内容 | 端 | 反馈环 |
 |---|---|---|---|
-| **P0 (MVP,1 周内可用)** | ① Medication 加 `timing_relation`/`meal_anchor` 字段 + 迁移 ② 提醒文案带"饭前/饭后/空腹"+ 完整剂量 ③ 通知一键"已吃"(iOS) | backend + mobile | 后端 pytest;mobile 本地 Sim(纯 JS 走 OTA,通知 action 需 1 次 EAS) |
+| **P0 (MVP,1 周内可用)** | ① Medication 加 `timing_relation`/`meal_anchor` 字段 + 迁移 ② 提醒文案带"饭前/饭后/空腹"+ 完整剂量 ③ 通知一键"已吃"(iOS) | backend + mobile | 后端 pytest；Mobile 仅 Simulator 验证，物理 iOS 验收冻结；所有 OTA/native 发布 Gate 均 BLOCK |
 | **P1 (方案 + 阶段)** | ④ MedicationRegimen 模型 + 模板引擎(Hp 四联/三联)⑤ 阶段自动切换 ⑥ 引入即 DDI 校验硬闸门 ⑦ 接 medication_course_service 复查 | backend 重 | 后端 pytest 为主 |
-| **P2 (耦合饮食 + Daily Plan)** | ⑧ 相对吃饭智能提醒(学习型+事件型)⑨ 注入 DailyOperatingPlan ⑩ 长期 PPI 安全规则 | backend + mobile | OTA |
+| **P2 (耦合饮食 + Daily Plan)** | ⑧ 相对吃饭智能提醒(学习型+事件型)⑨ 注入 DailyOperatingPlan ⑩ 长期 PPI 安全规则 | backend + mobile | 本地 Metro/Simulator 验证；发布 Gate BLOCK |
 | **P3 (硬件,可选)** | L1 分装图生成;L2 BLE 药盒回写接口 | mobile | 按需 |
 
 **先做 P0**:它独立交付价值(吃药当下不用再查"这个饭前还是饭后"),改动最小,反馈环最短,不依赖方案引擎。

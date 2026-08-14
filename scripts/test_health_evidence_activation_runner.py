@@ -688,7 +688,10 @@ def test_terminal_runner_state_is_durable_and_adopted_without_rewrite(
     )
     deploy_script = ROOT / "deploy.sh"
     harness = f"""
-source {deploy_script!s}
+# Production argv are frozen before deploy.sh can be sourced. Extract only the
+# explicitly marked unreachable legacy body for this function-level protocol
+# fixture; deploy.sh exposes no runtime test bypass.
+eval "$(/usr/bin/sed -n '/^# BEGIN UNREACHABLE LEGACY DEPLOY IMPLEMENTATION$/,/^# END UNREACHABLE LEGACY DEPLOY IMPLEMENTATION$/p' {deploy_script!s} | /usr/bin/sed 's|${{BASH_SOURCE\\[0\\]}}|{deploy_script!s}|g')"
 set +e
 DEPLOY_EXPECTED_SHA={sha}
 _REMOTE_RELEASE_LOCK_ACQUIRED=1

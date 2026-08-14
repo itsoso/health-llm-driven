@@ -376,23 +376,38 @@ mp3 bytes → mobile expo-audio createAudioPlayer 播
 
 ---
 
-## §11 build / OTA 发布速查
+## §11 本地 build / release 只读速查
 
 ```bash
-# 后端
-bash deploy.sh -b                            # 后端部署 (executor.life)
+# 只读 release routing / validation
+./scripts/release.sh plan --base <observed-baseline> --target origin/main
+./scripts/release.sh validate --base <observed-baseline> --target origin/main
 
-# Mobile OTA (preview channel)
-cd mobile && eas update --branch preview --environment preview \
-  --message "..." --non-interactive
-
-# Mobile native build (需要改 native module / Siri 才用)
-cd mobile && eas build --platform ios --profile production --auto-submit \
-  --non-interactive --message "build N: ..."
+# Existing IPA -> offline metadata/report only; no install manifest/QR or archive/signing
+./scripts/mobile-local-qr.sh --no-upload --ipa <EXISTING_IPA>
 ```
 
-OTA 能下: pure JS/TS 改动, 包括 Siri 之外的 mobile 业务.
-build 必须发: native iOS 改动 (Siri Intent / AVAudioSession 原生层 / expo-audio 升级).
+Mobile 反馈只用本地 Metro、iOS Simulator 和测试。`npm run ios` 固定走 Simulator
+wrapper，不得向 npm/Expo 追加 `--device`；wrapper 锁定 exact available Simulator UDID，
+物理 iOS repo CLI、连接/安装/验收冻结。bare
+`--no-upload` 会触发 archive/export，故同样冻结；禁止自动 signing/provisioning、
+`mobile-fast-device.sh`、`mobile-local-device.sh` 与 `-allowProvisioningUpdates`。EAS
+channel→branch mapping 可能漂移或共用，不能证明 preview/development 不触达 production；
+因此所有 OTA/rollback channel、server production、production native/EAS/ASC、Mac writer
+与历史旁路全部 exit 78。任何 Mobile 发布请求进入 manual Gate 后记录 BLOCK，而不是转
+direct CLI。
+Android 尚非 shipped/audited Mobile surface；`npm run android`/`expo run:android` 会自动
+native generation、debug signing 与 ADB install，因此 repo entry earliest exit 78，无
+Android native CLI 例外。
+标准 `production` 不包含 Watch；Watch 使用独立 `watch-production` profile 和独立
+dossier/Gate。未来重新启用后，原生入口也只创建候选，build selection、TestFlight
+验收与 App Review submission 不得合并成一步；远端响应不明时按原交易唯一证据恢复，
+禁止盲重跑。
+
+冻结根因是 same-UID writable repo 可通过 Git replace、info attributes+filter、隐藏
+untracked import、`BASH_ENV`、`PYTHONPATH`/`sitecustomize` 越过 repo 内 guard。解冻需
+repo-external root-owned launcher（fixed interpreter、`env -i`、canonical archive/tree
+仓库外 materialization）+ 新 dossier/独立 G4。当前 G5/G6/App Store submission 均 BLOCK。
 
 ---
 

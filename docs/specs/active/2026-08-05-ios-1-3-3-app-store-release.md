@@ -1,14 +1,26 @@
 # Feature Spec: iOS 1.3.3 App Store Release Safety Boundary
 
-> Status: approved
+> Status: blocked (production/App Store writers frozen)
 > Owner: product / mobile release
-> Updated: 2026-08-05
+> Updated: 2026-08-12
 > Related PRD: `docs/prd/2026-08-05-ios-1-3-3-app-store-release.md`
 > Related code: `mobile/components/dashboard/RhinitisCard.tsx`, `mobile/app/(tabs)/record.tsx`, `mobile/components/chat/cards/AIGCMediaConfirmationCard.tsx`, `frontend/src/components/assistant/inlineCards/cards.tsx`, `backend/app/api/aigc_media.py`, `backend/app/services/aigc_media_job_service.py`, `mobile/app.json`
 
 ## 1. Decision
 
-发布新的 iOS 1.3.3 Store Build，并在发布前移除记录页内置的具体处方药、固定剂量和自动建药行为；审核路径只演示健康记录、趋势解释、生活方式建议和用户确认后的写入。
+产品与医疗安全范围保持批准，但发布执行当前 **BLOCK**。在新的可信 production launcher
+通过独立 G4 前，不创建/上传 Store Build，不选择 TestFlight build，不修改 ASC，不重置
+审核账号，也不提交 App Review。不得自动 archive/export/signing/provisioning、调用
+`mobile-local-device.sh` 或使用 `-allowProvisioningUpdates`。existing-IPA 唯一例外是
+`mobile-local-qr.sh --no-upload --ipa <EXISTING_IPA>` 只读现成 IPA 并生成离线检视
+metadata/report；不得生成 install manifest、安装二维码或可安装承诺。
+本地 Mobile 验证只走 Metro/tests 或 `npm run ios` 的 Simulator wrapper；调用方不得向
+npm/Expo 追加 `--device`，wrapper 必须从 available inventory 锁定 exact Simulator UDID。
+物理 iOS repo CLI 与仓库内真机验收冻结。
+
+冻结根因是 same-UID writable repo bootstrap trust 无法闭合：Git replace、shared info
+attributes+filter、隐藏 untracked import shadow、`BASH_ENV` 与
+`PYTHONPATH`/`sitecustomize` 均可在 repo 内 guard 前改变执行语义。
 
 ## 2. Problem
 
@@ -149,8 +161,8 @@ When Agent 回复
 Then 回复不产生处方决定，并在需要时引导医生或急救服务
 
 Given App Store 审核开始
-When production OTA 渠道被检查
-Then 审核期间没有发布改变 1.3.3 首次启动行为的新更新
+When 任一 OTA channel 被检查
+Then 所有 OTA/rollback writer 均保持 exit 78，不依赖可漂移或共用的 channel→branch 映射
 
 Given 发布机运行审核账号 live gate
 When API 基址为 HTTP、包含 URL 凭证/查询/片段或服务返回重定向
@@ -184,19 +196,29 @@ python3 backend/scripts/check_dossier_consistency.py
 git diff --check
 ```
 
-最终提交还必须运行带 App Store Connect 凭据、截图目录、精确 Build 和外部真机证据的 `--final-submit` 闸门。
+冻结期 `--final-submit` 会登录 production reviewer 并取得可写 bearer token，必须在登录/
+凭证读取前冻结，不能作为只读 gap report。解冻后，
+未来获权提交还必须绑定 App Store Connect 凭据、截图目录、精确 Build 和仓库外人工生成
+的同包真机证据；仓库内 Simulator harness 不满足该 Gate。
 
 ## 13. Rollout And Rollback
 
-- 发布路径：新 EAS production Store Build，不以 OTA 替代嵌入代码。
-- 审核期间：冻结 production OTA 和审核账号。
+- 发布路径：当前不查询、选择、分发或提交 existing candidate；只允许用 already-downloaded
+  IPA/已导出本地 metadata 做 exact source/native identity 对账。所有 native/EAS/ASC/App
+  Review writer/observation 均 BLOCK。
+- 审核期间：冻结所有 OTA/rollback channel 和审核账号；preview/development 也无例外。
 - 审核拒绝：不公开发布；修复后提交新 Build。
-- 批准后：手动发布；生产 smoke 失败则暂停公开动作，必要时通过远程配置关闭问题入口并准备新 Build。
-- 上线验证完成后才解除 OTA 冻结。
+- 当前不存在“手动发布”兜底；raw CLI/ASC/SSH/helper 都不能绕过冻结。
+- 解冻必须另立 dossier，落地 repo-external root-owned launcher、fixed interpreter、
+  `env -i` allowlist、canonical archive/tree 仓库外 materialization，并通过新的独立 G4。
+- 此前 G5/G6/App Store submission 均 BLOCK，不得写 shipped/complete。
 
 ## 14. Open Questions
 
-无阻塞性未决问题。具体构建号由 EAS remote auto-increment 决定，但必须不低于 241。
+可信 bootstrap launcher 是首要阻断项。existing candidate（若有）只可从已有本地材料
+对账，且不能
+解除 Build/TestFlight/App Review Gate；不能假设 remote auto-increment 或人工 ASC 操作
+会创建/选择新候选。
 
 ## 15. Changelog
 
@@ -204,3 +226,5 @@ git diff --check
 |---|---|---|
 | 2026-08-05 | Initial approved spec | 用户批准审核优先、功能冻结的 1.3.3 发布方案 |
 | 2026-08-06 | Added exact AIGC external-provider review boundary | 外发前必须展示实际完整 prompt 并取得 owner/provider/model/version 绑定短时 token；客户端与 capability gateway 均 fail closed，最终独立 G4 GO。 |
+| 2026-08-12 | Historical partial freeze (superseded below) | 当时仅冻结自动 writer 并曾允许选择已对账 existing candidate；后续同日发现 bootstrap 绕过面后，该授权已撤销。 |
+| 2026-08-12 | Blocked all production and App Store writers/observation | same-UID repo bootstrap 可被 Git/env/import shadow 绕过；existing candidate 仅能从已有本地材料对账，不得联网查询/选择/提交。 |

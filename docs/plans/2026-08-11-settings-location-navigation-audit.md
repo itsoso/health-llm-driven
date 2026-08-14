@@ -258,17 +258,18 @@ Run focused Jest, typecheck, lint, route checker, and iOS Release simulator buil
 
 Stage only files from this feature and use project commit-message conventions.
 
-**Step 4: Publish only if OTA-compatible**
+**Step 4: Reach the production Gate and stop**
 
-If no native/config/backend change was required, publish with:
+Every OTA/rollback channel is frozen. EAS channel→branch mapping may drift or be shared, so even
+preview/development cannot prove isolation from production. Record a manual **BLOCK** and stop; do
+not run `mobile-ota.sh`, rollback, EAS/ASC directly, or any legacy/helper alternative.
 
-```bash
-./scripts/mobile-ota.sh production "fix settings GPS city and verify navigation"
-```
+**Step 5: Preserve local evidence only**
 
-Record the runtime, commit, update group ID, and iOS update ID.
-
-**Step 5: Verify on the production app**
-
-- Apply the OTA, reopen Settings, confirm city display and two representative routes.
-- Preserve the EAS previous update as the rollback point.
+- Reopen the iOS Simulator, then verify city display plus two representative routes. `npm run ios`
+  uses the Simulator wrapper; do not append npm/Expo `--device`. The wrapper pins an exact available
+  Simulator UDID; do not connect/install a physical iOS device.
+- Record source/runtime/test proof, but do not treat it as G5/G6 or production evidence.
+- A future production attempt requires a new dossier, a repo-external root-owned launcher with a
+  fixed interpreter and `env -i` allowlist, canonical Git archive/tree materialized outside the
+  repository, source/artifact/recovery proof, and a new independent G4.

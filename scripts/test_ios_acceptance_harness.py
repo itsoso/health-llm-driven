@@ -121,6 +121,7 @@ def test_generator_persists_expected_city_in_xcode_scheme(tmp_path: Path) -> Non
 
     assert "REVA_ACCEPTANCE_EXPECTED_CITY" in scheme
     assert "杭州" in scheme
+    assert 'shouldUseLaunchSchemeArgsEnv = "NO"' in scheme
 
 
 def test_runner_accepts_simulator_destination_platform() -> None:
@@ -134,6 +135,7 @@ def test_runner_accepts_simulator_destination_platform() -> None:
 
     assert "--platform" in result.stdout
     assert "iOS Simulator" in result.stdout
+    assert "Physical iOS acceptance is frozen" in result.stdout
     assert "pre-authenticated" in result.stdout
     assert "APP_STORE_REVIEW_DEMO_PASSWORD" not in result.stdout
 
@@ -155,49 +157,55 @@ def test_runner_documents_simulator_location_options() -> None:
 def test_runner_passes_cli_expected_city_to_xcodebuild_environment(
     tmp_path: Path,
 ) -> None:
+    source = RUNNER.read_text(encoding="utf-8")
+
+    assert 'REVA_ACCEPTANCE_EXPECTED_CITY="${EXPECTED_CITY}" \\\nenv -u APP_STORE_REVIEW_DEMO_ACCOUNT' in source
+    assert '-destination "platform=${DESTINATION_PLATFORM},id=${DEVICE_ID}"' in source
+    assert "/usr/bin/xcrun simctl list devices available --json" in source
+    assert "REVA_SIMCTL_RUNNER_FOR_TESTS" not in source
+
+
+@pytest.mark.parametrize(
+    ("arguments", "platform_env"),
+    [
+        (("--platform", "iOS", "--device", "physical-udid"), "iOS Simulator"),
+        (("--device", "physical-udid"), "iOS"),
+    ],
+)
+def test_runner_freezes_physical_ios_before_paths_credentials_or_tools(
+    tmp_path: Path,
+    arguments: tuple[str, ...],
+    platform_env: str,
+) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    captured_city = tmp_path / "xcodebuild-expected-city.txt"
-
-    _write_executable(bin_dir / "ruby", "#!/bin/sh\nexit 0\n")
-    _write_executable(bin_dir / "xcrun", "#!/bin/sh\nexit 0\n")
-    _write_executable(bin_dir / "python3", "#!/bin/sh\nexit 0\n")
-    _write_executable(
-        bin_dir / "xcodebuild",
-        "#!/bin/sh\n"
-        'printf "%s" "${REVA_ACCEPTANCE_EXPECTED_CITY-}" '
-        '> "${REVA_TEST_ENV_CAPTURE}"\n',
-    )
-
-    env = os.environ.copy()
-    env["PATH"] = f"{bin_dir}:{env['PATH']}"
-    env["REVA_TEST_ENV_CAPTURE"] = str(captured_city)
-    env.pop("REVA_ACCEPTANCE_EXPECTED_CITY", None)
+    marker = tmp_path / "external-tool-called"
+    for name in ("date", "dirname", "env", "mktemp", "python3", "ruby", "xcodebuild", "xcrun"):
+        _write_executable(
+            bin_dir / name,
+            f'#!/bin/sh\nprintf "%s\\n" "{name}" >> "{marker}"\nexit 91\n',
+        )
+    environment = {
+        **os.environ,
+        "PATH": f"{bin_dir}:/usr/bin:/bin",
+        "REVA_IOS_DESTINATION_PLATFORM": platform_env,
+        "APP_STORE_REVIEW_DEMO_ACCOUNT": "must-not-be-read",
+        "APP_STORE_REVIEW_DEMO_PASSWORD": "must-not-be-read",
+    }
 
     result = subprocess.run(
-        [
-            "bash",
-            str(RUNNER),
-            "--platform",
-            "iOS Simulator",
-            "--device",
-            "test-simulator",
-            "--location",
-            "30.2741,120.1551",
-            "--expected-city",
-            "杭州",
-            "--result",
-            str(tmp_path / "acceptance.xcresult"),
-        ],
+        ["/bin/bash", str(RUNNER), *arguments],
         cwd=ROOT,
-        env=env,
+        env=environment,
         check=False,
         capture_output=True,
         text=True,
     )
 
-    assert result.returncode == 0, result.stderr
-    assert captured_city.read_text(encoding="utf-8") == "杭州"
+    assert result.returncode == 78
+    assert "physical ios acceptance is frozen" in result.stderr.lower()
+    assert "must-not-be-read" not in result.stdout + result.stderr
+    assert not marker.exists()
 
 
 def test_verifier_expected_suite_matches_xctest_source() -> None:
@@ -454,7 +462,7 @@ def test_runner_derives_skip_policy_from_platform_and_expected_city() -> None:
     assert "--allow-skip" not in runner
 
 
-def test_runner_rejects_location_options_for_physical_devices() -> None:
+def test_runner_freezes_physical_location_request_before_argument_processing() -> None:
     result = subprocess.run(
         [
             "bash",
@@ -473,8 +481,8 @@ def test_runner_rejects_location_options_for_physical_devices() -> None:
         text=True,
     )
 
-    assert result.returncode == 2
-    assert "Simulator-only" in result.stderr
+    assert result.returncode == 78
+    assert "Physical iOS acceptance is frozen" in result.stderr
 
 
 def test_runner_refuses_review_credentials_before_invoking_xcodebuild() -> None:
@@ -483,7 +491,14 @@ def test_runner_refuses_review_credentials_before_invoking_xcodebuild() -> None:
     env["APP_STORE_REVIEW_DEMO_PASSWORD"] = "private-password"
 
     result = subprocess.run(
-        ["bash", str(RUNNER), "not-a-real-device"],
+        [
+            "bash",
+            str(RUNNER),
+            "--platform",
+            "iOS Simulator",
+            "--device",
+            "not-a-real-device",
+        ],
         cwd=ROOT,
         env=env,
         check=False,
@@ -502,7 +517,7 @@ def test_readme_requires_manual_pre_authentication_without_sourcing_credentials(
     assert "manually pre-authenticated" in readme
     assert "source /secure/path/to/release.env" not in readme
     assert "copied\nonly into the temporary generated Xcode scheme" not in readme
-    assert "<physical-device-udid>" in readme
+    assert "<physical-device-udid>" not in readme
     assert "<simulator-udid>" in readme
     assert re.search(r"\b[0-9A-F]{8}-[0-9A-F-]{20,}\b", readme, re.IGNORECASE) is None
 

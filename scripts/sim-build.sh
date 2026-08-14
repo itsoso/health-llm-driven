@@ -64,15 +64,20 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-if ! command -v xcrun >/dev/null 2>&1; then
+if [[ ! -x /usr/bin/xcrun ]]; then
   echo "xcrun not found. Install Xcode command line tools first." >&2
   exit 1
 fi
 
-if ! xcrun simctl list devices available | grep -Fq "${DEVICE}"; then
-  echo "Simulator device '${DEVICE}' was not found. Check: xcrun simctl list devices available" >&2
+if ! SIMULATOR_INVENTORY="$(/usr/bin/xcrun simctl list devices available --json)"; then
+  echo "Unable to read the available iOS Simulator inventory." >&2
   exit 2
 fi
+if ! RESOLVED_SIMULATOR_UDID="$(/usr/bin/python3 "${ROOT}/scripts/resolve_ios_simulator.py" "${DEVICE}" <<<"${SIMULATOR_INVENTORY}")"; then
+  echo "Destination '${DEVICE}' is not an available iOS Simulator name or UDID." >&2
+  exit 2
+fi
+DEVICE="${RESOLVED_SIMULATOR_UDID}"
 
 BUILD_ROOT="${ROOT}"
 TEMP_WORKTREE=""

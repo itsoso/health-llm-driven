@@ -5,6 +5,14 @@
 > Updated: 2026-06-22
 > Related PRD/PDD: docs/prd/reva-personal-health-os-prd.md · docs/prd/2026-06-19-proactive-planning-prd.md · docs/specs/active/2026-06-17-day-timing-schedule.md · docs/specs/active/2026-06-19-p1-pre-event-reminders.md · docs/specs/archive/2026-06-18-calendar-v2.md
 > Related code: backend/app/api/schedule.py · backend/app/services/{day_schedule_service,timing_solver,timing_adapter,schedule_diet_sleep,agenda_service}.py · backend/app/tasks/event_reminders.py · backend/app/api/{agenda,rokid,write_intents,reorder_intents}.py · backend/skills
+>
+> **Current release override (2026-08-12):** historical shipped/OTA evidence below remains a dated
+> fact, not a current command. All repo-contained automatic remote/vendor release entrypoints, local
+> signing/install/automatic-provisioning entrypoints and OTA/rollback channels are frozen. Only
+> production network observation and release plan/validate are also frozen. Only local Metro/iOS
+> Simulator/tests, offline evidence and public unauthenticated HTTPS are allowed, and none forms
+> G5/G6; physical iOS/Rokid/Watch
+> acceptance is a future external-manual evidence gap and remains BLOCKED.
 
 ## 1. Decision
 
@@ -81,7 +89,7 @@ Increment 1 已合并 main(`f1ca1802`,未部署),实现了 §7 流水线
 >
 > **上线状态(2026-06-23,已全部上线)**:后端全量增量已部署生产(`f7b47b65`→`fd37225a`→`578ee9a1`,health 60/60,两次迁移 `workout_chain_enabled`/`chain_key` 已应用,celery-beat 重启接 `protocol_learning_watch`,prod `.env` 零漂移)+ `api.generated.ts` 已 `generate-types` 同步(`33f7e65a`)+ 移动端 OTA 已发(production channel,update `c2757163`,runtime 1.3.0,接 TestFlight build 184)+ TestFlight build 184 已 submit。CI 绿。
 >
-> **仍需用户侧(自主代码无法替代)**:① 真机验证全链路(推送→完成/跳过→首页熄灯、用眼计时器、洗鼻/睡前提醒);② P3 坐姿/摄像头硬件 on-device adapter(需真机 + Rokid SDK);③ 真外卖/挂号 provider 接入(需账号 + 财务/安全评审,**支付永远用户自己执行**);④ 行为协议的「建议启用」UI(auto-seed 因 不劫持 故意不做,现经 `/protocols/seed/behavior` 手动启用)。
+> **仍需外部输入（当前不得执行）**:① 解冻后由仓库外获权人工流程验证真机全链路(推送→完成/跳过→首页熄灯、用眼计时器、洗鼻/睡前提醒);② P3 坐姿/摄像头硬件 on-device adapter(需真机 + Rokid SDK);③ 真外卖/挂号 provider 接入(需账号 + 财务/安全评审,**支付永远用户自己执行**);④ 行为协议的「建议启用」UI(auto-seed 因 不劫持 故意不做,现经 `/protocols/seed/behavior` 手动启用)。前两项当前保持 BLOCK，Simulator 不得替代。
 
 ## 2. Problem
 

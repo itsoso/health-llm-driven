@@ -1,33 +1,49 @@
 #!/usr/bin/env bash
 
-# One local release at a time across the main checkout and all git worktrees.
+# One kernel-backed local release lease across Python, deploy, OTA and TestFlight.
+# The first invocation is replaced by a Python guardian. The guardian owns the
+# lock and passes that exact locked descriptor to the restarted entrypoint.
 _REVA_RELEASE_LOCK_ACQUIRED=0
+_REVA_RELEASE_LOCK_ADOPTED=0
 _REVA_RELEASE_LOCK_PATH=""
-_REVA_RELEASE_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+_REVA_RELEASE_CALLER="${BASH_SOURCE[1]:-$0}"
+_REVA_RELEASE_CALLER_ARGS=("$@")
+_REVA_RELEASE_REPO_ROOT="${_REVA_RELEASE_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+_REVA_RELEASE_LOCK_PY="${_REVA_RELEASE_REPO_ROOT}/scripts/release_lock.py"
+
+_release_lock_python() {
+  [[ -x /usr/bin/python3 ]] || return 1
+  printf '%s\n' "/usr/bin/python3"
+}
 
 _release_lock_path() {
-  if [[ -n "${REVA_RELEASE_LOCK_DIR:-}" ]]; then
-    printf '%s\n' "${REVA_RELEASE_LOCK_DIR}"
-    return 0
-  fi
+  local python_bin
+  python_bin="$(_release_lock_python)" || return 1
+  "${python_bin}" "${_REVA_RELEASE_LOCK_PY}" path \
+    --repo-root "${_REVA_RELEASE_REPO_ROOT}"
+}
 
-  local common_dir
-  common_dir="$(git -C "${_REVA_RELEASE_REPO_ROOT}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
-  printf '%s/reva-release.lock\n' "${common_dir}"
+_release_lock_fd_is_valid() {
+  local descriptor="${1:-}"
+  [[ "${descriptor}" =~ ^[0-9]+$ ]] || return 1
+  [[ "${descriptor}" -ge 3 ]]
 }
 
 release_release_lock() {
   if [[ "${_REVA_RELEASE_LOCK_ACQUIRED:-0}" != "1" ]]; then
     return 0
   fi
-  if [[ -n "${_REVA_RELEASE_LOCK_PATH:-}" && -d "${_REVA_RELEASE_LOCK_PATH}" ]]; then
-    local owner_pid
-    owner_pid="$(cat "${_REVA_RELEASE_LOCK_PATH}/pid" 2>/dev/null || true)"
-    if [[ "${owner_pid}" == "$$" ]]; then
-      rm -rf -- "${_REVA_RELEASE_LOCK_PATH}"
-    fi
+
+  # Adoption closes and clears the inherited descriptor immediately. Keep this
+  # fail-safe for a partially initialized shell only.
+  if _release_lock_fd_is_valid "${REVA_RELEASE_LOCK_FD:-}"; then
+    eval "exec ${REVA_RELEASE_LOCK_FD}>&-"
   fi
   _REVA_RELEASE_LOCK_ACQUIRED=0
+  _REVA_RELEASE_LOCK_ADOPTED=0
+  _REVA_RELEASE_LOCK_PATH=""
+  unset REVA_RELEASE_LOCK_ADOPT
+  unset REVA_RELEASE_LOCK_FD
   unset REVA_RELEASE_LOCK_TOKEN
 }
 
@@ -39,52 +55,55 @@ _release_lock_exit() {
 
 acquire_release_lock() {
   local label="${1:-release}"
-  local lock_path
-  lock_path="$(_release_lock_path)" || {
-    echo "✗ 无法解析发布锁路径。" >&2
-    return 70
-  }
-  if [[ -z "${lock_path}" || "${lock_path}" == "/" ]]; then
-    echo "✗ 发布锁路径不安全，拒绝继续。" >&2
-    return 70
+  if [[ "${_REVA_RELEASE_LOCK_ACQUIRED:-0}" == "1" ]]; then
+    return 0
   fi
 
-  local attempt owner_pid owner_label owner_token stale_path token
-  token="${REVA_RELEASE_LOCK_TOKEN:-$$-${RANDOM:-0}-$(date +%s)}"
-  for attempt in 1 2; do
-    if mkdir "${lock_path}" 2>/dev/null; then
-      chmod 700 "${lock_path}" 2>/dev/null || true
-      printf '%s\n' "$$" > "${lock_path}/pid"
-      printf '%s\n' "${label}" > "${lock_path}/label"
-      printf '%s\n' "${token}" > "${lock_path}/token"
-      printf '%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "${lock_path}/started_at"
-      _REVA_RELEASE_LOCK_PATH="${lock_path}"
-      _REVA_RELEASE_LOCK_ACQUIRED=1
-      export REVA_RELEASE_LOCK_TOKEN="${token}"
-      trap _release_lock_exit EXIT
-      trap 'release_release_lock; exit 130' INT
-      trap 'release_release_lock; exit 143' TERM
-      return 0
-    fi
+  local python_bin
+  python_bin="$(_release_lock_python)" || {
+    echo "✗ 无法找到 Python，不能获取发布锁。" >&2
+    return 70
+  }
 
-    owner_pid="$(cat "${lock_path}/pid" 2>/dev/null || true)"
-    owner_label="$(cat "${lock_path}/label" 2>/dev/null || true)"
-    owner_token="$(cat "${lock_path}/token" 2>/dev/null || true)"
-    if [[ -n "${REVA_RELEASE_LOCK_TOKEN:-}" && "${owner_token}" == "${REVA_RELEASE_LOCK_TOKEN}" ]]; then
-      return 0
-    fi
-    if [[ "${owner_pid}" =~ ^[0-9]+$ ]] && kill -0 "${owner_pid}" 2>/dev/null; then
-      echo "✗ 另一个发布任务正在执行: ${owner_label:-unknown} (pid=${owner_pid})" >&2
+  if [[ "${REVA_RELEASE_LOCK_ADOPT:-}" == "1" ]]; then
+    local inherited_fd="${REVA_RELEASE_LOCK_FD:-}"
+    if ! _release_lock_fd_is_valid "${inherited_fd}" || ! \
+      "${python_bin}" "${_REVA_RELEASE_LOCK_PY}" verify-adopt \
+        --repo-root "${_REVA_RELEASE_REPO_ROOT}" \
+        --fd "${inherited_fd}"; then
+      if _release_lock_fd_is_valid "${inherited_fd}"; then
+        eval "exec ${inherited_fd}>&-"
+      fi
+      unset REVA_RELEASE_LOCK_ADOPT
+      unset REVA_RELEASE_LOCK_FD
+      unset REVA_RELEASE_LOCK_TOKEN
+      echo "✗ 继承发布锁失败：未收到真实 owner 的已加锁文件描述符。" >&2
       return 73
     fi
+    eval "exec ${inherited_fd}>&-"
+    unset REVA_RELEASE_LOCK_ADOPT
+    unset REVA_RELEASE_LOCK_FD
+    unset REVA_RELEASE_LOCK_TOKEN
+    _REVA_RELEASE_LOCK_PATH="$(_release_lock_path)" || return 70
+    _REVA_RELEASE_LOCK_ACQUIRED=1
+    _REVA_RELEASE_LOCK_ADOPTED=1
+    trap _release_lock_exit EXIT
+    trap 'release_release_lock; exit 130' INT
+    trap 'release_release_lock; exit 143' TERM
+    return 0
+  fi
 
-    echo "△ 清理陈旧发布锁: ${owner_label:-unknown} (pid=${owner_pid:-missing})" >&2
-    stale_path="${lock_path}.stale.$$"
-    if mv "${lock_path}" "${stale_path}" 2>/dev/null; then
-      rm -rf -- "${stale_path}"
-    fi
-  done
+  # An adoption marker is fail-closed. Never silently downgrade a malformed
+  # inherited-lock request into a fresh, independently authorized release.
+  if [[ -n "${REVA_RELEASE_LOCK_ADOPT:-}" ]]; then
+    echo "✗ 继承发布锁失败：继承标记无效。" >&2
+    return 73
+  fi
 
-  echo "✗ 无法获取发布锁，请稍后重试。" >&2
-  return 73
+  unset REVA_RELEASE_LOCK_TOKEN
+  exec "${python_bin}" "${_REVA_RELEASE_LOCK_PY}" run \
+    --repo-root "${_REVA_RELEASE_REPO_ROOT}" \
+    --label "${label}" \
+    -- "${_REVA_RELEASE_CALLER}" \
+    ${_REVA_RELEASE_CALLER_ARGS[@]+"${_REVA_RELEASE_CALLER_ARGS[@]}"}
 }

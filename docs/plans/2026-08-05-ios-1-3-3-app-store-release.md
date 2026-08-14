@@ -2,6 +2,14 @@
 
 > **For implementation:** execute task-by-task with test-driven development, the project iOS App Review Gate, Mobile TestFlight Release, independent safety review, and verification-before-completion.
 
+> **CURRENT FREEZE OVERRIDE (2026-08-12): BLOCKED / DO NOT EXECUTE RELEASE COMMANDS BELOW.**
+> Repo bootstrap is not a production trust root. Native/EAS/ASC writers and observation, reviewer
+> login, physical-device acceptance, `check_app_store_release_pack.py --final-submit`, and
+> `check_ios_app_store_submission.py --require-asc-credentials` are frozen before network/credential
+> access. Only non-final-submit static pack, pure static iOS config checks, already-downloaded
+> IPA/local metadata review, Simulator tests, and public unauthenticated HTTPS are allowed; none
+> forms G5/G6/submission evidence. The task steps below are historical future-design records.
+
 **Goal:** Produce, validate and submit a new iOS 1.3.3 Store Build with no known medication-safety, privacy, login or submission-completeness blocker.
 
 **Architecture:** Keep backend health/account state authoritative. Remove the application-authored prescription path from the Mobile record surface. Treat the exact EAS build ID + git commit + IPA metadata + physical-device evidence as one immutable release unit. Freeze production OTA until the approved binary is live and verified.

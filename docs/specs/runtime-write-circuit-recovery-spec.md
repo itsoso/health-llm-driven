@@ -5,6 +5,12 @@
 > Updated: 2026-08-01
 > Related PRD/PDD: `docs/plans/2026-08-01-runtime-write-circuit-recovery-design.md`
 > Related code: `backend/app/services/agent_runtime_rollout.py`, `backend/app/services/agent_executor.py`, `backend/app/services/agent_kernel/goal_spec.py`
+>
+> **Current release override (2026-08-12):** all repo-contained automatic remote/vendor release
+> entrypoints, local signing/install/automatic-provisioning entrypoints and OTA/rollback channels
+> are frozen. Preview/development does not prove isolation because EAS channel→branch mapping can
+> drift or be shared. Only local validation and read-only proof are allowed; manual release Gate is
+> BLOCK/STOP until a new external trust-root dossier and independent G4 pass.
 
 ## 1. Decision
 
@@ -212,11 +218,13 @@ Gate may not pipe test output through `tail`.
 
 - Acknowledge only the exact reviewed reconciliation generation; never replay the uncertain
   write.
-- Deploy backend before any client release.
-- Use existing backend deploy health scoring and production smoke checks.
-- Use Mobile OTA only if Mobile code changes; use the Mac release route only if a packaged
-  client update is required.
-- Roll back backend code to the recorded pre-deploy SHA on Gate failure.
+- Validate backend and Mobile changes locally; use only read-only production observations.
+- Do not deploy backend or any client. All OTA/rollback channels and production native writers are
+  frozen; record the release Gate as BLOCK regardless of existing candidate visibility.
+- A packaged Mac client change is classified for the Mac release Gate, but Mac
+  publish/recover/rollback/nginx writers are frozen. Keep it BLOCKED until a new
+  dossier and independent G4 explicitly re-enable the writer.
+- On local Gate failure, revert the candidate code in development; do not call a production rollback writer.
 - Set reconciliation threshold to `1` for immediate policy rollback.
 
 ## 14. Open Questions

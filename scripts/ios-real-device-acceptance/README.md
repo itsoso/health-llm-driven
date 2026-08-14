@@ -1,41 +1,28 @@
-# iOS Real-Device Acceptance
+# iOS Simulator Acceptance
 
-This harness runs non-destructive App Review checks against the already installed
-`life.executor.health` application on a physical iPhone.
+> **Current safety boundary (2026-08-12):** despite the historical directory and runner names,
+> this repository harness is Simulator-only. Physical iOS connection, installation, signing and
+> acceptance are frozen. Do not pass a physical-device UDID, `--platform iOS`, or `--device` to an
+> Expo command.
 
-It currently verifies:
+The harness runs non-destructive checks against `life.executor.health` in an iOS Simulator. It
+currently verifies:
 
-- the installed app reaches either the authenticated Agent or login surface;
-- a manually pre-authenticated session persists across two terminate/cold-launch cycles;
+- the app reaches either the authenticated Agent or login surface;
+- a manually pre-authenticated Simulator session persists across two terminate/cold-launch cycles;
 - the authenticated session exposes the Agent composer;
 - today's briefing expands and collapses;
 - an unsent text draft survives background/foreground without being sent;
-- privacy policy and account deletion entries are reachable.
-- Simulator-only GPS coordinates can prove the automatic city and ready state;
-- production-visible safe Settings entries open and return without invoking
-  destructive or third-party actions.
+- privacy policy and account deletion entries are reachable;
+- injected Simulator GPS coordinates produce the expected city and ready state;
+- production-visible safe Settings entries open and return without invoking destructive or
+  third-party actions.
 
-The tests do not submit a health record, delete an account, grant permissions, or
-mark the full physical-device gate as passed. Voice, camera, sharing, write
-idempotency and deletion completion still require their dedicated acceptance
-checks.
+The tests do not submit a health record, delete an account, grant real-device permissions, or
+satisfy a physical-iPhone/App Store Gate. Voice, camera, sharing, APNs, HealthKit, Keychain,
+background execution, write idempotency and deletion completion remain explicit **BLOCKED** gaps.
 
-The runner fails when any required acceptance test is skipped. A physical iPhone
-without an expected-city assertion may skip only the GPS city test; the exact
-eight-test suite, including today's context, must otherwise pass. Simulator runs
-never accept a GPS skip, even when no expected city was provided. A missing login
-is never treated as a green result.
-
-Run:
-
-```bash
-scripts/run_ios_real_device_acceptance.sh \
-  <physical-device-udid> \
-  /tmp/XiaobaAcceptance-Build237.xcresult
-```
-
-Run the same non-destructive harness against a manually pre-authenticated
-simulator build:
+Run only against an iOS Simulator:
 
 ```bash
 scripts/run_ios_real_device_acceptance.sh \
@@ -43,24 +30,22 @@ scripts/run_ios_real_device_acceptance.sh \
   --device <simulator-udid> \
   --location 30.2741,120.1551 \
   --expected-city 杭州 \
-  --result /tmp/XiaobaAcceptance-Simulator-Build237.xcresult
+  --result /tmp/XiaobaAcceptance-Simulator-<build-id>.xcresult
 ```
 
-`--location` and `--expected-city` must be supplied together and are rejected for
-physical devices. The runner grants the installed app in-use location access,
-injects the coordinate, and clears the simulated location from an EXIT/INT/TERM
-trap. This smoke validates the already-authorized path; it intentionally does
-not replace a real-device permission-prompt test.
+Here `--device` is the runner's historical option name for a Simulator UDID. It does not authorize
+Expo's `--device` flag or any physical device. `--location` and `--expected-city` must be supplied
+together. The runner grants the Simulator app in-use location access, injects the coordinate, and
+clears it from an EXIT/INT/TERM trap.
 
-Settings navigation automation never taps Garmin, Apple Health, account
-deletion, update application, or logout. Garmin OAuth/MFA, HealthKit, APNs,
-camera, microphone, Keychain and background execution remain real-device gates.
+Before running, open the Simulator app and sign in manually. The harness rejects
+`APP_STORE_REVIEW_DEMO_ACCOUNT` and `APP_STORE_REVIEW_DEMO_PASSWORD`; never pass review credentials
+to Xcode UI tests because result bundles and console logs can retain typed text.
 
-Before running, open the installed app and sign in manually. The harness rejects
-`APP_STORE_REVIEW_DEMO_ACCOUNT` and `APP_STORE_REVIEW_DEMO_PASSWORD`; never pass
-review credentials to Xcode UI tests because typed text is retained in result
-bundles and console logs.
+Physical iOS acceptance is not a repository command. After the global freeze is lifted, a
+separately authorized external manual process must inspect the exact candidate and produce private,
+sanitized, same-build evidence. Until then, physical-device, G5/G6 and App Store submission Gates
+remain BLOCKED; Simulator output cannot substitute for them.
 
-The command fails when the device is offline, the installed app is unavailable,
-or an assertion fails. Never pipe it through `tail`; the `xcodebuild` exit code is
-the acceptance result.
+The command fails when the Simulator is unavailable, the app is not installed there, or an
+assertion fails. Never pipe it through `tail`; the `xcodebuild` exit code is the acceptance result.

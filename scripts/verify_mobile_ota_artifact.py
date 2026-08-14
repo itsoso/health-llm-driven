@@ -9,7 +9,9 @@ import json
 import os
 import re
 import stat
+import subprocess
 import sys
+import uuid
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
@@ -19,10 +21,320 @@ UUID_RE = re.compile(
     r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+CHANNEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+MAX_MANIFEST_BYTES = 64 * 1024
 
 
 class VerificationError(ValueError):
     """Raised when an OTA proof is incomplete or contradictory."""
+
+
+def _private_directory(path: Path, *, create: bool = True) -> bool:
+    if create:
+        try:
+            path.mkdir(mode=0o700)
+        except FileExistsError:
+            pass
+        except OSError as exc:
+            raise VerificationError(
+                f"cannot create shared OTA state directory: {path}"
+            ) from exc
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        if not create:
+            return False
+        raise VerificationError(
+            f"shared OTA state directory is unavailable: {path}"
+        ) from None
+    except OSError as exc:
+        raise VerificationError(f"shared OTA state directory is unavailable: {path}") from exc
+    if (
+        stat.S_ISLNK(metadata.st_mode)
+        or not stat.S_ISDIR(metadata.st_mode)
+        or stat.S_IMODE(metadata.st_mode) != 0o700
+        or metadata.st_uid != os.getuid()
+    ):
+        raise VerificationError(
+            f"shared OTA state directory must be current-owner mode 0700: {path}"
+        )
+    return True
+
+
+def _git_common_dir(repo_root: Path) -> Path:
+    try:
+        value = subprocess.check_output(
+            [
+                "git",
+                "-C",
+                str(repo_root),
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-common-dir",
+            ],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise VerificationError("cannot resolve the repository common git directory") from exc
+    path = Path(value)
+    if not path.is_absolute():
+        path = repo_root / path
+    return path.resolve()
+
+
+def _git_worktrees(repo_root: Path) -> list[Path]:
+    try:
+        output = subprocess.check_output(
+            ["git", "-C", str(repo_root), "worktree", "list", "--porcelain"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise VerificationError("cannot enumerate repository worktrees") from exc
+    worktrees = []
+    for line in output.splitlines():
+        if line.startswith("worktree "):
+            worktrees.append(Path(line.removeprefix("worktree ")).resolve())
+    if not worktrees:
+        raise VerificationError("repository worktree inventory is empty")
+    return worktrees
+
+
+def _safe_receipt_bytes(path: Path, *, legacy: bool) -> tuple[bytes, os.stat_result]:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise VerificationError(f"unsafe OTA receipt: {path}: {exc}") from exc
+    try:
+        metadata = os.fstat(descriptor)
+        allowed_modes = {0o600, 0o644} if legacy else {0o600}
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) not in allowed_modes
+            or metadata.st_nlink != 1
+            or metadata.st_uid != os.getuid()
+        ):
+            raise VerificationError(f"unsafe OTA receipt metadata: {path}")
+        with os.fdopen(descriptor, "rb", closefd=False) as handle:
+            payload = handle.read()
+        current = path.stat(follow_symlinks=False)
+        if (current.st_dev, current.st_ino) != (metadata.st_dev, metadata.st_ino):
+            raise VerificationError(f"OTA receipt changed while reading: {path}")
+        return payload, metadata
+    finally:
+        os.close(descriptor)
+
+
+def _validate_receipt_payload(
+    kind: str, payload: bytes, _scratch: Path, *, channel: str
+) -> None:
+    if kind == "manifest":
+        try:
+            manifest = json.loads(payload.decode("utf-8"))
+        except (UnicodeError, json.JSONDecodeError) as exc:
+            raise VerificationError("legacy OTA manifest is invalid") from exc
+        _validate_manifest_payload(manifest, expected_channel=channel)
+        return
+    if kind == "anchor":
+        try:
+            value = payload.decode("utf-8").strip()
+        except UnicodeError as exc:
+            raise VerificationError("legacy OTA anchor is not UTF-8") from exc
+        if not SHA_RE.fullmatch(value):
+            raise VerificationError("legacy OTA anchor is invalid")
+        return
+    if kind == "audit":
+        try:
+            lines = payload.decode("utf-8").splitlines()
+            if any(not isinstance(json.loads(line), dict) for line in lines if line.strip()):
+                raise ValueError("audit event must be an object")
+        except (UnicodeError, ValueError, json.JSONDecodeError) as exc:
+            raise VerificationError("legacy OTA audit is invalid") from exc
+        return
+    raise VerificationError(f"unsupported OTA receipt kind: {kind}")
+
+
+def _install_private_receipt(path: Path, payload: bytes) -> None:
+    parent_fd = os.open(
+        path.parent,
+        os.O_RDONLY
+        | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0),
+    )
+    temporary_name = f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    flags |= getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(temporary_name, flags, 0o600, dir_fd=parent_fd)
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.link(
+                temporary_name,
+                path.name,
+                src_dir_fd=parent_fd,
+                dst_dir_fd=parent_fd,
+                follow_symlinks=False,
+            )
+            os.unlink(temporary_name, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+        except BaseException:
+            try:
+                os.unlink(temporary_name, dir_fd=parent_fd)
+            except FileNotFoundError:
+                pass
+            raise
+    finally:
+        os.close(parent_fd)
+
+
+def _remove_legacy_receipt(path: Path, expected: os.stat_result) -> None:
+    current = path.stat(follow_symlinks=False)
+    if (current.st_dev, current.st_ino) != (expected.st_dev, expected.st_ino):
+        raise VerificationError(f"legacy OTA receipt changed before migration: {path}")
+    path.unlink()
+    parent_fd = os.open(
+        path.parent,
+        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0),
+    )
+    try:
+        os.fsync(parent_fd)
+    finally:
+        os.close(parent_fd)
+
+
+def _migrate_legacy_receipt(
+    *, repo_root: Path, target: Path, channel: str, kind: str
+) -> None:
+    legacy_names = {
+        "manifest": (
+            ".mobile-release-manifest.json"
+            if channel == "production"
+            else f".mobile-release-manifest.{channel}.json"
+        ),
+        "anchor": ".last-ota-commit" if channel == "production" else None,
+        "audit": ".mobile-ota-audit.jsonl" if channel == "production" else None,
+    }
+    legacy_name = legacy_names[kind]
+    if legacy_name is None:
+        return
+    candidates = [
+        worktree / legacy_name
+        for worktree in _git_worktrees(repo_root)
+        if (worktree / legacy_name).exists() or (worktree / legacy_name).is_symlink()
+    ]
+    candidate_payloads = [
+        (candidate, *_safe_receipt_bytes(candidate, legacy=True))
+        for candidate in candidates
+    ]
+    unique_payloads = {payload for _path, payload, _metadata in candidate_payloads}
+    if len(unique_payloads) > 1:
+        raise VerificationError(
+            f"conflicting legacy OTA {kind} receipts across git worktrees"
+        )
+    target_payload: bytes | None = None
+    if target.exists() or target.is_symlink():
+        target_payload, _metadata = _safe_receipt_bytes(target, legacy=False)
+    if candidate_payloads:
+        payload = candidate_payloads[0][1]
+        scratch = target.with_name(f".{target.name}.validation.{os.getpid()}")
+        _validate_receipt_payload(kind, payload, scratch, channel=channel)
+        if target_payload is None:
+            _install_private_receipt(target, payload)
+        elif target_payload != payload:
+            raise VerificationError(
+                f"shared and legacy OTA {kind} receipts conflict; reconcile manually"
+            )
+        for candidate, _payload, metadata in candidate_payloads:
+            _remove_legacy_receipt(candidate, metadata)
+
+
+def resolve_mobile_state_paths(
+    *,
+    repo_root: Path,
+    channel: str,
+    scope: str,
+    manifest_file: str | None,
+    anchor_file: str | None,
+    audit_file: str | None,
+    migrate: bool,
+    read_only: bool = False,
+) -> dict[str, str]:
+    if not CHANNEL_RE.fullmatch(channel):
+        raise VerificationError("OTA channel is invalid")
+    if migrate and read_only:
+        raise VerificationError("OTA state migration is incompatible with read-only mode")
+    repo_root = repo_root.resolve()
+
+    def explicit(value: str) -> Path:
+        path = Path(value).expanduser()
+        return (path if path.is_absolute() else repo_root / path).absolute()
+
+    needs_shared_state = manifest_file is None or (
+        scope == "mobile" and (anchor_file is None or audit_file is None)
+    )
+    state_dir: Path | None = None
+    state_dir_exists = False
+    if needs_shared_state:
+        common = _git_common_dir(repo_root)
+        state_root = common / "reva-release-state"
+        state_root_exists = _private_directory(state_root, create=not read_only)
+        state_dir = state_root / "mobile-ota"
+        if state_root_exists:
+            state_dir_exists = _private_directory(state_dir, create=not read_only)
+
+    if manifest_file is not None:
+        manifest = explicit(manifest_file)
+        pending = manifest.with_name(f"{manifest.stem}.rollback-pending.json")
+    else:
+        assert state_dir is not None
+        manifest = state_dir / f"manifest.{channel}.json"
+        pending = state_dir / f"rollback-pending.{channel}.json"
+        if migrate and state_dir_exists:
+            _migrate_legacy_receipt(
+                repo_root=repo_root,
+                target=manifest,
+                channel=channel,
+                kind="manifest",
+            )
+    result = {
+        "manifest_file": str(manifest),
+        "pending_file": str(pending),
+    }
+    if scope == "mobile":
+        if anchor_file is not None:
+            anchor = explicit(anchor_file)
+        else:
+            assert state_dir is not None
+            anchor = state_dir / f"anchor.{channel}"
+            if migrate and state_dir_exists:
+                _migrate_legacy_receipt(
+                    repo_root=repo_root,
+                    target=anchor,
+                    channel=channel,
+                    kind="anchor",
+                )
+        if audit_file is not None:
+            audit = explicit(audit_file)
+        else:
+            assert state_dir is not None
+            audit = state_dir / f"audit.{channel}.jsonl"
+            if migrate and state_dir_exists:
+                _migrate_legacy_receipt(
+                    repo_root=repo_root,
+                    target=audit,
+                    channel=channel,
+                    kind="audit",
+                )
+        result.update({"anchor_file": str(anchor), "audit_file": str(audit)})
+    return result
 
 
 def _read_json(path: Path) -> Any:
@@ -30,6 +342,145 @@ def _read_json(path: Path) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise VerificationError(f"invalid JSON file {path}: {exc}") from exc
+
+
+def _open_directory_without_symlinks(path: Path) -> tuple[int, os.stat_result]:
+    absolute = path.expanduser().absolute()
+    flags = (
+        os.O_RDONLY
+        | os.O_DIRECTORY
+        | os.O_CLOEXEC
+        | os.O_NOFOLLOW
+    )
+    descriptor = -1
+    try:
+        descriptor = os.open(absolute.anchor, flags)
+        for component in absolute.parts[1:]:
+            next_descriptor = os.open(component, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = next_descriptor
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISDIR(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o700
+            or metadata.st_uid != os.getuid()
+        ):
+            raise VerificationError(
+                "release manifest directory must be current-owner mode 0700"
+            )
+        return descriptor, metadata
+    except VerificationError:
+        if descriptor >= 0:
+            os.close(descriptor)
+        raise
+    except OSError as exc:
+        if descriptor >= 0:
+            os.close(descriptor)
+        raise VerificationError(
+            f"release manifest directory is unsafe or unavailable: {path}: {exc}"
+        ) from exc
+
+
+def _assert_private_directory_fd(
+    descriptor: int,
+    *,
+    expected: os.stat_result | None = None,
+) -> os.stat_result:
+    try:
+        metadata = os.fstat(descriptor)
+    except OSError as exc:
+        raise VerificationError("release manifest directory changed") from exc
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or stat.S_IMODE(metadata.st_mode) != 0o700
+        or metadata.st_uid != os.getuid()
+    ):
+        raise VerificationError(
+            "release manifest directory must remain current-owner mode 0700"
+        )
+    if expected is not None and (metadata.st_dev, metadata.st_ino) != (
+        expected.st_dev,
+        expected.st_ino,
+    ):
+        raise VerificationError("release manifest directory changed")
+    return metadata
+
+
+def _read_private_manifest(
+    path: Path, *, allow_missing: bool
+) -> tuple[bytes | None, os.stat_result | None]:
+    absolute = path.expanduser().absolute()
+    parent_descriptor, parent_metadata = _open_directory_without_symlinks(
+        absolute.parent
+    )
+    descriptor = -1
+    try:
+        flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
+        try:
+            descriptor = os.open(absolute.name, flags, dir_fd=parent_descriptor)
+        except FileNotFoundError:
+            if allow_missing:
+                return None, None
+            raise VerificationError(f"release manifest is missing: {path}") from None
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise VerificationError(
+                "release manifest must be a regular non-symlink file"
+            )
+        if stat.S_IMODE(metadata.st_mode) != 0o600:
+            raise VerificationError("release manifest permissions must be 0600")
+        if metadata.st_uid != os.getuid():
+            raise VerificationError("release manifest must be owned by the current user")
+        if metadata.st_nlink != 1:
+            raise VerificationError("release manifest must have exactly one hard link")
+        if metadata.st_size > MAX_MANIFEST_BYTES:
+            raise VerificationError("release manifest size is too large")
+
+        chunks: list[bytes] = []
+        remaining = MAX_MANIFEST_BYTES + 1
+        while remaining > 0:
+            chunk = os.read(descriptor, min(64 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        payload = b"".join(chunks)
+        if len(payload) > MAX_MANIFEST_BYTES:
+            raise VerificationError("release manifest size is too large")
+
+        final_metadata = os.fstat(descriptor)
+        stable_fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+        if any(
+            getattr(metadata, field) != getattr(final_metadata, field)
+            for field in stable_fields
+        ):
+            raise VerificationError("release manifest changed while reading")
+        _assert_private_directory_fd(
+            parent_descriptor,
+            expected=parent_metadata,
+        )
+        try:
+            current = os.stat(
+                absolute.name,
+                dir_fd=parent_descriptor,
+                follow_symlinks=False,
+            )
+            current_parent = os.stat(absolute.parent, follow_symlinks=False)
+        except OSError as exc:
+            raise VerificationError("release manifest changed while reading") from exc
+        if (
+            (current.st_dev, current.st_ino) != (metadata.st_dev, metadata.st_ino)
+            or (current_parent.st_dev, current_parent.st_ino)
+            != (parent_metadata.st_dev, parent_metadata.st_ino)
+        ):
+            raise VerificationError("release manifest changed while reading")
+        return payload, metadata
+    except OSError as exc:
+        raise VerificationError(f"release manifest is unavailable: {exc}") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        os.close(parent_descriptor)
 
 
 def _safe_relative_path(value: Any, *, label: str) -> PurePosixPath:
@@ -175,25 +626,25 @@ def validate_artifact(
     }
 
 
-def validate_manifest(path: Path, *, allow_missing: bool) -> dict[str, Any]:
-    try:
-        mode = path.lstat().st_mode
-    except FileNotFoundError:
-        if allow_missing:
-            return {"exists": False, "schema_version": None}
-        raise VerificationError(f"release manifest is missing: {path}") from None
-    except OSError as exc:
-        raise VerificationError(f"release manifest is unavailable: {exc}") from exc
-    if stat.S_ISLNK(mode) or not stat.S_ISREG(mode):
-        raise VerificationError("release manifest must be a regular non-symlink file")
-    if stat.S_IMODE(mode) & 0o077:
-        raise VerificationError("release manifest permissions must be 0600")
-    payload = _read_json(path)
+def _validate_manifest_payload(
+    payload: Any, *, expected_channel: str | None
+) -> int:
     if not isinstance(payload, dict):
         raise VerificationError("release manifest must be a JSON object")
     schema = payload.get("schema_version", 1)
     if schema not in {1, 2}:
         raise VerificationError("release manifest schema is unsupported")
+    if expected_channel is not None:
+        if not CHANNEL_RE.fullmatch(expected_channel):
+            raise VerificationError("expected OTA channel is invalid")
+        manifest_channel = payload.get("channel")
+        legacy_production = (
+            schema == 1
+            and manifest_channel is None
+            and expected_channel == "production"
+        )
+        if not legacy_production and manifest_channel != expected_channel:
+            raise VerificationError("release manifest channel mismatch")
     for group_key, update_key in (
         ("group_id", "update_id"),
         ("active_group_id", "active_update_id"),
@@ -226,7 +677,290 @@ def validate_manifest(path: Path, *, allow_missing: bool) -> dict[str, Any]:
         raise VerificationError(
             "release manifest legacy and active update identities disagree"
         )
-    return {"exists": True, "schema_version": schema}
+    artifact_evidence = payload.get("artifact_evidence")
+    artifact_digest = payload.get("artifact_digest")
+    artifact_file_count = payload.get("artifact_file_count")
+    artifact_total_bytes = payload.get("artifact_total_bytes")
+    artifact_values = (
+        artifact_digest,
+        artifact_file_count,
+        artifact_total_bytes,
+    )
+    if artifact_evidence not in {
+        None,
+        "verified_transaction_artifact",
+        "unavailable_after_remote_adoption",
+    }:
+        raise VerificationError("release manifest has invalid artifact evidence")
+    has_artifact_values = any(value is not None for value in artifact_values)
+    if artifact_evidence == "unavailable_after_remote_adoption":
+        if has_artifact_values:
+            raise VerificationError(
+                "release manifest unavailable artifact evidence has artifact values"
+            )
+    elif artifact_evidence == "verified_transaction_artifact" or has_artifact_values:
+        if not isinstance(artifact_digest, str) or not DIGEST_RE.fullmatch(
+            artifact_digest
+        ):
+            raise VerificationError("release manifest has invalid artifact digest")
+        if (
+            not isinstance(artifact_file_count, int)
+            or isinstance(artifact_file_count, bool)
+            or artifact_file_count < 1
+        ):
+            raise VerificationError("release manifest has invalid artifact file count")
+        if (
+            not isinstance(artifact_total_bytes, int)
+            or isinstance(artifact_total_bytes, bool)
+            or artifact_total_bytes < 1
+        ):
+            raise VerificationError("release manifest has invalid artifact byte count")
+    return schema
+
+
+def validate_manifest(
+    path: Path,
+    *,
+    allow_missing: bool,
+    expected_channel: str | None = None,
+) -> dict[str, Any]:
+    raw_payload, metadata = _read_private_manifest(path, allow_missing=allow_missing)
+    if raw_payload is None:
+        return {
+            "exists": False,
+            "schema_version": None,
+            "sha256": None,
+            "identity": None,
+            "payload": None,
+        }
+    assert metadata is not None
+    try:
+        payload = json.loads(raw_payload.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise VerificationError(f"release manifest JSON is invalid: {exc}") from exc
+    schema = _validate_manifest_payload(payload, expected_channel=expected_channel)
+    return {
+        "exists": True,
+        "schema_version": schema,
+        "sha256": hashlib.sha256(raw_payload).hexdigest(),
+        "identity": {
+            "device": metadata.st_dev,
+            "inode": metadata.st_ino,
+        },
+        "payload": payload,
+    }
+
+
+def _read_private_file_at(
+    parent_descriptor: int,
+    name: str,
+    *,
+    label: str,
+    allow_missing: bool,
+) -> tuple[bytes, os.stat_result] | None:
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
+    descriptor = -1
+    try:
+        try:
+            descriptor = os.open(name, flags, dir_fd=parent_descriptor)
+        except FileNotFoundError:
+            if allow_missing:
+                return None
+            raise VerificationError(f"{label} is missing") from None
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_uid != os.getuid()
+            or metadata.st_nlink != 1
+        ):
+            raise VerificationError(
+                f"{label} must be a current-owner 0600 single-link regular file"
+            )
+        if metadata.st_size > MAX_MANIFEST_BYTES:
+            raise VerificationError(f"{label} size is too large")
+        chunks: list[bytes] = []
+        remaining = MAX_MANIFEST_BYTES + 1
+        while remaining > 0:
+            chunk = os.read(descriptor, min(64 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        data = b"".join(chunks)
+        if len(data) > MAX_MANIFEST_BYTES:
+            raise VerificationError(f"{label} size is too large")
+        final_metadata = os.fstat(descriptor)
+        stable_fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+        if any(
+            getattr(metadata, field) != getattr(final_metadata, field)
+            for field in stable_fields
+        ):
+            raise VerificationError(f"{label} changed while reading")
+        current = os.stat(name, dir_fd=parent_descriptor, follow_symlinks=False)
+        if (current.st_dev, current.st_ino) != (metadata.st_dev, metadata.st_ino):
+            raise VerificationError(f"{label} changed while reading")
+        return data, metadata
+    except OSError as exc:
+        raise VerificationError(f"{label} is unsafe or unavailable: {exc}") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _receipt_identity(
+    receipt: tuple[bytes, os.stat_result] | None,
+) -> tuple[int, int, str] | None:
+    if receipt is None:
+        return None
+    data, metadata = receipt
+    return metadata.st_dev, metadata.st_ino, hashlib.sha256(data).hexdigest()
+
+
+def _atomic_replace_private_file(
+    path: Path,
+    data: bytes,
+    *,
+    label: str,
+    expected_snapshot: dict[str, Any] | None,
+) -> None:
+    if len(data) > MAX_MANIFEST_BYTES:
+        raise VerificationError(f"{label} size is too large")
+    absolute = path.expanduser().absolute()
+    parent_descriptor, parent_metadata = _open_directory_without_symlinks(
+        absolute.parent
+    )
+    temporary_name = f".{absolute.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
+    temporary_created = False
+    try:
+        before = _read_private_file_at(
+            parent_descriptor,
+            absolute.name,
+            label=label,
+            allow_missing=True,
+        )
+        before_identity = _receipt_identity(before)
+        if expected_snapshot is not None:
+            expected_exists = expected_snapshot.get("exists") is True
+            if expected_exists:
+                identity = expected_snapshot.get("identity")
+                expected_digest = expected_snapshot.get("sha256")
+                if (
+                    not isinstance(identity, dict)
+                    or not isinstance(identity.get("device"), int)
+                    or isinstance(identity.get("device"), bool)
+                    or not isinstance(identity.get("inode"), int)
+                    or isinstance(identity.get("inode"), bool)
+                    or not isinstance(expected_digest, str)
+                    or not DIGEST_RE.fullmatch(expected_digest)
+                ):
+                    raise VerificationError("verified manifest snapshot is invalid")
+                expected_identity = (
+                    identity["device"],
+                    identity["inode"],
+                    expected_digest,
+                )
+                if before_identity != expected_identity:
+                    raise VerificationError("release manifest changed after validation")
+            elif (
+                expected_snapshot.get("exists") is not False
+                or expected_snapshot.get("identity") is not None
+                or expected_snapshot.get("sha256") is not None
+            ):
+                raise VerificationError("verified manifest snapshot is invalid")
+            elif before is not None:
+                raise VerificationError("release manifest appeared after validation")
+
+        write_flags = (
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | os.O_CLOEXEC
+            | os.O_NOFOLLOW
+        )
+        descriptor = os.open(
+            temporary_name,
+            write_flags,
+            0o600,
+            dir_fd=parent_descriptor,
+        )
+        temporary_created = True
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+
+        current = _read_private_file_at(
+            parent_descriptor,
+            absolute.name,
+            label=label,
+            allow_missing=True,
+        )
+        if _receipt_identity(current) != before_identity:
+            raise VerificationError(f"{label} changed before replacement")
+        _assert_private_directory_fd(
+            parent_descriptor,
+            expected=parent_metadata,
+        )
+        os.replace(
+            temporary_name,
+            absolute.name,
+            src_dir_fd=parent_descriptor,
+            dst_dir_fd=parent_descriptor,
+        )
+        temporary_created = False
+        os.fsync(parent_descriptor)
+        _assert_private_directory_fd(
+            parent_descriptor,
+            expected=parent_metadata,
+        )
+        installed = _read_private_file_at(
+            parent_descriptor,
+            absolute.name,
+            label=label,
+            allow_missing=False,
+        )
+        if installed is None or installed[0] != data:
+            raise VerificationError(f"{label} replacement could not be verified")
+    finally:
+        if temporary_created:
+            try:
+                os.unlink(temporary_name, dir_fd=parent_descriptor)
+            except FileNotFoundError:
+                pass
+        os.close(parent_descriptor)
+
+
+def replace_manifest_from_snapshot(
+    path: Path,
+    *,
+    snapshot: dict[str, Any],
+    payload: dict[str, Any],
+    expected_channel: str,
+) -> None:
+    _validate_manifest_payload(payload, expected_channel=expected_channel)
+    data = (
+        json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8") + b"\n"
+    )
+    _atomic_replace_private_file(
+        path,
+        data,
+        label="release manifest",
+        expected_snapshot=snapshot,
+    )
+
+
+def replace_private_text_receipt(path: Path, value: str, *, label: str) -> None:
+    try:
+        data = value.encode("utf-8")
+    except UnicodeError as exc:
+        raise VerificationError(f"{label} is not valid UTF-8") from exc
+    _atomic_replace_private_file(
+        path,
+        data,
+        label=label,
+        expected_snapshot=None,
+    )
 
 
 def _load_updates(payload: Any) -> list[dict[str, Any]]:
@@ -423,6 +1157,18 @@ def _parser() -> argparse.ArgumentParser:
     manifest = commands.add_parser("manifest")
     manifest.add_argument("--manifest-file", required=True, type=Path)
     manifest.add_argument("--allow-missing", action="store_true")
+    manifest.add_argument("--expected-channel")
+
+    write_manifest = commands.add_parser("write-manifest")
+    write_manifest.add_argument("--manifest-file", required=True, type=Path)
+    write_manifest.add_argument("--snapshot-json", required=True, type=Path)
+    write_manifest.add_argument("--payload-json", required=True, type=Path)
+    write_manifest.add_argument("--expected-channel", required=True)
+
+    write_receipt = commands.add_parser("write-private-receipt")
+    write_receipt.add_argument("--receipt-file", required=True, type=Path)
+    write_receipt.add_argument("--value", required=True)
+    write_receipt.add_argument("--label", required=True)
 
     publish = commands.add_parser("publish")
     publish.add_argument("--publish-json", required=True, type=Path)
@@ -444,6 +1190,16 @@ def _parser() -> argparse.ArgumentParser:
     lookup.add_argument("--transaction-id", required=True)
     lookup.add_argument("--branch")
     lookup.add_argument("--runtime-version", required=True)
+
+    state = commands.add_parser("state-paths")
+    state.add_argument("--repo-root", required=True, type=Path)
+    state.add_argument("--channel", required=True)
+    state.add_argument("--scope", choices=("mobile", "rollback"), required=True)
+    state.add_argument("--manifest-file")
+    state.add_argument("--anchor-file")
+    state.add_argument("--audit-file")
+    state.add_argument("--migrate", action="store_true")
+    state.add_argument("--read-only", action="store_true")
     return parser
 
 
@@ -461,7 +1217,27 @@ def main(argv: list[str] | None = None) -> int:
             result = validate_manifest(
                 args.manifest_file,
                 allow_missing=args.allow_missing,
+                expected_channel=args.expected_channel,
             )
+        elif args.command == "write-manifest":
+            snapshot = _read_json(args.snapshot_json)
+            payload = _read_json(args.payload_json)
+            if not isinstance(snapshot, dict) or not isinstance(payload, dict):
+                raise VerificationError("manifest write inputs must be JSON objects")
+            replace_manifest_from_snapshot(
+                args.manifest_file,
+                snapshot=snapshot,
+                payload=payload,
+                expected_channel=args.expected_channel,
+            )
+            result = {"written": True}
+        elif args.command == "write-private-receipt":
+            replace_private_text_receipt(
+                args.receipt_file,
+                args.value,
+                label=args.label,
+            )
+            result = {"written": True}
         elif args.command == "publish":
             result = verify_publish(
                 _read_json(args.publish_json),
@@ -479,12 +1255,23 @@ def main(argv: list[str] | None = None) -> int:
                 update_id=args.update_id,
                 runtime_version=args.runtime_version,
             )
-        else:
+        elif args.command == "find-transaction":
             result = find_transaction_candidate(
                 _read_json(args.updates_json),
                 transaction_id=args.transaction_id,
                 branch=args.branch,
                 runtime_version=args.runtime_version,
+            )
+        else:
+            result = resolve_mobile_state_paths(
+                repo_root=args.repo_root,
+                channel=args.channel,
+                scope=args.scope,
+                manifest_file=args.manifest_file,
+                anchor_file=args.anchor_file,
+                audit_file=args.audit_file,
+                migrate=args.migrate,
+                read_only=args.read_only,
             )
     except (OSError, VerificationError) as exc:
         print(f"verification error: {exc}", file=sys.stderr)

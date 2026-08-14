@@ -1,6 +1,10 @@
 # Feature Spec: Mobile Health Evidence Runtime
 
 > Status: local G3/G4 passed; integrated-main CI and production deployment pending
+>
+> **Current release override (2026-08-12):** production deployment/activation and all OTA channels
+> are frozen. Historical rollout steps below are future invariants only; do not execute them. Manual
+> Gate is BLOCK, G5/G6 are BLOCK, and local/CI evidence does not make this shipped.
 > Owner: Codex + product owner
 > Updated: 2026-07-29
 > Related PRD/PDD: `docs/prd/2026-07-29-mobile-health-evidence-runtime.md`
@@ -298,29 +302,16 @@ recorded in the Dossier as their Gates are reached.
 
 ## 13. Rollout And Rollback
 
-- `HEALTH_EVIDENCE_RUNTIME_ENABLED` controls the compiler/router/verifier
-  integration and the new low-back Guardian rule. It remains false in the
-  canonical backend `.env` after local focused/integration G3 and safety G4 pass.
-  After integrated-main CI is green, backend deployment stages the runtime-only KB
-  while every real writer process remains false. A separate
-  `deploy.sh --activate-health-evidence` transaction must pass systemd deadman,
-  canary health/auth/score/semantic checks, durable authorization commit, and
-  all-cgroup-PID `flag=true` proof before production is considered enabled.
+- `HEALTH_EVIDENCE_RUNTIME_ENABLED` remains false. Backend deploy, environment mutation and
+  `--activate-health-evidence` are frozen; their historical proof protocol is test/design input only.
 - The low-back entity, claims, relations, and eval candidates are listed in
   `CLINICAL_RELEASE_HOLD_DOCUMENT_IDS`; generic System KB search always excludes
   them. A separate exact allowlist releases only five claims to the controlled
   health-evidence runtime.
 - Raw Dedao fallback removal is a safety correction and is not re-enabled by the
   feature flag.
-- Backend and Web deploys precede Mobile OTA. Old clients continue to render answer
-  text and ignore the optional manifest/card.
-- Rollback first stops socket/backend/Celery writers, revokes and fsyncs durable
-  authorization, restores a canonical false environment, quarantines the
-  runtime-only KB where required, and proves schema/auth/health plus all writer
-  PIDs false before reporting success. Mobile rolls back through the OTA release
-  policy while the reviewed-only generic knowledge correction remains in place.
-- Production rollout begins with low-back-pain symptom intent and expands by
-  reviewed domain packs plus golden evaluations.
+- Do not deploy Backend/Web or call Mobile OTA/rollback. Old-client compatibility and rollback
+  sequencing remain future invariants; current production state is unchanged.
 
 ## 14. Implemented Slice Boundary
 

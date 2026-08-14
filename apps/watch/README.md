@@ -52,7 +52,9 @@ cd ios && xcodebuild -project HealthPilot.xcodeproj -target RevaWatch \
 - **激活 bridge**:App 启动时调 `WatchPhoneBridge.shared.activate()`(AppDelegate 或一个极小 Expo module 里一行),登录 token 变化时 `SharedKeychainModule` 会通知 bridge 同步到 Watch。
 - **Capabilities**:watch app + widget + 主 app 加 App Group `group.life.executor.health`(complication 缓存);bridge token 复用 Siri 的 `siri_auth_token`,Watch 本机保存到 Keychain。
 - **真机运行**:装到配对手表跑通(complication 出状态灯、腕上喝水/俯卧撑回写、关键推送)。
-- **发版**:EAS build production(watch app 随 iOS app 一起打包),见 `mobile-testflight-release` skill。
+- **发版边界**:标准 `production` 是 iPhone-only，不包含 Watch。Watch 使用独立
+  `watch-production` profile，并必须另建 dossier，通过多 target 签名/版本、物理
+  Watch、TestFlight 与商店资料 Gate；见 `mobile-testflight-release` skill。
 
 1. `cd mobile && npx expo prebuild --platform ios`(生成/刷新 `ios/`)。
 2. Xcode 打开 `ios/*.xcworkspace` → File ▸ New ▸ Target ▸ **watchOS App**(bundle `life.executor.health.watchkitapp`,companion=`life.executor.health`)。
@@ -61,7 +63,10 @@ cd ios && xcodebuild -project HealthPilot.xcodeproj -target RevaWatch \
 4. iPhone 侧加 **watch-bridge**(WCSession delegate,持 token、把 watch 的 `{op:"summary"|"quick_record"}` 转发后端)。约定见 `WatchConnectivityClient.swift` 顶部消息协议。
 5. Capabilities:watch app + widget 加 App Group(complication 缓存)。
 6. 验证可固化后,写 `mobile/plugins/withWatchApp.js`(仿 `withIntentsExtension.js` 的 `withXcodeProject`)把以上 target/源/capability 注入,保证 `prebuild --clean` 不丢。
-7. 发版走远端 EAS:`cd mobile && npx eas-cli build -p ios --profile production --auto-submit`(见 `mobile-testflight-release` skill;watch app 随 iOS app 一起打包分发)。
+7. 正式发布不要套用 iPhone 的 `production` 候选，也不要直接调用供应商 CLI。
+   `watch-production` 必须先接入受控 build-only 交易，再从仓库根目录的受控入口创建
+   候选；构建选择、TestFlight 验收和 App Review 提交分别过 Gate。本次 iPhone
+   formal release 明确不包含 Watch。
 
 ## 不做(v1 边界)
 

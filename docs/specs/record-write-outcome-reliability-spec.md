@@ -4,6 +4,15 @@
 > Owner: Codex
 > Updated: 2026-07-31
 > Related code: `backend/app/services/agent_executor.py`, `backend/app/services/agent_kernel/goal_spec.py`, `mobile/services/chat.ts`, `mobile/utils/agentTurnState.ts`
+>
+> **Current release override (2026-08-12):** no backend/frontend production deploy and no OTA
+> channel write is authorized. EAS channel→branch mapping may drift or be shared, so preview and
+> development are frozen too. Use only local tests/Metro/iOS Simulator and read-only proof;
+> `npm run ios` uses the Simulator wrapper, callers may not append npm/Expo `--device`, and the
+> wrapper pins an exact available Simulator UDID; physical iOS repo CLI is frozen;
+> archive/export/signing/provisioning is frozen. The release
+> Gate is BLOCK/STOP pending a new dossier, repo-external root-owned launcher, canonical
+> repo-external tree, recovery proof and new independent G4.
 
 ## 1. Decision
 
@@ -141,10 +150,10 @@ git diff --check
 
 ## 13. Rollout And Rollback
 
-- Deploy backend first so new Mobile code always has authoritative fields; legacy Mobile continues using additive legacy fields.
-- Publish Mobile JS/TS changes through the production OTA path after backend health checks.
-- Roll back Mobile OTA first if presentation regresses; backend additive fields are backward-compatible.
-- Roll back backend to the pre-deploy SHA if health score or smoke tests fail.
+- Validate backend compatibility and Mobile JS/TS locally; do not deploy either surface.
+- All OTA/rollback channels and all server/production native writers are frozen. Record the manual
+  release Gate as BLOCK; an existing candidate is read-only and cannot authorize selection/distribution.
+- Local regressions return to implementation. There is no current production rollout or rollback action.
 
 ## 14. Open Questions
 

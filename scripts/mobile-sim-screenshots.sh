@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Capture App Store review screenshots from an already installed iOS simulator app.
 #
-# Build first if needed:
-#   cd mobile
-#   ROKID_IOS_SDK_ENABLED=0 ROKID_IOS_SIMULATOR=1 SENTRY_DISABLE_AUTO_UPLOAD=true npx expo run:ios --device "iPhone 17 Pro"
+# Build first if needed (the wrapper verifies an exact Simulator destination):
+#   ./scripts/sim-build.sh --device "iPhone 17 Pro" --current-tree
 
 set -euo pipefail
 
@@ -91,8 +90,7 @@ if ! xcrun simctl get_app_container "${DEVICE_ID}" "${BUNDLE_ID}" app >/dev/null
 App ${BUNDLE_ID} is not installed on simulator ${DEVICE_ID}.
 
 Build and install it with:
-  cd mobile
-  ROKID_IOS_SDK_ENABLED=0 ROKID_IOS_SIMULATOR=1 SENTRY_DISABLE_AUTO_UPLOAD=true npx expo run:ios --device "iPhone 17 Pro"
+  ./scripts/sim-build.sh --device "iPhone 17 Pro" --current-tree
 
 Then rerun:
   ./scripts/mobile-sim-screenshots.sh

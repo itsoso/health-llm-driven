@@ -7,6 +7,29 @@
 # 服务器配置从 .env 读取
 # ===========================================
 
+# Sourcing is inert: no options, output, environment, path, or functions.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    return 0
+fi
+
+# This exact help response is the only repository-local deploy CLI operation.
+# Keep it and the unconditional freeze entirely in Bash builtins, before path
+# resolution, environment reads, startup hooks, credentials, or tools.
+if [[ "$#" -eq 1 && ( "$1" == "-h" || "$1" == "--help" ) ]]; then
+    builtin printf '%s\n' \
+        'Usage: ./deploy.sh -h|--help' \
+        '' \
+        'Production repository entrypoints are frozen (exit 78).' \
+        'Status, logs, release-lock inspection, deploy, restart, rollback, and publish require an external trusted Gate.'
+    exit 0
+fi
+builtin printf '%s\n' \
+    'Production repository entrypoints are frozen; use the manual release Gate.' >&2
+exit 78
+
+if [[ "REVA_UNREACHABLE_LEGACY" == "NEVER" ]]; then
+# BEGIN UNREACHABLE LEGACY DEPLOY IMPLEMENTATION
+
 set -e  # 遇到错误立即退出
 
 # 颜色定义
@@ -36,8 +59,8 @@ SERVER=$(grep "^DEPLOY_SERVER=" "$ENV_FILE" | cut -d'=' -f2)
 REMOTE_PATH=$(grep "^DEPLOY_PATH=" "$ENV_FILE" | cut -d'=' -f2)
 RELEASE_STEP_PROOF_MODE="${RELEASE_STEP_PROOF_MODE:-shadow}"
 REMOTE_RELEASE_PROOF_ROOT="${REMOTE_RELEASE_PROOF_ROOT:-/var/cache/health-app/release-proofs}"
-REMOTE_DEPLOY_BUNDLE="/tmp/health-app-deploy-$$-$(date +%s).bundle"
 REMOTE_BACKUP_PREFLIGHT_DIR="/tmp/health-app-backup-preflight-$$-$(date +%s)"
+REMOTE_DEPLOY_BUNDLE="$REMOTE_BACKUP_PREFLIGHT_DIR/deploy.bundle"
 REMOTE_BACKUP_RUNNER="$REMOTE_BACKUP_PREFLIGHT_DIR/backup_db.sh"
 REMOTE_ROLLBACK_RUNNER="$REMOTE_BACKUP_PREFLIGHT_DIR/rollback_release.sh"
 REMOTE_ACTIVATION_RUNNER="$REMOTE_BACKUP_PREFLIGHT_DIR/activate_health_evidence_runtime.sh"
@@ -58,18 +81,33 @@ ROLLBACK_COMMIT=""
 RUNTIME_STATE_RESUME_PHASE="NONE"
 RUNTIME_STATE_RESUME_TARGET="none"
 RUNTIME_STATE_ALREADY_FINALIZED=0
-REMOTE_RELEASE_LOCK_DIR="${REMOTE_RELEASE_LOCK_DIR:-/var/lock/health-app-release}"
+REMOTE_RELEASE_LOCK_DIR="/var/lib/health-app/release-state/deploy.lock"
 REMOTE_RELEASE_STATE_DIR="${REMOTE_RELEASE_STATE_DIR:-/var/lib/reva-release-state}"
 REMOTE_RELEASE_LOCK_TOKEN=""
+REMOTE_RELEASE_LOCK_LABEL=""
+REMOTE_RELEASE_LOCK_STATE=""
+REMOTE_RELEASE_SOURCE_SHA=""
+REMOTE_RELEASE_SOURCE_TREE=""
+REMOTE_RELEASE_REQUESTED_SHA=""
+REMOTE_RELEASE_REQUESTED_TREE=""
+REMOTE_RELEASE_SURFACE=""
+REMOTE_RELEASE_OPERATION=""
+REMOTE_RELEASE_CHANNEL=""
+REMOTE_RELEASE_TRANSACTION_ID=""
+REMOTE_RELEASE_BASELINE_DIGEST=""
+REMOTE_RELEASE_REQUEST_DIGEST=""
+REMOTE_RELEASE_TERMINAL_DIGEST=""
+CANONICAL_RELEASE_ORIGIN_URL="https://github.com/itsoso/health-llm-driven.git"
 _REMOTE_RELEASE_LOCK_ACQUIRED=0
 _REMOTE_RELEASE_LOCK_DELEGATED=0
 _REMOTE_RELEASE_LOCK_ABANDONED=0
 _REMOTE_RELEASE_LOCK_ADOPTED=0
+_REMOTE_RELEASE_LOCK_ALREADY_RELEASED=0
 
 set_remote_backup_preflight_dir() {
     local stage_dir="$1"
 
-    if [[ ! "$stage_dir" =~ ^/tmp/health-app-backup-preflight-[1-9][0-9]*-[1-9][0-9]*$ ]]; then
+    if [[ ! "$stage_dir" =~ ^/tmp/health-app-backup-preflight-([1-9][0-9]*-[1-9][0-9]*|[0-9a-f]{64})$ ]]; then
         print_error "远端发布 stage 路径不符合固定契约"
         return 1
     fi
@@ -80,6 +118,7 @@ set_remote_backup_preflight_dir() {
     REMOTE_BACKEND_ENV_CANDIDATE="$stage_dir/backend.env.candidate"
     REMOTE_BACKEND_ENV_ROLLBACK="$stage_dir/backend.env.rollback"
     REMOTE_RUNTIME_STATE_RUNNER="$stage_dir/runtime_state_release_transaction.py"
+    REMOTE_DEPLOY_BUNDLE="$stage_dir/deploy.bundle"
     REMOTE_ACTIVATION_STATE_DIR="${stage_dir}.activation-state"
     REMOTE_ACTIVATION_SUCCESS_MARKER="$REMOTE_ACTIVATION_STATE_DIR/success"
 }
@@ -134,14 +173,36 @@ print_warning() {
 }
 
 cleanup_remote_release_artifacts() {
-    if [[ "${_REMOTE_RELEASE_LOCK_ABANDONED:-0}" != "1" &&
+    local original_status=$?
+    local unlock_status=0
+    local allocation_aborted=0
+
+    # A crash before the immutable stage is sealed has not crossed a
+    # production-mutation boundary.  Reap that exact token-bound allocation
+    # even when the caller conservatively set ABANDONED/DELEGATED.  A sealed
+    # or mutating lease returns non-zero without changing one byte and remains
+    # available for explicit recovery.
+    if [[ "${_REMOTE_RELEASE_LOCK_ACQUIRED:-0}" = "1" ]]; then
+        if abort_remote_release_allocation >/dev/null 2>&1; then
+            allocation_aborted=1
+        fi
+    fi
+    if [[ "$allocation_aborted" != "1" &&
+          "${_REMOTE_RELEASE_LOCK_ABANDONED:-0}" != "1" &&
           "${_REMOTE_RELEASE_LOCK_DELEGATED:-0}" != "1" ]]; then
-        ssh "$SERVER" \
-            "rm -f '$REMOTE_DEPLOY_BUNDLE'; rm -rf '$REMOTE_BACKUP_PREFLIGHT_DIR' '$REMOTE_ACTIVATION_STATE_DIR'" \
-            >/dev/null 2>&1 || true
-        release_remote_release_lock || true
+        if release_remote_release_lock; then
+            :
+        else
+            unlock_status=$?
+        fi
     fi
     release_release_lock
+    if [[ "$original_status" -eq 0 && "$unlock_status" -ne 0 ]]; then
+        print_error "发布动作已完成，但服务器发布锁未安全释放"
+        trap - EXIT
+        exit 73
+    fi
+    return "$original_status"
 }
 
 abandon_remote_release_lock() {
@@ -162,7 +223,7 @@ arm_remote_release_cleanup_after_terminal_mode_success() {
     local mode="$1"
 
     case "$mode" in
-        all|frontend|backend|env|health-evidence|app-store-review-reset|restart) ;;
+        all|frontend|backend|env|health-evidence|app-store-review-reset|restart|mac-routes) ;;
         *) return 0 ;;
     esac
     if [[ "${_REMOTE_RELEASE_LOCK_ACQUIRED:-0}" != "1" ]]; then
@@ -183,9 +244,42 @@ arm_remote_release_cleanup_after_terminal_mode_success() {
 acquire_remote_release_lock() {
     local label="${1:-release}"
     local token
-    local adopt="${REVA_RELEASE_LOCK_ADOPT:-0}"
+    local adopt="${REVA_REMOTE_RELEASE_LOCK_ADOPT:-0}"
     local lock_output
     local adopted_stage
+    local adopted_state
+    local adopted_source
+    local adopted_tree
+
+    if [[ -n "${REVA_RELEASE_COORDINATOR_SOURCE_SHA:-}" ||
+          -n "${REVA_RELEASE_COORDINATOR_SOURCE_TREE:-}" ]]; then
+        REMOTE_RELEASE_REQUESTED_SHA="${REVA_RELEASE_COORDINATOR_SOURCE_SHA:-}"
+        REMOTE_RELEASE_REQUESTED_TREE="${REVA_RELEASE_COORDINATOR_SOURCE_TREE:-}"
+    else
+        REMOTE_RELEASE_REQUESTED_SHA="$(
+            trusted_release_git rev-parse HEAD 2>/dev/null
+        )" || return 70
+        REMOTE_RELEASE_REQUESTED_TREE="$(
+            trusted_release_git rev-parse "${REMOTE_RELEASE_REQUESTED_SHA}^{tree}" \
+                2>/dev/null
+        )" || return 70
+    fi
+    if ! [[ "$REMOTE_RELEASE_REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+        print_error "无法解析远端发布锁 source SHA"
+        return 70
+    fi
+    if ! [[ "$REMOTE_RELEASE_REQUESTED_TREE" =~ ^[0-9a-f]{40}$ ]]; then
+        print_error "无法解析远端发布锁 source tree"
+        return 70
+    fi
+    if ! trusted_release_git cat-file -e \
+            "${REMOTE_RELEASE_REQUESTED_SHA}^{commit}" 2>/dev/null ||
+       [[ "$(trusted_release_git rev-parse \
+            "${REMOTE_RELEASE_REQUESTED_SHA}^{tree}" 2>/dev/null)" != \
+            "$REMOTE_RELEASE_REQUESTED_TREE" ]]; then
+        print_error "远端发布协调器 source SHA/tree 不匹配"
+        return 70
+    fi
 
     if [[ "${_REMOTE_RELEASE_LOCK_ACQUIRED:-0}" = "1" ]]; then
         return 0
@@ -199,90 +293,1509 @@ acquire_remote_release_lock() {
         print_error "远端发布锁路径不安全: $REMOTE_RELEASE_LOCK_DIR"
         return 70
     fi
-    token="${REVA_RELEASE_LOCK_TOKEN:-$$-${RANDOM:-0}-$(date +%s)}"
-    if ! [[ "$token" =~ ^[A-Za-z0-9._:-]+$ ]]; then
+    if [[ "$adopt" = "1" ]]; then
+        token="${REVA_REMOTE_RELEASE_LOCK_TOKEN:-}"
+    else
+        if [[ -n "${REVA_REMOTE_RELEASE_LOCK_TOKEN:-}" ]]; then
+            if [[ "$REMOTE_RELEASE_LOCK_DIR" = "/var/lib/health-app/release-state/deploy.lock" ]]; then
+                print_error "新发布事务不接受调用者指定的远端 token"
+                return 70
+            fi
+            # Unit/integration harnesses use an isolated non-production lock
+            # path and deterministic owners to exercise ABA and recovery.
+            token="$REVA_REMOTE_RELEASE_LOCK_TOKEN"
+        else
+            token="$(/usr/bin/python3 -I -c 'import secrets; print(secrets.token_hex(32))')" || {
+                print_error "无法生成服务器发布锁的 256-bit 随机 token"
+                return 70
+            }
+        fi
+        if [[ "$REMOTE_RELEASE_LOCK_DIR" = "/var/lib/health-app/release-state/deploy.lock" ]] &&
+           ! [[ "$token" =~ ^[0-9a-f]{64}$ ]]; then
+            print_error "服务器发布锁 CSPRNG token 格式非法"
+            return 70
+        fi
+    fi
+    if [[ "$REMOTE_RELEASE_LOCK_DIR" = "/var/lib/health-app/release-state/deploy.lock" ]]; then
+        if ! [[ "$token" =~ ^[0-9a-f]{64}$ ]]; then
+            print_error "生产远端发布锁 token 必须是 256-bit canonical hex"
+            return 70
+        fi
+    elif ! [[ "$token" =~ ^[A-Za-z0-9._:-]+$ ]]; then
         print_error "远端发布锁 token 格式非法"
         return 70
     fi
     if [[ "$adopt" != "0" && "$adopt" != "1" ]]; then
-        print_error "REVA_RELEASE_LOCK_ADOPT 只接受 0/1"
+        print_error "REVA_REMOTE_RELEASE_LOCK_ADOPT 只接受 0/1"
         return 70
     fi
-    if [[ "$adopt" = "1" && -z "${REVA_RELEASE_LOCK_TOKEN:-}" ]]; then
-        print_error "显式接管远端发布锁必须提供原 REVA_RELEASE_LOCK_TOKEN"
+    if [[ "$adopt" = "1" && -z "${REVA_REMOTE_RELEASE_LOCK_TOKEN:-}" ]]; then
+        print_error "显式接管远端发布锁必须提供原 REVA_REMOTE_RELEASE_LOCK_TOKEN"
         return 70
     fi
-    if ! lock_output=$(ssh "$SERVER" bash -s -- \
-        "$REMOTE_RELEASE_LOCK_DIR" \
-        "$token" \
-        "$label" \
-        "$REMOTE_BACKUP_PREFLIGHT_DIR" \
-        "$adopt" <<'REMOTE_RELEASE_LOCK'
-set -euo pipefail
-lock_dir="$1"
-token="$2"
-label="$3"
-stage_dir="$4"
-adopt="$5"
-umask 077
-if ! mkdir "$lock_dir" 2>/dev/null; then
-    owner=$(cat "$lock_dir/label" 2>/dev/null || true)
-    started=$(cat "$lock_dir/started_at" 2>/dev/null || true)
-    if [ "$adopt" = "1" ]; then
-        test -r "$lock_dir/token"
-        test -r "$lock_dir/label"
-        test -r "$lock_dir/stage"
-        test "$(cat "$lock_dir/token")" = "$token"
-        test "$(cat "$lock_dir/label")" = "$label"
-        adopted_stage="$(cat "$lock_dir/stage")"
-        [[ "$adopted_stage" =~ ^/tmp/health-app-backup-preflight-[1-9][0-9]*-[1-9][0-9]*$ ]]
-        printf 'REMOTE_RELEASE_LOCK_ADOPTED stage=%s\n' "$adopted_stage"
-        exit 0
+    REMOTE_RELEASE_SURFACE="${REVA_RELEASE_COORDINATOR_SURFACE:-server}"
+    if [[ "$adopt" = "0" &&
+          "$REMOTE_RELEASE_SURFACE" =~ ^(mobile|native|mac)$ ]]; then
+        set_remote_backup_preflight_dir \
+            "/tmp/health-app-backup-preflight-${token}"
     fi
-    echo "remote release already active: label=${owner:-unknown} started=${started:-unknown}" >&2
-    exit 73
-fi
-printf '%s\n' "$token" > "$lock_dir/token"
-printf '%s\n' "$label" > "$lock_dir/label"
-printf '%s\n' "$stage_dir" > "$lock_dir/stage"
-date -u +%Y-%m-%dT%H:%M:%SZ > "$lock_dir/started_at"
-printf 'REMOTE_RELEASE_LOCK_CREATED stage=%s\n' "$stage_dir"
-REMOTE_RELEASE_LOCK
+    if [[ -n "${REVA_RELEASE_COORDINATOR_OPERATION:-}" ]]; then
+        REMOTE_RELEASE_OPERATION="$REVA_RELEASE_COORDINATOR_OPERATION"
+    elif [[ "$label" == deploy:* ]]; then
+        REMOTE_RELEASE_OPERATION="${label#deploy:}"
+    elif [[ "$REMOTE_RELEASE_LOCK_DIR" != "/var/lib/health-app/release-state/deploy.lock" ]]; then
+        REMOTE_RELEASE_OPERATION="backend"
+    else
+        REMOTE_RELEASE_OPERATION="$label"
+    fi
+    REMOTE_RELEASE_CHANNEL="${REVA_RELEASE_COORDINATOR_CHANNEL:-production}"
+    if [[ -n "${REVA_RELEASE_COORDINATOR_TRANSACTION:-}" ]]; then
+        REMOTE_RELEASE_TRANSACTION_ID="$REVA_RELEASE_COORDINATOR_TRANSACTION"
+    else
+        REMOTE_RELEASE_TRANSACTION_ID="$(
+            printf '%s' "$token" | /usr/bin/shasum -a 256 | /usr/bin/awk '{print substr($1, 1, 32)}'
+        )" || return 70
+    fi
+    if [[ -n "${REVA_RELEASE_COORDINATOR_BASELINE_DIGEST:-}" ]]; then
+        REMOTE_RELEASE_BASELINE_DIGEST="$REVA_RELEASE_COORDINATOR_BASELINE_DIGEST"
+    else
+        REMOTE_RELEASE_BASELINE_DIGEST="$(
+            printf '%s\n%s\n%s\n' \
+                "${REVA_EXPECTED_SERVER_SURFACES:-none}" \
+                "$REMOTE_RELEASE_REQUESTED_SHA" \
+                "$REMOTE_RELEASE_REQUESTED_TREE" |
+                shasum -a 256 | awk '{print $1}'
+        )" || return 70
+    fi
+    if [[ -n "${REVA_RELEASE_COORDINATOR_REQUEST_DIGEST:-}" ]]; then
+        REMOTE_RELEASE_REQUEST_DIGEST="$REVA_RELEASE_COORDINATOR_REQUEST_DIGEST"
+    else
+        REMOTE_RELEASE_REQUEST_DIGEST="$(
+            printf '%s\n%s\n%s\n' \
+                "$label" "$REMOTE_RELEASE_REQUESTED_SHA" \
+                "$REMOTE_RELEASE_REQUESTED_TREE" |
+                shasum -a 256 | awk '{print $1}'
+        )" || return 70
+    fi
+    REMOTE_RELEASE_TERMINAL_DIGEST="${REVA_RELEASE_COORDINATOR_TERMINAL_DIGEST:--}"
+    if ! [[ "$REMOTE_RELEASE_SURFACE" =~ ^(server|mobile|native|mac)$ &&
+          "$REMOTE_RELEASE_OPERATION" =~ ^(all|frontend|backend|env|health-evidence|app-store-review-reset|restart|mac-routes|forward|rollback|remote-build|publish|recover)$ &&
+          "$REMOTE_RELEASE_CHANNEL" = "production" &&
+          "$REMOTE_RELEASE_TRANSACTION_ID" =~ ^[0-9a-f]{32}$ &&
+          "$REMOTE_RELEASE_BASELINE_DIGEST" =~ ^(-|[0-9a-f]{64})$ &&
+          "$REMOTE_RELEASE_REQUEST_DIGEST" =~ ^[0-9a-f]{64}$ &&
+          "$REMOTE_RELEASE_TERMINAL_DIGEST" =~ ^(-|[0-9a-f]{64})$ ]]; then
+        print_error "远端发布协调器身份不符合固定 production 契约"
+        return 70
+    fi
+    case "$REMOTE_RELEASE_SURFACE:$REMOTE_RELEASE_OPERATION" in
+        server:all|server:frontend|server:backend|server:env|server:health-evidence|server:app-store-review-reset|server:restart|server:mac-routes|mobile:forward|mobile:rollback|native:remote-build|mac:publish|mac:recover|mac:rollback) ;;
+        *)
+            print_error "远端发布协调器 surface/operation 组合不受支持"
+            return 70
+            ;;
+    esac
+    if ! lock_output=$(remote_release_lock_command \
+        acquire "$token" "$label" "$REMOTE_BACKUP_PREFLIGHT_DIR" \
+        "$REMOTE_RELEASE_REQUESTED_SHA" "$REMOTE_RELEASE_REQUESTED_TREE" \
+        "$adopt" "$REMOTE_RELEASE_SURFACE" "$REMOTE_RELEASE_OPERATION" \
+        "$REMOTE_RELEASE_CHANNEL" "$REMOTE_RELEASE_TRANSACTION_ID" \
+        "$REMOTE_RELEASE_BASELINE_DIGEST" "$REMOTE_RELEASE_REQUEST_DIGEST" \
+        "$REMOTE_RELEASE_TERMINAL_DIGEST"
     ); then
         echo "$lock_output" >&2
         print_error "无法获取服务器发布锁"
         return 73
     fi
-    if [[ "$adopt" = "1" ]]; then
-        adopted_stage="$(
-            printf '%s\n' "$lock_output" |
-                awk '
-                    /^REMOTE_RELEASE_LOCK_ADOPTED stage=\/tmp\/health-app-backup-preflight-[1-9][0-9]*-[1-9][0-9]*$/ {
-                        matches += 1
-                        value = $0
-                        sub(/^REMOTE_RELEASE_LOCK_ADOPTED stage=/, "", value)
-                    }
-                    END {
-                        if (matches != 1) exit 1
-                        print value
-                    }
-                '
-        )" || {
+    if [[ "$lock_output" = "REMOTE_RELEASE_LOCK_ALREADY_RELEASED" ]]; then
+        if [[ "$adopt" != "1" ]]; then
+            print_error "服务器返回了未经请求的已完成发布证明"
+            return 73
+        fi
+        _REMOTE_RELEASE_LOCK_ACQUIRED=0
+        _REMOTE_RELEASE_LOCK_ADOPTED=1
+        _REMOTE_RELEASE_LOCK_ALREADY_RELEASED=1
+        printf '%s\n' "$lock_output"
+        return 0
+    fi
+    if [[ "$lock_output" == "REMOTE_RELEASE_LOCK_ADOPTED "* ]]; then
+        if [[ "$adopt" != "1" ]]; then
+            print_error "服务器返回了未经请求的发布锁接管证明"
+            return 73
+        fi
+        local adopted_surface
+        local adopted_operation
+        local adopted_channel
+        local adopted_transaction
+        local adopted_baseline
+        local adopted_request
+        local adopted_terminal
+        read -r adopted_state adopted_stage adopted_source adopted_tree \
+            adopted_surface adopted_operation adopted_channel \
+            adopted_transaction adopted_baseline adopted_request \
+            adopted_terminal < <(
+            printf '%s\n' "$lock_output" | awk '
+                /^REMOTE_RELEASE_LOCK_ADOPTED state=(allocating|sealed|mutating|completed) stage=\/tmp\/health-app-backup-preflight-([1-9][0-9]*-[1-9][0-9]*|[0-9a-f]{64}) source_sha=[0-9a-f]{40} source_tree=[0-9a-f]{40} surface=(server|mobile|native|mac) operation=[A-Za-z0-9._:-]+ channel=production transaction_id=[0-9a-f]{32} baseline_digest=(-|[0-9a-f]{64}) request_digest=[0-9a-f]{64} terminal_digest=(-|[0-9a-f]{64})$/ {
+                    matches += 1
+                    state = $2
+                    stage = $3
+                    source = $4
+                    tree = $5
+                    surface = $6
+                    operation = $7
+                    channel = $8
+                    transaction = $9
+                    baseline = $10
+                    request = $11
+                    terminal = $12
+                    sub(/^state=/, "", state)
+                    sub(/^stage=/, "", stage)
+                    sub(/^source_sha=/, "", source)
+                    sub(/^source_tree=/, "", tree)
+                    sub(/^surface=/, "", surface)
+                    sub(/^operation=/, "", operation)
+                    sub(/^channel=/, "", channel)
+                    sub(/^transaction_id=/, "", transaction)
+                    sub(/^baseline_digest=/, "", baseline)
+                    sub(/^request_digest=/, "", request)
+                    sub(/^terminal_digest=/, "", terminal)
+                }
+                END {
+                    if (matches != 1) exit 1
+                    print state, stage, source, tree, surface, operation, channel, transaction, baseline, request, terminal
+                }
+            '
+        ) || {
             print_error "远端发布锁接管缺少精确 stage 证明"
             return 73
         }
+        if ! git -C "$SCRIPT_DIR" cat-file -e "${adopted_source}^{commit}" ||
+            [[ "$(git -C "$SCRIPT_DIR" rev-parse "${adopted_source}^{tree}")" != \
+                "$adopted_tree" ]] ||
+            ! git merge-base --is-ancestor \
+                "$adopted_source" "$REMOTE_RELEASE_REQUESTED_SHA"; then
+            print_error "既有远端发布 source 不是当前 main 的可验证祖先"
+            return 73
+        fi
         set_remote_backup_preflight_dir "$adopted_stage"
+        REMOTE_RELEASE_LOCK_TOKEN="$token"
+        REMOTE_RELEASE_LOCK_LABEL="$label"
+        REMOTE_RELEASE_LOCK_STATE="$adopted_state"
+        REMOTE_RELEASE_SOURCE_SHA="$adopted_source"
+        REMOTE_RELEASE_SOURCE_TREE="$adopted_tree"
+        REMOTE_RELEASE_SURFACE="$adopted_surface"
+        REMOTE_RELEASE_OPERATION="$adopted_operation"
+        REMOTE_RELEASE_CHANNEL="$adopted_channel"
+        REMOTE_RELEASE_TRANSACTION_ID="$adopted_transaction"
+        REMOTE_RELEASE_BASELINE_DIGEST="$adopted_baseline"
+        REMOTE_RELEASE_REQUEST_DIGEST="$adopted_request"
+        REMOTE_RELEASE_TERMINAL_DIGEST="$adopted_terminal"
+        DEPLOY_EXPECTED_SHA="$adopted_source"
+        _REMOTE_RELEASE_LOCK_ACQUIRED=1
         _REMOTE_RELEASE_LOCK_ADOPTED=1
         # Until durable status proves there is no active transaction (or a
         # terminal one has been safely reconciled), every early exit must
         # preserve the adopted owner's exact stage and lease.
         _REMOTE_RELEASE_LOCK_ABANDONED=1
-    elif [[ "$lock_output" != "REMOTE_RELEASE_LOCK_CREATED stage=$REMOTE_BACKUP_PREFLIGHT_DIR" ]]; then
+        if [[ "$adopted_state" = "allocating" &&
+              "${REVA_REMOTE_RELEASE_LOCK_ALLOW_ALLOCATING_ADOPT:-0}" != "1" ]]; then
+            if ! abort_remote_release_allocation; then
+                print_error "未封存远端 allocation 无法安全回收"
+                return 73
+            fi
+            unset REVA_REMOTE_RELEASE_LOCK_ADOPT
+            unset REVA_REMOTE_RELEASE_LOCK_TOKEN
+            _REMOTE_RELEASE_LOCK_ADOPTED=0
+            _REMOTE_RELEASE_LOCK_ABANDONED=0
+            acquire_remote_release_lock "$label"
+            return
+        fi
+        return 0
+    elif [[ "$lock_output" != \
+        "REMOTE_RELEASE_LOCK_CREATED state=allocating stage=$REMOTE_BACKUP_PREFLIGHT_DIR source_sha=$REMOTE_RELEASE_REQUESTED_SHA source_tree=$REMOTE_RELEASE_REQUESTED_TREE" ]]; then
         print_error "远端发布锁创建缺少精确成功证明"
         return 73
     fi
     REMOTE_RELEASE_LOCK_TOKEN="$token"
+    REMOTE_RELEASE_LOCK_LABEL="$label"
+    REMOTE_RELEASE_LOCK_STATE="allocating"
+    REMOTE_RELEASE_SOURCE_SHA="$REMOTE_RELEASE_REQUESTED_SHA"
+    REMOTE_RELEASE_SOURCE_TREE="$REMOTE_RELEASE_REQUESTED_TREE"
     _REMOTE_RELEASE_LOCK_ACQUIRED=1
+}
+
+remote_release_lock_command() {
+    local operation="$1"
+    local token="${2:-$REMOTE_RELEASE_LOCK_TOKEN}"
+    local label="${3:-${REMOTE_RELEASE_LOCK_LABEL:--}}"
+    local stage="${4:-${REMOTE_BACKUP_PREFLIGHT_DIR:--}}"
+    local source_sha="${5:-${REMOTE_RELEASE_SOURCE_SHA:--}}"
+    local source_tree="${6:-${REMOTE_RELEASE_SOURCE_TREE:--}}"
+    local adopt="${7:-0}"
+    local surface="${8:-${REMOTE_RELEASE_SURFACE:--}}"
+    local release_operation="${9:-${REMOTE_RELEASE_OPERATION:--}}"
+    local channel="${10:-${REMOTE_RELEASE_CHANNEL:--}}"
+    local transaction_id="${11:-${REMOTE_RELEASE_TRANSACTION_ID:--}}"
+    local baseline_digest="${12:-${REMOTE_RELEASE_BASELINE_DIGEST:--}}"
+    local request_digest="${13:-${REMOTE_RELEASE_REQUEST_DIGEST:--}}"
+    local terminal_digest="${14:-${REMOTE_RELEASE_TERMINAL_DIGEST:--}}"
+
+    ssh "$SERVER" /usr/bin/python3 - \
+        "$operation" "$REMOTE_RELEASE_LOCK_DIR" "$token" "$label" \
+        "$stage" "$source_sha" "$source_tree" "$adopt" \
+        "$surface" "$release_operation" "$channel" "$transaction_id" \
+        "$baseline_digest" "$request_digest" "$terminal_digest" <<'REMOTE_RELEASE_LOCK_PY'
+import datetime
+import os
+import re
+import stat
+import sys
+
+(
+    operation,
+    lock_path,
+    token,
+    label,
+    stage_path,
+    source_sha,
+    source_tree,
+    adopt,
+    surface,
+    release_operation,
+    channel,
+    transaction_id,
+    baseline_digest,
+    request_digest,
+    terminal_digest,
+) = sys.argv[1:]
+canonical_lock = "/var/lib/health-app/release-state/deploy.lock"
+expected_uid = 0 if lock_path == canonical_lock else os.geteuid()
+expected_gid = 0 if lock_path == canonical_lock else None
+lock_re = re.compile(r"/[A-Za-z0-9._/-]+")
+token_re = re.compile(r"[A-Za-z0-9._:-]{1,128}")
+canonical_token_re = re.compile(r"[0-9a-f]{64}")
+label_re = re.compile(r"[A-Za-z0-9._:-]{1,128}")
+surface_re = re.compile(r"(?:server|mobile|native|mac)")
+operation_re = re.compile(
+    r"(?:all|frontend|backend|env|health-evidence|app-store-review-reset|"
+    r"restart|mac-routes|forward|rollback|remote-build|publish|recover)"
+)
+transaction_re = re.compile(r"[0-9a-f]{32}")
+digest_re = re.compile(r"[0-9a-f]{64}")
+stage_re = re.compile(
+    r"/tmp/health-app-backup-preflight-(?:[1-9][0-9]*-[1-9][0-9]*|[0-9a-f]{64})"
+)
+sha_re = re.compile(r"[0-9a-f]{40}")
+time_re = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
+metadata_names = {
+    "schema", "token", "label", "stage", "started_at", "source_sha",
+    "source_tree", "state", "surface", "operation", "channel",
+    "transaction_id", "baseline_digest", "request_digest", "terminal_digest"
+}
+surface_operations = {
+    "server": {
+        "all", "frontend", "backend", "env", "health-evidence",
+        "app-store-review-reset", "restart", "mac-routes",
+    },
+    "mobile": {"forward", "rollback"},
+    "native": {"remote-build"},
+    "mac": {"publish", "recover", "rollback"},
+}
+stage_names = {
+    "backup_db.sh", "verify_backup_restore.sh", "archive_backup_offsite.sh",
+    "rollback_release.sh", "activate_health_evidence_runtime.sh",
+    "verify_locked_requirements.py", "verify_runtime_schema_compatibility.py",
+    "quarantine_runtime_only_kb.py", "runtime_state_release_transaction.py",
+    "review_manifest.json", "health-backend-runtime-state.conf",
+    "celery-worker-runtime-state.conf", "celery-beat-runtime-state.conf",
+    "staged.sha256", "backend.env.rollback", "backend.env.candidate",
+    "candidate.env", "guard.env", "deploy.bundle", "mac-release-nginx-bootstrap.sh",
+    "mac_release_nginx_bootstrap.py", "mac-release-routes.conf",
+    "mac-routes.source", "mac-routes.sha256",
+}
+activation_names = {"launch-intent", "success", "success.outcome"}
+dir_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
+read_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
+
+
+def fail(message, code=73):
+    print(message, file=sys.stderr)
+    raise SystemExit(code)
+
+
+def safe_absolute(value, pattern):
+    return (
+        pattern.fullmatch(value) is not None
+        and value != "/"
+        and "/../" not in value
+        and not value.endswith("/..")
+        and "/./" not in value
+        and not value.endswith("/.")
+    )
+
+
+if not safe_absolute(lock_path, lock_re):
+    fail("unsafe lock path", 70)
+if (
+    canonical_token_re.fullmatch(token) is None
+    if lock_path == canonical_lock
+    else token_re.fullmatch(token) is None
+):
+    fail("unsafe lock identity", 70)
+if operation != "handoff" and (
+    label_re.fullmatch(label) is None
+    or stage_re.fullmatch(stage_path) is None
+    or sha_re.fullmatch(source_sha) is None
+    or sha_re.fullmatch(source_tree) is None
+    or surface_re.fullmatch(surface) is None
+    or operation_re.fullmatch(release_operation) is None
+    or release_operation not in surface_operations.get(surface, set())
+    or channel != "production"
+    or transaction_re.fullmatch(transaction_id) is None
+    or (baseline_digest != "-" and digest_re.fullmatch(baseline_digest) is None)
+    or digest_re.fullmatch(request_digest) is None
+    or (terminal_digest != "-" and digest_re.fullmatch(terminal_digest) is None)
+):
+    fail("unsafe lock source metadata", 70)
+if operation in {"complete", "finish"} and surface in {"mobile", "native", "mac"}:
+    if digest_re.fullmatch(terminal_digest) is None:
+        fail("terminal coordinator operation requires an exact digest", 70)
+if adopt not in {"0", "1"}:
+    fail("unsafe adoption flag", 70)
+
+parent_path = os.path.dirname(lock_path)
+lock_name = os.path.basename(lock_path)
+try:
+    parent_fd = os.open(parent_path, dir_flags)
+except OSError as error:
+    fail(f"cannot open lock parent: {error}")
+
+
+def validate_directory(fd, *, mode, label_text):
+    meta = os.fstat(fd)
+    if (
+        not stat.S_ISDIR(meta.st_mode)
+        or meta.st_uid != expected_uid
+        or (expected_gid is not None and meta.st_gid != expected_gid)
+        or stat.S_IMODE(meta.st_mode) != mode
+    ):
+        fail(f"unsafe {label_text} directory")
+    return meta
+
+
+def read_regular(directory_fd, name, maximum=512):
+    try:
+        fd = os.open(name, read_flags, dir_fd=directory_fd)
+    except OSError as error:
+        fail(f"cannot open lock metadata {name}: {error}")
+    try:
+        meta = os.fstat(fd)
+        if (
+            not stat.S_ISREG(meta.st_mode)
+            or meta.st_uid != expected_uid
+            or (expected_gid is not None and meta.st_gid != expected_gid)
+            or stat.S_IMODE(meta.st_mode) != 0o600
+            or meta.st_nlink != 1
+            or meta.st_size <= 0
+            or meta.st_size > maximum
+        ):
+            fail(f"unsafe lock metadata {name}")
+        data = os.read(fd, maximum + 1)
+        if len(data) > maximum or os.read(fd, 1):
+            fail(f"oversized lock metadata {name}")
+        return data
+    finally:
+        os.close(fd)
+
+
+def validate_lock_values(values, *, partial=False):
+    validators = {
+        "schema": lambda value: value == "2",
+        "token": lambda value: (
+            canonical_token_re.fullmatch(value) is not None
+            if lock_path == canonical_lock
+            else token_re.fullmatch(value) is not None
+        ),
+        "label": lambda value: label_re.fullmatch(value) is not None,
+        "stage": lambda value: stage_re.fullmatch(value) is not None,
+        "started_at": lambda value: time_re.fullmatch(value) is not None,
+        "source_sha": lambda value: sha_re.fullmatch(value) is not None,
+        "source_tree": lambda value: sha_re.fullmatch(value) is not None,
+        "state": lambda value: value in {
+            "allocating", "sealed", "mutating", "completed"
+        },
+        "surface": lambda value: surface_re.fullmatch(value) is not None,
+        "operation": lambda value: operation_re.fullmatch(value) is not None,
+        "channel": lambda value: value == "production",
+        "transaction_id": lambda value: transaction_re.fullmatch(value) is not None,
+        "baseline_digest": lambda value: (
+            value == "-" or digest_re.fullmatch(value) is not None
+        ),
+        "request_digest": lambda value: digest_re.fullmatch(value) is not None,
+        "terminal_digest": lambda value: (
+            value == "-" or digest_re.fullmatch(value) is not None
+        ),
+    }
+    if not partial and set(values) != metadata_names:
+        fail("release lock metadata allowlist mismatch")
+    if any(name not in validators or not validators[name](value) for name, value in values.items()):
+        fail("invalid release lock metadata values")
+    if (
+        "surface" in values
+        and "operation" in values
+        and values["operation"] not in surface_operations[values["surface"]]
+    ):
+        fail("invalid release lock surface/operation pair")
+
+
+def open_and_validate_lock(name=lock_name, *, partial=False):
+    try:
+        lock_fd = os.open(name, dir_flags, dir_fd=parent_fd)
+    except OSError as error:
+        fail(f"cannot safely open release lock: {error}")
+    validate_directory(lock_fd, mode=0o700, label_text="release lock")
+    names = set(os.listdir(lock_fd))
+    if (not partial and names != metadata_names) or not names.issubset(metadata_names):
+        os.close(lock_fd)
+        fail("release lock metadata allowlist mismatch")
+    values = {}
+    for field in names:
+        raw = read_regular(lock_fd, field)
+        try:
+            text = raw.decode("ascii")
+        except UnicodeDecodeError:
+            os.close(lock_fd)
+            fail(f"non-ASCII lock metadata {field}")
+        if not text.endswith("\n") or "\n" in text[:-1]:
+            os.close(lock_fd)
+            fail(f"non-canonical lock metadata {field}")
+        values[field] = text[:-1]
+    validate_lock_values(values, partial=partial)
+    if (
+        not partial
+        and values["state"] in {"sealed", "mutating", "completed"}
+        and values["baseline_digest"] == "-"
+    ):
+        os.close(lock_fd)
+        fail("bound release lock is missing its production baseline")
+    if (
+        not partial
+        and values["state"] == "completed"
+        and values["terminal_digest"] == "-"
+    ):
+        os.close(lock_fd)
+        fail("completed release lock is missing its terminal proof")
+    return lock_fd, values
+
+
+def write_regular(directory_fd, name, value):
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW
+    fd = os.open(name, flags, 0o600, dir_fd=directory_fd)
+    try:
+        os.fchmod(fd, 0o600)
+        os.fchown(fd, expected_uid, expected_gid if expected_gid is not None else -1)
+        payload = (value + "\n").encode("ascii")
+        view = memoryview(payload)
+        while view:
+            written = os.write(fd, view)
+            if written <= 0:
+                fail("short lock metadata write")
+            view = view[written:]
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def replace_state(lock_fd, value):
+    temp_name = f".{lock_name}.state-{token}"
+    try:
+        write_regular(parent_fd, temp_name, value)
+        os.replace(
+            temp_name,
+            f"{lock_name}/state",
+            src_dir_fd=parent_fd,
+            dst_dir_fd=parent_fd,
+        )
+        os.fsync(lock_fd)
+        os.fsync(parent_fd)
+    finally:
+        try:
+            os.unlink(temp_name, dir_fd=parent_fd)
+        except FileNotFoundError:
+            pass
+
+
+def replace_metadata(lock_fd, name, value):
+    if name not in {"baseline_digest", "terminal_digest"}:
+        fail("unsupported release metadata transition")
+    recovery_kind = "baseline" if name == "baseline_digest" else "terminal"
+    temp_name = f".{lock_name}.{recovery_kind}-{token}"
+    try:
+        write_regular(parent_fd, temp_name, value)
+        os.replace(
+            temp_name,
+            f"{lock_name}/{name}",
+            src_dir_fd=parent_fd,
+            dst_dir_fd=parent_fd,
+        )
+        os.fsync(lock_fd)
+        os.fsync(parent_fd)
+    finally:
+        try:
+            os.unlink(temp_name, dir_fd=parent_fd)
+        except FileNotFoundError:
+            pass
+
+
+receipt_dir_name = "coordinator-receipts"
+receipt_file_name = f"{transaction_id}.receipt"
+receipt_fields = (
+    "schema", "token", "label", "stage", "source_sha", "source_tree",
+    "surface", "operation", "channel", "transaction_id",
+    "baseline_digest", "request_digest", "terminal_digest",
+)
+
+
+def receipt_payload(values, terminal):
+    payload_values = {
+        "schema": "1",
+        "token": values["token"],
+        "label": values["label"],
+        "stage": values["stage"],
+        "source_sha": values["source_sha"],
+        "source_tree": values["source_tree"],
+        "surface": values["surface"],
+        "operation": values["operation"],
+        "channel": values["channel"],
+        "transaction_id": values["transaction_id"],
+        "baseline_digest": values["baseline_digest"],
+        "request_digest": values["request_digest"],
+        "terminal_digest": terminal,
+    }
+    return "".join(f"{name}={payload_values[name]}\n" for name in receipt_fields).encode("ascii")
+
+
+def open_receipt_directory(*, create=False):
+    if create:
+        try:
+            os.mkdir(receipt_dir_name, 0o700, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+        except FileExistsError:
+            pass
+    try:
+        fd = os.open(receipt_dir_name, dir_flags, dir_fd=parent_fd)
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        fail(f"cannot safely open coordinator receipts: {error}")
+    validate_directory(fd, mode=0o700, label_text="coordinator receipts")
+    temporary_names = []
+    for name in os.listdir(fd):
+        if (
+            re.fullmatch(r"[0-9a-f]{32}\.receipt", name) is None
+            and re.fullmatch(
+                r"\.[0-9a-f]{32}\.[A-Za-z0-9._:-]{1,128}\.receipt",
+                name,
+            ) is None
+        ):
+            os.close(fd)
+            fail("coordinator receipt allowlist mismatch")
+        if name.startswith("."):
+            temporary_names.append(name)
+    expected_temporary = f".{transaction_id}.{token}.receipt"
+    if len(temporary_names) > 1 or (
+        temporary_names and temporary_names[0] != expected_temporary
+    ):
+        os.close(fd)
+        fail("pending coordinator receipt recovery blocks another transaction")
+    return fd
+
+
+def read_receipt(receipt_fd):
+    if receipt_fd is None:
+        return None
+    try:
+        return read_regular(receipt_fd, receipt_file_name, maximum=4096)
+    except SystemExit:
+        raise
+
+
+def read_optional_receipt(receipt_fd):
+    if receipt_fd is None:
+        return None
+    try:
+        os.stat(receipt_file_name, dir_fd=receipt_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+    return read_regular(receipt_fd, receipt_file_name, maximum=4096)
+
+
+def write_terminal_receipt(values, terminal):
+    payload = receipt_payload(values, terminal)
+    receipt_fd = open_receipt_directory(create=True)
+    temp_name = f".{transaction_id}.{token}.receipt"
+    temporary_names = [
+        name
+        for name in os.listdir(receipt_fd)
+        if name.startswith(f".{transaction_id}.")
+    ]
+    if len(temporary_names) > 1:
+        os.close(receipt_fd)
+        fail("multiple coordinator receipt recovery entries")
+    if temporary_names:
+        if temporary_names[0] != temp_name:
+            os.close(receipt_fd)
+            fail("coordinator receipt recovery ownership changed")
+        temporary = read_regular(receipt_fd, temp_name, maximum=4096)
+        if temporary != payload:
+            os.close(receipt_fd)
+            fail("coordinator receipt recovery identity changed")
+        existing = read_optional_receipt(receipt_fd)
+        if existing is None:
+            os.rename(
+                temp_name,
+                receipt_file_name,
+                src_dir_fd=receipt_fd,
+                dst_dir_fd=receipt_fd,
+            )
+        elif existing == payload:
+            os.unlink(temp_name, dir_fd=receipt_fd)
+        else:
+            os.close(receipt_fd)
+            fail("coordinator transaction receipt identity changed")
+        os.fsync(receipt_fd)
+    existing = read_optional_receipt(receipt_fd)
+    if existing is not None:
+        if existing != payload:
+            os.close(receipt_fd)
+            fail("coordinator transaction receipt identity changed")
+        os.close(receipt_fd)
+        return
+    fd = None
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW
+        fd = os.open(temp_name, flags, 0o600, dir_fd=receipt_fd)
+        os.fchmod(fd, 0o600)
+        os.fchown(fd, expected_uid, expected_gid if expected_gid is not None else -1)
+        view = memoryview(payload)
+        while view:
+            written = os.write(fd, view)
+            if written <= 0:
+                fail("short coordinator receipt write")
+            view = view[written:]
+        os.fsync(fd)
+        os.close(fd)
+        fd = None
+        os.rename(temp_name, receipt_file_name, src_dir_fd=receipt_fd, dst_dir_fd=receipt_fd)
+        os.fsync(receipt_fd)
+    finally:
+        if fd is not None:
+            os.close(fd)
+        try:
+            os.unlink(temp_name, dir_fd=receipt_fd)
+        except FileNotFoundError:
+            pass
+        os.close(receipt_fd)
+
+
+def validate_terminal_receipt(values, terminal):
+    receipt_fd = open_receipt_directory(create=False)
+    existing = read_optional_receipt(receipt_fd)
+    if receipt_fd is not None:
+        os.close(receipt_fd)
+    if existing != receipt_payload(values, terminal):
+        fail("coordinator terminal receipt is missing or changed")
+
+
+def validate_payload_directory(path, allowed_names, label_text):
+    try:
+        fd = os.open(path, dir_flags)
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        fail(f"cannot safely open {label_text}: {error}")
+    validate_directory(fd, mode=0o700, label_text=label_text)
+    names = set(os.listdir(fd))
+    if not names.issubset(allowed_names):
+        os.close(fd)
+        fail(f"{label_text} allowlist mismatch")
+    for name in names:
+        try:
+            entry_fd = os.open(name, read_flags, dir_fd=fd)
+        except OSError as error:
+            os.close(fd)
+            fail(f"unsafe {label_text} entry: {error}")
+        try:
+            meta = os.fstat(entry_fd)
+            if (
+                not stat.S_ISREG(meta.st_mode)
+                or meta.st_uid != expected_uid
+                or (expected_gid is not None and meta.st_gid != expected_gid)
+                or meta.st_nlink != 1
+                or stat.S_IMODE(meta.st_mode)
+                not in {0o400, 0o600, 0o644, 0o700, 0o755}
+            ):
+                fail(f"unsafe {label_text} entry metadata")
+        finally:
+            os.close(entry_fd)
+    return fd
+
+
+def detach_lock(lock_fd):
+    tombstone = f".{lock_name}.released-{token}"
+    try:
+        os.stat(tombstone, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        pass
+    else:
+        fail("release lock tombstone already exists")
+    os.rename(lock_name, tombstone, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+    os.fsync(parent_fd)
+    return tombstone
+
+
+def delete_tombstone(lock_fd, tombstone):
+    try:
+        for name in sorted(metadata_names):
+            try:
+                os.unlink(name, dir_fd=lock_fd)
+            except FileNotFoundError:
+                pass
+        os.fsync(lock_fd)
+    finally:
+        os.close(lock_fd)
+    os.rmdir(tombstone, dir_fd=parent_fd)
+    os.fsync(parent_fd)
+
+
+def delete_payload(fd, path):
+    if fd is None:
+        return
+    try:
+        for name in os.listdir(fd):
+            os.unlink(name, dir_fd=fd)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    os.rmdir(path)
+
+
+def list_recovery_siblings():
+    prefix = f".{lock_name}."
+    orphan_re = re.compile(
+        rf"\.{re.escape(lock_name)}\.(alloc|state|baseline|terminal|released)-([A-Za-z0-9._:-]{{1,128}})"
+    )
+    mac_re = re.compile(
+        rf"\.{re.escape(lock_name)}\.mac-(creating|phase|releasing)-"
+        r"([A-Za-z0-9._:-]{1,128})"
+    )
+    entries = []
+    for name in os.listdir(parent_fd):
+        if not name.startswith(prefix):
+            continue
+        mac_match = mac_re.fullmatch(name)
+        if mac_match is not None:
+            entries.append((name, "mac", mac_match.group(1), mac_match.group(2)))
+            continue
+        match = orphan_re.fullmatch(name)
+        if match is None:
+            fail("unknown release lock recovery entry")
+        entries.append((name, "generic", match.group(1), match.group(2)))
+    if len(entries) > 1:
+        fail("multiple release lock recovery entries")
+    return entries
+
+
+def inspect_orphan_siblings():
+    entries = list_recovery_siblings()
+    if entries and entries[0][1] == "mac":
+        # Mac publishing shares this canonical lease but has its own durable
+        # partial-rename protocol. Generic deploy never mutates or reaps Mac
+        # residues; their mere presence blocks acquisition byte-for-byte.
+        fail("pending Mac release lease recovery blocks generic deploy")
+    orphans = [
+        (name, kind, owner)
+        for name, _family, kind, owner in entries
+    ]
+    return orphans
+
+
+def recover_orphan_for_explicit_owner(orphan):
+    name, kind, owner = orphan
+    if kind in {"baseline", "terminal"}:
+        if owner != token:
+            fail(f"release {kind} recovery ownership changed")
+        raw = read_regular(parent_fd, name)
+        try:
+            value = raw.decode("ascii")
+        except UnicodeDecodeError:
+            fail(f"non-ASCII release {kind} recovery entry")
+        if not value.endswith("\n") or digest_re.fullmatch(value[:-1]) is None:
+            fail(f"invalid release {kind} recovery entry")
+        lock_fd, values = open_and_validate_lock(partial=True)
+        expected_state = "allocating" if kind == "baseline" else "mutating"
+        metadata_field = "baseline_digest" if kind == "baseline" else "terminal_digest"
+        if values.get("token") != token or values.get("state") != expected_state:
+            os.close(lock_fd)
+            fail(f"release {kind} recovery identity mismatch")
+        if values.get(metadata_field) == "-":
+            os.replace(
+                name,
+                f"{lock_name}/{metadata_field}",
+                src_dir_fd=parent_fd,
+                dst_dir_fd=parent_fd,
+            )
+            os.fsync(lock_fd)
+            os.fsync(parent_fd)
+        elif values.get(metadata_field) == value[:-1]:
+            os.unlink(name, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+        else:
+            os.close(lock_fd)
+            fail(f"release {kind} recovery value changed")
+        os.close(lock_fd)
+        return
+    if kind == "state":
+        if owner != token:
+            fail("release state recovery ownership changed")
+        raw = read_regular(parent_fd, name)
+        try:
+            value = raw.decode("ascii")
+        except UnicodeDecodeError:
+            fail("non-ASCII release state recovery entry")
+        if value not in {"allocating\n", "sealed\n", "mutating\n", "completed\n"}:
+            fail("invalid release state recovery entry")
+        os.unlink(name, dir_fd=parent_fd)
+        os.fsync(parent_fd)
+        return
+    if adopt != "1" or owner != token:
+        fail("pending remote release cleanup requires explicit original owner")
+
+    orphan_fd, values = open_and_validate_lock(name, partial=True)
+    if "token" in values and values["token"] != token:
+        os.close(orphan_fd)
+        fail("release recovery token metadata mismatch")
+    if "label" in values and values["label"] != label:
+        os.close(orphan_fd)
+        fail("release recovery label metadata mismatch")
+    if kind == "alloc":
+        delete_tombstone(orphan_fd, name)
+        return
+
+    stage_fd = None
+    activation_fd = None
+    if "stage" in values:
+        stage_fd = validate_payload_directory(
+            values["stage"], stage_names, "release stage"
+        )
+        activation_fd = validate_payload_directory(
+            values["stage"] + ".activation-state",
+            activation_names,
+            "activation state",
+        )
+    # Validate every remaining byte before the first recovery write.  Payload
+    # cleanup precedes metadata deletion, so an interruption remains
+    # discoverable by this token-bound tombstone on the next invocation.
+    delete_payload(stage_fd, values.get("stage", ""))
+    delete_payload(
+        activation_fd,
+        values.get("stage", "") + ".activation-state",
+    )
+    delete_tombstone(orphan_fd, name)
+
+
+def inspect_generic_recovery_entry(entry):
+    name, family, kind, owner = entry
+    if family != "generic":
+        fail("generic recovery inspection received foreign entry")
+    if kind == "state":
+        raw = read_regular(parent_fd, name)
+        try:
+            value = raw.decode("ascii")
+        except UnicodeDecodeError:
+            fail("non-ASCII release state recovery entry")
+        if value not in {"allocating\n", "sealed\n", "mutating\n", "completed\n"}:
+            fail("invalid release state recovery entry")
+        return "unknown"
+    orphan_fd, values = open_and_validate_lock(name, partial=True)
+    os.close(orphan_fd)
+    if "token" in values and values["token"] != owner:
+        fail("release recovery token metadata mismatch")
+    return values.get("label", "unknown")
+
+
+try:
+    parent_meta = os.fstat(parent_fd)
+    if (
+        not stat.S_ISDIR(parent_meta.st_mode)
+        or parent_meta.st_uid != expected_uid
+        or (expected_gid is not None and parent_meta.st_gid != expected_gid)
+        or stat.S_IMODE(parent_meta.st_mode) & 0o022
+    ):
+        fail("unsafe release lock parent")
+
+    if operation == "handoff":
+        entries = list_recovery_siblings()
+        entry = entries[0] if entries else None
+        if entry is not None and entry[1] == "mac":
+            _name, _family, kind, owner = entry
+            print(
+                "REMOTE_RELEASE_HANDOFF status=mac-recovery "
+                f"kind={kind} token={owner}"
+            )
+            raise SystemExit(0)
+        try:
+            os.stat(lock_name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            if entry is None:
+                print("REMOTE_RELEASE_HANDOFF status=none")
+            else:
+                label_value = inspect_generic_recovery_entry(entry)
+                _name, _family, kind, owner = entry
+                print(
+                    "REMOTE_RELEASE_HANDOFF status=recovery "
+                    f"kind={kind} token={owner} label={label_value}"
+                )
+            raise SystemExit(0)
+        lock_fd, values = open_and_validate_lock()
+        os.close(lock_fd)
+        if entry is not None:
+            inspect_generic_recovery_entry(entry)
+            if entry[3] != values["token"]:
+                fail("active lock and recovery entry ownership mismatch")
+        print(
+            "REMOTE_RELEASE_HANDOFF status=active "
+            f"token={values['token']} label={values['label']} "
+            f"state={values['state']} stage={values['stage']} "
+            f"source_sha={values['source_sha']} "
+            f"source_tree={values['source_tree']} "
+            f"surface={values['surface']} "
+            f"operation={values['operation']} "
+            f"channel={values['channel']} "
+            f"transaction_id={values['transaction_id']} "
+            f"baseline_digest={values['baseline_digest']} "
+            f"request_digest={values['request_digest']} "
+            f"terminal_digest={values['terminal_digest']}"
+        )
+    elif operation == "acquire":
+        orphans = inspect_orphan_siblings()
+        recovered_released = False
+        if orphans:
+            recovered_released = orphans[0][1] == "released"
+            recover_orphan_for_explicit_owner(orphans[0])
+        try:
+            os.stat(lock_name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            if adopt == "1":
+                if recovered_released:
+                    print("REMOTE_RELEASE_LOCK_ALREADY_RELEASED")
+                    raise SystemExit(0)
+                fail("explicit remote release owner is missing")
+            receipt_fd = open_receipt_directory(create=False)
+            existing_receipt = read_optional_receipt(receipt_fd)
+            if receipt_fd is not None:
+                os.close(receipt_fd)
+            if existing_receipt is not None:
+                fail("coordinator transaction already has a terminal receipt")
+            temporary = f".{lock_name}.alloc-{token}"
+            try:
+                os.mkdir(temporary, 0o700, dir_fd=parent_fd)
+                temp_fd = os.open(temporary, dir_flags, dir_fd=parent_fd)
+                try:
+                    os.fchmod(temp_fd, 0o700)
+                    os.fchown(
+                        temp_fd,
+                        expected_uid,
+                        expected_gid if expected_gid is not None else -1,
+                    )
+                    values = {
+                        "schema": "2",
+                        "token": token,
+                        "label": label,
+                        "stage": stage_path,
+                        "started_at": datetime.datetime.now(
+                            datetime.timezone.utc
+                        ).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "source_sha": source_sha,
+                        "source_tree": source_tree,
+                        "state": "allocating",
+                        "surface": surface,
+                        "operation": release_operation,
+                        "channel": channel,
+                        "transaction_id": transaction_id,
+                        "baseline_digest": baseline_digest,
+                        "request_digest": request_digest,
+                        "terminal_digest": terminal_digest,
+                    }
+                    for field in sorted(values):
+                        write_regular(temp_fd, field, values[field])
+                    os.fsync(temp_fd)
+                finally:
+                    os.close(temp_fd)
+                os.rename(
+                    temporary, lock_name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd
+                )
+                os.fsync(parent_fd)
+            except BaseException:
+                try:
+                    temp_fd = os.open(temporary, dir_flags, dir_fd=parent_fd)
+                except OSError:
+                    pass
+                else:
+                    try:
+                        for field in os.listdir(temp_fd):
+                            if field in metadata_names:
+                                os.unlink(field, dir_fd=temp_fd)
+                        os.fsync(temp_fd)
+                    finally:
+                        os.close(temp_fd)
+                    try:
+                        os.rmdir(temporary, dir_fd=parent_fd)
+                    except OSError:
+                        pass
+                raise
+            print(
+                "REMOTE_RELEASE_LOCK_CREATED state=allocating "
+                f"stage={stage_path} source_sha={source_sha} "
+                f"source_tree={source_tree}"
+            )
+        else:
+            lock_fd, values = open_and_validate_lock()
+            os.close(lock_fd)
+            if adopt != "1":
+                fail(
+                    "remote release already active: "
+                    f"label={values['label']} started={values['started_at']}"
+                )
+            if (
+                values["token"] != token
+                or values["label"] != label
+                or values["stage"] != stage_path
+                or values["source_sha"] != source_sha
+                or values["source_tree"] != source_tree
+                or values["surface"] != surface
+                or values["operation"] != release_operation
+                or values["channel"] != channel
+                or values["transaction_id"] != transaction_id
+                or not (
+                    values["baseline_digest"] == baseline_digest
+                    or (
+                        adopt == "1"
+                        and baseline_digest == "-"
+                        and values["baseline_digest"] != "-"
+                    )
+                    or (
+                        adopt == "1"
+                        and values["state"] == "allocating"
+                        and values["baseline_digest"] == "-"
+                        and digest_re.fullmatch(baseline_digest) is not None
+                    )
+                )
+                or values["request_digest"] != request_digest
+                or not (
+                    values["terminal_digest"] == terminal_digest
+                    or (
+                        adopt == "1"
+                        and terminal_digest == "-"
+                        and values["terminal_digest"] != "-"
+                    )
+                )
+            ):
+                fail("remote release adoption identity mismatch")
+            print(
+                "REMOTE_RELEASE_LOCK_ADOPTED "
+                f"state={values['state']} stage={values['stage']} "
+                f"source_sha={values['source_sha']} "
+                f"source_tree={values['source_tree']} "
+                f"surface={values['surface']} "
+                f"operation={values['operation']} "
+                f"channel={values['channel']} "
+                f"transaction_id={values['transaction_id']} "
+                f"baseline_digest={values['baseline_digest']} "
+                f"request_digest={values['request_digest']} "
+                f"terminal_digest={values['terminal_digest']}"
+            )
+    elif operation in {
+        "assert", "bind", "seal", "mutate", "complete", "abort", "finish"
+    }:
+        orphans = inspect_orphan_siblings()
+        if orphans:
+            name, kind, owner = orphans[0]
+            if owner != token:
+                fail("remote release cleanup is still pending")
+            if kind in {"state", "terminal"}:
+                recover_orphan_for_explicit_owner((name, kind, owner))
+            elif kind == "released" and operation == "finish":
+                orphan_fd, orphan_values = open_and_validate_lock(
+                    name, partial=True
+                )
+                if orphan_values.get("token") != token:
+                    os.close(orphan_fd)
+                    fail("released coordinator recovery identity mismatch")
+                if set(orphan_values) != metadata_names:
+                    os.close(orphan_fd)
+                    fail("released coordinator recovery metadata incomplete")
+                validate_terminal_receipt(
+                    orphan_values, orphan_values["terminal_digest"]
+                )
+                if any(
+                    orphan_values[field] != expected
+                    for field, expected in {
+                        "label": label,
+                        "stage": stage_path,
+                        "source_sha": source_sha,
+                        "source_tree": source_tree,
+                        "surface": surface,
+                        "operation": release_operation,
+                        "channel": channel,
+                        "transaction_id": transaction_id,
+                        "baseline_digest": baseline_digest,
+                        "request_digest": request_digest,
+                        "terminal_digest": terminal_digest,
+                    }.items()
+                ):
+                    os.close(orphan_fd)
+                    fail("released coordinator recovery identity changed")
+                stage_fd = validate_payload_directory(
+                    orphan_values["stage"], stage_names, "release stage"
+                )
+                activation_path = orphan_values["stage"] + ".activation-state"
+                activation_fd = validate_payload_directory(
+                    activation_path, activation_names, "activation state"
+                )
+                delete_payload(stage_fd, orphan_values["stage"])
+                delete_payload(activation_fd, activation_path)
+                delete_tombstone(orphan_fd, name)
+                print("REMOTE_RELEASE_LOCK_ALREADY_RELEASED")
+                raise SystemExit(0)
+            else:
+                fail("remote release cleanup is still pending")
+        try:
+            os.stat(lock_name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            if operation == "finish" and terminal_digest != "-":
+                receipt_values = {
+                    "token": token,
+                    "label": label,
+                    "stage": stage_path,
+                    "source_sha": source_sha,
+                    "source_tree": source_tree,
+                    "surface": surface,
+                    "operation": release_operation,
+                    "channel": channel,
+                    "transaction_id": transaction_id,
+                    "baseline_digest": baseline_digest,
+                    "request_digest": request_digest,
+                }
+                validate_terminal_receipt(receipt_values, terminal_digest)
+                print("REMOTE_RELEASE_LOCK_ALREADY_RELEASED")
+                raise SystemExit(0)
+            fail("coordinator release lock is missing")
+        lock_fd, values = open_and_validate_lock()
+        if values["token"] != token:
+            os.close(lock_fd)
+            fail("release lock ownership changed")
+        if operation not in {"bind", "complete"} and any(
+            values[name] != expected
+            for name, expected in {
+                "label": label,
+                "stage": stage_path,
+                "source_sha": source_sha,
+                "source_tree": source_tree,
+                "surface": surface,
+                "operation": release_operation,
+                "channel": channel,
+                "transaction_id": transaction_id,
+                "baseline_digest": baseline_digest,
+                "request_digest": request_digest,
+                "terminal_digest": terminal_digest,
+            }.items()
+        ):
+            os.close(lock_fd)
+            fail("release lock coordinator identity changed")
+        if operation == "assert":
+            os.close(lock_fd)
+            print(f"REMOTE_RELEASE_LOCK_ASSERTED state={values['state']}")
+        elif operation == "bind":
+            if (
+                values["state"] not in {"allocating", "sealed"}
+                or values["baseline_digest"] not in {"-", baseline_digest}
+                or digest_re.fullmatch(baseline_digest) is None
+                or any(
+                    values[name] != expected
+                    for name, expected in {
+                        "label": label,
+                        "stage": stage_path,
+                        "source_sha": source_sha,
+                        "source_tree": source_tree,
+                        "surface": surface,
+                        "operation": release_operation,
+                        "channel": channel,
+                        "transaction_id": transaction_id,
+                        "request_digest": request_digest,
+                    }.items()
+                )
+            ):
+                os.close(lock_fd)
+                fail("release lock bind identity mismatch")
+            if values["baseline_digest"] == "-":
+                if values["state"] != "allocating":
+                    os.close(lock_fd)
+                    fail("sealed release lock cannot have an unbound baseline")
+                replace_metadata(lock_fd, "baseline_digest", baseline_digest)
+            if values["state"] == "allocating":
+                replace_state(lock_fd, "sealed")
+                values["state"] = "sealed"
+            os.close(lock_fd)
+            print(f"REMOTE_RELEASE_LOCK_BOUND state={values['state']}")
+        elif operation == "complete":
+            if (
+                values["surface"] not in {"mobile", "native", "mac"}
+                or values["state"] not in {"mutating", "completed"}
+                or digest_re.fullmatch(terminal_digest) is None
+                or values["terminal_digest"] not in {"-", terminal_digest}
+                or any(
+                    values[name] != expected
+                    for name, expected in {
+                        "label": label,
+                        "stage": stage_path,
+                        "source_sha": source_sha,
+                        "source_tree": source_tree,
+                        "surface": surface,
+                        "operation": release_operation,
+                        "channel": channel,
+                        "transaction_id": transaction_id,
+                        "baseline_digest": baseline_digest,
+                        "request_digest": request_digest,
+                    }.items()
+                )
+            ):
+                os.close(lock_fd)
+                fail("release terminal proof identity mismatch")
+            write_terminal_receipt(values, terminal_digest)
+            if values["terminal_digest"] == "-":
+                replace_metadata(lock_fd, "terminal_digest", terminal_digest)
+            if values["state"] == "mutating":
+                replace_state(lock_fd, "completed")
+                values["state"] = "completed"
+            os.close(lock_fd)
+            print("REMOTE_RELEASE_LOCK_COMPLETED state=completed")
+        elif operation in {"seal", "mutate"}:
+            target = "sealed" if operation == "seal" else "mutating"
+            if operation == "seal":
+                allowed = {"allocating", "sealed"}
+            elif values["surface"] in {"mobile", "native", "mac"}:
+                allowed = {"sealed", "mutating"}
+            else:
+                allowed = {"allocating", "sealed", "mutating"}
+            if values["state"] not in allowed:
+                os.close(lock_fd)
+                fail("invalid release lock state transition")
+            if operation == "seal" and values["baseline_digest"] == "-":
+                os.close(lock_fd)
+                fail("release stage cannot seal before baseline binding")
+            replace_state(lock_fd, target)
+            os.close(lock_fd)
+            print(f"REMOTE_RELEASE_LOCK_STATE state={target}")
+        else:
+            if operation == "abort" and values["state"] != "allocating":
+                os.close(lock_fd)
+                print(f"REMOTE_RELEASE_LOCK_NOT_ALLOCATING state={values['state']}")
+                raise SystemExit(75)
+            if (
+                operation == "finish"
+                and values["surface"] in {"mobile", "native", "mac"}
+                and values["state"] != "completed"
+            ):
+                os.close(lock_fd)
+                fail("coordinator finish requires a terminal-proven lease")
+            if (
+                operation == "finish"
+                and values["surface"] in {"mobile", "native", "mac"}
+            ):
+                validate_terminal_receipt(values, values["terminal_digest"])
+            stage_fd = validate_payload_directory(
+                values["stage"], stage_names, "release stage"
+            )
+            activation_path = values["stage"] + ".activation-state"
+            activation_fd = validate_payload_directory(
+                activation_path, activation_names, "activation state"
+            )
+            # Every byte has been validated before the atomic lock detach.
+            tombstone = detach_lock(lock_fd)
+            delete_payload(stage_fd, values["stage"])
+            delete_payload(activation_fd, activation_path)
+            delete_tombstone(lock_fd, tombstone)
+            print(
+                "REMOTE_RELEASE_ALLOCATION_ABORTED"
+                if operation == "abort"
+                else "REMOTE_RELEASE_LOCK_RELEASED"
+            )
+    else:
+        fail("unknown release lock operation", 70)
+finally:
+    os.close(parent_fd)
+REMOTE_RELEASE_LOCK_PY
+}
+
+show_remote_release_lock_handoff() {
+    builtin printf '%s\n' \
+        "发布锁检查已冻结：等待仓库外受信检查器；不会读取或输出接管凭据。" >&2
+    return 78
+}
+
+verify_expected_server_surfaces_under_lock() {
+    local expected="${REVA_EXPECTED_SERVER_SURFACES:-}"
+    local observed
+
+    if [[ -z "$expected" ]]; then
+        return 0
+    fi
+    if [[ "${_REMOTE_RELEASE_LOCK_ACQUIRED:-0}" != "1" ||
+          ! "$REMOTE_RELEASE_LOCK_TOKEN" =~ ^[A-Za-z0-9._:-]{1,128}$ ]]; then
+        print_error "服务器发布代际 CAS 缺少已持有的精确远端锁"
+        return 73
+    fi
+    if ! observed="$(
+        python3 "$SCRIPT_DIR/scripts/release_production_state.py" \
+            server-under-lock "$REMOTE_RELEASE_LOCK_TOKEN"
+    )"; then
+        print_error "无法在服务器发布锁内复采生产代际"
+        return 73
+    fi
+    if ! python3 - "$expected" "$observed" <<'PY'
+import json
+import re
+import sys
+
+
+def fail():
+    raise SystemExit(73)
+
+
+def parse(raw):
+    try:
+        value = json.loads(
+            raw,
+            object_pairs_hook=lambda pairs: dict(pairs),
+            parse_constant=lambda _value: fail(),
+        )
+    except (TypeError, ValueError, json.JSONDecodeError):
+        fail()
+    if not isinstance(value, list) or len(value) != 7:
+        fail()
+    patterns = (
+        r"[0-9a-f]{40}", r"[0-9a-f]{64}", r"[0-9a-f]{40}",
+        r"[0-9a-f]{64}", r"[0-9a-f]{40}", r"[0-9a-f]{64}",
+        r"[0-9a-f]{64}",
+    )
+    for index, (item, pattern) in enumerate(zip(value, patterns)):
+        if item is None and index in {2, 3, 4, 5, 6}:
+            continue
+        if not isinstance(item, str) or re.fullmatch(pattern, item) is None:
+            fail()
+    if (value[2] is None) != (value[3] is None):
+        fail()
+    if len({item is None for item in value[4:7]}) != 1:
+        fail()
+    return value
+
+
+if parse(sys.argv[1]) != parse(sys.argv[2]):
+    fail()
+PY
+    then
+        print_error "服务器发布代际已变化；拒绝覆盖另一发布者的结果，请重新规划"
+        return 73
+    fi
+    print_success "服务器发布代际 CAS 已在远端锁内核验"
+}
+
+capture_expected_server_surfaces_under_lock() {
+    local observed
+    local planned="${REVA_EXPECTED_SERVER_SURFACES:-}"
+    local normalized
+
+    if [[ "${_REMOTE_RELEASE_LOCK_ACQUIRED:-0}" != "1" ||
+          ! "$REMOTE_RELEASE_LOCK_TOKEN" =~ ^[A-Za-z0-9._:-]{1,128}$ ]]; then
+        print_error "服务器生产代际只能在精确远端租约内采集"
+        return 73
+    fi
+    if ! observed="$(
+        python3 "$SCRIPT_DIR/scripts/release_production_state.py" \
+            server-under-lock "$REMOTE_RELEASE_LOCK_TOKEN"
+    )" || [[ -z "$observed" ]]; then
+        print_error "无法在服务器发布锁内建立生产代际基线"
+        return 73
+    fi
+    if ! normalized="$(python3 - "$observed" "$planned" <<'PY'
+import json
+import re
+import sys
+
+
+def fail():
+    raise SystemExit(73)
+
+
+def parse(raw):
+    try:
+        value = json.loads(raw, parse_constant=lambda _value: fail())
+    except (TypeError, ValueError, json.JSONDecodeError):
+        fail()
+    if not isinstance(value, list) or len(value) != 7:
+        fail()
+    patterns = (
+        r"[0-9a-f]{40}", r"[0-9a-f]{64}", r"[0-9a-f]{40}",
+        r"[0-9a-f]{64}", r"[0-9a-f]{40}", r"[0-9a-f]{64}",
+        r"[0-9a-f]{64}",
+    )
+    for index, (item, pattern) in enumerate(zip(value, patterns)):
+        if item is None and index in {2, 3, 4, 5, 6}:
+            continue
+        if not isinstance(item, str) or re.fullmatch(pattern, item) is None:
+            fail()
+    if (value[2] is None) != (value[3] is None):
+        fail()
+    if len({item is None for item in value[4:7]}) != 1:
+        fail()
+    return value
+
+
+observed = parse(sys.argv[1])
+if sys.argv[2] and parse(sys.argv[2]) != observed:
+    fail()
+print(json.dumps(observed, separators=(",", ":")))
+PY
+    )"; then
+        print_error "服务器生产代际与规划快照不一致；拒绝在锁内绑定"
+        return 73
+    fi
+    REVA_EXPECTED_SERVER_SURFACES="$normalized"
+    print_success "服务器发布代际基线已在远端锁内建立"
+}
+
+bind_expected_server_surfaces_under_lock() {
+    local output
+    if [[ "${_REMOTE_RELEASE_LOCK_ACQUIRED:-0}" != "1" ||
+          -z "${REVA_EXPECTED_SERVER_SURFACES:-}" ]]; then
+        print_error "服务器 baseline bind 缺少租约内生产快照"
+        return 73
+    fi
+    REMOTE_RELEASE_BASELINE_DIGEST="$(
+        printf '%s' "$REVA_EXPECTED_SERVER_SURFACES" |
+            /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}'
+    )" || return 73
+    if ! [[ "$REMOTE_RELEASE_BASELINE_DIGEST" =~ ^[0-9a-f]{64}$ ]]; then
+        print_error "服务器 baseline digest 生成失败"
+        return 73
+    fi
+    output="$(remote_release_lock_command bind)" || return 73
+    if [[ "$output" != "REMOTE_RELEASE_LOCK_BOUND state=sealed" ]]; then
+        print_error "服务器生产基线未获得 sealed 绑定证明"
+        return 73
+    fi
+    REMOTE_RELEASE_LOCK_STATE="sealed"
 }
 
 assert_remote_release_lock() {
@@ -291,14 +1804,9 @@ assert_remote_release_lock() {
         print_error "服务器发布锁未持有"
         return 73
     fi
-    ssh "$SERVER" bash -s -- \
-        "$REMOTE_RELEASE_LOCK_DIR" "$REMOTE_RELEASE_LOCK_TOKEN" <<'REMOTE_RELEASE_ASSERT'
-set -euo pipefail
-lock_dir="$1"
-expected="$2"
-test -r "$lock_dir/token"
-test "$(cat "$lock_dir/token")" = "$expected"
-REMOTE_RELEASE_ASSERT
+    local output
+    output="$(remote_release_lock_command assert)" || return 73
+    [[ "$output" == "REMOTE_RELEASE_LOCK_ASSERTED state="* ]] || return 73
 }
 
 assert_remote_release_lock_if_acquired() {
@@ -311,48 +1819,421 @@ release_remote_release_lock() {
     if [[ "${_REMOTE_RELEASE_LOCK_ACQUIRED:-0}" != "1" ]]; then
         return 0
     fi
-    if ! ssh "$SERVER" bash -s -- \
-        "$REMOTE_RELEASE_LOCK_DIR" "$REMOTE_RELEASE_LOCK_TOKEN" <<'REMOTE_RELEASE_UNLOCK'
-set -euo pipefail
-lock_dir="$1"
-expected="$2"
-test -r "$lock_dir/token"
-test "$(cat "$lock_dir/token")" = "$expected"
-rm -f "$lock_dir/token" "$lock_dir/label" "$lock_dir/stage" "$lock_dir/started_at"
-rmdir "$lock_dir"
-REMOTE_RELEASE_UNLOCK
-    then
+    local output
+    if ! output="$(remote_release_lock_command finish)" ||
+        [[ "$output" != "REMOTE_RELEASE_LOCK_RELEASED" ]]; then
         print_error "服务器发布锁释放失败；保留锁以阻断并发发布"
         return 73
     fi
     _REMOTE_RELEASE_LOCK_ACQUIRED=0
     REMOTE_RELEASE_LOCK_TOKEN=""
+    REMOTE_RELEASE_LOCK_LABEL=""
+    REMOTE_RELEASE_LOCK_STATE=""
+    REMOTE_RELEASE_SOURCE_SHA=""
+    REMOTE_RELEASE_SOURCE_TREE=""
+    REMOTE_RELEASE_SURFACE=""
+    REMOTE_RELEASE_OPERATION=""
+    REMOTE_RELEASE_CHANNEL=""
+    REMOTE_RELEASE_TRANSACTION_ID=""
+    REMOTE_RELEASE_BASELINE_DIGEST=""
+    REMOTE_RELEASE_REQUEST_DIGEST=""
+    REMOTE_RELEASE_TERMINAL_DIGEST=""
 }
 
-# 上传当前 HEAD 的 git bundle 到服务器,作为 GitHub 超时时的回退源。
-# 前端/后端部署都调用它,所以两边都能走 bundle 回退。
+abort_remote_release_allocation() {
+    local output
+    if [[ "${_REMOTE_RELEASE_LOCK_ACQUIRED:-0}" != "1" ]]; then
+        return 1
+    fi
+    output="$(remote_release_lock_command abort)" || return $?
+    if [[ "$output" != "REMOTE_RELEASE_ALLOCATION_ABORTED" ]]; then
+        return 73
+    fi
+    _REMOTE_RELEASE_LOCK_ACQUIRED=0
+    REMOTE_RELEASE_LOCK_TOKEN=""
+    REMOTE_RELEASE_LOCK_LABEL=""
+    REMOTE_RELEASE_LOCK_STATE=""
+    REMOTE_RELEASE_SOURCE_SHA=""
+    REMOTE_RELEASE_SOURCE_TREE=""
+    REMOTE_RELEASE_SURFACE=""
+    REMOTE_RELEASE_OPERATION=""
+    REMOTE_RELEASE_CHANNEL=""
+    REMOTE_RELEASE_TRANSACTION_ID=""
+    REMOTE_RELEASE_BASELINE_DIGEST=""
+    REMOTE_RELEASE_REQUEST_DIGEST=""
+    REMOTE_RELEASE_TERMINAL_DIGEST=""
+}
+
+validate_release_coordinator_environment() {
+    local mode="$1"
+    local surface="${REVA_RELEASE_COORDINATOR_SURFACE:-}"
+    local operation="${REVA_RELEASE_COORDINATOR_OPERATION:-}"
+    local channel="${REVA_RELEASE_COORDINATOR_CHANNEL:-}"
+    local transaction="${REVA_RELEASE_COORDINATOR_TRANSACTION:-}"
+    local request_digest="${REVA_RELEASE_COORDINATOR_REQUEST_DIGEST:-}"
+    local baseline_digest="${REVA_RELEASE_COORDINATOR_BASELINE_DIGEST:-}"
+    local stage="${REVA_RELEASE_COORDINATOR_STAGE:-}"
+    local token="${REVA_REMOTE_RELEASE_LOCK_TOKEN:-}"
+    local source_sha="${REVA_RELEASE_COORDINATOR_SOURCE_SHA:-}"
+    local source_tree="${REVA_RELEASE_COORDINATOR_SOURCE_TREE:-}"
+    local terminal_digest="${REVA_RELEASE_COORDINATOR_TERMINAL_DIGEST:-}"
+
+    if [[ "$REMOTE_RELEASE_LOCK_DIR" = "/var/lib/health-app/release-state/deploy.lock" &&
+          ( "$SERVER" != "root@39.98.206.178" ||
+            "$REMOTE_PATH" != "/opt/health-app" ) ]]; then
+        print_error "canonical production 协调器只允许固定服务器与部署根目录"
+        return 70
+    fi
+
+    if ! [[ "$mode" =~ ^(begin|bind|assert|mutate|finish|abort|recover)$ &&
+          "$surface" =~ ^(mobile|native|mac)$ &&
+          "$channel" = "production" &&
+          "$transaction" =~ ^[0-9a-f]{32}$ &&
+          "$request_digest" =~ ^[0-9a-f]{64}$ ]]; then
+        print_error "远端发布协调器身份不符合固定 production 契约"
+        return 70
+    fi
+    case "$surface:$operation" in
+        mobile:forward|mobile:rollback|native:remote-build|mac:publish|mac:recover|mac:rollback) ;;
+        *)
+            print_error "远端发布协调器 surface/operation 组合不受支持"
+            return 70
+            ;;
+    esac
+    if [[ "$mode" = "begin" ]]; then
+        if [[ -n "$token" || -n "$stage" || -n "$baseline_digest" ||
+              -n "$source_sha" || -n "$source_tree" ||
+              -n "$terminal_digest" ||
+              "${REVA_REMOTE_RELEASE_LOCK_ADOPT:-0}" != "0" ]]; then
+            print_error "协调器 begin 不接受调用者 token/stage/source/baseline/terminal 或接管标记"
+            return 70
+        fi
+        return 0
+    fi
+    if ! [[ "$token" =~ ^[0-9a-f]{64}$ &&
+          "$stage" =~ ^/tmp/health-app-backup-preflight-([1-9][0-9]*-[1-9][0-9]*|[0-9a-f]{64})$ &&
+          "$source_sha" =~ ^[0-9a-f]{40}$ &&
+          "$source_tree" =~ ^[0-9a-f]{40}$ ]]; then
+        print_error "远端发布协调器续作缺少精确 token/stage/source"
+        return 70
+    fi
+    if [[ "$mode" = "abort" && "$baseline_digest" = "-" ]]; then
+        return 0
+    fi
+    if ! [[ "$baseline_digest" =~ ^[0-9a-f]{64}$ ]]; then
+        print_error "远端发布协调器续作缺少精确 baseline digest"
+        return 70
+    fi
+    if [[ "$mode" = "finish" ]] &&
+       ! [[ "$terminal_digest" =~ ^[0-9a-f]{64}$ ]]; then
+        print_error "远端发布协调器 finish 缺少精确 terminal digest"
+        return 70
+    fi
+    if [[ -n "$terminal_digest" ]] &&
+       ! [[ "$terminal_digest" =~ ^[0-9a-f]{64}$ ]]; then
+        print_error "远端发布协调器 terminal digest 格式非法"
+        return 70
+    fi
+}
+
+trusted_release_git() {
+    /usr/bin/env -i \
+        PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+        HOME="/var/empty" \
+        LANG="C" \
+        LC_ALL="C" \
+        GIT_CONFIG_NOSYSTEM="1" \
+        GIT_CONFIG_GLOBAL="/dev/null" \
+        GIT_TERMINAL_PROMPT="0" \
+        GIT_NO_REPLACE_OBJECTS="1" \
+        /usr/bin/git --no-replace-objects -c core.hooksPath=/dev/null \
+            -C "$SCRIPT_DIR" "$@"
+}
+
+trusted_release_network_git() {
+    (
+        cd / &&
+        /usr/bin/env -i \
+            PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+            HOME="/var/empty" \
+            LANG="C" \
+            LC_ALL="C" \
+            GIT_CONFIG_NOSYSTEM="1" \
+            GIT_CONFIG_GLOBAL="/dev/null" \
+            GIT_TERMINAL_PROMPT="0" \
+            GIT_NO_REPLACE_OBJECTS="1" \
+            /usr/bin/git --no-replace-objects -c core.hooksPath=/dev/null "$@"
+    )
+}
+
+verify_release_coordinator_source() {
+    local dirty
+    local branch
+    local head_sha
+    local head_tree
+    local origin_urls
+    local origin_push_urls
+    local url_rewrites
+    local remote_row
+    local remote_sha
+    local remote_ref
+    local remote_extra
+
+    dirty="$(trusted_release_git status --porcelain=v1 --untracked-files=all)" ||
+        return 70
+    if [[ -n "$dirty" ]]; then
+        print_error "production 协调器只允许完全干净的发布源"
+        return 70
+    fi
+    if branch="$(trusted_release_git symbolic-ref --quiet --short HEAD 2>/dev/null)"; then
+        if [[ "$branch" != "main" ]]; then
+            print_error "production 协调器只允许 main 或 exact origin/main detached HEAD"
+            return 70
+        fi
+    else
+        branch=""
+    fi
+    origin_urls="$(
+        trusted_release_git config --local --get-all remote.origin.url
+    )" || {
+        print_error "production 协调器缺少 canonical origin"
+        return 70
+    }
+    if [[ "$origin_urls" == *$'\n'* ||
+          "$origin_urls" != "$CANONICAL_RELEASE_ORIGIN_URL" ]]; then
+        print_error "production 协调器 origin 不等于固定仓库 authority"
+        return 70
+    fi
+    origin_push_urls="$(
+        trusted_release_git config --local --get-all remote.origin.pushurl 2>/dev/null || true
+    )"
+    url_rewrites="$(
+        trusted_release_git config --local --get-regexp \
+            '^url\..*\.(insteadOf|pushInsteadOf)$' 2>/dev/null || true
+    )"
+    if [[ -n "$origin_push_urls" || -n "$url_rewrites" ]]; then
+        print_error "production 协调器拒绝 origin push override 或 URL rewrite"
+        return 70
+    fi
+    local replace_refs
+    replace_refs="$(
+        trusted_release_git for-each-ref --format='%(refname)' refs/replace/
+    )" || return 70
+    if [[ -n "$replace_refs" ]]; then
+        print_error "production 协调器拒绝 Git replacement refs"
+        return 70
+    fi
+    head_sha="$(trusted_release_git rev-parse HEAD)" || return 70
+    head_tree="$(trusted_release_git rev-parse "${head_sha}^{tree}")" || return 70
+    remote_row="$(
+        trusted_release_network_git ls-remote --exit-code \
+            "$CANONICAL_RELEASE_ORIGIN_URL" refs/heads/main
+    )" || return 70
+    if [[ "$remote_row" == *$'\n'* ]]; then
+        print_error "origin/main 返回歧义结果"
+        return 70
+    fi
+    read -r remote_sha remote_ref remote_extra <<< "$remote_row"
+    if ! [[ "$head_sha" =~ ^[0-9a-f]{40}$ &&
+          "$head_tree" =~ ^[0-9a-f]{40}$ &&
+          "$remote_sha" =~ ^[0-9a-f]{40}$ &&
+          "$remote_ref" = "refs/heads/main" &&
+          -z "$remote_extra" &&
+          "$head_sha" = "$remote_sha" ]]; then
+        print_error "production 协调器 source 必须精确等于远端 origin/main"
+        return 70
+    fi
+    REVA_RELEASE_COORDINATOR_SOURCE_SHA="$head_sha"
+    REVA_RELEASE_COORDINATOR_SOURCE_TREE="$head_tree"
+    export REVA_RELEASE_COORDINATOR_SOURCE_SHA
+    export REVA_RELEASE_COORDINATOR_SOURCE_TREE
+}
+
+begin_remote_release_coordinator() {
+    validate_release_coordinator_environment begin || return $?
+    verify_release_coordinator_source || return $?
+    local label="coordinator:${REVA_RELEASE_COORDINATOR_SURFACE}:${REVA_RELEASE_COORDINATOR_OPERATION}"
+    REVA_RELEASE_COORDINATOR_BASELINE_DIGEST="-"
+    export REVA_RELEASE_COORDINATOR_BASELINE_DIGEST
+    acquire_remote_release_lock "$label" || return $?
+    printf '%s\n' \
+        "REVA_RELEASE_COORDINATOR_BEGIN token=$REMOTE_RELEASE_LOCK_TOKEN stage=$REMOTE_BACKUP_PREFLIGHT_DIR source_sha=$REMOTE_RELEASE_SOURCE_SHA source_tree=$REMOTE_RELEASE_SOURCE_TREE surface=$REMOTE_RELEASE_SURFACE operation=$REMOTE_RELEASE_OPERATION channel=$REMOTE_RELEASE_CHANNEL transaction_id=$REMOTE_RELEASE_TRANSACTION_ID request_digest=$REMOTE_RELEASE_REQUEST_DIGEST"
+    # The caller must now sample production under this exact lease and bind
+    # the resulting baseline. Retain allocating state across this short,
+    # explicit inter-process handoff; exact abort is the only safe cleanup.
+    _REMOTE_RELEASE_LOCK_ABANDONED=1
+}
+
+adopt_remote_release_coordinator() {
+    local mode="$1"
+    local requested_baseline="${REVA_RELEASE_COORDINATOR_BASELINE_DIGEST:-}"
+    local requested_terminal="${REVA_RELEASE_COORDINATOR_TERMINAL_DIGEST:--}"
+    validate_release_coordinator_environment "$mode" || return $?
+    set_remote_backup_preflight_dir "$REVA_RELEASE_COORDINATOR_STAGE"
+    REVA_REMOTE_RELEASE_LOCK_ADOPT=1
+    REVA_REMOTE_RELEASE_LOCK_ALLOW_ALLOCATING_ADOPT=1
+    export REVA_REMOTE_RELEASE_LOCK_ADOPT
+    export REVA_REMOTE_RELEASE_LOCK_ALLOW_ALLOCATING_ADOPT
+    acquire_remote_release_lock \
+        "coordinator:${REVA_RELEASE_COORDINATOR_SURFACE}:${REVA_RELEASE_COORDINATOR_OPERATION}" ||
+        return $?
+    if [[ "$mode" = "bind" ]]; then
+        REMOTE_RELEASE_BASELINE_DIGEST="$requested_baseline"
+    fi
+    REMOTE_RELEASE_TERMINAL_DIGEST="$requested_terminal"
+}
+
+load_release_coordinator_context() {
+    set_remote_backup_preflight_dir "$REVA_RELEASE_COORDINATOR_STAGE"
+    REMOTE_RELEASE_LOCK_TOKEN="$REVA_REMOTE_RELEASE_LOCK_TOKEN"
+    REMOTE_RELEASE_LOCK_LABEL="coordinator:${REVA_RELEASE_COORDINATOR_SURFACE}:${REVA_RELEASE_COORDINATOR_OPERATION}"
+    REMOTE_RELEASE_SOURCE_SHA="$REVA_RELEASE_COORDINATOR_SOURCE_SHA"
+    REMOTE_RELEASE_SOURCE_TREE="$REVA_RELEASE_COORDINATOR_SOURCE_TREE"
+    REMOTE_RELEASE_SURFACE="$REVA_RELEASE_COORDINATOR_SURFACE"
+    REMOTE_RELEASE_OPERATION="$REVA_RELEASE_COORDINATOR_OPERATION"
+    REMOTE_RELEASE_CHANNEL="$REVA_RELEASE_COORDINATOR_CHANNEL"
+    REMOTE_RELEASE_TRANSACTION_ID="$REVA_RELEASE_COORDINATOR_TRANSACTION"
+    REMOTE_RELEASE_BASELINE_DIGEST="$REVA_RELEASE_COORDINATOR_BASELINE_DIGEST"
+    REMOTE_RELEASE_REQUEST_DIGEST="$REVA_RELEASE_COORDINATOR_REQUEST_DIGEST"
+    REMOTE_RELEASE_TERMINAL_DIGEST="${REVA_RELEASE_COORDINATOR_TERMINAL_DIGEST:--}"
+}
+
+bind_remote_release_coordinator() {
+    adopt_remote_release_coordinator bind || return $?
+    local output
+    output="$(remote_release_lock_command bind)" || return $?
+    if [[ "$output" != "REMOTE_RELEASE_LOCK_BOUND state=sealed" ]]; then
+        print_error "远端发布协调器 baseline 绑定缺少 sealed 证明"
+        return 73
+    fi
+    REMOTE_RELEASE_LOCK_STATE="sealed"
+    _REMOTE_RELEASE_LOCK_ABANDONED=1
+    printf '%s\n' "$output"
+}
+
+assert_remote_release_coordinator() {
+    adopt_remote_release_coordinator assert || return $?
+    local output
+    output="$(remote_release_lock_command assert)" || return $?
+    if [[ ! "$output" =~ ^REMOTE_RELEASE_LOCK_ASSERTED\ state=(sealed|mutating)$ ]]; then
+        print_error "远端发布协调器 assert 缺少 sealed/mutating 证明"
+        return 73
+    fi
+    _REMOTE_RELEASE_LOCK_ABANDONED=1
+    printf '%s\n' "$output"
+}
+
+mutate_remote_release_coordinator() {
+    adopt_remote_release_coordinator mutate || return $?
+    local output
+    output="$(remote_release_lock_command mutate)" || return $?
+    if [[ "$output" != "REMOTE_RELEASE_LOCK_STATE state=mutating" ]]; then
+        print_error "远端发布协调器 mutation 边界结果不明确"
+        return 73
+    fi
+    REMOTE_RELEASE_LOCK_STATE="mutating"
+    _REMOTE_RELEASE_LOCK_ABANDONED=1
+    printf '%s\n' "$output"
+}
+
+finish_remote_release_coordinator() {
+    validate_release_coordinator_environment finish || return $?
+    load_release_coordinator_context
+    local complete_output=""
+    local finish_output=""
+    if complete_output="$(remote_release_lock_command complete)"; then
+        if [[ "$complete_output" != \
+              "REMOTE_RELEASE_LOCK_COMPLETED state=completed" ]]; then
+            print_error "远端发布协调器 terminal proof 结果不明确"
+            return 75
+        fi
+    fi
+    if ! finish_output="$(remote_release_lock_command finish)"; then
+        print_error "远端发布协调器终态/释放结果不明确；保留现场等待精确恢复"
+        return 75
+    fi
+    if [[ "$finish_output" != "REMOTE_RELEASE_LOCK_RELEASED" &&
+          "$finish_output" != "REMOTE_RELEASE_LOCK_ALREADY_RELEASED" ]]; then
+        print_error "远端发布协调器缺少精确释放证明"
+        return 75
+    fi
+    printf '%s\n' "REVA_RELEASE_COORDINATOR_FINISHED"
+}
+
+abort_remote_release_coordinator() {
+    adopt_remote_release_coordinator abort || return $?
+    _REMOTE_RELEASE_LOCK_ABANDONED=1
+    abort_remote_release_allocation || return $?
+    _REMOTE_RELEASE_LOCK_ABANDONED=0
+    printf '%s\n' "REVA_RELEASE_COORDINATOR_ABORTED"
+}
+
+recover_remote_release_coordinator() {
+    validate_release_coordinator_environment recover || return $?
+    if [[ "${REVA_RELEASE_COORDINATOR_TERMINAL_DIGEST:-}" =~ ^[0-9a-f]{64}$ ]]; then
+        finish_remote_release_coordinator
+        return $?
+    fi
+    load_release_coordinator_context
+    local output
+    if ! output="$(remote_release_lock_command assert)"; then
+        print_error "无法读取精确 coordinator 现场；租约保持不变"
+        return 75
+    fi
+    case "$output" in
+        "REMOTE_RELEASE_LOCK_ASSERTED state=allocating")
+            _REMOTE_RELEASE_LOCK_ACQUIRED=1
+            abort_remote_release_allocation || return $?
+            printf '%s\n' "REVA_RELEASE_COORDINATOR_RECOVERED outcome=aborted-allocation"
+            ;;
+        "REMOTE_RELEASE_LOCK_ASSERTED state=sealed")
+            print_error "协调器已绑定但尚未跨 mutation 边界；请用原操作精确续作"
+            return 75
+            ;;
+        "REMOTE_RELEASE_LOCK_ASSERTED state=mutating"|\
+        "REMOTE_RELEASE_LOCK_ASSERTED state=completed")
+            print_error "协调器已跨 mutation 边界；恢复必须提供锁内复证得到的 terminal digest"
+            return 75
+            ;;
+        *)
+            print_error "未知 coordinator 恢复状态"
+            return 75
+            ;;
+    esac
+}
+
+seal_remote_release_stage() {
+    local output
+    output="$(remote_release_lock_command seal)" || return 73
+    [[ "$output" == "REMOTE_RELEASE_LOCK_STATE state=sealed" ]] || return 73
+    REMOTE_RELEASE_LOCK_STATE="sealed"
+}
+
+mark_remote_release_mutation_started() {
+    local output
+    output="$(remote_release_lock_command mutate)" || return 73
+    [[ "$output" == "REMOTE_RELEASE_LOCK_STATE state=mutating" ]] || return 73
+    REMOTE_RELEASE_LOCK_STATE="mutating"
+}
+
+# git bundle is written only while the token-bound root-only stage is still
+# allocating. This function verifies that sealed artifact; it never writes a
+# predictable root target in world-writable /tmp.
 upload_deploy_bundle() {
-    local bundle
-    local delegation_owner=0
     assert_remote_release_lock_if_acquired
-    bundle=$(mktemp)
-    if ! git bundle create "$bundle" HEAD >/dev/null; then
-        rm -f "$bundle"
-        return 1
-    fi
-    if [[ "${_REMOTE_RELEASE_LOCK_DELEGATED:-0}" != "1" ]]; then
-        _REMOTE_RELEASE_LOCK_DELEGATED=1
-        delegation_owner=1
-    fi
-    if ! scp "$bundle" "$SERVER:$REMOTE_DEPLOY_BUNDLE" >/dev/null; then
-        rm -f "$bundle"
-        _REMOTE_RELEASE_LOCK_ABANDONED=1
-        return 1
-    fi
-    rm "$bundle"
-    if [ "$delegation_owner" -eq 1 ]; then
-        _REMOTE_RELEASE_LOCK_DELEGATED=0
-    fi
+    ssh "$SERVER" "
+        set -euo pipefail
+        test -f '$REMOTE_DEPLOY_BUNDLE'
+        test ! -L '$REMOTE_DEPLOY_BUNDLE'
+        test \"\$(stat -c '%U:%G:%a:%h' '$REMOTE_DEPLOY_BUNDLE')\" = root:root:600:1
+        cd '$REMOTE_PATH'
+        git bundle verify '$REMOTE_DEPLOY_BUNDLE' >/dev/null
+        git bundle list-heads '$REMOTE_DEPLOY_BUNDLE' |
+            awk -v expected='$DEPLOY_EXPECTED_SHA' '
+                \$1 == expected { matches += 1 }
+                END { exit(matches >= 1 ? 0 : 1) }
+            '
+    "
 }
 
 # 备份发生在远端 checkout 更新之前。先上传当前已核验 commit 的备份工具，
@@ -378,6 +2259,7 @@ stage_backup_preflight_scripts() {
     local staged_name
     local expected_hash
     local actual_hash
+    local deploy_bundle
 
     assert_remote_release_lock_if_acquired
     if ! [[ "$DEPLOY_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
@@ -421,7 +2303,8 @@ for entry in "$stage_dir"/*; do
         backend.env.rollback|\
         backend.env.candidate|\
         candidate.env|\
-        guard.env)
+        guard.env|\
+        deploy.bundle)
             ;;
         *)
             echo "unknown immutable release artifact: $name" >&2
@@ -462,6 +2345,7 @@ test "$stage_artifact_count" = "$manifest_artifact_count"
         health-backend-runtime-state.conf
         celery-worker-runtime-state.conf
         celery-beat-runtime-state.conf
+        deploy.bundle
     )
     for artifact in "${required[@]}"; do
         test -f "$artifact"
@@ -513,6 +2397,11 @@ test "$stage_artifact_count" = "$manifest_artifact_count"
             allowed += 1
             next
         }
+        $2 == "deploy.bundle" {
+            bundles += 1
+            allowed += 1
+            next
+        }
         { exit 1 }
         END {
             backend_pair = backend_rollback == 1 &&
@@ -523,8 +2412,9 @@ test "$stage_artifact_count" = "$manifest_artifact_count"
                 backend_candidate == 0 &&
                 activation_candidate == 1 &&
                 activation_guard == 1
-            if (allowed != 13 &&
-                !(allowed == 15 && (backend_pair || activation_pair))) {
+            if (bundles != 1 ||
+                (allowed != 14 &&
+                 !(allowed == 16 && (backend_pair || activation_pair)))) {
                 exit 1
             }
         }
@@ -553,6 +2443,28 @@ REMOTE_REUSE_RELEASE_STAGE
         "; then
             return 1
         fi
+        deploy_bundle="$(mktemp)" || return 1
+        if ! git -C "$SCRIPT_DIR" bundle create "$deploy_bundle" HEAD >/dev/null; then
+            rm -f -- "$deploy_bundle"
+            return 1
+        fi
+        # The destination parent is the exact root-only stage just created by
+        # this token. No unprivileged process can race inside it; a preexisting
+        # basename aborts before scp, and exact regular metadata is rechecked
+        # afterward without following links.
+        if ! ssh "$SERVER" "test ! -e '$REMOTE_DEPLOY_BUNDLE' && test ! -L '$REMOTE_DEPLOY_BUNDLE'" ||
+            ! scp "$deploy_bundle" "$SERVER:$REMOTE_DEPLOY_BUNDLE" ||
+            ! ssh "$SERVER" "
+                test -f '$REMOTE_DEPLOY_BUNDLE' &&
+                test ! -L '$REMOTE_DEPLOY_BUNDLE' &&
+                test \"\$(stat -c '%U:%G:%a:%h' '$REMOTE_DEPLOY_BUNDLE')\" = root:root:600:1 &&
+                sync -f '$REMOTE_DEPLOY_BUNDLE' &&
+                sync -f '$REMOTE_BACKUP_PREFLIGHT_DIR'
+            "; then
+            rm -f -- "$deploy_bundle"
+            return 1
+        fi
+        rm -f -- "$deploy_bundle"
     fi
 
     for source_file in "${scripts[@]}"; do
@@ -592,6 +2504,7 @@ REMOTE_REUSE_RELEASE_STAGE
                 health-backend-runtime-state.conf \
                 celery-worker-runtime-state.conf \
                 celery-beat-runtime-state.conf \
+                deploy.bundle \
                 > staged.sha256 && \
             chmod 0400 staged.sha256 && \
             sync -f staged.sha256 && \
@@ -599,6 +2512,11 @@ REMOTE_REUSE_RELEASE_STAGE
         "; then
             return 1
         fi
+    fi
+    if ! seal_remote_release_stage; then
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        print_error "远端 release stage 已写入但未能原子封存；现场与租约保留"
+        return 1
     fi
 }
 
@@ -869,7 +2787,7 @@ inspect_runtime_state_transaction_before_deploy() {
         cd '$REMOTE_BACKUP_PREFLIGHT_DIR'
         test \"\$(
             awk 'NF { count += 1 } END { print count + 0 }' staged.sha256
-        )\" = 15
+        )\" = 16
         sha256sum --strict -c staged.sha256 >/dev/null
         test -f backend.env.candidate
         test ! -L backend.env.candidate
@@ -1030,33 +2948,32 @@ verify_deployed_revision() {
 show_help() {
     echo "用法: ./deploy.sh [选项]"
     echo ""
-    echo "选项:"
-    echo "  -a, --all       部署前端和后端 (默认)"
-    echo "  -f, --frontend  重建远端已部署同一 SHA 的前端（新 commit 请用 --all）"
-    echo "  -b, --backend   仅部署后端"
-    echo "  -e, --env       仅同步 .env 到服务器"
-    echo "  -H, --activate-health-evidence  受控启用健康证据运行时"
-    echo "  -R, --reset-app-store-review  重置 App Store 审核演示数据（不改密码）"
-    echo "  -r, --restart   仅重启服务 (不拉取代码)"
-    echo "  -p, --push      仅推送代码到 GitHub (不部署)"
+    echo "仅以下只读命令可执行:"
     echo "  -s, --status    查看服务器服务状态"
     echo "  -l, --logs      查看服务器日志"
-    echo "  -y, --yes       跳过 mobile/ drift 交互确认"
     echo "  -h, --help      显示此帮助信息"
+    echo ""
+    echo "FROZEN (exit 78) — 所有生产写入必须走人工发布 Gate:"
+    echo "  -a, --all | -f, --frontend | -b, --backend | -e, --env"
+    echo "  -H, --activate-health-evidence | -R, --reset-app-store-review"
+    echo "  -r, --restart | -p, --push"
+    echo "  --bootstrap-mac-routes [rollback]"
+    echo "  --bootstrap-mac-routes rollback"
+    echo "  --publish-mac --version VERSION --build BUILD"
+    echo "  --recover-mac-release | --rollback-mac-release"
+    echo "  --release-coordinator-begin | --release-coordinator-bind"
+    echo "  --release-coordinator-assert | --release-coordinator-mutate"
+    echo "  --release-coordinator-finish | --release-coordinator-abort"
+    echo "  --release-coordinator-recover"
     echo ""
     echo "配置文件: .env (本地管理，不被 git 追踪)"
     echo "  - DEPLOY_SERVER: 服务器地址 (当前: $SERVER)"
     echo "  - DEPLOY_PATH: 部署路径 (当前: $REMOTE_PATH)"
     echo ""
-    echo "示例:"
-    echo "  ./deploy.sh           # 部署全部"
-    echo "  ./deploy.sh -f        # 重建远端当前同 SHA 的前端"
-    echo "  ./deploy.sh -b        # 仅部署后端"
-    echo "  ./deploy.sh -e        # 仅同步环境变量"
-    echo "  ./deploy.sh -H        # 启用并验证健康证据运行时，失败自动恢复"
-    echo "  ./deploy.sh -R        # 受控重置审核账号演示数据与默认会话"
-    echo "  ./deploy.sh -r        # 仅重启服务"
-    echo "  ./deploy.sh -s        # 查看服务状态"
+    echo "只读示例:"
+    echo "  ./deploy.sh -s"
+    echo "  ./deploy.sh -l"
+    echo "  --inspect-release-lock  FROZEN (exit 78)；等待仓库外受信检查器"
 }
 
 # ============================================================
@@ -1856,12 +3773,310 @@ sync_env() {
     print_success "发布前/候选 env 已封存并校验；live .env 尚未改变"
 }
 
+# Record the exact frontend process/build that passed the deployment health
+# gate.  The production probe treats a missing receipt as unknown and rejects
+# any present receipt that is not a root-owned, atomic, live-PM2 match.
+write_frontend_runtime_receipt() {
+    assert_remote_release_lock
+    if ! [[ "$DEPLOY_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+        print_error "无法为未知 revision 写入前端运行态收据"
+        return 1
+    fi
+
+    if ! ssh "$SERVER" /usr/bin/python3 - \
+        "$REMOTE_PATH" \
+        "$DEPLOY_EXPECTED_SHA" \
+        "$REMOTE_RELEASE_LOCK_DIR" \
+        "$REMOTE_RELEASE_LOCK_TOKEN" <<'REMOTE_FRONTEND_RUNTIME_RECEIPT'
+import json
+import os
+import re
+import secrets
+import stat
+import subprocess
+import sys
+
+repo_root, expected_sha, lock_path, lock_token = sys.argv[1:]
+receipt_path = "/var/lib/health-app/release-state/frontend-runtime.json"
+state_parent = os.path.dirname(os.path.dirname(receipt_path))
+state_name = os.path.basename(os.path.dirname(receipt_path))
+receipt_name = os.path.basename(receipt_path)
+sha_re = re.compile(r"[0-9a-f]{40}")
+path_re = re.compile(r"/[A-Za-z0-9._/-]+")
+token_re = re.compile(r"[A-Za-z0-9._:-]+")
+build_id_re = re.compile(r"[A-Za-z0-9._-]{1,128}")
+safe_env = {
+    "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+    "HOME": "/root",
+    "PM2_HOME": "/root/.pm2",
+    "LANG": "C",
+    "LC_ALL": "C",
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_ATTR_NOSYSTEM": "1",
+    "GIT_OPTIONAL_LOCKS": "0",
+    }
+dir_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
+read_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
+
+
+def fail(message):
+    raise RuntimeError(message)
+
+
+def validate_safe_path(value, *, label):
+    if (
+        path_re.fullmatch(value) is None
+        or value == "/"
+        or "/../" in value
+        or value.endswith("/..")
+        or "/./" in value
+        or value.endswith("/.")
+    ):
+        fail(f"unsafe {label}")
+
+
+def open_directory(path, *, exact_mode=None, forbid_write=False):
+    descriptor = os.open(path, dir_flags)
+    metadata = os.fstat(descriptor)
+    mode = stat.S_IMODE(metadata.st_mode)
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or metadata.st_uid != 0
+        or metadata.st_gid != 0
+        or (exact_mode is not None and mode != exact_mode)
+        or (forbid_write and mode & 0o022)
+    ):
+        os.close(descriptor)
+        fail(f"unsafe directory: {path}")
+    return descriptor
+
+
+def read_regular(directory_fd, name, *, mode, maximum):
+    descriptor = os.open(name, read_flags, dir_fd=directory_fd)
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != 0
+            or metadata.st_gid != 0
+            or stat.S_IMODE(metadata.st_mode) != mode
+            or metadata.st_nlink != 1
+            or metadata.st_size <= 0
+            or metadata.st_size > maximum
+        ):
+            fail(f"unsafe regular file: {name}")
+        raw = os.read(descriptor, maximum + 1)
+        if len(raw) > maximum or os.read(descriptor, 1):
+            fail(f"oversized regular file: {name}")
+        return raw
+    finally:
+        os.close(descriptor)
+
+
+def assert_release_lock():
+    lock_fd = open_directory(lock_path, exact_mode=0o700)
+    try:
+        raw = read_regular(lock_fd, "token", mode=0o600, maximum=256)
+    finally:
+        os.close(lock_fd)
+    if raw != f"{lock_token}\n".encode("ascii"):
+        fail("release lock ownership changed")
+
+
+def run(argv, *, cwd=None):
+    completed = subprocess.run(
+        argv,
+        cwd=cwd,
+        env=safe_env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    if completed.returncode != 0:
+        fail(f"command failed: {argv[0]}")
+    return completed.stdout
+
+
+if os.geteuid() != 0:
+    fail("frontend runtime receipt requires root")
+validate_safe_path(repo_root, label="repository path")
+validate_safe_path(lock_path, label="release lock path")
+if sha_re.fullmatch(expected_sha) is None:
+    fail("invalid expected revision")
+if token_re.fullmatch(lock_token) is None:
+    fail("invalid release lock token")
+assert_release_lock()
+
+revision = run(
+    [
+        "/usr/bin/git",
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "filter.lfs.process=",
+        "-c",
+        "filter.lfs.required=false",
+        "rev-parse",
+        "HEAD",
+    ],
+    cwd=repo_root,
+).strip()
+dirty = run(
+    [
+        "/usr/bin/git",
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "filter.lfs.process=",
+        "-c",
+        "filter.lfs.required=false",
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+    ],
+    cwd=repo_root,
+).strip()
+if revision != expected_sha or dirty:
+    fail("frontend checkout is not the clean expected revision")
+
+processes = json.loads(run(["/usr/bin/pm2", "jlist"]))
+if not isinstance(processes, list):
+    fail("invalid PM2 process list")
+matches = [
+    process
+    for process in processes
+    if isinstance(process, dict) and process.get("name") == "health-frontend"
+]
+if len(matches) != 1:
+    fail("ambiguous frontend PM2 process")
+process = matches[0]
+environment = process.get("pm2_env")
+pid = process.get("pid")
+uptime = environment.get("pm_uptime") if isinstance(environment, dict) else None
+if (
+    not isinstance(environment, dict)
+    or environment.get("status") != "online"
+    or isinstance(pid, bool)
+    or not isinstance(pid, int)
+    or pid <= 1
+    or isinstance(uptime, bool)
+    or not isinstance(uptime, int)
+    or uptime <= 0
+):
+    fail("frontend PM2 identity is invalid")
+
+build_id_path = os.path.join(repo_root, "frontend", ".next/BUILD_ID")
+next_fd = open_directory(os.path.dirname(build_id_path), exact_mode=0o755)
+try:
+    build_id = read_regular(
+        next_fd, os.path.basename(build_id_path), mode=0o644, maximum=256
+    ).decode("ascii", errors="strict").strip()
+finally:
+    os.close(next_fd)
+if build_id_re.fullmatch(build_id) is None:
+    fail("invalid frontend BUILD_ID")
+
+parent_fd = open_directory(state_parent, forbid_write=True)
+try:
+    try:
+        os.mkdir(state_name, mode=0o700, dir_fd=parent_fd)
+        os.fsync(parent_fd)
+    except FileExistsError:
+        pass
+    state_fd = os.open(state_name, dir_flags, dir_fd=parent_fd)
+finally:
+    os.close(parent_fd)
+try:
+    state_metadata = os.fstat(state_fd)
+    if (
+        not stat.S_ISDIR(state_metadata.st_mode)
+        or state_metadata.st_uid != 0
+        or state_metadata.st_gid != 0
+        or stat.S_IMODE(state_metadata.st_mode) != 0o700
+    ):
+        fail("unsafe frontend receipt directory")
+    try:
+        existing = os.stat(receipt_name, dir_fd=state_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        existing = None
+    if existing is not None and (
+        not stat.S_ISREG(existing.st_mode)
+        or existing.st_uid != 0
+        or existing.st_gid != 0
+        or stat.S_IMODE(existing.st_mode) != 0o600
+        or existing.st_nlink != 1
+    ):
+        fail("unsafe existing frontend runtime receipt")
+
+    payload = {
+        "schema_version": 1,
+        "revision": revision,
+        "pm2_pid": pid,
+        "pm2_uptime_ms": uptime,
+        "next_build_id": build_id,
+        }
+    encoded = (
+        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    temporary = f".{receipt_name}.{os.getpid()}.{secrets.token_hex(8)}.tmp"
+    write_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    write_flags |= os.O_CLOEXEC | os.O_NOFOLLOW
+    temporary_fd = os.open(temporary, write_flags, 0o600, dir_fd=state_fd)
+    try:
+        os.fchmod(temporary_fd, 0o600)
+        os.fchown(temporary_fd, 0, 0)
+        view = memoryview(encoded)
+        while view:
+            written = os.write(temporary_fd, view)
+            if written <= 0:
+                fail("short frontend receipt write")
+            view = view[written:]
+        os.fsync(temporary_fd)
+    finally:
+        os.close(temporary_fd)
+    try:
+        assert_release_lock()
+        os.replace(
+            temporary,
+            receipt_name,
+            src_dir_fd=state_fd,
+            dst_dir_fd=state_fd,
+        )
+        os.fsync(state_fd)
+    finally:
+        try:
+            os.unlink(temporary, dir_fd=state_fd)
+        except FileNotFoundError:
+            pass
+    assert_release_lock()
+    if read_regular(state_fd, receipt_name, mode=0o600, maximum=16 * 1024) != encoded:
+        fail("frontend runtime receipt verification failed")
+finally:
+    os.close(state_fd)
+
+print("FRONTEND_RUNTIME_RECEIPT_OK")
+REMOTE_FRONTEND_RUNTIME_RECEIPT
+    then
+        print_error "无法写入可验证的前端运行态收据"
+        return 1
+    fi
+}
+
 # 去激活事务已经完成 backend/Celery 的最后一次重启和逐 PID flag=false
 # 证明；通用 env/restart 模式此后只能重启前端，不能再让后端越过证明点。
 restart_frontend_service() {
     print_step "重启前端服务..."
     assert_remote_release_lock_if_acquired
 
+    mark_remote_release_mutation_started
     _REMOTE_RELEASE_LOCK_DELEGATED=1
     if ! ssh $SERVER "
         echo '重启前端服务 (PM2)...' && \
@@ -1883,15 +4098,15 @@ restart_frontend_service() {
 
 # 推送代码到 GitHub
 push_code() {
-    print_step "推送代码到 GitHub..."
+    print_step "核验 GitHub 发布源..."
 
-    python3 "$SCRIPT_DIR/scripts/check_secret_leaks.py"
+    /usr/bin/python3 "$SCRIPT_DIR/scripts/check_secret_leaks.py"
 
     # 部署只允许已提交的 tracked 内容。未跟踪文件不会进入 git push 或
     # 远端 checkout，因此仅提示并忽略；绝不能在发布脚本里 git add -A，
     # 否则会误收并发会话或用户尚未准备提交的文件。
     local tracked_changes
-    tracked_changes="$(git status --short --untracked-files=no)"
+    tracked_changes="$(trusted_release_git status --short --untracked-files=no)"
     if [[ -n "$tracked_changes" ]]; then
         print_error "检测到未提交的已跟踪更改，请先明确提交后再部署"
         echo "$tracked_changes"
@@ -1899,44 +4114,50 @@ push_code() {
     fi
 
     local untracked_files
-    untracked_files="$(git ls-files --others --exclude-standard)"
+    untracked_files="$(trusted_release_git ls-files --others --exclude-standard)"
     if [[ -n "$untracked_files" ]]; then
         print_warning "忽略未跟踪文件（不会进入本次部署）"
         echo "$untracked_files"
     fi
 
-    CURRENT_BRANCH="$(git branch --show-current)"
+    CURRENT_BRANCH="$(trusted_release_git branch --show-current)"
     if [[ -n "$CURRENT_BRANCH" && "$CURRENT_BRANCH" != "main" ]]; then
         print_error "生产部署只允许从 main 或 exact origin/main detached HEAD 执行，当前分支: $CURRENT_BRANCH"
         exit 1
     fi
-    DEPLOY_EXPECTED_SHA="$(git rev-parse HEAD)"
+    DEPLOY_EXPECTED_SHA="$(trusted_release_git rev-parse HEAD)"
     if ! [[ "$DEPLOY_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
         print_error "无法解析待部署 commit"
         exit 1
     fi
 
-    if [[ "$CURRENT_BRANCH" == "main" ]]; then
-        git push origin HEAD:main
-    else
-        print_step "detached release worktree：核验 exact origin/main（不执行 push）..."
-    fi
-    git fetch origin main --quiet
+    # Production deployment consumes an already-pushed immutable main commit.
+    # Committing/pushing is a separate workflow; deploy must not mutate GitHub.
+    trusted_release_git fetch --quiet --no-tags "$CANONICAL_RELEASE_ORIGIN_URL" \
+        "+refs/heads/main:refs/remotes/origin/main"
     local local_origin_main_sha
-    local_origin_main_sha=$(git rev-parse refs/remotes/origin/main)
+    local_origin_main_sha=$(trusted_release_git rev-parse refs/remotes/origin/main)
+    local remote_main_output
+    remote_main_output="$(
+        trusted_release_network_git ls-remote --exit-code \
+            "$CANONICAL_RELEASE_ORIGIN_URL" refs/heads/main
+    )"
     local remote_main_sha
-    remote_main_sha=$(git ls-remote origin refs/heads/main | awk 'NR==1 {print $1}')
+    local remote_main_ref
+    local remote_main_extra
+    if [[ "$remote_main_output" == *$'\n'* ]]; then
+        print_error "canonical main 返回歧义结果"
+        exit 1
+    fi
+    read -r remote_main_sha remote_main_ref remote_main_extra <<< "$remote_main_output"
     if [[ "$local_origin_main_sha" != "$DEPLOY_EXPECTED_SHA" ||
-          "$remote_main_sha" != "$DEPLOY_EXPECTED_SHA" ]]; then
+          "$remote_main_sha" != "$DEPLOY_EXPECTED_SHA" ||
+          "$remote_main_ref" != "refs/heads/main" ||
+          -n "$remote_main_extra" ]]; then
         print_error "origin/main 与本地 HEAD 不一致，拒绝部署 (local=${local_origin_main_sha:0:12} remote=${remote_main_sha:0:12})"
         exit 1
     fi
     print_success "发布源已核验为 exact origin/main: ${DEPLOY_EXPECTED_SHA:0:12}"
-
-    # 同步到 kuaishou GitLab（静默，失败不影响部署）
-    if git remote | grep -q kuaishou; then
-        git push kuaishou HEAD:main 2>/dev/null && print_success "代码已同步到 kuaishou GitLab" || print_warning "kuaishou GitLab 同步失败（不影响部署）"
-    fi
 }
 
 # 部署前端
@@ -1953,6 +4174,7 @@ deploy_frontend() {
         return 1
     fi
 
+    mark_remote_release_mutation_started
     _REMOTE_RELEASE_LOCK_DELEGATED=1
     if ! ssh $SERVER "
         set -euo pipefail
@@ -2034,6 +4256,11 @@ deploy_frontend() {
         return 1
     fi
 
+    if ! write_frontend_runtime_receipt; then
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        print_error "前端运行态收据写入失败；发布锁与现场保留"
+        return 1
+    fi
     if ! verify_deployed_revision; then
         _REMOTE_RELEASE_LOCK_ABANDONED=1
         print_error "前端构建后 revision 终态无法证明；发布锁与现场保留"
@@ -2767,6 +4994,7 @@ deactivate_health_evidence_runtime_before_mutation() {
     # Delegation starts before the first RPC that can stop a live service or
     # atomically replace production state. EXIT must preserve lease and stage
     # until an independent exact proof is obtained.
+    mark_remote_release_mutation_started
     _REMOTE_RELEASE_LOCK_DELEGATED=1
     if run_health_evidence_deactivation_transaction; then
         transaction_rc=0
@@ -2927,7 +5155,9 @@ deploy_backend() {
                             invalidate --profile python-dependencies \
                             --root '$REMOTE_RELEASE_PROOF_ROOT'; \
                     fi && \
-                    echo '安装依赖...' && \
+                    echo '重建干净 Python 虚拟环境并安装依赖...' && \
+                    python -m venv --clear venv && \
+                    source venv/bin/activate && \
                     pip install --require-hashes -r requirements.lock -q && \
                     test -r '$REMOTE_RELEASE_LOCK_DIR/token' && \
                     test \"\$(cat '$REMOTE_RELEASE_LOCK_DIR/token')\" = '$REMOTE_RELEASE_LOCK_TOKEN' && \
@@ -4037,7 +6267,12 @@ reset_app_store_review_demo() {
     assert_remote_release_lock
     verify_deployed_revision
     print_step "重置 App Store 审核演示数据..."
+    mark_remote_release_mutation_started
 
+    # Delegate before the first remote process that can delete/reseed demo
+    # rows. A transport failure cannot distinguish "not started" from
+    # "committed but response lost", so the mutating lease must be retained.
+    _REMOTE_RELEASE_LOCK_DELEGATED=1
     if ! reset_output=$(ssh "$SERVER" bash -s -- \
         "$REMOTE_PATH" \
         "$DEPLOY_EXPECTED_SHA" \
@@ -4093,13 +6328,17 @@ print("APP_STORE_REVIEW_RESET_OK")
 PY
 REMOTE_APP_STORE_REVIEW_RESET
     ); then
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
         print_error "App Store 审核演示数据重置失败"
         return 1
     fi
     if [[ "$reset_output" != "APP_STORE_REVIEW_RESET_OK" ]]; then
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
         print_error "App Store 审核演示数据重置缺少精确成功证明"
         return 1
     fi
+    _REMOTE_RELEASE_LOCK_DELEGATED=0
+    _REMOTE_RELEASE_LOCK_ABANDONED=0
     print_success "App Store 审核演示数据已重置并通过非敏感验证"
 }
 
@@ -4151,50 +6390,429 @@ view_logs() {
 # 部署前检查 mobile/ 自上次 production OTA 以来的漂移; 有未推送的 mobile 改动就提示
 # 默认交互式询问 [y/N], 用 -y/--yes 跳过
 confirm_ota_drift() {
-    local anchor_file="$SCRIPT_DIR/.last-ota-commit"
-    if [[ ! -f "$anchor_file" ]]; then
-        return 0
+    local common_dir last_ota anchor_status
+    common_dir=$(git -C "$SCRIPT_DIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || {
+        print_error "无法解析共享 OTA anchor 路径"
+        return 1
+    }
+    if last_ota=$(python3 - "$common_dir" <<'PY'
+import os
+import re
+import stat
+import sys
+from pathlib import Path
+
+common = Path(sys.argv[1])
+if not common.is_absolute():
+    raise SystemExit("OTA anchor git common-dir must be absolute")
+
+directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+directory_flags |= getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+
+
+def open_directory(name, *, parent_fd=None, private=False):
+    try:
+        descriptor = os.open(name, directory_flags, dir_fd=parent_fd)
+    except FileNotFoundError:
+        raise SystemExit(3) from None
+    metadata = os.fstat(descriptor)
+    if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.getuid():
+        os.close(descriptor)
+        raise OSError("directory is not owned by the current user")
+    if private and stat.S_IMODE(metadata.st_mode) != 0o700:
+        os.close(descriptor)
+        raise OSError("directory mode is not 0700")
+    return descriptor
+
+
+common_fd = state_fd = mobile_fd = anchor_fd = None
+try:
+    common_fd = open_directory(common)
+    state_fd = open_directory("reva-release-state", parent_fd=common_fd, private=True)
+    mobile_fd = open_directory("mobile-ota", parent_fd=state_fd, private=True)
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        anchor_fd = os.open("anchor.production", flags, dir_fd=mobile_fd)
+    except FileNotFoundError:
+        raise SystemExit(3) from None
+    metadata = os.fstat(anchor_fd)
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or metadata.st_nlink != 1
+        or metadata.st_uid != os.getuid()
+    ):
+        raise OSError("anchor must be a current-owner 0600 single-link regular file")
+    raw = os.read(anchor_fd, 256)
+    if len(raw) == 256 or os.read(anchor_fd, 1):
+        raise OSError("anchor is too large")
+    try:
+        value = raw.decode("ascii").strip()
+    except UnicodeError as error:
+        raise OSError("anchor is not ASCII") from error
+    if not re.fullmatch(r"[0-9a-f]{40}", value):
+        raise OSError("anchor is not a full commit SHA")
+    print(value)
+except OSError as error:
+    print(f"unsafe OTA anchor: {error}", file=sys.stderr)
+    raise SystemExit(1)
+finally:
+    for descriptor in (anchor_fd, mobile_fd, state_fd, common_fd):
+        if descriptor is not None:
+            os.close(descriptor)
+PY
+    ); then
+        :
+    else
+        anchor_status=$?
+        if [[ "$anchor_status" -eq 3 ]]; then
+            return 0
+        fi
+        print_error "共享 OTA anchor 安全校验失败"
+        return "$anchor_status"
     fi
-    local last_ota
-    last_ota=$(tr -d '[:space:]' < "$anchor_file")
-    if [[ -z "$last_ota" ]]; then
-        return 0
-    fi
-    if ! git -C "$SCRIPT_DIR" cat-file -e "$last_ota" 2>/dev/null; then
+    if ! trusted_release_git cat-file -e "$last_ota" 2>/dev/null; then
         print_warning "OTA anchor commit ${last_ota:0:8} 在本地不存在 (可能被 rebase),跳过 drift 检查"
         return 0
     fi
     local mobile_commits
-    mobile_commits=$(git -C "$SCRIPT_DIR" log --oneline "${last_ota}..HEAD" -- mobile/ 2>/dev/null || true)
+    mobile_commits=$(trusted_release_git log --oneline "${last_ota}..HEAD" -- mobile/ 2>/dev/null || true)
     if [[ -z "$mobile_commits" ]]; then
         return 0
     fi
     echo ""
-    print_warning "检测到 mobile/ 自上次 OTA (${last_ota:0:8}) 后有未推送改动:"
+    print_warning "检测到 mobile/ 自上次正式移动版 (${last_ota:0:8}) 后有未发布改动:"
     echo "$mobile_commits" | sed 's/^/    /'
     echo ""
     if [[ "${AUTO_YES:-0}" -eq 1 ]]; then
-        print_warning "已通过 -y 跳过确认; 部署完后请记得 ./scripts/mobile-ota.sh production"
+        print_warning "已通过 -y 继续服务器部署；移动端改动仍需人工原生构建与审核 Gate（production OTA 已冻结）"
         echo ""
         return 0
     fi
     if [[ ! -t 0 ]]; then
         # 非交互 (CI / 重定向),自动放行但提示
-        print_warning "非交互环境,自动继续; 部署完后请记得 ./scripts/mobile-ota.sh production"
+        print_warning "非交互环境自动继续服务器部署；移动端改动仍需人工原生构建与审核 Gate"
         echo ""
         return 0
     fi
-    read -r -p "继续部署? 部署后再 OTA 也可以 [y/N] " reply
+    read -r -p "继续服务器部署并保持移动端改动未发布? [y/N] " reply
     case "$reply" in
         [yY]|[yY][eE][sS])
             echo ""
             return 0
             ;;
         *)
-            print_error "已取消; 建议先跑 ./scripts/mobile-ota.sh production"
+            print_error "已取消；正式移动端请走人工原生构建与审核 Gate，preview 可单独 OTA"
             exit 1
             ;;
     esac
+}
+
+verify_remote_mac_route_release_stage() {
+    ssh "$SERVER" bash -s -- \
+        "$REMOTE_BACKUP_PREFLIGHT_DIR" \
+        "$REMOTE_RELEASE_LOCK_TOKEN" \
+        "$REMOTE_RELEASE_SOURCE_SHA" \
+        "$REMOTE_RELEASE_SOURCE_TREE" <<'REMOTE_VERIFY_MAC_ROUTE_STAGE'
+set -euo pipefail
+stage_dir="$1"
+expected_token="$2"
+expected_sha="$3"
+expected_tree="$4"
+
+test -d "$stage_dir"
+test ! -L "$stage_dir"
+test "$(stat -c '%U:%G:%a' "$stage_dir")" = "root:root:700"
+shopt -s nullglob dotglob
+entries=("$stage_dir"/*)
+test "${#entries[@]}" -eq 5
+for entry in "${entries[@]}"; do
+    name="${entry##*/}"
+    case "$name" in
+        mac-release-nginx-bootstrap.sh|mac_release_nginx_bootstrap.py|\
+        mac-release-routes.conf|mac-routes.source|mac-routes.sha256) ;;
+        *) echo "unknown immutable Mac route artifact: $name" >&2; exit 1 ;;
+    esac
+    test -f "$entry"
+    test ! -L "$entry"
+    test "$(stat -c '%U:%G:%h' "$entry")" = "root:root:1"
+done
+shopt -u nullglob dotglob
+test "$(stat -c '%a' "$stage_dir/mac-release-nginx-bootstrap.sh")" = 700
+test "$(stat -c '%a' "$stage_dir/mac_release_nginx_bootstrap.py")" = 600
+test "$(stat -c '%a' "$stage_dir/mac-release-routes.conf")" = 600
+test "$(stat -c '%a' "$stage_dir/mac-routes.source")" = 400
+test "$(stat -c '%a' "$stage_dir/mac-routes.sha256")" = 400
+awk -F= -v token="$expected_token" -v source="$expected_sha" \
+    -v tree="$expected_tree" '
+    $0 == "schema=1" { schema += 1; next }
+    $0 == "token=" token { tokens += 1; next }
+    $0 == "source_sha=" source { sources += 1; next }
+    $0 == "source_tree=" tree { trees += 1; next }
+    { exit 1 }
+    END {
+        if (NR != 4 || schema != 1 || tokens != 1 || sources != 1 || trees != 1) {
+            exit 1
+        }
+    }
+' "$stage_dir/mac-routes.source"
+awk '
+    NF != 2 || length($1) != 64 || $1 ~ /[^0-9a-f]/ { exit 1 }
+    $2 == "mac-release-nginx-bootstrap.sh" { wrapper += 1; next }
+    $2 == "mac_release_nginx_bootstrap.py" { helper += 1; next }
+    $2 == "mac-release-routes.conf" { snippet += 1; next }
+    $2 == "mac-routes.source" { source += 1; next }
+    { exit 1 }
+    END {
+        if (NR != 4 || wrapper != 1 || helper != 1 || snippet != 1 || source != 1) {
+            exit 1
+        }
+    }
+' "$stage_dir/mac-routes.sha256"
+(
+    cd "$stage_dir"
+    sha256sum --strict -c mac-routes.sha256 >/dev/null
+)
+REMOTE_VERIFY_MAC_ROUTE_STAGE
+}
+
+stage_mac_route_release_artifacts() {
+    local snapshot_dir
+    local relative_path
+    local staged_name
+
+    assert_remote_release_lock
+    if ! [[ "$DEPLOY_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ &&
+          "$REMOTE_RELEASE_SOURCE_TREE" =~ ^[0-9a-f]{40}$ &&
+          "$REMOTE_RELEASE_SOURCE_SHA" = "$DEPLOY_EXPECTED_SHA" &&
+          "$(git -C "$SCRIPT_DIR" rev-parse "${DEPLOY_EXPECTED_SHA}^{tree}")" = \
+              "$REMOTE_RELEASE_SOURCE_TREE" ]]; then
+        print_error "Mac 下载路由 stage 与发布锁 source/tree 不一致"
+        return 1
+    fi
+
+    if [[ "${_REMOTE_RELEASE_LOCK_ADOPTED:-0}" != "1" ]]; then
+        snapshot_dir="$(mktemp -d)" || return 1
+        chmod 0700 "$snapshot_dir"
+        if ! git -C "$SCRIPT_DIR" archive "$DEPLOY_EXPECTED_SHA" \
+            scripts/mac-release-nginx-bootstrap.sh \
+            scripts/mac_release_nginx_bootstrap.py \
+            infra/nginx/mac-release-routes.conf | tar -x -C "$snapshot_dir"; then
+            rm -rf -- "$snapshot_dir"
+            return 1
+        fi
+        if ! ssh "$SERVER" "
+            umask 077 &&
+            mkdir '$REMOTE_BACKUP_PREFLIGHT_DIR' &&
+            test \"\$(stat -c '%U:%G:%a' '$REMOTE_BACKUP_PREFLIGHT_DIR')\" = root:root:700
+        "; then
+            rm -rf -- "$snapshot_dir"
+            return 1
+        fi
+        for relative_path in \
+            scripts/mac-release-nginx-bootstrap.sh \
+            scripts/mac_release_nginx_bootstrap.py \
+            infra/nginx/mac-release-routes.conf; do
+            staged_name="${relative_path##*/}"
+            if ! scp "$snapshot_dir/$relative_path" \
+                "$SERVER:$REMOTE_BACKUP_PREFLIGHT_DIR/$staged_name"; then
+                rm -rf -- "$snapshot_dir"
+                return 1
+            fi
+        done
+        rm -rf -- "$snapshot_dir"
+        if ! ssh "$SERVER" bash -s -- \
+            "$REMOTE_BACKUP_PREFLIGHT_DIR" \
+            "$REMOTE_RELEASE_LOCK_TOKEN" \
+            "$REMOTE_RELEASE_SOURCE_SHA" \
+            "$REMOTE_RELEASE_SOURCE_TREE" <<'REMOTE_SEAL_MAC_ROUTE_STAGE'
+set -euo pipefail
+stage_dir="$1"
+token="$2"
+source_sha="$3"
+source_tree="$4"
+chmod 0700 "$stage_dir/mac-release-nginx-bootstrap.sh"
+chmod 0600 "$stage_dir/mac_release_nginx_bootstrap.py" \
+    "$stage_dir/mac-release-routes.conf"
+printf 'schema=1\ntoken=%s\nsource_sha=%s\nsource_tree=%s\n' \
+    "$token" "$source_sha" "$source_tree" > "$stage_dir/mac-routes.source"
+chmod 0400 "$stage_dir/mac-routes.source"
+(
+    cd "$stage_dir"
+    sha256sum \
+        mac-release-nginx-bootstrap.sh \
+        mac_release_nginx_bootstrap.py \
+        mac-release-routes.conf \
+        mac-routes.source > mac-routes.sha256
+    chmod 0400 mac-routes.sha256
+    sync -f mac-routes.sha256
+    sync -f .
+)
+REMOTE_SEAL_MAC_ROUTE_STAGE
+        then
+            return 1
+        fi
+    fi
+
+    if ! verify_remote_mac_route_release_stage; then
+        print_error "Mac 下载路由 immutable stage 不完整或已被修改"
+        return 1
+    fi
+    if [[ "${_REMOTE_RELEASE_LOCK_ADOPTED:-0}" != "1" ]]; then
+        if ! seal_remote_release_stage; then
+            _REMOTE_RELEASE_LOCK_ABANDONED=1
+            print_error "Mac 下载路由 stage 封存结果不明确；现场与租约保留"
+            return 1
+        fi
+    fi
+}
+
+# This one-time infrastructure transaction intentionally stays out of normal
+# backend/frontend deploys.  Its wrapper pins the production host and SSH key;
+# deploy.sh is only the explicit operator entry point.
+bootstrap_mac_release_routes() {
+    local snapshot_dir
+    local relative_path
+    local staged_name
+    local expected_blob
+    local actual_blob
+    local action_output
+    local expected_terminal_pattern
+
+    assert_remote_release_lock
+    # The pre-lock source proof can become stale while waiting for the server
+    # lease. Re-run it under that lease before extracting or executing any
+    # production mutation bytes.
+    verify_mac_route_release_source
+    assert_remote_release_lock
+    if ! [[ "$DEPLOY_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+        print_error "Mac 下载路由缺少已核验的 immutable source SHA"
+        return 1
+    fi
+    stage_mac_route_release_artifacts
+    snapshot_dir="$(mktemp -d)" || return 1
+    chmod 0700 "$snapshot_dir"
+    mkdir -p "$snapshot_dir/scripts" "$snapshot_dir/infra/nginx"
+    for relative_path in \
+        scripts/mac-release-nginx-bootstrap.sh \
+        scripts/mac_release_nginx_bootstrap.py \
+        infra/nginx/mac-release-routes.conf; do
+        staged_name="${relative_path##*/}"
+        if ! scp "$SERVER:$REMOTE_BACKUP_PREFLIGHT_DIR/$staged_name" \
+            "$snapshot_dir/$relative_path"; then
+            rm -rf -- "$snapshot_dir"
+            print_error "无法读取 sealed Mac nginx bootstrap artifact"
+            return 1
+        fi
+    done
+    for relative_path in \
+        scripts/mac-release-nginx-bootstrap.sh \
+        scripts/mac_release_nginx_bootstrap.py \
+        infra/nginx/mac-release-routes.conf; do
+        expected_blob="$(git -C "$SCRIPT_DIR" rev-parse "$DEPLOY_EXPECTED_SHA:$relative_path")" || {
+            rm -rf -- "$snapshot_dir"
+            return 1
+        }
+        actual_blob="$(git -C "$SCRIPT_DIR" hash-object "$snapshot_dir/$relative_path")" || {
+            rm -rf -- "$snapshot_dir"
+            return 1
+        }
+        if [[ "$actual_blob" != "$expected_blob" ]]; then
+            rm -rf -- "$snapshot_dir"
+            print_error "immutable Mac nginx bootstrap blob 校验失败: $relative_path"
+            return 1
+        fi
+    done
+    chmod 0700 "$snapshot_dir/scripts/mac-release-nginx-bootstrap.sh"
+    if ! verify_remote_mac_route_release_stage; then
+        rm -rf -- "$snapshot_dir"
+        print_error "Mac nginx bootstrap 执行前 stage 复核失败"
+        return 1
+    fi
+    mark_remote_release_mutation_started
+    _REMOTE_RELEASE_LOCK_DELEGATED=1
+    _REMOTE_RELEASE_LOCK_ABANDONED=1
+    if [[ "$MAC_ROUTE_ACTION" == "apply" ]]; then
+        expected_terminal_pattern='^MAC_NGINX_BOOTSTRAP_OK outcome=(applied|recovered-applied|already-applied|tracked-baseline-already-installed)$'
+    else
+        expected_terminal_pattern='^MAC_NGINX_BOOTSTRAP_OK outcome=(rolled-back|recovered-rolled-back|already-rolled-back)$'
+    fi
+    if action_output="$(REVA_MAC_BOOTSTRAP_ENTRYPOINT=deploy.sh \
+        MAC_NGINX_REMOTE_LOCK_DIR="$REMOTE_RELEASE_LOCK_DIR" \
+        MAC_NGINX_REMOTE_LOCK_TOKEN="$REMOTE_RELEASE_LOCK_TOKEN" \
+            "$snapshot_dir/scripts/mac-release-nginx-bootstrap.sh" "${MAC_ROUTE_ACTION}")" &&
+       [[ "$action_output" =~ $expected_terminal_pattern ]] &&
+       [[ "$(printf '%s\n' "$action_output" | wc -l | tr -d ' ')" == "1" ]]; then
+        :
+    else
+        rm -rf -- "$snapshot_dir"
+        print_error "Mac nginx route outcome is ambiguous; remote lease and transaction state retained"
+        return 75
+    fi
+    rm -rf -- "$snapshot_dir"
+    assert_remote_release_lock
+    verify_mac_route_release_source
+    assert_remote_release_lock
+    _REMOTE_RELEASE_LOCK_DELEGATED=0
+    _REMOTE_RELEASE_LOCK_ABANDONED=0
+    printf '%s\n' "$action_output"
+}
+
+verify_mac_route_release_source() {
+    local dirty
+    local branch
+    local local_origin_main_sha
+    local remote_main_output
+    local remote_main_sha
+    local current_sha
+    local current_tree
+
+    dirty="$(git -C "$SCRIPT_DIR" status --porcelain=v1 --untracked-files=all)" || return 1
+    if [[ -n "$dirty" ]]; then
+        print_error "Mac 下载路由 bootstrap 要求完全干净的工作树"
+        echo "$dirty"
+        return 1
+    fi
+    branch="$(git -C "$SCRIPT_DIR" branch --show-current)" || return 1
+    if [[ -n "$branch" && "$branch" != "main" ]]; then
+        print_error "Mac 下载路由 bootstrap 只允许 main 或 exact origin/main detached HEAD"
+        return 1
+    fi
+    current_sha="$(git -C "$SCRIPT_DIR" rev-parse HEAD)" || return 1
+    current_tree="$(git -C "$SCRIPT_DIR" rev-parse "${current_sha}^{tree}")" || return 1
+    if ! [[ "$current_sha" =~ ^[0-9a-f]{40}$ &&
+          "$current_tree" =~ ^[0-9a-f]{40}$ ]]; then
+        print_error "无法解析 Mac 下载路由 bootstrap source SHA"
+        return 1
+    fi
+    git -C "$SCRIPT_DIR" fetch --quiet --prune origin main || return 1
+    local_origin_main_sha="$(git -C "$SCRIPT_DIR" rev-parse refs/remotes/origin/main)" || return 1
+    remote_main_output="$(git -C "$SCRIPT_DIR" ls-remote --exit-code origin refs/heads/main)" || return 1
+    remote_main_sha="${remote_main_output%%[[:space:]]*}"
+    if [[ "$local_origin_main_sha" != "$current_sha" ||
+          "$remote_main_sha" != "$current_sha" ]]; then
+        print_error "Mac 下载路由 bootstrap source 不是 exact remote main"
+        return 1
+    fi
+    if [[ "${_REMOTE_RELEASE_LOCK_ADOPTED:-0}" = "1" ]]; then
+        if ! [[ "$REMOTE_RELEASE_SOURCE_SHA" =~ ^[0-9a-f]{40}$ &&
+              "$REMOTE_RELEASE_SOURCE_TREE" =~ ^[0-9a-f]{40}$ ]] ||
+            ! git -C "$SCRIPT_DIR" cat-file -e \
+                "${REMOTE_RELEASE_SOURCE_SHA}^{commit}" ||
+            [[ "$(git -C "$SCRIPT_DIR" rev-parse \
+                "${REMOTE_RELEASE_SOURCE_SHA}^{tree}")" != \
+                "$REMOTE_RELEASE_SOURCE_TREE" ]] ||
+            ! git -C "$SCRIPT_DIR" merge-base --is-ancestor \
+                "$REMOTE_RELEASE_SOURCE_SHA" "$current_sha"; then
+            print_error "Mac 下载路由 retained source A 不是 current main B 的可验证祖先"
+            return 1
+        fi
+        DEPLOY_EXPECTED_SHA="$REMOTE_RELEASE_SOURCE_SHA"
+    else
+        DEPLOY_EXPECTED_SHA="$current_sha"
+    fi
+    print_success "Mac 下载路由 immutable source 已核验: ${DEPLOY_EXPECTED_SHA:0:12}"
 }
 
 main() {
@@ -4207,6 +6825,9 @@ main() {
     # 默认部署全部
     DEPLOY_MODE="all"
     AUTO_YES=0
+    MAC_ROUTE_ACTION="apply"
+    MAC_RELEASE_VERSION=""
+    MAC_RELEASE_BUILD=""
 
     # 解析参数
     while [[ $# -gt 0 ]]; do
@@ -4234,6 +6855,75 @@ main() {
             -R|--reset-app-store-review)
                 DEPLOY_MODE="app-store-review-reset"
                 shift
+                ;;
+            --bootstrap-mac-routes)
+                DEPLOY_MODE="mac-routes"
+                if [[ "${2:-}" == "rollback" ]]; then
+                    MAC_ROUTE_ACTION="rollback"
+                    shift 2
+                else
+                    shift
+                fi
+                ;;
+            --publish-mac)
+                DEPLOY_MODE="mac-publish"
+                shift
+                ;;
+            --recover-mac-release)
+                DEPLOY_MODE="mac-recover"
+                shift
+                ;;
+            --rollback-mac-release)
+                DEPLOY_MODE="mac-rollback"
+                shift
+                ;;
+            --inspect-release-lock)
+                DEPLOY_MODE="release-lock-inspect"
+                shift
+                ;;
+            --release-coordinator-begin)
+                DEPLOY_MODE="release-coordinator-begin"
+                shift
+                ;;
+            --release-coordinator-bind)
+                DEPLOY_MODE="release-coordinator-bind"
+                shift
+                ;;
+            --release-coordinator-assert)
+                DEPLOY_MODE="release-coordinator-assert"
+                shift
+                ;;
+            --release-coordinator-mutate)
+                DEPLOY_MODE="release-coordinator-mutate"
+                shift
+                ;;
+            --release-coordinator-finish)
+                DEPLOY_MODE="release-coordinator-finish"
+                shift
+                ;;
+            --release-coordinator-abort)
+                DEPLOY_MODE="release-coordinator-abort"
+                shift
+                ;;
+            --release-coordinator-recover)
+                DEPLOY_MODE="release-coordinator-recover"
+                shift
+                ;;
+            --version)
+                if [[ $# -lt 2 || -z "${2:-}" ]]; then
+                    print_error "--version 缺少 VERSION"
+                    exit 2
+                fi
+                MAC_RELEASE_VERSION="$2"
+                shift 2
+                ;;
+            --build)
+                if [[ $# -lt 2 || -z "${2:-}" ]]; then
+                    print_error "--build 缺少 BUILD"
+                    exit 2
+                fi
+                MAC_RELEASE_BUILD="$2"
+                shift 2
                 ;;
             -r|--restart)
                 DEPLOY_MODE="restart"
@@ -4267,16 +6957,127 @@ main() {
         esac
     done
 
-    case $DEPLOY_MODE in
+    # Mac binary publication owns both the shared Git-common local lease and
+    # the server-wide release lease inside its formal driver. Delegate before
+    # this script acquires either lease so there is exactly one authority and
+    # no nested-lock deadlock. The driver rejects direct mutating invocation.
+    case "$DEPLOY_MODE" in
+        "mac-publish")
+            if [[ -z "$MAC_RELEASE_VERSION" || -z "$MAC_RELEASE_BUILD" ]]; then
+                print_error "--publish-mac 必须同时提供 --version 和 --build"
+                exit 2
+            fi
+            print_error "Mac 自动发布已冻结：统一发布事务的崩溃恢复尚未完成；请走人工 Gate。"
+            exit 78
+            ;;
+        "mac-recover")
+            if [[ -n "$MAC_RELEASE_VERSION" || -n "$MAC_RELEASE_BUILD" ]]; then
+                print_error "--recover-mac-release 不接受 --version/--build"
+                exit 2
+            fi
+            print_error "Mac 自动恢复已冻结：请由发布负责人执行人工恢复 Gate。"
+            exit 78
+            ;;
+        "mac-rollback")
+            if [[ -n "$MAC_RELEASE_VERSION" || -n "$MAC_RELEASE_BUILD" ]]; then
+                print_error "--rollback-mac-release 不接受 --version/--build"
+                exit 2
+            fi
+            print_error "Mac 自动回滚已冻结：请由发布负责人执行人工回滚 Gate。"
+            exit 78
+            ;;
+        *)
+            if [[ -n "$MAC_RELEASE_VERSION" || -n "$MAC_RELEASE_BUILD" ]]; then
+                print_error "--version/--build 只能与 --publish-mac 一起使用"
+                exit 2
+            fi
+            ;;
+    esac
+
+    if [[ "$DEPLOY_MODE" == "mac-routes" ]]; then
+        print_error "Mac 下载路由变更已冻结：请走人工基础设施 Gate。"
+        exit 78
+    fi
+
+    if [[ "$DEPLOY_MODE" == "release-lock-inspect" ]]; then
+        show_remote_release_lock_handoff
+        return
+    fi
+    case "$DEPLOY_MODE" in
+        release-coordinator-begin)
+            begin_remote_release_coordinator
+            return
+            ;;
+        release-coordinator-bind)
+            bind_remote_release_coordinator
+            return
+            ;;
+        release-coordinator-assert)
+            assert_remote_release_coordinator
+            return
+            ;;
+        release-coordinator-mutate)
+            mutate_remote_release_coordinator
+            return
+            ;;
+        release-coordinator-finish)
+            finish_remote_release_coordinator
+            return
+            ;;
+        release-coordinator-abort)
+            abort_remote_release_coordinator
+            return
+            ;;
+        release-coordinator-recover)
+            recover_remote_release_coordinator
+            return
+            ;;
+    esac
+
+    # Every enabled production mutation must bind to the literal canonical
+    # repository before creating either the local or server-wide release lease.
+    # This also makes deploy a consumer of an already-pushed exact main commit;
+    # it never doubles as an ambient Git push workflow.
+    case "$DEPLOY_MODE" in
         "all"|"frontend"|"backend"|"env"|"health-evidence"|"app-store-review-reset"|"restart"|"push")
+            verify_release_coordinator_source || exit $?
+            ;;
+    esac
+
+    case $DEPLOY_MODE in
+        "all"|"frontend"|"backend"|"env"|"health-evidence"|"app-store-review-reset"|"restart"|"push"|"mac-routes")
             acquire_release_lock "deploy:${DEPLOY_MODE}"
             ;;
     esac
+    if [[ "$DEPLOY_MODE" == "mac-routes" ]]; then
+        verify_mac_route_release_source
+    fi
+    if [[ "$DEPLOY_MODE" == "mac-routes" && "$SERVER" != "root@39.98.206.178" ]]; then
+        print_error "Mac 下载路由 bootstrap 只允许固定生产服务器"
+        exit 1
+    fi
     case $DEPLOY_MODE in
-        "all"|"frontend"|"backend"|"env"|"health-evidence"|"app-store-review-reset"|"restart")
+        "all"|"frontend"|"backend"|"env"|"health-evidence"|"app-store-review-reset"|"restart"|"mac-routes")
+            unset REVA_RELEASE_COORDINATOR_SURFACE
+            unset REVA_RELEASE_COORDINATOR_OPERATION
+            unset REVA_RELEASE_COORDINATOR_CHANNEL
+            unset REVA_RELEASE_COORDINATOR_TRANSACTION
+            unset REVA_RELEASE_COORDINATOR_REQUEST_DIGEST
+            unset REVA_RELEASE_COORDINATOR_STAGE
+            REVA_RELEASE_COORDINATOR_SURFACE="server"
+            REVA_RELEASE_COORDINATOR_OPERATION="$DEPLOY_MODE"
+            REVA_RELEASE_COORDINATOR_CHANNEL="production"
+            REVA_RELEASE_COORDINATOR_BASELINE_DIGEST="-"
             acquire_remote_release_lock "deploy:${DEPLOY_MODE}"
+            if [[ "${_REMOTE_RELEASE_LOCK_ALREADY_RELEASED:-0}" = "1" ]]; then
+                print_success "已恢复并确认原发布事务完成；未重复执行生产变更"
+                return 0
+            fi
             install_release_cleanup_traps
+            capture_expected_server_surfaces_under_lock
+            bind_expected_server_surfaces_under_lock
             assert_remote_release_lock
+            verify_expected_server_surfaces_under_lock
             ;;
     esac
 
@@ -4319,6 +7120,9 @@ main() {
         "app-store-review-reset")
             reset_app_store_review_demo
             ;;
+        "mac-routes")
+            bootstrap_mac_release_routes
+            ;;
         "restart")
             if ! require_health_evidence_flag_value false; then
                 print_error "通用 restart 只允许 flag=false；flag=true 请使用 --activate-health-evidence 受控重启"
@@ -4345,7 +7149,11 @@ main() {
     echo ""
 }
 
-# 运行主函数。测试可 source 本文件并对部署边界做真实故障演练。
+# END UNREACHABLE LEGACY DEPLOY IMPLEMENTATION
+
+# Historical direct entrypoint remains inside the fixed false block, but is
+# deliberately outside the test fixture's function-definition extraction.
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     main "$@"
+fi
 fi

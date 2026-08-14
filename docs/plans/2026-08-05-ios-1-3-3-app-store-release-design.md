@@ -1,5 +1,11 @@
 # iOS 1.3.3 App Store Release Design
 
+> **CURRENT FREEZE OVERRIDE (2026-08-12):** this design's build, candidate query, reviewer-login,
+> physical-device, final-submit and ASC steps are not executable. Repo-contained production
+> writers/observation and `check_app_store_release_pack.py --final-submit` are frozen. Only static
+> local materials, Simulator tests and public unauthenticated HTTPS may be inspected, and none can
+> produce G5/G6/submission PASS. Reauthorization requires a new dossier and independent G4.
+
 ## Decision
 
 Freeze new product work and create a fresh 1.3.3 production Store Build from a reviewed release commit. Remove the hard-coded prescription path, complete exact-build acceptance, update App Store material, submit by Friday, and keep the production OTA channel frozen until the approved build is publicly verified.

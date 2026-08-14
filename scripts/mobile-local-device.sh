@@ -1,13 +1,13 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # 本地 Xcode build → 装到真机 iPhone (绕开 EAS, $0)
 #
 # 何时用:
 #   - 第一次真机 dev-client 装机,或 native plugins / Pods / entitlements 改动后重建
-#   - JS 改动后已经在设备上的 dev-client 跑 OTA / Metro 即可, 不必每次重 build
+#   - JS 改动后已经在设备上的 dev-client 跑 Metro 即可, 不必每次重 build
 #
-# 何时还得走 EAS:
-#   - production .ipa 上 TestFlight (用 mobile-local-archive.sh 也可走 eas build --local)
-#   - 修改 EAS server 端的 credentials
+# 正式发布边界:
+#   - 本脚本只用于本机开发/真机调试，不创建 production 候选，也不上传商店
+#   - 所有 EAS OTA 与 production 原生候选发布入口当前冻结
 #
 # 前置条件:
 #   - 付费 Apple Developer Program 账号 (Xcode Signing & Capabilities 选你 Team)
@@ -15,6 +15,13 @@
 #   - cocoapods 已装 (sudo gem install cocoapods 或 brew install cocoapods)
 #   - iPhone USB 连 Mac, "Trust This Computer" 已点
 
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  builtin printf '%s\n' \
+    'mobile-local-device writer entrypoint is frozen; automatic provisioning and device install are disabled.' >&2
+  exit 78
+fi
+
+if [[ 0 -eq 1 ]]; then
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -70,9 +77,13 @@ cat <<EOF
 
 后续日常迭代 (装机后):
   - 开发内环  → ./scripts/mobile-fast-device.sh metro (Fast Refresh)
-  - JS/TS 验收 → ./scripts/mobile-ota.sh production "..." (设备前台下载,确认后应用)
+  - JS/TS 非生产验收 → 使用本地 Metro / Fast Refresh，不调用 EAS OTA
+  - 所有 EAS OTA 与 production 原生候选发布当前冻结，不得调用旧发布入口
   - Release 验收 → ./scripts/mobile-fast-device.sh release (复用 DerivedData,不重装 Pods)
   - native 结构变化 → 才重跑本脚本 (prebuild + Pods)
 
-完全不再消耗 EAS build credit. 只有发 TestFlight 才需要 EAS (或 eas build --local).
+本脚本的本地开发内环不消耗远端构建额度。
+正式 production 原生候选与商店上传当前冻结。本脚本只生成本机 Xcode
+开发构建；完成本地验收后请保留证据，等待受控发布通道恢复。
 EOF
+fi

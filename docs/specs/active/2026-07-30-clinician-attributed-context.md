@@ -5,6 +5,13 @@
 > Updated: 2026-07-30
 > Related PRD/PDD: `docs/prd/reva-personal-health-os-prd.md` R10, R13
 > Related code: `backend/app/services/utterance_intent_classifier.py`, `backend/app/services/agent_executor.py`, `backend/app/services/doctor_report_service.py`
+>
+> **Current release override (2026-08-12):** all repo-contained automatic remote/vendor release
+> entrypoints and local signing/install/automatic-provisioning entrypoints are frozen. Production
+> network observation and release plan/validate are also frozen. Only local validation, offline
+> evidence and public unauthenticated HTTPS are allowed, and none forms G5/G6; manual release Gate
+> is BLOCK pending a new repo-external
+> trust-root dossier and independent G4.
 
 ## 1. Decision
 
@@ -215,9 +222,9 @@ Run the repository's integration gate before deployment. Do not use `| tail`.
 
 ## 13. Rollout And Rollback
 
-- Backend-only rollout through the normal deployment script.
+- Validate Backend locally; do not call the frozen deployment writer.
 - No database migration or client release is required.
-- Rollback is the deployment's previous backend SHA.
+- No production rollout occurred, so there is no current rollback action.
 - Existing Doctor Loop and symptom recording remain compatible.
 
 ## 14. Open Questions

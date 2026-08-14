@@ -317,7 +317,7 @@ def test_app_store_release_pack_checker_validates_optional_screenshot_dir(tmp_pa
     assert "App Store screenshot check passed." in result.stdout
 
 
-def test_app_store_release_pack_final_submit_fails_loud_without_human_materials():
+def test_app_store_release_pack_final_submit_is_frozen_without_human_materials():
     root = Path(__file__).resolve().parents[2]
     scrubbed_env = {
         key: value
@@ -339,20 +339,14 @@ def test_app_store_release_pack_final_submit_fails_loud_without_human_materials(
         check=False,
     )
 
-    assert result.returncode == 1
-    assert "final submit requires APP_STORE_SCREENSHOT_DIR or --screenshot-dir" in result.stderr
-    assert "final submit requires replacing demo account placeholders" in result.stderr
-    assert "missing App Store Connect credentials" in result.stderr
-    assert "final submit requires real-device acceptance evidence" in result.stderr
-    assert "APP_STORE_PRIVACY_RESPONSES_PUBLISHED=1" in result.stderr
-    assert "APP_STORE_REGULATED_MEDICAL_DEVICE_STATUS=no" in result.stderr
-    assert "APP_STORE_AGE_RATING_CONFIRMED=1" in result.stderr
-    assert "APP_STORE_PRODUCTION_OTA_FROZEN=1" in result.stderr
-    assert "final submit requires --eas-build-id or APP_STORE_EAS_BUILD_ID" in result.stderr
-    assert "final submit requires --git-commit-hash or APP_STORE_GIT_COMMIT_HASH" in result.stderr
+    assert result.returncode == 78
+    assert result.stdout == ""
+    assert result.stderr == (
+        "App Store final-submit is frozen; use the external trusted Gate\n"
+    )
 
 
-def test_app_store_release_pack_final_submit_rejects_screenshots_from_another_build(
+def test_app_store_release_pack_final_submit_freezes_before_screenshot_build_checks(
     tmp_path: Path,
 ):
     root = Path(__file__).resolve().parents[2]
@@ -392,8 +386,11 @@ def test_app_store_release_pack_final_submit_rejects_screenshots_from_another_bu
         check=False,
     )
 
-    assert result.returncode == 1
-    assert "manifest build_id must match expected build" in result.stderr
+    assert result.returncode == 78
+    assert result.stdout == ""
+    assert result.stderr == (
+        "App Store final-submit is frozen; use the external trusted Gate\n"
+    )
 
 
 def test_real_device_evidence_requires_current_build_and_all_core_flows(tmp_path: Path):

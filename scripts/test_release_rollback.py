@@ -225,6 +225,7 @@ def test_rollback_restores_service_readable_env_metadata():
 
 def test_rollback_rewrites_verified_dependency_marker_before_service_start():
     script = ROLLBACK_SCRIPT.read_text(encoding="utf-8")
+    clean_venv = script.index("backend/venv/bin/python -m venv --clear backend/venv")
     install = script.index(
         "backend/venv/bin/pip install --require-hashes -r backend/requirements.lock"
     )
@@ -233,7 +234,7 @@ def test_rollback_rewrites_verified_dependency_marker_before_service_start():
     marker = script.index("requirements-lock.sha256", pip_check)
     start = script.index('systemctl start "$BACKEND_SOCKET"', marker)
 
-    assert install < exact < pip_check < marker < start
+    assert clean_venv < install < exact < pip_check < marker < start
     assert "root:root:700" in script[install:start]
     assert "root:root:600" in script[install:start]
     assert "mv -fT --" in script[install:start]
@@ -281,14 +282,25 @@ def _make_release_repo(tmp_path: Path) -> tuple[Path, str, str]:
     _write_executable(
         repo / "backend/venv/bin/python",
         """#!/bin/sh
+set -eu
 case "$1" in
   *verify_locked_requirements.py)
     exit 0
     ;;
   -m)
-    test "$2" = "pip"
-    test "$3" = "check"
-    exit 0
+    case "$2" in
+      venv)
+        test "$3" = "--clear"
+        test "$4" = "backend/venv"
+        printf 'venv-clear\n' >> "$FAKE_ROLLBACK_EVENT_LOG"
+        ;;
+      pip)
+        test "$3" = "check"
+        ;;
+      *)
+        exit 64
+        ;;
+    esac
     ;;
   *kb-quarantine*|*quarantine_runtime_only_kb.py)
     printf 'kb-quarantine-ran\n' >> "$FAKE_ROLLBACK_EVENT_LOG"
@@ -1017,6 +1029,7 @@ def test_release_rollback_moves_head_and_requires_health_check(tmp_path: Path):
         encoding="utf-8"
     ).splitlines() == [
         "runtime-state-restore",
+        "venv-clear",
         "kb-quarantine-ran",
         "schema-probe-ran",
         "service-start",
@@ -1068,6 +1081,7 @@ def test_release_rollback_candidate_floor_commits_then_finalizes(
     assert "runtime_state=candidate-retained" in result.stdout
     assert event_log.read_text(encoding="utf-8").splitlines() == [
         "runtime-state-restore",
+        "venv-clear",
         "kb-quarantine-ran",
         "schema-probe-ran",
         "service-start",
@@ -1664,6 +1678,7 @@ def test_release_rollback_keeps_services_inactive_when_kb_quarantine_fails(
         encoding="utf-8"
     ).splitlines() == [
         "runtime-state-restore",
+        "venv-clear",
         "kb-quarantine-ran",
     ]
 
@@ -1706,5 +1721,6 @@ def test_release_rollback_never_starts_services_after_server_lease_is_lost(
         encoding="utf-8"
     ).splitlines() == [
         "runtime-state-restore",
+        "venv-clear",
         "kb-quarantine-ran",
     ]

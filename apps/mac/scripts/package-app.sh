@@ -1,4 +1,11 @@
-#!/usr/bin/env bash
+#!/bin/bash
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  builtin printf '%s\n' \
+    'Mac package/sign/install writer entrypoint is frozen; use swift build/test for local validation.' >&2
+  exit 78
+fi
+
+if [[ 0 -eq 1 ]]; then
 set -euo pipefail
 
 APP_NAME="HealthAgentMac"
@@ -6,12 +13,34 @@ BUNDLE_NAME="${APP_NAME}.app"
 BUNDLE_ID="life.executor.health.mac"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+REPO_ROOT="$(cd "${PROJECT_DIR}/../.." && pwd)"
 OUTPUT_DIR="${PROJECT_DIR}/dist"
 CONFIGURATION="release"
 OPEN_AFTER_BUILD="0"
 INSTALL_AFTER_BUILD="0"
 SIGN_APP="1"
 SIGN_IDENTITY="${HEALTH_MAC_SIGN_IDENTITY:-}"
+APP_VERSION="${MAC_APP_VERSION:-0.1.0}"
+APP_BUILD="${MAC_APP_BUILD:-1}"
+MAC_SOURCE_SHA="${MAC_SOURCE_SHA:-$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || true)}"
+MAC_SOURCE_TREE="${MAC_SOURCE_TREE:-$(git -C "${REPO_ROOT}" rev-parse 'HEAD^{tree}' 2>/dev/null || true)}"
+
+[[ "${APP_VERSION}" =~ ^[0-9]+(\.[0-9]+){1,3}$ ]] || {
+  echo "Invalid MAC_APP_VERSION: ${APP_VERSION}" >&2
+  exit 2
+}
+[[ "${APP_BUILD}" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || {
+  echo "Invalid MAC_APP_BUILD: ${APP_BUILD}" >&2
+  exit 2
+}
+[[ "${MAC_SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]] || {
+  echo "Invalid MAC_SOURCE_SHA" >&2
+  exit 2
+}
+[[ "${MAC_SOURCE_TREE}" =~ ^[0-9a-f]{40}$ ]] || {
+  echo "Invalid MAC_SOURCE_TREE" >&2
+  exit 2
+}
 
 usage() {
   cat <<USAGE
@@ -120,9 +149,9 @@ cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>${APP_VERSION}</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>${APP_BUILD}</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>LSMultipleInstancesProhibited</key>
@@ -131,9 +160,22 @@ cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
   <true/>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
+  <key>RevaSourceSHA</key>
+  <string>${MAC_SOURCE_SHA}</string>
+  <key>RevaSourceTree</key>
+  <string>${MAC_SOURCE_TREE}</string>
 </dict>
 </plist>
 PLIST
+
+cat > "${RESOURCES_DIR}/release-manifest.json" <<MANIFEST
+{"schema_version":1,"source_sha":"${MAC_SOURCE_SHA}","source_tree":"${MAC_SOURCE_TREE}","bundle_id":"${BUNDLE_ID}","version":"${APP_VERSION}","build":"${APP_BUILD}"}
+MANIFEST
+chmod 644 "${RESOURCES_DIR}/release-manifest.json"
+
+if command -v plutil >/dev/null 2>&1; then
+  plutil -lint "${CONTENTS_DIR}/Info.plist" >/dev/null
+fi
 
 printf 'APPL????' > "${CONTENTS_DIR}/PkgInfo"
 
@@ -177,4 +219,5 @@ if [[ "${OPEN_AFTER_BUILD}" == "1" ]]; then
   else
     open "${APP_BUNDLE}"
   fi
+fi
 fi

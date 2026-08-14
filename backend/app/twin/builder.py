@@ -3,11 +3,12 @@ Digital Health Twin 组装器。
 
 调用策略（Phase 3 并行优化）：
   Phase A: _fill_integrated_profile               → 先执行（下游依赖 BP）
-  Phase B: _fill_physiological_derived ~ _fill_cgm → 8 个并行（各自独立 DB 会话）
+  Phase B: _fill_physiological_derived ~ _fill_cross_source → 独立分区填充
   Phase C: _fill_collectors                        → 最后执行（读取 Phase A 写入的 BP）
 
 约束：
-  - Phase B 每个线程创建独立 DB 会话（SQLAlchemy Session 不线程安全）
+  - PostgreSQL 的 Phase B 每个线程创建同 bind 的独立 DB 会话
+  - SQLite 的 Phase B 串行复用调用方会话（避免 pysqlite 锁反转）
   - 每步都是可选的，异常不能让整个 build_twin 崩
   - twin 对象的并发写入安全：各 _fill_* 写入不同字段，无竞争
 """
@@ -18,7 +19,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Callable, Dict, List, Set, Tuple
 
-from sqlalchemy.orm import Session
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.twin import _collectors
 from app.twin.schema import (
@@ -38,6 +40,71 @@ from app.twin.schema import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _run_phase_b_fillers(
+    db: Session,
+    fillers: List[Tuple[str, Callable[[Session], None]]],
+    twin: HealthTwin,
+) -> None:
+    """Run independent Twin fillers on the caller's database authority.
+
+    SQLite and connection-bound sessions stay serial on the caller session.
+    PostgreSQL engine-bound sessions retain parallelism, use the same engine,
+    and inherit only an already-authenticated ``app_user_id`` RLS identity.
+    """
+
+    def _run_filler(name: str, fn: Callable[[Session], None], filler_db: Session) -> None:
+        try:
+            fn(filler_db)
+        except Exception as e:
+            # 通用兜底(各 _fill_* 自己的 try/except 先接;这里只捕漏网的)。
+            # 同样记进 failed_partitions —— 否则「分区评估失败」与「无数据」不可分辨。
+            logger.error(f"[twin] {name} 分区执行失败: {e}", exc_info=True)
+            twin.meta.failed_partitions.append(name)
+
+    caller_bind = db.get_bind()
+    # pysqlite can deadlock when SingletonThreadPool closes a connection in one
+    # worker while another worker owns the same SQLite mutex and the Python GIL.
+    # A Session bound to one Connection is likewise unsafe to share across
+    # workers. Both paths preserve caller-transaction visibility by staying
+    # serial on the original Session.
+    if caller_bind.dialect.name == "sqlite" or not isinstance(caller_bind, Engine):
+        for name, fn in fillers:
+            _run_filler(name, fn, db)
+        return
+
+    phase_b_session = sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=caller_bind,
+    )
+    caller_tenant = db.info.get("app_user_id")
+    if caller_tenant is not None:
+        caller_tenant = int(caller_tenant)
+
+    def _run_parallel_filler(name: str, fn: Callable[[Session], None]) -> None:
+        thread_db = phase_b_session()
+        if caller_tenant is not None:
+            # ThreadPoolExecutor does not propagate ContextVar state. Copy only
+            # authority already present on the authenticated caller Session;
+            # never derive RLS authority from the requested user_id.
+            thread_db.info["app_user_id"] = caller_tenant
+        try:
+            _run_filler(name, fn, thread_db)
+        finally:
+            thread_db.close()
+
+    max_workers = min(len(fillers), 4)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_run_parallel_filler, name, fn): name
+            for name, fn in fillers
+        }
+        for future in as_completed(futures):
+            exc = future.exception()
+            if exc:
+                logger.warning(f"[twin] {futures[future]} 线程异常: {exc}")
 
 
 # ─────────────────────────────── 入口 ─────────────────────────────────
@@ -82,9 +149,7 @@ def build_twin(db: Session, user_id: int, use_cache: bool = True) -> HealthTwin:
     _fill_problem_red_lines(db, user_id, twin, sources)
     _fill_epigenetic(db, user_id, twin, sources)
 
-    # ── Phase B: 8 个独立步骤并行执行 ──
-    # 每个线程使用独立 DB 会话（SQLAlchemy Session 不线程安全）
-    from app.database import SessionLocal
+    # ── Phase B:独立分区填充 ──
 
     parallel_fillers: List[Tuple[str, Callable]] = [
         ("physiological_derived", lambda s: _fill_physiological_derived(s, user_id, twin)),
@@ -105,28 +170,7 @@ def build_twin(db: Session, user_id: int, use_cache: bool = True) -> HealthTwin:
         ("cross_source",          lambda s: _fill_cross_source(s, user_id, twin, sources)),
     ]
 
-    def _run_filler(name: str, fn: Callable) -> None:
-        thread_db = SessionLocal()
-        try:
-            fn(thread_db)
-        except Exception as e:
-            # 通用兜底(各 _fill_* 自己的 try/except 先接;这里只捕漏网的)。
-            # 同样记进 failed_partitions —— 否则「分区评估失败」与「无数据」不可分辨。
-            logger.error(f"[twin] {name} 并行执行失败: {e}", exc_info=True)
-            twin.meta.failed_partitions.append(name)
-        finally:
-            thread_db.close()
-
-    max_workers = min(len(parallel_fillers), 4)
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(_run_filler, name, fn): name
-            for name, fn in parallel_fillers
-        }
-        for future in as_completed(futures):
-            exc = future.exception()
-            if exc:
-                logger.warning(f"[twin] {futures[future]} 线程异常: {exc}")
+    _run_phase_b_fillers(db, parallel_fillers, twin)
 
     # ── Phase C: collectors 最后执行（依赖 Phase A 的 BP 数据）──
     _fill_collectors(db, user_id, twin, sources)

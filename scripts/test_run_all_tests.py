@@ -65,11 +65,24 @@ with state_path.open("a+", encoding="utf-8") as handle:
     fcntl.flock(handle, fcntl.LOCK_EX)
     handle.seek(0)
     raw = handle.read().strip()
-    state = json.loads(raw) if raw else {"current": 0, "maximum": 0, "labels": [], "pids": []}
+    state = json.loads(raw) if raw else {"current": 0, "maximum": 0, "labels": [], "pids": [], "environments": {}}
     state["current"] += 1
     state["maximum"] = max(state["maximum"], state["current"])
     state["labels"].append(label)
     state["pids"].append(os.getpid())
+    state.setdefault("environments", {})[label] = {
+        name: os.environ.get(name)
+        for name in (
+            "APP_ENV",
+            "DATABASE_URL",
+            "TEST_DATABASE_URL",
+            "TZ",
+            "NODE_OPTIONS",
+            "PYTEST_ADDOPTS",
+            "REVA_BACKEND_SHARD_LOG_DIR",
+        )
+    }
+    state.setdefault("arguments", {})[label] = sys.argv[2:]
     handle.seek(0)
     handle.truncate()
     json.dump(state, handle)
@@ -96,7 +109,7 @@ raise SystemExit(7 if label == os.environ.get("FAKE_CHECK_FAIL") else 0)
     runner.chmod(0o755)
 
     def wrapper(label: str) -> str:
-        return f"#!/bin/sh\nexec {sys.executable!s} {runner!s} {label}\n"
+        return f'#!/bin/sh\nexec {sys.executable!s} {runner!s} {label} "$@"\n'
 
     _write_executable(repo / "backend/venv/bin/python", wrapper("backend-pytest"))
     _write_executable(repo / "frontend/node_modules/.bin/tsc", wrapper("frontend-tsc"))
@@ -173,7 +186,8 @@ def test_all_profile_runs_checks_in_parallel_with_private_logs(tmp_path: Path) -
     }.issubset(state["labels"])
     logs = list(Path(env["REVA_VALIDATION_LOG_DIR"]).rglob("*.log"))
     assert len(logs) >= 10
-    assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in logs)
+    assert all(not path.is_symlink() for path in logs)
+    assert all(stat.S_IMODE(path.lstat().st_mode) == 0o600 for path in logs)
 
 
 def test_frontend_lint_failure_is_blocking_and_uses_real_exit_code(tmp_path: Path) -> None:
@@ -195,6 +209,117 @@ def test_successful_checks_emit_one_summary_line_each(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.count("Backend pytest (") == 1
     assert result.stdout.count("Git whitespace check (") == 1
+
+
+def test_validation_refuses_a_precreated_symlinked_check_log(tmp_path: Path) -> None:
+    _, env = _init_fixture_repo(tmp_path)
+    log_dir = Path(env["REVA_VALIDATION_LOG_DIR"])
+    log_dir.mkdir(parents=True)
+    victim = tmp_path / "victim.txt"
+    victim.write_text("DO NOT TRUNCATE", encoding="utf-8")
+    (log_dir / "git-diff-check.log").symlink_to(victim)
+
+    result = _run("--backend", env)
+
+    assert result.returncode == 2
+    assert "newly created" in result.stderr.lower()
+    assert victim.read_text(encoding="utf-8") == "DO NOT TRUNCATE"
+
+
+def test_validation_refuses_a_symlinked_log_parent(tmp_path: Path) -> None:
+    _, env = _init_fixture_repo(tmp_path)
+    target = tmp_path / "target"
+    target.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(target, target_is_directory=True)
+    env["REVA_VALIDATION_LOG_DIR"] = str(alias / "logs")
+
+    result = _run("--backend", env)
+
+    assert result.returncode == 2
+    assert "symlink" in result.stderr.lower()
+    assert not (target / "logs").exists()
+
+
+def test_validation_log_open_is_atomic_against_leaf_symlink_race(
+    tmp_path: Path,
+) -> None:
+    _, env = _init_fixture_repo(tmp_path)
+    log_dir = Path(env["REVA_VALIDATION_LOG_DIR"])
+    victim = tmp_path / "victim.txt"
+    victim.write_text("PRIVATE VICTIM CONTENT", encoding="utf-8")
+    race_bin = tmp_path / "race-bin"
+    race_bin.mkdir()
+    race_state = tmp_path / "tr-count"
+    _write_executable(
+        race_bin / "tr",
+        f"""#!/bin/sh
+count=$(cat {race_state!s} 2>/dev/null || echo 0)
+count=$((count + 1))
+printf '%s' "$count" > {race_state!s}
+if [ "$count" -eq 3 ]; then
+  ln -s {victim!s} {log_dir / 'backend-pytest.log'!s}
+fi
+exec /usr/bin/tr "$@"
+""",
+    )
+    env["PATH"] = f"{race_bin}:{env['PATH']}"
+
+    result = _run("--backend", env)
+
+    assert result.returncode == 2
+    assert "collision" in result.stderr.lower()
+    assert victim.read_text(encoding="utf-8") == "PRIVATE VICTIM CONTENT"
+    assert "PRIVATE VICTIM CONTENT" not in result.stdout + result.stderr
+
+
+def test_backend_pytest_delegates_to_ci_matrix_with_private_nested_logs(
+    tmp_path: Path,
+) -> None:
+    _, env = _init_fixture_repo(tmp_path)
+
+    result = _run("--backend", env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    state = json.loads(Path(env["FAKE_CHECK_STATE"]).read_text(encoding="utf-8"))
+    arguments = state["arguments"]["backend-pytest"]
+    assert arguments == ["scripts/run_local_pytest_matrix.py"]
+    assert state["environments"]["backend-pytest"][
+        "REVA_BACKEND_SHARD_LOG_DIR"
+    ] == str(Path(env["REVA_VALIDATION_LOG_DIR"]) / "backend-pytest-shards")
+
+
+def test_direct_validation_scrubs_ambient_database_and_execution_overrides(
+    tmp_path: Path,
+) -> None:
+    _, env = _init_fixture_repo(tmp_path)
+    env.update(
+        {
+            "APP_ENV": "production",
+            "DATABASE_URL": "postgresql://attacker.invalid/prod",
+            "TEST_DATABASE_URL": "postgresql://attacker.invalid/stale_test",
+            "TZ": "America/New_York",
+            "NODE_OPTIONS": "--require=/tmp/inject.js",
+            "PYTEST_ADDOPTS": "--collect-only",
+        }
+    )
+
+    result = _run("--backend", env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    state = json.loads(Path(env["FAKE_CHECK_STATE"]).read_text(encoding="utf-8"))
+    observed = state["environments"]["backend-pytest"]
+    assert observed == {
+        "APP_ENV": "test",
+        "DATABASE_URL": "sqlite:///:memory:",
+        "TEST_DATABASE_URL": None,
+        "TZ": "Asia/Shanghai",
+        "NODE_OPTIONS": None,
+        "PYTEST_ADDOPTS": None,
+        "REVA_BACKEND_SHARD_LOG_DIR": str(
+            Path(env["REVA_VALIDATION_LOG_DIR"]) / "backend-pytest-shards"
+        ),
+    }
 
 
 def test_mobile_profile_includes_lint_design_and_settings_route_checks(tmp_path: Path) -> None:

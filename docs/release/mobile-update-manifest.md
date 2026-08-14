@@ -1,105 +1,68 @@
 # Mobile Update Manifest
 
-`scripts/mobile-ota.sh` 为每次发布创建私有临时事务目录。第一次 `eas update`
-只在这个新目录中 bundle 一次；若上传发生明确的瞬时网络错误，脚本验证同一目录
-的 iOS metadata、bundle、资源和 SHA-256 digest，再以 `--skip-bundler` 重试。
-事务结束后目录删除，不做跨发布缓存。
+> **CURRENT SAFETY OVERRIDE (2026-08-12): 所有 OTA/rollback channel writer 冻结。**
+> `production`、`preview`、`development`、Rokid、Watch 与任何 alias 都必须在 Git、状态、
+> lock 和 EAS 网络访问前返回 78。本文的 manifest/transaction 内容只保留为历史协议与
+> 测试设计，不授权运行 `mobile-ota.sh`、rollback、直接 EAS CLI 或控制台操作。
 
-脚本只有在以下事实同时成立后才原子写入
-`.mobile-release-manifest.json` 和 production anchor：
+## 为什么非 production channel 也不能写
 
-- 工作输入的 HEAD、Git tree、runtime 和 Mobile/shared 工作树状态没有变化；
-- export 只含 iOS，所有 metadata 引用均位于事务目录，且不存在空文件、软链接或路径穿越；
-- 结构化 `eas update --json`、`eas update:view --json` 的 group/update/runtime/branch/commit 完全一致；
-- `eas channel:view --json` 证明目标 channel 所映射的 branch 已指向该 group
-  （channel 名和 branch 名不要求相同），且 channel 没有被暂停。
+EAS channel→branch 映射属于仓库外可变状态，可能漂移、复用或被重新映射。channel 名称
+不是 installed production cohort 的隔离证明，所以 `preview`/`development` 也不能作为
+安全兜底。
 
-该 manifest 默认被 `.gitignore` 忽略，是发布机上的 `0600` 运行证据，不是客户端
-远程配置，也不能包含健康内容、凭证或用户标识。
-production 保留历史路径 `.mobile-release-manifest.json`；preview/Rokid 使用
-`.mobile-release-manifest.<channel>.json`，避免跨 channel 污染回滚来源。
+此外，same-UID writable repo 已证明不能自举可信执行器：Git refs/replace、shared
+`.git/info/attributes` + local clean/smudge filter、`.git/info/exclude` 隐藏的 untracked
+import shadow、`BASH_ENV`、`PYTHONPATH`/`sitecustomize` 都可在 repo 内 guard 前改变执行
+语义。clean tree、canonical SHA/tree、local lock/manifest/receipt 因此不能签发 mutation
+authority。manual Gate 只表示 **STOP/BLOCK**。
 
-## Schema v2
+`exit 78` 只是 ordinary-invocation tombstone。Bash caller 可通过 `BASH_ENV` 并预定义
+`exit`/`builtin` function 改变顶部 guard；`_run-mobile-tf.sh` 的旧 writer 必须处于
+literal-false、语法级不可达 block。runtime/operator 禁止 source/extract/eval；隔离测试
+marker extraction 仅作无 writer/网络的协议 fixture，不构成 release proof。真正 bootstrap boundary
+只能来自 repo-external root-owned `env -i` launcher。
 
-- `schema_version`: 当前为 `2`。
-- `status`: `published` 或 `rolled_back`。
-- `transaction_id`: 单次发布唯一标识，同时写在 EAS message 开头；用于不确定失败后的去重查询。
-- `platform` / `channel` / `environment`: 发布路由；artifact 固定为 `ios`。
-- `runtime_version`: 当前 native runtime 版本。
-- `commit_sha` / `source_tree`: bundle 的 Git commit 与 tree 身份。
-- `artifact_digest`: 事务内所有导出文件按稳定相对路径和内容计算的 SHA-256。
-- `artifact_file_count` / `artifact_total_bytes`: artifact 完整性摘要。
-- `eas_cli`: 发布所用的精确 EAS CLI 标识；默认锁定 `eas-cli@21.8.0`，可通过
-  `OTA_EAS_CLI_VERSION` 显式调整。
-- `group_id` / `update_id`: 本次实际活跃的 EAS 发布身份；保留给旧消费者。
-- `active_group_id` / `active_update_id`: channel 当前已验证指向的身份。
-- `previous_known_good_group_id` / `previous_known_good_update_id`: 下次人工回滚的默认来源。
-- `remote_verification`: `update:view` 和 channel mapping 结构化复证结果。
-- `published_at`: UTC 发布时间。
+## 当前允许的 Mobile 证据
 
-回滚后另有：
+- 本地 Metro、iOS Simulator、单元测试和 typecheck；`npm run ios` 固定走 Simulator
+  wrapper，不得向 npm/Expo 追加 `--device`；wrapper 锁定 exact available Simulator
+  UDID，物理 iOS repo CLI、连接/安装/验收冻结；
+- `scripts/mobile-local-qr.sh --no-upload --ipa <EXISTING_IPA>` 读取现成 IPA 并生成离线检视
+  metadata/report；不生成 install manifest、安装二维码或可安装承诺；
+- offline evidence parser，以及 already-downloaded IPA/已有本地 metadata 的 identity 对账；
+  release `plan`/`validate` 与 EAS/ASC remote observation 均冻结。
 
-- `rollback_source_group_id` / `rollback_source_update_id`: 被选来 republish 的历史来源；
-- `rollback_source_verification`: 历史来源 group/update/runtime 在 republish 前的复证；
-- `rollback_from_group_id` / `rollback_from_update_id`: 回滚前的活跃身份；
-- `rollback_from_evidence`: 回滚前 artifact/transaction 证据的审计快照；这些字段
-  不再保留在顶层，避免被误读为当前 republish 的证据；
-- `active_group_id` / `active_update_id`: **republish 新创建**的 group/update 身份，而不是来源 ID；
-- `previous_known_good_group_id` / `previous_known_good_update_id`: 继续指向已复证的
-  历史来源，不会指回本次逃离的坏版本；
-- `rollback_remote_verification` / `rolled_back_at`: 新身份远端复证与完成时间。
+bare `--no-upload` 会触发 archive/export，故同样冻结；不得自动 signing/provisioning、调用
+`mobile-fast-device.sh`、`mobile-local-device.sh` 或使用 `-allowProvisioningUpdates`。
 
-`rollback_target_*` 作为 schema v1 兼容别名继续表示历史来源；新代码应读
-`rollback_source_*`。
+Android 尚不是 shipped/audited Mobile surface。`npm run android`/`expo run:android` 会自动
+native generation、debug signing 与 ADB install，故 repo entry 必须 earliest `exit 78`；
+冻结期无 Android native CLI 例外。
 
-## 发布
+这些证据不得写成 OTA 发布、G5/G6、App Store submission 或 `shipped`/`complete`。
 
-```bash
-./scripts/mobile-ota.sh production "message"
-```
+## Historical schema-v2 protocol（不可执行）
 
-正常路径由第一次 EAS 调用完成 bundling 和 publish。明确的临时上传失败会：
+若未来在新信任根下重新设计 OTA transaction，历史 schema-v2 字段可作为评审输入：
 
-1. 在所有 branch 中进行有界轮询（默认 3 次、间隔 2 秒），查找带
-   `[tx:<transaction_id>]` 的 recent updates；唯一
-   group 命中时只做复证，避免 channel/branch 名不同时重复发布；
-2. 无命中时复查 source 与 artifact digest；
-3. 对同一 `--input-dir` 执行一次 `--skip-bundler` 重试；如重试响应也丢失，
-   再做一次同 transaction 查询，只允许复证唯一命中，不发起第三次发布。
+- `schema_version`、`status`、`transaction_id`；
+- `platform`、`channel`、`environment`、`runtime_version`；
+- `commit_sha`、`source_tree`；
+- `artifact_digest`、`artifact_file_count`、`artifact_total_bytes`、`artifact_evidence`；
+- `eas_cli`、`group_id`、`update_id`、`active_group_id`、`active_update_id`；
+- `previous_known_good_group_id`、`previous_known_good_update_id`；
+- `remote_verification`、`published_at`；
+- rollback 的 source/from/active identities、verification 与 `rolled_back_at`。
 
-认证、runtime、Metro、语法、配置错误不重试；查询失败、多 group 命中、artifact
-缺失或变化都会停止，且不写 manifest/anchor。显式调试
-`OTA_FORCE_NO_BYTECODE=1` 仍支持单次 no-bytecode export，但不会在失败后换一份 bundle。
+历史协议要求单次 transaction 的 export 只复用同一批字节；remote outcome 模糊时只能
+reconcile exact transaction，不能盲发第二次；manifest、anchor、audit 必须分离且不含
+凭证、健康内容或用户标识。但这些不变量现在只可跑 mock/protocol tests，不能接 EAS。
 
-## 回滚
+## 解冻条件
 
-先演练：
-
-```bash
-./scripts/mobile-ota-rollback.sh production
-```
-
-确认后执行：
-
-```bash
-./scripts/mobile-ota-rollback.sh production --confirm
-```
-
-也可以显式指定已验证的来源 group/update 对：
-
-```bash
-./scripts/mobile-ota-rollback.sh production \
-  --group <verified-source-group-id> \
-  --update-id <verified-source-ios-update-id> \
-  --confirm
-```
-
-EAS `update:republish` 会创建新的 group 和 iOS update。脚本读取结构化 republish
-结果，并再次执行 `update:view` 与 `channel:view`；只有新身份全部匹配才更新 manifest。
-因此审计时必须区分“历史来源 ID”和“当前 republish ID”。
-
-## 边界
-
-- 一次事务的 export 仅用于本次瞬时重试；EAS 环境可能变化，因此禁止跨发布缓存。
-- 原生能力、权限、Watch 扩展、Expo SDK/native module 和 runtime 不兼容变更仍走原生发版。
-- 这是人工回滚，不根据崩溃循环或失败率自动回滚。
+解冻必须另开 dossier，并由 repo-external、root-owned launcher 以固定解释器和 `env -i`
+allowlist 启动，从 canonical Git archive/tree 在仓库外 materialize 受信执行字节。新的
+authority 必须独立证明 source/artifact/native cohort、channel→branch 与 installed cohort
+隔离、exact-transaction recovery 和 terminal state，再通过新的独立 G4。当前 G5、G6、
+App Store submission 均为 **BLOCK**。

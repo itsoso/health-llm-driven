@@ -5,6 +5,13 @@
 > Updated: 2026-06-18
 > Related PRD/PDD: `docs/plans/2026-06-18-rokid-pushup-real-data-integration.md`
 > Related code: `mobile/modules/rokid-bridge`, `mobile/app/rokid-pushup-coach.tsx`, `apps/rokid-pushup-glasses`
+>
+> **Current release override (2026-08-12):** all OTA/rollback channels and production native/Rokid
+> writers are frozen. EAS preview/development is not a trusted isolation boundary. The tracked
+> `gradlew`/`gradlew.bat`, release/debug-sign build, Android Studio build, ADB install, physical
+> iOS/Rokid bridge connection/install/acceptance are all frozen. There is no reviewed unsigned
+> compile/test wrapper, so this spec does not claim local Rokid compile/test is available. Manual
+> external Gate is BLOCK pending a new repo-external trust-root dossier and independent G4.
 
 ## 1. Decision
 
@@ -124,7 +131,7 @@ cd ..
 git diff --check
 ```
 
-Manual device check:
+Future external manual-device Gate (**BLOCKED / DO NOT EXECUTE during the freeze**):
 
 1. Install a native Reva build with `ROKID_IOS_SDK_ENABLED=1`.
 2. Complete Rokid authorization in Reva.
@@ -135,7 +142,14 @@ Manual device check:
 
 ## 11. Rollout And Rollback
 
-Roll out only through the Rokid native build channel. Rollback is to stop using the install/update button and keep ADB/manual install as fallback. Production OTA is not enough because this adds native bridge methods.
+OTA cannot carry this change because it adds native bridge methods, and every OTA channel is frozen
+anyway. Validate JS/UI integration only with local Metro/iOS Simulator; `npm run ios` uses the
+Simulator wrapper, callers may not append npm/Expo `--device`, and the wrapper pins an exact
+available Simulator UDID. Physical iOS/Rokid connection, install and acceptance are frozen. Do not
+archive/export/sign/provision a new build. The Rokid automatic production native entrypoint is
+frozen; manual Gate means BLOCK regardless of candidate visibility. The tracked Gradle wrappers,
+Android Studio, release/debug-sign builds and ADB/manual install are not development fallbacks.
+Without a reviewed unsigned compile/test wrapper, local Rokid compile/test is not an allowed surface.
 
 ## 12. Changelog
 

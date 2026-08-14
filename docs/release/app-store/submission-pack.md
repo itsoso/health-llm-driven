@@ -1,6 +1,26 @@
 # 小巴(中和知微)App Store Submission Pack · 睿为健康
 
-Status: draft for the next App Store submission.
+Status: **BLOCKED — automatic release/signing entrypoints and App Store submission are frozen.**
+
+The repository cannot currently bootstrap trusted production execution from a same-UID writable
+checkout. Git replace, shared info attributes+filters, hidden untracked import shadow, `BASH_ENV`,
+and `PYTHONPATH`/`sitecustomize` have all bypassed repo-contained source guards in review. Therefore
+candidate creation/upload, TestFlight selection/distribution, ASC metadata changes, review-account
+reset and App Review submission are forbidden. Automated archive/export/signing/provisioning,
+`mobile-fast-device.sh`, `mobile-local-device.sh`, bare `mobile-local-qr.sh --no-upload`, and especially
+`-allowProvisioningUpdates` are also forbidden. The only existing-IPA exception reads a
+caller-supplied IPA with `--no-upload --ipa <EXISTING_IPA>` and produces offline inspection
+metadata/report only—no install manifest, install QR, or installability claim. Live EAS/ASC observation is frozen;
+the material below is draft/static-local evidence only. `--final-submit` is frozen because it logs
+in as the production reviewer and obtains a writable bearer token. Passing a check does not
+authorize an ASC mutation. Re-enable only through a new dossier and an
+independently reviewed repo-external root-owned launcher with fixed interpreters, `env -i`, and
+canonical archive/tree materialization outside the repository.
+
+Local Mobile verification is limited to Metro/tests and the `npm run ios` Simulator wrapper.
+Callers must not append npm/Expo `--device`; the wrapper resolves the available inventory to an
+exact Simulator UDID. The repository XCUITest harness likewise accepts only an exact available
+Simulator UDID. Physical iOS repository CLI and acceptance are frozen.
 
 ## App Record
 
@@ -65,19 +85,31 @@ not uploaded for this first submission.
 
 Standard production is iPhone-only and portrait-only. It intentionally excludes the Watch companion, Rokid integration, Siri intents and background location. Those capabilities use separate non-submission profiles.
 
-Before triggering a production iOS build or submit, run the no-network config gate:
+For read-only preparation, run the no-network config gate:
 
 ```bash
 python3 scripts/check_ios_app_store_submission.py
 ```
 
-Immediately before upload/submit, require local App Store Connect API credentials as well:
+The credential-aware mode is not part of the static allowed surface. Do not run
+`--require-asc-credentials` during the freeze.
 
-```bash
-python3 scripts/check_ios_app_store_submission.py --require-asc-credentials
-```
+Automated production candidate creation is frozen. The reserved repository native entry returns 78
+before lock/network/EAS access and is intentionally omitted as a copyable command; direct EAS/Xcode/
+ASC alternatives are equally forbidden.
 
-The production binary path remains EAS production build with App Store Connect auto-submit. QR install is the default for local mobile distribution, but App Store submission requires the production EAS/App Store Connect path.
+For the current review cycle, reconcile an already-existing candidate only from an already-downloaded
+IPA or already-exported local metadata. Do not query EAS/ASC, select or distribute it. Regardless of
+whether a unique candidate exists, the App Review Gate remains BLOCKED. After a future re-enable,
+the `production` profile is
+iPhone-only. It excludes Watch; Watch uses the
+separate `watch-production` profile and requires its own dossier and native,
+physical-device and Store gates. A future repo-external controlled launcher may create a candidate
+only after the freeze prerequisites and a new independent G4 pass; no current repository command
+has that authority. Build selection, TestFlight acceptance and App Review submission remain separate
+gates. If the remote outcome is ambiguous, retain the original transaction and
+recover it from unique commit/profile/platform/build evidence; never start a
+replacement build merely because the success response was lost.
 
 ## Final Submit Gate
 
@@ -89,27 +121,23 @@ python3 scripts/check_app_store_release_pack.py
 
 The adapted review checklist is `docs/release/app-store/adapted-review-checklist.md`. It is included in the release-pack gate and maps operational App Review risks to automated and manual checks.
 
-Immediately before an App Store submission, run the stricter final gate. It must fail if the submission pack or review notes are still marked draft, demo credentials are still placeholders, App Store Connect credentials are unavailable, the age rating or production OTA freeze has not been confirmed, or no exact-build App Store-ready screenshot and physical-iPhone evidence set is provided:
+The stricter final gate is frozen, not a read-only gap report:
+`check_app_store_release_pack.py --final-submit` logs in as the production reviewer and obtains a
+writable bearer token. It must stop before login/credential access and is intentionally omitted as
+a copyable command. Record its inputs as unresolved future external-Gate requirements; the global
+production freeze keeps submission BLOCKED.
 
-```bash
-export APP_STORE_REVIEW_DEMO_ACCOUNT="..."
-export APP_STORE_REVIEW_DEMO_PASSWORD="..."
-export APP_STORE_REVIEW_CONTACT_PHONE="+8613800138000"
-export APP_STORE_BUILD_ID="..."
-export APP_STORE_EAS_BUILD_ID="..." # Copy from `eas build:view <id> --json`.
-export APP_STORE_GIT_COMMIT_HASH="..." # Full 40-character source SHA from the same EAS metadata.
-export APP_STORE_REAL_DEVICE_EVIDENCE="/secure/path/real-device-acceptance.json"
-export APP_STORE_PRIVACY_RESPONSES_PUBLISHED="1"
-export APP_STORE_REGULATED_MEDICAL_DEVICE_STATUS="no"
-export APP_STORE_AGE_RATING_CONFIRMED="1"
-export APP_STORE_PRODUCTION_OTA_FROZEN="1"
-
-python3 scripts/check_app_store_release_pack.py \
-  --final-submit \
-  --screenshot-dir design/screenshots/app-store/<build-id>-ready
-```
-
-Create the external evidence file from `docs/release/app-store/real-device-acceptance.template.json`. It must refer to the exact TestFlight build and include the app version, App Store build number, production EAS build ID, full 40-character source commit, IPA `DTXcode`, IPA `DTPlatformVersion`, device, iOS version and tester. Copy `APP_STORE_EAS_BUILD_ID` and `APP_STORE_GIT_COMMIT_HASH` independently from `eas build:view <id> --json`; the final gate compares both values exactly with the evidence instead of accepting format-only matches. It also requires `DTXcode >= 2600`, iOS platform major `>= 26`, and exact matches for the configured app version and `APP_STORE_BUILD_ID`. Mark every physical-iPhone check `true`, including demo login, streaming Markdown, permission-denied text fallback, both voice modes, external-audio interruption, photo persistence, image/video playback and sharing, write/correct/delete idempotency, foreground recovery, draft preservation, latest-message scrolling, privacy and deletion paths. Do not commit tester evidence containing device or account details.
+`docs/release/app-store/real-device-acceptance.template.json` is a future external-manual evidence
+schema, not a runnable instruction during the freeze. Do not create or update physical-iPhone
+evidence now. After the global freeze is lifted, a separately authorized process outside this
+repository must inspect the exact candidate and privately record the app version, App Store build
+number, production EAS build ID, full 40-character source commit, IPA `DTXcode`, IPA
+`DTPlatformVersion`, device class, iOS version and tester. It must cover demo login, streaming
+Markdown, permission-denied text fallback, both voice modes, external-audio interruption, photo
+persistence, image/video playback and sharing, write/correct/delete idempotency, foreground
+recovery, draft preservation, latest-message scrolling, privacy and deletion paths. Do not commit
+tester evidence containing device or account details. Until that external evidence exists, the
+physical-device and submission Gates remain BLOCKED.
 
 Extract the toolchain values from the exact downloaded IPA, not from a local Xcode assumption:
 
@@ -122,24 +150,36 @@ plutil -extract DTPlatformVersion raw -o - "$reva_app_plist"
 rm -rf "$reva_ipa_extract_dir"
 ```
 
-The release owner copies those two outputs into the external evidence file and verifies the EAS build ID, build number and commit against the same binary before setting any final-submit confirmation.
+After reauthorization, the external release owner copies those two outputs into the external evidence
+file and verifies the EAS build ID, build number and commit against the same binary. No current
+final-submit confirmation is permitted.
 
-Run the non-destructive automated subset against the installed production app first:
+The repository XCUITest harness is Simulator-only. It may exercise the non-destructive subset
+against a manually prepared iOS Simulator, but cannot create physical-device or Store evidence:
 
 ```bash
 scripts/run_ios_real_device_acceptance.sh \
-  <physical-device-udid> \
-  /secure/path/XiaobaAcceptance-<build-id>.xcresult
+  --platform "iOS Simulator" \
+  --device <simulator-udid> \
+  --location 30.2741,120.1551 \
+  --expected-city 杭州 \
+  --result /tmp/XiaobaAcceptance-Simulator-<build-id>.xcresult
 ```
 
-Before running it, sign in to the review account manually on the iPhone and confirm the Agent screen is visible. Never export or pass the review account/password to this XCUITest harness: Xcode result bundles and console output can retain typed text. The harness fails closed when those credential variables are present and covers only the pre-authenticated session: launch, cold-start persistence, Agent access, latest fixed briefing, Today interaction, foreground draft recovery, and privacy/account-deletion entries. Record the manual signed-out login check separately in the external evidence file. It does not replace the dedicated physical checks for voice, camera, sharing, health writes, correction/deletion idempotency, or completed account deletion.
+Here `--device` is the harness's historical option name for a Simulator UDID; it does not authorize
+Expo `--device` or a physical iPhone. Before running it, sign in manually in the Simulator and
+confirm the Agent screen is visible. Never export or pass the review account/password to this
+XCUITest harness: result bundles and console output can retain typed text. The harness covers only
+the pre-authenticated Simulator session: launch, cold-start persistence, Agent access, latest fixed
+briefing, Today interaction, foreground draft recovery, GPS city and privacy/account-deletion
+entries. It does not replace any external physical check.
 
-Immediately before final device acceptance, restore the deterministic review data through the guarded deployment entry point, then run the live release-pack check. The reset is revision-locked, uses the server-side secret store, prints only non-identifying pass evidence, preserves the existing password, and makes the fixed briefing the default latest conversation:
-
-```bash
-./deploy.sh --reset-app-store-review
-python3 scripts/check_app_store_release_pack.py
-```
+The production review-account reset writer is frozen at exit 78. Do not invoke it, seed/reset the
+account through a release-side raw SSH/API/database path, or substitute a release helper. A distinct
+server-local admin utility would require an explicitly authorized, audited manual-admin event and
+cannot be invoked by this automatic release flow. Device acceptance may
+only inspect the account's current state; if deterministic review data is not already present, record
+the App Review Gate as BLOCKED.
 
 ## Privacy Nutrition Label
 
@@ -154,23 +194,37 @@ requires `User Content -> Audio Data` for App Functionality, and authenticated
 client-event telemetry requires linked `Usage Data -> Product Interaction` for
 App Functionality and Analytics.
 
-Before final submission, compare every App Store Connect data type and purpose with the checked-in declaration, click Publish, and set `APP_STORE_PRIVACY_RESPONSES_PUBLISHED=1` only after the published product-page preview is visible.
+During the freeze, compare the checked-in declaration only with an already-exported local App Store
+Connect snapshot; do not query ASC, click Publish or change answers. Keep
+`APP_STORE_PRIVACY_RESPONSES_PUBLISHED` unset unless a
+future, separately authorized submission transaction has actually published them.
 
 ## Regulated Medical Device Declaration
 
 小巴 is not a regulated medical device. It supports personal health records, trend explanation and lifestyle action drafts, but does not claim to diagnose, prevent or treat disease, replace a medical device, prescribe treatment, or determine medication dosage.
 
-Because the app is categorized as Health & Fitness and is intended for United States availability, App Store Connect requires an explicit declaration. In `App Information -> App Store Regulations & Permits -> Regulated Medical Devices`, select `No`, save it, then set `APP_STORE_REGULATED_MEDICAL_DEVICE_STATUS=no` on the release machine. A `yes` value must stop this release and trigger a separate regulatory review.
+Because the app is categorized as Health & Fitness and is intended for United States availability,
+App Store Connect requires an explicit declaration. During the freeze, inspect only an
+already-exported local snapshot; do not query, change or save ASC metadata. A future authorized
+submission transaction may select `No` only
+after product/legal revalidation; any `Yes` determination requires separate regulatory review.
 
 Official requirement: https://developer.apple.com/help/app-store-connect/manage-app-information/declare-regulated-medical-device-status
 
 ## Age Rating Confirmation
 
-The release owner must open the saved App Store Connect age-rating questionnaire for version 1.3.3, review it against the production capability surface and save any required answers. Do not infer answers from the repository or set the confirmation before the saved questionnaire is visible. After this manual review, set `APP_STORE_AGE_RATING_CONFIRMED=1` on the release machine.
+The release owner may inspect an already-exported local snapshot of the App Store Connect age-rating
+questionnaire and record gaps. Do not query ASC, save answers or set the confirmation during the
+freeze. A future authorized
+submission transaction must re-review the then-current production surface.
 
-## Production OTA Freeze
+## All-Channel OTA Freeze
 
-From the moment the 1.3.3 candidate is built until App Review and public G6 verification finish, do not publish an EAS Update to the production channel. This keeps the reviewed JavaScript bundle identical to the tested candidate. The release owner records the freeze window and then sets `APP_STORE_PRODUCTION_OTA_FROZEN=1`; lift the freeze only after the approved binary is public and G6 passes.
+All OTA/rollback channel writers are frozen with the automatic production release entrypoints. EAS channel→branch mapping
+may drift or be shared, so preview/development names cannot prove that an update will not reach the
+production cohort. This is not a candidate-window toggle and cannot be lifted after a local check.
+It may only change in a new dossier after the external launcher design, trusted mapping/cohort proof,
+and independent G4 pass. G5/G6 are currently BLOCKED.
 
 ## Screenshot Set
 
@@ -184,12 +238,13 @@ Build 226 historical App Store Connect set (uploaded and API-verified on 2026-07
 
 The uploaded set uses the demo account, contains no private user health data, and targets `APP_IPHONE_67` at 1290 x 2796. The settings screenshot containing the demo login identifier and the privacy-policy screenshot were validated locally but intentionally excluded from marketing assets.
 
-The release target is version 1.3.3 with the App Store build number assigned by
-EAS remote auto-increment (expected Build 241 or later). Build 240 and the Build
-226 screenshots are historical evidence only and cannot satisfy the final gate.
-Record the newly produced EAS build ID, source commit and IPA metadata in the
-external evidence file, then capture or explicitly re-verify the required
-screenshot set against that exact candidate before submission.
+The release target is version 1.3.3 and requires an existing reconciled candidate at Build 241 or
+later. Build 240 and the Build 226 screenshots are historical evidence only and cannot satisfy the
+final gate. Automated production candidate creation is frozen, so do not expect remote
+auto-increment or a newly produced build. Record the selected candidate's exact EAS/ASC identity,
+source commit and IPA metadata in the external evidence file, then capture or explicitly re-verify
+the required screenshot set against that same candidate. If no unique trusted candidate exists,
+submission remains BLOCKED.
 
 Use `docs/release/app-store/screenshot-runbook.md`. Required first pass:
 
@@ -239,22 +294,31 @@ python3 scripts/prepare_app_store_screenshots.py \
 
 Do not submit until:
 
+- [ ] A new dossier has delivered and independently G4-approved the repo-external root-owned
+      launcher, fixed interpreter/`env -i` bootstrap, and canonical archive/tree materialization.
+- [ ] The global production freeze has been explicitly lifted for native/ASC/App Review writers.
+
 - [ ] `python3 scripts/check_app_store_release_pack.py` passes.
 - [ ] `docs/release/app-store/adapted-review-checklist.md` has been reviewed for any new route, dynamic card, payment, permission, HealthKit, or medical-boundary change.
-- [ ] `python3 scripts/check_app_store_release_pack.py --final-submit --screenshot-dir design/screenshots/app-store/<build-id>-ready` passes on the release machine.
-- [ ] `python3 scripts/check_ios_app_store_submission.py --require-asc-credentials` passes on the release machine.
+- [ ] After the freeze is lifted and a new independent G4 passes, the repo-external submission Gate
+      supplies reviewer login and exact-build evidence; current `--final-submit` and
+      `--require-asc-credentials` repo invocations remain frozen.
 - [ ] Any sanitized candidate generated from private QA screenshots has passed human visual review before prepare.
 - [ ] Candidate screenshots exist under `design/screenshots/app-store/<build-id>-ready/` and pass:
       `APP_STORE_SCREENSHOT_DIR=design/screenshots/app-store/<build-id>-ready python3 scripts/check_app_store_release_pack.py`.
 - [ ] Privacy policy URL is publicly reachable: `curl -fsSI https://health.executor.life/privacy`.
 - [ ] A production IPA or EAS build is visible in App Store Connect.
-- [ ] App Privacy answers exactly match `privacy-nutrition-label.draft.json`, have been published, and the product-page preview has been reviewed.
-- [ ] App Information declares `Regulated Medical Devices: No` for this release; any `Yes` determination stops submission pending regulatory review.
-- [ ] The release owner has reviewed and saved the current App Store Connect age-rating questionnaire, then set `APP_STORE_AGE_RATING_CONFIRMED=1`.
+- [ ] After the global freeze is separately lifted, an authorized transaction publishes App Privacy
+      answers matching `privacy-nutrition-label.draft.json`; current work is read-only comparison.
+- [ ] After the freeze is lifted, an authorized transaction records the regulated-device declaration;
+      any `Yes` determination stops submission pending regulatory review.
+- [ ] After the freeze is lifted, the release owner reviews and saves the current age-rating answers.
 - [ ] Production-channel OTA is frozen for the candidate through App Review and public G6 verification, then `APP_STORE_PRODUCTION_OTA_FROZEN=1` is set.
 - [ ] The exact IPA reports `DTXcode >= 2600` and `DTPlatformVersion` major `>= 26`; both values are copied into same-build real-device evidence.
 - [ ] `APP_STORE_EAS_BUILD_ID` and `APP_STORE_GIT_COMMIT_HASH` were copied from the candidate's EAS metadata and exactly match the same-build real-device evidence.
 - [ ] A physical iPhone has passed demo login, briefing expand/collapse, Agent text conversation, text fallback after denied optional permissions, real-time dictation toggle, hold-to-talk send/cancel/text conversion, camera/photo persistence, WeChat/Xiaohongshu share handoff, confirmed database write, personal-center/privacy and deletion-request status checks.
-- [ ] Only after the same-build physical-iPhone run and final screenshot review pass, change the submission pack status to `ready for App Store submission` and remove `Draft` from the Review Notes heading.
+- [ ] Only after the global freeze is lifted and a separately authorized external manual process
+      produces same-build physical-iPhone evidence and the final screenshot Gate passes, change
+      this pack from BLOCKED to ready; the repository Simulator harness cannot do so.
 - [ ] `docs/release/app-store/dependency-risk-review.md` still matches a fresh production dependency audit.
 - [ ] The release machine has `APP_STORE_REVIEW_DEMO_ACCOUNT`, `APP_STORE_REVIEW_DEMO_PASSWORD`, and `APP_STORE_REVIEW_CONTACT_PHONE`, or a human has filled the equivalent Review Detail fields in App Store Connect.

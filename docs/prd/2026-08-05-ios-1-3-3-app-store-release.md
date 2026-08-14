@@ -4,10 +4,24 @@
 > Owner: product / mobile release
 > Approved: 2026-08-05
 > Related spec: `docs/specs/active/2026-08-05-ios-1-3-3-app-store-release.md`
+>
+> **CURRENT RELEASE OVERRIDE (2026-08-12): BLOCKED.** 所有 repo 内自动远程/供应商 release
+> entrypoint、本机 signing/install/automatic provisioning entrypoint，以及所有 OTA/rollback
+> channel、native/EAS/ASC/App Review 自动入口均冻结。EAS channel→branch 映射
+> 可能漂移或共用，preview/development 也无例外。现有 candidate 仅可从已有本地 IPA/
+> metadata 对账，不得联网查询；不得创建、
+> 选择、分发或提交。不得自动 archive/export/signing/provisioning 或使用
+> `-allowProvisioningUpdates`；只可用 `--no-upload --ipa <EXISTING_IPA>` 读取现成 IPA 并
+> 生成离线检视 metadata/report，不生成 install manifest、安装二维码或可安装承诺。解冻须
+> 新 dossier、repo-external root-owned launcher、fixed
+> interpreter、`env -i`、repo-external canonical tree、source/artifact/recovery proof 与新独立
+> G4。当前 G5/G6/submission 均 BLOCK，不能标 shipped/complete。
 
 ## 1. Goal
 
-在 2026-08-07（周五）前完成小巴 iOS 1.3.3 的新正式构建、同包真机验收和 App Store 提交；若 Apple 在本周内批准，则在生产健康检查通过后手动公开发布。
+本 PRD 在 2026-08-05 原定于 2026-08-07（周五）前完成小巴 iOS 1.3.3 的新正式构建、同包
+真机验收和 App Store 提交。该原目标已被上方 2026-08-12 freeze override 取代：当前不得
+执行构建、真机验收或提交；未来解冻后的真机证据必须由仓库外获权人工流程生成。
 
 “本周发布”不等于承诺 Apple 的审核完成时间。团队可承诺的是：无已知红项地完成正式包并提交审核，随后及时响应审核问题。
 
@@ -27,8 +41,8 @@
 - R6：生产包只启用标准 iPhone 能力；实验性 Rokid、Watch、Siri、后台定位和诊断入口保持关闭。
 - R7：所有可选权限均由用户主动触发；拒绝权限后仍可使用文字对话和手工记录。
 - R8：同一个 Store Build 完成真机、医疗边界、隐私、账号删除、分享、Garmin/HealthKit 和恢复性验收。
-- R9：审核期间冻结 production OTA 渠道和审核账号状态。
-- R10：审核批准后采用手动发布，并完成生产真机和服务健康验证。
+- R9：所有 OTA/rollback channel 与审核账号 mutation 持续冻结。
+- R10：当前不采用手动发布；manual Gate 表示 BLOCK/STOP。未来解冻后另立 rollout。
 
 ## 4. Non-Goals
 
@@ -52,7 +66,7 @@
 - 健康、用药和账号数据的事实源仍是后端；客户端不得推导处方或剂量。
 - App Store Connect 是隐私标签、年龄分级、审核详情和提交状态的最终事实源。
 - EAS 构建 ID、git commit、IPA 工具链字段和真机证据共同定义精确发布包。
-- production OTA 在提交审核到公开上线完成期间保持冻结。
+- 所有 OTA/rollback channel 持续冻结；channel 名不能证明 cohort 隔离。
 
 ## 7. Authoritative External Requirements
 

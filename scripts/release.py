@@ -1,18 +1,34 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 """Fail-closed source-aware release planning and orchestration."""
 
 from __future__ import annotations
 
+# The repository-local CLI must fail before importing any path-resolved module.
+# A writable worktree can otherwise hide an untracked stdlib-shadowing module
+# and execute it before source validation. Pure functions remain importable for
+# offline unit tests; production CLI planning/validation/publishing belongs in
+# the repo-external trusted Gate.
+import sys
+
+if __name__ == "__main__":
+    if sys.argv[1:] in (["-h"], ["--help"]):
+        print("Usage: release.py -h|--help")
+        print("Production release CLI is frozen (exit 78); use the manual Gate.")
+        raise SystemExit(0)
+    print(
+        "release error: production release CLI is frozen; use the manual Gate",
+        file=sys.stderr,
+    )
+    raise SystemExit(78)
+
 import argparse
-import errno
-import fcntl
+import contextvars
 import hashlib
 import json
 import os
 import re
 import stat
 import subprocess
-import sys
 import tempfile
 import time
 import uuid
@@ -27,14 +43,34 @@ try:
 except ModuleNotFoundError:
     from scripts import validation_credential
 
+try:
+    import release_lock
+except ModuleNotFoundError:
+    from scripts import release_lock
+
+try:
+    import release_production_state
+except ModuleNotFoundError:
+    from scripts import release_production_state
+
 
 ROOT = Path(__file__).resolve().parents[1]
+GIT_BINARY = "/usr/bin/git"
+CANONICAL_RELEASE_ORIGIN_URL = (
+    "https://github.com/itsoso/health-llm-driven.git"
+)
 STATE_SCHEMA_VERSION = 2
 STATE_DIRECTORY_NAME = "reva-release-state"
 STATE_FILE_NAME = "release-state.json"
 TRANSACTION_LOG_FILE_NAME = "release-transactions.jsonl"
 LOCK_FILE_NAME = "release-publish.lock"
 VALIDATION_PROFILE = "all"
+MAX_RELEASE_STATE_BYTES = 256 * 1024
+MAX_TRANSACTION_EVENT_BYTES = 64 * 1024
+MAX_TRANSACTION_LOG_BYTES = 8 * 1024 * 1024
+_ACTIVE_RELEASE_LOCK_FD: contextvars.ContextVar[int | None] = (
+    contextvars.ContextVar("active_release_lock_fd", default=None)
+)
 
 
 class ReleaseError(RuntimeError):
@@ -56,6 +92,8 @@ class ReleasePlan:
     actions: tuple[str, ...]
     completed_actions: tuple[str, ...]
     blocked_paths: tuple[str, ...]
+    surface_scope: tuple[str, ...]
+    deferred_surfaces: tuple[str, ...]
     publishable: bool
 
     def to_dict(self) -> dict[str, Any]:
@@ -67,6 +105,7 @@ Runner = Callable[..., subprocess.CompletedProcess[Any]]
 
 _STATUS_RE = re.compile(r"^[ACDMRTUXB][0-9]{0,3}$")
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+_REMOTE_RELEASE_TOKEN_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _SURFACE_ORDER = (
     "backend",
     "frontend",
@@ -103,7 +142,6 @@ _ROOT_VALIDATION_FILES = {
     "CHANGELOG.md",
     "CLAUDE.md",
     "README.md",
-    "deploy.sh",
     "deploy-remote.sh",
     "deploy_production.sh",
     "deploy_to_server.sh",
@@ -164,7 +202,15 @@ _VALIDATION_ENV_OVERRIDES = frozenset(
         "PYTHONHOME",
         "PYTHONPATH",
         "PYTHONSTARTUP",
+        "APP_ENV",
+        "DATABASE_URL",
+        "GARMIN_ENCRYPTION_KEY",
+        "NODE_ENV",
+        "SECRET_KEY",
+        "TEST_DATABASE_URL",
+        "TZ",
         "OTA_TRANSACTION_ID",
+        "OTA_TRANSACTION_REUSED",
         "npm_config_globalconfig",
         "npm_config_node_options",
         "npm_config_script_shell",
@@ -189,6 +235,49 @@ _MUTATION_ENV_OVERRIDES = frozenset(
         "PYTHONPATH",
         "PYTHONSTARTUP",
         "OTA_TRANSACTION_ID",
+        "OTA_TRANSACTION_REUSED",
+        "MOBILE_RUNTIME_VERSION",
+        "OTA_MANIFEST_FILE",
+        "OTA_ANCHOR_FILE",
+        "OTA_AUDIT_LOG",
+        "OTA_LOOKUP_ATTEMPTS",
+        "OTA_LOOKUP_DELAY_SECONDS",
+        "OTA_LOOKUP_MAX_PAGES",
+        "OTA_RETRY_DELAY_SECONDS",
+        "OTA_EAS_CLI_VERSION",
+        "OTA_FORCE_NO_BYTECODE",
+        "RELEASE_STEP_PROOF_MODE",
+        "REMOTE_RELEASE_PROOF_ROOT",
+        "ALLOW_MISSING_LANGBRIDGE_ENV",
+        "DEPLOY_ENV_FORCE",
+        "DEPLOY_EXPECTED_SHA",
+        "DEPLOY_MODE",
+        "DEPLOY_SCORE_THRESHOLD",
+        "REVA_RELEASE_LOCK_ADOPT",
+        "REVA_RELEASE_LOCK_FD",
+        "REVA_RELEASE_LOCK_TOKEN",
+        "REVA_REMOTE_RELEASE_LOCK_ADOPT",
+        "REVA_REMOTE_RELEASE_LOCK_ALLOW_ALLOCATING_ADOPT",
+        "REVA_REMOTE_RELEASE_LOCK_TOKEN",
+        "REVA_RELEASE_COORDINATOR_SURFACE",
+        "REVA_RELEASE_COORDINATOR_OPERATION",
+        "REVA_RELEASE_COORDINATOR_CHANNEL",
+        "REVA_RELEASE_COORDINATOR_TRANSACTION",
+        "REVA_RELEASE_COORDINATOR_BASELINE_DIGEST",
+        "REVA_RELEASE_COORDINATOR_REQUEST_DIGEST",
+        "REVA_RELEASE_COORDINATOR_STAGE",
+        "REVA_RELEASE_COORDINATOR_SOURCE_SHA",
+        "REVA_RELEASE_COORDINATOR_SOURCE_TREE",
+        "REVA_RELEASE_COORDINATOR_TERMINAL_DIGEST",
+        "REVA_EXPECTED_SERVER_SURFACES",
+        "REMOTE_RELEASE_LOCK_DIR",
+        "REMOTE_RELEASE_STATE_DIR",
+        "REMOTE_HEALTH_EVIDENCE_CGROUP_ROOT",
+        "REMOTE_HEALTH_EVIDENCE_DURABLE_STATE_DIR",
+        "REMOTE_HEALTH_EVIDENCE_PROC_ROOT",
+        "REMOTE_HEALTH_EVIDENCE_RUNTIME_STATE_DIR",
+        "REMOTE_HEALTH_EVIDENCE_SYSTEMD_RUNTIME_DIR",
+        "SYSTEM_KB_IMPORT_PROOF_MODE",
         "npm_config_globalconfig",
         "npm_config_node_options",
         "npm_config_script_shell",
@@ -201,6 +290,7 @@ _OTA_TEST_ENV_OVERRIDES = frozenset(
         "OTA_EAS_RUNNER",
         "OTA_EXPO_RUNNER",
         "OTA_TEST_AFTER_ARTIFACT_VERIFIED",
+        "OTA_TEST_AFTER_RECEIPTS_WRITTEN",
     }
 )
 
@@ -213,7 +303,19 @@ def _git(
 ) -> str | bytes:
     environment = _git_environment()
     result = subprocess.run(
-        ["git", "-C", str(repo), *args],
+        [
+            GIT_BINARY,
+            "--no-replace-objects",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "credential.helper=",
+            "-C",
+            str(repo),
+            *args,
+        ],
         check=check,
         capture_output=True,
         text=text,
@@ -246,7 +348,38 @@ def _scrub_environment(
 
 
 def _git_environment() -> dict[str, str]:
-    return _scrub_environment(os.environ, _GIT_ENV_OVERRIDES)
+    return {
+        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+        "HOME": "/var/empty",
+        "LANG": "C",
+        "LC_ALL": "C",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_ASKPASS": "/usr/bin/false",
+        "SSH_ASKPASS": "/usr/bin/false",
+    }
+
+
+def _network_git(*args: str) -> str:
+    result = subprocess.run(
+        [
+            GIT_BINARY,
+            "--no-replace-objects",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "credential.helper=",
+            *args,
+        ],
+        cwd="/",
+        check=True,
+        capture_output=True,
+        text=True,
+        env=_git_environment(),
+    )
+    return result.stdout.strip()
 
 
 def _decode_path(value: bytes) -> str:
@@ -1096,6 +1229,18 @@ def classify_path(
 ) -> str | None:
     """Classify a repository path; ``None`` means fail-closed/unknown."""
 
+    # These are product/developer documents co-located with compiled clients.
+    # Keep the allowlist narrow: backend skills/KB Markdown remains runtime.
+    colocated_validation_docs = {
+        "apps/mac/README.md",
+        "apps/watch/README.md",
+        "apps/rokid-pushup-glasses/README.md",
+        "mobile/PRODUCT_MAP.md",
+        "mobile/SENTRY_SETUP.md",
+    }
+    if path in colocated_validation_docs:
+        return "validation_only"
+
     native_mobile_files = {
         "mobile/app.json",
         "mobile/app.config.js",
@@ -1160,6 +1305,9 @@ def classify_path(
     if path in _ROOT_VALIDATION_FILES or path.startswith(validation_prefixes):
         return "validation_only"
 
+    if path == "deploy.sh":
+        return "backend"
+
     if path.startswith("apps/mac/"):
         return "mac"
 
@@ -1182,13 +1330,20 @@ def build_plan(
     target_sha: str,
     completed_actions: Iterable[str] = (),
     native_mobile_assets: frozenset[str] | None = None,
+    surface_overrides: Mapping[str, str] | None = None,
+    surface_scope: Iterable[str] = (),
+    deferred_surfaces: Iterable[str] = (),
 ) -> ReleasePlan:
     changes_tuple = tuple(changes)
     surfaces_seen: set[str] = set()
     blocked_paths: set[str] = set()
     for change in changes_tuple:
         for path in change.paths:
-            surface = classify_path(path, native_mobile_assets=native_mobile_assets)
+            surface = (surface_overrides or {}).get(path)
+            if surface is None:
+                surface = classify_path(
+                    path, native_mobile_assets=native_mobile_assets
+                )
             if surface is None:
                 blocked_paths.add(path)
             else:
@@ -1198,30 +1353,37 @@ def build_plan(
         surfaces_seen.add("validation_only")
     if surfaces_seen - {"validation_only"}:
         surfaces_seen.discard("validation_only")
-    surfaces = tuple(surface for surface in _SURFACE_ORDER if surface in surfaces_seen)
-
     actions: list[str] = ["validate"]
     if "frontend" in surfaces_seen:
         actions.append("deploy_all")
     elif "backend" in surfaces_seen:
         actions.append("deploy_backend")
+    # Every EAS OTA channel writer is frozen until each distributed binary can
+    # be mapped to a trusted source/native fingerprint. Any mobile/shared change
+    # therefore requires native-build planning; no direct preview, development,
+    # or production OTA entrypoint remains executable.
+    if "mobile_ota" in surfaces_seen:
+        surfaces_seen.add("mobile_native")
+    surfaces = tuple(surface for surface in _SURFACE_ORDER if surface in surfaces_seen)
     if "mobile_native" in surfaces_seen:
         actions.append("native_build")
-    elif "mobile_ota" in surfaces_seen:
-        actions.append("mobile_ota")
     if "mac" in surfaces_seen:
         actions.append("mac_build")
 
-    normalized_completed = tuple(
-        action
-        for action in dict.fromkeys(completed_actions)
-        if action in _VALID_ACTIONS and action != "validate"
+    # Local release-state is same-UID mutable metadata, not production evidence.
+    # Keep the parameter for caller compatibility but never let it suppress a
+    # production mutation.  A future skip must come from a fresh, locked,
+    # per-surface production probe instead.
+    del completed_actions
+    normalized_completed: tuple[str, ...] = ()
+    normalized_deferred = tuple(
+        surface
+        for surface in _SURFACE_ORDER
+        if surface in set(deferred_surfaces) and surface != "validation_only"
     )
-    actions = [
-        action
-        for action in actions
-        if action == "validate" or action not in normalized_completed
-    ]
+    normalized_scope = tuple(
+        surface for surface in _SURFACE_ORDER if surface in set(surface_scope)
+    )
     publishable = not blocked_paths and not ({"mobile_native", "mac"} & surfaces_seen)
     return ReleasePlan(
         base_sha=base_sha,
@@ -1231,6 +1393,8 @@ def build_plan(
         actions=tuple(actions),
         completed_actions=normalized_completed,
         blocked_paths=tuple(sorted(blocked_paths)),
+        surface_scope=normalized_scope,
+        deferred_surfaces=normalized_deferred,
         publishable=publishable,
     )
 
@@ -1264,19 +1428,70 @@ def _owner_repository(repo: Path) -> Path:
     return _repository_root(repo)
 
 
-def release_state_dir(repo: Path) -> Path:
+def _open_release_state_directory(
+    repo: Path, *, create: bool
+) -> tuple[int | None, Path]:
     common = _git_common_dir(repo)
     state_dir = common / STATE_DIRECTORY_NAME
+    directory_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    directory_flags |= getattr(os, "O_DIRECTORY", 0)
+    directory_flags |= getattr(os, "O_NOFOLLOW", 0)
+    common_descriptor: int | None = None
+    state_descriptor: int | None = None
+    created = False
     try:
-        state_dir.mkdir(mode=0o700, exist_ok=True)
+        common_descriptor = os.open(common, directory_flags)
+        common_metadata = os.fstat(common_descriptor)
+        if (
+            not stat.S_ISDIR(common_metadata.st_mode)
+            or common_metadata.st_uid != os.getuid()
+        ):
+            raise ReleaseError(f"Unsafe Git common directory: {common}")
+        if create:
+            try:
+                os.mkdir(STATE_DIRECTORY_NAME, mode=0o700, dir_fd=common_descriptor)
+                created = True
+            except FileExistsError:
+                pass
+        try:
+            state_descriptor = os.open(
+                STATE_DIRECTORY_NAME,
+                directory_flags,
+                dir_fd=common_descriptor,
+            )
+        except FileNotFoundError:
+            if not create:
+                return None, state_dir
+            raise
+        metadata = os.fstat(state_descriptor)
+        if (
+            not stat.S_ISDIR(metadata.st_mode)
+            or metadata.st_uid != os.getuid()
+            or stat.S_IMODE(metadata.st_mode) != 0o700
+        ):
+            raise ReleaseError(f"Unsafe shared release state path: {state_dir}")
+        if created:
+            os.fsync(common_descriptor)
+        return state_descriptor, state_dir
+    except ReleaseError:
+        if state_descriptor is not None:
+            os.close(state_descriptor)
+        raise
     except OSError as error:
+        if state_descriptor is not None:
+            os.close(state_descriptor)
         raise ReleaseError(
-            f"Cannot create shared release state: {state_dir}"
+            f"Unsafe shared release state path: {state_dir}"
         ) from error
-    mode = state_dir.lstat().st_mode
-    if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
-        raise ReleaseError(f"Unsafe shared release state path: {state_dir}")
-    os.chmod(state_dir, 0o700)
+    finally:
+        if common_descriptor is not None:
+            os.close(common_descriptor)
+
+
+def release_state_dir(repo: Path) -> Path:
+    descriptor, state_dir = _open_release_state_directory(repo, create=True)
+    assert descriptor is not None
+    os.close(descriptor)
     return state_dir
 
 
@@ -1288,57 +1503,205 @@ def _transaction_log_path(repo: Path) -> Path:
     return _git_common_dir(repo) / STATE_DIRECTORY_NAME / TRANSACTION_LOG_FILE_NAME
 
 
-def write_release_state(repo: Path, state: Mapping[str, Any]) -> Path:
-    directory = release_state_dir(repo)
-    destination = directory / STATE_FILE_NAME
-    if destination.is_symlink():
-        raise ReleaseError(
-            f"Refusing to replace symlinked release state: {destination}"
+def _private_file_flags(access: int) -> int:
+    flags = access | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_NONBLOCK", 0)
+    return flags
+
+
+def _validate_private_file_descriptor(
+    directory_descriptor: int,
+    name: str,
+    descriptor: int,
+    *,
+    path: Path,
+    label: str,
+    max_bytes: int,
+) -> os.stat_result:
+    try:
+        metadata = os.fstat(descriptor)
+        entry = os.stat(
+            name,
+            dir_fd=directory_descriptor,
+            follow_symlinks=False,
         )
+    except OSError as error:
+        raise ReleaseError(f"Unsafe {label}: {path}") from error
+    if metadata.st_size > max_bytes:
+        raise ReleaseError(f"{label.capitalize()} is too large: {path}")
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != os.getuid()
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or metadata.st_nlink != 1
+        or (metadata.st_dev, metadata.st_ino) != (entry.st_dev, entry.st_ino)
+    ):
+        raise ReleaseError(f"Unsafe {label}: {path}")
+    return metadata
+
+
+def _write_all(descriptor: int, encoded: bytes) -> None:
+    view = memoryview(encoded)
+    while view:
+        written = os.write(descriptor, view)
+        if written <= 0:
+            raise OSError("short write to release state")
+        view = view[written:]
+
+
+def _read_bounded(descriptor: int, max_bytes: int) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    while total <= max_bytes:
+        chunk = os.read(descriptor, min(64 * 1024, max_bytes + 1 - total))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+    payload = b"".join(chunks)
+    if len(payload) > max_bytes:
+        raise ReleaseError("Shared release state file is too large")
+    return payload
+
+
+def _validate_existing_state_file(
+    directory_descriptor: int, destination: Path
+) -> None:
+    descriptor: int | None = None
+    try:
+        try:
+            descriptor = os.open(
+                STATE_FILE_NAME,
+                _private_file_flags(os.O_RDONLY),
+                dir_fd=directory_descriptor,
+            )
+        except FileNotFoundError:
+            return
+        _validate_private_file_descriptor(
+            directory_descriptor,
+            STATE_FILE_NAME,
+            descriptor,
+            path=destination,
+            label="shared release state file",
+            max_bytes=MAX_RELEASE_STATE_BYTES,
+        )
+    except ReleaseError:
+        raise
+    except OSError as error:
+        raise ReleaseError(f"Unsafe shared release state file: {destination}") from error
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def write_release_state(repo: Path, state: Mapping[str, Any]) -> Path:
+    directory_descriptor, directory = _open_release_state_directory(repo, create=True)
+    assert directory_descriptor is not None
+    destination = directory / STATE_FILE_NAME
     payload = dict(state)
     payload["schema_version"] = STATE_SCHEMA_VERSION
     payload["updated_at"] = datetime.now(timezone.utc).isoformat()
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=".release-state.", dir=directory
-    )
-    temporary = Path(temporary_name)
     try:
-        os.fchmod(descriptor, 0o600)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, sort_keys=True, separators=(",", ":"))
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, destination)
-        os.chmod(destination, 0o600)
-        directory_fd = os.open(directory, os.O_RDONLY)
+        encoded = (
+            json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode("utf-8")
+    except (TypeError, ValueError) as error:
+        os.close(directory_descriptor)
+        raise ReleaseError("Cannot encode shared release state") from error
+    if len(encoded) > MAX_RELEASE_STATE_BYTES:
+        os.close(directory_descriptor)
+        raise ReleaseError(f"Shared release state file is too large: {destination}")
+    temporary_name = f".release-state.{os.getpid()}.{uuid.uuid4().hex}"
+    temporary_descriptor: int | None = None
+    try:
+        _validate_existing_state_file(directory_descriptor, destination)
+        temporary_descriptor = os.open(
+            temporary_name,
+            _private_file_flags(os.O_WRONLY) | os.O_CREAT | os.O_EXCL,
+            0o600,
+            dir_fd=directory_descriptor,
+        )
+        _validate_private_file_descriptor(
+            directory_descriptor,
+            temporary_name,
+            temporary_descriptor,
+            path=directory / temporary_name,
+            label="temporary release state file",
+            max_bytes=MAX_RELEASE_STATE_BYTES,
+        )
+        _write_all(temporary_descriptor, encoded)
+        os.fsync(temporary_descriptor)
+        os.close(temporary_descriptor)
+        temporary_descriptor = None
         try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+            os.replace(
+                temporary_name,
+                STATE_FILE_NAME,
+                src_dir_fd=directory_descriptor,
+                dst_dir_fd=directory_descriptor,
+            )
+        except OSError as error:
+            raise ReleaseError(
+                f"Cannot atomically replace shared release state: {destination}"
+            ) from error
+        os.fsync(directory_descriptor)
     except BaseException:
-        temporary.unlink(missing_ok=True)
+        if temporary_descriptor is not None:
+            os.close(temporary_descriptor)
+        try:
+            os.unlink(temporary_name, dir_fd=directory_descriptor)
+        except FileNotFoundError:
+            pass
         raise
+    finally:
+        os.close(directory_descriptor)
     return destination
 
 
 def read_release_state(repo: Path) -> dict[str, Any]:
-    path = _state_path(repo)
-    if not path.exists():
+    directory_descriptor, directory = _open_release_state_directory(repo, create=False)
+    if directory_descriptor is None:
         return {}
-    metadata = path.lstat()
-    mode = metadata.st_mode
-    if (
-        stat.S_ISLNK(mode)
-        or not stat.S_ISREG(mode)
-        or stat.S_IMODE(mode) != 0o600
-        or metadata.st_nlink != 1
-    ):
-        raise ReleaseError(f"Unsafe shared release state file: {path}")
+    path = directory / STATE_FILE_NAME
+    descriptor: int | None = None
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
+        try:
+            descriptor = os.open(
+                STATE_FILE_NAME,
+                _private_file_flags(os.O_RDONLY),
+                dir_fd=directory_descriptor,
+            )
+        except FileNotFoundError:
+            return {}
+        except OSError as error:
+            raise ReleaseError(f"Unsafe shared release state file: {path}") from error
+        _validate_private_file_descriptor(
+            directory_descriptor,
+            STATE_FILE_NAME,
+            descriptor,
+            path=path,
+            label="shared release state file",
+            max_bytes=MAX_RELEASE_STATE_BYTES,
+        )
+        encoded = _read_bounded(descriptor, MAX_RELEASE_STATE_BYTES)
+        _validate_private_file_descriptor(
+            directory_descriptor,
+            STATE_FILE_NAME,
+            descriptor,
+            path=path,
+            label="shared release state file",
+            max_bytes=MAX_RELEASE_STATE_BYTES,
+        )
+        value = json.loads(encoded.decode("utf-8", errors="strict"))
+    except ReleaseError:
+        raise
+    except (OSError, UnicodeError, ValueError) as error:
         raise ReleaseError(f"Corrupt shared release state file: {path}") from error
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        os.close(directory_descriptor)
     if not isinstance(value, dict):
         raise ReleaseError(f"Invalid shared release state payload: {path}")
     if value.get("schema_version") == 1:
@@ -1366,6 +1729,8 @@ _TRANSACTION_EVENT_KEYS = frozenset(
         "failed_stage",
         "completed_surfaces",
         "pending_surfaces",
+        "surface_scope",
+        "deferred_surfaces",
         "safe_retry_command",
     }
 )
@@ -1378,36 +1743,48 @@ def _append_transaction_event(repo: Path, event: Mapping[str, Any]) -> Path:
             "Refusing unsafe release transaction event fields: "
             + ", ".join(sorted(unexpected))
         )
-    directory = release_state_dir(repo)
+    directory_descriptor, directory = _open_release_state_directory(repo, create=True)
+    assert directory_descriptor is not None
     destination = directory / TRANSACTION_LOG_FILE_NAME
-    if destination.is_symlink():
-        raise ReleaseError(f"Unsafe release transaction log: {destination}")
     payload = dict(event)
     payload["schema_version"] = STATE_SCHEMA_VERSION
     payload.setdefault("event_at", datetime.now(timezone.utc).isoformat())
     encoded = (
         json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
     ).encode("utf-8")
-    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
-    flags |= getattr(os, "O_CLOEXEC", 0)
-    flags |= getattr(os, "O_NOFOLLOW", 0)
+    if len(encoded) > MAX_TRANSACTION_EVENT_BYTES:
+        os.close(directory_descriptor)
+        raise ReleaseError(f"Release transaction event is too large: {destination}")
+    flags = _private_file_flags(os.O_WRONLY) | os.O_CREAT | os.O_APPEND
     descriptor: int | None = None
     try:
-        descriptor = os.open(destination, flags, 0o600)
-        metadata = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(metadata.st_mode)
-            or stat.S_IMODE(metadata.st_mode) != 0o600
-            or metadata.st_nlink != 1
-        ):
-            raise ReleaseError(f"Unsafe release transaction log: {destination}")
-        view = memoryview(encoded)
-        while view:
-            written = os.write(descriptor, view)
-            if written <= 0:
-                raise OSError("short write to release transaction log")
-            view = view[written:]
+        descriptor = os.open(
+            TRANSACTION_LOG_FILE_NAME,
+            flags,
+            0o600,
+            dir_fd=directory_descriptor,
+        )
+        metadata = _validate_private_file_descriptor(
+            directory_descriptor,
+            TRANSACTION_LOG_FILE_NAME,
+            descriptor,
+            path=destination,
+            label="release transaction log",
+            max_bytes=MAX_TRANSACTION_LOG_BYTES,
+        )
+        if metadata.st_size > MAX_TRANSACTION_LOG_BYTES - len(encoded):
+            raise ReleaseError(f"Release transaction log is too large: {destination}")
+        _write_all(descriptor, encoded)
         os.fsync(descriptor)
+        _validate_private_file_descriptor(
+            directory_descriptor,
+            TRANSACTION_LOG_FILE_NAME,
+            descriptor,
+            path=destination,
+            label="release transaction log",
+            max_bytes=MAX_TRANSACTION_LOG_BYTES,
+        )
+        os.fsync(directory_descriptor)
     except ReleaseError:
         raise
     except OSError as error:
@@ -1417,6 +1794,7 @@ def _append_transaction_event(repo: Path, event: Mapping[str, Any]) -> Path:
     finally:
         if descriptor is not None:
             os.close(descriptor)
+        os.close(directory_descriptor)
     return destination
 
 
@@ -1424,44 +1802,22 @@ def _append_transaction_event(repo: Path, event: Mapping[str, Any]) -> Path:
 def release_publish_lock(repo: Path):
     """Hold one nonblocking, repository-wide production publish lock."""
 
-    directory = release_state_dir(repo)
-    destination = directory / LOCK_FILE_NAME
-    if destination.is_symlink():
-        raise ReleaseError(f"Unsafe release publish lock: {destination}")
-    flags = os.O_RDWR | os.O_CREAT
-    flags |= getattr(os, "O_CLOEXEC", 0)
-    flags |= getattr(os, "O_NOFOLLOW", 0)
-    descriptor: int | None = None
-    locked = False
     try:
-        try:
-            descriptor = os.open(destination, flags, 0o600)
-        except OSError as error:
-            raise ReleaseError(f"Unsafe release publish lock: {destination}") from error
-        metadata = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(metadata.st_mode)
-            or stat.S_IMODE(metadata.st_mode) != 0o600
-            or metadata.st_nlink != 1
-        ):
-            raise ReleaseError(f"Unsafe release publish lock: {destination}")
-        try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError as error:
-            if error.errno in {errno.EACCES, errno.EAGAIN}:
-                raise ReleaseError(
-                    "Another release publish transaction is already active"
-                ) from error
+        lease = release_lock.acquire_release_lock(repo, label="release.py")
+    except release_lock.ReleaseLockError as error:
+        if error.kind == "busy":
             raise ReleaseError(
-                f"Cannot acquire release publish lock: {destination}"
+                "Another release publish transaction is already active"
             ) from error
-        locked = True
-        yield destination
+        raise ReleaseError(
+            f"Unsafe release publish lock: {release_lock.lock_path(repo)}"
+        ) from error
+    descriptor_reset = _ACTIVE_RELEASE_LOCK_FD.set(lease.fd)
+    try:
+        with lease:
+            yield lease
     finally:
-        if descriptor is not None:
-            if locked:
-                fcntl.flock(descriptor, fcntl.LOCK_UN)
-            os.close(descriptor)
+        _ACTIVE_RELEASE_LOCK_FD.reset(descriptor_reset)
 
 
 def _worktree_status(repo: Path) -> str:
@@ -1481,16 +1837,106 @@ def _branch_name(repo: Path) -> str:
     )
 
 
-def _remote_main_sha(repo: Path) -> str:
-    output = str(_git(repo, "ls-remote", "origin", "refs/heads/main"))
+def _assert_canonical_origin(
+    repo: Path,
+    *,
+    authority_url: str | None = None,
+) -> None:
+    authority_url = authority_url or CANONICAL_RELEASE_ORIGIN_URL
+    origin_urls = str(
+        _git(
+            repo,
+            "config",
+            "--local",
+            "--no-includes",
+            "--get-all",
+            "remote.origin.url",
+            check=False,
+        )
+    ).splitlines()
+    if origin_urls != [authority_url]:
+        raise ReleaseError(
+            "Release origin must contain exactly the canonical authority URL"
+        )
+    push_urls = str(
+        _git(
+            repo,
+            "config",
+            "--local",
+            "--no-includes",
+            "--get-all",
+            "remote.origin.pushurl",
+            check=False,
+        )
+    ).splitlines()
+    if push_urls:
+        raise ReleaseError("Release origin pushurl override is forbidden")
+    local_names = str(
+        _git(
+            repo,
+            "config",
+            "--local",
+            "--no-includes",
+            "--name-only",
+            "--list",
+        )
+    ).splitlines()
+    unsafe_names = []
+    for name in local_names:
+        lowered = name.lower()
+        if (
+            lowered == "include.path"
+            or lowered.startswith("includeif.")
+            or (
+                lowered.startswith("url.")
+                and lowered.endswith((".insteadof", ".pushinsteadof"))
+            )
+        ):
+            unsafe_names.append(name)
+    if unsafe_names:
+        raise ReleaseError(
+            "Release repository contains a forbidden URL rewrite/include: "
+            + ", ".join(sorted(unsafe_names))
+        )
+    replace_refs = str(
+        _git(repo, "for-each-ref", "--format=%(refname)", "refs/replace/")
+    ).splitlines()
+    if replace_refs:
+        raise ReleaseError("Release repository contains forbidden replacement refs")
+
+
+def _remote_main_sha(
+    repo: Path,
+    *,
+    authority_url: str | None = None,
+) -> str:
+    del repo
+    authority_url = authority_url or CANONICAL_RELEASE_ORIGIN_URL
+    output = _network_git(
+        "ls-remote",
+        "--exit-code",
+        authority_url,
+        "refs/heads/main",
+    )
     rows = [line.split() for line in output.splitlines() if line.strip()]
-    if len(rows) != 1 or len(rows[0]) != 2 or not _SHA_RE.fullmatch(rows[0][0]):
+    if (
+        len(rows) != 1
+        or len(rows[0]) != 2
+        or not _SHA_RE.fullmatch(rows[0][0])
+        or rows[0][1] != "refs/heads/main"
+    ):
         raise ReleaseError("Unable to verify the unique origin/main commit")
     return rows[0][0]
 
 
-def assert_release_source(release_path: Path) -> str:
+def assert_release_source(
+    release_path: Path,
+    *,
+    authority_url: str | None = None,
+) -> str:
+    authority_url = authority_url or CANONICAL_RELEASE_ORIGIN_URL
     release_path = _repository_root(release_path)
+    _assert_canonical_origin(release_path, authority_url=authority_url)
     dirty = _worktree_status(release_path)
     if dirty:
         raise ReleaseError(f"Release worktree is dirty; refusing cleanup:\n{dirty}")
@@ -1499,7 +1945,7 @@ def assert_release_source(release_path: Path) -> str:
         raise ReleaseError(f"Release worktree is on forbidden branch {branch}")
     head = str(_git(release_path, "rev-parse", "HEAD"))
     local_main = str(_git(release_path, "rev-parse", "refs/remotes/origin/main"))
-    remote_main = _remote_main_sha(release_path)
+    remote_main = _remote_main_sha(release_path, authority_url=authority_url)
     if not _SHA_RE.fullmatch(head) or head != local_main or head != remote_main:
         raise ReleaseError(
             "Release source must equal both local and remote origin/main: "
@@ -1512,8 +1958,11 @@ def ensure_release_worktree(
     repo: Path,
     *,
     release_path: Path | None = None,
+    authority_url: str | None = None,
 ) -> Path:
+    authority_url = authority_url or CANONICAL_RELEASE_ORIGIN_URL
     source = _repository_root(repo)
+    _assert_canonical_origin(source, authority_url=authority_url)
     owner = _owner_repository(source)
     destination = (
         release_path.resolve()
@@ -1545,9 +1994,16 @@ def ensure_release_worktree(
                 f"Release worktree is on forbidden branch {branch}; refusing checkout"
             )
 
-    _git(source, "fetch", "--quiet", "origin", "main")
+    _git(
+        source,
+        "fetch",
+        "--quiet",
+        "--no-tags",
+        authority_url,
+        "+refs/heads/main:refs/remotes/origin/main",
+    )
     local_main = str(_git(source, "rev-parse", "refs/remotes/origin/main"))
-    remote_main = _remote_main_sha(source)
+    remote_main = _remote_main_sha(source, authority_url=authority_url)
     if local_main != remote_main:
         raise ReleaseError("Fetched origin/main does not match the remote main SHA")
 
@@ -1564,7 +2020,7 @@ def ensure_release_worktree(
     else:
         _git(destination, "checkout", "--detach", local_main)
 
-    assert_release_source(destination)
+    assert_release_source(destination, authority_url=authority_url)
     return destination
 
 
@@ -1620,45 +2076,23 @@ def run_validation(
     profile = VALIDATION_PROFILE
     commands = _validation_commands()
     command = commands[0]["argv"]
-    in_ci = _running_in_ci()
-    credential_file: Path | None = None
-    toolchain: Mapping[str, str] | None = None
-
-    if in_ci:
-        print(
-            "[release] validation credential bypass: "
-            "CI requires commit-specific validation"
-        )
-    else:
-        try:
-            credential_file = validation_credential.credential_path(repo, profile)
-            toolchain = validation_credential.collect_toolchain(repo)
-            verdict = validation_credential.verify_credential(
-                repo=repo,
-                path=credential_file,
-                profile_name=profile,
-                profile_version=validation_credential.PROFILE_VERSION,
-                commands=commands,
-                toolchain=toolchain,
-            )
-        except (OSError, RuntimeError, ValueError) as error:
-            raise ReleaseError(
-                f"Validation credential check failed closed: {error}"
-            ) from error
-        if verdict.reusable:
-            print(
-                f"[release] validation credential hit: profile={profile} "
-                f"reason={verdict.reason}"
-            )
-            return None
-        print(
-            f"[release] validation credential miss: profile={profile} "
-            f"reason={verdict.reason}"
-        )
+    # A same-UID local process can forge any unsigned local credential/log.
+    # Therefore release validation never reuses or issues local pass claims;
+    # only commit-bound CI evidence may become a future skip authority.
+    print(
+        "[release] validation credential bypass: "
+        "unsigned local credentials cannot replace the full suite"
+    )
 
     log_path = _new_validation_log(repo, profile)
     print(f"[release] validation running: profile={profile} log={log_path}")
     validation_env = _scrub_environment(os.environ, _VALIDATION_ENV_OVERRIDES)
+    bound_environment = dict(validation_credential.CANONICAL_VALIDATION_ENVIRONMENT)
+    for name, value in bound_environment.items():
+        if value == "__unset__":
+            validation_env.pop(name, None)
+        else:
+            validation_env[name] = value
     validation_env["REVA_VALIDATION_EXPECTED_ROOT"] = str(repo)
     try:
         with log_path.open("x", encoding="utf-8") as log_handle:
@@ -1681,33 +2115,7 @@ def run_validation(
         raise
 
     _print_validation_log(log_path)
-    if in_ci:
-        print(
-            f"[release] validation passed: profile={profile}; "
-            "tree credential not issued in CI"
-        )
-        return log_path
-
-    assert credential_file is not None
-    assert toolchain is not None
-    try:
-        credential = validation_credential.build_credential(
-            repo=repo,
-            profile_name=profile,
-            profile_version=validation_credential.PROFILE_VERSION,
-            commands=commands,
-            logs={commands[0]["name"]: log_path},
-            toolchain=toolchain,
-        )
-        validation_credential.write_credential_atomic(credential_file, credential)
-    except (OSError, RuntimeError, ValueError) as error:
-        raise ReleaseError(
-            f"Validation passed but credential issue failed closed: {error}"
-        ) from error
-    print(
-        f"[release] validation credential issued: profile={profile} "
-        f"path={credential_file}"
-    )
+    print(f"[release] validation passed: profile={profile}; no local skip issued")
     return log_path
 
 
@@ -1730,6 +2138,8 @@ _RELEASE_STATE_KEYS = frozenset(
         "completed_actions",
         "completed_surfaces",
         "pending_surfaces",
+        "surface_scope",
+        "deferred_surfaces",
         "stages",
         "safe_retry_command",
     }
@@ -1769,6 +2179,8 @@ def _validate_resumable_state(
         completed_actions = state["completed_actions"]
         completed_surfaces = state["completed_surfaces"]
         pending_surfaces = state["pending_surfaces"]
+        surface_scope = state["surface_scope"]
+        deferred_surfaces = state["deferred_surfaces"]
         failed_stage = state["failed_stage"]
         stages = state["stages"]
         retry_command = state["safe_retry_command"]
@@ -1806,6 +2218,20 @@ def _validate_resumable_state(
                 raise ValueError("duplicate surfaces")
         if set(completed_surfaces) & set(pending_surfaces):
             raise ValueError("overlapping surfaces")
+        for surfaces in (surface_scope, deferred_surfaces):
+            if not isinstance(surfaces, list) or any(
+                not isinstance(item, str)
+                or item not in _SURFACE_ORDER
+                or item == "validation_only"
+                for item in surfaces
+            ):
+                raise ValueError("invalid scoped surface list")
+            if surfaces != [
+                surface for surface in _SURFACE_ORDER if surface in set(surfaces)
+            ]:
+                raise ValueError("unordered or duplicate scoped surfaces")
+        if set(surface_scope) & set(deferred_surfaces):
+            raise ValueError("overlapping scoped and deferred surfaces")
         if failed_stage is not None and failed_stage not in _VALID_ACTIONS:
             raise ValueError("invalid failed stage")
         if status == "failed" and failed_stage is None:
@@ -1897,6 +2323,21 @@ def _validate_resumable_state(
                 raise ValueError("retry command reference mismatch")
         if retry_command.count("publish") != 1:
             raise ValueError("retry command is not publish")
+        scope_indices = [
+            index for index, part in enumerate(retry_command) if part == "--surface"
+        ]
+        scope_values = []
+        for index in scope_indices:
+            if index + 1 >= len(retry_command):
+                raise ValueError("retry surface has no value")
+            scope_values.append(retry_command[index + 1])
+        if (
+            any(value not in _SURFACE_ORDER or value == "validation_only" for value in scope_values)
+            or len(scope_values) != len(set(scope_values))
+            or scope_values
+            != [surface for surface in _SURFACE_ORDER if surface in set(scope_values)]
+        ):
+            raise ValueError("invalid retry surface scope")
     except (KeyError, TypeError, ValueError):
         raise ReleaseError("Corrupt resumable release state") from None
 
@@ -1913,13 +2354,36 @@ def _matching_resumable_state(
     return state
 
 
+def _resumable_state_for_range(
+    repo: Path, base_sha: str, target_sha: str
+) -> dict[str, Any] | None:
+    state = read_release_state(repo)
+    if not state:
+        return None
+    state_base = state.get("base_sha")
+    state_target = state.get("target_sha")
+    if not isinstance(state_base, str) or not isinstance(state_target, str):
+        raise ReleaseError("Corrupt resumable release state")
+    _validate_resumable_state(state, state_base, state_target)
+    if state_base == base_sha and state_target == target_sha:
+        return state
+    if state["status"] != "succeeded" or state["pending_surfaces"]:
+        raise ReleaseError(
+            "A different unfinished release transaction requires manual reconciliation: "
+            f"transaction_id={state['transaction_id']} "
+            f"base_sha={state_base} target_sha={state_target}"
+        )
+    return None
+
+
 def _state_completed_actions(
     repo: Path, base_sha: str, target_sha: str
 ) -> tuple[str, ...]:
-    state = _matching_resumable_state(repo, base_sha, target_sha)
-    if state is None:
-        return ()
-    return tuple(state["completed_actions"])
+    # Deliberately do not parse or trust the local state as completion proof.
+    # It remains an audit/recovery hint only; production reconciliation decides
+    # whether a surface is already at the target.
+    del repo, base_sha, target_sha
+    return ()
 
 
 def _safe_retry_command(
@@ -1929,8 +2393,9 @@ def _safe_retry_command(
     base_sha: str,
     target_sha: str,
     env_file: Path,
+    surface_scope: Iterable[str] = (),
 ) -> list[str]:
-    return [
+    command = [
         sys.executable,
         str(repo / "scripts/release.py"),
         "publish",
@@ -1945,6 +2410,10 @@ def _safe_retry_command(
         "--env-file",
         str(env_file),
     ]
+    for surface in _SURFACE_ORDER:
+        if surface in set(surface_scope) and surface != "validation_only":
+            command.extend(("--surface", surface))
+    return command
 
 
 def _surfaces_for_completed_actions(
@@ -1981,14 +2450,22 @@ def _begin_release_transaction(
         base_sha=plan.base_sha,
         target_sha=plan.target_sha,
         env_file=env_file,
+        surface_scope=plan.surface_scope,
     )
-    prior = _matching_resumable_state(repo, plan.base_sha, plan.target_sha)
+    prior = _resumable_state_for_range(repo, plan.base_sha, plan.target_sha)
     resumable = prior is not None
     if resumable:
         assert prior is not None
         if prior["safe_retry_command"] != retry_command:
             raise ReleaseError(
                 "Release retry parameters differ from the resumable transaction"
+            )
+        if (
+            prior["surface_scope"] != list(plan.surface_scope)
+            or prior["deferred_surfaces"] != list(plan.deferred_surfaces)
+        ):
+            raise ReleaseError(
+                "Release retry surface scope differs from the resumable transaction"
             )
         stages = [dict(stage) for stage in prior["stages"]]
         uncertain_mutations = [
@@ -2009,14 +2486,15 @@ def _begin_release_transaction(
         transaction_id = prior["transaction_id"]
         attempt = prior["attempt"] + 1
         started_at = prior["started_at"]
-        prior_completed = list(prior["completed_actions"])
+        # Prior local completions are not authoritative.  Retain the transaction
+        # identity/stage history for bounded OTA reconciliation, but rerun every
+        # mutation unless a live production probe proves the target.
     else:
         stages = []
         transaction_id = uuid.uuid4().hex
         attempt = 1
         started_at = now
-        prior_completed = []
-    completed_actions = list(dict.fromkeys([*prior_completed, *plan.completed_actions]))
+    completed_actions: list[str] = []
     completed_surfaces = _surfaces_for_completed_actions(plan, completed_actions)
     pending_surfaces = [
         surface for surface in plan.surfaces if surface not in completed_surfaces
@@ -2033,6 +2511,8 @@ def _begin_release_transaction(
         "completed_actions": completed_actions,
         "completed_surfaces": completed_surfaces,
         "pending_surfaces": pending_surfaces,
+        "surface_scope": list(plan.surface_scope),
+        "deferred_surfaces": list(plan.deferred_surfaces),
         "stages": stages,
         "safe_retry_command": retry_command,
     }
@@ -2049,6 +2529,8 @@ def _begin_release_transaction(
             "started_at": now,
             "completed_surfaces": completed_surfaces,
             "pending_surfaces": pending_surfaces,
+            "surface_scope": list(plan.surface_scope),
+            "deferred_surfaces": list(plan.deferred_surfaces),
             "safe_retry_command": retry_command,
         },
     )
@@ -2080,6 +2562,8 @@ def _start_release_stage(
             "status": "running",
             "attempt": state["attempt"],
             "started_at": started_at,
+            "surface_scope": state["surface_scope"],
+            "deferred_surfaces": state["deferred_surfaces"],
         },
     )
     return record, time.monotonic()
@@ -2115,6 +2599,8 @@ def _finish_release_stage(
         "elapsed_seconds": elapsed,
         "completed_surfaces": state["completed_surfaces"],
         "pending_surfaces": state["pending_surfaces"],
+        "surface_scope": state["surface_scope"],
+        "deferred_surfaces": state["deferred_surfaces"],
     }
     if log_path is not None:
         event["log_path"] = log_path
@@ -2148,6 +2634,19 @@ def _mark_action_completed(
 def _safe_failure_reason(error: Exception) -> str:
     if isinstance(error, ReleaseError) and "dirty" in str(error).lower():
         return "release_source_dirty"
+    if isinstance(error, ReleaseError) and "live production" in str(error).lower():
+        message = str(error).lower()
+        if "during validation" in message:
+            return "production_surface_changed_during_validation"
+        if "before mobile_ota" in message:
+            return "production_surface_changed_before_mobile_ota"
+        if "before deploy_backend" in message:
+            return "production_surface_changed_before_deploy_backend"
+        if "before deploy_all" in message:
+            return "production_surface_changed_before_deploy_all"
+        if "transition after" in message:
+            return "production_transition_unproven"
+        return "production_surface_changed"
     if isinstance(error, subprocess.CalledProcessError):
         return "command_failed"
     return "stage_failed"
@@ -2191,6 +2690,8 @@ def _fail_release_transaction(
             "failed_stage": state["failed_stage"],
             "completed_surfaces": state["completed_surfaces"],
             "pending_surfaces": state["pending_surfaces"],
+            "surface_scope": state["surface_scope"],
+            "deferred_surfaces": state["deferred_surfaces"],
             "safe_retry_command": state["safe_retry_command"],
             **({"log_path": log_path} if log_path is not None else {}),
         },
@@ -2233,6 +2734,8 @@ def _succeed_release_transaction(repo: Path, state: dict[str, Any]) -> None:
             "elapsed_seconds": state["elapsed_seconds"],
             "completed_surfaces": state["completed_surfaces"],
             "pending_surfaces": state["pending_surfaces"],
+            "surface_scope": state["surface_scope"],
+            "deferred_surfaces": state["deferred_surfaces"],
             "safe_retry_command": state["safe_retry_command"],
         },
     )
@@ -2246,10 +2749,22 @@ def publish_plan(
     message: str,
     env_file: Path | None = None,
     runner: Runner = subprocess.run,
+    expected_production_surfaces: object | None = None,
+    remote_release_token: str | None = None,
     _lock_held: bool = False,
 ) -> None:
     repo = _repository_root(repo)
     owner_repo = _repository_root(owner_repo)
+    if remote_release_token is not None and not _REMOTE_RELEASE_TOKEN_RE.fullmatch(
+        remote_release_token
+    ):
+        raise ReleaseError("Invalid explicit remote release handoff token")
+    if remote_release_token is not None and not any(
+        action in {"deploy_backend", "deploy_all"} for action in plan.actions
+    ):
+        raise ReleaseError(
+            "Explicit remote release handoff token requires a server recovery action"
+        )
     if not _lock_held:
         with release_publish_lock(repo):
             return publish_plan(
@@ -2259,8 +2774,24 @@ def publish_plan(
                 message=message,
                 env_file=env_file,
                 runner=runner,
+                expected_production_surfaces=expected_production_surfaces,
+                remote_release_token=remote_release_token,
                 _lock_held=True,
             )
+    locked_production_surfaces = expected_production_surfaces
+    active_remote_release_token = remote_release_token
+    if expected_production_surfaces is not None:
+        observed = _probe_production_surfaces(
+            repo,
+            remote_release_token=active_remote_release_token,
+        )
+        if _production_surface_identity(observed) != _production_surface_identity(
+            expected_production_surfaces
+        ):
+            raise ReleaseError(
+                "Live production surface changed after planning; rerun the release plan"
+            )
+        locked_production_surfaces = observed
     if not plan.publishable:
         details = ", ".join(plan.blocked_paths) or ", ".join(plan.surfaces)
         raise ReleaseError(f"Release requires manual routing before publish: {details}")
@@ -2274,6 +2805,11 @@ def publish_plan(
         )
     assert_release_source(repo)
     environment = _scrub_environment(os.environ, _MUTATION_ENV_OVERRIDES)
+    inherited_lock_fd = _ACTIVE_RELEASE_LOCK_FD.get()
+    if inherited_lock_fd is None:
+        raise ReleaseError("Publish transaction has no active coordinator lock fd")
+    environment["REVA_RELEASE_LOCK_ADOPT"] = "1"
+    environment["REVA_RELEASE_LOCK_FD"] = str(inherited_lock_fd)
     deploy_env = env_file or Path(
         environment.get("DEPLOY_ENV_FILE", str(owner_repo / ".env"))
     )
@@ -2285,11 +2821,12 @@ def publish_plan(
         owner_repo=owner_repo,
         env_file=deploy_env,
     )
-    environment["OTA_TRANSACTION_ID"] = state["transaction_id"]
-
     for action in plan.actions:
         if action != "validate" and action in state["completed_actions"]:
             continue
+        mobile_previously_attempted = action == "mobile_ota" and any(
+            stage["stage"] == "mobile_ota" for stage in state["stages"]
+        )
         stage_record, stage_started = _start_release_stage(repo, state, action)
         log_path: str | None = None
         try:
@@ -2298,8 +2835,30 @@ def publish_plan(
                 if validation_log is not None:
                     log_path = str(validation_log)
                 assert_release_source(repo)
+                if locked_production_surfaces is not None:
+                    observed = _probe_production_surfaces(
+                        repo,
+                        remote_release_token=active_remote_release_token,
+                    )
+                    _assert_production_surfaces_unchanged(
+                        locked_production_surfaces,
+                        observed,
+                        context="during validation",
+                    )
+                    locked_production_surfaces = observed
             else:
                 assert_release_source(repo)
+                if locked_production_surfaces is not None:
+                    observed = _probe_production_surfaces(
+                        repo,
+                        remote_release_token=active_remote_release_token,
+                    )
+                    _assert_production_surfaces_unchanged(
+                        locked_production_surfaces,
+                        observed,
+                        context=f"before {action}",
+                    )
+                    locked_production_surfaces = observed
                 if action == "deploy_backend":
                     command = [str(repo / "deploy.sh"), "--backend", "--yes"]
                 elif action == "deploy_all":
@@ -2312,14 +2871,53 @@ def publish_plan(
                     ]
                 else:
                     raise ReleaseError(f"Action is not safely publishable: {action}")
+                action_environment = environment
+                if action in {"deploy_backend", "deploy_all"}:
+                    action_environment = dict(environment)
+                    if locked_production_surfaces is not None:
+                        action_environment["REVA_EXPECTED_SERVER_SURFACES"] = (
+                            json.dumps(
+                                _server_surface_identity(locked_production_surfaces),
+                                separators=(",", ":"),
+                            )
+                        )
+                    if active_remote_release_token:
+                        action_environment["REVA_REMOTE_RELEASE_LOCK_ADOPT"] = "1"
+                        action_environment["REVA_REMOTE_RELEASE_LOCK_TOKEN"] = (
+                            active_remote_release_token
+                        )
+                elif action == "mobile_ota":
+                    action_environment = dict(environment)
+                    action_environment["OTA_TRANSACTION_ID"] = state["transaction_id"]
+                    action_environment["OTA_TRANSACTION_REUSED"] = (
+                        "1" if mobile_previously_attempted else "0"
+                    )
                 completed = runner(
                     command,
                     cwd=repo,
                     check=True,
-                    env=environment,
+                    env=action_environment,
+                    pass_fds=(inherited_lock_fd,),
                 )
                 if completed.returncode != 0:
                     raise subprocess.CalledProcessError(completed.returncode, command)
+                if locked_production_surfaces is not None:
+                    # deploy.sh releases the retained lease after a server
+                    # action succeeds. Post-deploy proof must therefore return
+                    # to the ordinary quiescent probe.
+                    if action in {"deploy_backend", "deploy_all"}:
+                        active_remote_release_token = None
+                    observed = _probe_production_surfaces(
+                        repo,
+                        remote_release_token=active_remote_release_token,
+                    )
+                    _assert_production_transition(
+                        action,
+                        before=locked_production_surfaces,
+                        after=observed,
+                        target_sha=plan.target_sha,
+                    )
+                    locked_production_surfaces = observed
         except Exception as error:
             raise _fail_release_transaction(
                 repo, state, stage_record, stage_started, error
@@ -2364,6 +2962,481 @@ def _plan_for_refs(
     )
 
 
+def _resolve_commit(repo: Path, revision: str, *, label: str) -> str:
+    try:
+        resolved = str(
+            _git(repo, "rev-parse", "--verify", f"{revision}^{{commit}}")
+        )
+    except subprocess.CalledProcessError as error:
+        raise ReleaseError(f"Cannot resolve {label}: {revision}") from error
+    if _SHA_RE.fullmatch(resolved) is None:
+        raise ReleaseError(f"Cannot resolve {label}: {revision}")
+    return resolved
+
+
+def _merge_base(repo: Path, left: str, right: str, *, label: str) -> str:
+    try:
+        merged = str(_git(repo, "merge-base", left, right))
+    except subprocess.CalledProcessError as error:
+        raise ReleaseError(f"Cannot prove {label}") from error
+    if _SHA_RE.fullmatch(merged) is None:
+        raise ReleaseError(f"Cannot prove {label}")
+    return merged
+
+
+def _require_ancestor(
+    repo: Path, candidate: str, target: str, *, label: str
+) -> None:
+    if _merge_base(repo, candidate, target, label=label) != candidate:
+        raise ReleaseError(f"{label} is not an ancestor of the release target")
+
+
+def _strict_json_object(raw: str, *, label: str) -> dict[str, Any]:
+    def reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"duplicate key: {key}")
+            result[key] = value
+        return result
+
+    try:
+        payload = json.loads(
+            raw,
+            object_pairs_hook=reject_duplicates,
+            parse_constant=lambda value: (_ for _ in ()).throw(
+                ValueError(f"invalid constant: {value}")
+            ),
+        )
+    except (TypeError, ValueError, json.JSONDecodeError) as error:
+        raise ReleaseError(f"Cannot parse {label}") from error
+    if not isinstance(payload, dict):
+        raise ReleaseError(f"{label} must contain one JSON object")
+    return payload
+
+
+def _mobile_package_surface_for_refs(
+    repo: Path, base_sha: str, target_sha: str
+) -> str:
+    """Distinguish harmless package scripts from native dependency changes."""
+
+    base_raw = _show_optional(repo, base_sha, "mobile/package.json")
+    target_raw = _show_optional(repo, target_sha, "mobile/package.json")
+    if base_raw is None or target_raw is None:
+        return "mobile_native"
+    base_payload = _strict_json_object(
+        base_raw, label=f"mobile/package.json@{base_sha}"
+    )
+    target_payload = _strict_json_object(
+        target_raw, label=f"mobile/package.json@{target_sha}"
+    )
+    base_without_scripts = dict(base_payload)
+    target_without_scripts = dict(target_payload)
+    base_without_scripts.pop("scripts", None)
+    target_without_scripts.pop("scripts", None)
+    if base_without_scripts == target_without_scripts:
+        return "validation_only"
+    return "mobile_native"
+
+
+def _paths_in_changes(changes: Iterable[Change]) -> frozenset[str]:
+    return frozenset(path for change in changes for path in change.paths)
+
+
+def _probe_production_surfaces(
+    repo: Path,
+    *,
+    remote_release_token: str | None = None,
+):
+    try:
+        if remote_release_token is not None:
+            return (
+                release_production_state.probe_production_surfaces_under_release_lock(
+                    repo,
+                    mobile_dir=repo / "mobile",
+                    expected_lock_token=remote_release_token,
+                )
+            )
+        return release_production_state.probe_production_surfaces(
+            repo, mobile_dir=repo / "mobile"
+        )
+    except release_production_state.ProductionProbeError as error:
+        raise ReleaseError(f"Cannot prove live production surfaces: {error}") from error
+
+
+def _production_surface_identity(surfaces: object) -> tuple[object, ...]:
+    backend_sha = getattr(surfaces, "backend_sha", None)
+    if backend_sha is None:
+        backend_sha = getattr(surfaces, "server_sha", None)
+    return (
+        backend_sha,
+        getattr(surfaces, "backend_proof_id", None),
+        getattr(surfaces, "frontend_sha", None),
+        getattr(surfaces, "frontend_proof_id", None),
+        getattr(surfaces, "mobile_ota_sha", None),
+        getattr(surfaces, "mobile_group_id", None),
+        getattr(surfaces, "mobile_update_id", None),
+        getattr(surfaces, "mobile_runtime", None),
+        getattr(surfaces, "mac_sha", None),
+        getattr(surfaces, "mac_artifact_sha256", None),
+        getattr(surfaces, "mac_receipt_id", None),
+        getattr(surfaces, "mobile_channel_id", None),
+        getattr(surfaces, "mobile_channel_updated_at", None),
+        getattr(surfaces, "mobile_branch_mapping", None),
+        getattr(surfaces, "mobile_branch_id", None),
+        getattr(surfaces, "mobile_identity_digest", None),
+        getattr(surfaces, "mobile_runtime_vector_digest", None),
+    )
+
+
+def _server_surface_identity(surfaces: object) -> tuple[object, ...]:
+    identity = _production_surface_identity(surfaces)
+    return (*identity[:4], *identity[8:11])
+
+
+def _assert_production_surfaces_unchanged(
+    expected: object,
+    observed: object,
+    *,
+    context: str,
+) -> None:
+    if _production_surface_identity(observed) != _production_surface_identity(expected):
+        raise ReleaseError(
+            f"Live production surface changed {context}; rerun the release plan"
+        )
+
+
+def _assert_production_transition(
+    action: str,
+    *,
+    before: object,
+    after: object,
+    target_sha: str,
+) -> None:
+    before_identity = _production_surface_identity(before)
+    after_identity = _production_surface_identity(after)
+    expected_unchanged = set(range(len(before_identity)))
+
+    if action == "deploy_backend":
+        changed_fields = {0, 1}
+        valid = (
+            after_identity[0] == target_sha
+            and isinstance(after_identity[1], str)
+            and bool(after_identity[1])
+            and after_identity[1] != before_identity[1]
+        )
+    elif action == "deploy_all":
+        changed_fields = {0, 1, 2, 3}
+        valid = (
+            after_identity[0] == target_sha
+            and after_identity[2] == target_sha
+            and isinstance(after_identity[1], str)
+            and bool(after_identity[1])
+            and after_identity[1] != before_identity[1]
+            and isinstance(after_identity[3], str)
+            and bool(after_identity[3])
+            and after_identity[3] != before_identity[3]
+        )
+    elif action == "mobile_ota":
+        changed_fields = {4, 5, 6, 11, 12, 13, 14, 15, 16}
+        valid = (
+            after_identity[4] == target_sha
+            and isinstance(after_identity[5], str)
+            and bool(after_identity[5])
+            and after_identity[5] != before_identity[5]
+            and isinstance(after_identity[6], str)
+            and bool(after_identity[6])
+            and after_identity[6] != before_identity[6]
+            and isinstance(after_identity[15], str)
+            and bool(after_identity[15])
+            and after_identity[15] != before_identity[15]
+            and isinstance(after_identity[16], str)
+            and bool(after_identity[16])
+            and after_identity[16] != before_identity[16]
+        )
+    elif action == "mac_build":
+        changed_fields = {8, 9, 10}
+        valid = (
+            after_identity[8] == target_sha
+            and isinstance(after_identity[9], str)
+            and bool(after_identity[9])
+            and isinstance(after_identity[10], str)
+            and bool(after_identity[10])
+            and after_identity[10] != before_identity[10]
+        )
+    else:
+        raise ReleaseError(f"Unsupported production transition: {action}")
+
+    expected_unchanged.difference_update(changed_fields)
+    unchanged = all(
+        after_identity[index] == before_identity[index]
+        for index in expected_unchanged
+    )
+    if not valid or not unchanged:
+        raise ReleaseError(
+            f"Live production transition after {action} could not be proven"
+        )
+
+
+def _surface_baseline_changes(
+    repo: Path,
+    *,
+    baseline_sha: str,
+    target_sha: str,
+) -> tuple[Change, ...]:
+    _base, _target, changes = git_changes(repo, baseline_sha, target_sha)
+    return changes
+
+
+def _tree_contains_path(repo: Path, revision: str, path: str) -> bool:
+    """Return whether an exact tree path exists at a trusted commit."""
+
+    try:
+        found = str(_git(repo, "ls-tree", "--name-only", revision, "--", path))
+    except subprocess.CalledProcessError as error:
+        raise ReleaseError(f"Cannot inspect {path} at {revision}") from error
+    entries = tuple(line for line in found.splitlines() if line)
+    if any(entry != path for entry in entries):
+        raise ReleaseError(f"Cannot prove the exact tree path {path} at {revision}")
+    return entries == (path,)
+
+
+def _select_surface_changes(
+    changes: Iterable[Change],
+    *,
+    surface: str,
+    native_mobile_assets: frozenset[str],
+    surface_overrides: Mapping[str, str],
+) -> list[Change]:
+    selected: list[Change] = []
+    seen: set[tuple[str, str]] = set()
+    for change in changes:
+        for path in change.paths:
+            classified = surface_overrides.get(path)
+            if classified is None:
+                classified = classify_path(
+                    path, native_mobile_assets=native_mobile_assets
+                )
+            key = (change.status, path)
+            if classified == surface and key not in seen:
+                selected.append(Change(status=change.status, paths=(path,)))
+                seen.add(key)
+    return selected
+
+
+def _plan_for_production_surfaces(
+    repo: Path,
+    *,
+    requested_base: str,
+    target: str,
+    surface_scope: frozenset[str] | None = None,
+    remote_release_token: str | None = None,
+) -> tuple[ReleasePlan, object]:
+    """Plan from fresh, independent live baselines instead of local state."""
+
+    repo = _repository_root(repo)
+    target_sha = _resolve_commit(repo, target, label="release target")
+    observed = _probe_production_surfaces(
+        repo,
+        remote_release_token=remote_release_token,
+    )
+    backend_value = getattr(observed, "backend_sha", None)
+    if backend_value is None:
+        backend_value = getattr(observed, "server_sha", None)
+    backend_sha = _resolve_commit(
+        repo, str(backend_value), label="backend production SHA"
+    )
+    mobile_sha = _resolve_commit(
+        repo, str(observed.mobile_ota_sha), label="mobile production SHA"
+    )
+    _require_ancestor(
+        repo, backend_sha, target_sha, label="backend production SHA"
+    )
+    _require_ancestor(
+        repo, mobile_sha, target_sha, label="mobile production SHA"
+    )
+    frontend_value = getattr(observed, "frontend_sha", None)
+    frontend_sha: str | None = None
+    live_shas = [backend_sha, mobile_sha]
+    if frontend_value is not None:
+        frontend_sha = _resolve_commit(
+            repo, str(frontend_value), label="frontend production SHA"
+        )
+        _require_ancestor(
+            repo, frontend_sha, target_sha, label="frontend production SHA"
+        )
+        live_shas.append(frontend_sha)
+    mac_value = getattr(observed, "mac_sha", None)
+    mac_sha: str | None = None
+    if mac_value is not None:
+        mac_sha = _resolve_commit(
+            repo, str(mac_value), label="Mac production SHA"
+        )
+        _require_ancestor(
+            repo, mac_sha, target_sha, label="Mac production SHA"
+        )
+        live_shas.append(mac_sha)
+    live_base = live_shas[0]
+    for surface_sha in live_shas[1:]:
+        live_base = _merge_base(
+            repo, live_base, surface_sha, label="live production merge-base"
+        )
+    requested_sha = _resolve_commit(
+        repo, requested_base, label="requested release baseline"
+    )
+    if requested_sha != live_base:
+        raise ReleaseError(
+            "Requested release baseline does not equal the live production merge-base: "
+            f"expected={live_base} requested={requested_sha}"
+        )
+
+    global_changes = _surface_baseline_changes(
+        repo, baseline_sha=live_base, target_sha=target_sha
+    )
+    backend_changes = _surface_baseline_changes(
+        repo, baseline_sha=backend_sha, target_sha=target_sha
+    )
+    mobile_changes = _surface_baseline_changes(
+        repo, baseline_sha=mobile_sha, target_sha=target_sha
+    )
+    backend_paths = _paths_in_changes(backend_changes)
+    mobile_paths = _paths_in_changes(mobile_changes)
+    frontend_paths: frozenset[str] = frozenset()
+    frontend_changes: tuple[Change, ...] = ()
+    if frontend_sha is not None:
+        frontend_changes = _surface_baseline_changes(
+            repo, baseline_sha=frontend_sha, target_sha=target_sha
+        )
+        frontend_paths = _paths_in_changes(frontend_changes)
+    mac_paths: frozenset[str] = frozenset()
+    mac_changes: tuple[Change, ...] = ()
+    if mac_sha is not None:
+        mac_changes = _surface_baseline_changes(
+            repo, baseline_sha=mac_sha, target_sha=target_sha
+        )
+        mac_paths = _paths_in_changes(mac_changes)
+    native_assets = _native_mobile_assets_for_refs(
+        repo, (mobile_sha, target_sha)
+    )
+    overrides: dict[str, str] = {}
+    if "mobile/package.json" in mobile_paths:
+        overrides["mobile/package.json"] = _mobile_package_surface_for_refs(
+            repo, mobile_sha, target_sha
+        )
+
+    selected: list[Change] = []
+    seen: set[tuple[str, str]] = set()
+    for change in global_changes:
+        for path in change.paths:
+            surface = overrides.get(path)
+            if surface is None:
+                surface = classify_path(path, native_mobile_assets=native_assets)
+            include = (
+                surface in {None, "validation_only"}
+                or (surface == "mac" and path in mac_paths)
+                or (surface == "frontend" and path in frontend_paths)
+                or (surface == "backend" and path in backend_paths)
+                or (
+                    surface in {"mobile_native", "mobile_ota"}
+                    and path in mobile_paths
+                )
+            )
+            key = (change.status, path)
+            if include and key not in seen:
+                selected.append(Change(status=change.status, paths=(path,)))
+                seen.add(key)
+
+    # A surface may be older than the global live merge-base in histories with
+    # merges. Select from its own baseline as well so an already-deployed
+    # backend/mobile commit can never hide an unshipped frontend change.
+    for surface, changes in (
+        ("backend", backend_changes),
+        ("frontend", frontend_changes),
+        ("mobile_ota", mobile_changes),
+        ("mobile_native", mobile_changes),
+        ("mac", mac_changes),
+    ):
+        for change in _select_surface_changes(
+            changes,
+            surface=surface,
+            native_mobile_assets=native_assets,
+            surface_overrides=overrides,
+        ):
+            key = (change.status, change.paths[0])
+            if key not in seen:
+                selected.append(change)
+                seen.add(key)
+
+    if mac_sha is None and _tree_contains_path(repo, target_sha, "apps/mac"):
+        missing_mac_receipt = "apps/mac/.release-runtime-receipt-missing"
+        selected.append(Change(status="M", paths=(missing_mac_receipt,)))
+
+    selected_surfaces = {
+        overrides.get(path)
+        or classify_path(path, native_mobile_assets=native_assets)
+        for change in selected
+        for path in change.paths
+    }
+    # A historical frontend without a durable runtime receipt is unknown, not
+    # equal to the backend checkout. Bootstrap it during the next server deploy
+    # so future plans can compare backend and frontend independently.
+    if frontend_sha is None and "backend" in selected_surfaces:
+        bootstrap_path = "frontend/.release-runtime-receipt-bootstrap"
+        selected.append(Change(status="M", paths=(bootstrap_path,)))
+
+    full_plan = build_plan(
+        selected,
+        base_sha=live_base,
+        target_sha=target_sha,
+        native_mobile_assets=native_assets,
+        surface_overrides=overrides,
+    )
+    if surface_scope is None:
+        return full_plan, observed
+    invalid_scope = set(surface_scope) - set(_SURFACE_ORDER)
+    if invalid_scope or "validation_only" in surface_scope:
+        raise ReleaseError(
+            "Invalid explicit production surface scope: "
+            + ", ".join(sorted(invalid_scope or {"validation_only"}))
+        )
+    effective_scope = set(surface_scope)
+    pending = set(full_plan.surfaces)
+    # These routes deliver more than one source surface. Never let explicit
+    # scoping hide a dependency that the selected artifact/action also ships.
+    if "frontend" in effective_scope and "backend" in pending:
+        effective_scope.add("backend")
+    if effective_scope & {"mobile_native", "mobile_ota"} and "mobile_native" in pending:
+        effective_scope.update(pending & {"mobile_native", "mobile_ota"})
+    scoped_changes: list[Change] = []
+    for change in selected:
+        scoped_paths: list[str] = []
+        for path in change.paths:
+            surface = overrides.get(path)
+            if surface is None:
+                surface = classify_path(path, native_mobile_assets=native_assets)
+            if surface is None or surface == "validation_only" or surface in effective_scope:
+                scoped_paths.append(path)
+        if scoped_paths:
+            scoped_changes.append(Change(status=change.status, paths=tuple(scoped_paths)))
+    deferred = tuple(
+        surface
+        for surface in full_plan.surfaces
+        if surface != "validation_only" and surface not in effective_scope
+    )
+    return (
+        build_plan(
+            scoped_changes,
+            base_sha=live_base,
+            target_sha=target_sha,
+            native_mobile_assets=native_assets,
+            surface_overrides=overrides,
+            surface_scope=effective_scope,
+            deferred_surfaces=deferred,
+        ),
+        observed,
+    )
+
+
 def _print_plan(plan: ReleasePlan) -> None:
     print(json.dumps(plan.to_dict(), ensure_ascii=False, indent=2, sort_keys=True))
 
@@ -2376,20 +3449,44 @@ def _build_parser() -> argparse.ArgumentParser:
         command.add_argument("--repo", type=Path, default=ROOT)
         command.add_argument("--base", required=True, help="trusted baseline ref")
         command.add_argument("--target", default="origin/main")
+        command.add_argument(
+            "--surface",
+            action="append",
+            choices=tuple(surface for surface in _SURFACE_ORDER if surface != "validation_only"),
+            help="explicitly release only the named production surface; repeatable",
+        )
         command.add_argument("--release-worktree", type=Path)
         if name == "publish":
             command.add_argument("--message", default="source-aware production release")
             command.add_argument("--env-file", type=Path)
+            command.add_argument(
+                "--remote-release-token",
+                help=(
+                    "explicit token printed by deploy.sh --inspect-release-lock; "
+                    "adopts only that exact interrupted server lease"
+                ),
+            )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = _build_parser().parse_args(argv)
+    effective_argv = tuple(sys.argv[1:] if argv is None else argv)
+    if effective_argv[:1] in (("plan",), ("validate",), ("publish",)):
+        print(
+            "release error: production release CLI is frozen; use the manual Gate",
+            file=sys.stderr,
+        )
+        return 78
+    args = _build_parser().parse_args(effective_argv)
     try:
         repo = _repository_root(args.repo)
+        surface_scope = frozenset(args.surface) if args.surface else None
         if args.command == "plan":
-            plan = _plan_for_refs(
-                repo, args.base, args.target, include_partial_state=True
+            plan, _observed = _plan_for_production_surfaces(
+                repo,
+                requested_base=args.base,
+                target=args.target,
+                surface_scope=surface_scope,
             )
             _print_plan(plan)
             return 0 if plan.publishable else 2
@@ -2404,11 +3501,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise ReleaseError(
                     "Validation/publish target must be exact origin/main"
                 )
-            plan = _plan_for_refs(
+            plan, _observed = _plan_for_production_surfaces(
                 release_repo,
-                args.base,
-                exact_main,
-                include_partial_state=True,
+                requested_base=args.base,
+                target=exact_main,
+                surface_scope=surface_scope,
             )
             _print_plan(plan)
             run_validation(plan, release_repo)
@@ -2424,11 +3521,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise ReleaseError(
                     "Validation/publish target must be exact origin/main"
                 )
-            plan = _plan_for_refs(
+            plan, observed = _plan_for_production_surfaces(
                 release_repo,
-                args.base,
-                exact_main,
-                include_partial_state=True,
+                requested_base=args.base,
+                target=exact_main,
+                surface_scope=surface_scope,
+                remote_release_token=args.remote_release_token,
             )
             _print_plan(plan)
             if not plan.publishable:
@@ -2439,6 +3537,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 owner_repo=_owner_repository(repo),
                 message=args.message,
                 env_file=args.env_file,
+                expected_production_surfaces=observed,
+                remote_release_token=args.remote_release_token,
                 _lock_held=True,
             )
         return 0
