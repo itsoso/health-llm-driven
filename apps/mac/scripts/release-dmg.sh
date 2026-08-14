@@ -111,14 +111,65 @@ scp_release() {
   /usr/bin/scp "${SSH_OPTIONS[@]}" "$@"
 }
 
+stat_file_mode() {
+  local value
+  if value="$(/usr/bin/stat -c '%a' -- "$1" 2>/dev/null)"; then
+    /usr/bin/printf '%s\n' "${value}"
+    return 0
+  fi
+  /usr/bin/stat -f '%Lp' "$1" 2>/dev/null
+}
+
+stat_file_links() {
+  local value
+  if value="$(/usr/bin/stat -c '%h' -- "$1" 2>/dev/null)"; then
+    /usr/bin/printf '%s\n' "${value}"
+    return 0
+  fi
+  /usr/bin/stat -f '%l' "$1" 2>/dev/null
+}
+
+stat_file_size() {
+  local value
+  if value="$(/usr/bin/stat -c '%s' -- "$1" 2>/dev/null)"; then
+    /usr/bin/printf '%s\n' "${value}"
+    return 0
+  fi
+  /usr/bin/stat -f '%z' "$1" 2>/dev/null
+}
+
+stat_file_owner() {
+  local value
+  if value="$(/usr/bin/stat -c '%U' -- "$1" 2>/dev/null)"; then
+    /usr/bin/printf '%s\n' "${value}"
+    return 0
+  fi
+  /usr/bin/stat -f '%Su' "$1" 2>/dev/null
+}
+
+stat_file_type() {
+  local value
+  if value="$(/usr/bin/stat -c '%F' -- "$1" 2>/dev/null)"; then
+    case "${value}" in
+      "regular file"|"regular empty file") /usr/bin/printf '%s\n' "Regular File" ;;
+      *) /usr/bin/printf '%s\n' "${value}" ;;
+    esac
+    return 0
+  fi
+  /usr/bin/stat -f '%HT' "$1" 2>/dev/null
+}
+
 assert_local_exact_helper() {
   [[ -f "${SNAPSHOT_PUBLISHER}" && ! -L "${SNAPSHOT_PUBLISHER}" ]] || {
     echo "Exact Mac protocol helper is missing" >&2
     return 73
   }
   local helper_mode helper_links helper_sha256
-  helper_mode="$(/usr/bin/stat -f '%Lp' "${SNAPSHOT_PUBLISHER}")"
-  helper_links="$(/usr/bin/stat -f '%l' "${SNAPSHOT_PUBLISHER}")"
+  if ! helper_mode="$(stat_file_mode "${SNAPSHOT_PUBLISHER}")" ||
+     ! helper_links="$(stat_file_links "${SNAPSHOT_PUBLISHER}")"; then
+    echo "Exact Mac protocol helper is unsafe" >&2
+    return 73
+  fi
   [[ "${helper_mode}" == "600" && "${helper_links}" == "1" ]] || {
     echo "Exact Mac protocol helper is unsafe" >&2
     return 73
@@ -766,8 +817,10 @@ clear_recovery_handoff() {
   fi
   [[ -f "${cleanup_helper}" && ! -L "${cleanup_helper}" ]] || return 73
   local cleanup_mode cleanup_links
-  cleanup_mode="$(/usr/bin/stat -f '%Lp' "${cleanup_helper}")"
-  cleanup_links="$(/usr/bin/stat -f '%l' "${cleanup_helper}")"
+  if ! cleanup_mode="$(stat_file_mode "${cleanup_helper}")" ||
+     ! cleanup_links="$(stat_file_links "${cleanup_helper}")"; then
+    return 73
+  fi
   [[ ( "${cleanup_mode}" == "600" || "${cleanup_mode}" == "755" ) && "${cleanup_links}" == "1" ]] || return 73
   if [[ "${PROTOCOL_RECOVERY_TEST}" == "1" ]]; then
     SNAPSHOT_PUBLISHER="${cleanup_helper}" \
@@ -902,19 +955,15 @@ fetch_public_proof() {
     echo "Public proof download did not create a safe regular file" >&2
     return 1
   fi
-  if ! file_links="$(/usr/bin/stat -c '%h' "${partial}" 2>/dev/null)"; then
-    if ! file_links="$(/usr/bin/stat -f '%l' "${partial}" 2>/dev/null)"; then
-      /bin/rm -f -- "${partial}"
-      echo "Unable to inspect public proof link count" >&2
-      return 1
-    fi
+  if ! file_links="$(stat_file_links "${partial}")"; then
+    /bin/rm -f -- "${partial}"
+    echo "Unable to inspect public proof link count" >&2
+    return 1
   fi
-  if ! actual_size="$(/usr/bin/stat -c '%s' "${partial}" 2>/dev/null)"; then
-    if ! actual_size="$(/usr/bin/stat -f '%z' "${partial}" 2>/dev/null)"; then
-      /bin/rm -f -- "${partial}"
-      echo "Unable to inspect public proof size" >&2
-      return 1
-    fi
+  if ! actual_size="$(stat_file_size "${partial}")"; then
+    /bin/rm -f -- "${partial}"
+    echo "Unable to inspect public proof size" >&2
+    return 1
   fi
   if [[ "${file_links}" != "1" || ! "${actual_size}" =~ ^[0-9]+$ ]] || (( actual_size > maximum_bytes )); then
     /bin/rm -f -- "${partial}"
@@ -962,13 +1011,13 @@ if set(public) != fields or public != {key: receipt[key] for key in fields}:
 PY
     fetch_public_proof "${artifact_url}" "${immutable_proof}" "${size}" 300
     [[ "$(/usr/bin/shasum -a 256 "${immutable_proof}" | /usr/bin/awk '{print $1}')" == "${digest}" ]] || return 1
-    [[ "$(/usr/bin/stat -f '%z' "${immutable_proof}")" == "${size}" ]] || return 1
+    [[ "$(stat_file_size "${immutable_proof}")" == "${size}" ]] || return 1
   fi
   if [[ "${kind}" != "empty" ]]; then
     local stable_proof="${WORK_DIR}/verified-stable.dmg"
     fetch_public_proof "${PUBLIC_BASE_URL}/xiaoba-mac.dmg" "${stable_proof}" "${size}" 300
     [[ "$(/usr/bin/shasum -a 256 "${stable_proof}" | /usr/bin/awk '{print $1}')" == "${digest}" ]] || return 1
-    [[ "$(/usr/bin/stat -f '%z' "${stable_proof}")" == "${size}" ]] || return 1
+    [[ "$(stat_file_size "${stable_proof}")" == "${size}" ]] || return 1
   fi
 }
 
@@ -1212,11 +1261,11 @@ ASC_P8="${HOME}/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
   exit 1
 }
 
-P8_TYPE="$(/usr/bin/stat -f '%HT' "${ASC_P8}" 2>/dev/null || true)"
-P8_OWNER="$(/usr/bin/stat -f '%Su' "${ASC_P8}" 2>/dev/null || true)"
-P8_MODE="$(/usr/bin/stat -f '%Lp' "${ASC_P8}" 2>/dev/null || true)"
-P8_LINKS="$(/usr/bin/stat -f '%l' "${ASC_P8}" 2>/dev/null || true)"
-P8_SIZE="$(/usr/bin/stat -f '%z' "${ASC_P8}" 2>/dev/null || true)"
+P8_TYPE="$(stat_file_type "${ASC_P8}" || true)"
+P8_OWNER="$(stat_file_owner "${ASC_P8}" || true)"
+P8_MODE="$(stat_file_mode "${ASC_P8}" || true)"
+P8_LINKS="$(stat_file_links "${ASC_P8}" || true)"
+P8_SIZE="$(stat_file_size "${ASC_P8}" || true)"
 [[ ! -L "${ASC_P8}" && "${P8_TYPE}" == "Regular File" ]] &&
   [[ "${P8_OWNER}" == "$(/usr/bin/id -un)" ]] &&
   [[ "${P8_MODE}" == "400" || "${P8_MODE}" == "600" ]] &&
@@ -1352,7 +1401,7 @@ ARCHITECTURES="$(printf '%s\n' ${ARCHITECTURES_RAW} | /usr/bin/sort -u)"
 /usr/bin/hdiutil detach "${MOUNT_POINT}" >/dev/null
 MOUNT_POINT=""
 ARTIFACT_SHA256="$(/usr/bin/shasum -a 256 "${DMG_PATH}" | /usr/bin/awk '{print $1}')"
-ARTIFACT_SIZE="$(/usr/bin/stat -f '%z' "${DMG_PATH}")"
+ARTIFACT_SIZE="$(stat_file_size "${DMG_PATH}")"
 REMOTE_ARTIFACT_PATH="${ASSET_ROOT}/mac/releases/${SOURCE_SHA}/${ARTIFACT_SHA256}.dmg"
 ARTIFACT_URL="${PUBLIC_BASE_URL}/mac/releases/${SOURCE_SHA}/${ARTIFACT_SHA256}.dmg"
 PUBLISHED_AT="$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ')"
@@ -1435,7 +1484,7 @@ fetch_public_proof "${ARTIFACT_URL}" "${HTTP_PROOF}" "${ARTIFACT_SIZE}" 300
   echo "Public immutable DMG hash mismatch; current was not changed" >&2
   exit 1
 }
-[[ "$(/usr/bin/stat -f '%z' "${HTTP_PROOF}")" == "${ARTIFACT_SIZE}" ]] || {
+[[ "$(stat_file_size "${HTTP_PROOF}")" == "${ARTIFACT_SIZE}" ]] || {
   echo "Public immutable DMG size mismatch; current was not changed" >&2
   exit 1
 }
@@ -1480,7 +1529,7 @@ fi
   REMOTE_RELEASE_LOCK_HELD=0
   exit 75
 }
-[[ "$(/usr/bin/stat -f '%z' "${STABLE_PROOF}")" == "${ARTIFACT_SIZE}" ]] || {
+[[ "$(stat_file_size "${STABLE_PROOF}")" == "${ARTIFACT_SIZE}" ]] || {
   echo "MAC_RELEASE_PRODUCTION_MAY_HAVE_ADVANCED: stable download size did not match after switch; retained the unified lock and exact helper stage for reconciliation" >&2
   REMOTE_RELEASE_LOCK_HELD=0
   exit 75
@@ -1496,7 +1545,7 @@ fi
   REMOTE_RELEASE_LOCK_HELD=0
   exit 75
 }
-[[ "$(/usr/bin/stat -f '%z' "${IMMUTABLE_FINAL_PROOF}")" == "${ARTIFACT_SIZE}" ]] || {
+[[ "$(stat_file_size "${IMMUTABLE_FINAL_PROOF}")" == "${ARTIFACT_SIZE}" ]] || {
   echo "MAC_RELEASE_PRODUCTION_MAY_HAVE_ADVANCED: immutable download size did not match after switch; retained the unified lock and exact helper stage for reconciliation" >&2
   REMOTE_RELEASE_LOCK_HELD=0
   exit 75
