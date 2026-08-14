@@ -41,6 +41,7 @@ PYTHON_BINARY="/usr/local/bin/python3"
 MKTEMP_BINARY="/usr/bin/mktemp"
 CHMOD_BINARY="/bin/chmod"
 RM_BINARY="/bin/rm"
+SCRIPT_BINARY="/usr/bin/script"
 SAFE_TOOL_PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 TESTFLIGHT_WORK_DIR_CREATED=0
 WORK_DIR=""
@@ -60,7 +61,8 @@ assert_testflight_tooling() {
     "${PYTHON_BINARY}" \
     "${MKTEMP_BINARY}" \
     "${CHMOD_BINARY}" \
-    "${RM_BINARY}"; do
+    "${RM_BINARY}" \
+    "${SCRIPT_BINARY}"; do
     [ -x "${tool}" ] || fail "受控发布工具不存在或不可执行: ${tool}"
   done
   [ -r "${EAS_TOOL_MANIFEST_DIR}/package.json" ] ||
@@ -218,9 +220,7 @@ run_testflight_managed_command() {
 
   [ "$#" -gt 0 ] || fail "受控构建命令为空"
   [ -n "${log}" ] || fail "受控构建日志路径为空"
-  [ -x "/usr/bin/script" ] || fail "缺少受控伪终端工具: /usr/bin/script"
-
-  /usr/bin/script -q "${log}" "$@" &
+  "${SCRIPT_BINARY}" -q "${log}" "$@" &
   TESTFLIGHT_BUILD_PID=$!
   wait "${TESTFLIGHT_BUILD_PID}" || command_status=$?
   TESTFLIGHT_BUILD_PID=""

@@ -113,6 +113,22 @@ def _isolated_testflight_qr_wrapper(tmp_path: Path) -> Path:
     return wrapper
 
 
+def _isolated_managed_command_runner(tmp_path: Path) -> Path:
+    runner = tmp_path / "managed-command-runner"
+    runner.write_text(
+        f"#!{sys.executable}\n"
+        "import os\n"
+        "import sys\n"
+        "if len(sys.argv) < 4 or sys.argv[1] != '-q':\n"
+        "    raise SystemExit(2)\n"
+        "os.setsid()\n"
+        "os.execv(sys.argv[3], sys.argv[3:])\n",
+        encoding="utf-8",
+    )
+    runner.chmod(0o700)
+    return runner
+
+
 def _bash(
     script: str,
     *,
@@ -1090,6 +1106,7 @@ def test_testflight_helper_uses_private_paths_and_sanitized_npm_config():
     assert 'PYTHON_BINARY="/usr/local/bin/python3"' in testflight
     assert 'NPM_BINARY = Path("/usr/local/bin/npm")' in locked_eas
     assert 'NODE_BINARY = Path("/usr/local/bin/node")' in locked_eas
+    assert 'SCRIPT_BINARY="/usr/bin/script"' in testflight
     assert 'SAFE_TOOL_PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"' in testflight
     assert "git -C" not in testflight
     assert " npx " not in testflight
@@ -1251,10 +1268,12 @@ def test_testflight_term_stops_the_managed_build_process_tree(
     tmp_path: Path,
 ):
     helper = ROOT / "scripts" / "_run-mobile-tf.sh"
+    managed_runner = _isolated_managed_command_runner(tmp_path)
     work_dir = tmp_path / "reva-testflight.pipeline"
     child_pid_path = tmp_path / "managed-child.pid"
     command = (
         f'{TESTFLIGHT_SOURCE_FOR_TESTS}; '
+        f'SCRIPT_BINARY={shlex.quote(str(managed_runner))}; '
         f'WORK_DIR="{work_dir}"; '
         'TESTFLIGHT_WORK_DIR_CREATED=1; '
         '/bin/mkdir -m 700 "${WORK_DIR}"; '
