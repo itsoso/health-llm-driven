@@ -2,6 +2,7 @@ import importlib.util
 import json
 import os
 import shlex
+import shutil
 import signal
 import stat
 import subprocess
@@ -67,6 +68,49 @@ def _clean_env() -> dict[str, str]:
     env.pop("REVA_RELEASE_LOCK_TOKEN", None)
     env.pop("REVA_RELEASE_LOCK_DIR", None)
     return env
+
+
+def _isolated_testflight_qr_wrapper(tmp_path: Path) -> Path:
+    node_binary = shutil.which("node")
+    assert node_binary is not None, "release invariant suite requires Node.js"
+
+    fixture_scripts = tmp_path / "testflight-qr-fixture" / "scripts"
+    fixture_scripts.mkdir(parents=True)
+    fake_qrencode = fixture_scripts / "qrencode"
+    fake_qrencode.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        'if [ "${1:-}" = "-o" ]; then\n'
+        '  printf "fixture-png" > "$2"\n'
+        "else\n"
+        '  printf "fixture-ansi\\n"\n'
+        "fi\n",
+        encoding="utf-8",
+    )
+    fake_qrencode.chmod(0o700)
+
+    source = (ROOT / "scripts" / "testflight-qr.sh").read_text(
+        encoding="utf-8"
+    )
+    assert 'NODE_BINARY="/usr/local/bin/node"' in source
+    assert 'QRENCODE_BINARY="/opt/homebrew/bin/qrencode"' in source
+    wrapper = fixture_scripts / "testflight-qr.sh"
+    wrapper.write_text(
+        source.replace(
+            'NODE_BINARY="/usr/local/bin/node"',
+            f"NODE_BINARY={shlex.quote(node_binary)}",
+        ).replace(
+            'QRENCODE_BINARY="/opt/homebrew/bin/qrencode"',
+            f"QRENCODE_BINARY={shlex.quote(str(fake_qrencode))}",
+        ),
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o700)
+    shutil.copyfile(
+        ROOT / "scripts" / "testflight-public-link.mjs",
+        fixture_scripts / "testflight-public-link.mjs",
+    )
+    return wrapper
 
 
 def _bash(
@@ -1105,12 +1149,14 @@ def test_testflight_public_qr_is_local_only_and_cannot_mutate_asc():
     assert 'process.env.TESTFLIGHT_PUBLIC_LINK' in public_link
     assert 'src="./qr.png"' in public_link
     assert "TESTFLIGHT_PUBLIC_LINK" in qr_wrapper
+    assert 'NODE_BINARY="/usr/local/bin/node"' in qr_wrapper
+    assert 'QRENCODE_BINARY="/opt/homebrew/bin/qrencode"' in qr_wrapper
     assert "qrencode" in qr_wrapper
     assert package["scripts"]["testflight:public-link"] == "./scripts/testflight-qr.sh"
 
 
 def test_testflight_public_qr_rejects_missing_or_non_apple_links(tmp_path: Path):
-    wrapper = ROOT / "scripts" / "testflight-qr.sh"
+    wrapper = _isolated_testflight_qr_wrapper(tmp_path)
     common_env = _clean_env()
     common_env["TESTFLIGHT_OUTPUT_DIR"] = str(tmp_path / "output")
 
@@ -1139,7 +1185,7 @@ def test_testflight_public_qr_rejects_missing_or_non_apple_links(tmp_path: Path)
 
 
 def test_testflight_public_qr_generates_only_local_artifacts(tmp_path: Path):
-    wrapper = ROOT / "scripts" / "testflight-qr.sh"
+    wrapper = _isolated_testflight_qr_wrapper(tmp_path)
     output_dir = tmp_path / "output"
     result = subprocess.run(
         [str(wrapper)],
