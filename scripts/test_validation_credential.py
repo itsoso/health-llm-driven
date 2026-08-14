@@ -542,7 +542,7 @@ def test_credential_rejects_non_private_or_symlinked_logs(tmp_path: Path) -> Non
 
     public_log = _verify(repo, path)
     assert not public_log.reusable
-    assert "private" in public_log.reason
+    assert "permissions must be 0600" in public_log.reason
 
     log.chmod(0o600)
     original = log.with_name("original.log")
