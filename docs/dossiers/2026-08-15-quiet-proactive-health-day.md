@@ -108,6 +108,10 @@ G2 blocker:
 
 整体交付环被 G2 阻断。可单独为 Phase 1a read-only shadow 建 implementation plan 和原子任务;Phase 2-5 必须等待本 Dossier G2 对合同与 migration/test/rollback 设计重新评审并 PASS,随后各自建子 Dossier/G2,不得捆绑推进。
 
+- Phase 1a 子 Dossier:`docs/dossiers/2026-08-15-health-day-read-only-shadow.md`。
+- Phase 1a 实施计划:`docs/plans/2026-08-15-health-day-read-only-shadow-implementation.md`。
+- 子 Gate 的 G2 PASS 只放行休眠、无调用点的 read-only test slice;不改变本 umbrella G2 BLOCK,也不授权 Phase 2–4。
+
 ## G3 · 测试闸
 
 待实现。Phase 1a 要求 pure/no-write proof、deterministic manifest/digest、real assembled legacy diff、user-local/DST/calendar unknown 和 L3 telemetry 最小化。未来 G3 还必须覆盖同药多剂次、fixed+safety conflict、A→B→A、双端 confirm、跨用户相同 key、双 notification worker、provider timeout→`verifying_unknown`、reserve 后 supersede/cancel、offline expiry 与 receipt claim levels;helper-only mock 不足以通过。
