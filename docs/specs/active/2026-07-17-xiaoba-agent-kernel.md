@@ -1,14 +1,16 @@
 # Feature Spec: XiaoBa Agent Kernel
 
-> Status: implemented_pending_release
+> Status: implemented_pending_release · baseline only; Health Day reuse requires isolated PostgreSQL revalidation
 > Owner: Codex
-> Updated: 2026-07-17
+> Updated: 2026-08-15
 > Related PRD/PDD: `docs/plans/2026-07-17-xiaoba-agent-kernel-redesign.md`
 > Related code: `backend/app/services/agent_executor.py`, `backend/app/services/utterance_intent_classifier.py`
 
 ## 1. Decision
 
 Build a unified XiaoBa Agent Kernel so every surface routes user language through the same semantic intent, capability policy, tool execution and receipt boundary.
+
+Scope note: this status describes the existing kernel slice. It does not assert that current `WriteIntent` already supplies Health Day's generic snapshot-generation binding, one-shot CAS, expiry, owner-scoped idempotency or multi-level receipt state machine. The pre-side-effect health SafetyGuardian flow below is also a planned Health Day extension until PostgreSQL integration evidence exists;these remain additive G2/S4 work in `2026-08-15-quiet-proactive-health-day.md`.
 
 ## 2. Problem
 
@@ -68,7 +70,7 @@ RequirementAdmission:
 |---|---|
 | `HealthAgendaItem` | Receives actions only after capability policy grants the surface/channel. |
 | `LeverageAction` | Becomes an executable action with an explicit capability decision. |
-| `SafetyGuardian` | Runs after any verified write and can block/annotate risky outputs. |
+| `SafetyGuardian` | Planned Health Day extension:for health mutations,deterministic preflight runs before any side effect;post-receipt evaluation verifies/annotates results and newly discovered risk. |
 | `ExecutionEvent` | Stores intent, tool request, policy decision, receipt and final outcome. |
 | `WriteIntent` | Remains the manual confirmation object for create/update/delete. |
 
@@ -80,7 +82,7 @@ user text / voice / card action
   -> ExecutionContext(current time, timezone, user profile, source)
   -> IntentFrame(primary intent, domain, operation, confidence)
   -> CapabilityPolicy(allow / block / require_confirm / ask_clarify)
-  -> ToolGateway(validate args, execute, receipt, safety)
+  -> ToolGateway(validate args -> health safety preflight -> execute -> typed receipt -> post-result annotation)
   -> response + dynamic UI + audit events
 ```
 
@@ -142,6 +144,7 @@ This feature touches health records, reminders, medications, supplements, labs a
 - Ambiguous intent defaults to read-only or clarification, not write.
 - `health_manage(list)` is read-only; `health_manage(update/delete)` is write.
 - Every create/update/delete must have a deterministic receipt before XiaoBa says it completed.
+- Medication, supplement, clinician-floor and workout-safety mutations must pass deterministic SafetyGuardian/hard-rule preflight before ToolGateway side effects. Post-write safety is not a substitute for the pre-write gate.
 - Push/watch language must not claim delivery without client or device receipt.
 - All current-time dependent prompts/tools receive `ExecutionContext.current_time_iso` and `timezone`.
 - Voice shortcut parsing may extract a bounded numeric observation, but only ToolGateway can move it to confirmation or execution.
@@ -154,8 +157,8 @@ The LLM may explain, synthesize and propose actions. It must not be the final au
 Deterministic checks:
 
 - Before LLM/tool: build `IntentFrame` and `TurnSnapshot`.
-- Before tool execution: run `CapabilityPolicy`.
-- After tool execution: validate receipt and run SafetyGuardian where applicable.
+- Before tool execution:run `CapabilityPolicy`;for health mutations also run deterministic SafetyGuardian/hard-rule preflight against the exact proposed payload/snapshot.
+- After tool execution:validate the typed receipt and re-evaluate only for result verification/new-risk annotation;never make this the first medical safety gate.
 - Before final response: ensure claimed actions match verified receipts.
 
 Failures degrade to clarification or read-only explanation.
@@ -182,13 +185,17 @@ Then XiaoBa says it was created and can appear after refresh, not that it was de
 Given a write succeeds
 When the final answer is generated
 Then the answer can cite only the verified resource IDs or executed refs from the receipt
+
+Given deterministic health safety preflight rejects the exact proposed mutation
+When ToolGateway handles the request
+Then it records a blocked decision and produces zero database or external side effect
 ```
 
 ## 12. Verification Plan
 
 ```bash
-# Backend
-DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest \
+# Backend — TEST_DATABASE_URL points to an isolated PostgreSQL database.
+DATABASE_URL="$TEST_DATABASE_URL" TZ=Asia/Shanghai backend/venv/bin/python -m pytest \
   backend/tests/test_agent_kernel_intent_corpus.py \
   backend/tests/test_agent_kernel_turn_snapshot.py \
   backend/tests/test_agent_event_stream.py \
@@ -211,7 +218,7 @@ git diff --check
 - Phase 1 ships in shadow mode: log policy decisions while preserving existing behavior for low-risk reads.
 - Phase 2 enables fail-closed blocking for write tools on Chat and Telegram.
 - Phase 3 migrates Watch/Rokid/proactive adapters.
-- Rollback flag: disable new gateway enforcement and fall back to existing tool execution, keeping logging enabled.
+- Legacy-slice rollback flag may disable the new gateway enforcement and fall back to existing tool execution while keeping logging enabled. This rollback is not available to future Health Day health mutations:once owner/version/pre-write-safety/idempotency gates protect that path, rollback may disable the producer/read UI but cannot bypass those invariant gates.
 
 ## 14. Open Questions
 
@@ -224,3 +231,5 @@ git diff --check
 | Date | Change | Reason |
 |---|---|---|
 | 2026-07-17 | Initial draft | User requested system-level redesign after intent false-write risk. |
+| 2026-08-15 | Add pre-side-effect health safety gate and PostgreSQL verification | Health Day mutation review found that receipt-time SafetyGuardian is too late to prevent a medical side effect; align with PostgreSQL-only project contract. |
+| 2026-08-15 | Clarify Health Day reuse boundary | Require isolated PostgreSQL revalidation and additive WriteIntent guarantees instead of treating the shipped kernel baseline as a verified Health Day mutation contract. |

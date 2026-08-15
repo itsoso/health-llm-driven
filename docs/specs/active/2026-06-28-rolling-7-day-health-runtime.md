@@ -5,6 +5,7 @@
 > 关联 PRD: `docs/prd/2026-06-27-code-derived-product-prd-and-10m-goal.md`
 > 关联计划: `docs/plans/2026-06-27-health-runtime-governance-plan.md`
 > 关联 Dossier: `docs/dossiers/2026-06-28-rolling-health-runtime-next-slice.md`
+> Scope handoff: 本文件只裁决已上线的 1-14 天只读 Agenda runtime projection、读取时 rerank、`runtime_context` 与 provenance。文中的 `replan/rebuild` 只表示下一次读取投影时根据既有事实改变排序/解释,不代表持久化计划 mutation、版本化 trigger execution 或通知。Health Day v2 的 composer、plan version、Chat-first surface、confirmed mutation 与主动 trigger 合同见 `docs/specs/active/2026-08-15-quiet-proactive-health-day.md`;不得从本文件扩出第二套写入或 daily shell 真源。
 
 ## 1. 产品定义
 

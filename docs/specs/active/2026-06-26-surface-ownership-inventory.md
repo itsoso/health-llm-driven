@@ -1,14 +1,14 @@
 # Surface Ownership Inventory
 
-> Status: draft
+> Status: active · reconciled with Chat-first shell
 > Owner: Reva / Personal Health OS
-> Updated: 2026-06-26
-> Related PRD/PDD: docs/specs/reva-product-governance-spec.md · docs/prd/reva-personal-health-os-prd.md · docs/prd/2026-06-15-global-product-requirements.md · docs/plans/2026-06-26-reva-global-product-architecture-plan.md
+> Updated: 2026-08-15
+> Related PRD/PDD: docs/specs/reva-product-governance-spec.md · docs/prd/reva-personal-health-os-prd.md · docs/prd/2026-06-15-global-product-requirements.md · docs/plans/2026-06-26-reva-global-product-architecture-plan.md · docs/specs/active/2026-08-15-quiet-proactive-health-day.md
 > Related code: mobile/app · apps/watch · apps/mac · apps/rokid-pushup-glasses · frontend/src/app · mcp-server · backend/app/api
 
 ## 1. Decision
 
-Use this inventory as the Phase 0 surface ownership source of truth. New product work must name the owning surface and should not create duplicate daily-loop workflows outside that surface without an explicit cross-surface contract.
+Use this inventory as the surface ownership source of truth. Mobile's primary shell is Chat-first XiaoBa; Today, Agenda, Capture, Programs and Review are contextual product destinations inside that shell, not competing top-level tabs. New product work must name the owning surface and should not create duplicate daily-loop workflows outside that surface without an explicit cross-surface contract.
 
 Disposition vocabulary:
 
@@ -22,7 +22,7 @@ Disposition vocabulary:
 
 | Surface | Role | Owns | Must Not Own | Disposition |
 |---|---|---|---|---|
-| Mobile | Primary daily product | Today, Agenda, Capture, Programs, Review, settings/consent | Admin console, trace-heavy debugging, long file triage | Keep |
+| Mobile | Primary daily product | Chat-first XiaoBa shell, Health Day summary, Today/Agenda detail, Capture, Programs, Review, settings/consent | Admin console, trace-heavy debugging, long file triage, a second daily shell | Keep |
 | Apple Watch | Low-friction execution | top action, due item, confirm/later/skip, quick voice/food/water/symptom, freshness | long reports, complex editing, model selection | Keep |
 | Rokid | Hands-free execution | food photo/voice, push-up coaching, workout guidance, voice agenda when command-ready | dashboard, multi-page admin, noisy proactive broadcast | Keep |
 | Mac | Workbench | file/lab import, long agent workflows, trace review, calendar/planning review, local QR/release ops | replace mobile daily loop, duplicate health judgment | Keep |
@@ -32,11 +32,12 @@ Disposition vocabulary:
 
 ## 3. Mobile Inventory
 
-Mobile should converge to five primary entries. Existing routes outside these entries can remain temporarily, but they must map to one owner.
+Mobile has one primary shell and five contextual capability destinations. Existing routes can remain temporarily, but they must map to one owner and return safely to the XiaoBa shell.
 
 | Target Entry | Owns | Current Representative Files | Disposition |
 |---|---|---|---|
-| Today | readiness, top action, urgent safety, next due item | `mobile/app/(tabs)/index.tsx`, `mobile/app/reva.tsx`, `mobile/app/day-schedule.tsx`, `mobile/app/timeline.tsx` | Keep / Converge |
+| XiaoBa shell | cold start, conversation, Health Day summary, contextual dynamic actions and navigation | `mobile/app/(tabs)/index.tsx`(redirect), `mobile/app/(tabs)/chat.tsx` | Keep · sole primary entry |
+| Today | readiness, top action, urgent safety, next due item and current-day detail | `mobile/app/(tabs)/today.tsx`, `mobile/app/reva.tsx`, `mobile/app/day-schedule.tsx`, `mobile/app/timeline.tsx` | Keep detail / Converge duplicate planners |
 | Agenda | day/week/month/quarter health schedule | `mobile/app/agenda.tsx`, `mobile/app/calendar.tsx`, `mobile/app/calendar-sources.tsx`, `mobile/app/calendar-connect.tsx` | Keep |
 | Capture | food, water, symptoms, meds, supplements, measurements, voice/photo/manual | `mobile/app/(tabs)/record.tsx`, `mobile/app/diet.tsx`, `mobile/app/symptom-record.tsx`, `mobile/app/medications.tsx`, `mobile/app/body-measurements.tsx`, `mobile/app/import.tsx`, `mobile/app/voice-chat.tsx` | Keep / Converge |
 | Programs | metabolic, recovery/training, sleep/breathing, medication/supplement, checkup | `mobile/app/intervention-cycle.tsx`, `mobile/app/metabolic-profile.tsx`, `mobile/app/movement-plan.tsx`, `mobile/app/fitness-plan.tsx`, `mobile/app/sleep.tsx`, `mobile/app/sleep-spo2-analysis.tsx`, `mobile/app/doctor-loop.tsx` | Keep / Converge |
@@ -149,3 +150,4 @@ If a feature creates a second daily-loop page or local health decision path, it 
 | Date | Change | Reason |
 |---|---|---|
 | 2026-06-26 | Initial inventory | Phase 0 surface ownership cleanup. |
+| 2026-08-15 | Reconcile Mobile ownership with shipped Chat-first shell | `index` now redirects to `/chat` and the tab bar is hidden; clarify that Today/Agenda/Capture/Programs/Review are contextual destinations, preventing Health Day from creating a second home. |

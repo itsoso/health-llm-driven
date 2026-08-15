@@ -2,7 +2,7 @@
      端 roster / surface 名 / 流程 = 叙事,改了 bump 下方 last-reviewed。 -->
 ---
 doc: system-map/product-map
-last-reviewed: 2026-08-11
+last-reviewed: 2026-08-15
 generated-source: docs/_generated/system-map.json
 authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-inventory.md
 ---
@@ -28,7 +28,7 @@ authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-invent
 
 ## 2. 每端 UI surface(roster;计数见 `_generated`)
 
-- **mobile**(`mobile/app/`):可见 tab 为今日 `index.tsx` · 小巴 `chat.tsx` · 记录 `record.tsx` · 我 `me.tsx`(隐藏:`alerts.tsx`/`journal/`)。日常非 tab:`reva.tsx`/`agenda.tsx`/`timeline.tsx`/`day-schedule.tsx`/`diet.tsx`/`symptom-record.tsx`/`medications.tsx`/`goals.tsx`/`reminders.tsx`/`voice-chat.tsx`;同行支持从已验证饮食卡的服务端 `route.open` 动态进入 `community.tsx`，因此静态导航抽取器不会生成入边。
+- **mobile**(`mobile/app/`):底部 Tab Bar 已隐藏,`index.tsx` 冷启动重定向 `chat.tsx`,**小巴是唯一主入口**;`today.tsx`(今日详情)· `record.tsx` · `me.tsx` 作为小巴上下文进入的二级面,`alerts.tsx`/`journal/` 为隐藏路由。日常其他二级页:`reva.tsx`/`agenda.tsx`/`timeline.tsx`/`day-schedule.tsx`/`diet.tsx`/`symptom-record.tsx`/`medications.tsx`/`goals.tsx`/`reminders.tsx`/`voice-chat.tsx`;同行支持从已验证饮食卡的服务端 `route.open` 动态进入 `community.tsx`，因此静态导航抽取器不会生成入边。具体代码派生导航与深链边见 `docs/system-map/mobile-nav-map.md`。
 - **frontend**(`frontend/src/app/`):dashboard/digital-twin/health-trends/health-report/personal-outcome/admin/review/onboarding/family/…；管理员系统结构统一从 `/admin/system-map` 查看，旧 `/admin/architecture` 仅重定向，不再维护重复架构事实 (全量计数 `_generated`)。
 - **mac**(`SidebarDestination.swift`):today/agenda/timeline/calendar/agent/record/data/dataSources/prescriptions/liver/healthExtras/genetics/knowledge/workouts/goals/jobs/trace/settings。
 - **watch**(`apps/watch/WatchApp/`):`TodayStatusView` · `PushListView` · `QuickRecordView` + complication `RevaComplication.swift`。(对话/记录扩展见 watch §13 实施规划)

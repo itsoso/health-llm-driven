@@ -1,10 +1,13 @@
 # Feature Spec: Rolling 7-Day Health Runtime
 
-> Status: draft
+> Status: deprecated — superseded; do not implement
 > Owner: Reva
-> Updated: 2026-06-27
+> Updated: 2026-08-15
 > Related PRD/PDD: docs/prd/reva-personal-health-os-prd.md, docs/prd/2026-06-27-code-derived-product-prd-and-10m-goal.md
 > Related code: backend/app/api/agenda.py, backend/app/services/agenda_service.py, mobile/app/(tabs)/index.tsx, mobile/app/agenda.tsx, mobile/components/chat/cards/
+> Superseded by: `docs/specs/active/2026-06-28-rolling-7-day-health-runtime.md` (shipped read-only runtime baseline). Health Day v2 convergence is owned by `docs/specs/active/2026-08-15-quiet-proactive-health-day.md`.
+
+> ⚠️ 本文件保留为 2026-06-27 设计历史,不再是 active contract。不要从这里实现 `RollingHealthRuntimePlan`、Home IA 或 mutation;以两份 superseding specs 为准。
 
 ## 1. Decision
 
@@ -232,3 +235,4 @@ First slice should be opt-in by `mode=runtime` or a mobile feature flag. Rollbac
 | Date | Change | Reason |
 |---|---|---|
 | 2026-06-27 | Initial draft | Make rolling 7-day health runtime orchestration a first-class Reva capability before UI redesign. |
+| 2026-08-15 | Mark superseded | 2026-06-28 spec is the shipped runtime authority; Health Day v2 now has a separate convergence spec, avoiding two same-name active truths. |

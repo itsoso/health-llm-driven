@@ -1,6 +1,6 @@
 # Reva Personal Health OS — 全局产品需求说明书(PRD · 合并统一蓝图)
 
-> **状态**: **v1 合并基线(2026-06-15)。这是唯一权威 PRD**,已把以下全部输入合并、内联成一份自洽文档(下列输入自此降级为历史素材,一切以本文为准;冲突时本文优先):
+> **状态**: **v1 合并基线 + 2026-08-15 Mobile IA reconciliation。这是唯一全局权威 PRD**,已把以下全部输入合并、内联成一份自洽文档(下列输入自此降级为历史素材,一切以本文为准;focused feature 的已接受增量裁决通过本文件 §0 回写后生效):
 > 1. **TO-BE 目标形态** ← Codex 全局 PRD(HealthAgenda / HealthProgram / Router / R1–R10 / WSCLA / 5 入口)
 > 2. **AS-IS 现状基线 + 不变量 + 技术债** ← docs/PRD.md(逐子系统逆向 review,~85% 已建成的复用清单)
 > 3. **容器化/协议化最佳实践 + 手工/协议双轨** ← 产品决策
@@ -11,6 +11,16 @@
 > **读法**:§1–§3 定方向(定位/原则/架构);§4 一等对象;§5 双轨录入;§6 需求 R1–R16(全自洽);§7 不变量(验收 gate);§8 复用与债;§9 路线图;§10 待拍板;附录 A/B 临床默认配置与同行参考;§11 诚实声明。
 
 ---
+
+## 0. 2026-08-15 Mobile IA Reconciliation
+
+Mobile 已于 2026-07-03 落地 Chat-first agent-native shell:`/(tabs)/index` 重定向 `/chat`,底部 Tab Bar 隐藏。
+因此本文 v1 所称“Today / Agenda / Capture / Programs / Review 五个一等入口”自此解释为**五个上下文能力目的地**,
+不是五个并列 tab 或首页。唯一一级日常入口是小巴 Chat shell;它承载 Health Day 摘要、查询、快速执行和路由,
+再按上下文进入 Today/Agenda/Capture/Programs/Review 详情。
+
+Health Day v2 focused contract 见 `docs/specs/active/2026-08-15-quiet-proactive-health-day.md`。它不得改变本文的一等健康对象、
+医疗边界或跨端 ownership;本文后续历史段落若仍把五能力写成并列入口,以本节的 Chat-first 解释为准。
 
 ## 1. 北极星与定位(沿用 Codex,确认)
 
@@ -81,7 +91,7 @@ Operating Review(7/30/90 outcome + 个人响应 + 协议纠偏 + 下一议程)
 >
 > **对齐多模型 5 层工程视图**:数据层(自持 Data Lake + 被动传感器矩阵,原则 ⑭)· **状态层(= 真护城河:DAG + 规则引擎 + LLM「信息索取」三明治,LLM 不出诊断只索取信息;PRS/PGx 作先验权重调阈值;干预设 7–14 天 washout)** · 计划层(Program×Protocol 供应链工程)· 执行层(三级通知预算)· 复盘层(15 分钟 3 问 + n=1 A/B/A/B + L1↔L4 对账)。我们现有 orchestrator/specialists 确定性裁决 + personal_baseline 即状态层雏形;缺的是 washout/对账/状态机回测的严谨化。
 
-**Mobile 5 一等入口(沿用 Codex)**:Today / Agenda / **Capture(双轨录入入口)** / Programs / Review(其中 Programs 视图含「健康问题」子页)。
+**Mobile 单一主壳 + 5 个上下文能力目的地(v2 reconciliation)**:小巴 Chat shell 是唯一一级日常入口;Today / Agenda / **Capture(双轨录入入口)** / Programs / Review(其中 Programs 视图含「健康问题」子页)由主壳按上下文展开,不是并列 tab。
 **三端分工(沿用 Codex)**:Mobile 主体验;Mac 桌面工作台/导入复盘;Web 后台/报告/历史兼容/Apple Health XML fallback;Watch 腕上执行器;小程序降级历史兼容。
 
 ---
@@ -192,7 +202,7 @@ HealthProtocol:
 - **R7 Checkup & Specialty Screening Planner**:按年龄/性别/家族史/既往异常/症状/可穿戴异常/医生指令生成检查建议(区分 wellness/复查/就诊/急性红旗),输出 项目+时间窗+理由+来源+风险边界+是否需医生确认,全进 Agenda;不越界为诊断。
 - **R8 Training Prescription & Readiness Gate**:recovery_decision green/yellow/red 作训练 gate;输入 RingConn 睡眠/HRV/SpO2/皮温 + Garmin readiness/load/recovery + Apple 活动/主观疲劳 + 症状;训练前 30-60min 在 Watch/Mobile 出现;训练后捕获 RPE/疼痛 + Garmin workout 事实;**急性病/低氧/症状优先于 Garmin readiness**。
 - **R9 Outcome Proof**:每个 Program 绑 primary/secondary metrics;每个 action 标是否影响 outcome;7/30/90 复盘 = 执行率+指标变化+复查结果+个人响应强弱+下周期调整;temporal association 明确「非因果」;代谢周期输出 baseline→latest→target。
-- **R10 三端职责**:Mobile 主体验(Today/Agenda/Capture/Programs/Review + HealthKit/Watch 配对/语音/照片饮食);Mac 深度工作台(快速记录/导入/Agent 长对话/Trace,不复制健康判断);Web 后台/报告/历史兼容/Apple Health XML fallback;Watch 腕上执行;Agent/MCP 受控外部入口(最小权限+审计)。
+- **R10 三端职责**:Mobile 主体验(Chat-first 小巴单一主壳,按上下文进入 Today/Agenda/Capture/Programs/Review + HealthKit/Watch 配对/语音/照片饮食);Mac 深度工作台(快速记录/导入/Agent 长对话/Trace,不复制健康判断);Web 后台/报告/历史兼容/Apple Health XML fallback;Watch 腕上执行;Agent/MCP 受控外部入口(最小权限+审计)。
 
 **R11–R16(本 PRD 新增)**:
 - **R11 HealthProtocol 协议层 + 双轨录入**

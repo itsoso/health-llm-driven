@@ -1,10 +1,10 @@
 # Feature Spec: Time-Driven Health Management
 
-> Status: draft
+> Status: active · v1 shipped · v2 scope handed off
 > Owner: Reva / Personal Health OS
-> Updated: 2026-06-22
-> Related PRD/PDD: docs/prd/reva-personal-health-os-prd.md · docs/prd/2026-06-19-proactive-planning-prd.md · docs/specs/active/2026-06-17-day-timing-schedule.md · docs/specs/active/2026-06-19-p1-pre-event-reminders.md · docs/specs/archive/2026-06-18-calendar-v2.md
-> Related code: backend/app/api/schedule.py · backend/app/services/{day_schedule_service,timing_solver,timing_adapter,schedule_diet_sleep,agenda_service}.py · backend/app/tasks/event_reminders.py · backend/app/api/{agenda,rokid,write_intents,reorder_intents}.py · backend/skills
+> Updated: 2026-08-15
+> Related PRD/PDD: docs/prd/reva-personal-health-os-prd.md · docs/prd/2026-06-19-proactive-planning-prd.md · docs/specs/active/2026-08-15-quiet-proactive-health-day.md · docs/specs/active/2026-06-17-day-timing-schedule.md · docs/specs/active/2026-06-19-p1-pre-event-reminders.md · docs/specs/archive/2026-06-18-calendar-v2.md
+> Related code: backend/app/api/{schedule,daily_plan,agenda,write_intents}.py · backend/app/services/{day_schedule_service,timing_solver,timing_adapter,schedule_diet_sleep,agenda_service,daily_operating_plan,daily_artifact_service,today_dynamic_view_service}.py · backend/app/services/agent_kernel · backend/app/tasks/event_reminders.py · mobile/app/(tabs)/index.tsx · mobile/components/home/{DynamicTodayRenderer,DailyArtifactCard}.tsx
 
 ## 1. Decision
 
@@ -16,7 +16,7 @@
 ## 1.5 Reconciliation & Build Status（Claude A · 2026-06-22）
 
 > 本节把已落地的「执行层闭环基础」与本 spec 对齐,并回答 §18 的 must-decide 开放问题。
-> **本 spec 仍是时间驱动健康管理的权威路线图**;以下只补「已建什么 + 三个开放问题的裁决 + 脊柱 seam 对齐」,
+> **本 spec 是 v1 时间驱动能力与安全 baseline**;Health Day v2 scope handoff 见 §1.6。以下只补「已建什么 + 三个开放问题的裁决 + 脊柱 seam 对齐」,
 > 不改写下游章节。结论:Codex 的本 spec 与已建的 Increment 1 **互补、非冲突** —— 本 spec 描述
 > 「协议→投影→设备观察→外部意图」的**输入/编排侧**,Increment 1 已建其中的**执行/闭环侧**(= 本 spec §7 的
 > `-> ExecutionEvent -> Review` 段)。
@@ -52,7 +52,9 @@ Increment 1 已合并 main(`f1ca1802`,未部署),实现了 §7 流水线
 3. **首个 eye/screen-focus 信号由谁产** → **P1 先 Mobile 计时器 + 人工确认**(零硬件依赖,先把先验闭环跑通);
    **P2/P3** 接 Mac screen-focus adapter / Rokid 作为真实信号源。不阻塞 P1。
 
-### 1.5.3 脊柱 seam 对齐(`/schedule/today` vs `/timeline/today`)
+### 1.5.3 v1 历史脊柱 seam(`/schedule/today` vs `/timeline/today`)
+
+> 以下记录 2026-06-22 上线架构,用于 legacy adapter 与回滚理解,不再裁决 v2 Mobile 首页或 canonical Health Day snapshot。
 
 保持**两层、不重复**:
 - `/schedule/today`(`day_schedule_service` + `timing_solver` 输出)= **上游**;§9.1 的富字段
@@ -60,7 +62,7 @@ Increment 1 已合并 main(`f1ca1802`,未部署),实现了 §7 流水线
 - `/timeline/today`(`today_timeline_service`:agenda 未来 + past + outcome + 已加的 HealthEvent 生命周期)
   = **首页脊柱**,home 渲染只读它。§9.1 富字段经 agenda 投影流入 timeline 项。
 
-**首页只有一个脊柱面**(`/timeline/today`);`/schedule/today` 是其上游 solver,不直接喂 home。
+**v1 当时的首页脊柱面**是 `/timeline/today`;`/schedule/today` 是其上游 solver。v2 的 Chat-first shell 与 canonical snapshot 以 §1.6 指向的新 spec 为准。
 
 ### 1.5.4 合并后路线图(本 spec §14 P0-P6 ⇄ Increment 编号)
 
@@ -83,7 +85,27 @@ Increment 1 已合并 main(`f1ca1802`,未部署),实现了 §7 流水线
 >
 > **仍需用户侧(自主代码无法替代)**:① 真机验证全链路(推送→完成/跳过→首页熄灯、用眼计时器、洗鼻/睡前提醒);② P3 坐姿/摄像头硬件 on-device adapter(需真机 + Rokid SDK);③ 真外卖/挂号 provider 接入(需账号 + 财务/安全评审,**支付永远用户自己执行**);④ 行为协议的「建议启用」UI(auto-seed 因 不劫持 故意不做,现经 `/protocols/seed/behavior` 手动启用)。
 
-## 2. Problem
+## 1.6 v2 Scope Handoff: Quiet Proactive Health Day (2026-08-15)
+
+> Health Day v2 的 composer、版本、跨端 surface、查询/修改、主动重排和发布合同已移交
+> `docs/specs/active/2026-08-15-quiet-proactive-health-day.md`,后者是唯一规范真源。
+> 本 spec 继续只裁决领域 protocol、timing solver、SafetyGuardian、device observation 和 external-intent
+> 边界;不得从本文件历史章节重新推导第二套 Daily Plan / Agenda / Mobile 入口。
+
+权威边界:
+
+- 本 spec:领域时点、安全和已上线 time-driven capability baseline;
+- `2026-06-28-rolling-7-day-health-runtime.md`:已上线的只读 rolling runtime projection;
+- `2026-08-15-quiet-proactive-health-day.md`:Health Day v2 composition、plan version、Chat-first shell、mutation 和 rollout;
+- `2026-07-17-xiaoba-agent-kernel.md`:自然语言 intent、capability、ToolGateway 与 receipt。
+
+Health Day 是现有 `DailyOperatingPlan -> HealthAgendaItem -> HealthEvent/InterventionEvent` 的产品投影,
+不是新持久化对象。
+
+## 2. 2026-06-22 Problem Baseline
+
+> 本节记录 v1 立项时问题;其中多项已在 §1.5 标记为上线。当前 Health Day 收敛缺口和目标态以
+> `docs/specs/active/2026-08-15-quiet-proactive-health-day.md` 为准。
 
 当前用户想要的不只是“今天几点吃药”。
 
@@ -266,6 +288,8 @@ HealthProtocolTemplate:
 
 `day_schedule_service` 应继续做 source of truth,但从“药/补剂/餐/睡/锻炼”扩展成
 “protocol items + constraints”。
+
+> v2 scope note:`day_schedule_service` 继续是 deterministic timing/constraint source,不是完整 Health Day snapshot、跨端 rank 或 Mobile shell source of truth。v2 composer ownership 见 §1.6 指向的新 spec。
 
 新增或扩展内部接口:
 
@@ -775,7 +799,9 @@ hard_boundary:
   - all financial/booking/alarm actions require manual_confirm
 ```
 
-## 10. Surface Contract
+## 10. v1 Surface Contract(historical baseline)
+
+> 本表保留已上线端能力分工。Mobile 的一级入口现已改为 Chat-first;Health Day v2 surface ownership 以 §1.6 指向的新 spec 和 `2026-06-26-surface-ownership-inventory.md` 为准。
 
 | Surface | Responsibility | Contract |
 |---|---|---|
@@ -1022,3 +1048,4 @@ Can defer:
 | 2026-06-22 | P1a 协议模板地基(后端 `c93077e8`)| `protocol_templates.py` 注册表(nasal_wash×2 + sleep_winddown)+ 幂等 seeding + `/protocols/seed/behavior` + 提醒桥(`time_window→HH:MM`、protocol 进 `_collect_timed_items`、P1 tier)+ nasal 红旗 fail-safe 抑制 + R4 措辞。`respiratory` 入 PROTOCOL_DOMAINS。safety self-review GO。64+167 测试绿。未部署。P1b(eye 移动计时器 + microbreak 安全门)与 §7.2 recurrence 重构待做。 |
 | 2026-06-22 | council-review + 修复(后端 `40af18e9`)| 三方(Claude A+B+Codex/GPT-5.5)评审完成回路+P1a,一致 CONDITIONAL_ACCEPT,共识 F1–F4 部署前必修(已修):F1 skip 也校验类型+归属(→400/404,非跨用户泄露,只是缺校验);F2 skip 经同一 dispatcher 写真实 source skip 事实 → today_status/提醒/视图一致不再误推,后到 done **supersede** 先前 skip(skipped→taken upsert;done 不可被 skip 降级);F3 nasal 红旗查询异常 **fail-closed** + 警示语进推送正文;F4 **实测**旧幂等测试还原 `_slot_time`→now() 仍绿(假护栏)→ 加 `taken_time==scheduled_for 槽`断言 + clock-straddle 测试,红绿实测确认。F5a 窄缝留+sentinel 覆盖;F5b(complete_ref 缺 dose-slot/BID 折叠)加 TODO。safety re-review GO。101+167+372 测试绿。未部署。 |
 | 2026-06-23 | 自主全量建成 P1b/P2/P4/P5/P6 + 上线 | 顺序建+逐个安全评审:P1b eye 计时器(`a8f339a9`)+ microbreak §8.3 门(`edf075e3`)+ skip-原因 UI(`02ca8b88`);P2 DeviceObservation(`04032c97`);P4 workout chain(`07f8403a`);P5 external intents draft-only(`105e7749`);P6 learning loop(`caed55f8`)。每增量 safety self-review GO。**集成闸**(全增量测试合跑)抓出 2 个 CI-红跨增量回归:① device 完成双写 ② microbreak 误降级——根因=**CI UTC-runner vs 应用 Asia/Shanghai 午夜 date-base flake**(含真生产 bug:上海午夜 `_auto_observe` 双写虚高依从);修=CI `TZ=Asia/Shanghai` + date 对齐(`fd37225a`,4015 测试绿)。**Codex 跨家 capstone** 评审又抓出 BLOCKING:`/write-intents` 嵌套 L4 支付 key 只查顶层 → 递归拒(`578ee9a1`)+ device/chain China-day 归一 + 文案软化。**全部已部署生产**(后端 `578ee9a1`,health 60/60)+ `generate-types`(`33f7e65a`)+ 移动端 OTA(update `c2757163`,build 184)+ TestFlight build 184。auto-seed 因 不劫持 故意不做。P3 硬件/真外卖挂号 provider/支付=用户侧外部边界。 |
+| 2026-08-15 | Add §1.6 Health Day v2 scope handoff | 用户确认“安静主动型、可查询且可修改调整”;新 active spec 接管 composer/version/Chat-first surface/mutation/rollout,本 spec 保留领域 timing、安全与已上线能力权威,避免双真源。 |
