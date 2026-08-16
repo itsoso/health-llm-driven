@@ -1075,8 +1075,7 @@ def _write_briefing_message(db, user_id: int, content: str, target_date: date):
     )
     if existing:
         existing.content = content
-        # 不动 created_at, App 里日期排序不变
-        conv.updated_at = datetime.now(UTC)
+        # 后台刷新不是用户活动, 不推进 updated_at, 避免简报抢占默认续接会话。
         db.commit()
         db.refresh(existing)
         return conv.id, existing.id

@@ -1,5 +1,5 @@
 """每日简报对话改造为每日独立 conversation 后的回归测试."""
-from datetime import date
+from datetime import UTC, date, datetime
 
 from app.tasks.notifications import (
     _briefing_title_for,
@@ -7,6 +7,7 @@ from app.tasks.notifications import (
     _write_briefing_message,
 )
 from app.models.agent_conversation import AgentConversation, AgentMessage
+from app.services.agent_conversation_service import AgentConversationService
 
 
 def test_briefing_title_uses_date(db):
@@ -43,3 +44,49 @@ def test_write_message_lands_in_correct_day_bucket(db):
     msgs_26 = db.query(AgentMessage).filter(AgentMessage.conversation_id == convs[1].id).all()
     assert len(msgs_25) == 1 and "4-25" in msgs_25[0].content
     assert len(msgs_26) == 1 and "4-26" in msgs_26[0].content
+
+
+def test_refreshing_existing_briefing_does_not_reclaim_latest_conversation(db, monkeypatch):
+    """Background data refreshes must not masquerade as user chat activity."""
+    target_date = date(2026, 4, 25)
+    _write_briefing_message(db, user_id=7, content="旧简报", target_date=target_date)
+
+    briefing = db.query(AgentConversation).filter(
+        AgentConversation.user_id == 7,
+        AgentConversation.title == "每日健康简报 · 04-25",
+    ).one()
+    briefing.updated_at = datetime(2026, 4, 25, 10, 0)
+
+    user_conversation = AgentConversation(
+        user_id=7,
+        title="午餐记录",
+        updated_at=datetime(2026, 4, 25, 11, 0),
+    )
+    db.add(user_conversation)
+    db.flush()
+    db.add(AgentMessage(
+        conversation_id=user_conversation.id,
+        role="user",
+        content="记录午餐",
+    ))
+    db.commit()
+
+    class NoonDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 4, 25, 12, 0, tzinfo=tz or UTC)
+
+    monkeypatch.setattr("app.tasks.notifications.datetime", NoonDatetime)
+
+    _write_briefing_message(db, user_id=7, content="刷新后的简报", target_date=target_date)
+
+    db.refresh(briefing)
+    refreshed_message = db.query(AgentMessage).filter(
+        AgentMessage.conversation_id == briefing.id,
+        AgentMessage.role == "assistant",
+    ).one()
+    ordered = AgentConversationService(db).get_conversations(user_id=7)
+
+    assert refreshed_message.content == "刷新后的简报"
+    assert briefing.updated_at == datetime(2026, 4, 25, 10, 0)
+    assert ordered[0].id == user_conversation.id
