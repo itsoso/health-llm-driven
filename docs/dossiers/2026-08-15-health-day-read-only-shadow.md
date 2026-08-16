@@ -4,8 +4,8 @@
 |---|---|
 | slug | `health-day-read-only-shadow` |
 | 创建日期 | 2026-08-15 |
-| 当前阶段 | S3 规划 |
-| 状态 | defining |
+| 当前阶段 | S4 需求分解 / S5 实现（Task 0） |
+| 状态 | building |
 | 负责 | Codex |
 | 父 Dossier | `docs/dossiers/2026-08-15-quiet-proactive-health-day.md` |
 | 反馈环 | PostgreSQL service-fixture shadow / no runtime rollout |
@@ -25,6 +25,18 @@
   - 新基线:同一 committed semantic seed 的 per-surface oracle schemas + untouched candidate schema、symmetric versioned surface projectors、bounded pre-AdviceGuard Daily Plan subset/slot projector、payload-bound two-segment signing protocol和 mechanical no-skip PostgreSQL Gate。
   - 回退阶段:S3。
   - 需重跑 Gate:G2(本轮文档复审)、G3、G4。
+- [x] 2026-08-15 implementation-reachability correction
+  - 触发:Task 3 fresh preflight 发现 SQL cursor guard 按字面会拦截 measured transaction 自己必需的三条 session-local setup,且 private Core schema 不含 `users` 表却要求 seed User。
+  - 旧基线:approval 后无条件拒绝全部 GUC change;Task 3 seed 叙述暗示需要未列入 source inventory 的 User/FK。
+  - 新基线:只允许三条逐字节、参数 shape 已批准且 one-shot 消费的 measured setup (`statement_timeout`,`idle_in_transaction_session_timeout`,`app.user_id`);其他 GUC/transaction change 仍 fail closed。Task 3 使用 explicit owner scalar;有 owner column 的表直接过滤,owner-less child (`outcome_metrics`)只能通过已 owner-scoped parent cycle IDs 读取,不新增 `users` mapping/FK/伪造 owner column。
+  - 回退阶段:S3 计划机械澄清;不扩大 source、runtime 或安全范围。
+  - 需重跑 Gate:Task 3 focused RED/GREEN、G3、G4。
+- [x] 2026-08-15 digest-construction reachability correction
+  - 触发:Task 2 preflight 发现原计划仍允许 caller 以分离的 payload/metadata 形状触达 digest,且“verified bundle”未机械限定 verifier、key provider 与原 bundle object。
+  - 旧基线:`build_digest_bound_shadow_bundle(payloads,manifest_metadata,key_provider)` + caller-supplied digest mismatch 检查;Task 4/7 只写“verified bundle”,未固定验证入口。
+  - 新基线:signing-local exact frozen/slots `SourceSigningInput`/`ManifestSigningInput`,前者无 `payload_digest`;builder 只收 manifest input + provider、一次读取 key、内部逐源计算 digest 后签 manifest。`verify_digest_bound_shadow_bundle` 以 `compare_digest` 重算逐源与 manifest;Task 4 的 context factory 首步调用 verifier 并继续使用同一 snapshot 的原 bundle object,不引入 wrapper,oracle 永不参与。item key 只经窄 `bind_signed_shadow_item_key` factory 绑定 Task 2 生成的非授权 token。
+  - 回退阶段:S3 计划机械澄清;不扩大 source、runtime、写路径或生产 key 范围。
+  - 需重跑 Gate:Task 2/4 focused RED/GREEN、G3、G4。
 
 ## S0 · 用户需求(逐字)
 
@@ -152,7 +164,7 @@ manifest:
 
 Loader 入参只有 injected Session、authenticated owner、aware `as_of`、required valid IANA `fallback_timezone` 与外部 revision fixture;caller 不能自报 authoritative manifest timezone/local-day。loader 在同一 snapshot 冻结 ProfileScheduleDTO,逐个以 `ZoneInfo` 验证非空候选和 fallback,按 `manual -> detected -> legacy -> fallback` 选 effective timezone,再由 `as_of` 推 local day并构造/签名 manifest。高优先候选无效不静默 fall through;bundle verifier 重算 precedence,timezone/local-day mismatch 或伪造 manifest fail closed;绝不读取 OS/China ambient default。
 
-输入 payload 与 manifest 作为一个不可拆分的 `HealthDayShadowBundle` 留在内存,均先转 frozen/plain-data DTO;不把 ORM object、lazy relationship、wall clock 或 provider client交给 composer。每个 source manifest 的 `payload_digest` 必须由同一 builder 对精确 DTO bytes 重新计算,外部调用者不能自报;任一 payload 与 digest 不匹配即 fail closed。所有查询显式 `ORDER BY ... id`,相同完整 bundle 的 canonical artifact 必须逐字节一致。
+输入 payload 与 manifest 作为一个不可拆分的 `HealthDayShadowBundle` 留在内存,均先转 frozen/plain-data DTO;不把 ORM object、lazy relationship、wall clock 或 provider client交给 composer。Task 2 在 signing module 内定义 exact frozen/slots `SourceSigningInput(source_kind,source_role,revision,acquired_at,cutoff,freshness,availability,error_code,tombstone_state,value)` 与 `ManifestSigningInput(schema_version,owner_id,local_day,timezone,as_of,transaction,sources)`;source input 明确没有 `payload_digest`,raw `value` 使用 `repr=False` 或等价 safe descriptor。safe-repr 约束只裁决 signing input/验证异常不得回显原值或 token,不要求改变 `repr(bundle)`;bundle 仍禁止进入日志。`build_digest_bound_shadow_bundle(manifest_input,key_provider)` 只读 provider 一次,逐源从 exact input 重算 HMAC、创建带 digest 的 SourceResult、构造 bundle-owned graph 后签 manifest;外部调用者不能自报 digest。`verify_digest_bound_shadow_bundle(bundle,key_provider)` 用 `compare_digest` 重算每源和 manifest,任何 changed payload/field 搭配旧 revision/digest 都 fail closed且错误不回显原文/token。所有查询显式 `ORDER BY ... id`,相同完整 bundle 的 canonical artifact 必须逐字节一致。
 
 Phase 1a source support:
 
@@ -196,6 +208,8 @@ item:
 
 `shadow_item_key` 不是未来 `occurrence_id` 或 authorization token。canonical 与 legacy 两侧先把 `8:00`/`08:00` 统一成 user-local minute;BID/TID 再以 dose ordinal 区分。identity 还必须含 storage namespace:`medication_row` 与 `supplement_definition` 即使 numeric id/domain 相同也不能碰撞;legacy Schedule/Timeline 的 supplement ref 只绑定 Medication-table row。重复规范化 slot 或非法时点标 `slot_identity_ambiguous`/degraded,不得静默折叠或生成可执行 occurrence。title 永不作为 identity。Canonical rejected/deferred 都保持可见且不可执行;当前 legacy medication/supplement Schedule 的闭集只有 scheduled/rejected,伪造或未来的 deferred tuple 必须先走 unknown policy bump。
 
+普通 `HealthDayShadowItem(shadow_item_key=non_empty)` 构造继续 fail closed。contracts leaf 不暴露 public raw-token factory;只预留 private `_SIGNED_SHADOW_ITEM_KEY_BINDER`,并把输入收紧为 exact unsigned item + `[A-Za-z0-9_-]{1,32}\.[0-9a-f]{64}`。Task 2 是该 private seam 的唯一允许 importer,由 public `health_day_shadow.bind_signed_shadow_item_key(...)` 先调用 `sign_shadow_item_identity` 计算当次非授权 token 再绑定;caller 不能传任意 token 字符串。绑定逐字段保留 unsigned item 除 `shadow_item_key` 外的全部内容;Task 8 以 import graph 锁住这条边,不得为方便放宽 Task 1 constructor invariant。
+
 Medication execution 只按**唯一 exact normalized slot**绑定 occurrence,绝不 nearest-match。source slot 先按 minute 排序并赋 dose ordinal;duplicate-normalized slot 或 `times_per_day` 与多 slot 数不一致使整组 degraded。单一 occurrence 可接 `taken_time=NULL` 的 daily marker,但 timing precision unsupported;BID/TID 的 NULL、off-slot log、或 `8:00` + `08:00` 两条 raw log 归一碰撞都标 lossy/ambiguous 且不得终结任何剂次。status 映射固定:`taken -> completed terminal`,`skipped -> skipped terminal`,`delayed -> adjusted nonterminal`;unknown 不猜。SupplementRecord 保持 once-per-day 事实,`taken=true` 才完成,optional time 不制造第二 occurrence。
 
 Schedule 与 Timeline 的 assembled payload 已丢部分 source-slot/fixed/count 证据,所以两者必须同时接收由 untouched HMAC-bound bundle 派生的 immutable `LegacyOccurrenceContext`。它按 `(storage_namespace,source_id)` 保存 versioned domain、slot/ordinal、count consistency、fixed/flexible 与 conservative calendar-busy eligibility;不含 oracle delta、title 或授权。fixed 与 flexible 即使都显示 `anchor=anytime` 也只按 context 分类;calendar 只能声明“有 eligible busy input”,不能伪称实际参与。single occurrence 被 solver 移动时保留 source identity但 precision unsupported;multi-dose/invalid 无法唯一回绑时 canonical+legacy 同组都降为 ambiguous,不得制造 missing/extra。
@@ -221,7 +235,7 @@ CalendarEvent 的 PostgreSQL `timestamptz` 保存数据库 instant,但现有 ing
 
 ### 5. Per-surface assembled diff
 
-不做错误的“所有 surface 全局集合相等”,也不把 canonical 全量 items 直接喂给 diff。`project_canonical_surface(artifact, policy, occurrence_context=None)` 与 legacy adapter 对称地产生 `CanonicalSurfaceProjection` / `LegacySurfaceProjection`;Schedule/Timeline 两侧必须使用 measured candidate 同一个 verified bundle 派生的 `LegacyOccurrenceContext`,并校验 manifest/schema/payload digests 完全一致,不能从 oracle payload/delta 或第二个 snapshot 重建。**两侧每一行**都必须分类 `comparable | intentionally_unscoped | lossy_identity | ambiguous_identity | unsupported_precision`,否则 fail closed。
+不做错误的“所有 surface 全局集合相等”,也不把 canonical 全量 items 直接喂给 diff。`project_canonical_surface(artifact, policy, occurrence_context=None)` 与 legacy adapter 对称地产生 `CanonicalSurfaceProjection` / `LegacySurfaceProjection`;Schedule/Timeline 两侧必须调用 `derive_legacy_occurrence_context_from_bundle(bundle,key_provider)`,其首步对 measured candidate 同一原始 bundle object 调用 `verify_digest_bound_shadow_bundle`。校验 manifest/schema/payload digests 完全一致后才派生 context;不引入 `VerifiedBundle` wrapper,不能从 oracle payload/delta 或第二个 snapshot 重建。**两侧每一行**都必须分类 `comparable | intentionally_unscoped | lossy_identity | ambiguous_identity | unsupported_precision`,否则 fail closed。
 
 每个 versioned surface policy 显式声明:local-day/horizon、包含的 domain/role、cardinality/top-N、dedupe group、surface-specific ordering、top/now 规则和 safety comparability。global item 只持 neutral ordering facts;`ordinal/is_top/is_now` 只存在 surface projection,同一 item 可在 DOP/Agenda/Timeline 拥有不同 rank。
 
@@ -328,7 +342,7 @@ forbidden:
   - bounded in-memory Daily Plan shadow subset + per-slot medication projector;existing DOP/Day Schedule row/wrapper 不充当 canonical truth,也不把 subset 宣称为已提取的完整 DOP calculation half;
   - Daily Plan 逐字段 source matrix 锁定可支持 weight/single-source recovery/structured acute+intervention/terminal/cycle 事实;lab flags、composite training gate、AdviceGuard/top-5、prediction 和 registry label 明确 degraded/unscoped,缺失不得当 green/allowed;
   - symmetric canonical/legacy surface policy + normalized-minute/dose-ordinal identity + complete lifecycle + title-free matching;
-  - item identity/HMAC 必含 closed storage namespace,Medication-table supplement 与 standalone definition 同 numeric id 不碰撞;Schedule/Timeline 共用 same-bundle `LegacyOccurrenceContext` 恢复 source-slot/count/fixed provenance;
+  - item identity/HMAC 必含 closed storage namespace,Medication-table supplement 与 standalone definition 同 numeric id 不碰撞;Schedule/Timeline 以 `derive_legacy_occurrence_context_from_bundle(bundle,key_provider)` 先验签并从 same snapshot/same original bundle object 派生 `LegacyOccurrenceContext`,不引入 wrapper、不接受 oracle 输入;
   - 每个 legacy surface 与 untouched candidate 从相同 committed semantic baseline 建独立 PostgreSQL schema;oracle delta 永不喂回 shadow;
   - schema DDL 需 feature opt-in + fresh current_database/marker 复验 + strict generated-name regex;Task 3/7 禁 shared `db` fixture、public DDL 和自建 marker;
   - 五个 Phase 1a tests + local conftest/helper 位于独立 `backend/health_day_shadow_tests/` sibling tree,不加载 `backend/tests/conftest.py`;真实 Redis/provider/global engine 默认 fail-loud,legacy oracle 只用 per-schema/per-variant 空 fake cache;
@@ -346,7 +360,8 @@ forbidden:
 
 ## S4 · 研发任务分解
 
-- 当前尚未进入 S4;等待用户选择执行方式。
+- 用户已于 2026-08-15 明确要求“按照计划行动”;当前按实施计划从 Task 0 开始分批执行。
+- Workflow trace:`docs/_generated/harness-runs/ae8348a1d08b.jsonl`（本地生成物,不提交）。
 - 原子任务、精确文件和 red/green 命令见实施计划。
 - 实现前重新 `git fetch` + `gh pr list`;不依赖 PR #225,并在 Task 9 前明确处置与 PR #252 的 CI/system-map 重叠。
 

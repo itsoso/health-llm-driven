@@ -347,9 +347,9 @@ Rules:
 - `local_day` and IANA timezone are explicit; no `date.today()` or China-day helper;
 - source results are immutable tuples sorted by one declared source-order constant;
 - payload + manifest cannot be constructed independently;the bundle owns both and Task 2 binds every composition-relevant DTO field;
-- `LegacyOccurrenceContext` schema contains required manifest schema/digest and source-payload digest bindings plus controlled occurrence facts;Task 4's only public factory derives it from the verified bundle. It cannot contain oracle output or claim that a calendar block actually participated;
+- `LegacyOccurrenceContext` schema contains required manifest schema/digest and source-payload digest bindings plus controlled occurrence facts;Task 4's only public factory derives it from the original `HealthDayShadowBundle` object after calling Task 2 verification with the injected key provider. A `VerifiedBundle`/wrapper type is forbidden:the same bundle object from the same snapshot continues through composition/context derivation. It cannot contain oracle output or claim that a calendar block actually participated;
 - ORM instances, mutable dicts/lists, `Session`, provider clients and wall-clock calls are rejected at the boundary;
-- `shadow_item_key` remains empty until Task 2 signing; it is not called `occurrence_id`.
+- `shadow_item_key` remains empty until Task 2 signing; it is not called `occurrence_id`. The contracts leaf exposes no public raw-token binder:its only construction seam is the private `_SIGNED_SHADOW_ITEM_KEY_BINDER`,which accepts an exact unsigned item plus only `[A-Za-z0-9_-]{1,32}\.[0-9a-f]{64}`. Task 2 is the sole allowed importer and exposes the public `health_day_shadow.bind_signed_shadow_item_key(...)` that computes the HMAC before delegating to that private seam;Task 8 locks this import edge.
 - shared surface/policy/rank/unsealed/sealed/diff dataclasses are behavior-free schemas only. Unsealed comparable rows carry typed `ShadowItemIdentity` and no opaque key;sealed rows carry only `opaque_item_key` plus controlled projection facts and no raw identity;`ShadowSurfaceDiffRow` carries only the Task 6 allowlist. Projectors,signing and diff import these types from contracts and never define/import one another's shared types.
 
 `health_day_composer.py` initially imports contracts from this leaf and exposes no DB/signing implementation yet. The fixed dependency direction is:
@@ -396,7 +396,11 @@ def test_same_manifest_and_key_produce_same_digest(): ...
 def test_any_composition_field_change_changes_source_and_manifest_digest(): ...
 def test_source_row_order_only_change_does_not_change_digest(): ...
 def test_forged_same_manifest_with_changed_payload_is_rejected(): ...
-def test_external_revision_binds_upstream_revision_acquired_at_cutoff_and_payload(): ...
+def test_source_and_manifest_signing_inputs_are_frozen_slots_with_exact_fields(): ...
+def test_source_signing_input_has_no_caller_supplied_payload_digest(): ...
+def test_bundle_builder_reads_key_provider_exactly_once(): ...
+def test_verify_digest_bound_bundle_rejects_each_forged_source_and_manifest_field(): ...
+def test_external_revision_binds_revision_acquired_at_cutoff_and_payload(): ...
 def test_digest_uses_separate_health_day_shadow_domain(): ...
 def test_manifest_source_and_item_use_independent_hkdf_purposes(): ...
 def test_item_key_is_slot_sensitive_and_title_independent(): ...
@@ -409,7 +413,8 @@ def test_jcs_subset_rejects_integer_outside_ijson_safe_range(): ...
 def test_jcs_subset_preserves_unicode_without_normalization(): ...
 def test_complete_signing_protocol_matches_golden_canonical_frame_key_and_mac(): ...
 def test_absent_null_unknown_field_and_scalar_subclass_fail_closed(): ...
-def test_raw_health_text_is_not_present_in_digest_or_safe_repr(): ...
+def test_safe_repr_scope_hides_signing_value_and_sanitizes_errors_without_a_bundle_repr_contract(): ...
+def test_bind_signed_shadow_item_key_accepts_only_task2_token_and_preserves_other_fields(): ...
 def test_digest_is_stable_across_fresh_python_processes(): ...
 ```
 
@@ -423,14 +428,45 @@ Expected:imports or assertions fail because digest support is absent.
 
 **Step 3: Implement and prove the restricted JCS framing**
 
+Define these signing-local input types in `health_day_shadow.py`;they do not move into the Task 1 contracts leaf:
+
+```python
+@dataclass(frozen=True, slots=True)
+class SourceSigningInput:
+    source_kind: HealthDaySourceKind
+    source_role: HealthDaySourceRole
+    revision: str | None
+    acquired_at: datetime | None
+    cutoff: datetime | None
+    freshness: SourceFreshness
+    availability: SourceAvailability
+    error_code: ShadowReasonCode | None
+    tombstone_state: TombstoneState
+    value: SourcePayloadValue = field(repr=False)
+
+@dataclass(frozen=True, slots=True)
+class ManifestSigningInput:
+    schema_version: str
+    owner_id: str
+    local_day: date
+    timezone: str
+    as_of: datetime
+    transaction: HealthDayTransaction
+    sources: tuple[SourceSigningInput, ...]
+```
+
+These are exact closed schemas:unknown/missing fields fail closed,`SourceSigningInput` has no `payload_digest`,and callers cannot supply any digest through a side metadata object. `value` is `repr=False` (an equally strict explicit non-sensitive descriptor is acceptable),and validation exceptions expose only controlled field paths/reason codes—never raw values,key material or tokens. This `safe_repr` obligation applies to these signing inputs and their exception messages only;it does not redefine or require a redacted public `repr(HealthDayShadowBundle)`. Bundles still must never be logged.
+
 Implement an injected `ShadowKeyProvider` protocol and:
 
 ```python
 canonical_shadow_jcs_subset_bytes(value) -> bytes
-build_digest_bound_shadow_bundle(payloads, manifest_metadata, key_provider) -> HealthDayShadowBundle
-sign_shadow_source_payload(source_payload, source_metadata, key_provider) -> str
+build_digest_bound_shadow_bundle(manifest_input, key_provider) -> HealthDayShadowBundle
+verify_digest_bound_shadow_bundle(bundle, key_provider) -> None
+sign_shadow_source_payload(source_input, key_provider) -> str
 sign_shadow_manifest(manifest, key_provider) -> str
 sign_shadow_item_identity(manifest_identity, item_identity, key_provider) -> str
+bind_signed_shadow_item_key(unsigned_item, *, manifest_identity, key_provider) -> HealthDayShadowItem
 ```
 
 `health_day_shadow.py` imports stdlib,`cryptography` and the contracts leaf only. The contracts leaf never imports signing;this keeps Task 4's `composer -> signing -> contracts` graph acyclic.
@@ -447,8 +483,10 @@ Contract:
 - check in RFC 8785 §3.2 string/literal vectors and test both in-process and in a fresh Python process;
 - canonical envelope contains controlled `purpose`, `key_id`, `schema_version`, and payload. Frame exactly two parent-authorized segments:`u32be(len(domain)) || domain || u32be(len(canonical_envelope)) || canonical_envelope`,where domain is `b"health-day-shadow-v1"`;
 - key ID grammar is `[A-Za-z0-9_-]{1,32}`. Root key is at least 32 bytes. HKDF is SHA-256, length 32, salt `b"health-day-shadow-v1\x00hkdf-salt-v1"`, info `b"health-day-shadow-v1\x00" + purpose_ascii`;
-- purposes are exactly `source-payload`, `manifest-digest`, `item-key`. Each source payload HMAC binds every sorted composition DTO field plus external `{upstream_revision,acquired_at,cutoff}` where applicable;the manifest embeds the recomputed source HMAC. A mismatched caller-supplied digest is rejected before composition;
+- purposes are exactly `source-payload`, `manifest-digest`, `item-key`. `build_digest_bound_shadow_bundle` accepts only one `ManifestSigningInput` plus the provider and reads that provider exactly once. For each exact `SourceSigningInput`,it recomputes the `source-payload` HMAC over `source_kind,source_role,revision,acquired_at,cutoff,freshness,availability,error_code,tombstone_state,value`,creates the corresponding `HealthDaySourceResult` with that internal digest,constructs the bundle-owned payload/manifest graph,and only then signs the manifest for the returned `HealthDayShadowBundle`. No public builder argument or signing input accepts `payload_digest`;
+- `verify_digest_bound_shadow_bundle` pairs each owned payload with its manifest source,rehydrates the exact signing input,recomputes every source HMAC and then the manifest HMAC,and uses `hmac.compare_digest` for every comparison. A changed payload or any forged composition-relevant source/manifest field fails closed even when a stale revision/digest/token is reused. Verification errors expose only controlled reason codes/field locations;they never echo the source value,key material,expected token or received token;
 - item-key payload contains exactly schema,owner,local day,`storage_namespace`,source kind/id,normalized local minute,dose ordinal and projection role;title/free text is forbidden. `STORAGE_NAMESPACE_V1` is exactly `medication_row | supplement_definition | health_protocol | health_problem | daily_plan_action`;only comparable rows receive one,while unscoped/lossy diagnostics carry no identity. Namespace cannot be inferred from domain;equal source kind/id values in `medication_row` and `supplement_definition` must yield different MACs. The enum is part of policy/golden vectors. The token is non-authorizing,not durable across test-key rotation and never substitutes for a future occurrence identity;
+- ordinary direct construction of `HealthDayShadowItem` with a non-empty `shadow_item_key` remains fail closed. `bind_signed_shadow_item_key` is the sole narrow factory:it obtains only the non-authorizing token produced by Task 2's `sign_shadow_item_identity`,does not accept an arbitrary caller-supplied token string,and returns an item with every field other than `shadow_item_key` preserved exactly. Do not loosen the Task 1 constructor invariant;
 - HMAC-SHA-256 output is lowercase 64-character hex;opaque token grammar is `key_id + "." + mac_hex`. Never log either field in Phase 1a;
 - one complete fixed-root golden vector covers all manifest/source fields, nested arrays/objects, integer bounds, control characters and decomposed Unicode, and asserts canonical envelope bytes, framed bytes, all three derived keys and final MAC;
 - no production key/env fallback. Missing provider is an error, not a raw SHA fallback.
@@ -480,7 +518,7 @@ git commit -m "feat(health-day): add keyed shadow manifest digest"
 
 **Step 1: Write PostgreSQL-only failing tests**
 
-Seed a user, timezone/profile, BID medication, active protocol + event, due HealthProblem, active HealthProgram, calendar source/event, execution fact and an existing DailyOperatingPlan. Then add:
+Seed an explicit owner ID scalar plus its timezone/profile, BID medication, active protocol + event, due HealthProblem, active HealthProgram, calendar source/event, execution fact and an existing DailyOperatingPlan. The Task 3 private Core schema deliberately has no `users` table or cross-table foreign keys. Owner-bearing tables are filtered by their owner column;an owner-less child table (currently `outcome_metrics`) may be read only through IDs selected from its already owner-scoped parent cycle. Do not add an owner column merely for the fixture. Then add:
 
 ```python
 def test_loader_requires_postgresql_repeatable_read_and_read_only(): ...
@@ -571,7 +609,7 @@ Attach test guards:
 - `before_flush`:fail if `new/dirty/deleted` is non-empty;
 - `before_commit`:always fail during the measured shadow phase;
 - `before_execute`:walk the whole ClauseElement with default deny. A data query must be one simple single-allowlisted-table `Select`;the only permitted child node families are that table's allowlisted columns,primitive `BindParameter`,exact `Null/True_/False_` constants,controlled boolean `AND/OR`,binary `= != < <= > >= IN IS IS NOT`,an inert `Grouping` only around an already-approved boolean tree,and an allowlisted column ordered by `ASC/DESC` optionally wrapped exactly once by `NULLS FIRST/NULLS LAST`. These nodes explicitly admit declared owner/active/null/date-overlap filters and the `taken_time ASC NULLS FIRST,id ASC` execution-fact query. A Grouping around a value/arithmetic/text/function expression,unknown constant,unknown unary operator,nested null modifier or modifier over a non-column expression is rejected. Also reject joins/subqueries/unions,arithmetic/string expressions,every `FunctionElement`,locking option,prefix/suffix,textual/literal SQL fragment,non-allowlisted FROM,data-changing CTE,Insert/Update/Delete and any unrecognized node. The exact setup/proof TextClause byte strings shown above are the only exception,so `pg_current_snapshot()` and `set_config(app.user_id)` cannot be smuggled through a constructed `Select`. Every approved execution records one connection-local,one-shot approval containing the exact clause category,compiled statement identity and parameter-shape digest;
-- `before_cursor_execute`:default-deny unless it can atomically consume the immediately preceding matching one-shot approval. `context.compiled is None`,missing/mismatched/reused approval,or a direct driver statement is rejected before the cursor runs;this makes `Connection.exec_driver_sql()` unable to bypass `before_execute`. After approval matching,the second layer still rejects DML/DDL/DO/TRUNCATE/CALL/COPY/LISTEN/NOTIFY/LOCK, `FOR UPDATE|NO KEY UPDATE|SHARE|KEY SHARE`, `nextval/setval`, advisory locks and transaction-mode/GUC changes. Exact setup/proof TextClause statements are not independently trusted here:they too must have passed `before_execute` and carry their exact parameter shape;
+- `before_cursor_execute`:default-deny unless it can atomically consume the immediately preceding matching one-shot approval. `context.compiled is None`,missing/mismatched/reused approval,or a direct driver statement is rejected before the cursor runs;this makes `Connection.exec_driver_sql()` unable to bypass `before_execute`. After approval matching,the second layer still rejects DML/DDL/DO/TRUNCATE/CALL/COPY/LISTEN/NOTIFY/LOCK, `FOR UPDATE|NO KEY UPDATE|SHARE|KEY SHARE`, `nextval/setval`, advisory locks and transaction-mode/GUC changes,with one deliberately narrow exception:the exact approved TextClause byte strings and parameter shapes for `SET LOCAL statement_timeout = '5s'`,`SET LOCAL idle_in_transaction_session_timeout = '5s'`,and `SELECT set_config('app.user_id', :owner, true)` may execute once as measured-transaction setup. No other `SET`/`set_config`/transaction-mode change is allowed. Exact setup/proof TextClause statements are not independently trusted here:they too must first pass `before_execute`,carry their exact parameter shape,and consume the immediately preceding one-shot approval;
 - static AST over every shadow module rejects `exec_driver_sql`, `raw_connection`, `driver_connection`, DBAPI `.connection`/`.cursor` traversal and any call that can obtain a raw cursor. The loader must use only injected SQLAlchemy `Session.execute` against the approved Core statements. Negative tests call `session.connection().exec_driver_sql("SELECT fixture_volatile_udf()")` and representative raw-connection/cursor spellings;the former must be stopped by the cursor gate and the latter must be absent from the feature graph;
 - install fail-loud sentinels for `app.database.SessionLocal`,Redis get/set,environment-provider entry points,PushService/outbox and notification producers **without importing those modules**;the fresh-process import hook and local conftest must catch any attempted resolution.
 
@@ -665,7 +703,7 @@ Every query must match one row of this matrix exactly and use a supplied `Sessio
 - build calendar bounds from `effective_timezone` local midnight and the following local date's midnight,then convert to UTC;use the exact half-open overlap above. Convert valid CalendarEvent `timestamptz` values to canonical UTC instants without decrypting or copying title/location/attendees,then call `astimezone(ZoneInfo(effective_timezone))` only for degraded diagnostic wall time/offset/fold/cross-midnight facts. Never use the psycopg-returned `.fold` directly,never claim PostgreSQL retained the external producer's original timezone notation,and never let current all-day/floating-ambiguous cache authorize free/busy or retiming;
 - include source `last_sync_at/last_error`, timezone and tombstone capability state;
 - encode numeric DB values needed for composition as lossless canonical decimal strings,never binary float in signed primitives:`Decimal(str(value))`,finite-only,fixed-point/no exponent,strip insignificant trailing zeros,and normalize negative zero to `0`. This is storage/composition precision,not the user-display rounding helper. Construct every source's exact primitive DTO schema so Task 2 can recompute its keyed payload digest;
-- after every ordered DTO is loaded,call the injected signing helper to build one digest-bound bundle before leaving the same snapshot;return that bundle,not separable manifest/payload objects;
+- after every ordered DTO is loaded,construct the exact `ManifestSigningInput` and call `build_digest_bound_shadow_bundle(manifest_input, key_provider)` before leaving the same snapshot;the loader never calculates or passes a `payload_digest` and returns that bundle,not separable manifest/payload objects;
 - return explicit unavailable/unsupported source results instead of empty-success;
 - fail loud on an actual DB query error because PostgreSQL aborts the read-only transaction; do not rollback and continue with a fabricated partial snapshot.
 
@@ -729,6 +767,7 @@ def test_fixed_source_time_stays_visible_with_unknown_conflict(): ...
 def test_canonical_flexible_or_calendar_eligible_timing_is_unsupported_precision(): ...
 def test_occurrence_context_same_anytime_anchor_fixed_vs_flexible_uses_signed_source_facts(): ...
 def test_calendar_busy_present_is_conservative_context_not_participation_claim(): ...
+def test_legacy_occurrence_context_factory_requires_key_provider_and_verifies_first(): ...
 def test_legacy_occurrence_context_factory_rejects_forged_or_different_bundle_digest(): ...
 def test_composed_artifact_and_occurrence_context_share_exact_manifest_and_payload_digests(): ...
 def test_title_never_participates_in_item_identity(): ...
@@ -760,13 +799,13 @@ Run both composer and shadow PostgreSQL test files.
 
 Inputs and behavior:
 
-- recompute and verify every source payload digest and the manifest digest before any rule runs;changed payload + reused manifest fails closed;
+- call `verify_digest_bound_shadow_bundle(input_bundle, key_provider)` before any composition rule runs;it recomputes and `compare_digest`-verifies every source payload digest and the manifest digest,so changed payload + reused manifest fails closed without exposing raw values or tokens;
 - implement `calculate_shadow_daily_plan_candidates(DailyPlanSubsetFactsDTO, as_of)` and expose that exact name. It derives only the matrix-listed baseline/action-key,weight,single-source recovery,structured acute/intervention,terminal and active-cycle facts in memory;filters expired interventions without changing ORM state;and never sees a Session/AdviceLedger/materializer. The exact sequence is `base diagnostic candidates -> supported acute/official-readiness branch -> accepted interventions -> versioned training_like suppression -> terminal removal -> STOP before AdviceGuard/top-5 -> cycle core bind`. Every returned Daily Plan candidate is pre-AdviceGuard,non-authorizing and carries `actionable=false/degraded + daily_plan_advice_guard_unsupported` plus a controlled `daily_plan_post_guard_selection_uncomparable` scope hint. Task 4 does not inspect or classify a legacy action;Task 5 consumes that hint and symmetrically classifies canonical candidates plus legacy post-guard/top-5 actions on Daily Plan and exact smart-agenda downstream surfaces. Regular Agenda `today` and Timeline `build_today_spine` do not consume that DOP branch and must not invent an exclusion row. The function emits controlled unsupported reasons for lab flags,composite training gate,predictions,unknown intervention domain and registry labels. Existing DOP rows are legacy diagnostics,not canonical input. Do not call this the extracted full DOP calculation half or rewire the live builder in Phase 1a;the parent DOP calculation/materialization split remains blocked until those seams have their own pure contract and G2/G3/G4 evidence;
 - normalize protocol cadence-window facts/follow-ups and their explicit lifecycle state;the pure function accepts `local_day/as_of` and never calls user/China/global date helpers;
 - implement a new occurrence-level medication/supplement projector over one DTO per normalized slot,explicit `CalendarKnowledgeDTO`,and explicit per-slot `SafetySeamDTO`;do **not** call `schedule_from_medications`,`compute_seam`,SafetyGuardian registry or any existing Day Schedule wrapper. Current-schema calendar state is always non-authorizing provenance/stale/failure/tombstone unknown:it may be surfaced as diagnostic conflict uncertainty but cannot place or move an occurrence;
 - parse each source slot into local minute before identity/dedupe,then assign stable dose ordinal. Duplicate-normalized/invalid slots remain degraded/non-actionable diagnostic facts. Validate the resulting wall time against the explicit IANA timezone/local day:nonexistent times get `nonexistent_local_time`;ambiguous times without source offset/fold get `ambiguous_local_time_without_fold`. Both remain a single non-actionable diagnostic occurrence and are never converted to an arbitrary instant;
 - preserve canonical schedule `rejected/deferred` with `actionable=False` and controlled disposition. The characterized legacy medication/supplement solver emits only `scheduled/rejected`;a legacy med/supp `deferred` row is an unknown producer/disposition and must not be promoted into the closed comparable set;
-- implement the pure `derive_legacy_occurrence_context_from_bundle(bundle)` factory. It verifies the bundle manifest/schema and every contributing medication/supplement/calendar payload digest,then emits only storage namespace,source id,derived domain policy,normalized slots/ordinals,count consistency,fixed/flexible origin and conservative `busy_input_present_and_eligible | no_busy_input | unknown`. It never accepts an assembled legacy row,never infers calendar participation,and never performs canonical-vs-legacy comparison or symmetric downgrade;those projector rules begin in Task 5;
+- implement the pure `derive_legacy_occurrence_context_from_bundle(bundle, key_provider)` factory. Its first operation is `verify_digest_bound_shadow_bundle(bundle, key_provider)`;only after that succeeds may it schema-check and emit storage namespace,source id,derived domain policy,normalized slots/ordinals,count consistency,fixed/flexible origin and conservative `busy_input_present_and_eligible | no_busy_input | unknown`. It receives and preserves the original bundle object from the measured snapshot—no `VerifiedBundle` wrapper,second load or reconstructed bundle—and never accepts an assembled legacy row,oracle payload/delta or oracle-mutated state. It never infers calendar participation and never performs canonical-vs-legacy comparison or symmetric downgrade;those projector rules begin in Task 5;
 - classify prescription medication and due follow-up as fixed;classify pure DOP behavioral actions as adaptive;use `unknown` when the source cannot prove a class. Without immutable safety seam,disposition is `unknown/degraded`,never `allowed`;
 - never create an action from a HealthProgram in Phase 1a;mark source unsupported/degraded;
 - only `trusted_current` calendar may prove a free window or place/move flexible items. Current-schema provenance-unknown plus stale/failed/tombstone-unsupported states preserve only degraded conflict diagnostics and never infer free;fixed source times remain visible with conflict unknown;
@@ -887,9 +926,9 @@ env -u TEST_DATABASE_URL -u HEALTH_DAY_SHADOW_TEST_DDL_OPT_IN \
 
 **Step 3: Implement symmetric surface projections**
 
-Use the behavior-free shared `SurfaceProjectionPolicy`, `UnsealedCanonicalSurfaceProjection`, `UnsealedLegacySurfaceProjection`, `UnsealedSurfaceProjectedRow` and `SurfaceRank` dataclasses already defined in the Task 1 contracts leaf;Task 5 must not redefine them in either projector. Add the exact `STORAGE_NAMESPACE_V1`,`PROTOCOL_DOMAIN_TYPES_V1`,`SURFACE_PROJECTION_POLICIES_V1` and `LEGACY_SOURCE_ROLE_MATRIX_V1` as immutable data-only constants to that same leaf—no matching/composition/signing behavior and no reverse imports. Both projectors import the same constants from contracts,never duplicate policy literals. A comparable unsealed row carries a typed `ShadowItemIdentity` as in-memory identity material and no opaque output key;non-comparable rows carry no match identity unless their controlled exclusion policy explicitly needs one. One versioned policy constant per surface declares local-day/horizon,include/exclude roles,cardinality/top-N,dedupe groups,ordering/top/now semantics and whether safety is comparable. Schedule and Timeline policies additionally require a verified `LegacyOccurrenceContext`;calls without it,with a different manifest/schema version,or with context reconstructed from oracle output fail closed.
+Use the behavior-free shared `SurfaceProjectionPolicy`, `UnsealedCanonicalSurfaceProjection`, `UnsealedLegacySurfaceProjection`, `UnsealedSurfaceProjectedRow` and `SurfaceRank` dataclasses already defined in the Task 1 contracts leaf;Task 5 must not redefine them in either projector. Add the exact `STORAGE_NAMESPACE_V1`,`PROTOCOL_DOMAIN_TYPES_V1`,`SURFACE_PROJECTION_POLICIES_V1` and `LEGACY_SOURCE_ROLE_MATRIX_V1` as immutable data-only constants to that same leaf—no matching/composition/signing behavior and no reverse imports. Both projectors import the same constants from contracts,never duplicate policy literals. A comparable unsealed row carries a typed `ShadowItemIdentity` as in-memory identity material and no opaque output key;non-comparable rows carry no match identity unless their controlled exclusion policy explicitly needs one. One versioned policy constant per surface declares local-day/horizon,include/exclude roles,cardinality/top-N,dedupe groups,ordering/top/now semantics and whether safety is comparable. Schedule and Timeline policies additionally require a `LegacyOccurrenceContext` produced by `derive_legacy_occurrence_context_from_bundle(the_same_bundle, key_provider)`;calls without it,with a different manifest/schema version,or with context reconstructed from oracle output fail closed.
 
-`project_canonical_surface(artifact, policy, occurrence_context=None)` must classify every canonical item before selecting comparable rows. Global items carry only neutral ordering facts;surface ordinal/top/now is calculated here. Provide one legacy function per surface over already assembled plain dicts. Schedule and Timeline use exactly `(assembled_plain_dict, verified_occurrence_context, policy)`;other surfaces use plain payload + policy. This context is derived only from the measured candidate's same verified bundle object/manifest digest;it may be created after isolated oracle capture,but oracle payload/delta is never an input and the measured bundle is not reloaded in a second snapshot. It supplies only source identity/precision provenance destroyed by the assembled output. Neither side may call a service,DB,endpoint or provider;an unclassified row is an error.
+`project_canonical_surface(artifact, policy, occurrence_context=None)` must classify every canonical item before selecting comparable rows. Global items carry only neutral ordering facts;surface ordinal/top/now is calculated here. Provide one legacy function per surface over already assembled plain dicts. Schedule and Timeline use exactly `(assembled_plain_dict, occurrence_context_from_same_bundle, policy)`;other surfaces use plain payload + policy. That context comes only from `derive_legacy_occurrence_context_from_bundle(the_same_bundle, key_provider)`,whose first operation verifies the unwrapped measured candidate bundle. It may be created after isolated oracle capture,but oracle payload/delta is never an input and the measured bundle is not reloaded or reconstructed in a second snapshot. It supplies only source identity/precision provenance destroyed by the assembled output. Neither side may call a service,DB,endpoint or provider;an unclassified row is an error.
 
 Task 5 owns the two-sided occurrence precision rules. Compare legacy Schedule timing only when `LegacyOccurrenceContext` proves an exact source reminder and the row preserves that normalized minute. Do not infer fixed/flexible from `anchor`,because both can be `anytime`,and never claim a calendar block participated. Flexible rows or `busy_input_present_and_eligible` carry unsupported precision and the controlled reasons above. A moved single occurrence stays source-identity matched but cannot emit timing drift;an unbindable multi-occurrence/invalid source is downgraded on **both** canonical and legacy projections to `ambiguous_identity` before sealing,so later diff emits no false missing/extra. Timeline uses the same context to reject missing/duplicate/count-inconsistent source evidence and to keep `supplement_definition` separate from Medication-table supplement refs.
 
@@ -1128,7 +1167,7 @@ Legacy oracle capture:
 Measured candidate:
 
 1. confirm its semantic fingerprint still equals the original baseline,then open the one `REPEATABLE READ, READ ONLY` Session with all guards;
-2. load one digest-bound bundle,derive `LegacyOccurrenceContext` from that exact verified bundle object/manifest digest,compose canonical items,project canonical and legacy sides through matching surface policies,and compute diffs. Oracle capture may have happened earlier in its isolated schemas,but no oracle payload/delta enters the context. Assert context bundle object identity or exact manifest digest equality and prohibit a second loader call/cross-snapshot reconstruction;
+2. load one digest-bound `bundle` and keep that exact unwrapped object from the untouched candidate snapshot;call `derive_legacy_occurrence_context_from_bundle(bundle, key_provider)` (which first calls `verify_digest_bound_shadow_bundle(bundle, key_provider)`),then compose canonical items,project canonical and legacy sides through matching surface policies,and compute diffs. Oracle capture may have happened earlier in its isolated schemas,but no oracle payload/delta enters verification or context derivation. Assert the same bundle object/manifest digest is used throughout and prohibit a `VerifiedBundle` wrapper,second loader call or cross-snapshot reconstruction;
 3. run the same bundle/composition twice and assert byte-identical canonical projections/diffs;
 4. assert normalized BID slots remain distinct,fixed/rejected facts remain visible,calendar/safety unknown remains degraded,active HIGH/CRITICAL safety is explicitly unscoped,and every row on both sides has coverage;
 5. assert candidate rows/sequences/temp objects remain unchanged and no forbidden call fired.
