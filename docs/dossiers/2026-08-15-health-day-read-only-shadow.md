@@ -37,6 +37,12 @@
   - 新基线:signing-local exact frozen/slots `SourceSigningInput`/`ManifestSigningInput`,前者无 `payload_digest`;builder 只收 manifest input + provider、一次读取 key、内部逐源计算 digest 后签 manifest。`verify_digest_bound_shadow_bundle` 以 `compare_digest` 重算逐源与 manifest;Task 4 的 context factory 首步调用 verifier 并继续使用同一 snapshot 的原 bundle object,不引入 wrapper,oracle 永不参与。item key 只经窄 `bind_signed_shadow_item_key` factory 绑定 Task 2 生成的非授权 token。
   - 回退阶段:S3 计划机械澄清;不扩大 source、runtime、写路径或生产 key 范围。
   - 需重跑 Gate:Task 2/4 focused RED/GREEN、G3、G4。
+- [x] 2026-08-16 digest-order malleability correction
+  - 触发:Task 2 projection preflight 发现“row-order-only digest 不变”会允许同一 HMAC 对应不同 composer 顺序;intervention rank、existing DOP actions、normalized medication slots/dose ordinal 等 tuple 顺序本身是 composition fact。
+  - 旧基线:signer 可在 canonical projection 中排序 source rows,但返回 bundle 仍保留 caller 原顺序。
+  - 新基线:所有 source row/nested tuple 顺序逐字节进入 HMAC;signer 不做隐藏排序。Task 3 先用声明的 `ORDER BY`/pure normalization 形成唯一顺序再构造 signing input;任一重排必须改变 source+manifest digest。top-level sources 必须已符合 `HEALTH_DAY_SOURCE_ORDER_V1`,否则 builder fail closed。
+  - 回退阶段:S3 计划机械澄清;不扩大 source/runtime/write scope。
+  - 需重跑 Gate:Task 2 ordering RED/GREEN、Task 3 loader ordering、G3、G4。
 
 ## S0 · 用户需求(逐字)
 
@@ -164,7 +170,7 @@ manifest:
 
 Loader 入参只有 injected Session、authenticated owner、aware `as_of`、required valid IANA `fallback_timezone` 与外部 revision fixture;caller 不能自报 authoritative manifest timezone/local-day。loader 在同一 snapshot 冻结 ProfileScheduleDTO,逐个以 `ZoneInfo` 验证非空候选和 fallback,按 `manual -> detected -> legacy -> fallback` 选 effective timezone,再由 `as_of` 推 local day并构造/签名 manifest。高优先候选无效不静默 fall through;bundle verifier 重算 precedence,timezone/local-day mismatch 或伪造 manifest fail closed;绝不读取 OS/China ambient default。
 
-输入 payload 与 manifest 作为一个不可拆分的 `HealthDayShadowBundle` 留在内存,均先转 frozen/plain-data DTO;不把 ORM object、lazy relationship、wall clock 或 provider client交给 composer。Task 2 在 signing module 内定义 exact frozen/slots `SourceSigningInput(source_kind,source_role,revision,acquired_at,cutoff,freshness,availability,error_code,tombstone_state,value)` 与 `ManifestSigningInput(schema_version,owner_id,local_day,timezone,as_of,transaction,sources)`;source input 明确没有 `payload_digest`,raw `value` 使用 `repr=False` 或等价 safe descriptor。safe-repr 约束只裁决 signing input/验证异常不得回显原值或 token,不要求改变 `repr(bundle)`;bundle 仍禁止进入日志。`build_digest_bound_shadow_bundle(manifest_input,key_provider)` 只读 provider 一次,逐源从 exact input 重算 HMAC、创建带 digest 的 SourceResult、构造 bundle-owned graph 后签 manifest;外部调用者不能自报 digest。`verify_digest_bound_shadow_bundle(bundle,key_provider)` 用 `compare_digest` 重算每源和 manifest,任何 changed payload/field 搭配旧 revision/digest 都 fail closed且错误不回显原文/token。所有查询显式 `ORDER BY ... id`,相同完整 bundle 的 canonical artifact 必须逐字节一致。
+输入 payload 与 manifest 作为一个不可拆分的 `HealthDayShadowBundle` 留在内存,均先转 frozen/plain-data DTO;不把 ORM object、lazy relationship、wall clock 或 provider client交给 composer。Task 2 在 signing module 内定义 exact frozen/slots `SourceSigningInput(source_kind,source_role,revision,acquired_at,cutoff,freshness,availability,error_code,tombstone_state,value)` 与 `ManifestSigningInput(schema_version,owner_id,local_day,timezone,as_of,transaction,sources)`;source input 明确没有 `payload_digest`,raw `value` 使用 `repr=False` 或等价 safe descriptor。safe-repr 约束只裁决 signing input/验证异常不得回显原值或 token,不要求改变 `repr(bundle)`;bundle 仍禁止进入日志。`build_digest_bound_shadow_bundle(manifest_input,key_provider)` 只读 provider 一次,逐源从 exact input 重算 HMAC、创建带 digest 的 SourceResult、构造 bundle-owned graph 后签 manifest;外部调用者不能自报 digest。所有 source row 与 nested tuple 顺序都是 composition fact并逐字节签入,signer 不排序;Task 3 必须先按声明的 `ORDER BY`/pure normalization 形成唯一顺序,top-level source 不符合 `HEALTH_DAY_SOURCE_ORDER_V1` 直接 fail closed。`verify_digest_bound_shadow_bundle(bundle,key_provider)` 用 `compare_digest` 重算每源和 manifest,任何 changed payload/field/order 搭配旧 revision/digest 都 fail closed且错误不回显原文/token。相同完整 bundle 的 canonical artifact 必须逐字节一致。
 
 Phase 1a source support:
 
