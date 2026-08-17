@@ -37,13 +37,14 @@ acquire_release_lock "ota:${CHANNEL}"
 # 相关脏文件仍 fail closed。逃生口仅供显式调试，不用于正式 production。
 if [[ "${OTA_ALLOW_DIRTY:-0}" != "1" ]]; then
   git -C "${REPO_ROOT}" fetch origin --quiet
-  SOURCE_GUARD_FLAGS=()
+  SOURCE_GUARD_OUTPUT="$(python3 "${REPO_ROOT}/scripts/ota_source_guard.py" \
+    --repo "${REPO_ROOT}" --source HEAD --main origin/main --format shell)" || exit $?
 else
   SOURCE_GUARD_FLAGS=(--allow-divergence --allow-dirty)
+  SOURCE_GUARD_OUTPUT="$(python3 "${REPO_ROOT}/scripts/ota_source_guard.py" \
+    --repo "${REPO_ROOT}" --source HEAD --main origin/main --format shell \
+    "${SOURCE_GUARD_FLAGS[@]}")" || exit $?
 fi
-SOURCE_GUARD_OUTPUT="$(python3 "${REPO_ROOT}/scripts/ota_source_guard.py" \
-  --repo "${REPO_ROOT}" --source HEAD --main origin/main --format shell \
-  "${SOURCE_GUARD_FLAGS[@]}")" || exit $?
 SOURCE_COMMIT_SHA=""
 MAIN_COMMIT_SHA=""
 RELEASE_COMMIT_SHA=""
