@@ -66,7 +66,7 @@ MODELS: List[ModelEntry] = [
     # ──── 阿里百炼 TokenPlan (国内直连, 套餐固定计费) ────
     # 全部走同一 base_url (token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1,
     # OpenAI 协议兼容) + 同一 TOKENPLAN_API_KEY, 只换 model 字段。
-    # 2026-08-08: 阿里云 Token Plan 团队版官方文档快照。保留当前代文字/图片/音频/视频模型;
+    # 2026-08-17: 阿里云 Token Plan 团队版官方文档快照。保留当前代文字/图片/音频/视频模型;
     # 非文本模型只进目录,不进 chat picker。
     ModelEntry(
         id="qwen3.8-max",
@@ -174,6 +174,18 @@ MODELS: List[ModelEntry] = [
         reliable_tool_calling=False,
     ),
     ModelEntry(
+        id="qwen-image-3.0-pro",
+        label="Qwen Image 3.0 Pro · 千问",
+        provider="tokenplan",
+        model="qwen-image-3.0-pro",
+        speed_tier="reasoning",
+        note="图片生成",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("image_generation",),
+        chat_selectable=False,
+        reliable_tool_calling=False,
+    ),
+    ModelEntry(
         id="qwen-audio-3.0-tts-plus",
         label="Qwen Audio 3.0 TTS Plus · 千问",
         provider="tokenplan",
@@ -194,6 +206,18 @@ MODELS: List[ModelEntry] = [
         note="实时语音对话",
         requires_env=("TOKENPLAN_API_KEY",),
         capabilities=("realtime_voice_conversation",),
+        chat_selectable=False,
+        reliable_tool_calling=False,
+    ),
+    ModelEntry(
+        id="qwen-audio-3.0-asr-flash",
+        label="Qwen Audio 3.0 ASR Flash · 千问",
+        provider="tokenplan",
+        model="qwen-audio-3.0-asr-flash",
+        speed_tier="fast",
+        note="语音识别",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("speech_recognition",),
         chat_selectable=False,
         reliable_tool_calling=False,
     ),
@@ -262,6 +286,16 @@ MODELS: List[ModelEntry] = [
         label="DeepSeek V4 Pro",
         provider="tokenplan",
         model="deepseek-v4-pro",
+        speed_tier="reasoning",
+        note="文本生成 / 推理",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("text_generation", "reasoning"),
+    ),
+    ModelEntry(
+        id="deepseek-v4-pro-0813",
+        label="DeepSeek V4 Pro 0813",
+        provider="tokenplan",
+        model="deepseek-v4-pro-0813",
         speed_tier="reasoning",
         note="文本生成 / 推理",
         requires_env=("TOKENPLAN_API_KEY",),

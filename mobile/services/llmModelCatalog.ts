@@ -15,6 +15,7 @@ export const ADVANCED_CHAT_MODEL_IDS = [
   'qwen3.7-plus',
   'qwen3.7-max',
   'deepseek-v4-pro',
+  'deepseek-v4-pro-0813',
   'deepseek-v4-flash',
   'kimi-k2.7-code',
   'glm-5.2',
@@ -41,6 +42,7 @@ const MODEL_ID_ALIASES: Record<string, string> = {
   'qwen-3.8': 'qwen3.8-max',
   'tokenplan/kimi-k2.7': 'kimi-k2.7-code',
   'kimi-k2.7': 'kimi-k2.7-code',
+  'tokenplan/deepseek-v4-pro-0813': 'deepseek-v4-pro-0813',
   'minimax-m2.5': 'minimax-m2.5',
   'minimax-m25': 'minimax-m2.5',
 };

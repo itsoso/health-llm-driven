@@ -1,10 +1,17 @@
 import {
+  ADVANCED_CHAT_MODEL_IDS,
   canonicalModelId,
+  isAdvancedChatModelId,
   sanitizeLlmPreference,
   sanitizeModelOptions,
 } from '../llmModelCatalog';
 
 describe('llmModelCatalog', () => {
+  it('keeps the latest DeepSeek TokenPlan variant selectable', () => {
+    expect(ADVANCED_CHAT_MODEL_IDS).toContain('deepseek-v4-pro-0813');
+    expect(isAdvancedChatModelId('tokenplan/deepseek-v4-pro-0813')).toBe(true);
+  });
+
   it('keeps only advanced chat models and drops lower versions', () => {
     const options = sanitizeModelOptions([
       { id: 'qwen3.8-max', label: 'Qwen3.8 Max', provider: 'tokenplan', model: 'qwen3.8-max', speed_tier: 'reasoning', note: '' },
