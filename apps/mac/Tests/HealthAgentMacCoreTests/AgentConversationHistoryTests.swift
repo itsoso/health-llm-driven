@@ -45,6 +45,30 @@ final class AgentConversationHistoryTests: XCTestCase {
         XCTAssertEqual(snapshots[0].id, AgentConversationClient.deterministicID(forConversationID: 42))
     }
 
+    func testConversationClientUsesResumeOnlyForDefaultConversationDiscovery() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(
+                request.url?.absoluteString,
+                "https://example.test/api/v1/agent/conversations?limit=1&offset=0&resume_only=true"
+            )
+            let data = "{\"items\":[],\"total\":0,\"limit\":1,\"offset\":0}".data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = AgentConversationClient(apiClient: stubbedAPIClient())
+
+        let snapshots = try await client.fetchResumableConversations(limit: 1, offset: 0)
+
+        XCTAssertTrue(snapshots.isEmpty)
+    }
+
+    func testRemoteSourceDefaultResumeIsFailClosed() async throws {
+        let source = HistoryOnlyRemoteSource()
+
+        let snapshots = try await source.fetchResumableConversations(limit: 1, offset: 0)
+
+        XCTAssertTrue(snapshots.isEmpty)
+    }
+
     func testConversationClientFetchesDetailAndMapsMessages() async throws {
         URLProtocolStub.handler = { request in
             XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/agent/conversations/42")
@@ -124,6 +148,23 @@ final class AgentConversationHistoryTests: XCTestCase {
         XCTAssertNil(model.historyNotice)
         // Backend result is also written to the local cache for offline use.
         XCTAssertEqual(store.saved.last?.first?.conversationID, 42)
+    }
+
+    @MainActor
+    func testRefreshDoesNotAutoOpenAssistantOnlyBriefing() async {
+        let remote = FakeRemoteSource()
+        remote.list = [AgentConversationSnapshot(
+            id: AgentConversationClient.deterministicID(forConversationID: 73),
+            conversationID: 73, title: "每日健康简报 · 08-17", messages: []
+        )]
+        remote.resumableList = []
+        let model = AgentChatViewModel(conversationStore: nil, remoteSource: remote)
+
+        await model.refreshConversationHistory()
+
+        XCTAssertEqual(model.conversationHistory.map(\.conversationID), [73])
+        XCTAssertTrue(model.messages.isEmpty)
+        XCTAssertTrue(remote.fetchedDetailIDs.isEmpty)
     }
 
     @MainActor
@@ -530,6 +571,7 @@ final class AgentConversationHistoryTests: XCTestCase {
 
 private final class FakeRemoteSource: AgentConversationRemoteSourcing, @unchecked Sendable {
     var list: [AgentConversationSnapshot] = []
+    var resumableList: [AgentConversationSnapshot]?
     var listError: Error?
     var detailByID: [Int: [AgentChatMessage]] = [:]
     var detailError: Error?
@@ -553,6 +595,11 @@ private final class FakeRemoteSource: AgentConversationRemoteSourcing, @unchecke
         return list
     }
 
+    func fetchResumableConversations(limit: Int, offset: Int) async throws -> [AgentConversationSnapshot] {
+        if let listError { throw listError }
+        return resumableList ?? list
+    }
+
     func fetchDetail(conversationID: Int) async throws -> [AgentChatMessage] {
         fetchedDetailIDs.append(conversationID)
         if let detailError { throw detailError }
@@ -572,6 +619,19 @@ private final class FakeRemoteSource: AgentConversationRemoteSourcing, @unchecke
         sharedIDs.append(conversationID)
         if let shareError { throw shareError }
         return shareURL
+    }
+}
+
+/// Models a legacy integration that only implements the unfiltered history
+/// endpoint. The protocol's default resumable implementation must not turn
+/// that history into a default-resume candidate.
+private struct HistoryOnlyRemoteSource: AgentConversationRemoteSourcing {
+    func fetchConversations(limit: Int, offset: Int, search: String?) async throws -> [AgentConversationSnapshot] { [] }
+    func fetchDetail(conversationID: Int) async throws -> [AgentChatMessage] { [] }
+    func deleteConversation(conversationID: Int) async throws {}
+    func renameConversation(conversationID: Int, title: String) async throws {}
+    func shareConversation(conversationID: Int) async throws -> URL {
+        URL(string: "https://example.test/shared/legacy")!
     }
 }
 

@@ -52389,6 +52389,8 @@ export interface operations {
                 title_like?: string | null;
                 /** @description 按标题和消息内容搜索 */
                 search?: string | null;
+                /** @description 仅返回含用户消息的最近会话，用于跨端默认恢复；显式历史仍可打开 assistant-only 会话 */
+                resume_only?: boolean;
             };
             header?: never;
             path?: never;

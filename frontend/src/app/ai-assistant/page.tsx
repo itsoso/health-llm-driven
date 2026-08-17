@@ -304,7 +304,7 @@ function AIAssistantInner() {
     router.replace(target, { scroll: false });
   };
 
-  // 页面 mount:显式 ?c=<id> 优先；否则续接 owner-scoped 服务端最新对话。
+    // 页面 mount:显式 ?c=<id> 优先；否则续接最近一个包含用户消息的会话。
   // 只跑一次 — 后续 URL 变更由用户操作 (load/new/stream done) 主动触发。
   const bootstrappedRef = useRef(false);
   useEffect(() => {
@@ -324,7 +324,7 @@ function AIAssistantInner() {
     }
     if (raw) return; // 非法显式 id fail closed，不猜测另一条健康对话。
 
-    void agentApi.getConversations(1, 0).then((res) => {
+    void agentApi.getConversations(1, 0, undefined, { resumeOnly: true }).then((res) => {
       if (intentGeneration !== conversationIntentGenerationRef.current) return;
       const latestId = res.data.items?.[0]?.id;
       if (!latestId) return;

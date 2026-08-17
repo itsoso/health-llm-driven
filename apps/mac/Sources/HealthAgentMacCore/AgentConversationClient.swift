@@ -176,6 +176,8 @@ public protocol AgentConversationRemoteSourcing: Sendable {
     /// Snapshots carry no messages yet — call `fetchDetail` when one is opened.
     /// `search` matches title ∪ message content (backend EXISTS subquery); nil = all.
     func fetchConversations(limit: Int, offset: Int, search: String?) async throws -> [AgentConversationSnapshot]
+    /// Fetches default-resume candidates, excluding assistant-only system conversations.
+    func fetchResumableConversations(limit: Int, offset: Int) async throws -> [AgentConversationSnapshot]
     /// Fetches a single conversation's full message list.
     func fetchDetail(conversationID: Int) async throws -> [AgentChatMessage]
     /// Deletes a conversation on the backend. No-op-safe to call before syncing
@@ -188,6 +190,18 @@ public protocol AgentConversationRemoteSourcing: Sendable {
     func shareConversation(conversationID: Int) async throws -> URL
 }
 
+public extension AgentConversationRemoteSourcing {
+    /// Fail closed for test doubles and older integrations.
+    ///
+    /// A normal history fetch is intentionally not a resumable candidate:
+    /// assistant-only system conversations (for example daily briefings) must
+    /// never become the default conversation merely because a source forgot to
+    /// implement the explicit resume-only query.
+    func fetchResumableConversations(limit: Int, offset: Int) async throws -> [AgentConversationSnapshot] {
+        []
+    }
+}
+
 // MARK: - Client
 
 public final class AgentConversationClient: AgentConversationRemoteSourcing, @unchecked Sendable {
@@ -198,7 +212,23 @@ public final class AgentConversationClient: AgentConversationRemoteSourcing, @un
     }
 
     public func fetchConversations(limit: Int = 30, offset: Int = 0, search: String? = nil) async throws -> [AgentConversationSnapshot] {
+        try await fetchConversations(limit: limit, offset: offset, search: search, resumeOnly: false)
+    }
+
+    public func fetchResumableConversations(limit: Int = 1, offset: Int = 0) async throws -> [AgentConversationSnapshot] {
+        try await fetchConversations(limit: limit, offset: offset, search: nil, resumeOnly: true)
+    }
+
+    private func fetchConversations(
+        limit: Int,
+        offset: Int,
+        search: String?,
+        resumeOnly: Bool
+    ) async throws -> [AgentConversationSnapshot] {
         var path = "agent/conversations?limit=\(limit)&offset=\(offset)"
+        if resumeOnly {
+            path += "&resume_only=true"
+        }
         if let term = search?.trimmingCharacters(in: .whitespacesAndNewlines), !term.isEmpty {
             let encoded = term.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? term
             path += "&search=\(encoded)"

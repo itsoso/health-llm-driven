@@ -171,6 +171,11 @@ export interface ConversationPage {
   offset: number;
 }
 
+export interface ConversationListOptions {
+  /** Only conversations with at least one user turn, for default resume. */
+  resumeOnly?: boolean;
+}
+
 export interface ConversationDetail {
   id: number;
   title: string;
@@ -208,9 +213,15 @@ export const chatApi = {
 export const agentApi = {
   // 分页返回 {items,total,limit,offset};历史记录用 offset 做上一页/下一页翻页。
   // search 同时匹配标题与消息内容(后端 EXISTS 子查询)。
-  getConversations: (limit: number = 30, offset: number = 0, search?: string) => {
+  getConversations: (
+    limit: number = 30,
+    offset: number = 0,
+    search?: string,
+    options: ConversationListOptions = {},
+  ) => {
     const q = search?.trim() ? `&search=${encodeURIComponent(search.trim())}` : '';
-    return api.get<ConversationPage>(`/agent/conversations?limit=${limit}&offset=${offset}${q}`);
+    const resume = options.resumeOnly ? '&resume_only=true' : '';
+    return api.get<ConversationPage>(`/agent/conversations?limit=${limit}&offset=${offset}${q}${resume}`);
   },
 
   getConversation: (conversationId: number) =>

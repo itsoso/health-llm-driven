@@ -9,7 +9,7 @@ import uuid
 from contextlib import nullcontext
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.exc import IntegrityError, TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.orm import Session, joinedload
 
@@ -229,10 +229,40 @@ class AgentConversationService:
         title_like: Optional[str] = None,
         offset: int = 0,
         search: Optional[str] = None,
+        resume_only: bool = False,
     ) -> List[AgentConversation]:
         q = self.db.query(AgentConversation).filter(AgentConversation.user_id == user_id)
         q = self._exclude_pregen_scratch(q)
         q = self._apply_search(q, title_like=title_like, search=search)
+        if resume_only:
+            latest_user_message_created_at = (
+                select(func.max(AgentMessage.created_at))
+                .where(
+                    AgentMessage.conversation_id == AgentConversation.id,
+                    AgentMessage.role == "user",
+                )
+                .correlate(AgentConversation)
+                .scalar_subquery()
+            )
+            latest_user_message_id = (
+                select(func.max(AgentMessage.id))
+                .where(
+                    AgentMessage.conversation_id == AgentConversation.id,
+                    AgentMessage.role == "user",
+                )
+                .correlate(AgentConversation)
+                .scalar_subquery()
+            )
+            q = q.filter(latest_user_message_id.is_not(None))
+            return (
+                q.order_by(
+                    latest_user_message_created_at.desc(),
+                    latest_user_message_id.desc(),
+                )
+                .offset(offset)
+                .limit(limit)
+                .all()
+            )
         return q.order_by(AgentConversation.updated_at.desc()).offset(offset).limit(limit).all()
 
     def count_conversations(
@@ -240,10 +270,20 @@ class AgentConversationService:
         user_id: int,
         title_like: Optional[str] = None,
         search: Optional[str] = None,
+        resume_only: bool = False,
     ) -> int:
         q = self.db.query(AgentConversation).filter(AgentConversation.user_id == user_id)
         q = self._exclude_pregen_scratch(q)
         q = self._apply_search(q, title_like=title_like, search=search)
+        if resume_only:
+            q = q.filter(
+                self.db.query(AgentMessage.id)
+                .filter(
+                    AgentMessage.conversation_id == AgentConversation.id,
+                    AgentMessage.role == "user",
+                )
+                .exists()
+            )
         return q.count()
 
     @staticmethod

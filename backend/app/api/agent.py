@@ -2479,6 +2479,10 @@ async def list_conversations(
     offset: int = Query(0, ge=0, description="分页偏移(翻页用)"),
     title_like: Optional[str] = Query(None, description="按标题模糊过滤(旧参数,仅标题)"),
     search: Optional[str] = Query(None, description="按标题和消息内容搜索"),
+    resume_only: bool = Query(
+        False,
+        description="仅返回含用户消息的最近会话，用于跨端默认恢复；显式历史仍可打开 assistant-only 会话",
+    ),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
@@ -2495,9 +2499,19 @@ async def list_conversations(
     from app.services.agent_conversation_service import AgentConversationService
 
     service = AgentConversationService(db)
-    total = service.count_conversations(current_user.id, title_like=title_like, search=search)
+    total = service.count_conversations(
+        current_user.id,
+        title_like=title_like,
+        search=search,
+        resume_only=resume_only,
+    )
     convs = service.get_conversations(
-        current_user.id, limit, title_like=title_like, offset=offset, search=search
+        current_user.id,
+        limit,
+        title_like=title_like,
+        offset=offset,
+        search=search,
+        resume_only=resume_only,
     )
     conv_ids = [c.id for c in convs]
     last_msgs = {}

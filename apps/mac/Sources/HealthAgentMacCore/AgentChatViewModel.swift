@@ -1417,16 +1417,22 @@ public final class AgentChatViewModel {
             // Keep the visible transcript in sync with other devices. The list
             // endpoint intentionally omits messages, so after reconciling the
             // list we must load detail for the currently open remote chat. On a
-            // fresh Mac install with no local cache, auto-open the newest remote
-            // conversation so the phone transcript appears without a manual tap.
+            // fresh Mac install with no local cache, auto-open the latest resumable
+            // user conversation so the phone transcript appears without a manual tap.
             guard !isStreaming else { return }
             let target: AgentConversationSnapshot?
             if let currentConversationSnapshotID,
                let current = merged.first(where: { $0.id == currentConversationSnapshotID }) {
                 target = current
-            } else if currentConversationSnapshotID == nil, messages.isEmpty, let latest = merged.first {
-                loadConversation(latest)
-                target = latest
+            } else if currentConversationSnapshotID == nil, messages.isEmpty, activeSearch == nil {
+                let resumable = try await remoteSource.fetchResumableConversations(limit: 1, offset: 0)
+                if let latest = resumable.first {
+                    let visible = merged.first(where: { $0.conversationID == latest.conversationID }) ?? latest
+                    loadConversation(visible)
+                    target = visible
+                } else {
+                    target = nil
+                }
             } else {
                 target = nil
             }

@@ -229,6 +229,92 @@ def test_agent_conversations_list_uses_latest_updated_conversation_as_canonical_
     assert [item["id"] for item in res.json()["items"]] == [newer.id]
 
 
+def test_agent_conversations_resume_only_uses_latest_user_turn_not_updated_at(
+    client, db, auth_user_and_headers
+):
+    """Default resume must ignore assistant-only background briefings."""
+    user, headers = auth_user_and_headers
+    interactive = _create_conversation(db, user.id, "午餐记录")
+    _add_message(db, interactive.id, "user", "记录午餐")
+    briefing = _create_conversation(db, user.id, "每日健康简报 · 08-17")
+    _add_message(db, briefing.id, "assistant", "今日健康简报")
+    now = datetime.now(UTC)
+    interactive.updated_at = now - timedelta(hours=2)
+    briefing.updated_at = now
+    db.commit()
+
+    res = client.get(
+        "/api/v1/agent/conversations?resume_only=true&limit=1",
+        headers=headers,
+    )
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total"] == 1
+    assert [item["id"] for item in data["items"]] == [interactive.id]
+
+
+def test_agent_conversations_resume_only_keeps_interactive_briefing_conversation(
+    client, db, auth_user_and_headers
+):
+    """Selection is based on message roles, never on a title prefix."""
+    user, headers = auth_user_and_headers
+    briefing = _create_conversation(db, user.id, "每日健康简报 · 08-17")
+    _add_message(db, briefing.id, "user", "我想了解今天的建议")
+    _add_message(db, briefing.id, "assistant", "可以，我们先看饮水")
+
+    res = client.get(
+        "/api/v1/agent/conversations?resume_only=true&limit=1",
+        headers=headers,
+    )
+
+    assert res.status_code == 200
+    assert [item["id"] for item in res.json()["items"]] == [briefing.id]
+
+
+def test_agent_conversations_resume_only_orders_by_latest_user_turn(
+    client, db, auth_user_and_headers
+):
+    user, headers = auth_user_and_headers
+    first = _create_conversation(db, user.id, "较早用户会话")
+    first_user = _add_message(db, first.id, "user", "较早的问题")
+    second = _create_conversation(db, user.id, "较晚用户会话")
+    second_user = _add_message(db, second.id, "user", "较晚的问题")
+    now = datetime.now(UTC)
+    first_user.created_at = now - timedelta(hours=1)
+    second_user.created_at = now
+    # Deliberately invert conversation mutation timestamps: resume ordering
+    # must follow the last user turn, not assistant/background conversation churn.
+    first.updated_at = now
+    second.updated_at = now - timedelta(hours=1)
+    db.commit()
+
+    res = client.get(
+        "/api/v1/agent/conversations?resume_only=true&limit=2",
+        headers=headers,
+    )
+
+    assert res.status_code == 200
+    assert [item["id"] for item in res.json()["items"]] == [second.id, first.id]
+
+
+def test_agent_conversations_resume_only_returns_empty_for_assistant_only_history(
+    client, db, auth_user_and_headers
+):
+    user, headers = auth_user_and_headers
+    briefing = _create_conversation(db, user.id, "每日健康简报 · 08-17")
+    _add_message(db, briefing.id, "assistant", "今日健康简报")
+
+    res = client.get(
+        "/api/v1/agent/conversations?resume_only=true&limit=1",
+        headers=headers,
+    )
+
+    assert res.status_code == 200
+    assert res.json()["items"] == []
+    assert res.json()["total"] == 0
+
+
 def test_agent_send_collects_first_party_executor_stream(client, auth_user_and_headers, monkeypatch):
     _, headers = auth_user_and_headers
 

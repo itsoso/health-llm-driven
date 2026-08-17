@@ -42,6 +42,18 @@ describe('getConversationsPage', () => {
     expect(fetchMock.mock.calls[0][1]?.cache).toBe('no-store');
   });
 
+  it('requests only resumable user-turn conversations when asked', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ items: [], total: 0, limit: 1, offset: 0 }),
+    }) as any;
+
+    await getConversationsPage({ limit: 1, resumeOnly: true });
+
+    const url: string = (global.fetch as jest.Mock).mock.calls[0][0];
+    expect(url).toContain('resume_only=true');
+  });
+
   it('passes search (title∪content) through as query param', async () => {
     const fetchMock = jest.fn().mockResolvedValue({
       ok: true,

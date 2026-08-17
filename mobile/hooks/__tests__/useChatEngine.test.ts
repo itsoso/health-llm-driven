@@ -984,6 +984,12 @@ describe('useChatEngine', () => {
 
   it('restores the last active conversation after the chat page is remounted', async () => {
     mockAsyncStorage[scopedStorageKey('chat:last_conversation_id:v1')] = '321';
+    mockGetConversations.mockResolvedValue([{
+      id: 321,
+      title: '最近的用户对话',
+      created_at: '2026-05-22T10:00:00Z',
+      updated_at: '2026-05-22T10:00:10Z',
+    }]);
     mockGetConversationMessages.mockResolvedValueOnce({
       total_messages: 2,
       messages: [
@@ -1105,6 +1111,12 @@ describe('useChatEngine', () => {
 
   it('can force a context entry to start a new server conversation', async () => {
     mockAsyncStorage[scopedStorageKey('chat:last_conversation_id:v1')] = '321';
+    mockGetConversations.mockResolvedValue([{
+      id: 321,
+      title: '最近的用户对话',
+      created_at: '2026-05-22T10:00:00Z',
+      updated_at: '2026-05-22T10:00:10Z',
+    }]);
     mockGetConversationMessages.mockResolvedValueOnce({
       total_messages: 2,
       messages: [

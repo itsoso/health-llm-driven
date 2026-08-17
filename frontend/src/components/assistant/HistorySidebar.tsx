@@ -18,7 +18,7 @@ const BRIEFING_PREFIX = '每日健康简报';
 const WEEKLY_PREFIX = '每周健康周报';
 const isBriefingTitle = (t: string) => t === BRIEFING_PREFIX || t.startsWith(BRIEFING_PREFIX + ' ');
 const isWeeklyTitle = (t: string) => t === WEEKLY_PREFIX || t.startsWith(WEEKLY_PREFIX + ' ');
-const isPinned = (t: string) => isBriefingTitle(t) || isWeeklyTitle(t);
+
 
 export default function HistorySidebar({
   conversations,
@@ -39,15 +39,9 @@ export default function HistorySidebar({
       (c.last_message && c.last_message.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  // 同名 pinned 条目按 updated_at 倒序, 让今天的"每日健康简报"永远排第一
-  const byNewest = (a: Conversation, b: Conversation) =>
-    (b.updated_at || '').localeCompare(a.updated_at || '');
-
-  const sorted = [
-    ...filtered.filter((c) => isBriefingTitle(c.title)).sort(byNewest),
-    ...filtered.filter((c) => isWeeklyTitle(c.title)).sort(byNewest),
-    ...filtered.filter((c) => !isPinned(c.title)),
-  ];
+  // The API owns ordering. Do not pin system-generated briefings by title:
+  // background refreshes must not make them appear as the user's latest chat.
+  const sorted = filtered;
 
   const totalPages = Math.ceil(sorted.length / itemsPerPage);
   const paginated = sorted.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);

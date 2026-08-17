@@ -1042,10 +1042,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         if (restoredRecovery || localStreamOwnsState()) return;
       }
 
-      // Web / Mobile 共用同一条默认续接规则：服务端 owner-scoped 列表里
-      // updated_at 最新的 durable conversation。设备本地 id 只作离线/空列表回退，
-      // 不再抢占另一端刚更新的会话，也不再让“每日健康简报”特殊置顶。
-      const convs = await getConversations();
+      // Web / Mobile 共用同一条默认续接规则：服务端 owner-scoped resume_only
+      // 列表中最近一个包含用户消息的 durable conversation。assistant-only 的
+      // 每日简报仍可从历史显式打开，但不应成为默认恢复目标。
+      const convs = await getConversations(undefined, { resumeOnly: true });
       if (requestGeneration !== conversationRequestGenerationRef.current) return;
       if (localStreamOwnsState()) return;
 
@@ -1060,15 +1060,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         if (restoredLatest || localStreamOwnsState()) return;
       }
 
-      if (storedConversationId && storedConversationId !== latestId) {
-        const restoredStored = await loadConversationFromServer(
-          storedConversationId,
-          'hist',
-          requestGeneration,
-        );
-        if (requestGeneration !== conversationRequestGenerationRef.current) return;
-        if (restoredStored || localStreamOwnsState()) return;
-      }
+      // A stale local id must never revive an assistant-only briefing after the
+      // resume query intentionally returned no eligible user conversation.
+      // Explicit recoverable/pending turns were handled above and remain allowed.
       if (storedConversationId) await forgetConversationId();
     } catch { console.warn('Failed to load latest conversation'); }
   }, [loadConversationFromServer, localStreamOwnsState]);

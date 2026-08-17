@@ -684,8 +684,13 @@ export interface ConversationsPage {
   total: number;
 }
 
+export interface ConversationListOptions {
+  /** Only conversations with at least one user turn, for default resume. */
+  resumeOnly?: boolean;
+}
+
 /**
- * 分页拉取对话列表。透传 offset/limit/search(标题∪内容)/title_like 给 /agent/conversations
+ * 分页拉取对话列表。透传 offset/limit/search(标题∪内容)/title_like/resume_only 给 /agent/conversations
  * (后端返回 { items, total, limit, offset })，返回 items + total 供无限下拉判断
  * 是否还有更多 (items.length < total)。
  *
@@ -697,12 +702,14 @@ export async function getConversationsPage({
   limit = 20,
   titleLike,
   search,
-}: { offset?: number; limit?: number; titleLike?: string; search?: string } = {}): Promise<ConversationsPage> {
+  resumeOnly = false,
+}: { offset?: number; limit?: number; titleLike?: string; search?: string; resumeOnly?: boolean } = {}): Promise<ConversationsPage> {
   const token = await getToken();
   await enforceAppEgressAllowed({
     cloudCredentialPresent: Boolean(token && token !== WEB_SESSION_AUTH_SENTINEL),
   });
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (resumeOnly) params.set('resume_only', 'true');
   // search 匹配标题 ∪ 消息正文(后端 _apply_search);title_like 仅标题(旧参数,search 优先)。
   if (search) params.set('search', search);
   else if (titleLike) params.set('title_like', titleLike);
@@ -723,9 +730,12 @@ export async function getConversationsPage({
  * 兼容旧调用方 (voice-chat / useChatEngine 的最近会话探测) — 取第一页 items。
  * 失败时返回空数组 (保持历史行为: 这些调用方不处理异常)。
  */
-export async function getConversations(titleLike?: string): Promise<Conversation[]> {
+export async function getConversations(
+  titleLike?: string,
+  options: ConversationListOptions = {},
+): Promise<Conversation[]> {
   try {
-    const { items } = await getConversationsPage({ limit: 20, titleLike });
+    const { items } = await getConversationsPage({ limit: 20, titleLike, ...options });
     return items;
   } catch {
     return [];

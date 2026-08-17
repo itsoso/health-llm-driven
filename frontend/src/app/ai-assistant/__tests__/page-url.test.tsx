@@ -2,7 +2,7 @@
 /**
  * ai-assistant 页 URL 状态回归:
  *   - mount 时 URL 带 ?c=<id> → 自动加载对应对话 (agentApi.getConversation(id)).
- *   - 无 ?c → 自动续接服务端最新对话.
+ *   - 无 ?c → 自动续接最近一个包含用户消息的服务端对话.
  */
 import React from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -144,7 +144,7 @@ describe('ai-assistant URL state', () => {
     await waitFor(() => expect(getConversation).toHaveBeenCalledWith(42));
   });
 
-  it('resumes the newest durable conversation when ?c is absent', async () => {
+  it('resumes the newest user-turn conversation when ?c is absent', async () => {
     searchParamsGet.mockReturnValue(null);
     getConversations.mockResolvedValue({
       data: {
@@ -159,6 +159,7 @@ describe('ai-assistant URL state', () => {
     });
     render(<AIAssistantPage />);
     await waitFor(() => expect(getConversation).toHaveBeenCalledWith(84));
+    expect(getConversations).toHaveBeenCalledWith(1, 0, undefined, { resumeOnly: true });
   });
 
   it('does not let a late latest-conversation bootstrap override explicit new chat', async () => {
