@@ -8,8 +8,6 @@ jobs:
     name: Publish iOS preview update
     type: update
     environment: preview
-    env:
-      EAS_NO_VCS: "1"
     params:
       platform: ios
       channel: preview

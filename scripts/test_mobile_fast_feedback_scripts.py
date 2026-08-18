@@ -22,7 +22,7 @@ def test_eas_ota_fallback_is_manual_ios_preview_only() -> None:
     assert "\n  pull_request:" not in workflow
     assert "type: update" in workflow
     assert "environment: preview" in workflow
-    assert 'EAS_NO_VCS: "1"' in workflow
+    assert "EAS_NO_VCS" not in workflow
     assert "platform: ios" in workflow
     assert "channel: preview" in workflow
     assert "channel: production" not in workflow
