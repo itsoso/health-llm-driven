@@ -9,6 +9,22 @@ ROOT = Path(__file__).resolve().parents[1]
 FAST_TEST = ROOT / "scripts" / "mobile-fast-test.sh"
 FAST_DEVICE = ROOT / "scripts" / "mobile-fast-device.sh"
 OTA_SOURCE_GUARD = ROOT / "scripts" / "ota_source_guard.py"
+EAS_OTA_PREVIEW_WORKFLOW = (
+    ROOT / "mobile" / ".eas" / "workflows" / "ota-preview-manual.yml"
+)
+
+
+def test_eas_ota_fallback_is_manual_ios_preview_only() -> None:
+    workflow = EAS_OTA_PREVIEW_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "workflow_dispatch: {}" in workflow
+    assert "\n  push:" not in workflow
+    assert "\n  pull_request:" not in workflow
+    assert "type: update" in workflow
+    assert "environment: preview" in workflow
+    assert "platform: ios" in workflow
+    assert "channel: preview" in workflow
+    assert "channel: production" not in workflow
 
 
 def test_mobile_dependency_overrides_preserve_brace_expansion_major_compatibility() -> None:
