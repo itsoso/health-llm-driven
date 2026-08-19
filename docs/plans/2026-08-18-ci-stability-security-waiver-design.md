@@ -29,7 +29,7 @@ The aggregate backend job is red only because the two backend shards are red.
 
 ### Rolling-window fixtures
 
-Only the two time-sensitive integration fixtures will change. The TokenPlan dashboard row will use the current UTC time because the test verifies price conversion, not historical filtering. The life-event API test will use a recent UTC message timestamp while leaving deterministic parser unit-test anchors unchanged. This keeps production filtering and deterministic time-parser coverage intact.
+Only the two time-sensitive integration fixtures will change. The TokenPlan dashboard row will use the current UTC time and a current standard-price model because the old fixture combined a rolling 30-day query with a promotion that ended on 2026-07-22. Promotion arithmetic remains covered by the fixed-time TokenPlan cost unit test. The life-event API test will use a recent UTC message timestamp while leaving deterministic parser unit-test anchors unchanged. This keeps production filtering, promotion-expiry behavior, and deterministic time-parser coverage intact.
 
 ### Reviewed dependency exception
 
@@ -44,4 +44,3 @@ The audit evaluator will additionally report active exceptions that expire withi
 - Run both corrected backend nodes and their complete test files.
 - Run the malicious image parser guard, audit policy tests, production dependency audit, TypeScript check, and focused OTA workflow tests.
 - Run `git diff --check`, commit only the reviewed files, push the exact commit to `main`, and monitor that commit's CI result.
-

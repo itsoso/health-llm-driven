@@ -22,7 +22,7 @@ Run the two existing nodes with the CI environment and confirm both fail because
 
 **Step 2: Apply the minimal fixture correction**
 
-- Set the TokenPlan usage row's `created_at` to `datetime.now(timezone.utc)`.
+- Set the TokenPlan usage row's `created_at` to `datetime.now(timezone.utc)` and use the current standard-price `qwen3.7-plus` path without cached tokens. Keep the expired-promotion arithmetic in its existing fixed-time unit test.
 - Set only the life-event API integration message to a recent naive UTC timestamp, such as `datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)`.
 - Leave `_ANCHOR` and `_MSG_CREATED_UTC` unchanged for deterministic parser and idempotency unit tests.
 
@@ -102,4 +102,3 @@ Stage only the planned files, commit with `fix(ci): stabilize rolling windows an
 **Step 5: Monitor exact-commit CI**
 
 Follow the CI run for the pushed SHA. Do not claim overall green until all required jobs finish successfully; if another failure appears, return to root-cause investigation.
-

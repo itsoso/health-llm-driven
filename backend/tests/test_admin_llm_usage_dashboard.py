@@ -297,12 +297,11 @@ def test_usage_dashboard_converts_tokenplan_credits_to_capacity_rmb(client, db, 
         db,
         user_id=user.id,
         provider="tokenplan",
-        model="qwen3.7-max",
+        model="qwen3.7-plus",
         caller="agent.chat",
         prompt_tokens=1_000_000,
         completion_tokens=0,
-        cached_tokens=500_000,
-        created_at=datetime(2026, 7, 16, tzinfo=timezone.utc),
+        created_at=datetime.now(timezone.utc),
     )
 
     response = client.get(
@@ -314,11 +313,11 @@ def test_usage_dashboard_converts_tokenplan_credits_to_capacity_rmb(client, db, 
     payload = response.json()
     assert payload["plan"]["monthly_credits"] == 100_000
     assert payload["plan"]["capacity_cny_per_credit"] == pytest.approx(0.00698)
-    assert payload["overall"]["tokenplan_credits_estimate"] == pytest.approx(360.0)
-    assert payload["overall"]["tokenplan_capacity_cost_cny"] == pytest.approx(2.5128)
-    assert payload["overall"]["tokenplan_payg_value_cny"] == pytest.approx(3.6)
+    assert payload["overall"]["tokenplan_credits_estimate"] == pytest.approx(600.0)
+    assert payload["overall"]["tokenplan_capacity_cost_cny"] == pytest.approx(4.188)
+    assert payload["overall"]["tokenplan_payg_value_cny"] == pytest.approx(4.8)
     assert payload["overall"]["cost_savings_vs_payg_cny"] > 0
-    assert payload["by_user"][0]["tokenplan_capacity_cost_cny"] == pytest.approx(2.5128)
+    assert payload["by_user"][0]["tokenplan_capacity_cost_cny"] == pytest.approx(4.188)
 
 
 def test_usage_dashboard_does_not_price_unsupported_cached_rows(client, db):
