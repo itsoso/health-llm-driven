@@ -60,9 +60,15 @@ export function looksLikeNonDietIntake(value: string): boolean {
 }
 
 function looksLikeOnlyAmbiguousPhotoSlice(value: string): boolean {
-  const withoutNumericSlices = value.replace(/(?:约|大约)?\s*\d+(?:\.\d+)?\s*片/g, ' ');
-  if (withoutNumericSlices === value) return false;
-  return !looksLikeNonDietIntake(withoutNumericSlices);
+  // `片` alone is not a reliable medication signal in an owner-bound meal
+  // photo: it is also part of legitimate food names (`萝卜片`) and food
+  // portions (`胡萝卜 3片`). Remove only that ambiguous marker, then run the
+  // complete medication/supplement guard again. Strong signals such as drug
+  // names, dosage suffixes, fish oil, or vitamins remain blocked here and by
+  // the canonical backend classifier.
+  const withoutAmbiguousSliceMarker = value.replace(/片/g, ' ');
+  if (withoutAmbiguousSliceMarker === value) return false;
+  return !looksLikeNonDietIntake(withoutAmbiguousSliceMarker);
 }
 
 export function looksLikeHealthMetricIntent(value: string): boolean {

@@ -629,6 +629,50 @@ describe('dispatchChatCardAction', () => {
     );
   });
 
+  it('posts an owner-bound photo draft containing the food name 萝卜片', async () => {
+    const photoDraftToken = 'photo-draft-token-1234567890';
+    const foodItems = '煎三文鱼 约1份 + 牛油果 约1/4个 + 腰果 约10颗 + 黄瓜 约1/4根 + 红米 约1碗 + 裙带菜 少量 + 海苔 少量 + 萝卜片 少量';
+    mockApiPost.mockResolvedValueOnce({ data: { id: 1076 } });
+
+    await expect(dispatchChatCardAction({
+      id: `confirm-contextual-diet:${photoDraftToken}`,
+      label: '确认记录',
+      action: 'diet_record.create',
+      endpoint: '/diet/records',
+      requires_manual_confirm: true,
+      ...DIET_WRITE_POLICY,
+      payload: {
+        record: {
+          record_date: '2026-08-19',
+          meal_type: 'lunch',
+          food_items: foodItems,
+          calories: 615,
+          protein: 35,
+          carbs: 52,
+          fat: 35.8,
+          source: 'chat_photo',
+          photo_draft_token: photoDraftToken,
+        },
+      },
+    }, 'diet-photo-card-radish-slices')).resolves.toEqual(expect.objectContaining({
+      status: 'completed',
+      receipt: expect.objectContaining({
+        resourceType: 'diet_record',
+        resourceId: '1076',
+        verified: true,
+      }),
+    }));
+
+    expect(mockApiPost).toHaveBeenCalledWith(
+      '/diet/records',
+      expect.objectContaining({
+        food_items: foodItems,
+        photo_draft_token: photoDraftToken,
+      }),
+      { headers: { 'Idempotency-Key': 'diet-photo-card-radish-slices' } },
+    );
+  });
+
   it('preserves photo draft foods with 段 块 颗 portions before posting', async () => {
     const photoDraftToken = 'photo-draft-token-1234567890';
     const foodItems = '胡萝卜 约3段 · 南瓜 约2块 · 红枣 约3颗 · 玉米 约1小段';

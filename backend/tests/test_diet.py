@@ -118,6 +118,33 @@ class TestDietAPI:
         assert body["meal_type"] == "breakfast"
         assert body["calories"] == 655
 
+    def test_photo_recognized_radish_slices_are_valid_food(
+        self, client, auth_headers
+    ):
+        """合法食物名“萝卜片”不能被药片启发式误杀。"""
+        food_items = (
+            "煎三文鱼 约1份 + 牛油果 约1/4个 + 腰果 约10颗 + 黄瓜 约1/4根 + "
+            "红米 约1碗 + 裙带菜 少量 + 海苔 少量 + 萝卜片 少量"
+        )
+
+        response = client.post(
+            "/api/v1/diet/records",
+            json={
+                "record_date": str(date.today()),
+                "meal_type": "lunch",
+                "food_items": food_items,
+                "calories": 615,
+                "protein": 35,
+                "carbs": 52,
+                "fat": 35.8,
+                "source": "chat_photo",
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        assert response.json()["food_items"] == food_items
+
     def test_create_diet_record_internal_failure_uses_generic_detail(
         self, client, auth_headers, sample_diet_data, monkeypatch
     ):

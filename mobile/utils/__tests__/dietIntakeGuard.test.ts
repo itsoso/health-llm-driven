@@ -60,6 +60,15 @@ describe('dietIntakeGuard', () => {
     })).not.toThrow();
   });
 
+  it('allows a photographed meal whose legitimate food name ends in 片', () => {
+    const text = '煎三文鱼 约1份 + 牛油果 约1/4个 + 腰果 约10颗 + 黄瓜 约1/4根 + 红米 约1碗 + 裙带菜 少量 + 海苔 少量 + 萝卜片 少量';
+
+    expect(looksLikeNonDietIntake(text)).toBe(true);
+    expect(() => assertDietFoodItemsAllowed(text, {
+      ownerBoundPhotoDraft: true,
+    })).not.toThrow();
+  });
+
   it.each([
     ['删除这一餐', 'invalid_diet_food_items_management'],
     ['体重 73.1kg', 'invalid_diet_food_items_health_metric'],
@@ -72,6 +81,8 @@ describe('dietIntakeGuard', () => {
   it.each([
     ['阿司匹林 1片'],
     ['阿奇霉素 1片'],
+    ['奥美拉唑片'],
+    ['止痛片'],
     ['华法林 1片'],
     ['warfarin 1片'],
     ['warfarin1片'],
