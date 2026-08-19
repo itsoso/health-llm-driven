@@ -4,7 +4,7 @@
 
 ## Context
 
-The exact-commit CI run for `bf7f27a32` completed successfully, but GitHub annotated jobs that still use `actions/checkout@v4`, `actions/setup-python@v5`, and `actions/setup-node@v4`. Those action releases bundle the deprecated Node 20 runtime, so GitHub-hosted runners are already forcing them onto Node 24 compatibility behavior.
+The exact-commit CI run for `bf7f27a32` completed successfully, but GitHub annotated jobs that still use `actions/checkout@v4`, `actions/setup-python@v5`, `actions/setup-node@v4`, and `actions/upload-artifact@v4`. Those action releases bundle the deprecated Node 20 runtime, so GitHub-hosted runners are already forcing them onto Node 24 compatibility behavior.
 
 The goal is to remove the warning before it becomes a hard failure without changing application runtimes, dependency versions, cache keys, checkout depth, or release behavior.
 
@@ -15,8 +15,9 @@ Use the first stable Node 24 major for each affected first-party action:
 - `actions/checkout@v5`
 - `actions/setup-python@v6`
 - `actions/setup-node@v5`
+- `actions/upload-artifact@v6`
 
-Do not move to later feature-bearing majors in this slice. Checkout v5 changes only the embedded runtime compared with the current workflow contract. Setup Python v6 likewise moves the action runtime to Node 24. Setup Node v5 enables package-manager cache detection by default, so jobs that do not currently request caching must set `package-manager-cache: false`; jobs that already declare an explicit npm cache retain that declaration.
+Do not move to later feature-bearing majors in this slice. Checkout v5 changes only the embedded runtime compared with the current workflow contract. Setup Python v6 likewise moves the action runtime to Node 24. Setup Node v5 enables package-manager cache detection by default, so jobs that do not currently request caching must set `package-manager-cache: false`; jobs that already declare an explicit npm cache retain that declaration. Upload Artifact v6 is the first release that runs on Node 24 by default; its existing artifact name, path, and missing-file behavior remain unchanged.
 
 ## Scope and invariants
 
