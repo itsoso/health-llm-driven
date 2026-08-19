@@ -5,6 +5,8 @@ import json
 import re
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -87,10 +89,12 @@ def test_ci_hard_wires_llm_change_gate():
     assert "python scripts/harness_llm_change_gate.py" in section
     assert "continue-on-error" not in section, "LLM live-change gate must be blocking"
 
-    backend_checkout = re.search(
-        r"backend-tests:.*?- uses: actions/checkout@v4.*?(?=\n\n      - uses: actions/setup-python@v5)",
-        ci,
-        flags=re.S,
+    workflow = yaml.safe_load(ci)
+    backend_checkout = next(
+        step
+        for step in workflow["jobs"]["backend-quality"]["steps"]
+        if str(step.get("uses") or "").startswith("actions/checkout@")
     )
-    assert backend_checkout, "backend CI checkout must be discoverable"
-    assert "fetch-depth: 0" in backend_checkout.group(0), "change detection needs full history"
+    assert backend_checkout["with"]["fetch-depth"] == 0, (
+        "change detection needs full history"
+    )
