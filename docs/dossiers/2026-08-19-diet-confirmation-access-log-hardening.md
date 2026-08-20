@@ -4,15 +4,15 @@
 |---|---|
 | date | 2026-08-19 |
 | status | in_progress |
-| current_stage | G2 PASS; G3 implementation pending |
+| current_stage | G4 PASS; G5 deployment pending |
 | owner_surface | Mobile diet confirmation / Backend production telemetry |
 
 ## Problem
 
 The compact Mobile diet draft reports all recognized food items but silently
-renders only the first four. Production Uvicorn access logs also record raw
-request targets, which can include private filenames and signed upload query
-parameters.
+renders only the first four. Production proxy and Uvicorn access logs also
+record raw request targets, which can include private filenames and signed
+upload query parameters.
 
 ## Decision
 
@@ -21,8 +21,8 @@ Implement the approved design in
 
 - retain a four-item compact diet summary while making every remaining item
   explicitly expandable and collapsible; and
-- disable Uvicorn raw access logging only after application-owned sanitized
-  route-template logging is present.
+- disable proxy and Uvicorn raw access logging only after application-owned
+  sanitized route-template logging is present.
 
 No recognition, nutrition estimation, write-intent, API, database, ownership,
 or medical behavior changes are in scope.
@@ -38,26 +38,53 @@ new product object, autonomous action, or health claim.
 
 ### G2 Feasibility And Risk: PASS
 
-Source inspection confirms the fifth and later ingredient rows are discarded by
-a fixed four-item slice. Production systemd artifacts currently leave Uvicorn's
-raw access logger enabled. The chosen solution is local-state disclosure plus a
-pure-ASGI route-template logger. It requires no migration and preserves existing
-history and confirmation behavior.
+Source inspection confirmed the fifth and later ingredient rows were discarded
+by a fixed four-item slice. Production systemd and Nginx artifacts left raw
+request-target logging enabled. The chosen solution is local-state disclosure
+plus a pure-ASGI route-template logger. It requires no migration and preserves
+existing history and confirmation behavior.
 
 Primary risks are a tall card, accessibility regression, loss of operational
 telemetry, or accidentally moving private data into a replacement log. A compact
 default, explicit accessible control, fixed log field allowlist, `<unmatched>`
 fallback, and systemd contract tests address those risks.
 
-### G3 Tests: PENDING
+### G3 Tests: PASS
 
-Failure-first and regression evidence will be recorded after implementation.
+Failure-first evidence was observed before each implementation:
 
-### G4 Privacy And Security Review: PENDING
+- Mobile: the new eight-item disclosure regression failed with 1 failed and 82
+  passed because no `查看其余 4 项` control existed; after the fix the suite
+  passed 83 tests.
+- Backend: the new middleware suite first failed at import. After the initial
+  implementation, a second test failed because `RequestContextMiddleware`
+  still logged private exception content; after tightening, all 4 privacy tests
+  passed.
+- systemd: the new `--no-access-log` contract failed before both production
+  artifacts and the transactional candidate builder were updated.
+- Nginx: the new two-server `access_log off` contract failed before both server
+  blocks were updated.
 
-The review must confirm that the replacement log contains only method, route
-template, status, and duration, and that production Uvicorn raw access logging
-is disabled in both deployable artifacts.
+Fresh combined verification on the final local source snapshot:
+
+- Mobile diet card suite: 83 passed.
+- Mobile TypeScript: passed.
+- Mobile scoped ESLint: 0 errors; 8 pre-existing test-file warnings.
+- Backend privacy, infrastructure, and full runtime-state transaction suites:
+  126 passed with 6 dependency/framework deprecation warnings.
+- System Map, Mobile navigation graph, document drift, dossier consistency, and
+  `git diff --check`: passed.
+
+### G4 Privacy And Security Review: PASS
+
+The replacement access logger has a fixed four-field allowlist: method, resolved
+route template, status, and duration. Unmatched requests use `<unmatched>`; raw
+paths are never a fallback. Slow, timeout, and exception logs use the same safe
+template helper, and exception messages are excluded. Uvicorn raw access logging
+is disabled in both production ExecStart artifacts, and Nginx raw access logging
+is disabled in both production server blocks. The older detailed performance
+middleware can log raw data but is not registered in the application; this
+slice does not activate it.
 
 ### G5 Deployment Health: PENDING
 

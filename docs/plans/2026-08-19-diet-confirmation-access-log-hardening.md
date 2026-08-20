@@ -4,7 +4,7 @@
 
 **Goal:** Make every recognized diet item inspectable before confirmation and prevent signed upload capabilities or user-specific paths from entering production HTTP access logs.
 
-**Architecture:** Mobile keeps the first four ingredients as the compact summary and adds local disclosure state for the remainder. Backend replaces Uvicorn raw request-target logging with a small pure-ASGI middleware that emits only resolved route templates and bounded operational fields; the systemd unit and transactional drop-in disable Uvicorn's access logger together.
+**Architecture:** Mobile keeps the first four ingredients as the compact summary and adds local disclosure state for the remainder. Backend replaces proxy and Uvicorn raw request-target logging with a small pure-ASGI middleware that emits only resolved route templates and bounded operational fields; application error logs reuse the same safe template helper, while systemd and Nginx disable their raw access loggers.
 
 **Tech Stack:** React Native, React Native Testing Library, TypeScript, FastAPI/Starlette ASGI, pytest, systemd, Uvicorn.
 
@@ -23,7 +23,7 @@ or database contract changes are in scope.
 
 **Step 2: Run document checks**
 
-Run: `backend/venv/bin/python -m pytest -q --no-cov --tb=short scripts/test_dossier_consistency.py`
+Run: `backend/venv/bin/python backend/scripts/check_dossier_consistency.py`
 
 Expected: PASS.
 
@@ -143,6 +143,9 @@ Register it once in `backend/main.py`. Do not include request URLs, path
 parameters, query parameters, headers, client addresses, user identifiers,
 bodies, or exception text.
 
+Make the existing slow, timeout, and exception logs call the same safe route
+template helper. Preserve exception type but remove exception message content.
+
 **Step 4: Run the tests to verify GREEN**
 
 Run the command from Step 2.
@@ -156,20 +159,22 @@ git add -- backend/app/middleware/safe_access_log.py backend/tests/test_safe_acc
 git commit -m "security(backend): log only sanitized route templates"
 ```
 
-### Task 4: Disable Uvicorn raw access logging in every production artifact
+### Task 4: Disable raw proxy and Uvicorn access logging
 
 **Files:**
 - Modify: `infra/systemd/health-backend.service`
 - Modify: `infra/systemd/dropins/health-backend-runtime-state.conf`
+- Modify: `infra/nginx/health.executor.life.conf`
+- Modify: `backend/scripts/runtime_state_release_transaction.py`
 - Modify: `scripts/test_infrastructure_security.py`
 - Modify: `scripts/test_runtime_state_release_transaction.py`
 
 **Step 1: Write the failing infrastructure contract**
 
 Extend `test_backend_keeps_process_local_garmin_mfa_challenges_on_one_worker`
-or add a focused test that requires `--no-access-log` in both ExecStart
-artifacts. Update the exact runtime-state candidate expectation only after the
-new assertion has failed.
+to require `--no-access-log` in both ExecStart artifacts. Require
+`access_log off` in both Nginx server blocks. Update the exact runtime-state
+candidate expectation only after the new assertions have failed.
 
 **Step 2: Run the tests to verify RED**
 
@@ -180,13 +185,14 @@ backend/venv/bin/python -m pytest -q --no-cov --tb=short \
   scripts/test_infrastructure_security.py::test_backend_keeps_process_local_garmin_mfa_challenges_on_one_worker
 ```
 
-Expected: FAIL because neither ExecStart contains `--no-access-log`.
+Expected: FAIL because neither ExecStart contains `--no-access-log`; the Nginx
+contract separately fails because raw access logging remains enabled.
 
 **Step 3: Update both production ExecStart artifacts**
 
 Append `--no-access-log` to the base unit and the transactional runtime-state
-drop-in. Update the exact candidate assertion in
-`scripts/test_runtime_state_release_transaction.py`.
+drop-in. Update the production candidate builder and its exact assertion. Add
+`access_log off` to both Nginx server blocks.
 
 **Step 4: Run the infrastructure tests to verify GREEN**
 
@@ -203,7 +209,7 @@ Expected: PASS.
 **Step 5: Commit**
 
 ```bash
-git add -- infra/systemd/health-backend.service infra/systemd/dropins/health-backend-runtime-state.conf scripts/test_infrastructure_security.py scripts/test_runtime_state_release_transaction.py
+git add -- infra/systemd/health-backend.service infra/systemd/dropins/health-backend-runtime-state.conf infra/nginx/health.executor.life.conf backend/scripts/runtime_state_release_transaction.py scripts/test_infrastructure_security.py scripts/test_runtime_state_release_transaction.py
 git commit -m "security(infra): disable raw backend access logs"
 ```
 

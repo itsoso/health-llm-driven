@@ -8,9 +8,10 @@
 
 The compact diet draft card reports the complete number of recognized food
 items but renders only the first four. A user can therefore confirm a record
-without seeing every recognized item. Separately, Uvicorn's default access log
-records the raw request target, including signed upload query parameters. This
-puts short-lived capabilities and private filenames into production logs.
+without seeing every recognized item. Separately, Uvicorn and Nginx default
+access logs record the raw request target, including signed upload query
+parameters. This puts short-lived capabilities and private filenames into
+production logs.
 
 ## Decision
 
@@ -29,7 +30,8 @@ data.
 ### Sanitized access logging
 
 Disable Uvicorn's raw access logger in both production systemd ExecStart
-artifacts. Add one application-owned ASGI middleware that logs only:
+artifacts and disable raw access logging in both Nginx server blocks. Add one
+application-owned ASGI middleware that logs only:
 
 - HTTP method;
 - resolved route template, such as `/api/v1/upload/files/{category}/{file_id}`;
@@ -42,13 +44,17 @@ resolve to a route use the constant `<unmatched>` instead of the raw path.
 Exceptions are re-raised after recording a status of 500 so existing error
 handling remains authoritative.
 
+Existing slow, timeout, and exception logs reuse the same safe route-template
+resolver. Exception logs retain only the exception type, never the exception
+message, because exception text can contain user input or private filenames.
+
 ## Alternatives Rejected
 
 1. **Render every ingredient by default.** Truthful but makes ordinary chat
    cards unnecessarily tall and degrades conversation scanning.
 2. **Keep the first four with no disclosure.** Preserves height but continues
    the current correctness bug.
-3. **Regex-redact Uvicorn log lines.** Fragile because new query keys, encoded
+3. **Regex-redact proxy or Uvicorn log lines.** Fragile because new query keys, encoded
    values, filenames, or future routes can bypass the filter. It also retains
    unnecessary user-specific paths.
 4. **Remove access logging entirely.** Avoids exposure but loses basic route,
@@ -59,8 +65,8 @@ handling remains authoritative.
 - No API, database, write-intent, or health-record schema changes.
 - Ingredient text remains device-visible health data and is not added to logs.
 - Signed upload capabilities remain usable but are absent from new access logs.
-- Existing slow/error logs are outside this slice; this change adds no new raw
-  path logging and does not widen their contents.
+- Existing slow, timeout, and exception logs use the same route-template-only
+  boundary and exclude exception messages.
 - The structured logger is operational telemetry only and must not become a
   user-level audit trail.
 
@@ -75,14 +81,15 @@ handling remains authoritative.
    access record with the route template, method, status, and duration, but none
    of those private values.
 5. An unmatched request logs `<unmatched>` and never the raw request target.
-6. Both production Backend ExecStart artifacts contain `--no-access-log`.
+6. Both production Backend ExecStart artifacts contain `--no-access-log`, and
+   both production Nginx server blocks contain `access_log off`.
 7. Existing card confirmation, Backend routing, timeout, and deployment
    contracts continue to pass.
 
 ## Rollout And Rollback
 
-The Backend middleware and systemd change deploy together so sanitized logging
-is active before raw Uvicorn logging is disabled. The Mobile disclosure is a
-pure JavaScript/TypeScript change and can ship by the guarded production OTA
-path after the Backend deployment is healthy. Rollback is the previous source
-revision; no data migration or repair is required.
+The Backend middleware, systemd, and Nginx changes deploy together so sanitized
+logging is active before raw proxy and Uvicorn logging is disabled. The Mobile
+disclosure is a pure JavaScript/TypeScript change and can ship by the guarded
+production OTA path after the Backend deployment is healthy. Rollback is the
+previous source revision; no data migration or repair is required.
