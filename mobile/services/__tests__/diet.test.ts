@@ -9,7 +9,12 @@ jest.mock('../api', () => ({
   },
 }));
 
-import { createDietRecord, dietRecordImageUrls, type DietRecord } from '../diet';
+import {
+  createDietRecord,
+  dietRecordImageUrls,
+  recalculateDietRecordNutrition,
+  type DietRecord,
+} from '../diet';
 
 describe('diet service', () => {
   beforeEach(() => {
@@ -41,6 +46,47 @@ describe('diet service', () => {
       meal_type: 'lunch',
       food_items: '牛肉面',
     })).rejects.toThrow('diet_record_missing_id');
+  });
+
+  it('sends the caller idempotency key with an authoritative revision', async () => {
+    mockApiPost.mockResolvedValueOnce({
+      data: {
+        id: 88,
+        record_date: '2026-07-09',
+        meal_type: 'lunch',
+        food_items: '牛肉面 2 碗',
+      },
+    });
+
+    await recalculateDietRecordNutrition(88, {
+      food_items: '牛肉面 2 碗',
+      meal_type: 'lunch',
+      expected_updated_at: '2026-08-20T12:00:00Z',
+    }, '11111111-1111-4111-8111-111111111111');
+
+    expect(mockApiPost).toHaveBeenCalledWith(
+      '/diet/records/88/recalculate-nutrition',
+      {
+        food_items: '牛肉面 2 碗',
+        meal_type: 'lunch',
+        expected_updated_at: '2026-08-20T12:00:00Z',
+      },
+      {
+        headers: {
+          'Idempotency-Key': '11111111-1111-4111-8111-111111111111',
+        },
+      },
+    );
+  });
+
+  it('fails before transport when the idempotency key is empty', async () => {
+    await expect(recalculateDietRecordNutrition(88, {
+      food_items: '牛肉面 2 碗',
+      meal_type: 'lunch',
+      expected_updated_at: '2026-08-20T12:00:00Z',
+    }, '')).rejects.toThrow('diet_recalculation_idempotency_key_required');
+
+    expect(mockApiPost).not.toHaveBeenCalled();
   });
 
   it('uses ordered photo assets before legacy image fields and removes duplicates', () => {

@@ -191,6 +191,7 @@ def test_diet_quality_response_uses_today_totals_and_actionable_routes(db, auth_
         "protein": 30.0,
         "carbs": 70.0,
         "fat": 17.0,
+        "fiber": None,
     }
     assert all("问小巴" not in action["label"] for action in card["actions"])
     publish = card["actions"][2]
@@ -472,6 +473,58 @@ def test_diet_adjust_seed_preserves_none_macros_and_normalizes_zh_meal():
     assert seed["protein"] is None
     assert seed["carbs"] is None
     assert seed["fat"] is None
+
+
+def test_diet_adjust_seed_uses_owner_matched_write_response_for_current_revision():
+    response = build_post_record_quality_response(
+        "diet",
+        {
+            "meal_type": "lunch",
+            "food_items": "牛肉饭",
+            "calories": 650,
+            "protein": 28,
+            "carbs": 72,
+            "fat": 18,
+            "fiber": 1,
+        },
+        result=(
+            '{"id":77,"user_id":42,"fiber":4.25,'
+            '"updated_at":"2026-08-20T13:19:00+00:00"}'
+        ),
+        personal_context="",
+        user_id=42,
+        write_verified=True,
+    )
+
+    seed = response["cards"][0]["actions"][1]["payload"]["patch"]["adjust_record"]
+    assert seed["fiber"] == 4.25
+    assert seed["updated_at"] == "2026-08-20T13:19:00+00:00"
+
+
+def test_diet_adjust_seed_rejects_other_owner_write_response_metadata():
+    response = build_post_record_quality_response(
+        "diet",
+        {
+            "meal_type": "lunch",
+            "food_items": "牛肉饭",
+            "calories": 650,
+            "protein": 28,
+            "carbs": 72,
+            "fat": 18,
+            "fiber": 1,
+        },
+        result=(
+            '{"id":77,"user_id":99,"fiber":9.5,'
+            '"updated_at":"2026-08-20T13:19:00+00:00"}'
+        ),
+        personal_context="",
+        user_id=42,
+        write_verified=True,
+    )
+
+    seed = response["cards"][0]["actions"][1]["payload"]["patch"]["adjust_record"]
+    assert seed["fiber"] == 1.0
+    assert "updated_at" not in seed
 
 
 def test_exercise_actions_unchanged_by_diet_adjust_work():

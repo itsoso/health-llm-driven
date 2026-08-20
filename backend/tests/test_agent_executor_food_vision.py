@@ -505,6 +505,8 @@ def test_agent_auto_captures_empty_high_confidence_lunch_photo_with_receipt(
         "protein": result.record.protein,
         "carbs": result.record.carbs,
         "fat": result.record.fat,
+        "fiber": result.record.fiber,
+        "updated_at": None,
     }
     assert "photo_url" not in cards_for_persistence([card])[0]["data"]
 

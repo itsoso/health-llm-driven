@@ -29,9 +29,14 @@ jest.mock('../../../../services/clientEvents', () => ({
 }));
 
 import { CARD_REGISTRY, CARD_MAP, dispatchCard, renderCard, renderServerCards } from '../registry';
+import {
+  DietDraftCardView,
+  shouldCaptureDietPhotoDismiss,
+  shouldDismissDietPhotoGallery,
+} from '../DietDraftCard';
 import type { CardContext } from '../types';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
-import { AppState } from 'react-native';
+import { Animated, AppState, Modal } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import * as WebBrowser from 'expo-web-browser';
 import api from '../../../../services/api';
@@ -61,6 +66,38 @@ const MEDICATION_WRITE_POLICY = {
   ...WRITE_INTENT_POLICY,
   capability_id: 'medication_draft.v1',
 };
+
+function panMoveEvent(
+  dx: number,
+  dy: number,
+  timestamp = 100,
+  previousX = 0,
+  previousY = 0,
+) {
+  return {
+    nativeEvent: { touches: [{}] },
+    touchHistory: {
+      numberActiveTouches: 1,
+      indexOfSingleActiveTouch: 0,
+      mostRecentTimeStamp: timestamp,
+      touchBank: [{
+        touchActive: true,
+        currentTimeStamp: timestamp,
+        currentPageX: dx,
+        currentPageY: dy,
+        previousPageX: previousX,
+        previousPageY: previousY,
+      }],
+    },
+  } as any;
+}
+
+function panStartEvent() {
+  return {
+    nativeEvent: { touches: [{}] },
+    touchHistory: { numberActiveTouches: 1 },
+  } as any;
+}
 
 function makeContext(query: string, overrides?: Partial<CardContext>): CardContext {
   return {
@@ -221,6 +258,116 @@ describe('renderCard 安全降级', () => {
     expect(screen.getByText('2 张餐食照片')).toBeTruthy();
     expect(screen.getByText('1 / 2')).toBeTruthy();
     expect(screen.getByText('2 / 2')).toBeTruthy();
+  });
+
+  it('locks photo dismissal to a dominant vertical gesture', () => {
+    expect(shouldCaptureDietPhotoDismiss({ dx: 10, dy: -24 })).toBe(true);
+    expect(shouldCaptureDietPhotoDismiss({ dx: 120, dy: -25 })).toBe(false);
+    expect(shouldCaptureDietPhotoDismiss({ dx: 3, dy: 8 })).toBe(false);
+
+    expect(shouldDismissDietPhotoGallery({ dx: 12, dy: -110, vy: -0.4 })).toBe(true);
+    expect(shouldDismissDietPhotoGallery({ dx: 8, dy: 38, vy: 1.1 })).toBe(true);
+    expect(shouldDismissDietPhotoGallery({ dx: 120, dy: 105, vy: 1.2 })).toBe(false);
+    expect(shouldDismissDietPhotoGallery({ dx: 5, dy: 42, vy: 0.3 })).toBe(false);
+  });
+
+  it('dismisses the gallery by swiping up or down without stealing horizontal paging', () => {
+    const screen = render(renderCard({
+      type: 'diet_draft',
+      data: {
+        meal_type: 'lunch',
+        food_items: '鱼 + 蔬菜',
+        calories: 620,
+        recorded: true,
+        photo_urls: [
+          '/api/v1/upload/files/diet/1/first.jpg?signature=one',
+          '/api/v1/upload/files/diet/1/second.jpg?signature=two',
+        ],
+      },
+    })!);
+
+    fireEvent.press(screen.getByTestId('diet-photo-cover'));
+    let gallery = screen.getByTestId('diet-photo-gallery');
+    expect(gallery.props.onStartShouldSetResponderCapture(panStartEvent())).toBe(false);
+    expect(gallery.props.onMoveShouldSetResponderCapture(panMoveEvent(130, 22))).toBe(false);
+    expect(screen.getByTestId('diet-photo-gallery')).toBeTruthy();
+    expect(gallery.props.onMoveShouldSetResponderCapture(
+      panMoveEvent(12, -112, 200, 130, 22),
+    )).toBe(false);
+
+    // A horizontal intent remains locked for that touch; a fresh vertical touch may dismiss.
+    expect(gallery.props.onStartShouldSetResponderCapture(panStartEvent())).toBe(false);
+    expect(gallery.props.onMoveShouldSetResponderCapture(panMoveEvent(12, -112))).toBe(true);
+
+    act(() => {
+      gallery.props.onResponderRelease({});
+    });
+    expect(screen.queryByTestId('diet-photo-gallery')).toBeNull();
+
+    fireEvent.press(screen.getByTestId('diet-photo-cover'));
+    gallery = screen.getByTestId('diet-photo-gallery');
+    expect(gallery.props.onStartShouldSetResponderCapture(panStartEvent())).toBe(false);
+    expect(gallery.props.onMoveShouldSetResponderCapture(panMoveEvent(9, 104))).toBe(true);
+    act(() => {
+      gallery.props.onResponderRelease({});
+    });
+    expect(screen.queryByTestId('diet-photo-gallery')).toBeNull();
+  });
+
+  it('springs a short vertical photo swipe back and keeps the gallery open', () => {
+    const springStart = jest.fn();
+    const springSpy = jest.spyOn(Animated, 'spring').mockReturnValue({ start: springStart } as any);
+    const screen = render(renderCard({
+      type: 'diet_draft',
+      data: {
+        meal_type: 'lunch',
+        food_items: '鱼 + 蔬菜',
+        calories: 620,
+        recorded: true,
+        photo_urls: ['/api/v1/upload/files/diet/1/first.jpg?signature=one'],
+      },
+    })!);
+
+    fireEvent.press(screen.getByTestId('diet-photo-cover'));
+    const gallery = screen.getByTestId('diet-photo-gallery');
+    expect(gallery.props.onStartShouldSetResponderCapture(panStartEvent())).toBe(false);
+    expect(gallery.props.onMoveShouldSetResponderCapture(panMoveEvent(4, 38))).toBe(true);
+    act(() => {
+      gallery.props.onResponderRelease({});
+    });
+
+    expect(screen.getByTestId('diet-photo-gallery')).toBeTruthy();
+    expect(springSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ toValue: 0, useNativeDriver: true }),
+    );
+    expect(springStart).toHaveBeenCalledTimes(1);
+    springSpy.mockRestore();
+  });
+
+  it('retains the accessible close button and Android back dismissal', () => {
+    const screen = render(renderCard({
+      type: 'diet_draft',
+      data: {
+        meal_type: 'lunch',
+        food_items: '鱼 + 蔬菜',
+        calories: 620,
+        recorded: true,
+        photo_urls: ['/api/v1/upload/files/diet/1/first.jpg?signature=one'],
+      },
+    })!);
+
+    fireEvent.press(screen.getByTestId('diet-photo-cover'));
+    const close = screen.getByRole('button', { name: '关闭餐食照片' });
+    expect(close).toHaveProp('accessibilityHint', '也可以上下滑动关闭');
+    fireEvent.press(close);
+    expect(screen.queryByTestId('diet-photo-gallery')).toBeNull();
+
+    fireEvent.press(screen.getByTestId('diet-photo-cover'));
+    act(() => {
+      screen.UNSAFE_getByType(Modal).props.onRequestClose();
+    });
+    expect(screen.queryByTestId('diet-photo-gallery')).toBeNull();
   });
 
   it('refreshes a mounted card when the server projection adds another photo', () => {
@@ -2107,6 +2254,7 @@ describe('renderCard 安全降级', () => {
               protein: 16,
               carbs: 65,
               fat: 10,
+              fiber: 6,
             },
           },
         },
@@ -2116,12 +2264,96 @@ describe('renderCard 安全降级', () => {
 
     const element = renderCard(descriptor, { onAction: jest.fn() });
     expect(element).not.toBeNull();
-    const { getByText, getByTestId } = render(element!);
+    const { getByLabelText, getByText, getByTestId } = render(element!);
 
     fireEvent.press(getByText('调整记录'));
 
     expect(getByTestId('diet-adjust-inline-editor')).toBeTruthy();
     expect(getByText('保存修正')).toBeTruthy();
+    expect((getByLabelText('膳食纤维').props as any).value).toBe('6');
+  });
+
+  it('clears stale diet draft nutrients from a complete recalculation response', async () => {
+    (api.post as jest.Mock).mockClear();
+    (api.post as jest.Mock).mockResolvedValueOnce({
+      data: {
+        id: 805,
+        meal_type: 'lunch',
+        food_items: '番茄炒蛋面 2 碗',
+        calories: 840,
+        protein: null,
+        carbs: 130,
+        fat: null,
+        fiber: null,
+      },
+    });
+    const onDraftChange = jest.fn();
+    const screen = render(
+      <DietDraftCardView
+        recorded
+        record_id={805}
+        updated_at="2026-08-20T12:00:00Z"
+        meal_type="lunch"
+        food_items="番茄炒蛋面 1 碗"
+        calories={420}
+        protein={16}
+        carbs={65}
+        fat={10}
+        fiber={6}
+        confidence={0.85}
+        suggestions={['旧下一餐建议']}
+        post_meal_walk={{ recommended: true, minutes: 10 }}
+        next_meal_detail={{ summary: '旧下一餐详情' }}
+        expanded_sections={['adjust_record', 'next_meal']}
+        adjust_record={{
+          record_id: 805,
+          meal_type: 'lunch',
+          food_items: '番茄炒蛋面 1 碗',
+          calories: 420,
+          protein: 16,
+          carbs: 65,
+          fat: 10,
+          fiber: 6,
+        }}
+        onDraftChange={onDraftChange}
+      />,
+    );
+
+    fireEvent.changeText(screen.getByLabelText('食物描述'), '番茄炒蛋面 2 碗');
+    await act(async () => {
+      fireEvent.press(screen.getByText('保存修正'));
+    });
+
+    await waitFor(() => expect(onDraftChange).toHaveBeenCalledTimes(1));
+    expect(api.post).toHaveBeenCalledWith('/diet/records/805/recalculate-nutrition', {
+      meal_type: 'lunch',
+      food_items: '番茄炒蛋面 2 碗',
+      expected_updated_at: '2026-08-20T12:00:00Z',
+    }, {
+      headers: {
+        'Idempotency-Key': expect.any(String),
+      },
+    });
+    const next = onDraftChange.mock.calls[0][0];
+    expect(next).toEqual(expect.objectContaining({
+      calories: 840,
+      protein: null,
+      carbs: 130,
+      fat: null,
+      fiber: null,
+    }));
+    expect(next.adjust_record).toEqual(expect.objectContaining({
+      calories: 840,
+      protein: null,
+      carbs: 130,
+      fat: null,
+      fiber: null,
+    }));
+    expect(next).not.toHaveProperty('confidence');
+    expect(next).not.toHaveProperty('suggestions');
+    expect(next).not.toHaveProperty('post_meal_walk');
+    expect(next).not.toHaveProperty('next_meal_detail');
+    expect(next.expanded_sections).toEqual([]);
   });
 
   it('expands next-meal guidance inside a diet draft card without dispatching an action', () => {

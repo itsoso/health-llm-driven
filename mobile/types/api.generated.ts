@@ -6156,6 +6156,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/diet/records/{record_id}/recalculate-nutrition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recalculate Diet Record Nutrition
+         * @description Estimate and atomically replace nutrition for one owned diet record.
+         */
+        post: operations["recalculate_diet_record_nutrition_api_v1_diet_records__record_id__recalculate_nutrition_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/diet/records/{record_id}": {
         parameters: {
             query?: never;
@@ -23322,6 +23342,17 @@ export interface components {
              * Format: date-time
              */
             expires_at: string;
+        };
+        /**
+         * DietRecordNutritionRecalculateRequest
+         * @description Recalculate one owned record from a complete user-confirmed description.
+         */
+        DietRecordNutritionRecalculateRequest: {
+            /** Food Items */
+            food_items: string;
+            meal_type?: components["schemas"]["MealType"] | null;
+            /** Expected Updated At */
+            expected_updated_at: string | null;
         };
         /**
          * DietRecordResponse
@@ -43697,6 +43728,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FrequentFood"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recalculate_diet_record_nutrition_api_v1_diet_records__record_id__recalculate_nutrition_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                record_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DietRecordNutritionRecalculateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DietRecordResponse"];
                 };
             };
             /** @description Validation Error */

@@ -9,7 +9,12 @@ import {
   revaRadii,
   revaSemantic,
 } from '../../../constants/revaTheme';
-import { updateDietRecord, type DietRecordCreate, type MealType } from '../../../services/diet';
+import {
+  recalculateDietRecordNutrition,
+  updateDietRecord,
+  type DietRecordUpdate,
+  type MealType,
+} from '../../../services/diet';
 
 interface RecordQualityData {
   domain?: unknown;
@@ -26,6 +31,14 @@ interface RecordQualityData {
   next_meal_detail?: unknown;
   adjust_record?: unknown;
   adjust_saved?: unknown;
+  meal_type?: unknown;
+  food_items?: unknown;
+  calories?: unknown;
+  protein?: unknown;
+  carbs?: unknown;
+  fat?: unknown;
+  fiber?: unknown;
+  updated_at?: unknown;
   boundary?: unknown;
 }
 
@@ -114,6 +127,59 @@ function sanitizeNumberText(value: string): number | undefined {
   if (!trimmed) return undefined;
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 10) / 10 : undefined;
+}
+
+function normalizeFoodText(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+const DIET_RECALCULATION_SECURE_RANDOM_UNAVAILABLE = 'diet_recalculation_secure_random_unavailable';
+
+interface SecureRandomCrypto {
+  randomUUID?: () => string;
+  getRandomValues?: (bytes: Uint8Array) => Uint8Array;
+}
+
+function createDietRecalculationOperationKey(): string {
+  const cryptoApi = (globalThis as unknown as { crypto?: SecureRandomCrypto }).crypto;
+  if (typeof cryptoApi?.randomUUID === 'function') {
+    try {
+      const key = cryptoApi.randomUUID().trim();
+      if (key) return key;
+    } catch {
+      // Fall through to getRandomValues when the platform exposes both APIs.
+    }
+  }
+  if (typeof cryptoApi?.getRandomValues === 'function') {
+    try {
+      const bytes = cryptoApi.getRandomValues(new Uint8Array(16));
+      bytes[6] = (bytes[6] & 0x0f) | 0x40;
+      bytes[8] = (bytes[8] & 0x3f) | 0x80;
+      const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    } catch {
+      // The write must fail closed when secure randomness is unavailable.
+    }
+  }
+  throw new Error(DIET_RECALCULATION_SECURE_RANDOM_UNAVAILABLE);
+}
+
+function responseStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const response = (error as { response?: unknown }).response;
+  if (!response || typeof response !== 'object') return undefined;
+  const status = (response as { status?: unknown }).status;
+  return typeof status === 'number' && Number.isFinite(status) ? status : undefined;
+}
+
+function clearRecordQualityDietDerivations(data: RecordQualityData): RecordQualityData {
+  const next = { ...data };
+  delete next.progress;
+  delete next.primary_judgement;
+  delete next.personal_cautions;
+  delete next.next_action;
+  delete next.next_meal_detail;
+  return next;
 }
 
 function mealTypeValue(value: unknown): MealType {
@@ -318,14 +384,26 @@ export function RecordQualityCardView(props: RecordQualityViewProps) {
       {showAdjustEditor && adjustRecord && adjustRecordId != null ? (
         <DietRecordAdjustEditor
           recordId={adjustRecordId}
-          seed={adjustRecord}
+          seed={{
+            ...adjustRecord,
+            ...(!Object.prototype.hasOwnProperty.call(adjustRecord, 'fiber')
+              ? { fiber: data.fiber }
+              : {}),
+            ...(!Object.prototype.hasOwnProperty.call(adjustRecord, 'updated_at')
+              ? { updated_at: data.updated_at }
+              : {}),
+          }}
           onSaved={(applied) => {
             if (!onCardDataChange) return;
+            const currentData = clearRecordQualityDietDerivations(data);
             const remainingSections = (Array.isArray(data.expanded_sections) ? data.expanded_sections : [])
               .map((item) => text(item))
-              .filter((item): item is string => Boolean(item) && item !== 'adjust_record');
+              .filter((item): item is string => (
+                Boolean(item) && item !== 'adjust_record' && item !== 'next_meal'
+              ));
             onCardDataChange({
-              ...data,
+              ...currentData,
+              ...applied.adjustRecord,
               ...applied.cardFace,
               adjust_record: applied.adjustRecord,
               expanded_sections: remainingSections,
@@ -496,47 +574,130 @@ export function DietRecordAdjustEditor({
   const [protein, setProtein] = React.useState(() => editNumber(seed.protein));
   const [carbs, setCarbs] = React.useState(() => editNumber(seed.carbs));
   const [fat, setFat] = React.useState(() => editNumber(seed.fat));
+  const [fiber, setFiber] = React.useState(() => editNumber(seed.fiber));
   const [saving, setSaving] = React.useState(false);
-  const [error, setError] = React.useState(false);
+  const [error, setError] = React.useState<
+    'save' | 'recalculate' | 'conflict' | 'secure_random' | null
+  >(null);
   const [collapsed, setCollapsed] = React.useState(false);
+  const initialFood = React.useRef(normalizeFoodText(text(seed.food_items) || '')).current;
+  const seedHasRevision = Object.prototype.hasOwnProperty.call(seed, 'updated_at');
+  const expectedUpdatedAt = seed.updated_at === null ? null : text(seed.updated_at);
+  const revisionKnown = seedHasRevision && expectedUpdatedAt !== undefined;
+  const recalculationOperation = React.useRef<{ signature: string; key: string } | null>(null);
+  const foodChanged = normalizeFoodText(food) !== initialFood;
+  const revisionMissing = foodChanged && !revisionKnown;
+  const revisionConflict = error === 'conflict';
+  const secureRandomUnavailable = error === 'secure_random';
+  const saveBlocked = saving || revisionMissing || revisionConflict || secureRandomUnavailable;
 
-  const buildPatch = React.useCallback((): Partial<DietRecordCreate> => {
+  const buildPatch = React.useCallback((): DietRecordUpdate => {
     // food_items + meal_type 始终随保存写回; 数字仅在有效值时带上(空/负 → 不覆盖后端值)
-    const patch: Partial<DietRecordCreate> = { meal_type: mealType, food_items: food.trim() };
+    const patch: DietRecordUpdate = { meal_type: mealType, food_items: food.trim() };
     const cal = sanitizeNumberText(calories);
     const pro = sanitizeNumberText(protein);
     const car = sanitizeNumberText(carbs);
     const fatValue = sanitizeNumberText(fat);
+    const fiberValue = sanitizeNumberText(fiber);
     if (cal != null) patch.calories = cal;
     if (pro != null) patch.protein = pro;
     if (car != null) patch.carbs = car;
     if (fatValue != null) patch.fat = fatValue;
+    if (fiberValue != null) patch.fiber = fiberValue;
     return patch;
-  }, [mealType, food, calories, protein, carbs, fat]);
+  }, [mealType, food, calories, protein, carbs, fat, fiber]);
 
   const handleSave = React.useCallback(async () => {
-    if (saving) return; // action-lock: 防双击
+    if (saveBlocked) return; // action-lock: 防双击 / 防缺失或旧 revision 重试
     setSaving(true);
-    setError(false);
+    setError(null);
     const patch = buildPatch();
     try {
-      const updated = await updateDietRecord(recordId, patch);
+      let updated;
+      if (foodChanged) {
+        if (!revisionKnown || expectedUpdatedAt === undefined) {
+          setSaving(false);
+          return;
+        }
+        const normalizedFood = normalizeFoodText(food);
+        const signature = JSON.stringify([
+          recordId,
+          expectedUpdatedAt,
+          mealType,
+          normalizedFood,
+        ]);
+        if (recalculationOperation.current?.signature !== signature) {
+          recalculationOperation.current = {
+            signature,
+            key: createDietRecalculationOperationKey(),
+          };
+        }
+        updated = await recalculateDietRecordNutrition(recordId, {
+          meal_type: mealType,
+          food_items: normalizedFood,
+          expected_updated_at: expectedUpdatedAt,
+        }, recalculationOperation.current.key);
+      } else {
+        updated = await updateDietRecord(recordId, patch);
+      }
       const savedMealType = (updated.meal_type as MealType) || mealType;
       const savedFood = updated.food_items || food.trim();
-      const summary = buildSummary(savedMealType, updated.calories, updated.protein, updated.carbs, updated.fat);
-      const metrics = buildMetrics(updated.calories, updated.protein, updated.carbs, updated.fat);
-      const adjustRecord: Record<string, unknown> = { record_id: recordId, meal_type: savedMealType, food_items: savedFood };
-      if (updated.calories != null) adjustRecord.calories = updated.calories;
-      if (updated.protein != null) adjustRecord.protein = updated.protein;
-      if (updated.carbs != null) adjustRecord.carbs = updated.carbs;
-      if (updated.fat != null) adjustRecord.fat = updated.fat;
+      const summary = buildSummary(
+        savedMealType,
+        updated.calories,
+        updated.protein,
+        updated.carbs,
+        updated.fat,
+        updated.fiber,
+      );
+      const metrics = buildMetrics(
+        updated.calories,
+        updated.protein,
+        updated.carbs,
+        updated.fat,
+        updated.fiber,
+      );
+      const adjustRecord: Record<string, unknown> = {
+        record_id: recordId,
+        meal_type: savedMealType,
+        food_items: savedFood,
+        calories: updated.calories ?? null,
+        protein: updated.protein ?? null,
+        carbs: updated.carbs ?? null,
+        fat: updated.fat ?? null,
+        fiber: updated.fiber ?? null,
+        // null is a known revision; undefined deliberately clears any stale seed.
+        updated_at: Object.prototype.hasOwnProperty.call(updated, 'updated_at')
+          ? updated.updated_at
+          : undefined,
+      };
       setCollapsed(true);
       onSaved({ cardFace: { summary, metrics }, adjustRecord });
-    } catch {
-      setError(true);
+    } catch (cause) {
+      const secureRandomFailure = (
+        cause instanceof Error
+        && cause.message === DIET_RECALCULATION_SECURE_RANDOM_UNAVAILABLE
+      );
+      setError(
+        secureRandomFailure
+          ? 'secure_random'
+          : foodChanged && responseStatus(cause) === 409
+          ? 'conflict'
+          : foodChanged ? 'recalculate' : 'save',
+      );
       setSaving(false); // 失败保留输入, 允许重试
     }
-  }, [saving, buildPatch, recordId, mealType, food, onSaved]);
+  }, [
+    saveBlocked,
+    buildPatch,
+    food,
+    foodChanged,
+    recordId,
+    mealType,
+    revisionKnown,
+    expectedUpdatedAt,
+    onSaved,
+  ]);
 
   if (collapsed) return null;
 
@@ -579,9 +740,18 @@ export function DietRecordAdjustEditor({
         <AdjustNumberInput label="蛋白" unit="g" value={protein} onChangeText={setProtein} editable={!saving} />
         <AdjustNumberInput label="碳水" unit="g" value={carbs} onChangeText={setCarbs} editable={!saving} />
         <AdjustNumberInput label="脂肪" unit="g" value={fat} onChangeText={setFat} editable={!saving} />
+        <AdjustNumberInput label="膳食纤维" unit="g" value={fiber} onChangeText={setFiber} editable={!saving} />
       </View>
-      {error ? (
-        <Text maxFontSizeMultiplier={1.15} style={styles.adjustError}>保存失败，请重试</Text>
+      {revisionMissing || error ? (
+        <Text maxFontSizeMultiplier={1.15} style={styles.adjustError}>
+          {revisionMissing
+            ? '记录版本缺失，请取消并重新打开或刷新后再修改'
+            : error === 'conflict'
+            ? '记录已在其他位置更新，请取消并重新打开后再修改'
+            : error === 'secure_random'
+              ? '无法安全生成保存标识，请取消并重新打开后再试'
+            : error === 'recalculate' ? '营养重新计算失败，请重试' : '保存失败，请重试'}
+        </Text>
       ) : null}
       <View style={styles.adjustActionRow}>
         <Pressable
@@ -596,10 +766,15 @@ export function DietRecordAdjustEditor({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="保存修正"
-          accessibilityState={{ disabled: saving, busy: saving }}
-          disabled={saving}
+          accessibilityState={{ disabled: saveBlocked, busy: saving }}
+          disabled={saveBlocked}
           onPress={handleSave}
-          style={({ pressed }) => [styles.saveButton, saving && styles.saveButtonBusy, pressed && !saving && { opacity: 0.86 }]}
+          style={({ pressed }) => [
+            styles.saveButton,
+            saving && styles.saveButtonBusy,
+            (revisionMissing || revisionConflict || secureRandomUnavailable) && styles.buttonDisabled,
+            pressed && !saveBlocked && { opacity: 0.86 },
+          ]}
         >
           {saving ? <ActivityIndicator size="small" color="#fff" /> : (
             <Ionicons name="checkmark-circle" size={14} color="#fff" />
@@ -648,12 +823,14 @@ function buildSummary(
   protein: number | null,
   carbs: number | null,
   fat: number | null,
+  fiber: number | null,
 ): string {
   const parts = [MEAL_LABELS[mealType] || '餐食'];
-  if (calories != null) parts.push(`${Math.round(calories)} kcal`);
-  if (protein != null) parts.push(`蛋白 ${Math.round(protein)}g`);
-  if (carbs != null) parts.push(`碳水 ${Math.round(carbs)}g`);
-  if (fat != null) parts.push(`脂肪 ${Math.round(fat)}g`);
+  if (calories != null) parts.push(`${formatDisplayNumber(calories)} kcal`);
+  if (protein != null) parts.push(`蛋白 ${formatDisplayNumber(protein)}g`);
+  if (carbs != null) parts.push(`碳水 ${formatDisplayNumber(carbs)}g`);
+  if (fat != null) parts.push(`脂肪 ${formatDisplayNumber(fat)}g`);
+  if (fiber != null) parts.push(`纤维 ${formatDisplayNumber(fiber)}g`);
   return parts.join(' · ');
 }
 
@@ -662,12 +839,14 @@ function buildMetrics(
   protein: number | null,
   carbs: number | null,
   fat: number | null,
+  fiber: number | null,
 ): MetricItem[] {
   return [
-    calories != null ? { label: '热量', value: `${Math.round(calories)}kcal` } : null,
-    protein != null ? { label: '蛋白', value: `${Math.round(protein)}g` } : null,
-    carbs != null ? { label: '碳水', value: `${Math.round(carbs)}g` } : null,
-    fat != null ? { label: '脂肪', value: `${Math.round(fat)}g` } : null,
+    calories != null ? { label: '热量', value: `${formatDisplayNumber(calories)}kcal` } : null,
+    protein != null ? { label: '蛋白', value: `${formatDisplayNumber(protein)}g` } : null,
+    carbs != null ? { label: '碳水', value: `${formatDisplayNumber(carbs)}g` } : null,
+    fat != null ? { label: '脂肪', value: `${formatDisplayNumber(fat)}g` } : null,
+    fiber != null ? { label: '纤维', value: `${formatDisplayNumber(fiber)}g` } : null,
   ].filter((item): item is MetricItem => item != null);
 }
 

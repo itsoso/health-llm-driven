@@ -1,4 +1,5 @@
 """饮食记录API测试"""
+import json
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -888,6 +889,872 @@ class TestDietAPI:
         assert record.ai_confidence is None
         assert record.ai_raw_result is None
         assert record.health_tips is None
+
+    def test_recalculate_nutrition_authorizes_owner_before_model_work(
+        self, client, db, auth_headers, monkeypatch
+    ):
+        from app.services.ai.food_recognition import food_recognition_service
+
+        other_user = User(
+            username="diet-recalc-other",
+            email="diet-recalc-other@example.com",
+            hashed_password="hashed",
+            name="Other",
+            is_active=True,
+            is_approved=True,
+        )
+        db.add(other_user)
+        db.commit()
+        db.refresh(other_user)
+        record = DietRecord(
+            user_id=other_user.id,
+            record_date=date.today(),
+            meal_type="lunch",
+            food_name="虾滑鸡蛋汤",
+            food_items="一碗虾滑鸡蛋汤",
+            calories=180,
+            protein=16,
+            carbs=8,
+            fat=9,
+            fiber=1,
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+
+        model_called = False
+
+        def forbidden_estimate(_food_description):
+            nonlocal model_called
+            model_called = True
+            raise AssertionError("owner authorization must precede model work")
+
+        monkeypatch.setattr(
+            food_recognition_service,
+            "estimate_nutrition_from_text",
+            forbidden_estimate,
+        )
+
+        response = client.post(
+            f"/api/v1/diet/records/{record.id}/recalculate-nutrition",
+            json={
+                "food_items": "两碗虾滑鸡蛋汤",
+                "expected_updated_at": None,
+            },
+            headers={
+                **auth_headers,
+                "Idempotency-Key": "diet-recalc-owner-check-0001",
+            },
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Record not found"
+        assert model_called is False
+        db.refresh(record)
+        assert record.food_items == "一碗虾滑鸡蛋汤"
+        assert record.calories == 180
+
+    def test_recalculate_nutrition_commits_calibrated_five_fields_and_provenance(
+        self, client, db, auth_headers, test_user, monkeypatch
+    ):
+        from app.services.ai.food_recognition import food_recognition_service
+        from app.twin import cache as twin_cache
+
+        db.add(FoodItem(
+            food_id="cfc:chicken_breast-recalc",
+            canonical_name="鸡胸肉",
+            aliases=["鸡肉"],
+            calibration_names=["鸡胸肉"],
+            locale="zh-CN",
+            source="china_food_composition",
+            source_ref="diet-recalc-test",
+        ))
+        db.add(FoodNutrient(
+            food_id="cfc:chicken_breast-recalc",
+            kcal_per_100g=165.0,
+            protein_g_per_100g=31.0,
+            carbs_g_per_100g=0.0,
+            fat_g_per_100g=3.6,
+            fiber_g_per_100g=0.0,
+            source="china_food_composition",
+            source_ref="diet-recalc-test",
+        ))
+        record = DietRecord(
+            user_id=test_user.id,
+            record_date=date.today(),
+            meal_type="lunch",
+            food_name="鸡胸肉",
+            food_items="鸡胸肉 100g",
+            source="ai_estimate",
+            calories=165,
+            protein=31,
+            carbs=0,
+            fat=3.6,
+            fiber=0,
+            quantity=1,
+            unit="bowl",
+            alcohol_units=None,
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+
+        def estimate(_food_description):
+            return {
+                "success": True,
+                "foods": [{
+                    "name": "鸡胸肉",
+                    "quantity": "200g",
+                    "calories": 999,
+                    "protein": 1,
+                    "carbs": 50,
+                    "fat": 40,
+                    "fiber": 8,
+                    "confidence": 0.91,
+                }],
+                # These model-authored totals must never be persisted directly.
+                "total_calories": 4999,
+                "total_protein": 999,
+                "total_carbs": 999,
+                "total_fat": 499,
+                "total_fiber": 199,
+                "health_tips": "估算值，仅供饮食记录参考",
+            }
+
+        monkeypatch.setattr(
+            food_recognition_service,
+            "estimate_nutrition_from_text",
+            estimate,
+        )
+        invalidation_calls = []
+
+        def unavailable_invalidation(user_id):
+            invalidation_calls.append(user_id)
+            raise RuntimeError("redis private connection detail")
+
+        monkeypatch.setattr(
+            twin_cache,
+            "invalidate_twin",
+            unavailable_invalidation,
+        )
+        original_commit = db.commit
+        commit_calls = 0
+
+        def counting_commit():
+            nonlocal commit_calls
+            commit_calls += 1
+            return original_commit()
+
+        monkeypatch.setattr(db, "commit", counting_commit)
+
+        response = client.post(
+            f"/api/v1/diet/records/{record.id}/recalculate-nutrition",
+            json={
+                "food_items": "鸡胸肉 200g",
+                "meal_type": "dinner",
+                "expected_updated_at": None,
+            },
+            headers={
+                **auth_headers,
+                "Idempotency-Key": "diet-recalc-calibrated-five-0001",
+            },
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert commit_calls == 1
+        assert invalidation_calls == [test_user.id]
+        assert body["food_items"] == "鸡胸肉 200g"
+        assert body["meal_type"] == "dinner"
+        assert body["calories"] == 330
+        assert body["protein"] == 62
+        assert body["carbs"] == 0
+        assert body["fat"] == 7.2
+        assert body["fiber"] == 0
+        assert body["source"] == "china_food_composition"
+        assert body["food_id"] == "cfc:chicken_breast-recalc"
+        assert body["ai_recognized"] == 1
+        assert body["ai_confidence"] is None
+        assert body["health_tips"] is None
+
+        db.refresh(record)
+        assert record.food_name == "鸡胸肉"
+        assert record.quantity is None
+        assert record.unit is None
+        assert record.alcohol_units is None
+        assert record.ai_confidence is None
+        assert record.health_tips is None
+        provenance = json.loads(record.ai_raw_result)
+        assert provenance["recognition_version"] == "diet_text_recalculation_v1"
+        assert provenance["provenance"]["method"] == "text_estimate_user_corrected"
+        assert provenance["provenance"]["estimated"] is True
+        assert provenance["foods"][0]["nutrition_basis"] == "food_table"
+        assert provenance["total_fiber"] == 0
+
+    def test_recalculate_nutrition_rejects_forged_totals_with_zero_write(
+        self, client, db, auth_headers, test_user, monkeypatch
+    ):
+        from app.services.ai.food_recognition import food_recognition_service
+
+        record = DietRecord(
+            user_id=test_user.id,
+            record_date=date.today(),
+            meal_type="lunch",
+            food_name="虾滑鸡蛋汤",
+            food_items="一碗虾滑鸡蛋汤",
+            source="ai_estimate",
+            calories=180,
+            protein=16,
+            carbs=8,
+            fat=9,
+            fiber=1,
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+
+        monkeypatch.setattr(
+            food_recognition_service,
+            "estimate_nutrition_from_text",
+            lambda _description: {
+                "success": True,
+                "foods": [{"name": "虾滑鸡蛋汤"}],
+                "total_calories": 360,
+                "total_protein": 32,
+                "total_carbs": 16,
+                "total_fat": 18,
+                "total_fiber": 2,
+            },
+        )
+
+        response = client.post(
+            f"/api/v1/diet/records/{record.id}/recalculate-nutrition",
+            json={
+                "food_items": "两碗虾滑鸡蛋汤",
+                "expected_updated_at": None,
+            },
+            headers={
+                **auth_headers,
+                "Idempotency-Key": "diet-recalc-forged-totals-0001",
+            },
+        )
+
+        assert response.status_code == 422
+        assert response.json()["detail"] == "未获得可用的营养估算，请修改描述后重试"
+        db.refresh(record)
+        assert record.food_items == "一碗虾滑鸡蛋汤"
+        assert (record.calories, record.protein, record.carbs, record.fat, record.fiber) == (
+            180,
+            16,
+            8,
+            9,
+            1,
+        )
+
+    def test_recalculate_nutrition_detects_during_estimate_conflict(
+        self, client, db, auth_headers, test_user, monkeypatch
+    ):
+        from app.services.ai.food_recognition import food_recognition_service
+
+        record = DietRecord(
+            user_id=test_user.id,
+            record_date=date.today(),
+            meal_type="lunch",
+            food_name="虾滑鸡蛋汤",
+            food_items="一碗虾滑鸡蛋汤",
+            calories=180,
+            protein=16,
+            carbs=8,
+            fat=9,
+            fiber=1,
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+
+        def estimate_with_concurrent_write(_description):
+            # A separate ORM Session proves the post-estimate SELECT FOR UPDATE
+            # observes a committed writer, rather than only an in-session edit.
+            from sqlalchemy.orm import Session as OrmSession
+
+            with OrmSession(bind=db.get_bind()) as concurrent_db:
+                concurrent_record = concurrent_db.get(DietRecord, record.id)
+                concurrent_record.food_items = "并发修改后的午餐"
+                concurrent_record.notes = "并发请求已保存"
+                concurrent_db.commit()
+            return {
+                "success": True,
+                "foods": [{
+                    "name": "虾滑鸡蛋汤",
+                    "quantity": "两碗",
+                    "calories": 360,
+                    "protein": 32,
+                    "carbs": 16,
+                    "fat": 18,
+                    "fiber": 2,
+                }],
+            }
+
+        monkeypatch.setattr(
+            food_recognition_service,
+            "estimate_nutrition_from_text",
+            estimate_with_concurrent_write,
+        )
+
+        response = client.post(
+            f"/api/v1/diet/records/{record.id}/recalculate-nutrition",
+            json={
+                "food_items": "两碗虾滑鸡蛋汤",
+                "expected_updated_at": None,
+            },
+            headers={
+                **auth_headers,
+                "Idempotency-Key": "diet-recalc-concurrent-change-0001",
+            },
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == "饮食记录已更新，请刷新后重试"
+        db.refresh(record)
+        assert record.food_items == "并发修改后的午餐"
+        assert record.notes == "并发请求已保存"
+        assert record.calories == 180
+
+    def test_recalculate_nutrition_internal_failure_is_generic_and_zero_write(
+        self, client, db, auth_headers, test_user, monkeypatch
+    ):
+        from app.services.ai.food_recognition import food_recognition_service
+
+        record = DietRecord(
+            user_id=test_user.id,
+            record_date=date.today(),
+            meal_type="lunch",
+            food_name="虾滑鸡蛋汤",
+            food_items="一碗虾滑鸡蛋汤",
+            calories=180,
+            protein=16,
+            carbs=8,
+            fat=9,
+            fiber=1,
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+
+        def explode(_description):
+            raise RuntimeError("provider secret token and private meal text")
+
+        monkeypatch.setattr(
+            food_recognition_service,
+            "estimate_nutrition_from_text",
+            explode,
+        )
+
+        response = client.post(
+            f"/api/v1/diet/records/{record.id}/recalculate-nutrition",
+            json={
+                "food_items": "两碗虾滑鸡蛋汤",
+                "expected_updated_at": None,
+            },
+            headers={
+                **auth_headers,
+                "Idempotency-Key": "diet-recalc-provider-failure-0001",
+            },
+        )
+
+        assert response.status_code == 500
+        assert response.json()["detail"] == "营养重算失败，请稍后重试"
+        db.refresh(record)
+        assert record.food_items == "一碗虾滑鸡蛋汤"
+        assert record.calories == 180
+
+    @pytest.mark.parametrize(
+        "estimated_nutrition",
+        (
+            {"calories": 360},
+            {"protein": 32},
+        ),
+        ids=("calories_without_macro", "macro_without_calories"),
+    )
+    def test_recalculate_nutrition_requires_calories_and_at_least_one_macro(
+        self,
+        client,
+        db,
+        auth_headers,
+        test_user,
+        monkeypatch,
+        estimated_nutrition,
+    ):
+        from app.services.ai.food_recognition import food_recognition_service
+
+        record = DietRecord(
+            user_id=test_user.id,
+            record_date=date.today(),
+            meal_type="lunch",
+            food_name="虾滑鸡蛋汤",
+            food_items="一碗虾滑鸡蛋汤",
+            calories=180,
+            protein=16,
+            carbs=8,
+            fat=9,
+            fiber=1,
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+
+        monkeypatch.setattr(
+            food_recognition_service,
+            "estimate_nutrition_from_text",
+            lambda _description: {
+                "success": True,
+                "foods": [{
+                    "name": "虾滑鸡蛋汤",
+                    "quantity": "两碗",
+                    **estimated_nutrition,
+                }],
+            },
+        )
+
+        response = client.post(
+            f"/api/v1/diet/records/{record.id}/recalculate-nutrition",
+            json={
+                "food_items": "两碗虾滑鸡蛋汤",
+                "expected_updated_at": None,
+            },
+            headers={
+                **auth_headers,
+                "Idempotency-Key": "diet-recalc-incomplete-totals-0001",
+            },
+        )
+
+        assert response.status_code == 422
+        assert response.json()["detail"] == "未获得可用的营养估算，请修改描述后重试"
+        db.refresh(record)
+        assert record.food_items == "一碗虾滑鸡蛋汤"
+        assert (record.calories, record.protein, record.carbs, record.fat, record.fiber) == (
+            180,
+            16,
+            8,
+            9,
+            1,
+        )
+
+    def test_recalculate_nutrition_response_failure_rolls_back_the_write(
+        self, client, db, auth_headers, test_user, monkeypatch
+    ):
+        from app.api import diet as diet_api
+        from app.services.ai.food_recognition import food_recognition_service
+
+        record = DietRecord(
+            user_id=test_user.id,
+            record_date=date.today(),
+            meal_type="lunch",
+            food_name="虾滑鸡蛋汤",
+            food_items="一碗虾滑鸡蛋汤",
+            calories=180,
+            protein=16,
+            carbs=8,
+            fat=9,
+            fiber=1,
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+
+        monkeypatch.setattr(
+            food_recognition_service,
+            "estimate_nutrition_from_text",
+            lambda _description: {
+                "success": True,
+                "foods": [{
+                    "name": "虾滑鸡蛋汤",
+                    "quantity": "两碗",
+                    "calories": 360,
+                    "protein": 32,
+                    "carbs": 16,
+                    "fat": 18,
+                    "fiber": 2,
+                }],
+            },
+        )
+        monkeypatch.setattr(
+            diet_api,
+            "_convert_to_response",
+            lambda _record: (_ for _ in ()).throw(
+                RuntimeError("private response conversion detail")
+            ),
+        )
+
+        response = client.post(
+            f"/api/v1/diet/records/{record.id}/recalculate-nutrition",
+            json={
+                "food_items": "两碗虾滑鸡蛋汤",
+                "expected_updated_at": None,
+            },
+            headers={
+                **auth_headers,
+                "Idempotency-Key": "diet-recalc-response-failure-0001",
+            },
+        )
+
+        assert response.status_code == 500
+        assert response.json()["detail"] == "营养重算失败，请稍后重试"
+        db.refresh(record)
+        assert record.food_items == "一碗虾滑鸡蛋汤"
+        assert (record.calories, record.protein, record.carbs, record.fat, record.fiber) == (
+            180,
+            16,
+            8,
+            9,
+            1,
+        )
+
+    @pytest.mark.parametrize(
+        ("payload", "headers"),
+        (
+            (
+                {"food_items": "两碗虾滑鸡蛋汤", "expected_updated_at": None},
+                {},
+            ),
+            (
+                {"food_items": "两碗虾滑鸡蛋汤"},
+                {"Idempotency-Key": "diet-recalc-required-revision-0001"},
+            ),
+        ),
+        ids=("missing_idempotency_key", "missing_expected_revision"),
+    )
+    def test_recalculate_nutrition_requires_command_identity_before_model_work(
+        self,
+        client,
+        db,
+        auth_headers,
+        test_user,
+        monkeypatch,
+        payload,
+        headers,
+    ):
+        from app.services.ai.food_recognition import food_recognition_service
+
+        record = DietRecord(
+            user_id=test_user.id,
+            record_date=date.today(),
+            meal_type="lunch",
+            food_name="虾滑鸡蛋汤",
+            food_items="一碗虾滑鸡蛋汤",
+            calories=180,
+            protein=16,
+            carbs=8,
+            fat=9,
+            fiber=1,
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+        model_called = False
+
+        def forbidden_estimate(_description):
+            nonlocal model_called
+            model_called = True
+            raise AssertionError("command validation must precede model work")
+
+        monkeypatch.setattr(
+            food_recognition_service,
+            "estimate_nutrition_from_text",
+            forbidden_estimate,
+        )
+
+        response = client.post(
+            f"/api/v1/diet/records/{record.id}/recalculate-nutrition",
+            json=payload,
+            headers={**auth_headers, **headers},
+        )
+
+        assert response.status_code == 422
+        assert model_called is False
+        db.refresh(record)
+        assert record.food_items == "一碗虾滑鸡蛋汤"
+
+    def test_recalculate_nutrition_same_command_replays_without_model_work(
+        self, client, db, auth_headers, test_user, monkeypatch
+    ):
+        from app.services.ai.food_recognition import food_recognition_service
+
+        record = DietRecord(
+            user_id=test_user.id,
+            record_date=date.today(),
+            meal_type="lunch",
+            food_name="虾滑鸡蛋汤",
+            food_items="一碗虾滑鸡蛋汤",
+            calories=180,
+            protein=16,
+            carbs=8,
+            fat=9,
+            fiber=1,
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+        operation_key = "diet-recalc-replay-lunch-0001"
+        payload = {
+            "food_items": "两碗虾滑鸡蛋汤",
+            "expected_updated_at": None,
+        }
+        estimate_calls = 0
+
+        def estimate(_description):
+            nonlocal estimate_calls
+            estimate_calls += 1
+            return {
+                "success": True,
+                "foods": [{
+                    "name": "虾滑鸡蛋汤",
+                    "quantity": "两碗",
+                    "calories": 360,
+                    "protein": 32,
+                    "carbs": 16,
+                    "fat": 18,
+                    "fiber": 2,
+                }],
+            }
+
+        monkeypatch.setattr(
+            food_recognition_service,
+            "estimate_nutrition_from_text",
+            estimate,
+        )
+        headers = {**auth_headers, "Idempotency-Key": operation_key}
+
+        first = client.post(
+            f"/api/v1/diet/records/{record.id}/recalculate-nutrition",
+            json=payload,
+            headers=headers,
+        )
+        assert first.status_code == 200
+
+        second = client.post(
+            f"/api/v1/diet/records/{record.id}/recalculate-nutrition",
+            json=payload,
+            headers=headers,
+        )
+
+        assert second.status_code == 200
+        assert second.json()["food_items"] == "两碗虾滑鸡蛋汤"
+        assert second.json()["calories"] == 360
+        assert estimate_calls == 1
+        db.refresh(record)
+        receipt = json.loads(record.ai_raw_result)
+        assert operation_key not in record.ai_raw_result
+        assert len(receipt["provenance"]["operation_digest"]) == 64
+        assert len(receipt["provenance"]["request_digest"]) == 64
+        assert receipt["provenance"]["result_meal_type"] == "lunch"
+        assert receipt["provenance"]["result_food_items"] == "两碗虾滑鸡蛋汤"
+
+        # Even when meal_type was omitted from the request, the receipt binds
+        # the effective committed meal type. It cannot replay over a later edit.
+        record.meal_type = "dinner"
+        db.commit()
+        changed_result = client.post(
+            f"/api/v1/diet/records/{record.id}/recalculate-nutrition",
+            json=payload,
+            headers=headers,
+        )
+        assert changed_result.status_code == 409
+        assert changed_result.json()["detail"] == (
+            "已提交的饮食修正结果已发生变化，请刷新后重试"
+        )
+        assert estimate_calls == 1
+
+    def test_recalculate_nutrition_rejects_idempotency_key_reuse_for_new_payload(
+        self, client, db, auth_headers, test_user, monkeypatch
+    ):
+        from app.services.ai.food_recognition import food_recognition_service
+
+        record = DietRecord(
+            user_id=test_user.id,
+            record_date=date.today(),
+            meal_type="lunch",
+            food_name="虾滑鸡蛋汤",
+            food_items="一碗虾滑鸡蛋汤",
+            calories=180,
+            protein=16,
+            carbs=8,
+            fat=9,
+            fiber=1,
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+        operation_key = "diet-recalc-reuse-lunch-0001"
+        headers = {**auth_headers, "Idempotency-Key": operation_key}
+        estimate_calls = 0
+
+        def estimate(_description):
+            nonlocal estimate_calls
+            estimate_calls += 1
+            return {
+                "success": True,
+                "foods": [{
+                    "name": "虾滑鸡蛋汤",
+                    "quantity": "两碗",
+                    "calories": 360,
+                    "protein": 32,
+                    "carbs": 16,
+                    "fat": 18,
+                    "fiber": 2,
+                }],
+            }
+
+        monkeypatch.setattr(
+            food_recognition_service,
+            "estimate_nutrition_from_text",
+            estimate,
+        )
+        first = client.post(
+            f"/api/v1/diet/records/{record.id}/recalculate-nutrition",
+            json={
+                "food_items": "两碗虾滑鸡蛋汤",
+                "meal_type": "lunch",
+                "expected_updated_at": None,
+            },
+            headers=headers,
+        )
+        assert first.status_code == 200
+
+        different = client.post(
+            f"/api/v1/diet/records/{record.id}/recalculate-nutrition",
+            json={
+                "food_items": "三碗虾滑鸡蛋汤",
+                "meal_type": "lunch",
+                "expected_updated_at": first.json()["updated_at"],
+            },
+            headers=headers,
+        )
+
+        assert different.status_code == 409
+        assert different.json()["detail"] == "幂等标识已用于其他饮食修正"
+        assert estimate_calls == 1
+        db.refresh(record)
+        assert record.food_items == "两碗虾滑鸡蛋汤"
+
+    @pytest.mark.parametrize(
+        ("old_food", "old_alcohol_units", "new_food"),
+        (
+            ("鸡胸肉 100g", None, "一杯红酒和鸡胸肉"),
+            ("一杯红酒", 1, "鸡胸肉 200g"),
+            ("one beer", None, "chicken breast 200g"),
+            ("鸡胸肉 100g", None, "一杯香槟和鸡胸肉"),
+            ("chicken breast 100g", None, "one tequila highball"),
+            ("鸡胸肉 100g", None, "两杯酒和鸡胸肉"),
+            ("鸡胸肉 100g", None, "一杯果酒"),
+            ("鸡胸肉 100g", None, "一杯绍兴酒"),
+            ("鸡胸肉 100g", None, "一杯长岛冰茶"),
+            ("chicken breast 100g", None, "one margarita"),
+            ("鸡胸肉 100g", None, "一杯玛格丽特"),
+            ("chicken breast 100g", None, "one martini"),
+            ("鸡胸肉 100g", None, "一杯马天尼"),
+            ("chicken breast 100g", None, "two pints of lager"),
+            ("chicken breast 100g", None, "one pale ale"),
+            ("chicken breast 100g", None, "a pint of stout"),
+            ("chicken breast 100g", None, "one IPA"),
+            ("chicken breast 100g", None, "a glass of prosecco"),
+            ("chicken breast 100g", None, "one bourbon"),
+            ("chicken breast 100g", None, "one scotch"),
+            ("chicken breast 100g", None, "one cognac"),
+            ("chicken breast 100g", None, "one soju"),
+            ("chicken breast 100g", None, "one shochu"),
+            ("chicken breast 100g", None, "one hard seltzer"),
+            ("chicken breast 100g", None, "one mead"),
+            ("chicken breast 100g", None, "one liqueur"),
+        ),
+        ids=(
+            "new_alcohol",
+            "existing_alcohol_fact",
+            "old_english_alcohol",
+            "champagne_chinese",
+            "tequila_highball",
+            "generic_chinese_alcohol",
+            "fruit_wine_chinese",
+            "shaoxing_wine_chinese",
+            "long_island_iced_tea_chinese",
+            "margarita_english",
+            "margarita_chinese",
+            "martini_english",
+            "martini_chinese",
+            "lager",
+            "pale_ale",
+            "stout",
+            "ipa",
+            "prosecco",
+            "bourbon",
+            "scotch",
+            "cognac",
+            "soju",
+            "shochu",
+            "hard_seltzer",
+            "mead",
+            "liqueur",
+        ),
+    )
+    def test_recalculate_nutrition_blocks_alcohol_before_model_and_preserves_record(
+        self,
+        client,
+        db,
+        auth_headers,
+        test_user,
+        monkeypatch,
+        old_food,
+        old_alcohol_units,
+        new_food,
+    ):
+        from app.services.ai.food_recognition import food_recognition_service
+
+        record = DietRecord(
+            user_id=test_user.id,
+            record_date=date.today(),
+            meal_type="dinner",
+            food_name=old_food,
+            food_items=old_food,
+            calories=180,
+            protein=16,
+            carbs=8,
+            fat=9,
+            fiber=1,
+            alcohol_units=old_alcohol_units,
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+        model_called = False
+
+        def forbidden_estimate(_description):
+            nonlocal model_called
+            model_called = True
+            raise AssertionError("alcohol safety gate must precede model work")
+
+        monkeypatch.setattr(
+            food_recognition_service,
+            "estimate_nutrition_from_text",
+            forbidden_estimate,
+        )
+
+        response = client.post(
+            f"/api/v1/diet/records/{record.id}/recalculate-nutrition",
+            json={"food_items": new_food, "expected_updated_at": None},
+            headers={
+                **auth_headers,
+                "Idempotency-Key": "diet-recalc-alcohol-safety-0001",
+            },
+        )
+
+        assert response.status_code == 422
+        assert response.json()["detail"] == (
+            "含酒饮食需要填写标准杯，请到饮食记录页手动修正"
+        )
+        assert model_called is False
+        db.refresh(record)
+        assert record.food_items == old_food
+        assert record.alcohol_units == old_alcohol_units
 
     def test_photo_draft_status_fails_closed_after_expiry(
         self, client, db, auth_headers, test_user
