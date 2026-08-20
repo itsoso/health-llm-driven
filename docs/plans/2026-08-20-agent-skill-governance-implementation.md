@@ -32,15 +32,19 @@
 **Files:**
 - Create: `docs/governance/agent-skill-registry.json`
 - Create: `docs/governance/agent-skill-run-event.schema.json`
+- Create: `docs/governance/agent-skill-run-trace-event.schema.json`
 - Create: `scripts/check_agent_skill_governance.py`
+- Create: `scripts/agent_skill_benchmark.py`
 - Modify: `backend/tests/test_agent_skill_governance.py`
+- Create: `backend/tests/test_agent_skill_benchmark.py`
 
 1. Define project-managed skills separately from external recommendations.
 2. Require standard skills to declare owner, version, layer, kind, platform, trigger family, review date and evidence.
 3. Define task modes `analysis`, `quick_fix`, `feature`, `implementation`, `incident`, and `release`; machine routing must yield zero or one controller and a deduplicated overlay set.
 4. Make `using-superpowers` and direct `executing-plans` deprecated for this project; keep TDD, debugging and verification as capabilities, not controllers.
-5. Implement `check` and `recommend` commands using only the standard library. Fail closed on aliases, missing files, invalid lifecycle transitions, conflicting controllers, unknown overlays and sensitive event fields.
-6. Run the focused tests until GREEN.
+5. Implement `check` and `recommend` commands using only the standard library. Fail closed on aliases, missing files, invalid lifecycle values, conflicting controllers, unknown overlays and sensitive event fields；历史 lifecycle transition 仍由评审证据裁决，不冒充检查器可证明。
+6. Add an explicit-log, append-only trace collector with opaque UUID4, collector timestamps, hash-only evidence and a verifiable event chain. It must never infer a winner from one sample or unresolved G6.
+7. Run the focused tests until GREEN.
 
 ### Task 3: Add the Router and platform-native adapters
 
@@ -57,7 +61,8 @@
 2. Keep Router metadata concise and trigger-focused. Require it to run the deterministic recommendation before loading workflow skills.
 3. Make Claude and Codex Router adapters semantically equivalent while allowing tool-specific instructions.
 4. Rewrite the two Codex workflow adapters as thin consumers of the neutral contract; remove `TeamCreate`, `TaskCreate`, `SendMessage`, hard-coded Opus and Claude co-author text.
-5. Validate each changed Skill and run its focused tests before moving to the next adapter.
+5. Bind every adapter to the same semantic markers plus an exact content SHA-256 so a removed Gate or unversioned drift blocks the repository.
+6. Validate each changed Skill and run its focused tests before moving to the next adapter.
 
 ### Task 4: Wire governance into the project
 
@@ -75,16 +80,19 @@
 2. Add the governance checker as a blocking local validation, pre-commit and docs-quality CI step.
 3. Update plugin tests to verify semantic contracts and native-platform boundaries rather than byte equality.
 4. Remove the design document's Markdown trailing whitespace.
-5. Run focused tests and `python3.12 scripts/check_agent_skill_governance.py check`.
+5. Add `skill-governance` / `plugin-authoring` capability triggers and keep feature delegates deferred until Product Pipeline S5.
+6. Run focused tests and `python3.12 scripts/check_agent_skill_governance.py check`.
 
 ### Task 5: Forward-test and verify
 
 **Files:**
 - Modify only files above when a demonstrated failure requires it.
 
-1. Run the original cross-end and quick-fix pressure scenarios with the Router, using fresh read-only agents and no expected answer leakage.
+1. Run the original cross-end and quick-fix pressure scenarios with the Router, using fresh read-only agents and no expected answer leakage. Treat the already completed diet run as transition-only observational evidence, not a pure old-system control.
 2. Verify that each scenario selects at most one controller, keeps overlays non-owning, and avoids unnecessary planning for quick fixes.
-3. Run:
+3. Install the committed marketplace/plugin with the official Codex CLI, then verify discovery in a fresh Codex process. Only the Router may allow implicit invocation.
+4. Register the next real Bug as `router_v1_prospective` before root-cause work. Compare descriptively until matched sample size and G6 quality conditions are met.
+5. Run:
 
    ```bash
    cd backend
@@ -98,5 +106,5 @@
    git diff --check
    ```
 
-4. Request independent code/contract review on a fixed diff.
-5. Stage only the listed governance files, commit, re-run the focused gate from committed state, then push only if the local branch is not behind `origin/main` and no unrelated commit would be published.
+6. Request independent code/contract review on a fixed diff.
+7. Stage only the listed governance files, commit, re-run the focused gate from committed state, then push only if the local branch is not behind `origin/main` and no unrelated commit would be published.

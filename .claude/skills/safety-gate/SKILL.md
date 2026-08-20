@@ -12,7 +12,7 @@ description: "敏感改动上线前的 producer-reviewer 安全 overlay。当改
 ## 触发条件(命中任一就走)
 
 用药 / 补剂 / 基因 / 化验(labs)/ CGM / SpO2 血氧 / Safety Guardian 规则 / 提醒与通知(含推送文案和中断预算)/ 通用健康数据写路径 / 对外健康建议(剂量·减重·用药调整·趋势判读)/ 隐私 / 加密 / 认证 / CORS / 安全相关 Twin 字段。
-(权威清单见 `AGENTS.md` §安全;CLAUDE.md「高风险必经」。)
+(权威清单见 `AGENTS.md` §安全与 `docs/governance/security.md`。)
 
 ## 流程
 

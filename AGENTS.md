@@ -638,7 +638,7 @@ class ExampleModel(Base):
 
 ## 13. 本项目研发 Skill Binding(跨 agent 通用，Codex 必读)
 
-本仓库的项目级 binding 见 [`docs/agent-skill-binding.md`](docs/agent-skill-binding.md)。研发 Skill 的 agent-neutral 真源是 [`docs/governance/agent-skill-registry.json`](docs/governance/agent-skill-registry.json) 与 [`docs/governance/agent-skill-governance.md`](docs/governance/agent-skill-governance.md)。任何任务先经 `reva-workflow-router` / `scripts/check_agent_skill_governance.py recommend` 选择最小充分集合；同一任务最多一个 primary controller，overlay 只能阻断、不得另建计划或 ledger。
+本仓库的项目级 binding 见 [`docs/agent-skill-binding.md`](docs/agent-skill-binding.md)。研发 Skill 的 agent-neutral 真源是 [`docs/governance/agent-skill-registry.json`](docs/governance/agent-skill-registry.json) 与 [`docs/governance/agent-skill-governance.md`](docs/governance/agent-skill-governance.md)。任何任务先经 `reva-workflow-router` / `scripts/check_agent_skill_governance.py recommend` 选择最小充分集合；Skill / plugin 治理必须声明对应 capability trigger；同一任务最多一个 primary controller，overlay 只能阻断、不得另建计划或 ledger，feature delegate 只在父流程到达交付阶段后加载。
 
 - **Claude Code** 可以自动发现 `.claude/skills/*`;仍必须受本文件和 `docs/governance/*` 硬规则裁判。
 - **Codex** 使用 `plugins/reva-health-harness/skills/*` 的原生 adapter；不得把 Claude-only 的团队工具、模型选择或署名当成 Codex 指令。

@@ -25,7 +25,7 @@ scope: health-llm-driven
 2. 读 `docs/system-map/INDEX.md`:先知道系统目标、能力、架构、多端 surface、业务流和系统流。
 3. 读 `docs/_generated/system-map-agent-context.md`:加载从 canonical graph 生成的轻量全局上下文。
 4. 用 `python3.12 scripts/system_map_context.py` 按任务查询局部实体、关系、流、覆盖度和 source path,再打开源码与测试验证。
-5. 先运行 `python3.12 scripts/check_agent_skill_governance.py recommend --mode <mode>`，由 `reva-workflow-router` 选择最小充分 Skill 集；不得把多个 controller 机械叠加。
+5. 先运行 `python3.12 scripts/check_agent_skill_governance.py recommend --mode <mode>`，由 `reva-workflow-router` 选择最小充分 Skill 集；Skill/plugin 治理另加 `--capability-trigger skill-governance` / `plugin-authoring`，不得把多个 controller 机械叠加。
 6. 按平台读取 Router 选中的 adapter：Claude 读 `.claude/skills/<name>/SKILL.md`，Codex 读 `plugins/reva-health-harness/skills/<name>/SKILL.md`；未封装的平台能力才按注册表 source 读取。
 7. 如果是产品/用户行为/跨端能力,继续读 `docs/specs/reva-product-governance-spec.md` 和 `docs/specs/product-pipeline-contract.md`。
 8. 如果进入完整需求生命周期,创建或接续 `docs/dossiers/<date>-<slug>.md`,按 6 道 Gate 留痕。
@@ -35,11 +35,14 @@ scope: health-llm-driven
 
 Router 的机器推荐是入口，不是第二套状态机。`product-pipeline`、`health-harness-orchestrator` 与 release skill 同一任务最多选一个 primary controller；safety、DB、通知隐私、doc drift 和 App Review 只作为可阻断 overlay，不拥有独立计划或 ledger。
 
+`feature` 路由中的 Health Harness 是 deferred delegate，不在定义环预载；只有 Product Pipeline 进入 S5 后，才在同一 Dossier / 父 run 中显式加载。若要衡量治理效果，在开始下一条真实 Bug 前用 `scripts/agent_skill_benchmark.py start --arm router_v1_prospective --task-mode <mode> --log <explicit-jsonl> ...` 注册；日志路径必须显式提供且不得提交用户文本，后续只用 `mark` 写闭集阶段与哈希证据。证据 digest 必须来自完整、高熵 evidence pack，不能直接哈希药名、诊断、健康短句或 prompt；完成报告后把 trace head hash 锚定到对应 Dossier。
+
 ## Binding 表
 
 | 触发场景 | 必读研发 skill / 协议 | 后续权威文档 |
 |---|---|---|
 | 任一研发任务的 Skill 选择 | `reva-workflow-router` + `scripts/check_agent_skill_governance.py recommend` | `docs/governance/agent-skill-registry.json`, `docs/governance/agent-skill-governance.md` |
+| 新建/修改研发 Skill 或 Codex plugin | Router + `skill-governance` / `plugin-authoring` capability trigger | `docs/governance/agent-skill-governance.md`, plugin manifest,对应 Skill contract |
 | Onboard 本项目、问“系统是什么/有哪些能力/架构/产品地图/当前现状” | `system-map` | `docs/system-map/INDEX.md`, `docs/_generated/system-map-agent-context.md`, `docs/system-map/product-map.md`, `docs/_generated/system-map.json` |
 | 一句需求要走“需求→PRD→规划→研发→测试→部署→上线验证” | `product-pipeline`（由 Router 选择平台 adapter） | `docs/specs/product-pipeline-contract.md`, `docs/specs/reva-product-governance-spec.md`, `docs/dossiers/` |
 | 需求已定,进入跨端实现或多 agent fan-out | `health-harness-orchestrator`（由 Router 选择平台 adapter） | `docs/design-agent-operating-harness.md`,对应 plan/spec |

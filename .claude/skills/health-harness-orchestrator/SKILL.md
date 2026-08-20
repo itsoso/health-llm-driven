@@ -5,6 +5,17 @@ description: "复元健康平台的代理团队编排器。当用户要在本仓
 
 # 复元 Health Harness — Orchestrator
 
+## Governance ownership boundary
+
+- Run as `primary_controller` only when Router selects `implementation` or
+  `incident` mode.
+- When `product-pipeline` delegates S5, stay in the same parent run and Dossier;
+  do not create a second plan, ledger, checkpoint system, or completion state.
+- Capability Skills never own workflow state. Safety/privacy/database overlays
+  may return `BLOCK`, which returns to implementation and requires re-review.
+- Preserve G3 test, G4 safety, G5 deployment-health, and G6 user-path failure
+  propagation. Do not claim completion without verified production evidence.
+
 把本仓库的专职代理(`backend-engineer` / `mobile-engineer` / `qa-verifier` / `safety-privacy-reviewer` / `release-engineer`)编排成一个团队,完成"计划 → 实现 → 验证 → 安全评审 → 上线"闭环。
 
 ## 执行模式:代理团队(默认)
