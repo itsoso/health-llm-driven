@@ -52,14 +52,18 @@
 
 ### 2.5 最小可观测合同
 
-本期只定义无敏感文本的事件合同，不接数据库、不采集 prompt 或健康事实。最小事件记录任务模式、选择结果、skill 版本、Gate、验证退出码、耗时、评审轮次、人工介入和失败原因。后续 ROI 必须从任务结果出发，不能把安装数或调用数当成功。
+本期不接数据库、不采集 prompt 或健康事实。汇总 Schema 记录任务模式、选择结果、Skill 版本、Gate、验证退出码、耗时、评审轮次、人工介入和闭集失败原因；前瞻轨迹只保存 opaque UUID4、闭集阶段、UTC 时间和 source / registry / route / evidence SHA-256，并以 append-only hash chain 提供链式完整性；只有把 head hash 锚定到外部 Dossier / evidence pack 后，才具备整链 tamper-evident 证据。后续 ROI 必须从任务结果出发，不能把安装数或调用数当成功。
+
+已经完成的饮食修复仅是受新版 Router 污染的 transition observation，不作为随机或纯旧体系对照。下一条真实 Bug 在开工前注册为 `router_v1_prospective`；单样本只做描述，不宣称因果改善。
 
 ## 3. 机器资产
 
 1. `docs/governance/agent-skill-registry.json`：canonical ID、分类、层级、生命周期、平台、owner、触发族、冲突、证据与路由表。
 2. `docs/governance/agent-skill-run-event.schema.json`：隐私最小化事件 Schema。
-3. `scripts/check_agent_skill_governance.py`：验证注册表、路由唯一性、文件存在性、适配器边界与事件样例。
-4. `reva-workflow-router`：先路由、再加载最小充分 Skill 集合。
+3. `docs/governance/agent-skill-run-trace-event.schema.json`：append-only 前瞻轨迹 Schema。
+4. `scripts/agent_skill_benchmark.py`：显式路径、hash-chain 的 `start` / `mark` / `report` 采集器。
+5. `scripts/check_agent_skill_governance.py`：验证注册表、路由唯一性、文件存在性、适配器语义 digest 与事件合同。
+6. `reva-workflow-router`：先路由、再加载最小充分 Skill 集合；delegate 延迟到所属父流程阶段。
 
 ## 4. 推荐 Skill 组合
 
@@ -84,4 +88,6 @@
 - project binding 先进入 Router，再读取被选中的 Skill；
 - pre-commit、`scripts/validate.py` 与 CI 都阻断治理漂移；
 - 不记录原始 prompt、健康文本、药名、诊断或凭据；
+- Codex 插件可被官方 CLI 安装并在 fresh task 中发现，且只有 Router 可隐式触发；
+- 下一条 Bug 可在开工前写入 `router_v1_prospective` 路由证据，报告不会从单样本宣称优越性；
 - 现有产品运行时 skills、Health Day WIP 和部署行为保持不变。

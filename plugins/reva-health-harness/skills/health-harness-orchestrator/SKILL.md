@@ -36,16 +36,16 @@ Dossier before planning implementation.
 3. **Implement:** use Codex subagents only for independent bounded work.
    Read-only investigators and reviewers may run in parallel; stateful writers
    need disjoint ownership or isolated worktrees.
-4. **Incremental QA:** test each completed slice. For a real defect, establish
+4. **G3 incremental QA:** test each completed slice. For a real defect, establish
    the cause and a failing test before changing production behavior. LLM-facing
    changes also pass `scripts/harness_llm_change_gate.py` and any required live
    regression gate.
-5. **Safety review:** sensitive health data, medication, genetics, safety rules,
+5. **G4 safety review:** sensitive health data, medication, genetics, safety rules,
    authentication, notifications, and write paths require the selected safety
    overlay. BLOCK returns to implementation and requires re-review.
-6. **Release:** hand off to exactly one target-specific release workflow only
+6. **G5 release health:** hand off to exactly one target-specific release workflow only
    after tests and review pass. Native changes are not mobile OTA changes.
-7. **Validate:** prove the actual production/user path and return evidence to the
+7. **G6 validate:** prove the actual production/user path and return evidence to the
    parent controller or close this run when operating independently.
 
 For multi-agent, interruptible, or adversarial-review work, keep one trace:

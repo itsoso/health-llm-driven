@@ -18,12 +18,17 @@ The agent-neutral sources of truth are:
 Claude and Codex adapters may use platform-native collaboration primitives, but
 must preserve the same routing, Gate, safety, and completion semantics.
 
-Install from the repo marketplace:
+Install the committed `main` marketplace (recommended):
 
 ```bash
-codex plugin marketplace add .agents/plugins
+codex plugin marketplace add itsoso/health-llm-driven --ref main
 codex plugin add reva-health-harness@reva-health
 ```
+
+Run `codex --version` first and use the Codex binary bundled with the desktop
+app if an obsolete shell wrapper cannot start. A local checkout may be added
+only for adapter development; do not persist a temporary worktree as the
+installed marketplace source.
 
 Start a new Codex thread after reinstalling so newly packaged skills are loaded.
 The Router is the only plugin Skill eligible for implicit invocation; invoke the

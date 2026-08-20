@@ -21,12 +21,13 @@
   "properties": {
     "run_id": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+      "description": "Opaque UUID generated independently of task or user content.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[4-7][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
     },
     "task_id": {
       "type": "string",
-      "description": "Opaque project task identifier; never copy task text into this field.",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+      "description": "Opaque UUID generated independently of task or user content.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[4-7][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
     },
     "task_mode": {
       "type": "string",

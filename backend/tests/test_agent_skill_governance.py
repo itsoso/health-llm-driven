@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import importlib.util
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -11,7 +13,37 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = ROOT / "docs" / "governance" / "agent-skill-registry.json"
 EVENT_SCHEMA = ROOT / "docs" / "governance" / "agent-skill-run-event.schema.json"
+TRACE_EVENT_SCHEMA = (
+    ROOT / "docs" / "governance" / "agent-skill-run-trace-event.schema.json"
+)
+BENCHMARK_COLLECTOR = ROOT / "scripts" / "agent_skill_benchmark.py"
 CHECKER = ROOT / "scripts" / "check_agent_skill_governance.py"
+OPAQUE_UUID_PATTERN = (
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[4-7][0-9a-f]{3}-"
+    r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+)
+
+
+def _checker_module():
+    spec = importlib.util.spec_from_file_location(
+        "agent_skill_governance_checker", CHECKER
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture(autouse=True)
+def _isolate_twin_cache():
+    """Override the repository Redis-flushing fixture for pure governance tests."""
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _noop_twin_cache():
+    """Do not patch or connect to runtime Twin cache in repository-contract tests."""
+    yield
 
 
 def _registry() -> dict:
@@ -52,6 +84,7 @@ def test_registry_has_one_router_and_closed_governance_vocabulary():
 
     routers = [skill for skill in registry["skills"] if skill["kind"] == "router"]
     assert [skill["id"] for skill in routers] == ["reva-workflow-router"]
+    assert "domain-rule-factory" not in {skill["id"] for skill in registry["skills"]}
 
 
 def test_every_standard_project_skill_is_owned_versioned_and_evidenced():
@@ -75,6 +108,19 @@ def test_every_standard_project_skill_is_owned_versioned_and_evidenced():
         assert skill["owner"]
         assert skill["evidence"]
         assert skill["sources"]
+
+
+def test_every_registered_project_source_is_committed_not_only_present_locally():
+    for skill in _registry()["skills"]:
+        for source in skill["sources"]:
+            result = subprocess.run(
+                ["git", "ls-files", "--error-unmatch", source],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            assert result.returncode == 0, (skill["id"], source)
 
 
 def test_shared_protocol_skills_are_agent_neutral_not_implicit_platform_copies():
@@ -110,6 +156,9 @@ def test_agent_neutral_skill_sources_do_not_contain_provider_only_instructions()
         "subagent_type",
         'model: "opus"',
         "Co-Authored-By: Claude",
+        "CLAUDE.md",
+        "`backend-engineer`/",
+        "`release-engineer` agent",
         "[[",
     }
 
@@ -166,6 +215,8 @@ def test_feature_route_has_exactly_one_controller_and_deduplicated_overlays():
 
     assert result["controller"] == "product-pipeline"
     assert result["delegates"] == ["health-harness-orchestrator"]
+    assert result["deferred_skills"] == ["health-harness-orchestrator"]
+    assert "health-harness-orchestrator" not in result["selected_skills"]
     assert result["overlays"] == ["add-managed-migration", "safety-gate"]
     assert result["controller_count"] == 1
 
@@ -181,7 +232,9 @@ def test_quick_fix_route_does_not_create_a_workflow_controller():
     assert [item["id"] for item in result["selected_skill_details"]] == result[
         "selected_skills"
     ]
-    assert all(item["version"].count(".") == 2 for item in result["selected_skill_details"])
+    assert all(
+        item["version"].count(".") == 2 for item in result["selected_skill_details"]
+    )
     assert {item["role"] for item in result["selected_skill_details"]} <= {
         "router",
         "controller",
@@ -190,6 +243,46 @@ def test_quick_fix_route_does_not_create_a_workflow_controller():
         "overlay",
         "terminal",
     }
+
+
+def test_skill_and_plugin_governance_add_only_the_relevant_authoring_capabilities():
+    result = _recommend(
+        "--mode",
+        "analysis",
+        "--capability-trigger",
+        "skill-governance",
+        "--capability-trigger",
+        "plugin-authoring",
+    )
+
+    assert result["controller"] is None
+    assert result["triggered_capabilities"] == [
+        "plugin-creator",
+        "skill-creator",
+        "writing-skills",
+    ]
+    assert "test-driven-development" not in result["selected_skills"]
+
+
+def test_unknown_capability_trigger_fails_closed():
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(CHECKER),
+            "recommend",
+            "--mode",
+            "analysis",
+            "--capability-trigger",
+            "write-anything",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "unknown_capability_trigger" in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -250,7 +343,7 @@ def test_run_event_schema_is_closed_and_cannot_store_raw_health_or_prompt_text()
     assert schema["$id"] == "agent-skill-run-event.v1"
     assert schema["additionalProperties"] is False
     properties = set(schema["properties"])
-    assert {
+    expected_properties = {
         "run_id",
         "task_id",
         "task_mode",
@@ -261,7 +354,9 @@ def test_run_event_schema_is_closed_and_cannot_store_raw_health_or_prompt_text()
         "review_rounds",
         "manual_interventions",
         "reason_code",
-    } <= properties
+        "validation_exit_code",
+    }
+    assert properties == expected_properties
     assert not properties & {
         "prompt",
         "raw_prompt",
@@ -275,6 +370,88 @@ def test_run_event_schema_is_closed_and_cannot_store_raw_health_or_prompt_text()
     assert set(reason_code) >= {"type", "enum"}
     assert "pattern" not in reason_code
     assert all("-" not in value and " " not in value for value in reason_code["enum"])
+
+    for field in ("run_id", "task_id"):
+        assert schema["properties"][field]["pattern"] == OPAQUE_UUID_PATTERN
+        assert re.fullmatch(OPAQUE_UUID_PATTERN, "019c8f4a-7c40-7abc-8def-0123456789ab")
+        assert not re.fullmatch(OPAQUE_UUID_PATTERN, "diet-two-bowls-user-request")
+
+
+def test_registry_wires_the_append_only_trace_schema_and_benchmark_collector():
+    registry = _registry()
+
+    assert registry["trace_event_schema"] == str(TRACE_EVENT_SCHEMA.relative_to(ROOT))
+    assert registry["benchmark_collector"] == str(BENCHMARK_COLLECTOR.relative_to(ROOT))
+    for path in (TRACE_EVENT_SCHEMA, BENCHMARK_COLLECTOR):
+        assert path.is_file()
+        tracked = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", str(path.relative_to(ROOT))],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert tracked.returncode == 0, path
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda schema: schema["properties"]["arm"]["enum"].append("free-form-arm"),
+        lambda schema: schema["properties"]["timestamp_utc"].update({"pattern": ".*"}),
+        lambda schema: schema["properties"]["source_sha256"].update({"pattern": ".*"}),
+    ],
+)
+def test_checker_rejects_trace_vocabulary_or_integrity_pattern_drift(
+    monkeypatch, mutation
+):
+    checker = _checker_module()
+    schema = json.loads(TRACE_EVENT_SCHEMA.read_text(encoding="utf-8"))
+    mutation(schema)
+    monkeypatch.setattr(checker, "_load_json", lambda _path, _label: schema)
+
+    with pytest.raises(checker.GovernanceError):
+        checker._validate_trace_event_schema(TRACE_EVENT_SCHEMA)
+
+
+def test_adapter_semantic_contracts_cover_every_platform_adapter_and_exact_content():
+    registry = _registry()
+    contracts = registry["adapter_contracts"]
+    adapter_skills = {
+        skill["id"]: skill for skill in registry["skills"] if "adapters" in skill
+    }
+
+    assert set(contracts) == set(adapter_skills)
+    for skill_id, skill in adapter_skills.items():
+        contract = contracts[skill_id]
+        assert contract["version"] == skill["version"]
+        assert len(contract["required_markers"]) >= 5
+        assert set(contract["adapter_sha256"]) == set(skill["adapters"])
+        for platform, path in skill["adapters"].items():
+            content = (ROOT / path).read_text(encoding="utf-8")
+            assert all(marker in content for marker in contract["required_markers"]), (
+                skill_id,
+                platform,
+            )
+
+
+def test_adapter_semantic_mutation_is_rejected_before_a_route_can_use_it():
+    checker = _checker_module()
+    registry = _registry()
+
+    for skill in registry["skills"]:
+        if "adapters" not in skill:
+            continue
+        contract = registry["adapter_contracts"][skill["id"]]
+        marker = contract["required_markers"][0]
+        for platform, path in skill["adapters"].items():
+            content = (ROOT / path).read_text(encoding="utf-8")
+            mutated = content.replace(marker, "")
+            with pytest.raises(checker.GovernanceError) as exc:
+                checker._validate_adapter_semantics(
+                    skill["id"], platform, mutated, contract
+                )
+            assert exc.value.code == "adapter_semantic_marker_missing"
 
 
 def test_governance_checker_accepts_the_committed_contract():

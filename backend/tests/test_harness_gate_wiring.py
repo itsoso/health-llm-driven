@@ -32,7 +32,9 @@ def test_validate_runs_dossier_consistency_as_blocking_gate(monkeypatch):
 
     assert validate.main() == 0
 
-    dossier_checks = [check for check in captured if check.name == "dossier-consistency"]
+    dossier_checks = [
+        check for check in captured if check.name == "dossier-consistency"
+    ]
     assert dossier_checks, "scripts/validate.py must run dossier consistency"
     assert dossier_checks[0].blocking is True
     assert dossier_checks[0].argv[-1] == "backend/scripts/check_dossier_consistency.py"
@@ -45,7 +47,9 @@ def test_validate_runs_dossier_consistency_as_blocking_gate(monkeypatch):
     skill_governance_checks = [
         check for check in captured if check.name == "agent-skill-governance"
     ]
-    assert skill_governance_checks, "scripts/validate.py must run Agent Skill governance"
+    assert skill_governance_checks, (
+        "scripts/validate.py must run Agent Skill governance"
+    )
     assert skill_governance_checks[0].blocking is True
     assert skill_governance_checks[0].argv[-2:] == [
         "scripts/check_agent_skill_governance.py",
@@ -89,7 +93,7 @@ def test_ci_runs_central_system_map_gate():
 
     assert "Check System Map and doc drift" in workflow
     assert "python scripts/check_system_map.py" in workflow
-    assert "pip install -r ../scripts/system-map-requirements.txt" in workflow
+    assert "pip install -r scripts/system-map-requirements.txt" in workflow
     assert "python scripts/check_doc_drift.py" not in workflow
 
 

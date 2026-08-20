@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
+import subprocess
 import sys
 from datetime import date
 from pathlib import Path
@@ -46,6 +48,49 @@ SAFE_EVENT_FIELDS = {
     "manual_interventions",
     "reason_code",
 }
+TRACE_EVENT_FIELDS = {
+    "schema_version",
+    "run_id",
+    "task_id",
+    "arm",
+    "task_mode",
+    "stage",
+    "outcome",
+    "timestamp_utc",
+    "sequence",
+    "source_sha256",
+    "registry_sha256",
+    "route_sha256",
+    "evidence_sha256",
+    "prev_event_sha256",
+    "event_sha256",
+}
+TRACE_ARMS = ["transition_v0_observational", "router_v1_prospective"]
+TRACE_STAGES = [
+    "run_started",
+    "route_selected",
+    "root_cause_identified",
+    "red_test_observed",
+    "green_test_observed",
+    "g3_decided",
+    "g4_decided",
+    "g5_decided",
+    "g6_decided",
+    "manual_intervention",
+    "run_finished",
+]
+TRACE_OUTCOMES = [
+    "pending",
+    "pass",
+    "fail",
+    "blocked",
+    "not_applicable",
+    "cancelled",
+]
+TRACE_TIMESTAMP_PATTERN = (
+    r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:"
+    r"[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$"
+)
 REASON_CODES = {
     "none",
     "completed",
@@ -76,11 +121,23 @@ CODEX_FORBIDDEN = {
     "Co-Authored-By: Claude",
 }
 AGENT_NEUTRAL_FORBIDDEN = CODEX_FORBIDDEN | {
+    "CLAUDE.md",
+    "`backend-engineer`/",
+    "`release-engineer` agent",
     "subagent_type",
     "[[",
 }
 ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 SEMVER_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+OPAQUE_UUID_PATTERN = (
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[4-7][0-9a-f]{3}-"
+    r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+)
+OPAQUE_UUID4_PATTERN = (
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-"
+    r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+)
 
 
 class GovernanceError(Exception):
@@ -103,16 +160,33 @@ def _load_json(path: Path, label: str) -> dict[str, Any]:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise GovernanceError("invalid_json", f"{label}: {exc}") from exc
-    _require(isinstance(value, dict), "invalid_document", f"{label} must be a JSON object")
+    _require(
+        isinstance(value, dict), "invalid_document", f"{label} must be a JSON object"
+    )
     return value
 
 
 def _repo_file(relative: object, label: str) -> Path:
-    _require(isinstance(relative, str) and bool(relative), "invalid_path", f"{label} must be a path")
+    _require(
+        isinstance(relative, str) and bool(relative),
+        "invalid_path",
+        f"{label} must be a path",
+    )
     candidate = (ROOT / relative).resolve()
     _require(candidate.is_relative_to(ROOT), "path_escape", f"{label}: {relative}")
     _require(candidate.is_file(), "missing_file", f"{label}: {relative}")
     return candidate
+
+
+def _require_tracked(relative: str, label: str) -> None:
+    result = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", "--", relative],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    _require(result.returncode == 0, "untracked_source", f"{label}: {relative}")
 
 
 def _string_list(value: object, label: str, *, allow_empty: bool = False) -> list[str]:
@@ -124,7 +198,11 @@ def _string_list(value: object, label: str, *, allow_empty: bool = False) -> lis
         f"{label} must contain non-empty strings",
     )
     result = list(value)
-    _require(len(result) == len(set(result)), "duplicate_item", f"{label} contains duplicates")
+    _require(
+        len(result) == len(set(result)),
+        "duplicate_item",
+        f"{label} contains duplicates",
+    )
     return result
 
 
@@ -140,6 +218,7 @@ def _validate_sources(skill: dict[str, Any]) -> None:
     sources = _string_list(skill.get("sources"), f"skills.{skill['id']}.sources")
     for source in sources:
         source_path = _repo_file(source, f"skills.{skill['id']}.sources")
+        _require_tracked(source, f"skills.{skill['id']}.sources")
         if skill["platforms"] != ["agent-neutral"] or not source.endswith("SKILL.md"):
             continue
         content = source_path.read_text(encoding="utf-8")
@@ -151,17 +230,35 @@ def _validate_sources(skill: dict[str, Any]) -> None:
         )
 
     adapters = skill.get("adapters", {})
-    _require(isinstance(adapters, dict), "invalid_adapters", f"skills.{skill['id']}.adapters")
+    _require(
+        isinstance(adapters, dict), "invalid_adapters", f"skills.{skill['id']}.adapters"
+    )
     for platform, relative in adapters.items():
-        _require(platform in PLATFORMS, "unknown_platform", f"skills.{skill['id']}: {platform}")
-        _require(platform in skill["platforms"], "adapter_platform_mismatch", f"skills.{skill['id']}: {platform}")
-        _require(relative in sources, "adapter_source_missing", f"skills.{skill['id']}: {relative}")
+        _require(
+            platform in PLATFORMS,
+            "unknown_platform",
+            f"skills.{skill['id']}: {platform}",
+        )
+        _require(
+            platform in skill["platforms"],
+            "adapter_platform_mismatch",
+            f"skills.{skill['id']}: {platform}",
+        )
+        _require(
+            relative in sources,
+            "adapter_source_missing",
+            f"skills.{skill['id']}: {relative}",
+        )
         adapter_path = _repo_file(relative, f"skills.{skill['id']}.adapters.{platform}")
         if platform != "codex":
             continue
         content = adapter_path.read_text(encoding="utf-8")
         leaked = sorted(token for token in CODEX_FORBIDDEN if token in content)
-        _require(not leaked, "codex_adapter_leak", f"skills.{skill['id']}: {', '.join(leaked)}")
+        _require(
+            not leaked,
+            "codex_adapter_leak",
+            f"skills.{skill['id']}: {', '.join(leaked)}",
+        )
         _require("Codex" in content, "codex_adapter_identity", f"skills.{skill['id']}")
         _require(
             "docs/governance/agent-skill-registry.json" in content,
@@ -175,10 +272,88 @@ def _validate_sources(skill: dict[str, Any]) -> None:
         )
 
 
+def _validate_adapter_semantics(
+    skill_id: str,
+    platform: str,
+    content: str,
+    contract: dict[str, Any],
+) -> None:
+    markers = _string_list(
+        contract.get("required_markers"),
+        f"adapter_contracts.{skill_id}.required_markers",
+    )
+    missing = [marker for marker in markers if marker not in content]
+    _require(
+        not missing,
+        "adapter_semantic_marker_missing",
+        f"{skill_id}.{platform}: {', '.join(missing)}",
+    )
+    hashes = contract.get("adapter_sha256")
+    _require(
+        isinstance(hashes, dict),
+        "invalid_adapter_digest",
+        f"adapter_contracts.{skill_id}.adapter_sha256",
+    )
+    expected = hashes.get(platform)
+    _require(
+        isinstance(expected, str) and SHA256_RE.fullmatch(expected) is not None,
+        "invalid_adapter_digest",
+        f"{skill_id}.{platform}",
+    )
+    actual = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    _require(actual == expected, "adapter_content_drift", f"{skill_id}.{platform}")
+
+
+def _validate_adapter_contracts(
+    value: object,
+    skills: dict[str, dict[str, Any]],
+) -> None:
+    _require(isinstance(value, dict), "invalid_adapter_contracts", "must be an object")
+    adapter_skills = {
+        skill_id for skill_id, skill in skills.items() if "adapters" in skill
+    }
+    _require(
+        set(value) == adapter_skills,
+        "adapter_contract_coverage",
+        "adapter Skill set drifted",
+    )
+    for skill_id in sorted(adapter_skills):
+        contract = value[skill_id]
+        _require(isinstance(contract, dict), "invalid_adapter_contract", skill_id)
+        _require(
+            set(contract) == {"version", "required_markers", "adapter_sha256"},
+            "invalid_adapter_contract",
+            skill_id,
+        )
+        _require(
+            contract.get("version") == skills[skill_id]["version"],
+            "adapter_version_drift",
+            skill_id,
+        )
+        hashes = contract.get("adapter_sha256")
+        _require(
+            isinstance(hashes, dict)
+            and set(hashes) == set(skills[skill_id]["adapters"]),
+            "adapter_digest_coverage",
+            skill_id,
+        )
+        for platform, relative in skills[skill_id]["adapters"].items():
+            content = _repo_file(
+                relative, f"skills.{skill_id}.adapters.{platform}"
+            ).read_text(encoding="utf-8")
+            _validate_adapter_semantics(skill_id, platform, content, contract)
+
+
 def _validate_skill(skill: object, seen: set[str]) -> dict[str, Any]:
-    _require(isinstance(skill, dict), "invalid_skill", "each skills item must be an object")
+    _require(
+        isinstance(skill, dict), "invalid_skill", "each skills item must be an object"
+    )
     skill_id = skill.get("id")
-    _require(isinstance(skill_id, str) and ID_RE.fullmatch(skill_id) is not None, "invalid_skill_id", str(skill_id))
+    _require(
+        isinstance(skill_id, str) and ID_RE.fullmatch(skill_id) is not None,
+        "invalid_skill_id",
+        str(skill_id),
+    )
     _require(skill_id not in seen, "duplicate_skill", skill_id)
     seen.add(skill_id)
 
@@ -186,16 +361,38 @@ def _validate_skill(skill: object, seen: set[str]) -> dict[str, Any]:
     _require(lifecycle in LIFECYCLE, "invalid_lifecycle", f"{skill_id}: {lifecycle}")
     if lifecycle == "standard":
         missing = sorted(STANDARD_FIELDS - set(skill))
-        _require(not missing, "standard_metadata_missing", f"{skill_id}: {', '.join(missing)}")
+        _require(
+            not missing,
+            "standard_metadata_missing",
+            f"{skill_id}: {', '.join(missing)}",
+        )
 
-    _require(isinstance(skill.get("owner"), str) and bool(skill["owner"]), "invalid_owner", skill_id)
-    _require(isinstance(skill.get("version"), str) and SEMVER_RE.fullmatch(skill["version"]), "invalid_version", skill_id)
-    _require(skill.get("layer") in LAYERS, "invalid_layer", f"{skill_id}: {skill.get('layer')}")
-    _require(skill.get("kind") in KINDS, "invalid_kind", f"{skill_id}: {skill.get('kind')}")
+    _require(
+        isinstance(skill.get("owner"), str) and bool(skill["owner"]),
+        "invalid_owner",
+        skill_id,
+    )
+    _require(
+        isinstance(skill.get("version"), str) and SEMVER_RE.fullmatch(skill["version"]),
+        "invalid_version",
+        skill_id,
+    )
+    _require(
+        skill.get("layer") in LAYERS,
+        "invalid_layer",
+        f"{skill_id}: {skill.get('layer')}",
+    )
+    _require(
+        skill.get("kind") in KINDS, "invalid_kind", f"{skill_id}: {skill.get('kind')}"
+    )
 
     platforms = _string_list(skill.get("platforms"), f"skills.{skill_id}.platforms")
     unknown_platforms = sorted(set(platforms) - PLATFORMS)
-    _require(not unknown_platforms, "unknown_platform", f"{skill_id}: {', '.join(unknown_platforms)}")
+    _require(
+        not unknown_platforms,
+        "unknown_platform",
+        f"{skill_id}: {', '.join(unknown_platforms)}",
+    )
     _string_list(skill.get("trigger_family"), f"skills.{skill_id}.trigger_family")
     _validate_date(skill.get("last_reviewed"), f"skills.{skill_id}.last_reviewed")
     _string_list(skill.get("evidence"), f"skills.{skill_id}.evidence")
@@ -203,25 +400,60 @@ def _validate_skill(skill: object, seen: set[str]) -> dict[str, Any]:
     return skill
 
 
-def _validate_external(value: object, project_ids: set[str]) -> dict[str, dict[str, Any]]:
-    _require(isinstance(value, list), "invalid_external_recommendations", "must be a list")
+def _validate_external(
+    value: object, project_ids: set[str]
+) -> dict[str, dict[str, Any]]:
+    _require(
+        isinstance(value, list), "invalid_external_recommendations", "must be a list"
+    )
     external: dict[str, dict[str, Any]] = {}
     for item in value:
-        _require(isinstance(item, dict), "invalid_external_recommendation", "each item must be an object")
-        item_id = item.get("id")
-        _require(isinstance(item_id, str) and ID_RE.fullmatch(item_id), "invalid_skill_id", str(item_id))
-        _require(item_id not in project_ids and item_id not in external, "duplicate_skill", item_id)
         _require(
-            isinstance(item.get("version"), str) and SEMVER_RE.fullmatch(item["version"]),
+            isinstance(item, dict),
+            "invalid_external_recommendation",
+            "each item must be an object",
+        )
+        item_id = item.get("id")
+        _require(
+            isinstance(item_id, str) and ID_RE.fullmatch(item_id),
+            "invalid_skill_id",
+            str(item_id),
+        )
+        _require(
+            item_id not in project_ids and item_id not in external,
+            "duplicate_skill",
+            item_id,
+        )
+        _require(
+            isinstance(item.get("version"), str)
+            and SEMVER_RE.fullmatch(item["version"]),
             "invalid_version",
             item_id,
         )
-        _require(item.get("lifecycle") in LIFECYCLE, "invalid_lifecycle", f"{item_id}: {item.get('lifecycle')}")
-        _require(item.get("kind") in KINDS, "invalid_kind", f"{item_id}: {item.get('kind')}")
-        _require(isinstance(item.get("allow_direct_controller"), bool), "invalid_controller_policy", item_id)
-        _require(isinstance(item.get("reason"), str) and bool(item["reason"]), "missing_reason", item_id)
+        _require(
+            item.get("lifecycle") in LIFECYCLE,
+            "invalid_lifecycle",
+            f"{item_id}: {item.get('lifecycle')}",
+        )
+        _require(
+            item.get("kind") in KINDS, "invalid_kind", f"{item_id}: {item.get('kind')}"
+        )
+        _require(
+            isinstance(item.get("allow_direct_controller"), bool),
+            "invalid_controller_policy",
+            item_id,
+        )
+        _require(
+            isinstance(item.get("reason"), str) and bool(item["reason"]),
+            "missing_reason",
+            item_id,
+        )
         if item["lifecycle"] == "deprecated":
-            _require(item["allow_direct_controller"] is False, "deprecated_controller_enabled", item_id)
+            _require(
+                item["allow_direct_controller"] is False,
+                "deprecated_controller_enabled",
+                item_id,
+            )
         external[item_id] = item
     return external
 
@@ -231,57 +463,158 @@ def _skill_kind(skill_id: str, known: dict[str, dict[str, Any]]) -> str:
     return str(known[skill_id]["kind"])
 
 
-def _validate_best_set(registry: dict[str, Any], known: dict[str, dict[str, Any]], router_id: str) -> None:
+def _validate_best_set(
+    registry: dict[str, Any], known: dict[str, dict[str, Any]], router_id: str
+) -> None:
     best = registry.get("best_skill_set")
     _require(isinstance(best, dict), "invalid_best_skill_set", "must be an object")
-    _require(best.get("router") == router_id, "router_mismatch", str(best.get("router")))
-    baseline = _string_list(best.get("baseline_capabilities"), "best_skill_set.baseline_capabilities")
-    controllers = _string_list(best.get("primary_controllers"), "best_skill_set.primary_controllers")
-    _require(not set(baseline) & set(controllers), "role_conflict", "capability is also a controller")
+    _require(
+        best.get("router") == router_id, "router_mismatch", str(best.get("router"))
+    )
+    baseline = _string_list(
+        best.get("baseline_capabilities"), "best_skill_set.baseline_capabilities"
+    )
+    controllers = _string_list(
+        best.get("primary_controllers"), "best_skill_set.primary_controllers"
+    )
+    _require(
+        not set(baseline) & set(controllers),
+        "role_conflict",
+        "capability is also a controller",
+    )
     for skill_id in baseline:
-        _require(_skill_kind(skill_id, known) == "capability", "invalid_capability", skill_id)
+        _require(
+            _skill_kind(skill_id, known) == "capability", "invalid_capability", skill_id
+        )
     for skill_id in controllers:
-        _require(_skill_kind(skill_id, known) == "controller", "invalid_controller", skill_id)
+        _require(
+            _skill_kind(skill_id, known) == "controller", "invalid_controller", skill_id
+        )
 
 
-def _validate_routes(registry: dict[str, Any], known: dict[str, dict[str, Any]]) -> None:
+def _validate_routes(
+    registry: dict[str, Any], known: dict[str, dict[str, Any]]
+) -> None:
     routing = registry.get("routing")
     _require(isinstance(routing, dict), "invalid_routing", "routing must be an object")
     routes = routing.get("routes")
-    _require(isinstance(routes, dict) and set(routes) == set(MODES), "invalid_modes", "routes must use the closed mode set")
+    _require(
+        isinstance(routes, dict) and set(routes) == set(MODES),
+        "invalid_modes",
+        "routes must use the closed mode set",
+    )
 
     for mode in MODES:
         route = routes[mode]
         _require(isinstance(route, dict), "invalid_route", mode)
-        _require(set(route) == {"controller", "delegates", "capabilities"}, "invalid_route_fields", mode)
+        _require(
+            set(route) == {"controller", "delegates", "capabilities"},
+            "invalid_route_fields",
+            mode,
+        )
         controller = route["controller"]
-        _require(controller is None or isinstance(controller, str), "invalid_controller", mode)
+        _require(
+            controller is None or isinstance(controller, str),
+            "invalid_controller",
+            mode,
+        )
         if controller is not None:
-            _require(_skill_kind(controller, known) == "controller", "invalid_controller", f"{mode}: {controller}")
-            _require(known[controller].get("lifecycle") != "deprecated", "deprecated_controller", controller)
-        delegates = _string_list(route["delegates"], f"routing.routes.{mode}.delegates", allow_empty=True)
-        capabilities = _string_list(route["capabilities"], f"routing.routes.{mode}.capabilities", allow_empty=True)
+            _require(
+                _skill_kind(controller, known) == "controller",
+                "invalid_controller",
+                f"{mode}: {controller}",
+            )
+            _require(
+                known[controller].get("lifecycle") != "deprecated",
+                "deprecated_controller",
+                controller,
+            )
+        delegates = _string_list(
+            route["delegates"], f"routing.routes.{mode}.delegates", allow_empty=True
+        )
+        capabilities = _string_list(
+            route["capabilities"],
+            f"routing.routes.{mode}.capabilities",
+            allow_empty=True,
+        )
         _require(controller not in delegates, "controller_cycle", mode)
         for delegate in delegates:
-            _require(_skill_kind(delegate, known) == "controller", "invalid_delegate", f"{mode}: {delegate}")
+            _require(
+                _skill_kind(delegate, known) == "controller",
+                "invalid_delegate",
+                f"{mode}: {delegate}",
+            )
         for capability in capabilities:
-            _require(_skill_kind(capability, known) == "capability", "invalid_capability", f"{mode}: {capability}")
+            _require(
+                _skill_kind(capability, known) == "capability",
+                "invalid_capability",
+                f"{mode}: {capability}",
+            )
         if mode == "release":
-            _require(controller is None, "release_controller_conflict", "release controller comes from one target")
+            _require(
+                controller is None,
+                "release_controller_conflict",
+                "release controller comes from one target",
+            )
 
     overlays = routing.get("overlays")
-    _require(isinstance(overlays, dict) and bool(overlays), "invalid_overlays", "must be a non-empty object")
+    _require(
+        isinstance(overlays, dict) and bool(overlays),
+        "invalid_overlays",
+        "must be a non-empty object",
+    )
     for trigger, skill_ids in overlays.items():
-        _require(isinstance(trigger, str) and ID_RE.fullmatch(trigger), "invalid_overlay", str(trigger))
+        _require(
+            isinstance(trigger, str) and ID_RE.fullmatch(trigger),
+            "invalid_overlay",
+            str(trigger),
+        )
         for skill_id in _string_list(skill_ids, f"routing.overlays.{trigger}"):
-            _require(_skill_kind(skill_id, known) == "overlay", "invalid_overlay_skill", f"{trigger}: {skill_id}")
+            _require(
+                _skill_kind(skill_id, known) == "overlay",
+                "invalid_overlay_skill",
+                f"{trigger}: {skill_id}",
+            )
+
+    capability_triggers = routing.get("capability_triggers")
+    _require(
+        isinstance(capability_triggers, dict) and bool(capability_triggers),
+        "invalid_capability_triggers",
+        "must be a non-empty object",
+    )
+    for trigger, skill_ids in capability_triggers.items():
+        _require(
+            isinstance(trigger, str) and ID_RE.fullmatch(trigger),
+            "invalid_capability_trigger",
+            str(trigger),
+        )
+        for skill_id in _string_list(
+            skill_ids, f"routing.capability_triggers.{trigger}"
+        ):
+            _require(
+                _skill_kind(skill_id, known) == "capability",
+                "invalid_capability_trigger_skill",
+                f"{trigger}: {skill_id}",
+            )
 
     targets = routing.get("release_targets")
-    _require(isinstance(targets, dict) and bool(targets), "invalid_release_targets", "must be a non-empty object")
+    _require(
+        isinstance(targets, dict) and bool(targets),
+        "invalid_release_targets",
+        "must be a non-empty object",
+    )
     for target, skill_id in targets.items():
-        _require(isinstance(target, str) and ID_RE.fullmatch(target), "invalid_release_target", str(target))
+        _require(
+            isinstance(target, str) and ID_RE.fullmatch(target),
+            "invalid_release_target",
+            str(target),
+        )
         _require(isinstance(skill_id, str), "invalid_release_skill", str(skill_id))
-        _require(_skill_kind(skill_id, known) == "terminal", "invalid_release_skill", f"{target}: {skill_id}")
+        _require(
+            _skill_kind(skill_id, known) == "terminal",
+            "invalid_release_skill",
+            f"{target}: {skill_id}",
+        )
 
 
 def _canonical_field(name: str) -> str:
@@ -310,44 +643,186 @@ def _validate_closed_schema_objects(node: object, location: str = "event") -> No
     if not isinstance(node, dict):
         return
     if node.get("type") == "object" or "properties" in node:
-        _require(node.get("additionalProperties") is False, "event_schema_open", location)
+        _require(
+            node.get("additionalProperties") is False, "event_schema_open", location
+        )
     for key, value in node.items():
         _validate_closed_schema_objects(value, f"{location}.{key}")
 
 
 def _validate_event_schema(path: Path) -> None:
     schema = _load_json(path, "event_schema")
-    _require(schema.get("$id") == "agent-skill-run-event.v1", "event_schema_id", str(schema.get("$id")))
-    _require(schema.get("type") == "object", "event_schema_type", "top level must be object")
-    _require(schema.get("additionalProperties") is False, "event_schema_open", "top level must be closed")
-    properties = schema.get("properties")
-    _require(isinstance(properties, dict), "event_schema_properties", "properties must be an object")
-    _require(SAFE_EVENT_FIELDS <= set(properties), "event_schema_fields", "required governance fields are missing")
-    required = schema.get("required")
-    _require(isinstance(required, list) and set(required) <= set(properties), "event_schema_required", "invalid required fields")
-    _require(SAFE_EVENT_FIELDS <= set(required), "event_schema_required", "governance fields must be required")
-    reason_code = properties.get("reason_code")
-    _require(isinstance(reason_code, dict), "event_reason_code", "reason_code must be an object")
     _require(
-        reason_code.get("type") == "string" and set(reason_code.get("enum", [])) == REASON_CODES,
+        schema.get("$id") == "agent-skill-run-event.v1",
+        "event_schema_id",
+        str(schema.get("$id")),
+    )
+    _require(
+        schema.get("type") == "object", "event_schema_type", "top level must be object"
+    )
+    _require(
+        schema.get("additionalProperties") is False,
+        "event_schema_open",
+        "top level must be closed",
+    )
+    properties = schema.get("properties")
+    _require(
+        isinstance(properties, dict),
+        "event_schema_properties",
+        "properties must be an object",
+    )
+    _require(
+        set(properties) == SAFE_EVENT_FIELDS,
+        "event_schema_fields",
+        "event fields must match the closed governance contract",
+    )
+    required = schema.get("required")
+    _require(
+        isinstance(required, list) and set(required) == SAFE_EVENT_FIELDS,
+        "event_schema_required",
+        "all governance fields must be required",
+    )
+    reason_code = properties.get("reason_code")
+    _require(
+        isinstance(reason_code, dict),
+        "event_reason_code",
+        "reason_code must be an object",
+    )
+    _require(
+        reason_code.get("type") == "string"
+        and set(reason_code.get("enum", [])) == REASON_CODES,
         "event_reason_code",
         "reason_code must use the closed privacy-safe vocabulary",
     )
-    _require("pattern" not in reason_code, "event_reason_code", "reason_code cannot be free-form")
+    _require(
+        "pattern" not in reason_code,
+        "event_reason_code",
+        "reason_code cannot be free-form",
+    )
     task_mode = properties.get("task_mode")
-    _require(isinstance(task_mode, dict) and task_mode.get("enum") == MODES, "event_schema_modes", "mode enum drifted")
+    _require(
+        isinstance(task_mode, dict) and task_mode.get("enum") == MODES,
+        "event_schema_modes",
+        "mode enum drifted",
+    )
+    for identifier in ("run_id", "task_id"):
+        spec = properties.get(identifier)
+        _require(
+            isinstance(spec, dict) and spec.get("pattern") == OPAQUE_UUID_PATTERN,
+            "event_identifier_not_opaque",
+            identifier,
+        )
 
     for field in _schema_property_names(schema):
         canonical = _canonical_field(field)
-        leaked = sorted(fragment for fragment in SENSITIVE_FIELD_FRAGMENTS if fragment in canonical)
+        leaked = sorted(
+            fragment for fragment in SENSITIVE_FIELD_FRAGMENTS if fragment in canonical
+        )
         _require(not leaked, "sensitive_event_field", f"{field}: {', '.join(leaked)}")
 
     _validate_closed_schema_objects(schema)
     definitions = schema.get("$defs")
-    _require(isinstance(definitions, dict), "event_schema_definitions", "$defs must be an object")
+    _require(
+        isinstance(definitions, dict),
+        "event_schema_definitions",
+        "$defs must be an object",
+    )
     for name, definition in definitions.items():
         if isinstance(definition, dict) and definition.get("type") == "object":
-            _require(definition.get("additionalProperties") is False, "event_schema_open", f"$defs.{name}")
+            _require(
+                definition.get("additionalProperties") is False,
+                "event_schema_open",
+                f"$defs.{name}",
+            )
+
+
+def _validate_trace_event_schema(path: Path) -> None:
+    schema = _load_json(path, "trace_event_schema")
+    _require(
+        schema.get("$id") == "agent-skill-run-trace-event.v1",
+        "trace_event_schema_id",
+        str(schema.get("$id")),
+    )
+    _require(
+        schema.get("type") == "object",
+        "trace_event_schema_type",
+        "top level must be object",
+    )
+    _require(
+        schema.get("additionalProperties") is False,
+        "trace_event_schema_open",
+        "top level must be closed",
+    )
+    properties = schema.get("properties")
+    required = schema.get("required")
+    _require(
+        isinstance(properties, dict) and set(properties) == TRACE_EVENT_FIELDS,
+        "trace_event_schema_fields",
+        "trace fields must match the closed collector contract",
+    )
+    _require(
+        isinstance(required, list) and set(required) == TRACE_EVENT_FIELDS,
+        "trace_event_schema_required",
+        "all trace fields must be required",
+    )
+    for identifier in ("run_id", "task_id"):
+        spec = properties[identifier]
+        _require(
+            isinstance(spec, dict) and spec.get("pattern") == OPAQUE_UUID4_PATTERN,
+            "trace_identifier_not_uuid4",
+            identifier,
+        )
+    _require(
+        properties["schema_version"] == {"const": "agent-skill-run-trace-event.v1"},
+        "trace_schema_version_contract",
+        "schema_version must be a fixed constant",
+    )
+    for field, expected in (
+        ("arm", TRACE_ARMS),
+        ("task_mode", MODES),
+        ("stage", TRACE_STAGES),
+        ("outcome", TRACE_OUTCOMES),
+    ):
+        _require(
+            properties[field] == {"type": "string", "enum": expected},
+            "trace_vocabulary_drift",
+            field,
+        )
+    _require(
+        properties["timestamp_utc"]
+        == {"type": "string", "pattern": TRACE_TIMESTAMP_PATTERN},
+        "trace_timestamp_contract",
+        "timestamp_utc",
+    )
+    _require(
+        properties["sequence"] == {"type": "integer", "minimum": 1},
+        "trace_sequence_contract",
+        "sequence",
+    )
+    required_digest = {"type": "string", "pattern": r"^[0-9a-f]{64}$"}
+    nullable_digest = {"oneOf": [required_digest, {"type": "null"}]}
+    for field in ("source_sha256", "registry_sha256", "event_sha256"):
+        _require(
+            properties[field] == required_digest,
+            "trace_digest_contract",
+            field,
+        )
+    for field in (
+        "route_sha256",
+        "evidence_sha256",
+        "prev_event_sha256",
+    ):
+        _require(
+            properties[field] == nullable_digest,
+            "trace_digest_contract",
+            field,
+        )
+    for field in _schema_property_names(schema):
+        canonical = _canonical_field(field)
+        leaked = sorted(
+            fragment for fragment in SENSITIVE_FIELD_FRAGMENTS if fragment in canonical
+        )
+        _require(not leaked, "sensitive_trace_field", f"{field}: {', '.join(leaked)}")
 
 
 def _validate_local_skill_coverage(project_ids: set[str]) -> None:
@@ -360,10 +835,26 @@ def _validate_local_skill_coverage(project_ids: set[str]) -> None:
 
 
 def validate_registry(registry: dict[str, Any]) -> dict[str, Any]:
-    _require(registry.get("schema_version") == SCHEMA_VERSION, "schema_version", str(registry.get("schema_version")))
-    _require(registry.get("lifecycle") == LIFECYCLE, "lifecycle_vocabulary", "closed lifecycle vocabulary drifted")
-    _require(registry.get("layers") == LAYERS, "layer_vocabulary", "closed layer vocabulary drifted")
-    _require(registry.get("kinds") == KINDS, "kind_vocabulary", "closed kind vocabulary drifted")
+    _require(
+        registry.get("schema_version") == SCHEMA_VERSION,
+        "schema_version",
+        str(registry.get("schema_version")),
+    )
+    _require(
+        registry.get("lifecycle") == LIFECYCLE,
+        "lifecycle_vocabulary",
+        "closed lifecycle vocabulary drifted",
+    )
+    _require(
+        registry.get("layers") == LAYERS,
+        "layer_vocabulary",
+        "closed layer vocabulary drifted",
+    )
+    _require(
+        registry.get("kinds") == KINDS,
+        "kind_vocabulary",
+        "closed kind vocabulary drifted",
+    )
     _validate_date(registry.get("last_reviewed"), "last_reviewed")
 
     _require(
@@ -373,32 +864,66 @@ def validate_registry(registry: dict[str, Any]) -> dict[str, Any]:
     )
     _repo_file(registry["contract"], "contract")
     _require(
-        registry.get("event_schema") == "docs/governance/agent-skill-run-event.schema.json",
+        registry.get("event_schema")
+        == "docs/governance/agent-skill-run-event.schema.json",
         "event_schema_path",
         str(registry.get("event_schema")),
     )
     event_schema_path = _repo_file(registry["event_schema"], "event_schema")
+    _require(
+        registry.get("trace_event_schema")
+        == "docs/governance/agent-skill-run-trace-event.schema.json",
+        "trace_event_schema_path",
+        str(registry.get("trace_event_schema")),
+    )
+    trace_event_schema_path = _repo_file(
+        registry["trace_event_schema"], "trace_event_schema"
+    )
+    _require_tracked(registry["trace_event_schema"], "trace_event_schema")
+    _require(
+        registry.get("benchmark_collector") == "scripts/agent_skill_benchmark.py",
+        "benchmark_collector_path",
+        str(registry.get("benchmark_collector")),
+    )
+    _repo_file(registry["benchmark_collector"], "benchmark_collector")
+    _require_tracked(registry["benchmark_collector"], "benchmark_collector")
 
     skills_value = registry.get("skills")
-    _require(isinstance(skills_value, list) and bool(skills_value), "invalid_skills", "skills must be a non-empty list")
+    _require(
+        isinstance(skills_value, list) and bool(skills_value),
+        "invalid_skills",
+        "skills must be a non-empty list",
+    )
     seen: set[str] = set()
     skills = [_validate_skill(item, seen) for item in skills_value]
     by_id = {skill["id"]: skill for skill in skills}
     routers = [skill["id"] for skill in skills if skill["kind"] == "router"]
-    _require(routers == ["reva-workflow-router"], "router_count", f"expected one canonical router, got {routers}")
+    _require(
+        routers == ["reva-workflow-router"],
+        "router_count",
+        f"expected one canonical router, got {routers}",
+    )
 
     external = _validate_external(registry.get("external_recommendations"), set(by_id))
     known = {**by_id, **external}
     _validate_best_set(registry, known, routers[0])
+    _validate_adapter_contracts(registry.get("adapter_contracts"), by_id)
     _validate_routes(registry, known)
     _validate_event_schema(event_schema_path)
+    _validate_trace_event_schema(trace_event_schema_path)
     _validate_local_skill_coverage(set(by_id))
 
     for deprecated_id in ("using-superpowers", "executing-plans"):
         item = external.get(deprecated_id)
         _require(item is not None, "missing_deprecation", deprecated_id)
-        _require(item["lifecycle"] == "deprecated", "invalid_deprecation", deprecated_id)
-        _require(item["allow_direct_controller"] is False, "deprecated_controller_enabled", deprecated_id)
+        _require(
+            item["lifecycle"] == "deprecated", "invalid_deprecation", deprecated_id
+        )
+        _require(
+            item["allow_direct_controller"] is False,
+            "deprecated_controller_enabled",
+            deprecated_id,
+        )
     return registry
 
 
@@ -410,6 +935,7 @@ def recommend(
     registry: dict[str, Any],
     mode: str,
     overlay_triggers: list[str],
+    capability_triggers: list[str],
     release_targets: list[str],
 ) -> dict[str, Any]:
     routes = registry["routing"]["routes"]
@@ -419,8 +945,20 @@ def recommend(
     unknown_overlays = sorted(set(overlay_triggers) - set(overlay_map))
     _require(not unknown_overlays, "unknown_overlay", ", ".join(unknown_overlays))
 
+    capability_map = registry["routing"]["capability_triggers"]
+    unknown_capabilities = sorted(set(capability_triggers) - set(capability_map))
+    _require(
+        not unknown_capabilities,
+        "unknown_capability_trigger",
+        ", ".join(unknown_capabilities),
+    )
+
     if mode == "release":
-        _require(len(release_targets) == 1, "release_target_required", "release requires exactly one --release-target")
+        _require(
+            len(release_targets) == 1,
+            "release_target_required",
+            "release requires exactly one --release-target",
+        )
         target = release_targets[0]
         release_map = registry["routing"]["release_targets"]
         _require(target in release_map, "unknown_release_target", target)
@@ -433,14 +971,23 @@ def recommend(
     route = routes[mode]
     delegates = list(route["delegates"])
     capabilities = list(route["capabilities"])
-    overlays = sorted({skill_id for trigger in overlay_triggers for skill_id in overlay_map[trigger]})
+    triggered_capabilities = sorted(
+        {
+            skill_id
+            for trigger in capability_triggers
+            for skill_id in capability_map[trigger]
+        }
+    )
+    capabilities = list(dict.fromkeys([*capabilities, *triggered_capabilities]))
+    overlays = sorted(
+        {skill_id for trigger in overlay_triggers for skill_id in overlay_map[trigger]}
+    )
     controller_count = int(controller is not None)
     _require(controller_count <= 1, "controller_conflict", mode)
 
     ordered = [registry["best_skill_set"]["router"]]
     if controller is not None:
         ordered.append(controller)
-    ordered.extend(delegates)
     ordered.extend(capabilities)
     ordered.extend(overlays)
     selected_skills = list(dict.fromkeys(ordered))
@@ -452,8 +999,6 @@ def recommend(
     def selection_role(skill_id: str) -> str:
         if skill_id == registry["best_skill_set"]["router"]:
             return "router"
-        if skill_id in delegates:
-            return "delegate"
         if skill_id in capabilities:
             return "capability"
         if skill_id in overlays:
@@ -470,6 +1015,14 @@ def recommend(
         }
         for skill_id in selected_skills
     ]
+    deferred_skill_details = [
+        {
+            "id": skill_id,
+            "version": known[skill_id]["version"],
+            "role": "delegate",
+        }
+        for skill_id in delegates
+    ]
 
     return {
         "schema_version": "agent-skill-recommendation.v1",
@@ -478,7 +1031,10 @@ def recommend(
         "controller": controller,
         "controller_count": controller_count,
         "delegates": delegates,
+        "deferred_skills": delegates,
+        "deferred_skill_details": deferred_skill_details,
         "capabilities": capabilities,
+        "triggered_capabilities": triggered_capabilities,
         "overlays": overlays,
         "release_target": target,
         "selected_skills": selected_skills,
@@ -491,9 +1047,12 @@ def _parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("check", help="validate the committed governance contract")
 
-    recommend_parser = subparsers.add_parser("recommend", help="return one deterministic task route")
+    recommend_parser = subparsers.add_parser(
+        "recommend", help="return one deterministic task route"
+    )
     recommend_parser.add_argument("--mode", required=True)
     recommend_parser.add_argument("--overlay", action="append", default=[])
+    recommend_parser.add_argument("--capability-trigger", action="append", default=[])
     recommend_parser.add_argument("--release-target", action="append", default=[])
     return parser
 
@@ -513,7 +1072,13 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
 
-        result = recommend(registry, args.mode, args.overlay, args.release_target)
+        result = recommend(
+            registry,
+            args.mode,
+            args.overlay,
+            args.capability_trigger,
+            args.release_target,
+        )
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
     except GovernanceError as exc:

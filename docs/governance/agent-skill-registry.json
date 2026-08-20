@@ -2,6 +2,8 @@
   "schema_version": "agent-skill-registry.v1",
   "contract": "docs/governance/agent-skill-governance.md",
   "event_schema": "docs/governance/agent-skill-run-event.schema.json",
+  "trace_event_schema": "docs/governance/agent-skill-run-trace-event.schema.json",
+  "benchmark_collector": "scripts/agent_skill_benchmark.py",
   "last_reviewed": "2026-08-20",
   "lifecycle": [
     "experimental",
@@ -34,6 +36,68 @@
       "product-pipeline",
       "health-harness-orchestrator"
     ]
+  },
+  "adapter_contracts": {
+    "reva-workflow-router": {
+      "version": "1.1.0",
+      "required_markers": [
+        "analysis",
+        "quick_fix",
+        "feature",
+        "implementation",
+        "incident",
+        "release",
+        "primary_controller",
+        "capability-trigger",
+        "using-superpowers",
+        "executing-plans"
+      ],
+      "adapter_sha256": {
+        "claude": "8668f8de5ccea9e40b88708c810387a4967fde9e2b4454ac70ed917b60a96cd4",
+        "codex": "bfec5c1ba04b5c9be467d33b1bace2779af6816597a63106d70963e587c22664"
+      }
+    },
+    "product-pipeline": {
+      "version": "1.0.0",
+      "required_markers": [
+        "primary_controller",
+        "health-harness-orchestrator",
+        "Dossier",
+        "S5",
+        "G1",
+        "G2",
+        "G3",
+        "G4",
+        "G5",
+        "G6",
+        "BLOCK",
+        "production"
+      ],
+      "adapter_sha256": {
+        "claude": "94c062c55cadd9f508fc86a15532ad1f782bf672b7e3980903929f32793bed2d",
+        "codex": "346cf6fea20f76f91da4ff94ca7b8a23e64259c36cd8068e626a8eb0f98d1823"
+      }
+    },
+    "health-harness-orchestrator": {
+      "version": "1.0.0",
+      "required_markers": [
+        "primary_controller",
+        "implementation",
+        "incident",
+        "Dossier",
+        "S5",
+        "G3",
+        "G4",
+        "G5",
+        "G6",
+        "BLOCK",
+        "production"
+      ],
+      "adapter_sha256": {
+        "claude": "f07badc234a17fddd82643d8aea45198bbe54aebb8e64f96fbc9ff2ee11d25e2",
+        "codex": "e4769c178ca460ba7f2b762a52dbfbe0782238ee4d9996fcff6fc1ab6a1cd3d5"
+      }
+    }
   },
   "skills": [
     {
@@ -336,27 +400,6 @@
       "sources": [
         ".claude/skills/extend-safety-or-specialist/SKILL.md"
       ]
-    },
-    {
-      "id": "domain-rule-factory",
-      "lifecycle": "experimental",
-      "owner": "reva-agent-governance",
-      "version": "0.3.0",
-      "layer": "incubator",
-      "kind": "capability",
-      "platforms": [
-        "agent-neutral"
-      ],
-      "trigger_family": [
-        "new-deterministic-rule-domain"
-      ],
-      "last_reviewed": "2026-08-20",
-      "evidence": [
-        "The eight-stage rulebook-to-runtime pattern is documented but has not yet met the standard lifecycle evidence bar."
-      ],
-      "sources": [
-        ".claude/skills/domain-rule-factory/SKILL.md"
-      ]
     }
   ],
   "external_recommendations": [
@@ -391,6 +434,30 @@
       "kind": "capability",
       "allow_direct_controller": false,
       "reason": "Use before completion claims; it owns evidence, not orchestration."
+    },
+    {
+      "id": "skill-creator",
+      "version": "1.0.0",
+      "lifecycle": "standard",
+      "kind": "capability",
+      "allow_direct_controller": false,
+      "reason": "Use only when creating or materially revising a Skill contract."
+    },
+    {
+      "id": "writing-skills",
+      "version": "1.0.0",
+      "lifecycle": "standard",
+      "kind": "capability",
+      "allow_direct_controller": false,
+      "reason": "Use for TDD and deployment discipline specific to Skill files."
+    },
+    {
+      "id": "plugin-creator",
+      "version": "1.0.0",
+      "lifecycle": "standard",
+      "kind": "capability",
+      "allow_direct_controller": false,
+      "reason": "Use only when authoring or installing a Codex plugin package."
     },
     {
       "id": "using-superpowers",
@@ -484,6 +551,15 @@
       ],
       "safety": [
         "safety-gate"
+      ]
+    },
+    "capability_triggers": {
+      "plugin-authoring": [
+        "plugin-creator"
+      ],
+      "skill-governance": [
+        "skill-creator",
+        "writing-skills"
       ]
     },
     "release_targets": {

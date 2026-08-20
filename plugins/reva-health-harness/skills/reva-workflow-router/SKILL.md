@@ -19,13 +19,16 @@ Canonical policy:
    `analysis`, `quick_fix`, `feature`, `implementation`, `incident`, or `release`.
 2. Add only overlays actually triggered by the changed surface. Use canonical
    overlay IDs from the registry; do not invent aliases.
-3. For release mode, identify exactly one release target.
-4. Run the deterministic recommender from the repository root:
+3. Add a canonical `capability-trigger` only when the task actually authors a
+   Skill or Codex plugin. Capabilities never become controllers.
+4. For release mode, identify exactly one release target.
+5. Run the deterministic recommender from the repository root:
 
 ```bash
 python3.12 scripts/check_agent_skill_governance.py recommend \
   --mode <mode> \
   [--overlay <canonical-id>] \
+  [--capability-trigger <canonical-id>] \
   [--release-target <target>]
 ```
 
@@ -34,7 +37,8 @@ blocking errors. Do not guess around them.
 
 ## Apply the recommendation
 
-- Load only the returned controller, capabilities, overlays, and terminal skill.
+- Load only the returned immediate controller, capabilities, overlays, and
+  terminal skill. A returned delegate remains deferred until its named phase.
 - There must be zero or one `primary_controller`. If output contains more, stop
   and run the governance check; do not choose by intuition.
 - `analysis` and `quick_fix` deliberately have no controller.

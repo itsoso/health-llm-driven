@@ -74,6 +74,9 @@ jobs:
       - name: Check dossier consistency
         run: python backend/scripts/check_dossier_consistency.py
 
+      - name: Check Agent Skill governance
+        run: python scripts/check_agent_skill_governance.py check
+
   backend-test-shards:
     name: backend-test-${{ matrix.label }}
     runs-on: ubuntu-latest
