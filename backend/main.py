@@ -17,6 +17,7 @@ from app.scheduler import start_scheduler
 from app.utils.logging_config import setup_beijing_logging
 from app.config import settings
 from app.middleware.request_body_limit import RequestBodyLimitMiddleware
+from app.middleware.safe_access_log import SafeAccessLogMiddleware, safe_route_template
 import app.models.smart_reminder  # noqa: F401 - ensure table creation
 import app.models.interaction_feedback  # noqa: F401 - Agent 反馈系统
 import app.models.genetic_data  # noqa: F401 - 基因数据表
@@ -355,7 +356,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             # 慢请求日志
             if duration > SLOW_REQUEST_THRESHOLD:
                 logger.warning(
-                    f"[SLOW] [{request_id}] {method} {path} "
+                    f"[SLOW] [{request_id}] {method} {safe_route_template(request.scope)} "
                     f"took {duration_ms:.0f}ms (status={response.status_code})"
                 )
 
@@ -364,7 +365,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         except asyncio.TimeoutError:
             duration_ms = (time.time() - start_time) * 1000
             logger.error(
-                f"[TIMEOUT] [{request_id}] {method} {path} "
+                f"[TIMEOUT] [{request_id}] {method} {safe_route_template(request.scope)} "
                 f"timed out after {duration_ms:.0f}ms (limit={req_timeout}s)"
             )
             return JSONResponse(
@@ -377,8 +378,8 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         except Exception as e:
             duration_ms = (time.time() - start_time) * 1000
             logger.error(
-                f"[ERROR] [{request_id}] {method} {path} "
-                f"failed after {duration_ms:.0f}ms: {type(e).__name__}: {e}"
+                f"[ERROR] [{request_id}] {method} {safe_route_template(request.scope)} "
+                f"failed after {duration_ms:.0f}ms: {type(e).__name__}"
             )
             return JSONResponse(
                 status_code=500,
@@ -390,6 +391,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(RequestBodyLimitMiddleware)
+app.add_middleware(SafeAccessLogMiddleware)
 
 # 注册路由
 app.include_router(api_router, prefix="/api/v1")
