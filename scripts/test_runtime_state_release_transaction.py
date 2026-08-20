@@ -1569,7 +1569,7 @@ def test_dropins_enforce_minimal_external_writable_boundaries() -> None:
         "ExecStart=\n"
         "ExecStart=/opt/health-app/backend/venv/bin/uvicorn main:app --fd 3 "
         "--workers 1 --limit-concurrency 100 --proxy-headers "
-        "--forwarded-allow-ips=127.0.0.1\n"
+        "--forwarded-allow-ips=127.0.0.1 --no-access-log\n"
         "ReadWritePaths=\n"
         "ReadWritePaths=/var/lib/health-app/uploads "
         "/var/cache/health-app/skills-hub "

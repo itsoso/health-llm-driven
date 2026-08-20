@@ -12,7 +12,7 @@ EnvironmentFile=/opt/health-app/backend/.env
 Environment=PATH=/opt/health-app/backend/venv/bin:/usr/bin
 # Garmin 0.3.6 MFA challenge 持有进程内 native HTTP client；在 durable
 # challenge coordinator 落地前必须保持单 worker，避免验证码请求随机换进程。
-ExecStart=/opt/health-app/backend/venv/bin/uvicorn main:app --fd 3 --workers 1 --limit-concurrency 100 --proxy-headers --forwarded-allow-ips=127.0.0.1
+ExecStart=/opt/health-app/backend/venv/bin/uvicorn main:app --fd 3 --workers 1 --limit-concurrency 100 --proxy-headers --forwarded-allow-ips=127.0.0.1 --no-access-log
 Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=45s
