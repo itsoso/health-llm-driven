@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-skill-governance` |
 | 创建日期 | 2026-08-20 |
-| 当前阶段 | S5 实现 |
-| 状态 | building |
+| 当前阶段 | S7 验证 |
+| 状态 | validating |
 | 负责 | Codex |
 | 反馈环 | deterministic registry / Router recommendation / repository gates |
 
@@ -69,18 +69,20 @@
 - [x] T2 先写治理/插件/接线契约测试并取得预期 RED。
 - [x] T3 实现机器注册表、检查器、Router、adapter 语义 digest 与 benchmark collector。
 - [x] T4 接入 binding、plugin、validate、pre-commit、CI 和 system map。
-- [ ] T5 前向压测、独立评审、提交与安全推送。
+- [x] T5 前向压测、独立评审、提交与安全推送。
 
 ## S5 · 实现
 
-- 当前分支:`codex/agent-skill-governance-20260820`，基于最新 `origin/main` 的独立干净 worktree；共享主工作树中的 Health Day / KBase / 环境文件 WIP 未被带入。
-- 当前状态:registry/checker、Codex-native adapters、semantic digest、deferred delegate、隐私最小 benchmark collector 与 repository gates 已实现，正在做最终评审、提交、推送和插件安装发现验证。
+- 实现分支:`codex/agent-skill-governance-20260820`，基于最新 `origin/main` 的独立干净 worktree；共享主工作树中的 Health Day / KBase / 环境文件 WIP 未被带入。
+- 交付提交:`50b250b39`、`58f960c62`、`60466e3ea`，已安全快进到 `main`。
+- 当前状态:registry/checker、Codex-native adapters、semantic digest、deferred delegate、隐私最小 benchmark collector 与 repository gates 已实现并激活。
 
 ## G3 · 测试闸
 
-- 当前证据:治理/插件/benchmark/仓库接线 focused tests `65 passed`；checker self-check PASS；官方 plugin validator 与 3 个 Skill validator PASS；`scripts/validate.py -v` 的 blocking system-map、Dossier 与 Skill governance 全 PASS；目标 Ruff、py_compile、`git diff --check` PASS。
+- 当前证据:从 committed state 运行治理/插件/benchmark/仓库接线 focused tests `65 passed`；checker self-check PASS；官方 plugin validator 与 3 个 Skill validator PASS；`scripts/validate.py -v` 的 blocking system-map、Dossier 与 Skill governance 全 PASS；目标 Ruff、py_compile、`git diff --check` PASS。
 - `validate.py` 的 backend 全局 Ruff 是 report-only，仍报告仓库既有问题；本治理 diff 的目标 Ruff 为零错误。
-- **裁决:PASS** —— 待提交后仍会从 committed state 重跑同一证据包，主干 CI 是推送后的独立真实性检查。
+- 主干 CI:`60466e3ead02d7a4233f0ca1596579694e40254f` 对应 [run 32353788106](https://github.com/itsoso/health-llm-driven/actions/runs/32353788106) completed/success；`docs-quality` 中独立 Agent Skill governance step PASS，最终聚合 Gate PASS。
+- **裁决:PASS**。
 
 ## G4 · 安全闸
 
@@ -95,12 +97,18 @@
 
 ## G5 · 部署健康闸
 
-- 不适用；以 plugin validation 和 CI 接线取代。
+- 交付形态不是生产服务，而是本地 Codex plugin 激活；因此用 plugin health 取代服务器 health。
+- `/opt/homebrew/bin/codex`=`0.148.0-alpha.9`；从稳定远端 `itsoso/health-llm-driven --ref main` 添加 `reva-health` marketplace，并安装、启用 `reva-health-harness@reva-health` `0.2.0`。
+- marketplace checkout、远端 `origin/main` 与交付 SHA 均为 `60466e3ead02d7a4233f0ca1596579694e40254f`；plugin manifest 与三个已安装 Skill 的 SHA-256 均和该提交源码一致。
+- fresh `codex exec` 需直接调用 App bundle binary，避免 `/opt/homebrew/bin/codex` symlink 令 code-mode host 被错误解析到不存在的同目录路径；plugin 安装/list 命令不受此限制。
+- **裁决:PASS**。
 
 ## S7 · 验证
 
 - 已验证 Router 静态输出:quick-fix 无 controller；feature 仅 Product Pipeline 一个 controller，Health Harness 留在 `deferred_skills`；Skill/plugin 治理只增加对应 authoring capabilities。
-- 待提交后用官方 CLI 安装 repo marketplace/plugin，并在 fresh Codex 进程核对三项 Skill 的发现与仅 Router implicit 边界。
+- fresh Codex quick-fix:自动发现并应用已安装 `reva-workflow-router`，实际运行 recommender；`controller_count=0`、无 deferred skill、无 deprecated controller。
+- fresh Codex cross-end medication notification feature:实际运行 `feature + safety + notification-privacy`；overlay 去重为一个 `safety-gate`，`primary_controller=product-pipeline`、`controller_count=1`、`health-harness-orchestrator` 仅 deferred，未激活 `using-superpowers` / `executing-plans`。
+- 两个 fresh 进程均只读且最终 `governance_result=pass`；这证明安装发现与路由合同生效，不证明未来 Bug 已经提速。
 
 ### Transition observation（不作为纯旧体系对照）
 
@@ -111,8 +119,11 @@
 
 ## G6 · 验证闸(人在环)
 
-- 待用户确认治理结果是否符合“更少触发、更少重复状态、平台适配清晰”的目标。
+- 技术验收已经证明“单 Router、最多一个 Controller、平台原生 adapter、deferred delegate、overlay 去重”在 fresh Codex 进程生效。
+- 效果验收仍在进行:饮食任务是受污染的 transition observation；下一条真实 Bug 必须在根因调查前注册 `router_v1_prospective`。单样本只报告描述性结果，同 task mode 每 arm 至少 5 个完整样本且 G3–G6/run finished 均闭环后，才进入分层比较；工具永不自动宣称优胜。
+- **裁决:PENDING** —— 不阻塞治理能力投入使用，但阻止“已经提高速度/质量”的结论。
 
 ## S8 · 沉淀
 
-- 待更新 system-map 生成物、治理证据和最终状态。
+- 已更新 System Map 导航、agent binding、治理真源、plugin 安装说明、CI/pre-commit/validate 接线与证据 Dossier。本次没有新增代码派生架构实体或计数字段，无需改写 generated System Map 计数。
+- 下一 Bug 开始前用显式 trace 路径启动 benchmark；不把本轮 transition observation 倒灌为伪造历史事件。
