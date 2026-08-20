@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | date | 2026-08-19 |
-| status | in_progress |
-| current_stage | G4 PASS; G5 deployment pending |
+| status | complete |
+| current_stage | G6 PASS |
 | owner_surface | Mobile diet confirmation / Backend production telemetry |
 
 ## Problem
@@ -86,17 +86,41 @@ is disabled in both production server blocks. The older detailed performance
 middleware can log raw data but is not registered in the application; this
 slice does not activate it.
 
-### G5 Deployment Health: PENDING
+### G5 Deployment Health: PASS
 
-Backend deployment and production health evidence are not yet available.
+The clean `main` source revision
+`4140bb7a33d79e4968e22a7afd1813a7977a516b` was deployed through the governed
+Backend entrypoint. The deployment's backup, runtime-state transaction, remote
+revision, skill inventory, and repeated production health checks passed; the
+health score was 60/60. The effective `health-backend` ExecStart contains
+`--no-access-log`.
 
-### G6 Production Verification: PENDING
+The live Nginx estate contained four historical active configuration files for
+the same hostname, including two files named as backups. To avoid leaving an
+alternate raw-log path active, both server blocks in all four files were
+tightened with `access_log off`, followed by `nginx -t`, reload, and active-state
+checks. The originals are retained in the root-only backup directory
+`/var/backups/reva-nginx-access-log-20260820-4140bb7a`.
 
-Production log-sentinel verification and Mobile OTA applicability are not yet
-available.
+### G6 Production Verification: PASS
+
+A unique query-string sentinel was sent through the public production health
+endpoint after deployment. The response reported API, PostgreSQL, Redis, and
+Celery healthy. The Backend journal contained exactly one sanitized
+`http_access` entry for route template `/api/v1/health`; the sentinel appeared
+zero times in Backend and Nginx logs.
+
+The exact same source revision was published to the iOS `production` channel
+for runtime `1.3.3`. EAS update group
+`abc50749-b94e-4554-8eb7-d192ac5832e6` and iOS update
+`01a01df5-89fa-7c88-a237-f90c5a6b9545` were verified by the release script.
+The first Hermes upload timed out during EAS asset processing; the governed
+fallback rebuilt a no-bytecode artifact and published it successfully without
+relaxing source, branch, channel, or dirty-worktree guards.
 
 ## Rollback
 
 Rollback is the preceding source revision. There is no data migration and no
-record repair step. A failed Backend or OTA gate stops the release and keeps the
-dossier in a blocked state.
+record repair step. Backend rollback uses the governed runtime transaction;
+Nginx rollback uses the retained root-only configuration backup; Mobile rollback
+uses the verified EAS update group recorded in the release manifest.
