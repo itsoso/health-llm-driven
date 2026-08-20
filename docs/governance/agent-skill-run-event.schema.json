@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-skill-run-event.v1",
+  "title": "Reva agent skill run event",
+  "description": "Privacy-minimal governance evidence. Raw task, prompt and health content are intentionally excluded.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "task_id",
+    "task_mode",
+    "selected_skills",
+    "gate",
+    "outcome",
+    "validation_exit_code",
+    "duration_ms",
+    "review_rounds",
+    "manual_interventions",
+    "reason_code"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "task_id": {
+      "type": "string",
+      "description": "Opaque project task identifier; never copy task text into this field.",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "task_mode": {
+      "type": "string",
+      "enum": [
+        "analysis",
+        "quick_fix",
+        "feature",
+        "implementation",
+        "incident",
+        "release"
+      ]
+    },
+    "selected_skills": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/skill_selection"
+      }
+    },
+    "gate": {
+      "type": "string",
+      "enum": [
+        "none",
+        "governance",
+        "G1",
+        "G2",
+        "G3",
+        "G4",
+        "G5",
+        "G6",
+        "verification",
+        "release"
+      ]
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail",
+        "blocked",
+        "cancelled",
+        "not_applicable"
+      ]
+    },
+    "validation_exit_code": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "review_rounds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "manual_interventions": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "reason_code": {
+      "type": "string",
+      "enum": [
+        "none",
+        "completed",
+        "validation_failed",
+        "governance_blocked",
+        "safety_blocked",
+        "route_rejected",
+        "manual_decision_required",
+        "dependency_unavailable",
+        "budget_exhausted",
+        "release_failed",
+        "user_cancelled",
+        "unknown_failure"
+      ]
+    }
+  },
+  "$defs": {
+    "skill_selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "role"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "router",
+            "controller",
+            "delegate",
+            "capability",
+            "overlay",
+            "terminal"
+          ]
+        }
+      }
+    }
+  }
+}

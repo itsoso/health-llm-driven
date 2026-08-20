@@ -500,16 +500,16 @@ cat /etc/passwd | awk -F: '$3 == 0 {print}'
 
 ### 9.1 数据库类型
 
-**生产环境数据库: PostgreSQL**
+**生产环境与数据库语义真源: PostgreSQL**
 
-> ⚠️ **重要**: 项目统一使用 PostgreSQL 数据库，SQLite 仅用于历史兼容，**已废弃**。
-> 所有新的数据库操作、迁移、查询都必须基于 PostgreSQL。
+> ⚠️ **重要**:所有新的数据库操作、迁移与查询都必须以 PostgreSQL 为权威目标。生产语义与新数据库行为必须用 PostgreSQL 验证；SQLite 只保留快速单元测试与迁移兼容性验证，不能证明 PostgreSQL 的约束、并发、JSONB、时区或方言行为。
 
 | 环境 | 数据库 | 备注 |
 |------|--------|------|
 | 生产 | PostgreSQL | **唯一正式数据库** |
 | 开发 | PostgreSQL | 推荐使用 Docker 本地运行 |
-| ~~测试~~ | ~~SQLite~~ | **已废弃，请勿使用** |
+| 测试语义集成 | PostgreSQL | 新数据库行为和 PostgreSQL 特有语义的完成证据 |
+| 快速单元/迁移兼容 | SQLite | 仅作快速反馈，不得替代 PostgreSQL 语义 Gate |
 
 ### 9.2 连接配置
 
@@ -557,9 +557,9 @@ cd /opt/health-app/backend
 psql "$DATABASE_URL" -f migrations/create_xxx_tables.sql
 ```
 
-### 9.4 PostgreSQL vs SQLite 语法差异
+### 9.4 PostgreSQL vs SQLite 兼容性差异
 
-| 功能 | PostgreSQL | SQLite (已废弃) |
+| 功能 | PostgreSQL 权威语义 | SQLite 兼容 lane |
 |------|------------|-----------------|
 | 自增主键 | `SERIAL PRIMARY KEY` | `INTEGER PRIMARY KEY AUTOINCREMENT` |
 | 时间戳默认值 | `DEFAULT NOW()` | `DEFAULT CURRENT_TIMESTAMP` |
@@ -592,6 +592,7 @@ class ExampleModel(Base):
 
 | 版本 | 日期 | 更新内容 |
 |------|------|---------|
+| 1.3 | 2026-08-20 | 对齐真实测试矩阵：PostgreSQL 为语义真源，SQLite 仅快速单元/迁移兼容 |
 | 1.2 | 2026-01-25 | 新增数据库规范章节，明确使用 PostgreSQL，废弃 SQLite |
 | 1.1 | 2026-01-25 | 新增部署规范章节，明确 deploy.sh 和 .env 使用规范 |
 | 1.0 | 2026-01-17 | 初始版本，包含安全、日志、测试、性能、数据安全规范 |
@@ -633,15 +634,15 @@ class ExampleModel(Base):
 - **6 道可失败 Gate**：G1 准入（§8）/ G2 可行性+安全压测 / G3 测试 / G4 安全 / G5 部署健康分 / G6 上线验证。**任何 Gate 失败必回上游，绝不带红或带安全 BLOCK 往下走。**
 - **Dossier 脊柱**：每 feature 一份 `docs/dossiers/<date>-<slug>.md`，串起全链 + 每道 Gate 裁决（含 REJECT/BLOCK）+ 当前状态，**接手先读它从断点续**。
 - **测试 Gate 硬约束**：跑测试**绝不 `| tail`**（吞退出码 → 带红上线）；部署前集成闸 CI 模式合跑 + 查主干真实色。
-- 每个 agent 用自己的工具满足同一套 Gate。Claude Code 的具体编排在 `.claude/skills/product-pipeline/`；Codex/其他 agent 直接按契约走。
+- 每个 agent 用自己的工具满足同一套 Gate。平台适配器由 `reva-workflow-router` 和 Agent Skill 注册表选择；Claude 使用 `.claude/skills/`，Codex 使用 repo-local `reva-health-harness` plugin，其他 agent 直接按 agent-neutral 契约走。
 
 ## 13. 本项目研发 Skill Binding(跨 agent 通用，Codex 必读)
 
-本仓库的项目级 binding 见 [`docs/agent-skill-binding.md`](docs/agent-skill-binding.md)。它把 Claude 已落地的 `.claude/skills/*` 显式绑定到 health-llm-driven 的研发入口,供 Claude、Codex、Cursor 和其他 coding agent 共同使用。
+本仓库的项目级 binding 见 [`docs/agent-skill-binding.md`](docs/agent-skill-binding.md)。研发 Skill 的 agent-neutral 真源是 [`docs/governance/agent-skill-registry.json`](docs/governance/agent-skill-registry.json) 与 [`docs/governance/agent-skill-governance.md`](docs/governance/agent-skill-governance.md)。任何任务先经 `reva-workflow-router` / `scripts/check_agent_skill_governance.py recommend` 选择最小充分集合；同一任务最多一个 primary controller，overlay 只能阻断、不得另建计划或 ledger。
 
 - **Claude Code** 可以自动发现 `.claude/skills/*`;仍必须受本文件和 `docs/governance/*` 硬规则裁判。
-- **Codex / Cursor / 其他 agent** 不假设 Claude 工具存在;但在本项目内,遇到 binding 表里的触发场景时,必须直接读取对应 `.claude/skills/<name>/SKILL.md` 作为项目协议,再用自己的工具满足同一套 Gate。
-- 如果全局 openskills 已提供同名 skill,可以用 `npx openskills read <skill-name>`;否则以仓库内 `.claude/skills/<name>/SKILL.md` 为准。
+- **Codex** 使用 `plugins/reva-health-harness/skills/*` 的原生 adapter；不得把 Claude-only 的团队工具、模型选择或署名当成 Codex 指令。
+- **Cursor / 其他 agent** 直接按治理真源和 agent-neutral Gate 执行；只有注册表明确列出的外部 capability 才读取其来源。
 - 这里说的是**研发 agent skill**。`backend/skills/*` 是产品运行时技能,不得当作编码 agent 的研发流程入口。
 
 ## 14. 数据展示规范 — 面向用户的数字精度 🔢

@@ -1,0 +1,52 @@
+---
+name: reva-workflow-router
+description: "Route Reva repository work to the smallest governed Skill set before planning or editing. Use for analysis, quick fixes, features, implementation, incidents, and releases so the task has at most one controller and only relevant overlays."
+---
+
+# Reva Workflow Router
+
+This is the **Claude routing adapter**. It selects workflow ownership; it does
+not perform the requested engineering work itself.
+
+Canonical policy:
+
+- `docs/governance/agent-skill-registry.json`
+- `docs/governance/agent-skill-governance.md`
+
+## Route first
+
+1. Classify the task as exactly one mode:
+   `analysis`, `quick_fix`, `feature`, `implementation`, `incident`, or `release`.
+2. Add only overlays actually triggered by the changed surface. Use canonical
+   overlay IDs from the registry; do not invent aliases.
+3. For release mode, identify exactly one release target.
+4. Run the deterministic recommender from the repository root:
+
+```bash
+python3.12 scripts/check_agent_skill_governance.py recommend \
+  --mode <mode> \
+  [--overlay <canonical-id>] \
+  [--release-target <target>]
+```
+
+Repeat `--overlay` when needed. Unknown modes, overlays, and release targets are
+blocking errors. Do not guess around them.
+
+## Apply the recommendation
+
+- Load only the returned controller, capabilities, overlays, and terminal skill.
+- There must be zero or one `primary_controller`. If output contains more, stop
+  and run the governance check; do not choose by intuition.
+- `analysis` and `quick_fix` deliberately have no controller.
+- `feature` is owned by `product-pipeline`.
+- `implementation` and `incident` are owned by
+  `health-harness-orchestrator`; incident also receives debugging capability.
+- `release` is owned by exactly one target-specific terminal workflow.
+- When Product Pipeline delegates S5 to Health Harness, reuse the same parent
+  run and Dossier. Delegation does not create a second controller.
+- Overlays may block a Gate but never own planning, checkpoints, or completion.
+
+Before starting, state the selected mode and minimal Skill set in one concise
+update. Then follow the selected adapter and repository hard rules. Do not
+directly activate project-deprecated controllers such as `using-superpowers` or
+`executing-plans`.

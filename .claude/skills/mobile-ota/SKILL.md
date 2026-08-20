@@ -23,7 +23,7 @@ cd /Users/liqiuhua/work/personal/health-llm-driven
 
 ## 关键坑
 
-- **OTA 打包的是工作树(working tree),不是 HEAD**。未提交的 WIP 会漏进生产 OTA。**先 commit 或 stash 再推**(记忆 [[project_deploy_mobile_ota_bundles_worktree]])。
+- **OTA 打包的是工作树(working tree),不是 HEAD**。未提交的 WIP 会漏进生产 OTA。**先 commit 或移出 WIP 再推**；以脚本的 source/dirty-worktree guard 为准。
 - **设备拉取时机**:cold start 或退后台 30s+ 才拉新 bundle。**下拉刷新只重取数据,不换 bundle**——验证 OTA 生效要杀进程重开。
 - runtime version 必须匹配(`app.json` runtimeVersion policy=appVersion);跨 runtime 的改动 OTA 推不动,要发新 build。
 - channels:`development`(dev client / sim 允许)· `preview`(内部分发)· `production`(App Store,见 `mobile/eas.json`)。

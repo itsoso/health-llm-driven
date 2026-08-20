@@ -1,0 +1,6 @@
+interface:
+  display_name: "Reva Workflow Router"
+  short_description: "Route Reva work to one governed workflow."
+  default_prompt: "Use $reva-workflow-router to choose the minimal governed workflow for this Reva task."
+policy:
+  allow_implicit_invocation: true

@@ -2,11 +2,12 @@
      叙事区改完更新本文件顶部 last-reviewed;代码派生数字**绝不手写在这里**,只引用 docs/_generated/。 -->
 ---
 doc: system-map/INDEX
-last-reviewed: 2026-08-12
+last-reviewed: 2026-08-20
 generated-source: docs/_generated/system-map.json
 generated-agent-context: docs/_generated/system-map-agent-context.md
 extend-via: docs/specs/product-pipeline-contract.md
 skill-binding: docs/agent-skill-binding.md
+skill-governance: docs/governance/agent-skill-governance.md
 ---
 
 # System Map — 复元 Reva 系统全景(agent 先读这个)
@@ -23,7 +24,7 @@ skill-binding: docs/agent-skill-binding.md
    管理员需要可视化查看时 → `/admin/system-map`（复用现有管理员登录与权限；数据仍来自同一生成物）。
 6. **想扩一个功能** → [`product-pipeline-contract.md`](../specs/product-pipeline-contract.md)(需求→上线 6 道 Gate;S1 用本地图当现状输入)。
 7. **想知道当前在做什么** → `docs/dossiers/`(在途 feature)。
-8. **想知道本项目研发 skills 怎么触发/Claude-Codex 怎么共用** → [`docs/agent-skill-binding.md`](../agent-skill-binding.md)。
+8. **想知道本项目研发 skills 怎么推荐、触发和治理** → 先读 [`agent-skill-governance.md`](../governance/agent-skill-governance.md) 与 [`agent-skill-registry.json`](../governance/agent-skill-registry.json)，再按 [`agent-skill-binding.md`](../agent-skill-binding.md) 进入平台 adapter。
 
 **证据优先级：代码与测试 > 代码派生 System Map > 受审声明 > 带新鲜度的叙事。地图不能替代源码和测试验证。** 查询结果给出的是下一步应打开的 source path；命中 `partial`/`declaration` 时必须按警告回到源码。若摘要或地图缺失/陈旧,先跑 `./scripts/system-map-check.sh`;闸门仍失败则停用地图,直接调查代码、测试和注册表。CI 能验证生成物与接线,不能证明模型真的读过。
 

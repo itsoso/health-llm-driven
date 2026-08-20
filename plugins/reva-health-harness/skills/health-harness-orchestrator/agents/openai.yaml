@@ -1,0 +1,6 @@
+interface:
+  display_name: "Reva Health Harness"
+  short_description: "Deliver defined Reva changes through evidence gates."
+  default_prompt: "Use $health-harness-orchestrator to implement and verify this defined Reva change."
+policy:
+  allow_implicit_invocation: false

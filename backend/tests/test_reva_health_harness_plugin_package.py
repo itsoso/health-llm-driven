@@ -13,7 +13,7 @@ def test_reva_health_harness_plugin_manifest_is_installable():
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     assert manifest["name"] == "reva-health-harness"
-    assert manifest["version"].startswith("0.1.0")
+    assert manifest["version"].startswith("0.2.0")
     assert manifest["skills"] == "./skills/"
     assert "hooks" not in manifest
     assert manifest["interface"]["displayName"] == "Reva Health Harness"
@@ -38,14 +38,40 @@ def test_reva_health_harness_packages_core_project_skills():
     expected_skills = {
         "product-pipeline": "复元 Product Pipeline",
         "health-harness-orchestrator": "复元 Health Harness",
+        "reva-workflow-router": "Reva Workflow Router",
     }
 
     for name, marker in expected_skills.items():
         skill_path = PLUGIN / "skills" / name / "SKILL.md"
         content = skill_path.read_text(encoding="utf-8")
         assert marker in content
-        assert "scripts/harness_workflow_trace.py" in content
-        assert content == (ROOT / ".claude" / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
+        assert "docs/governance/agent-skill-registry.json" in content
+
+
+def test_codex_adapters_are_native_and_do_not_copy_claude_only_instructions():
+    forbidden = {
+        "TeamCreate",
+        "TaskCreate",
+        "SendMessage",
+        'model: "opus"',
+        "Co-Authored-By: Claude",
+    }
+
+    for name in ("product-pipeline", "health-harness-orchestrator"):
+        codex = (PLUGIN / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
+        claude = (ROOT / ".claude" / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
+        assert codex != claude
+        assert all(token not in codex for token in forbidden)
+        assert "Codex" in codex
+        assert "docs/governance/agent-skill-governance.md" in codex
+
+
+def test_codex_router_is_the_only_implicitly_invoked_plugin_skill():
+    for name in ("product-pipeline", "health-harness-orchestrator", "reva-workflow-router"):
+        metadata_path = PLUGIN / "skills" / name / "agents" / "openai.yaml"
+        text = metadata_path.read_text(encoding="utf-8")
+        expected = "true" if name == "reva-workflow-router" else "false"
+        assert f"allow_implicit_invocation: {expected}" in text
 
     for script_name in [
         "harness_workflow_trace.py",

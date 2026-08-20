@@ -38,4 +38,4 @@ pytest tests/test_safety_guardian.py tests/test_specialists.py tests/test_orches
 python ../scripts/check_doc_drift.py    # exit 0
 ```
 
-> 规则需要的新数据要先进 Twin:加 Twin 分区字段 → 在 `builder.py` 填(注意 Phase A 同步用传入 db / Phase B 并行自开 SessionLocal,见 [[project_build_twin_sessionlocal_ignores_db]])→ 该改动可能动 twin_partitions 计数(走 `doc-drift-fix`)。
+> 规则需要的新数据要先进 Twin:加 Twin 分区字段 → 在 `builder.py` 填；必须验证 Phase A 传入 session 与 Phase B 并行 session 的一致性边界。结构变化统一走 `doc-drift-fix`，不在叙事里手写分区计数。
