@@ -42,6 +42,16 @@ def test_validate_runs_dossier_consistency_as_blocking_gate(monkeypatch):
     assert system_map_checks[0].blocking is True
     assert system_map_checks[0].argv[-1] == "scripts/system-map-check.sh"
 
+    skill_governance_checks = [
+        check for check in captured if check.name == "agent-skill-governance"
+    ]
+    assert skill_governance_checks, "scripts/validate.py must run Agent Skill governance"
+    assert skill_governance_checks[0].blocking is True
+    assert skill_governance_checks[0].argv[-2:] == [
+        "scripts/check_agent_skill_governance.py",
+        "check",
+    ]
+
 
 def test_validate_fails_when_dossier_consistency_fails(monkeypatch):
     validate = _load_validate_module()
@@ -63,7 +73,8 @@ def test_pre_commit_runs_distributed_governance_gates():
     assert "entry: ./scripts/system-map-check.sh" in config
     assert "entry: python3 scripts/check_doc_drift.py" not in config
     assert "entry: python3 backend/scripts/check_dossier_consistency.py" in config
-    assert config.count("pass_filenames: false") >= 2
+    assert "entry: python3 scripts/check_agent_skill_governance.py check" in config
+    assert config.count("pass_filenames: false") >= 3
 
 
 def test_ci_runs_dossier_consistency_gate():
@@ -80,3 +91,10 @@ def test_ci_runs_central_system_map_gate():
     assert "python scripts/check_system_map.py" in workflow
     assert "pip install -r ../scripts/system-map-requirements.txt" in workflow
     assert "python scripts/check_doc_drift.py" not in workflow
+
+
+def test_ci_runs_agent_skill_governance_gate():
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "Check Agent Skill governance" in workflow
+    assert "python scripts/check_agent_skill_governance.py check" in workflow

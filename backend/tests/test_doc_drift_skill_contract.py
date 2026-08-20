@@ -24,8 +24,9 @@ def test_doc_drift_skill_uses_generated_map_instead_of_manual_counts() -> None:
 
     assert "逐条改文档数字" not in text
     assert "删除手写动态计数" in text
-    assert "python scripts/dump_system_map.py" in text
-    assert "python scripts/check_doc_drift.py" in text
+    assert "./scripts/system-map-check.sh" in text
+    assert "python scripts/dump_system_map.py" not in text
+    assert "python scripts/check_doc_drift.py" not in text
 
 
 def test_system_map_skill_documents_v2_admin_and_reproducible_gate() -> None:

@@ -1,0 +1,496 @@
+{
+  "schema_version": "agent-skill-registry.v1",
+  "contract": "docs/governance/agent-skill-governance.md",
+  "event_schema": "docs/governance/agent-skill-run-event.schema.json",
+  "last_reviewed": "2026-08-20",
+  "lifecycle": [
+    "experimental",
+    "recommended",
+    "standard",
+    "deprecated"
+  ],
+  "layers": [
+    "platform",
+    "workflow",
+    "incubator"
+  ],
+  "kinds": [
+    "router",
+    "controller",
+    "capability",
+    "overlay",
+    "terminal"
+  ],
+  "best_skill_set": {
+    "router": "reva-workflow-router",
+    "baseline_capabilities": [
+      "system-map",
+      "karpathy-guidelines",
+      "test-driven-development",
+      "systematic-debugging",
+      "verification-before-completion"
+    ],
+    "primary_controllers": [
+      "product-pipeline",
+      "health-harness-orchestrator"
+    ]
+  },
+  "skills": [
+    {
+      "id": "reva-workflow-router",
+      "lifecycle": "standard",
+      "owner": "reva-agent-governance",
+      "version": "1.0.0",
+      "layer": "workflow",
+      "kind": "router",
+      "platforms": [
+        "claude",
+        "codex"
+      ],
+      "trigger_family": [
+        "task-routing"
+      ],
+      "last_reviewed": "2026-08-20",
+      "evidence": [
+        "Cross-end and quick-fix pressure tests exposed competing-controller overhead; deterministic routing is covered by repository tests."
+      ],
+      "sources": [
+        ".claude/skills/reva-workflow-router/SKILL.md",
+        "plugins/reva-health-harness/skills/reva-workflow-router/SKILL.md"
+      ],
+      "adapters": {
+        "claude": ".claude/skills/reva-workflow-router/SKILL.md",
+        "codex": "plugins/reva-health-harness/skills/reva-workflow-router/SKILL.md"
+      }
+    },
+    {
+      "id": "product-pipeline",
+      "lifecycle": "standard",
+      "owner": "reva-product-governance",
+      "version": "1.0.0",
+      "layer": "workflow",
+      "kind": "controller",
+      "platforms": [
+        "claude",
+        "codex"
+      ],
+      "trigger_family": [
+        "feature-definition",
+        "requirements-to-production"
+      ],
+      "last_reviewed": "2026-08-20",
+      "evidence": [
+        "The six-Gate product contract and Dossier recovery path are repository-enforced."
+      ],
+      "sources": [
+        "docs/specs/product-pipeline-contract.md",
+        ".claude/skills/product-pipeline/SKILL.md",
+        "plugins/reva-health-harness/skills/product-pipeline/SKILL.md"
+      ],
+      "adapters": {
+        "claude": ".claude/skills/product-pipeline/SKILL.md",
+        "codex": "plugins/reva-health-harness/skills/product-pipeline/SKILL.md"
+      }
+    },
+    {
+      "id": "health-harness-orchestrator",
+      "lifecycle": "standard",
+      "owner": "reva-engineering",
+      "version": "1.0.0",
+      "layer": "workflow",
+      "kind": "controller",
+      "platforms": [
+        "claude",
+        "codex"
+      ],
+      "trigger_family": [
+        "implementation",
+        "incident",
+        "cross-surface-delivery"
+      ],
+      "last_reviewed": "2026-08-20",
+      "evidence": [
+        "The operating harness provides checkpointed implementation, review, validation and release hand-offs."
+      ],
+      "sources": [
+        "docs/design-agent-operating-harness.md",
+        ".claude/skills/health-harness-orchestrator/SKILL.md",
+        "plugins/reva-health-harness/skills/health-harness-orchestrator/SKILL.md"
+      ],
+      "adapters": {
+        "claude": ".claude/skills/health-harness-orchestrator/SKILL.md",
+        "codex": "plugins/reva-health-harness/skills/health-harness-orchestrator/SKILL.md"
+      }
+    },
+    {
+      "id": "system-map",
+      "lifecycle": "standard",
+      "owner": "reva-architecture",
+      "version": "1.0.0",
+      "layer": "platform",
+      "kind": "capability",
+      "platforms": [
+        "agent-neutral"
+      ],
+      "trigger_family": [
+        "system-discovery",
+        "architecture-navigation"
+      ],
+      "last_reviewed": "2026-08-20",
+      "evidence": [
+        "Code-derived system-map artifacts and drift checks are blocking repository gates."
+      ],
+      "sources": [
+        "docs/system-map/INDEX.md",
+        ".claude/skills/system-map/SKILL.md"
+      ]
+    },
+    {
+      "id": "add-managed-migration",
+      "lifecycle": "standard",
+      "owner": "reva-backend",
+      "version": "1.0.0",
+      "layer": "workflow",
+      "kind": "overlay",
+      "platforms": [
+        "agent-neutral"
+      ],
+      "trigger_family": [
+        "database-schema-change"
+      ],
+      "last_reviewed": "2026-08-20",
+      "evidence": [
+        "Managed migration pairing and deployment checks prevent application/schema drift."
+      ],
+      "sources": [
+        ".claude/skills/add-managed-migration/SKILL.md"
+      ]
+    },
+    {
+      "id": "safety-gate",
+      "lifecycle": "standard",
+      "owner": "reva-safety-privacy",
+      "version": "1.0.0",
+      "layer": "workflow",
+      "kind": "overlay",
+      "platforms": [
+        "agent-neutral"
+      ],
+      "trigger_family": [
+        "health-safety",
+        "privacy",
+        "security"
+      ],
+      "last_reviewed": "2026-08-20",
+      "evidence": [
+        "Producer-reviewer safety review is a blocking release requirement for sensitive health surfaces."
+      ],
+      "sources": [
+        ".claude/skills/safety-gate/SKILL.md"
+      ]
+    },
+    {
+      "id": "doc-drift-fix",
+      "lifecycle": "standard",
+      "owner": "reva-architecture",
+      "version": "1.0.0",
+      "layer": "workflow",
+      "kind": "overlay",
+      "platforms": [
+        "agent-neutral"
+      ],
+      "trigger_family": [
+        "architecture-drift"
+      ],
+      "last_reviewed": "2026-08-20",
+      "evidence": [
+        "Generated-system-map drift checks block stale architecture rosters and counts."
+      ],
+      "sources": [
+        ".claude/skills/doc-drift-fix/SKILL.md"
+      ]
+    },
+    {
+      "id": "ios-app-review-gate",
+      "lifecycle": "recommended",
+      "owner": "reva-mobile-release",
+      "version": "0.9.0",
+      "layer": "workflow",
+      "kind": "overlay",
+      "platforms": [
+        "agent-neutral"
+      ],
+      "trigger_family": [
+        "ios-app-review"
+      ],
+      "last_reviewed": "2026-08-20",
+      "evidence": [
+        "The App Review pack runs privacy, account access, screenshot and medical red-line checks; product identity still needs one generated source before standardization."
+      ],
+      "sources": [
+        ".claude/skills/ios-app-review-gate/SKILL.md"
+      ]
+    },
+    {
+      "id": "backend-deploy",
+      "lifecycle": "recommended",
+      "owner": "reva-backend-release",
+      "version": "0.9.0",
+      "layer": "workflow",
+      "kind": "terminal",
+      "platforms": [
+        "agent-neutral"
+      ],
+      "trigger_family": [
+        "backend-release"
+      ],
+      "last_reviewed": "2026-08-20",
+      "evidence": [
+        "The deployment entry point includes migration, health and post-deploy verification gates; machine-specific connection details still need configuration extraction before standardization."
+      ],
+      "sources": [
+        ".claude/skills/backend-deploy/SKILL.md"
+      ]
+    },
+    {
+      "id": "mobile-ota",
+      "lifecycle": "standard",
+      "owner": "reva-mobile-release",
+      "version": "1.0.0",
+      "layer": "workflow",
+      "kind": "terminal",
+      "platforms": [
+        "agent-neutral"
+      ],
+      "trigger_family": [
+        "mobile-ota-release"
+      ],
+      "last_reviewed": "2026-08-20",
+      "evidence": [
+        "OTA eligibility, source guard, runtime and post-publish checks are encoded in release scripts."
+      ],
+      "sources": [
+        ".claude/skills/mobile-ota/SKILL.md"
+      ]
+    },
+    {
+      "id": "mobile-testflight-release",
+      "lifecycle": "recommended",
+      "owner": "reva-mobile-release",
+      "version": "0.9.0",
+      "layer": "workflow",
+      "kind": "terminal",
+      "platforms": [
+        "agent-neutral"
+      ],
+      "trigger_family": [
+        "ios-native-release"
+      ],
+      "last_reviewed": "2026-08-20",
+      "evidence": [
+        "Native archive, signing and TestFlight readiness checks form an explicit release path; mutable build and toolchain notes still need extraction before standardization."
+      ],
+      "sources": [
+        ".claude/skills/mobile-testflight-release/SKILL.md"
+      ]
+    },
+    {
+      "id": "mac-build-deploy",
+      "lifecycle": "recommended",
+      "owner": "reva-mac-release",
+      "version": "0.9.0",
+      "layer": "workflow",
+      "kind": "terminal",
+      "platforms": [
+        "agent-neutral"
+      ],
+      "trigger_family": [
+        "mac-release"
+      ],
+      "last_reviewed": "2026-08-20",
+      "evidence": [
+        "Swift build, core tests, packaging and installation verification are documented as one terminal workflow; mutable toolchain pins still need exact-version hardening."
+      ],
+      "sources": [
+        ".claude/skills/mac-build-deploy/SKILL.md"
+      ]
+    },
+    {
+      "id": "extend-safety-or-specialist",
+      "lifecycle": "recommended",
+      "owner": "reva-safety-privacy",
+      "version": "0.9.0",
+      "layer": "workflow",
+      "kind": "capability",
+      "platforms": [
+        "agent-neutral"
+      ],
+      "trigger_family": [
+        "safety-rule-extension",
+        "specialist-extension"
+      ],
+      "last_reviewed": "2026-08-20",
+      "evidence": [
+        "The extension checklist covers registration, loop prevention, documentation drift and safety review."
+      ],
+      "sources": [
+        ".claude/skills/extend-safety-or-specialist/SKILL.md"
+      ]
+    },
+    {
+      "id": "domain-rule-factory",
+      "lifecycle": "experimental",
+      "owner": "reva-agent-governance",
+      "version": "0.3.0",
+      "layer": "incubator",
+      "kind": "capability",
+      "platforms": [
+        "agent-neutral"
+      ],
+      "trigger_family": [
+        "new-deterministic-rule-domain"
+      ],
+      "last_reviewed": "2026-08-20",
+      "evidence": [
+        "The eight-stage rulebook-to-runtime pattern is documented but has not yet met the standard lifecycle evidence bar."
+      ],
+      "sources": [
+        ".claude/skills/domain-rule-factory/SKILL.md"
+      ]
+    }
+  ],
+  "external_recommendations": [
+    {
+      "id": "karpathy-guidelines",
+      "version": "1.0.0",
+      "lifecycle": "standard",
+      "kind": "capability",
+      "allow_direct_controller": false,
+      "reason": "Use as a surgical-change capability; it does not own task state."
+    },
+    {
+      "id": "test-driven-development",
+      "version": "1.0.0",
+      "lifecycle": "standard",
+      "kind": "capability",
+      "allow_direct_controller": false,
+      "reason": "Use for behavior changes and bug fixes with risk-calibrated RED/GREEN evidence."
+    },
+    {
+      "id": "systematic-debugging",
+      "version": "1.0.0",
+      "lifecycle": "standard",
+      "kind": "capability",
+      "allow_direct_controller": false,
+      "reason": "Use for incidents and unexplained failures without creating a competing workflow."
+    },
+    {
+      "id": "verification-before-completion",
+      "version": "1.0.0",
+      "lifecycle": "standard",
+      "kind": "capability",
+      "allow_direct_controller": false,
+      "reason": "Use before completion claims; it owns evidence, not orchestration."
+    },
+    {
+      "id": "using-superpowers",
+      "version": "1.0.0",
+      "lifecycle": "deprecated",
+      "kind": "controller",
+      "allow_direct_controller": false,
+      "reason": "Its broad startup control conflicts with the project Router; useful capabilities are selected explicitly."
+    },
+    {
+      "id": "executing-plans",
+      "version": "1.0.0",
+      "lifecycle": "deprecated",
+      "kind": "controller",
+      "allow_direct_controller": false,
+      "reason": "Direct control duplicates the project controllers and their checkpoint state."
+    }
+  ],
+  "routing": {
+    "routes": {
+      "analysis": {
+        "controller": null,
+        "delegates": [],
+        "capabilities": [
+          "system-map"
+        ]
+      },
+      "quick_fix": {
+        "controller": null,
+        "delegates": [],
+        "capabilities": [
+          "system-map",
+          "karpathy-guidelines",
+          "test-driven-development",
+          "verification-before-completion"
+        ]
+      },
+      "feature": {
+        "controller": "product-pipeline",
+        "delegates": [
+          "health-harness-orchestrator"
+        ],
+        "capabilities": [
+          "system-map",
+          "karpathy-guidelines",
+          "test-driven-development",
+          "verification-before-completion"
+        ]
+      },
+      "implementation": {
+        "controller": "health-harness-orchestrator",
+        "delegates": [],
+        "capabilities": [
+          "system-map",
+          "karpathy-guidelines",
+          "test-driven-development",
+          "verification-before-completion"
+        ]
+      },
+      "incident": {
+        "controller": "health-harness-orchestrator",
+        "delegates": [],
+        "capabilities": [
+          "system-map",
+          "karpathy-guidelines",
+          "systematic-debugging",
+          "test-driven-development",
+          "verification-before-completion"
+        ]
+      },
+      "release": {
+        "controller": null,
+        "delegates": [],
+        "capabilities": [
+          "verification-before-completion"
+        ]
+      }
+    },
+    "overlays": {
+      "app-review": [
+        "ios-app-review-gate"
+      ],
+      "database": [
+        "add-managed-migration"
+      ],
+      "doc-drift": [
+        "doc-drift-fix"
+      ],
+      "notification-privacy": [
+        "safety-gate"
+      ],
+      "safety": [
+        "safety-gate"
+      ]
+    },
+    "release_targets": {
+      "backend": "backend-deploy",
+      "mac": "mac-build-deploy",
+      "mobile-ota": "mobile-ota",
+      "mobile-testflight": "mobile-testflight-release"
+    }
+  }
+}

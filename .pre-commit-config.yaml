@@ -48,6 +48,12 @@ repos:
         language: system
         pass_filenames: false
 
+      - id: agent-skill-governance
+        name: agent skill governance
+        entry: python3 scripts/check_agent_skill_governance.py check
+        language: system
+        pass_filenames: false
+
       # 加 KB claim ≠ 只追一行 claims.jsonl。这道闸复刻 release gate 的两条硬门
       # (manifest 计数 == JSONL 行数 + 无孤儿 claim),纯文件/无 DB,提交前就拦。
       - id: system-kb-seed-integrity

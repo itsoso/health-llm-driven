@@ -1,7 +1,7 @@
 # Reva Agent Skill 治理设计
 
-**状态：** approved-for-implementation  
-**日期：** 2026-08-20  
+**状态：** approved-for-implementation
+**日期：** 2026-08-20
 **范围：** 研发 agent skills；不改变 `backend/skills/*` 产品运行时技能
 
 ## 1. 问题

@@ -75,7 +75,7 @@ bash <repo>/.claude/skills/mobile-testflight-release/scripts/native-archive-asc.
 
 | 关卡 | 症状 | 解法(脚本已内置) |
 |---|---|---|
-| ruby 4 | pod install / fastlane 崩 | `PATH` 前置 `ruby@3.3`(见 [[project_homebrew_ruby4_breaks_ios_toolchain]]) |
+| ruby 4 | pod install / fastlane 崩 | 先验证当前 Xcode/CocoaPods 支持矩阵；若仓库工具链仍固定 Ruby 3.3，再显式把 `ruby@3.3` 放到 `PATH` 前部 |
 | cocoapods locale | `Unicode Normalization not appropriate for ASCII-8BIT` | `export LANG/LC_ALL=en_US.UTF-8` |
 | Sentry build phase | `An organization ID or slug is required (--org)` → ARCHIVE FAILED | `export SENTRY_DISABLE_AUTO_UPLOAD=true` |
 | 签名(archive) | profile 不含当前证书 | `xcodebuild archive -allowProvisioningUpdates -authenticationKeyPath <p8> -authenticationKeyID -authenticationKeyIssuerID` + `CODE_SIGN_STYLE=Automatic` → 用钥匙串真证书,ASC key 云端配 profile |

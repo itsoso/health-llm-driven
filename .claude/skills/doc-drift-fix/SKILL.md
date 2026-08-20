@@ -10,11 +10,10 @@ description: Use when CI reports doc drift or code changes API routers, tasks, m
 ## 标准修复
 
 ```bash
-python scripts/dump_system_map.py
-python scripts/check_doc_drift.py
+./scripts/system-map-check.sh
 ```
 
-第一条从目标代码重新生成确定性快照，第二条校验快照、Safety 注册表和活跃架构叙事。两条都必须 exit 0。
+中央 wrapper 使用项目固定的 Python 3.12 环境，串行验证并在需要时明确提示如何重新生成 System Map、Mobile nav 与 doc-drift 产物。它必须 exit 0；不要绕过它拼装较弱的局部命令。
 
 ## 按报错处理
 
@@ -33,6 +32,5 @@ python scripts/check_doc_drift.py
 ## 提交前
 
 - `git diff --check`
-- `python scripts/dump_system_map.py --check`
-- `python scripts/check_doc_drift.py`
+- `./scripts/system-map-check.sh`
 - 只提交本任务文件，不使用 `git add -A`
