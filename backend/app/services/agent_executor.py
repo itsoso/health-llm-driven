@@ -17864,7 +17864,10 @@ class AgentExecutor:
             "protein": record.protein,
             "carbs": record.carbs,
             "fat": record.fat,
+            "fiber": record.fiber,
         }
+        if int(record.user_id) != int(self._current_user_id):
+            raise ValueError("contextual_diet_recorded_card_owner_mismatch")
         capture_session_id = self._contextual_diet_capture_session_id(assets)
         return {
             "type": "diet_draft",
@@ -17891,7 +17894,11 @@ class AgentExecutor:
                 "receipt_message": "已保存到今日饮食，餐食照片已关联到这条记录。",
                 "boundary": "营养为图像估算；可在饮食记录中继续修正。",
             }),
-            "actions": [build_diet_adjust_action(record.id, record_data)],
+            "actions": [build_diet_adjust_action(
+                record.id,
+                record_data,
+                current_record=record,
+            )],
         }
 
     def _contextual_diet_confirmation_card(self, result: Any) -> Dict[str, Any]:

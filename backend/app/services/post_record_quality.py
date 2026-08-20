@@ -733,8 +733,64 @@ def _diet_meal_type_value(record_data: dict) -> str:
     return zh_map.get(raw, "snack")
 
 
-def _diet_adjust_record_seed(record_id: int, record_data: dict) -> dict[str, Any]:
-    """就地调整器的种子: 取 record_data 原始值,None 保留 None(不格式化展示串)。"""
+def _current_record_field(current_record: Any, field: str) -> tuple[bool, Any]:
+    """Read one server-owned record field while preserving known ``None``."""
+    if isinstance(current_record, dict):
+        return (field in current_record, current_record.get(field))
+    if current_record is not None and hasattr(current_record, field):
+        return (True, getattr(current_record, field))
+    return (False, None)
+
+
+def _serialized_record_revision(value: Any) -> tuple[bool, Optional[str]]:
+    """Return a JSON-safe revision token; ``None`` is a valid known revision."""
+    if value is None:
+        return (True, None)
+    if isinstance(value, datetime):
+        return (True, value.isoformat())
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return (False, None)
+        try:
+            datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return (False, None)
+        return (True, raw)
+    return (False, None)
+
+
+def _owner_matched_diet_write_result(
+    result: str,
+    *,
+    record_id: int,
+    user_id: Optional[int],
+) -> Optional[dict[str, Any]]:
+    """Accept persisted diet metadata only from an owner-matched API response."""
+    if user_id is None:
+        return None
+    parsed = parse_tool_record_result(result)
+    raw_record_id = parsed.get("id")
+    raw_user_id = parsed.get("user_id")
+    if isinstance(raw_record_id, bool) or isinstance(raw_user_id, bool):
+        return None
+    try:
+        parsed_record_id = int(raw_record_id)
+        parsed_user_id = int(raw_user_id)
+    except (TypeError, ValueError):
+        return None
+    if parsed_record_id != record_id or parsed_user_id != int(user_id):
+        return None
+    return parsed
+
+
+def _diet_adjust_record_seed(
+    record_id: int,
+    record_data: dict,
+    *,
+    current_record: Any = None,
+) -> dict[str, Any]:
+    """Build an edit seed without treating model input as a revision source."""
     food_raw = record_data.get("food_items") or record_data.get("food")
     if isinstance(food_raw, list):
         food_items = "、".join(
@@ -750,7 +806,11 @@ def _diet_adjust_record_seed(record_id: int, record_data: dict) -> dict[str, Any
     carbs = record_data.get("carbs")
     if carbs is None:
         carbs = record_data.get("carbohydrates")
-    return {
+    has_current_fiber, current_fiber = _current_record_field(
+        current_record,
+        "fiber",
+    )
+    seed = {
         "record_id": record_id,
         "meal_type": _diet_meal_type_value(record_data),
         "food_items": food_items,
@@ -758,10 +818,24 @@ def _diet_adjust_record_seed(record_id: int, record_data: dict) -> dict[str, Any
         "protein": _number_or_none(record_data.get("protein")),
         "carbs": _number_or_none(carbs),
         "fat": _number_or_none(record_data.get("fat")),
+        "fiber": _number_or_none(
+            current_fiber if has_current_fiber else record_data.get("fiber")
+        ),
     }
+    has_revision, revision = _current_record_field(current_record, "updated_at")
+    if has_revision:
+        revision_is_valid, serialized_revision = _serialized_record_revision(revision)
+        if revision_is_valid:
+            seed["updated_at"] = serialized_revision
+    return seed
 
 
-def build_diet_adjust_action(record_id: int, record_data: dict) -> dict[str, Any]:
+def build_diet_adjust_action(
+    record_id: int,
+    record_data: dict,
+    *,
+    current_record: Any = None,
+) -> dict[str, Any]:
     """Build the portable inline action for correcting one persisted diet record."""
     return _inline_expand_action(
         "adjust-record",
@@ -769,7 +843,11 @@ def build_diet_adjust_action(record_id: int, record_data: dict) -> dict[str, Any
         "adjust_record",
         {
             "expanded_sections": ["adjust_record"],
-            "adjust_record": _diet_adjust_record_seed(record_id, record_data),
+            "adjust_record": _diet_adjust_record_seed(
+                record_id,
+                record_data,
+                current_record=current_record,
+            ),
         },
     )
 
@@ -842,7 +920,15 @@ def build_post_record_quality_response(
         if goal_progress:
             card_data["goal_progress"] = goal_progress
         if record_id is not None:
-            adjust_action = build_diet_adjust_action(record_id, record_data)
+            adjust_action = build_diet_adjust_action(
+                record_id,
+                record_data,
+                current_record=_owner_matched_diet_write_result(
+                    result,
+                    record_id=record_id,
+                    user_id=user_id,
+                ),
+            )
         else:
             # 拿不到 id 无法就地调整 → 至少跳真正的饮食页(不再去通用记录 tab)。
             adjust_action = _route_action("open-diet", "去饮食页调整", "/diet")

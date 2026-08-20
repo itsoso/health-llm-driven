@@ -1,6 +1,8 @@
 import React from 'react';
 import {
+  Animated,
   Modal,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -27,6 +29,41 @@ import { revaColors as C, revaFonts, revaRadii, revaSemantic } from '../../../co
 // 饮食类目 accent (橙) = 「是饮食卡」装饰色, 保留字面量 (= legacy orange/tintOrange).
 const DIET_ACCENT = '#C97A2E';
 const DIET_TINT = '#F6E9DA';
+const PHOTO_DISMISS_ACTIVATION_DISTANCE = 12;
+const PHOTO_DISMISS_DISTANCE = 96;
+const PHOTO_DISMISS_VELOCITY = 0.9;
+const PHOTO_DISMISS_VERTICAL_RATIO = 1.2;
+
+interface DietPhotoGesture {
+  dx: number;
+  dy: number;
+  vy?: number;
+}
+
+type DietPhotoGestureDirection = 'horizontal' | 'vertical';
+
+function dietPhotoGestureDirection({ dx, dy }: DietPhotoGesture): DietPhotoGestureDirection | null {
+  const horizontal = Math.abs(dx);
+  const vertical = Math.abs(dy);
+  if (Math.max(horizontal, vertical) < PHOTO_DISMISS_ACTIVATION_DISTANCE) return null;
+  if (vertical >= horizontal * PHOTO_DISMISS_VERTICAL_RATIO) return 'vertical';
+  if (horizontal >= vertical * PHOTO_DISMISS_VERTICAL_RATIO) return 'horizontal';
+  return null;
+}
+
+/** Claim only a deliberate, dominant vertical drag; horizontal drags stay with pagination. */
+export function shouldCaptureDietPhotoDismiss({ dx, dy }: DietPhotoGesture): boolean {
+  return dietPhotoGestureDirection({ dx, dy }) === 'vertical';
+}
+
+/** Dismiss in either vertical direction after enough distance or vertical velocity. */
+export function shouldDismissDietPhotoGallery(gesture: DietPhotoGesture): boolean {
+  return shouldCaptureDietPhotoDismiss(gesture)
+    && (
+      Math.abs(gesture.dy) >= PHOTO_DISMISS_DISTANCE
+      || Math.abs(gesture.vy ?? 0) >= PHOTO_DISMISS_VELOCITY
+    );
+}
 
 const MEAL_LABELS: Record<string, string> = {
   breakfast: '早餐',
@@ -73,6 +110,7 @@ interface DietDraftData {
   record_id?: unknown;
   adjust_record?: unknown;
   adjust_saved?: unknown;
+  updated_at?: unknown;
 }
 
 interface DietDraftCardViewProps extends DietDraftData {
@@ -80,6 +118,15 @@ interface DietDraftCardViewProps extends DietDraftData {
   confirmAction?: ChatCardActionDescriptor;
   confirmActionState?: ChatCardActionRuntimeState;
   onConfirmAction?: (action: ChatCardActionDescriptor) => void;
+}
+
+function clearDietDraftNutritionDerivations(data: DietDraftData): DietDraftData {
+  const next = { ...data };
+  delete next.confidence;
+  delete next.suggestions;
+  delete next.post_meal_walk;
+  delete next.next_meal_detail;
+  return next;
 }
 
 type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
@@ -555,7 +602,15 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
       {showSavedAdjustEditor && adjustRecord && adjustRecordId != null ? (
         <DietRecordAdjustEditor
           recordId={adjustRecordId}
-          seed={adjustRecord}
+          seed={{
+            ...adjustRecord,
+            ...(!Object.prototype.hasOwnProperty.call(adjustRecord, 'fiber')
+              ? { fiber: data.fiber }
+              : {}),
+            ...(!Object.prototype.hasOwnProperty.call(adjustRecord, 'updated_at')
+              ? { updated_at: data.updated_at }
+              : {}),
+          }}
           onSaved={(applied) => {
             if (!data.onDraftChange) return;
             const {
@@ -565,11 +620,14 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
               onConfirmAction,
               ...cardData
             } = data;
+            const currentData = clearDietDraftNutritionDerivations(cardData);
             const remainingSections = (Array.isArray(data.expanded_sections) ? data.expanded_sections : [])
               .map((item) => text(item))
-              .filter((item): item is string => Boolean(item) && item !== 'adjust_record');
+              .filter((item): item is string => (
+                Boolean(item) && item !== 'adjust_record' && item !== 'next_meal'
+              ));
             onDraftChange({
-              ...cardData,
+              ...currentData,
               ...applied.adjustRecord,
               adjust_record: applied.adjustRecord,
               expanded_sections: remainingSections,
@@ -928,11 +986,69 @@ function MealPhotoGallery({
   onError: (uri: string) => void;
 }) {
   const { width, height } = useWindowDimensions();
+  const translateY = React.useRef(new Animated.Value(0)).current;
+  const directionLock = React.useRef<DietPhotoGestureDirection | null>(null);
+  const springBack = React.useCallback(() => {
+    Animated.spring(translateY, {
+      toValue: 0,
+      useNativeDriver: true,
+      tension: 180,
+      friction: 22,
+    }).start();
+  }, [translateY]);
+  const shouldClaimVerticalGesture = React.useCallback((gesture: DietPhotoGesture) => {
+    if (directionLock.current == null) {
+      directionLock.current = dietPhotoGestureDirection(gesture);
+    }
+    return directionLock.current === 'vertical';
+  }, []);
+  const panResponder = React.useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => false,
+    onStartShouldSetPanResponderCapture: () => {
+      directionLock.current = null;
+      return false;
+    },
+    onMoveShouldSetPanResponder: (_event, gesture) => shouldClaimVerticalGesture(gesture),
+    onMoveShouldSetPanResponderCapture: (_event, gesture) => shouldClaimVerticalGesture(gesture),
+    onPanResponderGrant: () => translateY.stopAnimation(),
+    onPanResponderMove: (_event, gesture) => translateY.setValue(gesture.dy),
+    onPanResponderRelease: (_event, gesture) => {
+      if (shouldDismissDietPhotoGallery(gesture)) {
+        directionLock.current = null;
+        onClose();
+        return;
+      }
+      directionLock.current = null;
+      springBack();
+    },
+    onPanResponderTerminate: () => {
+      directionLock.current = null;
+      springBack();
+    },
+  }), [onClose, shouldClaimVerticalGesture, springBack, translateY]);
+
+  React.useEffect(() => {
+    if (visible) translateY.setValue(0);
+  }, [translateY, visible]);
+
   if (!visible) return null;
   const total = uris.length + unavailableCount;
+  const galleryOpacity = translateY.interpolate({
+    inputRange: [-180, 0, 180],
+    outputRange: [0.5, 1, 0.5],
+    extrapolate: 'clamp',
+  });
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <View testID="diet-photo-gallery" style={styles.galleryBackdrop}>
+      <Animated.View
+        testID="diet-photo-gallery"
+        accessibilityViewIsModal
+        style={[
+          styles.galleryBackdrop,
+          { opacity: galleryOpacity, transform: [{ translateY }] },
+        ]}
+        {...panResponder.panHandlers}
+      >
         <View style={styles.galleryHeader}>
           <Text style={styles.galleryTitle}>
             {unavailableCount > 0 ? `${uris.length}/${total} 张照片可用` : `${uris.length} 张餐食照片`}
@@ -941,6 +1057,7 @@ function MealPhotoGallery({
             onPress={onClose}
             accessibilityRole="button"
             accessibilityLabel="关闭餐食照片"
+            accessibilityHint="也可以上下滑动关闭"
             style={styles.galleryClose}
           >
             <Ionicons name="close" size={23} color="#fff" />
@@ -986,7 +1103,7 @@ function MealPhotoGallery({
             </View>
           ) : null}
         </ScrollView>
-      </View>
+      </Animated.View>
     </Modal>
   );
 }

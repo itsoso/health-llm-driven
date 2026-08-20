@@ -33,6 +33,7 @@ export interface DietRecord {
   health_tips: string | null;
   ai_recognized?: number | null;
   ai_confidence?: number | null;
+  updated_at?: string | null;
 }
 
 /**
@@ -97,6 +98,12 @@ export interface DietRecordUpdate {
   ai_recognized?: number | null;
   ai_confidence?: number | null;
   ai_raw_result?: FoodRecognitionResponse | null;
+}
+
+export interface DietRecordNutritionRecalculateRequest {
+  food_items: string;
+  meal_type?: MealType;
+  expected_updated_at: string | null;
 }
 
 export interface DailyDietSummary {
@@ -226,6 +233,23 @@ export async function createDietRecord(record: DietRecordCreate): Promise<DietRe
 
 export async function updateDietRecord(id: number, patch: DietRecordUpdate): Promise<DietRecord> {
   const { data } = await api.put<DietRecord>(`/diet/records/${id}`, patch);
+  return data;
+}
+
+export async function recalculateDietRecordNutrition(
+  id: number,
+  request: DietRecordNutritionRecalculateRequest,
+  idempotencyKey: string,
+): Promise<DietRecord> {
+  const operationKey = idempotencyKey.trim();
+  if (!operationKey) {
+    throw new Error('diet_recalculation_idempotency_key_required');
+  }
+  const { data } = await api.post<DietRecord>(
+    `/diet/records/${id}/recalculate-nutrition`,
+    request,
+    { headers: { 'Idempotency-Key': operationKey } },
+  );
   return data;
 }
 

@@ -71,6 +71,22 @@ class DietRecordUpdate(BaseModel):
     ai_raw_result: Optional[Any] = None
 
 
+class DietRecordNutritionRecalculateRequest(BaseModel):
+    """Recalculate one owned record from a complete user-confirmed description."""
+
+    model_config = ConfigDict(
+        allow_inf_nan=False,
+        str_strip_whitespace=True,
+    )
+
+    food_items: str = Field(min_length=1, max_length=300)
+    meal_type: Optional[MealType] = None
+    # Required-but-nullable: a newly created DietRecord legitimately has a
+    # known-null updated_at until its first update. Missing means the caller has
+    # no authorizing revision and must refresh instead of issuing a blind write.
+    expected_updated_at: Optional[datetime] = Field(...)
+
+
 class DietPhotoDraftStatusResponse(BaseModel):
     status: str
     expires_at: datetime

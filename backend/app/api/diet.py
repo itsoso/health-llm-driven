@@ -1,8 +1,12 @@
 """饮食记录API"""
+import hashlib
+import hmac
 import os
 import json
 import logging
+import math
 import fcntl
+import re
 import threading
 import uuid
 from time import perf_counter
@@ -22,6 +26,7 @@ from app.schemas.diet import (
     MealType,
     DietRecordCreate,
     DietRecordUpdate,
+    DietRecordNutritionRecalculateRequest,
     DietRecordResponse,
     DailyDietSummary,
     DietStats,
@@ -1105,6 +1110,505 @@ def get_my_frequent_foods(
     # 频次倒序, 同频次按字母稳定排序
     items.sort(key=lambda f: (-f.count, f.food_items))
     return items[:limit]
+
+
+_DIET_RECALCULATION_SNAPSHOT_FIELDS = (
+    "id",
+    "user_id",
+    "record_date",
+    "meal_type",
+    "meal_time",
+    "food_name",
+    "food_items",
+    "food_id",
+    "source",
+    "quantity",
+    "unit",
+    "calories",
+    "protein",
+    "carbs",
+    "fat",
+    "fiber",
+    "alcohol_units",
+    "image_url",
+    "client_action_id",
+    "ai_recognized",
+    "ai_confidence",
+    "ai_raw_result",
+    "notes",
+    "health_tips",
+    "created_at",
+    "updated_at",
+)
+_DIET_RECALCULATION_TOTAL_FIELDS = {
+    "calories": ("total_calories", 5000.0),
+    "protein": ("total_protein", 1000.0),
+    "carbs": ("total_carbs", 1000.0),
+    "fat": ("total_fat", 500.0),
+    "fiber": ("total_fiber", 200.0),
+}
+_DIET_RECALCULATION_ALCOHOL_RE = re.compile(
+    r"(?:酒|长岛冰茶|玛格丽特|马天尼|莫吉托|血腥玛丽|尼格罗尼|"
+    r"茅台|香槟|鸡尾酒|威士忌|伏特加|朗姆|琴酒|金酒|烧酒|"
+    r"龙舌兰|白兰地|苹果酒|\b(?:alcohol|booze|beer|lager|ale|stout|"
+    r"porter|pilsner|ipa|wine|prosecco|cava|sherry|port|vermouth|"
+    r"sangria|whisky|whiskey|vodka|gin|rum|sake|soju|shochu|"
+    r"makgeolli|tequila|brandy|cognac|bourbon|scotch|baijiu|grappa|"
+    r"absinthe|ouzo|liqueur|schnapps|mead|cider|hard\s+seltzer|"
+    r"cocktail|highball|mojito|champagne|margarita|martini|negroni|"
+    r"daiquiri|mimosa|spritz|cosmopolitan|caipirinha|bloody\s+mary|"
+    r"old\s+fashioned|long\s+island\s+iced\s+tea)s?\b)",
+    re.IGNORECASE,
+)
+
+
+def _diet_recalculation_revision_value(value):
+    if isinstance(value, datetime):
+        if value.tzinfo is not None:
+            value = value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value.isoformat(timespec="microseconds")
+    if isinstance(value, (date, time)):
+        return value.isoformat()
+    return value
+
+
+def _diet_recalculation_snapshot(record: DietRecordModel) -> tuple:
+    """Bounded scalar snapshot used for compare-and-swap after model work."""
+    return tuple(
+        _diet_recalculation_revision_value(getattr(record, field, None))
+        for field in _DIET_RECALCULATION_SNAPSHOT_FIELDS
+    )
+
+
+def _diet_recalculation_expected_revision_matches(
+    record: DietRecordModel,
+    expected_updated_at: Optional[datetime],
+) -> bool:
+    return _diet_recalculation_revision_value(record.updated_at) == (
+        _diet_recalculation_revision_value(expected_updated_at)
+    )
+
+
+def _diet_recalculation_operation_digest(
+    *,
+    user_id: int,
+    record_id: int,
+    idempotency_key: str,
+) -> str:
+    payload = (
+        f"diet-recalculation-operation-v1\0{user_id}\0{record_id}\0"
+        f"{idempotency_key}"
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _diet_recalculation_request_digest(
+    *,
+    user_id: int,
+    record_id: int,
+    food_items: str,
+    meal_type: Optional[MealType],
+    expected_updated_at: Optional[datetime],
+) -> str:
+    payload = {
+        "expected_updated_at": _diet_recalculation_revision_value(
+            expected_updated_at
+        ),
+        "food_items": food_items,
+        "meal_type": meal_type.value if meal_type is not None else None,
+        "record_id": record_id,
+        "user_id": user_id,
+        "version": "diet-recalculation-request-v1",
+    }
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _diet_recalculation_stored_payload(
+    record: DietRecordModel,
+) -> Optional[dict]:
+    raw = record.ai_raw_result
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    provenance = payload.get("provenance")
+    if not isinstance(provenance, dict):
+        return None
+    if (
+        payload.get("recognition_version") != "diet_text_recalculation_v1"
+        or provenance.get("method") != "text_estimate_user_corrected"
+    ):
+        return None
+    return payload
+
+
+def _diet_recalculation_result_is_current(
+    record: DietRecordModel,
+    request: DietRecordNutritionRecalculateRequest,
+    stored_payload: dict,
+) -> bool:
+    provenance = stored_payload.get("provenance")
+    if not isinstance(provenance, dict):
+        return False
+    if (record.food_items or "") != provenance.get("result_food_items"):
+        return False
+    if record.meal_type != provenance.get("result_meal_type"):
+        return False
+    if record.health_tips is not None or not bool(record.ai_recognized):
+        return False
+    for field, (result_key, _maximum) in _DIET_RECALCULATION_TOTAL_FIELDS.items():
+        expected = stored_payload.get(result_key)
+        actual = getattr(record, field)
+        if expected is None or actual is None:
+            if expected is not None or actual is not None:
+                return False
+            continue
+        if (
+            isinstance(expected, bool)
+            or not isinstance(expected, (int, float))
+            or not math.isclose(
+                float(actual),
+                float(expected),
+                rel_tol=0,
+                abs_tol=1e-9,
+            )
+        ):
+            return False
+    return True
+
+
+def _diet_recalculation_replay_response(
+    record: DietRecordModel,
+    request: DietRecordNutritionRecalculateRequest,
+    *,
+    operation_digest: str,
+    request_digest: str,
+) -> Optional[DietRecordResponse]:
+    stored_payload = _diet_recalculation_stored_payload(record)
+    if stored_payload is None:
+        return None
+    provenance = stored_payload["provenance"]
+    stored_operation_digest = provenance.get("operation_digest")
+    if not isinstance(stored_operation_digest, str) or not hmac.compare_digest(
+        stored_operation_digest,
+        operation_digest,
+    ):
+        return None
+    stored_request_digest = provenance.get("request_digest")
+    if not isinstance(stored_request_digest, str) or not hmac.compare_digest(
+        stored_request_digest,
+        request_digest,
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="幂等标识已用于其他饮食修正",
+        )
+    if not _diet_recalculation_result_is_current(
+        record,
+        request,
+        stored_payload,
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="已提交的饮食修正结果已发生变化，请刷新后重试",
+        )
+    return _convert_to_response(record)
+
+
+def _diet_recalculation_contains_alcohol(value: object) -> bool:
+    return bool(_DIET_RECALCULATION_ALCOHOL_RE.search(str(value or "")))
+
+
+def _invalidate_diet_twin(user_id: int) -> None:
+    """Fail-soft invalidation after the authoritative diet commit."""
+    try:
+        from app.twin.cache import invalidate_twin
+
+        invalidate_twin(user_id)
+    except Exception as error:
+        logger.warning(
+            "饮食数据写入后 Twin 缓存失效失败: user_id=%s error_type=%s",
+            user_id,
+            type(error).__name__,
+        )
+
+
+def _diet_recalculation_totals(result: dict) -> dict[str, Optional[float]]:
+    totals: dict[str, Optional[float]] = {}
+    for field, (result_key, maximum) in _DIET_RECALCULATION_TOTAL_FIELDS.items():
+        value = result.get(result_key)
+        if value is None:
+            totals[field] = None
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise HTTPException(
+                status_code=422,
+                detail="未获得可用的营养估算，请修改描述后重试",
+            )
+        number = float(value)
+        if not math.isfinite(number) or number < 0 or number > maximum:
+            raise HTTPException(
+                status_code=422,
+                detail="未获得可用的营养估算，请修改描述后重试",
+            )
+        totals[field] = number
+
+    if (
+        totals["calories"] is None
+        or not any(
+            totals[field] is not None
+            for field in ("protein", "carbs", "fat")
+        )
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="未获得可用的营养估算，请修改描述后重试",
+        )
+    return totals
+
+
+@router.post(
+    "/records/{record_id}/recalculate-nutrition",
+    response_model=DietRecordResponse,
+)
+def recalculate_diet_record_nutrition(
+    record_id: int,
+    request: DietRecordNutritionRecalculateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_required),
+    idempotency_key: str = Header(
+        ...,
+        alias="Idempotency-Key",
+        min_length=8,
+        max_length=160,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    ),
+):
+    """Estimate and atomically replace nutrition for one owned diet record."""
+    record = db.query(DietRecordModel).filter(
+        DietRecordModel.id == record_id,
+        DietRecordModel.user_id == current_user.id,
+    ).first()
+    if not record:
+        # Keep cross-owner records indistinguishable from absent records and do
+        # not invoke the model before ownership has been established.
+        raise HTTPException(status_code=404, detail="Record not found")
+
+    try:
+        food_items = request.food_items.strip()
+        _assert_diet_food_items_allowed(food_items)
+        operation_digest = _diet_recalculation_operation_digest(
+            user_id=current_user.id,
+            record_id=record_id,
+            idempotency_key=idempotency_key,
+        )
+        request_digest = _diet_recalculation_request_digest(
+            user_id=current_user.id,
+            record_id=record_id,
+            food_items=food_items,
+            meal_type=request.meal_type,
+            expected_updated_at=request.expected_updated_at,
+        )
+        replay = _diet_recalculation_replay_response(
+            record,
+            request,
+            operation_digest=operation_digest,
+            request_digest=request_digest,
+        )
+        if replay is not None:
+            return replay
+        if not (
+            _diet_recalculation_expected_revision_matches(
+                record,
+                request.expected_updated_at,
+            )
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="饮食记录已更新，请刷新后重试",
+            )
+        if (
+            bool(record.alcohol_units)
+            or _diet_recalculation_contains_alcohol(record.food_items)
+            or _diet_recalculation_contains_alcohol(food_items)
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="含酒饮食需要填写标准杯，请到饮食记录页手动修正",
+            )
+        initial_snapshot = _diet_recalculation_snapshot(record)
+
+        # This is intentionally outside SELECT ... FOR UPDATE. The estimator
+        # can take seconds; the bounded snapshot below protects the later write.
+        raw_result = food_recognition_service.estimate_nutrition_from_text(
+            food_items
+        )
+        result = sanitize_food_recognition_result(raw_result)
+        if not result.get("success"):
+            model_failed = (
+                not isinstance(raw_result, dict)
+                or raw_result.get("success") is False
+            )
+            raise HTTPException(
+                status_code=503 if model_failed else 422,
+                detail=(
+                    "营养估算失败，请稍后重试"
+                    if model_failed
+                    else "未获得可用的营养估算，请修改描述后重试"
+                ),
+            )
+
+        foods = result.get("foods") or []
+        # Model-authored source IDs and label claims are untrusted. Only the
+        # reviewed-table calibration step may add authoritative provenance.
+        for food in foods:
+            for field in (
+                "food_id",
+                "source",
+                "nutrition_basis",
+                "quantity_grams",
+                "label_basis_grams",
+            ):
+                food.pop(field, None)
+        calibrate_recognized_foods(db, foods)
+        for food in foods:
+            if food.get("source") == "ai_estimate":
+                food["nutrition_basis"] = "text_estimate"
+        result = sanitize_food_recognition_result(result)
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=422,
+                detail="未获得可用的营养估算，请修改描述后重试",
+            )
+        foods = result.get("foods") or []
+        # Free-form model advice is outside this correction command's reviewed
+        # write contract. Only recalculated nutrition facts are persisted.
+        result["health_tips"] = None
+        for food in foods:
+            food["portion_basis"] = "user_stated"
+            if food.get("source") == "ai_estimate":
+                food["nutrition_basis"] = "text_estimate"
+        totals = _diet_recalculation_totals(result)
+
+        locked_record = (
+            db.query(DietRecordModel)
+            .filter(
+                DietRecordModel.id == record_id,
+                DietRecordModel.user_id == current_user.id,
+            )
+            .populate_existing()
+            .with_for_update()
+            .first()
+        )
+        if locked_record is None:
+            raise HTTPException(
+                status_code=409,
+                detail="饮食记录已更新，请刷新后重试",
+            )
+        replay = _diet_recalculation_replay_response(
+            locked_record,
+            request,
+            operation_digest=operation_digest,
+            request_digest=request_digest,
+        )
+        if replay is not None:
+            return replay
+        if (
+            _diet_recalculation_snapshot(locked_record) != initial_snapshot
+            or not _diet_recalculation_expected_revision_matches(
+                locked_record,
+                request.expected_updated_at,
+            )
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="饮食记录已更新，请刷新后重试",
+            )
+
+        sources = {
+            str(food["source"])
+            for food in foods
+            if food.get("source")
+        }
+        result_meal_type = (
+            request.meal_type.value
+            if request.meal_type is not None
+            else locked_record.meal_type
+        )
+        stored_result = dict(result)
+        stored_result["recognition_version"] = "diet_text_recalculation_v1"
+        stored_result["provenance"] = {
+            "method": "text_estimate_user_corrected",
+            "estimated": True,
+            "pipeline": "sanitize_calibrate_sanitize",
+            "operation_digest": operation_digest,
+            "request_digest": request_digest,
+            "result_food_items": food_items,
+            "result_meal_type": result_meal_type,
+        }
+
+        locked_record.meal_type = result_meal_type
+        locked_record.food_name = str(foods[0].get("name") or "")[:80] or None
+        locked_record.food_items = food_items
+        locked_record.food_id = (
+            foods[0].get("food_id")
+            if len(foods) == 1 and foods[0].get("food_id")
+            else None
+        )
+        locked_record.source = (
+            next(iter(sources))
+            if len(sources) == 1
+            else "mixed" if sources else "ai_estimate"
+        )
+        locked_record.calories = totals["calories"]
+        locked_record.protein = totals["protein"]
+        locked_record.carbs = totals["carbs"]
+        locked_record.fat = totals["fat"]
+        locked_record.fiber = totals["fiber"]
+        locked_record.quantity = None
+        locked_record.unit = None
+        locked_record.alcohol_units = None
+        locked_record.ai_recognized = True
+        locked_record.ai_confidence = None
+        locked_record.ai_raw_result = json.dumps(
+            stored_result,
+            ensure_ascii=False,
+        )
+        locked_record.health_tips = None
+
+        # Build the validated response before the only commit so any response
+        # conversion failure can still roll the complete mutation back.
+        db.flush()
+        db.refresh(locked_record)
+        response = _convert_to_response(locked_record)
+        db.commit()
+        _invalidate_diet_twin(current_user.id)
+        return response
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as error:
+        db.rollback()
+        logger.error(
+            "饮食营养重算失败: record_id=%s user_id=%s error_type=%s",
+            record_id,
+            current_user.id,
+            type(error).__name__,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="营养重算失败，请稍后重试",
+        )
 
 
 @router.put("/records/{record_id}", response_model=DietRecordResponse)

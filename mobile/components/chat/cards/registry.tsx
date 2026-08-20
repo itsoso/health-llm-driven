@@ -503,9 +503,16 @@ function sanitizeAdjustRecord(source: Record<string, unknown>): Record<string, u
   if (mealType && ADJUST_MEAL_TYPES.has(mealType)) adjust.meal_type = mealType;
   const foodItems = foodItemsValue(source.food_items);
   if (foodItems) adjust.food_items = foodItems;
-  for (const key of ['calories', 'protein', 'carbs', 'fat'] as const) {
+  for (const key of ['calories', 'protein', 'carbs', 'fat', 'fiber'] as const) {
     const parsed = numberValue(source[key]);
     if (parsed != null) adjust[key] = parsed;
+  }
+  if (Object.prototype.hasOwnProperty.call(source, 'updated_at')) {
+    if (source.updated_at === null) {
+      adjust.updated_at = null;
+    } else if (typeof source.updated_at === 'string' && source.updated_at.trim()) {
+      adjust.updated_at = source.updated_at.trim();
+    }
   }
   return adjust;
 }
