@@ -4,8 +4,8 @@
 |---|---|
 | slug | `diet-correction-recalculation-photo-dismiss` |
 | 创建日期 | 2026-08-20 |
-| 当前阶段 | G5 部署准备 |
-| 状态 | building |
+| 当前阶段 | G5 已通过；G6 真机用户路径待确认 |
+| 状态 | deployed_device_smoke_pending |
 | 负责 | Codex + 用户 |
 | 反馈环 | Backend focused tests + Mobile Jest/TypeScript + production OTA after Gates |
 
@@ -58,7 +58,7 @@
 - [x] T2 聊天内调整器在食物变化时只调用重算接口，完整替换五项营养；失败零写入；409 不重放旧 revision；失效旧 progress/下一餐派生内容。
 - [x] T3 餐食大图加入纵向滑动关闭且不破坏横向翻图。
 - [x] T4 focused tests、OpenAPI 生成类型、TypeScript 与 G4 独立安全评审完成。
-- [ ] T5 在当前 `origin/main` 上完成干净集成复测后，依次部署 Backend、Mobile OTA 并做生产用户路径验证。
+- [ ] T5 已从当前 `origin/main` 依次部署 Backend 与 Mobile OTA；待真机完成生产用户路径验证后关闭。
 - 并发检查：已检查开放 PR，未发现同一修正链路的在途 PR。
 
 ## S5 · 实现
@@ -85,4 +85,19 @@
 
 ## S6–S8
 
-- 已在基于 `origin/main@4140bb7a3` 的独立干净工作树重放本 feature；远端新增饮食食材披露改动被保留，Backend/Mobile/PostgreSQL/类型/System Map 全部复测通过。尚未推送或部署，G5/G6 仍需发布健康检查与生产用户路径证据。
+- 已在基于 `origin/main@4140bb7a3` 的独立干净工作树重放本 feature；远端新增饮食食材披露改动被保留，Backend/Mobile/PostgreSQL/类型/System Map 全部复测通过。
+- feature commit `272782b33` 已进入主干；发布使用的精确主干为 `994c5665aef34fcf092679ba99edc12b7adfa9b8`，其 GitHub CI run `32356968903` 完成且结论为 success。
+
+## G5 · 部署健康闸
+
+- Backend 通过唯一入口 `./deploy.sh -b` 从干净 `main` 发布到生产；数据库备份、237 表恢复演练、站外加密归档哈希/HMAC、依赖锁、完整 runtime schema、runtime-only KB guard/staged contract、Skills manifest 均通过。
+- 生产远端 revision 精确为 `994c5665aef34fcf092679ba99edc12b7adfa9b8`；`health-backend`、Celery worker、Celery beat 均为 active；重复健康评分为 `60/60 PASS`。
+- 新端点 `POST /api/v1/diet/records/{record_id}/recalculate-nutrition` 在生产返回预期未授权 `401`，而非旧进程/未注册路由的 `404`；健康端点报告 API、PostgreSQL、Redis、Celery 正常。
+- iOS production OTA 使用同一精确 source 发布到 runtime `1.3.3`；EAS group `d1d15b9c-e3bf-4190-be81-f96e3d16d504`、iOS update `01a01fe0-2dc2-74d6-970b-093eab295ff9`。独立 `update:view` 回读确认 branch、runtime、platform、commit 与发布记录一致。
+- **裁决：PASS**。
+
+## G6 · 生产用户路径验证
+
+- 机器侧已证明 Backend 新路由生效且 OTA 对目标 production/runtime 可达。
+- 尚未以真实用户记录执行“修改食物份量 → 服务端重算五项营养 → 保存后完整回读”，也尚未在真机验证餐食大图纵向滑动关闭与横向翻页不冲突。为避免修改真实健康数据或把发布成功冒充用户体验成功，本 Gate 保持 **PENDING**。
+- 真机验证步骤：彻底关闭并重开 App 应用 OTA；选择可安全修改的测试餐食，将份量从 1 改为 2，确认热量/蛋白质/碳水/脂肪/膳食纤维共同变化且刷新后保持；打开餐食大图，纵向滑动关闭，再确认横向多图翻页仍正常。
