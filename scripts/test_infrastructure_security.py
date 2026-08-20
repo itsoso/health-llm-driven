@@ -148,6 +148,7 @@ def test_nginx_and_firewall_do_not_publish_internal_services() -> None:
     nginx = (ROOT / "infra" / "nginx" / "health.executor.life.conf").read_text()
     assert "proxy_pass http://127.0.0.1:8000" in nginx
     assert "server_tokens off" in nginx
+    assert nginx.count("access_log off;") == 2
 
     firewall = (ROOT / "infra" / "firewall" / "apply-ufw.sh").read_text()
     for public_port in ("22/tcp", "80/tcp", "443/tcp"):
