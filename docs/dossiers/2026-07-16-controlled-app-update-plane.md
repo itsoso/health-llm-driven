@@ -100,3 +100,10 @@
 
 - 自动 crash-loop 回滚、自动灰度推进和跨端（Mac/Web）统一发布策略仍进入后续阶段。
 - 原生版本兼容门已由独立 dossier [`2026-07-16-native-release-compatibility-gate.md`](2026-07-16-native-release-compatibility-gate.md) 完成：策略能阻断不兼容 OTA，并在客户端显示原生升级提示。
+
+### 2026-08-21 · EAS CLI 版本漂移收口
+
+- 根因：`scripts/mobile-ota.sh` 的默认发布路径调用未指定版本的 `npx eas-cli`，操作者机器上的缓存或 npm 最新版本可改变正式 OTA 行为。
+- 修正：默认路径固定调用 `eas-cli@22.0.0`；测试注入的 `OTA_EAS_RUNNER`、源码守卫、发布锁、同字节重试和回滚证据契约均保持不变。
+- TDD：新增契约先因缺少精确版本而 RED，最小修改后 GREEN；完整 `scripts/test_mobile_fast_feedback_scripts.py` 为 `24 passed`，`/bin/bash -n scripts/mobile-ota.sh` 与真实 `eas-cli/22.0.0` 版本探针通过。
+- 边界：本次只完成本地 G3 与工具版本硬化，未发布 OTA；下一次获权正式 OTA 的 exact-commit CI、EAS group/update receipt 和真机应用结果仍分别裁决 G4–G6。

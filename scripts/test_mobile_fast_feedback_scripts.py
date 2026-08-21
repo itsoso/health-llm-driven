@@ -63,6 +63,14 @@ def test_committed_npm_lockfiles_only_use_the_public_registry() -> None:
                 assert source.hostname in allowed_hosts
 
 
+def test_ota_default_eas_cli_uses_an_exact_version() -> None:
+    script = (ROOT / "scripts" / "mobile-ota.sh").read_text(encoding="utf-8")
+
+    assert 'EAS_CLI_PACKAGE="eas-cli@22.0.0"' in script
+    assert 'npx --yes "${EAS_CLI_PACKAGE}" update' in script
+    assert "npx eas-cli update" not in script
+
+
 def run_fast_test(*args: str, changed_files: str = "") -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["MOBILE_FAST_TEST_DRY_RUN"] = "1"
