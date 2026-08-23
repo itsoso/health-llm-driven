@@ -720,6 +720,50 @@ describe('dispatchChatCardAction', () => {
     );
   });
 
+  it('posts an owner-bound breakfast photo draft containing 山药', async () => {
+    const photoDraftToken = 'photo-draft-token-1234567890';
+    const foodItems = '煎蛋 约1个 + 玉米段 约1/4根 + 紫薯 约1小块 + 山药 约1小段 + 青菜 少量';
+    mockApiPost.mockResolvedValueOnce({ data: { id: 1077 } });
+
+    await expect(dispatchChatCardAction({
+      id: `confirm-contextual-diet:${photoDraftToken}`,
+      label: '确认记录',
+      action: 'diet_record.create',
+      endpoint: '/diet/records',
+      requires_manual_confirm: true,
+      ...DIET_WRITE_POLICY,
+      payload: {
+        record: {
+          record_date: '2026-08-23',
+          meal_type: 'breakfast',
+          food_items: foodItems,
+          calories: 430,
+          protein: 22,
+          carbs: 60,
+          source: 'chat_photo',
+          photo_draft_token: photoDraftToken,
+        },
+      },
+    }, 'diet-photo-card-breakfast-yam')).resolves.toEqual(expect.objectContaining({
+      status: 'completed',
+      receipt: expect.objectContaining({
+        resourceType: 'diet_record',
+        resourceId: '1077',
+        verified: true,
+      }),
+    }));
+
+    expect(mockApiPost).toHaveBeenCalledWith(
+      '/diet/records',
+      expect.objectContaining({
+        food_items: foodItems,
+        meal_type: 'breakfast',
+        photo_draft_token: photoDraftToken,
+      }),
+      { headers: { 'Idempotency-Key': 'diet-photo-card-breakfast-yam' } },
+    );
+  });
+
   it('rejects malformed photo draft tokens before posting', async () => {
     await expect(dispatchChatCardAction({
       label: '确认记录',
@@ -776,6 +820,7 @@ describe('dispatchChatCardAction', () => {
     ['vitamindandfishoil'],
     ['d3-fish-oil'],
     ['胡萝卜 约3片 + warfarin 1片'],
+    ['山药 约1小段 + 阿司匹林 1片'],
   ])('rejects non-diet intake even with an owner-bound photo token: %s', async (foodItems) => {
     await expect(dispatchChatCardAction({
       label: '确认记录',

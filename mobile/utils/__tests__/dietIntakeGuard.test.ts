@@ -44,6 +44,15 @@ describe('dietIntakeGuard', () => {
     expect(() => assertDietFoodItemsAllowed(text)).not.toThrow();
   });
 
+  it('allows a photographed breakfast containing the food 山药', () => {
+    const text = '煎蛋 约1个 + 玉米段 约1/4根 + 紫薯 约1小块 + 山药 约1小段 + 青菜';
+
+    expect(looksLikeNonDietIntake(text)).toBe(false);
+    expect(() => assertDietFoodItemsAllowed(text, {
+      ownerBoundPhotoDraft: true,
+    })).not.toThrow();
+  });
+
   it.each([
     ['coq10environment salad'],
     ['d32factor cereal'],
@@ -118,6 +127,7 @@ describe('dietIntakeGuard', () => {
     ['vitamindandfishoil'],
     ['d3-fish-oil'],
     ['胡萝卜 约3片 + warfarin 1片'],
+    ['山药 约1小段 + 阿司匹林 1片'],
   ])('keeps strong medication and supplement guards for photo drafts: %s', (text) => {
     expect(() => assertDietFoodItemsAllowed(text, {
       ownerBoundPhotoDraft: true,

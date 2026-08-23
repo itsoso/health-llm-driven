@@ -1,5 +1,7 @@
 import { isMedicationRecordItem } from '../services/medicationFilters';
 
+const DIET_FOOD_HOMOGRAPHS_RE = /山药/g;
+
 export function assertDietFoodItemsAllowed(
   foodItems: string,
   options: { ownerBoundPhotoDraft?: boolean } = {},
@@ -46,7 +48,12 @@ export function looksLikeNonDietIntake(value: string): boolean {
     .normalize('NFKC')
     .replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-')
     .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '');
-  if (isMedicationRecordItem({ name: normalizedValue })) return true;
+  // The shared medication classifier intentionally treats `药` as a strong
+  // signal. In a diet payload, remove only confirmed food homographs before
+  // applying that classifier. Explicit residual signals still block entries
+  // such as `山药胶囊` or `山药 + 阿司匹林 1片`.
+  const medicationCandidate = normalizedValue.replace(DIET_FOOD_HOMOGRAPHS_RE, ' ');
+  if (isMedicationRecordItem({ name: medicationCandidate })) return true;
   // 饮品里常见的维 C 茶/柠檬饮料不应被补剂关键词误杀。
   if (/维\s*c\s*(?:茶|饮|饮料|果汁|柠檬|柠)/i.test(normalizedValue)) return false;
   if (/鱼油|维生素|维\s*d|b族|益生菌|辅酶\s*q?\s*10|甘氨酸镁|钙片|叶酸|锌片/i.test(normalizedValue)) {
