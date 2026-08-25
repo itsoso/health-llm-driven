@@ -13,6 +13,11 @@ import type { MedicationSafetyAlert } from './medications';
 
 type DietNutritionStatus = 'not_needed' | 'estimated' | 'estimate_failed';
 
+interface DietNutritionBackfillResult {
+  nutritionStatus: DietNutritionStatus;
+  patch?: Record<string, number>;
+}
+
 const WRITE_CARD_ACTIONS = new Set([
   'agenda.complete',
   'daily_plan_action.complete',
@@ -66,8 +71,13 @@ export async function dispatchChatCardAction(
       {
         const result = await createDietRecordFromCard(action, idempotencyKey);
         return {
-        status: 'completed',
+          status: 'completed',
           nutrition_status: result.nutritionStatus,
+          patch: {
+            recorded: true,
+            record_id: result.recordId,
+            ...(result.patch ?? {}),
+          },
           receipt: createVerifiedWriteReceipt({
             operationId: action.id || `diet_record.create:${result.recordId}`,
             resourceType: 'diet_record',
@@ -329,6 +339,7 @@ async function createDietRecordFromCard(
 ): Promise<{
   nutritionStatus: DietNutritionStatus;
   recordId: number;
+  patch?: Record<string, number>;
 }> {
   const record = readDietRecord(action);
   const normalizedKey = normalizeIdempotencyKey(idempotencyKey);
@@ -341,7 +352,7 @@ async function createDietRecordFromCard(
   const recordId = readOptionalNumericId(data?.id);
   if (!recordId) throw new Error('diet_record_missing_id');
   if (!needsNutritionEstimate(record)) return { nutritionStatus: 'not_needed', recordId };
-  return { nutritionStatus: await backfillEstimatedNutrition(recordId, record), recordId };
+  return { ...(await backfillEstimatedNutrition(recordId, record)), recordId };
 }
 
 function normalizeIdempotencyKey(raw: string | undefined): string | undefined {
@@ -512,18 +523,21 @@ function needsNutritionEstimate(record: Record<string, unknown>): boolean {
   return ['calories', 'protein', 'carbs', 'fat'].some((key) => !isUsableNutritionNumber(record[key]));
 }
 
-async function backfillEstimatedNutrition(recordId: number, record: Record<string, unknown>): Promise<DietNutritionStatus> {
+async function backfillEstimatedNutrition(
+  recordId: number,
+  record: Record<string, unknown>,
+): Promise<DietNutritionBackfillResult> {
   try {
     const foodItems = readFoodItems(record.food_items, {
       ownerBoundPhotoDraft: Boolean(readPhotoDraftToken(record.photo_draft_token)),
     });
     const { data } = await api.post(`/diet/estimate-nutrition?food_description=${encodeURIComponent(foodItems)}`);
     const patch = readNutritionPatch(data, record);
-    if (!Object.keys(patch).length) return 'estimate_failed';
+    if (!Object.keys(patch).length) return { nutritionStatus: 'estimate_failed' };
     await api.put(`/diet/records/${recordId}`, patch);
-    return 'estimated';
+    return { nutritionStatus: 'estimated', patch };
   } catch {
-    return 'estimate_failed';
+    return { nutritionStatus: 'estimate_failed' };
   }
 }
 

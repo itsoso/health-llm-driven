@@ -912,14 +912,14 @@ describe('dispatchChatCardAction', () => {
 
   it('estimates and backfills nutrition after confirming a diet record without macros', async () => {
     mockApiPost
-      .mockResolvedValueOnce({ data: { id: 88, food_items: '牛肉面', meal_type: 'lunch' } })
+      .mockResolvedValueOnce({ data: { id: 88, food_items: '牛肉50克 米饭0克', meal_type: 'lunch' } })
       .mockResolvedValueOnce({
         data: {
           success: true,
-          total_calories: 620,
-          total_protein: 28,
-          total_carbs: 78,
-          total_fat: 18,
+          total_calories: 125,
+          total_protein: 13,
+          total_carbs: 0,
+          total_fat: 8,
         },
       });
 
@@ -931,26 +931,37 @@ describe('dispatchChatCardAction', () => {
       ...DIET_WRITE_POLICY,
       payload: {
         record: {
-          food_items: '牛肉面',
+          food_items: '牛肉50克 米饭0克',
           meal_type: 'lunch',
         },
       },
     })).resolves.toEqual(expect.objectContaining({
       status: 'completed',
       nutrition_status: 'estimated',
+      patch: {
+        recorded: true,
+        record_id: 88,
+        calories: 125,
+        protein: 13,
+        carbs: 0,
+        fat: 8,
+      },
       receipt: expect.objectContaining({ resourceType: 'diet_record', resourceId: '88', verified: true }),
     }));
 
     expect(mockApiPost).toHaveBeenNthCalledWith(1, '/diet/records', expect.objectContaining({
-      food_items: '牛肉面',
+      food_items: '牛肉50克 米饭0克',
       meal_type: 'lunch',
     }));
-    expect(mockApiPost).toHaveBeenNthCalledWith(2, '/diet/estimate-nutrition?food_description=%E7%89%9B%E8%82%89%E9%9D%A2');
+    expect(mockApiPost).toHaveBeenNthCalledWith(
+      2,
+      '/diet/estimate-nutrition?food_description=%E7%89%9B%E8%82%8950%E5%85%8B%20%E7%B1%B3%E9%A5%AD0%E5%85%8B',
+    );
     expect(mockApiPut).toHaveBeenCalledWith('/diet/records/88', {
-      calories: 620,
-      protein: 28,
-      carbs: 78,
-      fat: 18,
+      calories: 125,
+      protein: 13,
+      carbs: 0,
+      fat: 8,
     });
   });
 
