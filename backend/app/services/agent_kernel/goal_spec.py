@@ -37,7 +37,7 @@ from app.services.agent_kernel.types import (
 )
 from app.services.agent_kernel.write_safety import is_explicit_write_cancellation
 from app.services.write_intent_scope import (
-    explicit_whole_record_delete_target,
+    explicit_whole_record_delete_targets,
     has_explicit_authorizing_update_request,
     has_mixed_write_polarity,
 )
@@ -424,22 +424,22 @@ def _compile_health_manage_mutation_goal(
     """Compile only an explicit current-turn update/delete needing owner lookup."""
     del actionable_references
     text = "".join(str(envelope.text or "").split()).strip()
-    delete_target = (
-        explicit_whole_record_delete_target(text) if not envelope.media else None
+    delete_targets = (
+        explicit_whole_record_delete_targets(text) if not envelope.media else ()
     )
-    mutation_operation = "delete" if delete_target is not None else intent.operation
+    mutation_operation = "delete" if delete_targets else intent.operation
     if (
         envelope.media
-        or (delete_target is None and intent.primary != "mutate")
+        or (not delete_targets and intent.primary != "mutate")
         or mutation_operation not in {"update", "delete"}
-        or (delete_target is None and not intent.is_write)
+        or (not delete_targets and not intent.is_write)
         or is_explicit_write_cancellation(text)
         or has_mixed_write_polarity(text)
         or (
             mutation_operation == "update"
             and not has_explicit_authorizing_update_request(text)
         )
-        or (mutation_operation == "delete" and delete_target is None)
+        or (mutation_operation == "delete" and not delete_targets)
         or (
             mutation_operation != "delete"
             and HEALTH_MANAGE_MUTATION_COMMAND_RE.search(text) is None
@@ -449,9 +449,12 @@ def _compile_health_manage_mutation_goal(
 
     target_record_type: str | None = None
     target_values: list[tuple[str, str]] = []
-    if delete_target is not None:
-        target_record_type = delete_target[0]
-        target_values.append(("record_id", str(delete_target[1])))
+    if delete_targets:
+        target_record_type = delete_targets[0][0]
+        target_values.extend(
+            ("record_id", str(record_id))
+            for _, record_id in delete_targets
+        )
     illness_entity = extract_owned_illness_entity(text)
     if illness_entity is not None:
         target_record_type = "illness"
@@ -644,12 +647,27 @@ def _format_simple_health_record_prompt(goal: GoalSpec) -> str:
 
 
 def _format_health_manage_mutation_prompt(goal: GoalSpec) -> str:
+    record_ids = tuple(
+        value for key, value in goal.target_values if key == "record_id"
+    )
+    target_detail = (
+        "，目标 ID: " + "、".join(f"#{record_id}" for record_id in record_ids)
+        if record_ids
+        else ""
+    )
+    lookup_rule = (
+        "先查询本人对应记录并确认上述全部 ID 都存在，再按完整目标集执行变更；"
+        "任一 ID 未找到时禁止执行任何删除。"
+        if goal.operation == "delete" and len(record_ids) > 1
+        else "先查询本人对应记录并确定唯一目标，再执行变更。"
+    )
     return (
         "## 本轮任务契约（必须完整执行）\n"
-        f"- 目标: 仅对本人 {goal.target_record_type} 记录执行 {goal.operation}。\n"
-        "- 顺序: 先查询本人对应记录并确定唯一目标，再执行变更。\n"
+        f"- 目标: 仅对本人 {goal.target_record_type} 记录执行 {goal.operation}"
+        f"{target_detail}。\n"
+        f"- 顺序: {lookup_rule}\n"
         "- 禁止: 查询其他记录类型、使用未出现在本人查询结果中的 ID，或新增记录。\n"
-        "- 完成标准: 收到匹配目标类型的 verified write receipt 后才能确认成功。"
+        "- 完成标准: 每个目标都收到匹配类型的 verified write receipt 后才能确认全部成功。"
     )
 
 

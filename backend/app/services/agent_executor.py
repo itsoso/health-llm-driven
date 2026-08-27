@@ -5816,6 +5816,60 @@ def _build_deterministic_goal_lookup_tool_call(
     }
 
 
+def _goal_exact_record_ids(goal: Optional[GoalSpec]) -> tuple[int, ...]:
+    """Return the server-compiled positive record IDs without collapsing repeats."""
+    if goal is None or goal.kind != "health_manage_mutation":
+        return ()
+    return tuple(
+        dict.fromkeys(
+            record_id
+            for key, value in goal.target_values
+            if key == "record_id"
+            and (record_id := canonical_health_manage_record_id(value)) is not None
+        )
+    )
+
+
+def _build_deterministic_goal_delete_tool_calls(
+    goal: Optional[GoalSpec],
+    *,
+    allowed_record_ids: set[str],
+) -> List[Dict[str, Any]]:
+    """Build the full typed delete set only after owner lookup proves every ID."""
+    if (
+        goal is None
+        or goal.kind != "health_manage_mutation"
+        or goal.operation != "delete"
+        or "explicit_current_turn_mutation" not in goal.evidence
+    ):
+        return []
+    record_type = canonical_health_manage_record_type(goal.target_record_type)
+    record_ids = _goal_exact_record_ids(goal)
+    if record_type is None or len(record_ids) < 2:
+        return []
+    expected_ids = {str(record_id) for record_id in record_ids}
+    if not expected_ids.issubset(allowed_record_ids):
+        return []
+    return [
+        {
+            "id": f"goal-delete-{record_type}-{record_id}-{_sha12(repr(goal))}",
+            "type": "function",
+            "function": {
+                "name": "health_manage",
+                "arguments": json.dumps(
+                    {
+                        "record_type": record_type,
+                        "operation": "delete",
+                        "record_id": record_id,
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        }
+        for record_id in record_ids
+    ]
+
+
 def _goal_lookup_arguments(goal: Optional[GoalSpec]) -> Optional[Dict[str, Any]]:
     """Return the server-owned lookup scope for a closed typed mutation goal."""
     if goal is None or not goal.requires_lookup:
@@ -5837,12 +5891,10 @@ def _goal_lookup_arguments(goal: Optional[GoalSpec]) -> Optional[Dict[str, Any]]
             lookup = {
                 "record_type": record_type,
                 "operation": "list",
-                "limit": 20,
+                "limit": 100 if len(_goal_exact_record_ids(goal)) > 1 else 20,
             }
-            target_values = dict(goal.target_values)
-            record_id = canonical_health_manage_record_id(
-                target_values.get("record_id")
-            )
+            record_ids = _goal_exact_record_ids(goal)
+            record_id = record_ids[0] if len(record_ids) == 1 else None
             if record_type == "illness" and record_id is not None:
                 lookup.pop("limit", None)
                 lookup["record_id"] = record_id
@@ -6043,6 +6095,19 @@ def _normalize_goal_guarded_tool_calls(
         return normalized
     if goal.kind == "health_manage_mutation":
         if lookup_completed:
+            if goal.operation == "delete" and len(_goal_exact_record_ids(goal)) > 1:
+                deterministic_calls = _build_deterministic_goal_delete_tool_calls(
+                    goal,
+                    allowed_record_ids=allowed_record_ids or set(),
+                )
+                if not deterministic_calls:
+                    logger.error(
+                        "[agent_executor] blocked batch delete without complete "
+                        "owner lookup record_type=%s target_count=%s",
+                        goal.target_record_type,
+                        len(_goal_exact_record_ids(goal)),
+                    )
+                return deterministic_calls
             return tool_calls
         lookup_args = _goal_lookup_arguments(goal)
         if lookup_args is None:
@@ -6196,14 +6261,14 @@ def _goal_target_record_resolution(
     result: Any,
 ) -> tuple[set[str], tuple[str, ...], tuple[str, ...]]:
     """Return safe IDs plus missing and ambiguous target meals."""
-    if goal is None or goal.kind != "diet_recalculate_update":
+    if goal is None:
         return set(), (), ()
     parsed = result
     if isinstance(result, str):
         try:
             parsed = json.loads(result)
         except (TypeError, ValueError, json.JSONDecodeError):
-            return set(), tuple(goal.target_meal_types), ()
+            return set(), (), ()
     rows: list[dict[str, Any]] = []
     if isinstance(parsed, list):
         rows = [row for row in parsed if isinstance(row, dict)]
@@ -6213,6 +6278,30 @@ def _goal_target_record_resolution(
             if isinstance(nested, list):
                 rows = [row for row in nested if isinstance(row, dict)]
                 break
+    if (
+        goal.kind == "health_manage_mutation"
+        and goal.operation == "delete"
+        and len(_goal_exact_record_ids(goal)) > 1
+    ):
+        target_ids = tuple(str(record_id) for record_id in _goal_exact_record_ids(goal))
+        row_ids = {
+            str(record_id)
+            for row in rows
+            if (
+                record_id := canonical_health_manage_record_id(
+                    row.get("id", row.get("record_id"))
+                )
+            )
+            is not None
+        }
+        missing_ids = tuple(
+            record_id for record_id in target_ids if record_id not in row_ids
+        )
+        if missing_ids:
+            return set(), missing_ids, ()
+        return set(target_ids), (), ()
+    if goal.kind != "diet_recalculate_update":
+        return set(), (), ()
     target_meals = set(goal.target_meal_types)
     ids_by_meal: dict[str, set[str]] = {
         meal_type: set()
@@ -6256,6 +6345,16 @@ def _goal_lookup_resolution_prompt(
     _, missing, ambiguous = _goal_target_record_resolution(goal, result)
     if not missing and not ambiguous:
         return ""
+    if (
+        goal is not None
+        and goal.kind == "health_manage_mutation"
+        and goal.operation == "delete"
+    ):
+        return (
+            "\n\n[系统任务约束] 本人查询结果中未找到"
+            + "、".join(f"记录 #{record_id}" for record_id in missing)
+            + "。禁止继续删除或宣称完成；请用户核对记录类型和 ID 后重新发送明确请求。"
+        )
     labels = {
         "breakfast": "早餐",
         "lunch": "午餐",
@@ -10340,6 +10439,7 @@ class AgentExecutor:
             deterministic_simple_record_fallback_attempted = False
             simple_diet_nutrition_estimation_attempted = False
             deterministic_goal_lookup_attempted = False
+            deterministic_goal_delete_attempted = False
             goal_verification_attempted = False
             receipt_goal_evaluated = False
             goal_verification_result: Any = None
@@ -10442,6 +10542,25 @@ class AgentExecutor:
                     if deterministic_goal_call:
                         deterministic_goal_lookup_attempted = True
                         tool_calls = [deterministic_goal_call]
+                        content = ""
+                if (
+                    not tool_calls
+                    and goal_lookup_completed
+                    and not deterministic_goal_delete_attempted
+                ):
+                    deterministic_delete_calls = (
+                        _build_deterministic_goal_delete_tool_calls(
+                            (
+                                self._agent_kernel_snapshot.goal
+                                if self._agent_kernel_snapshot is not None
+                                else None
+                            ),
+                            allowed_record_ids=goal_allowed_record_ids,
+                        )
+                    )
+                    if deterministic_delete_calls:
+                        deterministic_goal_delete_attempted = True
+                        tool_calls = deterministic_delete_calls
                         content = ""
                 if not tool_calls:
                     verification_call = _build_goal_verification_tool_call(
@@ -10722,8 +10841,14 @@ class AgentExecutor:
                         )
                         if (
                             fn == "health_manage"
-                            and parsed_args.get("record_type") == "diet"
-                            and parsed_args.get("operation") == "list"
+                            and _goal_lookup_call_matches(
+                                (
+                                    self._agent_kernel_snapshot.goal
+                                    if self._agent_kernel_snapshot is not None
+                                    else None
+                                ),
+                                parsed_args,
+                            )
                         ):
                             tool_content += _goal_lookup_resolution_prompt(
                                 (
@@ -12260,6 +12385,7 @@ class AgentExecutor:
         deterministic_simple_record_fallback_attempted = False
         simple_diet_nutrition_estimation_attempted = False
         deterministic_goal_lookup_attempted = False
+        deterministic_goal_delete_attempted = False
         goal_verification_attempted = False
         receipt_goal_evaluated = False
         goal_verification_result: Any = None
@@ -12806,6 +12932,32 @@ class AgentExecutor:
                             "content": "",
                             "finish_reason": "tool_calls",
                             "tool_calls": [deterministic_goal_call],
+                        }
+
+                if (
+                    not health_advice_buffered
+                    and isinstance(response, dict)
+                    and not response.get("tool_calls")
+                    and goal_lookup_completed
+                    and not deterministic_goal_delete_attempted
+                ):
+                    deterministic_delete_calls = (
+                        _build_deterministic_goal_delete_tool_calls(
+                            (
+                                self._agent_kernel_snapshot.goal
+                                if self._agent_kernel_snapshot is not None
+                                else None
+                            ),
+                            allowed_record_ids=goal_allowed_record_ids,
+                        )
+                    )
+                    if deterministic_delete_calls:
+                        deterministic_goal_delete_attempted = True
+                        response = {
+                            **response,
+                            "content": "",
+                            "finish_reason": "tool_calls",
+                            "tool_calls": deterministic_delete_calls,
                         }
 
                 if (
@@ -13477,8 +13629,14 @@ class AgentExecutor:
                         )
                         if (
                             func_name == "health_manage"
-                            and parsed_tool_args.get("record_type") == "diet"
-                            and parsed_tool_args.get("operation") == "list"
+                            and _goal_lookup_call_matches(
+                                (
+                                    self._agent_kernel_snapshot.goal
+                                    if self._agent_kernel_snapshot is not None
+                                    else None
+                                ),
+                                parsed_tool_args,
+                            )
                         ):
                             tool_content += _goal_lookup_resolution_prompt(
                                 (

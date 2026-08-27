@@ -7949,6 +7949,7 @@ async def test_execute_tool_blocks_field_removal_from_deleting_record(
     assert payload["dispatch_started"] is False
     assert payload["error_code"] == "delete_requires_explicit_whole_record_intent"
     assert "保留整条记录" in payload["recovery_guidance"]
+    assert "删除饮食记录 977 和 979" in payload["recovery_guidance"]
     assert "仅移除字段" in payload["recovery_guidance"]
 
 
@@ -8050,6 +8051,7 @@ async def test_execute_tool_blocks_exact_delete_without_owner_lookup(
     assert payload["status"] == "rejected"
     assert payload["dispatch_started"] is False
     assert payload["error_code"] == "delete_requires_exact_target_evidence"
+    assert "本轮必须零删除" in payload["recovery_guidance"]
 
 
 @pytest.mark.asyncio

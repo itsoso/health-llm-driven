@@ -138,10 +138,13 @@ def bind_server_authorized_manage_lookup(
     args.pop(_SERVER_AUTHORIZED_MANAGE_LOOKUP_KEY, None)
     requested_record_type = canonical_health_manage_record_type(args.get("record_type"))
     requested_record_id = canonical_health_manage_record_id(args.get("record_id"))
-    goal_values = dict(goal.target_values) if goal is not None else {}
-    expected_record_id = canonical_health_manage_record_id(
-        goal_values.get("record_id")
+    goal_record_ids = tuple(
+        record_id
+        for key, value in (goal.target_values if goal is not None else ())
+        if key == "record_id"
+        and (record_id := canonical_health_manage_record_id(value)) is not None
     )
+    expected_record_id = goal_record_ids[0] if len(goal_record_ids) == 1 else None
     authorized_lookup_record_id = (
         expected_record_id if requested_record_type == "illness" else None
     )
@@ -585,7 +588,7 @@ _SEVERITY_TARGET_RE = re.compile(
     r"(?:严重程度|严重度|程度|强度)?\s*(?P<value>10|[1-9])\s*"
     r"(?:分(?!钟)|级|/\s*10)"
 )
-_WHOLE_RECORD_DELETE_EVIDENCE_VERSION = "record-delete-evidence-v5"
+_WHOLE_RECORD_DELETE_EVIDENCE_VERSION = "record-delete-evidence-v6"
 _HEALTH_MANAGE_CANONICAL_RECORD_TYPES = frozenset(
     {
         "diet",
@@ -800,7 +803,7 @@ class _WholeRecordDeleteEvidence:
 
     target_kind: str
     record_type: str | None = None
-    record_id: int | None = None
+    record_ids: tuple[int, ...] = ()
 
 
 def canonical_health_manage_record_id(value: Any) -> int | None:
@@ -833,15 +836,18 @@ def _whole_record_delete_evidence(
     text: str,
 ) -> _WholeRecordDeleteEvidence | None:
     """Extract content-free target evidence from a closed delete grammar."""
-    from app.services.write_intent_scope import explicit_whole_record_delete_target
+    from app.services.write_intent_scope import explicit_whole_record_delete_targets
 
-    target = explicit_whole_record_delete_target(text)
-    if target is None:
+    targets = explicit_whole_record_delete_targets(text)
+    if not targets:
+        return None
+    record_types = {record_type for record_type, _ in targets}
+    if len(record_types) != 1:
         return None
     return _WholeRecordDeleteEvidence(
-        target_kind="exact_record",
-        record_type=target[0],
-        record_id=target[1],
+        target_kind="exact_record_set",
+        record_type=targets[0][0],
+        record_ids=tuple(record_id for _, record_id in targets),
     )
 
 
@@ -850,19 +856,25 @@ def _delete_evidence_authorizes_request(
     evidence: _WholeRecordDeleteEvidence | None,
     args: dict[str, Any],
 ) -> bool:
-    if evidence is None or evidence.target_kind != "exact_record":
+    if evidence is None or evidence.target_kind != "exact_record_set":
         return False
     requested_type = canonical_health_manage_record_type(args.get("record_type"))
     requested_id = canonical_health_manage_record_id(args.get("record_id"))
     if requested_type is None or requested_id is None:
         return False
-    if evidence.record_type != requested_type or evidence.record_id != requested_id:
+    if evidence.record_type != requested_type or requested_id not in evidence.record_ids:
         return False
-    return any(
-        canonical_health_manage_record_id(record.get("id", record.get("record_id")))
-        == requested_id
+    owner_record_ids = {
+        record_id
         for record in _owner_scoped_manage_list_records(snapshot, requested_type)
-    )
+        if (
+            record_id := canonical_health_manage_record_id(
+                record.get("id", record.get("record_id"))
+            )
+        )
+        is not None
+    }
+    return set(evidence.record_ids).issubset(owner_record_ids)
 
 
 def _delete_evidence_matches_request(
@@ -870,13 +882,13 @@ def _delete_evidence_matches_request(
     args: dict[str, Any],
 ) -> bool:
     """Return exact user-text/argument identity without granting owner authority."""
-    if evidence is None or evidence.target_kind != "exact_record":
+    if evidence is None or evidence.target_kind != "exact_record_set":
         return False
     return (
         evidence.record_type
         == canonical_health_manage_record_type(args.get("record_type"))
-        and evidence.record_id
-        == canonical_health_manage_record_id(args.get("record_id"))
+        and canonical_health_manage_record_id(args.get("record_id"))
+        in evidence.record_ids
     )
 
 

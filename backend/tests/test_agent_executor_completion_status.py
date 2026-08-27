@@ -3702,6 +3702,98 @@ async def test_update_retry_different_target_is_blocked_without_owner_scoped_evi
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("second_proposed_ids", ((), (977,)))
+async def test_typed_batch_delete_executes_full_server_plan_after_owner_lookup(
+    db, auth_user_and_headers, monkeypatch, second_proposed_ids
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    dispatched = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            proposed_ids = (977, 979)
+        elif llm_calls == 2:
+            # Whether the model omits every target or only one after lookup,
+            # the server-owned goal restores the complete current-turn set.
+            proposed_ids = second_proposed_ids
+            if not proposed_ids:
+                return {
+                    "content": "无法删除。",
+                    "finish_reason": "stop",
+                }
+        else:
+            return {
+                "content": "两条饮食记录都已删除。",
+                "finish_reason": "stop",
+            }
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [
+                {
+                    "id": f"diet-delete-{record_id}",
+                    "function": {
+                        "name": "health_manage",
+                        "arguments": json.dumps({
+                            "record_type": "diet",
+                            "operation": "delete",
+                            "record_id": record_id,
+                        }),
+                    },
+                }
+                for record_id in proposed_ids
+            ],
+        }
+
+    async def fake_health_manage(_base_url, _headers, parsed):
+        dispatched.append(parsed)
+        if parsed["operation"] == "list":
+            return json.dumps(
+                [{"id": 977}, {"id": 979}, {"id": 981}],
+                ensure_ascii=False,
+            )
+        return json.dumps({
+            "id": parsed["record_id"],
+            "record_id": parsed["record_id"],
+            "resource_type": "diet_record",
+            "message": "删除成功",
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_exec_health_manage", fake_health_manage)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="删除饮食记录977和979",
+            user_auth_token="test-token",
+        )
+    ]
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert [item["operation"] for item in dispatched] == [
+        "list",
+        "delete",
+        "delete",
+    ]
+    assert [
+        item.get("record_id")
+        for item in dispatched
+        if item["operation"] == "delete"
+    ] == [977, 979]
+    assert done["data"]["completion_status"] == "complete"
+    assert {
+        receipt["resource_id"] for receipt in done["data"]["write_receipts"]
+    } == {"977", "979"}
+
+
+@pytest.mark.asyncio
 async def test_delete_retry_recovers_same_target_operation_mismatch(
     db, auth_user_and_headers, monkeypatch
 ):
