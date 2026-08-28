@@ -183,6 +183,105 @@ test "$(awk 'END {{ print NR + 0 }}' "$FAKE_INSTALL_LOG")" = 2
     assert result.returncode == 0, (result.stdout, result.stderr)
 
 
+@pytest.mark.parametrize("residual_package", ("chromadb", "chroma-hnswlib"))
+def test_matching_dependency_marker_repairs_each_stale_chroma_package_and_keeps_failed_repair_unsealed(
+    tmp_path: Path,
+    residual_package: str,
+):
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    install_log = tmp_path / "installs"
+    dependency_state = tmp_path / "installed-dependency"
+    state_dir = tmp_path / "release-state"
+    state_dir.mkdir(mode=0o700)
+    digest = "c" * 64
+    marker = state_dir / "requirements-lock.sha256"
+    marker.write_text(digest + "\n", encoding="utf-8")
+    marker.chmod(0o600)
+    dependency_state.write_text(residual_package + "\n", encoding="utf-8")
+    _write_root_owned_stat_shim(fake_bin / "stat")
+    _write_executable(fake_bin / "sync", "#!/bin/sh\nexit 0\n")
+    _write_executable(
+        fake_bin / "mv",
+        """#!/bin/sh
+set -eu
+test "$1" = "-fT"
+test "$2" = "--"
+/bin/mv -f "$3" "$4"
+""",
+    )
+    _write_executable(
+        fake_bin / "pip",
+        """#!/bin/sh
+set -eu
+printf 'install\n' >> "$FAKE_INSTALL_LOG"
+""",
+    )
+    _write_executable(
+        fake_bin / "python",
+        """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "-m" ]]; then
+  test "$2" = "pip"
+  if [[ "$3" == "uninstall" ]]; then
+    test "$4" = "--yes"
+    test "$5" = "chromadb"
+    test "$6" = "chroma-hnswlib"
+    if [[ "${FAKE_UNINSTALL_FAIL:-0}" == "1" ]]; then exit 92; fi
+    rm -f "$FAKE_DEPENDENCY_STATE"
+    exit 0
+  fi
+  test "$3" = "check"
+  exit 0
+fi
+test "$1" = "scripts/verify_locked_requirements.py"
+test "$2" = "requirements.lock"
+test ! -e "$FAKE_DEPENDENCY_STATE"
+""",
+    )
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+REMOTE_RELEASE_STATE_DIR={state_dir!s}
+REQUIREMENTS_LOCK_SHA={digest}
+dependency_command="$(remote_dependency_sync_command)"
+if FAKE_UNINSTALL_FAIL=1 PATH="$FAKE_BIN:$PATH" bash -c "$dependency_command"; then
+  exit 91
+fi
+test ! -e '{marker!s}'
+test -e "$FAKE_DEPENDENCY_STATE"
+test "$(awk 'END {{ print NR + 0 }}' "$FAKE_INSTALL_LOG")" = 1
+PATH="$FAKE_BIN:$PATH" bash -c "$dependency_command"
+test "$(cat '{marker!s}')" = '{digest}'
+test ! -e "$FAKE_DEPENDENCY_STATE"
+test "$(awk 'END {{ print NR + 0 }}' "$FAKE_INSTALL_LOG")" = 2
+reuse_output="$(PATH="$FAKE_BIN:$PATH" bash -c "$dependency_command")"
+test "$reuse_output" = 'dependency lock unchanged; verified install reused'
+test "$(awk 'END {{ print NR + 0 }}' "$FAKE_INSTALL_LOG")" = 2
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "DEPLOY_ENV_FILE": str(env_file),
+            "FAKE_BIN": str(fake_bin),
+            "FAKE_INSTALL_LOG": str(install_log),
+            "FAKE_DEPENDENCY_STATE": str(dependency_state),
+        },
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+
+
 def test_system_kb_marker_executes_missing_match_and_symlink_paths(tmp_path: Path):
     env_file = tmp_path / "deploy.env"
     env_file.write_text(

@@ -21,11 +21,16 @@ ChromaDB `0.6.3` was removed from the production requirements and lock after
 already routes knowledge retrieval through reviewed System KB and keeps the legacy
 Chroma runtime disabled. The deploy dependency synchronizer now removes stale
 `chromadb`/`chroma-hnswlib` installations before verifying the lock, and the lock
-verifier rejects any residual `chromadb` package.
+verifier rejects either residual package. A matching dependency marker is deleted
+and durably synced before repair, so a failed uninstall cannot leave stale reuse
+evidence. Rollback installs the target lock while services are stopped, removes
+both forbidden packages, and verifies the remaining target-lock contract with the
+immutable staged verifier before any service starts.
 
-No dependency-audit exception remains. The release may proceed to the next gate;
-App Review is still blocked by exact-build CI, build, and real-device evidence, not
-by a known dependency finding.
+No dependency-audit exception remains. Local remediation tests pass, but release
+remains blocked until the exact commit receives independent G4b approval and main
+CI is green. App Review also remains blocked by exact-build CI, build, and
+real-device evidence.
 
 ## Controls
 
@@ -43,7 +48,8 @@ by a known dependency finding.
 - Backend CI audits the hashed `backend/requirements.lock`; the lock is generated
   for the CI Python 3.12 Linux x86_64 target and must install with `--require-hashes`.
 - Backend deployment removes forbidden stale packages before writing its
-  lock-addressed dependency marker; verification fails if ChromaDB remains installed.
+  lock-addressed dependency marker; verification fails if either `chromadb` or
+  `chroma-hnswlib` remains installed, and repair failure leaves no reusable marker.
 - Do not apply `npm audit fix --force`; dependency upgrades must stay within the
   Expo compatibility matrix and pass Mobile regression.
 

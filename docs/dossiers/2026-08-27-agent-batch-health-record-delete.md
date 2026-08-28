@@ -4,7 +4,7 @@
 |---|---|
 | slug | `agent-batch-health-record-delete` |
 | 创建日期 | 2026-08-27 |
-| 当前阶段 | G3 复验 PASS；等待依赖安全修复的 G4 复审 |
+| 当前阶段 | G3 复验 PASS；G4b 首轮 NO-GO 已修复，等待精确提交复审 |
 | 状态 | building |
 | 负责 | Codex + release owner |
 | 反馈环 | Backend tests + independent safety review + backend deploy |
@@ -75,8 +75,9 @@
 - 首次 live 尝试因错误本地 PostgreSQL 角色和 OpenAI 余额不足失败；改用项目现有 `health_test` 本地数据库执行同一 quota guard 后，最终候选 live gate 完整通过，没有绕过配额护栏。
 - 首版候选推送后，主干 CI 新命中 `chromadb==0.6.3` 的 `CVE-2026-45830`、`CVE-2026-45831` 和 critical `CVE-2026-45833`；审计数据没有给出任何修复版本，因此未带红部署。
 - 生产知识路径已使用 reviewed System KB，legacy Chroma runtime 默认关闭；从生产 requirements/lock 移除 ChromaDB 及其专属传递依赖，其他 127 个锁定包版本零变化。
-- 修复部署残留风险：依赖同步在写 lock marker 前卸载旧 `chromadb`/`chroma-hnswlib`，锁验证器拒绝任何残留 ChromaDB。
-- 依赖/部署/回滚合同 `138 passed`；Chroma 缺失下知识路径 `49 passed`；批量删除核心回归再次 `2788 passed`。
+- 修复部署残留风险：依赖同步在写 lock marker 前卸载旧 `chromadb`/`chroma-hnswlib`，锁验证器同时拒绝两项残留；匹配 marker 但验证失败时先持久删除旧 marker，修复失败不得伪装成可复用环境。
+- 修复回滚风险：旧锁在服务停止状态安装后立即移除两项无修复版本的 Chroma 包，再由 immutable stage verifier 按“目标锁减去禁用包”验证；既保留旧提交其余依赖语义，也不重新暴露漏洞。
+- 依赖、部署与安全合同 `142 passed`；完整回滚合同 `39 passed`；Chroma 缺失下知识路径 `49 passed`；批量删除核心回归再次 `2788 passed`。
 - 新锁 `pip-audit` 为 `No known vulnerabilities found`；全新临时 venv 从哈希锁安装 127 个包、依赖兼容检查通过且 `chromadb=absent`。
 - System Map 已移除生产 `resource.chromadb` 依赖并重生成，结构、Dossier、Skill 治理和硬阻断 Ruff/shell 语法门禁通过。
 - **裁决：PASS**。
@@ -90,7 +91,12 @@
 - 结论只覆盖固定本地 commit 的代码安全；不替代 main/CI、部署健康和生产行为验证。
 - **裁决：PASS**。
 
-依赖安全修复修改了生产 lock、部署同步与系统架构声明；必须形成新的固定 commit 并完成 G4b 独立安全复审。复审 GO 前禁止再次推送或部署。
+## G4b · 依赖与发布安全复审
+
+- 首轮固定候选 `68ab3f671ef91c31aad7c5752fdafe72cdd79651` 结论：**NO-GO**；发现旧 SHA 回滚错误套用候选 verifier，以及单独残留 `chroma-hnswlib` 可绕过同 digest marker 复用检查。
+- 已补 TDD 回归并修复：前向部署同时禁止两项残留、失败修复先失效 marker；回滚使用哈希封存 verifier 的显式 sanitized 模式，服务启动前证明禁用包已移除且目标锁其余依赖准确。
+- 新候选必须完成精确 commit 独立复审；复审 GO 前禁止再次推送或部署。
+- **裁决：Pending**。
 
 ## S6 · 部署
 

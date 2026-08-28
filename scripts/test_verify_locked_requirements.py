@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 import backend.scripts.verify_locked_requirements as verifier
 
 
@@ -55,9 +57,15 @@ def test_locked_requirement_verifier_rejects_mismatch_and_unpinned_input(
     assert "unsupported lock requirement" in unpinned_result.stderr
 
 
-def test_locked_requirement_verifier_rejects_stale_unpatched_chromadb(
+@pytest.mark.parametrize(
+    ("package_name", "installed_version"),
+    (("chromadb", "0.6.3"), ("chroma-hnswlib", "0.7.6")),
+)
+def test_locked_requirement_verifier_rejects_stale_unpatched_chroma_packages(
     tmp_path: Path,
     monkeypatch,
+    package_name: str,
+    installed_version: str,
 ) -> None:
     lock = tmp_path / "requirements.lock"
     lock.write_text(
@@ -69,12 +77,52 @@ def test_locked_requirement_verifier_rejects_stale_unpatched_chromadb(
         normalized = name.lower().replace("_", "-")
         if normalized == "pip":
             return "1.0"
-        if normalized == "chromadb":
-            return "0.6.3"
+        if normalized == package_name:
+            return installed_version
         raise importlib.metadata.PackageNotFoundError(name)
 
     monkeypatch.setattr(verifier.importlib.metadata, "version", fake_version)
 
     assert verifier.verify_lock(lock) == [
-        "chromadb: forbidden installed package; installed=0.6.3"
+        f"{package_name}: forbidden installed package; installed={installed_version}"
+    ]
+
+
+def test_locked_requirement_verifier_can_sanitize_forbidden_entries_from_a_rollback_lock(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    lock = tmp_path / "requirements.lock"
+    lock.write_text(
+        "pip==1.0 \\\n"
+        "    --hash=sha256:" + "a" * 64 + "\n"
+        "chromadb==0.6.3 \\\n"
+        "    --hash=sha256:" + "b" * 64 + "\n"
+        "chroma-hnswlib==0.7.6 \\\n"
+        "    --hash=sha256:" + "c" * 64 + "\n",
+        encoding="utf-8",
+    )
+
+    installed_forbidden: dict[str, str] = {}
+
+    def fake_version(name: str) -> str:
+        normalized = name.lower().replace("_", "-")
+        if normalized == "pip":
+            return "1.0"
+        if normalized in installed_forbidden:
+            return installed_forbidden[normalized]
+        raise importlib.metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(verifier.importlib.metadata, "version", fake_version)
+
+    assert verifier.verify_lock(
+        lock,
+        sanitize_forbidden_packages=True,
+    ) == []
+    installed_forbidden["chroma-hnswlib"] = "0.7.6"
+    assert verifier.verify_lock(
+        lock,
+        sanitize_forbidden_packages=True,
+    ) == [
+        "chroma-hnswlib: forbidden installed package; installed=0.7.6"
     ]

@@ -41,14 +41,15 @@ def test_production_dependencies_exclude_unpatched_legacy_chromadb():
     # CVE-2026-45830/45831/45833 have no patched ChromaDB release. The
     # Chroma-backed runtime is legacy and disabled by default, so production
     # must not install the vulnerable package or its server surface.
-    assert not any(
-        line.strip().startswith("chromadb==")
-        for line in requirements.splitlines()
-    )
-    assert not any(
-        line.strip().startswith("chromadb==")
-        for line in lock.splitlines()
-    )
+    for package_name in ("chromadb", "chroma-hnswlib"):
+        assert not any(
+            line.strip().startswith(f"{package_name}==")
+            for line in requirements.splitlines()
+        )
+        assert not any(
+            line.strip().startswith(f"{package_name}==")
+            for line in lock.splitlines()
+        )
 
 
 def test_production_lock_is_hashed_and_deploy_requires_hashes():

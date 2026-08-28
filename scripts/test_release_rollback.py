@@ -228,12 +228,17 @@ def test_rollback_rewrites_verified_dependency_marker_before_service_start():
     install = script.index(
         "backend/venv/bin/pip install --require-hashes -r backend/requirements.lock"
     )
-    exact = script.index('"$LOCKED_REQUIREMENTS_VERIFIER"', install)
+    uninstall = script.index(
+        "backend/venv/bin/python -m pip uninstall --yes chromadb chroma-hnswlib",
+        install,
+    )
+    exact = script.index('"$LOCKED_REQUIREMENTS_VERIFIER"', uninstall)
+    sanitize = script.index("--sanitize-forbidden-packages", exact)
     pip_check = script.index("backend/venv/bin/python -m pip check", exact)
     marker = script.index("requirements-lock.sha256", pip_check)
     start = script.index('systemctl start "$BACKEND_SOCKET"', marker)
 
-    assert install < exact < pip_check < marker < start
+    assert install < uninstall < exact < sanitize < pip_check < marker < start
     assert "root:root:700" in script[install:start]
     assert "root:root:600" in script[install:start]
     assert "mv -fT --" in script[install:start]
@@ -269,7 +274,15 @@ def _make_release_repo(tmp_path: Path) -> tuple[Path, str, str]:
         ["git", "config", "user.name", "Security Test"], cwd=repo, check=True
     )
     (repo / "backend/venv/bin").mkdir(parents=True)
-    (repo / "backend/requirements.lock").write_text("", encoding="utf-8")
+    (repo / "backend/requirements.lock").write_text(
+        "chromadb==0.6.3\nchroma-hnswlib==0.7.6\n",
+        encoding="utf-8",
+    )
+    (repo / "backend/scripts").mkdir(parents=True)
+    (repo / "backend/scripts/verify_locked_requirements.py").write_text(
+        "# Legacy target verifier intentionally permits its own Chroma lock.\n",
+        encoding="utf-8",
+    )
     (repo / ".gitignore").write_text("backend/.env\n", encoding="utf-8")
     (repo / "backend/.env").write_text(
         "DATABASE_URL=sqlite:///:memory:\n"
@@ -277,16 +290,48 @@ def _make_release_repo(tmp_path: Path) -> tuple[Path, str, str]:
         'touch "$FAKE_ENV_EXECUTED"\n',
         encoding="utf-8",
     )
-    _write_executable(repo / "backend/venv/bin/pip", "#!/bin/sh\nexit 0\n")
+    _write_executable(
+        repo / "backend/venv/bin/pip",
+        """#!/bin/sh
+if [ -n "${FAKE_DEPENDENCY_EVENT_LOG:-}" ]; then
+  if grep -q '^chromadb==' backend/requirements.lock; then
+    printf 'chroma-packages-installed\n' > "$FAKE_INSTALLED_DEPENDENCY_STATE"
+    printf 'pip-install-old-lock\n' >> "$FAKE_DEPENDENCY_EVENT_LOG"
+  else
+    rm -f "$FAKE_INSTALLED_DEPENDENCY_STATE"
+    printf 'pip-install-candidate-lock\n' >> "$FAKE_DEPENDENCY_EVENT_LOG"
+  fi
+fi
+exit 0
+""",
+    )
     _write_executable(
         repo / "backend/venv/bin/python",
         """#!/bin/sh
 case "$1" in
   *verify_locked_requirements.py)
+    if [ -n "${FAKE_DEPENDENCY_EVENT_LOG:-}" ]; then
+      test "$2" = "--sanitize-forbidden-packages"
+      test "$3" = "backend/requirements.lock"
+      test ! -f "$FAKE_INSTALLED_DEPENDENCY_STATE"
+      printf 'candidate-sanitized-lock-verifier\n' >> "$FAKE_DEPENDENCY_EVENT_LOG"
+    fi
     exit 0
     ;;
   -m)
     test "$2" = "pip"
+    if [ "$3" = "uninstall" ]; then
+      test "$4" = "--yes"
+      test "$5" = "chromadb"
+      test "$6" = "chroma-hnswlib"
+      if [ -n "${FAKE_INSTALLED_DEPENDENCY_STATE:-}" ]; then
+        rm -f "$FAKE_INSTALLED_DEPENDENCY_STATE"
+      fi
+      if [ -n "${FAKE_DEPENDENCY_EVENT_LOG:-}" ]; then
+        printf 'chroma-packages-uninstalled\n' >> "$FAKE_DEPENDENCY_EVENT_LOG"
+      fi
+      exit 0
+    fi
     test "$3" = "check"
     exit 0
     ;;
@@ -312,6 +357,10 @@ exit 0
         ["git", "rev-parse", "HEAD"], cwd=repo, text=True
     ).strip()
     (repo / "release.txt").write_text("failed-release", encoding="utf-8")
+    (repo / "backend/requirements.lock").write_text(
+        "safe-package==1.0.0\n",
+        encoding="utf-8",
+    )
     manifest_path = repo / "backend/data/system_kb_v2_seed/review_manifest.json"
     manifest_path.parent.mkdir(parents=True)
     manifest_path.write_text(
@@ -328,7 +377,11 @@ exit 0
 """,
         encoding="utf-8",
     )
-    subprocess.run(["git", "add", "release.txt"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "add", "release.txt", "backend/requirements.lock"],
+        cwd=repo,
+        check=True,
+    )
     subprocess.run(["git", "add", str(manifest_path)], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-qm", "failed release"], cwd=repo, check=True)
     failed = subprocess.check_output(
@@ -1026,6 +1079,62 @@ def test_release_rollback_moves_head_and_requires_health_check(tmp_path: Path):
     assert "kb_quarantine=passed" in result.stdout
 
 
+def test_release_rollback_sanitizes_legacy_chroma_from_old_lock_before_start(
+    tmp_path: Path,
+):
+    repo, known_good, _ = _make_release_repo(tmp_path)
+    rollback_runner = _stage_rollback_runner(tmp_path, repo)
+    bin_dir = _fake_commands(tmp_path, healthy=True)
+    service_state = tmp_path / "service-state"
+    service_state.write_text("active\n", encoding="utf-8")
+    event_log = tmp_path / "rollback-events"
+    dependency_state = tmp_path / "installed-dependency-state"
+    lock_args = _release_lock_args(tmp_path)
+    env = {
+        **os.environ,
+        **_process_proof_env(tmp_path),
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "ROLLBACK_HEALTH_ATTEMPTS": "1",
+        "FAKE_SERVICE_STATE": str(service_state),
+        "FAKE_SCHEMA_PROBE_LOG": str(tmp_path / "schema-probe"),
+        "FAKE_STOP_COUNT": str(tmp_path / "stop-count"),
+        "FAKE_ROLLBACK_EVENT_LOG": str(event_log),
+        "FAKE_DEPENDENCY_EVENT_LOG": str(event_log),
+        "FAKE_INSTALLED_DEPENDENCY_STATE": str(dependency_state),
+        "FAKE_RUNTIME_REPO": str(repo),
+        "FAKE_RUNTIME_EXPECTED_HEAD": known_good,
+        "FAKE_RUNTIME_EXPECTED_ROLLBACK": known_good,
+    }
+
+    result = subprocess.run(
+        [str(rollback_runner), str(repo), known_good, *lock_args],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (repo / "backend/requirements.lock").read_text(
+        encoding="utf-8"
+    ) == "chromadb==0.6.3\nchroma-hnswlib==0.7.6\n"
+    events = event_log.read_text(encoding="utf-8").splitlines()
+    assert "pip-install-old-lock" in events
+    assert "chroma-packages-uninstalled" in events
+    assert "candidate-sanitized-lock-verifier" in events
+    assert events.index("pip-install-old-lock") < events.index(
+        "chroma-packages-uninstalled"
+    ) < events.index("candidate-sanitized-lock-verifier") < events.index(
+        "service-start"
+    )
+    assert not dependency_state.exists()
+    assert "ROLLBACK_OK" in result.stdout
+    assert service_state.read_text(encoding="utf-8").strip() == "active"
+    assert (
+        tmp_path / "release-state" / "requirements-lock.sha256"
+    ).is_file()
+
+
 def test_release_rollback_candidate_floor_commits_then_finalizes(
     tmp_path: Path,
 ):
@@ -1215,7 +1324,9 @@ def test_release_rollback_restores_legacy_env_before_starting_old_services(
     assert "runtime_state=restored" in result.stdout
     restored_lines = paths["live_env"].read_text(encoding="utf-8").splitlines()
     assert restored_lines == expected_env.splitlines()
-    expected_lock_digest = hashlib.sha256(b"").hexdigest()
+    expected_lock_digest = hashlib.sha256(
+        (paths["live_env"].parent / "requirements.lock").read_bytes()
+    ).hexdigest()
     assert paths["requirements_marker"].read_text(encoding="utf-8") == (
         expected_lock_digest + "\n"
     )
