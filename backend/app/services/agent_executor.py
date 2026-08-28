@@ -6599,6 +6599,14 @@ def _contextual_diet_write_rejection(reason: str, *, action: str) -> str:
     )
 
 
+def _contextual_diet_confirmation_reply() -> str:
+    """Render a persisted meal-photo draft without asking a model to write it again."""
+    return (
+        "已识别这餐，照片和营养估算已保留。"
+        "为避免把不确定的图片识别直接写入，请在下方餐食卡片核对后点“确认记录”。"
+    )
+
+
 def _number_or_none(value: Any) -> Optional[float]:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
@@ -12433,6 +12441,41 @@ class AgentExecutor:
         self._http_client = httpx.AsyncClient(timeout=90.0)
         try:
             for round_idx in range(MAX_TOOL_ROUNDS):
+                if (
+                    self._turn_contextual_diet_write_blocked_reason
+                    == "confirmation_pending"
+                    and self._turn_contextual_diet_cards
+                ):
+                    # Structured vision has already persisted an owner-scoped
+                    # confirmation draft and built its actionable card.  A
+                    # model tool round cannot improve this state: if it calls
+                    # health_record, the write adapter must reject the duplicate
+                    # attempt, which previously turned a successful manual pause
+                    # into a false write failure and hid the card.  Finish from
+                    # the observed draft instead, with no second write attempt.
+                    if (
+                        "health_record"
+                        not in self._agent_kernel_pending_confirmation_tools
+                    ):
+                        self._agent_kernel_pending_confirmation_tools.append(
+                            "health_record"
+                        )
+                    full_reply = _contextual_diet_confirmation_reply()
+                    final_finish_reason = "stop"
+                    if first_token_at is None:
+                        first_token_at = time.time()
+                    if not health_advice_buffered:
+                        for index in range(0, len(full_reply), 20):
+                            yield {
+                                "event": "token",
+                                "data": {"content": full_reply[index:index + 20]},
+                            }
+                    rounds.append({
+                        "llm_gen_ms": 0,
+                        "tool_exec_ms": 0,
+                        "tools": [],
+                    })
+                    break
                 if deterministic_health_release:
                     # Sufficiency is a pre-synthesis policy decision. Clarify,
                     # high/emergency, and authority-miss turns are rendered by
