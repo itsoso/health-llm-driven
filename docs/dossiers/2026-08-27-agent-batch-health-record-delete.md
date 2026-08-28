@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-batch-health-record-delete` |
 | 创建日期 | 2026-08-27 |
-| 当前阶段 | G4b PASS；等待 main CI 与 G5 部署健康闸 |
-| 状态 | releasing |
+| 当前阶段 | G5 PASS；G6 技术验证 PASS，等待用户真实重试 |
+| 状态 | deployed-awaiting-user-validation |
 | 负责 | Codex + release owner |
 | 反馈环 | Backend tests + independent safety review + backend deploy |
 
@@ -54,7 +54,7 @@
 - [x] G4：本地 commit 后独立安全评审。
 - [x] 推送首版候选到 main。
 - [x] G4b：依赖安全与部署同步修复独立复审。
-- [ ] Backend 部署、生产只读验证。
+- [x] Backend 部署、生产只读验证。
 
 ## S5 · 实现
 
@@ -102,19 +102,26 @@
 
 ## S6 · 部署
 
-首版候选 `241b5eb15efd496a5d41a4e799beba7070780e9b` 已推送到 `main`，但 CI 因无修复版本的 ChromaDB 漏洞失败，未部署。安全修复候选已通过 G4b；等待最终文档提交复核、推送及主干 CI 变绿后执行 `deploy.sh -b`。
+首版候选 `241b5eb15efd496a5d41a4e799beba7070780e9b` 推送后因无修复版本的 ChromaDB 漏洞被 CI 阻断，没有带红部署。最终运行时候选 `5d84a48f4d3eb53228487db9c6c88e82d009f909` 的 main CI `52/52` 成功，随后从全新 clean main clone 执行 `./deploy.sh -b`，退出码 0。
 
 ## G5 · 部署健康闸
 
-Pending。
+- 生产备份 43 MB、权限 0600；恢复演练 237 张表通过；站外加密归档哈希与 HMAC 真实性通过。
+- 回滚点 `994c5665aef34fcf092679ba99edc12b7adfa9b8` 对实时 schema 兼容，候选按精确 SHA `5d84a48f4d3eb53228487db9c6c88e82d009f909` 安装。
+- 生产实际卸载 `chromadb 0.6.3` 与 `chroma-hnswlib 0.7.6`；127 个锁定包精确校验及 `pip check` 通过，依赖 marker 与 lock digest 一致。
+- 受控迁移无新增项，runtime schema 202 张表通过；多轮健康度均 `60/60 PASS`，4 个服务 active，runtime state finalized。
+- System KB staged contract、906 文档/906 dense vectors、Skills `22 = 22` 均通过；feature flag 保持 false。
+- **裁决：PASS**。
 
 ## S7 · 上线验证
 
-Pending；只读验证不会删除 977/979。
+- 生产只读解析探针：`删除饮食记录 977 和 979` → `(('diet', 977), ('diet', 979))`。
+- Fail-closed 探针：缺少记录类型的 `删除 977 和 979` 和超过上限的 6 条饮食删除均返回空目标集。
+- 本次验证未删除 977/979；真实结果必须由用户在新版本中重新明确请求后，根据 verified receipts 确认。
 
 ## G6 · 验证闸
 
-Pending；真实删除行为需用户在生产新版本中重新发送明确请求后确认。
+技术路径 **PASS**；用户真实删除闭环 **Pending**。建议请求：`删除饮食记录 977 和 979`。
 
 ## S8 · 沉淀
 
