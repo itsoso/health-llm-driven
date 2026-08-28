@@ -27,10 +27,10 @@ evidence. Rollback installs the target lock while services are stopped, removes
 both forbidden packages, and verifies the remaining target-lock contract with the
 immutable staged verifier before any service starts.
 
-No dependency-audit exception remains. Local remediation tests pass, but release
-remains blocked until the exact commit receives independent G4b approval and main
-CI is green. App Review also remains blocked by exact-build CI, build, and
-real-device evidence.
+No dependency-audit exception remains. The exact remediation commit received
+independent G4b approval with no Critical or Important findings; release remains
+blocked until main CI is green. App Review also remains blocked by exact-build CI,
+build, and real-device evidence.
 
 ## Controls
 

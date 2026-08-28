@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-batch-health-record-delete` |
 | 创建日期 | 2026-08-27 |
-| 当前阶段 | G3 复验 PASS；G4b 首轮 NO-GO 已修复，等待精确提交复审 |
-| 状态 | building |
+| 当前阶段 | G4b PASS；等待 main CI 与 G5 部署健康闸 |
+| 状态 | releasing |
 | 负责 | Codex + release owner |
 | 反馈环 | Backend tests + independent safety review + backend deploy |
 
@@ -53,7 +53,7 @@
 - [x] G3：聚焦回归、LLM/治理/结构检查。
 - [x] G4：本地 commit 后独立安全评审。
 - [x] 推送首版候选到 main。
-- [ ] G4b：依赖安全与部署同步修复独立复审。
+- [x] G4b：依赖安全与部署同步修复独立复审。
 - [ ] Backend 部署、生产只读验证。
 
 ## S5 · 实现
@@ -95,12 +95,14 @@
 
 - 首轮固定候选 `68ab3f671ef91c31aad7c5752fdafe72cdd79651` 结论：**NO-GO**；发现旧 SHA 回滚错误套用候选 verifier，以及单独残留 `chroma-hnswlib` 可绕过同 digest marker 复用检查。
 - 已补 TDD 回归并修复：前向部署同时禁止两项残留、失败修复先失效 marker；回滚使用哈希封存 verifier 的显式 sanitized 模式，服务启动前证明禁用包已移除且目标锁其余依赖准确。
-- 新候选必须完成精确 commit 独立复审；复审 GO 前禁止再次推送或部署。
-- **裁决：Pending**。
+- 修复候选 `d70c868ac174476a133bac532b1727a6fa721b6d` 独立复审结论：**GO**；Critical 0、Important 0、无阻断 Minor。
+- 独立证据：聚焦 verifier/marker/rollback `9 passed`；完整 rollback 合同 `39 passed`；`git diff --check`、shell 语法、verifier 编译与 System Map drift 均通过。
+- 结论边界：只允许进入 main CI/G5，不替代生产 venv、systemd、精确 SHA 和服务稳定验证。
+- **裁决：PASS**。
 
 ## S6 · 部署
 
-首版候选 `241b5eb15efd496a5d41a4e799beba7070780e9b` 已推送到 `main`，但 CI 因无修复版本的 ChromaDB 漏洞失败，未部署。等待安全修复候选复审、主干 CI 变绿后执行 `deploy.sh -b`。
+首版候选 `241b5eb15efd496a5d41a4e799beba7070780e9b` 已推送到 `main`，但 CI 因无修复版本的 ChromaDB 漏洞失败，未部署。安全修复候选已通过 G4b；等待最终文档提交复核、推送及主干 CI 变绿后执行 `deploy.sh -b`。
 
 ## G5 · 部署健康闸
 
