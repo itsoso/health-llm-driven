@@ -4,8 +4,8 @@
 |---|---|
 | slug | `meal-photo-confirmation-terminal` |
 | 创建日期 | 2026-08-28 |
-| 当前阶段 | G4 安全复审 |
-| 状态 | implementation_verified |
+| 当前阶段 | G5 部署健康闸 |
+| 状态 | reviewed_waiting_push |
 | 负责 | Codex |
 | 反馈环 | 生产 run/operation 取证 + Backend pytest + LLM regression gate + backend deploy |
 
@@ -51,7 +51,10 @@
 
 ## G4 · 安全复审
 
-- 待独立只读复审。
+- 独立只读复审对象：`44e5f4f7cd8c21778ab36c529100946f8617f5b4`。
+- 复审确认：低置信度路径只创建 owner-scoped 草稿，正式 `DietRecord` 为 0；确认接口继续受 owner、草稿锁、token 和幂等键约束；Agent Runtime 映射为 `waiting_for_user`，没有伪造写入回执；高置信度自动写入不受影响。
+- 复审附加验证：287 项通过；隐私、草稿和运行时操作 97 项通过，1 项需要本地 PostgreSQL 的并发测试跳过。
+- **裁决: GO。** 无 Critical、Important 或 Minor 项。
 
 ## G5 · 部署健康 / G6 · 上线验证
 
