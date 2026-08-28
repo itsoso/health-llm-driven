@@ -1293,20 +1293,6 @@
     },
     {
       "coverage": "declaration",
-      "data_classes": [
-        "L2",
-        "L3"
-      ],
-      "id": "resource.chromadb",
-      "kind": "resource",
-      "name": "ChromaDB",
-      "source": {
-        "path": "backend/app/services/",
-        "type": "declaration"
-      }
-    },
-    {
-      "coverage": "declaration",
       "id": "resource.expo-updates",
       "kind": "resource",
       "name": "Expo Updates",
@@ -3839,19 +3825,6 @@
       },
       "to": "api.health-v1",
       "type": "providesApi"
-    },
-    {
-      "coverage": "declaration",
-      "flows": [
-        "agent-chat"
-      ],
-      "from": "component.backend-api",
-      "source": {
-        "path": "backend/app/services/",
-        "type": "declaration"
-      },
-      "to": "resource.chromadb",
-      "type": "readsFrom"
     },
     {
       "coverage": "declaration",

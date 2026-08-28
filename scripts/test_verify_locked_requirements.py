@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import backend.scripts.verify_locked_requirements as verifier
+
 
 ROOT = Path(__file__).resolve().parents[1]
 VERIFIER = ROOT / "backend" / "scripts" / "verify_locked_requirements.py"
@@ -51,3 +53,28 @@ def test_locked_requirement_verifier_rejects_mismatch_and_unpinned_input(
     assert "installed=" in mismatch_result.stderr
     assert unpinned_result.returncode != 0
     assert "unsupported lock requirement" in unpinned_result.stderr
+
+
+def test_locked_requirement_verifier_rejects_stale_unpatched_chromadb(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    lock = tmp_path / "requirements.lock"
+    lock.write_text(
+        "pip==1.0 \\\n    --hash=sha256:" + "a" * 64 + "\n",
+        encoding="utf-8",
+    )
+
+    def fake_version(name: str) -> str:
+        normalized = name.lower().replace("_", "-")
+        if normalized == "pip":
+            return "1.0"
+        if normalized == "chromadb":
+            return "0.6.3"
+        raise importlib.metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(verifier.importlib.metadata, "version", fake_version)
+
+    assert verifier.verify_lock(lock) == [
+        "chromadb: forbidden installed package; installed=0.6.3"
+    ]

@@ -13,6 +13,11 @@ EXACT_REQUIREMENT = re.compile(
     r"(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)==(?P<version>[^;\\\s]+)\s*\\?"
 )
 
+# Packages that must not survive a lock transition even when pip reuses the
+# existing production venv. ChromaDB has no patched release for
+# CVE-2026-45830/45831/45833, and its legacy runtime is disabled.
+FORBIDDEN_INSTALLED_PACKAGES = ("chromadb",)
+
 
 def verify_lock(lock_path: Path) -> list[str]:
     expected: list[tuple[str, str]] = []
@@ -40,6 +45,14 @@ def verify_lock(lock_path: Path) -> list[str]:
             continue
         if installed != version:
             errors.append(f"{name}: installed={installed}; expected={version}")
+    for name in FORBIDDEN_INSTALLED_PACKAGES:
+        try:
+            installed = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+        errors.append(
+            f"{name}: forbidden installed package; installed={installed}"
+        )
     return errors
 
 

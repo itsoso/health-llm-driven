@@ -37,8 +37,8 @@ slowapi==0.1.9
 PyMuPDF>=1.27.0
 # Garmin Connect集成
 garminconnect==0.3.6
-# 知识库RAG系统
-chromadb==0.6.3
+# 知识库使用 reviewed System KB；legacy Chroma runtime 已默认关闭。
+# ChromaDB 在 CVE-2026-45830/45831/45833 有修复版本前不得进入生产依赖。
 psutil==5.9.0
 # 阿里云智能搜索 (夸克搜索)
 alibabacloud_iqs20241111==1.6.3

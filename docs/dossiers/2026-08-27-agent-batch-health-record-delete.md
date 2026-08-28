@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-batch-health-record-delete` |
 | 创建日期 | 2026-08-27 |
-| 当前阶段 | G4 PASS；等待推送 main 与 Backend 部署 |
-| 状态 | release_ready |
+| 当前阶段 | G3 复验 PASS；等待依赖安全修复的 G4 复审 |
+| 状态 | building |
 | 负责 | Codex + release owner |
 | 反馈环 | Backend tests + independent safety review + backend deploy |
 
@@ -52,7 +52,9 @@
 - [x] GREEN：最小实现并保持单条兼容。
 - [x] G3：聚焦回归、LLM/治理/结构检查。
 - [x] G4：本地 commit 后独立安全评审。
-- [ ] 推送 main、Backend 部署、生产只读验证。
+- [x] 推送首版候选到 main。
+- [ ] G4b：依赖安全与部署同步修复独立复审。
+- [ ] Backend 部署、生产只读验证。
 
 ## S5 · 实现
 
@@ -71,6 +73,12 @@
 - Live LLM gate：最终候选 `12/12 invariants`、`50/50 health_agent_core`、`5/5 orchestrator`、`12/12 trajectory contract`、`9/9 trajectory goldens`；LLM change gate PASS。
 - 结构闸：System Map、113 dossiers、agent-skill governance PASS；目标 Ruff、`py_compile`、`git diff --check` PASS。全仓 Ruff 仍有 635 个既有 report-only 问题，不在本次范围。
 - 首次 live 尝试因错误本地 PostgreSQL 角色和 OpenAI 余额不足失败；改用项目现有 `health_test` 本地数据库执行同一 quota guard 后，最终候选 live gate 完整通过，没有绕过配额护栏。
+- 首版候选推送后，主干 CI 新命中 `chromadb==0.6.3` 的 `CVE-2026-45830`、`CVE-2026-45831` 和 critical `CVE-2026-45833`；审计数据没有给出任何修复版本，因此未带红部署。
+- 生产知识路径已使用 reviewed System KB，legacy Chroma runtime 默认关闭；从生产 requirements/lock 移除 ChromaDB 及其专属传递依赖，其他 127 个锁定包版本零变化。
+- 修复部署残留风险：依赖同步在写 lock marker 前卸载旧 `chromadb`/`chroma-hnswlib`，锁验证器拒绝任何残留 ChromaDB。
+- 依赖/部署/回滚合同 `138 passed`；Chroma 缺失下知识路径 `49 passed`；批量删除核心回归再次 `2788 passed`。
+- 新锁 `pip-audit` 为 `No known vulnerabilities found`；全新临时 venv 从哈希锁安装 127 个包、依赖兼容检查通过且 `chromadb=absent`。
+- System Map 已移除生产 `resource.chromadb` 依赖并重生成，结构、Dossier、Skill 治理和硬阻断 Ruff/shell 语法门禁通过。
 - **裁决：PASS**。
 
 ## G4 · 安全闸
@@ -82,9 +90,11 @@
 - 结论只覆盖固定本地 commit 的代码安全；不替代 main/CI、部署健康和生产行为验证。
 - **裁决：PASS**。
 
+依赖安全修复修改了生产 lock、部署同步与系统架构声明；必须形成新的固定 commit 并完成 G4b 独立安全复审。复审 GO 前禁止再次推送或部署。
+
 ## S6 · 部署
 
-Pending。
+首版候选 `241b5eb15efd496a5d41a4e799beba7070780e9b` 已推送到 `main`，但 CI 因无修复版本的 ChromaDB 漏洞失败，未部署。等待安全修复候选复审、主干 CI 变绿后执行 `deploy.sh -b`。
 
 ## G5 · 部署健康闸
 

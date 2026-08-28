@@ -36,8 +36,6 @@
   source: `backend/app/services/notification/ [declaration]`
 - `resource.celery-queue` — Celery Queue (kind=resource; coverage=declaration)
   source: `backend/app/celery_app.py [declaration]`
-- `resource.chromadb` — ChromaDB (kind=resource; coverage=declaration; data_classes=L2,L3)
-  source: `backend/app/services/ [declaration]`
 - `resource.expo-updates` — Expo Updates (kind=resource; coverage=declaration)
   source: `mobile/app.json [declaration]`
 - `resource.garmin` — Garmin (kind=resource; coverage=declaration; data_classes=L3)
@@ -66,7 +64,6 @@
 - `component.backend-api` --dependsOn--> `resource.llm-provider` (coverage=declaration; source=`backend/app/services/llm/ [declaration]`)
 - `component.backend-api` --dependsOn--> `resource.redis` (coverage=declaration; source=`backend/app/utils/redis_cache.py [declaration]`)
 - `component.backend-api` --providesApi--> `api.health-v1` (coverage=declaration; source=`backend/app/api/main.py [declaration]`)
-- `component.backend-api` --readsFrom--> `resource.chromadb` (coverage=declaration; source=`backend/app/services/ [declaration]`)
 - `component.mac` --consumesApi--> `api.health-v1` (coverage=declaration; source=`apps/mac/ [declaration]`)
 - `component.mobile` --consumesApi--> `api.health-v1` (coverage=declaration; source=`mobile/services/ [declaration]`)
 

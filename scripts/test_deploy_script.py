@@ -64,9 +64,10 @@ def test_backend_dependency_cache_is_lock_addressed_and_fail_closed():
     assert "stat -c '%h'" in body
     assert "dependency lock unchanged; verified install reused" in body
     install = body.index("pip install --require-hashes")
+    remove_chromadb = body.index("python -m pip uninstall --yes chromadb")
     verified = body.index("python -m pip check", install)
     marker_replace = body.index('mv -fT -- "\\${requirements_marker_tmp}"')
-    assert install < verified < marker_replace
+    assert install < remove_chromadb < verified < marker_replace
     assert "|| true" not in body
 
 
@@ -128,6 +129,12 @@ printf 'install\n' >> "$FAKE_INSTALL_LOG"
 set -euo pipefail
 if [[ "$1" == "-m" ]]; then
   test "$2" = "pip"
+  if [[ "$3" == "uninstall" ]]; then
+    test "$4" = "--yes"
+    test "$5" = "chromadb"
+    test "$6" = "chroma-hnswlib"
+    exit 0
+  fi
   test "$3" = "check"
   exit 0
 fi

@@ -2761,6 +2761,10 @@ sync_backend_dependencies() {
     fi
     echo '安装锁定依赖...'
     pip install --require-hashes -r requirements.lock -q || return 1
+    # pip install does not remove packages deleted from the lock. ChromaDB has
+    # no patched release for CVE-2026-45830/45831/45833, so remove any stale
+    # legacy install before verifying or writing the lock marker.
+    python -m pip uninstall --yes chromadb chroma-hnswlib || return 1
     python scripts/verify_locked_requirements.py requirements.lock || return 1
     python -m pip check || return 1
     requirements_marker_tmp="\$(mktemp "\${release_state_dir}/.requirements-lock.XXXXXX")" || return 1
