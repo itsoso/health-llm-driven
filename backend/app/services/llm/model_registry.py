@@ -66,7 +66,7 @@ MODELS: List[ModelEntry] = [
     # ──── 阿里百炼 TokenPlan (国内直连, 套餐固定计费) ────
     # 全部走同一 base_url (token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1,
     # OpenAI 协议兼容) + 同一 TOKENPLAN_API_KEY, 只换 model 字段。
-    # 2026-08-17: 阿里云 Token Plan 团队版官方文档快照。保留当前代文字/图片/音频/视频模型;
+    # 2026-08-29: 阿里云 Token Plan 个人版/团队版官方文档快照。保留当前代文字/图片/音频/视频模型;
     # 非文本模型只进目录,不进 chat picker。
     ModelEntry(
         id="qwen3.8-max",
@@ -79,12 +79,23 @@ MODELS: List[ModelEntry] = [
         capabilities=("text_generation", "reasoning", "vision_understanding"),
     ),
     ModelEntry(
+        id="qwen3.8-flash",
+        label="Qwen3.8 Flash · 千问",
+        provider="tokenplan",
+        model="qwen3.8-flash",
+        speed_tier="fast",
+        note="文本生成 / 推理 / 视觉理解",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("text_generation", "reasoning", "vision_understanding"),
+        reliable_tool_calling=False,
+    ),
+    ModelEntry(
         id="qwen3.8-max-preview",
         label="Qwen3.8 Max Preview · 千问",
         provider="tokenplan",
         model="qwen3.8-max-preview",
         speed_tier="reasoning",
-        note="预览版 / 限时加量10倍 / 文本生成 / 推理 / 视觉理解",
+        note="已下线兼容 ID / 自动路由至 qwen3.8-max",
         requires_env=("TOKENPLAN_API_KEY",),
         capabilities=("text_generation", "reasoning", "vision_understanding"),
         chat_selectable=False,
