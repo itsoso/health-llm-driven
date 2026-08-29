@@ -4,10 +4,10 @@
 |---|---|
 | slug | `app-review-medical-citations` |
 | 创建日期 | 2026-08-29 |
-| 当前阶段 | S6 候选构建准备 |
-| 状态 | ready_for_release_candidate |
+| 当前阶段 | G6 精确候选真机验收 |
+| 状态 | awaiting_physical_device_acceptance |
 | 负责 | product / backend / mobile release |
-| 关联提交 | Apple Submission `85f3224c-3688-4aae-9da1-c7e91f4facaa`，Version 1.3.3 (256) |
+| 关联提交 | 拒审 Submission `85f3224c-3688-4aae-9da1-c7e91f4facaa` / 候选 Version 1.3.3 (257) |
 
 ## S0 · 用户需求
 
@@ -51,7 +51,7 @@
 - [x] 真机模板加入引用可见与官方链接打开检查。
 - [x] 系统地图再生成与漂移验证。
 - [x] 全量相关回归、lint、release pack 和安全 Gate。
-- [ ] commit / push / backend deploy / EAS production build。
+- [x] commit / push / backend deploy / EAS production build。
 - [ ] 精确候选 Build 真机证据。
 - [ ] 用户确认后回复 Apple 并重新提交。
 
@@ -75,11 +75,19 @@
 
 ## G5 · 部署健康
 
-- pending。需要 Backend 健康证据和 Build 257+ 的 EAS/ASC/IPA 对齐。
+- 修复提交 `048583dd62e456fd392d27e39acbf5a00e1d271b` 已进入 `main`；候选构建源为包含该修复的 `b171923e3de66ac56212d387177cf7e709245a28`。
+- GitHub Actions：`33238235849` 与候选主干 `33238797747` 均 SUCCESS。
+- Backend：生产部署到 `b171923e3de66ac56212d387177cf7e709245a28`；API、PostgreSQL、Redis、Celery 健康检查均 connected/running。
+- EAS production Store Build：`9d51b003-c5a5-4afe-8868-79efcefb7c72`，1.3.3 (257)，source、runtime、bundle id 与 production channel 对齐，状态 FINISHED。
+- EAS Submit：`431726be-0f23-4ce1-835c-f8ec41f5292a`，状态 FINISHED；App Store Connect processing state `VALID`，TestFlight internal state `IN_BETA_TESTING`。
+- 精确 IPA：SHA-256 `5d867fc34ca208e6305c57023c19b4ec15f34577d6a180dfa75b4e6852e3d7e0`；`CFBundleIdentifier=life.executor.health`、`CFBundleShortVersionString=1.3.3`、`CFBundleVersion=257`、`DTXcode=2620`、`DTPlatformVersion=26.2`；strict codesign 通过，production APNs / HealthKit entitlement 与根 PrivacyInfo.xcprivacy 存在。
+- **裁决：PASS**。
 
 ## G6 · 上线验证
 
-- pending。精确 Build 必须真机输入“帮我算我的BMI”，看到默认展开来源并能打开 NHC/CDC 官方链接。
+- pending。精确 Build 257 必须真机输入“帮我算我的BMI”，看到默认展开来源并能打开 NHC/CDC 官方链接。
+- 2026-08-29 检查到登记 iPhone `suntice` 当前 offline；未用模拟器或旧 Build 代替精确二进制证据。
+- 在这项验收通过、外部证据文件补齐且 final-submit gate 通过前，不回复 Apple、不重新提交审核。
 
 ## Rollback
 
