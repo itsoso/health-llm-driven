@@ -269,6 +269,54 @@ def test_named_knowledge_fallback_accepts_use_source_instruction():
     }
 
 
+@pytest.mark.parametrize(
+    ("message", "expected_source"),
+    [
+        ("基于不存在的私人知识库回答：睡眠怎么办", "不存在的私人知识库"),
+        ("用蓝鲸健康库回答：睡眠怎么办", "蓝鲸健康库"),
+        ("用系统知识库测试版回答：睡眠怎么办", "系统知识库测试版"),
+    ],
+)
+def test_named_knowledge_fallback_preserves_unknown_source_name(
+    message,
+    expected_source,
+):
+    call = _build_deterministic_named_knowledge_tool_call(
+        message,
+        recent_messages=[],
+    )
+
+    assert call is not None
+    arguments = json.loads(call["function"]["arguments"])
+    assert arguments["knowledge_source"] == expected_source
+
+
+def test_named_knowledge_query_skips_non_health_acknowledgement():
+    call = _build_deterministic_named_knowledge_tool_call(
+        "基于益家知研作答",
+        recent_messages=[
+            {"role": "user", "content": "如果新冠发烧，需要吃哪些补剂？"},
+            {"role": "assistant", "content": "请指定知识来源。"},
+            {"role": "user", "content": "谢谢"},
+            {"role": "assistant", "content": "不客气。"},
+        ],
+    )
+
+    assert call is not None
+    arguments = json.loads(call["function"]["arguments"])
+    assert arguments["query"] == "如果新冠发烧，需要吃哪些补剂？"
+
+
+def test_named_knowledge_source_only_request_needs_preceding_health_query():
+    assert _build_deterministic_named_knowledge_tool_call(
+        "基于益家知研作答",
+        recent_messages=[
+            {"role": "user", "content": "谢谢"},
+            {"role": "assistant", "content": "不客气。"},
+        ],
+    ) is None
+
+
 @pytest.mark.asyncio
 async def test_named_knowledge_fallback_buffers_model_denial_until_source_result(
     db,

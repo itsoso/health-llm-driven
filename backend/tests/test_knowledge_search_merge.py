@@ -5,6 +5,8 @@ Dedao/Chroma snippets are not runtime medical evidence and must never be used as
 fallback when the reviewed System KB misses or is unavailable.
 """
 
+import pytest
+
 import app.agents.knowledge_librarian.indexer as indexer
 import app.services.agent_executor as ae
 import app.services.system_knowledge_service as sks
@@ -189,9 +191,14 @@ async def test_named_legacy_supplement_source_fails_closed_without_substitution(
     assert "标题/关键词" not in out
 
 
+@pytest.mark.parametrize(
+    "knowledge_source",
+    ["不存在的私人知识库", "系统知识库测试版"],
+)
 async def test_unknown_named_source_is_unresolved_without_generic_search(
     db,
     monkeypatch,
+    knowledge_source,
 ):
     def _must_not_search(*args, **kwargs):
         raise AssertionError("unknown named source must not fall back to generic search")
@@ -201,10 +208,10 @@ async def test_unknown_named_source_is_unresolved_without_generic_search(
 
     out = await _make_executor(db)._exec_knowledge_search({
         "query": "睡眠怎么办",
-        "knowledge_source": "不存在的私人知识库",
+        "knowledge_source": knowledge_source,
     })
 
-    assert "requested_source=不存在的私人知识库" in out
+    assert f"requested_source={knowledge_source}" in out
     assert "source_status=unresolved" in out
     assert "没有可验证的运行时映射" in out
     assert "不得猜测上传、同步或关键词问题" in out
