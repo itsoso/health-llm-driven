@@ -4,8 +4,8 @@
 |---|---|
 | slug | `diet-progressive-response-ttft` |
 | 创建日期 | 2026-08-29 |
-| 当前阶段 | S4 发布前准备 |
-| 状态 | awaiting_main_ci |
+| 当前阶段 | S3 集成完成，等待发布重试 |
+| 状态 | parked |
 | 负责 | Codex |
 | 反馈环 | 生产内容安全时延基线 + Backend/Mobile 契约测试 + 部署后分意图里程碑 |
 
@@ -79,9 +79,14 @@
 ## G5 · 部署健康
 
 - 首个主干 CI run `33260890336` 的业务测试分片均通过，但 `backend-quality` 按预期拒绝缺少一次性真实模型确认变量的高风险 `agent_executor` 变更；未绕过 Gate、未部署。
-- 已补齐上面的真实模型证据；`HARNESS_LIVE_LLM_EVAL_CONFIRMED=1` 只允许用于承载本证据的下一轮 CI，CI 终态后必须删除并按名称复证不存在。
-- PENDING。要求证据提交的主干 CI 全绿、目标 SHA 一致、后端部署健康闸通过；Mobile 纯 JS/TS 改动走 production OTA。
+- 已补齐上面的真实模型证据；一次性 `HARNESS_LIVE_LLM_EVAL_CONFIRMED=1` 只用于原代码 run 的失败任务重跑。run `33260890336` 终态 `success`，证据文档 run `33261620726` 终态 `success`；变量随后删除并按名称复证不存在。
+- Backend 从干净 `main` 部署精确提交 `bc777146cac7b1355049be7d8fa283c104e13596`。发布前数据库备份 43MB，Force-RLS 完整性、237 表恢复演练、站外 age 归档哈希/HMAC 真实性通过；managed migrations 无新增。
+- 远端发布事务 `COMMITTED` 并 finalized；远端 SHA 三次核验一致，健康度三次 `60/60 PASS`，Skills `22 = 22`，runtime-only KB guard/staged contract 通过，System KB 输入未变化且跳过写入。
+- Mobile production OTA / runtime `1.3.3` 未成功：Hermes、自动 no-bytecode fallback、一次独立强制 no-bytecode 重试均由 EAS 以唯一 launch asset `asset_processing_timeout` 拒绝；没有生成 group/update ID，manifest 与生产锚点未改写。
+- EAS 公共状态页显示 Update operational，但 production channel 回读仍指向上一已知可用 group `fb9637c3-a7df-4644-832c-b1d7595c8bda` / iOS update `01a04cbd-4dc8-71a2-8b21-9097ad6c5c50` / commit `077ef949e44227f69c6b5fa22bb874843a747635`。停止无界重试。
+- **裁决：BLOCK。** Backend 子闸 PASS；完整跨端发布受 EAS 项目级资产处理阻断，Mobile 渐进式阶段 UI 尚未上线。
 
 ## G6 · 上线验证
 
-- PENDING。要求生产 SHA/OTA 可追溯，真实文字记餐验证阶段顺序与回执后成功，并在收集至少 30 个饮食样本后复核分位数。
+- Backend 生产 SHA 与健康闸已验证；未用真实用户身份制造测试饮食记录。
+- PENDING。等待 EAS 恢复后发布 production OTA，再由真实文字记餐验证阶段顺序与回执后成功，并在收集至少 30 个饮食样本后复核分位数。
