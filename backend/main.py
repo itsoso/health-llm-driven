@@ -314,13 +314,15 @@ STREAMING_PATHS = {
 # LLM-bound 长任务端点:单条请求需多次/大输出 LLM 调用,远超 60s 但**非**流式
 # (不能进 STREAMING_PATHS 全豁免——全豁免会让真卡死的请求永不超时、饿死 worker)。
 # 给单独的更长超时上限,既容下合法长解析、又保留兜底。
-# 体检报告 PDF 导入:大报告 LLM 解析 + 服务端分段(CHUNK_CHARS=35000)多次调用,实测 76s+。
+# 体检报告 PDF 导入/预览:大报告 LLM 解析 + 服务端分段(CHUNK_CHARS=35000)多次调用,实测 76s+。
 # image 走 vision OCR、text 走同一分段解析路径,同样 LLM-bound 可能 >60s。
 # csv/json 是确定性解析(快),不进此表。
 LONG_REQUEST_PATHS = {
     "/api/v1/medical-exams/import/pdf": 300,
     "/api/v1/medical-exams/import/image": 300,
     "/api/v1/medical-exams/import/text": 300,
+    "/api/v1/medical-exams/parse-pdf-preview": 300,
+    "/api/v1/medical-exams/parse-image-preview": 300,
 }
 # /api/v1/agent/send 与 /api/v1/orchestrator/chat 刻意不在上面两表里:深分析回合
 # 超过各自快窗(agent.py AGENT_SEND_KEEPALIVE_SECONDS / api/orchestrator.py
