@@ -816,6 +816,13 @@ action 选择:
                         "type": "string",
                         "description": '检索关键词,如"脂肪肝管理""红细胞增多 鉴别"',
                     },
+                    "knowledge_source": {
+                        "type": "string",
+                        "description": (
+                            "用户明确指定的知识库或知识源名称；必须原样传入，"
+                            "不得改写成通用系统知识库。用户未指定时省略。"
+                        ),
+                    },
                     "n_results": {
                         "type": "integer",
                         "default": 5,

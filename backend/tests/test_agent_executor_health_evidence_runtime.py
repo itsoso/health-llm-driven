@@ -573,6 +573,102 @@ async def test_health_runtime_compilation_failure_stays_failed_and_safe(
 
 
 @pytest.mark.asyncio
+async def test_named_unreleased_source_resolves_before_buffered_health_synthesis(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    user, _headers = auth_user_and_headers
+    query = "用益家知研回答：我腰疼怎么办"
+    _install_runtime(monkeypatch, user_id=user.id, query=query)
+    executor = AgentExecutor(db)
+    captured_messages: list[list[dict]] = []
+    captured_tools: list[list[dict]] = []
+    _install_stream(
+        executor,
+        ["该来源尚未发布，不能据此回答。"],
+        captured_messages,
+        captured_tools,
+    )
+    executed: list[tuple[str, dict]] = []
+
+    async def fake_execute_tool(name, args, token):
+        executed.append((name, json.loads(args)))
+        return (
+            "requested_source=益家知研\n"
+            "source_status=not_released\n"
+            "不得声称已搜索该来源。"
+        )
+
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message=query,
+            channel="typed",
+        )
+    ]
+
+    assert executed == [(
+        "knowledge_search",
+        {
+            "query": query,
+            "knowledge_source": "益家知研",
+        },
+    )]
+    assert [tool["function"]["name"] for tool in captured_tools[0]] == [
+        "knowledge_search"
+    ]
+    assert captured_tools[1] == []
+    assert events[-1]["data"]["tools_used"] == ["knowledge_search"]
+
+
+@pytest.mark.asyncio
+async def test_named_unreleased_source_cannot_suppress_emergency_release(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    user, _headers = auth_user_and_headers
+    query = "用益家知研回答：腰痛、排不出尿而且会阴麻木"
+    _install_runtime(monkeypatch, user_id=user.id, query=query)
+    executor = AgentExecutor(db)
+    captured_messages: list[list[dict]] = []
+    captured_tools: list[list[dict]] = []
+    _install_stream(
+        executor,
+        ["可以先等等看。"],
+        captured_messages,
+        captured_tools,
+    )
+    executed: list[str] = []
+
+    async def fake_execute_tool(name, args, token):
+        executed.append(name)
+        return "source_status=not_released\n不得声称已搜索该来源。"
+
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message=query,
+            channel="typed",
+        )
+    ]
+
+    visible = _token_text(events)
+    assert executed == ["knowledge_search"]
+    assert "立即" in visible
+    assert "急诊" in visible
+    assert "等等看" not in visible
+    assert events[-1]["data"]["health_evidence_manifest"]["risk_level"] == "emergency"
+
+
+@pytest.mark.asyncio
 async def test_emergency_health_turn_cannot_be_overwritten_by_record_fail_closed(
     db,
     auth_user_and_headers,

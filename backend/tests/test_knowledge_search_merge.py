@@ -8,6 +8,7 @@ fallback when the reviewed System KB misses or is unavailable.
 import app.agents.knowledge_librarian.indexer as indexer
 import app.services.agent_executor as ae
 import app.services.system_knowledge_service as sks
+from app.services.tool_schema_registry import get_health_tools
 
 
 REVIEWED_HEADER = "【已审定知识库(owner-reviewed,通用结论,需结合个人情况,非诊断)】"
@@ -148,3 +149,86 @@ async def test_invalid_result_count_uses_reviewed_default(db, monkeypatch):
     })
 
     assert seen["limit"] == 5
+
+
+def test_knowledge_search_contract_accepts_named_source():
+    tool = next(
+        item
+        for item in get_health_tools()
+        if item["function"]["name"] == "knowledge_search"
+    )
+
+    source = tool["function"]["parameters"]["properties"]["knowledge_source"]
+
+    assert source["type"] == "string"
+    assert "用户明确指定" in source["description"]
+
+
+async def test_named_legacy_supplement_source_fails_closed_without_substitution(
+    db,
+    monkeypatch,
+):
+    def _must_not_search(*args, **kwargs):
+        raise AssertionError("unreviewed named source must not query another source")
+
+    monkeypatch.setattr(sks, "search_knowledge", _must_not_search)
+    _forbid_raw_dedao(monkeypatch)
+
+    out = await _make_executor(db)._exec_knowledge_search({
+        "query": "如果新冠发烧，需要吃哪些补剂？",
+        "knowledge_source": "皮皮妈妈的一家之言",
+    })
+
+    assert "requested_source=皮皮妈妈的一家之言" in out
+    assert "resolved_source=益家知研 / 皮皮妈妈补剂知识库" in out
+    assert "source_status=not_released" in out
+    assert "旧补剂推荐资产" in out
+    assert "未进入已审定 System KB" in out
+    assert "不得用其他知识库结果冒充" in out
+    assert "内容可能尚未上传" not in out
+    assert "标题/关键词" not in out
+
+
+async def test_unknown_named_source_is_unresolved_without_generic_search(
+    db,
+    monkeypatch,
+):
+    def _must_not_search(*args, **kwargs):
+        raise AssertionError("unknown named source must not fall back to generic search")
+
+    monkeypatch.setattr(sks, "search_knowledge", _must_not_search)
+    _forbid_raw_dedao(monkeypatch)
+
+    out = await _make_executor(db)._exec_knowledge_search({
+        "query": "睡眠怎么办",
+        "knowledge_source": "不存在的私人知识库",
+    })
+
+    assert "requested_source=不存在的私人知识库" in out
+    assert "source_status=unresolved" in out
+    assert "没有可验证的运行时映射" in out
+    assert "不得猜测上传、同步或关键词问题" in out
+
+
+async def test_explicit_reviewed_system_kb_source_keeps_existing_retrieval(
+    db,
+    monkeypatch,
+):
+    seen = {}
+
+    def _kb(db, query, **kw):
+        seen["query"] = query
+        return _KB_PAYLOAD
+
+    monkeypatch.setattr(sks, "search_knowledge", _kb)
+    _forbid_raw_dedao(monkeypatch)
+
+    out = await _make_executor(db)._exec_knowledge_search({
+        "query": "二甲双胍 B12",
+        "knowledge_source": "系统知识库",
+    })
+
+    assert seen == {"query": "二甲双胍 B12"}
+    assert REVIEWED_HEADER in out
+    assert "requested_source=系统知识库" in out
+    assert "resolved_source=reviewed_system_kb" in out
