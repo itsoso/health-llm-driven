@@ -4,8 +4,8 @@
 |---|---|
 | slug | `named-kb-retrieval-integrity` |
 | 创建日期 | 2026-08-29 |
-| 当前阶段 | S7 发布 |
-| 状态 | ready_for_backend_release |
+| 当前阶段 | S8 上线验证 |
+| 状态 | complete |
 | 负责 | Codex |
 | 反馈环 | production evidence -> regression RED -> implementation -> safety review -> backend release -> production replay |
 
@@ -55,7 +55,7 @@
 - [x] T4 GREEN: minimal implementation.
 - [x] T5 G3 focused + LLM/repo gates.
 - [x] T6 G4 independent safety review.
-- [ ] T7 commit, push, backend deploy, production replay.
+- [x] T7 commit, push, backend deploy, production replay.
 
 ## G3 · Test evidence
 
@@ -103,6 +103,40 @@
   and `再用...` is not yet deterministic; the model schema path remains available.
 - **裁决**: PASS。
 
+## G5 · Deployment evidence
+
+- Release code commit: `3d4b98e47aedd2593c809414dd1422ff0dca9eb5`.
+- GitHub Actions run `33252752683`: `52/52` jobs completed successfully after
+  rerunning the timed-out backend shard; there were no test assertion failures.
+- Clean-main backend deployment completed with exit code `0`; remote revision
+  matched `3d4b98e47aed`.
+- Production health checks: `60/60` PASS before and after the staged runtime
+  transaction.
+- Runtime-only KB serving contract passed in guard and staged phases:
+  `packs=1 targets=11 matched=11 generic=0 runtime=5`.
+- Database backup, restore drill, encrypted offsite upload, hash verification,
+  and HMAC authenticity verification completed before activation. No schema
+  migration or KB content mutation was applied.
+- **裁决**: PASS。
+
+## G6 · Production replay
+
+- Ran a read-only replay against the deployed production Python environment;
+  it created no conversation or health record.
+- `益家知研 这个在我知识库中` preserved `knowledge_source=益家知研` and
+  recovered the nearest preceding health question.
+- The deployed executor returned the canonical source
+  `益家知研 / 皮皮妈妈补剂知识库` with `source_status=not_released` and the
+  explicit no-substitution boundary.
+- An unknown named source returned `source_status=unresolved` without generic
+  KB fallback; `不要使用系统知识库回答` created no deterministic retrieval call.
+- Replay marker:
+  `NAMED_KB_PRODUCTION_REPLAY_OK source=益家知研 query_recovered=1 legacy_fail_closed=1 unknown_fail_closed=1 negation_not_triggered=1`.
+- This verifies retrieval integrity, not publication of the legacy knowledge
+  asset. The named content remains unavailable until it passes a separate
+  medical-review and System KB ingestion lifecycle.
+- **裁决**: PASS。
+
 ## Gate ledger
 
 | Gate | Status | Evidence |
@@ -111,8 +145,8 @@
 | G2 | PASS | Fail-closed reviewed-only design above. |
 | G3 | PASS | 171 focused + 322 wider tests; live LLM and repo gates passed. |
 | G4 | PASS | Third independent review GO; no Critical or Important findings. |
-| G5 | pending | Deployment health pending. |
-| G6 | pending | Production replay pending. |
+| G5 | PASS | CI 52/52; clean-main deployment; production health 60/60. |
+| G6 | PASS | Read-only production named-source replay passed. |
 
 ## Rollback
 
