@@ -23,6 +23,8 @@ from app.services.agent_executor import (
     AgentExecutor,
     _apply_authorized_symptom_payload,
     _apply_authorized_rhinitis_payload,
+    _bind_named_knowledge_source_to_tool_calls,
+    _build_deterministic_named_knowledge_tool_call,
     _build_deterministic_symptom_tool_call,
     _extract_clear_rhinitis_record,
     _symptom_write_authorized_by_current_turn,
@@ -173,6 +175,174 @@ def test_deterministic_symptom_tool_call_rejects_attachments():
         write_receipts=[],
         has_attachment=True,
     ) is None
+
+
+def test_named_knowledge_request_recovers_previous_health_question():
+    call = _build_deterministic_named_knowledge_tool_call(
+        "基于皮皮妈妈的一家之言的知识库作答。",
+        recent_messages=[
+            {"role": "user", "content": "如果新冠发烧，需要吃哪些补剂？"},
+            {"role": "assistant", "content": "先说结论：补剂不能治疗新冠。"},
+        ],
+    )
+
+    assert call is not None
+    assert call["function"]["name"] == "knowledge_search"
+    assert json.loads(call["function"]["arguments"]) == {
+        "query": "如果新冠发烧，需要吃哪些补剂？",
+        "knowledge_source": "皮皮妈妈的一家之言",
+    }
+
+
+def test_named_knowledge_correction_keeps_original_question():
+    call = _build_deterministic_named_knowledge_tool_call(
+        "益家知研 这个在我知识库中",
+        recent_messages=[
+            {"role": "user", "content": "如果新冠发烧 需要吃哪些补剂？"},
+            {"role": "assistant", "content": "请告诉我想使用哪个知识库。"},
+            {"role": "user", "content": "基于皮皮妈妈的一家之言的知识库作答。"},
+            {"role": "assistant", "content": "我没有访问这个知识库的能力。"},
+        ],
+    )
+
+    assert call is not None
+    assert json.loads(call["function"]["arguments"]) == {
+        "query": "如果新冠发烧 需要吃哪些补剂？",
+        "knowledge_source": "益家知研",
+    }
+
+
+def test_named_knowledge_request_overrides_model_generic_search_args():
+    calls = [{
+        "id": "model-call",
+        "type": "function",
+        "function": {
+            "name": "knowledge_search",
+            "arguments": json.dumps({"query": "益家知研"}, ensure_ascii=False),
+        },
+    }]
+
+    bound = _bind_named_knowledge_source_to_tool_calls(
+        calls,
+        message="益家知研 这个在我知识库中",
+        recent_messages=[
+            {"role": "user", "content": "如果新冠发烧 需要吃哪些补剂？"},
+            {"role": "assistant", "content": "请告诉我知识库名称。"},
+        ],
+    )
+
+    assert json.loads(bound[0]["function"]["arguments"]) == {
+        "query": "如果新冠发烧 需要吃哪些补剂？",
+        "knowledge_source": "益家知研",
+    }
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "益家知研最近怎么样？",
+        "我用益家知研记录了补剂。",
+        "我把知识库整理好了。",
+        "根据知识库回答。",
+    ],
+)
+def test_named_knowledge_fallback_rejects_non_source_requests(message):
+    assert _build_deterministic_named_knowledge_tool_call(
+        message,
+        recent_messages=[],
+    ) is None
+
+
+def test_named_knowledge_fallback_accepts_use_source_instruction():
+    call = _build_deterministic_named_knowledge_tool_call(
+        "用益家知研回答",
+        recent_messages=[
+            {"role": "user", "content": "如果新冠发烧，需要吃哪些补剂？"},
+        ],
+    )
+
+    assert call is not None
+    arguments = json.loads(call["function"]["arguments"])
+    assert arguments == {
+        "query": "如果新冠发烧，需要吃哪些补剂？",
+        "knowledge_source": "益家知研",
+    }
+
+
+@pytest.mark.asyncio
+async def test_named_knowledge_fallback_buffers_model_denial_until_source_result(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.services.agent_conversation_service import AgentConversationService
+
+    user, _ = auth_user_and_headers
+    service = AgentConversationService(db)
+    conv = service.get_or_create_conversation(user.id, None, title="指定知识库")
+    service.save_message(conv.id, "user", "如果新冠发烧，需要吃哪些补剂？")
+    service.save_message(conv.id, "assistant", "请告诉我希望使用哪个知识库。")
+
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.task_tiered_routing",
+        False,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools",
+        lambda subset=None: [{
+            "type": "function",
+            "function": {
+                "name": "knowledge_search",
+                "description": "x",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }],
+    )
+    executed = []
+    rounds = 0
+
+    async def fake_execute_tool(name, args, token):
+        executed.append((name, json.loads(args)))
+        return "source_status=not_released\n不得声称已搜索该来源。"
+
+    async def fake_stream(messages, round_tools):
+        nonlocal rounds
+        rounds += 1
+        if rounds == 1:
+            yield {"type": "content", "text": "错误地说：我没有访问这个知识库的能力。"}
+        else:
+            yield {"type": "content", "text": "该来源存在，但尚未进入已审定知识库。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+    monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            conversation_id=conv.id,
+            message="基于皮皮妈妈的一家之言的知识库作答。",
+            user_auth_token="test-token",
+        )
+    ]
+
+    visible = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    assert "错误地说" not in visible
+    assert "该来源存在" in visible
+    assert executed == [(
+        "knowledge_search",
+        {
+            "query": "如果新冠发烧，需要吃哪些补剂？",
+            "knowledge_source": "皮皮妈妈的一家之言",
+        },
+    )]
 
 
 @pytest.mark.parametrize(

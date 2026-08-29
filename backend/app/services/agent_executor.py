@@ -7120,6 +7120,154 @@ def _build_deterministic_symptom_tool_call(
     }
 
 
+_NAMED_KNOWLEDGE_SOURCE_ALIASES: tuple[tuple[str, str, str], ...] = (
+    ("皮皮妈妈的一家之言", "益家知研 / 皮皮妈妈补剂知识库", "not_released"),
+    ("皮皮妈妈营养知识库", "益家知研 / 皮皮妈妈补剂知识库", "not_released"),
+    ("皮皮妈妈知识库", "益家知研 / 皮皮妈妈补剂知识库", "not_released"),
+    ("益家知研", "益家知研 / 皮皮妈妈补剂知识库", "not_released"),
+    ("reviewed system kb", "reviewed_system_kb", "released"),
+    ("system kb", "reviewed_system_kb", "released"),
+    ("已审定知识库", "reviewed_system_kb", "released"),
+    ("系统知识库", "reviewed_system_kb", "released"),
+)
+_NAMED_KNOWLEDGE_REQUEST_MARKERS = (
+    "知识库",
+    "知识源",
+    "基于",
+    "根据",
+    "使用",
+    "在我知识库",
+    "在我的知识库",
+)
+_NAMED_KNOWLEDGE_BOILERPLATE_TOKENS = (
+    "在我的",
+    "在我",
+    "帮我",
+    "知识库",
+    "知识源",
+    "基于",
+    "根据",
+    "使用",
+    "作答",
+    "回答",
+    "重新",
+    "查找",
+    "搜索",
+    "检索",
+    "一下",
+    "个人",
+    "里面",
+    "这个",
+    "请",
+    "该",
+    "用",
+    "的",
+    "里",
+    "中",
+    "再",
+)
+
+
+def _resolve_named_knowledge_source(source: Any) -> tuple[str, str, str]:
+    requested = re.sub(r"[\r\n\t]+", " ", str(source or "")).strip()[:120]
+    lowered = requested.lower()
+    for alias, canonical, status in _NAMED_KNOWLEDGE_SOURCE_ALIASES:
+        if alias.lower() in lowered:
+            return requested, canonical, status
+    return requested, "unresolved", "unresolved"
+
+
+def _named_knowledge_source_from_message(message: Any) -> Optional[str]:
+    text = str(message or "").strip()
+    lowered = text.lower()
+    explicit_request = any(
+        marker in text for marker in _NAMED_KNOWLEDGE_REQUEST_MARKERS
+    )
+    use_instruction = bool(
+        re.search(r"用.+?(?:回答|作答|查找|搜索|检索)", text)
+    )
+    if not text or not (explicit_request or use_instruction):
+        return None
+    for alias, _canonical, _status in _NAMED_KNOWLEDGE_SOURCE_ALIASES:
+        if alias.lower() in lowered:
+            return text[lowered.index(alias.lower()):][: len(alias)]
+    return None
+
+
+def _named_knowledge_source_only_text(message: str, source: str) -> bool:
+    remainder = str(message or "").replace(source, " ")
+    remainder = re.sub(r"[\s，,。.!！?？；;：:、]+", "", remainder)
+    for token in _NAMED_KNOWLEDGE_BOILERPLATE_TOKENS:
+        remainder = remainder.replace(token, "")
+    return not remainder
+
+
+def _previous_named_knowledge_query(recent_messages: Sequence[dict[str, Any]]) -> str:
+    for item in reversed(list(recent_messages or [])):
+        if item.get("role") != "user":
+            continue
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        source = _named_knowledge_source_from_message(content)
+        if source and _named_knowledge_source_only_text(content, source):
+            continue
+        if source:
+            continue
+        return content[:500]
+    return ""
+
+
+def _build_deterministic_named_knowledge_tool_call(
+    message: Any,
+    *,
+    recent_messages: Sequence[dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Bind an explicit named source to one reviewed-only retrieval attempt."""
+    text = str(message or "").strip()
+    source = _named_knowledge_source_from_message(text)
+    if not source:
+        return None
+    query = text
+    if _named_knowledge_source_only_text(text, source):
+        query = _previous_named_knowledge_query(recent_messages)
+    if not query:
+        return None
+    args = {
+        "query": query,
+        "knowledge_source": source,
+    }
+    return {
+        "id": f"deterministic-named-kb-{_sha12(source + ':' + query)}",
+        "type": "function",
+        "function": {
+            "name": "knowledge_search",
+            "arguments": json.dumps(args, ensure_ascii=False),
+        },
+    }
+
+
+def _bind_named_knowledge_source_to_tool_calls(
+    tool_calls: List[Dict[str, Any]],
+    *,
+    message: Any,
+    recent_messages: Sequence[dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Prevent a model from downgrading a named-source request to generic search."""
+    deterministic = _build_deterministic_named_knowledge_tool_call(
+        message,
+        recent_messages=recent_messages,
+    )
+    if deterministic is None:
+        return tool_calls
+    required_args = deterministic["function"]["arguments"]
+    for call in tool_calls:
+        function = call.get("function") or {}
+        if function.get("name") == "knowledge_search":
+            function["arguments"] = required_args
+    return tool_calls
+
+
 def _build_deterministic_simple_record_tool_call(
     goal: Optional[GoalSpec],
     *,
@@ -11348,6 +11496,16 @@ class AgentExecutor:
         self._turn_channel = channel if channel in ("typed", "voice", "siri") else None
         self._current_user_id = user_id
         self._current_turn_user_message = message or ""
+        current_named_knowledge_source = _named_knowledge_source_from_message(message)
+        current_named_knowledge_status = ""
+        if current_named_knowledge_source:
+            _, _, current_named_knowledge_status = _resolve_named_knowledge_source(
+                current_named_knowledge_source
+            )
+        named_knowledge_boundary_required = current_named_knowledge_status in {
+            "not_released",
+            "unresolved",
+        }
         self._turn_contextual_diet_receipts = []
         self._turn_contextual_diet_cards = []
         self._turn_attachment_write_receipts = []
@@ -11439,6 +11597,7 @@ class AgentExecutor:
         deterministic_health_release = bool(
             health_evidence_turn is not None
             and health_evidence_turn.sufficiency != "sufficient"
+            and not named_knowledge_boundary_required
         )
         # GenUI metric_table (rank1): 客户端声明 genui-table-v1 且未被 kill-switch 关闭时,
         # 工具结果确定性打成表格卡片 (合成后追加 fence)。正文仍按问题完整回答，避免
@@ -12188,8 +12347,14 @@ class AgentExecutor:
             # The compiler has already selected the frozen personal packet and
             # admitted reviewed authority claims. Synthesis receives no tools:
             # it cannot widen evidence, mutate health state, or fall into a weak
-            # tool-decision round before producing the answer.
-            tools = []
+            # tool-decision round before producing the answer. A named source
+            # that is known to be unavailable gets one read-only resolution
+            # call; that path cannot retrieve claims or mutate health state.
+            tools = (
+                get_health_tools(subset=["knowledge_search"])
+                if named_knowledge_boundary_required
+                else []
+            )
         if self._turn_attachment_write_receipts:
             blocked_attachment_write_tools = {"upload_medical_exam_text"}
             tools = [
@@ -12255,6 +12420,13 @@ class AgentExecutor:
         # 嘴上说"已记录"却没调工具(弱模型把 tool-call 当正文吐出 → 静默丢数据)。
         tool_executed_count = 0
         deterministic_symptom_fallback_attempted = False
+        deterministic_named_knowledge_fallback_attempted = False
+        named_knowledge_request_guarded = bool(
+            _build_deterministic_named_knowledge_tool_call(
+                message,
+                recent_messages=self._current_turn_recent_messages,
+            )
+        )
         deterministic_diet_correction_fallback_attempted = False
         deterministic_supplement_fallback_attempted = False
         deterministic_simple_record_fallback_attempted = False
@@ -12513,6 +12685,10 @@ class AgentExecutor:
                             or clinician_turn_decision.reason_code
                             in _CLINICIAN_ZERO_TOOL_REASON_CODES
                         )
+                        _named_knowledge_response_guarded = (
+                            named_knowledge_request_guarded
+                            and tool_executed_count == 0
+                        )
                         # 工具决策轮快路由 (fast 模型): 本轮输出只当工具决策, content 绝不
                         # live 下发 —— 若最终是直接答文本 (无 tool_calls), 会被丢弃并在强模型
                         # 重合成 (安全不变量: 面向用户的医疗正文绝不来自 fast 模型)。
@@ -12524,6 +12700,7 @@ class AgentExecutor:
                             and not _diet_correction_claim_unverified
                             and not _mutation_claim_unverified
                             and not _clinician_response_guarded
+                            and not _named_knowledge_response_guarded
                             and not recoverable_response_buffered
                         ):
                             streamed_to_client = True
@@ -12951,6 +13128,33 @@ class AgentExecutor:
                             len(message or ""),
                         )
 
+                if (
+                    (not health_advice_buffered or named_knowledge_boundary_required)
+                    and isinstance(response, dict)
+                    and not response.get("tool_calls")
+                    and not deterministic_named_knowledge_fallback_attempted
+                ):
+                    deterministic_named_call = (
+                        _build_deterministic_named_knowledge_tool_call(
+                            message,
+                            recent_messages=self._current_turn_recent_messages,
+                        )
+                    )
+                    if deterministic_named_call:
+                        deterministic_named_knowledge_fallback_attempted = True
+                        response = {
+                            **response,
+                            "content": "",
+                            "finish_reason": "tool_calls",
+                            "tool_calls": [deterministic_named_call],
+                        }
+                        logger.info(
+                            "[agent_executor] deterministic named knowledge fallback "
+                            "user=%s message_chars=%s",
+                            user_id,
+                            len(message or ""),
+                        )
+
                 # ──── 工具决策轮快路由安全兜底: fast 模型直接答文本时丢弃, 强模型重合成 ────
                 # 到这里所有 tool-call 恢复 (结构化 / inline JSON / 文本式重试) 都已尝试完。
                 # 若本轮是 fast 工具决策轮却仍**没有** tool_calls 而是产出了用户可见正文,
@@ -12992,6 +13196,11 @@ class AgentExecutor:
                             (tool_call.get("function") or {}).get("name"),
                         )
                     ]
+                    tool_calls = _bind_named_knowledge_source_to_tool_calls(
+                        tool_calls,
+                        message=message,
+                        recent_messages=self._current_turn_recent_messages,
+                    )
                     if (
                         clinician_turn_decision.kind
                         == "explicit_doctor_feedback_write"
@@ -19586,6 +19795,31 @@ class AgentExecutor:
         guarded_query = guard_retrieval_query(query)
         query = guarded_query.query
 
+        requested_source, resolved_source, source_status = (
+            _resolve_named_knowledge_source(args.get("knowledge_source"))
+        )
+        if requested_source and source_status == "not_released":
+            return "\n".join((
+                "【指定知识源解析】",
+                f"requested_source={requested_source}",
+                f"resolved_source={resolved_source}",
+                "source_status=not_released",
+                "该名称对应仓库中的旧补剂推荐资产，但它未进入已审定 System KB，"
+                "本轮不能把它作为运行时医学依据。",
+                "不得用其他知识库结果冒充该来源，也不得声称已搜索该来源。",
+                "不得推测内容未上传、未同步或关键词不匹配；这些状态本轮没有被验证。",
+                "请如实说明来源边界，不要据此给出新冠补剂治疗方案或具体剂量。",
+            ))
+        if requested_source and source_status == "unresolved":
+            return "\n".join((
+                "【指定知识源解析】",
+                f"requested_source={requested_source}",
+                "resolved_source=unresolved",
+                "source_status=unresolved",
+                "当前运行时没有可验证的运行时映射，未执行通用知识库替代检索。",
+                "不得猜测上传、同步或关键词问题，也不得声称已搜索该来源。",
+            ))
+
         n = args.get("n_results", 5)
         try:
             n = int(n)
@@ -19617,6 +19851,15 @@ class AgentExecutor:
             )
 
         kb_lines = [
+            *(
+                [
+                    f"requested_source={requested_source}",
+                    f"resolved_source={resolved_source}",
+                    "source_status=released",
+                ]
+                if requested_source
+                else []
+            ),
             "【已审定知识库(owner-reviewed,通用结论,需结合个人情况,非诊断)】",
             "(以下为已审定的通用医学结论,非针对当前用户的个性化判断;"
             "个性化证据见 Twin evidence card。仅供参考,不替代医生,不得据此开处方/给剂量)",
