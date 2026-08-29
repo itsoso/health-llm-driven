@@ -7239,6 +7239,7 @@ _NAMED_KNOWLEDGE_SOURCE_ALIASES: tuple[tuple[str, str, str], ...] = (
 )
 _NAMED_KNOWLEDGE_SOURCE_PATTERNS = (
     re.compile(
+        r"^\s*(?:(?:请|麻烦)(?:你)?|帮我)?\s*"
         r"(?:基于|根据|使用|用)\s*"
         r"(?P<source>.{1,80}?)\s*(?:来)?(?:回答|作答|查找|搜索|检索)"
     ),
@@ -7253,6 +7254,8 @@ _GENERIC_KNOWLEDGE_SOURCE_NAMES = frozenset({
     "我的知识库",
     "我知识库",
     "个人知识库",
+    "这个",
+    "该内容",
 })
 _NAMED_KNOWLEDGE_ACKNOWLEDGEMENT_RE = re.compile(
     r"^(?:谢谢(?:你)?|多谢|好的?|行|可以|明白了|知道了|收到)"

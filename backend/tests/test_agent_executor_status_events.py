@@ -242,6 +242,11 @@ def test_named_knowledge_request_overrides_model_generic_search_args():
     [
         "益家知研最近怎么样？",
         "我用益家知研记录了补剂。",
+        "我没有用益家知研回答这个问题。",
+        "不要用益家知研回答。",
+        "请不要用系统知识库回答。",
+        "小王根据蓝鲸健康库回答了睡眠问题。",
+        "我用益家知研回答了一个问题。",
         "我把知识库整理好了。",
         "根据知识库回答。",
     ],
@@ -253,9 +258,13 @@ def test_named_knowledge_fallback_rejects_non_source_requests(message):
     ) is None
 
 
-def test_named_knowledge_fallback_accepts_use_source_instruction():
+@pytest.mark.parametrize(
+    "message",
+    ["用益家知研回答", "请用益家知研回答", "帮我用益家知研回答"],
+)
+def test_named_knowledge_fallback_accepts_use_source_instruction(message):
     call = _build_deterministic_named_knowledge_tool_call(
-        "用益家知研回答",
+        message,
         recent_messages=[
             {"role": "user", "content": "如果新冠发烧，需要吃哪些补剂？"},
         ],
