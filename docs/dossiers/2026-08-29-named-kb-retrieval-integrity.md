@@ -5,7 +5,7 @@
 | slug | `named-kb-retrieval-integrity` |
 | 创建日期 | 2026-08-29 |
 | 当前阶段 | S6 安全评审 |
-| 状态 | awaiting_independent_safety_review |
+| 状态 | awaiting_independent_safety_rereview |
 | 负责 | Codex |
 | 反馈环 | production evidence -> regression RED -> implementation -> safety review -> backend release -> production replay |
 
@@ -59,12 +59,12 @@
 
 ## G3 · Test evidence
 
-- Focused named-source and health-runtime suite: `158 passed`.
+- Focused named-source and health-runtime suite: `164 passed`.
 - Wider routing, health-evidence, tool-class, plausibility, and false-claim
   regression: `322 passed`.
 - Live LLM gate, run through the existing local `health_test` PostgreSQL
   database so the budget guard remained active: invariants `12/12`,
-  health-agent core `50/50`, orchestrator `5/5` with score `0.94`, trajectory
+  health-agent core `50/50`, orchestrator `5/5` with score `0.96`, trajectory
   contract `12/12`, trajectory goldens `9/9`.
 - `harness_llm_change_gate.py`: PASS with the live-run confirmation.
 - `check_doc_drift.py`, `check_dossier_consistency.py`, `py_compile`, targeted
@@ -75,14 +75,28 @@
   passing evidence; the later real MiniMax run above is the G3 evidence.
 - **裁决**: PASS。
 
+## G4 · Independent safety review
+
+- First review of commit `01a03e414`: **BLOCK**, with no Critical and two
+  Important findings:
+  1. Unknown natural-language source names did not enter the deterministic
+     guard, and a released alias could match as a substring of a different
+     source name.
+  2. Source-only continuation recovery could treat a non-health acknowledgement
+     such as `谢谢` as the retrieval query.
+- Remediation added RED/GREEN coverage for arbitrary source names, exact source
+  preservation (`系统知识库测试版` remains unresolved), acknowledgement skipping,
+  and refusal to fold unrelated older turns into a source-only request.
+- Independent re-review: pending.
+
 ## Gate ledger
 
 | Gate | Status | Evidence |
 |---|---|---|
 | G1 | PASS | Requirement admission above. |
 | G2 | PASS | Fail-closed reviewed-only design above. |
-| G3 | PASS | 158 focused + 322 wider tests; live LLM and repo gates passed. |
-| G4 | pending | Independent safety review pending. |
+| G3 | PASS | 164 focused + 322 wider tests; live LLM and repo gates passed. |
+| G4 | pending | First review BLOCK remediated; independent re-review pending. |
 | G5 | pending | Deployment health pending. |
 | G6 | pending | Production replay pending. |
 

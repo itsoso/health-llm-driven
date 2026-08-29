@@ -7130,14 +7130,26 @@ _NAMED_KNOWLEDGE_SOURCE_ALIASES: tuple[tuple[str, str, str], ...] = (
     ("已审定知识库", "reviewed_system_kb", "released"),
     ("系统知识库", "reviewed_system_kb", "released"),
 )
-_NAMED_KNOWLEDGE_REQUEST_MARKERS = (
+_NAMED_KNOWLEDGE_SOURCE_PATTERNS = (
+    re.compile(
+        r"(?:基于|根据|使用|用)\s*"
+        r"(?P<source>.{1,80}?)\s*(?:来)?(?:回答|作答|查找|搜索|检索)"
+    ),
+    re.compile(
+        r"^\s*(?P<source>.{1,80}?)\s*(?:这个)?"
+        r"在(?:我的|我|个人)知识库(?:里|中)?"
+    ),
+)
+_GENERIC_KNOWLEDGE_SOURCE_NAMES = frozenset({
     "知识库",
     "知识源",
-    "基于",
-    "根据",
-    "使用",
-    "在我知识库",
-    "在我的知识库",
+    "我的知识库",
+    "我知识库",
+    "个人知识库",
+})
+_NAMED_KNOWLEDGE_ACKNOWLEDGEMENT_RE = re.compile(
+    r"^(?:谢谢(?:你)?|多谢|好的?|行|可以|明白了|知道了|收到)"
+    r"[\s。.!！]*$"
 )
 _NAMED_KNOWLEDGE_BOILERPLATE_TOKENS = (
     "在我的",
@@ -7168,29 +7180,46 @@ _NAMED_KNOWLEDGE_BOILERPLATE_TOKENS = (
 )
 
 
-def _resolve_named_knowledge_source(source: Any) -> tuple[str, str, str]:
+def _clean_named_knowledge_source(source: Any) -> str:
     requested = re.sub(r"[\r\n\t]+", " ", str(source or "")).strip()[:120]
+    requested = requested.strip(" \"'“”‘’「」『』，,。.!！?？；;：:")
     lowered = requested.lower()
     for alias, canonical, status in _NAMED_KNOWLEDGE_SOURCE_ALIASES:
-        if alias.lower() in lowered:
+        alias_lower = alias.lower()
+        known_forms = {alias_lower}
+        if not alias.endswith(("知识库", "知识源")):
+            known_forms.update({
+                f"{alias_lower}知识库",
+                f"{alias_lower}的知识库",
+                f"{alias_lower}知识源",
+                f"{alias_lower}的知识源",
+            })
+        if lowered in known_forms:
+            return alias
+    return requested
+
+
+def _resolve_named_knowledge_source(source: Any) -> tuple[str, str, str]:
+    requested = re.sub(r"[\r\n\t]+", " ", str(source or "")).strip()[:120]
+    cleaned = _clean_named_knowledge_source(requested)
+    lowered = cleaned.lower()
+    for alias, canonical, status in _NAMED_KNOWLEDGE_SOURCE_ALIASES:
+        if lowered == alias.lower():
             return requested, canonical, status
     return requested, "unresolved", "unresolved"
 
 
 def _named_knowledge_source_from_message(message: Any) -> Optional[str]:
     text = str(message or "").strip()
-    lowered = text.lower()
-    explicit_request = any(
-        marker in text for marker in _NAMED_KNOWLEDGE_REQUEST_MARKERS
-    )
-    use_instruction = bool(
-        re.search(r"用.+?(?:回答|作答|查找|搜索|检索)", text)
-    )
-    if not text or not (explicit_request or use_instruction):
+    if not text:
         return None
-    for alias, _canonical, _status in _NAMED_KNOWLEDGE_SOURCE_ALIASES:
-        if alias.lower() in lowered:
-            return text[lowered.index(alias.lower()):][: len(alias)]
+    for pattern in _NAMED_KNOWLEDGE_SOURCE_PATTERNS:
+        match = pattern.search(text)
+        if not match:
+            continue
+        source = _clean_named_knowledge_source(match.group("source"))
+        if source and source not in _GENERIC_KNOWLEDGE_SOURCE_NAMES:
+            return source
     return None
 
 
@@ -7214,7 +7243,16 @@ def _previous_named_knowledge_query(recent_messages: Sequence[dict[str, Any]]) -
             continue
         if source:
             continue
-        return content[:500]
+        if _NAMED_KNOWLEDGE_ACKNOWLEDGEMENT_RE.fullmatch(content):
+            continue
+        intent = classify_agent_utterance(content)
+        if (
+            intent.primary in {"read", "advice"}
+            and intent.domain not in {"unknown", "general"}
+        ):
+            return content[:500]
+        # Do not fold an unrelated older turn into this source-only request.
+        return ""
     return ""
 
 
