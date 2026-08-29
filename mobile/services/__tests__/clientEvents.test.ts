@@ -100,6 +100,32 @@ describe('client reliability events', () => {
     });
   });
 
+  it('keeps only content-free agent turn milestone fields', () => {
+    expect(sanitizeClientEventMeta('agent_turn_milestone', {
+      phase: 'first_useful',
+      duration_ms: 842,
+      action_type: 'diet_record',
+      has_image: false,
+      content: '一个桃子',
+      resource_id: 'diet-111',
+      transcript: '不能上传',
+    })).toEqual({
+      phase: 'first_useful',
+      duration_ms: 842,
+      action_type: 'diet_record',
+      has_image: false,
+    });
+  });
+
+  it('drops invalid agent turn milestone values as one atomic payload', () => {
+    expect(sanitizeClientEventMeta('agent_turn_milestone', {
+      phase: 'raw_reasoning',
+      duration_ms: 300_001,
+      action_type: 'diet_record\nprivate',
+      has_image: 'no',
+    })).toEqual({});
+  });
+
   it('sanitizes queued-turn telemetry to stable non-content fields', () => {
     expect(sanitizeClientEventMeta('chat_turn_queued', {
       surface: 'mobile',

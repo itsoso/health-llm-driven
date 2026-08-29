@@ -513,6 +513,83 @@ const STREAM_RECEIVED_CONTENT_SUFFIX = '\n\n[回复中断，已保留已接收�
 // window short so a real offline failure still returns control to the draft UI.
 const TURN_STATUS_RECONCILIATION_DELAYS_MS = [0, 250, 750] as const;
 const MAX_THINKING_STEPS = 8;
+
+type AgentTurnMilestonePhase =
+  | 'local_feedback'
+  | 'server_accepted'
+  | 'first_useful'
+  | 'write_verified';
+type AgentTurnActionType = 'generic' | 'diet_record' | 'diet_photo';
+
+const DIET_RECORD_QUESTION_RE = /[?？]|(?:怎么|为什么|为何|怎么办|什么|吗|能不能|可不可以|适合|建议|推荐|要不要|多少热量)/;
+const DIET_NUTRITION_QUERY_SUFFIX_RE = /(?:热量|卡路里|营养|蛋白质|碳水|脂肪)\s*$/;
+const DIET_EXPLICIT_RECORD_RE = /(?:记录|记下|打卡|记餐)/;
+const DIET_MEAL_WITH_CONTENT_RE = /(?:早餐|早饭|午餐|午饭|晚餐|晚饭|加餐|夜宵|宵夜)\s*[:：]?\s*\S+/;
+const DIET_INTAKE_RE = /(?:吃了|喝了|刚吃|刚喝|我吃|我喝)\s*\S+/;
+const DIET_QUANTIFIED_FOOD_RE = /(?:鸡蛋|桃子|苹果|香蕉|牛奶|豆浆|酸奶|米饭|面条|包子|馒头|粥|牛肉|鸡肉|鱼|虾|豆腐|蔬菜|沙拉|咖啡|坚果)\s*(?:\d+(?:\.\d+)?|[一二两三四五六七八九十半]+)\s*(?:个|只|颗|杯|碗|份|克|千克|斤|g|kg|ml|毫升)/i;
+
+function appendUniqueProgressStep(
+  steps: string[] | undefined,
+  label: string | undefined,
+): string[] | undefined {
+  const normalized = label?.trim();
+  if (!normalized || (steps || []).includes(normalized)) return steps;
+  return [...(steps || []), normalized].slice(-MAX_THINKING_STEPS);
+}
+
+function mergeUniqueProgressSteps(
+  ...groups: (string[] | undefined)[]
+): string[] | undefined {
+  const merged: string[] = [];
+  for (const group of groups) {
+    for (const step of group || []) {
+      const normalized = step?.trim();
+      if (normalized && !merged.includes(normalized)) merged.push(normalized);
+    }
+  }
+  return merged.length > 0 ? merged.slice(-MAX_THINKING_STEPS) : undefined;
+}
+
+function initialAgentTurnActionType(
+  message: string,
+  hasImages: boolean,
+  extraContext?: string,
+): AgentTurnActionType {
+  if (
+    hasImages
+    && (
+      /(?:记录这餐|记餐|餐食|早餐|午餐|晚餐|加餐|夜宵)/.test(message)
+      || /mobile_chat_meal_photo|diet_photo_record/.test(extraContext || '')
+    )
+  ) {
+    return 'diet_photo';
+  }
+  if (
+    !hasImages
+    && !DIET_RECORD_QUESTION_RE.test(message)
+    && !(
+      DIET_NUTRITION_QUERY_SUFFIX_RE.test(message)
+      && !DIET_EXPLICIT_RECORD_RE.test(message)
+    )
+    && (
+      (
+        DIET_EXPLICIT_RECORD_RE.test(message)
+        && /(?:早餐|早饭|午餐|午饭|晚餐|晚饭|加餐|夜宵|吃|喝|餐|饭)/.test(message)
+      )
+      || DIET_MEAL_WITH_CONTENT_RE.test(message)
+      || DIET_INTAKE_RE.test(message)
+      || DIET_QUANTIFIED_FOOD_RE.test(message)
+    )
+  ) {
+    return 'diet_record';
+  }
+  return 'generic';
+}
+
+function dietActionTypeFromStage(stage?: string): AgentTurnActionType | undefined {
+  if (!stage?.startsWith('diet_')) return undefined;
+  return stage.startsWith('diet_photo_') ? 'diet_photo' : 'diet_record';
+}
 // P0-5 竞态守卫: 本地 stream 活跃且未超过此窗口时, focus-reload / app-active-reload
 // 不得用服务端半截 partial 覆盖本地流式态。超过窗口 (慢流 / 卡死) 才放行服务端恢复,
 // 避免永久霸占 UI。与 PENDING_STREAM_TTL_MS(10min, 冷启恢复用)不同 —— 这是前台活跃流的护栏。
@@ -1278,6 +1355,27 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     }
 
     const turnStartedAt = Date.now();
+    const emittedMilestones = new Set<AgentTurnMilestonePhase>();
+    let lastDietStatusLabel: string | undefined;
+    let milestoneActionType = initialAgentTurnActionType(
+      finalMsg,
+      !!hasImages,
+      sendOpts?.extraContext,
+    );
+    const emitAgentTurnMilestone = (phase: AgentTurnMilestonePhase) => {
+      if (emittedMilestones.has(phase)) return;
+      emittedMilestones.add(phase);
+      const durationMs = Math.min(
+        300_000,
+        Math.max(0, Math.round(Date.now() - turnStartedAt)),
+      );
+      void emitClientEvent('agent_turn_milestone', {
+        phase,
+        duration_ms: durationMs,
+        action_type: milestoneActionType,
+        has_image: !!hasImages,
+      });
+    };
     const emitAgentTerminal = (
       phase: 'completed' | 'failed' | 'interrupted',
       errorCode?: string,
@@ -1357,6 +1455,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         return upsertOptimisticTurnPair(prev, reusableTurnId, userMsg, aiMsg);
       });
     }
+    emitAgentTurnMilestone('local_feedback');
     setIsStreaming(true);
     isStreamingRef.current = true;
     setRunningTurnId(turnId);
@@ -1658,6 +1757,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             conversationId: evt.conversationId,
             label: evt.thought || '正在理解…',
           });
+          emitAgentTurnMilestone('server_accepted');
           if (evt.conversationId) {
             streamConversationId = evt.conversationId;
             if (!targetConversationId) {
@@ -1694,6 +1794,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             conversationId: evt.conversationId,
             label: '请求已保存，正在处理…',
           });
+          emitAgentTurnMilestone('server_accepted');
           if (evt.conversationId) {
             streamConversationId = evt.conversationId;
             if (!targetConversationId) {
@@ -1703,6 +1804,17 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             void rememberConversationId(evt.conversationId);
           }
         } else if (evt.type === 'status') {
+          const dietActionType = dietActionTypeFromStage(evt.statusStage);
+          const previousDietStatusLabel = dietActionType
+            ? lastDietStatusLabel
+            : undefined;
+          if (dietActionType) {
+            milestoneActionType = dietActionType;
+            emitAgentTurnMilestone('first_useful');
+            if (evt.statusLabel?.trim()) {
+              lastDietStatusLabel = evt.statusLabel.trim();
+            }
+          }
           dispatchAgentTurn({
             type: 'status',
             at: Date.now(),
@@ -1713,9 +1825,20 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           // 首 token 到达后清空 (见下方 token 分支)。只在还没出正文时更新, 避免正文中途回退状态行。
           if (!gotFirstToken && evt.statusLabel) {
             const label = evt.statusLabel;
-            setMessages(prev => prev.map(m => (
-              m.id === aId && m.currentStatus !== label ? { ...m, currentStatus: label } : m
-            )));
+            setMessages(prev => prev.map((m) => {
+              if (m.id !== aId || m.currentStatus === label) return m;
+              // Once a dietary semantic stage is active, generic tool/synthesis
+              // statuses must not overwrite it. They remain available in the
+              // agent-turn state machine, while the user-facing panel keeps the
+              // auditable diet stage sequence.
+              if (!dietActionType && lastDietStatusLabel) return m;
+              if (!dietActionType) return { ...m, currentStatus: label };
+              const thinkingSteps = appendUniqueProgressStep(
+                m.thinkingSteps,
+                previousDietStatusLabel,
+              );
+              return { ...m, currentStatus: label, thinkingSteps };
+            }));
           }
         } else if (evt.type === 'token' || evt.type === 'tool') {
           if (evt.type === 'tool' && evt.toolName) {
@@ -1737,6 +1860,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
                 label: evt.thought,
               });
               if (writes && toolSucceeded && evt.receipt?.verified === true) {
+                emitAgentTurnMilestone('write_verified');
                 try {
                   await rememberVerifiedWriteReceipt(evt.receipt);
                 } catch {
@@ -1780,10 +1904,21 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           if (incoming) {
             if (!gotFirstToken) {
               gotFirstToken = true;
+              emitAgentTurnMilestone('first_useful');
               clearTimeout(slowTimer);
               // 首 token 到达: 清空 status 行 (正文开始渲染, 状态行让位)。
-              setMessages(prev => prev.map(m => (
-                m.id === aId && m.currentStatus ? { ...m, currentStatus: undefined } : m
+              const completedDietStatus = lastDietStatusLabel;
+              setMessages(prev => prev.map((m) => (
+                m.id === aId && m.currentStatus
+                  ? {
+                    ...m,
+                    currentStatus: undefined,
+                    thinkingSteps: appendUniqueProgressStep(
+                      m.thinkingSteps,
+                      completedDietStatus,
+                    ),
+                  }
+                  : m
               )));
             }
             pendingTokenText += incoming;
@@ -1803,6 +1938,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             return true;
           });
           if (uniqueCards.length > 0) {
+            emitAgentTurnMilestone('first_useful');
             renderedStreamedServerCard = true;
             setMessages(prev => upsertCardMessagesAfterAssistant(prev, aId, uniqueCards, turnId));
           }
@@ -1825,6 +1961,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             settleAcceptance(false);
           }
           if (evt.writeReceipts?.length) {
+            emitAgentTurnMilestone('write_verified');
             const latestReceipt = evt.writeReceipts[evt.writeReceipts.length - 1];
             dispatchAgentTurn({
               type: 'tool_finished',
@@ -1928,7 +2065,11 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               )
                 ? evt.messageId
                 : undefined,
-              thinkingSteps: evt.thinkingSteps?.length ? evt.thinkingSteps : m.thinkingSteps,
+              thinkingSteps: mergeUniqueProgressSteps(
+                m.thinkingSteps,
+                evt.thinkingSteps,
+                lastDietStatusLabel ? [lastDietStatusLabel] : undefined,
+              ),
               writeReceipts: evt.writeReceipts,
               } : m);
             const projected = evt.medicationBatchDecision

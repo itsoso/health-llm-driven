@@ -1,4 +1,6 @@
+import asyncio
 import json
+import time
 from datetime import date, timedelta
 from types import SimpleNamespace
 
@@ -3007,6 +3009,231 @@ async def test_agent_stream_enriches_anchor_peach_before_single_dispatch(
     assert "这次没有写入" not in rendered
     assert done["data"]["completion_status"] == "complete"
     assert done["data"]["write_receipts"][0]["resource_type"] == "diet_record"
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_clear_text_diet_uses_verified_progressive_fast_path(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    dispatched = []
+    estimate_calls = []
+
+    async def fail_llm(*_args, **_kwargs):
+        raise AssertionError("clear text diet must not wait for a tool-decision LLM")
+
+    async def fail_llm_stream(*_args, **_kwargs):
+        raise AssertionError("clear text diet must not wait for a tool-decision LLM")
+        yield  # pragma: no cover
+
+    async def fake_estimate(food_items):
+        assert food_items == "一个桃子"
+        estimate_calls.append(food_items)
+        return {
+            "calories": 58,
+            "protein": 1.4,
+            "carbs": 14,
+            "fat": 0.4,
+            "fiber": 2.3,
+        }
+
+    async def fake_dispatch(request, user_token):
+        dispatched.append((request.tool_name, request.arguments, user_token))
+        return json.dumps(
+            {
+                "id": 111,
+                "meal_type": request.arguments["data"]["meal_type"],
+                "food_items": request.arguments["data"]["food_items"],
+                "calories": request.arguments["data"]["calories"],
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(executor, "_call_llm", fail_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", fail_llm_stream)
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        fake_estimate,
+    )
+    monkeypatch.setattr(executor, "_dispatch_tool_request", fake_dispatch)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录吃了一个桃子",
+            user_auth_token="test-token",
+            client_turn_id="turn-progressive-peach",
+        )
+    ]
+
+    diet_stages = [
+        event["stage"]
+        for event in events
+        if event.get("type") == "status"
+        and str(event.get("stage") or "").startswith("diet_")
+    ]
+    assert diet_stages == [
+        "diet_parsed",
+        "diet_estimating",
+        "diet_writing",
+        "diet_verified",
+    ]
+    assert len(dispatched) == 1
+
+    verified_tool_result_index = next(
+        index
+        for index, event in enumerate(events)
+        if event.get("event") == "tool_result"
+        and event.get("data", {}).get("receipt", {}).get("verified") is True
+    )
+    verified_stage_index = next(
+        index
+        for index, event in enumerate(events)
+        if event.get("type") == "status" and event.get("stage") == "diet_verified"
+    )
+    assert verified_tool_result_index < verified_stage_index
+
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["completion_status"] == "complete"
+    assert done["data"]["llm_rounds"] == 0
+    assert done["data"]["perf"]["action_type"] == "diet_record"
+    assert done["data"]["perf"]["decision_route"] == "deterministic_simple_diet"
+    assert done["data"]["perf"]["first_useful_ms"] is not None
+    assert done["data"]["perf"]["write_verified_ms"] is not None
+    assert done["data"]["perf"]["nutrition_estimate_ms"] is not None
+    assert done["data"]["perf"]["nutrition_estimate_timed_out"] is False
+    assert done["data"]["perf"]["nutrition_estimate_calls"] == 1
+    assert done["data"]["perf"]["model_call_count"] == 1
+    assert done["data"]["perf"]["model_wait_ms"] >= 0
+    assert done["data"]["write_receipts"][0]["resource_id"] == "111"
+
+    replayed_events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录吃了一个桃子",
+            user_auth_token="test-token",
+            client_turn_id="turn-progressive-peach",
+        )
+    ]
+    replayed_done = next(
+        event for event in replayed_events if event.get("event") == "done"
+    )
+
+    assert estimate_calls == ["一个桃子"]
+    assert len(dispatched) == 1
+    assert replayed_done["data"]["replayed"] is True
+    assert replayed_done["data"]["write_receipts"] == done["data"]["write_receipts"]
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_times_out_slow_fast_path_estimate_and_uses_model_repair(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    dispatched = []
+    llm_calls = 0
+    estimate_cancelled = False
+
+    async def slow_estimate(_food_items):
+        nonlocal estimate_cancelled
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            estimate_cancelled = True
+            raise
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls > 1:
+            return {
+                "content": "已记录加餐，并完成营养估算。",
+                "finish_reason": "stop",
+            }
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": "repair-slow-estimate",
+                "function": {
+                    "name": "health_record",
+                    "arguments": json.dumps({
+                        "record_type": "diet",
+                        "data": {
+                            "meal_type": "snack",
+                            "food_items": "一个桃子",
+                            "calories": 58,
+                            "protein": 1.4,
+                            "carbs": 14,
+                            "fat": 0.4,
+                            "fiber": 2.3,
+                        },
+                    }, ensure_ascii=False),
+                },
+            }],
+        }
+
+    async def fake_dispatch(request, user_token):
+        dispatched.append((request.tool_name, request.arguments, user_token))
+        return json.dumps({
+            "id": 112,
+            "meal_type": request.arguments["data"]["meal_type"],
+            "food_items": request.arguments["data"]["food_items"],
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(
+        "app.services.agent_executor._SIMPLE_DIET_NUTRITION_FAST_PATH_TIMEOUT_SECONDS",
+        0.01,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        slow_estimate,
+    )
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_dispatch_tool_request", fake_dispatch)
+
+    started_at = time.monotonic()
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录吃了一个桃子",
+            user_auth_token="test-token",
+        )
+    ]
+    elapsed = time.monotonic() - started_at
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert elapsed < 1.5
+    assert estimate_cancelled is True
+    assert llm_calls == 1
+    assert len(dispatched) == 1
+    assert done["data"]["completion_status"] == "complete"
+    assert done["data"]["perf"]["decision_route"] == (
+        "deterministic_simple_diet_fallback_llm"
+    )
+    assert done["data"]["perf"]["nutrition_estimate_timed_out"] is True
+    assert done["data"]["perf"]["nutrition_estimate_ms"] < 200
+    assert done["data"]["perf"]["nutrition_estimate_calls"] == 1
+    assert done["data"]["perf"]["model_call_count"] == 2
+    assert done["data"]["perf"]["model_wait_ms"] >= 0
+    diet_stages = [
+        event["stage"]
+        for event in events
+        if event.get("type") == "status"
+        and str(event.get("stage") or "").startswith("diet_")
+    ]
+    assert diet_stages == [
+        "diet_parsed",
+        "diet_estimating",
+        "diet_writing",
+        "diet_verified",
+    ]
 
 
 @pytest.mark.asyncio

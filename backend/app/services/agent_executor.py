@@ -21,7 +21,7 @@ import re
 import time
 import unicodedata
 from datetime import UTC, date, datetime, time as datetime_time, timezone, timedelta
-from typing import AsyncGenerator, Collection, Dict, Any, List, Mapping, Optional, Sequence, Tuple
+from typing import AsyncGenerator, AsyncIterator, Collection, Dict, Any, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import urlencode
 
 import httpx
@@ -7444,6 +7444,59 @@ def _build_deterministic_simple_record_tool_call(
     }
 
 
+def _build_preplanned_simple_diet_tool_call(
+    goal: Optional[GoalSpec],
+    *,
+    write_receipts: Sequence[dict[str, Any]],
+    has_attachment: bool = False,
+    runtime_write_blocked: bool = False,
+    read_only_turn: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """Return the one safe, server-owned plan that can skip tool-decision LLM.
+
+    This is deliberately narrower than the existing simple-record fallback:
+    only an already compiled ``diet/create`` goal without media, runtime write
+    blocks, prior receipts, or read-only policy can enter.  The returned call
+    is still normalized, nutrition-enriched, validated, dispatched through the
+    ToolGateway, checkpointed, and receipt-verified by the ordinary round loop.
+    """
+    if (
+        goal is None
+        or goal.kind != "simple_health_record"
+        or goal.domain != "diet"
+        or goal.operation != "create"
+        or goal.target_record_type != "diet"
+        or has_attachment
+        or runtime_write_blocked
+        or read_only_turn
+    ):
+        return None
+    return _build_deterministic_simple_record_tool_call(
+        goal,
+        write_receipts=write_receipts,
+        has_attachment=False,
+    )
+
+
+async def _stream_llm_or_preplanned_tool_calls(
+    call_llm_stream: Any,
+    messages: Sequence[Dict[str, Any]],
+    tools: Sequence[Dict[str, Any]],
+    *,
+    preplanned_tool_calls: Optional[Sequence[Dict[str, Any]]] = None,
+) -> AsyncIterator[Dict[str, Any]]:
+    """Use a deterministic plan as a synthetic provider stream when present."""
+    if preplanned_tool_calls:
+        yield {
+            "type": "tool_calls",
+            "tool_calls": list(preplanned_tool_calls),
+        }
+        yield {"type": "finish", "finish_reason": "tool_calls"}
+        return
+    async for event in call_llm_stream(messages, tools):
+        yield event
+
+
 def _build_deterministic_supplement_record_tool_calls(
     message: Any,
     *,
@@ -7863,6 +7916,23 @@ _SIMPLE_DIET_NUTRITION_LIMITS = {
     "fat": 500.0,
     "fiber": 200.0,
 }
+_SIMPLE_DIET_NUTRITION_FAST_PATH_TIMEOUT_SECONDS = 3.0
+
+
+def _simple_diet_nutrition_estimator_model_name() -> Optional[str]:
+    """Best-effort model identifier; usage capture remains the cost authority."""
+    try:
+        from app.services.ai.food_recognition import food_recognition_service
+
+        provider = getattr(food_recognition_service, "_provider", None)
+        return str(
+            getattr(provider, "model", None)
+            or getattr(provider, "default_model", None)
+            or getattr(provider, "provider_name", None)
+            or ""
+        ).strip() or None
+    except Exception:  # noqa: BLE001 - telemetry cannot break meal recording
+        return None
 
 
 def _simple_diet_nutrition_is_complete(data: Mapping[str, Any]) -> bool:
@@ -7914,8 +7984,16 @@ async def _estimate_simple_diet_nutrition(
         raw = await asyncio.to_thread(
             food_recognition_service.estimate_nutrition_from_text,
             food_items,
+            timeout_seconds=max(
+                0.001,
+                _SIMPLE_DIET_NUTRITION_FAST_PATH_TIMEOUT_SECONDS * 0.9,
+            ),
         )
+        if raw.get("timed_out") is True:
+            raise TimeoutError("simple diet nutrition estimate timed out")
         sanitized = sanitize_food_recognition_result(raw)
+    except TimeoutError:
+        raise
     except Exception as exc:  # noqa: BLE001 - fail closed at the write validator
         logger.warning(
             "[agent_executor] simple diet nutrition estimation failed "
@@ -12012,10 +12090,38 @@ class AgentExecutor:
             return
 
         start_time = time.time()
+        perf_milestones: Dict[str, Optional[int]] = {
+            "request_persisted_ms": None,
+            "first_progress_ms": None,
+            "first_useful_ms": None,
+            "first_card_ms": None,
+            "write_verified_ms": None,
+        }
+        decision_route = "llm"
+
+        def _mark_perf_milestone(name: str) -> None:
+            """Record a content-free first occurrence without touching control flow."""
+            if name not in perf_milestones or perf_milestones[name] is not None:
+                return
+            try:
+                perf_milestones[name] = max(
+                    0,
+                    int((time.time() - start_time) * 1000),
+                )
+            except Exception:  # noqa: BLE001 - telemetry must never break a turn
+                return
+
         self._current_user_id = user_id
         self._diet_photo_auto_save = _is_diet_photo_auto_save_turn(
             extra_context,
             has_images=bool(images),
+        )
+        diet_photo_progress_turn = bool(
+            images
+            and (
+                self._diet_photo_auto_save
+                or self._looks_like_food_photo_context(message)
+            )
         )
         self._request_model_id = (
             str(getattr(settings, "health_evidence_model_id", "") or "").strip()
@@ -12267,6 +12373,7 @@ class AgentExecutor:
             raise
         pre_stages["conv_ms"] = _pre_stage(_t_stage)
 
+        _mark_perf_milestone("request_persisted_ms")
         yield {"event": "request_persisted", "data": {
             "conversation_id": conv.id,
             "user_message_id": user_msg.id,
@@ -12274,6 +12381,10 @@ class AgentExecutor:
             "image_urls": saved_image_urls,
             "recovered": recovered_user_message is not None,
         }}
+        if diet_photo_progress_turn:
+            _mark_perf_milestone("first_progress_ms")
+            _mark_perf_milestone("first_useful_ms")
+            yield self._progress_event("diet_photo_saved")
 
         self._current_turn_source_message_id = int(user_msg.id)
         self._current_turn_media_source_message_id = (
@@ -12602,6 +12713,8 @@ class AgentExecutor:
                 # 真实思考过程: 图片/视觉预处理 (4–20s 的 vision_ms 块) 即将开始。
                 # 仅在会真的跑独立 vision 预处理时发 (原图直传多模态模型时无此阶段)。
                 yield self._status_event("vision", detail=None)
+                if diet_photo_progress_turn:
+                    yield self._progress_event("diet_photo_recognizing")
                 if _looks_like_medical_report_image_context(message):
                     snapshot = self._ensure_agent_kernel_turn()
                     persist_medical_report = bool(
@@ -12615,6 +12728,12 @@ class AgentExecutor:
                     )
                 if not vision_description:
                     vision_description = await self._analyze_image_with_vision(message, images)
+                if (
+                    diet_photo_progress_turn
+                    and self._turn_contextual_diet_write_blocked_reason
+                    == "confirmation_pending"
+                ):
+                    yield self._progress_event("diet_photo_review")
 
             if vision_description:
                 enriched_message = f"{message}\n\n[图片识别结果]: {vision_description}"
@@ -12749,6 +12868,7 @@ class AgentExecutor:
         full_reply = ""
         streamed_cards: list[dict] = []
         post_record_qualities: list[dict] = []
+        _mark_perf_milestone("first_progress_ms")
         yield {
             "event": "agent_start",
             "data": {
@@ -12800,6 +12920,12 @@ class AgentExecutor:
         deterministic_supplement_fallback_attempted = False
         deterministic_simple_record_fallback_attempted = False
         simple_diet_nutrition_estimation_attempted = False
+        simple_diet_nutrition_estimate_ms: Optional[int] = None
+        simple_diet_nutrition_estimate_calls = 0
+        simple_diet_nutrition_estimate_timed_out = False
+        simple_diet_nutrition_estimate_model: Optional[str] = None
+        diet_writing_emitted = False
+        diet_verified_emitted = False
         deterministic_goal_lookup_attempted = False
         deterministic_goal_delete_attempted = False
         goal_verification_attempted = False
@@ -12934,10 +13060,128 @@ class AgentExecutor:
                 # 扫描输出的工具词表: round_tools 非空则用它, 否则回退本回合完整 tools
                 # (合成轮词表稳定, 默认路径历来带非空 tools, 这层保护逐字节不变)。
                 _detect_tools = round_tools or tools
+                preplanned_simple_diet_call = None
+                if (
+                    round_idx == 0
+                    and not health_advice_buffered
+                    and any(
+                        (tool.get("function") or {}).get("name")
+                        == "health_record"
+                        for tool in tools
+                    )
+                ):
+                    preplanned_simple_diet_call = (
+                        _build_preplanned_simple_diet_tool_call(
+                            (
+                                self._agent_kernel_snapshot.goal
+                                if self._agent_kernel_snapshot is not None
+                                else None
+                            ),
+                            write_receipts=write_receipts,
+                            has_attachment=bool(images or file_base64),
+                            runtime_write_blocked=bool(
+                                self._runtime_write_block_reason
+                            ),
+                            read_only_turn=bool(read_only_tools),
+                        )
+                    )
+                if preplanned_simple_diet_call is not None:
+                    # The text fast path is allowed to skip the tool-decision
+                    # model only when the existing bounded estimator produced
+                    # the complete nutrition payload required by the write
+                    # validator.  If estimation is unavailable, fall back to
+                    # the original model-assisted repair path instead of
+                    # dispatching a write that is already known to be invalid.
+                    _mark_perf_milestone("first_useful_ms")
+                    yield self._progress_event("diet_parsed")
+                    yield self._progress_event("diet_estimating")
+                    nutrition_estimate_started_at = time.time()
+                    simple_diet_nutrition_estimate_calls += 1
+                    try:
+                        async with asyncio.timeout(
+                            _SIMPLE_DIET_NUTRITION_FAST_PATH_TIMEOUT_SECONDS
+                        ):
+                            (
+                                enriched_preplanned_calls,
+                                simple_diet_nutrition_estimation_attempted,
+                            ) = await _enrich_simple_diet_goal_tool_calls(
+                                [preplanned_simple_diet_call],
+                                (
+                                    self._agent_kernel_snapshot.goal
+                                    if self._agent_kernel_snapshot is not None
+                                    else None
+                                ),
+                                estimation_attempted=(
+                                    simple_diet_nutrition_estimation_attempted
+                                ),
+                                runtime_write_blocked=bool(
+                                    self._runtime_write_block_reason
+                                ),
+                            )
+                    except TimeoutError:
+                        simple_diet_nutrition_estimate_timed_out = True
+                        simple_diet_nutrition_estimation_attempted = True
+                        enriched_preplanned_calls = [preplanned_simple_diet_call]
+                        logger.warning(
+                            "[agent_executor] simple diet fast estimate timed out "
+                            "budget_ms=%s",
+                            int(
+                                _SIMPLE_DIET_NUTRITION_FAST_PATH_TIMEOUT_SECONDS
+                                * 1000
+                            ),
+                        )
+                    finally:
+                        simple_diet_nutrition_estimate_ms = max(
+                            0,
+                            int(
+                                (time.time() - nutrition_estimate_started_at)
+                                * 1000
+                            ),
+                        )
+                        simple_diet_nutrition_estimate_model = (
+                            _simple_diet_nutrition_estimator_model_name()
+                        )
+                    candidate_function = (
+                        enriched_preplanned_calls[0].get("function")
+                        if enriched_preplanned_calls
+                        else {}
+                    ) or {}
+                    try:
+                        candidate_arguments = json.loads(
+                            candidate_function.get("arguments") or "{}"
+                        )
+                    except (json.JSONDecodeError, TypeError, ValueError):
+                        candidate_arguments = {}
+                    candidate_data = candidate_arguments.get("data")
+                    if not (
+                        isinstance(candidate_data, dict)
+                        and _simple_diet_nutrition_is_complete(candidate_data)
+                    ):
+                        preplanned_simple_diet_call = None
+                        decision_route = "deterministic_simple_diet_fallback_llm"
+                    else:
+                        preplanned_simple_diet_call = enriched_preplanned_calls[0]
+                if preplanned_simple_diet_call is not None:
+                    deterministic_simple_record_fallback_attempted = True
+                    decision_route = "deterministic_simple_diet"
+                    _mark_perf_milestone("first_useful_ms")
+                    logger.info(
+                        "[agent_executor] deterministic simple diet decision "
+                        "user=%s message_chars=%s",
+                        user_id,
+                        len(message or ""),
+                    )
+                elif (
+                    decision_route == "deterministic_simple_diet"
+                    and round_idx > 0
+                ):
+                    decision_route = "deterministic_simple_diet_fallback_llm"
                 # 真实思考过程: 本轮 LLM prefill/decide 等待即将开始 (TTFT 主来源)。
                 # synthesis = 前面轮已执行过工具 且 本轮不再带工具 (模型正在写最终答案);
                 # 否则 thinking (还在决策/可能再调工具)。纯附加、fail-soft (dict 构造不会抛)。
-                if tool_executed_count > 0 and not round_tools:
+                if preplanned_simple_diet_call is not None:
+                    pass
+                elif tool_executed_count > 0 and not round_tools:
                     yield self._status_event("synthesis", round=round_idx + 1)
                     # 2026-07-05 P0-1: 进度事件 (flat 契约) —— 最终回答开始生成前发。
                     # 命中条件与既有 synthesis status 一致: 前面轮已跑过工具且本轮不带工具。
@@ -12945,7 +13189,10 @@ class AgentExecutor:
                 else:
                     yield self._status_event("thinking", round=round_idx + 1)
                 # 非流式模型: 多发一条带 detail 的 thinking 状态 (整段生成需等待)。
-                if answer_model_non_streaming:
+                if (
+                    preplanned_simple_diet_call is None
+                    and answer_model_non_streaming
+                ):
                     yield self._status_event(
                         "thinking",
                         detail="该模型整段生成,需等待完整回答",
@@ -13006,7 +13253,16 @@ class AgentExecutor:
                 # 绝不能泄漏给用户。结构化 tool_calls 的正常模型不受影响。
                 inline_suppressed = False
                 recoverable_response_buffered = False
-                async for evt in self._call_llm_stream(messages, round_tools):
+                async for evt in _stream_llm_or_preplanned_tool_calls(
+                    self._call_llm_stream,
+                    messages,
+                    round_tools,
+                    preplanned_tool_calls=(
+                        [preplanned_simple_diet_call]
+                        if preplanned_simple_diet_call is not None
+                        else None
+                    ),
+                ):
                     etype = evt.get("type")
                     if etype == "content":
                         delta = evt.get("text") or ""
@@ -13162,13 +13418,18 @@ class AgentExecutor:
                 if streamed_tool_calls:
                     response["tool_calls"] = streamed_tool_calls
                 final_finish_reason = stream_finish_reason or final_finish_reason
-                _round_llm_gen_ms = int((time.time() - _round_start) * 1000)
-                llm_rounds_ms.append(_round_llm_gen_ms)
+                _round_llm_gen_ms = (
+                    0
+                    if preplanned_simple_diet_call is not None
+                    else int((time.time() - _round_start) * 1000)
+                )
+                if preplanned_simple_diet_call is None:
+                    llm_rounds_ms.append(_round_llm_gen_ms)
                 # 2026-07-01: per-round split — 本轮 LLM 生成耗时 (纯埋点)。tool_exec_ms /
                 # tools 在下面工具执行块填充; 无工具调用的最终答案轮 tool_exec_ms=0。
                 _round_tool_exec_ms = 0
                 _round_tool_names: List[str] = []
-                if model_name is None:
+                if model_name is None and preplanned_simple_diet_call is None:
                     if self._last_provider_model_name:
                         model_name = self._last_provider_model_name
                     else:
@@ -13944,6 +14205,19 @@ class AgentExecutor:
                         )
                         tool_id = tc["id"]
 
+                        if (
+                            not diet_photo_progress_turn
+                            and not diet_writing_emitted
+                            and func_name == "health_record"
+                            and str(parsed_tool_args.get("record_type") or "")
+                            .strip()
+                            .lower()
+                            == "diet"
+                        ):
+                            diet_writing_emitted = True
+                            _mark_perf_milestone("first_useful_ms")
+                            yield self._progress_event("diet_writing")
+
                         # 通知前端正在执行工具
                         yield {
                             "event": "tool_call",
@@ -14191,6 +14465,8 @@ class AgentExecutor:
                                         for item in write_receipts
                                     ):
                                         write_receipts.append(receipt)
+                                    if receipt.get("verified") is True:
+                                        _mark_perf_milestone("write_verified_ms")
                             else:
                                 receipt = None
                             write_outcome_fields = _write_outcome_event_fields(
@@ -14377,10 +14653,25 @@ class AgentExecutor:
                                 "event": "tool_result",
                                 "data": tool_event_data,
                             }
+                        if (
+                            not diet_photo_progress_turn
+                            and not diet_verified_emitted
+                            and func_name == "health_record"
+                            and str(parsed_tool_args.get("record_type") or "")
+                            .strip()
+                            .lower()
+                            == "diet"
+                            and tool_event_data.get("receipt", {}).get("verified")
+                            is True
+                        ):
+                            diet_verified_emitted = True
+                            yield self._progress_event("diet_verified")
                         for quality_card in quality_cards:
                             before = len(streamed_cards)
                             streamed_cards = _merge_agent_card_descriptors(streamed_cards, [quality_card])
                             if len(streamed_cards) > before:
+                                _mark_perf_milestone("first_card_ms")
+                                _mark_perf_milestone("first_useful_ms")
                                 yield {
                                     "event": "card",
                                     "data": {
@@ -14392,6 +14683,8 @@ class AgentExecutor:
                             before = len(streamed_cards)
                             streamed_cards = _merge_agent_card_descriptors(streamed_cards, [record_card])
                             if len(streamed_cards) > before:
+                                _mark_perf_milestone("first_card_ms")
+                                _mark_perf_milestone("first_useful_ms")
                                 yield {
                                     "event": "card",
                                     "data": {
@@ -15189,6 +15482,23 @@ class AgentExecutor:
 
         elapsed_ms = int((time.time() - start_time) * 1000)
         llm_ms_total = sum(llm_rounds_ms)
+        model_wait_ms = llm_ms_total + (
+            simple_diet_nutrition_estimate_ms or 0
+        )
+        model_call_count = (
+            len(llm_rounds_ms) + simple_diet_nutrition_estimate_calls
+        )
+        perf_action_type = (
+            "diet_photo"
+            if diet_photo_progress_turn
+            else (
+                "diet_record"
+                if self._agent_kernel_snapshot is not None
+                and self._agent_kernel_snapshot.goal is not None
+                and self._agent_kernel_snapshot.goal.domain == "diet"
+                else "generic"
+            )
+        )
 
         # 2026-07-01: 汇总 perf (纯埋点)。fail-soft — 任何计时缺失用 None/0, 绝不断流。
         try:
@@ -15197,6 +15507,11 @@ class AgentExecutor:
             )
         except Exception:  # noqa: BLE001
             llm_ttft_ms = None
+        if (
+            perf_milestones["first_useful_ms"] is None
+            and llm_ttft_ms is not None
+        ):
+            perf_milestones["first_useful_ms"] = llm_ttft_ms
         perf = {
             "total_ms": elapsed_ms,
             "pre_llm_ms": pre_llm_ms,
@@ -15206,13 +15521,41 @@ class AgentExecutor:
             "rounds": rounds,
             "orchestrator_tool_ms": orchestrator_tool_ms,
             "orchestrator_perf": orchestrator_perf,
+            **perf_milestones,
+            "action_type": perf_action_type,
+            "decision_route": decision_route,
+            "nutrition_estimate_ms": simple_diet_nutrition_estimate_ms,
+            "nutrition_estimate_calls": simple_diet_nutrition_estimate_calls,
+            "nutrition_estimate_timed_out": (
+                simple_diet_nutrition_estimate_timed_out
+            ),
+            "nutrition_estimate_model": simple_diet_nutrition_estimate_model,
+            "nutrition_estimate_caller": (
+                "food_recognition.estimate_nutrition"
+                if simple_diet_nutrition_estimate_calls
+                else None
+            ),
+            "tool_decision_llm_rounds": len(llm_rounds_ms),
+            "model_wait_ms": model_wait_ms,
+            "model_call_count": model_call_count,
         }
         # 单行 grep 日志 (镜像 orchestrator.py [perf.orchestrator])。
         try:
             logger.info(
-                "[perf.agent] user=%s total=%sms pre_llm=%sms ttft=%sms llm=%sms rounds=%s model=%s",
-                user_id, elapsed_ms, pre_llm_ms, llm_ttft_ms, llm_ms_total,
-                len(llm_rounds_ms), model_name,
+                "[perf.agent] user=%s total=%sms pre_llm=%sms ttft=%sms "
+                "first_useful=%sms write_verified=%sms llm=%sms rounds=%s "
+                "action=%s route=%s nutrition_estimate=%sms "
+                "nutrition_timeout=%s model_wait=%sms model_calls=%s "
+                "executor_model=%s nutrition_model=%s",
+                user_id, elapsed_ms, pre_llm_ms, llm_ttft_ms,
+                perf_milestones["first_useful_ms"],
+                perf_milestones["write_verified_ms"],
+                llm_ms_total, len(llm_rounds_ms), perf_action_type,
+                decision_route,
+                simple_diet_nutrition_estimate_ms,
+                simple_diet_nutrition_estimate_timed_out,
+                model_wait_ms, model_call_count, model_name,
+                simple_diet_nutrition_estimate_model,
             )
         except Exception:  # noqa: BLE001
             pass

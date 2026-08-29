@@ -546,6 +546,53 @@ async function* streamStatusThenWait() {
   yield { type: 'done', conversationId: 777, messageId: 2 };
 }
 
+async function* streamDietProgressThenWait() {
+  yield { type: 'start', conversationId: 777 };
+  yield {
+    type: 'status',
+    statusLabel: '已识别餐食和餐次，正在估算营养…',
+    statusStage: 'diet_parsed',
+  };
+  yield {
+    type: 'status',
+    statusLabel: '正在估算本餐热量和营养…',
+    statusStage: 'diet_estimating',
+  };
+  yield {
+    type: 'status',
+    statusLabel: '营养估算已完成，正在写入今日饮食…',
+    statusStage: 'diet_writing',
+  };
+  yield {
+    type: 'status',
+    statusLabel: '正在记录饮食…',
+    statusStage: 'tool',
+  };
+  yield {
+    type: 'tool',
+    toolName: 'health_record',
+    toolSuccess: true,
+    writeAttempted: true,
+    writeCompleted: true,
+    receipt: verifiedDietReceipt,
+  };
+  yield {
+    type: 'status',
+    statusLabel: '已写入今日饮食',
+    statusStage: 'diet_verified',
+  };
+  await new Promise<void>((resolve) => {
+    finishStream = resolve;
+  });
+  yield { type: 'token', content: '已记录加餐。' };
+  yield {
+    type: 'done',
+    conversationId: 777,
+    messageId: 2,
+    thinkingSteps: ['正在理解你的问题', '已取得饮食数据'],
+  };
+}
+
 // 未知事件容错: 混入 useChatEngine 不认识的 type, 必须静默忽略, 不污染状态、不崩。
 async function* streamUnknownEventThenToken() {
   yield { type: 'start', conversationId: 777 };
@@ -3377,6 +3424,88 @@ describe('useChatEngine', () => {
       const assistant = result.current.messages.find(m => m.role === 'assistant');
       expect(assistant?.content).toBe('整理完成。');
       expect(assistant?.currentStatus).toBeFalsy();
+    });
+  });
+
+  it('keeps progressive diet stages in one assistant progress panel', async () => {
+    mockStreamChat.mockImplementation(streamDietProgressThenWait);
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('桃子一个');
+    });
+
+    await waitFor(() => {
+      const assistants = result.current.messages.filter(m => m.role === 'assistant');
+      expect(assistants).toHaveLength(1);
+      expect(assistants[0].currentStatus).toBe('已写入今日饮食');
+      expect(assistants[0].thinkingSteps).toEqual(expect.arrayContaining([
+        '已识别餐食和餐次，正在估算营养…',
+        '正在估算本餐热量和营养…',
+        '营养估算已完成，正在写入今日饮食…',
+      ]));
+      expect(assistants[0].thinkingSteps).not.toContain('正在记录饮食…');
+    });
+
+    const milestoneCalls = mockEmitClientEvent.mock.calls.filter(
+      ([name]) => name === 'agent_turn_milestone',
+    );
+    expect(milestoneCalls.map(([, meta]) => meta.phase)).toEqual([
+      'local_feedback',
+      'server_accepted',
+      'first_useful',
+      'write_verified',
+    ]);
+    expect(milestoneCalls.every(([, meta]) => (
+      meta.action_type === 'diet_record'
+      && meta.has_image === false
+      && Number.isInteger(meta.duration_ms)
+      && !('content' in meta)
+    ))).toBe(true);
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      const assistant = result.current.messages.find(m => m.role === 'assistant');
+      expect(assistant?.content).toBe('已记录加餐。');
+      expect(assistant?.currentStatus).toBeFalsy();
+      expect(assistant?.thinkingSteps).toEqual(expect.arrayContaining([
+        '已识别餐食和餐次，正在估算营养…',
+        '正在估算本餐热量和营养…',
+        '营养估算已完成，正在写入今日饮食…',
+        '正在理解你的问题',
+        '已取得饮食数据',
+        '已写入今日饮食',
+      ]));
+    });
+  });
+
+  it('buckets shorthand nutrition questions as generic TTFT telemetry', async () => {
+    mockStreamChat.mockImplementation(streamStartThenWait);
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('午餐牛肉饭热量');
+    });
+
+    await waitFor(() => {
+      const milestoneCalls = mockEmitClientEvent.mock.calls.filter(
+        ([name]) => name === 'agent_turn_milestone',
+      );
+      expect(milestoneCalls.length).toBeGreaterThanOrEqual(2);
+      expect(milestoneCalls.every(([, meta]) => (
+        meta.action_type === 'generic'
+      ))).toBe(true);
+    });
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
     });
   });
 

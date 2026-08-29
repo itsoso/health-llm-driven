@@ -771,6 +771,36 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('maps progressive diet stages to concise Chinese execution summaries', async () => {
+    const iter = streamChat('记录吃了一个桃子');
+    const first = iter.next();
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+
+    const expected = [
+      ['diet_parsed', '已识别餐食和餐次，正在估算营养…'],
+      ['diet_estimating', '正在估算本餐热量和营养…'],
+      ['diet_writing', '营养估算已完成，正在写入今日饮食…'],
+      ['diet_verified', '已写入今日饮食'],
+      ['diet_photo_saved', '照片已保存，正在准备识别…'],
+      ['diet_photo_recognizing', '正在识别照片中的餐食…'],
+      ['diet_photo_review', '识别完成，请核对后确认…'],
+    ] as const;
+
+    let pending = first;
+    for (const [index, [stage, statusLabel]] of expected.entries()) {
+      xhr.responseText += `data: {"type":"status","stage":"${stage}"}\n\n`;
+      xhr.onprogress?.();
+      await expect(pending).resolves.toEqual({
+        value: { type: 'status', statusLabel, statusStage: stage },
+        done: false,
+      });
+      if (index < expected.length - 1) pending = iter.next();
+    }
+
+    await iter.return?.(undefined as any);
+  });
+
   it('parses the flat status family the backend actually emits ({"type":"status",...}, web/mac 同源)', async () => {
     const iter = streamChat('看看我今天走了多少步');
     const first = iter.next();

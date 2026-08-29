@@ -329,6 +329,20 @@ function statusStageLabel(stage?: string, label?: string | null): string | undef
       return '识别图片中…';
     case 'thinking':
       return '正在思考…';
+    case 'diet_parsed':
+      return '已识别餐食和餐次，正在估算营养…';
+    case 'diet_estimating':
+      return '正在估算本餐热量和营养…';
+    case 'diet_writing':
+      return '营养估算已完成，正在写入今日饮食…';
+    case 'diet_verified':
+      return '已写入今日饮食';
+    case 'diet_photo_saved':
+      return '照片已保存，正在准备识别…';
+    case 'diet_photo_recognizing':
+      return '正在识别照片中的餐食…';
+    case 'diet_photo_review':
+      return '识别完成，请核对后确认…';
     default:
       return undefined;
   }
