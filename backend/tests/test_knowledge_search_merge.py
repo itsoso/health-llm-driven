@@ -166,14 +166,17 @@ def test_knowledge_search_contract_accepts_named_source():
     assert "用户明确指定" in source["description"]
 
 
-async def test_named_legacy_supplement_source_fails_closed_without_substitution(
+async def test_named_yijia_source_uses_released_collection_without_substitution(
     db,
     monkeypatch,
 ):
-    def _must_not_search(*args, **kwargs):
-        raise AssertionError("unreviewed named source must not query another source")
+    seen = {}
 
-    monkeypatch.setattr(sks, "search_knowledge", _must_not_search)
+    def _search(_db, query, **kwargs):
+        seen.update(query=query, **kwargs)
+        return _KB_PAYLOAD
+
+    monkeypatch.setattr(sks, "search_knowledge", _search)
     _forbid_raw_dedao(monkeypatch)
 
     out = await _make_executor(db)._exec_knowledge_search({
@@ -181,14 +184,15 @@ async def test_named_legacy_supplement_source_fails_closed_without_substitution(
         "knowledge_source": "皮皮妈妈的一家之言",
     })
 
+    assert seen == {
+        "query": "如果新冠发烧，需要吃哪些补剂？",
+        "limit": 5,
+        "source_collection": "yijia_reviewed",
+    }
     assert "requested_source=皮皮妈妈的一家之言" in out
-    assert "resolved_source=益家知研 / 皮皮妈妈补剂知识库" in out
-    assert "source_status=not_released" in out
-    assert "旧补剂推荐资产" in out
-    assert "未进入已审定 System KB" in out
-    assert "不得用其他知识库结果冒充" in out
-    assert "内容可能尚未上传" not in out
-    assert "标题/关键词" not in out
+    assert "resolved_source=yijia_reviewed" in out
+    assert "source_status=released" in out
+    assert REVIEWED_HEADER in out
 
 
 @pytest.mark.parametrize(

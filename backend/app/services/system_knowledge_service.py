@@ -675,8 +675,14 @@ def search_knowledge(
     limit: int = 10,
     doc_type: str | None = None,
     entity_type: str | None = None,
+    source_collection: str | None = None,
 ) -> dict[str, Any]:
-    """Search the generic serving KB; globally held documents never enter."""
+    """Search reviewed serving documents, optionally within one exact collection.
+
+    ``source_collection`` is a fail-closed provenance boundary: it filters the
+    reviewed serving set before any retrieval channel runs and never widens to
+    generic documents when the named collection has no hit.
+    """
 
     return _search_knowledge(
         db,
@@ -685,6 +691,7 @@ def search_knowledge(
         doc_type=doc_type,
         entity_type=entity_type,
         runtime_released_ids=None,
+        source_collection=source_collection,
     )
 
 
@@ -705,6 +712,7 @@ def search_health_evidence_runtime_claims(
         runtime_released_ids=(
             HEALTH_EVIDENCE_RUNTIME_RELEASED_CLAIM_IDS
         ),
+        source_collection=None,
     )
 
 
@@ -716,6 +724,7 @@ def _search_knowledge(
     doc_type: str | None,
     entity_type: str | None,
     runtime_released_ids: frozenset[str] | None,
+    source_collection: str | None,
 ) -> dict[str, Any]:
     """DB-backed hybrid search for the serving KB.
 
@@ -740,6 +749,23 @@ def _search_knowledge(
         docs_query = docs_query.filter(KBDocument.entity_type == entity_type)
 
     documents = docs_query.all()
+    if source_collection:
+        documents = [
+            document
+            for document in documents
+            if isinstance(
+                (document.metadata_json or {}).get("source_collections"),
+                list,
+            )
+            and source_collection
+            in (document.metadata_json or {})["source_collections"]
+        ]
+    else:
+        documents = [
+            document
+            for document in documents
+            if (document.metadata_json or {}).get("named_collection_only") is not True
+        ]
     documents_by_id = {document.doc_id: document for document in documents}
 
     lexical_ranked: list[tuple[float, KBDocument]] = _bm25_rank_documents(documents, terms)
@@ -767,7 +793,11 @@ def _search_knowledge(
             if fts_score > 0 or not terms:
                 fts_ranked.append((fts_score, document))
     if fts_backend == "postgres_tsv":
-        fts_ranked = postgres_fts_ranked
+        fts_ranked = [
+            (score, document)
+            for score, document in postgres_fts_ranked
+            if document.doc_id in documents_by_id
+        ]
 
     lexical_ranked.sort(key=lambda item: (-item[0], item[1].doc_type, item[1].doc_id))
     fts_ranked.sort(key=lambda item: (-item[0], item[1].doc_type, item[1].doc_id))
@@ -842,6 +872,7 @@ def _search_knowledge(
             diff={
                 "query": (normalized_query or "")[:200],
                 "source": "search_knowledge",
+                "source_collection": source_collection,
                 "channel_stats": {
                     "lexical": len(lexical_ranked),
                     "fts": len(fts_ranked),
@@ -873,6 +904,7 @@ def _search_knowledge(
             "graph_backend": "kb_edges_one_hop",
             "rrf_backend": "python_rrf_v1",
             "input_guard": guarded_query.metadata(),
+            "source_collection": source_collection,
         },
         "claim_boundary": CLAIM_BOUNDARY,
     }

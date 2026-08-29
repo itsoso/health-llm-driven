@@ -7228,10 +7228,10 @@ def _build_deterministic_symptom_tool_call(
 
 
 _NAMED_KNOWLEDGE_SOURCE_ALIASES: tuple[tuple[str, str, str], ...] = (
-    ("皮皮妈妈的一家之言", "益家知研 / 皮皮妈妈补剂知识库", "not_released"),
-    ("皮皮妈妈营养知识库", "益家知研 / 皮皮妈妈补剂知识库", "not_released"),
-    ("皮皮妈妈知识库", "益家知研 / 皮皮妈妈补剂知识库", "not_released"),
-    ("益家知研", "益家知研 / 皮皮妈妈补剂知识库", "not_released"),
+    ("皮皮妈妈的一家之言", "yijia_reviewed", "released"),
+    ("皮皮妈妈营养知识库", "yijia_reviewed", "released"),
+    ("皮皮妈妈知识库", "yijia_reviewed", "released"),
+    ("益家知研", "yijia_reviewed", "released"),
     ("reviewed system kb", "reviewed_system_kb", "released"),
     ("system kb", "reviewed_system_kb", "released"),
     ("已审定知识库", "reviewed_system_kb", "released"),
@@ -11850,6 +11850,7 @@ class AgentExecutor:
                 current_named_knowledge_source
             )
         named_knowledge_boundary_required = current_named_knowledge_status in {
+            "released",
             "not_released",
             "unresolved",
         }
@@ -20268,7 +20269,10 @@ class AgentExecutor:
         kb_errored = False
         try:
             from app.services.system_knowledge_service import search_knowledge as kb_search
-            kb_payload = kb_search(self.db, query, limit=n)
+            search_kwargs: dict[str, Any] = {"limit": n}
+            if requested_source and resolved_source != "reviewed_system_kb":
+                search_kwargs["source_collection"] = resolved_source
+            kb_payload = kb_search(self.db, query, **search_kwargs)
             kb_results = (kb_payload or {}).get("results") or []
         except Exception as e:  # noqa: BLE001 — fail honest, 不冒充未命中
             logger.warning(f"[knowledge_search] System KB 检索失败: {e}")
@@ -20277,10 +20281,23 @@ class AgentExecutor:
 
         if not kb_results:
             if kb_errored:
+                if requested_source:
+                    return (
+                        f"指定知识源『{requested_source}』检索失败(暂不可用),"
+                        "未执行通用知识库替代检索。请勿编造依据或引用。"
+                    )
                 return (
                     "已审定知识库检索失败(暂不可用),"
                     "请基于已有信息谨慎作答,勿编造依据或引用。"
                 )
+            if requested_source:
+                return "\n".join((
+                    f"requested_source={requested_source}",
+                    f"resolved_source={resolved_source}",
+                    "source_status=released",
+                    f"指定知识源『{requested_source}』未命中『{query}』相关条目。",
+                    "未执行通用知识库替代检索，请如实说明该指定来源当前缺少相关依据。",
+                ))
             return (
                 f"已审定知识库未命中『{query}』相关条目(该主题可能未收录)。"
                 "请如实说明缺少本系统已审定依据,勿编造引用。"
