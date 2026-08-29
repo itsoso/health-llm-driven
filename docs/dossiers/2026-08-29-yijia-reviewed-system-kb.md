@@ -4,8 +4,8 @@
 |---|---|
 | slug | `yijia-reviewed-system-kb` |
 | 创建日期 | 2026-08-29 |
-| 当前阶段 | G4 独立安全评审 |
-| 状态 | implemented_local |
+| 当前阶段 | G5 部署前 CI |
+| 状态 | safety_reviewed |
 | 负责 | Codex |
 | 反馈环 | source discovery -> reviewed claim pack -> source-scoped retrieval -> backend deploy -> production replay |
 
@@ -83,7 +83,7 @@
 | G1 | PASS | Safe reviewed subset admitted; raw legacy promotion rejected. |
 | G2 | PASS | Source-scoped reviewed retrieval is feasible and fail-closed. |
 | G3 | PASS | 35 named-source/health interaction tests; System KB release gate 69/69; live LLM 5/5 plus deterministic suites all pass. |
-| G4 | pending | Independent safety review pending. |
+| G4 | PASS | Independent reviewer GO; no Critical/Important findings. Minor negative-guard gap remediated with executable dose/raw-fragment assertions. |
 | G5 | pending | Deployment health pending. |
 | G6 | pending | Production named-source replay pending. |
 
@@ -104,3 +104,15 @@ the aliases to `not_released`. No schema migration is planned.
 - 真实 TokenPlan `MiniMax-M2.5` 回归：invariants 12/12、health agent 50/50、
   orchestrator 5/5（平均 0.96）、trajectory contract 12/12、goldens 9/9。
 - 非生产内存 SQLite 缺 `llm_usage_logs` 仅产生旁路告警；模型调用、裁判与闸门均成功。
+
+## G4 · 独立安全评审
+
+- 审查提交：`f2bef65f`；裁决：**GO**。
+- Critical / Important：0 / 0。
+- reviewer 独立复核 CDC、NIH ODS、NCCIH 原始页面，确认两条 claim 未超出
+  补剂证据不足、尽早治疗评估、相互作用和肝肾限制核对边界。
+- reviewer 独立验证 35 项测试、69/69 release eval、895 documents / 3320 edges、
+  Ruff、py_compile 和 diff check 均通过。
+- Minor：`must_not_include` 不是当前 eval runner 的可执行字段。本次已在 artifact 测试中
+  增加剂量单位模式与旧配方片段扫描，并固定 `named_collection_only=true`，作为本知识包的
+  可执行负向护栏；不借机改变全局 eval 语义。

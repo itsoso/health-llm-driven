@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from app.models.system_knowledge import KBDocument
@@ -10,6 +11,17 @@ from app.services.system_knowledge_service import search_knowledge
 
 ARTIFACT_DIR = Path(__file__).resolve().parents[1] / "data" / "system_kb_v2_seed"
 COLLECTION = "yijia_reviewed"
+DOSE_RECIPE_PATTERN = re.compile(
+    r"(?:\d+(?:\.\d+)?\s*(?:mg|mcg|µg|μg|IU|毫克|微克|国际单位)(?:\s*/\s*(?:天|日|次))?)",
+    re.IGNORECASE,
+)
+LEGACY_RECIPE_FRAGMENTS = (
+    "成人：",
+    "缺乏者：",
+    "最高安全剂量",
+    "早餐后",
+    "每日1-2次",
+)
 
 
 def _reviewed_doc(
@@ -179,7 +191,15 @@ def test_reviewed_yijia_artifacts_have_official_provenance_and_no_dose_recipe():
         assert metadata["clinical_signoff"] == "not_claimed"
         assert metadata["claim_boundary"]
         assert metadata["review_valid_until"] == "2027-08-29T00:00:00+00:00"
+        assert metadata["named_collection_only"] is True
         external_sources = metadata["external_sources"]
         assert external_sources
         assert all(source["source"].startswith("https://") for source in external_sources)
         assert "不给出具体剂量" in claim["body"]
+        served_text = "\n".join((
+            claim.get("title") or "",
+            claim.get("summary") or "",
+            claim.get("body") or "",
+        ))
+        assert DOSE_RECIPE_PATTERN.search(served_text) is None
+        assert all(fragment not in served_text for fragment in LEGACY_RECIPE_FRAGMENTS)
