@@ -66,6 +66,7 @@ import {
   type AgentTransparencyBand,
   type AgentTransparencyProfile,
 } from '../../utils/chatTransparency';
+import MedicalCitations from './MedicalCitations';
 
 type WriteReceipt = NonNullable<ChatCardActionResult['receipt']>;
 
@@ -1205,6 +1206,9 @@ function ChatBubbleInner({
                   return rendered ? <View key={`${card.type}-${index}`}>{rendered}</View> : null;
                 })}
               </View>
+            ) : null}
+            {!item.streaming ? (
+              <MedicalCitations citations={item.medicalCitations} />
             ) : null}
             {visibleWriteReceipts.map(receipt => (
               <WriteReceiptLine key={receipt.operationId} receipt={receipt} />

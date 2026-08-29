@@ -109,6 +109,41 @@ describe('restoreMessagesFromHistory', () => {
     });
   });
 
+  it('restores persisted medical citations on the assistant message', () => {
+    const restored = restoreMessagesFromHistory([
+      {
+        id: 18,
+        role: 'assistant',
+        content: '你的 BMI 是 22.9。',
+        created_at: '2026-08-29 12:00:00',
+        meta: {
+          completion_status: 'complete',
+          medical_citations: [
+            {
+              source_id: 'cdc:adult-bmi-categories',
+              title: '成人 BMI 计算方法与分类',
+              organization: '美国疾病控制与预防中心',
+              url: 'https://www.cdc.gov/bmi/adult-calculator/bmi-categories.html',
+              topic: 'bmi',
+              claim_scope: 'BMI 是筛查指标。',
+            },
+          ],
+        },
+      },
+    ], 'https://example.test', 'h');
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toMatchObject({
+      role: 'assistant',
+      medicalCitations: [
+        {
+          sourceId: 'cdc:adult-bmi-categories',
+          url: 'https://www.cdc.gov/bmi/adult-calculator/bmi-categories.html',
+        },
+      ],
+    });
+  });
+
   it('restores health evidence from persisted meta.cards without a second manifest state', () => {
     const manifest = {
       version: 'health-evidence.v1',

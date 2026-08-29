@@ -30,6 +30,10 @@ import {
 import { getAuthStorageScope } from '../services/authStorageScope';
 import { normalizeWriteReceipt, type WriteReceipt } from '../services/writeReceipt';
 import type { MedicationSafetyAlert } from '../services/medications';
+import {
+  normalizeMedicalCitations,
+  type MedicalCitation,
+} from '../services/medicalCitations';
 
 function normalizeImageHost(baseUrl: string): string {
   return String(baseUrl || '').replace(/\/+$/, '').replace(/\/api(?:\/v\d+)?$/, '');
@@ -74,6 +78,7 @@ export interface UIMessage extends ChatMessage {
   writeReceipts?: WriteReceipt[];
   safetyAlerts?: MedicationSafetyAlert[];
   decisionStatus?: MedicationDecisionStatus;
+  medicalCitations?: MedicalCitation[];
 }
 
 export type MedicationDecisionStatus = 'pending' | 'executed' | 'dismissed' | 'expired';
@@ -183,6 +188,7 @@ function applyMeta(msg: any): Partial<UIMessage> {
     sourcesUsed: Array.isArray(meta.sources_used) ? meta.sources_used : undefined,
     toolsUsed: Array.isArray(meta.tools_used) ? meta.tools_used : undefined,
     completionStatus: typeof meta.completion_status === 'string' ? meta.completion_status : undefined,
+    medicalCitations: normalizeMedicalCitations(meta.medical_citations),
     thinkingSteps: normalizeThinkingSteps(meta.thinking_steps ?? meta.thought_steps),
     writeReceipts: noWriteTerminal
       ? []
@@ -1914,6 +1920,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               perf: evt.perf,
               sourcesUsed: evt.sourcesUsed,
               toolsUsed: evt.toolsUsed,
+              medicalCitations: evt.medicalCitations,
               completionStatus: effectiveCompletionStatus,
               sourceMessageId: (
                 evt.requestPersisted !== false

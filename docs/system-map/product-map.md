@@ -43,7 +43,7 @@ authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-invent
 | 能力域 | 当前功能 | 后端/契约锚点 | 主要 surface |
 |---|---|---|---|
 | **账号与身份** | 注册/登录/刷新、微信身份、邀请与 onboarding、用户合并、档案/API key/LLM 偏好、数据导出 | `api/auth.py` · `api/wechat.py` · `api/invitation.py` · `api/onboarding.py` · `api/user_profile.py` · `api/data_export.py` | Mobile 我/设置 · Web 注册/onboarding/admin |
-| **小巴 Agent** | SSE 文字对话、语音/TTS、会话历史、澄清、动态卡片与 action card、推理 trace、受控分享、实时/知识检索 | `api/agent.py` · `services/agent_executor.py` · `services/tool_schema_registry.py` · `api/dynamic_views.py` · `api/speech.py` · `api/shared_conversation.py` | Mobile 小巴/voice-chat · Mac Agent/Trace · Web AI Assistant |
+| **小巴 Agent** | SSE 文字对话、语音/TTS、会话历史、澄清、动态卡片与 action card、推理 trace、受控分享、实时/知识检索；医学计算、范围与健康建议由服务端附权威 HTTPS 引用，Mobile 正文下方默认展示可点击来源 | `api/agent.py` · `services/agent_executor.py` · `services/medical_citation_policy.py` · `services/tool_schema_registry.py` · `api/dynamic_views.py` · `api/speech.py` · `api/shared_conversation.py` | Mobile 小巴/voice-chat · Mac Agent/Trace · Web AI Assistant |
 | **确定性语义与权限** | 读/写/管理/分析 speech-act 分类，实体/时间/目标绑定，Tool Gateway 调度；模型只能提议，CapabilityPolicy 决定能否执行 | `services/agent_kernel/health_semantics.py` · `services/write_intent_scope.py` · `services/agent_kernel/goal_spec.py` · `services/agent_kernel/capability_policy.py` · `services/agent_kernel/tool_gateway.py` | 所有 Agent 对话入口共享 |
 | **健康记录与生命周期** | 饮食/饮水、体重/腰围/血压/心率/血氧、睡眠/排泄/情绪、运动/鼻炎/症状/病症、用药/补剂、体检/处方、基因、女性健康；支持查询、补录、修改、删除及病症痊愈状态 | `services/tool_schema_registry.py` 的 `health_record`/`health_manage` · `api/diet.py` · `api/basic_health.py` · `api/illness.py` · `api/medical_exams.py` · `api/genetic_data.py` | Mobile 记录与各详情页 · Mac Record/Import · Web records/pages |
 | **语义健康读取** | 当前值、滚动时间窗、批量指标、聚合/对比、病症关键词与“上一次/分别有哪些”；owner-scoped canonical reader，未知维度 fail loud | `health_query`/`health_query_batch` · `services/health_read.py` · `services/health_query_batch.py` · `services/health_query_dimensions.py` | 小巴 Agent 各端共享 |
@@ -59,7 +59,7 @@ authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-invent
 
 > ⚠️ CLAUDE.md 的「AI Chat Routing」前端 `needsSkill` 分流图**已部分过时** —— 现状是 mobile+web 统一打 `/agent/stream`,**服务端 tool-calling 路由**;`_needs_skill` 仅是弱模型(无 tool 支持)的兜底。
 
-1. **AI 对话(统一 agent chat,主流)**:mobile `mobile/services/chat.ts` `POST /agent/stream` · web `frontend/src/services/api/ai.ts` `agentApi.streamMessage` → `backend/app/api/agent.py` `POST /agent/stream` → `agent_executor.py:AgentExecutor.run_stream`(暴露 query/batch/record/manage/analysis/knowledge/AIGC 等工具；AIGC 工具只能创建确认草稿，真正外部调用由用户卡片点击消费一次性确认记录)。
+1. **AI 对话(统一 agent chat,主流)**:mobile `mobile/services/chat.ts` `POST /agent/stream` · web `frontend/src/services/api/ai.ts` `agentApi.streamMessage` → `backend/app/api/agent.py` `POST /agent/stream` → `agent_executor.py:AgentExecutor.run_stream`(暴露 query/batch/record/manage/analysis/knowledge/AIGC 等工具；AIGC 工具只能创建确认草稿，真正外部调用由用户卡片点击消费一次性确认记录)。医学信息在生成前由 `medical_citation_policy.py` 注入受控来源范围，complete 终态再次按最终正文补全并写入 `AgentMessage.meta`/SSE `medical_citations`；Mobile `medicalCitations.ts` 过滤安全 HTTPS，`MedicalCitations.tsx` 在回答下方默认展示可点击来源与就医边界。
 2. **病症语义读取**:用户问“上一次某病症是什么时候/最近一段时间分别有哪些” → `health_semantics.py`/`utterance_intent_classifier.py` 判定只读 speech act → `CapabilityPolicy` 只授权 typed `health_query(dimension=illness, keyword=…, days=…)` → `health_read.py` owner-scoped 读取；没给窗口时保留全历史“上一次”语义，未知维度直接报错，不再静默变成综合可穿戴查询。
 3. **云端记录饮食**:`mobile/app/diet.tsx` → `backend/app/api/diet.py`:`POST /diet/records`(确认写)· `POST /diet/voice/parse`(**只产草稿不写库**,R4)· `POST /diet/recognize[-and-save]`(照片)。Mobile 仅支持云端账号会话；未认证或会话未知时 egress fail-closed，不生成本地替代回复。
 4. **完成议程闭环**:`mobile/app/agenda.tsx` `POST /agenda/complete` + `POST /timeline/events/{id}/complete` → 单核 `timeline_agenda_service.py:complete_agenda_event`(DB 原子认领防虚高依从 → `agenda_service.complete_item` 写真实领域行,确定性 taken_time;失败回滚不翻态)。
@@ -70,7 +70,7 @@ authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-invent
 
 ## 5. 系统流(内部架构)
 
-- **Agent 请求主链**:`AgentExecutor.run_stream` 冻结 turn snapshot → `health_semantics`/`write_intent_scope` 编译 speech act 与授权目标 → `CapabilityPolicy`/validator 决定工具能力 → `ToolGateway` 调 owner-scoped reader/writer；模型提案不能绕过确定性闸。
+- **Agent 请求主链**:`AgentExecutor.run_stream` 冻结 turn snapshot → `health_semantics`/`write_intent_scope` 编译 speech act 与授权目标 → `CapabilityPolicy`/validator 决定工具能力 → `ToolGateway` 调 owner-scoped reader/writer；模型提案不能绕过确定性闸。医学信息的最终来源不由模型决定：`medical_citation_policy.py` 在 terminal choke point 生成、持久化并下发受控引用，Mobile 再做 HTTPS fail-closed 过滤。
 - **多 agent 深度分析**(L4→L3→L2→L1):`health_analysis` → `backend/app/orchestrator/orchestrator.py` `run_orchestrator`/`stream_orchestrator` → `build_twin`(Redis 5min)→ `classify_intent` → `_select_specialists`(trivial 短路 lite)→ `_run_specialists`(并行 ThreadPool 12s 超时,recovery→movement readiness 传递)→ 交叉评审+仲裁 → LLM 合成。详图见 [`ARCHITECTURE.md`](../ARCHITECTURE.md) §四 + CLAUDE.md §Multi-Agent。
 - **请求流(Web)**:Browser → Next.js rewrites `/api/*` → backend `/api/v1/*`。
 - **Write 自治承重墙**:见 `backend/app/services/write_autonomy.py`(只 `measurement_prompt` 自治,NEVER 集封顶 manual_confirm)。

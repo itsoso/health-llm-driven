@@ -6,6 +6,10 @@ import type { AgentPerfProfileLike } from '../utils/chatTransparency';
 import { normalizeWriteReceipt, type WriteReceipt } from './writeReceipt';
 import type { MedicationSafetyAlert } from './medications';
 import { assertAppEgressAllowed, enforceAppEgressAllowed } from './egressPolicy';
+import {
+  normalizeMedicalCitations,
+  type MedicalCitation,
+} from './medicalCitations';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -189,6 +193,7 @@ export interface StreamEvent {
   cards?: StreamCardDescriptor[];
   writeReceipts?: WriteReceipt[];
   medicationBatchDecision?: MedicationBatchStreamDecision;
+  medicalCitations?: MedicalCitation[];
 }
 
 function medicationSafetyAlerts(value: unknown): MedicationSafetyAlert[] {
@@ -580,6 +585,9 @@ export async function* streamChat(
           parsed.data?.write_receipts,
           parsed.data?.safety_alerts,
         );
+        const medicalCitations = normalizeMedicalCitations(
+          parsed.data?.medical_citations,
+        );
         const turnOutcome = parsed.data?.turn_outcome;
         const recoveryAction = parsed.data?.recovery_action;
         const retrySourceActive = Boolean(
@@ -615,6 +623,7 @@ export async function* streamChat(
           cards: Array.isArray(parsed.data?.cards) ? parsed.data.cards : undefined,
           writeReceipts: writeReceipts?.length ? writeReceipts : undefined,
           ...(medicationDecision ? { medicationBatchDecision: medicationDecision } : {}),
+          ...(medicalCitations ? { medicalCitations } : {}),
         };
       } else if (parsed.event === 'error') {
         return {

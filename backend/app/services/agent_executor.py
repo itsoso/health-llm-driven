@@ -10399,6 +10399,14 @@ class AgentExecutor:
 
         system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
         turn_time_context = self._agent_kernel_time_context(client_time_context)
+        from app.services.medical_citation_policy import (
+            build_medical_citation_bundle,
+            render_medical_citation_prompt,
+        )
+
+        medical_citation_prompt = render_medical_citation_prompt(
+            build_medical_citation_bundle(message)
+        )
         multi_model_context = [
             turn_time_context,
             format_actionable_context_prompt(
@@ -10409,6 +10417,7 @@ class AgentExecutor:
                 self._agent_kernel_snapshot.goal
                 if self._agent_kernel_snapshot is not None else None
             ),
+            medical_citation_prompt,
         ]
         multi_model_context_text = "\n\n".join(
             part for part in multi_model_context if part
@@ -11165,6 +11174,123 @@ class AgentExecutor:
             **({"client_turn_id": client_turn_id} if client_turn_id else {}),
         }}
 
+    def _attach_medical_citations_to_terminal_event(
+        self,
+        event: Dict[str, Any],
+        *,
+        user_id: int,
+        user_message: str,
+        streamed_answer: str = "",
+    ) -> Dict[str, Any]:
+        """Project reviewed medical sources into a complete terminal response.
+
+        This is deliberately a terminal choke point: normal model answers,
+        deterministic routes, and the multi-model route all pass through it.
+        The same projection is persisted so history replay cannot lose the
+        citations that the user saw live.
+        """
+        data = dict(event.get("data") or {})
+        if (
+            event.get("event") != "done"
+            or str(data.get("completion_status") or "complete") != "complete"
+        ):
+            return event
+
+        assistant_message = None
+        persisted_meta: Dict[str, Any] = {}
+        message_id = data.get("message_id")
+        if isinstance(message_id, int):
+            from app.models.agent_conversation import AgentConversation, AgentMessage
+
+            assistant_message = (
+                self.db.query(AgentMessage)
+                .join(
+                    AgentConversation,
+                    AgentConversation.id == AgentMessage.conversation_id,
+                )
+                .filter(
+                    AgentMessage.id == message_id,
+                    AgentMessage.role == "assistant",
+                    AgentConversation.user_id == int(user_id),
+                )
+                .first()
+            )
+            if assistant_message is not None:
+                persisted_meta = (
+                    dict(assistant_message.meta)
+                    if isinstance(assistant_message.meta, dict)
+                    else {}
+                )
+
+        cards = data.get("cards")
+        if not isinstance(cards, list):
+            cards = persisted_meta.get("cards")
+        system_evidence_card = next(
+            (
+                card
+                for card in (cards or [])
+                if isinstance(card, dict)
+                and card.get("type") == "system_knowledge_evidence"
+            ),
+            None,
+        )
+        health_evidence_manifest = (
+            data.get("health_evidence_manifest")
+            or persisted_meta.get("health_evidence_manifest")
+        )
+        answer_text = (
+            str(assistant_message.content or "")
+            if assistant_message is not None
+            else streamed_answer
+        )
+
+        from app.services.medical_citation_policy import (
+            build_medical_citation_bundle,
+        )
+
+        bundle = build_medical_citation_bundle(
+            user_message,
+            answer_text=answer_text,
+            health_evidence_manifest=(
+                health_evidence_manifest
+                if isinstance(health_evidence_manifest, dict)
+                else None
+            ),
+            system_evidence_card=system_evidence_card,
+        )
+        if not bundle.required or not bundle.citations:
+            return event
+
+        citations = bundle.public_citations
+        data.update(
+            {
+                "medical_citation_required": True,
+                "medical_citation_topics": list(bundle.topics),
+                "medical_citations": citations,
+            }
+        )
+        decorated = {**event, "data": data}
+
+        if assistant_message is not None:
+            try:
+                assistant_message.meta = {
+                    **persisted_meta,
+                    "medical_citation_required": True,
+                    "medical_citation_topics": list(bundle.topics),
+                    "medical_citations": citations,
+                }
+                self.db.commit()
+            except Exception as exc:  # noqa: BLE001 - live citation still ships
+                self.db.rollback()
+                logger.error(
+                    "[medical_citations] persistence failed user=%s "
+                    "message=%s error_type=%s",
+                    user_id,
+                    message_id,
+                    type(exc).__name__,
+                )
+        return decorated
+
     async def run_stream(
         self,
         user_id: int,
@@ -11224,9 +11350,21 @@ class AgentExecutor:
                 and assistant is not None
                 and self._should_replay_finalized_assistant(assistant, existing_turn)
             ):
+                replay_answer_parts: List[str] = []
                 async for replay_event in self._replay_client_turn(
                     turn_service, user_id, existing_turn, client_turn_id,
                 ):
+                    if replay_event.get("event") == "token":
+                        replay_content = (replay_event.get("data") or {}).get("content")
+                        if isinstance(replay_content, str):
+                            replay_answer_parts.append(replay_content)
+                    if replay_event.get("event") == "done":
+                        replay_event = self._attach_medical_citations_to_terminal_event(
+                            replay_event,
+                            user_id=user_id,
+                            user_message=message,
+                            streamed_answer="".join(replay_answer_parts),
+                        )
                     yield self._attach_runtime_identity(replay_event)
                 self._finish_agent_kernel_turn(status="replayed")
                 return
@@ -11253,9 +11391,21 @@ class AgentExecutor:
                         break
                     await asyncio.sleep(0.05)
                 if existing_turn is not None:
+                    replay_answer_parts = []
                     async for replay_event in self._replay_client_turn(
                         turn_service, user_id, existing_turn, client_turn_id,
                     ):
+                        if replay_event.get("event") == "token":
+                            replay_content = (replay_event.get("data") or {}).get("content")
+                            if isinstance(replay_content, str):
+                                replay_answer_parts.append(replay_content)
+                        if replay_event.get("event") == "done":
+                            replay_event = self._attach_medical_citations_to_terminal_event(
+                                replay_event,
+                                user_id=user_id,
+                                user_message=message,
+                                streamed_answer="".join(replay_answer_parts),
+                            )
                         yield self._attach_runtime_identity(replay_event)
                     self._finish_agent_kernel_turn(status="replayed")
                     return
@@ -11286,9 +11436,21 @@ class AgentExecutor:
                     and assistant is not None
                     and self._should_replay_finalized_assistant(assistant, existing_turn)
                 ):
+                    replay_answer_parts = []
                     async for replay_event in self._replay_client_turn(
                         turn_service, user_id, existing_turn, client_turn_id,
                     ):
+                        if replay_event.get("event") == "token":
+                            replay_content = (replay_event.get("data") or {}).get("content")
+                            if isinstance(replay_content, str):
+                                replay_answer_parts.append(replay_content)
+                        if replay_event.get("event") == "done":
+                            replay_event = self._attach_medical_citations_to_terminal_event(
+                                replay_event,
+                                user_id=user_id,
+                                user_message=message,
+                                streamed_answer="".join(replay_answer_parts),
+                            )
                         yield self._attach_runtime_identity(replay_event)
                     turn_service.release_client_turn_execution(user_id, client_turn_id)
                     claimed_turn = False
@@ -11424,6 +11586,7 @@ class AgentExecutor:
                     ):
                         yield self._attach_runtime_identity(event)
                     return
+            streamed_answer_parts: List[str] = []
             async for event in self._run_stream_impl(
                 user_id=user_id,
                 message=effective_message,
@@ -11443,7 +11606,17 @@ class AgentExecutor:
                 persist_images=persist_images,
                 retry_recovery=retry_recovery,
             ):
+                if event.get("event") == "token":
+                    content = (event.get("data") or {}).get("content")
+                    if isinstance(content, str):
+                        streamed_answer_parts.append(content)
                 if event.get("event") == "done":
+                    event = self._attach_medical_citations_to_terminal_event(
+                        event,
+                        user_id=user_id,
+                        user_message=effective_message,
+                        streamed_answer="".join(streamed_answer_parts),
+                    )
                     kernel_completion_status = str(
                         (event.get("data") or {}).get("completion_status") or "complete"
                     )
@@ -12127,6 +12300,27 @@ class AgentExecutor:
             turn_context_parts.append(system_kb_context)
             if "系统知识库" not in sources_used:
                 sources_used.append("系统知识库")
+        from app.services.medical_citation_policy import (
+            build_medical_citation_bundle,
+            render_medical_citation_prompt,
+        )
+
+        citation_seed = build_medical_citation_bundle(
+            message,
+            health_evidence_manifest=(
+                health_evidence_turn.public_manifest()
+                if health_evidence_turn is not None
+                else None
+            ),
+            system_evidence_card=(
+                self._turn_evidence_card
+                if isinstance(self._turn_evidence_card, dict)
+                else None
+            ),
+        )
+        citation_prompt = render_medical_citation_prompt(citation_seed)
+        if citation_prompt:
+            turn_context_parts.append(citation_prompt)
         # 2026-05-14: 用户数据源 inspection — 不依赖 system_prompt 实际用了什么,
         # 直接 SQL count 用户哪些表有数据, 给"AI 用了什么数据"chip 用.
         _t_stage = time.time()

@@ -30,7 +30,9 @@
     "conversation_opens_at_latest_message": false,
     "personal_center_privacy_policy": false,
     "optional_permission_denial_text_chat": false,
-    "account_deletion_status": false
+    "account_deletion_status": false,
+    "bmi_medical_citations_visible": false,
+    "medical_citation_link_opens_official_source": false
   },
   "notes": "Set a check to true only after it passes on this exact build."
 }

@@ -696,6 +696,35 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('normalizes clickable medical citations from the terminal event', async () => {
+    const iter = streamChat('帮我算我的 BMI');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText =
+      'data: {"event":"done","data":{"conversation_id":77,"message_id":88,"completion_status":"complete","medical_citations":[{"source_id":"nhc:adult-weight-standard","title":"中国成人体重判定标准","organization":"国家卫生健康委员会","url":"https://www.nhc.gov.cn/example.pdf","topic":"bmi","claim_scope":"成人 BMI 判定范围"},{"source_id":"bad","title":"不安全来源","organization":"未知","url":"http://example.test","topic":"bmi","claim_scope":"不应展示"}]}}\n\n';
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toMatchObject({
+      value: {
+        type: 'done',
+        medicalCitations: [
+          {
+            sourceId: 'nhc:adult-weight-standard',
+            title: '中国成人体重判定标准',
+            organization: '国家卫生健康委员会',
+            url: 'https://www.nhc.gov.cn/example.pdf',
+            topic: 'bmi',
+            claimScope: '成人 BMI 判定范围',
+          },
+        ],
+      },
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
   it('maps status stage events to slim status-line labels (P0-1 新契约: accepted/tool/synthesis)', async () => {
     const iter = streamChat('看看我今天走了多少步');
     const first = iter.next();
