@@ -4,8 +4,8 @@
 |---|---|
 | slug | `yijia-reviewed-system-kb` |
 | 创建日期 | 2026-08-29 |
-| 当前阶段 | G5 部署前 CI |
-| 状态 | safety_reviewed |
+| 当前阶段 | G6 上线验证完成 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | source discovery -> reviewed claim pack -> source-scoped retrieval -> backend deploy -> production replay |
 
@@ -84,8 +84,8 @@
 | G2 | PASS | Source-scoped reviewed retrieval is feasible and fail-closed. |
 | G3 | PASS | 35 named-source/health interaction tests; System KB release gate 69/69; live LLM 5/5 plus deterministic suites all pass. |
 | G4 | PASS | Independent reviewer GO; no Critical/Important findings. Minor negative-guard gap remediated with executable dose/raw-fragment assertions. |
-| G5 | pending | Deployment health pending. |
-| G6 | pending | Production named-source replay pending. |
+| G5 | PASS | CI `33257262576` 全绿；生产部署 SHA `78ba65a60f43`，健康度 60/60。 |
+| G6 | PASS | 生产只读回放命中精确两条受审 claim；通用检索零泄漏，来源回执与剂量负向护栏通过。 |
 
 ## Rollback
 
@@ -126,3 +126,27 @@ the aliases to `not_released`. No schema migration is planned.
   runtime-only 策略代码仍按 `serving_scope=health_evidence_runtime` 精确过滤，未放宽安全契约。
 - 本地复验：`test_kb_rollback_quarantine.py` 与 `test_runtime_only_kb_contract.py`
   共 38 passed / 1 skipped。
+- 修复后主干 CI：`33257262576`，结论 **SUCCESS**；PostgreSQL 语义、发布/回滚契约、
+  backend quality、完整后端测试聚合均通过。临时 `HARNESS_LIVE_LLM_EVAL_CONFIRMED`
+  仓库变量在 CI 结束后已删除并验证不存在。
+
+## G5 · 生产部署
+
+- 部署提交：`78ba65a60f434a89a5d3f0234062a5ab2293391f`，与 `origin/main` 和远端
+  `/opt/health-app` 精确一致。
+- 数据库发布前备份 43MB；恢复演练覆盖 237 张表；站外加密归档 SHA-256 与 HMAC
+  真实性校验通过。
+- System KB 导入：895 documents / 3320 edges；重建后 910 dense vectors，
+  backend=`pgvector:text-embedding-v4`。
+- 部署后健康度两次 `60/60 PASS`；runtime-only guard/staged 契约均通过，
+  generic exposure=0；事务 finalize 成功。
+
+## G6 · 生产只读回放
+
+- 查询：`我有胃溃疡和脂肪肝，新冠发烧时补剂怎么选？`
+- `source_collection=yijia_reviewed` 精确返回：
+  `claim:c_yijia_covid_supplement_evidence_boundary`、
+  `claim:c_yijia_covid_early_treatment_assessment`。
+- 同查询走通用 System KB 时，上述两个 `named_collection_only` claim 均未出现。
+- `AgentExecutor` 生产回执：`requested_source=益家知研`、
+  `resolved_source=yijia_reviewed`、`source_status=released`；数值剂量模式未命中。
