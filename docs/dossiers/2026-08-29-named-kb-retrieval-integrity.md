@@ -4,8 +4,8 @@
 |---|---|
 | slug | `named-kb-retrieval-integrity` |
 | 创建日期 | 2026-08-29 |
-| 当前阶段 | S6 安全评审 |
-| 状态 | awaiting_independent_safety_rereview |
+| 当前阶段 | S7 发布 |
+| 状态 | ready_for_backend_release |
 | 负责 | Codex |
 | 反馈环 | production evidence -> regression RED -> implementation -> safety review -> backend release -> production replay |
 
@@ -54,7 +54,7 @@
 - [x] T3 RED: run-stream deterministic fallback when the model omits retrieval.
 - [x] T4 GREEN: minimal implementation.
 - [x] T5 G3 focused + LLM/repo gates.
-- [ ] T6 G4 independent safety review.
+- [x] T6 G4 independent safety review.
 - [ ] T7 commit, push, backend deploy, production replay.
 
 ## G3 · Test evidence
@@ -95,7 +95,13 @@
   turn with a bounded polite prefix (`请` / `麻烦` / `帮我`). Five negated or
   historical examples first failed and then passed; positive direct and polite
   instructions remain covered.
-- Independent re-review: pending.
+- Third independent review of commit `5e20e0530`: **GO**, with no Critical or
+  Important findings. The reviewer independently verified the five rejection
+  examples, the three positive instruction forms, focused tests, static checks,
+  and the earlier unknown-source/query-recovery/emergency coverage.
+- Non-blocking follow-up: compound or continuation phrasing such as `请帮我用...`
+  and `再用...` is not yet deterministic; the model schema path remains available.
+- **裁决**: PASS。
 
 ## Gate ledger
 
@@ -104,7 +110,7 @@
 | G1 | PASS | Requirement admission above. |
 | G2 | PASS | Fail-closed reviewed-only design above. |
 | G3 | PASS | 171 focused + 322 wider tests; live LLM and repo gates passed. |
-| G4 | pending | Two BLOCK reviews remediated; independent re-review pending. |
+| G4 | PASS | Third independent review GO; no Critical or Important findings. |
 | G5 | pending | Deployment health pending. |
 | G6 | pending | Production replay pending. |
 
