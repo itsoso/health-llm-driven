@@ -4,8 +4,8 @@
 |---|---|
 | slug | `meal-photo-confirmation-terminal` |
 | 创建日期 | 2026-08-28 |
-| 当前阶段 | G5 部署健康闸 |
-| 状态 | reviewed_waiting_push |
+| 当前阶段 | G6 Mobile 真实链路验证 |
+| 状态 | production_deployed_waiting_mobile_retry |
 | 负责 | Codex |
 | 反馈环 | 生产 run/operation 取证 + Backend pytest + LLM regression gate + backend deploy |
 
@@ -58,4 +58,11 @@
 
 ## G5 · 部署健康 / G6 · 上线验证
 
-- 待本地提交、安全复审、主干 CI、后端部署与生产只读验证。
+- 修复与复审提交：`74a8f5ac8d4cb47357a2c28731fdd2023c9c7e14`，已推送到 `main`。
+- 主干 CI：run `33179558777` 全部通过；照片记餐分片、后端测试分片、阻断级 Ruff、LLM live-change/synthesis gate 和 Golden Set 均为 success。
+- 后端通过根目录 `./deploy.sh -b` 发布到生产；数据库备份、237 张表恢复演练、站外加密归档真实性、旧 SHA `5d84a48f4d3e` 回滚 schema 兼容性均验证通过。
+- 生产精确 SHA：`74a8f5ac8d4cb47357a2c28731fdd2023c9c7e14`；部署事务已 finalize，feature flag 保持 `false`。
+- 部署健康闸连续三次 `60/60 PASS`，runtime-only KB guard/staged contract 通过，Skills manifest 本地/线上均为 22；发布后 `health-backend` 为 `active (running)`，`/api/v1/health` 返回 200。
+- **G5 裁决：PASS。**
+- **G6 当前状态：待验证。** 不使用真实用户照片做自动化写入测试，避免生成或修改健康记录；需用户在 Mobile 再次拍照记餐，确认低置信度路径显示中文确认卡且点击“确认记录”后写入成功。
+- 发布清理：一次性 GitHub Actions 变量 `HARNESS_LIVE_LLM_EVAL_CONFIRMED` 仍待用户明确授权删除。
