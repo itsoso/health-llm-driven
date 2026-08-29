@@ -2,7 +2,9 @@
 import base64
 import io
 import json
+import math
 import threading
+from types import SimpleNamespace
 
 import pytest
 from datetime import date
@@ -27,6 +29,66 @@ def test_report_upload_schema_limits_page_count():
             report_date=date(2026, 7, 21),
             image_base64_list=[_jpeg_base64()] * 21,
         )
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (None, None),
+        ("", None),
+        ("-", None),
+        ("—", None),
+        (True, None),
+        (float("nan"), None),
+        (float("inf"), None),
+        ("0", 0.0),
+        ("1.25", 1.25),
+        (3, 3.0),
+    ],
+)
+def test_report_numeric_bound_coercion_rejects_non_numeric_values(raw, expected):
+    from app.api.family_health import _coerce_optional_finite_float
+
+    actual = _coerce_optional_finite_float(raw)
+
+    if expected is None:
+        assert actual is None
+    else:
+        assert math.isclose(actual, expected)
+
+
+def test_mark_report_failed_rolls_back_before_updating_status():
+    from app.api.family_health import _mark_report_failed
+
+    events = []
+    report = SimpleNamespace(status="processing", ai_summary=None)
+
+    class Query:
+        def filter(self, *_args):
+            events.append("filter")
+            return self
+
+        def first(self):
+            events.append("first")
+            return report
+
+    class Db:
+        def rollback(self):
+            events.append("rollback")
+
+        def query(self, *_args):
+            assert events == ["rollback"]
+            events.append("query")
+            return Query()
+
+        def commit(self):
+            events.append("commit")
+
+    _mark_report_failed(Db(), report_id=5, user_id=3)
+
+    assert events == ["rollback", "query", "filter", "first", "commit"]
+    assert report.status == "failed"
+    assert report.ai_summary == "AI 提取失败，请重新上传"
 
 
 def test_report_upload_rejects_oversized_body_before_auth_and_schema(client):
