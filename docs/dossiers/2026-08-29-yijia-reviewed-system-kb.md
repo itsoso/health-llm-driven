@@ -116,3 +116,13 @@ the aliases to `not_released`. No schema migration is planned.
 - Minor：`must_not_include` 不是当前 eval runner 的可执行字段。本次已在 artifact 测试中
   增加剂量单位模式与旧配方片段扫描，并固定 `named_collection_only=true`，作为本知识包的
   可执行负向护栏；不借机改变全局 eval 语义。
+
+## G5 · 主干 CI 反馈环
+
+- 首次主干 CI：`33256739791`，结论 **FAIL**，因此未部署。
+- 失败定位：两组 sealed runtime-only 契约测试通过 `authority_packs[0]` 构造漂移场景；
+  新命名来源 pack 被插入首位后，这些场景不再命中既有 low-back runtime pack。
+- 修复：保留原有 runtime pack 为首项，将 `named_generic_system_kb` pack 排在其后；
+  runtime-only 策略代码仍按 `serving_scope=health_evidence_runtime` 精确过滤，未放宽安全契约。
+- 本地复验：`test_kb_rollback_quarantine.py` 与 `test_runtime_only_kb_contract.py`
+  共 38 passed / 1 skipped。
