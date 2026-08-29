@@ -5,7 +5,7 @@
 | slug | `diet-progressive-response-ttft` |
 | 创建日期 | 2026-08-29 |
 | 当前阶段 | S4 发布前准备 |
-| 状态 | ready_to_deploy |
+| 状态 | awaiting_main_ci |
 | 负责 | Codex |
 | 反馈环 | 生产内容安全时延基线 + Backend/Mobile 契约测试 + 部署后分意图里程碑 |
 
@@ -73,11 +73,14 @@
 - 首轮评审发现并已修复：营养模型未硬超时、模型成本记账不完整、通用 SSE 状态覆盖饮食阶段、Mobile 本地饮食分类漏掉“午餐牛肉饭”/“桃子一个”。
 - 修复后复审额外验证了营养查询后缀不污染记餐 TTFT 分桶、provider 模型名埋点，以及 Mobile `done.thinking_steps` 与本地饮食阶段去重合并。
 - 独立复审结论：`APPROVE`，无 Critical / Important 阻断项。
+- 真实模型回归：`APP_ENV=test DATABASE_URL=sqlite:///:memory: ... scripts/harness_llm_regression_gate.py --include-live-llm --json` exit 0；`invariants` 12/12、`health_agent_core` 50/50、真实 `orchestrator` 5/5，平均分 0.94、无 regression；轨迹契约 12/12、金标 9/9。实际模型为 `MiniMax-M2.5`。临时 SQLite 未建 usage telemetry 表只产生非生产旁路告警，模型调用、LLM judge 与最终 Gate 均成功；未保存模型原始回答或健康正文。
 - **裁决：PASS。**
 
 ## G5 · 部署健康
 
-- PENDING。要求提交并推送干净主干、目标 SHA 一致、后端部署健康闸通过；Mobile 纯 JS/TS 改动走 production OTA。
+- 首个主干 CI run `33260890336` 的业务测试分片均通过，但 `backend-quality` 按预期拒绝缺少一次性真实模型确认变量的高风险 `agent_executor` 变更；未绕过 Gate、未部署。
+- 已补齐上面的真实模型证据；`HARNESS_LIVE_LLM_EVAL_CONFIRMED=1` 只允许用于承载本证据的下一轮 CI，CI 终态后必须删除并按名称复证不存在。
+- PENDING。要求证据提交的主干 CI 全绿、目标 SHA 一致、后端部署健康闸通过；Mobile 纯 JS/TS 改动走 production OTA。
 
 ## G6 · 上线验证
 
