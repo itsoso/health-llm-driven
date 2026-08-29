@@ -59,12 +59,12 @@
 
 ## G3 · Test evidence
 
-- Focused named-source and health-runtime suite: `164 passed`.
+- Focused named-source and health-runtime suite: `171 passed`.
 - Wider routing, health-evidence, tool-class, plausibility, and false-claim
   regression: `322 passed`.
 - Live LLM gate, run through the existing local `health_test` PostgreSQL
   database so the budget guard remained active: invariants `12/12`,
-  health-agent core `50/50`, orchestrator `5/5` with score `0.96`, trajectory
+  health-agent core `50/50`, orchestrator `5/5` with score `0.92`, trajectory
   contract `12/12`, trajectory goldens `9/9`.
 - `harness_llm_change_gate.py`: PASS with the live-run confirmation.
 - `check_doc_drift.py`, `check_dossier_consistency.py`, `py_compile`, targeted
@@ -87,6 +87,14 @@
 - Remediation added RED/GREEN coverage for arbitrary source names, exact source
   preservation (`系统知识库测试版` remains unresolved), acknowledgement skipping,
   and refusal to fold unrelated older turns into a source-only request.
+- Second review: **BLOCK**, with no Critical and one Important finding. The
+  extraction pattern still treated negated or historical prose such as
+  `不要用系统知识库回答` and `小王根据蓝鲸健康库回答了...` as live retrieval
+  instructions.
+- Second remediation anchored the instruction grammar to the start of the user
+  turn with a bounded polite prefix (`请` / `麻烦` / `帮我`). Five negated or
+  historical examples first failed and then passed; positive direct and polite
+  instructions remain covered.
 - Independent re-review: pending.
 
 ## Gate ledger
@@ -95,8 +103,8 @@
 |---|---|---|
 | G1 | PASS | Requirement admission above. |
 | G2 | PASS | Fail-closed reviewed-only design above. |
-| G3 | PASS | 164 focused + 322 wider tests; live LLM and repo gates passed. |
-| G4 | pending | First review BLOCK remediated; independent re-review pending. |
+| G3 | PASS | 171 focused + 322 wider tests; live LLM and repo gates passed. |
+| G4 | pending | Two BLOCK reviews remediated; independent re-review pending. |
 | G5 | pending | Deployment health pending. |
 | G6 | pending | Production replay pending. |
 
