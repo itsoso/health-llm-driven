@@ -90,6 +90,7 @@ def _tooling_pytest_runner_module():
     return module
 
 
+@cache
 def _tooling_pytest_guard_module():
     assert TOOLING_PYTEST_GUARD.is_file(), "tooling pytest guard is required"
     spec = importlib.util.spec_from_file_location(
@@ -608,56 +609,190 @@ def test_tooling_pytest_guard_fails_closed_on_source_identity_errors(monkeypatch
     assert not guard._is_backend_app_source(safe_source)
 
 
-def test_tooling_pytest_guard_snapshots_hooks_at_first_active_session(tmp_path):
+def test_tooling_pytest_guard_audit_listener_is_active_only_during_session(tmp_path):
+    runner = _tooling_pytest_runner_module()
+    app_source = ROOT / "backend" / "app" / "__init__.py"
+    probe = tmp_path / "audit_listener_lifecycle_probe.py"
+    probe.write_text(
+        "import builtins\n"
+        "import importlib\n"
+        "import importlib.machinery\n"
+        "import sys\n"
+        "from types import SimpleNamespace\n"
+        f"sys.path.insert(0, {str(ROOT)!r})\n"
+        "from scripts import tooling_pytest_guard as guard\n"
+        "\n"
+        "class Config:\n"
+        "    def __init__(self):\n"
+        "        self.cleanups = []\n"
+        "    def add_cleanup(self, cleanup):\n"
+        "        self.cleanups.append(cleanup)\n"
+        "    def cleanup(self):\n"
+        "        while self.cleanups:\n"
+        "            self.cleanups.pop()()\n"
+        "\n"
+        "original_hooks = (\n"
+        "    builtins.__import__,\n"
+        "    importlib.import_module,\n"
+        "    importlib.machinery.SourceFileLoader.exec_module,\n"
+        ")\n"
+        "config = Config()\n"
+        "guard.pytest_sessionstart(SimpleNamespace(config=config))\n"
+        "observed = guard._active_observed_modules[config]\n"
+        "assert (\n"
+        "    builtins.__import__,\n"
+        "    importlib.import_module,\n"
+        "    importlib.machinery.SourceFileLoader.exec_module,\n"
+        ") == original_hooks\n"
+        "sys.audit('import', 'app.audit_active_probe', None, (), (), ())\n"
+        "assert 'app.audit_active_probe' in observed\n"
+        "config.cleanup()\n"
+        "snapshot = set(observed)\n"
+        "sys.audit('import', 'app.audit_inactive_probe', None, (), (), ())\n"
+        f"exec(compile('VALUE = 1\\n', {str(app_source)!r}, 'exec'), {{}})\n"
+        "assert observed == snapshot\n"
+        "assert guard._active_observed_modules == {}\n"
+        "assert (\n"
+        "    builtins.__import__,\n"
+        "    importlib.import_module,\n"
+        "    importlib.machinery.SourceFileLoader.exec_module,\n"
+        ") == original_hooks\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_tooling_pytest_guard_reuses_one_process_audit_dispatcher(tmp_path):
+    runner = _tooling_pytest_runner_module()
+    probe = tmp_path / "audit_dispatcher_reuse_probe.py"
+    probe.write_text(
+        "import importlib.util\n"
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from types import SimpleNamespace\n"
+        f"guard_path = Path({str(TOOLING_PYTEST_GUARD)!r})\n"
+        "\n"
+        "class Config:\n"
+        "    def __init__(self):\n"
+        "        self.cleanups = []\n"
+        "    def add_cleanup(self, cleanup):\n"
+        "        self.cleanups.append(cleanup)\n"
+        "    def cleanup(self):\n"
+        "        while self.cleanups:\n"
+        "            self.cleanups.pop()()\n"
+        "\n"
+        "real_addaudithook = sys.addaudithook\n"
+        "added_hooks = []\n"
+        "def counting_addaudithook(hook):\n"
+        "    added_hooks.append(hook)\n"
+        "    return real_addaudithook(hook)\n"
+        "sys.addaudithook = counting_addaudithook\n"
+        "modules = []\n"
+        "try:\n"
+        "    for index in range(3):\n"
+        "        spec = importlib.util.spec_from_file_location(\n"
+        "            f'tooling_pytest_guard_probe_{index}', guard_path\n"
+        "        )\n"
+        "        assert spec and spec.loader\n"
+        "        module = importlib.util.module_from_spec(spec)\n"
+        "        spec.loader.exec_module(module)\n"
+        "        modules.append(module)\n"
+        "        config = Config()\n"
+        "        module.pytest_sessionstart(SimpleNamespace(config=config))\n"
+        "        config.cleanup()\n"
+        "finally:\n"
+        "    sys.addaudithook = real_addaudithook\n"
+        "assert len(added_hooks) == 1\n"
+        "state = getattr(sys, modules[0]._PROCESS_AUDIT_DISPATCHER_ATTR)\n"
+        "assert state['dispatcher'] is added_hooks[0]\n"
+        "assert state['listeners'] == {}\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_tooling_pytest_guard_fails_closed_when_audit_registration_is_denied(
+    tmp_path,
+):
+    runner = _tooling_pytest_runner_module()
+    probe = tmp_path / "audit_dispatcher_denied_probe.py"
+    probe.write_text(
+        "import sys\n"
+        "from types import SimpleNamespace\n"
+        f"sys.path.insert(0, {str(ROOT)!r})\n"
+        "\n"
+        "def deny_new_audit_hooks(event, _args):\n"
+        "    if event == 'sys.addaudithook':\n"
+        "        raise RuntimeError('audit hook denied')\n"
+        "sys.addaudithook(deny_new_audit_hooks)\n"
+        "from scripts import tooling_pytest_guard as guard\n"
+        "\n"
+        "class Config:\n"
+        "    def __init__(self):\n"
+        "        self.cleanups = []\n"
+        "    def add_cleanup(self, cleanup):\n"
+        "        self.cleanups.append(cleanup)\n"
+        "\n"
+        "config = Config()\n"
+        "try:\n"
+        "    guard.pytest_sessionstart(SimpleNamespace(config=config))\n"
+        "except RuntimeError as error:\n"
+        "    assert 'audit dispatcher registration was denied' in str(error)\n"
+        "else:\n"
+        "    raise AssertionError('audit registration denial was ignored')\n"
+        "assert guard._active_observed_modules == {}\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_tooling_pytest_guard_audit_callback_records_internal_errors(monkeypatch):
     guard = _tooling_pytest_guard_module()
-    original_import = builtins.__import__
-    original_import_module = importlib.import_module
-    original_exec_module = importlib.machinery.SourceFileLoader.exec_module
-    calls: list[str] = []
-    safe_source = tmp_path / "safe_delegate_probe.py"
-    safe_source.write_text("VALUE = 1\n", encoding="utf-8")
-    spec = importlib.util.spec_from_file_location("safe_delegate_probe", safe_source)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-
-    def sentinel_import(name, globals=None, locals=None, fromlist=(), level=0):
-        calls.append("import")
-        return original_import(name, globals, locals, fromlist, level)
-
-    def sentinel_import_module(name, package=None):
-        calls.append("import_module")
-        return original_import_module(name, package)
-
-    def sentinel_exec_module(loader, loaded_module):
-        calls.append("exec_module")
-        return original_exec_module(loader, loaded_module)
-
     config = _GuardCleanupConfig()
-    session = SimpleNamespace(config=config)
-    builtins.__import__ = sentinel_import
-    importlib.import_module = sentinel_import_module
-    importlib.machinery.SourceFileLoader.exec_module = sentinel_exec_module
+    guard.pytest_sessionstart(SimpleNamespace(config=config))
+
+    def fail_audit_handling(_event, _args):
+        raise RuntimeError("audit callback probe")
+
+    monkeypatch.setattr(guard, "_handle_audit_event", fail_audit_handling)
     try:
-        guard.pytest_sessionstart(session)
-        guard._tracking_import("json")
-        guard._tracking_import_module("json")
-        spec.loader.exec_module(module)
+        sys.audit("import", "safe.audit_callback_probe", None, (), (), ())
 
-        assert {"import", "import_module", "exec_module"}.issubset(calls)
-
-        assert len(config.cleanups) == 1
-        config.cleanup()
-        assert builtins.__import__ is sentinel_import
-        assert importlib.import_module is sentinel_import_module
-        assert (
-            importlib.machinery.SourceFileLoader.exec_module
-            is sentinel_exec_module
-        )
+        assert guard._active_observed_modules[config] == {
+            "audit-hook-error:builtins.RuntimeError"
+        }
     finally:
-        guard._active_observed_modules.clear()
-        builtins.__import__ = original_import
-        importlib.import_module = original_import_module
-        importlib.machinery.SourceFileLoader.exec_module = original_exec_module
+        config.cleanup()
 
 
 def test_tooling_pytest_guard_rolls_back_when_cleanup_registration_fails():
@@ -682,9 +817,7 @@ def test_tooling_pytest_guard_rolls_back_when_cleanup_registration_fails():
         )
     finally:
         guard._active_observed_modules.clear()
-        builtins.__import__ = original_import
-        importlib.import_module = original_import_module
-        importlib.machinery.SourceFileLoader.exec_module = original_exec_module
+        guard._unregister_audit_listener()
 
 
 def test_tooling_pytest_guard_isolates_same_module_nested_sessions(tmp_path):
@@ -727,18 +860,18 @@ def test_tooling_pytest_guard_isolates_same_module_nested_sessions(tmp_path):
         "class NestedSession:\n"
         "    inner_exit = None\n"
         "    outer_observed_inner = ()\n"
-        "    hooks_stayed_installed = False\n"
+        "    hooks_stayed_unmodified = False\n"
         "\n"
         "    @pytest.hookimpl(trylast=True)\n"
         "    def pytest_sessionstart(self, session):\n"
         f"        self.inner_exit = pytest.main([*common, {str(inner_test)!r}], plugins=[guard])\n"
         "        active = getattr(guard, '_active_observed_modules', {})\n"
         "        self.outer_observed_inner = tuple(sorted(active.get(session.config, ())))\n"
-        "        self.hooks_stayed_installed = (\n"
-        "            builtins.__import__ is guard._tracking_import\n"
-        "            and importlib.import_module is guard._tracking_import_module\n"
+        "        self.hooks_stayed_unmodified = (\n"
+        "            builtins.__import__ is original_import\n"
+        "            and importlib.import_module is original_import_module\n"
         "            and importlib.machinery.SourceFileLoader.exec_module\n"
-        "            is guard._tracking_source_exec_module\n"
+        "            is original_exec_module\n"
         "        )\n"
         "        name = 'nested_outer_direct_probe'\n"
         f"        spec = importlib.util.spec_from_file_location(name, {str(app_source)!r})\n"
@@ -750,7 +883,7 @@ def test_tooling_pytest_guard_isolates_same_module_nested_sessions(tmp_path):
         f"outer_exit = pytest.main([*common, {str(outer_test)!r}], plugins=[guard, nested])\n"
         "assert nested.inner_exit == pytest.ExitCode.TESTS_FAILED\n"
         "assert 'nested_inner_direct_probe' in nested.outer_observed_inner\n"
-        "assert nested.hooks_stayed_installed\n"
+        "assert nested.hooks_stayed_unmodified\n"
         "assert outer_exit == pytest.ExitCode.TESTS_FAILED\n"
         "assert getattr(guard, '_active_observed_modules', {}) == {}\n"
         "assert builtins.__import__ is original_import\n"
@@ -774,7 +907,7 @@ def test_tooling_pytest_guard_isolates_same_module_nested_sessions(tmp_path):
     assert "nested_outer_direct_probe" in output
 
 
-def test_tooling_pytest_guard_restores_hooks_after_late_plugin_teardown(tmp_path):
+def test_tooling_pytest_guard_preserves_late_plugin_hook_lifecycle(tmp_path):
     runner = _tooling_pytest_runner_module()
     first_test = tmp_path / "test_late_plugin_first_session.py"
     first_test.write_text("def test_first_session_ok():\n    pass\n", encoding="utf-8")
@@ -987,7 +1120,40 @@ def test_tooling_pytest_guard_cleanup_runs_after_same_priority_wrapper(tmp_path)
     assert "app.cleanup_second_probe" in output
 
 
-def test_tooling_pytest_guard_cleanup_restores_after_late_teardown_error(tmp_path):
+def test_tooling_pytest_guard_does_not_reinstall_early_plugin_hooks(tmp_path):
+    result = _run_tooling_guard_cleanup_probe(
+        tmp_path,
+        plugin_source=(
+            "class LifecyclePlugin:\n"
+            "    @pytest.hookimpl(tryfirst=True)\n"
+            "    def pytest_sessionstart(self):\n"
+            "        self.saved_import = builtins.__import__\n"
+            "        self.saved_import_module = importlib.import_module\n"
+            "        self.saved_exec_module = importlib.machinery.SourceFileLoader.exec_module\n"
+            "        def early_import(name, globals=None, locals=None, fromlist=(), level=0):\n"
+            "            return self.saved_import(name, globals, locals, fromlist, level)\n"
+            "        def early_import_module(name, package=None):\n"
+            "            return self.saved_import_module(name, package)\n"
+            "        def early_exec_module(loader, module):\n"
+            "            return self.saved_exec_module(loader, module)\n"
+            "        builtins.__import__ = early_import\n"
+            "        importlib.import_module = early_import_module\n"
+            "        importlib.machinery.SourceFileLoader.exec_module = early_exec_module\n"
+            "    @pytest.hookimpl(trylast=True)\n"
+            "    def pytest_unconfigure(self):\n"
+            "        builtins.__import__ = self.saved_import\n"
+            "        importlib.import_module = self.saved_import_module\n"
+            "        importlib.machinery.SourceFileLoader.exec_module = self.saved_exec_module\n"
+        ),
+        first_session_raises=False,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "app.cleanup_second_probe" in output
+
+
+def test_tooling_pytest_guard_cleans_state_after_late_teardown_error(tmp_path):
     result = _run_tooling_guard_cleanup_probe(
         tmp_path,
         plugin_source=(
@@ -1008,6 +1174,9 @@ def test_tooling_pytest_guard_cleanup_restores_after_late_teardown_error(tmp_pat
             "        importlib.machinery.SourceFileLoader.exec_module = late_exec_module\n"
             "    @pytest.hookimpl(trylast=True)\n"
             "    def pytest_unconfigure(self):\n"
+            "        builtins.__import__ = self.saved_import\n"
+            "        importlib.import_module = self.saved_import_module\n"
+            "        importlib.machinery.SourceFileLoader.exec_module = self.saved_exec_module\n"
             "        raise RuntimeError('late teardown probe')\n"
         ),
         first_session_raises=True,
@@ -1018,7 +1187,7 @@ def test_tooling_pytest_guard_cleanup_restores_after_late_teardown_error(tmp_pat
     assert "app.cleanup_second_probe" in output
 
 
-def test_tooling_pytest_guard_restores_hooks_after_sessionstart_error(
+def test_tooling_pytest_guard_leaves_hooks_unchanged_after_sessionstart_error(
     tmp_path,
     monkeypatch,
 ):
@@ -1061,7 +1230,8 @@ def test_tooling_pytest_guard_restores_hooks_after_sessionstart_error(
         assert importlib.import_module is original_import_module
         assert importlib.machinery.SourceFileLoader.exec_module is original_exec_module
     finally:
-        guard._restore_import_functions()
+        guard._active_observed_modules.clear()
+        guard._unregister_audit_listener()
 
 
 def test_tooling_pytest_guard_preserves_existing_nonzero_exit_status(monkeypatch):
@@ -1104,7 +1274,6 @@ def test_tooling_pytest_guard_resets_history_for_each_session(monkeypatch):
     finally:
         first_config.cleanup()
         second_config.cleanup()
-        guard._restore_import_functions()
 
 
 def test_agents_limits_the_tooling_fast_lane_to_pure_tooling_changes():
