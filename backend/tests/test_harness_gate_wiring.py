@@ -10,9 +10,15 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+REMOVAL_SENTINEL = "scripts/check_governed_path_removals.py"
+GOVERNED_HOOK_IDS = (
+    "system-map",
+    "dossier-consistency",
+    "agent-skill-governance",
+)
 
 
-def _pre_commit_hook_files_pattern(hook_id: str) -> re.Pattern[str]:
+def _pre_commit_hook_block(hook_id: str) -> str:
     config = (ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
     header = f"      - id: {hook_id}\n"
     assert header in config, f"missing pre-commit hook: {hook_id}"
@@ -20,6 +26,11 @@ def _pre_commit_hook_files_pattern(hook_id: str) -> re.Pattern[str]:
     next_hook = re.search(r"(?m)^      - id: ", block)
     if next_hook:
         block = block[: next_hook.start()]
+    return block
+
+
+def _pre_commit_hook_files_pattern(hook_id: str) -> re.Pattern[str]:
+    block = _pre_commit_hook_block(hook_id)
     files = re.search(r"(?m)^        files: '([^']+)'$", block)
     assert files, f"pre-commit hook {hook_id} must declare a files regex"
     return re.compile(files.group(1))
@@ -32,6 +43,125 @@ def _copy_test_harness(target: Path) -> None:
     scripts.mkdir(parents=True)
     shutil.copy2(ROOT / "scripts" / "run-all-tests.sh", scripts)
     shutil.copy2(source_helper, scripts)
+
+
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    return completed
+
+
+def _init_removal_sentinel_repo(tmp_path: Path) -> tuple[Path, Path]:
+    sentinel = ROOT / REMOVAL_SENTINEL
+    assert sentinel.is_file(), f"missing removal sentinel: {sentinel}"
+
+    repo = tmp_path / "repo"
+    scripts = repo / "scripts"
+    scripts.mkdir(parents=True)
+    shutil.copy2(sentinel, scripts / sentinel.name)
+    gate_log = repo / "gate.log"
+    python = sys.executable
+    (repo / ".pre-commit-config.yaml").write_text(
+        f"""repos:
+  - repo: local
+    hooks:
+      - id: system-map
+        name: system map
+        entry: {python} scripts/fake_gate.py system-map
+        language: system
+        pass_filenames: false
+        files: '^(?:\\.pre-commit-config\\.yaml$|{REMOVAL_SENTINEL}$|system/)'
+      - id: dossier-consistency
+        name: dossier consistency
+        entry: {python} scripts/fake_gate.py dossier-consistency
+        language: system
+        pass_filenames: false
+        files: '^(?:\\.pre-commit-config\\.yaml$|{REMOVAL_SENTINEL}$|dossier/)'
+      - id: agent-skill-governance
+        name: agent skill governance
+        entry: {python} scripts/fake_gate.py agent-skill-governance
+        language: system
+        pass_filenames: false
+        files: '^(?:\\.pre-commit-config\\.yaml$|{REMOVAL_SENTINEL}$|governance/)'
+      - id: governed-path-removals
+        name: governed path removals
+        entry: {python} {REMOVAL_SENTINEL}
+        language: system
+        files: '^(?:\\.pre-commit-config\\.yaml$|{REMOVAL_SENTINEL}$)'
+        pass_filenames: true
+        always_run: true
+""",
+        encoding="utf-8",
+    )
+    (scripts / "fake_gate.py").write_text(
+        """from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+gate = sys.argv[1]
+with Path(os.environ["GATE_LOG"]).open("a", encoding="utf-8") as handle:
+    handle.write(gate + "\\n")
+if os.environ.get("FAIL_GATE") == gate:
+    raise SystemExit(int(os.environ.get("FAIL_CODE", "1")))
+""",
+        encoding="utf-8",
+    )
+    for relative in (
+        "system/original.txt",
+        "dossier/original.txt",
+        "governance/original.txt",
+        "README.md",
+    ):
+        path = repo / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(relative + "\n", encoding="utf-8")
+
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.name", "Removal Sentinel Test")
+    _git(repo, "config", "user.email", "removal-sentinel@example.invalid")
+    _git(
+        repo,
+        "add",
+        ".pre-commit-config.yaml",
+        REMOVAL_SENTINEL,
+        "scripts/fake_gate.py",
+        "system/original.txt",
+        "dossier/original.txt",
+        "governance/original.txt",
+        "README.md",
+    )
+    _git(repo, "commit", "-qm", "baseline")
+    return repo, gate_log
+
+
+def _run_removal_sentinel(
+    repo: Path,
+    gate_log: Path,
+    *pre_commit_paths: str,
+    **extra_env: str,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, REMOVAL_SENTINEL, *pre_commit_paths],
+        cwd=repo,
+        env={**os.environ, "GATE_LOG": str(gate_log), **extra_env},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def _gate_runs(gate_log: Path) -> list[str]:
+    if not gate_log.exists():
+        return []
+    return gate_log.read_text(encoding="utf-8").splitlines()
 
 
 def _load_validate_module():
@@ -192,6 +322,160 @@ def test_pre_commit_governance_hooks_scope_only_relevant_files():
             assert pattern.search(path), f"{hook_id} must run for {path}"
         for path in paths["skip"]:
             assert not pattern.search(path), f"{hook_id} should skip {path}"
+
+
+def test_pre_commit_wires_one_always_run_removal_sentinel():
+    config = (ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    block = _pre_commit_hook_block("governed-path-removals")
+
+    assert f"entry: python3.12 {REMOVAL_SENTINEL}" in block
+    assert "pass_filenames: true" in block
+    assert "always_run: true" in block
+    sentinel_pattern = _pre_commit_hook_files_pattern("governed-path-removals")
+    assert sentinel_pattern.search(".pre-commit-config.yaml")
+    assert sentinel_pattern.search(REMOVAL_SENTINEL)
+    assert not sentinel_pattern.search("README.md")
+    for hook_id in GOVERNED_HOOK_IDS:
+        assert _pre_commit_hook_files_pattern(hook_id).search(REMOVAL_SENTINEL), (
+            f"{hook_id} must run when its removal sentinel changes"
+        )
+        assert config.index(f"      - id: {hook_id}\n") < config.index(
+            "      - id: governed-path-removals\n"
+        )
+
+
+def test_removal_sentinel_runs_gate_for_nul_safe_rename_out(tmp_path):
+    repo, gate_log = _init_removal_sentinel_repo(tmp_path)
+    old = repo / "system" / "line\nbreak\tname.txt"
+    old.write_text("governed\n", encoding="utf-8")
+    _git(repo, "add", str(old.relative_to(repo)))
+    _git(repo, "commit", "-qm", "add unusual path")
+    destination = repo / "unrelated" / "renamed.txt"
+    destination.parent.mkdir()
+    _git(
+        repo,
+        "mv",
+        str(old.relative_to(repo)),
+        str(destination.relative_to(repo)),
+    )
+
+    completed = _run_removal_sentinel(repo, gate_log)
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert _gate_runs(gate_log) == ["system-map"]
+
+
+def test_removal_sentinel_runs_each_gate_for_staged_deletions(tmp_path):
+    repo, gate_log = _init_removal_sentinel_repo(tmp_path)
+    for relative in (
+        "system/original.txt",
+        "dossier/original.txt",
+        "governance/original.txt",
+    ):
+        (repo / relative).unlink()
+    _git(repo, "add", "-u")
+
+    completed = _run_removal_sentinel(repo, gate_log)
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert _gate_runs(gate_log) == list(GOVERNED_HOOK_IDS)
+
+
+def test_removal_sentinel_does_not_duplicate_gate_with_governed_new_path(tmp_path):
+    repo, gate_log = _init_removal_sentinel_repo(tmp_path)
+    _git(repo, "mv", "system/original.txt", "system/renamed.txt")
+    (repo / "dossier" / "original.txt").unlink()
+    (repo / "dossier" / "replacement.txt").write_text(
+        "replacement\n", encoding="utf-8"
+    )
+    _git(repo, "add", "dossier/original.txt", "dossier/replacement.txt")
+
+    completed = _run_removal_sentinel(repo, gate_log)
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert _gate_runs(gate_log) == []
+
+
+def test_removal_sentinel_skips_unrelated_staged_change(tmp_path):
+    repo, gate_log = _init_removal_sentinel_repo(tmp_path)
+    (repo / "README.md").write_text("ordinary docs change\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+
+    completed = _run_removal_sentinel(repo, gate_log)
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert _gate_runs(gate_log) == []
+
+
+def test_removal_sentinel_skips_when_anchor_paths_signal_full_hook_coverage(tmp_path):
+    repo, gate_log = _init_removal_sentinel_repo(tmp_path)
+    for relative in (
+        "system/original.txt",
+        "dossier/original.txt",
+        "governance/original.txt",
+    ):
+        (repo / relative).unlink()
+    _git(repo, "add", "-u")
+
+    completed = _run_removal_sentinel(
+        repo,
+        gate_log,
+        ".pre-commit-config.yaml",
+        REMOVAL_SENTINEL,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert _gate_runs(gate_log) == []
+
+
+def test_removal_sentinel_fails_closed_on_config_parse_error(tmp_path):
+    repo, gate_log = _init_removal_sentinel_repo(tmp_path)
+    config = repo / ".pre-commit-config.yaml"
+    broken = re.sub(
+        r"(?m)^        files: .+\n",
+        "",
+        config.read_text(encoding="utf-8"),
+        count=1,
+    )
+    config.write_text(broken, encoding="utf-8")
+    _git(repo, "add", ".pre-commit-config.yaml")
+
+    completed = _run_removal_sentinel(repo, gate_log)
+
+    assert completed.returncode != 0
+    assert "system-map" in completed.stderr
+    assert "files" in completed.stderr
+    assert _gate_runs(gate_log) == []
+
+
+def test_removal_sentinel_fails_closed_when_git_diff_fails(tmp_path):
+    repo, gate_log = _init_removal_sentinel_repo(tmp_path)
+
+    completed = _run_removal_sentinel(
+        repo,
+        gate_log,
+        GIT_DIR=str(tmp_path / "missing-git-dir"),
+    )
+
+    assert completed.returncode != 0
+    assert "git diff" in completed.stderr
+    assert _gate_runs(gate_log) == []
+
+
+def test_removal_sentinel_propagates_governed_gate_failure(tmp_path):
+    repo, gate_log = _init_removal_sentinel_repo(tmp_path)
+    (repo / "system" / "original.txt").unlink()
+    _git(repo, "add", "-u")
+
+    completed = _run_removal_sentinel(
+        repo,
+        gate_log,
+        FAIL_GATE="system-map",
+        FAIL_CODE="7",
+    )
+
+    assert completed.returncode == 7
+    assert _gate_runs(gate_log) == ["system-map"]
 
 
 def test_run_all_tests_uses_logged_commands_without_truncating_pipes():
@@ -400,7 +684,8 @@ def test_ci_runs_central_system_map_gate():
 
     assert "Check System Map and doc drift" in workflow
     assert "python scripts/check_system_map.py" in workflow
-    assert "pip install -r scripts/system-map-requirements.txt" in workflow
+    assert "python -m pip install --disable-pip-version-check" in workflow
+    assert "pytest==9.1.1 -r scripts/system-map-requirements.txt" in workflow
     assert "python scripts/check_doc_drift.py" not in workflow
 
 
