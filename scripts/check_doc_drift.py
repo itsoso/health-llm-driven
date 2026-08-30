@@ -222,7 +222,7 @@ def find_manual_architecture_counts(text: str) -> list[str]:
     return [claim for _, claim in sorted(matches)]
 
 
-def main() -> int:
+def main(*, fresh_map: dict | None = None) -> int:
     failures: list[str] = []
 
     # 1. Safety rules per category
@@ -303,8 +303,10 @@ def main() -> int:
         import json
         sys.path.insert(0, str(ROOT / "scripts"))
         from dump_system_map import OUT as SYSMAP_OUT
-        from dump_system_map import build_map
-        fresh_map = build_map()
+        if fresh_map is None:
+            from dump_system_map import build_map
+
+            fresh_map = build_map()
         if not SYSMAP_OUT.exists():
             failures.append(
                 "  system-map: docs/_generated/system-map.json 缺失, "

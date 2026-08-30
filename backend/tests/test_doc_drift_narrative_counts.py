@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import check_doc_drift as cdd  # noqa: E402
+import dump_system_map as dsm  # noqa: E402
 
 
 def test_find_manual_architecture_counts_flags_code_derived_claims() -> None:
@@ -78,3 +82,29 @@ def test_architecture_document_has_no_manual_code_derived_counts() -> None:
     text = (ROOT / "docs" / "ARCHITECTURE.md").read_text(encoding="utf-8")
 
     assert cdd.find_manual_architecture_counts(text) == []
+
+
+def test_main_reuses_provided_fresh_map_without_building(monkeypatch) -> None:
+    fresh_map = json.loads(dsm.OUT.read_text(encoding="utf-8"))
+    monkeypatch.setattr(
+        dsm,
+        "build_map",
+        lambda: pytest.fail("provided fresh_map must skip build_map"),
+    )
+
+    assert cdd.main(fresh_map=fresh_map) == 0
+
+
+def test_standalone_main_builds_map_once(monkeypatch) -> None:
+    fresh_map = json.loads(dsm.OUT.read_text(encoding="utf-8"))
+    calls = 0
+
+    def build_map() -> dict:
+        nonlocal calls
+        calls += 1
+        return fresh_map
+
+    monkeypatch.setattr(dsm, "build_map", build_map)
+
+    assert cdd.main() == 0
+    assert calls == 1
