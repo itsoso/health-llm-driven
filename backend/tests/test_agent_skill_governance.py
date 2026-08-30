@@ -54,6 +54,21 @@ OPAQUE_UUID_PATTERN = (
 )
 
 
+class _GuardCleanupConfig:
+    def __init__(self, add_cleanup_error: BaseException | None = None):
+        self._add_cleanup_error = add_cleanup_error
+        self.cleanups = []
+
+    def add_cleanup(self, cleanup):
+        if self._add_cleanup_error is not None:
+            raise self._add_cleanup_error
+        self.cleanups.append(cleanup)
+
+    def cleanup(self):
+        while self.cleanups:
+            self.cleanups.pop()()
+
+
 def _checker_module():
     spec = importlib.util.spec_from_file_location(
         "agent_skill_governance_checker", CHECKER
@@ -617,7 +632,7 @@ def test_tooling_pytest_guard_snapshots_hooks_at_first_active_session(tmp_path):
         calls.append("exec_module")
         return original_exec_module(loader, loaded_module)
 
-    config = object()
+    config = _GuardCleanupConfig()
     session = SimpleNamespace(config=config)
     builtins.__import__ = sentinel_import
     importlib.import_module = sentinel_import_module
@@ -630,12 +645,40 @@ def test_tooling_pytest_guard_snapshots_hooks_at_first_active_session(tmp_path):
 
         assert {"import", "import_module", "exec_module"}.issubset(calls)
 
-        guard._finish_config(config)
+        assert len(config.cleanups) == 1
+        config.cleanup()
         assert builtins.__import__ is sentinel_import
         assert importlib.import_module is sentinel_import_module
         assert (
             importlib.machinery.SourceFileLoader.exec_module
             is sentinel_exec_module
+        )
+    finally:
+        guard._active_observed_modules.clear()
+        builtins.__import__ = original_import
+        importlib.import_module = original_import_module
+        importlib.machinery.SourceFileLoader.exec_module = original_exec_module
+
+
+def test_tooling_pytest_guard_rolls_back_when_cleanup_registration_fails():
+    guard = _tooling_pytest_guard_module()
+    original_import = builtins.__import__
+    original_import_module = importlib.import_module
+    original_exec_module = importlib.machinery.SourceFileLoader.exec_module
+    registration_error = RuntimeError("cleanup registration probe")
+    config = _GuardCleanupConfig(registration_error)
+
+    try:
+        with pytest.raises(RuntimeError) as exc:
+            guard.pytest_sessionstart(SimpleNamespace(config=config))
+
+        assert exc.value is registration_error
+        assert guard._active_observed_modules == {}
+        assert builtins.__import__ is original_import
+        assert importlib.import_module is original_import_module
+        assert (
+            importlib.machinery.SourceFileLoader.exec_module
+            is original_exec_module
         )
     finally:
         guard._active_observed_modules.clear()
@@ -831,6 +874,150 @@ def test_tooling_pytest_guard_restores_hooks_after_late_plugin_teardown(tmp_path
     assert "app.late_plugin_second_probe" in output
 
 
+def _run_tooling_guard_cleanup_probe(
+    tmp_path: Path,
+    *,
+    plugin_source: str,
+    first_session_raises: bool,
+) -> subprocess.CompletedProcess[str]:
+    runner = _tooling_pytest_runner_module()
+    first_test = tmp_path / "test_cleanup_first_session.py"
+    first_test.write_text("def test_first_session_ok():\n    pass\n", encoding="utf-8")
+    app_package = tmp_path / "app"
+    app_package.mkdir()
+    (app_package / "__init__.py").write_text("", encoding="utf-8")
+    (app_package / "cleanup_second_probe.py").write_text(
+        "VALUE = 1\n", encoding="utf-8"
+    )
+    second_test = tmp_path / "test_cleanup_second_session.py"
+    second_test.write_text(
+        "def test_second_session_import_and_guard():\n"
+        "    assert __import__('fractions')\n"
+        "    module = __import__('app.cleanup_second_probe', fromlist=['VALUE'])\n"
+        "    assert module.VALUE == 1\n",
+        encoding="utf-8",
+    )
+    probe = tmp_path / "guard_cleanup_probe.py"
+    probe.write_text(
+        "import builtins\n"
+        "import importlib\n"
+        "import importlib.machinery\n"
+        "import os\n"
+        "import sys\n"
+        f"sys.path.insert(0, {str(ROOT)!r})\n"
+        "import pytest\n"
+        "from scripts import tooling_pytest_guard as guard\n"
+        "\n"
+        "original_import = builtins.__import__\n"
+        "original_import_module = importlib.import_module\n"
+        "original_exec_module = importlib.machinery.SourceFileLoader.exec_module\n"
+        "common = [\n"
+        "    '--noconftest', '-c', os.devnull, '--rootdir', "
+        f"{str(tmp_path)!r}, '-q', '-p', 'no:cacheprovider',\n"
+        "]\n"
+        "\n"
+        f"{plugin_source}\n"
+        "plugin = LifecyclePlugin()\n"
+        "first_exit = None\n"
+        "first_error = None\n"
+        "try:\n"
+        f"    first_exit = pytest.main([*common, {str(first_test)!r}], plugins=[guard, plugin])\n"
+        "except BaseException as error:\n"
+        "    first_error = error\n"
+        "active_after_first = len(getattr(guard, '_active_observed_modules', {}))\n"
+        "restored_after_first = (\n"
+        "    builtins.__import__ is original_import\n"
+        "    and importlib.import_module is original_import_module\n"
+        "    and importlib.machinery.SourceFileLoader.exec_module is original_exec_module\n"
+        ")\n"
+        "try:\n"
+        f"    second_exit = pytest.main([*common, {str(second_test)!r}], plugins=[guard])\n"
+        "except RecursionError:\n"
+        "    second_exit = None\n"
+        "active_after_second = len(getattr(guard, '_active_observed_modules', {}))\n"
+        "restored_after_second = (\n"
+        "    builtins.__import__ is original_import\n"
+        "    and importlib.import_module is original_import_module\n"
+        "    and importlib.machinery.SourceFileLoader.exec_module is original_exec_module\n"
+        ")\n"
+        f"assert {first_session_raises!r} == isinstance(first_error, RuntimeError)\n"
+        "if first_error is None:\n"
+        "    assert first_exit == pytest.ExitCode.OK\n"
+        "else:\n"
+        "    assert str(first_error) == 'late teardown probe'\n"
+        "assert active_after_first == 0\n"
+        "assert restored_after_first\n"
+        "assert second_exit == pytest.ExitCode.TESTS_FAILED\n"
+        "assert active_after_second == 0\n"
+        "assert restored_after_second\n",
+        encoding="utf-8",
+    )
+    return subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_tooling_pytest_guard_cleanup_runs_after_same_priority_wrapper(tmp_path):
+    result = _run_tooling_guard_cleanup_probe(
+        tmp_path,
+        plugin_source=(
+            "class LifecyclePlugin:\n"
+            "    @pytest.hookimpl(wrapper=True, tryfirst=True)\n"
+            "    def pytest_unconfigure(self):\n"
+            "        saved_import = builtins.__import__\n"
+            "        saved_import_module = importlib.import_module\n"
+            "        saved_exec_module = importlib.machinery.SourceFileLoader.exec_module\n"
+            "        try:\n"
+            "            yield\n"
+            "        finally:\n"
+            "            builtins.__import__ = saved_import\n"
+            "            importlib.import_module = saved_import_module\n"
+            "            importlib.machinery.SourceFileLoader.exec_module = saved_exec_module\n"
+        ),
+        first_session_raises=False,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "app.cleanup_second_probe" in output
+
+
+def test_tooling_pytest_guard_cleanup_restores_after_late_teardown_error(tmp_path):
+    result = _run_tooling_guard_cleanup_probe(
+        tmp_path,
+        plugin_source=(
+            "class LifecyclePlugin:\n"
+            "    @pytest.hookimpl(trylast=True)\n"
+            "    def pytest_sessionstart(self):\n"
+            "        self.saved_import = builtins.__import__\n"
+            "        self.saved_import_module = importlib.import_module\n"
+            "        self.saved_exec_module = importlib.machinery.SourceFileLoader.exec_module\n"
+            "        def late_import(name, globals=None, locals=None, fromlist=(), level=0):\n"
+            "            return self.saved_import(name, globals, locals, fromlist, level)\n"
+            "        def late_import_module(name, package=None):\n"
+            "            return self.saved_import_module(name, package)\n"
+            "        def late_exec_module(loader, module):\n"
+            "            return self.saved_exec_module(loader, module)\n"
+            "        builtins.__import__ = late_import\n"
+            "        importlib.import_module = late_import_module\n"
+            "        importlib.machinery.SourceFileLoader.exec_module = late_exec_module\n"
+            "    @pytest.hookimpl(trylast=True)\n"
+            "    def pytest_unconfigure(self):\n"
+            "        raise RuntimeError('late teardown probe')\n"
+        ),
+        first_session_raises=True,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "app.cleanup_second_probe" in output
+
+
 def test_tooling_pytest_guard_restores_hooks_after_sessionstart_error(
     tmp_path,
     monkeypatch,
@@ -899,9 +1086,9 @@ def test_tooling_pytest_guard_preserves_existing_nonzero_exit_status(monkeypatch
 def test_tooling_pytest_guard_resets_history_for_each_session(monkeypatch):
     guard = _tooling_pytest_guard_module()
     monkeypatch.setattr(guard, "_observe_current_modules", lambda: None)
-    first_config = object()
+    first_config = _GuardCleanupConfig()
     first_session = SimpleNamespace(config=first_config)
-    second_config = object()
+    second_config = _GuardCleanupConfig()
     second_session = SimpleNamespace(config=second_config)
 
     guard.pytest_sessionstart(first_session)
@@ -910,13 +1097,13 @@ def test_tooling_pytest_guard_resets_history_for_each_session(monkeypatch):
         assert guard._active_observed_modules[first_config] == {
             "app.stale_session"
         }
-        guard._finish_config(first_config)
+        first_config.cleanup()
 
         guard.pytest_sessionstart(second_session)
         assert guard._active_observed_modules[second_config] == set()
     finally:
-        guard._finish_config(first_config)
-        guard._finish_config(second_config)
+        first_config.cleanup()
+        second_config.cleanup()
         guard._restore_import_functions()
 
 

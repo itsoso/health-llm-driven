@@ -130,7 +130,8 @@ def loaded_forbidden_module_names(config: object) -> tuple[str, ...]:
 
 def pytest_sessionstart(session) -> None:
     install_hooks = not _active_observed_modules
-    _active_observed_modules[session.config] = set()
+    config = session.config
+    _active_observed_modules[config] = set()
     if install_hooks:
         global _delegated_import
         global _delegated_import_module
@@ -143,18 +144,18 @@ def pytest_sessionstart(session) -> None:
         builtins.__import__ = _tracking_import
         importlib.import_module = _tracking_import_module
         importlib.machinery.SourceFileLoader.exec_module = _tracking_source_exec_module
+    try:
+        config.add_cleanup(lambda: _finish_config(config))
+    except BaseException:
+        _finish_config(config)
+        raise
     _observe_current_modules()
 
 
 def _restore_import_functions() -> None:
-    if builtins.__import__ is _tracking_import:
-        builtins.__import__ = _delegated_import
-    if importlib.import_module is _tracking_import_module:
-        importlib.import_module = _delegated_import_module
-    if importlib.machinery.SourceFileLoader.exec_module is _tracking_source_exec_module:
-        importlib.machinery.SourceFileLoader.exec_module = (
-            _delegated_source_exec_module
-        )
+    builtins.__import__ = _delegated_import
+    importlib.import_module = _delegated_import_module
+    importlib.machinery.SourceFileLoader.exec_module = _delegated_source_exec_module
 
 
 def pytest_sessionfinish(session) -> None:
@@ -175,11 +176,3 @@ def _finish_config(config: object) -> None:
     _active_observed_modules.pop(config, None)
     if not _active_observed_modules:
         _restore_import_functions()
-
-
-@pytest.hookimpl(wrapper=True, tryfirst=True)
-def pytest_unconfigure(config):
-    try:
-        yield
-    finally:
-        _finish_config(config)
