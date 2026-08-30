@@ -20698,12 +20698,36 @@ class AgentExecutor:
         if not query:
             return "Error: realtime_search 需要 query 参数"
 
-        from app.services.iqs_search import fetch_realtime_evidence
+        from app.services.iqs_search import (
+            RealtimeSearchUnavailable,
+            fetch_realtime_evidence,
+        )
         try:
-            block = await fetch_realtime_evidence(query)
+            block = await fetch_realtime_evidence(
+                query,
+                raise_on_unavailable=True,
+            )
+        except RealtimeSearchUnavailable as e:
+            reason = str(e)
+            reason_text = {
+                "not_configured": "服务未配置",
+                "timeout": "请求超时",
+                "upstream_error": "上游服务异常",
+            }.get(reason, "服务异常")
+            logger.warning(
+                "[realtime_search] IQS 检索不可用 reason=%s",
+                reason,
+            )
+            return (
+                f"Error: 实时检索暂不可用（{reason_text}），"
+                "请基于已有信息谨慎作答，并明确说明未完成联网核验，勿编造依据。"
+            )
         except Exception as e:  # noqa: BLE001 — fail honest, 不冒充成功
             logger.warning(f"[realtime_search] IQS 检索失败: {e}")
-            return "实时检索暂不可用,请基于已有信息谨慎作答,勿编造依据。"
+            return (
+                "Error: 实时检索暂不可用（服务异常），"
+                "请基于已有信息谨慎作答，并明确说明未完成联网核验，勿编造依据。"
+            )
 
         if not block:
             return (
