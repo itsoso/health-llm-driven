@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib
 import importlib.util
 import os
@@ -55,6 +56,25 @@ def _load_entrypoint(entrypoint: str):
 
 def _load_checker():
     return _load_entrypoint("check_system_map")
+
+
+def _bootstrap_ast(entrypoint: str) -> str:
+    path = ROOT / "scripts" / f"{entrypoint}.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    functions = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_load_system_map_import_helper"
+    ]
+    assert len(functions) == 1
+    return ast.dump(functions[0], include_attributes=False)
+
+
+def test_system_map_entrypoint_bootstraps_remain_structurally_identical() -> None:
+    reference = _bootstrap_ast(SYSTEM_MAP_ENTRYPOINTS[0])
+    for entrypoint in SYSTEM_MAP_ENTRYPOINTS[1:]:
+        assert _bootstrap_ast(entrypoint) == reference, entrypoint
 
 
 def test_local_harness_is_pinned_and_uses_its_venv() -> None:
@@ -297,6 +317,102 @@ def test_failed_helper_bootstrap_removes_private_cache_entry(monkeypatch) -> Non
         sys.modules[entry_module.load_repo_module.__module__].__file__,
         helper_path,
     )
+
+
+def test_interrupted_helper_bootstrap_releases_waiter_and_retries(
+    monkeypatch,
+) -> None:
+    helper_path = (ROOT / "scripts" / "system_map_imports.py").resolve()
+    helper_key = _import_helper_key()
+    monkeypatch.delitem(sys.modules, helper_key, raising=False)
+    helper_lock = importlib._bootstrap._get_module_lock(helper_key)
+    real_spec_from_file_location = importlib.util.spec_from_file_location
+    helper_started = threading.Event()
+    helper_release = threading.Event()
+    waiter_started = threading.Event()
+    waiter_finished = threading.Event()
+    helper_exec_calls = 0
+
+    class InterruptOnceHelperLoader:
+        def __init__(self, delegate) -> None:
+            self.delegate = delegate
+
+        def create_module(self, spec):
+            return self.delegate.create_module(spec)
+
+        def exec_module(self, module) -> None:
+            nonlocal helper_exec_calls
+            helper_exec_calls += 1
+            if helper_exec_calls == 1:
+                helper_started.set()
+                if not helper_release.wait(timeout=2):
+                    raise RuntimeError("helper release timed out")
+                raise KeyboardInterrupt("helper bootstrap interrupted")
+            self.delegate.exec_module(module)
+
+    def interrupt_once_helper_spec(name, location, *args, **kwargs):
+        spec = real_spec_from_file_location(name, location, *args, **kwargs)
+        if Path(location).resolve() == helper_path:
+            assert spec is not None and spec.loader is not None
+            spec.loader = InterruptOnceHelperLoader(spec.loader)
+        return spec
+
+    monkeypatch.setattr(
+        importlib.util,
+        "spec_from_file_location",
+        interrupt_once_helper_spec,
+    )
+    modules: dict[str, types.ModuleType] = {}
+    errors: dict[str, BaseException] = {}
+
+    def load(name: str) -> None:
+        try:
+            modules[name] = _load_entrypoint(name)
+        except BaseException as error:
+            errors[name] = error
+
+    interrupted = threading.Thread(target=load, args=("check_doc_drift",))
+
+    def load_waiter() -> None:
+        try:
+            waiter_started.set()
+            load("system_map_context")
+        finally:
+            waiter_finished.set()
+
+    waiter = threading.Thread(target=load_waiter)
+    try:
+        interrupted.start()
+        assert helper_started.wait(timeout=1)
+        waiter.start()
+        assert waiter_started.wait(timeout=1)
+        deadline = time.monotonic() + 1
+        while not helper_lock.waiters and time.monotonic() < deadline:
+            time.sleep(0.001)
+        assert helper_lock.waiters
+        assert not waiter_finished.is_set()
+
+        helper_release.set()
+        interrupted.join(timeout=2)
+        waiter.join(timeout=2)
+
+        assert not interrupted.is_alive()
+        assert not waiter.is_alive()
+        assert isinstance(errors.pop("check_doc_drift"), KeyboardInterrupt)
+        assert errors == {}
+        assert set(modules) == {"system_map_context"}
+        assert helper_exec_calls == 2
+        helper_module = sys.modules[helper_key]
+        assert os.path.samefile(helper_module.__file__, helper_path)
+        assert helper_module.__spec__ is not None
+        assert helper_module.__spec__._initializing is False
+        assert helper_lock.owner is None
+        assert helper_lock.waiters == []
+    finally:
+        helper_release.set()
+        interrupted.join(timeout=2)
+        if waiter.ident is not None:
+            waiter.join(timeout=2)
 
 
 @pytest.mark.parametrize(
