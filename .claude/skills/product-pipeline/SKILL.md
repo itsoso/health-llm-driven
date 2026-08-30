@@ -12,6 +12,10 @@ description: "复元产品全生命周期总指挥:把一句用户需求,经『�
 > - **后半段(实现→测试→评审→部署→验证)委托给已有零件,绝不重造**:`health-harness-orchestrator`、`backend-deploy` / `mobile-ota` / `mobile-testflight-release`、`safety-gate` / `safety-privacy-reviewer`、`qa-verifier`、`council-review`。
 > - 何时**不**用本 skill:单文件小修 / 纯文档 / 机械改动 → 直接做或用单个 `Agent`;只做实现+上线(需求已定)→ 直接用 `health-harness-orchestrator`。
 
+**Governance boundary:**本 adapter 只在 Router 选中 `feature` 时作为
+`primary_controller`;委托 `health-harness-orchestrator` 时复用 same parent run
+与同一 Dossier,绝不创建第二个完成状态。
+
 ## 核心理念(读这段就懂为什么这样设计)
 
 1. **Gate 而非 Stage**:每个阶段之间有一道**能失败、能 STOP** 的闸。流水线的价值在闸,不在线。

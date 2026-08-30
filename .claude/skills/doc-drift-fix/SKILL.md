@@ -27,7 +27,7 @@ description: Use when CI reports doc drift or code changes API routers, tasks, m
 
 ## 新增代码派生结构
 
-当一类结构会随代码变化时，在 `scripts/dump_system_map.py::build_map` 增加字段，并复用 `scripts/check_doc_drift.py` 的扫描器。不要把新计数放进 ARCHITECTURE、CLAUDE 或 system-map 叙事。
+当一类结构会随代码变化时，在 `scripts/dump_system_map.py::build_map` 增加字段，并复用 `scripts/check_doc_drift.py` 的扫描器。不要把新计数放进 ARCHITECTURE、agent 入口或 system-map 叙事。
 
 ## 提交前
 

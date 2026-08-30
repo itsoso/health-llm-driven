@@ -14,11 +14,13 @@
 
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT/scripts/test-output.sh"
 cd "$ROOT"
 
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'; NC='\033[0m'
 ok()   { echo -e "${GREEN}✓${NC} $*"; }
 fail() { echo -e "${RED}✗${NC} $*"; }
+warn() { echo -e "${YELLOW}!${NC} $*"; }
 hdr()  { echo -e "\n${YELLOW}═══ $* ═══${NC}"; }
 
 MODE="${1:-all}"
@@ -38,6 +40,30 @@ esac
 
 FAIL_LIST=()
 
+backend_pytest() {
+  (cd "$ROOT/backend" && source venv/bin/activate && pytest tests/ -q --no-cov --tb=line --ignore=tests/test_integration.py)
+}
+
+frontend_vitest() {
+  (cd "$ROOT/frontend" && npm run test -- --run)
+}
+
+frontend_typecheck() {
+  (cd "$ROOT/frontend" && npx tsc --noEmit -p .)
+}
+
+frontend_lint() {
+  (cd "$ROOT/frontend" && npm run lint --silent)
+}
+
+mobile_jest() {
+  (cd "$ROOT/mobile" && ./node_modules/.bin/jest --silent)
+}
+
+mobile_typecheck() {
+  (cd "$ROOT/mobile" && ./node_modules/.bin/tsc --noEmit)
+}
+
 # ── Backend ────────────────────────────────────────────────
 if $RUN_BACKEND; then
   hdr "Backend pytest (Python)"
@@ -45,10 +71,11 @@ if $RUN_BACKEND; then
     fail "backend/venv 不存在; 请先 cd backend && python3 -m venv venv && pip install -r requirements.txt"
     FAIL_LIST+=("backend:setup")
   else
-    if (cd backend && source venv/bin/activate && pytest tests/ -q --no-cov --tb=line --ignore=tests/test_integration.py 2>&1 | tail -30); then
+    if run_with_log "Backend pytest" 20 30 backend_pytest; then
       ok "Backend tests"
     else
-      fail "Backend tests"
+      status=$?
+      fail "Backend tests (exit $status)"
       FAIL_LIST+=("backend:pytest")
     fi
   fi
@@ -61,23 +88,28 @@ if $RUN_FRONTEND; then
     fail "frontend/node_modules 不存在; 请先 cd frontend && npm install"
     FAIL_LIST+=("frontend:setup")
   else
-    if (cd frontend && npm run test -- --run 2>&1 | tail -10); then
+    if run_with_log "Frontend vitest" 10 10 frontend_vitest; then
       ok "Frontend vitest"
     else
-      fail "Frontend vitest"
+      status=$?
+      fail "Frontend vitest (exit $status)"
       FAIL_LIST+=("frontend:vitest")
     fi
 
-    if (cd frontend && npx tsc --noEmit -p . 2>&1 | tail -5); then
+    if run_with_log "Frontend typecheck" 10 10 frontend_typecheck; then
       ok "Frontend typecheck"
     else
-      fail "Frontend typecheck"
+      status=$?
+      fail "Frontend typecheck (exit $status)"
       FAIL_LIST+=("frontend:tsc")
     fi
 
-    if (cd frontend && npm run lint --silent 2>&1 | grep -E "Error" | head -5; [ ${PIPESTATUS[0]} -eq 0 ] || true); then
-      # ESLint warning-only 模式, 不计入失败. 仅做提醒.
+    if run_with_log "Frontend lint" 10 10 frontend_lint; then
       ok "Frontend lint (warnings 不计入失败)"
+    else
+      lint_status=$?
+      # 保持既有 warning-only 边界,但显式暴露 lint 的真实退出码和上下文。
+      warn "Frontend lint exit $lint_status (non-blocking)"
     fi
   fi
 fi
@@ -90,17 +122,19 @@ if $RUN_MOBILE; then
     FAIL_LIST+=("mobile:setup")
   else
     # 直接调 local bin 避免子 shell 找不到 npx 全局
-    if (cd mobile && ./node_modules/.bin/jest --silent 2>&1 | tail -10); then
+    if run_with_log "Mobile jest" 10 10 mobile_jest; then
       ok "Mobile jest"
     else
-      fail "Mobile jest"
+      status=$?
+      fail "Mobile jest (exit $status)"
       FAIL_LIST+=("mobile:jest")
     fi
 
-    if (cd mobile && ./node_modules/.bin/tsc --noEmit 2>&1 | tail -5); then
+    if run_with_log "Mobile typecheck" 10 10 mobile_typecheck; then
       ok "Mobile typecheck"
     else
-      fail "Mobile typecheck"
+      status=$?
+      fail "Mobile typecheck (exit $status)"
       FAIL_LIST+=("mobile:tsc")
     fi
   fi

@@ -105,4 +105,4 @@ archive 在 `$WORK/app.xcarchive` 还在,只重跑 [3.5]+[4]+[5]+[6] 那几步(p
 | `eas submit` 缺 ASC key | 远端 `--auto-submit` 用服务端 key,无需本地配;若仍报错查 EAS credentials |
 | build 红在 Xcode 编译 | 看日志 `ARCHIVE FAILED` 段的具体 error;native/plugin 改动先 `npx expo prebuild --platform ios --clean` 本地复现 |
 
-> 相关:OTA 与本地 Sim 反馈环见 CLAUDE.md §"iOS 反馈环";`release-engineer` agent 负责发版执行(强制异步)。
+> 相关:OTA 与本地 Sim 反馈环见 `docs/agent-skill-binding.md`；发版执行必须异步并由当前唯一 controller 记录结果。

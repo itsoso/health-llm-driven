@@ -2,9 +2,9 @@
 
 **状态：** active
 
-**版本：** 1.1
+**版本：** 2.0
 
-**最后复审：** 2026-08-29
+**最后复审：** 2026-08-30
 
 **机器真源：** `docs/governance/agent-skill-registry.json`
 
@@ -85,7 +85,8 @@ Overlay 可以返回 BLOCK，但不能再创建计划、批次、父 run 或“�
 - `dispatching-parallel-agents`、`subagent-driven-development`：是 Harness 的平台实现手段，不拥有项目 checkpoint；
 - `requesting-code-review`、`receiving-code-review`：按风险和评审 charter 加载，不作为每个小修的固定税；
 - React Native、Postgres、OTA 等技术 Skill：只有对应技术面真实命中时才加载，并服从项目 Overlay 与 Terminal；
-- `domain-rule-factory`：继续留在 incubator，获得跨领域复用证据前不进入默认路由。
+- `skill-creator`、`writing-skills`、`plugin-creator`：只在 `skill-governance` / `plugin-authoring` capability trigger 命中时加载，不进入普通开发任务；
+- 未被 Git 跟踪、未登记或只有本地草稿的 Skill 不进入机器注册表；孵化实验先在单独证据包中完成 owner、版本和测试，再申请登记。
 
 ### 3.4 当前治理裁决
 
@@ -94,7 +95,6 @@ Overlay 可以返回 BLOCK，但不能再创建计划、批次、父 run 或“�
 | standard | `reva-workflow-router`、`product-pipeline`、`health-harness-orchestrator`、`system-map`、`safety-gate`、`add-managed-migration`、`doc-drift-fix`、`mobile-ota` | Router 可在严格触发边界内选择；controller 仍遵守唯一性 |
 | standard external capability | `karpathy-guidelines`、`test-driven-development`、`systematic-debugging`、`verification-before-completion` | 只增加纪律，不取得 controller 身份 |
 | recommended | `backend-deploy`、`ios-app-review-gate`、`mobile-testflight-release`、`mac-build-deploy`、`extend-safety-or-specialist` | 可显式使用，但在配置抽取、产品身份或工具链 pin 硬化前不宣称平台标准 |
-| experimental | `domain-rule-factory` | 仅受控试用，不进默认路由 |
 | deprecated as direct controller | `using-superpowers`、`executing-plans` | 不删除上游 Skill；本项目禁止其直接取得控制权 |
 
 机器可执行状态以注册表为准。本表只解释裁决理由，不复制 owner、版本或完整路由字段。
@@ -107,10 +107,14 @@ Router 不凭自由文本“顺手多加几个 Skill”。它先把任务归入�
 |---|---|---|---|
 | `analysis` | 无 | 无 | system-map |
 | `quick_fix` | 无 | 无 | system-map、最小改动、TDD、完成验证 |
-| `feature` | product-pipeline | health-harness-orchestrator | 定义环、交付环与同一父 run |
+| `feature` | product-pipeline | health-harness-orchestrator（S5 才按需加载） | 定义环、交付环与同一父 run |
 | `implementation` | health-harness-orchestrator | 无 | 已定义需求的实现、评审和验证 |
 | `incident` | health-harness-orchestrator | 无 | systematic-debugging、回归验证 |
 | `release` | 一个目标对应的 Terminal | 无 | 发布前验证与目标端 Gate |
+
+`planning` 与 `verification` 是工作流阶段，不是 Router mode；唯一 mode 词汇固定为 `analysis|quick_fix|feature|implementation|incident|release`。
+
+Skill 激活阶段由注册表 `routing.activation_policy` 唯一裁决：Router、当前 controller/terminal、实际命中的 Overlay 与 authoring capability trigger 在 `immediate` 启动；incident 的 debugging 语义阶段为 `diagnosis`，但该模式将 diagnosis 设为 eager；System Map 为 `on_demand`；最小改动与 TDD 在 `implementation`；完成验证在 `verification`；feature delegate 只在 `S5` 激活。未知阶段或覆盖不完整由 checker fail-closed。
 
 模式选择标准：
 
@@ -174,7 +178,26 @@ python3.12 scripts/check_agent_skill_governance.py recommend \
   --release-target mobile-ota
 ```
 
-推荐输出是机器合同：`controller_count` 只能为 0 或 1，Overlay 已去重，`selected_skills` 是本次最小选择。以下输入会以非零退出码失败：未知 mode、Overlay 或发布目标；release 缺少/重复目标；非 release 携带发布目标；注册文件缺失、来源缺失、角色冲突或 Codex 适配器含 Claude-only 指令。
+推荐输出是 `agent-skill-recommendation.v2` 机器合同：
+
+- 启动时只加载 `immediate_skills`；进入实际阶段时才按注册表 `routing.activation_policy.phases` 的顺序加载 `deferred_by_phase[phase]`。这两个字段是唯一加载依据。
+- `selected_skills` / `selected_skill_details` 保留 v1 的非 delegate 选择，即 Router、当前 controller/terminal、capability 与 Overlay；它们不包含 S5 delegate，也**不得驱动预载**。
+- `deferred_skills` / `deferred_skill_details` 只保留 delegate 的 v1 兼容语义，也**不得驱动预载**。
+- `activation_skills` / `activation_skill_details` 是 `immediate_skills` 加各 `deferred_by_phase` 的完整有序 union，只用于审计与确定性比较，不是预载清单。
+- detail 都带合法 `activation_phase`；immediate 与 phase-deferred 集合不重叠，union 等于 `activation_skills`。v1 选择顺序固定为 Router → controller/terminal → 注册表 route capability → 按 ID 排序的 authoring capability → 按 ID 排序的 Overlay；delegate 保留 route 顺序。`activation_skills` 先按上述选择顺序收集 immediate/eager 项，再按注册表 phase 顺序和各 phase 内选择顺序追加；`deferred_by_phase` 不按 JSON key 字母重排。
+
+`controller_count` 只能为 0 或 1。未知 mode、phase、Overlay、capability trigger 或发布目标，以及覆盖不全、角色冲突、adapter 漂移等输入均以非零退出码 fail-closed。
+
+Skill / plugin 治理任务应额外声明 capability trigger：
+
+```bash
+python3.12 scripts/check_agent_skill_governance.py recommend \
+  --mode analysis \
+  --capability-trigger skill-governance \
+  --capability-trigger plugin-authoring
+```
+
+`feature` 的 delegate 出现在 `deferred_by_phase.S5`、`activation_skills` 和 v1 `deferred_skills`，不进入 v1 `selected_skills`；它不会在定义环预载，也不会计作第二个 controller。Product Pipeline 进入 S5 后才在同一父 run 中显式加载该 delegate。
 
 ## 7. 平台适配器
 
@@ -182,7 +205,7 @@ python3.12 scripts/check_agent_skill_governance.py recommend \
 
 - Claude adapter 可以使用 Claude 的团队协作工具；
 - Codex adapter 只能使用 Codex collaboration、tool 和 checkpoint 语义；
-- 两端必须保留相同 mode、唯一 Controller、Gate、BLOCK、委托和失败语义；
+- 两端必须保留相同 mode、唯一 Controller、Gate、BLOCK、委托和失败语义；注册表用 required markers 与整文件 SHA-256 同时阻断删 Gate、漏 BLOCK 或未同步 digest 的 adapter 漂移；不兼容语义变更仍必须按 SemVer 规则升版并接受评审；
 - Codex adapter 禁止出现 `TeamCreate`、`TaskCreate`、`SendMessage`、硬编码 Opus 或 Claude 署名；
 - 平台适配器可以摘要稳定语义帮助人阅读，但机器检查器的路由输出始终是唯一裁决；
 - Router 是 Codex 插件唯一允许隐式调用的 Skill，两个 Controller 必须由 Router 显式选择。
@@ -193,13 +216,28 @@ python3.12 scripts/check_agent_skill_governance.py recommend \
 
 ## 8. 可观测与隐私
 
-`docs/governance/agent-skill-run-event.schema.json` 只允许记录：匿名 run/task ID、task mode、Skill ID/版本/角色、Gate、outcome、验证退出码、耗时、评审轮次、人工介入次数和 reason code。
+`docs/governance/agent-skill-run-event.schema.json` 定义汇总事件；`docs/governance/agent-skill-run-trace-event.schema.json` 与 `scripts/agent_skill_benchmark.py` 定义前瞻、append-only 的阶段轨迹。两者只接受独立生成的 opaque UUID4 或受限 UUID，不允许把任务语义编码进 ID。轨迹只保存 source / registry / route / evidence 的 SHA-256，不保存路径或证据正文；每条事件有全局序号、前驱 hash 和 event hash，写入使用文件锁与 `fsync`。
 
-严禁写入原始 prompt、任务正文、健康文本、药名、诊断、凭据、Secret 或 Token。`task_id` 必须是现有工单 ID 或不含语义的 opaque ID，不能把用户请求编码进 ID。事件 Schema 顶层和嵌套 Skill 对象都关闭额外字段。
+严禁写入原始 prompt、任务正文、健康文本、药名、诊断、凭据、Secret 或 Token。`task_id` 必须是独立随机生成、不含语义的 opaque ID，不能直接使用工单号或把用户请求编码进 ID。事件 Schema 顶层和嵌套 Skill 对象都关闭额外字段。
 
 `reason_code` 只能使用 Schema 内的闭集通用原因（如 `validation_failed`、`safety_blocked`、`manual_decision_required`），不得把药名、诊断、用户文字或任意自由文本编码进原因码。
 
-本期只定义 Schema，不自动写数据库。未来采集前仍需单独通过隐私准入。评估优先看：任务是否完成、Gate 一次通过率、返工轮次、恢复成功率、人工介入、端到端耗时和逃逸缺陷；调用次数仅用于容量分析。
+采集器没有默认日志路径，也不写数据库；操作者必须显式传 `--log`。`router_v1_prospective` 在任何工作阶段前必须先记录已哈希的 route，失败或取消则可在无路线时 fail-closed 结束。报告中的时长只由采集器 UTC 时间戳推导，调用方不能上报 duration 或自由文本 reason。`evidence_sha256` 只能哈希已提交或具备足够熵的完整 evidence pack，禁止直接哈希低熵药名、诊断、健康短句或 prompt（字典攻击可反推）。若要把链称为 tamper-evident，必须把 `trace_head_sha256` 锚定到 JSONL 之外的 Dossier 或评审证据中；未外部锚定时只能称为链式完整性校验。
+
+```bash
+python3.12 scripts/agent_skill_benchmark.py start \
+  --log <explicit-jsonl> \
+  --arm router_v1_prospective \
+  --task-mode <canonical-mode> \
+  --source-sha256 <sha256-of-fixed-source-ref> \
+  --registry-sha256 <sha256-of-registry>
+```
+
+每个 run 必须解析 G3、G4、G5、G6 并记录 `run_finished` 才具备比较资格；不同 arm 的 task-mode 分布必须完全匹配。
+
+本项目把已经完成的饮食修复仅记作 `transition_v0_observational` 叙事基线：它在执行中已经接触新版 Router，不能作为纯旧体系对照，也不回填伪造的历史 trace。下一条真实 Bug 才从任务启动前注册为 `router_v1_prospective`。单个样本只能报告描述性差异，不能宣称因果提升；初步结论至少需要同风险层每组 5 个任务（建议 10 个），且技术完成耗时中位数改善至少 20%、G3/G4/G6 与逃逸缺陷不退化。
+
+评估优先看：任务是否完成、Gate 一次通过率、返工轮次、恢复成功率、人工介入、端到端耗时和逃逸缺陷；调用次数仅用于容量分析。自动报告永远不选“赢家”，G6 未决、任一组缺样本或单样本时明确返回证据不足。
 
 ## 9. 变更与复审
 

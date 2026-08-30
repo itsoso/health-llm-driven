@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-skill-run-trace-event.v1",
+  "title": "Reva Agent Skill Benchmark Trace Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "task_id",
+    "arm",
+    "task_mode",
+    "stage",
+    "outcome",
+    "timestamp_utc",
+    "sequence",
+    "source_sha256",
+    "registry_sha256",
+    "route_sha256",
+    "evidence_sha256",
+    "prev_event_sha256",
+    "event_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "agent-skill-run-trace-event.v1"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "task_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "arm": {
+      "type": "string",
+      "enum": [
+        "transition_v0_observational",
+        "router_v1_prospective"
+      ]
+    },
+    "task_mode": {
+      "type": "string",
+      "enum": [
+        "analysis",
+        "quick_fix",
+        "feature",
+        "implementation",
+        "incident",
+        "release"
+      ]
+    },
+    "stage": {
+      "type": "string",
+      "enum": [
+        "run_started",
+        "route_selected",
+        "root_cause_identified",
+        "red_test_observed",
+        "green_test_observed",
+        "g3_decided",
+        "g4_decided",
+        "g5_decided",
+        "g6_decided",
+        "manual_intervention",
+        "run_finished"
+      ]
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "pass",
+        "fail",
+        "blocked",
+        "not_applicable",
+        "cancelled"
+      ]
+    },
+    "timestamp_utc": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "registry_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "route_sha256": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "evidence_sha256": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "prev_event_sha256": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "event_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

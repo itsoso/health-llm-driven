@@ -5,7 +5,7 @@ description: "macOS 桌面 App (apps/mac, Swift/SwiftPM) 的构建、测试、�
 
 # Mac Build & Deploy
 
-`apps/mac/`(Swift 6 + SwiftUI,SwiftPM 包)的开发反馈环 + 分发。`backend-engineer`/`mac-engineer`/`qa-verifier`/`release-engineer` 共用。
+`apps/mac/`(Swift 6 + SwiftUI,SwiftPM 包)的开发反馈环 + 分发。任何平台 adapter 都执行同一构建、验证和发布合同。
 
 ## 开发反馈环(本地,秒级~分钟级)
 ```
@@ -26,8 +26,8 @@ scripts/package-app.sh --debug    # debug 配置
 产物 `apps/mac/dist/` 不提交。显示名见 Info.plist;App 直连**生产** `https://health.executor.life/api/v1`。
 
 ## CI(唯一裁判 —— 本地绿 ≠ CI 绿)
-CI `mac-build` job:`macos-latest` + `setup-xcode@v1 latest-stable`(pin)→ `swift build` + `swift test --filter HealthAgentMacCoreTests`。
-CI 的 Xcode/工具链常比本地**旧**,会暴露本地不报的编译错(类型检查超时 / main-actor 隔离 / 跨模块 init)。**提交前若改了 Swift,必须以 CI 结果为准**;反复本地绿但 CI 红时,对照 `mac-engineer` agent 的"必踩坑"清单逐条排查。
+CI `mac-build` job:`macos-latest` + `setup-xcode@v1 latest-stable`(滚动版本,并非精确 pin)→ `swift build` + `swift test --filter HealthAgentMacCoreTests`。
+CI 的 Xcode/工具链可能与本地不同，会暴露本地不报的编译错(类型检查超时 / main-actor 隔离 / 跨模块 init)。**提交前若改了 Swift,必须以 CI 结果为准**，并按下表逐条排查。
 
 ## CI 失败快速排查(高频根因)
 | CI 报错 | 根因 | 修法 |

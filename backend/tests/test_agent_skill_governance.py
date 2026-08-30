@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+import ast
+import builtins
+import importlib.machinery
+import importlib.util
 import json
+import os
+import re
 import subprocess
 import sys
+import threading
+from functools import cache
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,12 +20,208 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = ROOT / "docs" / "governance" / "agent-skill-registry.json"
 EVENT_SCHEMA = ROOT / "docs" / "governance" / "agent-skill-run-event.schema.json"
+TRACE_EVENT_SCHEMA = (
+    ROOT / "docs" / "governance" / "agent-skill-run-trace-event.schema.json"
+)
+BENCHMARK_COLLECTOR = ROOT / "scripts" / "agent_skill_benchmark.py"
 CHECKER = ROOT / "scripts" / "check_agent_skill_governance.py"
+TOOLING_PYTEST_RUNNER = ROOT / "scripts" / "run_tooling_pytests.py"
+TOOLING_PYTEST_GUARD = ROOT / "scripts" / "tooling_pytest_guard.py"
+TOOLING_TESTS = (
+    "backend/tests/test_agent_skill_governance.py",
+    "backend/tests/test_agent_skill_manifests.py",
+    "backend/tests/test_doc_drift_narrative_counts.py",
+    "backend/tests/test_doc_drift_skill_contract.py",
+    "backend/tests/test_dossier_consistency.py",
+    "backend/tests/test_reva_health_harness_plugin_package.py",
+    "backend/tests/test_system_map_agent_context.py",
+    "backend/tests/test_system_map_generator.py",
+)
+TOOLING_BENCHMARK_TEST = "backend/tests/test_agent_skill_benchmark.py"
+CANONICAL_MODES = (
+    "analysis",
+    "quick_fix",
+    "feature",
+    "implementation",
+    "incident",
+    "release",
+)
+MODE_PHASE_NOTE = (
+    "`planning` and `verification` are workflow phases, not mode values."
+)
+OPAQUE_UUID_PATTERN = (
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[4-7][0-9a-f]{3}-"
+    r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+)
+
+
+class _GuardCleanupConfig:
+    def __init__(self, add_cleanup_error: BaseException | None = None):
+        self._add_cleanup_error = add_cleanup_error
+        self.cleanups = []
+
+    def add_cleanup(self, cleanup):
+        if self._add_cleanup_error is not None:
+            raise self._add_cleanup_error
+        self.cleanups.append(cleanup)
+
+    def cleanup(self):
+        while self.cleanups:
+            self.cleanups.pop()()
+
+
+def _checker_module():
+    spec = importlib.util.spec_from_file_location(
+        "agent_skill_governance_checker", CHECKER
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _tooling_pytest_runner_module():
+    assert TOOLING_PYTEST_RUNNER.is_file(), "tooling pytest runner is required"
+    spec = importlib.util.spec_from_file_location(
+        "tooling_pytest_runner", TOOLING_PYTEST_RUNNER
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@cache
+def _tooling_pytest_guard_module():
+    assert TOOLING_PYTEST_GUARD.is_file(), "tooling pytest guard is required"
+    spec = importlib.util.spec_from_file_location(
+        "tooling_pytest_guard", TOOLING_PYTEST_GUARD
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _attribute_path(node: ast.expr) -> tuple[str, ...]:
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        parts.append(node.id)
+    return tuple(reversed(parts))
+
+
+def _literal_fixture_names(call: ast.Call) -> set[str]:
+    values = [
+        *call.args,
+        *(keyword.value for keyword in call.keywords if keyword.arg == "argname"),
+    ]
+    return {
+        argument.value
+        for argument in values
+        if isinstance(argument, ast.Constant) and isinstance(argument.value, str)
+    }
+
+
+def _pytest_usefixtures_paths(tree: ast.AST) -> set[tuple[str, ...]]:
+    paths = {("pytest", "mark", "usefixtures")}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "pytest":
+                    paths.add((alias.asname or "pytest", "mark", "usefixtures"))
+        if not isinstance(node, ast.ImportFrom) or node.level != 0:
+            continue
+        if node.module == "pytest":
+            for alias in node.names:
+                if alias.name == "mark":
+                    paths.add((alias.asname or "mark", "usefixtures"))
+        if node.module == "pytest.mark":
+            for alias in node.names:
+                if alias.name == "usefixtures":
+                    paths.add((alias.asname or "usefixtures",))
+    return paths
+
+
+def _assert_tooling_test_ast_safe(source: str, filename: str) -> None:
+    guard = _tooling_pytest_guard_module()
+    tree = ast.parse(source, filename=filename)
+    usefixtures_paths = _pytest_usefixtures_paths(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported = [alias.name for alias in node.names]
+            forbidden = [
+                name for name in imported if guard.is_forbidden_module_name(name)
+            ]
+            assert not forbidden, (filename, forbidden)
+        if isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            imported = [
+                module,
+                *(f"{module}.{alias.name}" for alias in node.names if module),
+            ]
+            forbidden = [
+                name
+                for name in imported
+                if node.level == 0 and guard.is_forbidden_module_name(name)
+            ]
+            assert not forbidden, (filename, forbidden)
+        is_test_function = isinstance(
+            node, (ast.FunctionDef, ast.AsyncFunctionDef)
+        ) and node.name.startswith("test_")
+        if is_test_function:
+            argument_names = {
+                argument.arg
+                for argument in (
+                    *node.args.posonlyargs,
+                    *node.args.args,
+                    *node.args.kwonlyargs,
+                )
+            }
+            forbidden = argument_names & guard.FORBIDDEN_FIXTURES
+            assert not forbidden, (filename, node.name, forbidden)
+        if not isinstance(node, ast.Call):
+            continue
+        call_path = _attribute_path(node.func)
+        if call_path in usefixtures_paths:
+            forbidden = _literal_fixture_names(node) & guard.FORBIDDEN_FIXTURES
+            assert not forbidden, (filename, "pytest.mark.usefixtures", forbidden)
+        if call_path == ("request", "getfixturevalue"):
+            forbidden = _literal_fixture_names(node) & guard.FORBIDDEN_FIXTURES
+            assert not forbidden, (filename, "request.getfixturevalue", forbidden)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_twin_cache():
+    """Override the repository Redis-flushing fixture for pure governance tests."""
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _noop_twin_cache():
+    """Do not patch or connect to runtime Twin cache in repository-contract tests."""
+    yield
 
 
 def _registry() -> dict:
     assert REGISTRY.is_file(), "machine-readable Agent Skill registry is required"
     return json.loads(REGISTRY.read_text(encoding="utf-8"))
+
+
+@cache
+def _tracked_project_files() -> frozenset[str]:
+    result = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=ROOT,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, os.fsdecode(result.stderr)
+    return frozenset(
+        os.fsdecode(relative) for relative in result.stdout.split(b"\0") if relative
+    )
 
 
 def _recommend(*args: str) -> dict:
@@ -29,6 +234,46 @@ def _recommend(*args: str) -> dict:
     )
     assert result.returncode == 0, result.stdout + result.stderr
     return json.loads(result.stdout)
+
+
+def _assert_activation_partition(result: dict) -> None:
+    phases = _registry()["routing"]["activation_policy"]["phases"]
+    allowed_phases = set(phases)
+    expected_phase_order = [
+        phase
+        for phase in phases
+        if phase != "immediate" and phase in result["deferred_by_phase"]
+    ]
+    assert list(result["deferred_by_phase"]) == expected_phase_order
+
+    phase_deferred = [
+        skill_id
+        for phase in expected_phase_order
+        for skill_id in result["deferred_by_phase"][phase]
+    ]
+    activation = [*result["immediate_skills"], *phase_deferred]
+
+    assert set(result["immediate_skills"]).isdisjoint(phase_deferred)
+    assert result["activation_skills"] == activation
+    assert len(activation) == len(set(activation))
+    assert [item["id"] for item in result["activation_skill_details"]] == activation
+    assert result["deferred_skills"] == result["delegates"]
+    assert [item["id"] for item in result["deferred_skill_details"]] == result[
+        "delegates"
+    ]
+    assert all(
+        item["role"] == "delegate" for item in result["deferred_skill_details"]
+    )
+    assert set(result["selected_skills"]).isdisjoint(result["deferred_skills"])
+    assert set(result["selected_skills"]) | set(result["deferred_skills"]) == set(
+        activation
+    )
+    assert [item["id"] for item in result["selected_skill_details"]] == result[
+        "selected_skills"
+    ]
+    assert {
+        item["activation_phase"] for item in result["activation_skill_details"]
+    } <= allowed_phases
 
 
 def test_registry_has_one_router_and_closed_governance_vocabulary():
@@ -52,6 +297,1755 @@ def test_registry_has_one_router_and_closed_governance_vocabulary():
 
     routers = [skill for skill in registry["skills"] if skill["kind"] == "router"]
     assert [skill["id"] for skill in routers] == ["reva-workflow-router"]
+    assert "domain-rule-factory" not in {skill["id"] for skill in registry["skills"]}
+
+
+def test_mode_vocabulary_is_identical_across_registry_checker_and_entrypoints():
+    checker = _checker_module()
+    registry = _registry()
+    mode_argument = f"--mode <{'|'.join(CANONICAL_MODES)}>"
+
+    assert tuple(checker.MODES) == CANONICAL_MODES
+    assert tuple(registry["routing"]["routes"]) == CANONICAL_MODES
+
+    agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    assert mode_argument in agents
+    assert MODE_PHASE_NOTE in agents
+
+    for path in (
+        ROOT / ".claude" / "skills" / "reva-workflow-router" / "SKILL.md",
+        ROOT
+        / "plugins"
+        / "reva-health-harness"
+        / "skills"
+        / "reva-workflow-router"
+        / "SKILL.md",
+    ):
+        text = path.read_text(encoding="utf-8")
+        for mode in CANONICAL_MODES:
+            assert f"`{mode}`" in text
+        assert MODE_PHASE_NOTE in text
+
+
+def test_checker_rejects_registry_mode_order_drift():
+    checker = _checker_module()
+    registry = _registry()
+    routes = registry["routing"]["routes"]
+    registry["routing"]["routes"] = {
+        mode: routes[mode] for mode in reversed(CANONICAL_MODES)
+    }
+
+    with pytest.raises(checker.GovernanceError) as exc:
+        checker.validate_registry(registry)
+
+    assert exc.value.code == "invalid_modes"
+
+
+def test_tooling_pytest_runner_uses_an_isolated_no_coverage_command():
+    runner = _tooling_pytest_runner_module()
+
+    command = runner.build_command(include_benchmark=False)
+    assert command[:3] == [sys.executable, "-m", "pytest"]
+    assert "--noconftest" in command
+    assert "-c" in command
+    assert command[command.index("-c") + 1] == os.devnull
+    assert "--rootdir" in command
+    assert command[command.index("--rootdir") + 1] == str(ROOT)
+    assert command[command.index("-o") + 1] == "addopts="
+    assert "-q" in command
+    assert "--strict-markers" in command
+    assert "--tb=short" in command
+    plugins = [
+        command[index + 1]
+        for index, argument in enumerate(command[:-1])
+        if argument == "-p"
+    ]
+    assert plugins == ["no:cacheprovider", "scripts.tooling_pytest_guard"]
+    assert not any(argument.startswith("--cov") for argument in command)
+
+    environment = runner.sanitized_environment(
+        {
+            "PYTEST_ADDOPTS": "--cov=app --cov-report=html",
+            "PYTEST_PLUGINS": "untrusted_plugin",
+            "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "0",
+            "KEEP_ME": "yes",
+        }
+    )
+    assert "PYTEST_ADDOPTS" not in environment
+    assert "PYTEST_PLUGINS" not in environment
+    assert environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] == "1"
+    assert environment["KEEP_ME"] == "yes"
+
+
+def test_tooling_pytest_runner_has_exact_default_allowlist():
+    runner = _tooling_pytest_runner_module()
+
+    assert tuple(runner.DEFAULT_TESTS) == TOOLING_TESTS
+
+
+def test_tooling_pytest_runner_only_adds_benchmark_on_explicit_request():
+    runner = _tooling_pytest_runner_module()
+
+    default_command = runner.build_command(include_benchmark=False)
+    benchmark_command = runner.build_command(include_benchmark=True)
+
+    assert TOOLING_BENCHMARK_TEST not in default_command
+    assert benchmark_command[-1] == TOOLING_BENCHMARK_TEST
+    assert benchmark_command.count(TOOLING_BENCHMARK_TEST) == 1
+
+
+def test_tooling_pytest_runner_preserves_fixed_cwd_and_child_exit_code(monkeypatch):
+    runner = _tooling_pytest_runner_module()
+    invocation = {}
+
+    def completed_with_failure(command, **kwargs):
+        invocation.update(command=command, **kwargs)
+        return subprocess.CompletedProcess(command, returncode=17)
+
+    monkeypatch.setattr(runner.subprocess, "run", completed_with_failure)
+
+    assert runner.main([]) == 17
+    assert invocation["command"] == runner.build_command(include_benchmark=False)
+    assert invocation["cwd"] == ROOT
+    assert invocation["check"] is False
+
+
+def test_tooling_pytest_runner_help_states_supplemental_scope(capsys):
+    runner = _tooling_pytest_runner_module()
+
+    with pytest.raises(SystemExit) as exc:
+        runner.parse_args(["--help"])
+
+    assert exc.value.code == 0
+    help_text = " ".join(capsys.readouterr().out.lower().split())
+    assert "supplemental" in help_text
+    assert "skips coverage" in help_text
+    assert "does not replace regular project tests or ci gates" in help_text
+
+
+def test_tooling_pytest_allowlist_is_present_and_ast_runtime_independent():
+    runner = _tooling_pytest_runner_module()
+    allowlist = (*runner.DEFAULT_TESTS, runner.BENCHMARK_TEST)
+
+    assert runner.BENCHMARK_TEST == TOOLING_BENCHMARK_TEST
+
+    for relative in allowlist:
+        path = ROOT / relative
+        assert path.is_file(), relative
+        _assert_tooling_test_ast_safe(path.read_text(encoding="utf-8"), relative)
+
+
+def test_tooling_ast_guard_allows_helper_parameter_names():
+    _assert_tooling_test_ast_safe(
+        "def helper(client_name):\n    return client_name\n",
+        "helper_probe.py",
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "module_name"),
+    [
+        ("import app.services\n", "app.services"),
+        ("from main import create_app\n", "main"),
+        ("import backend.app.models\n", "backend.app.models"),
+        ("from backend.main import app\n", "backend.main"),
+        ("from backend import app\n", "backend.app"),
+    ],
+)
+def test_tooling_ast_guard_rejects_application_imports(source, module_name):
+    with pytest.raises(AssertionError, match=re.escape(module_name)):
+        _assert_tooling_test_ast_safe(source, "import_probe.py")
+
+
+@pytest.mark.parametrize(
+    ("source", "fixture_name"),
+    [
+        ("def test_probe(client):\n    pass\n", "client"),
+        (
+            '@pytest.mark.usefixtures("auth_user_and_headers")\n'
+            "def test_probe():\n    pass\n",
+            "auth_user_and_headers",
+        ),
+        (
+            "def test_probe(request):\n"
+            '    request.getfixturevalue("db")\n',
+            "db",
+        ),
+        (
+            "import pytest as pt\n"
+            '@pt.mark.usefixtures("db")\n'
+            "def test_probe():\n    pass\n",
+            "db",
+        ),
+        (
+            "from pytest import mark\n"
+            '@mark.usefixtures("client")\n'
+            "def test_probe():\n    pass\n",
+            "client",
+        ),
+        (
+            "def test_probe(request):\n"
+            '    request.getfixturevalue(argname="db")\n',
+            "db",
+        ),
+    ],
+)
+def test_tooling_ast_guard_rejects_application_fixture_access(source, fixture_name):
+    with pytest.raises(AssertionError, match=fixture_name):
+        _assert_tooling_test_ast_safe(source, "fixture_probe.py")
+
+
+def test_tooling_pytest_guard_fails_for_dynamically_loaded_application_module(
+    tmp_path,
+):
+    runner = _tooling_pytest_runner_module()
+    assert TOOLING_PYTEST_GUARD.is_file(), "tooling pytest guard is required"
+    package = tmp_path / "app"
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "dynamic_probe.py").write_text("VALUE = 1\n", encoding="utf-8")
+    probe = tmp_path / "test_dynamic_application_import.py"
+    probe.write_text(
+        "import importlib\n"
+        "import sys\n"
+        "\n"
+        "def test_dynamic_application_import():\n"
+        '    name = "app.dynamic_probe"\n'
+        "    assert importlib.import_module(name).VALUE == 1\n"
+        "    sys.modules.pop(name)\n"
+        '    sys.modules.pop("app")\n',
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", *runner.PYTEST_OPTIONS, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "app.dynamic_probe" in result.stdout + result.stderr
+
+
+def test_tooling_pytest_guard_fails_closed_when_late_finder_precedes_observer(
+    tmp_path,
+):
+    runner = _tooling_pytest_runner_module()
+    probe_test = tmp_path / "test_late_finder_probe.py"
+    probe_test.write_text(
+        "import importlib\n"
+        "import sys\n"
+        "\n"
+        "def test_late_finder_probe():\n"
+        "    module = importlib.import_module('app')\n"
+        "    assert module.VALUE == 1\n"
+        "    sys.modules.pop('app')\n",
+        encoding="utf-8",
+    )
+    probe = tmp_path / "late_finder_guard_probe.py"
+    probe.write_text(
+        "import importlib.util\n"
+        "import sys\n"
+        "\n"
+        "import pytest\n"
+        f"sys.path.insert(0, {str(ROOT)!r})\n"
+        "from scripts import tooling_pytest_guard as guard\n"
+        "\n"
+        "class Loader:\n"
+        "    def create_module(self, _spec):\n"
+        "        return None\n"
+        "    def exec_module(self, module):\n"
+        "        module.VALUE = 1\n"
+        "\n"
+        "class Finder:\n"
+        "    def find_spec(self, fullname, _path=None, _target=None):\n"
+        "        if fullname == 'app':\n"
+        "            return importlib.util.spec_from_loader(fullname, Loader())\n"
+        "        return None\n"
+        "\n"
+        "class LateFinderPlugin:\n"
+        "    def __init__(self):\n"
+        "        self.finder = Finder()\n"
+        "    @pytest.hookimpl(trylast=True)\n"
+        "    def pytest_sessionstart(self):\n"
+        "        sys.meta_path.insert(0, self.finder)\n"
+        "\n"
+        f"test_path = {str(probe_test)!r}\n"
+        "exit_code = pytest.main(\n"
+        "    [\n"
+        "        '--noconftest',\n"
+        "        '-c',\n"
+        f"        {os.devnull!r},\n"
+        "        '--rootdir',\n"
+        f"        {str(tmp_path)!r},\n"
+        "        '-q',\n"
+        "        '-p',\n"
+        "        'no:cacheprovider',\n"
+        "        test_path,\n"
+        "    ],\n"
+        "    plugins=[guard, LateFinderPlugin()],\n"
+        ")\n"
+        "assert exit_code == pytest.ExitCode.TESTS_FAILED, exit_code\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "import-observer-error:integrity" in output
+
+
+def test_tooling_pytest_guard_allows_safe_imports_and_static_source_reads():
+    guard = _tooling_pytest_guard_module()
+    config = _GuardCleanupConfig()
+    app_source = ROOT / "backend" / "app" / "__init__.py"
+    guard.pytest_sessionstart(SimpleNamespace(config=config))
+    try:
+        assert importlib.import_module("fractions").Fraction(1, 2)
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module("safe_missing_dynamic_probe")
+        assert app_source.read_text(encoding="utf-8")
+        assert compile("VALUE = 1\n", str(app_source), "exec")
+        assert guard._active_observed_modules[config] == set()
+    finally:
+        config.cleanup()
+
+
+def test_tooling_pytest_guard_fails_for_direct_application_source_loaders(tmp_path):
+    runner = _tooling_pytest_runner_module()
+    namespace = tmp_path / "app" / "namespace_probe"
+    namespace.mkdir(parents=True)
+    detached_source = tmp_path / "detached_source.py"
+    detached_source.write_text("VALUE = 1\n", encoding="utf-8")
+    invalid_source = tmp_path / "direct_syntax_error.py"
+    invalid_source.write_text("def broken(:\n", encoding="utf-8")
+    backend_app_source = ROOT / "backend" / "app" / "__init__.py"
+    backend_app_alias = tmp_path / "backend_app_alias.py"
+    backend_app_alias.symlink_to(backend_app_source)
+    safe_source = ROOT / "scripts" / "run_tooling_pytests.py"
+    probe = tmp_path / "test_direct_application_source_loader.py"
+    probe.write_text(
+        "import importlib\n"
+        "import importlib.machinery\n"
+        "import importlib.util\n"
+        "import sys\n"
+        "from pathlib import Path\n"
+        "\n"
+        "import pytest\n"
+        "\n"
+        f"PRECOMPILED_SAFE_CODE = compile('VALUE = 2\\n', {str(safe_source)!r}, 'exec')\n"
+        "\n"
+        "def load_detached(name, path):\n"
+        "    spec = importlib.util.spec_from_file_location(name, path)\n"
+        "    assert spec and spec.loader\n"
+        "    module = importlib.util.module_from_spec(spec)\n"
+        "    spec.loader.exec_module(module)\n"
+        "    assert name not in sys.modules\n"
+        "\n"
+        "class DeletingLoader(importlib.machinery.SourceFileLoader):\n"
+        "    def get_code(self, fullname):\n"
+        "        code = super().get_code(fullname)\n"
+        "        Path(self.path).unlink()\n"
+        "        return code\n"
+        "\n"
+        "class PrecompiledLoader(importlib.machinery.SourceFileLoader):\n"
+        "    def exec_module(self, module):\n"
+        "        exec(PRECOMPILED_SAFE_CODE, module.__dict__)\n"
+        "\n"
+        "class PrebindingSyntaxLoader(importlib.machinery.SourceFileLoader):\n"
+        "    def exec_module(self, module):\n"
+        "        code = None\n"
+        "        compile('def broken(:\\n', '<string>', 'exec')\n"
+        "\n"
+        "def test_direct_application_source_loader():\n"
+        "    namespace = importlib.import_module('app.namespace_probe')\n"
+        "    assert namespace.__spec__ is not None\n"
+        "    sys.modules.pop('app.namespace_probe')\n"
+        "    with pytest.raises(ModuleNotFoundError):\n"
+        "        importlib.import_module('app.missing_dynamic_probe')\n"
+        "    sys.modules.pop('app', None)\n"
+        f"    load_detached('app.direct_loader_probe', {str(detached_source)!r})\n"
+        f"    load_detached('backend_app_path_probe', {str(backend_app_source)!r})\n"
+        f"    load_detached('tooling_safe_loader_probe', {str(safe_source)!r})\n"
+        "    with pytest.raises(SyntaxError):\n"
+        f"        load_detached('app.direct_syntax_probe', {str(invalid_source)!r})\n"
+        "    name = 'safe_deleted_backend_alias_probe'\n"
+        f"    loader = DeletingLoader(name, {str(backend_app_alias)!r})\n"
+        "    spec = importlib.util.spec_from_loader(name, loader)\n"
+        "    assert spec is not None\n"
+        "    module = importlib.util.module_from_spec(spec)\n"
+        "    loader.exec_module(module)\n"
+        "    assert not Path(loader.path).exists()\n"
+        "    name = 'app.inline_precompiled_probe'\n"
+        f"    loader = PrecompiledLoader(name, {str(safe_source)!r})\n"
+        "    spec = importlib.util.spec_from_loader(name, loader)\n"
+        "    assert spec is not None\n"
+        "    module = importlib.util.module_from_spec(spec)\n"
+        "    loader.exec_module(module)\n"
+        "    assert module.VALUE == 2\n"
+        "    name = 'app.prebound_syntax_probe'\n"
+        f"    loader = PrebindingSyntaxLoader(name, {str(invalid_source)!r})\n"
+        "    spec = importlib.util.spec_from_loader(name, loader)\n"
+        "    assert spec is not None\n"
+        "    module = importlib.util.module_from_spec(spec)\n"
+        "    with pytest.raises(SyntaxError):\n"
+        "        loader.exec_module(module)\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", *runner.PYTEST_OPTIONS, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "app.namespace_probe" in output
+    assert "app.missing_dynamic_probe" in output
+    assert "app.direct_loader_probe" in output
+    assert "backend_app_path_probe" in output
+    assert "app.direct_syntax_probe" in output
+    assert "safe_deleted_backend_alias_probe" in output
+    assert "app.inline_precompiled_probe" in output
+    assert "app.prebound_syntax_probe" in output
+    assert "tooling_safe_loader_probe" not in output
+
+
+def test_tooling_pytest_guard_matches_backend_app_source_by_filesystem_identity():
+    if sys.platform != "darwin":
+        pytest.skip("case-preserving filesystem alias is a macOS regression")
+    app_source = ROOT / "backend" / "app" / "__init__.py"
+    alias_parts = list(app_source.parts)
+    alias_parts[1] = alias_parts[1].upper()
+    case_variant_alias = Path(*alias_parts)
+    try:
+        same_file = os.path.samefile(case_variant_alias, app_source)
+    except OSError:
+        same_file = False
+    if case_variant_alias == app_source or not same_file:
+        pytest.skip("the current filesystem has no case-variant alias")
+
+    guard = _tooling_pytest_guard_module()
+    assert guard._is_backend_app_source(case_variant_alias)
+
+
+def test_tooling_pytest_guard_matches_symlinked_backend_app_source(tmp_path):
+    app_source = ROOT / "backend" / "app" / "__init__.py"
+    symlink = tmp_path / "backend_app_alias.py"
+    symlink.symlink_to(app_source)
+
+    guard = _tooling_pytest_guard_module()
+    assert guard._is_backend_app_source(symlink)
+
+
+def test_tooling_pytest_guard_does_not_casefold_distinct_linux_paths(
+    tmp_path,
+    monkeypatch,
+):
+    guard = _tooling_pytest_guard_module()
+    root = tmp_path / "repo" / "backend" / "app"
+    root.mkdir(parents=True)
+    case_variant = tmp_path / "repo" / "BACKEND" / "APP" / "safe.py"
+    case_variant.parent.mkdir(parents=True, exist_ok=True)
+    case_variant.write_text("VALUE = 1\n", encoding="utf-8")
+    real_resolve = guard.Path.resolve
+
+    def preserve_case(path, *args, **kwargs):
+        if path == case_variant:
+            return guard.Path(os.path.abspath(path))
+        return real_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(guard.Path, "resolve", preserve_case)
+    monkeypatch.setattr(guard.os.path, "samefile", lambda _left, _right: False)
+
+    assert (
+        guard._classify_backend_app_source(case_variant, root)
+        == guard._PATH_OUTSIDE
+    )
+
+    def unavailable_identity(_left, _right):
+        raise OSError("identity unavailable")
+
+    monkeypatch.setattr(guard.os.path, "samefile", unavailable_identity)
+    assert (
+        guard._classify_backend_app_source(case_variant, root)
+        == guard._PATH_UNKNOWN
+    )
+
+
+def test_tooling_pytest_guard_preserves_different_prefix_samefile_aliases(
+    tmp_path,
+    monkeypatch,
+):
+    guard = _tooling_pytest_guard_module()
+    root = tmp_path / "repo" / "backend" / "app"
+    root.mkdir(parents=True)
+    alias_root = tmp_path / "mount"
+    alias_root.mkdir(parents=True)
+    assert len(alias_root.parts) != len(root.parts)
+    alias_source = alias_root / "safe.py"
+    alias_source.write_text("VALUE = 1\n", encoding="utf-8")
+    real_resolve = guard.Path.resolve
+    real_samefile = guard.os.path.samefile
+
+    def preserve_alias(path, *args, **kwargs):
+        if path == alias_source:
+            return guard.Path(os.path.abspath(path))
+        return real_resolve(path, *args, **kwargs)
+
+    def bind_mount_identity(left, right):
+        if guard.Path(left) == alias_root and guard.Path(right) == root:
+            return True
+        return real_samefile(left, right)
+
+    monkeypatch.setattr(guard.Path, "resolve", preserve_alias)
+    monkeypatch.setattr(guard.os.path, "samefile", bind_mount_identity)
+
+    assert (
+        guard._classify_backend_app_source(alias_source, root)
+        == guard._PATH_INSIDE
+    )
+
+
+def test_tooling_pytest_guard_fails_closed_on_source_identity_errors(monkeypatch):
+    guard = _tooling_pytest_guard_module()
+    app_source = ROOT / "backend" / "app" / "__init__.py"
+    safe_source = ROOT / "scripts" / "run_tooling_pytests.py"
+
+    def raise_identity_error(_left, _right):
+        raise OSError("identity unavailable")
+
+    monkeypatch.setattr(guard.os.path, "samefile", raise_identity_error)
+
+    assert guard._is_backend_app_source(app_source)
+    assert not guard._is_backend_app_source(safe_source)
+
+
+def test_tooling_pytest_guard_uses_tristate_loader_identity_and_fails_closed(
+    tmp_path,
+    monkeypatch,
+):
+    guard = _tooling_pytest_guard_module()
+    app_source = ROOT / "backend" / "app" / "__init__.py"
+    safe_source = ROOT / "scripts" / "run_tooling_pytests.py"
+    missing_source = tmp_path / "deleted_loader_source.py"
+
+    assert guard._classify_backend_app_source(app_source) == guard._PATH_INSIDE
+    assert guard._classify_backend_app_source(safe_source) == guard._PATH_OUTSIDE
+    assert guard._classify_backend_app_source(missing_source) == guard._PATH_UNKNOWN
+
+    config = _GuardCleanupConfig()
+    guard.pytest_sessionstart(SimpleNamespace(config=config))
+    code = compile("VALUE = 1\n", "<unknown-loader-probe>", "exec")
+    monkeypatch.setattr(
+        guard,
+        "_source_loader_context",
+        lambda _code: (True, "safe_unknown_loader_probe", missing_source),
+    )
+    try:
+        guard._handle_audit_event("exec", (code,))
+        assert guard._active_observed_modules[config] == {
+            "safe_unknown_loader_probe"
+        }
+    finally:
+        config.cleanup()
+
+
+def test_tooling_pytest_guard_audit_listener_is_active_only_during_session(tmp_path):
+    runner = _tooling_pytest_runner_module()
+    app_source = ROOT / "backend" / "app" / "__init__.py"
+    probe = tmp_path / "audit_listener_lifecycle_probe.py"
+    probe.write_text(
+        "import builtins\n"
+        "import importlib\n"
+        "import importlib.machinery\n"
+        "import sys\n"
+        "from types import SimpleNamespace\n"
+        f"sys.path.insert(0, {str(ROOT)!r})\n"
+        "from scripts import tooling_pytest_guard as guard\n"
+        "\n"
+        "class Config:\n"
+        "    def __init__(self):\n"
+        "        self.cleanups = []\n"
+        "    def add_cleanup(self, cleanup):\n"
+        "        self.cleanups.append(cleanup)\n"
+        "    def cleanup(self):\n"
+        "        while self.cleanups:\n"
+        "            self.cleanups.pop()()\n"
+        "\n"
+        "original_hooks = (\n"
+        "    builtins.__import__,\n"
+        "    importlib.import_module,\n"
+        "    importlib.machinery.SourceFileLoader.exec_module,\n"
+        ")\n"
+        "config = Config()\n"
+        "guard.pytest_sessionstart(SimpleNamespace(config=config))\n"
+        "observed = guard._active_observed_modules[config]\n"
+        "assert (\n"
+        "    builtins.__import__,\n"
+        "    importlib.import_module,\n"
+        "    importlib.machinery.SourceFileLoader.exec_module,\n"
+        ") == original_hooks\n"
+        "sys.audit('import', 'app.audit_active_probe', None, (), (), ())\n"
+        "assert 'app.audit_active_probe' in observed\n"
+        "config.cleanup()\n"
+        "snapshot = set(observed)\n"
+        "sys.audit('import', 'app.audit_inactive_probe', None, (), (), ())\n"
+        f"exec(compile('VALUE = 1\\n', {str(app_source)!r}, 'exec'), {{}})\n"
+        "assert observed == snapshot\n"
+        "assert guard._active_observed_modules == {}\n"
+        "assert (\n"
+        "    builtins.__import__,\n"
+        "    importlib.import_module,\n"
+        "    importlib.machinery.SourceFileLoader.exec_module,\n"
+        ") == original_hooks\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_tooling_pytest_guard_reuses_one_process_audit_dispatcher(tmp_path):
+    runner = _tooling_pytest_runner_module()
+    probe = tmp_path / "audit_dispatcher_reuse_probe.py"
+    probe.write_text(
+        "import importlib.util\n"
+        "import sys\n"
+        "import threading\n"
+        "from pathlib import Path\n"
+        "from types import SimpleNamespace\n"
+        f"guard_path = Path({str(TOOLING_PYTEST_GUARD)!r})\n"
+        "\n"
+        "class Config:\n"
+        "    def __init__(self):\n"
+        "        self.cleanups = []\n"
+        "    def add_cleanup(self, cleanup):\n"
+        "        self.cleanups.append(cleanup)\n"
+        "    def cleanup(self):\n"
+        "        while self.cleanups:\n"
+        "            self.cleanups.pop()()\n"
+        "\n"
+        "real_addaudithook = sys.addaudithook\n"
+        "added_hooks = []\n"
+        "def counting_addaudithook(hook):\n"
+        "    added_hooks.append(hook)\n"
+        "    return real_addaudithook(hook)\n"
+        "sys.addaudithook = counting_addaudithook\n"
+        "modules = []\n"
+        "specs = []\n"
+        "configs = []\n"
+        "try:\n"
+        "    for index in range(3):\n"
+        "        spec = importlib.util.spec_from_file_location(\n"
+        "            f'tooling_pytest_guard_probe_{index}', guard_path\n"
+        "        )\n"
+        "        assert spec and spec.loader\n"
+        "        module = importlib.util.module_from_spec(spec)\n"
+        "        spec.loader.exec_module(module)\n"
+        "        modules.append(module)\n"
+        "        specs.append(spec)\n"
+        "    first = Config()\n"
+        "    modules[0].pytest_sessionstart(SimpleNamespace(config=first))\n"
+        "    configs.append(first)\n"
+        "    token = modules[0]._AUDIT_LISTENER_TOKEN\n"
+        "    active = modules[0]._active_observed_modules\n"
+        "    observer = modules[0]._IMPORT_ATTEMPT_OBSERVER\n"
+        "    session_lock = modules[0]._SESSION_STATE_LOCK\n"
+        "    state = getattr(sys, modules[0]._PROCESS_AUDIT_DISPATCHER_ATTR)\n"
+        "    old_listener = state['listeners'][token]\n"
+        "    sys.audit('import', 'app.before_same_reexec', None, (), (), ())\n"
+        "    specs[0].loader.exec_module(modules[0])\n"
+        "    assert modules[0]._AUDIT_LISTENER_TOKEN is token\n"
+        "    assert modules[0]._active_observed_modules is active\n"
+        "    assert modules[0]._IMPORT_ATTEMPT_OBSERVER is observer\n"
+        "    assert modules[0]._SESSION_STATE_LOCK is session_lock\n"
+        "    assert 'app.before_same_reexec' in active[first]\n"
+        "    second = Config()\n"
+        "    modules[0].pytest_sessionstart(SimpleNamespace(config=second))\n"
+        "    configs.append(second)\n"
+        "    assert state['listeners'][token] is modules[0]._audit_listener\n"
+        "    assert state['listeners'][token] is not old_listener\n"
+        "    assert sum(item is observer for item in sys.meta_path) == 1\n"
+        "    for module in modules[1:]:\n"
+        "        config = Config()\n"
+        "        module.pytest_sessionstart(SimpleNamespace(config=config))\n"
+        "        configs.append(config)\n"
+        "    assert len(added_hooks) == 1\n"
+        "    assert state['dispatcher'] is added_hooks[0]\n"
+        "    assert len(state['listeners']) == 3\n"
+        "    assert state['listener_snapshot'] == tuple(state['listeners'].values())\n"
+        "    assert all(\n"
+        "        any(item is module._IMPORT_ATTEMPT_OBSERVER for item in sys.meta_path)\n"
+        "        for module in modules\n"
+        "    )\n"
+        "    assert all(\n"
+        "        module._import_attempt_observer_is_intact() for module in modules\n"
+        "    )\n"
+        "    class PassThroughFinder:\n"
+        "        def find_spec(self, _fullname, _path=None, _target=None):\n"
+        "            return None\n"
+        "    pass_through_finder = PassThroughFinder()\n"
+        "    sys.meta_path.insert(1, pass_through_finder)\n"
+        "    assert all(\n"
+        "        module._import_attempt_observer_is_intact() for module in modules\n"
+        "    )\n"
+        "    sys.meta_path[0].find_spec('app.multi_observer_probe')\n"
+        "    sys.meta_path.remove(pass_through_finder)\n"
+        "    class CountingRLock(type(threading.RLock())):\n"
+        "        entries = 0\n"
+        "        def __enter__(self):\n"
+        "            self.entries += 1\n"
+        "            return super().__enter__()\n"
+        "    process_lock = CountingRLock()\n"
+        "    state['lock'] = process_lock\n"
+        "    sys.audit('import', 'app.multi_module_probe', None, (), (), ())\n"
+        "    assert process_lock.entries == 0\n"
+        "    assert active[first] == {\n"
+        "        'app.before_same_reexec',\n"
+        "        'app.multi_module_probe',\n"
+        "        'app.multi_observer_probe',\n"
+        "    }\n"
+        "    assert active[second] == {\n"
+        "        'app.multi_module_probe', 'app.multi_observer_probe'\n"
+        "    }\n"
+        "    assert all(\n"
+        "        {\n"
+        "            'app.multi_module_probe', 'app.multi_observer_probe'\n"
+        "        } <= module._active_observed_modules[config]\n"
+        "        for module, config in zip(modules[1:], configs[2:], strict=True)\n"
+        "    )\n"
+        "    configs[0].cleanup()\n"
+        "    assert token in state['listeners']\n"
+        "    assert state['listener_snapshot'] == tuple(state['listeners'].values())\n"
+        "    assert any(item is observer for item in sys.meta_path)\n"
+        "    assert len(state['listeners']) == 3\n"
+        "    configs[1].cleanup()\n"
+        "    assert token not in state['listeners']\n"
+        "    assert state['listener_snapshot'] == tuple(state['listeners'].values())\n"
+        "    assert not any(\n"
+        "        item is observer for item in sys.meta_path\n"
+        "    )\n"
+        "    assert len(state['listeners']) == 2\n"
+        "    configs[2].cleanup()\n"
+        "    assert len(state['listeners']) == 1\n"
+        "    configs[3].cleanup()\n"
+        "    assert state['listeners'] == {}\n"
+        "    assert state['listener_snapshot'] == ()\n"
+        "    class CountingEvents:\n"
+        "        checks = 0\n"
+        "        def __contains__(self, _event):\n"
+        "            self.checks += 1\n"
+        "            return False\n"
+        "    inactive_events = CountingEvents()\n"
+        "    modules[0]._AUDIT_EVENTS = inactive_events\n"
+        "    sys.audit('compile', b'pass', '<inactive-guard-probe>')\n"
+        "    assert inactive_events.checks == 0\n"
+        "    assert all(\n"
+        "        not any(item is module._IMPORT_ATTEMPT_OBSERVER for item in sys.meta_path)\n"
+        "        for module in modules\n"
+        "    )\n"
+        "finally:\n"
+        "    for config in configs:\n"
+        "        config.cleanup()\n"
+        "    sys.addaudithook = real_addaudithook\n"
+        "assert len(added_hooks) == 1\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("dispatcher_kind", ["callable", "noncallable"])
+def test_tooling_pytest_guard_rejects_unverified_dispatcher_state(
+    dispatcher_kind,
+):
+    spec = importlib.util.spec_from_file_location(
+        f"fake_dispatcher_guard_{dispatcher_kind}", TOOLING_PYTEST_GUARD
+    )
+    assert spec and spec.loader
+    guard = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(guard)
+    state_attribute = f"_fake_guard_state_{dispatcher_kind}_{id(guard)}"
+    guard._PROCESS_AUDIT_DISPATCHER_ATTR = state_attribute
+    dispatcher = (
+        (lambda _event, _args: None)
+        if dispatcher_kind == "callable"
+        else object()
+    )
+    state = {
+        "version": guard._AUDIT_DISPATCHER_VERSION,
+        "dispatcher": dispatcher,
+        "listeners": {},
+        "listener_snapshot": (),
+        "import_observers": {},
+        "lock": threading.RLock(),
+        "registration_state": "installed",
+    }
+    setattr(sys, state_attribute, state)
+    config = _GuardCleanupConfig()
+    try:
+        with pytest.raises(RuntimeError, match="audit dispatcher|incompatible"):
+            guard.pytest_sessionstart(SimpleNamespace(config=config))
+        assert guard._active_observed_modules == {}
+        assert state["listeners"] == {}
+    finally:
+        config.cleanup()
+        delattr(sys, state_attribute)
+
+
+def test_tooling_pytest_guard_serializes_first_audit_registration(tmp_path):
+    runner = _tooling_pytest_runner_module()
+    probe = tmp_path / "concurrent_audit_registration_probe.py"
+    probe.write_text(
+        "import importlib.util\n"
+        "import sys\n"
+        "import threading\n"
+        "from pathlib import Path\n"
+        "from types import SimpleNamespace\n"
+        f"guard_path = Path({str(TOOLING_PYTEST_GUARD)!r})\n"
+        "\n"
+        "class Config:\n"
+        "    def __init__(self):\n"
+        "        self.cleanups = []\n"
+        "    def add_cleanup(self, cleanup):\n"
+        "        self.cleanups.append(cleanup)\n"
+        "    def cleanup(self):\n"
+        "        while self.cleanups:\n"
+        "            self.cleanups.pop()()\n"
+        "\n"
+        "def load_guard(name):\n"
+        "    spec = importlib.util.spec_from_file_location(name, guard_path)\n"
+        "    assert spec and spec.loader\n"
+        "    module = importlib.util.module_from_spec(spec)\n"
+        "    spec.loader.exec_module(module)\n"
+        "    return module\n"
+        "\n"
+        "first_guard = load_guard('concurrent_guard_first')\n"
+        "second_guard = load_guard('concurrent_guard_second')\n"
+        "first_config = Config()\n"
+        "second_config = Config()\n"
+        "entered_add_hook = threading.Event()\n"
+        "release_add_hook = threading.Event()\n"
+        "second_started = threading.Event()\n"
+        "second_lock_attempted = threading.Event()\n"
+        "second_done = threading.Event()\n"
+        "errors = []\n"
+        "class ProbeRLock(type(threading.RLock())):\n"
+        "    def __enter__(self):\n"
+        "        if threading.current_thread().name == 'second-register':\n"
+        "            second_lock_attempted.set()\n"
+        "        return super().__enter__()\n"
+        "state = {\n"
+        "    'version': first_guard._AUDIT_DISPATCHER_VERSION,\n"
+        "    'dispatcher': None,\n"
+        "    'listeners': {},\n"
+        "    'listener_snapshot': (),\n"
+        "    'import_observers': {},\n"
+        "    'lock': ProbeRLock(),\n"
+        "    'registration_state': 'unregistered',\n"
+        "}\n"
+        "setattr(sys, first_guard._PROCESS_AUDIT_DISPATCHER_ATTR, state)\n"
+        "real_addaudithook = sys.addaudithook\n"
+        "def blocking_addaudithook(hook):\n"
+        "    entered_add_hook.set()\n"
+        "    assert release_add_hook.wait(5)\n"
+        "    return real_addaudithook(hook)\n"
+        "sys.addaudithook = blocking_addaudithook\n"
+        "def start_first():\n"
+        "    try:\n"
+        "        first_guard.pytest_sessionstart(SimpleNamespace(config=first_config))\n"
+        "    except BaseException as error:\n"
+        "        errors.append(error)\n"
+        "def start_second():\n"
+        "    second_started.set()\n"
+        "    try:\n"
+        "        second_guard.pytest_sessionstart(SimpleNamespace(config=second_config))\n"
+        "        sys.audit('import', 'app.concurrent_window_probe', None, (), (), ())\n"
+        "    except BaseException as error:\n"
+        "        errors.append(error)\n"
+        "    finally:\n"
+        "        second_done.set()\n"
+        "first_thread = threading.Thread(target=start_first, name='first-register')\n"
+        "second_thread = threading.Thread(target=start_second, name='second-register')\n"
+        "first_thread.start()\n"
+        "assert entered_add_hook.wait(5)\n"
+        "second_thread.start()\n"
+        "assert second_started.wait(5)\n"
+        "assert second_lock_attempted.wait(5)\n"
+        "completed_during_install = second_done.is_set()\n"
+        "release_add_hook.set()\n"
+        "first_thread.join(5)\n"
+        "second_thread.join(5)\n"
+        "sys.addaudithook = real_addaudithook\n"
+        "assert not first_thread.is_alive()\n"
+        "assert not second_thread.is_alive()\n"
+        "assert not completed_during_install\n"
+        "assert errors == []\n"
+        "assert 'app.concurrent_window_probe' in first_guard._active_observed_modules[first_config]\n"
+        "assert 'app.concurrent_window_probe' in second_guard._active_observed_modules[second_config]\n"
+        "first_config.cleanup()\n"
+        "second_config.cleanup()\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_tooling_pytest_guard_validates_dispatcher_transition_under_state_lock(
+    tmp_path,
+):
+    runner = _tooling_pytest_runner_module()
+    probe = tmp_path / "dispatcher_transition_lock_probe.py"
+    probe.write_text(
+        "import importlib.util\n"
+        "import sys\n"
+        "import threading\n"
+        "from pathlib import Path\n"
+        "from types import SimpleNamespace\n"
+        f"guard_path = Path({str(TOOLING_PYTEST_GUARD)!r})\n"
+        "\n"
+        "class Config:\n"
+        "    def __init__(self):\n"
+        "        self.cleanups = []\n"
+        "    def add_cleanup(self, cleanup):\n"
+        "        self.cleanups.append(cleanup)\n"
+        "    def cleanup(self):\n"
+        "        while self.cleanups:\n"
+        "            self.cleanups.pop()()\n"
+        "\n"
+        "def load_guard(name):\n"
+        "    spec = importlib.util.spec_from_file_location(name, guard_path)\n"
+        "    assert spec and spec.loader\n"
+        "    module = importlib.util.module_from_spec(spec)\n"
+        "    spec.loader.exec_module(module)\n"
+        "    return module\n"
+        "\n"
+        "first_guard = load_guard('transition_guard_first')\n"
+        "second_guard = load_guard('transition_guard_second')\n"
+        "first_config = Config()\n"
+        "second_config = Config()\n"
+        "dispatcher_written = threading.Event()\n"
+        "release_dispatcher_write = threading.Event()\n"
+        "second_registration_lock_attempted = threading.Event()\n"
+        "second_progress = threading.Event()\n"
+        "errors = []\n"
+        "class ProbeRLock(type(threading.RLock())):\n"
+        "    def __enter__(self):\n"
+        "        if threading.current_thread().name == 'second-register':\n"
+        "            if sys._getframe(1).f_code.co_name == '_register_audit_listener':\n"
+        "                second_registration_lock_attempted.set()\n"
+        "            second_progress.set()\n"
+        "        return super().__enter__()\n"
+        "class PausingState(dict):\n"
+        "    def __setitem__(self, key, value):\n"
+        "        super().__setitem__(key, value)\n"
+        "        if key == 'dispatcher' and callable(value):\n"
+        "            dispatcher_written.set()\n"
+        "            assert release_dispatcher_write.wait(5)\n"
+        "state = PausingState({\n"
+        "    'version': first_guard._AUDIT_DISPATCHER_VERSION,\n"
+        "    'dispatcher': None,\n"
+        "    'listeners': {},\n"
+        "    'listener_snapshot': (),\n"
+        "    'import_observers': {},\n"
+        "    'lock': ProbeRLock(),\n"
+        "    'registration_state': 'unregistered',\n"
+        "})\n"
+        "setattr(sys, first_guard._PROCESS_AUDIT_DISPATCHER_ATTR, state)\n"
+        "def start_first():\n"
+        "    try:\n"
+        "        first_guard.pytest_sessionstart(SimpleNamespace(config=first_config))\n"
+        "    except BaseException as error:\n"
+        "        errors.append(error)\n"
+        "def start_second():\n"
+        "    try:\n"
+        "        second_guard.pytest_sessionstart(SimpleNamespace(config=second_config))\n"
+        "    except BaseException as error:\n"
+        "        errors.append(error)\n"
+        "    finally:\n"
+        "        second_progress.set()\n"
+        "first_thread = threading.Thread(target=start_first, name='first-register')\n"
+        "second_thread = threading.Thread(target=start_second, name='second-register')\n"
+        "first_thread.start()\n"
+        "assert dispatcher_written.wait(5)\n"
+        "second_thread.start()\n"
+        "assert second_progress.wait(5)\n"
+        "reached_registration_lock = second_registration_lock_attempted.is_set()\n"
+        "release_dispatcher_write.set()\n"
+        "first_thread.join(5)\n"
+        "second_thread.join(5)\n"
+        "assert not first_thread.is_alive()\n"
+        "assert not second_thread.is_alive()\n"
+        "assert reached_registration_lock\n"
+        "assert errors == []\n"
+        "sys.audit('import', 'app.transition_window_probe', None, (), (), ())\n"
+        "assert 'app.transition_window_probe' in first_guard._active_observed_modules[first_config]\n"
+        "assert 'app.transition_window_probe' in second_guard._active_observed_modules[second_config]\n"
+        "first_config.cleanup()\n"
+        "second_config.cleanup()\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_tooling_pytest_guard_atomically_publishes_listener_snapshots(tmp_path):
+    runner = _tooling_pytest_runner_module()
+    probe = tmp_path / "listener_snapshot_publication_probe.py"
+    probe.write_text(
+        "import sys\n"
+        "import threading\n"
+        "from types import SimpleNamespace\n"
+        f"sys.path.insert(0, {str(ROOT)!r})\n"
+        "from scripts import tooling_pytest_guard as guard\n"
+        "\n"
+        "class Config:\n"
+        "    def __init__(self):\n"
+        "        self.cleanups = []\n"
+        "    def add_cleanup(self, cleanup):\n"
+        "        self.cleanups.append(cleanup)\n"
+        "    def cleanup(self):\n"
+        "        while self.cleanups:\n"
+        "            self.cleanups.pop()()\n"
+        "\n"
+        "initial_config = Config()\n"
+        "guard.pytest_sessionstart(SimpleNamespace(config=initial_config))\n"
+        "initial_config.cleanup()\n"
+        "state = getattr(sys, guard._PROCESS_AUDIT_DISPATCHER_ATTR)\n"
+        "assert state['listeners'] == {}\n"
+        "assert state['listener_snapshot'] == ()\n"
+        "store_started = threading.Event()\n"
+        "release_store = threading.Event()\n"
+        "pop_started = threading.Event()\n"
+        "release_pop = threading.Event()\n"
+        "audit_listener_attempted = threading.Event()\n"
+        "class ProbeSessionLock(type(threading.RLock())):\n"
+        "    def __enter__(self):\n"
+        "        if threading.current_thread().name == 'audit-during-store':\n"
+        "            audit_listener_attempted.set()\n"
+        "        return super().__enter__()\n"
+        "guard._SESSION_STATE_LOCK = ProbeSessionLock()\n"
+        "class PausingListeners(dict):\n"
+        "    def __setitem__(self, key, value):\n"
+        "        super().__setitem__(key, value)\n"
+        "        store_started.set()\n"
+        "        assert release_store.wait(5)\n"
+        "    def pop(self, key, default=None):\n"
+        "        value = super().pop(key, default)\n"
+        "        pop_started.set()\n"
+        "        assert release_pop.wait(5)\n"
+        "        return value\n"
+        "state['listeners'] = PausingListeners()\n"
+        "config = Config()\n"
+        "errors = []\n"
+        "audit_errors = []\n"
+        "def start_session():\n"
+        "    try:\n"
+        "        guard.pytest_sessionstart(SimpleNamespace(config=config))\n"
+        "    except BaseException as error:\n"
+        "        errors.append(error)\n"
+        "def emit_audit_event():\n"
+        "    try:\n"
+        "        sys.audit('import', 'app.snapshot_publication_probe', None, (), (), ())\n"
+        "    except BaseException as error:\n"
+        "        audit_errors.append(error)\n"
+        "start_thread = threading.Thread(target=start_session)\n"
+        "start_thread.start()\n"
+        "assert store_started.wait(5)\n"
+        "audit_thread = threading.Thread(\n"
+        "    target=emit_audit_event, name='audit-during-store'\n"
+        ")\n"
+        "audit_thread.start()\n"
+        "assert audit_listener_attempted.wait(5)\n"
+        "release_store.set()\n"
+        "start_thread.join(5)\n"
+        "audit_thread.join(5)\n"
+        "assert not start_thread.is_alive()\n"
+        "assert not audit_thread.is_alive()\n"
+        "assert errors == [], errors\n"
+        "assert audit_errors == [], audit_errors\n"
+        "assert 'app.snapshot_publication_probe' in guard._active_observed_modules[config]\n"
+        "cleanup_thread = threading.Thread(target=config.cleanup)\n"
+        "cleanup_thread.start()\n"
+        "assert pop_started.wait(5)\n"
+        "assert state['listener_snapshot'] == ()\n"
+        "release_pop.set()\n"
+        "cleanup_thread.join(5)\n"
+        "assert not cleanup_thread.is_alive()\n"
+        "assert state['listeners'] == {}\n"
+        "assert guard._active_observed_modules == {}\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_tooling_pytest_guard_fails_closed_when_audit_registration_is_denied(
+    tmp_path,
+):
+    runner = _tooling_pytest_runner_module()
+    probe = tmp_path / "audit_dispatcher_denied_probe.py"
+    probe.write_text(
+        "import sys\n"
+        "from types import SimpleNamespace\n"
+        f"sys.path.insert(0, {str(ROOT)!r})\n"
+        "\n"
+        "def deny_new_audit_hooks(event, _args):\n"
+        "    if event == 'sys.addaudithook':\n"
+        "        raise RuntimeError('audit hook denied')\n"
+        "sys.addaudithook(deny_new_audit_hooks)\n"
+        "from scripts import tooling_pytest_guard as guard\n"
+        "\n"
+        "class Config:\n"
+        "    def __init__(self):\n"
+        "        self.cleanups = []\n"
+        "    def add_cleanup(self, cleanup):\n"
+        "        self.cleanups.append(cleanup)\n"
+        "\n"
+        "config = Config()\n"
+        "try:\n"
+        "    guard.pytest_sessionstart(SimpleNamespace(config=config))\n"
+        "except RuntimeError as error:\n"
+        "    assert 'audit dispatcher registration was denied' in str(error)\n"
+        "else:\n"
+        "    raise AssertionError('audit registration denial was ignored')\n"
+        "assert guard._active_observed_modules == {}\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_tooling_pytest_guard_audit_callback_records_internal_errors(monkeypatch):
+    guard = _tooling_pytest_guard_module()
+    config = _GuardCleanupConfig()
+    guard.pytest_sessionstart(SimpleNamespace(config=config))
+
+    def fail_audit_handling(_event, _args):
+        raise RuntimeError("audit callback probe")
+
+    monkeypatch.setattr(guard, "_handle_audit_event", fail_audit_handling)
+    try:
+        sys.audit("import", "safe.audit_callback_probe", None, (), (), ())
+
+        assert guard._active_observed_modules[config] == {
+            "audit-hook-error:builtins.RuntimeError"
+        }
+    finally:
+        config.cleanup()
+
+
+@pytest.mark.parametrize("error_type", [KeyboardInterrupt, SystemExit])
+def test_tooling_pytest_guard_audit_callback_propagates_control_flow(
+    monkeypatch,
+    error_type,
+):
+    guard = _tooling_pytest_guard_module()
+    config = _GuardCleanupConfig()
+    guard.pytest_sessionstart(SimpleNamespace(config=config))
+
+    def interrupt_audit_handling(_event, _args):
+        raise error_type()
+
+    monkeypatch.setattr(guard, "_handle_audit_event", interrupt_audit_handling)
+    try:
+        with pytest.raises(error_type):
+            sys.audit("import", "safe.control_flow_probe", None, (), (), ())
+        assert guard._active_observed_modules[config] == set()
+    finally:
+        config.cleanup()
+
+
+def test_tooling_pytest_guard_snapshots_sys_modules_during_observation(monkeypatch):
+    guard = _tooling_pytest_guard_module()
+    mutation_requested = threading.Event()
+    mutation_done = threading.Event()
+    module_name = "safe.concurrent_sys_modules_probe"
+    first_call = True
+
+    def mutate_modules():
+        assert mutation_requested.wait(5)
+        sys.modules[module_name] = SimpleNamespace()
+        mutation_done.set()
+
+    def allow_all_modules(_module_name):
+        nonlocal first_call
+        if first_call:
+            first_call = False
+            mutation_requested.set()
+            assert mutation_done.wait(5)
+        return False
+
+    worker = threading.Thread(target=mutate_modules)
+    worker.start()
+    monkeypatch.setattr(guard, "is_forbidden_module_name", allow_all_modules)
+    try:
+        guard._observe_current_modules()
+    finally:
+        worker.join(5)
+        sys.modules.pop(module_name, None)
+
+    assert not worker.is_alive()
+
+
+def test_tooling_pytest_guard_rolls_back_when_cleanup_registration_fails():
+    guard = _tooling_pytest_guard_module()
+    original_import = builtins.__import__
+    original_import_module = importlib.import_module
+    original_exec_module = importlib.machinery.SourceFileLoader.exec_module
+    registration_error = RuntimeError("cleanup registration probe")
+    config = _GuardCleanupConfig(registration_error)
+
+    try:
+        with pytest.raises(RuntimeError) as exc:
+            guard.pytest_sessionstart(SimpleNamespace(config=config))
+
+        assert exc.value is registration_error
+        assert guard._active_observed_modules == {}
+        assert builtins.__import__ is original_import
+        assert importlib.import_module is original_import_module
+        assert (
+            importlib.machinery.SourceFileLoader.exec_module
+            is original_exec_module
+        )
+    finally:
+        guard._active_observed_modules.clear()
+        guard._unregister_audit_listener()
+
+
+def test_tooling_pytest_guard_isolates_same_module_nested_sessions(tmp_path):
+    runner = _tooling_pytest_runner_module()
+    app_source = ROOT / "backend" / "app" / "__init__.py"
+    inner_test = tmp_path / "test_nested_inner_guard.py"
+    inner_test.write_text(
+        "import importlib.util\n"
+        "\n"
+        "def test_nested_inner_guard():\n"
+        "    name = 'nested_inner_direct_probe'\n"
+        f"    spec = importlib.util.spec_from_file_location(name, {str(app_source)!r})\n"
+        "    assert spec and spec.loader\n"
+        "    module = importlib.util.module_from_spec(spec)\n"
+        "    spec.loader.exec_module(module)\n",
+        encoding="utf-8",
+    )
+    outer_test = tmp_path / "test_nested_outer_guard.py"
+    outer_test.write_text("def test_outer_ok():\n    pass\n", encoding="utf-8")
+    probe = tmp_path / "nested_guard_probe.py"
+    probe.write_text(
+        "import builtins\n"
+        "import importlib\n"
+        "import importlib.machinery\n"
+        "import importlib.util\n"
+        "import os\n"
+        "import sys\n"
+        f"sys.path.insert(0, {str(ROOT)!r})\n"
+        "import pytest\n"
+        "from scripts import tooling_pytest_guard as guard\n"
+        "\n"
+        "original_import = builtins.__import__\n"
+        "original_import_module = importlib.import_module\n"
+        "original_exec_module = importlib.machinery.SourceFileLoader.exec_module\n"
+        "common = [\n"
+        "    '--noconftest', '-c', os.devnull, '--rootdir', "
+        f"{str(tmp_path)!r}, '-q', '-p', 'no:cacheprovider',\n"
+        "]\n"
+        "\n"
+        "class NestedSession:\n"
+        "    inner_exit = None\n"
+        "    outer_observed_inner = ()\n"
+        "    hooks_stayed_unmodified = False\n"
+        "\n"
+        "    @pytest.hookimpl(trylast=True)\n"
+        "    def pytest_sessionstart(self, session):\n"
+        f"        self.inner_exit = pytest.main([*common, {str(inner_test)!r}], plugins=[guard])\n"
+        "        active = getattr(guard, '_active_observed_modules', {})\n"
+        "        self.outer_observed_inner = tuple(sorted(active.get(session.config, ())))\n"
+        "        self.hooks_stayed_unmodified = (\n"
+        "            builtins.__import__ is original_import\n"
+        "            and importlib.import_module is original_import_module\n"
+        "            and importlib.machinery.SourceFileLoader.exec_module\n"
+        "            is original_exec_module\n"
+        "        )\n"
+        "        name = 'nested_outer_direct_probe'\n"
+        f"        spec = importlib.util.spec_from_file_location(name, {str(app_source)!r})\n"
+        "        assert spec and spec.loader\n"
+        "        module = importlib.util.module_from_spec(spec)\n"
+        "        spec.loader.exec_module(module)\n"
+        "\n"
+        "nested = NestedSession()\n"
+        f"outer_exit = pytest.main([*common, {str(outer_test)!r}], plugins=[guard, nested])\n"
+        "assert nested.inner_exit == pytest.ExitCode.TESTS_FAILED\n"
+        "assert 'nested_inner_direct_probe' in nested.outer_observed_inner\n"
+        "assert nested.hooks_stayed_unmodified\n"
+        "assert outer_exit == pytest.ExitCode.TESTS_FAILED\n"
+        "assert getattr(guard, '_active_observed_modules', {}) == {}\n"
+        "assert builtins.__import__ is original_import\n"
+        "assert importlib.import_module is original_import_module\n"
+        "assert importlib.machinery.SourceFileLoader.exec_module is original_exec_module\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "nested_inner_direct_probe" in output
+    assert "nested_outer_direct_probe" in output
+
+
+def test_tooling_pytest_guard_preserves_late_plugin_hook_lifecycle(tmp_path):
+    runner = _tooling_pytest_runner_module()
+    first_test = tmp_path / "test_late_plugin_first_session.py"
+    first_test.write_text("def test_first_session_ok():\n    pass\n", encoding="utf-8")
+    app_package = tmp_path / "app"
+    app_package.mkdir()
+    (app_package / "__init__.py").write_text("", encoding="utf-8")
+    (app_package / "late_plugin_second_probe.py").write_text(
+        "VALUE = 1\n", encoding="utf-8"
+    )
+    second_test = tmp_path / "test_late_plugin_second_session.py"
+    second_test.write_text(
+        "def test_second_session_import_and_guard():\n"
+        "    assert __import__('fractions')\n"
+        "    module = __import__('app.late_plugin_second_probe', fromlist=['VALUE'])\n"
+        "    assert module.VALUE == 1\n",
+        encoding="utf-8",
+    )
+    probe = tmp_path / "late_plugin_teardown_probe.py"
+    probe.write_text(
+        "import builtins\n"
+        "import importlib\n"
+        "import importlib.machinery\n"
+        "import os\n"
+        "import sys\n"
+        f"sys.path.insert(0, {str(ROOT)!r})\n"
+        "import pytest\n"
+        "from scripts import tooling_pytest_guard as guard\n"
+        "\n"
+        "original_import = builtins.__import__\n"
+        "original_import_module = importlib.import_module\n"
+        "original_exec_module = importlib.machinery.SourceFileLoader.exec_module\n"
+        "common = [\n"
+        "    '--noconftest', '-c', os.devnull, '--rootdir', "
+        f"{str(tmp_path)!r}, '-q', '-p', 'no:cacheprovider',\n"
+        "]\n"
+        "\n"
+        "class LateWrappingPlugin:\n"
+        "    @pytest.hookimpl(trylast=True)\n"
+        "    def pytest_sessionstart(self):\n"
+        "        self.saved_import = builtins.__import__\n"
+        "        self.saved_import_module = importlib.import_module\n"
+        "        self.saved_exec_module = importlib.machinery.SourceFileLoader.exec_module\n"
+        "\n"
+        "        def late_import(name, globals=None, locals=None, fromlist=(), level=0):\n"
+        "            return self.saved_import(name, globals, locals, fromlist, level)\n"
+        "\n"
+        "        def late_import_module(name, package=None):\n"
+        "            return self.saved_import_module(name, package)\n"
+        "\n"
+        "        def late_exec_module(loader, module):\n"
+        "            return self.saved_exec_module(loader, module)\n"
+        "\n"
+        "        builtins.__import__ = late_import\n"
+        "        importlib.import_module = late_import_module\n"
+        "        importlib.machinery.SourceFileLoader.exec_module = late_exec_module\n"
+        "\n"
+        "    @pytest.hookimpl(trylast=True)\n"
+        "    def pytest_unconfigure(self):\n"
+        "        builtins.__import__ = self.saved_import\n"
+        "        importlib.import_module = self.saved_import_module\n"
+        "        importlib.machinery.SourceFileLoader.exec_module = self.saved_exec_module\n"
+        "\n"
+        "late_plugin = LateWrappingPlugin()\n"
+        f"first_exit = pytest.main([*common, {str(first_test)!r}], plugins=[guard, late_plugin])\n"
+        "first_restored = (\n"
+        "    builtins.__import__ is original_import\n"
+        "    and importlib.import_module is original_import_module\n"
+        "    and importlib.machinery.SourceFileLoader.exec_module is original_exec_module\n"
+        ")\n"
+        "try:\n"
+        f"    second_exit = pytest.main([*common, {str(second_test)!r}], plugins=[guard])\n"
+        "except RecursionError:\n"
+        "    second_exit = None\n"
+        "final_restored = (\n"
+        "    builtins.__import__ is original_import\n"
+        "    and importlib.import_module is original_import_module\n"
+        "    and importlib.machinery.SourceFileLoader.exec_module is original_exec_module\n"
+        ")\n"
+        "assert first_exit == pytest.ExitCode.OK\n"
+        "assert first_restored\n"
+        "assert second_exit == pytest.ExitCode.TESTS_FAILED\n"
+        "assert final_restored\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "app.late_plugin_second_probe" in output
+
+
+def _run_tooling_guard_cleanup_probe(
+    tmp_path: Path,
+    *,
+    plugin_source: str,
+    first_session_raises: bool,
+) -> subprocess.CompletedProcess[str]:
+    runner = _tooling_pytest_runner_module()
+    first_test = tmp_path / "test_cleanup_first_session.py"
+    first_test.write_text("def test_first_session_ok():\n    pass\n", encoding="utf-8")
+    app_package = tmp_path / "app"
+    app_package.mkdir()
+    (app_package / "__init__.py").write_text("", encoding="utf-8")
+    (app_package / "cleanup_second_probe.py").write_text(
+        "VALUE = 1\n", encoding="utf-8"
+    )
+    second_test = tmp_path / "test_cleanup_second_session.py"
+    second_test.write_text(
+        "def test_second_session_import_and_guard():\n"
+        "    assert __import__('fractions')\n"
+        "    module = __import__('app.cleanup_second_probe', fromlist=['VALUE'])\n"
+        "    assert module.VALUE == 1\n",
+        encoding="utf-8",
+    )
+    probe = tmp_path / "guard_cleanup_probe.py"
+    probe.write_text(
+        "import builtins\n"
+        "import importlib\n"
+        "import importlib.machinery\n"
+        "import os\n"
+        "import sys\n"
+        f"sys.path.insert(0, {str(ROOT)!r})\n"
+        "import pytest\n"
+        "from scripts import tooling_pytest_guard as guard\n"
+        "\n"
+        "original_import = builtins.__import__\n"
+        "original_import_module = importlib.import_module\n"
+        "original_exec_module = importlib.machinery.SourceFileLoader.exec_module\n"
+        "common = [\n"
+        "    '--noconftest', '-c', os.devnull, '--rootdir', "
+        f"{str(tmp_path)!r}, '-q', '-p', 'no:cacheprovider',\n"
+        "]\n"
+        "\n"
+        f"{plugin_source}\n"
+        "plugin = LifecyclePlugin()\n"
+        "first_exit = None\n"
+        "first_error = None\n"
+        "try:\n"
+        f"    first_exit = pytest.main([*common, {str(first_test)!r}], plugins=[guard, plugin])\n"
+        "except BaseException as error:\n"
+        "    first_error = error\n"
+        "active_after_first = len(getattr(guard, '_active_observed_modules', {}))\n"
+        "restored_after_first = (\n"
+        "    builtins.__import__ is original_import\n"
+        "    and importlib.import_module is original_import_module\n"
+        "    and importlib.machinery.SourceFileLoader.exec_module is original_exec_module\n"
+        ")\n"
+        "try:\n"
+        f"    second_exit = pytest.main([*common, {str(second_test)!r}], plugins=[guard])\n"
+        "except RecursionError:\n"
+        "    second_exit = None\n"
+        "active_after_second = len(getattr(guard, '_active_observed_modules', {}))\n"
+        "restored_after_second = (\n"
+        "    builtins.__import__ is original_import\n"
+        "    and importlib.import_module is original_import_module\n"
+        "    and importlib.machinery.SourceFileLoader.exec_module is original_exec_module\n"
+        ")\n"
+        f"assert {first_session_raises!r} == isinstance(first_error, RuntimeError)\n"
+        "if first_error is None:\n"
+        "    assert first_exit == pytest.ExitCode.OK\n"
+        "else:\n"
+        "    assert str(first_error) == 'late teardown probe'\n"
+        "assert active_after_first == 0\n"
+        "assert restored_after_first\n"
+        "assert second_exit == pytest.ExitCode.TESTS_FAILED\n"
+        "assert active_after_second == 0\n"
+        "assert restored_after_second\n",
+        encoding="utf-8",
+    )
+    return subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_tooling_pytest_guard_cleanup_runs_after_same_priority_wrapper(tmp_path):
+    result = _run_tooling_guard_cleanup_probe(
+        tmp_path,
+        plugin_source=(
+            "class LifecyclePlugin:\n"
+            "    @pytest.hookimpl(wrapper=True, tryfirst=True)\n"
+            "    def pytest_unconfigure(self):\n"
+            "        saved_import = builtins.__import__\n"
+            "        saved_import_module = importlib.import_module\n"
+            "        saved_exec_module = importlib.machinery.SourceFileLoader.exec_module\n"
+            "        try:\n"
+            "            yield\n"
+            "        finally:\n"
+            "            builtins.__import__ = saved_import\n"
+            "            importlib.import_module = saved_import_module\n"
+            "            importlib.machinery.SourceFileLoader.exec_module = saved_exec_module\n"
+        ),
+        first_session_raises=False,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "app.cleanup_second_probe" in output
+
+
+def test_tooling_pytest_guard_does_not_reinstall_early_plugin_hooks(tmp_path):
+    result = _run_tooling_guard_cleanup_probe(
+        tmp_path,
+        plugin_source=(
+            "class LifecyclePlugin:\n"
+            "    @pytest.hookimpl(tryfirst=True)\n"
+            "    def pytest_sessionstart(self):\n"
+            "        self.saved_import = builtins.__import__\n"
+            "        self.saved_import_module = importlib.import_module\n"
+            "        self.saved_exec_module = importlib.machinery.SourceFileLoader.exec_module\n"
+            "        def early_import(name, globals=None, locals=None, fromlist=(), level=0):\n"
+            "            return self.saved_import(name, globals, locals, fromlist, level)\n"
+            "        def early_import_module(name, package=None):\n"
+            "            return self.saved_import_module(name, package)\n"
+            "        def early_exec_module(loader, module):\n"
+            "            return self.saved_exec_module(loader, module)\n"
+            "        builtins.__import__ = early_import\n"
+            "        importlib.import_module = early_import_module\n"
+            "        importlib.machinery.SourceFileLoader.exec_module = early_exec_module\n"
+            "    @pytest.hookimpl(trylast=True)\n"
+            "    def pytest_unconfigure(self):\n"
+            "        builtins.__import__ = self.saved_import\n"
+            "        importlib.import_module = self.saved_import_module\n"
+            "        importlib.machinery.SourceFileLoader.exec_module = self.saved_exec_module\n"
+        ),
+        first_session_raises=False,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "app.cleanup_second_probe" in output
+
+
+def test_tooling_pytest_guard_cleans_state_after_late_teardown_error(tmp_path):
+    result = _run_tooling_guard_cleanup_probe(
+        tmp_path,
+        plugin_source=(
+            "class LifecyclePlugin:\n"
+            "    @pytest.hookimpl(trylast=True)\n"
+            "    def pytest_sessionstart(self):\n"
+            "        self.saved_import = builtins.__import__\n"
+            "        self.saved_import_module = importlib.import_module\n"
+            "        self.saved_exec_module = importlib.machinery.SourceFileLoader.exec_module\n"
+            "        def late_import(name, globals=None, locals=None, fromlist=(), level=0):\n"
+            "            return self.saved_import(name, globals, locals, fromlist, level)\n"
+            "        def late_import_module(name, package=None):\n"
+            "            return self.saved_import_module(name, package)\n"
+            "        def late_exec_module(loader, module):\n"
+            "            return self.saved_exec_module(loader, module)\n"
+            "        builtins.__import__ = late_import\n"
+            "        importlib.import_module = late_import_module\n"
+            "        importlib.machinery.SourceFileLoader.exec_module = late_exec_module\n"
+            "    @pytest.hookimpl(trylast=True)\n"
+            "    def pytest_unconfigure(self):\n"
+            "        builtins.__import__ = self.saved_import\n"
+            "        importlib.import_module = self.saved_import_module\n"
+            "        importlib.machinery.SourceFileLoader.exec_module = self.saved_exec_module\n"
+            "        raise RuntimeError('late teardown probe')\n"
+        ),
+        first_session_raises=True,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "app.cleanup_second_probe" in output
+
+
+def test_tooling_pytest_guard_leaves_hooks_unchanged_after_sessionstart_error(
+    tmp_path,
+    monkeypatch,
+):
+    guard = _tooling_pytest_guard_module()
+    original_import = builtins.__import__
+    original_import_module = importlib.import_module
+    original_exec_module = importlib.machinery.SourceFileLoader.exec_module
+    probe = tmp_path / "test_guard_recovery_probe.py"
+    probe.write_text("def test_ok():\n    pass\n", encoding="utf-8")
+    args = [
+        "--noconftest",
+        "-c",
+        os.devnull,
+        "--rootdir",
+        str(tmp_path),
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        str(probe),
+    ]
+
+    class FailingSessionStart:
+        @pytest.hookimpl(trylast=True)
+        def pytest_sessionstart(self):
+            raise RuntimeError("sessionstart probe")
+
+    monkeypatch.setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
+    try:
+        first_exit = pytest.main(args, plugins=[guard, FailingSessionStart()])
+
+        assert first_exit == pytest.ExitCode.INTERNAL_ERROR
+        assert builtins.__import__ is original_import
+        assert importlib.import_module is original_import_module
+        assert importlib.machinery.SourceFileLoader.exec_module is original_exec_module
+
+        second_exit = pytest.main(args, plugins=[guard])
+
+        assert second_exit == pytest.ExitCode.OK
+        assert builtins.__import__ is original_import
+        assert importlib.import_module is original_import_module
+        assert importlib.machinery.SourceFileLoader.exec_module is original_exec_module
+    finally:
+        guard._active_observed_modules.clear()
+        guard._unregister_audit_listener()
+
+
+def test_tooling_pytest_guard_preserves_existing_nonzero_exit_status(monkeypatch):
+    guard = _tooling_pytest_guard_module()
+    session = SimpleNamespace(
+        exitstatus=pytest.ExitCode.INTERRUPTED,
+        config=SimpleNamespace(
+            pluginmanager=SimpleNamespace(get_plugin=lambda _name: None)
+        ),
+    )
+    monkeypatch.setattr(
+        guard,
+        "loaded_forbidden_module_names",
+        lambda _config: ("app.dynamic_probe",),
+    )
+
+    guard.pytest_sessionfinish(session)
+
+    assert session.exitstatus == pytest.ExitCode.INTERRUPTED
+
+
+def test_tooling_pytest_guard_resets_history_for_each_session(monkeypatch):
+    guard = _tooling_pytest_guard_module()
+    monkeypatch.setattr(guard, "_observe_current_modules", lambda: None)
+    first_config = _GuardCleanupConfig()
+    first_session = SimpleNamespace(config=first_config)
+    second_config = _GuardCleanupConfig()
+    second_session = SimpleNamespace(config=second_config)
+
+    guard.pytest_sessionstart(first_session)
+    try:
+        guard._record_forbidden_module("app.stale_session")
+        assert guard._active_observed_modules[first_config] == {
+            "app.stale_session"
+        }
+        first_config.cleanup()
+
+        guard.pytest_sessionstart(second_session)
+        assert guard._active_observed_modules[second_config] == set()
+    finally:
+        first_config.cleanup()
+        second_config.cleanup()
+
+
+def test_agents_limits_the_tooling_fast_lane_to_pure_tooling_changes():
+    agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+
+    assert (
+        "uv run --isolated --with-requirements backend/requirements-dev.txt "
+        "python scripts/run_tooling_pytests.py"
+    ) in agents
+    assert "仅修改 agent-governance、System Map 或 doc-tooling" in agents
+    assert "不得作为每个任务的默认入口" in agents
+    assert "不替代常规项目测试、coverage 或 CI Gate" in agents
 
 
 def test_every_standard_project_skill_is_owned_versioned_and_evidenced():
@@ -75,6 +2069,128 @@ def test_every_standard_project_skill_is_owned_versioned_and_evidenced():
         assert skill["owner"]
         assert skill["evidence"]
         assert skill["sources"]
+
+
+def test_every_registered_project_source_is_committed_not_only_present_locally():
+    tracked_files = _tracked_project_files()
+    for skill in _registry()["skills"]:
+        for source in skill["sources"]:
+            assert source in tracked_files, (skill["id"], source)
+
+
+def test_validation_queries_the_tracked_file_inventory_once(monkeypatch):
+    checker = _checker_module()
+    real_run = checker.subprocess.run
+    git_calls: list[list[str]] = []
+
+    def recording_run(command, *args, **kwargs):
+        if command[:2] == ["git", "ls-files"]:
+            git_calls.append(command)
+        return real_run(command, *args, **kwargs)
+
+    monkeypatch.setattr(checker.subprocess, "run", recording_run)
+
+    checker.validate_registry(_registry())
+
+    assert git_calls == [["git", "ls-files", "-z"]]
+
+
+def test_consecutive_validations_refresh_the_tracked_file_inventory(monkeypatch):
+    checker = _checker_module()
+    registry = _registry()
+    missing_source = registry["skills"][0]["sources"][0]
+    tracked_files = _tracked_project_files()
+    inventories = [tracked_files, tracked_files - {missing_source}]
+    git_calls: list[list[str]] = []
+
+    def changing_inventory(command, *args, **kwargs):
+        git_calls.append(command)
+        inventory = inventories[len(git_calls) - 1]
+        stdout = b"\0".join(os.fsencode(path) for path in sorted(inventory)) + b"\0"
+        return subprocess.CompletedProcess(
+            command,
+            returncode=0,
+            stdout=stdout,
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(checker.subprocess, "run", changing_inventory)
+
+    checker.validate_registry(registry)
+    with pytest.raises(checker.GovernanceError) as exc:
+        checker.validate_registry(registry)
+
+    assert exc.value.code == "untracked_source"
+    assert missing_source in exc.value.detail
+    assert git_calls == [
+        ["git", "ls-files", "-z"],
+        ["git", "ls-files", "-z"],
+    ]
+
+
+def test_validation_fails_closed_when_tracked_inventory_cannot_be_loaded(
+    monkeypatch,
+):
+    checker = _checker_module()
+
+    def failing_git(command, *args, **kwargs):
+        return subprocess.CompletedProcess(
+            command,
+            returncode=128,
+            stdout=b"",
+            stderr=b"fatal: tracked inventory unavailable",
+        )
+
+    monkeypatch.setattr(checker.subprocess, "run", failing_git)
+
+    with pytest.raises(checker.GovernanceError) as exc:
+        checker.validate_registry(_registry())
+
+    assert exc.value.code == "tracked_file_inventory_failed"
+
+
+def test_untracked_source_still_blocks_cached_inventory(monkeypatch):
+    checker = _checker_module()
+    registry = _registry()
+    missing_source = registry["skills"][0]["sources"][0]
+    tracked_files = _tracked_project_files() - {missing_source}
+    inventory = b"\0".join(os.fsencode(path) for path in sorted(tracked_files)) + b"\0"
+
+    def inventory_without_source(command, *args, **kwargs):
+        return subprocess.CompletedProcess(
+            command,
+            returncode=0,
+            stdout=inventory,
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(checker.subprocess, "run", inventory_without_source)
+
+    with pytest.raises(checker.GovernanceError) as exc:
+        checker.validate_registry(registry)
+
+    assert exc.value.code == "untracked_source"
+    assert missing_source in exc.value.detail
+
+
+def test_tracked_file_inventory_preserves_paths_with_spaces(monkeypatch):
+    checker = _checker_module()
+    assert hasattr(checker, "_tracked_files"), "tracked inventory API is required"
+    inventory = b"plain.py\0docs/path with spaces.md\0"
+
+    def spaced_inventory(command, *args, **kwargs):
+        return subprocess.CompletedProcess(
+            command,
+            returncode=0,
+            stdout=inventory,
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(checker.subprocess, "run", spaced_inventory)
+
+    assert checker._tracked_files() == frozenset(
+        {"plain.py", "docs/path with spaces.md"}
+    )
 
 
 def test_shared_protocol_skills_are_agent_neutral_not_implicit_platform_copies():
@@ -110,6 +2226,9 @@ def test_agent_neutral_skill_sources_do_not_contain_provider_only_instructions()
         "subagent_type",
         'model: "opus"',
         "Co-Authored-By: Claude",
+        "CLAUDE.md",
+        "`backend-engineer`/",
+        "`release-engineer` agent",
         "[[",
     }
 
@@ -166,8 +2285,33 @@ def test_feature_route_has_exactly_one_controller_and_deduplicated_overlays():
 
     assert result["controller"] == "product-pipeline"
     assert result["delegates"] == ["health-harness-orchestrator"]
+    assert result["deferred_by_phase"]["S5"] == ["health-harness-orchestrator"]
+    assert result["deferred_skills"] == ["health-harness-orchestrator"]
+    assert "health-harness-orchestrator" not in result["selected_skills"]
+    assert result["selected_skills"] == [
+        "reva-workflow-router",
+        "product-pipeline",
+        "system-map",
+        "karpathy-guidelines",
+        "test-driven-development",
+        "verification-before-completion",
+        "add-managed-migration",
+        "safety-gate",
+    ]
+    assert result["activation_skills"] == [
+        "reva-workflow-router",
+        "product-pipeline",
+        "add-managed-migration",
+        "safety-gate",
+        "system-map",
+        "karpathy-guidelines",
+        "test-driven-development",
+        "verification-before-completion",
+        "health-harness-orchestrator",
+    ]
     assert result["overlays"] == ["add-managed-migration", "safety-gate"]
     assert result["controller_count"] == 1
+    _assert_activation_partition(result)
 
 
 def test_quick_fix_route_does_not_create_a_workflow_controller():
@@ -181,7 +2325,9 @@ def test_quick_fix_route_does_not_create_a_workflow_controller():
     assert [item["id"] for item in result["selected_skill_details"]] == result[
         "selected_skills"
     ]
-    assert all(item["version"].count(".") == 2 for item in result["selected_skill_details"])
+    assert all(
+        item["version"].count(".") == 2 for item in result["selected_skill_details"]
+    )
     assert {item["role"] for item in result["selected_skill_details"]} <= {
         "router",
         "controller",
@@ -190,6 +2336,175 @@ def test_quick_fix_route_does_not_create_a_workflow_controller():
         "overlay",
         "terminal",
     }
+    _assert_activation_partition(result)
+
+
+def test_skill_and_plugin_governance_add_only_the_relevant_authoring_capabilities():
+    result = _recommend(
+        "--mode",
+        "analysis",
+        "--capability-trigger",
+        "skill-governance",
+        "--capability-trigger",
+        "plugin-authoring",
+    )
+
+    assert result["controller"] is None
+    assert result["triggered_capabilities"] == [
+        "plugin-creator",
+        "skill-creator",
+        "writing-skills",
+    ]
+    assert "test-driven-development" not in result["selected_skills"]
+
+
+def test_recommendation_v2_partitions_startup_from_deferred_phase_loading():
+    result = _recommend(
+        "--mode",
+        "implementation",
+        "--overlay",
+        "doc-drift",
+        "--capability-trigger",
+        "skill-governance",
+    )
+
+    assert result["schema_version"] == "agent-skill-recommendation.v2"
+    assert result["immediate_skills"] == [
+        "reva-workflow-router",
+        "health-harness-orchestrator",
+        "skill-creator",
+        "writing-skills",
+        "doc-drift-fix",
+    ]
+    assert result["deferred_by_phase"] == {
+        "on_demand": ["system-map"],
+        "implementation": ["karpathy-guidelines", "test-driven-development"],
+        "verification": ["verification-before-completion"],
+    }
+    assert result["deferred_skills"] == []
+    assert result["selected_skills"] == [
+        "reva-workflow-router",
+        "health-harness-orchestrator",
+        "system-map",
+        "karpathy-guidelines",
+        "test-driven-development",
+        "verification-before-completion",
+        "skill-creator",
+        "writing-skills",
+        "doc-drift-fix",
+    ]
+    assert result["activation_skills"] == [
+        "reva-workflow-router",
+        "health-harness-orchestrator",
+        "skill-creator",
+        "writing-skills",
+        "doc-drift-fix",
+        "system-map",
+        "karpathy-guidelines",
+        "test-driven-development",
+        "verification-before-completion",
+    ]
+    phases = {
+        item["id"]: item["activation_phase"]
+        for item in result["selected_skill_details"]
+    }
+    assert phases["reva-workflow-router"] == "immediate"
+    assert phases["doc-drift-fix"] == "immediate"
+    assert phases["skill-creator"] == "immediate"
+    assert phases["system-map"] == "on_demand"
+    assert phases["test-driven-development"] == "implementation"
+    assert phases["verification-before-completion"] == "verification"
+    _assert_activation_partition(result)
+
+
+def test_incident_debugging_is_eager_but_keeps_diagnosis_phase_semantics():
+    result = _recommend("--mode", "incident")
+
+    assert "systematic-debugging" in result["immediate_skills"]
+    details = {item["id"]: item for item in result["selected_skill_details"]}
+    assert details["systematic-debugging"]["activation_phase"] == "diagnosis"
+    assert "diagnosis" not in result["deferred_by_phase"]
+    _assert_activation_partition(result)
+
+
+def test_release_terminal_is_immediate_and_verification_remains_deferred():
+    result = _recommend("--mode", "release", "--release-target", "mobile-ota")
+
+    assert result["immediate_skills"] == [
+        "reva-workflow-router",
+        "mobile-ota",
+    ]
+    assert result["deferred_by_phase"] == {
+        "verification": ["verification-before-completion"]
+    }
+    _assert_activation_partition(result)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        pytest.param(
+            lambda policy: policy["phases"].append("whenever"),
+            id="phase-vocabulary",
+        ),
+        pytest.param(
+            lambda policy: policy["role_phases"].update({"router": "whenever"}),
+            id="role-phase",
+        ),
+        pytest.param(
+            lambda policy: policy["capability_phases"].update(
+                {"system-map": "whenever"}
+            ),
+            id="capability-phase",
+        ),
+        pytest.param(
+            lambda policy: policy.update({"capability_trigger_phase": "whenever"}),
+            id="capability-trigger-phase",
+        ),
+        pytest.param(
+            lambda policy: policy["eager_phases_by_mode"].update(
+                {"incident": ["whenever"]}
+            ),
+            id="eager-mode-phase",
+        ),
+        pytest.param(
+            lambda policy: policy["delegate_phases"]["feature"].update(
+                {"health-harness-orchestrator": "whenever"}
+            ),
+            id="delegate-phase",
+        ),
+    ],
+)
+def test_checker_rejects_unknown_activation_phase_from_registry(mutation):
+    checker = _checker_module()
+    registry = _registry()
+    mutation(registry["routing"]["activation_policy"])
+
+    with pytest.raises(checker.GovernanceError) as exc:
+        checker.validate_registry(registry)
+
+    assert exc.value.code == "invalid_activation_phase"
+
+
+def test_unknown_capability_trigger_fails_closed():
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(CHECKER),
+            "recommend",
+            "--mode",
+            "analysis",
+            "--capability-trigger",
+            "write-anything",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "unknown_capability_trigger" in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -206,6 +2521,7 @@ def test_every_non_release_mode_has_zero_or_one_expected_controller(mode, contro
     assert result["controller"] == controller
     assert result["controller_count"] == int(controller is not None)
     assert len({item for item in result["overlays"]}) == len(result["overlays"])
+    _assert_activation_partition(result)
 
 
 def test_incident_route_adds_debugging_as_a_capability_not_a_controller():
@@ -250,7 +2566,7 @@ def test_run_event_schema_is_closed_and_cannot_store_raw_health_or_prompt_text()
     assert schema["$id"] == "agent-skill-run-event.v1"
     assert schema["additionalProperties"] is False
     properties = set(schema["properties"])
-    assert {
+    expected_properties = {
         "run_id",
         "task_id",
         "task_mode",
@@ -261,7 +2577,9 @@ def test_run_event_schema_is_closed_and_cannot_store_raw_health_or_prompt_text()
         "review_rounds",
         "manual_interventions",
         "reason_code",
-    } <= properties
+        "validation_exit_code",
+    }
+    assert properties == expected_properties
     assert not properties & {
         "prompt",
         "raw_prompt",
@@ -275,6 +2593,82 @@ def test_run_event_schema_is_closed_and_cannot_store_raw_health_or_prompt_text()
     assert set(reason_code) >= {"type", "enum"}
     assert "pattern" not in reason_code
     assert all("-" not in value and " " not in value for value in reason_code["enum"])
+
+    for field in ("run_id", "task_id"):
+        assert schema["properties"][field]["pattern"] == OPAQUE_UUID_PATTERN
+        assert re.fullmatch(OPAQUE_UUID_PATTERN, "019c8f4a-7c40-7abc-8def-0123456789ab")
+        assert not re.fullmatch(OPAQUE_UUID_PATTERN, "diet-two-bowls-user-request")
+
+
+def test_registry_wires_the_append_only_trace_schema_and_benchmark_collector():
+    registry = _registry()
+    tracked_files = _tracked_project_files()
+
+    assert registry["trace_event_schema"] == str(TRACE_EVENT_SCHEMA.relative_to(ROOT))
+    assert registry["benchmark_collector"] == str(BENCHMARK_COLLECTOR.relative_to(ROOT))
+    for path in (TRACE_EVENT_SCHEMA, BENCHMARK_COLLECTOR):
+        assert path.is_file()
+        assert str(path.relative_to(ROOT)) in tracked_files, path
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda schema: schema["properties"]["arm"]["enum"].append("free-form-arm"),
+        lambda schema: schema["properties"]["timestamp_utc"].update({"pattern": ".*"}),
+        lambda schema: schema["properties"]["source_sha256"].update({"pattern": ".*"}),
+    ],
+)
+def test_checker_rejects_trace_vocabulary_or_integrity_pattern_drift(
+    monkeypatch, mutation
+):
+    checker = _checker_module()
+    schema = json.loads(TRACE_EVENT_SCHEMA.read_text(encoding="utf-8"))
+    mutation(schema)
+    monkeypatch.setattr(checker, "_load_json", lambda _path, _label: schema)
+
+    with pytest.raises(checker.GovernanceError):
+        checker._validate_trace_event_schema(TRACE_EVENT_SCHEMA)
+
+
+def test_adapter_semantic_contracts_cover_every_platform_adapter_and_exact_content():
+    registry = _registry()
+    contracts = registry["adapter_contracts"]
+    adapter_skills = {
+        skill["id"]: skill for skill in registry["skills"] if "adapters" in skill
+    }
+
+    assert set(contracts) == set(adapter_skills)
+    for skill_id, skill in adapter_skills.items():
+        contract = contracts[skill_id]
+        assert contract["version"] == skill["version"]
+        assert len(contract["required_markers"]) >= 5
+        assert set(contract["adapter_sha256"]) == set(skill["adapters"])
+        for platform, path in skill["adapters"].items():
+            content = (ROOT / path).read_text(encoding="utf-8")
+            assert all(marker in content for marker in contract["required_markers"]), (
+                skill_id,
+                platform,
+            )
+
+
+def test_adapter_semantic_mutation_is_rejected_before_a_route_can_use_it():
+    checker = _checker_module()
+    registry = _registry()
+
+    for skill in registry["skills"]:
+        if "adapters" not in skill:
+            continue
+        contract = registry["adapter_contracts"][skill["id"]]
+        marker = contract["required_markers"][0]
+        for platform, path in skill["adapters"].items():
+            content = (ROOT / path).read_text(encoding="utf-8")
+            mutated = content.replace(marker, "")
+            with pytest.raises(checker.GovernanceError) as exc:
+                checker._validate_adapter_semantics(
+                    skill["id"], platform, mutated, contract
+                )
+            assert exc.value.code == "adapter_semantic_marker_missing"
 
 
 def test_governance_checker_accepts_the_committed_contract():
@@ -321,9 +2715,26 @@ def test_agents_contract_is_concise_and_does_not_embed_a_skill_catalog():
     assert "## Available Skills" not in text
     assert "npx openskills read" not in text
     assert "非仓库元任务" in text
+    assert "immediate_skills" in text
+    assert "deferred_by_phase.on_demand" in text
+    assert "activation_skills" in text
+    assert "selected_skills" in text
+    assert "禁止作为预载清单" in text
 
 
-def test_codex_router_documents_only_supported_recommender_flags():
+def test_governance_contract_version_and_compatibility_fields_match_v2():
+    text = (
+        ROOT / "docs" / "governance" / "agent-skill-governance.md"
+    ).read_text(encoding="utf-8")
+
+    assert "**版本：** 2.0" in "\n".join(text.splitlines()[:10])
+    assert "`selected_skills` / `selected_skill_details` 保留 v1 的非 delegate 选择" in text
+    assert "`deferred_skills` / `deferred_skill_details` 只保留 delegate" in text
+    assert "`activation_skills` / `activation_skill_details`" in text
+    assert "不得驱动预载" in text
+
+
+def test_codex_router_documents_supported_capability_trigger():
     router = (
         ROOT
         / "plugins"
@@ -333,4 +2744,49 @@ def test_codex_router_documents_only_supported_recommender_flags():
         / "SKILL.md"
     ).read_text(encoding="utf-8")
 
-    assert "--capability-trigger" not in router
+    assert "--capability-trigger <canonical-id>" in router
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ROOT / ".claude" / "skills" / "reva-workflow-router" / "SKILL.md",
+        ROOT
+        / "plugins"
+        / "reva-health-harness"
+        / "skills"
+        / "reva-workflow-router"
+        / "SKILL.md",
+    ],
+)
+def test_router_adapters_load_by_activation_phase_not_compatibility_union(path: Path):
+    text = path.read_text(encoding="utf-8")
+
+    assert "immediate_skills" in text
+    assert "deferred_by_phase" in text
+    assert "activation_skills" in text
+    assert "selected_skills" in text
+    assert "selected_skills cannot be used as a preload list" in text
+    assert "v1 non-delegate selection" in text
+    assert "v1 delegate-only compatibility view" in text
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ROOT / ".claude" / "skills" / "health-harness-orchestrator" / "SKILL.md",
+        ROOT
+        / "plugins"
+        / "reva-health-harness"
+        / "skills"
+        / "health-harness-orchestrator"
+        / "SKILL.md",
+    ],
+)
+def test_health_harness_adapters_activate_system_map_only_on_demand(path: Path):
+    text = path.read_text(encoding="utf-8")
+
+    assert "deferred_by_phase.on_demand" in text
+    assert "system-map" in text
+    assert "docs/system-map/INDEX.md" not in text
+    assert "docs/_generated/system-map-agent-context.md" not in text

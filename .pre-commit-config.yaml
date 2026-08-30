@@ -41,18 +41,34 @@ repos:
         entry: ./scripts/system-map-check.sh
         language: system
         pass_filenames: false
+        # 仅收窄本地提交反馈；CI 仍直接执行完整 central gate。
+        files: '^(?:\.pre-commit-config\.yaml$|AGENTS\.md$|CLAUDE\.md$|backend/app/|mobile/app/|frontend/src/app/|mobile/scripts/dump_nav_graph\.py$|docs/(?:ARCHITECTURE\.md$|system-map/|_generated/(?:system-map\.json$|system-map\.schema\.json$|system-map-agent-context\.md$|mobile-nav-graph\.json$))|scripts/(?:check_governed_path_removals\.py$|check_system_map\.py$|check_doc_drift\.py$|dump_system_map\.py$|system_map_(?:context|contract|imports)\.py$|system-map-check\.sh$|system-map-requirements\.txt$)|\.claude/skills/(?:system-map|doc-drift-fix)/)'
 
       - id: dossier-consistency
         name: dossier consistency
         entry: python3 backend/scripts/check_dossier_consistency.py
         language: system
         pass_filenames: false
+        # Dossier 本体、锚点与模板变化才需要扫描全部 dossier。
+        files: '^(?:\.pre-commit-config\.yaml$|backend/scripts/check_dossier_consistency\.py$|docs/(?:dossiers|prd|plans|specs)/|\.claude/skills/product-pipeline/|plugins/reva-health-harness/skills/product-pipeline/|scripts/check_governed_path_removals\.py$)'
 
       - id: agent-skill-governance
         name: agent skill governance
         entry: python3 scripts/check_agent_skill_governance.py check
         language: system
         pass_filenames: false
+        # Registry、合同、adapter/plugin 与其 checker 是治理真源。
+        files: '^(?:\.pre-commit-config\.yaml$|AGENTS\.md$|docs/(?:agent-skill-binding\.md$|design-agent-operating-harness\.md$|governance/agent-skill-|specs/product-pipeline-contract\.md$|system-map/INDEX\.md$)|\.claude/skills/|plugins/reva-health-harness/|\.agents/plugins/marketplace\.json$|scripts/(?:check_agent_skill_governance|agent_skill_benchmark|check_governed_path_removals)\.py$)'
+
+      # pre-commit 的 files 只看到当前路径；rename-out / deletion 需补查 staged old path。
+      - id: governed-path-removals
+        name: governed path removal sentinel
+        entry: python3.12 scripts/check_governed_path_removals.py
+        language: system
+        # 两个 anchor 被三条原 hook 共同覆盖；--all-files 时据此避免重复补跑。
+        files: '^(?:\.pre-commit-config\.yaml$|scripts/check_governed_path_removals\.py$)'
+        pass_filenames: true
+        always_run: true
 
       # 加 KB claim ≠ 只追一行 claims.jsonl。这道闸复刻 release gate 的两条硬门
       # (manifest 计数 == JSONL 行数 + 无孤儿 claim),纯文件/无 DB,提交前就拦。

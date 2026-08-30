@@ -4,20 +4,66 @@
 from __future__ import annotations
 
 import argparse
+import importlib._bootstrap
+import importlib.util
 import json
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from system_map_contract import SystemMapContractError, validate_system_map
-
-
 ROOT = Path(__file__).resolve().parent.parent
+SCRIPTS = ROOT / "scripts"
 SYSTEM_MAP_PATH = ROOT / "docs" / "_generated" / "system-map.json"
 AGENT_CONTEXT_MAX_BYTES = 4 * 1024
 QUERY_CONTEXT_MAX_BYTES = 12 * 1024
 GLOBAL_KINDS = {"component"}
+
+def _load_system_map_import_helper():
+    """Bootstrap the trust root without consulting import search paths."""
+    helper_path = (SCRIPTS / "system_map_imports.py").resolve()
+    digest = 14695981039346656037
+    for byte in os.fsencode(str(ROOT)):
+        digest = ((digest ^ byte) * 1099511628211) & ((1 << 64) - 1)
+    helper_key = f"_reva_system_map_imports_{digest:016x}"
+
+    def require_canonical(module):
+        actual_path = getattr(module, "__file__", None)
+        try:
+            if actual_path is not None and os.path.samefile(actual_path, helper_path):
+                return module
+        except (OSError, TypeError, ValueError):
+            pass
+        raise ImportError(
+            "System Map import helper loaded from unexpected path: "
+            f"{actual_path!r}; expected {str(helper_path)!r}"
+        )
+
+    # Deliberately self-contained: importing a bootstrap helper here would
+    # recreate the trust gap this first hop closes. _load_unlocked owns partial
+    # sys.modules cleanup and spec._initializing under this shared module lock.
+    with importlib._bootstrap._ModuleLockManager(helper_key):
+        if helper_key in sys.modules:
+            return require_canonical(sys.modules[helper_key])
+        spec = importlib.util.spec_from_file_location(helper_key, helper_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"cannot load System Map import helper: {helper_path}")
+        module = importlib._bootstrap._load_unlocked(spec)
+        try:
+            return require_canonical(module)
+        except BaseException:
+            if sys.modules.get(helper_key) is module:
+                sys.modules.pop(helper_key, None)
+            raise
+
+
+_system_map_imports = _load_system_map_import_helper()
+load_repo_module = _system_map_imports.load_repo_module
+
+_system_map_contract = load_repo_module("system_map_contract", SCRIPTS)
+SystemMapContractError = _system_map_contract.SystemMapContractError
+validate_system_map = _system_map_contract.validate_system_map
 
 
 class SystemMapContextError(ValueError):

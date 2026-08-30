@@ -2,7 +2,9 @@
   "schema_version": "agent-skill-registry.v1",
   "contract": "docs/governance/agent-skill-governance.md",
   "event_schema": "docs/governance/agent-skill-run-event.schema.json",
-  "last_reviewed": "2026-08-20",
+  "trace_event_schema": "docs/governance/agent-skill-run-trace-event.schema.json",
+  "benchmark_collector": "scripts/agent_skill_benchmark.py",
+  "last_reviewed": "2026-08-30",
   "lifecycle": [
     "experimental",
     "recommended",
@@ -35,12 +37,83 @@
       "health-harness-orchestrator"
     ]
   },
+  "adapter_contracts": {
+    "reva-workflow-router": {
+      "version": "2.0.1",
+      "required_markers": [
+        "analysis",
+        "quick_fix",
+        "feature",
+        "implementation",
+        "incident",
+        "release",
+        "primary_controller",
+        "capability-trigger",
+        "immediate_skills",
+        "deferred_by_phase",
+        "activation_skills",
+        "v1 non-delegate selection",
+        "v1 delegate-only compatibility view",
+        "`planning` and `verification` are workflow phases, not mode values.",
+        "selected_skills cannot be used as a preload list",
+        "using-superpowers",
+        "executing-plans"
+      ],
+      "adapter_sha256": {
+        "claude": "91dd16cbd6a9fdbd7423edb5b5e8603d0d7d30acf263608434cd99d7cac0fd0c",
+        "codex": "9fd9a571173e90a530c22e3ac936b2ac27353e818d1affce22b9d87578e32a7f"
+      }
+    },
+    "product-pipeline": {
+      "version": "1.0.0",
+      "required_markers": [
+        "primary_controller",
+        "health-harness-orchestrator",
+        "Dossier",
+        "S5",
+        "G1",
+        "G2",
+        "G3",
+        "G4",
+        "G5",
+        "G6",
+        "BLOCK",
+        "production"
+      ],
+      "adapter_sha256": {
+        "claude": "94c062c55cadd9f508fc86a15532ad1f782bf672b7e3980903929f32793bed2d",
+        "codex": "346cf6fea20f76f91da4ff94ca7b8a23e64259c36cd8068e626a8eb0f98d1823"
+      }
+    },
+    "health-harness-orchestrator": {
+      "version": "1.0.1",
+      "required_markers": [
+        "primary_controller",
+        "implementation",
+        "incident",
+        "Dossier",
+        "S5",
+        "G3",
+        "G4",
+        "G5",
+        "G6",
+        "BLOCK",
+        "production",
+        "system-map",
+        "deferred_by_phase.on_demand"
+      ],
+      "adapter_sha256": {
+        "claude": "111dba2d750d169bb6b5ab192c5839d91fb0a160433e304ba785e5607a23d862",
+        "codex": "53eaf89f2a027d8dd04a43ca807b4246e015a9d3135d891cf0bca7be7b86c780"
+      }
+    }
+  },
   "skills": [
     {
       "id": "reva-workflow-router",
       "lifecycle": "standard",
       "owner": "reva-agent-governance",
-      "version": "1.1.0",
+      "version": "2.0.1",
       "layer": "workflow",
       "kind": "router",
       "platforms": [
@@ -50,7 +123,7 @@
       "trigger_family": [
         "task-routing"
       ],
-      "last_reviewed": "2026-08-29",
+      "last_reviewed": "2026-08-30",
       "evidence": [
         "Cross-end and quick-fix pressure tests exposed competing-controller overhead; deterministic routing is covered by repository tests."
       ],
@@ -96,7 +169,7 @@
       "id": "health-harness-orchestrator",
       "lifecycle": "standard",
       "owner": "reva-engineering",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "layer": "workflow",
       "kind": "controller",
       "platforms": [
@@ -108,7 +181,7 @@
         "incident",
         "cross-surface-delivery"
       ],
-      "last_reviewed": "2026-08-20",
+      "last_reviewed": "2026-08-30",
       "evidence": [
         "The operating harness provides checkpointed implementation, review, validation and release hand-offs."
       ],
@@ -336,27 +409,6 @@
       "sources": [
         ".claude/skills/extend-safety-or-specialist/SKILL.md"
       ]
-    },
-    {
-      "id": "domain-rule-factory",
-      "lifecycle": "experimental",
-      "owner": "reva-agent-governance",
-      "version": "0.3.0",
-      "layer": "incubator",
-      "kind": "capability",
-      "platforms": [
-        "agent-neutral"
-      ],
-      "trigger_family": [
-        "new-deterministic-rule-domain"
-      ],
-      "last_reviewed": "2026-08-20",
-      "evidence": [
-        "The eight-stage rulebook-to-runtime pattern is documented but has not yet met the standard lifecycle evidence bar."
-      ],
-      "sources": [
-        ".claude/skills/domain-rule-factory/SKILL.md"
-      ]
     }
   ],
   "external_recommendations": [
@@ -391,6 +443,30 @@
       "kind": "capability",
       "allow_direct_controller": false,
       "reason": "Use before completion claims; it owns evidence, not orchestration."
+    },
+    {
+      "id": "skill-creator",
+      "version": "1.0.0",
+      "lifecycle": "standard",
+      "kind": "capability",
+      "allow_direct_controller": false,
+      "reason": "Use only when creating or materially revising a Skill contract."
+    },
+    {
+      "id": "writing-skills",
+      "version": "1.0.0",
+      "lifecycle": "standard",
+      "kind": "capability",
+      "allow_direct_controller": false,
+      "reason": "Use for TDD and deployment discipline specific to Skill files."
+    },
+    {
+      "id": "plugin-creator",
+      "version": "1.0.0",
+      "lifecycle": "standard",
+      "kind": "capability",
+      "allow_direct_controller": false,
+      "reason": "Use only when authoring or installing a Codex plugin package."
     },
     {
       "id": "using-superpowers",
@@ -469,6 +545,40 @@
         ]
       }
     },
+    "activation_policy": {
+      "phases": [
+        "immediate",
+        "diagnosis",
+        "on_demand",
+        "implementation",
+        "verification",
+        "S5"
+      ],
+      "role_phases": {
+        "router": "immediate",
+        "controller": "immediate",
+        "overlay": "immediate",
+        "terminal": "immediate"
+      },
+      "capability_phases": {
+        "system-map": "on_demand",
+        "karpathy-guidelines": "implementation",
+        "systematic-debugging": "diagnosis",
+        "test-driven-development": "implementation",
+        "verification-before-completion": "verification"
+      },
+      "capability_trigger_phase": "immediate",
+      "eager_phases_by_mode": {
+        "incident": [
+          "diagnosis"
+        ]
+      },
+      "delegate_phases": {
+        "feature": {
+          "health-harness-orchestrator": "S5"
+        }
+      }
+    },
     "overlays": {
       "app-review": [
         "ios-app-review-gate"
@@ -484,6 +594,15 @@
       ],
       "safety": [
         "safety-gate"
+      ]
+    },
+    "capability_triggers": {
+      "plugin-authoring": [
+        "plugin-creator"
+      ],
+      "skill-governance": [
+        "skill-creator",
+        "writing-skills"
       ]
     },
     "release_targets": {

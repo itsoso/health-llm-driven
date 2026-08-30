@@ -1,6 +1,6 @@
 ---
 doc: agent-skill-binding
-last-reviewed: 2026-08-29
+last-reviewed: 2026-08-30
 scope: health-llm-driven
 ---
 
@@ -23,9 +23,9 @@ scope: health-llm-driven
 
 1. 读 `AGENTS.md`:安全、日志、测试、隐私、DB、提交、部署硬规则的最终裁判。
 2. 先判断是否为仓库研发任务。Codex 设置/性能、通用问答等**非仓库元任务**到此停止，不运行 Router，也不加载 System Map。
-3. 仓库研发任务运行 `python3.12 scripts/check_agent_skill_governance.py recommend --mode <mode>`，由 `reva-workflow-router` 选择最小充分 Skill 集；不得把多个 controller 机械叠加。
-4. 按平台读取 Router 选中的 adapter：Claude 读 `.claude/skills/<name>/SKILL.md`，Codex 读 `plugins/reva-health-harness/skills/<name>/SKILL.md`；未封装的平台能力才按注册表 source 读取。
-5. 只有 Router 选中 `system-map` 或任务明确需要全局架构/跨组件/代码派生结构时才加载地图：
+3. 仓库研发任务运行 `python3.12 scripts/check_agent_skill_governance.py recommend --mode <mode>`，由 `reva-workflow-router` 选择最小充分 Skill 集；Skill / plugin 治理分别声明 `--capability-trigger skill-governance` / `plugin-authoring`，不得把多个 controller 机械叠加。
+4. 启动时只读取推荐结果的 `immediate_skills`：Claude 读 `.claude/skills/<name>/SKILL.md`，Codex 读 `plugins/reva-health-harness/skills/<name>/SKILL.md`；进入实际阶段后才读取 `deferred_by_phase[phase]`。`activation_skills` 是完整有序审计 union；`selected_skills` 保留 v1 非 delegate 选择，`deferred_skills` 只保留 delegate；这些兼容/审计字段都禁止作为预载清单。
+5. `system-map` 位于 `on_demand`；只有任务确实需要全局架构、跨组件或代码派生结构时才加载地图：
    - 已知 path/entity/flow 的局部任务直接运行 `python3.12 scripts/system_map_context.py ... --depth 0`；
    - onboarding、全局架构或跨域设计先读 `docs/system-map/INDEX.md` 与 `docs/_generated/system-map-agent-context.md`，再局部查询。
 6. 打开查询结果给出的源码与附近测试后，再形成技术结论或实现计划。
@@ -37,11 +37,14 @@ scope: health-llm-driven
 
 Router 的机器推荐是入口，不是第二套状态机。`product-pipeline`、`health-harness-orchestrator` 与 release skill 同一任务最多选一个 primary controller；safety、DB、通知隐私、doc drift 和 App Review 只作为可阻断 overlay，不拥有独立计划或 ledger。
 
+`feature` 路由中的 Health Harness 位于 `deferred_by_phase.S5` 和完整 `activation_skills`，但不进入 v1 `selected_skills`，也不在定义环预载；只有 Product Pipeline 进入 S5 后，才在同一 Dossier / 父 run 中显式加载。若要衡量治理效果，在开始下一条真实 Bug 前用 `scripts/agent_skill_benchmark.py start --arm router_v1_prospective --task-mode <mode> --log <explicit-jsonl> ...` 注册；日志路径必须显式提供且不得提交用户文本，后续只用 `mark` 写闭集阶段与哈希证据。证据 digest 必须来自完整、高熵 evidence pack，不能直接哈希药名、诊断、健康短句或 prompt；完成报告后把 trace head hash 锚定到对应 Dossier。
+
 ## Binding 表
 
 | 触发场景 | 必读研发 skill / 协议 | 后续权威文档 |
 |---|---|---|
-| 任一仓库研发任务的 Skill 选择 | `reva-workflow-router` + `scripts/check_agent_skill_governance.py recommend` | `docs/governance/agent-skill-registry.json`, `docs/governance/agent-skill-governance.md` |
+| 任一研发任务的 Skill 选择 | `reva-workflow-router` + `scripts/check_agent_skill_governance.py recommend` | `docs/governance/agent-skill-registry.json`, `docs/governance/agent-skill-governance.md` |
+| 新建/修改研发 Skill 或 Codex plugin | Router + `skill-governance` / `plugin-authoring` capability trigger | `docs/governance/agent-skill-governance.md`, plugin manifest,对应 Skill contract |
 | Onboard 本项目、问“系统是什么/有哪些能力/架构/产品地图/当前现状” | `system-map` | `docs/system-map/INDEX.md`, `docs/_generated/system-map-agent-context.md`, `docs/system-map/product-map.md`, `docs/_generated/system-map.json` |
 | 一句需求要走“需求→PRD→规划→研发→测试→部署→上线验证” | `product-pipeline`（由 Router 选择平台 adapter） | `docs/specs/product-pipeline-contract.md`, `docs/specs/reva-product-governance-spec.md`, `docs/dossiers/` |
 | 需求已定,进入跨端实现或多 agent fan-out | `health-harness-orchestrator`（由 Router 选择平台 adapter） | `docs/design-agent-operating-harness.md`,对应 plan/spec |

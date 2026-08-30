@@ -3,9 +3,21 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN = ROOT / "plugins" / "reva-health-harness"
+
+
+@pytest.fixture(autouse=True)
+def _isolate_twin_cache():
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _noop_twin_cache():
+    yield
 
 
 def test_reva_health_harness_plugin_manifest_is_installable():
@@ -13,7 +25,7 @@ def test_reva_health_harness_plugin_manifest_is_installable():
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     assert manifest["name"] == "reva-health-harness"
-    assert manifest["version"].startswith("0.2.0")
+    assert manifest["version"] == "0.3.1"
     assert manifest["skills"] == "./skills/"
     assert "hooks" not in manifest
     assert manifest["interface"]["displayName"] == "Reva Health Harness"
@@ -21,17 +33,51 @@ def test_reva_health_harness_plugin_manifest_is_installable():
     assert manifest["author"]["name"] == "executor.life"
 
 
+def test_plugin_release_tracks_router_v2_semantic_contract():
+    manifest = json.loads(
+        (PLUGIN / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
+    )
+    registry = json.loads(
+        (
+            ROOT / "docs" / "governance" / "agent-skill-registry.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    assert manifest["version"] == "0.3.1"
+    assert registry["adapter_contracts"]["reva-workflow-router"]["version"] == "2.0.1"
+    assert (
+        registry["adapter_contracts"]["health-harness-orchestrator"]["version"]
+        == "1.0.1"
+    )
+
+
 def test_reva_health_harness_marketplace_entry_points_to_repo_plugin():
-    marketplace = json.loads((ROOT / ".agents" / "plugins" / "marketplace.json").read_text(encoding="utf-8"))
+    marketplace = json.loads(
+        (ROOT / ".agents" / "plugins" / "marketplace.json").read_text(encoding="utf-8")
+    )
     assert marketplace["name"] == "reva-health"
     assert marketplace["interface"]["displayName"] == "Reva Health"
 
     entries = {entry["name"]: entry for entry in marketplace["plugins"]}
 
     entry = entries["reva-health-harness"]
-    assert entry["source"] == {"source": "local", "path": "./plugins/reva-health-harness"}
-    assert entry["policy"] == {"installation": "AVAILABLE", "authentication": "ON_INSTALL"}
+    assert entry["source"] == {
+        "source": "local",
+        "path": "./plugins/reva-health-harness",
+    }
+    assert entry["policy"] == {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL",
+    }
     assert entry["category"] == "Productivity"
+
+
+def test_plugin_readme_installs_the_stable_main_marketplace_not_a_temp_checkout():
+    readme = (PLUGIN / "README.md").read_text(encoding="utf-8")
+
+    assert "codex plugin marketplace add itsoso/health-llm-driven --ref main" in readme
+    assert "codex plugin marketplace add .agents/plugins" not in readme
+    assert "/var/folders/" not in readme
 
 
 def test_reva_health_harness_packages_core_project_skills():
@@ -59,7 +105,9 @@ def test_codex_adapters_are_native_and_do_not_copy_claude_only_instructions():
 
     for name in ("product-pipeline", "health-harness-orchestrator"):
         codex = (PLUGIN / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
-        claude = (ROOT / ".claude" / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
+        claude = (ROOT / ".claude" / "skills" / name / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
         assert codex != claude
         assert all(token not in codex for token in forbidden)
         assert "Codex" in codex
@@ -67,7 +115,11 @@ def test_codex_adapters_are_native_and_do_not_copy_claude_only_instructions():
 
 
 def test_codex_router_is_the_only_implicitly_invoked_plugin_skill():
-    for name in ("product-pipeline", "health-harness-orchestrator", "reva-workflow-router"):
+    for name in (
+        "product-pipeline",
+        "health-harness-orchestrator",
+        "reva-workflow-router",
+    ):
         metadata_path = PLUGIN / "skills" / name / "agents" / "openai.yaml"
         text = metadata_path.read_text(encoding="utf-8")
         expected = "true" if name == "reva-workflow-router" else "false"
@@ -85,10 +137,12 @@ def test_codex_router_is_the_only_implicitly_invoked_plugin_skill():
 
 
 def test_product_pipeline_documents_quick_flow_and_correct_course():
-    skill = (ROOT / ".claude" / "skills" / "product-pipeline" / "SKILL.md").read_text(encoding="utf-8")
-    template = (ROOT / ".claude" / "skills" / "product-pipeline" / "dossier-template.md").read_text(
+    skill = (ROOT / ".claude" / "skills" / "product-pipeline" / "SKILL.md").read_text(
         encoding="utf-8"
     )
+    template = (
+        ROOT / ".claude" / "skills" / "product-pipeline" / "dossier-template.md"
+    ).read_text(encoding="utf-8")
 
     assert "Quick Flow" in skill
     assert "全 6-Gate" in skill
@@ -100,7 +154,9 @@ def test_product_pipeline_documents_quick_flow_and_correct_course():
 
 
 def test_product_pipeline_documents_selective_memory_priming():
-    skill = (ROOT / ".claude" / "skills" / "product-pipeline" / "SKILL.md").read_text(encoding="utf-8")
+    skill = (ROOT / ".claude" / "skills" / "product-pipeline" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
 
     assert "harness_memory_prime.py" in skill
     assert "MEMORY.md" in skill
@@ -108,7 +164,9 @@ def test_product_pipeline_documents_selective_memory_priming():
 
 
 def test_product_pipeline_documents_friction_scan_as_advisory():
-    skill = (ROOT / ".claude" / "skills" / "product-pipeline" / "SKILL.md").read_text(encoding="utf-8")
+    skill = (ROOT / ".claude" / "skills" / "product-pipeline" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
 
     assert "harness_friction_scan.py" in skill
     assert "摩擦检测" in skill

@@ -8,16 +8,18 @@
 2. 仓库研发任务先运行 `reva-workflow-router`，选择一个 primary controller 与必要 overlay：
 
    ```bash
-   python3.12 scripts/check_agent_skill_governance.py recommend --mode <analysis|planning|implementation|verification|release>
+   python3.12 scripts/check_agent_skill_governance.py recommend --mode <analysis|quick_fix|feature|implementation|incident|release>
    ```
 
-   有安全、DB、文档漂移等明确风险时才附加对应 `--overlay`。不要机械叠加多个 controller。
-3. **非仓库元任务**（例如 Codex 设置、执行速度、通用问答、个人工作流讨论）不运行 Router，也不加载 System Map。
-4. 只有 Router 选中 `system-map`，或任务确实涉及系统现状、架构、跨端/跨组件关系、代码派生结构或漂移时，才加载地图：
+   `planning` and `verification` are workflow phases, not mode values.
+   有安全、DB、文档漂移等明确风险时才附加对应 `--overlay`；Skill / plugin 治理分别声明 `--capability-trigger skill-governance` / `plugin-authoring`。不要机械叠加多个 controller；feature 的 Health Harness delegate 只在父流程进入 S5 后加载。
+3. 启动只消费推荐结果的 `immediate_skills`，进入实际阶段后才加载 `deferred_by_phase[phase]`。`activation_skills` 是完整有序审计 union；`selected_skills` 保留 v1 非 delegate 选择，`deferred_skills` 只保留 delegate；三者都**禁止作为预载清单**。
+4. **非仓库元任务**（例如 Codex 设置、执行速度、通用问答、个人工作流讨论）不运行 Router，也不加载 System Map。
+5. `system-map` 只在任务实际命中系统现状、架构、跨端/跨组件关系、代码派生结构或漂移需求时，从 `deferred_by_phase.on_demand` 激活：
    - 已知路径或局部修改：直接用 `python3.12 scripts/system_map_context.py --path <path> --depth 0`；
    - 已知实体/流：用 `--entity` / `--flow` / `--keyword`，默认零跳，确有需要再增大 `--depth`；
    - onboarding、全局架构或跨域设计：先读 `docs/system-map/INDEX.md` 与 `docs/_generated/system-map-agent-context.md`，再做局部查询。
-5. 打开查询结果指向的源码和邻近测试后，才能形成技术结论或实现计划。
+6. 打开查询结果指向的源码和邻近测试后，才能形成技术结论或实现计划。
 
 地图不可用或验证失败时，运行 `./scripts/system-map-check.sh`，并直接回到代码、测试和注册表调查。`docs/_generated/system-map.json` 是 canonical graph；摘要与查询结果只是派生视图。
 
@@ -50,6 +52,8 @@
 
 - 修复或新增行为先写能失败的测试，再做最小实现；完成声明前运行与风险相称的新鲜验证。
 - 跑测试绝不使用 `| tail`；如需管道必须 `set -o pipefail`，并检查真实退出码。
+- 仅修改 agent-governance、System Map 或 doc-tooling 时，可运行 `uv run --isolated --with-requirements backend/requirements-dev.txt python scripts/run_tooling_pytests.py` 作为 supplemental fast lane；不得作为每个任务的默认入口。该入口跳过 coverage，且不替代常规项目测试、coverage 或 CI Gate。
+- 部署或发布前必须运行项目 CI-mode 集成闸，并核对目标主干对应 revision 的真实 CI 状态；局部测试不能替代。
 - PostgreSQL 是生产和新数据库行为的唯一语义真源；SQLite 只用于快速单测/迁移兼容，不能证明约束、并发、JSONB、时区或方言行为。
 - schema/迁移变化必须选择 `add-managed-migration` overlay，同步 ORM、API/客户端类型、迁移、回滚路径和 PostgreSQL 集成证据。
 - 改接口契约要同步两侧类型并同批验证；不能只验证单端。
