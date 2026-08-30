@@ -103,6 +103,192 @@ def _agent_package_payload(
     }
 
 
+def _agent_package_v2_payload(
+    *,
+    primary: dict | None = None,
+    supporting: dict | None = None,
+    package_id: str = "health-evidence-v2",
+    version: str = "2.0.0",
+) -> dict:
+    primary = primary or _release_payload("release-primary")
+    supporting = supporting or _release_payload("release-supporting")
+    content_hash = "sha256:" + ("a" * 64)
+    minimum_scores = {
+        "retrieval": 1.0,
+        "retrieval_precision": 1.0,
+        "citations": 1.0,
+        "faithfulness": 1.0,
+        "abstention": 1.0,
+        "tool_choice": 1.0,
+        "tool_arguments": 1.0,
+        "task_completion": 1.0,
+        "latency": 1.0,
+        "cost": 1.0,
+        "adjudication_consistency": 1.0,
+        "source_independence": 1.0,
+        "conflict_detection": 1.0,
+        "report_citation_completeness": 1.0,
+        "safe_insufficiency": 1.0,
+        "proofroom_projection_completeness": 1.0,
+    }
+    return {
+        "schema_version": "agent-package.v2",
+        "package_id": package_id,
+        "version": version,
+        "content_hash": content_hash,
+        "lifecycle_state": "published",
+        "published_at": "2026-08-16T12:00:00Z",
+        "releases": [
+            {
+                "release_id": primary["release_id"],
+                "content_hash": primary["content_hash"],
+                "citation_ids": ["citation-1"],
+            },
+            {
+                "release_id": supporting["release_id"],
+                "content_hash": supporting["content_hash"],
+                "citation_ids": ["citation-1"],
+            },
+        ],
+        "retrieval_policy": {
+            "strategy": "hybrid",
+            "allowed_source_types": ["evidence"],
+            "require_citations": True,
+            "max_context_chunks": 4,
+            "embedding_provider": "test",
+            "embedding_model": "test-model",
+            "embedding_version": "v1",
+            "embedding_endpoint_hash": "sha256:" + ("b" * 64),
+            "reranker_version": "test-reranker-v1",
+        },
+        "model_policy": {
+            "preferred_capability": "grounded_reasoning",
+            "max_cost_usd": 0.1,
+            "timeout_ms": 30_000,
+        },
+        "prompt_profiles": [{"profile_id": "health-evidence", "output_schema": "claim-set.v1"}],
+        "tool_policy": {"tools": []},
+        "safety_policy": {
+            "usage_policy": "evidence_only",
+            "abstention_reasons": ["insufficient_evidence", "conflicting_evidence"],
+            "escalation_target": "health-domain-review",
+        },
+        "evaluation_policy": {
+            "suite_version": "health-agent-eval.v2",
+            "minimum_scores": minimum_scores,
+        },
+        "evaluation": {
+            "schema_version": "agent-evaluation-report.v1",
+            "package_id": package_id,
+            "package_content_hash": content_hash,
+            "suite_version": "health-agent-eval.v2",
+            "input_hash": "sha256:" + ("c" * 64),
+            "evaluator_version": "deterministic-agent-evaluator.v2",
+            "metrics": minimum_scores,
+            "passed": True,
+            "evaluated_at": "2026-08-16T11:59:00Z",
+        },
+        "evidence_policy": {
+            "release_roles": [
+                {"release_id": primary["release_id"], "role": "primary"},
+                {"release_id": supporting["release_id"], "role": "supporting"},
+            ],
+            "minimum_independent_sources": 2,
+            "max_claims": 8,
+            "max_evidence_per_claim": 5,
+            "allowed_verdicts": ["supported", "insufficient"],
+            "freshness_policy": {"max_age_days": 365, "require_publication_date": True},
+            "report_schema": "evidence-audit.v1",
+        },
+        "ui_manifest": {"capabilities": ["evidence"]},
+    }
+
+
+def test_assess_agent_package_v2_accepts_published_evidence_policy():
+    from app.integrations.dedao_kbase_release_consumer import assess_agent_package_for_health
+
+    primary = _release_payload("release-primary")
+    supporting = _release_payload("release-supporting")
+    package = _agent_package_v2_payload(primary=primary, supporting=supporting)
+
+    assessment = assess_agent_package_for_health(package, [primary, supporting])
+
+    assert assessment["eligible"] is True
+    assert assessment["hold_reasons"] == []
+    assert assessment["schema_version"] == "agent-package.v2"
+    assert assessment["evidence_policy"]["minimum_independent_sources"] == 2
+
+
+def test_assess_agent_package_v2_requires_evidence_policy():
+    from app.integrations.dedao_kbase_release_consumer import assess_agent_package_for_health
+
+    primary = _release_payload("release-primary")
+    supporting = _release_payload("release-supporting")
+    package = _agent_package_v2_payload(primary=primary, supporting=supporting)
+    package.pop("evidence_policy")
+
+    with pytest.raises(ValueError, match="evidence_policy"):
+        assess_agent_package_for_health(package, [primary, supporting])
+
+
+@pytest.mark.parametrize(
+    "mutate, message",
+    [
+        (
+            lambda package: package["evidence_policy"].update(
+                release_roles=[
+                    {"release_id": "release-primary", "role": "primary"},
+                    {"release_id": "release-supporting", "role": "primary"},
+                ]
+            ),
+            "primary",
+        ),
+        (
+            lambda package: package["evidence_policy"].update(max_claims=0),
+            "max_claims",
+        ),
+    ],
+)
+def test_assess_agent_package_v2_rejects_invalid_evidence_policy(mutate, message):
+    from app.integrations.dedao_kbase_release_consumer import assess_agent_package_for_health
+
+    primary = _release_payload("release-primary")
+    supporting = _release_payload("release-supporting")
+    package = _agent_package_v2_payload(primary=primary, supporting=supporting)
+    mutate(package)
+
+    with pytest.raises(ValueError, match=message):
+        assess_agent_package_for_health(package, [primary, supporting])
+
+
+def test_compile_agent_package_v2_preserves_bounded_evidence_policy_without_execution_policy(
+    tmp_path,
+):
+    from app.integrations.dedao_kbase_release_consumer import compile_agent_package_artifacts
+
+    primary = _release_payload("release-primary")
+    supporting = _release_payload("release-supporting")
+    package = _agent_package_v2_payload(primary=primary, supporting=supporting)
+
+    result = compile_agent_package_artifacts(
+        package=package,
+        releases=[primary, supporting],
+        base_artifact_dir=tmp_path / "artifacts",
+        source_root=tmp_path / "source",
+        now=datetime(2026, 8, 16, 13, tzinfo=UTC),
+    )
+
+    claim_metadata = result.claims[0]["metadata"]
+    assert result.manifest["ingest"]["serving_allowed"] is False
+    assert result.manifest["agent_package"]["schema_version"] == "agent-package.v2"
+    assert result.manifest["agent_package"]["evidence_policy"]["report_schema"] == "evidence-audit.v1"
+    assert claim_metadata["evidence_policy"]["release_roles"][0]["role"] == "primary"
+    assert "model_policy" not in claim_metadata
+    assert "prompt_profiles" not in claim_metadata
+    assert "tool_policy" not in claim_metadata
+    assert "ui_manifest" not in claim_metadata
+
+
 def test_release_client_lists_fetches_and_posts_feedback():
     from app.integrations.dedao_kbase_release_consumer import DedaoKBaseReleaseClient
 
@@ -524,6 +710,55 @@ def test_agent_package_sync_writes_draft_without_serving_or_personal_data_mutati
     assert db.query(KBDocument).count() == 0
     audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_agent_package_sync_draft").one()
     assert audit.diff["gate"]["serving_allowed"] is False
+
+
+def test_agent_package_v2_sync_writes_policy_snapshot_as_held_draft(tmp_path, db):
+    from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_agent_packages_draft_once
+
+    primary = _release_payload("release-primary")
+    supporting = _release_payload("release-supporting")
+    package = _agent_package_v2_payload(primary=primary, supporting=supporting)
+    requests: list[tuple[str, str, dict | None]] = []
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        _agent_package_sequence_handler(
+            [package],
+            {primary["release_id"]: primary, supporting["release_id"]: supporting},
+            requests,
+        ),
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    canonical = tmp_path / "canonical"
+    workspace = tmp_path / "agent-package-review"
+    _write_canonical_artifacts(canonical, marker="trusted-base")
+    try:
+        result = sync_dedao_kbase_agent_packages_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+            actor="test:agent-package-v2-sync",
+            limit=1,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert result["status"] == "draft_written"
+    assert result["gate"]["serving_allowed"] is False
+    manifest = json.loads((workspace / "draft_manifest.json").read_text())
+    package_receipt = manifest["agent_packages"][0]
+    assert package_receipt["schema_version"] == "agent-package.v2"
+    assert package_receipt["evidence_policy"]["minimum_independent_sources"] == 2
+    assert "model_policy" not in json.dumps(manifest, ensure_ascii=False)
+    draft_claim = json.loads((workspace / "claims.jsonl").read_text().splitlines()[-1])
+    assert draft_claim["metadata"]["review_status"] == "draft"
+    assert draft_claim["metadata"]["evidence_policy"]["report_schema"] == "evidence-audit.v1"
+    assert db.query(KBDocument).count() == 0
 
 
 def test_agent_package_sync_preserves_previous_unreviewed_batch(tmp_path, db):

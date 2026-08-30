@@ -30,6 +30,7 @@ from app.services.dedao_kbase_export_importer import (
 )
 from app.integrations.dedao_kbase_release_consumer import (
     DedaoKBaseReleaseClient,
+    _evidence_policy_snapshot,
     assess_agent_package_for_health,
     combine_release_results,
     compile_agent_package_artifacts,
@@ -950,6 +951,15 @@ def sync_dedao_kbase_agent_packages_draft_once(
                     "evaluation_evaluator_version": evaluation["evaluator_version"],
                     "evaluated_at": evaluation["evaluated_at"],
                 }
+                if package.get("schema_version") == "agent-package.v2":
+                    receipt.update(
+                        {
+                            "schema_version": "agent-package.v2",
+                            "evidence_policy": _evidence_policy_snapshot(
+                                package["evidence_policy"]
+                            ),
+                        }
+                    )
                 key = (receipt["package_id"], receipt["version"], receipt["content_hash"])
                 package_receipts[key] = receipt
             all_package_receipts = [package_receipts[key] for key in sorted(package_receipts)]

@@ -16,7 +16,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Protocol
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -37,6 +37,7 @@ _CANONICAL_DECIMAL_RE = re.compile(
     r"(?:0|-?[1-9][0-9]*|-?(?:0|[1-9][0-9]*)\.[0-9]*[1-9])"
 )
 _IJSON_SAFE_INTEGER = 2**53 - 1
+_JCS_MAX_NESTING_DEPTH = 64
 _SOURCE_ORDER_INDEX = {
     source_kind: index
     for index, source_kind in enumerate(contracts.HEALTH_DAY_SOURCE_ORDER_V1)
@@ -100,6 +101,16 @@ class ShadowManifestIdentity:
 
 def _raise(code: str) -> None:
     raise ShadowSigningError(code) from None
+
+
+def _revalidate_frozen_contract(
+    value: object,
+    code: str = "shadow_contract_revalidation_failed",
+) -> None:
+    try:
+        type(value).__post_init__(value)
+    except Exception:
+        _raise(code)
 
 
 def _require_exact_type(value: object, expected: type, code: str) -> None:
@@ -197,15 +208,24 @@ def _require_optional_date(value: object, code: str) -> str | None:
 def _require_utc_datetime(value: object, code: str) -> datetime:
     _require_exact_type(value, datetime, code)
     candidate = value  # type: ignore[assignment]
-    if candidate.tzinfo is None or candidate.utcoffset() is None:
+    try:
+        offset = candidate.utcoffset()
+    except Exception:
         _raise(code)
-    if candidate.utcoffset() != timedelta(0):
+    if candidate.tzinfo is None or offset is None:
+        _raise(code)
+    if offset != timedelta(0):
         _raise(code)
     return candidate
 
 
 def _timestamp(value: object, code: str) -> str:
-    return _require_utc_datetime(value, code).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    candidate = _require_utc_datetime(value, code)
+    return (
+        f"{candidate.year:04d}-{candidate.month:02d}-{candidate.day:02d}T"
+        f"{candidate.hour:02d}:{candidate.minute:02d}:{candidate.second:02d}."
+        f"{candidate.microsecond:06d}Z"
+    )
 
 
 def _optional_timestamp(value: object, code: str) -> str | None:
@@ -232,13 +252,35 @@ def _require_owner_id(value: object, code: str) -> str:
     return result
 
 
+def _require_bundle_owner_id(value: object, code: str) -> str:
+    result = _require_owner_id(value, code)
+    try:
+        int(result)
+    except (ValueError, OverflowError, MemoryError):
+        _raise("shadow_owner_id_invalid")
+    return result
+
+
 def _require_timezone(value: object, code: str) -> str:
     result = _require_string(value, code)
     try:
         ZoneInfo(result)
-    except (ZoneInfoNotFoundError, ValueError, TypeError):
+    except Exception:
         _raise("shadow_timezone_invalid")
     return result
+
+
+def _require_manifest_local_day_match(
+    as_of: datetime,
+    timezone_name: str,
+    local_day: date,
+) -> None:
+    try:
+        projected_local_day = as_of.astimezone(ZoneInfo(timezone_name)).date()
+    except Exception:
+        _raise("manifest_local_day_conversion_failed")
+    if projected_local_day != local_day:
+        _raise("manifest_local_day_mismatch")
 
 
 def _validate_unicode(value: str, code: str) -> None:
@@ -255,7 +297,14 @@ def _reason_codes(value: object, code: str) -> list[str]:
     return projected
 
 
-def _validate_jcs_subset(value: object) -> None:
+def _validate_jcs_subset(
+    value: object,
+    *,
+    depth: int = 0,
+    active_containers: set[int] | None = None,
+) -> None:
+    if depth > _JCS_MAX_NESTING_DEPTH:
+        _raise("jcs_nesting_too_deep")
     value_type = type(value)
     if value is None or value_type is bool:
         return
@@ -267,17 +316,43 @@ def _validate_jcs_subset(value: object) -> None:
         _validate_unicode(value, "jcs_unicode_surrogate_invalid")  # type: ignore[arg-type]
         return
     if value_type in {list, tuple}:
-        for member in value:  # type: ignore[union-attr]
-            _validate_jcs_subset(member)
+        if active_containers is None:
+            active_containers = set()
+        container_id = id(value)
+        if container_id in active_containers:
+            _raise("jcs_cycle_detected")
+        active_containers.add(container_id)
+        try:
+            for member in value:  # type: ignore[union-attr]
+                _validate_jcs_subset(
+                    member,
+                    depth=depth + 1,
+                    active_containers=active_containers,
+                )
+        finally:
+            active_containers.remove(container_id)
         return
     if value_type is dict:
-        for key, member in value.items():  # type: ignore[union-attr]
-            if type(key) is not str:
-                _raise("jcs_object_key_type_invalid")
-            _validate_unicode(key, "jcs_unicode_surrogate_invalid")
-            if not key.isascii() or _JCS_KEY_RE.fullmatch(key) is None:
-                _raise("jcs_object_key_invalid")
-            _validate_jcs_subset(member)
+        if active_containers is None:
+            active_containers = set()
+        container_id = id(value)
+        if container_id in active_containers:
+            _raise("jcs_cycle_detected")
+        active_containers.add(container_id)
+        try:
+            for key, member in value.items():  # type: ignore[union-attr]
+                if type(key) is not str:
+                    _raise("jcs_object_key_type_invalid")
+                _validate_unicode(key, "jcs_unicode_surrogate_invalid")
+                if not key.isascii() or _JCS_KEY_RE.fullmatch(key) is None:
+                    _raise("jcs_object_key_invalid")
+                _validate_jcs_subset(
+                    member,
+                    depth=depth + 1,
+                    active_containers=active_containers,
+                )
+        finally:
+            active_containers.remove(container_id)
         return
     if value_type is float:
         _raise("jcs_float_forbidden")
@@ -413,12 +488,11 @@ def _validate_manifest_signing_input(manifest_input: ManifestSigningInput) -> No
     if type(manifest_input) is not ManifestSigningInput:
         _raise("manifest_signing_input_type_invalid")
     _require_schema_version(manifest_input.schema_version, "manifest.schema_version")
-    _require_owner_id(manifest_input.owner_id, "manifest.owner_id")
+    _require_bundle_owner_id(manifest_input.owner_id, "manifest.owner_id")
     local_day = _require_exact_date(manifest_input.local_day, "manifest.local_day")
     timezone_name = _require_timezone(manifest_input.timezone, "manifest.timezone")
     as_of = _require_utc_datetime(manifest_input.as_of, "manifest.as_of")
-    if as_of.astimezone(ZoneInfo(timezone_name)).date() != local_day:
-        _raise("manifest_local_day_mismatch")
+    _require_manifest_local_day_match(as_of, timezone_name, local_day)
     if type(manifest_input.transaction) is not contracts.HealthDayTransaction:
         _raise("manifest_transaction_type_invalid")
     _project_transaction(manifest_input.transaction)
@@ -435,19 +509,21 @@ def _validate_manifest_signing_input(manifest_input: ManifestSigningInput) -> No
         _raise("signing_source_kind_invalid")
     if kinds != expected:
         _raise("signing_sources_out_of_order")
+    for source in manifest_input.sources:
+        _project_source_signing_input(source)
 
 
 def sign_shadow_source_payload(
     source_input: SourceSigningInput,
     key_provider: ShadowKeyProvider,
 ) -> str:
-    key_id, root_key = _read_key(key_provider)
     try:
         payload = _project_source_signing_input(source_input)
     except ShadowSigningError:
         raise
     except Exception:
         _raise("source_signing_input_invalid")
+    key_id, root_key = _read_key(key_provider)
     return _sign_projected_payload(
         payload,
         purpose="source-payload",
@@ -474,13 +550,13 @@ def sign_shadow_manifest(
     manifest: contracts.HealthDayShadowManifest,
     key_provider: ShadowKeyProvider,
 ) -> str:
-    key_id, root_key = _read_key(key_provider)
     try:
         payload = _project_manifest(manifest)
     except ShadowSigningError:
         raise
     except Exception:
         _raise("shadow_manifest_invalid")
+    key_id, root_key = _read_key(key_provider)
     return _sign_projected_payload(
         payload,
         purpose="manifest-digest",
@@ -508,8 +584,8 @@ def sign_shadow_item_identity(
     item_identity: contracts.ShadowItemIdentity,
     key_provider: ShadowKeyProvider,
 ) -> str:
-    key_id, root_key = _read_key(key_provider)
     payload = _project_item_identity(manifest_identity, item_identity)
+    key_id, root_key = _read_key(key_provider)
     return _sign_projected_payload(
         payload,
         purpose="item-key",
@@ -526,6 +602,17 @@ def bind_signed_shadow_item_key(
 ) -> contracts.HealthDayShadowItem:
     if type(unsigned_item) is not contracts.HealthDayShadowItem:
         _raise("unsigned_shadow_item_type_invalid")
+    for item_contract in (
+        unsigned_item,
+        unsigned_item.identity,
+        unsigned_item.timing,
+        unsigned_item.safety,
+        unsigned_item.ordering_facts,
+    ):
+        _revalidate_frozen_contract(
+            item_contract,
+            "unsigned_shadow_item_invalid",
+        )
     token = sign_shadow_item_identity(
         manifest_identity,
         unsigned_item.identity,
@@ -601,29 +688,70 @@ def build_digest_bound_shadow_bundle(
     )
 
 
+def _verify_bundle_ownership_graph(
+    bundle: contracts.HealthDayShadowBundle,
+) -> None:
+    try:
+        manifest = bundle.manifest
+        payloads = bundle.payloads
+        if type(manifest) is not contracts.HealthDayShadowManifest or type(
+            payloads
+        ) is not tuple:
+            return
+        if not all(
+            type(payload) is contracts.HealthDaySourcePayload for payload in payloads
+        ):
+            return
+        ownership = bundle._bundle_ownership
+        if (
+            type(ownership) is not contracts._BundleOwnership
+            or ownership.issuer is not contracts._BUNDLE_OWNERSHIP_ISSUER
+            or manifest._bundle_ownership is not ownership
+            or any(
+            payload._bundle_ownership is not ownership for payload in payloads
+            )
+        ):
+            _raise("shadow_digest_verification_failed:bundle_ownership")
+    except ShadowSigningError:
+        raise
+    except Exception:
+        _raise("shadow_digest_verification_failed:bundle_ownership")
+
+
 def verify_digest_bound_shadow_bundle(
     bundle: contracts.HealthDayShadowBundle,
     key_provider: ShadowKeyProvider,
 ) -> None:
     if type(bundle) is not contracts.HealthDayShadowBundle:
         _raise("shadow_digest_verification_failed:bundle_type")
-    key_id, root_key = _read_key(key_provider)
+    _verify_bundle_ownership_graph(bundle)
+
     try:
+        _revalidate_frozen_contract(
+            bundle,
+            "shadow_digest_verification_failed:structure",
+        )
         manifest = bundle.manifest
         payloads = bundle.payloads
         if type(manifest) is not contracts.HealthDayShadowManifest:
-            _raise("shadow_digest_verification_failed:manifest_type")
+            _raise("shadow_digest_verification_failed:structure")
         if type(payloads) is not tuple or len(payloads) != len(manifest.sources):
-            _raise("shadow_digest_verification_failed:source_pairing")
-        for index, (source_result, source_payload) in enumerate(
-            zip(manifest.sources, payloads)
-        ):
+            _raise("shadow_digest_verification_failed:structure")
+        source_projections: list[dict[str, object]] = []
+        received_source_digests: list[str] = []
+        source_inputs: list[SourceSigningInput] = []
+        for source_result, source_payload in zip(manifest.sources, payloads):
             if (
                 type(source_result) is not contracts.HealthDaySourceResult
                 or type(source_payload) is not contracts.HealthDaySourcePayload
                 or source_result.source_kind is not source_payload.source_kind
             ):
-                _raise("shadow_digest_verification_failed:source_pairing")
+                _raise("shadow_digest_verification_failed:structure")
+            _revalidate_frozen_contract(
+                source_payload,
+                "shadow_digest_verification_failed:structure",
+            )
+            _project_source_result(source_result)
             source_input = SourceSigningInput(
                 source_kind=source_result.source_kind,
                 source_role=source_result.source_role,
@@ -636,18 +764,9 @@ def verify_digest_bound_shadow_bundle(
                 tombstone_state=source_result.tombstone_state,
                 value=source_payload.value,
             )
-            expected_source_digest = _sign_source_with_key(
-                source_input,
-                key_id=key_id,
-                root_key=root_key,
-            )
-            received_source_digest = source_result.payload_digest
-            if type(received_source_digest) is not str or not hmac.compare_digest(
-                expected_source_digest,
-                received_source_digest,
-            ):
-                _raise(f"shadow_digest_verification_failed:source_payload:{index}")
-
+            source_inputs.append(source_input)
+            source_projections.append(_project_source_signing_input(source_input))
+            received_source_digests.append(source_result.payload_digest)
         manifest_input = ManifestSigningInput(
             schema_version=manifest.schema_version,
             owner_id=manifest.owner_id,
@@ -655,40 +774,43 @@ def verify_digest_bound_shadow_bundle(
             timezone=manifest.timezone,
             as_of=manifest.as_of,
             transaction=manifest.transaction,
-            sources=tuple(
-                SourceSigningInput(
-                    source_kind=source_result.source_kind,
-                    source_role=source_result.source_role,
-                    revision=source_result.revision,
-                    acquired_at=source_result.acquired_at,
-                    cutoff=source_result.cutoff,
-                    freshness=source_result.freshness,
-                    availability=source_result.availability,
-                    error_code=source_result.error_code,
-                    tombstone_state=source_result.tombstone_state,
-                    value=source_payload.value,
-                )
-                for source_result, source_payload in zip(manifest.sources, payloads)
-            ),
+            sources=tuple(source_inputs),
         )
         del manifest_input
-        expected_manifest_digest = _sign_manifest_with_key(
-            manifest,
-            key_id=key_id,
-            root_key=root_key,
-        )
+        manifest_projection = _project_manifest(manifest)
         received_manifest_digest = bundle.shadow_manifest_digest
-        if type(received_manifest_digest) is not str or not hmac.compare_digest(
-            expected_manifest_digest,
-            received_manifest_digest,
-        ):
-            _raise("shadow_digest_verification_failed:manifest_digest")
-    except ShadowSigningError as exc:
-        if str(exc).startswith("shadow_digest_verification_failed"):
-            raise
+    except ShadowSigningError:
         _raise("shadow_digest_verification_failed:structure")
     except Exception:
         _raise("shadow_digest_verification_failed:structure")
+
+    key_id, root_key = _read_key(key_provider)
+    for index, (source_projection, received_source_digest) in enumerate(
+        zip(source_projections, received_source_digests)
+    ):
+        expected_source_digest = _sign_projected_payload(
+            source_projection,
+            purpose="source-payload",
+            key_id=key_id,
+            root_key=root_key,
+        )
+        if not hmac.compare_digest(
+            expected_source_digest,
+            received_source_digest,
+        ):
+            _raise(f"shadow_digest_verification_failed:source_payload:{index}")
+
+    expected_manifest_digest = _sign_projected_payload(
+        manifest_projection,
+        purpose="manifest-digest",
+        key_id=key_id,
+        root_key=root_key,
+    )
+    if not hmac.compare_digest(
+        expected_manifest_digest,
+        received_manifest_digest,
+    ):
+        _raise("shadow_digest_verification_failed:manifest_digest")
 
 
 def _project_transaction(
@@ -696,6 +818,7 @@ def _project_transaction(
 ) -> dict[str, object]:
     if type(transaction) is not contracts.HealthDayTransaction:
         _raise("manifest_transaction_type_invalid")
+    _revalidate_frozen_contract(transaction)
     return {
         "dialect": _require_enum(
             transaction.dialect,
@@ -779,6 +902,7 @@ def _project_source_result(
 ) -> dict[str, object]:
     if type(source) is not contracts.HealthDaySourceResult:
         _raise("shadow_manifest_source_type_invalid")
+    _revalidate_frozen_contract(source)
     return {
         "source_kind": _require_enum(
             source.source_kind,
@@ -836,6 +960,7 @@ def _project_source_result(
 def _project_manifest(manifest: contracts.HealthDayShadowManifest) -> dict[str, object]:
     if type(manifest) is not contracts.HealthDayShadowManifest:
         _raise("shadow_manifest_type_invalid")
+    _revalidate_frozen_contract(manifest)
     schema_version = _require_schema_version(
         manifest.schema_version,
         "manifest.schema_version",
@@ -844,8 +969,7 @@ def _project_manifest(manifest: contracts.HealthDayShadowManifest) -> dict[str, 
     local_day = _require_exact_date(manifest.local_day, "manifest.local_day")
     timezone_name = _require_timezone(manifest.timezone, "manifest.timezone")
     as_of = _require_utc_datetime(manifest.as_of, "manifest.as_of")
-    if as_of.astimezone(ZoneInfo(timezone_name)).date() != local_day:
-        _raise("manifest_local_day_mismatch")
+    _require_manifest_local_day_match(as_of, timezone_name, local_day)
     if type(manifest.sources) is not tuple:
         _raise("shadow_manifest_sources_tuple_required")
     kinds = tuple(source.source_kind for source in manifest.sources)
@@ -876,6 +1000,7 @@ def _project_item_identity(
         _raise("manifest_identity_invalid")
     if type(item_identity) is not contracts.ShadowItemIdentity:
         _raise("item_identity_invalid")
+    _revalidate_frozen_contract(item_identity, "item_identity_invalid")
     if type(item_identity.storage_namespace) is not contracts.StorageNamespace:
         _raise("item_identity_invalid")
     if item_identity.storage_namespace not in contracts.STORAGE_NAMESPACE_V1:
@@ -938,6 +1063,7 @@ def _require_optional_bool(value: object, code: str) -> bool | None:
 def _project_profile_schedule(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.ProfileScheduleDTO)
     profile: contracts.ProfileScheduleDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(profile)
     return {
         "timezone": _require_optional_string(profile.timezone, "profile.timezone"),
         "detected_timezone": _require_optional_string(
@@ -978,6 +1104,7 @@ def _project_profile_schedule(value: object) -> dict[str, object]:
 def _project_body_weight(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.BodyWeightSubsetDTO)
     body_weight: contracts.BodyWeightSubsetDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(body_weight)
     return {
         "record_date": _require_optional_date(
             body_weight.record_date,
@@ -1007,6 +1134,7 @@ def _project_body_weight(value: object) -> dict[str, object]:
 def _project_lab_anchor(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.LabAnchorSubsetDTO)
     lab_anchor: contracts.LabAnchorSubsetDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(lab_anchor)
     return {
         "availability": _require_enum(
             lab_anchor.availability,
@@ -1031,6 +1159,7 @@ def _project_lab_anchor(value: object) -> dict[str, object]:
 def _project_recovery_wearable(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.RecoveryWearableFactDTO)
     wearable: contracts.RecoveryWearableFactDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(wearable)
     return {
         "fact_kind": _require_enum(
             wearable.fact_kind,
@@ -1065,6 +1194,7 @@ def _project_recovery_wearable(value: object) -> dict[str, object]:
 def _project_acute(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.AcuteSubsetDTO)
     acute: contracts.AcuteSubsetDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(acute)
     return {
         "has_active_illness": _require_bool(
             acute.has_active_illness,
@@ -1113,6 +1243,7 @@ def _project_acute(value: object) -> dict[str, object]:
 def _project_recovery(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.RecoverySubsetDTO)
     recovery: contracts.RecoverySubsetDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(recovery)
     return {
         "sleep": _project_recovery_wearable(recovery.sleep),
         "readiness": _project_recovery_wearable(recovery.readiness),
@@ -1136,6 +1267,7 @@ def _project_recovery(value: object) -> dict[str, object]:
 def _project_intervention(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.InterventionSubsetDTO)
     intervention: contracts.InterventionSubsetDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(intervention)
     return {
         "action_key": _require_identifier(
             intervention.action_key,
@@ -1203,6 +1335,7 @@ def _project_intervention(value: object) -> dict[str, object]:
 def _project_terminal_action(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.TerminalActionSubsetDTO)
     terminal: contracts.TerminalActionSubsetDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(terminal)
     return {
         "record_id": _require_identifier(terminal.record_id, "terminal.record_id"),
         "action_key": _require_identifier(
@@ -1225,6 +1358,7 @@ def _project_terminal_action(value: object) -> dict[str, object]:
 def _project_active_cycle(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.ActiveCycleSubsetDTO)
     cycle: contracts.ActiveCycleSubsetDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(cycle)
     return {
         "cycle_id": _require_identifier(cycle.cycle_id, "cycle.cycle_id"),
         "cycle_type": _require_identifier(cycle.cycle_type, "cycle.cycle_type"),
@@ -1253,6 +1387,7 @@ def _project_active_cycle(value: object) -> dict[str, object]:
 def _project_existing_dop_action(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.ExistingDOPActionFact)
     action: contracts.ExistingDOPActionFact = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(action)
     return {
         "action_key": _require_identifier(action.action_key, "dop_action.action_key"),
         "domain": _require_enum(
@@ -1270,6 +1405,7 @@ def _project_existing_dop_action(value: object) -> dict[str, object]:
 def _project_existing_dop(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.ExistingDOPDiagnosticDTO)
     dop: contracts.ExistingDOPDiagnosticDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(dop)
     if type(dop.actions) is not tuple:
         _raise("source_value_schema_mismatch")
     return {
@@ -1295,6 +1431,7 @@ def _project_existing_dop(value: object) -> dict[str, object]:
 def _project_daily_plan_subset(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.DailyPlanSubsetFactsDTO)
     daily_plan: contracts.DailyPlanSubsetFactsDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(daily_plan)
     if type(daily_plan.interventions) is not tuple:
         _raise("source_value_schema_mismatch")
     if type(daily_plan.terminal_actions) is not tuple:
@@ -1331,6 +1468,7 @@ def _project_daily_plan_subset(value: object) -> dict[str, object]:
 def _project_program_inventory(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.ProgramInventoryDTO)
     program: contracts.ProgramInventoryDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(program)
     return {
         "program_id": _require_identifier(program.program_id, "program.program_id"),
         "program_type": _require_identifier(
@@ -1364,6 +1502,7 @@ def _project_program_inventory(value: object) -> dict[str, object]:
 def _project_protocol(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.ProtocolDTO)
     protocol: contracts.ProtocolDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(protocol)
     return {
         "protocol_id": _require_identifier(
             protocol.protocol_id,
@@ -1431,6 +1570,7 @@ def _project_protocol(value: object) -> dict[str, object]:
 def _project_protocol_event(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.ProtocolEventDTO)
     event: contracts.ProtocolEventDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(event)
     return {
         "event_id": _require_identifier(event.event_id, "protocol_event.event_id"),
         "protocol_id": _require_identifier(
@@ -1461,6 +1601,7 @@ def _project_protocol_event(value: object) -> dict[str, object]:
 def _project_problem_followup(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.ProblemFollowUpDTO)
     problem: contracts.ProblemFollowUpDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(problem)
     return {
         "problem_id": _require_identifier(problem.problem_id, "problem.problem_id"),
         "risk_level": _require_enum(
@@ -1493,6 +1634,7 @@ def _project_problem_followup(value: object) -> dict[str, object]:
 def _project_medication_source(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.MedicationSourceDTO)
     medication: contracts.MedicationSourceDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(medication)
     if type(medication.normalized_slots) is not tuple:
         _raise("source_value_schema_mismatch")
     return {
@@ -1564,6 +1706,7 @@ def _project_medication_source(value: object) -> dict[str, object]:
 def _project_medication_execution(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.MedicationExecutionDTO)
     execution: contracts.MedicationExecutionDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(execution)
     return {
         "record_id": _require_identifier(
             execution.record_id,
@@ -1605,6 +1748,7 @@ def _project_medication_execution(value: object) -> dict[str, object]:
 def _project_supplement_source(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.SupplementSourceDTO)
     supplement: contracts.SupplementSourceDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(supplement)
     return {
         "storage_namespace": _require_enum(
             supplement.storage_namespace,
@@ -1639,6 +1783,7 @@ def _project_supplement_source(value: object) -> dict[str, object]:
 def _project_supplement_execution(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.SupplementExecutionDTO)
     execution: contracts.SupplementExecutionDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(execution)
     return {
         "record_id": _require_identifier(
             execution.record_id,
@@ -1667,6 +1812,7 @@ def _project_supplement_execution(value: object) -> dict[str, object]:
 def _project_calendar_source(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.CalendarSourceFact)
     source: contracts.CalendarSourceFact = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(source)
     return {
         "source_id": _require_identifier(source.source_id, "calendar_source.source_id"),
         "provider_code": _require_identifier(
@@ -1691,6 +1837,7 @@ def _project_calendar_source(value: object) -> dict[str, object]:
 def _project_calendar_interval(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.CalendarIntervalFact)
     interval: contracts.CalendarIntervalFact = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(interval)
     return {
         "event_id": _require_identifier(
             interval.event_id,
@@ -1747,6 +1894,7 @@ def _project_calendar_interval(value: object) -> dict[str, object]:
 def _project_calendar_knowledge(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.CalendarKnowledgeDTO)
     calendar: contracts.CalendarKnowledgeDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(calendar)
     if type(calendar.sources) is not tuple or type(calendar.intervals) is not tuple:
         _raise("source_value_schema_mismatch")
     return {
@@ -1781,6 +1929,7 @@ def _project_calendar_knowledge(value: object) -> dict[str, object]:
 def _project_safety_seam(value: object) -> dict[str, object]:
     _require_source_value_type(value, contracts.SafetySeamDTO)
     safety: contracts.SafetySeamDTO = value  # type: ignore[assignment]
+    _revalidate_frozen_contract(safety)
     return {
         "availability": _require_enum(
             safety.availability,

@@ -18,6 +18,7 @@ from app.services.system_knowledge_ingest import IngestResult
 
 RELEASE_PIPELINE_NAME = "dedao_kbase_release_v1"
 AGENT_PACKAGE_PIPELINE_NAME = "dedao_kbase_agent_package_v1"
+AGENT_PACKAGE_V2_PIPELINE_NAME = "dedao_kbase_agent_package_v2"
 _OPAQUE_ID = re.compile(r"[^A-Za-z0-9._:-]+")
 
 
@@ -222,18 +223,31 @@ def compile_agent_package_artifacts(
         },
         "review_status": "draft",
     }
+    evidence_policy = None
+    if package.get("schema_version") == "agent-package.v2":
+        evidence_policy = _evidence_policy_snapshot(package["evidence_policy"])
+        package_metadata.update(
+            {
+                "package_schema_version": "agent-package.v2",
+                "evidence_policy": evidence_policy,
+            }
+        )
     for row in [*result.pages, *result.entities, *result.claims, *result.relations]:
         metadata = dict(row.get("metadata") or {})
         metadata.update(package_metadata)
         row["metadata"] = metadata
 
     result.manifest["ingest"] = {
-        "pipeline": AGENT_PACKAGE_PIPELINE_NAME,
+        "pipeline": (
+            AGENT_PACKAGE_V2_PIPELINE_NAME
+            if package.get("schema_version") == "agent-package.v2"
+            else AGENT_PACKAGE_PIPELINE_NAME
+        ),
         "review_status": "draft",
         "requires_review": True,
         "serving_allowed": False,
     }
-    result.manifest["agent_package"] = {
+    package_manifest = {
         "package_id": package["package_id"],
         "version": package["version"],
         "content_hash": package["content_hash"],
@@ -244,6 +258,14 @@ def compile_agent_package_artifacts(
         "evaluated_at": evaluation["evaluated_at"],
         "release_ids": release_ids,
     }
+    if package.get("schema_version") == "agent-package.v2":
+        package_manifest.update(
+            {
+                "schema_version": "agent-package.v2",
+                "evidence_policy": evidence_policy,
+            }
+        )
+    result.manifest["agent_package"] = package_manifest
     result.manifest["agent_packages"] = [lineage]
     for source_stat in result.source_stats:
         source_stat.update(
@@ -314,11 +336,19 @@ def assess_agent_package_for_health(
     for release in releases:
         _validate_release(release)
     reasons = _agent_package_hold_reasons(package, releases)
-    return {
+    assessment = {
         "eligible": not reasons,
         "hold_reasons": reasons,
         "evaluation_status": "passed" if "unevaluated" not in reasons else "unevaluated",
     }
+    if package.get("schema_version") == "agent-package.v2":
+        assessment.update(
+            {
+                "schema_version": "agent-package.v2",
+                "evidence_policy": _evidence_policy_snapshot(package["evidence_policy"]),
+            }
+        )
+    return assessment
 
 
 def combine_release_results(results: list[IngestResult]) -> IngestResult:
@@ -350,6 +380,17 @@ def combine_release_results(results: list[IngestResult]) -> IngestResult:
 def _validate_agent_package(payload: Any) -> None:
     if not isinstance(payload, dict):
         raise ValueError("dedao-kbase agent package must be a JSON object")
+    schema_version = payload.get("schema_version")
+    if schema_version == "agent-package.v1":
+        _validate_agent_package_v1(payload)
+        return
+    if schema_version == "agent-package.v2":
+        _validate_agent_package_v2(payload)
+        return
+    raise ValueError("dedao-kbase agent package has unsupported schema_version")
+
+
+def _validate_agent_package_v1(payload: dict[str, Any]) -> None:
     required = (
         "schema_version",
         "package_id",
@@ -377,6 +418,143 @@ def _validate_agent_package(payload: Any) -> None:
         raise ValueError("dedao-kbase agent package evaluation_policy must be a JSON object")
     if "evaluation" in payload and not isinstance(payload.get("evaluation"), dict):
         raise ValueError("dedao-kbase agent package evaluation must be a JSON object")
+
+
+def _validate_agent_package_v2(payload: dict[str, Any]) -> None:
+    required = (
+        "schema_version",
+        "package_id",
+        "version",
+        "content_hash",
+        "lifecycle_state",
+        "releases",
+        "retrieval_policy",
+        "model_policy",
+        "prompt_profiles",
+        "tool_policy",
+        "safety_policy",
+        "evaluation_policy",
+        "evidence_policy",
+        "ui_manifest",
+    )
+    missing = [field for field in required if field not in payload]
+    if missing:
+        raise ValueError(f"dedao-kbase agent package v2 missing fields: {', '.join(missing)}")
+    if not all(str(payload.get(field) or "").strip() for field in ("package_id", "version", "content_hash")):
+        raise ValueError("dedao-kbase agent package v2 identity is incomplete")
+    if payload.get("lifecycle_state") not in {"draft", "published", "superseded"}:
+        raise ValueError("dedao-kbase agent package v2 has invalid lifecycle_state")
+    releases = payload.get("releases")
+    if not isinstance(releases, list) or not releases:
+        raise ValueError("dedao-kbase agent package v2 requires pinned releases")
+    if any(not isinstance(item, dict) for item in releases):
+        raise ValueError("dedao-kbase agent package v2 release references must be JSON objects")
+    release_ids = []
+    for reference in releases:
+        release_id = str(reference.get("release_id") or "").strip()
+        content_hash = str(reference.get("content_hash") or "").strip()
+        citation_ids = reference.get("citation_ids")
+        if not release_id or not content_hash:
+            raise ValueError("dedao-kbase agent package v2 release identity is incomplete")
+        if not isinstance(citation_ids, list) or not citation_ids or any(
+            not str(value).strip() for value in citation_ids
+        ):
+            raise ValueError("dedao-kbase agent package v2 release citation_ids are required")
+        release_ids.append(release_id)
+    if len(set(release_ids)) != len(release_ids):
+        raise ValueError("dedao-kbase agent package v2 has duplicate release id")
+    safety_policy = payload.get("safety_policy")
+    if not isinstance(safety_policy, dict):
+        raise ValueError("dedao-kbase agent package v2 safety_policy must be a JSON object")
+    if safety_policy.get("usage_policy") not in {"standard", "evidence_only"}:
+        raise ValueError("dedao-kbase agent package v2 has invalid usage_policy")
+    evaluation_policy = payload.get("evaluation_policy")
+    if not isinstance(evaluation_policy, dict):
+        raise ValueError("dedao-kbase agent package v2 evaluation_policy must be a JSON object")
+    if not str(evaluation_policy.get("suite_version") or "").strip():
+        raise ValueError("dedao-kbase agent package v2 evaluation_policy suite_version is required")
+    minimum_scores = evaluation_policy.get("minimum_scores")
+    if not isinstance(minimum_scores, dict) or not minimum_scores or any(
+        not isinstance(value, (int, float)) for value in minimum_scores.values()
+    ):
+        raise ValueError("dedao-kbase agent package v2 evaluation_policy minimum_scores is invalid")
+    _validate_evidence_policy(payload.get("evidence_policy"), release_ids)
+
+
+def _validate_evidence_policy(policy: Any, release_ids: list[str]) -> None:
+    if not isinstance(policy, dict):
+        raise ValueError("dedao-kbase agent package v2 evidence_policy must be a JSON object")
+    required = (
+        "release_roles",
+        "minimum_independent_sources",
+        "max_claims",
+        "max_evidence_per_claim",
+        "allowed_verdicts",
+        "freshness_policy",
+        "report_schema",
+    )
+    missing = [field for field in required if field not in policy]
+    if missing:
+        raise ValueError(f"evidence_policy missing fields: {', '.join(missing)}")
+    roles = policy.get("release_roles")
+    if not isinstance(roles, list) or len(roles) < 2 or any(not isinstance(item, dict) for item in roles):
+        raise ValueError("evidence_policy release_roles requires primary and supporting releases")
+    role_ids = [str(item.get("release_id") or "").strip() for item in roles]
+    role_names = [str(item.get("role") or "").strip() for item in roles]
+    if any(release_id not in release_ids for release_id in role_ids):
+        raise ValueError("evidence_policy release_roles reference unknown release")
+    if len(set(role_ids)) != len(role_ids):
+        raise ValueError("evidence_policy release_roles contain duplicate release")
+    if role_names.count("primary") != 1:
+        raise ValueError("evidence_policy release_roles require exactly one primary release")
+    if role_names.count("supporting") < 1:
+        raise ValueError("evidence_policy release_roles require a supporting release")
+    if any(role not in {"primary", "supporting"} for role in role_names):
+        raise ValueError("evidence_policy release_roles contain an invalid role")
+    for field, minimum, maximum in (
+        ("minimum_independent_sources", 1, None),
+        ("max_claims", 1, 8),
+        ("max_evidence_per_claim", 1, 5),
+    ):
+        value = policy.get(field)
+        if not isinstance(value, int) or isinstance(value, bool) or value < minimum or (
+            maximum is not None and value > maximum
+        ):
+            suffix = f" between {minimum} and {maximum}" if maximum is not None else f" >= {minimum}"
+            raise ValueError(f"evidence_policy {field} must be an integer{suffix}")
+    allowed_verdicts = policy.get("allowed_verdicts")
+    if not isinstance(allowed_verdicts, list) or not allowed_verdicts or any(
+        verdict not in {"supported", "contradicted", "mixed", "insufficient"}
+        for verdict in allowed_verdicts
+    ):
+        raise ValueError("evidence_policy allowed_verdicts is invalid")
+    freshness = policy.get("freshness_policy")
+    if not isinstance(freshness, dict) or not isinstance(freshness.get("max_age_days"), int) or (
+        isinstance(freshness.get("max_age_days"), bool) or freshness["max_age_days"] < 1
+    ) or not isinstance(freshness.get("require_publication_date"), bool):
+        raise ValueError("evidence_policy freshness_policy is invalid")
+    if policy.get("report_schema") != "evidence-audit.v1":
+        raise ValueError("evidence_policy report_schema must be evidence-audit.v1")
+
+
+def _evidence_policy_snapshot(policy: dict[str, Any]) -> dict[str, Any]:
+    """Keep only the evidence controls Health is allowed to consume."""
+    freshness = policy["freshness_policy"]
+    return {
+        "release_roles": [
+            {"release_id": str(item["release_id"]), "role": str(item["role"])}
+            for item in policy["release_roles"]
+        ],
+        "minimum_independent_sources": int(policy["minimum_independent_sources"]),
+        "max_claims": int(policy["max_claims"]),
+        "max_evidence_per_claim": int(policy["max_evidence_per_claim"]),
+        "allowed_verdicts": [str(value) for value in policy["allowed_verdicts"]],
+        "freshness_policy": {
+            "max_age_days": int(freshness["max_age_days"]),
+            "require_publication_date": bool(freshness["require_publication_date"]),
+        },
+        "report_schema": "evidence-audit.v1",
+    }
 
 
 def _agent_package_hold_reasons(
@@ -457,6 +635,18 @@ def _agent_package_hold_reasons(
             reasons.append("conflict")
     if set(releases_by_id) != seen_release_ids:
         reasons.append("conflict")
+    if package.get("schema_version") == "agent-package.v2":
+        evidence_policy = package["evidence_policy"]
+        pinned_release_ids = set(seen_release_ids)
+        role_release_ids = {
+            str(item.get("release_id") or "")
+            for item in evidence_policy.get("release_roles") or []
+            if isinstance(item, dict)
+        }
+        if role_release_ids != pinned_release_ids:
+            reasons.append("conflict")
+        if int(evidence_policy["minimum_independent_sources"]) > len(role_release_ids):
+            reasons.append("insufficient_independent_sources")
     return list(dict.fromkeys(reasons))
 
 
@@ -591,7 +781,7 @@ def _unique_relations(results: list[IngestResult]) -> list[dict[str, Any]]:
 
 def _agent_package_lineage(package: dict[str, Any]) -> dict[str, Any]:
     evaluation = package["evaluation"]
-    return {
+    lineage = {
         "package_id": package["package_id"],
         "version": package["version"],
         "content_hash": package["content_hash"],
@@ -604,6 +794,14 @@ def _agent_package_lineage(package: dict[str, Any]) -> dict[str, Any]:
             "evaluated_at": evaluation["evaluated_at"],
         },
     }
+    if package.get("schema_version") == "agent-package.v2":
+        lineage.update(
+            {
+                "schema_version": "agent-package.v2",
+                "evidence_policy": _evidence_policy_snapshot(package["evidence_policy"]),
+            }
+        )
+    return lineage
 
 
 def _merge_package_lineage(
