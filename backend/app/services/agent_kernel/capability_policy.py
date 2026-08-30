@@ -345,6 +345,10 @@ _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE = re.compile(
     r"(?:那天|当天)?"
     r")"
 )
+_LAST_NIGHT_SLEEP_WINDOW_RE = re.compile(
+    r"(?:昨晚|昨夜|昨天(?:晚上|夜里|夜间)).{0,12}(?:睡|睡眠)|"
+    r"(?:睡|睡眠).{0,12}(?:昨晚|昨夜|昨天(?:晚上|夜里|夜间))"
+)
 _HISTORY_QUERY_QUESTION_RE = re.compile(
     r"(?:上一次|是什么时候|在什么时候|何时|在何时|是何时|是哪天|是几号|"
     r"哪天|哪一天|几号|时间|日期|"
@@ -2414,8 +2418,17 @@ def decide_tool_capability(
                 tool_name,
                 canonical_args,
             )
-        if medical_exam_args is None and _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE.search(
-            _query_scope_text(turn_text)
+        # 睡眠跨午夜，单查“今天”会漏掉昨夜入睡段。把明确的“昨晚睡眠”
+        # 绑定为最近 2 个自然日的只读窗口；合成层再取最新一夜。该特例只
+        # 放行 sleep，不扩大其他尚不可精确表达的日历窗口。
+        last_night_sleep_read = bool(
+            proposed_dimension == "sleep"
+            and _LAST_NIGHT_SLEEP_WINDOW_RE.search(_query_scope_text(turn_text))
+        )
+        if (
+            not last_night_sleep_read
+            and medical_exam_args is None
+            and _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE.search(_query_scope_text(turn_text))
         ):
             return _decision(
                 "block",
@@ -2441,6 +2454,14 @@ def decide_tool_capability(
             return _decision(
                 "block",
                 "health_query_not_requested",
+                tool_name,
+                canonical_args,
+            )
+        if last_night_sleep_read:
+            canonical_args["days"] = 2
+            return _decision(
+                "allow",
+                "last_night_sleep_projected_to_two_day_window",
                 tool_name,
                 canonical_args,
             )

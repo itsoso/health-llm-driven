@@ -10,7 +10,7 @@ from datetime import date, datetime, timezone
 
 import pytest
 
-from app.services.today_timeline_service import build_today_spine
+from app.services.today_timeline_service import _map_agenda_item, build_today_spine
 
 TOP_KEYS = {"date", "current_window", "now", "items", "past", "counts"}
 COUNT_KEYS = {"actionable", "overdue", "info"}
@@ -35,6 +35,17 @@ def _add_today_workout(db, user_id: int):
     db.add(w)
     db.commit()
     return w
+
+
+def test_checkup_agenda_item_links_to_medical_exam_handling_page():
+    item = _map_agenda_item({
+        "type": "checkup",
+        "title": "复查:胃溃疡(Hp 阴性,胃窦后壁)",
+        "status": "overdue",
+        "source": {"object_type": "health_problem", "object_id": 42},
+    })
+
+    assert item["deep_link"] == "/medical-exams"
 
 
 def test_empty_user_valid_shape(db, auth_user_and_headers, monkeypatch):

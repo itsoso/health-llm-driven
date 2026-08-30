@@ -53,6 +53,7 @@ from app.services.internal_diet_correction import (
 )
 from app.services.agent_turn_recovery import (
     is_data_insufficiency_response,
+    is_internal_process_response,
     is_model_scope_refusal,
     is_safety_boundary_refusal,
     should_buffer_recovery_response,
@@ -14992,6 +14993,16 @@ class AgentExecutor:
                             final_text = recovered_text
                             streamed_to_client = False
                             self._record_model_fallback_reason("data_insufficiency_recovered")
+                    if is_internal_process_response(final_text):
+                        final_text = (
+                            "这次没有完成数据查询，因此没有生成可靠回答。"
+                            "请点“重试”重新查询。"
+                        )
+                        final_finish_reason = "error"
+                        streamed_to_client = False
+                        self._record_model_fallback_reason(
+                            "internal_process_response_blocked"
+                        )
                     if not final_text.strip():
                         # 空回复 → 走非流式重试链 (这些是新生成文本,需要 emit)。
                         streamed_to_client = False

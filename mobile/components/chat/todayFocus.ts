@@ -88,8 +88,17 @@ function readTimelineContextStrip(
     label: selected.label,
     title: selected.item.title,
     tone: selected.tone,
-    deepLink: selected.item.deep_link,
+    // 兼容尚未升级后端返回的旧 timeline：checkup 即使没有 deep_link，
+    // 也应进入复查处理页，而不是把用户送回 Today 原地打转。
+    deepLink: selected.item.deep_link ?? defaultContextDeepLink(selected.item),
   };
+}
+
+function defaultContextDeepLink(item: TodayTimelineItem): string | null {
+  if (item.kind === 'checkup' || item.action_kind === 'checkup') {
+    return '/medical-exams';
+  }
+  return null;
 }
 
 interface ContextCandidate {

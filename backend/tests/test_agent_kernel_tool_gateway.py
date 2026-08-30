@@ -1341,7 +1341,6 @@ async def test_unresolved_demonstrative_health_read_never_dispatches(
             {"queries": [{"dimension": "weight", "days": 365, "agg": "trend"}]},
         ),
         ("前天步数", "health_query", {"dimension": "activity", "days": 1}),
-        ("昨晚睡眠怎么样", "health_query", {"dimension": "sleep", "days": 1}),
         (
             "昨天SLE怎么样",
             "health_query",
@@ -1375,6 +1374,51 @@ async def test_calendar_window_health_read_is_hard_blocked_until_representable(
     assert calls == []
     assert result.decision is not None
     assert result.decision.reason == "health_query_calendar_window_unsupported"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+async def test_last_night_sleep_read_is_normalized_to_two_day_window(policy_mode):
+    gateway = ToolGateway(_snapshot("昨晚睡得怎样，是否适合锻炼", policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments={"dimension": "sleep", "days": 1},
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [{"dimension": "sleep", "days": 2}]
+
+
+@pytest.mark.asyncio
+async def test_last_night_sleep_special_case_does_not_bypass_owner_isolation():
+    gateway = ToolGateway(_snapshot("昨晚妈妈的睡眠怎么样"))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments={"dimension": "sleep", "days": 1},
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.reason == "health_query_subject_not_current_user"
 
 
 @pytest.mark.asyncio

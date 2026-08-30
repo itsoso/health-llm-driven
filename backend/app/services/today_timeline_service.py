@@ -150,7 +150,9 @@ def _map_agenda_item(item: Dict[str, Any]) -> Dict[str, Any]:
         # 只在 can_complete 的行动项上物化(见 build_today_spine);其余为 None。
         "event_id": None,
         "action_kind": itype,
-        "deep_link": None,
+        # 复查项必须进入可处理复查记录的页面。旧版统一填 None，聊天顶部
+        # 虽然展示了逾期复查，却只能退回 Today，无法完成闭环。
+        "deep_link": "/medical-exams" if kind == "checkup" else None,
         "severity": None,
         "proof": None,
     }
