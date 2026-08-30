@@ -985,9 +985,18 @@ def _validate_trace_event_schema(path: Path) -> None:
         _require(not leaked, "sensitive_trace_field", f"{field}: {', '.join(leaked)}")
 
 
-def _validate_local_skill_coverage(project_ids: set[str]) -> None:
-    skill_root = ROOT / ".claude" / "skills"
-    discovered = {path.parent.name for path in skill_root.glob("*/SKILL.md")}
+def _validate_local_skill_coverage(
+    project_ids: set[str], tracked_files: set[str]
+) -> None:
+    prefix = ".claude/skills/"
+    suffix = "/SKILL.md"
+    discovered = {
+        path.removeprefix(prefix).removesuffix(suffix)
+        for path in tracked_files
+        if path.startswith(prefix)
+        and path.endswith(suffix)
+        and "/" not in path.removeprefix(prefix).removesuffix(suffix)
+    }
     missing = sorted(discovered - project_ids)
     stale = sorted(project_ids - discovered)
     _require(not missing, "unregistered_project_skill", ", ".join(missing))
@@ -1076,7 +1085,7 @@ def validate_registry(registry: dict[str, Any]) -> dict[str, Any]:
     _validate_routes(registry, known)
     _validate_event_schema(event_schema_path)
     _validate_trace_event_schema(trace_event_schema_path)
-    _validate_local_skill_coverage(set(by_id))
+    _validate_local_skill_coverage(set(by_id), tracked_files)
 
     for deprecated_id in ("using-superpowers", "executing-plans"):
         item = external.get(deprecated_id)

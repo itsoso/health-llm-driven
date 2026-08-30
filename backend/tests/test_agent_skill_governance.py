@@ -2078,6 +2078,14 @@ def test_every_registered_project_source_is_committed_not_only_present_locally()
             assert source in tracked_files, (skill["id"], source)
 
 
+def test_local_skill_coverage_ignores_untracked_project_skill_directories():
+    checker = _checker_module()
+    registry = _registry()
+    project_ids = {skill["id"] for skill in registry["skills"]}
+
+    checker._validate_local_skill_coverage(project_ids, _tracked_project_files())
+
+
 def test_validation_queries_the_tracked_file_inventory_once(monkeypatch):
     checker = _checker_module()
     real_run = checker.subprocess.run
