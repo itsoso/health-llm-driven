@@ -40,7 +40,7 @@
       "id": "reva-workflow-router",
       "lifecycle": "standard",
       "owner": "reva-agent-governance",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "layer": "workflow",
       "kind": "router",
       "platforms": [
@@ -50,7 +50,7 @@
       "trigger_family": [
         "task-routing"
       ],
-      "last_reviewed": "2026-08-20",
+      "last_reviewed": "2026-08-29",
       "evidence": [
         "Cross-end and quick-fix pressure tests exposed competing-controller overhead; deterministic routing is covered by repository tests."
       ],
@@ -126,7 +126,7 @@
       "id": "system-map",
       "lifecycle": "standard",
       "owner": "reva-architecture",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "layer": "platform",
       "kind": "capability",
       "platforms": [
@@ -136,7 +136,7 @@
         "system-discovery",
         "architecture-navigation"
       ],
-      "last_reviewed": "2026-08-20",
+      "last_reviewed": "2026-08-29",
       "evidence": [
         "Code-derived system-map artifacts and drift checks are blocking repository gates."
       ],

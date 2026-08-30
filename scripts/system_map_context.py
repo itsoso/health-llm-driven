@@ -15,8 +15,9 @@ from system_map_contract import SystemMapContractError, validate_system_map
 
 ROOT = Path(__file__).resolve().parent.parent
 SYSTEM_MAP_PATH = ROOT / "docs" / "_generated" / "system-map.json"
-AGENT_CONTEXT_MAX_BYTES = 16 * 1024
-GLOBAL_KINDS = {"component", "api", "resource"}
+AGENT_CONTEXT_MAX_BYTES = 4 * 1024
+QUERY_CONTEXT_MAX_BYTES = 12 * 1024
+GLOBAL_KINDS = {"component"}
 
 
 class SystemMapContextError(ValueError):
@@ -49,7 +50,7 @@ def _entity_details(entity: dict[str, Any]) -> str:
 
 
 def render_agent_context(graph: dict[str, Any]) -> str:
-    """Render the bounded global bootstrap from a validated canonical graph."""
+    """Render a compact bootstrap; exact evidence stays in on-demand queries."""
     entities = sorted(
         (
             entity
@@ -58,67 +59,56 @@ def render_agent_context(graph: dict[str, Any]) -> str:
         ),
         key=lambda item: item["id"],
     )
-    flows = sorted(
-        {
-            flow
-            for relation in graph["relations"]
-            for flow in relation.get("flows", [])
-        }
+    flow_relations = sorted(
+        (relation for relation in graph["relations"] if relation.get("flows")),
+        key=_relation_key,
     )
     lines = [
         "# Reva System Map — Agent Global Context",
         "",
         "> DO NOT EDIT — generated from docs/_generated/system-map.json.",
-        "> Navigation input only: verify behavior in source code and tests before deciding or editing.",
+        "> Navigation only: verify behavior in source code and tests.",
         "",
-        "## Evidence order",
-        "",
-        "1. Executable code, tests, runtime contracts, and registries",
-        "2. Code-derived System Map facts",
-        "3. Reviewed declarations with explicit coverage",
-        "4. Freshness-dated narrative documents",
-        "",
-        "## Global entities",
+        "## Global components",
         "",
     ]
     for entity in entities:
         lines.append(
             f"- `{entity['id']}` — {entity['name']} ({_entity_details(entity)})"
         )
-        lines.append(f"  source: `{_source_label(entity['source'])}`")
 
-    lines.extend(["", "## Key flows", ""])
-    for flow in flows:
-        lines.append(f"### {flow}")
-        relations = sorted(
-            (
-                relation
-                for relation in graph["relations"]
-                if flow in relation.get("flows", [])
-            ),
-            key=lambda item: (item["from"], item["type"], item["to"]),
+    lines.extend(["", "## Cross-flow relations", ""])
+    for relation in flow_relations:
+        lines.append(
+            f"- `{relation['from']}` --{relation['type']}--> "
+            f"`{relation['to']}` (flows={','.join(sorted(relation['flows']))}; "
+            f"coverage={relation['coverage']})"
         )
-        for relation in relations:
-            lines.append(
-                f"- `{relation['from']}` --{relation['type']}--> "
-                f"`{relation['to']}` (coverage={relation['coverage']}; "
-                f"source=`{_source_label(relation['source'])}`)"
-            )
-        lines.append("")
 
-    lines.extend(["## Coverage limits", ""])
-    for area, coverage in sorted(graph["coverage"].items()):
+    lines.extend(["", "## Non-complete coverage", ""])
+    incomplete_coverage = [
+        (area, coverage)
+        for area, coverage in sorted(graph["coverage"].items())
+        if coverage["status"] != "complete"
+    ]
+    for area, coverage in incomplete_coverage:
         limitation = ""
         if coverage.get("limitations"):
             limitation = f"; limitation={coverage['limitations']}"
         lines.append(
-            f"- `{area}`: {coverage['status']}; source=`{coverage['source']}`"
-            f"{limitation}"
+            f"- `{area}`: {coverage['status']}{limitation}"
         )
+    if not incomplete_coverage:
+        lines.append("- none")
 
-    lines.extend(["", "## Code-derived counts", ""])
     lines.extend(
-        f"- {key}: {value}" for key, value in sorted(graph["counts"].items())
+        [
+            "",
+            "## On-demand detail",
+            "",
+            "Run `python3.12 scripts/system_map_context.py` with one selector; "
+            "use `--counts` only when live architecture counts are required.",
+        ]
     )
     rendered = "\n".join(lines).rstrip() + "\n"
     size = len(rendered.encode("utf-8"))
@@ -127,6 +117,15 @@ def render_agent_context(graph: dict[str, Any]) -> str:
             f"agent context exceeds {AGENT_CONTEXT_MAX_BYTES} bytes: {size}"
         )
     return rendered
+
+
+def render_counts(graph: dict[str, Any]) -> str:
+    """Render code-derived counts only when explicitly requested."""
+    lines = ["# Reva System Map — Code-derived counts", ""]
+    lines.extend(
+        f"- {key}: {value}" for key, value in sorted(graph["counts"].items())
+    )
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _relation_key(relation: dict[str, Any]) -> tuple[str, str, str]:
@@ -205,14 +204,13 @@ def _query_warnings(
         if entity["coverage"] != "complete":
             warnings.append(
                 f"VERIFY SOURCE: entity {entity['id']} has coverage="
-                f"{entity['coverage']}; source={_source_label(entity['source'])}"
+                f"{entity['coverage']}"
             )
     for relation in relations:
         if relation["coverage"] != "complete":
             warnings.append(
                 f"VERIFY SOURCE: relation {relation['from']} --{relation['type']}--> "
-                f"{relation['to']} has coverage={relation['coverage']}; "
-                f"source={_source_label(relation['source'])}"
+                f"{relation['to']} has coverage={relation['coverage']}"
             )
     return tuple(sorted(warnings))
 
@@ -224,7 +222,7 @@ def query_graph(
     entity: str | None = None,
     flow: str | None = None,
     keyword: str | None = None,
-    depth: int = 1,
+    depth: int = 0,
     max_entities: int = 50,
 ) -> QueryResult:
     """Select a bounded subgraph without inferring or silently dropping edges."""
@@ -288,7 +286,11 @@ def query_graph(
     )
 
 
-def render_query_result(result: QueryResult) -> str:
+def render_query_result(
+    result: QueryResult,
+    *,
+    max_bytes: int = QUERY_CONTEXT_MAX_BYTES,
+) -> str:
     """Render a query result as deterministic, source-linked Markdown."""
     lines = [
         "# System Map Task Context",
@@ -303,7 +305,6 @@ def render_query_result(result: QueryResult) -> str:
         lines.append(
             f"- `{entity['id']}` — {entity['name']} ({_entity_details(entity)})"
         )
-        lines.append(f"  source: `{_source_label(entity['source'])}`")
     lines.extend(["", "## Relations", ""])
     if result.relations:
         for relation in result.relations:
@@ -311,13 +312,20 @@ def render_query_result(result: QueryResult) -> str:
             lines.append(
                 f"- `{relation['from']}` --{relation['type']}--> "
                 f"`{relation['to']}` (coverage={relation['coverage']}; flows={flows}; "
-                f"source=`{_source_label(relation['source'])}`)"
+                "source listed below)"
             )
     else:
         lines.append("- none in the selected traversal depth")
     lines.extend(["", "## Open these sources next", ""])
     lines.extend(f"- `{source}`" for source in result.sources)
-    return "\n".join(lines).rstrip() + "\n"
+    rendered = "\n".join(lines).rstrip() + "\n"
+    size = len(rendered.encode("utf-8"))
+    if size > max_bytes:
+        raise SystemMapContextError(
+            f"query context exceeds {max_bytes} bytes: {size}; "
+            "narrow the selector or traversal depth"
+        )
+    return rendered
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -329,8 +337,10 @@ def _parser() -> argparse.ArgumentParser:
     selectors.add_argument("--entity")
     selectors.add_argument("--flow")
     selectors.add_argument("--keyword")
-    parser.add_argument("--depth", type=int, choices=(0, 1, 2), default=1)
+    selectors.add_argument("--counts", action="store_true")
+    parser.add_argument("--depth", type=int, choices=(0, 1, 2), default=0)
     parser.add_argument("--max-entities", type=int, default=50)
+    parser.add_argument("--max-bytes", type=int, default=QUERY_CONTEXT_MAX_BYTES)
     return parser
 
 
@@ -340,15 +350,19 @@ def main(argv: list[str] | None = None) -> int:
     try:
         graph = json.loads(SYSTEM_MAP_PATH.read_text(encoding="utf-8"))
         validate_system_map(graph)
-        result = query_graph(
-            graph,
-            path=args.path,
-            entity=args.entity,
-            flow=args.flow,
-            keyword=args.keyword,
-            depth=args.depth,
-            max_entities=args.max_entities,
-        )
+        if args.counts:
+            rendered = render_counts(graph)
+        else:
+            result = query_graph(
+                graph,
+                path=args.path,
+                entity=args.entity,
+                flow=args.flow,
+                keyword=args.keyword,
+                depth=args.depth,
+                max_entities=args.max_entities,
+            )
+            rendered = render_query_result(result, max_bytes=args.max_bytes)
     except (
         OSError,
         json.JSONDecodeError,
@@ -357,7 +371,7 @@ def main(argv: list[str] | None = None) -> int:
     ) as exc:
         print(f"System Map context unavailable: {exc}", file=sys.stderr)
         return 2
-    print(render_query_result(result), end="")
+    print(rendered, end="")
     return 0
 
 

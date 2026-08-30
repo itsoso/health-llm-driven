@@ -1,6 +1,6 @@
 ---
 doc: agent-skill-binding
-last-reviewed: 2026-08-20
+last-reviewed: 2026-08-29
 scope: health-llm-driven
 ---
 
@@ -22,11 +22,13 @@ scope: health-llm-driven
 ## 所有 agent 的固定启动顺序
 
 1. 读 `AGENTS.md`:安全、日志、测试、隐私、DB、提交、部署硬规则的最终裁判。
-2. 读 `docs/system-map/INDEX.md`:先知道系统目标、能力、架构、多端 surface、业务流和系统流。
-3. 读 `docs/_generated/system-map-agent-context.md`:加载从 canonical graph 生成的轻量全局上下文。
-4. 用 `python3.12 scripts/system_map_context.py` 按任务查询局部实体、关系、流、覆盖度和 source path,再打开源码与测试验证。
-5. 先运行 `python3.12 scripts/check_agent_skill_governance.py recommend --mode <mode>`，由 `reva-workflow-router` 选择最小充分 Skill 集；不得把多个 controller 机械叠加。
-6. 按平台读取 Router 选中的 adapter：Claude 读 `.claude/skills/<name>/SKILL.md`，Codex 读 `plugins/reva-health-harness/skills/<name>/SKILL.md`；未封装的平台能力才按注册表 source 读取。
+2. 先判断是否为仓库研发任务。Codex 设置/性能、通用问答等**非仓库元任务**到此停止，不运行 Router，也不加载 System Map。
+3. 仓库研发任务运行 `python3.12 scripts/check_agent_skill_governance.py recommend --mode <mode>`，由 `reva-workflow-router` 选择最小充分 Skill 集；不得把多个 controller 机械叠加。
+4. 按平台读取 Router 选中的 adapter：Claude 读 `.claude/skills/<name>/SKILL.md`，Codex 读 `plugins/reva-health-harness/skills/<name>/SKILL.md`；未封装的平台能力才按注册表 source 读取。
+5. 只有 Router 选中 `system-map` 或任务明确需要全局架构/跨组件/代码派生结构时才加载地图：
+   - 已知 path/entity/flow 的局部任务直接运行 `python3.12 scripts/system_map_context.py ... --depth 0`；
+   - onboarding、全局架构或跨域设计先读 `docs/system-map/INDEX.md` 与 `docs/_generated/system-map-agent-context.md`，再局部查询。
+6. 打开查询结果给出的源码与附近测试后，再形成技术结论或实现计划。
 7. 如果是产品/用户行为/跨端能力,继续读 `docs/specs/reva-product-governance-spec.md` 和 `docs/specs/product-pipeline-contract.md`。
 8. 如果进入完整需求生命周期,创建或接续 `docs/dossiers/<date>-<slug>.md`,按 6 道 Gate 留痕。
 9. 完成后按对应 skill 的 S8/沉淀规则更新 system map、PRD/Plan、doc drift 生成物或相关 agent 约束。
@@ -39,7 +41,7 @@ Router 的机器推荐是入口，不是第二套状态机。`product-pipeline`�
 
 | 触发场景 | 必读研发 skill / 协议 | 后续权威文档 |
 |---|---|---|
-| 任一研发任务的 Skill 选择 | `reva-workflow-router` + `scripts/check_agent_skill_governance.py recommend` | `docs/governance/agent-skill-registry.json`, `docs/governance/agent-skill-governance.md` |
+| 任一仓库研发任务的 Skill 选择 | `reva-workflow-router` + `scripts/check_agent_skill_governance.py recommend` | `docs/governance/agent-skill-registry.json`, `docs/governance/agent-skill-governance.md` |
 | Onboard 本项目、问“系统是什么/有哪些能力/架构/产品地图/当前现状” | `system-map` | `docs/system-map/INDEX.md`, `docs/_generated/system-map-agent-context.md`, `docs/system-map/product-map.md`, `docs/_generated/system-map.json` |
 | 一句需求要走“需求→PRD→规划→研发→测试→部署→上线验证” | `product-pipeline`（由 Router 选择平台 adapter） | `docs/specs/product-pipeline-contract.md`, `docs/specs/reva-product-governance-spec.md`, `docs/dossiers/` |
 | 需求已定,进入跨端实现或多 agent fan-out | `health-harness-orchestrator`（由 Router 选择平台 adapter） | `docs/design-agent-operating-harness.md`,对应 plan/spec |
@@ -65,7 +67,7 @@ Router 的机器推荐是入口，不是第二套状态机。`product-pipeline`�
 
 ## 最小执行标准
 
-- 小修可以降级产品流程,但仍要读 `AGENTS.md`、System Map INDEX 与轻量全局摘要,再定位局部代码并跑相关验证。
+- 小修可以降级产品流程；读 `AGENTS.md`、先经 Router，再按已知 path/entity 做零跳局部查询。只有全局任务才读 System Map INDEX 与轻量摘要。
 - 每个任务最多一个 primary controller；capability 与 overlay 不得创建竞争的 checkpoint、批次、ledger 或完成状态。
 - 非平凡产品行为必须进入 product governance 和 product pipeline,至少留下 Dossier 或明确引用已有 Dossier。
 - 任何带用户健康建议、写入、提醒、药物、疾病、基因、化验、CGM 的改动必须触发安全 Gate。

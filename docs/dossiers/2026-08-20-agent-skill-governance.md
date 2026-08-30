@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-skill-governance` |
 | 创建日期 | 2026-08-20 |
-| 当前阶段 | S5 实现 |
-| 状态 | building |
+| 当前阶段 | S7 本地验证 |
+| 状态 | verified-local / publish-blocked |
 | 负责 | Codex |
 | 反馈环 | deterministic registry / Router recommendation / repository gates |
 
@@ -18,6 +18,13 @@
   - 回退阶段:S3。
   - 需重跑 Gate:G2、G3、G4。
   - 用户确认:☑ 用户要求基于讨论形成最佳 Skills 推荐并治理。
+- [x] 2026-08-29 context-budget optimization
+  - 触发:Codex 近期体感变慢；入口规则、System Map 全局摘要与重复 flow relation 形成常驻上下文税。
+  - 旧基线:`AGENTS.md` 内嵌教程与 Skill catalog；所有仓库/非仓库任务先读全局地图；查询默认一跳；全局摘要常驻计数并按 flow 重复关系。
+  - 新基线:非仓库元任务跳过项目 Router/地图；仓库研发先 Router、后按需 query-first；默认零跳；全局摘要 4KB 硬预算；计数显式 `--counts`；查询 12KB 硬预算，超限 fail closed。
+  - 回退阶段:S3。
+  - 需重跑 Gate:G3、G4。
+  - 用户确认:☑ 用户要求按推荐直接改造。
 
 ## S0 · 用户需求(逐字)
 
@@ -60,23 +67,31 @@
 
 - [x] T1 设计与实施计划。
 - [x] T2 先写治理/插件/接线契约测试并取得预期 RED。
-- [ ] T3 实现机器注册表、检查器和 Router。
-- [ ] T4 接入 binding、plugin、validate、pre-commit、CI 和 system map。
-- [ ] T5 前向压测、独立评审、提交与安全推送。
+- [x] T3 实现机器注册表、检查器和 Router。
+- [x] T4 接入 binding、plugin、validate、pre-commit、CI 和 system map。
+- [ ] T5 前向压测、评审、提交与安全推送；本地验证完成，分支分叉与共享工作树阻断 push。
 
 ## S5 · 实现
 
 - 当前分支:`main`；仅精确暂存本 Dossier 列出的治理文件，保留共享工作树中的 Health Day / KBase WIP。
-- 当前状态:并行实现 registry/checker 与 Codex-native plugin adapters；主代理负责 binding 和 repository gates。
+- 当前状态:已收敛入口契约与 System Map 上下文预算；保留共享工作树中的 Health Day / KBase / CI WIP，未纳入本次修改。
 
 ## G3 · 测试闸
 
-- 待完成:focused pytest、checker self-check、Skill validation、`scripts/validate.py -v`、system-map、`git diff --check`。
+- `python3.12 scripts/check_agent_skill_governance.py check`:PASS，14 skills / 6 routes / 5 overlays / 4 release targets。
+- `.venv/bin/python -m pytest backend/tests/test_agent_skill_governance.py backend/tests/test_system_map_agent_context.py -q -o addopts=''`:42 passed。
+- `./scripts/system-map-check.sh`:PASS，canonical graph、4KB agent context、mobile nav 与 doc drift 一致。
+- `python3.12 scripts/validate.py -v`:PASS；system-map、dossier-consistency、agent-skill-governance 全绿。既有 ruff 635 项为 report-only，不属于本次文件。
+- 查询输出预算负例:256 bytes 上限返回 exit 2 和显式 `query context exceeds`，未静默截断。
+- `git diff --check`:PASS。
+- **裁决:PASS**。
 
 ## G4 · 安全闸
 
-- 触发:研发治理和最小事件 schema；不触发产品健康写路径。
-- 待完成:独立 diff review，重点检查 prompt/健康事实/凭据不进入事件 schema，未知 route fail closed。
+- 触发:仅研发治理、只读地图查询与文档拆分；不触发产品健康写路径、数据库、通知或生产部署。
+- diff review 确认查询器只读取 canonical artifact；超实体数、超字节数、未知 selector 和无效图均 fail closed。
+- 新治理文档保留健康数据隔离、推送隐私、PostgreSQL 语义与发布授权边界；未把这些规则从硬约束降级为建议。
+- **裁决:PASS**。
 
 ## S6 · 部署
 
@@ -88,7 +103,10 @@
 
 ## S7 · 验证
 
-- 待用原 quick-fix/cross-end 场景前向验证 Router 输出，并核对 `codex plugin list` 安装状态边界。
+- 非仓库元任务在 `AGENTS.md` 与 binding 中显式跳过 Router/System Map。
+- 局部仓库任务先 Router，再以 path/entity/flow 零跳查询；全局任务才加载 INDEX 与 4KB bootstrap。
+- 代码派生计数通过 `python3.12 scripts/system_map_context.py --counts` 独立按需读取。
+- 当前 `main` 相对 `origin/main` ahead 8 / behind 54，且共享工作树有其他 WIP；push 不满足安全前置条件。
 
 ## G6 · 验证闸(人在环)
 
@@ -96,4 +114,5 @@
 
 ## S8 · 沉淀
 
-- 待更新 system-map 生成物、治理证据和最终状态。
+- 已更新 System Map skill、INDEX、binding、治理合同/注册表、生成摘要与日志/性能/数据库/隐私分层文档。
+- 待安全整合主干后再 commit/push；不以本地验证冒充远端交付。
