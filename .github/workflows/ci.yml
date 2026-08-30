@@ -128,8 +128,14 @@ jobs:
             paths: "tests/test_agent_executor_[i-z]*.py"
           - label: agent-f-h
             paths: "tests/test_agent_[f-h]*.py"
-          - label: agent-i-z
-            paths: "tests/test_agent_[i-z]*.py"
+          # The former i-z bucket collected >6k parametrized cases and could
+          # exceed both 600-second attempts before reaching the final files.
+          - label: agent-i-l
+            paths: "tests/test_agent_[i-l]*.py"
+          - label: agent-m-r
+            paths: "tests/test_agent_[m-r]*.py"
+          - label: agent-s-z
+            paths: "tests/test_agent_[s-z]*.py"
           - label: c
             paths: "tests/test_c*.py"
           - label: d
