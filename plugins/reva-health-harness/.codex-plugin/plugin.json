@@ -1,6 +1,6 @@
 {
   "name": "reva-health-harness",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Codex plugin for governed Reva workflow routing, product lifecycle, delivery gates, and trace operations.",
   "author": {
     "name": "executor.life"

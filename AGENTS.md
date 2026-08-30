@@ -12,12 +12,13 @@
    ```
 
    有安全、DB、文档漂移等明确风险时才附加对应 `--overlay`；Skill / plugin 治理分别声明 `--capability-trigger skill-governance` / `plugin-authoring`。不要机械叠加多个 controller；feature 的 Health Harness delegate 只在父流程进入 S5 后加载。
-3. **非仓库元任务**（例如 Codex 设置、执行速度、通用问答、个人工作流讨论）不运行 Router，也不加载 System Map。
-4. 只有 Router 选中 `system-map`，或任务确实涉及系统现状、架构、跨端/跨组件关系、代码派生结构或漂移时，才加载地图：
+3. 启动只消费推荐结果的 `immediate_skills`；`selected_skills` 是 immediate 与 deferred 的兼容 union，**禁止作为预载清单**。进入实际阶段后，才加载 `deferred_by_phase[phase]`。
+4. **非仓库元任务**（例如 Codex 设置、执行速度、通用问答、个人工作流讨论）不运行 Router，也不加载 System Map。
+5. `system-map` 只在任务实际命中系统现状、架构、跨端/跨组件关系、代码派生结构或漂移需求时，从 `deferred_by_phase.on_demand` 激活：
    - 已知路径或局部修改：直接用 `python3.12 scripts/system_map_context.py --path <path> --depth 0`；
    - 已知实体/流：用 `--entity` / `--flow` / `--keyword`，默认零跳，确有需要再增大 `--depth`；
    - onboarding、全局架构或跨域设计：先读 `docs/system-map/INDEX.md` 与 `docs/_generated/system-map-agent-context.md`，再做局部查询。
-5. 打开查询结果指向的源码和邻近测试后，才能形成技术结论或实现计划。
+6. 打开查询结果指向的源码和邻近测试后，才能形成技术结论或实现计划。
 
 地图不可用或验证失败时，运行 `./scripts/system-map-check.sh`，并直接回到代码、测试和注册表调查。`docs/_generated/system-map.json` 是 canonical graph；摘要与查询结果只是派生视图。
 

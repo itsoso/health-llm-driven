@@ -73,6 +73,8 @@ def _assert_activation_partition(result: dict) -> None:
     }
 
     assert immediate.isdisjoint(deferred)
+    assert set(result["deferred_skills"]) == deferred
+    assert len(result["deferred_skills"]) == len(deferred)
     assert immediate | deferred == set(result["selected_skills"])
     assert [item["id"] for item in result["selected_skill_details"]] == result[
         "selected_skills"
@@ -344,12 +346,45 @@ def test_release_terminal_is_immediate_and_verification_remains_deferred():
     _assert_activation_partition(result)
 
 
-def test_checker_rejects_unknown_activation_phase_from_registry():
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        pytest.param(
+            lambda policy: policy["phases"].append("whenever"),
+            id="phase-vocabulary",
+        ),
+        pytest.param(
+            lambda policy: policy["role_phases"].update({"router": "whenever"}),
+            id="role-phase",
+        ),
+        pytest.param(
+            lambda policy: policy["capability_phases"].update(
+                {"system-map": "whenever"}
+            ),
+            id="capability-phase",
+        ),
+        pytest.param(
+            lambda policy: policy.update({"capability_trigger_phase": "whenever"}),
+            id="capability-trigger-phase",
+        ),
+        pytest.param(
+            lambda policy: policy["eager_phases_by_mode"].update(
+                {"incident": ["whenever"]}
+            ),
+            id="eager-mode-phase",
+        ),
+        pytest.param(
+            lambda policy: policy["delegate_phases"]["feature"].update(
+                {"health-harness-orchestrator": "whenever"}
+            ),
+            id="delegate-phase",
+        ),
+    ],
+)
+def test_checker_rejects_unknown_activation_phase_from_registry(mutation):
     checker = _checker_module()
     registry = _registry()
-    registry["routing"]["activation_policy"]["capability_phases"][
-        "system-map"
-    ] = "whenever"
+    mutation(registry["routing"]["activation_policy"])
 
     with pytest.raises(checker.GovernanceError) as exc:
         checker.validate_registry(registry)
@@ -592,6 +627,20 @@ def test_agents_contract_is_concise_and_does_not_embed_a_skill_catalog():
     assert "## Available Skills" not in text
     assert "npx openskills read" not in text
     assert "非仓库元任务" in text
+    assert "immediate_skills" in text
+    assert "deferred_by_phase.on_demand" in text
+    assert "selected_skills" in text
+    assert "禁止作为预载清单" in text
+
+
+def test_governance_contract_version_and_deferred_compatibility_match_v2():
+    text = (
+        ROOT / "docs" / "governance" / "agent-skill-governance.md"
+    ).read_text(encoding="utf-8")
+
+    assert "**版本：** 2.0" in "\n".join(text.splitlines()[:10])
+    assert "`deferred_skills` 是 `deferred_by_phase` 的兼容扁平 union" in text
+    assert "不得驱动预载" in text
 
 
 def test_codex_router_documents_supported_capability_trigger():

@@ -2,7 +2,7 @@
 
 **状态：** active
 
-**版本：** 1.1
+**版本：** 2.0
 
 **最后复审：** 2026-08-29
 
@@ -176,7 +176,7 @@ python3.12 scripts/check_agent_skill_governance.py recommend \
   --release-target mobile-ota
 ```
 
-推荐输出是 `agent-skill-recommendation.v2` 机器合同：启动时只加载 `immediate_skills`；进入实际阶段时才加载 `deferred_by_phase[phase]`。`selected_skills` / `selected_skill_details` 是两者的兼容 union，只用于审计和旧消费者，不是预载清单；每个 detail 都带 `activation_phase`。`controller_count` 只能为 0 或 1，两个集合必须不重叠且 union 等于 `selected_skills`。未知 mode、phase、Overlay、capability trigger 或发布目标，以及覆盖不全、角色冲突、adapter 漂移等输入均以非零退出码 fail-closed。
+推荐输出是 `agent-skill-recommendation.v2` 机器合同：启动时只加载 `immediate_skills`；进入实际阶段时才加载 `deferred_by_phase[phase]`。`selected_skills` / `selected_skill_details` 是两者的兼容 union，只用于审计和旧消费者，不是预载清单；每个 detail 都带 `activation_phase`。`deferred_skills` 是 `deferred_by_phase` 的兼容扁平 union，只供旧消费者迁移，**不得驱动预载**。`controller_count` 只能为 0 或 1，两个集合必须不重叠且 union 等于 `selected_skills`。未知 mode、phase、Overlay、capability trigger 或发布目标，以及覆盖不全、角色冲突、adapter 漂移等输入均以非零退出码 fail-closed。
 
 Skill / plugin 治理任务应额外声明 capability trigger：
 
