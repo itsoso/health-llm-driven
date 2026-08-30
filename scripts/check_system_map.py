@@ -21,11 +21,23 @@ SYSTEM_MAP = ROOT / "docs" / "_generated" / "system-map.json"
 SYSTEM_MAP_SCHEMA = ROOT / "docs" / "_generated" / "system-map.schema.json"
 AGENT_CONTEXT = ROOT / "docs" / "_generated" / "system-map-agent-context.md"
 
-sys.path.insert(0, str(SCRIPTS))
-from check_doc_drift import main as check_doc_drift  # noqa: E402
-from dump_system_map import build_map, check_artifacts  # noqa: E402
-from system_map_context import SystemMapContextError, render_agent_context  # noqa: E402
-from system_map_contract import SystemMapContractError, validate_system_map  # noqa: E402
+_scripts_path = str(SCRIPTS)
+_caller_sys_path = sys.path.copy()
+if not sys.path or sys.path[0] != _scripts_path:
+    sys.path.insert(0, _scripts_path)
+try:
+    from check_doc_drift import main as check_doc_drift  # noqa: E402
+    from dump_system_map import build_map, check_artifacts  # noqa: E402
+    from system_map_context import (  # noqa: E402
+        SystemMapContextError,
+        render_agent_context,
+    )
+    from system_map_contract import (  # noqa: E402
+        SystemMapContractError,
+        validate_system_map,
+    )
+finally:
+    sys.path[:] = _caller_sys_path
 
 
 MOBILE_CHECK = [sys.executable, "mobile/scripts/dump_nav_graph.py", "--check"]
@@ -46,20 +58,29 @@ def validate_artifact() -> None:
 
 
 def _build_and_check_canonical() -> dict | None:
-    print("→ system-map")
+    print("→ system-map", flush=True)
     try:
         fresh_map = build_map()
         matches, message = check_artifacts(fresh_map)
     except Exception:  # noqa: BLE001
         traceback.print_exc()
-        print("❌ system-map failed with exit code 1", file=sys.stderr)
+        print(
+            "❌ system-map failed with exit code 1",
+            file=sys.stderr,
+            flush=True,
+        )
         return None
     if not matches:
         print(
             f"❌ {message}：跑 python3.12 scripts/dump_system_map.py",
             file=sys.stderr,
+            flush=True,
         )
-        print("❌ system-map failed with exit code 1", file=sys.stderr)
+        print(
+            "❌ system-map failed with exit code 1",
+            file=sys.stderr,
+            flush=True,
+        )
         return None
     print(f"✅ {SYSTEM_MAP.relative_to(ROOT)} 与代码一致")
     print(f"✅ {AGENT_CONTEXT.relative_to(ROOT)} 与 canonical graph 一致")
@@ -72,11 +93,17 @@ def _replay_gate(
     stderr: str,
     returncode: int,
 ) -> None:
-    print(f"→ {name}")
+    print(f"→ {name}", flush=True)
     sys.stdout.write(stdout)
+    sys.stdout.flush()
     sys.stderr.write(stderr)
+    sys.stderr.flush()
     if returncode != 0:
-        print(f"❌ {name} failed with exit code {returncode}", file=sys.stderr)
+        print(
+            f"❌ {name} failed with exit code {returncode}",
+            file=sys.stderr,
+            flush=True,
+        )
 
 
 def _communicate_mobile(process) -> tuple[str, str, int]:
@@ -99,6 +126,34 @@ def _communicate_mobile(process) -> tuple[str, str, int]:
                 failure += traceback.format_exc()
             return "", failure, 1
         return stdout, failure + stderr, 1
+    except BaseException as cancellation:
+        _kill_and_reap_cancelled_mobile(process, cancellation)
+        raise
+
+
+def _kill_and_reap_cancelled_mobile(
+    process,
+    cancellation: BaseException,
+) -> None:
+    try:
+        process.kill()
+    except BaseException:
+        cancellation.add_note(
+            f"mobile cancellation cleanup failed:\n{traceback.format_exc()}"
+        )
+        return
+    try:
+        process.communicate()
+    except BaseException:
+        cancellation.add_note(
+            f"mobile cancellation cleanup failed:\n{traceback.format_exc()}"
+        )
+        try:
+            process.wait()
+        except BaseException:
+            cancellation.add_note(
+                f"mobile cancellation cleanup failed:\n{traceback.format_exc()}"
+            )
 
 
 def main() -> int:
@@ -112,7 +167,11 @@ def main() -> int:
         SystemMapContractError,
         SystemMapContextError,
     ) as exc:
-        print(f"❌ System Map contract validation failed: {exc}", file=sys.stderr)
+        print(
+            f"❌ System Map contract validation failed: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
         return 1
 
     fresh_map = _build_and_check_canonical()
@@ -143,6 +202,11 @@ def main() -> int:
         except Exception:  # noqa: BLE001
             traceback.print_exc(file=doc_stderr_buffer)
             doc_returncode = 1
+    except BaseException as cancellation:
+        if mobile_process is not None:
+            _kill_and_reap_cancelled_mobile(mobile_process, cancellation)
+            mobile_process = None
+        raise
     finally:
         if mobile_process is not None:
             mobile_stdout, mobile_stderr, mobile_returncode = _communicate_mobile(

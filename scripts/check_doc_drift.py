@@ -301,24 +301,32 @@ def main(*, fresh_map: dict | None = None) -> int:
     #    代码不符即红 (跑 scripts/dump_system_map.py 重新生成即修)。见 docs/system-map/INDEX.md。
     try:
         import json
-        sys.path.insert(0, str(ROOT / "scripts"))
-        from dump_system_map import OUT as SYSMAP_OUT
-        if fresh_map is None:
-            from dump_system_map import build_map
 
-            fresh_map = build_map()
-        if not SYSMAP_OUT.exists():
-            failures.append(
-                "  system-map: docs/_generated/system-map.json 缺失, "
-                "跑 python scripts/dump_system_map.py 生成并提交"
-            )
-        else:
-            committed_map = json.loads(SYSMAP_OUT.read_text(encoding="utf-8"))
-            if committed_map != fresh_map:
+        scripts_path = str(ROOT / "scripts")
+        caller_sys_path = sys.path.copy()
+        if not sys.path or sys.path[0] != scripts_path:
+            sys.path.insert(0, scripts_path)
+        try:
+            from dump_system_map import OUT as SYSMAP_OUT
+
+            if fresh_map is None:
+                from dump_system_map import build_map
+
+                fresh_map = build_map()
+            if not SYSMAP_OUT.exists():
                 failures.append(
-                    "  system-map: docs/_generated/system-map.json 与代码不符, "
-                    "跑 python scripts/dump_system_map.py 重新生成并提交"
+                    "  system-map: docs/_generated/system-map.json 缺失, "
+                    "跑 python scripts/dump_system_map.py 生成并提交"
                 )
+            else:
+                committed_map = json.loads(SYSMAP_OUT.read_text(encoding="utf-8"))
+                if committed_map != fresh_map:
+                    failures.append(
+                        "  system-map: docs/_generated/system-map.json 与代码不符, "
+                        "跑 python scripts/dump_system_map.py 重新生成并提交"
+                    )
+        finally:
+            sys.path[:] = caller_sys_path
     except Exception as e:  # noqa: BLE001
         failures.append(f"  system-map build/compare failed: {e}")
 

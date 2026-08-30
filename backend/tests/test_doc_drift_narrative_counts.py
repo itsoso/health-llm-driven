@@ -108,3 +108,49 @@ def test_standalone_main_builds_map_once(monkeypatch) -> None:
 
     assert cdd.main() == 0
     assert calls == 1
+
+
+@pytest.mark.parametrize("caller_has_scripts_path", (False, True))
+def test_main_preserves_caller_sys_path_across_repeated_checks(
+    caller_has_scripts_path: bool,
+) -> None:
+    fresh_map = json.loads(dsm.OUT.read_text(encoding="utf-8"))
+    scripts_path = str(ROOT / "scripts")
+    original_sys_path = sys.path.copy()
+    sys.path[:] = [entry for entry in sys.path if entry != scripts_path]
+    if caller_has_scripts_path:
+        sys.path.insert(1, scripts_path)
+    caller_sys_path = sys.path.copy()
+    try:
+        assert cdd.main(fresh_map=fresh_map) == 0
+        assert cdd.main(fresh_map=fresh_map) == 0
+        assert sys.path == caller_sys_path
+    finally:
+        sys.path[:] = original_sys_path
+
+
+def test_main_prefers_repo_scripts_over_shadow_dump_module(tmp_path) -> None:
+    fresh_map = json.loads(dsm.OUT.read_text(encoding="utf-8"))
+    scripts_path = str(ROOT / "scripts")
+    shadow_dir = tmp_path / "shadow"
+    shadow_dir.mkdir()
+    (shadow_dir / "dump_system_map.py").write_text(
+        "raise RuntimeError('shadow dump module imported')\n",
+        encoding="utf-8",
+    )
+    original_sys_path = sys.path.copy()
+    original_dump_module = sys.modules.pop("dump_system_map", None)
+    sys.path[:] = [
+        str(shadow_dir),
+        scripts_path,
+        *(entry for entry in sys.path if entry != scripts_path),
+    ]
+    caller_sys_path = sys.path.copy()
+    try:
+        assert cdd.main(fresh_map=fresh_map) == 0
+        assert sys.path == caller_sys_path
+    finally:
+        sys.path[:] = original_sys_path
+        sys.modules.pop("dump_system_map", None)
+        if original_dump_module is not None:
+            sys.modules["dump_system_map"] = original_dump_module

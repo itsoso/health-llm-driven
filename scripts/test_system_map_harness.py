@@ -36,6 +36,63 @@ def test_local_harness_is_pinned_and_uses_its_venv() -> None:
     assert ".venv/" in (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
 
 
+@pytest.mark.parametrize("caller_has_scripts_path", (False, True))
+def test_checker_import_preserves_caller_sys_path(
+    caller_has_scripts_path: bool,
+) -> None:
+    scripts_path = str(ROOT / "scripts")
+    original_sys_path = sys.path.copy()
+    sys.path[:] = [entry for entry in sys.path if entry != scripts_path]
+    if caller_has_scripts_path:
+        sys.path.insert(1, scripts_path)
+    caller_sys_path = sys.path.copy()
+    try:
+        _load_checker()
+
+        assert sys.path == caller_sys_path
+    finally:
+        sys.path[:] = original_sys_path
+
+
+def test_checker_import_prefers_repo_scripts_over_shadow_modules(tmp_path) -> None:
+    scripts_path = str(ROOT / "scripts")
+    shadow_dir = tmp_path / "shadow"
+    shadow_dir.mkdir()
+    (shadow_dir / "check_doc_drift.py").write_text(
+        "def main(*, fresh_map=None):\n    return 99\n",
+        encoding="utf-8",
+    )
+    module_names = (
+        "check_doc_drift",
+        "dump_system_map",
+        "system_map_context",
+        "system_map_contract",
+    )
+    saved_modules = {name: sys.modules.get(name) for name in module_names}
+    original_sys_path = sys.path.copy()
+    sys.path[:] = [
+        str(shadow_dir),
+        scripts_path,
+        *(entry for entry in sys.path if entry != scripts_path),
+    ]
+    caller_sys_path = sys.path.copy()
+    for name in module_names:
+        sys.modules.pop(name, None)
+    try:
+        checker = _load_checker()
+
+        assert Path(checker.check_doc_drift.__code__.co_filename).resolve() == (
+            ROOT / "scripts" / "check_doc_drift.py"
+        )
+        assert sys.path == caller_sys_path
+    finally:
+        sys.path[:] = original_sys_path
+        for name in module_names:
+            sys.modules.pop(name, None)
+            if saved_modules[name] is not None:
+                sys.modules[name] = saved_modules[name]
+
+
 class _FakeMobileProcess:
     def __init__(
         self,
@@ -206,6 +263,47 @@ def test_parallel_failures_replay_both_outputs_in_gate_order(
     assert events[-3:] == ["mobile-start", "doc-drift", "mobile-communicate"]
 
 
+def test_combined_stream_replay_preserves_gate_order_in_a_real_subprocess() -> None:
+    script = "\n".join(
+        (
+            "from scripts import check_system_map as checker",
+            "checker.build_map = lambda: {'counts': {}}",
+            "checker.check_artifacts = lambda _graph: (True, '')",
+            "assert checker._build_and_check_canonical() is not None",
+            "checker._replay_gate(",
+            "    'mobile-nav', 'mobile stdout\\n', 'mobile stderr\\n', 7",
+            ")",
+            "checker._replay_gate(",
+            "    'doc-drift', 'doc stdout\\n', 'doc stderr\\n', 9",
+            ")",
+        )
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stdout
+    ordered_markers = (
+        "→ system-map",
+        "→ mobile-nav",
+        "mobile stdout",
+        "mobile stderr",
+        "❌ mobile-nav failed with exit code 7",
+        "→ doc-drift",
+        "doc stdout",
+        "doc stderr",
+        "❌ doc-drift failed with exit code 9",
+    )
+    positions = [completed.stdout.index(marker) for marker in ordered_markers]
+    assert positions == sorted(positions), completed.stdout
+
+
 def test_mobile_start_error_still_completes_doc_drift(monkeypatch, capsys) -> None:
     checker = _load_checker()
     events: list[object] = []
@@ -306,19 +404,129 @@ def test_doc_drift_cancellation_reaps_mobile_before_propagating(monkeypatch) -> 
     checker = _load_checker()
     events: list[object] = []
     _configure_successful_canonical(monkeypatch, checker, events)
+    cancellation = KeyboardInterrupt("doc cancellation")
+
+    class CancellableMobileProcess(_FakeMobileProcess):
+        def kill(self) -> None:
+            events.append("mobile-kill")
+            self.returncode = -9
 
     def fake_popen(*_args, **_kwargs):
         events.append("mobile-start")
-        return _FakeMobileProcess(events)
+        return CancellableMobileProcess(events)
 
     def cancel_doc_drift(*, fresh_map: dict | None = None) -> int:
         events.append("doc-drift")
-        raise KeyboardInterrupt
+        raise cancellation
 
     monkeypatch.setattr(checker.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(checker, "check_doc_drift", cancel_doc_drift, raising=False)
 
-    with pytest.raises(KeyboardInterrupt):
+    with pytest.raises(KeyboardInterrupt) as caught:
         checker.main()
 
-    assert events[-3:] == ["mobile-start", "doc-drift", "mobile-communicate"]
+    assert caught.value is cancellation
+    assert events[-4:] == [
+        "mobile-start",
+        "doc-drift",
+        "mobile-kill",
+        "mobile-communicate",
+    ]
+
+
+def test_mobile_communicate_cancellation_kills_and_reaps_before_propagating(
+    monkeypatch,
+) -> None:
+    checker = _load_checker()
+    events: list[object] = []
+    _configure_successful_canonical(monkeypatch, checker, events)
+    cancellation = KeyboardInterrupt("mobile cancellation")
+
+    class CancelledCommunicateProcess:
+        returncode = None
+
+        def __init__(self) -> None:
+            self.communicate_calls = 0
+
+        def communicate(self) -> tuple[str, str]:
+            self.communicate_calls += 1
+            events.append("mobile-communicate")
+            if self.communicate_calls == 1:
+                raise cancellation
+            self.returncode = -9
+            return "", ""
+
+        def kill(self) -> None:
+            events.append("mobile-kill")
+
+    def fake_popen(*_args, **_kwargs):
+        events.append("mobile-start")
+        return CancelledCommunicateProcess()
+
+    def fake_doc_drift(*, fresh_map: dict | None = None) -> int:
+        events.append("doc-drift")
+        return 0
+
+    monkeypatch.setattr(checker.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(checker, "check_doc_drift", fake_doc_drift, raising=False)
+
+    with pytest.raises(KeyboardInterrupt) as caught:
+        checker.main()
+
+    assert caught.value is cancellation
+    assert events[-5:] == [
+        "mobile-start",
+        "doc-drift",
+        "mobile-communicate",
+        "mobile-kill",
+        "mobile-communicate",
+    ]
+
+
+def test_doc_cancellation_keeps_original_exception_when_cleanup_fails(
+    monkeypatch,
+) -> None:
+    checker = _load_checker()
+    events: list[object] = []
+    _configure_successful_canonical(monkeypatch, checker, events)
+    cancellation = KeyboardInterrupt("original cancellation")
+
+    class CleanupFailureProcess:
+        returncode = None
+
+        def kill(self) -> None:
+            events.append("mobile-kill")
+
+        def communicate(self) -> tuple[str, str]:
+            events.append("mobile-communicate")
+            raise RuntimeError("cleanup communicate failed")
+
+        def wait(self) -> int:
+            events.append("mobile-wait")
+            raise RuntimeError("cleanup wait failed")
+
+    def fake_popen(*_args, **_kwargs):
+        events.append("mobile-start")
+        return CleanupFailureProcess()
+
+    def cancel_doc_drift(*, fresh_map: dict | None = None) -> int:
+        events.append("doc-drift")
+        raise cancellation
+
+    monkeypatch.setattr(checker.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(checker, "check_doc_drift", cancel_doc_drift, raising=False)
+
+    with pytest.raises(KeyboardInterrupt) as caught:
+        checker.main()
+
+    assert caught.value is cancellation
+    cleanup_notes = "\n".join(getattr(caught.value, "__notes__", ()))
+    assert "cleanup communicate failed" in cleanup_notes
+    assert "cleanup wait failed" in cleanup_notes
+    assert events[-5:] == [
+        "mobile-start",
+        "doc-drift",
+        "mobile-kill",
+        "mobile-communicate",
+        "mobile-wait",
+    ]
