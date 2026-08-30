@@ -103,16 +103,10 @@ def _classify_backend_app_source(
     ):
         return _PATH_INSIDE
 
-    root_depth = len(root.parts)
     for candidate in source_candidates:
-        try:
-            candidate.stat()
-        except OSError:
-            identity_unavailable = True
-        if len(candidate.parts) >= root_depth:
-            peer = Path(*candidate.parts[:root_depth])
+        for ancestor in (candidate, *candidate.parents):
             try:
-                if os.path.samefile(peer, root):
+                if os.path.samefile(ancestor, root):
                     return _PATH_INSIDE
             except OSError:
                 identity_unavailable = True
@@ -268,8 +262,20 @@ def _validate_audit_dispatcher_state_locked(
     return registration_state, dispatcher
 
 
-def _refresh_listener_snapshot(state: dict[str, object]) -> None:
-    state["listener_snapshot"] = tuple(state["listeners"].values())
+def _publish_audit_listener(
+    state: dict[str, object], token: object, listener: object
+) -> None:
+    updated_listeners = dict(state["listeners"])
+    updated_listeners[token] = listener
+    state["listener_snapshot"] = tuple(updated_listeners.values())
+    state["listeners"][token] = listener
+
+
+def _withdraw_audit_listener(state: dict[str, object], token: object) -> None:
+    updated_listeners = dict(state["listeners"])
+    updated_listeners.pop(token, None)
+    state["listener_snapshot"] = tuple(updated_listeners.values())
+    state["listeners"].pop(token, None)
 
 
 def _fail_registration(
@@ -359,8 +365,9 @@ def _register_audit_listener() -> None:
             )
         _verify_audit_dispatcher(state, dispatcher)
         state["registration_state"] = "installed"
-        state["listeners"][_AUDIT_LISTENER_TOKEN] = _audit_listener
-        _refresh_listener_snapshot(state)
+        _publish_audit_listener(
+            state, _AUDIT_LISTENER_TOKEN, _audit_listener
+        )
 
 
 def _unregister_audit_listener() -> None:
@@ -370,8 +377,7 @@ def _unregister_audit_listener() -> None:
         lock = state.get("lock")
         if isinstance(listeners, dict) and isinstance(lock, _RLOCK_TYPE):
             with lock:
-                listeners.pop(_AUDIT_LISTENER_TOKEN, None)
-                _refresh_listener_snapshot(state)
+                _withdraw_audit_listener(state, _AUDIT_LISTENER_TOKEN)
 
 
 def _install_import_attempt_observer() -> None:

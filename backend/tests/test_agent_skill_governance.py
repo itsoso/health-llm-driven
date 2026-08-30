@@ -793,8 +793,9 @@ def test_tooling_pytest_guard_preserves_different_prefix_samefile_aliases(
     guard = _tooling_pytest_guard_module()
     root = tmp_path / "repo" / "backend" / "app"
     root.mkdir(parents=True)
-    alias_root = tmp_path / "mount" / "service" / "app"
+    alias_root = tmp_path / "mount"
     alias_root.mkdir(parents=True)
+    assert len(alias_root.parts) != len(root.parts)
     alias_source = alias_root / "safe.py"
     alias_source.write_text("VALUE = 1\n", encoding="utf-8")
     real_resolve = guard.Path.resolve
@@ -1322,6 +1323,106 @@ def test_tooling_pytest_guard_validates_dispatcher_transition_under_state_lock(
         "assert 'app.transition_window_probe' in second_guard._active_observed_modules[second_config]\n"
         "first_config.cleanup()\n"
         "second_config.cleanup()\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_tooling_pytest_guard_atomically_publishes_listener_snapshots(tmp_path):
+    runner = _tooling_pytest_runner_module()
+    probe = tmp_path / "listener_snapshot_publication_probe.py"
+    probe.write_text(
+        "import sys\n"
+        "import threading\n"
+        "from types import SimpleNamespace\n"
+        f"sys.path.insert(0, {str(ROOT)!r})\n"
+        "from scripts import tooling_pytest_guard as guard\n"
+        "\n"
+        "class Config:\n"
+        "    def __init__(self):\n"
+        "        self.cleanups = []\n"
+        "    def add_cleanup(self, cleanup):\n"
+        "        self.cleanups.append(cleanup)\n"
+        "    def cleanup(self):\n"
+        "        while self.cleanups:\n"
+        "            self.cleanups.pop()()\n"
+        "\n"
+        "initial_config = Config()\n"
+        "guard.pytest_sessionstart(SimpleNamespace(config=initial_config))\n"
+        "initial_config.cleanup()\n"
+        "state = getattr(sys, guard._PROCESS_AUDIT_DISPATCHER_ATTR)\n"
+        "assert state['listeners'] == {}\n"
+        "assert state['listener_snapshot'] == ()\n"
+        "store_started = threading.Event()\n"
+        "release_store = threading.Event()\n"
+        "pop_started = threading.Event()\n"
+        "release_pop = threading.Event()\n"
+        "audit_listener_attempted = threading.Event()\n"
+        "class ProbeSessionLock(type(threading.RLock())):\n"
+        "    def __enter__(self):\n"
+        "        if threading.current_thread().name == 'audit-during-store':\n"
+        "            audit_listener_attempted.set()\n"
+        "        return super().__enter__()\n"
+        "guard._SESSION_STATE_LOCK = ProbeSessionLock()\n"
+        "class PausingListeners(dict):\n"
+        "    def __setitem__(self, key, value):\n"
+        "        super().__setitem__(key, value)\n"
+        "        store_started.set()\n"
+        "        assert release_store.wait(5)\n"
+        "    def pop(self, key, default=None):\n"
+        "        value = super().pop(key, default)\n"
+        "        pop_started.set()\n"
+        "        assert release_pop.wait(5)\n"
+        "        return value\n"
+        "state['listeners'] = PausingListeners()\n"
+        "config = Config()\n"
+        "errors = []\n"
+        "audit_errors = []\n"
+        "def start_session():\n"
+        "    try:\n"
+        "        guard.pytest_sessionstart(SimpleNamespace(config=config))\n"
+        "    except BaseException as error:\n"
+        "        errors.append(error)\n"
+        "def emit_audit_event():\n"
+        "    try:\n"
+        "        sys.audit('import', 'app.snapshot_publication_probe', None, (), (), ())\n"
+        "    except BaseException as error:\n"
+        "        audit_errors.append(error)\n"
+        "start_thread = threading.Thread(target=start_session)\n"
+        "start_thread.start()\n"
+        "assert store_started.wait(5)\n"
+        "audit_thread = threading.Thread(\n"
+        "    target=emit_audit_event, name='audit-during-store'\n"
+        ")\n"
+        "audit_thread.start()\n"
+        "assert audit_listener_attempted.wait(5)\n"
+        "release_store.set()\n"
+        "start_thread.join(5)\n"
+        "audit_thread.join(5)\n"
+        "assert not start_thread.is_alive()\n"
+        "assert not audit_thread.is_alive()\n"
+        "assert errors == [], errors\n"
+        "assert audit_errors == [], audit_errors\n"
+        "assert 'app.snapshot_publication_probe' in guard._active_observed_modules[config]\n"
+        "cleanup_thread = threading.Thread(target=config.cleanup)\n"
+        "cleanup_thread.start()\n"
+        "assert pop_started.wait(5)\n"
+        "assert state['listener_snapshot'] == ()\n"
+        "release_pop.set()\n"
+        "cleanup_thread.join(5)\n"
+        "assert not cleanup_thread.is_alive()\n"
+        "assert state['listeners'] == {}\n"
+        "assert guard._active_observed_modules == {}\n",
         encoding="utf-8",
     )
 
