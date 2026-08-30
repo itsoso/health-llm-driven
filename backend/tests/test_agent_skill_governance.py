@@ -600,6 +600,39 @@ def test_validation_queries_the_tracked_file_inventory_once(monkeypatch):
     assert git_calls == [["git", "ls-files", "-z"]]
 
 
+def test_consecutive_validations_refresh_the_tracked_file_inventory(monkeypatch):
+    checker = _checker_module()
+    registry = _registry()
+    missing_source = registry["skills"][0]["sources"][0]
+    tracked_files = _tracked_project_files()
+    inventories = [tracked_files, tracked_files - {missing_source}]
+    git_calls: list[list[str]] = []
+
+    def changing_inventory(command, *args, **kwargs):
+        git_calls.append(command)
+        inventory = inventories[len(git_calls) - 1]
+        stdout = b"\0".join(os.fsencode(path) for path in sorted(inventory)) + b"\0"
+        return subprocess.CompletedProcess(
+            command,
+            returncode=0,
+            stdout=stdout,
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(checker.subprocess, "run", changing_inventory)
+
+    checker.validate_registry(registry)
+    with pytest.raises(checker.GovernanceError) as exc:
+        checker.validate_registry(registry)
+
+    assert exc.value.code == "untracked_source"
+    assert missing_source in exc.value.detail
+    assert git_calls == [
+        ["git", "ls-files", "-z"],
+        ["git", "ls-files", "-z"],
+    ]
+
+
 def test_validation_fails_closed_when_tracked_inventory_cannot_be_loaded(
     monkeypatch,
 ):

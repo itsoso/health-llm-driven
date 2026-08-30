@@ -11,7 +11,6 @@ import re
 import subprocess
 import sys
 from datetime import date
-from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -188,7 +187,6 @@ def _repo_file(relative: object, label: str) -> Path:
     return candidate
 
 
-@cache
 def _tracked_files() -> frozenset[str]:
     try:
         result = subprocess.run(
@@ -211,8 +209,10 @@ def _tracked_files() -> frozenset[str]:
     )
 
 
-def _require_tracked(relative: str, label: str) -> None:
-    _require(relative in _tracked_files(), "untracked_source", f"{label}: {relative}")
+def _require_tracked(
+    relative: str, label: str, tracked_files: frozenset[str]
+) -> None:
+    _require(relative in tracked_files, "untracked_source", f"{label}: {relative}")
 
 
 def _string_list(value: object, label: str, *, allow_empty: bool = False) -> list[str]:
@@ -240,11 +240,11 @@ def _validate_date(value: object, label: str) -> None:
         raise GovernanceError("invalid_date", f"{label}: {value}") from exc
 
 
-def _validate_sources(skill: dict[str, Any]) -> None:
+def _validate_sources(skill: dict[str, Any], tracked_files: frozenset[str]) -> None:
     sources = _string_list(skill.get("sources"), f"skills.{skill['id']}.sources")
     for source in sources:
         source_path = _repo_file(source, f"skills.{skill['id']}.sources")
-        _require_tracked(source, f"skills.{skill['id']}.sources")
+        _require_tracked(source, f"skills.{skill['id']}.sources", tracked_files)
         if skill["platforms"] != ["agent-neutral"] or not source.endswith("SKILL.md"):
             continue
         content = source_path.read_text(encoding="utf-8")
@@ -370,7 +370,9 @@ def _validate_adapter_contracts(
             _validate_adapter_semantics(skill_id, platform, content, contract)
 
 
-def _validate_skill(skill: object, seen: set[str]) -> dict[str, Any]:
+def _validate_skill(
+    skill: object, seen: set[str], tracked_files: frozenset[str]
+) -> dict[str, Any]:
     _require(
         isinstance(skill, dict), "invalid_skill", "each skills item must be an object"
     )
@@ -422,7 +424,7 @@ def _validate_skill(skill: object, seen: set[str]) -> dict[str, Any]:
     _string_list(skill.get("trigger_family"), f"skills.{skill_id}.trigger_family")
     _validate_date(skill.get("last_reviewed"), f"skills.{skill_id}.last_reviewed")
     _string_list(skill.get("evidence"), f"skills.{skill_id}.evidence")
-    _validate_sources(skill)
+    _validate_sources(skill, tracked_files)
     return skill
 
 
@@ -993,6 +995,7 @@ def _validate_local_skill_coverage(project_ids: set[str]) -> None:
 
 
 def validate_registry(registry: dict[str, Any]) -> dict[str, Any]:
+    tracked_files = _tracked_files()
     _require(
         registry.get("schema_version") == SCHEMA_VERSION,
         "schema_version",
@@ -1037,14 +1040,18 @@ def validate_registry(registry: dict[str, Any]) -> dict[str, Any]:
     trace_event_schema_path = _repo_file(
         registry["trace_event_schema"], "trace_event_schema"
     )
-    _require_tracked(registry["trace_event_schema"], "trace_event_schema")
+    _require_tracked(
+        registry["trace_event_schema"], "trace_event_schema", tracked_files
+    )
     _require(
         registry.get("benchmark_collector") == "scripts/agent_skill_benchmark.py",
         "benchmark_collector_path",
         str(registry.get("benchmark_collector")),
     )
     _repo_file(registry["benchmark_collector"], "benchmark_collector")
-    _require_tracked(registry["benchmark_collector"], "benchmark_collector")
+    _require_tracked(
+        registry["benchmark_collector"], "benchmark_collector", tracked_files
+    )
 
     skills_value = registry.get("skills")
     _require(
@@ -1053,7 +1060,7 @@ def validate_registry(registry: dict[str, Any]) -> dict[str, Any]:
         "skills must be a non-empty list",
     )
     seen: set[str] = set()
-    skills = [_validate_skill(item, seen) for item in skills_value]
+    skills = [_validate_skill(item, seen, tracked_files) for item in skills_value]
     by_id = {skill["id"]: skill for skill in skills}
     routers = [skill["id"] for skill in skills if skill["kind"] == "router"]
     _require(
