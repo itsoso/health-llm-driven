@@ -27,6 +27,9 @@ Usage:
 from __future__ import annotations
 
 import ast
+import importlib._bootstrap
+import importlib.util
+import os
 import re
 import sys
 from pathlib import Path
@@ -35,6 +38,48 @@ ROOT = Path(__file__).resolve().parent.parent
 BACKEND = ROOT / "backend"
 MOBILE = ROOT / "mobile"
 FRONTEND = ROOT / "frontend"
+SCRIPTS = ROOT / "scripts"
+
+def _load_system_map_import_helper():
+    """Bootstrap the trust root without consulting import search paths."""
+    helper_path = (SCRIPTS / "system_map_imports.py").resolve()
+    digest = 14695981039346656037
+    for byte in os.fsencode(str(ROOT)):
+        digest = ((digest ^ byte) * 1099511628211) & ((1 << 64) - 1)
+    helper_key = f"_reva_system_map_imports_{digest:016x}"
+
+    def require_canonical(module):
+        actual_path = getattr(module, "__file__", None)
+        try:
+            if actual_path is not None and os.path.samefile(actual_path, helper_path):
+                return module
+        except (OSError, TypeError, ValueError):
+            pass
+        raise ImportError(
+            "System Map import helper loaded from unexpected path: "
+            f"{actual_path!r}; expected {str(helper_path)!r}"
+        )
+
+    # Deliberately self-contained: importing a bootstrap helper here would
+    # recreate the trust gap this first hop closes. _load_unlocked owns partial
+    # sys.modules cleanup and spec._initializing under this shared module lock.
+    with importlib._bootstrap._ModuleLockManager(helper_key):
+        if helper_key in sys.modules:
+            return require_canonical(sys.modules[helper_key])
+        spec = importlib.util.spec_from_file_location(helper_key, helper_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"cannot load System Map import helper: {helper_path}")
+        module = importlib._bootstrap._load_unlocked(spec)
+        try:
+            return require_canonical(module)
+        except BaseException:
+            if sys.modules.get(helper_key) is module:
+                sys.modules.pop(helper_key, None)
+            raise
+
+
+_system_map_imports = _load_system_map_import_helper()
+load_repo_module = _system_map_imports.load_repo_module
 
 EXPECTED: dict = {
     "safety_rules": {
@@ -222,7 +267,7 @@ def find_manual_architecture_counts(text: str) -> list[str]:
     return [claim for _, claim in sorted(matches)]
 
 
-def main() -> int:
+def main(*, fresh_map: dict | None = None) -> int:
     failures: list[str] = []
 
     # 1. Safety rules per category
@@ -301,17 +346,19 @@ def main() -> int:
     #    代码不符即红 (跑 scripts/dump_system_map.py 重新生成即修)。见 docs/system-map/INDEX.md。
     try:
         import json
-        sys.path.insert(0, str(ROOT / "scripts"))
-        from dump_system_map import OUT as SYSMAP_OUT
-        from dump_system_map import build_map
-        fresh_map = build_map()
-        if not SYSMAP_OUT.exists():
+
+        dump_system_map = load_repo_module("dump_system_map", SCRIPTS)
+        if fresh_map is None:
+            fresh_map = dump_system_map.build_map()
+        if not dump_system_map.OUT.exists():
             failures.append(
                 "  system-map: docs/_generated/system-map.json 缺失, "
                 "跑 python scripts/dump_system_map.py 生成并提交"
             )
         else:
-            committed_map = json.loads(SYSMAP_OUT.read_text(encoding="utf-8"))
+            committed_map = json.loads(
+                dump_system_map.OUT.read_text(encoding="utf-8")
+            )
             if committed_map != fresh_map:
                 failures.append(
                     "  system-map: docs/_generated/system-map.json 与代码不符, "

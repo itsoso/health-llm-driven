@@ -13,8 +13,8 @@ agent-neutral rules live in:
 - `docs/design-agent-operating-harness.md`
 - `AGENTS.md` and `docs/governance/*`
 
-Read the relevant system-map context, source files, nearby tests, and active
-Dossier before planning implementation.
+Read relevant source files, nearby tests, and the active Dossier before planning
+implementation.
 
 ## Controller boundary
 
@@ -25,12 +25,14 @@ Dossier before planning implementation.
 - Capabilities such as systematic debugging, TDD, and verification add
   discipline; overlays such as safety or database review can block progress;
   neither category owns the workflow.
+- Activate `system-map` only when its task trigger is met and Router exposes it
+  in `deferred_by_phase.on_demand`; otherwise inspect known source and tests directly.
 - A release terminal is selected by target and occurs only after its Gates pass.
 
 ## Codex-native workflow
 
-1. **Scope:** inspect `AGENTS.md`, `docs/system-map/INDEX.md`, generated context,
-   the active Dossier, dirty files, open PRs, and exact acceptance evidence.
+1. **Scope:** inspect `AGENTS.md`, the active Dossier, relevant source and tests,
+   dirty files, open PRs, and exact acceptance evidence.
 2. **Plan:** define the smallest coherent tasks and cross-surface contracts.
    Keep one writer per shared file set.
 3. **Implement:** use Codex subagents only for independent bounded work.

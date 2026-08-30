@@ -2,9 +2,9 @@
 
 **状态：** active
 
-**版本：** 1.1
+**版本：** 2.0
 
-**最后复审：** 2026-08-29
+**最后复审：** 2026-08-30
 
 **机器真源：** `docs/governance/agent-skill-registry.json`
 
@@ -112,6 +112,10 @@ Router 不凭自由文本“顺手多加几个 Skill”。它先把任务归入�
 | `incident` | health-harness-orchestrator | 无 | systematic-debugging、回归验证 |
 | `release` | 一个目标对应的 Terminal | 无 | 发布前验证与目标端 Gate |
 
+`planning` 与 `verification` 是工作流阶段，不是 Router mode；唯一 mode 词汇固定为 `analysis|quick_fix|feature|implementation|incident|release`。
+
+Skill 激活阶段由注册表 `routing.activation_policy` 唯一裁决：Router、当前 controller/terminal、实际命中的 Overlay 与 authoring capability trigger 在 `immediate` 启动；incident 的 debugging 语义阶段为 `diagnosis`，但该模式将 diagnosis 设为 eager；System Map 为 `on_demand`；最小改动与 TDD 在 `implementation`；完成验证在 `verification`；feature delegate 只在 `S5` 激活。未知阶段或覆盖不完整由 checker fail-closed。
+
 模式选择标准：
 
 1. 只读理解、审计或报告为 `analysis`。
@@ -174,7 +178,15 @@ python3.12 scripts/check_agent_skill_governance.py recommend \
   --release-target mobile-ota
 ```
 
-推荐输出是机器合同：`controller_count` 只能为 0 或 1，Overlay 已去重，`selected_skills` 是本次最小选择。以下输入会以非零退出码失败：未知 mode、Overlay 或发布目标；release 缺少/重复目标；非 release 携带发布目标；注册文件缺失、来源缺失、角色冲突或 Codex 适配器含 Claude-only 指令。
+推荐输出是 `agent-skill-recommendation.v2` 机器合同：
+
+- 启动时只加载 `immediate_skills`；进入实际阶段时才按注册表 `routing.activation_policy.phases` 的顺序加载 `deferred_by_phase[phase]`。这两个字段是唯一加载依据。
+- `selected_skills` / `selected_skill_details` 保留 v1 的非 delegate 选择，即 Router、当前 controller/terminal、capability 与 Overlay；它们不包含 S5 delegate，也**不得驱动预载**。
+- `deferred_skills` / `deferred_skill_details` 只保留 delegate 的 v1 兼容语义，也**不得驱动预载**。
+- `activation_skills` / `activation_skill_details` 是 `immediate_skills` 加各 `deferred_by_phase` 的完整有序 union，只用于审计与确定性比较，不是预载清单。
+- detail 都带合法 `activation_phase`；immediate 与 phase-deferred 集合不重叠，union 等于 `activation_skills`。v1 选择顺序固定为 Router → controller/terminal → 注册表 route capability → 按 ID 排序的 authoring capability → 按 ID 排序的 Overlay；delegate 保留 route 顺序。`activation_skills` 先按上述选择顺序收集 immediate/eager 项，再按注册表 phase 顺序和各 phase 内选择顺序追加；`deferred_by_phase` 不按 JSON key 字母重排。
+
+`controller_count` 只能为 0 或 1。未知 mode、phase、Overlay、capability trigger 或发布目标，以及覆盖不全、角色冲突、adapter 漂移等输入均以非零退出码 fail-closed。
 
 Skill / plugin 治理任务应额外声明 capability trigger：
 
@@ -185,7 +197,7 @@ python3.12 scripts/check_agent_skill_governance.py recommend \
   --capability-trigger plugin-authoring
 ```
 
-`feature` 的 delegate 只出现在 `deferred_skills`；它不会在定义环预载，也不会计作第二个 controller。Product Pipeline 进入 S5 后才在同一父 run 中显式加载该 delegate。
+`feature` 的 delegate 出现在 `deferred_by_phase.S5`、`activation_skills` 和 v1 `deferred_skills`，不进入 v1 `selected_skills`；它不会在定义环预载，也不会计作第二个 controller。Product Pipeline 进入 S5 后才在同一父 run 中显式加载该 delegate。
 
 ## 7. 平台适配器
 

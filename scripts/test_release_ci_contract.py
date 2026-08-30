@@ -1,3 +1,4 @@
+import shlex
 from glob import glob
 from pathlib import Path
 
@@ -107,6 +108,37 @@ def test_docs_quality_is_mandatory_and_owns_lightweight_doc_gates():
     assert "check_secret_leaks.py" not in backend_runs
     assert "check_system_map.py" not in backend_runs
     assert "check_dossier_consistency.py" not in backend_runs
+
+
+def test_docs_quality_runs_the_system_map_harness_in_isolation():
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["docs-quality"]["steps"]
+    install_step = next(
+        step
+        for step in steps
+        if "scripts/system-map-requirements.txt" in str(step.get("run") or "")
+    )
+    install_command = str(install_step["run"])
+    assert "pytest==9.1.1" in install_command
+
+    harness_step = next(
+        step
+        for step in steps
+        if "scripts/test_system_map_harness.py" in str(step.get("run") or "")
+    )
+    command = shlex.split(str(harness_step["run"]))
+    assert command[:3] == ["python", "-m", "pytest"]
+    assert command[command.index("-c") + 1] == "/dev/null"
+    assert command[command.index("--rootdir") + 1] == "."
+    assert "--noconftest" in command
+    assert "-o" in command and "addopts=" in command
+    assert "-p" in command and "no:cacheprovider" in command
+    assert not any(argument.startswith("--cov") for argument in command)
+
+    environment = harness_step["env"]
+    assert environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] == "1"
+    assert environment["PYTEST_ADDOPTS"] == ""
+    assert environment["PYTEST_PLUGINS"] == ""
 
 
 def test_runtime_jobs_are_conditioned_on_conservative_scope_outputs():
