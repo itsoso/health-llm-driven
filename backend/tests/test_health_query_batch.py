@@ -70,7 +70,7 @@ def test_single_query_tool_description_does_not_claim_calendar_days_aliases():
 
     assert '问"昨天" → days=1' not in description
     assert "不能表示昨天" in description
-    assert "不能表达昨天/上周/去年" in days_description
+    assert "不能表达其他昨天/上周/去年" in days_description
 
 
 def test_query_schema_describes_only_rolling_upload_and_batch_windows():
