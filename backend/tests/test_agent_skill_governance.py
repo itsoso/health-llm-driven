@@ -3,9 +3,11 @@ from __future__ import annotations
 import ast
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
+from functools import cache
 from pathlib import Path
 
 import pytest
@@ -83,6 +85,20 @@ def _noop_twin_cache():
 def _registry() -> dict:
     assert REGISTRY.is_file(), "machine-readable Agent Skill registry is required"
     return json.loads(REGISTRY.read_text(encoding="utf-8"))
+
+
+@cache
+def _tracked_project_files() -> frozenset[str]:
+    result = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=ROOT,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, os.fsdecode(result.stderr)
+    return frozenset(
+        os.fsdecode(relative) for relative in result.stdout.split(b"\0") if relative
+    )
 
 
 def _recommend(*args: str) -> dict:
@@ -300,16 +316,92 @@ def test_every_standard_project_skill_is_owned_versioned_and_evidenced():
 
 
 def test_every_registered_project_source_is_committed_not_only_present_locally():
+    tracked_files = _tracked_project_files()
     for skill in _registry()["skills"]:
         for source in skill["sources"]:
-            result = subprocess.run(
-                ["git", "ls-files", "--error-unmatch", source],
-                cwd=ROOT,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            assert result.returncode == 0, (skill["id"], source)
+            assert source in tracked_files, (skill["id"], source)
+
+
+def test_validation_queries_the_tracked_file_inventory_once(monkeypatch):
+    checker = _checker_module()
+    real_run = checker.subprocess.run
+    git_calls: list[list[str]] = []
+
+    def recording_run(command, *args, **kwargs):
+        if command[:2] == ["git", "ls-files"]:
+            git_calls.append(command)
+        return real_run(command, *args, **kwargs)
+
+    monkeypatch.setattr(checker.subprocess, "run", recording_run)
+
+    checker.validate_registry(_registry())
+
+    assert git_calls == [["git", "ls-files", "-z"]]
+
+
+def test_validation_fails_closed_when_tracked_inventory_cannot_be_loaded(
+    monkeypatch,
+):
+    checker = _checker_module()
+
+    def failing_git(command, *args, **kwargs):
+        return subprocess.CompletedProcess(
+            command,
+            returncode=128,
+            stdout=b"",
+            stderr=b"fatal: tracked inventory unavailable",
+        )
+
+    monkeypatch.setattr(checker.subprocess, "run", failing_git)
+
+    with pytest.raises(checker.GovernanceError) as exc:
+        checker.validate_registry(_registry())
+
+    assert exc.value.code == "tracked_file_inventory_failed"
+
+
+def test_untracked_source_still_blocks_cached_inventory(monkeypatch):
+    checker = _checker_module()
+    registry = _registry()
+    missing_source = registry["skills"][0]["sources"][0]
+    tracked_files = _tracked_project_files() - {missing_source}
+    inventory = b"\0".join(os.fsencode(path) for path in sorted(tracked_files)) + b"\0"
+
+    def inventory_without_source(command, *args, **kwargs):
+        return subprocess.CompletedProcess(
+            command,
+            returncode=0,
+            stdout=inventory,
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(checker.subprocess, "run", inventory_without_source)
+
+    with pytest.raises(checker.GovernanceError) as exc:
+        checker.validate_registry(registry)
+
+    assert exc.value.code == "untracked_source"
+    assert missing_source in exc.value.detail
+
+
+def test_tracked_file_inventory_preserves_paths_with_spaces(monkeypatch):
+    checker = _checker_module()
+    assert hasattr(checker, "_tracked_files"), "tracked inventory API is required"
+    inventory = b"plain.py\0docs/path with spaces.md\0"
+
+    def spaced_inventory(command, *args, **kwargs):
+        return subprocess.CompletedProcess(
+            command,
+            returncode=0,
+            stdout=inventory,
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(checker.subprocess, "run", spaced_inventory)
+
+    assert checker._tracked_files() == frozenset(
+        {"plain.py", "docs/path with spaces.md"}
+    )
 
 
 def test_shared_protocol_skills_are_agent_neutral_not_implicit_platform_copies():
@@ -721,19 +813,13 @@ def test_run_event_schema_is_closed_and_cannot_store_raw_health_or_prompt_text()
 
 def test_registry_wires_the_append_only_trace_schema_and_benchmark_collector():
     registry = _registry()
+    tracked_files = _tracked_project_files()
 
     assert registry["trace_event_schema"] == str(TRACE_EVENT_SCHEMA.relative_to(ROOT))
     assert registry["benchmark_collector"] == str(BENCHMARK_COLLECTOR.relative_to(ROOT))
     for path in (TRACE_EVENT_SCHEMA, BENCHMARK_COLLECTOR):
         assert path.is_file()
-        tracked = subprocess.run(
-            ["git", "ls-files", "--error-unmatch", str(path.relative_to(ROOT))],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        assert tracked.returncode == 0, path
+        assert str(path.relative_to(ROOT)) in tracked_files, path
 
 
 @pytest.mark.parametrize(

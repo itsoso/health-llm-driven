@@ -6,10 +6,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
 from datetime import date
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -186,15 +188,31 @@ def _repo_file(relative: object, label: str) -> Path:
     return candidate
 
 
-def _require_tracked(relative: str, label: str) -> None:
-    result = subprocess.run(
-        ["git", "ls-files", "--error-unmatch", "--", relative],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
+@cache
+def _tracked_files() -> frozenset[str]:
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "-z"],
+            cwd=ROOT,
+            capture_output=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise GovernanceError(
+            "tracked_file_inventory_failed", "git ls-files could not start"
+        ) from exc
+    _require(
+        result.returncode == 0,
+        "tracked_file_inventory_failed",
+        f"git ls-files exited {result.returncode}",
     )
-    _require(result.returncode == 0, "untracked_source", f"{label}: {relative}")
+    return frozenset(
+        os.fsdecode(relative) for relative in result.stdout.split(b"\0") if relative
+    )
+
+
+def _require_tracked(relative: str, label: str) -> None:
+    _require(relative in _tracked_files(), "untracked_source", f"{label}: {relative}")
 
 
 def _string_list(value: object, label: str, *, allow_empty: bool = False) -> list[str]:
