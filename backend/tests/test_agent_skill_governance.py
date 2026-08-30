@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 from functools import cache
 from pathlib import Path
 from types import SimpleNamespace
@@ -528,16 +529,43 @@ def test_tooling_pytest_guard_fails_for_dynamically_loaded_application_module(
     assert "app.dynamic_probe" in result.stdout + result.stderr
 
 
+def test_tooling_pytest_guard_allows_safe_imports_and_static_source_reads():
+    guard = _tooling_pytest_guard_module()
+    config = _GuardCleanupConfig()
+    app_source = ROOT / "backend" / "app" / "__init__.py"
+    guard.pytest_sessionstart(SimpleNamespace(config=config))
+    try:
+        assert importlib.import_module("fractions").Fraction(1, 2)
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module("safe_missing_dynamic_probe")
+        assert app_source.read_text(encoding="utf-8")
+        assert compile("VALUE = 1\n", str(app_source), "exec")
+        assert guard._active_observed_modules[config] == set()
+    finally:
+        config.cleanup()
+
+
 def test_tooling_pytest_guard_fails_for_direct_application_source_loaders(tmp_path):
     runner = _tooling_pytest_runner_module()
+    namespace = tmp_path / "app" / "namespace_probe"
+    namespace.mkdir(parents=True)
     detached_source = tmp_path / "detached_source.py"
     detached_source.write_text("VALUE = 1\n", encoding="utf-8")
+    invalid_source = tmp_path / "direct_syntax_error.py"
+    invalid_source.write_text("def broken(:\n", encoding="utf-8")
     backend_app_source = ROOT / "backend" / "app" / "__init__.py"
+    backend_app_alias = tmp_path / "backend_app_alias.py"
+    backend_app_alias.symlink_to(backend_app_source)
     safe_source = ROOT / "scripts" / "run_tooling_pytests.py"
     probe = tmp_path / "test_direct_application_source_loader.py"
     probe.write_text(
+        "import importlib\n"
+        "import importlib.machinery\n"
         "import importlib.util\n"
         "import sys\n"
+        "from pathlib import Path\n"
+        "\n"
+        "import pytest\n"
         "\n"
         "def load_detached(name, path):\n"
         "    spec = importlib.util.spec_from_file_location(name, path)\n"
@@ -546,10 +574,31 @@ def test_tooling_pytest_guard_fails_for_direct_application_source_loaders(tmp_pa
         "    spec.loader.exec_module(module)\n"
         "    assert name not in sys.modules\n"
         "\n"
+        "class DeletingLoader(importlib.machinery.SourceFileLoader):\n"
+        "    def get_code(self, fullname):\n"
+        "        code = super().get_code(fullname)\n"
+        "        Path(self.path).unlink()\n"
+        "        return code\n"
+        "\n"
         "def test_direct_application_source_loader():\n"
+        "    namespace = importlib.import_module('app.namespace_probe')\n"
+        "    assert namespace.__spec__ is not None\n"
+        "    sys.modules.pop('app.namespace_probe')\n"
+        "    with pytest.raises(ModuleNotFoundError):\n"
+        "        importlib.import_module('app.missing_dynamic_probe')\n"
+        "    sys.modules.pop('app', None)\n"
         f"    load_detached('app.direct_loader_probe', {str(detached_source)!r})\n"
         f"    load_detached('backend_app_path_probe', {str(backend_app_source)!r})\n"
-        f"    load_detached('tooling_safe_loader_probe', {str(safe_source)!r})\n",
+        f"    load_detached('tooling_safe_loader_probe', {str(safe_source)!r})\n"
+        "    with pytest.raises(SyntaxError):\n"
+        f"        load_detached('app.direct_syntax_probe', {str(invalid_source)!r})\n"
+        "    name = 'safe_deleted_backend_alias_probe'\n"
+        f"    loader = DeletingLoader(name, {str(backend_app_alias)!r})\n"
+        "    spec = importlib.util.spec_from_loader(name, loader)\n"
+        "    assert spec is not None\n"
+        "    module = importlib.util.module_from_spec(spec)\n"
+        "    loader.exec_module(module)\n"
+        "    assert not Path(loader.path).exists()\n",
         encoding="utf-8",
     )
     result = subprocess.run(
@@ -563,8 +612,12 @@ def test_tooling_pytest_guard_fails_for_direct_application_source_loaders(tmp_pa
 
     output = result.stdout + result.stderr
     assert result.returncode != 0
+    assert "app.namespace_probe" in output
+    assert "app.missing_dynamic_probe" in output
     assert "app.direct_loader_probe" in output
     assert "backend_app_path_probe" in output
+    assert "app.direct_syntax_probe" in output
+    assert "safe_deleted_backend_alias_probe" in output
     assert "tooling_safe_loader_probe" not in output
 
 
@@ -607,6 +660,36 @@ def test_tooling_pytest_guard_fails_closed_on_source_identity_errors(monkeypatch
 
     assert guard._is_backend_app_source(app_source)
     assert not guard._is_backend_app_source(safe_source)
+
+
+def test_tooling_pytest_guard_uses_tristate_loader_identity_and_fails_closed(
+    tmp_path,
+    monkeypatch,
+):
+    guard = _tooling_pytest_guard_module()
+    app_source = ROOT / "backend" / "app" / "__init__.py"
+    safe_source = ROOT / "scripts" / "run_tooling_pytests.py"
+    missing_source = tmp_path / "deleted_loader_source.py"
+
+    assert guard._classify_backend_app_source(app_source) == guard._PATH_INSIDE
+    assert guard._classify_backend_app_source(safe_source) == guard._PATH_OUTSIDE
+    assert guard._classify_backend_app_source(missing_source) == guard._PATH_UNKNOWN
+
+    config = _GuardCleanupConfig()
+    guard.pytest_sessionstart(SimpleNamespace(config=config))
+    code = compile("VALUE = 1\n", "<unknown-loader-probe>", "exec")
+    monkeypatch.setattr(
+        guard,
+        "_source_loader_context",
+        lambda _code: (True, "safe_unknown_loader_probe", missing_source),
+    )
+    try:
+        guard._handle_audit_event("exec", (code,))
+        assert guard._active_observed_modules[config] == {
+            "safe_unknown_loader_probe"
+        }
+    finally:
+        config.cleanup()
 
 
 def test_tooling_pytest_guard_audit_listener_is_active_only_during_session(tmp_path):
@@ -698,6 +781,8 @@ def test_tooling_pytest_guard_reuses_one_process_audit_dispatcher(tmp_path):
         "    return real_addaudithook(hook)\n"
         "sys.addaudithook = counting_addaudithook\n"
         "modules = []\n"
+        "specs = []\n"
+        "configs = []\n"
         "try:\n"
         "    for index in range(3):\n"
         "        spec = importlib.util.spec_from_file_location(\n"
@@ -707,15 +792,213 @@ def test_tooling_pytest_guard_reuses_one_process_audit_dispatcher(tmp_path):
         "        module = importlib.util.module_from_spec(spec)\n"
         "        spec.loader.exec_module(module)\n"
         "        modules.append(module)\n"
+        "        specs.append(spec)\n"
+        "    first = Config()\n"
+        "    modules[0].pytest_sessionstart(SimpleNamespace(config=first))\n"
+        "    configs.append(first)\n"
+        "    token = modules[0]._AUDIT_LISTENER_TOKEN\n"
+        "    active = modules[0]._active_observed_modules\n"
+        "    observer = modules[0]._IMPORT_ATTEMPT_OBSERVER\n"
+        "    session_lock = modules[0]._SESSION_STATE_LOCK\n"
+        "    state = getattr(sys, modules[0]._PROCESS_AUDIT_DISPATCHER_ATTR)\n"
+        "    old_listener = state['listeners'][token]\n"
+        "    sys.audit('import', 'app.before_same_reexec', None, (), (), ())\n"
+        "    specs[0].loader.exec_module(modules[0])\n"
+        "    assert modules[0]._AUDIT_LISTENER_TOKEN is token\n"
+        "    assert modules[0]._active_observed_modules is active\n"
+        "    assert modules[0]._IMPORT_ATTEMPT_OBSERVER is observer\n"
+        "    assert modules[0]._SESSION_STATE_LOCK is session_lock\n"
+        "    assert 'app.before_same_reexec' in active[first]\n"
+        "    second = Config()\n"
+        "    modules[0].pytest_sessionstart(SimpleNamespace(config=second))\n"
+        "    configs.append(second)\n"
+        "    assert state['listeners'][token] is modules[0]._audit_listener\n"
+        "    assert state['listeners'][token] is not old_listener\n"
+        "    assert sum(item is observer for item in sys.meta_path) == 1\n"
+        "    for module in modules[1:]:\n"
         "        config = Config()\n"
         "        module.pytest_sessionstart(SimpleNamespace(config=config))\n"
-        "        config.cleanup()\n"
+        "        configs.append(config)\n"
+        "    assert len(added_hooks) == 1\n"
+        "    assert state['dispatcher'] is added_hooks[0]\n"
+        "    assert len(state['listeners']) == 3\n"
+        "    assert all(\n"
+        "        any(item is module._IMPORT_ATTEMPT_OBSERVER for item in sys.meta_path)\n"
+        "        for module in modules\n"
+        "    )\n"
+        "    sys.audit('import', 'app.multi_module_probe', None, (), (), ())\n"
+        "    assert active[first] == {\n"
+        "        'app.before_same_reexec', 'app.multi_module_probe'\n"
+        "    }\n"
+        "    assert active[second] == {'app.multi_module_probe'}\n"
+        "    assert all(\n"
+        "        'app.multi_module_probe' in module._active_observed_modules[config]\n"
+        "        for module, config in zip(modules[1:], configs[2:], strict=True)\n"
+        "    )\n"
+        "    configs[0].cleanup()\n"
+        "    assert token in state['listeners']\n"
+        "    assert any(item is observer for item in sys.meta_path)\n"
+        "    assert len(state['listeners']) == 3\n"
+        "    configs[1].cleanup()\n"
+        "    assert token not in state['listeners']\n"
+        "    assert not any(\n"
+        "        item is observer for item in sys.meta_path\n"
+        "    )\n"
+        "    assert len(state['listeners']) == 2\n"
+        "    configs[2].cleanup()\n"
+        "    assert len(state['listeners']) == 1\n"
+        "    configs[3].cleanup()\n"
+        "    assert state['listeners'] == {}\n"
+        "    assert all(\n"
+        "        not any(item is module._IMPORT_ATTEMPT_OBSERVER for item in sys.meta_path)\n"
+        "        for module in modules\n"
+        "    )\n"
         "finally:\n"
+        "    for config in configs:\n"
+        "        config.cleanup()\n"
         "    sys.addaudithook = real_addaudithook\n"
-        "assert len(added_hooks) == 1\n"
-        "state = getattr(sys, modules[0]._PROCESS_AUDIT_DISPATCHER_ATTR)\n"
-        "assert state['dispatcher'] is added_hooks[0]\n"
-        "assert state['listeners'] == {}\n",
+        "assert len(added_hooks) == 1\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("dispatcher_kind", ["callable", "noncallable"])
+def test_tooling_pytest_guard_rejects_unverified_dispatcher_state(
+    dispatcher_kind,
+):
+    spec = importlib.util.spec_from_file_location(
+        f"fake_dispatcher_guard_{dispatcher_kind}", TOOLING_PYTEST_GUARD
+    )
+    assert spec and spec.loader
+    guard = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(guard)
+    state_attribute = f"_fake_guard_state_{dispatcher_kind}_{id(guard)}"
+    guard._PROCESS_AUDIT_DISPATCHER_ATTR = state_attribute
+    dispatcher = (
+        (lambda _event, _args: None)
+        if dispatcher_kind == "callable"
+        else object()
+    )
+    state = {
+        "version": guard._AUDIT_DISPATCHER_VERSION,
+        "dispatcher": dispatcher,
+        "listeners": {},
+        "lock": threading.RLock(),
+        "registration_state": "installed",
+    }
+    setattr(sys, state_attribute, state)
+    config = _GuardCleanupConfig()
+    try:
+        with pytest.raises(RuntimeError, match="audit dispatcher|incompatible"):
+            guard.pytest_sessionstart(SimpleNamespace(config=config))
+        assert guard._active_observed_modules == {}
+        assert state["listeners"] == {}
+    finally:
+        config.cleanup()
+        delattr(sys, state_attribute)
+
+
+def test_tooling_pytest_guard_serializes_first_audit_registration(tmp_path):
+    runner = _tooling_pytest_runner_module()
+    probe = tmp_path / "concurrent_audit_registration_probe.py"
+    probe.write_text(
+        "import importlib.util\n"
+        "import sys\n"
+        "import threading\n"
+        "from pathlib import Path\n"
+        "from types import SimpleNamespace\n"
+        f"guard_path = Path({str(TOOLING_PYTEST_GUARD)!r})\n"
+        "\n"
+        "class Config:\n"
+        "    def __init__(self):\n"
+        "        self.cleanups = []\n"
+        "    def add_cleanup(self, cleanup):\n"
+        "        self.cleanups.append(cleanup)\n"
+        "    def cleanup(self):\n"
+        "        while self.cleanups:\n"
+        "            self.cleanups.pop()()\n"
+        "\n"
+        "def load_guard(name):\n"
+        "    spec = importlib.util.spec_from_file_location(name, guard_path)\n"
+        "    assert spec and spec.loader\n"
+        "    module = importlib.util.module_from_spec(spec)\n"
+        "    spec.loader.exec_module(module)\n"
+        "    return module\n"
+        "\n"
+        "first_guard = load_guard('concurrent_guard_first')\n"
+        "second_guard = load_guard('concurrent_guard_second')\n"
+        "first_config = Config()\n"
+        "second_config = Config()\n"
+        "entered_add_hook = threading.Event()\n"
+        "release_add_hook = threading.Event()\n"
+        "second_started = threading.Event()\n"
+        "second_lock_attempted = threading.Event()\n"
+        "second_done = threading.Event()\n"
+        "errors = []\n"
+        "class ProbeRLock(type(threading.RLock())):\n"
+        "    def __enter__(self):\n"
+        "        if threading.current_thread().name == 'second-register':\n"
+        "            second_lock_attempted.set()\n"
+        "        return super().__enter__()\n"
+        "state = {\n"
+        "    'version': first_guard._AUDIT_DISPATCHER_VERSION,\n"
+        "    'dispatcher': None,\n"
+        "    'listeners': {},\n"
+        "    'lock': ProbeRLock(),\n"
+        "    'registration_state': 'unregistered',\n"
+        "}\n"
+        "setattr(sys, first_guard._PROCESS_AUDIT_DISPATCHER_ATTR, state)\n"
+        "real_addaudithook = sys.addaudithook\n"
+        "def blocking_addaudithook(hook):\n"
+        "    entered_add_hook.set()\n"
+        "    assert release_add_hook.wait(5)\n"
+        "    return real_addaudithook(hook)\n"
+        "sys.addaudithook = blocking_addaudithook\n"
+        "def start_first():\n"
+        "    try:\n"
+        "        first_guard.pytest_sessionstart(SimpleNamespace(config=first_config))\n"
+        "    except BaseException as error:\n"
+        "        errors.append(error)\n"
+        "def start_second():\n"
+        "    second_started.set()\n"
+        "    try:\n"
+        "        second_guard.pytest_sessionstart(SimpleNamespace(config=second_config))\n"
+        "        sys.audit('import', 'app.concurrent_window_probe', None, (), (), ())\n"
+        "    except BaseException as error:\n"
+        "        errors.append(error)\n"
+        "    finally:\n"
+        "        second_done.set()\n"
+        "first_thread = threading.Thread(target=start_first, name='first-register')\n"
+        "second_thread = threading.Thread(target=start_second, name='second-register')\n"
+        "first_thread.start()\n"
+        "assert entered_add_hook.wait(5)\n"
+        "second_thread.start()\n"
+        "assert second_started.wait(5)\n"
+        "assert second_lock_attempted.wait(5)\n"
+        "completed_during_install = second_done.is_set()\n"
+        "release_add_hook.set()\n"
+        "first_thread.join(5)\n"
+        "second_thread.join(5)\n"
+        "sys.addaudithook = real_addaudithook\n"
+        "assert not first_thread.is_alive()\n"
+        "assert not second_thread.is_alive()\n"
+        "assert not completed_during_install\n"
+        "assert errors == []\n"
+        "assert 'app.concurrent_window_probe' in first_guard._active_observed_modules[first_config]\n"
+        "assert 'app.concurrent_window_probe' in second_guard._active_observed_modules[second_config]\n"
+        "first_config.cleanup()\n"
+        "second_config.cleanup()\n",
         encoding="utf-8",
     )
 
@@ -793,6 +1076,59 @@ def test_tooling_pytest_guard_audit_callback_records_internal_errors(monkeypatch
         }
     finally:
         config.cleanup()
+
+
+@pytest.mark.parametrize("error_type", [KeyboardInterrupt, SystemExit])
+def test_tooling_pytest_guard_audit_callback_propagates_control_flow(
+    monkeypatch,
+    error_type,
+):
+    guard = _tooling_pytest_guard_module()
+    config = _GuardCleanupConfig()
+    guard.pytest_sessionstart(SimpleNamespace(config=config))
+
+    def interrupt_audit_handling(_event, _args):
+        raise error_type()
+
+    monkeypatch.setattr(guard, "_handle_audit_event", interrupt_audit_handling)
+    try:
+        with pytest.raises(error_type):
+            sys.audit("import", "safe.control_flow_probe", None, (), (), ())
+        assert guard._active_observed_modules[config] == set()
+    finally:
+        config.cleanup()
+
+
+def test_tooling_pytest_guard_snapshots_sys_modules_during_observation(monkeypatch):
+    guard = _tooling_pytest_guard_module()
+    mutation_requested = threading.Event()
+    mutation_done = threading.Event()
+    module_name = "safe.concurrent_sys_modules_probe"
+    first_call = True
+
+    def mutate_modules():
+        assert mutation_requested.wait(5)
+        sys.modules[module_name] = SimpleNamespace()
+        mutation_done.set()
+
+    def allow_all_modules(_module_name):
+        nonlocal first_call
+        if first_call:
+            first_call = False
+            mutation_requested.set()
+            assert mutation_done.wait(5)
+        return False
+
+    worker = threading.Thread(target=mutate_modules)
+    worker.start()
+    monkeypatch.setattr(guard, "is_forbidden_module_name", allow_all_modules)
+    try:
+        guard._observe_current_modules()
+    finally:
+        worker.join(5)
+        sys.modules.pop(module_name, None)
+
+    assert not worker.is_alive()
 
 
 def test_tooling_pytest_guard_rolls_back_when_cleanup_registration_fails():
