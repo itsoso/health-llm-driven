@@ -6,6 +6,7 @@ from __future__ import annotations
 import builtins
 import importlib
 import importlib.machinery
+import os
 import sys
 from pathlib import Path
 
@@ -15,10 +16,10 @@ import pytest
 FORBIDDEN_MODULE_PREFIXES = ("app", "main", "backend.app", "backend.main")
 FORBIDDEN_FIXTURES = frozenset({"auth_user_and_headers", "client", "db"})
 BACKEND_APP_ROOT = Path(__file__).resolve().parents[1] / "backend" / "app"
-_ORIGINAL_IMPORT = builtins.__import__
-_ORIGINAL_IMPORT_MODULE = importlib.import_module
-_ORIGINAL_SOURCE_EXEC_MODULE = importlib.machinery.SourceFileLoader.exec_module
-_observed_forbidden_modules: set[str] = set()
+_delegated_import = builtins.__import__
+_delegated_import_module = importlib.import_module
+_delegated_source_exec_module = importlib.machinery.SourceFileLoader.exec_module
+_active_observed_modules: dict[object, set[str]] = {}
 
 
 def is_forbidden_module_name(module_name: str) -> bool:
@@ -28,9 +29,14 @@ def is_forbidden_module_name(module_name: str) -> bool:
     )
 
 
+def _record_forbidden_module(module_name: str) -> None:
+    for observed_modules in tuple(_active_observed_modules.values()):
+        observed_modules.add(module_name)
+
+
 def _record_loaded_module(module_name: str) -> None:
     if is_forbidden_module_name(module_name) and module_name in sys.modules:
-        _observed_forbidden_modules.add(module_name)
+        _record_forbidden_module(module_name)
 
 
 def _absolute_import_name(
@@ -45,7 +51,7 @@ def _absolute_import_name(
 
 
 def _tracking_import(name, globals=None, locals=None, fromlist=(), level=0):
-    module = _ORIGINAL_IMPORT(name, globals, locals, fromlist, level)
+    module = _delegated_import(name, globals, locals, fromlist, level)
     absolute_name = _absolute_import_name(name, globals, level)
     _record_loaded_module(absolute_name)
     for imported_name in fromlist or ():
@@ -56,57 +62,103 @@ def _tracking_import(name, globals=None, locals=None, fromlist=(), level=0):
 
 
 def _tracking_import_module(name: str, package: str | None = None):
-    module = _ORIGINAL_IMPORT_MODULE(name, package)
+    module = _delegated_import_module(name, package)
     _record_loaded_module(module.__name__)
     return module
 
 
+def _is_lexically_within(path: Path, root: Path) -> bool:
+    try:
+        path_parts = tuple(part.casefold() for part in path.parts)
+        root_parts = tuple(part.casefold() for part in root.parts)
+    except (AttributeError, TypeError):
+        return False
+    return path_parts[: len(root_parts)] == root_parts
+
+
 def _is_backend_app_source(path: object) -> bool:
     try:
-        return Path(path).resolve().is_relative_to(BACKEND_APP_ROOT)
-    except (OSError, TypeError):
+        source = Path(path)
+        absolute_source = Path(os.path.abspath(source))
+    except (OSError, TypeError, ValueError):
         return False
+
+    identity_unavailable = False
+    source_candidates = [absolute_source]
+    try:
+        resolved_source = source.resolve()
+    except (OSError, RuntimeError):
+        identity_unavailable = True
+    else:
+        if resolved_source != absolute_source:
+            source_candidates.append(resolved_source)
+
+    for candidate in source_candidates:
+        for ancestor in (candidate, *candidate.parents):
+            try:
+                if os.path.samefile(ancestor, BACKEND_APP_ROOT):
+                    return True
+            except OSError:
+                identity_unavailable = True
+
+    if not identity_unavailable:
+        return False
+    return any(
+        _is_lexically_within(candidate, BACKEND_APP_ROOT)
+        for candidate in source_candidates
+    )
 
 
 def _tracking_source_exec_module(loader, module) -> None:
     module_name = getattr(module, "__name__", "")
     source_path = getattr(loader, "path", None)
     if is_forbidden_module_name(module_name) or _is_backend_app_source(source_path):
-        _observed_forbidden_modules.add(module_name or str(source_path))
-    _ORIGINAL_SOURCE_EXEC_MODULE(loader, module)
+        _record_forbidden_module(module_name or str(source_path))
+    _delegated_source_exec_module(loader, module)
 
 
 def _observe_current_modules() -> None:
-    _observed_forbidden_modules.update(
-        name for name in sys.modules if is_forbidden_module_name(name)
-    )
+    for module_name in sys.modules:
+        if is_forbidden_module_name(module_name):
+            _record_forbidden_module(module_name)
 
 
-def loaded_forbidden_module_names() -> tuple[str, ...]:
+def loaded_forbidden_module_names(config: object) -> tuple[str, ...]:
     _observe_current_modules()
-    return tuple(sorted(_observed_forbidden_modules))
+    return tuple(sorted(_active_observed_modules.get(config, ())))
 
 
-def pytest_sessionstart() -> None:
-    _observed_forbidden_modules.clear()
+def pytest_sessionstart(session) -> None:
+    install_hooks = not _active_observed_modules
+    _active_observed_modules[session.config] = set()
+    if install_hooks:
+        global _delegated_import
+        global _delegated_import_module
+        global _delegated_source_exec_module
+        _delegated_import = builtins.__import__
+        _delegated_import_module = importlib.import_module
+        _delegated_source_exec_module = (
+            importlib.machinery.SourceFileLoader.exec_module
+        )
+        builtins.__import__ = _tracking_import
+        importlib.import_module = _tracking_import_module
+        importlib.machinery.SourceFileLoader.exec_module = _tracking_source_exec_module
     _observe_current_modules()
-    builtins.__import__ = _tracking_import
-    importlib.import_module = _tracking_import_module
-    importlib.machinery.SourceFileLoader.exec_module = _tracking_source_exec_module
 
 
 def _restore_import_functions() -> None:
     if builtins.__import__ is _tracking_import:
-        builtins.__import__ = _ORIGINAL_IMPORT
+        builtins.__import__ = _delegated_import
     if importlib.import_module is _tracking_import_module:
-        importlib.import_module = _ORIGINAL_IMPORT_MODULE
+        importlib.import_module = _delegated_import_module
     if importlib.machinery.SourceFileLoader.exec_module is _tracking_source_exec_module:
-        importlib.machinery.SourceFileLoader.exec_module = _ORIGINAL_SOURCE_EXEC_MODULE
+        importlib.machinery.SourceFileLoader.exec_module = (
+            _delegated_source_exec_module
+        )
 
 
 def pytest_sessionfinish(session) -> None:
-    forbidden = loaded_forbidden_module_names()
-    _restore_import_functions()
+    forbidden = loaded_forbidden_module_names(session.config)
     if not forbidden:
         return
     if session.exitstatus == pytest.ExitCode.OK:
@@ -119,5 +171,7 @@ def pytest_sessionfinish(session) -> None:
         )
 
 
-def pytest_unconfigure() -> None:
-    _restore_import_functions()
+def pytest_unconfigure(config) -> None:
+    _active_observed_modules.pop(config, None)
+    if not _active_observed_modules:
+        _restore_import_functions()

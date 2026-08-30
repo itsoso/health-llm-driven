@@ -578,6 +578,230 @@ def test_tooling_pytest_guard_allows_direct_safe_script_loader(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def _run_direct_source_loader_probe(
+    tmp_path: Path,
+    *,
+    module_name: str,
+    source_path: Path,
+) -> subprocess.CompletedProcess[str]:
+    runner = _tooling_pytest_runner_module()
+    probe = tmp_path / f"test_{module_name}.py"
+    probe.write_text(
+        "import importlib.util\n"
+        "\n"
+        "def test_direct_source_loader():\n"
+        f"    name = {module_name!r}\n"
+        f"    spec = importlib.util.spec_from_file_location(name, {str(source_path)!r})\n"
+        "    assert spec and spec.loader\n"
+        "    module = importlib.util.module_from_spec(spec)\n"
+        "    spec.loader.exec_module(module)\n",
+        encoding="utf-8",
+    )
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", *runner.PYTEST_OPTIONS, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_tooling_pytest_guard_matches_backend_app_source_by_filesystem_identity(
+    tmp_path,
+):
+    if sys.platform != "darwin":
+        pytest.skip("case-preserving filesystem alias is a macOS regression")
+    app_source = ROOT / "backend" / "app" / "__init__.py"
+    alias_parts = list(app_source.parts)
+    alias_parts[1] = alias_parts[1].upper()
+    case_variant_alias = Path(*alias_parts)
+    try:
+        same_file = os.path.samefile(case_variant_alias, app_source)
+    except OSError:
+        same_file = False
+    if case_variant_alias == app_source or not same_file:
+        pytest.skip("the current filesystem has no case-variant alias")
+
+    result = _run_direct_source_loader_probe(
+        tmp_path,
+        module_name="case_variant_backend_app_probe",
+        source_path=case_variant_alias,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode != 0, output
+    assert "case_variant_backend_app_probe" in output
+
+
+def test_tooling_pytest_guard_matches_symlinked_backend_app_source(tmp_path):
+    app_source = ROOT / "backend" / "app" / "__init__.py"
+    symlink = tmp_path / "backend_app_alias.py"
+    symlink.symlink_to(app_source)
+
+    result = _run_direct_source_loader_probe(
+        tmp_path,
+        module_name="symlinked_backend_app_probe",
+        source_path=symlink,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode != 0, output
+    assert "symlinked_backend_app_probe" in output
+
+
+def test_tooling_pytest_guard_fails_closed_on_source_identity_errors(monkeypatch):
+    guard = _tooling_pytest_guard_module()
+    app_source = ROOT / "backend" / "app" / "__init__.py"
+    safe_source = ROOT / "scripts" / "run_tooling_pytests.py"
+
+    def raise_identity_error(_left, _right):
+        raise OSError("identity unavailable")
+
+    monkeypatch.setattr(guard.os.path, "samefile", raise_identity_error)
+
+    assert guard._is_backend_app_source(app_source)
+    assert not guard._is_backend_app_source(safe_source)
+
+
+def test_tooling_pytest_guard_snapshots_hooks_at_first_active_session(tmp_path):
+    guard = _tooling_pytest_guard_module()
+    original_import = builtins.__import__
+    original_import_module = importlib.import_module
+    original_exec_module = importlib.machinery.SourceFileLoader.exec_module
+    calls: list[str] = []
+    safe_source = tmp_path / "safe_delegate_probe.py"
+    safe_source.write_text("VALUE = 1\n", encoding="utf-8")
+    spec = importlib.util.spec_from_file_location("safe_delegate_probe", safe_source)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+
+    def sentinel_import(name, globals=None, locals=None, fromlist=(), level=0):
+        calls.append("import")
+        return original_import(name, globals, locals, fromlist, level)
+
+    def sentinel_import_module(name, package=None):
+        calls.append("import_module")
+        return original_import_module(name, package)
+
+    def sentinel_exec_module(loader, loaded_module):
+        calls.append("exec_module")
+        return original_exec_module(loader, loaded_module)
+
+    config = object()
+    session = SimpleNamespace(config=config)
+    builtins.__import__ = sentinel_import
+    importlib.import_module = sentinel_import_module
+    importlib.machinery.SourceFileLoader.exec_module = sentinel_exec_module
+    try:
+        guard.pytest_sessionstart(session)
+        guard._tracking_import("json")
+        guard._tracking_import_module("json")
+        spec.loader.exec_module(module)
+
+        assert {"import", "import_module", "exec_module"}.issubset(calls)
+
+        guard.pytest_unconfigure(config)
+        assert builtins.__import__ is sentinel_import
+        assert importlib.import_module is sentinel_import_module
+        assert (
+            importlib.machinery.SourceFileLoader.exec_module
+            is sentinel_exec_module
+        )
+    finally:
+        guard._active_observed_modules.clear()
+        builtins.__import__ = original_import
+        importlib.import_module = original_import_module
+        importlib.machinery.SourceFileLoader.exec_module = original_exec_module
+
+
+def test_tooling_pytest_guard_isolates_same_module_nested_sessions(tmp_path):
+    runner = _tooling_pytest_runner_module()
+    app_source = ROOT / "backend" / "app" / "__init__.py"
+    inner_test = tmp_path / "test_nested_inner_guard.py"
+    inner_test.write_text(
+        "import importlib.util\n"
+        "\n"
+        "def test_nested_inner_guard():\n"
+        "    name = 'nested_inner_direct_probe'\n"
+        f"    spec = importlib.util.spec_from_file_location(name, {str(app_source)!r})\n"
+        "    assert spec and spec.loader\n"
+        "    module = importlib.util.module_from_spec(spec)\n"
+        "    spec.loader.exec_module(module)\n",
+        encoding="utf-8",
+    )
+    outer_test = tmp_path / "test_nested_outer_guard.py"
+    outer_test.write_text("def test_outer_ok():\n    pass\n", encoding="utf-8")
+    probe = tmp_path / "nested_guard_probe.py"
+    probe.write_text(
+        "import builtins\n"
+        "import importlib\n"
+        "import importlib.machinery\n"
+        "import importlib.util\n"
+        "import os\n"
+        "import sys\n"
+        f"sys.path.insert(0, {str(ROOT)!r})\n"
+        "import pytest\n"
+        "from scripts import tooling_pytest_guard as guard\n"
+        "\n"
+        "original_import = builtins.__import__\n"
+        "original_import_module = importlib.import_module\n"
+        "original_exec_module = importlib.machinery.SourceFileLoader.exec_module\n"
+        "common = [\n"
+        "    '--noconftest', '-c', os.devnull, '--rootdir', "
+        f"{str(tmp_path)!r}, '-q', '-p', 'no:cacheprovider',\n"
+        "]\n"
+        "\n"
+        "class NestedSession:\n"
+        "    inner_exit = None\n"
+        "    outer_observed_inner = ()\n"
+        "    hooks_stayed_installed = False\n"
+        "\n"
+        "    @pytest.hookimpl(trylast=True)\n"
+        "    def pytest_sessionstart(self, session):\n"
+        f"        self.inner_exit = pytest.main([*common, {str(inner_test)!r}], plugins=[guard])\n"
+        "        active = getattr(guard, '_active_observed_modules', {})\n"
+        "        self.outer_observed_inner = tuple(sorted(active.get(session.config, ())))\n"
+        "        self.hooks_stayed_installed = (\n"
+        "            builtins.__import__ is guard._tracking_import\n"
+        "            and importlib.import_module is guard._tracking_import_module\n"
+        "            and importlib.machinery.SourceFileLoader.exec_module\n"
+        "            is guard._tracking_source_exec_module\n"
+        "        )\n"
+        "        name = 'nested_outer_direct_probe'\n"
+        f"        spec = importlib.util.spec_from_file_location(name, {str(app_source)!r})\n"
+        "        assert spec and spec.loader\n"
+        "        module = importlib.util.module_from_spec(spec)\n"
+        "        spec.loader.exec_module(module)\n"
+        "\n"
+        "nested = NestedSession()\n"
+        f"outer_exit = pytest.main([*common, {str(outer_test)!r}], plugins=[guard, nested])\n"
+        "assert nested.inner_exit == pytest.ExitCode.TESTS_FAILED\n"
+        "assert 'nested_inner_direct_probe' in nested.outer_observed_inner\n"
+        "assert nested.hooks_stayed_installed\n"
+        "assert outer_exit == pytest.ExitCode.TESTS_FAILED\n"
+        "assert getattr(guard, '_active_observed_modules', {}) == {}\n"
+        "assert builtins.__import__ is original_import\n"
+        "assert importlib.import_module is original_import_module\n"
+        "assert importlib.machinery.SourceFileLoader.exec_module is original_exec_module\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "nested_inner_direct_probe" in output
+    assert "nested_outer_direct_probe" in output
+
+
 def test_tooling_pytest_guard_restores_hooks_after_sessionstart_error(
     tmp_path,
     monkeypatch,
@@ -635,7 +859,7 @@ def test_tooling_pytest_guard_preserves_existing_nonzero_exit_status(monkeypatch
     monkeypatch.setattr(
         guard,
         "loaded_forbidden_module_names",
-        lambda: ("app.dynamic_probe",),
+        lambda _config: ("app.dynamic_probe",),
     )
 
     guard.pytest_sessionfinish(session)
@@ -645,13 +869,25 @@ def test_tooling_pytest_guard_preserves_existing_nonzero_exit_status(monkeypatch
 
 def test_tooling_pytest_guard_resets_history_for_each_session(monkeypatch):
     guard = _tooling_pytest_guard_module()
-    guard._observed_forbidden_modules.add("app.stale_session")
     monkeypatch.setattr(guard, "_observe_current_modules", lambda: None)
+    first_config = object()
+    first_session = SimpleNamespace(config=first_config)
+    second_config = object()
+    second_session = SimpleNamespace(config=second_config)
 
-    guard.pytest_sessionstart()
+    guard.pytest_sessionstart(first_session)
     try:
-        assert guard._observed_forbidden_modules == set()
+        guard._record_forbidden_module("app.stale_session")
+        assert guard._active_observed_modules[first_config] == {
+            "app.stale_session"
+        }
+        guard.pytest_unconfigure(first_config)
+
+        guard.pytest_sessionstart(second_session)
+        assert guard._active_observed_modules[second_config] == set()
     finally:
+        guard.pytest_unconfigure(first_config)
+        guard.pytest_unconfigure(second_config)
         guard._restore_import_functions()
 
 
