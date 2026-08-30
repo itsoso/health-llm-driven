@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run repository tooling tests without loading the application test stack."""
+"""Run a supplemental fast lane for repository tooling tests."""
 
 from __future__ import annotations
 
@@ -21,11 +21,20 @@ DEFAULT_TESTS = (
     "backend/tests/test_dossier_consistency.py",
     "backend/tests/test_reva_health_harness_plugin_package.py",
     "backend/tests/test_system_map_agent_context.py",
+    "backend/tests/test_system_map_generator.py",
 )
 BENCHMARK_TEST = "backend/tests/test_agent_skill_benchmark.py"
+SUPPLEMENTAL_SCOPE = (
+    "This supplemental runner skips coverage and does not replace regular project "
+    "tests or CI gates."
+)
 
 PYTEST_OPTIONS = (
     "--noconftest",
+    "-c",
+    os.devnull,
+    "--rootdir",
+    str(ROOT),
     "-o",
     "addopts=",
     "-q",
@@ -33,6 +42,8 @@ PYTEST_OPTIONS = (
     "--tb=short",
     "-p",
     "no:cacheprovider",
+    "-p",
+    "scripts.tooling_pytest_guard",
 )
 
 
@@ -48,11 +59,13 @@ def sanitized_environment(
 ) -> dict[str, str]:
     environment = dict(os.environ if environ is None else environ)
     environment.pop("PYTEST_ADDOPTS", None)
+    environment.pop("PYTEST_PLUGINS", None)
+    environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     return environment
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, epilog=SUPPLEMENTAL_SCOPE)
     parser.add_argument(
         "--include-benchmark",
         action="store_true",

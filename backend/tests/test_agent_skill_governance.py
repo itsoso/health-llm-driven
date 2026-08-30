@@ -9,6 +9,7 @@ import subprocess
 import sys
 from functools import cache
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -22,6 +23,7 @@ TRACE_EVENT_SCHEMA = (
 BENCHMARK_COLLECTOR = ROOT / "scripts" / "agent_skill_benchmark.py"
 CHECKER = ROOT / "scripts" / "check_agent_skill_governance.py"
 TOOLING_PYTEST_RUNNER = ROOT / "scripts" / "run_tooling_pytests.py"
+TOOLING_PYTEST_GUARD = ROOT / "scripts" / "tooling_pytest_guard.py"
 TOOLING_TESTS = (
     "backend/tests/test_agent_skill_governance.py",
     "backend/tests/test_agent_skill_manifests.py",
@@ -30,6 +32,7 @@ TOOLING_TESTS = (
     "backend/tests/test_dossier_consistency.py",
     "backend/tests/test_reva_health_harness_plugin_package.py",
     "backend/tests/test_system_map_agent_context.py",
+    "backend/tests/test_system_map_generator.py",
 )
 TOOLING_BENCHMARK_TEST = "backend/tests/test_agent_skill_benchmark.py"
 CANONICAL_MODES = (
@@ -68,6 +71,107 @@ def _tooling_pytest_runner_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _tooling_pytest_guard_module():
+    assert TOOLING_PYTEST_GUARD.is_file(), "tooling pytest guard is required"
+    spec = importlib.util.spec_from_file_location(
+        "tooling_pytest_guard", TOOLING_PYTEST_GUARD
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _attribute_path(node: ast.expr) -> tuple[str, ...]:
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        parts.append(node.id)
+    return tuple(reversed(parts))
+
+
+def _literal_fixture_names(call: ast.Call) -> set[str]:
+    values = [
+        *call.args,
+        *(keyword.value for keyword in call.keywords if keyword.arg == "argname"),
+    ]
+    return {
+        argument.value
+        for argument in values
+        if isinstance(argument, ast.Constant) and isinstance(argument.value, str)
+    }
+
+
+def _pytest_usefixtures_paths(tree: ast.AST) -> set[tuple[str, ...]]:
+    paths = {("pytest", "mark", "usefixtures")}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "pytest":
+                    paths.add((alias.asname or "pytest", "mark", "usefixtures"))
+        if not isinstance(node, ast.ImportFrom) or node.level != 0:
+            continue
+        if node.module == "pytest":
+            for alias in node.names:
+                if alias.name == "mark":
+                    paths.add((alias.asname or "mark", "usefixtures"))
+        if node.module == "pytest.mark":
+            for alias in node.names:
+                if alias.name == "usefixtures":
+                    paths.add((alias.asname or "usefixtures",))
+    return paths
+
+
+def _assert_tooling_test_ast_safe(source: str, filename: str) -> None:
+    guard = _tooling_pytest_guard_module()
+    tree = ast.parse(source, filename=filename)
+    usefixtures_paths = _pytest_usefixtures_paths(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported = [alias.name for alias in node.names]
+            forbidden = [
+                name for name in imported if guard.is_forbidden_module_name(name)
+            ]
+            assert not forbidden, (filename, forbidden)
+        if isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            imported = [
+                module,
+                *(f"{module}.{alias.name}" for alias in node.names if module),
+            ]
+            forbidden = [
+                name
+                for name in imported
+                if node.level == 0 and guard.is_forbidden_module_name(name)
+            ]
+            assert not forbidden, (filename, forbidden)
+        is_test_function = isinstance(
+            node, (ast.FunctionDef, ast.AsyncFunctionDef)
+        ) and node.name.startswith("test_")
+        if is_test_function:
+            argument_names = {
+                argument.arg
+                for argument in (
+                    *node.args.posonlyargs,
+                    *node.args.args,
+                    *node.args.kwonlyargs,
+                )
+            }
+            forbidden = argument_names & guard.FORBIDDEN_FIXTURES
+            assert not forbidden, (filename, node.name, forbidden)
+        if not isinstance(node, ast.Call):
+            continue
+        call_path = _attribute_path(node.func)
+        if call_path in usefixtures_paths:
+            forbidden = _literal_fixture_names(node) & guard.FORBIDDEN_FIXTURES
+            assert not forbidden, (filename, "pytest.mark.usefixtures", forbidden)
+        if call_path == ("request", "getfixturevalue"):
+            forbidden = _literal_fixture_names(node) & guard.FORBIDDEN_FIXTURES
+            assert not forbidden, (filename, "request.getfixturevalue", forbidden)
 
 
 @pytest.fixture(autouse=True)
@@ -224,19 +328,40 @@ def test_tooling_pytest_runner_uses_an_isolated_no_coverage_command():
     command = runner.build_command(include_benchmark=False)
     assert command[:3] == [sys.executable, "-m", "pytest"]
     assert "--noconftest" in command
+    assert "-c" in command
+    assert command[command.index("-c") + 1] == os.devnull
+    assert "--rootdir" in command
+    assert command[command.index("--rootdir") + 1] == str(ROOT)
     assert command[command.index("-o") + 1] == "addopts="
     assert "-q" in command
     assert "--strict-markers" in command
     assert "--tb=short" in command
-    assert command[command.index("-p") + 1] == "no:cacheprovider"
+    plugins = [
+        command[index + 1]
+        for index, argument in enumerate(command[:-1])
+        if argument == "-p"
+    ]
+    assert plugins == ["no:cacheprovider", "scripts.tooling_pytest_guard"]
     assert not any(argument.startswith("--cov") for argument in command)
-    assert tuple(runner.DEFAULT_TESTS) == TOOLING_TESTS
 
     environment = runner.sanitized_environment(
-        {"PYTEST_ADDOPTS": "--cov=app --cov-report=html", "KEEP_ME": "yes"}
+        {
+            "PYTEST_ADDOPTS": "--cov=app --cov-report=html",
+            "PYTEST_PLUGINS": "untrusted_plugin",
+            "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "0",
+            "KEEP_ME": "yes",
+        }
     )
     assert "PYTEST_ADDOPTS" not in environment
+    assert "PYTEST_PLUGINS" not in environment
+    assert environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] == "1"
     assert environment["KEEP_ME"] == "yes"
+
+
+def test_tooling_pytest_runner_has_exact_default_allowlist():
+    runner = _tooling_pytest_runner_module()
+
+    assert tuple(runner.DEFAULT_TESTS) == TOOLING_TESTS
 
 
 def test_tooling_pytest_runner_only_adds_benchmark_on_explicit_request():
@@ -250,46 +375,182 @@ def test_tooling_pytest_runner_only_adds_benchmark_on_explicit_request():
     assert benchmark_command.count(TOOLING_BENCHMARK_TEST) == 1
 
 
+def test_tooling_pytest_runner_preserves_fixed_cwd_and_child_exit_code(monkeypatch):
+    runner = _tooling_pytest_runner_module()
+    invocation = {}
+
+    def completed_with_failure(command, **kwargs):
+        invocation.update(command=command, **kwargs)
+        return subprocess.CompletedProcess(command, returncode=17)
+
+    monkeypatch.setattr(runner.subprocess, "run", completed_with_failure)
+
+    assert runner.main([]) == 17
+    assert invocation["command"] == runner.build_command(include_benchmark=False)
+    assert invocation["cwd"] == ROOT
+    assert invocation["check"] is False
+
+
+def test_tooling_pytest_runner_help_states_supplemental_scope(capsys):
+    runner = _tooling_pytest_runner_module()
+
+    with pytest.raises(SystemExit) as exc:
+        runner.parse_args(["--help"])
+
+    assert exc.value.code == 0
+    help_text = " ".join(capsys.readouterr().out.lower().split())
+    assert "supplemental" in help_text
+    assert "skips coverage" in help_text
+    assert "does not replace regular project tests or ci gates" in help_text
+
+
 def test_tooling_pytest_allowlist_is_present_and_ast_runtime_independent():
     runner = _tooling_pytest_runner_module()
     allowlist = (*runner.DEFAULT_TESTS, runner.BENCHMARK_TEST)
 
-    assert tuple(runner.DEFAULT_TESTS) == TOOLING_TESTS
     assert runner.BENCHMARK_TEST == TOOLING_BENCHMARK_TEST
-    assert len(runner.DEFAULT_TESTS) == 7
 
     for relative in allowlist:
         path = ROOT / relative
         assert path.is_file(), relative
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=relative)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                imported = [alias.name for alias in node.names]
-                assert all(
-                    name not in {"app", "main"}
-                    and not name.startswith(("app.", "main."))
-                    for name in imported
-                ), (relative, imported)
-            if isinstance(node, ast.ImportFrom):
-                module = node.module or ""
-                assert module not in {"app", "main"} and not module.startswith(
-                    ("app.", "main.")
-                ), (relative, module)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                argument_names = {
-                    argument.arg
-                    for argument in (
-                        *node.args.posonlyargs,
-                        *node.args.args,
-                        *node.args.kwonlyargs,
-                    )
-                }
-                forbidden = {
-                    name
-                    for name in argument_names
-                    if {"db", "client", "auth"} & set(name.split("_"))
-                }
-                assert not forbidden, (relative, node.name, forbidden)
+        _assert_tooling_test_ast_safe(path.read_text(encoding="utf-8"), relative)
+
+
+def test_tooling_ast_guard_allows_helper_parameter_names():
+    _assert_tooling_test_ast_safe(
+        "def helper(client_name):\n    return client_name\n",
+        "helper_probe.py",
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "module_name"),
+    [
+        ("import app.services\n", "app.services"),
+        ("from main import create_app\n", "main"),
+        ("import backend.app.models\n", "backend.app.models"),
+        ("from backend.main import app\n", "backend.main"),
+        ("from backend import app\n", "backend.app"),
+    ],
+)
+def test_tooling_ast_guard_rejects_application_imports(source, module_name):
+    with pytest.raises(AssertionError, match=re.escape(module_name)):
+        _assert_tooling_test_ast_safe(source, "import_probe.py")
+
+
+@pytest.mark.parametrize(
+    ("source", "fixture_name"),
+    [
+        ("def test_probe(client):\n    pass\n", "client"),
+        (
+            '@pytest.mark.usefixtures("auth_user_and_headers")\n'
+            "def test_probe():\n    pass\n",
+            "auth_user_and_headers",
+        ),
+        (
+            "def test_probe(request):\n"
+            '    request.getfixturevalue("db")\n',
+            "db",
+        ),
+        (
+            "import pytest as pt\n"
+            '@pt.mark.usefixtures("db")\n'
+            "def test_probe():\n    pass\n",
+            "db",
+        ),
+        (
+            "from pytest import mark\n"
+            '@mark.usefixtures("client")\n'
+            "def test_probe():\n    pass\n",
+            "client",
+        ),
+        (
+            "def test_probe(request):\n"
+            '    request.getfixturevalue(argname="db")\n',
+            "db",
+        ),
+    ],
+)
+def test_tooling_ast_guard_rejects_application_fixture_access(source, fixture_name):
+    with pytest.raises(AssertionError, match=fixture_name):
+        _assert_tooling_test_ast_safe(source, "fixture_probe.py")
+
+
+def test_tooling_pytest_guard_fails_for_dynamically_loaded_application_module(
+    tmp_path,
+):
+    runner = _tooling_pytest_runner_module()
+    assert TOOLING_PYTEST_GUARD.is_file(), "tooling pytest guard is required"
+    package = tmp_path / "app"
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "dynamic_probe.py").write_text("VALUE = 1\n", encoding="utf-8")
+    probe = tmp_path / "test_dynamic_application_import.py"
+    probe.write_text(
+        "import importlib\n"
+        "import sys\n"
+        "\n"
+        "def test_dynamic_application_import():\n"
+        '    name = "app.dynamic_probe"\n'
+        "    assert importlib.import_module(name).VALUE == 1\n"
+        "    sys.modules.pop(name)\n"
+        '    sys.modules.pop("app")\n',
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", *runner.PYTEST_OPTIONS, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "app.dynamic_probe" in result.stdout + result.stderr
+
+
+def test_tooling_pytest_guard_preserves_existing_nonzero_exit_status(monkeypatch):
+    guard = _tooling_pytest_guard_module()
+    session = SimpleNamespace(
+        exitstatus=pytest.ExitCode.INTERRUPTED,
+        config=SimpleNamespace(
+            pluginmanager=SimpleNamespace(get_plugin=lambda _name: None)
+        ),
+    )
+    monkeypatch.setattr(
+        guard,
+        "loaded_forbidden_module_names",
+        lambda: ("app.dynamic_probe",),
+    )
+
+    guard.pytest_sessionfinish(session)
+
+    assert session.exitstatus == pytest.ExitCode.INTERRUPTED
+
+
+def test_tooling_pytest_guard_resets_history_for_each_session(monkeypatch):
+    guard = _tooling_pytest_guard_module()
+    guard._observed_forbidden_modules.add("app.stale_session")
+    monkeypatch.setattr(guard, "_observe_current_modules", lambda: None)
+
+    guard.pytest_sessionstart()
+    try:
+        assert guard._observed_forbidden_modules == set()
+    finally:
+        guard._restore_import_functions()
+
+
+def test_agents_limits_the_tooling_fast_lane_to_pure_tooling_changes():
+    agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+
+    assert (
+        "uv run --isolated --with-requirements backend/requirements-dev.txt "
+        "python scripts/run_tooling_pytests.py"
+    ) in agents
+    assert "仅修改 agent-governance、System Map 或 doc-tooling" in agents
+    assert "不得作为每个任务的默认入口" in agents
+    assert "不替代常规项目测试、coverage 或 CI Gate" in agents
 
 
 def test_every_standard_project_skill_is_owned_versioned_and_evidenced():
