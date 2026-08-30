@@ -4,8 +4,8 @@
 |---|---|
 | slug | `iqs-realtime-search-recovery` |
 | 创建日期 | 2026-08-30 |
-| 当前阶段 | G4 验证通过，待 Backend 发布 |
-| 状态 | ready-to-release |
+| 当前阶段 | G6 生产回放通过 |
+| 状态 | complete |
 | 负责 | Codex |
 | 反馈环 | production evidence -> TDD RED -> fail-honest repair -> credential recovery -> backend release -> production replay |
 
@@ -50,7 +50,7 @@
 - [x] T5 GREEN：显式工具调用 fail-honest，零命中保持原契约。
 - [x] T6 将项目部署配置切换到已验证有效的授权凭证。
 - [x] T7 完整本地验证。
-- [ ] T8 提交、推送、Backend 部署与生产只读回放。
+- [x] T8 提交、推送、Backend 部署与生产只读回放。
 
 ## G3 · 测试证据
 
@@ -60,7 +60,9 @@
 - 真实模型 Gate：invariants `12/12`、health-agent-core `50/50`、Orchestrator `5/5`（平均分 `0.92`、无 regression）、trajectory `12/12`、goldens `9/9`。
 - 本地真实 IQS strict probe：同一目标查询返回 3 条搜索结果。
 - Ruff、`compileall`、`git diff --check`、Dossier consistency：PASS。
-- 生产验证：pending。
+- GitHub Actions `33298075484`：最终 `success`；IQS、PostgreSQL、LLM 回归、发布约束与全部测试分片通过。
+- CI 慢测诊断：`agent-executor-i-z` 首次在 GitHub runner 超过 600 秒；原命令本地精确复现为 `360 passed`（35.29 秒），仅重跑失败分片后通过，未绕过 Gate。
+- 生产验证：PASS。
 
 ## G4 · 安全边界
 
@@ -75,13 +77,18 @@
 - Release target：Backend-only。
 - 配置同步和代码部署统一通过根目录 `deploy.sh`。
 - 回滚：代码回滚到部署前 revision；环境配置由 deploy transaction 的 env backup 恢复。
-- 状态：pending。
+- 发布 revision：`751eae98ea1ee6fb4169f04ee083c93a1be9d2bc`。
+- 已验证回滚点：`ee1e12f949dafd190bff53b1e81344be670f6341`。
+- 数据库备份、237 张表恢复演练、站外加密归档：PASS。
+- 部署健康度三次 `60/60`；runtime-only KB guard/staged contract 与 skills manifest `22=22`：PASS。
+- 状态：PASS，事务已 finalize，未触发回滚。
 
 ## G6 · 生产回放
 
-- 使用无个人健康信息的“浙大一院余杭院区 儿童急诊”做生产 IQS 只读探测。
-- 验收：返回非空证据块；日志无 `InvalidAccessKeyId.Inactive`；严格工具路径在故障时记录失败而非零命中。
-- 状态：pending。
+- 使用原问题“浙一的余杭院区能挂儿童急诊吗？”做生产 IQS 严格模式只读探测。
+- 结果：`PRODUCTION_IQS_REPLAY_OK results=3 evidence_block=1`。
+- 验收：有效生产凭证返回非空证据块；严格工具失败语义由单元/Agent 回归测试覆盖，不再把依赖故障伪装成零命中。
+- 状态：PASS。
 
 ## Gate ledger
 
@@ -91,5 +98,5 @@
 | G2 | PASS | 自动 grounding fail-soft；显式工具 fail-honest。 |
 | G3 | PASS | 183 related tests；真实模型全绿；本地 IQS strict probe 返回 3 条。 |
 | G4 | PASS | 既有隐私/注入护栏保留；错误原因稳定且脱敏。 |
-| G5 | PENDING | Backend 部署未执行。 |
-| G6 | PENDING | 生产 IQS 回放未执行。 |
+| G5 | PASS | `751eae98ea1e` 已发布；健康度 `60/60`；回滚点 `ee1e12f949da`。 |
+| G6 | PASS | 原问题生产严格回放返回 3 条实时证据。 |
