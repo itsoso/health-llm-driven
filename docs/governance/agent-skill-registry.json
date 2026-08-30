@@ -4,7 +4,7 @@
   "event_schema": "docs/governance/agent-skill-run-event.schema.json",
   "trace_event_schema": "docs/governance/agent-skill-run-trace-event.schema.json",
   "benchmark_collector": "scripts/agent_skill_benchmark.py",
-  "last_reviewed": "2026-08-29",
+  "last_reviewed": "2026-08-30",
   "lifecycle": [
     "experimental",
     "recommended",
@@ -39,7 +39,7 @@
   },
   "adapter_contracts": {
     "reva-workflow-router": {
-      "version": "2.0.0",
+      "version": "2.0.1",
       "required_markers": [
         "analysis",
         "quick_fix",
@@ -51,13 +51,17 @@
         "capability-trigger",
         "immediate_skills",
         "deferred_by_phase",
+        "activation_skills",
+        "v1 non-delegate selection",
+        "v1 delegate-only compatibility view",
+        "`planning` and `verification` are workflow phases, not mode values.",
         "selected_skills cannot be used as a preload list",
         "using-superpowers",
         "executing-plans"
       ],
       "adapter_sha256": {
-        "claude": "e9825a5a7fcb5363ed1c8036ed06706c7717bbee186314cd2cd1993a76aba935",
-        "codex": "6b8d20a7808c395dca1aace12a95b828799e71bf34e7188aa2579e438f5353c6"
+        "claude": "91dd16cbd6a9fdbd7423edb5b5e8603d0d7d30acf263608434cd99d7cac0fd0c",
+        "codex": "9fd9a571173e90a530c22e3ac936b2ac27353e818d1affce22b9d87578e32a7f"
       }
     },
     "product-pipeline": {
@@ -82,7 +86,7 @@
       }
     },
     "health-harness-orchestrator": {
-      "version": "1.0.0",
+      "version": "1.0.1",
       "required_markers": [
         "primary_controller",
         "implementation",
@@ -94,11 +98,13 @@
         "G5",
         "G6",
         "BLOCK",
-        "production"
+        "production",
+        "system-map",
+        "deferred_by_phase.on_demand"
       ],
       "adapter_sha256": {
-        "claude": "f07badc234a17fddd82643d8aea45198bbe54aebb8e64f96fbc9ff2ee11d25e2",
-        "codex": "e4769c178ca460ba7f2b762a52dbfbe0782238ee4d9996fcff6fc1ab6a1cd3d5"
+        "claude": "111dba2d750d169bb6b5ab192c5839d91fb0a160433e304ba785e5607a23d862",
+        "codex": "53eaf89f2a027d8dd04a43ca807b4246e015a9d3135d891cf0bca7be7b86c780"
       }
     }
   },
@@ -107,7 +113,7 @@
       "id": "reva-workflow-router",
       "lifecycle": "standard",
       "owner": "reva-agent-governance",
-      "version": "2.0.0",
+      "version": "2.0.1",
       "layer": "workflow",
       "kind": "router",
       "platforms": [
@@ -117,7 +123,7 @@
       "trigger_family": [
         "task-routing"
       ],
-      "last_reviewed": "2026-08-29",
+      "last_reviewed": "2026-08-30",
       "evidence": [
         "Cross-end and quick-fix pressure tests exposed competing-controller overhead; deterministic routing is covered by repository tests."
       ],
@@ -163,7 +169,7 @@
       "id": "health-harness-orchestrator",
       "lifecycle": "standard",
       "owner": "reva-engineering",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "layer": "workflow",
       "kind": "controller",
       "platforms": [
@@ -175,7 +181,7 @@
         "incident",
         "cross-surface-delivery"
       ],
-      "last_reviewed": "2026-08-20",
+      "last_reviewed": "2026-08-30",
       "evidence": [
         "The operating harness provides checkpointed implementation, review, validation and release hand-offs."
       ],

@@ -30,6 +30,17 @@ TOOLING_TESTS = (
     "backend/tests/test_system_map_agent_context.py",
 )
 TOOLING_BENCHMARK_TEST = "backend/tests/test_agent_skill_benchmark.py"
+CANONICAL_MODES = (
+    "analysis",
+    "quick_fix",
+    "feature",
+    "implementation",
+    "incident",
+    "release",
+)
+MODE_PHASE_NOTE = (
+    "`planning` and `verification` are workflow phases, not mode values."
+)
 OPAQUE_UUID_PATTERN = (
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[4-7][0-9a-f]{3}-"
     r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
@@ -87,23 +98,42 @@ def _recommend(*args: str) -> dict:
 
 
 def _assert_activation_partition(result: dict) -> None:
-    immediate = set(result["immediate_skills"])
-    allowed_phases = set(_registry()["routing"]["activation_policy"]["phases"])
-    deferred = {
-        skill_id
-        for skill_ids in result["deferred_by_phase"].values()
-        for skill_id in skill_ids
-    }
+    phases = _registry()["routing"]["activation_policy"]["phases"]
+    allowed_phases = set(phases)
+    expected_phase_order = [
+        phase
+        for phase in phases
+        if phase != "immediate" and phase in result["deferred_by_phase"]
+    ]
+    assert list(result["deferred_by_phase"]) == expected_phase_order
 
-    assert immediate.isdisjoint(deferred)
-    assert set(result["deferred_skills"]) == deferred
-    assert len(result["deferred_skills"]) == len(deferred)
-    assert immediate | deferred == set(result["selected_skills"])
+    phase_deferred = [
+        skill_id
+        for phase in expected_phase_order
+        for skill_id in result["deferred_by_phase"][phase]
+    ]
+    activation = [*result["immediate_skills"], *phase_deferred]
+
+    assert set(result["immediate_skills"]).isdisjoint(phase_deferred)
+    assert result["activation_skills"] == activation
+    assert len(activation) == len(set(activation))
+    assert [item["id"] for item in result["activation_skill_details"]] == activation
+    assert result["deferred_skills"] == result["delegates"]
+    assert [item["id"] for item in result["deferred_skill_details"]] == result[
+        "delegates"
+    ]
+    assert all(
+        item["role"] == "delegate" for item in result["deferred_skill_details"]
+    )
+    assert set(result["selected_skills"]).isdisjoint(result["deferred_skills"])
+    assert set(result["selected_skills"]) | set(result["deferred_skills"]) == set(
+        activation
+    )
     assert [item["id"] for item in result["selected_skill_details"]] == result[
         "selected_skills"
     ]
     assert {
-        item["activation_phase"] for item in result["selected_skill_details"]
+        item["activation_phase"] for item in result["activation_skill_details"]
     } <= allowed_phases
 
 
@@ -129,6 +159,47 @@ def test_registry_has_one_router_and_closed_governance_vocabulary():
     routers = [skill for skill in registry["skills"] if skill["kind"] == "router"]
     assert [skill["id"] for skill in routers] == ["reva-workflow-router"]
     assert "domain-rule-factory" not in {skill["id"] for skill in registry["skills"]}
+
+
+def test_mode_vocabulary_is_identical_across_registry_checker_and_entrypoints():
+    checker = _checker_module()
+    registry = _registry()
+    mode_argument = f"--mode <{'|'.join(CANONICAL_MODES)}>"
+
+    assert tuple(checker.MODES) == CANONICAL_MODES
+    assert tuple(registry["routing"]["routes"]) == CANONICAL_MODES
+
+    agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    assert mode_argument in agents
+    assert MODE_PHASE_NOTE in agents
+
+    for path in (
+        ROOT / ".claude" / "skills" / "reva-workflow-router" / "SKILL.md",
+        ROOT
+        / "plugins"
+        / "reva-health-harness"
+        / "skills"
+        / "reva-workflow-router"
+        / "SKILL.md",
+    ):
+        text = path.read_text(encoding="utf-8")
+        for mode in CANONICAL_MODES:
+            assert f"`{mode}`" in text
+        assert MODE_PHASE_NOTE in text
+
+
+def test_checker_rejects_registry_mode_order_drift():
+    checker = _checker_module()
+    registry = _registry()
+    routes = registry["routing"]["routes"]
+    registry["routing"]["routes"] = {
+        mode: routes[mode] for mode in reversed(CANONICAL_MODES)
+    }
+
+    with pytest.raises(checker.GovernanceError) as exc:
+        checker.validate_registry(registry)
+
+    assert exc.value.code == "invalid_modes"
 
 
 def test_tooling_pytest_runner_uses_an_isolated_no_coverage_command():
@@ -334,7 +405,29 @@ def test_feature_route_has_exactly_one_controller_and_deduplicated_overlays():
     assert result["controller"] == "product-pipeline"
     assert result["delegates"] == ["health-harness-orchestrator"]
     assert result["deferred_by_phase"]["S5"] == ["health-harness-orchestrator"]
-    assert "health-harness-orchestrator" in result["selected_skills"]
+    assert result["deferred_skills"] == ["health-harness-orchestrator"]
+    assert "health-harness-orchestrator" not in result["selected_skills"]
+    assert result["selected_skills"] == [
+        "reva-workflow-router",
+        "product-pipeline",
+        "system-map",
+        "karpathy-guidelines",
+        "test-driven-development",
+        "verification-before-completion",
+        "add-managed-migration",
+        "safety-gate",
+    ]
+    assert result["activation_skills"] == [
+        "reva-workflow-router",
+        "product-pipeline",
+        "add-managed-migration",
+        "safety-gate",
+        "system-map",
+        "karpathy-guidelines",
+        "test-driven-development",
+        "verification-before-completion",
+        "health-harness-orchestrator",
+    ]
     assert result["overlays"] == ["add-managed-migration", "safety-gate"]
     assert result["controller_count"] == 1
     _assert_activation_partition(result)
@@ -407,6 +500,29 @@ def test_recommendation_v2_partitions_startup_from_deferred_phase_loading():
         "implementation": ["karpathy-guidelines", "test-driven-development"],
         "verification": ["verification-before-completion"],
     }
+    assert result["deferred_skills"] == []
+    assert result["selected_skills"] == [
+        "reva-workflow-router",
+        "health-harness-orchestrator",
+        "system-map",
+        "karpathy-guidelines",
+        "test-driven-development",
+        "verification-before-completion",
+        "skill-creator",
+        "writing-skills",
+        "doc-drift-fix",
+    ]
+    assert result["activation_skills"] == [
+        "reva-workflow-router",
+        "health-harness-orchestrator",
+        "skill-creator",
+        "writing-skills",
+        "doc-drift-fix",
+        "system-map",
+        "karpathy-guidelines",
+        "test-driven-development",
+        "verification-before-completion",
+    ]
     phases = {
         item["id"]: item["activation_phase"]
         for item in result["selected_skill_details"]
@@ -726,17 +842,20 @@ def test_agents_contract_is_concise_and_does_not_embed_a_skill_catalog():
     assert "非仓库元任务" in text
     assert "immediate_skills" in text
     assert "deferred_by_phase.on_demand" in text
+    assert "activation_skills" in text
     assert "selected_skills" in text
     assert "禁止作为预载清单" in text
 
 
-def test_governance_contract_version_and_deferred_compatibility_match_v2():
+def test_governance_contract_version_and_compatibility_fields_match_v2():
     text = (
         ROOT / "docs" / "governance" / "agent-skill-governance.md"
     ).read_text(encoding="utf-8")
 
     assert "**版本：** 2.0" in "\n".join(text.splitlines()[:10])
-    assert "`deferred_skills` 是 `deferred_by_phase` 的兼容扁平 union" in text
+    assert "`selected_skills` / `selected_skill_details` 保留 v1 的非 delegate 选择" in text
+    assert "`deferred_skills` / `deferred_skill_details` 只保留 delegate" in text
+    assert "`activation_skills` / `activation_skill_details`" in text
     assert "不得驱动预载" in text
 
 
@@ -770,5 +889,29 @@ def test_router_adapters_load_by_activation_phase_not_compatibility_union(path: 
 
     assert "immediate_skills" in text
     assert "deferred_by_phase" in text
+    assert "activation_skills" in text
     assert "selected_skills" in text
     assert "selected_skills cannot be used as a preload list" in text
+    assert "v1 non-delegate selection" in text
+    assert "v1 delegate-only compatibility view" in text
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ROOT / ".claude" / "skills" / "health-harness-orchestrator" / "SKILL.md",
+        ROOT
+        / "plugins"
+        / "reva-health-harness"
+        / "skills"
+        / "health-harness-orchestrator"
+        / "SKILL.md",
+    ],
+)
+def test_health_harness_adapters_activate_system_map_only_on_demand(path: Path):
+    text = path.read_text(encoding="utf-8")
+
+    assert "deferred_by_phase.on_demand" in text
+    assert "system-map" in text
+    assert "docs/system-map/INDEX.md" not in text
+    assert "docs/_generated/system-map-agent-context.md" not in text

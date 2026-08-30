@@ -25,7 +25,7 @@ def test_reva_health_harness_plugin_manifest_is_installable():
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     assert manifest["name"] == "reva-health-harness"
-    assert manifest["version"] == "0.3.0"
+    assert manifest["version"] == "0.3.1"
     assert manifest["skills"] == "./skills/"
     assert "hooks" not in manifest
     assert manifest["interface"]["displayName"] == "Reva Health Harness"
@@ -43,8 +43,12 @@ def test_plugin_release_tracks_router_v2_semantic_contract():
         ).read_text(encoding="utf-8")
     )
 
-    assert manifest["version"] == "0.3.0"
-    assert registry["adapter_contracts"]["reva-workflow-router"]["version"] == "2.0.0"
+    assert manifest["version"] == "0.3.1"
+    assert registry["adapter_contracts"]["reva-workflow-router"]["version"] == "2.0.1"
+    assert (
+        registry["adapter_contracts"]["health-harness-orchestrator"]["version"]
+        == "1.0.1"
+    )
 
 
 def test_reva_health_harness_marketplace_entry_points_to_repo_plugin():

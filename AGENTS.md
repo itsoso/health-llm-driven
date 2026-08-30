@@ -11,8 +11,9 @@
    python3.12 scripts/check_agent_skill_governance.py recommend --mode <analysis|quick_fix|feature|implementation|incident|release>
    ```
 
+   `planning` and `verification` are workflow phases, not mode values.
    有安全、DB、文档漂移等明确风险时才附加对应 `--overlay`；Skill / plugin 治理分别声明 `--capability-trigger skill-governance` / `plugin-authoring`。不要机械叠加多个 controller；feature 的 Health Harness delegate 只在父流程进入 S5 后加载。
-3. 启动只消费推荐结果的 `immediate_skills`；`selected_skills` 是 immediate 与 deferred 的兼容 union，**禁止作为预载清单**。进入实际阶段后，才加载 `deferred_by_phase[phase]`。
+3. 启动只消费推荐结果的 `immediate_skills`，进入实际阶段后才加载 `deferred_by_phase[phase]`。`activation_skills` 是完整有序审计 union；`selected_skills` 保留 v1 非 delegate 选择，`deferred_skills` 只保留 delegate；三者都**禁止作为预载清单**。
 4. **非仓库元任务**（例如 Codex 设置、执行速度、通用问答、个人工作流讨论）不运行 Router，也不加载 System Map。
 5. `system-map` 只在任务实际命中系统现状、架构、跨端/跨组件关系、代码派生结构或漂移需求时，从 `deferred_by_phase.on_demand` 激活：
    - 已知路径或局部修改：直接用 `python3.12 scripts/system_map_context.py --path <path> --depth 0`；

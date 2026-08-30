@@ -507,9 +507,9 @@ def _validate_routes(
     _require(isinstance(routing, dict), "invalid_routing", "routing must be an object")
     routes = routing.get("routes")
     _require(
-        isinstance(routes, dict) and set(routes) == set(MODES),
+        isinstance(routes, dict) and list(routes) == MODES,
         "invalid_modes",
-        "routes must use the closed mode set",
+        "routes must use the closed mode set in canonical order",
     )
 
     for mode in MODES:
@@ -1198,11 +1198,20 @@ def recommend(
         for phase, skill_ids in deferred_by_phase.items()
         if skill_ids
     }
-    deferred_skills = [
+    phase_deferred_skills = [
         skill_id for skill_ids in deferred_by_phase.values() for skill_id in skill_ids
     ]
-    selected_skills = [*immediate_skills, *deferred_skills]
+    activation_skills = [*immediate_skills, *phase_deferred_skills]
+    activation_skill_details = [
+        details_by_id[skill_id] for skill_id in activation_skills
+    ]
+    selected_skills = [
+        skill_id
+        for skill_id in selection_order
+        if details_by_id[skill_id]["role"] != "delegate"
+    ]
     selected_skill_details = [details_by_id[skill_id] for skill_id in selected_skills]
+    deferred_skills = list(delegates)
     deferred_skill_details = [details_by_id[skill_id] for skill_id in deferred_skills]
 
     return {
@@ -1214,6 +1223,8 @@ def recommend(
         "delegates": delegates,
         "immediate_skills": immediate_skills,
         "deferred_by_phase": deferred_by_phase,
+        "activation_skills": activation_skills,
+        "activation_skill_details": activation_skill_details,
         "deferred_skills": deferred_skills,
         "deferred_skill_details": deferred_skill_details,
         "capabilities": capabilities,
@@ -1262,7 +1273,7 @@ def main(argv: list[str] | None = None) -> int:
             args.capability_trigger,
             args.release_target,
         )
-        print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except GovernanceError as exc:
         print(f"agent-skill-governance: FAIL {exc.code}: {exc.detail}", file=sys.stderr)

@@ -17,6 +17,7 @@ Canonical policy:
 
 1. Classify the task as exactly one mode:
    `analysis`, `quick_fix`, `feature`, `implementation`, `incident`, or `release`.
+   `planning` and `verification` are workflow phases, not mode values.
 2. Add only overlays actually triggered by the changed surface. Use canonical
    overlay IDs from the registry; do not invent aliases.
 3. Add a canonical `capability-trigger` only when the task actually authors a
@@ -41,8 +42,12 @@ blocking errors. Do not guess around them.
 - When work enters a named phase, load only that phase's IDs from
   `deferred_by_phase`; `on_demand` activates only when its trigger is actually
   needed, and an S5 delegate activates inside the existing parent run.
-- `selected_skills` and `selected_skill_details` are compatibility unions for
-  logging and older consumers. **selected_skills cannot be used as a preload list**.
+- `activation_skills` and `activation_skill_details` are the ordered complete
+  activation union for audit and deterministic comparison, not loading.
+- Preserve the v1 non-delegate selection in `selected_skills` and
+  `selected_skill_details`. **selected_skills cannot be used as a preload list**.
+- Preserve the v1 delegate-only compatibility view in `deferred_skills` and
+  `deferred_skill_details`; phase loading comes only from `deferred_by_phase`.
 - There must be zero or one `primary_controller`. If output contains more, stop
   and run the governance check; do not choose by intuition.
 - `analysis` and `quick_fix` deliberately have no controller.
