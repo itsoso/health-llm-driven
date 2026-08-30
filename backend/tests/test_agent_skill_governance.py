@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ast
+import builtins
+import importlib.machinery
 import importlib.util
 import json
 import os
@@ -508,6 +510,118 @@ def test_tooling_pytest_guard_fails_for_dynamically_loaded_application_module(
 
     assert result.returncode != 0
     assert "app.dynamic_probe" in result.stdout + result.stderr
+
+
+def test_tooling_pytest_guard_fails_for_direct_application_source_loaders(tmp_path):
+    runner = _tooling_pytest_runner_module()
+    detached_source = tmp_path / "detached_source.py"
+    detached_source.write_text("VALUE = 1\n", encoding="utf-8")
+    backend_app_source = ROOT / "backend" / "app" / "__init__.py"
+    probe = tmp_path / "test_direct_application_source_loader.py"
+    probe.write_text(
+        "import importlib.util\n"
+        "import sys\n"
+        "\n"
+        "def load_detached(name, path):\n"
+        "    spec = importlib.util.spec_from_file_location(name, path)\n"
+        "    assert spec and spec.loader\n"
+        "    module = importlib.util.module_from_spec(spec)\n"
+        "    spec.loader.exec_module(module)\n"
+        "    assert name not in sys.modules\n"
+        "\n"
+        "def test_direct_application_source_loader():\n"
+        f"    load_detached('app.direct_loader_probe', {str(detached_source)!r})\n"
+        f"    load_detached('backend_app_path_probe', {str(backend_app_source)!r})\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", *runner.PYTEST_OPTIONS, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "app.direct_loader_probe" in output
+    assert "backend_app_path_probe" in output
+
+
+def test_tooling_pytest_guard_allows_direct_safe_script_loader(tmp_path):
+    runner = _tooling_pytest_runner_module()
+    safe_source = ROOT / "scripts" / "run_tooling_pytests.py"
+    probe = tmp_path / "test_direct_safe_script_loader.py"
+    probe.write_text(
+        "import importlib.util\n"
+        "import sys\n"
+        "\n"
+        "def test_direct_safe_script_loader():\n"
+        "    name = 'tooling_safe_loader_probe'\n"
+        f"    spec = importlib.util.spec_from_file_location(name, {str(safe_source)!r})\n"
+        "    assert spec and spec.loader\n"
+        "    module = importlib.util.module_from_spec(spec)\n"
+        "    spec.loader.exec_module(module)\n"
+        "    assert name not in sys.modules\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", *runner.PYTEST_OPTIONS, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_tooling_pytest_guard_restores_hooks_after_sessionstart_error(
+    tmp_path,
+    monkeypatch,
+):
+    guard = _tooling_pytest_guard_module()
+    original_import = builtins.__import__
+    original_import_module = importlib.import_module
+    original_exec_module = importlib.machinery.SourceFileLoader.exec_module
+    probe = tmp_path / "test_guard_recovery_probe.py"
+    probe.write_text("def test_ok():\n    pass\n", encoding="utf-8")
+    args = [
+        "--noconftest",
+        "-c",
+        os.devnull,
+        "--rootdir",
+        str(tmp_path),
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        str(probe),
+    ]
+
+    class FailingSessionStart:
+        @pytest.hookimpl(trylast=True)
+        def pytest_sessionstart(self):
+            raise RuntimeError("sessionstart probe")
+
+    monkeypatch.setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
+    try:
+        first_exit = pytest.main(args, plugins=[guard, FailingSessionStart()])
+
+        assert first_exit == pytest.ExitCode.INTERNAL_ERROR
+        assert builtins.__import__ is original_import
+        assert importlib.import_module is original_import_module
+        assert importlib.machinery.SourceFileLoader.exec_module is original_exec_module
+
+        second_exit = pytest.main(args, plugins=[guard])
+
+        assert second_exit == pytest.ExitCode.OK
+        assert builtins.__import__ is original_import
+        assert importlib.import_module is original_import_module
+        assert importlib.machinery.SourceFileLoader.exec_module is original_exec_module
+    finally:
+        guard._restore_import_functions()
 
 
 def test_tooling_pytest_guard_preserves_existing_nonzero_exit_status(monkeypatch):

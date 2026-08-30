@@ -5,15 +5,19 @@ from __future__ import annotations
 
 import builtins
 import importlib
+import importlib.machinery
 import sys
+from pathlib import Path
 
 import pytest
 
 
 FORBIDDEN_MODULE_PREFIXES = ("app", "main", "backend.app", "backend.main")
 FORBIDDEN_FIXTURES = frozenset({"auth_user_and_headers", "client", "db"})
+BACKEND_APP_ROOT = Path(__file__).resolve().parents[1] / "backend" / "app"
 _ORIGINAL_IMPORT = builtins.__import__
 _ORIGINAL_IMPORT_MODULE = importlib.import_module
+_ORIGINAL_SOURCE_EXEC_MODULE = importlib.machinery.SourceFileLoader.exec_module
 _observed_forbidden_modules: set[str] = set()
 
 
@@ -57,6 +61,21 @@ def _tracking_import_module(name: str, package: str | None = None):
     return module
 
 
+def _is_backend_app_source(path: object) -> bool:
+    try:
+        return Path(path).resolve().is_relative_to(BACKEND_APP_ROOT)
+    except (OSError, TypeError):
+        return False
+
+
+def _tracking_source_exec_module(loader, module) -> None:
+    module_name = getattr(module, "__name__", "")
+    source_path = getattr(loader, "path", None)
+    if is_forbidden_module_name(module_name) or _is_backend_app_source(source_path):
+        _observed_forbidden_modules.add(module_name or str(source_path))
+    _ORIGINAL_SOURCE_EXEC_MODULE(loader, module)
+
+
 def _observe_current_modules() -> None:
     _observed_forbidden_modules.update(
         name for name in sys.modules if is_forbidden_module_name(name)
@@ -73,6 +92,7 @@ def pytest_sessionstart() -> None:
     _observe_current_modules()
     builtins.__import__ = _tracking_import
     importlib.import_module = _tracking_import_module
+    importlib.machinery.SourceFileLoader.exec_module = _tracking_source_exec_module
 
 
 def _restore_import_functions() -> None:
@@ -80,6 +100,8 @@ def _restore_import_functions() -> None:
         builtins.__import__ = _ORIGINAL_IMPORT
     if importlib.import_module is _tracking_import_module:
         importlib.import_module = _ORIGINAL_IMPORT_MODULE
+    if importlib.machinery.SourceFileLoader.exec_module is _tracking_source_exec_module:
+        importlib.machinery.SourceFileLoader.exec_module = _ORIGINAL_SOURCE_EXEC_MODULE
 
 
 def pytest_sessionfinish(session) -> None:
@@ -95,3 +117,7 @@ def pytest_sessionfinish(session) -> None:
         terminal.write_line(
             f"application runtime modules loaded: {', '.join(forbidden)}"
         )
+
+
+def pytest_unconfigure() -> None:
+    _restore_import_functions()
