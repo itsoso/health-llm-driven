@@ -63,6 +63,25 @@ def _recommend(*args: str) -> dict:
     return json.loads(result.stdout)
 
 
+def _assert_activation_partition(result: dict) -> None:
+    immediate = set(result["immediate_skills"])
+    allowed_phases = set(_registry()["routing"]["activation_policy"]["phases"])
+    deferred = {
+        skill_id
+        for skill_ids in result["deferred_by_phase"].values()
+        for skill_id in skill_ids
+    }
+
+    assert immediate.isdisjoint(deferred)
+    assert immediate | deferred == set(result["selected_skills"])
+    assert [item["id"] for item in result["selected_skill_details"]] == result[
+        "selected_skills"
+    ]
+    assert {
+        item["activation_phase"] for item in result["selected_skill_details"]
+    } <= allowed_phases
+
+
 def test_registry_has_one_router_and_closed_governance_vocabulary():
     registry = _registry()
 
@@ -215,10 +234,11 @@ def test_feature_route_has_exactly_one_controller_and_deduplicated_overlays():
 
     assert result["controller"] == "product-pipeline"
     assert result["delegates"] == ["health-harness-orchestrator"]
-    assert result["deferred_skills"] == ["health-harness-orchestrator"]
-    assert "health-harness-orchestrator" not in result["selected_skills"]
+    assert result["deferred_by_phase"]["S5"] == ["health-harness-orchestrator"]
+    assert "health-harness-orchestrator" in result["selected_skills"]
     assert result["overlays"] == ["add-managed-migration", "safety-gate"]
     assert result["controller_count"] == 1
+    _assert_activation_partition(result)
 
 
 def test_quick_fix_route_does_not_create_a_workflow_controller():
@@ -243,6 +263,7 @@ def test_quick_fix_route_does_not_create_a_workflow_controller():
         "overlay",
         "terminal",
     }
+    _assert_activation_partition(result)
 
 
 def test_skill_and_plugin_governance_add_only_the_relevant_authoring_capabilities():
@@ -262,6 +283,78 @@ def test_skill_and_plugin_governance_add_only_the_relevant_authoring_capabilitie
         "writing-skills",
     ]
     assert "test-driven-development" not in result["selected_skills"]
+
+
+def test_recommendation_v2_partitions_startup_from_deferred_phase_loading():
+    result = _recommend(
+        "--mode",
+        "implementation",
+        "--overlay",
+        "doc-drift",
+        "--capability-trigger",
+        "skill-governance",
+    )
+
+    assert result["schema_version"] == "agent-skill-recommendation.v2"
+    assert result["immediate_skills"] == [
+        "reva-workflow-router",
+        "health-harness-orchestrator",
+        "skill-creator",
+        "writing-skills",
+        "doc-drift-fix",
+    ]
+    assert result["deferred_by_phase"] == {
+        "on_demand": ["system-map"],
+        "implementation": ["karpathy-guidelines", "test-driven-development"],
+        "verification": ["verification-before-completion"],
+    }
+    phases = {
+        item["id"]: item["activation_phase"]
+        for item in result["selected_skill_details"]
+    }
+    assert phases["reva-workflow-router"] == "immediate"
+    assert phases["doc-drift-fix"] == "immediate"
+    assert phases["skill-creator"] == "immediate"
+    assert phases["system-map"] == "on_demand"
+    assert phases["test-driven-development"] == "implementation"
+    assert phases["verification-before-completion"] == "verification"
+    _assert_activation_partition(result)
+
+
+def test_incident_debugging_is_eager_but_keeps_diagnosis_phase_semantics():
+    result = _recommend("--mode", "incident")
+
+    assert "systematic-debugging" in result["immediate_skills"]
+    details = {item["id"]: item for item in result["selected_skill_details"]}
+    assert details["systematic-debugging"]["activation_phase"] == "diagnosis"
+    assert "diagnosis" not in result["deferred_by_phase"]
+    _assert_activation_partition(result)
+
+
+def test_release_terminal_is_immediate_and_verification_remains_deferred():
+    result = _recommend("--mode", "release", "--release-target", "mobile-ota")
+
+    assert result["immediate_skills"] == [
+        "reva-workflow-router",
+        "mobile-ota",
+    ]
+    assert result["deferred_by_phase"] == {
+        "verification": ["verification-before-completion"]
+    }
+    _assert_activation_partition(result)
+
+
+def test_checker_rejects_unknown_activation_phase_from_registry():
+    checker = _checker_module()
+    registry = _registry()
+    registry["routing"]["activation_policy"]["capability_phases"][
+        "system-map"
+    ] = "whenever"
+
+    with pytest.raises(checker.GovernanceError) as exc:
+        checker.validate_registry(registry)
+
+    assert exc.value.code == "invalid_activation_phase"
 
 
 def test_unknown_capability_trigger_fails_closed():
@@ -299,6 +392,7 @@ def test_every_non_release_mode_has_zero_or_one_expected_controller(mode, contro
     assert result["controller"] == controller
     assert result["controller_count"] == int(controller is not None)
     assert len({item for item in result["overlays"]}) == len(result["overlays"])
+    _assert_activation_partition(result)
 
 
 def test_incident_route_adds_debugging_as_a_capability_not_a_controller():
@@ -511,3 +605,24 @@ def test_codex_router_documents_supported_capability_trigger():
     ).read_text(encoding="utf-8")
 
     assert "--capability-trigger <canonical-id>" in router
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ROOT / ".claude" / "skills" / "reva-workflow-router" / "SKILL.md",
+        ROOT
+        / "plugins"
+        / "reva-health-harness"
+        / "skills"
+        / "reva-workflow-router"
+        / "SKILL.md",
+    ],
+)
+def test_router_adapters_load_by_activation_phase_not_compatibility_union(path: Path):
+    text = path.read_text(encoding="utf-8")
+
+    assert "immediate_skills" in text
+    assert "deferred_by_phase" in text
+    assert "selected_skills" in text
+    assert "selected_skills cannot be used as a preload list" in text

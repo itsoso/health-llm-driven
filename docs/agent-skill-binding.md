@@ -24,8 +24,8 @@ scope: health-llm-driven
 1. 读 `AGENTS.md`:安全、日志、测试、隐私、DB、提交、部署硬规则的最终裁判。
 2. 先判断是否为仓库研发任务。Codex 设置/性能、通用问答等**非仓库元任务**到此停止，不运行 Router，也不加载 System Map。
 3. 仓库研发任务运行 `python3.12 scripts/check_agent_skill_governance.py recommend --mode <mode>`，由 `reva-workflow-router` 选择最小充分 Skill 集；Skill / plugin 治理分别声明 `--capability-trigger skill-governance` / `plugin-authoring`，不得把多个 controller 机械叠加。
-4. 按平台读取 Router 选中的 adapter：Claude 读 `.claude/skills/<name>/SKILL.md`，Codex 读 `plugins/reva-health-harness/skills/<name>/SKILL.md`；未封装的平台能力才按注册表 source 读取。
-5. 只有 Router 选中 `system-map` 或任务明确需要全局架构/跨组件/代码派生结构时才加载地图：
+4. 启动时只读取推荐结果的 `immediate_skills`：Claude 读 `.claude/skills/<name>/SKILL.md`，Codex 读 `plugins/reva-health-harness/skills/<name>/SKILL.md`；进入实际阶段后才读取 `deferred_by_phase[phase]`。`selected_skills` 是兼容 union，禁止作为预载清单。
+5. `system-map` 位于 `on_demand`；只有任务确实需要全局架构、跨组件或代码派生结构时才加载地图：
    - 已知 path/entity/flow 的局部任务直接运行 `python3.12 scripts/system_map_context.py ... --depth 0`；
    - onboarding、全局架构或跨域设计先读 `docs/system-map/INDEX.md` 与 `docs/_generated/system-map-agent-context.md`，再局部查询。
 6. 打开查询结果给出的源码与附近测试后，再形成技术结论或实现计划。
@@ -37,9 +37,7 @@ scope: health-llm-driven
 
 Router 的机器推荐是入口，不是第二套状态机。`product-pipeline`、`health-harness-orchestrator` 与 release skill 同一任务最多选一个 primary controller；safety、DB、通知隐私、doc drift 和 App Review 只作为可阻断 overlay，不拥有独立计划或 ledger。
 
-`feature` 路由中的 Health Harness 是 deferred delegate，只在 Product Pipeline 进入 S5 后于同一 Dossier / 父 run 中加载。治理效果用任务开始前注册的前瞻 trace 衡量；日志路径必须显式提供，不记录 prompt、健康短句或凭据，digest 只来自完整高熵 evidence pack，单样本不得宣称因果改善。细则见治理真源。
-
-`feature` 路由中的 Health Harness 是 deferred delegate，不在定义环预载；只有 Product Pipeline 进入 S5 后，才在同一 Dossier / 父 run 中显式加载。若要衡量治理效果，在开始下一条真实 Bug 前用 `scripts/agent_skill_benchmark.py start --arm router_v1_prospective --task-mode <mode> --log <explicit-jsonl> ...` 注册；日志路径必须显式提供且不得提交用户文本，后续只用 `mark` 写闭集阶段与哈希证据。证据 digest 必须来自完整、高熵 evidence pack，不能直接哈希药名、诊断、健康短句或 prompt；完成报告后把 trace head hash 锚定到对应 Dossier。
+`feature` 路由中的 Health Harness 位于 `deferred_by_phase.S5`，不在定义环预载；只有 Product Pipeline 进入 S5 后，才在同一 Dossier / 父 run 中显式加载。若要衡量治理效果，在开始下一条真实 Bug 前用 `scripts/agent_skill_benchmark.py start --arm router_v1_prospective --task-mode <mode> --log <explicit-jsonl> ...` 注册；日志路径必须显式提供且不得提交用户文本，后续只用 `mark` 写闭集阶段与哈希证据。证据 digest 必须来自完整、高熵 evidence pack，不能直接哈希药名、诊断、健康短句或 prompt；完成报告后把 trace head hash 锚定到对应 Dossier。
 
 ## Binding 表
 

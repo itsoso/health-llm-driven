@@ -4,7 +4,7 @@
   "event_schema": "docs/governance/agent-skill-run-event.schema.json",
   "trace_event_schema": "docs/governance/agent-skill-run-trace-event.schema.json",
   "benchmark_collector": "scripts/agent_skill_benchmark.py",
-  "last_reviewed": "2026-08-20",
+  "last_reviewed": "2026-08-29",
   "lifecycle": [
     "experimental",
     "recommended",
@@ -39,7 +39,7 @@
   },
   "adapter_contracts": {
     "reva-workflow-router": {
-      "version": "1.0.0",
+      "version": "2.0.0",
       "required_markers": [
         "analysis",
         "quick_fix",
@@ -49,12 +49,15 @@
         "release",
         "primary_controller",
         "capability-trigger",
+        "immediate_skills",
+        "deferred_by_phase",
+        "selected_skills cannot be used as a preload list",
         "using-superpowers",
         "executing-plans"
       ],
       "adapter_sha256": {
-        "claude": "8668f8de5ccea9e40b88708c810387a4967fde9e2b4454ac70ed917b60a96cd4",
-        "codex": "bfec5c1ba04b5c9be467d33b1bace2779af6816597a63106d70963e587c22664"
+        "claude": "e9825a5a7fcb5363ed1c8036ed06706c7717bbee186314cd2cd1993a76aba935",
+        "codex": "6b8d20a7808c395dca1aace12a95b828799e71bf34e7188aa2579e438f5353c6"
       }
     },
     "product-pipeline": {
@@ -104,7 +107,7 @@
       "id": "reva-workflow-router",
       "lifecycle": "standard",
       "owner": "reva-agent-governance",
-      "version": "1.0.0",
+      "version": "2.0.0",
       "layer": "workflow",
       "kind": "router",
       "platforms": [
@@ -534,6 +537,40 @@
         "capabilities": [
           "verification-before-completion"
         ]
+      }
+    },
+    "activation_policy": {
+      "phases": [
+        "immediate",
+        "diagnosis",
+        "on_demand",
+        "implementation",
+        "verification",
+        "S5"
+      ],
+      "role_phases": {
+        "router": "immediate",
+        "controller": "immediate",
+        "overlay": "immediate",
+        "terminal": "immediate"
+      },
+      "capability_phases": {
+        "system-map": "on_demand",
+        "karpathy-guidelines": "implementation",
+        "systematic-debugging": "diagnosis",
+        "test-driven-development": "implementation",
+        "verification-before-completion": "verification"
+      },
+      "capability_trigger_phase": "immediate",
+      "eager_phases_by_mode": {
+        "incident": [
+          "diagnosis"
+        ]
+      },
+      "delegate_phases": {
+        "feature": {
+          "health-harness-orchestrator": "S5"
+        }
       }
     },
     "overlays": {

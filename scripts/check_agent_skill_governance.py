@@ -22,6 +22,14 @@ LIFECYCLE = ["experimental", "recommended", "standard", "deprecated"]
 LAYERS = ["platform", "workflow", "incubator"]
 KINDS = ["router", "controller", "capability", "overlay", "terminal"]
 MODES = ["analysis", "quick_fix", "feature", "implementation", "incident", "release"]
+ACTIVATION_PHASES = [
+    "immediate",
+    "diagnosis",
+    "on_demand",
+    "implementation",
+    "verification",
+    "S5",
+]
 PLATFORMS = {"agent-neutral", "claude", "codex"}
 
 STANDARD_FIELDS = {
@@ -616,6 +624,138 @@ def _validate_routes(
             f"{target}: {skill_id}",
         )
 
+    policy = routing.get("activation_policy")
+    _require(
+        isinstance(policy, dict),
+        "invalid_activation_policy",
+        "routing.activation_policy must be an object",
+    )
+    _require(
+        set(policy)
+        == {
+            "phases",
+            "role_phases",
+            "capability_phases",
+            "capability_trigger_phase",
+            "eager_phases_by_mode",
+            "delegate_phases",
+        },
+        "invalid_activation_policy",
+        "activation policy fields drifted",
+    )
+    _require(
+        policy["phases"] == ACTIVATION_PHASES,
+        "invalid_activation_phase",
+        "closed activation phase vocabulary drifted",
+    )
+
+    role_phases = policy["role_phases"]
+    immediate_roles = {"router", "controller", "overlay", "terminal"}
+    _require(
+        isinstance(role_phases, dict) and set(role_phases) == immediate_roles,
+        "invalid_activation_policy",
+        "role_phases must cover all immediate ownership roles",
+    )
+    for role, phase in role_phases.items():
+        _require(
+            phase in ACTIVATION_PHASES,
+            "invalid_activation_phase",
+            f"role_phases.{role}: {phase}",
+        )
+        _require(
+            phase == "immediate",
+            "invalid_activation_policy",
+            f"role_phases.{role} must be immediate",
+        )
+
+    capability_phases = policy["capability_phases"]
+    _require(
+        isinstance(capability_phases, dict),
+        "invalid_activation_policy",
+        "capability_phases must be an object",
+    )
+    route_capabilities = {
+        skill_id for route in routes.values() for skill_id in route["capabilities"]
+    }
+    _require(
+        set(capability_phases) == route_capabilities,
+        "activation_policy_coverage",
+        "capability phase coverage drifted",
+    )
+    for skill_id, phase in capability_phases.items():
+        _require(
+            _skill_kind(skill_id, known) == "capability",
+            "invalid_activation_capability",
+            skill_id,
+        )
+        _require(
+            phase in ACTIVATION_PHASES,
+            "invalid_activation_phase",
+            f"capability_phases.{skill_id}: {phase}",
+        )
+
+    trigger_phase = policy["capability_trigger_phase"]
+    _require(
+        trigger_phase in ACTIVATION_PHASES,
+        "invalid_activation_phase",
+        f"capability_trigger_phase: {trigger_phase}",
+    )
+    _require(
+        trigger_phase == "immediate",
+        "invalid_activation_policy",
+        "authoring capability triggers must be immediate",
+    )
+
+    eager_by_mode = policy["eager_phases_by_mode"]
+    _require(
+        isinstance(eager_by_mode, dict),
+        "invalid_activation_policy",
+        "eager_phases_by_mode must be an object",
+    )
+    unknown_eager_modes = sorted(set(eager_by_mode) - set(MODES))
+    _require(
+        not unknown_eager_modes,
+        "invalid_activation_mode",
+        ", ".join(unknown_eager_modes),
+    )
+    for eager_mode, phases in eager_by_mode.items():
+        for phase in _string_list(
+            phases, f"routing.activation_policy.eager_phases_by_mode.{eager_mode}"
+        ):
+            _require(
+                phase in ACTIVATION_PHASES,
+                "invalid_activation_phase",
+                f"eager_phases_by_mode.{eager_mode}: {phase}",
+            )
+
+    delegate_phases = policy["delegate_phases"]
+    _require(
+        isinstance(delegate_phases, dict),
+        "invalid_activation_policy",
+        "delegate_phases must be an object",
+    )
+    expected_delegate_modes = {
+        mode for mode, route in routes.items() if route["delegates"]
+    }
+    _require(
+        set(delegate_phases) == expected_delegate_modes,
+        "activation_policy_coverage",
+        "delegate phase mode coverage drifted",
+    )
+    for delegate_mode, phases_by_skill in delegate_phases.items():
+        _require(
+            isinstance(phases_by_skill, dict)
+            and set(phases_by_skill) == set(routes[delegate_mode]["delegates"]),
+            "activation_policy_coverage",
+            f"delegate phase coverage drifted: {delegate_mode}",
+        )
+        for skill_id, phase in phases_by_skill.items():
+            _require(
+                phase in ACTIVATION_PHASES,
+                "invalid_activation_phase",
+                f"delegate_phases.{delegate_mode}.{skill_id}: {phase}",
+            )
+
 
 def _canonical_field(name: str) -> str:
     return "".join(character for character in name.lower() if character.isalnum())
@@ -985,53 +1125,96 @@ def recommend(
     controller_count = int(controller is not None)
     _require(controller_count <= 1, "controller_conflict", mode)
 
-    ordered = [registry["best_skill_set"]["router"]]
-    if controller is not None:
-        ordered.append(controller)
-    ordered.extend(capabilities)
-    ordered.extend(overlays)
-    selected_skills = list(dict.fromkeys(ordered))
+    router = registry["best_skill_set"]["router"]
     known = {
         **{skill["id"]: skill for skill in registry["skills"]},
         **{skill["id"]: skill for skill in registry["external_recommendations"]},
     }
+    policy = registry["routing"]["activation_policy"]
+    eager_phases = set(policy["eager_phases_by_mode"].get(mode, []))
+    triggered_set = set(triggered_capabilities)
 
-    def selection_role(skill_id: str) -> str:
-        if skill_id == registry["best_skill_set"]["router"]:
-            return "router"
-        if skill_id in capabilities:
-            return "capability"
-        if skill_id in overlays:
-            return "overlay"
-        if known[skill_id]["kind"] == "terminal":
-            return "terminal"
-        return "controller"
-
-    selected_skill_details = [
-        {
-            "id": skill_id,
-            "version": known[skill_id]["version"],
-            "role": selection_role(skill_id),
-        }
-        for skill_id in selected_skills
+    selections: list[tuple[str, str, str]] = [
+        (router, "router", policy["role_phases"]["router"])
     ]
-    deferred_skill_details = [
-        {
-            "id": skill_id,
-            "version": known[skill_id]["version"],
-            "role": "delegate",
-        }
+    if controller is not None:
+        controller_role = (
+            "terminal" if known[controller]["kind"] == "terminal" else "controller"
+        )
+        selections.append(
+            (controller, controller_role, policy["role_phases"][controller_role])
+        )
+    for skill_id in capabilities:
+        phase = (
+            policy["capability_trigger_phase"]
+            if skill_id in triggered_set
+            else policy["capability_phases"][skill_id]
+        )
+        selections.append((skill_id, "capability", phase))
+    selections.extend(
+        (skill_id, "overlay", policy["role_phases"]["overlay"])
+        for skill_id in overlays
+    )
+    selections.extend(
+        (
+            skill_id,
+            "delegate",
+            policy["delegate_phases"][mode][skill_id],
+        )
         for skill_id in delegates
+    )
+
+    details_by_id: dict[str, dict[str, str]] = {}
+    selection_order: list[str] = []
+    for skill_id, role, phase in selections:
+        if skill_id in details_by_id:
+            continue
+        selection_order.append(skill_id)
+        details_by_id[skill_id] = {
+            "id": skill_id,
+            "version": known[skill_id]["version"],
+            "role": role,
+            "activation_phase": phase,
+        }
+
+    immediate_skills = [
+        skill_id
+        for skill_id in selection_order
+        if details_by_id[skill_id]["activation_phase"] == "immediate"
+        or details_by_id[skill_id]["activation_phase"] in eager_phases
     ]
+    deferred_by_phase = {
+        phase: [
+            skill_id
+            for skill_id in selection_order
+            if details_by_id[skill_id]["activation_phase"] == phase
+            and skill_id not in immediate_skills
+        ]
+        for phase in policy["phases"]
+        if phase != "immediate"
+    }
+    deferred_by_phase = {
+        phase: skill_ids
+        for phase, skill_ids in deferred_by_phase.items()
+        if skill_ids
+    }
+    deferred_skills = [
+        skill_id for skill_ids in deferred_by_phase.values() for skill_id in skill_ids
+    ]
+    selected_skills = [*immediate_skills, *deferred_skills]
+    selected_skill_details = [details_by_id[skill_id] for skill_id in selected_skills]
+    deferred_skill_details = [details_by_id[skill_id] for skill_id in deferred_skills]
 
     return {
-        "schema_version": "agent-skill-recommendation.v1",
+        "schema_version": "agent-skill-recommendation.v2",
         "mode": mode,
-        "router": registry["best_skill_set"]["router"],
+        "router": router,
         "controller": controller,
         "controller_count": controller_count,
         "delegates": delegates,
-        "deferred_skills": delegates,
+        "immediate_skills": immediate_skills,
+        "deferred_by_phase": deferred_by_phase,
+        "deferred_skills": deferred_skills,
         "deferred_skill_details": deferred_skill_details,
         "capabilities": capabilities,
         "triggered_capabilities": triggered_capabilities,

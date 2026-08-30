@@ -37,8 +37,12 @@ blocking errors. Do not guess around them.
 
 ## Apply the recommendation
 
-- Load only the returned immediate controller, capabilities, overlays, and
-  terminal skill. A returned delegate remains deferred until its named phase.
+- At startup, load only IDs in `immediate_skills`.
+- When work enters a named phase, load only that phase's IDs from
+  `deferred_by_phase`; `on_demand` activates only when its trigger is actually
+  needed, and an S5 delegate activates inside the existing parent run.
+- `selected_skills` and `selected_skill_details` are compatibility unions for
+  logging and older consumers. **selected_skills cannot be used as a preload list**.
 - There must be zero or one `primary_controller`. If output contains more, stop
   and run the governance check; do not choose by intuition.
 - `analysis` and `quick_fix` deliberately have no controller.
