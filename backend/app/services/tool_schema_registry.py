@@ -965,6 +965,43 @@ ANALYSIS_TURN_TOOL_NAMES: tuple = (
     "supplement_guide",
 )
 
+# Query-scoped fixed lanes. These are intentionally coarse and stable: the
+# provider sees one reusable schema prefix per domain instead of a unique tool
+# list per utterance. All lanes are read-only; mutation/attachments fail open to
+# the full registry in AgentExecutor.
+RECOVERY_TURN_TOOL_NAMES: tuple = (
+    "health_query",
+    "health_query_batch",
+    "health_analysis",
+    "knowledge_search",
+    "environment_check",
+)
+DIET_TURN_TOOL_NAMES: tuple = (
+    "health_query",
+    "health_query_batch",
+    "health_analysis",
+    "knowledge_search",
+)
+MEDICATION_TURN_TOOL_NAMES: tuple = (
+    "health_query",
+    "health_analysis",
+    "query_genetic_profile",
+    "knowledge_search",
+    "supplement_guide",
+)
+LABS_TURN_TOOL_NAMES: tuple = (
+    "health_query",
+    "health_analysis",
+    "query_lab_indicators",
+    "query_genetic_profile",
+    "knowledge_search",
+    "realtime_search",
+)
+KNOWLEDGE_TURN_TOOL_NAMES: tuple = (
+    "knowledge_search",
+    "realtime_search",
+)
+
 
 def get_health_tools(subset: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     """获取健康工具定义。

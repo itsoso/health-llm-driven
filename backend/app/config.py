@@ -252,9 +252,17 @@ class Settings(BaseSettings):
     notification_gatekeeper_mode: str = "off"
     # 任务分级模型路由(成本/延迟):开后按 task_tier 选模型;默认关=零行为变更
     task_tiered_routing: bool = False
+    # 两阶段回复 + 答案模型分层。off=现状；shadow=只记录拟路由；on=立即返回
+    # 确定性承接语，并按 casual/balanced/high_stakes 选择答案模型。
+    staged_response_mode: Literal["off", "shadow", "on"] = "off"
     # R5 分析轮只读工具子集(token 优化,fast 子集的对称补全)。开后纯分析/知识轮首轮
     # 只发只读工具;模型要写→withheld-upgrade 升级回全集重跑。默认关=逐字节现状。
     analysis_turn_tool_subset: bool = False
+    # Query-scoped prompt plan: use one of a few fixed domain lanes to trim
+    # unrelated personal context, analysis blobs and tool schemas. Ships OFF;
+    # fixed lanes preserve provider prefix-cache reuse and withheld-tool reruns
+    # remain the fail-open escape hatch.
+    domain_prompt_optimization: bool = False
     # XiaoBa Agent Kernel: shadow keeps decisions observable but does not block;
     # enforce blocks policy-denied write tools at the single execution choke point.
     agent_kernel_policy_mode: Literal["enforce", "shadow"] = "enforce"

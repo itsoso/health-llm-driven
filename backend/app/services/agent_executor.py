@@ -30,8 +30,13 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.services.tool_schema_registry import (
     ANALYSIS_TURN_TOOL_NAMES,
+    DIET_TURN_TOOL_NAMES,
     FAST_READ_TURN_TOOL_NAMES,
     FAST_TURN_TOOL_NAMES,
+    KNOWLEDGE_TURN_TOOL_NAMES,
+    LABS_TURN_TOOL_NAMES,
+    MEDICATION_TURN_TOOL_NAMES,
+    RECOVERY_TURN_TOOL_NAMES,
     get_health_tools,
 )
 from app.services.lab_plausibility import annotate_if_implausible
@@ -396,6 +401,58 @@ def _prompt_prefix_signature(messages: List[Dict]) -> Dict[str, Any]:
         "prefix_chars": len(prefix_blob),
         "total_chars": total_chars,
         "approx_tokens": total_chars // 4,
+    }
+
+
+def _prompt_payload_budget(
+    messages: List[Dict],
+    tools: Optional[List[Dict]] = None,
+) -> Dict[str, int]:
+    """Return content-free per-block prompt size telemetry.
+
+    The accounting deliberately contains only lengths/counts. It is safe for
+    health logs because neither prompt text nor tool descriptions are emitted.
+    ``// 4`` matches the existing token-ish prefix metric, so before/after
+    dashboards remain comparable until provider-reported token blocks exist.
+    """
+    last_user_idx = -1
+    for index, message in enumerate(messages):
+        if message.get("role") == "user":
+            last_user_idx = index
+
+    system_chars = 0
+    history_chars = 0
+    turn_chars = 0
+    for index, message in enumerate(messages):
+        size = len(_stringify_message_content(message.get("content")))
+        if message.get("role") == "system":
+            system_chars += size
+        elif index == last_user_idx:
+            turn_chars += size
+        else:
+            history_chars += size
+
+    tool_payload = json.dumps(
+        tools or [],
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    tool_schema_chars = len(tool_payload) if tools else 0
+    message_chars = system_chars + history_chars + turn_chars
+    return {
+        "system_chars": system_chars,
+        "system_approx_tokens": system_chars // 4,
+        "history_chars": history_chars,
+        "history_approx_tokens": history_chars // 4,
+        "turn_chars": turn_chars,
+        "turn_approx_tokens": turn_chars // 4,
+        "tool_schema_chars": tool_schema_chars,
+        "tool_schema_approx_tokens": tool_schema_chars // 4,
+        "tool_count": len(tools or []),
+        "message_approx_tokens": message_chars // 4,
+        "total_approx_tokens": (message_chars + tool_schema_chars) // 4,
     }
 
 
@@ -8502,6 +8559,77 @@ def _tool_progress_label(func_name: Optional[str]) -> str:
     return _TOOL_PROGRESS_LABEL.get(func_name, _TOOL_PROGRESS_FALLBACK)
 
 
+def _staged_response_mode() -> str:
+    mode = str(getattr(settings, "staged_response_mode", "off") or "off").strip().lower()
+    return mode if mode in {"shadow", "on"} else "off"
+
+
+def _phase_one_acknowledgement(
+    message: Optional[str],
+    *,
+    has_attachments: bool,
+) -> str:
+    """Return an immediate, deterministic acknowledgement without health claims."""
+    text = str(message or "").strip()
+    lowered = unicodedata.normalize("NFKC", text).lower()
+    from app.services.llm.task_routing import (
+        is_explicit_medication_safety_language,
+        is_contextual_medication_safety_language,
+        is_implicit_medication_dose_language,
+        is_low_risk_diet_record_language,
+    )
+    from app.services.workday_microbreak_safety import (
+        contains_acute_symptom_language,
+    )
+
+    if contains_acute_symptom_language(lowered):
+        return "我先核对你描述的症状和风险信号，再给出安全建议。"
+    if is_explicit_medication_safety_language(lowered):
+        return "我先核对用药和剂量信息，再按安全边界处理。"
+    has_lab_context = any(marker in lowered for marker in (
+        "化验", "体检报告", "检查报告", "肝功能", "肾功能", "血常规", "基因", "影像", "胃镜",
+    ))
+    if contains_medication_reference(lowered):
+        if has_lab_context:
+            return "我先核对用药和检查信息，再按安全边界给出判断。"
+        return "我先核对用药和剂量信息，再按安全边界处理。"
+    if is_contextual_medication_safety_language(lowered):
+        return "我先核对用药和剂量信息，再按安全边界处理。"
+    low_risk_diet_record = is_low_risk_diet_record_language(lowered)
+    if low_risk_diet_record:
+        return "我先核对餐食和份量，再给出可确认的营养结果。"
+    if is_implicit_medication_dose_language(lowered):
+        return "我先核对用药和剂量信息，再按安全边界处理。"
+    intent = classify_agent_utterance(text)
+    if intent.is_write and intent.requires_reliable_tool_model:
+        return "我先核对要处理的记录，确认目标后再执行。"
+    if intent.is_write:
+        if intent.domain == "diet":
+            return "我先核对餐食和份量，再给出可确认的营养结果。"
+        if intent.domain in {"medication", "supplement"}:
+            return "我先核对用药和检查信息，再按安全边界给出判断。"
+        return "收到，我先核对记录内容，确认后写入。"
+    if any(marker in lowered for marker in ("用药", "药物", "服药", "剂量", "疗程")):
+        return "我先核对用药和检查信息，再按安全边界给出判断。"
+    if any(marker in lowered for marker in (
+        "化验", "体检报告", "检查报告", "肝功能", "肾功能", "血常规", "基因", "影像", "胃镜",
+    )):
+        return "我先读取相关检查信息，再结合趋势和安全边界解释。"
+    if intent.domain == "diet" or any(
+        marker in lowered for marker in ("饮食", "早餐", "午餐", "晚餐", "这餐", "热量", "蛋白")
+    ):
+        return "我先核对餐食和份量，再给出可确认的营养结果。"
+    if any(marker in lowered for marker in (
+        "睡眠", "睡得", "hrv", "恢复", "锻炼", "运动", "训练",
+    )):
+        return "我先读取睡眠和恢复数据，再判断今天适合的运动强度。"
+    if has_attachments:
+        return "我先识别附件里的关键信息，再给你完整结果。"
+    if any(marker in lowered for marker in ("搜索", "查找", "医院", "指南", "来源")):
+        return "我先查证相关信息，再给你结论和来源。"
+    return "收到，我先梳理这个问题，再给你完整结果。"
+
+
 def _is_reminder_schedule_continuation(
     message: str,
     recent_messages: Any,
@@ -9039,6 +9167,8 @@ def _tool_names_for_turn(
     *,
     fast_route: bool,
     analysis_subset: bool,
+    domain_subset: bool = False,
+    has_attachments: bool = False,
 ) -> tuple[str, ...] | None:
     """Select the least-privilege tool set for a semantically typed turn."""
     if _is_explicit_aigc_media_draft_turn(message):
@@ -9047,9 +9177,103 @@ def _tool_names_for_turn(
         return _AIGC_MEDIA_DRAFT_TOOL_NAMES
     if fast_route:
         return _fast_turn_tool_names_for_message(message)
+    if domain_subset and not has_attachments:
+        intent = classify_agent_utterance(message)
+        if intent.is_write or intent.requires_reliable_tool_model:
+            # A write or ambiguous mutation must retain record/manage tools.
+            return None
+        from app.services.llm.task_routing import classify_answer_task_tier
+
+        if classify_answer_task_tier(
+            message,
+            has_attachments=False,
+        ) == "high_stakes":
+            # Safety dependency closure: medication/lab/symptom advice may
+            # require lab, supplement, genetic and external-evidence tools even
+            # when the wording initially looks single-domain.
+            return ANALYSIS_TURN_TOOL_NAMES
+        if (
+            intent.primary in {"read", "advice"}
+        ):
+            from app.services.health_context_lite_service import (
+                INJECTION_DIET,
+                INJECTION_LABS,
+                INJECTION_MEDICATION,
+                INJECTION_MINIMAL,
+                INJECTION_RECOVERY,
+                classify_context_profile,
+            )
+
+            profile = classify_context_profile(message)
+            fixed_lanes = {
+                INJECTION_RECOVERY: RECOVERY_TURN_TOOL_NAMES,
+                INJECTION_DIET: DIET_TURN_TOOL_NAMES,
+                INJECTION_MEDICATION: MEDICATION_TURN_TOOL_NAMES,
+                INJECTION_LABS: LABS_TURN_TOOL_NAMES,
+                INJECTION_MINIMAL: KNOWLEDGE_TURN_TOOL_NAMES,
+            }
+            # Unknown/cross-domain read-only queries use the existing broad
+            # read-only lane instead of the 17-tool registry.
+            return fixed_lanes.get(profile, ANALYSIS_TURN_TOOL_NAMES)
     if analysis_subset:
         return ANALYSIS_TURN_TOOL_NAMES
     return None
+
+
+_HISTORY_DEPENDENCY_RE = re.compile(
+    r"刚才|方才|前面|上面|上一(?:条|个|轮|次)|上次|上回|前次|之前(?:那|的|说)|此前|"
+    r"昨天说|昨日说|前天说|上周说|回顾|照旧|同前|继续|接着|再(?:分析|说|看|查|来|发)|"
+    r"按照你的建议|按你的建议|根据你的建议|按你说的|照你说的|基于你说的|"
+    r"根据你说的|你之前建议|"
+    r"和之前相比|与之前相比|相比|前述|基于前述|per your advice|"
+    r"based on (?:the )?(?:above|previous)|as you suggested|"
+    r"这个|那个|这些|那些|它们?|其(?:中|他)|同样|还是|改成|补充|撤销|"
+    r"what about|as above|previous|earlier|continue|again|that one|those",
+    re.IGNORECASE,
+)
+
+
+def _history_limit_for_turn(
+    message: Optional[str],
+    *,
+    domain_optimization: bool,
+    has_attachments: bool,
+) -> int:
+    """Use a short recent window only for explicit standalone domain reads.
+
+    The existing message builder may prepend a valid exact-window summary;
+    otherwise its established truncation behavior applies. Ambiguous references,
+    mutations, attachments, unknown domains, and cross-domain questions fail
+    open to the established 15-message window.
+    """
+    if not domain_optimization or has_attachments:
+        return 15
+    text = (message or "").strip()
+    if not text or _HISTORY_DEPENDENCY_RE.search(text):
+        return 15
+    intent = classify_agent_utterance(text)
+    if (
+        intent.primary not in {"read", "advice"}
+        or intent.is_write
+        or intent.requires_reliable_tool_model
+    ):
+        return 15
+    from app.services.health_context_lite_service import (
+        INJECTION_DIET,
+        INJECTION_LABS,
+        INJECTION_MEDICATION,
+        INJECTION_RECOVERY,
+        classify_context_profile,
+    )
+
+    if classify_context_profile(text) not in {
+        INJECTION_RECOVERY,
+        INJECTION_DIET,
+        INJECTION_MEDICATION,
+        INJECTION_LABS,
+    }:
+        return 15
+    return 6
 
 
 def _is_analysis_only_turn(message: str, *, has_images: bool, has_file: bool) -> bool:
@@ -9505,6 +9729,13 @@ class AgentExecutor:
         self._current_user_id: Optional[int] = None
         self._http_client: Optional[httpx.AsyncClient] = None
         self._request_model_id: Optional[str] = None
+        # Two-stage response routing is turn-scoped. Only models selected by
+        # this policy may be upgraded later; explicit choices stay owned by the
+        # user except that high-stakes turns cannot use a fast answer model.
+        self._staged_response_mode = "off"
+        self._staged_answer_task_tier: Optional[str] = None
+        self._staged_answer_model_selected = False
+        self._staged_answer_would_model_id: Optional[str] = None
         self._turn_channel: Optional[str] = None
         self._current_turn_user_message = ""
         self._current_turn_recent_messages: list[dict] = []
@@ -10089,6 +10320,176 @@ class AgentExecutor:
         if model_name and model_name not in self._tool_model_names:
             self._tool_model_names.append(model_name)
 
+    def _configure_staged_answer_routing(
+        self,
+        message: str,
+        *,
+        has_attachments: bool,
+        preclassified_tier: Optional[str] = None,
+        preclassification_failed: bool = False,
+    ) -> None:
+        """Classify answer difficulty and optionally select its quality model.
+
+        ``shadow`` computes the exact same decision but never mutates the
+        provider. ``on`` fills an otherwise-unselected answer model and keeps
+        explicit quality-model choices, but a high-stakes turn overrides any
+        fast answer model to enforce the medical quality floor.
+        """
+        self._staged_response_mode = _staged_response_mode()
+        self._staged_answer_task_tier = None
+        self._staged_answer_model_selected = False
+        self._staged_answer_would_model_id = None
+        if self._staged_response_mode == "off":
+            return
+
+        tier = preclassified_tier
+        classifier_failed = preclassification_failed
+        try:
+            from app.services.llm.task_routing import (
+                classify_answer_task_tier,
+                pick_model_id_by_tier,
+            )
+        except Exception as exc:  # noqa: BLE001 - import failure is safety-relevant
+            classify_answer_task_tier = None
+            pick_model_id_by_tier = None
+            classifier_failed = True
+            logger.warning(
+                "[agent_executor] staged answer route unavailable; use quality floor: %s",
+                exc,
+            )
+
+        if tier is None and not classifier_failed and classify_answer_task_tier is not None:
+            try:
+                tier = classify_answer_task_tier(
+                    message,
+                    has_attachments=has_attachments,
+                )
+            except Exception as exc:  # noqa: BLE001 - fail closed to quality
+                classifier_failed = True
+                logger.warning(
+                    "[agent_executor] staged answer classification unavailable; "
+                    "use high-stakes floor: %s",
+                    exc,
+                )
+        if tier is None:
+            tier = "high_stakes"
+        self._staged_answer_task_tier = tier
+
+        # Revoke a fast/unknown explicit model *before* model picking.  Picker,
+        # classifier, or registry failures must therefore fall back to the
+        # default quality provider instead of preserving a weak model.
+        if self._staged_response_mode == "on" and tier == "high_stakes":
+            current_model = None
+            model_lookup_failed = False
+            if self._request_model_id:
+                try:
+                    from app.services.llm.model_registry import get_model
+
+                    current_model = get_model(self._request_model_id)
+                except Exception as exc:  # noqa: BLE001 - fail closed to quality
+                    model_lookup_failed = True
+                    logger.warning(
+                        "[agent_executor] staged model lookup unavailable; "
+                        "revoke explicit model: %s",
+                        exc,
+                    )
+            current_is_unsafe = bool(
+                self._request_model_id
+                and (
+                    model_lookup_failed
+                    or current_model is None
+                    or getattr(current_model, "speed_tier", None) == "fast"
+                )
+            )
+            if (
+                self._fast_route_simple_turn
+                or self._prefer_fast_record_model
+                or current_is_unsafe
+            ):
+                was_legacy_fast_route = self._fast_route_simple_turn
+                was_compact_record_route = self._prefer_fast_record_model
+                self._request_model_id = None
+                self._fast_route_simple_turn = False
+                self._prefer_fast_record_model = False
+                self._turn_synthesis_skip_thinking = False
+                if model_lookup_failed:
+                    reason = "staged_high_stakes_model_lookup_failed"
+                elif was_legacy_fast_route:
+                    reason = "staged_high_stakes_revoked_fast_route"
+                elif was_compact_record_route:
+                    reason = "staged_high_stakes_revoked_compact_record_context"
+                else:
+                    reason = "staged_high_stakes_overrode_fast_model"
+                self._record_model_fallback_reason(reason)
+
+        selected = None
+        if not classifier_failed and pick_model_id_by_tier is not None:
+            try:
+                selected = pick_model_id_by_tier(tier, only_available=True)
+            except Exception as exc:  # noqa: BLE001 - default quality provider is safe
+                logger.warning(
+                    "[agent_executor] staged answer model picker unavailable; "
+                    "keep quality fallback: %s",
+                    exc,
+                )
+        self._staged_answer_would_model_id = selected
+        if (
+            self._staged_response_mode == "on"
+            and self._request_model_id is None
+            and selected
+        ):
+            self._request_model_id = selected
+            self._staged_answer_model_selected = True
+            self._record_model_fallback_reason(f"staged_answer_tier_{tier}")
+        logger.info(
+            "[agent_executor] staged answer route mode=%s tier=%s "
+            "would_model=%s applied=%s classifier_failed=%s user=%s",
+            self._staged_response_mode,
+            tier,
+            selected,
+            self._staged_answer_model_selected,
+            classifier_failed,
+            self._current_user_id,
+        )
+
+    def _maybe_escalate_staged_answer_model(self) -> None:
+        """Upgrade an auto-selected answer model after deep analysis is invoked."""
+        if (
+            self._staged_response_mode != "on"
+            or not self._staged_answer_model_selected
+            or not self._turn_invoked_deep_analysis
+            or self._staged_answer_task_tier == "high_stakes"
+        ):
+            return
+        try:
+            from app.services.llm.task_routing import pick_model_id_by_tier
+
+            selected = pick_model_id_by_tier(
+                "high_stakes",
+                only_available=True,
+            )
+            if not selected:
+                return
+            previous = self._request_model_id
+            self._request_model_id = selected
+            self._staged_answer_task_tier = "high_stakes"
+            self._staged_answer_would_model_id = selected
+            self._record_model_fallback_reason(
+                "staged_answer_deep_analysis_escalated"
+            )
+            logger.info(
+                "[agent_executor] staged answer escalated after deep analysis "
+                "model=%s -> %s user=%s",
+                previous,
+                selected,
+                self._current_user_id,
+            )
+        except Exception as exc:  # noqa: BLE001 - keep the current quality model
+            logger.warning(
+                "[agent_executor] staged answer escalation unavailable: %s",
+                exc,
+            )
+
     def _answer_max_tokens(self) -> int:
         """本回合答案生成的 max_tokens。fast-routed 简单回合收紧到
         FAST_ROUTE_ANSWER_MAX_TOKENS (简单答案的长尾解码是延迟的一部分);
@@ -10566,7 +10967,8 @@ class AgentExecutor:
             {"type":"status","stage":"synthesis"}                   — 最终答案开始生成前发
 
         故意 flat (顶层 type/stage/label, 无 data 包裹): 与既有 {"event":"status",
-        "data":{...}} 家族区分, 客户端可只订阅其一。round/label 仅 tool 阶段带。
+        "data":{...}} 家族区分, 客户端可只订阅其一。label 可在 accepted 承接语或
+        tool 阶段携带，round 仅 tool 阶段携带。
         纯附加、fail-soft: 未知事件四端消费者都 tolerate (mobile chat.ts 落 undefined /
         frontend evt.event??evt.type 落 status 分支 / mac default→nil)。
         """
@@ -11585,11 +11987,20 @@ class AgentExecutor:
         tools are refused at the dispatch choke (fail-closed) — the pregen turn
         runs the same synthesis pipeline but can never mutate user data.
         """
+        staged_mode = _staged_response_mode()
+        phase_one_label = (
+            _phase_one_acknowledgement(
+                message,
+                has_attachments=bool(images or file_base64),
+            )
+            if staged_mode == "on"
+            else None
+        )
         self._runtime_run_id = run_id
         self._runtime_attempt_id = attempt_id
         self._runtime_managed = bool(runtime_managed)
         self._runtime_write_block_reason = runtime_write_block_reason
-        yield self._progress_event("accepted")
+        yield self._progress_event("accepted", label=phase_one_label)
         self._current_user_id = user_id
         self._current_turn_user_message = message or ""
         self._trusted_diet_portion_update_keys.clear()
@@ -12129,6 +12540,10 @@ class AgentExecutor:
             if health_advice_buffered
             else _extract_model_id_from_extra_context(extra_context)
         ) or None
+        self._staged_response_mode = _staged_response_mode()
+        self._staged_answer_task_tier = None
+        self._staged_answer_model_selected = False
+        self._staged_answer_would_model_id = None
         self._request_model_tool_fallback_used = False
         self._fast_route_simple_turn = False
         self._analysis_turn_subset = False  # R5:纯分析轮只读工具子集(flag 门控,下方设定)
@@ -12179,14 +12594,52 @@ class AgentExecutor:
         self._turn_synthesis_skip_thinking = _is_fast_eligible_turn(
             message or "", has_images=bool(images), has_file=bool(file_base64)
         )
+        staged_preclassified_tier: Optional[str] = None
+        staged_preclassification_failed = False
+        if self._staged_response_mode != "off":
+            try:
+                from app.services.llm.task_routing import classify_answer_task_tier
+
+                staged_preclassified_tier = classify_answer_task_tier(
+                    message or "",
+                    has_attachments=bool(images or file_base64),
+                )
+            except Exception as exc:  # noqa: BLE001 - fail closed to quality
+                staged_preclassification_failed = True
+                staged_preclassified_tier = "high_stakes"
+                logger.warning(
+                    "[agent_executor] staged preclassification unavailable; "
+                    "disable fast route and use quality floor: %s",
+                    exc,
+                )
+        if (
+            self._staged_response_mode == "on"
+            and (
+                staged_preclassification_failed
+                or staged_preclassified_tier == "high_stakes"
+            )
+        ):
+            self._turn_synthesis_skip_thinking = False
         # 2026-07-02: FAST-MODEL 路由 — 简单记录/查询回合走最快的可靠工具调用模型,
         # 建议/分析/复盘等仍用用户偏好的质量模型 (qwen3.7-plus)。
-        # 只替换"默认"模型: 用户在 UI 显式选了模型 (_request_model_id 已由 extra_context
-        # 填充) 时**绝不**覆盖, 尊重显式选择。安全 (确定性 SafetyGuardian) 与模型无关。
+        # 只替换"默认"模型。用户在 UI 显式选择的质量模型保持不变；staged=on 时
+        # 高风险问题不能显式选择 fast 模型，由下方质量地板覆盖。
         # 可观测性: 复用 _request_model_id → provider 路由, [perf.agent] log 与 done.meta
         # 会自动显示快模型。
-        if self._request_model_id is None and _is_fast_eligible_turn(
-            message or "", has_images=bool(images), has_file=bool(file_base64)
+        if (
+            self._request_model_id is None
+            and not (
+                self._staged_response_mode == "on"
+                and (
+                    staged_preclassification_failed
+                    or staged_preclassified_tier == "high_stakes"
+                )
+            )
+            and _is_fast_eligible_turn(
+                message or "",
+                has_images=bool(images),
+                has_file=bool(file_base64),
+            )
         ):
             try:
                 from app.services.llm.model_registry import pick_fast_tool_model_id
@@ -12203,6 +12656,16 @@ class AgentExecutor:
                     )
             except Exception as e:  # noqa: BLE001 — 快路由失败绝不断主链路, 退回默认模型
                 logger.warning("[agent_executor] fast-route failed, keep default: %s", e)
+        # Two-stage answer routing runs after the established simple-turn path.
+        # This keeps record/read latency and explicit model ownership unchanged,
+        # while normal analysis and high-stakes health questions get different
+        # quality floors.  Shadow computes the same route without applying it.
+        self._configure_staged_answer_routing(
+            message or "",
+            has_attachments=bool(images or file_base64),
+            preclassified_tier=staged_preclassified_tier,
+            preclassification_failed=staged_preclassification_failed,
+        )
         # R5 分析轮只读工具子集(flag 门控,默认关=零行为)。纯分析/知识轮不裁模型(仍用质量
         # 模型答正文),只裁**工具集** → 首轮只发只读工具,省 health_record/manage/upload schema。
         # 与 fast 简单轮互斥(fast 已有 big-3 子集)。模型要写 → 下方 withheld-upgrade 升级回全集。
@@ -12666,7 +13129,20 @@ class AgentExecutor:
 
         # 3. 构建对话历史
         _t_stage = time.time()
-        messages = svc.build_messages(conv.id, limit=15)
+        history_limit = _history_limit_for_turn(
+            message,
+            domain_optimization=getattr(
+                settings, "domain_prompt_optimization", False
+            ),
+            has_attachments=bool(images or file_base64),
+        )
+        messages = svc.build_messages(conv.id, limit=history_limit)
+        logger.info(
+            "[agent_executor] history-window user=%s limit=%s profile=%s",
+            user_id,
+            history_limit,
+            getattr(self, "_prompt_context_profile", "full"),
+        )
         recent_messages = messages
         if (
             recent_messages
@@ -12816,6 +13292,10 @@ class AgentExecutor:
             message,
             fast_route=self._fast_route_simple_turn,
             analysis_subset=self._analysis_turn_subset,
+            domain_subset=getattr(
+                settings, "domain_prompt_optimization", False
+            ),
+            has_attachments=bool(images or file_base64),
         )
         if turn_tool_names is not None:
             tools = get_health_tools(subset=list(turn_tool_names))
@@ -13040,6 +13520,10 @@ class AgentExecutor:
                         user_id,
                         len(message or ""),
                     )
+                # A tool may reveal that a seemingly ordinary question needs a
+                # deep health analysis. Upgrade only the model auto-selected by
+                # staged routing; user-selected models remain untouched.
+                self._maybe_escalate_staged_answer_model()
                 # 真流式调用 LLM：content delta 实时 yield 给客户端,同时累积 tool_calls。
                 # _call_llm_stream 内部已做 provider 路由 + failover (镜像 _call_llm)。
                 # round_tools = 本轮**发给模型**的工具; _detect_tools = 扫描模型**输出**用的
@@ -15749,6 +16233,17 @@ class AgentExecutor:
                 "answer_model": answer_model,
                 "tool_models": tool_models,
                 "fallback_reasons": fallback_reasons,
+                **(
+                    {
+                        "staged_response_mode": self._staged_response_mode,
+                        "answer_task_tier": self._staged_answer_task_tier,
+                        "staged_answer_would_model_id": (
+                            self._staged_answer_would_model_id
+                        ),
+                    }
+                    if self._staged_response_mode != "off"
+                    else {}
+                ),
                 "sources_used": sources_used,
                 "tools_used": tools_used,
                 "write_receipts": write_receipts,
@@ -15812,6 +16307,17 @@ class AgentExecutor:
                 "answer_model": answer_model,
                 "tool_models": tool_models,
                 "fallback_reasons": fallback_reasons,
+                **(
+                    {
+                        "staged_response_mode": self._staged_response_mode,
+                        "answer_task_tier": self._staged_answer_task_tier,
+                        "staged_answer_would_model_id": (
+                            self._staged_answer_would_model_id
+                        ),
+                    }
+                    if self._staged_response_mode != "off"
+                    else {}
+                ),
                 "sources_used": sources_used,
                 "tools_used": tools_used,
                 "write_receipts": write_receipts,
@@ -17043,7 +17549,35 @@ class AgentExecutor:
         build_lite_health_context (基础画像) + 自我标识。**跳过**所有分析 blob:基因规则库、
         原研药建议、健康世界观、肝脏趋势、血常规趋势、用药疗程、干预闭环、效应估计、记忆 ——
         这些是分析用的重 prefill, 对「今天喝了多少水」纯噪音且拉长首字延迟。
-        lite=False (分析/建议/复盘等一切非快路由回合): 行为 100% 不变 (逐字节等同旧实现)。"""
+        lite=False (分析/建议/复盘等非快路由回合): 新的 domain prompt 开关关闭时
+        逐字节保持旧实现；开启时按固定领域 lane 裁剪无关上下文和分析 blob。"""
+        from app.services.health_context_lite_service import (
+            INJECTION_FULL,
+            INJECTION_LABS,
+            INJECTION_MEDICATION,
+            classify_context_profile,
+        )
+
+        domain_prompt_enabled = bool(
+            getattr(settings, "domain_prompt_optimization", False)
+            and not lite
+            and not health_evidence_runtime
+            and not force_full_personal_context
+        )
+        if domain_prompt_enabled:
+            from app.services.llm.task_routing import classify_answer_task_tier
+
+            domain_prompt_enabled = classify_answer_task_tier(
+                intent_query,
+                has_attachments=self._current_turn_has_attachment,
+            ) != "high_stakes"
+        context_profile = (
+            classify_context_profile(intent_query)
+            if domain_prompt_enabled
+            else INJECTION_FULL
+        )
+        self._prompt_context_profile = context_profile
+
         parts = [
             "你是用户的 AI 健康助理。你可以通过工具调用获取、记录和分析用户的健康数据。",
             "你是唯一的对话入口——用户的所有健康相关请求（记录数据、查询指标、深度分析、图片识别）都由你处理。",
@@ -17126,7 +17660,12 @@ class AgentExecutor:
 
         # 注入 ak-kbase gene_knowledge 高优先级警示规则（PM/缺陷/纯合风险）
         # lite 回合跳过: 分析用的基因规则库对「记录喝水/多少水」是纯 prefill 噪音。
-        if not lite and not health_evidence_runtime:
+        if (
+            not lite
+            and not health_evidence_runtime
+            and context_profile
+            in {INJECTION_FULL, INJECTION_LABS, INJECTION_MEDICATION}
+        ):
             try:
                 from app.services.gene_rules_registry import get_registry
                 gene_section = get_registry().system_prompt_section(user_phenotypes=None)
@@ -17150,6 +17689,7 @@ class AgentExecutor:
                     self.db,
                     user_id,
                     intent=(None if force_full_personal_context else intent_query),
+                    domain_scoped=domain_prompt_enabled,
                 )
                 if health_ctx:
                     parts.append("\n## 用户健康档案")
@@ -17166,13 +17706,14 @@ class AgentExecutor:
         # (lite=True) 全部跳过 —— 对「记录喝水」「今天喝了多少水」无用, 只增加 prefill 与噪音。
         if not lite and not health_evidence_runtime:
             # 注入原研药可换建议(基于在用药;已采纳/忽略的已被抑制,不会重复推荐)
-            try:
-                from app.services.originator_recommendations import originator_recs_prompt_blob
-                blob = originator_recs_prompt_blob(self.db, user_id)
-                if blob:
-                    parts.append("\n" + blob)
-            except Exception as e:
-                logger.warning(f"Agent 原研药建议注入失败: {e}")
+            if context_profile in {INJECTION_FULL, INJECTION_MEDICATION}:
+                try:
+                    from app.services.originator_recommendations import originator_recs_prompt_blob
+                    blob = originator_recs_prompt_blob(self.db, user_id)
+                    if blob:
+                        parts.append("\n" + blob)
+                except Exception as e:
+                    logger.warning(f"Agent 原研药建议注入失败: {e}")
 
             # 注入健康世界观(四定律 + 四层 + 症状级转诊红线)—— 统一建议哲学
             try:
@@ -17182,61 +17723,66 @@ class AgentExecutor:
                 logger.warning(f"Agent 世界观注入失败: {e}")
 
             # 注入肝脏趋势(消费历史肝酶;FIB-4/脂肪肝风险提示,非诊断)
-            try:
-                from app.services.liver_health import liver_prompt_blob
-                from app.models.user import User as _User
-                from datetime import date as _date
-                _u = self.db.query(_User).filter(_User.id == user_id).first()
-                _age = None
-                if _u and _u.birth_date:
-                    _t = _date.today()
-                    _age = float(_t.year - _u.birth_date.year -
-                                 ((_t.month, _t.day) < (_u.birth_date.month, _u.birth_date.day)))
-                blob = liver_prompt_blob(self.db, user_id, age=_age)
-                if blob:
-                    parts.append("\n" + blob)
-            except Exception as e:
-                logger.warning(f"Agent 肝脏趋势注入失败: {e}")
+            if context_profile in {INJECTION_FULL, INJECTION_LABS}:
+                try:
+                    from app.services.liver_health import liver_prompt_blob
+                    from app.models.user import User as _User
+                    from datetime import date as _date
+                    _u = self.db.query(_User).filter(_User.id == user_id).first()
+                    _age = None
+                    if _u and _u.birth_date:
+                        _t = _date.today()
+                        _age = float(_t.year - _u.birth_date.year -
+                                     ((_t.month, _t.day) < (_u.birth_date.month, _u.birth_date.day)))
+                    blob = liver_prompt_blob(self.db, user_id, age=_age)
+                    if blob:
+                        parts.append("\n" + blob)
+                except Exception as e:
+                    logger.warning(f"Agent 肝脏趋势注入失败: {e}")
 
             # 注入血常规趋势(消费历史 CBC;红细胞系同向偏高/中性-淋巴倒置提示,非诊断)
-            try:
-                from app.services.blood_routine import blood_routine_prompt_blob
-                from app.models.user import User as _User
-                _u = self.db.query(_User).filter(_User.id == user_id).first()
-                _sex = _u.gender if _u else None
-                blob = blood_routine_prompt_blob(self.db, user_id, sex=_sex)
-                if blob:
-                    parts.append("\n" + blob)
-            except Exception as e:
-                logger.warning(f"Agent 血常规趋势注入失败: {e}")
+            if context_profile in {INJECTION_FULL, INJECTION_LABS}:
+                try:
+                    from app.services.blood_routine import blood_routine_prompt_blob
+                    from app.models.user import User as _User
+                    _u = self.db.query(_User).filter(_User.id == user_id).first()
+                    _sex = _u.gender if _u else None
+                    blob = blood_routine_prompt_blob(self.db, user_id, sex=_sex)
+                    if blob:
+                        parts.append("\n" + blob)
+                except Exception as e:
+                    logger.warning(f"Agent 血常规趋势注入失败: {e}")
 
             # 注入用药疗程提醒(即将结束的疗程 + 建议复查;胃溃疡 PPI 疗程等)
-            try:
-                from app.services.medication_course_service import course_prompt_blob
-                blob = course_prompt_blob(self.db, user_id)
-                if blob:
-                    parts.append("\n" + blob)
-            except Exception as e:
-                logger.warning(f"Agent 疗程提醒注入失败: {e}")
+            if context_profile in {INJECTION_FULL, INJECTION_MEDICATION}:
+                try:
+                    from app.services.medication_course_service import course_prompt_blob
+                    blob = course_prompt_blob(self.db, user_id)
+                    if blob:
+                        parts.append("\n" + blob)
+                except Exception as e:
+                    logger.warning(f"Agent 疗程提醒注入失败: {e}")
 
             # 注入干预闭环主动提议(有异常代谢杠杆 + 无 active 周期 → 可提议开 N-of-1 周期)
-            try:
-                from app.services.intervention_cycle_service import intervention_proposal_prompt_blob
-                blob = intervention_proposal_prompt_blob(self.db, user_id)
-                if blob:
-                    parts.append("\n" + blob)
-            except Exception as e:
-                logger.warning(f"Agent 干预闭环提议注入失败: {e}")
+            if context_profile == INJECTION_FULL:
+                try:
+                    from app.services.intervention_cycle_service import intervention_proposal_prompt_blob
+                    blob = intervention_proposal_prompt_blob(self.db, user_id)
+                    if blob:
+                        parts.append("\n" + blob)
+                except Exception as e:
+                    logger.warning(f"Agent 干预闭环提议注入失败: {e}")
 
             # 注入 N-of-1 干预效应估计(active/近期周期 + 复查数据 → 个人化效应后验)。
             # 无周期/无复查 → 空串不注入(Phase 1, effect_estimator)。
-            try:
-                from app.services.effect_estimator import effect_estimate_prompt_blob
-                blob = effect_estimate_prompt_blob(self.db, user_id)
-                if blob:
-                    parts.append("\n" + blob)
-            except Exception as e:
-                logger.warning(f"Agent 干预效应估计注入失败: {e}")
+            if context_profile == INJECTION_FULL:
+                try:
+                    from app.services.effect_estimator import effect_estimate_prompt_blob
+                    blob = effect_estimate_prompt_blob(self.db, user_id)
+                    if blob:
+                        parts.append("\n" + blob)
+                except Exception as e:
+                    logger.warning(f"Agent 干预效应估计注入失败: {e}")
 
             # 记忆已由 build_lite_health_context(lite/full 都调,见 health_context_lite_service
             # 的「用户历史记忆」段)注入一次,自带 "用户历史记忆:" 标签 —— 此处曾重复注入 limit=5,
@@ -17773,10 +18319,16 @@ class AgentExecutor:
             return self._lite_tool_round_messages
         return messages
 
-    def _log_prompt_prefix_signature(self, round_messages: List[Dict], provider: Any) -> None:
-        """每次 LLM 调用记一行前缀指纹 (Phase-2 rank3 第0步, 仅观测, 绝不断业务)。"""
+    def _log_prompt_prefix_signature(
+        self,
+        round_messages: List[Dict],
+        provider: Any,
+        tools: Optional[List[Dict]] = None,
+    ) -> None:
+        """Log cache signature plus content-free per-block prompt accounting."""
         try:
             sig = _prompt_prefix_signature(round_messages)
+            budget = _prompt_payload_budget(round_messages, tools)
             model_name = (
                 getattr(provider, "model", None)
                 or getattr(provider, "provider_name", None)
@@ -17784,9 +18336,18 @@ class AgentExecutor:
             )
             logger.info(
                 "[agent_executor] llm_prefix model=%s sys_hash=%s prefix_hash=%s "
-                "prefix_chars=%d total_chars=%d approx_tokens=%d",
+                "prefix_chars=%d total_chars=%d approx_tokens=%d "
+                "context_profile=%s system_tokens=%d history_tokens=%d "
+                "turn_tokens=%d tool_tokens=%d tool_count=%d payload_tokens=%d",
                 model_name, sig["system_hash"], sig["prefix_hash"],
                 sig["prefix_chars"], sig["total_chars"], sig["approx_tokens"],
+                getattr(self, "_prompt_context_profile", "unknown"),
+                budget["system_approx_tokens"],
+                budget["history_approx_tokens"],
+                budget["turn_approx_tokens"],
+                budget["tool_schema_approx_tokens"],
+                budget["tool_count"],
+                budget["total_approx_tokens"],
             )
         except Exception:  # noqa: BLE001 — 观测层绝不断业务
             pass
@@ -17811,7 +18372,7 @@ class AgentExecutor:
         # 消息栈选择 (fast-record 压缩 / fast 工具决策轮 lite / 全量) — 见 _messages_for_round。
         # 必须在 _resolve_chat_provider 之后 (它设置 _tool_round_fast_routed)。
         round_messages = self._messages_for_round(messages)
-        self._log_prompt_prefix_signature(round_messages, provider)
+        self._log_prompt_prefix_signature(round_messages, provider, pass_tools)
         chat_kwargs = {
             "messages": round_messages,
             "model": None,
@@ -17899,7 +18460,7 @@ class AgentExecutor:
         # 消息栈选择 (fast-record 压缩 / fast 工具决策轮 lite / 全量) — 见 _messages_for_round。
         # 必须在 _resolve_chat_provider 之后 (它设置 _tool_round_fast_routed)。
         round_messages = self._messages_for_round(messages)
-        self._log_prompt_prefix_signature(round_messages, provider)
+        self._log_prompt_prefix_signature(round_messages, provider, pass_tools)
         stream_kwargs: Dict[str, Any] = {
             "messages": round_messages,
             "model": None,

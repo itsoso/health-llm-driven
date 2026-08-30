@@ -45,6 +45,10 @@ describe('statusStagePhrase', () => {
 
   it('maps accepted to the received-and-preparing phrase', () => {
     expect(statusStagePhrase({ stage: 'accepted' })).toBe('已收到，正在准备…');
+    expect(statusStagePhrase({
+      stage: 'accepted',
+      label: '我先读取睡眠和恢复数据，再判断今天适合的运动强度。',
+    })).toBe('我先读取睡眠和恢复数据，再判断今天适合的运动强度。');
   });
 
   it('maps tool label (progress family) verbatim, taking priority over detail', () => {

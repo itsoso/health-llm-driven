@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 # ── 内存缓存 ──────────────────────────────────────────
-# key = (user_id, budget) —— 不同注入档输出不同, 分开缓存, 避免 MINIMAL/FULL 互相污染。
+# key = (user_id, budget) —— 不同注入档输出不同, 分开缓存, 避免各 profile 互相污染。
 _context_cache: dict[tuple[int, str], tuple[float, str]] = {}
 _context_cache_entry_generations: dict[tuple[int, str], int] = {}
 _context_generations: dict[int, int] = {}
@@ -38,15 +38,28 @@ _CLINICIAN_FEEDBACK_SECTION_MAX_CHARS = 2048
 # MINIMAL: 纯知识题 —— 保留基础画像 (年龄/性别/慢病标签/用药/过敏/目标/基因静态标签),
 #          裁掉一切具体时序数值 (今日读数、7 日趋势、恢复就绪、病症天数、饮水/饮食、
 #          运动、预警、打卡、补剂服用状态、周计划、记忆), 避免污染通用知识回答。
+# RECOVERY/DIET/MEDICATION/LABS: 单域个人问题的固定窄档；公共安全字段始终保留。
 INJECTION_FULL = "full"
 INJECTION_MINIMAL = "minimal"
+INJECTION_RECOVERY = "recovery"
+INJECTION_DIET = "diet"
+INJECTION_MEDICATION = "medication"
+INJECTION_LABS = "labs"
+_INJECTION_BUDGETS = (
+    INJECTION_FULL,
+    INJECTION_MINIMAL,
+    INJECTION_RECOVERY,
+    INJECTION_DIET,
+    INJECTION_MEDICATION,
+    INJECTION_LABS,
+)
 
 
 def invalidate_health_context(user_id: int) -> None:
-    """清除单个用户的 FULL/MINIMAL 健康上下文缓存。"""
+    """清除单个用户的所有健康上下文 profile 缓存。"""
     with _context_cache_lock:
         _context_generations[user_id] = _context_generations.get(user_id, 0) + 1
-        for budget in (INJECTION_FULL, INJECTION_MINIMAL):
+        for budget in _INJECTION_BUDGETS:
             cache_key = (user_id, budget)
             _context_cache.pop(cache_key, None)
             _context_cache_entry_generations.pop(cache_key, None)
@@ -86,6 +99,52 @@ def classify_injection_budget(query: Optional[str]) -> str:
         return INJECTION_FULL
     if _KNOWLEDGE_MARKERS.search(q):
         return INJECTION_MINIMAL
+    return INJECTION_FULL
+
+
+_CONTEXT_DOMAIN_PATTERNS = {
+    INJECTION_RECOVERY: re.compile(
+        r"睡眠|睡得|入睡|起床|深睡|REM|HRV|心率|压力|身体电量|恢复|疲劳|"
+        r"锻炼|运动|训练|跑步|步行|骑行|游泳|健身|活动量|workout|exercise|sleep|recovery",
+        re.IGNORECASE,
+    ),
+    INJECTION_DIET: re.compile(
+        r"饮食|早餐|早饭|午餐|午饭|晚餐|晚饭|加餐|零食|夜宵|吃什么|"
+        r"热量|卡路里|蛋白|碳水|脂肪|膳食纤维|喝水|饮水|补水|diet|meal|calorie",
+        re.IGNORECASE,
+    ),
+    INJECTION_MEDICATION: re.compile(
+        r"用药|药物|吃药|服药|停药|换药|剂量|疗程|处方|补剂|保健品|"
+        r"维生素|鱼油|益生菌|medication|medicine|supplement",
+        re.IGNORECASE,
+    ),
+    INJECTION_LABS: re.compile(
+        r"化验|体检|检查报告|检验|指标|肝功能|肾功能|血常规|血脂|血糖|"
+        r"影像|胃镜|核磁|MRI|CT|X光|B超|基因|位点|检验单|lab|genetic",
+        re.IGNORECASE,
+    ),
+}
+
+
+def classify_context_profile(query: Optional[str]) -> str:
+    """Choose a fixed query-scoped context lane, conservatively.
+
+    Pure knowledge keeps the existing MINIMAL contract. One unambiguous health
+    domain selects a stable scoped lane; cross-domain or unknown requests fail
+    open to FULL so no required personal evidence is silently removed.
+    """
+    q = (query or "").strip()
+    if not q:
+        return INJECTION_FULL
+    if classify_injection_budget(q) == INJECTION_MINIMAL:
+        return INJECTION_MINIMAL
+    matched = [
+        profile
+        for profile, pattern in _CONTEXT_DOMAIN_PATTERNS.items()
+        if pattern.search(q)
+    ]
+    if len(matched) == 1:
+        return matched[0]
     return INJECTION_FULL
 
 # ── 系统规则 + Skill 路由表（注入到 system message） ─────
@@ -162,8 +221,8 @@ def _with_clinician_feedback_overlay(
     budget: str,
     base_context: str,
 ) -> str:
-    """Append uncached clinician feedback to FULL context only."""
-    if budget != INJECTION_FULL:
+    """Append bounded clinician feedback to personal/scoped contexts."""
+    if budget == INJECTION_MINIMAL:
         return base_context
     return _append_context_section(
         base_context,
@@ -172,15 +231,23 @@ def _with_clinician_feedback_overlay(
 
 
 def build_lite_health_context(
-    db: Session, user_id: int, intent: Optional[str] = None
+    db: Session,
+    user_id: int,
+    intent: Optional[str] = None,
+    *,
+    domain_scoped: bool = False,
 ) -> Optional[str]:
     """构建健康上下文（~800-1200 tokens）。
 
     intent=None (默认): 全量注入, 行为逐字节等同旧实现 (零回归)。
     intent 为纯知识意图字符串 (见 classify_injection_budget): 降级 MINIMAL,
     只留基础画像, 裁掉具体时序数值。判据保守 fail-open —— 拿不准一律 FULL。
+    domain_scoped=True: 单域问题使用固定窄 profile；未知或跨域仍回退 FULL。
     """
-    budget = classify_injection_budget(intent) if intent is not None else INJECTION_FULL
+    if domain_scoped:
+        budget = classify_context_profile(intent)
+    else:
+        budget = classify_injection_budget(intent) if intent is not None else INJECTION_FULL
     cache_key = (user_id, budget)
     base_context = None
     with _context_cache_lock:
@@ -212,8 +279,23 @@ def build_lite_health_context(
 
 
 def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> str:
-    """构建完整上下文。budget=MINIMAL 时裁掉所有具体时序数值段, 只留基础画像。"""
+    """按固定 profile 构建上下文；FULL 保持历史行为，MINIMAL 只留基础画像。"""
     minimal = budget == INJECTION_MINIMAL
+    include_general = budget == INJECTION_FULL
+    include_recovery = budget in {
+        INJECTION_FULL,
+        INJECTION_RECOVERY,
+        INJECTION_DIET,
+    }
+    include_diet = budget in {INJECTION_FULL, INJECTION_DIET}
+    include_workouts = budget in {INJECTION_FULL, INJECTION_RECOVERY}
+    include_supplements = budget in {INJECTION_FULL, INJECTION_MEDICATION}
+    include_genes = budget in {
+        INJECTION_FULL,
+        INJECTION_MINIMAL,
+        INJECTION_MEDICATION,
+        INJECTION_LABS,
+    }
     from app.models.user import User
     from app.models.user_profile import UserProfile
     from app.models.daily_health import GarminData, WaterIntake, WorkoutRecord, DietRecord
@@ -334,7 +416,7 @@ def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> s
             parts.append(" | ".join(diet_info))
 
     # ── 1d. 用户记忆 ────────────────────────────────────
-    if not minimal:
+    if include_general:
         try:
             from app.services.conversation_memory_service import get_relevant_memories
             memories_str = get_relevant_memories(db, user_id, limit=5)
@@ -351,9 +433,11 @@ def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> s
         return "\n".join(p for p in parts if p)
 
     # ── 2. 今日 Garmin 数据 ──────────────────────────────
-    latest_garmin = db.query(GarminData).filter(
-        GarminData.user_id == user_id
-    ).order_by(GarminData.record_date.desc()).first()
+    latest_garmin = None
+    if include_recovery:
+        latest_garmin = db.query(GarminData).filter(
+            GarminData.user_id == user_id
+        ).order_by(GarminData.record_date.desc()).first()
 
     if latest_garmin:
         g = latest_garmin
@@ -381,10 +465,12 @@ def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> s
 
     # ── 3. 7 日趋势 + 变化方向 ─────────────────────────
     week_ago = today - timedelta(days=7)
-    garmin_7d = db.query(GarminData).filter(
-        GarminData.user_id == user_id,
-        GarminData.record_date >= week_ago,
-    ).order_by(GarminData.record_date).all()
+    garmin_7d = []
+    if include_recovery:
+        garmin_7d = db.query(GarminData).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date >= week_ago,
+        ).order_by(GarminData.record_date).all()
 
     if len(garmin_7d) >= 3:
         steps_list = [g.steps for g in garmin_7d if g.steps is not None]
@@ -445,17 +531,18 @@ def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> s
                 parts.append(f"趋势: {', '.join(changes)}")
 
     # ── 3b. 可穿戴 7 日紧凑摘要 ───────────────────────────
-    try:
-        from app.services.health_context_summary import (
-            build_wearable_context_summary,
-            format_wearable_context_summary_for_prompt,
-        )
+    if include_recovery:
+        try:
+            from app.services.health_context_summary import (
+                build_wearable_context_summary,
+                format_wearable_context_summary_for_prompt,
+            )
 
-        wearable_summary = build_wearable_context_summary(db, user_id, days=7)
-        if wearable_summary:
-            parts.append(format_wearable_context_summary_for_prompt(wearable_summary))
-    except Exception as e:
-        logger.warning(f"构建可穿戴 7 日摘要失败(user={user_id}): {e}")
+            wearable_summary = build_wearable_context_summary(db, user_id, days=7)
+            if wearable_summary:
+                parts.append(format_wearable_context_summary_for_prompt(wearable_summary))
+        except Exception as e:
+            logger.warning(f"构建可穿戴 7 日摘要失败(user={user_id}): {e}")
 
     # ── 4. 恢复就绪度 ─────────────────────────────────
     if latest_garmin:
@@ -507,85 +594,90 @@ def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> s
         parts.append("急性状态约束: 生病/感冒/发热期间不要求完成运动训练目标, 优先恢复、补水、睡眠和症状观察。")
 
     # ── 6. 今日饮水 ─────────────────────────────────────
-    try:
-        water_today = db.query(WaterIntake).filter(
-            WaterIntake.user_id == user_id,
-            WaterIntake.record_date == today
-        ).all()
-        total_ml = sum(w.amount_ml or w.amount or 0 for w in water_today)
-        if total_ml > 0:
-            parts.append(f"今日饮水: {total_ml}ml / 2000ml ({total_ml * 100 // 2000}%)")
-        else:
-            parts.append("今日饮水: 尚未记录")
-    except Exception:
-        pass
+    if include_diet:
+        try:
+            water_today = db.query(WaterIntake).filter(
+                WaterIntake.user_id == user_id,
+                WaterIntake.record_date == today
+            ).all()
+            total_ml = sum(w.amount_ml or w.amount or 0 for w in water_today)
+            if total_ml > 0:
+                parts.append(f"今日饮水: {total_ml}ml / 2000ml ({total_ml * 100 // 2000}%)")
+            else:
+                parts.append("今日饮水: 尚未记录")
+        except Exception:
+            pass
 
     # ── 7. 今日饮食概况 ──────────────────────────────────
     diet_today = []
-    try:
-        diet_today = db.query(DietRecord).filter(
-            DietRecord.user_id == user_id,
-            DietRecord.record_date == today
-        ).all()
-        if diet_today:
-            total_cal = sum(d.calories or 0 for d in diet_today)
-            total_protein = sum(d.protein or 0 for d in diet_today)
-            meals = len(diet_today)
-            parts.append(f"今日饮食: {meals}餐, {total_cal:.0f}kcal, 蛋白质{total_protein:.0f}g")
-        else:
-            parts.append("今日饮食: 尚未记录")
-    except Exception:
-        pass
+    if include_diet:
+        try:
+            diet_today = db.query(DietRecord).filter(
+                DietRecord.user_id == user_id,
+                DietRecord.record_date == today
+            ).all()
+            if diet_today:
+                total_cal = sum(d.calories or 0 for d in diet_today)
+                total_protein = sum(d.protein or 0 for d in diet_today)
+                meals = len(diet_today)
+                parts.append(f"今日饮食: {meals}餐, {total_cal:.0f}kcal, 蛋白质{total_protein:.0f}g")
+            else:
+                parts.append("今日饮食: 尚未记录")
+        except Exception:
+            pass
 
     # ── 7b. 能量平衡 ──────────────────────────────────────
-    try:
-        cal_in = sum(d.calories or 0 for d in diet_today) if diet_today else 0
-        cal_out = latest_garmin.calories_burned if latest_garmin and latest_garmin.calories_burned else 0
-        if cal_in > 0 or cal_out > 0:
-            balance = cal_in - cal_out
-            parts.append(f"能量平衡: 摄入{cal_in:.0f}kcal / 消耗{cal_out}kcal = {'+' if balance >= 0 else ''}{balance:.0f}kcal")
-    except Exception:
-        pass
+    if include_diet:
+        try:
+            cal_in = sum(d.calories or 0 for d in diet_today) if diet_today else 0
+            cal_out = latest_garmin.calories_burned if latest_garmin and latest_garmin.calories_burned else 0
+            if cal_in > 0 or cal_out > 0:
+                balance = cal_in - cal_out
+                parts.append(f"能量平衡: 摄入{cal_in:.0f}kcal / 消耗{cal_out}kcal = {'+' if balance >= 0 else ''}{balance:.0f}kcal")
+        except Exception:
+            pass
 
     # ── 8. 最近运动 ─────────────────────────────────────
-    try:
-        recent_workouts = db.query(WorkoutRecord).filter(
-            WorkoutRecord.user_id == user_id,
-            WorkoutRecord.workout_date >= today - timedelta(days=7)
-        ).order_by(WorkoutRecord.workout_date.desc()).limit(3).all()
+    if include_workouts:
+        try:
+            recent_workouts = db.query(WorkoutRecord).filter(
+                WorkoutRecord.user_id == user_id,
+                WorkoutRecord.workout_date >= today - timedelta(days=7)
+            ).order_by(WorkoutRecord.workout_date.desc()).limit(3).all()
 
-        if recent_workouts:
-            w_strs = []
-            for w in recent_workouts:
-                days_ago = (today - w.workout_date).days
-                when = "今天" if days_ago == 0 else f"{days_ago}天前"
-                w_info = f"{w.workout_type or '运动'}({when})"
-                if w.duration_seconds:
-                    w_info += f" {w.duration_seconds // 60}min"
-                if w.distance_meters and w.distance_meters > 0:
-                    w_info += f" {w.distance_meters / 1000:.1f}km"
-                w_strs.append(w_info)
-            parts.append(f"近期运动: {' | '.join(w_strs)}")
-        else:
-            parts.append("近7天无运动记录")
-    except Exception:
-        pass
+            if recent_workouts:
+                w_strs = []
+                for w in recent_workouts:
+                    days_ago = (today - w.workout_date).days
+                    when = "今天" if days_ago == 0 else f"{days_ago}天前"
+                    w_info = f"{w.workout_type or '运动'}({when})"
+                    if w.duration_seconds:
+                        w_info += f" {w.duration_seconds // 60}min"
+                    if w.distance_meters and w.distance_meters > 0:
+                        w_info += f" {w.distance_meters / 1000:.1f}km"
+                    w_strs.append(w_info)
+                parts.append(f"近期运动: {' | '.join(w_strs)}")
+            else:
+                parts.append("近7天无运动记录")
+        except Exception:
+            pass
 
     # ── 8b. 运动水平（30天） ────────────────────────────
-    try:
-        workout_30d_count = db.query(func.count(WorkoutRecord.id)).filter(
-            WorkoutRecord.user_id == user_id,
-            WorkoutRecord.workout_date >= today - timedelta(days=30)
-        ).scalar() or 0
-        if workout_30d_count <= 4:
-            level = "新手"
-        elif workout_30d_count <= 12:
-            level = "中等"
-        else:
-            level = "活跃"
-        parts.append(f"运动水平: {level} (最近30天{workout_30d_count}次运动)")
-    except Exception:
-        pass
+    if include_workouts:
+        try:
+            workout_30d_count = db.query(func.count(WorkoutRecord.id)).filter(
+                WorkoutRecord.user_id == user_id,
+                WorkoutRecord.workout_date >= today - timedelta(days=30)
+            ).scalar() or 0
+            if workout_30d_count <= 4:
+                level = "新手"
+            elif workout_30d_count <= 12:
+                level = "中等"
+            else:
+                level = "活跃"
+            parts.append(f"运动水平: {level} (最近30天{workout_30d_count}次运动)")
+        except Exception:
+            pass
 
     # ── 9. 健康预警（未读） ──────────────────────────────
     try:
@@ -606,61 +698,63 @@ def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> s
         pass
 
     # ── 10. 打卡进度 ────────────────────────────────────
-    try:
-        from app.models.checkin import CheckinRecord, CheckinTemplate
-        checkins_today = db.query(CheckinRecord, CheckinTemplate).join(
-            CheckinTemplate, CheckinRecord.template_id == CheckinTemplate.id
-        ).filter(
-            CheckinRecord.user_id == user_id,
-            CheckinRecord.checkin_date == today
-        ).all()
+    if include_general:
+        try:
+            from app.models.checkin import CheckinRecord, CheckinTemplate
+            checkins_today = db.query(CheckinRecord, CheckinTemplate).join(
+                CheckinTemplate, CheckinRecord.template_id == CheckinTemplate.id
+            ).filter(
+                CheckinRecord.user_id == user_id,
+                CheckinRecord.checkin_date == today
+            ).all()
 
-        total_templates = db.query(CheckinTemplate).filter(
-            CheckinTemplate.user_id == user_id,
-            CheckinTemplate.is_active.is_(True)
-        ).count()
+            total_templates = db.query(CheckinTemplate).filter(
+                CheckinTemplate.user_id == user_id,
+                CheckinTemplate.is_active.is_(True)
+            ).count()
 
-        if total_templates > 0:
-            completed = len(checkins_today)
-            names = [t.name for _, t in checkins_today]
-            if completed > 0:
-                parts.append(f"今日打卡: {completed}/{total_templates} ({', '.join(names[:3])})")
-            else:
-                parts.append(f"今日打卡: 0/{total_templates}，尚未开始")
-    except Exception:
-        pass
+            if total_templates > 0:
+                completed = len(checkins_today)
+                names = [t.name for _, t in checkins_today]
+                if completed > 0:
+                    parts.append(f"今日打卡: {completed}/{total_templates} ({', '.join(names[:3])})")
+                else:
+                    parts.append(f"今日打卡: 0/{total_templates}，尚未开始")
+        except Exception:
+            pass
 
     # ── 11. 补剂清单 + 今日服用 ───────────────────────────
-    try:
-        from app.models.supplement import SupplementDefinition, SupplementRecord
-        active_supps = db.query(SupplementDefinition).filter(
-            SupplementDefinition.user_id == user_id,
-            SupplementDefinition.is_active.is_(True)
-        ).order_by(SupplementDefinition.sort_order).all()
+    if include_supplements:
+        try:
+            from app.models.supplement import SupplementDefinition, SupplementRecord
+            active_supps = db.query(SupplementDefinition).filter(
+                SupplementDefinition.user_id == user_id,
+                SupplementDefinition.is_active.is_(True)
+            ).order_by(SupplementDefinition.sort_order).all()
 
-        if active_supps:
-            taken_ids = {r.supplement_id for r in db.query(SupplementRecord).filter(
-                SupplementRecord.user_id == user_id,
-                SupplementRecord.record_date == today,
-                SupplementRecord.taken.is_(True)
-            ).all()}
-            taken = len(taken_ids)
-            total = len(active_supps)
+            if active_supps:
+                taken_ids = {r.supplement_id for r in db.query(SupplementRecord).filter(
+                    SupplementRecord.user_id == user_id,
+                    SupplementRecord.record_date == today,
+                    SupplementRecord.taken.is_(True)
+                ).all()}
+                taken = len(taken_ids)
+                total = len(active_supps)
 
-            # 补剂详情列表
-            supp_details = []
-            for s in active_supps:
-                detail = s.name
-                if s.dosage:
-                    detail += f" {s.dosage}"
-                timing_map = {"morning": "早", "noon": "午", "evening": "晚", "bedtime": "睡前"}
-                if s.timing:
-                    detail += f"({timing_map.get(s.timing, s.timing)})"
-                status = "✅" if s.id in taken_ids else "⬜"
-                supp_details.append(f"{status}{detail}")
-            parts.append(f"补剂({taken}/{total}): {', '.join(supp_details)}")
-    except Exception:
-        pass
+                # 补剂详情列表
+                supp_details = []
+                for s in active_supps:
+                    detail = s.name
+                    if s.dosage:
+                        detail += f" {s.dosage}"
+                    timing_map = {"morning": "早", "noon": "午", "evening": "晚", "bedtime": "睡前"}
+                    if s.timing:
+                        detail += f"({timing_map.get(s.timing, s.timing)})"
+                    status = "✅" if s.id in taken_ids else "⬜"
+                    supp_details.append(f"{status}{detail}")
+                parts.append(f"补剂({taken}/{total}): {', '.join(supp_details)}")
+        except Exception:
+            pass
 
     # ── 11b. 当前用药 ──────────────────────────────────────
     try:
@@ -695,20 +789,21 @@ def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> s
         pass
 
     # ── 12. 健康目标 ────────────────────────────────────
-    try:
-        from app.models.smart_plan import WeeklyPlan
-        current_plan = db.query(WeeklyPlan).filter(
-            WeeklyPlan.user_id == user_id,
-            WeeklyPlan.week_start <= today,
-            WeeklyPlan.week_end >= today,
-        ).first()
-        if current_plan and current_plan.completion_pct is not None:
-            parts.append(f"本周计划完成度: {current_plan.completion_pct:.0f}%")
-    except Exception:
-        pass
+    if include_general:
+        try:
+            from app.models.smart_plan import WeeklyPlan
+            current_plan = db.query(WeeklyPlan).filter(
+                WeeklyPlan.user_id == user_id,
+                WeeklyPlan.week_start <= today,
+                WeeklyPlan.week_end >= today,
+            ).first()
+            if current_plan and current_plan.completion_pct is not None:
+                parts.append(f"本周计划完成度: {current_plan.completion_pct:.0f}%")
+        except Exception:
+            pass
 
     # ── 13. 基因特征（区分风险/优势/用药安全）────────────────
-    gene_section = _gene_context_section(db, user_id)
+    gene_section = _gene_context_section(db, user_id) if include_genes else ""
     if gene_section:
         parts.append(gene_section)
 

@@ -5,8 +5,13 @@
 """
 import json
 
+import pytest
+
 from app.services.tool_schema_registry import (
     ANALYSIS_TURN_TOOL_NAMES,
+    DIET_TURN_TOOL_NAMES,
+    KNOWLEDGE_TURN_TOOL_NAMES,
+    RECOVERY_TURN_TOOL_NAMES,
     FAST_READ_TURN_TOOL_NAMES,
     FAST_TURN_TOOL_NAMES,
     HEALTH_TOOLS,
@@ -14,10 +19,76 @@ from app.services.tool_schema_registry import (
 )
 from app.services.agent_executor import (
     _fast_turn_tool_names_for_message,
+    _history_limit_for_turn,
     _is_analysis_only_turn,
     _project_orchestrator_result,
     _tool_subset_withheld_upgrade,
+    _tool_names_for_turn,
 )
+
+
+def test_domain_history_window_trims_only_standalone_scoped_reads():
+    assert _history_limit_for_turn(
+        "昨晚睡得怎样，今天是否适合锻炼？",
+        domain_optimization=True,
+        has_attachments=False,
+    ) == 6
+    assert _history_limit_for_turn(
+        "刚才那个睡眠结果继续分析",
+        domain_optimization=True,
+        has_attachments=False,
+    ) == 15
+    assert _history_limit_for_turn(
+        "删除刚才的两餐",
+        domain_optimization=True,
+        has_attachments=False,
+    ) == 15
+    assert _history_limit_for_turn(
+        "综合分析睡眠和肝功能趋势",
+        domain_optimization=True,
+        has_attachments=False,
+    ) == 15
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "上次的用药方案再发我一下",
+        "昨天说的用药怎么吃",
+        "请回顾上周说的训练建议",
+        "同前，今天还能运动吗",
+        "照旧分析今天的睡眠",
+        "按照你的建议继续训练",
+        "和之前相比睡眠怎样",
+        "按你说的今天练多少",
+        "你之前建议的运动强度是多少",
+        "基于前述睡眠结果今天能跑吗",
+        "per your advice, how hard should I train today",
+        "照你说的今天运动多少",
+        "基于你说的睡眠结果今天能跑吗",
+        "as you suggested, can I exercise",
+        "根据你的建议今天运动多少",
+    ),
+)
+def test_domain_history_window_fails_open_for_conversation_references(message):
+    assert _history_limit_for_turn(
+        message,
+        domain_optimization=True,
+        has_attachments=False,
+    ) == 15
+
+
+def test_domain_history_window_fails_open_when_disabled_or_with_attachment():
+    assert _history_limit_for_turn(
+        "昨晚睡得怎样？",
+        domain_optimization=False,
+        has_attachments=False,
+    ) == 15
+    assert _history_limit_for_turn(
+        "解读这份睡眠截图",
+        domain_optimization=True,
+        has_attachments=True,
+    ) == 15
 
 
 def test_fast_subset_returns_exactly_big3_in_stable_order():
@@ -78,6 +149,126 @@ def test_analysis_subset_saves_schema_bytes():
     assert small < full  # 分析子集省下 record/manage/upload/plan schema
 
 
+def test_domain_recovery_turn_uses_stable_small_read_only_bundle():
+    names = _tool_names_for_turn(
+        "昨晚睡得怎样，今天是否适合锻炼？",
+        fast_route=False,
+        analysis_subset=False,
+        domain_subset=True,
+        has_attachments=False,
+    )
+    assert names == RECOVERY_TURN_TOOL_NAMES
+    assert "health_record" not in names
+    assert "health_manage" not in names
+    full_bytes = len(json.dumps(get_health_tools(), ensure_ascii=False))
+    scoped_bytes = len(json.dumps(
+        get_health_tools(subset=list(names)), ensure_ascii=False
+    ))
+    assert scoped_bytes < full_bytes * 0.4
+    # New domain lanes supersede the older broad analysis lane when both
+    # rollout flags are enabled.
+    assert _tool_names_for_turn(
+        "综合分析我最近的睡眠趋势",
+        fast_route=False,
+        analysis_subset=True,
+        domain_subset=True,
+        has_attachments=False,
+    ) == RECOVERY_TURN_TOOL_NAMES
+
+
+def test_every_domain_lane_maps_to_existing_read_only_tools():
+    expected = {
+        "分析我今天饮食营养": DIET_TURN_TOOL_NAMES,
+        "循证医学是什么": KNOWLEDGE_TURN_TOOL_NAMES,
+    }
+    full_names = {tool["function"]["name"] for tool in get_health_tools()}
+    write_names = {
+        "health_record",
+        "health_manage",
+        "upload_genetic_txt",
+        "upload_medical_exam_text",
+        "manage_plan",
+        "intervention_cycle",
+        "record_doctor_feedback",
+        "draft_aigc_media",
+    }
+    for query, expected_names in expected.items():
+        actual = _tool_names_for_turn(
+            query,
+            fast_route=False,
+            analysis_subset=False,
+            domain_subset=True,
+            has_attachments=False,
+        )
+        assert actual == expected_names
+        assert set(actual) <= full_names
+        assert not (set(actual) & write_names)
+
+
+@pytest.mark.parametrize(
+    "query",
+    (
+        "这个药是否适合我",
+        "解读我的肝功能化验",
+        "肝功能异常会不会和补剂有关",
+    ),
+)
+def test_high_stakes_domain_tools_keep_cross_domain_safety_dependencies(query):
+    actual = _tool_names_for_turn(
+        query,
+        fast_route=False,
+        analysis_subset=False,
+        domain_subset=True,
+        has_attachments=False,
+    )
+    assert actual == ANALYSIS_TURN_TOOL_NAMES
+    assert "query_lab_indicators" in actual
+    assert "supplement_guide" in actual
+
+
+def test_domain_tool_bundle_fails_open_for_write_or_attachment():
+    assert _tool_names_for_turn(
+        "删除刚才的两餐",
+        fast_route=False,
+        analysis_subset=False,
+        domain_subset=True,
+        has_attachments=False,
+    ) is None
+    assert _tool_names_for_turn(
+        "解读这份报告",
+        fast_route=False,
+        analysis_subset=False,
+        domain_subset=True,
+        has_attachments=True,
+    ) is None
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录我现在胸痛",
+        "记录我服了维生素D",
+        "删除刚才错误的用药记录",
+    ),
+)
+def test_high_stakes_write_keeps_write_capable_full_toolset(message):
+    assert _tool_names_for_turn(
+        message,
+        fast_route=False,
+        analysis_subset=False,
+        domain_subset=True,
+        has_attachments=False,
+    ) is None
+
+
+def test_domain_tool_bundle_is_off_by_default():
+    assert _tool_names_for_turn(
+        "昨晚睡得怎样，今天是否适合锻炼？",
+        fast_route=False,
+        analysis_subset=False,
+    ) is None
+
+
 def test_is_analysis_only_turn_detection():
     f = _is_analysis_only_turn
     # 纯分析/建议 → True
@@ -96,6 +287,7 @@ def test_is_analysis_only_turn_detection():
 def test_ships_off_by_default():
     from app.config import Settings
     assert Settings.model_fields["analysis_turn_tool_subset"].default is False
+    assert Settings.model_fields["domain_prompt_optimization"].default is False
 
 
 # ── R5 withheld-upgrade 护栏(fast + analysis 共用)──────────────────

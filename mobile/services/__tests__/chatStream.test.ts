@@ -771,6 +771,27 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('shows the backend phase-one acknowledgement verbatim on accepted', async () => {
+    const iter = streamChat('昨晚睡得怎样，今天是否适合锻炼？');
+    const first = iter.next();
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+
+    xhr.responseText =
+      'data: {"type":"status","stage":"accepted","label":"我先读取睡眠和恢复数据，再判断今天适合的运动强度。"}\n\n';
+    xhr.onprogress?.();
+    await expect(first).resolves.toEqual({
+      value: {
+        type: 'status',
+        statusLabel: '我先读取睡眠和恢复数据，再判断今天适合的运动强度。',
+        statusStage: 'accepted',
+      },
+      done: false,
+    });
+
+    await iter.return?.(undefined as any);
+  });
+
   it('maps progressive diet stages to concise Chinese execution summaries', async () => {
     const iter = streamChat('记录吃了一个桃子');
     const first = iter.next();

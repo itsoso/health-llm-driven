@@ -319,7 +319,7 @@ function statusStageLabel(stage?: string, label?: string | null): string | undef
   const trimmedLabel = typeof label === 'string' ? label.trim() : '';
   switch (s) {
     case 'accepted':
-      return '正在理解…';
+      return trimmedLabel || '正在理解…';
     case 'tool':
       // label 来自后端确定性映射表 (工具名→动词短语); 缺失时兜底.
       return trimmedLabel || '正在处理…';

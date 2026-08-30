@@ -2771,6 +2771,9 @@ public final class AgentChatViewModel {
         case "accepted":
             // P0-1 progress family: stream just opened (before any LLM work). Gives the
             // user deterministic feedback in the 8s before the first token.
+            if let detail, !detail.trimmingCharacters(in: .whitespaces).isEmpty {
+                return (detail, nil)
+            }
             return ("Reva received your message…", nil)
         case "vision":
             return ("Recognizing image…", nil)

@@ -36,7 +36,7 @@ export function statusStagePhrase(data: StatusEventData | null | undefined): str
 
   switch (stage) {
     case 'accepted':
-      return '已收到，正在准备…';
+      return label ?? '已收到，正在准备…';
     case 'vision':
       return '识别图片中';
     case 'thinking':

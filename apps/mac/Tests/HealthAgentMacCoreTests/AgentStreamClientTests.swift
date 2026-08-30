@@ -313,6 +313,11 @@ final class AgentStreamClientTests: XCTestCase {
         // P0-1 progress family: accepted → its own phrase.
         XCTAssertEqual(AgentChatViewModel.statusText(stage: "accepted", detail: nil, round: nil).key, "Reva received your message…")
         XCTAssertNil(AgentChatViewModel.statusText(stage: "accepted", detail: nil, round: nil).detail)
+        let acceptedDetail = "我先读取睡眠和恢复数据，再判断今天适合的运动强度。"
+        XCTAssertEqual(
+            AgentChatViewModel.statusText(stage: "accepted", detail: acceptedDetail, round: nil).key,
+            acceptedDetail
+        )
         // tool with a folded progress label renders via the same Working: %@… template.
         let progressTool = AgentChatViewModel.statusText(stage: "tool", detail: "查看健康数据…", round: 1)
         XCTAssertEqual(progressTool.key, "Working: %@…")
