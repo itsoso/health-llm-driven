@@ -37,9 +37,16 @@ if "_SESSION_STATE_LOCK" not in globals():
 
 
 class _ForbiddenImportObserver:
+    def _record(self, module_name: str) -> None:
+        _record_forbidden_module(module_name)
+
     def find_spec(self, fullname, _path=None, _target=None):
         if isinstance(fullname, str) and is_forbidden_module_name(fullname):
-            _record_forbidden_module(fullname)
+            state = _process_audit_dispatcher_state()
+            with state["lock"]:
+                observers = tuple(state["import_observers"].values())
+            for observer in observers:
+                observer._record(fullname)
         return None
 
 
@@ -62,8 +69,8 @@ def _record_forbidden_module(module_name: str) -> None:
 
 def _is_lexically_within(path: Path, root: Path) -> bool:
     try:
-        path_parts = tuple(part.casefold() for part in path.parts)
-        root_parts = tuple(part.casefold() for part in root.parts)
+        path_parts = path.parts
+        root_parts = root.parts
     except (AttributeError, TypeError):
         return False
     return path_parts[: len(root_parts)] == root_parts
@@ -127,7 +134,7 @@ def _loader_module_name(frame) -> str:
 
 
 def _source_loader_context(
-    code: CodeType,
+    _code: CodeType | None = None,
 ) -> tuple[bool, str, object | None]:
     frame = sys._getframe(1)
     for _ in range(16):
@@ -138,32 +145,8 @@ def _source_loader_context(
             continue
         frame_locals = frame.f_locals
         loader = frame_locals.get("self")
-        if frame_locals.get("code") is code and isinstance(
+        if "module" in frame_locals and isinstance(
             loader, importlib.machinery.SourceFileLoader
-        ):
-            return (
-                True,
-                _loader_module_name(frame),
-                getattr(loader, "path", None),
-            )
-        frame = frame.f_back
-    return False, "", None
-
-
-def _source_loader_pre_exec_context() -> tuple[bool, str, object | None]:
-    frame = sys._getframe(1)
-    for _ in range(16):
-        if frame is None:
-            break
-        if frame.f_code.co_name != "exec_module":
-            frame = frame.f_back
-            continue
-        frame_locals = frame.f_locals
-        loader = frame_locals.get("self")
-        if (
-            "module" in frame_locals
-            and "code" not in frame_locals
-            and isinstance(loader, importlib.machinery.SourceFileLoader)
         ):
             return (
                 True,
@@ -206,9 +189,9 @@ def _handle_audit_event(event: str, args: tuple[object, ...]) -> None:
             _record_forbidden_module(module_name)
         return
     if event == "compile":
-        confirmed, module_name, loader_path = _source_loader_pre_exec_context()
+        source_path = args[1] if len(args) > 1 else None
+        confirmed, module_name, loader_path = _source_loader_context()
         if confirmed:
-            source_path = args[1] if len(args) > 1 else None
             _record_loader_source(module_name, loader_path, source_path)
         return
     if event != "exec" or not args or not isinstance(args[0], CodeType):
@@ -240,6 +223,8 @@ def _process_audit_dispatcher_state() -> dict[str, object]:
         "version": _AUDIT_DISPATCHER_VERSION,
         "dispatcher": None,
         "listeners": {},
+        "listener_snapshot": (),
+        "import_observers": {},
         "lock": threading.RLock(),
         "registration_state": "unregistered",
     }
@@ -252,6 +237,25 @@ def _process_audit_dispatcher_state() -> dict[str, object]:
         or state.get("registration_state") not in _REGISTRATION_STATES
     ):
         raise RuntimeError("incompatible tooling pytest audit dispatcher state")
+
+    if "listener_snapshot" not in state or "import_observers" not in state:
+        lock = state["lock"]
+        with lock:
+            state.setdefault(
+                "listener_snapshot", tuple(state["listeners"].values())
+            )
+            state.setdefault("import_observers", {})
+    if (
+        not isinstance(state.get("listener_snapshot"), tuple)
+        or not isinstance(state.get("import_observers"), dict)
+    ):
+        raise RuntimeError("incompatible tooling pytest audit dispatcher state")
+    return state
+
+
+def _validate_audit_dispatcher_state_locked(
+    state: dict[str, object],
+) -> tuple[str, object]:
     dispatcher = state.get("dispatcher")
     registration_state = state["registration_state"]
     if (
@@ -261,7 +265,11 @@ def _process_audit_dispatcher_state() -> dict[str, object]:
         and not callable(dispatcher)
     ):
         raise RuntimeError("incompatible tooling pytest audit dispatcher state")
-    return state
+    return registration_state, dispatcher
+
+
+def _refresh_listener_snapshot(state: dict[str, object]) -> None:
+    state["listener_snapshot"] = tuple(state["listeners"].values())
 
 
 def _fail_registration(
@@ -303,7 +311,9 @@ def _register_audit_listener() -> None:
     state = _process_audit_dispatcher_state()
     lock = state["lock"]
     with lock:
-        registration_state = state["registration_state"]
+        registration_state, dispatcher = _validate_audit_dispatcher_state_locked(
+            state
+        )
         if registration_state == "failed":
             raise RuntimeError(str(state.get("registration_error")))
         if registration_state == "installing":
@@ -324,10 +334,11 @@ def _register_audit_listener() -> None:
                         args[2]["nonce"] = args[1]
                         args[2]["dispatcher"] = dispatch
                     return
+                listeners = state["listener_snapshot"]
+                if not listeners:
+                    return
                 if event not in _AUDIT_EVENTS:
                     return
-                with state["lock"]:
-                    listeners = tuple(state["listeners"].values())
                 for listener in listeners:
                     listener(event, args)
 
@@ -349,6 +360,7 @@ def _register_audit_listener() -> None:
         _verify_audit_dispatcher(state, dispatcher)
         state["registration_state"] = "installed"
         state["listeners"][_AUDIT_LISTENER_TOKEN] = _audit_listener
+        _refresh_listener_snapshot(state)
 
 
 def _unregister_audit_listener() -> None:
@@ -359,13 +371,36 @@ def _unregister_audit_listener() -> None:
         if isinstance(listeners, dict) and isinstance(lock, _RLOCK_TYPE):
             with lock:
                 listeners.pop(_AUDIT_LISTENER_TOKEN, None)
+                _refresh_listener_snapshot(state)
 
 
 def _install_import_attempt_observer() -> None:
     state = _process_audit_dispatcher_state()
     with state["lock"]:
+        state["import_observers"][_AUDIT_LISTENER_TOKEN] = (
+            _IMPORT_ATTEMPT_OBSERVER
+        )
         if not any(item is _IMPORT_ATTEMPT_OBSERVER for item in sys.meta_path):
             sys.meta_path.insert(0, _IMPORT_ATTEMPT_OBSERVER)
+
+
+def _import_attempt_observer_is_intact() -> bool:
+    state = _process_audit_dispatcher_state()
+    with state["lock"]:
+        registered = state["import_observers"]
+        if registered.get(_AUDIT_LISTENER_TOKEN) is not _IMPORT_ATTEMPT_OBSERVER:
+            return False
+        observers = tuple(registered.values())
+        if len({id(observer) for observer in observers}) != len(observers):
+            return False
+        if not sys.meta_path or not any(
+            sys.meta_path[0] is observer for observer in observers
+        ):
+            return False
+        return all(
+            sum(item is observer for item in sys.meta_path) == 1
+            for observer in observers
+        )
 
 
 def _remove_import_attempt_observer() -> None:
@@ -373,6 +408,9 @@ def _remove_import_attempt_observer() -> None:
     lock = state.get("lock") if isinstance(state, dict) else None
     if isinstance(lock, _RLOCK_TYPE):
         with lock:
+            import_observers = state.get("import_observers")
+            if isinstance(import_observers, dict):
+                import_observers.pop(_AUDIT_LISTENER_TOKEN, None)
             sys.meta_path[:] = [
                 item for item in sys.meta_path if item is not _IMPORT_ATTEMPT_OBSERVER
             ]
@@ -389,6 +427,17 @@ def _observe_current_modules() -> None:
 
 
 def loaded_forbidden_module_names(config: object) -> tuple[str, ...]:
+    try:
+        observer_is_intact = _import_attempt_observer_is_intact()
+    except Exception as error:
+        error_type = type(error)
+        _record_forbidden_module(
+            "import-observer-error:"
+            f"{error_type.__module__}.{error_type.__qualname__}"
+        )
+    else:
+        if not observer_is_intact:
+            _record_forbidden_module("import-observer-error:integrity")
     _observe_current_modules()
     with _SESSION_STATE_LOCK:
         return tuple(sorted(_active_observed_modules.get(config, ())))

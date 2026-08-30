@@ -529,6 +529,82 @@ def test_tooling_pytest_guard_fails_for_dynamically_loaded_application_module(
     assert "app.dynamic_probe" in result.stdout + result.stderr
 
 
+def test_tooling_pytest_guard_fails_closed_when_late_finder_precedes_observer(
+    tmp_path,
+):
+    runner = _tooling_pytest_runner_module()
+    probe_test = tmp_path / "test_late_finder_probe.py"
+    probe_test.write_text(
+        "import importlib\n"
+        "import sys\n"
+        "\n"
+        "def test_late_finder_probe():\n"
+        "    module = importlib.import_module('app')\n"
+        "    assert module.VALUE == 1\n"
+        "    sys.modules.pop('app')\n",
+        encoding="utf-8",
+    )
+    probe = tmp_path / "late_finder_guard_probe.py"
+    probe.write_text(
+        "import importlib.util\n"
+        "import sys\n"
+        "\n"
+        "import pytest\n"
+        f"sys.path.insert(0, {str(ROOT)!r})\n"
+        "from scripts import tooling_pytest_guard as guard\n"
+        "\n"
+        "class Loader:\n"
+        "    def create_module(self, _spec):\n"
+        "        return None\n"
+        "    def exec_module(self, module):\n"
+        "        module.VALUE = 1\n"
+        "\n"
+        "class Finder:\n"
+        "    def find_spec(self, fullname, _path=None, _target=None):\n"
+        "        if fullname == 'app':\n"
+        "            return importlib.util.spec_from_loader(fullname, Loader())\n"
+        "        return None\n"
+        "\n"
+        "class LateFinderPlugin:\n"
+        "    def __init__(self):\n"
+        "        self.finder = Finder()\n"
+        "    @pytest.hookimpl(trylast=True)\n"
+        "    def pytest_sessionstart(self):\n"
+        "        sys.meta_path.insert(0, self.finder)\n"
+        "\n"
+        f"test_path = {str(probe_test)!r}\n"
+        "exit_code = pytest.main(\n"
+        "    [\n"
+        "        '--noconftest',\n"
+        "        '-c',\n"
+        f"        {os.devnull!r},\n"
+        "        '--rootdir',\n"
+        f"        {str(tmp_path)!r},\n"
+        "        '-q',\n"
+        "        '-p',\n"
+        "        'no:cacheprovider',\n"
+        "        test_path,\n"
+        "    ],\n"
+        "    plugins=[guard, LateFinderPlugin()],\n"
+        ")\n"
+        "assert exit_code == pytest.ExitCode.TESTS_FAILED, exit_code\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "import-observer-error:integrity" in output
+
+
 def test_tooling_pytest_guard_allows_safe_imports_and_static_source_reads():
     guard = _tooling_pytest_guard_module()
     config = _GuardCleanupConfig()
@@ -567,6 +643,8 @@ def test_tooling_pytest_guard_fails_for_direct_application_source_loaders(tmp_pa
         "\n"
         "import pytest\n"
         "\n"
+        f"PRECOMPILED_SAFE_CODE = compile('VALUE = 2\\n', {str(safe_source)!r}, 'exec')\n"
+        "\n"
         "def load_detached(name, path):\n"
         "    spec = importlib.util.spec_from_file_location(name, path)\n"
         "    assert spec and spec.loader\n"
@@ -579,6 +657,15 @@ def test_tooling_pytest_guard_fails_for_direct_application_source_loaders(tmp_pa
         "        code = super().get_code(fullname)\n"
         "        Path(self.path).unlink()\n"
         "        return code\n"
+        "\n"
+        "class PrecompiledLoader(importlib.machinery.SourceFileLoader):\n"
+        "    def exec_module(self, module):\n"
+        "        exec(PRECOMPILED_SAFE_CODE, module.__dict__)\n"
+        "\n"
+        "class PrebindingSyntaxLoader(importlib.machinery.SourceFileLoader):\n"
+        "    def exec_module(self, module):\n"
+        "        code = None\n"
+        "        compile('def broken(:\\n', '<string>', 'exec')\n"
         "\n"
         "def test_direct_application_source_loader():\n"
         "    namespace = importlib.import_module('app.namespace_probe')\n"
@@ -598,7 +685,21 @@ def test_tooling_pytest_guard_fails_for_direct_application_source_loaders(tmp_pa
         "    assert spec is not None\n"
         "    module = importlib.util.module_from_spec(spec)\n"
         "    loader.exec_module(module)\n"
-        "    assert not Path(loader.path).exists()\n",
+        "    assert not Path(loader.path).exists()\n"
+        "    name = 'app.inline_precompiled_probe'\n"
+        f"    loader = PrecompiledLoader(name, {str(safe_source)!r})\n"
+        "    spec = importlib.util.spec_from_loader(name, loader)\n"
+        "    assert spec is not None\n"
+        "    module = importlib.util.module_from_spec(spec)\n"
+        "    loader.exec_module(module)\n"
+        "    assert module.VALUE == 2\n"
+        "    name = 'app.prebound_syntax_probe'\n"
+        f"    loader = PrebindingSyntaxLoader(name, {str(invalid_source)!r})\n"
+        "    spec = importlib.util.spec_from_loader(name, loader)\n"
+        "    assert spec is not None\n"
+        "    module = importlib.util.module_from_spec(spec)\n"
+        "    with pytest.raises(SyntaxError):\n"
+        "        loader.exec_module(module)\n",
         encoding="utf-8",
     )
     result = subprocess.run(
@@ -618,6 +719,8 @@ def test_tooling_pytest_guard_fails_for_direct_application_source_loaders(tmp_pa
     assert "backend_app_path_probe" in output
     assert "app.direct_syntax_probe" in output
     assert "safe_deleted_backend_alias_probe" in output
+    assert "app.inline_precompiled_probe" in output
+    assert "app.prebound_syntax_probe" in output
     assert "tooling_safe_loader_probe" not in output
 
 
@@ -646,6 +749,74 @@ def test_tooling_pytest_guard_matches_symlinked_backend_app_source(tmp_path):
 
     guard = _tooling_pytest_guard_module()
     assert guard._is_backend_app_source(symlink)
+
+
+def test_tooling_pytest_guard_does_not_casefold_distinct_linux_paths(
+    tmp_path,
+    monkeypatch,
+):
+    guard = _tooling_pytest_guard_module()
+    root = tmp_path / "repo" / "backend" / "app"
+    root.mkdir(parents=True)
+    case_variant = tmp_path / "repo" / "BACKEND" / "APP" / "safe.py"
+    case_variant.parent.mkdir(parents=True, exist_ok=True)
+    case_variant.write_text("VALUE = 1\n", encoding="utf-8")
+    real_resolve = guard.Path.resolve
+
+    def preserve_case(path, *args, **kwargs):
+        if path == case_variant:
+            return guard.Path(os.path.abspath(path))
+        return real_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(guard.Path, "resolve", preserve_case)
+    monkeypatch.setattr(guard.os.path, "samefile", lambda _left, _right: False)
+
+    assert (
+        guard._classify_backend_app_source(case_variant, root)
+        == guard._PATH_OUTSIDE
+    )
+
+    def unavailable_identity(_left, _right):
+        raise OSError("identity unavailable")
+
+    monkeypatch.setattr(guard.os.path, "samefile", unavailable_identity)
+    assert (
+        guard._classify_backend_app_source(case_variant, root)
+        == guard._PATH_UNKNOWN
+    )
+
+
+def test_tooling_pytest_guard_preserves_different_prefix_samefile_aliases(
+    tmp_path,
+    monkeypatch,
+):
+    guard = _tooling_pytest_guard_module()
+    root = tmp_path / "repo" / "backend" / "app"
+    root.mkdir(parents=True)
+    alias_root = tmp_path / "mount" / "service" / "app"
+    alias_root.mkdir(parents=True)
+    alias_source = alias_root / "safe.py"
+    alias_source.write_text("VALUE = 1\n", encoding="utf-8")
+    real_resolve = guard.Path.resolve
+    real_samefile = guard.os.path.samefile
+
+    def preserve_alias(path, *args, **kwargs):
+        if path == alias_source:
+            return guard.Path(os.path.abspath(path))
+        return real_resolve(path, *args, **kwargs)
+
+    def bind_mount_identity(left, right):
+        if guard.Path(left) == alias_root and guard.Path(right) == root:
+            return True
+        return real_samefile(left, right)
+
+    monkeypatch.setattr(guard.Path, "resolve", preserve_alias)
+    monkeypatch.setattr(guard.os.path, "samefile", bind_mount_identity)
+
+    assert (
+        guard._classify_backend_app_source(alias_source, root)
+        == guard._PATH_INSIDE
+    )
 
 
 def test_tooling_pytest_guard_fails_closed_on_source_identity_errors(monkeypatch):
@@ -761,6 +932,7 @@ def test_tooling_pytest_guard_reuses_one_process_audit_dispatcher(tmp_path):
     probe.write_text(
         "import importlib.util\n"
         "import sys\n"
+        "import threading\n"
         "from pathlib import Path\n"
         "from types import SimpleNamespace\n"
         f"guard_path = Path({str(TOOLING_PYTEST_GUARD)!r})\n"
@@ -822,25 +994,55 @@ def test_tooling_pytest_guard_reuses_one_process_audit_dispatcher(tmp_path):
         "    assert len(added_hooks) == 1\n"
         "    assert state['dispatcher'] is added_hooks[0]\n"
         "    assert len(state['listeners']) == 3\n"
+        "    assert state['listener_snapshot'] == tuple(state['listeners'].values())\n"
         "    assert all(\n"
         "        any(item is module._IMPORT_ATTEMPT_OBSERVER for item in sys.meta_path)\n"
         "        for module in modules\n"
         "    )\n"
-        "    sys.audit('import', 'app.multi_module_probe', None, (), (), ())\n"
-        "    assert active[first] == {\n"
-        "        'app.before_same_reexec', 'app.multi_module_probe'\n"
-        "    }\n"
-        "    assert active[second] == {'app.multi_module_probe'}\n"
         "    assert all(\n"
-        "        'app.multi_module_probe' in module._active_observed_modules[config]\n"
+        "        module._import_attempt_observer_is_intact() for module in modules\n"
+        "    )\n"
+        "    class PassThroughFinder:\n"
+        "        def find_spec(self, _fullname, _path=None, _target=None):\n"
+        "            return None\n"
+        "    pass_through_finder = PassThroughFinder()\n"
+        "    sys.meta_path.insert(1, pass_through_finder)\n"
+        "    assert all(\n"
+        "        module._import_attempt_observer_is_intact() for module in modules\n"
+        "    )\n"
+        "    sys.meta_path[0].find_spec('app.multi_observer_probe')\n"
+        "    sys.meta_path.remove(pass_through_finder)\n"
+        "    class CountingRLock(type(threading.RLock())):\n"
+        "        entries = 0\n"
+        "        def __enter__(self):\n"
+        "            self.entries += 1\n"
+        "            return super().__enter__()\n"
+        "    process_lock = CountingRLock()\n"
+        "    state['lock'] = process_lock\n"
+        "    sys.audit('import', 'app.multi_module_probe', None, (), (), ())\n"
+        "    assert process_lock.entries == 0\n"
+        "    assert active[first] == {\n"
+        "        'app.before_same_reexec',\n"
+        "        'app.multi_module_probe',\n"
+        "        'app.multi_observer_probe',\n"
+        "    }\n"
+        "    assert active[second] == {\n"
+        "        'app.multi_module_probe', 'app.multi_observer_probe'\n"
+        "    }\n"
+        "    assert all(\n"
+        "        {\n"
+        "            'app.multi_module_probe', 'app.multi_observer_probe'\n"
+        "        } <= module._active_observed_modules[config]\n"
         "        for module, config in zip(modules[1:], configs[2:], strict=True)\n"
         "    )\n"
         "    configs[0].cleanup()\n"
         "    assert token in state['listeners']\n"
+        "    assert state['listener_snapshot'] == tuple(state['listeners'].values())\n"
         "    assert any(item is observer for item in sys.meta_path)\n"
         "    assert len(state['listeners']) == 3\n"
         "    configs[1].cleanup()\n"
         "    assert token not in state['listeners']\n"
+        "    assert state['listener_snapshot'] == tuple(state['listeners'].values())\n"
         "    assert not any(\n"
         "        item is observer for item in sys.meta_path\n"
         "    )\n"
@@ -849,6 +1051,16 @@ def test_tooling_pytest_guard_reuses_one_process_audit_dispatcher(tmp_path):
         "    assert len(state['listeners']) == 1\n"
         "    configs[3].cleanup()\n"
         "    assert state['listeners'] == {}\n"
+        "    assert state['listener_snapshot'] == ()\n"
+        "    class CountingEvents:\n"
+        "        checks = 0\n"
+        "        def __contains__(self, _event):\n"
+        "            self.checks += 1\n"
+        "            return False\n"
+        "    inactive_events = CountingEvents()\n"
+        "    modules[0]._AUDIT_EVENTS = inactive_events\n"
+        "    sys.audit('compile', b'pass', '<inactive-guard-probe>')\n"
+        "    assert inactive_events.checks == 0\n"
         "    assert all(\n"
         "        not any(item is module._IMPORT_ATTEMPT_OBSERVER for item in sys.meta_path)\n"
         "        for module in modules\n"
@@ -894,6 +1106,8 @@ def test_tooling_pytest_guard_rejects_unverified_dispatcher_state(
         "version": guard._AUDIT_DISPATCHER_VERSION,
         "dispatcher": dispatcher,
         "listeners": {},
+        "listener_snapshot": (),
+        "import_observers": {},
         "lock": threading.RLock(),
         "registration_state": "installed",
     }
@@ -955,6 +1169,8 @@ def test_tooling_pytest_guard_serializes_first_audit_registration(tmp_path):
         "    'version': first_guard._AUDIT_DISPATCHER_VERSION,\n"
         "    'dispatcher': None,\n"
         "    'listeners': {},\n"
+        "    'listener_snapshot': (),\n"
+        "    'import_observers': {},\n"
         "    'lock': ProbeRLock(),\n"
         "    'registration_state': 'unregistered',\n"
         "}\n"
@@ -997,6 +1213,113 @@ def test_tooling_pytest_guard_serializes_first_audit_registration(tmp_path):
         "assert errors == []\n"
         "assert 'app.concurrent_window_probe' in first_guard._active_observed_modules[first_config]\n"
         "assert 'app.concurrent_window_probe' in second_guard._active_observed_modules[second_config]\n"
+        "first_config.cleanup()\n"
+        "second_config.cleanup()\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_tooling_pytest_guard_validates_dispatcher_transition_under_state_lock(
+    tmp_path,
+):
+    runner = _tooling_pytest_runner_module()
+    probe = tmp_path / "dispatcher_transition_lock_probe.py"
+    probe.write_text(
+        "import importlib.util\n"
+        "import sys\n"
+        "import threading\n"
+        "from pathlib import Path\n"
+        "from types import SimpleNamespace\n"
+        f"guard_path = Path({str(TOOLING_PYTEST_GUARD)!r})\n"
+        "\n"
+        "class Config:\n"
+        "    def __init__(self):\n"
+        "        self.cleanups = []\n"
+        "    def add_cleanup(self, cleanup):\n"
+        "        self.cleanups.append(cleanup)\n"
+        "    def cleanup(self):\n"
+        "        while self.cleanups:\n"
+        "            self.cleanups.pop()()\n"
+        "\n"
+        "def load_guard(name):\n"
+        "    spec = importlib.util.spec_from_file_location(name, guard_path)\n"
+        "    assert spec and spec.loader\n"
+        "    module = importlib.util.module_from_spec(spec)\n"
+        "    spec.loader.exec_module(module)\n"
+        "    return module\n"
+        "\n"
+        "first_guard = load_guard('transition_guard_first')\n"
+        "second_guard = load_guard('transition_guard_second')\n"
+        "first_config = Config()\n"
+        "second_config = Config()\n"
+        "dispatcher_written = threading.Event()\n"
+        "release_dispatcher_write = threading.Event()\n"
+        "second_registration_lock_attempted = threading.Event()\n"
+        "second_progress = threading.Event()\n"
+        "errors = []\n"
+        "class ProbeRLock(type(threading.RLock())):\n"
+        "    def __enter__(self):\n"
+        "        if threading.current_thread().name == 'second-register':\n"
+        "            if sys._getframe(1).f_code.co_name == '_register_audit_listener':\n"
+        "                second_registration_lock_attempted.set()\n"
+        "            second_progress.set()\n"
+        "        return super().__enter__()\n"
+        "class PausingState(dict):\n"
+        "    def __setitem__(self, key, value):\n"
+        "        super().__setitem__(key, value)\n"
+        "        if key == 'dispatcher' and callable(value):\n"
+        "            dispatcher_written.set()\n"
+        "            assert release_dispatcher_write.wait(5)\n"
+        "state = PausingState({\n"
+        "    'version': first_guard._AUDIT_DISPATCHER_VERSION,\n"
+        "    'dispatcher': None,\n"
+        "    'listeners': {},\n"
+        "    'listener_snapshot': (),\n"
+        "    'import_observers': {},\n"
+        "    'lock': ProbeRLock(),\n"
+        "    'registration_state': 'unregistered',\n"
+        "})\n"
+        "setattr(sys, first_guard._PROCESS_AUDIT_DISPATCHER_ATTR, state)\n"
+        "def start_first():\n"
+        "    try:\n"
+        "        first_guard.pytest_sessionstart(SimpleNamespace(config=first_config))\n"
+        "    except BaseException as error:\n"
+        "        errors.append(error)\n"
+        "def start_second():\n"
+        "    try:\n"
+        "        second_guard.pytest_sessionstart(SimpleNamespace(config=second_config))\n"
+        "    except BaseException as error:\n"
+        "        errors.append(error)\n"
+        "    finally:\n"
+        "        second_progress.set()\n"
+        "first_thread = threading.Thread(target=start_first, name='first-register')\n"
+        "second_thread = threading.Thread(target=start_second, name='second-register')\n"
+        "first_thread.start()\n"
+        "assert dispatcher_written.wait(5)\n"
+        "second_thread.start()\n"
+        "assert second_progress.wait(5)\n"
+        "reached_registration_lock = second_registration_lock_attempted.is_set()\n"
+        "release_dispatcher_write.set()\n"
+        "first_thread.join(5)\n"
+        "second_thread.join(5)\n"
+        "assert not first_thread.is_alive()\n"
+        "assert not second_thread.is_alive()\n"
+        "assert reached_registration_lock\n"
+        "assert errors == []\n"
+        "sys.audit('import', 'app.transition_window_probe', None, (), (), ())\n"
+        "assert 'app.transition_window_probe' in first_guard._active_observed_modules[first_config]\n"
+        "assert 'app.transition_window_probe' in second_guard._active_observed_modules[second_config]\n"
         "first_config.cleanup()\n"
         "second_config.cleanup()\n",
         encoding="utf-8",
