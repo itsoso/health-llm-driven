@@ -171,7 +171,15 @@ def pytest_sessionfinish(session) -> None:
         )
 
 
-def pytest_unconfigure(config) -> None:
+def _finish_config(config: object) -> None:
     _active_observed_modules.pop(config, None)
     if not _active_observed_modules:
         _restore_import_functions()
+
+
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_unconfigure(config):
+    try:
+        yield
+    finally:
+        _finish_config(config)

@@ -517,6 +517,7 @@ def test_tooling_pytest_guard_fails_for_direct_application_source_loaders(tmp_pa
     detached_source = tmp_path / "detached_source.py"
     detached_source.write_text("VALUE = 1\n", encoding="utf-8")
     backend_app_source = ROOT / "backend" / "app" / "__init__.py"
+    safe_source = ROOT / "scripts" / "run_tooling_pytests.py"
     probe = tmp_path / "test_direct_application_source_loader.py"
     probe.write_text(
         "import importlib.util\n"
@@ -531,7 +532,8 @@ def test_tooling_pytest_guard_fails_for_direct_application_source_loaders(tmp_pa
         "\n"
         "def test_direct_application_source_loader():\n"
         f"    load_detached('app.direct_loader_probe', {str(detached_source)!r})\n"
-        f"    load_detached('backend_app_path_probe', {str(backend_app_source)!r})\n",
+        f"    load_detached('backend_app_path_probe', {str(backend_app_source)!r})\n"
+        f"    load_detached('tooling_safe_loader_probe', {str(safe_source)!r})\n",
         encoding="utf-8",
     )
     result = subprocess.run(
@@ -547,69 +549,10 @@ def test_tooling_pytest_guard_fails_for_direct_application_source_loaders(tmp_pa
     assert result.returncode != 0
     assert "app.direct_loader_probe" in output
     assert "backend_app_path_probe" in output
+    assert "tooling_safe_loader_probe" not in output
 
 
-def test_tooling_pytest_guard_allows_direct_safe_script_loader(tmp_path):
-    runner = _tooling_pytest_runner_module()
-    safe_source = ROOT / "scripts" / "run_tooling_pytests.py"
-    probe = tmp_path / "test_direct_safe_script_loader.py"
-    probe.write_text(
-        "import importlib.util\n"
-        "import sys\n"
-        "\n"
-        "def test_direct_safe_script_loader():\n"
-        "    name = 'tooling_safe_loader_probe'\n"
-        f"    spec = importlib.util.spec_from_file_location(name, {str(safe_source)!r})\n"
-        "    assert spec and spec.loader\n"
-        "    module = importlib.util.module_from_spec(spec)\n"
-        "    spec.loader.exec_module(module)\n"
-        "    assert name not in sys.modules\n",
-        encoding="utf-8",
-    )
-    result = subprocess.run(
-        [sys.executable, "-m", "pytest", *runner.PYTEST_OPTIONS, str(probe)],
-        cwd=ROOT,
-        env=runner.sanitized_environment(),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stdout + result.stderr
-
-
-def _run_direct_source_loader_probe(
-    tmp_path: Path,
-    *,
-    module_name: str,
-    source_path: Path,
-) -> subprocess.CompletedProcess[str]:
-    runner = _tooling_pytest_runner_module()
-    probe = tmp_path / f"test_{module_name}.py"
-    probe.write_text(
-        "import importlib.util\n"
-        "\n"
-        "def test_direct_source_loader():\n"
-        f"    name = {module_name!r}\n"
-        f"    spec = importlib.util.spec_from_file_location(name, {str(source_path)!r})\n"
-        "    assert spec and spec.loader\n"
-        "    module = importlib.util.module_from_spec(spec)\n"
-        "    spec.loader.exec_module(module)\n",
-        encoding="utf-8",
-    )
-    return subprocess.run(
-        [sys.executable, "-m", "pytest", *runner.PYTEST_OPTIONS, str(probe)],
-        cwd=ROOT,
-        env=runner.sanitized_environment(),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-
-def test_tooling_pytest_guard_matches_backend_app_source_by_filesystem_identity(
-    tmp_path,
-):
+def test_tooling_pytest_guard_matches_backend_app_source_by_filesystem_identity():
     if sys.platform != "darwin":
         pytest.skip("case-preserving filesystem alias is a macOS regression")
     app_source = ROOT / "backend" / "app" / "__init__.py"
@@ -623,15 +566,8 @@ def test_tooling_pytest_guard_matches_backend_app_source_by_filesystem_identity(
     if case_variant_alias == app_source or not same_file:
         pytest.skip("the current filesystem has no case-variant alias")
 
-    result = _run_direct_source_loader_probe(
-        tmp_path,
-        module_name="case_variant_backend_app_probe",
-        source_path=case_variant_alias,
-    )
-
-    output = result.stdout + result.stderr
-    assert result.returncode != 0, output
-    assert "case_variant_backend_app_probe" in output
+    guard = _tooling_pytest_guard_module()
+    assert guard._is_backend_app_source(case_variant_alias)
 
 
 def test_tooling_pytest_guard_matches_symlinked_backend_app_source(tmp_path):
@@ -639,15 +575,8 @@ def test_tooling_pytest_guard_matches_symlinked_backend_app_source(tmp_path):
     symlink = tmp_path / "backend_app_alias.py"
     symlink.symlink_to(app_source)
 
-    result = _run_direct_source_loader_probe(
-        tmp_path,
-        module_name="symlinked_backend_app_probe",
-        source_path=symlink,
-    )
-
-    output = result.stdout + result.stderr
-    assert result.returncode != 0, output
-    assert "symlinked_backend_app_probe" in output
+    guard = _tooling_pytest_guard_module()
+    assert guard._is_backend_app_source(symlink)
 
 
 def test_tooling_pytest_guard_fails_closed_on_source_identity_errors(monkeypatch):
@@ -701,7 +630,7 @@ def test_tooling_pytest_guard_snapshots_hooks_at_first_active_session(tmp_path):
 
         assert {"import", "import_module", "exec_module"}.issubset(calls)
 
-        guard.pytest_unconfigure(config)
+        guard._finish_config(config)
         assert builtins.__import__ is sentinel_import
         assert importlib.import_module is sentinel_import_module
         assert (
@@ -802,6 +731,106 @@ def test_tooling_pytest_guard_isolates_same_module_nested_sessions(tmp_path):
     assert "nested_outer_direct_probe" in output
 
 
+def test_tooling_pytest_guard_restores_hooks_after_late_plugin_teardown(tmp_path):
+    runner = _tooling_pytest_runner_module()
+    first_test = tmp_path / "test_late_plugin_first_session.py"
+    first_test.write_text("def test_first_session_ok():\n    pass\n", encoding="utf-8")
+    app_package = tmp_path / "app"
+    app_package.mkdir()
+    (app_package / "__init__.py").write_text("", encoding="utf-8")
+    (app_package / "late_plugin_second_probe.py").write_text(
+        "VALUE = 1\n", encoding="utf-8"
+    )
+    second_test = tmp_path / "test_late_plugin_second_session.py"
+    second_test.write_text(
+        "def test_second_session_import_and_guard():\n"
+        "    assert __import__('fractions')\n"
+        "    module = __import__('app.late_plugin_second_probe', fromlist=['VALUE'])\n"
+        "    assert module.VALUE == 1\n",
+        encoding="utf-8",
+    )
+    probe = tmp_path / "late_plugin_teardown_probe.py"
+    probe.write_text(
+        "import builtins\n"
+        "import importlib\n"
+        "import importlib.machinery\n"
+        "import os\n"
+        "import sys\n"
+        f"sys.path.insert(0, {str(ROOT)!r})\n"
+        "import pytest\n"
+        "from scripts import tooling_pytest_guard as guard\n"
+        "\n"
+        "original_import = builtins.__import__\n"
+        "original_import_module = importlib.import_module\n"
+        "original_exec_module = importlib.machinery.SourceFileLoader.exec_module\n"
+        "common = [\n"
+        "    '--noconftest', '-c', os.devnull, '--rootdir', "
+        f"{str(tmp_path)!r}, '-q', '-p', 'no:cacheprovider',\n"
+        "]\n"
+        "\n"
+        "class LateWrappingPlugin:\n"
+        "    @pytest.hookimpl(trylast=True)\n"
+        "    def pytest_sessionstart(self):\n"
+        "        self.saved_import = builtins.__import__\n"
+        "        self.saved_import_module = importlib.import_module\n"
+        "        self.saved_exec_module = importlib.machinery.SourceFileLoader.exec_module\n"
+        "\n"
+        "        def late_import(name, globals=None, locals=None, fromlist=(), level=0):\n"
+        "            return self.saved_import(name, globals, locals, fromlist, level)\n"
+        "\n"
+        "        def late_import_module(name, package=None):\n"
+        "            return self.saved_import_module(name, package)\n"
+        "\n"
+        "        def late_exec_module(loader, module):\n"
+        "            return self.saved_exec_module(loader, module)\n"
+        "\n"
+        "        builtins.__import__ = late_import\n"
+        "        importlib.import_module = late_import_module\n"
+        "        importlib.machinery.SourceFileLoader.exec_module = late_exec_module\n"
+        "\n"
+        "    @pytest.hookimpl(trylast=True)\n"
+        "    def pytest_unconfigure(self):\n"
+        "        builtins.__import__ = self.saved_import\n"
+        "        importlib.import_module = self.saved_import_module\n"
+        "        importlib.machinery.SourceFileLoader.exec_module = self.saved_exec_module\n"
+        "\n"
+        "late_plugin = LateWrappingPlugin()\n"
+        f"first_exit = pytest.main([*common, {str(first_test)!r}], plugins=[guard, late_plugin])\n"
+        "first_restored = (\n"
+        "    builtins.__import__ is original_import\n"
+        "    and importlib.import_module is original_import_module\n"
+        "    and importlib.machinery.SourceFileLoader.exec_module is original_exec_module\n"
+        ")\n"
+        "try:\n"
+        f"    second_exit = pytest.main([*common, {str(second_test)!r}], plugins=[guard])\n"
+        "except RecursionError:\n"
+        "    second_exit = None\n"
+        "final_restored = (\n"
+        "    builtins.__import__ is original_import\n"
+        "    and importlib.import_module is original_import_module\n"
+        "    and importlib.machinery.SourceFileLoader.exec_module is original_exec_module\n"
+        ")\n"
+        "assert first_exit == pytest.ExitCode.OK\n"
+        "assert first_restored\n"
+        "assert second_exit == pytest.ExitCode.TESTS_FAILED\n"
+        "assert final_restored\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=runner.sanitized_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "app.late_plugin_second_probe" in output
+
+
 def test_tooling_pytest_guard_restores_hooks_after_sessionstart_error(
     tmp_path,
     monkeypatch,
@@ -881,13 +910,13 @@ def test_tooling_pytest_guard_resets_history_for_each_session(monkeypatch):
         assert guard._active_observed_modules[first_config] == {
             "app.stale_session"
         }
-        guard.pytest_unconfigure(first_config)
+        guard._finish_config(first_config)
 
         guard.pytest_sessionstart(second_session)
         assert guard._active_observed_modules[second_config] == set()
     finally:
-        guard.pytest_unconfigure(first_config)
-        guard.pytest_unconfigure(second_config)
+        guard._finish_config(first_config)
+        guard._finish_config(second_config)
         guard._restore_import_functions()
 
 
