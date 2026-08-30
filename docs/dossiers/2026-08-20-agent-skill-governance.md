@@ -25,6 +25,13 @@
   - 回退阶段:S2。
   - 需重跑 Gate:G3、G4、G6。
   - 用户确认:☑ 用户明确要求衡量新 Skills 的改 Bug 速度和质量。
+- [x] 2026-08-29 context-budget optimization
+  - 触发:Codex 近期体感变慢；入口规则、System Map 全局摘要与重复 flow relation 形成常驻上下文税。
+  - 旧基线:`AGENTS.md` 内嵌教程与 Skill catalog；所有仓库/非仓库任务先读全局地图；查询默认一跳；全局摘要常驻计数并按 flow 重复关系。
+  - 新基线:非仓库元任务跳过项目 Router/地图；仓库研发先 Router、后按需 query-first；默认零跳；全局摘要 4KB 硬预算；计数显式 `--counts`；查询 12KB 硬预算，超限 fail closed。
+  - 回退阶段:S3。
+  - 需重跑 Gate:G3、G4。
+  - 用户确认:☑ 用户要求按推荐直接改造。
 
 ## S0 · 用户需求(逐字)
 
@@ -82,6 +89,11 @@
 - 当前证据:从 committed state 运行治理/插件/benchmark/仓库接线 focused tests `65 passed`；checker self-check PASS；官方 plugin validator 与 3 个 Skill validator PASS；`scripts/validate.py -v` 的 blocking system-map、Dossier 与 Skill governance 全 PASS；目标 Ruff、py_compile、`git diff --check` PASS。
 - `validate.py` 的 backend 全局 Ruff 是 report-only，仍报告仓库既有问题；本治理 diff 的目标 Ruff 为零错误。
 - 主干 CI:`60466e3ead02d7a4233f0ca1596579694e40254f` 对应 [run 32353788106](https://github.com/itsoso/health-llm-driven/actions/runs/32353788106) completed/success；`docs-quality` 中独立 Agent Skill governance step PASS，最终聚合 Gate PASS。
+
+### 2026-08-29 上下文预算增量
+
+- 已收敛入口契约与 System Map 上下文预算；最终测试数字在当前干净 worktree 完成重跑后更新，旧共享工作树的分叉状态不作为本分支证据。
+- 验收目标:Router-first；局部查询默认零跳；bootstrap 不超过 4 KiB；query 不超过 12 KiB 且超限显式失败；计数仅由 `--counts` 按需返回。
 - **裁决:PASS**。
 
 ## G4 · 安全闸
@@ -89,6 +101,9 @@
 - 触发:研发治理和最小事件 schema；不触发产品健康写路径。
 - 当前防线:run/task 只接受 opaque UUID；trace 无 prompt/path/free reason/duration，证据只存 SHA-256；未知 route、未跟踪 source、adapter 漏 Gate/内容漂移均 fail closed。成功耗时只取目标 stage 的首次 PASS，失败或 BLOCK 不会伪装成更快完成。
 - 独立复审:首轮发现 benchmark 会把首次失败事件计作完成时间，已按 fail→pass RED/GREEN 修复；fresh 复审确认无剩余 BLOCKER/HIGH。
+- 触发:仅研发治理、只读地图查询与文档拆分；不触发产品健康写路径、数据库、通知或生产部署。
+- diff review 确认查询器只读取 canonical artifact；超实体数、超字节数、未知 selector 和无效图均 fail closed。
+- 新治理文档保留健康数据隔离、推送隐私、PostgreSQL 语义与发布授权边界；未把这些规则从硬约束降级为建议。
 - **裁决:PASS**。
 
 ## S6 · 部署
@@ -117,6 +132,12 @@
 - 质量/返工:首次评审至少发现 1 个 BLOCKER 和 4 类 HIGH；经历 1 次 NO-GO→GO、1 次 CI rerun、1 次 backend pre-mutation retry，OTA 第 3 次成功；真实用户 G6 仍待验证。
 - 解释边界:该 run 已使用新 Router recommendation，以上只作为 transition observation。下一 Bug 必须在根因调查前启动 `router_v1_prospective` trace；单个新样本只报告描述性 delta，不宣称因果提升。
 
+### 2026-08-29 上下文路径验证目标
+
+- 非仓库元任务在 `AGENTS.md` 与 binding 中显式跳过 Router/System Map。
+- 局部仓库任务先 Router，再以 path/entity/flow 零跳查询；全局任务才加载 INDEX 与 4KB bootstrap。
+- 代码派生计数通过 `python3.12 scripts/system_map_context.py --counts` 独立按需读取。
+
 ## G6 · 验证闸(人在环)
 
 - 技术验收已经证明“单 Router、最多一个 Controller、平台原生 adapter、deferred delegate、overlay 去重”在 fresh Codex 进程生效。
@@ -127,3 +148,4 @@
 
 - 已更新 System Map 导航、agent binding、治理真源、plugin 安装说明、CI/pre-commit/validate 接线与证据 Dossier。本次没有新增代码派生架构实体或计数字段，无需改写 generated System Map 计数。
 - 下一 Bug 开始前用显式 trace 路径启动 benchmark；不把本轮 transition observation 倒灌为伪造历史事件。
+- 已更新 System Map skill、INDEX、binding、治理合同/注册表、生成摘要与日志/性能/数据库/隐私分层文档。

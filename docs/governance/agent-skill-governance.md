@@ -2,15 +2,17 @@
 
 **状态：** active
 
-**版本：** 1.0
+**版本：** 1.1
 
-**最后复审：** 2026-08-20
+**最后复审：** 2026-08-29
 
 **机器真源：** `docs/governance/agent-skill-registry.json`
 
 ## 1. 范围与目标
 
 本合同治理在 `health-llm-driven` 内工作的研发 Agent Skill，包括项目 Skill、平台 Skill 的项目级推荐，以及 Claude/Codex 适配器。`backend/skills/*` 是产品运行时能力，不属于本合同，不能被注册成研发工作流。
+
+Router 的适用边界是**仓库研发任务**。Codex 配置、执行速度、通用知识问答等非仓库元任务不进入本路由，也不加载 System Map。仓库任务先路由、后按选择加载能力；System Map 采用已知路径零跳查询优先，全局摘要只用于 onboarding、架构与跨域任务。
 
 治理目标只有四个：
 
@@ -62,13 +64,13 @@ Overlay 可以返回 BLOCK，但不能再创建计划、批次、父 run 或“�
 
 基础集合保持最小，并且都不是 Controller：
 
-- `system-map`：定位当前系统、实体、流程和源文件；
+- `system-map`：按需定位当前系统、实体、流程和源文件；局部任务 query-first，全局任务才加载摘要；
 - `karpathy-guidelines`：约束改动范围和复杂度；
 - `test-driven-development`：行为变更与修复的风险校准 RED/GREEN；
 - `systematic-debugging`：只在故障或原因不明时加载；
 - `verification-before-completion`：所有完成声明的证据门。
 
-“基础集合”表示项目认可这些能力，不表示每个模式全量加载。例如 `analysis` 只需要 `system-map`，`quick_fix` 不需要完整 Controller，`incident` 才强制加入系统调试能力。
+“基础集合”表示项目认可这些能力，不表示每个模式全量加载。这里的 `analysis` 指仓库分析；非仓库元任务不进入 Router。`quick_fix` 不需要完整 Controller，`incident` 才强制加入系统调试能力。
 
 ### 3.2 两个主控制器
 

@@ -476,3 +476,38 @@ def test_project_entrypoints_route_before_loading_workflow_adapters(path: Path):
 
     assert "reva-workflow-router" in text
     assert "scripts/check_agent_skill_governance.py recommend" in text
+
+
+@pytest.mark.parametrize(
+    "path",
+    [ROOT / "AGENTS.md", ROOT / "docs" / "agent-skill-binding.md"],
+)
+def test_project_entrypoints_route_before_loading_system_map(path: Path):
+    text = path.read_text(encoding="utf-8")
+
+    assert text.index("scripts/check_agent_skill_governance.py recommend") < text.index(
+        "scripts/system_map_context.py"
+    )
+
+
+def test_agents_contract_is_concise_and_does_not_embed_a_skill_catalog():
+    text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+
+    assert len(text.encode("utf-8")) <= 10 * 1024
+    assert "<skills_system" not in text
+    assert "## Available Skills" not in text
+    assert "npx openskills read" not in text
+    assert "非仓库元任务" in text
+
+
+def test_codex_router_documents_supported_capability_trigger():
+    router = (
+        ROOT
+        / "plugins"
+        / "reva-health-harness"
+        / "skills"
+        / "reva-workflow-router"
+        / "SKILL.md"
+    ).read_text(encoding="utf-8")
+
+    assert "--capability-trigger <canonical-id>" in router

@@ -126,19 +126,31 @@ def test_render_agent_context_is_deterministic_and_global(minimal_graph: dict) -
     assert "resource.postgresql" in first
     assert "agent-chat" in first
     assert "partial" in first
-    assert "backend/app/api/main.py" in first
     assert "surface.mobile.home" not in first
     assert "verify behavior in source code and tests" in first
-    assert len(first.encode("utf-8")) <= context.AGENT_CONTEXT_MAX_BYTES
+    assert len(first.encode("utf-8")) <= 4 * 1024
 
 
-def test_render_agent_context_uses_canonical_counts(minimal_graph: dict) -> None:
+def test_render_agent_context_keeps_counts_on_demand(minimal_graph: dict) -> None:
+    context = importlib.import_module("system_map_context")
+
+    text = context.render_agent_context(minimal_graph)
+    counts = context.render_counts(minimal_graph)
+
+    assert "Code-derived counts" not in text
+    for key, value in minimal_graph["counts"].items():
+        assert f"{key}: {value}" in counts
+
+
+def test_render_agent_context_deduplicates_relations_across_flows(
+    minimal_graph: dict,
+) -> None:
     context = importlib.import_module("system_map_context")
 
     text = context.render_agent_context(minimal_graph)
 
-    for key, value in minimal_graph["counts"].items():
-        assert f"{key}: {value}" in text
+    assert text.count("component.mobile` --consumesApi--> `api.health-v1") == 1
+    assert "flows=agent-chat,health-record" in text
 
 
 def test_render_agent_context_fails_when_budget_is_exceeded(
@@ -171,10 +183,21 @@ def test_agent_context_renderer_does_not_import_backend_runtime(
     assert "component.mobile" in context.render_agent_context(minimal_graph)
 
 
-def test_entity_query_includes_one_hop_neighbors(minimal_graph: dict) -> None:
+def test_entity_query_defaults_to_the_selected_entity_only(minimal_graph: dict) -> None:
     context = importlib.import_module("system_map_context")
 
     result = context.query_graph(minimal_graph, entity="component.mobile")
+
+    assert {item["id"] for item in result.entities} == {"component.mobile"}
+    assert result.relations == ()
+
+
+def test_entity_query_includes_one_hop_neighbors_when_requested(
+    minimal_graph: dict,
+) -> None:
+    context = importlib.import_module("system_map_context")
+
+    result = context.query_graph(minimal_graph, entity="component.mobile", depth=1)
 
     assert {item["id"] for item in result.entities} == {
         "api.health-v1",
@@ -221,12 +244,22 @@ def test_keyword_query_is_case_insensitive(minimal_graph: dict) -> None:
 def test_declared_evidence_warns_and_points_to_sources(minimal_graph: dict) -> None:
     context = importlib.import_module("system_map_context")
 
-    result = context.query_graph(minimal_graph, entity="component.mobile")
+    result = context.query_graph(minimal_graph, entity="component.mobile", depth=1)
     text = context.render_query_result(result)
 
     assert "VERIFY SOURCE" in text
     assert "mobile/app/" in text
     assert all(source for source in result.sources)
+
+
+def test_query_render_fails_instead_of_exceeding_the_output_budget(
+    minimal_graph: dict,
+) -> None:
+    context = importlib.import_module("system_map_context")
+    result = context.query_graph(minimal_graph, entity="component.mobile", depth=1)
+
+    with pytest.raises(context.SystemMapContextError, match="query context exceeds"):
+        context.render_query_result(result, max_bytes=64)
 
 
 def test_query_fails_instead_of_returning_empty(minimal_graph: dict) -> None:
@@ -279,6 +312,25 @@ def test_query_cli_prints_context_from_checked_in_shape(
     output = capsys.readouterr()
     assert exit_code == 0
     assert "component.mobile" in output.out
+    assert output.err == ""
+
+
+def test_counts_cli_prints_canonical_counts(
+    minimal_graph: dict,
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    context = importlib.import_module("system_map_context")
+    artifact = tmp_path / "system-map.json"
+    artifact.write_text(json.dumps(minimal_graph), encoding="utf-8")
+    monkeypatch.setattr(context, "SYSTEM_MAP_PATH", artifact)
+
+    exit_code = context.main(["--counts"])
+
+    output = capsys.readouterr()
+    assert exit_code == 0
+    assert "mobile_routes: 2" in output.out
     assert output.err == ""
 
 

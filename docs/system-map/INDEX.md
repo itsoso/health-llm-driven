@@ -2,7 +2,7 @@
      叙事区改完更新本文件顶部 last-reviewed;代码派生数字**绝不手写在这里**,只引用 docs/_generated/。 -->
 ---
 doc: system-map/INDEX
-last-reviewed: 2026-08-20
+last-reviewed: 2026-08-29
 generated-source: docs/_generated/system-map.json
 generated-agent-context: docs/_generated/system-map-agent-context.md
 extend-via: docs/specs/product-pipeline-contract.md
@@ -10,21 +10,21 @@ skill-binding: docs/agent-skill-binding.md
 skill-governance: docs/governance/agent-skill-governance.md
 ---
 
-# System Map — 复元 Reva 系统全景(agent 先读这个)
+# System Map — 复元 Reva 系统全景(全局任务入口)
 
-> **这是任意 agent / 大模型理解「本系统是什么、在哪、怎么扩」的统一入口。** 不重写已有权威文档,只 INDEX 化 + 给「结构」加代码派生的当前性。维护机制(三层分治 / 防漂移 / 与流水线闭环)见 [`.claude/skills/system-map/SKILL.md`](../../.claude/skills/system-map/SKILL.md)。
+> **这是理解「本系统是什么、在哪、怎么扩」的统一入口，不是每个任务的固定税。** 仓库研发先经 Router；已知路径的小任务直接做零跳查询，全局 onboarding / 架构 / 跨域任务才先读本页和轻量摘要。维护机制见 [`.claude/skills/system-map/SKILL.md`](../../.claude/skills/system-map/SKILL.md)。
 
 ## READ ORDER FOR AGENTS(按需读,别全读)
 
-1. **每个任务先加载全局认知** → 读 [`system-map-agent-context.md`](../_generated/system-map-agent-context.md)(有大小上限、从 canonical graph 生成,不展开全部页面/任务)。
-2. **再定位任务局部上下游** → 用 `python3.12 scripts/system_map_context.py --path/--entity/--flow/--keyword ...`;结果过大时缩小 selector 或改用 `--depth 0`,工具不会静默截断。
-3. **想知道这系统是什么/能做什么** → 下方「facet 2 能力」+ [`product-map.md`](product-map.md#3-当前功能清单代码核验) 当前功能清单。
-4. **想知道某功能在哪个端/怎么连** → [`product-map.md`](product-map.md)(多端 × UI × 业务流 × 系统流)。
-5. **想确认地图此刻可不可信** → [`docs/_generated/system-map.json`](../_generated/system-map.json)(代码派生,CI 校验;它是其中所列计数与注册表的唯一真源)。
+1. **先经 Router 判断是否需要地图** → `python3.12 scripts/check_agent_skill_governance.py recommend --mode <mode>`；非仓库元任务跳过本页。
+2. **已知局部直接查询** → 用 `python3.12 scripts/system_map_context.py --path/--entity/--flow/--keyword ... --depth 0`；确需上下游再提高 depth，结果超预算时缩小 selector。
+3. **全局任务加载有界认知** → onboarding、系统全景或跨域设计才读 [`system-map-agent-context.md`](../_generated/system-map-agent-context.md)，然后做局部查询。
+4. **想知道这系统是什么/能做什么** → 下方「facet 2 能力」+ [`product-map.md`](product-map.md#3-当前功能清单代码核验) 当前功能清单。
+5. **想知道某功能在哪个端/怎么连** → [`product-map.md`](product-map.md)(多端 × UI × 业务流 × 系统流)。
+6. **想确认地图此刻可不可信或只看计数** → [`docs/_generated/system-map.json`](../_generated/system-map.json)，或运行 `python3.12 scripts/system_map_context.py --counts`。
    管理员需要可视化查看时 → `/admin/system-map`（复用现有管理员登录与权限；数据仍来自同一生成物）。
-6. **想扩一个功能** → [`product-pipeline-contract.md`](../specs/product-pipeline-contract.md)(需求→上线 6 道 Gate;S1 用本地图当现状输入)。
-7. **想知道当前在做什么** → `docs/dossiers/`(在途 feature)。
-8. **想知道本项目研发 skills 怎么推荐、触发和治理** → 先读 [`agent-skill-governance.md`](../governance/agent-skill-governance.md) 与 [`agent-skill-registry.json`](../governance/agent-skill-registry.json)，再按 [`agent-skill-binding.md`](../agent-skill-binding.md) 进入平台 adapter。
+7. **想扩一个功能** → [`product-pipeline-contract.md`](../specs/product-pipeline-contract.md)(需求→上线 6 道 Gate;S1 用本地图当现状输入)。
+8. **想知道当前在做什么** → `docs/dossiers/`(在途 feature)。
 
 **证据优先级：代码与测试 > 代码派生 System Map > 受审声明 > 带新鲜度的叙事。地图不能替代源码和测试验证。** 查询结果给出的是下一步应打开的 source path；命中 `partial`/`declaration` 时必须按警告回到源码。若摘要或地图缺失/陈旧,先跑 `./scripts/system-map-check.sh`;闸门仍失败则停用地图,直接调查代码、测试和注册表。CI 能验证生成物与接线,不能证明模型真的读过。
 
