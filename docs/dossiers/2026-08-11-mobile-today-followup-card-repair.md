@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-today-followup-card-repair` |
 | 创建日期 | 2026-08-11 |
-| 当前阶段 | S6（第二轮修复验证通过，待发布） |
-| 状态 | ready-to-release |
+| 当前阶段 | S7（第二轮 Backend / Mobile 已发布，待真机冷启动确认） |
+| 状态 | shipping |
 | 负责 | Codex |
 | 类型 | bugfix / medical-boundary UI / write-capability repair |
 | 计划 | `docs/plans/2026-08-11-mobile-today-followup-card-repair.md` |
@@ -99,4 +99,9 @@
 - Backend：timeline / recovery / reasoning 三文件完整回归 `30 passed`；日历窗口与昨晚睡眠策略回归 `13 passed`；单独的昨晚睡眠、第三方 owner 和单字符泄漏回归 `4 passed`。
 - Mobile：聊天页与 todayFocus `2 suites / 65 tests passed`；TypeScript `--noEmit`、变更文件 ESLint 均通过。
 - 架构：`scripts/system-map-check.sh` 全部通过，Mobile 导航图回到 `108 edges / 16 orphans`；`git diff --check` 通过。
-- 待完成：提交并推送 main、Backend 部署健康读回、production OTA 发布读回、真机冷启动复测。
+- 代码提交 `ee1e12f949dafd190bff53b1e81344be670f6341` 已推送 `main`。
+- Backend 从干净 main 部署精确 SHA `ee1e12f949da`：43MB 数据库备份、237 表恢复演练、Force-RLS 完整性与站外加密归档验证通过；受管迁移无新增；部署后健康检查三次 `60/60 PASS`，Skills `22=22`，服务状态 `active (running)`。
+- Backend 回滚点：`bc777146cac7b1355049be7d8fa283c104e13596`。
+- Mobile production OTA（iOS / runtime `1.3.3`）已发布：group `6efabc96-b055-40a4-8abc-383a1b439fe1`，iOS update `01a050f4-c37c-7ca9-8a08-c9491a908ac1`，commit `ee1e12f949da`，tree digest `6e031f59467ee26d407d2865d195c289b3877aaee4876acb7fb90935de8e3265`。
+- OTA 首次干净克隆因依赖符号链接边界无法解析 React，未上传；完整依赖验证后 Hermes 与首轮 no-bytecode 均被 EAS 资产处理超时，精确 no-bytecode 重试复用既有资产后发布成功，manifest 已读回 `status=published`。
+- 待完成：真机完全杀进程后冷启动，点击胃溃疡复查横幅进入复查页；重问“昨晚我睡得怎么样？今天是否适合锻炼？”确认不再出现英文工具计划或内部错误码。
