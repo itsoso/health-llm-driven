@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import io
+import importlib._bootstrap
+import importlib.util
 import json
 import os
 import signal
@@ -23,12 +25,46 @@ SYSTEM_MAP = ROOT / "docs" / "_generated" / "system-map.json"
 SYSTEM_MAP_SCHEMA = ROOT / "docs" / "_generated" / "system-map.schema.json"
 AGENT_CONTEXT = ROOT / "docs" / "_generated" / "system-map-agent-context.md"
 
-try:
-    from scripts.system_map_imports import load_repo_module
-except ModuleNotFoundError as error:
-    if error.name not in {"scripts", "scripts.system_map_imports"}:
-        raise
-    from system_map_imports import load_repo_module
+def _load_system_map_import_helper():
+    """Bootstrap the trust root without consulting import search paths."""
+    helper_path = (SCRIPTS / "system_map_imports.py").resolve()
+    digest = 14695981039346656037
+    for byte in os.fsencode(str(ROOT)):
+        digest = ((digest ^ byte) * 1099511628211) & ((1 << 64) - 1)
+    helper_key = f"_reva_system_map_imports_{digest:016x}"
+
+    def require_canonical(module):
+        actual_path = getattr(module, "__file__", None)
+        try:
+            if actual_path is not None and os.path.samefile(actual_path, helper_path):
+                return module
+        except (OSError, TypeError, ValueError):
+            pass
+        raise ImportError(
+            "System Map import helper loaded from unexpected path: "
+            f"{actual_path!r}; expected {str(helper_path)!r}"
+        )
+
+    # Deliberately self-contained: importing a bootstrap helper here would
+    # recreate the trust gap this first hop closes. _load_unlocked owns partial
+    # sys.modules cleanup and spec._initializing under this shared module lock.
+    with importlib._bootstrap._ModuleLockManager(helper_key):
+        if helper_key in sys.modules:
+            return require_canonical(sys.modules[helper_key])
+        spec = importlib.util.spec_from_file_location(helper_key, helper_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"cannot load System Map import helper: {helper_path}")
+        module = importlib._bootstrap._load_unlocked(spec)
+        try:
+            return require_canonical(module)
+        except BaseException:
+            if sys.modules.get(helper_key) is module:
+                sys.modules.pop(helper_key, None)
+            raise
+
+
+_system_map_imports = _load_system_map_import_helper()
+load_repo_module = _system_map_imports.load_repo_module
 
 _check_doc_drift_module = load_repo_module("check_doc_drift", SCRIPTS)
 _dump_system_map_module = load_repo_module("dump_system_map", SCRIPTS)

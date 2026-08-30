@@ -16,17 +16,45 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SYSTEM_MAP_ENTRYPOINTS = (
+    "check_system_map",
+    "check_doc_drift",
+    "dump_system_map",
+    "system_map_context",
+)
 
 
-def _load_checker():
-    path = ROOT / "scripts" / "check_system_map.py"
-    assert path.exists(), "scripts/check_system_map.py must be the central gate"
-    spec = importlib.util.spec_from_file_location("check_system_map", path)
+def _import_helper_key() -> str:
+    digest = 14695981039346656037
+    for byte in os.fsencode(str(ROOT)):
+        digest = ((digest ^ byte) * 1099511628211) & ((1 << 64) - 1)
+    return f"_reva_system_map_imports_{digest:016x}"
+
+
+def _load_entrypoint(entrypoint: str):
+    path = ROOT / "scripts" / f"{entrypoint}.py"
+    assert path.exists()
+    spec = importlib.util.spec_from_file_location(
+        f"_system_map_entrypoint_probe_{entrypoint}",
+        path,
+    )
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
-    spec.loader.exec_module(module)
+    previous = sys.modules.get(spec.name)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        if previous is None:
+            sys.modules.pop(spec.name, None)
+        else:
+            sys.modules[spec.name] = previous
     return module
+
+
+def _load_checker():
+    return _load_entrypoint("check_system_map")
 
 
 def test_local_harness_is_pinned_and_uses_its_venv() -> None:
@@ -43,8 +71,10 @@ def test_local_harness_is_pinned_and_uses_its_venv() -> None:
     assert ".venv/" in (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
 
 
+@pytest.mark.parametrize("entrypoint", SYSTEM_MAP_ENTRYPOINTS)
 @pytest.mark.parametrize("caller_has_scripts_path", (False, True))
-def test_checker_import_preserves_caller_sys_path(
+def test_system_map_entrypoint_import_preserves_caller_sys_path(
+    entrypoint: str,
     caller_has_scripts_path: bool,
 ) -> None:
     scripts_path = str(ROOT / "scripts")
@@ -54,7 +84,7 @@ def test_checker_import_preserves_caller_sys_path(
         sys.path.insert(1, scripts_path)
     caller_sys_path = sys.path.copy()
     try:
-        _load_checker()
+        _load_entrypoint(entrypoint)
 
         assert sys.path == caller_sys_path
     finally:
@@ -98,6 +128,175 @@ def test_checker_import_prefers_repo_scripts_over_shadow_modules(tmp_path) -> No
             sys.modules.pop(name, None)
             if saved_modules[name] is not None:
                 sys.modules[name] = saved_modules[name]
+
+
+@pytest.mark.parametrize("entrypoint", SYSTEM_MAP_ENTRYPOINTS)
+def test_entrypoint_ignores_preloaded_scripts_import_helper(
+    monkeypatch,
+    entrypoint: str,
+) -> None:
+    shadow_package = types.ModuleType("scripts")
+    shadow_package.__path__ = []
+    shadow_helper = types.ModuleType("scripts.system_map_imports")
+
+    def poison_loader(*_args, **_kwargs):
+        raise AssertionError("preloaded scripts.system_map_imports was trusted")
+
+    shadow_helper.load_repo_module = poison_loader
+    monkeypatch.setitem(sys.modules, "scripts", shadow_package)
+    monkeypatch.setitem(sys.modules, "scripts.system_map_imports", shadow_helper)
+
+    entry_module = _load_entrypoint(entrypoint)
+    helper_module = sys.modules[entry_module.load_repo_module.__module__]
+
+    assert os.path.samefile(
+        helper_module.__file__,
+        ROOT / "scripts" / "system_map_imports.py",
+    )
+
+
+@pytest.mark.parametrize("entrypoint", SYSTEM_MAP_ENTRYPOINTS)
+def test_entrypoint_rejects_preloaded_private_import_helper(
+    monkeypatch,
+    tmp_path,
+    entrypoint: str,
+) -> None:
+    shadow_path = tmp_path / "system_map_imports.py"
+    shadow_path.write_text("# noncanonical helper\n", encoding="utf-8")
+    shadow_helper = types.ModuleType(_import_helper_key())
+    shadow_helper.__file__ = str(shadow_path)
+    shadow_helper.load_repo_module = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, _import_helper_key(), shadow_helper)
+
+    with pytest.raises(ImportError, match="system_map_imports.py"):
+        _load_entrypoint(entrypoint)
+
+
+def test_entrypoints_share_one_helper_during_concurrent_bootstrap(
+    monkeypatch,
+) -> None:
+    helper_path = (ROOT / "scripts" / "system_map_imports.py").resolve()
+    helper_key = _import_helper_key()
+    monkeypatch.delitem(sys.modules, helper_key, raising=False)
+    shadow_package = types.ModuleType("scripts")
+    shadow_package.__path__ = []
+    shadow_helper = types.ModuleType("scripts.system_map_imports")
+    shadow_helper.load_repo_module = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("preloaded scripts.system_map_imports was trusted")
+    )
+    monkeypatch.setitem(sys.modules, "scripts", shadow_package)
+    monkeypatch.setitem(sys.modules, "scripts.system_map_imports", shadow_helper)
+
+    real_spec_from_file_location = importlib.util.spec_from_file_location
+    helper_started = threading.Event()
+    helper_release = threading.Event()
+    second_finished = threading.Event()
+    helper_exec_calls = 0
+
+    class SlowHelperLoader:
+        def __init__(self, delegate) -> None:
+            self.delegate = delegate
+
+        def create_module(self, spec):
+            return self.delegate.create_module(spec)
+
+        def exec_module(self, module) -> None:
+            nonlocal helper_exec_calls
+            helper_exec_calls += 1
+            helper_started.set()
+            if not helper_release.wait(timeout=2):
+                raise RuntimeError("helper release timed out")
+            self.delegate.exec_module(module)
+
+    def slow_helper_spec(name, location, *args, **kwargs):
+        spec = real_spec_from_file_location(name, location, *args, **kwargs)
+        if Path(location).resolve() == helper_path:
+            assert spec is not None and spec.loader is not None
+            spec.loader = SlowHelperLoader(spec.loader)
+        return spec
+
+    monkeypatch.setattr(importlib.util, "spec_from_file_location", slow_helper_spec)
+    modules: dict[str, types.ModuleType] = {}
+    errors: dict[str, BaseException] = {}
+
+    def load(name: str) -> None:
+        try:
+            modules[name] = _load_entrypoint(name)
+        except BaseException as error:
+            errors[name] = error
+
+    first = threading.Thread(target=load, args=("check_doc_drift",))
+
+    def load_second() -> None:
+        try:
+            load("system_map_context")
+        finally:
+            second_finished.set()
+
+    second = threading.Thread(target=load_second)
+    try:
+        first.start()
+        assert helper_started.wait(timeout=1)
+        second.start()
+        assert not second_finished.wait(timeout=0.1)
+        helper_release.set()
+        first.join(timeout=2)
+        second.join(timeout=2)
+
+        assert not first.is_alive()
+        assert not second.is_alive()
+        assert errors == {}
+        assert helper_exec_calls == 1
+        assert (
+            modules["check_doc_drift"].load_repo_module
+            is modules["system_map_context"].load_repo_module
+        )
+    finally:
+        helper_release.set()
+        first.join(timeout=2)
+        if second.ident is not None:
+            second.join(timeout=2)
+
+
+def test_failed_helper_bootstrap_removes_private_cache_entry(monkeypatch) -> None:
+    helper_path = (ROOT / "scripts" / "system_map_imports.py").resolve()
+    helper_key = _import_helper_key()
+    monkeypatch.delitem(sys.modules, helper_key, raising=False)
+    real_spec_from_file_location = importlib.util.spec_from_file_location
+
+    class FailingHelperLoader:
+        def __init__(self, delegate) -> None:
+            self.delegate = delegate
+
+        def create_module(self, spec):
+            return self.delegate.create_module(spec)
+
+        def exec_module(self, _module) -> None:
+            raise RuntimeError("helper bootstrap failed")
+
+    def failing_helper_spec(name, location, *args, **kwargs):
+        spec = real_spec_from_file_location(name, location, *args, **kwargs)
+        if Path(location).resolve() == helper_path:
+            assert spec is not None and spec.loader is not None
+            spec.loader = FailingHelperLoader(spec.loader)
+        return spec
+
+    monkeypatch.setattr(importlib.util, "spec_from_file_location", failing_helper_spec)
+
+    with pytest.raises(RuntimeError, match="helper bootstrap failed"):
+        _load_entrypoint("check_doc_drift")
+
+    assert helper_key not in sys.modules
+    monkeypatch.setattr(
+        importlib.util,
+        "spec_from_file_location",
+        real_spec_from_file_location,
+    )
+    entry_module = _load_entrypoint("check_doc_drift")
+    assert os.path.samefile(
+        sys.modules[entry_module.load_repo_module.__module__].__file__,
+        helper_path,
+    )
 
 
 @pytest.mark.parametrize(
@@ -206,6 +405,87 @@ def test_repo_module_loader_waits_for_concurrent_standard_import(
         support.release.set()
         first.join(timeout=1)
         second.join(timeout=1)
+        sys.modules.pop(module_name, None)
+
+
+def test_repo_module_loader_interrupt_releases_standard_import_waiter(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from scripts import system_map_imports
+
+    module_name = "_interrupted_system_map_probe"
+    support_name = f"{module_name}_support"
+    support = types.ModuleType(support_name)
+    support.started = threading.Event()
+    support.release = threading.Event()
+    support.attempts = 0
+    support.specs = []
+    monkeypatch.setitem(sys.modules, support_name, support)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    (tmp_path / f"{module_name}.py").write_text(
+        f"import {support_name} as support\n"
+        "support.attempts += 1\n"
+        "support.specs.append(__spec__)\n"
+        "if support.attempts == 1:\n"
+        "    support.started.set()\n"
+        "    if not support.release.wait(timeout=2):\n"
+        "        raise RuntimeError('probe release timed out')\n"
+        "    raise KeyboardInterrupt('probe interrupted')\n"
+        "READY = True\n",
+        encoding="utf-8",
+    )
+    results: dict[str, types.ModuleType] = {}
+    errors: dict[str, BaseException] = {}
+    standard_finished = threading.Event()
+
+    def repo_load() -> None:
+        try:
+            results["repo"] = system_map_imports.load_repo_module(
+                module_name,
+                tmp_path,
+            )
+        except BaseException as error:
+            errors["repo"] = error
+
+    def standard_load() -> None:
+        try:
+            results["standard"] = importlib.import_module(module_name)
+        except BaseException as error:
+            errors["standard"] = error
+        finally:
+            standard_finished.set()
+
+    repo_thread = threading.Thread(target=repo_load)
+    standard_thread = threading.Thread(target=standard_load)
+    try:
+        repo_thread.start()
+        assert support.started.wait(timeout=1)
+        partial_module = sys.modules[module_name]
+        partial_spec = partial_module.__spec__
+        assert partial_spec is not None
+        assert partial_spec._initializing is True
+
+        standard_thread.start()
+        assert not standard_finished.wait(timeout=0.1)
+        support.release.set()
+        repo_thread.join(timeout=2)
+        standard_thread.join(timeout=2)
+
+        assert not repo_thread.is_alive()
+        assert not standard_thread.is_alive()
+        assert isinstance(errors.pop("repo"), KeyboardInterrupt)
+        assert errors == {}
+        assert support.attempts == 2
+        assert partial_spec._initializing is False
+        assert sys.modules[module_name] is results["standard"]
+        assert sys.modules[module_name] is not partial_module
+        assert results["standard"].READY is True
+    finally:
+        support.release.set()
+        repo_thread.join(timeout=2)
+        if standard_thread.ident is not None:
+            standard_thread.join(timeout=2)
         sys.modules.pop(module_name, None)
 
 
