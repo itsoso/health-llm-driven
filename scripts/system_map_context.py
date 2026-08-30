@@ -10,14 +10,23 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from system_map_contract import SystemMapContractError, validate_system_map
-
-
 ROOT = Path(__file__).resolve().parent.parent
+SCRIPTS = ROOT / "scripts"
 SYSTEM_MAP_PATH = ROOT / "docs" / "_generated" / "system-map.json"
 AGENT_CONTEXT_MAX_BYTES = 4 * 1024
 QUERY_CONTEXT_MAX_BYTES = 12 * 1024
 GLOBAL_KINDS = {"component"}
+
+try:
+    from scripts.system_map_imports import load_repo_module
+except ModuleNotFoundError as error:
+    if error.name not in {"scripts", "scripts.system_map_imports"}:
+        raise
+    from system_map_imports import load_repo_module
+
+_system_map_contract = load_repo_module("system_map_contract", SCRIPTS)
+SystemMapContractError = _system_map_contract.SystemMapContractError
+validate_system_map = _system_map_contract.validate_system_map
 
 
 class SystemMapContextError(ValueError):

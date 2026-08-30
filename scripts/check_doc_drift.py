@@ -35,6 +35,14 @@ ROOT = Path(__file__).resolve().parent.parent
 BACKEND = ROOT / "backend"
 MOBILE = ROOT / "mobile"
 FRONTEND = ROOT / "frontend"
+SCRIPTS = ROOT / "scripts"
+
+try:
+    from scripts.system_map_imports import load_repo_module
+except ModuleNotFoundError as error:
+    if error.name not in {"scripts", "scripts.system_map_imports"}:
+        raise
+    from system_map_imports import load_repo_module
 
 EXPECTED: dict = {
     "safety_rules": {
@@ -302,31 +310,23 @@ def main(*, fresh_map: dict | None = None) -> int:
     try:
         import json
 
-        scripts_path = str(ROOT / "scripts")
-        caller_sys_path = sys.path.copy()
-        if not sys.path or sys.path[0] != scripts_path:
-            sys.path.insert(0, scripts_path)
-        try:
-            from dump_system_map import OUT as SYSMAP_OUT
-
-            if fresh_map is None:
-                from dump_system_map import build_map
-
-                fresh_map = build_map()
-            if not SYSMAP_OUT.exists():
+        dump_system_map = load_repo_module("dump_system_map", SCRIPTS)
+        if fresh_map is None:
+            fresh_map = dump_system_map.build_map()
+        if not dump_system_map.OUT.exists():
+            failures.append(
+                "  system-map: docs/_generated/system-map.json 缺失, "
+                "跑 python scripts/dump_system_map.py 生成并提交"
+            )
+        else:
+            committed_map = json.loads(
+                dump_system_map.OUT.read_text(encoding="utf-8")
+            )
+            if committed_map != fresh_map:
                 failures.append(
-                    "  system-map: docs/_generated/system-map.json 缺失, "
-                    "跑 python scripts/dump_system_map.py 生成并提交"
+                    "  system-map: docs/_generated/system-map.json 与代码不符, "
+                    "跑 python scripts/dump_system_map.py 重新生成并提交"
                 )
-            else:
-                committed_map = json.loads(SYSMAP_OUT.read_text(encoding="utf-8"))
-                if committed_map != fresh_map:
-                    failures.append(
-                        "  system-map: docs/_generated/system-map.json 与代码不符, "
-                        "跑 python scripts/dump_system_map.py 重新生成并提交"
-                    )
-        finally:
-            sys.path[:] = caller_sys_path
     except Exception as e:  # noqa: BLE001
         failures.append(f"  system-map build/compare failed: {e}")
 

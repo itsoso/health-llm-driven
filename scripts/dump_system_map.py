@@ -26,10 +26,20 @@ OUT = ROOT / "docs" / "_generated" / "system-map.json"
 AGENT_CONTEXT_OUT = ROOT / "docs" / "_generated" / "system-map-agent-context.md"
 DECLARATIONS = ROOT / "docs" / "system-map" / "declarations.json"
 
-sys.path.insert(0, str(SCRIPTS))
-import check_doc_drift as cdd  # noqa: E402  复用扫描器,不复制计数逻辑
-from system_map_context import render_agent_context  # noqa: E402
-from system_map_contract import validate_system_map  # noqa: E402
+try:
+    from scripts.system_map_imports import load_repo_module
+except ModuleNotFoundError as error:
+    if error.name not in {"scripts", "scripts.system_map_imports"}:
+        raise
+    from system_map_imports import load_repo_module
+
+cdd = load_repo_module("check_doc_drift", SCRIPTS)
+render_agent_context = load_repo_module(
+    "system_map_context", SCRIPTS
+).render_agent_context
+validate_system_map = load_repo_module(
+    "system_map_contract", SCRIPTS
+).validate_system_map
 
 
 def _specialist_roster() -> list[str]:

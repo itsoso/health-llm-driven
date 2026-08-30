@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import signal
 import subprocess
 import sys
 import traceback
@@ -21,26 +23,29 @@ SYSTEM_MAP = ROOT / "docs" / "_generated" / "system-map.json"
 SYSTEM_MAP_SCHEMA = ROOT / "docs" / "_generated" / "system-map.schema.json"
 AGENT_CONTEXT = ROOT / "docs" / "_generated" / "system-map-agent-context.md"
 
-_scripts_path = str(SCRIPTS)
-_caller_sys_path = sys.path.copy()
-if not sys.path or sys.path[0] != _scripts_path:
-    sys.path.insert(0, _scripts_path)
 try:
-    from check_doc_drift import main as check_doc_drift  # noqa: E402
-    from dump_system_map import build_map, check_artifacts  # noqa: E402
-    from system_map_context import (  # noqa: E402
-        SystemMapContextError,
-        render_agent_context,
-    )
-    from system_map_contract import (  # noqa: E402
-        SystemMapContractError,
-        validate_system_map,
-    )
-finally:
-    sys.path[:] = _caller_sys_path
+    from scripts.system_map_imports import load_repo_module
+except ModuleNotFoundError as error:
+    if error.name not in {"scripts", "scripts.system_map_imports"}:
+        raise
+    from system_map_imports import load_repo_module
+
+_check_doc_drift_module = load_repo_module("check_doc_drift", SCRIPTS)
+_dump_system_map_module = load_repo_module("dump_system_map", SCRIPTS)
+_system_map_context_module = load_repo_module("system_map_context", SCRIPTS)
+_system_map_contract_module = load_repo_module("system_map_contract", SCRIPTS)
+
+check_doc_drift = _check_doc_drift_module.main
+build_map = _dump_system_map_module.build_map
+check_artifacts = _dump_system_map_module.check_artifacts
+SystemMapContextError = _system_map_context_module.SystemMapContextError
+render_agent_context = _system_map_context_module.render_agent_context
+SystemMapContractError = _system_map_contract_module.SystemMapContractError
+validate_system_map = _system_map_contract_module.validate_system_map
 
 
 MOBILE_CHECK = [sys.executable, "mobile/scripts/dump_nav_graph.py", "--check"]
+MOBILE_REAP_TIMEOUT_SECONDS = 1.0
 
 
 def validate_artifact() -> None:
@@ -110,50 +115,134 @@ def _communicate_mobile(process) -> tuple[str, str, int]:
     try:
         stdout, stderr = process.communicate()
         return stdout, stderr, process.returncode
-    except Exception:  # noqa: BLE001
-        failure = traceback.format_exc()
-        try:
-            process.kill()
-        except Exception:  # noqa: BLE001
-            failure += traceback.format_exc()
-        try:
-            stdout, stderr = process.communicate()
-        except Exception:  # noqa: BLE001
-            failure += traceback.format_exc()
-            try:
-                process.wait()
-            except Exception:  # noqa: BLE001
-                failure += traceback.format_exc()
-            return "", failure, 1
-        return stdout, failure + stderr, 1
-    except BaseException as cancellation:
-        _kill_and_reap_cancelled_mobile(process, cancellation)
+    except BaseException as error:
+        failure = _format_exception("mobile communicate failed", error)
+        if isinstance(error, Exception):
+            primary, failures = _cleanup_mobile_process(
+                process,
+                failure_reports=[failure],
+            )
+            if primary is not None:
+                raise primary
+            return "", "\n".join(failures), 1
+        _cleanup_mobile_process(process, primary=error)
         raise
+
+
+def _format_exception(label: str, error: BaseException) -> str:
+    detail = "".join(
+        traceback.format_exception(type(error), error, error.__traceback__)
+    )
+    return f"{label}:\n{detail}"
+
+
+def _record_cleanup_failure(
+    primary: BaseException | None,
+    failures: list[str],
+    label: str,
+    error: BaseException,
+) -> BaseException | None:
+    report = _format_exception(label, error)
+    if primary is None and not isinstance(error, Exception):
+        primary = error
+        for failure in failures:
+            primary.add_note(failure)
+        failures.clear()
+    elif primary is None:
+        failures.append(report)
+    else:
+        primary.add_note(report)
+    return primary
+
+
+def _attempt_cleanup(
+    label: str,
+    action,
+    primary: BaseException | None,
+    failures: list[str],
+) -> tuple[BaseException | None, bool]:
+    try:
+        action()
+    except BaseException as error:  # cleanup must continue after cancellation
+        primary = _record_cleanup_failure(
+            primary,
+            failures,
+            label,
+            error,
+        )
+        if isinstance(error, Exception):
+            return primary, False
+        try:
+            action()
+        except BaseException as retry_error:
+            return _record_cleanup_failure(
+                primary,
+                failures,
+                f"{label} after interruption",
+                retry_error,
+            ), False
+        return primary, True
+    return primary, True
+
+
+def _cleanup_mobile_process(
+    process,
+    *,
+    primary: BaseException | None = None,
+    failure_reports: list[str] | None = None,
+) -> tuple[BaseException | None, list[str]]:
+    failures = list(failure_reports or ())
+    pid = getattr(process, "pid", None)
+    killed = False
+    if os.name == "posix" and isinstance(pid, int):
+        def kill_group() -> None:
+            try:
+                os.killpg(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+        primary, killed = _attempt_cleanup(
+            "mobile process-group kill failed",
+            kill_group,
+            primary,
+            failures,
+        )
+    if not killed:
+        primary, _ = _attempt_cleanup(
+            "mobile direct kill failed",
+            process.kill,
+            primary,
+            failures,
+        )
+
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(process, stream_name, None)
+        close = getattr(stream, "close", None)
+        if close is None:
+            continue
+        primary, _ = _attempt_cleanup(
+            f"mobile {stream_name} close failed",
+            close,
+            primary,
+            failures,
+        )
+
+    wait = getattr(process, "wait", None)
+    if wait is not None:
+        primary, _ = _attempt_cleanup(
+            "mobile bounded wait failed",
+            lambda: wait(timeout=MOBILE_REAP_TIMEOUT_SECONDS),
+            primary,
+            failures,
+        )
+    return primary, failures
 
 
 def _kill_and_reap_cancelled_mobile(
     process,
     cancellation: BaseException,
 ) -> None:
-    try:
-        process.kill()
-    except BaseException:
-        cancellation.add_note(
-            f"mobile cancellation cleanup failed:\n{traceback.format_exc()}"
-        )
-        return
-    try:
-        process.communicate()
-    except BaseException:
-        cancellation.add_note(
-            f"mobile cancellation cleanup failed:\n{traceback.format_exc()}"
-        )
-        try:
-            process.wait()
-        except BaseException:
-            cancellation.add_note(
-                f"mobile cancellation cleanup failed:\n{traceback.format_exc()}"
-            )
+    _cleanup_mobile_process(process, primary=cancellation)
 
 
 def main() -> int:
@@ -189,6 +278,7 @@ def main() -> int:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            start_new_session=True,
         )
     except Exception:  # noqa: BLE001
         mobile_stderr = traceback.format_exc()

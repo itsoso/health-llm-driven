@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
+import types
 from pathlib import Path
 
 import pytest
@@ -154,3 +156,87 @@ def test_main_prefers_repo_scripts_over_shadow_dump_module(tmp_path) -> None:
         sys.modules.pop("dump_system_map", None)
         if original_dump_module is not None:
             sys.modules["dump_system_map"] = original_dump_module
+
+
+def test_main_rejects_preloaded_noncanonical_dump_module(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    fresh_map = json.loads(dsm.OUT.read_text(encoding="utf-8"))
+    shadow_path = tmp_path / "dump_system_map.py"
+    shadow_path.write_text("# stale module from another checkout\n", encoding="utf-8")
+    shadow = types.ModuleType("dump_system_map")
+    shadow.__file__ = str(shadow_path)
+    shadow.OUT = dsm.OUT
+    shadow.build_map = lambda: fresh_map
+    monkeypatch.setitem(sys.modules, "dump_system_map", shadow)
+
+    assert cdd.main(fresh_map=fresh_map) == 1
+    assert "unexpected path" in capsys.readouterr().err
+
+
+def test_concurrent_main_preserves_external_sys_path_without_scripts_leak(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    fresh_map = json.loads(dsm.OUT.read_text(encoding="utf-8"))
+    scripts_path = str(ROOT / "scripts")
+    external_path = str(tmp_path / "external-concurrent-path")
+    original_sys_path = sys.path.copy()
+    sys.path[:] = [entry for entry in sys.path if entry != scripts_path]
+    caller_sys_path = sys.path.copy()
+    first_at_read = threading.Event()
+    second_at_read = threading.Event()
+    first_finished = threading.Event()
+    results: dict[str, int] = {}
+
+    class BlockingOut:
+        def exists(self) -> bool:
+            return True
+
+        def read_text(self, *, encoding: str) -> str:
+            assert encoding == "utf-8"
+            if threading.current_thread().name == "first-doc-drift":
+                first_at_read.set()
+                assert second_at_read.wait(timeout=2)
+            else:
+                second_at_read.set()
+                assert first_finished.wait(timeout=2)
+            return json.dumps(fresh_map)
+
+    monkeypatch.setattr(dsm, "OUT", BlockingOut())
+
+    def run_check(label: str) -> None:
+        results[label] = cdd.main(fresh_map=fresh_map)
+        if label == "first":
+            first_finished.set()
+
+    first = threading.Thread(
+        target=run_check,
+        args=("first",),
+        name="first-doc-drift",
+    )
+    second = threading.Thread(
+        target=run_check,
+        args=("second",),
+        name="second-doc-drift",
+    )
+    try:
+        first.start()
+        assert first_at_read.wait(timeout=2)
+        second.start()
+        assert second_at_read.wait(timeout=2)
+        sys.path.append(external_path)
+        first.join(timeout=5)
+        second.join(timeout=5)
+
+        assert not first.is_alive()
+        assert not second.is_alive()
+        assert results == {"first": 0, "second": 0}
+        assert sys.path == [*caller_sys_path, external_path]
+    finally:
+        first_finished.set()
+        first.join(timeout=1)
+        second.join(timeout=1)
+        sys.path[:] = original_sys_path

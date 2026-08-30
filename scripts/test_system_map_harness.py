@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import importlib
 import importlib.util
+import os
+import selectors
+import signal
 import subprocess
 import sys
+import threading
+import time
+import types
 from pathlib import Path
 
 import pytest
@@ -93,6 +100,115 @@ def test_checker_import_prefers_repo_scripts_over_shadow_modules(tmp_path) -> No
                 sys.modules[name] = saved_modules[name]
 
 
+@pytest.mark.parametrize(
+    "module_name",
+    (
+        "check_doc_drift",
+        "dump_system_map",
+        "system_map_context",
+        "system_map_contract",
+    ),
+)
+def test_checker_rejects_preloaded_noncanonical_system_map_modules(
+    monkeypatch,
+    tmp_path,
+    module_name: str,
+) -> None:
+    shadow_path = tmp_path / f"{module_name}.py"
+    shadow_path.write_text("# stale module from another checkout\n", encoding="utf-8")
+    shadow = types.ModuleType(module_name)
+    shadow.__file__ = str(shadow_path)
+    shadow.main = lambda **_kwargs: 0
+    shadow.build_map = lambda: {"counts": {}}
+    shadow.check_artifacts = lambda _graph: (True, "")
+    shadow.SystemMapContextError = ValueError
+    shadow.render_agent_context = lambda _graph: ""
+    shadow.SystemMapContractError = ValueError
+    shadow.validate_system_map = lambda _graph: None
+    monkeypatch.setitem(sys.modules, module_name, shadow)
+
+    with pytest.raises(ImportError, match=module_name):
+        _load_checker()
+
+
+@pytest.mark.parametrize("repo_loader_first", (True, False))
+def test_repo_module_loader_waits_for_concurrent_standard_import(
+    monkeypatch,
+    tmp_path,
+    repo_loader_first: bool,
+) -> None:
+    from scripts import system_map_imports
+
+    module_name = f"_slow_system_map_probe_{repo_loader_first}"
+    support_name = f"{module_name}_support"
+    support = types.ModuleType(support_name)
+    support.started = threading.Event()
+    support.release = threading.Event()
+    monkeypatch.setitem(sys.modules, support_name, support)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    (tmp_path / f"{module_name}.py").write_text(
+        f"from {support_name} import release, started\n"
+        "started.set()\n"
+        "if not release.wait(timeout=2):\n"
+        "    raise RuntimeError('probe release timed out')\n"
+        "READY = True\n",
+        encoding="utf-8",
+    )
+    results: dict[str, types.ModuleType] = {}
+    errors: dict[str, BaseException] = {}
+    second_started = threading.Event()
+    second_finished = threading.Event()
+
+    def repo_load() -> None:
+        try:
+            results["repo"] = system_map_imports.load_repo_module(
+                module_name,
+                tmp_path,
+            )
+        except BaseException as error:
+            errors["repo"] = error
+
+    def standard_load() -> None:
+        try:
+            results["standard"] = importlib.import_module(module_name)
+        except BaseException as error:
+            errors["standard"] = error
+
+    first_target = repo_load if repo_loader_first else standard_load
+    second_target = standard_load if repo_loader_first else repo_load
+    first = threading.Thread(target=first_target)
+
+    def run_second() -> None:
+        try:
+            second_started.set()
+            second_target()
+        finally:
+            second_finished.set()
+
+    second = threading.Thread(target=run_second)
+    try:
+        first.start()
+        assert support.started.wait(timeout=1)
+        second.start()
+        assert second_started.wait(timeout=1)
+        assert not second_finished.wait(timeout=0.1)
+
+        support.release.set()
+        first.join(timeout=1)
+        second.join(timeout=1)
+
+        assert not first.is_alive()
+        assert not second.is_alive()
+        assert errors == {}
+        assert results["repo"] is results["standard"]
+        assert results["repo"].READY is True
+    finally:
+        support.release.set()
+        first.join(timeout=1)
+        second.join(timeout=1)
+        sys.modules.pop(module_name, None)
+
+
 class _FakeMobileProcess:
     def __init__(
         self,
@@ -144,12 +260,13 @@ def test_central_checker_reuses_one_graph_and_overlaps_mobile_with_doc_drift(
     events: list[object] = []
     fresh_map = _configure_successful_canonical(monkeypatch, checker, events)
 
-    def fake_popen(argv, *, cwd, stdout, stderr, text):
+    def fake_popen(argv, *, cwd, stdout, stderr, text, start_new_session):
         events.append(("mobile-start", tuple(argv)))
         assert cwd == checker.ROOT
         assert stdout is subprocess.PIPE
         assert stderr is subprocess.PIPE
         assert text is True
+        assert start_new_session is True
         return _FakeMobileProcess(events)
 
     def fake_doc_drift(*, fresh_map: dict | None = None) -> int:
@@ -361,16 +478,14 @@ def test_mobile_communicate_error_kills_and_reaps_process(monkeypatch, capsys) -
     class FailingCommunicateProcess:
         returncode = None
 
-        def __init__(self) -> None:
-            self.communicate_calls = 0
-
         def communicate(self) -> tuple[str, str]:
-            self.communicate_calls += 1
             events.append("mobile-communicate")
-            if self.communicate_calls == 1:
-                raise RuntimeError("mobile communicate failed")
+            raise RuntimeError("mobile communicate failed")
+
+        def wait(self, *, timeout=None) -> int:
+            events.append(("mobile-wait", timeout))
             self.returncode = -9
-            return "mobile reaped\n", ""
+            return self.returncode
 
         def kill(self) -> None:
             events.append("mobile-kill")
@@ -390,13 +505,11 @@ def test_mobile_communicate_error_kills_and_reaps_process(monkeypatch, capsys) -
 
     output = capsys.readouterr()
     assert "mobile communicate failed" in output.err
-    assert "mobile reaped" in output.out
-    assert events[-5:] == [
-        "mobile-start",
+    assert events[-4:] == [
         "doc-drift",
         "mobile-communicate",
         "mobile-kill",
-        "mobile-communicate",
+        ("mobile-wait", checker.MOBILE_REAP_TIMEOUT_SECONDS),
     ]
 
 
@@ -426,11 +539,10 @@ def test_doc_drift_cancellation_reaps_mobile_before_propagating(monkeypatch) -> 
         checker.main()
 
     assert caught.value is cancellation
-    assert events[-4:] == [
+    assert events[-3:] == [
         "mobile-start",
         "doc-drift",
         "mobile-kill",
-        "mobile-communicate",
     ]
 
 
@@ -474,13 +586,264 @@ def test_mobile_communicate_cancellation_kills_and_reaps_before_propagating(
         checker.main()
 
     assert caught.value is cancellation
-    assert events[-5:] == [
+    assert events[-4:] == [
         "mobile-start",
         "doc-drift",
         "mobile-communicate",
         "mobile-kill",
-        "mobile-communicate",
     ]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="process groups require POSIX")
+def test_mobile_cancellation_kills_descendant_group_without_unbounded_drain(
+    tmp_path,
+) -> None:
+    checker = _load_checker()
+    process, descendant_pid, watchdog = _start_descendant_probe(tmp_path)
+    cancellation = KeyboardInterrupt("mobile cancellation")
+
+    class CancelFirstCommunicate:
+        pid = process.pid
+        stdout = process.stdout
+        stderr = process.stderr
+
+        @property
+        def returncode(self):
+            return process.returncode
+
+        def communicate(self):
+            calls = getattr(self, "calls", 0) + 1
+            self.calls = calls
+            if calls == 1:
+                raise cancellation
+            return process.communicate()
+
+        def kill(self) -> None:
+            process.kill()
+
+        def wait(self, *, timeout=None):
+            return process.wait(timeout=timeout)
+
+    started = time.monotonic()
+    try:
+        with pytest.raises(KeyboardInterrupt) as caught:
+            checker._communicate_mobile(CancelFirstCommunicate())
+        elapsed = time.monotonic() - started
+
+        assert caught.value is cancellation
+        assert elapsed < 3.0
+        assert process.returncode is not None
+        _assert_process_stopped(descendant_pid)
+    finally:
+        _finish_descendant_probe(process, descendant_pid, watchdog)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="process groups require POSIX")
+def test_cleanup_retries_interrupted_process_group_kill(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    checker = _load_checker()
+    process, descendant_pid, watchdog = _start_descendant_probe(tmp_path)
+    cancellation = KeyboardInterrupt("process-group kill interrupted")
+    real_killpg = checker.os.killpg
+    killpg_calls = 0
+
+    def interrupt_first_killpg(pid: int, sig: int) -> None:
+        nonlocal killpg_calls
+        killpg_calls += 1
+        if killpg_calls == 1:
+            raise cancellation
+        real_killpg(pid, sig)
+
+    class FailedCommunicate:
+        pid = process.pid
+        stdout = process.stdout
+        stderr = process.stderr
+
+        @property
+        def returncode(self):
+            return process.returncode
+
+        def communicate(self):
+            raise RuntimeError("initial communicate failure")
+
+        def kill(self) -> None:
+            process.kill()
+
+        def wait(self, *, timeout=None):
+            return process.wait(timeout=timeout)
+
+    monkeypatch.setattr(checker.os, "killpg", interrupt_first_killpg)
+    try:
+        with pytest.raises(KeyboardInterrupt) as caught:
+            checker._communicate_mobile(FailedCommunicate())
+
+        assert caught.value is cancellation
+        assert killpg_calls >= 2
+        assert "initial communicate failure" in "\n".join(
+            getattr(caught.value, "__notes__", ())
+        )
+        assert process.returncode is not None
+        _assert_process_stopped(descendant_pid)
+    finally:
+        monkeypatch.setattr(checker.os, "killpg", real_killpg)
+        _finish_descendant_probe(process, descendant_pid, watchdog)
+
+
+def _start_descendant_probe(tmp_path):
+    child_script = tmp_path / "mobile_with_descendant.py"
+    child_script.write_text(
+        "import subprocess\n"
+        "import sys\n"
+        "import time\n"
+        "descendant = subprocess.Popen([sys.executable, '-c', "
+        "'import time; time.sleep(60)'])\n"
+        "print(descendant.pid, flush=True)\n"
+        "time.sleep(60)\n",
+        encoding="utf-8",
+    )
+    process = subprocess.Popen(
+        [sys.executable, str(child_script)],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    watchdog = threading.Timer(3.0, _kill_probe_group, args=(process, None))
+    watchdog.start()
+    try:
+        assert process.stdout is not None
+        selector = selectors.DefaultSelector()
+        selector.register(process.stdout, selectors.EVENT_READ)
+        try:
+            ready = selector.select(timeout=1)
+            assert ready, "mobile probe did not report its descendant PID"
+            descendant_pid = int(process.stdout.readline().strip())
+        finally:
+            selector.close()
+    except BaseException:
+        watchdog.cancel()
+        _finish_descendant_probe(process, None, watchdog)
+        raise
+    return process, descendant_pid, watchdog
+
+
+def _kill_probe_group(process, descendant_pid: int | None) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (PermissionError, ProcessLookupError):
+        for pid in (process.pid, descendant_pid):
+            if pid is None:
+                continue
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except (PermissionError, ProcessLookupError):
+                pass
+
+
+def _assert_process_stopped(pid: int) -> None:
+    deadline = time.monotonic() + 1.0
+    while True:
+        probe = subprocess.run(
+            ["ps", "-o", "stat=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=0.5,
+        )
+        state = probe.stdout.strip()
+        if not state or state.startswith("Z"):
+            return
+        if time.monotonic() >= deadline:
+            pytest.fail(f"mobile descendant still running; pid={pid} state={state}")
+        time.sleep(0.01)
+
+
+def _finish_descendant_probe(process, descendant_pid, watchdog) -> None:
+    watchdog.cancel()
+    _kill_probe_group(process, descendant_pid)
+    if process.stdout is not None:
+        process.stdout.close()
+    if process.stderr is not None:
+        process.stderr.close()
+    try:
+        process.wait(timeout=1)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=1)
+
+
+@pytest.mark.parametrize(
+    "interrupt_stage",
+    ("kill", "stdout-close", "stderr-close", "wait"),
+)
+def test_recovery_keyboard_interrupt_keeps_cleaning_and_becomes_primary(
+    interrupt_stage: str,
+) -> None:
+    checker = _load_checker()
+    events: list[object] = []
+    cancellation = KeyboardInterrupt(f"cleanup interrupted at {interrupt_stage}")
+
+    class Pipe:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def close(self) -> None:
+            events.append(f"{self.name}-close")
+            if (
+                interrupt_stage == f"{self.name}-close"
+                and events.count(f"{self.name}-close") == 1
+            ):
+                raise cancellation
+
+    class RecoveryProcess:
+        returncode = None
+        stdout = Pipe("stdout")
+        stderr = Pipe("stderr")
+
+        def communicate(self):
+            events.append("mobile-communicate")
+            raise RuntimeError("initial communicate failure")
+
+        def kill(self) -> None:
+            events.append("mobile-kill")
+            if interrupt_stage == "kill" and events.count("mobile-kill") == 1:
+                raise cancellation
+
+        def wait(self, *, timeout=None):
+            events.append(("mobile-wait", timeout))
+            if (
+                interrupt_stage == "wait"
+                and events.count(("mobile-wait", timeout)) == 1
+            ):
+                raise cancellation
+            self.returncode = -9
+            return self.returncode
+
+    with pytest.raises(KeyboardInterrupt) as caught:
+        checker._communicate_mobile(RecoveryProcess())
+
+    assert caught.value is cancellation
+    expected_events = [
+        "mobile-communicate",
+        "mobile-kill",
+        "stdout-close",
+        "stderr-close",
+        ("mobile-wait", checker.MOBILE_REAP_TIMEOUT_SECONDS),
+    ]
+    retry_event = {
+        "kill": "mobile-kill",
+        "stdout-close": "stdout-close",
+        "stderr-close": "stderr-close",
+        "wait": ("mobile-wait", checker.MOBILE_REAP_TIMEOUT_SECONDS),
+    }[interrupt_stage]
+    expected_events.insert(expected_events.index(retry_event) + 1, retry_event)
+    assert events == expected_events
+    assert "initial communicate failure" in "\n".join(
+        getattr(caught.value, "__notes__", ())
+    )
 
 
 def test_doc_cancellation_keeps_original_exception_when_cleanup_fails(
@@ -491,18 +854,26 @@ def test_doc_cancellation_keeps_original_exception_when_cleanup_fails(
     _configure_successful_canonical(monkeypatch, checker, events)
     cancellation = KeyboardInterrupt("original cancellation")
 
+    class FailingPipe:
+        def __init__(self, name: str, *, fail: bool = False) -> None:
+            self.name = name
+            self.fail = fail
+
+        def close(self) -> None:
+            events.append(f"mobile-{self.name}-close")
+            if self.fail:
+                raise RuntimeError(f"cleanup {self.name} close failed")
+
     class CleanupFailureProcess:
         returncode = None
+        stdout = FailingPipe("stdout", fail=True)
+        stderr = FailingPipe("stderr")
 
         def kill(self) -> None:
             events.append("mobile-kill")
 
-        def communicate(self) -> tuple[str, str]:
-            events.append("mobile-communicate")
-            raise RuntimeError("cleanup communicate failed")
-
-        def wait(self) -> int:
-            events.append("mobile-wait")
+        def wait(self, *, timeout=None) -> int:
+            events.append(("mobile-wait", timeout))
             raise RuntimeError("cleanup wait failed")
 
     def fake_popen(*_args, **_kwargs):
@@ -521,12 +892,13 @@ def test_doc_cancellation_keeps_original_exception_when_cleanup_fails(
 
     assert caught.value is cancellation
     cleanup_notes = "\n".join(getattr(caught.value, "__notes__", ()))
-    assert "cleanup communicate failed" in cleanup_notes
+    assert "cleanup stdout close failed" in cleanup_notes
     assert "cleanup wait failed" in cleanup_notes
-    assert events[-5:] == [
+    assert events[-6:] == [
         "mobile-start",
         "doc-drift",
         "mobile-kill",
-        "mobile-communicate",
-        "mobile-wait",
+        "mobile-stdout-close",
+        "mobile-stderr-close",
+        ("mobile-wait", checker.MOBILE_REAP_TIMEOUT_SECONDS),
     ]
