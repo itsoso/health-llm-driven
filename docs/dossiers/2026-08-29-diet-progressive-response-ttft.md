@@ -4,8 +4,8 @@
 |---|---|
 | slug | `diet-progressive-response-ttft` |
 | 创建日期 | 2026-08-29 |
-| 当前阶段 | S3 集成完成，等待发布重试 |
-| 状态 | parked |
+| 当前阶段 | S6 生产发布完成，等待真机验证 |
+| 状态 | shipping |
 | 负责 | Codex |
 | 反馈环 | 生产内容安全时延基线 + Backend/Mobile 契约测试 + 部署后分意图里程碑 |
 
@@ -82,11 +82,13 @@
 - 已补齐上面的真实模型证据；一次性 `HARNESS_LIVE_LLM_EVAL_CONFIRMED=1` 只用于原代码 run 的失败任务重跑。run `33260890336` 终态 `success`，证据文档 run `33261620726` 终态 `success`；变量随后删除并按名称复证不存在。
 - Backend 从干净 `main` 部署精确提交 `bc777146cac7b1355049be7d8fa283c104e13596`。发布前数据库备份 43MB，Force-RLS 完整性、237 表恢复演练、站外 age 归档哈希/HMAC 真实性通过；managed migrations 无新增。
 - 远端发布事务 `COMMITTED` 并 finalized；远端 SHA 三次核验一致，健康度三次 `60/60 PASS`，Skills `22 = 22`，runtime-only KB guard/staged contract 通过，System KB 输入未变化且跳过写入。
-- Mobile production OTA / runtime `1.3.3` 未成功：Hermes、自动 no-bytecode fallback、一次独立强制 no-bytecode 重试均由 EAS 以唯一 launch asset `asset_processing_timeout` 拒绝；没有生成 group/update ID，manifest 与生产锚点未改写。
-- EAS 公共状态页显示 Update operational，但 production channel 回读仍指向上一已知可用 group `fb9637c3-a7df-4644-832c-b1d7595c8bda` / iOS update `01a04cbd-4dc8-71a2-8b21-9097ad6c5c50` / commit `077ef949e44227f69c6b5fa22bb874843a747635`。停止无界重试。
-- **裁决：BLOCK。** Backend 子闸 PASS；完整跨端发布受 EAS 项目级资产处理阻断，Mobile 渐进式阶段 UI 尚未上线。
+- Mobile production OTA / runtime `1.3.3` 首轮未成功：Hermes、自动 no-bytecode fallback、一次独立强制 no-bytecode 重试均由 EAS 以唯一 launch asset `asset_processing_timeout` 拒绝；当时没有生成 group/update ID，manifest 与生产锚点未改写。
+- 用户明确要求继续后，在工作树与 `origin/main` 精确一致、Mobile/shared tree digest 不变、EAS Update 无公开事故的前提下重试；Hermes artifact 成功发布。production channel 回读确认首组为 group `122ae29c-5484-4512-8201-3dfed3fc6075` / iOS update `01a05016-7184-744f-8c7f-227484149178` / commit `7f354f74ebec5347795af2afb9e14d6a5e176af0`，platform=`ios`、runtime=`1.3.3`、工作树 clean。
+- 发布 manifest 与 anchor 已原子更新；回滚锚点保留上一已知可用 group `fb9637c3-a7df-4644-832c-b1d7595c8bda` / iOS update `01a04cbd-4dc8-71a2-8b21-9097ad6c5c50`。
+- **裁决：PASS。** Backend 与 Mobile production OTA 均已形成可追溯发布证据。
 
 ## G6 · 上线验证
 
 - Backend 生产 SHA 与健康闸已验证；未用真实用户身份制造测试饮食记录。
-- PENDING。等待 EAS 恢复后发布 production OTA，再由真实文字记餐验证阶段顺序与回执后成功，并在收集至少 30 个饮食样本后复核分位数。
+- EAS production channel、runtime、commit、group/update ID 和本地 manifest 已一致回读；尚未冒充设备已下载/应用。
+- PENDING。用户在 App 回到前台收到更新提示后确认应用，完全退出并重开，再用真实文字记餐验证阶段顺序与回执后成功；收集至少 30 个饮食样本后复核分位数。
