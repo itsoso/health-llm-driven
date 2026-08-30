@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import json
+import ast
 import importlib.util
+import json
 import re
 import subprocess
 import sys
@@ -18,6 +19,17 @@ TRACE_EVENT_SCHEMA = (
 )
 BENCHMARK_COLLECTOR = ROOT / "scripts" / "agent_skill_benchmark.py"
 CHECKER = ROOT / "scripts" / "check_agent_skill_governance.py"
+TOOLING_PYTEST_RUNNER = ROOT / "scripts" / "run_tooling_pytests.py"
+TOOLING_TESTS = (
+    "backend/tests/test_agent_skill_governance.py",
+    "backend/tests/test_agent_skill_manifests.py",
+    "backend/tests/test_doc_drift_narrative_counts.py",
+    "backend/tests/test_doc_drift_skill_contract.py",
+    "backend/tests/test_dossier_consistency.py",
+    "backend/tests/test_reva_health_harness_plugin_package.py",
+    "backend/tests/test_system_map_agent_context.py",
+)
+TOOLING_BENCHMARK_TEST = "backend/tests/test_agent_skill_benchmark.py"
 OPAQUE_UUID_PATTERN = (
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[4-7][0-9a-f]{3}-"
     r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
@@ -27,6 +39,17 @@ OPAQUE_UUID_PATTERN = (
 def _checker_module():
     spec = importlib.util.spec_from_file_location(
         "agent_skill_governance_checker", CHECKER
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _tooling_pytest_runner_module():
+    assert TOOLING_PYTEST_RUNNER.is_file(), "tooling pytest runner is required"
+    spec = importlib.util.spec_from_file_location(
+        "tooling_pytest_runner", TOOLING_PYTEST_RUNNER
     )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -106,6 +129,80 @@ def test_registry_has_one_router_and_closed_governance_vocabulary():
     routers = [skill for skill in registry["skills"] if skill["kind"] == "router"]
     assert [skill["id"] for skill in routers] == ["reva-workflow-router"]
     assert "domain-rule-factory" not in {skill["id"] for skill in registry["skills"]}
+
+
+def test_tooling_pytest_runner_uses_an_isolated_no_coverage_command():
+    runner = _tooling_pytest_runner_module()
+
+    command = runner.build_command(include_benchmark=False)
+    assert command[:3] == [sys.executable, "-m", "pytest"]
+    assert "--noconftest" in command
+    assert command[command.index("-o") + 1] == "addopts="
+    assert "-q" in command
+    assert "--strict-markers" in command
+    assert "--tb=short" in command
+    assert command[command.index("-p") + 1] == "no:cacheprovider"
+    assert not any(argument.startswith("--cov") for argument in command)
+    assert tuple(runner.DEFAULT_TESTS) == TOOLING_TESTS
+
+    environment = runner.sanitized_environment(
+        {"PYTEST_ADDOPTS": "--cov=app --cov-report=html", "KEEP_ME": "yes"}
+    )
+    assert "PYTEST_ADDOPTS" not in environment
+    assert environment["KEEP_ME"] == "yes"
+
+
+def test_tooling_pytest_runner_only_adds_benchmark_on_explicit_request():
+    runner = _tooling_pytest_runner_module()
+
+    default_command = runner.build_command(include_benchmark=False)
+    benchmark_command = runner.build_command(include_benchmark=True)
+
+    assert TOOLING_BENCHMARK_TEST not in default_command
+    assert benchmark_command[-1] == TOOLING_BENCHMARK_TEST
+    assert benchmark_command.count(TOOLING_BENCHMARK_TEST) == 1
+
+
+def test_tooling_pytest_allowlist_is_present_and_ast_runtime_independent():
+    runner = _tooling_pytest_runner_module()
+    allowlist = (*runner.DEFAULT_TESTS, runner.BENCHMARK_TEST)
+
+    assert tuple(runner.DEFAULT_TESTS) == TOOLING_TESTS
+    assert runner.BENCHMARK_TEST == TOOLING_BENCHMARK_TEST
+    assert len(runner.DEFAULT_TESTS) == 7
+
+    for relative in allowlist:
+        path = ROOT / relative
+        assert path.is_file(), relative
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=relative)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported = [alias.name for alias in node.names]
+                assert all(
+                    name not in {"app", "main"}
+                    and not name.startswith(("app.", "main."))
+                    for name in imported
+                ), (relative, imported)
+            if isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                assert module not in {"app", "main"} and not module.startswith(
+                    ("app.", "main.")
+                ), (relative, module)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                argument_names = {
+                    argument.arg
+                    for argument in (
+                        *node.args.posonlyargs,
+                        *node.args.args,
+                        *node.args.kwonlyargs,
+                    )
+                }
+                forbidden = {
+                    name
+                    for name in argument_names
+                    if {"db", "client", "auth"} & set(name.split("_"))
+                }
+                assert not forbidden, (relative, node.name, forbidden)
 
 
 def test_every_standard_project_skill_is_owned_versioned_and_evidenced():
