@@ -4,8 +4,8 @@
 |---|---|
 | slug | `complex-latency-recovery-safety-routing` |
 | 创建日期 | 2026-08-31 |
-| 当前阶段 | G4 发布候选安全复审；阻断修复已完成 |
-| 状态 | safety_re_review_pending |
+| 当前阶段 | G5 发布准备；后端先行、Mobile OTA 待后端健康检查 |
+| 状态 | release_authorized |
 | 负责 | Codex / 用户确认 |
 | 反馈环 | Backend pytest + LLM regression gate + iOS Simulator 三档验收 |
 
@@ -40,6 +40,7 @@
 - LLM live gate 首次被本机 PostgreSQL role 缺失与 fallback 429 阻塞；改用一次性本地 SQLite 额度账本后默认 TokenPlan/MiniMax 路径真实执行并通过：invariants 12/12、health agent core 50/50、orchestrator 5/5（平均分 0.94、平均耗时 10252ms）、trajectory contract 12/12、goldens 9/9，无回归。
 - Release preflight：主干 CI 基线 `0160b0bfb` 为 green；secret scan、System Map/doc drift、Dossier 一致性、API 类型漂移、23 个 release invariant 与 Mobile changed-file 345/345 全部通过。
 - 固定候选提交 `330aedbda` 的发布前独立复审为 **NO-GO**：长按通用菜单仍允许复制流式/中断/失败的半截回答，绕过紧凑依据面的终态门控。已用 streaming、interrupted、error 三类 RED 回归复现，并在菜单可见性与复制/分享/播报 handler 两层加入终态防护；定向 33/33 已通过，等待新固定提交复审。
+- 修复提交 `14078c987` 的独立复审为 **GO**：三类半截回答的导出入口均关闭，复制/分享/播报 handler 具备二次终态检查，完整 assistant 与 user 操作未回归；相关 Mobile 7 个套件 174/174 通过。
 - `system-map-check.sh`、doc drift、`git diff --check` 均通过。
 - 这些结果证明契约和门控，不是线上 A/B；在同批请求的 `end_to_end_ttft_ms` 分位数和质量闸完成前，不宣称已经变快。
 
@@ -132,9 +133,10 @@
 
 - 独立安全评审结论：GO。恢复建议分类、guard fail-closed、非 fast 模型地板、回退阻断、内容无关元数据和缺数保守文案均通过；后续仅调整承接语分类，不改变安全路径。
 - 发布候选复审结论：`330aedbda` **NO-GO**，原因是 Mobile 长按菜单的半截回答导出旁路；阻断修复与回归已完成，最终 GO 以修复后固定提交的复审结论为准。
+- 修复后固定提交 `14078c987` 复审结论：**GO**，无剩余发布阻断。
 
 ## G5 / G6 · 发布与上线验证
 
 - 2026-08-31 用户明确要求完成后进行 OTA，并已在本任务链路授权合并到 `main` 和部署到线上。
 - 本切片的性能与恢复安全路由为 Backend 行为，必须先通过 `deploy.sh -b` 发布；Mobile UI 变更再按 `scripts/mobile-ota.sh production` 发布。OTA 不冒充 Backend 部署。
-- **裁决：暂缓。** 本地回归、LLM gate 与三档模拟器验收已通过；等待修复后固定提交的独立安全复审 GO，再进入 push/deploy/OTA。
+- **裁决：READY。** 本地回归、LLM gate、修复后独立安全复审与三档模拟器验收已通过；上线状态仍以发布工具回执和线上读回为准。

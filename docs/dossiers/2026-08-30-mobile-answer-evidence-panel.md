@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-answer-evidence-panel` |
 | 创建日期 | 2026-08-30 |
-| 当前阶段 | G4 发布候选安全复审；阻断修复已完成 |
-| 状态 | safety_re_review_pending |
+| 当前阶段 | G5 发布准备；后端先行、Mobile OTA 待后端健康检查 |
+| 状态 | release_authorized |
 | 负责 | Codex / 用户确认 |
 | 反馈环 | Mobile Jest + TypeScript + iOS Simulator；发布另行授权 |
 
@@ -153,5 +153,6 @@
 - 发布前 live LLM gate 使用一次性本地额度账本完成真实调用：invariants 12/12、health core 50/50、orchestrator 5/5（平均分 0.94）、trajectory contract 12/12、goldens 9/9，**PASS**。
 - Release preflight：主干 CI 基线 `0160b0bfb` 为 green；secret scan、System Map/doc drift、Dossier 一致性、API 类型漂移、23 个 release invariant 与 Mobile changed-file 345/345 全部通过。
 - 固定候选提交 `330aedbda` 的发布前独立复审为 **NO-GO**：长按通用菜单仍允许复制流式/中断/失败的半截回答。三类 RED 回归已复现该旁路；菜单与复制/分享/播报 handler 均已改为仅允许完整终态，定向 33/33 通过，等待修复后固定提交复审。
+- 修复提交 `14078c987` 的独立复审为 **GO**：三类非完整状态均无复制/分享/播报入口，handler 具备二次终态检查；完整 assistant 与 user 操作保持，相关 Mobile 7 个套件 174/174 通过。
 - G5：2026-08-31 用户在本轮明确回复“发布”，授权本批变更 commit、push、后端 deploy 与随后 Mobile OTA；仍按后端健康检查通过后再发 OTA 的顺序执行。
 - G6：待真实发布回执、production revision 读回和 OTA update group / iOS update ID。
