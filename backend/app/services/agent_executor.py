@@ -7013,9 +7013,14 @@ _SYMPTOM_PROVEN_SELF_PREFIX_RE = re.compile(
     r"^(?:"
     r"(?:我|本人|自己)|"
     r"(?:刚才|刚刚|现在|目前|此刻|今天|今日|昨日|昨天|前天|今晚|昨晚|今早|"
-    r"今天早上|今天上午|今天中午|今天下午|今天晚上|早上|上午|中午|下午|晚上|夜里)|"
+    r"今天早上|今天上午|今天中午|今天下午|今天晚上|早上|上午|中午|下午|晚上|夜里|"
+    r"凌晨|清晨|这两天|这几天|最近|从昨晚开始)|"
+    r"(?:\d{4}年\d{1,2}月\d{1,2}日)|"
     r"(?:\d{1,2}月\d{1,2}日)|"
+    r"(?:(?:半|[一二两三四五六七八九十\d]+)小时前)|"
     r"(?:[01]?\d|2[0-3])(?:[:：点](?:[0-5]?\d|半|一刻|三刻)?)(?:分|钟)?|"
+    r"(?:[零〇一二两三四五六七八九十]{1,3}点"
+    r"(?:半|一刻|三刻|[零〇一二两三四五六七八九十]{1,3}分)?(?:钟)?)|"
     r"(?:还是|仍然|仍|还|又|也|已经|正在|突然|一直|开始|感觉|觉得|出现|有点|有些|有|偶尔|连续|"
     r"严重|轻微|剧烈|明显|稍微|非常|特别)|"
     r"(?:过程中(?:的)?)|"
@@ -7033,6 +7038,18 @@ _SYMPTOM_EXPLICIT_CN_CLOCK_RE = re.compile(
 _SYMPTOM_EXPLICIT_SEVERITY_RE = re.compile(
     r"(?:严重程度|严重度|程度|强度)?\s*(?P<value>10|[1-9])\s*"
     r"(?:分(?!钟)|级|/\s*10)"
+)
+_SYMPTOM_FACT_SUFFIX_RE = re.compile(r"^(?:的症状|得站不稳)")
+_SYMPTOM_UNCLASSIFIED_ADVICE_TAIL_RE = re.compile(
+    r"^(?:用不用急诊|需不需急诊|算正常还是危险|要急诊还是门诊|"
+    r"挂内科还是神经科|该咋办|咋治|说下原因|有多严重|需要急诊|"
+    r"正常还是异常|严重还是不严重|看不看医生|需要不需要看医生)$"
+)
+_SYMPTOM_POSTPOSED_OWNER_RE = re.compile(
+    r"(?:的是|是[^，,。！？!?；;：:\s]{1,16}的(?:症状)?$|"
+    r"给(?!点|些)[^，,。！？!?；;：:\s]{1,16}$|"
+    r"(?:记录)?到[^，,。！？!?；;：:\s]{1,16}名下|"
+    r"(?:属于|归)[^，,。！？!?；;：:\s]{1,16})"
 )
 _PURE_SYMPTOM_CONTEXT_PREFIX_RE = re.compile(
     r"^(?:(?:我)?(?:准备|要)?(?:睡觉|休息)(?:了)?[，,])?"
@@ -7120,6 +7137,8 @@ def _symptom_text_has_non_self_reference(normalized: str) -> bool:
             return True
         # 小王等姓名需要后续确实出现动作词,避免把“小腿疼”识别成第三方。
         for match in name_re.finditer(clause[:first_symptom_index]):
+            if match.group(0) == "小时前":
+                continue
             # 症状标记本身可能包含动作词(例如“打喷嚏”),所以窗口要包含
             # 标记开头,否则“小王打喷嚏”会因动作词恰好位于边界而漏检。
             suffix = clause[match.end():first_symptom_index + 4]
@@ -7257,6 +7276,23 @@ def _explicit_symptom_selectors(message: Any) -> Dict[str, Any]:
     return selectors
 
 
+def _symptom_secondary_tail_is_safe(text: Any) -> bool:
+    """Allow only proven advice/read tails after extracting a symptom fact."""
+    normalized = "".join(str(text or "").split()).strip("：:，,。；;！？!?")
+    if not normalized:
+        return True
+    if _SYMPTOM_POSTPOSED_OWNER_RE.search(normalized):
+        return False
+    if _SYMPTOM_WRITE_ACTION_RE.search(normalized):
+        return False
+    intent = classify_agent_utterance(normalized)
+    if intent.is_write:
+        return False
+    if intent.primary in {"advice", "read"}:
+        return True
+    return _SYMPTOM_UNCLASSIFIED_ADVICE_TAIL_RE.fullmatch(normalized) is not None
+
+
 def _is_proven_pure_symptom_record_request(message: Any) -> bool:
     """Prove the narrow zero-model symptom grammar; unknown text fails closed.
 
@@ -7303,7 +7339,7 @@ def _is_proven_pure_symptom_record_request(message: Any) -> bool:
 
 
 def _compound_symptom_fact_description(message: Any) -> Optional[str]:
-    """Extract only the user's symptom fact from a compound write+advice turn."""
+    """Extract one proven self symptom after validating the complete request."""
     raw = str(message or "").strip()
     if not raw:
         return None
@@ -7318,55 +7354,55 @@ def _compound_symptom_fact_description(message: Any) -> Optional[str]:
     if _is_proven_pure_symptom_record_request(raw):
         return None
 
-    symptom_markers = tuple(
-        marker
-        for _, markers in _SYMPTOM_BODY_PART_MARKERS
-        for marker in markers
-    ) + ("症状", "不适", "难受", "不舒服")
     raw_clauses = [
         clause
         for clause in _SYMPTOM_FACT_CLAUSE_SPLIT_RE.split(raw)
         if clause.strip()
     ]
+    fact_description: Optional[str] = None
     for raw_clause in raw_clauses:
         clause = raw_clause.strip(" \t\r\n:：,，;；。！？!?")
-        if not clause or not any(marker in clause for marker in symptom_markers):
+        if not clause:
             continue
-        clause = _SYMPTOM_WRITE_PREFIX_RE.sub("", clause, count=1).strip()
-        span = _first_symptom_marker_span(clause)
-        if span is None or not _symptom_prefix_proves_self(
-            clause,
+        stripped_clause = _SYMPTOM_WRITE_PREFIX_RE.sub("", clause, count=1).strip()
+        span = _first_symptom_marker_span(stripped_clause)
+        is_fact_candidate = span is not None and _symptom_prefix_proves_self(
+            stripped_clause,
             start=0,
             symptom_start=span[0],
-        ):
+        )
+        if not is_fact_candidate:
+            if fact_description is not None and (
+                _SYMPTOM_WRITE_PREFIX_RE.fullmatch(clause) is not None
+                or _SYMPTOM_EXPLICIT_SEVERITY_RE.fullmatch(clause) is not None
+            ):
+                continue
+            if not _symptom_secondary_tail_is_safe(clause):
+                return None
             continue
-        if len(raw_clauses) == 1:
-            # No trustworthy clause boundary exists.  Under-record the
-            # recognized fact rather than persisting an unknown request
-            # tail as health data.
-            clause = clause[:span[1]]
-        if any(marker in clause for marker in HEALTH_QUESTION_SIGNALS):
-            symptom_ends = [
-                index + len(marker)
-                for marker in symptom_markers
-                for index in [clause.find(marker)]
-                if index >= 0
-            ]
-            if symptom_ends:
-                # With no punctuation boundary, the first health question may
-                # begin immediately after the symptom ("我头疼严重吗").  Keep
-                # the asserted symptom and drop the ambiguous/question tail.
-                clause = clause[:min(symptom_ends)]
-        cut_points = [
-            clause.find(marker)
-            for marker in _SYMPTOM_SECONDARY_REQUEST_MARKERS
-            if clause.find(marker) > 0
-        ]
-        if cut_points:
-            clause = clause[:min(cut_points)].rstrip(" \t\r\n:：,，;；。！？!?")
-        if clause:
-            return clause[:500]
-    return None
+        if fact_description is not None:
+            return None
+
+        clause = stripped_clause
+        span = _first_symptom_marker_span(clause)
+        if span is None:
+            return None
+        fact_end = span[1]
+        suffix = clause[fact_end:].strip()
+        fact_suffix = _SYMPTOM_FACT_SUFFIX_RE.match(suffix)
+        if fact_suffix is not None:
+            fact_end += fact_suffix.end()
+            suffix = suffix[fact_suffix.end():].strip()
+        severity = _SYMPTOM_EXPLICIT_SEVERITY_RE.match(suffix)
+        if severity is not None:
+            suffix = suffix[severity.end():].strip()
+        if not _symptom_secondary_tail_is_safe(suffix):
+            return None
+        fact_description = clause[:fact_end].rstrip(
+            " \t\r\n:：,，;；。！？!?"
+        )[:500]
+
+    return fact_description
 
 
 def _normalize_symptom_body_part(data: Dict[str, Any]) -> None:

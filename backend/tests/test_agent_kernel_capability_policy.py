@@ -4807,6 +4807,12 @@ def test_location_prefix_does_not_reauthorize_non_current_symptom_write(message)
         "宝宝眼睛痒",
         "领导眼睛痒",
         "记录张三眼睛痒",
+        "记录眼睛痒的是老妈",
+        "眼睛痒的是张三，帮我记录",
+        "记录昨天9点眼睛痒，是张三的",
+        "记录眼睛痒程度6分，是媳妇的",
+        "记录眼睛痒给宝宝",
+        "眼睛痒，记录到妈咪名下",
         "主任诊断我嗓子疼",
         "护士诊断我膝盖疼",
         "营养师诊断我皮肤发痒",
@@ -4854,6 +4860,53 @@ def test_untrusted_symptom_context_cannot_use_generic_write_fallback(message):
 
     assert decision.action == "block"
     assert decision.reason == "health_record_authorization_target_unresolved"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录昨天九点眼睛痒",
+        "记录2026年8月28日9点膝盖疼",
+        "记录这两天眼睛痒",
+        "记录这几天嗓子疼",
+        "记录最近皮肤发痒",
+        "记录一小时前眼睛痒",
+        "记录半小时前膝盖疼",
+        "记录从昨晚开始眼睛痒",
+        "记录凌晨3点眼睛痒",
+        "记录清晨6点嗓子疼",
+    ),
+)
+def test_natural_self_time_prefixes_keep_server_bound_symptom_write(message):
+    snapshot = _snapshot(message)
+    goal = compile_goal_spec(
+        envelope=snapshot.envelope,
+        context=snapshot.context,
+        intent=snapshot.intent,
+    )
+    tool_call = agent_executor_module._build_deterministic_symptom_tool_call(
+        message,
+        write_receipts=[],
+    )
+    assert tool_call is not None
+    args = json.loads(tool_call["function"]["arguments"])
+    args = agent_executor_module._apply_server_health_record_provenance(
+        "health_record",
+        args,
+        execution_source="structured_or_recovered",
+        has_attachment=False,
+        diet_photo_auto_save=False,
+        contextual_diet_recorded=False,
+        contextual_supplement_names=(),
+        user_message=message,
+    )
+
+    decision = decide_tool_capability(
+        replace(snapshot, goal=goal),
+        _request("health_record", args),
+    )
+
+    assert decision.action == "allow"
 
 
 @pytest.mark.parametrize(
