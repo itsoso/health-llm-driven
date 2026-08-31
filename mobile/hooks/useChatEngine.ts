@@ -18,6 +18,7 @@ import {
   createIdleAgentTurn,
   isAgentTurnTerminal,
   reduceAgentTurn,
+  resolveAgentTurnStatusLabel,
   type AgentTurnEvent,
   type AgentTurnState,
 } from '../utils/agentTurnState';
@@ -1826,24 +1827,29 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           if (!gotFirstToken && evt.statusLabel) {
             const label = evt.statusLabel;
             setMessages(prev => prev.map((m) => {
-              if (m.id !== aId || m.currentStatus === label) return m;
+              if (m.id !== aId) return m;
               // The backend emits an immediate, request-specific accepted
               // acknowledgement before the first model round. A legacy
               // `thinking` heartbeat is only liveness information, so it must
               // not erase that more useful first-stage response. Concrete
               // progress stages (tool/synthesis/vision/diet) still replace it.
-              if (evt.statusStage === 'thinking' && m.currentStatus) return m;
+              const nextStatus = resolveAgentTurnStatusLabel(
+                m.currentStatus,
+                evt.statusStage,
+                label,
+              );
+              if (m.currentStatus === nextStatus) return m;
               // Once a dietary semantic stage is active, generic tool/synthesis
               // statuses must not overwrite it. They remain available in the
               // agent-turn state machine, while the user-facing panel keeps the
               // auditable diet stage sequence.
               if (!dietActionType && lastDietStatusLabel) return m;
-              if (!dietActionType) return { ...m, currentStatus: label };
+              if (!dietActionType) return { ...m, currentStatus: nextStatus };
               const thinkingSteps = appendUniqueProgressStep(
                 m.thinkingSteps,
                 previousDietStatusLabel,
               );
-              return { ...m, currentStatus: label, thinkingSteps };
+              return { ...m, currentStatus: nextStatus, thinkingSteps };
             }));
           }
         } else if (evt.type === 'token' || evt.type === 'tool') {
