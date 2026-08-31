@@ -7039,16 +7039,23 @@ _SYMPTOM_EXPLICIT_SEVERITY_RE = re.compile(
     r"(?:严重程度|严重度|程度|强度)?\s*(?P<value>10|[1-9])\s*"
     r"(?:分(?!钟)|级|/\s*10)"
 )
-_SYMPTOM_FACT_SUFFIX_RE = re.compile(r"^(?:的症状|得站不稳)")
+_SYMPTOM_FACT_SUFFIX_RE = re.compile(r"^(?:的症状|症状|得站不稳)")
 _SYMPTOM_PROVEN_ADVICE_TAIL_RE = re.compile(
     r"^(?:"
-    r"(?:(?:请)?(?:帮我)?(?:分析|解释|评估|判断)"
-    r"(?:一下)?(?:为什么|原因|风险|要紧吗)?)|"
+    r"(?:(?:请|麻烦)?(?:帮我|帮忙)?(?:分析|解释|评估|判断)"
+    r"(?:一下)?(?:为什么|原因|风险|要紧吗|要不要急诊|需不需要就医)?)|"
+    r"(?:(?:请|麻烦)?(?:帮我|帮忙)?看看?(?:怎么|咋)回事)|"
     r"(?:帮忙看看)|"
     r"(?:说说(?:怎么|咋)回事)|(?:说下|告诉我)原因|"
-    r"给(?:我)?(?:点|点儿|个|些|一些|一份)?(?:处理)?"
-    r"(?:意见|建议|方法|方案)|"
-    r"(?:该)?(?:怎么|如何|咋)(?:处理|缓解|办|治|整)|"
+    r"(?:(?:请|麻烦)?给(?:我)?(?:点|点儿|个|些|一些|一份)?(?:处理)?"
+    r"(?:意见|建议|方法|方案))|"
+    r"(?:能给(?:我)?(?:点|点儿|个|些|一些|一份)?(?:处理)?"
+    r"(?:意见|建议|方法|方案)吗)|"
+    r"(?:该)?(?:怎么|如何|咋)(?:处理|缓解|改善|办|治|整)|"
+    r"(?:能否|可否)(?:缓解|改善)|"
+    r"(?:缓解|改善)(?:方法|办法)?是什么|(?:有什么办法)|"
+    r"(?:需要注意什么|是否严重|什么时候(?:就医|去急诊)|哪些情况危险|"
+    r"会不会过敏|可能是什么原因|最常见原因是什么)|"
     r"(?:是否)?需要(?:去医院|就诊|急诊|看医生)(?:吗)?|"
     r"(?:需不需要就医|需要不需要看医生)|"
     r"(?:该看什么科|该挂哪个科|该去哪里看)|"
@@ -7298,6 +7305,9 @@ def _symptom_secondary_tail_is_safe(text: Any) -> bool:
         return False
     if _SYMPTOM_WRITE_ACTION_RE.search(normalized):
         return False
+    normalized = re.sub(r"^(?:这个|该|此)?症状", "", normalized)
+    if not normalized:
+        return False
     return _SYMPTOM_PROVEN_ADVICE_TAIL_RE.fullmatch(normalized) is not None
 
 
@@ -7374,10 +7384,14 @@ def _compound_symptom_fact_description(message: Any) -> Optional[str]:
             continue
         stripped_clause = _SYMPTOM_WRITE_PREFIX_RE.sub("", clause, count=1).strip()
         span = _first_symptom_marker_span(stripped_clause)
-        is_fact_candidate = span is not None and _symptom_prefix_proves_self(
-            stripped_clause,
-            start=0,
-            symptom_start=span[0],
+        is_fact_candidate = (
+            span is not None
+            and not re.match(r"^(?:这个|该|此)?症状", stripped_clause)
+            and _symptom_prefix_proves_self(
+                stripped_clause,
+                start=0,
+                symptom_start=span[0],
+            )
         )
         if not is_fact_candidate:
             if fact_description is not None and (
@@ -7464,11 +7478,16 @@ def _extract_clear_symptom_record(message: Any) -> Optional[Dict[str, str]]:
     normalized = "".join(raw.split()).lower()
     if _symptom_text_has_non_self_reference(normalized):
         return None
-    if _symptom_text_has_negated_observation(normalized):
-        return None
     pure = _is_proven_pure_symptom_record_request(raw)
     fact_description = None if pure else _compound_symptom_fact_description(raw)
     if not pure and not fact_description:
+        return None
+    # For compound turns, validate negation only on the proven fact.  Advice
+    # tails such as ``怎么缓解`` contain the same lexical marker but do not
+    # retract the user's observation.
+    if _symptom_text_has_negated_observation(
+        normalized if pure else str(fact_description)
+    ):
         return None
     for body_part, markers in _SYMPTOM_BODY_PART_MARKERS:
         if any(marker in normalized for marker in markers):

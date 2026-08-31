@@ -99,6 +99,12 @@ SIMPLE_SYMPTOM_BODY_PARTS = (
     ("skin", ("皮疹", "皮肤痒", "瘙痒")),
     ("musculoskeletal", ("腰痛", "腰疼", "关节痛", "关节疼", "肌肉痛")),
 )
+SYMPTOM_COMPOUND_TAIL_SIGNALS = (
+    "怎么办", "怎么", "如何", "为什么", "建议", "意见", "处理", "缓解",
+    "改善", "办法", "注意", "严重", "急诊", "就医", "医院", "原因", "看看",
+    "评估", "解释", "判断", "正常", "危险", "过敏", "什么科", "会不会", "需要",
+    "是否", "吗", "给",
+)
 DIET_TRAILING_WRITE_RE = re.compile(
     r"(?:[\s，,。.!！；;：:]*)"
     r"(?:请)?(?:帮我|给我)?"
@@ -572,6 +578,17 @@ def _is_compound_record_request(text: str, target_domain: str) -> bool:
     ]
     if target_domain == "symptom" and len(distinct_symptoms) > 1:
         return True
+    if target_domain == "symptom" and distinct_symptoms:
+        first_symptom_end = min(
+            text.find(alias) + len(alias)
+            for alias in distinct_symptoms
+            if text.find(alias) >= 0
+        )
+        if any(
+            text.find(signal, first_symptom_end) >= 0
+            for signal in SYMPTOM_COMPOUND_TAIL_SIGNALS
+        ):
+            return True
 
     detected_domains: set[str] = set()
     if water_matches:

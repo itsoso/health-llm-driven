@@ -476,6 +476,29 @@ def test_historical_symptom_goal_keeps_the_user_owned_date():
     assert goal.target_date == "2026-07-16"
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录我眼睛痒，怎么缓解",
+        "记录我眼睛痒，该看什么科",
+        "记录我眼睛痒，给我建议",
+        "记录眼睛痒，老妈出现这个症状该怎么办",
+    ),
+)
+def test_compound_symptom_request_never_compiles_to_simple_record_goal(message):
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(user_id=1, channel="mobile", text=message)
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal is None or goal.kind != "simple_health_record"
+
+
 def test_simple_diet_goal_binds_explicit_meal_and_foods_from_current_turn():
     context = ExecutionContext.for_test(user_id=1, channel="mobile")
     envelope = AgentEnvelope(
