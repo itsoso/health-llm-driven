@@ -208,6 +208,36 @@ describe('restoreMessagesFromHistory', () => {
     });
   });
 
+  it('restores structured answer evidence from persisted message meta', () => {
+    const restored = restoreMessagesFromHistory([{
+      id: 15,
+      role: 'assistant',
+      content: '今天建议降低强度。',
+      created_at: '2026-08-31 08:00:00',
+      meta: {
+        answer_evidence: {
+          version: 'answer-evidence.v1',
+          summary: '本轮获得 1 条可核对数据',
+          basis: [{
+            id: 'wearable.hrv.latest',
+            label: 'HRV',
+            observation: '31 ms',
+            source: 'Garmin',
+            purpose: '用于评估恢复与活动承受度',
+          }],
+          limitations: [],
+        },
+      },
+    }], 'https://example.test', 'h');
+
+    expect(restored[0]).toMatchObject({
+      answerEvidence: {
+        summary: '本轮获得 1 条可核对数据',
+        basis: [expect.objectContaining({ observation: '31 ms' })],
+      },
+    });
+  });
+
   it('folds repeated projections of one meal card and keeps the latest media set', () => {
     const restored = restoreMessagesFromHistory([
       {

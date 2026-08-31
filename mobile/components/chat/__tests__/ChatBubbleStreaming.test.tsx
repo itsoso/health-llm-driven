@@ -348,6 +348,25 @@ describe('ChatBubble streaming degraded render', () => {
     expect(queryByLabelText('保存为记录')).toBeNull();
   });
 
+  it.each([
+    ['streaming', { streaming: true }],
+    ['interrupted', { streaming: false, completionStatus: 'interrupted' as const }],
+    ['failed', { streaming: false, completionStatus: 'error' as const }],
+  ])('does not expose completion-only actions for %s assistant output', (_label, state) => {
+    const { getByTestId, queryByLabelText } = renderBubble({
+      id: `assistant-${_label}-partial-actions`,
+      role: 'assistant',
+      content: '血压 185/85，建议先',
+      ...state,
+    });
+
+    fireEvent(getByTestId('assistant-message-surface'), 'longPress');
+
+    expect(queryByLabelText('复制全文')).toBeNull();
+    expect(queryByLabelText('分享这条回复')).toBeNull();
+    expect(queryByLabelText('语音播报')).toBeNull();
+  });
+
   it('long press on a user message opens copy-first actions and keeps selection secondary', async () => {
     const onEnterSelection = jest.fn();
     const { getByLabelText, queryByLabelText } = render(
@@ -545,6 +564,110 @@ describe('ChatBubble streaming degraded render', () => {
 
     fireEvent.press(getByLabelText('收起回答依据'));
     expect(queryByText('读取记录信息')).toBeNull();
+  });
+
+  it('shows concrete observations and limitations before generic execution records', () => {
+    const { getByLabelText, getByText, queryByText } = renderBubble({
+      id: 'assistant-structured-answer-evidence',
+      role: 'assistant',
+      content: '今天建议降低训练强度。',
+      streaming: false,
+      sourcesUsed: ['在服补剂 (10 种)', '主目标: 总体健康'],
+      thinkingSteps: ['正在查询健康数据', '检查健康数据', '整理回复中'],
+      answerEvidence: {
+        version: 'answer-evidence.v1',
+        summary: '本轮获得 1 条可核对数据，1 项需注意',
+        basis: [{
+          id: 'wearable.hrv.latest',
+          label: 'HRV',
+          observation: '31 ms',
+          context: '今天 07:55',
+          source: 'Garmin',
+          purpose: '用于评估恢复与活动承受度',
+          freshness: 'current',
+        }],
+        limitations: [{
+          id: 'wearable.resting-heart-rate',
+          title: '静息心率未同步',
+          detail: '昨晚没有可用记录',
+          handling: '未按正常值处理，运动建议已保持保守',
+        }],
+      },
+    });
+
+    expect(getByText('回答依据 · 2项')).toBeTruthy();
+    fireEvent.press(getByLabelText('展开回答依据'));
+    expect(getByText('关键依据')).toBeTruthy();
+    expect(getByText('HRV')).toBeTruthy();
+    expect(getByText('31 ms')).toBeTruthy();
+    expect(getByText('用于评估恢复与活动承受度')).toBeTruthy();
+    expect(getByText('Garmin')).toBeTruthy();
+    expect(getByText('当前数据')).toBeTruthy();
+    expect(getByText('数据限制')).toBeTruthy();
+    expect(getByText('静息心率未同步')).toBeTruthy();
+    expect(getByText('未按正常值处理，运动建议已保持保守')).toBeTruthy();
+    expect(queryByText('处理摘要')).toBeNull();
+    expect(queryByText('在服补剂 (10 种)')).toBeNull();
+    expect(queryByText('主目标: 总体健康')).toBeNull();
+    expect(queryByText('查询健康数据')).toBeNull();
+
+    fireEvent.press(getByLabelText('展开技术详情'));
+    expect(getByText('执行记录')).toBeTruthy();
+    expect(getByText(/查询健康数据/)).toBeTruthy();
+    expect(getByText(/整理回答/)).toBeTruthy();
+  });
+
+  it('shows structured evidence before verified text without enabling completion actions', () => {
+    const { getByLabelText, getByText, queryByLabelText } = renderBubble({
+      id: 'assistant-streaming-answer-evidence',
+      role: 'assistant',
+      content: '',
+      streaming: true,
+      answerEvidence: {
+        version: 'answer-evidence.v1',
+        summary: '本轮获得 1 条可核对数据',
+        basis: [{
+          id: 'wearable.hrv.latest',
+          label: 'HRV',
+          observation: '31 ms',
+          source: 'Garmin',
+          purpose: '用于评估恢复与活动承受度',
+        }],
+        limitations: [],
+      },
+    });
+
+    expect(getByText('回答依据 · 1项')).toBeTruthy();
+    expect(queryByLabelText('复制回答')).toBeNull();
+    expect(queryByLabelText('微信分享这条回复')).toBeNull();
+    fireEvent.press(getByLabelText('展开回答依据'));
+    expect(getByText('HRV')).toBeTruthy();
+    expect(getByText('31 ms')).toBeTruthy();
+  });
+
+  it('labels retained evidence when the reply ends incomplete', () => {
+    const { getByLabelText, getByText } = renderBubble({
+      id: 'assistant-interrupted-answer-evidence',
+      role: 'assistant',
+      content: '本轮回答没有完整结束。',
+      streaming: false,
+      completionStatus: 'interrupted',
+      answerEvidence: {
+        version: 'answer-evidence.v1',
+        summary: '本轮获得 1 条可核对数据',
+        basis: [{
+          id: 'wearable.hrv.latest',
+          label: 'HRV',
+          observation: '31 ms',
+          source: 'Garmin',
+          purpose: '用于评估恢复与活动承受度',
+        }],
+        limitations: [],
+      },
+    });
+
+    fireEvent.press(getByLabelText('展开回答依据'));
+    expect(getByText('回复未完整结束，以下依据仅用于核对本轮处理。')).toBeTruthy();
   });
 
   it('keeps unavailable steps honest and hides diagnostics behind technical details', () => {

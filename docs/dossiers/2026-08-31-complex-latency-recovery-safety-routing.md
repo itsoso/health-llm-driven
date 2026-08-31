@@ -4,10 +4,52 @@
 |---|---|
 | slug | `complex-latency-recovery-safety-routing` |
 | 创建日期 | 2026-08-31 |
-| 当前阶段 | S6 本地验证完成 / G5 发布已授权 |
-| 状态 | ready_for_release |
+| 当前阶段 | G4 发布候选安全复审；阻断修复已完成 |
+| 状态 | safety_re_review_pending |
 | 负责 | Codex / 用户确认 |
 | 反馈环 | Backend pytest + LLM regression gate + iOS Simulator 三档验收 |
+
+## 2026-08-31 Correction Block · TTFT 与首个有用信息
+
+用户在上一切片后继续要求优化速度与 TTFT。本修订重新打开 S2/S3/G3/G4；此前 G5 发布授权不自动覆盖这批新代码，且本轮明确不执行 commit、push、deploy 或 OTA。
+
+2026-08-31 用户随后在本轮明确回复“发布”，重新授权本批代码的 commit、push、后端 deploy 与 Mobile OTA；安全和质量 Gate 仍必须全部通过，后端发布与健康读回必须先于 OTA。
+
+### 新发现
+
+- 旧 `llm_ttft_ms` 在 Health Evidence 编译之后才起钟，不能代表用户请求入口到首段验证正文的端到端 TTFT。
+- Health Evidence 正文为安全而完整缓冲；首个正文 token 发生在完整生成和确定性验证之后，因此其 TTFT 长尾受完整输出长度影响。
+- `accepted/status` 能改善等待感，但不能计作正文 TTFT；结构化 `answer_evidence` 才是可核对的首个有用信息。
+
+### 修订决策
+
+- 新增端到端 TTFT/total、turn setup、health compile 和 first evidence 指标，保留旧字段兼容。
+- balanced 使用 512 thinking token；high-stakes 与 deep analysis 不封顶。
+- Health Evidence 最终回答上限 1200 token，不限制思考且不绕过验证器。
+- `request_persisted` 后先发 owner-scoped、schema-bounded 的 `answer_evidence.v1`，Mobile 在流中即时落到 assistant 气泡。
+- 三个行为各有独立回退配置；关闭早期事件不影响 done/历史依据。
+
+### 当前验证证据
+
+- TDD RED：后端 6 个行为断言和 Mobile 3 个跨端断言先因能力缺失失败；两个回退断言随后单独 RED。
+- TDD GREEN：后端首批 14/14 通过；回退 2/2 通过；Mobile SSE/parser/hook/transparency 131/131 通过。
+- 截断安全回归 1/1 通过：provider `finish_reason=length` 时不释放半截模型文本，只发布确定性 verifier 重建内容，并把回合标记为 `interrupted`。
+- 独立 safety-privacy reviewer：**GO**。确认 owner isolation、持久化后发送、投影 fail-closed、verifier 唯一正文释放点、三项独立回退均成立。评审发现 `ChatBubble` 的旧终态门控会让 early evidence 到达后仍不可见；已先 RED 复现，再改为流中即时显示，并在流式/中断状态禁用复制分享、为未完整回复加核对提示。相关 UI 40/40 通过。
+- Mobile 相关完整集合在补入两条 UI 护栏后为 181/181、TypeScript 通过；全仓 lint 为 0 error / 93 个仓库既有 warning，改动文件单独 lint 为 0 error / 0 warning。
+- 后端受影响集合在当前本地环境为 655 passed、2 failed、2 errors：两个旧用例依赖 `STAGED_RESPONSE_MODE=off`，在该模式下 2/2 通过；两个旧 `/agent/send` integration stub 先被本机缺失 PostgreSQL role `health_app_runtime` 阻塞，切 SQLite 后又因 fake `run_stream` 不创建 coordinator 所要求的真实 conversation 而失败。本轮新增 send-meta 纯测试通过。
+- LLM live gate 首次被本机 PostgreSQL role 缺失与 fallback 429 阻塞；改用一次性本地 SQLite 额度账本后默认 TokenPlan/MiniMax 路径真实执行并通过：invariants 12/12、health agent core 50/50、orchestrator 5/5（平均分 0.94、平均耗时 10252ms）、trajectory contract 12/12、goldens 9/9，无回归。
+- Release preflight：主干 CI 基线 `0160b0bfb` 为 green；secret scan、System Map/doc drift、Dossier 一致性、API 类型漂移、23 个 release invariant 与 Mobile changed-file 345/345 全部通过。
+- 固定候选提交 `330aedbda` 的发布前独立复审为 **NO-GO**：长按通用菜单仍允许复制流式/中断/失败的半截回答，绕过紧凑依据面的终态门控。已用 streaming、interrupted、error 三类 RED 回归复现，并在菜单可见性与复制/分享/播报 handler 两层加入终态防护；定向 33/33 已通过，等待新固定提交复审。
+- `system-map-check.sh`、doc drift、`git diff --check` 均通过。
+- 这些结果证明契约和门控，不是线上 A/B；在同批请求的 `end_to_end_ttft_ms` 分位数和质量闸完成前，不宣称已经变快。
+
+### 待完成
+
+- [x] 后端 Health Evidence / Agent Executor / send meta 定向回归；完整受影响集合的 4 个既有环境/模式问题已如实记录。
+- [x] Mobile 类型检查、lint 与相关完整测试。
+- [x] LLM change classification 与 live regression gate 均完成；真实 orchestrator 5/5 通过。
+- [x] 独立 safety-privacy reviewer 对早期 L3 投影和 1200-token 健康回答给出 GO。
+- [x] `git diff --check`、System Map/doc drift。
 
 ## S0 · 用户需求（逐字）
 
@@ -89,9 +131,10 @@
 ## G4 · 安全评审
 
 - 独立安全评审结论：GO。恢复建议分类、guard fail-closed、非 fast 模型地板、回退阻断、内容无关元数据和缺数保守文案均通过；后续仅调整承接语分类，不改变安全路径。
+- 发布候选复审结论：`330aedbda` **NO-GO**，原因是 Mobile 长按菜单的半截回答导出旁路；阻断修复与回归已完成，最终 GO 以修复后固定提交的复审结论为准。
 
 ## G5 / G6 · 发布与上线验证
 
 - 2026-08-31 用户明确要求完成后进行 OTA，并已在本任务链路授权合并到 `main` 和部署到线上。
 - 本切片的性能与恢复安全路由为 Backend 行为，必须先通过 `deploy.sh -b` 发布；Mobile UI 变更再按 `scripts/mobile-ota.sh production` 发布。OTA 不冒充 Backend 部署。
-- **裁决：READY。** 本地回归、LLM gate、独立安全复审与三档模拟器验收已通过；上线状态仍以发布工具回执和线上读回为准。
+- **裁决：暂缓。** 本地回归、LLM gate 与三档模拟器验收已通过；等待修复后固定提交的独立安全复审 GO，再进入 push/deploy/OTA。

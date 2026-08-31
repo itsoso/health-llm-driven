@@ -10,6 +10,10 @@ import {
   normalizeMedicalCitations,
   type MedicalCitation,
 } from './medicalCitations';
+import {
+  normalizeAnswerEvidence,
+  type AnswerEvidence,
+} from './answerEvidence';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -141,7 +145,7 @@ export interface MedicationBatchStreamDecision {
 }
 
 export interface StreamEvent {
-  type: 'start' | 'persisted' | 'token' | 'tool' | 'status' | 'card' | 'done' | 'error';
+  type: 'start' | 'persisted' | 'evidence' | 'token' | 'tool' | 'status' | 'card' | 'done' | 'error';
   content?: string;
   /** 面向用户的安全思考/进度摘要,不包含模型原始推理链或工具参数。 */
   thought?: string;
@@ -181,6 +185,7 @@ export interface StreamEvent {
   perf?: AgentPerfProfile;
   // 2026-05-14 #4: 可解释性 — AI 用了什么数据
   sourcesUsed?: string[];
+  answerEvidence?: AnswerEvidence;
   // 2026-06-12: 本轮调用的 Skill / 工具名 (后端 done.tools_used; 去重保序, 空 [])
   toolsUsed?: string[];
   completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
@@ -486,6 +491,9 @@ export async function* streamChat(
           clientTurnId: parsed.data?.client_turn_id,
           imageUrls,
         };
+      } else if (parsed.event === 'answer_evidence') {
+        const answerEvidence = normalizeAnswerEvidence(parsed.data?.answer_evidence);
+        if (answerEvidence) return { type: 'evidence', answerEvidence };
       } else if (parsed.event === 'agent_start') {
         return {
           type: 'start',
@@ -624,6 +632,7 @@ export async function* streamChat(
           ...(llmUsage ? { llmUsage } : {}),
           ...(perf ? { perf } : {}),
           sourcesUsed: Array.isArray(parsed.data?.sources_used) ? parsed.data.sources_used : undefined,
+          answerEvidence: normalizeAnswerEvidence(parsed.data?.answer_evidence),
           toolsUsed: Array.isArray(parsed.data?.tools_used) ? parsed.data.tools_used : undefined,
           completionStatus: parsed.data?.completion_status,
           ...(typeof turnOutcome?.reason_code === 'string'

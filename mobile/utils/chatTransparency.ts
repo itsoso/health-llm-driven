@@ -37,9 +37,14 @@ export interface AgentPerfRoundLike {
 
 export interface AgentPerfProfileLike {
   total_ms?: number | null;
+  end_to_end_total_ms?: number | null;
   pre_llm_ms?: number | null;
+  turn_setup_ms?: number | null;
+  health_compile_ms?: number | null;
   pre_llm_stages?: Record<string, number | null | undefined> | null;
   llm_ttft_ms?: number | null;
+  end_to_end_ttft_ms?: number | null;
+  first_evidence_ms?: number | null;
   llm_full_ms?: number | null;
   rounds?: AgentPerfRoundLike[] | null;
   orchestrator_tool_ms?: number | null;
@@ -215,12 +220,15 @@ function buildTraceLine(usage?: LlmUsageProfileLike | null): string | undefined 
 }
 
 function buildBands(perf: AgentPerfProfileLike | null | undefined, elapsedMs: number): AgentTransparencyBand[] {
-  const total = positive(perf?.total_ms) || elapsedMs;
+  const total = positive(perf?.end_to_end_total_ms) || positive(perf?.total_ms) || elapsedMs;
   if (!total) return [];
   if (!perf) return [{ kind: 'total', label: '总耗时', ms: total, ratio: 1 }];
 
-  const pre = positive(perf.pre_llm_ms);
-  const firstTokenAt = Math.max(pre, positive(perf.llm_ttft_ms) || pre);
+  const pre = positive(perf.turn_setup_ms) + positive(perf.pre_llm_ms);
+  const firstTokenAt = Math.max(
+    pre,
+    positive(perf.end_to_end_ttft_ms) || positive(perf.llm_ttft_ms) || pre,
+  );
   const ttft = Math.max(0, firstTokenAt - pre);
   const rounds = Array.isArray(perf.rounds) ? perf.rounds : [];
   const tool = rounds.reduce((sum, round) => sum + positive(round?.tool_exec_ms), 0);
@@ -272,7 +280,9 @@ function buildRounds(input: AgentTransparencyInput): AgentTransparencyRow[] {
 }
 
 export function buildAgentTransparency(input: AgentTransparencyInput): AgentTransparencyProfile {
-  const total = positive(input.perf?.total_ms) || positive(input.elapsedMs);
+  const total = positive(input.perf?.end_to_end_total_ms)
+    || positive(input.perf?.total_ms)
+    || positive(input.elapsedMs);
   const roundsCount = positive(input.llmRounds) || positive(input.perf?.rounds?.length);
   const headlineParts: string[] = [];
   const model = String(input.model || '').trim();

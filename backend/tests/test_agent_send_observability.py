@@ -62,6 +62,18 @@ def test_build_meta_maps_model_rounds_latency_tools():
     assert meta["tools_used"] == ["health_query"]
 
 
+def test_build_meta_prefers_end_to_end_latency_when_available():
+    done = _done_data()
+    done["perf"].update({
+        "end_to_end_total_ms": 5100,
+        "end_to_end_ttft_ms": 1700,
+    })
+
+    meta = build_send_meta(done, _usage_summary())
+
+    assert meta["latency"] == {"total_ms": 5100, "ttft_ms": 1700}
+
+
 def test_build_meta_usage_structure_from_summary():
     meta = build_send_meta(_done_data(), _usage_summary())
     usage = meta["usage"]

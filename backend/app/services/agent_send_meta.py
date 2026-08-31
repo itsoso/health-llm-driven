@@ -150,13 +150,20 @@ def build_send_meta(
     # rounds:done 的 llm_rounds(工具循环轮数);多模型路径无此字段 → None。
     rounds = _int_or_none(done.get("llm_rounds"))
 
-    # latency:优先 perf.total_ms / perf.llm_ttft_ms,回退顶层 elapsed_ms。
-    total_ms = _int_or_none(perf.get("total_ms"))
+    # latency:优先从 run_stream 入口起算的新口径；旧回合回退原字段。
+    total_ms = _int_or_none(perf.get("end_to_end_total_ms"))
+    if total_ms is None:
+        total_ms = _int_or_none(perf.get("total_ms"))
     if total_ms is None:
         total_ms = _int_or_none(done.get("elapsed_ms"))
+    end_to_end_ttft_ms = _int_or_none(perf.get("end_to_end_ttft_ms"))
     latency = {
         "total_ms": total_ms,
-        "ttft_ms": _int_or_none(perf.get("llm_ttft_ms")),
+        "ttft_ms": (
+            end_to_end_ttft_ms
+            if end_to_end_ttft_ms is not None
+            else _int_or_none(perf.get("llm_ttft_ms"))
+        ),
     }
 
     tools_used = done.get("tools_used")

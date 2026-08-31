@@ -35,6 +35,10 @@ import {
   normalizeMedicalCitations,
   type MedicalCitation,
 } from '../services/medicalCitations';
+import {
+  normalizeAnswerEvidence,
+  type AnswerEvidence,
+} from '../services/answerEvidence';
 
 function normalizeImageHost(baseUrl: string): string {
   return String(baseUrl || '').replace(/\/+$/, '').replace(/\/api(?:\/v\d+)?$/, '');
@@ -73,6 +77,7 @@ export interface UIMessage extends ChatMessage {
   perf?: AgentPerfProfile;
   // 2026-05-14 #4: 可解释性 — AI 用了什么数据
   sourcesUsed?: string[];
+  answerEvidence?: AnswerEvidence;
   // 2026-06-12: 本轮调用的 Skill / 工具名 (后端 done.tools_used / meta.tools_used), 对齐 mac/web
   toolsUsed?: string[];
   completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
@@ -187,6 +192,7 @@ function applyMeta(msg: any): Partial<UIMessage> {
     llmUsage: meta.llm_usage && typeof meta.llm_usage === 'object' ? meta.llm_usage : undefined,
     perf: meta.perf && typeof meta.perf === 'object' ? meta.perf : undefined,
     sourcesUsed: Array.isArray(meta.sources_used) ? meta.sources_used : undefined,
+    answerEvidence: normalizeAnswerEvidence(meta.answer_evidence),
     toolsUsed: Array.isArray(meta.tools_used) ? meta.tools_used : undefined,
     completionStatus: typeof meta.completion_status === 'string' ? meta.completion_status : undefined,
     medicalCitations: normalizeMedicalCitations(meta.medical_citations),
@@ -1804,6 +1810,16 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             }
             void rememberConversationId(evt.conversationId);
           }
+        } else if (evt.type === 'evidence') {
+          if (evt.answerEvidence) {
+            emitAgentTurnMilestone('first_useful');
+            clearTimeout(slowTimer);
+            setMessages(prev => prev.map(message => (
+              message.id === aId
+                ? { ...message, answerEvidence: evt.answerEvidence }
+                : message
+            )));
+          }
         } else if (evt.type === 'status') {
           const dietActionType = dietActionTypeFromStage(evt.statusStage);
           const previousDietStatusLabel = dietActionType
@@ -2068,6 +2084,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               llmUsage: evt.llmUsage,
               perf: evt.perf,
               sourcesUsed: evt.sourcesUsed,
+              answerEvidence: evt.answerEvidence ?? m.answerEvidence,
               toolsUsed: evt.toolsUsed,
               medicalCitations: evt.medicalCitations,
               completionStatus: effectiveCompletionStatus,

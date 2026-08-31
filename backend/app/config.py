@@ -339,6 +339,9 @@ class Settings(BaseSettings):
     # 医疗正文相关 → ships-disabled,须过评测闸(invariant_judge + cadence family-drift)
     # 才可开。探针实证见 scripts/probe_qwen_thinking_budget.py。
     synthesis_thinking_budget: int = 0
+    # staged balanced 合成轮的用途匹配预算。只对已探针验证支持 thinking_budget
+    # 的模型生效；high_stakes 与 health_analysis 始终保留完整思考。
+    balanced_synthesis_thinking_budget: int = 512
     # 显式上下文缓存(延迟, Phase-2 rank3):开后对 ModelEntry.supports_explicit_cache=True
     # 的 DashScope 模型, 在 messages 的 append-only 边界(system + history_prefix)注入
     # Anthropic 式 cache_control ephemeral 断点。工具决策轮写 ~7.3k-16k token 的 system
@@ -472,6 +475,12 @@ class Settings(BaseSettings):
     # 健康建议统一由服务端指定的强模型合成，避免客户端默认模型造成临床质量漂移。
     # 需要切换时在服务端配置，而不是由 Mobile/Mac 各自选择。
     health_evidence_model_id: str = "qwen3.7-max"
+    # Health Evidence 正文会等完整生成 + 确定性验证后再释放，因此限制无必要的
+    # 长尾解码；设回 8000 可仅回退该性能策略，不关闭安全运行时。
+    health_evidence_answer_max_tokens: int = 1200
+    # 在 request_persisted 后先发送已被 Health Evidence runtime 选中的有界依据投影。
+    # 关闭只停早期事件；done/历史中的同一 answer_evidence 仍保留。
+    answer_evidence_streaming_enabled: bool = True
 
     # dedao-kbase -> Reva System KB draft 同步配置。
     # export URL 是传输通道，不是运行时医疗权威；同步结果始终先进入 draft/review gate。

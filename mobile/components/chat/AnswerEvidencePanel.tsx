@@ -15,6 +15,7 @@ import {
 } from '../../utils/chatTransparency';
 import { SocialBrandIcon } from '../common/SocialBrandIcon';
 import { AttributionDetails, normalizedAttributionCount } from './AttributionChips';
+import type { AnswerEvidence } from '../../services/answerEvidence';
 
 type ProcessTone = 'complete' | 'warning';
 
@@ -31,9 +32,11 @@ interface EvidenceSummary {
 
 interface Props {
   profile: AgentTransparencyProfile;
+  answerEvidence?: AnswerEvidence;
   sources?: readonly string[];
   thinkingSteps: readonly string[];
-  sharingEnabled: boolean;
+  completionActionsEnabled: boolean;
+  incomplete?: boolean;
   onOpenMemory: () => void;
   onShareWeChat: () => void;
   onShareXiaohongshu: () => void;
@@ -127,9 +130,11 @@ function bandColor(kind: AgentTransparencyBand['kind']): string {
 
 export default function AnswerEvidencePanel({
   profile,
+  answerEvidence,
   sources,
   thinkingSteps,
-  sharingEnabled,
+  completionActionsEnabled,
+  incomplete = false,
   onOpenMemory,
   onShareWeChat,
   onShareXiaohongshu,
@@ -140,9 +145,21 @@ export default function AnswerEvidencePanel({
   const [technicalOpen, setTechnicalOpen] = useState(false);
   const sourceCount = normalizedAttributionCount(sources);
   const processItems = useMemo(() => buildEvidenceProcessItems(thinkingSteps), [thinkingSteps]);
+  const structuredCount = answerEvidence
+    ? answerEvidence.basis.length + answerEvidence.limitations.length
+    : 0;
+  const evidenceCount = answerEvidence ? structuredCount : sourceCount;
   const evidenceSummary = useMemo(
-    () => buildEvidenceSummary(sourceCount, processItems),
-    [processItems, sourceCount],
+    () => answerEvidence
+      ? {
+        title: answerEvidence.summary,
+        subtitle: answerEvidence.limitations.length > 0
+          ? '数据不足或不确定的部分已单独列出，未按正常值处理'
+          : '每条依据都保留观察值、用途与来源，方便核对',
+        tone: answerEvidence.limitations.length > 0 ? 'warning' as const : 'complete' as const,
+      }
+      : buildEvidenceSummary(sourceCount, processItems),
+    [answerEvidence, processItems, sourceCount],
   );
   const technicalRows = [
     ...(profile.routing.length > 0 ? [{ label: '模型选择', value: profile.routing.join(' · ') }] : []),
@@ -157,8 +174,9 @@ export default function AnswerEvidencePanel({
     || profile.bands.length > 0
     || technicalRows.length > 0
     || profile.tools.length > 0
-    || (sourceCount === 0 && profile.sources.length > 0);
-  const hasDetails = sourceCount > 0 || processItems.length > 0 || hasTechnicalDetails;
+    || (sourceCount === 0 && profile.sources.length > 0)
+    || (!!answerEvidence && processItems.length > 0);
+  const hasDetails = !!answerEvidence || sourceCount > 0 || processItems.length > 0 || hasTechnicalDetails;
   const hasWarning = evidenceSummary.tone === 'warning';
 
   return (
@@ -176,13 +194,13 @@ export default function AnswerEvidencePanel({
               <Ionicons name="document-text-outline" size={13} color={C.green700} />
             </View>
             <Text style={txt.evidenceLabel} numberOfLines={1}>
-              {`回答依据${sourceCount > 0 ? ` · ${sourceCount}项` : ''}`}
+              {`回答依据${evidenceCount > 0 ? ` · ${evidenceCount}项` : ''}`}
             </Text>
             <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={13} color={C.ink3} />
           </Pressable>
         ) : <View style={styles.spacer} />}
 
-        {sharingEnabled ? (
+        {completionActionsEnabled ? (
           <>
             <View style={styles.divider} />
             <Pressable
@@ -204,23 +222,30 @@ export default function AnswerEvidencePanel({
           </>
         ) : null}
 
-        <Pressable
-          onPress={onCopy}
-          accessibilityRole="button"
-          accessibilityLabel={copied ? '已复制' : '复制回答'}
-          hitSlop={6}
-          style={({ pressed }) => [
-            styles.copyButton,
-            copied && styles.copyButtonDone,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={14} color={copied ? C.green700 : C.ink3} />
-        </Pressable>
+        {completionActionsEnabled ? (
+          <Pressable
+            onPress={onCopy}
+            accessibilityRole="button"
+            accessibilityLabel={copied ? '已复制' : '复制回答'}
+            hitSlop={6}
+            style={({ pressed }) => [
+              styles.copyButton,
+              copied && styles.copyButtonDone,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={14} color={copied ? C.green700 : C.ink3} />
+          </Pressable>
+        ) : null}
       </View>
 
       {open && hasDetails ? (
         <View style={styles.details}>
+          {incomplete ? (
+            <Text style={[txt.summarySubtitle, txt.summarySubtitleWarning]}>
+              回复未完整结束，以下依据仅用于核对本轮处理。
+            </Text>
+          ) : null}
           <View style={styles.summary}>
             <View style={[styles.summaryIcon, hasWarning && styles.summaryIconWarning]}>
               <Ionicons
@@ -237,14 +262,57 @@ export default function AnswerEvidencePanel({
             </View>
           </View>
 
-          {sourceCount > 0 ? (
+          {answerEvidence && answerEvidence.basis.length > 0 ? (
+            <View style={styles.section}>
+              <SectionTitle icon="analytics-outline" label="关键依据" />
+              <View style={styles.basisList}>
+                {answerEvidence.basis.map(item => (
+                  <View
+                    key={item.id}
+                    style={styles.basisCard}
+                    accessibilityLabel={`${item.label}：${item.observation}。${item.purpose || ''}。来源：${item.source}`}
+                  >
+                    <View style={styles.basisHeader}>
+                      <Text style={txt.basisLabel}>{item.label}</Text>
+                      <Text style={txt.basisObservation}>{item.observation}</Text>
+                    </View>
+                    {item.context ? <Text style={txt.basisContext}>{item.context}</Text> : null}
+                    {item.purpose ? <Text style={txt.basisPurpose}>{item.purpose}</Text> : null}
+                    <View style={styles.basisMeta}>
+                      <Text style={txt.basisSource}>{item.source}</Text>
+                      {item.freshness ? (
+                        <Text style={txt.basisMetaText}>{freshnessLabel(item.freshness)}</Text>
+                      ) : null}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          {answerEvidence && answerEvidence.limitations.length > 0 ? (
+            <View style={styles.section}>
+              <SectionTitle icon="alert-circle-outline" label="数据限制" />
+              <View style={styles.limitationList}>
+                {answerEvidence.limitations.map(item => (
+                  <View key={item.id} style={styles.limitationCard}>
+                    <Text style={txt.limitationTitle}>{item.title}</Text>
+                    {item.detail ? <Text style={txt.limitationDetail}>{item.detail}</Text> : null}
+                    <Text style={txt.limitationHandling}>{item.handling}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          {!answerEvidence && sourceCount > 0 ? (
             <View style={styles.section}>
               <SectionTitle icon="file-tray-full-outline" label="参考的数据" />
               <AttributionDetails sources={sources} onOpenMemory={onOpenMemory} />
             </View>
           ) : null}
 
-          {processItems.length > 0 ? (
+          {!answerEvidence && processItems.length > 0 ? (
             <View style={styles.section}>
               <SectionTitle icon="git-merge-outline" label="处理摘要" />
               <View style={styles.processList}>
@@ -321,6 +389,15 @@ export default function AnswerEvidencePanel({
                     </View>
                   ))}
 
+                  {answerEvidence && processItems.length > 0 ? (
+                    <View style={styles.technicalRow}>
+                      <Text style={txt.technicalLabel}>执行记录</Text>
+                      <Text style={txt.technicalValue}>
+                        {processItems.map(item => item.label).join(' · ')}
+                      </Text>
+                    </View>
+                  ) : null}
+
                   {profile.sources.length > 0 && sourceCount === 0 ? (
                     <View style={styles.technicalRow}>
                       <Text style={txt.technicalLabel}>引用数据</Text>
@@ -361,6 +438,17 @@ function SectionTitle({ icon, label }: { icon: React.ComponentProps<typeof Ionic
       <Text style={txt.sectionTitle}>{label}</Text>
     </View>
   );
+}
+
+function freshnessLabel(value: NonNullable<AnswerEvidence['basis'][number]['freshness']>): string {
+  switch (value) {
+    case 'current': return '当前数据';
+    case 'recent': return '近期数据';
+    case 'stale': return '数据较旧';
+    case 'unknown':
+    default:
+      return '时间未知';
+  }
 }
 
 const styles = StyleSheet.create({
@@ -438,6 +526,28 @@ const styles = StyleSheet.create({
   summaryCopy: { flex: 1, minWidth: 0, gap: 2 },
   section: { gap: 9 },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  basisList: { gap: 8 },
+  basisCard: {
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    backgroundColor: C.paper,
+    paddingHorizontal: 11,
+    paddingVertical: 10,
+    gap: 4,
+  },
+  basisHeader: { flexDirection: 'row', alignItems: 'baseline', gap: 10 },
+  basisMeta: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 7, marginTop: 2 },
+  limitationList: { gap: 7 },
+  limitationCard: {
+    borderRadius: 11,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: revaSemantic.caution.line,
+    backgroundColor: revaSemantic.caution.bg,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    gap: 3,
+  },
   processList: { paddingLeft: 2, gap: 8 },
   processRow: { minHeight: 22, flexDirection: 'row', alignItems: 'flex-start', gap: 8, position: 'relative' },
   processIcon: {
@@ -511,6 +621,15 @@ const txt = {
   summarySubtitle: { fontFamily: revaFonts.sans, fontSize: 10.8, lineHeight: 16, color: C.ink3 } as TextStyle,
   summarySubtitleWarning: { color: revaSemantic.caution.fg, fontWeight: '700' } as TextStyle,
   sectionTitle: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 15, fontWeight: '900', color: C.ink2 } as TextStyle,
+  basisLabel: { flex: 1, fontFamily: revaFonts.sans, fontSize: 12.2, lineHeight: 17, fontWeight: '900', color: C.ink1 } as TextStyle,
+  basisObservation: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 19, fontWeight: '900', color: C.green700 } as TextStyle,
+  basisContext: { fontFamily: revaFonts.sans, fontSize: 10.6, lineHeight: 15, color: C.ink3 } as TextStyle,
+  basisPurpose: { fontFamily: revaFonts.sans, fontSize: 11.2, lineHeight: 16, fontWeight: '700', color: C.ink2 } as TextStyle,
+  basisSource: { fontFamily: revaFonts.sans, fontSize: 10.2, lineHeight: 14, fontWeight: '800', color: C.green700 } as TextStyle,
+  basisMetaText: { fontFamily: revaFonts.sans, fontSize: 10.2, lineHeight: 14, color: C.ink3 } as TextStyle,
+  limitationTitle: { fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 16, fontWeight: '900', color: revaSemantic.caution.fg } as TextStyle,
+  limitationDetail: { fontFamily: revaFonts.sans, fontSize: 10.8, lineHeight: 16, color: C.ink2 } as TextStyle,
+  limitationHandling: { fontFamily: revaFonts.sans, fontSize: 10.5, lineHeight: 15, fontWeight: '700', color: revaSemantic.caution.fg } as TextStyle,
   processLabel: { flex: 1, fontFamily: revaFonts.sans, fontSize: 11.8, lineHeight: 18, fontWeight: '700', color: C.ink2 } as TextStyle,
   processLabelWarning: { color: revaSemantic.caution.fg } as TextStyle,
   technicalTitle: { flex: 1, fontFamily: revaFonts.sans, fontSize: 11.2, lineHeight: 16, fontWeight: '800', color: C.ink2 } as TextStyle,

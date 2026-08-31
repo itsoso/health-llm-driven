@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-answer-evidence-panel` |
 | 创建日期 | 2026-08-30 |
-| 当前阶段 | S6 本地验收完成 / G5 发布已授权 |
-| 状态 | ready_for_release |
+| 当前阶段 | G4 发布候选安全复审；阻断修复已完成 |
+| 状态 | safety_re_review_pending |
 | 负责 | Codex / 用户确认 |
 | 反馈环 | Mobile Jest + TypeScript + iOS Simulator；发布另行授权 |
 
@@ -115,3 +115,43 @@
 - G5 已授权：2026-08-31 用户明确要求“搞定之后，进行 OTA”；纯 Mobile JS/TS 变更按 `scripts/mobile-ota.sh production` 执行，不使用 dirty escape hatch。
 - G6 本地模拟器已验证：折叠态不抢正文；首层只显示来源与处理动作；技术数据须二次展开；原生无障碍树可分别聚焦回答依据、微信、小红书、复制和技术详情，并正确暴露 expanded 状态。
 - Dynamic Type 已切到最大辅助字号做压力检查并恢复原 `large`；来源 `Text` 无行数截断，整体对话在最大字号下仍依赖纵向滚动（既有页面行为）。
+
+## Correction Block · 2026-08-31 二阶段证据语义升级
+
+- 触发：用户验收反馈“处理摘要都是通用表达，没有足够的信息”。
+- 旧基线：假设 `sourcesUsed + thinkingSteps` 足以支撑用户理解回答依据，并将范围限制为 Mobile 单组件重排。
+- 新证据：
+  - `AnswerEvidencePanel` 的首层模型只有 `label + tone`，摘要只能统计来源数和步骤数。
+  - 普通 Agent 路径曾把“用户哪些表有数据”直接加入 `sources_used`，并不证明本轮回答实际使用了这些数据。
+  - 后端已有可确定性复用的工具结果、Health Evidence 本轮选中证据、freshness 与恢复数据质量闸，但未形成 Mobile 可消费的统一契约。
+- 新基线：首层必须展示“本轮实际观察到什么、该数据用于什么、哪些数据不足以及如何处理”；查询/检查/整理只属于二级技术记录。
+- 回退阶段：S2/S3 Quick Flow 规格与规划。
+- 范围变化：升级为 Backend + Mobile 跨端只读展示契约；不新增 LLM 调用、不改变健康结论和写路径。
+- 安全边界：只从本轮真实工具结果或本轮选中的 Health Evidence 编译；禁止从全部已填充数据表推断“本轮已使用”；禁止暴露 prompt、chain-of-thought、工具参数、完整载荷或未约束对象。
+- G1：**PASS**。仍映射 HealthTwin / SafetyGuardian 的证据复核闭环；用户于 2026-08-31 回复“可以的”确认继续。
+- G2：**PASS**。已有确定性表格构建器和 Health Evidence packet 可复用，无需额外模型调用；新增 `safety` overlay，历史重放与失败路径必须 fail closed。
+- 待重跑：G3 前后端契约/持久化/撤权/类型/UI 测试；G4 独立安全复审；G5/G6 发布与真机验收不沿用上一轮结论。
+- Harness run：`docs/_generated/harness-runs/1b873181e9f6.jsonl`（本地生成，不提交）。
+
+### 二阶段实现与验证记录
+
+- Backend：新增确定性 `answer_evidence.v1` 编译器；只接收本轮执行的受支持只读查询结果或 Health Evidence 已选 `PersonalEvidencePacket`，最多 4 条依据与 3 条限制，不接收模型散文、对象或数组原始载荷。
+- Truthfulness：普通 Agent 路径停止用 `_inspect_user_data_sources` 枚举所有已填充表；`sources_used` 只保留本轮实际工具/知识来源。结构化依据写入 done 与 assistant `message.meta`，并用 SHA-256 绑定持久化投影。
+- Replay：所有 assistant 历史投影都在健康意图早退前规范化并校验 `answer_evidence_sha256`；普通查询缺少/不匹配摘要、健康证据撤权或 verification 失效时均移除结构化依据。
+- Mobile：新增严格归一化；done 与历史恢复共用同一校验。结构化消息首层显示“关键依据 / 数据限制”，通用查询、检查、整理步骤只进入技术详情；旧消息继续走原兼容展示。
+- 2026-08-31 fresh checks：
+  - Backend 定向全集：`346 passed`（编译、Agent done/meta、Health Evidence、普通与健康历史摘要校验、撤权与摘要篡改）。
+  - Mobile：ChatBubble/stream/history/normalizer `167 passed`；`tsc --noEmit` 与 `expo lint --quiet` 均 exit 0。
+  - `git diff --check` 与 changed Python `py_compile` 均 exit 0。
+  - `./scripts/system-map-check.sh`：PASS；生成物已同步，`service_files` 由代码生成更新为 415。
+  - 扩展 Backend 452 项：446 passed、2 failed、4 errors。4 个 error 均在测试应用启动时因本机 PostgreSQL 缺少 `health_app_runtime` role；2 个 failure 分别是多药确认轮次与 LangBridge 原图输入断言，本任务未修改对应逻辑，当前不将扩展套件记为全绿。
+  - Live-LLM gate：BLOCK。确定性 invariants 12/12、health core 50/50、trajectory goldens 9/9 通过；真实 orchestrator 评测因预算守卫/数据库环境不可用与上游 429 无额度失败（0/5）。不得设置 `HARNESS_LIVE_LLM_EVAL_CONFIRMED=1`，不得进入发布。
+- G3：本任务定向契约与 UI Gate **PASS**；扩展套件环境/非目标失败如上保留为 Unknown/未清零。
+- G4 初审：**NO-GO**。独立安全 reviewer 复现了三项阻断：嵌套工具对象被字符串化进入 observation；stale/low-confidence/conflicts/failed partitions/truncated 未形成限制；普通历史消息可绕过摘要完整性校验。
+- G4 修复：容器化工具字段让整条依据 fail closed；过期/低可信、来源冲突和加载/截断分别生成用户可见限制，冲突私有 detail 不透传；所有 assistant meta 统一在历史投影入口校验规范化结果和 64 位 digest。
+- G4 复审：**GO**。原 reviewer 使用上一轮 batch/diet 攻击样例、陈旧/冲突 packet、普通历史 valid/missing/tampered digest 重新验证，三项阻断均关闭；owner 隔离与撤权清理保持成立。该 GO 只覆盖当前未提交 diff，不构成 commit、push、deploy 或 release 授权。
+- 发布前 live LLM gate 使用一次性本地额度账本完成真实调用：invariants 12/12、health core 50/50、orchestrator 5/5（平均分 0.94）、trajectory contract 12/12、goldens 9/9，**PASS**。
+- Release preflight：主干 CI 基线 `0160b0bfb` 为 green；secret scan、System Map/doc drift、Dossier 一致性、API 类型漂移、23 个 release invariant 与 Mobile changed-file 345/345 全部通过。
+- 固定候选提交 `330aedbda` 的发布前独立复审为 **NO-GO**：长按通用菜单仍允许复制流式/中断/失败的半截回答。三类 RED 回归已复现该旁路；菜单与复制/分享/播报 handler 均已改为仅允许完整终态，定向 33/33 通过，等待修复后固定提交复审。
+- G5：2026-08-31 用户在本轮明确回复“发布”，授权本批变更 commit、push、后端 deploy 与随后 Mobile OTA；仍按后端健康检查通过后再发 OTA 的顺序执行。
+- G6：待真实发布回执、production revision 读回和 OTA update group / iOS update ID。

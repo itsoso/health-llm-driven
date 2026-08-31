@@ -724,6 +724,37 @@ async def test_cap_on_emits_metric_table_after_synthesis(db, auth_user_and_heade
     assert rendered.index("结论") < rendered.index("reva-ui")
     # 数值来自工具结果 (58 ms), 不来自 LLM 文本
     assert "58 ms" in rendered
+    done = next(event["data"] for event in events if event.get("event") == "done")
+    assert done["answer_evidence"] == {
+        "version": "answer-evidence.v1",
+        "summary": "本轮获得 3 条可核对数据",
+        "basis": [
+            {
+                "id": "tool-1-row-1",
+                "label": "HRV",
+                "observation": "58 ms",
+                "context": "近7天平均 · 7天数据",
+                "source": "健康数据查询",
+                "purpose": "用于评估恢复趋势",
+            },
+            {
+                "id": "tool-1-row-2",
+                "label": "睡眠评分",
+                "observation": "-5",
+                "context": "近7天趋势(首尾差) · 7天数据 · 略降",
+                "source": "健康数据查询",
+                "purpose": "用于评估睡眠与恢复状态",
+            },
+            {
+                "id": "tool-1-row-3",
+                "label": "对比(差值)",
+                "observation": "3 ms",
+                "source": "健康数据查询",
+                "purpose": "用于回答本轮问题",
+            },
+        ],
+        "limitations": [],
+    }
     # 持久化的 assistant 消息也带 fence
     from app.models.agent_conversation import AgentMessage
     assistant = (
@@ -731,6 +762,35 @@ async def test_cap_on_emits_metric_table_after_synthesis(db, auth_user_and_heade
         .order_by(AgentMessage.id.desc()).first()
     )
     assert "```reva-ui" in (assistant.content or "")
+    assert assistant.meta["answer_evidence"] == done["answer_evidence"]
+    assert len(assistant.meta["answer_evidence_sha256"]) == 64
+
+
+@pytest.mark.asyncio
+async def test_available_but_unused_profile_data_is_not_reported_as_turn_evidence(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire(executor, monkeypatch)
+    captured: list = []
+    monkeypatch.setattr(executor, "_call_llm_stream", _batch_round_stream(captured))
+    monkeypatch.setattr(executor, "_execute_tool", _exec_returns(_batch_result()))
+    monkeypatch.setattr(
+        "app.services.agent_executor._inspect_user_data_sources",
+        lambda *_args, **_kwargs: ["在服补剂 (10 种)", "主目标: 总体健康"],
+    )
+
+    events = await _run(
+        executor,
+        "对比我这周和上周的 HRV",
+        client_caps=[GENUI_TABLE_CAP],
+        user_id=user.id,
+    )
+
+    done = next(event["data"] for event in events if event.get("event") == "done")
+    assert "在服补剂 (10 种)" not in done["sources_used"]
+    assert "主目标: 总体健康" not in done["sources_used"]
 
 
 def _sleep_round_stream(captured):

@@ -139,6 +139,40 @@ async function* streamHealthDoneCardAfterWait() {
   };
 }
 
+const earlyAnswerEvidence = {
+  version: 'answer-evidence.v1' as const,
+  summary: '本轮获得 1 条可核对数据',
+  basis: [{
+    id: 'wearable.hrv.latest',
+    label: 'HRV',
+    observation: '31 ms',
+    source: 'Garmin',
+    purpose: '用于评估恢复与活动承受度',
+  }],
+  limitations: [],
+};
+
+async function* streamEvidenceThenWait(...args: any[]) {
+  yield {
+    type: 'persisted',
+    conversationId: 777,
+    userMessageId: 41,
+    clientTurnId: args[6],
+  };
+  yield { type: 'evidence', answerEvidence: earlyAnswerEvidence };
+  await new Promise<void>((resolve) => {
+    finishStream = resolve;
+  });
+  yield { type: 'token', content: '已核对后的回答。' };
+  yield {
+    type: 'done',
+    conversationId: 777,
+    messageId: 901,
+    completionStatus: 'complete',
+    answerEvidence: earlyAnswerEvidence,
+  };
+}
+
 async function* streamStartWaitForPersistenceThenDone(...args: any[]) {
   await new Promise<void>((resolve) => {
     persistStream = resolve;
@@ -1862,6 +1896,30 @@ describe('useChatEngine', () => {
     expect(mockEmitClientEvent).toHaveBeenCalledWith('agent_turn_terminal', {
       phase: 'completed',
       duration_bucket: '10_30s',
+    });
+  });
+
+  it('shows answer evidence while verified health text is still pending', async () => {
+    mockStreamChat.mockImplementation(streamEvidenceThenWait);
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('昨晚睡得怎样？');
+    });
+
+    await waitFor(() => {
+      expect(result.current.messages).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          role: 'assistant',
+          streaming: true,
+          answerEvidence: earlyAnswerEvidence,
+        }),
+      ]));
+    });
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
     });
   });
 

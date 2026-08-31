@@ -197,6 +197,10 @@ function ChatBubbleInner({
     ? rawVisibleAssistantMarkdown
     : advisorPresentation?.details ?? rawVisibleAssistantMarkdown;
   const assistantTextForActions = assistantText.trim();
+  const assistantCompletionActionsEnabled = !item.streaming
+    && item.completionStatus !== 'interrupted'
+    && item.completionStatus !== 'error';
+  const messageExportActionsEnabled = isUser || assistantCompletionActionsEnabled;
   const renderedMarkdown = useMemo(
     () => preprocessMarkdownTables(visibleAssistantMarkdown),
     [visibleAssistantMarkdown],
@@ -671,6 +675,10 @@ function ChatBubbleInner({
     // 先收起长按菜单，避免异步剪贴板写入期间再次长按时仍处于旧菜单状态。
     setShowActions(false);
     setShowShareActions(false);
+    if (!messageExportActionsEnabled) {
+      toast.show('这条回复没有完整结束，暂不能复制。', 'info');
+      return;
+    }
     try {
       await Clipboard.setStringAsync(item.content);
       setCopied(true);
@@ -683,7 +691,7 @@ function ChatBubbleInner({
     } catch {
       toast.show('复制失败，请重试', 'error');
     }
-  }, [item.content, toast]);
+  }, [item.content, messageExportActionsEnabled, toast]);
 
   if (item.cardType && item.cardData) {
     const rendered = renderCard(
@@ -920,6 +928,10 @@ function ChatBubbleInner({
       finishSpeech();
       return;
     }
+    if (!assistantCompletionActionsEnabled) {
+      toast.show('这条回复没有完整结束，暂不能播报。', 'info');
+      return;
+    }
     const text = stripMarkdownForSpeech(assistantTextForActions);
     if (!text) return;
     try { Haptics.selectionAsync(); } catch {}
@@ -956,7 +968,7 @@ function ChatBubbleInner({
   // 分享当前 AI 气泡 — 系统分享菜单, 微信/群/朋友圈/短信都走这里.
   // 不引 native WeChat SDK (破坏 OTA 反馈环), 复用 RN Share 已够用.
   const handleShare = async (target: 'wechat' | 'xiaohongshu' | 'more' = 'more') => {
-    if (item.completionStatus === 'interrupted' || item.completionStatus === 'error') {
+    if (!assistantCompletionActionsEnabled) {
       toast.show('这条回复没有完整结束，暂不能分享。', 'info');
       return;
     }
@@ -1010,13 +1022,10 @@ function ChatBubbleInner({
 
   const renderMessageActions = () => {
     if (!showActions || selectionMode) return null;
-    const canCopy = item.content.trim().length > 0;
+    const canCopy = messageExportActionsEnabled && item.content.trim().length > 0;
     const canSelect = !!onEnterSelection;
-    const canShare = canCopy && (
-      isUser
-      || (item.completionStatus !== 'interrupted' && item.completionStatus !== 'error')
-    );
-    const canSpeak = !isUser && !!assistantTextForActions;
+    const canShare = canCopy;
+    const canSpeak = !isUser && assistantCompletionActionsEnabled && !!assistantTextForActions;
     if (!canCopy && !canSelect && !canShare && !canSpeak) return null;
 
     if (showShareActions && !isUser) {
@@ -1113,12 +1122,13 @@ function ChatBubbleInner({
     );
   };
 
-  const showsAnswerEvidencePanel = !item.streaming
+  const incompleteAssistantReply = item.completionStatus === 'interrupted'
+    || item.completionStatus === 'error';
+  const showsAnswerEvidencePanel = !!item.answerEvidence || (
+    !item.streaming
     && !!assistantTextForActions
-    && (
-      (item.completionStatus !== 'interrupted' && item.completionStatus !== 'error')
-      || transparency.visible
-    );
+    && (!incompleteAssistantReply || transparency.visible)
+  );
   const assistantSurfaceAccessible = !hasInlineEditableCard && !showsAnswerEvidencePanel;
 
   return (
@@ -1221,9 +1231,11 @@ function ChatBubbleInner({
             {showsAnswerEvidencePanel ? (
               <AnswerEvidencePanel
                 profile={transparency}
+                answerEvidence={item.answerEvidence}
                 sources={item.sourcesUsed}
                 thinkingSteps={thinkingSteps}
-                sharingEnabled={item.completionStatus !== 'interrupted' && item.completionStatus !== 'error'}
+                completionActionsEnabled={assistantCompletionActionsEnabled}
+                incomplete={incompleteAssistantReply}
                 onOpenMemory={() => router.push('/memory')}
                 onShareWeChat={() => { void handleShare('wechat'); }}
                 onShareXiaohongshu={() => { void handleShare('xiaohongshu'); }}

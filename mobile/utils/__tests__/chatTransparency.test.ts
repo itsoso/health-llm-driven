@@ -64,6 +64,21 @@ describe('chatTransparency', () => {
     expect(profile.bands).toEqual([{ kind: 'total', label: '总耗时', ms: 3200, ratio: 1 }]);
   });
 
+  it('prefers request-entry latency over the legacy post-compile clock', () => {
+    const profile = buildAgentTransparency({
+      elapsedMs: 5200,
+      perf: {
+        total_ms: 5200,
+        llm_ttft_ms: 900,
+        end_to_end_total_ms: 6100,
+        end_to_end_ttft_ms: 1800,
+      },
+    });
+
+    expect(profile.headline).toBe('6.1s');
+    expect(profile.bands.find(band => band.label === '首字节')?.ms).toBe(1800);
+  });
+
   it('labels tools as attempted when the turn ended in error', () => {
     const profile = buildAgentTransparency({
       toolsUsed: ['health_record'],

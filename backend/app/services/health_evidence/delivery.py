@@ -108,7 +108,9 @@ def sanitize_health_delivery(
     """
 
     content = str(assistant_content or "")
-    meta = dict(assistant_meta) if isinstance(assistant_meta, Mapping) else {}
+    meta = _verified_answer_evidence_meta(
+        assistant_meta if isinstance(assistant_meta, Mapping) else {}
+    )
     metadata_claims_health = _metadata_claims_health(meta)
     if not enabled and not metadata_claims_health:
         return HealthDelivery(content=content, meta=meta, sanitized=False)
@@ -538,6 +540,14 @@ def _canonical_verified_meta(
         "health_evidence_manifest": canonical_manifest,
         "health_evidence_verification": canonical_verification,
     }
+    verified_answer_meta = _verified_answer_evidence_meta(meta)
+    if "answer_evidence" in verified_answer_meta:
+        canonical_meta["answer_evidence"] = verified_answer_meta[
+            "answer_evidence"
+        ]
+        canonical_meta["answer_evidence_sha256"] = verified_answer_meta[
+            "answer_evidence_sha256"
+        ]
     completion_status = meta.get("completion_status")
     if completion_status in {
         "complete",
@@ -580,6 +590,40 @@ def _canonical_verified_meta(
         canonical_manifest.get("risk_level") or ""
     )
     return canonical_meta
+
+
+def _verified_answer_evidence_meta(meta: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep persisted answer evidence only when its canonical digest matches.
+
+    This check intentionally runs before health-intent routing so ordinary tool
+    answers and verified health answers have the same history integrity boundary.
+    """
+
+    from app.services.answer_evidence import (
+        answer_evidence_sha256,
+        normalize_answer_evidence,
+    )
+
+    output = dict(meta)
+    answer_evidence = normalize_answer_evidence(output.get("answer_evidence"))
+    expected_digest = output.get("answer_evidence_sha256")
+    actual_digest = (
+        answer_evidence_sha256(answer_evidence)
+        if answer_evidence is not None
+        else ""
+    )
+    if (
+        answer_evidence is None
+        or not isinstance(expected_digest, str)
+        or len(expected_digest) != 64
+        or not hmac.compare_digest(actual_digest, expected_digest)
+    ):
+        output.pop("answer_evidence", None)
+        output.pop("answer_evidence_sha256", None)
+        return output
+    output["answer_evidence"] = answer_evidence
+    output["answer_evidence_sha256"] = expected_digest
+    return output
 
 
 def unverified_health_delivery_text(risk_level: str) -> str:

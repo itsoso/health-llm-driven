@@ -493,6 +493,78 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('preserves structured answer evidence from the done event', async () => {
+    const iter = streamChat('昨晚睡得怎样？');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    const answerEvidence = {
+      version: 'answer-evidence.v1',
+      summary: '本轮获得 1 条可核对数据',
+      basis: [{
+        id: 'wearable.hrv.latest',
+        label: 'HRV',
+        observation: '31 ms',
+        source: 'Garmin',
+        purpose: '用于评估恢复与活动承受度',
+      }],
+      limitations: [],
+    };
+    xhr.responseText = `data: ${JSON.stringify({
+      event: 'done',
+      data: {
+        conversation_id: 42,
+        message_id: 101,
+        answer_evidence: answerEvidence,
+      },
+    })}\n\n`;
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toEqual({
+      value: expect.objectContaining({
+        type: 'done',
+        answerEvidence,
+      }),
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
+  it('yields structured answer evidence before the verified answer text', async () => {
+    const iter = streamChat('昨晚睡得怎样？');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    const answerEvidence = {
+      version: 'answer-evidence.v1',
+      summary: '本轮获得 1 条可核对数据',
+      basis: [{
+        id: 'wearable.hrv.latest',
+        label: 'HRV',
+        observation: '31 ms',
+        source: 'Garmin',
+        purpose: '用于评估恢复与活动承受度',
+      }],
+      limitations: [],
+    };
+    xhr.responseText = `data: ${JSON.stringify({
+      event: 'answer_evidence',
+      data: { answer_evidence: answerEvidence },
+    })}\n\n`;
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toEqual({
+      value: {
+        type: 'evidence',
+        answerEvidence,
+      },
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
   it('uses the health evidence card as the Mobile projection of the done manifest', async () => {
     const iter = streamChat('我腰疼怎么办');
     const first = iter.next();

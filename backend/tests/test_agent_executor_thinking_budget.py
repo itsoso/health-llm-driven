@@ -14,11 +14,13 @@ from app.services.agent_executor import AgentExecutor
 from app.services.llm import model_registry as reg
 
 
-def _executor(model_id, deep_analysis=False):
+def _executor(model_id, deep_analysis=False, tier=None):
     """构造一个不走 __init__ 的最小实例, 只填门控要读的属性。"""
     obj = AgentExecutor.__new__(AgentExecutor)
     obj._last_effective_model_id = model_id
     obj._turn_invoked_deep_analysis = deep_analysis
+    obj._staged_response_mode = "on"
+    obj._staged_answer_task_tier = tier
     return obj
 
 
@@ -40,6 +42,10 @@ def test_config_default_disabled():
     assert getattr(settings, "synthesis_thinking_budget", 0) == 0
 
 
+def test_balanced_config_has_a_bounded_default():
+    assert getattr(settings, "balanced_synthesis_thinking_budget", 0) == 512
+
+
 # ──── 门控行为 ────
 
 def test_disabled_by_default_no_injection(monkeypatch):
@@ -54,6 +60,36 @@ def test_injects_when_enabled_and_model_supports(monkeypatch):
     sk = {"messages": []}
     _executor("qwen3.7-max")._maybe_apply_synthesis_thinking_budget(sk)
     assert sk["thinking_budget"] == 512
+
+
+def test_balanced_turn_uses_tier_budget_without_enabling_global_budget(monkeypatch):
+    monkeypatch.setattr(settings, "synthesis_thinking_budget", 0, raising=False)
+    monkeypatch.setattr(
+        settings,
+        "balanced_synthesis_thinking_budget",
+        512,
+        raising=False,
+    )
+    sk = {"messages": []}
+
+    _executor("qwen3.7-plus", tier="balanced")._maybe_apply_synthesis_thinking_budget(sk)
+
+    assert sk["thinking_budget"] == 512
+
+
+def test_high_stakes_turn_never_inherits_a_thinking_cap(monkeypatch):
+    monkeypatch.setattr(settings, "synthesis_thinking_budget", 512, raising=False)
+    monkeypatch.setattr(
+        settings,
+        "balanced_synthesis_thinking_budget",
+        512,
+        raising=False,
+    )
+    sk = {"messages": []}
+
+    _executor("qwen3.7-max", tier="high_stakes")._maybe_apply_synthesis_thinking_budget(sk)
+
+    assert "thinking_budget" not in sk
 
 
 def test_skips_unsupported_model(monkeypatch):

@@ -1230,6 +1230,22 @@ def test_persisted_health_answer_is_sanitized_when_runtime_release_is_revoked(
     monkeypatch,
 ):
     content, meta = _verified_persisted_health_answer()
+    from app.services.answer_evidence import answer_evidence_sha256
+
+    answer_evidence = {
+        "version": "answer-evidence.v1",
+        "summary": "本轮获得 1 条可核对数据",
+        "basis": [{
+            "id": "wearable.hrv.latest",
+            "label": "HRV",
+            "observation": "31 ms",
+            "source": "Garmin",
+            "purpose": "用于评估恢复与活动承受度",
+        }],
+        "limitations": [],
+    }
+    meta["answer_evidence"] = answer_evidence
+    meta["answer_evidence_sha256"] = answer_evidence_sha256(answer_evidence)
     assert meta["health_evidence_manifest"]["authority_artifacts"]
     initial = sanitize_health_delivery(
         source_query="腰痛怎么办",
@@ -1238,6 +1254,7 @@ def test_persisted_health_answer_is_sanitized_when_runtime_release_is_revoked(
         enabled=False,
     )
     assert initial.sanitized is False
+    assert initial.meta["answer_evidence"] == answer_evidence
 
     monkeypatch.setattr(
         release_policy,
@@ -1254,6 +1271,91 @@ def test_persisted_health_answer_is_sanitized_when_runtime_release_is_revoked(
     assert revoked.sanitized is True
     assert content not in revoked.content
     assert revoked.meta["cards"] == []
+    assert "answer_evidence" not in revoked.meta
+
+
+def test_persisted_answer_evidence_is_dropped_when_its_digest_does_not_match():
+    content, meta = _verified_persisted_health_answer()
+    from app.services.answer_evidence import answer_evidence_sha256
+
+    answer_evidence = {
+        "version": "answer-evidence.v1",
+        "summary": "本轮获得 1 条可核对数据",
+        "basis": [{
+            "id": "wearable.hrv.latest",
+            "label": "HRV",
+            "observation": "31 ms",
+            "source": "Garmin",
+            "purpose": "用于评估恢复与活动承受度",
+        }],
+        "limitations": [],
+    }
+    meta["answer_evidence"] = answer_evidence
+    meta["answer_evidence_sha256"] = answer_evidence_sha256(answer_evidence)
+    meta["answer_evidence"]["basis"][0]["observation"] = "999 ms"
+
+    delivery = sanitize_health_delivery(
+        source_query="腰痛怎么办",
+        assistant_content=content,
+        assistant_meta=meta,
+        enabled=False,
+    )
+
+    assert delivery.sanitized is False
+    assert "answer_evidence" not in delivery.meta
+    assert "answer_evidence_sha256" not in delivery.meta
+
+
+def test_ordinary_persisted_answer_evidence_always_requires_matching_digest():
+    from app.services.answer_evidence import answer_evidence_sha256
+
+    answer_evidence = {
+        "version": "answer-evidence.v1",
+        "summary": "本轮获得 1 条可核对数据",
+        "basis": [{
+            "id": "tool-1-row-1",
+            "label": "步数",
+            "observation": "8000",
+            "source": "健康数据查询",
+            "purpose": "用于回答本轮问题",
+        }],
+        "limitations": [],
+    }
+    digest = answer_evidence_sha256(answer_evidence)
+    valid = sanitize_health_delivery(
+        source_query="请整理查询结果",
+        assistant_content="已整理。",
+        assistant_meta={
+            "answer_evidence": answer_evidence,
+            "answer_evidence_sha256": digest,
+        },
+        enabled=True,
+    )
+    assert valid.sanitized is False
+    assert valid.meta["answer_evidence"] == answer_evidence
+
+    tampered = deepcopy(answer_evidence)
+    tampered["basis"][0]["observation"] = "99999"
+    invalid = sanitize_health_delivery(
+        source_query="请整理查询结果",
+        assistant_content="已整理。",
+        assistant_meta={
+            "answer_evidence": tampered,
+            "answer_evidence_sha256": digest,
+        },
+        enabled=True,
+    )
+    assert invalid.sanitized is False
+    assert "answer_evidence" not in invalid.meta
+    assert "answer_evidence_sha256" not in invalid.meta
+
+    missing_digest = sanitize_health_delivery(
+        source_query="请整理查询结果",
+        assistant_content="已整理。",
+        assistant_meta={"answer_evidence": answer_evidence},
+        enabled=True,
+    )
+    assert "answer_evidence" not in missing_digest.meta
 
 
 def test_persisted_health_answer_is_sanitized_on_artifact_version_mismatch():

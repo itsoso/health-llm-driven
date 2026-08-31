@@ -8,11 +8,11 @@
 
 ## 1. Decision
 
-把完成态的“依据与过程”从扁平调试面板改为“回答依据优先、处理摘要其次、技术详情按需”的渐进式说明组件。
+把完成态的“依据与过程”升级为可核对的回答审计卡：首层展示本轮真实观察值、用途与数据限制，来源和技术执行记录按需展开。
 
 ## 2. Problem
 
-当前展开面把来源标签、进行时状态、成本、耗时、轮次、模型、Token、工具名和 run trace 放在相近的视觉层级。用户需要自行解释工程指标，且“思考过程”容易被误解为内部推理；完成态仍出现“正在……”也造成时态冲突。如果保持现状，医疗来源虽然存在，却不够突出，透明化反而增加认知负担。
+第一阶段已经把工程遥测收进二级详情，但首层仍只拿到来源字符串和通用进度步骤，只能生成“参考了 N 项信息 / 查询健康数据 / 检查健康数据 / 整理回答”。这些内容描述系统做过什么，却没有说明查到了什么、数据新不新、哪些数据不足。更严重的是，普通路径的旧 `sources_used` 会枚举用户已填充的数据表，不能证明本轮实际使用，容易把“可用上下文”误呈现成“本轮依据”。
 
 ## 3. Requirement Admission
 
@@ -23,36 +23,36 @@ RequirementAdmission:
   first_user_fit: 需要快速理解健康建议依据的 Mobile 用户
   core_loop_step: personal data -> HealthTwin/SafetyGuardian context -> answer -> evidence review -> safer action
   first_class_objects: [HealthTwin, SafetyGuardian]
-  target_surface: Mobile
-  source_of_truth: existing message sourcesUsed/thinkingSteps/llmUsage/perf metadata
+  target_surface: Backend + Mobile
+  source_of_truth: current-turn tool results and selected Health Evidence packet
   safety_level: medical_boundary
   prescription_or_causal_verdict: none
   autonomy_tier: none
-  evidence_provenance: preserve source labels, medical citations, tool failure and telemetry semantics
+  evidence_provenance: every primary evidence row must derive from an executed tool result or selected Health Evidence item
   claim_hedging: n/a
   verification_window: same-turn Jest, TypeScript and iOS Simulator review
-  success_metric: source evidence is the first expanded section; completed steps use honest completed/warning states; raw diagnostics require a second explicit expansion
+  success_metric: the first expanded section contains concrete observations and limitations; no generic process step appears in the primary layer; raw diagnostics require a second explicit expansion
   added_user_burden: zero
   burden_justification: n/a
-  non_goals: no answer, routing, query, write, share, auth or backend contract change
-  smallest_end_to_end_slice: one compact entry -> evidence summary -> sources/process -> optional technical details
-  stale_surface_to_remove_or_archive: raw headline at drawer top, completed-state 思考过程 label, flat debug log hierarchy
+  non_goals: no answer text, model routing, query semantics, write path, share, auth or medical-claim change
+  smallest_end_to_end_slice: executed evidence -> deterministic answer_evidence.v1 -> persisted/done contract -> Mobile audit card
+  stale_surface_to_remove_or_archive: populated-but-unused source chips and generic completed process steps in the primary layer
   spec_required: yes
 ```
 
 ## 4. Product Direction
 
 - Tone: refined clinical notebook — calm, legible and evidence-led, without dashboard chrome.
-- Memorable interaction: the expanded view answers two human questions first: “参考了什么？” and “做了什么？”.
+- Memorable interaction: the expanded view answers three human questions first: “看到了什么？”、“这项数据用来判断什么？”、“哪些数据不足，系统怎么处理？”.
 - Collapsed state remains one compact rail so the reply stays dominant.
 - Color communicates meaning: green means completed, amber means unavailable/partial; medication or risk source colors remain unchanged.
 
 ## 5. Non-Goals
 
-- 不修改回答正文、医疗引用卡或来源字符串。
+- 不修改回答正文、医疗引用卡或医学结论。
 - 不生成、保存或展示 chain-of-thought。
 - 不改变模型选择、工具执行、费用计算或埋点。
-- 不修改 Mac/Web/Watch，不新增跨端契约。
+- 不修改 Mac/Web/Watch；本轮新增 Backend→Mobile 的只读 `answer_evidence.v1` 契约。
 - 不在本任务内发布 OTA。
 
 ## 6. Product Object Mapping
@@ -65,13 +65,16 @@ RequirementAdmission:
 ## 7. User Flow
 
 ```text
-Agent 完成事件（sourcesUsed / thinkingSteps / llmUsage / perf）
-  -> ChatBubble 构建既有 AgentTransparencyProfile
+Agent 本轮真实工具结果 / Health Evidence packet
+  -> 后端确定性编译 answer_evidence.v1（零额外 LLM）
+  -> 完成事件 + message.meta 持久化
+  -> Mobile 校验并归一化契约
   -> AnswerEvidencePanel 默认显示“回答依据 · N项”
   -> 用户展开
-      -> 回答依据摘要
-      -> 参考的数据（来源 chip，可进入记忆）
-      -> 处理摘要（完成 / 不可用状态）
+      -> 本次判断摘要
+      -> 关键依据（观察值 / 用途 / 来源 / 新鲜度）
+      -> 数据限制（缺失 / 失败 / 冲突 / 保守处理）
+      -> 来源（仅本轮实际使用）
       -> 技术详情（二次按需展开）
   -> 用户收起，继续阅读主回答或分享
 ```
@@ -80,14 +83,14 @@ Agent 完成事件（sourcesUsed / thinkingSteps / llmUsage / perf）
 
 | Surface | Responsibility | Contract |
 |---|---|---|
-| Mobile | 渐进披露来源、处理摘要和技术遥测 | 只消费既有 UIMessage / AgentTransparencyProfile，不改写数据 |
-| Backend | 继续提供既有完成事件元数据 | 无接口变化 |
+| Backend | 从本轮真实结果编译、持久化并下发审计投影 | `answer_evidence.v1`；不得消费任意模型散文 |
+| Mobile | 校验后渐进披露依据、限制、来源和技术遥测 | 新客户端优先 `answerEvidence`；旧消息安全回退 |
 
 ```yaml
-apis: unchanged
-events: unchanged
+apis: conversation history meta adds answer_evidence
+events: done adds answer_evidence
 models: unchanged
-fields: unchanged
+fields: answer_evidence.v1 (additive)
 enums: unchanged
 backward_compatibility: legacy messages with only one metadata family still render the available sections
 migration: none
@@ -100,6 +103,8 @@ migration: none
 - 包含“失败、不可用、缺失、未同步、跳过”等信号的步骤使用警示样式，禁止渲染为成功勾。
 - 技术详情仍可访问，但默认不显示模型、Token、run id 和逐轮耗时。
 - 不展示 prompt、推理 token 文本、原始健康载荷、认证信息或错误堆栈。
+- 数值只允许来自结构化工具结果或本轮已选 PersonalEvidenceItem 的标量字段；对象、数组和任意模型散文不进入审计卡。
+- 普通路径不得通过 SQL 枚举所有已填充表生成“参考数据”；`available context` 与 `used evidence` 必须分离。
 - 记忆来源继续通过既有受控入口打开；权限与用户隔离不变。
 
 ## 10. Acceptance Criteria
@@ -132,15 +137,32 @@ Then 仍进入现有记忆管理页面
 Given 回答含依据、分享、复制和技术详情入口
 When VoiceOver 浏览这条回答
 Then 正文与每个交互入口都是独立可聚焦节点，不被外层消息容器合并
+
+Given 用户有补剂库、目标或化验数据，但本轮未查询也未选入 Health Evidence
+When 回答完成
+Then 这些可用数据不得出现在“本轮依据”中
+
+Given 本轮批量查询得到 HRV 58ms 和睡眠趋势 -5
+When 用户展开回答依据
+Then 显示具体观察值、窗口/用途和真实来源，不显示“查询/检查/整理”三条通用步骤
+
+Given 本轮查询结果缺失、过期、冲突或失败
+When 用户展开回答依据
+Then 单独显示数据限制和保守处理，且不得把缺失推断为正常
+
+Given 历史消息重新加载或健康证据失效
+When 客户端恢复消息
+Then 只恢复当前策略允许的 answer_evidence；失效数据不得从旧 meta 重新出现
 ```
 
 ## 11. Implementation Plan
 
-1. 新建不超过 500 行的 `AnswerEvidencePanel.tsx`，从超大 `ChatBubble.tsx` 提取现有 utility panel。
-2. 先修改邻近 Jest，锁定新标题、完成时态、警示状态和二级技术详情。
-3. 实现纯函数 `buildEvidenceProcessItems`，清洗、去重并标注完成/注意状态。
-4. 保留现有分享、复制、来源跳转和技术数据完整性。
-5. 运行定向测试、TypeScript、ESLint、diff check，再做模拟器视觉验收。
+1. 先用后端单测锁定“只收本轮结果、标量白名单、缺失/冲突限制、无额外 LLM”。
+2. 新增 `answer_evidence.v1` 确定性编译器，复用既有 GenUI 结构化结果与 Health Evidence packet。
+3. 将契约加入 done 与 message.meta，并在受控历史投影中保留或清理。
+4. Mobile 新增严格归一化类型；完成事件与历史恢复保持一致。
+5. `AnswerEvidencePanel` 首层改为关键依据与数据限制；旧 `thinkingSteps` 仅进入技术详情。
+6. 运行后端/Mobile 定向测试、TypeScript、治理闸与三档模拟器验收。
 
 ## 12. Verification Plan
 
@@ -173,3 +195,4 @@ git diff --check
 |---|---|---|
 | 2026-08-30 | Initial approved Quick Flow spec | 用户确认“用户依据优先、技术信息二级折叠”方向 |
 | 2026-08-31 | Add honest warning counts, neutral data-access wording and native accessibility grouping | TDD、独立复审与模拟器 AX 验收发现 |
+| 2026-08-31 | Correct scope to a truthful cross-end answer evidence contract | 用户反馈首层仍是通用流水线，且源码证明旧来源不等于本轮实际使用 |

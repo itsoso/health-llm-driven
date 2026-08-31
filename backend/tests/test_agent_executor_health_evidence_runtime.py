@@ -119,6 +119,8 @@ def _install_stream(
     chunks: list[str],
     captured: list,
     captured_tools: list | None = None,
+    *,
+    finish_reason: str = "stop",
 ) -> None:
     async def fake_call_llm_stream(messages, tools):
         captured.append(messages)
@@ -126,10 +128,10 @@ def _install_stream(
             captured_tools.append(tools)
         for chunk in chunks:
             yield {"type": "content", "text": chunk}
-        yield {"type": "finish", "finish_reason": "stop"}
+        yield {"type": "finish", "finish_reason": finish_reason}
 
     async def fake_call_llm(messages, tools):
-        return {"content": "".join(chunks), "finish_reason": "stop"}
+        return {"content": "".join(chunks), "finish_reason": finish_reason}
 
     executor._call_llm_stream = fake_call_llm_stream
     executor._call_llm = fake_call_llm
@@ -148,6 +150,42 @@ def _last_user_content(messages: list[dict]) -> str:
         if message.get("role") == "user":
             return str(message.get("content") or "")
     return ""
+
+
+@pytest.mark.asyncio
+async def test_health_turn_never_releases_length_truncated_model_text(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    user, _headers = auth_user_and_headers
+    query = FULLY_SCREENED_QUERY
+    _install_runtime(monkeypatch, user_id=user.id, query=query)
+    executor = AgentExecutor(db)
+    captured: list[list[dict]] = []
+    truncated_candidate = "MODEL_PARTIAL_SENTINEL_92F1：先做这一步，然后"
+    _install_stream(
+        executor,
+        [truncated_candidate],
+        captured,
+        finish_reason="length",
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message=query,
+            channel="typed",
+        )
+    ]
+
+    released = _token_text(events)
+    done = events[-1]["data"]
+    assert truncated_candidate not in released
+    assert done["completion_status"] == "interrupted"
+    assert done["health_evidence_verification"]["verdict"] in {"pass", "repair"}
+    assert released.strip()
 
 
 @pytest.mark.asyncio
@@ -271,6 +309,7 @@ async def test_health_turn_never_streams_unverified_model_text_and_persists_mani
 
     done = events[-1]["data"]
     visible = _token_text(events)
+    event_names = [event.get("event") for event in events]
     assert unsafe not in visible
     assert "已经确诊" not in visible
     assert "原回答未通过健康安全校验" in visible
@@ -284,6 +323,19 @@ async def test_health_turn_never_streams_unverified_model_text_and_persists_mani
     assert len(cards) == 1
     assert cards[0]["data"] == done["health_evidence_manifest"]
     assert done["sources_used"] == ["个人健康上下文：symptom"]
+    assert event_names.index("request_persisted") < event_names.index("answer_evidence")
+    assert event_names.index("answer_evidence") < event_names.index("token")
+    early_evidence = next(
+        event["data"]["answer_evidence"]
+        for event in events
+        if event.get("event") == "answer_evidence"
+    )
+    assert early_evidence == done["answer_evidence"]
+    assert done["perf"]["first_evidence_ms"] is not None
+    assert done["perf"]["health_compile_ms"] >= 0
+    assert done["perf"]["turn_setup_ms"] >= done["perf"]["health_compile_ms"]
+    assert done["perf"]["end_to_end_ttft_ms"] >= done["perf"]["llm_ttft_ms"]
+    assert done["perf"]["end_to_end_total_ms"] >= done["perf"]["total_ms"]
 
     assistant = (
         db.query(AgentMessage)
@@ -297,6 +349,8 @@ async def test_health_turn_never_streams_unverified_model_text_and_persists_mani
         done["health_evidence_manifest"]
     )
     assert assistant.meta["cards"][0]["type"] == "health_evidence"
+    assert assistant.meta["answer_evidence"] == done["answer_evidence"]
+    assert len(assistant.meta["answer_evidence_sha256"]) == 64
 
 
 @pytest.mark.asyncio
@@ -336,6 +390,39 @@ async def test_non_health_turn_keeps_existing_stream_contract(
         card.get("type") == "health_evidence"
         for card in events[-1]["data"]["cards"]
     )
+    assert not any(event.get("event") == "answer_evidence" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_early_answer_evidence_can_be_disabled_without_losing_final_evidence(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    user, _headers = auth_user_and_headers
+    query = FULLY_SCREENED_QUERY
+    _install_runtime(monkeypatch, user_id=user.id, query=query)
+    monkeypatch.setattr(
+        settings,
+        "answer_evidence_streaming_enabled",
+        False,
+        raising=False,
+    )
+    executor = AgentExecutor(db)
+    captured: list[list[dict]] = []
+    _install_stream(executor, ["可以先做温和活动，并留意症状变化。"], captured)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message=query,
+            channel="typed",
+        )
+    ]
+
+    assert not any(event.get("event") == "answer_evidence" for event in events)
+    assert events[-1]["data"]["answer_evidence"] is not None
 
 
 @pytest.mark.asyncio

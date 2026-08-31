@@ -500,6 +500,10 @@ FAST_ROUTE_ANSWER_MAX_TOKENS = 2000
 # This cap is active only when staged routing is on; the legacy/off path keeps
 # the existing quality budget for backwards compatibility.
 BALANCED_ANSWER_MAX_TOKENS = 3000
+# Health Evidence answers are buffered until deterministic verification, so
+# their text TTFT includes the whole decode. Keep the verified response concise;
+# this does not cap model thinking and the verifier still fails closed.
+HEALTH_EVIDENCE_ANSWER_MAX_TOKENS = 1200
 CLIENT_TURN_REPLAY_WAIT_SECONDS = 5.0
 INTERRUPTED_COMPLETION_NOTICE = "\n\n[回复因长度限制中断，请让我接着上文继续。]"
 AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"
@@ -10011,6 +10015,7 @@ class AgentExecutor:
         # 本回合是否被 fast-route 到快模型 (简单记录/查询)。仅用于把答案 max_tokens
         # 从 ANSWER_MAX_TOKENS 收紧到 FAST_ROUTE_ANSWER_MAX_TOKENS —— 见 _answer_max_tokens。
         self._fast_route_simple_turn = False
+        self._health_evidence_answer_budget_active = False
         # 本**轮**是否被工具决策轮快路由到 fast 模型 (task_tiered_routing, 见
         # _maybe_fast_route_tool_round)。仅在带 tools 的轮为 True, 每轮入口重置。
         # 作用: 该轮的模型输出**只**当作工具决策 —— content 不 live 下发; 若该轮
@@ -10916,6 +10921,18 @@ class AgentExecutor:
         FAST_ROUTE_ANSWER_MAX_TOKENS (简单答案的长尾解码是延迟的一部分);
         staged balanced 回合收紧到 BALANCED_ANSWER_MAX_TOKENS；高风险与
         staged-off 路径保留 ANSWER_MAX_TOKENS。"""
+        if self._health_evidence_answer_budget_active:
+            try:
+                configured = int(
+                    getattr(
+                        settings,
+                        "health_evidence_answer_max_tokens",
+                        HEALTH_EVIDENCE_ANSWER_MAX_TOKENS,
+                    )
+                )
+            except (TypeError, ValueError):
+                configured = HEALTH_EVIDENCE_ANSWER_MAX_TOKENS
+            return min(ANSWER_MAX_TOKENS, max(1, configured))
         if self._fast_route_simple_turn:
             return FAST_ROUTE_ANSWER_MAX_TOKENS
         if (
@@ -12430,6 +12447,7 @@ class AgentExecutor:
         tools are refused at the dispatch choke (fail-closed) — the pregen turn
         runs the same synthesis pipeline but can never mutate user data.
         """
+        request_started_at = time.time()
         staged_mode = _staged_response_mode()
         phase_one_label = (
             _phase_one_acknowledgement(
@@ -12727,6 +12745,7 @@ class AgentExecutor:
                 display_message=display_message,
                 persist_images=persist_images,
                 retry_recovery=retry_recovery,
+                request_started_at=request_started_at,
             ):
                 if event.get("event") == "token":
                     content = (event.get("data") or {}).get("content")
@@ -12767,8 +12786,11 @@ class AgentExecutor:
         display_message: Optional[str] = None,
         persist_images: Optional[List[dict]] = None,
         retry_recovery: RetryableTurnRecovery | None = None,
+        request_started_at: Optional[float] = None,
     ) -> AsyncGenerator[Dict, None]:
         """运行 Agent 循环，SSE 流式输出"""
+        if request_started_at is None:
+            request_started_at = time.time()
         from app.services.llm.usage_tracker import set_caller
         set_caller("agent_executor.run_stream", user_id=user_id)
         # 输入通道(客户端传输层声明,typed/voice/siri):症状类记录的确认策略依赖它。
@@ -12803,6 +12825,8 @@ class AgentExecutor:
         health_verification = None
         health_evidence_manifest: Optional[Dict[str, Any]] = None
         health_continuation_attempted = False
+        health_compile_ms = 0
+        health_compile_started_at = time.time()
         if getattr(settings, "health_evidence_runtime_enabled", False):
             from app.services import health_evidence as _health_evidence
             from app.services.health_evidence.continuation import (
@@ -12874,6 +12898,25 @@ class AgentExecutor:
                             now=self._agent_kernel_reference_now(),
                         )
                     )
+            health_compile_ms = max(
+                0,
+                int((time.time() - health_compile_started_at) * 1000),
+            )
+        early_answer_evidence = None
+        if health_evidence_turn is not None:
+            try:
+                from app.services.answer_evidence import build_answer_evidence
+
+                early_answer_evidence = build_answer_evidence(
+                    personal_packet=health_evidence_turn.personal_packet,
+                )
+            except Exception as exc:  # noqa: BLE001 - projection must not break advice
+                logger.warning(
+                    "[agent_executor] early answer evidence skipped user=%s "
+                    "error_type=%s",
+                    user_id,
+                    type(exc).__name__,
+                )
         health_advice_buffered = health_evidence_turn is not None
         deterministic_health_release = bool(
             health_evidence_turn is not None
@@ -12912,6 +12955,9 @@ class AgentExecutor:
         )
         # 本回合已执行的只读数据查询工具 (name, args, result) —— 供合成后确定性建表。
         genui_tool_calls: List[Tuple[str, Optional[dict], str]] = []
+        # 回答依据与 GenUI capability 解耦：即使客户端不显示表格，只要本轮真实
+        # 执行了受支持的只读查询，也可编译有界、无原始载荷的审计投影。
+        answer_evidence_tool_calls: List[Tuple[str, Optional[dict], str]] = []
         # 多模型综合分析 (商用三强 panel)。仅纯文本分析回合走此路径;
         # 带图片/附件时回退普通单模型路径 (panel 是文本综合, 不处理多模态)。
         if (
@@ -12946,10 +12992,12 @@ class AgentExecutor:
             return
 
         start_time = time.time()
+        turn_setup_ms = max(0, int((start_time - request_started_at) * 1000))
         perf_milestones: Dict[str, Optional[int]] = {
             "request_persisted_ms": None,
             "first_progress_ms": None,
             "first_useful_ms": None,
+            "first_evidence_ms": None,
             "first_card_ms": None,
             "write_verified_ms": None,
         }
@@ -12994,6 +13042,7 @@ class AgentExecutor:
         self._turn_recovery_wearable_snapshot = _TURN_CARD_UNSET
         self._request_model_tool_fallback_used = False
         self._fast_route_simple_turn = False
+        self._health_evidence_answer_budget_active = health_advice_buffered
         self._analysis_turn_subset = False  # R5:纯分析轮只读工具子集(flag 门控,下方设定)
         self._tool_round_fast_routed = False
         self._lite_tool_round_messages = None
@@ -13293,6 +13342,19 @@ class AgentExecutor:
             "image_urls": saved_image_urls,
             "recovered": recovered_user_message is not None,
         }}
+        if (
+            early_answer_evidence is not None
+            and getattr(settings, "answer_evidence_streaming_enabled", True)
+        ):
+            perf_milestones["first_evidence_ms"] = max(
+                0,
+                int((time.time() - request_started_at) * 1000),
+            )
+            _mark_perf_milestone("first_useful_ms")
+            yield {
+                "event": "answer_evidence",
+                "data": {"answer_evidence": early_answer_evidence},
+            }
         if diet_photo_progress_turn:
             _mark_perf_milestone("first_progress_ms")
             _mark_perf_milestone("first_useful_ms")
@@ -13568,11 +13630,8 @@ class AgentExecutor:
                 sources_used.append(
                     "个人健康上下文：" + "、".join(context_categories)
                 )
-        else:
-            try:
-                sources_used.extend(_inspect_user_data_sources(self.db, user_id))
-            except Exception as e:
-                logger.warning(f"[sources_used] inspect failed: {e}")
+        # 普通路径不再枚举用户所有已填充的数据表。available context 不能证明
+        # 本轮回答实际使用；真实来源会在工具执行或知识检索时逐项加入。
         pre_stages["inspect_ms"] = _pre_stage(_t_stage)
 
         # 3. 构建对话历史
@@ -15382,8 +15441,19 @@ class AgentExecutor:
                         # GenUI metric_table (rank1): 记下只读数据查询工具的
                         # (name, args, result), 合成后确定性建表/卡 (零 LLM)。声明
                         # genui-table-v1 或 genui-diet-summary-v1 任一即追踪 (无 cap → 零开销)。
-                        if (genui_table_on or genui_diet_summary_on or genui_sleep_summary_on or genui_medication_list_on) and func_name in _GENUI_TABLE_TOOLS and not replayed_read:
-                            genui_tool_calls.append((func_name, parsed_tool_args, result))
+                        if func_name in _GENUI_TABLE_TOOLS and not replayed_read:
+                            answer_evidence_tool_calls.append(
+                                (func_name, parsed_tool_args, result)
+                            )
+                            if (
+                                genui_table_on
+                                or genui_diet_summary_on
+                                or genui_sleep_summary_on
+                                or genui_medication_list_on
+                            ):
+                                genui_tool_calls.append(
+                                    (func_name, parsed_tool_args, result)
+                                )
 
                         # tool_result 事件给前端用. health_record 时附 args 让前端能识别
                         # 是哪种 record + 提取关键内容显示 summary 卡 (I Phase 2).
@@ -16457,6 +16527,10 @@ class AgentExecutor:
         conv.updated_at = datetime.now(UTC)
 
         elapsed_ms = int((time.time() - start_time) * 1000)
+        end_to_end_total_ms = max(
+            0,
+            int((time.time() - request_started_at) * 1000),
+        )
         llm_ms_total = sum(llm_rounds_ms)
         model_wait_ms = llm_ms_total + (
             simple_diet_nutrition_estimate_ms or 0
@@ -16483,6 +16557,14 @@ class AgentExecutor:
             )
         except Exception:  # noqa: BLE001
             llm_ttft_ms = None
+        try:
+            end_to_end_ttft_ms: Optional[int] = (
+                int((first_token_at - request_started_at) * 1000)
+                if first_token_at
+                else None
+            )
+        except Exception:  # noqa: BLE001
+            end_to_end_ttft_ms = None
         if (
             perf_milestones["first_useful_ms"] is None
             and llm_ttft_ms is not None
@@ -16490,6 +16572,10 @@ class AgentExecutor:
             perf_milestones["first_useful_ms"] = llm_ttft_ms
         perf = {
             "total_ms": elapsed_ms,
+            "end_to_end_total_ms": end_to_end_total_ms,
+            "end_to_end_ttft_ms": end_to_end_ttft_ms,
+            "turn_setup_ms": turn_setup_ms,
+            "health_compile_ms": health_compile_ms,
             "pre_llm_ms": pre_llm_ms,
             "pre_llm_stages": dict(pre_stages),
             "llm_ttft_ms": llm_ttft_ms,
@@ -16682,6 +16768,35 @@ class AgentExecutor:
         )
         kernel_trace = self._agent_kernel_trace_summary(status=completion_status)
         recovery_data_guard_meta = self._recovery_data_guard_meta()
+        answer_evidence = early_answer_evidence
+        answer_evidence_digest = ""
+        if completion_status == "complete":
+            try:
+                from app.services.answer_evidence import (
+                    answer_evidence_sha256,
+                    build_answer_evidence,
+                )
+
+                if answer_evidence is None or answer_evidence_tool_calls:
+                    answer_evidence = build_answer_evidence(
+                        tool_calls=answer_evidence_tool_calls,
+                        personal_packet=(
+                            health_evidence_turn.personal_packet
+                            if health_evidence_turn is not None
+                            else None
+                        ),
+                    )
+                if answer_evidence is not None:
+                    answer_evidence_digest = answer_evidence_sha256(answer_evidence)
+            except Exception as e:  # noqa: BLE001 - optional projection must fail closed
+                logger.warning(
+                    "[agent_executor] answer evidence compilation skipped "
+                    "user=%s error_type=%s",
+                    user_id,
+                    type(e).__name__,
+                )
+                answer_evidence = None
+                answer_evidence_digest = ""
 
         # rank7: passthrough 观测/标记进 meta(offline judge 读)。shadow 落 would-be
         # passthrough 文本(截 4000 char)+ 两侧壁钟;on 落一个轻量 taken 标记。
@@ -16728,6 +16843,14 @@ class AgentExecutor:
                 ),
                 "sources_used": sources_used,
                 "tools_used": tools_used,
+                **(
+                    {
+                        "answer_evidence": answer_evidence,
+                        "answer_evidence_sha256": answer_evidence_digest,
+                    }
+                    if answer_evidence is not None and answer_evidence_digest
+                    else {}
+                ),
                 "write_receipts": write_receipts,
                 "pending_write_intent_ids": self._turn_pending_write_intent_ids,
                 "pending_write_intent_kinds": self._turn_pending_write_intent_kinds,
@@ -16807,6 +16930,11 @@ class AgentExecutor:
                 ),
                 "sources_used": sources_used,
                 "tools_used": tools_used,
+                **(
+                    {"answer_evidence": answer_evidence}
+                    if answer_evidence is not None
+                    else {}
+                ),
                 "write_receipts": write_receipts,
                 "pending_write_intent_ids": self._turn_pending_write_intent_ids,
                 "pending_write_intent_kinds": self._turn_pending_write_intent_kinds,
@@ -19142,8 +19270,9 @@ class AgentExecutor:
     def _maybe_apply_synthesis_thinking_budget(self, stream_kwargs: Dict[str, Any]) -> None:
         """合成/答案轮 → 给 qwen 思考阶段封顶(flag 门控, fail-closed)。
 
-        只在满足**全部**条件时给 stream_kwargs 注入 thinking_budget(否则 = 零行为变更):
-          1. settings.synthesis_thinking_budget > 0(默认 0 = 关);
+        只在满足**全部**条件时给 stream_kwargs 注入 thinking_budget:
+          1. staged balanced 使用 balanced_synthesis_thinking_budget；其它兼容路径
+             使用 synthesis_thinking_budget；high_stakes 永不封顶；
           2. 本回合 effective model 的 ModelEntry.supports_thinking_budget=True
              (仅探针验证过该参数的 qwen 模型;未验证模型不传, 免端点 400 打死合成轮);
           3. 本回合**未**调用 health_analysis(深度分析/安全裁决可能确实需要长思考 →
@@ -19176,8 +19305,22 @@ class AgentExecutor:
                     model_id, self._current_user_id,
                 )
                 return
+            tier = getattr(self, "_staged_answer_task_tier", None)
+            if (
+                getattr(self, "_staged_response_mode", "off") == "on"
+                and tier == "high_stakes"
+            ):
+                return
+            if (
+                getattr(self, "_staged_response_mode", "off") == "on"
+                and tier == "balanced"
+            ):
+                budget = int(
+                    getattr(settings, "balanced_synthesis_thinking_budget", 0) or 0
+                )
+            else:
+                budget = int(getattr(settings, "synthesis_thinking_budget", 0) or 0)
             # (B) 全局思考封顶(flag 门控, 默认 0=关; 命中即含分析轮, 慎开)。
-            budget = int(getattr(settings, "synthesis_thinking_budget", 0) or 0)
             if budget <= 0:
                 return
             stream_kwargs["thinking_budget"] = budget

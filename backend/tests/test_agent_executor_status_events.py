@@ -17,6 +17,8 @@ import json
 
 import pytest
 
+from app.config import settings
+
 from app.services.agent_executor import (
     ANSWER_MAX_TOKENS,
     FAST_ROUTE_ANSWER_MAX_TOKENS,
@@ -1949,6 +1951,41 @@ async def test_staged_high_stakes_keeps_full_quality_budget(db):
     executor._fast_route_simple_turn = False
     executor._staged_response_mode = "on"
     executor._staged_answer_task_tier = "high_stakes"
+
+    assert executor._answer_max_tokens() == ANSWER_MAX_TOKENS
+
+
+@pytest.mark.asyncio
+async def test_health_evidence_turn_uses_bounded_verified_answer_budget(db):
+    health_budget = getattr(
+        __import__("app.services.agent_executor", fromlist=["HEALTH_EVIDENCE_ANSWER_MAX_TOKENS"]),
+        "HEALTH_EVIDENCE_ANSWER_MAX_TOKENS",
+        None,
+    )
+    assert health_budget is not None, "health evidence answer budget is not implemented"
+    executor = AgentExecutor(db)
+    executor._fast_route_simple_turn = False
+    executor._staged_response_mode = "on"
+    executor._staged_answer_task_tier = "high_stakes"
+    executor._health_evidence_answer_budget_active = True
+
+    assert executor._answer_max_tokens() == health_budget
+    assert health_budget == 1200
+
+
+@pytest.mark.asyncio
+async def test_health_evidence_answer_budget_can_roll_back_without_code_change(
+    db,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        settings,
+        "health_evidence_answer_max_tokens",
+        ANSWER_MAX_TOKENS,
+        raising=False,
+    )
+    executor = AgentExecutor(db)
+    executor._health_evidence_answer_budget_active = True
 
     assert executor._answer_max_tokens() == ANSWER_MAX_TOKENS
 
