@@ -7170,6 +7170,35 @@ def _first_symptom_marker_span(text: str, *, start: int = 0) -> Optional[tuple[i
     if not candidates:
         return None
     position, _negative_length, end = min(candidates)
+    # Some body-part markers are anatomical nouns rather than a complete
+    # symptom (``眼睛``, ``嗓子``, ``皮肤``, ``膝盖``).  Preserve the adjacent
+    # user-stated predicate instead of truncating ``眼睛痒`` to ``眼睛``.  The
+    # extension is deliberately finite and stops before any advice/question
+    # tail, so the server-bound payload remains a fact rather than model prose.
+    suffix = text[end:]
+    predicate = next(
+        (
+            marker
+            for marker in (
+                "不舒服",
+                "发痒",
+                "发红",
+                "疼",
+                "痛",
+                "痒",
+                "红",
+                "肿",
+                "胀",
+                "酸",
+                "麻",
+                "干",
+                "涩",
+            )
+            if suffix.startswith(marker)
+        ),
+        "",
+    )
+    end += len(predicate)
     return position, end
 
 

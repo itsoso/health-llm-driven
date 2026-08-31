@@ -4638,6 +4638,30 @@ def test_server_bound_compound_symptom_authorizes_only_exact_fact_payload():
 
 
 @pytest.mark.parametrize(
+    ("message", "description"),
+    (
+        ("眼睛痒", "眼睛痒"),
+        ("嗓子疼", "嗓子疼"),
+        ("皮肤发痒", "皮肤发痒"),
+        ("膝盖疼", "膝盖疼"),
+    ),
+)
+def test_server_bound_anatomical_symptom_keeps_adjacent_predicate(
+    message,
+    description,
+):
+    assert agent_executor_module._extract_clear_symptom_record(message) == {
+        "body_part": {
+            "眼睛痒": "eye",
+            "嗓子疼": "respiratory",
+            "皮肤发痒": "skin",
+            "膝盖疼": "musculoskeletal",
+        }[message],
+        "description": description,
+    }
+
+
+@pytest.mark.parametrize(
     "model_record_date",
     ("2026-07-17", "2026-07-16", "2026-07-01"),
 )
