@@ -191,8 +191,7 @@ export default function AnswerEvidencePanel({
               accessibilityLabel="微信分享这条回复"
               style={({ pressed }) => [styles.shareButton, pressed && styles.pressed]}
             >
-              <SocialBrandIcon brand="wechat" size={15} />
-              <Text style={txt.shareLabel}>微信</Text>
+              <SocialBrandIcon brand="wechat" size={20} />
             </Pressable>
             <Pressable
               onPress={onShareXiaohongshu}
@@ -200,8 +199,7 @@ export default function AnswerEvidencePanel({
               accessibilityLabel="小红书分享这条回复"
               style={({ pressed }) => [styles.shareButton, pressed && styles.pressed]}
             >
-              <SocialBrandIcon brand="xiaohongshu" size={15} />
-              <Text style={txt.shareLabel}>小红书</Text>
+              <SocialBrandIcon brand="xiaohongshu" size={20} />
             </Pressable>
           </>
         ) : null}
@@ -374,6 +372,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: C.paper2,
     paddingHorizontal: 4,
+    gap: 2,
   },
   evidenceButton: {
     minHeight: 44,
@@ -395,11 +394,12 @@ const styles = StyleSheet.create({
   spacer: { flex: 1 },
   divider: { width: StyleSheet.hairlineWidth, height: 18, backgroundColor: C.line },
   shareButton: {
-    minHeight: 44,
-    flexDirection: 'row',
+    width: 44,
+    height: 44,
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 7,
+    justifyContent: 'center',
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.paper,
   },
   copyButton: {
     width: 44,
@@ -507,7 +507,6 @@ const styles = StyleSheet.create({
 
 const txt = {
   evidenceLabel: { flex: 1, minWidth: 0, fontFamily: revaFonts.sans, fontSize: 11.8, lineHeight: 16, fontWeight: '800', color: C.ink2 } as TextStyle,
-  shareLabel: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 15, fontWeight: '700', color: C.ink2 } as TextStyle,
   summaryTitle: { fontFamily: revaFonts.sans, fontSize: 13, lineHeight: 18, fontWeight: '900', color: C.ink1 } as TextStyle,
   summarySubtitle: { fontFamily: revaFonts.sans, fontSize: 10.8, lineHeight: 16, color: C.ink3 } as TextStyle,
   summarySubtitleWarning: { color: revaSemantic.caution.fg, fontWeight: '700' } as TextStyle,

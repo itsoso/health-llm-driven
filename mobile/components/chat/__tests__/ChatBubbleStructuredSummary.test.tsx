@@ -512,8 +512,8 @@ ${sectionTitle}
     });
   });
 
-  it('keeps a compact WeChat and Xiaohongshu share rail while speech remains in the long-press menu', () => {
-    const { getByText, getByLabelText, getByTestId, queryByText } = renderBubble(
+  it('keeps icon-only WeChat and Xiaohongshu actions while speech remains in the long-press menu', () => {
+    const { getByLabelText, getByTestId, queryByText } = renderBubble(
       '建议今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。',
     );
 
@@ -521,10 +521,10 @@ ${sectionTitle}
     expect(queryByText('保存记忆')).toBeNull();
     expect(queryByText('生成记录')).toBeNull();
     expect(queryByText('继续追问')).toBeNull();
-    expect(getByText('微信')).toBeTruthy();
-    expect(getByText('小红书')).toBeTruthy();
-    expect(getByLabelText('微信分享这条回复')).toBeTruthy();
-    expect(getByLabelText('小红书分享这条回复')).toBeTruthy();
+    expect(queryByText('微信')).toBeNull();
+    expect(queryByText('小红书')).toBeNull();
+    expect(getByLabelText('微信分享这条回复')).toHaveStyle({ width: 44, height: 44 });
+    expect(getByLabelText('小红书分享这条回复')).toHaveStyle({ width: 44, height: 44 });
     expect(() => getByLabelText('语音播报')).toThrow();
 
     fireEvent(getByTestId('assistant-message-surface'), 'longPress');
