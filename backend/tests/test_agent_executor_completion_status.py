@@ -1676,6 +1676,102 @@ async def test_agent_stream_reports_tools_used_in_done_and_meta(db, auth_user_an
 
 
 @pytest.mark.asyncio
+async def test_agent_stream_emits_grounded_evidence_before_synthesis_text(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+
+    async def fake_call_llm(messages, tools):
+        calls.append({"messages": messages, "tool_count": len(tools or [])})
+        if len(calls) == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{
+                    "id": "call_query_recovery",
+                    "type": "function",
+                    "function": {
+                        "name": "health_query_batch",
+                        "arguments": json.dumps({
+                            "queries": [
+                                {"dimension": "hrv", "days": 7, "agg": "avg"},
+                                {"dimension": "sleep", "days": 7, "agg": "trend"},
+                            ],
+                        }),
+                    },
+                }],
+            }
+        return {
+            "content": "最近 7 天 HRV 平均 58ms，睡眠评分略有下降。",
+            "finish_reason": "stop",
+        }
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        assert tool_name == "health_query_batch"
+        return json.dumps({
+            "queries": [
+                {
+                    "dimension": "hrv",
+                    "days": 7,
+                    "agg": "avg",
+                    "value": 58,
+                    "unit": "ms",
+                    "n": 7,
+                },
+                {
+                    "dimension": "sleep",
+                    "days": 7,
+                    "agg": "trend",
+                    "value": -5,
+                    "n": 7,
+                    "note": "略降",
+                },
+            ],
+            "meta": {"executed": 2, "failed": 0},
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.answer_evidence_streaming_enabled",
+        True,
+    )
+    executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="比较我最近 7 天的 HRV 和睡眠趋势",
+            user_auth_token="test-token",
+        )
+    ]
+
+    tool_result_index = next(
+        index for index, event in enumerate(events)
+        if event.get("event") == "tool_result"
+    )
+    evidence_index = next(
+        index for index, event in enumerate(events)
+        if event.get("event") == "answer_evidence"
+    )
+    first_text_index = next(
+        index for index, event in enumerate(events)
+        if event.get("event") == "token"
+    )
+    streamed_evidence = events[evidence_index]["data"]["answer_evidence"]
+    done = next(event["data"] for event in events if event.get("event") == "done")
+
+    assert tool_result_index < evidence_index < first_text_index
+    assert streamed_evidence["summary"] == "本轮获得 2 条可核对数据"
+    assert streamed_evidence == done["answer_evidence"]
+    assert done["perf"]["first_evidence_ms"] is not None
+    assert done["perf"]["first_useful_ms"] is not None
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_tools_used_empty_when_no_tool_call(db, auth_user_and_headers):
     """无 tool call 的纯问答轮, tools_used 为 []。"""
     user, _headers = auth_user_and_headers

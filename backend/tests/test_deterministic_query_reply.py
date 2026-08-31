@@ -1,8 +1,8 @@
 """端到端: 确定性查询直出 (Phase-2 rank2) 通过 /api/v1/agent/stream。
 
-flag ON + 覆盖维度的只读查询回合 → 从真实 tool result 渲染确定性读数并**跳过合成轮**
-(恰好 1 次 LLM 调用 = 工具决策轮, 无合成)。flag OFF / 安全告警后缀 / 未覆盖维度 →
-fail-open 回落正常合成轮 (2 次 LLM 调用), 行为与现状一致。
+flag ON + 覆盖维度的只读查询回合 → 从真实 tool result 渲染确定性读数并**跳过合成轮**。
+窄范围多指标请求还会确定性构造批查询, 省掉工具决策轮 (0 次 LLM)。flag OFF / 安全
+告警后缀 / 未覆盖维度 → fail-open 回落正常模型路径。
 """
 import json
 
@@ -47,21 +47,25 @@ class _ToolThenAnswerProvider:
     stream_calls 累积每次 chat_stream 调用 = LLM 轮数 (确定性短路后不该有第二次)。
     """
 
-    def __init__(self, model_id, tool_args, stream_calls):
+    def __init__(self, model_id, tool_args, stream_calls, tool_name="health_query"):
         self.model = model_id
         self._tool_args = tool_args
         self._stream_calls = stream_calls
+        self._tool_name = tool_name
 
     async def chat_stream(self, **kwargs):
         self._stream_calls.append(kwargs.get("tools"))
-        if len(self._stream_calls) == 1:
+        if not any(
+            message.get("role") == "tool"
+            for message in kwargs.get("messages", [])
+        ):
             yield {
                 "type": "tool_calls",
                 "tool_calls": [{
                     "id": "call_q1",
                     "type": "function",
                     "function": {
-                        "name": "health_query",
+                        "name": self._tool_name,
                         "arguments": json.dumps(self._tool_args, ensure_ascii=False),
                     },
                 }],
@@ -81,11 +85,18 @@ def _wire(executor, monkeypatch, provider_factory):
     monkeypatch.setattr("app.services.agent_executor.settings.agent_api_key", None)
     monkeypatch.setattr(
         "app.services.agent_executor.get_health_tools",
-        lambda subset=None: [{
-            "type": "function",
-            "function": {"name": "health_query", "description": "x",
-                         "parameters": {"type": "object", "properties": {}}},
-        }],
+        lambda subset=None: [
+            {
+                "type": "function",
+                "function": {"name": "health_query", "description": "x",
+                             "parameters": {"type": "object", "properties": {}}},
+            },
+            {
+                "type": "function",
+                "function": {"name": "health_query_batch", "description": "x",
+                             "parameters": {"type": "object", "properties": {}}},
+            },
+        ],
     )
     monkeypatch.setattr(
         "app.services.llm.factory.create_provider_for_model_id",
@@ -114,13 +125,24 @@ def _set_flag(monkeypatch, value: bool):
     monkeypatch.setattr("app.services.agent_executor.settings.deterministic_query_reply", value)
 
 
-def _make_executor(db, monkeypatch, tool_args=None, tool_result=_WATER_RESULT):
+def _make_executor(
+    db,
+    monkeypatch,
+    tool_args=None,
+    tool_result=_WATER_RESULT,
+    tool_name="health_query",
+):
     """Wire an executor whose health_query returns a canned result. Returns (executor, state)."""
     executor = AgentExecutor(db)
     state = {"stream_calls": [], "executed": []}
 
     def factory(model_id):
-        return _ToolThenAnswerProvider(model_id, tool_args or {"dimension": "water"}, state["stream_calls"])
+        return _ToolThenAnswerProvider(
+            model_id,
+            tool_args or {"dimension": "water"},
+            state["stream_calls"],
+            tool_name=tool_name,
+        )
 
     async def fake_execute_tool(tool_name, args, token):  # noqa: ARG001
         state["executed"].append((tool_name, args))
@@ -152,6 +174,114 @@ async def test_flag_on_water_query_is_deterministic_single_round(db, auth_user_a
     # done 事件正常, completion_status complete。
     done = events[-1]["data"]
     assert done["completion_status"] == "complete"
+
+
+@pytest.mark.asyncio
+async def test_flag_on_batch_query_is_deterministic_single_round(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    batch_args = {
+        "queries": [
+            {"dimension": "hrv", "days": 7, "agg": "avg"},
+            {"dimension": "sleep", "days": 7, "agg": "avg"},
+        ],
+    }
+    batch_result = json.dumps({
+        "queries": [
+            {
+                "dimension": "hrv",
+                "days": 7,
+                "agg": "avg",
+                "value": 58,
+                "unit": "ms",
+                "n": 7,
+            },
+            {
+                "dimension": "sleep",
+                "days": 7,
+                "agg": "avg",
+                "value": 76,
+                "n": 7,
+            },
+        ],
+        "meta": {"executed": 2, "failed": 0},
+    }, ensure_ascii=False)
+    executor, state = _make_executor(
+        db,
+        monkeypatch,
+        tool_args=batch_args,
+        tool_result=batch_result,
+        tool_name="health_query_batch",
+    )
+    _set_flag(monkeypatch, True)
+
+    events = await _run(executor, "查一下最近7天的HRV和睡眠", user.id)
+
+    assert len(state["stream_calls"]) == 0
+    assert state["executed"] == [
+        ("health_query_batch", json.dumps(batch_args, ensure_ascii=False)),
+    ]
+    assert _tokens(events) == (
+        "近7天 HRV 平均值 58 ms。\n\n"
+        "近7天 睡眠评分 平均值 76 分。"
+    )
+    done = events[-1]["data"]
+    assert done["completion_status"] == "complete"
+    assert done["llm_rounds"] == 0
+    assert done["perf"]["end_to_end_ttft_ms"] is not None
+    assert done["perf"]["first_useful_ms"] is not None
+
+
+@pytest.mark.asyncio
+async def test_preplanned_batch_failure_falls_open_to_one_synthesis_round(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    batch_args = {
+        "queries": [
+            {"dimension": "hrv", "days": 7, "agg": "avg"},
+            {"dimension": "sleep", "days": 7, "agg": "avg"},
+        ],
+    }
+    batch_result = json.dumps({
+        "queries": [
+            {
+                "dimension": "hrv",
+                "days": 7,
+                "agg": "avg",
+                "value": None,
+                "error": "数据查询失败",
+            },
+            {
+                "dimension": "sleep",
+                "days": 7,
+                "agg": "avg",
+                "value": 76,
+                "n": 7,
+            },
+        ],
+        "meta": {"executed": 2, "failed": 1},
+    }, ensure_ascii=False)
+    executor, state = _make_executor(
+        db,
+        monkeypatch,
+        tool_args=batch_args,
+        tool_result=batch_result,
+        tool_name="health_query_batch",
+    )
+    _set_flag(monkeypatch, True)
+
+    events = await _run(executor, "查一下最近7天的HRV和睡眠", user.id)
+
+    assert len(state["stream_calls"]) == 1
+    assert state["executed"] == [
+        ("health_query_batch", json.dumps(batch_args, ensure_ascii=False)),
+    ]
+    assert _tokens(events) == _SYNTH_ANSWER
+    assert events[-1]["data"]["perf"]["decision_route"] == (
+        "deterministic_batch_query_fallback_llm"
+    )
 
 
 @pytest.mark.asyncio

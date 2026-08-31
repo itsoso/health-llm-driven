@@ -31,6 +31,21 @@ def _assistant_query(tool_call_id: str, dimension: str, **args) -> dict:
     }
 
 
+def _assistant_batch(tool_call_id: str, queries: list[dict]) -> dict:
+    return {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [{
+            "id": tool_call_id,
+            "type": "function",
+            "function": {
+                "name": "health_query_batch",
+                "arguments": json.dumps({"queries": queries}, ensure_ascii=False),
+            },
+        }],
+    }
+
+
 # ──────────────────────── marker drift guard ────────────────────────
 
 def test_safety_marker_matches_agent_executor_source():
@@ -276,6 +291,138 @@ def test_multiple_covered_queries_are_joined():
     out = qr.deterministic_query_reply(messages)
     assert "今日饮水 1000ml" in out
     assert "最新体重 70kg" in out
+
+
+def test_batch_scalar_queries_render_grounded_readouts():
+    messages = [
+        _assistant_batch("batch-1", [
+            {"dimension": "hrv", "days": 7, "agg": "avg"},
+            {"dimension": "sleep", "days": 7, "agg": "trend"},
+        ]),
+        _tool_msg("batch-1", {
+            "queries": [
+                {
+                    "dimension": "hrv",
+                    "days": 7,
+                    "agg": "avg",
+                    "value": 58,
+                    "unit": "ms",
+                    "n": 7,
+                },
+                {
+                    "dimension": "sleep",
+                    "days": 7,
+                    "agg": "trend",
+                    "value": -5,
+                    "n": 7,
+                },
+            ],
+            "meta": {"executed": 2, "failed": 0},
+        }),
+    ]
+
+    assert qr.deterministic_query_reply(messages) == (
+        "近7天 HRV 平均值 58 ms。\n\n"
+        "近7天 睡眠评分 较窗口起点下降 5 分。"
+    )
+
+
+def test_batch_sensitive_or_partial_results_fall_open():
+    for payload in (
+        {
+            "queries": [{
+                "dimension": "spo2",
+                "days": 7,
+                "agg": "avg",
+                "value": 93,
+                "unit": "%",
+                "n": 7,
+            }],
+            "meta": {"executed": 1, "failed": 0},
+        },
+        {
+            "queries": [{
+                "dimension": "hrv",
+                "days": 7,
+                "agg": "avg",
+                "value": None,
+                "error": "数据查询失败",
+            }],
+            "meta": {"executed": 1, "failed": 1},
+        },
+    ):
+        messages = [
+            _assistant_batch("batch-1", [{
+                "dimension": payload["queries"][0]["dimension"],
+                "days": 7,
+                "agg": "avg",
+            }]),
+            _tool_msg("batch-1", payload),
+        ]
+
+        assert qr.deterministic_query_reply(messages) is None
+
+
+def test_preplanned_batch_query_is_narrow_and_low_risk():
+    assert qr.preplanned_batch_query_args("查一下最近7天的HRV和睡眠数据") == {
+        "queries": [
+            {"dimension": "hrv", "days": 7, "agg": "avg"},
+            {"dimension": "sleep", "days": 7, "agg": "avg"},
+        ],
+    }
+    assert qr.preplanned_batch_query_args("列出近两周的步数和身体电量") == {
+        "queries": [
+            {"dimension": "activity", "days": 14, "agg": "avg"},
+            {"dimension": "body_battery", "days": 14, "agg": "avg"},
+        ],
+    }
+    assert qr.preplanned_batch_query_args("查询近3周的HRV和睡眠") == {
+        "queries": [
+            {"dimension": "hrv", "days": 21, "agg": "avg"},
+            {"dimension": "sleep", "days": 21, "agg": "avg"},
+        ],
+    }
+
+    assert qr.preplanned_batch_query_args("分析最近7天的HRV和睡眠") is None
+    assert qr.preplanned_batch_query_args("查最近7天的HRV、睡眠和血氧") is None
+    assert qr.preplanned_batch_query_args("查最近120天的HRV和睡眠") is None
+    assert qr.preplanned_batch_query_args("查最近7天的HRV") is None
+    assert qr.preplanned_batch_query_args("不要查HRV和睡眠数据") is None
+    assert qr.preplanned_batch_query_args("你能查询HRV和睡眠数据吗") is None
+    assert qr.preplanned_batch_query_args("查昨天的HRV和睡眠") is None
+    assert qr.preplanned_batch_query_args("查过去24小时的HRV和睡眠") is None
+
+
+def test_deterministic_reply_only_considers_current_turn_tools():
+    messages = [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{
+                "id": "old-write",
+                "type": "function",
+                "function": {"name": "health_record", "arguments": "{}"},
+            }],
+        },
+        _tool_msg("old-write", {"id": 1}),
+        {"role": "user", "content": "查最近7天的HRV和睡眠"},
+        _assistant_batch("batch-1", [
+            {"dimension": "hrv", "days": 7, "agg": "avg"},
+            {"dimension": "sleep", "days": 7, "agg": "avg"},
+        ]),
+        _tool_msg("batch-1", {
+            "queries": [
+                {"dimension": "hrv", "days": 7, "agg": "avg", "value": 58, "n": 7},
+                {"dimension": "sleep", "days": 7, "agg": "avg", "value": 76, "n": 7},
+            ],
+            "meta": {"executed": 2, "failed": 0},
+        }),
+    ]
+
+    assert qr.deterministic_query_reply(messages) == (
+        "近7天 HRV 平均值 58 ms。\n\n"
+        "近7天 睡眠评分 平均值 76 分。"
+    )
 
 
 def test_bp_alias_dimension_normalizes_and_covers():

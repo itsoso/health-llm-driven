@@ -12958,6 +12958,7 @@ class AgentExecutor:
         # 回答依据与 GenUI capability 解耦：即使客户端不显示表格，只要本轮真实
         # 执行了受支持的只读查询，也可编译有界、无原始载荷的审计投影。
         answer_evidence_tool_calls: List[Tuple[str, Optional[dict], str]] = []
+        streamed_answer_evidence_digest = ""
         # 多模型综合分析 (商用三强 panel)。仅纯文本分析回合走此路径;
         # 带图片/附件时回退普通单模型路径 (panel 是文本综合, 不处理多模态)。
         if (
@@ -13355,6 +13356,14 @@ class AgentExecutor:
                 "event": "answer_evidence",
                 "data": {"answer_evidence": early_answer_evidence},
             }
+            try:
+                from app.services.answer_evidence import answer_evidence_sha256
+
+                streamed_answer_evidence_digest = answer_evidence_sha256(
+                    early_answer_evidence
+                )
+            except Exception:  # noqa: BLE001 - dedupe telemetry must not break advice
+                streamed_answer_evidence_digest = ""
         if diet_photo_progress_turn:
             _mark_perf_milestone("first_progress_ms")
             _mark_perf_milestone("first_useful_ms")
@@ -14053,6 +14062,45 @@ class AgentExecutor:
                 # (合成轮词表稳定, 默认路径历来带非空 tools, 这层保护逐字节不变)。
                 _detect_tools = round_tools or tools
                 preplanned_simple_diet_call = None
+                preplanned_query_call = None
+                if (
+                    round_idx == 0
+                    and settings.deterministic_query_reply
+                    and self._fast_route_simple_turn
+                    and not self._prefer_fast_record_model
+                    and not health_advice_buffered
+                    and not images
+                    and not file_base64
+                    and any(
+                        (tool.get("function") or {}).get("name")
+                        == "health_query_batch"
+                        for tool in tools
+                    )
+                ):
+                    from app.services import query_readouts
+
+                    preplanned_query_args = (
+                        query_readouts.preplanned_batch_query_args(message or "")
+                    )
+                    if preplanned_query_args is not None:
+                        preplanned_query_call = {
+                            "id": "deterministic-query-batch",
+                            "type": "function",
+                            "function": {
+                                "name": "health_query_batch",
+                                "arguments": json.dumps(
+                                    preplanned_query_args,
+                                    ensure_ascii=False,
+                                ),
+                            },
+                        }
+                        decision_route = "deterministic_batch_query"
+                        logger.info(
+                            "[agent_executor] deterministic batch query decision "
+                            "user=%s query_count=%s",
+                            user_id,
+                            len(preplanned_query_args["queries"]),
+                        )
                 if (
                     round_idx == 0
                     and not health_advice_buffered
@@ -14168,10 +14216,18 @@ class AgentExecutor:
                     and round_idx > 0
                 ):
                     decision_route = "deterministic_simple_diet_fallback_llm"
+                preplanned_tool_calls = (
+                    [preplanned_simple_diet_call]
+                    if preplanned_simple_diet_call is not None
+                    else [preplanned_query_call]
+                    if preplanned_query_call is not None
+                    else None
+                )
+                preplanned_tool_decision = preplanned_tool_calls is not None
                 # 真实思考过程: 本轮 LLM prefill/decide 等待即将开始 (TTFT 主来源)。
                 # synthesis = 前面轮已执行过工具 且 本轮不再带工具 (模型正在写最终答案);
                 # 否则 thinking (还在决策/可能再调工具)。纯附加、fail-soft (dict 构造不会抛)。
-                if preplanned_simple_diet_call is not None:
+                if preplanned_tool_decision:
                     pass
                 elif tool_executed_count > 0 and not round_tools:
                     yield self._status_event("synthesis", round=round_idx + 1)
@@ -14182,7 +14238,7 @@ class AgentExecutor:
                     yield self._status_event("thinking", round=round_idx + 1)
                 # 非流式模型: 多发一条带 detail 的 thinking 状态 (整段生成需等待)。
                 if (
-                    preplanned_simple_diet_call is None
+                    not preplanned_tool_decision
                     and answer_model_non_streaming
                 ):
                     yield self._status_event(
@@ -14249,11 +14305,7 @@ class AgentExecutor:
                     self._call_llm_stream,
                     messages,
                     round_tools,
-                    preplanned_tool_calls=(
-                        [preplanned_simple_diet_call]
-                        if preplanned_simple_diet_call is not None
-                        else None
-                    ),
+                    preplanned_tool_calls=preplanned_tool_calls,
                 ):
                     etype = evt.get("type")
                     if etype == "content":
@@ -14412,16 +14464,16 @@ class AgentExecutor:
                 final_finish_reason = stream_finish_reason or final_finish_reason
                 _round_llm_gen_ms = (
                     0
-                    if preplanned_simple_diet_call is not None
+                    if preplanned_tool_decision
                     else int((time.time() - _round_start) * 1000)
                 )
-                if preplanned_simple_diet_call is None:
+                if not preplanned_tool_decision:
                     llm_rounds_ms.append(_round_llm_gen_ms)
                 # 2026-07-01: per-round split — 本轮 LLM 生成耗时 (纯埋点)。tool_exec_ms /
                 # tools 在下面工具执行块填充; 无工具调用的最终答案轮 tool_exec_ms=0。
                 _round_tool_exec_ms = 0
                 _round_tool_names: List[str] = []
-                if model_name is None and preplanned_simple_diet_call is None:
+                if model_name is None and not preplanned_tool_decision:
                     if self._last_provider_model_name:
                         model_name = self._last_provider_model_name
                     else:
@@ -15690,6 +15742,48 @@ class AgentExecutor:
                                 "data": tool_event_data,
                             }
                         if (
+                            answer_evidence_tool_calls
+                            and getattr(
+                                settings,
+                                "answer_evidence_streaming_enabled",
+                                True,
+                            )
+                        ):
+                            try:
+                                from app.services.answer_evidence import (
+                                    answer_evidence_sha256,
+                                    build_answer_evidence,
+                                )
+
+                                streamed_answer_evidence = build_answer_evidence(
+                                    tool_calls=answer_evidence_tool_calls,
+                                )
+                                if streamed_answer_evidence is not None:
+                                    evidence_digest = answer_evidence_sha256(
+                                        streamed_answer_evidence
+                                    )
+                                    if (
+                                        evidence_digest
+                                        and evidence_digest
+                                        != streamed_answer_evidence_digest
+                                    ):
+                                        streamed_answer_evidence_digest = evidence_digest
+                                        _mark_perf_milestone("first_evidence_ms")
+                                        _mark_perf_milestone("first_useful_ms")
+                                        yield {
+                                            "event": "answer_evidence",
+                                            "data": {
+                                                "answer_evidence": streamed_answer_evidence,
+                                            },
+                                        }
+                            except Exception as exc:  # noqa: BLE001 - projection is optional
+                                logger.warning(
+                                    "[agent_executor] streaming answer evidence skipped "
+                                    "user=%s error_type=%s",
+                                    user_id,
+                                    type(exc).__name__,
+                                )
+                        if (
                             not diet_photo_progress_turn
                             and not diet_verified_emitted
                             and func_name == "health_record"
@@ -15903,6 +15997,9 @@ class AgentExecutor:
 
                         deterministic_query_text = query_readouts.deterministic_query_reply(messages)
                         if deterministic_query_text:
+                            if first_token_at is None:
+                                first_token_at = time.time()
+                            _mark_perf_milestone("first_useful_ms")
                             if not health_advice_buffered:
                                 for i in range(0, len(deterministic_query_text), 20):
                                     chunk = deterministic_query_text[i:i + 20]
@@ -15915,6 +16012,10 @@ class AgentExecutor:
                             # 不留工具轮的 'tool_calls' 陈值 (镜像 rank7 passthrough 收尾)。
                             final_finish_reason = "stop"
                             break
+                        if decision_route == "deterministic_batch_query":
+                            decision_route = (
+                                "deterministic_batch_query_fallback_llm"
+                            )
 
                     # 只读收敛护栏: 本轮全是"已跑过"的只读调用(纯空转重发)→ 强制下轮进合成轮,
                     # 停住 loop(_force_no_tools_synthesis 在轮首最先判, 压过 keep_tools_after_synthesis_miss)。

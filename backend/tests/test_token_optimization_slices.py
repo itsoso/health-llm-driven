@@ -104,6 +104,7 @@ def test_fast_read_turn_omits_write_tool():
 
     assert names == FAST_READ_TURN_TOOL_NAMES
     assert "health_record" not in names
+    assert "health_query_batch" in names
 
 
 def test_fast_write_turn_keeps_record_tool():
