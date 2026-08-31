@@ -70,6 +70,16 @@ class _GuardCleanupConfig:
             self.cleanups.pop()()
 
 
+def _start_nested_guard_probe(guard):
+    config = _GuardCleanupConfig()
+    guard.pytest_sessionstart(SimpleNamespace(config=config))
+    # The real tooling runner must reject application modules loaded before its
+    # session. These in-process probes start inside an already collected host
+    # suite, so assertions below measure only events triggered by the probe.
+    guard._active_observed_modules[config].clear()
+    return config
+
+
 def _checker_module():
     spec = importlib.util.spec_from_file_location(
         "agent_skill_governance_checker", CHECKER
@@ -607,9 +617,8 @@ def test_tooling_pytest_guard_fails_closed_when_late_finder_precedes_observer(
 
 def test_tooling_pytest_guard_allows_safe_imports_and_static_source_reads():
     guard = _tooling_pytest_guard_module()
-    config = _GuardCleanupConfig()
+    config = _start_nested_guard_probe(guard)
     app_source = ROOT / "backend" / "app" / "__init__.py"
-    guard.pytest_sessionstart(SimpleNamespace(config=config))
     try:
         assert importlib.import_module("fractions").Fraction(1, 2)
         with pytest.raises(ModuleNotFoundError):
@@ -847,8 +856,7 @@ def test_tooling_pytest_guard_uses_tristate_loader_identity_and_fails_closed(
     assert guard._classify_backend_app_source(safe_source) == guard._PATH_OUTSIDE
     assert guard._classify_backend_app_source(missing_source) == guard._PATH_UNKNOWN
 
-    config = _GuardCleanupConfig()
-    guard.pytest_sessionstart(SimpleNamespace(config=config))
+    config = _start_nested_guard_probe(guard)
     code = compile("VALUE = 1\n", "<unknown-loader-probe>", "exec")
     monkeypatch.setattr(
         guard,
@@ -1485,8 +1493,7 @@ def test_tooling_pytest_guard_fails_closed_when_audit_registration_is_denied(
 
 def test_tooling_pytest_guard_audit_callback_records_internal_errors(monkeypatch):
     guard = _tooling_pytest_guard_module()
-    config = _GuardCleanupConfig()
-    guard.pytest_sessionstart(SimpleNamespace(config=config))
+    config = _start_nested_guard_probe(guard)
 
     def fail_audit_handling(_event, _args):
         raise RuntimeError("audit callback probe")
@@ -1508,8 +1515,7 @@ def test_tooling_pytest_guard_audit_callback_propagates_control_flow(
     error_type,
 ):
     guard = _tooling_pytest_guard_module()
-    config = _GuardCleanupConfig()
-    guard.pytest_sessionstart(SimpleNamespace(config=config))
+    config = _start_nested_guard_probe(guard)
 
     def interrupt_audit_handling(_event, _args):
         raise error_type()
@@ -1952,6 +1958,10 @@ def test_tooling_pytest_guard_leaves_hooks_unchanged_after_sessionstart_error(
     monkeypatch,
 ):
     guard = _tooling_pytest_guard_module()
+    # This probe verifies hook restoration across nested pytest sessions. The
+    # outer shard may already have loaded app modules, which is unrelated to
+    # the lifecycle behavior under test.
+    monkeypatch.setattr(guard, "_observe_current_modules", lambda: None)
     original_import = builtins.__import__
     original_import_module = importlib.import_module
     original_exec_module = importlib.machinery.SourceFileLoader.exec_module

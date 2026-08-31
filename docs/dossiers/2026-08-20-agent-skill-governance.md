@@ -138,11 +138,21 @@
 - 局部仓库任务先 Router，再以 path/entity/flow 零跳查询；全局任务才加载 INDEX 与 4KB bootstrap。
 - 代码派生计数通过 `python3.12 scripts/system_map_context.py --counts` 独立按需读取。
 
+### 2026-08-31 Codex 上下文性能对照
+
+- 对照边界:旧 arm 固定在首个上下文优化提交之前的 `cddafd7a9c7f5e1c384568897c5d3aa5814260af`；新 arm 使用当前候选工作树。两 arm 均直接调用 ChatGPT App bundle 内的 Codex `0.151.0-alpha.7.2`，模型 `gpt-5.6-luna`、low reasoning、read-only、ephemeral、忽略用户配置。
+- 任务:非仓库研发元任务，不调用工具，仅根据启动时已注入的项目指令返回 canonical System Map 源与完整漂移检查命令。两 arm 交错执行，各 5 个 fresh process；期望严格为 `docs/_generated/system-map.json` 与 `./scripts/system-map-check.sh` 两行。
+- 静态上下文: `AGENTS.md`、System Map Skill 与生成 bootstrap 合计从 47,170 bytes / 3,687 words 降至 15,451 bytes / 987 words，分别减少 67.2% / 73.2%。
+- 运行结果:输入 token 中位数从 25,908 降至 20,158（-22.2%）；端到端中位数从 17.377s 降至 15.916s（-8.4%）；严格输出契约从 3/5 提升到 5/5；两 arm 工具调用均为 0。
+- 长尾边界:5 样本观测最大值为 18.613s 与 18.684s，新 arm 未改善；样本量不足以宣称 P95 改善。CLI 仍报告全局 Skill 描述超过上下文预算并被压缩，因此仓库级优化已验证，但全局 Skill 供给仍是独立残余开销。
+- 回归证据:原失败 CI 分片本地原命令重跑为 90、385、663 passed；tooling fast lane 176 passed；Skill governance、System Map、mobile navigation 与 doc drift 全部 PASS。
+
 ## G6 · 验证闸(人在环)
 
 - 技术验收已经证明“单 Router、最多一个 Controller、平台原生 adapter、deferred delegate、overlay 去重”在 fresh Codex 进程生效。
+- 本轮“缩减 AGENTS/System Map 常驻上下文且不损失回答效果”的受控目标已 PASS:新 arm 5/5 严格正确且中位耗时、输入 token 均下降；不把 5 样本扩大解释为所有研发任务或长尾性能结论。
 - 效果验收仍在进行:饮食任务是受污染的 transition observation；下一条真实 Bug 必须在根因调查前注册 `router_v1_prospective`。单样本只报告描述性结果，同 task mode 每 arm 至少 5 个完整样本且 G3–G6/run finished 均闭环后，才进入分层比较；工具永不自动宣称优胜。
-- **裁决:PENDING** —— 不阻塞治理能力投入使用，但阻止“已经提高速度/质量”的结论。
+- **裁决:PENDING（全研发任务）/ PASS（本轮上下文路径目标）** —— 不阻塞治理能力投入使用；允许陈述受控元任务的改善，不允许宣称所有 Bug、feature 或 P95 已提速。
 
 ## S8 · 沉淀
 

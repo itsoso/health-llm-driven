@@ -3164,7 +3164,7 @@ async def test_agent_stream_times_out_slow_fast_path_estimate_and_uses_model_rep
                     "arguments": json.dumps({
                         "record_type": "diet",
                         "data": {
-                            "meal_type": "snack",
+                            "meal_type": "lunch",
                             "food_items": "一个桃子",
                             "calories": 58,
                             "protein": 1.4,

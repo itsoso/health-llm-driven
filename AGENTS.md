@@ -54,7 +54,7 @@
 - 跑测试绝不使用 `| tail`；如需管道必须 `set -o pipefail`，并检查真实退出码。
 - 仅修改 agent-governance、System Map 或 doc-tooling 时，可运行 `uv run --isolated --with-requirements backend/requirements-dev.txt python scripts/run_tooling_pytests.py` 作为 supplemental fast lane；不得作为每个任务的默认入口。该入口跳过 coverage，且不替代常规项目测试、coverage 或 CI Gate。
 - 部署或发布前必须运行项目 CI-mode 集成闸，并核对目标主干对应 revision 的真实 CI 状态；局部测试不能替代。
-- PostgreSQL 是生产和新数据库行为的唯一语义真源；SQLite 只用于快速单测/迁移兼容，不能证明约束、并发、JSONB、时区或方言行为。
+- 生产语义与新数据库行为必须用 PostgreSQL 验证；SQLite 只保留快速单元测试与迁移兼容性验证，不能证明约束、并发、JSONB、时区或方言行为。
 - schema/迁移变化必须选择 `add-managed-migration` overlay，同步 ORM、API/客户端类型、迁移、回滚路径和 PostgreSQL 集成证据。
 - 改接口契约要同步两侧类型并同批验证；不能只验证单端。
 
