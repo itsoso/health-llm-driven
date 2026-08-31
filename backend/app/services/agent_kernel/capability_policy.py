@@ -3452,7 +3452,13 @@ def _health_record_target_status(
         return "unresolved"
     server_authorized = _server_authorized_health_record_fields(args)
     symptom_payload = server_authorized.get("symptom_payload")
-    if requested_type == "symptom" and isinstance(symptom_payload, dict):
+    if requested_type == "symptom":
+        # A symptom write is authorized only by the opaque payload produced
+        # from this turn's verified, first-person text.  Never fall back to the
+        # generic goal/clause matcher: that would re-authorize third-party,
+        # clinician-attributed, or attachment-derived symptom descriptions.
+        if not isinstance(symptom_payload, dict):
+            return "unresolved"
         data = args.get("data") if isinstance(args.get("data"), dict) else {}
         requested_description = _effective_argument_value(
             args,
@@ -3484,6 +3490,26 @@ def _health_record_target_status(
             "target_date": target_date,
             "default_date": default_date,
         }
+        expected_values.update(
+            _deterministic_target_values(snapshot.envelope.text, requested_type)
+        )
+        if expected_values.get("occurred_clock"):
+            target_day = date.fromisoformat(target_date)
+            hour, minute = (
+                int(value)
+                for value in str(expected_values["occurred_clock"]).split(":", 1)
+            )
+            expected_values["canonical_occurred_at"] = (
+                snapshot.context.current_time.replace(
+                    year=target_day.year,
+                    month=target_day.month,
+                    day=target_day.day,
+                    hour=hour,
+                    minute=minute,
+                    second=0,
+                    microsecond=0,
+                ).isoformat()
+            )
         if not _authorization_target_complete(requested_type, expected_values):
             return "unresolved"
         return (

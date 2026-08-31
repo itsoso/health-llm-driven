@@ -46,6 +46,27 @@ def _snapshot(text: str, channel: str = "chat") -> TurnSnapshot:
     )
 
 
+def _server_bound_symptom(
+    snapshot: TurnSnapshot,
+    args: dict,
+) -> tuple[TurnSnapshot, dict]:
+    """Model a symptom request after executor-owned provenance binding."""
+    data = args["data"]
+    bound_args = capability_policy_module.bind_server_authorized_health_record_fields(
+        args,
+        symptom_payload={
+            "body_part": data["body_part"],
+            "description": data["description"],
+        },
+    )
+    goal = compile_goal_spec(
+        envelope=snapshot.envelope,
+        context=snapshot.context,
+        intent=snapshot.intent,
+    )
+    return replace(snapshot, goal=goal), bound_args
+
+
 def _attachment_snapshot(text: str) -> TurnSnapshot:
     context = ExecutionContext.for_test(user_id=1, channel="chat")
     envelope = AgentEnvelope(
@@ -460,8 +481,11 @@ def test_explicit_illness_backfill_binds_the_user_owned_start_date(message):
 def test_direct_write_authorization_allows_only_its_semantic_target(
     message, record_args
 ):
+    snapshot = _snapshot(message)
+    if record_args["record_type"] == "symptom":
+        snapshot, record_args = _server_bound_symptom(snapshot, record_args)
     decision = decide_tool_capability(
-        _snapshot(message),
+        snapshot,
         _request("health_record", record_args),
     )
 
@@ -1325,11 +1349,15 @@ def test_unmentioned_model_severity_is_removed_from_normalized_dispatch(
             "severity": 5,
         }
 
+    snapshot = _snapshot(message)
+    args = {"record_type": record_type, "severity": 5, "data": data}
+    if record_type == "symptom":
+        snapshot, args = _server_bound_symptom(snapshot, args)
     decision = decide_tool_capability(
-        _snapshot(message),
+        snapshot,
         _request(
             "health_record",
-            {"record_type": record_type, "severity": 5, "data": data},
+            args,
         ),
     )
 
@@ -1615,19 +1643,20 @@ def test_date_aliases_canonicalize_to_one_stable_dispatch_payload():
 
 
 def test_date_only_symptom_projects_model_timestamp_to_server_owned_date():
-    decision = decide_tool_capability(
+    snapshot, args = _server_bound_symptom(
         _snapshot("记录昨天头痛"),
-        _request(
-            "health_record",
-            {
-                "record_type": "symptom",
-                "data": {
-                    "body_part": "head",
-                    "description": "头痛",
-                    "occurred_at": "2026-07-16T23:59:59-12:00",
-                },
+        {
+            "record_type": "symptom",
+            "data": {
+                "body_part": "head",
+                "description": "头痛",
+                "occurred_at": "2026-07-16T23:59:59-12:00",
             },
-        ),
+        },
+    )
+    decision = decide_tool_capability(
+        snapshot,
+        _request("health_record", args),
     )
 
     assert decision.action == "allow"
@@ -1639,19 +1668,20 @@ def test_date_only_symptom_projects_model_timestamp_to_server_owned_date():
 
 
 def test_explicit_symptom_clock_is_canonicalized_in_user_timezone():
-    decision = decide_tool_capability(
+    snapshot, args = _server_bound_symptom(
         _snapshot("记录昨天9点头痛"),
-        _request(
-            "health_record",
-            {
-                "record_type": "symptom",
-                "data": {
-                    "body_part": "head",
-                    "description": "头痛",
-                    "occurred_at": "2026-07-16T09:00:00-12:00",
-                },
+        {
+            "record_type": "symptom",
+            "data": {
+                "body_part": "head",
+                "description": "头痛",
+                "occurred_at": "2026-07-16T09:00:00-12:00",
             },
-        ),
+        },
+    )
+    decision = decide_tool_capability(
+        snapshot,
+        _request("health_record", args),
     )
 
     assert decision.action == "allow"
@@ -1840,13 +1870,24 @@ def test_health_authorization_binds_explicit_severity(
     message, matching_args, wrong_severity_args
 ):
     snapshot = _snapshot(message)
+    matching_snapshot = snapshot
+    wrong_snapshot = snapshot
+    if matching_args["record_type"] == "symptom":
+        matching_snapshot, matching_args = _server_bound_symptom(
+            matching_snapshot,
+            matching_args,
+        )
+        wrong_snapshot, wrong_severity_args = _server_bound_symptom(
+            wrong_snapshot,
+            wrong_severity_args,
+        )
 
     matching = decide_tool_capability(
-        snapshot,
+        matching_snapshot,
         _request("health_record", matching_args),
     )
     wrong = decide_tool_capability(
-        snapshot,
+        wrong_snapshot,
         _request("health_record", wrong_severity_args),
     )
 
@@ -2185,8 +2226,11 @@ def test_health_write_projection_drops_model_invented_persisted_fields(
     arguments,
     expected_data,
 ):
+    snapshot = _snapshot(message)
+    if arguments["record_type"] == "symptom":
+        snapshot, arguments = _server_bound_symptom(snapshot, arguments)
     decision = decide_tool_capability(
-        _snapshot(message),
+        snapshot,
         _request("health_record", arguments),
     )
 
@@ -4748,6 +4792,97 @@ def test_location_prefix_does_not_reauthorize_non_current_symptom_write(message)
     )
 
     assert decision.action == "block"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "妈妈眼睛痒",
+        "记录妈妈眼睛痒",
+        "帮我记录妈妈眼睛痒",
+        "主任诊断我嗓子疼",
+        "护士诊断我膝盖疼",
+        "营养师诊断我皮肤发痒",
+        "理疗师诊断我眼睛痒",
+        "健康顾问诊断我嗓子疼",
+    ),
+)
+def test_untrusted_symptom_context_cannot_use_generic_write_fallback(message):
+    snapshot = _snapshot(message)
+    goal = compile_goal_spec(
+        envelope=snapshot.envelope,
+        context=snapshot.context,
+        intent=snapshot.intent,
+    )
+    args = agent_executor_module._recover_clear_symptom_args(
+        "health_record",
+        {
+            "record_type": "symptom",
+            "data": {
+                "body_part": next(
+                    body_part
+                    for body_part, markers in agent_executor_module._SYMPTOM_BODY_PART_MARKERS
+                    if any(marker in message for marker in markers)
+                ),
+                "description": message,
+            },
+        },
+        message,
+    )
+    args = agent_executor_module._apply_server_health_record_provenance(
+        "health_record",
+        args,
+        execution_source="structured_or_recovered",
+        has_attachment=False,
+        diet_photo_auto_save=False,
+        contextual_diet_recorded=False,
+        contextual_supplement_names=(),
+        user_message=message,
+    )
+
+    decision = decide_tool_capability(
+        replace(snapshot, goal=goal),
+        _request("health_record", args),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "health_record_authorization_target_unresolved"
+
+
+def test_attachment_symptom_cannot_bind_server_authorized_payload():
+    message = "截图里眼睛痒"
+    snapshot = _attachment_snapshot(message)
+    goal = compile_goal_spec(
+        envelope=snapshot.envelope,
+        context=snapshot.context,
+        intent=snapshot.intent,
+    )
+    args = agent_executor_module._recover_clear_symptom_args(
+        "health_record",
+        {
+            "record_type": "symptom",
+            "data": {"body_part": "eye", "description": message},
+        },
+        message,
+    )
+    args = agent_executor_module._apply_server_health_record_provenance(
+        "health_record",
+        args,
+        execution_source="structured_or_recovered",
+        has_attachment=True,
+        diet_photo_auto_save=False,
+        contextual_diet_recorded=False,
+        contextual_supplement_names=(),
+        user_message=message,
+    )
+
+    decision = decide_tool_capability(
+        replace(snapshot, goal=goal),
+        _request("health_record", args),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "health_record_authorization_target_unresolved"
 
 
 @pytest.mark.parametrize(

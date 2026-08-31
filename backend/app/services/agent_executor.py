@@ -8613,6 +8613,12 @@ def _apply_server_health_record_provenance(
     bind_server_authorized_health_record_fields(args)
     record_type = _fast_record_kind(args)
     if record_type == "symptom":
+        # Attachment-derived text is not proof of a current first-person
+        # symptom.  OCR/model calls may still propose a record, but only an
+        # attachment-free user utterance can receive the opaque server-bound
+        # symptom authorization consumed by capability policy.
+        if has_attachment:
+            return args
         authorization = _extract_clear_symptom_record(user_message)
         if authorization:
             return bind_server_authorized_health_record_fields(

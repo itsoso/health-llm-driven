@@ -356,11 +356,16 @@ CLAUSE_SAVE_MODAL_TERMS = ("需要", "是否", "要不要")
 # character scan does not reduce "主治医生" to the embedded "医生".
 CLINICIAN_PROVIDER_TERMS = (
     "物理治疗师",
+    "健康顾问",
     "主治医生",
+    "营养师",
     "康复师",
+    "理疗师",
     "医生",
     "医师",
     "大夫",
+    "护士",
+    "主任",
 )
 
 # A clinician-basis surface is not itself a human provider. Keep these aliases

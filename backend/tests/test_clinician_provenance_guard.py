@@ -13,6 +13,11 @@ FIXTURE = (
     / "clinician_provenance_guard_safety_cases.json"
 )
 PROVIDERS = {
+    "健康顾问",
+    "营养师",
+    "理疗师",
+    "护士",
+    "主任",
     "医生",
     "医师",
     "大夫",
@@ -20,6 +25,25 @@ PROVIDERS = {
     "康复师",
     "物理治疗师",
 }
+EXTENDED_PROVIDER_CASES = (
+    ("主任", "主任诊断我嗓子疼"),
+    ("护士", "护士诊断我膝盖疼"),
+    ("营养师", "营养师诊断我皮肤发痒"),
+    ("理疗师", "理疗师诊断我眼睛痒"),
+    ("健康顾问", "健康顾问诊断我嗓子疼"),
+)
+
+
+@pytest.mark.parametrize(
+    ("provider", "text"),
+    EXTENDED_PROVIDER_CASES,
+)
+def test_extended_clinical_roles_are_provenance_not_self_reports(provider, text):
+    decision = _module().classify_clinician_turn(text)
+
+    assert decision.kind == "clinician_context"
+    assert decision.reason_code == "clinician_report"
+    assert _slice(text, decision.provider_start, decision.provider_end) == provider
 
 
 def _module():
@@ -557,6 +581,7 @@ def test_non_writes_never_expose_an_authorizing_command_span():
 
 def test_provider_vocabulary_is_covered_by_handwritten_corpus():
     covered = {case.get("provider") for case in _cases()}
+    covered.update(provider for provider, _ in EXTENDED_PROVIDER_CASES)
 
     assert PROVIDERS <= covered
 
