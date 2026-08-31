@@ -4638,6 +4638,95 @@ def test_server_bound_compound_symptom_authorizes_only_exact_fact_payload():
 
 
 @pytest.mark.parametrize(
+    "model_record_date",
+    ("2026-07-17", "2026-07-16", "2026-07-01"),
+)
+def test_server_bound_compound_historical_symptom_uses_compiled_goal_date(
+    model_record_date,
+):
+    snapshot = _snapshot("记录我昨天头疼，严重吗")
+    goal = compile_goal_spec(
+        envelope=snapshot.envelope,
+        context=snapshot.context,
+        intent=snapshot.intent,
+    )
+    args = capability_policy_module.bind_server_authorized_health_record_fields(
+        {
+            "record_type": "symptom",
+            "data": {
+                "body_part": "head",
+                "description": "我昨天头疼",
+                "record_date": model_record_date,
+            },
+        },
+        symptom_payload={"body_part": "head", "description": "我昨天头疼"},
+    )
+
+    decision = decide_tool_capability(
+        replace(snapshot, goal=goal),
+        _request("health_record", args),
+    )
+
+    assert goal.target_date == "2026-07-16"
+    assert decision.action == "allow"
+    assert decision.normalized_args["data"]["record_date"] == "2026-07-16"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "如果在公司记录我头疼",
+        "等我到公司记录我头疼",
+        "假设在医院记录我头疼",
+        "如果到了学校记录我头疼",
+        "明天到办公室记录我头疼",
+        "以后在健身房记录我头疼",
+        "客服原话在公司记录我头疼",
+        "如果在麦当劳店记录我头疼",
+        "等到麦当劳店记录我头疼",
+        "下周在麦当劳店记录我头疼",
+        "一会儿在麦当劳店记录我头疼",
+        "主任让我在麦当劳店记录我头疼",
+        "妈妈在麦当劳店记录我头疼",
+        "报告里写我在麦当劳店记录我头疼",
+        "附件显示我在麦当劳店记录我头疼",
+    ),
+)
+def test_location_prefix_does_not_reauthorize_non_current_symptom_write(message):
+    snapshot = _snapshot(message)
+    goal = compile_goal_spec(
+        envelope=snapshot.envelope,
+        context=snapshot.context,
+        intent=snapshot.intent,
+    )
+    args = agent_executor_module._recover_clear_symptom_args(
+        "health_record",
+        {
+            "record_type": "symptom",
+            "data": {"body_part": "head", "description": message},
+        },
+        message,
+    )
+    args = agent_executor_module._apply_server_health_record_provenance(
+        "health_record",
+        args,
+        execution_source="structured_or_recovered",
+        has_attachment=False,
+        diet_photo_auto_save=False,
+        contextual_diet_recorded=False,
+        contextual_supplement_names=(),
+        user_message=message,
+    )
+
+    decision = decide_tool_capability(
+        replace(snapshot, goal=goal),
+        _request("health_record", args),
+    )
+
+    assert decision.action == "block"
+
+
+@pytest.mark.parametrize(
     "model_description",
     (
         "我头疼得很厉害",

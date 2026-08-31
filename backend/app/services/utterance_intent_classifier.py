@@ -41,6 +41,7 @@ from app.services.write_intent_scope import (
     direct_remember_fact_values,
     direct_supplement_group_values,
     has_explicit_authorizing_write_request,
+    has_non_authorizing_write_context,
     has_negated_write_scope,
     is_historical_write_reference,
     is_read_action_write_reference,
@@ -811,9 +812,41 @@ def _has_direct_symptom_write_command(text: str) -> bool:
         key=lambda item: (-item[0], item[1]),
     )
     context_prefix = symptom_prefix[:action_start].strip("，,。.!！；;：: ")
-    if not context_prefix.endswith(
-        ("店", "餐厅", "家里", "家中", "公司", "办公室", "学校", "路上", "车上", "医院", "健身房")
+    if has_non_authorizing_write_context(text):
+        return False
+    current_location = context_prefix
+    for prefix in (
+        "我现在在",
+        "我正在",
+        "我刚才在",
+        "我刚刚在",
+        "我在",
+        "现在在",
+        "正在",
+        "刚才在",
+        "刚刚在",
+        "在",
+        "于",
     ):
+        if current_location.startswith(prefix):
+            current_location = current_location[len(prefix) :]
+            break
+    fixed_locations = {
+        "家里",
+        "家中",
+        "公司",
+        "办公室",
+        "学校",
+        "路上",
+        "车上",
+        "医院",
+        "健身房",
+    }
+    # Keep the named-venue compatibility surface finite.  This exact phrase is
+    # a known production transcription/context-bleed shape; accepting arbitrary
+    # text that merely ends in ``店`` would turn provenance into authority.
+    recognized_named_venue = current_location in {"麦当劳店", "麦当劳餐厅"}
+    if current_location not in fixed_locations and not recognized_named_venue:
         return False
     return has_explicit_authorizing_write_request(symptom_prefix[action_start:])
 

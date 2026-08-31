@@ -3465,10 +3465,17 @@ def _health_record_target_status(
         ):
             return "mismatch"
         default_date = snapshot.context.current_time.date().isoformat()
+        goal_is_symptom_create = (
+            snapshot.goal is not None
+            and snapshot.goal.domain == "symptom"
+            and snapshot.goal.operation == "create"
+            and snapshot.intent.domain == "symptom"
+            and snapshot.intent.operation == "create"
+            and snapshot.intent.is_write
+        )
         target_date = (
             str(snapshot.goal.target_date or "").strip()
-            if snapshot.goal is not None
-            and snapshot.goal.target_record_type == "symptom"
+            if goal_is_symptom_create
             else ""
         ) or default_date
         expected_values = {

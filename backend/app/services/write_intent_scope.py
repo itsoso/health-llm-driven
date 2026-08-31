@@ -2107,6 +2107,50 @@ def _helper_owner_is_current_user(before_action: str) -> bool:
     return False
 
 
+def has_non_authorizing_write_context(value: str) -> bool:
+    """Reject context that cannot grant a current health-record write.
+
+    This is the shared fail-closed half of the write-authorization contract.
+    Callers with a narrow positive grammar (for example a current-location
+    adjunct before ``记录``) must apply these provenance, ownership, temporal,
+    question, and revocation guards before accepting that grammar.
+    """
+    context = _last_write_action_context(value)
+    if context is None:
+        return True
+    normalized = normalize_write_scope_text(value)
+    contrast_segments = tuple(
+        segment for segment in _CONTRAST_SCOPE_RE.split(normalized) if segment
+    )
+    governing_segment = contrast_segments[-1] if contrast_segments else context[0]
+    before_action = context[0][: context[2]]
+    future_or_deferred_prefix = re.search(
+        r"(?:明天|后天|大后天|下周|下个月|以后|未来|稍后|一会儿|回头|等到|待到)",
+        before_action,
+    )
+    return bool(
+        _DEFERRED_CONDITION_PREFIX_RE.search(normalized)
+        or future_or_deferred_prefix
+        or _THIRD_PARTY_WRITE_SUBJECT_RE.search(normalized)
+        or _has_untrusted_colon_command(normalized)
+        or _segment_has_untrusted_provenance_or_owner(governing_segment)
+        or any(
+            _is_post_attributed_to_non_current_owner(clause)
+            for clause in split_write_clauses(governing_segment)
+        )
+        or (
+            _HYPOTHETICAL_PREFIX_RE.search(normalized)
+            and not _POLITE_CONDITIONAL_PREFIX_RE.search(normalized)
+        )
+        or has_negated_write_scope(value)
+        or is_write_capability_question(value)
+        or is_historical_write_reference(value)
+        or is_read_action_write_reference(value)
+        or is_write_result_check(value)
+        or is_reported_write_reference(value)
+    )
+
+
 def has_explicit_authorizing_write_request(value: str) -> bool:
     """Require a positive, direct speech act before authorizing health writes.
 
