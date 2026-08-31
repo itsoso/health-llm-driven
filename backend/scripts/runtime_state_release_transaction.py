@@ -58,7 +58,7 @@ BACKEND_EXEC_START_PATH = "/opt/health-app/backend/venv/bin/uvicorn"
 BACKEND_EXEC_START_ARGV = (
     f"{BACKEND_EXEC_START_PATH} main:app --fd 3 --workers 1 "
     "--limit-concurrency 100 --proxy-headers "
-    "--forwarded-allow-ips=127.0.0.1"
+    "--forwarded-allow-ips=127.0.0.1 --no-access-log"
 )
 
 

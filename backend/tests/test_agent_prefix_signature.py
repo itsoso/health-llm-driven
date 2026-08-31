@@ -16,6 +16,7 @@ import logging
 
 from app.services.agent_executor import (
     AgentExecutor,
+    _prompt_payload_budget,
     _prompt_prefix_signature,
 )
 
@@ -92,6 +93,36 @@ def test_handles_non_string_content_stably():
     assert _prompt_prefix_signature(msgs)["prefix_hash"] == sig["prefix_hash"]
 
 
+def test_prompt_payload_budget_accounts_for_blocks_without_content():
+    messages = [
+        {"role": "system", "content": "SECRET_SYSTEM"},
+        {"role": "user", "content": "old question"},
+        {"role": "assistant", "content": "old answer"},
+        {"role": "user", "content": "SECRET_CURRENT_TURN"},
+    ]
+    tools = [{
+        "type": "function",
+        "function": {
+            "name": "health_query",
+            "description": "SECRET_TOOL_DESCRIPTION",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }]
+
+    budget = _prompt_payload_budget(messages, tools)
+
+    assert budget["system_chars"] == len("SECRET_SYSTEM")
+    assert budget["turn_chars"] == len("SECRET_CURRENT_TURN")
+    assert budget["history_chars"] == len("old question") + len("old answer")
+    assert budget["tool_count"] == 1
+    assert budget["tool_schema_chars"] > 0
+    assert budget["total_approx_tokens"] >= budget["message_approx_tokens"]
+    rendered = repr(budget)
+    assert "SECRET_SYSTEM" not in rendered
+    assert "SECRET_CURRENT_TURN" not in rendered
+    assert "SECRET_TOOL_DESCRIPTION" not in rendered
+
+
 def test_log_emits_one_line_without_content_leak(db, caplog):
     executor = AgentExecutor(db)
     provider = type("P", (), {"model": "qwen3.6-flash"})()
@@ -99,12 +130,21 @@ def test_log_emits_one_line_without_content_leak(db, caplog):
         {"role": "system", "content": "TOPSECRET_SYSTEM_PROMPT"},
         {"role": "user", "content": "TOPSECRET_USER_MESSAGE"},
     ]
+    tools = [{
+        "type": "function",
+        "function": {
+            "name": "health_query",
+            "description": "TOPSECRET_TOOL_DESCRIPTION",
+        },
+    }]
     with caplog.at_level(logging.INFO, logger="app.services.agent_executor"):
-        executor._log_prompt_prefix_signature(msgs, provider)
+        executor._log_prompt_prefix_signature(msgs, provider, tools)
     lines = [r.getMessage() for r in caplog.records if "llm_prefix" in r.getMessage()]
     assert len(lines) == 1
     msg = lines[0]
     assert "sys_hash=" in msg and "prefix_hash=" in msg and "model=qwen3.6-flash" in msg
+    assert "system_tokens=" in msg and "tool_count=1" in msg and "payload_tokens=" in msg
     # 绝不泄漏 prompt 内容 (只出 hash)。
     assert "TOPSECRET_SYSTEM_PROMPT" not in msg
     assert "TOPSECRET_USER_MESSAGE" not in msg
+    assert "TOPSECRET_TOOL_DESCRIPTION" not in msg

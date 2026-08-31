@@ -12,7 +12,47 @@ from app.services.write_intent_scope import (
     is_write_capability_question,
     is_write_result_check,
     split_write_clauses,
+    explicit_whole_record_delete_targets,
 )
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    (
+        ("删除饮食记录977和979", (("diet", 977), ("diet", 979))),
+        (
+            "我确认要整条删除饮食记录977和979，不是修改内容，是彻底删除这两条饮食记录",
+            (("diet", 977), ("diet", 979)),
+        ),
+        ("把饮食记录718、719、718删掉", (("diet", 718), ("diet", 719))),
+    ),
+)
+def test_explicit_whole_record_delete_targets_accepts_bounded_typed_batch(
+    text: str,
+    expected: tuple[tuple[str, int], ...],
+) -> None:
+    assert explicit_whole_record_delete_targets(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "删掉977和979",
+        "删除记录977和979",
+        "删除饮食记录977到979",
+        "删除所有饮食记录977和979",
+        "删除饮食记录977和饮水记录979",
+        "删除饮水记录718和719",
+        "我确认要整条删除饮食记录977和979，不是修改内容，是彻底删除这两条饮水记录",
+        "删除饮食记录977和979的备注",
+        "删除饮食记录1和2和3和4和5和6",
+        "不要删除饮食记录977和979",
+    ),
+)
+def test_explicit_whole_record_delete_targets_fails_closed_for_unsafe_batch(
+    text: str,
+) -> None:
+    assert explicit_whole_record_delete_targets(text) == ()
 
 
 @pytest.mark.parametrize(

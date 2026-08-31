@@ -13,6 +13,7 @@ from app.services.agent_executor import (
     AgentExecutor,
     _build_deterministic_diet_correction_tool_call,
     _build_deterministic_goal_lookup_tool_call,
+    _build_deterministic_goal_delete_tool_calls,
     _build_goal_verification_tool_call,
     _ground_query_response_date_labels,
     _goal_target_record_ids,
@@ -73,6 +74,21 @@ def _water_delete_goal() -> GoalSpec:
         operation="delete",
         target_record_type="water",
         target_values=(("record_id", "718"),),
+        requires_lookup=True,
+        requires_verification=True,
+        prohibited_operations=("create", "update"),
+        postconditions=("owner_scoped_lookup", "verified_receipt"),
+        evidence=("explicit_current_turn_mutation",),
+    )
+
+
+def _diet_batch_delete_goal() -> GoalSpec:
+    return GoalSpec(
+        kind="health_manage_mutation",
+        domain="diet",
+        operation="delete",
+        target_record_type="diet",
+        target_values=(("record_id", "977"), ("record_id", "979")),
         requires_lookup=True,
         requires_verification=True,
         prohibited_operations=("create", "update"),
@@ -253,6 +269,73 @@ def test_manage_mutation_write_is_not_rewritten_after_owner_lookup():
         _illness_update_goal(),
         lookup_completed=True,
     ) == [call]
+
+
+def test_batch_delete_plan_is_server_owned_after_complete_lookup():
+    calls = _build_deterministic_goal_delete_tool_calls(
+        _diet_batch_delete_goal(),
+        allowed_record_ids={"977", "979"},
+    )
+
+    assert [
+        json.loads(call["function"]["arguments"])
+        for call in calls
+    ] == [
+        {"record_type": "diet", "operation": "delete", "record_id": 977},
+        {"record_type": "diet", "operation": "delete", "record_id": 979},
+    ]
+
+
+def test_batch_delete_goal_replaces_model_subset_with_full_server_plan():
+    model_subset = [{
+        "id": "model-only-first",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps({
+                "record_type": "diet",
+                "operation": "delete",
+                "record_id": 977,
+            }),
+        },
+    }]
+
+    normalized = _normalize_goal_guarded_tool_calls(
+        model_subset,
+        _diet_batch_delete_goal(),
+        lookup_completed=True,
+        allowed_record_ids={"977", "979"},
+    )
+
+    assert [
+        json.loads(call["function"]["arguments"])["record_id"]
+        for call in normalized
+    ] == [977, 979]
+
+
+def test_batch_delete_plan_is_empty_when_owner_lookup_misses_one_target():
+    assert _build_deterministic_goal_delete_tool_calls(
+        _diet_batch_delete_goal(),
+        allowed_record_ids={"977"},
+    ) == []
+
+
+def test_batch_delete_resolution_requires_every_exact_id():
+    result = json.dumps([{"id": 977}, {"id": 979}, {"id": 981}])
+
+    assert _goal_target_record_ids(_diet_batch_delete_goal(), result) == {
+        "977",
+        "979",
+    }
+
+
+def test_batch_delete_resolution_rejects_partial_owner_lookup():
+    result = json.dumps([{"id": 977}, {"id": 981}])
+
+    assert _goal_target_record_ids(_diet_batch_delete_goal(), result) == set()
+    prompt = _goal_lookup_resolution_prompt(_diet_batch_delete_goal(), result)
+    assert "未找到记录 #979" in prompt
+    assert "禁止继续删除或宣称完成" in prompt
 
 
 def test_recalculate_goal_never_allows_model_to_create_duplicate_diet_record():

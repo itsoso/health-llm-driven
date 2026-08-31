@@ -16,9 +16,172 @@ import pytest
 
 from app.services.agent_executor import (
     AgentExecutor,
+    _phase_one_acknowledgement,
     _tool_progress_label,
     _TOOL_PROGRESS_FALLBACK,
 )
+
+
+@pytest.mark.parametrize(
+    "message,expected",
+    [
+        (
+            "昨晚睡得怎样，今天是否适合锻炼？",
+            "我先读取睡眠和恢复数据，再判断今天适合的运动强度。",
+        ),
+        (
+            "结合我的用药和肝功能判断今天能否锻炼",
+            "我先核对用药和检查信息，再按安全边界给出判断。",
+        ),
+        (
+            "记录午餐吃了牛肉面",
+            "我先核对餐食和份量，再给出可确认的营养结果。",
+        ),
+        (
+            "删除刚才错误的两餐",
+            "我先核对要处理的记录，确认目标后再执行。",
+        ),
+        (
+            "记录今天运动30分钟",
+            "收到，我先核对记录内容，确认后写入。",
+        ),
+        (
+            "记录今天锻炼了半小时",
+            "收到，我先核对记录内容，确认后写入。",
+        ),
+        (
+            "记录睡眠7小时",
+            "收到，我先核对记录内容，确认后写入。",
+        ),
+        (
+            "这个能多吃一颗吗",
+            "我先核对用药和剂量信息，再按安全边界处理。",
+        ),
+        (
+            "心跳突然很乱还能运动吗",
+            "我先核对你描述的症状和风险信号，再给出安全建议。",
+        ),
+        (
+            "胸口像有人坐着还能跑步吗",
+            "我先核对你描述的症状和风险信号，再给出安全建议。",
+        ),
+        (
+            "吸不进气还能训练吗",
+            "我先核对你描述的症状和风险信号，再给出安全建议。",
+        ),
+        (
+            "一侧胳膊抬不起来",
+            "我先核对你描述的症状和风险信号，再给出安全建议。",
+        ),
+        (
+            "记录午餐吃了富含维生素C的橙子",
+            "我先核对餐食和份量，再给出可确认的营养结果。",
+        ),
+        (
+            "记录午餐吃了药膳鸡汤",
+            "我先核对餐食和份量，再给出可确认的营养结果。",
+        ),
+        (
+            "早餐吃了两片面包",
+            "我先核对餐食和份量，再给出可确认的营养结果。",
+        ),
+        (
+            "阿司匹林怎么吃",
+            "我先核对用药和剂量信息，再按安全边界处理。",
+        ),
+        (
+            "布洛芬和阿司匹林能一起吃吗",
+            "我先核对用药和剂量信息，再按安全边界处理。",
+        ),
+        (
+            "记录我吃了它",
+            "我先核对用药和剂量信息，再按安全边界处理。",
+        ),
+        (
+            "记录吸入了两揿哮喘气雾剂",
+            "我先核对用药和剂量信息，再按安全边界处理。",
+        ),
+        (
+            "记录吃了矿物质一粒",
+            "我先核对用药和剂量信息，再按安全边界处理。",
+        ),
+        (
+            "记录吃了富含维生素C一粒",
+            "我先核对用药和剂量信息，再按安全边界处理。",
+        ),
+        (
+            "记录吃了高血糖指数一片",
+            "我先核对用药和剂量信息，再按安全边界处理。",
+        ),
+        (
+            "午餐吃了一粒矿物质补充剂和一个苹果",
+            "我先核对用药和剂量信息，再按安全边界处理。",
+        ),
+        (
+            "午餐吃了一粒钙片和一个苹果",
+            "我先核对用药和剂量信息，再按安全边界处理。",
+        ),
+        (
+            "午餐吃了维生素C一粒和橙子",
+            "我先核对用药和剂量信息，再按安全边界处理。",
+        ),
+        (
+            "记录用了鼻喷剂两下",
+            "我先核对用药和剂量信息，再按安全边界处理。",
+        ),
+        (
+            "记录用了气雾剂两下",
+            "我先核对用药和剂量信息，再按安全边界处理。",
+        ),
+        (
+            "记录喷了两下哮喘喷雾",
+            "我先核对用药和剂量信息，再按安全边界处理。",
+        ),
+        (
+            "记录用了哮喘吸入器两下",
+            "我先核对用药和剂量信息，再按安全边界处理。",
+        ),
+        (
+            "午餐吃了一粒维C和一个苹果",
+            "我先核对用药和剂量信息，再按安全边界处理。",
+        ),
+        (
+            "记录用了吸入器两下",
+            "我先核对用药和剂量信息，再按安全边界处理。",
+        ),
+        (
+            "吃了药膳鸡汤",
+            "我先核对餐食和份量，再给出可确认的营养结果。",
+        ),
+        (
+            "那颗苹果还能吃吗",
+            "我先核对餐食和份量，再给出可确认的营养结果。",
+        ),
+        (
+            "继续用这个训练计划吗",
+            "我先读取睡眠和恢复数据，再判断今天适合的运动强度。",
+        ),
+        (
+            "这个贴纸怎么贴",
+            "收到，我先梳理这个问题，再给你完整结果。",
+        ),
+        (
+            "这个喷壶怎么喷",
+            "收到，我先梳理这个问题，再给你完整结果。",
+        ),
+        (
+            "这个面膜怎么贴",
+            "收到，我先梳理这个问题，再给你完整结果。",
+        ),
+    ],
+)
+def test_phase_one_acknowledgement_is_specific_without_health_claims(
+    message, expected
+):
+    assert _phase_one_acknowledgement(
+        message,
+        has_attachments=False,
+    ) == expected
 
 
 # ──── tool → progress label map ────
@@ -125,6 +288,60 @@ async def test_accepted_is_first_event_plain_turn(db, auth_user_and_headers, mon
     assert first == {"type": "status", "stage": "accepted"}
     # 且 accepted 恰好出现一次。
     assert sum(1 for e in events if e.get("type") == "status" and e.get("stage") == "accepted") == 1
+
+
+@pytest.mark.asyncio
+async def test_staged_response_on_adds_immediate_ack_label(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.staged_response_mode", "on"
+    )
+
+    async def fake_stream(messages, round_tools):
+        yield {"type": "content", "text": "结论"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
+    events = await _run(
+        executor,
+        "昨晚睡得怎样，今天是否适合锻炼？",
+        user_id=user.id,
+    )
+
+    assert events[0] == {
+        "type": "status",
+        "stage": "accepted",
+        "label": "我先读取睡眠和恢复数据，再判断今天适合的运动强度。",
+    }
+
+
+@pytest.mark.asyncio
+async def test_staged_response_shadow_keeps_user_visible_event_unchanged(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.staged_response_mode", "shadow"
+    )
+
+    async def fake_stream(messages, round_tools):
+        yield {"type": "content", "text": "结论"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
+    events = await _run(
+        executor,
+        "昨晚睡得怎样，今天是否适合锻炼？",
+        user_id=user.id,
+    )
+
+    assert events[0] == {"type": "status", "stage": "accepted"}
 
 
 @pytest.mark.asyncio

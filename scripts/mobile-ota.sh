@@ -16,6 +16,7 @@ set -euo pipefail
 CHANNEL="${1:-production}"
 MESSAGE="${2:-$(git log -1 --pretty=format:'%s')}"
 ENVIRONMENT="${CHANNEL}"
+EAS_CLI_PACKAGE="eas-cli@22.0.0"
 
 case "${CHANNEL}" in
   rokid-production)
@@ -239,7 +240,7 @@ run_update_attempt() {
       --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" \
       --input-dir "${input_dir}" --skip-bundler 2>&1 | tee "${UPDATE_LOG}"
   else
-    CI=1 npx eas-cli update --channel "${CHANNEL}" \
+    CI=1 npx --yes "${EAS_CLI_PACKAGE}" update --channel "${CHANNEL}" \
       --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" \
       --input-dir "${input_dir}" --skip-bundler 2>&1 | tee "${UPDATE_LOG}"
   fi

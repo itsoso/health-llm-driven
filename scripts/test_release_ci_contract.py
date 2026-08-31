@@ -31,6 +31,35 @@ def _run_bodies(job: dict) -> str:
     )
 
 
+def test_ci_first_party_javascript_actions_use_node24_runtimes():
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    expected_versions = {
+        "actions/checkout": "v5",
+        "actions/setup-python": "v6",
+        "actions/setup-node": "v5",
+        "actions/upload-artifact": "v6",
+    }
+    observed_versions = {action: set() for action in expected_versions}
+
+    for job in workflow["jobs"].values():
+        for step in job.get("steps", []):
+            uses = str(step.get("uses") or "")
+            action, separator, version = uses.partition("@")
+            if separator and action in observed_versions:
+                observed_versions[action].add(version)
+
+    assert observed_versions == {
+        action: {version} for action, version in expected_versions.items()
+    }
+
+    type_drift_node = next(
+        step
+        for step in workflow["jobs"]["type-drift"]["steps"]
+        if str(step.get("uses") or "").startswith("actions/setup-node@")
+    )
+    assert type_drift_node["with"]["package-manager-cache"] is False
+
+
 def test_ci_blocks_on_release_invariants_and_exercises_macos_bash3():
     workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
     jobs = workflow["jobs"]

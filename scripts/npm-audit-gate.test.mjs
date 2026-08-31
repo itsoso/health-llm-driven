@@ -50,7 +50,7 @@ test("accepts a transitive chain rooted only in an active exception", () => {
 
   assert.deepEqual(
     evaluateAuditReport(report, allowedPolicy, new Date("2026-07-25T00:00:00Z")),
-    { allowed: ["brace-expansion", "glob"], blocked: [] },
+    { allowed: ["brace-expansion", "glob"], blocked: [], warnings: [] },
   );
 });
 
@@ -82,8 +82,36 @@ test("accepts an excepted advisory reached through a cyclic dependency graph", (
 
   assert.deepEqual(
     evaluateAuditReport(report, allowedPolicy, new Date("2026-07-25T00:00:00Z")),
-    { allowed: ["brace-expansion", "glob", "minimatch"], blocked: [] },
+    { allowed: ["brace-expansion", "glob", "minimatch"], blocked: [], warnings: [] },
   );
+});
+
+test("warns when an active exception expires within seven days", () => {
+  const report = reportWith({
+    "brace-expansion": {
+      name: "brace-expansion",
+      severity: "high",
+      via: [
+        {
+          source: 1124334,
+          name: "brace-expansion",
+          url: "https://github.com/advisories/GHSA-mh99-v99m-4gvg",
+          severity: "high",
+        },
+      ],
+    },
+  });
+
+  const result = evaluateAuditReport(
+    report,
+    allowedPolicy,
+    new Date("2026-08-09T00:00:00Z"),
+  );
+
+  assert.deepEqual(result.blocked, []);
+  assert.deepEqual(result.warnings, [
+    "GHSA-mh99-v99m-4gvg (brace-expansion) expires on 2026-08-15",
+  ]);
 });
 
 test("blocks an unknown high severity advisory", () => {

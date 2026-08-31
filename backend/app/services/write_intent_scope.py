@@ -637,31 +637,57 @@ _EXPLICIT_DELETE_RECORD_TYPE_PATTERN = "|".join(
         key=lambda value: (-len(value), value),
     )
 )
-_EXPLICIT_DELETE_TARGET_PATTERN = (
-    rf"(?:我的|本人)?(?:整条|整项|整份)?"
-    rf"(?:{_EXPLICIT_DELETE_RECORD_TYPE_PATTERN})(?:记录|条目)?"
-    rf"(?:ID|编号|#|第)?[：:=（(]?\d+[）)]?(?:号|条|项)?"
+_MAX_EXPLICIT_WHOLE_RECORD_DELETE_TARGETS = 5
+_EXPLICIT_BATCH_DELETE_RECORD_TYPES = frozenset({"diet"})
+_EXPLICIT_DELETE_ID_LIST_PATTERN = (
+    r"(?:ID|编号|#|第)?[：:=（(]?\d+[）)]?(?:号|条|项)?"
+    r"(?:(?:和|与|及|、|,)(?:记录|条目)?"
+    r"(?:ID|编号|#|第)?[：:=（(]?\d+[）)]?(?:号|条|项)?)*"
 )
-_EXPLICIT_DELETE_TARGET_RE = re.compile(
+_EXPLICIT_DELETE_TYPED_ID_LIST_PATTERN = (
     rf"(?:我的|本人)?(?:整条|整项|整份)?"
     rf"(?P<record_type>{_EXPLICIT_DELETE_RECORD_TYPE_PATTERN})(?:记录|条目)?"
-    rf"(?:ID|编号|#|第)?[：:=（(]?(?P<record_id>\d+)[）)]?(?:号|条|项)?",
-    re.IGNORECASE,
+    rf"(?P<record_ids>{_EXPLICIT_DELETE_ID_LIST_PATTERN})"
 )
-_EXPLICIT_WHOLE_RECORD_DELETE_RE = re.compile(
-    rf"^(?:请你帮我|麻烦你帮我|麻烦帮我|可以帮我|能否帮我|"
-    rf"能不能帮我|请帮我|请你|请您|麻烦你|请帮忙|麻烦帮忙|"
-    rf"请替我|帮我|帮忙|麻烦|能否|能不能|可以|替我|我要|给我|确认|请)?"
-    rf"(?:"
-    rf"(?:彻底)?(?:删除|删掉|删去|删了|移除|清除|清掉|去掉)"
-    rf"{_EXPLICIT_DELETE_TARGET_PATTERN}|"
-    rf"(?:把|将)?{_EXPLICIT_DELETE_TARGET_PATTERN}(?:彻底)?"
-    rf"(?:删除|删掉|删去|删了|移除|清除|清掉|去掉)"
-    rf")(?:一下|下)?(?:吧)?"
+_EXPLICIT_DELETE_REQUEST_PREFIX_PATTERN = (
+    r"(?:请你帮我|麻烦你帮我|麻烦帮我|可以帮我|能否帮我|"
+    r"能不能帮我|请帮我|请你|请您|麻烦你|请帮忙|麻烦帮忙|"
+    r"请替我|帮我|帮忙|麻烦|能否|能不能|可以|替我|我要|给我|"
+    r"我确认要|我确认|确认要|确认|请)?"
+)
+_EXPLICIT_DELETE_REQUEST_SUFFIX_PATTERN = (
+    rf"(?:一下|下)?(?:吧)?"
+    rf"(?:[,，]?不是修改(?:内容)?[,，]?是彻底删除"
+    rf"(?P<count_word>这(?:两|三|四|五)条)"
+    rf"(?P<confirmation_record_type>{_EXPLICIT_DELETE_RECORD_TYPE_PATTERN})"
+    rf"(?:记录|条目)?)?"
     rf"(?:[,，]?(?:谢谢(?:你)?|可以吗|好吗|行吗))?"
-    rf"[。.!！?？]*(?:🩺)?$",
-    re.IGNORECASE,
+    rf"[。.!！?？]*(?:🩺)?"
 )
+_EXPLICIT_WHOLE_RECORD_DELETE_TARGETS_RES = (
+    re.compile(
+        rf"^{_EXPLICIT_DELETE_REQUEST_PREFIX_PATTERN}"
+        rf"(?:整条|整项|整份)?(?:彻底)?"
+        rf"(?:删除|删掉|删去|删了|移除|清除|清掉|去掉)"
+        rf"{_EXPLICIT_DELETE_TYPED_ID_LIST_PATTERN}"
+        rf"{_EXPLICIT_DELETE_REQUEST_SUFFIX_PATTERN}$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"^{_EXPLICIT_DELETE_REQUEST_PREFIX_PATTERN}(?:把|将)?"
+        rf"{_EXPLICIT_DELETE_TYPED_ID_LIST_PATTERN}(?:彻底)?"
+        rf"(?:删除|删掉|删去|删了|移除|清除|清掉|去掉)"
+        rf"{_EXPLICIT_DELETE_REQUEST_SUFFIX_PATTERN}$",
+        re.IGNORECASE,
+    ),
+)
+_EXPLICIT_DELETE_ID_RE = re.compile(r"\d+")
+_EXPLICIT_DELETE_COUNT_WORDS = {
+    "这两条": 2,
+    "这三条": 3,
+    "这四条": 4,
+    "这五条": 5,
+}
 _DIRECT_REMEMBER_AVOID_RE = re.compile(
     r"^(?:请)?(?:帮我)?记住(?:我|我的)?(?P<value>不吃[^，,。.!！；;：:?？]{1,80})$"
 )
@@ -1686,23 +1712,68 @@ def _is_post_attributed_to_non_current_owner(clause: str) -> bool:
     return True
 
 
-def explicit_whole_record_delete_target(value: str) -> tuple[str, int] | None:
-    """Return one exact direct delete target, or fail closed."""
+def explicit_whole_record_delete_targets(
+    value: str,
+) -> tuple[tuple[str, int], ...]:
+    """Return one bounded same-type exact delete set, or fail closed."""
     normalized = "".join(normalize_write_scope_text(value).split()).strip(
         "，,。.!！；;：:?？ "
     )
-    if _EXPLICIT_WHOLE_RECORD_DELETE_RE.fullmatch(normalized) is None:
-        return None
-    target = _EXPLICIT_DELETE_TARGET_RE.search(normalized)
-    if target is None:
-        return None
-    record_type = _EXPLICIT_DELETE_RECORD_TYPE_ALIASES.get(
-        target.group("record_type").casefold()
+    match = next(
+        (
+            candidate
+            for pattern in _EXPLICIT_WHOLE_RECORD_DELETE_TARGETS_RES
+            if (candidate := pattern.fullmatch(normalized)) is not None
+        ),
+        None,
     )
-    record_id = int(target.group("record_id"))
-    if record_type is None or record_id <= 0:
+    if match is None:
+        return ()
+    record_type = _EXPLICIT_DELETE_RECORD_TYPE_ALIASES.get(
+        match.group("record_type").casefold()
+    )
+    if record_type is None:
+        return ()
+    record_ids = tuple(
+        dict.fromkeys(
+            int(item)
+            for item in _EXPLICIT_DELETE_ID_RE.findall(match.group("record_ids"))
+        )
+    )
+    if (
+        not record_ids
+        or len(record_ids) > _MAX_EXPLICIT_WHOLE_RECORD_DELETE_TARGETS
+        or any(record_id <= 0 for record_id in record_ids)
+        or (
+            len(record_ids) > 1
+            and record_type not in _EXPLICIT_BATCH_DELETE_RECORD_TYPES
+        )
+    ):
+        return ()
+    count_word = match.group("count_word")
+    if (
+        count_word is not None
+        and _EXPLICIT_DELETE_COUNT_WORDS.get(count_word) != len(record_ids)
+    ):
+        return ()
+    confirmation_record_type = match.group("confirmation_record_type")
+    if (
+        confirmation_record_type is not None
+        and _EXPLICIT_DELETE_RECORD_TYPE_ALIASES.get(
+            confirmation_record_type.casefold()
+        )
+        != record_type
+    ):
+        return ()
+    return tuple((record_type, record_id) for record_id in record_ids)
+
+
+def explicit_whole_record_delete_target(value: str) -> tuple[str, int] | None:
+    """Return one exact direct delete target, or fail closed."""
+    targets = explicit_whole_record_delete_targets(value)
+    if len(targets) != 1:
         return None
-    return record_type, record_id
+    return targets[0]
 
 
 def has_explicit_authorizing_update_request(value: str) -> bool:

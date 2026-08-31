@@ -16,6 +16,7 @@ from scripts.check_app_store_release_pack import (
     validate_demo_account_live,
     validate_final_release_confirmations,
     validate_final_submission_material_state,
+    validate_medical_citation_review_path,
     validate_app_store_privacy_declaration,
     validate_privacy_policy_copy,
     validate_real_device_evidence,
@@ -117,6 +118,8 @@ def _real_device_evidence(*, build_id: str = "235") -> dict:
             "personal_center_privacy_policy": True,
             "optional_permission_denial_text_chat": True,
             "account_deletion_status": True,
+            "bmi_medical_citations_visible": True,
+            "medical_citation_link_opens_official_source": True,
         },
     }
 
@@ -1089,3 +1092,23 @@ def test_app_review_redlines_allow_current_medical_boundary_disclaimers():
     )
 
     assert failures == []
+
+
+def test_medical_citation_review_path_requires_repro_and_official_links():
+    failures = validate_medical_citation_review_path(
+        "Ask 帮我算我的BMI and inspect 参考来源."
+    )
+
+    assert "国家卫生健康委员会" in "\n".join(failures)
+    assert "https://www.nhc.gov.cn/" in "\n".join(failures)
+    assert "https://www.cdc.gov/bmi/" in "\n".join(failures)
+    assert "做医疗决定前请咨询医生" in "\n".join(failures)
+
+
+def test_medical_citation_review_path_accepts_complete_reviewer_instructions():
+    assert validate_medical_citation_review_path(
+        "帮我算我的BMI；回答下方显示参考来源；国家卫生健康委员会 "
+        "https://www.nhc.gov.cn/example.pdf；CDC "
+        "https://www.cdc.gov/bmi/adult-calculator/bmi-categories.html；"
+        "做医疗决定前请咨询医生。"
+    ) == []

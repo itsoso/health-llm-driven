@@ -5,6 +5,177 @@
 """
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+
+def test_staged_response_ships_off_until_canary_is_authorized():
+    from app.config import Settings
+
+    assert Settings.model_fields["staged_response_mode"].default == "off"
+
+
+@pytest.mark.parametrize(
+    "message,has_attachments,expected",
+    [
+        ("查一下我今天走了多少步", False, "casual"),
+        ("昨晚睡得怎样，今天是否适合锻炼？", False, "balanced"),
+        ("深入分析我的恢复状态", False, "balanced"),
+        ("分析我最近一周的饮食结构", False, "balanced"),
+        ("结合我的用药和肝功能判断今天能否锻炼", False, "high_stakes"),
+        ("胃溃疡应该怎么吃", False, "high_stakes"),
+        ("补剂怎么吃", False, "high_stakes"),
+        ("我膝盖痛今天能运动吗", False, "high_stakes"),
+        ("我运动时心慌气短，今天还能跑吗", False, "high_stakes"),
+        ("吃这个药要注意什么", False, "high_stakes"),
+        ("停用这个药可以吗", False, "high_stakes"),
+        ("把这个药加倍可以吗", False, "high_stakes"),
+        ("孕妇能运动吗", False, "high_stakes"),
+        ("哺乳期能运动吗", False, "high_stakes"),
+        ("排便有鲜血怎么办", False, "high_stakes"),
+        ("我刚才突然看不清", False, "high_stakes"),
+        ("阿司匹林怎么吃", False, "high_stakes"),
+        ("二甲双胍要停吗", False, "high_stakes"),
+        ("保健品可以加倍吗", False, "high_stakes"),
+        ("这个能多吃一颗吗", False, "high_stakes"),
+        ("继续按这个量吃吗", False, "high_stakes"),
+        ("和那个一起吃呢", False, "high_stakes"),
+        ("那今晚还吃吗", False, "high_stakes"),
+        ("那我照旧吃就行？", False, "high_stakes"),
+        ("心跳突然很乱还能运动吗", False, "high_stakes"),
+        ("正在喂奶能跑步吗", False, "high_stakes"),
+        ("胸口像被石头压住，今天还能练吗", False, "high_stakes"),
+        ("吐出来像咖啡渣", False, "high_stakes"),
+        ("大便像柏油一样", False, "high_stakes"),
+        ("喘不上来还能运动吗", False, "high_stakes"),
+        ("心跳漏拍还能跑吗", False, "high_stakes"),
+        ("突然一只手没劲还能走吗", False, "high_stakes"),
+        ("视线突然模糊还能开车吗", False, "high_stakes"),
+        ("心脏像被攥住还能跑吗", False, "high_stakes"),
+        ("喘不过来还能运动吗", False, "high_stakes"),
+        ("透不过气还能训练吗", False, "high_stakes"),
+        ("眼前发黑还能开车吗", False, "high_stakes"),
+        ("说话大舌头", False, "high_stakes"),
+        ("一边脸耷拉了", False, "high_stakes"),
+        ("胸口被压着还能跑吗", False, "high_stakes"),
+        ("心口堵得慌还能练吗", False, "high_stakes"),
+        ("呼吸怎么也吸不进来", False, "high_stakes"),
+        ("吸不进气还能训练吗", False, "high_stakes"),
+        ("胸口像有人坐着还能跑步吗", False, "high_stakes"),
+        ("一侧胳膊抬不起来", False, "high_stakes"),
+        ("左手突然使不上劲", False, "high_stakes"),
+        ("看东西突然糊了", False, "high_stakes"),
+        ("胸口像压了块东西", False, "high_stakes"),
+        ("我现在胸痛而且呼吸困难，怎么办", False, "high_stakes"),
+        ("帮我看看这个", True, "high_stakes"),
+        ("解读这份体检报告", True, "high_stakes"),
+        ("分析这份病理报告", True, "high_stakes"),
+        ("记录照片里的这餐", True, "balanced"),
+        ("记录午餐吃了富含维生素和矿物质的沙拉", False, "casual"),
+        ("记录晚餐吃了高血糖指数的米饭", False, "casual"),
+        ("记录晚餐吃了药膳鸡", False, "casual"),
+        ("午餐吃了富含维生素C的橙子", False, "casual"),
+        ("早餐吃了高血糖指数的白米饭", False, "casual"),
+        ("午餐吃了药膳鸡汤", False, "casual"),
+        ("早餐喝了维生素饮料一瓶", False, "casual"),
+        ("早餐吃了两片面包", False, "casual"),
+        ("我们今天一起运动吗", False, "casual"),
+        ("今晚吃什么", False, "casual"),
+        ("今晚吃了火锅", False, "casual"),
+        ("记录我吃了富含维生素C的橙子", False, "casual"),
+        ("刚吃了维生素C含量高的橙子", False, "casual"),
+        ("喝了一瓶维生素饮料", False, "casual"),
+        ("吃了药膳鸡汤", False, "casual"),
+        ("记录一个富含矿物质的沙拉", False, "casual"),
+        ("继续一起训练吗", False, "casual"),
+        ("这个面包片热量多少", False, "casual"),
+        ("那颗苹果还能吃吗", False, "casual"),
+        ("记录我吃了这个", False, "high_stakes"),
+        ("记录今晚吃了两片", False, "high_stakes"),
+        ("记下吃了那一颗", False, "high_stakes"),
+        ("打卡吃了这个", False, "high_stakes"),
+        ("记录吃了半颗", False, "high_stakes"),
+        ("午餐吃了富含维生素C的橙子和鱼油", False, "high_stakes"),
+        ("记一下吞了两片", False, "high_stakes"),
+        ("记录刚吞了半颗", False, "high_stakes"),
+        ("记录打了一针", False, "high_stakes"),
+        ("记录刚用了两粒", False, "high_stakes"),
+        ("记录我吃了它", False, "high_stakes"),
+        ("记下嚼了半片", False, "high_stakes"),
+        ("饭后吃这个可以吗", False, "high_stakes"),
+        ("记录刚咽了一粒", False, "high_stakes"),
+        ("记录刚滴了两滴", False, "high_stakes"),
+        ("记录吸入了两揿哮喘气雾剂", False, "high_stakes"),
+        ("记录注射了10单位", False, "high_stakes"),
+        ("记录注射了8U", False, "high_stakes"),
+        ("记一下打了0.5ml", False, "high_stakes"),
+        ("记录吃了矿物质一粒", False, "high_stakes"),
+        ("记录吃了富含维生素C一粒", False, "high_stakes"),
+        ("记录吃了高血糖指数一片", False, "high_stakes"),
+        ("午餐吃了一粒矿物质补充剂和一个苹果", False, "high_stakes"),
+        ("午餐吃了一粒钙片和一个苹果", False, "high_stakes"),
+        ("午餐吃了维生素C一粒和橙子", False, "high_stakes"),
+        ("午餐吃了一粒维C和一个苹果", False, "high_stakes"),
+        ("午餐吃了一粒VC和一个苹果", False, "high_stakes"),
+        ("午餐吃了一粒铁片和一个苹果", False, "high_stakes"),
+        ("午餐吃了一粒锌片和一个苹果", False, "high_stakes"),
+        ("午餐吃了一粒镁片和一个苹果", False, "high_stakes"),
+        ("午餐吃了一粒维C配一个苹果", False, "high_stakes"),
+        ("午餐吃了一粒VC搭配一个苹果", False, "high_stakes"),
+        ("午餐吃了一粒铁片与一个苹果", False, "high_stakes"),
+        ("午餐吃了一粒锌片跟一个苹果", False, "high_stakes"),
+        ("午餐吃了一粒镁片加一个苹果", False, "high_stakes"),
+        ("午餐吃了维C一粒苹果一个", False, "high_stakes"),
+        ("午餐维C一粒苹果一个", False, "high_stakes"),
+        ("午餐吃了鸡肉一片和一个苹果", False, "casual"),
+        ("早餐吃了两片全麦面包", False, "casual"),
+        ("午餐吃了苹果和一片面包", False, "casual"),
+        ("记录用了鼻喷剂两下", False, "high_stakes"),
+        ("运动前用了鼻喷剂两下", False, "high_stakes"),
+        ("记录用了气雾剂两下", False, "high_stakes"),
+        ("记录喷了两下哮喘喷雾", False, "high_stakes"),
+        ("记录用了哮喘吸入器两下", False, "high_stakes"),
+        ("记录用了吸入器两下", False, "high_stakes"),
+        ("记录用了定量吸入器两下", False, "high_stakes"),
+        ("记录吸了两口吸入器", False, "high_stakes"),
+        ("记录用了鼻喷两下", False, "high_stakes"),
+        ("继续用这个训练计划吗", False, "casual"),
+        ("这个健身器械怎么用", False, "balanced"),
+        ("这个动作怎么用", False, "balanced"),
+        ("这个贴纸怎么贴", False, "balanced"),
+        ("这个喷壶怎么喷", False, "balanced"),
+        ("这个面膜怎么贴", False, "balanced"),
+        ("记录我吃了富含维生素C的猕猴桃", False, "casual"),
+        ("刚吃了富含矿物质的西兰花", False, "casual"),
+        ("吃了药膳排骨", False, "casual"),
+    ],
+)
+def test_answer_task_tier_is_conservative_and_domain_aware(
+    message, has_attachments, expected
+):
+    from app.services.llm.task_routing import classify_answer_task_tier
+
+    assert classify_answer_task_tier(
+        message,
+        has_attachments=has_attachments,
+    ) == expected
+
+
+def test_user_facing_answer_tiers_never_pick_fast_model():
+    from app.services.llm.model_registry import get_model
+    from app.services.llm.task_routing import (
+        classify_answer_task_tier,
+        pick_model_id_by_tier,
+    )
+
+    for message in (
+        "昨晚睡得怎样，今天是否适合锻炼？",
+        "结合我的用药和肝功能判断今天能否锻炼",
+    ):
+        tier = classify_answer_task_tier(message, has_attachments=False)
+        model_id = pick_model_id_by_tier(tier, only_available=False)
+        assert model_id is not None
+        assert get_model(model_id).speed_tier != "fast"
+
 
 def test_pick_model_id_by_tier():
     from app.services.llm.task_routing import pick_model_id_by_tier
@@ -15,8 +186,9 @@ def test_pick_model_id_by_tier():
     assert hs and casual and bal
     from app.services.llm.model_registry import get_model
     assert get_model(hs).speed_tier == "reasoning"
-    # casual 期望 fast;套餐收敛后注册表无 fast 档 → 按 _SPEED_FALLBACK 降级(balanced/reasoning)
-    assert get_model(casual).speed_tier in ("fast", "balanced", "reasoning")
+    # casual 是用户可见回答档，安全地板禁止落到 fast；简单查/写的
+    # 快路由 AgentExecutor 的可验证确定性路径单独承担。
+    assert get_model(casual).speed_tier in ("balanced", "reasoning")
     assert get_model(bal).speed_tier == "balanced"
     assert pick_model_id_by_tier("nonsense", only_available=False) is None
     assert pick_model_id_by_tier(None) is None

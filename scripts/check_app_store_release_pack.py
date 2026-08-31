@@ -114,6 +114,17 @@ REAL_DEVICE_CHECKS = (
     "personal_center_privacy_policy",
     "optional_permission_denial_text_chat",
     "account_deletion_status",
+    "bmi_medical_citations_visible",
+    "medical_citation_link_opens_official_source",
+)
+
+MEDICAL_CITATION_REVIEW_TERMS = (
+    "帮我算我的BMI",
+    "参考来源",
+    "国家卫生健康委员会",
+    "https://www.nhc.gov.cn/",
+    "https://www.cdc.gov/bmi/",
+    "做医疗决定前请咨询医生",
 )
 CURRENT_AGENT_NATIVE_ENTRY_TERMS = [
     "打开即进入小巴",
@@ -452,6 +463,15 @@ def validate_app_review_redlines(source_texts: Mapping[str, str]) -> list[str]:
                     failures.append(f"{category}: {rel}:{line_no}: {compact[:120]}")
 
     return failures
+
+
+def validate_medical_citation_review_path(review_notes: str) -> list[str]:
+    """Require reviewer-visible reproduction steps for Guideline 1.4.1."""
+    return [
+        f"review notes missing medical citation review term: {term}"
+        for term in MEDICAL_CITATION_REVIEW_TERMS
+        if term not in review_notes
+    ]
 
 
 def _parse_demo_credential_value(review_notes: str, label: str) -> str | None:
@@ -1001,6 +1021,7 @@ def main() -> int:
         )
     )
     failures.extend(validate_app_review_redlines(collect_app_review_redline_sources()))
+    failures.extend(validate_medical_citation_review_path(review_notes))
 
     for url in OFFICIAL_REFERENCE_URLS:
         if url not in submission and url not in read_text("docs/plans/2026-06-28-app-store-mvp-release-batch2-plan.md"):

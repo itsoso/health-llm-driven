@@ -2,7 +2,8 @@
 
 Simple record / simple query turns route to the FASTEST reliable-tool-calling
 model to cut latency; advice/analysis/复盘 turns keep the user's quality model
-(qwen3.7-plus). Explicit UI model choice is always honored (never overridden).
+(qwen3.7-plus). Explicit UI choices are honored except that high-stakes turns
+cannot use a fast answer model.
 
 The chosen fast model must have reliable_tool_calling=True — simple record/query
 turns almost always call a tool (health_record/health_query/health_manage), and a
@@ -610,6 +611,509 @@ async def test_analysis_turn_keeps_quality_model(db, auth_user_and_headers, monk
     assert done["model"] == "qwen3.7-plus"  # answered by the default/quality model
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "expected_tier", "expected_model"),
+    (
+        ("昨晚睡得怎样，今天是否适合锻炼？", "balanced", "qwen3.7-plus"),
+        ("结合我的用药和肝功能判断今天能否锻炼", "high_stakes", "qwen3.7-max"),
+    ),
+)
+async def test_staged_answer_routes_quality_model_by_difficulty(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    message,
+    expected_tier,
+    expected_model,
+):
+    """Staged mode changes the answer model, not merely the status copy."""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    created = []
+    picked = []
+
+    def factory(model_id):
+        created.append(model_id)
+        return _FakeProvider(model_id)
+
+    def pick(tier, only_available=True):  # noqa: ARG001
+        picked.append(tier)
+        return {
+            "balanced": "qwen3.7-plus",
+            "high_stakes": "qwen3.7-max",
+        }[tier]
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.staged_response_mode", "on"
+    )
+    monkeypatch.setattr(
+        "app.services.llm.task_routing.pick_model_id_by_tier", pick
+    )
+    _wire_common(executor, monkeypatch, factory)
+
+    events = await _run(executor, message, user_id=user.id)
+    done = events[-1]["data"]
+
+    assert picked == [expected_tier]
+    assert created == [expected_model]
+    assert executor._request_model_id == expected_model
+    assert done["answer_task_tier"] == expected_tier
+    assert done["staged_response_mode"] == "on"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    (
+        "我运动时心慌气短，今天还能跑吗",
+        "记录我吃了这个",
+        "记录服用了布洛芬200mg",
+        "记录吃了鱼油一粒",
+        "午餐吃了一粒钙片和一个苹果",
+        "记录用了吸入器两下",
+    ),
+)
+async def test_staged_high_stakes_turn_revokes_fast_and_compact_record_routes(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    message,
+):
+    """Representative high-stakes turns must retain the full safety path."""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    created = []
+
+    def factory(model_id):
+        created.append(model_id)
+        return _FakeProvider(model_id)
+
+    _stub_registry_fast(monkeypatch)
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.staged_response_mode", "on"
+    )
+    monkeypatch.setattr(
+        "app.services.llm.task_routing.pick_model_id_by_tier",
+        lambda tier, only_available=True: "qwen3.7-max",
+    )
+    _wire_common(executor, monkeypatch, factory)
+
+    events = await _run(
+        executor,
+        message,
+        user_id=user.id,
+    )
+    done = events[-1]["data"]
+
+    assert created
+    assert set(created) == {"qwen3.7-max"}
+    assert executor._fast_route_simple_turn is False
+    assert executor._prefer_fast_record_model is False
+    assert done["answer_task_tier"] == "high_stakes"
+
+
+@pytest.mark.asyncio
+async def test_staged_high_stakes_overrides_explicit_fast_answer_model(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    """A UI-selected weak model cannot bypass the medical safety floor."""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    created = []
+
+    def factory(model_id):
+        created.append(model_id)
+        return _FakeProvider(model_id)
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.staged_response_mode", "on"
+    )
+    monkeypatch.setattr(
+        "app.services.llm.task_routing.pick_model_id_by_tier",
+        lambda tier, only_available=True: "qwen3.7-max",
+    )
+    _wire_common(executor, monkeypatch, factory)
+
+    events = await _run(
+        executor,
+        "我现在胸痛而且呼吸困难，怎么办",
+        extra_context=json.dumps({"client": "mac", "model_id": "qwen3.6-flash"}),
+        user_id=user.id,
+    )
+    done = events[-1]["data"]
+
+    assert created == ["qwen3.7-max"]
+    assert executor._request_model_id == "qwen3.7-max"
+    assert done["answer_task_tier"] == "high_stakes"
+    assert "staged_high_stakes_overrode_fast_model" in done["fallback_reasons"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录我现在心慌气短，今天还能跑吗",
+        "记录我吃了这个药，顺便说下能不能加倍",
+    ),
+)
+async def test_staged_mixed_write_and_advice_overrides_explicit_fast_model(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    message,
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    created = []
+
+    def factory(model_id):
+        created.append(model_id)
+        return _FakeProvider(model_id)
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.staged_response_mode", "on"
+    )
+    monkeypatch.setattr(
+        "app.services.llm.task_routing.pick_model_id_by_tier",
+        lambda tier, only_available=True: "qwen3.7-max",
+    )
+    _wire_common(executor, monkeypatch, factory)
+
+    events = await _run(
+        executor,
+        message,
+        extra_context=json.dumps({"client": "mac", "model_id": "qwen3.6-flash"}),
+        user_id=user.id,
+    )
+    done = events[-1]["data"]
+
+    assert created == ["qwen3.7-max"]
+    assert done["answer_task_tier"] == "high_stakes"
+
+
+@pytest.mark.asyncio
+async def test_staged_preclassification_failure_blocks_legacy_fast_route(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    """Classifier failure must fall back to the quality provider, never fast."""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    created = []
+    default_provider = _FakeProvider("qwen3.7-plus")
+
+    _stub_registry_fast(monkeypatch)
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.staged_response_mode", "on"
+    )
+    monkeypatch.setattr(
+        "app.services.llm.task_routing.classify_answer_task_tier",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("classifier down")),
+    )
+    _wire_common(
+        executor,
+        monkeypatch,
+        lambda model_id: created.append(model_id) or _FakeProvider(model_id),
+    )
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_user",
+        lambda uid, db, **kwargs: default_provider,
+    )
+
+    events = await _run(
+        executor,
+        "今天走了多少步",
+        extra_context=json.dumps({"client": "mac", "model_id": "qwen3.6-flash"}),
+        user_id=user.id,
+    )
+    done = events[-1]["data"]
+
+    assert created == []
+    assert executor._fast_route_simple_turn is False
+    assert executor._request_model_id is None
+    assert done["model"] == "qwen3.7-plus"
+
+
+@pytest.mark.asyncio
+async def test_staged_picker_failure_clears_explicit_fast_before_fallback(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    default_provider = _FakeProvider("qwen3.7-plus")
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.staged_response_mode", "on"
+    )
+    monkeypatch.setattr(
+        "app.services.llm.task_routing.pick_model_id_by_tier",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("picker down")),
+    )
+    _wire_common(executor, monkeypatch, lambda model_id: _FakeProvider(model_id))
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_user",
+        lambda uid, db, **kwargs: default_provider,
+    )
+
+    events = await _run(
+        executor,
+        "我现在胸痛而且呼吸困难，怎么办",
+        extra_context=json.dumps({"client": "mac", "model_id": "qwen3.6-flash"}),
+        user_id=user.id,
+    )
+    done = events[-1]["data"]
+
+    assert executor._request_model_id is None
+    assert done["model"] == "qwen3.7-plus"
+
+
+@pytest.mark.asyncio
+async def test_staged_model_lookup_failure_revokes_explicit_model_before_picker(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    created = []
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.staged_response_mode", "on"
+    )
+    monkeypatch.setattr(
+        "app.services.llm.model_registry.get_model",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("registry down")),
+    )
+    monkeypatch.setattr(
+        "app.services.llm.task_routing.pick_model_id_by_tier",
+        lambda *_args, **_kwargs: "qwen3.7-max",
+    )
+    _wire_common(
+        executor,
+        monkeypatch,
+        lambda model_id: created.append(model_id) or _FakeProvider(model_id),
+    )
+
+    events = await _run(
+        executor,
+        "我现在胸痛而且呼吸困难，怎么办",
+        extra_context=json.dumps({"client": "mac", "model_id": "qwen3.6-flash"}),
+        user_id=user.id,
+    )
+    done = events[-1]["data"]
+
+    assert created == ["qwen3.7-max"]
+    assert executor._request_model_id == "qwen3.7-max"
+    assert "staged_high_stakes_model_lookup_failed" in done["fallback_reasons"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录我喝了500ml水",
+        "午餐吃了富含维生素C的橙子",
+        "早餐吃了高血糖指数的白米饭",
+        "午餐吃了药膳鸡汤",
+        "早餐喝了维生素饮料一瓶",
+        "记录我吃了富含维生素C的橙子",
+        "刚吃了维生素C含量高的橙子",
+        "喝了一瓶维生素饮料",
+        "吃了药膳鸡汤",
+        "记录一个富含矿物质的沙拉",
+        "记录我吃了富含维生素C的猕猴桃",
+        "刚吃了富含矿物质的西兰花",
+        "吃了药膳排骨",
+    ),
+)
+async def test_staged_mode_keeps_low_risk_record_fast_path(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    message,
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    created = []
+
+    def factory(model_id):
+        created.append(model_id)
+        return _FakeProvider(model_id)
+
+    _stub_registry_fast(monkeypatch)
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.staged_response_mode", "on"
+    )
+    monkeypatch.setattr(
+        "app.services.llm.task_routing.pick_model_id_by_tier",
+        lambda tier, only_available=True: "qwen3.7-plus",
+    )
+    _wire_common(executor, monkeypatch, factory)
+
+    events = await _run(executor, message, user_id=user.id)
+    done = events[-1]["data"]
+
+    assert created
+    assert set(created) == {_FAST_ID}
+    assert executor._fast_route_simple_turn is True
+    assert done["answer_task_tier"] == "casual"
+
+
+@pytest.mark.asyncio
+async def test_staged_answer_shadow_observes_without_changing_model(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    default_provider = _FakeProvider("qwen3.7-plus")
+    picked = []
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.staged_response_mode", "shadow"
+    )
+    monkeypatch.setattr(
+        "app.services.llm.task_routing.pick_model_id_by_tier",
+        lambda tier, only_available=True: picked.append(tier) or "qwen3.7-max",
+    )
+    _wire_common(executor, monkeypatch, lambda model_id: _FakeProvider(model_id))
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_user",
+        lambda uid, db, **kwargs: default_provider,
+    )
+
+    events = await _run(
+        executor,
+        "结合我的用药和肝功能判断今天能否锻炼",
+        user_id=user.id,
+    )
+    done = events[-1]["data"]
+
+    assert picked == ["high_stakes"]
+    assert executor._request_model_id is None
+    assert done["model"] == "qwen3.7-plus"
+    assert done["answer_task_tier"] == "high_stakes"
+    assert done["staged_response_mode"] == "shadow"
+
+
+def test_staged_answer_deep_analysis_escalates_only_auto_selected_model(
+    db,
+    monkeypatch,
+):
+    executor = AgentExecutor(db)
+    executor._staged_response_mode = "on"
+    executor._staged_answer_task_tier = "balanced"
+    executor._staged_answer_model_selected = True
+    executor._request_model_id = "qwen3.7-plus"
+    executor._turn_invoked_deep_analysis = True
+    picked = []
+
+    monkeypatch.setattr(
+        "app.services.llm.task_routing.pick_model_id_by_tier",
+        lambda tier, only_available=True: picked.append(tier) or "qwen3.7-max",
+    )
+
+    executor._maybe_escalate_staged_answer_model()
+
+    assert picked == ["high_stakes"]
+    assert executor._request_model_id == "qwen3.7-max"
+    assert executor._staged_answer_task_tier == "high_stakes"
+
+    # A user-selected model has no auto-selection ownership and must stay put.
+    executor._staged_answer_model_selected = False
+    executor._request_model_id = "claude-opus-4.7"
+    picked.clear()
+    executor._maybe_escalate_staged_answer_model()
+    assert picked == []
+    assert executor._request_model_id == "claude-opus-4.7"
+
+
+@pytest.mark.asyncio
+async def test_staged_answer_escalates_before_post_analysis_synthesis(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    """A balanced tool round may discover complexity; its final prose uses reasoning."""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    created = []
+
+    class Provider:
+        def __init__(self, model_id):
+            self.model = model_id
+
+        async def chat_stream(self, **kwargs):  # noqa: ARG002
+            if self.model == "qwen3.7-plus":
+                yield {
+                    "type": "tool_calls",
+                    "tool_calls": [{
+                        "id": "analysis-1",
+                        "type": "function",
+                        "function": {
+                            "name": "health_analysis",
+                            "arguments": json.dumps({"analysis_type": "recovery"}),
+                        },
+                    }],
+                }
+                yield {"type": "finish", "finish_reason": "tool_calls"}
+                return
+            yield {"type": "content", "text": "基于分析结果，今天建议降低强度。"}
+            yield {"type": "finish", "finish_reason": "stop"}
+
+    def factory(model_id):
+        created.append(model_id)
+        return Provider(model_id)
+
+    async def execute(tool_name, args_raw, user_token):  # noqa: ARG001
+        assert tool_name == "health_analysis"
+        executor._turn_invoked_deep_analysis = True
+        return json.dumps({"status": "ok", "recovery": "moderate"})
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.staged_response_mode", "on"
+    )
+    monkeypatch.setattr(
+        "app.services.llm.task_routing.pick_model_id_by_tier",
+        lambda tier, only_available=True: {
+            "balanced": "qwen3.7-plus",
+            "high_stakes": "qwen3.7-max",
+        }[tier],
+    )
+    _wire_common(executor, monkeypatch, factory)
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools",
+        lambda subset=None: [{
+            "type": "function",
+            "function": {
+                "name": "health_analysis",
+                "description": "x",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }],
+    )
+    executor._execute_tool = execute
+
+    events = await _run(
+        executor,
+        "深入分析我的恢复状态",
+        user_id=user.id,
+    )
+    done = events[-1]["data"]
+
+    assert created == ["qwen3.7-plus", "qwen3.7-max"]
+    assert done["answer_task_tier"] == "high_stakes"
+    assert done["selected_model"] == "qwen3.7-max"
+    assert "staged_answer_deep_analysis_escalated" in done["fallback_reasons"]
+
+
 CLINICIAN_FALLBACK_NONWRITE_MESSAGES = (
     "医生让我记录每天腰痛情况",
     "医生叫我记录每天腰痛情况",
@@ -1033,6 +1537,90 @@ def test_lite_prompt_is_smaller_than_full(db, auth_user_and_headers):
         f"cut={cut} ({cut / len(full) * 100:.1f}%)"
     )
     assert len(lite) < len(full)
+
+
+def test_domain_prompt_plan_drops_unrelated_analysis_blobs(
+    db, auth_user_and_headers, monkeypatch
+):
+    """Recovery lane keeps shared safety worldview but skips unrelated lab/med/N-of-1 blocks."""
+    from types import SimpleNamespace
+
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.domain_prompt_optimization", True
+    )
+    monkeypatch.setattr(
+        "app.services.gene_rules_registry.get_registry",
+        lambda: SimpleNamespace(system_prompt_section=lambda **_: "GENE_RULES_SENTINEL"),
+    )
+    monkeypatch.setattr(
+        "app.services.originator_recommendations.originator_recs_prompt_blob",
+        lambda *_args, **_kwargs: "ORIGINATOR_SENTINEL",
+    )
+    monkeypatch.setattr(
+        "app.services.liver_health.liver_prompt_blob",
+        lambda *_args, **_kwargs: "LIVER_SENTINEL",
+    )
+    monkeypatch.setattr(
+        "app.services.blood_routine.blood_routine_prompt_blob",
+        lambda *_args, **_kwargs: "CBC_SENTINEL",
+    )
+    monkeypatch.setattr(
+        "app.services.medication_course_service.course_prompt_blob",
+        lambda *_args, **_kwargs: "COURSE_SENTINEL",
+    )
+    monkeypatch.setattr(
+        "app.services.intervention_cycle_service.intervention_proposal_prompt_blob",
+        lambda *_args, **_kwargs: "INTERVENTION_SENTINEL",
+    )
+    monkeypatch.setattr(
+        "app.services.effect_estimator.effect_estimate_prompt_blob",
+        lambda *_args, **_kwargs: "EFFECT_SENTINEL",
+    )
+    monkeypatch.setattr(
+        "app.services.health_worldview.worldview_prompt_blob",
+        lambda **_kwargs: "WORLDVIEW_SENTINEL",
+    )
+
+    prompt = executor._build_system_prompt(
+        user.id,
+        1,
+        "tok",
+        intent_query="昨晚睡得怎样，今天是否适合锻炼？",
+    )
+
+    assert executor._prompt_context_profile == "recovery"
+    assert "WORLDVIEW_SENTINEL" in prompt
+    for unrelated in (
+        "GENE_RULES_SENTINEL",
+        "ORIGINATOR_SENTINEL",
+        "LIVER_SENTINEL",
+        "CBC_SENTINEL",
+        "COURSE_SENTINEL",
+        "INTERVENTION_SENTINEL",
+        "EFFECT_SENTINEL",
+    ):
+        assert unrelated not in prompt
+
+
+def test_high_stakes_domain_prompt_fails_open_to_full_context(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.domain_prompt_optimization", True
+    )
+
+    executor._build_system_prompt(
+        user.id,
+        1,
+        "tok",
+        intent_query="这个药是否适合我",
+    )
+
+    assert executor._prompt_context_profile == "full"
 
 
 @pytest.mark.asyncio

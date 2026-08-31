@@ -716,13 +716,19 @@ class FoodRecognitionService:
                 "foods": []
             }
 
-    def estimate_nutrition_from_text(self, food_description: str) -> Dict[str, Any]:
+    def estimate_nutrition_from_text(
+        self,
+        food_description: str,
+        *,
+        timeout_seconds: Optional[float] = None,
+    ) -> Dict[str, Any]:
         """
         根据文字描述估算营养信息（不使用图片）
         注意：此方法内部使用同步调用，兼容旧接口。
 
         Args:
             food_description: 食物描述文字
+            timeout_seconds: 可选的模型调用硬超时，超时后取消协程
 
         Returns:
             包含营养估算的字典
@@ -774,6 +780,14 @@ class FoodRecognitionService:
             )
             return content
 
+        async def _run_estimate():
+            if timeout_seconds is None or timeout_seconds <= 0:
+                return await _do_estimate()
+            return await asyncio.wait_for(
+                _do_estimate(),
+                timeout=timeout_seconds,
+            )
+
         try:
             # 尝试获取运行中的事件循环
             try:
@@ -785,9 +799,9 @@ class FoodRecognitionService:
                 # 在已有事件循环中，创建新线程执行
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as pool:
-                    content = pool.submit(asyncio.run, _do_estimate()).result()
+                    content = pool.submit(asyncio.run, _run_estimate()).result()
             else:
-                content = asyncio.run(_do_estimate())
+                content = asyncio.run(_run_estimate())
 
             content = content.strip()
             # 提取 JSON
@@ -796,6 +810,14 @@ class FoodRecognitionService:
             result["success"] = True
             return result
 
+        except (asyncio.TimeoutError, TimeoutError):
+            logger.warning("文字营养估算超时")
+            return {
+                "success": False,
+                "error": "营养估算超时，请重试",
+                "foods": [],
+                "timed_out": True,
+            }
         except Exception as e:
             logger.error("文字营养估算失败 error_type=%s", type(e).__name__)
             return {

@@ -1777,6 +1777,56 @@ describe('renderCard 安全降级', () => {
     expect(getByText('营养为估算值，保存前可继续修正')).toBeTruthy();
   });
 
+  it('lets users inspect every recognized diet item before confirming', () => {
+    const element = renderCard({
+      type: 'diet_draft',
+      data: {
+        meal_type: 'lunch',
+        food_items: [
+          '煎三文鱼 1 份',
+          '牛油果 1/4 个',
+          '腰果 10 颗',
+          '黄瓜 1/4 根',
+          '紫甘蓝 少量',
+          '玉米粒 少量',
+          '海带 少量',
+          '萝卜片 少量',
+        ],
+        calories: 615,
+        protein: 35,
+        carbs: 52,
+      },
+    } as any);
+
+    expect(element).not.toBeNull();
+    const { getByText, queryByText } = render(element!);
+
+    expect(getByText('已识别 8 项，可直接调整份量')).toBeTruthy();
+    expect(getByText('查看其余 4 项')).toBeTruthy();
+    expect(queryByText('萝卜片 少量')).toBeNull();
+
+    fireEvent.press(getByText('查看其余 4 项'));
+    expect(getByText('萝卜片 少量')).toBeTruthy();
+    expect(getByText('收起')).toBeTruthy();
+
+    fireEvent.press(getByText('收起'));
+    expect(queryByText('萝卜片 少量')).toBeNull();
+  });
+
+  it('does not show an ingredient disclosure when every item is already visible', () => {
+    const element = renderCard({
+      type: 'diet_draft',
+      data: {
+        meal_type: 'lunch',
+        food_items: ['煎三文鱼 1 份', '牛油果 1/4 个', '腰果 10 颗', '黄瓜 1/4 根'],
+      },
+    } as any);
+
+    expect(element).not.toBeNull();
+    const { queryByText } = render(element!);
+    expect(queryByText(/查看其余/)).toBeNull();
+  });
+
   it('marks incomplete agent diet drafts as pending nutrition backfill', () => {
     const element = renderCard({
       type: 'diet_draft',

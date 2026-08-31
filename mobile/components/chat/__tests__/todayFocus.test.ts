@@ -197,6 +197,24 @@ describe('todayFocus resolver', () => {
     }));
   });
 
+  it('falls back to the medical exam handling page for legacy checkup items', () => {
+    const overdueTimeline = timeline('复查：胃溃疡');
+    overdueTimeline.items[0] = {
+      ...overdueTimeline.items[0],
+      kind: 'checkup',
+      action_kind: 'checkup',
+      status: 'overdue',
+      deep_link: null,
+    };
+
+    const model = buildTodayFocusModel({
+      timeline: overdueTimeline,
+      now: atLocalTime(12, 30),
+    });
+
+    expect(model.contextStrip?.deepLink).toBe('/medical-exams');
+  });
+
   it('prioritizes a high-severity state over a due action', () => {
     const safetyTimeline = timeline('记录体重和腰围');
     safetyTimeline.date = '2026-07-16';

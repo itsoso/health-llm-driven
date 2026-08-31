@@ -33,6 +33,7 @@ export type ClientEventName =
   | 'chat_turn_queued'
   | 'chat_attachment_terminal'
   | 'agent_turn_terminal'
+  | 'agent_turn_milestone'
   | 'voice_input_terminal'
   | 'voice_asr_terminal'
   | 'write_receipt_terminal'
@@ -98,6 +99,17 @@ const CHAT_ATTACHMENT_ERROR_CODES = new Set([
   'draft_hydration_failed',
   'server_not_accepted',
   'send_rejected',
+]);
+const AGENT_TURN_MILESTONE_PHASES = new Set([
+  'local_feedback',
+  'server_accepted',
+  'first_useful',
+  'write_verified',
+]);
+const AGENT_TURN_MILESTONE_ACTION_TYPES = new Set([
+  'generic',
+  'diet_record',
+  'diet_photo',
 ]);
 
 type ReliabilityEventName = keyof typeof RELIABILITY_PHASES;
@@ -311,6 +323,31 @@ export function sanitizeClientEventMeta(
       sanitized.error_code = meta.error_code;
     }
     return sanitized;
+  }
+  if (name === 'agent_turn_milestone') {
+    const phase = meta.phase;
+    const durationMs = meta.duration_ms;
+    const actionType = meta.action_type;
+    const hasImage = meta.has_image;
+    if (
+      typeof phase !== 'string'
+      || !AGENT_TURN_MILESTONE_PHASES.has(phase)
+      || typeof durationMs !== 'number'
+      || !Number.isInteger(durationMs)
+      || durationMs < 0
+      || durationMs > 300_000
+      || typeof actionType !== 'string'
+      || !AGENT_TURN_MILESTONE_ACTION_TYPES.has(actionType)
+      || typeof hasImage !== 'boolean'
+    ) {
+      return {};
+    }
+    return {
+      phase,
+      duration_ms: durationMs,
+      action_type: actionType,
+      has_image: hasImage,
+    };
   }
   if (!isReliabilityEvent(name)) return meta;
 

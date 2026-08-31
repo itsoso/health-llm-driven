@@ -12,6 +12,7 @@ export const ADVANCED_CHAT_MODEL_IDS = [
   'gemini-3.1-pro',
   'gpt-5.5',
   'qwen3.8-max',
+  'qwen3.8-flash',
   'qwen3.7-plus',
   'qwen3.7-max',
   'deepseek-v4-pro',

@@ -1,5 +1,6 @@
 from app.services.agent_turn_recovery import (
     is_data_insufficiency_response,
+    is_internal_process_response,
     is_model_scope_refusal,
     should_buffer_refusal_response,
     should_buffer_recovery_response,
@@ -49,3 +50,21 @@ def test_data_gap_is_recoverable_but_actionable_data_gap_is_not():
 
 def test_data_gap_response_is_buffered_before_recovery():
     assert should_buffer_recovery_response("目前暂无相关记录。") is True
+
+
+def test_internal_process_response_detects_production_style_self_talk():
+    leaked = (
+        "I need to get the actual sleep data for last night. Let me query it properly. "
+        "The sleep query failed due to a window parameter issue. "
+        "I'll try health_query with the sleep dimension."
+    )
+
+    assert is_internal_process_response(leaked) is True
+    assert should_buffer_recovery_response("I need to get the actual sleep data") is True
+
+
+def test_internal_process_response_keeps_normal_user_facing_english():
+    answer = "Your sleep duration was 7 hours. A light workout is reasonable today."
+
+    assert is_internal_process_response(answer) is False
+    assert should_buffer_recovery_response(answer) is False

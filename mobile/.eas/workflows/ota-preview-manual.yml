@@ -1,0 +1,14 @@
+name: Publish iOS OTA preview
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  publish_preview:
+    name: Publish iOS preview update
+    type: update
+    environment: preview
+    params:
+      platform: ios
+      channel: preview
+      message: "manual iOS OTA preview"

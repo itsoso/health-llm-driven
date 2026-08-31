@@ -21,7 +21,6 @@
 - `component.backend-api` --dependsOn--> `resource.llm-provider` (flows=agent-chat; coverage=declaration)
 - `component.backend-api` --dependsOn--> `resource.redis` (flows=agent-chat,safety; coverage=declaration)
 - `component.backend-api` --providesApi--> `api.health-v1` (flows=agenda,agent-chat,device-sync,health-record,safety; coverage=declaration)
-- `component.backend-api` --readsFrom--> `resource.chromadb` (flows=agent-chat; coverage=declaration)
 - `component.backend-api` --writesTo--> `resource.postgresql` (flows=agenda,health-record,safety; coverage=declaration)
 - `component.celery-beat` --publishesTo--> `resource.celery-queue` (flows=background-jobs; coverage=declaration)
 - `component.celery-worker` --consumesFrom--> `resource.celery-queue` (flows=background-jobs; coverage=declaration)

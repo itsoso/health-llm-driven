@@ -89,6 +89,19 @@ export function agentTurnPhaseFromStatus(_stage?: string): AgentTurnPhase {
   return 'running';
 }
 
+export function resolveAgentTurnStatusLabel(
+  currentLabel: string | undefined,
+  nextStage: string | undefined,
+  nextLabel: string | undefined,
+): string | undefined {
+  // `thinking` is a generic heartbeat. Once the server has acknowledged the
+  // concrete request, replacing that acknowledgement with a less informative
+  // label makes the UI appear to regress. Specific progress stages are still
+  // allowed to replace the current label.
+  if (nextStage === 'thinking' && currentLabel?.trim()) return currentLabel;
+  return nextLabel?.trim() ? nextLabel : currentLabel;
+}
+
 export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): AgentTurnState {
   if (event.type === 'reset') return createIdleAgentTurn();
   if (event.type === 'hydrate') return event.snapshot;
@@ -125,7 +138,7 @@ export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): A
         ...state,
         phase: agentTurnPhaseFromStatus(event.stage),
         updatedAt: event.at,
-        label: event.label ?? state.label,
+        label: resolveAgentTurnStatusLabel(state.label, event.stage, event.label),
         recoverable: true,
       };
     case 'tool_started':

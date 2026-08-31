@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from typing import List, Optional
+from typing import List
 
 from app.config import settings
 
@@ -21,6 +21,10 @@ logger = logging.getLogger(__name__)
 
 _ENDPOINT = "iqs.cn-zhangjiakou.aliyuncs.com"
 _client = None  # 进程级单例
+
+
+class RealtimeSearchUnavailable(RuntimeError):
+    """Stable, non-sensitive reason for an unavailable IQS dependency."""
 
 # ── H1: 出口前确定性 PII 脱敏 ────────────────────────────────
 # 仅清洗**明确的直接标识符**(手机号/身份证/邮箱), 绝不动年龄/数值/病名 —— 那些是
@@ -135,12 +139,19 @@ async def fetch_realtime_evidence(
     max_results: int = 6,
     timeout_s: float = 6.0,
     time_range: str = "NoLimit",
+    raise_on_unavailable: bool = False,
 ) -> str:
-    """检索实时证据并返回格式化【实时检索证据】块; 未启用/失败/超时/无结果 → 返回 ""。
+    """检索实时证据并返回格式化【实时检索证据】块。
 
-    永不抛异常 — 调用方可无条件 await 并直接拼进 prompt。
+    默认保持 orchestrator 的 fail-soft 契约：未启用、失败、超时或无结果都返回空串。
+    显式工具调用可用 ``raise_on_unavailable=True`` 区分依赖故障与真实零命中，
+    避免把失效凭证伪装成“没有搜索结果”。
     """
-    if not _enabled() or not (query or "").strip():
+    if not (query or "").strip():
+        return ""
+    if not _enabled():
+        if raise_on_unavailable:
+            raise RealtimeSearchUnavailable("not_configured")
         return ""
     # H1: 出口前确定性 PII 脱敏 —— query 离开本进程到 aliyun IQS 前清洗直接标识符。
     query = _scrub_pii(query)
@@ -150,9 +161,13 @@ async def fetch_realtime_evidence(
         )
     except asyncio.TimeoutError:
         logger.warning(f"[iqs] 检索超时 {timeout_s}s, 降级无证据: {query[:40]}")
+        if raise_on_unavailable:
+            raise RealtimeSearchUnavailable("timeout") from None
         return ""
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[iqs] 检索失败降级: {type(e).__name__}: {str(e)[:160]}")
+        if raise_on_unavailable:
+            raise RealtimeSearchUnavailable("upstream_error") from e
         return ""
     if not items:
         return ""

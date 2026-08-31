@@ -1037,6 +1037,46 @@ def test_v42_explicit_exact_record_mutation_compiles_typed_goal(
     assert ("record_id", record_id) in goal.target_values
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "删除饮食记录977和979",
+        "我确认要整条删除饮食记录977和979，不是修改内容，是彻底删除这两条饮食记录",
+    ),
+)
+def test_explicit_typed_batch_delete_compiles_every_record_id_into_goal(message):
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(
+        user_id=1,
+        channel="mobile",
+        text=message,
+    )
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(envelope=envelope, context=context, intent=intent)
+
+    assert goal.kind == "health_manage_mutation"
+    assert goal.operation == "delete"
+    assert goal.target_record_type == "diet"
+    assert tuple(
+        value for key, value in goal.target_values if key == "record_id"
+    ) == ("977", "979")
+
+
+def test_untyped_batch_delete_does_not_compile_a_mutation_goal():
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(
+        user_id=1,
+        channel="mobile",
+        text="删掉977和979",
+    )
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(envelope=envelope, context=context, intent=intent)
+
+    assert goal.kind != "health_manage_mutation"
+
+
 def test_v42_goal_digest_tracks_transitive_authorization_helper(monkeypatch):
     from app.services.agent_kernel import goal_spec as goal_spec_module
 

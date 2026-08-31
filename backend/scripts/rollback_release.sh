@@ -524,8 +524,12 @@ select_release_env_for_runtime_result "$runtime_state_result"
 assert_release_lock
 
 backend/venv/bin/pip install --require-hashes -r backend/requirements.lock -q
+# Services remain stopped while the old lock is installed. Remove the legacy
+# Chroma runtime before validation so rollback restores every safe target
+# dependency without re-exposing packages that have no patched release.
+backend/venv/bin/python -m pip uninstall --yes chromadb chroma-hnswlib
 backend/venv/bin/python "$LOCKED_REQUIREMENTS_VERIFIER" \
-    backend/requirements.lock
+    --sanitize-forbidden-packages backend/requirements.lock
 backend/venv/bin/python -m pip check
 
 requirements_digest="$(sha256sum backend/requirements.lock | awk '{print $1}')"

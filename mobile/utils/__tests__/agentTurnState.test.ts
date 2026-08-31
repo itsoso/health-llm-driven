@@ -35,6 +35,24 @@ describe('agentTurnState', () => {
     expect(agentTurnPhaseFromStatus(stage)).toBe(expected);
   });
 
+  it('keeps the contextual acknowledgement when a generic thinking heartbeat arrives', () => {
+    const submitted = reduceAgentTurn(createIdleAgentTurn(), {
+      type: 'submit', turnId: 'turn-contextual-status', at: 10, label: '正在提交…',
+    });
+    const accepted = reduceAgentTurn(submitted, {
+      type: 'accepted', at: 20, label: '正在读取昨晚睡眠并评估今日训练…',
+    });
+    const thinking = reduceAgentTurn(accepted, {
+      type: 'status', at: 30, stage: 'thinking', label: '正在思考…',
+    });
+    const synthesis = reduceAgentTurn(thinking, {
+      type: 'status', at: 40, stage: 'synthesis', label: '正在整理回答…',
+    });
+
+    expect(thinking.label).toBe('正在读取昨晚睡眠并评估今日训练…');
+    expect(synthesis.label).toBe('正在整理回答…');
+  });
+
   it('moves a write tool through writing and verification', () => {
     const submitted = reduceAgentTurn(createIdleAgentTurn(), {
       type: 'submit', turnId: 'turn-write', at: 10,

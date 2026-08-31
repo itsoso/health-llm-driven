@@ -34,6 +34,24 @@ def test_test_dependencies_are_separate_from_production():
     assert "pytest==9.1.1" in dev
 
 
+def test_production_dependencies_exclude_unpatched_legacy_chromadb():
+    requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8").lower()
+    lock = (ROOT / "requirements.lock").read_text(encoding="utf-8").lower()
+
+    # CVE-2026-45830/45831/45833 have no patched ChromaDB release. The
+    # Chroma-backed runtime is legacy and disabled by default, so production
+    # must not install the vulnerable package or its server surface.
+    for package_name in ("chromadb", "chroma-hnswlib"):
+        assert not any(
+            line.strip().startswith(f"{package_name}==")
+            for line in requirements.splitlines()
+        )
+        assert not any(
+            line.strip().startswith(f"{package_name}==")
+            for line in lock.splitlines()
+        )
+
+
 def test_production_lock_is_hashed_and_deploy_requires_hashes():
     lock = (ROOT / "requirements.lock").read_text(encoding="utf-8")
     deploy = (ROOT.parent / "deploy.sh").read_text(encoding="utf-8")

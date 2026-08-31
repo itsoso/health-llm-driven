@@ -1,5 +1,7 @@
+import asyncio
 import json
 import logging
+import time
 
 import pytest
 
@@ -14,6 +16,37 @@ from app.config import Settings
 
 def test_default_vision_model_uses_current_fast_food_recognition_model():
     assert Settings.model_fields["llm_vision_model"].default == "qwen3-vl-flash"
+
+
+def test_text_nutrition_estimator_cancels_provider_at_timeout():
+    cancelled = False
+
+    class SlowProvider:
+        async def chat(self, **_kwargs):
+            nonlocal cancelled
+            try:
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                cancelled = True
+                raise
+
+    service = FoodRecognitionService()
+    service._provider = SlowProvider()
+
+    started_at = time.monotonic()
+    result = service.estimate_nutrition_from_text(
+        "一个桃子",
+        timeout_seconds=0.01,
+    )
+
+    assert time.monotonic() - started_at < 1
+    assert cancelled is True
+    assert result == {
+        "success": False,
+        "error": "营养估算超时，请重试",
+        "foods": [],
+        "timed_out": True,
+    }
 
 
 def test_sanitize_food_recognition_rejects_ui_card_copy():

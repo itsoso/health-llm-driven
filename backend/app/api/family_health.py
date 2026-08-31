@@ -4,6 +4,7 @@ import asyncio
 import io
 import json
 import logging
+import math
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from threading import BoundedSemaphore
@@ -50,6 +51,24 @@ _REPORT_JOB_SLOTS = BoundedSemaphore(4)
 
 ImageBase64 = Annotated[str, Field(min_length=1, max_length=_IMAGE_BASE64_MAX_CHARS)]
 PdfBase64 = Annotated[str, Field(min_length=1, max_length=_PDF_BASE64_MAX_CHARS)]
+
+
+def _coerce_optional_finite_float(value) -> Optional[float]:
+    """Return a finite float for numeric LLM output, otherwise ``None``.
+
+    Vision models sometimes preserve report placeholders such as ``-`` or ``—``
+    in numeric reference-bound fields. Those values must not reach PostgreSQL
+    ``DOUBLE PRECISION`` columns.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
 
 
 # ══════════════════════════════════════════════════════════
@@ -905,6 +924,19 @@ async def handle_wechat_message(
 # 辅助函数
 # ══════════════════════════════════════════════════════════
 
+def _mark_report_failed(db: Session, *, report_id: int, user_id: int) -> None:
+    """Recover a failed transaction before persisting the terminal state."""
+    db.rollback()
+    failed_report = db.query(MedicalReport).filter(
+        MedicalReport.id == report_id,
+        MedicalReport.user_id == user_id,
+    ).first()
+    if failed_report:
+        failed_report.status = "failed"
+        failed_report.ai_summary = "AI 提取失败，请重新上传"
+        db.commit()
+
+
 def _process_report_with_slot(
     report_id: int,
     user_id: int,
@@ -1075,6 +1107,9 @@ def _process_report_background(report_id: int, user_id: int, report_date, image_
             for item in extracted_items:
                 if item.get("value") is not None:
                     try:
+                        numeric_value = _coerce_optional_finite_float(item.get("value"))
+                        if numeric_value is None:
+                            continue
                         from app.services.exam_packages import normalize_item_name
                         code, std_name = normalize_item_name(item["name"])
                         indicator = MedicalIndicator(
@@ -1084,10 +1119,14 @@ def _process_report_background(report_id: int, user_id: int, report_date, image_
                             name_en=code if code else None,
                             item_code=code if code else None,
                             category=_categorize_indicator(item["name"]),
-                            value=float(item["value"]),
+                            value=numeric_value,
                             unit=item.get("unit"),
-                            reference_low=item.get("reference_low"),
-                            reference_high=item.get("reference_high"),
+                            reference_low=_coerce_optional_finite_float(
+                                item.get("reference_low")
+                            ),
+                            reference_high=_coerce_optional_finite_float(
+                                item.get("reference_high")
+                            ),
                             is_abnormal=item.get("is_abnormal", False),
                             severity=item.get("severity", "normal"),
                             source="image_ai",
@@ -1122,9 +1161,7 @@ def _process_report_background(report_id: int, user_id: int, report_date, image_
 
         except Exception as e:
             logger.error(f"报告 {report_id} AI 提取失败: {e}", exc_info=True)
-            report.status = "failed"
-            report.ai_summary = f"AI 提取失败: {str(e)}"
-            db.commit()
+            _mark_report_failed(db, report_id=report_id, user_id=user_id)
 
     finally:
         db.close()

@@ -6,7 +6,7 @@
     "mobile_routes": 127,
     "model_files": 116,
     "safety_rules_total": 65,
-    "service_files": 413,
+    "service_files": 414,
     "specialists": 13,
     "twin_partitions": 15,
     "web_pages": 73
@@ -1288,20 +1288,6 @@
       "name": "Celery Queue",
       "source": {
         "path": "backend/app/celery_app.py",
-        "type": "declaration"
-      }
-    },
-    {
-      "coverage": "declaration",
-      "data_classes": [
-        "L2",
-        "L3"
-      ],
-      "id": "resource.chromadb",
-      "kind": "resource",
-      "name": "ChromaDB",
-      "source": {
-        "path": "backend/app/services/",
         "type": "declaration"
       }
     },
@@ -3839,19 +3825,6 @@
       },
       "to": "api.health-v1",
       "type": "providesApi"
-    },
-    {
-      "coverage": "declaration",
-      "flows": [
-        "agent-chat"
-      ],
-      "from": "component.backend-api",
-      "source": {
-        "path": "backend/app/services/",
-        "type": "declaration"
-      },
-      "to": "resource.chromadb",
-      "type": "readsFrom"
     },
     {
       "coverage": "declaration",
