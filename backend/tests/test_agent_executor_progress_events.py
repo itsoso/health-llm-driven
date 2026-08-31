@@ -258,6 +258,9 @@ def _wire_min(executor, monkeypatch):
     monkeypatch.setattr("app.services.agent_executor.settings.llm_provider", "tokenplan")
     monkeypatch.setattr("app.services.agent_executor.settings.agent_base_url", None)
     monkeypatch.setattr("app.services.agent_executor.settings.agent_api_key", None)
+    # Keep legacy-event assertions independent from the developer's local .env;
+    # staged-response tests below opt in explicitly.
+    monkeypatch.setattr("app.services.agent_executor.settings.staged_response_mode", "off")
     monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [{
         "type": "function",
         "function": {"name": "health_query", "description": "x",
@@ -316,6 +319,35 @@ async def test_staged_response_on_adds_immediate_ack_label(
         "type": "status",
         "stage": "accepted",
         "label": "我先读取睡眠和恢复数据，再判断今天适合的运动强度。",
+    }
+
+
+@pytest.mark.asyncio
+async def test_staged_response_plan_request_does_not_promise_a_write(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.staged_response_mode", "on"
+    )
+
+    async def fake_stream(messages, round_tools):
+        yield {"type": "content", "text": "结论"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
+    events = await _run(
+        executor,
+        "帮我制定一个适合久坐上班族的20分钟晚间拉伸计划，说明动作顺序和注意事项。",
+        user_id=user.id,
+    )
+
+    assert events[0] == {
+        "type": "status",
+        "stage": "accepted",
+        "label": "我先拆解目标和约束，再给出可执行的完整方案。",
     }
 
 

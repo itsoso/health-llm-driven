@@ -12,7 +12,7 @@
 import ast
 import asyncio
 import base64
-from dataclasses import replace
+from dataclasses import dataclass, replace
 import hashlib
 import json
 import logging
@@ -495,6 +495,11 @@ ANSWER_MAX_TOKENS = 8000
 # 从不需要 8000, 长尾解码本身就是延迟的一部分 —— 只对 fast-routed turn 收紧到 2000,
 # 其它一切 (建议/分析/复盘/长方案) 仍用 ANSWER_MAX_TOKENS。
 FAST_ROUTE_ANSWER_MAX_TOKENS = 2000
+# Two-stage balanced answers keep enough room for a complete health explanation,
+# while avoiding the 8k-token decode tail reserved for high-stakes/complex turns.
+# This cap is active only when staged routing is on; the legacy/off path keeps
+# the existing quality budget for backwards compatibility.
+BALANCED_ANSWER_MAX_TOKENS = 3000
 CLIENT_TURN_REPLAY_WAIT_SECONDS = 5.0
 INTERRUPTED_COMPLETION_NOTICE = "\n\n[回复因长度限制中断，请让我接着上文继续。]"
 AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"
@@ -8564,6 +8569,228 @@ def _staged_response_mode() -> str:
     return mode if mode in {"shadow", "on"} else "off"
 
 
+@dataclass(frozen=True)
+class RecoveryDataGuardDecision:
+    """Fail-closed routing decision for recovery-based exercise advice.
+
+    Only normalized reason codes leave this guard. Raw wearable/health values
+    stay in the owner-scoped tool result and are never copied into telemetry.
+    """
+
+    status: str
+    reason_codes: tuple[str, ...] = ()
+    model_directive: str = ""
+
+
+_RECOVERY_ADVICE_DATA_MARKERS = (
+    "睡", "睡眠", "睡得", "睡了", "睡不", "失眠", "休息", "hrv", "恢复",
+    "readiness", "训练准备", "身体电量", "疲劳", "乏力", "精神",
+)
+_RECOVERY_ADVICE_EXERCISE_MARKERS = (
+    "运动", "锻炼", "训练", "跑", "练", "hiit", "间歇", "力量", "有氧",
+    "骑行", "游泳", "健身",
+)
+_RECOVERY_ADVICE_DECISION_MARKERS = (
+    "适合", "合适", "能", "能不能", "能否", "可以", "是否", "应该", "建议", "要不要",
+    "该不该", "能练", "能做", "能跑", "判断", "安排", "今天练", "今天跑",
+    "好吗", "好不好", "怎么样", "咋样", "如何", "行不行", "行吗",
+    "会不会", "有问题吗", "有没有问题", "受得了吗", "撑得住吗", "吃得消吗",
+    "安全", "风险", "危险",
+)
+_RECOVERY_RELATIONSHIP_MARKERS = (
+    "为什么", "为何", "原因", "关系", "影响", "联系", "关联", "相关", "机制", "原理",
+)
+_RECOVERY_CURRENT_CONTEXT_MARKERS = (
+    "今天", "今晚", "现在", "本次", "这次", "昨晚", "昨天", "最近", "这两天", "刚才",
+)
+_RECOVERY_QUALITY_HARD_FALLBACK_MODEL_ID = "qwen3.7-max"
+_RECOVERY_GUARD_DIMENSIONS = {
+    "sleep", "hrv", "comprehensive", "body_battery", "stress", "activity",
+}
+_RECOVERY_GUARD_REASON_ORDER = (
+    "missing_core_signal",
+    "stale_signal",
+    "conflicting_signal",
+    "implausible_signal",
+    "read_failed",
+    "guard_unavailable",
+)
+_RECOVERY_GUARD_DIRECTIVE = (
+    "[系统恢复数据安全闸]\n"
+    "当前恢复数据不足或质量异常。必须明确告诉用户数据不足或异常，"
+    "不得把缺失值推断成正常恢复；不得建议高强度、冲刺、间歇、VO2max、"
+    "大重量力量训练或创造个人纪录。若没有急性症状，最多建议轻松步行、"
+    "拉伸或活动度练习；如有明显不适，优先休息并沿用就医红线。"
+)
+
+
+def _is_recovery_exercise_advice_message(message: Optional[str]) -> bool:
+    """Classify a current recovery-based exercise decision request."""
+    normalized = unicodedata.normalize("NFKC", str(message or "")).lower()
+    has_current_context = any(
+        marker in normalized for marker in _RECOVERY_CURRENT_CONTEXT_MARKERS
+    )
+    if (
+        any(marker in normalized for marker in _RECOVERY_RELATIONSHIP_MARKERS)
+        and not has_current_context
+    ):
+        return False
+    has_data = any(marker in normalized for marker in _RECOVERY_ADVICE_DATA_MARKERS)
+    has_exercise = any(
+        marker in normalized for marker in _RECOVERY_ADVICE_EXERCISE_MARKERS
+    )
+    has_decision = any(
+        marker in normalized for marker in _RECOVERY_ADVICE_DECISION_MARKERS
+    )
+    # After excluding context-free causal/relationship questions above, an
+    # explicit question that combines recovery and exercise is itself a
+    # decision request. Chinese users commonly omit both the pronoun and a
+    # fixed modal (for example, "睡得不好，还去健身？").
+    asks_current_question = any(marker in normalized for marker in ("?", "？"))
+    return bool(
+        has_data and has_exercise and (has_decision or asks_current_question)
+    )
+
+
+def _is_recovery_exercise_advice_context(
+    message: Optional[str],
+    *,
+    tool_name: str,
+    args: Mapping[str, Any],
+) -> bool:
+    """Return whether this tool result may drive recovery exercise advice."""
+    if not _is_recovery_exercise_advice_message(message):
+        return False
+    if tool_name in {"health_analysis", "analyze_recovery"}:
+        return True
+    if tool_name == "health_query":
+        return str(args.get("dimension") or "").strip().lower() in _RECOVERY_GUARD_DIMENSIONS
+    if tool_name == "health_query_batch":
+        queries = args.get("queries")
+        if not isinstance(queries, list):
+            return False
+        return any(
+            isinstance(query, Mapping)
+            and str(query.get("dimension") or "").strip().lower()
+            in _RECOVERY_GUARD_DIMENSIONS
+            for query in queries
+        )
+    return False
+
+
+def _contains_recovery_plausibility_warning(value: Any) -> bool:
+    """Find a plausibility warning anywhere in a batch/tool response."""
+    if isinstance(value, Mapping):
+        if value.get("_data_plausibility_warning"):
+            return True
+        return any(
+            _contains_recovery_plausibility_warning(child)
+            for child in value.values()
+        )
+    if isinstance(value, (list, tuple)):
+        return any(_contains_recovery_plausibility_warning(child) for child in value)
+    return False
+
+
+def _contains_recovery_read_failure(value: Any) -> bool:
+    """Find an explicit tool/read failure anywhere in a structured response."""
+    if isinstance(value, Mapping):
+        status = str(value.get("status") or "").strip().lower()
+        if status in {
+            "error", "failed", "failure", "timeout", "unavailable", "unhealthy",
+        }:
+            return True
+        if value.get("error"):
+            return True
+        return any(_contains_recovery_read_failure(child) for child in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_contains_recovery_read_failure(child) for child in value)
+    return False
+
+
+def _evaluate_recovery_data_guard(
+    message: Optional[str],
+    *,
+    tool_name: str,
+    args: Mapping[str, Any],
+    result: str,
+    wearable_snapshot: Optional[Mapping[str, Any]],
+) -> Optional[RecoveryDataGuardDecision]:
+    """Classify recovery data quality before exercise advice is synthesized."""
+    if not _is_recovery_exercise_advice_context(
+        message,
+        tool_name=tool_name,
+        args=args,
+    ):
+        return None
+    if not isinstance(wearable_snapshot, Mapping):
+        return RecoveryDataGuardDecision(
+            status="degraded",
+            reason_codes=("guard_unavailable",),
+            model_directive=_RECOVERY_GUARD_DIRECTIVE,
+        )
+
+    reasons: set[str] = set()
+    metrics = wearable_snapshot.get("metrics")
+    metric_map = metrics if isinstance(metrics, Mapping) else {}
+    has_sleep_signal = any(
+        metric_map.get(name) is not None
+        for name in ("total_sleep_duration", "sleep_score")
+    )
+    has_recovery_signal = any(
+        metric_map.get(name) is not None
+        for name in ("hrv", "training_readiness_score")
+    )
+    if not (has_sleep_signal and has_recovery_signal):
+        reasons.add("missing_core_signal")
+
+    quality_issues = wearable_snapshot.get("data_quality_issues")
+    if isinstance(quality_issues, list):
+        issue_kinds = {
+            str(issue.get("kind") or "").strip().lower()
+            for issue in quality_issues
+            if isinstance(issue, Mapping)
+        }
+        if "stale" in issue_kinds:
+            reasons.add("stale_signal")
+        if "conflict" in issue_kinds:
+            reasons.add("conflicting_signal")
+
+    result_text = str(result or "")
+    parsed_result: Any = None
+    try:
+        parsed_result = json.loads(result_text)
+    except (TypeError, ValueError):
+        parsed_result = None
+    if _contains_recovery_plausibility_warning(parsed_result):
+        reasons.add("implausible_signal")
+
+    normalized_result = unicodedata.normalize("NFKC", result_text).lower()
+    if (
+        _contains_recovery_read_failure(parsed_result)
+        or normalized_result.startswith("error")
+        or '"status":"no_data"' in normalized_result.replace(" ", "")
+        or any(marker in normalized_result for marker in (
+            "没有足够", "未找到可穿戴", "关键指标均为空", "暂无睡眠数据",
+            "wearable service unavailable", "read failed", "query failed",
+            "timeout", "timed out", "读取失败", "查询失败", "暂时不可用",
+            "服务不可用", "请求超时", "连接失败", "上游失败", "超时", "失败",
+        ))
+    ):
+        reasons.add("read_failed")
+
+    ordered_reasons = tuple(
+        reason for reason in _RECOVERY_GUARD_REASON_ORDER if reason in reasons
+    )
+    if not ordered_reasons:
+        return RecoveryDataGuardDecision(status="ok")
+    return RecoveryDataGuardDecision(
+        status="degraded",
+        reason_codes=ordered_reasons,
+        model_directive=_RECOVERY_GUARD_DIRECTIVE,
+    )
+
+
 def _phase_one_acknowledgement(
     message: Optional[str],
     *,
@@ -8600,7 +8827,20 @@ def _phase_one_acknowledgement(
         return "我先核对餐食和份量，再给出可确认的营养结果。"
     if is_implicit_medication_dose_language(lowered):
         return "我先核对用药和剂量信息，再按安全边界处理。"
+    # A request to *draft* a plan is an answer-generation task, not durable
+    # write authority.  The intent classifier intentionally treats verbs such
+    # as "制定" as action-oriented, so keep the acknowledgement honest unless
+    # the user also names an explicit persistence/execution operation.
+    drafts_plan = any(marker in lowered for marker in (
+        "计划", "方案", "动作顺序",
+    ))
+    persists_plan = any(marker in lowered for marker in (
+        "保存", "写入", "添加", "加入", "记下", "记录", "创建提醒",
+        "设置提醒", "同步", "更新", "修改", "删除", "执行这个计划",
+    ))
     intent = classify_agent_utterance(text)
+    if intent.is_write and intent.domain == "plan" and drafts_plan and not persists_plan:
+        return "我先拆解目标和约束，再给出可执行的完整方案。"
     if intent.is_write and intent.requires_reliable_tool_model:
         return "我先核对要处理的记录，确认目标后再执行。"
     if intent.is_write:
@@ -8609,6 +8849,12 @@ def _phase_one_acknowledgement(
         if intent.domain in {"medication", "supplement"}:
             return "我先核对用药和检查信息，再按安全边界给出判断。"
         return "收到，我先核对记录内容，确认后写入。"
+    if any(marker in lowered for marker in (
+        "睡眠", "睡得", "hrv", "恢复", "锻炼", "运动", "训练",
+    )):
+        return "我先读取睡眠和恢复数据，再判断今天适合的运动强度。"
+    if drafts_plan and not persists_plan:
+        return "我先拆解目标和约束，再给出可执行的完整方案。"
     if any(marker in lowered for marker in ("用药", "药物", "服药", "剂量", "疗程")):
         return "我先核对用药和检查信息，再按安全边界给出判断。"
     if any(marker in lowered for marker in (
@@ -8619,10 +8865,6 @@ def _phase_one_acknowledgement(
         marker in lowered for marker in ("饮食", "早餐", "午餐", "晚餐", "这餐", "热量", "蛋白")
     ):
         return "我先核对餐食和份量，再给出可确认的营养结果。"
-    if any(marker in lowered for marker in (
-        "睡眠", "睡得", "hrv", "恢复", "锻炼", "运动", "训练",
-    )):
-        return "我先读取睡眠和恢复数据，再判断今天适合的运动强度。"
     if has_attachments:
         return "我先识别附件里的关键信息，再给你完整结果。"
     if any(marker in lowered for marker in ("搜索", "查找", "医院", "指南", "来源")):
@@ -9736,6 +9978,10 @@ class AgentExecutor:
         self._staged_answer_task_tier: Optional[str] = None
         self._staged_answer_model_selected = False
         self._staged_answer_would_model_id: Optional[str] = None
+        self._recovery_data_guard_decision: Optional[RecoveryDataGuardDecision] = None
+        self._recovery_data_guard_model_escalated = False
+        self._recovery_data_guard_requires_non_fast_model = False
+        self._turn_recovery_wearable_snapshot: Any = _TURN_CARD_UNSET
         self._turn_channel: Optional[str] = None
         self._current_turn_user_message = ""
         self._current_turn_recent_messages: list[dict] = []
@@ -10490,15 +10736,211 @@ class AgentExecutor:
                 exc,
             )
 
+    def _activate_recovery_data_guard(
+        self,
+        decision: Optional[RecoveryDataGuardDecision],
+    ) -> bool:
+        """Escalate degraded recovery advice to the reasoning quality tier."""
+        if decision is None or decision.status != "degraded":
+            return False
+        current = self._recovery_data_guard_decision
+        if current is not None and current.status == "degraded":
+            merged_codes = tuple(
+                reason
+                for reason in _RECOVERY_GUARD_REASON_ORDER
+                if reason in {*current.reason_codes, *decision.reason_codes}
+            )
+            decision = RecoveryDataGuardDecision(
+                status="degraded",
+                reason_codes=merged_codes,
+                model_directive=_RECOVERY_GUARD_DIRECTIVE,
+            )
+        self._recovery_data_guard_decision = decision
+        if self._staged_response_mode != "on":
+            return False
+
+        self._recovery_data_guard_requires_non_fast_model = True
+        self._staged_answer_task_tier = "high_stakes"
+        self._turn_synthesis_skip_thinking = False
+        previous = self._request_model_id
+        selected: Optional[str] = None
+        try:
+            from app.services.llm.task_routing import pick_model_id_by_tier
+
+            selected = pick_model_id_by_tier("high_stakes", only_available=True)
+        except Exception as exc:  # noqa: BLE001 - fail closed to default quality
+            logger.warning(
+                "[agent_executor] recovery data guard model escalation unavailable "
+                "error_type=%s",
+                type(exc).__name__,
+            )
+        used_quality_fallback = not selected
+        if not selected:
+            selected = self._recovery_quality_fallback_model_id(previous)
+        if not selected:
+            # list_models itself can be unavailable. Pin to a registered
+            # non-fast model rather than silently re-entering the user's fast
+            # model. If its provider is unavailable, the request fails loudly.
+            selected = _RECOVERY_QUALITY_HARD_FALLBACK_MODEL_ID
+            self._record_model_fallback_reason(
+                "staged_answer_recovery_data_degraded_quality_fallback"
+            )
+            logger.error(
+                "[agent_executor] recovery data guard pinned hard non-fast fallback"
+            )
+
+        self._request_model_id = selected
+        self._staged_answer_would_model_id = selected
+        self._staged_answer_model_selected = True
+        self._record_model_fallback_reason(
+            "staged_answer_recovery_data_degraded_quality_fallback"
+            if used_quality_fallback
+            else "staged_answer_recovery_data_degraded"
+        )
+        escalated = previous != selected
+        self._recovery_data_guard_model_escalated = (
+            self._recovery_data_guard_model_escalated or escalated
+        )
+        logger.info(
+            "[agent_executor] recovery data guard escalated answer model=%s -> %s",
+            previous,
+            selected,
+        )
+        return escalated
+
+    @staticmethod
+    def _recovery_quality_fallback_model_id(previous: Optional[str]) -> Optional[str]:
+        """Choose an available non-fast model without consulting user preference."""
+        try:
+            from app.services.llm.model_registry import list_models
+
+            models = list_models(only_available=True)
+        except Exception as exc:  # noqa: BLE001 - report an unavailable safety lane
+            logger.error(
+                "[agent_executor] recovery quality fallback registry unavailable "
+                "error_type=%s",
+                type(exc).__name__,
+            )
+            return None
+        previous_entry = next(
+            (model for model in models if getattr(model, "id", None) == previous),
+            None,
+        )
+        if previous_entry is not None and getattr(previous_entry, "speed_tier", None) != "fast":
+            return str(previous)
+        for speed_tier in ("reasoning", "balanced"):
+            selected = next(
+                (
+                    str(model.id)
+                    for model in models
+                    if getattr(model, "speed_tier", None) == speed_tier
+                ),
+                None,
+            )
+            if selected:
+                return selected
+        return None
+
+    def _load_recovery_wearable_snapshot(self) -> Optional[Mapping[str, Any]]:
+        """Build one owner-scoped recovery snapshot per turn, failing closed."""
+        if self._turn_recovery_wearable_snapshot is _TURN_CARD_UNSET:
+            try:
+                from app.services.wearable_router import build_snapshot
+
+                self._turn_recovery_wearable_snapshot = build_snapshot(
+                    self.db,
+                    int(self._current_user_id or 0),
+                    metrics=(
+                        "hrv",
+                        "resting_heart_rate",
+                        "total_sleep_duration",
+                        "sleep_score",
+                        "training_readiness_score",
+                        "acute_load",
+                    ),
+                )
+            except Exception as exc:  # noqa: BLE001 - guard failure must tighten advice
+                self._turn_recovery_wearable_snapshot = None
+                logger.warning(
+                    "[agent_executor] recovery data guard snapshot unavailable "
+                    "error_type=%s",
+                    type(exc).__name__,
+                )
+        snapshot = self._turn_recovery_wearable_snapshot
+        return snapshot if isinstance(snapshot, Mapping) else None
+
+    def _evaluate_recovery_data_guard_safely(
+        self,
+        message: Optional[str],
+        *,
+        tool_name: str,
+        args: Mapping[str, Any],
+        result: str,
+    ) -> RecoveryDataGuardDecision:
+        """Evaluate the guard and tighten advice if its own parsing fails."""
+        try:
+            decision = _evaluate_recovery_data_guard(
+                message,
+                tool_name=tool_name,
+                args=args,
+                result=result,
+                wearable_snapshot=self._load_recovery_wearable_snapshot(),
+            )
+            if decision is not None:
+                return decision
+        except Exception as exc:  # noqa: BLE001 - safety guard must fail closed
+            logger.warning(
+                "[agent_executor] recovery data guard evaluation unavailable "
+                "error_type=%s",
+                type(exc).__name__,
+            )
+        return RecoveryDataGuardDecision(
+            status="degraded",
+            reason_codes=("guard_unavailable",),
+            model_directive=_RECOVERY_GUARD_DIRECTIVE,
+        )
+
+    def _recovery_data_guard_meta(self) -> Optional[Dict[str, Any]]:
+        decision = self._recovery_data_guard_decision
+        if decision is None:
+            return None
+        return {
+            "status": decision.status,
+            "reason_codes": list(decision.reason_codes),
+            "model_escalated": self._recovery_data_guard_model_escalated,
+        }
+
     def _answer_max_tokens(self) -> int:
         """本回合答案生成的 max_tokens。fast-routed 简单回合收紧到
         FAST_ROUTE_ANSWER_MAX_TOKENS (简单答案的长尾解码是延迟的一部分);
-        其它一切回合仍用 ANSWER_MAX_TOKENS。"""
-        return (
-            FAST_ROUTE_ANSWER_MAX_TOKENS
-            if self._fast_route_simple_turn
-            else ANSWER_MAX_TOKENS
+        staged balanced 回合收紧到 BALANCED_ANSWER_MAX_TOKENS；高风险与
+        staged-off 路径保留 ANSWER_MAX_TOKENS。"""
+        if self._fast_route_simple_turn:
+            return FAST_ROUTE_ANSWER_MAX_TOKENS
+        if (
+            self._staged_response_mode == "on"
+            and self._staged_answer_task_tier == "balanced"
+        ):
+            return BALANCED_ANSWER_MAX_TOKENS
+        return ANSWER_MAX_TOKENS
+
+    def _assert_recovery_quality_model(self, model_id: Optional[str]) -> None:
+        """Block direct/alternate routes that bypass the non-fast quality floor."""
+        if not self._recovery_data_guard_requires_non_fast_model:
+            return
+        from app.services.llm.model_registry import MODELS
+
+        normalized = str(model_id or "").strip()
+        entry = next(
+            (
+                model
+                for model in MODELS
+                if model.id == normalized or model.model == normalized
+            ),
+            None,
         )
+        if entry is None or entry.speed_tier == "fast":
+            raise RuntimeError("recovery quality provider unavailable")
 
     @staticmethod
     def _should_replay_finalized_assistant(
@@ -12473,6 +12915,7 @@ class AgentExecutor:
         # 带图片/附件时回退普通单模型路径 (panel 是文本综合, 不处理多模态)。
         if (
             _extract_multi_model_flag(extra_context)
+            and not _is_recovery_exercise_advice_message(message)
             and not health_advice_buffered
             and not images
             and not file_base64
@@ -12544,6 +12987,10 @@ class AgentExecutor:
         self._staged_answer_task_tier = None
         self._staged_answer_model_selected = False
         self._staged_answer_would_model_id = None
+        self._recovery_data_guard_decision = None
+        self._recovery_data_guard_model_escalated = False
+        self._recovery_data_guard_requires_non_fast_model = False
+        self._turn_recovery_wearable_snapshot = _TURN_CARD_UNSET
         self._request_model_tool_fallback_used = False
         self._fast_route_simple_turn = False
         self._analysis_turn_subset = False  # R5:纯分析轮只读工具子集(flag 门控,下方设定)
@@ -14866,6 +15313,32 @@ class AgentExecutor:
                             if str(tc.get("id") or "").startswith("goal-verify-"):
                                 goal_verification_result = result
 
+                        recovery_guard_decision: Optional[
+                            RecoveryDataGuardDecision
+                        ] = None
+                        if _is_recovery_exercise_advice_context(
+                            message,
+                            tool_name=func_name,
+                            args=parsed_tool_args,
+                        ):
+                            recovery_guard_decision = self._evaluate_recovery_data_guard_safely(
+                                message,
+                                tool_name=func_name,
+                                args=parsed_tool_args,
+                                result=result,
+                            )
+                            if (
+                                recovery_guard_decision is not None
+                                and recovery_guard_decision.status == "degraded"
+                            ):
+                                self._activate_recovery_data_guard(
+                                    recovery_guard_decision
+                                )
+                            elif self._recovery_data_guard_decision is None:
+                                self._recovery_data_guard_decision = (
+                                    recovery_guard_decision
+                                )
+
                         # 追加 tool_result 到 messages
                         tool_content = _model_tool_result_content(
                             func_name,
@@ -14874,6 +15347,13 @@ class AgentExecutor:
                             reference_now=self._agent_kernel_reference_now(),
                             timezone_label=self._ensure_agent_kernel_turn().context.timezone,
                         )
+                        if (
+                            recovery_guard_decision is not None
+                            and recovery_guard_decision.status == "degraded"
+                        ):
+                            tool_content += (
+                                "\n\n" + recovery_guard_decision.model_directive
+                            )
                         if (
                             func_name == "health_manage"
                             and _goal_lookup_call_matches(
@@ -16200,6 +16680,7 @@ class AgentExecutor:
             else _citation_anchor_shadow_meta(self.db, user_id, full_reply)
         )
         kernel_trace = self._agent_kernel_trace_summary(status=completion_status)
+        recovery_data_guard_meta = self._recovery_data_guard_meta()
 
         # rank7: passthrough 观测/标记进 meta(offline judge 读)。shadow 落 would-be
         # passthrough 文本(截 4000 char)+ 两侧壁钟;on 落一个轻量 taken 标记。
@@ -16276,6 +16757,11 @@ class AgentExecutor:
                 "recovery": {
                     "tool_retry_count": self._agent_kernel_tool_retry_count,
                 },
+                **(
+                    {"recovery_data_guard": recovery_data_guard_meta}
+                    if recovery_data_guard_meta is not None
+                    else {}
+                ),
                 "perf": perf,
                 **({"kernel_trace": kernel_trace} if kernel_trace else {}),
                 **({"citation_anchor": citation_anchor} if citation_anchor else {}),
@@ -16351,6 +16837,11 @@ class AgentExecutor:
                 "recovery": {
                     "tool_retry_count": self._agent_kernel_tool_retry_count,
                 },
+                **(
+                    {"recovery_data_guard": recovery_data_guard_meta}
+                    if recovery_data_guard_meta is not None
+                    else {}
+                ),
                 "perf": perf,
                 **({"kernel_trace": kernel_trace} if kernel_trace else {}),
                 **({"citation_anchor": citation_anchor} if citation_anchor else {}),
@@ -17996,9 +18487,15 @@ class AgentExecutor:
                     self._request_model_id,
                     e,
                 )
+                if self._recovery_data_guard_requires_non_fast_model:
+                    raise RuntimeError(
+                        "recovery quality provider unavailable"
+                    ) from e
                 provider = None
 
         if request_model_dead:
+            if self._recovery_data_guard_requires_non_fast_model:
+                raise RuntimeError("recovery quality provider unavailable")
             # 首选模型本回合已死: 记一条日志, 直接落到稳定回退 (工具轮走可靠工具模型)。
             logger.info(
                 "[agent_executor] 本回合跳过已失败 provider=%s (dead), 走稳定回退",
@@ -18009,6 +18506,9 @@ class AgentExecutor:
             # effective_model_id 保持 None: 稳定回退已自带工具门控, 下方 gate 不再重复。
             self._last_effective_model_id = None
             return provider, tools
+
+        if provider is None and self._recovery_data_guard_requires_non_fast_model:
+            raise RuntimeError("recovery quality provider unavailable")
 
         # 回退到默认 provider — 不传 model, 让 provider 用 init 时的默认
         # 2026-05-13: 用户级 LLM 偏好 — 优先读 user_profile.llm_model_id
@@ -18366,6 +18866,7 @@ class AgentExecutor:
         # 直接发给 TokenPlan → Model not exist.
         if agent_base and agent_key:
             model = settings.agent_model or settings.llm_model
+            self._assert_recovery_quality_model(model)
             return await self._call_llm_direct(messages, tools, model, agent_base, agent_key)
 
         provider, pass_tools = self._resolve_chat_provider(tools)
@@ -18410,6 +18911,8 @@ class AgentExecutor:
             logger.warning(
                 "[agent_executor] 选定 provider chat() 失败,回退稳定 provider: %s", e
             )
+            if self._recovery_data_guard_requires_non_fast_model:
+                raise RuntimeError("recovery quality provider unavailable") from e
             self._remember_dead_provider(tool_specific=bool(pass_tools))
             if pass_tools and self._request_model_id:
                 self._request_model_tool_fallback_used = True
@@ -18451,6 +18954,7 @@ class AgentExecutor:
         if agent_base and agent_key:
             # 直连网关只实现非流式 tool-calling → 退化为单次调用 + 一次性 content。
             model = settings.agent_model or settings.llm_model
+            self._assert_recovery_quality_model(model)
             result = await self._call_llm_direct(messages, tools, model, agent_base, agent_key)
             async for evt in self._result_to_stream_events(result):
                 yield evt
@@ -18507,6 +19011,8 @@ class AgentExecutor:
                 logger.warning(
                     "[agent_executor] 非流式桥 chat() 失败,回退稳定 provider: %s", e
                 )
+                if self._recovery_data_guard_requires_non_fast_model:
+                    raise RuntimeError("recovery quality provider unavailable") from e
                 self._remember_dead_provider(tool_specific=bool(pass_tools))
                 if pass_tools and self._request_model_id:
                     self._request_model_tool_fallback_used = True
@@ -18548,6 +19054,8 @@ class AgentExecutor:
                 )
                 yield {"type": "finish", "finish_reason": "error"}
                 return
+            if self._recovery_data_guard_requires_non_fast_model:
+                raise RuntimeError("recovery quality provider unavailable") from e
             # 流开始前/未发任何内容就报错 → 回退稳定 provider (F2: 带工具时经可靠工具模型)。
             logger.warning(
                 "[agent_executor] 选定 provider chat_stream() 失败,回退稳定 provider: %s", e
@@ -18895,11 +19403,35 @@ class AgentExecutor:
         from app.services.llm.pii_scrub import wrap_provider_pii_scrub
         from app.services.llm.usage_tracker import wrap_provider
 
-        try:
-            provider = wrap_provider_pii_scrub(wrap_provider(create_llm_provider("tokenplan")))
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[agent_executor] tokenplan fallback unavailable: %s", e)
-            provider = get_llm_provider()
+        if self._recovery_data_guard_requires_non_fast_model:
+            from app.services.llm.factory import create_provider_for_model_id
+            from app.services.llm.task_routing import pick_model_id_by_tier
+
+            selected = (
+                pick_model_id_by_tier("high_stakes", only_available=True)
+                or self._request_model_id
+            )
+            self._assert_recovery_quality_model(selected)
+            try:
+                provider = create_provider_for_model_id(str(selected))
+            except Exception as exc:  # noqa: BLE001 - fail closed, never use global fast
+                raise RuntimeError(
+                    "recovery quality provider unavailable"
+                ) from exc
+            provider_model = (
+                getattr(provider, "model", None)
+                or getattr(provider, "default_model", None)
+                or selected
+            )
+            self._assert_recovery_quality_model(str(provider_model))
+        else:
+            try:
+                provider = wrap_provider_pii_scrub(
+                    wrap_provider(create_llm_provider("tokenplan"))
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[agent_executor] tokenplan fallback unavailable: %s", e)
+                provider = get_llm_provider()
         return await provider.chat(
             messages=messages,
             model=None,

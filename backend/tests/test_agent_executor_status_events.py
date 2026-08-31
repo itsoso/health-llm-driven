@@ -1736,6 +1736,9 @@ def _wire_min(executor, monkeypatch):
     monkeypatch.setattr("app.services.agent_executor.settings.llm_provider", "tokenplan")
     monkeypatch.setattr("app.services.agent_executor.settings.agent_base_url", None)
     monkeypatch.setattr("app.services.agent_executor.settings.agent_api_key", None)
+    # Keep legacy-event assertions independent from the developer's local .env;
+    # staged-response tests below opt in explicitly on the executor instance.
+    monkeypatch.setattr("app.services.agent_executor.settings.staged_response_mode", "off")
     monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [{
         "type": "function",
         "function": {"name": "health_query", "description": "x",
@@ -1920,6 +1923,44 @@ async def test_non_fast_turn_keeps_full_answer_max_tokens(
     assert executor._fast_route_simple_turn is False
     assert captured["max_tokens"] == ANSWER_MAX_TOKENS
     assert ANSWER_MAX_TOKENS == 8000
+
+
+@pytest.mark.asyncio
+async def test_staged_balanced_turn_uses_bounded_answer_budget(db):
+    """Balanced staged answers must not retain the generic 8k decode tail."""
+    balanced_budget = getattr(
+        __import__("app.services.agent_executor", fromlist=["BALANCED_ANSWER_MAX_TOKENS"]),
+        "BALANCED_ANSWER_MAX_TOKENS",
+        None,
+    )
+    assert balanced_budget is not None, "balanced answer budget is not implemented"
+    executor = AgentExecutor(db)
+    executor._fast_route_simple_turn = False
+    executor._staged_response_mode = "on"
+    executor._staged_answer_task_tier = "balanced"
+
+    assert executor._answer_max_tokens() == balanced_budget
+    assert balanced_budget == 3000
+
+
+@pytest.mark.asyncio
+async def test_staged_high_stakes_keeps_full_quality_budget(db):
+    executor = AgentExecutor(db)
+    executor._fast_route_simple_turn = False
+    executor._staged_response_mode = "on"
+    executor._staged_answer_task_tier = "high_stakes"
+
+    assert executor._answer_max_tokens() == ANSWER_MAX_TOKENS
+
+
+@pytest.mark.asyncio
+async def test_staged_flag_off_keeps_legacy_full_budget(db):
+    executor = AgentExecutor(db)
+    executor._fast_route_simple_turn = False
+    executor._staged_response_mode = "off"
+    executor._staged_answer_task_tier = "balanced"
+
+    assert executor._answer_max_tokens() == ANSWER_MAX_TOKENS
 
 
 @pytest.mark.asyncio
