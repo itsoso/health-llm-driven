@@ -66,6 +66,7 @@ import {
   type AgentTransparencyBand,
   type AgentTransparencyProfile,
 } from '../../utils/chatTransparency';
+import MedicalCitations from './MedicalCitations';
 
 type WriteReceipt = NonNullable<ChatCardActionResult['receipt']>;
 
@@ -120,6 +121,10 @@ function ChatBubbleInner({
   const [cardActionStateByKey, setCardActionStateByKey] = useState<Record<string, ChatCardActionRuntimeState>>({});
   const [cardReceiptByKey, setCardReceiptByKey] = useState<Record<string, WriteReceipt[]>>({});
   const [cardSafetyAlertsByKey, setCardSafetyAlertsByKey] = useState<Record<string, MedicationSafetyAlert[]>>({});
+  const [cardDataPatchState, setCardDataPatchState] = useState<{
+    itemId: string;
+    data: Record<string, unknown>;
+  }>(() => ({ itemId: item.id, data: {} }));
   const [cardDecisionStatus, setCardDecisionStatus] = useState<MedicationDecisionStatus | undefined>(
     () => readMedicationDecisionStatus(item.decisionStatus ?? item.cardData?.decision_status),
   );
@@ -477,6 +482,15 @@ function ChatBubbleInner({
         if (result.decision_status) {
           setCardDecisionStatus(result.decision_status);
         }
+        if (result.patch && Object.keys(result.patch).length > 0) {
+          setCardDataPatchState(previous => ({
+            itemId: item.id,
+            data: {
+              ...(previous.itemId === item.id ? previous.data : {}),
+              ...result.patch,
+            },
+          }));
+        }
         if (writeAction) {
           if (receiptlessTerminal) {
             emitWriteTerminal(
@@ -594,9 +608,18 @@ function ChatBubbleInner({
     : item.safetyAlerts || [];
   const latestWriteReceipt = latestCardReceipt
     || (directWriteReceipts.length > 0 ? directWriteReceipts[directWriteReceipts.length - 1] : null);
+  const effectiveCardData = useMemo(() => {
+    const patch = cardDataPatchState.itemId === item.id ? cardDataPatchState.data : {};
+    return item.cardData
+      && typeof item.cardData === 'object'
+      && !Array.isArray(item.cardData)
+      && Object.keys(patch).length > 0
+      ? { ...item.cardData, ...patch }
+      : item.cardData;
+  }, [cardDataPatchState, item.cardData, item.id]);
   const cardSharePayload = useMemo(
-    () => buildCardSharePayload(item.cardType, item.cardData, latestWriteReceipt),
-    [item.cardData, item.cardType, latestWriteReceipt],
+    () => buildCardSharePayload(item.cardType, effectiveCardData, latestWriteReceipt),
+    [effectiveCardData, item.cardType, latestWriteReceipt],
   );
   const handleCardShare = useCallback(async () => {
     if (!cardSharePayload) return;
@@ -612,8 +635,8 @@ function ChatBubbleInner({
     setShowCardActions(true);
   }, [cardSharePayload, revealMessageTime, selectionMode]);
 
-  const cardDataRecord = item.cardData && typeof item.cardData === 'object' && !Array.isArray(item.cardData)
-    ? item.cardData as Record<string, unknown>
+  const cardDataRecord = effectiveCardData && typeof effectiveCardData === 'object' && !Array.isArray(effectiveCardData)
+    ? effectiveCardData as Record<string, unknown>
     : null;
   const isRecordedDietCard = item.cardType === 'diet_draft' && (
     cardDataRecord?.recorded === true
@@ -628,7 +651,7 @@ function ChatBubbleInner({
   const canEditDietShare = Boolean(chatDietShareInput?.available && chatDietPhotoSource);
   const renderedCardData = item.cardType === 'medication_draft' && cardDataRecord
     ? { ...cardDataRecord, ...(cardDecisionStatus ? { decision_status: cardDecisionStatus } : {}) }
-    : item.cardData;
+    : effectiveCardData;
   const renderedCardActions = cardDecisionStatus && cardDecisionStatus !== 'pending'
     ? []
     : item.cardActions;
@@ -1183,6 +1206,9 @@ function ChatBubbleInner({
                   return rendered ? <View key={`${card.type}-${index}`}>{rendered}</View> : null;
                 })}
               </View>
+            ) : null}
+            {!item.streaming ? (
+              <MedicalCitations citations={item.medicalCitations} />
             ) : null}
             {visibleWriteReceipts.map(receipt => (
               <WriteReceiptLine key={receipt.operationId} receipt={receipt} />

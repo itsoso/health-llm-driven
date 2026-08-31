@@ -4,12 +4,15 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | Build 256 已完成 EAS/ASC/TestFlight、精确 IPA、ASC 绑定、审核账号真实登录及物理 iPhone 6/6 安全自动子集；补剂/照片卡第四轮独立安全评审 BLOCK 已整改，并追加修复照片餐食确认失败时的安全可读错误提示；第五轮独立 G4 裁决前，App Review、production OTA、部署及错误记录撤销继续冻结 |
-| 状态 | implementing |
+| 当前阶段 | Build 256 已于 App Review 因 Guideline 1.4.1 医学信息缺少易发现引用而被拒；引用修复 G3/G4 已通过，正在准备 Build 257+，重新提交前继续冻结 production OTA |
+| 状态 | ready_for_release_candidate |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
 
 ## Correct Course
+
+- [x] Correction Block（2026-08-29）：医学引用修复 G3/G4 已通过。Backend 相关 293 tests、Mobile 5 suites / 48 tests、TypeScript、lint、System Map、release pack、iOS submission preflight、Python compile 和 diff hygiene 均 PASS；11 个目录来源在线探针均 HTTP 200。下一阻断仅为新提交、Backend 部署、Build 257+ 精确 IPA/TestFlight/真机外链和 ASC 重新提交；这些证据不得由 Build 256 或 OTA 替代。
+- [x] Correction Block（2026-08-29）：Apple 对 1.3.3 (256) 的审核明确以 Guideline 1.4.1 拒绝，截图复现“帮我算我的BMI”显示公式、22.9 和正常范围但无来源。新增独立 Dossier `docs/dossiers/2026-08-29-app-review-medical-citations.md`：服务端以受控主题目录生成引用，complete 终态统一补全并落库；Mobile 在正文下方默认展示可点击 HTTPS 来源和就医边界。Build 256 不再作为候选，必须用 Build 257+ 完成精确包、真机引用外链和重新提交 Gate。
 
 - [x] Correction Block（2026-08-05）：最新 `main` CI 在依赖审计处失败；在 T4 前插入 T3.5 修复 Python 锁文件漏洞并重验 Mobile advisory，禁止带红进入原生构建。
 - [x] Correction Block（2026-08-10）：T7.5 首轮独立安全评审判定 `BLOCK`。旧基线“模型名称只要是当前消息任意子串即可信”可被“补剂/图/打卡”等通用词绕过；owner-bound photo token 又跳过整个 Mobile 非饮食闸，合法 token 配药名仍能进入提交。范围退回 S5：补剂只接受当前文本中动作绑定、去剂量后的具体实体完全匹配并拒绝通用类别/动作词；照片卡只豁免阿拉伯数字后的食物切片单位，药名/补剂名仍由 Mobile 与 Backend 词库双层拦截。重跑 G3 与新的独立 G4 前，禁止部署、OTA、App Review 和生产删除。

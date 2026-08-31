@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 const BLOCKING_SEVERITIES = new Set(["high", "critical"]);
+const EXPIRY_WARNING_MS = 7 * 24 * 60 * 60 * 1000;
 
 function advisoryId(advisory) {
   const url = String(advisory?.url ?? "");
@@ -59,6 +60,7 @@ export function evaluateAuditReport(report, policy, now = new Date()) {
   const vulnerabilities = report.vulnerabilities;
   const allowed = [];
   const blocked = [];
+  const warnings = new Set();
 
   for (const [packageName, vulnerability] of Object.entries(vulnerabilities)) {
     if (!BLOCKING_SEVERITIES.has(vulnerability?.severity)) {
@@ -86,6 +88,8 @@ export function evaluateAuditReport(report, policy, now = new Date()) {
       const expiresAt = new Date(`${exception.expires_on}T23:59:59Z`);
       if (now > expiresAt) {
         reasons.push(`expired ${id} on ${exception.expires_on}`);
+      } else if (expiresAt.getTime() - now.getTime() <= EXPIRY_WARNING_MS) {
+        warnings.add(`${id} (${leaf.name}) expires on ${exception.expires_on}`);
       }
     }
     if (reasons.length > 0) {
@@ -95,7 +99,11 @@ export function evaluateAuditReport(report, policy, now = new Date()) {
     }
   }
 
-  return { allowed: allowed.sort(), blocked: blocked.sort() };
+  return {
+    allowed: allowed.sort(),
+    blocked: blocked.sort(),
+    warnings: [...warnings].sort(),
+  };
 }
 
 function argumentValue(name) {
@@ -133,6 +141,12 @@ function main() {
       console.error(`- ${item}`);
     }
     process.exit(1);
+  }
+  if (result.warnings.length > 0) {
+    console.warn("Npm audit exceptions approaching expiry:");
+    for (const item of result.warnings) {
+      console.warn(`- ${item}`);
+    }
   }
   if (result.allowed.length > 0) {
     console.log(

@@ -4,7 +4,7 @@
 |---|---|
 | slug | `mobile-today-followup-card-repair` |
 | 创建日期 | 2026-08-11 |
-| 当前阶段 | S7（Backend / Mobile 已发布，待真机冷启动确认） |
+| 当前阶段 | S7（第二轮 Backend / Mobile 已发布，待真机冷启动确认） |
 | 状态 | shipping |
 | 负责 | Codex |
 | 类型 | bugfix / medical-boundary UI / write-capability repair |
@@ -80,3 +80,28 @@
 
 - 工具侧已确认 Backend 精确 SHA、鉴权路由与 EAS production update manifest。
 - 待用户在 TestFlight / App Store build 完全杀进程后冷启动，确认卡片显示“复查完成情况”“处理复查”，点击进入复查页；支持完成的行动显示中文成功回执并从今日行动刷新。
+
+## 2026-08-29 第二轮：聊天横幅导航与模型过程文本泄漏
+
+### 现场证据与根因
+
+- Mobile 聊天顶部仍展示“待处理 · 复查:胃溃疡”，但点击事件固定执行 `/(tabs)/today`；同时 timeline 对 checkup 一律返回 `deep_link=null`，因此用户无法进入处理页。
+- 用户原句“昨晚我睡得怎么样？今天是否适合锻炼？”中，“昨晚”被通用日历窗口策略误判为不可表达，`health_query` 被拒绝；Qwen 随后把重试计划、工具名和错误码作为普通 `content` 输出，既进入实时 token，也被持久化为成功消息。
+
+### Correct Course
+
+- checkup timeline 由后端明确给出 `/medical-exams`；Mobile 同时为旧后端的 checkup 空深链提供相同兜底，并让聊天横幅优先执行该深链，普通“今日计划”入口保持原路由。
+- 将“昨晚睡眠”收敛为唯一跨午夜特例：只允许 `sleep`，确定性归一为最近 2 个自然日；取消/非授权、未解析引用、第三方 owner 和非查询观察仍先执行原安全闸。
+- 新增模型过程文本出口防护：从单字符流开始缓冲高风险英文自述前缀，完整回答若命中“过程叙述 + 内部工具/错误标记”则不回显、不落原文，改为中文可重试失败态；正常英文健康回答保持不变。
+
+### 验证证据（发布前）
+
+- Backend：timeline / recovery / reasoning 三文件完整回归 `30 passed`；日历窗口与昨晚睡眠策略回归 `13 passed`；单独的昨晚睡眠、第三方 owner 和单字符泄漏回归 `4 passed`。
+- Mobile：聊天页与 todayFocus `2 suites / 65 tests passed`；TypeScript `--noEmit`、变更文件 ESLint 均通过。
+- 架构：`scripts/system-map-check.sh` 全部通过，Mobile 导航图回到 `108 edges / 16 orphans`；`git diff --check` 通过。
+- 代码提交 `ee1e12f949dafd190bff53b1e81344be670f6341` 已推送 `main`。
+- Backend 从干净 main 部署精确 SHA `ee1e12f949da`：43MB 数据库备份、237 表恢复演练、Force-RLS 完整性与站外加密归档验证通过；受管迁移无新增；部署后健康检查三次 `60/60 PASS`，Skills `22=22`，服务状态 `active (running)`。
+- Backend 回滚点：`bc777146cac7b1355049be7d8fa283c104e13596`。
+- Mobile production OTA（iOS / runtime `1.3.3`）已发布：group `6efabc96-b055-40a4-8abc-383a1b439fe1`，iOS update `01a050f4-c37c-7ca9-8a08-c9491a908ac1`，commit `ee1e12f949da`，tree digest `6e031f59467ee26d407d2865d195c289b3877aaee4876acb7fb90935de8e3265`。
+- OTA 首次干净克隆因依赖符号链接边界无法解析 React，未上传；完整依赖验证后 Hermes 与首轮 no-bytecode 均被 EAS 资产处理超时，精确 no-bytecode 重试复用既有资产后发布成功，manifest 已读回 `status=published`。
+- 待完成：真机完全杀进程后冷启动，点击胃溃疡复查横幅进入复查页；重问“昨晚我睡得怎么样？今天是否适合锻炼？”确认不再出现英文工具计划或内部错误码。

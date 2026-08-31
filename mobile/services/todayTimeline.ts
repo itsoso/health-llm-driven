@@ -68,6 +68,7 @@ export interface TodayTimelineItem {
   deep_link: string | null;
   severity: string | null;
   proof: TimelineProof | null;
+  action_kind?: string | null;
   // 驱动来源标记(后端 HealthEvent.driver);缺省/null → 不画驱动 chip。
   driver?: TimelineDriver | null;
 }

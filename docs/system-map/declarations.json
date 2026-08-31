@@ -150,14 +150,6 @@
     },
     {
       "coverage": "declaration",
-      "data_classes": ["L2", "L3"],
-      "id": "resource.chromadb",
-      "kind": "resource",
-      "name": "ChromaDB",
-      "source": {"path": "backend/app/services/", "type": "declaration"}
-    },
-    {
-      "coverage": "declaration",
       "id": "resource.expo-updates",
       "kind": "resource",
       "name": "Expo Updates",
@@ -211,7 +203,6 @@
     {"coverage": "declaration", "flows": ["safety", "health-record", "agenda"], "from": "component.backend-api", "source": {"path": "backend/app/database.py", "type": "declaration"}, "to": "resource.postgresql", "type": "writesTo"},
     {"coverage": "declaration", "flows": ["agent-chat", "safety"], "from": "component.backend-api", "source": {"path": "backend/app/utils/redis_cache.py", "type": "declaration"}, "to": "resource.redis", "type": "dependsOn"},
     {"coverage": "declaration", "flows": ["agent-chat"], "from": "component.backend-api", "source": {"path": "backend/app/services/llm/", "type": "declaration"}, "to": "resource.llm-provider", "type": "dependsOn"},
-    {"coverage": "declaration", "flows": ["agent-chat"], "from": "component.backend-api", "source": {"path": "backend/app/services/", "type": "declaration"}, "to": "resource.chromadb", "type": "readsFrom"},
     {"coverage": "declaration", "flows": ["device-sync"], "from": "component.backend-api", "source": {"path": "backend/app/api/data_collection.py", "type": "declaration"}, "to": "resource.garmin", "type": "dependsOn"},
     {"coverage": "declaration", "flows": ["safety", "agenda"], "from": "component.backend-api", "source": {"path": "backend/app/services/notification/", "type": "declaration"}, "to": "resource.apns", "type": "dependsOn"},
     {"coverage": "declaration", "flows": ["background-jobs"], "from": "component.celery-beat", "source": {"path": "backend/app/celery_app.py", "type": "declaration"}, "to": "resource.celery-queue", "type": "publishesTo"},

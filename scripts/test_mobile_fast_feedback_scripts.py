@@ -9,6 +9,23 @@ ROOT = Path(__file__).resolve().parents[1]
 FAST_TEST = ROOT / "scripts" / "mobile-fast-test.sh"
 FAST_DEVICE = ROOT / "scripts" / "mobile-fast-device.sh"
 OTA_SOURCE_GUARD = ROOT / "scripts" / "ota_source_guard.py"
+EAS_OTA_PREVIEW_WORKFLOW = (
+    ROOT / "mobile" / ".eas" / "workflows" / "ota-preview-manual.yml"
+)
+
+
+def test_eas_ota_fallback_is_manual_ios_preview_only() -> None:
+    workflow = EAS_OTA_PREVIEW_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "workflow_dispatch: {}" in workflow
+    assert "\n  push:" not in workflow
+    assert "\n  pull_request:" not in workflow
+    assert "type: update" in workflow
+    assert "environment: preview" in workflow
+    assert "EAS_NO_VCS" not in workflow
+    assert "platform: ios" in workflow
+    assert "channel: preview" in workflow
+    assert "channel: production" not in workflow
 
 
 def test_mobile_dependency_overrides_preserve_brace_expansion_major_compatibility() -> None:
@@ -44,6 +61,14 @@ def test_committed_npm_lockfiles_only_use_the_public_registry() -> None:
                 source = urlparse(resolved)
                 assert source.scheme == "https"
                 assert source.hostname in allowed_hosts
+
+
+def test_ota_default_eas_cli_uses_an_exact_version() -> None:
+    script = (ROOT / "scripts" / "mobile-ota.sh").read_text(encoding="utf-8")
+
+    assert 'EAS_CLI_PACKAGE="eas-cli@22.0.0"' in script
+    assert 'npx --yes "${EAS_CLI_PACKAGE}" update' in script
+    assert "npx eas-cli update" not in script
 
 
 def run_fast_test(*args: str, changed_files: str = "") -> subprocess.CompletedProcess[str]:

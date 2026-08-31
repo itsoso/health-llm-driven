@@ -573,7 +573,7 @@ async def test_health_runtime_compilation_failure_stays_failed_and_safe(
 
 
 @pytest.mark.asyncio
-async def test_named_unreleased_source_resolves_before_buffered_health_synthesis(
+async def test_named_released_source_resolves_before_buffered_health_synthesis(
     db,
     auth_user_and_headers,
     monkeypatch,
@@ -586,7 +586,7 @@ async def test_named_unreleased_source_resolves_before_buffered_health_synthesis
     captured_tools: list[list[dict]] = []
     _install_stream(
         executor,
-        ["该来源尚未发布，不能据此回答。"],
+        ["已基于该指定来源的审定结论回答。"],
         captured_messages,
         captured_tools,
     )
@@ -596,8 +596,9 @@ async def test_named_unreleased_source_resolves_before_buffered_health_synthesis
         executed.append((name, json.loads(args)))
         return (
             "requested_source=益家知研\n"
-            "source_status=not_released\n"
-            "不得声称已搜索该来源。"
+            "resolved_source=yijia_reviewed\n"
+            "source_status=released\n"
+            "已检索该指定来源。"
         )
 
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -626,7 +627,7 @@ async def test_named_unreleased_source_resolves_before_buffered_health_synthesis
 
 
 @pytest.mark.asyncio
-async def test_named_unreleased_source_cannot_suppress_emergency_release(
+async def test_named_released_source_cannot_suppress_emergency_release(
     db,
     auth_user_and_headers,
     monkeypatch,
@@ -647,7 +648,7 @@ async def test_named_unreleased_source_cannot_suppress_emergency_release(
 
     async def fake_execute_tool(name, args, token):
         executed.append(name)
-        return "source_status=not_released\n不得声称已搜索该来源。"
+        return "source_status=released\n已检索该指定来源。"
 
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
 

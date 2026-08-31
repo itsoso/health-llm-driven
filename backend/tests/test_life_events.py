@@ -210,7 +210,15 @@ def test_extraction_skips_non_owner_message(db):
 
 def test_extracted_events_readable_via_episodes_api(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
-    msg = _mk_user_message(db, user.id, "下午从家出发, 21:07落地北京", _MSG_CREATED_UTC)
+    recent_message_created_at = (
+        datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
+    )
+    msg = _mk_user_message(
+        db,
+        user.id,
+        "下午从家出发, 21:07落地北京",
+        recent_message_created_at,
+    )
     events = [
         {"title": "落地北京", "category": "arrival", "time_text": "21:07"},
         {"title": "从家出发", "category": "travel", "time_text": "下午"},

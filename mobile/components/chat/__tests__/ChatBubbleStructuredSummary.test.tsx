@@ -2013,6 +2013,14 @@ ${sectionTitle}
     dispatchChatCardAction.mockResolvedValueOnce({
       status: 'completed',
       nutrition_status: 'estimated',
+      patch: {
+        recorded: true,
+        record_id: 88,
+        calories: 620,
+        protein: 28,
+        carbs: 78,
+        fat: 18,
+      },
       receipt: verifiedReceipt('diet_record', '88'),
     });
     renderCard.mockImplementationOnce((descriptor: any, options: any) => {
@@ -2050,6 +2058,22 @@ ${sectionTitle}
 
     await waitFor(() => {
       expect(mockToastShow).toHaveBeenCalledWith('已记录饮食，营养已估算', 'success');
+    });
+    await waitFor(() => {
+      expect(renderCard).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          type: 'diet_draft',
+          data: expect.objectContaining({
+            recorded: true,
+            record_id: 88,
+            calories: 620,
+            protein: 28,
+            carbs: 78,
+            fat: 18,
+          }),
+        }),
+        expect.any(Object),
+      );
     });
   });
 

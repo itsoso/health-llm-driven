@@ -18,6 +18,7 @@ from app.models.symptom_entry import SymptomEntry
 from app.models.user import User
 from app.services import agenda_service
 from app.services import workday_health_scheduler as scheduler
+from app.services.workday_microbreak_safety import contains_acute_symptom_language
 
 
 def _user(db):
@@ -46,6 +47,15 @@ def _readiness(db, user_id: int, score: int):
 
 
 _LOCAL_TZ = ZoneInfo("Asia/Shanghai")
+
+
+def test_acute_symptom_language_covers_pressure_breathing_and_one_sided_weakness():
+    for text in (
+        "胸口像有人坐着还能跑步吗",
+        "吸不进气还能训练吗",
+        "一侧胳膊抬不起来",
+    ):
+        assert contains_acute_symptom_language(text) is True
 
 
 def _diet(db, user_id: int, *, minutes_ago: int):

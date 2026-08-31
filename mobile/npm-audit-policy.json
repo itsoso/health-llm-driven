@@ -3,14 +3,14 @@
     {
       "advisory": "GHSA-w3rx-r6r6-pgpr",
       "package": "image-size",
-      "expires_on": "2026-08-14",
-      "reason": "Expo/Metro build-only transitive dependency; upstream has no patched release. The ICNS loop is locally patched and exercised by mobile/scripts/image-size-security.node.js."
+      "expires_on": "2026-09-15",
+      "reason": "Reviewed 2026-08-18: npm latest image-size 2.0.2 remains affected; Expo/Metro uses 1.2.1 as a build-only transitive dependency. The local ICNS loop patch and mobile/scripts/image-size-security.node.js malicious-input test remain mandatory."
     },
     {
       "advisory": "GHSA-5p2g-fcmc-qvqq",
       "package": "image-size",
-      "expires_on": "2026-08-14",
-      "reason": "Expo/Metro build-only transitive dependency; upstream has no patched release. Zero-sized JXL/HEIF boxes are locally rejected and exercised by mobile/scripts/image-size-security.node.js."
+      "expires_on": "2026-09-15",
+      "reason": "Reviewed 2026-08-18: npm latest image-size 2.0.2 remains affected; Expo/Metro uses 1.2.1 as a build-only transitive dependency. Zero-sized JXL/HEIF boxes are locally rejected and exercised by mobile/scripts/image-size-security.node.js."
     }
   ]
 }

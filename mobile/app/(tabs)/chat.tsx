@@ -733,6 +733,15 @@ export default function ChatScreen() {
     router.navigate('/(tabs)/today');
   }, []);
 
+  const handleOpenTodayFocus = useCallback(() => {
+    const deepLink = todayFocusModel.contextStrip?.deepLink;
+    if (deepLink) {
+      router.navigate(deepLink as never);
+      return;
+    }
+    handleOpenToday();
+  }, [handleOpenToday, todayFocusModel.contextStrip?.deepLink]);
+
   const handleDeleteCurrentConversation = useCallback(() => {
     setToolMenuVisible(false);
     if (!conversationId) return;
@@ -1005,7 +1014,7 @@ export default function ChatScreen() {
         model={visibleTodayFocusModel}
         turnStatus={turnStatus}
         onRetry={turnStatus?.retryable ? retryLastTextTurn : undefined}
-        onOpenToday={handleOpenToday}
+        onOpenToday={handleOpenTodayFocus}
         onDismiss={visibleTodayFocusModel.contextStrip
           ? () => setDismissedTodayFocusKey(visibleTodayFocusModel.contextStrip?.key ?? null)
           : undefined}

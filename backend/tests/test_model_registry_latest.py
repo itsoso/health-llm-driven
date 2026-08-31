@@ -5,6 +5,7 @@ from app.services.llm import model_registry as reg
 
 EXPECTED_MODELS = {
     "qwen3.8-max": ("text_generation", "reasoning", "vision_understanding"),
+    "qwen3.8-flash": ("text_generation", "reasoning", "vision_understanding"),
     "qwen3.8-max-preview": ("text_generation", "reasoning", "vision_understanding"),
     "qwen3.7-plus": ("text_generation", "reasoning", "vision_understanding"),
     "qwen3.7-max": ("text_generation", "reasoning"),
@@ -53,6 +54,7 @@ NON_TEXT_MODELS = {
 
 TOP_CHAT_MODELS = {
     "qwen3.8-max",
+    "qwen3.8-flash",
     "qwen3.7-plus",
     "qwen3.7-max",
     "deepseek-v4-pro",
@@ -119,6 +121,7 @@ def test_non_text_generation_models_are_not_chat_selectable():
 
 def test_qwen38_models_preserve_preview_compatibility_and_conservative_flags():
     stable = reg.get_model("qwen3.8-max")
+    flash = reg.get_model("qwen3.8-flash")
     preview = reg.get_model("qwen3.8-max-preview")
 
     assert stable is not None
@@ -126,6 +129,11 @@ def test_qwen38_models_preserve_preview_compatibility_and_conservative_flags():
     assert stable.supports_thinking_budget is False
     assert stable.supports_forced_tool_choice is False
     assert stable.supports_explicit_cache is False
+    assert flash is not None
+    assert flash.reliable_tool_calling is False
+    assert flash.supports_thinking_budget is False
+    assert flash.supports_forced_tool_choice is False
+    assert flash.supports_explicit_cache is False
     assert preview is not None
     assert preview.chat_selectable is False
 

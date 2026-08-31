@@ -30,6 +30,31 @@
       "generic_serving_allowed": false,
       "source_policy": "T1 official guidance only; no raw Dedao or paid-course text",
       "version": "low-back-authority-pack.v1"
+    },
+    {
+      "claim_ids": [
+        "claim:c_yijia_covid_supplement_evidence_boundary",
+        "claim:c_yijia_covid_early_treatment_assessment"
+      ],
+      "entity_ids": [
+        "entity:condition:covid-19-acute-care-boundary"
+      ],
+      "eval_case_ids": [
+        "eval:yijia_covid_supplement_and_treatment_boundary"
+      ],
+      "decision": "approved_for_named_source_serving_by_product_owner",
+      "domain": "acute_covid",
+      "clinical_signoff": "not_claimed",
+      "license_scope": "internal_transformed_claims",
+      "reviewed_at": "2026-08-29T00:00:00+00:00",
+      "reviewer": "codex-evidence-boundary-review-2026-08-29",
+      "reviewer_role": "evidence_boundary_reviewer",
+      "serving_allowed": true,
+      "serving_scope": "named_generic_system_kb",
+      "generic_serving_allowed": false,
+      "source_collection": "yijia_reviewed",
+      "source_policy": "T1 official public-health sources only; legacy Pipi material is discovery input and is never served raw",
+      "version": "yijia-reviewed-source-pack.v1"
     }
   ],
   "artifact_dir": "backend/data/system_kb_v2_seed",

@@ -98,6 +98,19 @@ def test_agent_a_h_tests_run_in_bounded_ci_processes():
     assert by_label["agent-f-h"]["paths"] == "tests/test_agent_[f-h]*.py"
 
 
+def test_agent_i_z_tests_run_in_bounded_ci_processes():
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    shards = workflow["jobs"]["backend-test-shards"]["strategy"]["matrix"]["include"]
+    by_label = {shard["label"]: shard for shard in shards}
+
+    assert "agent-i-z" not in by_label
+    assert by_label["agent-i-l"]["paths"] == "tests/test_agent_[i-l]*.py"
+    assert by_label["agent-m-r"]["paths"] == "tests/test_agent_[m-r]*.py"
+    assert by_label["agent-s-z"]["paths"] == "tests/test_agent_[s-z]*.py"
+
+
 def test_observed_slow_alphabetic_families_run_in_single_letter_shards():
     workflow = yaml.safe_load(
         (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")

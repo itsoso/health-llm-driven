@@ -88,6 +88,30 @@ const CONTENT = '已为你记录今天的体重。';
 const EXPAND_LABEL = '展开依据与过程';
 
 describe('ChatBubble 调用 Skill 展示 (透视面板)', () => {
+  it('renders an always-visible medical source panel below a completed health answer', () => {
+    const { getByText, getByLabelText } = renderBubble({
+      id: 'assistant-bmi-citations',
+      role: 'assistant',
+      content: '你的 BMI 是 22.9，属于正常范围。',
+      streaming: false,
+      completionStatus: 'complete',
+      medicalCitations: [
+        {
+          sourceId: 'cdc:adult-bmi-categories',
+          title: '成人 BMI 计算方法与分类',
+          organization: '美国疾病控制与预防中心',
+          url: 'https://www.cdc.gov/bmi/adult-calculator/bmi-categories.html',
+          topic: 'bmi',
+          claimScope: 'BMI 是筛查指标。',
+        },
+      ],
+    });
+
+    expect(getByText('参考来源')).toBeTruthy();
+    expect(getByText('成人 BMI 计算方法与分类')).toBeTruthy();
+    expect(getByLabelText('打开参考来源：成人 BMI 计算方法与分类')).toBeTruthy();
+  });
+
   it('toolsUsed 非空且非流式 → 渲染透视面板, 展开后可见 "调用 Skill" + 每个 Skill 名', () => {
     const { getByText, queryByText, getByLabelText, getByTestId } = renderBubble({
       id: 'assistant-tools',

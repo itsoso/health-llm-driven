@@ -5,6 +5,8 @@ failures.  The model must never decide that a write is safe to repeat.
 """
 from __future__ import annotations
 
+import re
+
 
 _RETRYABLE_READ_TOOLS = frozenset(
     {
@@ -82,6 +84,25 @@ _DATA_GAP_ACTION_MARKERS = (
     "我可以",
     "下一步",
     "请提供",
+)
+
+_INTERNAL_PROCESS_PHRASES = (
+    "i need to",
+    "let me",
+    "i'll try",
+    "i will try",
+    "i'll query",
+    "i will query",
+    "let me reconsider",
+    "the sleep query failed",
+)
+
+_INTERNAL_TOOL_MARKERS = (
+    "health_query",
+    "health_analysis",
+    "calendar_window_unsupported",
+    "tool call",
+    "window parameter",
 )
 
 
@@ -163,10 +184,43 @@ def is_data_insufficiency_response(text: str) -> bool:
     )
 
 
+def is_internal_process_response(text: str) -> bool:
+    """Detect model self-talk/tool planning that must never be user-visible.
+
+    One ordinary English first-person phrase is not enough. We require either
+    an internal tool/error marker plus process narration, or repeated process
+    narration, which keeps legitimate English health answers untouched.
+    """
+    normalized = " ".join(str(text or "").split()).lower()
+    if not normalized:
+        return False
+    process_count = sum(
+        len(re.findall(re.escape(phrase), normalized))
+        for phrase in _INTERNAL_PROCESS_PHRASES
+    )
+    has_internal_marker = any(marker in normalized for marker in _INTERNAL_TOOL_MARKERS)
+    return bool((process_count >= 1 and has_internal_marker) or process_count >= 3)
+
+
+def _could_be_internal_process_prefix(text: str) -> bool:
+    """Buffer even token-sized prefixes before they can form model self-talk."""
+    normalized = " ".join(str(text or "").split()).lower()
+    if not normalized:
+        return False
+    return any(
+        phrase.startswith(normalized) or normalized.startswith(phrase)
+        for phrase in _INTERNAL_PROCESS_PHRASES
+    )
+
+
 def should_buffer_recovery_response(text: str) -> bool:
     """Return whether a short refusal/data-gap answer should wait for recovery."""
     normalized = " ".join(str(text or "").split())
     if should_buffer_refusal_response(normalized) or is_data_insufficiency_response(normalized):
+        return True
+    if is_internal_process_response(normalized) or _could_be_internal_process_prefix(
+        normalized
+    ):
         return True
     # Data-gap wording often arrives over several deltas (e.g. "目前没有" +
     # "足够数据"). Buffer only the short leading prefix so the first fragment

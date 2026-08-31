@@ -55,6 +55,7 @@ _ALLOWED_EVENTS = frozenset({
     "chat_turn_queued",
     "chat_attachment_terminal",
     "agent_turn_terminal",
+    "agent_turn_milestone",
     "voice_input_terminal",
     "voice_asr_terminal",
     "write_receipt_terminal",
@@ -128,6 +129,17 @@ _RELIABILITY_EVENT_SCHEMAS = {
         "required": frozenset({"phase", "duration_bucket", "action_type", "verified"}),
         "phases": frozenset({"verified", "unverified", "failed"}),
     },
+}
+_AGENT_TURN_MILESTONE_SCHEMA = {
+    "allowed": frozenset({"phase", "duration_ms", "action_type", "has_image"}),
+    "required": frozenset({"phase", "duration_ms", "action_type", "has_image"}),
+    "phases": frozenset({
+        "local_feedback",
+        "server_accepted",
+        "first_useful",
+        "write_verified",
+    }),
+    "action_types": frozenset({"generic", "diet_record", "diet_photo"}),
 }
 _CHAT_QUEUE_EVENT_SCHEMA = {
     "allowed": frozenset({"surface", "channel", "queue_depth_at_submit"}),
@@ -376,6 +388,38 @@ class EventIn(BaseModel):
                 expected_verified = self.meta.get("phase") == "verified"
                 if self.meta.get("verified") is not expected_verified:
                     raise ValueError("write receipt phase contradicts verified")
+            return self
+
+        if self.event_name == "agent_turn_milestone":
+            if self.meta is None:
+                raise ValueError("agent turn milestone meta is required")
+            keys = set(self.meta)
+            extra = keys - _AGENT_TURN_MILESTONE_SCHEMA["allowed"]
+            missing = _AGENT_TURN_MILESTONE_SCHEMA["required"] - keys
+            if extra:
+                raise ValueError(
+                    "agent turn milestone meta has forbidden fields: "
+                    f"{sorted(extra)}"
+                )
+            if missing:
+                raise ValueError(
+                    "agent turn milestone meta missing fields: "
+                    f"{sorted(missing)}"
+                )
+            if self.meta.get("phase") not in _AGENT_TURN_MILESTONE_SCHEMA["phases"]:
+                raise ValueError("invalid agent turn milestone phase")
+            duration_ms = self.meta.get("duration_ms")
+            if (
+                type(duration_ms) is not int
+                or duration_ms < 0
+                or duration_ms > 300_000
+            ):
+                raise ValueError("invalid agent turn milestone duration_ms")
+            action_type = self.meta.get("action_type")
+            if action_type not in _AGENT_TURN_MILESTONE_SCHEMA["action_types"]:
+                raise ValueError("invalid agent turn milestone action_type")
+            if type(self.meta.get("has_image")) is not bool:
+                raise ValueError("invalid agent turn milestone has_image")
             return self
 
         aigc_schema = _AIGC_ENGAGEMENT_EVENT_SCHEMAS.get(self.event_name)

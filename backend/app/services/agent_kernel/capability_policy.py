@@ -138,10 +138,13 @@ def bind_server_authorized_manage_lookup(
     args.pop(_SERVER_AUTHORIZED_MANAGE_LOOKUP_KEY, None)
     requested_record_type = canonical_health_manage_record_type(args.get("record_type"))
     requested_record_id = canonical_health_manage_record_id(args.get("record_id"))
-    goal_values = dict(goal.target_values) if goal is not None else {}
-    expected_record_id = canonical_health_manage_record_id(
-        goal_values.get("record_id")
+    goal_record_ids = tuple(
+        record_id
+        for key, value in (goal.target_values if goal is not None else ())
+        if key == "record_id"
+        and (record_id := canonical_health_manage_record_id(value)) is not None
     )
+    expected_record_id = goal_record_ids[0] if len(goal_record_ids) == 1 else None
     authorized_lookup_record_id = (
         expected_record_id if requested_record_type == "illness" else None
     )
@@ -341,6 +344,10 @@ _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE = re.compile(
     r"(?:元旦|春节|清明节|端午节|中秋节|国庆节|劳动节|儿童节|圣诞节)"
     r"(?:那天|当天)?"
     r")"
+)
+_LAST_NIGHT_SLEEP_WINDOW_RE = re.compile(
+    r"(?:昨晚|昨夜|昨天(?:晚上|夜里|夜间)).{0,12}(?:睡|睡眠)|"
+    r"(?:睡|睡眠).{0,12}(?:昨晚|昨夜|昨天(?:晚上|夜里|夜间))"
 )
 _HISTORY_QUERY_QUESTION_RE = re.compile(
     r"(?:上一次|是什么时候|在什么时候|何时|在何时|是何时|是哪天|是几号|"
@@ -585,7 +592,7 @@ _SEVERITY_TARGET_RE = re.compile(
     r"(?:严重程度|严重度|程度|强度)?\s*(?P<value>10|[1-9])\s*"
     r"(?:分(?!钟)|级|/\s*10)"
 )
-_WHOLE_RECORD_DELETE_EVIDENCE_VERSION = "record-delete-evidence-v5"
+_WHOLE_RECORD_DELETE_EVIDENCE_VERSION = "record-delete-evidence-v6"
 _HEALTH_MANAGE_CANONICAL_RECORD_TYPES = frozenset(
     {
         "diet",
@@ -800,7 +807,7 @@ class _WholeRecordDeleteEvidence:
 
     target_kind: str
     record_type: str | None = None
-    record_id: int | None = None
+    record_ids: tuple[int, ...] = ()
 
 
 def canonical_health_manage_record_id(value: Any) -> int | None:
@@ -833,15 +840,18 @@ def _whole_record_delete_evidence(
     text: str,
 ) -> _WholeRecordDeleteEvidence | None:
     """Extract content-free target evidence from a closed delete grammar."""
-    from app.services.write_intent_scope import explicit_whole_record_delete_target
+    from app.services.write_intent_scope import explicit_whole_record_delete_targets
 
-    target = explicit_whole_record_delete_target(text)
-    if target is None:
+    targets = explicit_whole_record_delete_targets(text)
+    if not targets:
+        return None
+    record_types = {record_type for record_type, _ in targets}
+    if len(record_types) != 1:
         return None
     return _WholeRecordDeleteEvidence(
-        target_kind="exact_record",
-        record_type=target[0],
-        record_id=target[1],
+        target_kind="exact_record_set",
+        record_type=targets[0][0],
+        record_ids=tuple(record_id for _, record_id in targets),
     )
 
 
@@ -850,19 +860,25 @@ def _delete_evidence_authorizes_request(
     evidence: _WholeRecordDeleteEvidence | None,
     args: dict[str, Any],
 ) -> bool:
-    if evidence is None or evidence.target_kind != "exact_record":
+    if evidence is None or evidence.target_kind != "exact_record_set":
         return False
     requested_type = canonical_health_manage_record_type(args.get("record_type"))
     requested_id = canonical_health_manage_record_id(args.get("record_id"))
     if requested_type is None or requested_id is None:
         return False
-    if evidence.record_type != requested_type or evidence.record_id != requested_id:
+    if evidence.record_type != requested_type or requested_id not in evidence.record_ids:
         return False
-    return any(
-        canonical_health_manage_record_id(record.get("id", record.get("record_id")))
-        == requested_id
+    owner_record_ids = {
+        record_id
         for record in _owner_scoped_manage_list_records(snapshot, requested_type)
-    )
+        if (
+            record_id := canonical_health_manage_record_id(
+                record.get("id", record.get("record_id"))
+            )
+        )
+        is not None
+    }
+    return set(evidence.record_ids).issubset(owner_record_ids)
 
 
 def _delete_evidence_matches_request(
@@ -870,13 +886,13 @@ def _delete_evidence_matches_request(
     args: dict[str, Any],
 ) -> bool:
     """Return exact user-text/argument identity without granting owner authority."""
-    if evidence is None or evidence.target_kind != "exact_record":
+    if evidence is None or evidence.target_kind != "exact_record_set":
         return False
     return (
         evidence.record_type
         == canonical_health_manage_record_type(args.get("record_type"))
-        and evidence.record_id
-        == canonical_health_manage_record_id(args.get("record_id"))
+        and canonical_health_manage_record_id(args.get("record_id"))
+        in evidence.record_ids
     )
 
 
@@ -2402,8 +2418,17 @@ def decide_tool_capability(
                 tool_name,
                 canonical_args,
             )
-        if medical_exam_args is None and _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE.search(
-            _query_scope_text(turn_text)
+        # 睡眠跨午夜，单查“今天”会漏掉昨夜入睡段。把明确的“昨晚睡眠”
+        # 绑定为最近 2 个自然日的只读窗口；合成层再取最新一夜。该特例只
+        # 放行 sleep，不扩大其他尚不可精确表达的日历窗口。
+        last_night_sleep_read = bool(
+            proposed_dimension == "sleep"
+            and _LAST_NIGHT_SLEEP_WINDOW_RE.search(_query_scope_text(turn_text))
+        )
+        if (
+            not last_night_sleep_read
+            and medical_exam_args is None
+            and _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE.search(_query_scope_text(turn_text))
         ):
             return _decision(
                 "block",
@@ -2429,6 +2454,14 @@ def decide_tool_capability(
             return _decision(
                 "block",
                 "health_query_not_requested",
+                tool_name,
+                canonical_args,
+            )
+        if last_night_sleep_read:
+            canonical_args["days"] = 2
+            return _decision(
+                "allow",
+                "last_night_sleep_projected_to_two_day_window",
                 tool_name,
                 canonical_args,
             )

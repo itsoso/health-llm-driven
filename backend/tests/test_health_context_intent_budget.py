@@ -18,8 +18,10 @@ from app.models.illness import IllnessEpisode
 from app.models.genetic_data import GeneticProfile, GeneticVariant
 from app.services.health_context_lite_service import (
     build_lite_health_context,
+    classify_context_profile,
     classify_injection_budget,
     INJECTION_FULL,
+    INJECTION_RECOVERY,
     INJECTION_MINIMAL,
 )
 
@@ -158,9 +160,77 @@ class TestClassifyInjectionBudget:
         assert classify_injection_budget("最近睡不好") == INJECTION_FULL
 
 
+class TestClassifyContextProfile:
+    def test_sleep_and_exercise_share_recovery_profile(self):
+        assert (
+            classify_context_profile("昨晚睡得怎样，今天是否适合锻炼？")
+            == INJECTION_RECOVERY
+        )
+
+    def test_cross_domain_query_fails_open_to_full(self):
+        assert (
+            classify_context_profile("综合分析最近睡眠和肝功能趋势")
+            == INJECTION_FULL
+        )
+
+    def test_pure_knowledge_stays_minimal(self):
+        assert classify_context_profile("胃溃疡分几期") == INJECTION_MINIMAL
+
+
 # ──── build_lite_health_context 注入预算 ────
 
 class TestInjectionBudget:
+    def test_recovery_profile_keeps_safety_and_drops_unrelated_sections(
+        self, db, user, profile, garmin_today, active_illness, drug_safety_gene
+    ):
+        from app.models.daily_health import DietRecord, WaterIntake
+
+        db.add(DietRecord(
+            user_id=user.id,
+            record_date=date.today(),
+            meal_type="lunch",
+            food_items="米饭和牛肉",
+            calories=520,
+            protein=28,
+        ))
+        db.add(WaterIntake(
+            user_id=user.id,
+            record_date=date.today(),
+            amount_ml=600,
+        ))
+        db.commit()
+
+        ctx = build_lite_health_context(
+            db,
+            user.id,
+            intent="昨晚睡得怎样，今天是否适合锻炼？",
+            domain_scoped=True,
+        )
+
+        assert ctx is not None
+        assert "7日均值" in ctx
+        assert "恢复就绪" in ctx
+        assert "当前病症" in ctx
+        assert "雷贝拉唑" in ctx
+        assert "青霉素" in ctx
+        assert "今日饮水" not in ctx
+        assert "今日饮食" not in ctx
+        assert "能量平衡" not in ctx
+        assert "基因特征" not in ctx
+
+        from app.services.health_context_lite_service import _context_cache
+        _context_cache.clear()
+        full_ctx = build_lite_health_context(
+            db,
+            user.id,
+            intent="昨晚睡得怎样，今天是否适合锻炼？",
+        )
+        assert full_ctx is not None
+        # This fixture has intentionally little unrelated data; even so the
+        # scoped lane removes at least 10%. Production profiles with memories,
+        # supplements and check-ins should save more.
+        assert len(ctx) < len(full_ctx) * 0.9
+
     def test_fact_intent_drops_timeseries(
         self, db, user, profile, garmin_today, active_illness
     ):

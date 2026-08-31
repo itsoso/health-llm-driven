@@ -8,6 +8,7 @@ from app.services.agent_executor import (
     _enrich_simple_diet_goal_tool_calls,
     _estimate_simple_diet_nutrition,
     _normalize_goal_guarded_tool_calls,
+    _simple_diet_nutrition_estimator_model_name,
     _simple_diet_nutrition_is_complete,
     _write_operation_fingerprint,
 )
@@ -784,9 +785,24 @@ def test_simple_diet_nutrition_accepts_alcohol_energy_with_zero_macros():
     )
 
 
+def test_simple_diet_nutrition_metric_reports_configured_provider_model(
+    monkeypatch,
+):
+    from app.services.ai.food_recognition import food_recognition_service
+
+    monkeypatch.setattr(
+        food_recognition_service,
+        "_provider",
+        type("Provider", (), {"model": "qwen3.6-flash"})(),
+    )
+
+    assert _simple_diet_nutrition_estimator_model_name() == "qwen3.6-flash"
+
+
 @pytest.mark.asyncio
 async def test_simple_diet_estimator_uses_sanitized_food_totals(monkeypatch):
-    def fake_estimate(_food_items):
+    def fake_estimate(_food_items, *, timeout_seconds=None):
+        assert timeout_seconds is not None
         return {
             "success": True,
             "foods": [

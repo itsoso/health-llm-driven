@@ -299,6 +299,7 @@ function findDietConfirmAction(actions?: ChatCardActionDescriptor[]): ChatCardAc
 
 export function DietDraftCardView(data: DietDraftCardViewProps) {
   const [editing, setEditing] = React.useState(false);
+  const [showAllIngredients, setShowAllIngredients] = React.useState(false);
   const [draftMealType, setDraftMealType] = React.useState<MealType>(() => mealTypeValue(data.meal_type));
   const [draftFood, setDraftFood] = React.useState(() => foodText(data.food_items) || '');
   const [draftCalories, setDraftCalories] = React.useState(() => editNumber(data.calories));
@@ -306,6 +307,11 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   const [draftCarbs, setDraftCarbs] = React.useState(() => editNumber(data.carbs));
   const [draftFat, setDraftFat] = React.useState(() => editNumber(data.fat));
   const chips = foodChips(data.food_items);
+  const compactIngredients = chips.length > 0 ? chips : [draftFood || '待确认餐食'];
+  const hiddenIngredientCount = Math.max(0, compactIngredients.length - 4);
+  const visibleIngredients = showAllIngredients
+    ? compactIngredients
+    : compactIngredients.slice(0, 4);
   const mealType = mealTypeValue(data.meal_type);
   const mealLabel = MEAL_LABELS[mealType] || '餐食';
   const macros = macroRows(data);
@@ -435,14 +441,36 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
         </View>
 
         <View style={styles.compactIngredientList}>
-          {(chips.length > 0 ? chips : [draftFood || '待确认餐食']).slice(0, 4).map(item => (
-            <View key={item} style={styles.compactIngredientRow}>
+          {visibleIngredients.map((item, index) => (
+            <View key={`${item}-${index}`} style={styles.compactIngredientRow}>
               <View style={styles.compactIngredientDot} />
               <Text maxFontSizeMultiplier={1.13} style={styles.compactIngredientText} numberOfLines={1}>
                 {item}
               </Text>
             </View>
           ))}
+          {hiddenIngredientCount > 0 ? (
+            <Pressable
+              onPress={() => setShowAllIngredients(current => !current)}
+              accessibilityRole="button"
+              accessibilityLabel={showAllIngredients
+                ? '收起食材列表'
+                : `查看其余 ${hiddenIngredientCount} 项食材`}
+              style={({ pressed }) => [
+                styles.compactIngredientDisclosure,
+                pressed && styles.editButtonPressed,
+              ]}
+            >
+              <Text style={styles.compactIngredientDisclosureText}>
+                {showAllIngredients ? '收起' : `查看其余 ${hiddenIngredientCount} 项`}
+              </Text>
+              <Ionicons
+                name={showAllIngredients ? 'chevron-up' : 'chevron-down'}
+                size={13}
+                color={C.green700}
+              />
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={styles.compactNutritionStrip}>
@@ -1243,6 +1271,24 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '700',
     color: C.ink2,
+  } as TextStyle,
+  compactIngredientDisclosure: {
+    minHeight: 28,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 1,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    paddingHorizontal: 9,
+  },
+  compactIngredientDisclosureText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11.5,
+    lineHeight: 16,
+    fontWeight: '800',
+    color: C.green700,
   } as TextStyle,
   compactNutritionStrip: {
     marginTop: 11,

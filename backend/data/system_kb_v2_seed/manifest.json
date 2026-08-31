@@ -1,21 +1,21 @@
 {
   "compiled_at": "2026-05-22T09:45:00+00:00",
   "counts": {
-    "claims": 460,
+    "claims": 462,
     "contraindications": 45,
-    "entities": 247,
-    "eval_cases": 68,
+    "entities": 248,
+    "eval_cases": 69,
     "pages": 61,
     "protocols": 10,
-    "relations": 3318
+    "relations": 3320
   },
   "diff": {
-    "claims_added": 12,
+    "claims_added": 14,
     "claims_superseded": 0,
-    "entities_added": 14,
+    "entities_added": 15,
     "pages_added": 0,
     "protocols_added": 10,
-    "relations_added": 201
+    "relations_added": 203
   },
   "down_dedao_wiki": {
     "compiled_at": "2026-05-23T01:44:15.959623+00:00",

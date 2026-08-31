@@ -6,6 +6,10 @@ import type { AgentPerfProfileLike } from '../utils/chatTransparency';
 import { normalizeWriteReceipt, type WriteReceipt } from './writeReceipt';
 import type { MedicationSafetyAlert } from './medications';
 import { assertAppEgressAllowed, enforceAppEgressAllowed } from './egressPolicy';
+import {
+  normalizeMedicalCitations,
+  type MedicalCitation,
+} from './medicalCitations';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -189,6 +193,7 @@ export interface StreamEvent {
   cards?: StreamCardDescriptor[];
   writeReceipts?: WriteReceipt[];
   medicationBatchDecision?: MedicationBatchStreamDecision;
+  medicalCitations?: MedicalCitation[];
 }
 
 function medicationSafetyAlerts(value: unknown): MedicationSafetyAlert[] {
@@ -314,7 +319,7 @@ function statusStageLabel(stage?: string, label?: string | null): string | undef
   const trimmedLabel = typeof label === 'string' ? label.trim() : '';
   switch (s) {
     case 'accepted':
-      return '正在理解…';
+      return trimmedLabel || '正在理解…';
     case 'tool':
       // label 来自后端确定性映射表 (工具名→动词短语); 缺失时兜底.
       return trimmedLabel || '正在处理…';
@@ -324,6 +329,20 @@ function statusStageLabel(stage?: string, label?: string | null): string | undef
       return '识别图片中…';
     case 'thinking':
       return '正在思考…';
+    case 'diet_parsed':
+      return '已识别餐食和餐次，正在估算营养…';
+    case 'diet_estimating':
+      return '正在估算本餐热量和营养…';
+    case 'diet_writing':
+      return '营养估算已完成，正在写入今日饮食…';
+    case 'diet_verified':
+      return '已写入今日饮食';
+    case 'diet_photo_saved':
+      return '照片已保存，正在准备识别…';
+    case 'diet_photo_recognizing':
+      return '正在识别照片中的餐食…';
+    case 'diet_photo_review':
+      return '识别完成，请核对后确认…';
     default:
       return undefined;
   }
@@ -580,6 +599,9 @@ export async function* streamChat(
           parsed.data?.write_receipts,
           parsed.data?.safety_alerts,
         );
+        const medicalCitations = normalizeMedicalCitations(
+          parsed.data?.medical_citations,
+        );
         const turnOutcome = parsed.data?.turn_outcome;
         const recoveryAction = parsed.data?.recovery_action;
         const retrySourceActive = Boolean(
@@ -615,6 +637,7 @@ export async function* streamChat(
           cards: Array.isArray(parsed.data?.cards) ? parsed.data.cards : undefined,
           writeReceipts: writeReceipts?.length ? writeReceipts : undefined,
           ...(medicationDecision ? { medicationBatchDecision: medicationDecision } : {}),
+          ...(medicalCitations ? { medicalCitations } : {}),
         };
       } else if (parsed.event === 'error') {
         return {

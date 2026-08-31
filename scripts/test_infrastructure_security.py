@@ -44,6 +44,7 @@ def test_backend_keeps_process_local_garmin_mfa_challenges_on_one_worker() -> No
 
     assert "--workers 1" in exec_start
     assert "--workers 2" not in exec_start
+    assert "--no-access-log" in exec_start
 
     # Production deploys the runtime-state drop-in transactionally while the
     # base unit in /etc may predate the checkout. The deployed artifact must
@@ -55,6 +56,7 @@ def test_backend_keeps_process_local_garmin_mfa_challenges_on_one_worker() -> No
     assert dropin_exec_starts[0] == "ExecStart="
     assert "--workers 1" in dropin_exec_starts[1]
     assert all("--workers 2" not in line for line in dropin_exec_starts)
+    assert "--no-access-log" in dropin_exec_starts[1]
 
 
 def test_celery_beat_state_is_outside_the_trusted_worktree() -> None:
@@ -146,6 +148,7 @@ def test_nginx_and_firewall_do_not_publish_internal_services() -> None:
     nginx = (ROOT / "infra" / "nginx" / "health.executor.life.conf").read_text()
     assert "proxy_pass http://127.0.0.1:8000" in nginx
     assert "server_tokens off" in nginx
+    assert nginx.count("access_log off;") == 2
 
     firewall = (ROOT / "infra" / "firewall" / "apply-ufw.sh").read_text()
     for public_port in ("22/tcp", "80/tcp", "443/tcp"):

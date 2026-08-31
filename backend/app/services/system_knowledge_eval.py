@@ -153,6 +153,7 @@ def _run_eval_case(db: Session, document: KBDocument) -> dict[str, Any]:
     lookup_targets: list[dict[str, Any]] = []
 
     search_query = case_input.get("search_query")
+    source_collection = case_input.get("source_collection")
     if (
         "search_query" in expected
         and expected.get("search_query") != search_query
@@ -164,6 +165,9 @@ def _run_eval_case(db: Session, document: KBDocument) -> dict[str, Any]:
             db,
             str(search_query),
             runtime_eval=runtime_eval,
+            source_collection=(
+                str(source_collection) if source_collection else None
+            ),
         )
         found = set(ranked_ids)
         missing_from_search = search_required_doc_ids - found
@@ -280,6 +284,7 @@ def _search_doc_ids_ranked(
     query: str,
     *,
     runtime_eval: bool = False,
+    source_collection: str | None = None,
 ) -> list[str]:
     """Ordered doc_ids from search_knowledge, preserving fusion rank (dedup, keep-first)."""
     from app.services.health_evidence.authority import (
@@ -295,7 +300,10 @@ def _search_doc_ids_ranked(
         if runtime_eval
         else search_knowledge
     )
-    result = search(db, query, limit=RANK_PROBE_LIMIT)
+    search_kwargs: dict[str, Any] = {"limit": RANK_PROBE_LIMIT}
+    if source_collection and not runtime_eval:
+        search_kwargs["source_collection"] = source_collection
+    result = search(db, query, **search_kwargs)
     ordered: list[str] = []
     seen: set[str] = set()
     for item in (result.get("results") or []):

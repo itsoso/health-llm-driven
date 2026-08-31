@@ -18,6 +18,7 @@ SymptomEntry/IllnessEpisode 读法 + symptoms 安全规则的红旗关键词。
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from typing import List, Optional
@@ -41,19 +42,46 @@ _LOCAL_TZ = ZoneInfo("Asia/Shanghai")
 _ACUTE_SYMPTOM_KEYWORDS: tuple[str, ...] = (
     # 心脏 / 胸部
     "胸痛", "胸闷", "心前区", "胸口痛", "胸口闷", "心悸", "心慌",
+    "心跳突然很乱", "心跳很乱", "心律不齐", "乱跳", "心跳漏拍",
+    "胸口像被石头压住", "胸口压迫", "胸部压迫", "胸口发紧",
+    "心脏像被攥住", "心口像被攥住", "胸口被压着", "胸口压着",
+    "心口堵得慌", "心口堵",
     # 卒中 FAST
     "口角歪", "面瘫", "嘴歪", "言语不清", "说话不清", "口齿不清",
     "半身", "单侧无力", "一侧无力", "肢体无力", "突然看不清",
+    "突然一只手没劲", "一只手没劲", "视线突然模糊", "突然视线模糊",
+    "眼前发黑", "说话大舌头", "大舌头", "一边脸耷拉", "脸耷拉",
     # 呼吸
-    "呼吸困难", "喘不上气", "喘不过气", "无法平卧", "端坐呼吸",
+    "呼吸困难", "喘不上气", "喘不过气", "喘不上来", "喘不过来",
+    "透不过气", "无法平卧", "端坐呼吸",
     "口唇发绀", "嘴唇发紫", "憋气严重", "呼吸费力",
     # 急腹症 / 消化道出血(含 symptoms.py acute_abdomen 全部 CRITICAL 关键词)
     "剧烈腹痛", "腹痛难忍", "刀割样腹痛", "板状腹", "腹部僵硬",
-    "呕血", "黑便", "便血", "柏油样便",
+    "呕血", "黑便", "便血", "柏油样便", "大便像柏油",
+    "咖啡渣样", "吐出来像咖啡渣",
     # 全身警示(含 symptoms.py red_flag_persistent_warning 的高危表现)
     "晕厥", "昏厥", "意识模糊", "持续发热", "反复发烧", "高热不退",
     "异常出血", "体重骤降", "暴瘦",
+    "排便有鲜血", "排便鲜血", "大便带血", "便中带血", "鲜血便",
 )
+
+_ACUTE_SYMPTOM_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?:喘|呼吸|透气|吸气|吸).{0,5}(?:不上|不过|不进|困难|费力|憋)"),
+    re.compile(r"(?:突然)?.{0,3}(?:一只|一边|一侧|单侧|左|右).{0,3}(?:手|手臂|胳膊|脚|脸|身体).{0,4}(?:没劲|无力|使不上劲|抬不起来|耷拉|麻)"),
+    re.compile(r"(?:眼前|视线|视物|看东西).{0,5}(?:发黑|模糊|看不清|糊)"),
+    re.compile(r"(?:说话|言语|口齿).{0,4}(?:大舌头|不清|含糊)"),
+    re.compile(r"(?:胸口|胸部|心口|心脏).{0,8}(?:压|堵|攥|紧|痛|闷|坐着)"),
+    re.compile(r"(?:心跳|心脏).{0,5}(?:乱|漏拍|漏跳|停跳)"),
+)
+
+
+def contains_acute_symptom_language(text: str | None) -> bool:
+    """Conservative free-text safety signal shared by pre-routing guards."""
+    normalized = str(text or "").strip().lower()
+    return bool(normalized) and (
+        any(keyword in normalized for keyword in _ACUTE_SYMPTOM_KEYWORDS)
+        or any(pattern.search(normalized) for pattern in _ACUTE_SYMPTOM_PATTERNS)
+    )
 
 
 @dataclass(frozen=True)

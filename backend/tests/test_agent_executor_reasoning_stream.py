@@ -181,3 +181,45 @@ async def test_reasoning_snippet_that_looks_like_tool_result_json_is_skipped(
     # 泄漏形态的 reasoning 一条 status 都不发。
     assert details == []
     assert _tokens(events) == "已了解。"
+
+
+@pytest.mark.asyncio
+async def test_internal_process_content_is_never_streamed_or_persisted(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+    leaked = (
+        "I need to get the actual sleep data for last night. Let me query it properly. "
+        "The sleep query failed due to a window parameter issue. "
+        "I'll try health_query with the sleep dimension."
+    )
+
+    async def fake_stream(messages, round_tools):
+        # 单字符增量锁死最坏情况：不能先漏出 "I" / "I need" 再开始缓冲。
+        for char in leaked:
+            yield {"type": "content", "text": char}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
+    events = await _run(executor, "昨晚我睡得怎么样？今天是否适合锻炼？", user_id=user.id)
+
+    tokens = _tokens(events)
+    assert "I need to" not in tokens
+    assert "health_query" not in tokens
+    assert tokens == "这次没有完成数据查询，因此没有生成可靠回答。请点“重试”重新查询。"
+
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["completion_status"] == "error"
+    assert done["data"]["turn_outcome"]["retryable"] is True
+
+    from app.models.agent_conversation import AgentMessage
+
+    message = (
+        db.query(AgentMessage)
+        .filter(AgentMessage.id == done["data"]["message_id"])
+        .first()
+    )
+    assert message is not None
+    assert message.content == tokens

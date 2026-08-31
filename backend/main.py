@@ -17,6 +17,7 @@ from app.scheduler import start_scheduler
 from app.utils.logging_config import setup_beijing_logging
 from app.config import settings
 from app.middleware.request_body_limit import RequestBodyLimitMiddleware
+from app.middleware.safe_access_log import SafeAccessLogMiddleware, safe_route_template
 import app.models.smart_reminder  # noqa: F401 - ensure table creation
 import app.models.interaction_feedback  # noqa: F401 - Agent 反馈系统
 import app.models.genetic_data  # noqa: F401 - 基因数据表
@@ -313,13 +314,15 @@ STREAMING_PATHS = {
 # LLM-bound 长任务端点:单条请求需多次/大输出 LLM 调用,远超 60s 但**非**流式
 # (不能进 STREAMING_PATHS 全豁免——全豁免会让真卡死的请求永不超时、饿死 worker)。
 # 给单独的更长超时上限,既容下合法长解析、又保留兜底。
-# 体检报告 PDF 导入:大报告 LLM 解析 + 服务端分段(CHUNK_CHARS=35000)多次调用,实测 76s+。
+# 体检报告 PDF 导入/预览:大报告 LLM 解析 + 服务端分段(CHUNK_CHARS=35000)多次调用,实测 76s+。
 # image 走 vision OCR、text 走同一分段解析路径,同样 LLM-bound 可能 >60s。
 # csv/json 是确定性解析(快),不进此表。
 LONG_REQUEST_PATHS = {
     "/api/v1/medical-exams/import/pdf": 300,
     "/api/v1/medical-exams/import/image": 300,
     "/api/v1/medical-exams/import/text": 300,
+    "/api/v1/medical-exams/parse-pdf-preview": 300,
+    "/api/v1/medical-exams/parse-image-preview": 300,
 }
 # /api/v1/agent/send 与 /api/v1/orchestrator/chat 刻意不在上面两表里:深分析回合
 # 超过各自快窗(agent.py AGENT_SEND_KEEPALIVE_SECONDS / api/orchestrator.py
@@ -355,7 +358,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             # 慢请求日志
             if duration > SLOW_REQUEST_THRESHOLD:
                 logger.warning(
-                    f"[SLOW] [{request_id}] {method} {path} "
+                    f"[SLOW] [{request_id}] {method} {safe_route_template(request.scope)} "
                     f"took {duration_ms:.0f}ms (status={response.status_code})"
                 )
 
@@ -364,7 +367,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         except asyncio.TimeoutError:
             duration_ms = (time.time() - start_time) * 1000
             logger.error(
-                f"[TIMEOUT] [{request_id}] {method} {path} "
+                f"[TIMEOUT] [{request_id}] {method} {safe_route_template(request.scope)} "
                 f"timed out after {duration_ms:.0f}ms (limit={req_timeout}s)"
             )
             return JSONResponse(
@@ -377,8 +380,8 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         except Exception as e:
             duration_ms = (time.time() - start_time) * 1000
             logger.error(
-                f"[ERROR] [{request_id}] {method} {path} "
-                f"failed after {duration_ms:.0f}ms: {type(e).__name__}: {e}"
+                f"[ERROR] [{request_id}] {method} {safe_route_template(request.scope)} "
+                f"failed after {duration_ms:.0f}ms: {type(e).__name__}"
             )
             return JSONResponse(
                 status_code=500,
@@ -390,6 +393,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(RequestBodyLimitMiddleware)
+app.add_middleware(SafeAccessLogMiddleware)
 
 # 注册路由
 app.include_router(api_router, prefix="/api/v1")

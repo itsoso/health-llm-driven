@@ -1,12 +1,12 @@
 # App Store Production Dependency Risk Review
 
-Review date: 2026-08-07
+Review date: 2026-08-28
 
 ## Decision
 
 Fresh full-tree and production-only npm audits report zero known vulnerabilities. The
 backend hashed production lock also reports zero known vulnerabilities under
-`pip-audit`.
+`pip-audit` after removing the default-disabled legacy ChromaDB runtime dependency.
 
 The newly disclosed `brace-expansion` advisories are remediated across every locked
 major line used by Mobile (`1.1.18`, `2.1.4`, and `5.0.9`). PostCSS is pinned to the
@@ -15,9 +15,22 @@ locked major lines (`3.15.1` and `4.3.1`). Backend remediation pins
 `aiohttp==3.14.3`, `cryptography==50.0.0`, and `h2==4.4.1` for the duplicate Host
 header request-smuggling advisory.
 
-No dependency-audit exception remains. The release may proceed to the next gate;
-App Review is still blocked by exact-build CI, build, and real-device evidence, not
-by a known dependency finding.
+ChromaDB `0.6.3` was removed from the production requirements and lock after
+`CVE-2026-45830`, `CVE-2026-45831`, and critical code-injection
+`CVE-2026-45833` were published without a patched ChromaDB release. Production
+already routes knowledge retrieval through reviewed System KB and keeps the legacy
+Chroma runtime disabled. The deploy dependency synchronizer now removes stale
+`chromadb`/`chroma-hnswlib` installations before verifying the lock, and the lock
+verifier rejects either residual package. A matching dependency marker is deleted
+and durably synced before repair, so a failed uninstall cannot leave stale reuse
+evidence. Rollback installs the target lock while services are stopped, removes
+both forbidden packages, and verifies the remaining target-lock contract with the
+immutable staged verifier before any service starts.
+
+No dependency-audit exception remains. The exact remediation commit received
+independent G4b approval with no Critical or Important findings; release remains
+blocked until main CI is green. App Review also remains blocked by exact-build CI,
+build, and real-device evidence.
 
 ## Controls
 
@@ -34,6 +47,9 @@ by a known dependency finding.
   advisories.
 - Backend CI audits the hashed `backend/requirements.lock`; the lock is generated
   for the CI Python 3.12 Linux x86_64 target and must install with `--require-hashes`.
+- Backend deployment removes forbidden stale packages before writing its
+  lock-addressed dependency marker; verification fails if either `chromadb` or
+  `chroma-hnswlib` remains installed, and repair failure leaves no reusable marker.
 - Do not apply `npm audit fix --force`; dependency upgrades must stay within the
   Expo compatibility matrix and pass Mobile regression.
 

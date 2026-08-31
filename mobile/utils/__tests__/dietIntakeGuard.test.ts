@@ -44,6 +44,15 @@ describe('dietIntakeGuard', () => {
     expect(() => assertDietFoodItemsAllowed(text)).not.toThrow();
   });
 
+  it('allows a photographed breakfast containing the food 山药', () => {
+    const text = '煎蛋 约1个 + 玉米段 约1/4根 + 紫薯 约1小块 + 山药 约1小段 + 青菜';
+
+    expect(looksLikeNonDietIntake(text)).toBe(false);
+    expect(() => assertDietFoodItemsAllowed(text, {
+      ownerBoundPhotoDraft: true,
+    })).not.toThrow();
+  });
+
   it.each([
     ['coq10environment salad'],
     ['d32factor cereal'],
@@ -55,6 +64,15 @@ describe('dietIntakeGuard', () => {
     const text = '小米粥 约1碗 + 胡萝卜 约3片 + 南瓜 约2块';
     expect(looksLikeNonDietIntake(text)).toBe(true);
     expect(() => assertDietFoodItemsAllowed(text)).toThrow('invalid_diet_food_items_non_diet');
+    expect(() => assertDietFoodItemsAllowed(text, {
+      ownerBoundPhotoDraft: true,
+    })).not.toThrow();
+  });
+
+  it('allows a photographed meal whose legitimate food name ends in 片', () => {
+    const text = '煎三文鱼 约1份 + 牛油果 约1/4个 + 腰果 约10颗 + 黄瓜 约1/4根 + 红米 约1碗 + 裙带菜 少量 + 海苔 少量 + 萝卜片 少量';
+
+    expect(looksLikeNonDietIntake(text)).toBe(true);
     expect(() => assertDietFoodItemsAllowed(text, {
       ownerBoundPhotoDraft: true,
     })).not.toThrow();
@@ -72,6 +90,8 @@ describe('dietIntakeGuard', () => {
   it.each([
     ['阿司匹林 1片'],
     ['阿奇霉素 1片'],
+    ['奥美拉唑片'],
+    ['止痛片'],
     ['华法林 1片'],
     ['warfarin 1片'],
     ['warfarin1片'],
@@ -107,6 +127,7 @@ describe('dietIntakeGuard', () => {
     ['vitamindandfishoil'],
     ['d3-fish-oil'],
     ['胡萝卜 约3片 + warfarin 1片'],
+    ['山药 约1小段 + 阿司匹林 1片'],
   ])('keeps strong medication and supplement guards for photo drafts: %s', (text) => {
     expect(() => assertDietFoodItemsAllowed(text, {
       ownerBoundPhotoDraft: true,

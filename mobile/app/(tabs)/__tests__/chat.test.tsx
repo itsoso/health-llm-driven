@@ -498,6 +498,23 @@ describe('ChatScreen', () => {
     expect(queryByText(/接下来/)).toBeNull();
   });
 
+  it('opens the handling page from an overdue checkup hint', () => {
+    mockTodayTimelineData = {
+      items: [{
+        id: 'checkup-1', kind: 'checkup', action_kind: 'checkup',
+        title: '复查:胃溃疡(Hp 阴性,胃窦后壁)', status: 'overdue',
+        priority: 9, can_complete: false, deep_link: '/medical-exams',
+      }],
+      past: { completed_count: 0, events: [] },
+      counts: { actionable: 0, overdue: 1, info: 0 },
+    };
+
+    const view = render(<ChatScreen />);
+
+    fireEvent.press(view.getByLabelText('打开今日计划'));
+    expect(mockPush).toHaveBeenCalledWith('/medical-exams');
+  });
+
   it('dismisses a due hint completely and keeps Today available in more actions', async () => {
     mockTodayTimelineData = {
       items: [{

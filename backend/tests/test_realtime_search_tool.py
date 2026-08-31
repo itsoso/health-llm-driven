@@ -49,11 +49,16 @@ async def test_empty_block_returns_honest_miss(db, monkeypatch):
 
 
 async def test_exception_fails_honest(db, monkeypatch):
+    seen = {}
+
     async def _boom(query, **kw):
-        raise RuntimeError("iqs down")
+        seen.update(kw)
+        raise iqs_search.RealtimeSearchUnavailable("upstream_error")
 
     _patch_iqs(monkeypatch, _boom)
     out = await _make_executor(db)._exec_realtime_search({"query": "高血压"})
+    assert seen["raise_on_unavailable"] is True
+    assert out.startswith("Error:")
     assert "暂不可用" in out
     assert "勿编造依据" in out
     assert PREFIX not in out

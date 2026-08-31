@@ -696,6 +696,35 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('normalizes clickable medical citations from the terminal event', async () => {
+    const iter = streamChat('帮我算我的 BMI');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText =
+      'data: {"event":"done","data":{"conversation_id":77,"message_id":88,"completion_status":"complete","medical_citations":[{"source_id":"nhc:adult-weight-standard","title":"中国成人体重判定标准","organization":"国家卫生健康委员会","url":"https://www.nhc.gov.cn/example.pdf","topic":"bmi","claim_scope":"成人 BMI 判定范围"},{"source_id":"bad","title":"不安全来源","organization":"未知","url":"http://example.test","topic":"bmi","claim_scope":"不应展示"}]}}\n\n';
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toMatchObject({
+      value: {
+        type: 'done',
+        medicalCitations: [
+          {
+            sourceId: 'nhc:adult-weight-standard',
+            title: '中国成人体重判定标准',
+            organization: '国家卫生健康委员会',
+            url: 'https://www.nhc.gov.cn/example.pdf',
+            topic: 'bmi',
+            claimScope: '成人 BMI 判定范围',
+          },
+        ],
+      },
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
   it('maps status stage events to slim status-line labels (P0-1 新契约: accepted/tool/synthesis)', async () => {
     const iter = streamChat('看看我今天走了多少步');
     const first = iter.next();
@@ -738,6 +767,57 @@ describe('streamChat', () => {
       value: { type: 'status', statusLabel: '正在整理回答…', statusStage: 'synthesis' },
       done: false,
     });
+
+    await iter.return?.(undefined as any);
+  });
+
+  it('shows the backend phase-one acknowledgement verbatim on accepted', async () => {
+    const iter = streamChat('昨晚睡得怎样，今天是否适合锻炼？');
+    const first = iter.next();
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+
+    xhr.responseText =
+      'data: {"type":"status","stage":"accepted","label":"我先读取睡眠和恢复数据，再判断今天适合的运动强度。"}\n\n';
+    xhr.onprogress?.();
+    await expect(first).resolves.toEqual({
+      value: {
+        type: 'status',
+        statusLabel: '我先读取睡眠和恢复数据，再判断今天适合的运动强度。',
+        statusStage: 'accepted',
+      },
+      done: false,
+    });
+
+    await iter.return?.(undefined as any);
+  });
+
+  it('maps progressive diet stages to concise Chinese execution summaries', async () => {
+    const iter = streamChat('记录吃了一个桃子');
+    const first = iter.next();
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+
+    const expected = [
+      ['diet_parsed', '已识别餐食和餐次，正在估算营养…'],
+      ['diet_estimating', '正在估算本餐热量和营养…'],
+      ['diet_writing', '营养估算已完成，正在写入今日饮食…'],
+      ['diet_verified', '已写入今日饮食'],
+      ['diet_photo_saved', '照片已保存，正在准备识别…'],
+      ['diet_photo_recognizing', '正在识别照片中的餐食…'],
+      ['diet_photo_review', '识别完成，请核对后确认…'],
+    ] as const;
+
+    let pending = first;
+    for (const [index, [stage, statusLabel]] of expected.entries()) {
+      xhr.responseText += `data: {"type":"status","stage":"${stage}"}\n\n`;
+      xhr.onprogress?.();
+      await expect(pending).resolves.toEqual({
+        value: { type: 'status', statusLabel, statusStage: stage },
+        done: false,
+      });
+      if (index < expected.length - 1) pending = iter.next();
+    }
 
     await iter.return?.(undefined as any);
   });

@@ -288,6 +288,13 @@ class TestLimiterConfig:
 class TestRequestContextMiddleware:
     """测试请求上下文中间件"""
 
+    def test_medical_exam_preview_paths_use_long_request_timeout(self):
+        """体检报告预览解析不得落入普通请求的 60 秒超时。"""
+        from main import LONG_REQUEST_PATHS
+
+        assert LONG_REQUEST_PATHS["/api/v1/medical-exams/parse-pdf-preview"] == 300
+        assert LONG_REQUEST_PATHS["/api/v1/medical-exams/parse-image-preview"] == 300
+
     def test_response_has_request_id(self, client):
         """响应应包含 X-Request-ID"""
         response = client.get("/")

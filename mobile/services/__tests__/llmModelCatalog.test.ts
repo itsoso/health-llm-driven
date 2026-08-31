@@ -7,6 +7,11 @@ import {
 } from '../llmModelCatalog';
 
 describe('llmModelCatalog', () => {
+  it('keeps the latest Qwen TokenPlan flash model selectable', () => {
+    expect(ADVANCED_CHAT_MODEL_IDS).toContain('qwen3.8-flash');
+    expect(isAdvancedChatModelId('tokenplan/qwen3.8-flash')).toBe(true);
+  });
+
   it('keeps the latest DeepSeek TokenPlan variant selectable', () => {
     expect(ADVANCED_CHAT_MODEL_IDS).toContain('deepseek-v4-pro-0813');
     expect(isAdvancedChatModelId('tokenplan/deepseek-v4-pro-0813')).toBe(true);

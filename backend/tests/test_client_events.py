@@ -120,6 +120,80 @@ def test_post_client_event_rejects_aigc_resource_identifiers(
     assert response.status_code == 422, response.text
 
 
+def test_post_client_event_accepts_content_free_agent_turn_milestone(
+    client, db, auth_user_and_headers,
+):
+    _, headers = auth_user_and_headers
+
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={
+            "event_name": "agent_turn_milestone",
+            "meta": {
+                "phase": "first_useful",
+                "duration_ms": 842,
+                "action_type": "diet_record",
+                "has_image": False,
+            },
+        },
+    )
+
+    assert response.status_code == 202, response.text
+    row = db.query(ClientEvent).order_by(ClientEvent.id.desc()).first()
+    assert row.event_name == "agent_turn_milestone"
+    assert row.meta == {
+        "phase": "first_useful",
+        "duration_ms": 842,
+        "action_type": "diet_record",
+        "has_image": False,
+    }
+
+
+@pytest.mark.parametrize(
+    "meta",
+    [
+        {
+            "phase": "first_useful",
+            "duration_ms": 842,
+            "action_type": "diet_record",
+            "has_image": False,
+            "content": "一碗粥",
+        },
+        {
+            "phase": "raw_reasoning",
+            "duration_ms": 842,
+            "action_type": "diet_record",
+            "has_image": False,
+        },
+        {
+            "phase": "first_useful",
+            "duration_ms": 300001,
+            "action_type": "diet_record",
+            "has_image": False,
+        },
+        {
+            "phase": "first_useful",
+            "duration_ms": 842,
+            "action_type": "diet_record\nprivate",
+            "has_image": False,
+        },
+    ],
+)
+def test_post_client_event_rejects_unsafe_agent_turn_milestone(
+    client, auth_user_and_headers, meta,
+):
+    _, headers = auth_user_and_headers
+
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={"event_name": "agent_turn_milestone", "meta": meta},
+    )
+
+    assert response.status_code == 422, response.text
+
+
 def test_client_events_stats_counts_by_event(db, auth_user_and_headers):
     from app.models.user import User
     from app.services.observability_service import client_events_stats

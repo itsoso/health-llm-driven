@@ -211,6 +211,83 @@ async def test_image_nutrition_label_auto_save_ignores_redundant_incomplete_writ
 
 
 @pytest.mark.asyncio
+async def test_low_confidence_mobile_meal_photo_returns_confirmation_without_llm_write(
+    db, tmp_path, monkeypatch
+):
+    """A persisted confirmation draft is a successful pause, not a failed write."""
+    from app.services.ai.food_recognition import food_recognition_service
+
+    executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+    low_confidence = _food_result()
+    low_confidence["foods"][0]["confidence"] = 0.80
+    llm_calls = 0
+
+    async def recognize_food(*_args, **_kwargs):
+        return low_confidence
+
+    async def unexpected_llm_call(*_args, **_kwargs):
+        nonlocal llm_calls
+        llm_calls += 1
+        raise AssertionError("a persisted confirmation draft must skip the LLM")
+
+    monkeypatch.setattr(
+        food_recognition_service,
+        "recognize_food_from_base64",
+        recognize_food,
+    )
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools",
+        lambda subset=None: [],
+    )
+    monkeypatch.setattr(executor, "_call_llm", unexpected_llm_call)
+    monkeypatch.setattr(
+        executor,
+        "_call_llm_stream",
+        _stream_from(unexpected_llm_call),
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录这餐",
+            user_auth_token="test-token",
+            images=[{"base64": VALID_PNG_BASE64, "type": "png"}],
+            extra_context=json.dumps({
+                "source": "mobile_chat_meal_photo",
+                "intent": "diet_photo_record",
+            }),
+            client_turn_id="turn-low-confidence-meal-photo-confirmation",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+    diet_cards = [
+        card
+        for card in done["data"].get("cards", [])
+        if card.get("type") == "diet_draft"
+    ]
+
+    assert llm_calls == 0
+    assert db.query(DietRecord).filter(DietRecord.user_id == user.id).count() == 0
+    assert db.query(DietPhotoDraft).filter(DietPhotoDraft.user_id == user.id).count() == 1
+    assert "已识别这餐" in rendered
+    assert "记录没有完成" not in rendered
+    assert done["data"]["completion_status"] == "complete"
+    assert done["data"]["turn_outcome"]["category"] == "confirmation_required"
+    assert done["data"]["turn_outcome"]["confirmation_required"] is True
+    assert len(diet_cards) == 1
+    assert diet_cards[0]["data"]["media_stage"] == "pending_confirmation"
+    assert diet_cards[0]["actions"][0]["action"] == "diet_record.create"
+
+
+@pytest.mark.asyncio
 async def test_structured_food_vision_does_not_save_label_basis_as_consumed_amount(
     db, tmp_path, monkeypatch
 ):

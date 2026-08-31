@@ -4,6 +4,8 @@ H1: _scrub_pii —— 出口前脱敏直接标识符 (手机号/身份证/邮箱
 H2: _format_block —— 外部返回文本里的注入指令被打码, 合法医学正文保留, size cap 不破。
 契约: fetch_realtime_evidence 在 disabled/empty/exception 下仍返回 "" 且永不抛。
 """
+import pytest
+
 import app.services.iqs_search as iqs
 
 
@@ -88,6 +90,16 @@ async def test_fetch_returns_empty_when_disabled(monkeypatch):
     assert out == ""
 
 
+async def test_fetch_strict_reports_disabled_service(monkeypatch):
+    monkeypatch.setattr(iqs, "_enabled", lambda: False)
+
+    with pytest.raises(iqs.RealtimeSearchUnavailable, match="not_configured"):
+        await iqs.fetch_realtime_evidence(
+            "浙大一院余杭院区 儿童急诊",
+            raise_on_unavailable=True,
+        )
+
+
 async def test_fetch_returns_empty_on_empty_query(monkeypatch):
     monkeypatch.setattr(iqs, "_enabled", lambda: True)
     out = await iqs.fetch_realtime_evidence("   ")
@@ -103,6 +115,21 @@ async def test_fetch_returns_empty_on_exception(monkeypatch):
     monkeypatch.setattr(iqs, "_raw_search", _boom)
     out = await iqs.fetch_realtime_evidence("高血压 指南")
     assert out == ""  # 永不抛, 降级空串
+
+
+async def test_fetch_strict_reports_upstream_failure(monkeypatch):
+    monkeypatch.setattr(iqs, "_enabled", lambda: True)
+
+    async def _boom(query, max_results, time_range):
+        raise RuntimeError("disabled access key")
+
+    monkeypatch.setattr(iqs, "_raw_search", _boom)
+
+    with pytest.raises(iqs.RealtimeSearchUnavailable, match="upstream_error"):
+        await iqs.fetch_realtime_evidence(
+            "浙大一院余杭院区 儿童急诊",
+            raise_on_unavailable=True,
+        )
 
 
 async def test_fetch_scrubs_pii_before_egress(monkeypatch):

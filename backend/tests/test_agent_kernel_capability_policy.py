@@ -3505,6 +3505,69 @@ def test_explicit_whole_record_delete_remains_allowed(message, record_type):
     assert decision.receipt_required is True
 
 
+@pytest.mark.parametrize("record_id", (718, 719))
+def test_explicit_batch_delete_allows_each_target_after_complete_owner_lookup(
+    record_id,
+):
+    snapshot = replace(
+        _snapshot("删除饮食记录 718 和 719"),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={
+                    "record_type": "diet",
+                    "records": ({"id": 718}, {"id": 719}),
+                },
+            ),
+        ),
+    )
+
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "diet",
+                "operation": "delete",
+                "record_id": record_id,
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.reason == "explicit_mutation_intent"
+
+
+@pytest.mark.parametrize("record_id", (718, 719))
+def test_explicit_batch_delete_blocks_every_target_when_owner_lookup_is_partial(
+    record_id,
+):
+    snapshot = replace(
+        _snapshot("删除饮食记录 718 和 719"),
+        actionable_references=(
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={"record_type": "diet", "records": ({"id": 718},)},
+            ),
+        ),
+    )
+
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "diet",
+                "operation": "delete",
+                "record_id": record_id,
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "delete_requires_exact_target_evidence"
+
+
 @pytest.mark.parametrize(
     ("message", "record_type", "record_id"),
     (
@@ -4537,7 +4600,7 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
         },
     }
     assert (
-        payload["whole_record_delete_evidence_version"] == "record-delete-evidence-v5"
+        payload["whole_record_delete_evidence_version"] == "record-delete-evidence-v6"
     )
     assert (
         payload["health_manage_update_evidence_version"] == "record-update-evidence-v24"
