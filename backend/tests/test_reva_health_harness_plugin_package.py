@@ -47,7 +47,7 @@ def test_plugin_release_tracks_router_v2_semantic_contract():
     assert registry["adapter_contracts"]["reva-workflow-router"]["version"] == "2.0.1"
     assert (
         registry["adapter_contracts"]["health-harness-orchestrator"]["version"]
-        == "1.0.1"
+        == "1.0.2"
     )
 
 
@@ -134,6 +134,18 @@ def test_codex_router_is_the_only_implicitly_invoked_plugin_skill():
         assert (PLUGIN / "scripts" / script_name).read_text(encoding="utf-8") == (
             ROOT / "scripts" / script_name
         ).read_text(encoding="utf-8")
+
+
+def test_health_harness_documents_commit_bound_live_llm_confirmation():
+    skill = (
+        ROOT / ".claude" / "skills" / "health-harness-orchestrator" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        'gh variable set HARNESS_LIVE_LLM_EVAL_CONFIRMED --body "$(git rev-parse HEAD)"'
+        in skill
+    )
+    assert "HARNESS_LIVE_LLM_EVAL_CONFIRMED=1" not in skill
 
 
 def test_product_pipeline_documents_quick_flow_and_correct_course():

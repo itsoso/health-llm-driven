@@ -294,6 +294,7 @@ def test_system_kb_marker_executes_missing_match_and_symlink_paths(tmp_path: Pat
     fake_bin.mkdir()
     state_dir = tmp_path / "release-state"
     digest = "b" * 64
+    legacy_digest = "c" * 64
     _write_root_owned_stat_shim(fake_bin / "stat")
     _write_executable(fake_bin / "sync", "#!/bin/sh\nexit 0\n")
     _write_executable(
@@ -309,10 +310,17 @@ test "$2" = "--"
 source {DEPLOY_SCRIPT!s}
 REMOTE_RELEASE_STATE_DIR={state_dir!s}
 SYSTEM_KB_INPUT_SHA={digest}
+SYSTEM_KB_LEGACY_INPUT_SHA={legacy_digest}
 ssh() {{ shift; PATH="$FAKE_BIN:$PATH" "$@"; }}
 determine_system_kb_activation_need
 test "$SYSTEM_KB_ACTIVATION_REQUIRED" = 1
+mkdir -m 700 '{state_dir!s}'
+printf '%s\n' '{legacy_digest}' > '{state_dir!s}/system-kb-input.sha256'
+chmod 600 '{state_dir!s}/system-kb-input.sha256'
+determine_system_kb_activation_need
+test "$SYSTEM_KB_ACTIVATION_REQUIRED" = 0
 record_system_kb_input_digest
+test "$(cat '{state_dir!s}/system-kb-input.sha256')" = '{digest}'
 determine_system_kb_activation_need
 test "$SYSTEM_KB_ACTIVATION_REQUIRED" = 0
 rm -f '{state_dir!s}/system-kb-input.sha256'

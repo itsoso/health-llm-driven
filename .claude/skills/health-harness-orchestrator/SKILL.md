@@ -69,7 +69,7 @@ leader 拆任务 → `TaskCreate`。跨端任务先定 **API 契约**(请求/响
 
 ### Phase 3:增量 QA(每个模块完成即跑,非最后一次)
 `qa-verifier` 跑对应闸门;**真红**回对应实现者修;**假红**(本地 Redis / runner 假死)标注、不动测试。
-- 触及 LLM / prompt / model registry / orchestrator / eval gold set 的改动,先跑 `python3 scripts/harness_llm_change_gate.py --path <changed-file>` 做零成本分类;命中高风险时必须跑 `python3 scripts/harness_llm_regression_gate.py --include-live-llm` 并把证据写入 Dossier/PR,CI 才允许设置 `HARNESS_LIVE_LLM_EVAL_CONFIRMED=1` 通过 live-change 硬闸。
+- 触及 LLM / prompt / model registry / orchestrator / eval gold set 的改动,先跑 `python3 scripts/harness_llm_change_gate.py --path <changed-file>` 做零成本分类;命中高风险时必须跑 `python3 scripts/harness_llm_regression_gate.py --include-live-llm` 并把证据写入 Dossier/PR,然后在 push 前用 `gh variable set HARNESS_LIVE_LLM_EVAL_CONFIRMED --body "$(git rev-parse HEAD)"` 把一次性 CI 放行精确绑定到该提交。后续提交不能复用旧值。
 
 ### Phase 4:安全评审(producer-reviewer)
 触及敏感数据/用药/基因/安全规则/认证 → `safety-privacy-reviewer` 评审,阻断项整改 + 复审后才放行。

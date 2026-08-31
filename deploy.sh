@@ -65,6 +65,7 @@ _REMOTE_RELEASE_LOCK_ABANDONED=0
 _REMOTE_RELEASE_LOCK_ADOPTED=0
 REQUIREMENTS_LOCK_SHA=""
 SYSTEM_KB_INPUT_SHA=""
+SYSTEM_KB_LEGACY_INPUT_SHA=""
 SYSTEM_KB_ACTIVATION_REQUIRED=1
 
 set_remote_backup_preflight_dir() {
@@ -2799,8 +2800,11 @@ compute_release_input_digests() {
         --repo "$SCRIPT_DIR" --commit "$DEPLOY_EXPECTED_SHA" --kind requirements)" || return 1
     SYSTEM_KB_INPUT_SHA="$(python3 "$SCRIPT_DIR/scripts/release_input_digest.py" \
         --repo "$SCRIPT_DIR" --commit "$DEPLOY_EXPECTED_SHA" --kind system-kb)" || return 1
+    SYSTEM_KB_LEGACY_INPUT_SHA="$(python3 "$SCRIPT_DIR/scripts/release_input_digest.py" \
+        --repo "$SCRIPT_DIR" --commit "$DEPLOY_EXPECTED_SHA" --kind system-kb-legacy)" || return 1
     if [[ ! "$REQUIREMENTS_LOCK_SHA" =~ ^[0-9a-f]{64}$ ||
-          ! "$SYSTEM_KB_INPUT_SHA" =~ ^[0-9a-f]{64}$ ]]; then
+          ! "$SYSTEM_KB_INPUT_SHA" =~ ^[0-9a-f]{64}$ ||
+          ! "$SYSTEM_KB_LEGACY_INPUT_SHA" =~ ^[0-9a-f]{64}$ ]]; then
         print_error "发布输入摘要格式非法"
         return 70
     fi
@@ -2814,15 +2818,18 @@ determine_system_kb_activation_need() {
           "$REMOTE_RELEASE_STATE_DIR" = *"/.." ||
           "$REMOTE_RELEASE_STATE_DIR" = *"/./"* ||
           "$REMOTE_RELEASE_STATE_DIR" = *"/." ||
-          ! "$SYSTEM_KB_INPUT_SHA" =~ ^[0-9a-f]{64}$ ]]; then
+          ! "$SYSTEM_KB_INPUT_SHA" =~ ^[0-9a-f]{64}$ ||
+          ! "$SYSTEM_KB_LEGACY_INPUT_SHA" =~ ^[0-9a-f]{64}$ ]]; then
         print_error "System KB 状态目录或 digest 非法"
         return 70
     fi
     result="$(ssh "$SERVER" bash -s -- \
-        "$REMOTE_RELEASE_STATE_DIR" "$SYSTEM_KB_INPUT_SHA" <<'REMOTE_KB_DIGEST_CHECK'
+        "$REMOTE_RELEASE_STATE_DIR" "$SYSTEM_KB_INPUT_SHA" \
+        "$SYSTEM_KB_LEGACY_INPUT_SHA" <<'REMOTE_KB_DIGEST_CHECK'
 set -euo pipefail
 state_dir="$1"
 expected="$2"
+legacy_expected="$3"
 marker="${state_dir}/system-kb-input.sha256"
 if [ ! -e "$state_dir" ]; then
     printf '%s\n' MISMATCH
@@ -2839,6 +2846,8 @@ if [ -e "$marker" ] || [ -L "$marker" ]; then
 fi
 if [ -f "$marker" ] && [ "$(cat "$marker")" = "$expected" ]; then
     printf '%s\n' MATCH
+elif [ -f "$marker" ] && [ "$(cat "$marker")" = "$legacy_expected" ]; then
+    printf '%s\n' LEGACY_MATCH
 else
     printf '%s\n' MISMATCH
 fi
@@ -2851,6 +2860,10 @@ REMOTE_KB_DIGEST_CHECK
         MATCH)
             SYSTEM_KB_ACTIVATION_REQUIRED=0
             print_success "System KB 输入摘要未变化，将跳过写入并保留只读验证"
+            ;;
+        LEGACY_MATCH)
+            SYSTEM_KB_ACTIVATION_REQUIRED=0
+            print_success "System KB 旧摘要与候选一致，将跳过写入并在终态升级 marker"
             ;;
         MISMATCH)
             SYSTEM_KB_ACTIVATION_REQUIRED=1

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.services import query_readouts
 from app.services.agent_executor import AgentExecutor
 from app.services.agent_kernel.intent_frame import build_intent_frame
 from app.services.agent_kernel.context import build_turn_snapshot
@@ -38,6 +39,65 @@ def _snapshot(
         intent=build_intent_frame(envelope, context),
         policy_mode=policy_mode,
     )
+
+
+@pytest.mark.asyncio
+async def test_zero_llm_batch_plan_matches_real_gateway_aggregate_authority():
+    implicit_message = "查一下最近7天的HRV和睡眠数据"
+    implicit_plan = query_readouts.preplanned_batch_query_args(implicit_message)
+    assert implicit_plan == {
+        "queries": [
+            {"dimension": "hrv", "days": 7, "agg": None},
+            {"dimension": "sleep", "days": 7, "agg": None},
+        ]
+    }
+    implicit_gateway = ToolGateway(_snapshot(implicit_message))
+    implicit_dispatched = []
+
+    async def dispatch_implicit(request):
+        implicit_dispatched.append(request.arguments)
+        return "{}"
+
+    implicit_result = await implicit_gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query_batch",
+            arguments=implicit_plan,
+            source="deterministic_preplan",
+        ),
+        dispatch_implicit,
+    )
+
+    assert implicit_result.decision is not None
+    assert implicit_result.decision.action == "allow"
+    assert implicit_dispatched == [implicit_plan]
+
+    explicit_message = "查一下最近7天的HRV和睡眠平均值"
+    plan = query_readouts.preplanned_batch_query_args(explicit_message)
+    assert plan == {
+        "queries": [
+            {"dimension": "hrv", "days": 7, "agg": "avg"},
+            {"dimension": "sleep", "days": 7, "agg": "avg"},
+        ]
+    }
+    gateway = ToolGateway(_snapshot(explicit_message))
+    dispatched = []
+
+    async def dispatch(request):
+        dispatched.append(request.arguments)
+        return "{}"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query_batch",
+            arguments=plan,
+            source="deterministic_preplan",
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert dispatched == [plan]
 
 
 def test_tool_gateway_blocks_recovered_health_record_in_read_turn():

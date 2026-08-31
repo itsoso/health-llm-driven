@@ -20,6 +20,7 @@ HRV / 睡眠评分 / 步数 / 身体电量 / 压力等低风险标量。若本�
 from __future__ import annotations
 
 import json
+import math
 import re
 from typing import Any, Callable, Dict, List, Optional
 
@@ -45,6 +46,13 @@ _BATCH_AGG_LABELS = {
     "avg": "平均值",
     "min": "最低值",
     "max": "最高值",
+}
+_BATCH_VALUE_RANGES = {
+    "activity": (0, 500_000),
+    "hrv": (0, 500),
+    "sleep": (0, 100),
+    "body_battery": (0, 100),
+    "stress": (0, 100),
 }
 
 # Zero-LLM planning is intentionally narrower than result formatting.  These
@@ -171,8 +179,13 @@ def preplanned_batch_query_args(message: str) -> Optional[Dict[str, Any]]:
         agg = "max"
     elif re.search(r"最低|最小", text):
         agg = "min"
-    else:
+    elif re.search(r"平均|均值", text):
         agg = "avg"
+    else:
+        # Preserve the user's unspecified aggregation semantics.  The normal
+        # ToolGateway allows this read and the batch result then takes one LLM
+        # synthesis round; it must never be silently widened to avg/latest.
+        agg = None
 
     return {
         "queries": [
@@ -468,7 +481,20 @@ def _format_batch(args: Dict[str, Any], content: str) -> Optional[str]:
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             return None
         count = entry.get("n")
-        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+        if (
+            isinstance(count, bool)
+            or not isinstance(count, int)
+            or count < planned_days
+        ):
+            return None
+        value_range = _BATCH_VALUE_RANGES[dimension]
+        if not math.isfinite(value):
+            return None
+        if agg == "trend":
+            max_delta = value_range[1] - value_range[0]
+            if not -max_delta <= value <= max_delta:
+                return None
+        elif not value_range[0] <= value <= value_range[1]:
             return None
 
         label, default_unit = label_and_unit
@@ -478,11 +504,11 @@ def _format_batch(args: Dict[str, Any], content: str) -> Optional[str]:
         prefix = f"近{result_days}天 {label}"
         if agg == "trend":
             if value > 0:
-                text = f"{prefix} 较窗口起点上升 {value_with_unit}。"
+                text = f"{prefix} 较首个数据点上升 {value_with_unit}。"
             elif value < 0:
-                text = f"{prefix} 较窗口起点下降 {value_with_unit}。"
+                text = f"{prefix} 较首个数据点下降 {value_with_unit}。"
             else:
-                text = f"{prefix} 与窗口起点持平。"
+                text = f"{prefix} 与首个数据点持平。"
         else:
             text = f"{prefix} {_BATCH_AGG_LABELS[agg]} {value_with_unit}。"
         readouts.append(text)

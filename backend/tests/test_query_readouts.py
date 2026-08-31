@@ -8,6 +8,8 @@
 """
 import json
 
+import pytest
+
 from app.services import query_readouts as qr
 
 
@@ -323,7 +325,7 @@ def test_batch_scalar_queries_render_grounded_readouts():
 
     assert qr.deterministic_query_reply(messages) == (
         "近7天 HRV 平均值 58 ms。\n\n"
-        "近7天 睡眠评分 较窗口起点下降 5 分。"
+        "近7天 睡眠评分 较首个数据点下降 5 分。"
     )
 
 
@@ -364,25 +366,37 @@ def test_batch_sensitive_or_partial_results_fall_open():
 
 
 def test_preplanned_batch_query_is_narrow_and_low_risk():
-    assert qr.preplanned_batch_query_args("查一下最近7天的HRV和睡眠数据") == {
+    assert qr.preplanned_batch_query_args("查一下最近7天的HRV和睡眠平均值") == {
         "queries": [
             {"dimension": "hrv", "days": 7, "agg": "avg"},
             {"dimension": "sleep", "days": 7, "agg": "avg"},
         ],
     }
-    assert qr.preplanned_batch_query_args("列出近两周的步数和身体电量") == {
+    assert qr.preplanned_batch_query_args("列出近两周步数和身体电量的最高值") == {
         "queries": [
-            {"dimension": "activity", "days": 14, "agg": "avg"},
-            {"dimension": "body_battery", "days": 14, "agg": "avg"},
+            {"dimension": "activity", "days": 14, "agg": "max"},
+            {"dimension": "body_battery", "days": 14, "agg": "max"},
         ],
     }
-    assert qr.preplanned_batch_query_args("查询近3周的HRV和睡眠") == {
+    assert qr.preplanned_batch_query_args("查询近3周的HRV和睡眠趋势") == {
         "queries": [
-            {"dimension": "hrv", "days": 21, "agg": "avg"},
-            {"dimension": "sleep", "days": 21, "agg": "avg"},
+            {"dimension": "hrv", "days": 21, "agg": "trend"},
+            {"dimension": "sleep", "days": 21, "agg": "trend"},
         ],
     }
 
+    assert qr.preplanned_batch_query_args("查一下最近7天的HRV和睡眠数据") == {
+        "queries": [
+            {"dimension": "hrv", "days": 7, "agg": None},
+            {"dimension": "sleep", "days": 7, "agg": None},
+        ],
+    }
+    assert qr.preplanned_batch_query_args("列出近两周的步数和身体电量") == {
+        "queries": [
+            {"dimension": "activity", "days": 14, "agg": None},
+            {"dimension": "body_battery", "days": 14, "agg": None},
+        ],
+    }
     assert qr.preplanned_batch_query_args("分析最近7天的HRV和睡眠") is None
     assert qr.preplanned_batch_query_args("查最近7天的HRV、睡眠和血氧") is None
     assert qr.preplanned_batch_query_args("查最近120天的HRV和睡眠") is None
@@ -391,6 +405,61 @@ def test_preplanned_batch_query_is_narrow_and_low_risk():
     assert qr.preplanned_batch_query_args("你能查询HRV和睡眠数据吗") is None
     assert qr.preplanned_batch_query_args("查昨天的HRV和睡眠") is None
     assert qr.preplanned_batch_query_args("查过去24小时的HRV和睡眠") is None
+
+
+def test_batch_sparse_window_falls_open_instead_of_claiming_full_window():
+    messages = [
+        _assistant_batch("batch-1", [
+            {"dimension": "hrv", "days": 90, "agg": "trend"},
+            {"dimension": "sleep", "days": 90, "agg": "avg"},
+        ]),
+        _tool_msg("batch-1", {
+            "queries": [
+                {
+                    "dimension": "hrv",
+                    "days": 90,
+                    "agg": "trend",
+                    "value": -12,
+                    "unit": "ms",
+                    "n": 2,
+                },
+                {
+                    "dimension": "sleep",
+                    "days": 90,
+                    "agg": "avg",
+                    "value": 76,
+                    "n": 1,
+                },
+            ],
+            "meta": {"executed": 2, "failed": 0},
+        }),
+    ]
+
+    assert qr.deterministic_query_reply(messages) is None
+
+
+@pytest.mark.parametrize(
+    ("dimension", "value"),
+    (("sleep", 120), ("hrv", float("inf")), ("activity", -1)),
+)
+def test_batch_nonfinite_or_impossible_scalar_falls_open(dimension, value):
+    messages = [
+        _assistant_batch("batch-1", [
+            {"dimension": dimension, "days": 7, "agg": "avg"},
+        ]),
+        _tool_msg("batch-1", {
+            "queries": [{
+                "dimension": dimension,
+                "days": 7,
+                "agg": "avg",
+                "value": value,
+                "n": 7,
+            }],
+            "meta": {"executed": 1, "failed": 0},
+        }),
+    ]
+
+    assert qr.deterministic_query_reply(messages) is None
 
 
 def test_deterministic_reply_only_considers_current_turn_tools():

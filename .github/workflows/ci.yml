@@ -107,13 +107,23 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Keep broad a/b discovery bounded and isolate agent + App Store
-          # families. Root discovery lets pytest's ignore rules exclude agent
-          # paths before collection; direct shell globs would pass them as
-          # explicit paths and defeat --ignore-glob.
-          - label: a-early
-            paths: "tests"
-            extra_args: "--ignore=tests/services --ignore=tests/test_app_store_demo_account.py --ignore-glob='tests/test_[b-z]*.py' --ignore-glob='tests/test_agent_*.py' --ignore-glob='tests/test_a[i-z]*.py'"
+          # The former a-early bucket exhausted its 600-second process budget.
+          # Split its three independent families while keeping exact coverage
+          # enforced by test_release_ci_contract.py.
+          - label: a-action
+            paths: "tests/test_action*.py"
+          - label: a-agenda
+            paths: "tests/test_agenda*.py"
+          - label: a-early-rest
+            paths: >-
+              tests/test_a_to_i_smoke.py
+              tests/test_account*.py
+              tests/test_activation*.py
+              tests/test_adherence*.py
+              tests/test_admin*.py
+              tests/test_advice*.py
+          # Root discovery lets pytest's ignore rules exclude agent paths
+          # before collection; direct shell globs would pass them explicitly.
           - label: a-late
             paths: "tests"
             extra_args: "--ignore=tests/services --ignore=tests/test_app_store_demo_account.py --ignore-glob='tests/test_[b-z]*.py' --ignore-glob='tests/test_agent_*.py' --ignore-glob='tests/test_a[_a-h]*.py'"
@@ -157,8 +167,29 @@ jobs:
             paths: "tests/test_agent_[s-z]*.py"
           - label: c
             paths: "tests/test_c*.py"
-          - label: d
-            paths: "tests/test_d*.py"
+          # The former d bucket also exhausted its 600-second process budget.
+          - label: d-dedao
+            paths: "tests/test_dedao*.py tests/test_down_dedao*.py"
+          - label: d-diet
+            paths: "tests/test_diet*.py"
+          - label: d-data-device
+            paths: >-
+              tests/test_daily*.py
+              tests/test_data*.py
+              tests/test_day*.py
+              tests/test_desktop*.py
+              tests/test_device*.py
+          - label: d-rest
+            paths: >-
+              tests/test_dependency*.py
+              tests/test_deploy*.py
+              tests/test_deprescribing*.py
+              tests/test_deterministic*.py
+              tests/test_doc*.py
+              tests/test_dogfood*.py
+              tests/test_dossier*.py
+              tests/test_drug*.py
+              tests/test_dynamic*.py
           - label: e-g
             paths: "tests/test_[e-g]*.py"
           - label: h-j
@@ -336,6 +367,7 @@ jobs:
         env:
           HARNESS_CHANGE_BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
           HARNESS_LIVE_LLM_EVAL_CONFIRMED: ${{ vars.HARNESS_LIVE_LLM_EVAL_CONFIRMED }}
+          HARNESS_LIVE_LLM_EVAL_TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         # Zero-cost path gate: high-risk LLM/prompt/model/eval changes must carry explicit live-eval evidence.
         run: python scripts/harness_llm_change_gate.py --base-ref "$HARNESS_CHANGE_BASE_REF"
 

@@ -216,7 +216,7 @@ async def test_flag_on_batch_query_is_deterministic_single_round(
     )
     _set_flag(monkeypatch, True)
 
-    events = await _run(executor, "查一下最近7天的HRV和睡眠", user.id)
+    events = await _run(executor, "查一下最近7天的HRV和睡眠平均值", user.id)
 
     assert len(state["stream_calls"]) == 0
     assert state["executed"] == [
@@ -231,6 +231,57 @@ async def test_flag_on_batch_query_is_deterministic_single_round(
     assert done["llm_rounds"] == 0
     assert done["perf"]["end_to_end_ttft_ms"] is not None
     assert done["perf"]["first_useful_ms"] is not None
+
+
+@pytest.mark.asyncio
+async def test_implicit_batch_aggregation_skips_decision_model_but_uses_synthesis(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    batch_args = {
+        "queries": [
+            {"dimension": "hrv", "days": 7, "agg": None},
+            {"dimension": "sleep", "days": 7, "agg": None},
+        ],
+    }
+    batch_result = json.dumps({
+        "queries": [
+            {
+                "dimension": "hrv",
+                "days": 7,
+                "agg": None,
+                "value": None,
+                "data": "hrv 最近 7 天: 2026-08-25: 58ms",
+            },
+            {
+                "dimension": "sleep",
+                "days": 7,
+                "agg": None,
+                "value": None,
+                "data": "sleep 最近 7 天: 2026-08-25: 76",
+            },
+        ],
+        "meta": {"executed": 2, "failed": 0},
+    }, ensure_ascii=False)
+    executor, state = _make_executor(
+        db,
+        monkeypatch,
+        tool_args=batch_args,
+        tool_result=batch_result,
+        tool_name="health_query_batch",
+    )
+    _set_flag(monkeypatch, True)
+
+    events = await _run(executor, "查一下最近7天的HRV和睡眠数据", user.id)
+
+    assert len(state["stream_calls"]) == 1
+    assert state["executed"] == [
+        ("health_query_batch", json.dumps(batch_args, ensure_ascii=False)),
+    ]
+    assert _tokens(events) == _SYNTH_ANSWER
+    assert events[-1]["data"]["perf"]["decision_route"] == (
+        "deterministic_batch_query_fallback_llm"
+    )
 
 
 @pytest.mark.asyncio
@@ -272,7 +323,7 @@ async def test_preplanned_batch_failure_falls_open_to_one_synthesis_round(
     )
     _set_flag(monkeypatch, True)
 
-    events = await _run(executor, "查一下最近7天的HRV和睡眠", user.id)
+    events = await _run(executor, "查一下最近7天的HRV和睡眠平均值", user.id)
 
     assert len(state["stream_calls"]) == 1
     assert state["executed"] == [

@@ -14,7 +14,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_app_store_demo_account_runs_in_an_isolated_ci_process():
+def test_non_agent_a_tests_run_in_bounded_ci_processes():
     workflow = yaml.safe_load(
         (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     )
@@ -24,19 +24,22 @@ def test_app_store_demo_account_runs_in_an_isolated_ci_process():
     assert by_label["app-store-demo-account"]["paths"] == (
         "tests/test_app_store_demo_account.py"
     )
+    assert "a-early" not in by_label
     assert "a-b-rest" not in by_label
     assert "a-rest" not in by_label
-    assert by_label["a-early"]["paths"] == "tests"
+    assert by_label["a-action"]["paths"] == "tests/test_action*.py"
+    assert by_label["a-agenda"]["paths"] == "tests/test_agenda*.py"
+    assert by_label["a-early-rest"]["paths"] == (
+        "tests/test_a_to_i_smoke.py tests/test_account*.py "
+        "tests/test_activation*.py tests/test_adherence*.py "
+        "tests/test_admin*.py tests/test_advice*.py"
+    )
     assert by_label["a-late"]["paths"] == "tests"
     assert by_label["b"]["paths"] == "tests/test_b*.py"
-    for label in ("a-early", "a-late"):
-        assert "--ignore=tests/test_app_store_demo_account.py" in by_label[label][
-            "extra_args"
-        ]
-        assert "--ignore-glob='tests/test_agent_*.py'" in by_label[label][
-            "extra_args"
-        ]
-    assert "--ignore-glob='tests/test_a[i-z]*.py'" in by_label["a-early"][
+    assert "--ignore=tests/test_app_store_demo_account.py" in by_label["a-late"][
+        "extra_args"
+    ]
+    assert "--ignore-glob='tests/test_agent_*.py'" in by_label["a-late"][
         "extra_args"
     ]
     assert "--ignore-glob='tests/test_a[_a-h]*.py'" in by_label["a-late"][
@@ -121,7 +124,21 @@ def test_observed_slow_alphabetic_families_run_in_single_letter_shards():
     assert "c-d" not in by_label
     assert "n-o" not in by_label
     assert by_label["c"]["paths"] == "tests/test_c*.py"
-    assert by_label["d"]["paths"] == "tests/test_d*.py"
+    assert "d" not in by_label
+    assert by_label["d-dedao"]["paths"] == (
+        "tests/test_dedao*.py tests/test_down_dedao*.py"
+    )
+    assert by_label["d-diet"]["paths"] == "tests/test_diet*.py"
+    assert by_label["d-data-device"]["paths"] == (
+        "tests/test_daily*.py tests/test_data*.py tests/test_day*.py "
+        "tests/test_desktop*.py tests/test_device*.py"
+    )
+    assert by_label["d-rest"]["paths"] == (
+        "tests/test_dependency*.py tests/test_deploy*.py "
+        "tests/test_deprescribing*.py tests/test_deterministic*.py "
+        "tests/test_doc*.py tests/test_dogfood*.py tests/test_dossier*.py "
+        "tests/test_drug*.py tests/test_dynamic*.py"
+    )
     assert by_label["n"]["paths"] == "tests/test_n*.py"
     assert by_label["o"]["paths"] == "tests/test_o*.py"
 

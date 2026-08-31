@@ -253,8 +253,40 @@ def test_slow_shard_replacements_cover_predecessor_scopes_exactly_once():
     assert set(qr_parts) == qr_original
     assert len(qr_parts) == len(set(qr_parts))
 
+    a_early_parts = expand(("a-action", "a-agenda", "a-early-rest"))
+    a_early_original = {
+        Path(path)
+        for path in glob(str(backend / "tests/test_a*.py"))
+        if not path.startswith(str(backend / "tests/test_agent_"))
+        and Path(path).name != "test_app_store_demo_account.py"
+        and not Path(path).name.startswith(
+            (
+                "test_ai",
+                "test_air",
+                "test_ambient",
+                "test_anomaly",
+                "test_answer",
+                "test_api",
+                "test_app_",
+                "test_arbitration",
+                "test_ask",
+                "test_atomic",
+                "test_auth",
+            )
+        )
+    }
+    assert set(a_early_parts) == a_early_original
+    assert len(a_early_parts) == len(set(a_early_parts))
+
+    d_parts = expand(("d-dedao", "d-diet", "d-data-device", "d-rest"))
+    d_original = {Path(path) for path in glob(str(backend / "tests/test_d*.py"))}
+    assert set(d_parts) == d_original
+    assert len(d_parts) == len(set(d_parts))
+
     assert "agent-executor-a-h" not in entries
     assert "q-r" not in entries
+    assert "a-early" not in entries
+    assert "d" not in entries
 
 
 def test_postgres_gate_runs_invitation_migration_and_merge_concurrency_without_skip():

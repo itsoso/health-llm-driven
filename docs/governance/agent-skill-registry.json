@@ -86,7 +86,7 @@
       }
     },
     "health-harness-orchestrator": {
-      "version": "1.0.1",
+      "version": "1.0.2",
       "required_markers": [
         "primary_controller",
         "implementation",
@@ -103,7 +103,7 @@
         "deferred_by_phase.on_demand"
       ],
       "adapter_sha256": {
-        "claude": "111dba2d750d169bb6b5ab192c5839d91fb0a160433e304ba785e5607a23d862",
+        "claude": "0735151a4126a58ce11c21ec4368bc962520d08e0bdaa2eb170e4161fda0bbb2",
         "codex": "53eaf89f2a027d8dd04a43ca807b4246e015a9d3135d891cf0bca7be7b86c780"
       }
     }
@@ -169,7 +169,7 @@
       "id": "health-harness-orchestrator",
       "lifecycle": "standard",
       "owner": "reva-engineering",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "layer": "workflow",
       "kind": "controller",
       "platforms": [

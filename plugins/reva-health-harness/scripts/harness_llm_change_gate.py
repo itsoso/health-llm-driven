@@ -19,6 +19,7 @@ from typing import Callable, Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIRMATION_ENV = "HARNESS_LIVE_LLM_EVAL_CONFIRMED"
+CONFIRMATION_TARGET_ENV = "HARNESS_LIVE_LLM_EVAL_TARGET_SHA"
 LIVE_GATE_COMMAND = "python scripts/harness_llm_regression_gate.py --include-live-llm"
 
 HIGH_RISK_RULES: tuple[tuple[str, str], ...] = (
@@ -61,7 +62,14 @@ def _match_reason(path: str) -> str | None:
 
 
 def _is_confirmed(env: dict[str, str]) -> bool:
-    return env.get(CONFIRMATION_ENV, "").strip().lower() in TRUTHY
+    confirmation = env.get(CONFIRMATION_ENV, "").strip().lower()
+    target_sha = (
+        env.get(CONFIRMATION_TARGET_ENV, "").strip()
+        or env.get("GITHUB_SHA", "").strip()
+    ).lower()
+    if target_sha:
+        return confirmation == target_sha
+    return confirmation in TRUTHY
 
 
 def _default_base_ref(env: dict[str, str]) -> str:
@@ -91,18 +99,25 @@ def evaluate_paths(paths: Iterable[str], *, env: dict[str, str]) -> dict[str, ob
     ]
     live_required = bool(matched_paths)
     confirmed = _is_confirmed(env)
+    expected_confirmation = (
+        env.get(CONFIRMATION_TARGET_ENV, "").strip()
+        or env.get("GITHUB_SHA", "").strip()
+        or None
+    )
     status = "passed" if not live_required or confirmed else "failed"
     next_steps = ""
     if live_required and not confirmed:
         next_steps = (
             f"Run `{LIVE_GATE_COMMAND}` and preserve the run evidence, then set "
-            f"`{CONFIRMATION_ENV}=1` for the CI run that contains this change."
+            f"the repository variable with `gh variable set {CONFIRMATION_ENV} "
+            '--body "$(git rev-parse HEAD)"` before pushing that exact commit.'
         )
     return {
         "status": status,
         "live_llm_required": live_required,
         "confirmed": confirmed,
         "confirmation_env": CONFIRMATION_ENV,
+        "expected_confirmation": expected_confirmation,
         "changed_paths": changed_paths,
         "matched_paths": matched_paths,
         "next_steps": next_steps,
