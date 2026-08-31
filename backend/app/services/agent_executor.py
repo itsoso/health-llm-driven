@@ -7040,14 +7040,20 @@ _SYMPTOM_EXPLICIT_SEVERITY_RE = re.compile(
     r"(?:分(?!钟)|级|/\s*10)"
 )
 _SYMPTOM_FACT_SUFFIX_RE = re.compile(r"^(?:的症状|得站不稳)")
-_SYMPTOM_UNCLASSIFIED_ADVICE_TAIL_RE = re.compile(
-    r"^(?:用不用急诊|需不需急诊|算正常还是危险|要急诊还是门诊|"
+_SYMPTOM_PROVEN_ADVICE_TAIL_RE = re.compile(
+    r"^(?:分析为什么|"
+    r"给(?:我|点|个|些|一份)?(?:处理)?(?:意见|建议|方法|方案)|"
+    r"说说咋回事|咋整|解释一下|判断一下要紧吗|"
+    r"需不需要就医|该看什么科|严重吗|这正常吗|要去急诊吗|"
+    r"该挂哪个科|严不严重|正常不正常|会不会有事|该去哪里看|"
+    r"用不用急诊|需不需急诊|算正常还是危险|要急诊还是门诊|"
     r"挂内科还是神经科|该咋办|咋治|说下原因|有多严重|需要急诊|"
-    r"正常还是异常|严重还是不严重|看不看医生|需要不需要看医生)$"
+    r"正常还是异常|严重还是不严重|是不是偏头痛|可否吃药|"
+    r"帮忙看看|请评估风险|告诉我原因|看不看医生|需要不需要看医生|"
+    r"该不该去看大夫|要不要找医生看看|该不该找大夫)$"
 )
 _SYMPTOM_POSTPOSED_OWNER_RE = re.compile(
     r"(?:的是|是[^，,。！？!?；;：:\s]{1,16}的(?:症状)?$|"
-    r"给(?!点|些)[^，,。！？!?；;：:\s]{1,16}$|"
     r"(?:记录)?到[^，,。！？!?；;：:\s]{1,16}名下|"
     r"(?:属于|归)[^，,。！？!?；;：:\s]{1,16})"
 )
@@ -7277,7 +7283,7 @@ def _explicit_symptom_selectors(message: Any) -> Dict[str, Any]:
 
 
 def _symptom_secondary_tail_is_safe(text: Any) -> bool:
-    """Allow only proven advice/read tails after extracting a symptom fact."""
+    """Allow only bounded advice tails with no unparsed subject or owner."""
     normalized = "".join(str(text or "").split()).strip("：:，,。；;！？!?")
     if not normalized:
         return True
@@ -7285,12 +7291,7 @@ def _symptom_secondary_tail_is_safe(text: Any) -> bool:
         return False
     if _SYMPTOM_WRITE_ACTION_RE.search(normalized):
         return False
-    intent = classify_agent_utterance(normalized)
-    if intent.is_write:
-        return False
-    if intent.primary in {"advice", "read"}:
-        return True
-    return _SYMPTOM_UNCLASSIFIED_ADVICE_TAIL_RE.fullmatch(normalized) is not None
+    return _SYMPTOM_PROVEN_ADVICE_TAIL_RE.fullmatch(normalized) is not None
 
 
 def _is_proven_pure_symptom_record_request(message: Any) -> bool:
