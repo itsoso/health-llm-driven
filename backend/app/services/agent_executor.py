@@ -7935,11 +7935,12 @@ def _merge_equivalent_diet_model_estimates(
         == conjunction_food_identity(authoritative_food_items)
     )
     food_matches = direct_food_matches or conjunction_food_matches
-    if (
-        str(model_data.get("meal_type") or "").strip().lower()
-        != str(authoritative_data.get("meal_type") or "").strip().lower()
-        or not food_matches
-    ):
+    # Meal placement is server-owned and remains authoritative below. A model
+    # may classify an otherwise identical food as lunch instead of snack; that
+    # must not discard valid nutrition estimates and force extra repair rounds.
+    # Food identity is the safety boundary for copying estimates, while date,
+    # meal type, and source always come from ``authoritative_data``.
+    if not food_matches:
         return authoritative_args
 
     merged_data = dict(authoritative_data)

@@ -144,7 +144,7 @@ def test_diet_goal_replaces_model_foods_with_current_turn_payload():
     }
 
 
-def test_diet_goal_keeps_model_nutrition_when_food_text_is_equivalent():
+def test_diet_goal_keeps_model_nutrition_when_food_matches_but_meal_type_differs():
     goal = GoalSpec(
         kind="simple_health_record",
         domain="diet",
@@ -164,7 +164,7 @@ def test_diet_goal_keeps_model_nutrition_when_food_text_is_equivalent():
             {
                 "record_type": "diet",
                 "data": {
-                    "meal_type": "breakfast",
+                    "meal_type": "lunch",
                     "food_items": "两个鸡蛋,一杯牛奶",
                     "calories": 280,
                     "protein": 20,
