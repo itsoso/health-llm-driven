@@ -34,6 +34,7 @@ from app.services.utterance_intent_lexicon import (
     REMINDER_CREATE_ACTIONS,
     REMINDER_TERMS,
     WRITE_ACTIONS,
+    WRITE_COMMAND_ACTIONS,
 )
 from app.services.write_intent_scope import (
     direct_event_values,
@@ -788,10 +789,33 @@ def _has_direct_symptom_write_command(text: str) -> bool:
         return False
     _position, _negative_length, symptom_end = min(candidates)
     symptom_prefix = text[:symptom_end]
-    return (
-        _infer_domain(symptom_prefix) == "symptom"
-        and has_explicit_authorizing_write_request(symptom_prefix)
+    if _infer_domain(symptom_prefix) != "symptom":
+        return False
+    if has_explicit_authorizing_write_request(symptom_prefix):
+        return True
+
+    # A short location adjunct can legitimately precede the command without
+    # becoming the owner of the symptom (for example, ``麦当劳店记录打了一个
+    # 喷嚏``). Keep this fallback closed to common location endings; reported,
+    # attachment-derived, hypothetical, and third-party prefixes do not match.
+    action_candidates = [
+        (position, -len(action), action)
+        for action in WRITE_COMMAND_ACTIONS
+        for position in [symptom_prefix.rfind(action)]
+        if position >= 0
+    ]
+    if not action_candidates:
+        return False
+    action_start, _negative_length, _action = min(
+        action_candidates,
+        key=lambda item: (-item[0], item[1]),
     )
+    context_prefix = symptom_prefix[:action_start].strip("，,。.!！；;：: ")
+    if not context_prefix.endswith(
+        ("店", "餐厅", "家里", "家中", "公司", "办公室", "学校", "路上", "车上", "医院", "健身房")
+    ):
+        return False
+    return has_explicit_authorizing_write_request(symptom_prefix[action_start:])
 
 
 def has_retracted_symptom_write(text: str) -> bool:

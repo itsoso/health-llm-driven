@@ -3465,10 +3465,16 @@ def _health_record_target_status(
         ):
             return "mismatch"
         default_date = snapshot.context.current_time.date().isoformat()
+        target_date = (
+            str(snapshot.goal.target_date or "").strip()
+            if snapshot.goal is not None
+            and snapshot.goal.target_record_type == "symptom"
+            else ""
+        ) or default_date
         expected_values = {
             "body_part": symptom_payload.get("body_part"),
             "description": symptom_payload.get("description"),
-            "target_date": default_date,
+            "target_date": target_date,
             "default_date": default_date,
         }
         if not _authorization_target_complete(requested_type, expected_values):

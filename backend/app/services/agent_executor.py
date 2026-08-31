@@ -9662,9 +9662,13 @@ def _tool_names_for_turn(
                 classify_context_profile,
             )
 
-            if intent.primary == "read" and intent.domain == "unknown":
-                return ANALYSIS_TURN_TOOL_NAMES
             profile = classify_context_profile(message)
+            if (
+                intent.primary == "read"
+                and intent.domain == "unknown"
+                and profile != INJECTION_MINIMAL
+            ):
+                return ANALYSIS_TURN_TOOL_NAMES
             fixed_lanes = {
                 INJECTION_RECOVERY: RECOVERY_TURN_TOOL_NAMES,
                 INJECTION_DIET: DIET_TURN_TOOL_NAMES,

@@ -152,7 +152,7 @@ def test_analysis_subset_saves_schema_bytes():
 
 def test_domain_recovery_turn_uses_stable_small_read_only_bundle():
     names = _tool_names_for_turn(
-        "昨晚睡得怎样，今天是否适合锻炼？",
+        "综合分析我最近的睡眠趋势",
         fast_route=False,
         analysis_subset=False,
         domain_subset=True,
