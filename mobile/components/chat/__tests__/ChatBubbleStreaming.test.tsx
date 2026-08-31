@@ -120,6 +120,7 @@ describe('ChatBubble streaming degraded render', () => {
     });
 
     expect(getByTestId('rich-markdown')).toBeTruthy();
+    expect(getByTestId('assistant-message-surface').props.accessible).toBe(true);
     expect(mockMarkdownMount).toHaveBeenCalled();
     expect(mockMarkdownMount).toHaveBeenLastCalledWith(CONTENT);
   });
@@ -159,7 +160,7 @@ describe('ChatBubble streaming degraded render', () => {
     );
 
     expect(assistant.queryByTestId('message-time')).toBeNull();
-    fireEvent.press(assistant.getByLabelText(/小巴回复于/));
+    fireEvent.press(assistant.getByTestId('assistant-message-surface'));
     expect(assistant.getByTestId('message-time').props.children).toBe('12:31');
   });
 
@@ -257,7 +258,7 @@ describe('ChatBubble streaming degraded render', () => {
 
   it('long press on an assistant message opens copy-first progressive actions instead of selecting immediately', () => {
     const onEnterSelection = jest.fn();
-    const { getByLabelText, queryByLabelText } = render(
+    const { getByLabelText, getByTestId, queryByLabelText } = render(
       <QueryClientProvider client={new QueryClient()}>
         <ChatBubble
           item={{
@@ -273,7 +274,7 @@ describe('ChatBubble streaming degraded render', () => {
 
     expect(queryByLabelText('分享这条回复')).toBeNull();
     expect(queryByLabelText('语音播报')).toBeNull();
-    fireEvent(getByLabelText('AI: 建议今天午后散步 10 分钟。'), 'longPress');
+    fireEvent(getByTestId('assistant-message-surface'), 'longPress');
 
     expect(onEnterSelection).not.toHaveBeenCalled();
     expect(getByLabelText('复制全文')).toBeTruthy();
@@ -287,14 +288,14 @@ describe('ChatBubble streaming degraded render', () => {
   });
 
   it('does not expose client-side prose-to-record writes for assistant replies', () => {
-    const { getByLabelText, queryByLabelText } = renderBubble({
+    const { getByLabelText, getByTestId, queryByLabelText } = renderBubble({
       id: 'assistant-prose-write-disabled',
       role: 'assistant',
       content: '已记录血压 185/85 mmHg。',
       streaming: false,
     });
 
-    fireEvent(getByLabelText('AI: 已记录血压 185/85 mmHg。'), 'longPress');
+    fireEvent(getByTestId('assistant-message-surface'), 'longPress');
 
     expect(queryByLabelText('保存为记录')).toBeNull();
     expect(getByLabelText('复制全文')).toBeTruthy();
@@ -515,7 +516,7 @@ describe('ChatBubble streaming degraded render', () => {
     expect(queryByText('⏳ AI 正在思考中...')).toBeNull();
   });
 
-  it('keeps completed thinking steps inside the combined evidence and process drawer', () => {
+  it('presents completed thinking steps as a concise process summary', () => {
     const { getByLabelText, getByTestId, getByText, queryByText, queryByTestId } = renderBubble({
       id: 'assistant-finished-thinking',
       role: 'assistant',
@@ -527,17 +528,76 @@ describe('ChatBubble streaming degraded render', () => {
     expect(queryByTestId('assistant-thinking-panel')).toBeNull();
     expect(queryByText('思考完成')).toBeNull();
     expect(getByTestId('assistant-utility-panel')).toBeTruthy();
+    expect(getByTestId('assistant-message-surface').props.accessible).toBe(false);
     expect(queryByText('正在理解你的问题')).toBeNull();
     expect(getByText('今天饮食总结如下。')).toBeTruthy();
 
-    fireEvent.press(getByLabelText('展开依据与过程'));
-    expect(getByText('思考过程')).toBeTruthy();
-    expect(getByText('正在理解你的问题')).toBeTruthy();
+    expect(getByLabelText('展开回答依据')).toHaveStyle({ minHeight: 44 });
+    expect(getByLabelText('复制回答')).toHaveStyle({ width: 44, height: 44 });
+    fireEvent.press(getByLabelText('展开回答依据'));
+    expect(getByText('处理摘要')).toBeTruthy();
+    expect(getByText('理解你的问题')).toBeTruthy();
     expect(getByText('读取记录信息')).toBeTruthy();
-    expect(getByText('整理回复中')).toBeTruthy();
+    expect(getByText('整理回答')).toBeTruthy();
+    expect(queryByText('思考过程')).toBeNull();
+    expect(queryByText('正在理解你的问题')).toBeNull();
+    expect(queryByText('整理回复中')).toBeNull();
 
-    fireEvent.press(getByLabelText('收起依据与过程'));
+    fireEvent.press(getByLabelText('收起回答依据'));
     expect(queryByText('读取记录信息')).toBeNull();
+  });
+
+  it('keeps unavailable steps honest and hides diagnostics behind technical details', () => {
+    const { getByLabelText, getByTestId, getByText, queryByText } = renderBubble({
+      id: 'assistant-finished-process-warning',
+      role: 'assistant',
+      content: '今天的步数暂时没有同步。',
+      streaming: false,
+      thinkingSteps: ['正在查询健康数据', '记录信息暂时不可用', '整理回复中'],
+      elapsedMs: 6100,
+      llmRounds: 2,
+      model: 'qwen3.6-flash',
+      toolsUsed: ['health_query'],
+      llmUsage: {
+        run_id: 'run_safe_123',
+        providers: ['tokenplan'],
+        calls: 2,
+        prompt_tokens: 640,
+        completion_tokens: 80,
+        total_tokens: 720,
+        tokenplan_cost_cny: 0.002,
+        tokenplan_cost_estimated: true,
+        failed_calls: 1,
+        items: [{
+          run_id: 'run_safe_123',
+          success: false,
+          error_code: 'upstream_timeout',
+          error_message: 'SECRET health payload and stack trace',
+          recovery_action: 'fallback_attempted',
+        }],
+      },
+    });
+
+    fireEvent.press(getByLabelText('展开回答依据'));
+
+    expect(getByText('完成 2 个处理步骤，1 项需要注意')).toBeTruthy();
+    expect(getByTestId('icon-alert-circle-outline')).toBeTruthy();
+    expect(getByText('查询健康数据')).toBeTruthy();
+    expect(getByLabelText('需要注意：记录信息暂时不可用')).toBeTruthy();
+    expect(queryByText(/qwen3\.6-flash/)).toBeNull();
+    expect(queryByText('成本估算')).toBeNull();
+    expect(queryByText('health_query')).toBeNull();
+    expect(queryByText(/SECRET health payload/)).toBeNull();
+
+    fireEvent.press(getByLabelText('展开技术详情'));
+    expect(getByText(/qwen3\.6-flash/)).toBeTruthy();
+    expect(getByText('成本估算')).toBeTruthy();
+    expect(getByText('Token')).toBeTruthy();
+    expect(getByText('失败信息')).toBeTruthy();
+    expect(getByText('追踪信息')).toBeTruthy();
+    expect(getByText('调用工具')).toBeTruthy();
+    expect(getByText('health_query')).toBeTruthy();
+    expect(queryByText(/SECRET health payload/)).toBeNull();
   });
 
   // 流式期间跳过 sanitizeAiContent + extractRevaUiBlocks 两条重正则 (perf fix).

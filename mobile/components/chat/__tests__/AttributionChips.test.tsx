@@ -34,12 +34,15 @@ describe('AttributionChips', () => {
 
   it('routes a structured memory source to memory management', () => {
     const onOpenMemory = jest.fn();
-    const { getByLabelText } = render(
+    const { getByLabelText, getByText } = render(
       <AttributionChips sources={['用户记忆']} onOpenMemory={onOpenMemory} />,
     );
 
     fireEvent.press(getByLabelText('展开使用数据'));
-    fireEvent.press(getByLabelText('查看 AI 记忆来源'));
+    const memorySource = getByLabelText('查看 AI 记忆来源：用户记忆');
+    expect(memorySource).toHaveStyle({ minHeight: 44 });
+    expect(getByText('用户记忆').props.numberOfLines).toBeUndefined();
+    fireEvent.press(memorySource);
     expect(onOpenMemory).toHaveBeenCalledTimes(1);
   });
 });

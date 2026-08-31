@@ -513,7 +513,7 @@ ${sectionTitle}
   });
 
   it('keeps a compact WeChat and Xiaohongshu share rail while speech remains in the long-press menu', () => {
-    const { getByText, getByLabelText, queryByText } = renderBubble(
+    const { getByText, getByLabelText, getByTestId, queryByText } = renderBubble(
       '建议今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。',
     );
 
@@ -527,7 +527,7 @@ ${sectionTitle}
     expect(getByLabelText('小红书分享这条回复')).toBeTruthy();
     expect(() => getByLabelText('语音播报')).toThrow();
 
-    fireEvent(getByLabelText('AI: 建议今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。'), 'longPress');
+    fireEvent(getByTestId('assistant-message-surface'), 'longPress');
     expect(getByLabelText('分享这条回复')).toBeTruthy();
     expect(getByLabelText('语音播报')).toBeTruthy();
   });
@@ -591,9 +591,9 @@ ${sectionTitle}
   it('shares assistant replies under the 小巴 persona', async () => {
     sharePlainText.mockResolvedValueOnce(undefined);
 
-    const { getByLabelText } = renderBubble('今天先补水 300ml, 晚饭后散步 15 分钟。');
+    const { getByLabelText, getByTestId } = renderBubble('今天先补水 300ml, 晚饭后散步 15 分钟。');
 
-    fireEvent(getByLabelText('AI: 今天先补水 300ml, 晚饭后散步 15 分钟。'), 'longPress');
+    fireEvent(getByTestId('assistant-message-surface'), 'longPress');
     fireEvent.press(getByLabelText('分享这条回复'));
     fireEvent.press(getByLabelText('系统分享'));
 
@@ -607,9 +607,9 @@ ${sectionTitle}
   it('shares assistant replies from the Xiaohongshu action too', async () => {
     sharePlainCaption.mockResolvedValueOnce(undefined);
 
-    const { getByLabelText } = renderBubble('今天午餐记录完成，晚饭少油并补 30g 蛋白。');
+    const { getByLabelText, getByTestId } = renderBubble('今天午餐记录完成，晚饭少油并补 30g 蛋白。');
 
-    fireEvent(getByLabelText('AI: 今天午餐记录完成，晚饭少油并补 30g 蛋白。'), 'longPress');
+    fireEvent(getByTestId('assistant-message-surface'), 'longPress');
     fireEvent.press(getByLabelText('分享这条回复'));
     fireEvent.press(getByLabelText('小红书文案'));
 
@@ -635,9 +635,9 @@ ${sectionTitle}
       '✅ 已记录午餐 — 煎牛肉能量碗 + 姜黄鲜柠维C茶，770 kcal（蛋白 30g / 碳水 70g / 脂肪 17g）',
       '晚餐建议：优先补 40g 蛋白，少油少刺激。',
     ].join('\n');
-    const { getByLabelText } = renderBubble(content);
+    const { getByLabelText, getByTestId } = renderBubble(content);
 
-    fireEvent(getByLabelText(`AI: ${content}`), 'longPress');
+    fireEvent(getByTestId('assistant-message-surface'), 'longPress');
     fireEvent.press(getByLabelText('分享这条回复'));
     fireEvent.press(getByLabelText('系统分享'));
 
@@ -666,13 +666,13 @@ ${sectionTitle}
       </QueryClientProvider>,
     );
 
-    expect(getByText('依据与过程 · 2')).toBeTruthy();
+    expect(getByText('回答依据 · 2项')).toBeTruthy();
     expect(queryByText('使用数据 · 2 项')).toBeNull();
     expect(queryByLabelText('展开执行透视')).toBeNull();
-    fireEvent.press(getByLabelText('展开依据与过程'));
+    fireEvent.press(getByLabelText('展开回答依据'));
     expect(getByText('用户记忆')).toBeTruthy();
     expect(getByText('Garmin 数据 (14 天 HRV/睡眠/RHR)')).toBeTruthy();
-    fireEvent.press(getByLabelText('查看 AI 记忆来源'));
+    fireEvent.press(getByLabelText('查看 AI 记忆来源：用户记忆'));
     expect(router.push).toHaveBeenCalledWith('/memory');
   });
 

@@ -115,10 +115,14 @@ describe('ChatBubble speech playback', () => {
   it('recovers the speech button when native speech startup throws', async () => {
     mockSpeakWithUserVoice.mockRejectedValue(new Error('speech unavailable'));
 
-    const { getByLabelText, queryByLabelText } = renderBubble();
+    const { getByLabelText, getByTestId, queryByLabelText } = renderBubble();
 
     expect(queryByLabelText('语音播报')).toBeNull();
-    fireEvent(getByLabelText(`AI: ${baseMessage.content}`), 'longPress');
+    // Completed replies with the evidence panel intentionally expose the body,
+    // evidence, and utility actions as separate accessibility nodes. Trigger
+    // the existing long-press gesture on the message surface without restoring
+    // the old merged VoiceOver label.
+    fireEvent(getByTestId('assistant-message-surface'), 'longPress');
     expect(() => fireEvent.press(getByLabelText('语音播报'))).not.toThrow();
     await waitFor(() => expect(mockSpeakWithUserVoice).toHaveBeenCalled());
   });

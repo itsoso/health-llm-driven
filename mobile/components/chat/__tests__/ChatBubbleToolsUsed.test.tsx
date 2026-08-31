@@ -85,7 +85,7 @@ const CONTENT = '已为你记录今天的体重。';
 
 // 透视面板 (AgentTransparencyPanel) 折叠头的展开按钮 accessibilityLabel —
 // toolsUsed 现在经 buildAgentTransparency 收进这个面板, 展开后以 "调用 Skill" 行 + chip 呈现.
-const EXPAND_LABEL = '展开依据与过程';
+const EXPAND_LABEL = '展开回答依据';
 
 describe('ChatBubble 调用 Skill 展示 (透视面板)', () => {
   it('renders an always-visible medical source panel below a completed health answer', () => {
@@ -112,7 +112,7 @@ describe('ChatBubble 调用 Skill 展示 (透视面板)', () => {
     expect(getByLabelText('打开参考来源：成人 BMI 计算方法与分类')).toBeTruthy();
   });
 
-  it('toolsUsed 非空且非流式 → 渲染透视面板, 展开后可见 "调用 Skill" + 每个 Skill 名', () => {
+  it('toolsUsed 非空且非流式 → 技术详情二次展开后可见工具调用', () => {
     const { getByText, queryByText, getByLabelText, getByTestId } = renderBubble({
       id: 'assistant-tools',
       role: 'assistant',
@@ -129,12 +129,16 @@ describe('ChatBubble 调用 Skill 展示 (透视面板)', () => {
     });
     expect(queryByText('调用 Skill')).toBeNull();
 
-    // 展开 → Skill 名对用户可见
+    // 一级展开仍保持用户依据优先，工具名默认不抢占。
     fireEvent.press(expander);
     expect(getByTestId('assistant-utility-panel')).toHaveStyle({
       alignSelf: 'stretch',
     });
-    expect(getByText('调用 Skill')).toBeTruthy();
+    expect(queryByText('调用工具')).toBeNull();
+    expect(queryByText('health_record')).toBeNull();
+
+    fireEvent.press(getByLabelText('展开技术详情'));
+    expect(getByText('调用工具')).toBeTruthy();
     expect(getByText('health_record')).toBeTruthy();
     expect(getByText('health_query')).toBeTruthy();
   });
@@ -163,8 +167,10 @@ describe('ChatBubble 调用 Skill 展示 (透视面板)', () => {
     });
 
     fireEvent.press(getByLabelText(EXPAND_LABEL));
-    expect(getByText('尝试调用 Skill')).toBeTruthy();
-    expect(queryByText('调用 Skill')).toBeNull();
+    expect(queryByText('尝试调用工具')).toBeNull();
+    fireEvent.press(getByLabelText('展开技术详情'));
+    expect(getByText('尝试调用工具')).toBeTruthy();
+    expect(queryByText('调用工具')).toBeNull();
   });
 
   it('toolsUsed undefined → 不渲染', () => {

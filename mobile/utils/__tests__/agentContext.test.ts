@@ -41,6 +41,7 @@ describe('agentContext', () => {
     expect(route.params.prompt).toBe('今天饮食结构怎么样?');
     expect(route.params.badge).toBe('基于今日饮食 3 餐');
     expect(route.params.newChat).toBe('1');
+    expect(route.params.contextEntry).toBe('1');
     expect(JSON.parse(route.params.context)).toEqual({
       from: 'diet/2026-05-14',
       date: '2026-05-14',

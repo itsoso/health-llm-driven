@@ -78,6 +78,34 @@ describe('buildAiShareMessage', () => {
     ].join('\n'));
   });
 
+  it('turns a completed diet record into a detailed Xiaohongshu food diary', () => {
+    const content = [
+      '✅ 已记录午餐 — 煎牛肉能量碗 + 姜黄鲜柠维C茶，770 kcal（蛋白 30g / 碳水 70g / 脂肪 17g）',
+      '晚餐建议：优先补 40g 蛋白，少油少刺激。',
+    ].join('\n');
+
+    expect(buildXiaohongshuShareMessage(content)).toBe([
+      '今天的饮食打卡｜午餐 🍱',
+      '',
+      '不追求每餐都完美，先把真实吃下的东西记清楚。',
+      '',
+      '🥢 这一餐',
+      '煎牛肉能量碗 + 姜黄鲜柠维C茶',
+      '',
+      '📊 营养估算',
+      '热量 770 kcal',
+      '蛋白质 30g ｜ 碳水 70g ｜ 脂肪 17g',
+      '',
+      '💡 下一餐怎么接',
+      '晚餐优先补 40g 蛋白，少油少刺激。',
+      '',
+      '记录一餐，才更容易看见自己的饮食节奏。',
+      '营养数据为估算值，实际会因食材、份量和烹饪方式变化。',
+      '',
+      '#健康饮食 #饮食记录 #一日三餐 #健康管理 #小巴',
+    ].join('\n'));
+  });
+
   it('turns an assistant suggestion into a concise Xiaohongshu caption', () => {
     const content = [
       '## 今日建议',

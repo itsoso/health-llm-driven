@@ -254,8 +254,9 @@ export default function ChatScreen() {
   // Context from alert / push / Siri deep-link. Read ONCE on first mount, then cleared.
   // autoSend=1 (from Siri HealthAnalysisOpenIntent) → directly send instead of prefilling.
   // context (JSON string) → 注入到 LLM system prompt 作为深化基础, 不展示在 user 消息里
-  const params = useLocalSearchParams<{ prompt?: string; badge?: string; autoSend?: string; context?: string; newChat?: string; promptNonce?: string }>();
+  const params = useLocalSearchParams<{ prompt?: string; badge?: string; autoSend?: string; context?: string; newChat?: string; promptNonce?: string; contextEntry?: string }>();
   const [contextBadge, setContextBadge] = useState<string | null>(null);
+  const [contextEntryActive, setContextEntryActive] = useState(params.contextEntry === '1');
   const [initialInput, setInitialInput] = useState<string | undefined>(undefined);
   const [initialInputKey, setInitialInputKey] = useState(0);
   const [captureMealPhotoToken, setCaptureMealPhotoToken] = useState(0);
@@ -359,7 +360,7 @@ export default function ChatScreen() {
   }, [llmModelId, llmSaving]);
 
   useEffect(() => {
-    if (params.prompt || params.badge || params.context) {
+    if (params.prompt || params.badge || params.context || params.contextEntry === '1') {
       const contextKey = JSON.stringify({
         prompt: params.prompt ?? '',
         badge: params.badge ?? '',
@@ -367,6 +368,7 @@ export default function ChatScreen() {
         context: params.context ?? '',
         newChat: params.newChat ?? '',
         promptNonce: params.promptNonce ?? '',
+        contextEntry: params.contextEntry ?? '',
       });
       if (lastContextKey.current === contextKey) return;
       lastContextKey.current = contextKey;
@@ -375,6 +377,7 @@ export default function ChatScreen() {
         newChat();
       }
       if (params.badge) setContextBadge(params.badge);
+      if (params.contextEntry === '1') setContextEntryActive(true);
       if (params.prompt) {
         if (params.autoSend === '1') {
           sendMessage(params.prompt, null, { fromSiri: true, extraContext: params.context, forceNewConversation });
@@ -386,11 +389,11 @@ export default function ChatScreen() {
           setInitialInputKey(key => key + 1);
         }
       }
-      try { router.setParams({ prompt: undefined, badge: undefined, autoSend: undefined, context: undefined, newChat: undefined, promptNonce: undefined } as any); } catch {}
+      try { router.setParams({ prompt: undefined, badge: undefined, autoSend: undefined, context: undefined, newChat: undefined, promptNonce: undefined, contextEntry: undefined } as any); } catch {}
     } else {
       lastContextKey.current = null;
     }
-  }, [newChat, params.prompt, params.badge, params.autoSend, params.context, params.newChat, params.promptNonce, sendMessage]);
+  }, [newChat, params.prompt, params.badge, params.autoSend, params.context, params.newChat, params.promptNonce, params.contextEntry, sendMessage]);
 
   const clearChatScrollTimers = useCallback(() => {
     scrollTimersRef.current.forEach(clearTimeout);
@@ -724,10 +727,21 @@ export default function ChatScreen() {
     setToolMenuVisible(false);
     exitSelectionMode();
     setContextBadge(null);
+    setContextEntryActive(false);
     setComposerFocusToken((n) => n + 1);
     newChat();
     void refreshCoachHomeState();
   }, [exitSelectionMode, newChat, refreshCoachHomeState]);
+
+  const handleExitContext = useCallback(() => {
+    setContextEntryActive(false);
+    setContextBadge(null);
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    handleNewChat();
+  }, [handleNewChat]);
 
   const handleOpenToday = useCallback(() => {
     router.navigate('/(tabs)/today');
@@ -869,6 +883,7 @@ export default function ChatScreen() {
         format: 'png',
         quality: 1,
         result: 'tmpfile',
+        width: 1080,
         ...(Platform.OS === 'ios' ? { useRenderInContext: true } : {}),
       });
       failureStage = 'share';
@@ -1003,6 +1018,7 @@ export default function ChatScreen() {
           llmSaving={llmSaving}
           llmError={llmError}
           isStreaming={isStreaming}
+          onBack={contextEntryActive ? handleExitContext : undefined}
           onSelectModel={handleSelectModel}
           onNewChat={handleNewChat}
           onOpenHistory={openHistory}

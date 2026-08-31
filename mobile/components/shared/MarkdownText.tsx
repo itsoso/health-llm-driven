@@ -12,17 +12,19 @@
 import React, { useMemo } from 'react';
 import Markdown from 'react-native-markdown-display';
 import { createMdStylesCompact, createMdStylesChat } from '../../constants/markdownStyles';
-import { useTheme } from '../../hooks/useTheme';
+import { useTheme, type ColorPalette } from '../../hooks/useTheme';
 import { preprocessMarkdownTables } from '../../utils/markdownTables';
 import { prepareSafeMarkdown, safeMarkdownIt } from '../../utils/safeMarkdown';
 
 interface Props {
   children: string;
   variant?: 'compact' | 'chat';
+  palette?: ColorPalette;
 }
 
-export default function MarkdownText({ children, variant = 'compact' }: Props) {
-  const { c } = useTheme();
+export default function MarkdownText({ children, variant = 'compact', palette }: Props) {
+  const { c: themePalette } = useTheme();
+  const c = palette ?? themePalette;
   const style = useMemo(
     () => (variant === 'chat' ? createMdStylesChat(c) : createMdStylesCompact(c)),
     [c, variant],

@@ -14,6 +14,7 @@ const mockRecordCardDecision = jest.fn();
 const mockNewChat = jest.fn();
 const mockSetMessages = jest.fn();
 const mockSetParams = jest.fn();
+const mockBack = jest.fn();
 const mockLoadLatestConversation = jest.fn();
 const mockLoadMoreHistory = jest.fn();
 const mockSaveChatImageToLibrary = jest.fn();
@@ -22,6 +23,7 @@ const mockShareLocalImage = jest.fn();
 const mockCaptureRef = jest.fn();
 const mockReleaseCapture = jest.fn();
 let mockRouteParams: Record<string, string | undefined> = {};
+let mockCanGoBack = true;
 let mockLlmPreference: any = { model_id: null, options: [] };
 let mockMessages: any[] = [];
 let mockIsStreaming = false;
@@ -37,6 +39,8 @@ jest.mock('expo-router', () => ({
     push: (...args: any[]) => mockPush(...args),
     navigate: (...args: any[]) => mockPush(...args),
     setParams: (...args: any[]) => mockSetParams(...args),
+    back: (...args: any[]) => mockBack(...args),
+    canGoBack: () => mockCanGoBack,
   },
   useLocalSearchParams: () => mockRouteParams,
   useFocusEffect: (cb: any) => cb(),
@@ -216,6 +220,7 @@ describe('ChatScreen', () => {
     mockRecordCardAdherence.mockResolvedValue({});
     mockRecordCardDecision.mockResolvedValue({});
     mockRouteParams = {};
+    mockCanGoBack = true;
     mockLlmPreference = { model_id: null, options: [] };
     mockMessages = [];
     mockIsStreaming = false;
@@ -329,6 +334,7 @@ describe('ChatScreen', () => {
         format: 'png',
         quality: 1,
         result: 'tmpfile',
+        width: 1080,
         useRenderInContext: true,
       });
       expect(mockShareLocalImage).toHaveBeenCalledWith('/tmp/reva-conversation-long-image.png');
@@ -1494,6 +1500,27 @@ describe('ChatScreen', () => {
       );
     });
     expect(mockNewChat).toHaveBeenCalled();
+  });
+
+  it('returns to the source screen from a contextual health discussion', () => {
+    mockRouteParams = { contextEntry: '1' };
+    const { getByLabelText } = render(<ChatScreen />);
+
+    fireEvent.press(getByLabelText('返回上一页'));
+
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    expect(mockNewChat).not.toHaveBeenCalled();
+  });
+
+  it('returns to the empty chat home when a contextual entry has no back stack', () => {
+    mockRouteParams = { contextEntry: '1' };
+    mockCanGoBack = false;
+    const { getByLabelText } = render(<ChatScreen />);
+
+    fireEvent.press(getByLabelText('返回上一页'));
+
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockNewChat).toHaveBeenCalledTimes(1);
   });
 
   it('handles a second Agent context entry while the chat tab is already mounted', async () => {

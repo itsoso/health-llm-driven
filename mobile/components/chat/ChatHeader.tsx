@@ -24,6 +24,7 @@ interface ChatHeaderProps {
   llmSaving: string | null;
   llmError: string | null;
   isStreaming: boolean;
+  onBack?: () => void;
   onSelectModel: (modelId: string | null) => void;
   onNewChat: () => void;
   onOpenHistory: () => void;
@@ -41,6 +42,7 @@ export default function ChatHeader({
   llmOptions,
   llmSaving,
   llmError,
+  onBack,
   onSelectModel,
   onNewChat,
   onOpenHistory,
@@ -50,7 +52,20 @@ export default function ChatHeader({
   return (
     <View testID="chat-header-wrap" style={styles.headerWrap}>
       <View testID="chat-header-surface" style={styles.headerSurface}>
-        <XiaoBaAvatar size={22} />
+        {onBack ? (
+          <Pressable
+            onPress={onBack}
+            hitSlop={8}
+            style={({ pressed }) => [styles.backAction, pressed && styles.headerActionPressed]}
+            accessibilityLabel="返回上一页"
+            accessibilityHint="返回发起这次健康讨论的页面"
+            accessibilityRole="button"
+          >
+            <Ionicons name="chevron-back" size={21} color={C.ink1} />
+          </Pressable>
+        ) : (
+          <XiaoBaAvatar size={22} />
+        )}
         <LlmModelPicker
           variant="header"
           currentLabel={headerLlmLabel}
@@ -149,6 +164,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'transparent',
     borderWidth: 0,
+  },
+  backAction: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerActionPressed: {
     backgroundColor: C.green50,

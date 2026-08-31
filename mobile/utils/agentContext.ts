@@ -53,6 +53,7 @@ export function buildChatContextRoute(input: ChatContextRouteInput) {
       context: serializeAgentContext(input.context),
       badge: input.badge,
       newChat: input.newChat === false ? undefined : '1',
+      contextEntry: '1',
     },
   };
 }

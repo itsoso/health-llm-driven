@@ -130,7 +130,7 @@ function SourceChip({ item, onOpenMemory }: { item: StructuredSource; onOpenMemo
   const content = (
     <>
       <Ionicons name={meta.icon} size={11} color={meta.color} />
-      <Text style={[styles.chipLabel, { color: meta.color }]} numberOfLines={1}>
+      <Text style={[styles.chipLabel, { color: meta.color }]}>
         {item.label}
       </Text>
     </>
@@ -140,8 +140,13 @@ function SourceChip({ item, onOpenMemory }: { item: StructuredSource; onOpenMemo
       <Pressable
         onPress={onOpenMemory}
         accessibilityRole="button"
-        accessibilityLabel="查看 AI 记忆来源"
-        style={({ pressed }) => [styles.chip, { backgroundColor: meta.bg }, pressed && styles.chipPressed]}
+        accessibilityLabel={`查看 AI 记忆来源：${item.label}`}
+        style={({ pressed }) => [
+          styles.chip,
+          styles.chipInteractive,
+          { backgroundColor: meta.bg },
+          pressed && styles.chipPressed,
+        ]}
       >
         {content}
         <Ionicons name="chevron-forward" size={11} color={meta.color} />
@@ -161,7 +166,7 @@ const styles = StyleSheet.create({
   },
   summaryRow: {
     alignSelf: 'flex-start',
-    minHeight: 28,
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -180,8 +185,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: revaSpacing.s2,
     paddingVertical: 3,
     borderRadius: revaRadii.pill,
-    maxWidth: 220,
+    maxWidth: 280,
   },
+  chipInteractive: { minHeight: 44 },
   chipPressed: { opacity: 0.7 },
   chipLabel: {
     fontFamily: revaFonts.sans,

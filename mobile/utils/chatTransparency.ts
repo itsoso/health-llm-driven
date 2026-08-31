@@ -189,10 +189,6 @@ function cleanText(value: unknown): string {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
-function truncate(value: string, max = 96): string {
-  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
-}
-
 function buildErrorLine(usage?: LlmUsageProfileLike | null): string | undefined {
   if (!usage) return undefined;
   const items = Array.isArray(usage.items) ? usage.items : [];
@@ -202,10 +198,8 @@ function buildErrorLine(usage?: LlmUsageProfileLike | null): string | undefined 
 
   const first = failedItems[0];
   const code = cleanText(first?.error_code || first?.error_type);
-  const message = truncate(cleanText(first?.error_message));
   const parts = [`失败 ${Math.round(failedCount)} 次`];
   if (code) parts.push(code);
-  if (message) parts.push(message);
   return parts.join(' · ');
 }
 

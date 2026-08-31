@@ -141,7 +141,7 @@ function normalizeMealLabel(value: string | null): string | null {
   return v.length <= 4 ? v : null;
 }
 
-function buildDietShareMessage(content: string): string | null {
+function buildDietShareMessage(content: string, style: 'compact' | 'xiaohongshu' = 'compact'): string | null {
   const flattened = content.replace(/\s+/g, ' ').trim();
   const hasDietSignal = /(?:已记录|记录完成|已写入|饮食记录(?:完成|已保存|已写入)?|本餐|这餐).{0,80}(?:kcal|千卡|蛋白|碳水|脂肪)/iu.test(flattened)
     || /(?:kcal|千卡|蛋白|碳水|脂肪).{0,80}(?:已记录|记录完成|已写入|饮食记录(?:完成|已保存|已写入)?|本餐|这餐)/iu.test(flattened);
@@ -164,6 +164,40 @@ function buildDietShareMessage(content: string): string | null {
     : nextBody;
 
   if (!food && !kcal) return null;
+
+  if (style === 'xiaohongshu') {
+    const lines = [`今天的饮食打卡${meal ? `｜${meal}` : ''} 🍱`, ''];
+    lines.push('不追求每餐都完美，先把真实吃下的东西记清楚。', '');
+
+    if (food) lines.push('🥢 这一餐', food, '');
+
+    const macroLine = [
+      protein ? `蛋白质 ${Number(protein)}g` : null,
+      carbs ? `碳水 ${Number(carbs)}g` : null,
+      fat ? `脂肪 ${Number(fat)}g` : null,
+    ].filter(Boolean).join(' ｜ ');
+    if (kcal || macroLine) {
+      lines.push('📊 营养估算');
+      if (kcal) lines.push(`热量 ${Number(kcal)} kcal`);
+      if (macroLine) lines.push(macroLine);
+      lines.push('');
+    }
+
+    if (nextAction) {
+      const nextTitle = /^(?:下一餐|早餐|午餐|晚餐|加餐)建议$/u.test(nextPrefix)
+        ? '💡 下一餐怎么接'
+        : '💡 下一步怎么做';
+      lines.push(nextTitle, nextAction, '');
+    }
+
+    lines.push(
+      '记录一餐，才更容易看见自己的饮食节奏。',
+      '营养数据为估算值，实际会因食材、份量和烹饪方式变化。',
+      '',
+      '#健康饮食 #饮食记录 #一日三餐 #健康管理 #小巴',
+    );
+    return lines.join('\n');
+  }
 
   const lines = ['今天这餐被小巴认真记下来了', ''];
   const mealLine = [meal, food].filter(Boolean).join(' · ');
@@ -257,8 +291,8 @@ export function buildAiShareMessage(content: string): string {
 }
 
 export function buildXiaohongshuShareMessage(content: string): string {
-  const dietShare = buildDietShareMessage(content);
-  if (dietShare) return dietShare.replace('#饮食记录 #健康管理 #小巴', '#健康饮食 #饮食记录 #小巴');
+  const dietShare = buildDietShareMessage(content, 'xiaohongshu');
+  if (dietShare) return dietShare;
 
   const adviceLines = buildConciseAdviceLines(content);
   if (adviceLines.length === 0) return '';

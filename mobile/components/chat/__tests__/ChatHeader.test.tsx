@@ -6,6 +6,28 @@ import ChatHeader from '../ChatHeader';
 import { revaColors as C } from '../../../constants/revaTheme';
 
 describe('ChatHeader', () => {
+  it('shows a source return action for contextual health discussions', () => {
+    const onBack = jest.fn();
+    const { getByLabelText } = render(
+      <ChatHeader
+        activeLlmLabel="Qwen3.7 Plus"
+        llmModelId="qwen3.7-plus"
+        llmOptions={[]}
+        llmSaving={null}
+        llmError={null}
+        isStreaming={false}
+        onBack={onBack}
+        onSelectModel={jest.fn()}
+        onNewChat={jest.fn()}
+        onOpenHistory={jest.fn()}
+        onOpenToolMenu={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(getByLabelText('返回上一页'));
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the branded assistant identity compact in the header', () => {
     const { getByLabelText, getByText } = render(
       <ChatHeader

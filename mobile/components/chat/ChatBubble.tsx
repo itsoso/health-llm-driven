@@ -26,7 +26,6 @@ import {
   saveCardActionReceipt,
 } from '../../services/cardActionReceiptStorage';
 import { durationBucket, emitClientEvent } from '../../services/clientEvents';
-import { AttributionDetails, normalizedAttributionCount } from './AttributionChips';
 import type { ChatCardActionDescriptor, ChatCardActionRuntimeState, ServerCardDescriptor } from './cards/types';
 import {
   revaColors as C,
@@ -35,7 +34,6 @@ import {
   revaFonts,
 } from '../../constants/revaTheme';
 import { useToast } from '../../hooks/useToast';
-import { SocialBrandIcon } from '../common/SocialBrandIcon';
 import {
   shareImage,
   sharePlainCaption,
@@ -60,13 +58,9 @@ import {
   type InterventionDraft,
 } from '../../services/interventionDraft';
 import { invalidateQueryKeys, queryKeys } from '../../applib/queryKeys';
-import {
-  buildAgentTransparency,
-  formatDurationMs,
-  type AgentTransparencyBand,
-  type AgentTransparencyProfile,
-} from '../../utils/chatTransparency';
+import { buildAgentTransparency } from '../../utils/chatTransparency';
 import MedicalCitations from './MedicalCitations';
+import AnswerEvidencePanel from './AnswerEvidencePanel';
 
 type WriteReceipt = NonNullable<ChatCardActionResult['receipt']>;
 
@@ -1119,6 +1113,14 @@ function ChatBubbleInner({
     );
   };
 
+  const showsAnswerEvidencePanel = !item.streaming
+    && !!assistantTextForActions
+    && (
+      (item.completionStatus !== 'interrupted' && item.completionStatus !== 'error')
+      || transparency.visible
+    );
+  const assistantSurfaceAccessible = !hasInlineEditableCard && !showsAnswerEvidencePanel;
+
   return (
     <>
       <View style={[styles.msgRow, isUser ? styles.msgRowUser : styles.msgRowAI]}>
@@ -1162,8 +1164,9 @@ function ChatBubbleInner({
             disabled={hasInlineEditableCard}
             onPress={hasInlineEditableCard ? undefined : handleBubblePress}
             onLongPress={hasInlineEditableCard ? undefined : openMessageActions}
-            accessibilityRole={hasInlineEditableCard ? undefined : 'text'}
-            accessibilityLabel={hasInlineEditableCard ? undefined : `${timeAccessibilityPrefix}AI: ${assistantTextForActions || (revaUiContent.cards.length > 0 ? '图表卡片' : item.content)}`}
+            accessible={assistantSurfaceAccessible}
+            accessibilityRole={assistantSurfaceAccessible ? 'text' : undefined}
+            accessibilityLabel={assistantSurfaceAccessible ? `${timeAccessibilityPrefix}AI: ${assistantTextForActions || (revaUiContent.cards.length > 0 ? '图表卡片' : item.content)}` : undefined}
             accessibilityState={selectionMode ? { selected } : undefined}
           >
             {renderMessageImages()}
@@ -1215,13 +1218,8 @@ function ChatBubbleInner({
             ))}
             {cardSafetyAlerts.length > 0 ? <MedicationSafetyAdvisory alerts={cardSafetyAlerts} /> : null}
             {cardReceiptPersistenceWarning ? <WriteReceiptPersistenceWarning /> : null}
-            {!item.streaming
-              && assistantTextForActions
-              && (
-                (item.completionStatus !== 'interrupted' && item.completionStatus !== 'error')
-                || transparency.visible
-              ) ? (
-              <AssistantUtilityPanel
+            {showsAnswerEvidencePanel ? (
+              <AnswerEvidencePanel
                 profile={transparency}
                 sources={item.sourcesUsed}
                 thinkingSteps={thinkingSteps}
@@ -2627,127 +2625,6 @@ const styles = StyleSheet.create({
   },
   actionBtnDisabled: { opacity: 0.45 },
   actionBtnPressed: { opacity: 0.82 },
-  assistantUtilityPanel: {
-    alignSelf: 'stretch',
-    width: '100%',
-    marginTop: 12,
-  },
-  assistantUtilityRail: {
-    minHeight: 38,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 10,
-    backgroundColor: C.paper2,
-    paddingHorizontal: 4,
-  },
-  assistantUtilityEvidence: {
-    minHeight: 38,
-    flex: 1,
-    minWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 8,
-  },
-  assistantUtilitySpacer: { flex: 1 },
-  assistantUtilityDivider: {
-    width: StyleSheet.hairlineWidth,
-    height: 18,
-    backgroundColor: C.line,
-  },
-  assistantUtilityShare: {
-    minHeight: 38,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 7,
-  },
-  assistantUtilityCopy: {
-    width: 30,
-    height: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: revaRadii.pill,
-    backgroundColor: C.paper,
-  },
-  assistantUtilityCopyDone: {
-    backgroundColor: C.green50,
-  },
-  assistantUtilityDetails: {
-    marginTop: 7,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-    backgroundColor: C.paper,
-    paddingHorizontal: 11,
-    paddingVertical: 10,
-    gap: 12,
-  },
-  assistantUtilitySection: { gap: 7 },
-  assistantUtilityThoughts: { gap: 6 },
-  assistantUtilityThoughtRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },
-  transparencyPanel: {
-    marginTop: 9,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-    backgroundColor: C.paper2,
-    overflow: 'hidden',
-  },
-  transparencyPanelCollapsed: {
-    alignSelf: 'flex-start',
-    maxWidth: '100%',
-    borderRadius: revaRadii.pill,
-  },
-  transparencyPanelOpen: {
-    alignSelf: 'stretch',
-    borderRadius: 14,
-  },
-  transparencyHeader: {
-    minHeight: 34,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-  transparencyBody: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.line,
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-    gap: 8,
-  },
-  transparencyBar: {
-    height: 7,
-    borderRadius: 999,
-    flexDirection: 'row',
-    overflow: 'hidden',
-    backgroundColor: C.line,
-  },
-  transparencyLegend: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  transparencyRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  transparencyChipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 5,
-  },
-  transparencyChip: {
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-    backgroundColor: C.paper,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
 });
 
 const txt = {
@@ -2772,19 +2649,10 @@ const txt = {
   thinkingStep: { flex: 1, fontFamily: revaFonts.sans, fontSize: 12.2, lineHeight: 18, color: C.ink2, fontWeight: '600' } as TextStyle,
   actionBtn: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '700', color: C.green500 } as TextStyle,
   actionBtnOnUser: { color: C.green700 } as TextStyle,
-  assistantUtilityEvidence: { flex: 1, minWidth: 0, fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 16, fontWeight: '800', color: C.ink2 } as TextStyle,
-  assistantUtilityShare: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 15, fontWeight: '700', color: C.ink2 } as TextStyle,
-  assistantUtilitySectionTitle: { fontFamily: revaFonts.sans, fontSize: 10.5, lineHeight: 14, fontWeight: '900', color: C.ink3 } as TextStyle,
-  assistantUtilityThought: { flex: 1, fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 17, fontWeight: '700', color: C.ink2 } as TextStyle,
   cardShareButton: { fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 15, fontWeight: '900', color: C.green700 } as TextStyle,
   cardSaveButton: { fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 15, fontWeight: '900', color: C.ink3 } as TextStyle,
   cardShareUnavailableHint: { width: '100%', fontFamily: revaFonts.sans, fontSize: 10.5, lineHeight: 15, color: C.ink3 } as TextStyle,
   fallback: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 20, color: C.ink2, fontStyle: 'italic' } as TextStyle,
-  transparencyTitle: { flex: 1, fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 16, fontWeight: '800', color: C.ink2 } as TextStyle,
-  transparencyLabel: { width: 64, fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 16, color: C.ink3 } as TextStyle,
-  transparencyValue: { flex: 1, fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 16, fontWeight: '700', color: C.ink2 } as TextStyle,
-  transparencyMono: { fontFamily: revaFonts.mono, fontSize: 10.5, lineHeight: 15, color: C.ink3 } as TextStyle,
-  transparencyChip: { fontFamily: revaFonts.sans, fontSize: 10.5, lineHeight: 14, color: C.ink2, fontWeight: '700' } as TextStyle,
 };
 
 function ThinkingStepsPanel({
@@ -2897,202 +2765,4 @@ function ThinkingStepsPanel({
       </View>
     );
   }
-}
-
-function bandColor(kind: AgentTransparencyBand['kind']): string {
-  switch (kind) {
-    case 'prellm': return '#CBD5D1';
-    case 'ttft': return '#F5A623';
-    case 'gen': return C.green500;
-    case 'tool': return C.blue500;
-    case 'orch': return revaSemantic.risk.fg;
-    case 'total':
-    default:
-      return C.green300;
-  }
-}
-
-function AssistantUtilityPanel({
-  profile,
-  sources,
-  thinkingSteps,
-  sharingEnabled,
-  onOpenMemory,
-  onShareWeChat,
-  onShareXiaohongshu,
-  onCopy,
-  copied,
-}: {
-  profile: AgentTransparencyProfile;
-  sources?: readonly string[];
-  thinkingSteps: readonly string[];
-  sharingEnabled: boolean;
-  onOpenMemory: () => void;
-  onShareWeChat: () => void;
-  onShareXiaohongshu: () => void;
-  onCopy: () => void;
-  copied: boolean;
-}) {
-  const [open, setOpen] = React.useState(false);
-  const sourceCount = normalizedAttributionCount(sources);
-  const rows = [
-    ...(profile.stages.length > 0 ? [{ label: '继续阶段', value: profile.stages.map(s => `${s.label} ${s.value}`).join(' · ') }] : []),
-    ...(profile.rounds.length > 0 ? [{ label: 'LLM 轮次', value: profile.rounds.map(r => `${r.label} ${r.value}`).join('\n') }] : []),
-    ...(profile.costLine ? [{ label: '成本', value: profile.costLine }] : []),
-    ...(profile.tokenLine ? [{ label: 'Token', value: profile.tokenLine }] : []),
-    ...(profile.errorLine ? [{ label: '失败', value: profile.errorLine }] : []),
-    ...(profile.traceLine ? [{ label: '追踪', value: profile.traceLine }] : []),
-  ];
-  const hasExecutionDetails = profile.bands.length > 0
-    || rows.length > 0
-    || profile.tools.length > 0
-    || (sourceCount === 0 && profile.sources.length > 0);
-  const hasDetails = sourceCount > 0 || hasExecutionDetails || thinkingSteps.length > 0;
-  return (
-    <View
-      testID="assistant-utility-panel"
-      style={styles.assistantUtilityPanel}
-    >
-      <View style={styles.assistantUtilityRail}>
-        {hasDetails ? (
-          <Pressable
-            onPress={() => setOpen(o => !o)}
-            style={({ pressed }) => [styles.assistantUtilityEvidence, pressed && styles.actionBtnPressed]}
-            accessibilityRole="button"
-            accessibilityLabel={open ? '收起依据与过程' : '展开依据与过程'}
-            accessibilityState={{ expanded: open }}
-          >
-            <Ionicons name="layers-outline" size={13} color={C.ink3} />
-            {/* 第一部分只留干净入口"依据与过程 · N";耗时/轮次/模型名(profile.headline)
-                太技术,收进展开面(下方 执行过程 顶部),不在常显行透出。 */}
-            <Text style={txt.assistantUtilityEvidence} numberOfLines={1}>
-              {`依据与过程${sourceCount > 0 ? ` · ${sourceCount}` : ''}`}
-            </Text>
-            <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={13} color={C.ink3} />
-          </Pressable>
-        ) : <View style={styles.assistantUtilitySpacer} />}
-        {sharingEnabled ? (
-          <>
-            <View style={styles.assistantUtilityDivider} />
-            <Pressable
-              onPress={onShareWeChat}
-              accessibilityRole="button"
-              accessibilityLabel="微信分享这条回复"
-              style={({ pressed }) => [styles.assistantUtilityShare, pressed && styles.actionBtnPressed]}
-            >
-              <SocialBrandIcon brand="wechat" size={15} />
-              <Text style={txt.assistantUtilityShare}>微信</Text>
-            </Pressable>
-            <Pressable
-              onPress={onShareXiaohongshu}
-              accessibilityRole="button"
-              accessibilityLabel="小红书分享这条回复"
-              style={({ pressed }) => [styles.assistantUtilityShare, pressed && styles.actionBtnPressed]}
-            >
-              <SocialBrandIcon brand="xiaohongshu" size={15} />
-              <Text style={txt.assistantUtilityShare}>小红书</Text>
-            </Pressable>
-          </>
-        ) : null}
-        <Pressable
-          onPress={onCopy}
-          accessibilityRole="button"
-          accessibilityLabel={copied ? '已复制' : '复制回答'}
-          hitSlop={6}
-          style={({ pressed }) => [
-            styles.assistantUtilityCopy,
-            copied && styles.assistantUtilityCopyDone,
-            pressed && styles.actionBtnPressed,
-          ]}
-        >
-          <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={14} color={copied ? C.green700 : C.ink3} />
-        </Pressable>
-      </View>
-      {open && hasDetails ? (
-        <View style={styles.assistantUtilityDetails}>
-          {/* 耗时/轮次/模型名从常显行下放到这里(展开才见):透明化不丢,只是不喧闹。 */}
-          {profile.headline ? (
-            <Text style={txt.transparencyMono} numberOfLines={1}>{profile.headline}</Text>
-          ) : null}
-          {sourceCount > 0 ? (
-            <View style={styles.assistantUtilitySection}>
-              <Text style={txt.assistantUtilitySectionTitle}>使用数据</Text>
-              <AttributionDetails sources={sources} onOpenMemory={onOpenMemory} />
-            </View>
-          ) : null}
-          {thinkingSteps.length > 0 ? (
-            <View style={styles.assistantUtilitySection}>
-              <Text style={txt.assistantUtilitySectionTitle}>思考过程</Text>
-              <View style={styles.assistantUtilityThoughts}>
-                {thinkingSteps.map((step, index) => (
-                  <View key={`${step}-${index}`} style={styles.assistantUtilityThoughtRow}>
-                    <Ionicons name="checkmark-circle" size={13} color={C.green500} />
-                    <Text style={txt.assistantUtilityThought}>{step}</Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-          ) : null}
-          {hasExecutionDetails ? (
-            <View style={styles.assistantUtilitySection}>
-              <Text style={txt.assistantUtilitySectionTitle}>执行过程</Text>
-          {profile.bands.length > 0 ? (
-            <>
-              <View style={styles.transparencyBar}>
-                {profile.bands.map((band, index) => (
-                  <View
-                    key={`${band.kind}-${index}`}
-                    style={{
-                      flexGrow: band.ratio,
-                      flexBasis: 0,
-                      backgroundColor: bandColor(band.kind),
-                    }}
-                  />
-                ))}
-              </View>
-              <View style={styles.transparencyLegend}>
-                {profile.bands.map((band, index) => (
-                  <Text key={`${band.kind}-legend-${index}`} style={txt.transparencyMono}>
-                    {band.label} {formatDurationMs(band.ms)}
-                  </Text>
-                ))}
-              </View>
-            </>
-          ) : null}
-          {rows.map(row => (
-            <View key={row.label} style={styles.transparencyRow}>
-              <Text style={txt.transparencyLabel}>{row.label}</Text>
-              <Text style={txt.transparencyValue}>{row.value}</Text>
-            </View>
-          ))}
-          {profile.sources.length > 0 ? (
-            sourceCount === 0 ? (
-              <View style={styles.transparencyRow}>
-                <Text style={txt.transparencyLabel}>引用数据</Text>
-                <View style={{ flex: 1, gap: 3 }}>
-                  {profile.sources.slice(0, 8).map(source => (
-                    <Text key={source} style={txt.transparencyValue}>· {source}</Text>
-                  ))}
-                </View>
-              </View>
-            ) : null
-          ) : null}
-          {profile.tools.length > 0 ? (
-            <View style={styles.transparencyRow}>
-              <Text style={txt.transparencyLabel}>{profile.toolLabel}</Text>
-              <View style={[styles.transparencyChipRow, { flex: 1 }]}>
-                {profile.tools.map(tool => (
-                  <View key={tool} style={styles.transparencyChip}>
-                    <Text style={txt.transparencyChip}>{tool}</Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-          ) : null}
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-    </View>
-  );
 }

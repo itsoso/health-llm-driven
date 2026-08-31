@@ -133,7 +133,8 @@ describe('chatTransparency', () => {
     });
 
     expect(profile.visible).toBe(true);
-    expect(profile.errorLine).toBe('失败 1 次 · insufficient_quota · Your token-plan quota has been exhausted.');
+    expect(profile.errorLine).toBe('失败 1 次 · insufficient_quota');
+    expect(profile.errorLine).not.toContain('quota has been exhausted');
     expect(profile.traceLine).toBe('run run_abc1234567890 · fallback_attempted · 备用 gpt-5.5');
   });
 
