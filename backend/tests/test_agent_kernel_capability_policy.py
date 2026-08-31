@@ -11,6 +11,7 @@ import pytest
 from app.services.agent_kernel import capability_policy as capability_policy_module
 from app.services.agent_kernel import goal_spec as goal_spec_module
 from app.services.agent_kernel import health_semantics as semantics
+from app.services import agent_executor as agent_executor_module
 from app.services import write_intent_scope as write_intent_scope_module
 from app.services.agent_kernel.capability_policy import (
     bind_server_authorized_manage_lookup,
@@ -4527,6 +4528,197 @@ def test_mutating_tools_are_blocked_without_explicit_write_intent(tool_name, arg
     assert decision.action == "block"
     assert decision.receipt_required is True
     assert decision.reason == "write_tool_without_write_intent"
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "我朋友说，记录我头疼，给点意见",
+        "他说：记录我头疼，给点意见",
+        "客服原话：记录我头疼，给点意见",
+        "我朋友说，记录我头疼，严重吗",
+        "他说：记录我头疼，该看什么科",
+        "客服原话：记录我头疼，要去急诊吗",
+        "我朋友说，记录我头疼严不严重",
+        "他说：记录我头疼该挂哪个科",
+        "客服原话：记录我头疼会不会有事",
+        "朋友让我记录我头疼该咋办",
+        "记录我朋友头疼用不用急诊",
+        "记录妈妈头疼该咋办",
+        "我朋友头疼要急诊还是门诊记录一下",
+        "主任让我记录我头疼需要急诊",
+        "护士让我记录我头疼该咋办",
+        "营养师让我记录我头疼咋治",
+        "理疗师让我记录我头疼有多严重",
+        "健康顾问让我记录我头疼用不用急诊",
+    ),
+)
+def test_reported_compound_advice_cannot_authorize_generic_mutating_tool(text):
+    decision = decide_tool_capability(
+        _snapshot(text),
+        _request(
+            "manage_plan",
+            {"action": "save_to_card", "data": {"title": "计划"}},
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "write_tool_without_write_intent"
+
+
+def test_attachment_symptom_text_cannot_authorize_unrelated_plan_write():
+    decision = decide_tool_capability(
+        _attachment_snapshot("附件中是我头疼，记录一下"),
+        _request(
+            "manage_plan",
+            {"action": "save_to_card", "data": {"title": "计划"}},
+        ),
+    )
+
+    assert decision.action == "block"
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "记录我头疼",
+        "记录我头疼用不用急诊",
+        "记录我头疼帮忙看看",
+    ),
+)
+def test_symptom_write_intent_cannot_authorize_unrelated_plan_write(text):
+    decision = decide_tool_capability(
+        _snapshot(text),
+        _request(
+            "manage_plan",
+            {"action": "save_to_card", "data": {"title": "计划"}},
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "write_tool_target_domain_mismatch"
+
+
+def test_server_bound_compound_symptom_authorizes_only_exact_fact_payload():
+    snapshot = _snapshot("记录我头疼有多严重")
+    matching_args = capability_policy_module.bind_server_authorized_health_record_fields(
+        {
+            "record_type": "symptom",
+            "data": {"body_part": "head", "description": "我头疼"},
+        },
+        symptom_payload={"body_part": "head", "description": "我头疼"},
+    )
+    mismatch_args = capability_policy_module.bind_server_authorized_health_record_fields(
+        {
+            "record_type": "symptom",
+            "data": {"body_part": "head", "description": "偏头痛"},
+        },
+        symptom_payload={"body_part": "head", "description": "我头疼"},
+    )
+
+    matching = decide_tool_capability(
+        snapshot,
+        _request("health_record", matching_args),
+    )
+    mismatch = decide_tool_capability(
+        snapshot,
+        _request("health_record", mismatch_args),
+    )
+
+    assert matching.action == "allow"
+    assert matching.normalized_args == {
+        "record_type": "symptom",
+        "data": {
+            "body_part": "head",
+            "description": "我头疼",
+            "record_date": snapshot.context.current_time.date().isoformat(),
+        },
+    }
+    assert mismatch.action == "block"
+
+
+@pytest.mark.parametrize(
+    "model_description",
+    (
+        "我头疼得很厉害",
+        "昨晚开始我头疼",
+        "头疼",
+        "我头疼，疑似偏头痛",
+        "我头疼需要急诊",
+    ),
+)
+def test_server_bound_symptom_blocks_model_description_rewrites(model_description):
+    snapshot = _snapshot("记录我头疼有多严重")
+    args = capability_policy_module.bind_server_authorized_health_record_fields(
+        {
+            "record_type": "symptom",
+            "data": {"body_part": "head", "description": model_description},
+        },
+        symptom_payload={"body_part": "head", "description": "我头疼"},
+    )
+
+    decision = decide_tool_capability(
+        snapshot,
+        _request("health_record", args),
+    )
+
+    assert decision.action == "block"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录我头疼，不对，现在不疼了",
+        "记录我头疼但现在不疼了",
+        "记录我头疼，不对，我现在一点也不疼",
+        "记录我头疼不过现在已经完全不疼",
+        "记录我头疼，但我此刻一点疼痛都没有",
+        "记录我头疼，不对刚才说错了",
+        "记录我头疼，纠正一下前面说错了",
+        "记录我头疼，撤回刚才这句话",
+        "记录我头疼，这条作废",
+        "记录我头疼，忽略前面的记录请求",
+        "记录我头疼，算我没说",
+        "记录我头疼，刚才是口误",
+        "记录我头疼，不对，现在不疼了，怎么办",
+        "记录我头疼但现在不疼了，给点处理意见",
+        "记录我头疼，撤回刚才这句话，顺便给点建议",
+        "记录我头疼，刚才是口误，分析一下为什么",
+        "记录我头疼，这条作废，告诉我头疼的原因",
+        "记录我头疼，算我没说，要不要去急诊",
+        "记录我头疼，不过现在恢复正常了，怎么处理",
+        "记录我头疼，撤回刚才这句话，医生怎么看",
+        "记录我头疼，刚才是口误，想问医生这严重吗",
+        "记录我头疼，这条作废，医生建议怎么处理",
+        "记录我头疼，不对现在不疼了，医生说这是怎么回事",
+    ),
+)
+def test_retracted_symptom_blocks_after_full_recovery_and_provenance_path(message):
+    args = agent_executor_module._recover_clear_symptom_args(
+        "health_record",
+        {
+            "record_type": "symptom",
+            "data": {"body_part": "head", "description": "我头疼"},
+        },
+        message,
+    )
+    args = agent_executor_module._apply_server_health_record_provenance(
+        "health_record",
+        args,
+        execution_source="structured_or_recovered",
+        has_attachment=False,
+        diet_photo_auto_save=False,
+        contextual_diet_recorded=False,
+        contextual_supplement_names=(),
+        user_message=message,
+    )
+
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request("health_record", args),
+    )
+
+    assert decision.action == "block"
 
 
 @pytest.mark.parametrize(

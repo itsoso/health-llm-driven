@@ -472,6 +472,37 @@ def test_clear_symptom_statement_is_write_intent():
     assert intent.is_write is True
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录我头疼，不对，现在不疼了",
+        "记录我头疼但现在不疼了",
+        "记录我头疼，不对，我现在一点也不疼",
+        "记录我头疼不过现在已经完全不疼",
+        "记录我头疼，但我此刻一点疼痛都没有",
+        "记录我头疼，不对刚才说错了",
+        "记录我头疼，纠正一下前面说错了",
+        "记录我头疼，撤回刚才这句话",
+        "记录我头疼，这条作废",
+        "记录我头疼，忽略前面的记录请求",
+        "记录我头疼，算我没说",
+        "记录我头疼，刚才是口误",
+        "记录我头疼，不对，现在不疼了，怎么办",
+        "记录我头疼但现在不疼了，给点处理意见",
+        "记录我头疼，撤回刚才这句话，顺便给点建议",
+        "记录我头疼，刚才是口误，分析一下为什么",
+        "记录我头疼，这条作废，告诉我头疼的原因",
+        "记录我头疼，算我没说，要不要去急诊",
+        "记录我头疼，不过现在恢复正常了，怎么处理",
+    ),
+)
+def test_retracted_symptom_statement_is_not_write_intent(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.is_write is False
+    assert intent.reason == "symptom_write_retracted"
+
+
 SCREENSHOT_CLINICIAN_TEXT = (
     "医生诊断是大腿和臀部肌肉无力导致腰肌代偿进而导致腰肌痛"
 )
@@ -1466,6 +1497,92 @@ def test_compound_record_and_analysis_keeps_write_capability():
     assert intent.primary == "write"
     assert intent.operation == "create"
     assert intent.is_write is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录我一直呕吐，给点处理意见",
+        "记录我头晕得站不稳，给点处理意见",
+        "记录我严重头痛，给点处理意见",
+        "记录我头疼，给点意见",
+        "记录我刚才打了一个喷嚏，顺便说说咋回事",
+        "记录我一直呕吐，接下来咋整",
+        "记录我头疼，解释一下",
+        "记录我头疼，判断一下要紧吗",
+        "记录我头疼，给些处理方法",
+        "记录我头疼，需不需要就医",
+        "记录我头疼，该看什么科",
+        "记录我头疼，严重吗",
+        "记录我头疼，这正常吗",
+        "记录我头疼，要去急诊吗",
+        "记录我头疼该看什么科",
+        "记录我头疼严重吗",
+        "记录我头疼这正常吗",
+        "记录我头疼要去急诊吗",
+        "记录我头疼该挂哪个科",
+        "记录我头疼严不严重",
+        "记录我头疼正常不正常",
+        "记录我头疼会不会有事",
+        "记录我头疼该去哪里看",
+        "记录我头疼用不用急诊",
+        "记录我头疼需不需急诊",
+        "记录我头疼算正常还是危险",
+        "记录我头疼要急诊还是门诊",
+        "记录我头疼挂内科还是神经科",
+        "记录我头疼该咋办",
+        "记录我头疼咋治",
+        "记录我头疼说下原因",
+        "记录我头疼有多严重",
+        "记录我头疼需要急诊",
+        "记录我头疼正常还是异常",
+        "记录我头疼严重还是不严重",
+        "记录我头疼是不是偏头痛",
+        "记录我头疼可否吃药",
+        "记录我头疼帮忙看看",
+        "记录我头疼请评估风险",
+        "记录我头疼告诉我原因",
+    ),
+)
+def test_natural_compound_symptom_advice_requires_reliable_model(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "write"
+    assert intent.domain == "symptom"
+    assert intent.operation == "create"
+    assert intent.is_write is True
+    assert intent.requires_reliable_tool_model is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "我朋友说，记录我头疼，给点意见",
+        "他说：记录我头疼，给点意见",
+        "客服原话：记录我头疼，给点意见",
+        "我朋友说，记录我头疼，严重吗",
+        "他说：记录我头疼，该看什么科",
+        "客服原话：记录我头疼，要去急诊吗",
+        "我朋友说，记录我头疼严不严重",
+        "他说：记录我头疼该挂哪个科",
+        "客服原话：记录我头疼会不会有事",
+        "朋友让我记录我头疼该咋办",
+        "记录我朋友头疼用不用急诊",
+        "记录妈妈头疼该咋办",
+        "我朋友头疼要急诊还是门诊记录一下",
+        "附件中是我头疼，记录一下",
+        "主任让我记录我头疼需要急诊",
+        "护士让我记录我头疼该咋办",
+        "营养师让我记录我头疼咋治",
+        "理疗师让我记录我头疼有多严重",
+        "健康顾问让我记录我头疼用不用急诊",
+    ),
+)
+def test_reported_compound_symptom_advice_does_not_authorize_write(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.is_write is False
+    assert intent.primary != "write"
 
 
 def test_diet_nutrition_request_with_carbs_is_not_misrouted_to_water():

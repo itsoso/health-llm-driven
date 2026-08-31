@@ -6,6 +6,7 @@ import re
 import unicodedata
 
 from app.services.utterance_intent_lexicon import (
+    HEALTH_QUESTION_SIGNALS,
     QUESTION_SIGNALS,
     READ_ACTIONS,
     RECORD_NOUN_SUFFIXES,
@@ -1323,7 +1324,24 @@ def _observation_has_non_current_subject(clause: str) -> bool:
     a subjectless shorthand); otherwise a later ``记录一下`` cannot turn that
     fact into the current user's record.
     """
-    matches = tuple(_HEALTH_OBSERVATION_PREDICATE_RE.finditer(clause))
+    # Interrogative tails describe what the user wants answered, not a second
+    # observation owner.  Truncate only a question signal that occurs after the
+    # first health predicate: this handles ``头疼是不是偏头痛`` without erasing
+    # factual prefixes such as ``这几天不想吃东西``.  Real third-party subjects
+    # remain before the predicate and are still rejected below.
+    ownership_clause = clause
+    initial_matches = tuple(_HEALTH_OBSERVATION_PREDICATE_RE.finditer(clause))
+    if initial_matches:
+        first_predicate_end = initial_matches[0].end()
+        question_starts = [
+            position
+            for signal in HEALTH_QUESTION_SIGNALS
+            for position in [clause.find(signal, first_predicate_end)]
+            if position >= 0
+        ]
+        if question_starts:
+            ownership_clause = clause[:min(question_starts)]
+    matches = tuple(_HEALTH_OBSERVATION_PREDICATE_RE.finditer(ownership_clause))
     if not matches:
         return False
     if direct_supplement_group_values(clause) is not None:
@@ -1340,7 +1358,7 @@ def _observation_has_non_current_subject(clause: str) -> bool:
         return False
     previous_end = 0
     for match in matches:
-        prefix = clause[previous_end : match.start()]
+        prefix = ownership_clause[previous_end : match.start()]
         if previous_end and re.search(r"(?:备注|注释|说明|描述)", prefix):
             previous_end = match.end()
             continue
@@ -1682,6 +1700,16 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
 
 def _is_post_attributed_to_non_current_owner(clause: str) -> bool:
     normalized = clause.strip("，,。.!！；;：: ")
+    # ``给点意见`` / ``给些处理方法`` are direct requests for advice, not
+    # postposed ownership statements.  The generic ``给 + owner`` grammar
+    # otherwise captures ``点意见`` as an owner and makes an otherwise direct
+    # compound record request look unauthorised.  Keep this exception narrow;
+    # full-turn reported/third-party guards still run before authorization.
+    if re.fullmatch(
+        r"(?:请)?给(?:我)?(?:点|些)(?:处理)?(?:意见|建议|方法)",
+        normalized,
+    ):
+        return False
     if _POST_CURRENT_USER_OWNERSHIP_ONLY_DENIAL_RE.fullmatch(normalized):
         return True
     denial_match = _POST_CURRENT_USER_OWNERSHIP_DENIAL_RE.fullmatch(normalized)

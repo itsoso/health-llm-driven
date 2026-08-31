@@ -2587,14 +2587,17 @@ async def test_agent_stream_executes_inline_diet_record_json_with_nutrition(db, 
 
 @pytest.mark.asyncio
 async def test_agent_stream_executes_founder_sneeze_tool_code_and_returns_receipt(
-    db, auth_user_and_headers
+    db, auth_user_and_headers, monkeypatch
 ):
     """Founder 2026-07-16: Python-style pseudo tool call must become a real write."""
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     executed = []
+    llm_calls = 0
 
     async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
         if not executed:
             return {
                 "content": (
@@ -2622,6 +2625,10 @@ async def test_agent_stream_executes_founder_sneeze_tool_code_and_returns_receip
     executor._call_llm = fake_call_llm
     executor._call_llm_stream = _stream_from(fake_call_llm)
     executor._execute_tool = fake_execute_tool
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.staged_response_mode",
+        "on",
+    )
 
     events = [
         event
@@ -2630,7 +2637,7 @@ async def test_agent_stream_executes_founder_sneeze_tool_code_and_returns_receip
             message="我准备睡觉了，记录刚才我打了一个喷嚏。",
             user_auth_token="test-token",
             extra_context=json.dumps({"client": "mobile"}),
-            channel="typed",
+            channel="voice",
         )
     ]
     rendered = "".join(
@@ -2641,14 +2648,143 @@ async def test_agent_stream_executes_founder_sneeze_tool_code_and_returns_receip
 
     assert executed[0][0] == "health_record"
     assert executed[0][1]["record_type"] == "symptom"
-    assert executed[0][1]["data"]["description"] == "打喷嚏"
+    assert executed[0][1]["data"]["description"] == (
+        "我准备睡觉了，记录刚才我打了一个喷嚏"
+    )
     assert executed[0][2] == "test-token"
+    assert llm_calls == 0
     assert "<tool_code>" not in rendered and "print(health_record" not in rendered
     assert "已记录症状：打喷嚏" in rendered
     done = next(event for event in events if event.get("event") == "done")
     assert done["data"]["write_receipts"][0]["resource_type"] == "symptom_record"
     assert done["data"]["write_receipts"][0]["resource_id"] == "75"
     assert done["data"]["write_receipts"][0]["verified"] is True
+    assert done["data"]["llm_rounds"] == 0
+    assert done["data"]["perf"]["model_call_count"] == 0
+    assert done["data"]["perf"]["end_to_end_ttft_ms"] is not None
+
+
+@pytest.mark.parametrize(
+    ("message", "symptom_description"),
+    (
+        ("记录我刚才打了一个喷嚏，并分析为什么", "我刚才打了一个喷嚏"),
+        ("记录我一直呕吐，给点处理意见", "我一直呕吐"),
+        ("记录我头晕得站不稳，给点处理意见", "我头晕得站不稳"),
+        ("记录我严重头痛，给点处理意见", "我严重头痛"),
+        ("记录我头疼，给点意见", "我头疼"),
+        ("记录我刚才打了一个喷嚏，顺便说说咋回事", "我刚才打了一个喷嚏"),
+        ("记录我一直呕吐，接下来咋整", "我一直呕吐"),
+        ("记录我头疼，解释一下", "我头疼"),
+        ("记录我头疼，判断一下要紧吗", "我头疼"),
+        ("记录我头疼，给些处理方法", "我头疼"),
+        ("记录我头疼，需不需要就医", "我头疼"),
+        ("记录我头疼，该看什么科", "我头疼"),
+        ("记录我头疼，严重吗", "我头疼"),
+        ("记录我头疼，这正常吗", "我头疼"),
+        ("记录我头疼，要去急诊吗", "我头疼"),
+        ("记录我头疼该看什么科", "我头疼"),
+        ("记录我头疼严重吗", "我头疼"),
+        ("记录我头疼这正常吗", "我头疼"),
+        ("记录我头疼要去急诊吗", "我头疼"),
+        ("记录我头疼该挂哪个科", "我头疼"),
+        ("记录我头疼严不严重", "我头疼"),
+        ("记录我头疼正常不正常", "我头疼"),
+        ("记录我头疼会不会有事", "我头疼"),
+        ("记录我头疼该去哪里看", "我头疼"),
+        ("记录我头疼用不用急诊", "我头疼"),
+        ("记录我头疼需不需急诊", "我头疼"),
+        ("记录我头疼算正常还是危险", "我头疼"),
+        ("记录我头疼要急诊还是门诊", "我头疼"),
+        ("记录我头疼挂内科还是神经科", "我头疼"),
+        ("记录我头疼该咋办", "我头疼"),
+        ("记录我头疼咋治", "我头疼"),
+        ("记录我头疼说下原因", "我头疼"),
+        ("记录我头疼有多严重", "我头疼"),
+        ("记录我头疼需要急诊", "我头疼"),
+        ("记录我头疼正常还是异常", "我头疼"),
+        ("记录我头疼严重还是不严重", "我头疼"),
+        ("记录我头疼是不是偏头痛", "我头疼"),
+        ("记录我头疼可否吃药", "我头疼"),
+        ("记录我头疼帮忙看看", "我头疼"),
+        ("记录我头疼请评估风险", "我头疼"),
+        ("记录我头疼告诉我原因", "我头疼"),
+        ("记录我头疼看不看医生", "我头疼"),
+        ("记录我头疼需要不需要看医生", "我头疼"),
+        ("记录我头疼该不该去看大夫", "我头疼"),
+        ("记录我头疼要不要找医生看看", "我头疼"),
+        ("记录我头疼该不该找大夫", "我头疼"),
+    ),
+)
+@pytest.mark.asyncio
+async def test_verified_compound_write_advice_still_uses_quality_synthesis(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    message,
+    symptom_description,
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{
+                    "id": "symptom-write",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "symptom",
+                            "data": {"description": message, "confirmed": True},
+                            "confirmed": True,
+                        }, ensure_ascii=False),
+                    },
+                }],
+            }
+        return {"content": "已记录。常见原因包括环境刺激。", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):  # noqa: ARG001
+        assert tool_name == "health_record"
+        args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+        assert args["data"]["description"] == symptom_description
+        return json.dumps({
+            "id": 76,
+            "message": f"已记录症状：{symptom_description}。",
+            "description": symptom_description,
+        }, ensure_ascii=False)
+
+    executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
+    executor._execute_tool = fake_execute_tool
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.staged_response_mode",
+        "on",
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message=message,
+            user_auth_token="test-token",
+            channel="voice",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+    assert llm_calls == 2
+    assert "常见原因" in rendered
+    assert events[-1]["data"]["write_receipts"][0]["verified"] is True
 
 
 @pytest.mark.asyncio

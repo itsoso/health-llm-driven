@@ -29,7 +29,7 @@ from app.services.utterance_intent_lexicon import (
     PLAN_CREATE_ACTIONS,
     PLAN_TERMS,
     PLAN_UPDATE_ACTIONS,
-    QUESTION_SIGNALS,
+    HEALTH_QUESTION_SIGNALS,
     READ_ACTIONS,
     REMINDER_CREATE_ACTIONS,
     REMINDER_TERMS,
@@ -91,6 +91,20 @@ ADVICE_ACTIONS = (
     "禁忌",
     "推断",
     "根因",
+    # Natural follow-up phrasing seen in production-shaped symptom requests.
+    # These must keep the write capability while forcing a reliable synthesis
+    # round; otherwise ``记录...给点意见`` can be mistaken for a pure write.
+    "意见",
+    "说说",
+    "讲讲",
+    "咋回事",
+    "咋整",
+    "解释",
+    "判断",
+    "处理方法",
+    "需不需要",
+    "就医",
+    "要紧",
 )
 DIET_TERMS = (
     "饮食",
@@ -273,8 +287,18 @@ def classify_agent_utterance(
     domain = _infer_domain(normalized)
     has_question = _has_question_signal(normalized) or write_capability_question
     has_write = _has_any(normalized, WRITE_ACTIONS)
-    has_write_command = _has_explicit_write_command(normalized)
-    has_negated_write = _has_negated_write(normalized)
+    has_advice = _has_any(normalized, ADVICE_ACTIONS)
+    direct_symptom_write_command = _has_direct_symptom_write_command(normalized)
+    has_write_command = (
+        _has_explicit_write_command(normalized) or direct_symptom_write_command
+    )
+    if direct_symptom_write_command:
+        # Bind an explicit symptom record to the symptom fact that immediately
+        # follows the write speech act.  A later question mentioning medicine
+        # ("头疼可否吃药") must not retarget the requested write to medication.
+        domain = "symptom"
+    retracted_symptom_write = has_retracted_symptom_write(normalized)
+    has_negated_write = _has_negated_write(normalized) or retracted_symptom_write
     mutation = _mutation_operation(normalized)
     implicit_diet_correction = _is_diet_quantity_correction(
         normalized,
@@ -284,7 +308,6 @@ def classify_agent_utterance(
     if mutation is None and implicit_diet_correction:
         mutation = "update"
     has_negated_mutation = _has_negated_mutation(normalized, mutation)
-    has_advice = _has_any(normalized, ADVICE_ACTIONS)
     question_without_write_command = has_question and not has_write_command
 
     if _is_media_generation_request(media_control_text):
@@ -298,6 +321,25 @@ def classify_agent_utterance(
             "media_generation_request",
             is_write=True,
             requires_reliable_tool_model=True,
+        )
+
+    if retracted_symptom_write:
+        if has_advice:
+            primary, operation = "advice", "analyze"
+        elif has_question or has_read:
+            primary, operation = "read", "ask"
+        else:
+            primary, operation = "chat", "none"
+        return _intent(
+            raw,
+            normalized,
+            primary,
+            "symptom",
+            operation,
+            0.96,
+            "symptom_write_retracted",
+            scope,
+            requires_reliable_tool_model=primary in {"advice", "read"},
         )
 
     is_diet_recalculate_update = (
@@ -426,6 +468,46 @@ def classify_agent_utterance(
             scope,
             is_write=True,
             requires_reliable_tool_model=True,
+        )
+
+    if domain == "symptom" and has_write_command and not has_negated_write:
+        # The classifier never proves a symptom write has no trailing work. All such
+        # turns request a reliable synthesis model; the executor may bypass the
+        # model only when its separate structural parser proves that the write
+        # contains exactly one symptom fact and no unparsed tail.
+        return _intent(
+            raw,
+            normalized,
+            "write",
+            domain,
+            "create",
+            0.84,
+            "symptom_write_requires_pure_fast_proof",
+            scope,
+            is_write=True,
+            requires_reliable_tool_model=True,
+        )
+
+    if (
+        domain == "symptom"
+        and has_write
+        and not has_write_command
+        and not (has_question or has_advice or has_read)
+    ):
+        # A write word inside reported, third-party, attachment-derived, or
+        # otherwise unowned symptom language is not authorization.  Do not let
+        # the declarative-observation fallback below re-grant generic write
+        # capability after the positive speech-act parser rejected it.
+        return _intent(
+            raw,
+            normalized,
+            "read" if has_question or has_advice or has_read else "chat",
+            domain,
+            "ask" if has_question or has_advice or has_read else "none",
+            0.9,
+            "symptom_write_reference_without_authority",
+            scope,
+            requires_reliable_tool_model=bool(has_question or has_advice),
         )
 
     if has_advice:
@@ -652,7 +734,7 @@ def _has_water_signal(text: str) -> bool:
 
 
 def _has_question_signal(text: str) -> bool:
-    return _has_any(text, QUESTION_SIGNALS)
+    return _has_any(text, HEALTH_QUESTION_SIGNALS)
 
 
 def _wants_table_or_list(text: str) -> bool:
@@ -673,6 +755,120 @@ def _has_explicit_write_command(text: str) -> bool:
     a broad regex keyword router.
     """
     return has_explicit_authorizing_write_request(text)
+
+
+def _has_direct_symptom_write_command(text: str) -> bool:
+    """Recognize a direct symptom write before an arbitrary trailing request.
+
+    The full-turn authorization predicate intentionally rejects questions. A
+    compound turn such as ``记录我头疼有多严重`` still owns the leading write,
+    though, and must reach reliable synthesis rather than losing write intent.
+    Prove only the prefix ending at the first symptom marker; reported,
+    third-party, and attachment-first language therefore stays unauthorized.
+    """
+    sanitized = text
+    for false_positive in (
+        "麻烦",
+        "酸奶",
+        "氨酸",
+        "心酸",
+        "辛酸",
+        "痛快",
+        "痛点",
+        "疼爱",
+    ):
+        sanitized = sanitized.replace(false_positive, "\0" * len(false_positive))
+    candidates = [
+        (position, -len(term), position + len(term))
+        for term in SYMPTOM_TERMS
+        for position in [sanitized.find(term)]
+        if position >= 0
+    ]
+    if not candidates:
+        return False
+    _position, _negative_length, symptom_end = min(candidates)
+    symptom_prefix = text[:symptom_end]
+    return (
+        _infer_domain(symptom_prefix) == "symptom"
+        and has_explicit_authorizing_write_request(symptom_prefix)
+    )
+
+
+def has_retracted_symptom_write(text: str) -> bool:
+    """Reject a later symptom denial, correction, or revocation."""
+    if not _has_direct_symptom_write_command(text):
+        return False
+    sanitized = text
+    for false_positive in (
+        "麻烦",
+        "酸奶",
+        "氨酸",
+        "心酸",
+        "辛酸",
+        "痛快",
+        "痛点",
+        "疼爱",
+    ):
+        sanitized = sanitized.replace(false_positive, "\0" * len(false_positive))
+    candidates = [
+        (position, -len(term), position + len(term))
+        for term in SYMPTOM_TERMS
+        for position in [sanitized.find(term)]
+        if position >= 0
+    ]
+    if not candidates:
+        return False
+    _position, _negative_length, symptom_end = min(candidates)
+    suffix = text[symptom_end:]
+    if any(
+        marker in suffix
+        for marker in (
+            "说错",
+            "纠正",
+            "更正",
+            "撤回",
+            "作废",
+            "算我没说",
+            "当我没说",
+            "口误",
+            "恢复正常",
+        )
+    ):
+        return True
+    if "忽略" in suffix and any(
+        target in suffix for target in ("记录请求", "前面", "刚才", "这条", "这句话")
+    ):
+        return True
+    for predicate in (
+        "疼",
+        "痛",
+        "疼痛",
+        "痒",
+        "胀",
+        "咳",
+        "晕",
+        "恶心",
+        "呕吐",
+        "打喷嚏",
+        "喷嚏",
+        "鼻塞",
+        "流鼻涕",
+        "难受",
+        "不舒服",
+    ):
+        if any(
+            marker in suffix
+            for marker in (
+                f"不{predicate}",
+                f"没{predicate}",
+                f"不再{predicate}",
+                f"没再{predicate}",
+                f"没有{predicate}",
+                f"{predicate}都没有",
+            )
+        ):
+            return True
+    return False
 
 
 def _mutation_operation(text: str) -> Optional[str]:

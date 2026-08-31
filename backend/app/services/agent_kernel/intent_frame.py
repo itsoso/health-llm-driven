@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from app.services.agent_kernel.types import AgentEnvelope, ExecutionContext, IntentFrame
 from app.services.agent_kernel.write_safety import is_explicit_write_cancellation
-from app.services.utterance_intent_classifier import classify_agent_utterance
+from app.services.utterance_intent_classifier import (
+    classify_agent_utterance,
+    has_retracted_symptom_write,
+)
 
 
 def build_intent_frame(
@@ -17,6 +20,7 @@ def build_intent_frame(
     classifier internals without changing callers.
     """
     text = envelope.text
+    symptom_write_retracted = has_retracted_symptom_write(text)
     intent = classify_agent_utterance(text, reference_now=context.current_time)
     write_cancelled = is_explicit_write_cancellation(text)
     ambiguity: list[str] = []
@@ -34,6 +38,8 @@ def build_intent_frame(
     ]
     if write_cancelled:
         evidence.append("safety:explicit_write_cancellation")
+    if symptom_write_retracted:
+        evidence.append("safety:symptom_write_retracted")
     if intent.scope:
         evidence.extend(f"scope:{key}={value}" for key, value in sorted(intent.scope.items()))
 

@@ -2321,6 +2321,24 @@ def decide_tool_capability(
             args,
             receipt_required=True,
         )
+    if (
+        tool_name == "health_record"
+        and any(
+            evidence in snapshot.intent.evidence
+            for evidence in (
+                "classifier:negated_write",
+                "classifier:symptom_write_retracted",
+                "safety:symptom_write_retracted",
+            )
+        )
+    ):
+        return _decision(
+            "block",
+            "explicit_write_cancellation",
+            tool_name,
+            args,
+            receipt_required=True,
+        )
     if tool_name == "health_record" and request.source != "procedure_recipe_replay":
         target_status = _health_record_target_status(snapshot, args)
         if target_status == "mismatch":
@@ -2927,6 +2945,18 @@ def decide_tool_capability(
         )
 
     if tool_name == "user_directive":
+        if (
+            snapshot.intent.domain == "symptom"
+            and primary in {"write", "mutate"}
+            and snapshot.intent.is_write
+        ):
+            return _decision(
+                "block",
+                "write_tool_target_domain_mismatch",
+                tool_name,
+                args,
+                receipt_required=True,
+            )
         if primary in {"write", "mutate"} and snapshot.intent.is_write:
             return _decision(
                 "allow",
@@ -2946,6 +2976,18 @@ def decide_tool_capability(
     if tool_name == "intervention_cycle":
         action = str(args.get("action") or "").strip().lower()
         if action in INTERVENTION_WRITE_ACTIONS:
+            if (
+                snapshot.intent.domain == "symptom"
+                and primary in {"write", "mutate"}
+                and snapshot.intent.is_write
+            ):
+                return _decision(
+                    "block",
+                    "write_tool_target_domain_mismatch",
+                    tool_name,
+                    args,
+                    receipt_required=True,
+                )
             if primary in {"write", "mutate"}:
                 return _decision(
                     "allow",
@@ -2976,6 +3018,18 @@ def decide_tool_capability(
         )
 
     if tool_name in {"manage_plan", "upload_genetic_txt", "upload_medical_exam_text"}:
+        if (
+            snapshot.intent.domain == "symptom"
+            and primary in {"write", "mutate"}
+            and snapshot.intent.is_write
+        ):
+            return _decision(
+                "block",
+                "write_tool_target_domain_mismatch",
+                tool_name,
+                args,
+                receipt_required=True,
+            )
         if tool_name == "manage_plan":
             action = str(args.get("action") or "").strip().lower()
             if action not in MANAGE_PLAN_ACTIONS:
@@ -3397,6 +3451,33 @@ def _health_record_target_status(
     if not requested_type:
         return "unresolved"
     server_authorized = _server_authorized_health_record_fields(args)
+    symptom_payload = server_authorized.get("symptom_payload")
+    if requested_type == "symptom" and isinstance(symptom_payload, dict):
+        data = args.get("data") if isinstance(args.get("data"), dict) else {}
+        requested_description = _effective_argument_value(
+            args,
+            data,
+            data_keys=("description",),
+            arg_keys=("description",),
+        )
+        if _normalize_entity_name(requested_description) != _normalize_entity_name(
+            symptom_payload.get("description")
+        ):
+            return "mismatch"
+        default_date = snapshot.context.current_time.date().isoformat()
+        expected_values = {
+            "body_part": symptom_payload.get("body_part"),
+            "description": symptom_payload.get("description"),
+            "target_date": default_date,
+            "default_date": default_date,
+        }
+        if not _authorization_target_complete(requested_type, expected_values):
+            return "unresolved"
+        return (
+            "mismatch"
+            if _target_values_mismatch(requested_type, expected_values, args)
+            else "match"
+        )
     contextual_supplement_name = str(
         server_authorized.get("contextual_supplement_name") or ""
     ).strip()

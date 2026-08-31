@@ -83,9 +83,11 @@ from app.services.agent_write_outcome import (
 from app.services.dynamic_card_persistence import cards_for_persistence
 from app.services.clinician_provenance_guard import classify_clinician_turn
 from app.services.utterance_intent_classifier import (
+    ADVICE_ACTIONS,
     classify_agent_utterance,
     is_closed_aigc_provider_confirmation,
 )
+from app.services.utterance_intent_lexicon import HEALTH_QUESTION_SIGNALS
 from app.utils.number_format import format_card_numbers
 from app.services.agent_kernel.context import (
     build_turn_snapshot,
@@ -6968,6 +6970,11 @@ _SYMPTOM_NEGATION_MARKERS = (
     "消失",
     "排除",
 )
+_POST_SYMPTOM_NEGATED_PREDICATE_RE = re.compile(
+    r"(?:不|没)(?:再)?"
+    r"(?:疼|痛|痒|胀|咳|晕|恶心|呕吐|打喷嚏|喷嚏|鼻塞|流鼻涕|难受|不舒服)"
+    r"(?:了|啦)?"
+)
 _SYMPTOM_QUESTION_MARKERS = (
     "怎么办",
     "怎么处理",
@@ -6986,6 +6993,25 @@ _SYMPTOM_QUESTION_MARKERS = (
     "呢",
     "？",
     "?",
+)
+_SYMPTOM_SECONDARY_REQUEST_MARKERS = tuple(
+    dict.fromkeys((*ADVICE_ACTIONS, *HEALTH_QUESTION_SIGNALS))
+)
+_SYMPTOM_FACT_CLAUSE_SPLIT_RE = re.compile(
+    r"[，,。！？!?；;：:\n]+|"
+    r"(?:顺便|并且|同时|然后|接下来|再帮我|并帮我|并)"
+    r"(?=(?:帮我)?(?:给|说|讲|分析|解读|评估|判断|解释|看|告诉|咋|怎么|如何))"
+)
+_SYMPTOM_WRITE_PREFIX_RE = re.compile(
+    r"^(?:(?:请|麻烦)(?:你)?\s*)?(?:帮我\s*)?"
+    r"(?:记录(?:一下|下来)?|记(?:一下|下来)?|保存(?:一下)?|录入(?:一下)?)\s*"
+)
+_SYMPTOM_WRITE_ACTION_RE = re.compile(
+    r"(?:记录(?:一下|下来)?|记(?:一下|下来)?|保存(?:一下)?|录入(?:一下)?)"
+)
+_PURE_SYMPTOM_CONTEXT_PREFIX_RE = re.compile(
+    r"^(?:(?:我)?(?:准备|要)?(?:睡觉|休息)(?:了)?[，,])?"
+    r"(?:(?:请|麻烦)(?:你)?|帮我|请帮我|麻烦帮我)?$"
 )
 _SYMPTOM_NON_SELF_MARKERS = (
     "朋友",
@@ -7083,6 +7109,11 @@ def _symptom_text_is_current_self_observation(normalized: str) -> bool:
         return False
     if _symptom_text_has_non_self_reference(normalized):
         return False
+    return not _symptom_text_has_negated_observation(normalized)
+
+
+def _symptom_text_has_negated_observation(normalized: str) -> bool:
+    """Return whether a negation governs a recognized symptom observation."""
     symptom_markers = tuple(
         marker
         for _, markers in _SYMPTOM_BODY_PART_MARKERS
@@ -7096,14 +7127,151 @@ def _symptom_text_is_current_self_observation(normalized: str) -> bool:
                 break
             window = normalized[max(0, index - 8): index + len(symptom_marker) + 8]
             preceding = normalized[max(0, index - 8):index]
+            following = normalized[
+                index + len(symptom_marker): index + len(symptom_marker) + 12
+            ]
             if any(
                 negation in window
                 for negation in _SYMPTOM_NEGATION_MARKERS
                 if negation != "不"
-            ) or "不" in preceding:
-                return False
+            ) or "不" in preceding or _POST_SYMPTOM_NEGATED_PREDICATE_RE.search(
+                following
+            ):
+                return True
             start = index + len(symptom_marker)
-    return True
+    return False
+
+
+def _symptom_text_has_secondary_request(normalized: str) -> bool:
+    """Fail closed when a symptom turn asks for anything beyond recording.
+
+    The public intent classifier is one signal, but the zero-model path also
+    keeps its own conservative closure.  This prevents vocabulary drift in the
+    broad classifier from silently converting a compound health request into a
+    receipt-only response.
+    """
+    return any(
+        marker in normalized for marker in _SYMPTOM_SECONDARY_REQUEST_MARKERS
+    )
+
+
+def _first_symptom_marker_span(text: str, *, start: int = 0) -> Optional[tuple[int, int]]:
+    markers = tuple(
+        marker
+        for _, body_markers in _SYMPTOM_BODY_PART_MARKERS
+        for marker in body_markers
+    ) + ("症状", "不适", "难受", "不舒服")
+    candidates = [
+        (position, -len(marker), position + len(marker))
+        for marker in markers
+        for position in [text.find(marker, start)]
+        if position >= 0
+    ]
+    if not candidates:
+        return None
+    position, _negative_length, end = min(candidates)
+    return position, end
+
+
+def _is_proven_pure_symptom_record_request(message: Any) -> bool:
+    """Prove the narrow zero-model symptom grammar; unknown text fails closed.
+
+    The proof is structural rather than a list of question words: after one
+    directly authorized write action, the first recognized symptom must be the
+    final semantic content.  Any unparsed suffix (advice, triage, diagnosis,
+    another symptom, or merely unknown wording) requires model synthesis.
+    """
+    raw = str(message or "").strip()
+    if not raw or classify_clinician_turn(raw).kind != "none":
+        return False
+    intent = classify_agent_utterance(raw)
+    if not (
+        intent.primary == "write"
+        and intent.operation == "create"
+        and intent.domain == "symptom"
+        and intent.is_write
+    ):
+        return False
+    normalized = "".join(raw.split()).lower().strip("。！？!?；; ")
+    if _symptom_text_has_non_self_reference(normalized):
+        return False
+    action = _SYMPTOM_WRITE_ACTION_RE.search(normalized)
+    symptom_search_start = 0
+    if action is not None:
+        prefix = normalized[:action.start()].strip("：: ")
+        if _PURE_SYMPTOM_CONTEXT_PREFIX_RE.fullmatch(prefix) is None:
+            return False
+        symptom_search_start = action.end()
+    span = _first_symptom_marker_span(normalized, start=symptom_search_start)
+    if span is None:
+        return False
+    _symptom_start, symptom_end = span
+    suffix = normalized[symptom_end:].strip("。！？!?；;，, ")
+    if suffix not in {"", "的症状"}:
+        return False
+    return _symptom_text_is_current_self_observation(normalized)
+
+
+def _compound_symptom_fact_description(message: Any) -> Optional[str]:
+    """Extract only the user's symptom fact from a compound write+advice turn."""
+    raw = str(message or "").strip()
+    if not raw:
+        return None
+    intent = classify_agent_utterance(raw)
+    if not (
+        intent.primary == "write"
+        and intent.operation == "create"
+        and intent.domain == "symptom"
+        and intent.is_write
+    ):
+        return None
+    if _is_proven_pure_symptom_record_request(raw):
+        return None
+
+    symptom_markers = tuple(
+        marker
+        for _, markers in _SYMPTOM_BODY_PART_MARKERS
+        for marker in markers
+    ) + ("症状", "不适", "难受", "不舒服")
+    raw_clauses = [
+        clause
+        for clause in _SYMPTOM_FACT_CLAUSE_SPLIT_RE.split(raw)
+        if clause.strip()
+    ]
+    for raw_clause in raw_clauses:
+        clause = raw_clause.strip(" \t\r\n:：,，;；。！？!?")
+        if not clause or not any(marker in clause for marker in symptom_markers):
+            continue
+        clause = _SYMPTOM_WRITE_PREFIX_RE.sub("", clause, count=1).strip()
+        if len(raw_clauses) == 1:
+            span = _first_symptom_marker_span(clause)
+            if span is not None:
+                # No trustworthy clause boundary exists.  Under-record the
+                # recognized fact rather than persisting an unknown request
+                # tail as health data.
+                clause = clause[:span[1]]
+        if any(marker in clause for marker in HEALTH_QUESTION_SIGNALS):
+            symptom_ends = [
+                index + len(marker)
+                for marker in symptom_markers
+                for index in [clause.find(marker)]
+                if index >= 0
+            ]
+            if symptom_ends:
+                # With no punctuation boundary, the first health question may
+                # begin immediately after the symptom ("我头疼严重吗").  Keep
+                # the asserted symptom and drop the ambiguous/question tail.
+                clause = clause[:min(symptom_ends)]
+        cut_points = [
+            clause.find(marker)
+            for marker in _SYMPTOM_SECONDARY_REQUEST_MARKERS
+            if clause.find(marker) > 0
+        ]
+        if cut_points:
+            clause = clause[:min(cut_points)].rstrip(" \t\r\n:：,，;；。！？!?")
+        if clause:
+            return clause[:500]
+    return None
 
 
 def _normalize_symptom_body_part(data: Dict[str, Any]) -> None:
@@ -7155,13 +7323,23 @@ def _extract_clear_symptom_record(message: Any) -> Optional[Dict[str, str]]:
         return None
 
     normalized = "".join(raw.split()).lower()
-    if not _symptom_text_is_current_self_observation(normalized):
+    if _symptom_text_has_non_self_reference(normalized):
+        return None
+    if _symptom_text_has_negated_observation(normalized):
+        return None
+    pure = _is_proven_pure_symptom_record_request(raw)
+    fact_description = None if pure else _compound_symptom_fact_description(raw)
+    if not pure and not fact_description:
         return None
     for body_part, markers in _SYMPTOM_BODY_PART_MARKERS:
         if any(marker in normalized for marker in markers):
             return {
                 "body_part": body_part,
-                "description": raw.strip("。！？!?；;，, ")[:500],
+                "description": (
+                    raw.strip("。！？!?；;，, ")
+                    if pure
+                    else str(fact_description)
+                )[:500],
             }
 
     # A clear but non-localized statement can still be stored as a general
@@ -7171,7 +7349,11 @@ def _extract_clear_symptom_record(message: Any) -> Optional[Dict[str, str]]:
     ):
         return {
             "body_part": "general",
-            "description": raw.strip("。！？!?；;，, ")[:500],
+            "description": (
+                raw.strip("。！？!?；;，, ")
+                if pure
+                else str(fact_description)
+            )[:500],
         }
     return None
 
@@ -7238,6 +7420,16 @@ def _recover_clear_symptom_args(tool_name: str, args: Any, message: Any) -> Any:
     """Fill only missing symptom fields from an unambiguous user statement."""
     if tool_name != "health_record" or not isinstance(args, dict):
         return args
+    compound_description = _compound_symptom_fact_description(message)
+    if compound_description and _fast_record_kind(args) in ("", "symptom"):
+        data = args.get("data")
+        if isinstance(data, dict):
+            description = str(data.get("description") or "").strip()
+            raw = str(message or "").strip()
+            if description == raw or _symptom_text_has_secondary_request(
+                "".join(description.split()).lower()
+            ):
+                data["description"] = compound_description
     extracted = _extract_clear_symptom_record(message)
     if not extracted:
         return args
@@ -8391,6 +8583,14 @@ def _apply_server_health_record_provenance(
     # inside this process and is consumed (then stripped) by capability policy.
     bind_server_authorized_health_record_fields(args)
     record_type = _fast_record_kind(args)
+    if record_type == "symptom":
+        authorization = _extract_clear_symptom_record(user_message)
+        if authorization:
+            return bind_server_authorized_health_record_fields(
+                args,
+                symptom_payload=dict(authorization),
+            )
+        return args
     if record_type == "rhinitis":
         authorization = _extract_clear_rhinitis_record(user_message)
         if authorization:
@@ -9180,6 +9380,8 @@ def _has_explicit_record_write_intent(message: Optional[str]) -> bool:
 def _has_fast_record_write_intent(message: Optional[str]) -> bool:
     """Fast-record is only for clear writes; query nouns stay on the read path."""
     intent = classify_agent_utterance(message)
+    if intent.domain == "symptom":
+        return _is_proven_pure_symptom_record_request(message)
     return (
         intent.primary == "write"
         and intent.is_write
@@ -9431,10 +9633,19 @@ def _tool_names_for_turn(
             return None
         from app.services.llm.task_routing import classify_answer_task_tier
 
-        if classify_answer_task_tier(
-            message,
-            has_attachments=False,
-        ) == "high_stakes":
+        try:
+            answer_tier = classify_answer_task_tier(
+                message,
+                has_attachments=False,
+            )
+        except Exception as exc:  # noqa: BLE001 - subset failure keeps broad safety lane
+            logger.warning(
+                "[agent_executor] domain tool subset classification unavailable; "
+                "keep broad read-only lane: %s",
+                exc,
+            )
+            return ANALYSIS_TURN_TOOL_NAMES
+        if answer_tier == "high_stakes":
             # Safety dependency closure: medication/lab/symptom advice may
             # require lab, supplement, genetic and external-evidence tools even
             # when the wording initially looks single-domain.
@@ -9451,6 +9662,8 @@ def _tool_names_for_turn(
                 classify_context_profile,
             )
 
+            if intent.primary == "read" and intent.domain == "unknown":
+                return ANALYSIS_TURN_TOOL_NAMES
             profile = classify_context_profile(message)
             fixed_lanes = {
                 INJECTION_RECOVERY: RECOVERY_TURN_TOOL_NAMES,
@@ -14062,6 +14275,7 @@ class AgentExecutor:
                 # (合成轮词表稳定, 默认路径历来带非空 tools, 这层保护逐字节不变)。
                 _detect_tools = round_tools or tools
                 preplanned_simple_diet_call = None
+                preplanned_symptom_call = None
                 preplanned_query_call = None
                 if (
                     round_idx == 0
@@ -14100,6 +14314,34 @@ class AgentExecutor:
                             "user=%s query_count=%s",
                             user_id,
                             len(preplanned_query_args["queries"]),
+                        )
+                if (
+                    round_idx == 0
+                    and not health_advice_buffered
+                    and self._agent_kernel_snapshot is not None
+                    and self._agent_kernel_snapshot.intent.primary == "write"
+                    and self._agent_kernel_snapshot.intent.operation == "create"
+                    and _is_proven_pure_symptom_record_request(message)
+                    and not deterministic_symptom_fallback_attempted
+                    and any(
+                        (tool.get("function") or {}).get("name")
+                        == "health_record"
+                        for tool in tools
+                    )
+                ):
+                    preplanned_symptom_call = _build_deterministic_symptom_tool_call(
+                        message,
+                        write_receipts=write_receipts,
+                        has_attachment=bool(images or file_base64),
+                    )
+                    if preplanned_symptom_call is not None:
+                        deterministic_symptom_fallback_attempted = True
+                        decision_route = "deterministic_symptom"
+                        logger.info(
+                            "[agent_executor] deterministic symptom decision "
+                            "user=%s message_chars=%s",
+                            user_id,
+                            len(message or ""),
                         )
                 if (
                     round_idx == 0
@@ -14217,7 +14459,9 @@ class AgentExecutor:
                 ):
                     decision_route = "deterministic_simple_diet_fallback_llm"
                 preplanned_tool_calls = (
-                    [preplanned_simple_diet_call]
+                    [preplanned_symptom_call]
+                    if preplanned_symptom_call is not None
+                    else [preplanned_simple_diet_call]
                     if preplanned_simple_diet_call is not None
                     else [preplanned_query_call]
                     if preplanned_query_call is not None
@@ -14473,6 +14717,7 @@ class AgentExecutor:
                 # tools 在下面工具执行块填充; 无工具调用的最终答案轮 tool_exec_ms=0。
                 _round_tool_exec_ms = 0
                 _round_tool_names: List[str] = []
+                _round_write_receipts_before = len(write_receipts)
                 if model_name is None and not preplanned_tool_decision:
                     if self._last_provider_model_name:
                         model_name = self._last_provider_model_name
@@ -15187,12 +15432,40 @@ class AgentExecutor:
                                 channel=self._turn_channel,
                                 user_message=self._current_turn_user_message,
                             )
-                        parsed_tool_args = _parse_tool_arguments_for_telemetry(func_args)
+                        parsed_tool_args_before_recovery = (
+                            _parse_tool_arguments_for_telemetry(func_args)
+                        )
+                        parsed_tool_args_before_recovery_json = json.dumps(
+                            parsed_tool_args_before_recovery,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            default=str,
+                        )
                         parsed_tool_args = _recover_clear_symptom_args(
                             func_name,
-                            parsed_tool_args,
+                            parsed_tool_args_before_recovery,
                             self._current_turn_user_message,
                         )
+                        if (
+                            func_name == "health_record"
+                            and json.dumps(
+                                parsed_tool_args,
+                                ensure_ascii=False,
+                                sort_keys=True,
+                                default=str,
+                            )
+                            != parsed_tool_args_before_recovery_json
+                        ):
+                            # Execute and expose the same canonical symptom-only
+                            # payload that the validator will persist.  Keeping
+                            # the model's compound request in ``func_args`` would
+                            # make tool progress metadata disagree with the
+                            # audited write even though _execute_tool_impl later
+                            # repairs it again.
+                            func_args = json.dumps(
+                                parsed_tool_args,
+                                ensure_ascii=False,
+                            )
                         write_attempted = (
                             func_name in _WRITE_RECEIPT_TOOL_NAMES
                             and _write_tool_attempted(func_name, parsed_tool_args)
@@ -15916,7 +16189,18 @@ class AgentExecutor:
                         and not self._agent_kernel_tool_failure_tools
                         and not self._agent_kernel_capability_block_reasons
                     )
-                    if self._prefer_fast_record_model and pure_pending_confirmation:
+                    _fast_record_receipt_only_allowed = bool(
+                        self._prefer_fast_record_model
+                        and not (
+                            self._agent_kernel_snapshot is not None
+                            and self._agent_kernel_snapshot.intent.domain == "symptom"
+                            and not _is_proven_pure_symptom_record_request(message)
+                        )
+                    )
+                    if (
+                        _fast_record_receipt_only_allowed
+                        and pure_pending_confirmation
+                    ):
                         pending_text = _pending_confirmation_reply_from_tool_results(
                             messages
                         )
@@ -15951,8 +16235,25 @@ class AgentExecutor:
                         t in ("health_record", "health_manage") for t in _round_tool_names
                     )
                     _turn_had_verified_write = bool(write_receipts)
+                    _round_verified_create_only = bool(
+                        decision_route == "deterministic_symptom"
+                        and self._agent_kernel_snapshot is not None
+                        and self._agent_kernel_snapshot.intent.primary == "write"
+                        and self._agent_kernel_snapshot.intent.operation == "create"
+                        and _is_proven_pure_symptom_record_request(message)
+                        and _round_tool_names
+                        and all(name == "health_record" for name in _round_tool_names)
+                        and len(write_receipts) - _round_write_receipts_before
+                        == len(_round_tool_names)
+                        and not self._agent_kernel_pending_confirmation_tools
+                        and not self._agent_kernel_tool_failure_tools
+                        and not self._agent_kernel_capability_block_reasons
+                    )
                     if (
-                        self._prefer_fast_record_model
+                        (
+                            _fast_record_receipt_only_allowed
+                            or _round_verified_create_only
+                        )
                         and _turn_had_verified_write
                         and not last_recoverable_write_rejection
                     ):
@@ -15970,6 +16271,15 @@ class AgentExecutor:
                         if safety_suffix and safety_suffix not in final_text:
                             final_text = f"{final_text}\n\n{safety_suffix}" if final_text else safety_suffix
                         if final_text:
+                            if first_token_at is None:
+                                first_token_at = time.time()
+                            _mark_perf_milestone("first_useful_ms")
+                            if (
+                                _round_verified_create_only
+                                and not self._prefer_fast_record_model
+                                and decision_route == "llm"
+                            ):
+                                decision_route = "verified_create_receipt"
                             if not health_advice_buffered:
                                 for i in range(0, len(final_text), 20):
                                     chunk = final_text[i:i + 20]

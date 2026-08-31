@@ -25,6 +25,7 @@ from app.services.agent_executor import (
     AgentExecutor,
     _apply_authorized_symptom_payload,
     _apply_authorized_rhinitis_payload,
+    _apply_server_health_record_provenance,
     _bind_named_knowledge_source_to_tool_calls,
     _build_deterministic_named_knowledge_tool_call,
     _build_deterministic_symptom_tool_call,
@@ -162,6 +163,9 @@ def test_deterministic_symptom_tool_call_keeps_questions_on_advice_path():
         "可否记录我刚才打了一个喷嚏？",
         "可不可以记录我刚才打了一个喷嚏？",
         "附件里记录了腰疼。",
+        "记录我头疼，不对，现在不疼了",
+        "记录我头疼但现在不疼了",
+        "记录我头疼后来不疼了",
     ],
 )
 def test_deterministic_symptom_tool_call_rejects_non_self_or_negated_text(message):
@@ -409,7 +413,6 @@ async def test_named_knowledge_fallback_buffers_model_denial_until_source_result
     [
         "没有腰疼的症状。",
         "我不头疼。",
-        "记录一下打了一个喷嚏怎么办？",
         "我朋友头痛。",
         "同事头痛，帮我记录一下。",
         "我老婆腰疼，记录一下。",
@@ -479,6 +482,53 @@ def test_authorized_symptom_payload_discards_model_inference():
         "record_type": "symptom",
         "data": {"body_part": "musculoskeletal", "description": "腰疼"},
     }
+
+
+def test_compound_symptom_provenance_is_derived_from_current_turn_fact():
+    args = _apply_server_health_record_provenance(
+        "health_record",
+        {
+            "record_type": "symptom",
+            "data": {"body_part": "head", "description": "我头疼"},
+        },
+        execution_source="structured_or_recovered",
+        has_attachment=False,
+        diet_photo_auto_save=False,
+        contextual_diet_recorded=False,
+        contextual_supplement_names=(),
+        user_message="记录我头疼有多严重",
+    )
+
+    marker = args["_server_authorized_health_record_fields"]
+    assert dict(marker.values) == {
+        "symptom_payload": {"body_part": "head", "description": "我头疼"}
+    }
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录我头疼，不对，现在不疼了",
+        "记录我头疼但现在不疼了",
+        "记录我头疼后来不疼了",
+    ),
+)
+def test_retracted_symptom_does_not_receive_server_write_authorization(message):
+    args = _apply_server_health_record_provenance(
+        "health_record",
+        {
+            "record_type": "symptom",
+            "data": {"body_part": "head", "description": "我头疼"},
+        },
+        execution_source="structured_or_recovered",
+        has_attachment=False,
+        diet_photo_auto_save=False,
+        contextual_diet_recorded=False,
+        contextual_supplement_names=(),
+        user_message=message,
+    )
+
+    assert "_server_authorized_health_record_fields" not in args
 
 
 @pytest.mark.parametrize(

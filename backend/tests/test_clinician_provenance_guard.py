@@ -42,6 +42,23 @@ def _cases():
     return json.loads(FIXTURE.read_text(encoding="utf-8"))
 
 
+@pytest.mark.parametrize(
+    "text",
+    (
+        "记录我头疼看不看医生",
+        "记录我头疼需要不需要看医生",
+        "记录我头疼该不该去看大夫",
+        "记录我头疼要不要找医生看看",
+        "记录我头疼该不该找大夫",
+    ),
+)
+def test_care_seeking_question_is_not_clinician_provenance(text):
+    decision = _module().classify_clinician_turn(text)
+
+    assert decision.kind == "none"
+    assert decision.reason_code == "care_seeking_question"
+
+
 @pytest.mark.parametrize("case", _cases(), ids=lambda row: row["id"])
 def test_fixed_safety_corpus(case):
     guard = _module()

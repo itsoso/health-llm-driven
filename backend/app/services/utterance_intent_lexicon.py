@@ -53,6 +53,29 @@ QUESTION_SIGNALS = (
     "怎么样",
 )
 
+# Health questions need a broader natural-language closure than the legacy
+# generic classifier view above.  Keep the legacy tuple byte-compatible for
+# existing consumers while giving symptom safety gates one shared extension.
+HEALTH_QUESTION_TAIL_SIGNALS = (
+    "哪个",
+    "哪一个",
+    "哪一",
+    "哪种",
+    "哪里",
+    "哪儿",
+    "哪科",
+    "哪家",
+    "会不会",
+    "严不严重",
+    "正常不正常",
+    "危险不危险",
+    "有事没",
+    "有问题没",
+)
+HEALTH_QUESTION_SIGNALS = tuple(
+    dict.fromkeys((*QUESTION_SIGNALS, *HEALTH_QUESTION_TAIL_SIGNALS))
+)
+
 WRITE_ACTIONS = (
     "记住",
     "记录",

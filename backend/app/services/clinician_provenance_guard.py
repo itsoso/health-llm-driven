@@ -249,6 +249,7 @@ _REASONS_BY_KIND: dict[DecisionKind, frozenset[str]] = {
             "no_clinician_signal",
             "no_clinician_report",
             "legacy_clinician_record_operation",
+            "care_seeking_question",
         }
     ),
     "clinician_context": frozenset({"clinician_report"}),
@@ -1447,6 +1448,35 @@ def _turn_contains_deny_only_action(raw: str) -> bool:
     return any(root in raw for root in _DENY_ONLY_ACTION_ROOTS)
 
 
+def _provider_is_care_seeking_object(
+    raw: str,
+    provider: _Span,
+) -> bool:
+    """Distinguish seeking a clinician from attributing content to one."""
+    prefix = _letters_numbers_only(raw[:provider.start])
+    question_form = prefix.endswith(
+        (
+            "看不看",
+            "要不要看",
+            "要不要去看",
+            "需不需要看",
+            "需不需要去看",
+            "需要不需要看",
+            "需要不需要去看",
+            "该不该看",
+            "该不该去看",
+            "该不该找",
+            "该不该去找",
+            "要不要找",
+            "要不要去找",
+        )
+    )
+    return question_form or (
+        _contains_question(raw)
+        and prefix.endswith(("看", "去看", "找", "去找"))
+    )
+
+
 def _letters_numbers_only(text: str) -> str:
     compatible = unicodedata.normalize("NFKC", text)
     return "".join(
@@ -2253,6 +2283,13 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
             reason_code="clinician_consultation",
             provider=first_provider,
             content=content if content.start < content.end else None,
+        )
+    if _provider_is_care_seeking_object(raw, first_provider):
+        return _decision(
+            raw,
+            kind="none",
+            reason_code="care_seeking_question",
+            provider=first_provider,
         )
     if _turn_contains_deny_only_action(raw):
         return _decision(

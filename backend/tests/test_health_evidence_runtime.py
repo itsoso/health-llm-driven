@@ -44,6 +44,13 @@ def test_low_back_advice_compiles_a_typed_symptom_intent():
     assert intent.requires_authority is True
 
 
+def test_natural_low_back_opinion_request_keeps_health_evidence_authority():
+    intent = classify_health_intent("记录我腰疼，给点处理意见")
+
+    assert intent.intent_id == "health_advice.symptom.low_back_pain"
+    assert intent.requires_authority is True
+
+
 def test_clinician_basis_low_back_risk_question_keeps_evidence_precedence():
     from app.services.clinician_provenance_guard import classify_clinician_turn
     from app.services.utterance_intent_classifier import (
