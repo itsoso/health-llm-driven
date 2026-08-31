@@ -4800,6 +4800,13 @@ def test_location_prefix_does_not_reauthorize_non_current_symptom_write(message)
         "妈妈眼睛痒",
         "记录妈妈眼睛痒",
         "帮我记录妈妈眼睛痒",
+        "老妈眼睛痒",
+        "记录老妈眼睛痒",
+        "妈咪眼睛痒",
+        "记录媳妇眼睛痒",
+        "宝宝眼睛痒",
+        "领导眼睛痒",
+        "记录张三眼睛痒",
         "主任诊断我嗓子疼",
         "护士诊断我膝盖疼",
         "营养师诊断我皮肤发痒",
@@ -4847,6 +4854,85 @@ def test_untrusted_symptom_context_cannot_use_generic_write_fallback(message):
 
     assert decision.action == "block"
     assert decision.reason == "health_record_authorization_target_unresolved"
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    (
+        (
+            "记录昨天9点眼睛痒",
+            {
+                "body_part": "eye",
+                "description": "记录昨天9点眼睛痒",
+                "occurred_at": "2026-07-16T09:00:00+08:00",
+            },
+        ),
+        (
+            "记录我眼睛痒程度6分",
+            {
+                "body_part": "eye",
+                "description": "我眼睛痒",
+                "record_date": "2026-07-17",
+                "severity": 6,
+            },
+        ),
+        (
+            "记录昨天9点眼睛痒程度6分",
+            {
+                "body_part": "eye",
+                "description": "昨天9点眼睛痒",
+                "occurred_at": "2026-07-16T09:00:00+08:00",
+                "severity": 6,
+            },
+        ),
+        (
+            "记录8月28日9点膝盖疼程度6分",
+            {
+                "body_part": "musculoskeletal",
+                "description": "8月28日9点膝盖疼",
+                "occurred_at": "2026-08-28T09:00:00+08:00",
+                "severity": 6,
+            },
+        ),
+    ),
+)
+def test_deterministic_symptom_call_carries_server_owned_time_and_severity(
+    message,
+    expected,
+):
+    snapshot = _snapshot(message)
+    goal = compile_goal_spec(
+        envelope=snapshot.envelope,
+        context=snapshot.context,
+        intent=snapshot.intent,
+    )
+    tool_call = agent_executor_module._build_deterministic_symptom_tool_call(
+        message,
+        write_receipts=[],
+    )
+    assert tool_call is not None
+    args = json.loads(tool_call["function"]["arguments"])
+    args = agent_executor_module._apply_server_health_record_provenance(
+        "health_record",
+        args,
+        execution_source="structured_or_recovered",
+        has_attachment=False,
+        diet_photo_auto_save=False,
+        contextual_diet_recorded=False,
+        contextual_supplement_names=(),
+        user_message=message,
+    )
+
+    decision = decide_tool_capability(
+        replace(snapshot, goal=goal),
+        _request("health_record", args),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args == {
+        "record_type": "symptom",
+        "data": expected,
+    }
 
 
 def test_attachment_symptom_cannot_bind_server_authorized_payload():

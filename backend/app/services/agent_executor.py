@@ -7009,6 +7009,31 @@ _SYMPTOM_WRITE_PREFIX_RE = re.compile(
 _SYMPTOM_WRITE_ACTION_RE = re.compile(
     r"(?:记录(?:一下|下来)?|记(?:一下|下来)?|保存(?:一下)?|录入(?:一下)?)"
 )
+_SYMPTOM_PROVEN_SELF_PREFIX_RE = re.compile(
+    r"^(?:"
+    r"(?:我|本人|自己)|"
+    r"(?:刚才|刚刚|现在|目前|此刻|今天|今日|昨日|昨天|前天|今晚|昨晚|今早|"
+    r"今天早上|今天上午|今天中午|今天下午|今天晚上|早上|上午|中午|下午|晚上|夜里)|"
+    r"(?:\d{1,2}月\d{1,2}日)|"
+    r"(?:[01]?\d|2[0-3])(?:[:：点](?:[0-5]?\d|半|一刻|三刻)?)(?:分|钟)?|"
+    r"(?:还是|仍然|仍|还|又|也|已经|正在|突然|一直|开始|感觉|觉得|出现|有点|有些|有|偶尔|连续|"
+    r"严重|轻微|剧烈|明显|稍微|非常|特别)|"
+    r"(?:过程中(?:的)?)|"
+    r"(?:(?:连|连续)?打(?:了)?(?:[零一二两三四五六七八九十\d]+)?(?:个|次)?)"
+    r")*$"
+)
+_SYMPTOM_EXPLICIT_CLOCK_RE = re.compile(
+    r"(?<!\d)(?:[01]?\d|2[0-3])[:：点]"
+    r"(?:[0-5]\d|半|一刻|三刻)?(?:钟)?"
+)
+_SYMPTOM_EXPLICIT_CN_CLOCK_RE = re.compile(
+    r"[零〇一二两三四五六七八九十]{1,3}点"
+    r"(?:半|一刻|三刻|[零〇一二两三四五六七八九十]{1,3}分)?(?:钟)?"
+)
+_SYMPTOM_EXPLICIT_SEVERITY_RE = re.compile(
+    r"(?:严重程度|严重度|程度|强度)?\s*(?P<value>10|[1-9])\s*"
+    r"(?:分(?!钟)|级|/\s*10)"
+)
 _PURE_SYMPTOM_CONTEXT_PREFIX_RE = re.compile(
     r"^(?:(?:我)?(?:准备|要)?(?:睡觉|休息)(?:了)?[，,])?"
     r"(?:(?:请|麻烦)(?:你)?|帮我|请帮我|麻烦帮我)?$"
@@ -7202,6 +7227,36 @@ def _first_symptom_marker_span(text: str, *, start: int = 0) -> Optional[tuple[i
     return position, end
 
 
+def _symptom_prefix_proves_self(
+    text: str,
+    *,
+    start: int,
+    symptom_start: int,
+) -> bool:
+    """Allow only first-person/current-observation grammar before a symptom.
+
+    Unknown nouns in the owner position fail closed.  This is intentionally an
+    allowlist: a finite list of third-party labels can never prove ownership.
+    """
+    prefix = "".join(text[start:symptom_start].split()).strip("：:，,。；; ")
+    return _SYMPTOM_PROVEN_SELF_PREFIX_RE.fullmatch(prefix) is not None
+
+
+def _explicit_symptom_selectors(message: Any) -> Dict[str, Any]:
+    """Return only deterministic clock/severity selectors stated by the user."""
+    raw = str(message or "")
+    selectors: Dict[str, Any] = {}
+    clock = _SYMPTOM_EXPLICIT_CLOCK_RE.search(raw)
+    if clock is None:
+        clock = _SYMPTOM_EXPLICIT_CN_CLOCK_RE.search(raw)
+    if clock is not None:
+        selectors["occurred_at"] = clock.group(0)
+    severity = _SYMPTOM_EXPLICIT_SEVERITY_RE.search(raw)
+    if severity is not None:
+        selectors["severity"] = int(severity.group("value"))
+    return selectors
+
+
 def _is_proven_pure_symptom_record_request(message: Any) -> bool:
     """Prove the narrow zero-model symptom grammar; unknown text fails closed.
 
@@ -7234,7 +7289,13 @@ def _is_proven_pure_symptom_record_request(message: Any) -> bool:
     span = _first_symptom_marker_span(normalized, start=symptom_search_start)
     if span is None:
         return False
-    _symptom_start, symptom_end = span
+    symptom_start, symptom_end = span
+    if not _symptom_prefix_proves_self(
+        normalized,
+        start=symptom_search_start,
+        symptom_start=symptom_start,
+    ):
+        return False
     suffix = normalized[symptom_end:].strip("。！？!?；;，, ")
     if suffix not in {"", "的症状"}:
         return False
@@ -7272,13 +7333,18 @@ def _compound_symptom_fact_description(message: Any) -> Optional[str]:
         if not clause or not any(marker in clause for marker in symptom_markers):
             continue
         clause = _SYMPTOM_WRITE_PREFIX_RE.sub("", clause, count=1).strip()
+        span = _first_symptom_marker_span(clause)
+        if span is None or not _symptom_prefix_proves_self(
+            clause,
+            start=0,
+            symptom_start=span[0],
+        ):
+            continue
         if len(raw_clauses) == 1:
-            span = _first_symptom_marker_span(clause)
-            if span is not None:
-                # No trustworthy clause boundary exists.  Under-record the
-                # recognized fact rather than persisting an unknown request
-                # tail as health data.
-                clause = clause[:span[1]]
+            # No trustworthy clause boundary exists.  Under-record the
+            # recognized fact rather than persisting an unknown request
+            # tail as health data.
+            clause = clause[:span[1]]
         if any(marker in clause for marker in HEALTH_QUESTION_SIGNALS):
             symptom_ends = [
                 index + len(marker)
@@ -7499,6 +7565,8 @@ def _build_deterministic_symptom_tool_call(
     if not extracted:
         return None
     description = extracted["description"]
+    data = dict(extracted)
+    data.update(_explicit_symptom_selectors(message))
     return {
         "id": f"deterministic-symptom-{_sha12(description)}",
         "type": "function",
@@ -7507,7 +7575,7 @@ def _build_deterministic_symptom_tool_call(
             "arguments": json.dumps(
                 {
                     "record_type": "symptom",
-                    "data": extracted,
+                    "data": data,
                 },
                 ensure_ascii=False,
             ),
