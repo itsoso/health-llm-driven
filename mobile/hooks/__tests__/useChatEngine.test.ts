@@ -546,6 +546,21 @@ async function* streamStatusThenWait() {
   yield { type: 'done', conversationId: 777, messageId: 2 };
 }
 
+async function* streamContextualAcceptanceThenThinkingAndWait() {
+  yield { type: 'start', conversationId: 777 };
+  yield {
+    type: 'status',
+    statusLabel: '我先读取睡眠和恢复数据，再判断今天适合的运动强度。',
+    statusStage: 'accepted',
+  };
+  yield { type: 'status', statusLabel: '正在思考…', statusStage: 'thinking' };
+  await new Promise<void>((resolve) => {
+    finishStream = resolve;
+  });
+  yield { type: 'token', content: '昨晚睡眠数据已读取。' };
+  yield { type: 'done', conversationId: 777, messageId: 2 };
+}
+
 async function* streamDietProgressThenWait() {
   yield { type: 'start', conversationId: 777 };
   yield {
@@ -3423,6 +3438,38 @@ describe('useChatEngine', () => {
     await waitFor(() => {
       const assistant = result.current.messages.find(m => m.role === 'assistant');
       expect(assistant?.content).toBe('整理完成。');
+      expect(assistant?.currentStatus).toBeFalsy();
+    });
+  });
+
+  it('keeps the contextual acknowledgement visible when a legacy thinking status follows it', async () => {
+    mockStreamChat.mockImplementation(streamContextualAcceptanceThenThinkingAndWait);
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('昨晚我睡得怎么样？今天是否适合锻炼？');
+    });
+
+    await waitFor(() => {
+      const assistant = result.current.messages.find(m => m.role === 'assistant');
+      expect(assistant?.currentStatus).toBe(
+        '我先读取睡眠和恢复数据，再判断今天适合的运动强度。',
+      );
+      expect(assistant?.streaming).toBe(true);
+    });
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      const assistant = result.current.messages.find(m => m.role === 'assistant');
+      expect(assistant).toMatchObject({
+        content: '昨晚睡眠数据已读取。',
+        streaming: false,
+      });
       expect(assistant?.currentStatus).toBeFalsy();
     });
   });

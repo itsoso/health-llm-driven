@@ -1827,6 +1827,12 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             const label = evt.statusLabel;
             setMessages(prev => prev.map((m) => {
               if (m.id !== aId || m.currentStatus === label) return m;
+              // The backend emits an immediate, request-specific accepted
+              // acknowledgement before the first model round. A legacy
+              // `thinking` heartbeat is only liveness information, so it must
+              // not erase that more useful first-stage response. Concrete
+              // progress stages (tool/synthesis/vision/diet) still replace it.
+              if (evt.statusStage === 'thinking' && m.currentStatus) return m;
               // Once a dietary semantic stage is active, generic tool/synthesis
               // statuses must not overwrite it. They remain available in the
               // agent-turn state machine, while the user-facing panel keeps the
