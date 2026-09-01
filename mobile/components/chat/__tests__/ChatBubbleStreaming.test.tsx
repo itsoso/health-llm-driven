@@ -134,7 +134,7 @@ describe('ChatBubble streaming degraded render', () => {
     });
 
     expect(mockMarkdownMount).toHaveBeenLastCalledWith('第一段\n第二段\n下一步。');
-    expect(getByLabelText('AI: 第一段\n第二段\n下一步。')).toBeTruthy();
+    expect(getByLabelText('小巴健康: 第一段\n第二段\n下一步。')).toBeTruthy();
   });
 
   it('copies the same normalized assistant text that is rendered', async () => {
@@ -236,7 +236,7 @@ describe('ChatBubble streaming degraded render', () => {
     expect(style.backgroundColor).toBe('transparent');
     expect(style.shadowOpacity ?? 0).toBe(0);
     expect(style.paddingHorizontal).toBe(0);
-    expect(getByText('小巴')).toBeTruthy();
+    expect(getByText('小巴健康')).toBeTruthy();
     expect(getByTestId('assistant-conclusion')).toBeTruthy();
     expect(queryByTestId('assistant-avatar')).toBeNull();
   });
@@ -340,7 +340,7 @@ describe('ChatBubble streaming degraded render', () => {
       streaming: true,
     });
 
-    fireEvent(getByLabelText('AI: 血压 185/85'), 'longPress');
+    fireEvent(getByLabelText('小巴健康: 血压 185/85'), 'longPress');
     expect(queryByLabelText('保存为记录')).toBeNull();
 
     rerender(
@@ -356,7 +356,7 @@ describe('ChatBubble streaming degraded render', () => {
         />
       </QueryClientProvider>,
     );
-    fireEvent(getByLabelText('AI: 血压 185/85'), 'longPress');
+    fireEvent(getByLabelText('小巴健康: 血压 185/85'), 'longPress');
     expect(queryByLabelText('保存为记录')).toBeNull();
 
     rerender(
@@ -372,7 +372,7 @@ describe('ChatBubble streaming degraded render', () => {
         />
       </QueryClientProvider>,
     );
-    fireEvent(getByLabelText('AI: 血压 185/85'), 'longPress');
+    fireEvent(getByLabelText('小巴健康: 血压 185/85'), 'longPress');
     expect(queryByLabelText('保存为记录')).toBeNull();
   });
 
@@ -820,7 +820,7 @@ describe('ChatBubble streaming degraded render', () => {
     });
 
     expect(getByLabelText('卡片食物描述')).toBeTruthy();
-    expect(queryByLabelText('AI: 图表卡片')).toBeNull();
+    expect(queryByLabelText('小巴健康: 图表卡片')).toBeNull();
   });
 
   it('renders rich Markdown once streaming has finished (terminal state unchanged)', () => {

@@ -51,7 +51,7 @@ describe('todayAgendaManagement', () => {
 
     const groups = groupTodayAgendaItems(
       [anytimeHydration, completed, eveningWalk, morningMedication, advice],
-      { now: new Date('2026-07-20T09:00:00-04:00') },
+      { now: new Date(2026, 6, 20, 9, 0, 0) },
     );
 
     expect(groups.now.map(entry => entry.title)).toEqual(['晨间用药', '喝水 200ml']);
@@ -90,7 +90,7 @@ describe('todayAgendaManagement', () => {
     });
 
     const groups = groupTodayAgendaItems([hydration], {
-      now: new Date('2026-07-20T12:00:00-04:00'),
+      now: new Date(2026, 6, 20, 12, 0, 0),
     });
 
     expect(groups.now).toEqual([]);
@@ -110,7 +110,7 @@ describe('todayAgendaManagement', () => {
 
     const groups = groupTodayAgendaItems(
       [repeatedAdvice, higherPriorityCopy],
-      { now: new Date('2026-07-20T12:00:00-04:00') },
+      { now: new Date(2026, 6, 20, 12, 0, 0) },
     );
 
     expect(groups.review).toEqual([higherPriorityCopy]);

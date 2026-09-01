@@ -114,7 +114,7 @@ import AgendaScreen from '../agenda';
 describe('AgendaScreen', () => {
   beforeEach(() => {
     jest.useFakeTimers();
-    jest.setSystemTime(new Date('2026-07-20T09:00:00-04:00'));
+    jest.setSystemTime(new Date(2026, 6, 20, 9, 0, 0));
     jest.clearAllMocks();
     mockCanGoBack = true;
     mockAgendaData = agendaData;

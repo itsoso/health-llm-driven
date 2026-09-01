@@ -57,7 +57,7 @@ jest.mock('../../modules/rokid-bridge', () => {
     createRokidRevaCustomViewLayout: (options?: any) => JSON.stringify({
       type: 'LinearLayout',
       children: [
-        { props: { text: options?.title ?? '小巴' } },
+        { props: { text: options?.title ?? '小巴健康' } },
         { props: { text: options?.body ?? '' } },
         { props: { text: options?.priority ?? 'manual_confirm' } },
       ],
@@ -246,9 +246,9 @@ describe('RokidHealthScreen', () => {
       {
         id: 'ios_sdk_linked',
         title: 'iOS SDK 已链接',
-        detail: status?.sdkLinked ? '当前包已链接 RGCxrClient:1.0.1。' : '安装 Rokid 版小巴包。',
+        detail: status?.sdkLinked ? '当前包已链接 RGCxrClient:1.0.1。' : '安装 Rokid 版小巴健康包。',
         status: status?.sdkLinked ? 'done' : 'next',
-        actionLabel: '安装 Rokid 版小巴',
+        actionLabel: '安装 Rokid 版小巴健康',
       },
       {
         id: 'hi_rokid_ready',
@@ -260,16 +260,16 @@ describe('RokidHealthScreen', () => {
       {
         id: 'rokid_authorized',
         title: 'CXR-L 授权',
-        detail: '在小巴中完成 CXR-L 授权回调后继续。',
+        detail: '在小巴健康中完成 CXR-L 授权回调后继续。',
         status: status?.authorizationState === 'authenticated' ? 'done' : 'next',
         actionLabel: '授权 Rokid',
       },
       {
         id: 'custom_view_running',
-        title: '小巴眼镜视图',
-        detail: '打开小巴 CustomView, 确认眼镜端已经显示。',
+        title: '小巴健康眼镜视图',
+        detail: '打开小巴健康 CustomView, 确认眼镜端已经显示。',
         status: status?.customViewRunning ? 'done' : 'pending',
-        actionLabel: '打开小巴眼镜视图',
+        actionLabel: '打开小巴健康眼镜视图',
       },
       {
         id: 'capture_ready',
@@ -334,7 +334,7 @@ describe('RokidHealthScreen', () => {
     await waitFor(() => {
       expect(mockStartRokidVoiceCommandCapture).toHaveBeenCalledTimes(1);
       expect(mockOpenRokidRevaCustomView).toHaveBeenCalledWith({
-        title: '小巴语音控制',
+        title: '小巴健康语音控制',
         body: '正在等待明确语音指令',
         priority: 'voice',
       });
@@ -707,7 +707,7 @@ describe('RokidHealthScreen', () => {
     });
 
     expect(mockOpenRokidRevaCustomView).toHaveBeenCalledWith({
-      title: '小巴语音控制',
+      title: '小巴健康语音控制',
       body: '正在等待明确语音指令',
       priority: 'voice',
     });
@@ -1500,9 +1500,9 @@ describe('RokidHealthScreen', () => {
     await waitFor(() => {
       expect(screen.getByText('真机验证')).toBeTruthy();
       expect(screen.getByText('下一步: 授权 Rokid')).toBeTruthy();
-      expect(screen.getByText('在小巴中完成 CXR-L 授权回调后继续。')).toBeTruthy();
+      expect(screen.getByText('在小巴健康中完成 CXR-L 授权回调后继续。')).toBeTruthy();
       expect(screen.getByText('授权 Rokid')).toBeTruthy();
-      expect(screen.getByText('打开小巴眼镜视图')).toBeTruthy();
+      expect(screen.getByText('打开小巴健康眼镜视图')).toBeTruthy();
       expect(screen.getByText('能力未就绪')).toBeTruthy();
     });
 
@@ -1520,15 +1520,15 @@ describe('RokidHealthScreen', () => {
     });
 
     await act(async () => {
-      fireEvent.press(screen.getByText('打开小巴眼镜视图'));
+      fireEvent.press(screen.getByText('打开小巴健康眼镜视图'));
       await flushAsyncUpdates();
     });
 
     await waitFor(() => {
       expect(mockOpenRokidRevaCustomView).toHaveBeenCalledWith({
-        body: '等待小巴投递下一条健康行动',
+        body: '等待小巴健康投递下一条健康行动',
         priority: 'manual_confirm',
-        title: '小巴 Health',
+        title: '小巴健康 Health',
       });
     });
   });
@@ -1572,14 +1572,14 @@ describe('RokidHealthScreen', () => {
     });
 
     await act(async () => {
-      fireEvent.press(screen.getByText('打开小巴眼镜视图'));
+      fireEvent.press(screen.getByText('打开小巴健康眼镜视图'));
       await flushAsyncUpdates();
     });
 
     await waitFor(() => {
-      expect(screen.getByText('小巴眼镜视图失败: SDK 已接受打开命令，但眼镜端没有回报 CustomView 运行。请确认眼镜端是否显示小巴；若未显示，请重新打开眼镜视图。')).toBeTruthy();
-      expect(screen.queryByText('小巴眼镜视图已打开')).toBeNull();
-      expect(screen.queryByText('小巴眼镜视图已运行')).toBeNull();
+      expect(screen.getByText('小巴健康眼镜视图失败: SDK 已接受打开命令，但眼镜端没有回报 CustomView 运行。请确认眼镜端是否显示小巴健康；若未显示，请重新打开眼镜视图。')).toBeTruthy();
+      expect(screen.queryByText('小巴健康眼镜视图已打开')).toBeNull();
+      expect(screen.queryByText('小巴健康眼镜视图已运行')).toBeNull();
     });
   });
 
@@ -1721,16 +1721,16 @@ describe('RokidHealthScreen', () => {
     const screen = renderWithProviders(<RokidHealthScreen />);
 
     await waitFor(() => {
-      expect(screen.getByText('打开小巴眼镜视图')).toBeTruthy();
+      expect(screen.getByText('打开小巴健康眼镜视图')).toBeTruthy();
     });
 
     await act(async () => {
-      fireEvent.press(screen.getByText('打开小巴眼镜视图'));
+      fireEvent.press(screen.getByText('打开小巴健康眼镜视图'));
       await flushAsyncUpdates();
     });
 
     await waitFor(() => {
-      expect(screen.getByText('小巴眼镜视图失败: 眼镜网络未就绪: 请在 Rokid AI / Hi Rokid 中确认眼镜已连 WiFi，并让手机与眼镜处在同一可互通网络，再回小巴刷新。')).toBeTruthy();
+      expect(screen.getByText('小巴健康眼镜视图失败: 眼镜网络未就绪: 请在 Rokid AI / Hi Rokid 中确认眼镜已连 WiFi，并让手机与眼镜处在同一可互通网络，再回小巴健康刷新。')).toBeTruthy();
     });
   });
 
@@ -1766,7 +1766,7 @@ describe('RokidHealthScreen', () => {
 
     await waitFor(() => {
       expect(screen.getByText('SDK 请求但未导入')).toBeTruthy();
-      expect(screen.getByText('小巴 build: version=1.3.0 · build=153')).toBeTruthy();
+      expect(screen.getByText('小巴健康 build: version=1.3.0 · build=153')).toBeTruthy();
       expect(screen.getByText('SDK linkage: sdkLinked=false · mode=requested_but_unlinked · reason=sdk_requested_callback_macro_but_RGCxrClient_unavailable')).toBeTruthy();
       expect(screen.getByText('CXR-L API: callbackApi=true · notify=setNotifyEventListenCmds')).toBeTruthy();
     });
@@ -2068,18 +2068,18 @@ describe('RokidHealthScreen', () => {
     const screen = renderWithProviders(<RokidHealthScreen />);
 
     await waitFor(() => {
-      expect(screen.getByText('打开小巴眼镜视图')).toBeTruthy();
+      expect(screen.getByText('打开小巴健康眼镜视图')).toBeTruthy();
       expect(screen.getByText('iOS BLE: connected=false · device=Glasses_0077')).toBeTruthy();
     });
 
     await act(async () => {
-      fireEvent.press(screen.getByText('打开小巴眼镜视图'));
+      fireEvent.press(screen.getByText('打开小巴健康眼镜视图'));
       await flushAsyncUpdates();
     });
 
     await waitFor(() => {
-      expect(screen.getByText('小巴眼镜视图已请求打开，等待眼镜端确认运行。请确认眼镜已显示后刷新。')).toBeTruthy();
-      expect(screen.queryByText(/小巴眼镜视图失败/)).toBeNull();
+      expect(screen.getByText('小巴健康眼镜视图已请求打开，等待眼镜端确认运行。请确认眼镜已显示后刷新。')).toBeTruthy();
+      expect(screen.queryByText(/小巴健康眼镜视图失败/)).toBeNull();
       expect(screen.getByText('CustomView retry: pending=true · lastAutoRetry=2026-06-19T19:46:21+08:00')).toBeTruthy();
       expect(screen.getByText('Native: 2026-06-19T19:46:18+08:00 #auth-3 custom_view_ble_preflight connected=false; device=Glasses_0077; action=attempt_sdk_open')).toBeTruthy();
       expect(screen.getByText('Native: 2026-06-19T19:46:20+08:00 #auth-3 custom_view_open_settled running=false; commandAccepted=true; rawNotify=none; openError=none')).toBeTruthy();
@@ -2133,12 +2133,12 @@ describe('RokidHealthScreen', () => {
     const screen = renderWithProviders(<RokidHealthScreen />);
 
     await waitFor(() => {
-      expect(screen.getByText('打开小巴眼镜视图')).toBeTruthy();
+      expect(screen.getByText('打开小巴健康眼镜视图')).toBeTruthy();
       expect(screen.getByText('iOS BLE: connected=false · device=Glasses_0077')).toBeTruthy();
     });
 
     await act(async () => {
-      fireEvent.press(screen.getByText('打开小巴眼镜视图'));
+      fireEvent.press(screen.getByText('打开小巴健康眼镜视图'));
       await flushAsyncUpdates();
     });
 
@@ -2192,7 +2192,7 @@ describe('RokidHealthScreen', () => {
     });
 
     await act(async () => {
-      fireEvent.press(screen.getByText('打开小巴眼镜视图'));
+      fireEvent.press(screen.getByText('打开小巴健康眼镜视图'));
       await flushAsyncUpdates();
     });
 

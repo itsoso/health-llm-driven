@@ -565,7 +565,7 @@ describe('RokidPushupCoachScreen', () => {
     await waitFor(() => {
       expect(screen.getByText(/Rokid CXR-L 当前已在 customView 会话/)).toBeTruthy();
       expect(screen.getByText(/完全退出小巴/)).toBeTruthy();
-      expect(screen.getByText(/不要先打开小巴眼镜视图/)).toBeTruthy();
+      expect(screen.getByText(/不要先打开小巴健康眼镜视图/)).toBeTruthy();
       expect(screen.queryByText(/完全退出 Reva/)).toBeNull();
     });
     expect(mockQueryRokidApp).not.toHaveBeenCalled();

@@ -448,7 +448,7 @@ describe('rokid-bridge JS facade', () => {
     ]);
     expect(steps[2]).toMatchObject({
       actionLabel: '授权 Rokid',
-      detail: '在小巴中完成 CXR-L 授权回调后继续。',
+      detail: '在小巴健康中完成 CXR-L 授权回调后继续。',
     });
   });
 
@@ -530,7 +530,7 @@ describe('rokid-bridge JS facade', () => {
     ]);
     expect(steps[3]).toMatchObject({
       title: '眼镜蓝牙链路',
-      detail: 'Rokid CXR-L 还未连接到眼镜蓝牙链路: Glasses_0077。授权完成后请「完全退出」Rokid AI / Hi Rokid(它会独占眼镜蓝牙, 一次只能一个 App 连眼镜), 再回小巴刷新。',
+      detail: 'Rokid CXR-L 还未连接到眼镜蓝牙链路: Glasses_0077。授权完成后请「完全退出」Rokid AI / Hi Rokid(它会独占眼镜蓝牙, 一次只能一个 App 连眼镜), 再回小巴健康刷新。',
       actionLabel: '打开 Rokid AI / Hi Rokid',
     });
   });
@@ -745,20 +745,20 @@ describe('rokid-bridge JS facade', () => {
 
     const gateway = bridge.buildRokidCapabilityGateway(status);
     expect(gateway.blockers).toContain(
-      'Rokid companion 疑似仍占用眼镜蓝牙: iOS 一次只能一个 central。请完全退出/划掉 Rokid AI / Hi Rokid 后回小巴刷新。',
+      'Rokid companion 疑似仍占用眼镜蓝牙: iOS 一次只能一个 central。请完全退出/划掉 Rokid AI / Hi Rokid 后回小巴健康刷新。',
     );
     expect(gateway.capabilities).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'glasses_ble',
         state: 'degraded',
-        detail: '疑似 Rokid AI / Hi Rokid 仍占用眼镜蓝牙; 请完全退出 companion 后回小巴刷新。',
+        detail: '疑似 Rokid AI / Hi Rokid 仍占用眼镜蓝牙; 请完全退出 companion 后回小巴健康刷新。',
       }),
     ]));
 
     const steps = bridge.getRokidDeviceValidationSteps(status);
     expect(steps.find((step: any) => step.id === 'glasses_ble_connected')).toMatchObject({
       status: 'next',
-      detail: '疑似 Rokid AI / Hi Rokid 仍占用眼镜蓝牙 central: Glasses_0077。请从系统后台完全划掉 Rokid AI / Hi Rokid, 再回小巴刷新。',
+      detail: '疑似 Rokid AI / Hi Rokid 仍占用眼镜蓝牙 central: Glasses_0077。请从系统后台完全划掉 Rokid AI / Hi Rokid, 再回小巴健康刷新。',
     });
   });
 

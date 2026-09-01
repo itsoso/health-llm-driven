@@ -245,7 +245,7 @@ describe('rokid diagnostics', () => {
       }),
     ]));
     expect(check.capabilityGateway.blockers).toContain(
-      'Rokid companion 疑似仍占用眼镜蓝牙: iOS 一次只能一个 central。请完全退出/划掉 Rokid AI / Hi Rokid 后回小巴刷新。',
+      'Rokid companion 疑似仍占用眼镜蓝牙: iOS 一次只能一个 central。请完全退出/划掉 Rokid AI / Hi Rokid 后回小巴健康刷新。',
     );
   });
 
