@@ -34,6 +34,7 @@ export type ClientEventName =
   | 'chat_attachment_terminal'
   | 'agent_turn_terminal'
   | 'agent_turn_milestone'
+  | 'agent_turn_dedupe_hit'
   | 'voice_input_terminal'
   | 'voice_asr_terminal'
   | 'write_receipt_terminal'
@@ -111,6 +112,7 @@ const AGENT_TURN_MILESTONE_ACTION_TYPES = new Set([
   'diet_record',
   'diet_photo',
 ]);
+const AGENT_TURN_DEDUPE_SCOPES = new Set(['active', 'queued', 'server']);
 
 type ReliabilityEventName = keyof typeof RELIABILITY_PHASES;
 
@@ -347,6 +349,22 @@ export function sanitizeClientEventMeta(
       duration_ms: durationMs,
       action_type: actionType,
       has_image: hasImage,
+    };
+  }
+  if (name === 'agent_turn_dedupe_hit') {
+    if (
+      typeof meta.surface !== 'string'
+      || !CHAT_QUEUE_SURFACES.has(meta.surface)
+      || typeof meta.scope !== 'string'
+      || !AGENT_TURN_DEDUPE_SCOPES.has(meta.scope)
+      || typeof meta.has_image !== 'boolean'
+    ) {
+      return {};
+    }
+    return {
+      surface: meta.surface,
+      scope: meta.scope,
+      has_image: meta.has_image,
     };
   }
   if (!isReliabilityEvent(name)) return meta;

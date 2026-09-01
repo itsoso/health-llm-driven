@@ -8,6 +8,9 @@
 
 **Tech Stack:** Python 3.12, FastAPI/SSE, pytest, React Native/Expo, TypeScript, Jest.
 
+> 交互展示、终态、去重与回放发布门禁的后续统一治理见
+> `docs/plans/2026-08-31-agent-interaction-quality-reliability.md`。
+
 ---
 
 ### Task 1: Freeze contracts and RED tests

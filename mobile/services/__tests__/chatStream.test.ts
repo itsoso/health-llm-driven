@@ -244,6 +244,32 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('maps structured processing evidence into a user-readable progress summary', async () => {
+    const iter = streamChat('查一下最近七天睡眠');
+    const first = iter.next();
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText = 'data: {"event":"tool_result","data":{"tool":"health_query","success":true,"processing_summary":{"source":"睡眠记录","time_range":"最近 7 天","row_count":7,"availability":"available","failure_reason":null,"next_action":"基于已取得的证据继续分析"}}}\n\n';
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toEqual({
+      value: expect.objectContaining({
+        type: 'tool',
+        toolName: 'health_query',
+        processingSummary: {
+          source: '睡眠记录',
+          timeRange: '最近 7 天',
+          rowCount: 7,
+          availability: 'available',
+          nextAction: '基于已取得的证据继续分析',
+        },
+        thought: '睡眠记录 · 最近 7 天 · 7 条可用；基于已取得的证据继续分析',
+      }),
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
   it('preserves deterministic write receipts from tool results', async () => {
     const iter = streamChat('记录午餐');
     const first = iter.next();
@@ -368,6 +394,34 @@ describe('streamChat', () => {
         terminalRetryable: true,
         retryMode: 'retry_source',
         terminalErrorCode: 'write_without_tool',
+      }),
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
+  it('parses the authoritative outcome envelope from done', async () => {
+    const iter = streamChat('记录两项数据');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText =
+      'data: {"event":"done","data":{"conversation_id":42,"message_id":99,"completion_status":"complete","turn_outcome":{"status":"reconciliation_required","category":"write_reconciliation_required","reason_code":"missing_receipt","retryable":false,"dispatch_started":true,"verified_receipt_count":1,"actions":[{"action_id":"record:1","status":"verified","receipt_verified":true},{"action_id":"record:2","status":"reconciliation_required","receipt_verified":false}]}}}\n\n';
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toEqual({
+      value: expect.objectContaining({
+        type: 'done',
+        terminalStatus: 'reconciliation_required',
+        terminalRetryable: false,
+        terminalErrorCode: 'missing_receipt',
+        dispatchStarted: true,
+        verifiedReceiptCount: 1,
+        actionOutcomes: expect.arrayContaining([
+          expect.objectContaining({ actionId: 'record:1', status: 'verified' }),
+          expect.objectContaining({ actionId: 'record:2', status: 'reconciliation_required' }),
+        ]),
       }),
       done: false,
     });

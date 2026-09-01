@@ -25,6 +25,8 @@ const REVA_UI_DATA_CARD_TYPES = new Set<string>([
 export interface ExtractedRevaUiBlocks {
   text: string;
   cards: ServerCardDescriptor[];
+  /** Content-only telemetry; never contains the rejected protocol payload. */
+  malformedBlockCount: number;
 }
 
 export function extractRevaUiBlocks(raw: string): ExtractedRevaUiBlocks {
@@ -43,6 +45,7 @@ export function extractRevaUiBlocks(raw: string): ExtractedRevaUiBlocks {
       ? '这张动态卡片暂时无法显示，请让小巴用文字说明。'
       : ''),
     cards,
+    malformedBlockCount,
   };
 }
 

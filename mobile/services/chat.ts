@@ -144,6 +144,23 @@ export interface MedicationBatchStreamDecision {
   safetyAlerts: MedicationSafetyAlert[];
 }
 
+export type AgentTerminalStatus =
+  | 'complete'
+  | 'waiting_for_user'
+  | 'blocked'
+  | 'failed'
+  | 'refused'
+  | 'reconciliation_required';
+
+export interface AgentActionOutcome {
+  actionId?: string;
+  status: 'verified' | 'rejected' | 'failed' | 'reconciliation_required' | 'waiting_for_user';
+  reasonCode?: string;
+  recoveryGuidance?: string;
+  dispatchStarted?: boolean;
+  receiptVerified?: boolean;
+}
+
 export interface StreamEvent {
   type: 'start' | 'persisted' | 'evidence' | 'token' | 'tool' | 'status' | 'card' | 'done' | 'error';
   content?: string;
@@ -165,6 +182,14 @@ export interface StreamEvent {
   card?: StreamCardDescriptor;
   toolName?: string;
   toolSuccess?: boolean;
+  processingSummary?: {
+    source: string;
+    timeRange: string;
+    rowCount?: number;
+    availability: 'available' | 'unavailable';
+    failureReason?: string;
+    nextAction: string;
+  };
   writeAttempted?: boolean;
   writeCompleted?: boolean;
   writeOutcome?: 'verified' | 'rejected' | 'failed' | 'uncertain';
@@ -189,8 +214,11 @@ export interface StreamEvent {
   // 2026-06-12: 本轮调用的 Skill / 工具名 (后端 done.tools_used; 去重保序, 空 [])
   toolsUsed?: string[];
   completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
+  terminalStatus?: AgentTerminalStatus;
   terminalRetryable?: boolean;
   terminalErrorCode?: string;
+  verifiedReceiptCount?: number;
+  actionOutcomes?: AgentActionOutcome[];
   retryMode?: 'retry_source';
   // SSE done 事件里的动态卡片，由 useChatEngine 交给 card registry 渲染。
   // health_evidence_manifest 以 health_evidence card.data 为 Mobile 唯一展示投影，
@@ -526,6 +554,23 @@ export async function* streamChat(
           ? parsed.data.write_attempted
           : undefined;
         const receipt = normalizeWriteReceipt(parsed.data?.receipt);
+        const rawSummary = parsed.data?.processing_summary;
+        const processingSummary = rawSummary && typeof rawSummary === 'object'
+          && typeof rawSummary.source === 'string'
+          && typeof rawSummary.time_range === 'string'
+          && (rawSummary.availability === 'available' || rawSummary.availability === 'unavailable')
+          && typeof rawSummary.next_action === 'string'
+          ? {
+              source: rawSummary.source,
+              timeRange: rawSummary.time_range,
+              ...(typeof rawSummary.row_count === 'number' ? { rowCount: rawSummary.row_count } : {}),
+              availability: rawSummary.availability,
+              ...(typeof rawSummary.failure_reason === 'string'
+                ? { failureReason: rawSummary.failure_reason }
+                : {}),
+              nextAction: rawSummary.next_action,
+            } as const
+          : undefined;
         const writeOutcome = ['verified', 'rejected', 'failed', 'uncertain'].includes(
           parsed.data?.write_outcome,
         )
@@ -540,6 +585,11 @@ export async function* streamChat(
               : writeOutcome === 'failed'
                 ? '记录未完成'
                 : undefined;
+        const processingThought = processingSummary
+          ? processingSummary.availability === 'available'
+            ? `${processingSummary.source} · ${processingSummary.timeRange} · ${typeof processingSummary.rowCount === 'number' ? `${processingSummary.rowCount} 条可用` : '已返回可用证据'}；${processingSummary.nextAction}`
+            : `${processingSummary.source} · ${processingSummary.timeRange} · ${processingSummary.failureReason || '暂无可用数据'}；${processingSummary.nextAction}`
+          : undefined;
         // 工具结果是回合内的中间状态，失败后 Agent 仍可能纠正参数并重试成功。
         // 不把临时失败写进永久正文；整轮失败由后端终态文本或 error 事件呈现。
         return {
@@ -547,6 +597,7 @@ export async function* streamChat(
           content: '',
           toolName: tool,
           toolSuccess: ok,
+          ...(processingSummary ? { processingSummary } : {}),
           ...(typeof writeAttempted === 'boolean' ? { writeAttempted } : {}),
           ...(typeof writeCompleted === 'boolean' ? { writeCompleted } : {}),
           ...(writeOutcome ? { writeOutcome } : {}),
@@ -560,7 +611,7 @@ export async function* streamChat(
             ? { errorCode: parsed.data.error_code }
             : {}),
           ...(receipt ? { receipt } : {}),
-          thought: writeThought ?? (ok ? `已取得${label}` : `${label}暂时不可用`),
+          thought: writeThought ?? processingThought ?? (ok ? `已取得${label}` : `${label}暂时不可用`),
           // I Phase 2: health_record 时后端附 record_type + record_data, 前端 sniff 录入摘要
           recordType: parsed.data?.record_type,
           recordData: parsed.data?.record_data,
@@ -611,6 +662,8 @@ export async function* streamChat(
           parsed.data?.medical_citations,
         );
         const turnOutcome = parsed.data?.turn_outcome;
+        const terminalStatus = normalizeAgentTerminalStatus(turnOutcome?.status);
+        const actionOutcomes = normalizeAgentActionOutcomes(turnOutcome?.actions);
         const recoveryAction = parsed.data?.recovery_action;
         const retrySourceActive = Boolean(
           turnOutcome?.retryable === true
@@ -635,12 +688,20 @@ export async function* streamChat(
           answerEvidence: normalizeAnswerEvidence(parsed.data?.answer_evidence),
           toolsUsed: Array.isArray(parsed.data?.tools_used) ? parsed.data.tools_used : undefined,
           completionStatus: parsed.data?.completion_status,
+          ...(terminalStatus ? { terminalStatus } : {}),
           ...(typeof turnOutcome?.reason_code === 'string'
             ? { terminalErrorCode: turnOutcome.reason_code }
             : {}),
           ...(turnOutcome && typeof turnOutcome === 'object'
             ? { terminalRetryable: retrySourceActive }
             : {}),
+          ...(typeof turnOutcome?.dispatch_started === 'boolean'
+            ? { dispatchStarted: turnOutcome.dispatch_started }
+            : {}),
+          ...(Number.isInteger(turnOutcome?.verified_receipt_count)
+            ? { verifiedReceiptCount: turnOutcome.verified_receipt_count }
+            : {}),
+          ...(actionOutcomes.length ? { actionOutcomes } : {}),
           ...(retrySourceActive ? { retryMode: 'retry_source' as const } : {}),
           thinkingSteps: normalizeThinkingSteps(parsed.data?.thinking_steps),
           cards: Array.isArray(parsed.data?.cards) ? parsed.data.cards : undefined,
@@ -699,6 +760,47 @@ export async function* streamChat(
       if (evt !== doneSentinel && evt) yield evt;
     }
   }
+}
+
+function normalizeAgentTerminalStatus(value: unknown): AgentTerminalStatus | undefined {
+  return value === 'complete'
+    || value === 'waiting_for_user'
+    || value === 'blocked'
+    || value === 'failed'
+    || value === 'refused'
+    || value === 'reconciliation_required'
+    ? value
+    : undefined;
+}
+
+function normalizeAgentActionOutcomes(value: unknown): AgentActionOutcome[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((raw): AgentActionOutcome[] => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
+    const item = raw as Record<string, unknown>;
+    const status = item.status;
+    if (
+      status !== 'verified'
+      && status !== 'rejected'
+      && status !== 'failed'
+      && status !== 'reconciliation_required'
+      && status !== 'waiting_for_user'
+    ) return [];
+    return [{
+      status,
+      ...(typeof item.action_id === 'string' ? { actionId: item.action_id } : {}),
+      ...(typeof item.reason_code === 'string' ? { reasonCode: item.reason_code } : {}),
+      ...(typeof item.recovery_guidance === 'string'
+        ? { recoveryGuidance: item.recovery_guidance }
+        : {}),
+      ...(typeof item.dispatch_started === 'boolean'
+        ? { dispatchStarted: item.dispatch_started }
+        : {}),
+      ...(typeof item.receipt_verified === 'boolean'
+        ? { receiptVerified: item.receipt_verified }
+        : {}),
+    }];
+  }).slice(0, 32);
 }
 
 function normalizeThinkingSteps(value: unknown): string[] | undefined {

@@ -65,6 +65,17 @@ from app.services.agent_turn_recovery import (
     should_retry_tool_failure,
 )
 from app.services.agent_turn_outcome import classify_agent_turn_outcome
+from app.services.agent_output_quality import (
+    clarification_reply,
+    enforce_agent_output_quality,
+    needs_input_clarification,
+)
+from app.services.agent_processing_summary import build_processing_summary
+from app.services.guidance_validator import (
+    build_confirmable_health_fact_draft,
+    enforce_medical_evidence_boundaries,
+    requires_medical_evidence_boundary,
+)
 from app.services.agent_turn_retry import (
     RetryableTurnRecovery,
     build_retry_source_action_if_safe,
@@ -12804,6 +12815,109 @@ class AgentExecutor:
                 )
         return decorated
 
+    async def _run_input_clarification_stream(
+        self,
+        *,
+        user_id: int,
+        message: str,
+        conversation_id: int | None,
+        client_turn_id: str | None,
+        recovered_user_message: Any = None,
+        health_fact_draft: dict[str, Any] | None = None,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Persist a one-turn clarification without loading health context or a model."""
+        from app.services.agent_conversation_service import AgentConversationService
+
+        svc = AgentConversationService(self.db)
+        if recovered_user_message is not None:
+            conv = svc.get_or_create_conversation(
+                user_id,
+                int(recovered_user_message.conversation_id),
+                title=message,
+            )
+            user_msg = recovered_user_message
+        else:
+            conv = svc.get_or_create_conversation(
+                user_id,
+                conversation_id,
+                title=message,
+            )
+            user_msg, _ = svc.save_user_message_once(
+                conv.id,
+                user_id,
+                message,
+                client_turn_id=client_turn_id,
+                meta={"client_turn_id": client_turn_id} if client_turn_id else None,
+            )
+        if health_fact_draft:
+            labels = []
+            for fact in health_fact_draft.get("facts", []):
+                if fact.get("type") == "caffeine_intake":
+                    labels.append(f"咖啡因 {fact.get('value')} mg")
+                elif fact.get("type") == "sleep_onset":
+                    labels.append(f"入睡时间 {fact.get('value')}")
+            text = "我先整理成待确认草稿：" + "；".join(labels) + "。确认后我再记录，可以吗？"
+            reason_code = "health_fact_confirmation_required"
+            route = "health_fact_draft"
+        else:
+            text = clarification_reply()
+            reason_code = "input_too_short"
+            route = "clarification"
+        outcome = {
+            "status": "waiting_for_user",
+            "category": "clarification_required",
+            "reason_code": reason_code,
+            "retryable": False,
+            "dispatch_started": False,
+            "verified_receipt_count": 0,
+            "actions": [],
+            "refusal_detected": False,
+            "capability_block_count": 0,
+            "tool_failure_count": 0,
+            "confirmation_required": True,
+        }
+        meta = {
+            "completion_status": "complete",
+            "turn_outcome": outcome,
+            "route": route,
+            "model_call_count": 0,
+            "client_turn_finalized": True,
+            **({"health_fact_draft": health_fact_draft} if health_fact_draft else {}),
+            **({"client_turn_id": client_turn_id} if client_turn_id else {}),
+        }
+        ai_msg = svc.save_message(
+            conv.id,
+            "assistant",
+            text,
+            meta=meta,
+            client_turn_id=client_turn_id,
+            client_turn_user_id=user_id,
+        )
+        yield {
+            "event": "request_persisted",
+            "data": {
+                "conversation_id": conv.id,
+                "user_message_id": user_msg.id,
+                "client_turn_id": client_turn_id,
+            },
+        }
+        yield {"event": "token", "data": {"content": text}}
+        yield {
+            "event": "done",
+            "data": {
+                "conversation_id": conv.id,
+                "message_id": ai_msg.id,
+                **meta,
+                "perf": {
+                    "route": route,
+                    "model_call_count": 0,
+                    "first_progress_ms": 0,
+                    "first_useful_ms": 0,
+                    "total_ms": 0,
+                },
+            },
+        }
+
     async def run_stream(
         self,
         user_id: int,
@@ -13066,6 +13180,43 @@ class AgentExecutor:
                 run_id=run_id,
             )
 
+            if (
+                retry_recovery is None
+                and not effective_images
+                and not file_base64
+                and needs_input_clarification(effective_message)
+            ):
+                async for event in self._run_input_clarification_stream(
+                    user_id=user_id,
+                    message=display_message,
+                    conversation_id=conversation_id,
+                    client_turn_id=client_turn_id,
+                    recovered_user_message=recovered_user_message,
+                ):
+                    if event.get("event") == "done":
+                        kernel_completion_status = "complete"
+                    yield self._attach_runtime_identity(event)
+                return
+
+            health_fact_draft = (
+                build_confirmable_health_fact_draft(effective_message)
+                if retry_recovery is None and not effective_images and not file_base64
+                else None
+            )
+            if health_fact_draft is not None:
+                async for event in self._run_input_clarification_stream(
+                    user_id=user_id,
+                    message=display_message,
+                    conversation_id=conversation_id,
+                    client_turn_id=client_turn_id,
+                    recovered_user_message=recovered_user_message,
+                    health_fact_draft=health_fact_draft,
+                ):
+                    if event.get("event") == "done":
+                        kernel_completion_status = "complete"
+                    yield self._attach_runtime_identity(event)
+                return
+
             if recovered_user_message is not None:
                 recovered_meta = dict(recovered_user_message.meta or {})
                 recovered_write_state = dict(recovered_meta.get("write_state") or {})
@@ -13300,7 +13451,13 @@ class AgentExecutor:
                     user_id,
                     type(exc).__name__,
                 )
-        health_advice_buffered = health_evidence_turn is not None
+        medical_boundary_buffered = (
+            health_evidence_turn is None
+            and requires_medical_evidence_boundary(message)
+        )
+        health_advice_buffered = (
+            health_evidence_turn is not None or medical_boundary_buffered
+        )
         deterministic_health_release = bool(
             health_evidence_turn is not None
             and health_evidence_turn.sufficiency != "sufficient"
@@ -15958,6 +16115,12 @@ class AgentExecutor:
                             "preview": result[:200],
                             "result": result,
                         }
+                        tool_event_data["processing_summary"] = build_processing_summary(
+                            func_name,
+                            parsed_tool_args,
+                            result,
+                            success=bool(tool_event_data["success"]),
+                        )
                         if replayed_write:
                             tool_event_data["replayed"] = True
                         if func_name in _WRITE_RECEIPT_TOOL_NAMES:
@@ -16944,6 +17107,27 @@ class AgentExecutor:
                 user_id,
                 len(message or ""),
             )
+        medical_boundary = enforce_medical_evidence_boundaries(
+            full_reply,
+            evidence_sources=sources_used,
+            has_clinician_instruction=(
+                clinician_turn_decision.kind in {
+                    "clinician_context",
+                    "clinician_advice",
+                    "explicit_doctor_feedback_write",
+                }
+            ),
+            verified_write_receipt=any(
+                isinstance(receipt, dict) and receipt.get("verified") is True
+                for receipt in write_receipts
+            ),
+        )
+        if medical_boundary.flagged:
+            logger.warning(
+                "[agent_executor] medical boundary sanitized response violations=%s",
+                [item.split(":", 1)[0] for item in medical_boundary.violations],
+            )
+        full_reply = medical_boundary.text
         if health_evidence_turn is not None:
             # This is the only release point for model-authored health advice.
             # Every earlier token path is buffered; only deterministic verifier
@@ -16985,6 +17169,14 @@ class AgentExecutor:
                 sources_used.append(
                     "个人健康上下文：" + "、".join(context_categories)
                 )
+            if first_token_at is None:
+                first_token_at = time.time()
+            for i in range(0, len(full_reply), 24):
+                yield {
+                    "event": "token",
+                    "data": {"content": full_reply[i:i + 24]},
+                }
+        elif medical_boundary_buffered:
             if first_token_at is None:
                 first_token_at = time.time()
             for i in range(0, len(full_reply), 24):
@@ -17098,6 +17290,14 @@ class AgentExecutor:
                 logger.warning(
                     "[agent_executor] GenUI card/table build/emit failed: %s", e
                 )
+        output_quality = enforce_agent_output_quality(
+            full_reply,
+            max_chars=int(
+                getattr(settings, "agent_answer_persistence_max_chars", 50_000)
+                or 50_000
+            ),
+        )
+        full_reply = output_quality.text
         ai_msg = svc.save_message(
             conv.id,
             "assistant",
@@ -17209,6 +17409,31 @@ class AgentExecutor:
             if completion_status == "complete" and full_reply.strip()
             else set()
         )
+        action_outcomes = [
+            {
+                "action_id": str(
+                    receipt.get("operation_id")
+                    or receipt.get("resource_id")
+                    or f"verified:{index}"
+                ),
+                "status": "verified",
+                "dispatch_started": True,
+                "receipt_verified": True,
+            }
+            for index, receipt in enumerate(write_receipts)
+            if isinstance(receipt, dict) and receipt.get("verified") is True
+        ]
+        action_outcomes.extend(
+            {
+                "action_id": str(operation_id),
+                "status": "reconciliation_required",
+                "reason_code": str(reason or "missing_receipt"),
+                "dispatch_started": True,
+                "receipt_verified": False,
+                "recovery_guidance": "请先核对记录状态，不要重复提交。",
+            }
+            for operation_id, reason in unverified_write_operations.items()
+        )
         turn_outcome = classify_agent_turn_outcome(
             completion_status=completion_status,
             final_text=full_reply,
@@ -17224,6 +17449,9 @@ class AgentExecutor:
             destructive_or_sync_no_tool=destructive_or_sync_no_tool,
             write_reconciliation_required=bool(unverified_write_operations),
             runtime_control_unavailable=runtime_control_terminal,
+            dispatch_started=bool(write_receipts or unverified_write_operations),
+            claimed_write_action_count=len(write_receipts) + len(unverified_write_operations),
+            action_outcomes=action_outcomes,
         )
         kernel_snapshot = self._agent_kernel_snapshot
         health_write_requested = bool(
@@ -17438,6 +17666,8 @@ class AgentExecutor:
                 "cards": cards_for_persistence(response_cards),
                 "finish_reason": final_finish_reason,
                 "completion_status": completion_status,
+                "output_quality_flags": list(output_quality.flags),
+                "output_persisted_chars": output_quality.persisted_length,
                 "record_intent_no_tool": record_intent_no_tool,
                 "turn_outcome": turn_outcome,
                 **(
@@ -17523,6 +17753,8 @@ class AgentExecutor:
                 "cards": response_cards,
                 "finish_reason": final_finish_reason,
                 "completion_status": completion_status,
+                "output_quality_flags": list(output_quality.flags),
+                "output_persisted_chars": output_quality.persisted_length,
                 "record_intent_no_tool": record_intent_no_tool,
                 "turn_outcome": turn_outcome,
                 **(
@@ -18537,6 +18769,12 @@ class AgentExecutor:
                     "write_completed": write_completed,
                     "recipe_step": index,
                 }
+                tool_event_data["processing_summary"] = build_processing_summary(
+                    tool,
+                    args,
+                    result,
+                    success=bool(tool_event_data["success"]),
+                )
                 if receipt:
                     tool_event_data["receipt"] = receipt
                 if write_attempted and not write_completed:

@@ -31,6 +31,13 @@ from app.services.secure_upload import (
     validate_image_bytes,
     validate_pdf_bytes,
 )
+from app.services.agent_turn_idempotency import (
+    SemanticTurnDedupeCache,
+    image_content_hashes,
+    is_semantic_read_only_candidate,
+    resolve_distributed_semantic_turn,
+    semantic_turn_fingerprint,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +93,7 @@ class _BoundedSSEBridge:
 # 不持久化, 进程内即可; 多 worker 各自一份没关系 (同一连接通常落同一 worker).
 _RECENT_DUP_CACHE: dict[tuple[int, str], float] = {}
 _DUP_WINDOW_SECONDS = 3.0
+_SEMANTIC_TURN_DEDUPE = SemanticTurnDedupeCache()
 _MAX_THINKING_STEPS = 8
 _THINKING_STEPS_KIND = "safe_progress_summary"
 _TOOL_THOUGHT_LABELS = {
@@ -302,9 +310,16 @@ def _done_event_may_expose_cards(data: dict | None) -> bool:
     """Action cards are valid only for a durable, completed assistant turn."""
     if not isinstance(data, dict):
         return False
+    outcome = data.get("turn_outcome")
+    terminal_status = outcome.get("status") if isinstance(outcome, dict) else None
+    authoritative_status_allows_cards = (
+        terminal_status in {"complete", "waiting_for_user"}
+        if terminal_status is not None
+        else data.get("completion_status") == "complete"
+    )
     return (
         data.get("request_persisted") is not False
-        and data.get("completion_status") == "complete"
+        and authoritative_status_allows_cards
         and isinstance(data.get("message_id"), int)
     )
 
@@ -808,6 +823,9 @@ class AgentRequest(BaseModel):
         max_length=80,
         pattern=r"^[A-Za-z0-9._:-]+$",
     )
+    # Optional content-free snapshot/version. A changed version deliberately
+    # bypasses semantic reuse for otherwise identical read requests.
+    data_version: Optional[str] = Field(default=None, max_length=128)
     client_time_context: Optional[ClientTimeContext] = None
 
     @field_validator("image_base64")
@@ -898,6 +916,37 @@ def _validated_agent_attachments_or_400(
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except UploadContentInvalid as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _resolve_semantic_client_turn(
+    *,
+    req: AgentRequest,
+    user_id: int,
+    images: list[dict],
+) -> tuple[str | None, bool, str | None]:
+    """Coalesce only owner-scoped, read-only turns with an exact client id."""
+    proposed = req.client_turn_id
+    if (
+        not proposed
+        or req.file_base64
+        or not is_semantic_read_only_candidate(req.message)
+    ):
+        return proposed, False, None
+    intent = "image_analysis" if images else "read"
+    fingerprint = semantic_turn_fingerprint(
+        user_id=user_id,
+        conversation_id=req.conversation_id,
+        message=req.message,
+        data_version=req.data_version,
+        image_hashes=image_content_hashes(images),
+        intent=intent,
+    )
+    resolution = resolve_distributed_semantic_turn(
+        cache=_SEMANTIC_TURN_DEDUPE,
+        fingerprint=fingerprint,
+        proposed_client_turn_id=proposed,
+    )
+    return resolution.client_turn_id, resolution.dedupe_hit, fingerprint
 
 
 class ConversationTitleUpdate(BaseModel):
@@ -1541,7 +1590,11 @@ async def agent_stream(
     images_local = all_images or None
     extra_ctx = req.extra_context
     chan = req.channel
-    client_turn_id = req.client_turn_id
+    client_turn_id, semantic_dedupe_hit, _semantic_fingerprint = _resolve_semantic_client_turn(
+        req=req,
+        user_id=user_id,
+        images=all_images,
+    )
     from app.config import settings as _agent_settings
     from app.services.health_evidence.delivery import (
         requires_live_health_executor,
@@ -1594,6 +1647,12 @@ async def agent_stream(
                 status_code=409,
                 detail="该消息已有处理状态，请刷新对话",
             )
+        for replay_event in replay_events:
+            if (
+                replay_event.get("event") == "done"
+                and isinstance(replay_event.get("data"), dict)
+            ):
+                replay_event["data"]["dedupe_hit"] = semantic_dedupe_hit
 
         async def runtime_replay_generate():
             for event in replay_events:
@@ -1846,6 +1905,7 @@ async def agent_stream(
                     # 在 done 事件里附加动态卡片, 失败静默
                     if event.get("event") == "done":
                         event.setdefault("data", {})["run_id"] = runtime_context.run_id
+                        event["data"]["dedupe_hit"] = semantic_dedupe_hit
                         event.setdefault("data", {})["attempt_id"] = runtime_context.attempt_id
                         if thinking_steps:
                             event.setdefault("data", {})["thinking_steps"] = thinking_steps
@@ -2097,6 +2157,11 @@ async def agent_send(
         )
 
     all_images, file_b64, file_nm = _validated_agent_attachments_or_400(req)
+    client_turn_id, semantic_dedupe_hit, _semantic_fingerprint = _resolve_semantic_client_turn(
+        req=req,
+        user_id=current_user.id,
+        images=all_images,
+    )
 
     auth_header = request.headers.get("authorization", "")
     user_token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
@@ -2134,7 +2199,7 @@ async def agent_send(
             attempt_id=send_attempt_id,
             user_id=current_user.id,
             conversation_id=req.conversation_id,
-            client_turn_id=req.client_turn_id,
+            client_turn_id=client_turn_id,
             origin="agent_send",
         )
     except Exception as exc:
@@ -2219,7 +2284,7 @@ async def agent_send(
                 file_name=file_nm,
                 extra_context=req.extra_context,
                 channel=req.channel,
-                client_turn_id=req.client_turn_id,
+                client_turn_id=client_turn_id,
                 client_caps=send_caps,
                 client_time_context=(
                     req.client_time_context.model_dump(exclude_none=True)
@@ -2251,6 +2316,7 @@ async def agent_send(
                 elif event.get("event") == "done":
                     data = event.get("data")
                     if isinstance(data, dict):
+                        data["dedupe_hit"] = semantic_dedupe_hit
                         done_data = data
                 elif event.get("event") == "error":
                     data = event.get("data") if isinstance(event.get("data"), dict) else {}
@@ -2355,7 +2421,7 @@ async def agent_send(
 
             pregen_hit = starter_pregen.try_serve(
                 db, current_user.id, req.message.strip(),
-                conversation_id=req.conversation_id, client_turn_id=req.client_turn_id,
+                conversation_id=req.conversation_id, client_turn_id=client_turn_id,
             )
         except Exception as e:  # noqa: BLE001 — never break /send; fall through to live
             logger.warning("[agent.send] pregen serve failed, fall through: %s", e)

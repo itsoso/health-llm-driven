@@ -75,6 +75,7 @@ jest.mock('../../services/clientEvents', () => ({
 import {
   buildTurnRequestFingerprint,
   findReusableTurnMessage,
+  isSemanticReadDedupeCandidate,
   restoreMessagesFromHistory,
   useChatEngine,
 } from '../useChatEngine';
@@ -93,6 +94,13 @@ describe('buildTurnRequestFingerprint', () => {
     }]);
 
     expect(retried).toBe(first);
+  });
+
+  it('coalesces only read/image analysis requests, never write-shaped input', () => {
+    expect(isSemanticReadDedupeCandidate('分析我最近 7 天睡眠', false)).toBe(true);
+    expect(isSemanticReadDedupeCandidate('请分析这张照片', true)).toBe(true);
+    expect(isSemanticReadDedupeCandidate('记录这餐', true)).toBe(false);
+    expect(isSemanticReadDedupeCandidate('晚餐只吃了一半', false)).toBe(false);
   });
 });
 
@@ -1640,6 +1648,43 @@ describe('useChatEngine', () => {
     await waitFor(() => expect(mockStreamChat).toHaveBeenCalledTimes(3));
     expect(mockStreamChat.mock.calls[1][6]).toBe(mockStreamChat.mock.calls[0][6]);
     expect(mockStreamChat.mock.calls[2][6]).not.toBe(mockStreamChat.mock.calls[0][6]);
+  });
+
+  it('coalesces an identical in-flight image analysis instead of starting recognition twice', async () => {
+    mockStreamChat.mockImplementation(streamStartThenWait);
+    const { result } = renderHook(() => useChatEngine());
+    const image = [{
+      uri: 'file:///tmp/repeated-photo.jpg',
+      base64: 'same-image-content',
+      type: 'jpeg',
+    }];
+
+    act(() => {
+      void result.current.sendMessage('请分析这张照片', image);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    let duplicateAccepted = false;
+    await act(async () => {
+      duplicateAccepted = await result.current.sendMessage('请分析这张照片', image);
+    });
+
+    expect(duplicateAccepted).toBe(true);
+    expect(mockStreamChat).toHaveBeenCalledTimes(1);
+    expect(result.current.queuedCount).toBe(0);
+    expect(mockEmitClientEvent).toHaveBeenCalledWith(
+      'agent_turn_dedupe_hit',
+      expect.objectContaining({ scope: 'active', has_image: true }),
+    );
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
   });
 
   it('keeps a server-busy photo draft pending until the retry is persisted', async () => {

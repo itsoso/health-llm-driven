@@ -478,6 +478,7 @@ class Settings(BaseSettings):
     # Health Evidence 正文会等完整生成 + 确定性验证后再释放，因此限制无必要的
     # 长尾解码；设回 8000 可仅回退该性能策略，不关闭安全运行时。
     health_evidence_answer_max_tokens: int = 1200
+    agent_answer_persistence_max_chars: int = 50_000
     # 在 request_persisted 后先发送已被 Health Evidence runtime 选中的有界依据投影。
     # 关闭只停早期事件；done/历史中的同一 answer_evidence 仍保留。
     answer_evidence_streaming_enabled: bool = True

@@ -481,6 +481,16 @@ def test_only_complete_persisted_done_events_may_expose_action_cards():
         "completion_status": "complete",
         "request_persisted": False,
     }) is False
+    assert _done_event_may_expose_cards({
+        "message_id": 7,
+        "completion_status": "complete",
+        "turn_outcome": {"status": "waiting_for_user"},
+    }) is True
+    assert _done_event_may_expose_cards({
+        "message_id": 7,
+        "completion_status": "complete",
+        "turn_outcome": {"status": "blocked"},
+    }) is False
 
 
 @pytest.mark.parametrize(

@@ -63,6 +63,34 @@ def _refusal_reason(text: str) -> str | None:
     return "model_scope"
 
 
+_ACTION_STATUSES = frozenset(
+    {"verified", "rejected", "failed", "reconciliation_required", "waiting_for_user"}
+)
+
+
+def _public_action_outcomes(values: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return a bounded, stack-trace-free per-action projection."""
+    actions: list[dict[str, Any]] = []
+    for raw in values or ():
+        if not isinstance(raw, dict):
+            continue
+        status = str(raw.get("status") or "").strip()
+        if status not in _ACTION_STATUSES:
+            continue
+        action: dict[str, Any] = {"status": status}
+        for key in ("action_id", "reason_code", "recovery_guidance"):
+            value = raw.get(key)
+            if isinstance(value, str) and value.strip():
+                action[key] = value.strip()[:240]
+        for key in ("dispatch_started", "receipt_verified"):
+            if isinstance(raw.get(key), bool):
+                action[key] = raw[key]
+        actions.append(action)
+        if len(actions) >= 32:
+            break
+    return actions
+
+
 def classify_agent_turn_outcome(
     *,
     completion_status: str,
@@ -75,6 +103,9 @@ def classify_agent_turn_outcome(
     destructive_or_sync_no_tool: bool = False,
     write_reconciliation_required: bool = False,
     runtime_control_unavailable: bool = False,
+    dispatch_started: bool = False,
+    claimed_write_action_count: int = 0,
+    action_outcomes: Iterable[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     """Return a stable, content-free outcome payload for ``done.meta``.
 
@@ -86,109 +117,114 @@ def classify_agent_turn_outcome(
     failures = _unique(tool_failure_tools)
     confirmations = _unique(pending_confirmation_tools)
     receipts = tuple(write_receipts or ())
+    verified_receipt_count = sum(
+        1
+        for receipt in receipts
+        if isinstance(receipt, dict) and receipt.get("verified") is True
+    )
+    actions = _public_action_outcomes(action_outcomes)
 
-    if write_reconciliation_required:
+    def outcome(
+        *,
+        status: str,
+        category: str,
+        reason_code: str,
+        retryable: bool,
+        refusal_detected: bool = False,
+        confirmation_required: bool = False,
+    ) -> dict[str, Any]:
         return {
-            "category": "write_reconciliation_required",
-            "reason_code": "missing_receipt",
-            "retryable": False,
-            "refusal_detected": False,
+            "status": status,
+            "category": category,
+            "reason_code": reason_code,
+            "retryable": retryable,
+            "dispatch_started": bool(dispatch_started),
+            "verified_receipt_count": verified_receipt_count,
+            "actions": actions,
+            "refusal_detected": refusal_detected,
             "capability_block_count": len(blocks),
             "tool_failure_count": len(failures),
-            "confirmation_required": False,
+            "confirmation_required": confirmation_required,
         }
+
+    missing_claimed_receipt = (
+        max(0, int(claimed_write_action_count or 0)) > verified_receipt_count
+    )
+    if write_reconciliation_required or missing_claimed_receipt or (dispatch_started and failures):
+        return outcome(
+            status="reconciliation_required",
+            category="write_reconciliation_required",
+            reason_code="missing_receipt",
+            retryable=False,
+        )
     if runtime_control_unavailable:
-        return {
-            "category": "service_unavailable",
-            "reason_code": "runtime_control_unavailable",
-            "retryable": False,
-            "refusal_detected": False,
-            "capability_block_count": len(blocks),
-            "tool_failure_count": len(failures),
-            "confirmation_required": False,
-        }
+        return outcome(
+            status="failed",
+            category="service_unavailable",
+            reason_code="runtime_control_unavailable",
+            retryable=False,
+        )
     if confirmations:
-        return {
-            "category": "confirmation_required",
-            "reason_code": confirmations[0],
-            "retryable": False,
-            "refusal_detected": False,
-            "capability_block_count": len(blocks),
-            "tool_failure_count": len(failures),
-            "confirmation_required": True,
-        }
+        return outcome(
+            status="waiting_for_user",
+            category="confirmation_required",
+            reason_code=confirmations[0],
+            retryable=False,
+            confirmation_required=True,
+        )
     if blocks:
-        return {
-            "category": "tool_blocked",
-            "reason_code": blocks[0],
-            "retryable": False,
-            "refusal_detected": False,
-            "capability_block_count": len(blocks),
-            "tool_failure_count": len(failures),
-            "confirmation_required": False,
-        }
+        return outcome(
+            status="blocked",
+            category="tool_blocked",
+            reason_code=blocks[0],
+            retryable=False,
+        )
     if failures:
-        return {
-            "category": "tool_failed",
-            "reason_code": failures[0],
-            "retryable": True,
-            "refusal_detected": False,
-            "capability_block_count": 0,
-            "tool_failure_count": len(failures),
-            "confirmation_required": False,
-        }
+        return outcome(
+            status="failed",
+            category="tool_failed",
+            reason_code=failures[0],
+            retryable=True,
+        )
     if record_intent_no_tool or destructive_or_sync_no_tool:
         reason = "write_without_tool" if record_intent_no_tool else "mutation_without_tool"
-        return {
-            "category": "action_not_executed",
-            "reason_code": reason,
-            "retryable": True,
-            "refusal_detected": False,
-            "capability_block_count": 0,
-            "tool_failure_count": 0,
-            "confirmation_required": False,
-        }
+        return outcome(
+            status="failed",
+            category="action_not_executed",
+            reason_code=reason,
+            retryable=True,
+        )
 
-    if completion_status == "error":
-        return {
-            "category": "execution_error",
-            "reason_code": "completion_error",
-            "retryable": True,
-            "refusal_detected": False,
-            "capability_block_count": 0,
-            "tool_failure_count": 0,
-            "confirmation_required": False,
-        }
+    if completion_status != "complete":
+        reason = "completion_error" if completion_status == "error" else "completion_interrupted"
+        return outcome(
+            status="failed",
+            category="execution_error",
+            reason_code=reason,
+            retryable=True,
+        )
     refusal_reason = _refusal_reason(final_text)
     if refusal_reason:
-        return {
-            "category": (
+        return outcome(
+            status="refused",
+            category=(
                 "safety_refusal" if refusal_reason == "safety_boundary" else "model_refusal"
             ),
-            "reason_code": refusal_reason,
-            "retryable": refusal_reason == "model_scope",
-            "refusal_detected": True,
-            "capability_block_count": 0,
-            "tool_failure_count": 0,
-            "confirmation_required": False,
-        }
+            reason_code=refusal_reason,
+            retryable=refusal_reason == "model_scope",
+            refusal_detected=True,
+        )
     if not str(final_text or "").strip():
-        return {
-            "category": "no_answer",
-            "reason_code": "empty_final_text",
-            "retryable": True,
-            "refusal_detected": False,
-            "capability_block_count": 0,
-            "tool_failure_count": 0,
-            "confirmation_required": False,
-        }
+        return outcome(
+            status="failed",
+            category="no_answer",
+            reason_code="empty_final_text",
+            retryable=True,
+        )
 
-    return {
-        "category": "success",
-        "reason_code": "verified_write" if receipts else "completed",
-        "retryable": False,
-        "refusal_detected": False,
-        "capability_block_count": 0,
-        "tool_failure_count": 0,
-        "confirmation_required": False,
-    }
+    return outcome(
+        status="complete",
+        category="success",
+        reason_code="verified_write" if verified_receipt_count else "completed",
+        retryable=False,
+    )

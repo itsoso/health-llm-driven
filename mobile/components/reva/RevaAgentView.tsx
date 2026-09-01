@@ -4,7 +4,7 @@
  * Powered by the real `useChatEngine` streaming. No outer SafeAreaView — the host
  * provides layout/insets.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, AppState, KeyboardAvoidingView, Platform, Pressable, ScrollView,
   StyleSheet, Text, TextInput, View,
@@ -19,10 +19,15 @@ import { renderCard } from '../chat/cards';
 import { revaColors as C, revaRadii, revaShadows } from '../../constants/revaTheme';
 import { RevaMark } from './RevaKit';
 import { cancelChatScrollOnUserDrag, shouldScrollChatToEnd } from '../../utils/chatScroll';
+import { normalizeAssistantContent } from '../../utils/assistantContentNormalizer';
 
 const QUICKS = ['今天能跑步吗？', '解读我的血糖', '这周吃得怎么样？'];
 
 function RevaBubble({ message }: { message: UIMessage }) {
+  const normalized = useMemo(
+    () => normalizeAssistantContent(message.content),
+    [message.content],
+  );
   if (message.cardType && message.cardData) {
     const rendered = renderCard({
       type: message.cardType,
@@ -46,8 +51,20 @@ function RevaBubble({ message }: { message: UIMessage }) {
   }
   return (
     <View style={[styles.row, { justifyContent: 'flex-start' }]}>
-      <View style={[styles.bubble, styles.bubbleAgent]}>
-        {message.content ? <Markdown style={mdStyles} markdownit={safeMarkdownIt}>{prepareSafeMarkdown(message.content)}</Markdown> : <ActivityIndicator size="small" color={C.green500} />}
+      <View
+        style={[styles.bubble, styles.bubbleAgent]}
+        accessible
+        accessibilityRole="text"
+        accessibilityLabel={`AI: ${normalized.text || (normalized.cards.length > 0 ? '图表卡片' : '')}`}
+      >
+        {normalized.text ? (
+          <Markdown style={mdStyles} markdownit={safeMarkdownIt}>{prepareSafeMarkdown(normalized.text)}</Markdown>
+        ) : normalized.cards.length === 0 ? (
+          <ActivityIndicator size="small" color={C.green500} />
+        ) : null}
+        {normalized.cards.map((card, index) => (
+          <View key={`${card.type}-${index}`}>{renderCard(card)}</View>
+        ))}
       </View>
     </View>
   );

@@ -193,6 +193,29 @@ describe('agentTurnState', () => {
     });
   });
 
+  it.each([
+    ['waiting_for_user', 'waiting_for_user'],
+    ['blocked', 'blocked'],
+    ['failed', 'failed'],
+    ['refused', 'refused'],
+    ['reconciliation_required', 'reconciliation_required'],
+  ] as const)('uses authoritative %s terminal status instead of legacy complete', (terminalStatus, phase) => {
+    const submitted = reduceAgentTurn(createIdleAgentTurn(), {
+      type: 'submit', turnId: `turn-${terminalStatus}`, at: 10,
+    });
+    const terminal = reduceAgentTurn(submitted, {
+      type: 'done',
+      completionStatus: 'complete',
+      terminalStatus,
+      retryable: false,
+      errorCode: terminalStatus,
+      at: 20,
+    });
+
+    expect(terminal).toMatchObject({ phase, recoverable: false });
+    expect(terminal.phase).not.toBe('completed');
+  });
+
   it('keeps an interrupted turn recoverable and resolves it from server state', () => {
     const submitted = reduceAgentTurn(createIdleAgentTurn(), {
       type: 'submit', turnId: 'turn-resume', at: 10,

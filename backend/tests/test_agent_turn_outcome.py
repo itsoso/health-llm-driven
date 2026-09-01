@@ -5,13 +5,17 @@ def test_success_outcome_is_explicit_when_a_write_receipt_exists():
     result = classify_agent_turn_outcome(
         completion_status="complete",
         final_text="已记录晚餐，并完成今天的营养分析。",
-        write_receipts=[{"operation_id": "health_record:1"}],
+        write_receipts=[{"operation_id": "health_record:1", "verified": True}],
     )
 
     assert result == {
+        "status": "complete",
         "category": "success",
         "reason_code": "verified_write",
         "retryable": False,
+        "dispatch_started": False,
+        "verified_receipt_count": 1,
+        "actions": [],
         "refusal_detected": False,
         "capability_block_count": 0,
         "tool_failure_count": 0,
@@ -83,6 +87,75 @@ def test_confirmation_is_distinct_from_failure():
     assert result["category"] == "confirmation_required"
     assert result["reason_code"] == "health_record"
     assert result["confirmation_required"] is True
+    assert result["retryable"] is False
+    assert result["status"] == "waiting_for_user"
+
+
+def test_outcome_envelope_keeps_block_failure_and_refusal_statuses_distinct():
+    blocked = classify_agent_turn_outcome(
+        completion_status="complete",
+        final_text="本轮没有执行。",
+        capability_block_reasons=["write_tool_without_write_intent"],
+    )
+    failed = classify_agent_turn_outcome(
+        completion_status="complete",
+        final_text="查询失败。",
+        tool_failure_tools=["health_query"],
+    )
+    refused = classify_agent_turn_outcome(
+        completion_status="complete",
+        final_text="抱歉，我只能记录数据，无法提供分析和建议。",
+    )
+
+    assert blocked["status"] == "blocked"
+    assert failed["status"] == "failed"
+    assert refused["status"] == "refused"
+
+
+def test_claimed_multi_action_write_requires_one_verified_receipt_per_action():
+    result = classify_agent_turn_outcome(
+        completion_status="complete",
+        final_text="第一项已记录，第二项状态待核对。",
+        write_receipts=[{"operation_id": "health_record:1", "verified": True}],
+        claimed_write_action_count=2,
+        dispatch_started=True,
+        action_outcomes=[
+            {
+                "action_id": "health_record:1",
+                "status": "verified",
+                "receipt_verified": True,
+                "dispatch_started": True,
+            },
+            {
+                "action_id": "health_record:2",
+                "status": "reconciliation_required",
+                "reason_code": "missing_receipt",
+                "receipt_verified": False,
+                "dispatch_started": True,
+                "recovery_guidance": "请先核对记录状态，不要重复提交。",
+            },
+        ],
+    )
+
+    assert result["status"] == "reconciliation_required"
+    assert result["retryable"] is False
+    assert result["dispatch_started"] is True
+    assert result["verified_receipt_count"] == 1
+    assert [action["status"] for action in result["actions"]] == [
+        "verified",
+        "reconciliation_required",
+    ]
+
+
+def test_failure_after_write_dispatch_is_not_blindly_retryable():
+    result = classify_agent_turn_outcome(
+        completion_status="error",
+        final_text="写入状态暂时无法确认。",
+        tool_failure_tools=["health_record"],
+        dispatch_started=True,
+    )
+
+    assert result["status"] == "reconciliation_required"
     assert result["retryable"] is False
 
 

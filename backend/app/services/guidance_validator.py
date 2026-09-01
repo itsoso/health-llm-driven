@@ -29,8 +29,9 @@ text without recording it. Returns the sanitized string + structured metadata.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Sequence
 
 
 # ── 量化 + 命令式饮食处方 (R4 越界) ────────────────────────────────
@@ -224,6 +225,92 @@ class GuidanceValidationResult:
 
     def to_audit(self) -> dict:
         return {"flagged": self.flagged, "violations": self.violations}
+
+
+_SENSITIVE_MEDICAL_TOPIC = re.compile(
+    r"(?:药|用药|停药|换药|剂量|补剂|保健品|溃疡|胃镜|肠镜|检查|复查|随访)"
+)
+_DOSE_ACTION = re.compile(
+    r"(?:建议|应该|需要|可以|请|每天|每次)[^。；;!?！？\n]{0,24}"
+    r"\d+(?:\.\d+)?\s*(?:mg|μg|ug|IU|单位|毫克|微克|克)"
+)
+_SCHEDULE_CLAIM = re.compile(
+    r"(?:(?:已经|已)?为你|已经|已)(?:成功)?(?:安排|预约|创建|设定|设置)(?:了)?[^。；;!?！？\n]{0,30}"
+)
+
+
+def requires_medical_evidence_boundary(text: str) -> bool:
+    """Whether the turn must be buffered until medical provenance checks finish."""
+    return bool(_SENSITIVE_MEDICAL_TOPIC.search(text or ""))
+
+
+def build_confirmable_health_fact_draft(text: str) -> dict | None:
+    """Recognize narrow natural-language facts without authorizing a write."""
+    raw = unicodedata.normalize("NFKC", text or "").strip()
+    if any(marker in raw for marker in ("?", "？", "怎么", "为什么", "为何", "影响", "分析")):
+        return None
+    facts: list[dict[str, str]] = []
+    caffeine = re.search(
+        r"(?:咖啡因|咖啡)[^。；;!?！？\n]{0,12}?(\d+(?:\.\d+)?)\s*(mg|毫克)", raw, re.I
+    )
+    if caffeine:
+        facts.append({"type": "caffeine_intake", "value": caffeine.group(1), "unit": "mg"})
+    sleep = re.search(
+        r"(?:昨晚|今晚|今天)?\s*(\d{1,2})(?:[:：点时](\d{1,2})?)?\s*(?:左右)?(?:入睡|睡着)", raw
+    )
+    if sleep:
+        hour = int(sleep.group(1))
+        minute = int(sleep.group(2) or 0)
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            facts.append({"type": "sleep_onset", "value": f"{hour:02d}:{minute:02d}", "unit": "local_time"})
+    if not facts:
+        return None
+    return {
+        "status": "draft",
+        "facts": facts,
+        "requires_confirmation": True,
+        "authorized_write": False,
+    }
+
+
+def enforce_medical_evidence_boundaries(
+    text: str,
+    *,
+    evidence_sources: Sequence[str] = (),
+    has_clinician_instruction: bool = False,
+    verified_write_receipt: bool = False,
+) -> GuidanceValidationResult:
+    """Label sensitive medical claims and remove unauthorized action certainty."""
+    if not text or not _SENSITIVE_MEDICAL_TOPIC.search(text):
+        return GuidanceValidationResult(text=text or "")
+    violations: list[str] = []
+    out = text
+    if not has_clinician_instruction:
+        out = _redact(
+            out,
+            _DOSE_ACTION,
+            "[具体药物或补剂剂量需由医生确认]",
+            violations,
+            "unverified_dose_action",
+        )
+    if not verified_write_receipt and not has_clinician_instruction:
+        out = _redact(
+            out,
+            _SCHEDULE_CLAIM,
+            "[尚无验证写入回执]",
+            violations,
+            "unverified_schedule_claim",
+        )
+    labels = ["用户陈述"]
+    if evidence_sources:
+        labels.append("已检索证据")
+    labels.append("模型推断")
+    if has_clinician_instruction:
+        labels.append("医生确认指示")
+    boundary = "信息来源：" + "、".join(labels) + "。"
+    if not out.startswith("信息来源："):
+        out = boundary + "\n" + out
+    return GuidanceValidationResult(out, bool(violations), violations)
 
 
 def _redact(text: str, pattern: re.Pattern, replacement: str, violations: List[str], kind: str) -> str:

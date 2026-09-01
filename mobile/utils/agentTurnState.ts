@@ -4,6 +4,10 @@ export type AgentTurnPhase =
   | 'running'
   | 'writing'
   | 'verifying'
+  | 'waiting_for_user'
+  | 'blocked'
+  | 'refused'
+  | 'reconciliation_required'
   | 'completed'
   | 'failed'
   | 'interrupted';
@@ -48,6 +52,7 @@ export type AgentTurnEvent =
       type: 'done';
       at: number;
       completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
+      terminalStatus?: 'complete' | 'waiting_for_user' | 'blocked' | 'failed' | 'refused' | 'reconciliation_required';
       conversationId?: number;
       messageId?: number;
       retryable?: boolean;
@@ -82,7 +87,13 @@ export function createIdleAgentTurn(): AgentTurnState {
 }
 
 export function isAgentTurnTerminal(state: AgentTurnState): boolean {
-  return state.phase === 'completed' || state.phase === 'failed' || state.phase === 'interrupted';
+  return state.phase === 'completed'
+    || state.phase === 'waiting_for_user'
+    || state.phase === 'blocked'
+    || state.phase === 'failed'
+    || state.phase === 'refused'
+    || state.phase === 'reconciliation_required'
+    || state.phase === 'interrupted';
 }
 
 export function agentTurnPhaseFromStatus(_stage?: string): AgentTurnPhase {
@@ -202,6 +213,21 @@ export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): A
       };
     }
     case 'done':
+      if (event.terminalStatus && event.terminalStatus !== 'complete') {
+        const phase = event.terminalStatus;
+        return {
+          ...state,
+          phase,
+          conversationId: event.conversationId ?? state.conversationId,
+          messageId: event.messageId ?? state.messageId,
+          updatedAt: event.at,
+          label: undefined,
+          errorCode: event.errorCode ?? state.errorCode,
+          recoverable: event.retryable === true,
+          retryMode: event.retryable === true ? event.retryMode : undefined,
+          ...(phase === 'reconciliation_required' ? { writeVerified: false } : {}),
+        };
+      }
       if (event.completionStatus === 'interrupted') {
         return {
           ...state,

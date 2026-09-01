@@ -125,6 +125,34 @@ describe('ChatBubble streaming degraded render', () => {
     expect(mockMarkdownMount).toHaveBeenLastCalledWith(CONTENT);
   });
 
+  it('normalizes malformed assistant content before streaming render and accessibility output', () => {
+    const { getByLabelText } = renderBubble({
+      id: 'assistant-streaming-normalized',
+      role: 'assistant',
+      content: '第一段<br />第二段\n.\n.\n.\n.\n.\n.\n下一步。',
+      streaming: true,
+    });
+
+    expect(mockMarkdownMount).toHaveBeenLastCalledWith('第一段\n第二段\n下一步。');
+    expect(getByLabelText('AI: 第一段\n第二段\n下一步。')).toBeTruthy();
+  });
+
+  it('copies the same normalized assistant text that is rendered', async () => {
+    const { getByLabelText } = renderBubble({
+      id: 'assistant-normalized-copy',
+      role: 'assistant',
+      content: '建议一<br>建议二',
+      streaming: false,
+    });
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('复制回答'));
+      await Promise.resolve();
+    });
+
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith('建议一\n建议二');
+  });
+
   it('reveals message time only after tapping user and assistant bubbles', () => {
     const user = render(
       <QueryClientProvider client={new QueryClient()}>
@@ -723,9 +751,8 @@ describe('ChatBubble streaming degraded render', () => {
     expect(queryByText(/SECRET health payload/)).toBeNull();
   });
 
-  // 流式期间跳过 sanitizeAiContent + extractRevaUiBlocks 两条重正则 (perf fix).
-  // 判别用: [附图: …] 会被 sanitize 剥掉; ```reva-ui``` fence 会被 extract 抽成卡片.
-  // 流式中两者都应"未处理" → 原文逐字显示, 无 reva-ui 卡片视图.
+  // 流式期间正文仍走统一清洗管线,但卡片等到权威 done 后再挂载,
+  // 避免一个尚未稳定的协议块产生交互表面。
   const CONTENT_WITH_MARKERS = [
     '这是回复[附图: lab.jpg]正文。',
     '',
@@ -734,7 +761,7 @@ describe('ChatBubble streaming degraded render', () => {
     '```',
   ].join('\n');
 
-  it('skips sanitize/extract while streaming but still renders Markdown', () => {
+  it('normalizes streaming content but waits for done before rendering cards', () => {
     const { queryByTestId, getByTestId } = renderBubble({
       id: 'assistant-streaming-markers',
       role: 'assistant',
@@ -742,11 +769,9 @@ describe('ChatBubble streaming degraded render', () => {
       streaming: true,
     });
 
-    // 未跑 extract → 不生成 reva-ui 卡片视图.
     expect(queryByTestId('assistant-reva-ui-cards')).toBeNull();
-    // 流式期仍暂不抽卡,但正文必须走 Markdown renderer.
     expect(getByTestId('rich-markdown')).toBeTruthy();
-    expect(mockMarkdownMount).toHaveBeenCalled();
+    expect(mockMarkdownMount).toHaveBeenLastCalledWith('这是回复正文。');
   });
 
   it('runs sanitize/extract once streaming finishes (剥附图 + 抽 reva-ui 卡片)', () => {

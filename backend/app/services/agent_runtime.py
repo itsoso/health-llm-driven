@@ -123,6 +123,8 @@ _KNOWN_ERROR_CODES = frozenset(
         "runtime_control_unavailable",
         "aigc_media_turn_disallows_health_write",
         "ambiguous_intent_requires_clarification",
+        "input_too_short",
+        "clarification_required",
         "delete_requires_explicit_whole_record_intent",
         "manage_operation_mismatch",
         "manage_write_without_mutate_intent",
@@ -322,6 +324,15 @@ def runtime_outcome_from_done(
     turn_outcome = done_data.get("turn_outcome")
     outcome = turn_outcome if isinstance(turn_outcome, dict) else {}
     reason_code = str(outcome.get("reason_code") or "").strip() or None
+    terminal_status = str(outcome.get("status") or "").strip()
+    if terminal_status == "waiting_for_user":
+        return "waiting_for_user", reason_code or "clarification_required", False
+    if terminal_status == "reconciliation_required":
+        return "reconciliation_required", reason_code or "missing_receipt", False
+    if terminal_status in {"blocked", "failed", "refused"}:
+        return "failed", reason_code or "completion_error", bool(outcome.get("retryable"))
+    if terminal_status == "complete":
+        return "succeeded", None, False
     if outcome.get("category") == "confirmation_required" or outcome.get(
         "confirmation_required"
     ) is True:

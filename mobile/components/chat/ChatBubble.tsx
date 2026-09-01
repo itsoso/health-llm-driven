@@ -44,7 +44,7 @@ import { buildChatImageSource } from '../../utils/chatImageSource';
 import { saveChatImageToLibrary } from '../../services/chatImageSave';
 import { containsMarkdownTable, preprocessMarkdownTables } from '../../utils/markdownTables';
 import { prepareSafeMarkdown, safeMarkdownIt } from '../../utils/safeMarkdown';
-import { extractRevaUiBlocks } from '../../utils/revaUiBlocks';
+import { normalizeAssistantContent } from '../../utils/assistantContentNormalizer';
 import { DietShareComposer } from '../diet/DietShareComposer';
 import {
   buildChatDietShareInput,
@@ -131,19 +131,17 @@ function ChatBubbleInner({
   const speechHandleRef = useRef<SpeakHandle | null>(null);
   const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const timeRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // 流式期间跳过 sanitizeAiContent + extractRevaUiBlocks 这两条 O(n) 正则:
-  // 每个 token 批次都对全量累积文本重跑一遍 → 整轮回复退化为 O(n²), 长回复打满
-  // JS 线程。正文仍走 Markdown 渲染, 但 reva-ui 块本就只在 done 后可用。
-  // 流式中用原始 item.content 作为正文源, 终态 (item.streaming 转 false) 才跑全量处理。
   const streamingBubble = !isUser && !!item.streaming;
-  const displayText = useMemo(
-    () => (streamingBubble ? item.content : sanitizeAiContent(item.content)),
-    [streamingBubble, item.content],
+  const normalizedAssistantContent = useMemo(
+    () => (!isUser
+      ? normalizeAssistantContent(item.content)
+      : { text: item.content, cards: [], qualityFlags: [] }),
+    [isUser, item.content],
   );
-  const revaUiContent = useMemo(
-    () => (!isUser && !streamingBubble ? extractRevaUiBlocks(displayText) : { text: displayText, cards: [] }),
-    [displayText, isUser, streamingBubble],
-  );
+  const displayText = normalizedAssistantContent.text;
+  const revaUiContent = streamingBubble
+    ? { ...normalizedAssistantContent, cards: [] }
+    : normalizedAssistantContent;
   const hasInlineEditableCard = useMemo(
     () => revaUiContent.cards.some(card => INLINE_EDITABLE_CARD_TYPES.has(card.type)),
     [revaUiContent.cards],
@@ -680,7 +678,7 @@ function ChatBubbleInner({
       return;
     }
     try {
-      await Clipboard.setStringAsync(item.content);
+      await Clipboard.setStringAsync(isUser ? item.content : assistantTextForActions);
       setCopied(true);
       if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current);
       copyResetTimerRef.current = setTimeout(() => {
@@ -691,7 +689,7 @@ function ChatBubbleInner({
     } catch {
       toast.show('复制失败，请重试', 'error');
     }
-  }, [item.content, messageExportActionsEnabled, toast]);
+  }, [assistantTextForActions, isUser, item.content, messageExportActionsEnabled, toast]);
 
   if (item.cardType && item.cardData) {
     const rendered = renderCard(
@@ -1569,18 +1567,6 @@ function getCardActionSuccessType(
  * - 去掉孤零的 ❌ 行 (error payload 为空时残留)
  * - trim
  */
-function sanitizeAiContent(raw: string): string {
-  let s = raw.replace(/\n?\[附图: [^\]]+\]/g, '');
-  // 残缺表格: "| a | b |\n|---|---|" 后面没有数据行 (下一行不以 | 开头或到末尾)
-  s = s.replace(/(^|\n)\|[^\n]*\|\n\|[\s|:\-]+\|(?=\n(?!\s*\|)|\n?$)/g, '');
-  // 孤零 ❌ 行: "\n❌" 或 "\n❌ " 行尾, 无实际错误信息
-  s = s.replace(/\n+❌\s*(?=\n|$)/g, '');
-  // LLM 主动输出的 fenced ```menu_share/```card_xxx JSON 块 — 后端会解析成结构化卡片,
-  // 文本里要剥掉, 不然用户看到一坨 JSON 源码
-  s = s.replace(/```(?:menu_share|card_[a-z_]+)\s*\n[\s\S]*?\n```\s*/g, '');
-  return s.trim();
-}
-
 /** 把 markdown 文本剥成"能给 TTS 念"的纯文本 — 去标题/粗斜/列表标记/链接/表格管道. */
 function stripMarkdownForSpeech(s: string): string {
   return s

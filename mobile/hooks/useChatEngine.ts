@@ -123,6 +123,15 @@ export function buildTurnRequestFingerprint(
   }));
 }
 
+const WRITE_SHAPED_TURN_RE = /(?:记录|保存|写入|补录|修改|更新|删除|移除|撤销|完成|打卡|添加|创建|设置|设定|提醒|同步|执行|服用|吃了|喝了)|\b(?:record|save|log|add|update|delete|remove|complete|remind|sync|take|took|ate|drank|schedule|cancel)\b/i;
+const READ_SHAPED_TURN_RE = /(?:分析|解读|查询|查看|多少|怎么样|如何|能否|是否|建议|趋势|为什么|什么|吗|？|\?)|\b(?:analy[sz]e|query|show|check|review|explain|how|what|why|can|could|should|trend)\b/i;
+
+export function isSemanticReadDedupeCandidate(text: string, hasImages: boolean): boolean {
+  const normalized = text.trim();
+  if (!normalized || WRITE_SHAPED_TURN_RE.test(normalized)) return false;
+  return hasImages || READ_SHAPED_TURN_RE.test(normalized);
+}
+
 function optimisticImageUri(image: { uri: string; base64?: string; type?: string }): string {
   const content = image.base64?.trim();
   if (!content) return image.uri;
@@ -1277,6 +1286,27 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     const requestFingerprint = buildTurnRequestFingerprint(finalMsg, pendingImages);
     const forceNewConversation = !!sendOpts?.forceNewConversation;
     const previousTurn = activeTurnRef.current;
+    const semanticDedupeCandidate = (
+      !forceNewConversation
+      && isSemanticReadDedupeCandidate(finalMsg, !!hasImages)
+    );
+    const duplicatesActiveTurn = (
+      semanticDedupeCandidate
+      && !isAgentTurnTerminal(previousTurn)
+      && previousTurn.requestFingerprint === requestFingerprint
+    );
+    const duplicatesQueuedTurn = semanticDedupeCandidate && queuedTurnsRef.current.some(
+      queued => buildTurnRequestFingerprint(queued.text, queued.pendingImages) === requestFingerprint,
+    );
+    if (duplicatesActiveTurn || duplicatesQueuedTurn) {
+      settleAcceptance(true);
+      void emitClientEvent('agent_turn_dedupe_hit', {
+        surface: 'mobile',
+        scope: duplicatesActiveTurn ? 'active' : 'queued',
+        has_image: !!hasImages,
+      }).catch(() => undefined);
+      return true;
+    }
     const isIndependentQueuedSubmission = (
       (isStreamingRef.current || queuedTurnsRef.current.length > 0)
       && !sendOpts?.__precreatedLocalMessages
@@ -2008,6 +2038,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             type: 'done',
             at: Date.now(),
             completionStatus: effectiveCompletionStatus,
+            terminalStatus: evt.terminalStatus,
             conversationId: evt.conversationId,
             messageId: evt.messageId,
             retryable: evt.terminalRetryable === true || (
@@ -2034,10 +2065,17 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             emitAgentTerminal('interrupted', terminalTurn.errorCode || 'server_completion_interrupted');
           } else if (terminalTurn.phase === 'completed') {
             emitAgentTerminal('completed');
+          } else if (terminalTurn.phase === 'waiting_for_user') {
+            emitAgentTerminal('completed', terminalTurn.errorCode || 'waiting_for_user');
+          } else {
+            emitAgentTerminal('failed', terminalTurn.errorCode || terminalTurn.phase);
           }
           const allowDoneCards = (
             evt.requestPersisted !== false
-            && terminalTurn.phase === 'completed'
+            && (
+              terminalTurn.phase === 'completed'
+              || terminalTurn.phase === 'waiting_for_user'
+            )
             && typeof evt.messageId === 'number'
           );
           const rawDoneCards = (

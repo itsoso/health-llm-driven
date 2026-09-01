@@ -956,6 +956,13 @@ export default function ChatScreen() {
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
     : '系统默认';
   const activeTurnVisible = activeTurn.phase !== 'idle' && activeTurn.phase !== 'completed';
+  const activeTurnHasErrorTone = (
+    activeTurn.phase === 'failed'
+    || activeTurn.phase === 'interrupted'
+    || activeTurn.phase === 'blocked'
+    || activeTurn.phase === 'refused'
+    || activeTurn.phase === 'reconciliation_required'
+  );
   const currentTurnUserMessage = [...messages].reverse().find(message => (
     message.role === 'user'
     && (!activeTurn.turnId || message.sourceTurnId === activeTurn.turnId)
@@ -969,11 +976,13 @@ export default function ChatScreen() {
   const turnStatus = activeTurnVisible
     ? {
         label: activeTurn.label || (
-          activeTurn.phase === 'failed' || activeTurn.phase === 'interrupted'
+          activeTurnHasErrorTone
             ? '上一轮未完成，内容已保留'
-            : '小巴正在处理…'
+            : activeTurn.phase === 'waiting_for_user'
+              ? '等待你确认或补充信息'
+              : '小巴正在处理…'
         ),
-        tone: activeTurn.phase === 'failed' || activeTurn.phase === 'interrupted'
+        tone: activeTurnHasErrorTone
           ? 'error' as const
           : 'active' as const,
         retryable: !!(

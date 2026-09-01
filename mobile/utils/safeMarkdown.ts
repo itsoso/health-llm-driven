@@ -5,8 +5,9 @@
 // transitive package being hoisted into the application.
 // @ts-ignore the runtime package does not bundle TypeScript declarations.
 import MarkdownIt from '@rexovolt/markdown-it';
+import { MAX_ASSISTANT_DISPLAY_LENGTH } from './assistantContentNormalizer';
 
-export const MAX_MARKDOWN_INPUT_LENGTH = 50_000;
+export const MAX_MARKDOWN_INPUT_LENGTH = MAX_ASSISTANT_DISPLAY_LENGTH;
 
 export const safeMarkdownIt = MarkdownIt('default', {
   typographer: false,
