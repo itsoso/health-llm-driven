@@ -4,13 +4,15 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | Build 256 已于 App Review 因 Guideline 1.4.1 医学信息缺少易发现引用而被拒；引用修复 G3/G4 已通过，正在准备 Build 257+，重新提交前继续冻结 production OTA |
+| 当前阶段 | 标准 production Build 261 已完成 EAS 构建、ASC 上传、Apple processing、TestFlight 内测分发与精确 IPA 二进制核验；等待精确候选真机引用外链/截图验收和 ASC 元数据更新，重新提交前继续冻结 production OTA |
 | 状态 | ready_for_release_candidate |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
 
 ## Correct Course
 
+- [x] Correction Block（2026-09-01）：修复账号登录把本地安全存储异常误报为“网络暂时不可用”的问题，并补齐真实 Axios 网络错误、取消、伪造 Axios/HTTP 对象与未知本地详情脱敏测试。精确 `main` `21576b80ec4c968ada4ea005e8bfde633bc24f27` 的 GitHub CI run `33510985890` 全绿，独立 safety review 为 GO。标准 `production` Build 261（EAS `dd6a2c0f-b167-47b9-a796-61ce8ec0c335`，Submit `4761bfae-3f4c-457a-9415-5f8847e0c23d`）已构建并成功上传 ASC，Apple processing 完成；TestFlight 详情 `1.3.3 (261)` 已加入 `Team (Expo)`（4 人）与“内部测试”（1 人）两个内部群组，状态“准备提交”。精确 IPA SHA-256 `597a601f8e54b834ef6d31f8022df99b8d8d21cf6462023dd86ed660c1398fc1`，版本 1.3.3（261）、`CFBundleDisplayName=小巴健康`、Xcode 26.2 / iOS 26.2 SDK、MinimumOSVersion 16.0、strict codesign、production APNs / HealthKit / Universal Link 与根 PrivacyInfo 均 PASS；iPhone-only，未带扩展或后台模式。
+- [x] Correction Block（2026-09-01）：用户要求安装名、助手回复名与 App Store 名称统一为“小巴健康”。标准 `production` Build 260（EAS `12726ec9-3e37-4a76-aad6-f1ac1a5cbff5`，Submit `250b8d79-3d64-45c1-9f47-d59df7dd128c`）已从精确 `main` `3e3d1f9d4e1ccd4433f75735c420dbc98ab0a850` 完成并进入 ASC `VALID / IN_BETA_TESTING`。精确 IPA SHA-256 `b98eb85c33db3b504fec41dc3bf25b3fb218c2f325f91c63d2789019edf68d48`，版本 1.3.3（260）、`CFBundleDisplayName=小巴健康`、Xcode 26.2 / iOS 26.2 SDK、MinimumOSVersion 16.0、strict codesign、production APNs / HealthKit / Universal Link 与根 PrivacyInfo 均 PASS；未带 Rokid、Watch、Siri 或后台定位。ASC App Privacy 已发布、受监管医疗设备声明为 No、年龄分级已保存。Build 260 已由 Build 261 取代，重新提交仍 BLOCK 于精确物理 iPhone BMI 引用外链、准确截图、商店名称/审核备注/候选 Build 更新和提交前用户确认。
 - [x] Correction Block（2026-08-29）：医学引用修复 G3/G4 已通过。Backend 相关 293 tests、Mobile 5 suites / 48 tests、TypeScript、lint、System Map、release pack、iOS submission preflight、Python compile 和 diff hygiene 均 PASS；11 个目录来源在线探针均 HTTP 200。下一阻断仅为新提交、Backend 部署、Build 257+ 精确 IPA/TestFlight/真机外链和 ASC 重新提交；这些证据不得由 Build 256 或 OTA 替代。
 - [x] Correction Block（2026-08-29）：Apple 对 1.3.3 (256) 的审核明确以 Guideline 1.4.1 拒绝，截图复现“帮我算我的BMI”显示公式、22.9 和正常范围但无来源。新增独立 Dossier `docs/dossiers/2026-08-29-app-review-medical-citations.md`：服务端以受控主题目录生成引用，complete 终态统一补全并落库；Mobile 在正文下方默认展示可点击 HTTPS 来源和就医边界。Build 256 不再作为候选，必须用 Build 257+ 完成精确包、真机引用外链和重新提交 Gate。
 

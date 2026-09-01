@@ -7,7 +7,7 @@
 | 当前阶段 | G6 精确候选真机验收 |
 | 状态 | awaiting_physical_device_acceptance |
 | 负责 | product / backend / mobile release |
-| 关联提交 | 拒审 Submission `85f3224c-3688-4aae-9da1-c7e91f4facaa` / 候选 Version 1.3.3 (257) |
+| 关联提交 | 拒审 Submission `85f3224c-3688-4aae-9da1-c7e91f4facaa` / 当前候选 Version 1.3.3 (261) |
 
 ## S0 · 用户需求
 
@@ -81,11 +81,14 @@
 - EAS production Store Build：`9d51b003-c5a5-4afe-8868-79efcefb7c72`，1.3.3 (257)，source、runtime、bundle id 与 production channel 对齐，状态 FINISHED。
 - EAS Submit：`431726be-0f23-4ce1-835c-f8ec41f5292a`，状态 FINISHED；App Store Connect processing state `VALID`，TestFlight internal state `IN_BETA_TESTING`。
 - 精确 IPA：SHA-256 `5d867fc34ca208e6305c57023c19b4ec15f34577d6a180dfa75b4e6852e3d7e0`；`CFBundleIdentifier=life.executor.health`、`CFBundleShortVersionString=1.3.3`、`CFBundleVersion=257`、`DTXcode=2620`、`DTPlatformVersion=26.2`；strict codesign 通过，production APNs / HealthKit entitlement 与根 PrivacyInfo.xcprivacy 存在。
+- 当前标准 production 候选已升级为 Build 260：EAS `12726ec9-3e37-4a76-aad6-f1ac1a5cbff5`、Submit `250b8d79-3d64-45c1-9f47-d59df7dd128c`、source `3e3d1f9d4e1ccd4433f75735c420dbc98ab0a850`，ASC `VALID / IN_BETA_TESTING`。精确 IPA SHA-256 `b98eb85c33db3b504fec41dc3bf25b3fb218c2f325f91c63d2789019edf68d48`；版本 1.3.3（260）、`CFBundleDisplayName=小巴健康`、`DTXcode=2620`、`DTPlatformVersion=26.2`、MinimumOSVersion 16.0、strict codesign、production APNs / HealthKit / Universal Link 与根 PrivacyInfo.xcprivacy 均通过，且未包含 Rokid、Watch、Siri 或后台定位能力。
+- 当前标准 production 候选已升级为 Build 261：EAS `dd6a2c0f-b167-47b9-a796-61ce8ec0c335`、Submit `4761bfae-3f4c-457a-9415-5f8847e0c23d`、source `21576b80ec4c968ada4ea005e8bfde633bc24f27`；Apple processing 已完成，TestFlight `1.3.3 (261)` 状态“准备提交”，已加入 `Team (Expo)` 与“内部测试”两个内部群组。精确 IPA SHA-256 `597a601f8e54b834ef6d31f8022df99b8d8d21cf6462023dd86ed660c1398fc1`；版本 1.3.3（261）、`CFBundleDisplayName=小巴健康`、`DTXcode=2620`、`DTPlatformVersion=26.2`、MinimumOSVersion 16.0、strict codesign、production APNs / HealthKit / Universal Link 与根 PrivacyInfo.xcprivacy 均通过，iPhone-only 且未包含扩展或后台模式。
 - **裁决：PASS**。
 
 ## G6 · 上线验证
 
-- pending。精确 Build 257 必须真机输入“帮我算我的BMI”，看到默认展开来源并能打开 NHC/CDC 官方链接。
+- pending。精确 Build 261 必须真机输入“帮我算我的BMI”，看到默认展开来源并能打开 NHC/CDC 官方链接。
+- 2026-09-01 从精确 source `3e3d1f9d4e1ccd4433f75735c420dbc98ab0a850` 以 Release / iOS Simulator 26.5 无签名构建 1.3.3 (260) 成功并安装；`CFBundleDisplayName=小巴健康`，启动登录页品牌显示“小巴健康”。模拟器没有审核账号会话，因此未生成聊天/医学引用商店截图；此证据只验证 Release UI 与品牌，不替代物理 iPhone G6。
 - 2026-08-29 检查到登记 iPhone `suntice` 当前 offline；未用模拟器或旧 Build 代替精确二进制证据。
 - 在这项验收通过、外部证据文件补齐且 final-submit gate 通过前，不回复 Apple、不重新提交审核。
 

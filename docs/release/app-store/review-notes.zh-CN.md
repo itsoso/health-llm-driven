@@ -14,11 +14,11 @@ If the reviewer cannot sign in, please contact support@executor.life.
 
 ## What To Test
 
-1. Choose `账号密码登录` and sign in with the demo account. The app opens directly into 小巴.
+1. Choose `账号密码登录` and sign in with the demo account. The app opens directly into 小巴健康.
 2. When the demo account has a qualified pending action, risk or processing state, a compact context strip appears at the top. Tap it to open 今日计划, use 返回小巴 to return, or close the strip. It is intentionally not repeated after every response.
-3. Ask 小巴: `帮我算我的BMI`. The answer shows an always-visible `参考来源` panel directly below the medical information.
+3. Ask 小巴健康: `帮我算我的BMI`. The answer shows an always-visible `参考来源` panel directly below the medical information.
 4. Tap `中国成人体重判定标准（WS/T 428—2013）` or `成人 BMI 计算方法与分类`. The app opens the official HTTPS source from 国家卫生健康委员会 (`https://www.nhc.gov.cn/`) or CDC (`https://www.cdc.gov/bmi/`). The same panel states `健康信息用于辅助管理，不替代诊断；做医疗决定前请咨询医生。`
-5. Ask 小巴: `今天应该先做什么健康行动？`
+5. Ask 小巴健康: `今天应该先做什么健康行动？`
 6. Tap the `+` button beside the input bar to photograph or select a meal image. The recognized result remains editable until it is saved.
 7. Open the top-right more menu, then enter 个人中心 to manage data sources, health records, notifications and privacy.
 
@@ -36,7 +36,7 @@ The standard iPhone release does not include an Apple Watch companion app, Rokid
 
 The app provides health records, trend explanation, lifestyle suggestions and action drafts. Medical calculations, ranges and health guidance show easy-to-find, clickable references from authoritative sources directly below the answer. It does not provide diagnosis, emergency triage, prescriptions, treatment plans or medication dosage changes. Users are directed to qualified clinicians for medical decisions and emergency services for urgent symptoms.
 
-App Store Connect declaration: No. 小巴 is not a regulated medical device and does not claim to replace one or to diagnose, prevent or treat disease.
+App Store Connect declaration: No. 小巴健康 is not a regulated medical device and does not claim to replace one or to diagnose, prevent or treat disease.
 
 ## Account Deletion
 
@@ -48,6 +48,6 @@ The request receives a unique deletion request number and a queryable status. Th
 
 ## Notes For Review
 
-- The demo account contains sample health records, so 小巴 and 今日计划 show non-empty content without HealthKit authorization on the review device. The compact context strip appears only when the current data produces a qualified action, risk or processing state.
+- The demo account contains sample health records, so 小巴健康 and 今日计划 show non-empty content without HealthKit authorization on the review device. The compact context strip appears only when the current data produces a qualified action, risk or processing state.
 - Optional permissions are not required for the reviewer to use text conversation.
 - The submitted binary is iPhone-only, portrait-only and supports iOS 16 or later.
