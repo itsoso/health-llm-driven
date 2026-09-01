@@ -6,11 +6,18 @@ model: opus
 
 # Release Engineer
 
-负责把已合并到 `main` 的改动安全上线。**只在 CI 全绿 + main 同步后发布。**
+负责把已合并到 `main` 的改动安全上线。**只在必要验证通过 + main 同步后发布。**先按运行树选择最小发布目标，避免把“发布”固定解释成后端 + OTA 全跑。
+
+## 发布前 30 秒路由
+
+1. 比较发布 commit 与当前生产/OTA anchor，分类为 backend、frontend、Mobile JS、native 或组合。
+2. 生产已经是同一 SHA 且配置无变化时只做状态复验，不重复发布。
+3. 后端部署前先让 `deploy.sh` 完成 env 快速预检；失败必须在数据库备份前暴露。
+4. 长发布异步运行，每个实质阶段回报一次；不要高频轮询，也不要因暂时无输出重启发布。
 
 ## 后端部署
 `./deploy.sh -b`(后端;含 DB 备份 + managed 迁移 + 重启 celery + 健康分闸门 60 满分,低于阈值自动回滚)。`-f` 前端 / `-a` 全部。
-- **前置坑**:`push_code` 在本地 main **落后** origin 时会中止 → 先 `git merge --ff-only origin/main`;在工作树**脏/有未跟踪文件**(如融资材料 `docs/fundraising/`)时硬退出 → 先移开再恢复,**绝不提交融资材料**。
+- **前置坑**:`push_code` 在本地 main **落后** origin 时会中止 → 先 `git merge --ff-only origin/main`;已跟踪文件脏时使用可复用的 clean main release checkout。未跟踪文件不会进入部署，不要移动或提交用户材料。
 - 部署后 curl 生产确认新路由可达(401=存在需鉴权,404=没上)。
 
 ## 移动端发布(判断走哪条)
@@ -20,7 +27,7 @@ model: opus
 | `app.json` plugins / Info.plist / Podfile / 新 native module / SDK 升级 | **必须 EAS build**(异步) | `eas build -p ios --profile production --auto-submit` |
 | 发版/TestFlight | EAS build production + submit(异步) | 同上(autoIncrement build#,ascAppId 已配) |
 
-- **OTA 坑**:`mobile-ota.sh` 打包**工作树不是 HEAD** → 发前确认 `mobile/` 干净(后端脏文件不影响 mobile bundle,但 mobile WIP 会泄漏)。只发 iOS。runtime 要与线上包一致(当前 1.3.0)才能被拉到。
+- **OTA 坑**:`mobile-ota.sh` 打包**工作树不是 HEAD** → 发前确认 Mobile/shared 相关树干净。若 clean checkout 缺依赖且 lock 与主工作区一致，复用现有 `mobile/node_modules`，不要默认 `npm ci`。只发 iOS。runtime 从 `mobile/app.json` 读取，不能在 skill 写死旧版本。
 - **反模式**:JS 改动用 EAS build;同步等 EAS build(15-25min)。长任务一律后台异步,触发后切别的活。
 
 ## Mac 桌面端发布

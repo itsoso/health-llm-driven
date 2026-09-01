@@ -971,6 +971,74 @@ def test_backend_proves_rollback_schema_before_live_env_mutation():
     assert backup < rollback_point < rollback_probe < sync_env
 
 
+def test_backend_validates_env_before_expensive_backup_and_reuses_the_result():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    deploy_start = script.index("deploy_backend() {")
+    deploy_end = script.index("render_backend_env_file() {", deploy_start)
+    deploy_body = script[deploy_start:deploy_end]
+    sync_start = script.index("sync_env() {")
+    sync_end = script.index("# 去激活事务", sync_start)
+    sync_body = script[sync_start:sync_end]
+    preflight_start = script.index("validate_deploy_env_preflight() {")
+    preflight_end = script.index("# 同步环境变量", preflight_start)
+    preflight_body = script[preflight_start:preflight_end]
+
+    env_preflight = deploy_body.index("validate_deploy_env_preflight")
+    backup = deploy_body.index("backup_database")
+
+    assert env_preflight < backup
+    assert "ENV_SYNC_SAFETY_VALIDATED_SHA" in preflight_body
+    assert "validate_deploy_env_preflight" in sync_body
+
+
+def test_deploy_env_preflight_reuses_only_the_same_file_digest(tmp_path: Path):
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "APP_ENV=production\n"
+        "DEBUG=False\n"
+        "HEALTH_RUNTIME_DATA_DIR=/var/lib/health-app/runtime\n"
+        "HEALTH_UPLOAD_DIR=/var/lib/health-app/uploads\n"
+        "HEALTH_SKILLS_CACHE_DIR=/var/cache/health-app/skills-hub\n"
+        "DEDAO_KBASE_REVIEW_ARTIFACT_DIR=/var/lib/health-app/dedao-kbase/workspace\n"
+        "LEGACY_KNOWLEDGE_RUNTIME_ENABLED=false\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n"
+        "LANGBRIDGE_GATEWAY_BASE_URL=https://example.test/api/llm\n"
+        "LANGBRIDGE_GATEWAY_API_KEY=test-only\n",
+        encoding="utf-8",
+    )
+    scp_count = tmp_path / "scp-count"
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+scp() {{
+    count=0
+    test ! -f "$SCP_COUNT" || count=$(cat "$SCP_COUNT")
+    printf '%s\n' $((count + 1)) > "$SCP_COUNT"
+    cp "$DEPLOY_ENV_FILE" "${{@:$#}}"
+}}
+validate_deploy_env_preflight
+validate_deploy_env_preflight
+test "$(cat "$SCP_COUNT")" = 1
+printf '# digest changes\n' >> "$DEPLOY_ENV_FILE"
+validate_deploy_env_preflight
+test "$(cat "$SCP_COUNT")" = 2
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "DEPLOY_ENV_FILE": str(env_file),
+            "SCP_COUNT": str(scp_count),
+        },
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+
+
 def test_backend_runs_bundle_and_runtime_preflight_before_live_mutation():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
     deploy_start = script.index("deploy_backend() {")

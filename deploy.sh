@@ -51,6 +51,7 @@ REMOTE_HEALTH_EVIDENCE_CGROUP_ROOT="${REMOTE_HEALTH_EVIDENCE_CGROUP_ROOT:-/sys/f
 REMOTE_HEALTH_EVIDENCE_PROC_ROOT="${REMOTE_HEALTH_EVIDENCE_PROC_ROOT:-/proc}"
 REMOTE_RUNTIME_STATE_RUNNER="$REMOTE_BACKUP_PREFLIGHT_DIR/runtime_state_release_transaction.py"
 DEPLOY_EXPECTED_SHA=""
+ENV_SYNC_SAFETY_VALIDATED_SHA=""
 ROLLBACK_CANDIDATE_COMMIT=""
 ROLLBACK_COMMIT=""
 RUNTIME_STATE_RESUME_PHASE="NONE"
@@ -101,31 +102,6 @@ if [[ ! "$SERVER" =~ ^[A-Za-z0-9._@:-]+$ ||
       "$REMOTE_PATH" = *"/." ]]; then
     echo -e "${RED}✗${NC} 错误: DEPLOY_SERVER/DEPLOY_PATH 格式不安全"
     exit 1
-fi
-
-# Preflight: 如果代码里启用了 LangBridge 商用模型 entry, .env-online 必须含
-# 非空的 gateway base + key, 否则生产 backend 会从可用模型列表里把它们隐藏掉
-# (LLM_VISION 选项一夜消失就是这么造成的, 2026-05-22)
-#
-# 触发条件: model_registry.py 含 provider="langbridge-proxy" entry.
-# 解除方式 (任选其一):
-#   1. 在 .env-online 里补 LANGBRIDGE_GATEWAY_BASE_URL + LANGBRIDGE_GATEWAY_API_KEY
-#   2. 从 model_registry.py 移除商用 entry, 不发布给用户
-REGISTRY_FILE="$SCRIPT_DIR/backend/app/services/llm/model_registry.py"
-if [[ -f "$REGISTRY_FILE" ]] && grep -q "langbridge-proxy" "$REGISTRY_FILE"; then
-    LB_BASE=$(grep -E "^LANGBRIDGE_GATEWAY_BASE_URL=.+" "$ENV_ONLINE_FILE" | head -1)
-    LB_KEY=$(grep -E "^LANGBRIDGE_GATEWAY_API_KEY=.+" "$ENV_ONLINE_FILE" | head -1)
-    if [[ -z "$LB_BASE" || -z "$LB_KEY" ]]; then
-        echo -e "${RED}✗${NC} preflight 失败: model_registry.py 启用了 langbridge-proxy 商用模型,"
-        echo -e "${RED} ${NC} 但 .env-online 缺 LANGBRIDGE_GATEWAY_BASE_URL 或 LANGBRIDGE_GATEWAY_API_KEY。"
-        echo -e "${RED} ${NC} 如果继续部署, 生产 backend 会从可用模型列表里隐藏 claude-opus-4.7 /"
-        echo -e "${RED} ${NC} gpt-5.5 / gemini-3.1-pro, mobile / web 选不到。"
-        echo -e "${YELLOW} ${NC} 修复: 把这两行补到 .env-online:"
-        echo "      LANGBRIDGE_GATEWAY_BASE_URL=https://base.executor.life/api/llm"
-        echo "      LANGBRIDGE_GATEWAY_API_KEY=<browser-llm-orchestrator 的 LLM_GATEWAY_TOKEN>"
-        echo -e "${YELLOW} ${NC} 或: 从 model_registry.py 移除 provider=\"langbridge-proxy\" 的 entry。"
-        exit 1
-    fi
 fi
 
 # 打印带颜色的消息
@@ -1841,11 +1817,34 @@ validate_env_sync_safety() {
     fi
 }
 
+validate_deploy_env_preflight() {
+    local env_sha
+
+    if [[ ! -r "$ENV_FILE" ]]; then
+        print_error "待同步 env 文件不可读"
+        return 1
+    fi
+    env_sha="$(shasum -a 256 "$ENV_FILE" | awk 'NR==1 {print $1}')"
+    if ! [[ "$env_sha" =~ ^[0-9a-f]{64}$ ]]; then
+        print_error "无法计算待同步 env 文件摘要"
+        return 1
+    fi
+    if [[ "$ENV_SYNC_SAFETY_VALIDATED_SHA" == "$env_sha" ]]; then
+        return 0
+    fi
+    print_step "部署前快速校验生产 env..."
+    if ! validate_env_sync_safety || ! validate_langbridge_env; then
+        return 1
+    fi
+    ENV_SYNC_SAFETY_VALIDATED_SHA="$env_sha"
+    print_success "生产 env 预检通过"
+}
+
 # 同步环境变量到服务器
 sync_env() {
     print_step "同步 .env 到服务器..."
 
-    if ! validate_env_sync_safety || ! validate_langbridge_env; then
+    if ! validate_deploy_env_preflight; then
         return 1
     fi
     if ! backup_remote_env; then
@@ -2957,6 +2956,10 @@ deploy_backend() {
     # runtime-only 医疗知识必须先让 hold-aware 代码成为健康回滚地板，
     # 且首阶段禁止生成新 evidence answer。
     validate_runtime_only_kb_staging
+
+    # 环境错误必须在数据库备份、恢复演练和站外归档之前失败。相同文件的
+    # 摘要由后续上传阶段复用；文件若在预检后改变，则会自动重新校验。
+    validate_deploy_env_preflight
 
     # 1. 备份数据库 + 记录发布前回滚点
     backup_database
