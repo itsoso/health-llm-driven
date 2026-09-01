@@ -162,6 +162,34 @@ def test_build_pytest_command_keeps_the_shard_in_one_process():
     ]
 
 
+def test_instrument_pytest_args_adds_durations_and_optional_junit_output():
+    from scripts.run_ci_pytest_shard import instrument_pytest_args
+
+    args = instrument_pytest_args(
+        ["-q", "--no-cov"],
+        junit_path="test-results/agent-a-d.xml",
+    )
+
+    assert args == [
+        "-q",
+        "--no-cov",
+        "--durations=50",
+        "--durations-min=0.01",
+        "--junitxml=test-results/agent-a-d.xml",
+    ]
+
+
+def test_instrument_pytest_args_preserves_explicit_timing_options():
+    from scripts.run_ci_pytest_shard import instrument_pytest_args
+
+    args = instrument_pytest_args(
+        ["--durations", "10", "--durations-min=1"],
+        junit_path=None,
+    )
+
+    assert args == ["--durations", "10", "--durations-min=1"]
+
+
 def test_run_shard_retries_timeout_in_a_fresh_process():
     from scripts.run_ci_pytest_shard import run_shard
 

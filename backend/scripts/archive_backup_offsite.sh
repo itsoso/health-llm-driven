@@ -3,6 +3,17 @@
 set -euo pipefail
 umask 077
 
+OFFSITE_PERF_STARTED_AT=$(date +%s)
+log_offsite_timing() {
+    local stage="$1"
+    local started_at="$2"
+    local outcome="$3"
+    local finished_at
+    finished_at=$(date +%s)
+    printf '[perf.backup.offsite] stage="%s" duration_ms=%s outcome="%s"\n' \
+        "$stage" "$(((finished_at - started_at) * 1000))" "$outcome"
+}
+
 if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
     echo "用法: $0 /absolute/path/to/backup.sql.gz" >&2
     exit 2
@@ -58,7 +69,12 @@ TMP_REMOTE_MANIFEST=$(mktemp "${TMPDIR:-/tmp}/health-backup.XXXXXX.remote-manife
 cleanup() { rm -f "$TMP" "$TMP_CHECKSUM" "$TMP_MANIFEST" "$TMP_REMOTE_MANIFEST"; }
 trap cleanup EXIT
 
-age --recipient "$BACKUP_AGE_RECIPIENT" --output "$TMP" "$BACKUP_FILE"
+ENCRYPT_STARTED_AT=$(date +%s)
+if ! age --recipient "$BACKUP_AGE_RECIPIENT" --output "$TMP" "$BACKUP_FILE"; then
+    log_offsite_timing "encrypt" "$ENCRYPT_STARTED_AT" "failure"
+    exit 1
+fi
+log_offsite_timing "encrypt" "$ENCRYPT_STARTED_AT" "success"
 LOCAL_SHA=$(sha256sum "$TMP" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')
 printf '%s  %s\n' "$LOCAL_SHA" "$NAME" > "$TMP_CHECKSUM"
 printf 'version=1\nobject=%s\nsource_sha256=%s\ncipher_sha256=%s\n' \
@@ -77,16 +93,23 @@ PY
 printf 'hmac_sha256=%s\n' "$MANIFEST_HMAC" >> "$TMP_MANIFEST"
 
 verify_remote_archive() {
-    local STORED_SHA STORED_NAME REMOTE_SHA
+    local STORED_SHA STORED_NAME REMOTE_SHA REMOTE_HASH_STARTED_AT REMOTE_MANIFEST_STARTED_AT
     read -r STORED_SHA STORED_NAME < <(rclone cat "$CHECKSUM_REMOTE")
     STORED_SHA=$(printf '%s' "$STORED_SHA" | tr '[:upper:]' '[:lower:]')
-    REMOTE_SHA=$(rclone hashsum SHA-256 "$REMOTE" --download | awk 'NR==1 {print $1}' | tr '[:upper:]' '[:lower:]')
+    REMOTE_HASH_STARTED_AT=$(date +%s)
+    if ! REMOTE_SHA=$(rclone hashsum SHA-256 "$REMOTE" --download | awk 'NR==1 {print $1}' | tr '[:upper:]' '[:lower:]'); then
+        log_offsite_timing "remote_hash" "$REMOTE_HASH_STARTED_AT" "failure"
+        return 1
+    fi
     if [ -z "$STORED_SHA" ] || [ -z "$REMOTE_SHA" ] || [ "$STORED_NAME" != "$NAME" ] || [ "$STORED_SHA" != "$REMOTE_SHA" ]; then
+        log_offsite_timing "remote_hash" "$REMOTE_HASH_STARTED_AT" "failure"
         echo "[$(date)] ❌ 站外副本哈希校验失败: $NAME" >&2
         return 1
     fi
+    log_offsite_timing "remote_hash" "$REMOTE_HASH_STARTED_AT" "success"
+    REMOTE_MANIFEST_STARTED_AT=$(date +%s)
     rclone cat "$MANIFEST_REMOTE" > "$TMP_REMOTE_MANIFEST"
-    BACKUP_INTEGRITY_KEY="$INTEGRITY_KEY" \
+    if ! BACKUP_INTEGRITY_KEY="$INTEGRITY_KEY" \
     BACKUP_MANIFEST_PATH="$TMP_REMOTE_MANIFEST" \
     BACKUP_EXPECTED_OBJECT="$NAME" \
     BACKUP_EXPECTED_SOURCE_SHA="$SOURCE_SHA" \
@@ -124,6 +147,11 @@ wanted = hmac.new(
 if not hmac.compare_digest(actual, wanted):
     raise SystemExit("站外备份 HMAC 真实性校验失败")
 PY
+    then
+        log_offsite_timing "remote_manifest" "$REMOTE_MANIFEST_STARTED_AT" "failure"
+        return 1
+    fi
+    log_offsite_timing "remote_manifest" "$REMOTE_MANIFEST_STARTED_AT" "success"
 }
 
 REMOTE_LIST=$(rclone lsf "${DEST%/}" --files-only 2>/dev/null || true)
@@ -137,6 +165,7 @@ if grep -Fxq "$NAME" <<< "$REMOTE_LIST" || \
         exit 1
     fi
     verify_remote_archive
+    log_offsite_timing "total" "$OFFSITE_PERF_STARTED_AT" "success"
     echo "[$(date)] ✅ 站外既有加密副本哈希与 HMAC 真实性已验证: $NAME"
     exit 0
 fi
@@ -144,12 +173,19 @@ fi
 # The encrypted database object can take several minutes to upload. Emit a
 # low-frequency progress line so SSH/proxy channel-idle timeouts cannot discard
 # the command's final exit status and make a successful archive look failed.
-rclone copyto "$TMP" "$REMOTE" --immutable \
-    --stats 30s \
-    --stats-one-line \
-    --stats-log-level NOTICE
-rclone copyto "$TMP_CHECKSUM" "$CHECKSUM_REMOTE" --immutable
-rclone copyto "$TMP_MANIFEST" "$MANIFEST_REMOTE" --immutable
+UPLOAD_STARTED_AT=$(date +%s)
+if ! {
+    rclone copyto "$TMP" "$REMOTE" --immutable \
+        --stats 30s \
+        --stats-one-line \
+        --stats-log-level NOTICE
+    rclone copyto "$TMP_CHECKSUM" "$CHECKSUM_REMOTE" --immutable
+    rclone copyto "$TMP_MANIFEST" "$MANIFEST_REMOTE" --immutable
+}; then
+    log_offsite_timing "upload" "$UPLOAD_STARTED_AT" "failure"
+    exit 1
+fi
+log_offsite_timing "upload" "$UPLOAD_STARTED_AT" "success"
 verify_remote_archive
 
 rclone delete "${DEST%/}" --min-age "${RETENTION_DAYS}d" \
@@ -159,4 +195,5 @@ rclone delete "${DEST%/}" --min-age "${RETENTION_DAYS}d" \
     --include '*.sql.gz.*.age' \
     --include '*.sql.gz.*.age.sha256' \
     --include '*.sql.gz.*.age.manifest'
+log_offsite_timing "total" "$OFFSITE_PERF_STARTED_AT" "success"
 echo "[$(date)] ✅ 站外加密归档哈希与 HMAC 真实性已验证: $NAME"

@@ -63,6 +63,22 @@ def test_offsite_archive_emits_a_low_frequency_upload_heartbeat():
     assert "--stats-log-level NOTICE" in script
 
 
+def test_backup_pipeline_emits_machine_readable_stage_timings():
+    backup = BACKUP.read_text(encoding="utf-8")
+    offsite = OFFSITE.read_text(encoding="utf-8")
+
+    assert "[perf.backup]" in backup
+    assert 'log_backup_timing "database_dump"' in backup
+    assert 'log_backup_timing "restore_drill"' in backup
+    assert 'log_backup_timing "offsite_archive"' in backup
+    assert 'log_backup_timing "total"' in backup
+    assert "[perf.backup.offsite]" in offsite
+    assert 'log_offsite_timing "encrypt"' in offsite
+    assert 'log_offsite_timing "upload"' in offsite
+    assert 'log_offsite_timing "remote_hash"' in offsite
+    assert 'log_offsite_timing "remote_manifest"' in offsite
+
+
 def test_backup_preserves_local_postgres_port_for_dump_and_restore():
     backup = BACKUP.read_text(encoding="utf-8")
     restore = RESTORE.read_text(encoding="utf-8")

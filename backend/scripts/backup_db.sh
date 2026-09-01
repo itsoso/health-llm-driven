@@ -17,6 +17,17 @@ set -euo pipefail
 # 否则 ECS 上任何本地用户可读基因字节。umask 077 让本脚本新建的文件默认 0600、目录 0700。
 umask 077
 
+BACKUP_PERF_STARTED_AT=$(date +%s)
+log_backup_timing() {
+    local stage="$1"
+    local started_at="$2"
+    local outcome="$3"
+    local finished_at
+    finished_at=$(date +%s)
+    printf '[perf.backup] stage="%s" duration_ms=%s outcome="%s"\n' \
+        "$stage" "$(((finished_at - started_at) * 1000))" "$outcome"
+}
+
 # 配置（从 .env 或进程环境读取；生产禁止内置数据库凭据）
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/../.env"
@@ -106,11 +117,14 @@ echo "[$(date)] 开始备份 ${DB_NAME}..."
 # cd /tmp 消除 postgres 用户无法 cd 进 /root 的 "could not change directory" 噪声。
 # set -o pipefail 已开:pg_dump 非零退出会让整条管道失败,if 诚实捕获,不被 gzip 的 0 掩盖。
 cd /tmp
+DUMP_STARTED_AT=$(date +%s)
 if sudo -u postgres "${ADMIN_PG_ENV[@]}" pg_dump "$DB_NAME" | gzip > "$BACKUP_FILE"; then
+    log_backup_timing "database_dump" "$DUMP_STARTED_AT" "success"
     chmod 600 "$BACKUP_FILE"   # council #1 双保险:含基因数据的备份必须 0600(即便 umask 被改)
     SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
     echo "[$(date)] ✅ 备份成功: ${BACKUP_FILE} (${SIZE}, 0600)"
 else
+    log_backup_timing "database_dump" "$DUMP_STARTED_AT" "failure"
     echo "[$(date)] ❌ 备份失败!"
     rm -f "$BACKUP_FILE"
     exit 1
@@ -144,12 +158,22 @@ done <<< "$FORCE_RLS_TABLES"
 export BACKUP_ADMIN_PGPORT="$DB_PORT"
 export BACKUP_ADMIN_PGHOST="$ADMIN_PGHOST"
 export BACKUP_SOURCE_DB="$DB_NAME"
-"$SCRIPT_DIR/verify_backup_restore.sh" "$BACKUP_FILE"
+RESTORE_STARTED_AT=$(date +%s)
+if ! "$SCRIPT_DIR/verify_backup_restore.sh" "$BACKUP_FILE"; then
+    log_backup_timing "restore_drill" "$RESTORE_STARTED_AT" "failure"
+    exit 1
+fi
+log_backup_timing "restore_drill" "$RESTORE_STARTED_AT" "success"
 
 # 站外副本必须先在本机用 age 加密，再上传并回读远端清单确认。
 export BACKUP_AGE_RECIPIENT BACKUP_OFFSITE_RCLONE_DEST BACKUP_OFFSITE_RETENTION_DAYS BACKUP_INTEGRITY_KEY
 export BACKUP_OFFSITE_REQUIRED="${BACKUP_OFFSITE_REQUIRED:-0}"
-"$SCRIPT_DIR/archive_backup_offsite.sh" "$BACKUP_FILE"
+OFFSITE_STARTED_AT=$(date +%s)
+if ! "$SCRIPT_DIR/archive_backup_offsite.sh" "$BACKUP_FILE"; then
+    log_backup_timing "offsite_archive" "$OFFSITE_STARTED_AT" "failure"
+    exit 1
+fi
+log_backup_timing "offsite_archive" "$OFFSITE_STARTED_AT" "success"
 
 # 本地保留多份供快速恢复；只有恢复演练和站外归档都成功后才执行清理。
 BACKUP_LOCAL_RETENTION_COUNT="${BACKUP_LOCAL_RETENTION_COUNT:-7}"
@@ -167,3 +191,4 @@ COUNT=$(ls -1 "${BACKUP_DIR}/${DB_NAME}_"*.sql.gz 2>/dev/null | wc -l)
 DB_SIZE=$(psql "$DATABASE_URL" -tAc "SELECT pg_size_pretty(pg_database_size(current_database()))" 2>/dev/null | tr -d ' ')
 DISK=$(df -h "$BACKUP_DIR" 2>/dev/null | awk 'NR==2{print $4" 可用 / "$2" 总 ("$5" 已用)"}')
 echo "[$(date)] 📦 当前共有 ${COUNT} 个备份 | 数据库实际大小: ${DB_SIZE:-未知} | 磁盘: ${DISK}"
+log_backup_timing "total" "$BACKUP_PERF_STARTED_AT" "success"

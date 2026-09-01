@@ -317,10 +317,20 @@ jobs:
           GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
           DATABASE_URL: "sqlite:///:memory:"
           TZ: Asia/Shanghai
+          CI_PYTEST_JUNIT_XML: test-results/${{ matrix.label }}.xml
         run: >-
           python scripts/run_ci_pytest_shard.py ${{ matrix.paths }} --
           -q --no-cov --tb=short --maxfail=5
           --timeout=120 --timeout-method=signal ${{ matrix.extra_args }}
+
+      - name: Upload pytest timing (${{ matrix.label }})
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pytest-timing-${{ matrix.label }}
+          path: backend/test-results/${{ matrix.label }}.xml
+          if-no-files-found: warn
+          retention-days: 14
 
   backend-quality:
     runs-on: ubuntu-latest
