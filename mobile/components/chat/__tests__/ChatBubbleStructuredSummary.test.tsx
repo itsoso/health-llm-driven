@@ -195,7 +195,7 @@ describe('ChatBubble structured summary', () => {
 2. 饭后散步 10 分钟
 `);
 
-    expect(getByText('小巴')).toBeTruthy();
+    expect(getByText('小巴健康')).toBeTruthy();
     expect(getByTestId('assistant-metric-grid')).toBeTruthy();
     expect(getByTestId('assistant-action-card')).toBeTruthy();
     expect(getByText('睡眠')).toBeTruthy();
@@ -425,7 +425,7 @@ ${sectionTitle}
   it('promotes the assistant identity without changing the conclusion reading scale', () => {
     const { getByText, getByTestId } = renderBubble('今晚先补水 300ml，再散步 10 分钟。');
 
-    const label = getByText('小巴');
+    const label = getByText('小巴健康');
     const dot = getByTestId('assistant-conclusion-dot');
     const container = getByTestId('assistant-conclusion');
     const conclusion = getByText('今晚先补水 300ml，再散步 10 分钟。');

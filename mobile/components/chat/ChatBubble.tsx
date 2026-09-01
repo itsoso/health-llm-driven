@@ -61,6 +61,7 @@ import { invalidateQueryKeys, queryKeys } from '../../applib/queryKeys';
 import { buildAgentTransparency } from '../../utils/chatTransparency';
 import MedicalCitations from './MedicalCitations';
 import AnswerEvidencePanel from './AnswerEvidencePanel';
+import { ASSISTANT_REPLY_NAME } from '../../constants/brand';
 
 type WriteReceipt = NonNullable<ChatCardActionResult['receipt']>;
 
@@ -231,7 +232,7 @@ function ChatBubbleInner({
   const sentTimeShort = formatMessageTimeLabel(item.createdAt);
   const sentTimeFull = formatMessageFullTimeLabel(item.createdAt);
   const timeAccessibilityPrefix = sentTimeFull
-    ? `${isUser ? '你发送于' : '小巴回复于'} ${sentTimeFull}. `
+    ? `${isUser ? '你发送于' : `${ASSISTANT_REPLY_NAME}回复于`} ${sentTimeFull}. `
     : '';
   const revealMessageTime = useCallback(() => {
     if (!sentTimeShort) return;
@@ -1174,7 +1175,7 @@ function ChatBubbleInner({
             onLongPress={hasInlineEditableCard ? undefined : openMessageActions}
             accessible={assistantSurfaceAccessible}
             accessibilityRole={assistantSurfaceAccessible ? 'text' : undefined}
-            accessibilityLabel={assistantSurfaceAccessible ? `${timeAccessibilityPrefix}AI: ${assistantTextForActions || (revaUiContent.cards.length > 0 ? '图表卡片' : item.content)}` : undefined}
+            accessibilityLabel={assistantSurfaceAccessible ? `${timeAccessibilityPrefix}${ASSISTANT_REPLY_NAME}: ${assistantTextForActions || (revaUiContent.cards.length > 0 ? '图表卡片' : item.content)}` : undefined}
             accessibilityState={selectionMode ? { selected } : undefined}
           >
             {renderMessageImages()}
@@ -1923,7 +1924,7 @@ function AssistantConclusionLabel() {
   return (
     <View style={summaryStyles.conclusionLabelRow}>
       <View testID="assistant-conclusion-dot" style={summaryStyles.conclusionDot} />
-      <Text style={summaryStyles.conclusionLabel}>小巴</Text>
+      <Text style={summaryStyles.conclusionLabel}>{ASSISTANT_REPLY_NAME}</Text>
     </View>
   );
 }
