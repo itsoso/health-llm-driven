@@ -593,6 +593,99 @@ APP_UPDATE_HEALTH_MIN_LAUNCHES = 20
 APP_UPDATE_HEALTH_EMERGENCY_RATE_PCT = 5.0
 APP_UPDATE_HEALTH_TERMINAL_FAILURE_RATE_PCT = 10.0
 
+_AGENT_TURN_MILESTONE_PHASES = (
+    "local_feedback",
+    "server_accepted",
+    "first_useful",
+    "write_verified",
+)
+_AGENT_TURN_ACTION_TYPES = frozenset({"generic", "diet_record", "diet_photo"})
+_AGENT_TURN_MAX_DURATION_MS = 300_000
+
+
+def _latency_percentiles_ms(values: list[float]) -> dict:
+    """Return a stable, integer-millisecond latency summary."""
+
+    percentiles = {
+        "p50": _percentile(values, 50),
+        "p95": _percentile(values, 95),
+        "p99": _percentile(values, 99),
+    }
+    return {
+        "n": len(values),
+        **{
+            name: round(value) if value is not None else None
+            for name, value in percentiles.items()
+        },
+    }
+
+
+def _agent_turn_milestone_stats(rows: list[tuple[str, object]]) -> dict:
+    """Aggregate content-free user-perceived Agent latency milestones.
+
+    API validation protects new writes, but dashboards can span historical rows
+    created before the current schema. Treat malformed rows as invalid instead
+    of allowing them to skew release decisions.
+    """
+
+    by_phase_values: dict[str, list[float]] = {
+        phase: [] for phase in _AGENT_TURN_MILESTONE_PHASES
+    }
+    by_path_values: dict[
+        tuple[str, bool], dict[str, list[float]]
+    ] = {}
+    valid = 0
+    invalid = 0
+
+    for name, raw_meta in rows:
+        if name != "agent_turn_milestone":
+            continue
+        meta = raw_meta if isinstance(raw_meta, dict) else {}
+        phase = meta.get("phase")
+        duration_ms = meta.get("duration_ms")
+        action_type = meta.get("action_type")
+        has_image = meta.get("has_image")
+        if (
+            not isinstance(phase, str)
+            or phase not in by_phase_values
+            or type(duration_ms) is not int
+            or not 0 <= duration_ms <= _AGENT_TURN_MAX_DURATION_MS
+            or not isinstance(action_type, str)
+            or action_type not in _AGENT_TURN_ACTION_TYPES
+            or type(has_image) is not bool
+        ):
+            invalid += 1
+            continue
+
+        value = float(duration_ms)
+        valid += 1
+        by_phase_values[phase].append(value)
+        path_values = by_path_values.setdefault((action_type, has_image), {})
+        path_values.setdefault(phase, []).append(value)
+
+    by_path: dict[str, dict] = {}
+    for (action_type, has_image), phase_values in sorted(by_path_values.items()):
+        path_key = f"{action_type}:{'image' if has_image else 'text'}"
+        by_path[path_key] = {
+            "action_type": action_type,
+            "has_image": has_image,
+            "phases": {
+                phase: _latency_percentiles_ms(values)
+                for phase in _AGENT_TURN_MILESTONE_PHASES
+                if (values := phase_values.get(phase))
+            },
+        }
+
+    return {
+        "valid": valid,
+        "invalid": invalid,
+        "by_phase": {
+            phase: _latency_percentiles_ms(values)
+            for phase, values in by_phase_values.items()
+        },
+        "by_path": by_path,
+    }
+
 
 def app_update_release_health(
     *,
@@ -726,6 +819,8 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
     chat_attachment_failures_by_stage: Dict[str, int] = {}
     chat_attachment_duration_buckets: Dict[str, int] = {}
     chat_attachment_payload_buckets: Dict[str, int] = {}
+
+    agent_turn_milestones_ms = _agent_turn_milestone_stats(rows)
 
     for name, meta in rows:
         by_event[name] = by_event.get(name, 0) + 1
@@ -874,6 +969,7 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
     return {
         "total": sum(by_event.values()),
         "by_event": by_event,
+        "agent_turn_milestones_ms": agent_turn_milestones_ms,
         "app_update": {
             "launches": app_update_launches,
             "checks": app_update_checks,

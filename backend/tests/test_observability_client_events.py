@@ -47,6 +47,82 @@ def test_client_events_stats_computes_starter_ctr_and_cold_start(db):
     assert stats["by_event"]["starter_chip_clicked"] == 3
 
 
+def test_client_events_stats_aggregates_agent_turn_milestone_percentiles(db):
+    from app.models.user import User
+    from app.services.observability_service import client_events_stats, utc_now
+
+    user = User(
+        username="agent-latency-obs",
+        email="agent-latency-obs@test.com",
+        hashed_password="x",
+        name="latency",
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    for duration_ms in (100, 300, 700, 1500):
+        _seed(db, user.id, "agent_turn_milestone", {
+            "phase": "first_useful",
+            "duration_ms": duration_ms,
+            "action_type": "generic",
+            "has_image": False,
+        })
+    _seed(db, user.id, "agent_turn_milestone", {
+        "phase": "server_accepted",
+        "duration_ms": 900,
+        "action_type": "diet_photo",
+        "has_image": True,
+    })
+    # Historical rows can predate API validation. Aggregation must ignore them
+    # instead of letting malformed durations skew the latency baseline.
+    _seed(db, user.id, "agent_turn_milestone", {
+        "phase": "first_useful",
+        "duration_ms": True,
+        "action_type": "generic",
+        "has_image": False,
+    })
+    _seed(db, user.id, "agent_turn_milestone", {
+        "phase": "unknown",
+        "duration_ms": 1,
+        "action_type": "generic",
+        "has_image": False,
+    })
+    _seed(db, user.id, "agent_turn_milestone", {
+        "phase": ["first_useful"],
+        "duration_ms": 1,
+        "action_type": "generic",
+        "has_image": False,
+    })
+    db.commit()
+
+    stats = client_events_stats(db, utc_now() - timedelta(days=7), user_id=None)
+    latency = stats["agent_turn_milestones_ms"]
+
+    assert latency["valid"] == 5
+    assert latency["invalid"] == 3
+    assert latency["by_phase"]["first_useful"] == {
+        "n": 4,
+        "p50": 500,
+        "p95": 1380,
+        "p99": 1476,
+    }
+    assert latency["by_phase"]["write_verified"] == {
+        "n": 0,
+        "p50": None,
+        "p95": None,
+        "p99": None,
+    }
+    assert latency["by_path"]["generic:text"]["phases"]["first_useful"]["p95"] == 1380
+    assert latency["by_path"]["diet_photo:image"] == {
+        "action_type": "diet_photo",
+        "has_image": True,
+        "phases": {
+            "server_accepted": {"n": 1, "p50": 900, "p95": 900, "p99": 900},
+        },
+    }
+
+
 def test_client_events_weekly_digest_task_runs(db, monkeypatch):
     """The scheduled digest task computes + logs without error and flags dead generators."""
     from app.models.user import User

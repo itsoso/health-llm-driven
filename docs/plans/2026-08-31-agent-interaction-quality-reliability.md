@@ -314,6 +314,7 @@ Immediately disable the affected feature flag and stop rollout if any of these o
 
 ## Related plans
 
+- `docs/plans/2026-09-01-agent-perceived-latency.md` — TTFT、可交互时间与关键内容到达时间的独立瀑布和优化顺序。
 - `docs/plans/2026-08-29-diet-progressive-response-ttft.md` — dietary progressive feedback and TTFT.
 - `docs/plans/2026-07-28-agent-write-recovery.md` — write recovery and retry authority.
 - `docs/plans/2026-07-31-record-write-outcome-reliability.md` — authoritative write outcome contract.

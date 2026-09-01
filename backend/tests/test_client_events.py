@@ -225,6 +225,17 @@ def test_client_events_stats_empty(db):
     assert stats == {
         "total": 0,
         "by_event": {},
+        "agent_turn_milestones_ms": {
+            "valid": 0,
+            "invalid": 0,
+            "by_phase": {
+                "local_feedback": {"n": 0, "p50": None, "p95": None, "p99": None},
+                "server_accepted": {"n": 0, "p50": None, "p95": None, "p99": None},
+                "first_useful": {"n": 0, "p50": None, "p95": None, "p99": None},
+                "write_verified": {"n": 0, "p50": None, "p95": None, "p99": None},
+            },
+            "by_path": {},
+        },
         "app_update": {
             "launches": 0,
             "checks": 0,

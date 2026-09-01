@@ -3,8 +3,9 @@
 The UI events we instrument (starter chip impressions/clicks, home cold-start
 timing, quick-record/chat actions) are worthless if nobody reads them. This task
 aggregates the last week of `client_events` and logs a structured summary —
-starter CTR per generator, cold-start p50/p95, and a "dead generator" list
-(shown a lot, never clicked) — so the data drives decisions instead of piling up.
+starter CTR per generator, cold-start p50/p95, Agent first-useful p50/p95/p99,
+and a "dead generator" list (shown a lot, never clicked) — so the data drives
+decisions instead of piling up.
 
 Pull-on-demand already exists at GET /admin/observability; this is the push half.
 """
@@ -30,6 +31,8 @@ def client_events_weekly_digest(days: int = 7) -> dict:
     by_event = stats.get("by_event", {})
     ctr: dict = stats.get("starter_ctr", {})
     cold: dict = stats.get("home_cold_start_ms", {})
+    agent_latency: dict = stats.get("agent_turn_milestones_ms", {})
+    first_useful: dict = agent_latency.get("by_phase", {}).get("first_useful", {})
 
     # Dead generators: shown enough to judge (≥20 impressions) yet never clicked →
     # candidates for rewording or removal (the whole point of the CTR instrumentation).
@@ -44,7 +47,8 @@ def client_events_weekly_digest(days: int = 7) -> dict:
 
     logger.info(
         "[client-events-digest %dd] total=%s events=%s | cold_start p50=%sms p95=%sms "
-        "n=%s incomplete=%s | starter dead_keys=%s top_ctr=%s",
+        "n=%s incomplete=%s | agent_first_useful p50=%sms p95=%sms p99=%sms "
+        "n=%s invalid=%s | starter dead_keys=%s top_ctr=%s",
         days,
         stats.get("total"),
         by_event,
@@ -52,6 +56,11 @@ def client_events_weekly_digest(days: int = 7) -> dict:
         cold.get("p95"),
         cold.get("n"),
         cold.get("incomplete"),
+        first_useful.get("p50"),
+        first_useful.get("p95"),
+        first_useful.get("p99"),
+        first_useful.get("n"),
+        agent_latency.get("invalid"),
         dead or "none",
         [(k, v.get("ctr_pct")) for k, v in top],
     )
