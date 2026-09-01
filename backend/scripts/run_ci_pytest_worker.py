@@ -19,6 +19,9 @@ except ModuleNotFoundError:  # Direct execution from backend/scripts.
     from run_ci_pytest_shard import instrument_pytest_args, run_shard
 
 
+DEFAULT_SHARD_TIMEOUT_SECONDS = 600
+
+
 BASE_PYTEST_ARGS = [
     "-q",
     "--no-cov",
@@ -55,7 +58,7 @@ def run_worker(
     *,
     cwd: Path,
     junit_dir: Path,
-    shard_runner: Callable[[list[str], list[str]], int] = run_shard,
+    shard_runner: Callable[..., int] = run_shard,
 ) -> int:
     by_label = {str(shard["label"]): shard for shard in catalog}
     unknown = [label for label in labels if label not in by_label]
@@ -75,16 +78,29 @@ def run_worker(
             pytest_args,
             junit_path=str(junit_dir / f"{label}.xml"),
         )
+        timeout_seconds = int(
+            shard.get("timeout_seconds", DEFAULT_SHARD_TIMEOUT_SECONDS)
+        )
+        if timeout_seconds < 1:
+            raise ValueError(f"{label} timeout_seconds must be at least 1")
         print(
             "[ci-worker] "
             + json.dumps(
-                {"shard": label, "paths": len(paths)},
+                {
+                    "shard": label,
+                    "paths": len(paths),
+                    "deadline_seconds": timeout_seconds,
+                },
                 sort_keys=True,
                 separators=(",", ":"),
             ),
             flush=True,
         )
-        return_code = shard_runner(paths, pytest_args)
+        return_code = shard_runner(
+            paths,
+            pytest_args,
+            timeout_seconds=timeout_seconds,
+        )
         if return_code != 0:
             return return_code
     return 0

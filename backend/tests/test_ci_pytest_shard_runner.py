@@ -326,15 +326,22 @@ def test_run_worker_keeps_catalog_shards_in_fresh_pytest_processes(tmp_path):
     tests_dir.mkdir()
     (tests_dir / "test_alpha.py").write_text("", encoding="utf-8")
     (tests_dir / "test_beta.py").write_text("", encoding="utf-8")
-    calls: list[tuple[list[str], list[str]]] = []
+    calls: list[tuple[list[str], list[str], int]] = []
 
-    def fake_runner(paths: list[str], args: list[str]) -> int:
-        calls.append((paths, args))
+    def fake_runner(
+        paths: list[str], args: list[str], *, timeout_seconds: int
+    ) -> int:
+        calls.append((paths, args, timeout_seconds))
         return 0
 
     catalog = [
         {"label": "alpha", "paths": ["tests/test_alpha.py"], "extra_args": []},
-        {"label": "beta", "paths": ["tests/test_beta.py"], "extra_args": ["-vv"]},
+        {
+            "label": "beta",
+            "paths": ["tests/test_beta.py"],
+            "extra_args": ["-vv"],
+            "timeout_seconds": 180,
+        },
     ]
 
     result = run_worker(
@@ -360,6 +367,7 @@ def test_run_worker_keeps_catalog_shards_in_fresh_pytest_processes(tmp_path):
                 "--durations-min=0.01",
                 f"--junitxml={tmp_path / 'results' / 'alpha.xml'}",
             ],
+            600,
         ),
         (
             ["tests/test_beta.py"],
@@ -375,5 +383,26 @@ def test_run_worker_keeps_catalog_shards_in_fresh_pytest_processes(tmp_path):
                 "--durations-min=0.01",
                 f"--junitxml={tmp_path / 'results' / 'beta.xml'}",
             ],
+            180,
         ),
     ]
+
+
+def test_run_worker_rejects_non_positive_process_deadline(tmp_path):
+    from scripts.run_ci_pytest_worker import run_worker
+
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_alpha.py").write_text("", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        run_worker(
+            ["alpha"],
+            [{
+                "label": "alpha",
+                "paths": ["tests/test_alpha.py"],
+                "timeout_seconds": 0,
+            }],
+            cwd=tmp_path,
+            junit_dir=tmp_path / "results",
+        )
