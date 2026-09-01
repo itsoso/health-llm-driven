@@ -19,6 +19,7 @@ jobs:
       run_mac: ${{ steps.scope.outputs.run_mac }}
       run_type_drift: ${{ steps.scope.outputs.run_type_drift }}
       run_release: ${{ steps.scope.outputs.run_release }}
+      release_only: ${{ steps.scope.outputs.release_only }}
       full: ${{ steps.scope.outputs.full }}
     steps:
       - uses: actions/checkout@v5
@@ -96,213 +97,46 @@ jobs:
       - name: Check Agent Skill governance
         run: python scripts/check_agent_skill_governance.py check
 
-  backend-test-shards:
-    name: backend-test-${{ matrix.label }}
+  backend-test-plan:
+    name: backend-test-plan
     runs-on: ubuntu-latest
     needs: classify-changes
     if: ${{ needs.classify-changes.outputs.run_backend == 'true' }}
-    # Allows one 10-minute process timeout plus a fresh retry and setup time.
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build timing-balanced pytest matrix
+        id: plan
+        run: >-
+          python3 backend/scripts/build_ci_pytest_matrix.py
+          --workers 16 --github-output "$GITHUB_OUTPUT"
+
+  backend-test-shards:
+    name: backend-test-${{ matrix.label }}
+    runs-on: ubuntu-latest
+    needs:
+      - classify-changes
+      - backend-test-plan
+    if: ${{ needs.classify-changes.outputs.run_backend == 'true' }}
+    # Each catalog shard remains a fresh pytest process. Workers only share the
+    # dependency install, then execute isolated processes in historical-time
+    # balanced order. This preserves the SQLite isolation contract.
     timeout-minutes: 25
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          # The former a-early bucket exhausted its 600-second process budget.
-          # Split its three independent families while keeping exact coverage
-          # enforced by test_release_ci_contract.py.
-          - label: a-action
-            paths: "tests/test_action*.py"
-          - label: a-agenda
-            paths: "tests/test_agenda*.py"
-          - label: a-early-rest
-            paths: >-
-              tests/test_a_to_i_smoke.py
-              tests/test_account*.py
-              tests/test_activation*.py
-              tests/test_adherence*.py
-              tests/test_admin*.py
-              tests/test_advice*.py
-          # Root discovery lets pytest's ignore rules exclude agent paths
-          # before collection; direct shell globs would pass them explicitly.
-          - label: a-late
-            paths: "tests"
-            extra_args: "--ignore=tests/services --ignore=tests/test_app_store_demo_account.py --ignore-glob='tests/test_[b-z]*.py' --ignore-glob='tests/test_agent_*.py' --ignore-glob='tests/test_a[_a-h]*.py'"
-          - label: b
-            paths: "tests/test_b*.py"
-          - label: app-store-demo-account
-            paths: "tests/test_app_store_demo_account.py"
-          # Executor coverage has grown too large for a single reliable process.
-          # Split the broad a-h family so a slow provider/tool simulation cannot
-          # consume both 600-second attempts for hundreds of unrelated tests.
-          - label: agent-a-d
-            paths: "tests/test_agent_[a-d]*.py"
-          - label: agent-e-core
-            paths: >-
-              tests/test_agent_eval.py
-              tests/test_agent_event_stream.py
-              tests/test_agent_evidence_card_memo.py
-              tests/test_agent_explicit_cache_flag.py
-          - label: agent-executor-a-d
-            paths: "tests/test_agent_executor_[a-d]*.py"
-          - label: agent-executor-error-fast
-            paths: >-
-              tests/test_agent_executor_error_sanitization.py
-              tests/test_agent_executor_failover_gate.py
-              tests/test_agent_executor_fast_routing.py
-          - label: agent-executor-food
-            paths: "tests/test_agent_executor_food_vision.py"
-          - label: agent-executor-g-h
-            paths: "tests/test_agent_executor_[g-h]*.py"
-          - label: agent-executor-i-z
-            paths: "tests/test_agent_executor_[i-z]*.py"
-          - label: agent-f-h
-            paths: "tests/test_agent_[f-h]*.py"
-          # The former i-z bucket collected >6k parametrized cases and could
-          # exceed both 600-second attempts before reaching the final files.
-          - label: agent-i-l
-            paths: "tests/test_agent_[i-l]*.py"
-          - label: agent-m-r
-            paths: "tests/test_agent_[m-r]*.py"
-          - label: agent-s-z
-            paths: "tests/test_agent_[s-z]*.py"
-          - label: c
-            paths: "tests/test_c*.py"
-          # The former d bucket also exhausted its 600-second process budget.
-          - label: d-dedao
-            paths: "tests/test_dedao*.py tests/test_down_dedao*.py"
-          - label: d-diet
-            paths: "tests/test_diet*.py"
-          - label: d-data-device
-            paths: >-
-              tests/test_daily*.py
-              tests/test_data*.py
-              tests/test_day*.py
-              tests/test_desktop*.py
-              tests/test_device*.py
-          - label: d-rest
-            paths: >-
-              tests/test_dependency*.py
-              tests/test_deploy*.py
-              tests/test_deprescribing*.py
-              tests/test_deterministic*.py
-              tests/test_doc*.py
-              tests/test_dogfood*.py
-              tests/test_dossier*.py
-              tests/test_drug*.py
-              tests/test_dynamic*.py
-          - label: e-g
-            paths: "tests/test_[e-g]*.py"
-          - label: h-j
-            paths: "tests/test_[h-j]*.py"
-          - label: k-m
-            paths: "tests/test_[k-m]*.py"
-          - label: n
-            paths: "tests/test_n*.py"
-          - label: o
-            paths: "tests/test_o*.py"
-          - label: p
-            paths: "tests/test_p*.py"
-          - label: q
-            paths: "tests/test_q*.py"
-          - label: r-record-registration
-            paths: "tests/test_record*.py tests/test_registration*.py"
-          - label: r-runtime-recovery
-            paths: "tests/test_runtime*.py tests/test_recovery*.py"
-          - label: r-other
-            paths: >-
-              tests/test_r4*.py
-              tests/test_realtime*.py
-              tests/test_reasoning*.py
-              tests/test_recheck*.py
-              tests/test_redact*.py
-              tests/test_redis*.py
-              tests/test_regimen*.py
-              tests/test_reliable*.py
-              tests/test_release*.py
-              tests/test_remember*.py
-              tests/test_reminder*.py
-              tests/test_reorder*.py
-              tests/test_report*.py
-              tests/test_retrieval*.py
-              tests/test_reva*.py
-              tests/test_rhinitis*.py
-              tests/test_rokid*.py
-              tests/test_run_episode*.py
-          # Keep telegram, timeline, and today families in separate pytest
-          # processes. Linux runners can retain background process state between
-          # these families; once the combined t-f-v shard grew to 279 tests it
-          # repeatedly exhausted both 600-second attempts without an assertion
-          # failure. Twin tests also need a clean process after earlier t* files.
-          - label: s-a-b
-            paths: "tests/test_s[a-b]*.py"
-          - label: s-c-k
-            paths: "tests/test_s[c-k]*.py"
-            extra_args: "-vv"
-          - label: s-l-z
-            paths: "tests/test_s[l-z]*.py"
-          - label: t-a-e
-            paths: "tests/test_t[a-e]*.py"
-          - label: timeline-core
-            paths: "tests/test_timeline_agenda_lifecycle.py tests/test_timeline_driver_schedule.py"
-          - label: timeline-medications
-            paths: "tests/test_timeline_spine_medications.py"
-          - label: today-core
-            paths: "tests/test_today_dynamic_view.py tests/test_today_spine_honest_counts.py"
-          - label: today-timeline
-            paths: "tests/test_today_timeline.py"
-          - label: t-f-v-rest
-            paths: >-
-              tests/test_timezone_user_tz.py
-              tests/test_timing_adapter.py
-              tests/test_timing_solver.py
-              tests/test_token_optimization_slices.py
-              tests/test_tool_execution_classes.py
-              tests/test_tool_tag_call_recovery.py
-              tests/test_tool_validator.py
-              tests/test_trajectory_watch.py
-              tests/test_treatment_effect.py
-              tests/test_tts_normalize.py
-          - label: t-w-z
-            paths: "tests/test_t[w-z]*.py"
-            extra_args: >-
-              -vv
-              --deselect=tests/test_twin_builder.py::TestTwinAPI
-          # TestClient and the preceding direct SQLite builder tests can
-          # deadlock while closing the shared in-memory connection. Keep the
-          # API class in a fresh process; both halves pass independently.
-          - label: twin-api
-            paths: "tests/test_twin_builder.py::TestTwinAPI"
-            extra_args: "-vv"
-          - label: u
-            paths: "tests/test_u*.py"
-          # Keep the broad v-z family and service tests in bounded processes.
-          # The former combined shard grew to 360 tests and deterministically
-          # exhausted both 600-second attempts before reporting assertions.
-          - label: voice-watch
-            paths: "tests/test_v*.py tests/test_wa*.py"
-          # Keep agenda/twin-heavy workday tests out of the same SQLite process
-          # as wearable/report tests. Retained worker state can make the shared
-          # process crash before pytest can report an assertion.
-          - label: wearable-reports
-            paths: >-
-              tests/test_wearable*.py
-              tests/test_weather*.py
-              tests/test_wechat*.py
-              tests/test_weekly*.py
-              tests/test_weight.py
-              tests/test_womens_health.py
-          - label: workday-workout
-            paths: "tests/test_workday*.py tests/test_workout*.py"
-          - label: write-z
-            paths: "tests/test_write*.py tests/test_z*.py"
-          - label: services
-            paths: "tests/services/"
+      matrix: ${{ fromJson(needs.backend-test-plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v5
 
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.lock
+            backend/requirements-dev.txt
 
       - name: Install dependencies
         working-directory: backend
@@ -310,25 +144,24 @@ jobs:
           pip install --require-hashes -r requirements.lock
           pip install -r requirements-dev.txt
 
-      - name: Run tests (${{ matrix.label }})
+      - name: Run isolated shards (${{ matrix.label }})
         working-directory: backend
         env:
           SECRET_KEY: test-secret-key-32-chars-minimum!!
           GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
           DATABASE_URL: "sqlite:///:memory:"
           TZ: Asia/Shanghai
-          CI_PYTEST_JUNIT_XML: test-results/${{ matrix.label }}.xml
         run: >-
-          python scripts/run_ci_pytest_shard.py ${{ matrix.paths }} --
-          -q --no-cov --tb=short --maxfail=5
-          --timeout=120 --timeout-method=signal ${{ matrix.extra_args }}
+          python scripts/run_ci_pytest_worker.py
+          --shards "${{ matrix.shards }}"
+          --junit-dir test-results
 
       - name: Upload pytest timing (${{ matrix.label }})
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: pytest-timing-${{ matrix.label }}
-          path: backend/test-results/${{ matrix.label }}.xml
+          path: backend/test-results/*.xml
           if-no-files-found: warn
           retention-days: 14
 
@@ -344,6 +177,11 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.lock
+            backend/requirements-dev.txt
+            scripts/system-map-requirements.txt
 
       - name: Install dependencies
         working-directory: backend
@@ -442,6 +280,10 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.lock
+            backend/requirements-dev.txt
 
       - name: Install release-test dependencies
         working-directory: backend
@@ -452,6 +294,7 @@ jobs:
       - name: Run deployment and rollback invariants
         run: >-
           python -m pytest -q --no-cov --tb=short --maxfail=1
+          scripts/test_backup_security.py
           scripts/test_ci_change_scope.py
           scripts/test_deploy_script.py
           scripts/test_generate_api_types.py
@@ -491,6 +334,10 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.lock
+            backend/requirements-dev.txt
 
       - name: Install dependencies
         working-directory: backend
@@ -570,22 +417,19 @@ jobs:
       - docs-quality
       - backend-test-shards
       - backend-quality
-      - release-invariants
       - agent-runtime-postgres
     if: ${{ always() }}
     steps:
       - name: Enforce backend test and quality gates
         env:
           RUN_BACKEND: ${{ needs.classify-changes.outputs.run_backend }}
-          RUN_RELEASE: ${{ needs.classify-changes.outputs.run_release }}
           DOCS_QUALITY: ${{ needs.docs-quality.result }}
           TEST_SHARDS: ${{ needs.backend-test-shards.result }}
           QUALITY_GATES: ${{ needs.backend-quality.result }}
-          RELEASE_INVARIANTS: ${{ needs.release-invariants.result }}
           RUNTIME_POSTGRES: ${{ needs.agent-runtime-postgres.result }}
         run: |
-          printf 'backend gates: selected=%s docs=%s test-shards=%s quality=%s release=%s runtime-postgres=%s\n' \
-            "$RUN_BACKEND" "$DOCS_QUALITY" "$TEST_SHARDS" "$QUALITY_GATES" "$RELEASE_INVARIANTS" "$RUNTIME_POSTGRES"
+          printf 'backend gates: selected=%s docs=%s test-shards=%s quality=%s runtime-postgres=%s\n' \
+            "$RUN_BACKEND" "$DOCS_QUALITY" "$TEST_SHARDS" "$QUALITY_GATES" "$RUNTIME_POSTGRES"
           if [[ "$DOCS_QUALITY" != success ]]; then
             exit 1
           fi
@@ -596,7 +440,31 @@ jobs:
           if [[ "$TEST_SHARDS" != success || "$QUALITY_GATES" != success || "$RUNTIME_POSTGRES" != success ]]; then
             exit 1
           fi
-          if [[ "$RUN_RELEASE" == true && "$RELEASE_INVARIANTS" != success ]]; then
+
+  release-tests:
+    runs-on: ubuntu-latest
+    needs:
+      - classify-changes
+      - docs-quality
+      - release-invariants
+    if: ${{ always() }}
+    steps:
+      - name: Enforce release-only gates
+        env:
+          RUN_RELEASE: ${{ needs.classify-changes.outputs.run_release }}
+          DOCS_QUALITY: ${{ needs.docs-quality.result }}
+          RELEASE_INVARIANTS: ${{ needs.release-invariants.result }}
+        run: |
+          printf 'release gates: selected=%s docs=%s invariants=%s\n' \
+            "$RUN_RELEASE" "$DOCS_QUALITY" "$RELEASE_INVARIANTS"
+          if [[ "$DOCS_QUALITY" != success ]]; then
+            exit 1
+          fi
+          if [[ "$RUN_RELEASE" != true ]]; then
+            echo "release scope skipped by classifier"
+            exit 0
+          fi
+          if [[ "$RELEASE_INVARIANTS" != success ]]; then
             exit 1
           fi
 
@@ -738,6 +606,10 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.lock
+            backend/requirements-dev.txt
 
       - name: Install backend deps
         working-directory: backend

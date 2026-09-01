@@ -27,12 +27,29 @@ DOC_ROOT_FILES = {
     "SECURITY.md",
 }
 
+RELEASE_ONLY_FILES = {
+    "deploy.sh",
+    "backend/scripts/activate_health_evidence_runtime.sh",
+    "backend/scripts/archive_backup_offsite.sh",
+    "backend/scripts/backup_db.sh",
+    "backend/scripts/rollback_release.sh",
+    "scripts/release-preflight.sh",
+    "scripts/test_backup_security.py",
+    "scripts/test_deploy_script.py",
+    "scripts/test_infrastructure_security.py",
+    "scripts/test_release_input_digest.py",
+    "scripts/test_release_lock.py",
+    "scripts/test_release_rollback.py",
+    "scripts/test_runtime_state_release_transaction.py",
+}
+
 
 def _full_result() -> dict[str, bool]:
     return {
         "docs_only": False,
         "run_docs": True,
         **{key: True for key in RUNTIME_KEYS},
+        "release_only": False,
         "full": True,
     }
 
@@ -48,9 +65,9 @@ def _is_documentation(path: str) -> bool:
 def _requires_full(path: str) -> bool:
     return (
         path.startswith(".github/")
-        or path.startswith("scripts/")
+        or (path.startswith("scripts/") and path not in RELEASE_ONLY_FILES)
         or path.startswith("packages/shared/")
-        or path in {"deploy.sh", "docker-compose.yml", "docker-compose.prod.yml"}
+        or path in {"docker-compose.yml", "docker-compose.prod.yml"}
         or path.endswith(
             (
                 "/requirements.lock",
@@ -80,15 +97,21 @@ def classify_changes(
         "docs_only": True,
         "run_docs": True,
         **{key: False for key in RUNTIME_KEYS},
+        "release_only": False,
         "full": False,
     }
     for path in normalized:
         if _is_documentation(path):
             continue
+        if path in RELEASE_ONLY_FILES:
+            result["docs_only"] = False
+            result["run_release"] = True
+            continue
         result["docs_only"] = False
         if path.startswith("backend/"):
             result["run_backend"] = True
-            result["run_release"] = True
+            if path.startswith(("backend/migrations/", "backend/scripts/")):
+                result["run_release"] = True
             if path.startswith("backend/app/") or path == "backend/main.py":
                 result["run_type_drift"] = True
         elif path.startswith("frontend/"):
@@ -102,6 +125,16 @@ def classify_changes(
         else:
             return _full_result()
 
+    result["release_only"] = result["run_release"] and not any(
+        result[key]
+        for key in (
+            "run_backend",
+            "run_frontend",
+            "run_mobile",
+            "run_mac",
+            "run_type_drift",
+        )
+    )
     return result
 
 

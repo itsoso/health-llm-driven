@@ -55,6 +55,7 @@ RUN_MOBILE=0
 RUN_MAC=0
 RUN_TYPE_DRIFT=0
 RUN_RELEASE=0
+RELEASE_ONLY=0
 FULL=0
 while IFS='=' read -r key value; do
   case "${key}" in
@@ -66,14 +67,15 @@ while IFS='=' read -r key value; do
     RUN_MAC) RUN_MAC="${value}" ;;
     RUN_TYPE_DRIFT) RUN_TYPE_DRIFT="${value}" ;;
     RUN_RELEASE) RUN_RELEASE="${value}" ;;
+    RELEASE_ONLY) RELEASE_ONLY="${value}" ;;
     FULL) FULL="${value}" ;;
     *) echo "unknown classifier output: ${key}" >&2; exit 2 ;;
   esac
 done <<< "${CLASSIFICATION}"
 
-printf 'preflight scope: docs_only=%s backend=%s frontend=%s mobile=%s mac=%s type_drift=%s release=%s full=%s\n' \
+printf 'preflight scope: docs_only=%s backend=%s frontend=%s mobile=%s mac=%s type_drift=%s release=%s release_only=%s full=%s\n' \
   "${DOCS_ONLY}" "${RUN_BACKEND}" "${RUN_FRONTEND}" "${RUN_MOBILE}" \
-  "${RUN_MAC}" "${RUN_TYPE_DRIFT}" "${RUN_RELEASE}" "${FULL}"
+  "${RUN_MAC}" "${RUN_TYPE_DRIFT}" "${RUN_RELEASE}" "${RELEASE_ONLY}" "${FULL}"
 
 if [[ "${DRY_RUN}" == "1" ]]; then
   echo "+ gh run list --branch main --workflow CI --limit 1 --json conclusion,status,headSha,url"

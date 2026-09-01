@@ -27,6 +27,7 @@ def _assert_only_runtime_scopes(result: dict[str, bool], *enabled: str) -> None:
         "run_mac",
         "run_type_drift",
         "run_release",
+        "release_only",
         "full",
     }
     expected = set(enabled)
@@ -58,8 +59,22 @@ def test_backend_runtime_changes_include_locked_type_drift() -> None:
         result,
         "run_backend",
         "run_type_drift",
-        "run_release",
     )
+
+
+def test_release_only_changes_do_not_start_application_builds() -> None:
+    classifier = _load_classifier()
+
+    for path in (
+        "deploy.sh",
+        "backend/scripts/backup_db.sh",
+        "backend/scripts/archive_backup_offsite.sh",
+        "scripts/test_backup_security.py",
+        "scripts/test_release_rollback.py",
+    ):
+        result = classifier.classify_changes([path])
+        assert result["docs_only"] is False, path
+        _assert_only_runtime_scopes(result, "run_release", "release_only")
 
 
 def test_surface_changes_select_only_their_runtime_gate() -> None:
@@ -84,8 +99,7 @@ def test_release_and_dependency_changes_fail_closed_to_full() -> None:
 
     for path in (
         ".github/workflows/ci.yml",
-        "scripts/release-preflight.sh",
-        "deploy.sh",
+        "scripts/ci_change_scope.py",
         "backend/requirements.lock",
         "mobile/package-lock.json",
         "packages/shared/src/types.ts",
@@ -102,6 +116,19 @@ def test_release_and_dependency_changes_fail_closed_to_full() -> None:
             "run_release",
             "full",
         )
+
+
+def test_mixed_backend_and_release_changes_run_both_lanes() -> None:
+    result = _load_classifier().classify_changes(
+        ["backend/app/api/today.py", "deploy.sh"]
+    )
+
+    _assert_only_runtime_scopes(
+        result,
+        "run_backend",
+        "run_type_drift",
+        "run_release",
+    )
 
 
 def test_unknown_empty_and_workflow_dispatch_changes_fail_closed_to_full() -> None:

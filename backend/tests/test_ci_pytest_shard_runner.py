@@ -2,24 +2,33 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 import pytest
-import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
+SHARD_CATALOG = ROOT / ".github" / "ci" / "backend-pytest-shards.json"
+
+
+def _shards_by_label() -> dict[str, dict]:
+    payload = json.loads(SHARD_CATALOG.read_text(encoding="utf-8"))
+    return {
+        shard["label"]: {
+            **shard,
+            "paths": " ".join(shard["paths"]),
+            "extra_args": " ".join(shard.get("extra_args", [])),
+        }
+        for shard in payload["shards"]
+    }
 
 
 def test_non_agent_a_tests_run_in_bounded_ci_processes():
-    workflow = yaml.safe_load(
-        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    )
-    shards = workflow["jobs"]["backend-test-shards"]["strategy"]["matrix"]["include"]
-    by_label = {shard["label"]: shard for shard in shards}
+    by_label = _shards_by_label()
 
     assert by_label["app-store-demo-account"]["paths"] == (
         "tests/test_app_store_demo_account.py"
@@ -39,23 +48,21 @@ def test_non_agent_a_tests_run_in_bounded_ci_processes():
     assert "--ignore=tests/test_app_store_demo_account.py" in by_label["a-late"][
         "extra_args"
     ]
-    assert "--ignore-glob='tests/test_agent_*.py'" in by_label["a-late"][
+    assert "--ignore-glob=tests/test_agent_*.py" in by_label["a-late"][
         "extra_args"
     ]
-    assert "--ignore-glob='tests/test_a[_a-h]*.py'" in by_label["a-late"][
+    assert "--ignore-glob=tests/test_a[_a-h]*.py" in by_label["a-late"][
         "extra_args"
     ]
 
 
 def test_v_z_and_service_tests_run_in_bounded_ci_processes():
-    workflow = yaml.safe_load(
-        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    )
-    shards = workflow["jobs"]["backend-test-shards"]["strategy"]["matrix"]["include"]
-    by_label = {shard["label"]: shard for shard in shards}
+    by_label = _shards_by_label()
 
     assert "v-z" not in by_label
-    assert by_label["voice-watch"]["paths"] == "tests/test_v*.py tests/test_wa*.py"
+    assert "voice-watch" not in by_label
+    assert by_label["voice"]["paths"] == "tests/test_v*.py"
+    assert by_label["watch"]["paths"] == "tests/test_wa*.py"
     assert by_label["wearable-reports"]["paths"] == (
         "tests/test_wearable*.py tests/test_weather*.py tests/test_wechat*.py "
         "tests/test_weekly*.py tests/test_weight.py tests/test_womens_health.py"
@@ -68,11 +75,7 @@ def test_v_z_and_service_tests_run_in_bounded_ci_processes():
 
 
 def test_agent_a_h_tests_run_in_bounded_ci_processes():
-    workflow = yaml.safe_load(
-        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    )
-    shards = workflow["jobs"]["backend-test-shards"]["strategy"]["matrix"]["include"]
-    by_label = {shard["label"]: shard for shard in shards}
+    by_label = _shards_by_label()
 
     assert "agent-a-h" not in by_label
     assert by_label["agent-a-d"]["paths"] == "tests/test_agent_[a-d]*.py"
@@ -102,11 +105,7 @@ def test_agent_a_h_tests_run_in_bounded_ci_processes():
 
 
 def test_agent_i_z_tests_run_in_bounded_ci_processes():
-    workflow = yaml.safe_load(
-        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    )
-    shards = workflow["jobs"]["backend-test-shards"]["strategy"]["matrix"]["include"]
-    by_label = {shard["label"]: shard for shard in shards}
+    by_label = _shards_by_label()
 
     assert "agent-i-z" not in by_label
     assert by_label["agent-i-l"]["paths"] == "tests/test_agent_[i-l]*.py"
@@ -115,11 +114,7 @@ def test_agent_i_z_tests_run_in_bounded_ci_processes():
 
 
 def test_observed_slow_alphabetic_families_run_in_single_letter_shards():
-    workflow = yaml.safe_load(
-        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    )
-    shards = workflow["jobs"]["backend-test-shards"]["strategy"]["matrix"]["include"]
-    by_label = {shard["label"]: shard for shard in shards}
+    by_label = _shards_by_label()
 
     assert "c-d" not in by_label
     assert "n-o" not in by_label
@@ -263,3 +258,122 @@ def test_run_attempt_terminates_a_hung_process_group():
         run_attempt(command, timeout_seconds=1)
 
     assert time.monotonic() - started_at < 5
+
+
+def test_balance_shards_uses_longest_processing_time_and_is_deterministic():
+    from scripts.build_ci_pytest_matrix import balance_shards
+
+    shards = [
+        {"label": "slow", "estimated_seconds": 9},
+        {"label": "medium", "estimated_seconds": 5},
+        {"label": "small-b", "estimated_seconds": 3},
+        {"label": "small-a", "estimated_seconds": 3},
+    ]
+
+    workers = balance_shards(shards, worker_count=2)
+
+    assert workers == [
+        {
+            "label": "balanced-01",
+            "shards": "slow",
+            "estimated_seconds": 9.0,
+        },
+        {
+            "label": "balanced-02",
+            "shards": "medium,small-a,small-b",
+            "estimated_seconds": 11.0,
+        },
+    ]
+
+
+def test_balance_shards_rejects_duplicate_labels():
+    from scripts.build_ci_pytest_matrix import balance_shards
+
+    with pytest.raises(ValueError, match="duplicate shard label"):
+        balance_shards(
+            [
+                {"label": "same", "estimated_seconds": 1},
+                {"label": "same", "estimated_seconds": 2},
+            ],
+            worker_count=2,
+        )
+
+
+def test_expand_path_inputs_preserves_node_ids_and_expands_globs(tmp_path):
+    from scripts.run_ci_pytest_worker import expand_path_inputs
+
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_beta.py").write_text("", encoding="utf-8")
+    (tests_dir / "test_alpha.py").write_text("", encoding="utf-8")
+
+    expanded = expand_path_inputs(
+        ["tests/test_*.py", "tests/test_alpha.py::TestAPI"],
+        cwd=tmp_path,
+        exclude_paths=["tests/test_beta.py"],
+    )
+
+    assert expanded == [
+        "tests/test_alpha.py",
+        "tests/test_alpha.py::TestAPI",
+    ]
+
+
+def test_run_worker_keeps_catalog_shards_in_fresh_pytest_processes(tmp_path):
+    from scripts.run_ci_pytest_worker import run_worker
+
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_alpha.py").write_text("", encoding="utf-8")
+    (tests_dir / "test_beta.py").write_text("", encoding="utf-8")
+    calls: list[tuple[list[str], list[str]]] = []
+
+    def fake_runner(paths: list[str], args: list[str]) -> int:
+        calls.append((paths, args))
+        return 0
+
+    catalog = [
+        {"label": "alpha", "paths": ["tests/test_alpha.py"], "extra_args": []},
+        {"label": "beta", "paths": ["tests/test_beta.py"], "extra_args": ["-vv"]},
+    ]
+
+    result = run_worker(
+        ["alpha", "beta"],
+        catalog,
+        cwd=tmp_path,
+        junit_dir=tmp_path / "results",
+        shard_runner=fake_runner,
+    )
+
+    assert result == 0
+    assert calls == [
+        (
+            ["tests/test_alpha.py"],
+            [
+                "-q",
+                "--no-cov",
+                "--tb=short",
+                "--maxfail=5",
+                "--timeout=120",
+                "--timeout-method=signal",
+                "--durations=50",
+                "--durations-min=0.01",
+                f"--junitxml={tmp_path / 'results' / 'alpha.xml'}",
+            ],
+        ),
+        (
+            ["tests/test_beta.py"],
+            [
+                "-q",
+                "--no-cov",
+                "--tb=short",
+                "--maxfail=5",
+                "--timeout=120",
+                "--timeout-method=signal",
+                "-vv",
+                "--durations=50",
+                "--durations-min=0.01",
+                f"--junitxml={tmp_path / 'results' / 'beta.xml'}",
+            ],
+        ),
+    ]

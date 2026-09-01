@@ -7,7 +7,9 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+PYTEST_SHARD_CATALOG = ROOT / ".github" / "ci" / "backend-pytest-shards.json"
 RELEASE_TESTS = (
+    "scripts/test_backup_security.py",
     "scripts/test_ci_change_scope.py",
     "scripts/test_deploy_script.py",
     "scripts/test_generate_api_types.py",
@@ -60,6 +62,28 @@ def test_ci_first_party_javascript_actions_use_node24_runtimes():
     assert type_drift_node["with"]["package-manager-cache"] is False
 
 
+def test_dependency_heavy_python_jobs_share_the_builtin_pip_cache():
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    jobs = workflow["jobs"]
+
+    for job_name in (
+        "backend-test-shards",
+        "backend-quality",
+        "release-invariants",
+        "agent-runtime-postgres",
+        "type-drift",
+    ):
+        setup = next(
+            step
+            for step in jobs[job_name]["steps"]
+            if str(step.get("uses") or "").startswith("actions/setup-python@")
+        )
+        assert setup["with"]["cache"] == "pip", job_name
+        assert "backend/requirements.lock" in setup["with"][
+            "cache-dependency-path"
+        ], job_name
+
+
 def test_ci_blocks_on_release_invariants_and_exercises_macos_bash3():
     workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
     jobs = workflow["jobs"]
@@ -70,11 +94,11 @@ def test_ci_blocks_on_release_invariants_and_exercises_macos_bash3():
     for test_path in RELEASE_TESTS:
         assert test_path in release_runs
 
-    backend_needs = jobs["backend-tests"]["needs"]
-    assert "release-invariants" in backend_needs
+    release_needs = jobs["release-tests"]["needs"]
+    assert "release-invariants" in release_needs
     assert (
         "RELEASE_INVARIANTS"
-        in jobs["backend-tests"]["steps"][0]["env"]
+        in jobs["release-tests"]["steps"][0]["env"]
     )
 
     mac_runs = _run_bodies(jobs["mac-build"])
@@ -113,6 +137,7 @@ def test_ci_classifies_changes_before_selecting_expensive_jobs():
         "run_mac",
         "run_type_drift",
         "run_release",
+        "release_only",
         "full",
     ):
         assert output in outputs
@@ -174,6 +199,7 @@ def test_runtime_jobs_are_conditioned_on_conservative_scope_outputs():
     workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
     jobs = workflow["jobs"]
     expected = {
+        "backend-test-plan": "run_backend",
         "backend-test-shards": "run_backend",
         "backend-quality": "run_backend",
         "release-invariants": "run_release",
@@ -205,15 +231,32 @@ def test_backend_aggregate_passes_explicit_docs_only_skip_but_not_red_backend():
     assert "TEST_SHARDS" in run
     assert "QUALITY_GATES" in run
     assert "RUNTIME_POSTGRES" in run
+    assert "RELEASE_INVARIANTS" not in run
+
+
+def test_release_aggregate_is_independent_from_backend_lane():
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    job = workflow["jobs"]["release-tests"]
+    needs = job["needs"]
+    run = _run_bodies(job)
+
+    assert "classify-changes" in needs
+    assert "docs-quality" in needs
+    assert "release-invariants" in needs
+    assert "backend-test-shards" not in needs
+    assert "RUN_RELEASE" in run
+    assert "RELEASE_INVARIANTS" in run
+    assert "release scope skipped by classifier" in run
 
 
 def test_slow_shard_replacements_cover_predecessor_scopes_exactly_once():
-    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    import json
+
     entries = {
-        entry["label"]: entry
-        for entry in workflow["jobs"]["backend-test-shards"]["strategy"]["matrix"][
-            "include"
-        ]
+        entry["label"]: {**entry, "paths": " ".join(entry["paths"])}
+        for entry in json.loads(
+            PYTEST_SHARD_CATALOG.read_text(encoding="utf-8")
+        )["shards"]
     }
     backend = ROOT / "backend"
 
@@ -287,6 +330,23 @@ def test_slow_shard_replacements_cover_predecessor_scopes_exactly_once():
     assert "q-r" not in entries
     assert "a-early" not in entries
     assert "d" not in entries
+
+
+def test_ci_uses_timing_balanced_workers_without_merging_pytest_processes():
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    jobs = workflow["jobs"]
+    plan = jobs["backend-test-plan"]
+    shards = jobs["backend-test-shards"]
+    shard_runs = _run_bodies(shards)
+
+    assert "build_ci_pytest_matrix.py" in _run_bodies(plan)
+    assert "fromJson(needs.backend-test-plan.outputs.matrix)" in str(
+        shards["strategy"]["matrix"]
+    )
+    assert "backend-test-plan" in shards["needs"]
+    assert "run_ci_pytest_worker.py" in shard_runs
+    assert "matrix.shards" in shard_runs
+    assert shards["strategy"]["fail-fast"] is False
 
 
 def test_postgres_gate_runs_invitation_migration_and_merge_concurrency_without_skip():
