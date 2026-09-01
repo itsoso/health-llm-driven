@@ -7,6 +7,7 @@ import argparse
 from collections.abc import Callable, Sequence
 from glob import glob, has_magic
 import json
+import math
 from pathlib import Path
 import sys
 from typing import Any
@@ -19,7 +20,9 @@ except ModuleNotFoundError:  # Direct execution from backend/scripts.
     from run_ci_pytest_shard import instrument_pytest_args, run_shard
 
 
-DEFAULT_SHARD_TIMEOUT_SECONDS = 600
+MIN_SHARD_TIMEOUT_SECONDS = 180
+MAX_SHARD_TIMEOUT_SECONDS = 600
+SHARD_TIMEOUT_MULTIPLIER = 3.0
 
 
 BASE_PYTEST_ARGS = [
@@ -52,6 +55,24 @@ def expand_path_inputs(
     return [path for path in expanded if path not in excluded]
 
 
+def shard_timeout_seconds(shard: dict[str, Any]) -> int:
+    """Derive a bounded process deadline from historical shard wall time."""
+
+    explicit = shard.get("timeout_seconds")
+    if explicit is not None:
+        timeout_seconds = int(explicit)
+    else:
+        estimated_seconds = float(shard.get("estimated_seconds", 1.0))
+        if estimated_seconds < 0:
+            raise ValueError("estimated_seconds must not be negative")
+        timeout_seconds = math.ceil(estimated_seconds * SHARD_TIMEOUT_MULTIPLIER)
+        timeout_seconds = max(MIN_SHARD_TIMEOUT_SECONDS, timeout_seconds)
+        timeout_seconds = min(MAX_SHARD_TIMEOUT_SECONDS, timeout_seconds)
+    if timeout_seconds < 1:
+        raise ValueError("timeout_seconds must be at least 1")
+    return timeout_seconds
+
+
 def run_worker(
     labels: Sequence[str],
     catalog: Sequence[dict[str, Any]],
@@ -78,11 +99,10 @@ def run_worker(
             pytest_args,
             junit_path=str(junit_dir / f"{label}.xml"),
         )
-        timeout_seconds = int(
-            shard.get("timeout_seconds", DEFAULT_SHARD_TIMEOUT_SECONDS)
-        )
-        if timeout_seconds < 1:
-            raise ValueError(f"{label} timeout_seconds must be at least 1")
+        try:
+            timeout_seconds = shard_timeout_seconds(shard)
+        except ValueError as exc:
+            raise ValueError(f"{label} {exc}") from exc
         print(
             "[ci-worker] "
             + json.dumps(

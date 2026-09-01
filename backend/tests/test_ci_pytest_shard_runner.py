@@ -367,7 +367,7 @@ def test_run_worker_keeps_catalog_shards_in_fresh_pytest_processes(tmp_path):
                 "--durations-min=0.01",
                 f"--junitxml={tmp_path / 'results' / 'alpha.xml'}",
             ],
-            600,
+            180,
         ),
         (
             ["tests/test_beta.py"],
@@ -406,3 +406,15 @@ def test_run_worker_rejects_non_positive_process_deadline(tmp_path):
             cwd=tmp_path,
             junit_dir=tmp_path / "results",
         )
+
+
+def test_shard_timeout_seconds_scales_and_caps_historical_duration():
+    from scripts.run_ci_pytest_worker import shard_timeout_seconds
+
+    assert shard_timeout_seconds({"estimated_seconds": 20}) == 180
+    assert shard_timeout_seconds({"estimated_seconds": 100}) == 300
+    assert shard_timeout_seconds({"estimated_seconds": 300}) == 600
+    assert shard_timeout_seconds({
+        "estimated_seconds": 300,
+        "timeout_seconds": 240,
+    }) == 240
