@@ -249,6 +249,12 @@ def build_confirmable_health_fact_draft(text: str) -> dict | None:
     raw = unicodedata.normalize("NFKC", text or "").strip()
     if any(marker in raw for marker in ("?", "？", "怎么", "为什么", "为何", "影响", "分析")):
         return None
+    # Explicit mutations must continue through the normal tool path so
+    # validation, authorization, independent outcomes and durable receipts stay
+    # authoritative.  This shortcut is only for uncommanded facts that need a
+    # confirmation prompt before any write is proposed.
+    if any(marker in raw for marker in ("记录", "保存", "写入", "添加", "同步")):
+        return None
     facts: list[dict[str, str]] = []
     caffeine = re.search(
         r"(?:咖啡因|咖啡)[^。；;!?！？\n]{0,12}?(\d+(?:\.\d+)?)\s*(mg|毫克)", raw, re.I

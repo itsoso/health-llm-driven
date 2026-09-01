@@ -20070,6 +20070,8 @@ export interface components {
             channel?: string | null;
             /** Client Turn Id */
             client_turn_id?: string | null;
+            /** Data Version */
+            data_version?: string | null;
             client_time_context?: components["schemas"]["ClientTimeContext"] | null;
         };
         /** AgentRuntimeIntegrityResponse */

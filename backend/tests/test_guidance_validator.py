@@ -22,6 +22,15 @@ def test_health_fact_question_is_not_diverted_into_write_draft():
     assert build_confirmable_health_fact_draft("咖啡因 180mg 会怎么影响睡眠？") is None
 
 
+def test_health_fact_draft_does_not_intercept_explicit_record_command():
+    assert (
+        build_confirmable_health_fact_draft(
+            "记录喝水500ml，记录昨晚23点入睡今天7点起床睡眠质量5分。"
+        )
+        is None
+    )
+
+
 def test_sensitive_medical_turn_requires_buffered_boundary_release():
     assert requires_medical_evidence_boundary("这个补剂剂量是否需要复查？") is True
     assert requires_medical_evidence_boundary("今天走了多少步？") is False

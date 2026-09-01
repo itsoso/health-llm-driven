@@ -13184,6 +13184,7 @@ class AgentExecutor:
                 retry_recovery is None
                 and not effective_images
                 and not file_base64
+                and not _extract_multi_model_flag(extra_context)
                 and needs_input_clarification(effective_message)
             ):
                 async for event in self._run_input_clarification_stream(
@@ -13455,8 +13456,14 @@ class AgentExecutor:
             health_evidence_turn is None
             and requires_medical_evidence_boundary(message)
         )
-        health_advice_buffered = (
-            health_evidence_turn is not None or medical_boundary_buffered
+        # Keep the sealed evidence runtime separate from the output-only medical
+        # boundary buffer.  The former intentionally removes tools and pins the
+        # evidence model; the latter must only delay user-visible text until the
+        # deterministic boundary sanitizer has run.  Conflating the two causes
+        # ordinary medication/supplement queries and writes to lose their tools.
+        health_advice_buffered = health_evidence_turn is not None
+        response_output_buffered = (
+            health_advice_buffered or medical_boundary_buffered
         )
         deterministic_health_release = bool(
             health_evidence_turn is not None
@@ -14535,7 +14542,7 @@ class AgentExecutor:
                     final_finish_reason = "stop"
                     if first_token_at is None:
                         first_token_at = time.time()
-                    if not health_advice_buffered:
+                    if not response_output_buffered:
                         for index in range(0, len(full_reply), 20):
                             yield {
                                 "event": "token",
@@ -14836,7 +14843,7 @@ class AgentExecutor:
                             first_token_at = time.time()
                         # 内层调用整段一次返回 → 切成 20-char token 让端逐块渲染
                         # (镜像既有非流式兜底口径 4827/5024)。
-                        if not health_advice_buffered:
+                        if not response_output_buffered:
                             for i in range(0, len(passthrough_final), 20):
                                 yield {
                                     "event": "token",
@@ -14970,7 +14977,7 @@ class AgentExecutor:
                         # 重合成 (安全不变量: 面向用户的医疗正文绝不来自 fast 模型)。
                         if (
                             not inline_suppressed
-                            and not health_advice_buffered
+                            and not response_output_buffered
                             and not self._tool_round_fast_routed
                             and not _record_claim_unverified
                             and not _diet_correction_claim_unverified
@@ -14997,7 +15004,7 @@ class AgentExecutor:
                         #   4. 累积 reasoning 未形成工具结果 JSON 泄漏 (复用 _streaming_leak_forming);
                         #   5. 清洗后片段非空。
                         if (
-                            health_advice_buffered
+                            response_output_buffered
                             or streamed_text
                             or self._tool_round_fast_routed
                         ):
@@ -15730,7 +15737,7 @@ class AgentExecutor:
                         and not self._tool_round_fast_routed
                         and not write_action_requested
                     ):
-                        if not streamed_to_client and not health_advice_buffered:
+                        if not streamed_to_client and not response_output_buffered:
                             yield {"event": "token", "data": {"content": text_content}}
                         full_reply += text_content
 
@@ -16474,7 +16481,7 @@ class AgentExecutor:
                         terminal_text = _runtime_control_unavailable_message(
                             write_receipts
                         )
-                        if not health_advice_buffered:
+                        if not response_output_buffered:
                             for i in range(0, len(terminal_text), 20):
                                 yield {
                                     "event": "token",
@@ -16489,7 +16496,7 @@ class AgentExecutor:
                             write_receipts,
                             also_unverified=bool(unverified_write_operations),
                         )
-                        if not health_advice_buffered:
+                        if not response_output_buffered:
                             for i in range(0, len(failed_text), 20):
                                 yield {
                                     "event": "token",
@@ -16502,7 +16509,7 @@ class AgentExecutor:
                         final_finish_reason = "error"
                         # 部分成功要点名(write_receipts=本轮已验证写入),不一刀切否定
                         _unverified_msg = _unverified_write_message(write_receipts)
-                        if not health_advice_buffered:
+                        if not response_output_buffered:
                             for i in range(0, len(_unverified_msg), 20):
                                 yield {
                                     "event": "token",
@@ -16543,7 +16550,7 @@ class AgentExecutor:
                                     f"另有 {len(write_receipts)} 项记录已完成并取得回执。\n\n"
                                     f"{pending_text}"
                                 )
-                            if not health_advice_buffered:
+                            if not response_output_buffered:
                                 for i in range(0, len(pending_text), 20):
                                     chunk = pending_text[i:i + 20]
                                     yield {
@@ -16613,7 +16620,7 @@ class AgentExecutor:
                                 and decision_route == "llm"
                             ):
                                 decision_route = "verified_create_receipt"
-                            if not health_advice_buffered:
+                            if not response_output_buffered:
                                 for i in range(0, len(final_text), 20):
                                     chunk = final_text[i:i + 20]
                                     yield {
@@ -16643,7 +16650,7 @@ class AgentExecutor:
                             if first_token_at is None:
                                 first_token_at = time.time()
                             _mark_perf_milestone("first_useful_ms")
-                            if not health_advice_buffered:
+                            if not response_output_buffered:
                                 for i in range(0, len(deterministic_query_text), 20):
                                     chunk = deterministic_query_text[i:i + 20]
                                     yield {
@@ -16674,7 +16681,7 @@ class AgentExecutor:
                             last_recoverable_write_rejection,
                             write_receipts,
                         )
-                        if not health_advice_buffered:
+                        if not response_output_buffered:
                             for i in range(
                                 0,
                                 len(terminal_rejection),
@@ -16912,7 +16919,7 @@ class AgentExecutor:
                         final_finish_reason = "stop"
                         streamed_to_client = False
                     if (
-                        not health_advice_buffered
+                        not response_output_buffered
                         and streamed_to_client
                         and final_text.startswith(streamed_text)
                     ):
@@ -16922,7 +16929,7 @@ class AgentExecutor:
                             if first_token_at is None:
                                 first_token_at = time.time()
                             yield {"event": "token", "data": {"content": tail}}
-                    elif not health_advice_buffered:
+                    elif not response_output_buffered:
                         # 重试/兜底产生的新文本 (非流式来源) → 一次性下发。
                         if final_text:
                             if first_token_at is None:
@@ -16997,7 +17004,7 @@ class AgentExecutor:
                         "我已经完成了多轮数据查询，但没有生成足够明确的最终结论。"
                         "请缩小问题范围，或稍后使用更强模型重新分析。"
                     )
-                if not health_advice_buffered:
+                if not response_output_buffered:
                     for i in range(0, len(final_text), 20):
                         chunk = final_text[i:i + 20]
                         yield {"event": "token", "data": {"content": chunk}}
@@ -17007,7 +17014,7 @@ class AgentExecutor:
             deterministic_diet_correction_terminal = True
             full_reply = terminal.message
             final_finish_reason = "stop" if terminal.satisfied else "error"
-            if not health_advice_buffered:
+            if not response_output_buffered:
                 for i in range(0, len(full_reply), 20):
                     yield {
                         "event": "token",
@@ -17039,7 +17046,7 @@ class AgentExecutor:
                     final_finish_reason = "stop"
             else:
                 error_msg = safe_llm_error_message(e)
-            if not health_advice_buffered:
+            if not response_output_buffered:
                 yield {"event": "token", "data": {"content": error_msg}}
             full_reply = error_msg
             if final_finish_reason != "stop":
