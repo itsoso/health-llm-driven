@@ -27,9 +27,9 @@ Status: draft for the next App Store submission.
 
 ### Description
 
-小巴，你忠实的健康参谋——面向长期健康管理的个人健康操作系统。它把你授权同步的 Apple Health / HealthKit 数据、Apple Watch 记录、体检报告、饮食运动记录、用药和补剂信息组织成可复盘的健康时间线，并通过 AI 帮你生成日常行动建议。
+小巴健康，你忠实的健康参谋——面向长期健康管理的个人健康操作系统。它把你授权同步的 Apple Health / HealthKit 数据、Apple Watch 记录、体检报告、饮食运动记录、用药和补剂信息组织成可复盘的健康时间线，并通过 AI 帮你生成日常行动建议。
 
-打开即进入小巴。小巴对话是主入口；当存在明确待办、风险或处理状态时，顶部动态上下文条会连接到今日计划，但不会在每轮回复后重复出现。你可以通过输入栏和快捷入口完成记录，并从更多菜单进入个人中心管理数据来源、健康档案、提醒、安全与隐私。
+打开即进入小巴健康。小巴健康对话是主入口；当存在明确待办、风险或处理状态时，顶部动态上下文条会连接到今日计划，但不会在每轮回复后重复出现。你可以通过输入栏和快捷入口完成记录，并从更多菜单进入个人中心管理数据来源、健康档案、提醒、安全与隐私。
 
 核心能力:
 
@@ -42,15 +42,15 @@ Status: draft for the next App Store submission.
 
 重要说明:
 
-小巴提供健康记录、趋势解读和生活方式建议，不提供诊断、急救分诊、处方、治疗方案或药物剂量调整。任何医疗决策请咨询医生。紧急症状请立即联系医生或当地急救服务。
+小巴健康提供健康记录、趋势解读和生活方式建议，不提供诊断、急救分诊、处方、治疗方案或药物剂量调整。任何医疗决策请咨询医生。紧急症状请立即联系医生或当地急救服务。
 
 ### Keywords
 
-健康记录,Apple Watch,HealthKit,体检报告,饮食记录,运动记录,睡眠,用药提醒,补剂,小巴,中和知微,健康参谋
+健康记录,Apple Watch,HealthKit,体检报告,饮食记录,运动记录,睡眠,用药提醒,补剂,小巴健康,中和知微,健康参谋
 
 ### What's New
 
-本版本收敛为 iPhone 上的 Agent Native 核心体验：打开即进入小巴，动态上下文条与今日计划、文字与语音输入、拍照记录、确认写入和个人中心都围绕对话完成。新增可查询的账号与数据删除请求，改为场景触发权限，并优化动态行动、流式 Markdown、图片持久化和写入回执。
+本版本收敛为 iPhone 上的小巴健康核心体验：打开即进入小巴健康，动态上下文条与今日计划、文字与语音输入、拍照记录、确认写入和个人中心都围绕对话完成。新增可查询的账号与数据删除请求，改为场景触发权限，并优化动态行动、流式 Markdown、图片持久化和写入回执。
 
 ## Review Notes
 
@@ -158,7 +158,7 @@ Before final submission, compare every App Store Connect data type and purpose w
 
 ## Regulated Medical Device Declaration
 
-小巴 is not a regulated medical device. It supports personal health records, trend explanation and lifestyle action drafts, but does not claim to diagnose, prevent or treat disease, replace a medical device, prescribe treatment, or determine medication dosage.
+小巴健康 is not a regulated medical device. It supports personal health records, trend explanation and lifestyle action drafts, but does not claim to diagnose, prevent or treat disease, replace a medical device, prescribe treatment, or determine medication dosage.
 
 Because the app is categorized as Health & Fitness and is intended for United States availability, App Store Connect requires an explicit declaration. In `App Information -> App Store Regulations & Permits -> Regulated Medical Devices`, select `No`, save it, then set `APP_STORE_REGULATED_MEDICAL_DEVICE_STATUS=no` on the release machine. A `yes` value must stop this release and trigger a separate regulatory review.
 
@@ -193,7 +193,7 @@ screenshot set against that exact candidate before submission.
 
 Use `docs/release/app-store/screenshot-runbook.md`. Required first pass:
 
-1. Xiaoba: open directly into 小巴, with today briefing and suggested next action visible.
+1. Xiaoba Health: open directly into 小巴健康, with today briefing and suggested next action visible.
 2. Chat: AI conversation with dynamic UI card.
 3. Record: fast food/water/workout recording opened from the conversation entry points.
 4. Profile: personal center / data connections and health profile.
