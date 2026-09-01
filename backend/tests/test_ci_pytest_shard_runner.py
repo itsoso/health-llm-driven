@@ -113,8 +113,12 @@ def test_agent_i_z_tests_run_in_bounded_ci_processes():
 
     assert "agent-i-z" not in by_label
     assert by_label["agent-i-l"]["paths"] == "tests/test_agent_[i-l]*.py"
-    assert by_label["agent-m-r"]["paths"] == "tests/test_agent_[m-r]*.py"
-    assert by_label["agent-s-z"]["paths"] == "tests/test_agent_[s-z]*.py"
+    assert "agent-m-r" not in by_label
+    assert "agent-s-z" not in by_label
+    assert by_label["agent-m-p"]["paths"] == "tests/test_agent_[m-p]*.py"
+    assert by_label["agent-r"]["paths"] == "tests/test_agent_r*.py"
+    assert by_label["agent-s-v"]["paths"] == "tests/test_agent_[s-v]*.py"
+    assert by_label["agent-w-z"]["paths"] == "tests/test_agent_[w-z]*.py"
 
 
 def test_observed_slow_alphabetic_families_run_in_single_letter_shards():
