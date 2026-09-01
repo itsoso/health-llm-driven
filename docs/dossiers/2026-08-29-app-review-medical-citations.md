@@ -87,6 +87,8 @@
 
 ## G6 · 上线验证
 
+- 2026-09-01 独立模拟审核裁决：`NO-GO`。代码与 Build 261 二进制层为 conditional GO；提交层因精确候选真机审核账号登录/BMI 引用与外链证据、`261-ready` 同包截图缺失而阻断。只读核对 ASC 还发现 1.3.3 绑定已拒绝的 Build 256，名称与提交文案仍有旧品牌，审核备注缺少 BMI 复现步骤且审核联系人电话为空；App Privacy、年龄分级与“非受监管医疗设备”声明已发布/保存并保持通过。此次模拟审核没有修改 ASC 表单、选择 Build 261 或提交审核。
+- 同日新鲜 Mobile 定向回归 6 suites / 85 tests PASS，覆盖医学引用、SSE/历史恢复、引用组件与登录错误分类。Backend 本地定向 pytest 因 `localhost:5432` PostgreSQL 未运行而在 collection 前失败，不能记为新鲜通过；精确 source `21576b80ec4c968ada4ea005e8bfde633bc24f27` 仍以 GitHub CI run `33510985890` 全绿为提交候选证据。
 - pending。精确 Build 261 必须真机输入“帮我算我的BMI”，看到默认展开来源并能打开 NHC/CDC 官方链接。
 - 2026-09-01 从精确 source `3e3d1f9d4e1ccd4433f75735c420dbc98ab0a850` 以 Release / iOS Simulator 26.5 无签名构建 1.3.3 (260) 成功并安装；`CFBundleDisplayName=小巴健康`，启动登录页品牌显示“小巴健康”。模拟器没有审核账号会话，因此未生成聊天/医学引用商店截图；此证据只验证 Release UI 与品牌，不替代物理 iPhone G6。
 - 2026-08-29 检查到登记 iPhone `suntice` 当前 offline；未用模拟器或旧 Build 代替精确二进制证据。
