@@ -45,6 +45,10 @@ def test_non_agent_a_tests_run_in_bounded_ci_processes():
     )
     assert by_label["a-late"]["paths"] == "tests"
     assert by_label["b"]["paths"] == "tests/test_b*.py"
+    assert "e-g" not in by_label
+    assert by_label["e"]["paths"] == "tests/test_e*.py"
+    assert by_label["f"]["paths"] == "tests/test_f*.py"
+    assert by_label["g"]["paths"] == "tests/test_g*.py"
     assert "--ignore=tests/test_app_store_demo_account.py" in by_label["a-late"][
         "extra_args"
     ]
