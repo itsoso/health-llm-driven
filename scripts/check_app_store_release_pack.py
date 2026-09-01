@@ -66,7 +66,7 @@ OFFICIAL_REFERENCE_URLS = [
     "https://developer.apple.com/app-store/review/guidelines/",
 ]
 
-EXPECTED_APP_NAME = "小巴"
+EXPECTED_APP_NAME = "小巴健康"
 DEMO_PLACEHOLDERS = [
     "[NEEDS APP STORE REVIEW DEMO ACCOUNT]",
     "[NEEDS APP STORE REVIEW DEMO PASSWORD]",

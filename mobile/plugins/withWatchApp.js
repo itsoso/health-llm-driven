@@ -33,9 +33,9 @@ const WATCH_INFO_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
   </array>
   <key>CFBundleIconName</key><string>AppIcon</string>
   <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-  <key>CFBundleDisplayName</key><string>小巴</string>
+  <key>CFBundleDisplayName</key><string>小巴健康</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>小巴</string>
+  <key>CFBundleName</key><string>小巴健康</string>
   <key>CFBundlePackageType</key><string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
   <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
   <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
@@ -52,11 +52,11 @@ const WIDGET_INFO_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>$(DEVELOPMENT_LANGUAGE)</string>
-  <key>CFBundleDisplayName</key><string>小巴</string>
+  <key>CFBundleDisplayName</key><string>小巴健康</string>
   <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
   <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>小巴</string>
+  <key>CFBundleName</key><string>小巴健康</string>
   <key>CFBundlePackageType</key><string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
   <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
   <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>

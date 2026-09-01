@@ -1,4 +1,4 @@
-# 小巴(中和知微)App Store Submission Pack · 睿为健康
+# 小巴健康(中和知微)App Store Submission Pack · 睿为健康
 
 Status: draft for the next App Store submission.
 
@@ -9,7 +9,7 @@ Status: draft for the next App Store submission.
 | App Store Connect app id | `6763569720` |
 | Bundle ID | `life.executor.health` |
 | SKU | `life.executor.health` |
-| App name | `小巴` |
+| App name | `小巴健康` |
 | Internal product name | `中和知微`(公司:睿为健康)|
 | App Store Connect primary locale | English (U.S.) record with Simplified Chinese customer-facing metadata |
 | Category | Health & Fitness |

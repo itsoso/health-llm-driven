@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "小巴",
+    "name": "小巴健康",
     "slug": "health-pilot",
     "version": "1.3.3",
     "orientation": "portrait",
@@ -20,7 +20,7 @@
         "com.apple.developer.healthkit": true
       },
       "infoPlist": {
-        "CFBundleDisplayName": "小巴",
+        "CFBundleDisplayName": "小巴健康",
         "UISupportedInterfaceOrientations": [
           "UIInterfaceOrientationPortrait"
         ],

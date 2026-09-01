@@ -14,11 +14,11 @@ jest.mock('../../hooks/useTheme', () => ({
 }));
 
 describe('AppLockScreen', () => {
-  it('uses 小巴 as the locked app brand name', () => {
+  it('uses 小巴健康 as the locked app brand name', () => {
     const onUnlock = jest.fn();
     const { getByText, queryByText } = render(<AppLockScreen onUnlock={onUnlock} />);
 
-    expect(getByText('小巴')).toBeTruthy();
+    expect(getByText('小巴健康')).toBeTruthy();
     expect(queryByText('HealthPilot')).toBeNull();
 
     fireEvent.press(getByText('解锁'));

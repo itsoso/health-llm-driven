@@ -108,8 +108,8 @@ target.build_configurations.each do |c|
 end
 
 watch_plist = File.join(src_dir, 'Info.plist')
-ensure_plist_value(watch_plist, 'CFBundleDisplayName', '小巴')
-ensure_plist_value(watch_plist, 'CFBundleName', '小巴')
+ensure_plist_value(watch_plist, 'CFBundleDisplayName', '小巴健康')
+ensure_plist_value(watch_plist, 'CFBundleName', '小巴健康')
 
 # 源文件组 + 引用(幂等:先清掉本 target 已有的 RevaWatch 源 build files)
 group = project.main_group.find_subpath(watch_name, true)
@@ -175,8 +175,8 @@ if Dir.exist?(comp_dir)
   end
 
   comp_plist = File.join(comp_dir, 'Info.plist')
-  ensure_plist_value(comp_plist, 'CFBundleDisplayName', '小巴')
-  ensure_plist_value(comp_plist, 'CFBundleName', '小巴')
+  ensure_plist_value(comp_plist, 'CFBundleDisplayName', '小巴健康')
+  ensure_plist_value(comp_plist, 'CFBundleName', '小巴健康')
 
   cgroup = project.main_group.find_subpath(comp_name, true)
   cgroup.path = comp_name

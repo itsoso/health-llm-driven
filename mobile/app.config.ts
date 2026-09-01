@@ -2,9 +2,9 @@
  * Expo dynamic config — variant 机制让同一个 iPhone 能同时装 production + dev-client.
  *
  * 靠 process.env.APP_VARIANT 切换 bundle ID + 显示名:
- *   - undefined / 'production' → 小巴         (life.executor.health)
- *   - 'development'            → 小巴 Dev     (life.executor.health.dev)
- *   - 'preview'                → 小巴 Preview (life.executor.health.preview)
+ *   - undefined / 'production' → 小巴健康         (life.executor.health)
+ *   - 'development'            → 小巴健康 Dev     (life.executor.health.dev)
+ *   - 'preview'                → 小巴健康 Preview (life.executor.health.preview)
  *
  * APP_VARIANT 在 eas.json 各 profile 的 env 里设置。
  *
@@ -49,10 +49,10 @@ const bundleId = IS_DEV
     : BUNDLE_ID_BASE;
 
 const displayName = IS_DEV
-  ? '小巴 Dev'
+  ? '小巴健康 Dev'
   : IS_PREVIEW
-    ? '小巴 Preview'
-    : '小巴';
+    ? '小巴健康 Preview'
+    : '小巴健康';
 
 const androidPackage = bundleId;
 const BUNDLE_ROKID_CALLBACK_SCHEME = `${bundleId}.rokid`;
@@ -149,7 +149,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
 
   return {
   ...config,
-  name: config.name ?? '小巴',
+  name: config.name ?? '小巴健康',
   slug: config.slug ?? 'health-pilot',
   plugins,
   ios: {

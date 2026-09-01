@@ -24,7 +24,7 @@ def test_ios_app_store_submission_preflight_passes_repo_config():
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "iOS App Store submission preflight passed." in result.stdout
-    assert "app_name=小巴" in result.stdout
+    assert "app_name=小巴健康" in result.stdout
     assert "bundle_id=life.executor.health" in result.stdout
     assert "asc_app_id=6763569720" in result.stdout
 

@@ -31,7 +31,7 @@ FORBIDDEN_PRODUCTION_PLUGINS = {
     "./plugins/withIntentsExtension",
 }
 
-EXPECTED_APP_NAME = "小巴"
+EXPECTED_APP_NAME = "小巴健康"
 
 APPLE_PRIVACY_TYPE_TO_MANIFEST_TYPE = {
     "Health": "NSPrivacyCollectedDataTypeHealth",

@@ -1,5 +1,6 @@
 const { buildWatchInjectionEnv } = require('../plugins/withWatchApp');
 const appJson = require('../app.json');
+const { APP_DISPLAY_NAME } = require('../constants/brand');
 
 function configForVariant(variant?: string, env: Record<string, string | undefined> = {}) {
   const previous = process.env.APP_VARIANT;
@@ -81,16 +82,17 @@ describe('app.config app links', () => {
     });
   });
 
-  it('uses 小巴 as the user-visible production app name', () => {
+  it('uses 小巴健康 as the user-visible production app name', () => {
     const config = configForVariant('production');
 
-    expect(config.name).toBe('小巴');
-    expect(config.ios?.infoPlist?.CFBundleDisplayName).toBe('小巴');
+    expect(config.name).toBe('小巴健康');
+    expect(config.ios?.infoPlist?.CFBundleDisplayName).toBe('小巴健康');
+    expect(APP_DISPLAY_NAME).toBe('小巴健康');
   });
 
-  it('keeps user-visible variant names aligned with 小巴', () => {
-    expect(configForVariant('development').ios?.infoPlist?.CFBundleDisplayName).toBe('小巴 Dev');
-    expect(configForVariant('preview').ios?.infoPlist?.CFBundleDisplayName).toBe('小巴 Preview');
+  it('keeps user-visible variant names aligned with 小巴健康', () => {
+    expect(configForVariant('development').ios?.infoPlist?.CFBundleDisplayName).toBe('小巴健康 Dev');
+    expect(configForVariant('preview').ios?.infoPlist?.CFBundleDisplayName).toBe('小巴健康 Preview');
   });
 
   it('uses an explicit native build number for reproducible local release builds', () => {
