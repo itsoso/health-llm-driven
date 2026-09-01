@@ -2,6 +2,7 @@
 import React from 'react';
 import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { AxiosError, CanceledError } from 'axios';
 
 const mockLogin = jest.fn();
 const mockVerifyPhoneCode = jest.fn();
@@ -375,7 +376,19 @@ describe('LoginScreen invitation-gated phone auth', () => {
   });
 
   it('shows an inline error when account password login fails', async () => {
-    mockLogin.mockRejectedValueOnce({ response: { status: 401 } });
+    mockLogin.mockRejectedValueOnce(new AxiosError(
+      'Request failed with status code 401',
+      AxiosError.ERR_BAD_REQUEST,
+      undefined,
+      undefined,
+      {
+        data: {},
+        status: 401,
+        statusText: 'Unauthorized',
+        headers: {},
+        config: {} as never,
+      },
+    ));
     const view = render(<LoginScreen />);
 
     fireEvent.press(view.getByText('账号密码登录'));
@@ -384,5 +397,131 @@ describe('LoginScreen invitation-gated phone auth', () => {
     fireEvent.press(view.getByText('登录'));
 
     expect(await view.findByRole('alert')).toHaveTextContent('登录失败，请检查账号信息。');
+  });
+
+  it('shows the actionable device-storage error instead of reporting the network unavailable', async () => {
+    mockLogin.mockRejectedValueOnce(new Error('登录状态无法安全保存，请解锁设备后重试'));
+    const view = render(<LoginScreen />);
+
+    fireEvent.press(view.getByText('账号密码登录'));
+    fireEvent.changeText(view.getByLabelText('用户名输入框'), 'alice');
+    fireEvent.changeText(view.getByLabelText('密码输入框'), 'hunter2');
+    fireEvent.press(view.getByText('登录'));
+
+    const alert = await view.findByRole('alert');
+    expect(alert).toHaveTextContent('登录状态无法安全保存，请解锁设备后重试');
+    expect(alert).not.toHaveTextContent('网络暂时不可用');
+  });
+
+  it('keeps the network-unavailable guidance for an actual Axios network error', async () => {
+    mockLogin.mockRejectedValueOnce(new AxiosError(
+      'Network Error',
+      AxiosError.ERR_NETWORK,
+      undefined,
+      {},
+    ));
+    const view = render(<LoginScreen />);
+
+    fireEvent.press(view.getByText('账号密码登录'));
+    fireEvent.changeText(view.getByLabelText('用户名输入框'), 'alice');
+    fireEvent.changeText(view.getByLabelText('密码输入框'), 'hunter2');
+    fireEvent.press(view.getByText('登录'));
+
+    expect(await view.findByRole('alert')).toHaveTextContent(
+      '网络暂时不可用，请检查网络后重试。',
+    );
+  });
+
+  it('does not trust a forged Axios-shaped local error as a network failure', async () => {
+    mockLogin.mockRejectedValueOnce({
+      isAxiosError: true,
+      code: 'ERR_NETWORK',
+      request: {},
+      message: 'sensitive forged detail',
+    });
+    const view = render(<LoginScreen />);
+
+    fireEvent.press(view.getByText('账号密码登录'));
+    fireEvent.changeText(view.getByLabelText('用户名输入框'), 'alice');
+    fireEvent.changeText(view.getByLabelText('密码输入框'), 'hunter2');
+    fireEvent.press(view.getByText('登录'));
+
+    const alert = await view.findByRole('alert');
+    expect(alert).toHaveTextContent('登录失败，请稍后重试。');
+    expect(alert).not.toHaveTextContent('网络暂时不可用');
+    expect(alert).not.toHaveTextContent('sensitive forged detail');
+  });
+
+  it('does not trust a local response property as an HTTP authentication failure', async () => {
+    mockLogin.mockRejectedValueOnce({
+      response: { status: 401 },
+      message: 'sensitive local response detail',
+    });
+    const view = render(<LoginScreen />);
+
+    fireEvent.press(view.getByText('账号密码登录'));
+    fireEvent.changeText(view.getByLabelText('用户名输入框'), 'alice');
+    fireEvent.changeText(view.getByLabelText('密码输入框'), 'hunter2');
+    fireEvent.press(view.getByText('登录'));
+
+    const alert = await view.findByRole('alert');
+    expect(alert).toHaveTextContent('登录失败，请稍后重试。');
+    expect(alert).not.toHaveTextContent('登录失败，请检查账号信息。');
+    expect(alert).not.toHaveTextContent('sensitive local response detail');
+  });
+
+  it('does not report an Axios cancellation as the network unavailable', async () => {
+    mockLogin.mockRejectedValueOnce(new CanceledError('canceled', undefined, {}));
+    const view = render(<LoginScreen />);
+
+    fireEvent.press(view.getByText('账号密码登录'));
+    fireEvent.changeText(view.getByLabelText('用户名输入框'), 'alice');
+    fireEvent.changeText(view.getByLabelText('密码输入框'), 'hunter2');
+    fireEvent.press(view.getByText('登录'));
+
+    const alert = await view.findByRole('alert');
+    expect(alert).toHaveTextContent('登录失败，请稍后重试。');
+    expect(alert).not.toHaveTextContent('网络暂时不可用');
+  });
+
+  it('redacts unknown local login error details', async () => {
+    mockLogin.mockRejectedValueOnce(new Error('sensitive local detail'));
+    const view = render(<LoginScreen />);
+
+    fireEvent.press(view.getByText('账号密码登录'));
+    fireEvent.changeText(view.getByLabelText('用户名输入框'), 'alice');
+    fireEvent.changeText(view.getByLabelText('密码输入框'), 'hunter2');
+    fireEvent.press(view.getByText('登录'));
+
+    const alert = await view.findByRole('alert');
+    expect(alert).toHaveTextContent('登录失败，请稍后重试。');
+    expect(alert).not.toHaveTextContent('sensitive local detail');
+  });
+
+  it('redacts HTTP login response details', async () => {
+    mockLogin.mockRejectedValueOnce(new AxiosError(
+      'sensitive server message',
+      AxiosError.ERR_BAD_REQUEST,
+      undefined,
+      undefined,
+      {
+        data: { detail: 'sensitive server detail' },
+        status: 401,
+        statusText: 'Unauthorized',
+        headers: {},
+        config: {} as never,
+      },
+    ));
+    const view = render(<LoginScreen />);
+
+    fireEvent.press(view.getByText('账号密码登录'));
+    fireEvent.changeText(view.getByLabelText('用户名输入框'), 'alice');
+    fireEvent.changeText(view.getByLabelText('密码输入框'), 'wrong-password');
+    fireEvent.press(view.getByText('登录'));
+
+    const alert = await view.findByRole('alert');
+    expect(alert).toHaveTextContent('登录失败，请检查账号信息。');
+    expect(alert).not.toHaveTextContent('sensitive server message');
+    expect(alert).not.toHaveTextContent('sensitive server detail');
   });
 });

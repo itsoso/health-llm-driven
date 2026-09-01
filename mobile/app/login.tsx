@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { AxiosError } from 'axios';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -38,6 +39,14 @@ interface LoginScreenProps {
 const MANUAL_INVITE_PATTERN = /^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}$/;
 const PHONE_PATTERN = /^\+[1-9]\d{6,14}$/;
 const OTP_PATTERN = /^\d{4,8}$/;
+const ACCOUNT_LOGIN_ACTIONABLE_ERRORS = new Set([
+  '登录状态无法安全保存，请解锁设备后重试',
+]);
+const NETWORK_ERROR_CODES = new Set([
+  AxiosError.ERR_NETWORK,
+  AxiosError.ECONNABORTED,
+  AxiosError.ETIMEDOUT,
+]);
 
 const INVITATION_ERROR_MESSAGES: Record<string, string> = {
   INVITATION_PHONE_MISMATCH: '该邀请码不是发送给当前手机号的，请确认手机号或联系管理员。',
@@ -64,7 +73,21 @@ function maskPhone(value: string): string {
 }
 
 function isNetworkError(error: unknown): boolean {
-  return Boolean(error && typeof error === 'object' && !('response' in error));
+  return error instanceof AxiosError
+    && Boolean(error.code && NETWORK_ERROR_CODES.has(error.code));
+}
+
+function accountLoginErrorMessage(error: unknown): string {
+  if (error instanceof Error && ACCOUNT_LOGIN_ACTIONABLE_ERRORS.has(error.message)) {
+    return error.message;
+  }
+  if (isNetworkError(error)) {
+    return '网络暂时不可用，请检查网络后重试。';
+  }
+  if (error instanceof AxiosError && error.response) {
+    return '登录失败，请检查账号信息。';
+  }
+  return '登录失败，请稍后重试。';
 }
 
 export default function LoginScreen({
@@ -236,9 +259,7 @@ export default function LoginScreen({
       await login(username.trim(), password);
       await saveCredentials(username.trim(), password, remember);
     } catch (error) {
-      setInlineError(isNetworkError(error)
-        ? '网络暂时不可用，请检查网络后重试。'
-        : '登录失败，请检查账号信息。');
+      setInlineError(accountLoginErrorMessage(error));
     } finally {
       setLoading(false);
     }
