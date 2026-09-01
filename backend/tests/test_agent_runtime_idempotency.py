@@ -77,6 +77,13 @@ def test_distributed_cache_coalesces_requests_across_worker_local_caches(monkeyp
         def get(self, key):
             return values.get(key)
 
+    # Earlier tests can legitimately put the module-level Redis circuit breaker
+    # into its 30-second cooldown. This case replaces Redis with a healthy fake,
+    # so reset that independent global state instead of depending on test order.
+    monkeypatch.setattr(
+        "app.services.agent_turn_idempotency._redis_retry_after",
+        0.0,
+    )
     monkeypatch.setattr("app.utils.redis_cache.get_redis_client", lambda: FakeRedis())
     first = resolve_distributed_semantic_turn(
         cache=SemanticTurnDedupeCache(),
