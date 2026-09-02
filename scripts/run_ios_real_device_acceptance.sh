@@ -107,20 +107,23 @@ trap 'rm -rf "${HARNESS_DIR}"' EXIT
 env -u APP_STORE_REVIEW_DEMO_ACCOUNT -u APP_STORE_REVIEW_DEMO_PASSWORD \
   ruby "${HARNESS_SOURCE_DIR}/generate_project.rb" "${HARNESS_DIR}"
 
-PROVISIONING_ARGS=()
-if [[ "${DESTINATION_PLATFORM}" == "iOS" ]]; then
-  PROVISIONING_ARGS+=("-allowProvisioningUpdates")
-fi
+run_xcodebuild() {
+  env -u APP_STORE_REVIEW_DEMO_ACCOUNT -u APP_STORE_REVIEW_DEMO_PASSWORD \
+    xcodebuild \
+    -project "${HARNESS_DIR}/XiaobaAcceptance.xcodeproj" \
+    -scheme XiaobaAcceptanceUITests \
+    -destination "platform=${DESTINATION_PLATFORM},id=${DEVICE_ID}" \
+    -derivedDataPath "${HARNESS_DIR}/DerivedData" \
+    -resultBundlePath "${RESULT_PATH}" \
+    -collect-test-diagnostics never \
+    "$@" \
+    test
+}
 
-env -u APP_STORE_REVIEW_DEMO_ACCOUNT -u APP_STORE_REVIEW_DEMO_PASSWORD \
-  xcodebuild \
-  -project "${HARNESS_DIR}/XiaobaAcceptance.xcodeproj" \
-  -scheme XiaobaAcceptanceUITests \
-  -destination "platform=${DESTINATION_PLATFORM},id=${DEVICE_ID}" \
-  -derivedDataPath "${HARNESS_DIR}/DerivedData" \
-  -resultBundlePath "${RESULT_PATH}" \
-  -collect-test-diagnostics never \
-  "${PROVISIONING_ARGS[@]}" \
-  test
+if [[ "${DESTINATION_PLATFORM}" == "iOS" ]]; then
+  run_xcodebuild -allowProvisioningUpdates
+else
+  run_xcodebuild
+fi
 
 echo "${DESTINATION_PLATFORM} acceptance result: ${RESULT_PATH}"

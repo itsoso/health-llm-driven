@@ -82,7 +82,15 @@ def test_runner_allows_xcode_to_provision_the_physical_device_test_runner() -> N
 
     assert 'if [[ "${DESTINATION_PLATFORM}" == "iOS" ]]' in runner
     assert "-allowProvisioningUpdates" in runner
-    assert '"${PROVISIONING_ARGS[@]}"' in runner
+    assert "run_xcodebuild -allowProvisioningUpdates" in runner
+
+
+def test_runner_avoids_empty_array_expansion_with_bash_nounset() -> None:
+    runner = RUNNER.read_text(encoding="utf-8")
+
+    assert "PROVISIONING_ARGS=()" not in runner
+    assert '"${PROVISIONING_ARGS[@]}"' not in runner
+    assert "run_xcodebuild()" in runner
 
 
 def test_runner_refuses_review_credentials_before_invoking_xcodebuild() -> None:
