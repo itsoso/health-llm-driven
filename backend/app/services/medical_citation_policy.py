@@ -8,9 +8,9 @@ links cross the client boundary.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from ipaddress import ip_address
-import re
 from typing import Any, Iterable, Mapping
 from urllib.parse import urlsplit
 
@@ -89,6 +89,31 @@ _TOPIC_SOURCES: dict[str, tuple[MedicalCitation, ...]] = {
             claim_scope="用于核对成人高血压风险、复测和就医沟通边界。",
         ),
     ),
+    "vital_signs": (
+        MedicalCitation(
+            source_id="nlm:vital-signs",
+            title="生命体征：心率、呼吸、体温与血压",
+            organization="美国国立医学图书馆",
+            url="https://medlineplus.gov/ency/article/002341.htm",
+            topic="vital_signs",
+            claim_scope=(
+                "用于核对静息成人心率、呼吸频率、体温和血压的一般参考范围；"
+                "个体范围会随年龄、健康状况和活动水平变化。"
+            ),
+        ),
+    ),
+    "oxygen_saturation": (
+        MedicalCitation(
+            source_id="nlm:pulse-oximetry",
+            title="脉搏血氧测量与结果解读",
+            organization="美国国立医学图书馆",
+            url="https://medlineplus.gov/lab-tests/pulse-oximetry/",
+            topic="oxygen_saturation",
+            claim_scope=(
+                "用于核对血氧饱和度测量、家庭设备局限和需要联系医疗人员的边界。"
+            ),
+        ),
+    ),
     "blood_glucose": (
         MedicalCitation(
             source_id="ada:standards-of-care",
@@ -127,6 +152,22 @@ _TOPIC_SOURCES: dict[str, tuple[MedicalCitation, ...]] = {
             url="https://www.who.int/news-room/fact-sheets/detail/physical-activity",
             topic="physical_activity",
             claim_scope="用于核对成人身体活动建议；个人疾病限制需由专业人员评估。",
+        ),
+    ),
+    "hydration": (
+        MedicalCitation(
+            source_id="nhs:hydration",
+            title="饮水与补水建议",
+            organization="英国国家医疗服务体系",
+            url=(
+                "https://www.nhs.uk/live-well/eat-well/"
+                "food-guidelines-and-food-labels/water-drinks-nutrition/"
+            ),
+            topic="hydration",
+            claim_scope=(
+                "用于核对一般成人日常补水建议；炎热、运动、妊娠、哺乳或疾病时"
+                "需求可能不同。"
+            ),
         ),
     ),
     "supplement": (
@@ -181,6 +222,21 @@ _TOPIC_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     ("blood_pressure", re.compile(r"血压|收缩压|舒张压|高血压|低血压", re.I)),
     (
+        "vital_signs",
+        re.compile(
+            r"心率|静息心率|脉搏|呼吸频率|呼吸率|体温|发热|发烧|"
+            r"heartbeat|heart rate|pulse|respiratory rate|body temperature|fever",
+            re.I,
+        ),
+    ),
+    (
+        "oxygen_saturation",
+        re.compile(
+            r"血氧|血氧饱和度|指氧|脉搏血氧|SpO2|oxygen saturation|pulse ox",
+            re.I,
+        ),
+    ),
+    (
         "blood_glucose",
         re.compile(r"血糖|糖化血红蛋白|HbA1c|糖尿病|胰岛素", re.I),
     ),
@@ -195,7 +251,16 @@ _TOPIC_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("sleep", re.compile(r"睡眠|失眠|入睡|早醒|睡不着|睡多久|深睡|REM", re.I)),
     (
         "physical_activity",
-        re.compile(r"运动建议|运动量|锻炼|训练量|有氧|力量训练|步行多久|运动多久", re.I),
+        re.compile(
+            r"运动建议|运动量|锻炼|训练量|有氧|力量训练|步行多久|运动多久", re.I
+        ),
+    ),
+    (
+        "hydration",
+        re.compile(
+            r"饮水|喝水|喝.{0,4}水|补水|水分摄入|脱水|hydration|dehydration",
+            re.I,
+        ),
     ),
     (
         "supplement",
@@ -224,6 +289,8 @@ _HEALTH_ADVICE_MARKERS = re.compile(
 _GENERAL_HEALTH_MARKERS = re.compile(
     r"疼|痛|发热|发烧|咳嗽|头晕|恶心|呕吐|腹泻|皮疹|过敏|"
     r"感冒|口腔溃疡|便秘|鼻炎|哮喘|"
+    r"焦虑|抑郁|情绪|惊恐|心理|压力|"
+    r"月经|经期|停经|绝经|怀孕|妊娠|备孕|哺乳|避孕|生育|性健康|"
     r"症状|疾病|感染|炎症|肿瘤|癌|心脏|肝|肾|肺|胃|肠|"
     r"健康|医学|医生|医院|急诊",
     re.I,
@@ -331,7 +398,9 @@ def _external_source_citation(
     )
 
 
-def _manifest_citations(manifest: Mapping[str, Any] | None) -> Iterable[MedicalCitation]:
+def _manifest_citations(
+    manifest: Mapping[str, Any] | None,
+) -> Iterable[MedicalCitation]:
     for source in (manifest or {}).get("authority_sources") or []:
         if not isinstance(source, Mapping):
             continue
@@ -355,9 +424,7 @@ def _system_card_citations(card: Mapping[str, Any] | None) -> Iterable[MedicalCi
         claim_title = str(claim.get("title") or "系统知识条目").strip()
         metadata = claim.get("metadata") or {}
         external_sources = (
-            metadata.get("external_sources")
-            if isinstance(metadata, Mapping)
-            else []
+            metadata.get("external_sources") if isinstance(metadata, Mapping) else []
         )
         resolved_ids: set[str] = set()
         for source in external_sources or []:
@@ -379,21 +446,18 @@ def _system_card_citations(card: Mapping[str, Any] | None) -> Iterable[MedicalCi
 
 
 def _detect_topics(text: str) -> tuple[str, ...]:
-    return tuple(
-        topic
-        for topic, pattern in _TOPIC_PATTERNS
-        if pattern.search(text)
-    )
+    return tuple(topic for topic, pattern in _TOPIC_PATTERNS if pattern.search(text))
 
 
 def _looks_like_general_health_advice(text: str) -> bool:
     return bool(
-        _GENERAL_HEALTH_MARKERS.search(text)
-        and _HEALTH_ADVICE_MARKERS.search(text)
+        _GENERAL_HEALTH_MARKERS.search(text) and _HEALTH_ADVICE_MARKERS.search(text)
     )
 
 
-def _dedupe(citations: Iterable[MedicalCitation], *, limit: int = 4) -> tuple[MedicalCitation, ...]:
+def _dedupe(
+    citations: Iterable[MedicalCitation], *, limit: int = 4
+) -> tuple[MedicalCitation, ...]:
     output: list[MedicalCitation] = []
     seen_urls: set[str] = set()
     for citation in citations:
@@ -461,9 +525,7 @@ def render_medical_citation_prompt(bundle: MedicalCitationBundle) -> str:
             f"({citation.url})"
         )
     if "bmi" in bundle.topics:
-        lines.append(
-            "必须说明 BMI 是筛查指标，不是诊断；做医疗决定前请咨询医生。"
-        )
+        lines.append("必须说明 BMI 是筛查指标，不是诊断；做医疗决定前请咨询医生。")
     else:
         lines.append(
             "必须说明这些信息用于健康管理，不替代诊断；做医疗决定前请咨询医生。"

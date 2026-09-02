@@ -1,3 +1,4 @@
+import pytest
 from app.services.medical_citation_policy import (
     build_medical_citation_bundle,
     render_medical_citation_prompt,
@@ -45,7 +46,7 @@ def test_personal_data_read_without_interpretation_does_not_add_medical_citation
     assert render_medical_citation_prompt(bundle) == ""
 
 
-def test_health_advice_without_specific_catalog_fails_safe_to_official_health_directory():
+def test_uncataloged_health_advice_fails_safe_to_official_health_directory():
     bundle = build_medical_citation_bundle("我最近总是头痛，应该怎么办？")
 
     assert bundle.required is True
@@ -176,3 +177,42 @@ def test_answer_side_calculation_adds_citation_even_when_request_looked_like_a_r
     assert bundle.required is True
     assert bundle.topics == ("nutrition_energy",)
     assert bundle.public_citations[0]["source_id"] == "usda:fooddata-central"
+
+
+@pytest.mark.parametrize(
+    ("prompt", "topic", "source_id"),
+    [
+        ("心率正常范围是多少？", "vital_signs", "nlm:vital-signs"),
+        ("体温 39 度应该怎么办？", "vital_signs", "nlm:vital-signs"),
+        ("血氧 92% 正常吗？", "oxygen_saturation", "nlm:pulse-oximetry"),
+        ("成年人每天应该喝多少水？", "hydration", "nhs:hydration"),
+    ],
+)
+def test_common_medical_measurements_and_calculations_always_have_official_sources(
+    prompt,
+    topic,
+    source_id,
+):
+    bundle = build_medical_citation_bundle(prompt)
+
+    assert bundle.required is True
+    assert topic in bundle.topics
+    assert source_id in [item["source_id"] for item in bundle.public_citations]
+    assert all(item["url"].startswith("https://") for item in bundle.public_citations)
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "最近总是焦虑，应该怎么办？",
+        "月经推迟一周正常吗？",
+    ],
+)
+def test_common_mental_and_reproductive_health_advice_fails_safe_to_health_directory(
+    prompt,
+):
+    bundle = build_medical_citation_bundle(prompt)
+
+    assert bundle.required is True
+    assert bundle.topics == ("general_health",)
+    assert bundle.public_citations[0]["source_id"] == "nlm:medlineplus-health-topics"
