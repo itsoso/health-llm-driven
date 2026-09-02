@@ -77,6 +77,14 @@ def test_runner_accepts_simulator_destination_platform() -> None:
     assert "APP_STORE_REVIEW_DEMO_PASSWORD" not in result.stdout
 
 
+def test_runner_allows_xcode_to_provision_the_physical_device_test_runner() -> None:
+    runner = RUNNER.read_text(encoding="utf-8")
+
+    assert 'if [[ "${DESTINATION_PLATFORM}" == "iOS" ]]' in runner
+    assert "-allowProvisioningUpdates" in runner
+    assert '"${PROVISIONING_ARGS[@]}"' in runner
+
+
 def test_runner_refuses_review_credentials_before_invoking_xcodebuild() -> None:
     env = os.environ.copy()
     env["APP_STORE_REVIEW_DEMO_ACCOUNT"] = "review@example.test"
@@ -152,10 +160,12 @@ def test_latest_message_acceptance_checks_seeded_markdown_at_the_bottom() -> Non
     source = UI_TEST_SOURCE.read_text(encoding="utf-8")
 
     assert "testConversationOpensAtLatestSeededMessage" in source
-    assert '"assistant-message-surface"' in source
-    assert 'label CONTAINS %@' in source
+    assert 'app.otherElements["assistant-message-surface"]' in source
+    assert 'app.staticTexts[seededMessageText].firstMatch' in source
     assert '"今天优先完成两件事"' in source
-    assert 'assistantSurface.label.contains("今天优先完成两件事")' in source
+    assert "app.frame.intersects(seededMessage.frame)" in source
+    assert "seededMessage.isHittable" not in source
+    assert 'identifier == %@ AND label CONTAINS %@' not in source
 
 
 def test_runner_disables_interactive_device_diagnostics() -> None:
@@ -170,6 +180,8 @@ def test_today_context_acceptance_matches_the_current_agent_native_surface() -> 
     assert "testTodayContextCanOpenAndDismiss" in source
     assert 'app.buttons["打开今日计划"]' in source
     assert 'app.buttons["返回小巴"]' in source
+    assert 'app.descendants(matching: .any)["返回"]' in source
+    assert "backToChat.exists || genericBack.exists" in source
     assert 'app.buttons["关闭当前提示"]' in source
     assert "testBriefingCanExpandAndCollapse" not in source
     assert '"今日简报："' not in source

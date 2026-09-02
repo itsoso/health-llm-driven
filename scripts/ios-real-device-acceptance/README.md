@@ -8,7 +8,8 @@ It currently verifies:
 - the installed app reaches either the authenticated Agent or login surface;
 - a manually pre-authenticated session persists across two terminate/cold-launch cycles;
 - the authenticated session exposes the Agent composer;
-- today's briefing can expand and collapse when present;
+- a qualified Today context opens its declared Today or handling destination,
+  returns to the Agent, and can be dismissed;
 - an unsent text draft survives background/foreground without being sent;
 - privacy policy and account deletion entries are reachable.
 
