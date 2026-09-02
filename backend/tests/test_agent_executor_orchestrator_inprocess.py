@@ -135,10 +135,12 @@ async def test_user_scoping_passes_current_user_id(db, monkeypatch):
     result_b = await executor_b._run_orchestrator_in_process("B 的问题")
 
     assert seen_user_ids == [111, 222]
-    assert json.loads(result_a)["synthesis"] == "user=111"
+    parsed_a = json.loads(result_a)
+    assert parsed_a["query"] == "A 的问题"
+    assert parsed_a["synthesis"] == "user=111"
     assert json.loads(result_b)["synthesis"] == "user=222"
-    # 对抗:A 的结果绝不含 B 的身份/内容。
-    assert "222" not in result_a
+    # 对抗:A 的业务结果绝不含 B 的身份标记。不要扫描整个 JSON 中的裸数字：
+    # created_at 等无关时间戳也可能随机包含相同的三位数字。
     assert "user=222" not in result_a
 
 
