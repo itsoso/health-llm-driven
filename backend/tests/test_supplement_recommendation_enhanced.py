@@ -9,6 +9,7 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from app.services.supplement_recommendation import SupplementRecommendationService
+from app.services.supplement_evidence import SupplementSafetyContext
 from app.models.user_profile import UserProfile
 from app.models.daily_health import GarminData
 
@@ -141,6 +142,66 @@ class TestSupplementRecommendationService:
         assert "不能替代医生诊断" in result["recommendations"][0]["claim_boundary"]
         assert result["evidence_summary"]["matched"] >= 1
         assert result["recommendations"][0]["evidence_profile"]["evidence_level"] in {"A", "B", "C"}
+
+    def test_generate_recommendation_uses_recent_lab_safety_context(
+        self,
+        service,
+        mock_db,
+        mock_user_profile,
+        monkeypatch
+    ):
+        """测试：真实化验上下文参与补剂安全拦截"""
+        user_id = 1
+        target_date = date.today()
+        calls = []
+
+        mock_query = Mock()
+        mock_db.query.return_value = mock_query
+        mock_query.filter_by.return_value.first.return_value = mock_user_profile
+
+        monkeypatch.setattr(service, "_get_recent_health_data", lambda *args, **kwargs: None)
+        monkeypatch.setattr(service, "_get_recent_workout_data", lambda *args, **kwargs: None)
+        monkeypatch.setattr(service, "_get_recent_diet_data", lambda *args, **kwargs: None)
+        monkeypatch.setattr(service, "_get_supplement_status", lambda *args, **kwargs: {})
+        monkeypatch.setattr(
+            service,
+            "_analyze_health_status",
+            lambda *args, **kwargs: {"risk_factors": [], "positive_factors": []},
+        )
+        monkeypatch.setattr(
+            service,
+            "_generate_recommendations",
+            lambda *args, **kwargs: [{
+                "name": "甘氨酸镁",
+                "dosage": "300mg",
+                "timing": "睡前",
+                "reason": "睡眠支持",
+                "priority": "中",
+            }],
+        )
+        monkeypatch.setattr(service, "_build_knowledge_evidence", lambda *args, **kwargs: {})
+        monkeypatch.setattr(service, "_generate_timing_suggestions", lambda *args, **kwargs: {})
+        monkeypatch.setattr(service, "_generate_precautions", lambda *args, **kwargs: [])
+        monkeypatch.setattr(service, "_calculate_overall_rating", lambda *args, **kwargs: {"score": 6, "rating": "一般"})
+
+        def fake_safety_context(db, called_user_id, profile, called_target_date):
+            calls.append((db, called_user_id, profile, called_target_date))
+            return SupplementSafetyContext.from_profile(profile, labs={"egfr": 25})
+
+        monkeypatch.setattr(
+            "app.services.supplement_recommendation.build_supplement_safety_context",
+            fake_safety_context,
+        )
+
+        result = service.generate_supplement_recommendation(
+            db=mock_db,
+            user_id=user_id,
+            target_date=target_date,
+        )
+
+        assert calls == [(mock_db, user_id, mock_user_profile, target_date)]
+        assert result["recommendations"][0]["support_status"] == "blocked"
+        assert result["evidence_summary"]["blocked"] == 1
 
     # ==================== 测试：边界条件 ====================
 

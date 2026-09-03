@@ -52,16 +52,24 @@ class SupplementSafetyContext:
     chronic_conditions: tuple[str, ...] = ()
     allergies: tuple[str, ...] = ()
     labs: dict[str, float] = field(default_factory=dict)
+    data_warnings: tuple[str, ...] = ()
 
     @classmethod
-    def from_profile(cls, profile: Any | None) -> "SupplementSafetyContext":
+    def from_profile(
+        cls,
+        profile: Any | None,
+        *,
+        labs: dict[str, float] | None = None,
+        data_warnings: tuple[str, ...] = (),
+    ) -> "SupplementSafetyContext":
         if profile is None:
-            return cls()
+            return cls(labs=dict(labs or {}), data_warnings=data_warnings)
         return cls(
             medications=tuple(_extract_names(getattr(profile, "current_medications", None))),
             chronic_conditions=tuple(_as_text_list(getattr(profile, "chronic_conditions", None))),
             allergies=tuple(_as_text_list(getattr(profile, "allergies", None))),
-            labs={},
+            labs=dict(labs or {}),
+            data_warnings=data_warnings,
         )
 
 
@@ -338,6 +346,7 @@ def enrich_supplement_recommendations(
         "blocked": 0,
         "warnings": [],
         "unsupported": [],
+        "safety_context_warnings": list(context.data_warnings),
     }
 
     for rec in recommendations:
@@ -422,6 +431,8 @@ def evidence_warnings_to_precautions(summary: dict[str, Any], limit: int = 4) ->
     """Render safety warnings into short user-facing precaution lines."""
 
     lines: list[str] = []
+    if "lab_fetch_failed" in (summary.get("safety_context_warnings") or []):
+        lines.append("⚠️ 近期化验数据暂不可用；涉及肾功能、铁蛋白、维生素 D 等边界时先核对化验。")
     if summary.get("blocked"):
         lines.append("🚫 有补剂建议命中硬性安全边界，标记为 blocked 的项目不要自行开始。")
     for item in (summary.get("warnings") or [])[:limit]:

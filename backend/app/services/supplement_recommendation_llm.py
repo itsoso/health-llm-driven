@@ -17,10 +17,10 @@ from app.utils.timezone import get_china_now
 from app.services.llm_health_analyzer import LLMHealthAnalyzer
 from app.services.knowledge.rag_pipeline import RAGPipeline
 from app.services.supplement_evidence import (
-    SupplementSafetyContext,
     enrich_supplement_recommendations,
     evidence_warnings_to_precautions,
 )
+from app.services.supplement_safety_context import build_supplement_safety_context
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +166,7 @@ class SupplementRecommendationServiceLLM:
             )
             evidence_summary = enrich_supplement_recommendations(
                 llm_result.get("recommendations", []),
-                SupplementSafetyContext.from_profile(profile),
+                build_supplement_safety_context(db, user_id, profile, target_date),
             )
             llm_result["evidence_summary"] = evidence_summary
             llm_result["precautions"] = self._merge_precautions(

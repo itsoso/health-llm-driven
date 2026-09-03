@@ -12,10 +12,10 @@ from app.models.daily_health import GarminData, WorkoutRecord, DietRecord
 from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.services.knowledge_evidence import build_advice_knowledge_context
 from app.services.supplement_evidence import (
-    SupplementSafetyContext,
     enrich_supplement_recommendations,
     evidence_warnings_to_precautions,
 )
+from app.services.supplement_safety_context import build_supplement_safety_context
 from app.utils.timezone import get_china_now
 
 logger = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ class SupplementRecommendationService:
             self._attach_knowledge_evidence(recommendations, knowledge_evidence)
             evidence_summary = enrich_supplement_recommendations(
                 recommendations,
-                SupplementSafetyContext.from_profile(profile),
+                build_supplement_safety_context(db, user_id, profile, target_date),
             )
 
             # 8. 生成服用时间建议
