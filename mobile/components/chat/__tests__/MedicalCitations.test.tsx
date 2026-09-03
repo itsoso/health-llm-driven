@@ -27,7 +27,9 @@ describe('MedicalCitations', () => {
     expect(screen.getByText('国家卫生健康委员会')).toBeTruthy();
     expect(screen.getByText('健康信息用于辅助管理，不替代诊断；做医疗决定前请咨询医生。')).toBeTruthy();
 
-    fireEvent.press(screen.getByLabelText('打开参考来源：中国成人体重判定标准'));
+    fireEvent.press(screen.getByRole('link', {
+      name: '打开参考来源：中国成人体重判定标准，国家卫生健康委员会，外部网站',
+    }));
     await waitFor(() => {
       expect(open).toHaveBeenCalledWith('https://www.nhc.gov.cn/example.pdf');
     });
@@ -37,6 +39,26 @@ describe('MedicalCitations', () => {
   it('renders nothing when no safe citation exists', () => {
     const screen = render(<MedicalCitations citations={[]} />);
     expect(screen.toJSON()).toBeNull();
+  });
+
+  it('reports the first native layout once so receipt time is not mistaken for paint time', () => {
+    const onPaint = jest.fn();
+    const screen = render(
+      <MedicalCitations
+        onPaint={onPaint}
+        citations={[{
+          sourceId: 'nhc:adult-weight-standard',
+          title: '中国成人体重判定标准',
+          organization: '国家卫生健康委员会',
+          url: 'https://www.nhc.gov.cn/example.pdf',
+        }]}
+      />,
+    );
+
+    fireEvent(screen.getByTestId('medical-citations'), 'layout');
+    fireEvent(screen.getByTestId('medical-citations'), 'layout');
+
+    expect(onPaint).toHaveBeenCalledTimes(1);
   });
 
   it('tells the user when an official source cannot be opened', async () => {
@@ -53,7 +75,9 @@ describe('MedicalCitations', () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText('打开参考来源：成人 BMI 计算方法与分类'));
+    fireEvent.press(screen.getByRole('link', {
+      name: '打开参考来源：成人 BMI 计算方法与分类，美国疾病控制与预防中心，外部网站',
+    }));
     await waitFor(() => {
       expect(alert).toHaveBeenCalledWith(
         '暂时无法打开来源',

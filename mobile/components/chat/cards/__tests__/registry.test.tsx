@@ -2212,17 +2212,19 @@ describe('renderCard 安全降级', () => {
     } as any);
     expect(element).not.toBeNull();
 
-    const { getByText } = render(element!);
-    // 已记录态: 标题「午餐已记录」; 卡路里/营养在 hero + 网格; 下一步 + 帮助文案保留。
+    const { getByText, queryByText } = render(element!);
+    // 已记录态保留记录事实与下一步，但不再混入一块重复的社交宣传区。
     expect(getByText('午餐已记录')).toBeTruthy();
     expect(getByText('kcal', { exact: false })).toBeTruthy();
     expect(getByText('蛋白质')).toBeTruthy();
-    expect(getByText('已进入今日饮食进度')).toBeTruthy();
-    expect(getByText('今日饮食打卡')).toBeTruthy();
-    expect(getByText('小巴生成')).toBeTruthy();
-    expect(getByText('可直接分享至微信 / 小红书')).toBeTruthy();
-    expect(getByText('下一步: 餐后轻走 10 分钟')).toBeTruthy();
-    expect(getByText('可在记录页继续修正,小巴会把这餐纳入今日饮食进度。')).toBeTruthy();
+    expect(getByText('已计入今日饮食')).toBeTruthy();
+    expect(queryByText('今日饮食打卡')).toBeNull();
+    expect(queryByText('小巴生成')).toBeNull();
+    expect(queryByText('可直接分享至微信 / 小红书')).toBeNull();
+    expect(getByText('接下来')).toBeTruthy();
+    expect(getByText('餐后轻走 10 分钟')).toBeTruthy();
+    expect(getByText('基于本餐估算和今日饮食进度')).toBeTruthy();
+    expect(queryByText(/可在记录页继续修正/)).toBeNull();
   });
 
   it('opens an inline editor for an already recorded diet card', () => {
@@ -2264,13 +2266,86 @@ describe('renderCard 安全降级', () => {
 
     const element = renderCard(descriptor, { onAction: jest.fn() });
     expect(element).not.toBeNull();
-    const { getByLabelText, getByText, getByTestId } = render(element!);
+    const { getByLabelText, getByText, getByTestId, queryByText } = render(element!);
 
-    fireEvent.press(getByText('调整记录'));
+    expect(getByText('继续修正本餐')).toBeTruthy();
+    expect(getByText('修改餐次、食物或营养估算')).toBeTruthy();
+    expect(queryByText('调整记录')).toBeNull();
+    fireEvent.press(getByLabelText('继续修正本餐'));
 
     expect(getByTestId('diet-adjust-inline-editor')).toBeTruthy();
     expect(getByText('保存修正')).toBeTruthy();
     expect((getByLabelText('膳食纤维').props as any).value).toBe('6');
+  });
+
+  it('keeps the correction entry on the card when the generic action bar is absent', () => {
+    const element = renderCard({
+      type: 'diet_draft',
+      data: {
+        recorded: true,
+        record_id: 806,
+        meal_type: 'dinner',
+        food_items: '牛肉饭 1 份',
+        calories: 680,
+        adjust_record: {
+          record_id: 806,
+          meal_type: 'dinner',
+          food_items: '牛肉饭 1 份',
+          calories: 680,
+          updated_at: '2026-09-03T12:00:00+08:00',
+        },
+      },
+      actions: [],
+    } as any, { onAction: jest.fn() });
+
+    expect(element).not.toBeNull();
+    const screen = render(element!);
+    fireEvent.press(screen.getByLabelText('继续修正本餐'));
+    expect(screen.getByTestId('diet-adjust-inline-editor')).toBeTruthy();
+    expect(screen.getByLabelText('食物描述').props.value).toBe('牛肉饭 1 份');
+  });
+
+  it('fails closed when a recorded diet card has no safe correction seed', () => {
+    const element = renderCard({
+      type: 'diet_draft',
+      data: {
+        recorded: true,
+        record_id: 806,
+        meal_type: 'dinner',
+        food_items: '牛肉饭 1 份',
+        calories: 680,
+      },
+      actions: [],
+    } as any, { onAction: jest.fn() });
+
+    expect(element).not.toBeNull();
+    const screen = render(element!);
+    expect(screen.queryByLabelText('继续修正本餐')).toBeNull();
+    expect(screen.queryByTestId('diet-adjust-inline-editor')).toBeNull();
+  });
+
+  it('does not repeat pending-write copy on an already recorded photo card', () => {
+    const screen = render(
+      <DietDraftCardView
+        recorded
+        record_id={807}
+        meal_type="lunch"
+        food_items="酸汤面片 1 碗"
+        calories={520}
+        source="chat_photo"
+        boundary="营养为图像估算；确认后才写入今日饮食记录。"
+        adjust_record={{
+          record_id: 807,
+          meal_type: 'lunch',
+          food_items: '酸汤面片 1 碗',
+          calories: 520,
+          updated_at: '2026-09-03T12:00:00+08:00',
+        }}
+      />,
+    );
+
+    expect(screen.queryByText(/确认后才写入/)).toBeNull();
+    expect(screen.getByText('营养为图片估算，如有偏差请继续修正。')).toBeTruthy();
   });
 
   it('clears stale diet draft nutrients from a complete recalculation response', async () => {

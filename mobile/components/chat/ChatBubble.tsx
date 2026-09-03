@@ -15,7 +15,11 @@ import Markdown from 'react-native-markdown-display';
 import { getCardActionRuntimeGroupKey, getCardActionRuntimeKey, renderCard } from './cards';
 import { createMdStylesChat } from '../../constants/markdownStyles';
 import type { ColorPalette } from '../../hooks/useTheme';
-import type { MedicationDecisionStatus, UIMessage } from '../../hooks/useChatEngine';
+import type {
+  AgentContentPaintKind,
+  MedicationDecisionStatus,
+  UIMessage,
+} from '../../hooks/useChatEngine';
 import { speakWithUserVoice, type SpeakHandle } from '../../services/speakWithUserVoice';
 import { dispatchChatCardAction, type ChatCardActionResult } from '../../services/chatCardActions';
 import { rememberVerifiedWriteReceipt } from '../../services/conversationContinuity';
@@ -78,6 +82,12 @@ const MD_PALETTE = {
 const MD_STYLES = createMdStylesChat(MD_PALETTE);
 const THINKING_PLACEHOLDER_TEXT = '⏳ AI 正在思考中...';
 const INLINE_EDITABLE_CARD_TYPES = new Set(['diet_draft', 'record_quality', 'save_recipe']);
+const STREAM_RENDERABLE_CARD_TYPES = new Set([
+  'metric_table',
+  'diet_daily_summary',
+  'sleep_summary',
+  'medication_list',
+]);
 
 interface Props {
   item: UIMessage;
@@ -90,6 +100,7 @@ interface Props {
   onEnterSelection?: (id: string) => void;
   onSendSuggestedPrompt?: (prompt: string, extraContext?: string) => void;
   onStopStreaming?: () => void;
+  onContentPaint?: (messageId: string, kind: AgentContentPaintKind) => void;
 }
 
 function ChatBubbleInner({
@@ -102,6 +113,7 @@ function ChatBubbleInner({
   onEnterSelection,
   onSendSuggestedPrompt,
   onStopStreaming,
+  onContentPaint,
 }: Props) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -132,6 +144,15 @@ function ChatBubbleInner({
   const speechHandleRef = useRef<SpeakHandle | null>(null);
   const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const timeRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const paintedContentKindsRef = useRef<Set<AgentContentPaintKind>>(new Set());
+  useEffect(() => {
+    paintedContentKindsRef.current.clear();
+  }, [item.id]);
+  const reportContentPaint = useCallback((kind: AgentContentPaintKind) => {
+    if (paintedContentKindsRef.current.has(kind)) return;
+    paintedContentKindsRef.current.add(kind);
+    onContentPaint?.(item.id, kind);
+  }, [item.id, onContentPaint]);
   const streamingBubble = !isUser && !!item.streaming;
   const normalizedAssistantContent = useMemo(
     () => (!isUser
@@ -141,7 +162,12 @@ function ChatBubbleInner({
   );
   const displayText = normalizedAssistantContent.text;
   const revaUiContent = streamingBubble
-    ? { ...normalizedAssistantContent, cards: [] }
+    ? {
+      ...normalizedAssistantContent,
+      cards: normalizedAssistantContent.cards.filter(card => (
+        STREAM_RENDERABLE_CARD_TYPES.has(card.type)
+      )),
+    }
     : normalizedAssistantContent;
   const hasInlineEditableCard = useMemo(
     () => revaUiContent.cards.some(card => INLINE_EDITABLE_CARD_TYPES.has(card.type)),
@@ -653,6 +679,14 @@ function ChatBubbleInner({
     ? []
     : item.cardActions;
   const hasPendingDietDraftEditor = item.cardType === 'diet_draft' && !isRecordedDietCard;
+  const hasRecordedDietAdjustEditor = item.cardType === 'diet_draft' && isRecordedDietCard && Boolean(
+    cardDataRecord?.adjust_record
+    || item.cardActions?.some((action) => (
+      action.action === 'ui.inline.expand'
+      && action.payload?.target === 'adjust_record'
+      && action.payload?.patch?.adjust_record
+    )),
+  );
   const hasRecordAdjustEditor = item.cardType === 'record_quality' && Boolean(
     cardDataRecord?.adjust_record
     || (Array.isArray(cardDataRecord?.expanded_sections)
@@ -662,7 +696,9 @@ function ChatBubbleInner({
       && action.payload?.target === 'adjust_record'
     )),
   );
-  const hasEmbeddedCardEditor = hasPendingDietDraftEditor || hasRecordAdjustEditor;
+  const hasEmbeddedCardEditor = hasPendingDietDraftEditor
+    || hasRecordedDietAdjustEditor
+    || hasRecordAdjustEditor;
   const hasEmbeddedMediaInteraction = item.cardType === 'aigc_media_job'
     || item.cardType === 'aigc_media_confirmation';
   const hasNestedCardInteraction = hasEmbeddedCardEditor
@@ -753,8 +789,8 @@ function ChatBubbleInner({
                       disabled={!canEditDietShare}
                       hitSlop={6}
                       accessibilityRole="button"
-                      accessibilityLabel="编辑分享图"
-                      accessibilityHint={!canEditDietShare ? '需要这餐的可用照片才能编辑分享图' : undefined}
+                      accessibilityLabel="制作饮食分享图"
+                      accessibilityHint={!canEditDietShare ? '需要这餐的可用照片才能制作分享图' : undefined}
                       accessibilityState={{ disabled: !canEditDietShare }}
                       style={({ pressed }) => [
                         styles.cardSaveButton,
@@ -763,18 +799,18 @@ function ChatBubbleInner({
                       ]}
                     >
                       <Ionicons name="create-outline" size={13} color={C.ink3} />
-                      <Text style={txt.cardSaveButton}>编辑分享图</Text>
+                      <Text style={txt.cardSaveButton}>制作分享图</Text>
                     </Pressable>
                   ) : null}
                   <Pressable
                     onPress={handleCardShare}
                     hitSlop={6}
                     accessibilityRole="button"
-                    accessibilityLabel="分享卡片正文"
+                    accessibilityLabel="分享饮食文字"
                     style={({ pressed }) => [styles.cardShareButton, pressed && styles.actionBtnPressed]}
                   >
                     <Ionicons name="document-text-outline" size={13} color={C.green700} />
-                    <Text style={txt.cardShareButton}>分享正文</Text>
+                    <Text style={txt.cardShareButton}>分享文字</Text>
                   </Pressable>
                   {!isRecordedDietCard ? (
                     <Pressable
@@ -789,7 +825,7 @@ function ChatBubbleInner({
                     </Pressable>
                   ) : null}
                   {isRecordedDietCard && !canEditDietShare ? (
-                    <Text style={txt.cardShareUnavailableHint}>没有可用餐食照片，仅支持分享正文</Text>
+                    <Text style={txt.cardShareUnavailableHint}>原照片暂不可用，仍可分享文字</Text>
                   ) : null}
                 </View>
               ) : null}
@@ -1128,7 +1164,9 @@ function ChatBubbleInner({
     && !!assistantTextForActions
     && (!incompleteAssistantReply || transparency.visible)
   );
-  const assistantSurfaceAccessible = !hasInlineEditableCard && !showsAnswerEvidencePanel;
+  const assistantSurfaceAccessible = !hasInlineEditableCard
+    && !showsAnswerEvidencePanel
+    && !(item.medicalCitations?.length);
 
   return (
     <>
@@ -1180,12 +1218,14 @@ function ChatBubbleInner({
           >
             {renderMessageImages()}
             {item.streaming && showProcessingPanel ? (
-              <ThinkingStepsPanel
-                steps={thinkingSteps}
-                streaming={item.streaming}
-                statusLabel={processingStatusLabel}
-                onStop={onStopStreaming}
-              />
+              <View onLayout={() => reportContentPaint('progress')}>
+                <ThinkingStepsPanel
+                  steps={thinkingSteps}
+                  streaming={item.streaming}
+                  statusLabel={processingStatusLabel}
+                  onStop={onStopStreaming}
+                />
+              </View>
             ) : null}
             {advisorPresentation?.conclusion ? (
               <AssistantConclusion text={advisorPresentation.conclusion} />
@@ -1199,12 +1239,18 @@ function ChatBubbleInner({
               />
             ) : null}
             {visibleAssistantMarkdown ? (
-              <SafeMarkdown content={renderedMarkdown} fallbackText={visibleAssistantMarkdown} />
+              <View onLayout={() => reportContentPaint('text')}>
+                <SafeMarkdown content={renderedMarkdown} fallbackText={visibleAssistantMarkdown} />
+              </View>
             ) : !item.streaming && !displayText ? (
               <Text style={txt.fallback}>抱歉，这条回复没能送达。你可以重新提问。</Text>
             ) : null}
             {revaUiContent.cards.length > 0 ? (
-              <View testID="assistant-reva-ui-cards" style={styles.inlineCardStack}>
+              <View
+                testID="assistant-reva-ui-cards"
+                style={styles.inlineCardStack}
+                onLayout={() => reportContentPaint('card')}
+              >
                 {revaUiContent.cards.map((card, index) => {
                   const rendered = renderCard(card, {
                     onAction: handleCardAction,
@@ -1219,28 +1265,35 @@ function ChatBubbleInner({
                 })}
               </View>
             ) : null}
-            {!item.streaming ? (
-              <MedicalCitations citations={item.medicalCitations} />
+            <MedicalCitations
+              citations={item.medicalCitations}
+              onPaint={() => reportContentPaint('citation')}
+            />
+            {visibleWriteReceipts.length > 0 ? (
+              <View onLayout={() => reportContentPaint('write_receipt')}>
+                {visibleWriteReceipts.map(receipt => (
+                  <WriteReceiptLine key={receipt.operationId} receipt={receipt} />
+                ))}
+              </View>
             ) : null}
-            {visibleWriteReceipts.map(receipt => (
-              <WriteReceiptLine key={receipt.operationId} receipt={receipt} />
-            ))}
             {cardSafetyAlerts.length > 0 ? <MedicationSafetyAdvisory alerts={cardSafetyAlerts} /> : null}
             {cardReceiptPersistenceWarning ? <WriteReceiptPersistenceWarning /> : null}
             {showsAnswerEvidencePanel ? (
-              <AnswerEvidencePanel
-                profile={transparency}
-                answerEvidence={item.answerEvidence}
-                sources={item.sourcesUsed}
-                thinkingSteps={thinkingSteps}
-                completionActionsEnabled={assistantCompletionActionsEnabled}
-                incomplete={incompleteAssistantReply}
-                onOpenMemory={() => router.push('/memory')}
-                onShareWeChat={() => { void handleShare('wechat'); }}
-                onShareXiaohongshu={() => { void handleShare('xiaohongshu'); }}
-                onCopy={() => { void handleCopy(); }}
-                copied={copied}
-              />
+              <View onLayout={() => reportContentPaint('evidence')}>
+                <AnswerEvidencePanel
+                  profile={transparency}
+                  answerEvidence={item.answerEvidence}
+                  sources={item.sourcesUsed}
+                  thinkingSteps={thinkingSteps}
+                  completionActionsEnabled={assistantCompletionActionsEnabled}
+                  incomplete={incompleteAssistantReply}
+                  onOpenMemory={() => router.push('/memory')}
+                  onShareWeChat={() => { void handleShare('wechat'); }}
+                  onShareXiaohongshu={() => { void handleShare('xiaohongshu'); }}
+                  onCopy={() => { void handleCopy(); }}
+                  copied={copied}
+                />
+              </View>
             ) : null}
             {showMessageTime ? <MessageTime label={sentTimeShort} isUser={false} /> : null}
             {renderMessageActions()}

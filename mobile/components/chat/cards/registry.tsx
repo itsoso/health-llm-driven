@@ -234,6 +234,9 @@ function StatefulCardRenderer({
     // private job projection after the one-time confirmation succeeds.
     if (descriptor.type === 'aigc_media_confirmation' || !actions.length || !options.onAction) return rendered;
     const visibleActions = actions.filter((action) => {
+      if (isEmbeddedRecordedDietAdjustAction(action, descriptor.type, data)) {
+        return false;
+      }
       const actionKey = getCardActionRuntimeKey(action, descriptor);
       const actionState = options.actionStateByKey?.[actionKey];
       const localDone = localDoneActionKeys[actionKey] === true;
@@ -468,6 +471,21 @@ function readInlineExpandPatch(action: ChatCardActionDescriptor): Record<string,
   if (!target || !rawPatch || typeof rawPatch !== 'object' || Array.isArray(rawPatch)) return null;
   const patch = sanitizeInlinePatch(rawPatch as Record<string, unknown>);
   return Object.keys(patch).length > 0 ? patch : null;
+}
+
+function isEmbeddedRecordedDietAdjustAction(
+  action: ChatCardActionDescriptor,
+  cardType: string,
+  data: any,
+): boolean {
+  if (cardType !== 'diet_draft' || data?.recorded !== true) return false;
+  if (textValue(action.payload?.target) !== 'adjust_record') return false;
+  const patch = readInlineExpandPatch(action);
+  return Boolean(
+    patch?.adjust_record
+    && typeof patch.adjust_record === 'object'
+    && !Array.isArray(patch.adjust_record),
+  );
 }
 
 const INLINE_EXPAND_SECTIONS = new Set(['next_meal', 'adjust_record']);

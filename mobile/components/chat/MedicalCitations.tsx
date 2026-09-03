@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useRef } from 'react';
 import {
   Alert,
   Linking,
@@ -18,6 +18,7 @@ import {
 
 interface Props {
   citations?: MedicalCitation[];
+  onPaint?: () => void;
 }
 
 async function openCitation(url: string): Promise<void> {
@@ -30,33 +31,46 @@ async function openCitation(url: string): Promise<void> {
   }
 }
 
-export default function MedicalCitations({ citations = [] }: Props) {
+export default function MedicalCitations({ citations = [], onPaint }: Props) {
+  const reportedPaintRef = useRef(false);
+  const handleLayout = useCallback(() => {
+    if (reportedPaintRef.current) return;
+    reportedPaintRef.current = true;
+    onPaint?.();
+  }, [onPaint]);
+
   if (citations.length === 0) return null;
 
   return (
-    <View style={styles.container} accessibilityLabel="医学参考来源">
+    <View
+      testID="medical-citations"
+      style={styles.container}
+      accessibilityLabel="医学参考来源"
+      onLayout={handleLayout}
+    >
       <View style={styles.headingRow}>
         <Ionicons name="library-outline" size={14} color={C.green600} />
-        <Text maxFontSizeMultiplier={1.3} style={styles.heading}>参考来源</Text>
+        <Text maxFontSizeMultiplier={2} style={styles.heading}>参考来源</Text>
       </View>
       {citations.map((citation) => (
         <Pressable
           key={`${citation.sourceId}:${citation.url}`}
           onPress={() => { void openCitation(citation.url); }}
           accessibilityRole="link"
-          accessibilityLabel={`打开参考来源：${citation.title}`}
+          accessibilityLabel={`打开参考来源：${citation.title}，${citation.organization}，外部网站`}
+          accessibilityHint="将在浏览器中打开官方来源"
           style={({ pressed }) => [styles.source, pressed && styles.sourcePressed]}
         >
           <View style={styles.sourceText}>
-            <Text maxFontSizeMultiplier={1.3} style={styles.title}>{citation.title}</Text>
-            <Text maxFontSizeMultiplier={1.3} style={styles.organization}>
+            <Text maxFontSizeMultiplier={2} style={styles.title}>{citation.title}</Text>
+            <Text maxFontSizeMultiplier={2} style={styles.organization}>
               {citation.organization}
             </Text>
           </View>
           <Ionicons name="open-outline" size={15} color={C.green600} />
         </Pressable>
       ))}
-      <Text maxFontSizeMultiplier={1.3} style={styles.boundary}>
+      <Text maxFontSizeMultiplier={2} style={styles.boundary}>
         健康信息用于辅助管理，不替代诊断；做医疗决定前请咨询医生。
       </Text>
     </View>
@@ -112,14 +126,14 @@ const styles = StyleSheet.create({
   } as TextStyle,
   organization: {
     fontFamily: revaFonts.sans,
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 11,
+    lineHeight: 16,
     color: C.ink2,
   } as TextStyle,
   boundary: {
     fontFamily: revaFonts.sans,
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 11,
+    lineHeight: 16,
     color: C.ink2,
   } as TextStyle,
 });

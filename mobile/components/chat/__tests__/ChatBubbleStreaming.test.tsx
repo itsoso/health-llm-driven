@@ -95,11 +95,14 @@ const ChatBubble = require('../ChatBubble').default;
 const { renderCard } = require('../cards');
 const { createRecordFromAssistantReply } = require('../../../services/chatResultActions');
 
-function renderBubble(message: UIMessage) {
+function renderBubble(
+  message: UIMessage,
+  props: { onContentPaint?: jest.Mock } = {},
+) {
   const qc = new QueryClient();
   return render(
     <QueryClientProvider client={qc}>
-      <ChatBubble item={message} />
+      <ChatBubble item={message} {...props} />
     </QueryClientProvider>,
   );
 }
@@ -772,6 +775,33 @@ describe('ChatBubble streaming degraded render', () => {
     expect(queryByTestId('assistant-reva-ui-cards')).toBeNull();
     expect(getByTestId('rich-markdown')).toBeTruthy();
     expect(mockMarkdownMount).toHaveBeenLastCalledWith('这是回复正文。');
+  });
+
+  it('renders deterministic read-only metric cards during streaming', () => {
+    const onContentPaint = jest.fn();
+    const readout = [
+      '```reva-ui',
+      '{"type":"metric_table","v":1,"title":"今日饮水","columns":[{"key":"date","label":"日期"},{"key":"value","label":"饮水"}],"rows":[{"date":"今天","value":"1200 ml"}]}',
+      '```',
+    ].join('\n');
+    const { getByTestId, queryByText } = renderBubble(
+      {
+        id: 'assistant-streaming-readout',
+        role: 'assistant',
+        content: readout,
+        streaming: true,
+      },
+      { onContentPaint },
+    );
+
+    const cards = getByTestId('assistant-reva-ui-cards');
+    expect(cards).toBeTruthy();
+    expect(queryByText(/metric_table/)).toBeNull();
+    fireEvent(cards, 'layout');
+    expect(onContentPaint).toHaveBeenCalledWith(
+      'assistant-streaming-readout',
+      'card',
+    );
   });
 
   it('runs sanitize/extract once streaming finishes (剥附图 + 抽 reva-ui 卡片)', () => {

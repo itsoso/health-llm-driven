@@ -851,6 +851,30 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('normalizes prompt-grounded medical citations before the terminal event', async () => {
+    const iter = streamChat('帮我算我的 BMI');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText =
+      'data: {"event":"medical_citations","data":{"stage":"prompt_grounding","medical_citations":[{"source_id":"nhc:adult-weight-standard","title":"中国成人体重判定标准","organization":"国家卫生健康委员会","url":"https://www.nhc.gov.cn/example.pdf","topic":"bmi","claim_scope":"成人 BMI 判定范围"}]}}\n\ndata: [DONE]\n\n';
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toMatchObject({
+      value: {
+        type: 'citations',
+        medicalCitations: [{
+          sourceId: 'nhc:adult-weight-standard',
+          organization: '国家卫生健康委员会',
+          topic: 'bmi',
+        }],
+      },
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
   it('maps status stage events to slim status-line labels (P0-1 新契约: accepted/tool/synthesis)', async () => {
     const iter = streamChat('看看我今天走了多少步');
     const first = iter.next();

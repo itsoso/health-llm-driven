@@ -757,9 +757,9 @@ ${sectionTitle}
       flexDirection: 'row',
       flexWrap: 'wrap',
     });
-    expect(getByLabelText('编辑分享图')).toBeTruthy();
-    expect(getByLabelText('分享卡片正文')).toBeTruthy();
-    fireEvent.press(getByLabelText('编辑分享图'));
+    expect(getByLabelText('制作饮食分享图')).toBeTruthy();
+    expect(getByLabelText('分享饮食文字')).toBeTruthy();
+    fireEvent.press(getByLabelText('制作饮食分享图'));
     expect(mockCaptureRefCalls).toHaveLength(0);
     expect(getByTestId('mock-diet-share-composer')).toBeTruthy();
     expect(mockDietShareComposer).toHaveBeenLastCalledWith(expect.objectContaining({
@@ -770,7 +770,7 @@ ${sectionTitle}
       },
     }));
 
-    fireEvent.press(getByLabelText('分享卡片正文'));
+    fireEvent.press(getByLabelText('分享饮食文字'));
 
     await waitFor(() => {
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
@@ -855,7 +855,7 @@ ${sectionTitle}
 
     expect(getByTestId('assistant-editable-card-interaction-surface')).toBeTruthy();
     expect(queryByTestId('assistant-card-interaction-surface')).toBeNull();
-    expect(queryByLabelText('分享卡片正文')).toBeNull();
+    expect(queryByLabelText('分享饮食文字')).toBeNull();
   });
 
   it('shares a card-only diet quality result with progress and next action', async () => {
@@ -891,7 +891,7 @@ ${sectionTitle}
 
     expect(queryByText('截图可直接发微信 / 小红书')).toBeNull();
     fireEvent(getByTestId('assistant-card-interaction-surface'), 'longPress');
-    fireEvent.press(getByLabelText('分享卡片正文'));
+    fireEvent.press(getByLabelText('分享饮食文字'));
 
     await waitFor(() => {
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
@@ -1958,10 +1958,10 @@ ${sectionTitle}
     );
 
     expect(getByText('午餐已记录')).toBeTruthy();
-    expect(getByLabelText('编辑分享图')).toHaveAccessibilityState({ disabled: true });
-    expect(getByLabelText('编辑分享图').props.accessibilityHint).toBe('需要这餐的可用照片才能编辑分享图');
-    expect(getByText('没有可用餐食照片，仅支持分享正文')).toBeTruthy();
-    expect(getByLabelText('分享卡片正文')).toBeTruthy();
+    expect(getByLabelText('制作饮食分享图')).toHaveAccessibilityState({ disabled: true });
+    expect(getByLabelText('制作饮食分享图').props.accessibilityHint).toBe('需要这餐的可用照片才能制作分享图');
+    expect(getByText('原照片暂不可用，仍可分享文字')).toBeTruthy();
+    expect(getByLabelText('分享饮食文字')).toBeTruthy();
     expect(queryByLabelText('分享卡片图片')).toBeNull();
   });
 
@@ -1999,7 +1999,7 @@ ${sectionTitle}
       </QueryClientProvider>,
     );
 
-    fireEvent.press(getByLabelText('分享卡片正文'));
+    fireEvent.press(getByLabelText('分享饮食文字'));
     await waitFor(() => expect(sharePlainText).toHaveBeenCalledTimes(1));
     const payload = sharePlainText.mock.calls[0][0];
     expect(payload.message).toContain('营养待核对');

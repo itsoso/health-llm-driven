@@ -162,7 +162,7 @@ export interface AgentActionOutcome {
 }
 
 export interface StreamEvent {
-  type: 'start' | 'persisted' | 'evidence' | 'token' | 'tool' | 'status' | 'card' | 'done' | 'error';
+  type: 'start' | 'persisted' | 'evidence' | 'citations' | 'token' | 'tool' | 'status' | 'card' | 'done' | 'error';
   content?: string;
   /** 面向用户的安全思考/进度摘要,不包含模型原始推理链或工具参数。 */
   thought?: string;
@@ -522,6 +522,11 @@ export async function* streamChat(
       } else if (parsed.event === 'answer_evidence') {
         const answerEvidence = normalizeAnswerEvidence(parsed.data?.answer_evidence);
         if (answerEvidence) return { type: 'evidence', answerEvidence };
+      } else if (parsed.event === 'medical_citations') {
+        const medicalCitations = normalizeMedicalCitations(
+          parsed.data?.medical_citations,
+        );
+        if (medicalCitations) return { type: 'citations', medicalCitations };
       } else if (parsed.event === 'agent_start') {
         return {
           type: 'start',

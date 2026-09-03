@@ -262,6 +262,12 @@ function boundaryText(data: DietDraftData): string {
   return isPhotoSource(data.source) ? boundary.replace('确认后写入', '核对后写入') : boundary;
 }
 
+function recordedBoundaryText(data: DietDraftData): string {
+  return isPhotoSource(data.source)
+    ? '营养为图片估算，如有偏差请继续修正。'
+    : '营养为估算值，如有偏差请继续修正。';
+}
+
 function editHintText(data: DietDraftData): string {
   return isPhotoSource(data.source) ? '核对前可修正餐次、食物和营养估算' : '确认前可修正餐次、食物和营养估算';
 }
@@ -297,9 +303,25 @@ function findDietConfirmAction(actions?: ChatCardActionDescriptor[]): ChatCardAc
     ?? actions?.find((action) => action.action === 'diet_record.create');
 }
 
+function findDietAdjustRecord(
+  actions?: ChatCardActionDescriptor[],
+): Record<string, unknown> | null {
+  const action = actions?.find((candidate) => (
+    candidate.action === 'ui.inline.expand'
+    && text(candidate.payload?.target) === 'adjust_record'
+  ));
+  const patch = objectValue(action?.payload?.patch);
+  const seed = objectValue(patch?.adjust_record);
+  const recordId = numberValue(seed?.record_id);
+  return recordId != null && Number.isInteger(recordId) && recordId > 0 ? seed : null;
+}
+
 export function DietDraftCardView(data: DietDraftCardViewProps) {
   const [editing, setEditing] = React.useState(false);
   const [showAllIngredients, setShowAllIngredients] = React.useState(false);
+  const [savedAdjustOpen, setSavedAdjustOpen] = React.useState(() => (
+    hasExpandedSection(data.expanded_sections, 'adjust_record')
+  ));
   const [draftMealType, setDraftMealType] = React.useState<MealType>(() => mealTypeValue(data.meal_type));
   const [draftFood, setDraftFood] = React.useState(() => foodText(data.food_items) || '');
   const [draftCalories, setDraftCalories] = React.useState(() => editNumber(data.calories));
@@ -326,7 +348,8 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   const showNextMealDetail = Boolean(
     nextMealDetail && hasExpandedSection(data.expanded_sections, 'next_meal'),
   );
-  const boundary = boundaryText(data);
+  const isRecorded = data.recorded === true || data.confirmActionState === 'done';
+  const boundary = isRecorded ? recordedBoundaryText(data) : boundaryText(data);
   const editHint = editHintText(data);
   const photoUris = React.useMemo(() => privateDietPhotoUris(data), [data]);
   const [galleryVisible, setGalleryVisible] = React.useState(false);
@@ -359,13 +382,17 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   const retryFailedPhotos = React.useCallback(() => {
     setFailedPhotoUris(new Set());
   }, []);
-  const isRecorded = data.recorded === true || data.confirmActionState === 'done';
   const adjustRecord = objectValue(data.adjust_record);
-  const adjustRecordId = numberValue(adjustRecord?.record_id) ?? numberValue(data.record_id);
+  const adjustRecordIdValue = numberValue(adjustRecord?.record_id);
+  const adjustRecordId = adjustRecordIdValue != null
+    && Number.isInteger(adjustRecordIdValue)
+    && adjustRecordIdValue > 0
+    ? adjustRecordIdValue
+    : undefined;
   const showSavedAdjustEditor = isRecorded
     && adjustRecordId != null
     && adjustRecord != null
-    && hasExpandedSection(data.expanded_sections, 'adjust_record');
+    && savedAdjustOpen;
   const receiptMessage = text(data.receipt_message);
   const canConfirmFromEditor = Boolean(data.confirmAction && data.onConfirmAction && !data.confirmAction.disabled_reason);
   const recordedNextStep = walkText || suggestions[0] || '下一餐按目标补足蛋白和蔬菜';
@@ -606,63 +633,82 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
         <View style={styles.recordedProgressPill}>
           <Ionicons name="checkmark-done-circle" size={13} color={C.green600} />
           <Text maxFontSizeMultiplier={1.12} style={styles.recordedProgressText}>
-            {receiptMessage || '已进入今日饮食进度'}
+            {receiptMessage || '已计入今日饮食'}
           </Text>
         </View>
       ) : null}
 
-      {isRecorded ? (
-        <View style={styles.socialShareFooter}>
-          <View style={styles.socialTitleRow}>
-            <Text maxFontSizeMultiplier={1.08} style={styles.socialTitle}>
-              今日饮食打卡
-            </Text>
-            <Text maxFontSizeMultiplier={1.05} style={styles.socialBadge}>
-              小巴生成
-            </Text>
-          </View>
-          <Text maxFontSizeMultiplier={1.08} style={styles.socialHint}>
-            可直接分享至微信 / 小红书
-          </Text>
-        </View>
-      ) : null}
+      {isRecorded && adjustRecord && adjustRecordId != null ? (
+        <>
+          <Pressable
+            onPress={() => setSavedAdjustOpen((current) => !current)}
+            accessibilityRole="button"
+            accessibilityLabel={savedAdjustOpen ? '收起本餐修正' : '继续修正本餐'}
+            accessibilityHint="修改餐次、食物或营养估算"
+            accessibilityState={{ expanded: savedAdjustOpen }}
+            style={({ pressed }) => [
+              styles.recordedAdjustButton,
+              savedAdjustOpen && styles.recordedAdjustButtonOpen,
+              pressed && styles.editButtonPressed,
+            ]}
+          >
+            <View style={styles.recordedAdjustIcon}>
+              <Ionicons name="create-outline" size={15} color={C.green700} />
+            </View>
+            <View style={styles.recordedAdjustCopy}>
+              <Text maxFontSizeMultiplier={1.12} style={styles.recordedAdjustTitle}>
+                {savedAdjustOpen ? '收起修正' : '继续修正本餐'}
+              </Text>
+              <Text maxFontSizeMultiplier={1.12} style={styles.recordedAdjustHint}>
+                修改餐次、食物或营养估算
+              </Text>
+            </View>
+            <Ionicons
+              name={savedAdjustOpen ? 'chevron-up' : 'chevron-forward'}
+              size={16}
+              color={C.green700}
+            />
+          </Pressable>
 
-      {showSavedAdjustEditor && adjustRecord && adjustRecordId != null ? (
-        <DietRecordAdjustEditor
-          recordId={adjustRecordId}
-          seed={{
-            ...adjustRecord,
-            ...(!Object.prototype.hasOwnProperty.call(adjustRecord, 'fiber')
-              ? { fiber: data.fiber }
-              : {}),
-            ...(!Object.prototype.hasOwnProperty.call(adjustRecord, 'updated_at')
-              ? { updated_at: data.updated_at }
-              : {}),
-          }}
-          onSaved={(applied) => {
-            if (!data.onDraftChange) return;
-            const {
-              onDraftChange,
-              confirmAction,
-              confirmActionState,
-              onConfirmAction,
-              ...cardData
-            } = data;
-            const currentData = clearDietDraftNutritionDerivations(cardData);
-            const remainingSections = (Array.isArray(data.expanded_sections) ? data.expanded_sections : [])
-              .map((item) => text(item))
-              .filter((item): item is string => (
-                Boolean(item) && item !== 'adjust_record' && item !== 'next_meal'
-              ));
-            onDraftChange({
-              ...currentData,
-              ...applied.adjustRecord,
-              adjust_record: applied.adjustRecord,
-              expanded_sections: remainingSections,
-              adjust_saved: true,
-            });
-          }}
-        />
+          {showSavedAdjustEditor ? (
+            <DietRecordAdjustEditor
+              recordId={adjustRecordId}
+              seed={{
+                ...adjustRecord,
+                ...(!Object.prototype.hasOwnProperty.call(adjustRecord, 'fiber')
+                  ? { fiber: data.fiber }
+                  : {}),
+                ...(!Object.prototype.hasOwnProperty.call(adjustRecord, 'updated_at')
+                  ? { updated_at: data.updated_at }
+                  : {}),
+              }}
+              onSaved={(applied) => {
+                setSavedAdjustOpen(false);
+                if (!data.onDraftChange) return;
+                const {
+                  onDraftChange,
+                  confirmAction,
+                  confirmActionState,
+                  onConfirmAction,
+                  ...cardData
+                } = data;
+                const currentData = clearDietDraftNutritionDerivations(cardData);
+                const remainingSections = (Array.isArray(data.expanded_sections) ? data.expanded_sections : [])
+                  .map((item) => text(item))
+                  .filter((item): item is string => (
+                    Boolean(item) && item !== 'adjust_record' && item !== 'next_meal'
+                  ));
+                onDraftChange({
+                  ...currentData,
+                  ...applied.adjustRecord,
+                  adjust_record: applied.adjustRecord,
+                  expanded_sections: remainingSections,
+                  adjust_saved: true,
+                });
+              }}
+            />
+          ) : null}
+        </>
       ) : null}
 
       {data.adjust_saved === true ? (
@@ -861,14 +907,15 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
 
       {isRecorded ? (
         <View style={styles.recordedBox}>
-          <Text maxFontSizeMultiplier={1.15} style={styles.recordedNext}>下一步: {recordedNextStep}</Text>
+          <Text maxFontSizeMultiplier={1.12} style={styles.recordedEyebrow}>接下来</Text>
+          <Text maxFontSizeMultiplier={1.15} style={styles.recordedNext}>{recordedNextStep}</Text>
           <Text maxFontSizeMultiplier={1.15} style={styles.recordedHelp}>
-            可在记录页继续修正,小巴会把这餐纳入今日饮食进度。
+            基于本餐估算和今日饮食进度
           </Text>
         </View>
       ) : null}
 
-      {(walkText || suggestions.length > 0) ? (
+      {!isRecorded && (walkText || suggestions.length > 0) ? (
         <View style={styles.nextBox}>
           {walkText ? (
             <View style={styles.nextRow}>
@@ -1147,12 +1194,15 @@ export const DietDraftCardSpec: CardSpec<DietDraftData> = {
   },
   render: (data, options?: CardRenderOptions) => {
     const confirmAction = findDietConfirmAction(options?.cardActions);
+    const adjustRecord = objectValue(data.adjust_record)
+      ?? findDietAdjustRecord(options?.cardActions);
     const confirmActionKey = confirmAction
       ? confirmAction.id || `diet_draft:${confirmAction.action}:${confirmAction.label}`
       : undefined;
     return (
       <DietDraftCardView
         {...data}
+        adjust_record={adjustRecord ?? data.adjust_record}
         onDraftChange={options?.onCardDataChange}
         confirmAction={confirmAction}
         confirmActionState={confirmActionKey ? options?.actionStateByKey?.[confirmActionKey] : undefined}
@@ -1581,46 +1631,48 @@ const styles = StyleSheet.create({
     color: C.green700,
     fontWeight: '900',
   } as TextStyle,
-  socialShareFooter: {
-    marginTop: 8,
-    borderRadius: revaRadii.md,
-    backgroundColor: 'rgba(255,255,255,0.82)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E8D6C0',
-    paddingHorizontal: 11,
-    paddingVertical: 9,
-  },
-  socialTitleRow: {
-    minHeight: 22,
+  recordedAdjustButton: {
+    minHeight: 52,
+    marginTop: 9,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
+    gap: 10,
+    borderRadius: revaRadii.md,
+    backgroundColor: 'rgba(255,255,255,0.88)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
   },
-  socialTitle: {
+  recordedAdjustButtonOpen: {
+    backgroundColor: C.green50,
+  },
+  recordedAdjustIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.green50,
+  },
+  recordedAdjustCopy: {
     flex: 1,
     minWidth: 0,
+    gap: 1,
+  },
+  recordedAdjustTitle: {
     fontFamily: revaFonts.sans,
-    fontSize: 13.5,
-    lineHeight: 18,
-    color: C.ink1,
+    fontSize: 13,
+    lineHeight: 17,
+    color: C.green700,
     fontWeight: '900',
   } as TextStyle,
-  socialBadge: {
-    flexShrink: 0,
-    fontFamily: revaFonts.sans,
-    fontSize: 10.5,
-    lineHeight: 14,
-    color: DIET_ACCENT,
-    fontWeight: '900',
-  } as TextStyle,
-  socialHint: {
-    marginTop: 2,
+  recordedAdjustHint: {
     fontFamily: revaFonts.sans,
     fontSize: 11,
     lineHeight: 15,
     color: C.ink3,
-    fontWeight: '700',
+    fontWeight: '600',
   } as TextStyle,
   inlineHeader: {
     flexDirection: 'row',
@@ -1840,6 +1892,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 9,
   },
+  recordedEyebrow: {
+    fontFamily: revaFonts.sans,
+    fontSize: 10.5,
+    lineHeight: 14,
+    color: C.green600,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  } as TextStyle,
   recordedNext: {
     fontFamily: revaFonts.sans,
     fontSize: 12,

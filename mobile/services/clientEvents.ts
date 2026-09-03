@@ -105,6 +105,14 @@ const AGENT_TURN_MILESTONE_PHASES = new Set([
   'local_feedback',
   'server_accepted',
   'first_useful',
+  'first_semantic_progress',
+  'first_content_painted',
+  'first_key_content',
+  'first_interactive',
+  'citations_received',
+  'citations_painted',
+  // Historical compatibility. New clients emit received/painted separately.
+  'citations_visible',
   'write_verified',
 ]);
 const AGENT_TURN_MILESTONE_ACTION_TYPES = new Set([

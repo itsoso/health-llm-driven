@@ -117,6 +117,28 @@ describe('client reliability events', () => {
     });
   });
 
+  it.each([
+    'first_semantic_progress',
+    'first_content_painted',
+    'first_key_content',
+    'first_interactive',
+    'citations_received',
+    'citations_painted',
+  ])('accepts the content-free %s milestone', (phase) => {
+    expect(sanitizeClientEventMeta('agent_turn_milestone', {
+      phase,
+      duration_ms: 1_240,
+      action_type: 'generic',
+      has_image: false,
+      content: '帮我算我的 BMI',
+    })).toEqual({
+      phase,
+      duration_ms: 1_240,
+      action_type: 'generic',
+      has_image: false,
+    });
+  });
+
   it('drops invalid agent turn milestone values as one atomic payload', () => {
     expect(sanitizeClientEventMeta('agent_turn_milestone', {
       phase: 'raw_reasoning',

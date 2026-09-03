@@ -109,7 +109,34 @@ describe('ChatBubble 调用 Skill 展示 (透视面板)', () => {
 
     expect(getByText('参考来源')).toBeTruthy();
     expect(getByText('成人 BMI 计算方法与分类')).toBeTruthy();
-    expect(getByLabelText('打开参考来源：成人 BMI 计算方法与分类')).toBeTruthy();
+    expect(getByLabelText(
+      '打开参考来源：成人 BMI 计算方法与分类，美国疾病控制与预防中心，外部网站',
+    )).toBeTruthy();
+  });
+
+  it('renders prompt-grounded medical sources as separate accessible links while answer text is still streaming', () => {
+    const { getByTestId, getByText, getByRole } = renderBubble({
+      id: 'assistant-bmi-citations-streaming',
+      role: 'assistant',
+      content: '⏳ AI 正在思考中...',
+      streaming: true,
+      medicalCitations: [
+        {
+          sourceId: 'nhc:adult-weight-standard',
+          title: '中国成人体重判定标准',
+          organization: '国家卫生健康委员会',
+          url: 'https://www.nhc.gov.cn/example.pdf',
+          topic: 'bmi',
+        },
+      ],
+    });
+
+    expect(getByText('参考来源')).toBeTruthy();
+    expect(getByText('中国成人体重判定标准')).toBeTruthy();
+    expect(getByTestId('assistant-message-surface').props.accessible).toBe(false);
+    expect(getByRole('link', {
+      name: '打开参考来源：中国成人体重判定标准，国家卫生健康委员会，外部网站',
+    })).toBeTruthy();
   });
 
   it('toolsUsed 非空且非流式 → 技术详情二次展开后可见工具调用', () => {
