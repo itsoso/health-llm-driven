@@ -707,7 +707,7 @@ async def test_cap_off_preserves_mac_instruction_no_contract(db, auth_user_and_h
 
 
 @pytest.mark.asyncio
-async def test_cap_on_emits_metric_table_after_synthesis(db, auth_user_and_headers, monkeypatch):
+async def test_cap_on_emits_metric_table_before_synthesis(db, auth_user_and_headers, monkeypatch):
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     _wire(executor, monkeypatch)
@@ -718,13 +718,16 @@ async def test_cap_on_emits_metric_table_after_synthesis(db, auth_user_and_heade
     events = await _run(executor, "对比我这周和上周的 HRV", client_caps=[GENUI_TABLE_CAP], user_id=user.id)
     rendered = _tokens(events)
 
-    # 叙事在前、卡片在后
+    # 工具结果卡先到，叙事随后流出。
     assert "结论：HRV" in rendered
     assert "```reva-ui" in rendered and '"type":"metric_table"' in rendered
-    assert rendered.index("结论") < rendered.index("reva-ui")
+    assert rendered.index("reva-ui") < rendered.index("结论")
     # 数值来自工具结果 (58 ms), 不来自 LLM 文本
     assert "58 ms" in rendered
     done = next(event["data"] for event in events if event.get("event") == "done")
+    assert done["perf"]["end_to_end_ttft_ms"] is not None
+    assert done["perf"]["first_card_ms"] is not None
+    assert done["perf"]["first_useful_ms"] == done["perf"]["first_card_ms"]
     assert done["answer_evidence"] == {
         "version": "answer-evidence.v1",
         "summary": "本轮获得 3 条可核对数据",
@@ -815,7 +818,7 @@ def _sleep_round_stream(captured):
 
 @pytest.mark.asyncio
 async def test_cap_on_emits_sleep_metric_table(db, auth_user_and_headers, monkeypatch):
-    """新形状 e2e: health_query(sleep) → 叙事后确定性追加睡眠 metric_table (真数值来自工具结果)。"""
+    """health_query(sleep) 完成即发送确定性卡，不等待叙事合成。"""
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     _wire(executor, monkeypatch)
@@ -826,12 +829,10 @@ async def test_cap_on_emits_sleep_metric_table(db, auth_user_and_headers, monkey
     events = await _run(executor, "看看我最近睡眠", client_caps=[GENUI_TABLE_CAP], user_id=user.id)
     rendered = _tokens(events)
 
-    # 确定性快读或合成叙事都必须在卡片前；两者都只基于真实工具数据。
-    narrative = rendered.split("```reva-ui", 1)[0].strip()
-    assert narrative
     assert "```reva-ui" in rendered and '"type":"metric_table"' in rendered
     assert "睡眠记录" in rendered
-    assert rendered.index(narrative) < rendered.index("reva-ui")
+    assert "结论：你近两晚睡眠评分" in rendered
+    assert rendered.index("reva-ui") < rendered.index("结论")
     # 数值来自工具结果 daily_data (时长 445 分钟 / 评分 82), 不来自 LLM 文本
     assert "445 分钟" in rendered and '"score":"82"' in rendered
     # quality_assessment (服务端质量判定) 不泄漏进卡片
@@ -1059,7 +1060,7 @@ def _diet_round_stream(captured):
 @pytest.mark.asyncio
 async def test_diet_cap_on_emits_diet_summary_card(db, auth_user_and_headers, monkeypatch):
     """diet cap 声明 → health_query(diet) 走结构化 diet_daily_summary 卡, 不落 metric_table;
-    叙事在前、卡片在后; 卡片数值来自工具结果具名字段 (R4, 不来自 LLM)。"""
+    工具结果后卡片先到;卡片数值来自工具结果具名字段 (R4, 不来自 LLM)。"""
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     _wire(executor, monkeypatch)
@@ -1071,10 +1072,26 @@ async def test_diet_cap_on_emits_diet_summary_card(db, auth_user_and_headers, mo
                         client_caps=[GENUI_TABLE_CAP, GENUI_DIET_SUMMARY_CAP], user_id=user.id)
     rendered = _tokens(events)
 
+    tool_result_index = next(
+        index for index, event in enumerate(events)
+        if event.get("event") == "tool_result"
+    )
+    card_index = next(
+        index for index, event in enumerate(events)
+        if event.get("event") == "token"
+        and '"type":"diet_daily_summary"' in event.get("data", {}).get("content", "")
+    )
+    narrative_index = next(
+        index for index, event in enumerate(events)
+        if event.get("event") == "token"
+        and "结论：今天蛋白质" in event.get("data", {}).get("content", "")
+    )
+    assert tool_result_index < card_index < narrative_index
+
     assert "结论：今天蛋白质" in rendered
     assert "```reva-ui" in rendered and '"type":"diet_daily_summary"' in rendered
     assert '"type":"metric_table"' not in rendered          # diet 不再走通用表
-    assert rendered.index("结论") < rendered.index("reva-ui")
+    assert rendered.index("reva-ui") < rendered.index("结论")
     # 数值/文本来自工具结果具名字段 (fence 用 separators=(",",":"))
     assert '"calories":400' in rendered and "山药小米粥·蒸蛋羹" in rendered
     # 确定性派生观察落卡 (脂肪 49g/980kcal≈45%>35% → 脂肪偏高 caution)

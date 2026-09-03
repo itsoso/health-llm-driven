@@ -14964,6 +14964,7 @@ class AgentExecutor:
                 stream_finish_reason: Optional[str] = None
                 streamed_to_client = False
                 tool_round_output_buffered = bool(round_tools)
+                streamed_content_deltas: List[str] = []
                 # 每轮入口重置工具决策轮快路由标记; _call_llm_stream → _resolve_chat_provider
                 # → _maybe_fast_route_tool_round 会在本轮命中时置 True (仅带 tools 的轮可能命中)。
                 self._tool_round_fast_routed = False
@@ -14985,6 +14986,7 @@ class AgentExecutor:
                         if not delta:
                             continue
                         streamed_text += delta
+                        streamed_content_deltas.append(delta)
                         if (
                             not recoverable_response_buffered
                             and should_buffer_recovery_response(streamed_text)
@@ -17072,6 +17074,29 @@ class AgentExecutor:
                         if tail:
                             if first_token_at is None:
                                 first_token_at = time.time()
+                            yield {"event": "token", "data": {"content": tail}}
+                    elif (
+                        not response_output_buffered
+                        and tool_round_output_buffered
+                        and not streamed_to_client
+                        and not streamed_tool_calls
+                        and not inline_suppressed
+                        and not recoverable_response_buffered
+                        and streamed_content_deltas
+                        and final_text.startswith(streamed_text)
+                        and not _streaming_leak_forming(streamed_text)
+                    ):
+                        # Tool-capable rounds are buffered until finish so model
+                        # preambles cannot leak before a later structured
+                        # tool_call. If the same round finishes as a plain text
+                        # answer, release the original provider deltas instead
+                        # of collapsing the answer into one synthetic token.
+                        if first_token_at is None:
+                            first_token_at = time.time()
+                        for delta in streamed_content_deltas:
+                            yield {"event": "token", "data": {"content": delta}}
+                        tail = final_text[len(streamed_text):]
+                        if tail:
                             yield {"event": "token", "data": {"content": tail}}
                     elif not response_output_buffered:
                         # 重试/兜底产生的新文本 (非流式来源) → 一次性下发。
