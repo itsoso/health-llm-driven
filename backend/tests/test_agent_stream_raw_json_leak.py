@@ -124,6 +124,72 @@ def test_natural_language_fallback_prefers_tool_message_field():
     assert _natural_language_from_tool_results(msgs) == "今天只有早餐记录,没有午餐"
 
 
+@pytest.mark.asyncio
+async def test_tool_round_preamble_is_not_streamed_or_persisted(
+    db,
+    auth_user_and_headers,
+):
+    """工具决策轮 content 是模型自述, 不属于最终回答。"""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = {"n": 0}
+    preamble = (
+        "I'll pull today's activity data to give you an accurate summary.\n\n"
+        "Let me query your wearable and activity records.\n\n"
+        "I'll query your activity data for today."
+    )
+    final_answer = "今天活动汇总: 步数 8000, 活动量稳定。"
+
+    async def fake_call_llm_stream(messages, tools):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            assert tools
+            yield {"type": "content", "text": preamble}
+            yield {"type": "tool_calls", "tool_calls": [{
+                "id": "c1",
+                "type": "function",
+                "function": {
+                    "name": "health_query",
+                    "arguments": json.dumps(
+                        {"dimension": "activity", "days": 1},
+                        ensure_ascii=False,
+                    ),
+                },
+            }]}
+            yield {"type": "finish", "finish_reason": "tool_calls"}
+            return
+        yield {"type": "content", "text": final_answer}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        return json.dumps({"message": "今天步数 8000"}, ensure_ascii=False)
+
+    executor._call_llm_stream = fake_call_llm_stream
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        e async for e in executor.run_stream(
+            user_id=user.id,
+            message="总结我这一天的活动",
+            user_auth_token="test-token",
+        )
+    ]
+
+    token_texts = "".join(
+        e["data"]["content"] for e in events if e.get("event") == "token"
+    )
+    assert "I'll pull" not in token_texts
+    assert "Let me query" not in token_texts
+    assert final_answer in token_texts
+
+    from app.models.agent_conversation import AgentMessage
+
+    saved = db.query(AgentMessage).filter_by(role="assistant").one()
+    assert "I'll pull" not in saved.content
+    assert "Let me query" not in saved.content
+    assert final_answer in saved.content
+
+
 # ── 端到端 run_stream: (a) 泄漏被抑制 → 落库自然语言, 不含裸 JSON ──────────────
 
 

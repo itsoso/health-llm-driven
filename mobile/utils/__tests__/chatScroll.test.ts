@@ -1,6 +1,8 @@
 import {
+  isChatNearBottom,
   cancelChatScrollOnUserDrag,
   shouldForceScrollAfterHydration,
+  shouldShowScrollToBottom,
   shouldScrollChatToEnd,
   type ChatScrollState,
 } from '../chatScroll';
@@ -14,6 +16,17 @@ describe('chat scroll policy', () => {
 
   it('still follows streamed layout changes when the user is already near the end', () => {
     expect(shouldScrollChatToEnd({ forcePending: false, isNearBottom: true })).toBe(true);
+  });
+
+  it('detects whether the viewport is close enough to the transcript end', () => {
+    expect(isChatNearBottom({ layoutHeight: 500, offsetY: 910, contentHeight: 1500 })).toBe(true);
+    expect(isChatNearBottom({ layoutHeight: 500, offsetY: 700, contentHeight: 1500 })).toBe(false);
+  });
+
+  it('shows a jump-to-latest affordance only after user leaves the end', () => {
+    expect(shouldShowScrollToBottom({ forcePending: true, isNearBottom: false })).toBe(false);
+    expect(shouldShowScrollToBottom({ forcePending: false, isNearBottom: true })).toBe(false);
+    expect(shouldShowScrollToBottom({ forcePending: false, isNearBottom: false })).toBe(true);
   });
 
   it('forces the first scroll after an async history load', () => {

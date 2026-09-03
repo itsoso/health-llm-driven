@@ -1338,6 +1338,47 @@ describe('ChatScreen', () => {
       flex: 1,
       minHeight: 0,
     });
+    expect(StyleSheet.flatten(getByTestId('chat-message-list').props.contentContainerStyle)).toMatchObject({
+      paddingBottom: 48,
+    });
+  });
+
+  it('offers a jump-to-latest control after scrolling away from a long transcript', async () => {
+    mockMessages = [
+      { id: 'u-1', role: 'user', content: '总结我这一天的活动' },
+      { id: 'a-1', role: 'assistant', content: '很长的活动总结'.repeat(80), completionStatus: 'complete' },
+    ];
+    jest.useFakeTimers();
+    const scrollToEnd = jest.spyOn(FlatList.prototype, 'scrollToEnd');
+
+    try {
+      const view = render(<ChatScreen />);
+      const list = view.getByTestId('chat-message-list');
+
+      act(() => {
+        list.props.onScrollBeginDrag();
+        fireEvent.scroll(list, {
+          nativeEvent: {
+            layoutMeasurement: { height: 500 },
+            contentOffset: { y: 120 },
+            contentSize: { height: 1800 },
+          },
+        });
+      });
+
+      await waitFor(() => expect(view.getByTestId('chat-scroll-to-bottom')).toBeTruthy());
+      scrollToEnd.mockClear();
+      fireEvent.press(view.getByTestId('chat-scroll-to-bottom'));
+      act(() => {
+        jest.advanceTimersByTime(1);
+      });
+
+      expect(scrollToEnd).toHaveBeenCalledWith({ animated: true });
+      expect(view.queryByTestId('chat-scroll-to-bottom')).toBeNull();
+    } finally {
+      scrollToEnd.mockRestore();
+      jest.useRealTimers();
+    }
   });
 
   it('offers a compact control to load earlier messages at the top of the transcript', async () => {

@@ -1721,6 +1721,75 @@ def _strip_xml_tool_markers(text: str) -> str:
 _GENUI_TABLE_TOOLS = frozenset({"health_query", "health_query_batch", "query_lab_indicators"})
 
 
+def _genui_readout_fences(
+    tool_calls: List[Tuple[str, Optional[dict], str]],
+    *,
+    table_on: bool,
+    diet_summary_on: bool,
+    sleep_summary_on: bool,
+    medication_list_on: bool,
+) -> List[str]:
+    """Build deterministic, read-only GenUI fences from completed tool results."""
+    from app.services.genui import (
+        build_diet_daily_summary,
+        build_medication_list,
+        build_sleep_summary,
+        build_tables_from_tool_calls,
+        load_tool_result_json,
+        render_diet_summary_block,
+        render_medication_list_block,
+        render_metric_table_block,
+        render_sleep_summary_block,
+    )
+
+    fences: List[str] = []
+    table_calls: List[Tuple[str, Optional[dict], str]] = []
+    for tool_name, args, result in tool_calls:
+        dimension = str((args or {}).get("dimension") or "").strip().lower()
+        if tool_name == "health_query" and dimension == "diet" and diet_summary_on:
+            payload = load_tool_result_json(result)
+            descriptor = (
+                build_diet_daily_summary(payload)
+                if isinstance(payload, dict)
+                else None
+            )
+            if descriptor:
+                fences.append(render_diet_summary_block(descriptor))
+                continue
+        if tool_name == "health_query" and dimension == "sleep" and sleep_summary_on:
+            payload = load_tool_result_json(result)
+            descriptor = (
+                build_sleep_summary(payload)
+                if isinstance(payload, dict)
+                else None
+            )
+            if descriptor:
+                fences.append(render_sleep_summary_block(descriptor))
+                continue
+        if (
+            tool_name == "health_query"
+            and dimension == "medication"
+            and medication_list_on
+        ):
+            payload = load_tool_result_json(result)
+            descriptor = (
+                build_medication_list(payload)
+                if isinstance(payload, list)
+                else None
+            )
+            if descriptor:
+                fences.append(render_medication_list_block(descriptor))
+                continue
+        table_calls.append((tool_name, args, result))
+
+    if table_on and table_calls:
+        fences.extend(
+            render_metric_table_block(descriptor)
+            for descriptor in build_tables_from_tool_calls(table_calls)
+        )
+    return fences
+
+
 def _strip_reva_ui_from_llm_text(text: str) -> str:
     """剥掉 LLM 生成文本里伪造的 ```reva-ui``` 图表 block (确定性护栏, 防御纵深)。
 
@@ -2042,6 +2111,25 @@ def _resolve_synthesis_passthrough_mode() -> str:
     mode = (getattr(settings, "orchestrator_synthesis_passthrough", "off") or "off")
     mode = str(mode).strip().lower()
     return mode if mode in ("shadow", "on") else "off"
+
+
+def _resolve_deterministic_query_reply_mode() -> str:
+    """Normalize the readout rollout flag to off/shadow/on, fail-closed.
+
+    ``True``/``False`` and their string forms keep deployments using the old
+    boolean flag compatible while allowing behavior-neutral shadow sampling.
+    """
+    raw = getattr(settings, "deterministic_query_reply", "off")
+    if raw is True:
+        return "on"
+    if raw is False or raw is None:
+        return "off"
+    mode = str(raw).strip().lower()
+    if mode in {"on", "true", "1"}:
+        return "on"
+    if mode == "shadow":
+        return "shadow"
+    return "off"
 
 
 def _apply_passthrough_outbound_guards(
@@ -12305,7 +12393,7 @@ class AgentExecutor:
                         ):
                             planned_writes.append((fn, parsed_args))
                     self._persist_turn_expected_writes(user_msg, planned_writes)
-                    lead_messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
+                    lead_messages.append({"role": "assistant", "content": "", "tool_calls": tool_calls})
                     for tc in tool_calls:
                         fn = tc["function"]["name"]
                         fa = tc["function"]["arguments"]
@@ -13502,6 +13590,8 @@ class AgentExecutor:
         )
         # 本回合已执行的只读数据查询工具 (name, args, result) —— 供合成后确定性建表。
         genui_tool_calls: List[Tuple[str, Optional[dict], str]] = []
+        emitted_genui_fences: set[str] = set()
+        early_genui_fences: List[str] = []
         # 回答依据与 GenUI capability 解耦：即使客户端不显示表格，只要本轮真实
         # 执行了受支持的只读查询，也可编译有界、无原始载荷的审计投影。
         answer_evidence_tool_calls: List[Tuple[str, Optional[dict], str]] = []
@@ -14449,6 +14539,9 @@ class AgentExecutor:
         passthrough_orch_calls = 0                     # 本回合捕获到 synthesis 的 orchestrator 次数
         passthrough_synthesis_round_ms: Optional[int] = None  # shadow: 二次合成轮壁钟(=可省时延)
         passthrough_taken = False                      # on: 本回合是否真短路了二次合成
+        deterministic_query_mode = _resolve_deterministic_query_reply_mode()
+        deterministic_query_eligible = False
+        deterministic_query_candidate_chars = 0
         # 后置校验: record 意图的 turn 必须真的执行了写工具。0 次 = 模型可能只是
         # 嘴上说"已记录"却没调工具(弱模型把 tool-call 当正文吐出 → 静默丢数据)。
         tool_executed_count = 0
@@ -14613,7 +14706,7 @@ class AgentExecutor:
                 preplanned_query_call = None
                 if (
                     round_idx == 0
-                    and settings.deterministic_query_reply
+                    and deterministic_query_mode == "on"
                     and self._fast_route_simple_turn
                     and not self._prefer_fast_record_model
                     and not health_advice_buffered
@@ -14870,6 +14963,7 @@ class AgentExecutor:
                 streamed_tool_calls: List[Dict[str, Any]] = []
                 stream_finish_reason: Optional[str] = None
                 streamed_to_client = False
+                tool_round_output_buffered = bool(round_tools)
                 # 每轮入口重置工具决策轮快路由标记; _call_llm_stream → _resolve_chat_provider
                 # → _maybe_fast_route_tool_round 会在本轮命中时置 True (仅带 tools 的轮可能命中)。
                 self._tool_round_fast_routed = False
@@ -14975,8 +15069,12 @@ class AgentExecutor:
                         # 工具决策轮快路由 (fast 模型): 本轮输出只当工具决策, content 绝不
                         # live 下发 —— 若最终是直接答文本 (无 tool_calls), 会被丢弃并在强模型
                         # 重合成 (安全不变量: 面向用户的医疗正文绝不来自 fast 模型)。
+                        # 普通工具决策轮也先缓冲: 有些 provider 会先吐 preamble
+                        # ("Let me query...") 再给结构化 tool_calls。若本轮最后没有
+                        # tool_calls, 纯文本最终答案分支会一次性释放完整 content。
                         if (
                             not inline_suppressed
+                            and not tool_round_output_buffered
                             and not response_output_buffered
                             and not self._tool_round_fast_routed
                             and not _record_claim_unverified
@@ -15006,6 +15104,7 @@ class AgentExecutor:
                         if (
                             response_output_buffered
                             or streamed_text
+                            or tool_round_output_buffered
                             or self._tool_round_fast_routed
                         ):
                             continue
@@ -15579,10 +15678,7 @@ class AgentExecutor:
                         # analysis 轮正文 live 流式,本轮已发可见正文再重跑会双发 → fallthrough 不重跑。
                         _withheld, _action = _tool_subset_withheld_upgrade(
                             tool_calls, tools,
-                            live_text_already_sent=(
-                                bool(streamed_text.strip())
-                                and not self._tool_round_fast_routed
-                            ),
+                            live_text_already_sent=bool(streamed_to_client),
                         )
                         if _action == "fallthrough":
                             logger.warning(
@@ -15727,24 +15823,21 @@ class AgentExecutor:
                         )
                     )
 
-                    # 思考过程: 真流式下已逐 delta 下发过, 这里只补 full_reply,
-                    # 不重复 yield token (避免客户端看到双份)。inline-recovery 路径
-                    # 会把 content 置空 → text_content 为空也不发。
-                    # fast 工具决策轮: 该轮 content (工具调用前的 preamble) 也来自 fast 模型,
-                    # 不下发、不计入 full_reply —— 最终医疗正文由后续合成轮的强模型产出。
-                    if (
-                        text_content
-                        and not self._tool_round_fast_routed
-                        and not write_action_requested
-                    ):
-                        if not streamed_to_client and not response_output_buffered:
-                            yield {"event": "token", "data": {"content": text_content}}
-                        full_reply += text_content
+                    # 工具调用轮的 content 是 provider/tool-call preamble, 不属于最终回答。
+                    # 只保留结构化 tool_calls 进入协议上下文; preamble 不下发、不落库。
+                    if text_content:
+                        logger.info(
+                            "[agent_executor] suppressed tool-call round content "
+                            "user=%s chars=%s tools=%s",
+                            user_id,
+                            len(text_content),
+                            len(tool_calls),
+                        )
 
                     # 追加 assistant message（含 tool_calls）
                     messages.append({
                         "role": "assistant",
-                        "content": text_content,
+                        "content": "",
                         "tool_calls": tool_calls,
                     })
 
@@ -16355,6 +16448,49 @@ class AgentExecutor:
                                 "data": tool_event_data,
                             }
                         if (
+                            not transient_local_rejection
+                            and not response_output_buffered
+                            and func_name in _GENUI_TABLE_TOOLS
+                            and not replayed_read
+                            and (
+                                genui_table_on
+                                or genui_diet_summary_on
+                                or genui_sleep_summary_on
+                                or genui_medication_list_on
+                            )
+                        ):
+                            try:
+                                readout_fences = _genui_readout_fences(
+                                    [(func_name, parsed_tool_args, result)],
+                                    table_on=genui_table_on,
+                                    diet_summary_on=genui_diet_summary_on,
+                                    sleep_summary_on=genui_sleep_summary_on,
+                                    medication_list_on=genui_medication_list_on,
+                                )
+                                for fence in readout_fences:
+                                    if fence in emitted_genui_fences:
+                                        continue
+                                    has_early_fence = bool(early_genui_fences)
+                                    emitted_genui_fences.add(fence)
+                                    early_genui_fences.append(fence)
+                                    chunk = f"\n\n{fence}" if has_early_fence else fence
+                                    if first_token_at is None:
+                                        first_token_at = time.time()
+                                    _mark_perf_milestone("first_card_ms")
+                                    _mark_perf_milestone("first_useful_ms")
+                                    yield {
+                                        "event": "token",
+                                        "data": {"content": chunk},
+                                    }
+                            except Exception as exc:  # noqa: BLE001 - optional read projection
+                                logger.warning(
+                                    "[agent_executor] early GenUI readout skipped "
+                                    "user=%s tool=%s error_type=%s",
+                                    user_id,
+                                    func_name,
+                                    type(exc).__name__,
+                                )
+                        if (
                             answer_evidence_tool_calls
                             and getattr(
                                 settings,
@@ -16637,7 +16773,7 @@ class AgentExecutor:
                     # 跳过强模型合成轮。任一未覆盖维度/写工具/安全后缀 → 短路返回 None,
                     # fall-open 落到下方 continue 走正常合成 (fail-open: 宁可慢而对)。
                     if (
-                        settings.deterministic_query_reply
+                        deterministic_query_mode != "off"
                         and self._fast_route_simple_turn
                         and not self._prefer_fast_record_model
                         and not _round_executed_write_tool
@@ -16647,22 +16783,30 @@ class AgentExecutor:
 
                         deterministic_query_text = query_readouts.deterministic_query_reply(messages)
                         if deterministic_query_text:
-                            if first_token_at is None:
-                                first_token_at = time.time()
-                            _mark_perf_milestone("first_useful_ms")
-                            if not response_output_buffered:
-                                for i in range(0, len(deterministic_query_text), 20):
-                                    chunk = deterministic_query_text[i:i + 20]
-                                    yield {
-                                        "event": "token",
-                                        "data": {"content": chunk},
-                                    }
-                            full_reply += deterministic_query_text
-                            # 最终答案路径 → finish_reason 对齐 'stop' (completion_status → complete),
-                            # 不留工具轮的 'tool_calls' 陈值 (镜像 rank7 passthrough 收尾)。
-                            final_finish_reason = "stop"
-                            break
-                        if decision_route == "deterministic_batch_query":
+                            deterministic_query_eligible = True
+                            deterministic_query_candidate_chars = len(
+                                deterministic_query_text
+                            )
+                            if deterministic_query_mode == "on":
+                                if first_token_at is None:
+                                    first_token_at = time.time()
+                                _mark_perf_milestone("first_useful_ms")
+                                if not response_output_buffered:
+                                    for i in range(0, len(deterministic_query_text), 20):
+                                        chunk = deterministic_query_text[i:i + 20]
+                                        yield {
+                                            "event": "token",
+                                            "data": {"content": chunk},
+                                        }
+                                full_reply += deterministic_query_text
+                                # 最终答案路径 → finish_reason 对齐 'stop' (completion_status → complete),
+                                # 不留工具轮的 'tool_calls' 陈值 (镜像 rank7 passthrough 收尾)。
+                                final_finish_reason = "stop"
+                                break
+                        if (
+                            deterministic_query_mode == "on"
+                            and decision_route == "deterministic_batch_query"
+                        ):
                             decision_route = (
                                 "deterministic_batch_query_fallback_llm"
                             )
@@ -17200,13 +17344,13 @@ class AgentExecutor:
         # = 审计面 under-alarm, (b) 审计写入的 rollback 会回滚本轮还没落库的助手消息。
         # 故本切片**只打 log**: 不写审计行、不进 meta、不追加提示、不碰 db session、不改正文。
         # 目的 = 先量出真实分布(真处方 vs 转述/回显噪声), 再决定是否收紧正则/开拦截。
-        # 位置: 在 GenUI fence 追加**之前**扫散文 —— 确定性卡片行(如 `| 每日摄入 | 50 克 |`)
-        # 会命中 _PRESCRIPTIVE_QTY, 不该算进噪声分母。(LLM 自写的 markdown 表仍会命中 = 已知噪声。)
+        # 早期 GenUI 现在可能已在 full_reply 中；扫描前统一剥掉 reva-ui fence，避免卡片
+        # 确定性数字污染 guidance shadow 的噪声分母。
         # 时机: 此处 token 已全部下发, 不影响 TTFT。
-        _guidance_shadow_probe(user_id, full_reply)
+        _guidance_shadow_probe(user_id, _strip_reva_ui_from_llm_text(full_reply))
 
-        # GenUI metric_table (rank1): 合成完成后, 把本回合只读数据查询结果确定性打成
-        # reva-ui 表格卡片, 追加到答案末尾 (镜像图表 "叙事在前、卡片在后" 的顺序)。
+        # GenUI fallback:正常路径在 tool_result 后已立即下发；这里只补建尚未发送的卡，
+        # 兼容无法在工具阶段投影的边缘形状。
         # 数值全部来自工具结果具名字段 (R4); 在 _strip_reva_ui_from_llm_text **之后**追加
         # → 确定性 fence 不会被防伪造剥离器吃掉。fail-open: 无表/任何异常 → 逐字节现状。
         if (
@@ -17288,15 +17432,25 @@ class AgentExecutor:
                     for _tbl in build_tables_from_tool_calls(_table_calls):
                         _fences.append(render_metric_table_block(_tbl))
                 for _fence in _fences:
+                    if _fence in emitted_genui_fences:
+                        continue
+                    emitted_genui_fences.add(_fence)
                     _chunk = f"\n\n{_fence}" if full_reply.strip() else _fence
-                    if first_token_at is None:
-                        first_token_at = time.time()
+                    _mark_perf_milestone("first_card_ms")
+                    _mark_perf_milestone("first_useful_ms")
                     yield {"event": "token", "data": {"content": _chunk}}
                     full_reply += _chunk
             except Exception as e:  # noqa: BLE001 — 建卡/建表/emit 失败绝不断回合
                 logger.warning(
                     "[agent_executor] GenUI card/table build/emit failed: %s", e
                 )
+        if early_genui_fences:
+            early_prefix = "\n\n".join(early_genui_fences)
+            full_reply = (
+                f"{early_prefix}\n\n{full_reply}"
+                if full_reply.strip()
+                else early_prefix
+            )
         output_quality = enforce_agent_output_quality(
             full_reply,
             max_chars=int(
@@ -17388,6 +17542,17 @@ class AgentExecutor:
             "tool_decision_llm_rounds": len(llm_rounds_ms),
             "model_wait_ms": model_wait_ms,
             "model_call_count": model_call_count,
+            **(
+                {
+                    "deterministic_query": {
+                        "mode": deterministic_query_mode,
+                        "eligible": deterministic_query_eligible,
+                        "candidate_chars": deterministic_query_candidate_chars,
+                    }
+                }
+                if deterministic_query_mode != "off"
+                else {}
+            ),
         }
         # 单行 grep 日志 (镜像 orchestrator.py [perf.orchestrator])。
         try:
@@ -20932,6 +21097,12 @@ class AgentExecutor:
         if int(record.user_id) != int(self._current_user_id):
             raise ValueError("contextual_diet_recorded_card_owner_mismatch")
         capture_session_id = self._contextual_diet_capture_session_id(assets)
+        adjust_action = build_diet_adjust_action(
+            record.id,
+            record_data,
+            current_record=record,
+        )
+        adjust_record = adjust_action["payload"]["patch"]["adjust_record"]
         return {
             "type": "diet_draft",
             "data": format_card_numbers({
@@ -20954,14 +21125,11 @@ class AgentExecutor:
                 "photo_url": photo_urls[0],
                 "photo_urls": photo_urls,
                 "media_stage": "attached",
-                "receipt_message": "已保存到今日饮食，餐食照片已关联到这条记录。",
-                "boundary": "营养为图像估算；可在饮食记录中继续修正。",
+                "receipt_message": "已计入今日饮食，照片已关联。",
+                "boundary": "营养为图片估算，如有偏差可继续修正本餐。",
+                "adjust_record": adjust_record,
             }),
-            "actions": [build_diet_adjust_action(
-                record.id,
-                record_data,
-                current_record=record,
-            )],
+            "actions": [adjust_action],
         }
 
     def _contextual_diet_confirmation_card(self, result: Any) -> Dict[str, Any]:

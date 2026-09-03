@@ -9,6 +9,7 @@ provider 产出的 {"type":"reasoning",...} 增量节流成既有 thinking statu
   (b) reasoning 文本绝不进 token 流 / full_reply / 持久化 assistant 消息内容;
   (c) 无 reasoning 的模型 → 零 reasoning-derived 事件(byte-identical 路径);
   (d) 长得像工具结果 JSON 的 reasoning 片段被 _streaming_leak_forming 跳过。
+  (e) 带工具 schema 的决策轮 reasoning 不 surface; 等确定性工具状态替代。
 """
 import pytest
 
@@ -16,16 +17,20 @@ from app.services import agent_executor as ae
 from app.services.agent_executor import AgentExecutor
 
 
-def _wire_min(executor, monkeypatch):
+def _wire_min(executor, monkeypatch, *, with_tools=True):
     """最小接线,让 run_stream 走到 round 循环而不碰真 LLM/provider。"""
     monkeypatch.setattr("app.services.agent_executor.settings.llm_provider", "tokenplan")
     monkeypatch.setattr("app.services.agent_executor.settings.agent_base_url", None)
     monkeypatch.setattr("app.services.agent_executor.settings.agent_api_key", None)
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [{
+    tools = [{
         "type": "function",
         "function": {"name": "health_query", "description": "x",
                      "parameters": {"type": "object", "properties": {}}},
-    }])
+    }]
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools",
+        lambda subset=None: tools if with_tools else [],
+    )
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
 
 
@@ -66,7 +71,7 @@ async def test_reasoning_throttled_into_thinking_status_and_absent_from_answer(
     """(a) + (b): reasoning → thinking status(首 token 前停),且绝不进答案/持久化。"""
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
-    _wire_min(executor, monkeypatch)
+    _wire_min(executor, monkeypatch, with_tools=False)
     # 关掉节流阈值,让每个 reasoning delta 都能发,精确断言逐条。
     monkeypatch.setattr(ae, "_REASONING_STATUS_MIN_INTERVAL_S", 0.0)
     monkeypatch.setattr(ae, "_REASONING_STATUS_MIN_CHARS", 0)
@@ -116,7 +121,7 @@ async def test_reasoning_status_is_throttled_by_char_budget(
     """(a) 节流: 默认 120 字预算下,300 字 reasoning 分 10 个 30 字 delta → 恰 2 条 status。"""
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
-    _wire_min(executor, monkeypatch)
+    _wire_min(executor, monkeypatch, with_tools=False)
     # 只放开时间闸,保留默认字符预算(120),验证 whichever-later 的字符节流。
     monkeypatch.setattr(ae, "_REASONING_STATUS_MIN_INTERVAL_S", 0.0)
 
@@ -181,6 +186,44 @@ async def test_reasoning_snippet_that_looks_like_tool_result_json_is_skipped(
     # 泄漏形态的 reasoning 一条 status 都不发。
     assert details == []
     assert _tokens(events) == "已了解。"
+
+
+@pytest.mark.asyncio
+async def test_tool_round_reasoning_status_is_not_surfaced(
+    db, auth_user_and_headers, monkeypatch
+):
+    """(e) 工具决策轮 reasoning 是内部过程, 不进入 thinking detail。"""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch, with_tools=True)
+    monkeypatch.setattr(ae, "_REASONING_STATUS_MIN_INTERVAL_S", 0.0)
+    monkeypatch.setattr(ae, "_REASONING_STATUS_MIN_CHARS", 0)
+    calls = {"n": 0}
+
+    async def fake_stream(messages, round_tools):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            assert round_tools
+            yield {"type": "reasoning", "text": "我需要先查询 health_query。"}
+            yield {"type": "tool_calls", "tool_calls": [{
+                "id": "c1",
+                "type": "function",
+                "function": {"name": "health_query", "arguments": "{}"},
+            }]}
+            yield {"type": "finish", "finish_reason": "tool_calls"}
+            return
+        yield {"type": "content", "text": "已查到数据。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        return "data"
+
+    monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+    events = await _run(executor, "看看我的饮食", user_id=user.id)
+
+    assert _thinking_details(events) == []
+    assert _tokens(events) == "已查到数据。"
 
 
 @pytest.mark.asyncio

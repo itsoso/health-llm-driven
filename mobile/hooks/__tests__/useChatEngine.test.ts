@@ -108,6 +108,7 @@ let finishStream: (() => void) | undefined;
 let failStream: (() => void) | undefined;
 let persistStream: (() => void) | undefined;
 let releaseBusyResponse: (() => void) | undefined;
+let observeFirstTokenConsumed: (() => void) | undefined;
 
 async function* streamStartThenWait() {
   yield { type: 'start', conversationId: 777 };
@@ -159,6 +160,37 @@ const earlyAnswerEvidence = {
   }],
   limitations: [],
 };
+
+const earlyMedicalCitations = [{
+  sourceId: 'nhc:adult-weight-standard',
+  title: '中国成人体重判定标准',
+  organization: '国家卫生健康委员会',
+  url: 'https://www.nhc.gov.cn/example.pdf',
+  topic: 'bmi',
+  claimScope: '成人 BMI 判定范围',
+}];
+
+async function* streamCitationsThenWait() {
+  yield { type: 'start', conversationId: 777 };
+  yield { type: 'citations', medicalCitations: earlyMedicalCitations };
+  await new Promise<void>((resolve) => {
+    finishStream = resolve;
+  });
+  yield { type: 'token', content: 'BMI 是 22.9。' };
+  yield {
+    type: 'done',
+    conversationId: 777,
+    messageId: 901,
+    completionStatus: 'complete',
+    medicalCitations: earlyMedicalCitations,
+  };
+}
+
+async function* streamCitationsThenError() {
+  yield { type: 'start', conversationId: 777 };
+  yield { type: 'citations', medicalCitations: earlyMedicalCitations };
+  yield { type: 'error', content: '上游响应失败' };
+}
 
 async function* streamEvidenceThenWait(...args: any[]) {
   yield {
@@ -498,6 +530,41 @@ async function* streamCardThenUnrenderableDoneCard() {
   };
 }
 
+async function* streamAigcConfirmationAndEvidenceDone() {
+  yield { type: 'start', conversationId: 777 };
+  yield { type: 'token', content: '创作草稿已准备，请在创作卡片中确认。' };
+  yield {
+    type: 'done',
+    conversationId: 777,
+    messageId: 84,
+    completionStatus: 'complete',
+    cards: [
+      {
+        type: 'aigc_media_confirmation',
+        data: {
+          confirmation_id: 'aigc_confirm_video_1',
+          kind: 'text_to_video',
+          status: 'pending',
+          duration_seconds: 15,
+          duration_options: [5, 8, 15],
+        },
+        actions: [{
+          id: 'aigc_media.confirm:aigc_confirm_video_1',
+          label: '确认并生成',
+          action: 'aigc_media.confirm',
+          endpoint: '/aigc/media/confirmations/aigc_confirm_video_1/confirm',
+          requires_manual_confirm: true,
+        }],
+      },
+      {
+        type: 'system_knowledge_evidence',
+        data: { entity: { title: 'FoodData Central' }, claims: [] },
+        actions: [],
+      },
+    ],
+  };
+}
+
 // 快路由: 一批 token 紧挨着到达 (worst case for the ~80ms 攒批 throttle).
 // 攒批后终态必须是逐 token 顺序拼接, 不丢字、不乱序.
 const BURST_TOKENS = ['第一', '段。', '第二', '段。', '第三', '段。', '收尾。'];
@@ -560,6 +627,16 @@ async function* streamQuotaErrorAsToken() {
 async function* streamStartTokenThenWait() {
   yield { type: 'start', conversationId: 777 };
   yield { type: 'token', content: '本地流式正文，请勿覆盖。' };
+  await new Promise<void>((resolve) => {
+    finishStream = resolve;
+  });
+  yield { type: 'done', conversationId: 777, messageId: 2 };
+}
+
+async function* streamFirstTokenThenWait() {
+  yield { type: 'start', conversationId: 777 };
+  yield { type: 'token', content: '第一段立即可见。' };
+  observeFirstTokenConsumed?.();
   await new Promise<void>((resolve) => {
     finishStream = resolve;
   });
@@ -724,6 +801,7 @@ describe('useChatEngine', () => {
     failStream = undefined;
     persistStream = undefined;
     releaseBusyResponse = undefined;
+    observeFirstTokenConsumed = undefined;
     mockGetConversations.mockResolvedValue([]);
     mockGetConversationMessages.mockResolvedValue({ total_messages: 0, messages: [] });
     mockGetAgentTurnStatus.mockResolvedValue(null);
@@ -1968,6 +2046,103 @@ describe('useChatEngine', () => {
     });
   });
 
+  it('separates citation receipt from actual paint and records key-content latency on paint', async () => {
+    mockStreamChat.mockImplementation(streamCitationsThenWait);
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('帮我算我的 BMI');
+    });
+
+    await waitFor(() => {
+      expect(result.current.messages).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          role: 'assistant',
+          streaming: true,
+          medicalCitations: earlyMedicalCitations,
+        }),
+      ]));
+    });
+    expect(mockEmitClientEvent).toHaveBeenCalledWith(
+      'agent_turn_milestone',
+      expect.objectContaining({
+        phase: 'citations_received',
+        action_type: 'generic',
+        has_image: false,
+      }),
+    );
+    expect(mockEmitClientEvent).not.toHaveBeenCalledWith(
+      'agent_turn_milestone',
+      expect.objectContaining({ phase: 'citations_painted' }),
+    );
+
+    const assistant = result.current.messages.find(message => message.role === 'assistant');
+    act(() => {
+      result.current.markAgentContentPainted(assistant!.id, 'citation');
+    });
+    for (const phase of ['citations_painted', 'first_key_content', 'first_interactive']) {
+      expect(mockEmitClientEvent).toHaveBeenCalledWith(
+        'agent_turn_milestone',
+        expect.objectContaining({ phase }),
+      );
+    }
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+    });
+  });
+
+  it('maps native surface paint to semantic, content, interactive, and key milestones once', async () => {
+    mockStreamChat.mockImplementation(streamStatusThenWait);
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('看看我最近的状态');
+    });
+    await waitFor(() => {
+      expect(result.current.messages.some(message => message.role === 'assistant')).toBe(true);
+    });
+    const assistant = result.current.messages.find(message => message.role === 'assistant');
+    mockEmitClientEvent.mockClear();
+
+    act(() => {
+      result.current.markAgentContentPainted(assistant!.id, 'progress');
+      result.current.markAgentContentPainted(assistant!.id, 'progress');
+      result.current.markAgentContentPainted(assistant!.id, 'text');
+      result.current.markAgentContentPainted(assistant!.id, 'card');
+      result.current.markAgentContentPainted('unknown-message', 'card');
+    });
+
+    const phases = mockEmitClientEvent.mock.calls
+      .filter(([name]) => name === 'agent_turn_milestone')
+      .map(([, metadata]) => metadata.phase);
+    expect(phases).toEqual([
+      'first_semantic_progress',
+      'first_interactive',
+      'first_content_painted',
+      'first_key_content',
+    ]);
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+    });
+  });
+
+  it('removes prompt-grounded citations if the answer stream fails', async () => {
+    mockStreamChat.mockImplementation(streamCitationsThenError);
+    const { result } = renderHook(() => useChatEngine());
+
+    await act(async () => {
+      await result.current.sendMessage('帮我算我的 BMI');
+    });
+
+    const failedReply = result.current.messages.find(message => message.role === 'assistant');
+    expect(failedReply).toEqual(expect.objectContaining({ completionStatus: 'error' }));
+    expect(failedReply?.medicalCitations).toBeUndefined();
+  });
+
   it('does not let a delayed active-turn write revive recovery after starting a new chat', async () => {
     mockStreamChat.mockImplementation(streamStatusThenWait);
     let releaseDelayedWrite!: () => void;
@@ -2710,6 +2885,31 @@ describe('useChatEngine', () => {
     });
   });
 
+  it('renders the first content chunk without scheduling the 80ms batch delay', async () => {
+    mockStreamChat.mockImplementation(streamFirstTokenThenWait);
+    let resolveFirstTokenConsumed!: () => void;
+    const firstTokenConsumed = new Promise<void>((resolve) => {
+      resolveFirstTokenConsumed = resolve;
+    });
+    observeFirstTokenConsumed = resolveFirstTokenConsumed;
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('首段刷新测试');
+    });
+
+    await act(async () => {
+      await firstTokenConsumed;
+    });
+    expect(result.current.messages.find(m => m.role === 'assistant')?.content)
+      .toBe('第一段立即可见。');
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+    });
+  });
+
   it('batches bursty tokens without dropping or reordering (攒批终态逐段拼接)', async () => {
     mockStreamChat.mockImplementation(streamTokenBurstThenDone);
 
@@ -2927,6 +3127,31 @@ describe('useChatEngine', () => {
       cardData: expect.objectContaining({ summary: '服务端终态新版饮食摘要' }),
       sourceMessageId: 82,
     }));
+  });
+
+  it('keeps AIGC confirmation separate from evidence cards in the terminal snapshot', async () => {
+    mockStreamChat.mockImplementation(streamAigcConfirmationAndEvidenceDone);
+    const { result } = renderHook(() => useChatEngine());
+
+    await act(async () => {
+      await result.current.sendMessage('基于我今天的活动生成 15 秒短视频');
+    });
+
+    const currentTurnCards = result.current.messages.filter(message => (
+      message.sourceTurnId === result.current.activeTurn.turnId && !!message.cardType
+    ));
+    expect(currentTurnCards.map(message => message.cardType)).toEqual([
+      'aigc_media_confirmation',
+      'system_knowledge_evidence',
+    ]);
+    expect(currentTurnCards[0]).toEqual(expect.objectContaining({
+      cardData: expect.objectContaining({
+        confirmation_id: 'aigc_confirm_video_1',
+        kind: 'text_to_video',
+      }),
+      sourceMessageId: 84,
+    }));
+    expect(currentTurnCards.some(message => message.cardType === 'cards_group')).toBe(false);
   });
 
   it('does not fabricate a local fallback when supplied done cards are unrenderable', async () => {

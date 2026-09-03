@@ -64,7 +64,9 @@ import { buildChatImageSource } from '../../utils/chatImageSource';
 import { saveChatImageToLibrary } from '../../services/chatImageSave';
 import {
   cancelChatScrollOnUserDrag,
+  isChatNearBottom,
   shouldForceScrollAfterHydration,
+  shouldShowScrollToBottom,
   shouldScrollChatToEnd,
 } from '../../utils/chatScroll';
 
@@ -85,6 +87,7 @@ const SUGGESTIONS: SuggestionCard[] = [
 // 悬浮输入栏: home indicator 安全区之上再抬起, 不贴屏幕最下缘。
 // founder 2026-07-05: 12 太贴底(拇指要够到屏幕最下缘反而累), 抬进舒适拇指弧区。
 const CHAT_BOTTOM_BREATHING_SPACE = 12;
+const CHAT_LIST_END_COMFORT_SPACE = 48;
 
 // 对话历史无限下拉每页条数 (后端 limit 上限 100)
 const HISTORY_PAGE_SIZE = 20;
@@ -163,12 +166,14 @@ export default function ChatScreen() {
     hasMoreHistory,
     isLoadingMoreHistory,
     setMessages,
+    markAgentContentPainted,
   } = chat;
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true);
   const forceScrollPending = useRef(false);
   const previousMessageCountRef = useRef(messages.length);
   const scrollTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   // 对话页只消费明确、及时的 timeline 状态；完整计划留在 Today surface。
   const todayTimeline = useTodayTimeline();
   const todayFocusModel = useMemo(
@@ -940,9 +945,10 @@ export default function ChatScreen() {
         onEnterSelection={!selectionMode && shareable ? enterSelectionWith : undefined}
         onSendSuggestedPrompt={sendSuggestedPrompt}
         onStopStreaming={stopStreaming}
+        onContentPaint={markAgentContentPainted}
       />
     );
-  }, [authToken, selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith, sendSuggestedPrompt, stopStreaming]);
+  }, [authToken, selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith, sendSuggestedPrompt, stopStreaming, markAgentContentPainted]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -952,6 +958,18 @@ export default function ChatScreen() {
   const bottomSpacerHeight = keyboardVisible
     ? (Platform.OS === 'ios' ? keyboardHeight : 0)
     : insets.bottom + CHAT_BOTTOM_BREATHING_SPACE;
+  const messageListBottomInset = keyboardVisible
+    ? revaSpacing.s4
+    : insets.bottom + CHAT_LIST_END_COMFORT_SPACE;
+  const messageListContentStyle = useMemo(
+    () => [styles.messageList, { paddingBottom: messageListBottomInset }],
+    [messageListBottomInset],
+  );
+  const handleScrollToBottom = useCallback(() => {
+    setShowScrollToBottom(false);
+    try { flatListRef.current?.scrollToEnd({ animated: true }); } catch {}
+    scheduleScrollToEnd({ force: true, animated: true });
+  }, [scheduleScrollToEnd]);
   const activeLlmLabel = llmModelId
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
     : '系统默认';
@@ -1053,7 +1071,7 @@ export default function ChatScreen() {
           data={messageListItems}
           keyExtractor={item => item.id}
           renderItem={renderMessage}
-          contentContainerStyle={styles.messageList}
+          contentContainerStyle={messageListContentStyle}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="always"
           maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
@@ -1081,7 +1099,10 @@ export default function ChatScreen() {
               forcePending: forceScrollPending.current,
               isNearBottom: isNearBottom.current,
             })) {
+              setShowScrollToBottom(false);
               try { flatListRef.current?.scrollToEnd({ animated: true }); } catch {}
+            } else if (messageListItems.length > 0) {
+              setShowScrollToBottom(true);
             }
           }}
           onScrollBeginDrag={cancelForcedScrollOnUserDrag}
@@ -1090,7 +1111,16 @@ export default function ChatScreen() {
             // opening scroll runs. It is not user intent and must not cancel it.
             if (forceScrollPending.current) return;
             const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-            isNearBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 120;
+            const nearBottom = isChatNearBottom({
+              layoutHeight: layoutMeasurement.height,
+              offsetY: contentOffset.y,
+              contentHeight: contentSize.height,
+            });
+            isNearBottom.current = nearBottom;
+            setShowScrollToBottom(messageListItems.length > 0 && shouldShowScrollToBottom({
+              forcePending: forceScrollPending.current,
+              isNearBottom: nearBottom,
+            }));
           }}
           scrollEventThrottle={100}
           ListEmptyComponent={
@@ -1184,6 +1214,19 @@ export default function ChatScreen() {
             showCapturePhoto={!startersOnboarding}
           />
         )}
+        {showScrollToBottom && !selectionMode && messages.length > 0 ? (
+          <TouchableOpacity
+            testID="chat-scroll-to-bottom"
+            accessibilityRole="button"
+            accessibilityLabel="回到底部"
+            activeOpacity={0.78}
+            onPress={handleScrollToBottom}
+            style={styles.scrollToBottomButton}
+          >
+            <Ionicons name="chevron-down" size={15} color="#fff" />
+            <Text style={txt.scrollToBottom}>回到底部</Text>
+          </TouchableOpacity>
+        ) : null}
         <ChatInputBar
           onSend={handleSend}
           isStreaming={isStreaming}
@@ -1338,6 +1381,19 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
   messageListViewport: { flex: 1, minHeight: 0 },
   messageList: { padding: revaSpacing.s4, paddingBottom: 8 },
+  scrollToBottomButton: {
+    minHeight: 34,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green500,
+    ...revaShadows.sm,
+  },
   loadEarlierButton: {
     minHeight: 36,
     alignSelf: 'center',
@@ -1462,6 +1518,7 @@ const txt = {
   shareBarSub: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, marginTop: 2 } as TextStyle,
   cancelSelectionButton: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, fontWeight: '700' } as TextStyle,
   shareButton: { fontFamily: revaFonts.sans, fontSize: 13, color: '#fff', fontWeight: '700' } as TextStyle,
+  scrollToBottom: { fontFamily: revaFonts.sans, fontSize: 12, color: '#fff', fontWeight: '800' } as TextStyle,
   toolSheetTitle: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '800', color: C.ink1 } as TextStyle,
   toolSheetSub: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2 } as TextStyle,
   toolMenuText: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '700' } as TextStyle,

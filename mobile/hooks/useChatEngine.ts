@@ -534,8 +534,47 @@ type AgentTurnMilestonePhase =
   | 'local_feedback'
   | 'server_accepted'
   | 'first_useful'
+  | 'first_semantic_progress'
+  | 'first_content_painted'
+  | 'first_key_content'
+  | 'first_interactive'
+  | 'citations_received'
+  | 'citations_painted'
+  | 'citations_visible'
   | 'write_verified';
 type AgentTurnActionType = 'generic' | 'diet_record' | 'diet_photo';
+export type AgentContentPaintKind =
+  | 'progress'
+  | 'text'
+  | 'card'
+  | 'citation'
+  | 'evidence'
+  | 'write_receipt';
+
+interface AgentTurnMilestoneContext {
+  startedAt: number;
+  actionType: AgentTurnActionType;
+  hasImage: boolean;
+  emitted: Set<AgentTurnMilestonePhase>;
+}
+
+function emitAgentMilestone(
+  context: AgentTurnMilestoneContext,
+  phase: AgentTurnMilestonePhase,
+): void {
+  if (context.emitted.has(phase)) return;
+  context.emitted.add(phase);
+  const durationMs = Math.min(
+    300_000,
+    Math.max(0, Math.round(Date.now() - context.startedAt)),
+  );
+  void emitClientEvent('agent_turn_milestone', {
+    phase,
+    duration_ms: durationMs,
+    action_type: context.actionType,
+    has_image: context.hasImage,
+  });
+}
 
 const DIET_RECORD_QUESTION_RE = /[?？]|(?:怎么|为什么|为何|怎么办|什么|吗|能不能|可不可以|适合|建议|推荐|要不要|多少热量)/;
 const DIET_NUTRITION_QUERY_SUFFIX_RE = /(?:热量|卡路里|营养|蛋白质|碳水|脂肪)\s*$/;
@@ -677,6 +716,16 @@ function appendThinkingStep(current: string[] | undefined, next: string | undefi
   return [...existing, normalized].slice(-MAX_THINKING_STEPS);
 }
 
+function isAigcMediaCard(card: ServerCardDescriptor): boolean {
+  return card.type === 'aigc_media_confirmation' || card.type === 'aigc_media_job';
+}
+
+function terminalCardsForMessages(cards: ServerCardDescriptor[]): ServerCardDescriptor[] {
+  if (cards.length <= 1) return cards;
+  if (cards.some(isAigcMediaCard)) return cards;
+  return [{ type: 'cards_group', data: { cards }, actions: [] }];
+}
+
 export function serverCardKey(card: Pick<ServerCardDescriptor, 'type' | 'data' | 'actions'>): string {
   return serverCardIdentity(card);
 }
@@ -794,6 +843,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const isStreamingRef = useRef(false);
   const runningTurnIdRef = useRef<string | undefined>(undefined);
   const terminalTelemetryKeysRef = useRef<Set<string>>(new Set());
+  const paintMilestoneContextsRef = useRef<Map<string, AgentTurnMilestoneContext>>(new Map());
   const emitAgentTurnTerminal = useCallback((
     turnId: string,
     startedAt: number,
@@ -812,6 +862,29 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       duration_bucket: durationBucket(startedAt),
       ...(errorCode ? { error_code: errorCode } : {}),
     });
+  }, []);
+  const markAgentContentPainted = useCallback((
+    assistantMessageId: string,
+    kind: AgentContentPaintKind,
+  ) => {
+    const context = paintMilestoneContextsRef.current.get(assistantMessageId);
+    if (!context) return;
+    if (kind === 'progress') {
+      emitAgentMilestone(context, 'first_semantic_progress');
+      emitAgentMilestone(context, 'first_interactive');
+      return;
+    }
+    if (kind === 'text') {
+      emitAgentMilestone(context, 'first_content_painted');
+      return;
+    }
+    if (kind === 'citation') {
+      emitAgentMilestone(context, 'citations_painted');
+      emitAgentMilestone(context, 'first_key_content');
+      emitAgentMilestone(context, 'first_interactive');
+      return;
+    }
+    emitAgentMilestone(context, 'first_key_content');
   }, []);
   const hydrationGateRef = useRef<{ promise: Promise<void>; resolve: () => void } | null>(null);
   const activeTurnStorageGenerationRef = useRef(0);
@@ -1394,24 +1467,18 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     const turnStartedAt = Date.now();
     const emittedMilestones = new Set<AgentTurnMilestonePhase>();
     let lastDietStatusLabel: string | undefined;
-    let milestoneActionType = initialAgentTurnActionType(
-      finalMsg,
-      !!hasImages,
-      sendOpts?.extraContext,
-    );
+    const milestoneContext: AgentTurnMilestoneContext = {
+      startedAt: turnStartedAt,
+      actionType: initialAgentTurnActionType(
+        finalMsg,
+        !!hasImages,
+        sendOpts?.extraContext,
+      ),
+      hasImage: !!hasImages,
+      emitted: emittedMilestones,
+    };
     const emitAgentTurnMilestone = (phase: AgentTurnMilestonePhase) => {
-      if (emittedMilestones.has(phase)) return;
-      emittedMilestones.add(phase);
-      const durationMs = Math.min(
-        300_000,
-        Math.max(0, Math.round(Date.now() - turnStartedAt)),
-      );
-      void emitClientEvent('agent_turn_milestone', {
-        phase,
-        duration_ms: durationMs,
-        action_type: milestoneActionType,
-        has_image: !!hasImages,
-      });
+      emitAgentMilestone(milestoneContext, phase);
     };
     const emitAgentTerminal = (
       phase: 'completed' | 'failed' | 'interrupted',
@@ -1476,6 +1543,11 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       thinkingSteps: ['正在理解你的问题'],
       sourceTurnId: turnId,
     };
+    paintMilestoneContextsRef.current.set(aId, milestoneContext);
+    if (paintMilestoneContextsRef.current.size > 64) {
+      const oldest = paintMilestoneContextsRef.current.keys().next().value;
+      if (oldest) paintMilestoneContextsRef.current.delete(oldest);
+    }
 
     if (sendOpts?.__precreatedLocalMessages) {
       setMessages(prev => {
@@ -1840,6 +1912,17 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             }
             void rememberConversationId(evt.conversationId);
           }
+        } else if (evt.type === 'citations') {
+          if (evt.medicalCitations?.length) {
+            emitAgentTurnMilestone('first_useful');
+            emitAgentTurnMilestone('citations_received');
+            clearTimeout(slowTimer);
+            setMessages(prev => prev.map(message => (
+              message.id === aId
+                ? { ...message, medicalCitations: evt.medicalCitations }
+                : message
+            )));
+          }
         } else if (evt.type === 'evidence') {
           if (evt.answerEvidence) {
             emitAgentTurnMilestone('first_useful');
@@ -1856,7 +1939,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             ? lastDietStatusLabel
             : undefined;
           if (dietActionType) {
-            milestoneActionType = dietActionType;
+            milestoneContext.actionType = dietActionType;
             emitAgentTurnMilestone('first_useful');
             if (evt.statusLabel?.trim()) {
               lastDietStatusLabel = evt.statusLabel.trim();
@@ -1964,13 +2047,15 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               gotFirstToken = true;
               emitAgentTurnMilestone('first_useful');
               clearTimeout(slowTimer);
-              // 首 token 到达: 清空 status 行 (正文开始渲染, 状态行让位)。
+              // 首 token/首张内联卡立即落 UI；只有后续 token 才走 80ms 合批。
+              // 同一次 state update 清空 status，避免首内容额外等待一个 timer/一帧。
               const completedDietStatus = lastDietStatusLabel;
               setMessages(prev => prev.map((m) => (
-                m.id === aId && m.currentStatus
+                m.id === aId
                   ? {
                     ...m,
                     currentStatus: undefined,
+                    content: mergeAssistantStreamContent(m.content, incoming),
                     thinkingSteps: appendUniqueProgressStep(
                       m.thinkingSteps,
                       completedDietStatus,
@@ -1978,10 +2063,11 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
                   }
                   : m
               )));
-            }
-            pendingTokenText += incoming;
-            if (!tokenFlushTimer) {
-              tokenFlushTimer = setTimeout(flushTokenBuffer, 80);
+            } else {
+              pendingTokenText += incoming;
+              if (!tokenFlushTimer) {
+                tokenFlushTimer = setTimeout(flushTokenBuffer, 80);
+              }
             }
           }
           if (evt.toolName) toolsUsed.add(evt.toolName);
@@ -2082,11 +2168,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             allowDoneCards && Array.isArray((evt as any).cards)
           ) ? (evt as any).cards : [];
           const terminalServerCards = dedupeServerCards(renderServerCards(rawDoneCards));
-          const terminalCard = terminalServerCards.length === 1
-            ? terminalServerCards[0]
-            : terminalServerCards.length > 1
-              ? { type: 'cards_group', data: { cards: terminalServerCards }, actions: [] }
-              : undefined;
+          const terminalCards = terminalCardsForMessages(terminalServerCards);
           // done 收尾原子性: 把 token 缓冲里最后一批一起折进这次 setMessages, 且同帧
           // 把 streaming 翻 false —— 不再靠 finally 的 streaming:false 分帧收尾。这样
           // done 首帧就是「完整内容 + streaming:false」, ChatBubble 的 renderedMarkdown
@@ -2142,11 +2224,11 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             const projected = evt.medicationBatchDecision
               ? projectMedicationTerminalMessages(settled, evt.medicationBatchDecision)
               : settled;
-            if (!terminalCard) return projected;
+            if (terminalCards.length === 0) return projected;
             return upsertCardMessagesAfterAssistant(
               projected,
               aId,
-              [terminalCard],
+              terminalCards,
               turnId,
               evt.messageId,
             );
@@ -2154,7 +2236,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           if (
             allowDoneCards
             && rawDoneCards.length === 0
-            && !terminalCard
+            && terminalCards.length === 0
             && !renderedStreamedServerCard
           ) {
             const card = await dispatchCard({
@@ -2193,6 +2275,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             ...m,
             currentStatus: undefined,
             completionStatus: 'error',
+            medicalCitations: undefined,
             content: stripThinkingPlaceholder(m.content)
               ? stripThinkingPlaceholder(m.content) + `\n❌ ${errMsg}`
               : `❌ ${errMsg}`,
@@ -2217,6 +2300,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           ...m,
           currentStatus: undefined,
           completionStatus: 'interrupted',
+          medicalCitations: undefined,
           content: stripThinkingPlaceholder(m.content)
             ? `${stripThinkingPlaceholder(m.content)}\n\n[回复中断，已保留已接收内容]`
             : '[回复中断，请重新提问]',
@@ -2381,6 +2465,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         ...m,
         currentStatus: undefined,
         completionStatus: isAbort ? 'interrupted' : 'error',
+        medicalCitations: undefined,
         content: stripThinkingPlaceholder(m.content)
           ? (isAbort ? stripThinkingPlaceholder(m.content) + '\n\n[回复中断，已保留已接收内容]' : stripThinkingPlaceholder(m.content) + `\n❌ ${sanitizeChatErrorMessage(err?.message, '请求失败')}`)
           : (isAbort ? '[App 切换到后台，回复中断。请重新提问]' : `[错误] ${sanitizeChatErrorMessage(err?.message, '请求失败')}`),
@@ -2609,5 +2694,6 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     isLoadingMoreHistory,
     deleteCurrentConversation,
     setMessages,
+    markAgentContentPainted,
   };
 }
