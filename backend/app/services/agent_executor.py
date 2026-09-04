@@ -9844,6 +9844,79 @@ def _aigc_media_content_preview(*, kind: str, prompt: str) -> Dict[str, Any]:
     }
 
 
+def _safe_aigc_media_draft_fallback(
+    *,
+    user_message: Optional[str],
+    kind: str,
+    duration_seconds: int,
+    ratio: str,
+) -> Optional[Dict[str, str]]:
+    """Build a bounded wellness prompt when model-authored copy crosses policy.
+
+    The fallback is intentionally derived from the user's current command, not
+    tool results or profile data. It therefore cannot smuggle medications,
+    diagnoses, measurements, or other private health details to the provider.
+    """
+    if kind != "text_to_video":
+        return None
+    intent = classify_agent_utterance(user_message)
+    if not (
+        intent.primary == "write"
+        and intent.is_write
+        and intent.domain == "aigc_media"
+        and intent.operation == "create"
+        and intent.reason == "media_generation_request"
+    ):
+        return None
+
+    source = str(user_message or "").strip()
+    if not source:
+        return None
+    from app.services.aigc_media_policy import (
+        AIGCMediaPolicyError,
+        validate_aigc_media_policy,
+    )
+
+    try:
+        # A red line in the user's own request must remain blocked. Only
+        # model-added unsafe detail is eligible for deterministic replacement.
+        validate_aigc_media_policy(purpose="wellness_story", prompt=source)
+    except AIGCMediaPolicyError:
+        return None
+
+    try:
+        duration = int(duration_seconds)
+    except (TypeError, ValueError):
+        return None
+    safe_topics = [
+        label
+        for label, pattern in _AIGC_MEDIA_TOPIC_PATTERNS
+        if label != "用药提醒" and pattern.search(source)
+    ]
+    purpose_by_topic = {
+        "活动": "movement_routine",
+        "饮食": "meal_visual",
+        "睡眠": "sleep_routine",
+        "补水": "hydration_reminder",
+        "健康计划": "wellness_story",
+    }
+    purpose = (
+        purpose_by_topic[safe_topics[0]]
+        if len(safe_topics) == 1
+        else "wellness_story"
+    )
+    if safe_topics:
+        topic_text = "、".join(safe_topics[:3])
+        theme = f"今日{topic_text}总结"
+    else:
+        theme = "日常健康行动"
+    prompt = (
+        f"制作一条{duration}秒{ratio}健康行动短视频，主题为{theme}。"
+        "画面展示日常生活中的积极行动，使用简洁中文标题、清晰画面与温和节奏。"
+    )
+    return {"purpose": purpose, "prompt": prompt}
+
+
 def _is_explicit_aigc_media_draft_turn(message: Optional[str]) -> bool:
     """Gate forced drafts to a high-confidence current-user command.
 
@@ -25019,6 +25092,29 @@ class AgentExecutor:
                 message="当前会话缺少用户身份，无法创建创作草稿。",
             )
         kind = str(args.get("kind") or "").strip()
+        draft_purpose = str(args.get("purpose") or "")
+        draft_prompt = str(args.get("prompt") or "")
+        if kind == "text_to_video":
+            from app.services.aigc_media_policy import (
+                AIGCMediaPolicyError,
+                validate_aigc_media_policy,
+            )
+
+            try:
+                validate_aigc_media_policy(
+                    purpose=draft_purpose,
+                    prompt=draft_prompt,
+                )
+            except AIGCMediaPolicyError:
+                fallback = _safe_aigc_media_draft_fallback(
+                    user_message=self._current_turn_user_message,
+                    kind=kind,
+                    duration_seconds=args.get("duration_seconds") or 5,
+                    ratio=str(args.get("ratio") or "9:16"),
+                )
+                if fallback is not None:
+                    draft_purpose = fallback["purpose"]
+                    draft_prompt = fallback["prompt"]
         requires_source = kind in {"image_to_image", "image_to_video"}
         source_message_id = self._current_turn_source_message_id if requires_source else None
         if requires_source and (source_message_id is None or not self._current_turn_image_urls):
@@ -25034,8 +25130,8 @@ class AgentExecutor:
                 conversation_id=self._current_turn_conversation_id,
                 request=AIGCMediaJobRequest(
                     kind=kind,
-                    purpose=str(args.get("purpose") or ""),
-                    prompt=str(args.get("prompt") or ""),
+                    purpose=draft_purpose,
+                    prompt=draft_prompt,
                     source_message_id=source_message_id,
                     source_image_index=0,
                     duration_seconds=int(args.get("duration_seconds") or 5),
@@ -25073,7 +25169,7 @@ class AgentExecutor:
             "status": "pending",
             **_aigc_media_content_preview(
                 kind=confirmation.kind,
-                prompt=str(args.get("prompt") or ""),
+                prompt=draft_prompt,
             ),
         }
         if confirmation.kind in {"text_to_video", "image_to_video"}:
