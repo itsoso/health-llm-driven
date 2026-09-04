@@ -494,7 +494,10 @@ jobs:
 
       - name: Audit production dependencies
         working-directory: frontend
-        run: npm audit --omit=dev --audit-level=high
+        run: node ../scripts/osv-npm-audit-gate.mjs
+
+      - name: Test OSV dependency audit gate
+        run: node --test scripts/osv-npm-audit-gate.test.mjs
 
       - name: Test (vitest)
         working-directory: frontend
