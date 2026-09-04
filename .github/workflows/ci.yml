@@ -534,10 +534,10 @@ jobs:
 
       - name: Audit production dependencies
         working-directory: mobile
-        run: node ../scripts/npm-audit-gate.mjs --policy npm-audit-policy.json
+        run: node ../scripts/osv-npm-audit-gate.mjs --policy npm-audit-policy.json
 
-      - name: Test dependency audit gate
-        run: node --test scripts/npm-audit-gate.test.mjs
+      - name: Test OSV dependency audit gate
+        run: node --test scripts/osv-npm-audit-gate.test.mjs
 
       - name: TypeScript check
         working-directory: mobile
