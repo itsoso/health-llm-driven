@@ -25099,6 +25099,10 @@ class AgentExecutor:
             AIGCMediaJobService,
         )
         from app.services.aigc_media_service import AIGCMediaConfigurationError
+        from app.services.aigc_media_policy import (
+            AIGCMediaPolicyError,
+            validate_aigc_media_policy,
+        )
 
         user_id = self._current_user_id
         if user_id is None:
@@ -25106,15 +25110,23 @@ class AgentExecutor:
                 "aigc_user_missing",
                 message="当前会话缺少用户身份，无法创建创作草稿。",
             )
+        try:
+            # The model-authored provider prompt cannot launder a medical media
+            # request into a benign-looking wellness draft. Authorize the
+            # user's current command first on every AIGC path.
+            validate_aigc_media_policy(
+                purpose="wellness_story",
+                prompt=self._current_turn_user_message,
+            )
+        except AIGCMediaPolicyError as exc:
+            return local_write_rejection(
+                "aigc_request_invalid",
+                message=str(exc),
+            )
         kind = str(args.get("kind") or "").strip()
         draft_purpose = str(args.get("purpose") or "")
         draft_prompt = str(args.get("prompt") or "")
         if kind == "text_to_video":
-            from app.services.aigc_media_policy import (
-                AIGCMediaPolicyError,
-                validate_aigc_media_policy,
-            )
-
             try:
                 validate_aigc_media_policy(
                     purpose=draft_purpose,

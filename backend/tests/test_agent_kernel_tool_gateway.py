@@ -8855,7 +8855,7 @@ async def test_agent_media_tool_does_not_build_card_for_medical_user_request(
 
     executor = AgentExecutor(db)
     executor._current_user_id = 1
-    executor._current_turn_user_message = "生成一个高血压用药方案短视频"
+    executor._current_turn_user_message = "请生成一个高血压用药方案短视频"
 
     class RejectingMediaService:
         calls = 0
@@ -8888,7 +8888,7 @@ async def test_agent_media_tool_does_not_build_card_for_medical_user_request(
         "draft_aigc_media",
         {
             "kind": "text_to_video",
-            "prompt": "生成高血压用药方案短视频",
+            "prompt": "展示晨间步行和舒展的健康行动短视频",
             "duration_seconds": 15,
             "ratio": "9:16",
             "purpose": "wellness_story",
@@ -8897,7 +8897,7 @@ async def test_agent_media_tool_does_not_build_card_for_medical_user_request(
     )
 
     payload = json.loads(result)
-    assert payload["error_code"] == "aigc_media_without_explicit_draft_intent"
+    assert payload["error_code"] == "aigc_request_invalid"
     assert RejectingMediaService.calls == 0
     assert executor._turn_aigc_media_cards == []
 
