@@ -9798,6 +9798,17 @@ _AIGC_MEDIA_BARE_CREATE_RE = re.compile(
     rf"{_AIGC_MEDIA_OUTPUT_RE}(?:吧|呀|啊|一下|看看|就好|就行|即可)?[。.!！]?$",
     re.IGNORECASE,
 )
+_AIGC_MEDIA_DESCRIBED_CREATE_RE = re.compile(
+    rf"^[^。.!！?？\n]{{0,160}}{_AIGC_MEDIA_ACTION_RE}"
+    rf"[^。.!！?？\n]{{0,100}}{_AIGC_MEDIA_OUTPUT_RE}"
+    rf"(?:吧|呀|啊|一下|看看|给我看看|就好|就行|即可)?[。.!！]?$",
+    re.IGNORECASE,
+)
+_AIGC_MEDIA_INDIRECT_RE = re.compile(
+    r"他说|她说|有人说|引用|转述|复述|分析这句话|解释这句话|"
+    r"例如|比如|假如|如果我说|假设我说",
+    re.IGNORECASE,
+)
 _AIGC_MEDIA_RESTRICTION_RE = re.compile(
     r"不|没|未|无须|无需|别|勿|禁止|严禁|避免|仅|只|限|不可|不得|不能|不应|"
     r"只能|只可|必须|需要|取消|撤销|拒绝|停止|放弃|暂停|谢绝|撤回|终止|"
@@ -9857,16 +9868,7 @@ def _safe_aigc_media_draft_fallback(
     tool results or profile data. It therefore cannot smuggle medications,
     diagnoses, measurements, or other private health details to the provider.
     """
-    if kind != "text_to_video":
-        return None
-    intent = classify_agent_utterance(user_message)
-    if not (
-        intent.primary == "write"
-        and intent.is_write
-        and intent.domain == "aigc_media"
-        and intent.operation == "create"
-        and intent.reason == "media_generation_request"
-    ):
+    if kind != "text_to_video" or not _is_explicit_aigc_media_draft_turn(user_message):
         return None
 
     source = str(user_message or "").strip()
@@ -9887,6 +9889,11 @@ def _safe_aigc_media_draft_fallback(
     try:
         duration = int(duration_seconds)
     except (TypeError, ValueError):
+        return None
+    from app.services.aigc_media_capabilities import VIDEO_RATIOS
+
+    normalized_ratio = str(ratio or "").strip()
+    if not 3 <= duration <= 15 or normalized_ratio not in VIDEO_RATIOS:
         return None
     safe_topics = [
         label
@@ -9911,9 +9918,13 @@ def _safe_aigc_media_draft_fallback(
     else:
         theme = "日常健康行动"
     prompt = (
-        f"制作一条{duration}秒{ratio}健康行动短视频，主题为{theme}。"
+        f"制作一条{duration}秒{normalized_ratio}健康行动短视频，主题为{theme}。"
         "画面展示日常生活中的积极行动，使用简洁中文标题、清晰画面与温和节奏。"
     )
+    try:
+        validate_aigc_media_policy(purpose=purpose, prompt=prompt)
+    except AIGCMediaPolicyError:
+        return None
     return {"purpose": purpose, "prompt": prompt}
 
 
@@ -9940,11 +9951,15 @@ def _is_explicit_aigc_media_draft_turn(message: Optional[str]) -> bool:
     ).strip()
     if not text:
         return False
-    if _AIGC_MEDIA_RESTRICTION_RE.search(text):
+    if (
+        _AIGC_MEDIA_RESTRICTION_RE.search(text)
+        or _AIGC_MEDIA_INDIRECT_RE.search(text)
+    ):
         return False
     return bool(
         _AIGC_MEDIA_DIRECT_CREATE_RE.fullmatch(text)
         or _AIGC_MEDIA_BARE_CREATE_RE.fullmatch(text)
+        or _AIGC_MEDIA_DESCRIBED_CREATE_RE.fullmatch(text)
         or is_closed_aigc_provider_confirmation(text)
     )
 
