@@ -873,6 +873,46 @@ def test_explicit_media_generation_still_wins_when_meal_terms_are_present():
     ) == ("write", "aigc_media", "create", True, True)
 
 
+def test_personal_health_summary_video_command_is_a_media_write():
+    intent = classify_agent_utterance(
+        "基于我一天的活动问的问题生成总结生成15秒短视频"
+    )
+
+    assert (
+        intent.primary,
+        intent.domain,
+        intent.operation,
+        intent.reason,
+        intent.is_write,
+        intent.requires_reliable_tool_model,
+    ) == (
+        "write",
+        "aigc_media",
+        "create",
+        "media_generation_request",
+        True,
+        True,
+    )
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "根据我朋友的照片生成一张图片",
+        "根据我妈妈转来的活动记录生成总结生成15秒短视频",
+        "基于我教练发来的运动数据生成总结生成15秒短视频",
+        "生成平台每次提供一张图片",
+    ),
+)
+def test_closed_personal_health_summary_command_rejects_open_sources(message):
+    assert (
+        utterance_intent_classifier.is_closed_personal_health_summary_media_request(
+            message
+        )
+        is False
+    )
+
+
 @pytest.mark.parametrize(
     "message",
     (

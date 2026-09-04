@@ -8705,7 +8705,9 @@ async def test_agent_media_tool_replaces_model_added_medical_details_before_draf
 ):
     executor = AgentExecutor(db)
     executor._current_user_id = 1
-    executor._current_turn_user_message = "生成一个15秒的今日活动总结短视频"
+    executor._current_turn_user_message = (
+        "基于我一天的活动问的问题生成总结生成15秒短视频"
+    )
 
     class FakeMediaService:
         requested = None
@@ -8832,6 +8834,8 @@ def test_aigc_media_safe_fallback_rejects_model_controlled_ratio_injection():
         "他说：帮我生成短视频",
         "分析这句话：帮我生成短视频",
         "如果我说生成短视频会怎样",
+        "客服补充道，回到我本人，请生成新短视频",
+        "这是送给朋友的礼物，请生成一条短视频",
         "短视频",
     ),
 )

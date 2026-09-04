@@ -1185,6 +1185,73 @@ MEDIA_REPORTING_SUFFIXES = (
     "为",
 )
 
+_CLOSED_PERSONAL_HEALTH_MEDIA_INTRODUCERS = ("基于", "根据", "结合")
+_CLOSED_PERSONAL_HEALTH_MEDIA_SCOPES = (
+    "我一天的",
+    "我今天的",
+    "我的今日",
+    "我这一天的",
+    "我最近的",
+    "我本次的",
+)
+_CLOSED_PERSONAL_HEALTH_MEDIA_TOPICS = (
+    "活动",
+    "运动",
+    "训练",
+    "步数",
+    "睡眠",
+    "饮食",
+    "补水",
+    "健康",
+)
+_CLOSED_PERSONAL_HEALTH_MEDIA_SUMMARY_SUFFIXES = (
+    "总结",
+    "数据总结",
+    "记录总结",
+    "情况总结",
+    "问的问题生成总结",
+)
+
+
+def is_closed_personal_health_summary_media_request(value: str) -> bool:
+    """Recognize one bounded first-person health-summary video command."""
+    text = "".join(_normalize_media_control(value).split())
+    text = text.rstrip("。.!！")
+    if not text.startswith(_CLOSED_PERSONAL_HEALTH_MEDIA_INTRODUCERS):
+        return False
+    if any(separator in text for separator in "，,。.!！?？:：;；\n"):
+        return False
+    if _has_media_denial_signal(text):
+        return False
+
+    actions = [
+        (position, action)
+        for position, action in _media_action_occurrences(
+            text,
+            MEDIA_CREATE_ACTIONS,
+        )
+        if not _is_nominal_media_action(text, position, action)
+    ]
+    if not actions:
+        return False
+    position, action = actions[-1]
+    source = text[:position]
+    allowed_source = any(
+        source == f"{introducer}{scope}{topic}{suffix}"
+        for introducer in _CLOSED_PERSONAL_HEALTH_MEDIA_INTRODUCERS
+        for scope in _CLOSED_PERSONAL_HEALTH_MEDIA_SCOPES
+        for topic in _CLOSED_PERSONAL_HEALTH_MEDIA_TOPICS
+        for suffix in _CLOSED_PERSONAL_HEALTH_MEDIA_SUMMARY_SUFFIXES
+    )
+    if not allowed_source:
+        return False
+    payload = text[position + len(action):]
+    duration_text, separator, medium = payload.partition("秒")
+    if not separator or not duration_text.isdigit():
+        return False
+    duration = int(duration_text)
+    return 3 <= duration <= 15 and medium in {"短视频", "视频"}
+
 
 def _is_report_grouping_quote(text: str, position: int) -> bool:
     """Treat grouping punctuation as quotation only after a report label."""
@@ -2527,6 +2594,8 @@ def _is_media_generation_request(text: str) -> bool:
     """Require a current user command/consent frame for external media work."""
     if _has_hard_media_report_scope(text):
         return False
+    if is_closed_personal_health_summary_media_request(text):
+        return True
     text = _mask_media_quoted_content(text)
     has_media_target = _has_any(text, MEDIA_TERMS) or (
         _has_any(text, MEDIA_CREATE_ACTIONS)

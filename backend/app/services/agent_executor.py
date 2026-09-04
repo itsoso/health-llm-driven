@@ -97,6 +97,7 @@ from app.services.utterance_intent_classifier import (
     ADVICE_ACTIONS,
     classify_agent_utterance,
     is_closed_aigc_provider_confirmation,
+    is_closed_personal_health_summary_media_request,
 )
 from app.services.utterance_intent_lexicon import HEALTH_QUESTION_SIGNALS
 from app.utils.number_format import format_card_numbers
@@ -9799,8 +9800,11 @@ _AIGC_MEDIA_BARE_CREATE_RE = re.compile(
     re.IGNORECASE,
 )
 _AIGC_MEDIA_DESCRIBED_CREATE_RE = re.compile(
-    rf"^[^。.!！?？\n]{{0,160}}{_AIGC_MEDIA_ACTION_RE}"
-    rf"[^。.!！?？\n]{{0,100}}{_AIGC_MEDIA_OUTPUT_RE}"
+    rf"^(?:{_AIGC_MEDIA_DIRECT_PREFIX_RE})?{_AIGC_MEDIA_ACTION_RE}"
+    rf"(?:一个|一条)?(?:[3-9３-９]|1[0-5]|１[０-５])\s*秒(?:的)?"
+    rf"(?:(?:今天|今日|本次|这次)?"
+    rf"(?:活动|运动|训练|睡眠|饮食|补水|健康)"
+    rf"(?:总结|回顾|提醒|计划|行动)?)?(?:短视频|视频)"
     rf"(?:吧|呀|啊|一下|看看|给我看看|就好|就行|即可)?[。.!！]?$",
     re.IGNORECASE,
 )
@@ -9812,7 +9816,7 @@ _AIGC_MEDIA_INDIRECT_RE = re.compile(
 _AIGC_MEDIA_RESTRICTION_RE = re.compile(
     r"不|没|未|无须|无需|别|勿|禁止|严禁|避免|仅|只|限|不可|不得|不能|不应|"
     r"只能|只可|必须|需要|取消|撤销|拒绝|停止|放弃|暂停|谢绝|撤回|终止|"
-    r"反悔|作罢|算了",
+    r"务必|反悔|作罢|算了",
     re.IGNORECASE,
 )
 _AIGC_MEDIA_TOPIC_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -9960,6 +9964,7 @@ def _is_explicit_aigc_media_draft_turn(message: Optional[str]) -> bool:
         _AIGC_MEDIA_DIRECT_CREATE_RE.fullmatch(text)
         or _AIGC_MEDIA_BARE_CREATE_RE.fullmatch(text)
         or _AIGC_MEDIA_DESCRIBED_CREATE_RE.fullmatch(text)
+        or is_closed_personal_health_summary_media_request(text)
         or is_closed_aigc_provider_confirmation(text)
     )
 
