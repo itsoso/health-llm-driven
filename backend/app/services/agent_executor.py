@@ -1139,6 +1139,28 @@ _INVOKE_PARAM_RE = re.compile(
     re.S | re.I,
 )
 _INVOKE_STRIP_RE = re.compile(r"<invoke\b.*?</invoke\s*>", re.S | re.I)
+# 另一类代理会输出无属性名的 XML 方言:
+#   <tool_call><function=health_record>
+#   <parameter=record_type>event</parameter><parameter=data>{...}</parameter>
+#   </function></tool_call>
+# 它既不是 OpenAI structured tool_calls,也不符合上面的 `<invoke name=...>`。完整块可按
+# 注册工具 schema 恢复;残缺块只触发重试/展示剥离,不能把协议文本交给用户。
+_FUNCTION_PARAMETER_BLOCK_RE = re.compile(
+    r"<\s*function\s*=\s*[\"']?([A-Za-z_]\w*)[\"']?\s*>(.*?)"
+    r"</\s*function\s*>",
+    re.S | re.I,
+)
+_FUNCTION_PARAMETER_PARAM_RE = re.compile(
+    r"<\s*parameter\s*=\s*[\"']?([A-Za-z_]\w*)[\"']?\s*>(.*?)"
+    r"</\s*parameter\s*>",
+    re.S | re.I,
+)
+_FUNCTION_PARAMETER_LEAK_RE = re.compile(
+    r"(?:<\s*tool_call\s*>\s*)?"
+    r"<\s*function\s*=\s*[\"']?[A-Za-z_]\w*[\"']?\s*>.*?"
+    r"(?:</\s*function\s*>\s*(?:</\s*tool_call\s*>)?|\Z)",
+    re.S | re.I,
+)
 # 悬空 `<minimax:tool_call>` / `</minimax:tool_call>`(含无开标签的孤立闭标签)也一并剥掉。
 _MINIMAX_TAG_STRIP_RE = re.compile(r"</?\s*minimax:tool_call\s*>", re.I)
 
@@ -1252,7 +1274,7 @@ def _matches_outside_code_spans(regex: "re.Pattern", text: str) -> List[re.Match
 # 流式期前缀检测:`<invoke` / `<minimax:tool_call` / `<tool` / `<tool_call` / `<function_call`
 # 一出现就抑制 live 下发(逐 token 泄漏兜底 —— founder 截图正是逐 token live 泄漏)。
 _XML_TOOLCALL_PREFIX_RE = re.compile(
-    r"<\s*(?:invoke\b|/?\s*minimax:tool_call\b|/?\s*tool_code\b|/?\s*tool\b|/?\s*tool_call\b|/?\s*function_call\b)",
+    r"<\s*(?:invoke\b|/?\s*minimax:tool_call\b|/?\s*tool_code\b|/?\s*tool\b|/?\s*tool_call\b|/?\s*function_call\b|/?\s*function\s*=)",
     re.I,
 )
 
@@ -1308,6 +1330,10 @@ def _is_botched_text_tool_call(content: Optional[str], tools: Optional[List[Dict
     if "<tool_code" in content.lower() and _search_outside_code_spans(
         _TOOL_CODE_LEAK_RE, content
     ):
+        return True
+    # (d) `<function=name><parameter=key>…` 方言。完整块会在此函数之前被恢复;
+    #     走到这里说明截断或参数不可解析,只能重试,原文不得外泄。
+    if _search_outside_code_spans(_FUNCTION_PARAMETER_LEAK_RE, content):
         return True
     return False
 
@@ -1642,6 +1668,64 @@ def _extract_xml_tool_call(raw: str, tools: Optional[List[Dict]], allowed: set) 
     return None
 
 
+def _extract_function_parameter_tool_call(
+    raw: str,
+    tools: Optional[List[Dict]],
+    allowed: set,
+) -> Optional[Dict[str, Any]]:
+    """Recover ``<function=name><parameter=key>…`` textual tool calls."""
+    matches = _matches_outside_code_spans(_FUNCTION_PARAMETER_BLOCK_RE, raw or "")
+    if not matches:
+        return None
+
+    schema_by_tool: Dict[str, Dict[str, Any]] = {}
+    for tool in tools or []:
+        function = tool.get("function", {}) if isinstance(tool, dict) else {}
+        name = function.get("name")
+        if name:
+            properties = (function.get("parameters") or {}).get("properties") or {}
+            schema_by_tool[name] = properties if isinstance(properties, dict) else {}
+
+    for match in matches:
+        name = match.group(1)
+        if name not in allowed:
+            continue
+        properties = schema_by_tool.get(name, {})
+        body = match.group(2) or ""
+        parameters = list(_FUNCTION_PARAMETER_PARAM_RE.finditer(body))
+        # Never recover a partial call.  If anything except whitespace remains
+        # after removing complete parameter blocks, an opening/closing tag was
+        # truncated (or the body contains an unsupported shape).
+        if _FUNCTION_PARAMETER_PARAM_RE.sub("", body).strip():
+            continue
+        args: Dict[str, Any] = {}
+        valid = True
+        for parameter in parameters:
+            key = (parameter.group(1) or "").strip()
+            if not key or key in args:
+                valid = False
+                break
+            raw_value = (parameter.group(2) or "").strip()
+            value = _coerce_param_by_schema(raw_value, properties.get(key))
+            # Object/array-shaped values must parse as JSON.  Falling back to a
+            # string here would turn a damaged health payload into a write.
+            if raw_value.startswith(("{", "[")) and isinstance(value, str):
+                valid = False
+                break
+            args[key] = value
+        if not valid:
+            continue
+        return {
+            "id": "inline_tool_call_0",
+            "type": "function",
+            "function": {
+                "name": name,
+                "arguments": json.dumps(args, ensure_ascii=False),
+            },
+        }
+    return None
+
+
 # `<tool>funcname {args_json}</tool>` 形态:函数名在标签体、参数是紧跟的**独立** JSON(无 "name"
 # 键)。qwen 系经代理偶发(founder 2026-07-14 实测「列出喝水记录」→ 泄漏
 # `<tool>health_query {"dimension":"water"}</tool>` 且**未执行** → 无水数据)。既有三条恢复路径都
@@ -1705,6 +1789,10 @@ def _strip_xml_tool_markers(text: str) -> str:
         )
     stripped = _INVOKE_STRIP_RE.sub("", stripped)
     stripped = _MINIMAX_TAG_STRIP_RE.sub("", stripped)
+    if _FUNCTION_PARAMETER_LEAK_RE.search(stripped):
+        stripped = _apply_outside_code_spans(
+            lambda seg: _FUNCTION_PARAMETER_LEAK_RE.sub("", seg), stripped
+        )
     # 通用 `<tool>`/`<tool_call>`/`<function_call>` 伪标签泄漏(残缺/嵌套 JSON+签名混合,
     # 恢复不出结构化调用)—— 展示兜底剥离(founder 截图 2026-07-14)。`_GENERIC_TOOL_TAG_LEAK_RE`
     # 的门控确保只吃工具调用形状,不误伤文档里的 `<tool>example</tool>`;`_apply_outside_code_spans`
@@ -2330,6 +2418,8 @@ def _text_tool_call_write_is_authorized(
     authorization logic; ToolGateway remains the final execution boundary.
     """
     function = call.get("function") or {}
+    if function.get("name") == "health_record":
+        return _has_explicit_text_record_intent(user_message)
     if function.get("name") != "health_manage":
         return True
     try:
@@ -2387,6 +2477,10 @@ def _extract_inline_tool_call(
     xml = _extract_xml_tool_call(raw, tools, allowed)
     if xml is not None:
         return xml if _authorized(xml) else None
+
+    function_parameter = _extract_function_parameter_tool_call(raw, tools, allowed)
+    if function_parameter is not None:
+        return function_parameter if _authorized(function_parameter) else None
 
     # `<tool>funcname {args}</tool>` 形态(函数名在标签体 + 独立参数 JSON):既有三路都不认,
     # 恢复后真执行、不泄漏(founder 2026-07-14「列出喝水记录」根因)。

@@ -377,6 +377,12 @@ _POST_WRITE_BENEFICIARY_RE = re.compile(
     r"^(?:记录|记一下|记下|保存|录入|写入|新增|打卡)(?:一下)?"
     rf"(?:给|替|为)(?P<owner>{_OWNER_TOKEN_PATTERN})(?:的)?$"
 )
+_DIRECT_EVENT_RESOURCE_WRITE_RE = re.compile(
+    r"^(?:(?:请|请你|麻烦|麻烦你|帮我|请帮我|请你帮我|麻烦帮我|"
+    r"可以帮我|能帮我|给我|为我|我想|我要|我希望|我需要))?"
+    r"(?:记录|记一下|记下|保存|录入|登记|写入|新增|打卡)(?:一下)?"
+    r"(?:行程|旅程|旅途|出行|事件|生活事件)$"
+)
 _CURRENT_OWNER_WORDS = frozenset(
     {
         "我",
@@ -1710,6 +1716,11 @@ def _is_post_attributed_to_non_current_owner(clause: str) -> bool:
         r"(?:请)?给(?:我)?(?:点|些)(?:处理)?(?:意见|建议|方法)",
         normalized,
     ):
+        return False
+    # `记录行程` is a direct write command whose object is the current
+    # conversation's trip.  The generic `owner + 行程` grammar otherwise reads
+    # `记录` as a person's name and rejects the command as third-party data.
+    if _DIRECT_EVENT_RESOURCE_WRITE_RE.fullmatch(normalized):
         return False
     if _POST_CURRENT_USER_OWNERSHIP_ONLY_DENIAL_RE.fullmatch(normalized):
         return True

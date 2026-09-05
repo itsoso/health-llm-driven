@@ -2664,6 +2664,87 @@ async def test_agent_stream_executes_founder_sneeze_tool_code_and_returns_receip
     assert done["data"]["perf"]["end_to_end_ttft_ms"] is not None
 
 
+@pytest.mark.asyncio
+async def test_agent_stream_executes_function_parameter_event_call_without_leaking_protocol(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executed = []
+    llm_calls = 0
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if not executed:
+            return {
+                "content": (
+                    "<tool_call><function=health_record>"
+                    "<parameter=record_type>event</parameter>"
+                    '<parameter=data>{"title":"测试行程",'
+                    '"occurred_at":"2026-09-05T17:33+08:00",'
+                    '"location":"测试地点"}</parameter>'
+                    "</function></tool_call>"
+                ),
+                "finish_reason": "stop",
+            }
+        return {"content": "行程已记录。", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        executed.append((tool_name, json.loads(args_raw), user_token))
+        return json.dumps(
+            {
+                "id": 88,
+                "title": "测试行程",
+                "occurred_at": "2026-09-05T17:33+08:00",
+                "location": "测试地点",
+            },
+            ensure_ascii=False,
+        )
+
+    executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
+    executor._execute_tool = fake_execute_tool
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.staged_response_mode",
+        "on",
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录行程",
+            user_auth_token="test-token",
+            extra_context=json.dumps({"client": "mobile"}),
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+    assert len(executed) == 1
+    tool_name, args, user_token = executed[0]
+    assert tool_name == "health_record"
+    assert user_token == "test-token"
+    assert args["record_type"] == "event"
+    assert args["data"] == {
+        "title": "测试行程",
+        "occurred_at": "2026-09-05T17:33+08:00",
+        "location": "测试地点",
+        "confirmed": True,
+    }
+    assert args["confirmed"] is True
+    assert llm_calls == 1
+    assert "已记录" in rendered
+    assert "<tool_call>" not in rendered
+    assert "health_record" not in rendered
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["write_receipts"][0]["verified"] is True
+
+
 @pytest.mark.parametrize(
     ("message", "symptom_description"),
     (
