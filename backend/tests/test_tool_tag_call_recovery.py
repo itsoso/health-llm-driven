@@ -236,6 +236,8 @@ def test_bare_function_parameter_protocol_is_never_user_visible():
 
 def test_truncated_function_parameter_prefix_is_retryable_and_never_user_visible():
     for truncated in (
+        "<function=",
+        "<tool_call><function=",
         "<function=health_record",
         "<tool_call><function=health_record",
     ):

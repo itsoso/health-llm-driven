@@ -1163,7 +1163,7 @@ _FUNCTION_PARAMETER_LEAK_RE = re.compile(
 )
 _FUNCTION_PARAMETER_TRUNCATED_PREFIX_RE = re.compile(
     r"(?:<\s*tool_call\s*>\s*)?"
-    r"<\s*function\s*=\s*[\"']?[A-Za-z_]\w*[\"']?\s*\Z",
+    r"<\s*function\s*=\s*(?:[\"']?[A-Za-z_]\w*[\"']?)?\s*\Z",
     re.S | re.I,
 )
 # 悬空 `<minimax:tool_call>` / `</minimax:tool_call>`(含无开标签的孤立闭标签)也一并剥掉。
@@ -1222,6 +1222,19 @@ _CODE_SPAN_RE = re.compile(
     r"|``[^`]+``"       # 行内双反引号 span
     r"|`[^`\n]+`",      # 行内单反引号 span(不跨行)
     re.S,
+)
+
+# Context grounding is stricter than display sanitization: code samples can be
+# visible, but they must never authorize a write. Support both Markdown fence
+# syntaxes and remove an unfinished fence through EOF.
+_EVENT_GROUNDING_FENCED_CODE_RE = re.compile(
+    r"^[ \t]*(?P<fence>`{3,}|~{3,})[^\n]*\n.*?"
+    r"^[ \t]*(?P=fence)[ \t]*(?:\n|\Z)",
+    re.M | re.S,
+)
+_EVENT_GROUNDING_UNCLOSED_FENCE_RE = re.compile(
+    r"^[ \t]*(?:`{3,}|~{3,})[^\n]*(?:\n.*)?\Z",
+    re.M | re.S,
 )
 
 # 少数代理模型会把 function calling 降级成 Python 伪代码:
@@ -1308,17 +1321,23 @@ _TEXT_TOOLCALL_STRIP_RE = re.compile(
 
 
 def _is_botched_text_tool_call(content: Optional[str], tools: Optional[List[Dict]]) -> bool:
-    """模型把工具调用写成了**文本**而非结构化 tool_calls(两种形态,都命名了已注册工具)。
+    """模型把工具调用写成了**文本**而非结构化 tool_calls。
 
     (a) Markdown 清单式:`Tool calls:` / `工具调用:` 标题 + 工具名(无参数可解析);
     (b) 残缺 `<tool>`/`<tool_call>`/`<function_call>` 伪标签泄漏(founder 截图 2026-07-14)——
         `_extract_inline_tool_call` 恢复失败的畸形 blob(`_GENERIC_TOOL_TAG_LEAK_RE` 命中)。
+    (c) 已出现 `<function=` 但函数名或开标签尚未生成完整的确定性协议前缀。
     仅在 `_extract_inline_tool_call`(可解析格式)已返回 None 后调用 —— 两种都解析不出参数,
     只能重提示模型用结构化 function calling 重试(拿真数据 > 空转);轮次用尽由展示层
     `_strip_xml_tool_markers` 兜底剥离,绝不泄漏。
     """
     if not content:
         return False
+    if _search_outside_code_spans(
+        _FUNCTION_PARAMETER_TRUNCATED_PREFIX_RE,
+        content,
+    ):
+        return True
     allowed = {t.get("function", {}).get("name") for t in (tools or [])}
     names_in_content = [n for n in allowed if n and n in content]
     if not names_in_content:
@@ -8994,6 +9013,8 @@ def _contextual_event_payload_from_recent_turn(
         visible = _strip_bracket_tool_markers(visible)
         visible = _strip_text_tool_call(visible)
         # Code examples are visible but are not an actionable event proposal.
+        visible = _EVENT_GROUNDING_FENCED_CODE_RE.sub("", visible)
+        visible = _EVENT_GROUNDING_UNCLOSED_FENCE_RE.sub("", visible)
         visible = _CODE_SPAN_RE.sub("", visible)
         return visible.strip()
 

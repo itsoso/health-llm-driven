@@ -3587,6 +3587,18 @@ async def test_executor_does_not_record_trip_details_absent_from_context(db, mon
                 ),
             }
         ],
+        [
+            {
+                "role": "assistant",
+                "content": "```text\n测试行程",
+            }
+        ],
+        [
+            {
+                "role": "assistant",
+                "content": "~~~text\n测试行程",
+            }
+        ],
     ),
 )
 async def test_executor_does_not_bind_stale_or_hidden_trip_context(

@@ -107,6 +107,8 @@ describe('normalizeAssistantContent', () => {
   });
 
   it.each([
+    '<function=',
+    '<tool_call><function=',
     '<function=health_record',
     '<tool_call><function=health_record',
   ])('fails closed for a truncated raw protocol prefix: %s', (protocol) => {
