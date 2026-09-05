@@ -7996,6 +7996,33 @@ def _build_preplanned_simple_diet_tool_call(
     )
 
 
+def _build_preplanned_simple_water_tool_call(
+    goal: Optional[GoalSpec],
+    *,
+    write_receipts: Sequence[dict[str, Any]],
+    has_attachment: bool = False,
+    runtime_write_blocked: bool = False,
+    read_only_turn: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """Skip model tool selection for one fully typed water record."""
+    if (
+        goal is None
+        or goal.kind != "simple_health_record"
+        or goal.domain != "water"
+        or goal.operation != "create"
+        or goal.target_record_type != "water"
+        or has_attachment
+        or runtime_write_blocked
+        or read_only_turn
+    ):
+        return None
+    return _build_deterministic_simple_record_tool_call(
+        goal,
+        write_receipts=write_receipts,
+        has_attachment=False,
+    )
+
+
 async def _stream_llm_or_preplanned_tool_calls(
     call_llm_stream: Any,
     messages: Sequence[Dict[str, Any]],
@@ -14091,6 +14118,32 @@ class AgentExecutor:
                     yield evt
                 return
 
+        # A fully typed, bounded water/create goal already contains the entire
+        # write payload. Keep the ordinary ToolGateway, checkpoint, receipt and
+        # post-write safety path below, but remember that no model prompt or
+        # conversation history is needed to choose the tool.
+        preplanned_water_turn_call = (
+            _build_preplanned_simple_water_tool_call(
+                (
+                    self._agent_kernel_snapshot.goal
+                    if self._agent_kernel_snapshot is not None
+                    else None
+                ),
+                write_receipts=(),
+                has_attachment=bool(images or file_base64),
+                runtime_write_blocked=bool(self._runtime_write_block_reason),
+                read_only_turn=bool(read_only_tools),
+            )
+            if (
+                not health_advice_buffered
+                and clinician_turn_decision.kind
+                not in {*_CLINICIAN_ZERO_TOOL_KINDS, "explicit_doctor_feedback_write"}
+                and clinician_turn_decision.reason_code
+                not in _CLINICIAN_ZERO_TOOL_REASON_CODES
+            )
+            else None
+        )
+
         _t_stage = time.time()
         opener_quick_reply_note = None
         try:
@@ -14111,15 +14164,21 @@ class AgentExecutor:
         # 干预/效应/记忆), 只留核心人格 + R4 边界 + 防回显 + 记录参数指引 + 基础画像。
         # 非快路由回合 lite=False → prompt 逐字节不变。
         _t_stage = time.time()
-        system_content = self._build_system_prompt(
-            user_id, conv.id, user_auth_token, lite=self._fast_route_simple_turn,
-            intent_query=message,
-            health_evidence_runtime=health_advice_buffered,
-            force_full_personal_context=(
-                clinician_turn_decision.reason_code
-                in _CLINICIAN_ZERO_TOOL_REASON_CODES
-            ),
-        )
+        if preplanned_water_turn_call is not None:
+            system_content = ""
+        else:
+            system_content = self._build_system_prompt(
+                user_id,
+                conv.id,
+                user_auth_token,
+                lite=self._fast_route_simple_turn,
+                intent_query=message,
+                health_evidence_runtime=health_advice_buffered,
+                force_full_personal_context=(
+                    clinician_turn_decision.reason_code
+                    in _CLINICIAN_ZERO_TOOL_REASON_CODES
+                ),
+            )
         for source_label in _source_labels_from_system_prompt(system_content):
             if source_label not in sources_used:
                 sources_used.append(source_label)
@@ -14289,7 +14348,11 @@ class AgentExecutor:
             ),
             has_attachments=bool(images or file_base64),
         )
-        messages = svc.build_messages(conv.id, limit=history_limit)
+        messages = (
+            [{"role": "user", "content": user_content}]
+            if preplanned_water_turn_call is not None
+            else svc.build_messages(conv.id, limit=history_limit)
+        )
         logger.info(
             "[agent_executor] history-window user=%s limit=%s profile=%s",
             user_id,
@@ -14702,6 +14765,7 @@ class AgentExecutor:
                 # (合成轮词表稳定, 默认路径历来带非空 tools, 这层保护逐字节不变)。
                 _detect_tools = round_tools or tools
                 preplanned_simple_diet_call = None
+                preplanned_simple_water_call = None
                 preplanned_symptom_call = None
                 preplanned_query_call = None
                 if (
@@ -14793,6 +14857,33 @@ class AgentExecutor:
                             ),
                             read_only_turn=bool(read_only_tools),
                         )
+                    )
+                    preplanned_simple_water_call = (
+                        preplanned_water_turn_call
+                        if round_idx == 0
+                        else _build_preplanned_simple_water_tool_call(
+                            (
+                                self._agent_kernel_snapshot.goal
+                                if self._agent_kernel_snapshot is not None
+                                else None
+                            ),
+                            write_receipts=write_receipts,
+                            has_attachment=bool(images or file_base64),
+                            runtime_write_blocked=bool(
+                                self._runtime_write_block_reason
+                            ),
+                            read_only_turn=bool(read_only_tools),
+                        )
+                    )
+                if preplanned_simple_water_call is not None:
+                    deterministic_simple_record_fallback_attempted = True
+                    decision_route = "deterministic_simple_water"
+                    _mark_perf_milestone("first_useful_ms")
+                    logger.info(
+                        "[agent_executor] deterministic simple water decision "
+                        "user=%s message_chars=%s",
+                        user_id,
+                        len(message or ""),
                     )
                 if preplanned_simple_diet_call is not None:
                     # The text fast path is allowed to skip the tool-decision
@@ -14888,6 +14979,8 @@ class AgentExecutor:
                 preplanned_tool_calls = (
                     [preplanned_symptom_call]
                     if preplanned_symptom_call is not None
+                    else [preplanned_simple_water_call]
+                    if preplanned_simple_water_call is not None
                     else [preplanned_simple_diet_call]
                     if preplanned_simple_diet_call is not None
                     else [preplanned_query_call]
@@ -19241,6 +19334,11 @@ class AgentExecutor:
             "- 用户说'删除这一餐'、'撤销这顿'、'我刚才不小心删除了'、'把晚餐删掉/恢复'时,这是管理已有饮食记录,绝不能把这句话作为 diet.food_items 新增一条晚餐;先查候选记录并确认。",
             "- 饮水、补剂打卡：直接执行，不需确认",
             "- 血压、血糖、体重：执行后复述确认数值（'已记录血压 138/92'）",
+            (
+                "- 单一记录请求只处理本轮记录：成功后简短确认记录值；失败或没有可验证回执时，"
+                "只说明未完成或状态不明以及下一步。除非用户同时要求分析，或工具返回新的高危安全告警，"
+                "不得主动展开地点、天气、既往病史、化验、可穿戴数据或通用健康建议。"
+            ),
             "- 用户说'吃了/服用了XX'：若包含药名、药物剂型(胶囊/缓释片/颗粒/口服液等)、mg/毫克、处方/用药语境 → record_type=medication；补剂/保健品名(鱼油/维C/B族等) → record_type=supplement；明确食物或餐次 → record_type=diet",
             "- 用户说'早上的药都吃了' → record_type=supplement_group, timing=morning",
             "- 用户明确要设置提醒/闹钟/每天几点提醒,且已给出时间 → 调用 health_record(record_type=reminder, data={title,message,remind_at,recurrence})。每日提醒用 recurrence=daily; remind_at 必须是带 +08:00 的 ISO 时间; 只有 HH:MM 时按下一次北京时间生成。不能回复“系统接口限制”或让用户自己去手机/手表设置。",

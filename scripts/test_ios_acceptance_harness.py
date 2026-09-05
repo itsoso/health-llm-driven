@@ -176,10 +176,33 @@ def test_latest_message_acceptance_checks_seeded_markdown_at_the_bottom() -> Non
     assert 'identifier == %@ AND label CONTAINS %@' not in source
 
 
+def test_medical_review_acceptance_uses_accessible_send_and_official_link() -> None:
+    source = UI_TEST_SOURCE.read_text(encoding="utf-8")
+
+    assert "testZZMedicalCitationReviewPathOpensOfficialSource" in source
+    assert 'app.buttons["发送消息"]' in source
+    assert 'app.staticTexts["参考来源"]' in source
+    assert 'label BEGINSWITH %@' in source
+    assert '"中国成人体重判定标准"' in source
+    assert '"国家卫生健康委员会"' in source
+    assert 'XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")' in source
+    assert '"nhc.gov.cn"' in source
+    assert "officialDomain.waitForExistence" in source
+
+
+def test_authenticated_acceptance_never_passes_by_skipping_required_checks() -> None:
+    source = UI_TEST_SOURCE.read_text(encoding="utf-8")
+
+    assert "XCTSkip" not in source
+    assert "AcceptanceHarnessError.ownerLoginRequired" in source
+    assert "AcceptanceHarnessError.qualifiedTodayContextRequired" in source
+
+
 def test_runner_disables_interactive_device_diagnostics() -> None:
     runner = RUNNER.read_text(encoding="utf-8")
 
     assert "-collect-test-diagnostics never" in runner
+    assert "-parallel-testing-enabled NO" in runner
 
 
 def test_today_context_acceptance_matches_the_current_agent_native_surface() -> None:

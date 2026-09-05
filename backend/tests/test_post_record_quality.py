@@ -8,6 +8,7 @@ from app.models.daily_health import DietRecord
 from app.models.health_program import HealthProgram
 from app.models.user_profile import UserProfile
 from app.models.weight import WeightRecord
+from app.services import post_record_quality
 from app.services.post_record_quality import (
     build_post_record_quality_response,
     combine_post_record_quality_responses,
@@ -15,6 +16,30 @@ from app.services.post_record_quality import (
     fetch_today_diet_totals,
 )
 from tests.conftest import create_authenticated_user
+
+
+def test_water_quality_response_skips_unused_personal_context(monkeypatch):
+    """Unsupported quality cards must not load profile or wearable context."""
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("water reply does not use personal context")
+
+    monkeypatch.setattr(
+        post_record_quality,
+        "extract_personal_context_pack",
+        fail_if_called,
+    )
+
+    response = build_post_record_quality_response(
+        "water",
+        {"amount": 800, "record_date": "2026-09-04"},
+        result='{"id": 1}',
+        db=object(),
+        user_id=42,
+        write_verified=True,
+    )
+
+    assert response is None
 
 
 def test_personal_context_pack_merges_profile_and_prompt(db, auth_user_and_headers):
@@ -167,7 +192,7 @@ def test_diet_quality_response_uses_today_totals_and_actionable_routes(db, auth_
     assert card["data"]["progress"]["protein_target_g"] == 112
     assert card["data"]["progress"]["remaining_protein_g"] == 75
     assert card["data"]["progress"]["recorded_days_7d"] == 1
-    assert [action["label"] for action in card["actions"]] == ["看下一餐建议", "调整记录", "发到同行圈"]
+    assert [action["label"] for action in card["actions"]] == ["看下一餐建议", "修正本餐", "发到同行圈"]
     assert card["actions"][0]["action"] == "ui.inline.expand"
     assert card["actions"][0]["payload"]["target"] == "next_meal"
     assert "route" not in card["actions"][0]["payload"]
@@ -193,6 +218,7 @@ def test_diet_quality_response_uses_today_totals_and_actionable_routes(db, auth_
         "fat": 17.0,
         "fiber": None,
     }
+    assert card["data"]["adjust_record"] == adjust["payload"]["patch"]["adjust_record"]
     assert all("问小巴" not in action["label"] for action in card["actions"])
     publish = card["actions"][2]
     assert publish["id"] == "share-with-peers"

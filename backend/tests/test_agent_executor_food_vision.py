@@ -572,7 +572,7 @@ def test_agent_auto_captures_empty_high_confidence_lunch_photo_with_receipt(
     assert card["data"]["record_id"] == result.record.id
     adjust_action = card["actions"][0]
     assert adjust_action["action"] == "ui.inline.expand"
-    assert adjust_action["label"] == "调整记录"
+    assert adjust_action["label"] == "修正本餐"
     assert adjust_action["payload"]["target"] == "adjust_record"
     assert adjust_action["payload"]["patch"]["adjust_record"] == {
         "record_id": result.record.id,
@@ -585,6 +585,9 @@ def test_agent_auto_captures_empty_high_confidence_lunch_photo_with_receipt(
         "fiber": result.record.fiber,
         "updated_at": None,
     }
+    assert card["data"]["adjust_record"] == adjust_action["payload"]["patch"]["adjust_record"]
+    assert card["data"]["receipt_message"] == "已计入今日饮食，照片已关联。"
+    assert card["data"]["boundary"] == "营养为图片估算，如有偏差可继续修正本餐。"
     assert "photo_url" not in cards_for_persistence([card])[0]["data"]
 
 

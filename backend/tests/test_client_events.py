@@ -151,6 +151,42 @@ def test_post_client_event_accepts_content_free_agent_turn_milestone(
 
 
 @pytest.mark.parametrize(
+    "phase",
+    [
+        "first_semantic_progress",
+        "first_content_painted",
+        "first_key_content",
+        "first_interactive",
+        "citations_received",
+        "citations_painted",
+    ],
+)
+def test_post_client_event_accepts_render_aware_agent_milestone(
+    phase,
+    client, db, auth_user_and_headers,
+):
+    _, headers = auth_user_and_headers
+
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={
+            "event_name": "agent_turn_milestone",
+            "meta": {
+                "phase": phase,
+                "duration_ms": 1240,
+                "action_type": "generic",
+                "has_image": False,
+            },
+        },
+    )
+
+    assert response.status_code == 202, response.text
+    row = db.query(ClientEvent).order_by(ClientEvent.id.desc()).first()
+    assert row.meta["phase"] == phase
+
+
+@pytest.mark.parametrize(
     "meta",
     [
         {
@@ -232,6 +268,13 @@ def test_client_events_stats_empty(db):
                 "local_feedback": {"n": 0, "p50": None, "p95": None, "p99": None},
                 "server_accepted": {"n": 0, "p50": None, "p95": None, "p99": None},
                 "first_useful": {"n": 0, "p50": None, "p95": None, "p99": None},
+                "first_semantic_progress": {"n": 0, "p50": None, "p95": None, "p99": None},
+                "first_content_painted": {"n": 0, "p50": None, "p95": None, "p99": None},
+                "first_key_content": {"n": 0, "p50": None, "p95": None, "p99": None},
+                "first_interactive": {"n": 0, "p50": None, "p95": None, "p99": None},
+                "citations_received": {"n": 0, "p50": None, "p95": None, "p99": None},
+                "citations_painted": {"n": 0, "p50": None, "p95": None, "p99": None},
+                "citations_visible": {"n": 0, "p50": None, "p95": None, "p99": None},
                 "write_verified": {"n": 0, "p50": None, "p95": None, "p99": None},
             },
             "by_path": {},

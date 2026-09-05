@@ -74,6 +74,12 @@ def test_client_events_stats_aggregates_agent_turn_milestone_percentiles(db):
         "action_type": "diet_photo",
         "has_image": True,
     })
+    _seed(db, user.id, "agent_turn_milestone", {
+        "phase": "citations_painted",
+        "duration_ms": 1200,
+        "action_type": "generic",
+        "has_image": False,
+    })
     # Historical rows can predate API validation. Aggregation must ignore them
     # instead of letting malformed durations skew the latency baseline.
     _seed(db, user.id, "agent_turn_milestone", {
@@ -99,7 +105,7 @@ def test_client_events_stats_aggregates_agent_turn_milestone_percentiles(db):
     stats = client_events_stats(db, utc_now() - timedelta(days=7), user_id=None)
     latency = stats["agent_turn_milestones_ms"]
 
-    assert latency["valid"] == 5
+    assert latency["valid"] == 6
     assert latency["invalid"] == 3
     assert latency["by_phase"]["first_useful"] == {
         "n": 4,
@@ -112,6 +118,12 @@ def test_client_events_stats_aggregates_agent_turn_milestone_percentiles(db):
         "p50": None,
         "p95": None,
         "p99": None,
+    }
+    assert latency["by_phase"]["citations_painted"] == {
+        "n": 1,
+        "p50": 1200,
+        "p95": 1200,
+        "p99": 1200,
     }
     assert latency["by_path"]["generic:text"]["phases"]["first_useful"]["p95"] == 1380
     assert latency["by_path"]["diet_photo:image"] == {

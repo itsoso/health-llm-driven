@@ -1599,6 +1599,7 @@ def test_diet_nutrition_request_with_carbs_is_not_misrouted_to_water():
     "message",
     (
         "喝水300ml",
+        "喝水八百毫升",
         "喝了250ml水",
         "记录饮水半升",
         "喝了一杯水",
@@ -1614,6 +1615,34 @@ def test_explicit_water_intake_stays_in_water_domain(message):
     intent = classify_agent_utterance(message)
 
     assert intent.domain == "water"
+
+
+def test_bare_water_intake_with_chinese_amount_is_a_create_write():
+    intent = classify_agent_utterance("喝水八百毫升")
+
+    assert intent.primary == "write"
+    assert intent.domain == "water"
+    assert intent.operation == "create"
+    assert intent.is_write is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "喝水八百毫升合适吗？",
+        "不要记录喝水八百毫升",
+        "明天早上八点提醒我喝水八百毫升",
+        "记录午餐吃了八百克水饺",
+    ),
+)
+def test_chinese_water_amount_does_not_override_nonwrite_or_other_domain(message):
+    intent = classify_agent_utterance(message)
+
+    assert not (
+        intent.primary == "write"
+        and intent.domain == "water"
+        and intent.operation == "create"
+    )
 
 
 def test_water_character_inside_food_name_is_not_a_water_intent():

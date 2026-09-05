@@ -808,6 +808,82 @@ async def test_second_write_failure_never_streams_success_preamble(
 # ── Test 4: 生产实锤 — 模型零工具 + 确定性写入失败 → 绝不谎称已记录 ──
 
 
+async def test_bare_chinese_water_record_never_falls_through_to_profile_analysis(
+    db, auth_user_and_headers, monkeypatch
+):
+    """A terse water write must stay on the typed record path.
+
+    Production once classified this exact sentence as ambiguous. The general
+    chat prompt then expanded it with location, ulcer and SpO2 context even
+    though the write had no receipt. A failed write must instead end with a
+    short, deterministic retry message.
+    """
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    message = "喝水八百毫升"
+    unrelated_reply = (
+        "现在你在青海湖，结合胃溃疡和血氧情况，建议继续复测并分次补水。"
+    )
+    executed = []
+    model_calls = 0
+    history_loads = 0
+
+    def fail_system_prompt(*_args, **_kwargs):
+        raise AssertionError("typed water writes should not build a model prompt")
+
+    from app.services.agent_conversation_service import AgentConversationService
+
+    original_build_messages = AgentConversationService.build_messages
+
+    def tracked_build_messages(self, *args, **kwargs):
+        nonlocal history_loads
+        history_loads += 1
+        return original_build_messages(self, *args, **kwargs)
+
+    async def fake_call_llm_stream(messages, tools):  # noqa: ARG001
+        nonlocal model_calls
+        model_calls += 1
+        for character in unrelated_reply:
+            yield {"type": "content", "text": character}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):  # noqa: ARG001
+        args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+        executed.append((tool_name, args))
+        raise RuntimeError("模拟饮水写入失败")
+
+    executor._call_llm_stream = fake_call_llm_stream
+    executor._execute_tool = fake_execute_tool
+    executor._build_system_prompt = fail_system_prompt
+    monkeypatch.setattr(
+        AgentConversationService,
+        "build_messages",
+        tracked_build_messages,
+    )
+
+    events = [
+        event async for event in executor.run_stream(
+            user_id=user.id,
+            message=message,
+            user_auth_token="test-token",
+        )
+    ]
+    reply = _tokens(events)
+
+    assert model_calls == 0, "typed water writes should skip model tool selection"
+    assert history_loads == 0, "typed water writes should not load model history"
+    assert len(executed) == 1
+    tool_name, args = executed[0]
+    assert tool_name == "health_record"
+    assert args["record_type"] == "water"
+    assert args["data"]["amount"] == 800
+    assert args["data"]["record_date"] == datetime.now(
+        ZoneInfo("Asia/Shanghai")
+    ).date().isoformat()
+    assert any(term in reply for term in ("无法确认", "没有完成", "没有写入"))
+    assert all(term not in reply for term in ("青海湖", "胃溃疡", "血氧", "复测"))
+
+
 async def test_failed_deterministic_symptom_write_never_streams_the_claim(
     db, auth_user_and_headers
 ):

@@ -38,6 +38,22 @@ def test_height_and_weight_question_is_grounded_as_bmi_before_answer_generation(
     ]
 
 
+def test_bmi_answer_does_not_dilute_request_sources_with_incidental_advice_topics():
+    bundle = build_medical_citation_bundle(
+        "帮我算我的 BMI",
+        answer_text=(
+            "BMI 是 22.9，属于筛查范围内。日常可以继续均衡营养，"
+            "关注食物热量，并保持规律活动。"
+        ),
+    )
+
+    assert bundle.topics == ("bmi",)
+    assert [item["source_id"] for item in bundle.public_citations] == [
+        "nhc:adult-weight-standard",
+        "cdc:adult-bmi-categories",
+    ]
+
+
 def test_personal_data_read_without_interpretation_does_not_add_medical_citations():
     bundle = build_medical_citation_bundle("我今天走了多少步？")
 

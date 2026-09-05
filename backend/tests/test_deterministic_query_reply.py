@@ -121,7 +121,7 @@ def _tokens(events) -> str:
     )
 
 
-def _set_flag(monkeypatch, value: bool):
+def _set_flag(monkeypatch, value):
     monkeypatch.setattr("app.services.agent_executor.settings.deterministic_query_reply", value)
 
 
@@ -350,6 +350,40 @@ async def test_flag_off_falls_through_to_synthesis(db, auth_user_and_headers, mo
     assert "今日饮水" not in tokens  # 确定性读数从未产生
     done = events[-1]["data"]
     assert done["completion_status"] == "complete"
+
+
+@pytest.mark.asyncio
+async def test_shadow_keeps_synthesis_and_reports_content_free_eligibility(
+    db, auth_user_and_headers, monkeypatch,
+):
+    user, _ = auth_user_and_headers
+    executor, state = _make_executor(db, monkeypatch)
+    _set_flag(monkeypatch, "shadow")
+
+    events = await _run(executor, "今天喝了多少水", user.id)
+
+    assert len(state["stream_calls"]) == 2
+    assert _tokens(events) == _SYNTH_ANSWER
+    assert events[-1]["data"]["perf"]["deterministic_query"] == {
+        "mode": "shadow",
+        "eligible": True,
+        "candidate_chars": len("今日饮水 1200ml,目标 2000ml(完成 60%)。"),
+    }
+
+
+@pytest.mark.asyncio
+async def test_unknown_mode_fails_closed_to_normal_synthesis(
+    db, auth_user_and_headers, monkeypatch,
+):
+    user, _ = auth_user_and_headers
+    executor, state = _make_executor(db, monkeypatch)
+    _set_flag(monkeypatch, "surprise")
+
+    events = await _run(executor, "今天喝了多少水", user.id)
+
+    assert len(state["stream_calls"]) == 2
+    assert _tokens(events) == _SYNTH_ANSWER
+    assert "deterministic_query" not in events[-1]["data"]["perf"]
 
 
 @pytest.mark.asyncio

@@ -5,6 +5,7 @@ import pytest
 from app.services.agent_executor import (
     _build_deterministic_simple_record_tool_call,
     _build_deterministic_supplement_record_tool_calls,
+    _build_preplanned_simple_water_tool_call,
     _enrich_simple_diet_goal_tool_calls,
     _estimate_simple_diet_nutrition,
     _normalize_goal_guarded_tool_calls,
@@ -63,6 +64,59 @@ def test_water_goal_replaces_model_amount_and_record_type_with_goal_payload():
         "record_type": "water",
         "data": {"amount": 500, "record_date": "2026-07-26"},
     }
+
+
+def test_typed_water_goal_can_skip_model_tool_selection():
+    goal = GoalSpec(
+        kind="simple_health_record",
+        domain="water",
+        operation="create",
+        target_date="2026-09-04",
+        target_record_type="water",
+        target_values=(("amount_ml", "800"),),
+        requires_verification=True,
+    )
+
+    call = _build_preplanned_simple_water_tool_call(goal, write_receipts=[])
+
+    assert call is not None
+    assert call["function"]["name"] == "health_record"
+    assert json.loads(call["function"]["arguments"]) == {
+        "record_type": "water",
+        "data": {"amount": 800, "record_date": "2026-09-04"},
+    }
+
+
+@pytest.mark.parametrize(
+    "blocked_by",
+    ("attachment", "runtime", "read_only", "receipt"),
+)
+def test_typed_water_preplan_keeps_existing_write_safety_gates(blocked_by):
+    goal = GoalSpec(
+        kind="simple_health_record",
+        domain="water",
+        operation="create",
+        target_date="2026-09-04",
+        target_record_type="water",
+        target_values=(("amount_ml", "800"),),
+        requires_verification=True,
+    )
+    kwargs = {
+        "write_receipts": [],
+        "has_attachment": False,
+        "runtime_write_blocked": False,
+        "read_only_turn": False,
+    }
+    if blocked_by == "attachment":
+        kwargs["has_attachment"] = True
+    elif blocked_by == "runtime":
+        kwargs["runtime_write_blocked"] = True
+    elif blocked_by == "read_only":
+        kwargs["read_only_turn"] = True
+    else:
+        kwargs["write_receipts"] = [{"resource_id": "1", "verified": True}]
+
+    assert _build_preplanned_simple_water_tool_call(goal, **kwargs) is None
 
 
 def test_symptom_goal_replaces_model_invented_symptom_with_current_turn_payload():

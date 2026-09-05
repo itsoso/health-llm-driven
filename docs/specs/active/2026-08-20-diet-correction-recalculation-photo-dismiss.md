@@ -40,7 +40,7 @@ RequirementAdmission:
 
 | Surface | Responsibility | Contract |
 |---|---|---|
-| Mobile | detect changed food, show busy/error state, invoke exactly one write command, recognize vertical dismiss | changed food never falls back to ordinary PUT; horizontal gallery paging remains |
+| Mobile | expose a stable diet-record entry from the Chat shell; detect changed food, show busy/error state, invoke exactly one write command, recognize vertical dismiss | “更多操作 → 饮食记录” opens the existing owner-scoped diet screen; changed food never falls back to ordinary PUT; horizontal gallery paging remains |
 | Backend | authenticate, estimate and sanitize, revalidate concurrency, atomically update and return the full record | owner scope; no lock during model work; finite bounded nutrients; safe failure detail |
 
 No database migration is required. Add `POST /diet/records/{id}/recalculate-nutrition` with `food_items`, optional `meal_type`, required `expected_updated_at`, and a required bounded `Idempotency-Key` header. It returns `DietRecordResponse`. The service captures a record snapshot, performs model work without a row lock, sanitizes and calibrates the result, then locks and rejects a changed snapshot with `409` before one commit. A same-key/same-request replay returns the already committed record without rerunning the model; key reuse with another request is rejected. Existing `PUT /diet/records/{id}` remains the path for unchanged-food manual edits only.
@@ -94,6 +94,22 @@ When the user performs a qualifying vertical swipe
 Then the gallery closes
 And a short or horizontal swipe does not close it
 And the close button remains available
+
+Given the full-screen share photo editor is presented on an iPhone
+When the modal safe-area context temporarily reports a zero top inset
+Then the editor falls back to the launch-window inset
+And its header and controls remain outside the status bar and home indicator
+
+Given the share editor or poster preview is open
+When a single touch starts within the left-edge return zone
+Then that edge touch is reserved before photo or scroll gestures can claim it
+And only a qualifying rightward swipe runs the same cancel path as the visible back control
+And release may report zero active touches after single-touch qualification without cancelling completion
+And an incomplete, vertical, reverse, multi-touch or disabled swipe does not navigate away
+
+Given the user needs to revisit a saved meal
+When they open the Chat shell's more-actions menu and choose Diet records
+Then Mobile opens the existing diet-record screen without requiring them to find an old conversation
 ```
 
 ## 6. Verification And Rollout
@@ -115,3 +131,6 @@ Backend deploy precedes production Mobile OTA. Rollback removes Mobile use of th
 | 2026-08-20 | Initial accepted spec | User-observed stale nutrition and modal dismissal defects |
 | 2026-08-20 | Replaced client estimate-then-PUT with an atomic server command | Close concurrency, provenance and partial-write gaps found in G2 pressure review |
 | 2026-08-20 | Added required revision/idempotency receipts and fail-closed alcohol handling | Make lost-response retries safe and preserve alcohol-related safety facts |
+| 2026-09-04 | Added a Chat-shell entry to the existing diet-record screen | Manual simulator review showed that revisiting a saved meal still depended on finding an old conversation |
+| 2026-09-04 | Added launch-window safe-area fallback and early left-edge gesture capture to the share flow | Simulator review exposed status-bar overlap and an edge swipe lost to the image gesture recognizer |
+| 2026-09-04 | Decoupled release completion from the active-touch count | `PanResponder` reports zero active touches after lift; requiring one made qualified edge swipes impossible to complete |

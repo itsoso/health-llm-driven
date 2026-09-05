@@ -1546,6 +1546,24 @@ def _finalize_agent_runtime_events(
         raise
 
 
+def _prompt_grounding_citation_event(message: str) -> dict | None:
+    """Build a public, model-independent first-useful SSE event."""
+    from app.services.medical_citation_policy import build_medical_citation_bundle
+
+    bundle = build_medical_citation_bundle(message)
+    if not bundle.required or not bundle.citations:
+        return None
+    return {
+        "event": "medical_citations",
+        "data": {
+            "stage": "prompt_grounding",
+            "medical_citation_required": True,
+            "medical_citation_topics": list(bundle.topics),
+            "medical_citations": bundle.public_citations,
+        },
+    }
+
+
 @router.post("/stream", summary="统一健康助理流式对话")
 async def agent_stream(
     request: Request,
@@ -1557,6 +1575,7 @@ async def agent_stream(
     """统一健康 Agent — 记录 + 查询 + 分析 + 图片识别
 
     SSE 事件类型：
+    - medical_citations: 基于用户请求的公共医学来源（模型/工具执行前）
     - agent_start: Agent 开始
     - tool_call: 正在调用工具 {tool, args, round}
     - tool_result: 工具返回 {tool, success, preview}
@@ -1854,6 +1873,14 @@ async def agent_stream(
                             owner_task=owner_task,
                             initial_lease_deadline=initial_lease_deadline,
                         )
+                    )
+                # This catalog-only event is safe to enqueue before model or
+                # tool work. The executor remains the authoritative terminal
+                # choke point that recomputes and persists completed sources.
+                prompt_citation_event = _prompt_grounding_citation_event(msg_text)
+                if prompt_citation_event is not None:
+                    await stream_bridge.publish(
+                        f"data: {json.dumps(prompt_citation_event, ensure_ascii=False)}\n\n"
                     )
                 executor_bg = AgentExecutor(bg_db)
                 # 累积 LLM 流式输出, done 时扫描 fenced ```menu_share 块 (L1 分享菜单)

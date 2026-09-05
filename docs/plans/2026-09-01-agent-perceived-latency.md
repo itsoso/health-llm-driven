@@ -114,3 +114,19 @@ Jeff Dean 的核心提示是关注尾延迟和跨服务放大：一个回合串�
 5. 根据 7 天瀑布，在确定性查询直出、推理预算、缓存前缀、只读并发中只选择收益最大的一个进入 A/B。
 
 每个切片必须先写失败测试，运行相关 Backend/Mobile 回归，并在提交后等待 CI 全绿。涉及模型行为的切片额外执行 agent live eval、安全不变量和回执一致性闸。
+
+## 6. 2026-09-03 实施进展
+
+本轮只完成本地实现和验证，不继承历史发布授权，不执行 commit、push、部署、OTA 或送审。
+
+- [x] 将客户端里程碑扩展为 `first_semantic_progress`、`first_content_painted`、`first_key_content`、`first_interactive`、`citations_received` 和 `citations_painted`；所有事件仍只含枚举、时长和布尔值。
+- [x] 里程碑终点改为 React Native surface 的首次 `onLayout`，不再把 SSE 收到或 state 更新当成“用户已经看到”。
+- [x] 首个正文 token 或首张内联卡在同一次 state update 中立即落 UI；80ms 合批只用于后续 token。
+- [x] 受支持的只读工具结果到达后，先流出确定性 GenUI 卡片，再继续叙事合成；医疗建议缓冲路径不提前释放健康内容。
+- [x] 确定性查询直出改成 `off / shadow / on`；默认 `off`，`shadow` 只记录 eligibility 和候选字符数，不改变回答，未知值回落 `off`。
+- [x] 周报聚合新增关键内容、可交互和引用实际绘制的 p50/p95/p99；保留 `citations_visible` 仅用于历史数据兼容。
+- [ ] API admission/provider 子阶段时钟尚未补齐，继续列为 Phase A 后续切片。
+- [ ] 7 天或主路径 100 个有效样本尚未形成，不能宣称线上 P95 已改善。
+- [ ] live orchestrator gate 因本机没有 TokenPlan/OpenAI 凭证未执行成功；离线 invariants、health-agent core、trajectory contract 和 golden trace 已通过。
+
+发布前停止条件保持不变：live LLM gate、固定提交独立安全复审、主干 CI 和同批请求基线任一缺失，均不得把本地实现标成可发布或已提速。

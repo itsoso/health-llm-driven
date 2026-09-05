@@ -597,6 +597,13 @@ _AGENT_TURN_MILESTONE_PHASES = (
     "local_feedback",
     "server_accepted",
     "first_useful",
+    "first_semantic_progress",
+    "first_content_painted",
+    "first_key_content",
+    "first_interactive",
+    "citations_received",
+    "citations_painted",
+    "citations_visible",
     "write_verified",
 )
 _AGENT_TURN_ACTION_TYPES = frozenset({"generic", "diet_record", "diet_photo"})

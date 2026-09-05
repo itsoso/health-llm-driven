@@ -1,7 +1,82 @@
+import json
+
+from sqlalchemy.orm import sessionmaker
+
 from app.models.agent_conversation import AgentMessage
 from app.services.agent_conversation_service import AgentConversationService
 from app.services.agent_executor import AgentExecutor
 from tests.conftest import create_authenticated_user
+
+
+def test_prompt_grounded_citations_stream_before_the_first_answer_token(
+    client, db, auth_user_and_headers, monkeypatch,
+):
+    from app.config import settings
+
+    _, headers = auth_user_and_headers
+
+    async def fake_run_stream(self, **_kwargs):
+        yield {"event": "token", "data": {"content": "BMI 是 22.9。"}}
+        yield {
+            "event": "done",
+            "data": {
+                "conversation_id": None,
+                "message_id": None,
+                "completion_status": "complete",
+            },
+        }
+
+    monkeypatch.setattr(settings, "agent_runtime_mode", "off")
+    monkeypatch.setattr(settings, "starter_pregen_enabled", False)
+    monkeypatch.setattr(
+        "app.api.agent._maybe_genui_chart_events",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.api.agent._reserve_agent_capacity",
+        lambda *_args, **_kwargs: "test-capacity-lease",
+    )
+    monkeypatch.setattr(
+        "app.api.agent._release_agent_capacity_safely",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.api.agent._dispatch_life_event_extraction",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.database.SessionLocal",
+        sessionmaker(bind=db.get_bind(), autocommit=False, autoflush=False),
+    )
+    monkeypatch.setattr(AgentExecutor, "run_stream", fake_run_stream)
+
+    response = client.post(
+        "/api/v1/agent/stream",
+        headers=headers,
+        json={
+            "message": "帮我算我的 BMI",
+            "client_turn_id": "prompt-grounding-citations",
+        },
+    )
+    assert response.status_code == 200, response.text
+    events = [
+        json.loads(line.removeprefix("data: "))
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+    ]
+
+    event_names = [event.get("event") for event in events if event.get("event")]
+    assert event_names.index("medical_citations") < event_names.index("token")
+    early = next(
+        event for event in events if event.get("event") == "medical_citations"
+    )
+    assert early["data"]["stage"] == "prompt_grounding"
+    assert [
+        item["source_id"] for item in early["data"]["medical_citations"]
+    ] == [
+        "nhc:adult-weight-standard",
+        "cdc:adult-bmi-categories",
+    ]
 
 
 def test_terminal_bmi_answer_exposes_and_persists_clickable_medical_citations(

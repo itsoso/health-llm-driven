@@ -6,6 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import {
   ActivityIndicator,
   Alert,
@@ -19,6 +20,7 @@ import {
 import { Image, type ImageLoadEventData } from 'expo-image';
 import * as FileSystem from 'expo-file-system/legacy';
 import type { Action } from 'expo-image-manipulator';
+import { StatusBar } from 'expo-status-bar';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
@@ -26,9 +28,18 @@ import Animated, {
   useSharedValue,
 } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  initialWindowMetrics,
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 
-import { revaColors as C } from '../../constants/revaTheme';
+import {
+  revaColors as C,
+  revaFonts,
+  revaRadii,
+  revaShadows,
+} from '../../constants/revaTheme';
 
 import {
   addDietShareRedaction,
@@ -42,6 +53,7 @@ import {
   type DietShareRedaction,
   type NormalizedPoint,
 } from './dietShareImageEdit';
+import { SwipeBackSurface } from './SwipeBackSurface';
 
 type EditorPhase = 'loading' | 'ready' | 'applying' | 'failed';
 type FailureKind = 'load' | 'unsupported' | 'manipulation';
@@ -87,7 +99,16 @@ const DEFAULT_BRUSH_WIDTH = 0.06;
 const JPEG_COMPRESSION = 0.95;
 const MIN_CROP_FRACTION = 1 / 8;
 const EDITOR_HORIZONTAL_PADDING = 32;
-const EDITOR_FIXED_VERTICAL_SPACE = 268;
+const EDITOR_FIXED_VERTICAL_SPACE = 246;
+
+export function resolveDietShareEditorTopInset(
+  contextTop: number,
+  launchWindowTop: number | null | undefined = initialWindowMetrics?.insets.top,
+): number {
+  const safeContextTop = Number.isFinite(contextTop) ? Math.max(0, contextTop) : 0;
+  const safeLaunchTop = Number.isFinite(launchWindowTop) ? Math.max(0, launchWindowTop ?? 0) : 0;
+  return Math.max(safeContextTop, safeLaunchTop);
+}
 
 type GestureConstraint = {
   scale: number;
@@ -314,11 +335,15 @@ function pathForRedaction(redaction: DietShareRedaction, viewport: Size): string
 
 function ToolbarButton({
   label,
+  displayLabel,
+  icon,
   disabled = false,
   selected,
   onPress,
 }: {
   label: string;
+  displayLabel: string;
+  icon: keyof typeof Ionicons.glyphMap;
   disabled?: boolean;
   selected?: boolean;
   onPress: () => void;
@@ -340,7 +365,14 @@ function ToolbarButton({
         disabled ? styles.buttonDisabled : null,
       ]}
     >
-      <Text style={styles.toolbarButtonText}>{label}</Text>
+      <Ionicons
+        name={icon}
+        size={20}
+        color={selected ? C.greenBright : C.focusInk1}
+      />
+      <Text style={[styles.toolbarButtonText, selected ? styles.toolbarButtonTextSelected : null]}>
+        {displayLabel}
+      </Text>
     </Pressable>
   );
 }
@@ -352,6 +384,8 @@ export function DietShareImageEditor({
   onComplete,
   onCancel,
 }: DietShareImageEditorProps) {
+  const safeAreaInsets = useSafeAreaInsets();
+  const editorTopInset = resolveDietShareEditorTopInset(safeAreaInsets.top);
   const startingEdit = normalizeEditorEdit(initialEdit ?? initialDietShareImageEdit());
   const initialEditKey = JSON.stringify(startingEdit);
   const [history, dispatch] = useReducer(historyReducer, {
@@ -735,38 +769,59 @@ export function DietShareImageEditor({
       presentationStyle="fullScreen"
       onRequestClose={requestCancel}
     >
-      <SafeAreaView testID="diet-share-editor-root" onLayout={onRootLayout} style={styles.root}>
-        <View style={styles.header}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="取消图片编辑"
-            accessibilityState={{ disabled: phase === 'applying' }}
-            disabled={phase === 'applying'}
-            onPress={phase === 'applying' ? undefined : requestCancel}
-            style={({ pressed }) => [
-              styles.headerButton,
-              pressed ? styles.buttonPressed : null,
-              phase === 'applying' ? styles.buttonDisabled : null,
-            ]}
-          >
-            <Text style={styles.headerButtonText}>取消</Text>
-          </Pressable>
-          <Text style={styles.title}>编辑分享照片</Text>
-          <View style={styles.headerSpacer} />
-        </View>
+      <StatusBar style="light" backgroundColor={C.focusBg} />
+      <SwipeBackSurface
+        testID="diet-share-image-editor-swipe-back"
+        enabled={phase !== 'applying'}
+        resetBeforeBack={hasChanges}
+        onBack={requestCancel}
+        style={styles.root}
+      >
+        <SafeAreaView
+          testID="diet-share-editor-root"
+          edges={['bottom']}
+          onLayout={onRootLayout}
+          style={[styles.root, { paddingTop: editorTopInset }]}
+        >
+          <View style={styles.header}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="取消图片编辑"
+              accessibilityState={{ disabled: phase === 'applying' }}
+              disabled={phase === 'applying'}
+              onPress={phase === 'applying' ? undefined : requestCancel}
+              hitSlop={8}
+              style={({ pressed }) => [
+                styles.headerButton,
+                pressed ? styles.buttonPressed : null,
+                phase === 'applying' ? styles.buttonDisabled : null,
+              ]}
+            >
+              <Ionicons name="chevron-back" size={22} color={C.focusInk1} />
+              <Text style={styles.headerButtonText}>返回</Text>
+            </Pressable>
+            <View style={styles.titleGroup}>
+              <Text style={styles.title}>调整照片</Text>
+              <Text style={styles.subtitle}>裁剪与隐私处理</Text>
+            </View>
+            <View style={styles.headerSpacer} />
+          </View>
 
-        <Text style={styles.privacyReminder}>公开分享前，请检查人脸、地址、条码和二维码。</Text>
+          <View style={styles.privacyReminder}>
+            <Ionicons name="shield-checkmark-outline" size={15} color={C.focusInk2} />
+            <Text style={styles.privacyReminderText}>分享前请检查人脸、地址、条码与二维码</Text>
+          </View>
 
-        <View style={styles.previewArea}>
-          <View
-            testID="diet-share-editor-viewport"
-            accessibilityLabel="图片编辑状态"
-            accessibilityValue={{
-              text: `旋转 ${history.current.rotation} 度，隐私涂抹 ${history.current.redactions.length} 条`,
-            }}
-            onLayout={onViewportLayout}
-            style={[styles.viewport, viewportFrame]}
-          >
+          <View style={styles.previewArea}>
+            <View
+              testID="diet-share-editor-viewport"
+              accessibilityLabel="图片编辑状态"
+              accessibilityValue={{
+                text: `旋转 ${history.current.rotation} 度，隐私涂抹 ${history.current.redactions.length} 条`,
+              }}
+              onLayout={onViewportLayout}
+              style={[styles.viewport, viewportFrame]}
+            >
             <GestureDetector gesture={composedGesture}>
               <Animated.View
                 testID="diet-share-editor-transform"
@@ -856,58 +911,80 @@ export function DietShareImageEditor({
                 </Pressable>
               </View>
             ) : null}
+              <View pointerEvents="none" style={styles.viewportHint}>
+                <Ionicons
+                  name={privacyMode ? 'brush-outline' : 'move-outline'}
+                  size={14}
+                  color={C.focusInk1}
+                />
+                <Text style={styles.viewportHintText}>
+                  {privacyMode ? '在图片上涂抹需要隐藏的信息' : '拖动调整构图 · 双指缩放'}
+                </Text>
+              </View>
+            </View>
           </View>
-        </View>
 
-        <View testID="diet-share-editor-toolbar" style={styles.toolbar}>
-          <ToolbarButton
-            label="顺时针旋转照片"
-            disabled={!canEdit}
-            onPress={() => {
-              if (!sourceSize) return;
-              dispatch({ type: 'commit', edit: rotateDietShareImage(history.current, sourceSize) });
-            }}
-          />
-          <ToolbarButton
-            label="隐私涂抹"
-            disabled={!canEdit}
-            selected={privacyMode}
-            onPress={() => setPrivacyMode(current => !current)}
-          />
-          <ToolbarButton
-            label="撤销图片编辑"
-            disabled={!canEdit || history.past.length === 0}
-            onPress={() => dispatch({ type: 'undo' })}
-          />
-          <ToolbarButton
-            label="重做图片编辑"
-            disabled={!canEdit || history.future.length === 0}
-            onPress={() => dispatch({ type: 'redo' })}
-          />
-          <ToolbarButton
-            label="重置图片编辑"
-            disabled={!canEdit || !hasChanges}
-            onPress={() => dispatch({ type: 'reset' })}
-          />
-        </View>
+          <View testID="diet-share-editor-toolbar" style={styles.toolbar}>
+            <ToolbarButton
+              label="顺时针旋转照片"
+              displayLabel="旋转"
+              icon="sync-outline"
+              disabled={!canEdit}
+              onPress={() => {
+                if (!sourceSize) return;
+                dispatch({ type: 'commit', edit: rotateDietShareImage(history.current, sourceSize) });
+              }}
+            />
+            <ToolbarButton
+              label="隐私涂抹"
+              displayLabel="遮挡"
+              icon="brush-outline"
+              disabled={!canEdit}
+              selected={privacyMode}
+              onPress={() => setPrivacyMode(current => !current)}
+            />
+            <ToolbarButton
+              label="撤销图片编辑"
+              displayLabel="撤销"
+              icon="arrow-undo-outline"
+              disabled={!canEdit || history.past.length === 0}
+              onPress={() => dispatch({ type: 'undo' })}
+            />
+            <ToolbarButton
+              label="重做图片编辑"
+              displayLabel="重做"
+              icon="arrow-redo-outline"
+              disabled={!canEdit || history.future.length === 0}
+              onPress={() => dispatch({ type: 'redo' })}
+            />
+            <ToolbarButton
+              label="重置图片编辑"
+              displayLabel="重置"
+              icon="refresh-outline"
+              disabled={!canEdit || !hasChanges}
+              onPress={() => dispatch({ type: 'reset' })}
+            />
+          </View>
 
-        <View testID="diet-share-editor-actions" style={styles.actions}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="完成图片编辑"
-            accessibilityState={{ disabled: !canEdit }}
-            disabled={!canEdit}
-            onPress={canEdit ? applyEdit : undefined}
-            style={({ pressed }) => [
-              styles.completeButton,
-              pressed ? styles.buttonPressed : null,
-              !canEdit ? styles.buttonDisabled : null,
-            ]}
-          >
-            <Text style={styles.completeButtonText}>完成</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
+          <View testID="diet-share-editor-actions" style={styles.actions}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="完成图片编辑"
+              accessibilityState={{ disabled: !canEdit }}
+              disabled={!canEdit}
+              onPress={canEdit ? applyEdit : undefined}
+              style={({ pressed }) => [
+                styles.completeButton,
+                pressed ? styles.buttonPressed : null,
+                !canEdit ? styles.buttonDisabled : null,
+              ]}
+            >
+              <Text style={styles.completeButtonText}>生成分享图</Text>
+              <Ionicons name="arrow-forward" size={18} color={C.greenOn} />
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      </SwipeBackSurface>
     </Modal>
   );
 }
@@ -918,37 +995,67 @@ const styles = StyleSheet.create({
     backgroundColor: C.focusBg,
   },
   header: {
-    minHeight: 52,
+    minHeight: 58,
     paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   headerButton: {
-    minWidth: 64,
+    minWidth: 74,
     minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
+    marginLeft: -6,
   },
   headerButtonText: {
     color: C.focusInk1,
     fontSize: 16,
     fontWeight: '600',
+    fontFamily: revaFonts.cjk,
   },
   headerSpacer: {
-    width: 64,
+    width: 74,
+  },
+  titleGroup: {
+    alignItems: 'center',
+    gap: 1,
   },
   title: {
     color: C.greenOn,
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '800',
+    fontFamily: revaFonts.cjk,
+  },
+  subtitle: {
+    color: C.focusInk2,
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '500',
+    fontFamily: revaFonts.cjk,
   },
   privacyReminder: {
+    minHeight: 36,
+    marginHorizontal: 18,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    backgroundColor: C.focusBg2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.focusLine,
+    borderRadius: revaRadii.pill,
+    borderCurve: 'continuous',
+  },
+  privacyReminderText: {
     color: C.focusInk2,
-    fontSize: 13,
-    lineHeight: 19,
-    paddingHorizontal: 20,
-    paddingBottom: 10,
-    textAlign: 'center',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '500',
+    fontFamily: revaFonts.cjk,
   },
   previewArea: {
     flex: 1,
@@ -967,6 +1074,9 @@ const styles = StyleSheet.create({
     backgroundColor: C.focusBg2,
     borderRadius: 18,
     borderCurve: 'continuous',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.focusLine,
+    ...revaShadows.focus,
   },
   imageFill: {
     ...StyleSheet.absoluteFillObject,
@@ -976,6 +1086,28 @@ const styles = StyleSheet.create({
   },
   privacyCanvas: {
     ...StyleSheet.absoluteFillObject,
+  },
+  viewportHint: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 12,
+    minHeight: 30,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(15,28,23,0.78)',
+    borderRadius: revaRadii.pill,
+  },
+  viewportHintText: {
+    color: C.focusInk1,
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '600',
+    fontFamily: revaFonts.cjk,
   },
   statusOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1026,49 +1158,65 @@ const styles = StyleSheet.create({
   },
   toolbar: {
     flexShrink: 0,
-    minHeight: 112,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    minHeight: 68,
+    marginHorizontal: 16,
+    marginTop: 8,
+    paddingHorizontal: 5,
+    paddingVertical: 5,
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 8,
+    alignItems: 'stretch',
+    backgroundColor: C.focusBg2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.focusLine,
+    borderRadius: revaRadii.lg,
+    borderCurve: 'continuous',
   },
   toolbarButton: {
-    minHeight: 44,
-    paddingHorizontal: 12,
+    flex: 1,
+    minWidth: 0,
+    minHeight: 56,
+    paddingHorizontal: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: C.focusBg2,
-    borderRadius: 18,
+    gap: 3,
+    borderRadius: revaRadii.md,
     borderCurve: 'continuous',
   },
   toolbarButtonSelected: {
-    backgroundColor: C.green700,
+    backgroundColor: C.focusLine,
   },
   toolbarButtonText: {
-    color: C.greenOn,
-    fontSize: 12,
+    color: C.focusInk2,
+    fontSize: 11,
+    lineHeight: 14,
     fontWeight: '600',
+    fontFamily: revaFonts.cjk,
+  },
+  toolbarButtonTextSelected: {
+    color: C.greenBright,
   },
   actions: {
     flexShrink: 0,
     paddingHorizontal: 16,
-    paddingTop: 4,
+    paddingTop: 10,
     paddingBottom: 10,
   },
   completeButton: {
-    minHeight: 50,
+    minHeight: 52,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
     backgroundColor: C.green500,
-    borderRadius: 25,
+    borderRadius: revaRadii.pill,
     borderCurve: 'continuous',
+    ...revaShadows.md,
   },
   completeButtonText: {
     color: C.greenOn,
     fontSize: 16,
     fontWeight: '700',
+    fontFamily: revaFonts.cjk,
   },
   buttonPressed: {
     opacity: 0.72,

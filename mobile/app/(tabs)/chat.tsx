@@ -1272,7 +1272,7 @@ export default function ChatScreen() {
             <View style={styles.toolSheetHeader}>
               <View>
                 <Text style={txt.toolSheetTitle}>更多操作</Text>
-                <Text style={txt.toolSheetSub}>个人中心、分享与对话管理</Text>
+                <Text style={txt.toolSheetSub}>记录、分享与个人中心</Text>
               </View>
               <TouchableOpacity onPress={() => setToolMenuVisible(false)} hitSlop={8} accessibilityLabel="关闭更多操作">
                 <Ionicons name="close" size={22} color={C.ink2} />
@@ -1284,6 +1284,14 @@ export default function ChatScreen() {
               onPress={() => {
                 setToolMenuVisible(false);
                 handleOpenToday();
+              }}
+            />
+            <ToolMenuRow
+              icon="restaurant-outline"
+              label="饮食记录"
+              onPress={() => {
+                setToolMenuVisible(false);
+                router.push('/diet');
               }}
             />
             <ToolMenuRow

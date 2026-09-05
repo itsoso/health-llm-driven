@@ -92,6 +92,7 @@ jest.mock('react-native-gesture-handler', () => {
 import {
   constrainDietShareGesture,
   DietShareImageEditor,
+  resolveDietShareEditorTopInset,
   type DietShareImageEditorResult,
 } from '../DietShareImageEditor';
 // eslint-disable-next-line import/first
@@ -165,6 +166,89 @@ function performPinch(scale: number) {
   runGesture('pinch', 'onFinalize');
 }
 
+function attemptSwipeBack(
+  view: ReturnType<typeof renderEditor>,
+  gestureOverrides: Record<string, number> = {},
+) {
+  const surface = view.getByTestId('diet-share-image-editor-swipe-back');
+  const gesture = {
+    x0: 12,
+    y0: 220,
+    dx: 132,
+    dy: 4,
+    vx: 0.4,
+    vy: 0,
+    numberActiveTouches: 1,
+    ...gestureOverrides,
+  };
+  const touchEvent = (
+    pageX: number,
+    pageY: number,
+    previousPageX: number,
+    previousPageY: number,
+    timestamp: number,
+    activeTouches = gesture.numberActiveTouches,
+  ) => ({
+    nativeEvent: {
+      pageX,
+      pageY,
+      touches: Array.from(
+        { length: activeTouches },
+        (_, index) => ({ pageX: pageX + index, pageY: pageY + index }),
+      ),
+    },
+    touchHistory: {
+      numberActiveTouches: activeTouches,
+      indexOfSingleActiveTouch: 0,
+      mostRecentTimeStamp: timestamp,
+      touchBank: [{
+        touchActive: true,
+        startPageX: gesture.x0,
+        startPageY: gesture.y0,
+        startTimeStamp: 1,
+        currentPageX: pageX,
+        currentPageY: pageY,
+        currentTimeStamp: timestamp,
+        previousPageX,
+        previousPageY,
+        previousTimeStamp: Math.max(1, timestamp - 1),
+      }],
+    },
+  });
+  const startEvent = touchEvent(gesture.x0, gesture.y0, gesture.x0, gesture.y0, 1);
+  const capturedAtStart = surface.props.onStartShouldSetResponderCapture?.(startEvent) ?? false;
+  const claimDx = gesture.dx > 0 ? Math.min(12, gesture.dx) : gesture.dx;
+  const claimDy = gesture.dx > 0 && Math.abs(gesture.dy) < Math.abs(gesture.dx)
+    ? gesture.dy * (claimDx / gesture.dx)
+    : gesture.dy;
+  const claimEvent = touchEvent(
+    gesture.x0 + claimDx,
+    gesture.y0 + claimDy,
+    gesture.x0,
+    gesture.y0,
+    2,
+  );
+  const claimed = capturedAtStart
+    || surface.props.onMoveShouldSetResponderCapture?.(claimEvent)
+    || false;
+  if (claimed) {
+    const endEvent = touchEvent(
+      gesture.x0 + gesture.dx,
+      gesture.y0 + gesture.dy,
+      gesture.x0 + claimDx,
+      gesture.y0 + claimDy,
+      3,
+      0,
+    );
+    act(() => {
+      surface.props.onResponderGrant?.(claimEvent);
+      surface.props.onResponderMove?.(endEvent);
+      surface.props.onResponderRelease?.(endEvent);
+    });
+  }
+  return claimed;
+}
+
 describe('DietShareImageEditor', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -185,10 +269,25 @@ describe('DietShareImageEditor', () => {
     jest.restoreAllMocks();
   });
 
-  it('shows the public-sharing reminder and only names the manual privacy tool', () => {
+  it('falls back to the launch-window top inset when a full-screen modal loses safe-area context', () => {
+    expect(resolveDietShareEditorTopInset(0, 59)).toBe(59);
+    expect(resolveDietShareEditorTopInset(47, 59)).toBe(59);
+    expect(resolveDietShareEditorTopInset(62, 59)).toBe(62);
+  });
+
+  it('presents a compact, task-oriented editor without claiming automatic privacy detection', () => {
     const view = renderEditor();
 
-    expect(view.getByText('公开分享前，请检查人脸、地址、条码和二维码。')).toBeTruthy();
+    expect(view.getByText('调整照片')).toBeTruthy();
+    expect(view.getByText('裁剪与隐私处理')).toBeTruthy();
+    expect(view.getByText('分享前请检查人脸、地址、条码与二维码')).toBeTruthy();
+    expect(view.getByText('拖动调整构图 · 双指缩放')).toBeTruthy();
+    expect(view.getByText('旋转')).toBeTruthy();
+    expect(view.getByText('遮挡')).toBeTruthy();
+    expect(view.getByText('撤销')).toBeTruthy();
+    expect(view.getByText('重做')).toBeTruthy();
+    expect(view.getByText('重置')).toBeTruthy();
+    expect(view.getByText('生成分享图')).toBeTruthy();
     expect(view.getByRole('button', { name: '隐私涂抹' })).toBeTruthy();
     expect(view.queryByText(/自动检测|自动识别|检测到/)).toBeNull();
   });
@@ -448,6 +547,65 @@ describe('DietShareImageEditor', () => {
     expect(unchanged.onCancel).toHaveBeenCalledTimes(1);
   });
 
+  it('uses a completed left-edge swipe as cancel and ignores unrelated gestures', () => {
+    const startCaptureView = renderEditor();
+    const surface = startCaptureView.getByTestId('diet-share-image-editor-swipe-back');
+
+    expect(surface.props.onStartShouldSetResponderCapture?.({
+      nativeEvent: { pageX: 12, touches: [{ pageX: 12, pageY: 220 }] },
+      touchHistory: {
+        numberActiveTouches: 1,
+        indexOfSingleActiveTouch: 0,
+        mostRecentTimeStamp: 1,
+        touchBank: [{
+          touchActive: true,
+          startPageX: 12,
+          startPageY: 220,
+          startTimeStamp: 1,
+          currentPageX: 12,
+          currentPageY: 220,
+          currentTimeStamp: 1,
+          previousPageX: 12,
+          previousPageY: 220,
+          previousTimeStamp: 1,
+        }],
+      },
+    })).toBe(true);
+    startCaptureView.unmount();
+
+    const offEdge = renderEditor();
+    expect(attemptSwipeBack(offEdge, { x0: 64 })).toBe(false);
+    expect(offEdge.onCancel).not.toHaveBeenCalled();
+    offEdge.unmount();
+
+    const multitouch = renderEditor();
+    expect(attemptSwipeBack(multitouch, { numberActiveTouches: 2 })).toBe(false);
+    expect(multitouch.onCancel).not.toHaveBeenCalled();
+    multitouch.unmount();
+
+    const completed = renderEditor();
+    expect(attemptSwipeBack(completed)).toBe(true);
+    expect(completed.onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes a dirty edge swipe through the discard confirmation', () => {
+    const view = renderEditor();
+    loadPhoto(view);
+    fireEvent.press(view.getByRole('button', { name: '顺时针旋转照片' }));
+
+    expect(attemptSwipeBack(view)).toBe(true);
+    expect(view.onCancel).not.toHaveBeenCalled();
+    expect(Alert.alert).toHaveBeenCalledWith(
+      '放弃图片编辑？',
+      '未保存的裁剪、旋转和隐私涂抹会丢失。',
+      expect.any(Array),
+    );
+
+    const buttons = (Alert.alert as jest.Mock).mock.calls[0][2];
+    act(() => buttons.find((button: { text: string }) => button.text === '丢弃编辑').onPress());
+    expect(view.onCancel).toHaveBeenCalledTimes(1);
+  });
+
   it('uses the normalized session input as the clean baseline across rebuilt props and source changes', () => {
     const baseline = {
       ...initialDietShareImageEdit(),
@@ -633,6 +791,7 @@ describe('DietShareImageEditor', () => {
     expect(view.getByText('正在应用图片编辑…')).toBeTruthy();
     expect(view.getByRole('button', { name: '完成图片编辑' })).toBeDisabled();
     expect(view.getByRole('button', { name: '取消图片编辑' })).toBeDisabled();
+    expect(attemptSwipeBack(view)).toBe(false);
     fireEvent.press(view.getByRole('button', { name: '取消图片编辑' }));
     fireEvent(view.getByTestId('diet-share-image-editor-modal'), 'requestClose');
     fireEvent.press(view.getByRole('button', { name: '完成图片编辑' }));

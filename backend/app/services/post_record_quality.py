@@ -839,7 +839,7 @@ def build_diet_adjust_action(
     """Build the portable inline action for correcting one persisted diet record."""
     return _inline_expand_action(
         "adjust-record",
-        "调整记录",
+        "修正本餐",
         "adjust_record",
         {
             "expanded_sections": ["adjust_record"],
@@ -869,9 +869,13 @@ def build_post_record_quality_response(
     ):
         return None
     kind = _normalize_kind(record_type)
-    context = extract_personal_context_pack(personal_context, db=db, user_id=user_id)
 
     if kind == "diet":
+        context = extract_personal_context_pack(
+            personal_context,
+            db=db,
+            user_id=user_id,
+        )
         meal = _MEAL_TYPE_ZH.get(str(record_data.get("meal_type") or "").lower(), "饮食")
         food_label = _short_food_label(record_data.get("food_items") or record_data.get("food"))
         if not food_label:
@@ -929,6 +933,9 @@ def build_post_record_quality_response(
                     user_id=user_id,
                 ),
             )
+            card_data["adjust_record"] = adjust_action["payload"]["patch"][
+                "adjust_record"
+            ]
         else:
             # 拿不到 id 无法就地调整 → 至少跳真正的饮食页(不再去通用记录 tab)。
             adjust_action = _route_action("open-diet", "去饮食页调整", "/diet")
@@ -983,6 +990,11 @@ def build_post_record_quality_response(
         }
 
     if kind == "exercise":
+        context = extract_personal_context_pack(
+            personal_context,
+            db=db,
+            user_id=user_id,
+        )
         exercise, detail = _exercise_record_summary(record_data)
         if context.has_condition("高血压", "心脏病", "胸闷", "胸痛"):
             caution = "有心血管/血压背景时，训练中若胸闷头晕要停止并观察。"

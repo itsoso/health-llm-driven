@@ -1477,6 +1477,7 @@ async def test_typed_symptom_writes_without_confirmation_roundtrip(db):
 _R4_MARKER = "## 安全与边界 (R4"          # 医疗边界章节标题
 _ANTI_ECHO_MARKER = "绝对不要把工具返回的原始 JSON"   # 防回显规则 (R4 里那条)
 _RECORD_GUIDANCE_MARKER = "data 参数必须包含具体内容"  # 记录 worked-example / 单位默认指引
+_RECORD_SCOPE_MARKER = "单一记录请求只处理本轮记录"
 _LITE_HEALTH_MARKER = "当前时段:"           # build_lite_health_context 路径注入
 _TURN_TIME_CONTEXT_MARKER = "每轮用户消息前会附带系统生成的本轮时间信息"
 # full-only marker (lite 必须不含):
@@ -1494,6 +1495,7 @@ def test_lite_prompt_keeps_core_persona_and_record_guidance(db, auth_user_and_he
     assert _R4_MARKER in lite
     assert _ANTI_ECHO_MARKER in lite
     assert _RECORD_GUIDANCE_MARKER in lite
+    assert _RECORD_SCOPE_MARKER in lite
     assert _LITE_HEALTH_MARKER in lite
     assert _TURN_TIME_CONTEXT_MARKER in lite
     # SKIP: 分析 blob (世界观是 full 恒注入的最稳 marker)

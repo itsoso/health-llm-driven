@@ -431,6 +431,19 @@ describe('ChatInputBar', () => {
     expect(view.getByLabelText('消息输入框').props.accessibilityLabel).toBe('消息输入框');
   });
 
+  it('exposes the attachment and send actions as accessible buttons', () => {
+    const view = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    expect(view.getByRole('button', { name: '附件菜单' })).toBeTruthy();
+
+    enterKeyboardMode(view);
+    fireEvent.changeText(view.getByLabelText('消息输入框'), '帮我算我的 BMI');
+
+    expect(view.getByRole('button', { name: '发送消息' })).toBeTruthy();
+  });
+
   it('keyboard composer controls meet thumb ergonomics in the WeChat-style layout', () => {
     const view = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,

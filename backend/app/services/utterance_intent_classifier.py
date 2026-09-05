@@ -160,6 +160,9 @@ WATER_STATUS_TERMS = (
     "水摄入多",
 )
 WATER_AMOUNT_UNITS = ("ml", "毫升", "升")
+WATER_AMOUNT_NUMERAL_CHARS = frozenset(
+    "零〇一二两三四五六七八九十百千万点半"
+)
 MEDIA_SHORTHAND_TERMS = (
     "张图",
     "幅图",
@@ -733,6 +736,30 @@ def _has_water_signal(text: str) -> bool:
         and _has_any(text, ("喝了", "已喝"))
         and _has_any(text, WATER_AMOUNT_UNITS)
     )
+
+
+def _has_water_amount_signal(text: str) -> bool:
+    """Recognize an explicit water quantity without parsing its value."""
+    if any(character.isdigit() for character in text):
+        return True
+    if any(
+        phrase in text
+        for phrase in ("一杯", "两杯", "三杯", "半杯", "一瓶", "半瓶")
+    ):
+        return True
+    for unit in WATER_AMOUNT_UNITS:
+        unit_start = text.find(unit)
+        while unit_start >= 0:
+            numeral_start = unit_start
+            while (
+                numeral_start > 0
+                and text[numeral_start - 1] in WATER_AMOUNT_NUMERAL_CHARS
+            ):
+                numeral_start -= 1
+            if numeral_start < unit_start:
+                return True
+            unit_start = text.find(unit, unit_start + len(unit))
+    return False
 
 
 def _has_question_signal(text: str) -> bool:
@@ -2637,9 +2664,7 @@ def _has_explicit_observation_write(text: str, domain: str) -> bool:
     has_ascii_number = any(char.isdigit() for char in text)
     if domain == "water":
         has_drink_action = any(token in text for token in ("喝", "饮"))
-        has_amount = has_ascii_number or any(
-            phrase in text for phrase in ("一杯", "两杯", "三杯", "半杯", "一瓶", "半瓶")
-        )
+        has_amount = _has_water_amount_signal(text)
         return has_drink_action and has_amount
     if domain != "metric" or not has_ascii_number:
         return False

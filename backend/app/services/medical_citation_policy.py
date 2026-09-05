@@ -485,14 +485,32 @@ def build_medical_citation_bundle(
     the same citation UI.
     """
 
-    combined = f"{message or ''}\n{answer_text or ''}".strip()
-    topics = list(_detect_topics(combined))
+    request_text = (message or "").strip()
+    answer_text = (answer_text or "").strip()
+    topics = list(_detect_topics(request_text))
+    if (
+        _looks_like_general_health_advice(request_text)
+        and "general_health" not in topics
+    ):
+        topics.append("general_health")
+
+    # The request determines the reviewed grounding contract. Once it has a
+    # concrete medical topic, incidental words in the generated answer must
+    # not dilute the panel with broad or unrelated directories. Answer-side
+    # detection remains the fail-safe for deterministic calculations whose
+    # request itself did not look medical (for example a record acknowledgement
+    # that contains a nutrition estimate).
+    if not topics:
+        topics.extend(_detect_topics(answer_text))
+        if (
+            _looks_like_general_health_advice(answer_text)
+            and "general_health" not in topics
+        ):
+            topics.append("general_health")
     evidence = [
         *_manifest_citations(health_evidence_manifest),
         *_system_card_citations(system_evidence_card),
     ]
-    if _looks_like_general_health_advice(combined) and "general_health" not in topics:
-        topics.append("general_health")
     if not topics and evidence:
         topics.append("health_evidence")
 

@@ -1520,6 +1520,15 @@ describe('ChatScreen', () => {
     expect(getByTestId('chat-tool-menu-sheet').props.accessible).toBe(false);
   });
 
+  it('opens diet records from the more sheet', () => {
+    const { getByLabelText, getByText } = render(<ChatScreen />);
+
+    fireEvent.press(getByLabelText('更多会诊操作'));
+    fireEvent.press(getByText('饮食记录'));
+
+    expect(mockPush).toHaveBeenCalledWith('/diet');
+  });
+
   it('starts a new conversation when opened from an Agent context entry', async () => {
     mockRouteParams = {
       prompt: '请基于我近 7 天睡眠数据分析今晚最该调整的 3 件事。',

@@ -1,6 +1,20 @@
 import XCTest
 
 final class XiaobaAcceptanceUITests: XCTestCase {
+    private enum AcceptanceHarnessError: LocalizedError {
+        case ownerLoginRequired
+        case qualifiedTodayContextRequired
+
+        var errorDescription: String? {
+            switch self {
+            case .ownerLoginRequired:
+                return "Owner login is required before authenticated acceptance checks"
+            case .qualifiedTodayContextRequired:
+                return "The deterministic review account must expose a qualified Today context"
+            }
+        }
+    }
+
     private let app = XCUIApplication(bundleIdentifier: "life.executor.health")
     private let draftFixture = "UI自动验收草稿不发送"
 
@@ -20,7 +34,7 @@ final class XiaobaAcceptanceUITests: XCTestCase {
         app.descendants(matching: .any)
             .matching(
                 NSPredicate(
-                    format: "label == %@ OR label == %@ OR label == %@",
+                    format: "label == %@ OR label BEGINSWITH %@ OR label == %@",
                     "按住说话",
                     "消息输入框",
                     "消息输入框容器"
@@ -37,7 +51,7 @@ final class XiaobaAcceptanceUITests: XCTestCase {
 
     private func requireAuthenticatedChat() throws {
         if loginSurfaceExists(timeout: 2) {
-            throw XCTSkip("Owner login is required before authenticated acceptance checks")
+            throw AcceptanceHarnessError.ownerLoginRequired
         }
         XCTAssertTrue(
             chatSurfaceExists(timeout: 30),
@@ -181,7 +195,7 @@ final class XiaobaAcceptanceUITests: XCTestCase {
 
         let openToday = app.buttons["打开今日计划"]
         guard openToday.waitForExistence(timeout: 15) else {
-            throw XCTSkip("No qualified today context is visible for this account")
+            throw AcceptanceHarnessError.qualifiedTodayContextRequired
         }
 
         openToday.tap()
@@ -253,6 +267,77 @@ final class XiaobaAcceptanceUITests: XCTestCase {
         )
         attachScreenshot("draft-restored-after-background")
         replaceDraft(restoredField, with: originalDraft)
+    }
+
+    func testZZMedicalCitationReviewPathOpensOfficialSource() throws {
+        app.launch()
+        try requireAuthenticatedChat()
+        switchToKeyboardModeIfNeeded()
+
+        let field = composerTextInput()
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "Keyboard text field was not exposed")
+        let originalDraft = draftValue(field)
+        replaceDraft(field, with: "帮我算我的BMI")
+
+        let send = app.buttons["发送消息"]
+        XCTAssertTrue(
+            send.waitForExistence(timeout: 5),
+            "Send control was not exposed as an accessible button"
+        )
+        send.tap()
+
+        let citationHeading = app.staticTexts["参考来源"].firstMatch
+        XCTAssertTrue(
+            citationHeading.waitForExistence(timeout: 45),
+            "BMI answer did not expose the always-visible citation panel"
+        )
+        let officialSource = app.links.matching(
+            NSPredicate(
+                format: "label CONTAINS %@ AND label CONTAINS %@",
+                "中国成人体重判定标准",
+                "国家卫生健康委员会"
+            )
+        ).firstMatch
+        XCTAssertTrue(
+            officialSource.waitForExistence(timeout: 10),
+            "BMI citation panel did not expose the official NHC source as a link"
+        )
+        XCTAssertTrue(
+            app.staticTexts["健康信息用于辅助管理，不替代诊断；做医疗决定前请咨询医生。"]
+                .waitForExistence(timeout: 5),
+            "Medical boundary was not visible beside the BMI sources"
+        )
+        attachScreenshot("bmi-medical-citations-visible")
+
+        officialSource.tap()
+        let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
+        XCTAssertTrue(
+            safari.wait(for: .runningForeground, timeout: 15),
+            "Official medical source did not open in Safari"
+        )
+        let officialDomain = safari.descendants(matching: .any).matching(
+            NSPredicate(
+                format: "label CONTAINS[c] %@ OR value CONTAINS[c] %@",
+                "nhc.gov.cn",
+                "nhc.gov.cn"
+            )
+        ).firstMatch
+        XCTAssertTrue(
+            officialDomain.waitForExistence(timeout: 20),
+            "Safari did not expose the official nhc.gov.cn destination"
+        )
+        attachScreenshot("official-nhc-source-opened")
+
+        app.activate()
+        XCTAssertTrue(
+            chatSurfaceExists(timeout: 20),
+            "Returning from the official source did not restore Agent chat"
+        )
+        switchToKeyboardModeIfNeeded()
+        let restoredField = composerTextInput()
+        if !originalDraft.isEmpty && restoredField.waitForExistence(timeout: 5) {
+            replaceDraft(restoredField, with: originalDraft)
+        }
     }
 
     func testPrivacyAndAccountDeletionEntriesAreReachable() throws {

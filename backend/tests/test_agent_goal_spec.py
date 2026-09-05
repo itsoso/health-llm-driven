@@ -414,6 +414,26 @@ def test_simple_water_goal_keeps_exact_normalized_amount():
     assert "只创建 1 条 water" in format_goal_contract_prompt(goal)
 
 
+def test_bare_water_goal_keeps_chinese_amount_without_prompt_inference():
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(
+        user_id=1,
+        channel="mobile",
+        text="喝水八百毫升",
+    )
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind == "simple_health_record"
+    assert goal.target_record_type == "water"
+    assert dict(goal.target_values) == {"amount_ml": "800"}
+
+
 def test_historical_water_supplement_goal_keeps_amount_and_user_owned_date():
     context = ExecutionContext.for_test(user_id=1, channel="mobile")
     envelope = AgentEnvelope(

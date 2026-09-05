@@ -153,6 +153,87 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+function attemptSwipeBack(
+  view: ReturnType<typeof renderComposer>,
+  gestureOverrides: Record<string, number> = {},
+) {
+  const surface = view.getByTestId('diet-share-composer-swipe-back');
+  const gesture = {
+    x0: 12,
+    y0: 220,
+    dx: 132,
+    dy: 4,
+    vx: 0.4,
+    vy: 0,
+    numberActiveTouches: 1,
+    ...gestureOverrides,
+  };
+  const touchEvent = (
+    pageX: number,
+    pageY: number,
+    previousPageX: number,
+    previousPageY: number,
+    timestamp: number,
+    activeTouches = gesture.numberActiveTouches,
+  ) => ({
+    nativeEvent: {
+      pageX,
+      pageY,
+      touches: Array.from(
+        { length: activeTouches },
+        (_, index) => ({ pageX: pageX + index, pageY: pageY + index }),
+      ),
+    },
+    touchHistory: {
+      numberActiveTouches: activeTouches,
+      indexOfSingleActiveTouch: 0,
+      mostRecentTimeStamp: timestamp,
+      touchBank: [{
+        touchActive: true,
+        startPageX: gesture.x0,
+        startPageY: gesture.y0,
+        startTimeStamp: 1,
+        currentPageX: pageX,
+        currentPageY: pageY,
+        currentTimeStamp: timestamp,
+        previousPageX,
+        previousPageY,
+        previousTimeStamp: Math.max(1, timestamp - 1),
+      }],
+    },
+  });
+  const startEvent = touchEvent(gesture.x0, gesture.y0, gesture.x0, gesture.y0, 1);
+  surface.props.onStartShouldSetResponderCapture?.(startEvent);
+  const claimDx = gesture.dx > 0 ? Math.min(12, gesture.dx) : gesture.dx;
+  const claimDy = gesture.dx > 0 && Math.abs(gesture.dy) < Math.abs(gesture.dx)
+    ? gesture.dy * (claimDx / gesture.dx)
+    : gesture.dy;
+  const claimEvent = touchEvent(
+    gesture.x0 + claimDx,
+    gesture.y0 + claimDy,
+    gesture.x0,
+    gesture.y0,
+    2,
+  );
+  const claimed = surface.props.onMoveShouldSetResponderCapture?.(claimEvent) ?? false;
+  if (claimed) {
+    const endEvent = touchEvent(
+      gesture.x0 + gesture.dx,
+      gesture.y0 + gesture.dy,
+      gesture.x0 + claimDx,
+      gesture.y0 + claimDy,
+      3,
+      0,
+    );
+    act(() => {
+      surface.props.onResponderGrant?.(claimEvent);
+      surface.props.onResponderMove?.(endEvent);
+      surface.props.onResponderRelease?.(endEvent);
+    });
+  }
+  return claimed;
+}
+
 describe('DietShareComposer', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -215,6 +296,35 @@ describe('DietShareComposer', () => {
     expect(mockCaptureRef).toHaveBeenCalledTimes(1);
   });
 
+  it('shows a top-led share preview with clear status, privacy copy, and text fallback', async () => {
+    const view = renderComposer();
+    await reachPreview(view);
+
+    expect(view.getByText('分享这餐')).toBeTruthy();
+    expect(view.getByText('确认画面无误后再发布')).toBeTruthy();
+    expect(view.getByText('分享图已生成')).toBeTruthy();
+    expect(view.getByText('公开分享前，再确认图片中没有人脸、地址或二维码')).toBeTruthy();
+    expect(view.getByRole('button', { name: '分享饮食文字' })).toBeTruthy();
+    expect(view.getByText('仅分享文字')).toBeTruthy();
+  });
+
+  it('uses only a completed left-edge swipe to close through resource cleanup', async () => {
+    const view = renderComposer();
+    await reachPreview(view);
+
+    expect(attemptSwipeBack(view, { x0: 64 })).toBe(false);
+    expect(attemptSwipeBack(view, { dx: -132 })).toBe(false);
+    expect(attemptSwipeBack(view, { dx: 30, dy: 70 })).toBe(false);
+    expect(attemptSwipeBack(view, { numberActiveTouches: 2 })).toBe(false);
+    expect(view.onClose).not.toHaveBeenCalled();
+
+    expect(attemptSwipeBack(view)).toBe(true);
+    await waitFor(() => expect(view.onClose).toHaveBeenCalledTimes(1));
+    expect(mockReleaseCapture).toHaveBeenCalledWith('file:///cache/meal-poster.png');
+    expect(mockEditedCleanup).toHaveBeenCalledTimes(1);
+    expect(mockMaterializedCleanup).toHaveBeenCalledTimes(1);
+  });
+
   it('treats a dismissed system share as cancellation without an error', async () => {
     Object.defineProperty(Platform, 'OS', { configurable: true, value: 'ios' });
     (Share.share as jest.Mock).mockResolvedValueOnce({ action: Share.dismissedAction });
@@ -244,7 +354,7 @@ describe('DietShareComposer', () => {
     expect(view.queryByTestId('mock-diet-share-editor')).toBeNull();
     expect(view.queryByTestId('mock-diet-share-poster')).toBeNull();
     expect(view.getByRole('button', { name: '重试照片加载' })).toBeTruthy();
-    expect(view.getByRole('button', { name: '分享正文' })).toBeTruthy();
+    expect(view.getByRole('button', { name: '分享饮食文字' })).toBeTruthy();
     expect(mockCaptureRef).not.toHaveBeenCalled();
   });
 

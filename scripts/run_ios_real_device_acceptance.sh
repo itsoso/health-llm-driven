@@ -116,6 +116,7 @@ run_xcodebuild() {
     -derivedDataPath "${HARNESS_DIR}/DerivedData" \
     -resultBundlePath "${RESULT_PATH}" \
     -collect-test-diagnostics never \
+    -parallel-testing-enabled NO \
     "$@" \
     test
 }

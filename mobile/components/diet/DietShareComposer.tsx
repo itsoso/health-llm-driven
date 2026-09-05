@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import {
   ActivityIndicator,
   Alert,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   Share,
   StyleSheet,
   Text,
@@ -13,10 +15,16 @@ import {
 import { Image } from 'expo-image';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
+import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef, releaseCapture } from 'react-native-view-shot';
 
-import { revaColors as C } from '../../constants/revaTheme';
+import {
+  revaColors as C,
+  revaFonts,
+  revaRadii,
+  revaShadows,
+} from '../../constants/revaTheme';
 import { materializeImageForLocalUse } from '../../utils/share';
 import DietShareCard, { dietShareCaptureDimensions } from './DietShareCard';
 import {
@@ -27,6 +35,7 @@ import {
   buildDietSharePresentation,
   type DietShareRecord,
 } from './dietSharePresentation';
+import { SwipeBackSurface } from './SwipeBackSurface';
 
 export type ComposerPhase =
   | 'loading_photo'
@@ -508,133 +517,239 @@ export function DietShareComposer({
 
   return (
     <Modal visible animationType="slide" onRequestClose={() => { void closeComposer(); }}>
-      <SafeAreaView style={styles.root}>
-        <View style={styles.header}>
-          <Text style={styles.title}>编辑分享图</Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="关闭饮食分享编辑器"
-            onPress={() => { void closeComposer(); }}
-            style={styles.closeButton}
-          >
-            <Text style={styles.closeText}>关闭</Text>
-          </Pressable>
-        </View>
-
-        {phase === 'loading_photo' ? (
-          <View style={styles.centered}>
-            <ActivityIndicator />
-            <Text style={styles.statusText}>正在安全加载照片…</Text>
-          </View>
-        ) : null}
-
-        {phase === 'editing' && localPhotoUri ? (
-          <DietShareImageEditor
-            visible
-            sourceUri={localPhotoUri}
-            onComplete={completeEditing}
-            onCancel={() => { void closeComposer(); }}
-          />
-        ) : null}
-
-        {phase === 'rendering' && editedResult ? (
-          <View style={styles.renderingWrap}>
-            <View ref={posterRef} collapsable={false} style={styles.posterSurface}>
-              <DietShareCard
-                record={record}
-                dateLabel={dateLabel}
-                imageSource={{ uri: editedResult.editedUri }}
-                redactions={editedResult.redactions}
-                onImageReady={captureAfterDisplay}
-                onImageError={failRendering}
-              />
-            </View>
-            <View style={styles.renderingStatus} pointerEvents="none">
-              <ActivityIndicator color={C.greenOn} />
-              <Text style={styles.renderingText}>正在生成海报…</Text>
-            </View>
-          </View>
-        ) : null}
-
-        {phase === 'preview' && capturedUri ? (
-          <View style={styles.previewArea}>
-            <Image
-              testID="diet-share-captured-preview"
-              source={{ uri: capturedUri }}
-              contentFit="contain"
-              style={styles.previewImage}
-            />
-            <View style={styles.actionRow}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="保存海报到相册"
-                disabled={busyAction !== null}
-                onPress={() => { void savePoster(); }}
-                style={styles.secondaryAction}
-              >
-                <Text style={styles.secondaryActionText}>{busyAction === 'save' ? '保存中…' : '保存到相册'}</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="分享饮食海报"
-                disabled={busyAction !== null}
-                onPress={() => { void sharePoster(); }}
-                style={styles.primaryAction}
-              >
-                <Text style={styles.primaryActionText}>{busyAction === 'share' ? '分享中…' : '分享'}</Text>
-              </Pressable>
-            </View>
-            <Pressable accessibilityRole="button" accessibilityLabel="分享正文" onPress={() => { void shareText(); }}>
-              <Text style={styles.textAction}>分享正文</Text>
-            </Pressable>
-            {onAskReva ? (
-              <Pressable accessibilityRole="button" accessibilityLabel="问小巴复盘今日饮食" onPress={onAskReva}>
-                <Text style={styles.textAction}>问小巴复盘今日饮食</Text>
-              </Pressable>
-            ) : null}
-          </View>
-        ) : null}
-
-        {phase === 'failed' ? (
-          <View style={styles.centered}>
-            <Text style={styles.failureTitle}>
-              {failureKind === 'photo_load_failed' ? '照片加载失败' : '分享图生成失败'}
-            </Text>
-            <Text style={styles.failureDetail}>
-              {failureKind === 'photo_load_failed'
-                ? '未生成指标海报。请重试照片，或只分享正文。'
-                : '照片编辑结果已保留，可直接重新生成分享图。'}
-            </Text>
+      <StatusBar style="dark" backgroundColor={C.paper} />
+      <SwipeBackSurface
+        testID="diet-share-composer-swipe-back"
+        enabled={busyAction === null}
+        onBack={() => { void closeComposer(); }}
+        style={styles.root}
+      >
+        <SafeAreaView style={styles.root}>
+          <View style={styles.header}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={failureKind === 'photo_load_failed' ? '重试照片加载' : '重新生成分享图'}
-              onPress={retry}
-              style={styles.primaryAction}
+              accessibilityLabel="关闭饮食分享编辑器"
+              onPress={() => { void closeComposer(); }}
+              hitSlop={8}
+              style={({ pressed }) => [styles.closeButton, pressed ? styles.buttonPressed : null]}
             >
-              <Text style={styles.primaryActionText}>
-                {failureKind === 'photo_load_failed' ? '重试' : '重新生成'}
-              </Text>
+              <Ionicons name="chevron-back" size={24} color={C.ink1} />
             </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="分享正文" onPress={() => { void shareText(); }}>
-              <Text style={styles.textAction}>分享正文</Text>
-            </Pressable>
+            <View style={styles.titleGroup}>
+              <Text style={styles.title}>分享这餐</Text>
+              <Text style={styles.subtitle}>确认画面无误后再发布</Text>
+            </View>
+            <View style={styles.headerSpacer} />
           </View>
-        ) : null}
-      </SafeAreaView>
+
+          {phase === 'loading_photo' ? (
+            <View style={styles.centered}>
+              <ActivityIndicator color={C.green500} />
+              <Text style={styles.statusText}>正在安全加载照片…</Text>
+            </View>
+          ) : null}
+
+          {phase === 'editing' && localPhotoUri ? (
+            <DietShareImageEditor
+              visible
+              sourceUri={localPhotoUri}
+              onComplete={completeEditing}
+              onCancel={() => { void closeComposer(); }}
+            />
+          ) : null}
+
+          {phase === 'rendering' && editedResult ? (
+            <View style={styles.renderingWrap}>
+              <View ref={posterRef} collapsable={false} style={styles.posterSurface}>
+                <DietShareCard
+                  record={record}
+                  dateLabel={dateLabel}
+                  imageSource={{ uri: editedResult.editedUri }}
+                  redactions={editedResult.redactions}
+                  onImageReady={captureAfterDisplay}
+                  onImageError={failRendering}
+                />
+              </View>
+              <View style={styles.renderingStatus} pointerEvents="none">
+                <ActivityIndicator color={C.greenOn} />
+                <Text style={styles.renderingText}>正在生成海报…</Text>
+              </View>
+            </View>
+          ) : null}
+
+          {phase === 'preview' && capturedUri ? (
+            <ScrollView
+              style={styles.previewScroll}
+              contentContainerStyle={styles.previewContent}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.readyBadge}>
+                <Ionicons name="checkmark-circle" size={17} color={C.green600} />
+                <Text style={styles.readyBadgeText}>分享图已生成</Text>
+              </View>
+              <View style={styles.previewFrame}>
+                <Image
+                  testID="diet-share-captured-preview"
+                  source={{ uri: capturedUri }}
+                  contentFit="contain"
+                  style={styles.previewImage}
+                />
+              </View>
+              <View style={styles.privacyNotice}>
+                <Ionicons name="shield-checkmark-outline" size={16} color={C.green600} />
+                <Text style={styles.privacyNoticeText}>
+                  公开分享前，再确认图片中没有人脸、地址或二维码
+                </Text>
+              </View>
+              <View style={styles.actionRow}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="保存海报到相册"
+                  accessibilityState={{ disabled: busyAction !== null }}
+                  disabled={busyAction !== null}
+                  onPress={() => { void savePoster(); }}
+                  style={({ pressed }) => [
+                    styles.secondaryAction,
+                    pressed ? styles.buttonPressed : null,
+                    busyAction !== null ? styles.buttonDisabled : null,
+                  ]}
+                >
+                  <Ionicons name="download-outline" size={19} color={C.ink2} />
+                  <Text style={styles.secondaryActionText}>
+                    {busyAction === 'save' ? '保存中…' : '存到相册'}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="分享饮食海报"
+                  accessibilityState={{ disabled: busyAction !== null }}
+                  disabled={busyAction !== null}
+                  onPress={() => { void sharePoster(); }}
+                  style={({ pressed }) => [
+                    styles.primaryAction,
+                    pressed ? styles.buttonPressed : null,
+                    busyAction !== null ? styles.buttonDisabled : null,
+                  ]}
+                >
+                  <Ionicons name="share-outline" size={19} color={C.greenOn} />
+                  <Text style={styles.primaryActionText}>
+                    {busyAction === 'share' ? '分享中…' : '分享海报'}
+                  </Text>
+                </Pressable>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="分享饮食文字"
+                accessibilityState={{ disabled: busyAction !== null }}
+                disabled={busyAction !== null}
+                onPress={() => { void shareText(); }}
+                style={({ pressed }) => [styles.textActionButton, pressed ? styles.buttonPressed : null]}
+              >
+                <Ionicons name="document-text-outline" size={17} color={C.green600} />
+                <Text style={styles.textAction}>{busyAction === 'text' ? '分享中…' : '仅分享文字'}</Text>
+              </Pressable>
+              {onAskReva ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="问小巴复盘今日饮食"
+                  onPress={onAskReva}
+                  style={({ pressed }) => [styles.textActionButton, pressed ? styles.buttonPressed : null]}
+                >
+                  <Ionicons name="sparkles-outline" size={17} color={C.green600} />
+                  <Text style={styles.textAction}>问小巴复盘今日饮食</Text>
+                </Pressable>
+              ) : null}
+            </ScrollView>
+          ) : null}
+
+          {phase === 'failed' ? (
+            <View style={styles.centered}>
+              <View style={styles.failureIcon}>
+                <Ionicons name="image-outline" size={25} color={C.green600} />
+              </View>
+              <Text style={styles.failureTitle}>
+                {failureKind === 'photo_load_failed' ? '照片加载失败' : '分享图生成失败'}
+              </Text>
+              <Text style={styles.failureDetail}>
+                {failureKind === 'photo_load_failed'
+                  ? '没有生成图片。你可以重试，或直接分享文字内容。'
+                  : '照片编辑结果已保留，可以直接重新生成。'}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={failureKind === 'photo_load_failed' ? '重试照片加载' : '重新生成分享图'}
+                onPress={retry}
+                style={({ pressed }) => [styles.primaryAction, styles.failurePrimary, pressed ? styles.buttonPressed : null]}
+              >
+                <Ionicons name="refresh-outline" size={19} color={C.greenOn} />
+                <Text style={styles.primaryActionText}>
+                  {failureKind === 'photo_load_failed' ? '重试' : '重新生成'}
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="分享饮食文字"
+                onPress={() => { void shareText(); }}
+                style={({ pressed }) => [styles.textActionButton, pressed ? styles.buttonPressed : null]}
+              >
+                <Ionicons name="document-text-outline" size={17} color={C.green600} />
+                <Text style={styles.textAction}>仅分享文字</Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </SafeAreaView>
+      </SwipeBackSurface>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.paper2, padding: 18 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  title: { fontSize: 20, fontWeight: '900', color: C.ink1 },
-  closeButton: { paddingHorizontal: 12, paddingVertical: 8 },
-  closeText: { color: C.green600, fontWeight: '800' },
+  root: { flex: 1, backgroundColor: C.paper },
+  header: {
+    minHeight: 64,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: C.line,
+  },
+  closeButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: -6,
+    borderRadius: revaRadii.pill,
+  },
+  headerSpacer: { width: 44 },
+  titleGroup: { alignItems: 'center', gap: 1 },
+  title: {
+    fontFamily: revaFonts.cjk,
+    fontSize: 18,
+    lineHeight: 23,
+    fontWeight: '800',
+    color: C.ink1,
+  },
+  subtitle: {
+    fontFamily: revaFonts.cjk,
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '500',
+    color: C.ink3,
+  },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 28 },
-  statusText: { color: C.ink2, fontWeight: '700' },
-  failureTitle: { fontSize: 19, color: C.ink1, fontWeight: '900' },
-  failureDetail: { color: C.ink2, lineHeight: 20, textAlign: 'center' },
+  statusText: { color: C.ink2, fontWeight: '600', fontFamily: revaFonts.cjk },
+  failureIcon: {
+    width: 52,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+  },
+  failureTitle: { fontSize: 19, color: C.ink1, fontWeight: '800', fontFamily: revaFonts.cjk },
+  failureDetail: { color: C.ink2, lineHeight: 21, textAlign: 'center', fontFamily: revaFonts.cjk },
   renderingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   posterSurface: { width: '92%', maxWidth: 360, aspectRatio: 3 / 4 },
   renderingStatus: {
@@ -644,30 +759,112 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: 'rgba(38, 29, 22, 0.42)',
   },
-  renderingText: { color: C.greenOn, fontWeight: '900' },
-  previewArea: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 },
-  previewImage: { width: '92%', maxWidth: 360, aspectRatio: 3 / 4, backgroundColor: C.lineStrong },
-  actionRow: { width: '100%', flexDirection: 'row', gap: 10 },
+  renderingText: { color: C.greenOn, fontWeight: '800', fontFamily: revaFonts.cjk },
+  previewScroll: { flex: 1 },
+  previewContent: {
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 28,
+    gap: 12,
+  },
+  readyBadge: {
+    minHeight: 30,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    borderRadius: revaRadii.pill,
+  },
+  readyBadgeText: {
+    color: C.green700,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
+    fontFamily: revaFonts.cjk,
+  },
+  previewFrame: {
+    width: '100%',
+    maxWidth: 390,
+    padding: 8,
+    backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    borderRadius: revaRadii.lg,
+    borderCurve: 'continuous',
+    ...revaShadows.md,
+  },
+  previewImage: {
+    width: '100%',
+    aspectRatio: 3 / 4,
+    backgroundColor: C.paper2,
+    borderRadius: revaRadii.md,
+    borderCurve: 'continuous',
+  },
+  privacyNotice: {
+    width: '100%',
+    maxWidth: 430,
+    minHeight: 42,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: C.green50,
+    borderRadius: revaRadii.md,
+  },
+  privacyNoticeText: {
+    flex: 1,
+    color: C.ink2,
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: revaFonts.cjk,
+  },
+  actionRow: { width: '100%', maxWidth: 430, flexDirection: 'row', gap: 10 },
   primaryAction: {
+    flex: 1,
     minHeight: 46,
-    minWidth: 112,
-    paddingHorizontal: 18,
-    borderRadius: 14,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 7,
+    borderRadius: revaRadii.md,
+    borderCurve: 'continuous',
     backgroundColor: C.green600,
+    ...revaShadows.sm,
   },
-  primaryActionText: { color: C.greenOn, fontWeight: '900' },
+  primaryActionText: { color: C.greenOn, fontWeight: '800', fontFamily: revaFonts.cjk },
   secondaryAction: {
     flex: 1,
     minHeight: 46,
-    borderRadius: 14,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 7,
+    borderRadius: revaRadii.md,
+    borderCurve: 'continuous',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.lineStrong,
-    backgroundColor: C.surface2,
+    backgroundColor: C.surface,
   },
-  secondaryActionText: { color: C.ink2, fontWeight: '900' },
-  textAction: { padding: 8, color: C.green600, fontWeight: '800' },
+  secondaryActionText: { color: C.ink2, fontWeight: '700', fontFamily: revaFonts.cjk },
+  failurePrimary: { flex: 0, minWidth: 180, marginTop: 4 },
+  textActionButton: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: revaRadii.md,
+  },
+  textAction: { color: C.green600, fontWeight: '700', fontFamily: revaFonts.cjk },
+  buttonPressed: { opacity: 0.72 },
+  buttonDisabled: { opacity: 0.48 },
 });

@@ -1281,7 +1281,14 @@ export default function ChatInputBar({
           )}
 
           {canSend ? (
-            <TouchableOpacity onPress={() => handleSend()} style={styles.sendBtn} hitSlop={COMPOSER_HIT_SLOP} accessibilityLabel="发送消息">
+            <TouchableOpacity
+              onPress={() => handleSend()}
+              style={styles.sendBtn}
+              hitSlop={COMPOSER_HIT_SLOP}
+              accessibilityRole="button"
+              accessibilityLabel="发送消息"
+              accessibilityHint="发送当前输入的消息"
+            >
               <Ionicons name="arrow-up" size={20} color="#fff" />
             </TouchableOpacity>
           ) : justSent ? (
@@ -1289,7 +1296,16 @@ export default function ChatInputBar({
               <Ionicons name="checkmark" size={20} color="#fff" />
             </View>
           ) : (
-            <TouchableOpacity testID="composer-plus" onPress={toggleMenu} style={styles.plusBtn} hitSlop={COMPOSER_HIT_SLOP} accessibilityLabel="附件菜单">
+            <TouchableOpacity
+              testID="composer-plus"
+              onPress={toggleMenu}
+              style={styles.plusBtn}
+              hitSlop={COMPOSER_HIT_SLOP}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: showMenu }}
+              accessibilityLabel="附件菜单"
+              accessibilityHint="打开拍照、相册、文件和输入模式菜单"
+            >
               <Ionicons name={showMenu ? 'close' : 'add'} size={26} color={COMPOSER_ICON} />
             </TouchableOpacity>
           )}

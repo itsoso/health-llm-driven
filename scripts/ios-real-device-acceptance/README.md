@@ -10,13 +10,23 @@ It currently verifies:
 - the authenticated session exposes the Agent composer;
 - a qualified Today context opens its declared Today or handling destination,
   returns to the Agent, and can be dismissed;
+- the BMI App Review path sends through an accessible button, renders the
+  medical boundary and NHC citation, and opens the official source in Safari;
 - an unsent text draft survives background/foreground without being sent;
 - privacy policy and account deletion entries are reachable.
 
 The tests do not submit a health record, delete an account, grant permissions, or
 mark the full physical-device gate as passed. Voice, camera, sharing, write
-idempotency and deletion completion still require their dedicated acceptance
-checks.
+idempotency, permission-denial prompts and deletion completion still require
+their dedicated acceptance checks.
+
+The suite is fail-closed: a signed-out app or missing deterministic Today
+fixture fails the run. Authenticated checks are never converted to skips.
+
+Run the guarded review-fixture reset before every full suite invocation. The
+BMI path intentionally sends a real review-account message and is named
+`testZZ...` so it runs after the fixed-latest-message assertion; a later rerun
+still needs a fresh reset to restore deterministic review data.
 
 Run:
 

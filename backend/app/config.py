@@ -326,13 +326,15 @@ class Settings(BaseSettings):
     # ships-OFF, 翻开前 battery 全绿 + comparative 无回退。
     llm_history_compaction: bool = False
     history_compaction_model_id: str = "deepseek-v4-flash"
-    # 确定性查询直出(延迟, Phase-2 rank2):开后对 fast-route 的**只读**查询回合, 执行完
+    # 确定性查询直出(延迟, Phase-2 rank2):对 fast-route 的**只读**查询回合, 执行完
     # health_query 后若本回合所有工具结果都被 query_readouts 的 top-5 维度格式化器
     # (水/体重/睡眠/步数活动/血压)覆盖, 直接从真实 tool result 渲染人话读数 + break,
     # 跳过强模型合成轮(~10-30s → ~2s)。ships-OFF: 关=逐字节现状; 开=仅在**全覆盖 + 无
     # 安全告警后缀**时短路, 任一未覆盖维度/写工具/安全后缀 → fail-open 回落合成轮。
     # 读数只从真实 tool result 渲染, 绝不编造(query_readouts 不变量, test-enforced)。
-    deterministic_query_reply: bool = False
+    # off=逐字节现状; shadow=照常合成,只记录无内容的 eligible/字符数; on=安全覆盖时短路。
+    # 兼容旧环境值 true/false,由 resolver 归一;未知值 fail-closed 到 off。
+    deterministic_query_reply: str = "off"
     # 合成轮思考封顶(延迟):>0 时给**合成/答案轮**的 qwen 思考阶段封顶到 N 个 token
     # (仅 ModelEntry.supports_thinking_budget=True 的模型;绝不碰工具决策轮;深度分析/
     # health_analysis 轮 fail-closed 跳过=保留完整思考)。默认 0=关=零行为变更。
