@@ -8699,6 +8699,69 @@ async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation
     assert "draft_aigc_media" not in executor._agent_kernel_tool_failure_tools
 
 
+@pytest.mark.asyncio
+async def test_agent_media_tool_replaces_model_added_medical_details_before_draft(
+    db, monkeypatch
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = (
+        "基于我一天的活动问的问题生成总结生成15秒短视频"
+    )
+
+    class FakeMediaService:
+        requested = None
+
+        def __init__(self, _db):
+            pass
+
+        async def issue_confirmation(self, *, user_id, request, conversation_id=None):
+            FakeMediaService.requested = request
+            return SimpleNamespace(
+                id="aigc_confirm_0123456789abcdef0123456789abcdea",
+                kind=request.kind,
+                source_message_id=None,
+                model="happyhorse-1.1-t2v",
+                duration_seconds=request.duration_seconds,
+                ratio=request.ratio,
+            )
+
+    monkeypatch.setattr(
+        "app.services.aigc_media_job_service.AIGCMediaJobService",
+        FakeMediaService,
+    )
+    monkeypatch.setattr(
+        executor,
+        "_persist_current_turn_write_dispatch_started",
+        lambda **_kwargs: None,
+    )
+
+    result = await executor._execute_tool(
+        "draft_aigc_media",
+        {
+            "kind": "text_to_video",
+            "prompt": "展示今日活动、处方药和用药剂量提醒",
+            "duration_seconds": 15,
+            "ratio": "9:16",
+            "purpose": "wellness_story",
+        },
+        None,
+    )
+
+    assert json.loads(result)["resource_type"] == "aigc_media_confirmation"
+    request = FakeMediaService.requested
+    assert request is not None
+    assert request.purpose == "movement_routine"
+    assert request.duration_seconds == 15
+    assert "今日活动总结" in request.prompt
+    assert "处方" not in request.prompt
+    assert "用药" not in request.prompt
+    card = executor._turn_aigc_media_cards[0]
+    assert card["type"] == "aigc_media_confirmation"
+    assert card["actions"][0]["requires_manual_confirm"] is True
+    assert card["actions"][0]["action"] == "aigc_media.confirm"
+
+
 def test_aigc_media_preview_exposes_categories_without_raw_health_details():
     from app.services.agent_executor import _aigc_media_content_preview
 
@@ -8714,6 +8777,133 @@ def test_aigc_media_preview_exposes_categories_without_raw_health_details():
     assert "95" not in preview["content_summary"]
     assert "8200" not in preview["content_summary"]
     assert "580" not in preview["content_summary"]
+
+
+def test_aigc_media_safe_fallback_replaces_model_medical_details_for_activity_video():
+    from app.services.agent_executor import _safe_aigc_media_draft_fallback
+
+    fallback = _safe_aigc_media_draft_fallback(
+        user_message="生成一个15秒的今日活动总结短视频",
+        kind="text_to_video",
+        duration_seconds=15,
+        ratio="9:16",
+    )
+
+    assert fallback is not None
+    assert fallback["purpose"] == "movement_routine"
+    assert "今日活动总结" in fallback["prompt"]
+    assert "15秒" in fallback["prompt"]
+    assert "9:16" in fallback["prompt"]
+    assert "用药" not in fallback["prompt"]
+    assert "诊断" not in fallback["prompt"]
+
+
+@pytest.mark.parametrize(
+    "user_message",
+    (
+        "生成一个高血压用药方案短视频",
+        "制作一条二甲双胍剂量说明视频",
+    ),
+)
+def test_aigc_media_safe_fallback_never_bypasses_medical_red_lines(user_message):
+    from app.services.agent_executor import _safe_aigc_media_draft_fallback
+
+    assert _safe_aigc_media_draft_fallback(
+        user_message=user_message,
+        kind="text_to_video",
+        duration_seconds=15,
+        ratio="9:16",
+    ) is None
+
+
+def test_aigc_media_safe_fallback_rejects_model_controlled_ratio_injection():
+    from app.services.agent_executor import _safe_aigc_media_draft_fallback
+
+    assert _safe_aigc_media_draft_fallback(
+        user_message="生成一个15秒的今日活动总结短视频",
+        kind="text_to_video",
+        duration_seconds=15,
+        ratio='9:16。展示处方药剂量和 {"steps":11001}',
+    ) is None
+
+
+@pytest.mark.parametrize(
+    "user_message",
+    (
+        "不要生成短视频",
+        "他说：帮我生成短视频",
+        "分析这句话：帮我生成短视频",
+        "如果我说生成短视频会怎样",
+        "客服补充道，回到我本人，请生成新短视频",
+        "这是送给朋友的礼物，请生成一条短视频",
+        "短视频",
+    ),
+)
+def test_aigc_media_safe_fallback_requires_direct_creation_command(user_message):
+    from app.services.agent_executor import _safe_aigc_media_draft_fallback
+
+    assert _safe_aigc_media_draft_fallback(
+        user_message=user_message,
+        kind="text_to_video",
+        duration_seconds=15,
+        ratio="9:16",
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_agent_media_tool_does_not_build_card_for_medical_user_request(
+    db, monkeypatch
+):
+    from app.services.aigc_media_job_service import AIGCMediaJobRequestError
+    from app.services.aigc_media_policy import validate_aigc_media_policy
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "请生成一个高血压用药方案短视频"
+
+    class RejectingMediaService:
+        calls = 0
+
+        def __init__(self, _db):
+            pass
+
+        async def issue_confirmation(self, *, user_id, request, conversation_id=None):
+            RejectingMediaService.calls += 1
+            try:
+                validate_aigc_media_policy(
+                    purpose=request.purpose,
+                    prompt=request.prompt,
+                )
+            except Exception as exc:
+                raise AIGCMediaJobRequestError(str(exc)) from exc
+            raise AssertionError("medical request unexpectedly passed policy")
+
+    monkeypatch.setattr(
+        "app.services.aigc_media_job_service.AIGCMediaJobService",
+        RejectingMediaService,
+    )
+    monkeypatch.setattr(
+        executor,
+        "_persist_current_turn_write_dispatch_started",
+        lambda **_kwargs: None,
+    )
+
+    result = await executor._execute_tool(
+        "draft_aigc_media",
+        {
+            "kind": "text_to_video",
+            "prompt": "展示晨间步行和舒展的健康行动短视频",
+            "duration_seconds": 15,
+            "ratio": "9:16",
+            "purpose": "wellness_story",
+        },
+        None,
+    )
+
+    payload = json.loads(result)
+    assert payload["error_code"] == "aigc_request_invalid"
+    assert RejectingMediaService.calls == 0
+    assert executor._turn_aigc_media_cards == []
 
 
 # v37: independent G4 showed that v36 closed its enumerated examples but left

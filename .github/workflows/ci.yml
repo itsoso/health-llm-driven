@@ -494,7 +494,10 @@ jobs:
 
       - name: Audit production dependencies
         working-directory: frontend
-        run: npm audit --omit=dev --audit-level=high
+        run: node ../scripts/osv-npm-audit-gate.mjs
+
+      - name: Test OSV dependency audit gate
+        run: node --test scripts/osv-npm-audit-gate.test.mjs
 
       - name: Test (vitest)
         working-directory: frontend
@@ -510,6 +513,7 @@ jobs:
 
   mobile-typecheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: classify-changes
     if: ${{ needs.classify-changes.outputs.run_mobile == 'true' }}
     steps:
@@ -531,10 +535,10 @@ jobs:
 
       - name: Audit production dependencies
         working-directory: mobile
-        run: node ../scripts/npm-audit-gate.mjs --policy npm-audit-policy.json
+        run: node ../scripts/osv-npm-audit-gate.mjs --policy npm-audit-policy.json
 
-      - name: Test dependency audit gate
-        run: node --test scripts/npm-audit-gate.test.mjs
+      - name: Test OSV dependency audit gate
+        run: node --test scripts/osv-npm-audit-gate.test.mjs
 
       - name: TypeScript check
         working-directory: mobile
@@ -544,9 +548,27 @@ jobs:
         working-directory: mobile
         run: npm run design:check
 
-      - name: Test (jest)
+      - name: Test (jest main suite)
         working-directory: mobile
-        run: npx jest --silent --passWithNoTests
+        run: >-
+          npx jest --silent --passWithNoTests --forceExit
+          --testPathIgnorePatterns='components/chat/__tests__/ChatInputBar.test.tsx|app/\(tabs\)/__tests__/chat.test.tsx|hooks/__tests__/useAuth.test.tsx|hooks/__tests__/useGPSOnboardingPrompt.test.ts'
+
+      - name: Test stateful chat input (isolated)
+        working-directory: mobile
+        run: npx jest --runTestsByPath components/chat/__tests__/ChatInputBar.test.tsx --runInBand --silent --forceExit
+
+      - name: Test stateful chat screen (isolated)
+        working-directory: mobile
+        run: npx jest --runTestsByPath 'app/(tabs)/__tests__/chat.test.tsx' --runInBand --silent --forceExit
+
+      - name: Test stateful auth hook (isolated)
+        working-directory: mobile
+        run: npx jest --runTestsByPath hooks/__tests__/useAuth.test.tsx --runInBand --silent --forceExit
+
+      - name: Test stateful GPS prompt hook (isolated)
+        working-directory: mobile
+        run: npx jest --runTestsByPath hooks/__tests__/useGPSOnboardingPrompt.test.ts --runInBand --silent --forceExit
 
   mac-build:
     # Catches non-compiling mac app pushes that the ubuntu jobs can't (the app is

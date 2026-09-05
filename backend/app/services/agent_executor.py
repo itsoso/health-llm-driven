@@ -97,6 +97,7 @@ from app.services.utterance_intent_classifier import (
     ADVICE_ACTIONS,
     classify_agent_utterance,
     is_closed_aigc_provider_confirmation,
+    is_closed_personal_health_summary_media_request,
 )
 from app.services.utterance_intent_lexicon import HEALTH_QUESTION_SIGNALS
 from app.utils.number_format import format_card_numbers
@@ -9825,10 +9826,24 @@ _AIGC_MEDIA_BARE_CREATE_RE = re.compile(
     rf"{_AIGC_MEDIA_OUTPUT_RE}(?:吧|呀|啊|一下|看看|就好|就行|即可)?[。.!！]?$",
     re.IGNORECASE,
 )
+_AIGC_MEDIA_DESCRIBED_CREATE_RE = re.compile(
+    rf"^(?:{_AIGC_MEDIA_DIRECT_PREFIX_RE})?{_AIGC_MEDIA_ACTION_RE}"
+    rf"(?:一个|一条)?(?:[3-9３-９]|1[0-5]|１[０-５])\s*秒(?:的)?"
+    rf"(?:(?:今天|今日|本次|这次)?"
+    rf"(?:活动|运动|训练|睡眠|饮食|补水|健康)"
+    rf"(?:总结|回顾|提醒|计划|行动)?)?(?:短视频|视频)"
+    rf"(?:吧|呀|啊|一下|看看|给我看看|就好|就行|即可)?[。.!！]?$",
+    re.IGNORECASE,
+)
+_AIGC_MEDIA_INDIRECT_RE = re.compile(
+    r"他说|她说|有人说|引用|转述|复述|分析这句话|解释这句话|"
+    r"例如|比如|假如|如果我说|假设我说",
+    re.IGNORECASE,
+)
 _AIGC_MEDIA_RESTRICTION_RE = re.compile(
     r"不|没|未|无须|无需|别|勿|禁止|严禁|避免|仅|只|限|不可|不得|不能|不应|"
     r"只能|只可|必须|需要|取消|撤销|拒绝|停止|放弃|暂停|谢绝|撤回|终止|"
-    r"反悔|作罢|算了",
+    r"务必|反悔|作罢|算了",
     re.IGNORECASE,
 )
 _AIGC_MEDIA_TOPIC_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -9871,6 +9886,79 @@ def _aigc_media_content_preview(*, kind: str, prompt: str) -> Dict[str, Any]:
     }
 
 
+def _safe_aigc_media_draft_fallback(
+    *,
+    user_message: Optional[str],
+    kind: str,
+    duration_seconds: int,
+    ratio: str,
+) -> Optional[Dict[str, str]]:
+    """Build a bounded wellness prompt when model-authored copy crosses policy.
+
+    The fallback is intentionally derived from the user's current command, not
+    tool results or profile data. It therefore cannot smuggle medications,
+    diagnoses, measurements, or other private health details to the provider.
+    """
+    if kind != "text_to_video" or not _is_explicit_aigc_media_draft_turn(user_message):
+        return None
+
+    source = str(user_message or "").strip()
+    if not source:
+        return None
+    from app.services.aigc_media_policy import (
+        AIGCMediaPolicyError,
+        validate_aigc_media_policy,
+    )
+
+    try:
+        # A red line in the user's own request must remain blocked. Only
+        # model-added unsafe detail is eligible for deterministic replacement.
+        validate_aigc_media_policy(purpose="wellness_story", prompt=source)
+    except AIGCMediaPolicyError:
+        return None
+
+    try:
+        duration = int(duration_seconds)
+    except (TypeError, ValueError):
+        return None
+    from app.services.aigc_media_capabilities import VIDEO_RATIOS
+
+    normalized_ratio = str(ratio or "").strip()
+    if not 3 <= duration <= 15 or normalized_ratio not in VIDEO_RATIOS:
+        return None
+    safe_topics = [
+        label
+        for label, pattern in _AIGC_MEDIA_TOPIC_PATTERNS
+        if label != "用药提醒" and pattern.search(source)
+    ]
+    purpose_by_topic = {
+        "活动": "movement_routine",
+        "饮食": "meal_visual",
+        "睡眠": "sleep_routine",
+        "补水": "hydration_reminder",
+        "健康计划": "wellness_story",
+    }
+    purpose = (
+        purpose_by_topic[safe_topics[0]]
+        if len(safe_topics) == 1
+        else "wellness_story"
+    )
+    if safe_topics:
+        topic_text = "、".join(safe_topics[:3])
+        theme = f"今日{topic_text}总结"
+    else:
+        theme = "日常健康行动"
+    prompt = (
+        f"制作一条{duration}秒{normalized_ratio}健康行动短视频，主题为{theme}。"
+        "画面展示日常生活中的积极行动，使用简洁中文标题、清晰画面与温和节奏。"
+    )
+    try:
+        validate_aigc_media_policy(purpose=purpose, prompt=prompt)
+    except AIGCMediaPolicyError:
+        return None
+    return {"purpose": purpose, "prompt": prompt}
+
+
 def _is_explicit_aigc_media_draft_turn(message: Optional[str]) -> bool:
     """Gate forced drafts to a high-confidence current-user command.
 
@@ -9894,11 +9982,16 @@ def _is_explicit_aigc_media_draft_turn(message: Optional[str]) -> bool:
     ).strip()
     if not text:
         return False
-    if _AIGC_MEDIA_RESTRICTION_RE.search(text):
+    if (
+        _AIGC_MEDIA_RESTRICTION_RE.search(text)
+        or _AIGC_MEDIA_INDIRECT_RE.search(text)
+    ):
         return False
     return bool(
         _AIGC_MEDIA_DIRECT_CREATE_RE.fullmatch(text)
         or _AIGC_MEDIA_BARE_CREATE_RE.fullmatch(text)
+        or _AIGC_MEDIA_DESCRIBED_CREATE_RE.fullmatch(text)
+        or is_closed_personal_health_summary_media_request(text)
         or is_closed_aigc_provider_confirmation(text)
     )
 
@@ -25109,6 +25202,10 @@ class AgentExecutor:
             AIGCMediaJobService,
         )
         from app.services.aigc_media_service import AIGCMediaConfigurationError
+        from app.services.aigc_media_policy import (
+            AIGCMediaPolicyError,
+            validate_aigc_media_policy,
+        )
 
         user_id = self._current_user_id
         if user_id is None:
@@ -25116,7 +25213,38 @@ class AgentExecutor:
                 "aigc_user_missing",
                 message="当前会话缺少用户身份，无法创建创作草稿。",
             )
+        try:
+            # The model-authored provider prompt cannot launder a medical media
+            # request into a benign-looking wellness draft. Authorize the
+            # user's current command first on every AIGC path.
+            validate_aigc_media_policy(
+                purpose="wellness_story",
+                prompt=self._current_turn_user_message,
+            )
+        except AIGCMediaPolicyError as exc:
+            return local_write_rejection(
+                "aigc_request_invalid",
+                message=str(exc),
+            )
         kind = str(args.get("kind") or "").strip()
+        draft_purpose = str(args.get("purpose") or "")
+        draft_prompt = str(args.get("prompt") or "")
+        if kind == "text_to_video":
+            try:
+                validate_aigc_media_policy(
+                    purpose=draft_purpose,
+                    prompt=draft_prompt,
+                )
+            except AIGCMediaPolicyError:
+                fallback = _safe_aigc_media_draft_fallback(
+                    user_message=self._current_turn_user_message,
+                    kind=kind,
+                    duration_seconds=args.get("duration_seconds") or 5,
+                    ratio=str(args.get("ratio") or "9:16"),
+                )
+                if fallback is not None:
+                    draft_purpose = fallback["purpose"]
+                    draft_prompt = fallback["prompt"]
         requires_source = kind in {"image_to_image", "image_to_video"}
         source_message_id = self._current_turn_source_message_id if requires_source else None
         if requires_source and (source_message_id is None or not self._current_turn_image_urls):
@@ -25132,8 +25260,8 @@ class AgentExecutor:
                 conversation_id=self._current_turn_conversation_id,
                 request=AIGCMediaJobRequest(
                     kind=kind,
-                    purpose=str(args.get("purpose") or ""),
-                    prompt=str(args.get("prompt") or ""),
+                    purpose=draft_purpose,
+                    prompt=draft_prompt,
                     source_message_id=source_message_id,
                     source_image_index=0,
                     duration_seconds=int(args.get("duration_seconds") or 5),
@@ -25171,7 +25299,7 @@ class AgentExecutor:
             "status": "pending",
             **_aigc_media_content_preview(
                 kind=confirmation.kind,
-                prompt=str(args.get("prompt") or ""),
+                prompt=draft_prompt,
             ),
         }
         if confirmation.kind in {"text_to_video", "image_to_video"}:
