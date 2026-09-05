@@ -9,7 +9,7 @@ import pytest
 from app.agents.safety_guardian.schema import Alert, Severity
 from app.models.blood_pressure import BloodPressureRecord
 from app.models.user_profile import UserProfile
-from app.models.agent_conversation import AgentMessage
+from app.models.agent_conversation import AgentConversation, AgentMessage
 from app.services.agent_executor import (
     INTERRUPTED_COMPLETION_NOTICE,
     AgentExecutor,
@@ -2669,42 +2669,53 @@ async def test_agent_stream_executes_function_parameter_event_call_without_leaki
     db, auth_user_and_headers, monkeypatch
 ):
     user, _headers = auth_user_and_headers
+    conversation = AgentConversation(
+        user_id=user.id,
+        title="测试行程",
+        session_key=f"function-parameter-event-{user.id}",
+    )
+    db.add(conversation)
+    db.flush()
+    db.add(
+        AgentMessage(
+            conversation_id=conversation.id,
+            role="assistant",
+            content="下午前往测试地点，安排测试行程。",
+        )
+    )
+    db.commit()
     executor = AgentExecutor(db)
-    executed = []
+    posted = []
     llm_calls = 0
 
     async def fake_call_llm(messages, tools):
         nonlocal llm_calls
         llm_calls += 1
-        if not executed:
-            return {
-                "content": (
-                    "<tool_call><function=health_record>"
-                    "<parameter=record_type>event</parameter>"
-                    '<parameter=data>{"title":"测试行程",'
-                    '"occurred_at":"2026-09-05T17:33+08:00",'
-                    '"location":"测试地点"}</parameter>'
-                    "</function></tool_call>"
-                ),
-                "finish_reason": "stop",
-            }
-        return {"content": "行程已记录。", "finish_reason": "stop"}
+        return {
+            "content": (
+                "<tool_call><function=health_record>"
+                "<parameter=record_type>event</parameter>"
+                '<parameter=data>{"title":"测试行程",'
+                '"occurred_at":"2026-09-05T17:33+08:00",'
+                '"location":"测试地点"}</parameter>'
+                "</function></tool_call>"
+            ),
+            "finish_reason": "stop",
+        }
 
-    async def fake_execute_tool(tool_name, args_raw, user_token):
-        executed.append((tool_name, json.loads(args_raw), user_token))
+    async def fake_post(url, headers, payload):
+        posted.append((url, headers, payload))
         return json.dumps(
             {
                 "id": 88,
                 "title": "测试行程",
-                "occurred_at": "2026-09-05T17:33+08:00",
-                "location": "测试地点",
             },
             ensure_ascii=False,
         )
 
     executor._call_llm = fake_call_llm
     executor._call_llm_stream = _stream_from(fake_call_llm)
-    executor._execute_tool = fake_execute_tool
+    executor._api_post = fake_post
     monkeypatch.setattr(
         "app.services.agent_executor.settings.staged_response_mode",
         "on",
@@ -2715,6 +2726,7 @@ async def test_agent_stream_executes_function_parameter_event_call_without_leaki
         async for event in executor.run_stream(
             user_id=user.id,
             message="记录行程",
+            conversation_id=conversation.id,
             user_auth_token="test-token",
             extra_context=json.dumps({"client": "mobile"}),
         )
@@ -2725,18 +2737,11 @@ async def test_agent_stream_executes_function_parameter_event_call_without_leaki
         if event.get("event") == "token"
     )
 
-    assert len(executed) == 1
-    tool_name, args, user_token = executed[0]
-    assert tool_name == "health_record"
-    assert user_token == "test-token"
-    assert args["record_type"] == "event"
-    assert args["data"] == {
-        "title": "测试行程",
-        "occurred_at": "2026-09-05T17:33+08:00",
-        "location": "测试地点",
-        "confirmed": True,
-    }
-    assert args["confirmed"] is True
+    assert len(posted) == 1
+    url, headers, payload = posted[0]
+    assert url.endswith("/episodes/life-event")
+    assert headers["Authorization"] == "Bearer test-token"
+    assert payload == {"title": "测试行程"}
     assert llm_calls == 1
     assert "已记录" in rendered
     assert "<tool_call>" not in rendered

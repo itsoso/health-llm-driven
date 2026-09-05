@@ -43,7 +43,12 @@ export function normalizeAssistantContent(
   }
 
   if (RAW_TOOL_PROTOCOL_PREFIX_RE.test(text)) {
-    text = text.replace(RAW_TOOL_PROTOCOL_BLOCK_RE, '').trim() || RAW_TOOL_PROTOCOL_FALLBACK;
+    while (RAW_TOOL_PROTOCOL_PREFIX_RE.test(text)) {
+      const remaining = text.replace(RAW_TOOL_PROTOCOL_BLOCK_RE, '').trim();
+      if (remaining === text) break;
+      text = remaining;
+    }
+    text ||= RAW_TOOL_PROTOCOL_FALLBACK;
     qualityFlags.push('raw_tool_protocol_removed');
   }
 

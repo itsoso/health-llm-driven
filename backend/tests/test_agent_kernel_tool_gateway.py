@@ -2679,8 +2679,8 @@ async def test_executor_metalinguistic_event_never_reaches_real_event_post(
     executor._current_turn_user_message = message
     calls = []
 
-    async def fake_post(url, _headers, payload):
-        calls.append((url, payload))
+    async def fake_post(url, headers, payload):
+        calls.append((url, headers, payload))
         return "unexpected"
 
     monkeypatch.setattr(
@@ -3466,6 +3466,85 @@ async def test_executor_dispatches_public_record_contract_through_real_gateway(
     assert calls and calls[0][0].endswith(expected_path)
     assert calls[0][1] == expected_payload
     assert json.loads(result)["id"] == 91
+
+
+@pytest.mark.asyncio
+async def test_executor_records_contextual_trip_through_real_gateway(db, monkeypatch):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_channel = "typed"
+    executor._current_turn_user_message = "记录行程"
+    executor._current_turn_recent_messages = [
+        {
+            "role": "assistant",
+            "content": "下午前往青海湖·东格尔观景台观鸟（棕头鸥）。",
+        }
+    ]
+    executor._agent_kernel_snapshot = _snapshot("记录行程", channel="typed")
+    calls = []
+
+    async def fake_post(url, headers, payload):
+        calls.append((url, headers, payload))
+        return '{"id": 92, "record_id": 92, "status": "recorded"}'
+
+    monkeypatch.setattr(executor, "_api_post", fake_post)
+
+    result = await executor._execute_tool(
+        "health_record",
+        {
+            "record_type": "event",
+            "data": {
+                "title": "青海湖·东格尔观景台观鸟（棕头鸥）",
+                "location": "青海湖·东格尔观景台",
+                "occurred_at": "2026-09-05T17:33+08:00",
+                "note": "未在上一条回复中出现的模型补充",
+            },
+        },
+        "test-token",
+    )
+
+    assert len(calls) == 1
+    assert calls[0][0].endswith("/episodes/life-event")
+    assert calls[0][1]["Authorization"] == "Bearer test-token"
+    assert calls[0][2] == {
+        "title": "青海湖·东格尔观景台观鸟（棕头鸥）",
+    }
+    assert json.loads(result)["id"] == 92
+    assert executor._agent_kernel_last_decision.action == "allow"
+
+
+@pytest.mark.asyncio
+async def test_executor_does_not_record_trip_details_absent_from_context(db, monkeypatch):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_channel = "typed"
+    executor._current_turn_user_message = "记录行程"
+    executor._current_turn_recent_messages = [
+        {"role": "assistant", "content": "今天从茶卡前往刚察。"}
+    ]
+    executor._agent_kernel_snapshot = _snapshot("记录行程", channel="typed")
+    calls = []
+
+    async def fake_post(url, _headers, payload):
+        calls.append((url, payload))
+        return "unexpected"
+
+    monkeypatch.setattr(executor, "_api_post", fake_post)
+
+    result = await executor._execute_tool(
+        "health_record",
+        {
+            "record_type": "event",
+            "data": {
+                "title": "青海湖·东格尔观景台观鸟（棕头鸥）",
+                "location": "青海湖·东格尔观景台",
+            },
+        },
+        "test-token",
+    )
+
+    assert calls == []
+    assert json.loads(result)["error_code"] == "health_record_target_mismatch"
 
 
 @pytest.mark.asyncio

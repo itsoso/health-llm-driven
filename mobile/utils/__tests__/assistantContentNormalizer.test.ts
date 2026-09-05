@@ -90,6 +90,22 @@ describe('normalizeAssistantContent', () => {
     expect(normalizeAssistantContent(markdown).text).toBe(markdown);
   });
 
+  it('removes every consecutive raw tool protocol block', () => {
+    const block = [
+      '<tool_call>',
+      '<function=health_record>',
+      '<parameter=record_type>event</parameter>',
+      '<parameter=data>{"title":"测试行程"}</parameter>',
+      '</function>',
+      '</tool_call>',
+    ].join('\n');
+
+    const result = normalizeAssistantContent(`${block}\n${block}`);
+
+    expect(result.text).toBe('这条回复未能正常完成，请重新发送。');
+    expect(result.text).not.toMatch(/tool_call|health_record|parameter/i);
+  });
+
   it('bounds oversized answers and reports a quality flag', () => {
     const result = normalizeAssistantContent('a'.repeat(60_000));
 

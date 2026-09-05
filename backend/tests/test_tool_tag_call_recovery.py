@@ -174,6 +174,8 @@ def test_function_parameter_record_call_requires_explicit_write_intent():
         _FUNCTION_PARAMETER_RECORD_CALL,
         user_message="不要记录行程",
     ) is None
+    for question in ("记录行程？", "能记录行程吗？", "可以帮我记录行程吗？"):
+        assert _fn(_FUNCTION_PARAMETER_RECORD_CALL, user_message=question) is None
 
 
 def test_function_parameter_leak_is_retryable_and_never_user_visible():
@@ -219,6 +221,17 @@ def test_function_parameter_call_inside_markdown_code_is_not_executed_or_strippe
 
     assert _fn(text, user_message="记录行程") is None
     assert _strip_xml_tool_markers(text) == text
+
+
+def test_bare_function_parameter_protocol_is_never_user_visible():
+    bare = (
+        "<function=health_record>"
+        "<parameter=record_type>event</parameter>"
+        '<parameter=data>{"title":"测试行程"}</parameter>'
+        "</function>"
+    )
+
+    assert _strip_xml_tool_markers(bare) == ""
 
 
 def test_streaming_prefix_suppresses_bare_function_parameter_dialect():

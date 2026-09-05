@@ -1780,6 +1780,7 @@ def _strip_xml_tool_markers(text: str) -> str:
         and "minimax:tool_call" not in low
         and "<tool_code" not in low
         and not _maybe_generic_tool_tag(text)
+        and not _FUNCTION_PARAMETER_LEAK_RE.search(text)
     ):
         return text
     stripped = text
@@ -8940,6 +8941,59 @@ def _prepare_health_record_args_for_validation(
     return args
 
 
+def _event_context_comparable(value: Any) -> str:
+    """Normalize one event phrase for exact visible-context grounding."""
+    return re.sub(
+        r"[\W_]+",
+        "",
+        unicodedata.normalize("NFKC", str(value or "")).lower(),
+        flags=re.UNICODE,
+    )
+
+
+def _contextual_event_payload_from_recent_turn(
+    data: dict[str, Any],
+    *,
+    user_message: str,
+    recent_messages: Sequence[dict[str, Any]],
+) -> Optional[dict[str, Any]]:
+    """Project only event fields visibly proposed in the preceding assistant turn."""
+    from app.services.write_intent_scope import is_direct_event_resource_write
+
+    if not is_direct_event_resource_write(user_message):
+        return None
+    previous_assistant = ""
+    for message in reversed(tuple(recent_messages or ())):
+        if message.get("role") != "assistant":
+            continue
+        content = str(message.get("content") or "").strip()
+        if not content or _XML_TOOLCALL_PREFIX_RE.search(content):
+            continue
+        previous_assistant = content
+        break
+    comparable_context = _event_context_comparable(previous_assistant)
+    if not comparable_context:
+        return None
+
+    title = str(
+        data.get("title") or data.get("name") or data.get("event") or ""
+    ).strip()[:80]
+    comparable_title = _event_context_comparable(title)
+    if len(comparable_title) < 3 or comparable_title not in comparable_context:
+        return None
+
+    payload: dict[str, Any] = {"title": title}
+    notes = str(data.get("notes") or data.get("note") or "").strip()[:500]
+    comparable_notes = _event_context_comparable(notes)
+    if comparable_notes and comparable_notes in comparable_context:
+        payload["notes"] = notes
+    occurred_at = str(data.get("occurred_at") or "").strip()[:64]
+    comparable_occurred_at = _event_context_comparable(occurred_at)
+    if comparable_occurred_at and comparable_occurred_at in comparable_context:
+        payload["occurred_at"] = occurred_at
+    return payload
+
+
 def _apply_server_health_record_provenance(
     tool_name: str,
     args: Any,
@@ -8950,6 +9004,7 @@ def _apply_server_health_record_provenance(
     contextual_diet_recorded: bool,
     contextual_supplement_names: Sequence[str],
     user_message: str,
+    recent_messages: Sequence[dict[str, Any]] = (),
 ) -> Any:
     """Bind only server-known health-record provenance and continuation targets."""
     if tool_name != "health_record" or not isinstance(args, dict):
@@ -8964,6 +9019,19 @@ def _apply_server_health_record_provenance(
     # inside this process and is consumed (then stripped) by capability policy.
     bind_server_authorized_health_record_fields(args)
     record_type = _fast_record_kind(args)
+    if record_type == "event":
+        contextual_payload = _contextual_event_payload_from_recent_turn(
+            data,
+            user_message=user_message,
+            recent_messages=recent_messages,
+        )
+        if contextual_payload is not None:
+            args["data"] = contextual_payload
+            return bind_server_authorized_health_record_fields(
+                args,
+                contextual_event_payload=dict(contextual_payload),
+            )
+        return args
     if record_type == "symptom":
         # Attachment-derived text is not proof of a current first-person
         # symptom.  OCR/model calls may still propose a record, but only an
@@ -22718,6 +22786,9 @@ class AgentExecutor:
             ),
             user_message=str(
                 getattr(self, "_current_turn_user_message", "") or ""
+            ),
+            recent_messages=tuple(
+                getattr(self, "_current_turn_recent_messages", ()) or ()
             ),
         )
         if (

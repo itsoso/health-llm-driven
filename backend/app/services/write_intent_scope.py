@@ -1072,6 +1072,8 @@ def is_write_capability_question(value: str) -> bool:
     context = _last_write_action_context(value)
     if context is None:
         return False
+    if _is_bare_event_resource_write_question(value):
+        return True
     clause, action, action_position = context
     before_action = clause[:action_position]
     after_action = clause[action_position + len(action) :]
@@ -1108,6 +1110,25 @@ def is_write_capability_question(value: str) -> bool:
     return has_inquiry_cue or any(
         modal in before_subject_action for modal in _CAPABILITY_MODALS
     )
+
+
+def _is_bare_event_resource_write_question(value: str) -> bool:
+    """Fail closed when a generic trip/event noun is phrased as a question."""
+    normalized = normalize_write_scope_text(value).strip()
+    if not re.search(r"(?:[?？]|[吗呢么嘛][?？]?)$", normalized):
+        return False
+    body = re.sub(r"[?？]+$", "", normalized)
+    body = re.sub(r"[吗呢么嘛]+$", "", body)
+    body = re.sub(r"^(?:能不能|可不可以|能否|可否|能|可以)", "", body)
+    return _DIRECT_EVENT_RESOURCE_WRITE_RE.fullmatch(body) is not None
+
+
+def is_direct_event_resource_write(value: str) -> bool:
+    """Return true only for an imperative generic trip/event record command."""
+    if _is_bare_event_resource_write_question(value):
+        return False
+    normalized = normalize_write_scope_text(value).strip("，,。.!！；;：: ")
+    return _DIRECT_EVENT_RESOURCE_WRITE_RE.fullmatch(normalized) is not None
 
 
 def _is_explicit_dated_backfill(value: str) -> bool:
@@ -1720,7 +1741,7 @@ def _is_post_attributed_to_non_current_owner(clause: str) -> bool:
     # `记录行程` is a direct write command whose object is the current
     # conversation's trip.  The generic `owner + 行程` grammar otherwise reads
     # `记录` as a person's name and rejects the command as third-party data.
-    if _DIRECT_EVENT_RESOURCE_WRITE_RE.fullmatch(normalized):
+    if is_direct_event_resource_write(clause):
         return False
     if _POST_CURRENT_USER_OWNERSHIP_ONLY_DENIAL_RE.fullmatch(normalized):
         return True
