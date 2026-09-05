@@ -11490,6 +11490,7 @@ export interface paths {
          * @description 统一健康 Agent — 记录 + 查询 + 分析 + 图片识别
          *
          *     SSE 事件类型：
+         *     - medical_citations: 基于用户请求的公共医学来源（模型/工具执行前）
          *     - agent_start: Agent 开始
          *     - tool_call: 正在调用工具 {tool, args, round}
          *     - tool_result: 工具返回 {tool, success, preview}

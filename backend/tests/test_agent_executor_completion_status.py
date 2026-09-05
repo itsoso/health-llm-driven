@@ -3864,7 +3864,10 @@ async def test_agent_stream_repaired_missing_argument_clears_scope_rejection(
 
     assert dispatched == [{
         "record_type": "water",
-        "data": {"amount": 500},
+        "data": {
+            "amount": 500,
+            "record_date": date.today().isoformat(),
+        },
     }]
     assert "这次没有写入" not in rendered
     assert done["data"]["completion_status"] != "error"
