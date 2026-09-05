@@ -4,8 +4,8 @@
 |---|---|
 | slug | `app-review-medical-citations` |
 | 创建日期 | 2026-08-29 |
-| 当前阶段 | G4 独立安全评审待办；通过后才进入新 Store 候选与 G6 精确物理 iPhone 验收 |
-| 状态 | review_pending |
+| 当前阶段 | 2026-09-03 增量 G4 已通过；新 Store 候选与 G6 精确物理 iPhone 验收待办 |
+| 状态 | store_candidate_pending |
 | 负责 | product / backend / mobile release |
 | 关联提交 | 拒审 Submission `85f3224c-3688-4aae-9da1-c7e91f4facaa` / 当前候选 Version 1.3.3 (261) |
 
@@ -57,7 +57,8 @@
 - [x] 系统地图再生成与漂移验证。
 - [x] 全量相关回归、lint、release pack 和安全 Gate。
 - [x] 历史引用修复 commit / push / backend deploy / EAS production build。
-- [ ] 2026-09-03 本地加固已固定为本地提交 `b9063c441`；独立 G4、push、backend deploy 与新 EAS production build 仍待完成。
+- [x] 2026-09-03 本地加固已固定并完成独立 G4。
+- [ ] 该增量的 push、backend deploy 与新 EAS production build 仍按独立发布 Gate 待办。
 - [ ] 精确候选 Build 真机证据。
 - [ ] 用户确认后回复 Apple 并重新提交。
 
@@ -80,7 +81,7 @@
 - 失败语义：仅 `completion_status=complete` 附引用；error/interrupted 不声称已经提供来源；外链打不开时明确提示用户重试。
 - 医疗边界：只增加只读证据展示，不新增诊断、处方、剂量调整或健康数据写入；模型不能决定最终 URL。
 - **历史引用修复裁决：PASS（本变更为只读证据展示；未扩大既有医疗自治或写入权限）**。
-- **2026-09-03 增量裁决：pending**。单测、目录安全、失败语义与隐私检查已通过；因当前流程未获准启用独立 reviewer，本地增量不得沿用历史 G4，也不得部署或进入新 Store Build。
+- **2026-09-03 增量裁决：PASS**。2026-09-05 对固定候选重新执行高置信密钥扫描、医疗引用/失败语义/无正文客户端事件/owner guard 与图片饮食相关 427 个 Backend 用例，以及分享编辑 42 个、Chat 54 个 Mobile 用例，均通过；本增量没有让模型决定最终 URL，也未扩大医疗自治或用户数据范围。
 
 ## G5 · 部署健康
 
@@ -93,7 +94,7 @@
 - 当前标准 production 候选已升级为 Build 260：EAS `12726ec9-3e37-4a76-aad6-f1ac1a5cbff5`、Submit `250b8d79-3d64-45c1-9f47-d59df7dd128c`、source `3e3d1f9d4e1ccd4433f75735c420dbc98ab0a850`，ASC `VALID / IN_BETA_TESTING`。精确 IPA SHA-256 `b98eb85c33db3b504fec41dc3bf25b3fb218c2f325f91c63d2789019edf68d48`；版本 1.3.3（260）、`CFBundleDisplayName=小巴健康`、`DTXcode=2620`、`DTPlatformVersion=26.2`、MinimumOSVersion 16.0、strict codesign、production APNs / HealthKit / Universal Link 与根 PrivacyInfo.xcprivacy 均通过，且未包含 Rokid、Watch、Siri 或后台定位能力。
 - 当前标准 production 候选已升级为 Build 261：EAS `dd6a2c0f-b167-47b9-a796-61ce8ec0c335`、Submit `4761bfae-3f4c-457a-9415-5f8847e0c23d`、source `21576b80ec4c968ada4ea005e8bfde633bc24f27`；Apple processing 已完成，TestFlight `1.3.3 (261)` 状态“准备提交”，已加入 `Team (Expo)` 与“内部测试”两个内部群组。精确 IPA SHA-256 `597a601f8e54b834ef6d31f8022df99b8d8d21cf6462023dd86ed660c1398fc1`；版本 1.3.3（261）、`CFBundleDisplayName=小巴健康`、`DTXcode=2620`、`DTPlatformVersion=26.2`、MinimumOSVersion 16.0、strict codesign、production APNs / HealthKit / Universal Link 与根 PrivacyInfo.xcprivacy 均通过，iPhone-only 且未包含扩展或后台模式。
 - **历史引用修复裁决：PASS**。
-- **2026-09-03 增量裁决：pending**。本地 Release 模拟器构建不等于部署或 Store 候选；本地候选已固定为 `b9063c441`，完成独立 G4、push、Backend 部署、新 EAS Store Build 和目标 revision CI 核验前，不得把 Build 261 标为本轮通过。
+- **2026-09-03 增量裁决：pending**。G4 已通过，但本地 Release 模拟器构建仍不等于部署或 Store 候选；完成 push、Backend 部署、新 EAS Store Build 和目标 revision CI 核验前，不得把 Build 261 标为本轮通过。
 
 ## G6 · 上线验证
 

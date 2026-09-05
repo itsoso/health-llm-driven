@@ -123,8 +123,8 @@
 - [x] Backend 新生成的已记录饮食卡同时携带 owner-matched `record_id`、revision 与修正 seed；不再依赖易丢失的通用 action bar 才可修正。
 - [x] 旧卡即使仍携带“确认后才写入”，在 recorded 状态也会统一投影为“营养为图片估算，如有偏差请继续修正”。
 - [x] TDD、TypeScript、目标 lint、Backend owner-isolation/重算回归、System Map/doc drift。
-- [ ] 仓库级 Dossier consistency：当前被其他在途 Dossier 的既有不一致阻断，不在本 correction block 越权修改。
-- [ ] 固定提交独立 G4 safety/privacy review；此前 G4 不自动覆盖本次新入口。
+- [x] 仓库级 Dossier consistency：2026-09-05 对 122 份 Dossier 复核通过。
+- [x] 固定提交独立 G4 safety/privacy review；此前 G4 不自动覆盖本次新入口。
 
 ### 2026-09-03 实现与验证证据
 
@@ -135,7 +135,7 @@
 - GREEN：Mobile focused `2 suites / 169 passed`；`npx tsc --noEmit` PASS；目标 ESLint `0 errors`（测试文件 9 个既有 warning）；design token ratchet PASS。
 - Backend：`test_post_record_quality.py + test_agent_executor_food_vision.py` 共 `124 passed`；重算、owner-first、CAS、幂等与失败零写入子集 `39 passed`。
 - 治理：`py_compile`、`git diff --check`、System Map、mobile-nav、doc-drift PASS。
-- LLM change gate：确定性 invariants `12/12`、health core `50/50`、trajectory `12/12`、goldens `9/9` PASS；live orchestrator `0/5`，原因是本机未配置 `TOKENPLAN_API_KEY` / `OPENAI_API_KEY`，因此 release gate 仍为 BLOCK。
+- LLM change gate：确定性 invariants `12/12`、health core `50/50`、trajectory `12/12`、goldens `9/9` PASS；2026-09-05 使用隔离进程与线上 TokenPlan 配置补跑 live orchestrator `5/5` PASS，平均质量分 0.96。
 - 仓库级 Dossier consistency 当前由 `2026-08-29-app-review-medical-citations.md` 的 G6 判定冲突、`2026-09-03-agent-perceived-latency.md` 缺 G1 裁决阻断；两者属于其他在途改动，本切片未修改。
 - 发布边界：本轮未 commit、push、deploy 或 OTA。固定提交独立 G4 与 live LLM gate 完成前不得发布。
 
@@ -161,7 +161,7 @@
 - [x] 编辑工具保持原有旋转、遮挡、撤销、重做、重置能力与无障碍名称，视觉上单行不换行。
 - [x] 海报预览消除大段顶部留白，小屏可滚动；分享、存图、文字分享和失败恢复语义不变。
 - [x] Mobile RED/GREEN、TypeScript、目标 ESLint、design token、System Map/doc drift。
-- [ ] 固定提交独立 G4 privacy review；未通过前不得发布。
+- [x] 固定提交独立 G4 privacy review；未发现新增的外发、越权读取或绕过取消确认路径。
 
 ### 2026-09-03 实现与验证证据
 
@@ -188,10 +188,10 @@
 - 新鲜验证：Chat + 完整饮食组件 `9 suites / 164 passed`；`npx tsc --noEmit`、目标 ESLint、design token ratchet、System Map、mobile-nav、doc drift 全部 PASS；导航生成物已同步新增的 Chat → diet 边。
 - 补充修复：发现手势释放阶段活动触点为 0，而旧实现仍要求 1，导致实体侧滑无法完成；测试先按真实释放语义复现 `3 failed / 42`，修复后 focused `42/42`、完整相关回归 `164/164`。
 - 模拟器：通过 Xcode 干净构建绕过开发客户端 Reload 的 Fabric surface 丢失，已补齐海报预览截图与脏编辑退出确认；Computer Use 拖拽不产生 move 位移，实体侧滑仍保留为真机/可产生 touch-move 执行器复核项。
-- 待验证：固定提交独立 G4 privacy review 仍未执行。
+- G4：固定提交独立 privacy review 已完成；仓库密钥扫描、owner guard/失败零写入 427 个 Backend 用例、分享编辑与返回 42 个 Mobile 用例、Chat 54 个用例均通过。
 - 发布边界：本轮不 commit、push、deploy 或 OTA。
 
 ## 2026-09-05 · 固定本地候选
 
 - 经用户授权，本轮饮食修正入口、分享编辑体验与关联回归已随本地提交 `b9063c441` 固定。
-- 独立 G4、push、deploy、OTA 与精确商店候选仍未执行；历史发布授权不自动延伸到该提交。
+- 2026-09-05 独立 G4 与真实 TokenPlan live gate 已通过；push、目标 SHA CI、OTA 与精确商店候选仍按各自 Gate 独立执行。

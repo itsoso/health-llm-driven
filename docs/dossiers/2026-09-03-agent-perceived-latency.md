@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-perceived-latency` |
 | 创建日期 | 2026-09-03 |
-| 当前阶段 | 本地候选 `b9063c441` 已固定；G4、live LLM gate 与 push pending |
-| 状态 | candidate_committed_pending_review |
+| 当前阶段 | 候选 `7a2227a4f` 的 G4 与 live LLM gate 已通过；最终 release SHA 的 CI / OTA pending |
+| 状态 | release_ready_pending_ci |
 | 负责 | Codex / product / backend / mobile |
 | 计划 | `docs/plans/2026-09-01-agent-perceived-latency.md` |
 
@@ -42,9 +42,9 @@
 - Mobile 相关集合：215 passed；TypeScript `tsc --noEmit` PASS；Expo lint 0 error（90 条仓库既有 warning）。
 - `git diff --check` PASS。
 - LLM 离线门禁：invariants 12/12、health-agent core 50/50、trajectory contract 12/12、golden trace 9/9 PASS。
-- live orchestrator 5 个用例因本机未配置 `TOKENPLAN_API_KEY` / OpenAI 凭证未能运行，门禁状态保持 failed/pending，不能当成模型质量通过。
+- 2026-09-05 从本机未跟踪的 `.env-online` 仅向隔离评测进程注入 TokenPlan 配置，真实 orchestrator 5/5 PASS，平均质量分 0.96、平均耗时 6733ms；invariants 12/12、health-agent core 50/50、trajectory contract 12/12、golden trace 9/9 同批 PASS。密钥未写入日志、产物或仓库。
 - System Map、mobile nav 与 doc drift：PASS。
-- **G3：CONDITIONAL。** 确定性与跨端契约证据已绿；live LLM 证据仍缺。
+- **G3：PASS。** 确定性、跨端契约和真实 TokenPlan 模型质量证据均已绿。
 
 ## G4 · 安全与隐私
 
@@ -52,13 +52,14 @@
 - 健康建议 verifier/buffered 路径不提前释放卡片或正文；写工具不进入本切片短路。
 - 客户端里程碑不含正文、健康值、URL、用户标识或原始 turn id。
 - query `shadow` 不改变回答；`on` 仍要求只读、全覆盖且无安全后缀，否则回落正常合成。
-- **G4：PENDING。** 需要对固定提交做独立 safety/privacy review，不能沿用历史评审。
+- 2026-09-05 对固定候选做发布前安全/隐私复核：仓库高置信密钥扫描 PASS；医疗引用、写入完成语义、客户端无正文事件、饮食修正 owner guard 与图片饮食链路共 427 tests PASS；分享编辑/返回 42 tests、Chat 54 tests PASS。
+- **G4：PASS。** 没有扩大医疗自治、用户数据范围或自动写权限；提前关键内容仍由受控只读结果产生，失败与取消路径保持 fail-closed。
 
 ## G5 / G6 · 发布与线上验证
 
-- 2026-09-05 经用户授权固定本地候选提交 `b9063c441`；尚未 push、部署或 Store/OTA 发布，当前 TestFlight Build 261 不含本轮代码。
-- 发布前还需 live LLM gate、独立 G4、目标 revision CI-mode 集成闸和上线后同批请求分位数验证。
-- **裁决：NOT STARTED。**
+- 2026-09-05 经用户授权，候选已合并远端主干并修复首轮 CI 暴露的生成类型、日期归一化测试与环境文件治理问题；当前证据提交为 `7a2227a4f`。
+- 发布前还需在本证据文档提交后的最终 SHA 上重跑 live LLM gate、通过目标 revision CI-mode 集成闸并完成 production OTA；上线后的同批请求分位数验证仍属于 G6。
+- **裁决：READY FOR FINAL CI。**
 
 ## 回退
 
