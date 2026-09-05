@@ -1064,79 +1064,96 @@ export default function ChatScreen() {
       />
 
       <View style={{ flex: 1 }}>
-        <FlatList
-          ref={flatListRef}
-          testID="chat-message-list"
-          style={styles.messageListViewport}
-          data={messageListItems}
-          keyExtractor={item => item.id}
-          renderItem={renderMessage}
-          contentContainerStyle={messageListContentStyle}
-          keyboardDismissMode="on-drag"
-          keyboardShouldPersistTaps="always"
-          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-          ListHeaderComponent={hasMoreHistory || isLoadingMoreHistory ? (
+        <View testID="chat-message-list-shell" style={styles.messageListShell}>
+          <FlatList
+            ref={flatListRef}
+            testID="chat-message-list"
+            style={styles.messageListViewport}
+            data={messageListItems}
+            keyExtractor={item => item.id}
+            renderItem={renderMessage}
+            contentContainerStyle={messageListContentStyle}
+            keyboardDismissMode="on-drag"
+            keyboardShouldPersistTaps="always"
+            maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+            ListHeaderComponent={hasMoreHistory || isLoadingMoreHistory ? (
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={isLoadingMoreHistory ? '正在加载更早消息' : '加载更早消息'}
+                activeOpacity={0.72}
+                disabled={isLoadingMoreHistory}
+                onPress={() => { void loadMoreHistory(); }}
+                style={styles.loadEarlierButton}
+              >
+                {isLoadingMoreHistory ? (
+                  <ActivityIndicator size="small" color={C.green500} />
+                ) : (
+                  <Ionicons name="time-outline" size={14} color={C.green500} />
+                )}
+                <Text style={txt.loadEarlier}>
+                  {isLoadingMoreHistory ? '正在加载…' : '加载更早消息'}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+            onContentSizeChange={() => {
+              if (shouldScrollChatToEnd({
+                forcePending: forceScrollPending.current,
+                isNearBottom: isNearBottom.current,
+              })) {
+                setShowScrollToBottom(false);
+                try { flatListRef.current?.scrollToEnd({ animated: true }); } catch {}
+              } else if (messageListItems.length > 0) {
+                setShowScrollToBottom(true);
+              }
+            }}
+            onScrollBeginDrag={cancelForcedScrollOnUserDrag}
+            onScroll={(e) => {
+              // The first layout can emit an offset=0 scroll event before the forced
+              // opening scroll runs. It is not user intent and must not cancel it.
+              if (forceScrollPending.current) return;
+              const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+              const nearBottom = isChatNearBottom({
+                layoutHeight: layoutMeasurement.height,
+                offsetY: contentOffset.y,
+                contentHeight: contentSize.height,
+              });
+              isNearBottom.current = nearBottom;
+              setShowScrollToBottom(messageListItems.length > 0 && shouldShowScrollToBottom({
+                forcePending: forceScrollPending.current,
+                isNearBottom: nearBottom,
+              }));
+            }}
+            scrollEventThrottle={100}
+            ListEmptyComponent={
+              bootstrapReady ? (
+                <EmptyStateHome
+                  memoryOpener={memoryOpener}
+                  opener={opener}
+                  onOpenMemory={() => router.push('/memory')}
+                  onOpenerQuickReply={handleOpenerQuickReply}
+                  onboarding={startersOnboarding}
+                  onQuickAction={handleQuickAction}
+                  showReplyActions={!keyboardVisible}
+                />
+              ) : <AgentHomeBootstrapLoading />
+            }
+          />
+
+          {showScrollToBottom && !selectionMode && messages.length > 0 ? (
             <TouchableOpacity
+              testID="chat-scroll-to-bottom"
               accessibilityRole="button"
-              accessibilityLabel={isLoadingMoreHistory ? '正在加载更早消息' : '加载更早消息'}
-              activeOpacity={0.72}
-              disabled={isLoadingMoreHistory}
-              onPress={() => { void loadMoreHistory(); }}
-              style={styles.loadEarlierButton}
+              accessibilityLabel="跳到最新消息"
+              accessibilityHint="回到对话末尾"
+              activeOpacity={0.68}
+              hitSlop={4}
+              onPress={handleScrollToBottom}
+              style={styles.scrollToBottomButton}
             >
-              {isLoadingMoreHistory ? (
-                <ActivityIndicator size="small" color={C.green500} />
-              ) : (
-                <Ionicons name="time-outline" size={14} color={C.green500} />
-              )}
-              <Text style={txt.loadEarlier}>
-                {isLoadingMoreHistory ? '正在加载…' : '加载更早消息'}
-              </Text>
+              <Ionicons name="chevron-down" size={22} color={C.green600} />
             </TouchableOpacity>
           ) : null}
-          onContentSizeChange={() => {
-            if (shouldScrollChatToEnd({
-              forcePending: forceScrollPending.current,
-              isNearBottom: isNearBottom.current,
-            })) {
-              setShowScrollToBottom(false);
-              try { flatListRef.current?.scrollToEnd({ animated: true }); } catch {}
-            } else if (messageListItems.length > 0) {
-              setShowScrollToBottom(true);
-            }
-          }}
-          onScrollBeginDrag={cancelForcedScrollOnUserDrag}
-          onScroll={(e) => {
-            // The first layout can emit an offset=0 scroll event before the forced
-            // opening scroll runs. It is not user intent and must not cancel it.
-            if (forceScrollPending.current) return;
-            const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-            const nearBottom = isChatNearBottom({
-              layoutHeight: layoutMeasurement.height,
-              offsetY: contentOffset.y,
-              contentHeight: contentSize.height,
-            });
-            isNearBottom.current = nearBottom;
-            setShowScrollToBottom(messageListItems.length > 0 && shouldShowScrollToBottom({
-              forcePending: forceScrollPending.current,
-              isNearBottom: nearBottom,
-            }));
-          }}
-          scrollEventThrottle={100}
-          ListEmptyComponent={
-            bootstrapReady ? (
-              <EmptyStateHome
-                memoryOpener={memoryOpener}
-                opener={opener}
-                onOpenMemory={() => router.push('/memory')}
-                onOpenerQuickReply={handleOpenerQuickReply}
-                onboarding={startersOnboarding}
-                onQuickAction={handleQuickAction}
-                showReplyActions={!keyboardVisible}
-              />
-            ) : <AgentHomeBootstrapLoading />
-          }
-        />
+        </View>
 
         {contextBadge && (
           <View style={styles.contextBanner}>
@@ -1214,19 +1231,6 @@ export default function ChatScreen() {
             showCapturePhoto={!startersOnboarding}
           />
         )}
-        {showScrollToBottom && !selectionMode && messages.length > 0 ? (
-          <TouchableOpacity
-            testID="chat-scroll-to-bottom"
-            accessibilityRole="button"
-            accessibilityLabel="回到底部"
-            activeOpacity={0.78}
-            onPress={handleScrollToBottom}
-            style={styles.scrollToBottomButton}
-          >
-            <Ionicons name="chevron-down" size={15} color="#fff" />
-            <Text style={txt.scrollToBottom}>回到底部</Text>
-          </TouchableOpacity>
-        ) : null}
         <ChatInputBar
           onSend={handleSend}
           isStreaming={isStreaming}
@@ -1387,20 +1391,22 @@ function ToolMenuRow({
 // Reva 设计语言: 暖白 paper 屏底 / surface 卡 / green500 主色 / r-lg 18 / 软阴影. 文字走 Manrope.
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
+  messageListShell: { flex: 1, minHeight: 0 },
   messageListViewport: { flex: 1, minHeight: 0 },
   messageList: { padding: revaSpacing.s4, paddingBottom: 8 },
   scrollToBottomButton: {
-    minHeight: 34,
-    alignSelf: 'center',
-    flexDirection: 'row',
+    position: 'absolute',
+    right: revaSpacing.s4,
+    bottom: revaSpacing.s3,
+    width: 44,
+    height: 44,
     alignItems: 'center',
-    gap: 4,
-    marginBottom: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: revaRadii.pill,
-    backgroundColor: C.green500,
-    ...revaShadows.sm,
+    justifyContent: 'center',
+    borderRadius: 22,
+    backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.lineStrong,
+    ...revaShadows.md,
   },
   loadEarlierButton: {
     minHeight: 36,
@@ -1526,7 +1532,6 @@ const txt = {
   shareBarSub: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, marginTop: 2 } as TextStyle,
   cancelSelectionButton: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, fontWeight: '700' } as TextStyle,
   shareButton: { fontFamily: revaFonts.sans, fontSize: 13, color: '#fff', fontWeight: '700' } as TextStyle,
-  scrollToBottom: { fontFamily: revaFonts.sans, fontSize: 12, color: '#fff', fontWeight: '800' } as TextStyle,
   toolSheetTitle: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '800', color: C.ink1 } as TextStyle,
   toolSheetSub: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2 } as TextStyle,
   toolMenuText: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '700' } as TextStyle,

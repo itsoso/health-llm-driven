@@ -1343,7 +1343,7 @@ describe('ChatScreen', () => {
     });
   });
 
-  it('offers a jump-to-latest control after scrolling away from a long transcript', async () => {
+  it('offers an unobtrusive jump-to-latest control after scrolling away from a long transcript', async () => {
     mockMessages = [
       { id: 'u-1', role: 'user', content: '总结我这一天的活动' },
       { id: 'a-1', role: 'assistant', content: '很长的活动总结'.repeat(80), completionStatus: 'complete' },
@@ -1366,9 +1366,21 @@ describe('ChatScreen', () => {
         });
       });
 
-      await waitFor(() => expect(view.getByTestId('chat-scroll-to-bottom')).toBeTruthy());
+      const jumpButton = await waitFor(() => view.getByTestId('chat-scroll-to-bottom'));
+      expect(jumpButton.props.accessibilityLabel).toBe('跳到最新消息');
+      expect(jumpButton.props.accessibilityHint).toBe('回到对话末尾');
+      expect(view.queryByText('回到底部')).toBeNull();
+      expect(StyleSheet.flatten(jumpButton.props.style)).toMatchObject({
+        position: 'absolute',
+        right: 16,
+        bottom: 12,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: '#FFFFFF',
+      });
       scrollToEnd.mockClear();
-      fireEvent.press(view.getByTestId('chat-scroll-to-bottom'));
+      fireEvent.press(jumpButton);
       act(() => {
         jest.advanceTimersByTime(1);
       });
