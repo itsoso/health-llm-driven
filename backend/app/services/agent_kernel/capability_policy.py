@@ -96,8 +96,8 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v45"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v31"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v46"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v32"
 _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v24"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
 _SERVER_AUTHORIZED_MANAGE_LOOKUP_KEY = "_server_authorized_manage_lookup"
@@ -3520,6 +3520,17 @@ def _health_record_target_status(
     contextual_supplement_name = str(
         server_authorized.get("contextual_supplement_name") or ""
     ).strip()
+    contextual_event_payload = server_authorized.get("contextual_event_payload")
+    if requested_type == "event" and isinstance(contextual_event_payload, dict):
+        data = args.get("data") if isinstance(args.get("data"), dict) else {}
+        return (
+            "match"
+            if snapshot.intent.is_write
+            and snapshot.intent.primary == "write"
+            and snapshot.intent.operation == "create"
+            and data == contextual_event_payload
+            else "mismatch"
+        )
     if (
         requested_type == "supplement"
         and contextual_supplement_name

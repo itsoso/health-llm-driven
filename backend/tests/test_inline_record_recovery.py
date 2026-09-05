@@ -291,7 +291,13 @@ def test_inline_recovery_of_truncated_named_tool_call():
     # 整段是被截断的 named tool-call JSON(raw_decode 全失败)→ 截断修复后恢复
     text = ('{"name": "health_record", "parameters": '
             '{"record_type": "rhinitis", "data": {"sneezing": 1, "congestion": 0}')
-    recovered = _extract_inline_tool_call(text, _TOOLS)
+    # 文本协议中的写调用必须同时有本轮明确记录意图；否则即使参数可修复也不能执行。
+    assert _extract_inline_tool_call(text, _TOOLS, user_message=None) is None
+    recovered = _extract_inline_tool_call(
+        text,
+        _TOOLS,
+        user_message="记录鼻炎：打喷嚏 1 次，鼻塞 0",
+    )
     assert recovered is not None
     assert recovered["function"]["name"] == "health_record"
     args = json.loads(recovered["function"]["arguments"])

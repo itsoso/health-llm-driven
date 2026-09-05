@@ -1139,6 +1139,33 @@ _INVOKE_PARAM_RE = re.compile(
     re.S | re.I,
 )
 _INVOKE_STRIP_RE = re.compile(r"<invoke\b.*?</invoke\s*>", re.S | re.I)
+# 另一类代理会输出无属性名的 XML 方言:
+#   <tool_call><function=health_record>
+#   <parameter=record_type>event</parameter><parameter=data>{...}</parameter>
+#   </function></tool_call>
+# 它既不是 OpenAI structured tool_calls,也不符合上面的 `<invoke name=...>`。完整块可按
+# 注册工具 schema 恢复;残缺块只触发重试/展示剥离,不能把协议文本交给用户。
+_FUNCTION_PARAMETER_BLOCK_RE = re.compile(
+    r"<\s*function\s*=\s*[\"']?([A-Za-z_]\w*)[\"']?\s*>(.*?)"
+    r"</\s*function\s*>",
+    re.S | re.I,
+)
+_FUNCTION_PARAMETER_PARAM_RE = re.compile(
+    r"<\s*parameter\s*=\s*[\"']?([A-Za-z_]\w*)[\"']?\s*>(.*?)"
+    r"</\s*parameter\s*>",
+    re.S | re.I,
+)
+_FUNCTION_PARAMETER_LEAK_RE = re.compile(
+    r"(?:<\s*tool_call\s*>\s*)?"
+    r"<\s*function\s*=\s*[\"']?[A-Za-z_]\w*[\"']?\s*>.*?"
+    r"(?:</\s*function\s*>\s*(?:</\s*tool_call\s*>)?|\Z)",
+    re.S | re.I,
+)
+_FUNCTION_PARAMETER_TRUNCATED_PREFIX_RE = re.compile(
+    r"(?:<\s*tool_call\s*>\s*)?"
+    r"<\s*function\s*=\s*(?:[\"']?[A-Za-z_]\w*[\"']?)?\s*\Z",
+    re.S | re.I,
+)
 # 悬空 `<minimax:tool_call>` / `</minimax:tool_call>`(含无开标签的孤立闭标签)也一并剥掉。
 _MINIMAX_TAG_STRIP_RE = re.compile(r"</?\s*minimax:tool_call\s*>", re.I)
 
@@ -1197,6 +1224,19 @@ _CODE_SPAN_RE = re.compile(
     re.S,
 )
 
+# Context grounding is stricter than display sanitization: code samples can be
+# visible, but they must never authorize a write. Support both Markdown fence
+# syntaxes and remove an unfinished fence through EOF.
+_EVENT_GROUNDING_FENCED_CODE_RE = re.compile(
+    r"^[ \t]*(?P<fence>`{3,}|~{3,})[^\n]*\n.*?"
+    r"^[ \t]*(?P=fence)[ \t]*(?:\n|\Z)",
+    re.M | re.S,
+)
+_EVENT_GROUNDING_UNCLOSED_FENCE_RE = re.compile(
+    r"^[ \t]*(?:`{3,}|~{3,})[^\n]*(?:\n.*)?\Z",
+    re.M | re.S,
+)
+
 # 少数代理模型会把 function calling 降级成 Python 伪代码:
 # `<tool_code>print(health_record(...))</tool_code>`。完整块可在严格白名单下恢复;
 # 残缺块只用于重试/展示剥离,绝不执行任意 Python。
@@ -1252,7 +1292,7 @@ def _matches_outside_code_spans(regex: "re.Pattern", text: str) -> List[re.Match
 # 流式期前缀检测:`<invoke` / `<minimax:tool_call` / `<tool` / `<tool_call` / `<function_call`
 # 一出现就抑制 live 下发(逐 token 泄漏兜底 —— founder 截图正是逐 token live 泄漏)。
 _XML_TOOLCALL_PREFIX_RE = re.compile(
-    r"<\s*(?:invoke\b|/?\s*minimax:tool_call\b|/?\s*tool_code\b|/?\s*tool\b|/?\s*tool_call\b|/?\s*function_call\b)",
+    r"<\s*(?:invoke\b|/?\s*minimax:tool_call\b|/?\s*tool_code\b|/?\s*tool\b|/?\s*tool_call\b|/?\s*function_call\b|/?\s*function\s*=)",
     re.I,
 )
 
@@ -1281,17 +1321,23 @@ _TEXT_TOOLCALL_STRIP_RE = re.compile(
 
 
 def _is_botched_text_tool_call(content: Optional[str], tools: Optional[List[Dict]]) -> bool:
-    """模型把工具调用写成了**文本**而非结构化 tool_calls(两种形态,都命名了已注册工具)。
+    """模型把工具调用写成了**文本**而非结构化 tool_calls。
 
     (a) Markdown 清单式:`Tool calls:` / `工具调用:` 标题 + 工具名(无参数可解析);
     (b) 残缺 `<tool>`/`<tool_call>`/`<function_call>` 伪标签泄漏(founder 截图 2026-07-14)——
         `_extract_inline_tool_call` 恢复失败的畸形 blob(`_GENERIC_TOOL_TAG_LEAK_RE` 命中)。
+    (c) 已出现 `<function=` 但函数名或开标签尚未生成完整的确定性协议前缀。
     仅在 `_extract_inline_tool_call`(可解析格式)已返回 None 后调用 —— 两种都解析不出参数,
     只能重提示模型用结构化 function calling 重试(拿真数据 > 空转);轮次用尽由展示层
     `_strip_xml_tool_markers` 兜底剥离,绝不泄漏。
     """
     if not content:
         return False
+    if _search_outside_code_spans(
+        _FUNCTION_PARAMETER_TRUNCATED_PREFIX_RE,
+        content,
+    ):
+        return True
     allowed = {t.get("function", {}).get("name") for t in (tools or [])}
     names_in_content = [n for n in allowed if n and n in content]
     if not names_in_content:
@@ -1307,6 +1353,16 @@ def _is_botched_text_tool_call(content: Optional[str], tools: Optional[List[Dict
     # 走到这里说明语法残缺/越权,应要求模型重试结构化调用并禁止原文外泄。
     if "<tool_code" in content.lower() and _search_outside_code_spans(
         _TOOL_CODE_LEAK_RE, content
+    ):
+        return True
+    # (d) `<function=name><parameter=key>…` 方言。完整块会在此函数之前被恢复;
+    #     走到这里说明截断或参数不可解析,只能重试,原文不得外泄。
+    if (
+        _search_outside_code_spans(_FUNCTION_PARAMETER_LEAK_RE, content)
+        or _search_outside_code_spans(
+            _FUNCTION_PARAMETER_TRUNCATED_PREFIX_RE,
+            content,
+        )
     ):
         return True
     return False
@@ -1642,6 +1698,64 @@ def _extract_xml_tool_call(raw: str, tools: Optional[List[Dict]], allowed: set) 
     return None
 
 
+def _extract_function_parameter_tool_call(
+    raw: str,
+    tools: Optional[List[Dict]],
+    allowed: set,
+) -> Optional[Dict[str, Any]]:
+    """Recover ``<function=name><parameter=key>…`` textual tool calls."""
+    matches = _matches_outside_code_spans(_FUNCTION_PARAMETER_BLOCK_RE, raw or "")
+    if not matches:
+        return None
+
+    schema_by_tool: Dict[str, Dict[str, Any]] = {}
+    for tool in tools or []:
+        function = tool.get("function", {}) if isinstance(tool, dict) else {}
+        name = function.get("name")
+        if name:
+            properties = (function.get("parameters") or {}).get("properties") or {}
+            schema_by_tool[name] = properties if isinstance(properties, dict) else {}
+
+    for match in matches:
+        name = match.group(1)
+        if name not in allowed:
+            continue
+        properties = schema_by_tool.get(name, {})
+        body = match.group(2) or ""
+        parameters = list(_FUNCTION_PARAMETER_PARAM_RE.finditer(body))
+        # Never recover a partial call.  If anything except whitespace remains
+        # after removing complete parameter blocks, an opening/closing tag was
+        # truncated (or the body contains an unsupported shape).
+        if _FUNCTION_PARAMETER_PARAM_RE.sub("", body).strip():
+            continue
+        args: Dict[str, Any] = {}
+        valid = True
+        for parameter in parameters:
+            key = (parameter.group(1) or "").strip()
+            if not key or key in args:
+                valid = False
+                break
+            raw_value = (parameter.group(2) or "").strip()
+            value = _coerce_param_by_schema(raw_value, properties.get(key))
+            # Object/array-shaped values must parse as JSON.  Falling back to a
+            # string here would turn a damaged health payload into a write.
+            if raw_value.startswith(("{", "[")) and isinstance(value, str):
+                valid = False
+                break
+            args[key] = value
+        if not valid:
+            continue
+        return {
+            "id": "inline_tool_call_0",
+            "type": "function",
+            "function": {
+                "name": name,
+                "arguments": json.dumps(args, ensure_ascii=False),
+            },
+        }
+    return None
+
+
 # `<tool>funcname {args_json}</tool>` 形态:函数名在标签体、参数是紧跟的**独立** JSON(无 "name"
 # 键)。qwen 系经代理偶发(founder 2026-07-14 实测「列出喝水记录」→ 泄漏
 # `<tool>health_query {"dimension":"water"}</tool>` 且**未执行** → 无水数据)。既有三条恢复路径都
@@ -1696,6 +1810,8 @@ def _strip_xml_tool_markers(text: str) -> str:
         and "minimax:tool_call" not in low
         and "<tool_code" not in low
         and not _maybe_generic_tool_tag(text)
+        and not _FUNCTION_PARAMETER_LEAK_RE.search(text)
+        and not _FUNCTION_PARAMETER_TRUNCATED_PREFIX_RE.search(text)
     ):
         return text
     stripped = text
@@ -1705,6 +1821,15 @@ def _strip_xml_tool_markers(text: str) -> str:
         )
     stripped = _INVOKE_STRIP_RE.sub("", stripped)
     stripped = _MINIMAX_TAG_STRIP_RE.sub("", stripped)
+    if _FUNCTION_PARAMETER_LEAK_RE.search(stripped):
+        stripped = _apply_outside_code_spans(
+            lambda seg: _FUNCTION_PARAMETER_LEAK_RE.sub("", seg), stripped
+        )
+    if _FUNCTION_PARAMETER_TRUNCATED_PREFIX_RE.search(stripped):
+        stripped = _apply_outside_code_spans(
+            lambda seg: _FUNCTION_PARAMETER_TRUNCATED_PREFIX_RE.sub("", seg),
+            stripped,
+        )
     # 通用 `<tool>`/`<tool_call>`/`<function_call>` 伪标签泄漏(残缺/嵌套 JSON+签名混合,
     # 恢复不出结构化调用)—— 展示兜底剥离(founder 截图 2026-07-14)。`_GENERIC_TOOL_TAG_LEAK_RE`
     # 的门控确保只吃工具调用形状,不误伤文档里的 `<tool>example</tool>`;`_apply_outside_code_spans`
@@ -2330,6 +2455,8 @@ def _text_tool_call_write_is_authorized(
     authorization logic; ToolGateway remains the final execution boundary.
     """
     function = call.get("function") or {}
+    if function.get("name") == "health_record":
+        return _has_explicit_text_record_intent(user_message)
     if function.get("name") != "health_manage":
         return True
     try:
@@ -2387,6 +2514,10 @@ def _extract_inline_tool_call(
     xml = _extract_xml_tool_call(raw, tools, allowed)
     if xml is not None:
         return xml if _authorized(xml) else None
+
+    function_parameter = _extract_function_parameter_tool_call(raw, tools, allowed)
+    if function_parameter is not None:
+        return function_parameter if _authorized(function_parameter) else None
 
     # `<tool>funcname {args}</tool>` 形态(函数名在标签体 + 独立参数 JSON):既有三路都不认,
     # 恢复后真执行、不泄漏(founder 2026-07-14「列出喝水记录」根因)。
@@ -8846,6 +8977,118 @@ def _prepare_health_record_args_for_validation(
     return args
 
 
+def _event_context_comparable(value: Any) -> str:
+    """Normalize one event phrase for exact visible-context grounding."""
+    return re.sub(
+        r"[\W_]+",
+        "",
+        unicodedata.normalize("NFKC", str(value or "")).lower(),
+        flags=re.UNICODE,
+    )
+
+
+def _contextual_event_payload_from_recent_turn(
+    data: dict[str, Any],
+    *,
+    user_message: str,
+    recent_messages: Sequence[dict[str, Any]],
+) -> Optional[dict[str, Any]]:
+    """Project only event fields visibly proposed in the preceding assistant turn."""
+    from app.services.write_intent_scope import is_direct_event_resource_write
+
+    if not is_direct_event_resource_write(user_message):
+        return None
+    history = tuple(recent_messages or ())
+
+    def visible_assistant_text(message: dict[str, Any]) -> str:
+        if message.get("role") != "assistant":
+            return ""
+        content = str(message.get("content") or "").strip()
+        if not content:
+            return ""
+        from app.services.genui import strip_reva_ui_blocks
+
+        visible = strip_reva_ui_blocks(content)
+        visible = _strip_xml_tool_markers(visible)
+        visible = _strip_bracket_tool_markers(visible)
+        visible = _strip_text_tool_call(visible)
+        # Code examples are visible but are not an actionable event proposal.
+        visible = _EVENT_GROUNDING_FENCED_CODE_RE.sub("", visible)
+        visible = _EVENT_GROUNDING_UNCLOSED_FENCE_RE.sub("", visible)
+        visible = _CODE_SPAN_RE.sub("", visible)
+        return visible.strip()
+
+    previous_assistant = visible_assistant_text(history[-1]) if history else ""
+    if not previous_assistant and history:
+        raw_last = str(history[-1].get("content") or "")
+        last_is_protocol_only = bool(
+            history[-1].get("role") == "assistant"
+            and _XML_TOOLCALL_PREFIX_RE.search(raw_last)
+        )
+        # Narrow retry bridge: only the immediately preceding identical record
+        # command followed by a protocol-only assistant reply may reach one turn
+        # farther back.  Arbitrary intervening user messages never grant authority.
+        if last_is_protocol_only and len(history) >= 3:
+            retry_message = history[-2]
+            same_retry_command = bool(
+                retry_message.get("role") == "user"
+                and is_direct_event_resource_write(
+                    str(retry_message.get("content") or "")
+                )
+                and _event_context_comparable(retry_message.get("content"))
+                == _event_context_comparable(user_message)
+            )
+            if same_retry_command:
+                previous_assistant = visible_assistant_text(history[-3])
+    comparable_context = _event_context_comparable(previous_assistant)
+    if not comparable_context:
+        return None
+
+    title = str(
+        data.get("title") or data.get("name") or data.get("event") or ""
+    ).strip()[:80]
+    comparable_title = _event_context_comparable(title)
+    if len(comparable_title) < 3 or comparable_title not in comparable_context:
+        return None
+
+    payload: dict[str, Any] = {"title": title}
+    notes = str(data.get("notes") or data.get("note") or "").strip()[:500]
+    comparable_notes = _event_context_comparable(notes)
+    if comparable_notes and comparable_notes in comparable_context:
+        payload["notes"] = notes
+    occurred_at = str(data.get("occurred_at") or "").strip()[:64]
+    comparable_occurred_at = _event_context_comparable(occurred_at)
+    if comparable_occurred_at and comparable_occurred_at in comparable_context:
+        payload["occurred_at"] = occurred_at
+    return payload
+
+
+def _turn_write_identity_args(
+    tool_name: str,
+    parsed_args: Dict[str, Any],
+    *,
+    user_message: str,
+    recent_messages: Sequence[dict[str, Any]],
+) -> Dict[str, Any]:
+    """Use the same grounded event projection for turn-local write identity."""
+    if tool_name != "health_record" or _fast_record_kind(parsed_args) != "event":
+        return parsed_args
+    raw_data = parsed_args.get("data")
+    if not isinstance(raw_data, dict):
+        return parsed_args
+    contextual_payload = _contextual_event_payload_from_recent_turn(
+        raw_data,
+        user_message=user_message,
+        recent_messages=recent_messages,
+    )
+    if contextual_payload is None:
+        return parsed_args
+    return {
+        "record_type": "event",
+        "data": contextual_payload,
+    }
+
+
 def _apply_server_health_record_provenance(
     tool_name: str,
     args: Any,
@@ -8856,6 +9099,7 @@ def _apply_server_health_record_provenance(
     contextual_diet_recorded: bool,
     contextual_supplement_names: Sequence[str],
     user_message: str,
+    recent_messages: Sequence[dict[str, Any]] = (),
 ) -> Any:
     """Bind only server-known health-record provenance and continuation targets."""
     if tool_name != "health_record" or not isinstance(args, dict):
@@ -8870,6 +9114,19 @@ def _apply_server_health_record_provenance(
     # inside this process and is consumed (then stripped) by capability policy.
     bind_server_authorized_health_record_fields(args)
     record_type = _fast_record_kind(args)
+    if record_type == "event":
+        contextual_payload = _contextual_event_payload_from_recent_turn(
+            data,
+            user_message=user_message,
+            recent_messages=recent_messages,
+        )
+        if contextual_payload is not None:
+            args["data"] = contextual_payload
+            return bind_server_authorized_health_record_fields(
+                args,
+                contextual_event_payload=dict(contextual_payload),
+            )
+        return args
     if record_type == "symptom":
         # Attachment-derived text is not proof of a current first-person
         # symptom.  OCR/model calls may still propose a record, but only an
@@ -11721,7 +11978,13 @@ class AgentExecutor:
         checkpoint is committed before the external write is invoked, so a
         replacement worker can fail closed instead of repeating the write.
         """
-        fingerprint = _write_operation_fingerprint(tool_name, parsed_args)
+        identity_args = _turn_write_identity_args(
+            tool_name,
+            parsed_args,
+            user_message=self._current_turn_user_message,
+            recent_messages=self._current_turn_recent_messages,
+        )
+        fingerprint = _write_operation_fingerprint(tool_name, identity_args)
         meta = dict(user_message.meta or {})
         existing_receipts = [
             dict(item)
@@ -11777,7 +12040,13 @@ class AgentExecutor:
         }
         updated_at = datetime.now(UTC).isoformat()
         for tool_name, parsed_args in expected_writes:
-            fingerprint = _write_operation_fingerprint(tool_name, parsed_args)
+            identity_args = _turn_write_identity_args(
+                tool_name,
+                parsed_args,
+                user_message=self._current_turn_user_message,
+                recent_messages=self._current_turn_recent_messages,
+            )
+            fingerprint = _write_operation_fingerprint(tool_name, identity_args)
             planned_fingerprints.add(fingerprint)
             if fingerprint not in operations:
                 operations[fingerprint] = {
@@ -12525,14 +12794,20 @@ class AgentExecutor:
                             fn in _WRITE_RECEIPT_TOOL_NAMES
                             and _write_tool_attempted(fn, parsed_args)
                         )
+                        write_identity_args = _turn_write_identity_args(
+                            fn,
+                            parsed_args,
+                            user_message=self._current_turn_user_message,
+                            recent_messages=self._current_turn_recent_messages,
+                        )
                         write_fingerprint = (
-                            _write_operation_fingerprint(fn, parsed_args)
+                            _write_operation_fingerprint(fn, write_identity_args)
                             if write_attempted else None
                         )
                         recoverable_write_key = (
                             _recoverable_write_operation_key(
                                 fn,
-                                parsed_args,
+                                write_identity_args,
                                 default_record_date=(
                                     self._agent_kernel_reference_now()
                                     .date()
@@ -16085,14 +16360,23 @@ class AgentExecutor:
                             func_name in _WRITE_RECEIPT_TOOL_NAMES
                             and _write_tool_attempted(func_name, parsed_tool_args)
                         )
+                        write_identity_args = _turn_write_identity_args(
+                            func_name,
+                            parsed_tool_args,
+                            user_message=self._current_turn_user_message,
+                            recent_messages=self._current_turn_recent_messages,
+                        )
                         write_fingerprint = (
-                            _write_operation_fingerprint(func_name, parsed_tool_args)
+                            _write_operation_fingerprint(
+                                func_name,
+                                write_identity_args,
+                            )
                             if write_attempted else None
                         )
                         runtime_write_fingerprint = (
                             _runtime_write_operation_fingerprint(
                                 func_name,
-                                parsed_tool_args,
+                                write_identity_args,
                                 default_record_date=(
                                     self._agent_kernel_reference_now().strftime("%Y-%m-%d")
                                 ),
@@ -16102,7 +16386,7 @@ class AgentExecutor:
                         recoverable_write_key = (
                             _recoverable_write_operation_key(
                                 func_name,
-                                parsed_tool_args,
+                                write_identity_args,
                                 default_record_date=(
                                     self._agent_kernel_reference_now()
                                     .date()
@@ -22624,6 +22908,9 @@ class AgentExecutor:
             ),
             user_message=str(
                 getattr(self, "_current_turn_user_message", "") or ""
+            ),
+            recent_messages=tuple(
+                getattr(self, "_current_turn_recent_messages", ()) or ()
             ),
         )
         if (

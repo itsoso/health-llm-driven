@@ -99,6 +99,36 @@ def test_classifier_uses_exact_legacy_question_and_mutation_negation_views():
     )
 
 
+def test_short_trip_record_command_is_an_explicit_event_write():
+    intent = classify_agent_utterance("记录行程")
+
+    assert (
+        intent.primary,
+        intent.operation,
+        intent.is_write,
+    ) == ("write", "create", True)
+
+
+def test_friend_trip_reference_is_not_authorized_as_current_user_write():
+    intent = classify_agent_utterance("记录朋友的行程")
+
+    assert intent.is_write is False
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录行程？",
+        "能记录行程吗？",
+        "可以帮我记录行程吗？",
+    ),
+)
+def test_bare_trip_record_questions_do_not_authorize_a_write(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.is_write is False
+
+
 def test_read_only_diet_record_noun_is_not_a_write_intent():
     intent = classify_agent_utterance("今天我的饮食的记录，帮我列个表格出来。")
 

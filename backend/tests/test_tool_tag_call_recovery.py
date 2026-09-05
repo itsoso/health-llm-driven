@@ -11,6 +11,7 @@
 import json
 
 from app.services.agent_executor import (
+    _XML_TOOLCALL_PREFIX_RE,
     _extract_inline_tool_call,
     _is_botched_text_tool_call,
     _strip_xml_tool_markers,
@@ -135,3 +136,122 @@ def test_unparseable_tool_code_is_retryable_and_never_user_visible():
     assert _fn(text, user_message="记录刚才打了一个喷嚏") is None
     assert _is_botched_text_tool_call(text, _TOOLS) is True
     assert _strip_xml_tool_markers(text) == ""
+
+
+_FUNCTION_PARAMETER_RECORD_CALL = (
+    "<tool_call>\n"
+    "<function=health_record>\n"
+    "<parameter=record_type> event </parameter>\n"
+    '<parameter=data> {"title":"测试行程","occurred_at":"2026-09-05T17:33+08:00",'
+    '"location":"测试地点","note":"测试备注"} </parameter>\n'
+    "</function>\n"
+    "</tool_call>"
+)
+
+
+def test_function_parameter_record_call_is_recovered_with_nested_data():
+    """Provider XML dialect must become a real write instead of visible protocol text."""
+    fn = _fn(_FUNCTION_PARAMETER_RECORD_CALL, user_message="记录行程")
+
+    assert fn is not None and fn["name"] == "health_record"
+    assert json.loads(fn["arguments"]) == {
+        "record_type": "event",
+        "data": {
+            "title": "测试行程",
+            "occurred_at": "2026-09-05T17:33+08:00",
+            "location": "测试地点",
+            "note": "测试备注",
+        },
+    }
+
+
+def test_function_parameter_record_call_requires_explicit_write_intent():
+    assert _fn(
+        _FUNCTION_PARAMETER_RECORD_CALL,
+        user_message="这段工具调用格式是什么意思？",
+    ) is None
+    assert _fn(
+        _FUNCTION_PARAMETER_RECORD_CALL,
+        user_message="不要记录行程",
+    ) is None
+    for question in ("记录行程？", "能记录行程吗？", "可以帮我记录行程吗？"):
+        assert _fn(_FUNCTION_PARAMETER_RECORD_CALL, user_message=question) is None
+
+
+def test_function_parameter_leak_is_retryable_and_never_user_visible():
+    malformed = (
+        "<tool_call><function=health_record>"
+        "<parameter=record_type>event</parameter>"
+        '<parameter=data>{"title":</parameter>'
+    )
+
+    assert _fn(malformed, user_message="记录行程") is None
+    assert _is_botched_text_tool_call(malformed, _TOOLS) is True
+    assert _strip_xml_tool_markers(malformed) == ""
+
+
+def test_function_parameter_call_with_truncated_inner_parameter_is_not_executed():
+    malformed = (
+        "<tool_call><function=health_record>"
+        "<parameter=record_type>event</parameter>"
+        '<parameter=data>{"title":"测试行程"}'
+        "</function></tool_call>"
+    )
+
+    assert _fn(malformed, user_message="记录行程") is None
+    assert _is_botched_text_tool_call(malformed, _TOOLS) is True
+    assert _strip_xml_tool_markers(malformed) == ""
+
+
+def test_function_parameter_call_with_invalid_json_parameter_is_not_executed():
+    malformed = (
+        "<tool_call><function=health_record>"
+        "<parameter=record_type>event</parameter>"
+        '<parameter=data>{"title":}</parameter>'
+        "</function></tool_call>"
+    )
+
+    assert _fn(malformed, user_message="记录行程") is None
+    assert _is_botched_text_tool_call(malformed, _TOOLS) is True
+    assert _strip_xml_tool_markers(malformed) == ""
+
+
+def test_function_parameter_call_inside_markdown_code_is_not_executed_or_stripped():
+    text = f"```xml\n{_FUNCTION_PARAMETER_RECORD_CALL}\n```"
+
+    assert _fn(text, user_message="记录行程") is None
+    assert _strip_xml_tool_markers(text) == text
+
+
+def test_bare_function_parameter_protocol_is_never_user_visible():
+    bare = (
+        "<function=health_record>"
+        "<parameter=record_type>event</parameter>"
+        '<parameter=data>{"title":"测试行程"}</parameter>'
+        "</function>"
+    )
+
+    assert _strip_xml_tool_markers(bare) == ""
+
+
+def test_truncated_function_parameter_prefix_is_retryable_and_never_user_visible():
+    for truncated in (
+        "<function=",
+        "<tool_call><function=",
+        "<function=health_record",
+        "<tool_call><function=health_record",
+    ):
+        assert _fn(truncated, user_message="记录行程") is None
+        assert _is_botched_text_tool_call(truncated, _TOOLS) is True
+        assert _strip_xml_tool_markers(truncated) == ""
+
+
+def test_truncated_function_parameter_prefix_inside_code_is_preserved():
+    text = "```xml\n<tool_call><function=health_record\n```"
+
+    assert _is_botched_text_tool_call(text, _TOOLS) is False
+    assert _strip_xml_tool_markers(text) == text
+
+
+def test_streaming_prefix_suppresses_bare_function_parameter_dialect():
+    assert _XML_TOOLCALL_PREFIX_RE.search("<function=health_record>")

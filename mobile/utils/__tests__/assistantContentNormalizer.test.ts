@@ -63,6 +63,62 @@ describe('normalizeAssistantContent', () => {
     expect(result.qualityFlags).toContain('malformed_protocol_block');
   });
 
+  it('replaces a raw function-parameter tool protocol reply with a safe retry message', () => {
+    const result = normalizeAssistantContent([
+      '<tool_call>',
+      '<function=health_record>',
+      '<parameter=record_type>event</parameter>',
+      '<parameter=data>{"title":"测试行程","location":"测试地点"}</parameter>',
+      '</function>',
+      '</tool_call>',
+    ].join('\n'));
+
+    expect(result.text).toBe('这条回复未能正常完成，请重新发送。');
+    expect(result.text).not.toMatch(/tool_call|health_record|parameter/i);
+    expect(result.cards).toEqual([]);
+    expect(result.qualityFlags).toContain('raw_tool_protocol_removed');
+  });
+
+  it('preserves a function-parameter tool protocol shown inside a code example', () => {
+    const markdown = [
+      '示例：',
+      '```xml',
+      '<tool_call><function=health_query></function></tool_call>',
+      '```',
+    ].join('\n');
+
+    expect(normalizeAssistantContent(markdown).text).toBe(markdown);
+  });
+
+  it('removes every consecutive raw tool protocol block', () => {
+    const block = [
+      '<tool_call>',
+      '<function=health_record>',
+      '<parameter=record_type>event</parameter>',
+      '<parameter=data>{"title":"测试行程"}</parameter>',
+      '</function>',
+      '</tool_call>',
+    ].join('\n');
+
+    const result = normalizeAssistantContent(`${block}\n${block}`);
+
+    expect(result.text).toBe('这条回复未能正常完成，请重新发送。');
+    expect(result.text).not.toMatch(/tool_call|health_record|parameter/i);
+  });
+
+  it.each([
+    '<function=',
+    '<tool_call><function=',
+    '<function=health_record',
+    '<tool_call><function=health_record',
+  ])('fails closed for a truncated raw protocol prefix: %s', (protocol) => {
+    const result = normalizeAssistantContent(protocol);
+
+    expect(result.text).toBe('这条回复未能正常完成，请重新发送。');
+    expect(result.text).not.toMatch(/tool_call|health_record|function/i);
+    expect(result.qualityFlags).toContain('raw_tool_protocol_removed');
+  });
+
   it('bounds oversized answers and reports a quality flag', () => {
     const result = normalizeAssistantContent('a'.repeat(60_000));
 

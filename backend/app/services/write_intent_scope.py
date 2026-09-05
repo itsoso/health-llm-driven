@@ -377,6 +377,12 @@ _POST_WRITE_BENEFICIARY_RE = re.compile(
     r"^(?:记录|记一下|记下|保存|录入|写入|新增|打卡)(?:一下)?"
     rf"(?:给|替|为)(?P<owner>{_OWNER_TOKEN_PATTERN})(?:的)?$"
 )
+_DIRECT_EVENT_RESOURCE_WRITE_RE = re.compile(
+    r"^(?:(?:请|请你|麻烦|麻烦你|帮我|请帮我|请你帮我|麻烦帮我|"
+    r"可以帮我|能帮我|给我|为我|我想|我要|我希望|我需要))?"
+    r"(?:记录|记一下|记下|保存|录入|登记|写入|新增|打卡)(?:一下)?"
+    r"(?:行程|旅程|旅途|出行|事件|生活事件)$"
+)
 _CURRENT_OWNER_WORDS = frozenset(
     {
         "我",
@@ -1066,6 +1072,8 @@ def is_write_capability_question(value: str) -> bool:
     context = _last_write_action_context(value)
     if context is None:
         return False
+    if _is_bare_event_resource_write_question(value):
+        return True
     clause, action, action_position = context
     before_action = clause[:action_position]
     after_action = clause[action_position + len(action) :]
@@ -1102,6 +1110,25 @@ def is_write_capability_question(value: str) -> bool:
     return has_inquiry_cue or any(
         modal in before_subject_action for modal in _CAPABILITY_MODALS
     )
+
+
+def _is_bare_event_resource_write_question(value: str) -> bool:
+    """Fail closed when a generic trip/event noun is phrased as a question."""
+    normalized = normalize_write_scope_text(value).strip()
+    if not re.search(r"(?:[?？]|[吗呢么嘛][?？]?)$", normalized):
+        return False
+    body = re.sub(r"[?？]+$", "", normalized)
+    body = re.sub(r"[吗呢么嘛]+$", "", body)
+    body = re.sub(r"^(?:能不能|可不可以|能否|可否|能|可以)", "", body)
+    return _DIRECT_EVENT_RESOURCE_WRITE_RE.fullmatch(body) is not None
+
+
+def is_direct_event_resource_write(value: str) -> bool:
+    """Return true only for an imperative generic trip/event record command."""
+    if _is_bare_event_resource_write_question(value):
+        return False
+    normalized = normalize_write_scope_text(value).strip("，,。.!！；;：: ")
+    return _DIRECT_EVENT_RESOURCE_WRITE_RE.fullmatch(normalized) is not None
 
 
 def _is_explicit_dated_backfill(value: str) -> bool:
@@ -1710,6 +1737,11 @@ def _is_post_attributed_to_non_current_owner(clause: str) -> bool:
         r"(?:请)?给(?:我)?(?:点|些)(?:处理)?(?:意见|建议|方法)",
         normalized,
     ):
+        return False
+    # `记录行程` is a direct write command whose object is the current
+    # conversation's trip.  The generic `owner + 行程` grammar otherwise reads
+    # `记录` as a person's name and rejects the command as third-party data.
+    if is_direct_event_resource_write(clause):
         return False
     if _POST_CURRENT_USER_OWNERSHIP_ONLY_DENIAL_RE.fullmatch(normalized):
         return True

@@ -4,14 +4,18 @@ import { extractRevaUiBlocks } from './revaUiBlocks';
 export const MAX_ASSISTANT_DISPLAY_LENGTH = 50_000;
 
 const TRUNCATION_NOTICE = '\n\n> 内容过长，已截断显示';
+const RAW_TOOL_PROTOCOL_FALLBACK = '这条回复未能正常完成，请重新发送。';
 const PLACEHOLDER_FLOOD_THRESHOLD = 6;
 const PLACEHOLDER_LINE_RE = /^(?:([.。·…,:;!?！？—_~*#-])\1{0,7})$/u;
+const RAW_TOOL_PROTOCOL_PREFIX_RE = /^\s*(?:<tool_call\s*>\s*)?<function\s*=/i;
+const RAW_TOOL_PROTOCOL_BLOCK_RE = /^\s*(?:<tool_call\s*>\s*)?<function\s*=\s*["']?[A-Za-z_]\w*["']?\s*>[\s\S]*?(?:<\/function\s*>\s*(?:<\/tool_call\s*>)?|$)\s*/i;
 
 export type AssistantContentQualityFlag =
   | 'empty_content'
   | 'html_break_normalized'
   | 'legacy_artifact_removed'
   | 'placeholder_flood_removed'
+  | 'raw_tool_protocol_removed'
   | 'malformed_protocol_block'
   | 'display_length_truncated';
 
@@ -36,6 +40,22 @@ export function normalizeAssistantContent(
   if (/<br\s*\/?>/i.test(text)) {
     text = text.replace(/<br\s*\/?>/gi, '\n');
     qualityFlags.push('html_break_normalized');
+  }
+
+  if (RAW_TOOL_PROTOCOL_PREFIX_RE.test(text)) {
+    while (RAW_TOOL_PROTOCOL_PREFIX_RE.test(text)) {
+      const remaining = text.replace(RAW_TOOL_PROTOCOL_BLOCK_RE, '').trim();
+      if (remaining === text) {
+        // The provider stopped inside the opening tag (for example
+        // `<function=health_record`).  Prefix detection is already conclusive;
+        // retaining an unparseable suffix would expose protocol to the user.
+        text = '';
+        break;
+      }
+      text = remaining;
+    }
+    text ||= RAW_TOOL_PROTOCOL_FALLBACK;
+    qualityFlags.push('raw_tool_protocol_removed');
   }
 
   const legacyCleaned = removeLegacyArtifacts(text);
