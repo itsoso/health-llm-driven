@@ -45,7 +45,13 @@ export function normalizeAssistantContent(
   if (RAW_TOOL_PROTOCOL_PREFIX_RE.test(text)) {
     while (RAW_TOOL_PROTOCOL_PREFIX_RE.test(text)) {
       const remaining = text.replace(RAW_TOOL_PROTOCOL_BLOCK_RE, '').trim();
-      if (remaining === text) break;
+      if (remaining === text) {
+        // The provider stopped inside the opening tag (for example
+        // `<function=health_record`).  Prefix detection is already conclusive;
+        // retaining an unparseable suffix would expose protocol to the user.
+        text = '';
+        break;
+      }
       text = remaining;
     }
     text ||= RAW_TOOL_PROTOCOL_FALLBACK;

@@ -234,5 +234,22 @@ def test_bare_function_parameter_protocol_is_never_user_visible():
     assert _strip_xml_tool_markers(bare) == ""
 
 
+def test_truncated_function_parameter_prefix_is_retryable_and_never_user_visible():
+    for truncated in (
+        "<function=health_record",
+        "<tool_call><function=health_record",
+    ):
+        assert _fn(truncated, user_message="记录行程") is None
+        assert _is_botched_text_tool_call(truncated, _TOOLS) is True
+        assert _strip_xml_tool_markers(truncated) == ""
+
+
+def test_truncated_function_parameter_prefix_inside_code_is_preserved():
+    text = "```xml\n<tool_call><function=health_record\n```"
+
+    assert _is_botched_text_tool_call(text, _TOOLS) is False
+    assert _strip_xml_tool_markers(text) == text
+
+
 def test_streaming_prefix_suppresses_bare_function_parameter_dialect():
     assert _XML_TOOLCALL_PREFIX_RE.search("<function=health_record>")

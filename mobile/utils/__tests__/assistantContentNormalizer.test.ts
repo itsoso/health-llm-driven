@@ -106,6 +106,17 @@ describe('normalizeAssistantContent', () => {
     expect(result.text).not.toMatch(/tool_call|health_record|parameter/i);
   });
 
+  it.each([
+    '<function=health_record',
+    '<tool_call><function=health_record',
+  ])('fails closed for a truncated raw protocol prefix: %s', (protocol) => {
+    const result = normalizeAssistantContent(protocol);
+
+    expect(result.text).toBe('这条回复未能正常完成，请重新发送。');
+    expect(result.text).not.toMatch(/tool_call|health_record|function/i);
+    expect(result.qualityFlags).toContain('raw_tool_protocol_removed');
+  });
+
   it('bounds oversized answers and reports a quality flag', () => {
     const result = normalizeAssistantContent('a'.repeat(60_000));
 

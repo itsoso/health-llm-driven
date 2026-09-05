@@ -810,6 +810,104 @@ async def test_duplicate_writes_in_one_model_response_execute_once(
 
 
 @pytest.mark.asyncio
+async def test_contextual_event_calls_differing_only_in_discarded_fields_execute_once(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    conversation = AgentConversation(
+        user_id=user.id,
+        title="测试行程",
+        session_key=f"contextual-event-dedup-{user.id}",
+    )
+    db.add(conversation)
+    db.flush()
+    db.add(
+        AgentMessage(
+            conversation_id=conversation.id,
+            role="assistant",
+            content="下午安排测试行程。",
+        )
+    )
+    db.commit()
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    tool_calls = 0
+
+    async def fake_llm_call(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            def event_call(call_id, location):
+                return {
+                    "id": call_id,
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps(
+                            {
+                                "record_type": "event",
+                                "data": {
+                                    "title": "测试行程",
+                                    "location": location,
+                                },
+                            },
+                            ensure_ascii=False,
+                        ),
+                    },
+                }
+
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    event_call("event-1", "模型地点甲"),
+                    event_call("event-2", "模型地点乙"),
+                ],
+            }
+        return {"content": "行程已记录。", "finish_reason": "stop"}
+
+    async def fake_execute_tool(name, args, token):
+        nonlocal tool_calls
+        tool_calls += 1
+        return json.dumps(
+            {
+                "id": 901,
+                "record_id": 901,
+                "resource_type": "health_episode",
+                "status": "verified",
+                "success": True,
+            }
+        )
+
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr(executor, "_call_llm", fake_llm_call)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_llm_call))
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+    monkeypatch.setattr(
+        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
+        lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录行程",
+            conversation_id=conversation.id,
+            user_auth_token="test-token",
+            client_turn_id="turn-contextual-event-dedup",
+        )
+    ]
+
+    assert tool_calls == 1
+    tool_results = [
+        event["data"] for event in events if event.get("event") == "tool_result"
+    ]
+    assert len(tool_results) == 2
+    assert tool_results[1]["replayed"] is True
+
+
+@pytest.mark.asyncio
 async def test_client_turn_lock_is_released_when_post_acquire_lookup_raises(
     db, auth_user_and_headers, monkeypatch
 ):

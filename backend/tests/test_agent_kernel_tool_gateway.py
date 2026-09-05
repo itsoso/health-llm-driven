@@ -3469,17 +3469,38 @@ async def test_executor_dispatches_public_record_contract_through_real_gateway(
 
 
 @pytest.mark.asyncio
-async def test_executor_records_contextual_trip_through_real_gateway(db, monkeypatch):
+@pytest.mark.parametrize(
+    "recent_messages",
+    (
+        [
+            {
+                "role": "assistant",
+                "content": "下午前往青海湖·东格尔观景台观鸟（棕头鸥）。",
+            }
+        ],
+        [
+            {
+                "role": "assistant",
+                "content": "下午前往青海湖·东格尔观景台观鸟（棕头鸥）。",
+            },
+            {"role": "user", "content": "记录行程"},
+            {
+                "role": "assistant",
+                "content": "<tool_call><function=health_record",
+            },
+        ],
+    ),
+)
+async def test_executor_records_contextual_trip_through_real_gateway(
+    db,
+    monkeypatch,
+    recent_messages,
+):
     executor = AgentExecutor(db)
     executor._current_user_id = 1
     executor._turn_channel = "typed"
     executor._current_turn_user_message = "记录行程"
-    executor._current_turn_recent_messages = [
-        {
-            "role": "assistant",
-            "content": "下午前往青海湖·东格尔观景台观鸟（棕头鸥）。",
-        }
-    ]
+    executor._current_turn_recent_messages = recent_messages
     executor._agent_kernel_snapshot = _snapshot("记录行程", channel="typed")
     calls = []
 
@@ -3539,6 +3560,59 @@ async def test_executor_does_not_record_trip_details_absent_from_context(db, mon
                 "title": "青海湖·东格尔观景台观鸟（棕头鸥）",
                 "location": "青海湖·东格尔观景台",
             },
+        },
+        "test-token",
+    )
+
+    assert calls == []
+    assert json.loads(result)["error_code"] == "health_record_target_mismatch"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "recent_messages",
+    (
+        [
+            {"role": "assistant", "content": "很早以前安排测试行程。"},
+            {"role": "user", "content": "现在聊聊别的"},
+        ],
+        [
+            {
+                "role": "assistant",
+                "content": (
+                    "没有可记录的正文。\n"
+                    "```reva-ui\n"
+                    '{"v":2,"component":"notice","private":"测试行程"}\n'
+                    "```"
+                ),
+            }
+        ],
+    ),
+)
+async def test_executor_does_not_bind_stale_or_hidden_trip_context(
+    db,
+    monkeypatch,
+    recent_messages,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_channel = "typed"
+    executor._current_turn_user_message = "记录行程"
+    executor._current_turn_recent_messages = recent_messages
+    executor._agent_kernel_snapshot = _snapshot("记录行程", channel="typed")
+    calls = []
+
+    async def fake_post(url, _headers, payload):
+        calls.append((url, payload))
+        return "unexpected"
+
+    monkeypatch.setattr(executor, "_api_post", fake_post)
+
+    result = await executor._execute_tool(
+        "health_record",
+        {
+            "record_type": "event",
+            "data": {"title": "测试行程"},
         },
         "test-token",
     )

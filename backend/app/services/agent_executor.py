@@ -1161,6 +1161,11 @@ _FUNCTION_PARAMETER_LEAK_RE = re.compile(
     r"(?:</\s*function\s*>\s*(?:</\s*tool_call\s*>)?|\Z)",
     re.S | re.I,
 )
+_FUNCTION_PARAMETER_TRUNCATED_PREFIX_RE = re.compile(
+    r"(?:<\s*tool_call\s*>\s*)?"
+    r"<\s*function\s*=\s*[\"']?[A-Za-z_]\w*[\"']?\s*\Z",
+    re.S | re.I,
+)
 # 悬空 `<minimax:tool_call>` / `</minimax:tool_call>`(含无开标签的孤立闭标签)也一并剥掉。
 _MINIMAX_TAG_STRIP_RE = re.compile(r"</?\s*minimax:tool_call\s*>", re.I)
 
@@ -1333,7 +1338,13 @@ def _is_botched_text_tool_call(content: Optional[str], tools: Optional[List[Dict
         return True
     # (d) `<function=name><parameter=key>…` 方言。完整块会在此函数之前被恢复;
     #     走到这里说明截断或参数不可解析,只能重试,原文不得外泄。
-    if _search_outside_code_spans(_FUNCTION_PARAMETER_LEAK_RE, content):
+    if (
+        _search_outside_code_spans(_FUNCTION_PARAMETER_LEAK_RE, content)
+        or _search_outside_code_spans(
+            _FUNCTION_PARAMETER_TRUNCATED_PREFIX_RE,
+            content,
+        )
+    ):
         return True
     return False
 
@@ -1781,6 +1792,7 @@ def _strip_xml_tool_markers(text: str) -> str:
         and "<tool_code" not in low
         and not _maybe_generic_tool_tag(text)
         and not _FUNCTION_PARAMETER_LEAK_RE.search(text)
+        and not _FUNCTION_PARAMETER_TRUNCATED_PREFIX_RE.search(text)
     ):
         return text
     stripped = text
@@ -1793,6 +1805,11 @@ def _strip_xml_tool_markers(text: str) -> str:
     if _FUNCTION_PARAMETER_LEAK_RE.search(stripped):
         stripped = _apply_outside_code_spans(
             lambda seg: _FUNCTION_PARAMETER_LEAK_RE.sub("", seg), stripped
+        )
+    if _FUNCTION_PARAMETER_TRUNCATED_PREFIX_RE.search(stripped):
+        stripped = _apply_outside_code_spans(
+            lambda seg: _FUNCTION_PARAMETER_TRUNCATED_PREFIX_RE.sub("", seg),
+            stripped,
         )
     # 通用 `<tool>`/`<tool_call>`/`<function_call>` 伪标签泄漏(残缺/嵌套 JSON+签名混合,
     # 恢复不出结构化调用)—— 展示兜底剥离(founder 截图 2026-07-14)。`_GENERIC_TOOL_TAG_LEAK_RE`
@@ -8962,15 +8979,46 @@ def _contextual_event_payload_from_recent_turn(
 
     if not is_direct_event_resource_write(user_message):
         return None
-    previous_assistant = ""
-    for message in reversed(tuple(recent_messages or ())):
+    history = tuple(recent_messages or ())
+
+    def visible_assistant_text(message: dict[str, Any]) -> str:
         if message.get("role") != "assistant":
-            continue
+            return ""
         content = str(message.get("content") or "").strip()
-        if not content or _XML_TOOLCALL_PREFIX_RE.search(content):
-            continue
-        previous_assistant = content
-        break
+        if not content:
+            return ""
+        from app.services.genui import strip_reva_ui_blocks
+
+        visible = strip_reva_ui_blocks(content)
+        visible = _strip_xml_tool_markers(visible)
+        visible = _strip_bracket_tool_markers(visible)
+        visible = _strip_text_tool_call(visible)
+        # Code examples are visible but are not an actionable event proposal.
+        visible = _CODE_SPAN_RE.sub("", visible)
+        return visible.strip()
+
+    previous_assistant = visible_assistant_text(history[-1]) if history else ""
+    if not previous_assistant and history:
+        raw_last = str(history[-1].get("content") or "")
+        last_is_protocol_only = bool(
+            history[-1].get("role") == "assistant"
+            and _XML_TOOLCALL_PREFIX_RE.search(raw_last)
+        )
+        # Narrow retry bridge: only the immediately preceding identical record
+        # command followed by a protocol-only assistant reply may reach one turn
+        # farther back.  Arbitrary intervening user messages never grant authority.
+        if last_is_protocol_only and len(history) >= 3:
+            retry_message = history[-2]
+            same_retry_command = bool(
+                retry_message.get("role") == "user"
+                and is_direct_event_resource_write(
+                    str(retry_message.get("content") or "")
+                )
+                and _event_context_comparable(retry_message.get("content"))
+                == _event_context_comparable(user_message)
+            )
+            if same_retry_command:
+                previous_assistant = visible_assistant_text(history[-3])
     comparable_context = _event_context_comparable(previous_assistant)
     if not comparable_context:
         return None
@@ -8992,6 +9040,32 @@ def _contextual_event_payload_from_recent_turn(
     if comparable_occurred_at and comparable_occurred_at in comparable_context:
         payload["occurred_at"] = occurred_at
     return payload
+
+
+def _turn_write_identity_args(
+    tool_name: str,
+    parsed_args: Dict[str, Any],
+    *,
+    user_message: str,
+    recent_messages: Sequence[dict[str, Any]],
+) -> Dict[str, Any]:
+    """Use the same grounded event projection for turn-local write identity."""
+    if tool_name != "health_record" or _fast_record_kind(parsed_args) != "event":
+        return parsed_args
+    raw_data = parsed_args.get("data")
+    if not isinstance(raw_data, dict):
+        return parsed_args
+    contextual_payload = _contextual_event_payload_from_recent_turn(
+        raw_data,
+        user_message=user_message,
+        recent_messages=recent_messages,
+    )
+    if contextual_payload is None:
+        return parsed_args
+    return {
+        "record_type": "event",
+        "data": contextual_payload,
+    }
 
 
 def _apply_server_health_record_provenance(
@@ -11883,7 +11957,13 @@ class AgentExecutor:
         checkpoint is committed before the external write is invoked, so a
         replacement worker can fail closed instead of repeating the write.
         """
-        fingerprint = _write_operation_fingerprint(tool_name, parsed_args)
+        identity_args = _turn_write_identity_args(
+            tool_name,
+            parsed_args,
+            user_message=self._current_turn_user_message,
+            recent_messages=self._current_turn_recent_messages,
+        )
+        fingerprint = _write_operation_fingerprint(tool_name, identity_args)
         meta = dict(user_message.meta or {})
         existing_receipts = [
             dict(item)
@@ -11939,7 +12019,13 @@ class AgentExecutor:
         }
         updated_at = datetime.now(UTC).isoformat()
         for tool_name, parsed_args in expected_writes:
-            fingerprint = _write_operation_fingerprint(tool_name, parsed_args)
+            identity_args = _turn_write_identity_args(
+                tool_name,
+                parsed_args,
+                user_message=self._current_turn_user_message,
+                recent_messages=self._current_turn_recent_messages,
+            )
+            fingerprint = _write_operation_fingerprint(tool_name, identity_args)
             planned_fingerprints.add(fingerprint)
             if fingerprint not in operations:
                 operations[fingerprint] = {
@@ -12687,14 +12773,20 @@ class AgentExecutor:
                             fn in _WRITE_RECEIPT_TOOL_NAMES
                             and _write_tool_attempted(fn, parsed_args)
                         )
+                        write_identity_args = _turn_write_identity_args(
+                            fn,
+                            parsed_args,
+                            user_message=self._current_turn_user_message,
+                            recent_messages=self._current_turn_recent_messages,
+                        )
                         write_fingerprint = (
-                            _write_operation_fingerprint(fn, parsed_args)
+                            _write_operation_fingerprint(fn, write_identity_args)
                             if write_attempted else None
                         )
                         recoverable_write_key = (
                             _recoverable_write_operation_key(
                                 fn,
-                                parsed_args,
+                                write_identity_args,
                                 default_record_date=(
                                     self._agent_kernel_reference_now()
                                     .date()
@@ -16247,14 +16339,23 @@ class AgentExecutor:
                             func_name in _WRITE_RECEIPT_TOOL_NAMES
                             and _write_tool_attempted(func_name, parsed_tool_args)
                         )
+                        write_identity_args = _turn_write_identity_args(
+                            func_name,
+                            parsed_tool_args,
+                            user_message=self._current_turn_user_message,
+                            recent_messages=self._current_turn_recent_messages,
+                        )
                         write_fingerprint = (
-                            _write_operation_fingerprint(func_name, parsed_tool_args)
+                            _write_operation_fingerprint(
+                                func_name,
+                                write_identity_args,
+                            )
                             if write_attempted else None
                         )
                         runtime_write_fingerprint = (
                             _runtime_write_operation_fingerprint(
                                 func_name,
-                                parsed_tool_args,
+                                write_identity_args,
                                 default_record_date=(
                                     self._agent_kernel_reference_now().strftime("%Y-%m-%d")
                                 ),
@@ -16264,7 +16365,7 @@ class AgentExecutor:
                         recoverable_write_key = (
                             _recoverable_write_operation_key(
                                 func_name,
-                                parsed_tool_args,
+                                write_identity_args,
                                 default_record_date=(
                                     self._agent_kernel_reference_now()
                                     .date()
