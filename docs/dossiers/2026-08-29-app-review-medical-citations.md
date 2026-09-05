@@ -4,8 +4,8 @@
 |---|---|
 | slug | `app-review-medical-citations` |
 | 创建日期 | 2026-08-29 |
-| 当前阶段 | G6 精确候选真机验收 |
-| 状态 | awaiting_physical_device_acceptance |
+| 当前阶段 | G4 独立安全评审待办；通过后才进入新 Store 候选与 G6 精确物理 iPhone 验收 |
+| 状态 | review_pending |
 | 负责 | product / backend / mobile release |
 | 关联提交 | 拒审 Submission `85f3224c-3688-4aae-9da1-c7e91f4facaa` / 当前候选 Version 1.3.3 (261) |
 
@@ -49,9 +49,15 @@
 - [x] Mobile SSE/历史解析、安全 URL 过滤和默认展开引用面板。
 - [x] 审核说明加入 Apple 原始 BMI 复现路径。
 - [x] 真机模板加入引用可见与官方链接打开检查。
+- [x] 公共目录引用前移到已鉴权 SSE 边界，在模型/工具工作前提供首批关键内容；终态仍由既有 choke point 重新计算和持久化。
+- [x] 流式引用可独立点击和被 VoiceOver 访问；发送/附件补齐 button 语义，来源补齐机构、外部网站提示与动态字体。
+- [x] 失败/中断清除提前引用；BMI 请求主题优先，不被回答中的附带健康词稀释。
+- [x] 引用时延拆为 `citations_received` 与基于 React Native 首次布局的 `citations_painted`；`citations_visible` 仅保留为历史事件兼容，周报使用实际绘制分位数。
+- [x] XCUITest 新增 BMI → NHC 官方域名检查，并对未登录、缺固定 Today 数据和并行执行 fail-closed。
 - [x] 系统地图再生成与漂移验证。
 - [x] 全量相关回归、lint、release pack 和安全 Gate。
-- [x] commit / push / backend deploy / EAS production build。
+- [x] 历史引用修复 commit / push / backend deploy / EAS production build。
+- [ ] 2026-09-03 本地加固已固定为本地提交 `b9063c441`；独立 G4、push、backend deploy 与新 EAS production build 仍待完成。
 - [ ] 精确候选 Build 真机证据。
 - [ ] 用户确认后回复 Apple 并重新提交。
 
@@ -62,6 +68,8 @@
 - TypeScript `tsc --noEmit`：PASS；Expo lint `--quiet`：PASS。
 - System Map 生成与漂移：PASS；App Store release pack：PASS；iOS submission preflight：PASS。
 - Python 编译与 `git diff --check`：PASS。
+- 2026-09-03 新鲜增量证据：Mobile 6 suites / 237 tests、Backend/API/事件/引用策略与 harness 共 140 tests、TypeScript、Mobile lint、Python compile、diff hygiene、离线 LLM invariants 12/12 + health-agent core 50/50 + trajectory 12/12 + golden 9/9、System Map、基础 release pack 与 iOS submission preflight 均 PASS；14/14 个目录官方 HTTPS 来源在线返回 2xx。
+- 当前未提交源码已构建并安装为本地 Release 模拟器 `小巴健康 1.3.3 (262)`，0 error；由于重装后没有审核账号会话，fail-closed 套件为 1 个登录入口 PASS、6 个 `ownerLoginRequired` FAIL。该结果证明门禁语义正确，不构成登录后功能或物理 iPhone G6 通过证据。
 - **裁决：PASS**。
 
 ## G4 · 安全评审
@@ -71,7 +79,8 @@
 - 用户隔离：持久化查询同时限定 assistant message 与 `AgentConversation.user_id`，跨用户回归通过。
 - 失败语义：仅 `completion_status=complete` 附引用；error/interrupted 不声称已经提供来源；外链打不开时明确提示用户重试。
 - 医疗边界：只增加只读证据展示，不新增诊断、处方、剂量调整或健康数据写入；模型不能决定最终 URL。
-- **裁决：PASS（本变更为只读证据展示；未扩大既有医疗自治或写入权限）**。
+- **历史引用修复裁决：PASS（本变更为只读证据展示；未扩大既有医疗自治或写入权限）**。
+- **2026-09-03 增量裁决：pending**。单测、目录安全、失败语义与隐私检查已通过；因当前流程未获准启用独立 reviewer，本地增量不得沿用历史 G4，也不得部署或进入新 Store Build。
 
 ## G5 · 部署健康
 
@@ -83,10 +92,13 @@
 - 精确 IPA：SHA-256 `5d867fc34ca208e6305c57023c19b4ec15f34577d6a180dfa75b4e6852e3d7e0`；`CFBundleIdentifier=life.executor.health`、`CFBundleShortVersionString=1.3.3`、`CFBundleVersion=257`、`DTXcode=2620`、`DTPlatformVersion=26.2`；strict codesign 通过，production APNs / HealthKit entitlement 与根 PrivacyInfo.xcprivacy 存在。
 - 当前标准 production 候选已升级为 Build 260：EAS `12726ec9-3e37-4a76-aad6-f1ac1a5cbff5`、Submit `250b8d79-3d64-45c1-9f47-d59df7dd128c`、source `3e3d1f9d4e1ccd4433f75735c420dbc98ab0a850`，ASC `VALID / IN_BETA_TESTING`。精确 IPA SHA-256 `b98eb85c33db3b504fec41dc3bf25b3fb218c2f325f91c63d2789019edf68d48`；版本 1.3.3（260）、`CFBundleDisplayName=小巴健康`、`DTXcode=2620`、`DTPlatformVersion=26.2`、MinimumOSVersion 16.0、strict codesign、production APNs / HealthKit / Universal Link 与根 PrivacyInfo.xcprivacy 均通过，且未包含 Rokid、Watch、Siri 或后台定位能力。
 - 当前标准 production 候选已升级为 Build 261：EAS `dd6a2c0f-b167-47b9-a796-61ce8ec0c335`、Submit `4761bfae-3f4c-457a-9415-5f8847e0c23d`、source `21576b80ec4c968ada4ea005e8bfde633bc24f27`；Apple processing 已完成，TestFlight `1.3.3 (261)` 状态“准备提交”，已加入 `Team (Expo)` 与“内部测试”两个内部群组。精确 IPA SHA-256 `597a601f8e54b834ef6d31f8022df99b8d8d21cf6462023dd86ed660c1398fc1`；版本 1.3.3（261）、`CFBundleDisplayName=小巴健康`、`DTXcode=2620`、`DTPlatformVersion=26.2`、MinimumOSVersion 16.0、strict codesign、production APNs / HealthKit / Universal Link 与根 PrivacyInfo.xcprivacy 均通过，iPhone-only 且未包含扩展或后台模式。
-- **裁决：PASS**。
+- **历史引用修复裁决：PASS**。
+- **2026-09-03 增量裁决：pending**。本地 Release 模拟器构建不等于部署或 Store 候选；本地候选已固定为 `b9063c441`，完成独立 G4、push、Backend 部署、新 EAS Store Build 和目标 revision CI 核验前，不得把 Build 261 标为本轮通过。
 
 ## G6 · 上线验证
 
+- 2026-09-04：在正确的 review fixture 与审核演示账号下，本地 Release Simulator Build 262 完整验收 `7/7 PASS`；BMI 来源约 17 秒可见，NHC 链接可点击并在 Safari 到达 `nhc.gov.cn`，返回 App 后聊天面可恢复。该证据只证明当前本地源码的模拟器行为，不替代精确 Store Build 的物理 iPhone 验收。
+- 2026-09-03 本地 Release 模拟器构建已验证 App 名、版本和 Build 为 `小巴健康 1.3.3 (262)`；审核套件已修复“未登录仍因 skip 返回成功”的假绿。受控 review fixture reset 因本机缺少 `.env` 未执行，未读取用户未跟踪的 `.env-online`；模拟器重装后停在登录页，因此登录后 BMI/NHC、Today、草稿、隐私和冷启动用例均按预期失败。该本地产物未上传，不是 TestFlight 候选。
 - 2026-09-01 独立模拟审核裁决：`NO-GO`。代码与 Build 261 二进制层为 conditional GO；提交层因精确候选真机审核账号登录/BMI 引用与外链证据、`261-ready` 同包截图缺失而阻断。只读核对 ASC 还发现 1.3.3 绑定已拒绝的 Build 256，名称与提交文案仍有旧品牌，审核备注缺少 BMI 复现步骤且审核联系人电话为空；App Privacy、年龄分级与“非受监管医疗设备”声明已发布/保存并保持通过。此次模拟审核没有修改 ASC 表单、选择 Build 261 或提交审核。
 - 同日新鲜 Mobile 定向回归 6 suites / 85 tests PASS，覆盖医学引用、SSE/历史恢复、引用组件与登录错误分类。Backend 本地定向 pytest 因 `localhost:5432` PostgreSQL 未运行而在 collection 前失败，不能记为新鲜通过；精确 source `21576b80ec4c968ada4ea005e8bfde633bc24f27` 仍以 GitHub CI run `33510985890` 全绿为提交候选证据。
 - pending。精确 Build 261 必须真机输入“帮我算我的BMI”，看到默认展开来源并能打开 NHC/CDC 官方链接。
