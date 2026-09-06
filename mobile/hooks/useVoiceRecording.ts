@@ -10,6 +10,8 @@ import {
 import * as Haptics from 'expo-haptics';
 import { transcribeAudioDetailed, type TranscribeAudioResult } from '../services/transcribe';
 import { durationBucket, emitClientEvent } from '../services/clientEvents';
+import { ensureAIConsent } from '../services/aiConsent';
+import { subscribeAIConsentInvalidation } from '../services/aiConsentState';
 
 export interface VoiceRecordingState {
   isRecording: boolean;
@@ -132,6 +134,8 @@ export function useVoiceRecording(opts?: {
     const isCurrentStart = () => startSeqRef.current === seq;
     try {
       readyRef.current = false;
+
+      if (!await ensureAIConsent() || !isCurrentStart()) return false;
 
       const perm = await requestRecordingPermissionsAsync();
       if (!isCurrentStart()) {
@@ -282,6 +286,10 @@ export function useVoiceRecording(opts?: {
     emitTerminal('cancelled');
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
   }, [clearTimer, emitTerminal, recorder, releaseAudioSession]);
+
+  useEffect(() => subscribeAIConsentInvalidation(() => {
+    if (sessionStartedAtRef.current) void cancelRecording();
+  }), [cancelRecording]);
 
   return {
     isRecording,

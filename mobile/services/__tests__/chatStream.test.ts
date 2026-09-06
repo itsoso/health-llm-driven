@@ -1,4 +1,5 @@
 /* eslint-disable import/first */
+jest.mock('../aiConsentState', () => ({ aiConsentRevision: () => 1, hasAIConsent: () => true, invalidateAIConsent: jest.fn() }));
 jest.mock('../auth', () => ({
   getToken: jest.fn().mockResolvedValue('test-token'),
 }));
@@ -10,6 +11,7 @@ jest.mock('../api', () => ({
 import { streamChat } from '../chat';
 import { buildClientCapsHeader } from '../clientCaps';
 import { setAppEgressMode } from '../egressPolicy';
+import { invalidateAIConsent } from '../aiConsentState';
 
 class MockXMLHttpRequest {
   static instances: MockXMLHttpRequest[] = [];
@@ -47,6 +49,18 @@ describe('streamChat', () => {
     jest.useRealTimers();
     jest.clearAllMocks();
     setAppEgressMode(null);
+  });
+
+  it('requires a fresh disclosure after a consent-required streaming error', async () => {
+    const iter = streamChat('hello');
+    const first = iter.next();
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText = 'data: {"event":"error","data":{"code":"ai_consent_required","message":"authorization required"}}\n\n';
+    xhr.onprogress?.();
+    await expect(first).resolves.toMatchObject({ value: { type: 'error', content: expect.stringContaining('重新确认') } });
+    expect(invalidateAIConsent).toHaveBeenCalled();
+    await iter.return?.(undefined as any);
   });
 
   it('yields conversation id from agent_start before done for resume', async () => {

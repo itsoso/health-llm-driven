@@ -35,6 +35,55 @@ describe('services/api auth failure handling', () => {
     }));
   });
 
+  it('rejects AI upload before transport when disclosure is declined even with explicit-cloud flag', async () => {
+    const { setRuntimeAuthToken } = require('../api');
+    const { requireAIConsent } = require('../aiConsent');
+    setRuntimeAuthToken('session-a');
+    requireAIConsent.mockRejectedValueOnce(new Error('ai_consent_required'));
+    const headers = { get: () => '1', delete: jest.fn() };
+    await expect(requestFulfilled?.({ headers, method: 'post', url: '/diet/recognize' })).rejects.toThrow('ai_consent_required');
+  });
+
+  it('invalidates cached consent on the server policy-required response', async () => {
+    const { setRuntimeAuthToken } = require('../api');
+    const state = require('../aiConsentState');
+    setRuntimeAuthToken('session-a');
+    state.acceptAIConsentRevision(state.aiConsentRevision());
+    const error = { response: { status: 403, data: { detail: { code: 'ai_consent_required' } } } };
+    await expect(responseRejected?.(error)).rejects.toBe(error);
+    expect(state.hasAIConsent()).toBe(false);
+  });
+
+  it.each([
+    '/medical-exams/import/image', '/medical-exams/import/pdf',
+    '/prescriptions/recognize', '/ambient/audio-inputs', '/ambient/visual-inputs',
+    '/diet/estimate-nutrition?food_description=private',
+  ])('blocks sensitive AI upload before transport: %s', async (url) => {
+    const { setRuntimeAuthToken } = require('../api');
+    const { requireAIConsent } = require('../aiConsent');
+    setRuntimeAuthToken('session-a');
+    requireAIConsent.mockRejectedValueOnce(new Error('ai_consent_required'));
+    await expect(requestFulfilled?.({ headers: { get: jest.fn(), delete: jest.fn() }, method: 'post', url })).rejects.toThrow('ai_consent_required');
+  });
+
+  it.each(['/water/records', '/diet/records', '/ambient/meal-sessions/42/abort', '/auth/me/deletion-request'])('allows non-AI record management after declining: %s', async (url) => {
+    const { setRuntimeAuthToken } = require('../api');
+    const { requireAIConsent } = require('../aiConsent');
+    setRuntimeAuthToken('session-a');
+    await expect(requestFulfilled?.({ headers: { get: jest.fn(), delete: jest.fn() }, method: 'post', url })).resolves.toMatchObject({ url });
+    expect(requireAIConsent).not.toHaveBeenCalled();
+  });
+
+  it('rejects a consent write bound to a session that changed while awaiting dispatch', async () => {
+    const { setRuntimeAuthToken } = require('../api');
+    const state = require('../aiConsentState');
+    setRuntimeAuthToken('session-a');
+    const oldRevision = state.aiConsentRevision();
+    setRuntimeAuthToken('session-b');
+    const headers = { get: jest.fn(), delete: jest.fn() };
+    await expect(requestFulfilled?.({ headers, method: 'put', url: '/auth/ai-consent', __revaConsentRevision: oldRevision })).rejects.toThrow('auth_session_changed');
+  });
+
   it.each([
     '/auth/login/json',
     '/auth/phone/code',
@@ -203,3 +252,4 @@ describe('services/api auth failure handling', () => {
     expect(config.__revaAuthToken).toBe('tok_request');
   });
 });
+jest.mock('../aiConsent', () => ({ requireAIConsent: jest.fn().mockResolvedValue(undefined) }));

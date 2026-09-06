@@ -4,6 +4,10 @@ import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import * as Haptics from 'expo-haptics';
+import { ensureAIConsent } from '../../services/aiConsent';
+import { hasAIConsent } from '../../services/aiConsentState';
+jest.mock('../../services/aiConsent', () => ({ ensureAIConsent: jest.fn().mockResolvedValue(true) }));
+jest.mock('../../services/aiConsentState', () => ({ hasAIConsent: jest.fn(() => true) }));
 
 const mockStreamChat = jest.fn();
 const mockGetConversations = jest.fn();
@@ -785,6 +789,20 @@ async function* streamLegacyHealthManageQueryThenDone() {
 }
 
 describe('useChatEngine', () => {
+  it('preserves the composer acceptance and avoids uploads when AI consent is declined', async () => {
+    (hasAIConsent as jest.Mock).mockReturnValueOnce(false);
+    (ensureAIConsent as jest.Mock).mockResolvedValueOnce(false);
+    const onAccepted = jest.fn();
+    const { result } = renderHook(() => useChatEngine());
+    let accepted: boolean | undefined;
+    await act(async () => {
+      accepted = await result.current.sendMessage('保留这条草稿', [{ uri: 'file:///draft.jpg', base64: 'private-image' }], { onAccepted });
+    });
+    expect(accepted).toBe(false);
+    expect(onAccepted).toHaveBeenCalledWith(false);
+    expect(mockStreamChat).not.toHaveBeenCalled();
+    expect(result.current.messages).toHaveLength(0);
+  });
 
   it('never reuses an older message solely because the text is identical', () => {
     const messages = [

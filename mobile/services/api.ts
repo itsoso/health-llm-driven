@@ -1,6 +1,7 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { enforceAppEgressAllowed } from './egressPolicy';
+import { aiConsentRevision, hasAIConsent, invalidateAIConsent, isAIConsentError, setAIConsentIdentity } from './aiConsentState';
 
 const TOKEN_KEY = 'auth_token';
 export const WEB_SESSION_AUTH_SENTINEL = '__web_cookie_session__';
@@ -16,6 +17,7 @@ export function isUsableNativeAuthToken(token: string | null | undefined): token
 
 export function setRuntimeAuthToken(token: string | null): void {
   runtimeAuthToken = isUsableNativeAuthToken(token) ? token : null;
+  setAIConsentIdentity(runtimeAuthToken);
 }
 
 const DEFAULT_API = 'https://health.executor.life/api';
@@ -45,6 +47,7 @@ function isCloudSessionBootstrapRequest(method: string | undefined, url: string 
 
 api.interceptors.request.use(
   async (config) => {
+    const consentRevision = (config as typeof config & { __revaConsentRevision?: number }).__revaConsentRevision;
     const explicitCloudAI = config.headers.get(EXPLICIT_CLOUD_AI_HEADER) === '1';
     config.headers.delete(EXPLICIT_CLOUD_AI_HEADER);
     let token = runtimeAuthToken;
@@ -53,7 +56,7 @@ api.interceptors.request.use(
         const persistedToken = await SecureStore.getItemAsync(TOKEN_KEY);
         if (isUsableNativeAuthToken(persistedToken)) {
           token = persistedToken;
-          runtimeAuthToken = persistedToken;
+          setRuntimeAuthToken(persistedToken);
         }
       } catch {
         // SecureStore not available (e.g. web or a transient iOS keychain
@@ -67,6 +70,15 @@ api.interceptors.request.use(
     });
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    if (requiresAIConsent(config.method, config.url) && !hasAIConsent()) {
+      // Lazy load avoids an api → consent → auth → api initialization cycle.
+      const { requireAIConsent } = require('./aiConsent') as typeof import('./aiConsent');
+      await requireAIConsent();
+      if (token !== runtimeAuthToken) throw new Error('auth_session_changed');
+    }
+    if (consentRevision !== undefined && consentRevision !== aiConsentRevision()) {
+      throw new Error('auth_session_changed');
     }
     // Scope a later 401 to the exact session that sent this request. Without
     // this marker, a delayed response from an old token can log out a newly
@@ -84,6 +96,7 @@ export function setOnUnauthorized(cb: (() => void) | null) { onUnauthorized = cb
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
+    if (isAIConsentError(error)) invalidateAIConsent();
     if (error.response?.status === 401) {
       const requestToken = (
         error.config as { __revaAuthToken?: string | null } | undefined
@@ -104,3 +117,16 @@ api.interceptors.response.use(
 
 export default api;
 export { TOKEN_KEY };
+
+// Record reads and deterministic data management remain available without AI.
+// The backend also gates the provider boundary for other clients and jobs.
+export function requiresAIConsent(method?: string, url?: string): boolean {
+  const path = String(url || '').split('?', 1)[0];
+  const verb = String(method || 'get').toUpperCase();
+  return verb === 'POST' && (
+    /^\/(agent\/(chat|stream)|chat\/(transcribe|tts)|tts\/synthesize|diet\/(recognize|voice\/parse|estimate-nutrition)|quick-record|safety\/explain|clarification\/extract-memory|dynamic-views\/today)(\/|$)/.test(path)
+    || /^\/(ambient\/(visual-inputs|audio-inputs|rokid-voice-commands)|aigc|medical-exams\/import|prescriptions\/recognize|genetic\/profiles\/upload-pdf)(\/|$)/.test(path)
+    || /^\/ambient\/meal-sessions(?:\/?$|\/[^/]+\/(frames|finish)\/?$)/.test(path)
+    || /^\/(workout\/me\/[^/]+\/analyze|monthly-report\/me\/[^/]+\/[^/]+\/regenerate|goals\/(guidance|me\/generate-from-analysis))\/?$/.test(path)
+  );
+}

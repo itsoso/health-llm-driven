@@ -6,6 +6,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import api from '../services/api';
+import { manageAIConsent } from '../services/aiConsent';
 import {
   authLogoutErrorCode,
   getAccountDeletionRequest,
@@ -342,6 +343,8 @@ export default function SettingsScreen() {
 
         <Text style={txt.sectionLabel}>账号与隐私</Text>
         <View style={styles.card}>
+          <SettingRow icon="sparkles-outline" label="AI 数据共享"
+            value="查看与撤回授权" onPress={() => { void manageAIConsent(); }} />
           <SettingRow icon="key-outline" label="账号安全"
             value={(user as any)?.has_password ? '修改密码' : '设置密码'}
             onPress={() => router.push('/account-security' as any)} />

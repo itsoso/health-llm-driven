@@ -1,5 +1,6 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import api from './api';
+import { requireAIConsent } from './aiConsent';
 
 export interface TranscribeAudioResult {
   text: string;
@@ -15,6 +16,7 @@ function readConfidence(value: unknown): TranscribeAudioResult['confidence'] {
 }
 
 export async function transcribeAudioDetailed(fileUri: string): Promise<TranscribeAudioResult> {
+  await requireAIConsent();
   const base64 = await FileSystem.readAsStringAsync(fileUri, {
     encoding: FileSystem.EncodingType.Base64,
   });

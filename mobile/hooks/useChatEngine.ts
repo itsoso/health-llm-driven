@@ -12,6 +12,8 @@ import {
   stableServerCardId,
 } from '../components/chat/cards/cardIdentity';
 import api, { BASE_URL } from '../services/api';
+import { ensureAIConsent } from '../services/aiConsent';
+import { hasAIConsent } from '../services/aiConsentState';
 import { durationBucket, emitClientEvent } from '../services/clientEvents';
 import { sanitizeChatErrorMessage, sanitizeChatStreamToken } from '../utils/chatErrorMessage';
 import {
@@ -1354,6 +1356,16 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       return false;
     }
 
+    // Keep composer text and image files untouched until consent is durable.
+    const consentConversationGeneration = conversationRequestGenerationRef.current;
+    if (!hasAIConsent() && !await ensureAIConsent()) {
+      settleAcceptance(false);
+      return false;
+    }
+    if (consentConversationGeneration !== conversationRequestGenerationRef.current) {
+      settleAcceptance(false);
+      return false;
+    }
     const finalMsg = msg || (hasImages ? '请分析这些图片' : '');
     const turnQueueGeneration = turnQueueGenerationRef.current;
     const requestFingerprint = buildTurnRequestFingerprint(finalMsg, pendingImages);

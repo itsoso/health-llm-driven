@@ -12,8 +12,15 @@ jest.mock('../api', () => ({
 }));
 
 import { transcribeAudio, transcribeAudioDetailed } from '../transcribe';
+import { requireAIConsent } from '../aiConsent';
 
 describe('transcribeAudioDetailed', () => {
+  it('does not read or upload voice data when consent is absent', async () => {
+    (requireAIConsent as jest.Mock).mockRejectedValueOnce(new Error('ai_consent_required'));
+    await expect(transcribeAudioDetailed('file:///draft.m4a')).rejects.toThrow('ai_consent_required');
+    expect(mockReadAsStringAsync).not.toHaveBeenCalled();
+    expect(mockPost).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -51,3 +58,4 @@ describe('transcribeAudioDetailed', () => {
     await expect(transcribeAudio('file:///tmp/voice.m4a')).resolves.toBe('识别出的文字');
   });
 });
+jest.mock('../aiConsent', () => ({ requireAIConsent: jest.fn().mockResolvedValue(undefined) }));

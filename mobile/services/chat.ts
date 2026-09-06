@@ -6,6 +6,8 @@ import type { AgentPerfProfileLike } from '../utils/chatTransparency';
 import { normalizeWriteReceipt, type WriteReceipt } from './writeReceipt';
 import type { MedicationSafetyAlert } from './medications';
 import { assertAppEgressAllowed, enforceAppEgressAllowed } from './egressPolicy';
+import { requireAIConsent } from './aiConsent';
+import { aiConsentRevision, hasAIConsent, invalidateAIConsent } from './aiConsentState';
 import {
   normalizeMedicalCitations,
   type MedicalCitation,
@@ -404,6 +406,10 @@ export async function* streamChat(
     await enforceAppEgressAllowed(egressIntent);
   }
   const token = await getToken();
+  const consentRevision = aiConsentRevision();
+  if (!hasAIConsent()) await requireAIConsent();
+  if (consentRevision !== aiConsentRevision()) throw new Error('auth_session_changed');
+  if (signal?.aborted) throw new Error('aborted');
   // channel = 传输层输入通道声明(非 LLM 参数):打字免症状二次确认;
   // 语音(转写有失真风险)fail-closed 保留确认 —— 语音入口必须显式传 'voice'。
   const body: Record<string, any> = { message, channel, client_time_context: buildClientTimeContext() };
@@ -463,6 +469,10 @@ export async function* streamChat(
   xhr.onload = () => {
     if (xhr.status < 200 || xhr.status >= 300) {
       error = chatStreamHttpError(xhr.status, xhr.responseText);
+      if (xhr.status === 403 && xhr.responseText.includes('ai_consent_required')) {
+        invalidateAIConsent();
+        error = new Error('AI 数据共享授权需要重新确认，请再次发送；原内容会保留。');
+      }
       done = true;
       resolve?.();
       return;
@@ -715,9 +725,15 @@ export async function* streamChat(
           ...(medicalCitations ? { medicalCitations } : {}),
         };
       } else if (parsed.event === 'error') {
+        const consentRequired = parsed.data?.code === 'ai_consent_required'
+          || parsed.data?.error_code === 'ai_consent_required'
+          || String(parsed.data?.message || parsed.data?.detail || '').includes('ai_consent_required');
+        if (consentRequired) invalidateAIConsent();
         return {
           type: 'error',
-          content: sanitizeChatErrorMessage(parsed.data?.message || parsed.data?.detail, '请求失败'),
+          content: consentRequired
+            ? 'AI 数据共享授权需要重新确认，请再次发送；原内容会保留。'
+            : sanitizeChatErrorMessage(parsed.data?.message || parsed.data?.detail, '请求失败'),
         };
       }
     } catch {

@@ -9,10 +9,9 @@
  * 客户端用 expo-file-system 写 mp3 到临时文件, expo-audio useAudioPlayer 播放.
  * (不能用 Speech.speak — 那是 iOS 系统合成; 云端 mp3 必须走音频播放器.)
  */
-import axios from 'axios';
 import * as FileSystem from 'expo-file-system/legacy';
-import * as SecureStore from 'expo-secure-store';
-import { BASE_URL } from './api';
+import api from './api';
+import { requireAIConsent } from './aiConsent';
 
 export type CloudVoiceKey =
   | 'cloned_private_female'
@@ -41,22 +40,17 @@ export interface SynthesizedAudio {
 export async function synthesize(opts: SynthesizeOpts): Promise<SynthesizedAudio> {
   const text = opts.text.trim();
   if (!text) throw new Error('text empty');
-
-  const token = await SecureStore.getItemAsync('auth_token').catch(() => null);
-  if (!token) throw new Error('no auth token');
-
-  const url = `${BASE_URL}/tts/synthesize`;
+  await requireAIConsent();
 
   // axios 拿 arraybuffer 再写入文件. fetch + FileSystem.writeAsStringAsync(base64)
   // 也能做到, 但 axios 统一了超时和拦截器.
-  const resp = await axios.post(
-    url,
+  const resp = await api.post(
+    '/tts/synthesize',
     { text, voice_style: opts.voiceKey, speed: opts.speed ?? 1.0 },
     {
       responseType: 'arraybuffer',
       timeout: 30000,
       headers: {
-        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
         Accept: 'audio/mpeg',
       },

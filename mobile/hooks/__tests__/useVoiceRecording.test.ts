@@ -1,4 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
+import { ensureAIConsent } from '../../services/aiConsent';
+import { invalidateAIConsent } from '../../services/aiConsentState';
 
 // iOS 按住说话必须独占 audio session；停止、取消和异常都要 deactivate，
 // 让外部播放器恢复，同时把 session 放回非录音模式，避免后续键盘/麦克风失效。
@@ -72,6 +74,22 @@ function releasedAudioFocus(): boolean {
 }
 
 describe('useVoiceRecording audio session release (Bug 2: 语音后键盘失效)', () => {
+  it('cancels an active recording after authorization is withdrawn without transcribing', async () => {
+    const { result } = renderHook(() => useVoiceRecording());
+    await act(async () => { await result.current.startRecording(); });
+    await act(async () => { invalidateAIConsent(); });
+    expect(mockStop).toHaveBeenCalled();
+    expect(result.current.isRecording).toBe(false);
+    expect(mockTranscribe).not.toHaveBeenCalled();
+  });
+  it('does not request the microphone or record after AI sharing is declined', async () => {
+    (ensureAIConsent as jest.Mock).mockResolvedValueOnce(false);
+    const { result } = renderHook(() => useVoiceRecording());
+    await act(async () => { expect(await result.current.startRecording()).toBe(false); });
+    expect(mockRequestPerm).not.toHaveBeenCalled();
+    expect(mockRecord).not.toHaveBeenCalled();
+    expect(mockTranscribe).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     jest.clearAllMocks();
     mockRequestPerm.mockResolvedValue({ granted: true });
@@ -327,3 +345,4 @@ describe('useVoiceRecording audio session release (Bug 2: 语音后键盘失效)
     expect(releasedRecordingSession()).toBe(true);
   });
 });
+jest.mock('../../services/aiConsent', () => ({ ensureAIConsent: jest.fn().mockResolvedValue(true) }));

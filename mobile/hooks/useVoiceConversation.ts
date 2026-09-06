@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ensureAIConsent } from '../services/aiConsent';
+import { subscribeAIConsentInvalidation } from '../services/aiConsentState';
 import Voice, {
   type SpeechResultsEvent,
   type SpeechErrorEvent,
@@ -620,6 +622,7 @@ export function useVoiceConversation() {
   }, []);
 
   const startListening = useCallback(async () => {
+    if (!await ensureAIConsent() || !mountedRef.current) return;
     try {
       // 顺序很重要: 先清队列 + preSynth, 再 stopCurrentSpeech.
       // stopCurrentSpeech 会同步触发 finish → onDone → flushTTS, 若此时队列未清
@@ -686,6 +689,8 @@ export function useVoiceConversation() {
     setTranscript('');
     setError(null);
   }, [stopCurrentSpeech, setPlaybackMode]);
+
+  useEffect(() => subscribeAIConsentInvalidation(reset), [reset]);
 
   /**
    * 直接喂一段文本走 TTS 播 (不走 LLM, 用于晨间简报 / 系统播报场景).

@@ -3,6 +3,8 @@ import Voice from '@react-native-voice/voice';
 import { synthesize as cloudSynthesize } from '../../services/cloudTts';
 import { splitTextForCloudTts } from '../../utils/ttsText';
 import { useVoiceConversation } from '../useVoiceConversation';
+import { ensureAIConsent } from '../../services/aiConsent';
+import { invalidateAIConsent } from '../../services/aiConsentState';
 
 const mockSpeechSpeak = jest.fn();
 const mockSpeechStop = jest.fn();
@@ -74,6 +76,20 @@ const mockCloudSynthesize = cloudSynthesize as jest.MockedFunction<typeof cloudS
 const mockedVoice = Voice as any;
 
 describe('useVoiceConversation', () => {
+  it('stops active system recognition when AI authorization is withdrawn', async () => {
+    const { result } = renderHook(() => useVoiceConversation());
+    await act(async () => { await result.current.startListening(); });
+    jest.clearAllMocks();
+    await act(async () => { invalidateAIConsent(); });
+    expect(mockedVoice.cancel).toHaveBeenCalled();
+    expect(result.current.state).toBe('idle');
+  });
+  it('does not begin Apple speech recognition after AI consent is declined', async () => {
+    (ensureAIConsent as jest.Mock).mockResolvedValueOnce(false);
+    const { result } = renderHook(() => useVoiceConversation());
+    await act(async () => { await result.current.startListening(); });
+    expect(mockedVoice.start).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     jest.clearAllMocks();
     mockPlaybackCallbacks.length = 0;
@@ -149,3 +165,4 @@ describe('useVoiceConversation', () => {
     expect(mockedVoice.start).not.toHaveBeenCalled();
   });
 });
+jest.mock('../../services/aiConsent', () => ({ ensureAIConsent: jest.fn().mockResolvedValue(true) }));
