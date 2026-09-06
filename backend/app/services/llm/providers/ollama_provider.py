@@ -6,6 +6,7 @@ from typing import AsyncIterator, Dict, Any, List, Optional, Union
 import httpx
 
 from app.services.llm.base import LLMProvider
+from app.services.ai_consent import require_local_or_consented_ai
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,7 @@ class OllamaProvider(LLMProvider):
         if stream:
             return self._stream_chat(payload)
 
+        require_local_or_consented_ai(self.base_url)
         url = f"{self.base_url}/api/chat"
         async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
             resp = await client.post(url, json=payload)
@@ -75,6 +77,7 @@ class OllamaProvider(LLMProvider):
 
     async def _stream_chat(self, payload: Dict[str, Any]) -> AsyncIterator[str]:
         """流式调用 Ollama，解析 NDJSON 逐行返回"""
+        require_local_or_consented_ai(self.base_url)
         url = f"{self.base_url}/api/chat"
 
         async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
@@ -111,6 +114,7 @@ class OllamaProvider(LLMProvider):
         """
         use_model = model or self.model
         vision_messages = self._build_vision_messages(messages, image_url)
+        require_local_or_consented_ai(self.base_url)
 
         payload = {
             "model": use_model,

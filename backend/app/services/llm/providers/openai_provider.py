@@ -6,7 +6,7 @@ import threading
 from typing import AsyncIterator, Dict, Any, List, Optional, Union
 
 from app.services.llm.base import LLMProvider
-from app.services.ai_consent import require_ai_consent
+from app.services.ai_consent import require_ai_consent, guard_openai_client
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ def _get_shared_sync_client(client_kwargs: Dict[str, Any]):
         if client is None:
             from openai import OpenAI
 
-            client = OpenAI(**_apply_client_defaults(client_kwargs))
+            client = guard_openai_client(OpenAI(**_apply_client_defaults(client_kwargs)))
             _SYNC_CLIENT_CACHE[key] = client
             logger.info(
                 "[OpenAI Provider] 新建共享同步客户端 base_url=%s (连接池复用)",
@@ -97,7 +97,7 @@ def _get_shared_async_client(client_kwargs: Dict[str, Any]):
         if client is None:
             from openai import AsyncOpenAI
 
-            client = AsyncOpenAI(**_apply_client_defaults(client_kwargs))
+            client = guard_openai_client(AsyncOpenAI(**_apply_client_defaults(client_kwargs)))
             _ASYNC_CLIENT_CACHE[key] = client
             logger.info(
                 "[OpenAI Provider] 新建共享异步客户端 base_url=%s (连接池复用)",

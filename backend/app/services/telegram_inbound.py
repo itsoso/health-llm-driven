@@ -127,7 +127,8 @@ async def transcribe_voice_bytes(
         kwargs = {"api_key": settings.openai_api_key}
         if settings.openai_base_url:
             kwargs["base_url"] = settings.openai_base_url
-        client = OpenAI(**kwargs)
+        from app.services.ai_consent import guard_openai_client
+        client = guard_openai_client(OpenAI(**kwargs))
         with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as f:
             f.write(audio_bytes)
             path = f.name

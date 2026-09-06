@@ -46,7 +46,8 @@ class RAGPipeline:
             client_kwargs = {"api_key": settings.openai_api_key}
             if settings.openai_base_url:
                 client_kwargs["base_url"] = settings.openai_base_url
-            self.openai_client = OpenAI(**client_kwargs)
+            from app.services.ai_consent import guard_openai_client
+            self.openai_client = guard_openai_client(OpenAI(**client_kwargs))
             self.model = settings.openai_model or "gpt-4o-mini"
             logger.info("RAG Pipeline 初始化成功")
         else:

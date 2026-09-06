@@ -14,6 +14,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("mock_ai_consent_for_provider_protocol")
+
 from app.services.llm.providers.openai_provider import (
     OpenAIProvider,
     _extract_reasoning_delta,

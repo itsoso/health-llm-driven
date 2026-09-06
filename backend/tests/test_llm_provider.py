@@ -1,6 +1,8 @@
 """LLM Provider 适配层测试"""
 import json
 import pytest
+
+pytestmark = pytest.mark.usefixtures("mock_ai_consent_for_provider_protocol")
 from unittest.mock import patch, MagicMock, AsyncMock
 
 from app.services.llm.base import LLMProvider
@@ -423,7 +425,7 @@ class TestOllamaProvider:
     @pytest.mark.asyncio
     async def test_chat_non_streaming(self):
         """非流式 chat 调用 Ollama"""
-        p = OllamaProvider(base_url="http://test:11434", model="llama3")
+        p = OllamaProvider(base_url="http://localhost:11434", model="llama3")
 
         mock_response = MagicMock()
         mock_response.json.return_value = {
@@ -453,7 +455,7 @@ class TestOllamaProvider:
     @pytest.mark.asyncio
     async def test_chat_with_vision(self):
         """vision 调用 Ollama"""
-        p = OllamaProvider(base_url="http://test:11434", model="llava")
+        p = OllamaProvider(base_url="http://localhost:11434", model="llava")
 
         mock_response = MagicMock()
         mock_response.json.return_value = {

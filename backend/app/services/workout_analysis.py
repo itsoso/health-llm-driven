@@ -17,10 +17,11 @@ class WorkoutAnalysisService:
     def __init__(self):
         self.client = None
         if settings.openai_api_key:
-            self.client = OpenAI(
+            from app.services.ai_consent import guard_openai_client
+            self.client = guard_openai_client(OpenAI(
                 api_key=settings.openai_api_key,
                 base_url=settings.openai_base_url
-            )
+            ))
         self.model = settings.openai_model or "gpt-4o-mini"
 
     def _format_duration(self, seconds: int) -> str:

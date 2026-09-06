@@ -3513,7 +3513,8 @@ def _embed_system_kb_texts(texts: list[str], *, batch_size: int | None = None) -
         embedding_base_url = _system_kb_embedding_base_url()
         if embedding_base_url:
             client_kwargs["base_url"] = embedding_base_url
-        client = OpenAI(**client_kwargs)
+        from app.services.ai_consent import guard_openai_client
+        client = guard_openai_client(OpenAI(**client_kwargs))
         embeddings: list[list[float]] = []
         for index in range(0, len(prepared_texts), effective_batch_size):
             batch = prepared_texts[index : index + effective_batch_size]

@@ -189,6 +189,19 @@ def create_authenticated_user(db):
     return user, token
 
 
+@pytest.fixture
+def mock_ai_consent_for_provider_protocol(monkeypatch):
+    """Protocol-only tests mock network clients; consent has real DB/transport tests.
+
+    Explicit opt-in, never autouse: privacy tests and application integration
+    tests must keep the production gate enabled.
+    """
+    monkeypatch.setattr(
+        "app.services.llm.providers.openai_provider.require_ai_consent",
+        lambda *args, **kwargs: None,
+    )
+
+
 def grant_healthkit_consent(db, user, scopes=None):
     """Create the server-side Apple Health connection + self consent used by imports."""
     from app.services.data_connections import create_consent_grant, upsert_data_connection

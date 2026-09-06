@@ -90,7 +90,8 @@ class VectorStoreService:
                 client_kwargs = {"api_key": settings.openai_api_key}
                 if settings.openai_base_url:
                     client_kwargs["base_url"] = settings.openai_base_url
-                self.openai_client = OpenAI(**client_kwargs)
+                from app.services.ai_consent import guard_openai_client
+                self.openai_client = guard_openai_client(OpenAI(**client_kwargs))
                 logger.info("OpenAI embeddings 已启用")
             else:
                 logger.warning("OpenAI 未配置，将使用 Chroma 默认 embeddings")
@@ -98,10 +99,11 @@ class VectorStoreService:
             # 初始化 DashScope 容灾客户端
             fallback_key = getattr(settings, "llm_vision_api_key", None)
             if OPENAI_AVAILABLE and fallback_key:
-                self._fallback_client = OpenAI(
+                from app.services.ai_consent import guard_openai_client
+                self._fallback_client = guard_openai_client(OpenAI(
                     api_key=fallback_key,
                     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-                )
+                ))
                 logger.info("DashScope embeddings 容灾已启用")
 
         except Exception as e:

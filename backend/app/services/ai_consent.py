@@ -6,6 +6,8 @@ destinations and missing identities fail closed, including background jobs.
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
+import asyncio
+import inspect
 import json
 import logging
 from urllib.parse import urlsplit
@@ -80,6 +82,32 @@ def is_disclosed_model(entry) -> bool:
              "moonshot": "moonshot_base_url", "zhipu": "zhipu_base_url",
              "langbridge-proxy": "langbridge_gateway_base_url"}.get(entry.provider)
     return bool(field) and is_disclosed_destination(getattr(settings, field, None))
+
+
+def guard_openai_client(client):
+    """Guard actual SDK HTTP sends, including automatic retry and redirect.
+
+    The shared connection pool stores hooks, never a user's permission. The
+    current context and database are consulted separately on every request.
+    """
+    hooks = client._client.event_hooks.setdefault("request", [])
+    if client.__dict__.get("_ai_consent_guard_installed"):
+        return client
+    def check(request):
+        require_ai_consent(destination=str(request.url))
+    async def check_async(request):
+        await asyncio.to_thread(require_ai_consent, destination=str(request.url))
+    hooks.append(check_async if inspect.iscoroutinefunction(client._client.send) else check)
+    client._ai_consent_guard_installed = True
+    return client
+
+
+def require_local_or_consented_ai(destination: str) -> None:
+    """Only loopback Ollama is local; a provider label is not a trust boundary."""
+    parsed = urlsplit(destination)
+    if parsed.hostname in {"127.0.0.1", "::1", "localhost"} and parsed.scheme in {"http", "https"}:
+        return
+    require_ai_consent(destination=destination)
 
 
 def _settings_dict(value) -> dict:
