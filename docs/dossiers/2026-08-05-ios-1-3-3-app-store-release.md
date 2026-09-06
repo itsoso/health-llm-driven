@@ -336,3 +336,5 @@
 - 运行限制：无用户主体的公共 Celery 知识库任务不能自动重建 dense embedding，返回 `dense_vectors=0` 并记录 warning；sparse 检索仍服务。新增真实 SDK/隔离 transport 回归覆盖无主体零外发、稀疏保留和批次间撤回。不能将测试绿解释为后台 dense 能力恢复；公共任务的可信内容来源与独立授权边界需另行设计，禁止按“公开”标签直接豁免。
 - 第二轮完整 CI `34039053347` 又暴露 `test_agent_explicit_cache_flag` 的缓存降级协议缺失明确测试授权前提，已补齐，关联 33 passed / 2 PostgreSQL-only skipped。第一轮四组修复的组合验证 223 passed / 2 PostgreSQL-only skipped；生产门禁保持不变。
 - 本机 Release 模拟器使用独立合成账号/数据库，实际完成登录、问候回复、服务端撤回后发送被阻断、再次发送重现完整第三方披露、拒绝后数据库仍未授权及草稿保留。实测同时发现 Composer 把授权拒绝错误提示为网络失败；`873a66926` 用显式 required 状态区分授权拒绝与授权未知，拒绝仅保留草稿，真实网络失败仍提示。该修复 TDD 红到绿、跨聊天/语音/授权/登录/设置 14 suites / 381 passed、TypeScript 通过；更新后的模拟器视觉复验和精确主干 CI 仍待收口。
+- `873a66926` Release 模拟器视觉复验通过：完整披露可见，点击“暂不使用”后草稿保留，不再弹网络错误。独立复核补充发现迟到拒绝响应会错误清除新会话授权，`adf6f008f` 按发送 token/授权代次隔离 HTTP403 与 SSE 的失效副作用，无自动重发；独立安全复核 GO，35/35 通过。
+- 最终代码 `adf6f008f` 新鲜整合：Mobile 302 suites / 2758 passed / 1 既有 skipped，TypeScript PASS；Backend 本轮 CI 回归及授权组合 231 passed / 2 PostgreSQL-only skipped（真实 PostgreSQL 23/23 证据见上）；Release 模拟器构建成功；秘密扫描 PASS。后续仅本证据文档提交，远端精确主干 CI、生产部署与新 TestFlight 构建仍须分别验证，不将本地绿作为已发布。
