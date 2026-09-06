@@ -332,3 +332,5 @@
 - Web 生产依赖 OSV 闸 PASS；npm production audit 仅有一项 low（构建相关 selector parser），不误称零漏洞。Mobile 仍按已有有效期内、附回归证据的例外策略裁决，详见 dependency-risk-review。
 - 当前 EAS Store 候选仍为历史 Build 262（源 `3b3d4f5e4`），不包含本次整改；新模拟器构建仅作本地 QA。新 Store 包、该包的物理设备完整验收、审核账号复验、截图及当前 ASC 绑定/隐私声明仍 pending，不能据代码或旧开关标记 final-submit PASS。
 - 凭据保持在本机受控配置中，`.env-online` 明确忽略，不进入 Git。ASC 浏览器会话失效，现有本地配置未找到匹配的签名私钥；EAS 服务端自动提交能力与 ASC 页面人工确认分别验证，不混淆。
+- `8c2862591` 已推送；远端 CI `34038474074` 全量发现四组旧测试前提不兼容：流式协议缺授权隔离 fixture、路由替身缺接收方元数据、embedding SDK 替身缺 transport、旧断言不允许忽略含密钥的 `.env-online`。仅修复测试前提，生产门禁不放宽；后续精确提交 CI 全绿前继续禁止部署与构建。
+- 运行限制：无用户主体的公共 Celery 知识库任务不能自动重建 dense embedding，返回 `dense_vectors=0` 并记录 warning；sparse 检索仍服务。新增真实 SDK/隔离 transport 回归覆盖无主体零外发、稀疏保留和批次间撤回。不能将测试绿解释为后台 dense 能力恢复；公共任务的可信内容来源与独立授权边界需另行设计，禁止按“公开”标签直接豁免。
