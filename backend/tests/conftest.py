@@ -244,6 +244,22 @@ def auth_user_and_headers(db):
 
 
 @pytest.fixture
+def consenting_agent_user(request, monkeypatch):
+    """Opt-in precondition for existing authenticated agent behavior tests.
+
+    Only the synthetic user explicitly requested by that test is granted. New
+    privacy tests never use this fixture; the real database gate stays enabled.
+    """
+    if "auth_user_and_headers" not in request.fixturenames:
+        return
+    from app.services import ai_consent
+    db = request.getfixturevalue("db")
+    user, _ = request.getfixturevalue("auth_user_and_headers")
+    monkeypatch.setattr(ai_consent, "SessionLocal", sessionmaker(bind=db.get_bind()))
+    ai_consent.update_ai_consent(db, user.id, True, ai_consent.POLICY_VERSION)
+
+
+@pytest.fixture
 def sample_basic_health_data():
     """示例基础健康数据"""
     return {

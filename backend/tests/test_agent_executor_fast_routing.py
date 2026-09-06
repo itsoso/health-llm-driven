@@ -13,6 +13,8 @@ import json
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("consenting_agent_user")
+
 from app.services import agent_executor as ae
 from app.models.supplement import SupplementDefinition
 from app.services.agent_executor import (

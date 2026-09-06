@@ -9,6 +9,9 @@
 from __future__ import annotations
 
 import json as jsonlib
+import pytest
+
+pytestmark = pytest.mark.usefixtures("consenting_agent_user")
 
 from app.services.agent_send_meta import build_send_meta
 

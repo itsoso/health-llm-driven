@@ -11,6 +11,8 @@ from statistics import mean
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("consenting_agent_user")
+
 from app.models.daily_health import GarminData
 from app.models.weight import WeightRecord
 from app.orchestrator import OrchestratorRequest, run_orchestrator

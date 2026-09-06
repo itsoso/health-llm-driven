@@ -8,6 +8,8 @@ import json
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("consenting_agent_user")
+
 from app.services.agent_executor import AgentExecutor
 from app.services.llm import model_registry as reg
 

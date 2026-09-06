@@ -7,6 +7,8 @@ from datetime import UTC, date, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+
+pytestmark = pytest.mark.usefixtures("consenting_agent_user")
 from sqlalchemy.orm import sessionmaker
 
 from app.models.agent_conversation import AgentConversation, AgentMessage

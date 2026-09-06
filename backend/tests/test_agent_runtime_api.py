@@ -3,6 +3,8 @@ import json
 import time
 
 import pytest
+
+pytestmark = pytest.mark.usefixtures("consenting_agent_user")
 from sqlalchemy.orm import sessionmaker
 
 from app.config import settings

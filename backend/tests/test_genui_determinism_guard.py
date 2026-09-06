@@ -14,6 +14,8 @@ from datetime import date, timedelta
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("consenting_agent_user")
+
 from app.models.daily_health import GarminData
 from app.orchestrator import OrchestratorRequest, run_orchestrator
 from app.services.genui import (

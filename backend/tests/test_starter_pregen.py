@@ -15,6 +15,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("consenting_agent_user")
+
 from app.config import settings
 from app.models.user import User
 from app.services import starter_pregen

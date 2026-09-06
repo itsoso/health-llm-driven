@@ -2,6 +2,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("consenting_agent_user")
+
 
 def test_agent_capacity_enforces_per_user_and_release(
     db,

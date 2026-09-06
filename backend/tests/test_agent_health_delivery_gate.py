@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import pytest
+
+pytestmark = pytest.mark.usefixtures("consenting_agent_user")
 
 from sqlalchemy.orm import sessionmaker
 
