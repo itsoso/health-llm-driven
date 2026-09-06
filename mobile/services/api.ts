@@ -83,7 +83,12 @@ api.interceptors.request.use(
     // Scope a later 401 to the exact session that sent this request. Without
     // this marker, a delayed response from an old token can log out a newly
     // authenticated user after an app foreground or account switch.
-    (config as typeof config & { __revaAuthToken?: string | null }).__revaAuthToken = token;
+    const scopedConfig = config as typeof config & {
+      __revaAuthToken?: string | null;
+      __revaRequestConsentRevision?: number;
+    };
+    scopedConfig.__revaAuthToken = token;
+    scopedConfig.__revaRequestConsentRevision = aiConsentRevision();
     return config;
   },
   (error) => Promise.reject(error),
@@ -97,7 +102,15 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (isAIConsentError(error)) {
-      invalidateAIConsent(isAIConsentRequired() || error.response?.status === 403);
+      const request = error.config as {
+        __revaAuthToken?: string | null;
+        __revaRequestConsentRevision?: number;
+      } | undefined;
+      if (request?.__revaAuthToken !== undefined
+        && request.__revaAuthToken === runtimeAuthToken
+        && request.__revaRequestConsentRevision === aiConsentRevision()) {
+        invalidateAIConsent(isAIConsentRequired() || error.response?.status === 403);
+      }
     }
     if (error.response?.status === 401) {
       const requestToken = (

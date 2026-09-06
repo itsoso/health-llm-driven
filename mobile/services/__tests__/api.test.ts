@@ -49,9 +49,25 @@ describe('services/api auth failure handling', () => {
     const state = require('../aiConsentState');
     setRuntimeAuthToken('session-a');
     state.acceptAIConsentRevision(state.aiConsentRevision());
-    const error = { response: { status: 403, data: { detail: { code: 'ai_consent_required' } } } };
+    const config = await requestFulfilled?.({ headers: { get: jest.fn(), delete: jest.fn() }, method: 'post', url: '/agent/chat' });
+    const error = { config, response: { status: 403, data: { detail: { code: 'ai_consent_required' } } } };
     await expect(responseRejected?.(error)).rejects.toBe(error);
     expect(state.hasAIConsent()).toBe(false);
+  });
+
+  it.each(['account-switch', 'new-consent-generation'])('preserves a newer grant when an old request returns 403: %s', async (change) => {
+    const { setRuntimeAuthToken } = require('../api');
+    const state = require('../aiConsentState');
+    setRuntimeAuthToken('session-a');
+    state.acceptAIConsentRevision(state.aiConsentRevision());
+    const config = await requestFulfilled?.({ headers: { get: jest.fn(), delete: jest.fn() }, method: 'post', url: '/agent/chat' });
+    if (change === 'account-switch') setRuntimeAuthToken('session-b');
+    else state.invalidateAIConsent(true);
+    state.acceptAIConsentRevision(state.aiConsentRevision());
+    const error = { config, response: { status: 403, data: { detail: { code: 'ai_consent_required' } } } };
+    await expect(responseRejected?.(error)).rejects.toBe(error);
+    expect(state.hasAIConsent()).toBe(true);
+    expect(state.isAIConsentRequired()).toBe(false);
   });
 
   it.each([
