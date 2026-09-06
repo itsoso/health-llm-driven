@@ -22,11 +22,13 @@ def test_operator_docs_do_not_point_deploys_at_env_online():
     assert ".env-online" not in docs
 
 
-def test_gitignore_only_ignores_root_env_file():
+def test_gitignore_protects_primary_and_legacy_secret_files():
     gitignore = (REPO_ROOT / ".gitignore").read_text().splitlines()
 
     assert ".env" in gitignore
-    assert ".env-online" not in gitignore
+    # The deployment default remains .env; a local legacy candidate can still
+    # contain production secrets and must never become an accidental git add.
+    assert ".env-online" in gitignore
 
 
 def test_deploy_script_backs_up_remote_env_before_syncing():

@@ -47,7 +47,7 @@ class _FakeOpenAIClient:
         return iter(self._chunks)
 
 
-async def test_chat_stream_emits_content_deltas_in_real_time():
+async def test_chat_stream_emits_content_deltas_in_real_time(mock_ai_consent_for_provider_protocol):
     chunks = [
         _chunk(content="你好"),
         _chunk(content="，"),
@@ -66,7 +66,7 @@ async def test_chat_stream_emits_content_deltas_in_real_time():
     assert all(e["type"] != "tool_calls" for e in events)
 
 
-async def test_chat_stream_reassembles_tool_calls_by_index():
+async def test_chat_stream_reassembles_tool_calls_by_index(mock_ai_consent_for_provider_protocol):
     # tool_call 分片跨多个 chunk: id/name 在第一片, arguments 字符串分两片拼接。
     chunks = [
         _chunk(content="我来记录。"),
@@ -96,7 +96,7 @@ async def test_chat_stream_reassembles_tool_calls_by_index():
     assert events[-1]["finish_reason"] == "tool_calls"
 
 
-async def test_chat_stream_reassembles_two_parallel_tool_calls_by_index():
+async def test_chat_stream_reassembles_two_parallel_tool_calls_by_index(mock_ai_consent_for_provider_protocol):
     """Phase-2 rank6 回归: 切到 AsyncOpenAI + async for 后, **多个** index 的 tool_call
     分片仍各自按 index 累积 (parallel_tool_calls=true / rank5 依赖这个)。两个 tool_call
     的 arguments 分片交错到达, 必须按 index 分别拼接、按 index 升序产出。"""
