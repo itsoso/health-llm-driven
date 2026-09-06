@@ -37,6 +37,7 @@ async function loadPolicy(): Promise<AIConsentPolicy> {
 }
 
 async function promptConsent(policy: AIConsentPolicy, revision: number): Promise<boolean> {
+  clearAIConsentAuthorization(true);
   return new Promise(resolve => {
     Alert.alert('使用 AI 前，请确认数据共享', disclosure(policy), [
       { text: '暂不使用', style: 'cancel', onPress: () => resolve(false) },
@@ -103,7 +104,7 @@ export async function manageAIConsent(): Promise<void> {
         { text: '撤回授权', style: 'destructive', onPress: () => {
           if (revision !== aiConsentRevision()) { resolve(); return; }
           // Close local egress immediately while the server persists revocation.
-          invalidateAIConsent();
+          invalidateAIConsent(true);
           setAIConsentRevoking(true);
           const revokeRevision = aiConsentRevision();
           void api.put<AIConsentPolicy>('/auth/ai-consent', { accepted: false, policy_version: policy.policy_version },

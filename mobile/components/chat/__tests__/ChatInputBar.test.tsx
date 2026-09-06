@@ -13,6 +13,7 @@ import { Alert, AppState, StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import ChatInputBar from '../ChatInputBar';
+import { acceptAIConsentRevision, aiConsentRevision, invalidateAIConsent, setAIConsentIdentity } from '../../../services/aiConsentState';
 import { revaColors } from '../../../constants/revaTheme';
 
 const mockExecuteMedicalExamImport = jest.fn();
@@ -1588,6 +1589,43 @@ describe('ChatInputBar', () => {
     expect(getByLabelText('消息输入框').props.value).toBe('这条草稿不能丢');
     expect(mockClearImages).not.toHaveBeenCalled();
     expect(mockClearPersistedChatDraft).not.toHaveBeenCalled();
+  });
+
+  it('preserves a revoked-consent draft without misreporting a network failure', async () => {
+    setAIConsentIdentity('consent-session');
+    acceptAIConsentRevision(aiConsentRevision());
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    const storedImage = { uri: 'file:///draft-lunch.jpeg', base64: '', type: 'jpeg' };
+    mockPendingImages = [storedImage];
+    mockHydrateDraftImages.mockResolvedValue([{ ...storedImage, base64: 'image-fixture' }]);
+    const onSend = jest.fn(async () => { invalidateAIConsent(true); return false; });
+    const view = render(<ChatInputBar onSend={onSend} isStreaming={false} />);
+    enterKeyboardMode(view);
+    fireEvent.changeText(view.getByLabelText('消息输入框'), '保留午餐草稿');
+    try {
+      await act(async () => { fireEvent.press(view.getByLabelText('发送消息')); });
+      expect(onSend).toHaveBeenCalledTimes(1);
+      expect(view.getByLabelText('消息输入框').props.value).toBe('保留午餐草稿');
+      expect(mockClearPersistedChatDraft).not.toHaveBeenCalled();
+      expect(mockReleaseImagesAfterSend).not.toHaveBeenCalled();
+      expect(alertSpy).not.toHaveBeenCalled();
+      await act(async () => { fireEvent.press(view.getByLabelText('发送消息')); });
+      expect(onSend).toHaveBeenCalledTimes(2);
+    } finally { setAIConsentIdentity(null); }
+  });
+
+  it('still reports actual network failure when authorization is unknown', async () => {
+    setAIConsentIdentity('unknown-consent-session');
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    const onSend = jest.fn().mockResolvedValue(false);
+    const view = render(<ChatInputBar onSend={onSend} isStreaming={false} />);
+    enterKeyboardMode(view);
+    fireEvent.changeText(view.getByLabelText('消息输入框'), '网络失败也保留');
+    try {
+      await act(async () => { fireEvent.press(view.getByLabelText('发送消息')); });
+      expect(alertSpy).toHaveBeenCalledWith('发送失败', expect.stringContaining('检查网络'));
+      expect(view.getByLabelText('消息输入框').props.value).toBe('网络失败也保留');
+    } finally { setAIConsentIdentity(null); }
   });
 
   it('retains the draft when the chat engine explicitly rejects before server acceptance', async () => {

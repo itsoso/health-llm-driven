@@ -2,7 +2,7 @@ import { Alert } from 'react-native';
 import api from '../api';
 import { ensureAIConsent, manageAIConsent, requireAIConsent } from '../aiConsent';
 import { setAIConsentIdentity, invalidateAIConsent } from '../aiConsentState';
-import { hasAIConsent } from '../aiConsentState';
+import { hasAIConsent, isAIConsentRequired } from '../aiConsentState';
 
 jest.mock('../api', () => ({ __esModule: true, default: { get: jest.fn(), put: jest.fn() } }));
 jest.mock('../auth', () => ({ getToken: jest.fn(async () => 'session-a') }));
@@ -29,6 +29,7 @@ it('does not authorize or write consent when disclosure is declined', async () =
   buttons()[0].onPress();
   await expect(pending).resolves.toBe(false);
   expect(api.put).not.toHaveBeenCalled();
+  expect(isAIConsentRequired()).toBe(true);
 });
 
 it('waits for server persistence before allowing data sharing', async () => {
@@ -41,6 +42,7 @@ it('waits for server persistence before allowing data sharing', async () => {
   expect(api.put).toHaveBeenCalledWith('/auth/ai-consent', { accepted: true, policy_version: 'test-policy' }, expect.any(Object));
   resolveSave({ data: { ...policy, accepted: true, accepted_at: '2026-09-06T00:00:00Z' } });
   await pending; expect(allowed).toBe(true);
+  expect(isAIConsentRequired()).toBe(false);
 });
 
 it('fails closed if saving explicit consent fails', async () => {
@@ -101,4 +103,5 @@ it('clears prior authorization when policy fetch fails', async () => {
   (api.get as jest.Mock).mockRejectedValueOnce(new Error('offline'));
   await expect(ensureAIConsent()).resolves.toBe(false);
   expect(hasAIConsent()).toBe(false);
+  expect(isAIConsentRequired()).toBe(false);
 });

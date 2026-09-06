@@ -3,6 +3,8 @@
 let identity: string | null = null;
 let revision = 0;
 let authorized = false;
+// Distinguish a confirmed missing/revoked grant from an unreadable policy.
+let explicitlyRequired = false;
 let revocationPending = false;
 const invalidationListeners = new Set<() => void>();
 
@@ -13,9 +15,10 @@ export function setAIConsentIdentity(value: string | null): void {
   invalidateAIConsent();
 }
 
-export function invalidateAIConsent(): void {
+export function invalidateAIConsent(required = false): void {
   revision += 1;
   authorized = false;
+  explicitlyRequired = required;
   invalidationListeners.forEach(listener => listener());
 }
 
@@ -27,12 +30,17 @@ export function subscribeAIConsentInvalidation(listener: () => void): () => void
 export function aiConsentRevision(): number { return revision; }
 export function hasAIConsentIdentity(): boolean { return identity !== null; }
 export function hasAIConsent(): boolean { return identity !== null && authorized; }
-export function clearAIConsentAuthorization(): void { authorized = false; }
+export function isAIConsentRequired(): boolean { return identity !== null && explicitlyRequired; }
+export function clearAIConsentAuthorization(required = false): void {
+  authorized = false;
+  explicitlyRequired = required;
+}
 export function isAIConsentRevoking(): boolean { return revocationPending; }
 export function setAIConsentRevoking(value: boolean): void { revocationPending = value; }
 export function acceptAIConsentRevision(value: number): boolean {
   if (value !== revision || !identity || revocationPending) return false;
   authorized = true;
+  explicitlyRequired = false;
   return true;
 }
 

@@ -32,6 +32,7 @@ import {
   type ChatDraftMetadata,
 } from '../../services/chatDraftStorage';
 import { registerAppReloadPreparation } from '../../services/appReloadPreparation';
+import { isAIConsentRequired } from '../../services/aiConsentState';
 import {
   revaColors as C,
   revaRadii,
@@ -411,6 +412,7 @@ export default function ChatInputBar({
     const attachmentImageCount = pendingImages.length;
     const attachmentEventKey = createAttachmentEventKey();
     let attachmentStage: 'local_prepare' | 'server_accept' = 'local_prepare';
+    let sendAttempted = false;
     let attachmentPayload: AttachmentPayloadBucket = (
       attachmentImageCount > 0 ? attachmentPayloadBucket(pendingImages) : 'unknown'
     );
@@ -470,6 +472,7 @@ export default function ChatInputBar({
           buildVoiceDraftExtraContext(voiceDraftForSend),
         );
       }
+      sendAttempted = true;
       const sendResult = onSend(
         msg || '请分析这些图片',
         sendImages.length > 0 ? sendImages : null,
@@ -477,6 +480,13 @@ export default function ChatInputBar({
       );
       const accepted = await Promise.resolve(sendResult);
       if (accepted !== true) {
+        if (isAIConsentRequired()) {
+          if (effectiveChannelForSend === 'voice' && msg) restoreVoiceTranscriptDraft(msg);
+          else dispatchComposer({ type: 'fail', errorCode: 'ai_consent_required' });
+          // The disclosure/stream already explains authorization. Keep drafts
+          // ready for another send without adding a misleading network alert.
+          return;
+        }
         if (attachmentImageCount > 0) {
           try {
             await emitClientEvent('chat_attachment_terminal', {
@@ -516,6 +526,11 @@ export default function ChatInputBar({
         }
       }
     } catch (e) {
+      if (sendAttempted && isAIConsentRequired()) {
+        if (effectiveChannelForSend === 'voice' && msg) restoreVoiceTranscriptDraft(msg);
+        else dispatchComposer({ type: 'fail', errorCode: 'ai_consent_required' });
+        return;
+      }
       if (attachmentImageCount > 0) {
         try {
           await emitClientEvent('chat_attachment_terminal', {

@@ -1,7 +1,7 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { enforceAppEgressAllowed } from './egressPolicy';
-import { aiConsentRevision, hasAIConsent, invalidateAIConsent, isAIConsentError, setAIConsentIdentity } from './aiConsentState';
+import { aiConsentRevision, hasAIConsent, invalidateAIConsent, isAIConsentError, isAIConsentRequired, setAIConsentIdentity } from './aiConsentState';
 
 const TOKEN_KEY = 'auth_token';
 export const WEB_SESSION_AUTH_SENTINEL = '__web_cookie_session__';
@@ -96,7 +96,9 @@ export function setOnUnauthorized(cb: (() => void) | null) { onUnauthorized = cb
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (isAIConsentError(error)) invalidateAIConsent();
+    if (isAIConsentError(error)) {
+      invalidateAIConsent(isAIConsentRequired() || error.response?.status === 403);
+    }
     if (error.response?.status === 401) {
       const requestToken = (
         error.config as { __revaAuthToken?: string | null } | undefined

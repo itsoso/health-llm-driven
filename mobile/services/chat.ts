@@ -470,7 +470,7 @@ export async function* streamChat(
     if (xhr.status < 200 || xhr.status >= 300) {
       error = chatStreamHttpError(xhr.status, xhr.responseText);
       if (xhr.status === 403 && xhr.responseText.includes('ai_consent_required')) {
-        invalidateAIConsent();
+        invalidateAIConsent(true);
         error = new Error('AI 数据共享授权需要重新确认，请再次发送；原内容会保留。');
       }
       done = true;
@@ -728,7 +728,7 @@ export async function* streamChat(
         const consentRequired = parsed.data?.code === 'ai_consent_required'
           || parsed.data?.error_code === 'ai_consent_required'
           || String(parsed.data?.message || parsed.data?.detail || '').includes('ai_consent_required');
-        if (consentRequired) invalidateAIConsent();
+        if (consentRequired) invalidateAIConsent(true);
         return {
           type: 'error',
           content: consentRequired
