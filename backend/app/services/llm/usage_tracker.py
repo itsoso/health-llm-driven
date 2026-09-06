@@ -387,15 +387,23 @@ def _enforce_monthly_token_quota(
         logger.warning("[LLM Budget] quota guard unavailable in non-production: %s", exc)
 
 
+def get_caller_user_id() -> Optional[int]:
+    """Identity for background AI jobs without an HTTP request context."""
+    return _user_id_ctx.get()
+
+
+_CALLER_USER_UNSET = object()
+
+
 def set_caller(
     caller: str,
-    user_id: Optional[int] = None,
+    user_id: Optional[int] = _CALLER_USER_UNSET,
     *,
     is_admin: Optional[bool] = None,
 ) -> None:
     """在调用 LLM 前调用, 标注本次调用归属哪个业务."""
     _caller_ctx.set(caller)
-    if user_id is not None:
+    if user_id is not _CALLER_USER_UNSET:
         _user_id_ctx.set(user_id)
         # A new user binding must never inherit a prior admin exemption. Callers
         # without a loaded User leave this unknown so the guard resolves it from DB.

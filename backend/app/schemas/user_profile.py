@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class PrivacySettings(BaseModel):
     """隐私设置 - 控制哪些字段对外部API可见"""
+    model_config = ConfigDict(extra="forbid")
     weight: bool = Field(True, description="体重是否公开")
     height: bool = Field(True, description="身高是否公开")
     age: bool = Field(True, description="年龄是否公开")

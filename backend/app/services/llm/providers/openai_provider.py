@@ -6,6 +6,7 @@ import threading
 from typing import AsyncIterator, Dict, Any, List, Optional, Union
 
 from app.services.llm.base import LLMProvider
+from app.services.ai_consent import require_ai_consent
 
 logger = logging.getLogger(__name__)
 
@@ -334,6 +335,7 @@ class OpenAIProvider(LLMProvider):
         if stream:
             return self._stream_chat(messages, use_model, temperature, max_tokens, **kwargs)
 
+        require_ai_consent(destination=self.base_url or "https://api.openai.com/v1")
         client = self._get_client()
         response = await asyncio.to_thread(
             client.chat.completions.create,
@@ -382,6 +384,7 @@ class OpenAIProvider(LLMProvider):
         **kwargs,
     ) -> AsyncIterator[str]:
         """流式调用，逐 token yield"""
+        require_ai_consent(destination=self.base_url or "https://api.openai.com/v1")
         # AsyncOpenAI + `async for`:inter-chunk 网络等待不再霸占 event loop(旧代码
         # 用 asyncio.to_thread 创建后 `for chunk in response` 同步迭代,每个 ~80ms 等待
         # 阻塞整个 loop)。include_usage:让最后一个 chunk 带回 usage 真值(不兼容代理→
@@ -406,6 +409,7 @@ class OpenAIProvider(LLMProvider):
             if not auto_usage:
                 raise
             logger.info("[OpenAI Provider] 带 stream_options 创建失败,退回无 usage 流式: %s", e)
+            require_ai_consent(destination=self.base_url or "https://api.openai.com/v1")
             response = await _create_stream(
                 client.chat.completions.create,
                 {**base_kwargs, **kwargs},
@@ -438,6 +442,7 @@ class OpenAIProvider(LLMProvider):
 
         OpenAI SDK 的 streaming 是同步迭代器,在线程里跑 (同 _stream_chat)。
         """
+        require_ai_consent(destination=self.base_url or "https://api.openai.com/v1")
         use_model = model or self.model
         # return_metadata 是 chat() 的参数,流式不接受,丢弃避免传给 OpenAI SDK
         kwargs.pop("return_metadata", None)
@@ -470,6 +475,7 @@ class OpenAIProvider(LLMProvider):
                 raise
             logger.info("[OpenAI Provider] 带 stream_options 创建失败,退回无 usage 流式: %s", e)
             create_kwargs.pop("stream_options", None)
+            require_ai_consent(destination=self.base_url or "https://api.openai.com/v1")
             response = await _create_stream(client.chat.completions.create, create_kwargs)
 
         # tool_calls 分片按 index 累积: 同一个 tool_call 的 id / name / arguments
@@ -540,6 +546,7 @@ class OpenAIProvider(LLMProvider):
         将最后一条 user 消息的 content 改为包含文本和图片的列表格式。
         """
         # 构建 vision 消息
+        require_ai_consent(destination=self.base_url or "https://api.openai.com/v1")
         vision_messages = self._build_vision_messages(messages, image_url)
 
         use_model = model or self.model

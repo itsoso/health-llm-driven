@@ -58,6 +58,22 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+from app.schemas.ai_consent import AIConsentStatus, AIConsentUpdate
+
+
+@router.get("/ai-consent", response_model=AIConsentStatus)
+async def read_ai_consent(current_user: User = Depends(get_current_user_required), db: Session = Depends(get_db)):
+    from app.services.ai_consent import get_ai_consent
+    return get_ai_consent(db, current_user.id)
+
+
+@router.put("/ai-consent", response_model=AIConsentStatus)
+async def write_ai_consent(body: AIConsentUpdate, request: Request, current_user: User = Depends(get_current_user_required), db: Session = Depends(get_db)):
+    from app.services.ai_consent import update_ai_consent
+    if getattr(request.state, "is_proxy_mode", False):
+        raise HTTPException(status_code=403, detail="请使用本人账号设置 AI 数据使用授权")
+    return update_ai_consent(db, current_user.id, body.accepted, body.policy_version)
+
 # 配置限流器
 limiter = Limiter(key_func=get_remote_address)
 

@@ -86,10 +86,10 @@ def build_profile_response(profile: UserProfile) -> UserProfileResponse:
         timezone=profile.timezone or "Asia/Shanghai",
         devices=parse_json_field(profile.devices, []),
         assistant_dashboard_layouts=normalize_assistant_dashboard_layouts(profile.assistant_dashboard_layouts),
-        privacy_settings=PrivacySettings(**parse_json_field(profile.privacy_settings, {
+        privacy_settings=PrivacySettings(**{k: v for k, v in parse_json_field(profile.privacy_settings, {
             "weight": True, "height": True, "age": True,
             "gender": True, "city": True, "location": True
-        })),
+        }).items() if k in PrivacySettings.model_fields}),
         age=profile.age,
         bmi=profile.bmi,
         bmi_category=profile.bmi_category,
@@ -143,7 +143,9 @@ async def update_my_profile(
     db: Session = Depends(get_db)
 ):
     """更新当前用户的画像"""
-    profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+    from app.services.ai_consent import lock_consent_owner, merge_public_privacy
+    lock_consent_owner(db, current_user.id)
+    profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).populate_existing().first()
 
     if not profile:
         # 自动创建
@@ -153,6 +155,9 @@ async def update_my_profile(
     # 更新非空字段
     update_data = profile_data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
+        if key == "privacy_settings":
+            profile.privacy_settings = merge_public_privacy(profile.privacy_settings, value)
+            continue
         if key == "assistant_dashboard_layouts" and value is not None:
             current_layouts = normalize_assistant_dashboard_layouts(profile.assistant_dashboard_layouts).model_dump()
             for device, layout in value.items():

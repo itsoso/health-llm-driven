@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db, set_current_tenant, reset_current_tenant
 from app.models.user import User
 from app.services.auth import auth_service
+from app.services.ai_consent import ai_request_scope, bind_ai_user
 from app.services.web_session import (
     WEB_SESSION_AUTH_SENTINEL,
     WEB_SESSION_COOKIE,
@@ -39,6 +40,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=F
 def bind_authenticated_tenant(db: Session, user_id: int) -> None:
     """Bind the authenticated tenant to the current and future transactions."""
     uid = int(user_id)
+    bind_ai_user(uid)
     db.info["app_user_id"] = uid
     if db.bind is not None and db.bind.dialect.name == "postgresql":
         db.execute(
@@ -163,7 +165,8 @@ def _resolve_family_proxy_user(
 async def get_current_user(
     request: Request,
     token: Optional[str] = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _ai_scope=Depends(ai_request_scope),
 ) -> Optional[User]:
     """获取当前登录用户（可选）
 

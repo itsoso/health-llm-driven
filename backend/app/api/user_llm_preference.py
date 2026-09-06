@@ -66,6 +66,7 @@ def _ensure_profile(db: Session, user_id: int) -> UserProfile:
 
 def _list_options() -> List[ModelOption]:
     from app.services.llm.model_registry import list_models
+    from app.services.ai_consent import is_disclosed_model
 
     return [
         ModelOption(
@@ -74,6 +75,7 @@ def _list_options() -> List[ModelOption]:
             supports_streaming=m.supports_streaming,
         )
         for m in list_models(only_available=True)
+        if is_disclosed_model(m)
     ]
 
 
@@ -99,8 +101,7 @@ def update_preference(
     """切换当前用户的 LLM 偏好. None / 空 = 恢复默认."""
     new_id = (body.model_id or "").strip() or None
     if new_id is not None:
-        from app.services.llm.model_registry import list_models
-        allowed = {m.id for m in list_models(only_available=True)}
+        allowed = {m.id for m in _list_options()}
         if new_id not in allowed:
             raise HTTPException(
                 status_code=400,
