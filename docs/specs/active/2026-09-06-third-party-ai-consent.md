@@ -22,6 +22,7 @@ Before an AI action, read `GET /auth/ai-consent`. Response:
 
 ```typescript
 type AIConsent = {
+  subject_id: number;
   policy_version: string;
   accepted: boolean;
   accepted_at: string | null;
@@ -35,6 +36,11 @@ Display the server's recipient, purpose and data categories. Offer explicit
 acceptance or declining; do not preselect agreement. Persist through
 `PUT /auth/ai-consent` with `{accepted: boolean, policy_version: string}`; the
 response uses the same shape. A failed save must not enable transmission.
+Web cookie requests bind the disclosed `subject_id` in `X-Reva-AI-Subject`
+through consent writes and subsequent AI requests. The backend compares this
+assertion with the authenticated actor; it never uses it to choose a target.
+A changed cookie or missing assertion fails closed, preventing cross-tab
+account changes from granting or sending another account's draft.
 Settings exposes the same disclosure and withdrawal. Declining preserves the
 draft and access to non-AI records, privacy and account deletion.
 

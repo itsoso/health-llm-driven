@@ -1,12 +1,21 @@
 # App Store Production Dependency Risk Review
 
-Review date: 2026-08-28
+Review date: 2026-09-06
 
 ## Decision
 
-Fresh full-tree and production-only npm audits report zero known vulnerabilities. The
-backend hashed production lock also reports zero known vulnerabilities under
-`pip-audit` after removing the default-disabled legacy ChromaDB runtime dependency.
+The 2026-09-06 Mobile production and package-lock-only npm audits report 20
+findings: 15 moderate and five high transitive package paths. The high paths
+resolve to the two `image-size` denial-of-service advisories documented in
+`mobile/npm-audit-policy.json`. The policy gate passes with exceptions expiring
+on 2026-09-15; the local malicious-input regression passes 2/2. This is a
+conditional dependency-policy pass, not a zero-vulnerability result. Moderate
+findings remain for XML parsing, URI decoding and `qs` and must be assessed
+during the next dependency remediation pass.
+
+The full-tree audit and backend hashed production lock audit were not rerun in
+this 2026-09-06 review. The backend zero-vulnerability result described below is
+historical 2026-08-28 evidence and must be refreshed before release.
 
 The newly disclosed `brace-expansion` advisories are remediated across every locked
 major line used by Mobile (`1.1.18`, `2.1.4`, and `5.0.9`). PostCSS is pinned to the
@@ -27,10 +36,9 @@ evidence. Rollback installs the target lock while services are stopped, removes
 both forbidden packages, and verifies the remaining target-lock contract with the
 immutable staged verifier before any service starts.
 
-No dependency-audit exception remains. The exact remediation commit received
-independent G4b approval with no Critical or Important findings; release remains
-blocked until main CI is green. App Review also remains blocked by exact-build CI,
-build, and real-device evidence.
+The two `image-size` exceptions remain active. The historical backend remediation
+received independent G4b approval. A historical green CI run does not replace a
+fresh dependency check, and App Review still requires exact-build acceptance.
 
 ## Controls
 
@@ -41,7 +49,7 @@ build, and real-device evidence.
 - Production overrides pin patched XML, PostCSS, UUID, `brace-expansion`, and
   both locked `js-yaml` major lines.
 - Both full-tree `npm audit` and `npm audit --omit=dev` are part of the release evidence.
-- Mobile CI runs `scripts/npm-audit-gate.mjs` against an empty-exception
+- Mobile CI runs `scripts/npm-audit-gate.mjs` against the bounded-exception
   `mobile/npm-audit-policy.json`. The gate resolves every high/critical transitive
   path to its advisory leaf and fails closed on malformed, unresolved, or new
   advisories.

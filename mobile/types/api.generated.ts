@@ -4,6 +4,24 @@
  */
 
 export interface paths {
+    "/api/v1/auth/ai-consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Ai Consent */
+        get: operations["read_ai_consent_api_v1_auth_ai_consent_get"];
+        /** Write Ai Consent */
+        put: operations["write_ai_consent_api_v1_auth_ai_consent_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/register": {
         parameters: {
             query?: never;
@@ -19517,6 +19535,30 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AIConsentStatus */
+        AIConsentStatus: {
+            /** Subject Id */
+            subject_id: number;
+            /** Policy Version */
+            policy_version: string;
+            /** Accepted */
+            accepted: boolean;
+            /** Accepted At */
+            accepted_at: string | null;
+            /** Recipients */
+            recipients: components["schemas"]["AIRecipient"][];
+            /** Data Types */
+            data_types: string[];
+            /** Purpose */
+            purpose: string;
+        };
+        /** AIConsentUpdate */
+        AIConsentUpdate: {
+            /** Accepted */
+            accepted: boolean;
+            /** Policy Version */
+            policy_version: string;
+        };
         /** AIGCMediaConfirmRequest */
         AIGCMediaConfirmRequest: {
             /** Review Token */
@@ -19587,6 +19629,15 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /** AIRecipient */
+        AIRecipient: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Purpose */
+            purpose: string;
         };
         /** AIReviewRequest */
         AIReviewRequest: {
@@ -33767,6 +33818,59 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    read_ai_consent_api_v1_auth_ai_consent_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIConsentStatus"];
+                };
+            };
+        };
+    };
+    write_ai_consent_api_v1_auth_ai_consent_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AIConsentUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIConsentStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     register_api_v1_auth_register_post: {
         parameters: {
             query?: never;

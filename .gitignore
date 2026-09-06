@@ -33,6 +33,7 @@ wheels/
 # Environment variables
 .env
 .env.local
+.env-online
 
 # Mobile OTA anchor (writeable by scripts/mobile-ota.sh, used by deploy.sh drift check)
 .last-ota-commit

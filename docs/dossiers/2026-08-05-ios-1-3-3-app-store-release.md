@@ -11,6 +11,8 @@
 
 ## Correct Course
 
+- [ ] Correction Block（2026-09-06 自我审核）：**App Store NO-GO**。审查源码 `637141bd3`；EAS 最新 Store 候选已是 `1.3.3 (262)`、EAS ID `76895709-3b6a-4397-95c3-abaaee7fcad3`、source `3b3d4f5e487da92f7ac8fdf3e20c7b34fd3c1324`、FINISHED，纠正下方历史记录中“最新仍为 261”的结论。本轮未核验 ASC processing/候选绑定；已连接物理 iPhone 仍安装 261。本地模拟器同样标号 262，但未证明与 EAS 262 同源码，不能据版本号合并证据。阻断项：`mobile/services/egressPolicy.ts` 只检查云端登录；`mobile/services/chat.ts::streamChat` 和 `mobile/hooks/useChatEngine.ts` 发送文本/图片/健康上下文前缺少第三方 AI 共享的显式同意检查；隐私政策仅泛称模型服务。依据 Apple 当前 5.1.2(i)，须先明确接收方和数据用途、取得共享前许可，并覆盖自动发送、语音和后台 AI 路径。独立只读 safety reviewer 同判 NO-GO，Garmin `334ec6a95` 单项 GO。新鲜证据：基础 release-pack 与 iOS 配置闸 PASS；Mobile 登录/分享/医疗卡片/发布能力 204/204、Backend 医学来源/账号删除 27/27；本地模拟器启动、双冷启动登录态、隐私/删除入口 3/3（0 skip）；线上 privacy HTTP 200、API/数据库/Redis/Celery healthy。最终送审闸 FAIL 于审核账号/联系信息在当前环境未解析、资料 Draft、ASC 当前声明确认、候选截图与精确真机证据；这不等于断言 ASC 中这些字段为空。依赖原始 audit 为 15 moderate + 5 high 传递路径，high 归于已有 `image-size` 限期例外，policy gate 与恶意输入补丁测试 2/2 PASS；已纠正文档“零漏洞/无例外”的过期声明。当前本地另有三个未 push 提交，Garmin 修复不在 EAS 262 内。本轮未更新 ASC、未触发构建或送审。
+
 - [ ] Correction Block（2026-09-04）：本地候选（后固定为提交 `b9063c441`）以 Release / iOS Simulator 26.5 构建并安装 `小巴健康 1.3.3 (262)`，重置生产 review fixture 后使用审核演示账号完成 XCUITest `7/7`：双冷启动登录态、固定审核消息、草稿前后台恢复、入口、Today、隐私/账号删除、BMI 默认可见 NHC 引用、Safari `nhc.gov.cn` 外链及返回 App 全部 PASS；结果包仅保留本机 `/tmp/XiaobaAcceptance-Simulator-Build262-Demo-Rerun-20260904.xcresult`。本轮修复了验收脚本在键盘模式返回时只接受精确“消息输入框”标签导致的假红，并由静态测试 `17/17` 覆盖。提交仍为 `NO-GO`：已登记物理 iPhone `suntice` 当前 offline；EAS 最新 Store 候选仍是旧 source 的 Build 261，本地 262 不是已提交候选；严格 final-submit gate 还缺 ASC 私钥、精确候选 EAS/revision/真机证据、最终审核元数据与 review contact phone，以及隐私问卷、非受监管医疗设备、年龄分级和 production OTA freeze 的发布者确认。未修改 ASC、未创建 EAS Store Build、未提交审核。
 - [ ] Correction Block（2026-09-03）：在用户无法提供物理 iPhone、且当前 ASC 浏览器会话已过期的条件下，完成其余可执行加固：医学公共来源在已鉴权 SSE 边界、模型与工具工作前发送；Mobile 流式阶段立即展示独立可点击引用并记录 `citations_visible`，失败/中断时清除仅用于提前提示的引用；请求主题优先，BMI 不再被回答中的“营养/热量”等附带措辞稀释；发送与附件入口补齐 button 语义，来源链接补齐机构、外部网站与动态字体信息；审核 XCUITest 新增 BMI → NHC Safari 官方域名路径、禁用并行、固定末尾执行会写数据的 BMI 用例，并将缺登录/缺固定 Today 上下文从 `skip` 改为 fail-closed。本地当前树 Release 模拟器产物 `小巴健康 1.3.3 (262)` 编译安装成功；未登录运行正确得到 1 个启动入口 PASS、6 个 `ownerLoginRequired` FAIL，证明门禁不再把跳过冒充通过。上述源码不在 Build 261 中；若采纳为提交候选，必须先完成本轮独立 G4、commit/push、Backend 部署及新的 Store Build 262+，不得 OTA 覆盖 Build 261。Build 261 的 7 张 `261-ready-20260902` 截图已通过机器闸；EAS Build/Submit 状态本轮再次核为 FINISHED，但当前 ASC 页面状态未因登录过期而重新核验。最终仍 BLOCK 于精确候选物理 iPhone 全项证据、可用审核登录会话、ASC 当前字段复核与严格 final-submit 外部凭据/确认。
 - [ ] Correction Block（2026-09-01）：对 ASC 当前真实状态与精确 Build 261 做独立模拟审核，裁决为 `NO-GO`，未选择候选构建、未修改审核表单、未重新提交。代码/二进制层为 conditional GO，但提交层仍有 P0 阻断：没有精确 Build 261 的物理 iPhone 审核账号登录、BMI 引用可见及 NHC/CDC 外链证据；没有 `261-ready` 同包商店截图；ASC 1.3.3 仍绑定已拒绝的 Build 256，商店名称、描述/关键词、审核备注仍含旧品牌，审核备注缺少 BMI 复现步骤，审核联系人电话为空。本地 final-submit gate 同时因上述证据、提交包/审核备注仍为 Draft、审核账号占位符及本机缺少 ASC API 凭据而按预期失败。必须先补齐真机与截图证据，再同步 ASC 元数据、选择 Build 261、通过最终闸门并取得动作时用户确认；在此之前不得送审。
@@ -317,3 +319,16 @@
 - 新坑：发布规划文档提交也会触发实时依赖 advisory；必须把最新主干 CI 颜色作为预构建 Gate，锁文件安全修复不得延后到构建后。
 - 文档同步：若架构计数未变化，无 system-map 生成物变更；最终以 doc-drift 为准。
 - 状态：待 shipped。
+
+## 2026-09-06 · 第三方 AI 授权整改与复审
+
+- 本轮承接“全部解决”，不把历史 Build 的验收替代新候选。执行 ledger：`docs/_generated/harness-runs/f7011786c974.jsonl`（本机审计、不提交）；规格：`docs/specs/active/2026-09-06-third-party-ai-consent.md`。
+- 已实现版本化、按账号隔离的明确授权与撤回；披露阿里云百炼、Apple 系统语音识别和相关数据种类。Mobile/Web 拒绝保留草稿，普通记录、隐私及账号删除仍可访问；服务端逐次校验当前权限，未知接收方、旧版本、撤回、数据库不可用均拒绝外发。
+- 覆盖聊天、媒体生成、语音识别与朗读、直接 SDK/embedding、后台身份和 SDK 重试；不将无用户身份的公开后台 AI 任务默认为已获同意。旧的未披露模型偏好仅使用已披露默认服务，不继续向未知代理发送。
+- 独立审查确实发现并修复：Apple 语音启动等待中的撤回竞态；Telegram 已授权用户身份丢失和错误伪装；Web Cookie 跨标签切换账号竞态。Cookie 授权及 AI 外发携带已展示的主体断言，由服务端同次鉴权核对，不能用该字段选择目标账号。
+- 固定代码 `6e14f9dcf` 独立安全复审 GO；独立后端 10/10 与 Mobile 16/16 通过。本 GO 只裁决代码，不替代 ASC 或最终构建设备验收。
+- 新鲜验证：CI-mode 全增量后端 623 passed / 2 PostgreSQL 专项 skipped；真实隔离 PostgreSQL 授权、主体及并发用例 23/23 passed；Mobile 全量 301 suites、2748 passed / 1 既有 skipped；Web 全量 385/385、生产构建与类型检查通过；System Map、导航和文档漂移通过，双端 API 类型已再生成。
+- 真实 Aliyun 模型评测使用独立本机 PostgreSQL 中的合成账号与虚构 gold set，未发送用户健康资料：invariants 12/12、health-agent core 50/50、orchestrator 5/5（平均 0.96），trajectory 12/12 与 goldens 9/9；真实模型闸 PASS。
+- Web 生产依赖 OSV 闸 PASS；npm production audit 仅有一项 low（构建相关 selector parser），不误称零漏洞。Mobile 仍按已有有效期内、附回归证据的例外策略裁决，详见 dependency-risk-review。
+- 当前 EAS Store 候选仍为历史 Build 262（源 `3b3d4f5e4`），不包含本次整改；新模拟器构建仅作本地 QA。新 Store 包、该包的物理设备完整验收、审核账号复验、截图及当前 ASC 绑定/隐私声明仍 pending，不能据代码或旧开关标记 final-submit PASS。
+- 凭据保持在本机受控配置中，`.env-online` 明确忽略，不进入 Git。ASC 浏览器会话失效，现有本地配置未找到匹配的签名私钥；EAS 服务端自动提交能力与 ASC 页面人工确认分别验证，不混淆。
