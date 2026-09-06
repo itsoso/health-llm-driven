@@ -11,6 +11,7 @@
 只依赖注册表 + 纯函数,不打真实 LLM。
 """
 from dataclasses import dataclass
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -19,6 +20,12 @@ from app.services.llm import task_routing
 from app.services.llm.task_routing import pick_model_id_by_tier
 from app.services.llm.model_registry import get_model, list_models
 from app.orchestrator.orchestrator import _tier_for_intent
+
+
+@pytest.fixture
+def disclosed_default_provider():
+    """Model routing must preserve the real recipient gate, even with fake I/O."""
+    return SimpleNamespace(base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
 
 
 # ── 测试用最小 ModelEntry 替身(只需 id + speed_tier) ──
@@ -189,7 +196,7 @@ def test_returns_none_when_registry_empty():
         assert pick_model_id_by_tier("casual", only_available=False) is None
 
 
-def test_factory_falls_through_to_default_when_no_tier_model():
+def test_factory_falls_through_to_default_when_no_tier_model(disclosed_default_provider):
     """flag=true 但 pick 返回 None(目标档无模型)→ factory 不能 crash,
     落到既有逻辑(无 user 偏好 → 全局默认),绝不静默用弱模型。"""
     from app.config import settings
@@ -199,12 +206,12 @@ def test_factory_falls_through_to_default_when_no_tier_model():
     db.query.return_value.filter.return_value.first.return_value = None  # 无 user 偏好
     with patch.object(settings, "task_tiered_routing", True), \
          patch("app.services.llm.task_routing.pick_model_id_by_tier", return_value=None), \
-         patch.object(factory, "get_llm_provider", return_value="default-provider"):
+         patch.object(factory, "get_llm_provider", return_value=disclosed_default_provider):
         out = factory.create_provider_for_user(1, db, task_tier="high_stakes")
-    assert out == "default-provider"
+    assert out is disclosed_default_provider
 
 
-def test_factory_swallows_routing_error_and_falls_through():
+def test_factory_swallows_routing_error_and_falls_through(disclosed_default_provider):
     """路由内部抛异常 → factory 捕获后回退既有逻辑(不 fail-open 到崩,也不静默弱模型)。"""
     from app.config import settings
     from app.services.llm import factory
@@ -214,16 +221,16 @@ def test_factory_swallows_routing_error_and_falls_through():
     with patch.object(settings, "task_tiered_routing", True), \
          patch("app.services.llm.task_routing.pick_model_id_by_tier",
                side_effect=RuntimeError("boom")), \
-         patch.object(factory, "get_llm_provider", return_value="default-provider"):
+         patch.object(factory, "get_llm_provider", return_value=disclosed_default_provider):
         out = factory.create_provider_for_user(1, db, task_tier="high_stakes")
-    assert out == "default-provider"
+    assert out is disclosed_default_provider
 
 
 # ─────────────────────────────────────────────────────────────
 # (d) flag=false → 与现状完全一致(回归保护)
 # ─────────────────────────────────────────────────────────────
 
-def test_flag_off_never_invokes_routing():
+def test_flag_off_never_invokes_routing(disclosed_default_provider):
     """flag 关:pick 根本不被调用,直接回退既有(user 偏好 → 全局默认)。"""
     from app.config import settings
     from app.services.llm import factory
@@ -233,13 +240,13 @@ def test_flag_off_never_invokes_routing():
     db.query.return_value.filter.return_value.first.return_value = None
     with patch.object(settings, "task_tiered_routing", False), \
          patch("app.services.llm.task_routing.pick_model_id_by_tier", pick), \
-         patch.object(factory, "get_llm_provider", return_value="default-provider"):
+         patch.object(factory, "get_llm_provider", return_value=disclosed_default_provider):
         out = factory.create_provider_for_user(1, db, task_tier="high_stakes")
     pick.assert_not_called()
-    assert out == "default-provider"
+    assert out is disclosed_default_provider
 
 
-def test_flag_off_ignores_tier_for_every_intent_class():
+def test_flag_off_ignores_tier_for_every_intent_class(disclosed_default_provider):
     """flag 关:无论 intent 落哪个档,都不走路由(零行为变更)。"""
     from app.config import settings
     from app.services.llm import factory
@@ -250,10 +257,10 @@ def test_flag_off_ignores_tier_for_every_intent_class():
         db.query.return_value.filter.return_value.first.return_value = None
         with patch.object(settings, "task_tiered_routing", False), \
              patch("app.services.llm.task_routing.pick_model_id_by_tier", pick), \
-             patch.object(factory, "get_llm_provider", return_value="default-provider"):
+             patch.object(factory, "get_llm_provider", return_value=disclosed_default_provider):
             out = factory.create_provider_for_user(1, db, task_tier=tier)
         pick.assert_not_called()
-        assert out == "default-provider"
+        assert out is disclosed_default_provider
 
 
 def test_flag_on_high_stakes_uses_tier_model():

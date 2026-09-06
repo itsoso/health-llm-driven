@@ -4,6 +4,7 @@
 钉:tier→speed_tier 选模型;flag 关=零行为变更(不走路由);flag 开+匹配=用 tier 模型。
 """
 from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
 
 import pytest
 
@@ -213,11 +214,15 @@ def test_routing_taken_when_flag_on():
     """flag 开 + tier 匹配 → 用 tier 模型(不落到用户偏好/默认)。"""
     from app.config import settings
     from app.services.llm import factory
+    from app.services.llm.model_registry import ModelEntry
 
     sentinel = object()
+    entry = ModelEntry(id="m-x", label="Test tier model", provider="tokenplan",
+                       model="qwen-test", speed_tier="reasoning")
     with patch.object(settings, "task_tiered_routing", True), \
+         patch.object(settings, "tokenplan_base_url", "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"), \
          patch("app.services.llm.task_routing.pick_model_id_by_tier", return_value="m-x"), \
-         patch("app.services.llm.model_registry.get_model", return_value=MagicMock()), \
+         patch("app.services.llm.model_registry.get_model", return_value=entry), \
          patch.object(factory, "_create_from_entry", return_value="raw"), \
          patch("app.services.llm.usage_tracker.wrap_provider", side_effect=lambda x: x), \
          patch("app.services.llm.pii_scrub.wrap_provider_pii_scrub", return_value=sentinel):
@@ -231,14 +236,15 @@ def test_routing_skipped_when_flag_off():
     from app.services.llm import factory
 
     pick = MagicMock()
+    default_provider = SimpleNamespace(base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
     db = MagicMock()
     db.query.return_value.filter.return_value.first.return_value = None  # 无 user 偏好
     with patch.object(settings, "task_tiered_routing", False), \
          patch("app.services.llm.task_routing.pick_model_id_by_tier", pick), \
-         patch.object(factory, "get_llm_provider", return_value="default-provider"):
+         patch.object(factory, "get_llm_provider", return_value=default_provider):
         out = factory.create_provider_for_user(1, db, task_tier="high_stakes")
     pick.assert_not_called()        # flag 关 → 根本不调用路由
-    assert out == "default-provider"
+    assert out is default_provider
 
 
 # ─────────────────────────────────────────────────────────────
