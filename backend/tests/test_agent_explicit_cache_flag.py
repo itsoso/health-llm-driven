@@ -159,7 +159,9 @@ class _FailingPrimary:
 
 
 @pytest.mark.asyncio
-async def test_fallback_to_nonsupporting_model_no_cache_control(db, monkeypatch):
+async def test_fallback_to_nonsupporting_model_no_cache_control(
+    db, monkeypatch, mock_ai_consent_for_provider_protocol
+):
     """coordinator 要求的场景: flag on + 主选 qwen3.7-max (supported) 置了 markers 信号,
     主选 chat() 抛错 → executor failover 到**不支持**显式缓存的 fallback (MiniMax) →
     该 fallback 的真实 create() payload **无** cache_control (provider 最后一英里 fail-closed)。"""
