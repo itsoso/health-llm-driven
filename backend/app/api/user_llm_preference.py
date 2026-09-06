@@ -86,9 +86,11 @@ def get_preference(
 ):
     """读当前用户的 LLM 偏好 + 可选模型列表."""
     profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+    options = _list_options()
+    selected = getattr(profile, "llm_model_id", None) if profile else None
     return PreferenceResponse(
-        model_id=getattr(profile, "llm_model_id", None) if profile else None,
-        options=_list_options(),
+        model_id=selected if selected in {option.id for option in options} else None,
+        options=options,
     )
 
 
@@ -139,8 +141,7 @@ async def selftest(
     给设置页"切换完成"后立刻调用, 让用户**眼见为实**自己选的模型确实生效.
     """
     import time
-    profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-    model_id = getattr(profile, "llm_model_id", None) if profile else None
+    model_id = get_preference(current_user=current_user, db=db).model_id
 
     try:
         from app.services.llm.factory import create_provider_for_user

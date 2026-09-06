@@ -260,6 +260,7 @@ def create_provider_for_user(user_id: int, db, task_tier: str | None = None) -> 
     from app.config import settings
     from app.services.llm.usage_tracker import wrap_provider
     from app.services.llm.pii_scrub import wrap_provider_pii_scrub
+    from app.services.ai_consent import is_disclosed_model, is_disclosed_destination
 
     # 0. 任务分级路由(flag 门控;失败/无匹配静默回退到下面的既有逻辑)
     if task_tier and getattr(settings, "task_tiered_routing", False):
@@ -269,7 +270,7 @@ def create_provider_for_user(user_id: int, db, task_tier: str | None = None) -> 
             tier_model = pick_model_id_by_tier(task_tier)
             if tier_model:
                 entry = get_model(tier_model)
-                if entry:
+                if entry and is_disclosed_model(entry):
                     raw = _create_from_entry(entry)
                     logger.info(f"[LLM Factory] user={user_id} 任务路由 tier={task_tier} model={tier_model}")
                     return wrap_provider_pii_scrub(wrap_provider(raw))
@@ -284,7 +285,7 @@ def create_provider_for_user(user_id: int, db, task_tier: str | None = None) -> 
         model_id = getattr(profile, "llm_model_id", None) if profile else None
         if model_id:
             entry = get_model(model_id)
-            if entry:
+            if entry and is_disclosed_model(entry):
                 try:
                     raw = _create_from_entry(entry)
                     logger.info(f"[LLM Factory] user={user_id} 用偏好 model={model_id}")
@@ -296,4 +297,8 @@ def create_provider_for_user(user_id: int, db, task_tier: str | None = None) -> 
         logger.warning(f"[LLM Factory] 读 user={user_id} 偏好失败, 降级: {e}")
 
     # 2. 降级到全局 (admin 切换 / settings 默认)
-    return get_llm_provider()
+    provider = get_llm_provider()
+    if not is_disclosed_destination(getattr(provider, "base_url", None)):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail={"code": "ai_recipient_not_disclosed", "message": "系统默认 AI 服务尚未完成数据使用披露，暂不可用"})
+    return provider

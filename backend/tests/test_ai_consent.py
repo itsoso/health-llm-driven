@@ -262,3 +262,22 @@ def test_authenticated_http_request_binds_only_its_own_consent(db, monkeypatch):
         assert http.get("/probe").status_code == 401
         ai_consent.update_ai_consent(db, user.id, False, ai_consent.POLICY_VERSION)
         assert http.get("/probe", headers=headers).status_code == 403
+
+
+def test_legacy_undisclosed_preference_is_not_selected_or_reported_effective(db, monkeypatch):
+    from app.api.user_llm_preference import get_preference
+    from app.services.llm import factory, model_registry
+    user, _ = _headers(db)
+    db.add(UserProfile(user_id=user.id, llm_model_id="legacy-proxy"))
+    db.commit()
+    entry = model_registry.ModelEntry(id="legacy-proxy", label="Legacy", provider="openai-proxy", model="unknown", speed_tier="fast")
+    monkeypatch.setattr(model_registry, "get_model", lambda key: entry)
+    monkeypatch.setattr(model_registry, "list_models", lambda **kw: [entry])
+    def unknown_entry(*args):
+        pytest.fail("selected an undisclosed legacy preference")
+    from types import SimpleNamespace
+    safe_default = SimpleNamespace(base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+    monkeypatch.setattr(factory, "_create_from_entry", unknown_entry)
+    monkeypatch.setattr(factory, "get_llm_provider", lambda: safe_default)
+    assert factory.create_provider_for_user(user.id, db) is safe_default
+    assert get_preference(current_user=user, db=db).model_id is None
