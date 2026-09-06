@@ -281,6 +281,8 @@ Collectors + Services (L1) ← Garmin/Withings/CGM/化验/基因/环境/补剂/�
 - `intent.py` — 关键字意图分类（safety/labs/recovery/fuel/movement/mental/chronic/longevity/knowledge/longitudinal）
 - `specialists.py` — specialist 注册表，按依赖顺序执行
 - `orchestrator.py` — `run_orchestrator` (非流式) / `stream_orchestrator` (SSE)
+- `cross_review.py` — 确定性 specialist 冲突检测（营养 vs 慢病 / 训练 vs 恢复 / 补剂 vs 药物）。给冲突 finding 加 `conflict_flag`，合成 prompt 把冲突放最显眼位置。不引入额外 LLM 调用
+- `arbitration.py` — LLM 仲裁层：cross_review 检出 hard conflict 或 ≥2 冲突时才升级到 LLM 裁决（成本可控），结构化 JSON 输出写 audit log，失败 fail-soft 回退到 prompt-based 渲染
 - 共享 context：Recovery Coach 的 readiness_zone 自动传递给 Movement Coach
 - 对话记忆：注入 `conversation_memory_service` 到 LLM prompt
 - LLM 失败走模型注册表内的 provider failover
