@@ -3,7 +3,7 @@ Telegram Webhook — 用户通过 Telegram 给 bot 发文字/语音 → 自动�
 
 输入支持:
   - 文字: 直接处理
-  - 语音 (voice/audio): getFile + 下载 ogg → Whisper STT → 当文字处理
+  - 语音 (voice/audio): getFile + 下载 ogg → 已披露 ASR 服务 → 当文字处理
 
 意图分流 (services.telegram_inbound.classify_intent):
   directive (硬性指令: '戒酒 30 天')      → user_directives (老路径)
@@ -28,6 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.services.ai_consent import ai_user_scope, require_ai_consent
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/telegram", tags=["telegram"])
@@ -51,7 +52,21 @@ async def _reply_to_telegram(chat_id: str, text: str, reply_to_message_id: Optio
             return
         await svc.send_message(text=text, chat_id=str(chat_id))
     except Exception as e:  # noqa: BLE001
-        logger.warning(f"[telegram-webhook] 回复失败 (旁路): {e}")
+        logger.warning("[telegram-webhook] reply failed error_type=%s", type(e).__name__)
+
+
+async def _reply_ai_permission_error(chat_id: str, exc: HTTPException) -> dict:
+    detail = exc.detail if isinstance(exc.detail, dict) else {}
+    code = detail.get("code")
+    messages = {
+        "ai_consent_required": "请先在小巴健康 App 的设置中阅读并确认 AI 数据使用授权；撤回后需重新确认才能使用 AI。",
+        "ai_consent_unavailable": "暂时无法核验 AI 数据使用授权，请稍后重试。",
+        "ai_recipient_not_disclosed": "当前 AI 服务尚未完成数据使用披露，暂不可用，请在 App 中使用已披露的服务。",
+    }
+    if code not in messages:
+        code = "handler_error"
+    await _reply_to_telegram(chat_id, messages.get(code, "暂时无法处理，请稍后重试。"))
+    return {"ok": False, "reason": code}
 
 
 @router.post("/webhook", summary="Telegram bot webhook (健康助理入口)")
@@ -66,7 +81,7 @@ async def telegram_webhook(
     try:
         update: Dict[str, Any] = await request.json()
     except Exception as e:
-        logger.warning(f"[telegram-webhook] JSON parse failed: {e}")
+        logger.warning("[telegram-webhook] JSON parse failed error_type=%s", type(e).__name__)
         return {"ok": False, "reason": "bad_json"}
 
     msg = update.get("message") or update.get("edited_message") or {}
@@ -95,7 +110,7 @@ async def telegram_webhook(
         return {"ok": True, "ignored": "advisor_not_configured"}
 
     if chat_id != advisor_chat_id:
-        logger.info(f"[telegram-webhook] chat_id={chat_id} 非 advisor, 忽略")
+        logger.info("[telegram-webhook] unconfigured chat ignored")
         return {"ok": True, "ignored": "not_advisor_chat"}
 
     # ── 语音消息 → STT → text ──
@@ -111,8 +126,14 @@ async def telegram_webhook(
         if not audio:
             await _reply_to_telegram(chat_id, "⚠️ 语音下载失败")
             return {"ok": False, "reason": "download_failed"}
-        # Telegram voice 是 ogg/opus 容器
-        text = await transcribe_voice_bytes(audio, ext="ogg") or ""
+        # Only the server-configured advisor mapping, checked above, may bind AI
+        # identity. A payload user_id never participates in this authorization.
+        try:
+            with ai_user_scope(int(advisor_user_id)):
+                require_ai_consent()
+                text = await transcribe_voice_bytes(audio, ext="ogg") or ""
+        except HTTPException as exc:
+            return await _reply_ai_permission_error(chat_id, exc)
         if not text:
             await _reply_to_telegram(chat_id, "⚠️ 语音识别失败, 试试发文字")
             return {"ok": False, "reason": "transcribe_failed"}
@@ -144,16 +165,22 @@ async def telegram_webhook(
     # 主路径: 自动意图分流
     from app.services.telegram_inbound import handle_inbound_text
     try:
-        reply = await handle_inbound_text(
-            db,
-            int(advisor_user_id),
-            text,
-            source_message_id=str(message_id) if message_id is not None else None,
-            source_conversation_id=chat_id,
-        )
+        with ai_user_scope(int(advisor_user_id)):
+            # Commands and empty messages have already returned above. This
+            # entry invokes AI, so report permission failures before parsing.
+            require_ai_consent()
+            reply = await handle_inbound_text(
+                db,
+                int(advisor_user_id),
+                text,
+                source_message_id=str(message_id) if message_id is not None else None,
+                source_conversation_id=chat_id,
+            )
+    except HTTPException as exc:
+        return await _reply_ai_permission_error(chat_id, exc)
     except Exception as e:
-        logger.error(f"[telegram-webhook] handle_inbound_text 失败: {e}", exc_info=True)
-        await _reply_to_telegram(chat_id, f"⚠️ 处理出错: {str(e)[:120]}")
+        logger.error("[telegram-webhook] handler failed error_type=%s", type(e).__name__)
+        await _reply_to_telegram(chat_id, "暂时无法处理，请稍后重试。")
         return {"ok": False, "reason": "handler_error"}
 
     await _reply_to_telegram(chat_id, reply)

@@ -908,6 +908,8 @@ async def handle_wechat_message(
             detail="缺少微信原始消息 ID，无法安全防止重复处理",
         )
     from app.services.wechat_bot import WeChatBotHandler
+    from app.services.ai_consent import require_ai_consent
+    require_ai_consent(current_user.id)
     handler = WeChatBotHandler(db)
     result = await handler.handle_message({
         "msg_type": req.msg_type,

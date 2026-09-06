@@ -5,7 +5,7 @@ from app.models.user_directive import UserDirective
 
 
 @pytest.fixture(autouse=True)
-def _patch_settings(monkeypatch):
+def _patch_settings(monkeypatch, db):
     """配置模拟的 advisor chat."""
     from app.config import settings
     monkeypatch.setattr(settings, "telegram_advisor_chat_id", "12345")
@@ -13,6 +13,18 @@ def _patch_settings(monkeypatch):
     monkeypatch.setattr(settings, "telegram_doctor_chat_id", None)
     monkeypatch.setattr(settings, "telegram_doctor_user_id", None)
     monkeypatch.setattr(settings, "telegram_webhook_secret", "test-secret")
+    # These established webhook behavior tests explicitly use one consenting
+    # synthetic advisor; privacy denial cases live in test_ai_consent_telegram.
+    from sqlalchemy.orm import sessionmaker
+    from app.models.user import User
+    from app.services import ai_consent
+    user = User(id=7, username="telegram-test-advisor", email="telegram@example.test",
+                hashed_password="not-a-real-credential", name="Test advisor",
+                is_active=True, is_approved=True)
+    db.add(user)
+    db.commit()
+    monkeypatch.setattr(ai_consent, "SessionLocal", sessionmaker(bind=db.get_bind()))
+    ai_consent.update_ai_consent(db, user.id, True, ai_consent.POLICY_VERSION)
 
 
 @pytest.fixture(autouse=True)

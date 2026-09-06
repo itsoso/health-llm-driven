@@ -3,7 +3,7 @@ Telegram inbound 处理器 — 把用户在 Telegram 发的语音/文字解析�
 
 流程:
   用户 → Telegram → bot 转发到 webhook
-  → 如果是 voice 消息: getFile + 下载 ogg → Whisper STT → 文字
+  → 如果是 voice 消息: getFile + 下载 ogg → 已披露 ASR 服务 → 文字
   → 意图分类 (共享 Agent Kernel 语义帧):
       directive → user_directives (走 directive_parser, 老路径)
       record    → 调 health_record 工具 (LLM tool calling, 单次)
@@ -13,7 +13,7 @@ Telegram inbound 处理器 — 把用户在 Telegram 发的语音/文字解析�
 Karpathy verification 思想: 写库前预览 + 用户在 Telegram 直接看到结果.
 
 最小依赖:
-  - openai SDK (已有, Whisper + chat)
+  - 共享 speech_transcription 服务 (已披露语音供应商)
   - httpx (已有)
   - LLM provider (现成 services.llm.factory)
 """
@@ -21,11 +21,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import tempfile
+import asyncio
 from typing import Optional
 
 import httpx
+from fastapi import HTTPException
 
 from app.config import settings
 from app.services.agent_kernel.intent_frame import build_intent_frame
@@ -119,33 +119,18 @@ async def download_telegram_file(file_id: str) -> Optional[bytes]:
 async def transcribe_voice_bytes(
     audio_bytes: bytes, ext: str = "ogg"
 ) -> Optional[str]:
-    """走 OpenAI Whisper. ext 通常 ogg (Telegram voice 默认 opus in ogg container)."""
-    if not settings.openai_api_key:
-        return None
+    """Reuse the disclosed ASR route and preserve the verified request scope."""
+    from app.services.ai_consent import require_ai_consent
+    from app.services.speech_transcription import transcribe_audio_bytes
+    require_ai_consent()
     try:
-        from openai import OpenAI
-        kwargs = {"api_key": settings.openai_api_key}
-        if settings.openai_base_url:
-            kwargs["base_url"] = settings.openai_base_url
-        from app.services.ai_consent import guard_openai_client
-        client = guard_openai_client(OpenAI(**kwargs))
-        with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as f:
-            f.write(audio_bytes)
-            path = f.name
-        try:
-            with open(path, "rb") as af:
-                t = client.audio.transcriptions.create(
-                    model="whisper-1", file=af, language="zh"
-                )
-            return (t.text or "").strip()
-        finally:
-            try:
-                os.unlink(path)
-            except Exception:
-                pass
+        result = await asyncio.to_thread(transcribe_audio_bytes, audio_bytes, ext)
+        return (result.text or "").strip()
+    except HTTPException:
+        raise
     except Exception as e:
         logger.warning(
-            "[telegram-inbound] whisper failed error_type=%s",
+            "[telegram-inbound] transcription failed error_type=%s",
             type(e).__name__,
         )
         return None
@@ -207,6 +192,8 @@ async def llm_extract_record(text: str) -> Optional[dict]:
         except json.JSONDecodeError:
             return None
         return args
+    except HTTPException:
+        raise
     except Exception as e:
         logger.warning(
             "[telegram-inbound] llm_extract_record failed error_type=%s",
