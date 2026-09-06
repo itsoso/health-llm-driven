@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ensureAIConsent } from '../services/aiConsent';
-import { subscribeAIConsentInvalidation } from '../services/aiConsentState';
+import { aiConsentRevision, subscribeAIConsentInvalidation } from '../services/aiConsentState';
 import Voice, {
   type SpeechResultsEvent,
   type SpeechErrorEvent,
@@ -194,6 +194,7 @@ export function useVoiceConversation() {
   const voiceEventLeaseRef = useRef<VoiceEventLease | null>(null);
   const voiceHandlersRef = useRef<VoiceEventHandlers>({});
   const mountedRef = useRef(true);
+  const listeningStartSeqRef = useRef(0);
   const resumeListeningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // I Phase 2: 本次会话内成功 health_record 的录入摘要 (关闭 voice-chat 时弹 summary 卡用)
@@ -601,6 +602,7 @@ export function useVoiceConversation() {
     };
     return () => {
       mountedRef.current = false;
+      listeningStartSeqRef.current += 1;
       if (resumeListeningTimerRef.current) {
         clearTimeout(resumeListeningTimerRef.current);
         resumeListeningTimerRef.current = null;
@@ -622,7 +624,11 @@ export function useVoiceConversation() {
   }, []);
 
   const startListening = useCallback(async () => {
-    if (!await ensureAIConsent() || !mountedRef.current) return;
+    const startSeq = ++listeningStartSeqRef.current;
+    if (!await ensureAIConsent() || !mountedRef.current || startSeq !== listeningStartSeqRef.current) return;
+    const consentRevision = aiConsentRevision();
+    const isCurrentStart = () => mountedRef.current && startSeq === listeningStartSeqRef.current
+      && consentRevision === aiConsentRevision();
     try {
       // 顺序很重要: 先清队列 + preSynth, 再 stopCurrentSpeech.
       // stopCurrentSpeech 会同步触发 finish → onDone → flushTTS, 若此时队列未清
@@ -638,11 +644,17 @@ export function useVoiceConversation() {
       justSubmittedRef.current = false;  // 新一轮开始, 解锁 listener
       // 先切到 .playAndRecord, 再启动 Voice — 顺序很重要, Voice.start 依赖 session 已经就绪
       await setRecordingMode();
+      if (!isCurrentStart()) return;
       releaseVoiceEventHandlers(voiceEventLeaseRef.current);
       voiceEventLeaseRef.current = bindVoiceEventHandlers(voiceHandlersRef.current);
       setState('listening');
       await Voice.start('zh-CN');
+      if (!isCurrentStart()) {
+        await Voice.cancel();
+        await Voice.stop();
+      }
     } catch (e: any) {
+      if (!isCurrentStart()) return;
       releaseVoiceEventHandlers(voiceEventLeaseRef.current);
       voiceEventLeaseRef.current = null;
       setError(String(e?.message || e));
@@ -653,6 +665,7 @@ export function useVoiceConversation() {
   }, [stopCurrentSpeech, setRecordingMode, setPlaybackMode]);
 
   const stopListening = useCallback(async () => {
+    listeningStartSeqRef.current += 1;
     if (silenceTimerRef.current) {
       clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = null;
@@ -663,6 +676,7 @@ export function useVoiceConversation() {
   }, [setPlaybackMode]);
 
   const reset = useCallback(() => {
+    listeningStartSeqRef.current += 1;
     if (silenceTimerRef.current) {
       clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = null;

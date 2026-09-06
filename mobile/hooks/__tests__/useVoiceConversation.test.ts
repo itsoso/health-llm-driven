@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import Voice from '@react-native-voice/voice';
+import { setAudioModeAsync } from 'expo-audio';
 import { synthesize as cloudSynthesize } from '../../services/cloudTts';
 import { splitTextForCloudTts } from '../../utils/ttsText';
 import { useVoiceConversation } from '../useVoiceConversation';
@@ -76,12 +77,37 @@ const mockCloudSynthesize = cloudSynthesize as jest.MockedFunction<typeof cloudS
 const mockedVoice = Voice as any;
 
 describe('useVoiceConversation', () => {
+  it('does not restart Apple recognition if consent is withdrawn while audio setup waits', async () => {
+    let release!: () => void;
+    (setAudioModeAsync as jest.Mock).mockImplementation(options => options.allowsRecording
+      ? new Promise<void>(resolve => { release = resolve; }) : Promise.resolve());
+    const { result } = renderHook(() => useVoiceConversation());
+    let start!: Promise<void>;
+    await act(async () => { start = result.current.startListening(); });
+    await act(async () => { invalidateAIConsent(); });
+    await act(async () => { release(); await start; });
+    expect(mockedVoice.start).not.toHaveBeenCalled();
+    expect(result.current.state).toBe('idle');
+  });
   it('stops active system recognition when AI authorization is withdrawn', async () => {
     const { result } = renderHook(() => useVoiceConversation());
     await act(async () => { await result.current.startListening(); });
     jest.clearAllMocks();
     await act(async () => { invalidateAIConsent(); });
     expect(mockedVoice.cancel).toHaveBeenCalled();
+    expect(result.current.state).toBe('idle');
+  });
+  it('cancels a native start that finishes after withdrawal', async () => {
+    let release!: () => void;
+    mockedVoice.start.mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }));
+    const { result } = renderHook(() => useVoiceConversation());
+    let start!: Promise<void>;
+    await act(async () => { start = result.current.startListening(); });
+    expect(mockedVoice.start).toHaveBeenCalled();
+    await act(async () => { invalidateAIConsent(); });
+    const cancellations = mockedVoice.cancel.mock.calls.length;
+    await act(async () => { release(); await start; });
+    expect(mockedVoice.cancel.mock.calls.length).toBeGreaterThan(cancellations);
     expect(result.current.state).toBe('idle');
   });
   it('does not begin Apple speech recognition after AI consent is declined', async () => {
@@ -92,6 +118,7 @@ describe('useVoiceConversation', () => {
   });
   beforeEach(() => {
     jest.clearAllMocks();
+    (setAudioModeAsync as jest.Mock).mockResolvedValue(undefined);
     mockPlaybackCallbacks.length = 0;
     mockAutoFinishPlayback = true;
   });
