@@ -37,6 +37,8 @@ APPLE_PRIVACY_TYPE_TO_MANIFEST_TYPE = {
     "Health": "NSPrivacyCollectedDataTypeHealth",
     "Fitness": "NSPrivacyCollectedDataTypeFitness",
     "Email Address": "NSPrivacyCollectedDataTypeEmailAddress",
+    "Phone Number": "NSPrivacyCollectedDataTypePhoneNumber",
+    "Sensitive Info": "NSPrivacyCollectedDataTypeSensitiveInfo",
     "User ID": "NSPrivacyCollectedDataTypeUserID",
     "Device ID": "NSPrivacyCollectedDataTypeDeviceID",
     "Other User Content": "NSPrivacyCollectedDataTypeOtherUserContent",

@@ -94,13 +94,30 @@
       "collection_notes": "The production app has no account-free local mode or bundled on-device inference model. User-selected meal and report images are uploaded to the authenticated service for recognition. Meal photo drafts are owner-scoped and expire after 24 hours if not saved; saved photos remain attached to the user's record until the user deletes the record or account. Voice input audio is uploaded through the authenticated service to cloud ASR for transcription and is not used for advertising or tracking."
     },
     {
+      "category": "Sensitive Info",
+      "apple_data_types": [
+        "Sensitive Info"
+      ],
+      "examples": [
+        "genetic_information_from_user_uploaded_raw_data_and_reports"
+      ],
+      "purpose": [
+        "app_functionality",
+        "personalization"
+      ],
+      "linked_to_user": true,
+      "used_for_tracking": false
+    },
+    {
       "category": "Contact Info",
       "apple_data_types": [
-        "Email Address"
+        "Email Address",
+        "Phone Number"
       ],
       "examples": [
         "email",
-        "username"
+        "username",
+        "phone_number"
       ],
       "purpose": [
         "app_functionality"

@@ -263,6 +263,8 @@ describe('app.config app links', () => {
       'NSPrivacyCollectedDataTypeHealth',
       'NSPrivacyCollectedDataTypeFitness',
       'NSPrivacyCollectedDataTypeEmailAddress',
+      'NSPrivacyCollectedDataTypePhoneNumber',
+      'NSPrivacyCollectedDataTypeSensitiveInfo',
       'NSPrivacyCollectedDataTypeUserID',
       'NSPrivacyCollectedDataTypeOtherUserContent',
       'NSPrivacyCollectedDataTypePhotosorVideos',

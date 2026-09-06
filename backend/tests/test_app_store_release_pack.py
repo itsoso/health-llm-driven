@@ -28,6 +28,46 @@ from scripts.check_app_store_release_pack import (
 def test_release_pack_requires_dependency_risk_review():
     assert "docs/release/app-store/dependency-risk-review.md" in REQUIRED_FILES
 
+
+def test_release_pack_discloses_phone_and_email_for_account_functionality():
+    root = Path(__file__).resolve().parents[2]
+    privacy = json.loads(
+        (root / "docs/release/app-store/privacy-nutrition-label.draft.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    # The production login screen collects phone numbers for SMS sign-in;
+    # account/password sign-in still supports email addresses.
+    contact_info = next(
+        item for item in privacy["data_types"] if item["category"] == "Contact Info"
+    )
+
+    assert {"Phone Number", "Email Address"} <= set(contact_info["apple_data_types"])
+    assert "phone_number" in contact_info["examples"]
+    assert contact_info["purpose"] == ["app_functionality"]
+    assert contact_info["linked_to_user"] is True
+    assert contact_info["used_for_tracking"] is False
+
+
+def test_release_pack_discloses_uploaded_genetics_as_sensitive_info():
+    root = Path(__file__).resolve().parents[2]
+    privacy = json.loads(
+        (root / "docs/release/app-store/privacy-nutrition-label.draft.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    sensitive_info = [
+        item for item in privacy["data_types"]
+        if "Sensitive Info" in item["apple_data_types"]
+    ]
+
+    assert len(sensitive_info) == 1, "Uploaded genetic information needs Sensitive Info disclosure"
+    assert sensitive_info[0]["purpose"] == ["app_functionality", "personalization"]
+    assert sensitive_info[0]["linked_to_user"] is True
+    assert sensitive_info[0]["used_for_tracking"] is False
+    assert "genetic_information_from_user_uploaded_raw_data_and_reports" in sensitive_info[0]["examples"]
+
+
 REQUIRED_SCREENSHOT_NAMES = [
     "00-launch",
     "01-today",

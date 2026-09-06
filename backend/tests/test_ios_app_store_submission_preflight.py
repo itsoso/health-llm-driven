@@ -51,6 +51,8 @@ def test_ios_app_store_submission_preflight_passes_repo_config():
         "NSPrivacyCollectedDataTypeHealth",
         "NSPrivacyCollectedDataTypeFitness",
         "NSPrivacyCollectedDataTypeEmailAddress",
+        "NSPrivacyCollectedDataTypePhoneNumber",
+        "NSPrivacyCollectedDataTypeSensitiveInfo",
         "NSPrivacyCollectedDataTypeUserID",
         "NSPrivacyCollectedDataTypeOtherUserContent",
         "NSPrivacyCollectedDataTypePhotosorVideos",
@@ -67,6 +69,8 @@ def test_ios_app_store_submission_preflight_requires_all_published_privacy_types
     from scripts.check_ios_app_store_submission import REQUIRED_PRIVACY_DATA_TYPES
 
     assert {
+        "NSPrivacyCollectedDataTypePhoneNumber",
+        "NSPrivacyCollectedDataTypeSensitiveInfo",
         "NSPrivacyCollectedDataTypeAudioData",
         "NSPrivacyCollectedDataTypeDeviceID",
         "NSPrivacyCollectedDataTypeProductInteraction",
@@ -103,7 +107,7 @@ def test_ios_privacy_manifest_alignment_fails_closed_for_semantic_mutations():
     extra = deepcopy(manifest)
     extra["NSPrivacyCollectedDataTypes"].append(
         {
-            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypePhoneNumber",
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeContacts",
             "NSPrivacyCollectedDataTypeLinked": True,
             "NSPrivacyCollectedDataTypeTracking": False,
             "NSPrivacyCollectedDataTypePurposes": [
