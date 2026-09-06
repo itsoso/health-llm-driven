@@ -1,12 +1,68 @@
 from datetime import UTC, datetime
+import json
 from pathlib import Path
-from types import SimpleNamespace
-import sys
+
+import httpx
+import openai
+import pytest
+from sqlalchemy.orm import sessionmaker
 
 from app.config import settings
 from app.models.system_knowledge import KBAudit, KBDocument, KBDocumentVector, KBEdge
-from app.services import system_knowledge_service
+from app.services import ai_consent, system_knowledge_service
 from app.services.system_knowledge_service import reindex_knowledge_documents, search_knowledge
+
+
+@pytest.fixture
+def consented_embedding_actor(db, auth_user_and_headers, monkeypatch):
+    """Keep the real permission gate; authorize only this synthetic operator."""
+    user, _ = auth_user_and_headers
+    monkeypatch.setattr(ai_consent, "SessionLocal", sessionmaker(bind=db.get_bind()))
+    ai_consent.update_ai_consent(db, user.id, True, ai_consent.POLICY_VERSION)
+    with ai_consent.ai_user_scope(user.id):
+        yield user
+
+
+@pytest.fixture
+def embedding_transport(monkeypatch):
+    """Replace network I/O, retaining the SDK and its consent request hooks."""
+    original_client = openai.OpenAI
+    clients = []
+
+    def install(respond, captured):
+        def client(**kwargs):
+            captured["client_kwargs"] = kwargs
+            sdk = original_client(
+                **kwargs,
+                http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+                max_retries=0,
+            )
+            clients.append(sdk)
+            return sdk
+
+        monkeypatch.setattr(openai, "OpenAI", client)
+        monkeypatch.setattr(settings, "system_kb_embedding_api_key", "system-kb-key")
+        monkeypatch.setattr(
+            settings, "system_kb_embedding_base_url",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        )
+        monkeypatch.setattr(settings, "system_kb_embedding_model", "text-embedding-v3")
+
+    yield install
+    for client in clients:
+        client.close()
+
+
+def _embedding_response(vectors):
+    return httpx.Response(200, json={
+        "object": "list",
+        "model": "text-embedding-v3",
+        "data": [
+            {"object": "embedding", "index": index, "embedding": vector}
+            for index, vector in enumerate(vectors)
+        ],
+        "usage": {"prompt_tokens": 1, "total_tokens": 1},
+    })
 
 
 def _seed_vector_knowledge(db):
@@ -206,63 +262,85 @@ def test_system_kb_reindex_report_audits_pgvector_health(db, monkeypatch):
     assert audit.diff["pgvector"]["embedding_rows"] == 3
 
 
-def test_system_kb_embeddings_use_dedicated_provider_settings(monkeypatch):
+def test_system_kb_embeddings_use_dedicated_provider_settings(
+    consented_embedding_actor, embedding_transport,
+):
     captured = {}
 
-    class FakeEmbeddings:
-        def create(self, *, model, input):
-            captured["model"] = model
-            captured["input"] = input
-            return SimpleNamespace(
-                data=[
-                    SimpleNamespace(embedding=[0.1, 0.2, 0.3])
-                    for _ in input
-                ]
-            )
+    def respond(request):
+        captured.update(json.loads(request.content))
+        return _embedding_response([[0.1, 0.2, 0.3]])
 
-    class FakeOpenAI:
-        def __init__(self, **kwargs):
-            captured["client_kwargs"] = kwargs
-            self.embeddings = FakeEmbeddings()
-
-    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
-    monkeypatch.setattr(settings, "system_kb_embedding_api_key", "system-kb-key")
-    monkeypatch.setattr(settings, "system_kb_embedding_base_url", "https://embedding.example/v1")
-    monkeypatch.setattr(settings, "system_kb_embedding_model", "text-embedding-v3")
-
+    embedding_transport(respond, captured)
     embeddings = system_knowledge_service._embed_system_kb_texts(["hello"])
 
     assert embeddings == [[0.1, 0.2, 0.3]]
     assert captured["client_kwargs"] == {
         "api_key": "system-kb-key",
-        "base_url": "https://embedding.example/v1",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     }
     assert captured["model"] == "text-embedding-v3"
+    assert captured["input"] == ["hello"]
 
 
-def test_system_kb_embeddings_honor_configured_batch_size(monkeypatch):
+def test_system_kb_embeddings_honor_configured_batch_size(
+    monkeypatch, consented_embedding_actor, embedding_transport,
+):
     calls = []
 
-    class FakeEmbeddings:
-        def create(self, *, model, input):
-            calls.append(list(input))
-            return SimpleNamespace(
-                data=[
-                    SimpleNamespace(embedding=[float(index)])
-                    for index, _ in enumerate(input)
-                ]
-            )
+    def respond(request):
+        batch = json.loads(request.content)["input"]
+        calls.append(batch)
+        return _embedding_response([[float(index)] for index, _ in enumerate(batch)])
 
-    class FakeOpenAI:
-        def __init__(self, **kwargs):
-            self.embeddings = FakeEmbeddings()
-
-    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
-    monkeypatch.setattr(settings, "system_kb_embedding_api_key", "system-kb-key")
-    monkeypatch.setattr(settings, "system_kb_embedding_base_url", "https://embedding.example/v1")
+    embedding_transport(respond, {})
     monkeypatch.setattr(settings, "system_kb_embedding_batch_size", 2)
 
     embeddings = system_knowledge_service._embed_system_kb_texts(["a", "b", "c", "d", "e"])
 
     assert embeddings == [[0.0], [1.0], [0.0], [1.0], [0.0]]
     assert calls == [["a", "b"], ["c", "d"], ["e"]]
+
+
+def test_unbound_public_reindex_reports_no_dense_vectors_and_retains_sparse_search(
+    db, monkeypatch, embedding_transport, caplog,
+):
+    """Public KB text does not implicitly exempt a scheduled job from consent."""
+    _seed_vector_knowledge(db)
+    sent = []
+
+    def respond(request):
+        sent.append(request)
+        return _embedding_response([[0.1]])
+
+    embedding_transport(respond, {})
+    monkeypatch.setattr(system_knowledge_service, "_ensure_pgvector_table", lambda _db: True)
+    with ai_consent.ai_user_scope(None):
+        result = reindex_knowledge_documents(db, actor="celery:system_kb_reindex")
+        payload = search_knowledge(db, "methylfolate", limit=5)
+
+    assert result["dense_vectors"] == 0
+    assert sent == []
+    assert "sparse vector fallback remains active" in caplog.text
+    assert payload["retrieval_plan"]["vector_backend"] == "sparse_term_cosine_v1"
+    assert "claim:c_mthfr_c677t_hcy_folate_boundary" in [
+        item["document"]["doc_id"] for item in payload["results"]
+    ]
+
+
+def test_system_kb_embedding_batch_stops_after_consent_withdrawal(
+    db, monkeypatch, consented_embedding_actor, embedding_transport,
+):
+    sent = []
+
+    def respond(request):
+        sent.append(json.loads(request.content)["input"])
+        ai_consent.update_ai_consent(
+            db, consented_embedding_actor.id, False, ai_consent.POLICY_VERSION,
+        )
+        return _embedding_response([[0.1]])
+
+    embedding_transport(respond, {})
+    monkeypatch.setattr(settings, "system_kb_embedding_batch_size", 1)
+    assert system_knowledge_service._embed_system_kb_texts(["public document", "private query"]) is None
+    assert sent == [["public document"]]
