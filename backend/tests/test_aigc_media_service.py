@@ -4,6 +4,13 @@ import httpx
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _authorized_provider_unit_boundary(monkeypatch):
+    # Provider protocol tests use synthetic data and fake HTTP transport.
+    # Denial/revocation behavior is exercised in test_ai_consent_aigc_egress.
+    monkeypatch.setattr("app.services.aigc_media_service.require_ai_consent", lambda **kwargs: None)
+
+
 @pytest.mark.asyncio
 async def test_provider_auth_rejection_has_a_stable_safe_error_code():
     from app.services.aigc_media_service import AIGCMediaProvider, AIGCMediaProviderError

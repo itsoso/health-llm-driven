@@ -6,6 +6,15 @@ import pytest
 import httpx
 
 
+@pytest.fixture(autouse=True)
+def _consenting_job_owner(db, auth_user_and_headers, monkeypatch):
+    from sqlalchemy.orm import sessionmaker
+    from app.services import ai_consent
+    user, _ = auth_user_and_headers
+    monkeypatch.setattr(ai_consent, "SessionLocal", sessionmaker(bind=db.get_bind()))
+    ai_consent.update_ai_consent(db, user.id, True, ai_consent.POLICY_VERSION)
+
+
 class _FakeProvider:
     def __init__(self) -> None:
         self.video_requests: list[dict] = []

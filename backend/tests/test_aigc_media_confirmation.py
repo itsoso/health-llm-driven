@@ -5,6 +5,15 @@ import pytest
 from cryptography.fernet import InvalidToken
 
 
+@pytest.fixture(autouse=True)
+def _consenting_job_owner(db, auth_user_and_headers, monkeypatch):
+    from sqlalchemy.orm import sessionmaker
+    from app.services import ai_consent
+    user, _ = auth_user_and_headers
+    monkeypatch.setattr(ai_consent, "SessionLocal", sessionmaker(bind=db.get_bind()))
+    ai_consent.update_ai_consent(db, user.id, True, ai_consent.POLICY_VERSION)
+
+
 class _Provider:
     def __init__(self) -> None:
         self.image_requests: list[dict] = []

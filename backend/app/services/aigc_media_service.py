@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from app.services.aigc_media_capabilities import validate_video_spec
+from app.services.ai_consent import require_ai_consent
 
 
 logger = logging.getLogger(__name__)
@@ -334,6 +335,7 @@ class AIGCMediaProvider:
             headers["X-DashScope-Async"] = "enable"
         response: httpx.Response | None = None
         for attempt in range(2):
+            require_ai_consent(destination=api_base_url)
             try:
                 response = await self._http_client.post(
                     f"{api_base_url}{path}",

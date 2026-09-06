@@ -13,6 +13,13 @@ from app.services.realtime_speech_transcription import (
 from app.api import speech
 
 
+@pytest.fixture(autouse=True)
+def _authorized_protocol_unit_boundary(monkeypatch):
+    # These tests exercise a fake websocket, not permission persistence.
+    # Real denial must precede connection in test_ai_consent_media_egress.
+    monkeypatch.setattr(realtime_speech, "require_ai_consent", lambda **kwargs: None)
+
+
 def test_builds_manual_pcm_session_for_push_to_talk():
     event = build_session_update_event("event-1")
 

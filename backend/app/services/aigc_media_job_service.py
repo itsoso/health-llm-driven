@@ -20,11 +20,13 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 import httpx
+from fastapi import HTTPException
 from sqlalchemy import func, or_, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.services.ai_consent import ai_user_scope, require_ai_consent
 from app.models.agent_audit_log import AgentAuditLog
 from app.models.agent_conversation import AgentConversation, AgentMessage
 from app.models.aigc_media_job import AIGCMediaJob
@@ -525,6 +527,7 @@ class AIGCMediaJobService:
         conversation_id: int | None = None,
     ) -> AIGCMediaJob:
         self._validate_request(request)
+        require_ai_consent(user_id)
         fingerprint = self._fingerprint(user_id=user_id, request=request)
         idempotency_key = f"aigc-confirmation:{confirmation_id}"
         existing = (
@@ -633,6 +636,7 @@ class AIGCMediaJobService:
         Unknown submissions and any job with a provider task ID are deliberately
         excluded because creating another provider task could duplicate spend.
         """
+        require_ai_consent(user_id)
         job = (
             self.db.query(AIGCMediaJob)
             .filter(AIGCMediaJob.id == str(job_id), AIGCMediaJob.user_id == int(user_id))
@@ -732,27 +736,30 @@ class AIGCMediaJobService:
         provider_request_started = False
         provider_accepted = False
         try:
+            require_ai_consent(job.user_id)
             provider = self._provider_factory()
             if request.kind in IMAGE_KINDS:
                 provider_request_started = True
-                urls = await provider.generate_image(
-                    prompt=request.prompt,
-                    image_data_uri=source_data_uri,
-                    model=job.model,
-                )
+                with ai_user_scope(job.user_id):
+                    urls = await provider.generate_image(
+                        prompt=request.prompt,
+                        image_data_uri=source_data_uri,
+                        model=job.model,
+                    )
                 provider_accepted = True
                 await self._complete_from_provider_url(job, urls[0], kind=request.kind)
             else:
                 provider_request_started = True
-                task = await provider.create_video_task(
-                    kind=request.kind,
-                    prompt=request.prompt,
-                    source_url=source_url,
-                    duration_seconds=request.duration_seconds,
-                    ratio=request.ratio,
-                    resolution=request.resolution,
-                    model=job.model,
-                )
+                with ai_user_scope(job.user_id):
+                    task = await provider.create_video_task(
+                        kind=request.kind,
+                        prompt=request.prompt,
+                        source_url=source_url,
+                        duration_seconds=request.duration_seconds,
+                        ratio=request.ratio,
+                        resolution=request.resolution,
+                        model=job.model,
+                    )
                 provider_accepted = True
                 job.provider_task_id = task.task_id
                 job.status = "queued" if task.status == "PENDING" else "running"
@@ -762,6 +769,11 @@ class AIGCMediaJobService:
                 self.db.commit()
                 self.db.refresh(job)
             return job
+        except HTTPException:
+            # Consent rejection proves no new vendor dispatch was permitted;
+            # preserve the permission response instead of claiming unknown I/O.
+            self._mark_failed(job, "ai_consent_required", "请先确认 AI 数据使用授权，再重新发起创作。")
+            raise
         except AIGCMediaProviderIndeterminateError as exc:
             self._mark_submission_unknown(job, "provider_submission_unknown")
             logger.warning(

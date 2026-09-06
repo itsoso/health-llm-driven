@@ -38,7 +38,7 @@ const sections = [
   {
     title: 'AI 与第三方模型',
     body:
-      '当你请求 AI 分析或对话时,系统会按最小必要原则向完成任务所需的 AI 模型服务提供上下文。模型服务只用于完成该次对话、识别、总结或建议,不用于第三方广告、营销画像或出售。',
+      '首次使用前,App 会单独展示第三方 AI 模型服务的接收方、数据和用途。当前接收方为阿里云百炼（含通义千问、语音及图像模型）;采用 Apple 系统语音识别时,语音可能由设备或 Apple 服务器处理。只有明确同意并保存授权后,才会发送本次任务所需的对话、主动提交的图片/文件/语音及相关健康记录、个人资料和对话上下文。登录或同意隐私政策不代表同意 AI 共享。模型服务不用于第三方广告、营销画像或出售。',
   },
   {
     title: '安全与隔离',
@@ -48,7 +48,7 @@ const sections = [
   {
     title: '你的控制权',
     body:
-      '你可以在应用内断开设备授权,停止同步 Apple Health、Garmin 等来源。你也可以在“我 -> 账号与隐私 -> 删除账号与数据”中发起请求;App 会显示删除请求编号和处理状态,通常 7 天内完成。',
+      '你可以在“设置 -> AI 数据共享”查看和撤回 AI 授权。拒绝或撤回后停止后续第三方 AI 共享,仍可查看和管理非 AI 记录、隐私与账号;已发送的数据无法自动收回。你可以断开设备授权以停止同步,也可在“我 -> 账号与隐私 -> 删除账号与数据”发起删除请求;App 会显示删除请求编号和处理状态,通常 7 天内完成。',
   },
   {
     title: '医疗边界',
@@ -89,7 +89,7 @@ export default function PrivacyPolicyScreen() {
             <Text style={txt.heroBody}>
               这份政策说明移动端当前主要数据用途和控制方式,并与 App Store 隐私标签和权限说明保持一致。
             </Text>
-            <Text style={txt.heroBody}>最近更新: 2026-08-05</Text>
+            <Text style={txt.heroBody}>最近更新: 2026-09-06</Text>
           </View>
         </View>
 
@@ -102,7 +102,7 @@ export default function PrivacyPolicyScreen() {
           ))}
         </View>
 
-        <Text style={txt.footer}>生效及最近更新日期: 2026-07-14</Text>
+        <Text style={txt.footer}>生效日期: 2026-08-05 · 最近更新: 2026-09-06</Text>
       </ScrollView>
     </SafeAreaView>
   );

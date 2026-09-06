@@ -16,7 +16,7 @@ If the reviewer cannot sign in, please contact support@executor.life.
 
 1. Choose `账号密码登录` and sign in with the demo account. The app opens directly into 小巴健康.
 2. When the demo account has a qualified pending action, risk or processing state, a compact context strip appears at the top. Tap it to open 今日计划, use 返回小巴 to return, or close the strip. It is intentionally not repeated after every response.
-3. Ask 小巴健康: `帮我算我的BMI`. The answer shows an always-visible `参考来源` panel directly below the medical information.
+3. Ask 小巴健康: `帮我算我的BMI`. On first use, read the separate AI data-sharing disclosure and choose whether to allow sharing. Declining preserves the draft and does not transmit it to an AI provider. After explicit permission, the answer shows an always-visible `参考来源` panel directly below the medical information.
 4. Tap `中国成人体重判定标准（WS/T 428—2013）` or `成人 BMI 计算方法与分类`. The app opens the official HTTPS source from 国家卫生健康委员会 (`https://www.nhc.gov.cn/`) or CDC (`https://www.cdc.gov/bmi/`). The same panel states `健康信息用于辅助管理，不替代诊断；做医疗决定前请咨询医生。`
 5. Ask 小巴健康: `今天应该先做什么健康行动？`
 6. Tap the `+` button beside the input bar to photograph or select a meal image. The recognized result remains editable until it is saved.
@@ -25,6 +25,12 @@ If the reviewer cannot sign in, please contact support@executor.life.
 Text chat remains available if the reviewer declines notification, location, microphone, photo, camera or HealthKit permissions. Each optional permission is requested only after the reviewer starts the related feature.
 
 The submitted binary does not bundle an on-device inference model or expose an account-free local mode. Authenticated requests are sent only to the documented service endpoints; an unavailable or unknown session fails closed instead of producing an offline model response.
+
+## Third-Party AI Permission
+
+Before the first third-party AI request, the app separately discloses Alibaba Cloud Model Studio (including Qwen, speech and image models), the submitted text, selected images/files/audio, and the relevant health/profile/conversation context used for the requested task. Apple system speech recognition is also disclosed because recognition may occur on the device or Apple's servers. Microphone and speech-recognition OS permissions remain separate.
+
+Signing in does not grant AI sharing permission. Reviewers may decline and continue using non-AI records, privacy controls and account deletion. To manage or withdraw permission, open `设置 -> AI 数据共享`. Withdrawal blocks subsequent AI dispatches; it cannot recall data already sent. Re-enabling requires explicit agreement to the current disclosure.
 
 ## HealthKit Use
 

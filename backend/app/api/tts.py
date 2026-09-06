@@ -40,14 +40,14 @@ async def synthesize(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:
-        logger.warning("TTS 失败 user=%s: %s", current_user.id, e)
+        logger.warning("TTS 失败 user=%s error_type=%s", current_user.id, type(e).__name__)
         raise HTTPException(status_code=503, detail="TTS 服务暂时不可用")
 
     return Response(
         content=audio,
         media_type="audio/mpeg",
         headers={
-            "Cache-Control": "public, max-age=86400",
+            "Cache-Control": "private, no-store",
             "Content-Length": str(len(audio)),
         },
     )

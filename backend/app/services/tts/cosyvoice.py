@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Optional
 
 from app.config import settings
+from app.services.ai_consent import require_ai_consent
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,8 @@ def _synth_blocking(text: str, voice_id: str, speed: float) -> bytes:
     import dashscope
     from dashscope.audio.tts_v2 import SpeechSynthesizer
 
+    require_ai_consent(destination=dashscope.base_websocket_api_url)
+
     key = _resolve_api_key()
     if not key:
         raise RuntimeError("TTS API key 未配置")
@@ -117,6 +120,8 @@ async def synthesize(
     """
     if not text or not text.strip():
         raise ValueError("text 不能为空")
+
+    require_ai_consent()
 
     # 进模型前做一次文本规范化 (数字小数点等). 缓存 key 用规范化后的文本,
     # 不然旧 cache 命中会绕过新逻辑.

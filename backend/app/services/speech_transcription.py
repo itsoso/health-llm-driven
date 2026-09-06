@@ -10,6 +10,8 @@ import tempfile
 from typing import Callable
 
 from app.config import settings
+from app.services.ai_consent import guard_openai_client, require_ai_consent
+from fastapi import HTTPException
 
 
 logger = logging.getLogger(__name__)
@@ -79,6 +81,7 @@ def _transcribe_with_dashscope(
     base_url: str,
     timeout_seconds: float,
 ) -> TranscriptionResult:
+    require_ai_consent(destination=base_url)
     import dashscope
 
     dashscope.base_http_api_url = base_url.rstrip("/")
@@ -115,16 +118,17 @@ def _transcribe_with_openai(
     base_url: str | None,
     timeout_seconds: float,
 ) -> TranscriptionResult:
+    require_ai_consent(destination=base_url or "https://api.openai.com/v1")
     from openai import OpenAI
 
     client_kwargs = {"api_key": api_key}
     if base_url:
         client_kwargs["base_url"] = base_url
-    client = OpenAI(
+    client = guard_openai_client(OpenAI(
         **client_kwargs,
         timeout=timeout_seconds,
         max_retries=0,
-    )
+    ))
     normalized_format = _normalized_format(audio_format)
     temp_path = ""
     try:
@@ -188,6 +192,9 @@ def transcribe_audio_bytes(audio_bytes: bytes, audio_format: str) -> Transcripti
             if not result.text.strip():
                 raise RuntimeError("ASR provider returned empty text")
             return result
+        except HTTPException:
+            # Permission failures are not provider outages and must never fail over.
+            raise
         except Exception as exc:  # noqa: BLE001 - fail over to the next configured provider
             logger.warning(
                 "ASR provider failed - provider=%s error_type=%s",

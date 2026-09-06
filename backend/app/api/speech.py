@@ -21,6 +21,7 @@ from app.services.speech_transcription import (
 )
 from app.services.auth import auth_service
 from app.services.realtime_speech_transcription import proxy_realtime_asr
+from app.services.ai_consent import ai_user_scope, require_ai_consent
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["speech"])
@@ -76,10 +77,19 @@ async def transcribe_audio_realtime(
         await websocket.close(code=4403, reason="账户不可用")
         return
 
+    try:
+        require_ai_consent(current_user.id, destination=settings.asr_realtime_base_url)
+    except HTTPException:
+        await websocket.close(code=4403, reason="请先确认 AI 数据使用授权")
+        return
+
     await websocket.accept()
     logger.info("Realtime ASR session started - user_id=%s", current_user.id)
     try:
-        await proxy_realtime_asr(websocket.receive_json, websocket.send_json)
+        with ai_user_scope(current_user.id):
+            await proxy_realtime_asr(websocket.receive_json, websocket.send_json)
+    except HTTPException:
+        await websocket.close(code=4403, reason="AI 数据使用授权已撤回或失效")
     except WebSocketDisconnect:
         logger.info("Realtime ASR client disconnected - user_id=%s", current_user.id)
     except (TimeoutError, ValueError) as exc:

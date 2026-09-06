@@ -13,6 +13,7 @@ from typing import Any, Awaitable, Callable
 from urllib.parse import urlencode
 
 from app.config import settings
+from app.services.ai_consent import require_ai_consent
 
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,8 @@ def _upstream_url() -> str:
 async def _open_dashscope_socket():
     from websockets.asyncio.client import connect
 
+    require_ai_consent(destination=settings.asr_realtime_base_url)
+
     api_key = settings.tts_api_key or settings.llm_vision_api_key
     if not api_key:
         raise RuntimeError("DashScope API key is not configured")
@@ -105,6 +108,7 @@ async def proxy_realtime_asr(
     send_json: Callable[[dict[str, Any]], Awaitable[None]],
 ) -> None:
     """Proxy one authenticated mobile PCM session without persisting raw audio."""
+    require_ai_consent(destination=settings.asr_realtime_base_url)
     started_at = time.monotonic()
     pcm_buffer = bytearray()
     upstream = None
@@ -184,6 +188,7 @@ async def proxy_realtime_asr(
             if message_type == "cancel":
                 return
             if message_type == "audio":
+                require_ai_consent(destination=settings.asr_realtime_base_url)
                 encoded = str(message.get("audio") or "")
                 try:
                     chunk = base64.b64decode(encoded, validate=True)
@@ -213,6 +218,7 @@ async def proxy_realtime_asr(
                 continue
             if message_type != "finish":
                 raise ValueError("不支持的语音会话事件")
+            require_ai_consent(destination=settings.asr_realtime_base_url)
             if not pcm_buffer:
                 raise ValueError("没有收到可识别的语音")
             if upstream_error:

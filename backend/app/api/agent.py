@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
 from app.api.deps import get_current_user_required
+from app.services.ai_consent import require_ai_consent
 from app.services.llm.error_messages import safe_llm_error_message
 from app.services.secure_upload import (
     UploadContentInvalid,
@@ -1586,6 +1587,7 @@ async def agent_stream(
     has_images = bool(req.image_base64 or req.images)
     if not req.message.strip() and not has_images and not req.file_base64:
         raise HTTPException(status_code=400, detail="消息不能为空")
+    require_ai_consent(current_user.id)
 
     # 防双发 (用户反馈批 4): 客户端 silence_timer + onSpeechEnd 偶发同一 message 发 2 次
     # 后端用 in-memory 短期缓存 (3s 窗) 拒同一用户重复 message, 避免 LLM 重试浪费 + 撞 OpenAI proxy 限流.
@@ -2056,7 +2058,12 @@ async def agent_stream(
                     runtime_context.run_id,
                     type(e).__name__,
                 )
-                err = {"event": "error", "data": {"message": safe_llm_error_message(e)}}
+                detail = e.detail if isinstance(e, HTTPException) and isinstance(e.detail, dict) else {}
+                consent_code = detail.get("code")
+                if consent_code in {"ai_consent_required", "ai_consent_unavailable", "ai_recipient_not_disclosed"}:
+                    err = {"event": "error", "data": {"code": consent_code, "message": detail.get("message", "请重新检查 AI 数据使用授权")}}
+                else:
+                    err = {"event": "error", "data": {"message": safe_llm_error_message(e)}}
                 try:
                     await stream_bridge.publish(
                         f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
@@ -2176,6 +2183,7 @@ async def agent_send(
     has_images = bool(req.image_base64 or req.images)
     if not req.message.strip() and not has_images and not req.file_base64:
         raise HTTPException(status_code=400, detail="消息不能为空")
+    require_ai_consent(current_user.id)
 
     if not req.client_turn_id and _check_recent_dup(current_user.id, req.message):
         raise HTTPException(
