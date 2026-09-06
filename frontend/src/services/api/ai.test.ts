@@ -3,6 +3,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { agentApi } from './ai';
 
+// These tests exercise stream transport; real permission behavior is covered separately.
+vi.mock('@/services/aiConsent', async importOriginal => ({
+  ...await importOriginal<typeof import('@/services/aiConsent')>(),
+  requireAiConsent: vi.fn().mockResolvedValue(undefined),
+}));
+
 describe('agentApi.streamMessage', () => {
   afterEach(() => {
     vi.useRealTimers();

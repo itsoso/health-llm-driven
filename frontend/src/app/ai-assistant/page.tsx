@@ -28,6 +28,7 @@ import ChatView from '@/components/assistant/ChatView';
 import LlmModelPicker, { ModelOption } from '@/components/assistant/LlmModelPicker';
 import ConversationHistoryRail from '@/components/assistant/ConversationHistoryRail';
 import { api } from '@/services/api/client';
+import { requireAiConsent } from '@/services/aiConsent';
 import { durableSelectedMessageIds } from '@/components/assistant/shareSelection';
 import {
   clearChatScrollTimers,
@@ -168,6 +169,8 @@ function AIAssistantInner() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
   const [input, setInput] = useState('');
+  const [consentError, setConsentError] = useState<string | null>(null);
+  const checkingConsentRef = useRef(false);
   const [streaming, setStreaming] = useState(false);
   const [queuedPromptCount, setQueuedPromptCount] = useState(0);
   // 2026-07-02: 实时状态行 (status SSE 事件 → 中文短语), 首 token 到达清空。纯加法。
@@ -189,6 +192,7 @@ function AIAssistantInner() {
   const historyRequestRef = useRef(0);
   const hasLoadedHistoryRef = useRef(false);
   const conversationIntentGenerationRef = useRef(0);
+  useEffect(() => () => { conversationIntentGenerationRef.current += 1; }, []);
   const queuedPromptsRef = useRef<QueuedWebPrompt[]>([]);
   // 状态行去抖: for-await 循环内读闭包会拿到陈旧 statusText, 用 ref 避免重复 setState。
   const statusRef = useRef<string | null>(null);
@@ -388,8 +392,27 @@ function AIAssistantInner() {
     const text = (overrideText ?? input).trim();
     if (!text) return;
 
+    if (checkingConsentRef.current) return;
+    const consentIntent = conversationIntentGenerationRef.current;
+    checkingConsentRef.current = true;
+    try {
+      await requireAiConsent();
+      if (consentIntent !== conversationIntentGenerationRef.current) return;
+      setConsentError(null);
+    } catch (error) {
+      setConsentError(error instanceof Error ? error.message : '授权状态无法核实，内容未发送。');
+      if (queuedPrompt) {
+        setInput(current => current || text);
+        setMessages(previous => previous.map(message => message.id === queuedPrompt.assistantMessageId
+          ? { ...message, content: '尚未发送，请确认 AI 数据使用授权后重试。' } : message));
+      }
+      return;
+    } finally {
+      checkingConsentRef.current = false;
+    }
+
     if (streamingRef.current && !queuedPrompt) {
-      setInput('');
+      setInput(current => current.trim() === text ? '' : current);
       const stamp = Date.now();
       const userMessageId = -stamp;
       const assistantMessageId = -stamp - 1;
@@ -404,7 +427,7 @@ function AIAssistantInner() {
       return;
     }
 
-    if (!queuedPrompt) setInput('');
+    if (!queuedPrompt) setInput(current => current.trim() === text ? '' : current);
     setStreaming(true);
     streamingRef.current = true;
     setStatusText(null);
@@ -1089,6 +1112,7 @@ function AIAssistantInner() {
                 <ArrowUp className="h-5 w-5" />
               </button>
             </form>
+            {consentError && <p role="alert" className="pointer-events-auto mx-auto mt-2 max-w-3xl text-center text-xs text-[#D5503A]">{consentError}</p>}
             {medicalExamImportError && (
               <p role="alert" className="pointer-events-auto mx-auto mt-2 max-w-3xl text-center text-[11px] text-[#D5503A]">
                 {medicalExamImportError}

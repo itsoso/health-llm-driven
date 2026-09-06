@@ -1,4 +1,5 @@
 'use client';
+import { requireAiConsent } from '@/services/aiConsent';
 
 import { useState } from 'react';
 import Link from 'next/link';
@@ -106,6 +107,7 @@ function DailyInsightsContent() {
   // 刷新建议（清除缓存并重新生成）
   const refreshMutation = useMutation({
     mutationFn: async () => {
+      await requireAiConsent();
       const res = await fetch(`${API_BASE}/daily-recommendation/me/refresh?use_llm=true`, {
         method: 'POST',
         headers: {

@@ -1,4 +1,5 @@
 'use client';
+import { requireAiConsent } from '@/services/aiConsent';
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -81,6 +82,7 @@ function MedicalExamsContent() {
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append('file', file);
+      await requireAiConsent();
       const res = await fetch(`${API_BASE}/medical-exams/parse-pdf-preview`, {
         method: 'POST',
         headers: {

@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import { API_BASE_URL, WEB_SESSION_TOKEN } from '@/services/api/client';
+import { setAiConsentUser } from '@/services/aiConsent';
 
 const API_BASE = API_BASE_URL;
 
@@ -48,6 +49,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  useEffect(() => {
+    setAiConsentUser(user?.id ?? null);
+  }, [user?.id]);
 
   // Web 登录态由同源 HttpOnly Cookie 恢复，JavaScript 不读取持久凭证。
   useEffect(() => {
@@ -112,6 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // 登录 (使用 useCallback 优化)
   const login = useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    setAiConsentUser(null);
     try {
       const res = await fetch(`${API_BASE}/auth/login/json`, {
         method: 'POST',
@@ -134,6 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await res.json();
 
       if (res.ok) {
+        setAiConsentUser(data.user.id);
         setToken(WEB_SESSION_TOKEN);
         setUser(data.user);
         return { success: true };
@@ -148,6 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // 注册 (使用 useCallback 优化)
   const register = useCallback(async (data: RegisterData): Promise<{ success: boolean; error?: string }> => {
+    setAiConsentUser(null);
     try {
       const res = await fetch(`${API_BASE}/auth/register`, {
         method: 'POST',
@@ -187,6 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // 登出 (使用 useCallback 优化)
   const logout = useCallback(() => {
+    setAiConsentUser(null);
     setToken(null);
     setUser(null);
     void fetch(`${API_BASE}/auth/logout`, {

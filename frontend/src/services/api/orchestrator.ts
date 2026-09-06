@@ -1,5 +1,6 @@
 import api, { API_BASE_URL } from './client';
 import { parseFullSSE } from '@/utils/sseParser';
+import { AiConsentError, isAiConsentRejection, requireAiConsent } from '@/services/aiConsent';
 
 export interface OrchestratorRequest {
   query: string;
@@ -65,6 +66,7 @@ export const streamOrchestrator = async (
   handlers: OrchestratorStreamHandlers,
   signal?: AbortSignal
 ): Promise<void> => {
+  await requireAiConsent();
   const res = await fetch(`${API_BASE_URL}/orchestrator/chat/stream`, {
     method: 'POST',
     headers: {
@@ -77,6 +79,7 @@ export const streamOrchestrator = async (
   });
 
   if (!res.ok) {
+    if (res.status === 403 && isAiConsentRejection(await res.clone().json())) throw new AiConsentError();
     const text = await res.text().catch(() => '');
     throw new Error(`Orchestrator stream failed: ${res.status} ${text || ''}`);
   }

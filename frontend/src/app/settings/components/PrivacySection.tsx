@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, QueryClient } from '@tanstack/react-query';
 import { formatDateTime } from '@/utils/timezone';
+import { manageAiConsent } from '@/services/aiConsent';
 
 const API_BASE = '/api';
 
@@ -148,6 +149,12 @@ export default function PrivacySection({ token, setMessage, queryClient }: Priva
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-gray-100">
+      <div className="mb-5 border-b border-gray-100 pb-5">
+        <h2 className="text-lg font-semibold text-gray-900">第三方 AI 数据使用</h2>
+        <p className="mt-2 text-sm text-gray-600">查看 AI 服务接收方、数据范围，或撤回授权。与下方 API 公开字段设置相互独立。</p>
+        <button type="button" onClick={() => void manageAiConsent().catch(error => setMessage({ type: 'error', text: error instanceof Error ? error.message : '无法加载授权说明，请重试。' }))}
+          className="mt-3 min-h-11 rounded-lg border border-green-700 px-4 text-sm font-medium text-green-800">查看与管理 AI 授权</button>
+      </div>
       <div
         className="flex items-center justify-between cursor-pointer"
         onClick={() => setShowPrivacySection(!showPrivacySection)}

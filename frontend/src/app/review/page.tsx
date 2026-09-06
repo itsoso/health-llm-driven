@@ -1,4 +1,5 @@
 'use client';
+import { requireAiConsent } from '@/services/aiConsent';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -263,6 +264,7 @@ export default function ReviewPage() {
     const token = getToken();
 
     try {
+      await requireAiConsent();
       const res = await fetch(`${API_BASE}/review/ai-summary`, {
         method: 'POST',
         headers: {
@@ -282,7 +284,7 @@ export default function ReviewPage() {
       }
     } catch (e) {
       console.error('AI生成失败:', e);
-      alert('AI生成失败');
+      alert(e instanceof Error ? e.message : 'AI 总结未生成，请稍后重试。');
     } finally {
       setGeneratingAI(false);
     }

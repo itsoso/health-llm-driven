@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ToastProvider } from '@/contexts/ToastContext';
+import AiConsentDialog from '@/components/AiConsentDialog';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -22,6 +23,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <AuthProvider>
         <ToastProvider>
           {children}
+          <AiConsentDialog />
         </ToastProvider>
       </AuthProvider>
     </QueryClientProvider>

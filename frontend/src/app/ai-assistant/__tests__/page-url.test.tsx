@@ -34,6 +34,10 @@ vi.mock('@/services/api/ai', () => ({
 }));
 
 const apiGet = vi.fn();
+const requireAiConsent = vi.fn();
+vi.mock('@/services/aiConsent', () => ({
+  requireAiConsent: (...args: unknown[]) => requireAiConsent(...args),
+}));
 const apiPost = vi.fn();
 vi.mock('@/services/api/client', () => ({
   api: {
@@ -52,6 +56,7 @@ import AIAssistantPage from '../page';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  requireAiConsent.mockResolvedValue(undefined);
   Object.defineProperty(window, 'confirm', {
     configurable: true,
     value: vi.fn(() => true),
@@ -73,6 +78,30 @@ beforeEach(() => {
       share_url: 'https://health.executor.life/shared/selected-token',
     },
   });
+});
+
+it('keeps the chat draft intact when AI consent is declined', async () => {
+  requireAiConsent.mockRejectedValueOnce(new Error('尚未同意，内容未发送'));
+  render(<AIAssistantPage />);
+  const input = await screen.findByPlaceholderText(/发消息/);
+  fireEvent.change(input, { target: { value: 'synthetic unsent draft' } });
+  fireEvent.keyDown(input, { key: 'Enter', shiftKey: false });
+  await waitFor(() => expect(requireAiConsent).toHaveBeenCalled());
+  expect(input).toHaveValue('synthetic unsent draft');
+  expect(streamMessage).not.toHaveBeenCalled();
+});
+
+it('does not send a pending draft after leaving the chat during consent', async () => {
+  let approve!: () => void;
+  requireAiConsent.mockReturnValueOnce(new Promise<void>(resolve => { approve = resolve; }));
+  const view = render(<AIAssistantPage />);
+  const input = await screen.findByPlaceholderText(/发消息/);
+  fireEvent.change(input, { target: { value: 'synthetic abandoned draft' } });
+  fireEvent.keyDown(input, { key: 'Enter', shiftKey: false });
+  await waitFor(() => expect(requireAiConsent).toHaveBeenCalled());
+  view.unmount();
+  await act(async () => approve());
+  expect(streamMessage).not.toHaveBeenCalled();
 });
 
 const MEDICATION_POLICY = {
@@ -420,7 +449,7 @@ describe('ai-assistant URL state', () => {
     fireEvent.click(screen.getByTitle('发送'));
 
     expect(screen.getByText('第二条')).toBeInTheDocument();
-    expect(screen.getByText('小巴处理中，已加入队列。')).toBeInTheDocument();
+    expect(await screen.findByText('小巴处理中，已加入队列。')).toBeInTheDocument();
     expect(streamMessage).toHaveBeenCalledTimes(1);
 
     finishFirst?.();

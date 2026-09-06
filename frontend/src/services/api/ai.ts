@@ -1,5 +1,6 @@
 import api, { API_BASE_URL } from './client';
 import { parseSimpleSSE } from '@/utils/sseParser';
+import { AiConsentError, isAiConsentRejection, requireAiConsent } from '@/services/aiConsent';
 
 // GenUI 能力声明 (X-Reva-Client-Caps): 让后端知道本端能渲染哪些 reva-ui 组件。
 // metric_table 渲染器 (MetricTableCard) 已随前端上线, 但 cap token 先暗着 —— eval
@@ -242,6 +243,7 @@ export const agentApi = {
     fileName?: string,
     extraContext?: string,
   ) {
+    await requireAiConsent();
     const body: Record<string, any> = {
       message,
       conversation_id: conversationId,
@@ -267,6 +269,7 @@ export const agentApi = {
     });
 
     if (!response.ok) {
+      if (response.status === 403 && isAiConsentRejection(await response.clone().json())) throw new AiConsentError();
       throw new Error(`Agent stream request failed: ${response.status}`);
     }
 
