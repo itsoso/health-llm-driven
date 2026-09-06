@@ -277,6 +277,7 @@ app.add_middleware(
         "Origin",
         "X-Requested-With",
         "X-Auth-Transport",
+        "X-Reva-AI-Subject",  # Bind a browser disclosure/draft to the authenticated actor.
         "X-API-Key",  # 外部系统 API Key 认证
     ],
     # 浏览器可以访问的响应头

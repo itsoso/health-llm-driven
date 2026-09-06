@@ -40,6 +40,7 @@ _ALLOWED_HOSTS = frozenset({
 })
 _UNBOUND = object()
 _user_ctx = ContextVar("ai_consent_user", default=_UNBOUND)
+_cookie_subject_missing = ContextVar("ai_cookie_subject_missing", default=False)
 
 
 @contextmanager
@@ -56,15 +57,21 @@ async def ai_request_scope():
     """FastAPI dependency: isolate identity from unrelated requests/tasks."""
     from app.services.llm.usage_tracker import _user_id_ctx
     usage_token = _user_id_ctx.set(None)
+    subject_token = _cookie_subject_missing.set(False)
     with ai_user_scope(None):
         try:
             yield
         finally:
             _user_id_ctx.reset(usage_token)
+            _cookie_subject_missing.reset(subject_token)
 
 
 def bind_ai_user(user_id: int) -> None:
     _user_ctx.set(int(user_id))
+
+
+def bind_ai_cookie_subject(*, missing: bool) -> None:
+    _cookie_subject_missing.set(missing)
 
 
 def is_disclosed_destination(destination: str | None) -> bool:
@@ -123,6 +130,7 @@ def get_ai_consent(db: Session, user_id: int) -> dict:
     record = record if isinstance(record, dict) else {}
     accepted = record.get("accepted") is True and record.get("policy_version") == POLICY_VERSION
     return {
+        "subject_id": user_id,
         "policy_version": POLICY_VERSION,
         "accepted": accepted,
         "accepted_at": record.get("accepted_at") if accepted else None,
@@ -167,6 +175,11 @@ def update_ai_consent(db: Session, user_id: int, accepted: bool, policy_version:
 
 def require_ai_consent(user_id: int | None = None, *, destination: str | None = None) -> None:
     """Raise before I/O if identity, current consent, or recipient is unverified."""
+    if _cookie_subject_missing.get():
+        raise HTTPException(status_code=409, detail={
+            "code": "auth_session_changed",
+            "message": "请刷新页面以确认当前账号，内容未发送",
+        })
     if user_id is None:
         user_id = _user_ctx.get()
         if user_id is _UNBOUND:

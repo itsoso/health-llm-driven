@@ -15,6 +15,7 @@ class AIRecipient(BaseModel):
 
 
 class AIConsentStatus(BaseModel):
+    subject_id: int
     policy_version: str
     accepted: bool
     accepted_at: str | None

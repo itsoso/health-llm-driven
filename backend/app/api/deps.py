@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db, set_current_tenant, reset_current_tenant
 from app.models.user import User
 from app.services.auth import auth_service
-from app.services.ai_consent import ai_request_scope, bind_ai_user
+from app.services.ai_consent import ai_request_scope, bind_ai_cookie_subject, bind_ai_user
 from app.services.web_session import (
     WEB_SESSION_AUTH_SENTINEL,
     WEB_SESSION_COOKIE,
@@ -162,6 +162,16 @@ def _resolve_family_proxy_user(
     return target_user, origin_id
 
 
+def _assert_expected_ai_subject(request: Request, user_id: int) -> None:
+    """An old browser tab may assert its actor, never select another actor."""
+    expected = request.headers.get("x-reva-ai-subject")
+    if expected is not None and expected != str(user_id):
+        raise HTTPException(status_code=409, detail={
+            "code": "auth_session_changed",
+            "message": "登录账号已变化，内容未发送，请刷新页面后重试",
+        })
+
+
 async def get_current_user(
     request: Request,
     token: Optional[str] = Depends(oauth2_scheme),
@@ -181,6 +191,7 @@ async def get_current_user(
     cookie_token = request.cookies.get(WEB_SESSION_COOKIE) if not bearer_token else None
     jwt_token = bearer_token or cookie_token
     is_cookie_auth = bool(cookie_token)
+    bind_ai_cookie_subject(missing=is_cookie_auth and not request.headers.get("x-reva-ai-subject"))
     if is_cookie_auth:
         enforce_cookie_request_origin(request)
 
@@ -209,6 +220,7 @@ async def get_current_user(
                         acting_as=acting_as,
                         original_user_id=original_user,
                     )
+                    _assert_expected_ai_subject(request, target_user.id)
                     bind_authenticated_tenant(db, target_user.id)
                     request.state.auth_type = "cookie" if is_cookie_auth else "jwt"
                     request.state.api_key_id = None
@@ -225,6 +237,7 @@ async def get_current_user(
                 # 正常模式
                 user = auth_service.get_user_by_id(db, int(user_id))
                 if user:
+                    _assert_expected_ai_subject(request, user.id)
                     bind_authenticated_tenant(db, user.id)
                     request.state.auth_type = "cookie" if is_cookie_auth else "jwt"
                     request.state.api_key_id = None
@@ -252,6 +265,7 @@ async def get_current_user(
             if user:
                 scopes = normalize_api_key_scopes(api_key.scopes)
                 _enforce_api_key_request(request, scopes)
+                _assert_expected_ai_subject(request, user.id)
                 bind_authenticated_tenant(db, user.id)
                 request.state.auth_type = "api_key"
                 request.state.api_key_id = api_key.id
