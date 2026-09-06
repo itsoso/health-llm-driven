@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { AiConsentError, isAiConsentRejection, isAiRequest, requireAiConsent } from '@/services/aiConsent';
+import { AiConsentError, aiSessionHeaders, isAuthSessionChanged, isAiConsentRejection, isAiRequest, requireAiConsent } from '@/services/aiConsent';
 
 // frontend/ 只服务 Web (PC 浏览器 + iOS Safari). 原生 App 走 mobile/ 的 React Native 路线.
 // Web 版本使用相对路径 /api, 由 next.config.js rewrites 代理到后端.
@@ -15,7 +15,9 @@ export const api = axios.create({
 });
 
 api.interceptors.request.use(async config => {
-  if (isAiRequest(config.url, config.method)) await requireAiConsent();
+  const captured = aiSessionHeaders();
+  const headers = isAiRequest(config.url, config.method) ? await requireAiConsent() : captured;
+  if (headers['X-Reva-AI-Subject']) config.headers.set('X-Reva-AI-Subject', headers['X-Reva-AI-Subject']);
   return config;
 });
 
@@ -23,6 +25,9 @@ api.interceptors.request.use(async config => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.status === 409 && isAuthSessionChanged(error.response.data)) {
+      return Promise.reject(new AiConsentError('登录账号已变化，请刷新页面后重试；本次操作未执行。'));
+    }
     if (error.response?.status === 403 && isAiConsentRejection(error.response.data)) {
       return Promise.reject(new AiConsentError());
     }

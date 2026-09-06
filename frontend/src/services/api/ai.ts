@@ -1,6 +1,6 @@
 import api, { API_BASE_URL } from './client';
 import { parseSimpleSSE } from '@/utils/sseParser';
-import { AiConsentError, isAiConsentRejection, requireAiConsent } from '@/services/aiConsent';
+import { AiConsentError, fetchWithAiSubject, isAiConsentRejection, requireAiConsent } from '@/services/aiConsent';
 
 // GenUI 能力声明 (X-Reva-Client-Caps): 让后端知道本端能渲染哪些 reva-ui 组件。
 // metric_table 渲染器 (MetricTableCard) 已随前端上线, 但 cap token 先暗着 —— eval
@@ -242,8 +242,9 @@ export const agentApi = {
     fileBase64?: string,
     fileName?: string,
     extraContext?: string,
+    expectedSubject?: string,
   ) {
-    await requireAiConsent();
+    const aiHeaders = await requireAiConsent(expectedSubject);
     const body: Record<string, any> = {
       message,
       conversation_id: conversationId,
@@ -258,9 +259,10 @@ export const agentApi = {
     // "做到了/没做/调整" 绑定到具体 ActionCard, 而非当孤立文本。
     if (extraContext) { body.extra_context = extraContext; }
 
-    const response = await fetch(`${API_BASE_URL}/agent/stream`, {
+    const response = await fetchWithAiSubject(`${API_BASE_URL}/agent/stream`, {
       method: 'POST',
       headers: {
+        ...aiHeaders,
         'Content-Type': 'application/json',
         'X-Reva-Client-Caps': CLIENT_CAPS,
       },

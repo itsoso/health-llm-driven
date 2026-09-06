@@ -1,5 +1,5 @@
 'use client';
-import { requireAiConsent } from '@/services/aiConsent';
+import { fetchWithAiSubject as fetch, requireAiConsent } from '@/services/aiConsent';
 
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -156,10 +156,11 @@ function DietContent() {
   // AI识别并保存
   const recognizeAndSaveMutation = useMutation({
     mutationFn: async (data: any) => {
-      await requireAiConsent();
+      const aiHeaders = await requireAiConsent();
       const res = await fetch(`${API_BASE}/diet/recognize-and-save`, {
         method: 'POST',
         headers: {
+          ...aiHeaders,
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
@@ -245,10 +246,11 @@ function DietContent() {
 
     setIsRecognizing(true);
     try {
-      await requireAiConsent();
+      const aiHeaders = await requireAiConsent();
       const res = await fetch(`${API_BASE}/diet/recognize`, {
         method: 'POST',
         headers: {
+          ...aiHeaders,
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
@@ -311,10 +313,11 @@ function DietContent() {
 
     setIsAnalyzing(true);
     try {
-      await requireAiConsent();
+      const aiHeaders = await requireAiConsent();
       const res = await fetch(`${API_BASE}/diet/estimate-nutrition?food_description=${encodeURIComponent(text)}`, {
         method: 'POST',
         headers: {
+          ...aiHeaders,
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
@@ -356,10 +359,11 @@ function DietContent() {
 
     setIsVoiceParsing(true);
     try {
-      await requireAiConsent();
+      const aiHeaders = await requireAiConsent();
       const res = await fetch(`${API_BASE}/diet/voice/parse`, {
         method: 'POST',
         headers: {
+          ...aiHeaders,
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },

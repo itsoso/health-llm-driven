@@ -1,5 +1,5 @@
 'use client';
-import { requireAiConsent } from '@/services/aiConsent';
+import { fetchWithAiSubject as fetch, requireAiConsent } from '@/services/aiConsent';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -264,10 +264,11 @@ export default function ReviewPage() {
     const token = getToken();
 
     try {
-      await requireAiConsent();
+      const aiHeaders = await requireAiConsent();
       const res = await fetch(`${API_BASE}/review/ai-summary`, {
         method: 'POST',
         headers: {
+          ...aiHeaders,
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },

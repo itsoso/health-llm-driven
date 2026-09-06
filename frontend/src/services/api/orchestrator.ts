@@ -1,6 +1,6 @@
 import api, { API_BASE_URL } from './client';
 import { parseFullSSE } from '@/utils/sseParser';
-import { AiConsentError, isAiConsentRejection, requireAiConsent } from '@/services/aiConsent';
+import { AiConsentError, fetchWithAiSubject, isAiConsentRejection, requireAiConsent } from '@/services/aiConsent';
 
 export interface OrchestratorRequest {
   query: string;
@@ -66,10 +66,11 @@ export const streamOrchestrator = async (
   handlers: OrchestratorStreamHandlers,
   signal?: AbortSignal
 ): Promise<void> => {
-  await requireAiConsent();
-  const res = await fetch(`${API_BASE_URL}/orchestrator/chat/stream`, {
+  const aiHeaders = await requireAiConsent();
+  const res = await fetchWithAiSubject(`${API_BASE_URL}/orchestrator/chat/stream`, {
     method: 'POST',
     headers: {
+      ...aiHeaders,
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
     },

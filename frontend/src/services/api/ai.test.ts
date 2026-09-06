@@ -28,9 +28,8 @@ describe('agentApi.streamMessage', () => {
     await iterator.next();
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][1]?.headers).toMatchObject({
-      'X-Reva-Client-Caps': 'genui-v1, genui-components-v1, genui-table-v1',
-    });
+    expect(new Headers(fetchMock.mock.calls[0][1]?.headers).get('X-Reva-Client-Caps'))
+      .toBe('genui-v1, genui-components-v1, genui-table-v1');
   });
 
   it('declares the metric_table capability after the eval gate passed', async () => {
@@ -41,7 +40,7 @@ describe('agentApi.streamMessage', () => {
     const iterator = agentApi.streamMessage('近三天关键指标做个表');
     await iterator.next();
 
-    const caps = (fetchMock.mock.calls[0][1]?.headers as Record<string, string>)['X-Reva-Client-Caps'];
+    const caps = new Headers(fetchMock.mock.calls[0][1]?.headers).get('X-Reva-Client-Caps');
     expect(caps).toContain('genui-table-v1');
   });
 

@@ -1,5 +1,5 @@
 'use client';
-import { requireAiConsent } from '@/services/aiConsent';
+import { fetchWithAiSubject as fetch, requireAiConsent } from '@/services/aiConsent';
 
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -108,9 +108,9 @@ function WorkoutContent() {
   // AI Analysis
   const analyzeMutation = useMutation({
     mutationFn: async (workoutId: number) => {
-      await requireAiConsent();
+      const aiHeaders = await requireAiConsent();
       const res = await fetch(`${API_BASE}/workout/me/${workoutId}/analyze`, {
-        method: 'POST', headers: { Authorization: `Bearer ${token}` },
+        method: 'POST', headers: { ...aiHeaders, Authorization: `Bearer ${token}` },
       });
       if (!res.ok) { const error = await res.json(); throw new Error(error.detail || '分析失败'); }
       return res.json();

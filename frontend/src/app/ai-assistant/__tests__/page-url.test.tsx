@@ -56,7 +56,7 @@ import AIAssistantPage from '../page';
 
 beforeEach(() => {
   vi.clearAllMocks();
-  requireAiConsent.mockResolvedValue(undefined);
+  requireAiConsent.mockResolvedValue({ 'X-Reva-AI-Subject': '101' });
   Object.defineProperty(window, 'confirm', {
     configurable: true,
     value: vi.fn(() => true),
@@ -93,7 +93,9 @@ it('keeps the chat draft intact when AI consent is declined', async () => {
 
 it('does not send a pending draft after leaving the chat during consent', async () => {
   let approve!: () => void;
-  requireAiConsent.mockReturnValueOnce(new Promise<void>(resolve => { approve = resolve; }));
+  requireAiConsent.mockReturnValueOnce(new Promise(resolve => {
+    approve = () => resolve({ 'X-Reva-AI-Subject': '101' });
+  }));
   const view = render(<AIAssistantPage />);
   const input = await screen.findByPlaceholderText(/发消息/);
   fireEvent.change(input, { target: { value: 'synthetic abandoned draft' } });
@@ -454,6 +456,7 @@ describe('ai-assistant URL state', () => {
 
     finishFirst?.();
     await waitFor(() => expect(streamMessage).toHaveBeenCalledTimes(2));
+    expect(requireAiConsent).toHaveBeenNthCalledWith(3, '101');
   });
 
   it('locks medication sibling actions atomically and renders every response receipt and safety alert', async () => {

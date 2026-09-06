@@ -106,6 +106,7 @@ interface ConversationOpener {
 
 interface QueuedWebPrompt {
   text: string;
+  subject: string;
   userMessageId: number;
   assistantMessageId: number;
 }
@@ -394,9 +395,11 @@ function AIAssistantInner() {
 
     if (checkingConsentRef.current) return;
     const consentIntent = conversationIntentGenerationRef.current;
+    let requestSubject: string;
     checkingConsentRef.current = true;
     try {
-      await requireAiConsent();
+      const consentHeaders = await requireAiConsent(queuedPrompt?.subject);
+      requestSubject = consentHeaders['X-Reva-AI-Subject'];
       if (consentIntent !== conversationIntentGenerationRef.current) return;
       setConsentError(null);
     } catch (error) {
@@ -417,7 +420,7 @@ function AIAssistantInner() {
       const userMessageId = -stamp;
       const assistantMessageId = -stamp - 1;
       const now = new Date().toISOString();
-      queuedPromptsRef.current.push({ text, userMessageId, assistantMessageId });
+      queuedPromptsRef.current.push({ text, subject: requestSubject, userMessageId, assistantMessageId });
       setQueuedPromptCount(queuedPromptsRef.current.length);
       setMessages(prev => [
         ...prev,
@@ -455,7 +458,9 @@ function AIAssistantInner() {
     statusRef.current = null;
 
     try {
-      for await (const evt of agentApi.streamMessage(text, activeConvIdRef.current)) {
+      for await (const evt of agentApi.streamMessage(
+        text, activeConvIdRef.current, undefined, undefined, undefined, undefined, undefined, requestSubject,
+      )) {
         if (!evt) continue;
         // /agent/stream event shape: { event, data: {content, conversation_id, ...} }
         const type = evt.event ?? evt.type;

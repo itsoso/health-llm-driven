@@ -20,6 +20,7 @@ beforeEach(() => {
       accepted = JSON.parse(String(init.body)).accepted;
     }
     return Response.json({
+      subject_id: 101,
       policy_version: 'test-v1', accepted, accepted_at: null,
       recipients: [{ id: 'synthetic', name: '测试服务接收方', purpose: '处理输入' }],
       data_types: ['本次输入'], purpose: '响应请求',

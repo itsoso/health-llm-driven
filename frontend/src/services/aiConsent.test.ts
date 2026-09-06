@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isAiRequest, manageAiConsent, registerAiConsentPresenter, requireAiConsent, setAiConsentUser } from './aiConsent';
 
 const policy = {
+  subject_id: 101,
   policy_version: 'test-v1', accepted: false, accepted_at: null,
   recipients: [{ id: 'test-vendor', name: '测试 AI 服务', purpose: '处理输入' }],
   data_types: ['用户输入'], purpose: '响应请求',
@@ -17,7 +18,7 @@ beforeEach(() => {
     requests.push({ url, method: init?.method || 'GET', body: init?.body });
     if (url.endsWith('/auth/me')) return Response.json({ id: cookieUser });
     if (init?.method === 'PUT') accepted = JSON.parse(String(init.body)).accepted;
-    return Response.json({ ...policy, accepted });
+    return Response.json({ ...policy, accepted, subject_id: cookieUser });
   });
 });
 afterEach(() => { cleanup?.(); setAiConsentUser(null); vi.unstubAllGlobals(); });
