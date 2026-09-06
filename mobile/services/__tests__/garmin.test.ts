@@ -14,9 +14,11 @@ jest.mock('../api', () => ({
 }));
 
 import {
+  GARMIN_SYNC_TIMEOUT_MS,
   deleteGarminCredentials,
   fetchGarminStatus,
   garminErrorMessage,
+  garminSyncErrorMessage,
   connectGarminCredentials,
   setGarminSyncEnabled,
   syncGarmin,
@@ -69,7 +71,12 @@ describe('Garmin service', () => {
     await setGarminSyncEnabled(true);
     await deleteGarminCredentials();
 
-    expect(mockPost).toHaveBeenNthCalledWith(1, '/data-collection/garmin/me/sync?days=3');
+    expect(mockPost).toHaveBeenNthCalledWith(
+      1,
+      '/data-collection/garmin/me/sync?days=3',
+      undefined,
+      { timeout: GARMIN_SYNC_TIMEOUT_MS },
+    );
     expect(mockPost).toHaveBeenNthCalledWith(2, '/auth/garmin/toggle-sync?enabled=false');
     expect(mockPost).toHaveBeenNthCalledWith(3, '/auth/garmin/toggle-sync?enabled=true');
     expect(mockDelete).toHaveBeenCalledWith('/auth/garmin/credentials');
@@ -79,5 +86,20 @@ describe('Garmin service', () => {
     expect(garminErrorMessage({ response: { data: { detail: '请重新连接账号' } } })).toBe('请重新连接账号');
     expect(garminErrorMessage({ response: { data: { detail: { password: 'secret' } } } })).toBe('操作失败，请稍后重试');
     expect(garminErrorMessage(new Error('request included a password'))).toBe('操作失败，请稍后重试');
+  });
+
+  it('explains that a timed-out manual sync can still finish server-side', () => {
+    expect(garminSyncErrorMessage({ code: 'ECONNABORTED' })).toBe(
+      '同步耗时较长，服务器可能仍在继续。请稍后刷新状态，避免重复同步。',
+    );
+    expect(garminSyncErrorMessage({ code: 'ETIMEDOUT' })).toBe(
+      '同步耗时较长，服务器可能仍在继续。请稍后刷新状态，避免重复同步。',
+    );
+    expect(garminSyncErrorMessage({ response: { data: { detail: '请重新连接账号' } } })).toBe(
+      '请重新连接账号',
+    );
+    expect(garminSyncErrorMessage(new Error('timeout contained password=secret'))).toBe(
+      '操作失败，请稍后重试',
+    );
   });
 });

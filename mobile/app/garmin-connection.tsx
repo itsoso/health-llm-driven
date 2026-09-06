@@ -20,6 +20,7 @@ import {
   deleteGarminCredentials,
   fetchGarminStatus,
   garminErrorMessage,
+  garminSyncErrorMessage,
   connectGarminCredentials,
   setGarminSyncEnabled,
   syncGarmin,
@@ -216,7 +217,7 @@ export default function GarminConnectionScreen() {
       await invalidateHealthSnapshot(queryClient);
       await refreshStatus();
     } catch (syncError) {
-      setError(garminErrorMessage(syncError));
+      setError(garminSyncErrorMessage(syncError));
     } finally {
       setBusy(null);
     }

@@ -1,5 +1,10 @@
 import api from './api';
 
+export const GARMIN_SYNC_TIMEOUT_MS = 120_000;
+
+const GARMIN_SYNC_TIMEOUT_MESSAGE =
+  '同步耗时较长，服务器可能仍在继续。请稍后刷新状态，避免重复同步。';
+
 export type GarminHealth = 'healthy' | 'stale' | 'error' | 'unbound';
 
 export interface GarminCredentialStatus {
@@ -65,7 +70,11 @@ export async function verifyGarminMfa(
 }
 
 export async function syncGarmin(days = 1): Promise<GarminSyncResult> {
-  const response = await api.post(`/data-collection/garmin/me/sync?days=${days}`);
+  const response = await api.post(
+    `/data-collection/garmin/me/sync?days=${days}`,
+    undefined,
+    { timeout: GARMIN_SYNC_TIMEOUT_MS },
+  );
   return response.data;
 }
 
@@ -83,4 +92,11 @@ export function garminErrorMessage(error: unknown): string {
   return typeof detail === 'string' && detail.trim()
     ? detail
     : '操作失败，请稍后重试';
+}
+
+export function garminSyncErrorMessage(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === 'ECONNABORTED' || code === 'ETIMEDOUT'
+    ? GARMIN_SYNC_TIMEOUT_MESSAGE
+    : garminErrorMessage(error);
 }

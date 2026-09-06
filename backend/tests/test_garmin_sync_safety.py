@@ -1,4 +1,5 @@
-from datetime import UTC, datetime, timedelta
+import logging
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
@@ -6,8 +7,79 @@ from app import scheduler
 from app.models.user import GarminCredential, User
 from app.scheduler import get_all_sync_enabled_users
 from app.services.auth import garmin_credential_service
+from app.services.data_collection.garmin_connect import GarminConnectService
 from app.services.data_collection.garmin_native_auth import encode_native_token_store
 from app.services.garmin_session_manager import GarminSessionManager
+
+
+def _bare_garmin_service() -> GarminConnectService:
+    service = object.__new__(GarminConnectService)
+    service.email = "private@example.com"
+    service.user_id = 42
+    service.client = None
+    return service
+
+
+def test_garmin_parser_logs_never_embed_raw_health_payloads(caplog) -> None:
+    service = _bare_garmin_service()
+    marker = "garmin-private-health-marker"
+    raw_data = {
+        "steps": 1234,
+        "totalKilocalories": 1800,
+        "totalDistanceMeters": 4200,
+        "floorsAscended": 3,
+        "lastNightAvg": 41,
+        "private_payload": marker,
+        "sleep": {
+            "dailySleepDTO": {
+                "sleepScores": {"overall": {"value": 88}},
+                "sleepTimeSeconds": 28800,
+            },
+            "private_payload": marker,
+        },
+        "respiration": {
+            "averageRespirationValue": 16,
+            marker: marker,
+        },
+        "spo2": {
+            "averageSpO2": 97,
+            marker: marker,
+        },
+    }
+
+    with caplog.at_level(logging.DEBUG):
+        service.parse_to_garmin_data_create(raw_data, user_id=42, record_date=date(2026, 9, 5))
+
+    assert marker not in caplog.text
+
+
+def test_garmin_sync_failure_logs_exception_type_without_exception_text(caplog) -> None:
+    service = _bare_garmin_service()
+    marker = "garmin-private-exception-marker"
+
+    class ExplodingDb:
+        def query(self, *_args, **_kwargs):
+            raise RuntimeError(marker)
+
+    raw_data = {
+        "hrv_raw": {
+            "hrvReadings": [
+                {"readingTimeLocal": "2026-09-05T01:02:00", "hrvValue": 40},
+            ],
+        },
+    }
+
+    with caplog.at_level(logging.WARNING):
+        result = service._sync_hrv_readings(
+            ExplodingDb(),
+            user_id=42,
+            target_date=date(2026, 9, 5),
+            raw_data=raw_data,
+        )
+
+    assert result == 0
+    assert marker not in caplog.text
+    assert "RuntimeError" in caplog.text
 
 
 def _credential(db, suffix: str) -> GarminCredential:

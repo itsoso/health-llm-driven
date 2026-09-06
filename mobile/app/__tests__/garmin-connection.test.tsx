@@ -11,6 +11,9 @@ const mockVerifyMfa = jest.fn();
 const mockSync = jest.fn();
 const mockSetSyncEnabled = jest.fn();
 const mockDeleteCredentials = jest.fn();
+const mockGarminSyncErrorMessage = jest.fn(
+  (_error: unknown) => '同步耗时较长，服务器可能仍在继续。请稍后刷新状态，避免重复同步。',
+);
 let mockStatus: any;
 
 jest.mock('expo-router', () => ({
@@ -40,6 +43,7 @@ jest.mock('../../services/garmin', () => ({
   setGarminSyncEnabled: (...args: unknown[]) => mockSetSyncEnabled(...args),
   deleteGarminCredentials: (...args: unknown[]) => mockDeleteCredentials(...args),
   garminErrorMessage: () => '操作失败，请稍后重试',
+  garminSyncErrorMessage: (error: unknown) => mockGarminSyncErrorMessage(error),
 }));
 
 import GarminConnectionScreen from '../garmin-connection';
@@ -144,6 +148,24 @@ describe('GarminConnectionScreen', () => {
         (icon) => icon.props.name === 'information-circle-outline',
       ),
     ).toBe(true);
+  });
+
+  it('does not claim failure when a manual sync times out before the server finishes', async () => {
+    mockStatus = {
+      ...mockStatus,
+      bound: true,
+      health: 'healthy',
+      credentials_valid: true,
+    };
+    mockSync.mockRejectedValueOnce({ code: 'ECONNABORTED' });
+    const { getByRole, getByText } = render(<GarminConnectionScreen />);
+
+    fireEvent.press(getByRole('button', { name: '立即同步 Garmin' }));
+
+    await waitFor(() => expect(getByText(
+      '同步耗时较长，服务器可能仍在继续。请稍后刷新状态，避免重复同步。',
+    )).toBeTruthy());
+    expect(mockGarminSyncErrorMessage).toHaveBeenCalledWith({ code: 'ECONNABORTED' });
   });
 
   it('shows an actionable reconnect path for revoked credentials', () => {

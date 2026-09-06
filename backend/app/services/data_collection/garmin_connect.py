@@ -289,7 +289,11 @@ class GarminConnectService(GarminGettersMixin):
                 db.commit()
                 logger.info(f"{self._log_prefix()} 已清除缓存的 Garmin token")
         except Exception as e:
-            logger.warning(f"{self._log_prefix()} 清除 session 失败: {e}")
+            logger.warning(
+                "%s 清除 session 失败；异常类型=%s",
+                self._log_prefix(),
+                type(e).__name__,
+            )
 
     def _check_login_lock(self, db: Session) -> Optional[datetime]:
         """
@@ -321,7 +325,11 @@ class GarminConnectService(GarminGettersMixin):
                     cred.login_locked_until = None
                     db.commit()
         except Exception as e:
-            logger.warning(f"{self._log_prefix()} 检查登录锁定失败: {e}")
+            logger.warning(
+                "%s 检查登录锁定失败；异常类型=%s",
+                self._log_prefix(),
+                type(e).__name__,
+            )
 
         return None
 
@@ -386,7 +394,7 @@ class GarminConnectService(GarminGettersMixin):
 
                 db.commit()
         except Exception as e:
-            logger.warning(f"{prefix} 记录登录失败状态时出错: {e}")
+            logger.warning("%s 记录登录失败状态时出错；异常类型=%s", prefix, type(e).__name__)
             db.rollback()
 
     def _reset_login_failure(self, db: Session):
@@ -414,7 +422,11 @@ class GarminConnectService(GarminGettersMixin):
                 db.commit()
                 logger.info(f"{self._log_prefix()} ✅ 登录成功，已重置失败计数")
         except Exception as e:
-            logger.warning(f"{self._log_prefix()} 重置登录失败状态时出错: {e}")
+            logger.warning(
+                "%s 重置登录失败状态时出错；异常类型=%s",
+                self._log_prefix(),
+                type(e).__name__,
+            )
 
     def _ensure_display_name(self) -> bool:
         """确保资料字段可供 Garmin getter 使用，不记录身份信息。"""
@@ -725,10 +737,10 @@ class GarminConnectService(GarminGettersMixin):
         Returns:
             GarminDataCreate对象
         """
-        # 调试：打印原始数据结构（仅前1000字符）
-        import json
-        raw_data_str = json.dumps(raw_data, indent=2, default=str)[:2000]
-        logger.debug(f"解析Garmin数据，原始数据结构（前2000字符）:\n{raw_data_str}")
+        logger.debug(
+            "开始解析 Garmin 数据；顶层字段数=%s",
+            len(raw_data) if isinstance(raw_data, dict) else 0,
+        )
 
         # 从get_user_summary获取的数据在根级别
         # 注意：raw_data包含sleep、body_battery等，但summary数据可能为空
@@ -739,7 +751,7 @@ class GarminConnectService(GarminGettersMixin):
             # 只保留来自get_user_summary的字段
             exclude_keys = {'sleep', 'body_battery', 'heart_rate', 'stress'}
             summary = {k: v for k, v in raw_data.items() if k not in exclude_keys}
-            logger.debug(f"提取summary数据，排除独立API数据后的键: {list(summary.keys())[:20]}")
+            logger.debug("已提取 Garmin summary；字段数=%s", len(summary))
 
         # 处理睡眠数据（可能来自get_sleep_data或summary）
         sleep_data_raw = raw_data.get('sleep') if isinstance(raw_data, dict) else None
@@ -791,22 +803,16 @@ class GarminConnectService(GarminGettersMixin):
             #   ...
             # }
 
-            # 打印睡眠数据的顶层键
-            logger.info(f"睡眠数据顶层键: {list(sleep_data.keys())}")
-
             # 获取 dailySleepDTO
             daily_sleep_dto = sleep_data.get('dailySleepDTO', {})
             if not isinstance(daily_sleep_dto, dict):
                 daily_sleep_dto = {}
 
-            # 打印 dailySleepDTO 的键和睡眠分数相关字段
-            if daily_sleep_dto:
-                logger.info(f"dailySleepDTO 键: {list(daily_sleep_dto.keys())}")
-                sleep_scores = daily_sleep_dto.get('sleepScores')
-                if sleep_scores:
-                    logger.info(f"sleepScores 内容: {sleep_scores}")
-            else:
-                logger.info("dailySleepDTO 为空")
+            logger.debug(
+                "Garmin 睡眠载荷结构已解析；顶层字段数=%s dailySleepDTO字段数=%s",
+                len(sleep_data),
+                len(daily_sleep_dto),
+            )
 
             # 获取睡眠分数 - 正确的路径是 dailySleepDTO.sleepScores.overall.value
             sleep_score = (
@@ -821,8 +827,6 @@ class GarminConnectService(GarminGettersMixin):
             # 如果sleep_score是字典（如 {'value': 87, 'qualifierKey': 'GOOD'}），提取value
             if isinstance(sleep_score, dict):
                 sleep_score = sleep_score.get('value')
-
-            logger.debug(f"提取的睡眠分数: {sleep_score}")
 
             # 睡眠时长（秒）- 从 dailySleepDTO 获取
             sleep_duration_seconds = (
@@ -867,7 +871,7 @@ class GarminConnectService(GarminGettersMixin):
                     sleep_start_beijing = sleep_start_utc.astimezone(beijing_tz)
                     sleep_start_time = sleep_start_beijing.time()
                 except Exception as e:
-                    logger.warning(f"解析睡眠开始时间失败: {e}")
+                    logger.warning("解析 Garmin 睡眠开始时间失败；异常类型=%s", type(e).__name__)
             if sleep_end_ts:
                 try:
                     # 从GMT时间戳转换为UTC时间，再转为北京时间
@@ -875,11 +879,14 @@ class GarminConnectService(GarminGettersMixin):
                     sleep_end_beijing = sleep_end_utc.astimezone(beijing_tz)
                     sleep_end_time = sleep_end_beijing.time()
                 except Exception as e:
-                    logger.warning(f"解析睡眠结束时间失败: {e}")
+                    logger.warning("解析 Garmin 睡眠结束时间失败；异常类型=%s", type(e).__name__)
 
-            logger.info(f"解析睡眠数据: 分数={sleep_score}, 时长秒={sleep_duration_seconds}, 深睡={deep_sleep_seconds}, REM={rem_sleep_seconds}, HRV={hrv}, 开始时间={sleep_start_time}, 结束时间={sleep_end_time}")
+            logger.debug("已解析 Garmin 睡眠指标")
         else:
-            logger.warning(f"睡眠数据为空或格式不正确: type={type(sleep_data)}, 值={sleep_data}")
+            logger.debug(
+                "Garmin 睡眠数据为空或格式不正确；类型=%s",
+                type(sleep_data).__name__,
+            )
 
         # 如果从sleep_data没有获取到，尝试从summary获取
         if isinstance(summary, dict):
@@ -980,7 +987,7 @@ class GarminConnectService(GarminGettersMixin):
         if resting_hr is None and isinstance(sleep_data, dict):
             resting_hr = sleep_data.get('restingHeartRate')
             if resting_hr:
-                logger.info(f"从睡眠数据获取静息心率: {resting_hr}")
+                logger.debug("已从 Garmin 睡眠数据提取静息心率")
 
         # 如果还没有获取到平均心率，尝试从睡眠数据获取
         if avg_hr is None and isinstance(sleep_data, dict):
@@ -988,7 +995,7 @@ class GarminConnectService(GarminGettersMixin):
             if isinstance(daily_sleep_dto, dict):
                 avg_hr = daily_sleep_dto.get('avgHeartRate')
                 if avg_hr:
-                    logger.info(f"从睡眠数据获取平均心率: {avg_hr}")
+                    logger.debug("已从 Garmin 睡眠数据提取平均心率")
 
         # HRV数据 - 如果从睡眠数据没有获取到，尝试从summary获取
         if hrv is None and isinstance(summary, dict):
@@ -1002,28 +1009,22 @@ class GarminConnectService(GarminGettersMixin):
                 if hrv_resp and isinstance(hrv_resp, dict):
                     hrv_summary = hrv_resp.get("hrvSummary", {})
                     hrv = hrv_summary.get("lastNightAvg") or hrv_summary.get("weeklyAvg")
-                    hrv_status_val = hrv_summary.get("status")
                     if hrv:
-                        logger.info(f"从 HRV API 获取: hrv={hrv}, status={hrv_status_val}")
+                        logger.debug("已从 Garmin HRV API 提取指标")
             except Exception as e:
-                logger.debug(f"HRV API 调用失败(非致命): {e}")
-
-        logger.debug(f"最终HRV值: {hrv}")
+                logger.debug("Garmin HRV API 调用失败（非致命）；异常类型=%s", type(e).__name__)
 
         # 身体电量数据（可能来自get_body_battery或summary）
         battery_data_raw = None
         if isinstance(raw_data, dict):
             battery_data_raw = raw_data.get('body_battery') or raw_data.get('bodyBattery')
 
-        logger.info(f"身体电量原始数据类型: {type(battery_data_raw)}")
+        logger.debug("开始解析 Garmin 身体电量数据；类型=%s", type(battery_data_raw).__name__)
         if battery_data_raw:
             if isinstance(battery_data_raw, list):
-                logger.info(f"身体电量原始数据(列表)长度: {len(battery_data_raw)}")
-                if battery_data_raw:
-                    sample = battery_data_raw[0] if len(battery_data_raw) > 0 else None
-                    logger.info(f"身体电量第一个元素: {sample}")
+                logger.debug("Garmin 身体电量样本数=%s", len(battery_data_raw))
             elif isinstance(battery_data_raw, dict):
-                logger.info(f"身体电量原始数据(字典)键: {list(battery_data_raw.keys())}")
+                logger.debug("Garmin 身体电量字段数=%s", len(battery_data_raw))
 
         # 如果battery_data是列表，可能需要从中提取统计值
         battery_data = {}
@@ -1038,7 +1039,6 @@ class GarminConnectService(GarminGettersMixin):
             # 需要遍历找到 charged/drained 或计算 most_charged/lowest
             # 重要：过滤掉不属于目标日期的数据点
             battery_levels = []
-            battery_with_timestamps = []  # 记录电量和时间戳用于调试
 
             # 计算目标日期的时间范围（使用本地时区）
             target_date_start = datetime.combine(record_date, datetime.min.time())
@@ -1067,7 +1067,6 @@ class GarminConnectService(GarminGettersMixin):
 
                         if is_valid_date:
                             battery_levels.append(level)
-                            battery_with_timestamps.append((level, timestamp))
                     # 有些格式直接包含统计数据
                     if item.get('charged') is not None:
                         charged = item.get('charged')
@@ -1098,31 +1097,7 @@ class GarminConnectService(GarminGettersMixin):
                     charged = total_charged if total_charged > 0 else None
                     drained = total_drained if total_drained > 0 else None
 
-            # 调试：打印时间范围和最高值的时间点
-            if battery_with_timestamps:
-                first_ts = battery_with_timestamps[0][1]
-                last_ts = battery_with_timestamps[-1][1]
-                max_entry = max(battery_with_timestamps, key=lambda x: x[0] if x[0] else 0)
-                min_entry = min(battery_with_timestamps, key=lambda x: x[0] if x[0] else 999)
-
-                # 转换时间戳为可读格式
-                def ts_to_str(ts):
-                    if ts:
-                        try:
-                            if isinstance(ts, (int, float)) and ts > 1000000000000:
-                                return datetime.fromtimestamp(ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
-                            elif isinstance(ts, (int, float)):
-                                return datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
-                            return str(ts)
-                        except Exception:
-                            return str(ts)
-                    return 'N/A'
-
-                logger.info(f"电量列表时间范围: {ts_to_str(first_ts)} - {ts_to_str(last_ts)}, "
-                           f"最高值={max_entry[0]}@{ts_to_str(max_entry[1])}, "
-                           f"最低值={min_entry[0]}@{ts_to_str(min_entry[1])}")
-
-            logger.info(f"从列表计算: most_charged={most_charged}, lowest={lowest}, current={current_battery}, charged={charged}, drained={drained}")
+            logger.debug("Garmin 身体电量样本已解析；有效样本数=%s", len(battery_levels))
 
         elif isinstance(battery_data_raw, dict):
             battery_data = battery_data_raw
@@ -1147,7 +1122,6 @@ class GarminConnectService(GarminGettersMixin):
                     most_charged = summary_highest
                 else:
                     most_charged = max(most_charged, summary_highest)
-                logger.debug(f"从summary获取bodyBatteryHighestValue: {summary_highest}, 更新后most_charged: {most_charged}")
 
             # 最低值
             summary_lowest = summary.get('bodyBatteryLowestValue') or summary.get('bodyBatteryLowest')
@@ -1161,13 +1135,7 @@ class GarminConnectService(GarminGettersMixin):
         if current_battery is None and isinstance(summary, dict):
             current_battery = summary.get('bodyBatteryMostRecentValue') or summary.get('bodyBatteryCurrentValue')
 
-        logger.info(f"最终身体电量: charged={charged}, drained={drained}, most_charged={most_charged}, lowest={lowest}, current={current_battery}")
-
-        # 调试：打印 summary 中所有 bodyBattery 相关字段
-        if isinstance(summary, dict):
-            bb_fields = {k: v for k, v in summary.items() if 'bodyBattery' in k or 'battery' in k.lower()}
-            if bb_fields:
-                logger.debug(f"Summary中的电量相关字段: {bb_fields}")
+        logger.debug("已解析 Garmin 身体电量指标")
 
         # 压力数据（可能来自get_all_day_stress或summary）
         stress_data_raw = None
@@ -1198,7 +1166,7 @@ class GarminConnectService(GarminGettersMixin):
                 summary.get('stress')
             )
 
-        logger.debug(f"提取的压力水平: {stress_level} (来源: {'stress数据' if stress_data_raw else 'summary' if isinstance(summary, dict) else '无'})")
+        logger.debug("已解析 Garmin 压力指标；是否有值=%s", stress_level is not None)
 
         # 活动数据（从summary获取，如果失败则从活动数据获取）
         steps = None
@@ -1221,7 +1189,7 @@ class GarminConnectService(GarminGettersMixin):
                 summary.get('steps') or
                 safe_get_nested(summary, 'stepGoal', 'steps')
             )
-            logger.debug(f"从summary获取步数: {steps}")
+            logger.debug("已从 Garmin summary 提取活动指标")
 
             # 卡路里：优先使用totalKilocalories
             calories = (
@@ -1254,7 +1222,14 @@ class GarminConnectService(GarminGettersMixin):
             floors is None
         )
         if needs_activity_data:
-            logger.info(f"触发活动数据查询: has_activity_data={has_activity_data}, steps={steps}, calories={calories}, distance={distance}, floors={floors}")
+            missing_activity_fields = sum(
+                value is None for value in (steps, calories, distance, floors)
+            )
+            logger.info(
+                "触发 Garmin 活动数据查询；summary包含活动数据=%s 缺失字段数=%s",
+                has_activity_data,
+                missing_activity_fields,
+            )
             try:
                 # get_activities_by_date 需要字符串格式的日期
                 date_str = record_date.isoformat() if hasattr(record_date, 'isoformat') else str(record_date)
@@ -1326,14 +1301,11 @@ class GarminConnectService(GarminGettersMixin):
 
                                     if any(vt in activity_type for vt in vigorous_types):
                                         total_vigorous_mins += duration_minutes
-                                        logger.debug(f"活动类型 '{activity_type}' 归类为高强度，时长: {duration_minutes}分钟")
                                     elif any(mt in activity_type for mt in moderate_types):
                                         total_moderate_mins += duration_minutes
-                                        logger.debug(f"活动类型 '{activity_type}' 归类为中等强度，时长: {duration_minutes}分钟")
                                     elif duration_minutes >= 10:
                                         # 未知活动类型但有足够时长，默认归类为中等强度
                                         total_moderate_mins += duration_minutes
-                                        logger.info(f"未识别的活动类型 '{activity_type}'，默认归类为中等强度，时长: {duration_minutes}分钟")
                             else:
                                 if activity_moderate:
                                     total_moderate_mins += int(activity_moderate)
@@ -1342,29 +1314,21 @@ class GarminConnectService(GarminGettersMixin):
 
                     # 更新数据（如果之前没有获取到，或者值为0但活动数据中有值）
                     # 修复：如果活动数据的步数大于summary的步数，应该使用活动数据（更准确）
-                    logger.info(f"步数对比 - summary步数: {steps}, 活动数据总步数: {total_steps}")
                     if steps is None or (steps == 0 and total_steps > 0) or (total_steps > steps):
-                        old_steps = steps
                         steps = total_steps if total_steps > 0 else steps
-                        logger.info(f"从活动数据更新步数: {old_steps} -> {steps}")
                     if calories is None or (calories == 0 and total_calories > 0):
                         calories = total_calories if total_calories > 0 else calories
-                        logger.info(f"从活动数据获取卡路里: {calories}")
                     if distance is None or (distance == 0 and total_distance > 0):
                         distance = total_distance if total_distance > 0 else distance
-                        logger.info(f"从活动数据获取距离: {distance}米")
                     if floors is None or (floors == 0 and total_floors > 0):
                         floors = total_floors if total_floors > 0 else floors
-                        logger.info(f"从活动数据获取楼层: {floors}")
                     # 更新强度活动时间（如果之前没有获取到或为0）
                     if (moderate_mins is None or moderate_mins == 0) and total_moderate_mins > 0:
                         moderate_mins = total_moderate_mins
-                        logger.info(f"从活动数据获取中等强度活动时间: {moderate_mins}分钟")
                     if (vigorous_mins is None or vigorous_mins == 0) and total_vigorous_mins > 0:
                         vigorous_mins = total_vigorous_mins
-                        logger.info(f"从活动数据获取高强度活动时间: {vigorous_mins}分钟")
             except Exception as e:
-                logger.error(f"从活动数据获取活动指标失败: {e}")
+                logger.error("Garmin 活动指标获取失败；异常类型=%s", type(e).__name__)
 
         # 安全的数值转换函数
         def safe_int(value):
@@ -1442,7 +1406,7 @@ class GarminConnectService(GarminGettersMixin):
                 moderate_intensity_mins = moderate_mins
             if vigorous_mins is not None and vigorous_mins > 0:
                 vigorous_intensity_mins = vigorous_mins
-            logger.info(f"使用从活动数据获取的强度活动时间: moderate={moderate_intensity_mins}, vigorous={vigorous_intensity_mins}")
+            logger.debug("已从 Garmin 活动数据补全强度活动时间")
 
         # 卡路里详细分类
         active_cals = None
@@ -1475,8 +1439,7 @@ class GarminConnectService(GarminGettersMixin):
                 highest_resp = (resp_data_raw.get('highestRespirationValue') or
                                resp_data_raw.get('maxRespirationValue') or
                                resp_data_raw.get('highest'))
-                logger.info(f"从respiration API获取呼吸数据: awake={avg_resp_awake}, sleep={avg_resp_sleep}, low={lowest_resp}, high={highest_resp}")
-                logger.debug(f"respiration数据键: {list(resp_data_raw.keys())}")
+                logger.debug("已从 Garmin respiration API 提取呼吸指标")
             elif isinstance(resp_data_raw, list) and resp_data_raw:
                 # 如果是列表，尝试计算
                 values = []
@@ -1491,7 +1454,7 @@ class GarminConnectService(GarminGettersMixin):
                     avg_resp_awake = sum(values) / len(values)
                     lowest_resp = min(values)
                     highest_resp = max(values)
-                    logger.info(f"从respiration列表计算呼吸数据: avg={avg_resp_awake}, low={lowest_resp}, high={highest_resp}, 样本数={len(values)}")
+                    logger.debug("Garmin 呼吸样本已解析；样本数=%s", len(values))
 
         # 如果独立API没有数据，从sleep_data获取
         if avg_resp_sleep is None and isinstance(sleep_data, dict):
@@ -1503,13 +1466,13 @@ class GarminConnectService(GarminGettersMixin):
                 if highest_resp is None:
                     highest_resp = daily_dto.get('highestRespirationValue')
                 if avg_resp_sleep:
-                    logger.info(f"从sleep_data获取呼吸数据: sleep={avg_resp_sleep}, low={lowest_resp}, high={highest_resp}")
+                    logger.debug("已从 Garmin 睡眠数据提取呼吸指标")
 
         # 如果还没有数据，从summary获取
         if avg_resp_awake is None and isinstance(summary, dict):
             avg_resp_awake = summary.get('avgWakingRespirationValue') or summary.get('averageRespirationValue')
             if avg_resp_awake:
-                logger.info(f"从summary获取清醒呼吸数据: awake={avg_resp_awake}")
+                logger.debug("已从 Garmin summary 提取呼吸指标")
         if lowest_resp is None and isinstance(summary, dict):
             lowest_resp = summary.get('lowestRespirationValue')
         if highest_resp is None and isinstance(summary, dict):
@@ -1540,8 +1503,7 @@ class GarminConnectService(GarminGettersMixin):
                            spo2_data_raw.get('maxSpO2') or
                            spo2_data_raw.get('highest') or
                            spo2_data_raw.get('maximum'))
-                logger.info(f"从spo2 API获取血氧数据: avg={spo2_avg}, min={spo2_min}, max={spo2_max}")
-                logger.debug(f"spo2数据键: {list(spo2_data_raw.keys())}")
+                logger.debug("已从 Garmin SpO2 API 提取血氧指标")
             elif isinstance(spo2_data_raw, list) and spo2_data_raw:
                 # 如果是列表，尝试计算平均值等
                 values = []
@@ -1556,7 +1518,7 @@ class GarminConnectService(GarminGettersMixin):
                     spo2_avg = sum(values) / len(values)
                     spo2_min = min(values)
                     spo2_max = max(values)
-                    logger.info(f"从spo2列表计算血氧数据: avg={spo2_avg}, min={spo2_min}, max={spo2_max}, 样本数={len(values)}")
+                    logger.debug("Garmin SpO2 样本已解析；样本数=%s", len(values))
 
         # 如果spo2独立API没有数据，尝试从summary获取
         if spo2_avg is None and isinstance(summary, dict):
@@ -1564,7 +1526,7 @@ class GarminConnectService(GarminGettersMixin):
             spo2_min = summary.get('lowestSpO2') or summary.get('minSpO2')
             spo2_max = summary.get('highestSpO2') or summary.get('maxSpO2')
             if spo2_avg:
-                logger.info(f"从summary获取血氧数据: avg={spo2_avg}, min={spo2_min}, max={spo2_max}")
+                logger.debug("已从 Garmin summary 提取血氧指标")
 
         # VO2 Max - 优先从 max_metrics 获取
         vo2max_run = None
@@ -1590,14 +1552,14 @@ class GarminConnectService(GarminGettersMixin):
                 cycling.get('vo2MaxValue')
             )
             if vo2max_run:
-                logger.info(f"从max_metrics获取VO2Max: running={vo2max_run}, cycling={vo2max_cycle}")
+                logger.debug("已从 Garmin max_metrics 提取 VO2 Max 指标")
 
         # 如果 max_metrics 没有，回退到 summary
         if vo2max_run is None and isinstance(summary, dict):
             vo2max_run = summary.get('vo2MaxRunning') or summary.get('vo2Max')
             vo2max_cycle = summary.get('vo2MaxCycling')
             if vo2max_run:
-                logger.info(f"从summary获取VO2Max: running={vo2max_run}, cycling={vo2max_cycle}")
+                logger.debug("已从 Garmin summary 提取 VO2 Max 指标")
 
         # 楼层和距离（如果之前没有从活动数据获取到，再从summary获取）
         floors_goal_val = None
@@ -1612,7 +1574,7 @@ class GarminConnectService(GarminGettersMixin):
                 distance = distance_from_summary
 
         # 记录解析结果用于调试
-        logger.info(f"解析结果 - 睡眠分数: {sleep_score}, 睡眠时长(秒): {sleep_duration_seconds}, 静息心率: {resting_hr}, 平均心率: {avg_hr}, 步数: {steps}")
+        logger.debug("已完成 Garmin 日健康指标解析")
 
         # --- P1a: 解析 Training Readiness / Status / 其他指标 ---
         tr = raw_data.get('training_readiness') if isinstance(raw_data, dict) else None
@@ -1806,7 +1768,7 @@ class GarminConnectService(GarminGettersMixin):
             logger.debug(f"{prefix} 开始解析 {target_date} 的数据...")
             garmin_data = self.parse_to_garmin_data_create(raw_data, user_id, target_date)
 
-            logger.debug(f"{prefix} 解析完成，步数: {garmin_data.steps}, 心率: {garmin_data.resting_heart_rate}")
+            logger.debug(f"{prefix} {target_date} 数据解析完成")
 
             # 保存到数据库
             logger.debug(f"{prefix} 开始保存 {target_date} 的数据到数据库...")
@@ -1933,7 +1895,7 @@ class GarminConnectService(GarminGettersMixin):
             return len(samples_to_insert)
 
         except Exception as e:
-            logger.warning(f"{prefix} 同步心率采样数据失败: {e}")
+            logger.warning(f"{prefix} 同步心率采样数据失败；异常类型={type(e).__name__}")
             return 0
 
     def _sync_spo2_samples(
@@ -1960,8 +1922,6 @@ class GarminConnectService(GarminGettersMixin):
                 epoch_spo2_list = sleep_raw.get('wellnessEpochSPO2DataDTOList', [])
                 if isinstance(epoch_spo2_list, list) and epoch_spo2_list:
                     logger.info(f"{prefix} 从 sleep.wellnessEpochSPO2DataDTOList 解析 SpO2，共 {len(epoch_spo2_list)} 条")
-                    if epoch_spo2_list[0] and isinstance(epoch_spo2_list[0], dict):
-                        logger.info(f"{prefix} SpO2 epoch 条目示例 keys: {list(epoch_spo2_list[0].keys())}, values: {epoch_spo2_list[0]}")
                     for item in epoch_spo2_list:
                         try:
                             if not isinstance(item, dict):
@@ -2102,9 +2062,7 @@ class GarminConnectService(GarminGettersMixin):
             return len(objects)
 
         except Exception as e:
-            logger.warning(f"{prefix} 同步血氧采样数据失败: {e}")
-            import traceback
-            logger.warning(f"{prefix} SpO2 同步详细错误: {traceback.format_exc()}")
+            logger.warning(f"{prefix} 同步血氧采样数据失败；异常类型={type(e).__name__}")
             return 0
 
     def _sync_sleep_level_intervals(
@@ -2228,7 +2186,7 @@ class GarminConnectService(GarminGettersMixin):
             return len(objects)
 
         except Exception as e:
-            logger.warning(f"{prefix} 同步睡眠阶段数据失败: {e}")
+            logger.warning(f"{prefix} 同步睡眠阶段数据失败；异常类型={type(e).__name__}")
             return 0
 
     # ------------------------------------------------------------------
@@ -2316,7 +2274,7 @@ class GarminConnectService(GarminGettersMixin):
             return len(objects)
 
         except Exception as e:
-            logger.warning(f"{prefix} 同步呼吸采样失败: {e}")
+            logger.warning(f"{prefix} 同步呼吸采样失败；异常类型={type(e).__name__}")
             return 0
 
     def _sync_hrv_readings(
@@ -2400,7 +2358,7 @@ class GarminConnectService(GarminGettersMixin):
             return len(objects)
 
         except Exception as e:
-            logger.warning(f"{prefix} 同步 HRV 读数失败: {e}")
+            logger.warning("%s 同步 HRV 读数失败；异常类型=%s", prefix, type(e).__name__)
             return 0
 
     def _sync_stress_samples(
@@ -2474,7 +2432,7 @@ class GarminConnectService(GarminGettersMixin):
             return len(objects)
 
         except Exception as e:
-            logger.warning(f"{prefix} 同步压力读数失败: {e}")
+            logger.warning("%s 同步压力读数失败；异常类型=%s", prefix, type(e).__name__)
             return 0
 
     def _sync_devices(self, db: Session, user_id: int) -> int:
@@ -2536,7 +2494,7 @@ class GarminConnectService(GarminGettersMixin):
             return saved
 
         except Exception as e:
-            logger.warning(f"{prefix} 同步设备失败: {e}")
+            logger.warning("%s 同步设备失败；异常类型=%s", prefix, type(e).__name__)
             return 0
 
     def _sync_body_composition(self, db: Session, user_id: int, target_date: date) -> int:
@@ -2584,11 +2542,11 @@ class GarminConnectService(GarminGettersMixin):
             else:
                 db.add(WeightRecord(user_id=user_id, record_date=target_date, **fields))
             db.commit()
-            logger.info(f"{prefix} 保存体成分 {target_date}: {weight_kg}kg")
+            logger.info("%s 保存了 %s 的 Garmin 体成分记录", prefix, target_date)
             return 1
 
         except Exception as e:
-            logger.warning(f"{prefix} 同步体成分失败: {e}")
+            logger.warning("%s 同步体成分失败；异常类型=%s", prefix, type(e).__name__)
             return 0
 
     def _sync_workout_hr_zones(self, db: Session, workout_id: int, garmin_activity_id: int) -> int:
@@ -2623,7 +2581,12 @@ class GarminConnectService(GarminGettersMixin):
             return len(objects)
 
         except Exception as e:
-            logger.warning(f"{prefix} 同步 workout HR zones 失败 (id={garmin_activity_id}): {e}")
+            logger.warning(
+                "%s 同步 workout HR zones 失败 (id=%s)；异常类型=%s",
+                prefix,
+                garmin_activity_id,
+                type(e).__name__,
+            )
             return 0
 
     def sync_date_range(

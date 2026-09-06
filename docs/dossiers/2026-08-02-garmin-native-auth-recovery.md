@@ -157,3 +157,41 @@ manifest remain on known-good commit `ffa790f67c62`. G6 is therefore blocked on
 an external EAS per-asset processing failure and on the lack of a safe
 authenticated Garmin account for one credential/reconnect/MFA/manual-sync
 smoke. Do not mark the feature complete until both are cleared.
+
+## 2026-09-05 Manual Sync False Failure Correction
+
+### Production Evidence
+
+A read-only production investigation of the reported Mobile error found that
+the Garmin credential remained valid, required no MFA, had zero recorded sync
+errors and persisted current-day records. The relevant manual-sync request
+returned HTTP 200 after 42.34 seconds. Mobile used the shared 30-second Axios
+timeout, so it displayed a generic failure while the server continued and
+completed successfully.
+
+The longest observed server interval was the SpO2 persistence phase: preparing
+526 samples to write and committing them took about 34 seconds. This identifies
+where the observed latency occurred, but does not prove database contention or
+a specific database root cause.
+
+### Correction
+
+- Garmin manual sync uses a request-specific 120-second timeout without
+  changing the global Mobile API timeout.
+- Axios timeout codes produce truthful copy that the server may still be
+  running and advise refreshing status instead of repeating the sync.
+- Explicit server error details continue to pass through the existing
+  secret-safe Garmin error mapper.
+- Garmin parser and sample-sync logs no longer embed raw payloads, sample
+  values or derived health readings. Operational dates, stages, field counts
+  and sample counts remain available for diagnosis.
+
+### Verification
+
+- Mobile TypeScript: PASS (`npx tsc --noEmit`).
+- Mobile Garmin service and connection screen: PASS (12 tests).
+- Backend Garmin safety regression: PASS (7 tests).
+- Complete focused Garmin backend set: PASS (150 tests).
+
+This correction has not been deployed or published by this update. Its release
+gates remain pending until an explicitly authorized release run.
