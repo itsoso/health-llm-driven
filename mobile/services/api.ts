@@ -37,6 +37,8 @@ const CLOUD_SESSION_BOOTSTRAP_REQUESTS = new Set([
   'POST /auth/login/json',
   'POST /auth/phone/code',
   'POST /auth/phone/login',
+  'POST /auth/phone/verify',
+  'POST /auth/invited-registration',
 ]);
 
 function isCloudSessionBootstrapRequest(method: string | undefined, url: string | undefined): boolean {
