@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import re
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import MetaData, Table, func, inspect, or_, select
@@ -26,6 +27,7 @@ _PRIVACY_AUDIT_ACTIONS = {
     "account_deletion_status_updated",
 }
 _UPLOAD_ROOT = upload_dir()
+_OWNER_UPLOAD_CATEGORIES = {"chat", "diet", "medical", "other", "aigc"}
 
 
 def _table(db: Session, table_name: str) -> Table:
@@ -71,17 +73,56 @@ def _row_counts(db: Session, table_name: str, user_id: int) -> dict[str, Any] | 
     }
 
 
-def _upload_report(user_id: int) -> dict[str, Any]:
+def _count_upload_entries(path: Path) -> int:
+    """Count residual files without following links or hiding IO failures."""
+    if path.is_symlink() or not path.is_dir():
+        return 1
+    return sum(_count_upload_entries(child) for child in path.iterdir())
+
+
+def _upload_report(user_id: int, *, other_avatar_urls: set[str] | None = None) -> dict[str, Any]:
     roots: list[str] = []
     files = 0
+    unresolved = 0
+    other_avatar_urls = other_avatar_urls or set()
+    if _UPLOAD_ROOT.is_symlink():
+        return {"status": "checked", "scoped_directories": [], "files": 0, "unresolved_files": 1}
     if _UPLOAD_ROOT.exists():
-        for category in ("chat", "diet", "medical", "other"):
-            root = _UPLOAD_ROOT / category / str(user_id)
-            if not root.exists():
+        for category_root in _UPLOAD_ROOT.iterdir():
+            category = category_root.name
+            if category_root.is_symlink() or not category_root.is_dir():
+                unresolved += 1
                 continue
-            roots.append(str(root.relative_to(_UPLOAD_ROOT)))
-            files += sum(1 for path in root.rglob("*") if path.is_file())
-    return {"status": "checked", "scoped_directories": roots, "files": files}
+            for entry in category_root.iterdir():
+                if entry.is_symlink():
+                    unresolved += 1
+                elif (
+                    category in _OWNER_UPLOAD_CATEGORIES
+                    and entry.is_dir()
+                    and re.fullmatch(r"[1-9][0-9]*", entry.name)
+                ):
+                    if entry.name == str(user_id):
+                        roots.append(str(entry.relative_to(_UPLOAD_ROOT)))
+                        files += _count_upload_entries(entry)
+                    # Canonical owner directories belonging to other users are
+                    # not deletion targets and must never be traversed/deleted.
+                elif (
+                    category == "avatar"
+                    and entry.is_file()
+                    and f"/api/v1/upload/files/avatar/{entry.name}" in other_avatar_urls
+                ) or (category == "chat" and entry.name == ".lifecycle.lock" and entry.is_file()):
+                    continue
+                else:
+                    # Legacy flat uploads, orphaned avatars and unknown layouts
+                    # have no surviving owner proof. Do not silently clear them
+                    # or authorize deletion of another user's data.
+                    unresolved += _count_upload_entries(entry)
+    return {
+        "status": "checked",
+        "scoped_directories": sorted(roots),
+        "files": files,
+        "unresolved_files": unresolved,
+    }
 
 
 def _cache_report(user_id: int) -> dict[str, Any]:
@@ -109,7 +150,10 @@ def build_deletion_verification_report(db: Session, user_id: int) -> dict[str, A
         if (row := _row_counts(db, table_name, user_id)) is not None
     ]
     user_exists = db.query(User.id).filter(User.id == user_id).first() is not None
-    uploads = _upload_report(user_id)
+    other_avatar_urls = {
+        url for (url,) in db.query(User.avatar_url).filter(User.id != user_id).all() if url
+    }
+    uploads = _upload_report(user_id, other_avatar_urls=other_avatar_urls)
     cache = _cache_report(user_id)
     blocking_rows = sum(int(row["blocking_rows"]) for row in table_rows)
     cache_clear = cache["status"] == "checked" and cache["keys"] == 0
@@ -117,6 +161,7 @@ def build_deletion_verification_report(db: Session, user_id: int) -> dict[str, A
         not user_exists
         and blocking_rows == 0
         and uploads["files"] == 0
+        and uploads["unresolved_files"] == 0
         and cache_clear
     )
     report = {
