@@ -14,6 +14,19 @@ const baseProps = {
 };
 
 describe('ConversationSheet canonical server order', () => {
+  it('keeps modal containers out of the accessibility tree and exposes an explicit close', () => {
+    const onClose = jest.fn();
+    const view = render(<ConversationSheet {...baseProps} onClose={onClose} conversations={makeConvs([1])} onSearchChange={jest.fn()} />);
+    // iOS groups descendants of accessible Pressables; Jest alone does not model that grouping.
+    for (let node = view.getByLabelText('搜索对话').parent; node; node = node.parent) {
+      if (typeof node.type === 'string') expect(node.props.accessible).not.toBe(true);
+    }
+    fireEvent.press(view.getByRole('button', { name: '关闭对话历史' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(view.getByLabelText('搜索对话')).toBeTruthy();
+    expect(view.getByTestId('conversation-sheet-drag-header').props.onMoveShouldSetResponder).toEqual(expect.any(Function));
+  });
+
   it('renames a conversation title inline', async () => {
     const onRenameConversation = jest.fn().mockResolvedValue(undefined);
     const conversations = [

@@ -14,6 +14,13 @@ It currently verifies:
   medical boundary and NHC citation, and opens the official source in Safari;
 - an unsent text draft survives background/foreground without being sent;
 - privacy policy and account deletion entries are reachable.
+- history search and row controls are individually accessible, with button and header-swipe dismissal;
+- attachment controls are individually accessible, report import can be cancelled before file selection, and the attachment sheet closes by button or header swipe.
+
+These navigation checks require a candidate containing the modal accessibility
+fix. Historical Build 263 fails them and is not treated as a passing candidate.
+Modal disappearance is awaited explicitly, rather than negating an existence
+wait while the closing animation may still be running.
 
 The tests do not submit a health record, delete an account, grant permissions, or
 mark the full physical-device gate as passed. Voice, camera, sharing, write

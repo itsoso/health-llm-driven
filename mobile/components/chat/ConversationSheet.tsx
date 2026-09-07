@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   View, Text, Modal, Pressable, FlatList, TouchableOpacity,
   StyleSheet, Alert, ActivityIndicator, useWindowDimensions,
-  TextInput,
+  TextInput, Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -12,6 +12,7 @@ import {
   revaSemantic,
   revaFonts,
 } from '../../constants/revaTheme';
+import { useSheetDismiss } from '../../hooks/useSheetDismiss';
 
 interface Props {
   visible: boolean;
@@ -48,6 +49,7 @@ export default function ConversationSheet({
   const [draftTitle, setDraftTitle] = useState('');
   const [savingId, setSavingId] = useState<number | null>(null);
   const [renameError, setRenameError] = useState<string | null>(null);
+  const { translateY, panHandlers } = useSheetDismiss(onClose, visible);
   const { height: screenH, width: screenW } = useWindowDimensions();
   const isTablet = screenW >= 768;
   // iPhone: 列表占屏幕 70%; iPad: 占 75% 但封顶 800
@@ -85,17 +87,28 @@ export default function ConversationSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={[styles.overlay, isTablet && styles.overlayTablet]} onPress={onClose}>
-        <Pressable
+      <View style={[styles.overlay, isTablet && styles.overlayTablet]} accessible={false}>
+        <Pressable style={StyleSheet.absoluteFill} accessible={false} onPress={onClose} />
+        <Animated.View
+          accessible={false}
+          accessibilityViewIsModal
+          onAccessibilityEscape={onClose}
           style={[
             styles.sheet,
             isTablet && styles.sheetTablet,
             sheetMaxWidth ? { maxWidth: sheetMaxWidth, width: '100%' } : null,
+            { transform: [{ translateY }] },
           ]}
-          onPress={e => e.stopPropagation()}
         >
-          <View style={styles.handle} />
-          <Text style={styles.title}>对话历史</Text>
+          <View testID="conversation-sheet-drag-header" {...panHandlers} accessible={false}>
+            <View style={styles.handle} accessible={false} />
+            <View style={styles.headerRow}>
+              <Text style={styles.title} accessibilityRole="header">对话历史</Text>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="关闭对话历史" onPress={onClose} style={styles.closeButton}>
+                <Ionicons name="close" size={22} color={C.ink2} />
+              </TouchableOpacity>
+            </View>
+          </View>
           {onSearchChange && (
             <View style={styles.searchWrap}>
               <Ionicons name="search-outline" size={16} color={C.ink3} style={styles.searchIcon} />
@@ -246,8 +259,8 @@ export default function ConversationSheet({
               }
             />
           )}
-        </Pressable>
-      </Pressable>
+        </Animated.View>
+      </View>
     </Modal>
   );
 }
@@ -301,6 +314,7 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
   overlayTablet: { justifyContent: 'center', alignItems: 'center' },
   sheet: {
+    maxHeight: '90%',
     backgroundColor: C.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
     paddingHorizontal: revaSpacing.s5, paddingBottom: 40, paddingTop: 8,
   },
@@ -311,7 +325,9 @@ const styles = StyleSheet.create({
     width: 36, height: 4, borderRadius: 2, backgroundColor: C.ink4,
     alignSelf: 'center', marginBottom: revaSpacing.s4,
   },
-  title: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1, marginBottom: 12 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  closeButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  title: { flexShrink: 1, fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1 },
   searchWrap: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: C.paper2, borderRadius: revaRadii.md,

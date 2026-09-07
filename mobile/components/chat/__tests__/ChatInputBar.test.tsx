@@ -230,6 +230,23 @@ describe('ChatInputBar', () => {
       .toBe(revaColors.surface);
   });
 
+  it('exposes attachment controls without an accessible grouping container and can close without sending', () => {
+    const onSend = jest.fn();
+    const view = render(<ChatInputBar onSend={onSend} isStreaming={false} />);
+    fireEvent.press(view.getByLabelText('附件菜单'));
+    expect(view.getByTestId('attachment-menu-sheet').props.accessible).toBe(false);
+    expect(view.getByTestId('attachment-menu-drag-header').props.onMoveShouldSetResponder).toEqual(expect.any(Function));
+    for (let node = view.getByRole('button', { name: '拍照记餐' }).parent; node; node = node.parent) {
+      if (typeof node.type === 'string') expect(node.props.accessible).not.toBe(true);
+    }
+    expect(view.getByRole('button', { name: '拍照记餐' })).toBeTruthy();
+    fireEvent.press(view.getByRole('button', { name: '关闭附件菜单' }));
+    expect(view.queryByTestId('attachment-menu-sheet')).toBeNull();
+    expect(onSend).not.toHaveBeenCalled();
+    expect(mockTakePhoto).not.toHaveBeenCalled();
+    expect(mockPickImage).not.toHaveBeenCalled();
+  });
+
   it('keeps the attachment menu sheet vertically tight', () => {
     const { getByLabelText, getByTestId } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,

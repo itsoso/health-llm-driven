@@ -143,6 +143,73 @@ final class XiaobaAcceptanceUITests: XCTestCase {
         XCTAssertTrue(reachedChat || reachedLogin, "App exposed neither login nor Agent chat")
     }
 
+    private func assertDismissed(_ element: XCUIElement) {
+        let disappeared = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: element
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [disappeared], timeout: 5), .completed)
+    }
+
+    private func pullSheetHeader(_ identifier: String) {
+        let header = app.otherElements[identifier]
+        XCTAssertTrue(header.waitForExistence(timeout: 5))
+        let start = header.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.25))
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 140)))
+    }
+
+    func testReadOnlyHistoryControlsAndDismissal() throws {
+        app.launch()
+        try requireAuthenticatedChat()
+        let history = app.buttons["对话历史"]
+        XCTAssertTrue(history.waitForExistence(timeout: 5))
+        history.tap()
+        let search = app.textFields["搜索对话"]
+        XCTAssertTrue(search.waitForExistence(timeout: 10))
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "对话: ")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 20))
+        attachScreenshot("history-controls-accessible")
+        app.buttons["关闭对话历史"].tap()
+        assertDismissed(search)
+        history.tap()
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        pullSheetHeader("conversation-sheet-drag-header")
+        assertDismissed(search)
+        try requireAuthenticatedChat()
+        attachScreenshot("history-swipe-dismissed")
+    }
+
+    func testReadOnlyAttachmentControlsImportCancelAndDismissal() throws {
+        app.launch()
+        try requireAuthenticatedChat()
+        switchToKeyboardModeIfNeeded()
+        let field = composerTextInput()
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        let originalDraft = draftValue(field)
+        if !originalDraft.isEmpty { replaceDraft(field, with: "") }
+        let plus = app.buttons["附件菜单"]
+        XCTAssertTrue(plus.waitForExistence(timeout: 5))
+        plus.tap()
+        for label in ["拍照记餐", "相册", "文件", "导入体检报告", "关闭附件菜单"] {
+            XCTAssertTrue(app.buttons[label].waitForExistence(timeout: 5), "Missing accessible entry: \(label)")
+        }
+        attachScreenshot("attachment-controls-accessible")
+        app.buttons["导入体检报告"].tap()
+        let cancel = app.buttons["关闭导入体检报告"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5))
+        attachScreenshot("report-import-before-selection")
+        cancel.tap()
+        assertDismissed(cancel)
+        plus.tap()
+        app.buttons["关闭附件菜单"].tap()
+        assertDismissed(app.buttons["关闭附件菜单"])
+        plus.tap()
+        pullSheetHeader("attachment-menu-drag-header")
+        assertDismissed(app.buttons["关闭附件菜单"])
+        try requireAuthenticatedChat()
+        if !originalDraft.isEmpty { replaceDraft(composerTextInput(), with: originalDraft) }
+        attachScreenshot("attachment-swipe-dismissed")
+    }
+
     func test00AuthenticatedSessionPersistsAcrossTwoColdLaunches() throws {
         app.launch()
         try requireAuthenticatedChat()

@@ -2,7 +2,7 @@ import React, { useCallback, useRef, useState } from 'react';
 import {
   View, TextInput, TouchableOpacity, StyleSheet, Text,
   Modal, Pressable, ActivityIndicator, TextStyle, ScrollView,
-  Alert, AppState, Keyboard, NativeSyntheticEvent, TextInputContentSizeChangeEventData,
+  Alert, AppState, Keyboard, NativeSyntheticEvent, TextInputContentSizeChangeEventData, Animated,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -50,6 +50,7 @@ import {
 } from '../../services/voiceDraft';
 import type { TranscribeAudioResult } from '../../services/transcribe';
 import { durationBucket, emitClientEvent } from '../../services/clientEvents';
+import { useSheetDismiss } from '../../hooks/useSheetDismiss';
 
 const CANCEL_THRESHOLD = 80;
 const VOICE_SLIDE_THRESHOLD = 88;
@@ -203,6 +204,8 @@ export default function ChatInputBar({
 }: Props) {
   const [input, setInput] = useState(initialText ?? '');
   const [showMenu, setShowMenu] = useState(false);
+  const closeAttachmentMenu = useCallback(() => setShowMenu(false), []);
+  const attachmentDismiss = useSheetDismiss(closeAttachmentMenu, showMenu);
   const [showMedicalImportFlow, setShowMedicalImportFlow] = useState(false);
   const [agentMode, setAgentMode] = useState<ChatAgentMode>('daily');
   const [cancelHint, setCancelHint] = useState(false);
@@ -1328,14 +1331,25 @@ export default function ChatInputBar({
       </View>
 
       {/* 附件菜单 */}
-      <Modal visible={showMenu} transparent animationType="slide" onRequestClose={toggleMenu}>
-        <Pressable style={styles.menuOverlay} onPress={toggleMenu}>
-          <Pressable
+      <Modal visible={showMenu} transparent animationType="slide" onRequestClose={closeAttachmentMenu}>
+        <View style={styles.menuOverlay} accessible={false}>
+          <Pressable style={StyleSheet.absoluteFill} accessible={false} onPress={closeAttachmentMenu} />
+          <Animated.View
             testID="attachment-menu-sheet"
-            style={styles.menuSheet}
-            onPress={e => e.stopPropagation()}
+            accessible={false}
+            accessibilityViewIsModal
+            onAccessibilityEscape={closeAttachmentMenu}
+            style={[styles.menuSheet, { transform: [{ translateY: attachmentDismiss.translateY }] }]}
           >
-            <View testID="attachment-menu-handle" style={styles.menuHandle} />
+            <View testID="attachment-menu-drag-header" {...attachmentDismiss.panHandlers} accessible={false}>
+              <View testID="attachment-menu-handle" style={styles.menuHandle} accessible={false} />
+              <View style={styles.attachmentHeader}>
+                <Text style={styles.attachmentTitle} accessibilityRole="header">添加内容</Text>
+                <TouchableOpacity onPress={closeAttachmentMenu} accessibilityRole="button" accessibilityLabel="关闭附件菜单" style={styles.attachmentClose}>
+                  <Ionicons name="close" size={22} color={C.ink2} />
+                </TouchableOpacity>
+              </View>
+            </View>
             <View testID="attachment-action-grid" style={styles.attachmentGrid}>
               <AttachmentGridItem icon="camera-outline" label="拍照记餐" desc="确认后写入" onPress={handleCaptureMealPhoto} />
               <AttachmentGridItem icon="image-outline" label="相册" desc="最多9张" onPress={handlePickImage} />
@@ -1367,8 +1381,8 @@ export default function ChatInputBar({
                 />
               ))}
             </View>
-          </Pressable>
-        </Pressable>
+          </Animated.View>
+        </View>
       </Modal>
 
       <MedicalExamImportFlow
@@ -1431,6 +1445,9 @@ function AttachmentGridItem({ icon, label, desc, onPress }: { icon: any; label: 
 // Reva 设计语言: 暖白 paper 输入栏 / surface 卡 / green500 发送 / ink 文字.
 // 实时录音态沿用 Reva 的纸张、墨色与健康绿,避免脱离对话页主题.
 const styles = StyleSheet.create({
+  attachmentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  attachmentTitle: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '600', color: C.ink1 },
+  attachmentClose: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   /* ── 输入栏 ── */
   composerSurface: {
     marginHorizontal: 0,
