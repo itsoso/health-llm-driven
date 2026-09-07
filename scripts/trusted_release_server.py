@@ -314,6 +314,20 @@ def loopback_config():
     )
 
 
+def use_system_timezone():
+    os.environ.pop("TZ", None)
+    time.tzset()
+
+
+def expiry_time(expiry):
+    # Match sshd's system-local interpretation without trusting caller TZ.
+    use_system_timezone()
+    stamp = datetime.datetime.fromtimestamp(expiry).strftime("%Y%m%d%H%M%S")  # noqa: DTZ006 -- Match sshd's system-local parser exactly.
+    if time.mktime(time.strptime(stamp, "%Y%m%d%H%M%S")) != expiry:
+        raise LaunchError("system-local expiry cannot preserve the absolute deadline")
+    return stamp
+
+
 def validate_loopback(policy):
     for name in ("loopback.key", "loopback.pub", "known_hosts", "loopback.conf"):
         secure_path(CONFIG / name, private=True)
@@ -322,7 +336,7 @@ def validate_loopback(policy):
     public = _read_private(CONFIG / "loopback.pub").decode().strip()
     if re.fullmatch(r"ssh-ed25519 [A-Za-z0-9+/]+={0,2}", public) is None:
         raise LaunchError("invalid loopback public identity")
-    expiry = datetime.datetime.fromtimestamp(policy["expires_at"], datetime.timezone.utc).strftime("%Y%m%d%H%M%SZ")
+    expiry = expiry_time(policy["expires_at"])
     expected = f'from="127.0.0.1",restrict,expiry-time="{expiry}" {public}'
     keys = _read_private(Path("/root/.ssh/authorized_keys")).decode().splitlines()
     matches = [line for line in keys if public.split()[1] in line]
@@ -362,6 +376,7 @@ def main():
         if not sys.flags.isolated or os.geteuid() != 0 or len(sys.argv) != 1:
             raise LaunchError("isolated root forced-command invocation required")
         os.umask(0o077)
+        use_system_timezone()
         original_command = os.environ.get("SSH_ORIGINAL_COMMAND", "")
         parse_command(original_command)
         policy = validate_policy(_json(_read_private(POLICY)), now=int(time.time()))

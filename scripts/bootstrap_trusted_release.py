@@ -67,8 +67,22 @@ def validate_install(sha, expiry, public, *, now):
         raise BootstrapError("invalid ed25519 SSH public-key wire format")
 
 
+def use_system_timezone():
+    os.environ.pop("TZ", None)
+    time.tzset()
+
+
+def expiry_time(expiry):
+    # OpenSSH 8.9 parses expiry-time in the server's system timezone, without Z.
+    use_system_timezone()
+    stamp = datetime.datetime.fromtimestamp(expiry).strftime("%Y%m%d%H%M%S")  # noqa: DTZ006 -- sshd requires system-local wall time.
+    if time.mktime(time.strptime(stamp, "%Y%m%d%H%M%S")) != expiry:
+        raise BootstrapError("system-local expiry cannot preserve the absolute deadline")
+    return stamp
+
+
 def key_lines(expiry, cloud, loopback):
-    stamp = datetime.datetime.fromtimestamp(expiry, datetime.timezone.utc).strftime("%Y%m%d%H%M%SZ")
+    stamp = expiry_time(expiry)
     return (
         f'command="/usr/bin/python3 -I /usr/local/lib/reva-release/trusted_release_server.py",restrict,expiry-time="{stamp}" {cloud}',
         f'from="127.0.0.1",restrict,expiry-time="{stamp}" {loopback}',
@@ -247,6 +261,7 @@ def main():
         if not sys.flags.isolated or os.geteuid() != 0:
             raise BootstrapError("isolated root execution required")
         os.umask(0o077)
+        use_system_timezone()
         parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
         commands = parser.add_subparsers(dest="action", required=True)
         create = commands.add_parser("install", allow_abbrev=False)

@@ -3,6 +3,7 @@
 import base64
 import importlib.util
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -42,11 +43,43 @@ def test_valid_install_inputs_are_exact_not_normalized():
     bootstrap.validate_install(SHA, 100 + 28800, PUBLIC, now=100)
 
 
-def test_key_lines_are_fixed_expiring_and_loopback_cannot_be_remote():
+def test_key_lines_are_fixed_expiring_and_loopback_cannot_be_remote(monkeypatch):
     bootstrap = load_bootstrap()
+    monkeypatch.setattr(bootstrap, "expiry_time", lambda _expiry: "19700101000320", raising=False)
     cloud, loopback = bootstrap.key_lines(200, PUBLIC, "ssh-ed25519 AAAA")
-    assert cloud == 'command="/usr/bin/python3 -I /usr/local/lib/reva-release/trusted_release_server.py",restrict,expiry-time="19700101000320Z" ' + PUBLIC
-    assert loopback == 'from="127.0.0.1",restrict,expiry-time="19700101000320Z" ssh-ed25519 AAAA'
+    assert cloud == 'command="/usr/bin/python3 -I /usr/local/lib/reva-release/trusted_release_server.py",restrict,expiry-time="19700101000320" ' + PUBLIC
+    assert loopback == 'from="127.0.0.1",restrict,expiry-time="19700101000320" ssh-ed25519 AAAA'
+
+
+@pytest.mark.parametrize("offset,expected", [(0, "19700101000320"), (8, "19700101080320")])
+def test_expiry_uses_system_local_time_and_discards_caller_tz(monkeypatch, offset, expected):
+    bootstrap = load_bootstrap()
+    real_tzset = bootstrap.time.tzset
+    clock = bootstrap.datetime.datetime
+    system_zone = bootstrap.datetime.timezone(bootstrap.datetime.timedelta(hours=offset))
+    class SystemDateTime:
+        @staticmethod
+        def fromtimestamp(value):
+            return clock.fromtimestamp(value, system_zone).replace(tzinfo=None)
+    def simulated_system_timezone():
+        assert "TZ" not in os.environ
+    monkeypatch.setattr(bootstrap, "datetime", SimpleNamespace(datetime=SystemDateTime))
+    monkeypatch.setattr(bootstrap.time, "tzset", simulated_system_timezone)
+    monkeypatch.setattr(bootstrap.time, "mktime", lambda value: clock(*value[:6], tzinfo=system_zone).timestamp())
+    monkeypatch.setenv("TZ", "GMT-13")
+    try:
+        assert bootstrap.expiry_time(200) == expected
+        assert "TZ" not in os.environ
+    finally:
+        monkeypatch.undo()
+        real_tzset()
+
+
+def test_ambiguous_system_local_expiry_cannot_change_absolute_deadline(monkeypatch):
+    bootstrap = load_bootstrap()
+    monkeypatch.setattr(bootstrap.time, "mktime", lambda _wall_time: 3800)
+    with pytest.raises(bootstrap.BootstrapError):
+        bootstrap.expiry_time(200)
 
 
 def fixture(monkeypatch, tmp_path):

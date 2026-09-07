@@ -234,10 +234,11 @@ def test_production_env_accepts_root_service_group_0640_without_chmod():
 def test_loopback_rejects_added_shell_directives_or_broader_authorization(monkeypatch):
     server = load_server()
     monkeypatch.setattr(server, "secure_path", lambda *args, **kwargs: None)
+    monkeypatch.setattr(server, "expiry_time", lambda _expiry: "19700101000320", raising=False)
     values = {
         "loopback.conf": server.loopback_config().encode(),
         "loopback.pub": b"ssh-ed25519 AAAA",
-        "authorized_keys": b'from="127.0.0.1",restrict,expiry-time="19700101000320Z" ssh-ed25519 AAAA',
+        "authorized_keys": b'from="127.0.0.1",restrict,expiry-time="19700101000320" ssh-ed25519 AAAA',
     }
     monkeypatch.setattr(server, "_read_private", lambda path: values[path.name])
     server.validate_loopback(policy(expires_at=200))
@@ -321,9 +322,42 @@ def test_main_rejects_sha_mismatch_before_any_state_or_source_mutation(monkeypat
     monkeypatch.setattr(server, "STATE", tmp_path / "not-created")
     monkeypatch.setattr(server, "_read_private", lambda _path: json.dumps(policy()).encode())
     monkeypatch.setenv("SSH_ORIGINAL_COMMAND", action + " " + "c" * 40)
+    monkeypatch.setenv("TZ", "GMT-13")
     assert server.main() == 1
     assert "caller SHA" in server.sys.stderr.getvalue()
     assert not server.STATE.exists()
+    assert "TZ" not in os.environ
+
+
+@pytest.mark.parametrize("offset,expected", [(0, "19700101000320"), (8, "19700101080320")])
+def test_loopback_expiry_uses_system_time_without_caller_tz(monkeypatch, offset, expected):
+    server = load_server()
+    real_tzset = server.time.tzset
+    clock = server.datetime.datetime
+    system_zone = server.datetime.timezone(server.datetime.timedelta(hours=offset))
+    class SystemDateTime:
+        @staticmethod
+        def fromtimestamp(value):
+            return clock.fromtimestamp(value, system_zone).replace(tzinfo=None)
+    def simulated_system_timezone():
+        assert "TZ" not in os.environ
+    monkeypatch.setattr(server, "datetime", SimpleNamespace(datetime=SystemDateTime))
+    monkeypatch.setattr(server.time, "tzset", simulated_system_timezone)
+    monkeypatch.setattr(server.time, "mktime", lambda value: clock(*value[:6], tzinfo=system_zone).timestamp())
+    monkeypatch.setenv("TZ", "GMT-13")
+    try:
+        assert server.expiry_time(200) == expected
+        assert "TZ" not in os.environ
+    finally:
+        monkeypatch.undo()
+        real_tzset()
+
+
+def test_loopback_ambiguous_wall_time_cannot_extend_absolute_deadline(monkeypatch):
+    server = load_server()
+    monkeypatch.setattr(server.time, "mktime", lambda _wall_time: 3800)
+    with pytest.raises(server.LaunchError):
+        server.expiry_time(200)
 
 
 def test_lost_native_claim_response_never_grants_a_second_build(monkeypatch, tmp_path):
