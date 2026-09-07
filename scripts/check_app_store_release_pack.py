@@ -67,6 +67,10 @@ OFFICIAL_REFERENCE_URLS = [
 ]
 
 EXPECTED_APP_NAME = "小巴健康"
+# Apple distinguishes this byte limit from the description's character limit:
+# https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information
+REVIEW_NOTES_MAX_BYTES = 4000
+KEYWORDS_MAX_BYTES = 100
 DEMO_PLACEHOLDERS = [
     "[NEEDS APP STORE REVIEW DEMO ACCOUNT]",
     "[NEEDS APP STORE REVIEW DEMO PASSWORD]",
@@ -240,6 +244,29 @@ def validate_release_narrative(
 ) -> list[str]:
     combined = "\n".join([submission, review_notes, screenshot_runbook])
     failures: list[str] = []
+
+    # The credential/draft preface goes in separate ASC fields, never Notes.
+    # Count the entire upload body, including headings and later sections.
+    body_markers = list(re.finditer(r"^## What To Test[ \t]*$", review_notes, re.MULTILINE))
+    if len(body_markers) != 1 or not review_notes[body_markers[0].end():].strip():
+        failures.append("review notes upload body must start with one non-empty '## What To Test' section")
+    else:
+        body_bytes = len(review_notes[body_markers[0].start():].encode("utf-8"))
+        if body_bytes > REVIEW_NOTES_MAX_BYTES:
+            failures.append(
+                f"review notes upload body exceeds {REVIEW_NOTES_MAX_BYTES} UTF-8 bytes: {body_bytes}"
+            )
+
+    keyword_sections = re.findall(
+        r"^### Keywords[ \t]*\n(.*?)(?=^#{1,3} |\Z)",
+        submission, re.MULTILINE | re.DOTALL,
+    )
+    if len(keyword_sections) != 1 or not keyword_sections[0].strip():
+        failures.append("submission pack must contain one non-empty Keywords section")
+    else:
+        keyword_bytes = len(keyword_sections[0].strip().encode("utf-8"))
+        if keyword_bytes > KEYWORDS_MAX_BYTES:
+            failures.append(f"keywords exceed {KEYWORDS_MAX_BYTES} UTF-8 bytes: {keyword_bytes}")
 
     for term in STALE_USER_VISIBLE_RELEASE_TERMS:
         if term in combined:

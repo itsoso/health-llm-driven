@@ -1,5 +1,6 @@
-import os
 import json
+import os
+import re
 import struct
 import subprocess
 import sys
@@ -7,17 +8,17 @@ import zlib
 from pathlib import Path
 
 from scripts.check_app_store_release_pack import (
+    REQUIRED_FILES,
     _NoRedirectHandler,
     _request_json,
-    REQUIRED_FILES,
     validate_app_review_redlines,
+    validate_app_store_privacy_declaration,
     validate_app_store_privacy_publication,
-    validate_demo_review_credentials,
     validate_demo_account_live,
+    validate_demo_review_credentials,
     validate_final_release_confirmations,
     validate_final_submission_material_state,
     validate_medical_citation_review_path,
-    validate_app_store_privacy_declaration,
     validate_privacy_policy_copy,
     validate_real_device_evidence,
     validate_regulated_medical_device_declaration,
@@ -27,6 +28,69 @@ from scripts.check_app_store_release_pack import (
 
 def test_release_pack_requires_dependency_risk_review():
     assert "docs/release/app-store/dependency-risk-review.md" in REQUIRED_FILES
+
+
+def _review_notes_narrative_failures(notes: str) -> list[str]:
+    root = Path(__file__).resolve().parents[2]
+    return validate_release_narrative(
+        submission=(root / "docs/release/app-store/submission-pack.md").read_text(),
+        review_notes=notes,
+        screenshot_runbook=(root / "docs/release/app-store/screenshot-runbook.md").read_text(),
+    )
+
+
+def test_review_notes_reject_utf8_byte_overflow_not_just_character_overflow():
+    notes = "## What To Test\n" + "健" * 1400
+    assert len(notes) < 4000
+    failures = _review_notes_narrative_failures(notes)
+    assert any("4000 UTF-8 bytes" in item for item in failures)
+
+
+def test_review_notes_upload_budget_includes_heading_and_all_later_sections():
+    prefix = "## What To Test\n"
+    exact = prefix + "x" * (4000 - len(prefix.encode("utf-8")))
+    assert _review_notes_narrative_failures(exact) == []
+    assert any("4000 UTF-8 bytes" in item for item in _review_notes_narrative_failures(exact + "x"))
+    assert any("4000 UTF-8 bytes" in item for item in _review_notes_narrative_failures(exact + "\n## Privacy\nMore"))
+
+
+def test_review_notes_require_single_unambiguous_upload_body():
+    for notes in ("", "Missing body", "## What To Test\n\n", "## What To Test\nA\n## What To Test\nB"):
+        assert any("upload body" in item for item in _review_notes_narrative_failures(notes))
+
+
+def test_review_notes_preface_is_not_sent_to_notes_field():
+    notes = "# Draft\n" + "x" * 5000 + "\n## What To Test\nUse the demo account.\n"
+    assert _review_notes_narrative_failures(notes) == []
+
+
+def test_checked_in_review_notes_fit_apple_upload_budget():
+    root = Path(__file__).resolve().parents[2]
+    notes = (root / "docs/release/app-store/review-notes.zh-CN.md").read_text()
+    marker = re.search(r"^## What To Test$", notes, re.MULTILINE)
+    assert marker is not None
+    body = notes[marker.start():]
+    assert len(body.encode("utf-8")) <= 4000
+
+
+def test_keywords_enforce_apple_utf8_byte_budget():
+    root = Path(__file__).resolve().parents[2]
+    notes = (root / "docs/release/app-store/review-notes.zh-CN.md").read_text()
+    submission = (root / "docs/release/app-store/submission-pack.md").read_text()
+    runbook = (root / "docs/release/app-store/screenshot-runbook.md").read_text()
+    for keywords, should_fail in (("x" * 100, False), ("x" * 101, True), ("健" * 34, True)):
+        modified = re.sub(
+            r"(?<=### Keywords\n).*?(?=\n### )", "\n" + keywords + "\n", submission, flags=re.DOTALL,
+        )
+        failures = validate_release_narrative(submission=modified, review_notes=notes, screenshot_runbook=runbook)
+        assert any("100 UTF-8 bytes" in item for item in failures) is should_fail
+
+
+def test_checked_in_keywords_fit_apple_upload_budget():
+    root = Path(__file__).resolve().parents[2]
+    submission = (root / "docs/release/app-store/submission-pack.md").read_text()
+    keywords = submission.split("### Keywords\n", 1)[1].split("\n### ", 1)[0].strip()
+    assert len(keywords.encode("utf-8")) <= 100
 
 
 def test_release_pack_discloses_phone_and_email_for_account_functionality():

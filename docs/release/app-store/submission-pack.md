@@ -46,7 +46,7 @@ Status: draft for the next App Store submission.
 
 ### Keywords
 
-健康记录,Apple Watch,HealthKit,体检报告,饮食记录,运动记录,睡眠,用药提醒,补剂,小巴健康,中和知微,健康参谋
+健康记录,饮食,饮水,体重,运动,睡眠,体检报告,健康档案,生活习惯
 
 ### What's New
 
@@ -55,6 +55,11 @@ Status: draft for the next App Store submission.
 ## Review Notes
 
 Use `docs/release/app-store/review-notes.zh-CN.md` as the source text for App Store Connect.
+Paste only the section beginning `## What To Test` through the end into Notes;
+credentials and reviewer contact use their separate ASC fields. Notes has a
+**4,000-byte** limit, measured as UTF-8 by the release-pack gate, unlike the
+description's character limit. Keywords are also measured in UTF-8, with a
+100-byte limit; avoid repeating the app/company name. See Apple's [platform version information](https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information).
 
 App Store Connect currently treats 1.3.3 as the app's inaugural Store version,
 so its API rejects the `whatsNew` field in `PREPARE_FOR_SUBMISSION`. The draft
@@ -145,11 +150,14 @@ python3 scripts/check_app_store_release_pack.py
 
 Use `docs/release/app-store/privacy-nutrition-label.draft.json` as the working source. App Store Connect remains the final source of truth after manual entry.
 
-The 1.3.3 declaration covers 12 data types. Email Address, Health, Fitness,
-Precise Location, Photos or Videos, Audio Data, Other User Content, User ID,
-Device ID, and Product Interaction are linked to the user's identity. Crash Data
-and Performance Data are not linked. None is used for tracking. The checked-in
-JSON is the purpose-level source of truth; in particular, cloud transcription
+The checked-in JSON is the data-type and purpose-level source of truth; do not
+copy a fixed inventory count into this narrative. Phone Number and Email Address
+are collected for account functionality. Uploaded genetic information is
+declared as Sensitive Info for app functionality and personalization; both are
+linked to identity and never used for tracking. Other declared health, fitness,
+location, content, identifier and interaction data is also linked. Crash Data
+and Performance Data are not linked. No declared data is used for tracking.
+In particular, cloud transcription
 requires `User Content -> Audio Data` for App Functionality, and authenticated
 client-event telemetry requires linked `Usage Data -> Product Interaction` for
 App Functionality and Analytics.

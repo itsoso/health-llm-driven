@@ -3,6 +3,8 @@
 > Demo account credentials stay outside git. At final submit, provide them through `APP_STORE_REVIEW_DEMO_ACCOUNT` and `APP_STORE_REVIEW_DEMO_PASSWORD`.
 >
 > App Store Connect contains the demo account, password, reviewer contact and these review notes. This checked-in draft intentionally retains placeholders so secrets are not committed; change the heading to final only after the exact version 1.3.3 EAS candidate passes the physical-iPhone G6 checklist.
+>
+> Paste only `## What To Test` through the end into ASC Notes (maximum 4,000 UTF-8 bytes). Enter credentials and contact details in their separate fields; do not paste this preface.
 
 ## Reviewer Access
 
@@ -15,12 +17,12 @@ If the reviewer cannot sign in, please contact support@executor.life.
 ## What To Test
 
 1. Choose `账号密码登录` and sign in with the demo account. The app opens directly into 小巴健康.
-2. A compact context strip appears for qualified pending actions, risks or processing states. Tap it to open 今日计划, use 返回小巴 to return, or close it. It does not repeat after every response.
+2. If a pending action, risk or processing state exists, tap the top context strip for 今日计划, use 返回小巴 to return, or close it.
 3. Ask 小巴健康: `帮我算我的BMI`. On first use, read the separate AI data-sharing disclosure and choose whether to allow sharing. Declining preserves the draft and does not transmit it to an AI provider. After explicit permission, the answer shows an always-visible `参考来源` panel directly below the medical information.
 4. Tap `中国成人体重判定标准（WS/T 428—2013）` or `成人 BMI 计算方法与分类`. The app opens the official HTTPS source from 国家卫生健康委员会 (`https://www.nhc.gov.cn/`) or CDC (`https://www.cdc.gov/bmi/`). The same panel states `健康信息用于辅助管理，不替代诊断；做医疗决定前请咨询医生。`
 5. Ask 小巴健康: `今天应该先做什么健康行动？`
 6. Tap the `+` button beside the input bar to photograph or select a meal image. The recognized result remains editable until it is saved.
-7. Open the top-right more menu, then enter 个人中心 to manage data sources, health records, notifications and privacy.
+7. Open the top-right more menu -> 个人中心 for records, data sources, notifications and privacy.
 
 Text chat remains available after declining notification, location, microphone, photo, camera or HealthKit permissions. Optional permissions are requested only when starting the related feature.
 
@@ -40,7 +42,7 @@ The standard iPhone release does not include an Apple Watch companion app, Rokid
 
 ## Medical Boundary
 
-The app provides health records, trend explanation, lifestyle suggestions and action drafts. Medical calculations, ranges and health guidance show easy-to-find, clickable references from authoritative sources directly below the answer. It does not provide diagnosis, emergency triage, prescriptions, treatment plans or medication dosage changes. Users are directed to qualified clinicians for medical decisions and emergency services for urgent symptoms.
+Health records, trends and lifestyle suggestions are supported. Medical calculations and guidance show clickable authoritative references below the answer. The app does not provide diagnosis, emergency triage, prescriptions, treatment plans or medication dosage changes. Medical decisions require a clinician; urgent symptoms require emergency services.
 
 App Store Connect declaration: No. 小巴健康 is not a regulated medical device and does not claim to replace one or to diagnose, prevent or treat disease.
 
@@ -50,7 +52,7 @@ The in-app path is:
 
 `个人中心 -> 账号与隐私 -> 删除账号与数据`
 
-The request receives a unique deletion request number and a queryable status. The user is told that processing usually completes within 7 days. Completion is allowed only after the operator verifies that account data and related stored objects have been removed.
+Users receive a deletion request number, queryable status and an expected 7-day timeframe. Completion requires verifying removal of account data and stored objects.
 
 ## Notes For Review
 
