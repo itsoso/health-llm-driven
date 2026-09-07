@@ -1,0 +1,86 @@
+"""Check the executable dispatch boundary and workflow capability wiring."""
+
+import re
+import subprocess
+from pathlib import Path
+
+import pytest
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
+WORKFLOW = yaml.safe_load((ROOT / ".github/workflows/trusted-release.yml").read_text())
+
+
+@pytest.mark.parametrize("job", ["preflight", "backend", "testflight"])
+@pytest.mark.parametrize("changes", [
+    {"TARGET_SHA": "main"},
+    {"TARGET_SHA": "a" * 40},
+    {"TARGET_SHA": "$(touch /tmp/reva-never-execute)"},
+    {"GITHUB_SHA": "b" * 40},
+    {"GITHUB_REF": "refs/heads/unreviewed"},
+    {"GITHUB_REPOSITORY": "other/fork"},
+])
+def test_bad_dispatch_cannot_reach_bootstrap_or_network(job, changes):
+    # All mismatches must fail in shell builtins, before sudo, Git or API calls.
+    body = WORKFLOW["jobs"][job]["steps"][0]["run"]
+    prefix = body.split("/usr/bin/sudo", 1)[0]
+    result = subprocess.run(
+        ["/bin/bash", "--noprofile", "--norc", "-eu", "-c", prefix + "\necho BOOTSTRAP_REACHED\n"],
+        env={
+            "PATH": "/nonexistent", "TARGET_SHA": "c" * 40, "GITHUB_SHA": "c" * 40,
+            "GITHUB_REF": "refs/heads/main", "GITHUB_REPOSITORY": "itsoso/health-llm-driven",
+            **changes,
+        }, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode != 0
+    assert "BOOTSTRAP_REACHED" not in result.stdout
+
+
+def test_dispatch_cannot_auto_publish_or_reuse_test_runner():
+    triggers = WORKFLOW.get("on", WORKFLOW.get(True))
+    assert set(triggers) == {"workflow_dispatch"}
+    target = triggers["workflow_dispatch"]["inputs"]["target"]
+    assert target["default"] == "validate"
+    assert set(target["options"]) == {"validate", "release"}
+    assert WORKFLOW["permissions"] == {"contents": "read", "actions": "read"}
+    assert WORKFLOW["concurrency"]["cancel-in-progress"] is False
+    for name, job in WORKFLOW["jobs"].items():
+        assert job["runs-on"] == "ubuntu-24.04"
+        assert 1 <= job["timeout-minutes"] <= 90
+        if name != "preflight":
+            assert job["environment"] == "release-production"
+            assert job["if"] == "inputs.target == 'release'"
+    assert WORKFLOW["jobs"]["backend"]["needs"] == "preflight"
+    assert WORKFLOW["jobs"]["testflight"]["needs"] == "backend"
+
+
+def test_actions_are_immutable_and_preflight_has_no_production_secret():
+    for name, job in WORKFLOW["jobs"].items():
+        for step in job["steps"]:
+            if "uses" in step:
+                assert re.fullmatch(r"actions/[\w-]+@[0-9a-f]{40}", step["uses"])
+            if name == "preflight":
+                assert "secrets." not in str(step)
+
+
+@pytest.mark.parametrize("key,hostkeys", [("", ""), ("fake-private-key", ""), ("", "fake-host-key")])
+def test_missing_backend_credential_fails_before_ssh(key, hostkeys):
+    body = WORKFLOW["jobs"]["backend"]["steps"][1]["run"]
+    result = subprocess.run(
+        ["/bin/bash", "--noprofile", "--norc", "-eu", "-c", body],
+        env={"PATH": "/nonexistent", "RELEASE_KEY": key, "RELEASE_HOST_KEYS": hostkeys},
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 1
+    assert "not found" not in result.stderr
+    assert "fake-private-key" not in result.stdout + result.stderr
+
+
+def test_missing_expo_credential_fails_before_ci_or_vendor_call():
+    body = WORKFLOW["jobs"]["testflight"]["steps"][-1]["run"]
+    result = subprocess.run(
+        ["/bin/bash", "--noprofile", "--norc", "-eu", "-c", body],
+        env={"PATH": "/nonexistent", "EXPO_TOKEN": ""}, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 1
+    assert "not found" not in result.stderr

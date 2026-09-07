@@ -446,3 +446,14 @@
 - 新鲜验证：Mobile 针对性 57/57，全量 304 suites、2796 PASS、1 既有 SKIP；TypeScript、System Map、diff whitespace 检查 PASS；意图分类 852/852。独立 UTF8 PostgreSQL 测试库最终 162/162 PASS（129.70s，退出码 0），覆盖订单/标签/原照片、数量确认、重试幂等、校准和复盘数据隔离。初次临时库 SQL_ASCII 编码不适用；中途缺用户及缺 name 的夹具失败均保留日志，不能算通过，最终证据为 `/tmp/xiaoba-diet-fix-pg-reviewed.log`。
 - safety-gate 独立只读复审对固定 v2 diff 判代码安全 GO，SHA256 `cadd77b68b08c8eb1f550e8c8cfc88c1b7151fd7b9dda6ba7b1ee2604cdf258c`；未因 Skill 的 commit 建议越过用户仅修复的授权。证据：`/tmp/xiaoba-order-review-v2.patch`、`/tmp/xiaoba-order-safety-{red,green}.log`、`/tmp/xiaoba-diet-fix-*.log`。
 - 本轮未 commit/push/deploy/OTA/build/安装/提交 Apple；保留其他任务的未提交修改。执行期间其他任务提交了附件菜单简化，HEAD 变为 `c5f54c89a`，非本轮提交。真实视觉模型对用户原始订单图片的复测、新包真机分享回跳及正式发布 Gate 仍待完成；当前证据不宣称线上已修复或 Apple 必过。
+
+### 2026-09-07 · 已授权发布，发布链安全复核阻断
+
+- 用户要求“全部部署和发布一个新包，如果有需要”。本轮授权解释为后端部署及新 TestFlight 包，不包含正式 App Review 提交、账号数据重置或其他开放 PR 的合并。
+- 上述产品修复固定提交 `6da24bbaf786f55c819563d42f847a04833af02d`，独立安全复审 GO 后已推送 main，包含此前附件菜单简化提交。SSH Git fetch 超时后停止该进程，改用已有 gh 身份的 HTTPS Git；推送前远端仍为 `6ab8bfed7f468b859928c7bac36298763bb9822c`，无分叉。GitHub 返回 required checks 尚待运行的提示，不把推送成功当 CI 绿色。
+- 新鲜 release preflight PASS：Mobile 46 suites / 789 项、类型漂移、秘密扫描、System Map 与 Dossier 检查通过；隔离 CI-mode 后端组合 204/204 PASS。此 SQLite 组合不替代上一节真实 PostgreSQL 162 项证据，也不替代精确主干 CI。
+- 真实模型回归在本地合成用户、真实同意记录和真实 AI user scope 下运行，不使用生产健康数据或绕过同意守门：invariants 12/12、health_agent_core 50/50、live orchestrator 5/5、trajectory contract 12/12、goldens 9/9；合成订单识别四项餐品及数量来源、真实标签缺摄入量的保护均通过。初次图片夹具因字体文件格式错误退出 1，修正测试字体后完整重跑 exit 0，证据 `/tmp/xiaoba-265-live-eval-rerun.log`。这不等于用户原图或新包真机验收。
+- 精确 [CI 34133080315](https://github.com/itsoso/health-llm-driven/actions/runs/34133080315) 对应 `6da24bbaf`，记录时仍 in_progress，尚无整体通过结论；live-eval 确认变量仅绑定该完整 SHA。EAS archive 本地检查完成，未包含真实 `.env`、签名密钥或数据库；没有创建 EAS build 或发起上传。
+- 开放 [PR #252](https://github.com/itsoso/health-llm-driven/pull/252)（固定头 `55c30e2845803b0142ee88dd33ccf95a9e3dcd56`）记录发布 bootstrap 的独立攻击复现。该 PR 未合并，其冻结文案不自动替代主干规范；但进一步独立复核主干 `deploy.sh`、`release_lock.sh`、TestFlight wrapper 后，判定已知发布执行信任边界尚无受审解决路径，发布链 G4 **NO-GO**。未发现正在攻击本机的证据；产品代码 GO 保持有效，不能替代发布链 GO。
+- 因 safety-gate 阻断，未运行 deploy.sh、未同步生产配置、未重启服务、未构建/上传/安装/OTA 或修改 ASC。最后只读观测后端 SHA 为 `0e16b1c4ebd7681d54e4ab2b0a747ae9bfb9077e`、工作树干净，最新 EAS 包仍为 1.3.3 (264)。不能声称本次修复线上已生效。
+- 下一步需要独立受信、最小权限的发布执行器与精确 revision/制品/恢复证据，并重新通过发布链安全复审；这是发布基础设施扩展，须另获用户方向。不得自动合并 PR #252 的大量变更或改走手工 SSH/EAS 规避 NO-GO。G5/G6 与正式 App Review 继续 BLOCK。

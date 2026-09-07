@@ -23,6 +23,33 @@
 
 ### 8.2 线上配置管理
 
+#### 受审隔离发布入口
+
+手动触发 `.github/workflows/trusted-release.yml`，先以 `target=validate` 验证当前 main
+的精确 SHA 和真实 CI，再以同一 SHA 执行 `target=release`。三个 job 均使用新的
+GitHub 托管 VM，不上传本机工作区、不复用测试 runner 或缓存；生产权限只在只读闸后使用。
+GitHub 控制面、受审代码、固定工具链和服务器 root 是信任前提，不声称抵御 runner root 失陷。
+
+首次安装仅属于经授权的发布基础设施配置：管理员以固定系统 Git 从 canonical GitHub
+检出已通过独立 G4 和 CI 的 SHA 到 `/var/lib/reva-release/bootstrap/<sha>/source`，
+核验干净 revision、root ownership 与受审字节，再以系统 Python `-I` 执行该源码中的
+`scripts/bootstrap_trusted_release.py`。禁止上传本机脚本充当 bootstrap。
+安装器只接受八小时内到期的专用 ed25519 公钥，拒绝覆盖现有安装。
+
+云端身份由服务器 forced-command 限定为绑定同一 SHA 的 `run`、`status`、
+`claim-testflight`，不提供 shell/SFTP；服务器内部的短期 loopback 身份不离开服务器。
+后端业务部署仍由受审 fresh source 中的 **`deploy.sh -b`** 执行全部事务闸。
+`DEPLOY_SOURCE_SHA` 仅选择精确来源的 verify-only 模式，不是授权或绕过检查的开关。
+候选环境从当前生产 `root:health-app 0640` 配置派生，不改变其凭据和权限合同。
+
+启动和原生构建 claim 在调用前持久化；未知结果不得重新 dispatch 规避一次性标记。
+后端 STARTED/NEEDS_OPERATOR 时保留权限和 lease 供调查，不按“锁空闲”推断已终结。
+EAS 调用响应丢失时按 source SHA 查询已有构建，记录其 build/submission ID，禁止重复 create。
+完成后撤销本次专用授权、环境 secrets 与新建 Expo robot token；只移除精确匹配项，
+保留其他密钥及审计记录。权限到期不证明已启动的进程终止。
+
+该入口不替代下面的备份、恢复、迁移、运行态、健康和回滚规则，也不提交正式 App Review。
+
 **配置文件: `.env`**
 
 - 位置: 项目根目录

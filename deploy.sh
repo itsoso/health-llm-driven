@@ -1912,6 +1912,10 @@ push_code() {
     local untracked_files
     untracked_files="$(git ls-files --others --exclude-standard)"
     if [[ -n "$untracked_files" ]]; then
+        if [[ -n "${DEPLOY_SOURCE_SHA:-}" ]]; then
+            print_error "精确 revision 发布拒绝未跟踪文件"
+            exit 1
+        fi
         print_warning "忽略未跟踪文件（不会进入本次部署）"
         echo "$untracked_files"
     fi
@@ -1927,7 +1931,18 @@ push_code() {
         exit 1
     fi
 
-    git push origin HEAD:main
+    # The hosted release executor has read-only GitHub permissions. It already
+    # verified canonical source and exact CI before invoking this script. This
+    # option is source selection, NOT a credential or a bootstrap-trust bypass.
+    if [[ -n "${DEPLOY_SOURCE_SHA:-}" ]]; then
+        if ! [[ "$DEPLOY_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] ||
+                [[ "$DEPLOY_SOURCE_SHA" != "$DEPLOY_EXPECTED_SHA" ]]; then
+            print_error "精确 revision 与待部署 HEAD 不一致"
+            exit 1
+        fi
+    else
+        git push origin HEAD:main
+    fi
     local remote_main_sha
     remote_main_sha=$(git ls-remote origin refs/heads/main | awk 'NR==1 {print $1}')
     if [[ "$remote_main_sha" != "$DEPLOY_EXPECTED_SHA" ]]; then
@@ -1935,10 +1950,10 @@ push_code() {
         exit 1
     fi
     compute_release_input_digests
-    print_success "代码已推送并核验 origin/main: ${DEPLOY_EXPECTED_SHA:0:12}"
+    print_success "已核验 origin/main: ${DEPLOY_EXPECTED_SHA:0:12}"
 
     # 同步到 kuaishou GitLab（静默，失败不影响部署）
-    if git remote | grep -q kuaishou; then
+    if [[ -z "${DEPLOY_SOURCE_SHA:-}" ]] && git remote | grep -q kuaishou; then
         git push kuaishou main 2>/dev/null && print_success "代码已同步到 kuaishou GitLab" || print_warning "kuaishou GitLab 同步失败（不影响部署）"
     fi
 }
