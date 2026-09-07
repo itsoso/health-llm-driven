@@ -159,6 +159,8 @@ export function DietShareComposer({
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
   const [retryGeneration, setRetryGeneration] = useState(0);
   const [busyAction, setBusyAction] = useState<BusyAction | null>(null);
+  const [reviewDismissed, setReviewDismissed] = useState(false);
+  const pendingReviewRef = useRef(false);
   const headersFingerprint = headerFingerprint(photoSource.headers);
   latestPhotoSourceRef.current = photoSource;
 
@@ -216,7 +218,11 @@ export function DietShareComposer({
   useEffect(() => {
     const opening = visible && !wasVisibleRef.current;
     wasVisibleRef.current = visible;
-    if (opening) closeInFlightRef.current = false;
+    if (opening) {
+      closeInFlightRef.current = false;
+      setReviewDismissed(false);
+      pendingReviewRef.current = false;
+    }
     const generation = sessionGenerationRef.current + 1;
     sessionGenerationRef.current = generation;
 
@@ -293,6 +299,29 @@ export function DietShareComposer({
     await cleanupResources();
     onClose();
   }, [cleanupResources, onClose]);
+
+  const finishReviewDismissal = useCallback(() => {
+    if (!pendingReviewRef.current || !mountedRef.current) return;
+    pendingReviewRef.current = false;
+    onClose();
+    onAskReva?.();
+  }, [onAskReva, onClose]);
+
+  const askRevaAfterDismissal = useCallback(async () => {
+    if (closeInFlightRef.current || busyActionRef.current || !onAskReva) return;
+    closeInFlightRef.current = true;
+    sessionGenerationRef.current += 1;
+    await cleanupResources();
+    if (!mountedRef.current) return;
+    pendingReviewRef.current = true;
+    // Keep the Modal mounted until iOS confirms its native dismissal.
+    setReviewDismissed(true);
+  }, [cleanupResources, onAskReva]);
+
+  useEffect(() => {
+    // RN's onDismiss is iOS-only. Other platforms navigate after the hide commit.
+    if (reviewDismissed && Platform.OS !== 'ios') finishReviewDismissal();
+  }, [finishReviewDismissal, reviewDismissed]);
 
   const failRendering = useCallback(() => {
     if (!mountedRef.current || closeInFlightRef.current || phaseRef.current !== 'rendering') return;
@@ -516,7 +545,9 @@ export function DietShareComposer({
   if (!visible) return null;
 
   return (
-    <Modal visible animationType="slide" onRequestClose={() => { void closeComposer(); }}>
+    <Modal visible={!reviewDismissed} animationType="slide"
+      onDismiss={finishReviewDismissal}
+      onRequestClose={() => { void closeComposer(); }}>
       <StatusBar style="dark" backgroundColor={C.paper} />
       <SwipeBackSurface
         testID="diet-share-composer-swipe-back"
@@ -652,7 +683,7 @@ export function DietShareComposer({
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="问小巴复盘今日饮食"
-                  onPress={onAskReva}
+                  onPress={() => { void askRevaAfterDismissal(); }}
                   style={({ pressed }) => [styles.textActionButton, pressed ? styles.buttonPressed : null]}
                 >
                   <Ionicons name="sparkles-outline" size={17} color={C.green600} />

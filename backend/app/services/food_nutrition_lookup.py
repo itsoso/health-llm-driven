@@ -69,6 +69,8 @@ def calibrate_recognized_foods(
     """
     matches = find_food_matches(db, [food.get("name") for food in foods])
     for food in foods:
+        estimate_basis = "order_estimate" if food.get("source") == "order_estimate" else "vision_estimate"
+        estimate_source = "order_estimate" if estimate_basis == "order_estimate" else "ai_estimate"
         if _has_nutrition_label_values(food):
             food.setdefault("source", "nutrition_label")
             continue
@@ -76,14 +78,14 @@ def calibrate_recognized_foods(
         match = matches.get(normalize_food_key(food.get("name")))
         if match is None:
             food.setdefault("source", "ai_estimate")
-            food["nutrition_basis"] = "vision_estimate"
+            food["nutrition_basis"] = estimate_basis
             continue
 
         food["food_id"] = match.food_id
         grams = quantity_as_grams(food.get("quantity"), food.get("unit"))
         if grams is None:
-            food["source"] = "ai_estimate"
-            food["nutrition_basis"] = "vision_estimate"
+            food["source"] = estimate_source
+            food["nutrition_basis"] = estimate_basis
             food.pop("quantity_grams", None)
             continue
 
@@ -94,8 +96,8 @@ def calibrate_recognized_foods(
         }
         available_count = sum(value is not None for value in table_values.values())
         if available_count == 0:
-            food["source"] = "ai_estimate"
-            food["nutrition_basis"] = "vision_estimate"
+            food["source"] = estimate_source
+            food["nutrition_basis"] = estimate_basis
             continue
         fully_calibrated = available_count == len(_NUTRIENT_FIELDS)
         food["source"] = match.source if fully_calibrated else "mixed"

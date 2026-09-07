@@ -225,6 +225,25 @@ def looks_like_food_ui_text(value: Any) -> bool:
     return any(marker in normalized for marker in FOOD_UI_TEXT_MARKERS)
 
 
+def is_reusable_food_description(value: str) -> bool:
+    """Exclude symptom narratives from one-tap reuse, not from stored history.
+
+    A meal plus a symptom may be a valid historical observation, but must not
+    repeat that symptom as today's food. Unknown food names remain eligible;
+    this is deliberately not a food vocabulary allowlist or a write validator.
+    Keep the mobile stale-cache guard and its positive/negative cases aligned.
+    """
+    normalized = _normalize(value)
+    return bool(normalized) and not _FOOD_REUSE_SYMPTOM_RE.search(normalized)
+
+
+_FOOD_REUSE_SYMPTOM_RE = re.compile(
+    r"(?:肚子|腹部|胃).{0,4}(?:痛|疼|胀)|腹痛|腹胀|腹泻|拉肚子|"
+    r"胃痛|胃疼|反酸|烧心|恶心|想吐|呕吐|头晕|心悸|"
+    r"不舒服|睡不着|失眠|睡不好"
+)
+
+
 def _flatten_text(value: Any) -> str:
     if isinstance(value, (list, tuple, set)):
         return " ".join(_flatten_text(item) for item in value if item is not None).strip()

@@ -8,13 +8,15 @@ const mockRouteParams: Record<string, string> = { capture: 'photo' };
 const mockMealForm = jest.fn();
 const mockEstimate = jest.fn();
 const mockRouterPush = jest.fn();
+const mockRouterBack = jest.fn();
 const mockPushChatWithContext = jest.fn();
+const mockReturnToChatWithContext = jest.fn();
 const mockDietShareComposer = jest.fn();
 const mockMeals: any[] = [];
 const mockToastShow = jest.fn();
 
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ back: jest.fn(), push: (...args: any[]) => mockRouterPush(...args) }),
+  useRouter: () => ({ back: mockRouterBack, push: (...args: any[]) => mockRouterPush(...args) }),
   useLocalSearchParams: () => mockRouteParams,
 }));
 
@@ -134,11 +136,18 @@ jest.mock('../../components/diet/DietShareComposer', () => {
 jest.mock('../../utils/agentContext', () => ({
   createDietAgentContext: jest.fn(() => ({})),
   pushChatWithContext: (...args: any[]) => mockPushChatWithContext(...args),
+  returnToChatWithContext: (...args: any[]) => mockReturnToChatWithContext(...args),
 }));
 
 import DietScreen from '../diet';
 
 describe('DietScreen capture deeplink', () => {
+  it('exposes an accessible back action that returns to the previous screen', async () => {
+    const view = render(<DietScreen />);
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.press(view.getByRole('button', { name: '返回小巴' }));
+    expect(mockRouterBack).toHaveBeenCalledTimes(1);
+  });
   beforeEach(() => {
     mockMealForm.mockClear();
     mockEstimate.mockClear();
@@ -185,6 +194,28 @@ describe('DietScreen capture deeplink', () => {
       message: expect.stringContaining('小巴饮食卡｜'),
     }));
     shareSpy.mockRestore();
+    await act(async () => props.onAskReva());
+    expect(view.queryByTestId('mock-diet-share-composer')).toBeNull();
+    expect(mockPushChatWithContext).not.toHaveBeenCalled();
+    expect(mockReturnToChatWithContext).toHaveBeenCalledTimes(1);
+    const review = mockReturnToChatWithContext.mock.lastCall?.[1];
+    expect(review.prompt).toBe('帮我复盘这一天的饮食，给出下一餐的调整建议。');
+    expect(review.context.database_verification).toEqual(expect.objectContaining({
+      required: true, verify_record_id: 88, date: '2026-08-01', totals_source: 'database',
+    }));
+  });
+
+  it('keeps verification context valid even with a long meal description and notes', async () => {
+    mockRouteParams.share_record_id = '90';
+    mockMeals.push({ id: 90, record_date: '2026-08-01', meal_type: 'dinner',
+      food_items: '餐食明细'.repeat(500), notes: '备注'.repeat(3000),
+      image_url: '/api/v1/upload/files/diet/1/meal.jpg' });
+    render(<DietScreen />);
+    await waitFor(() => expect(mockDietShareComposer).toHaveBeenCalled());
+    await act(async () => mockDietShareComposer.mock.lastCall?.[0].onAskReva());
+    const { serializeAgentContext } = jest.requireActual('../../utils/agentContext');
+    const serialized = serializeAgentContext(mockReturnToChatWithContext.mock.lastCall?.[1].context);
+    expect(JSON.parse(serialized).database_verification.verify_record_id).toBe(90);
   });
 
   it('falls back to canonical text sharing with feedback when a record has no accessible photo', async () => {
@@ -428,10 +459,10 @@ describe('DietScreen capture deeplink', () => {
           meal_description: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
         }),
       }));
-      expect(mockPushChatWithContext).toHaveBeenCalledWith(
+      expect(mockReturnToChatWithContext).toHaveBeenCalledWith(
         expect.objectContaining({ push: expect.any(Function) }),
         expect.objectContaining({
-          prompt: expect.stringContaining('请先查询今天数据库里的所有饮食记录'),
+          prompt: '帮我复盘这一天的饮食，给出下一餐的调整建议。',
           badge: expect.stringContaining('刚记录饮食'),
           context: expect.objectContaining({
             from: 'diet/post_confirm',

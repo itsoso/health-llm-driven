@@ -98,6 +98,7 @@ from app.services.utterance_intent_classifier import (
     classify_agent_utterance,
     is_closed_aigc_provider_confirmation,
     is_closed_personal_health_summary_media_request,
+    is_explicit_order_intake,
 )
 from app.services.utterance_intent_lexicon import HEALTH_QUESTION_SIGNALS
 from app.utils.number_format import format_card_numbers
@@ -21944,6 +21945,17 @@ class AgentExecutor:
             or vision_result.get("multi_photo_incomplete")
         ):
             confidence = 0.0
+        order_foods = [
+            food for food in foods if isinstance(food, dict)
+            and (food.get("source") == "order_estimate" or food.get("portion_basis") == "order_quantity")
+        ]
+        if order_foods and (
+            not is_explicit_order_intake(intent)
+            or any(not str(food.get("quantity") or "").strip() for food in order_foods)
+        ):
+            # Purchased portions are not proof of intake. Missing quantities or
+            # an order without a recording request need the existing confirm UI.
+            confidence = 0.0
         decision = decide_contextual_meal_photo(MealPhotoCandidate(
             origin="chat",
             semantic_intent=semantic_intent,
@@ -21953,6 +21965,10 @@ class AgentExecutor:
             timezone_name=timezone_name,
             idempotency_clear=True,
         ))
+        if order_foods and is_explicit_order_intake(intent):
+            requested_meal = intent.scope.get("meal_type")
+            if requested_meal in {"breakfast", "lunch", "dinner", "snack"}:
+                decision = replace(decision, meal_type=requested_meal)
         if decision.decision == "analyze_only":
             return None
 
@@ -22215,7 +22231,7 @@ class AgentExecutor:
                 for key in (
                     "name", "quantity", "quantity_grams", "label_basis_grams",
                     "calories", "protein", "carbs", "fat", "fiber",
-                    "confidence", "food_id", "source", "nutrition_basis",
+                    "confidence", "food_id", "source", "nutrition_basis", "portion_basis",
                 )
                 if food.get(key) is not None
             })
@@ -22332,6 +22348,15 @@ class AgentExecutor:
             f"meal_type={meal_type}; foods={' + '.join(foods)}; totals({total_text}). "
             f"准确写入参数: {record_json}。"
             f"{capture_instruction}"
+            + (
+                "本图是食品订单，份量来自订单明细，营养为常见份量估算而非官方标签值。"
+                "记录时说明按订单份量估算，可继续修正没吃的品项或份量；"
+                "不要声称识别了营养成分表，也不要强制要求克数。"
+                if any(food.get("portion_basis") == "order_quantity" or food.get("source") == "order_estimate"
+                       for food in recognized_foods)
+                else ""
+            )
+            +
             "food_items 只能使用真实食物名称和份量, 绝对不要包含营养卡、保存并确认、今日饮食等界面文案。"
         )
 

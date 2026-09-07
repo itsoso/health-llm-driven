@@ -62,6 +62,11 @@ export function pushChatWithContext(router: Router, input: ChatContextRouteInput
   router.push(buildChatContextRoute(input) as never);
 }
 
+/** Return from a modal workflow without leaving another chat above its stack. */
+export function returnToChatWithContext(router: Router, input: ChatContextRouteInput): void {
+  router.dismissTo(buildChatContextRoute(input) as never);
+}
+
 export function createDietAgentContext(
   daily: DailyDietSummary,
   targets: { tdee?: number | null; protein_target?: number | null } | null = null,

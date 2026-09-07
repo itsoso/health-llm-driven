@@ -1,6 +1,7 @@
 import {
   AGENT_CONTEXT_MAX_CHARS,
   buildChatContextRoute,
+  returnToChatWithContext,
   createActionCardAgentContext,
   createAiProfileAgentContext,
   createBodyMetricsAgentContext,
@@ -30,6 +31,14 @@ import {
 } from '../agentContext';
 
 describe('agentContext', () => {
+  it('unwinds to the main Agent instead of pushing chat above a diet modal', () => {
+    const router = { dismissTo: jest.fn(), push: jest.fn() };
+    const input = { prompt: '帮我复盘今天的饮食', context: { from: 'diet/post_confirm' }, badge: '今日饮食复盘' };
+    returnToChatWithContext(router as any, input);
+    expect(router.dismissTo).toHaveBeenCalledWith(buildChatContextRoute(input));
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
   it('builds chat route params with serialized context and badge', () => {
     const route = buildChatContextRoute({
       prompt: '今天饮食结构怎么样?',

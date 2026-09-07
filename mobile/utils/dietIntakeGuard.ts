@@ -2,6 +2,14 @@ import { isMedicationRecordItem } from '../services/medicationFilters';
 
 const DIET_FOOD_HOMOGRAPHS_RE = /山药/g;
 
+// Recommendation-only guard, aligned with is_reusable_food_description.
+// Preserve history and unfamiliar food names; do not replay symptom narratives
+// as today's food, including when the app is displaying a stale cached response.
+export function isReusableDietFoodDescription(value: string): boolean {
+  const normalized = value.replace(/\s+/g, '').toLowerCase();
+  return Boolean(normalized) && !/(?:肚子|腹部|胃).{0,4}(?:痛|疼|胀)|腹痛|腹胀|腹泻|拉肚子|胃痛|胃疼|反酸|烧心|恶心|想吐|呕吐|头晕|心悸|不舒服|睡不着|失眠|睡不好/.test(normalized);
+}
+
 export function assertDietFoodItemsAllowed(
   foodItems: string,
   options: { ownerBoundPhotoDraft?: boolean } = {},

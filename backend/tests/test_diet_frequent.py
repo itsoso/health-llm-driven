@@ -123,3 +123,21 @@ def test_blank_food_items_skipped(client, auth, db):
 def test_requires_auth(client):
     resp = client.get("/api/v1/diet/records/me/frequent")
     assert resp.status_code in (401, 403)
+
+@pytest.mark.parametrize("description", [
+    "导致肚子有点痛", "胃疼", "吃完牛肉面后腹泻", "喝咖啡后心悸",
+    "头晕恶心", "吃完后不舒服", "肚子 有点 疼", "昨晚失眠",
+])
+def test_symptom_history_is_not_recommended_or_deleted(client, auth, db, description):
+    user, headers = auth
+    for day in range(3):
+        _seed(db, user.id, description, "snack", day, calories=150)
+    _seed(db, user.id, "燕麦粥", "breakfast", 0, calories=180)
+    assert [item["food_items"] for item in _get(client, headers, limit=1)] == ["燕麦粥"]
+    assert db.query(DietRecord).filter_by(user_id=user.id, food_items=description).count() == 3
+
+@pytest.mark.parametrize("description", ["山药片", "猪肚汤", "酸奶", "苦瓜炒蛋", "维C柠檬茶", "鸡胸肉 200g", "无糖咖啡"])
+def test_normal_food_names_remain_reusable(client, auth, db, description):
+    user, headers = auth
+    _seed(db, user.id, description, "lunch", 0)
+    assert [item["food_items"] for item in _get(client, headers)] == [description]

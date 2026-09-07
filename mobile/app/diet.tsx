@@ -28,7 +28,7 @@ import {
   revaSemantic,
   revaFonts,
 } from '../constants/revaTheme';
-import { createDietAgentContext, pushChatWithContext } from '../utils/agentContext';
+import { createDietAgentContext, pushChatWithContext, returnToChatWithContext } from '../utils/agentContext';
 import { todayStr, offsetDate } from '../utils/dietDate';
 import { assertDietFoodItemsAllowed } from '../utils/dietIntakeGuard';
 import { buildChatImageSource } from '../utils/chatImageSource';
@@ -84,7 +84,7 @@ const BUSY_PHOTO_CAPTURE_STAGES = new Set<PhotoCaptureStage>([
 ]);
 const PHOTO_RECOGNITION_SLOW_MS = 6000;
 const PORTION_REVIEW_ASSISTIVE_HINT = '优先核对食物份量；热量和三大营养会随份量一起修正。';
-const POST_CONFIRM_DIET_REVIEW_PROMPT = '请先查询今天数据库里的所有饮食记录，并核验 created_id 对应的刚保存记录是否存在；再结合这条刚保存的饮食记录，汇总全天饮食、总热量和蛋白质/碳水/脂肪，并给出下一餐最小调整建议。如果数据库里查不到这条记录，请明确提示同步失败，不要只凭本页缓存或本轮对话猜测。';
+const POST_CONFIRM_DIET_REVIEW_PROMPT = '帮我复盘这一天的饮食，给出下一餐的调整建议。';
 const PHOTO_CAPTURE_STEPS = [
   { key: 'preparing', label: '优化照片' },
   { key: 'recognizing', label: '识别食物' },
@@ -309,6 +309,9 @@ function buildShareRecordFromConfirmation(created: DietRecord, draft: DietRecord
 }
 
 function buildPostConfirmDietReviewContext(record: DietRecord) {
+  // Context is a lookup hint, not the source of truth. Keep it below the route
+  // budget so long meal notes cannot truncate the database-verification JSON.
+  const foodSummary = record.food_items.slice(0, 160);
   return {
     from: 'diet/post_confirm',
     must_query_database: true,
@@ -327,19 +330,18 @@ function buildPostConfirmDietReviewContext(record: DietRecord) {
       id: record.id,
       record_date: record.record_date,
       meal_type: record.meal_type,
-      food_items: record.food_items,
+      food_items: foodSummary,
     },
     record: {
       record_date: record.record_date,
       meal_type: record.meal_type,
-      food_items: record.food_items,
+      food_items: foodSummary,
       calories: record.calories ?? null,
       protein: record.protein ?? null,
       carbs: record.carbs ?? null,
       fat: record.fat ?? null,
       fiber: record.fiber ?? null,
       alcohol_units: record.alcohol_units ?? null,
-      notes: record.notes ?? null,
       source: record.source ?? null,
     },
   };
@@ -721,7 +723,7 @@ export default function DietScreen() {
       setDraftEstimateSource(null);
       if (isPhotoDraft) setPhotoCaptureStage('saved');
       if (returnToChatAfterConfirm) {
-        pushChatWithContext(router, {
+        returnToChatWithContext(router, {
           prompt: POST_CONFIRM_DIET_REVIEW_PROMPT,
           context: buildPostConfirmDietReviewContext(confirmedRecord),
           badge: '刚记录饮食',
@@ -1221,42 +1223,21 @@ export default function DietScreen() {
   }, [daily, dateLabel, router]);
 
   const handleAskRevaFromShare = useCallback((record: DietRecord) => {
-    const baseContext = daily
-      ? createDietAgentContext(daily)
-      : {
-        from: `diet/${record.record_date}`,
-        date: record.record_date,
-        totals: null,
-        meals: [],
-      };
-    pushChatWithContext(router, {
+    returnToChatWithContext(router, {
       prompt: POST_CONFIRM_DIET_REVIEW_PROMPT,
-      context: {
-        ...baseContext,
-        ...buildPostConfirmDietReviewContext(record),
-        just_recorded: {
-          id: record.id,
-          record_date: record.record_date,
-          meal_type: record.meal_type,
-          food_items: record.food_items,
-          calories: record.calories ?? null,
-          protein: record.protein ?? null,
-          carbs: record.carbs ?? null,
-          fat: record.fat ?? null,
-          fiber: record.fiber ?? null,
-          source: record.source ?? null,
-        },
-      },
+      context: buildPostConfirmDietReviewContext(record),
       badge: '今日饮食复盘',
     });
     setShareRecord(null);
     setShareImageUriOverride(null);
-  }, [daily, router]);
+  }, [router]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}
+          accessibilityRole="button" accessibilityLabel="返回小巴"
+          accessibilityHint="返回打开饮食记录前的页面">
           <Ionicons name="chevron-back" size={24} color={C.ink1} />
         </TouchableOpacity>
         <Text style={txt.title}>饮食记录</Text>

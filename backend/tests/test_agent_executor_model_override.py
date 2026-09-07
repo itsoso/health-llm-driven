@@ -81,6 +81,11 @@ def test_extract_database_verification_instruction_ignores_unrelated_context():
 
 
 def test_build_database_verification_snapshot_reads_diet_records_from_db(db):
+    from app.models.user import User
+    db.add_all([User(id=user_id, name="Test reviewer", username=f"diet-review-{user_id}",
+                     email=f"diet-review-{user_id}@example.com", hashed_password="test-only")
+                for user_id in (7, 8)])
+    db.flush()
     db.add_all([
         DietRecord(
             id=89,
@@ -138,6 +143,9 @@ def test_build_database_verification_snapshot_reads_diet_records_from_db(db):
 
 
 def test_build_database_verification_snapshot_reports_missing_record(db):
+    from app.models.user import User
+    db.add(User(id=7, name="Test reviewer", username="diet-review-7", email="diet-review-7@example.com", hashed_password="test-only"))
+    db.flush()
     db.add(DietRecord(
         id=90,
         user_id=7,

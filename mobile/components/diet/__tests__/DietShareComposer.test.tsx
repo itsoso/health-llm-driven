@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Platform, Share } from 'react-native';
+import { Alert, Modal, Platform, Share } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockMaterializedCleanup = jest.fn().mockResolvedValue(undefined);
@@ -235,6 +235,35 @@ function attemptSwipeBack(
 }
 
 describe('DietShareComposer', () => {
+  it('waits for native iOS dismissal before opening the Agent and ignores repeat taps', async () => {
+    Platform.OS = 'ios';
+    const onAskReva = jest.fn();
+    const view = renderComposer({ onAskReva });
+    await reachPreview(view);
+    const modal = view.UNSAFE_getByType(Modal);
+    const button = view.getByLabelText('问小巴复盘今日饮食');
+    fireEvent.press(button);
+    fireEvent.press(button);
+    await waitFor(() => expect(modal.props.visible).toBe(false));
+    expect(onAskReva).not.toHaveBeenCalled();
+    act(() => modal.props.onDismiss());
+    act(() => modal.props.onDismiss());
+    expect(onAskReva).toHaveBeenCalledTimes(1);
+    expect(view.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the Agent after hiding on Android without waiting for an iOS-only event', async () => {
+    Platform.OS = 'android';
+    const onAskReva = jest.fn();
+    const view = renderComposer({ onAskReva });
+    await reachPreview(view);
+    const modal = view.UNSAFE_getByType(Modal);
+    fireEvent.press(view.getByLabelText('问小巴复盘今日饮食'));
+    await waitFor(() => expect(onAskReva).toHaveBeenCalledTimes(1));
+    expect(modal.props.visible).toBe(false);
+    expect(view.onClose).toHaveBeenCalledTimes(1);
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     currentEditorProps = undefined;

@@ -65,6 +65,24 @@ class AgentUtteranceIntent:
     is_write: bool = False
     requires_reliable_tool_model: bool = False
 
+
+def is_explicit_order_intake(intent: AgentUtteranceIntent) -> bool:
+    """Only closed, current meal-record commands can turn purchases into intake.
+
+    Richer statements (dates, plans, negation, another person's order, etc.)
+    deliberately use the existing confirmation flow, not keyword inference.
+    This predicate narrows the classifier's authority; it never grants a write.
+    """
+    if not intent.is_write or intent.domain != "diet" or intent.operation != "create":
+        return False
+    text = intent.normalized.strip("。，,.!！ ")
+    return text in {
+        f"{prefix}{action}{meal}"
+        for prefix in ("", "请", "帮我", "请帮我", "麻烦", "麻烦帮我")
+        for action in ("记录", "记下", "记录一下", "保存")
+        for meal in ("早餐", "午餐", "晚餐", "加餐", "这餐", "这顿饭", "这顿", "这餐饮食")
+    }
+
 DIET_RECALCULATE_ACTIONS = ("重新估算", "重新计算", "重新核算", "重算", "重估")
 DIET_RECALCULATE_UPDATE_ACTIONS = ("写入", "写回", "更新", "保存", "改写")
 ADVICE_ACTIONS = (

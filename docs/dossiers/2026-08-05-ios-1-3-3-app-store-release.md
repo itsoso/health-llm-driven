@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | Build 261 已完成 EAS/ASC/TestFlight 与精确 IPA 核验；2026-09-03 的非真机加固已完成本地实现和 Release 模拟器构建，但尚未进入 Store 候选；等待独立安全复核、新候选构建及精确物理 iPhone 验收，继续冻结 production OTA |
+| 当前阶段 | Build 264 已由 Apple 处理完成并通过 TestFlight 安装到物理 iPhone；同包基础导航验收通过，完整业务验收与最终送审闸仍未完成，继续冻结 production OTA |
 | 状态 | implementation |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -391,3 +391,58 @@
 - 真机验收脚本新增只读 UI 覆盖，验证历史列表底部可达、关闭按钮、下滑关闭，以及附件/报告导入的取消与关闭；不发送消息、不写健康数据。组件级 Jest `91 passed`、TypeScript 通过；完整 Mobile 验证为 `304 suites / 2776 passed / 1 existing skipped`，原生 Release 模拟器编译成功，隔离 XCUITest 结果包 2/2 通过。
 - BMI 引用链接修正为国家卫生健康委员会 `WS/T 428—2013 成人体重判定` 的直接 PDF；HTTP 200、`application/pdf`，封面渲染核验与声明标题一致。仅修正引用目标，不改变 BMI 计算、健康建议或安全边界。
 - 以上源码晚于 Build 263。模拟器证据不能替代生产候选的真实设备 G6；本轮提交和 Backend SSH 部署也不会把这些 Mobile 变更送入 App Store。必须生成绑定新精确提交的 Store Build，完成真机验收和 ASC 绑定后，才可提交 Apple 审核。
+
+### 2026-09-07 20:42 CST · Build 264 构建上传完成，等待解锁安装
+
+- 用户要求先打新包、安装后再测试，因此停止了旧 Build 263 的基础子集；旧运行仅一项冷启动测试在中断前通过，结果包未正常收尾，不记为完整验收通过。未发送测试消息或卸载应用。
+- 打包前发现 `.gitignore` 已排除的 `.env-online` 与 `.mobile-ota-audit.jsonl` 遗漏在 EAS 排除清单中；既有 archive contract 先失败，补齐两行后相关 4/4 通过，独立安全复核 GO。实际 EAS archive 检查确认两文件不在上传目录，新弹层源码与主干逐字节相同；没有读取秘密内容。
+- 候选源固定为 `6ab8bfed7f468b859928c7bac36298763bb9822c`，构建时 main / origin/main 一致且工作树干净。精确 [CI 34121575366](https://github.com/itsoso/health-llm-driven/actions/runs/34121575366) completed/success。新鲜 Mobile 304 suites / 2776 passed / 1 既有 skipped、TypeScript、隔离 CI-mode 216 项回归、release preflight / 类型漂移 / System Map / 发布配置闸通过；SQLite 组合不替代该 CI 中真实 PostgreSQL 证据。
+- [EAS Build 264](https://expo.dev/accounts/itsoso/projects/health-pilot/builds/61cb2a75-9524-4ec6-9cc9-30f3ba1560fb) FINISHED，production / 1.3.3 (264)，metadata source SHA 精确匹配。[自动上传](https://expo.dev/accounts/itsoso/projects/health-pilot/submissions/688d1073-d5a2-4410-b288-7bd1c94a32fc) Success，日志明确包已成功上传 App Store Connect；20:42 页面显示 Build 264 Processing，尚未核为可安装。
+- 精确 IPA SHA-256 `1167b9cfb9ff3b154cdcbce661939a4c8360a0a84113225de1c5c7137465541e`。包内名称、bundle、1.3.3 / 264、Xcode 26.2 / iOS SDK 26.2、最低 iOS 16、iPhone 竖屏、隐私清单完整映射、必要用途描述及新弹层 JS 标记全部通过；strict deep codesign 通过，production APNs / HealthKit / Universal Link 与禁止调试 entitlement 符合预期，无 Watch / extension / 后台模式。
+- 手机连接正常但需要密码解锁，已请求用户解锁；尚未安装 264、尚未执行该包真机用例。原生验收 Runner 编译通过，临时 BMI 用例在发送前额外核验审核账号身份。原始设备标识、账号和本机结果仅留仓库外。
+- ASC Chrome 会话可用，另开 TestFlight 页检查处理状态，没有修改原送审表单。当前打开的原表单审核用户名/密码字段呈空值，仅做布尔检查，未读取或修改凭据；这不证明服务器已保存为空，最终送审前须重新核实已保存信息。正式版本仍选历史 261，本轮未替换正式版本构建、未发 OTA、未提交 App Review。
+- G6 / final-submit 继续 BLOCK：Apple 处理完成、安装、审核账号真实登录、同包完整真机路径与截图、ASC 准确绑定及最终资料确认均须各自取证，不将构建或上传成功当作 Apple 审核通过。
+
+### 2026-09-07 · Build 264 已安装，物理 iPhone 基础验收
+
+- ASC 的 Build 264 processing 已 Complete，状态 Ready to Submit，内部测试与 Team (Expo) 群组均已关联。此状态不是 App Review 已提交或批准。
+- Store IPA 直接安装遇到 Beta profile entitlement 限制后，改用正常 TestFlight 更新；没有修改签名或卸载旧应用。真机 TestFlight 更新用例 PASS，随后设备查询确认实际安装版本为 `1.3.3 (264)`。
+- 同包启动用例 PASS；五项基础导航子集首次为 4 PASS / 1 FAIL / 0 SKIP：双冷启动保留登录、草稿前后台恢复、隐私政策及删除入口、附件菜单/报告导入取消/下滑关闭通过。历史用例遇到系统 BannerNotification 干扰及 `kAXErrorServerNotFound`，原失败结果保留，不记为整组通过。
+- 不改产品、不放宽断言，单独复测历史列表入口、搜索框/记录行可访问、按钮关闭及下滑返回：1 PASS / 0 FAIL / 0 SKIP，xcodebuild exit 0。累计六个不同基础用例各自取得通过证据，但不冒充完整审核套件通过。
+- 结果包仅保留本机：`/tmp/XiaobaTestFlight-update264-20260907.xcresult`、`/tmp/XiaobaAcceptance-264-launch-20260907.xcresult`、`/tmp/XiaobaAcceptance-264-core-navigation-20260907.xcresult`、`/tmp/XiaobaAcceptance-264-history-retry-20260907.xcresult`。界面截图包含已有会话，仅用于私有 QA，不得上传为商店宣传截图。
+- 上述基础用例未发送健康消息、未删除账号/数据。医学引用用例发送前必须单独核实审核账号；语音、拍照持久化、分享、写入/修正/幂等性等完整业务路径不得据此填为通过。正式版本仍未切换构建，本轮未送审、未发布 OTA。
+- 后续通过 UI 核实当前确为审核账号，再发送一次 BMI 测试消息。引用面板、NHC 链接、医疗免责声明、Safari 官方域名与返回 App 的既有用例 1/1 PASS；今日提示打开/返回/关闭 1/1 PASS，均无跳过。新增结果分别为 `/tmp/XiaobaAcceptance-264-bmi-guarded-20260907.xcresult` 与 `/tmp/XiaobaAcceptance-264-today-20260907.xcresult`。
+- 人工复看发现既有 BMI 用例在引用预发送阶段就可通过，Safari 截图也只证明导航到官方域名、仍处于加载中，因此此 PASS 不证明回答完整生成或官方文档正文已加载；继续补充只读检查，不将该证据缺口隐去。
+- 补查结果 `/tmp/XiaobaAcceptance-264-source-body-20260907.xcresult`：自动断言 FAIL，因为 Safari 原生 PDF 未在所查询的 WebView 文字节点中暴露标题；不能把此脚本计为通过。人工查看同次截图，确认 `nhc.gov.cn` 实际显示《成人体重判定》WS/T 428—2013 封面和前言，而非空白、错误页或仅域名。另张同次截图确认 BMI 回答已生成、冷启动后仍保留，非一直停留在提前引用/分析状态；未据此宣称数值计算全链路或全部医学建议完成审查。
+- 本轮最终口径：Build 264 安装完成，八个不同既有真机用例分别取得 PASS（历史初次系统干扰失败、单独复测通过）；补充 PDF 自动定位用例 FAIL，正文可见性有独立截图人工核验。完整 G6 仍 BLOCK 于未跑业务项、同包合规商店截图、ASC 候选与最终资料确认；没有 App Review 提交或上架操作。
+
+### 2026-09-07 · Build 264 扩展真机验收：语音/相机及新增缺陷
+
+- 用户继续要求验收；设备查询再次确认已安装 `1.3.3 (264)`，每项扩展用例先在 UI 核对审核账号，不输入密码。没有触发新构建、OTA、ASC 修改、账号删除或对外发布。
+- `/tmp/XiaobaAcceptance-264-extended-20260907.xcresult`：3 项中语音路径 PASS，实时转写进入活动态并停止、切换按住说话后左滑取消可返回。实际出现的短转写仅留本机草稿，未发送；这不证明固定语句识别准确率、按住发送/转文字或外部音频抢占全项通过。
+- 相机实际进入原生预览。初次脚本未识别 iOS 的 `Dismiss`，下一次又因输入框有草稿、发送按钮替代附件入口而失败；保留失败证据。暂存/清空/恢复原草稿、识别真实关闭控件后，`/tmp/XiaobaAcceptance-264-camera-final-20260907.xcresult` 1/1 PASS，覆盖进入相机、取消、返回聊天；没有拍照上传，不能据此填照片持久化为通过。
+- 系统分享面板截图真实可见小红书入口；最终已定位到 `com.apple.SharingUIService` 并点击该应用入口，但返回 App 的自动读取出现 `kAXErrorServerNotFound`，`/tmp/XiaobaAcceptance-264-social-diet-20260907.xcresult` 仍为失败。不能仅凭分享面板出现或入口点击宣称交接完成，也未据此断定 App 崩溃；微信及小红书完整交接保持未验收状态。未选择联系人、发送消息或公开发布。
+- **新增缺陷：饮食页返回箭头缺少可访问标签。** `mobile/app/diet.tsx` 的 header 返回 TouchableOpacity 没有 role/label；截图显示箭头可见，而“返回/返回小巴”查询均失败。保留语义验收失败，后续坐标探测只验证视觉动线，不抵销可访问性缺陷。
+- **新增缺陷：历史异常饮食内容会被“常吃”重复推荐。** 当前审核账号 UI 将症状短句作为带热量的常吃卡片展示。`backend/app/api/diet.py::get_my_frequent_foods` 对非空历史 food_items 直接聚合；`FrequentFoodsRow` 直接渲染，`diet.tsx::handlePickFrequent` 直接发起复用创建。未点击该异常卡片、未新增错误记录；是否最终被写入接口拒绝未冒充已验证。应过滤不适合食物复用的历史项，并为合法食物提供正向回归，不能只清空审核账号掩盖通用缺陷。
+- 所有原始截图与设备/账号信息留仓库外。主干源码未改；本轮仅扩展临时验收 Runner 并更新此 dossier。发布判断继续 NO-GO，新增缺陷与未覆盖业务路径须闭环后才能走 final-submit。
+- 饮食文字入口实际为原生 `Alert.prompt`，不是直接打开 MealForm，初次表单查询失败保留。适配真实弹窗后，`/tmp/XiaobaAcceptance-264-diet-entry-final-20260907.xcresult` 1/1 PASS：进入饮食页、展开新增入口、打开文字弹窗、取消、按截图定位返回箭头并回到聊天；未填入或提交食物。此为视觉动线通过，返回箭头 AX 缺陷仍在；没有现成当日餐食可用于只读编辑检查，新增/修正/删除与数据库幂等性仍未验证。所有测试进程已结束，手机回到聊天。
+
+### 2026-09-07 · 两项验收缺陷本地修复（尚未发布）
+
+- 用户授权解决上述两项问题。先补真实 API/组件回归：后端 8 个症状推荐用例失败、15 个已有/正常食物用例通过；移动端症状隐藏与返回按钮用例共 9 个预期失败。未用清空审核账号替代修复。
+- 后端在按认证用户隔离的历史查询后、频率聚合和 limit 前过滤症状叙述；客户端使用相同有限症状规则过滤旧缓存，避免提供可点击复用入口。只改变推荐，不修改/删除历史记录，不更改摄入写入校验或自动分类；陌生但不含症状信号的食物名称仍保留。此规则不宣称识别所有健康文本。
+- 饮食页原返回回调不变，补充 button 角色、返回标签及提示。真实组件测试调用该控件并确认路由回退，不再靠图标坐标证明辅助功能可用。
+- 验证：Mobile 全量 304 suites / 2792 PASS / 1 既有 SKIP；针对性 96 项、TypeScript、System Map PASS。后端 SQLite 23 项 PASS；独立临时 PostgreSQL 数据库同样 23 项 PASS，覆盖过滤先于 limit、正常食物保留、历史不变和用户隔离。只连接本机隔离 Unix socket，未访问生产数据库。
+- safety-gate 独立只读 reviewer 对限定 working diff 判 GO，并独立复跑 Mobile 96/96。用户未授权提交，因此未为满足 Skill 建议擅自 commit/push；复核范围固定为本次修改文件，后续部署仍须对应提交的 CI 与发布闸。测试新增异步恢复警告随后以等待 effect 收尾修正，产品逻辑未变化。
+- 证据保留在本机 `/tmp/diet-review-fix-*.log`。本次没有构建、发布、OTA、安装或送审；手机中的 Build 264 不含这些本地修改，不能把本地通过写成同包真机修复已生效。完整 G6 的其余未验收项仍未关闭。
+
+### 2026-09-07 · 订单记餐与分享复盘回跳修复（本地，未发布）
+
+- 用户实测重新打开两项缺陷：食品订单截图被当作营养标签要求克数；真实餐食可保存，但分享页“问小巴复盘”没有退出原分享/饮食页面。截图还显示内部数据库核验指令作为用户消息。此反馈不算 Build 264 全链路验收通过。
+- 识别合同增加订单/小票食品明细路径，区分真实标签、食品照片、订单和广告/按钮；套餐只计算可读子项，订单价格不作为营养。订单数量与营养估算来源贯穿清洗、校准、合并及持久化；真正标签仍必须提供实际摄入量。
+- 安全复审第一轮 NO-GO：通用写意图可能误记未来订单或其他维度记录，非空但无效数量可能误当份量。先补失败用例，再将自动记餐收紧到 classifier 已授权的饮食 create 且完整闭合记餐命令；复杂、未来、历史、未吃、其他维度及无效数量走确认，不自动计入。指定餐次优先于当前时段；重复请求仍解析同一回执。
+- 分享复盘先完成图片资源清理并隐藏原生 Modal；iOS 收到 onDismiss 后才关闭父分享状态并 dismissTo 主 Agent，Android 在隐藏提交后完成回调，重复点击只执行一次。未改其他业务入口的 push 语义。
+- 可见消息改为简短饮食复盘请求，数据库查询/记录 ID 核验仍放在既有结构化上下文。移除重复的缓存餐次/备注并限制入口摘要，避免长文本截断核验 JSON；不裁剪数据库原始记录。相关 DB 核验测试补齐 PostgreSQL 必需的关联用户夹具，未放松外键。
+- 新鲜验证：Mobile 针对性 57/57，全量 304 suites、2796 PASS、1 既有 SKIP；TypeScript、System Map、diff whitespace 检查 PASS；意图分类 852/852。独立 UTF8 PostgreSQL 测试库最终 162/162 PASS（129.70s，退出码 0），覆盖订单/标签/原照片、数量确认、重试幂等、校准和复盘数据隔离。初次临时库 SQL_ASCII 编码不适用；中途缺用户及缺 name 的夹具失败均保留日志，不能算通过，最终证据为 `/tmp/xiaoba-diet-fix-pg-reviewed.log`。
+- safety-gate 独立只读复审对固定 v2 diff 判代码安全 GO，SHA256 `cadd77b68b08c8eb1f550e8c8cfc88c1b7151fd7b9dda6ba7b1ee2604cdf258c`；未因 Skill 的 commit 建议越过用户仅修复的授权。证据：`/tmp/xiaoba-order-review-v2.patch`、`/tmp/xiaoba-order-safety-{red,green}.log`、`/tmp/xiaoba-diet-fix-*.log`。
+- 本轮未 commit/push/deploy/OTA/build/安装/提交 Apple；保留其他任务的未提交修改。执行期间其他任务提交了附件菜单简化，HEAD 变为 `c5f54c89a`，非本轮提交。真实视觉模型对用户原始订单图片的复测、新包真机分享回跳及正式发布 Gate 仍待完成；当前证据不宣称线上已修复或 Apple 必过。

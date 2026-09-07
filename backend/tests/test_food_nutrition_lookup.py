@@ -81,6 +81,18 @@ def test_calibrate_recognized_foods_uses_table_for_explicit_weight(db):
     }
 
 
+@pytest.mark.parametrize("quantity", [None, "1份"])
+def test_order_origin_survives_table_match_without_measured_portion(db, quantity):
+    _add_chicken_breast(db)
+    foods = [{"name": "鸡胸肉", "quantity": quantity, "source": "order_estimate",
+              "nutrition_basis": "order_estimate", "calories": None}]
+    calibrated = calibrate_recognized_foods(db, foods)
+    assert calibrated[0]["source"] == "order_estimate"
+    assert calibrated[0]["nutrition_basis"] == "order_estimate"
+    assert calibrated[0]["calories"] is None
+    assert "quantity_grams" not in calibrated[0]
+
+
 def test_calibrate_recognized_foods_preserves_scaled_nutrition_label(db):
     _add_chicken_breast(db)
     foods = [{

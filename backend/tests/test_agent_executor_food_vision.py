@@ -288,6 +288,48 @@ async def test_low_confidence_mobile_meal_photo_returns_confirmation_without_llm
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "quantity", "expected_records", "expected_drafts"),
+    [("记录晚餐", "1个", 1, 0), ("", "1个", 0, 1),
+     ("记录晚餐", None, 0, 1), ("分析这份晚餐订单，不要记录", "1个", 0, 0),
+     ("记录体重71kg", "1个", 0, 1), ("记录订单，明天才吃", "1个", 0, 1),
+     ("记录晚餐，还没吃", "1个", 0, 1), ("记录昨天晚餐", "1个", 0, 1),
+     ("记录晚餐", "未知", 0, 1), ("记录晚餐", "数量不清", 0, 1),
+     ("记录晚餐", "0个", 0, 1)],
+)
+async def test_order_vision_records_explicit_portions_but_confirms_unknown_intake(
+    db, tmp_path, monkeypatch, message, quantity, expected_records, expected_drafts,
+):
+    from app.services.ai.food_recognition import food_recognition_service
+
+    executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+    recognized = {"success": True, "foods": [{
+        "name": "鱼堡", "quantity": quantity, "confidence": 0.95,
+        "source": "order_estimate", "nutrition_basis": "order_estimate",
+        "calories": 350, "protein": 15, "carbs": 40, "fat": 15, "fiber": 2,
+    }]}
+    monkeypatch.setattr(food_recognition_service, "recognize_food_from_base64",
+                        AsyncMock(return_value=recognized))
+    context = await executor._analyze_food_images_with_structured_vision(
+        message, [{"base64": VALID_PNG_BASE64, "type": "png"}],
+    )
+    records = db.query(DietRecord).filter(DietRecord.user_id == user.id).all()
+    assert len(records) == expected_records
+    assert db.query(DietPhotoDraft).filter(DietPhotoDraft.user_id == user.id).count() == expected_drafts
+    assert "还缺少实际食用重量" not in context
+    if records:
+        assert "鱼堡 1个" in records[0].food_items
+        assert records[0].meal_type == "dinner"
+        assert records[0].calories == 350
+        assert json.loads(records[0].ai_raw_result)["foods"][0]["portion_basis"] == "order_quantity"
+        # A replay must resolve the existing receipt, not count the order twice.
+        await executor._analyze_food_images_with_structured_vision(
+            message, [{"base64": VALID_PNG_BASE64, "type": "png"}],
+        )
+        assert db.query(DietRecord).filter(DietRecord.user_id == user.id).count() == 1
+
+
+@pytest.mark.asyncio
 async def test_structured_food_vision_does_not_save_label_basis_as_consumed_amount(
     db, tmp_path, monkeypatch
 ):

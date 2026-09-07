@@ -16,6 +16,7 @@ import {
   revaFonts,
 } from '../../constants/revaTheme';
 import type { FrequentFood } from '../../services/diet';
+import { isReusableDietFoodDescription } from '../../utils/dietIntakeGuard';
 
 const MEAL_LABEL: Record<string, string> = {
   breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐',
@@ -27,7 +28,8 @@ interface Props {
 }
 
 export default function FrequentFoodsRow({ foods, onPick }: Props) {
-  if (!foods || foods.length === 0) return null;
+  const reusableFoods = (foods ?? []).filter(food => isReusableDietFoodDescription(food.food_items));
+  if (reusableFoods.length === 0) return null;
 
   return (
     <View style={styles.wrapper} testID="frequent-foods-row">
@@ -45,7 +47,7 @@ export default function FrequentFoodsRow({ foods, onPick }: Props) {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
       >
-        {foods.map((f, i) => {
+        {reusableFoods.map((f, i) => {
           const cal = f.calories != null ? `${Math.round(f.calories)}kcal` : '按历史估算';
           return (
             <Pressable

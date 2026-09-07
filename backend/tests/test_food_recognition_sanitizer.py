@@ -18,6 +18,43 @@ def test_default_vision_model_uses_current_fast_food_recognition_model():
     assert Settings.model_fields["llm_vision_model"].default == "qwen3-vl-flash"
 
 
+def test_order_portions_survive_sanitizing_and_merging_without_label_amount_gate():
+    result = sanitize_food_recognition_result({
+        "foods": [
+            {"name": "鱼堡", "quantity": "1个", "calories": 350,
+             "source": "order_estimate", "nutrition_basis": "order_estimate"},
+            {"name": "纯牛奶", "quantity": "1盒", "calories": None,
+             "source": "order_estimate", "nutrition_basis": "order_estimate"},
+        ],
+    })
+    merged = merge_food_recognition_results([result])
+    usable = apply_user_stated_amount_to_nutrition_label(merged, "记录晚餐")
+    assert usable["success"] is True
+    assert not usable.get("nutrition_label_requires_amount")
+    assert [food["quantity"] for food in usable["foods"]] == ["1个", "1盒"]
+    assert all(food["portion_basis"] == "order_quantity" for food in usable["foods"])
+    assert "quantity_grams" not in usable["foods"][1]
+    assert usable["total_calories"] is None  # Unknown is not zero.
+
+
+def test_order_without_readable_quantity_does_not_gain_a_portion():
+    result = sanitize_food_recognition_result({"foods": [{
+        "name": "鱼堡", "source": "order_estimate", "calories": None,
+    }]})
+    assert result["foods"][0]["quantity"] is None
+    assert result["foods"][0]["portion_basis"] == "unknown"
+
+
+def test_order_request_does_not_bypass_actual_nutrition_label_safety():
+    result = sanitize_food_recognition_result({"foods": [{
+        "name": "坚果", "quantity": "每100g", "label_basis_grams": 100,
+        "source": "nutrition_label", "nutrition_basis": "nutrition_label_per_100g",
+        "calories": 650,
+    }]})
+    usable = apply_user_stated_amount_to_nutrition_label(result, "按订单记录晚餐")
+    assert usable["nutrition_label_requires_amount"] is True
+
+
 def test_text_nutrition_estimator_cancels_provider_at_timeout():
     cancelled = False
 

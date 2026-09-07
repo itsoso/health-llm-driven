@@ -48,6 +48,7 @@ from app.services.food_nutrition_lookup import calibrate_recognized_foods
 from app.services.intake_intent_classifier import (
     classify_intake_intent,
     looks_like_food_ui_text,
+    is_reusable_food_description,
 )
 from app.services.diet_media_storage import StoredDietPhoto, store_diet_image
 from app.services.internal_diet_correction import (
@@ -1085,7 +1086,7 @@ def get_my_frequent_foods(
     groups: dict[str, list] = {}
     for r in records:
         key = (r.food_items or "").strip()
-        if not key:
+        if not is_reusable_food_description(key):
             continue
         groups.setdefault(key, []).append(r)
 

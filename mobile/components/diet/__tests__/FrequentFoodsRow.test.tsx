@@ -25,6 +25,21 @@ const food = (over: Partial<FrequentFood> = {}): FrequentFood => ({
 });
 
 describe('FrequentFoodsRow', () => {
+  it.each(['导致肚子有点痛', '胃疼', '吃完牛肉面后腹泻', '喝咖啡后心悸', '头晕恶心', '吃完后不舒服', '肚子 有点 疼', '昨晚失眠'])(
+    'does not offer a stale symptom record for reuse: %s', (description) => {
+      const { queryByTestId } = render(<FrequentFoodsRow foods={[food({ food_items: description })]} onPick={jest.fn()} />);
+      expect(queryByTestId('frequent-foods-row')).toBeNull();
+    },
+  );
+  it.each(['山药片', '猪肚汤', '酸奶', '苦瓜炒蛋', '维C柠檬茶', '鸡胸肉 200g', '无糖咖啡'])(
+    'keeps real foods reusable: %s', (description) => {
+      const onPick = jest.fn();
+      const value = food({ food_items: description });
+      const { getByRole } = render(<FrequentFoodsRow foods={[value, food({ food_items: '胃疼' })]} onPick={onPick} />);
+      fireEvent.press(getByRole('button', { name: `记录午餐：${description}，330kcal` }));
+      expect(onPick).toHaveBeenCalledWith(value);
+    },
+  );
   it('renders nothing when there are no frequent foods', () => {
     const { queryByTestId } = render(<FrequentFoodsRow foods={[]} onPick={jest.fn()} />);
     expect(queryByTestId('frequent-foods-row')).toBeNull();
