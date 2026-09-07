@@ -474,12 +474,15 @@ _SUPPLEMENT_TARGET_TERMS = (
 _SUPPLEMENT_NAME_EVIDENCE_RE = re.compile(
     r"(?:营养素[\u4e00-\u9fffA-Za-z0-9]{1,4}"
     r"|维生素[A-Za-z0-9]{1,6}"
+    r"|复合维[A-Za-z0-9]{1,6}"
     r"|辅酶[A-Za-z0-9]{1,8}"
     r"|益生菌[\u4e00-\u9fffA-Za-z0-9]{0,8})"
     r"|.+(?:素|镁|锌|钙|铁|硒|油|液|粉|丸|片|胶囊|酸|肽|酶|菌)"
     r"|(?:PQQ|NAC|NMN|Q10)",
     re.IGNORECASE,
 )
+_SUPPLEMENT_ACRONYM_NAME_RE = re.compile(r"[A-Z][A-Z0-9-]{1,7}")
+_SUPPLEMENT_MAX_UNQUOTED_NAME_LENGTH = 6
 _SUPPLEMENT_GENERIC_NAME_REFERENCE_RE = re.compile(
     r"(?:补剂|营养素|维生素|胶囊|产品|片)$"
 )
@@ -594,6 +597,9 @@ _SUPPLEMENT_NONCURRENT_TIME_RE = re.compile(
 )
 _SUPPLEMENT_LABEL_SEGMENT_BOUNDARY_RE = re.compile(r"[;；。.!！?？\r\n]+")
 _SUPPLEMENT_LABEL_ACTION_RE = re.compile(r"记录补剂\s*(?P<colon>[:：])?")
+_SUPPLEMENT_LABELED_QUESTION_RE = re.compile(
+    r"记录补剂\s*[:：][^?？\r\n]*[?？]"
+)
 _MEDICATION_NAME_SUFFIX_RE = re.compile(
     r"(?:霉素|必利|瑞酮|二甲双胍|沙坦|普利|洛尔|他汀|唑仑|西泮)$"
 )
@@ -4606,6 +4612,7 @@ def _supplement_item_has_name_evidence(raw_item: str) -> bool:
         or (not is_quoted and bool(re.search(r"\s", candidate)))
     ):
         return False
+    is_acronym = _SUPPLEMENT_ACRONYM_NAME_RE.fullmatch(candidate) is not None
     normalized_candidate = _normalize_entity_name(candidate)
     if len(normalized_candidate) < 2:
         return False
@@ -4617,9 +4624,17 @@ def _supplement_item_has_name_evidence(raw_item: str) -> bool:
         for term in _SUPPLEMENT_TARGET_TERMS
     ):
         return True
+    if (
+        not is_quoted
+        and len(normalized_candidate) > _SUPPLEMENT_MAX_UNQUOTED_NAME_LENGTH
+    ):
+        return False
     if _SUPPLEMENT_GENERIC_NAME_REFERENCE_RE.search(normalized_candidate):
         return False
-    return bool(_SUPPLEMENT_NAME_EVIDENCE_RE.fullmatch(normalized_candidate))
+    return bool(
+        _SUPPLEMENT_NAME_EVIDENCE_RE.fullmatch(normalized_candidate)
+        or is_acronym
+    )
 
 
 def _supplement_item_is_current_metadata(raw_item: str) -> bool:
@@ -4645,6 +4660,8 @@ def _explicit_labeled_supplement_targets(message: str) -> tuple[str, ...]:
     from app.services.write_intent_scope import authorized_health_record_clauses
 
     normalized = unicodedata.normalize("NFKC", str(message or ""))
+    if _SUPPLEMENT_LABELED_QUESTION_RE.search(normalized):
+        return ()
     names: list[str] = []
     segments = _SUPPLEMENT_LABEL_SEGMENT_BOUNDARY_RE.split(normalized)
     if any(

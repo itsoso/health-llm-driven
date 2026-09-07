@@ -560,6 +560,18 @@ def test_supplement_label_colon_builds_clean_deterministic_calls():
     ] == ["营养素甲", "营养素乙", "营养素丙"]
 
 
+def test_supplement_label_colon_accepts_compact_vitamin_and_acronym_names():
+    calls = _build_deterministic_supplement_record_tool_calls(
+        "记录补剂：一粒复合维B、一粒PQQ和两粒MNAC。",
+        write_receipts=[],
+    )
+
+    assert [
+        json.loads(call["function"]["arguments"])["data"]["supplement_name"]
+        for call in calls
+    ] == ["复合维B", "PQQ", "MNAC"]
+
+
 def test_supplement_label_colon_rejects_mixed_authority_batch_atomically():
     calls = _build_deterministic_supplement_record_tool_calls(
         "记录补剂：营养素甲、不要营养素乙、如果吃营养素丙、"
