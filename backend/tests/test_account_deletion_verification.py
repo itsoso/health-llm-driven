@@ -8,8 +8,8 @@ from app.services import account_deletion
 
 
 class _EmptyRedis:
-    def scan_iter(self, match):
-        return iter(())
+    def scan(self, cursor=0, *, match, count):
+        return 0, []
 
 
 def test_deletion_report_fails_closed_when_user_data_remains(db, auth_user_and_headers, monkeypatch, tmp_path):

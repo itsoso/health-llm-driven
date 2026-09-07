@@ -350,3 +350,14 @@
 - 审核备注实际提交正文原超过 ASC 4,000 字符上限，已压缩至 3,907 字符，保留医学引用测试路径、第三方 AI 许可、撤回及账号删除边界。仓库 Draft 标记仍保留，不能据此声称最终送审材料已确认。
 - 当前 G6 / final-submit 仍为 BLOCK：ASC 会话再次失效，需要用户重新登录后确认 Apple 处理状态、选择 263、发布新增隐私标签并保存审核备注；此前后台仍选 261，尚未变更。物理 iPhone 于本轮查询为 `unavailable`，不能完成该精确候选的完整真机验收、审核账号复验及新截图验证；不复用旧 Build 或人工开关伪造通过。无用户主体的公共后台 dense embedding 限制仍按上一节记录。
 - 本机仅使用合成数据的临时 API 与 PostgreSQL 已正常停止，未删除用户资料或清理其他工作树。
+
+## 2026-09-07 · 后续对抗自审整改（尚未发布）
+
+- 本轮继续查找并修复审核风险，不把新源码测试当成旧 Build 263 的验收证据，沿用同一 Health Harness run。当前线上与 Build 263 仍为 `e53ea9a3d`，本节修复尚未部署或构建。
+- 登录阻断：实际 UI 走 `POST /auth/phone/verify`，邀请注册走 `POST /auth/invited-registration`，两者遗漏在预登录网络准入清单中，首次登录直接被 `cloud_session_required` 拦截。仅加入这两个精确 POST 路径，未放宽 `/auth/*`。真实 auth service → API interceptor → egress 回归先 RED 3 failed，再 GREEN；独立安全复审 GO，57/57。集成为 `06da8fb74`，不会绕过服务端验证码/邀请校验或 AI 授权。
+- 删除文件核验：补齐 `aigc/{user_id}` 图片/视频以及历史扁平文件、未知布局和符号链接的未解决状态。第一版用“他人头像引用”证明所有权被独立复审判为 P1/NO-GO；真实 `PUT /wechat/user/info` 反例证明该 URL 可由用户填写，随后去除豁免，重新 GO。共享头像缺乏可信归属时仍阻断，不删除其他用户目录，不把数据库行删除当成文件清理。
+- 删除缓存核验：修复 `*{user_id}*` 数字子串导致相邻 ID/日期/hash 误报，同时不遗漏 hash 主体、会话 ID、共享或未知 namespace。仅按已核实生产者的精确主体槽位计数；未知或扫描不完整保持 `partial`，不得完成。只读键元数据、不 GET/DEL 健康载荷，错误日志仅异常类型；SCAN 有页数和返回条目预算，重复条目也计入。独立安全复审 52/52，GO。
+- 发布材料纠正：Apple [官方字段说明](https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information) 将 Notes 限为 4,000 **bytes**、Keywords 限为 100 **bytes**，不是字符。上一节 3,907 字符正文实际为 4,199 UTF-8 bytes，关键词为 139 bytes；此前长度判断不足，未在 ASC 保存。本轮 `b8c9fbf06` 加入字节上限、正文缺失/重复和边界回归，缩至正文 3,915 bytes、关键词 86 bytes，并去掉隐私说明中过时的固定类型数量。复制正文必须从独立行 `## What To Test` 开始，不含凭据/Draft 前言。相关 65/65 PASS，独立复审 GO。
+- 新鲜整合 G3：Mobile 全量 303 suites、2770 passed / 1 既有 skipped，TypeScript PASS；Backend CI-mode 删除/材料/用户流程组合 142/142；独立 UTF8 PostgreSQL 合成库组合 77/77，删除核验模块 coverage 95.65%（80% 门槛通过）。System Map、类型/语法级 Ruff、密钥扫描与 diff hygiene 通过。线上只读确认两条认证路由 GET 返回 405、隐私页 HTTP 200，只证明路由存在，不替代真实验证码登录。
+- 最终组合独立安全复审 GO。新精确提交的主干 CI 仍须另验，未触发新部署、OTA、TestFlight 构建或 App Review 提交。
+- G6 继续 BLOCK：本次仅修正核验诚实性，没有新增自动清理器、可信历史文件归属账本或跨进程写入冻结。历史共享头像及无法证明归属的缓存仍需受控治理，不能声称所有删除请求已经能完成；禁止清空共享目录/Redis 来消除阻断。ASC 标签与备注保存、新候选包、审核账号、精确真机/截图验收依然需要真实证据，不能承诺 Apple 必定通过。
