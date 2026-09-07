@@ -340,3 +340,13 @@
 - 最终代码 `adf6f008f` 新鲜整合：Mobile 302 suites / 2758 passed / 1 既有 skipped，TypeScript PASS；Backend 本轮 CI 回归及授权组合 231 passed / 2 PostgreSQL-only skipped（真实 PostgreSQL 23/23 证据见上）；Release 模拟器构建成功；秘密扫描 PASS。后续仅本证据文档提交，远端精确主干 CI、生产部署与新 TestFlight 构建仍须分别验证，不将本地绿作为已发布。
 - `a44b72bb5` 的远端 CI `34039963530` 已全部成功，包含此前失败的完整后端分片。ASC 会话本轮已恢复并只读核实：旧 Build 262 完成处理、已加入内部群组；App Store 1.3.3 当前绑定 261，仍显示历史 1.4.1 拒绝；名称“小巴健康”、年龄分级和非受监管医疗设备声明已保存，App Privacy 已发布。
 - ASC 隐私标签只列邮箱、漏列手机登录的 Phone Number；基因上传持久化还需 Sensitive Info。`48105a226` 补齐仓库声明、iOS 原生 manifest、映射及回归，仅反映既有收集行为，不新增权限或外发。独立安全复核 GO，58/58 后端检查、17/17 Mobile 配置检查通过；本变更必须进入新二进制。ASC 的对应披露保存、精确新 SHA CI/原生包核验尚待完成，未将编辑器中的草稿当成已发布。
+
+## 2026-09-07 · Build 263 发布与剩余审核边界
+
+- 发布源固定为 `e53ea9a3d5ac20cd64cd87d2d3a9afa757013c5b`，与当时干净 `main` / `origin/main` 一致。远端完整 CI [34040646329](https://github.com/itsoso/health-llm-driven/actions/runs/34040646329) `completed/success`；CI-mode 集成证据见上一节。全发布范围 preflight 再验 PASS：秘密扫描、System Map / Dossier、双端 API 类型及 28/28 发布契约测试。
+- 经唯一入口 `DEPLOY_ENV_FILE=.env-online ./deploy.sh --all --yes` 完成 Backend/Web 部署，exit 0；数据库备份、恢复演练、站外加密归档及 runtime contract 均通过，健康度 60/60。9 月 7 日复验服务器 SHA 精确一致、工作树干净、Backend active、Web PM2 online、隐私页 HTTP 200，未认证 `/api/v1/auth/ai-consent` 返回 401。
+- EAS production [Build 263](https://expo.dev/accounts/itsoso/projects/health-pilot/builds/5bb4b1a0-c4c2-4ff7-9885-85fd8c7ff4c5) `FINISHED`，1.3.3 / 263，元数据 source SHA 精确匹配；[自动上传](https://expo.dev/accounts/itsoso/projects/health-pilot/submissions/a5df88c7-c667-44af-81e0-02d45b0babfd) 日志明确 `Submitted your app to Apple App Store Connect!`，命令 exit 0。没有发布 OTA，也没有再次提交 App Review。
+- 实际 IPA SHA-256：`ec080424e6dccefbed2b13ae5c61448e468f86ddd028e9af9550984febb85c9d`。直接读取包内 Info.plist / PrivacyInfo.xcprivacy：名称“小巴健康”、bundle `life.executor.health`、1.3.3 / 263、iPhone-only 均匹配；复用正式隐私校验器逐项核对 collected types、purposes、linked 与 tracking，完整通过，包含 Phone Number / Sensitive Info，tracking=false。此证据来自实际 EAS IPA，不是模拟器或源码替代。
+- 审核备注实际提交正文原超过 ASC 4,000 字符上限，已压缩至 3,907 字符，保留医学引用测试路径、第三方 AI 许可、撤回及账号删除边界。仓库 Draft 标记仍保留，不能据此声称最终送审材料已确认。
+- 当前 G6 / final-submit 仍为 BLOCK：ASC 会话再次失效，需要用户重新登录后确认 Apple 处理状态、选择 263、发布新增隐私标签并保存审核备注；此前后台仍选 261，尚未变更。物理 iPhone 于本轮查询为 `unavailable`，不能完成该精确候选的完整真机验收、审核账号复验及新截图验证；不复用旧 Build 或人工开关伪造通过。无用户主体的公共后台 dense embedding 限制仍按上一节记录。
+- 本机仅使用合成数据的临时 API 与 PostgreSQL 已正常停止，未删除用户资料或清理其他工作树。
