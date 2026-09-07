@@ -304,9 +304,24 @@ async def test_water_record_without_model_tool_call_uses_one_deterministic_write
     }]
 
 
+@pytest.mark.parametrize(
+    ("message", "expected_names"),
+    (
+        (
+            "记录下来，吃了一粒甘氨酸镁和一粒褪黑素。",
+            ["甘氨酸镁", "褪黑素"],
+        ),
+        (
+            "记录补剂：一粒营养素甲、一粒营养素乙和一粒两粒营养素丙。",
+            ["营养素甲", "营养素乙", "营养素丙"],
+        ),
+    ),
+)
 async def test_multiple_supplements_without_model_tool_calls_write_every_item_once(
     db,
     auth_user_and_headers,
+    message,
+    expected_names,
 ):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
@@ -321,7 +336,7 @@ async def test_multiple_supplements_without_model_tool_calls_write_every_item_on
         args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
         calls.append((tool_name, args))
         name = args["data"]["supplement_name"]
-        record_id = 901 if name == "甘氨酸镁" else 902
+        record_id = 900 + len(calls)
         return json.dumps(
             {
                 "id": record_id,
@@ -341,7 +356,7 @@ async def test_multiple_supplements_without_model_tool_calls_write_every_item_on
         event
         async for event in executor.run_stream(
             user_id=user.id,
-            message="记录下来，吃了一粒甘氨酸镁和一粒褪黑素。",
+            message=message,
             user_auth_token="test-token",
         )
     ]
@@ -349,9 +364,9 @@ async def test_multiple_supplements_without_model_tool_calls_write_every_item_on
 
     assert [
         args["data"]["supplement_name"] for _, args in calls
-    ] == ["甘氨酸镁", "褪黑素"]
+    ] == expected_names
     assert all(tool_name == "health_record" for tool_name, _ in calls)
-    assert len(done["data"]["write_receipts"]) == 2
+    assert len(done["data"]["write_receipts"]) == len(expected_names)
     assert done["data"]["completion_status"] == "complete"
     assert done["data"]["record_intent_no_tool"] is False
 

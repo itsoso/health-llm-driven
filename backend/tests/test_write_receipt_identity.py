@@ -90,6 +90,30 @@ def test_explicit_unverified_result_never_builds_verified_receipt():
     assert _write_tool_completed("health_record", {"record_type": "diet"}, shape) is False
 
 
+@pytest.mark.parametrize(
+    "error_field",
+    (
+        {"errors": ["failed"]},
+        {"error_code": "FAILED"},
+    ),
+)
+def test_explicit_error_fields_never_build_verified_receipt(error_field):
+    shape = json.dumps(
+        {
+            "status": "recorded",
+            "record_id": 829,
+            "resource_type": "supplement_log",
+            **error_field,
+        }
+    )
+
+    assert _write_receipt_from_tool_result(
+        "health_record",
+        "supplement",
+        shape,
+    ) is None
+
+
 def test_nested_explicit_unverified_result_never_builds_verified_receipt():
     shape = json.dumps(
         {

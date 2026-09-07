@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.services.agent_executor import AgentExecutor
+from app.services.agent_executor import AgentExecutor, _write_receipt_from_tool_result
 
 
 def _executor(db):
@@ -31,7 +31,12 @@ async def test_unregistered_supplement_autocreates_then_taps(db):
     async def fake_post_json(url, headers, payload):
         assert "/supplements/definitions" in url
         create_payload.update(payload)
-        return {"id": 88, "name": payload["name"]}, None
+        return {
+            "id": 88,
+            "name": payload["name"],
+            "user_id": 1,
+            "is_active": True,
+        }, None
 
     async def fake_post(url, headers, payload):
         assert "/nfc/tap" in url
@@ -59,6 +64,361 @@ async def test_unregistered_supplement_autocreates_then_taps(db):
     assert "加入补剂库" in parsed["message"]
     assert "88" in parsed["message"]  # 补剂号入回显,撤销回合有 id 可用
     assert "撤销" in parsed["message"]
+    assert parsed["status"] == "unverified"
+    assert parsed["verified"] is False
+    assert _write_receipt_from_tool_result(
+        "health_record",
+        {"record_type": "supplement"},
+        result,
+    ) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "lookup_payload",
+    (
+        {"unexpected": True},
+        {"status": "failed", "data": []},
+        {"error": "合成错误详情", "data": []},
+        {"data": "not-a-list"},
+        {"data": ["not-an-object"]},
+        {"data": [{"name": "营养素甲", "is_active": True}]},
+        {"data": [{"id": 7, "name": "营养素甲", "is_active": "false"}]},
+        {
+            "user_id": 2,
+            "data": [{"id": 7, "name": "营养素甲", "is_active": True}],
+        },
+        {
+            "name": "营养素甲",
+            "data": [{"id": 7, "name": "营养素甲", "is_active": True}],
+        },
+        {
+            "is_active": True,
+            "data": [{"id": 7, "name": "营养素甲", "is_active": True}],
+        },
+        {
+            "resource_type": "diet_record",
+            "data": [{"id": 7, "name": "营养素甲", "is_active": True}],
+        },
+        {
+            "data": [{"id": 7, "name": "营养素甲", "is_active": True}],
+            "result": {"user_id": 2},
+        },
+        {
+            "data": [{"id": 7, "name": "营养素甲", "is_active": True}],
+            "result": {"name": "营养素乙"},
+        },
+        {
+            "data": [{"id": 7, "name": "营养素甲", "is_active": True}],
+            "result": {"resource_type": "diet_record"},
+        },
+        {
+            "data": [
+                {
+                    "id": 7,
+                    "name": "营养素甲",
+                    "is_active": True,
+                    "user_id": 2,
+                }
+            ]
+        },
+        {
+            "data": [
+                {"id": 7, "name": "营养素甲", "is_active": True},
+                {"id": 7, "name": "营养素乙", "is_active": True},
+            ]
+        },
+        {
+            "data": [
+                {
+                    "id": 7,
+                    "name": "营养素甲",
+                    "is_active": True,
+                    "error": "synthetic",
+                }
+            ]
+        },
+        {
+            "data": [
+                {
+                    "id": 7,
+                    "name": "营养素甲",
+                    "is_active": True,
+                    "resource_type": "medication_definition",
+                }
+            ]
+        },
+        {
+            "data": [
+                {
+                    "id": 7,
+                    "name": "营养素甲",
+                    "is_active": True,
+                    "success": False,
+                }
+            ]
+        },
+        {
+            "data": [
+                {
+                    "id": 7,
+                    "name": "营养素甲",
+                    "is_active": True,
+                    "result": [{"status": "failed"}],
+                }
+            ]
+        },
+        {
+            "data": [
+                {
+                    "id": 7,
+                    "name": "营养素甲",
+                    "is_active": True,
+                    "result": {"is_active": False},
+                }
+            ]
+        },
+    ),
+)
+async def test_autocreate_rejects_malformed_definition_lookup_response(
+    db,
+    lookup_payload,
+):
+    ex = _executor(db)
+    ex._current_turn_user_message = "记录「营养素甲」"
+    create = AsyncMock()
+    tap = AsyncMock()
+
+    with patch.object(
+        ex,
+        "_api_get_json",
+        new=AsyncMock(return_value=(lookup_payload, None)),
+    ), patch.object(ex, "_api_post_json", new=create), patch.object(
+        ex,
+        "_api_post",
+        new=tap,
+    ):
+        result = await ex._exec_health_record(
+            "http://x",
+            {},
+            {
+                "record_type": "supplement",
+                "data": {"supplement_name": "营养素甲"},
+            },
+        )
+
+    parsed = json.loads(result)
+    assert parsed["status"] == "rejected"
+    assert parsed["error_code"] == "supplement_definition_lookup_invalid"
+    assert parsed["dispatch_started"] is False
+    create.assert_not_awaited()
+    tap.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "create_payload",
+    (
+        {"status": "failed", "id": 88},
+        {"errors": ["failed"], "id": 88},
+        {"error_code": "FAILED", "id": 88},
+        {"id": 0},
+        {"id": []},
+        {"id": 88, "name": "营养素乙", "user_id": 1},
+        {"id": 88, "name": "营养素甲", "user_id": 2},
+        {"id": 88, "name": "营养素甲", "user_id": 1, "is_active": False},
+        {"id": 88, "name": "营养素甲", "user_id": 1, "is_active": "true"},
+        {
+            "id": 88,
+            "name": "营养素甲",
+            "user_id": 1,
+            "resource_id": 89,
+        },
+        {
+            "id": 88,
+            "name": "营养素甲",
+            "user_id": 1,
+            "data": {"id": 89},
+        },
+        {
+            "id": 88,
+            "name": "营养素甲",
+            "user_id": 1,
+            "resource_type": "medication_definition",
+        },
+        {
+            "id": 88,
+            "name": "营养素甲",
+            "user_id": 1,
+            "data": {"result": {"status": "failed"}},
+        },
+        {
+            "id": 88,
+            "name": "营养素甲",
+            "user_id": 1,
+            "result": [{"status": "failed"}],
+        },
+    ),
+)
+async def test_invalid_autocreate_response_never_reaches_tap(db, create_payload):
+    ex = _executor(db)
+    ex._current_turn_user_message = "记录「营养素甲」"
+    tap = AsyncMock()
+
+    with patch.object(
+        ex,
+        "_api_get_json",
+        new=AsyncMock(return_value=([], None)),
+    ), patch.object(
+        ex,
+        "_api_post_json",
+        new=AsyncMock(return_value=(create_payload, None)),
+    ), patch.object(ex, "_api_post", new=tap):
+        result = await ex._exec_health_record(
+            "http://x",
+            {},
+            {
+                "record_type": "supplement",
+                "data": {"supplement_name": "营养素甲"},
+            },
+        )
+
+    assert "完成今日打卡" not in result
+    assert _write_receipt_from_tool_result(
+        "health_record",
+        {"record_type": "supplement"},
+        result,
+    ) is None
+    tap.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tap_payload", "expected_status"),
+    (
+        ({"status": "failed", "record_id": 901}, "failed"),
+        ({"id": 88, "resource_type": "supplement_definition"}, "unverified"),
+        ({"record_id": 901, "resource_type": "diet_record"}, "unverified"),
+        ({"record_id": []}, "unverified"),
+        ({"record_id": 0}, "unverified"),
+        ({"record_id": -1}, "unverified"),
+        ({"record_id": "0.0"}, "unverified"),
+        ({"id": 88}, "unverified"),
+        ({"record_id": 901, "id": 902}, "unverified"),
+        ({"record_id": 901, "errors": ["failed"]}, "failed"),
+        ({"record_id": 901, "error_code": "FAILED"}, "failed"),
+        (
+            {"record_id": 901, "data": {"result": {"status": "failed"}}},
+            "failed",
+        ),
+        ({"record_id": 901, "result": [{"status": "failed"}]}, "failed"),
+        ({"record_id": 901, "status": False}, "unverified"),
+        ({"record_id": 901, "status": 0}, "unverified"),
+        ({"record_id": 901, "status": []}, "unverified"),
+        ({"record_id": 901, "status": {}}, "unverified"),
+        ({"record_id": 901, "resource_type": []}, "unverified"),
+        ({"record_id": 901, "resource_type": 0}, "unverified"),
+        ({"record_id": 901, "data": {"type": "medication_log"}}, "unverified"),
+        (
+            {
+                "status": "ok",
+                "record_id": 901,
+                "data": {"result": {"record_id": 77}},
+            },
+            "unverified",
+        ),
+        (
+            {"status": "ok", "record_id": 901, "data": [{"record_id": 77}]},
+            "unverified",
+        ),
+        (
+            {
+                "record_id": 901,
+                "data": [
+                    {"success": False, "error": "synthetic", "record_id": 77}
+                ],
+            },
+            "failed",
+        ),
+    ),
+)
+async def test_autocreate_invalid_tap_never_builds_verified_receipt(
+    db,
+    tap_payload,
+    expected_status,
+):
+    ex = _executor(db)
+    ex._current_turn_user_message = "记录「营养素甲」"
+
+    with patch.object(
+        ex,
+        "_api_get_json",
+        new=AsyncMock(return_value=([], None)),
+    ), patch.object(
+        ex,
+        "_api_post_json",
+        new=AsyncMock(
+            return_value=(
+                {
+                    "id": 88,
+                    "name": "营养素甲",
+                    "user_id": 1,
+                    "is_active": True,
+                },
+                None,
+            )
+        ),
+    ), patch.object(
+        ex,
+        "_api_post",
+        new=AsyncMock(return_value=json.dumps(tap_payload)),
+    ):
+        result = await ex._exec_health_record(
+            "http://x",
+            {},
+            {
+                "record_type": "supplement",
+                "data": {"supplement_name": "营养素甲"},
+            },
+        )
+
+    parsed = json.loads(result)
+    assert parsed["verified"] is False
+    assert parsed["status"] == expected_status
+    assert "完成今日打卡" not in parsed["message"]
+    assert _write_receipt_from_tool_result(
+        "health_record",
+        {"record_type": "supplement"},
+        result,
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_supplement_lookup_error_detail_is_not_logged_or_returned(db, caplog):
+    ex = _executor(db)
+    ex._current_turn_user_message = "记录「营养素甲」"
+    private_detail = "营养素甲 合成错误"
+
+    with patch.object(
+        ex,
+        "_api_get_json",
+        new=AsyncMock(return_value=(None, f"网络错误: {private_detail}")),
+    ), patch.object(ex, "_api_post_json", new=AsyncMock()), patch.object(
+        ex,
+        "_api_post",
+        new=AsyncMock(),
+    ):
+        result = await ex._exec_health_record(
+            "http://x",
+            {},
+            {
+                "record_type": "supplement",
+                "data": {"supplement_name": "营养素甲"},
+            },
+        )
+
+    assert private_detail not in caplog.text
+    assert private_detail not in result
 
 
 @pytest.mark.asyncio
@@ -101,7 +461,7 @@ async def test_registered_supplement_taps_without_creating(db):
 
     async def fake_post(url, headers, payload):
         assert payload.get("supplement_id") == 7
-        return '{"status": "ok"}'
+        return '{"status": "ok", "record_id": 1073}'
 
     with patch.object(ex, "_api_get_json", new=AsyncMock(side_effect=fake_get_json)), \
          patch.object(ex, "_api_post_json", new=AsyncMock(side_effect=fake_post_json)), \
@@ -113,6 +473,274 @@ async def test_registered_supplement_taps_without_creating(db):
 
     assert created["called"] is False  # 已注册 → 不重复建档
     assert "ok" in result
+
+
+@pytest.mark.asyncio
+async def test_duplicate_exact_supplement_definitions_require_clarification(db):
+    ex = _executor(db)
+    ex._current_turn_user_message = "记录「营养素甲」"
+    create = AsyncMock()
+    tap = AsyncMock()
+
+    with patch.object(
+        ex,
+        "_api_get_json",
+        new=AsyncMock(
+            return_value=(
+                [
+                    {"id": 7, "name": "营养素甲", "is_active": True},
+                    {"id": 8, "name": " 营养素甲 ", "is_active": True},
+                ],
+                None,
+            )
+        ),
+    ), patch.object(ex, "_api_post_json", new=create), patch.object(
+        ex,
+        "_api_post",
+        new=tap,
+    ):
+        result = await ex._exec_health_record(
+            "http://x",
+            {},
+            {
+                "record_type": "supplement",
+                "data": {"supplement_name": "营养素甲"},
+            },
+        )
+
+    parsed = json.loads(result)
+    assert parsed["status"] == "rejected"
+    assert parsed["error_code"] == "supplement_definition_ambiguous"
+    create.assert_not_awaited()
+    tap.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "tap_payload",
+    (
+        {"status": "ok", "id": 9},
+        {"status": "ok", "record_id": False, "id": 9},
+        {"status": "ok", "data": {"record_id": 9}},
+        {"record_id": 1073, "success": 0},
+        {"record_id": 1073, "ok": "false"},
+        {"status": "ok", "record_id": 1073, "id": [55]},
+        {"record_id": 1073, "data": {"result": {"status": "failed"}}},
+        {"record_id": 1073, "result": [{"status": "failed"}]},
+        {"record_id": 1073, "status": False},
+        {"record_id": 1073, "status": 0},
+        {"record_id": 1073, "status": []},
+        {"record_id": 1073, "status": {}},
+        {"record_id": 1073, "resource_type": []},
+        {"record_id": 1073, "resource_type": 0},
+        {"record_id": 1073, "data": {"type": "medication_log"}},
+        {
+            "status": "ok",
+            "record_id": 1073,
+            "data": {"result": {"record_id": 77}},
+        },
+        {"status": "ok", "record_id": 1073, "data": [{"record_id": 77}]},
+        {
+            "record_id": 1073,
+            "data": [
+                {"success": False, "error": "synthetic", "record_id": 77}
+            ],
+        },
+    ),
+)
+async def test_registered_supplement_requires_strict_tap_receipt(db, tap_payload):
+    ex = _executor(db)
+    ex._current_turn_user_message = "记录「营养素甲」"
+
+    with patch.object(
+        ex,
+        "_api_get_json",
+        new=AsyncMock(
+            return_value=([{"id": 7, "name": "营养素甲", "is_active": True}], None)
+        ),
+    ), patch.object(ex, "_api_post_json", new=AsyncMock()), patch.object(
+        ex,
+        "_api_post",
+        new=AsyncMock(return_value=json.dumps(tap_payload)),
+    ):
+        result = await ex._exec_health_record(
+            "http://x",
+            {},
+            {
+                "record_type": "supplement",
+                "data": {"supplement_name": "营养素甲"},
+            },
+        )
+
+    parsed = json.loads(result)
+    assert parsed["verified"] is False
+    assert "已完成" not in parsed["message"]
+    assert "完成今日打卡" not in parsed["message"]
+    assert _write_receipt_from_tool_result(
+        "health_record",
+        {"record_type": "supplement"},
+        result,
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_colon_delimited_supplement_list_grounds_each_exact_name(db):
+    ex = _executor(db)
+    ex._current_turn_user_message = (
+        "记录补剂：一粒营养素甲、一粒营养素乙和一粒两粒营养素丙。"
+    )
+    definitions = [
+        {"id": 41, "name": "营养素甲", "is_active": True},
+        {"id": 42, "name": "营养素乙", "is_active": True},
+        {"id": 43, "name": "营养素丙", "is_active": True},
+    ]
+    create = AsyncMock()
+    tapped_ids = []
+
+    async def fake_post(url, headers, payload):  # noqa: ARG001
+        tapped_ids.append(payload["supplement_id"])
+        return json.dumps(
+            {"status": "recorded", "record_id": 1000 + payload["supplement_id"]}
+        )
+
+    with patch.object(
+        ex,
+        "_api_get_json",
+        new=AsyncMock(return_value=(definitions, None)),
+    ), patch.object(ex, "_api_post_json", new=create), patch.object(
+        ex,
+        "_api_post",
+        new=AsyncMock(side_effect=fake_post),
+    ):
+        for name in ("营养素甲", "营养素乙", "营养素丙"):
+            result = await ex._exec_health_record(
+                "http://x",
+                {},
+                {
+                    "record_type": "supplement",
+                    "data": {"supplement_name": name},
+                },
+            )
+            assert json.loads(result)["record_id"] == 1000 + tapped_ids[-1]
+
+    assert tapped_ids == [41, 42, 43]
+    create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "user_message",
+    (
+        "护士提及：记录补剂：营养素甲",
+        "记录朋友的补剂：营养素甲",
+    ),
+)
+async def test_colon_delimited_supplement_list_rejects_unowned_provenance(
+    db,
+    user_message,
+):
+    ex = _executor(db)
+    ex._current_turn_user_message = user_message
+    lookup = AsyncMock(return_value=([], None))
+    create = AsyncMock()
+    tap = AsyncMock()
+
+    with patch.object(ex, "_api_get_json", new=lookup), patch.object(
+        ex,
+        "_api_post_json",
+        new=create,
+    ), patch.object(ex, "_api_post", new=tap):
+        result = await ex._exec_health_record(
+            "http://x",
+            {},
+            {
+                "record_type": "supplement",
+                "data": {"supplement_name": "营养素甲"},
+            },
+        )
+
+    parsed = json.loads(result)
+    assert parsed["error_code"] == "supplement_name_not_user_grounded"
+    assert parsed["dispatch_started"] is False
+    lookup.assert_not_awaited()
+    create.assert_not_awaited()
+    tap.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("user_message", "supplement_name"),
+    (
+        ("记录补剂：营养素甲、不要营养素乙", "不要营养素乙"),
+        ("记录补剂：营养素甲、如果吃营养素乙", "如果吃营养素乙"),
+        ("记录补剂：营养素甲、没吃营养素乙", "没吃营养素乙"),
+        ("记录补剂：营养素甲、可能吃营养素乙", "可能吃营养素乙"),
+        ("记录补剂：营养素甲（仅作假设）", "营养素甲（仅作假设）"),
+        ("记录补剂：鱼油、营养素甲（没吃）", "营养素甲（没吃）"),
+        ("记录补剂：营养素甲（可能吃）", "营养素甲（可能吃）"),
+        ("记录补剂：营养素甲（如果吃）", "营养素甲（如果吃）"),
+        ("记录补剂：营养素甲、营养素乙没吃", "营养素乙没吃"),
+        ("记录补剂：营养素甲、营养素乙只是假设", "营养素乙"),
+        ("记录补剂：营养素甲不吃", "营养素甲不吃"),
+        ("记录补剂：营养素甲不曾吃", "营养素甲不曾吃"),
+        ("记录补剂：营养素乙、不记录营养素甲", "营养素甲"),
+        ("记录补剂：营养素甲不想再吃", "营养素甲不想再吃"),
+        ("记录补剂：营养素甲以后吃", "营养素甲以后吃"),
+        ("记录补剂：营养素甲能吃吗", "营养素甲能吃吗"),
+        ("记录补剂：营养素甲、下周吃营养素乙", "下周吃营养素乙"),
+        ("记录补剂：营养素甲、营养素乙不需要记", "营养素乙不需要记"),
+        ("记录补剂：营养素甲、营养素乙已停", "营养素乙已停"),
+        ("记录补剂：营养素甲、过两小时吃营养素乙", "过两小时吃营养素乙"),
+        ("记录补剂：营养素甲、预备吃营养素乙", "预备吃营养素乙"),
+        ("记录补剂：营养素甲、将会吃营养素乙", "将会吃营养素乙"),
+        ("记录补剂：营养素甲、服营养素乙", "服营养素乙"),
+        ("记录补剂：营养素甲、补营养素乙", "补营养素乙"),
+        ("记录补剂：营养素甲、吞营养素乙", "吞营养素乙"),
+        ("记录补剂：营养素甲、下周再服一片", "营养素甲"),
+        ("记录补剂：营养素甲、计划每天两粒", "营养素甲"),
+        ("记录补剂：营养素甲、以后再吃一点", "营养素甲"),
+        ("记录补剂：营养素甲、no intake", "营养素甲"),
+        ("记录补剂：营养素甲、will take later", "营养素甲"),
+        ("记录补剂：营养素甲、仅供参考", "营养素甲"),
+        ("记录补剂：营养素甲、暂停这次", "营养素甲"),
+        ("记录补剂：明早营养素甲", "明早营养素甲"),
+        ("记录补剂：昨晚已服营养素甲", "昨晚已服营养素甲"),
+        ("记录补剂：鱼油；记录补剂营养素甲", "营养素甲"),
+        ("记录补剂：鱼油，记录补剂营养素甲", "营养素甲"),
+        ("记录补剂：鱼油\n记录补剂营养素甲", "营养素甲"),
+    ),
+)
+async def test_colon_delimited_supplement_list_rejects_unscoped_names(
+    db,
+    user_message,
+    supplement_name,
+):
+    ex = _executor(db)
+    ex._current_turn_user_message = user_message
+    lookup = AsyncMock(return_value=([], None))
+    create = AsyncMock()
+    tap = AsyncMock()
+
+    with patch.object(ex, "_api_get_json", new=lookup), patch.object(
+        ex,
+        "_api_post_json",
+        new=create,
+    ), patch.object(ex, "_api_post", new=tap):
+        result = await ex._exec_health_record(
+            "http://x",
+            {},
+            {
+                "record_type": "supplement",
+                "data": {"supplement_name": supplement_name},
+            },
+        )
+
+    parsed = json.loads(result)
+    assert parsed["error_code"] == "supplement_name_not_user_grounded"
+    assert parsed["dispatch_started"] is False
+    lookup.assert_not_awaited()
+    create.assert_not_awaited()
+    tap.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -164,7 +792,9 @@ async def test_overlapping_supplement_names_match_distinct_exact_definitions(db)
 
     async def fake_post(url, headers, payload):  # noqa: ARG001
         dispatched_ids.append(payload["supplement_id"])
-        return json.dumps({"record_id": 1000 + payload["supplement_id"]})
+        return json.dumps(
+            {"status": "recorded", "record_id": 1000 + payload["supplement_id"]}
+        )
 
     with patch.object(ex, "_api_get_json", new=AsyncMock(side_effect=fake_get_json)), \
          patch.object(ex, "_api_post_json", new=AsyncMock()), \
@@ -192,7 +822,7 @@ async def test_contextual_all_taken_name_passes_gateway_and_taps_existing_defini
     lookup = AsyncMock(
         return_value=([{"id": 7, "name": "甘氨酸镁", "is_active": True}], None)
     )
-    tap = AsyncMock(return_value='{"record_id": 1073}')
+    tap = AsyncMock(return_value='{"status": "recorded", "record_id": 1073}')
 
     with patch.object(ex, "_api_get_json", new=lookup), \
          patch.object(ex, "_api_post_json", new=AsyncMock()), \
@@ -258,7 +888,7 @@ async def test_multiple_trailing_amounts_are_removed_without_rejecting_the_name(
     ex._current_turn_user_message = user_message
     lookup = AsyncMock(return_value=([{"id": 7, "name": model_name, "is_active": True}], None))
     create = AsyncMock()
-    tap = AsyncMock(return_value='{"status": "ok"}')
+    tap = AsyncMock(return_value='{"status": "ok", "record_id": 1073}')
 
     with patch.object(ex, "_api_get_json", new=lookup), \
          patch.object(ex, "_api_post_json", new=create), \

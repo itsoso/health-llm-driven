@@ -3410,12 +3410,23 @@ _FIXED_RECEIPT_RESOURCE_TYPE_BY_TOOL = {
 
 def _result_payload_sources(payload: Dict[str, Any]) -> list[Dict[str, Any]]:
     """Return every supported producer envelope used to verify a write result."""
-    sources = [payload]
-    sources.extend(
-        nested
-        for container_name in ("resource", "record", "data", "result")
-        if isinstance((nested := payload.get(container_name)), dict)
-    )
+    sources: list[Dict[str, Any]] = []
+    pending: list[Any] = [payload]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if isinstance(current, list):
+            pending.extend(current)
+            continue
+        if not isinstance(current, dict) or id(current) in seen:
+            continue
+        seen.add(id(current))
+        sources.append(current)
+        pending.extend(
+            current.get(container_name)
+            for container_name in ("resource", "record", "data", "result")
+            if container_name in current
+        )
     return sources
 
 
@@ -3441,8 +3452,29 @@ def _write_result_payload(
         return None
     verification_sources = _result_payload_sources(payload)
     if any(
+        "status" in source
+        and (
+            not isinstance(source.get("status"), str)
+            or not source.get("status", "").strip()
+        )
+        for source in verification_sources
+    ):
+        return None
+    if any(
         "verified" in source and source.get("verified") is not True
         for source in verification_sources
+    ):
+        return None
+    if any(
+        key in source and source.get(key) is not True
+        for source in verification_sources
+        for key in ("success", "ok")
+    ):
+        return None
+    if any(
+        source.get(key) not in (None, "", False, [], {})
+        for source in verification_sources
+        for key in ("error", "errors", "error_code")
     ):
         return None
     if any(
@@ -4161,10 +4193,12 @@ def _receipt_resource_identity(payload: Dict[str, Any]) -> tuple[Optional[str], 
         values: list[str] = []
         for key in id_keys:
             value = source.get(key)
-            if isinstance(value, bool) or value in (None, ""):
+            if isinstance(value, bool) or not isinstance(value, (int, str)):
+                continue
+            if isinstance(value, int) and value <= 0:
                 continue
             normalized = str(value).strip()
-            if normalized:
+            if normalized and normalized != "0":
                 values.append(normalized)
         return values
 
@@ -4194,6 +4228,18 @@ def _receipt_resource_identity(payload: Dict[str, Any]) -> tuple[Optional[str], 
         unique_types[0] if unique_types else None,
         unique_ids[0] if unique_ids else None,
     )
+
+
+def _positive_integer_resource_id(raw: Any) -> Optional[str]:
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        return str(raw) if raw > 0 else None
+    if isinstance(raw, str):
+        normalized = raw.strip()
+        if re.fullmatch(r"[1-9]\d*", normalized):
+            return normalized
+    return None
 
 
 def _receipt_target_date(
@@ -4786,6 +4832,370 @@ def _supplement_entity_is_generic(raw: Any) -> bool:
     )
 
 
+_SUPPLEMENT_TERMINAL_SUCCESS_STATUSES = frozenset(
+    {"ok", "success", "succeeded", "recorded", "completed", "done"}
+)
+
+
+def _supplement_payload_has_only_terminal_success(payload: Dict[str, Any]) -> bool:
+    return all(
+        "status" not in source
+        or (
+            isinstance(source.get("status"), str)
+            and source["status"].strip().casefold()
+            in _SUPPLEMENT_TERMINAL_SUCCESS_STATUSES
+        )
+        for source in _result_payload_sources(payload)
+    )
+
+
+def _supplement_definitions_from_payload(
+    raw: Any,
+    *,
+    expected_user_id: Any = None,
+) -> Optional[List[Dict[str, Any]]]:
+    if isinstance(raw, list):
+        definitions = raw
+    elif isinstance(raw, dict) and isinstance(raw.get("data"), list):
+        expected_owner_id = _positive_integer_resource_id(expected_user_id)
+        if (
+            _write_result_payload(raw) is None
+            or not _supplement_payload_has_only_terminal_success(raw)
+            or raw.get("success") is False
+            or any(key in raw for key in ("resource", "record", "result"))
+            or any(
+                raw.get(key) not in (None, "", False, [], {})
+                for key in ("error", "errors", "error_code")
+            )
+        ):
+            return None
+        if "user_id" in raw and (
+            expected_owner_id is None
+            or _positive_integer_resource_id(raw.get("user_id"))
+            != expected_owner_id
+        ):
+            return None
+        if any(
+            key in raw
+            for key in (
+                "id",
+                "resource_id",
+                "definition_id",
+                "supplement_id",
+                "supplement_definition_id",
+                "record_id",
+                "event_id",
+                "log_id",
+                "cycle_id",
+                "exam_id",
+                "name",
+                "is_active",
+                "active",
+            )
+        ):
+            return None
+        for type_key in ("resource_type", "type"):
+            if type_key not in raw:
+                continue
+            raw_type = raw.get(type_key)
+            if not isinstance(raw_type, str) or raw_type.strip() not in {
+                "supplement_definition_list",
+                "supplement_definitions",
+            }:
+                return None
+        definitions = raw["data"]
+    else:
+        return None
+    seen_definition_ids: set[str] = set()
+    for item in definitions:
+        if not isinstance(item, dict):
+            return None
+        if _write_result_payload(item) is None:
+            return None
+        if not _supplement_payload_has_only_terminal_success(item):
+            return None
+        definition_id = _positive_integer_resource_id(item.get("id"))
+        if definition_id is None or definition_id in seen_definition_ids:
+            return None
+        seen_definition_ids.add(definition_id)
+        if not isinstance(item.get("name"), str) or not item["name"].strip():
+            return None
+        if not isinstance(item.get("is_active"), bool):
+            return None
+        expected_owner_id = _positive_integer_resource_id(expected_user_id)
+        if "user_id" in item and (
+            expected_owner_id is None
+            or _positive_integer_resource_id(item.get("user_id"))
+            != expected_owner_id
+        ):
+            return None
+        for source in _result_payload_sources(item):
+            if "user_id" in source and (
+                expected_owner_id is None
+                or _positive_integer_resource_id(source.get("user_id"))
+                != expected_owner_id
+            ):
+                return None
+            if "name" in source and (
+                _normalized_supplement_reference(source.get("name"))
+                != _normalized_supplement_reference(item["name"])
+            ):
+                return None
+            if "is_active" in source:
+                nested_active = source.get("is_active")
+                if (
+                    not isinstance(nested_active, bool)
+                    or nested_active is not item["is_active"]
+                ):
+                    return None
+            if "active" in source and source.get("active") is not item["is_active"]:
+                return None
+            if any(
+                key in source
+                for key in ("record_id", "event_id", "log_id", "cycle_id", "exam_id")
+            ):
+                return None
+            for key in (
+                "id",
+                "resource_id",
+                "definition_id",
+                "supplement_id",
+                "supplement_definition_id",
+            ):
+                if key not in source:
+                    continue
+                candidate_id = _positive_integer_resource_id(source.get(key))
+                if candidate_id is None or candidate_id != definition_id:
+                    return None
+            for type_key in ("resource_type", "type"):
+                if type_key not in source:
+                    continue
+                raw_resource_type = source.get(type_key)
+                if (
+                    not isinstance(raw_resource_type, str)
+                    or raw_resource_type.strip() != "supplement_definition"
+                ):
+                    return None
+    return definitions
+
+
+def _supplement_autocreate_tap_failure(
+    name: str,
+    definition_id: Any,
+    *,
+    known_failure: bool,
+) -> str:
+    if known_failure:
+        message = (
+            f"已把「{name}」加入补剂库（补剂号 {definition_id}，说「撤销」可移除），"
+            "但今日打卡没有完成，请稍后重试。"
+        )
+        status = "failed"
+    else:
+        message = (
+            f"已把「{name}」加入补剂库（补剂号 {definition_id}，说「撤销」可移除），"
+            "但未取得今日打卡的可验证回执。请先在补剂页确认，避免重复打卡。"
+        )
+        status = "unverified"
+    return json.dumps(
+        {
+            "message": message,
+            "supplement_definition_id": definition_id,
+            "status": status,
+            "verified": False,
+        },
+        ensure_ascii=False,
+    )
+
+
+def _supplement_tap_known_failure(raw: Any) -> bool:
+    if isinstance(raw, str):
+        if raw.startswith("Error"):
+            return True
+        try:
+            raw = json.loads(raw)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return False
+    if not isinstance(raw, dict):
+        return False
+    sources = _result_payload_sources(raw)
+    if any(
+        key in source and source.get(key) is not True
+        for source in sources
+        for key in ("success", "ok")
+    ):
+        return True
+    if any(
+        source.get(key) not in (None, "", False, [], {})
+        for source in sources
+        for key in ("error", "errors", "error_code")
+    ):
+        return True
+    return any(write_result_declares_non_success(source) for source in sources)
+
+
+def _validated_supplement_tap_payload(
+    raw: Any,
+    *,
+    expected_user_id: Any,
+    expected_supplement_id: Any,
+) -> Optional[Tuple[Dict[str, Any], str]]:
+    payload = _write_result_payload(raw)
+    if payload is None:
+        return None
+    if not _supplement_payload_has_only_terminal_success(payload):
+        return None
+    if not (
+        (isinstance(payload.get("status"), str) and payload["status"].strip())
+        or payload.get("success") is True
+        or payload.get("ok") is True
+    ):
+        return None
+    record_id = _positive_integer_resource_id(payload.get("record_id"))
+    expected_owner_id = _positive_integer_resource_id(expected_user_id)
+    expected_definition_id = _positive_integer_resource_id(expected_supplement_id)
+    if (
+        record_id is None
+        or expected_owner_id is None
+        or expected_definition_id is None
+    ):
+        return None
+
+    identity_keys = (
+        "id",
+        "resource_id",
+        "record_id",
+        "event_id",
+        "log_id",
+        "cycle_id",
+        "exam_id",
+    )
+    for source in _result_payload_sources(payload):
+        if any(key in source for key in ("name", "is_active", "active")):
+            return None
+        if "user_id" in source and (
+            _positive_integer_resource_id(source.get("user_id"))
+            != expected_owner_id
+        ):
+            return None
+        for key in ("supplement_id", "supplement_definition_id", "definition_id"):
+            if key not in source:
+                continue
+            candidate_definition_id = _positive_integer_resource_id(source.get(key))
+            if candidate_definition_id != expected_definition_id:
+                return None
+        for key in identity_keys:
+            if key not in source:
+                continue
+            candidate_id = _positive_integer_resource_id(source.get(key))
+            if candidate_id is None or candidate_id != record_id:
+                return None
+
+    resource_types: set[str] = set()
+    for source in _result_payload_sources(payload):
+        for type_key in ("resource_type", "type"):
+            if type_key not in source:
+                continue
+            raw_resource_type = source.get(type_key)
+            if not isinstance(raw_resource_type, str) or not raw_resource_type.strip():
+                return None
+            resource_types.add(raw_resource_type.strip())
+    if resource_types and resource_types != {"supplement_log"}:
+        return None
+
+    _resource_type, receipt_resource_id = _receipt_resource_identity(payload)
+    if receipt_resource_id != record_id:
+        return None
+    return payload, record_id
+
+
+def _validated_supplement_definition_create_payload(
+    raw: Any,
+    *,
+    expected_name: str,
+    expected_user_id: Any,
+) -> Optional[Tuple[Dict[str, Any], str]]:
+    payload = _write_result_payload(raw)
+    if payload is None:
+        return None
+    if not _supplement_payload_has_only_terminal_success(payload):
+        return None
+    definition_id = _positive_integer_resource_id(payload.get("id"))
+    owner_id = _positive_integer_resource_id(payload.get("user_id"))
+    expected_owner_id = _positive_integer_resource_id(expected_user_id)
+    if definition_id is None or owner_id != expected_owner_id:
+        return None
+    if _normalized_supplement_reference(payload.get("name")) != (
+        _normalized_supplement_reference(expected_name)
+    ):
+        return None
+    if payload.get("is_active") is not True:
+        return None
+
+    identity_keys = (
+        "id",
+        "resource_id",
+        "definition_id",
+        "supplement_id",
+        "supplement_definition_id",
+    )
+    for source in _result_payload_sources(payload):
+        if "user_id" in source and (
+            _positive_integer_resource_id(source.get("user_id"))
+            != expected_owner_id
+        ):
+            return None
+        if "name" in source and (
+            _normalized_supplement_reference(source.get("name"))
+            != _normalized_supplement_reference(expected_name)
+        ):
+            return None
+        if "is_active" in source and source.get("is_active") is not True:
+            return None
+        if "active" in source and source.get("active") is not True:
+            return None
+        if any(
+            key in source
+            for key in ("record_id", "event_id", "log_id", "cycle_id", "exam_id")
+        ):
+            return None
+        for key in identity_keys:
+            if key not in source:
+                continue
+            candidate_id = _positive_integer_resource_id(source.get(key))
+            if candidate_id is None or candidate_id != definition_id:
+                return None
+
+    resource_types: set[str] = set()
+    for source in _result_payload_sources(payload):
+        for type_key in ("resource_type", "type"):
+            if type_key not in source:
+                continue
+            raw_resource_type = source.get(type_key)
+            if not isinstance(raw_resource_type, str) or not raw_resource_type.strip():
+                return None
+            resource_types.add(raw_resource_type.strip())
+    if resource_types and resource_types != {"supplement_definition"}:
+        return None
+    return payload, definition_id
+
+
+def _supplement_existing_tap_failure(name: str, *, known_failure: bool) -> str:
+    message = (
+        f"「{name}」今日打卡没有完成，请稍后重试。"
+        if known_failure
+        else f"未取得「{name}」今日打卡的可验证回执，请先核对记录，避免重复打卡。"
+    )
+    return json.dumps(
+        {
+            "message": message,
+            "status": "failed" if known_failure else "unverified",
+            "verified": False,
+        },
+        ensure_ascii=False,
+    )
+
+
 def _supplement_entity_has_directive_residual(raw: Any) -> bool:
     boundary_preserving = unicodedata.normalize("NFKC", str(raw or "")).casefold()
     normalized = _normalized_current_turn_entity_text(boundary_preserving)
@@ -4835,9 +5245,27 @@ def _explicitly_quoted_supplement_entity(raw: str) -> Optional[str]:
     return name
 
 
+def _explicit_labeled_supplement_names(raw_message: str) -> tuple[str, ...]:
+    from app.services.agent_kernel.capability_policy import (
+        _explicit_labeled_supplement_targets,
+    )
+
+    names: list[str] = []
+    for candidate in _explicit_labeled_supplement_targets(raw_message):
+        normalized_candidate = _normalized_current_turn_entity_text(candidate)
+        if len(normalized_candidate) < 2:
+            continue
+        if _supplement_entity_is_generic(candidate):
+            continue
+        if _supplement_entity_has_directive_residual(candidate):
+            continue
+        names.append(normalized_candidate)
+    return tuple(dict.fromkeys(names))
+
+
 def _explicit_supplement_names_in_current_turn(user_message: Any) -> tuple[str, ...]:
     raw_message = unicodedata.normalize("NFKC", str(user_message or ""))
-    names: list[str] = []
+    names = list(_explicit_labeled_supplement_names(raw_message))
     for match in _EXPLICIT_SUPPLEMENT_NAME_RE.finditer(raw_message):
         candidate = match.group("name").strip(" ：:，,;；。.!！?？")
         quoted_candidate = _explicitly_quoted_supplement_entity(candidate)
@@ -4852,7 +5280,7 @@ def _explicit_supplement_names_in_current_turn(user_message: Any) -> tuple[str, 
         if quoted_candidate is None and not _supplement_entity_is_canonical_name(candidate):
             continue
         names.append(normalized_candidate)
-    return tuple(names)
+    return tuple(dict.fromkeys(names))
 
 
 def _supplement_name_is_grounded_in_current_turn(
@@ -8199,9 +8627,16 @@ def _build_deterministic_supplement_record_tool_calls(
             and intent.is_write
         ):
             return []
-        from app.services.agent_kernel.capability_policy import _named_item_targets
+        from app.services.agent_kernel.capability_policy import (
+            _explicit_labeled_supplement_targets,
+            _named_item_targets,
+        )
 
-        raw_names = _named_item_targets(str(message or ""), "supplement")
+        normalized_message = unicodedata.normalize("NFKC", str(message or ""))
+        if re.search(r"记录补剂\s*:", normalized_message):
+            raw_names = _explicit_labeled_supplement_targets(normalized_message)
+        else:
+            raw_names = _named_item_targets(normalized_message, "supplement")
 
     names: list[str] = []
     seen: set[str] = set()
@@ -24639,27 +25074,69 @@ class AgentExecutor:
                 # 查找匹配的补剂定义 (走 _api_get_json: 拿干净可解析数据, 不被字符截断)
                 supps, err = await self._api_get_json(f"{base}/supplements/me/definitions", headers)
                 if err:
-                    logger.warning(f"[health_record] supplement lookup 失败: {err}")
-                    return f"补剂记录暂时没成功(查询补剂列表时{err}),你可以稍后再试一次。"
-                supps = supps if isinstance(supps, list) else (supps.get("data", []) if isinstance(supps, dict) else [])
-                normalized_name = _normalized_supplement_reference(name)
-                matched = next(
-                    (
-                        supplement
-                        for supplement in supps
-                        if supplement.get("is_active")
-                        and _normalized_supplement_reference(
-                            supplement.get("name")
-                        )
-                        == normalized_name
-                    ),
-                    None,
+                    logger.warning(
+                        "[health_record] supplement lookup failed user=%s "
+                        "reason=upstream_error",
+                        self._current_user_id,
+                    )
+                    return local_write_rejection(
+                        "supplement_definition_lookup_failed",
+                        message="补剂列表暂时无法读取，本次没有写入。",
+                        recovery_guidance="请稍后重新记录。",
+                    )
+                supps = _supplement_definitions_from_payload(
+                    supps,
+                    expected_user_id=self._current_user_id,
                 )
+                if supps is None:
+                    logger.warning(
+                        "[health_record] supplement lookup invalid shape user=%s",
+                        self._current_user_id,
+                    )
+                    return local_write_rejection(
+                        "supplement_definition_lookup_invalid",
+                        message="补剂列表返回异常，本次没有写入。",
+                        recovery_guidance="请稍后重新记录。",
+                    )
+                normalized_name = _normalized_supplement_reference(name)
+                exact_matches = [
+                    supplement
+                    for supplement in supps
+                    if supplement.get("is_active")
+                    and _normalized_supplement_reference(supplement.get("name"))
+                    == normalized_name
+                ]
+                if len(exact_matches) > 1:
+                    return local_write_rejection(
+                        "supplement_definition_ambiguous",
+                        message="发现多个同名补剂条目，本次没有写入。",
+                        recovery_guidance="请先在补剂管理页合并或停用重复条目后再记录。",
+                    )
+                matched = exact_matches[0] if exact_matches else None
                 if matched:
-                    return await self._api_post(
+                    tap_result = await self._api_post(
                         f"{base}/nfc/tap", headers,
                         {"action": "supplement", "supplement_id": matched["id"]}
                     )
+                    validated_tap = _validated_supplement_tap_payload(
+                        tap_result,
+                        expected_user_id=self._current_user_id,
+                        expected_supplement_id=matched["id"],
+                    )
+                    if validated_tap is None:
+                        known_failure = _supplement_tap_known_failure(tap_result)
+                        logger.warning(
+                            "[health_record] existing supplement tap not verified "
+                            "user=%s known_failure=%s response_type=%s",
+                            self._current_user_id,
+                            known_failure,
+                            type(tap_result).__name__,
+                        )
+                        return _supplement_existing_tap_failure(
+                            str(name),
+                            known_failure=known_failure,
+                        )
+                    return json.dumps(validated_tap[0], ensure_ascii=False)
                 containing_candidates = []
                 for supplement in supps:
                     candidate_normalized = _normalized_supplement_reference(
@@ -24701,33 +25178,53 @@ class AgentExecutor:
                 created, cerr = await self._api_post_json(
                     f"{base}/supplements/definitions", headers, create_payload
                 )
-                if cerr or not isinstance(created, dict) or not created.get("id"):
-                    logger.warning(f"[health_record] supplement 自动建档失败: {cerr}")
-                    return f"补剂记录暂时没成功(自动建档 '{name}' 时{cerr or '未知错误'}),你可以稍后再试一次。"
+                validated_created = _validated_supplement_definition_create_payload(
+                    created,
+                    expected_name=str(name),
+                    expected_user_id=self._current_user_id,
+                )
+                if cerr or validated_created is None:
+                    logger.warning(
+                        "[health_record] supplement autocreate failed user=%s "
+                        "reason=upstream_error",
+                        self._current_user_id,
+                    )
+                    return "补剂记录暂时没成功（自动建档失败），你可以稍后再试一次。"
+                _created_payload, created_id = validated_created
                 tap_result = await self._api_post(
                     f"{base}/nfc/tap", headers,
-                    {"action": "supplement", "supplement_id": created["id"]}
+                    {"action": "supplement", "supplement_id": int(created_id)}
                 )
-                if tap_result.startswith("Error"):
-                    return f"已把「{name}」加入补剂库(补剂号 {created['id']}),但今日打卡没成功({tap_result})。"
                 # 2026-07-12 生产实锤:此处曾只回 {"message": ...} 无任何 id → 回执身份
                 # 提取不到 → 整轮被诚实门判「不可确认」(四笔全成功仍报无回执,还诱导重试)。
                 # 回执必须带可验证身份:透传 tap 的 record_id + resource_type。
-                tap_record_id = None
-                try:
-                    tap_record_id = (json.loads(tap_result) or {}).get("record_id")
-                except (json.JSONDecodeError, TypeError, ValueError):
+                validated_tap = _validated_supplement_tap_payload(
+                    tap_result,
+                    expected_user_id=self._current_user_id,
+                    expected_supplement_id=created_id,
+                )
+                if validated_tap is None:
+                    known_failure = _supplement_tap_known_failure(tap_result)
                     logger.warning(
-                        "[health_record] supplement tap 响应不可解析 chars=%s",
-                        len(tap_result),
+                        "[health_record] supplement tap not verified user=%s "
+                        "known_failure=%s response_type=%s",
+                        self._current_user_id,
+                        known_failure,
+                        type(tap_result).__name__,
                     )
+                    return _supplement_autocreate_tap_failure(
+                        str(name),
+                        created_id,
+                        known_failure=known_failure,
+                    )
+                _tap_payload, tap_record_id = validated_tap
                 return json.dumps(
                     {
-                        "message": f"已把「{name}」加入补剂库并完成今日打卡（补剂号 {created['id']}，说「撤销」可移除）",
+                        "message": f"已把「{name}」加入补剂库并完成今日打卡（补剂号 {created_id}，说「撤销」可移除）",
                         "id": tap_record_id,
                         "record_id": tap_record_id,
                         "resource_type": "supplement_log",
-                        "supplement_definition_id": created["id"],
+                        "supplement_definition_id": created_id,
                         "status": "recorded",
                     },
                     ensure_ascii=False,

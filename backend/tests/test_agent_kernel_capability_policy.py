@@ -1149,6 +1149,229 @@ def test_multiple_supplements_are_independently_authorized_and_projected():
     assert melatonin.normalized_args["data"] == {"supplement_name": "褪黑素"}
 
 
+def test_supplement_label_colon_authorizes_only_the_explicit_named_items():
+    snapshot = _snapshot(
+        "记录补剂：一粒营养素甲、一粒营养素乙和一粒两粒营养素丙。"
+    )
+
+    decisions = {
+        name: decide_tool_capability(
+            snapshot,
+            _request(
+                "health_record",
+                {
+                    "record_type": "supplement",
+                    "data": {"supplement_name": name},
+                },
+            ),
+        )
+        for name in ("营养素甲", "营养素乙", "营养素丙", "未提及成分")
+    }
+
+    assert [
+        decisions[name].action for name in ("营养素甲", "营养素乙", "营养素丙")
+    ] == [
+        "allow",
+        "allow",
+        "allow",
+    ]
+    assert decisions["未提及成分"].action == "block"
+
+
+@pytest.mark.parametrize(
+    ("message", "unsafe_name"),
+    (
+        ("记录补剂：营养素甲、不要营养素乙", "不要营养素乙"),
+        ("记录补剂：营养素甲、如果吃营养素乙", "如果吃营养素乙"),
+        ("记录补剂：营养素甲、没吃营养素乙", "没吃营养素乙"),
+        ("记录补剂：营养素甲、可能吃营养素乙", "可能吃营养素乙"),
+        ("记录补剂：营养素甲（仅作假设）", "营养素甲（仅作假设）"),
+        ("记录补剂：鱼油、营养素甲（没吃）", "营养素甲（没吃）"),
+        ("记录补剂：营养素甲（可能吃）", "营养素甲（可能吃）"),
+        ("记录补剂：营养素甲（如果吃）", "营养素甲（如果吃）"),
+        ("记录补剂：营养素甲、营养素乙没吃", "营养素乙没吃"),
+        ("记录补剂：营养素甲、营养素乙只是假设", "营养素乙"),
+        ("记录补剂：营养素甲不吃", "营养素甲不吃"),
+        ("记录补剂：营养素甲不曾吃", "营养素甲不曾吃"),
+        ("记录补剂：营养素乙、不记录营养素甲", "营养素甲"),
+        ("记录补剂：营养素甲不想再吃", "营养素甲不想再吃"),
+        ("记录补剂：营养素甲以后吃", "营养素甲以后吃"),
+        ("记录补剂：营养素甲能吃吗", "营养素甲能吃吗"),
+        ("记录补剂：营养素甲、下周吃营养素乙", "下周吃营养素乙"),
+        ("记录补剂：营养素甲、营养素乙不需要记", "营养素乙不需要记"),
+        ("记录补剂：营养素甲、营养素乙已停", "营养素乙已停"),
+        ("记录补剂：营养素甲、过两小时吃营养素乙", "过两小时吃营养素乙"),
+        ("记录补剂：营养素甲、预备吃营养素乙", "预备吃营养素乙"),
+        ("记录补剂：营养素甲、将会吃营养素乙", "将会吃营养素乙"),
+        ("记录补剂：营养素甲、服营养素乙", "服营养素乙"),
+        ("记录补剂：营养素甲、补营养素乙", "补营养素乙"),
+        ("记录补剂：营养素甲、吞营养素乙", "吞营养素乙"),
+        ("记录补剂：营养素甲、下周再服一片", "营养素甲"),
+        ("记录补剂：营养素甲、计划每天两粒", "营养素甲"),
+        ("记录补剂：营养素甲、以后再吃一点", "营养素甲"),
+        ("记录补剂：营养素甲、no intake", "营养素甲"),
+        ("记录补剂：营养素甲、will take later", "营养素甲"),
+        ("记录补剂：营养素甲、仅供参考", "营养素甲"),
+        ("记录补剂：营养素甲、暂停这次", "营养素甲"),
+        ("记录补剂：明早营养素甲", "明早营养素甲"),
+        ("记录补剂：昨晚已服营养素甲", "昨晚已服营养素甲"),
+    ),
+)
+def test_supplement_label_colon_rejects_non_authorizing_list_items(
+    message,
+    unsafe_name,
+):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {
+                "record_type": "supplement",
+                "data": {"supplement_name": unsafe_name},
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录补剂：鱼油；记录补剂营养素甲",
+        "记录补剂：鱼油，记录补剂营养素甲",
+        "记录补剂：鱼油\n记录补剂营养素甲",
+    ),
+)
+def test_supplement_label_colon_does_not_authorize_name_from_unlabeled_clause(
+    message,
+):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {
+                "record_type": "supplement",
+                "data": {"supplement_name": "营养素甲"},
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录补剂：一粒两粒营养素甲",
+        "记录补剂：一粒营养素甲和两粒营养素甲",
+    ),
+)
+def test_conflicting_supplement_quantities_do_not_bind_a_dosage(message):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {
+                "record_type": "supplement",
+                "data": {
+                    "supplement_name": "营养素甲",
+                    "dosage": "1粒",
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args["data"] == {"supplement_name": "营养素甲"}
+
+
+def test_rejected_supplement_item_cannot_supply_metadata_to_authorized_item():
+    decision = decide_tool_capability(
+        _snapshot("记录补剂：营养素甲、不要晚上吃两粒营养素乙"),
+        _request(
+            "health_record",
+            {
+                "record_type": "supplement",
+                "data": {
+                    "supplement_name": "营养素甲",
+                    "dosage": "2粒",
+                    "timing": "evening",
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+
+
+def test_leading_rejected_supplement_item_cannot_supply_metadata():
+    decision = decide_tool_capability(
+        _snapshot("记录补剂：不要晚上吃两粒营养素乙、营养素甲"),
+        _request(
+            "health_record",
+            {
+                "record_type": "supplement",
+                "data": {
+                    "supplement_name": "营养素甲",
+                    "dosage": "2粒",
+                    "timing": "evening",
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录补剂：早上一粒营养素甲和晚上两粒营养素乙",
+        "记录补剂：早上一粒营养素甲和晚上两粒营养素甲",
+    ),
+)
+def test_multi_item_supplement_clause_does_not_guess_timing(message):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {
+                "record_type": "supplement",
+                "data": {
+                    "supplement_name": "营养素甲",
+                    "timing": "evening",
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args["data"] == {"supplement_name": "营养素甲"}
+
+
+def test_conflicting_supplement_metadata_across_clauses_is_not_selected():
+    decision = decide_tool_capability(
+        _snapshot(
+            "记录补剂：早上一粒营养素甲；记录补剂：晚上两粒营养素甲"
+        ),
+        _request(
+            "health_record",
+            {
+                "record_type": "supplement",
+                "data": {
+                    "supplement_name": "营养素甲",
+                    "dosage": "1粒",
+                    "timing": "morning",
+                },
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args["data"] == {"supplement_name": "营养素甲"}
+
+
 def test_write_action_residue_is_not_authorized_as_a_supplement_name():
     decision = decide_tool_capability(
         _snapshot("记录下来，吃了一粒甘氨酸镁和一粒褪黑素。"),
@@ -5171,11 +5394,11 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v46"
+    assert payload["contract_version"] == "agent-capability-policy-v49"
     assert payload["health_semantics"]["version"] == "health-semantics-v7"
     assert re.fullmatch(r"[0-9a-f]{64}", payload["health_semantics"]["content_digest"])
     assert payload["health_record_target_binding"] == {
-        "version": "authorized-target-set-v32",
+        "version": "authorized-target-set-v35",
         "domain_types": {
             "diet": "diet",
             "exercise": "exercise",

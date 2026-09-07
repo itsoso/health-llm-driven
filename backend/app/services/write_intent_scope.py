@@ -940,6 +940,7 @@ def _colon_extends_write_target(left: str) -> bool:
             "设置目标",
             "新增目标",
             "记录目标",
+            "记录补剂",
             "记录疾病",
             "记录事件",
             "记录生活事件",

@@ -548,6 +548,92 @@ def test_explicit_multiple_supplements_build_deterministic_calls():
     assert all(call["function"]["name"] == "health_record" for call in calls)
 
 
+def test_supplement_label_colon_builds_clean_deterministic_calls():
+    calls = _build_deterministic_supplement_record_tool_calls(
+        "记录补剂：一粒营养素甲、一粒营养素乙和一粒两粒营养素丙。",
+        write_receipts=[],
+    )
+
+    assert [
+        json.loads(call["function"]["arguments"])["data"]["supplement_name"]
+        for call in calls
+    ] == ["营养素甲", "营养素乙", "营养素丙"]
+
+
+def test_supplement_label_colon_rejects_mixed_authority_batch_atomically():
+    calls = _build_deterministic_supplement_record_tool_calls(
+        "记录补剂：营养素甲、不要营养素乙、如果吃营养素丙、"
+        "没吃营养素丁、可能吃营养素戊、营养素己（没吃）、"
+        "营养素庚（可能吃）、营养素辛（如果吃）、营养素壬没吃、"
+        "营养素癸只是假设、营养素子不吃、营养素丑不曾吃。",
+        write_receipts=[],
+    )
+
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    ("message", "expected_names"),
+    (
+        ("记录补剂：营养素乙、不记录营养素甲", []),
+        ("记录补剂：营养素甲不想再吃", []),
+        ("记录补剂：营养素甲以后吃", []),
+        ("记录补剂：营养素甲能吃吗", []),
+        ("记录补剂：营养素甲、下周吃营养素乙", []),
+        ("记录补剂：营养素甲、营养素乙不需要记", []),
+        ("记录补剂：营养素甲、营养素乙已停", []),
+        ("记录补剂：营养素甲、过两小时吃营养素乙", []),
+        ("记录补剂：营养素甲、预备吃营养素乙", []),
+        ("记录补剂：营养素甲、将会吃营养素乙", []),
+        ("记录补剂：营养素甲、服营养素乙", []),
+        ("记录补剂：营养素甲、补营养素乙", []),
+        ("记录补剂：营养素甲、吞营养素乙", []),
+        ("记录补剂：营养素甲、下周再服一片", []),
+        ("记录补剂：营养素甲、计划每天两粒", []),
+        ("记录补剂：营养素甲、以后再吃一点", []),
+        ("记录补剂：营养素甲、no intake", []),
+        ("记录补剂：营养素甲、will take later", []),
+        ("记录补剂：营养素甲、仅供参考", []),
+        ("记录补剂：营养素甲、暂停这次", []),
+        ("记录补剂：明早营养素甲", []),
+        ("记录补剂：昨晚已服营养素甲", []),
+    ),
+)
+def test_supplement_label_colon_does_not_build_noncurrent_actions(
+    message,
+    expected_names,
+):
+    calls = _build_deterministic_supplement_record_tool_calls(
+        message,
+        write_receipts=[],
+    )
+
+    assert [
+        json.loads(call["function"]["arguments"])["data"]["supplement_name"]
+        for call in calls
+    ] == expected_names
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录补剂：鱼油；记录补剂营养素甲",
+        "记录补剂：鱼油，记录补剂营养素甲",
+        "记录补剂：鱼油\n记录补剂营养素甲",
+    ),
+)
+def test_supplement_label_colon_deterministic_calls_stay_clause_local(message):
+    calls = _build_deterministic_supplement_record_tool_calls(
+        message,
+        write_receipts=[],
+    )
+
+    assert [
+        json.loads(call["function"]["arguments"])["data"]["supplement_name"]
+        for call in calls
+    ] == ["鱼油"]
+
+
 def test_contextual_all_supplements_builds_only_owner_authorized_calls():
     calls = _build_deterministic_supplement_record_tool_calls(
         "全部已服用",

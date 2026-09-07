@@ -89,6 +89,7 @@ def test_compound_revocation_deferred_condition_and_third_party_have_no_authoriz
         "表妹体重71kg，记录一下",
         "岳父感冒了，帮忙记录感冒",
         "护士提及：帮我记录感冒",
+        "护士提及：记录补剂：鱼油",
         "客服转达的原话是：帮我记录感冒",
         "护士提及帮我记录感冒",
         "客服转达原话帮我记录感冒",
@@ -106,6 +107,7 @@ def test_compound_revocation_deferred_condition_and_third_party_have_no_authoriz
         "我的同事李雷吃了米饭，记录午餐",
         "记录张三体重71kg",
         "请记录小明体重71kg",
+        "记录朋友的补剂：鱼油",
         "记录小明感冒",
         "记录邻居感冒",
         "我感冒了同时小明体重71kg帮我记录一下",
@@ -145,6 +147,14 @@ def test_revoked_reported_hypothetical_and_third_party_frames_have_no_authority(
 def test_posterior_current_user_ownership_keeps_authority(text: str) -> None:
     assert authorized_health_record_clauses(text)
     assert has_explicit_authorizing_write_request(text) is True
+
+
+def test_direct_supplement_label_colon_keeps_payload_in_authorized_clause() -> None:
+    text = "记录补剂：一粒营养素甲、一粒营养素乙和一粒两粒营养素丙。"
+
+    assert authorized_health_record_clauses(text) == (
+        "记录补剂一粒营养素甲、一粒营养素乙和一粒两粒营养素丙",
+    )
 
 
 @pytest.mark.parametrize(

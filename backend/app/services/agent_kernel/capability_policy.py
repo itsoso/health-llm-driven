@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
@@ -96,8 +97,8 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v46"
-_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v32"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v49"
+_HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v35"
 _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v24"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
 _SERVER_AUTHORIZED_MANAGE_LOOKUP_KEY = "_server_authorized_manage_lookup"
@@ -470,6 +471,41 @@ _SUPPLEMENT_TARGET_TERMS = (
     "辅酶q10",
     "红参液",
 )
+_SUPPLEMENT_NAME_EVIDENCE_RE = re.compile(
+    r"(?:营养素[\u4e00-\u9fffA-Za-z0-9]{1,4}"
+    r"|维生素[A-Za-z0-9]{1,6}"
+    r"|辅酶[A-Za-z0-9]{1,8}"
+    r"|益生菌[\u4e00-\u9fffA-Za-z0-9]{0,8})"
+    r"|.+(?:素|镁|锌|钙|铁|硒|油|液|粉|丸|片|胶囊|酸|肽|酶|菌)"
+    r"|(?:PQQ|NAC|NMN|Q10)",
+    re.IGNORECASE,
+)
+_SUPPLEMENT_GENERIC_NAME_REFERENCE_RE = re.compile(
+    r"(?:补剂|营养素|维生素|胶囊|产品|片)$"
+)
+_SUPPLEMENT_COLON_INGESTION_LANGUAGE_RE = re.compile(
+    r"(?:吃|服用|服|喝|摄入|摄取|食用|吞服|吞咽|吞|补(?:了|充|过))"
+    r"|(?<![A-Za-z])(?:ingest(?:ed|ing)?|consum(?:e|ed|ing)|"
+    r"swallow(?:ed|ing)?|took)(?![A-Za-z])",
+    re.IGNORECASE,
+)
+_SUPPLEMENT_NAME_GRAMMAR_MARKER_RE = re.compile(
+    r"(?:不|没|未|无|尚|曾|已|零|否|漏|排除|计入|开封|入口|"
+    r"摄取|摄入|食用|服用|服|吃|喝|吞|用过|"
+    r"前|后|上|下|昨|今|明|每|隔|日|周|月|年|季度|日期|时间|"
+    r"此前|往年|阵子|来年|翌日|下回|下一|本次|本轮|"
+    r"这|那|此|该|上述|前述|以上|同款|任意|任何|某款|"
+    r"示例|范文|引用|演示|测试|占位|计划|安排|预约|择日|"
+    r"频次|例行|定期|星期|礼拜|回|清单|状态|事实|只|仅|作为|用于|"
+    r"同一款)"
+)
+_SUPPLEMENT_NAME_ENGLISH_GRAMMAR_RE = re.compile(
+    r"(?<![A-Za-z])(?:not|never|without|did|hasn'?t|haven'?t|wasn'?t|"
+    r"won'?t|last|ago|next|future|every|only|hypothetical|excluded|zero|"
+    r"previous|tomorrow|today|yesterday|scheduled|withheld|"
+    r"ingest(?:ed|ing)?|consum(?:e|ed|ing)|swallow(?:ed|ing)?)(?![A-Za-z])",
+    re.IGNORECASE,
+)
 _MEDICATION_TARGET_TERMS = ("二甲双胍",)
 _MEDICATION_DOSE_RE = re.compile(
     r"(?P<value>\d+(?:\.\d+)?|[一二两三四五六七八九十])\s*"
@@ -491,6 +527,69 @@ _SUPPLEMENT_DOSE_RE = re.compile(
 _SUPPLEMENT_TIMING_RE = re.compile(
     r"(?:早上|早晨|上午|中午|午间|晚上|晚间|睡前)(?:吃|服用)?"
 )
+_SUPPLEMENT_NON_AUTHORIZING_ITEM_RE = re.compile(
+    r"^(?:我)?(?:不要|不用|无需|先别|暂不|别|勿|甭|"
+    r"没|没有|还没|尚未|并未|未|不确定|可能|也许|或许|大概|似乎|"
+    r"如果|假如|假使|假设|假定|设想|倘若|若是|要是|万一)"
+    r"|(?:仅|只)?(?:作|是)?(?:假设|假定|设想|举例|示例)"
+)
+_SUPPLEMENT_NON_AUTHORIZING_RESIDUAL_RE = re.compile(
+    r"(?:不要|不用|无需|先别|暂不|勿|甭)"
+    r"|(?:不打算|不准备|不需要|不考虑|不想|不会|不能|不再|不曾|"
+    r"从未|拒绝|别|没有|还没|尚未|并未|没|未|不)(?:再)?"
+    r"(?:吃|服用|服|喝|补充|补|摄入|吞服|打卡)"
+    r"|(?:是否|要不要|该不该|能不能|可不可以)"
+    r"(?:吃|服用|服|喝|补充|补|摄入|吞服)"
+    r"|(?:准备|计划|打算|考虑|想要?|待会|稍后|明天)"
+    r"(?:吃|服用|服|喝|补充|补|摄入|吞服)"
+    r"|(?:取消|撤销|删除|停用|停止)"
+    r"|(?:以后|之后|改天|下次|过会儿|稍候)"
+    r"|(?:能|可以|该|要|需要)(?:吃|服用|服|喝|补充|补|摄入|吞服)"
+    r"(?:吗|么|不)"
+    r"|[吗么?？]$"
+    r"|(?:不|别|勿)(?:要)?(?:记录|记下|保存|录入|写入|打卡)"
+    r"|(?:不确定|可能|也许|或许|大概|似乎|如果|假如|假使|"
+    r"假设|假定|设想|倘若|若是|要是|万一)"
+    r"|(?:仅|只)?(?:作|是)?(?:假设|假定|设想|举例|示例)"
+    r"|(?:只|仅)?(?:是|作|作为|举|做|用于)?(?:一)?(?:个)?"
+    r"(?:例子|示例|演示|参考)"
+)
+_SUPPLEMENT_INGESTION_ACTION_RE = re.compile(
+    r"(?:吃|服用|服|喝|补充|补|摄入|吞服|吞)"
+)
+_SUPPLEMENT_COMPLETED_INGESTION_RE = re.compile(
+    r"(?:(?:已|已经|刚|刚刚|刚才|方才)\s*"
+    r"(?:吃|服用|服|喝|补充|补|摄入|吞服|吞)(?:了)?"
+    r"|(?:吃|服用|服|喝|补充|补|摄入|吞服|吞)\s*了)"
+)
+_SUPPLEMENT_COMPLETED_INGESTION_PREFIX_RE = re.compile(
+    r"^(?:我)?(?:已|已经|刚|刚刚|刚才|方才)\s*"
+    r"(?:吃|服用|服|喝|补充|补|摄入|吞服|吞)(?:了)?"
+)
+_SUPPLEMENT_COMPLETED_INGESTION_SUFFIX_RE = re.compile(
+    r"(?:已|已经|刚|刚刚|刚才|方才)\s*"
+    r"(?:吃|服用|服|喝|补充|补|摄入|吞服|吞)(?:了)?$"
+)
+_SUPPLEMENT_WRITE_LANGUAGE_RE = re.compile(
+    r"(?:记录|记下|记|保存|录入|写入|打卡|登记)"
+)
+_SUPPLEMENT_ENGLISH_NON_AUTHORIZING_RE = re.compile(
+    r"(?<![A-Za-z])(?:no|not|never|without|will|would|might|may|"
+    r"plan|planning|intend|intending|cancel|skip|take|taken|intake|"
+    r"later|tomorrow|next|yet|example|reference)"
+    r"(?![A-Za-z])",
+    re.IGNORECASE,
+)
+_SUPPLEMENT_NONCURRENT_TIME_RE = re.compile(
+    r"(?:未来|今后|以后|之后|稍后|稍晚|晚点|待会|过会|改天|"
+    r"明天|明早|明晚|明年|后天|次日|昨天|昨早|昨晚|前天|"
+    r"前几天|去年|前年|上周|上星期|上礼拜|上月|"
+    r"今晚|今夜|过后|下周|下星期|下礼拜|下月|下次|"
+    r"过\s*(?:\d+|[一二两三四五六七八九十半]+)\s*"
+    r"(?:分钟|小时|天|周|个月|月|年))"
+)
+_SUPPLEMENT_LABEL_SEGMENT_BOUNDARY_RE = re.compile(r"[;；。.!！?？\r\n]+")
+_SUPPLEMENT_LABEL_ACTION_RE = re.compile(r"记录补剂\s*(?P<colon>[:：])?")
 _MEDICATION_NAME_SUFFIX_RE = re.compile(
     r"(?:霉素|必利|瑞酮|二甲双胍|沙坦|普利|洛尔|他汀|唑仑|西泮)$"
 )
@@ -3573,9 +3672,57 @@ def _health_record_target_status(
                 == _normalize_entity_name(exact_name)
                 else "mismatch"
             )
+    if requested_type == "supplement" and re.search(
+        r"记录补剂\s*[:：]",
+        str(snapshot.envelope.text or ""),
+    ):
+        data = args.get("data") if isinstance(args.get("data"), dict) else {}
+        requested_name = _effective_argument_value(
+            args,
+            data,
+            data_keys=("supplement_name", "name"),
+            arg_keys=("supplement_name", "name"),
+        )
+        labeled_names = {
+            _normalize_entity_name(name)
+            for name in _explicit_labeled_supplement_targets(snapshot.envelope.text)
+        }
+        if _normalize_entity_name(requested_name) not in labeled_names:
+            return "mismatch"
     clauses = authorized_health_record_clauses(snapshot.envelope.text)
     if not clauses:
         return "unauthorized"
+
+    conflicting_supplement_metadata: set[str] = set()
+    if requested_type == "supplement":
+        data = args.get("data") if isinstance(args.get("data"), dict) else {}
+        requested_name = _normalize_entity_name(
+            _effective_argument_value(
+                args,
+                data,
+                data_keys=("supplement_name", "name"),
+                arg_keys=("supplement_name", "name"),
+            )
+        )
+        observed_metadata: dict[str, set[str]] = {
+            "dosage": set(),
+            "timing": set(),
+        }
+        for clause in clauses:
+            clause_values = _deterministic_target_values(clause, requested_type)
+            clause_names = {
+                _normalize_entity_name(name)
+                for name in clause_values.get("names", ())
+            }
+            if requested_name not in clause_names:
+                continue
+            for field in observed_metadata:
+                value = str(clause_values.get(field) or "").strip()
+                if value:
+                    observed_metadata[field].add(value)
+        conflicting_supplement_metadata = {
+            field for field, values in observed_metadata.items() if len(values) > 1
+        }
 
     direct_write_seen = False
     matching_type_seen = False
@@ -3676,6 +3823,9 @@ def _health_record_target_status(
         if requested_type == "diet" and expected_values.get("food_items"):
             deterministic_values.pop("meal_food_targets", None)
         expected_values.update(deterministic_values)
+        if requested_type == "supplement":
+            for field in conflicting_supplement_metadata:
+                expected_values.pop(field, None)
         if requested_type == "rhinitis" and isinstance(
             server_authorized.get("rhinitis_payload"), dict
         ):
@@ -3974,23 +4124,32 @@ def _deterministic_target_values(
         names = _named_item_targets(clause, record_type)
         if names:
             values["names"] = names
-        dosage_match = _SUPPLEMENT_DOSE_RE.search(clause)
-        if len(names) == 1 and dosage_match is not None:
-            values["dosage"] = _canonical_medication_dosage(dosage_match)
-        timing = next(
-            (
-                canonical
-                for terms, canonical in (
-                    (("晚上", "晚间", "睡前"), "evening"),
-                    (("早上", "早晨", "上午"), "morning"),
-                    (("中午", "午间"), "noon"),
-                )
-                if any(term in clause for term in terms)
-            ),
-            "",
-        )
-        if timing:
-            values["timing"] = timing
+        has_non_authorizing_item = _supplement_clause_has_non_authorizing_item(clause)
+        dosage_matches = tuple(_SUPPLEMENT_DOSE_RE.finditer(clause))
+        canonical_dosages = {
+            _canonical_medication_dosage(match) for match in dosage_matches
+        }
+        if (
+            not has_non_authorizing_item
+            and len(names) == 1
+            and len(canonical_dosages) == 1
+        ):
+            values["dosage"] = next(iter(canonical_dosages))
+        canonical_timings = {
+            canonical
+            for terms, canonical in (
+                (("晚上", "晚间", "睡前"), "evening"),
+                (("早上", "早晨", "上午"), "morning"),
+                (("中午", "午间"), "noon"),
+            )
+            if any(term in clause for term in terms)
+        }
+        if (
+            not has_non_authorizing_item
+            and len(names) == 1
+            and len(canonical_timings) == 1
+        ):
+            values["timing"] = next(iter(canonical_timings))
     elif record_type == "symptom" and (
         occurred_clock := _normalize_clock_value(clause)
     ):
@@ -4255,8 +4414,18 @@ def _diet_meal_food_targets(clause: str) -> dict[str, str]:
 def _named_item_targets(clause: str, record_type: str) -> tuple[str, ...]:
     if record_type == "medication":
         return tuple(_medication_item_targets(clause))
-    action_matches = tuple(_WRITE_TARGET_ACTION_RE.finditer(clause))
-    candidate = clause[action_matches[-1].end() :] if action_matches else clause
+    if record_type == "supplement" and _supplement_has_unbound_modifier(clause):
+        return ()
+    label_match = (
+        _SUPPLEMENT_LABEL_ACTION_RE.search(clause)
+        if record_type == "supplement"
+        else None
+    )
+    if label_match is not None and label_match.group("colon") is not None:
+        candidate = clause[label_match.end() :]
+    else:
+        action_matches = tuple(_WRITE_TARGET_ACTION_RE.finditer(clause))
+        candidate = clause[action_matches[-1].end() :] if action_matches else clause
     if record_type == "supplement":
         # ``记录下来`` is tokenized as the ``记录`` action plus ``下来``.
         # The latter is grammar, not a user-owned supplement target.
@@ -4271,8 +4440,11 @@ def _named_item_targets(clause: str, record_type: str) -> tuple[str, ...]:
         "",
         candidate,
     )
+    if record_type == "supplement":
+        candidate = re.sub(r"^补剂[：:]?", "", candidate)
     separator = (
-        r"(?:然后|并且|再)"
+        r"(?:然后|并且|再)(?=(?:请|帮我|替我|为我|给我)?"
+        r"(?:记录|记下|保存|录入|写入|打卡|查询|查看|分析))"
         if record_type == "supplement"
         else r"(?:，|,|然后|并且|再)"
     )
@@ -4280,18 +4452,29 @@ def _named_item_targets(clause: str, record_type: str) -> tuple[str, ...]:
     if record_type == "supplement":
         candidate = _SUPPLEMENT_DOSE_RE.sub("", candidate)
         candidate = _SUPPLEMENT_TIMING_RE.sub("", candidate)
-        candidate = re.sub(r"(?:吃|服用)$", "", candidate)
-        targets = tuple(
-            dict.fromkeys(
-                item
-                for raw_item in re.split(r"[、，,]|(?:以及|和|与|及)", candidate)
-                if (
-                    item := raw_item.strip("的了，,。.!！；;：: ")
-                )
+        targets: list[str] = []
+        for raw_item in re.split(r"[、，,]|(?:以及|和|与|及)", candidate):
+            item = raw_item.strip("的了，,。.!！；;：: ")
+            if not item or _supplement_item_is_non_authorizing(
+                item,
+                strict_current_action=(
+                    label_match is not None
+                    and label_match.group("colon") is not None
+                ),
+            ):
+                continue
+            item = _SUPPLEMENT_COMPLETED_INGESTION_PREFIX_RE.sub("", item)
+            item = _SUPPLEMENT_COMPLETED_INGESTION_SUFFIX_RE.sub("", item)
+            item = re.sub(r"(?:吃|服用)$", "", item).strip(
+                "的了，,。.!！；;：: "
             )
-        )
+            if item:
+                targets.append(item)
+        targets = list(dict.fromkeys(targets))
         if targets:
-            return targets
+            return tuple(targets)
+        if candidate.strip("的了，,。.!！；;：: "):
+            return ()
     candidate = candidate.strip("的了，,。.!！；;：: ")
     if candidate:
         return (candidate,)
@@ -4299,6 +4482,183 @@ def _named_item_targets(clause: str, record_type: str) -> tuple[str, ...]:
         known = tuple(term for term in _SUPPLEMENT_TARGET_TERMS if term in clause)
         return tuple(dict.fromkeys(known))
     return ()
+
+
+def _supplement_item_is_non_authorizing(
+    raw_item: str,
+    *,
+    strict_current_action: bool = False,
+) -> bool:
+    candidate = unicodedata.normalize("NFKC", str(raw_item or ""))
+    label_match = _SUPPLEMENT_LABEL_ACTION_RE.search(candidate)
+    if label_match is not None and label_match.group("colon") is not None:
+        candidate = candidate[label_match.end() :]
+    candidate = re.sub(r"^补剂\s*[：:]?", "", candidate)
+    candidate = _SUPPLEMENT_DOSE_RE.sub("", candidate)
+    candidate = _SUPPLEMENT_TIMING_RE.sub("", candidate)
+    candidate = candidate.strip("的了，,。.!！；;：: ()（）[]【】")
+    if _SUPPLEMENT_NONCURRENT_TIME_RE.search(candidate):
+        return True
+    if strict_current_action and _SUPPLEMENT_ENGLISH_NON_AUTHORIZING_RE.search(
+        candidate
+    ):
+        return True
+    if re.search(
+        r"(?:仅)?供参考|仅作参考|(?:举|做)(?:个)?例子|"
+        r"(?:只|仅)?是(?:一)?(?:个)?(?:例子|示例|演示)|用于演示|"
+        r"(?:只|仅)?用于说明|延后(?:处理|安排)?|"
+        r"暂停|暂缓|作废|反悔|尚未|只考虑|仅考虑|计划|预计|预备",
+        candidate,
+    ):
+        return True
+    if re.search(r"(?:已|已经)?停(?:用|止|服)?", candidate):
+        return True
+    if strict_current_action and (
+        _SUPPLEMENT_INGESTION_ACTION_RE.search(candidate)
+        and not _SUPPLEMENT_COMPLETED_INGESTION_RE.search(candidate)
+    ):
+        return True
+    if strict_current_action and _SUPPLEMENT_WRITE_LANGUAGE_RE.search(candidate):
+        return True
+    return bool(
+        _SUPPLEMENT_NON_AUTHORIZING_ITEM_RE.search(candidate)
+        or _SUPPLEMENT_NON_AUTHORIZING_RESIDUAL_RE.search(candidate)
+    )
+
+
+def _supplement_clause_has_non_authorizing_item(clause: str) -> bool:
+    label_match = _SUPPLEMENT_LABEL_ACTION_RE.search(clause)
+    strict_current_action = bool(
+        label_match is not None and label_match.group("colon") is not None
+    )
+    for raw_item in re.split(r"[、，,]|(?:以及|和|与|及)", clause):
+        if _supplement_item_is_non_authorizing(
+            raw_item,
+            strict_current_action=strict_current_action,
+        ):
+            return True
+    return False
+
+
+def _supplement_has_unbound_modifier(message: str) -> bool:
+    """Reject a modifier-only list item that changes the preceding target."""
+    label_match = _SUPPLEMENT_LABEL_ACTION_RE.search(message)
+    if label_match is None or label_match.group("colon") is None:
+        return False
+    raw_items = re.split(
+        r"[、，,;；。.!！?？\r\n]+|(?:以及|和|与)",
+        message,
+    )
+    for raw_item in raw_items:
+        if not raw_item.strip():
+            continue
+        item_body = _SUPPLEMENT_LABEL_ACTION_RE.sub(
+            "",
+            unicodedata.normalize("NFKC", str(raw_item or "")),
+        )
+        if _SUPPLEMENT_COLON_INGESTION_LANGUAGE_RE.search(item_body):
+            return True
+        is_non_authorizing = _supplement_item_is_non_authorizing(
+            raw_item,
+            strict_current_action=True,
+        )
+        has_name_evidence = _supplement_item_has_name_evidence(raw_item)
+        # Treat a colon-delimited batch as one authorization unit. A denied,
+        # hypothetical, or non-current item invalidates the whole batch.
+        if is_non_authorizing:
+            return True
+        if (
+            not has_name_evidence
+            and not _supplement_item_is_current_metadata(raw_item)
+        ):
+            return True
+    return False
+
+
+def _supplement_item_has_name_evidence(raw_item: str) -> bool:
+    """Recognize a name from the original item without erasing modifiers."""
+    candidate = unicodedata.normalize("NFKC", str(raw_item or ""))
+    candidate = _SUPPLEMENT_LABEL_ACTION_RE.sub("", candidate)
+    candidate = _SUPPLEMENT_DOSE_RE.sub("", candidate)
+    candidate = _SUPPLEMENT_TIMING_RE.sub("", candidate)
+    candidate = candidate.strip(" ：:，,。.!！?？；;()（）")
+    quoted_match = re.fullmatch(
+        r"(?:「([^」]+)」|“([^”]+)”|\"([^\"]+)\"|【([^】]+)】)",
+        candidate,
+    )
+    is_quoted = quoted_match is not None
+    if quoted_match is not None:
+        candidate = next(
+            value for value in quoted_match.groups() if value is not None
+        ).strip()
+    if (
+        _SUPPLEMENT_NAME_GRAMMAR_MARKER_RE.search(candidate)
+        or _SUPPLEMENT_NAME_ENGLISH_GRAMMAR_RE.search(candidate)
+        or (not is_quoted and bool(re.search(r"\s", candidate)))
+    ):
+        return False
+    normalized_candidate = _normalize_entity_name(candidate)
+    if len(normalized_candidate) < 2:
+        return False
+    if is_quoted:
+        return True
+    if any(
+        normalized_candidate.casefold()
+        == _normalize_entity_name(term).casefold()
+        for term in _SUPPLEMENT_TARGET_TERMS
+    ):
+        return True
+    if _SUPPLEMENT_GENERIC_NAME_REFERENCE_RE.search(normalized_candidate):
+        return False
+    return bool(_SUPPLEMENT_NAME_EVIDENCE_RE.fullmatch(normalized_candidate))
+
+
+def _supplement_item_is_current_metadata(raw_item: str) -> bool:
+    """Accept only explicit event metadata in a non-name list fragment."""
+    residual = unicodedata.normalize("NFKC", str(raw_item or ""))
+    residual = _SUPPLEMENT_LABEL_ACTION_RE.sub("", residual)
+    residual = _SUPPLEMENT_DOSE_RE.sub("", residual)
+    residual = _SUPPLEMENT_TIMING_RE.sub("", residual)
+    residual = _SUPPLEMENT_COMPLETED_INGESTION_RE.sub("", residual)
+    residual = re.sub(
+        r"(?:剂量|用量|今天|今日|我|已|已经|刚|刚刚|刚才|方才|"
+        r"是|为|的|了)",
+        "",
+        residual,
+    )
+    return not _normalize_entity_name(
+        residual.strip(" ：:，,。.!！?？；;()（）")
+    )
+
+
+def _explicit_labeled_supplement_targets(message: str) -> tuple[str, ...]:
+    """Return names from individually authorized ``记录补剂:`` segments."""
+    from app.services.write_intent_scope import authorized_health_record_clauses
+
+    normalized = unicodedata.normalize("NFKC", str(message or ""))
+    names: list[str] = []
+    segments = _SUPPLEMENT_LABEL_SEGMENT_BOUNDARY_RE.split(normalized)
+    if any(
+        segment.strip() and _SUPPLEMENT_LABEL_ACTION_RE.search(segment) is None
+        for segment in segments[1:]
+    ):
+        return ()
+    for segment in segments:
+        action_matches = tuple(_SUPPLEMENT_LABEL_ACTION_RE.finditer(segment))
+        if not action_matches or not authorized_health_record_clauses(segment):
+            continue
+        for index, action_match in enumerate(action_matches):
+            if action_match.group("colon") is None:
+                continue
+            end = (
+                action_matches[index + 1].start()
+                if index + 1 < len(action_matches)
+                else len(segment)
+            )
+            local_segment = segment[action_match.start() : end]
+            if authorized_health_record_clauses(local_segment):
+                names.extend(_named_item_targets(local_segment, "supplement"))
+    return tuple(dict.fromkeys(names))
 
 
 def _looks_like_medication_clause(clause: str) -> bool:
