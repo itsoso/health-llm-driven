@@ -361,3 +361,26 @@
 - 新鲜整合 G3：Mobile 全量 303 suites、2770 passed / 1 既有 skipped，TypeScript PASS；Backend CI-mode 删除/材料/用户流程组合 142/142；独立 UTF8 PostgreSQL 合成库组合 77/77，删除核验模块 coverage 95.65%（80% 门槛通过）。System Map、类型/语法级 Ruff、密钥扫描与 diff hygiene 通过。线上只读确认两条认证路由 GET 返回 405、隐私页 HTTP 200，只证明路由存在，不替代真实验证码登录。
 - 最终组合独立安全复审 GO。新精确提交的主干 CI 仍须另验，未触发新部署、OTA、TestFlight 构建或 App Review 提交。
 - G6 继续 BLOCK：本次仅修正核验诚实性，没有新增自动清理器、可信历史文件归属账本或跨进程写入冻结。历史共享头像及无法证明归属的缓存仍需受控治理，不能声称所有删除请求已经能完成；禁止清空共享目录/Redis 来消除阻断。ASC 标签与备注保存、新候选包、审核账号、精确真机/截图验收依然需要真实证据，不能承诺 Apple 必定通过。
+
+## 2026-09-07 · ASC 资料同步与当天送审准备
+
+- 用户要求完成 iOS 验收并提交上架。发布职责已协调：补剂任务负责其安全整改、目标 SHA 的 CI 和后端部署，本任务负责 iOS 候选包与 ASC；不得并发修改发布 HEAD 或重复部署。补剂任务仍有复审回归在进行，不将其本地提交当成已上线。
+- ASC 会话已恢复。页面核实 1.3.3 (263) 上传处理“完成”，TestFlight“准备提交”，已在内部测试群组；正式版本仍绑定历史 261，本轮未替换构建或重新提交审核。
+- 已在 ASC 补齐并分别点击“发布”：Phone Number 用于 App Functionality、与身份关联、不追踪；Sensitive Info 用于 App Functionality / Product Personalization、与身份关联、不追踪。发布后逐项比较现有声明与仓库 JSON，产品页面详细预览已出现电话号码和敏感信息，无待设置提示；这是实际发布状态，不是仅选择类别的草稿。
+- 已保存 ASC 版本描述（统一“小巴健康”）、关键词及 Review Notes 正文；重新加载页面核实三者持久化，Notes 包含独立第三方 AI 数据共享授权、拒绝和撤回说明。审核凭据与联系字段未修改，发布方式仍为手动发布。仓库 Draft 标记保留，不能提前声明最终材料 ready。
+- 实际打开历史拒审详情：Apple 2026-08-26 对 1.3.3 (256) 的 1.4.1 问题是 AI 医疗/健康计算缺少易找到的来源链接。当前提交关联显示 261，不混同历史被审核二进制；尚未向 Apple 发送已完成新包验收的回复。
+- 本轮新鲜普通检查 `check_app_store_release_pack.py` 和 `check_ios_app_store_submission.py` 均 exit 0。严格 `--final-submit` exit 1：仍缺最终候选身份、精确截图/真机证据及本机最终凭据/确认绑定，材料仍 Draft。隐私发布已由 UI 证实，但未通过虚填所有确认变量消除其余阻断。
+- 2026-09-07 10:31 CST 前设备查询仍为 physical iPhone `unavailable`。已请求用户连接、解锁设备；模拟器与旧包不能替代同一新候选的完整真机 G6。当前未启动新 EAS build、未发布 OTA、未提交 App Review；Apple 审核完成时间及通过结果不能保证。
+
+### 11:36 CST · 真机已连接，启动预检等待解锁
+
+- 用户连接手机后，CoreDevice 确认 wired / paired / connected，物理 iPhone 17 Pro Max、iOS 26.6.1，安装包为 1.3.3 (263)。设备标识及完整本机结果留在仓库外，不写入本证据。
+- 复用现有 XCUITest generator，在隔离临时目录编译签名测试 Runner；仅选择 `testInstalledBuildLaunchesExpectedEntrySurface`，不运行 BMI 发送、演示数据重置或健康写入，未将凭据传给测试程序。此启动子集不依赖固定演示数据，不代表完整审核套件。
+- Xcode 明确报告 `The destination is not ready` / `device is locked`，等待解锁。当前仅测试程序构建签名完成，没有任何真机用例通过；已请求用户解锁，并在继续认证流程前手动登录审核演示账号。完整 G6 及新候选包仍未通过。
+
+### 11:40 CST · Build 263 真机基础子集通过
+
+- 解锁后原启动预检正常继续，`testInstalledBuildLaunchesExpectedEntrySurface` 1/1 PASS，xcodebuild exit 0，实际进入已认证聊天页。
+- 同一设备和已安装 Build 263 追加非发送子集：两次冷启动保留登录、未发送草稿经后台/前台恢复、隐私政策和账号删除入口可达，3/3 PASS / 0 skipped，xcodebuild exit 0；直接读取 xcresult summary 确认 Passed。截图复核隐私政策正文及设置页删除入口均确实显示。
+- 合计 4 项真机测试通过，仅证明上述基础行为。实测截图含个人历史会话，不是固定审核演示数据；原始截图及结果仅留本机仓库外，不得用于商店素材。未运行 BMI 发送、确认健康写入、删除请求、演示数据重置或权限授权/撤回。
+- 后续正式审核账户动线、医学引用跳转、固定最新消息、两种语音、相机持久化、分享交接、写入/修正/删除幂等及最终新候选验收仍待完成。已要求在专用审核账号完成后续会产生消息或数据的检查，不将个人账号基础子集或旧包结果升级为 G6 GO。
