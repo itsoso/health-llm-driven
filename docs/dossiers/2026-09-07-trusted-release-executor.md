@@ -67,6 +67,15 @@
   已消费标记后、任何 prepare/deploy 前 fsync STATE，失败保留 STARTED 并阻断。
   新增边界和故障注入回归通过；修复提交仍须独立重审，不凭 producer 自评放行。
 
+- `238b30107463dd5a5ceb20149f7ed4fcfe1da23b` 独立 G4 **GO**（server 64 passed），
+  本地最终集成 365 passed / 192.36 秒；main CI `34137743030` SUCCESS，
+  云端无生产凭据 validate `34138358246` SUCCESS。
+- 真实 bootstrap 的只读 Git clone 暴露网络兼容性：隔离环境去掉 root global 的
+  HTTP/1.1 后，默认 HTTP/2 连接约五分钟未收到新数据，pack 仅 16 KB。
+  终止该只读下载后，显式 HTTP/1.1＋低速边界的同一 canonical clone 成功，objects 22 MB。
+  不恢复 global config；将固定 transport 设置覆盖 source 准备和 deploy.sh 的所有 Git 子进程。
+  新提交需重新 G4/CI/validate；此时仍未安装服务器授权或启动后端发布。
+
 ### 实现与验证证据（发布前）
 
 - 原产品提交 `6da24bbaf786f55c819563d42f847a04833af02d` 的真实 CI

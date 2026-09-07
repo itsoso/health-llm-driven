@@ -6,6 +6,7 @@ import io
 import json
 import os
 import stat
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -146,9 +147,34 @@ def test_clean_environment_does_not_forward_caller_injection(monkeypatch, tmp_pa
     env = server.clean_environment(tmp_path)
     assert "BASH_ENV" not in env
     assert "PYTHONPATH" not in env
-    assert "GIT_CONFIG_COUNT" not in env
+    assert env.get("GIT_CONFIG_COUNT") == "3"
     assert env["GIT_CONFIG_GLOBAL"] == "/dev/null"
     assert env["GIT_CONFIG_NOSYSTEM"] == "1"
+
+
+def test_real_git_inherits_only_fixed_http_transport_settings(monkeypatch, tmp_path):
+    server = load_server()
+    (tmp_path / "home").mkdir()
+    (tmp_path / "home/.gitconfig").write_text("[http]\nversion = HTTP/2\nlowSpeedLimit = 0\nlowSpeedTime = 0\n")
+    malicious = {
+        "GIT_CONFIG_COUNT": "4",
+        "GIT_CONFIG_KEY_0": "http.version", "GIT_CONFIG_VALUE_0": "HTTP/2",
+        "GIT_CONFIG_KEY_1": "http.lowSpeedLimit", "GIT_CONFIG_VALUE_1": "0",
+        "GIT_CONFIG_KEY_2": "http.lowSpeedTime", "GIT_CONFIG_VALUE_2": "0",
+        "GIT_CONFIG_KEY_3": "url.https://evil.example/.insteadOf",
+        "GIT_CONFIG_VALUE_3": "https://github.com/",
+        "GIT_CONFIG_GLOBAL": str(tmp_path / "home/.gitconfig"),
+    }
+    for key, value in malicious.items():
+        monkeypatch.setenv(key, value)
+    env = server.clean_environment(tmp_path)
+    for key, expected in (("http.version", "HTTP/1.1"), ("http.lowSpeedLimit", "1024"), ("http.lowSpeedTime", "30")):
+        result = subprocess.run(["/usr/bin/git", "config", "--get", key], cwd=tmp_path, env=env, capture_output=True, text=True, check=False)
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == expected
+    injected = subprocess.run(["/usr/bin/git", "config", "--get", "url.https://evil.example/.insteadOf"], cwd=tmp_path, env=env, capture_output=True, text=True, check=False)
+    assert injected.returncode == 1
+    assert not injected.stdout
 
 
 def test_source_preparation_uses_fixed_public_origin_and_exact_sha(monkeypatch, tmp_path):
@@ -164,6 +190,12 @@ def test_source_preparation_uses_fixed_public_origin_and_exact_sha(monkeypatch, 
         return ""
     monkeypatch.setattr(server, "execute", execute)
     server.prepare_source(policy(executor_sha256=hashlib.sha256(b"audited").hexdigest()), tmp_path)
+    clone = next(args for args in calls if "clone" in args)
+    git_config = dict(clone[index + 1].split("=", 1) for index, arg in enumerate(clone) if arg == "-c")
+    assert git_config.get("http.version") == "HTTP/1.1"
+    assert git_config.get("http.lowSpeedLimit") == "1024"
+    assert git_config.get("http.lowSpeedTime") == "30"
+    assert git_config.get("http.followRedirects") == "false"
     assert any("https://github.com/itsoso/health-llm-driven.git" in args for args in calls)
     assert any(args[-3:] == ["-B", "main", SHA] for args in calls)
     assert any("-I" in args and args[-4:] == ["--sha", SHA, "--workflow-sha", SHA] for args in calls)

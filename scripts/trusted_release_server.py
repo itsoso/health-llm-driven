@@ -247,6 +247,12 @@ def clean_environment(workspace):
         "HOME": str(Path(workspace) / "home"),
         "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8",
         "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+        # Literal command-scope entries reach deploy.sh's own Git subprocesses;
+        # no caller config keys, values, count, or URL rewrites are inherited.
+        "GIT_CONFIG_COUNT": "3",
+        "GIT_CONFIG_KEY_0": "http.version", "GIT_CONFIG_VALUE_0": "HTTP/1.1",
+        "GIT_CONFIG_KEY_1": "http.lowSpeedLimit", "GIT_CONFIG_VALUE_1": "1024",
+        "GIT_CONFIG_KEY_2": "http.lowSpeedTime", "GIT_CONFIG_VALUE_2": "30",
         "GIT_TERMINAL_PROMPT": "0",
     }
 
@@ -266,7 +272,12 @@ def prepare_source(policy, workspace):
     (workspace / "home").mkdir(mode=0o700)
     source = workspace / "source"
     log = workspace / "preparation.log"
-    git = ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "protocol.file.allow=never", "-c", "protocol.ext.allow=never", "-c", "http.followRedirects=false"]
+    git = [
+        "/usr/bin/git", "-c", "core.hooksPath=/dev/null",
+        "-c", "protocol.file.allow=never", "-c", "protocol.ext.allow=never",
+        "-c", "http.followRedirects=false", "-c", "http.version=HTTP/1.1",
+        "-c", "http.lowSpeedLimit=1024", "-c", "http.lowSpeedTime=30",
+    ]
     execute(git + ["clone", "--no-checkout", "--no-local", "--depth=1", "--branch=main", "--single-branch", ORIGIN, str(source)], workspace, env, log)
     execute(git + ["-C", str(source), "checkout", "-B", "main", policy["sha"]], workspace, env, log)
     executor = source / "scripts/trusted_release_server.py"
