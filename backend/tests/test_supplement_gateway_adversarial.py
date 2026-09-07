@@ -400,6 +400,12 @@ async def test_explicit_quoted_long_name_plans_and_dispatches(db, message, name)
     (
         "记录补剂：一粒\u201c超长引用补剂名甲甲乙丙丁\u201d。",
         "记录补剂：一粒\u201c待定长名字补剂甲乙丙丁\u201d。",
+        "记录补剂：一粒\u201c暂定长名字补剂甲乙丙丁\u201d。",
+        "记录补剂：一粒\u201c预留长名字补剂甲乙丙丁\u201d。",
+        "记录补剂：一粒\u201c待议长名字补剂甲乙丙丁\u201d。",
+        "记录补剂：暂定新验甲硒。",
+        "记录补剂：预留新验甲硒。",
+        "记录补剂：待议新验甲硒。",
     ),
 )
 async def test_quoted_grammar_fragments_never_plan_or_dispatch(db, message):
