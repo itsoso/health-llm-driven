@@ -80,11 +80,10 @@ def _count_upload_entries(path: Path) -> int:
     return sum(_count_upload_entries(child) for child in path.iterdir())
 
 
-def _upload_report(user_id: int, *, other_avatar_urls: set[str] | None = None) -> dict[str, Any]:
+def _upload_report(user_id: int) -> dict[str, Any]:
     roots: list[str] = []
     files = 0
     unresolved = 0
-    other_avatar_urls = other_avatar_urls or set()
     if _UPLOAD_ROOT.is_symlink():
         return {"status": "checked", "scoped_directories": [], "files": 0, "unresolved_files": 1}
     if _UPLOAD_ROOT.exists():
@@ -106,11 +105,7 @@ def _upload_report(user_id: int, *, other_avatar_urls: set[str] | None = None) -
                         files += _count_upload_entries(entry)
                     # Canonical owner directories belonging to other users are
                     # not deletion targets and must never be traversed/deleted.
-                elif (
-                    category == "avatar"
-                    and entry.is_file()
-                    and f"/api/v1/upload/files/avatar/{entry.name}" in other_avatar_urls
-                ) or (category == "chat" and entry.name == ".lifecycle.lock" and entry.is_file()):
+                elif category == "chat" and entry.name == ".lifecycle.lock" and entry.is_file():
                     continue
                 else:
                     # Legacy flat uploads, orphaned avatars and unknown layouts
@@ -150,10 +145,9 @@ def build_deletion_verification_report(db: Session, user_id: int) -> dict[str, A
         if (row := _row_counts(db, table_name, user_id)) is not None
     ]
     user_exists = db.query(User.id).filter(User.id == user_id).first() is not None
-    other_avatar_urls = {
-        url for (url,) in db.query(User.avatar_url).filter(User.id != user_id).all() if url
-    }
-    uploads = _upload_report(user_id, other_avatar_urls=other_avatar_urls)
+    # A User.avatar_url reference is client-controlled (including via WeChat),
+    # so it cannot exempt a shared file from residual-data verification.
+    uploads = _upload_report(user_id)
     cache = _cache_report(user_id)
     blocking_rows = sum(int(row["blocking_rows"]) for row in table_rows)
     cache_clear = cache["status"] == "checked" and cache["keys"] == 0

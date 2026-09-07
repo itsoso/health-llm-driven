@@ -74,12 +74,19 @@ def test_unattributed_uploads_block_completion(db, monkeypatch, tmp_path, catego
     assert (category_dir / "synthetic.png").read_bytes() == b"synthetic"
 
 
-def test_another_users_proven_avatar_does_not_block_completion(
-    db, auth_user_and_headers, monkeypatch, tmp_path
+def test_user_controlled_avatar_reference_cannot_prove_another_users_file_is_clear(
+    client, db, auth_user_and_headers, monkeypatch, tmp_path
 ):
-    user, _ = auth_user_and_headers
-    user.avatar_url = "/api/v1/upload/files/avatar/synthetic.png"
-    db.commit()
+    user, headers = auth_user_and_headers
+    # This is an actual supported write path, not a trusted owner ledger.
+    response = client.put(
+        "/api/v1/wechat/user/info",
+        headers=headers,
+        json={"avatar_url": "/api/v1/upload/files/avatar/synthetic.png"},
+    )
+    assert response.status_code == 200
+    db.refresh(user)
+    assert user.avatar_url == "/api/v1/upload/files/avatar/synthetic.png"
     monkeypatch.setattr(account_deletion, "_UPLOAD_ROOT", tmp_path)
     monkeypatch.setattr(account_deletion, "get_redis_client", lambda: _EmptyRedis())
     avatar_dir = tmp_path / "avatar"
@@ -88,8 +95,8 @@ def test_another_users_proven_avatar_does_not_block_completion(
 
     report = account_deletion.build_deletion_verification_report(db, user.id + 100)
 
-    assert report["uploads"]["unresolved_files"] == 0
-    assert report["can_finalize"] is True
+    assert report["uploads"]["unresolved_files"] == 1
+    assert report["can_finalize"] is False
     assert (avatar_dir / "synthetic.png").read_bytes() == b"synthetic"
 
 
