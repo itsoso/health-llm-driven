@@ -22,6 +22,8 @@ POLICY = CONFIG / "authorized-release.json"
 STATE = Path("/var/lib/reva-release")
 ORIGIN = "https://github.com/itsoso/health-llm-driven.git"
 PYTHON = "/usr/bin/python3.12"
+DEPLOY_TIMEOUT_SECONDS = 3600
+RECOVERY_MARGIN_SECONDS = 3600
 
 
 class LaunchError(Exception):
@@ -55,6 +57,13 @@ def validate_policy(data, *, now):
     ):
         raise LaunchError("invalid or expired release authorization")
     return data
+
+
+def _assert_deployment_window(policy):
+    now = time.time()
+    validate_policy(policy, now=now)
+    if policy["expires_at"] - now < DEPLOY_TIMEOUT_SECONDS + RECOVERY_MARGIN_SECONDS:
+        raise LaunchError("authorization lifetime is insufficient for deployment and recovery")
 
 
 def validate_metadata(metadata, *, private=False, directory=False):
@@ -124,7 +133,11 @@ def _write_private(path, data):
         stream.write(data)
         stream.flush()
         os.fsync(stream.fileno())
-    parent_fd = os.open(Path(path).parent, os.O_RDONLY | os.O_DIRECTORY)
+    _sync_directory(Path(path).parent)
+
+
+def _sync_directory(path):
+    parent_fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         os.fsync(parent_fd)
     finally:
@@ -163,9 +176,15 @@ def run_once(policy, workspace, prepare, deploy):
             raise LaunchError("another release invocation is active") from None
         if read_status(policy["sha"], workspace)["state"] != "READY":
             raise LaunchError("authorization already consumed; manual review required")
+        _assert_deployment_window(policy)
         _write_private(workspace / "started.json", json.dumps({"sha": policy["sha"], "state": "STARTED"}).encode())
+        # The marker fsync covers the new workspace's contents, not the entry
+        # that links this newly created directory into STATE. Persist both
+        # before any source preparation or external release operation begins.
+        _sync_directory(workspace.parent)
         try:
             prepare()
+            _assert_deployment_window(policy)
             deploy()
         except Exception:  # noqa: BLE001 -- Persist every failure before sanitizing it at this boundary.
             _write_private(workspace / "completed.json", json.dumps({"sha": policy["sha"], "state": "NEEDS_OPERATOR"}).encode())
@@ -238,7 +257,7 @@ def execute(args, cwd, env, log):
         os.chmod(log, 0o600)
         subprocess.run(args, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
                        stdout=output, stderr=subprocess.STDOUT, check=True,
-                       timeout=3600, start_new_session=True)
+                       timeout=DEPLOY_TIMEOUT_SECONDS, start_new_session=True)
 
 
 def prepare_source(policy, workspace):
@@ -302,7 +321,7 @@ def validate_loopback(policy):
 
 def deploy(policy, workspace):
     # Provisioning remains a separate privileged, reviewed installation step.
-    validate_policy(policy, now=int(time.time()))
+    _assert_deployment_window(policy)
     validate_loopback(policy)
     secure_path(Path(PYTHON))
     workspace = Path(workspace)
@@ -323,6 +342,7 @@ def deploy(policy, workspace):
     source = workspace / "source"
     # Fresh CI/main attestation immediately before business deployment.
     execute([PYTHON, "-I", str(source / "scripts/trusted_release_gate.py"), "--sha", policy["sha"], "--workflow-sha", policy["sha"]], source, env, workspace / "preparation.log")
+    _assert_deployment_window(policy)
     execute(["/bin/bash", str(source / "deploy.sh"), "-b"], source, env, workspace / "deployment.log")
 
 

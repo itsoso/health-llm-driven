@@ -25,7 +25,7 @@ def load_server():
 
 
 def policy(**changes):
-    result = {"sha": SHA, "expires_at": 200, "executor_sha256": HASH}
+    result = {"sha": SHA, "expires_at": 7300, "executor_sha256": HASH}
     result.update(changes)
     return result
 
@@ -77,6 +77,7 @@ def setup_state(monkeypatch, tmp_path):
     # Test mutable filesystem/state with this process's UID. Production entry
     # separately enforces root ownership all the way to / and fixed roots.
     monkeypatch.setattr(server, "secure_path", lambda *args, **kwargs: None)
+    monkeypatch.setattr(server.time, "time", lambda: 100)
     return server
 
 
@@ -207,14 +208,14 @@ def test_loopback_rejects_added_shell_directives_or_broader_authorization(monkey
         "authorized_keys": b'from="127.0.0.1",restrict,expiry-time="19700101000320Z" ssh-ed25519 AAAA',
     }
     monkeypatch.setattr(server, "_read_private", lambda path: values[path.name])
-    server.validate_loopback(policy())
+    server.validate_loopback(policy(expires_at=200))
     values["authorized_keys"] += b"\nssh-ed25519 AAAA"
     with pytest.raises(server.LaunchError):
-        server.validate_loopback(policy())
+        server.validate_loopback(policy(expires_at=200))
     values["authorized_keys"] = values["authorized_keys"].splitlines()[0]
     values["loopback.conf"] += b"  LocalCommand id\n"
     with pytest.raises(server.LaunchError):
-        server.validate_loopback(policy())
+        server.validate_loopback(policy(expires_at=200))
 
 
 def test_deploy_uses_only_fixed_command_and_private_authoritative_env(monkeypatch, tmp_path):
@@ -235,7 +236,7 @@ def test_deploy_uses_only_fixed_command_and_private_authoritative_env(monkeypatc
 
 def test_expired_policy_blocks_deploy_even_after_slow_preparation(monkeypatch, tmp_path):
     server = setup_state(monkeypatch, tmp_path)
-    monkeypatch.setattr(server.time, "time", lambda: 201)
+    monkeypatch.setattr(server.time, "time", lambda: 7301)
     with pytest.raises(server.LaunchError):
         server.deploy(policy(), tmp_path)
     assert not (tmp_path / "bin").exists()
@@ -307,3 +308,81 @@ def test_lost_native_claim_response_never_grants_a_second_build(monkeypatch, tmp
     assert server.release_status(SHA, tmp_path)["testflight"] == "STARTED"
     with pytest.raises(server.LaunchError):
         server.claim_testflight(policy(), tmp_path)
+
+
+@pytest.mark.parametrize("remaining", [7199, 7200, 7201])
+def test_run_requires_full_deployment_and_recovery_window_before_marker(monkeypatch, tmp_path, remaining):
+    server = setup_state(monkeypatch, tmp_path)
+    calls = []
+    authorized = policy(expires_at=100 + remaining)
+    if remaining < 7200:
+        with pytest.raises(server.LaunchError, match="lifetime"):
+            server.run_once(authorized, tmp_path, lambda: calls.append("prepare"), lambda: calls.append("deploy"))
+        assert calls == []
+        assert not (tmp_path / "started.json").exists()
+    else:
+        assert server.run_once(authorized, tmp_path, lambda: calls.append("prepare"), lambda: calls.append("deploy"))["state"] == "SUCCEEDED"
+        assert calls == ["prepare", "deploy"]
+
+
+def test_preparation_cannot_spend_the_reserved_deployment_window(monkeypatch, tmp_path):
+    server = setup_state(monkeypatch, tmp_path)
+    calls = []
+    def prepare():
+        calls.append("prepare")
+        monkeypatch.setattr(server.time, "time", lambda: 101)
+    with pytest.raises(server.LaunchError):
+        server.run_once(policy(), tmp_path, prepare, lambda: calls.append("deploy"))
+    assert calls == ["prepare"]
+    assert server.read_status(SHA, tmp_path)["state"] == "NEEDS_OPERATOR"
+
+
+def test_last_ci_check_cannot_spend_the_reserved_deployment_window(monkeypatch, tmp_path):
+    server = setup_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(server, "validate_loopback", lambda policy: None)
+    monkeypatch.setattr(server, "read_production_env", lambda: "EXAMPLE_SETTING=fixture\n")
+    calls = []
+    def slow_ci(args, cwd, env, log):
+        calls.append(args)
+        monkeypatch.setattr(server.time, "time", lambda: 101)
+    monkeypatch.setattr(server, "execute", slow_ci)
+    with pytest.raises(server.LaunchError, match="lifetime"):
+        server.deploy(policy(), tmp_path)
+    assert len(calls) == 1
+    assert calls[0][0] == "/usr/bin/python3.12"
+    assert not any("/bin/bash" in command for command in calls)
+
+
+def test_workspace_parent_directory_is_durable_before_preparation(monkeypatch, tmp_path):
+    server = setup_state(monkeypatch, tmp_path)
+    events = []
+    parent_identity = (tmp_path.parent.stat().st_dev, tmp_path.parent.stat().st_ino)
+    real_fsync = server.os.fsync
+    def observe(fd):
+        info = os.fstat(fd)
+        if (info.st_dev, info.st_ino) == parent_identity:
+            events.append("parent-fsync")
+        return real_fsync(fd)
+    monkeypatch.setattr(server.os, "fsync", observe)
+    server.run_once(policy(), tmp_path, lambda: events.append("prepare"), lambda: events.append("deploy"))
+    assert events[:3] == ["parent-fsync", "prepare", "deploy"]
+
+
+def test_workspace_parent_fsync_failure_preserves_marker_and_blocks_all_work(monkeypatch, tmp_path):
+    server = setup_state(monkeypatch, tmp_path)
+    calls = []
+    parent_identity = (tmp_path.parent.stat().st_dev, tmp_path.parent.stat().st_ino)
+    real_fsync = server.os.fsync
+    def fail_parent(fd):
+        info = os.fstat(fd)
+        if (info.st_dev, info.st_ino) == parent_identity:
+            raise OSError("parent durability unavailable")
+        return real_fsync(fd)
+    monkeypatch.setattr(server.os, "fsync", fail_parent)
+    with pytest.raises((server.LaunchError, OSError)):
+        server.run_once(policy(), tmp_path, lambda: calls.append("prepare"), lambda: calls.append("deploy"))
+    assert calls == []
+    assert (tmp_path / "started.json").exists()
+    with pytest.raises(server.LaunchError):
+        server.run_once(policy(), tmp_path, lambda: calls.append("prepare"), lambda: calls.append("deploy"))
+    assert calls == []
