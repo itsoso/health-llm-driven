@@ -36,10 +36,12 @@ wheels/
 # Environment variables
 .env
 .env.local
+.env-online
 
 # Mobile OTA anchor
 .last-ota-commit
 .mobile-release-manifest.json
+.mobile-ota-audit.jsonl
 
 # Local harness and install artifacts
 docs/_generated/harness-runs/
