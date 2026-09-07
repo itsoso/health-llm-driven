@@ -29,6 +29,38 @@ _PRIVACY_AUDIT_ACTIONS = {
 _UPLOAD_ROOT = upload_dir()
 _OWNER_UPLOAD_CATEGORIES = {"chat", "diet", "medical", "other", "aigc"}
 
+# Audit only key metadata. Unknown/legacy namespaces (including hashed owners,
+# conversation IDs and shared Celery payloads) cannot prove user-data absence.
+# Deliberately do not infer ownership from a number elsewhere in a key.
+_CACHE_OWNER_PATTERNS = tuple(re.compile(pattern) for pattern in (
+    r"(?:daily_rec|supplement_rec|rec_gen_lock):(?P<owner>[1-9][0-9]*):[0-9]{4}-[0-9]{2}-[0-9]{2}",
+    r"dim_analysis:(?P<owner>[1-9][0-9]*):[0-9]{4}-[0-9]{2}-[0-9]{2}:[^:\n]+",
+    r"(?:twin:v2|twin_env):(?P<owner>[1-9][0-9]*)",
+    r"safety:v3:(?P<owner>[1-9][0-9]*):s[0-9]+:l[0-9]+:d[01]",
+    r"(?:starter_polish:v2|starter_pregen:v2|starter_pregen:inflight:v2):(?P<owner>[1-9][0-9]*):[a-f0-9]+",
+    r"starter_pregen:idx:v2:(?P<owner>[1-9][0-9]*)",
+    r"agent_loop:push_count:(?P<owner>[1-9][0-9]*):[0-9]{8}",
+    r"genetic_report:agent_summary:v1:u(?P<owner>[1-9][0-9]*):p[1-9][0-9]*",
+    r"genetic_snp_detail:v2:user=(?P<owner>[1-9][0-9]*):rsid=[^:\n]+:gt=[^:\n]+",
+    r"observability:dashboard:d=[0-9]+:u=(?P<owner>[1-9][0-9]*):j=[01]",
+))
+_CACHE_SCAN_MAX_PAGES = 128
+_CACHE_SCAN_MAX_KEYS = 10_000
+_CACHE_KEY_MAX_BYTES = 4096
+
+
+def _cache_key_owner(key: bytes) -> str | None:
+    """Return only a proven owner from a known producer's exact key shape."""
+    try:
+        text = key.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    for pattern in _CACHE_OWNER_PATTERNS:
+        matched = pattern.fullmatch(text)
+        if matched is not None:
+            return matched.group("owner")
+    return None
+
 
 def _table(db: Session, table_name: str) -> Table:
     if not _IDENTIFIER.fullmatch(table_name):
@@ -121,18 +153,58 @@ def _upload_report(user_id: int) -> dict[str, Any]:
 
 
 def _cache_report(user_id: int) -> dict[str, Any]:
+    base = {"pattern": "*", "scope": "known_owner_slots_v1"}
     try:
         client = get_redis_client()
         if client is None:
-            return {"status": "unavailable", "keys": None, "pattern": f"*{user_id}*"}
-        keys = list(client.scan_iter(match=f"*{user_id}*"))
-        return {"status": "checked", "keys": len(keys), "pattern": f"*{user_id}*"}
-    except Exception as exc:  # noqa: BLE001
-        logger.error("账号删除缓存核验失败 - user_id=%s, error=%s", user_id, exc)
+            return {**base, "status": "unavailable", "keys": None}
+        cursor = 0
+        seen: set[bytes] = set()
+        owned = unresolved = 0
+        inspected = 0
+        complete = False
+        # SCAN COUNT is a hint, not a limit. Bound both pages (even empty ones)
+        # and returned keys (even duplicates), never treating truncation as zero.
+        for _ in range(_CACHE_SCAN_MAX_PAGES):
+            cursor, keys = client.scan(cursor, match="*", count=100)
+            exceeded = False
+            for key in keys:
+                if inspected >= _CACHE_SCAN_MAX_KEYS:
+                    exceeded = True
+                    break
+                inspected += 1
+                raw = key.encode("utf-8") if isinstance(key, str) else key
+                if not isinstance(raw, bytes) or len(raw) > _CACHE_KEY_MAX_BYTES:
+                    exceeded = True
+                    break
+                fingerprint = hashlib.sha256(raw).digest()
+                if fingerprint in seen:
+                    continue
+                seen.add(fingerprint)
+                owner = _cache_key_owner(raw)
+                if owner is None:
+                    unresolved += 1
+                elif owner == str(user_id):
+                    owned += 1
+            if exceeded:
+                break
+            if cursor == 0:
+                complete = True
+                break
         return {
+            **base,
+            "status": "checked" if complete and unresolved == 0 else "partial",
+            "keys": owned,
+            "unresolved_keys": unresolved,
+            "scanned_keys": len(seen),
+            "scan_complete": complete,
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.error("账号删除缓存核验失败 - user_id=%s, error_type=%s", user_id, type(exc).__name__)
+        return {
+            **base,
             "status": "error",
             "keys": None,
-            "pattern": f"*{user_id}*",
             "error": type(exc).__name__,
         }
 
