@@ -490,14 +490,18 @@ _SUPPLEMENT_COLON_INGESTION_LANGUAGE_RE = re.compile(
     re.IGNORECASE,
 )
 _SUPPLEMENT_NAME_GRAMMAR_MARKER_RE = re.compile(
-    r"(?:不|没|未|无|尚|曾|已|零|否|漏|排除|计入|开封|入口|"
+    r"(?:不|没|未|无|非|尚|曾|已|零|否|漏|排除|计入|开封|入口|"
+    r"绝非|毋须|莫要|休要|拒收|排斥|免予|"
     r"摄取|摄入|食用|服用|服|吃|喝|吞|用过|"
-    r"前|后|上|下|昨|今|明|每|隔|日|周|月|年|季度|日期|时间|"
-    r"此前|往年|阵子|来年|翌日|下回|下一|本次|本轮|"
+    r"前|后|上|下|昨|今|明|每|隔|天|日|周|月|年|季度|日期|时间|"
+    r"此前|往年|往昔|旧时|儿时|幼时|阵子|来年|翌日|下回|下一|"
+    r"本次|本轮|届时|拟用|拟定|预定|待用|候用|有空再用|"
     r"这|那|此|该|上述|前述|以上|同款|任意|任何|某款|"
     r"示例|范文|引用|演示|测试|占位|计划|安排|预约|择日|"
-    r"频次|例行|定期|星期|礼拜|回|清单|状态|事实|只|仅|作为|用于|"
-    r"同一款)"
+    r"频次|频率|例行|定期|按需|偶尔|常规|经常|惯常|规律|周期|"
+    r"星期|礼拜|回|清单|状态|事实|只|仅|作为|用于|的|"
+    r"同一款|相同|类似|若干|其它|其他|另一种|一种|某种|各类|"
+    r"抄录|摘录|转述|据说|传闻|例句|练习)"
 )
 _SUPPLEMENT_NAME_ENGLISH_GRAMMAR_RE = re.compile(
     r"(?<![A-Za-z])(?:not|never|without|did|hasn'?t|haven'?t|wasn'?t|"
@@ -4578,6 +4582,11 @@ def _supplement_has_unbound_modifier(message: str) -> bool:
 def _supplement_item_has_name_evidence(raw_item: str) -> bool:
     """Recognize a name from the original item without erasing modifiers."""
     candidate = unicodedata.normalize("NFKC", str(raw_item or ""))
+    candidate = "".join(
+        character
+        for character in candidate
+        if unicodedata.category(character) != "Cf"
+    )
     candidate = _SUPPLEMENT_LABEL_ACTION_RE.sub("", candidate)
     candidate = _SUPPLEMENT_DOSE_RE.sub("", candidate)
     candidate = _SUPPLEMENT_TIMING_RE.sub("", candidate)
@@ -4656,8 +4665,12 @@ def _explicit_labeled_supplement_targets(message: str) -> tuple[str, ...]:
                 else len(segment)
             )
             local_segment = segment[action_match.start() : end]
-            if authorized_health_record_clauses(local_segment):
-                names.extend(_named_item_targets(local_segment, "supplement"))
+            if not authorized_health_record_clauses(local_segment):
+                return ()
+            local_names = _named_item_targets(local_segment, "supplement")
+            if not local_names:
+                return ()
+            names.extend(local_names)
     return tuple(dict.fromkeys(names))
 
 
