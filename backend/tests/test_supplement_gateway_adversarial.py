@@ -372,6 +372,7 @@ async def test_deferred_short_name_never_plans_or_dispatches(db, message):
         ("记录补剂：一粒\"甲乙丙丁戊己庚\"。", "甲乙丙丁戊己庚"),
         ("记录补剂：一粒「月白复合营养胶囊」。", "月白复合营养胶囊"),
         ("记录补剂：一粒【远山矿物组合片】。", "远山矿物组合片"),
+        ("记录补剂：一粒【核心长名称合成补剂02甲乙】。", "核心长名称合成补剂02甲乙"),
     ),
 )
 async def test_explicit_quoted_long_name_plans_and_dispatches(db, message, name):
@@ -412,6 +413,8 @@ async def test_explicit_quoted_long_name_plans_and_dispatches(db, message, name)
         "记录补剂：候补新验丁硒。",
         "记录补剂：预留新验甲硒。",
         "记录补剂：尚待新验庚硒。",
+        "记录补剂：预备新验辛硒。",
+        "记录补剂：留待新验壬硒。",
         "记录补剂：待议新验甲硒。",
     ),
 )

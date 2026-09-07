@@ -4529,7 +4529,7 @@ def _supplement_item_is_non_authorizing(
     candidate = re.sub(r"^补剂\s*[：:]?", "", candidate)
     candidate = _SUPPLEMENT_DOSE_RE.sub("", candidate)
     candidate = _SUPPLEMENT_TIMING_RE.sub("", candidate)
-    candidate = candidate.strip("的了，,。.!！；;：: ()（）[]【】")
+    candidate = candidate.strip("的了，,。.!！；;：: ()（）[]")
     quoted_match = _SUPPLEMENT_QUOTED_NAME_RE.fullmatch(candidate)
     if quoted_match is not None:
         quoted_name = next(
@@ -4539,6 +4539,8 @@ def _supplement_item_is_non_authorizing(
             _SUPPLEMENT_TENTATIVE_NAME_PREFIX_RE.search(quoted_name)
             or _SUPPLEMENT_QUOTED_NAME_FORBIDDEN_RE.search(quoted_name)
         )
+    if _SUPPLEMENT_TENTATIVE_NAME_PREFIX_RE.search(candidate):
+        return True
     if _SUPPLEMENT_NONCURRENT_TIME_RE.search(candidate):
         return True
     if strict_current_action and _SUPPLEMENT_ENGLISH_NON_AUTHORIZING_RE.search(
