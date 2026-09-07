@@ -14,7 +14,10 @@ def test_apple_bmi_review_prompt_gets_chinese_and_international_authority_links(
         "国家卫生健康委员会",
         "美国疾病控制与预防中心",
     ]
-    assert bundle.public_citations[0]["url"].startswith("https://www.nhc.gov.cn/")
+    assert bundle.public_citations[0]["url"] == (
+        "https://www.nhc.gov.cn/ewebeditor/uploadfile/2013/08/"
+        "20130808135715967.pdf"
+    )
     assert bundle.public_citations[1]["url"] == (
         "https://www.cdc.gov/bmi/adult-calculator/bmi-categories.html"
     )

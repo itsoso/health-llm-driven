@@ -53,9 +53,8 @@ _TOPIC_SOURCES: dict[str, tuple[MedicalCitation, ...]] = {
             title="中国成人体重判定标准（WS/T 428—2013）",
             organization="国家卫生健康委员会",
             url=(
-                "https://www.nhc.gov.cn/ylyjs/zcwj/202412/"
-                "75cb79c171c94def9e768193e65484f7/files/"
-                "1736390749000_59785.pdf"
+                "https://www.nhc.gov.cn/ewebeditor/uploadfile/2013/08/"
+                "20130808135715967.pdf"
             ),
             topic="bmi",
             claim_scope="中国成人（18 岁及以上）BMI 判定：18.5–23.9 为体重正常范围。",

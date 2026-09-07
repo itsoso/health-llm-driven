@@ -118,9 +118,8 @@ def test_terminal_bmi_answer_exposes_and_persists_clickable_medical_citations(
     urls = [item["url"] for item in event["data"]["medical_citations"]]
     assert urls == [
         (
-            "https://www.nhc.gov.cn/ylyjs/zcwj/202412/"
-            "75cb79c171c94def9e768193e65484f7/files/"
-            "1736390749000_59785.pdf"
+            "https://www.nhc.gov.cn/ewebeditor/uploadfile/2013/08/"
+            "20130808135715967.pdf"
         ),
         "https://www.cdc.gov/bmi/adult-calculator/bmi-categories.html",
     ]
