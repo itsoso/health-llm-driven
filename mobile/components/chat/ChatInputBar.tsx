@@ -69,7 +69,6 @@ const COMPOSER_TEXT_MAX_HEIGHT = 72;
 const COMPOSER_TEXT_VERTICAL_CHROME = 8;
 const VOICE_WAVE_BARS = Array.from({ length: 28 }, (_, i) => i);
 
-type ChatAgentMode = 'daily' | 'deep' | 'vision';
 type AttachmentPayloadBucket =
   | 'unknown'
   | 'lt_256kb'
@@ -93,22 +92,6 @@ export interface ChatInputSendOptions {
   extraContext?: string;
   channel?: 'typed' | 'voice' | 'siri';
 }
-
-const AGENT_MODES: {
-  id: ChatAgentMode;
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-}[] = [
-  { id: 'daily', label: '日常', icon: 'flash-outline' },
-  { id: 'deep', label: '深思', icon: 'diamond-outline' },
-  { id: 'vision', label: '识图', icon: 'image-outline' },
-];
-
-const MODE_PLACEHOLDER: Record<ChatAgentMode, string> = {
-  daily: '问小巴，或点麦克风说话',
-  deep: '让小巴深思一个计划',
-  vision: '拍照/报告后问小巴',
-};
 
 const MEAL_PHOTO_CONTEXT = {
   source: 'mobile_chat_meal_photo',
@@ -145,20 +128,6 @@ function mergePhotoContext(base: string | undefined, photoContext: Record<string
     // Preserve non-JSON caller context instead of dropping it.
   }
   return JSON.stringify({ prior_context: base, ...photoContext });
-}
-
-function buildAgentModeOptions(mode: ChatAgentMode): ChatInputSendOptions | undefined {
-  if (mode === 'daily') return undefined;
-  const instruction = mode === 'deep'
-    ? '先梳理目标、约束和健康风险边界，再给出可执行计划、验证信号和下一步确认动作。'
-    : '优先理解图片、报告或饮食运动线索，输出可确认的记录、复核卡片或下一步补充信息。';
-  return {
-    extraContext: JSON.stringify({
-      source: 'mobile_chat_composer',
-      mode,
-      instruction,
-    }),
-  };
 }
 
 function PulsingRing() {
@@ -207,7 +176,6 @@ export default function ChatInputBar({
   const closeAttachmentMenu = useCallback(() => setShowMenu(false), []);
   const attachmentDismiss = useSheetDismiss(closeAttachmentMenu, showMenu);
   const [showMedicalImportFlow, setShowMedicalImportFlow] = useState(false);
-  const [agentMode, setAgentMode] = useState<ChatAgentMode>('daily');
   const [cancelHint, setCancelHint] = useState(false);
   const [holdTranscript, setHoldTranscript] = useState('');
   const [textInputFocused, setTextInputFocused] = useState(false);
@@ -442,7 +410,6 @@ export default function ChatInputBar({
         attachmentPayload = attachmentPayloadBucket(sendImages);
         attachmentStage = 'server_accept';
       }
-      const modeOptions = buildAgentModeOptions(agentMode);
       const effectiveChannel = sendOptions?.channel ?? inputChannelRef.current;
       effectiveChannelForSend = effectiveChannel;
       if (effectiveChannel === 'voice') {
@@ -459,7 +426,6 @@ export default function ChatInputBar({
         }
       }
       const outboundOptions: ChatInputSendOptions = {
-        ...(modeOptions || {}),
         ...(sendOptions || {}),
         ...(effectiveChannel !== 'typed' ? { channel: effectiveChannel } : {}),
       };
@@ -471,7 +437,7 @@ export default function ChatInputBar({
       }
       if (voiceDraftForSend) {
         outboundOptions.extraContext = mergeExtraContext(
-          sendOptions?.extraContext ?? modeOptions?.extraContext,
+          sendOptions?.extraContext,
           buildVoiceDraftExtraContext(voiceDraftForSend),
         );
       }
@@ -596,7 +562,6 @@ export default function ChatInputBar({
       if (__DEV__) console.warn('[ChatInputBar] sent draft cleanup failed:', e);
     }
   }, [
-    agentMode,
     applyVoiceTranscript,
     input,
     pendingImages,
@@ -1256,7 +1221,7 @@ export default function ChatInputBar({
               <TextInput
                 ref={textInputRef}
                 style={[styles.textInput, { height: textInputHeight, pointerEvents: 'auto' }]}
-                placeholder={MODE_PLACEHOLDER[agentMode]}
+                placeholder="问小巴，或点麦克风说话"
                 placeholderTextColor={C.ink3}
                 value={input}
                 onChangeText={handleInputChange}
@@ -1364,23 +1329,6 @@ export default function ChatInputBar({
                 }}
               />
             </View>
-            <Text style={styles.menuSectionTitle}>模式</Text>
-            <View testID="agent-mode-segmented-row" style={styles.modeSegmentedRow}>
-              {AGENT_MODES.map(mode => (
-                <ModeSegmentItem
-                  key={mode.id}
-                  icon={mode.icon}
-                  label={mode.label}
-                  accessibilityLabel={`${mode.label}模式`}
-                  selected={agentMode === mode.id}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setAgentMode(mode.id);
-                    setShowMenu(false);
-                  }}
-                />
-              ))}
-            </View>
           </Animated.View>
         </View>
       </Modal>
@@ -1391,34 +1339,6 @@ export default function ChatInputBar({
         onImported={handleMedicalExamImported}
       />
     </>
-  );
-}
-
-function ModeSegmentItem({
-  icon,
-  label,
-  accessibilityLabel,
-  selected,
-  onPress,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  accessibilityLabel: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      style={[styles.modeMenuItem, selected && styles.modeMenuItemActive]}
-      onPress={onPress}
-      activeOpacity={0.68}
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      accessibilityLabel={accessibilityLabel}
-    >
-      <Ionicons name={icon} size={15} color={selected ? C.green500 : C.ink2} />
-      <Text style={[styles.modeMenuLabel, selected && styles.modeMenuLabelActive]}>{label}</Text>
-    </TouchableOpacity>
   );
 }
 
@@ -1666,15 +1586,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingBottom: 8,
   },
-  menuSectionTitle: {
-    fontFamily: revaFonts.sans,
-    fontSize: 12,
-    fontWeight: '800',
-    color: C.ink3,
-    marginTop: 12,
-    marginBottom: 6,
-    paddingHorizontal: 4,
-  } as TextStyle,
   menuItem: {
     flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line,
@@ -1725,39 +1636,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: C.ink3,
     marginTop: 1,
-  } as TextStyle,
-  modeSegmentedRow: {
-    minHeight: 36,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    padding: 3,
-    borderRadius: revaRadii.pill,
-    backgroundColor: C.paper2,
-  },
-  modeMenuItem: {
-    flex: 1,
-    minHeight: 30,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    borderRadius: revaRadii.pill,
-    paddingHorizontal: 8,
-  },
-  modeMenuItemActive: {
-    backgroundColor: C.paper,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: revaSemantic.normal.line,
-  },
-  modeMenuLabel: {
-    fontFamily: revaFonts.sans,
-    fontSize: 13,
-    color: C.ink2,
-    fontWeight: '700',
-  } as TextStyle,
-  modeMenuLabelActive: {
-    color: C.green500,
   } as TextStyle,
   menuLabel: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '500', color: C.ink1 } as TextStyle,
   menuDesc: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, marginTop: 1 } as TextStyle,

@@ -1218,14 +1218,12 @@ describe('ChatInputBar', () => {
     expect(getByLabelText('切换到键盘输入')).toBeTruthy();
   });
 
-  it('sends the selected agent mode as chat context without polluting the user text', async () => {
+  it('sends a detailed-analysis request directly without a mode instruction', async () => {
     const onSend = jest.fn();
     const { getByLabelText } = render(
       <ChatInputBar onSend={onSend} isStreaming={false} />,
     );
 
-    fireEvent.press(getByLabelText('附件菜单'));
-    fireEvent.press(getByLabelText('深思模式'));
     fireEvent.press(getByLabelText('切换到键盘输入'));
     fireEvent.changeText(getByLabelText('消息输入框'), '帮我调整训练计划');
     await act(async () => {
@@ -1237,26 +1235,24 @@ describe('ChatInputBar', () => {
     expect(onSend).toHaveBeenCalledWith(
       '帮我调整训练计划',
       null,
-      expect.objectContaining({
-        extraContext: expect.stringContaining('"mode":"deep"'),
-      }),
+      undefined,
     );
   });
 
-  it('renders agent modes as a single compact segmented row in the attachment menu', () => {
-    const { getByLabelText, getByTestId, getByText } = render(
+  it('offers content attachments without requiring an agent mode choice', () => {
+    const { getByLabelText, queryByText, queryByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
     fireEvent.press(getByLabelText('附件菜单'));
 
-    const modeRow = StyleSheet.flatten(getByTestId('agent-mode-segmented-row').props.style);
-    expect(modeRow.flexDirection).toBe('row');
-    expect(modeRow.minHeight).toBeLessThanOrEqual(38);
-    expect(getByText('日常')).toBeTruthy();
-    expect(getByText('深思')).toBeTruthy();
-    expect(getByText('识图')).toBeTruthy();
-    expect(getByLabelText('深思模式')).toBeTruthy();
+    for (const label of ['拍照记餐', '相册', '文件', '导入体检报告']) {
+      expect(getByLabelText(label)).toBeTruthy();
+    }
+    expect(queryByText('模式')).toBeNull();
+    for (const label of ['日常模式', '深思模式', '识图模式']) {
+      expect(queryByLabelText(label)).toBeNull();
+    }
   });
 
   it('sends typed text when Enter is pressed in the composer', async () => {
