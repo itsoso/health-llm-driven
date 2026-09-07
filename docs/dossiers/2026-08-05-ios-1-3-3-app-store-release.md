@@ -457,3 +457,25 @@
 - 开放 [PR #252](https://github.com/itsoso/health-llm-driven/pull/252)（固定头 `55c30e2845803b0142ee88dd33ccf95a9e3dcd56`）记录发布 bootstrap 的独立攻击复现。该 PR 未合并，其冻结文案不自动替代主干规范；但进一步独立复核主干 `deploy.sh`、`release_lock.sh`、TestFlight wrapper 后，判定已知发布执行信任边界尚无受审解决路径，发布链 G4 **NO-GO**。未发现正在攻击本机的证据；产品代码 GO 保持有效，不能替代发布链 GO。
 - 因 safety-gate 阻断，未运行 deploy.sh、未同步生产配置、未重启服务、未构建/上传/安装/OTA 或修改 ASC。最后只读观测后端 SHA 为 `0e16b1c4ebd7681d54e4ab2b0a747ae9bfb9077e`、工作树干净，最新 EAS 包仍为 1.3.3 (264)。不能声称本次修复线上已生效。
 - 下一步需要独立受信、最小权限的发布执行器与精确 revision/制品/恢复证据，并重新通过发布链安全复审；这是发布基础设施扩展，须另获用户方向。不得自动合并 PR #252 的大量变更或改走手工 SSH/EAS 规避 NO-GO。G5/G6 与正式 App Review 继续 BLOCK。
+
+### 2026-09-08 · Build 265 已发布，本机验收完成
+
+- 用户后续明确授权修复发布链、发布后先做本机模拟验收，不等待手机。流程与逐轮安全复审见
+  [隔离发布执行器 Dossier](2026-09-07-trusted-release-executor.md)；未合并 PR #252。
+- 最终发布 SHA `34e32edc463d87a3331d38d552599d3c164c3db3` 经独立 G4 GO、577 项本地发布合同、
+  精确 CI `34141329002` 与 hosted validate `34142232595` 通过；发布 run `34142442888` 全部 SUCCESS。
+  后端完整备份/恢复/站外归档/部署/健康闸通过，live SHA 一致，健康度 58/60 PASS。
+- **1.3.3 (265)** 已由 EAS production 构建并 auto-submit：
+  EAS `71b2da1d-b4ea-4f9d-82b2-43eb2dd54849`；submission `9e83f974-1ea7-43b4-9f22-709e2b32ebae`；
+  ASC `a05ef842-3268-4f9c-bad6-093d37b3c951`。Apple 上传处理 Complete，内部测试与 Team (Expo)
+  两组已有访问权，测试说明已保存。实际 IPA 名称/版本/权限/隐私及新饮食 bundle 标识 PASS；
+  Xcode=2620，iOS SDK=26.2，iPhone portrait only。
+- 发布后饮食 API 合成订单识别/确认保存/回查/重复确认幂等 PASS。主 Agent 合成订单正确识别订单数量，
+  低置信时显示确认卡，确认后保存/回查/幂等 PASS；未削弱确认阈值。仅本次合成记录和对话已清理。
+- 全新空白模拟器上安全审核登录、两次冷启动保持登录、隐私返回、取消注销，以及真实原生饮食组件
+  编辑取消/复盘关闭 Modal 回 root Agent，最终 6 项 PASS。旧模拟器凭据预填和 XCTest 隐式滚动造成的
+  初始 QA 失败均留证并修正测试隔离/操作顺序，未改产品逻辑；原 App 草稿与手机未触碰。
+- 临时发布 SSH/Expo/GitHub secrets 均已撤销，审计与一次性执行状态保留。生产 OTA 仍冻结。
+- 本轮仅完成后端、内部 TestFlight 和本机验证；正式 App Review **仍未提交**。同源 Simulator
+  不等于签名 IPA 真机验收；完整饮食页面到真实 Agent 的 UI 链、弱网恢复、相机、语音、系统分享等
+  留待用户白天用 Build 265 复测，不能把旧 Build 264 证据搬作新包通过，也不承诺 Apple 必过。

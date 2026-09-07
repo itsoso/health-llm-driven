@@ -4,8 +4,8 @@
 |---|---|
 | slug | `trusted-release-executor` |
 | 创建日期 | 2026-09-07 |
-| 当前阶段 | S5 实现 |
-| 状态 | building |
+| 当前阶段 | S8 发布后本机验证完成（正式 App Review 不在本轮范围） |
+| 状态 | complete |
 | 负责 | Codex |
 | 反馈环 | 本地负例测试 / GitHub 无凭据预检 / 独立安全复审 / 后端部署 / TestFlight / iOS Simulator |
 
@@ -51,15 +51,15 @@
 
 - [x] T1 精确 revision/CI 只读守门与负例测试。
 - [x] T2 独立托管 workflow，默认无凭据预检；后端只验证不 push 的兼容模式。
-- [ ] T3 固定提交安全复审、CI 与真实托管预检；发布身份缺口明确记录。
-- [ ] T4 条件满足后后端部署、TestFlight 新包与终态核验。
-- [ ] T5 本机模拟器导航/订单/分享回跳/审核检查；未覆盖真机项目留给次日。
+- [x] T3 固定提交安全复审、CI 与真实托管预检；使用可撤销的短期发布身份。
+- [x] T4 后端部署、TestFlight 新包与终态核验。
+- [x] T5 本机模拟器登录/隐私/取消注销/分享回跳及线上合成订单检查；明确真机与弱网边界。
 - 当前 main 无分叉；已有发布 Dossier 的本地追加记录保留，不覆盖。
 - 父流程 ledger：`docs/_generated/harness-runs/d46af76cd7f9.jsonl`（本地，不提交）。
 
 ## G3 / G4
 
-尚待新鲜测试和固定提交安全复审，不把方案 GO 当实现 GO。
+以下保留逐轮裁决；最终 G4 GO 见发布后记录，不把方案 GO 当实现 GO。
 
 - 首轮固定提交 `9ff10f95342cfaef96011061ff268a108746ed58` 的 G4：**NO-GO**。
   两项阻断：授权剩余窗口不足仍能启动，以及 workspace 新目录项未 fsync 父目录。
@@ -95,8 +95,60 @@
   ts-deepmerge 位于新项目初始化而非 build，diff 使用 diffLines 而非受影响的 patch API。
   不声称零漏洞，也不为消除报告盲目跨 major 替换厂商 API。
   证据 `/tmp/xiaoba-release-tools-audit-final.json`、`/tmp/xiaoba-eas-toolcheck.QlUtq0/inspect.log`。
-- server 安装和撤销均尚未执行；没有新增云端 secret、Expo token、构建或生产部署。
+- 上述初次证据采集时 server 安装和撤销均尚未执行；实际安装、发布及撤销结果见下节。
 
 ## S6 / G5 / S7 / G6
 
-未部署、未构建；同包真机验证明日由用户完成。模拟器不替代商店 IPA 的物理设备验收或 Apple 审核结论。
+### 2026-09-08 · 最终固定提交与真实发布
+
+- HTTP transport 修复 `fcbf01329dfeabbd22ef83aea56394e93abb9b00`：独立 G4 GO、
+  CI `34139659079` 和 hosted validate `34140373606` SUCCESS。真实安装后的认证负例发现
+  OpenSSH 8.9 不接受 `expiry-time` 的 Z 后缀；此时没有启动 backend，也没有消费记录或业务 lease。
+- TDD 修复为服务器系统时区无 Z 的时间，清除 caller TZ，并 roundtrip 核对绝对截止时间；
+  保留八小时授权上限和 7200 秒启动窗口。固定提交
+  `34e32edc463d87a3331d38d552599d3c164c3db3` 独立 G4 **GO**（98 项独立回归）；
+  parent targeted 139 PASS，全 CI-mode 发布合同 **577 PASS / 281.93 秒**。
+  CI `34141329002`、hosted validate `34142232595` 均 SUCCESS。
+- 经独立 reviewer 允许，用旧 fcb canonical bootstrap 撤销精确旧授权；持全局锁重新证明
+  NEVER_STARTED / 无业务 lease / 无发布进程，再将两个旧安装目录原子移入 root-only retired 审计目录。
+  未删除或重建 launcher.lock、消费标记、业务状态或其他授权。
+- 新安装的真实正负检查通过：status READY、loopback 认证成功；任意命令、错误 SHA、参数注入、
+  SFTP 和错误主机 pin 均拒绝。只触发一次 `target=release`，run **34142442888 SUCCESS**。
+- Backend `deploy.sh -b` 完整通过：dump 23 秒、恢复演练 20 秒、站外加密/上传/远端哈希与 HMAC
+  验证 364 秒；精确 live SHA 为 `34e32edc4…`，服务 active，健康度 **58/60 PASS**，终态 SUCCEEDED。
+- EAS production **1.3.3 (265)**：build `71b2da1d-b4ea-4f9d-82b2-43eb2dd54849` FINISHED，
+  source SHA 与上述发布一致；submission `9e83f974-1ea7-43b4-9f22-709e2b32ebae` 于
+  00:37 CST 上传成功。ASC build `a05ef842-3268-4f9c-bad6-093d37b3c951` 上传 Complete，
+  已分发至 Team (Expo) 与内部测试；What to Test 已保存。没有提交正式 App Review。
+- 下载的实际 IPA 配置校验 PASS：小巴健康、1.3.3/265、iPhone portrait、无 Watch/extension、
+  权限文案与隐私清单匹配，DTXcode=2620、iOS SDK=26.2；新饮食复盘文案及组件标识在 bundle 内。
+
+### 发布后验证与边界
+
+- 饮食 API 真实模型合成订单：四项食品/数量、广告排除、确认写入、数据库回查、重复确认幂等，全部 PASS。
+- 主 Agent `记录晚餐`＋合成订单图：识别为 order_estimate/order_quantity。实际置信度较低，
+  正确保留 diet_draft 确认卡，而非误称营养标签缺克数；确认后写入/回查/幂等均 PASS。
+  初次 QA SSE 解析器错误地把 JSON 内 event 当作独立 SSE event，并过严要求自动保存，因此失败；
+  按原 client_turn_id 只读恢复同一回合，验证后确认同一草稿，没有重发请求或降低生产置信阈值。
+  本次新建的合成记录与合成对话均已精确清理，既有记录没有被删除。
+- 新建空白 iPhone 17 Pro / iOS 26.5 Simulator，不克隆或重置原设备：审核账号安全登录 1/1、
+  完整 App 两次冷启动持久化/隐私页返回/取消注销 3/3、真实原生饮食组件取消/分享回跳 2/2，
+  最终 **6 项全部 PASS，退出码均 0**。主 App 的既有登录与未发送草稿未触碰，未使用手机。
+- 保留两次 QA 初始失败：旧模拟器记住的凭据导致 Paste 追加，改用全新空白设备解决；
+  XCTest 首次 tap 仅自动滚动，改为先显式滚动到可见/可点击再 tap，产品代码未改。
+- 本机汇总 `/tmp/xiaoba-full-release-qa.6R1NXb/POST_RELEASE_RESULT.json`；
+  API `/tmp/xiaoba-release-order-api-result.json`；Agent确认 `/tmp/xiaoba-agent-order-confirm-result.json`。
+  临时原始失败证据保留，不以重跑通过隐去原因。
+- 审核资料/config 自动 gate PASS，线上隐私页 HTTP 200；本轮 G5/G6 仅裁决部署、内部 TestFlight
+  分发和上述本机验证 **PASS**。同源 Simulator 不是商店 IPA 真机运行；完整 App 饮食页面→真实 Agent
+  的整条 UI、隔离弱网恢复、相机/语音/生物识别/外部分享与同包真机验收仍由用户白天复测。
+  正式上架 final-submit gate、同包截图人工审核与 Apple 结论均未宣称完成。
+
+### 凭据与现场收尾
+
+- Backend SUCCEEDED 且全部发布 job SUCCESS 后，精确撤销两条 task SSH 授权；实测专用 key 已被拒绝。
+  原有密钥保持不变。删除本次本机私钥、服务器新旧两份已撤销 loopback 私钥及临时 deployment.env，
+  不影响 live backend/.env；其余 root-only 安装、日志及一次性状态保留审计，不重置用于重跑。
+- 删除本轮创建的三个 GitHub release-production secrets，查询列表为空；撤销并删除本轮新建的
+  Expo robot token，既有 robot 与个人认证不变。新旧模拟器剪贴板均清空、临时凭据 broker 已停止。
+- 下一次发布需要新的受审授权生命周期；不能复用已撤销身份或清除本次消费记录。
