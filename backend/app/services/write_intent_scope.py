@@ -476,6 +476,10 @@ _QUOTE_PAIRS = (
     ("'", "'"),
     ("`", "`"),
 )
+_DIRECT_QUOTED_SUPPLEMENT_RECORD_RE = re.compile(
+    r"^(?:(?:请(?:你)?|帮我|替我|为我|给我|麻烦)\s*)?"
+    r"记录补剂(?:\s*[:：])?"
+)
 _PARENTHETICAL_PAIRS = (("（", "）"), ("(", ")"))
 _UPDATE_CORRECTION_MARKER_PATTERN = (
     r"(?:(?:哦不|不对|错了|说错了|更正一下|等等|等一下|抱歉)[，,]?|不[，,])"
@@ -1240,7 +1244,10 @@ def is_reported_write_reference(value: str) -> bool:
     text = normalize_write_scope_text(value)
     if _is_fully_parenthesized(text):
         return True
-    if any(opening in text and closing in text for opening, closing in _QUOTE_PAIRS):
+    if (
+        any(opening in text and closing in text for opening, closing in _QUOTE_PAIRS)
+        and _DIRECT_QUOTED_SUPPLEMENT_RECORD_RE.match(text) is None
+    ):
         return True
 
     clauses = split_write_clauses(text)

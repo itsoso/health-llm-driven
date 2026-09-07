@@ -483,6 +483,13 @@ _SUPPLEMENT_NAME_EVIDENCE_RE = re.compile(
 )
 _SUPPLEMENT_ACRONYM_NAME_RE = re.compile(r"[A-Z][A-Z0-9-]{1,7}")
 _SUPPLEMENT_MAX_UNQUOTED_NAME_LENGTH = 6
+_SUPPLEMENT_QUOTED_NAME_RE = re.compile(
+    r'(?:「([^」]+)」|“([^”]+)”|"([^"]+)"|【([^】]+)】)'
+)
+_SUPPLEMENT_QUOTED_NAME_FORBIDDEN_RE = re.compile(
+    r"(?:引用|引文|示例|例句|范文|演示|测试|占位|假设|假定|设想|"
+    r"计划|安排|预约|待定|待用|拟用|拟定|预定|抄录|摘录|转述)"
+)
 _SUPPLEMENT_GENERIC_NAME_REFERENCE_RE = re.compile(
     r"(?:补剂|营养素|维生素|胶囊|产品|片)$"
 )
@@ -498,7 +505,7 @@ _SUPPLEMENT_NAME_GRAMMAR_MARKER_RE = re.compile(
     r"摄取|摄入|食用|服用|服|吃|喝|吞|用过|"
     r"前|后|上|下|昨|今|明|每|隔|天|日|周|月|年|季度|日期|时间|"
     r"此前|往年|往昔|旧时|儿时|幼时|阵子|来年|翌日|下回|下一|"
-    r"本次|本轮|届时|拟用|拟定|预定|待用|候用|有空再用|"
+    r"本次|本轮|届时|拟用|拟定|预定|待定|待用|候用|有空再用|"
     r"这|那|此|该|上述|前述|以上|同款|任意|任何|某款|"
     r"示例|范文|引用|演示|测试|占位|计划|安排|预约|择日|"
     r"频次|频率|例行|定期|按需|偶尔|常规|经常|惯常|规律|周期|"
@@ -4478,6 +4485,13 @@ def _named_item_targets(clause: str, record_type: str) -> tuple[str, ...]:
             item = re.sub(r"(?:吃|服用)$", "", item).strip(
                 "的了，,。.!！；;：: "
             )
+            quoted_match = _SUPPLEMENT_QUOTED_NAME_RE.fullmatch(item)
+            if quoted_match is not None:
+                item = next(
+                    value
+                    for value in quoted_match.groups()
+                    if value is not None
+                ).strip()
             if item:
                 targets.append(item)
         targets = list(dict.fromkeys(targets))
@@ -4507,6 +4521,12 @@ def _supplement_item_is_non_authorizing(
     candidate = _SUPPLEMENT_DOSE_RE.sub("", candidate)
     candidate = _SUPPLEMENT_TIMING_RE.sub("", candidate)
     candidate = candidate.strip("的了，,。.!！；;：: ()（）[]【】")
+    quoted_match = _SUPPLEMENT_QUOTED_NAME_RE.fullmatch(candidate)
+    if quoted_match is not None:
+        quoted_name = next(
+            value for value in quoted_match.groups() if value is not None
+        ).strip()
+        return _SUPPLEMENT_QUOTED_NAME_FORBIDDEN_RE.search(quoted_name) is not None
     if _SUPPLEMENT_NONCURRENT_TIME_RE.search(candidate):
         return True
     if strict_current_action and _SUPPLEMENT_ENGLISH_NON_AUTHORIZING_RE.search(
@@ -4597,19 +4617,18 @@ def _supplement_item_has_name_evidence(raw_item: str) -> bool:
     candidate = _SUPPLEMENT_DOSE_RE.sub("", candidate)
     candidate = _SUPPLEMENT_TIMING_RE.sub("", candidate)
     candidate = candidate.strip(" ：:，,。.!！?？；;()（）")
-    quoted_match = re.fullmatch(
-        r"(?:「([^」]+)」|“([^”]+)”|\"([^\"]+)\"|【([^】]+)】)",
-        candidate,
-    )
+    quoted_match = _SUPPLEMENT_QUOTED_NAME_RE.fullmatch(candidate)
     is_quoted = quoted_match is not None
     if quoted_match is not None:
         candidate = next(
             value for value in quoted_match.groups() if value is not None
         ).strip()
-    if (
+        if _SUPPLEMENT_QUOTED_NAME_FORBIDDEN_RE.search(candidate):
+            return False
+    if not is_quoted and (
         _SUPPLEMENT_NAME_GRAMMAR_MARKER_RE.search(candidate)
         or _SUPPLEMENT_NAME_ENGLISH_GRAMMAR_RE.search(candidate)
-        or (not is_quoted and bool(re.search(r"\s", candidate)))
+        or bool(re.search(r"\s", candidate))
     ):
         return False
     is_acronym = _SUPPLEMENT_ACRONYM_NAME_RE.fullmatch(candidate) is not None

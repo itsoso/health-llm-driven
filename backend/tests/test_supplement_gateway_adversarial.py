@@ -21,6 +21,7 @@ async def _execute(
     tap=None,
     lookup=None,
     create=None,
+    dosage=None,
 ):
     calls = []
 
@@ -55,7 +56,10 @@ async def _execute(
     executor = AgentExecutor(db)
     executor._current_user_id = 1
     executor._current_turn_user_message = message
-    args = {"record_type": "supplement", "data": {"supplement_name": name}}
+    data = {"supplement_name": name}
+    if dosage is not None:
+        data["dosage"] = dosage
+    args = {"record_type": "supplement", "data": data}
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
         executor._http_client = client
         result = await executor._execute_tool(
@@ -340,4 +344,69 @@ async def test_mixed_authority_batch_is_atomic_and_never_dispatches(db, message)
 async def test_ambiguous_definitions_never_select_arbitrary_id(db, definitions):
     calls, _, receipt = await _execute(db, lookup=definitions)
     assert not any(method == "POST" for method, _, _ in calls)
+    assert receipt is None
+
+
+@pytest.mark.parametrize(
+    "message",
+    tuple(f"记录补剂：待定短验{suffix}硒。" for suffix in "甲乙丙丁戊己庚辛"),
+)
+async def test_deferred_short_name_never_plans_or_dispatches(db, message):
+    assert _build_deterministic_supplement_record_tool_calls(
+        message,
+        write_receipts=[],
+    ) == []
+    calls, _, receipt = await _execute(
+        db,
+        message=message,
+        name=message.removeprefix("记录补剂：").removesuffix("。"),
+    )
+    assert calls == []
+    assert receipt is None
+
+
+@pytest.mark.parametrize(
+    ("message", "name"),
+    (
+        ("记录补剂：一粒“明澈镇静组合补剂”。", "明澈镇静组合补剂"),
+        ("记录补剂：一粒\"甲乙丙丁戊己庚\"。", "甲乙丙丁戊己庚"),
+        ("记录补剂：一粒「月白复合营养胶囊」。", "月白复合营养胶囊"),
+        ("记录补剂：一粒【远山矿物组合片】。", "远山矿物组合片"),
+    ),
+)
+async def test_explicit_quoted_long_name_plans_and_dispatches(db, message, name):
+    plan = _build_deterministic_supplement_record_tool_calls(
+        message,
+        write_receipts=[],
+    )
+    assert len(plan) == 1
+    assert json.loads(plan[0]["function"]["arguments"])["data"][
+        "supplement_name"
+    ] == name
+    assert json.loads(plan[0]["function"]["arguments"])["data"]["dosage"] == "1粒"
+
+    calls, _, receipt = await _execute(
+        db,
+        message=message,
+        name=name,
+        dosage="1粒",
+    )
+    assert any(path.endswith("/tap") for _, path, _ in calls)
+    assert receipt and receipt["verified"] is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录补剂：一粒\u201c超长引用补剂名甲甲乙丙丁\u201d。",
+        "记录补剂：一粒\u201c待定长名字补剂甲乙丙丁\u201d。",
+    ),
+)
+async def test_quoted_grammar_fragments_never_plan_or_dispatch(db, message):
+    assert _build_deterministic_supplement_record_tool_calls(
+        message,
+        write_receipts=[],
+    ) == []
+    calls, _, receipt = await _execute(db, message=message, name="不应使用")
+    assert calls == []
     assert receipt is None

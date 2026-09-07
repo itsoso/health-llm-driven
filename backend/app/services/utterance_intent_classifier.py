@@ -1051,6 +1051,9 @@ def _infer_domain(text: str) -> str:
         return "goal"
     if _has_water_signal(text):
         return "water"
+    compact_text = "".join(text.split())
+    if "记录补剂:" in compact_text or "记录补剂：" in compact_text:
+        return "supplement"
     intake_kind = classify_intake_intent(text).kind
     if intake_kind == "supplement":
         return "supplement"

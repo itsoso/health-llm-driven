@@ -4822,6 +4822,10 @@ _QUOTED_SUPPLEMENT_ENTITY_RE = re.compile(
     r"^\s*(?:「(?P<corner>[^」]+)」|“(?P<curly>[^”]+)”|"
     r"\"(?P<double>[^\"]+)\"|【(?P<bracket>[^】]+)】)\s*(?P<tail>.*)$"
 )
+_QUOTED_SUPPLEMENT_NAME_RE = re.compile(
+    r'(?:「(?P<corner>[^」]+)」|“(?P<curly>[^”]+)”|'
+    r'"(?P<double>[^"]+)"|【(?P<bracket>[^】]+)】)'
+)
 
 
 def _supplement_entity_is_generic(raw: Any) -> bool:
@@ -5253,11 +5257,25 @@ def _explicit_labeled_supplement_names(raw_message: str) -> tuple[str, ...]:
     names: list[str] = []
     for candidate in _explicit_labeled_supplement_targets(raw_message):
         normalized_candidate = _normalized_current_turn_entity_text(candidate)
+        explicitly_quoted = any(
+            _normalized_current_turn_entity_text(
+                next(
+                    value
+                    for value in match.groupdict().values()
+                    if value is not None
+                )
+            )
+            == normalized_candidate
+            for match in _QUOTED_SUPPLEMENT_NAME_RE.finditer(raw_message)
+        )
         if len(normalized_candidate) < 2:
             continue
         if _supplement_entity_is_generic(candidate):
             continue
-        if _supplement_entity_has_directive_residual(candidate):
+        if (
+            not explicitly_quoted
+            and _supplement_entity_has_directive_residual(candidate)
+        ):
             continue
         names.append(normalized_candidate)
     return tuple(dict.fromkeys(names))
@@ -5292,9 +5310,13 @@ def _supplement_name_is_grounded_in_current_turn(
         return False
     if _supplement_entity_is_generic(supplement_name):
         return False
-    if _supplement_entity_has_directive_residual(supplement_name):
+    explicit_names = _explicit_supplement_names_in_current_turn(user_message)
+    if (
+        _supplement_entity_has_directive_residual(supplement_name)
+        and normalized_name not in explicit_names
+    ):
         return False
-    return normalized_name in _explicit_supplement_names_in_current_turn(user_message)
+    return normalized_name in explicit_names
 
 
 def _fast_record_kind(args: dict) -> str:
@@ -8628,6 +8650,7 @@ def _build_deterministic_supplement_record_tool_calls(
         ):
             return []
         from app.services.agent_kernel.capability_policy import (
+            _deterministic_target_values,
             _explicit_labeled_supplement_targets,
             _named_item_targets,
         )
@@ -8650,6 +8673,13 @@ def _build_deterministic_supplement_record_tool_calls(
     if not names or len(names) > 64:
         return []
 
+    shared_metadata: dict[str, Any] = {}
+    if len(names) == 1 and not contextual_supplement_names:
+        expected = _deterministic_target_values(normalized_message, "supplement")
+        for field in ("dosage", "timing"):
+            if expected.get(field) not in (None, "", []):
+                shared_metadata[field] = expected[field]
+
     return [
         {
             "id": f"deterministic-supplement-{_sha12(name)}",
@@ -8659,7 +8689,10 @@ def _build_deterministic_supplement_record_tool_calls(
                 "arguments": json.dumps(
                     {
                         "record_type": "supplement",
-                        "data": {"supplement_name": name},
+                        "data": {
+                            "supplement_name": name,
+                            **shared_metadata,
+                        },
                     },
                     ensure_ascii=False,
                 ),
