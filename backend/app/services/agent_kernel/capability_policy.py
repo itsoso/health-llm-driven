@@ -488,8 +488,13 @@ _SUPPLEMENT_QUOTED_NAME_RE = re.compile(
 )
 _SUPPLEMENT_QUOTED_NAME_FORBIDDEN_RE = re.compile(
     r"(?:引用|引文|示例|例句|范文|演示|测试|占位|假设|假定|设想|"
-    r"计划|安排|预约|待定|暂定|待议|预留|待用|拟用|拟定|预定|"
-    r"抄录|摘录|转述)"
+    r"计划|安排|预约|待定|暂定|暂缓|搁置|候补|尚待|待议|预留|"
+    r"待用|拟用|拟定|预定|备选|备用|待办|草稿|复核|复审|审核|"
+    r"核验|查验|验证|确认|审议|商议|讨论|考虑|咨询|询问|观察|"
+    r"推迟|延后|抄录|摘录|转述)"
+)
+_SUPPLEMENT_TENTATIVE_NAME_PREFIX_RE = re.compile(
+    r"^(?:暂|待|预|拟|候|尚待|搁置|留待|有待)"
 )
 _SUPPLEMENT_GENERIC_NAME_REFERENCE_RE = re.compile(
     r"(?:补剂|营养素|维生素|胶囊|产品|片)$"
@@ -506,13 +511,15 @@ _SUPPLEMENT_NAME_GRAMMAR_MARKER_RE = re.compile(
     r"摄取|摄入|食用|服用|服|吃|喝|吞|用过|"
     r"前|后|上|下|昨|今|明|每|隔|天|日|周|月|年|季度|日期|时间|"
     r"此前|往年|往昔|旧时|儿时|幼时|阵子|来年|翌日|下回|下一|"
-    r"本次|本轮|届时|拟用|拟定|预定|待定|暂定|待议|预留|"
-    r"待用|候用|有空再用|"
+    r"本次|本轮|届时|拟用|拟定|预定|待定|暂定|暂缓|搁置|"
+    r"候补|尚待|待议|预留|待用|候用|有空再用|"
     r"这|那|此|该|上述|前述|以上|同款|任意|任何|某款|"
     r"示例|范文|引用|演示|测试|占位|计划|安排|预约|择日|"
     r"频次|频率|例行|定期|按需|偶尔|常规|经常|惯常|规律|周期|"
     r"星期|礼拜|回|清单|状态|事实|只|仅|作为|用于|的|"
     r"同一款|相同|类似|若干|其它|其他|另一种|一种|某种|各类|"
+    r"备选|备用|待办|草稿|复核|复审|审核|核验|查验|验证|确认|"
+    r"审议|商议|讨论|考虑|咨询|询问|观察|推迟|延后|"
     r"抄录|摘录|转述|据说|传闻|例句|练习)"
 )
 _SUPPLEMENT_NAME_ENGLISH_GRAMMAR_RE = re.compile(
@@ -4528,7 +4535,10 @@ def _supplement_item_is_non_authorizing(
         quoted_name = next(
             value for value in quoted_match.groups() if value is not None
         ).strip()
-        return _SUPPLEMENT_QUOTED_NAME_FORBIDDEN_RE.search(quoted_name) is not None
+        return bool(
+            _SUPPLEMENT_TENTATIVE_NAME_PREFIX_RE.search(quoted_name)
+            or _SUPPLEMENT_QUOTED_NAME_FORBIDDEN_RE.search(quoted_name)
+        )
     if _SUPPLEMENT_NONCURRENT_TIME_RE.search(candidate):
         return True
     if strict_current_action and _SUPPLEMENT_ENGLISH_NON_AUTHORIZING_RE.search(
@@ -4625,7 +4635,10 @@ def _supplement_item_has_name_evidence(raw_item: str) -> bool:
         candidate = next(
             value for value in quoted_match.groups() if value is not None
         ).strip()
-        if _SUPPLEMENT_QUOTED_NAME_FORBIDDEN_RE.search(candidate):
+        if (
+            _SUPPLEMENT_TENTATIVE_NAME_PREFIX_RE.search(candidate)
+            or _SUPPLEMENT_QUOTED_NAME_FORBIDDEN_RE.search(candidate)
+        ):
             return False
     if not is_quoted and (
         _SUPPLEMENT_NAME_GRAMMAR_MARKER_RE.search(candidate)
