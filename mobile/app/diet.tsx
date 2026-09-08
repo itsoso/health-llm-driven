@@ -52,7 +52,7 @@ const VALID_MEAL_TYPES = new Set(['breakfast', 'lunch', 'dinner', 'snack']);
 const EMPTY_MEALS: DietRecord[] = [];
 
 function dietShareDateLabel(record: DietRecord): string {
-  return `${record.record_date.replace(/-/g, '.')} · ${MEAL_LABEL[record.meal_type] ?? '餐食'}`;
+  return record.record_date.replace(/-/g, '.');
 }
 
 type DietRouteParams = {

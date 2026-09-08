@@ -64,6 +64,12 @@ describe('buildDietSharePresentation', () => {
       '约 900 kcal · 蛋白质 36g',
       '碳水 103g · 脂肪 42g',
     ]);
+    expect(view.nutritionItems).toEqual([
+      { key: 'calories', label: '热量', value: '900', unit: 'kcal' },
+      { key: 'protein', label: '蛋白质', value: '36', unit: 'g' },
+      { key: 'carbs', label: '碳水', value: '103', unit: 'g' },
+      { key: 'fat', label: '脂肪', value: '42', unit: 'g' },
+    ]);
     expect(JSON.stringify(view)).not.toContain('88%');
   });
 
@@ -71,6 +77,7 @@ describe('buildDietSharePresentation', () => {
     const view = buildDietSharePresentation(photoRecord({ ai_confidence: 0.42 }));
 
     expect(view.macroLines).toEqual(['营养待核对']);
+    expect(view.nutritionItems).toEqual([]);
     expect(JSON.stringify(view)).not.toContain('900');
   });
 

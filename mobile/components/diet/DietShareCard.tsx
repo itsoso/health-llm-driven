@@ -520,6 +520,8 @@ export default function DietShareCard({
   const presentation = buildDietSharePresentation(record);
   const tags = presentation.tags.slice(0, 3);
   const macroLines = presentation.macroLines.slice(0, 2);
+  const nutritionItems = presentation.nutritionItems.slice(0, 4);
+  const nutritionStatus = nutritionItems.length === 0 ? macroLines[0] : null;
   const showDisclosure = !macroLines.includes(presentation.disclosure);
 
   return (
@@ -552,13 +554,25 @@ export default function DietShareCard({
           <View style={styles.posterRuleLong} />
           <View style={styles.posterRuleShort} />
         </View>
-        <Text testID="diet-share-headline" style={styles.posterHeadline} numberOfLines={1}>{presentation.headline}</Text>
+        <Text testID="diet-share-headline" style={styles.posterHeadline} numberOfLines={2}>{presentation.headline}</Text>
         <Text testID="diet-share-food-line" style={styles.posterFoodLine} numberOfLines={2}>{presentation.foodLine}</Text>
 
-        <View style={styles.posterNutrition}>
-          {macroLines.map(line => (
-            <Text key={line} style={styles.posterMacroLine} numberOfLines={1}>{line}</Text>
-          ))}
+        <View testID="diet-share-nutrition-grid" style={styles.posterNutrition}>
+          {nutritionItems.length > 0 ? nutritionItems.map((item, index) => (
+            <View
+              key={item.key}
+              testID={`diet-share-metric-${item.key}`}
+              style={[styles.posterMetric, index > 0 ? styles.posterMetricSeparated : null]}
+            >
+              <Text style={styles.posterMetricLabel}>{item.label}</Text>
+              <View style={styles.posterMetricValueRow}>
+                <Text style={styles.posterMetricValue}>{item.value}</Text>
+                <Text style={styles.posterMetricUnit}>{item.unit}</Text>
+              </View>
+            </View>
+          )) : (
+            <Text style={styles.posterNutritionStatus}>{nutritionStatus}</Text>
+          )}
         </View>
 
         {tags.length > 0 ? (
@@ -571,19 +585,23 @@ export default function DietShareCard({
           </View>
         ) : null}
 
+        {presentation.nextAction ? (
+          <View testID="diet-share-next-action" style={styles.posterNextAction}>
+            <Text style={styles.posterNextActionLabel}>饮食提示</Text>
+            <Text style={styles.posterNextActionText} numberOfLines={2}>{presentation.nextAction}</Text>
+          </View>
+        ) : null}
+
         <View style={styles.posterFooter}>
-          {presentation.nextAction ? (
-            <View testID="diet-share-next-action" style={styles.posterNextAction}>
-              <View style={styles.posterNextActionDot} />
-              <Text style={styles.posterNextActionText} numberOfLines={1}>{presentation.nextAction}</Text>
-            </View>
-          ) : <View />}
           {showDisclosure ? (
             <Text style={styles.posterDisclosure}>{presentation.disclosure}</Text>
           ) : null}
-          <View style={styles.posterFooterMark}>
-            <View style={styles.posterFooterMarkDot} />
-            <View style={styles.posterFooterMarkLine} />
+          <View style={styles.posterBrand}>
+            <View style={styles.posterFooterMark}>
+              <View style={styles.posterFooterMarkDot} />
+              <View style={styles.posterFooterMarkLine} />
+            </View>
+            <Text style={styles.posterBrandText}>小巴</Text>
           </View>
         </View>
       </View>
@@ -1216,17 +1234,14 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(99, 70, 40, 0.28)',
   },
   posterMealBadgeText: {
-    fontFamily: revaFonts.sans,
     fontSize: 11,
     color: C.ink2,
-    fontWeight: '900',
-    letterSpacing: 1.2,
+    fontWeight: '700',
   },
   posterDate: {
-    fontFamily: revaFonts.mono,
-    fontSize: 10,
+    fontSize: 10.5,
     color: C.surface2,
-    fontWeight: '800',
+    fontWeight: '600',
     textShadowColor: 'rgba(43, 29, 15, 0.55)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
@@ -1236,12 +1251,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: '45%',
+    height: '48%',
     paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 10,
-    gap: 4,
-    backgroundColor: C.paper2,
+    paddingTop: 14,
+    paddingBottom: 12,
+    gap: 5,
+    backgroundColor: C.surface2,
   },
   posterRuleRow: {
     flexDirection: 'row',
@@ -1264,31 +1279,65 @@ const styles = StyleSheet.create({
     backgroundColor: C.green600,
   },
   posterHeadline: {
-    fontFamily: revaFonts.sans,
-    fontSize: 20,
-    lineHeight: 25,
+    fontSize: 19.5,
+    lineHeight: 24,
     color: C.ink1,
-    fontWeight: '900',
-    letterSpacing: 0.2,
-  },
-  posterFoodLine: {
-    fontFamily: revaFonts.sans,
-    fontSize: 11.5,
-    lineHeight: 16,
-    color: C.ink2,
     fontWeight: '700',
   },
-  posterNutrition: {
-    paddingTop: 4,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(104, 76, 48, 0.2)',
-    gap: 1,
+  posterFoodLine: {
+    fontSize: 11.5,
+    lineHeight: 17,
+    color: C.ink2,
+    fontWeight: '500',
   },
-  posterMacroLine: {
+  posterNutrition: {
+    minHeight: 41,
+    paddingVertical: 7,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  posterMetric: {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: 7,
+  },
+  posterMetricSeparated: {
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: C.line,
+  },
+  posterMetricLabel: {
+    fontSize: 8.5,
+    lineHeight: 11,
+    color: C.ink3,
+    fontWeight: '600',
+  },
+  posterMetricValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 3,
+    marginTop: 1,
+  },
+  posterMetricValue: {
     fontFamily: revaFonts.mono,
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 15.5,
+    lineHeight: 19,
     color: C.ink1,
+    fontWeight: '500',
+  },
+  posterMetricUnit: {
+    fontFamily: revaFonts.mono,
+    fontSize: 7.5,
+    lineHeight: 11,
+    color: C.ink3,
+  },
+  posterNutritionStatus: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 26,
+    color: revaSemantic.caution.fg,
     fontWeight: '700',
   },
   posterTagRow: {
@@ -1307,47 +1356,53 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(82, 117, 93, 0.3)',
   },
   posterTagText: {
-    fontFamily: revaFonts.sans,
     fontSize: 9.5,
     color: C.green700,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   posterFooter: {
     marginTop: 'auto',
-    minHeight: 27,
+    minHeight: 18,
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: 9,
   },
   posterNextAction: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    borderLeftWidth: 2,
+    borderLeftColor: revaSemantic.caution.fg,
+    paddingLeft: 8,
+    paddingVertical: 1,
   },
-  posterNextActionDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: revaSemantic.caution.fg,
+  posterNextActionLabel: {
+    fontSize: 8.5,
+    lineHeight: 11,
+    color: revaSemantic.caution.fg,
+    fontWeight: '700',
   },
   posterNextActionText: {
-    flexShrink: 1,
-    fontFamily: revaFonts.sans,
-    fontSize: 9.5,
-    lineHeight: 13,
+    fontSize: 10,
+    lineHeight: 14,
     color: C.ink2,
-    fontWeight: '800',
+    fontWeight: '600',
+    marginTop: 1,
   },
   posterDisclosure: {
-    fontFamily: revaFonts.sans,
     fontSize: 8.5,
     lineHeight: 12,
     color: C.ink3,
+    fontWeight: '500',
+  },
+  posterBrand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  posterBrandText: {
+    fontSize: 9,
+    lineHeight: 12,
+    color: C.green700,
     fontWeight: '700',
-    textAlign: 'right',
   },
   posterFooterMark: {
     width: 18,

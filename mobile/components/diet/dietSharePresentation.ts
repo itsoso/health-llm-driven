@@ -17,9 +17,17 @@ export type DietSharePresentation = {
   headline: string;
   foodLine: string;
   macroLines: string[];
+  nutritionItems: DietShareNutritionItem[];
   tags: string[];
   nextAction?: string;
   disclosure: string;
+};
+
+export type DietShareNutritionItem = {
+  key: 'calories' | 'protein' | 'carbs' | 'fat';
+  label: string;
+  value: string;
+  unit: 'kcal' | 'g';
 };
 
 /**
@@ -132,6 +140,26 @@ function buildMacroLines(record: DietShareRecord): string[] {
   return lines.length > 0 ? lines : ['营养估算中'];
 }
 
+function buildNutritionItems(record: DietShareRecord): DietShareNutritionItem[] {
+  if (isLowConfidence(record)) return [];
+
+  const candidates: (DietShareNutritionItem | null)[] = [
+    metric(record.calories) != null
+      ? { key: 'calories', label: '热量', value: metric(record.calories)!, unit: 'kcal' }
+      : null,
+    metric(record.protein) != null
+      ? { key: 'protein', label: '蛋白质', value: metric(record.protein)!, unit: 'g' }
+      : null,
+    metric(record.carbs) != null
+      ? { key: 'carbs', label: '碳水', value: metric(record.carbs)!, unit: 'g' }
+      : null,
+    metric(record.fat) != null
+      ? { key: 'fat', label: '脂肪', value: metric(record.fat)!, unit: 'g' }
+      : null,
+  ];
+  return candidates.filter((item): item is DietShareNutritionItem => item != null);
+}
+
 function buildTags(record: DietShareRecord): string[] {
   if (isLowConfidence(record)) return ['待核对'];
   const tags: string[] = [];
@@ -170,6 +198,7 @@ export function buildDietSharePresentation(record: DietShareRecord): DietSharePr
     headline: buildHeadline(record, mealLabel),
     foodLine: record.food_items.trim(),
     macroLines: buildMacroLines(record),
+    nutritionItems: buildNutritionItems(record),
     tags: buildTags(record),
     ...(nextAction ? { nextAction } : {}),
     disclosure: buildDisclosure(record),

@@ -123,7 +123,7 @@ describe('DietShareCard Xiaohongshu poster', () => {
     jest.spyOn(Share, 'share').mockResolvedValue({ action: Share.sharedAction });
   });
 
-  it('renders the edited meal photo as the dominant 55% layer and uses the presentation contract once', () => {
+  it('renders the edited meal photo as the dominant layer with a structured nutrition grid', () => {
     const view = renderCard();
     const photoFrameStyle = StyleSheet.flatten(view.getByTestId('diet-share-photo-frame').props.style);
 
@@ -140,8 +140,14 @@ describe('DietShareCard Xiaohongshu poster', () => {
     expect(view.getByText('午餐')).toBeTruthy();
     expect(view.getByText('今天的午餐，能量很足')).toBeTruthy();
     expect(view.getByText(record.food_items)).toBeTruthy();
-    expect(view.getByText('约 900 kcal · 蛋白质 36g')).toBeTruthy();
-    expect(view.getByText('碳水 103g · 脂肪 42g')).toBeTruthy();
+    expect(view.getByTestId('diet-share-nutrition-grid')).toBeTruthy();
+    expect(view.getByTestId('diet-share-metric-calories')).toBeTruthy();
+    expect(view.getByTestId('diet-share-metric-protein')).toBeTruthy();
+    expect(view.getByTestId('diet-share-metric-carbs')).toBeTruthy();
+    expect(view.getByTestId('diet-share-metric-fat')).toBeTruthy();
+    ['热量', '蛋白质', '碳水', '脂肪', '900', '36', '103', '42', 'kcal', 'g']
+      .forEach(text => expect(view.getAllByText(text).length).toBeGreaterThan(0));
+    expect(view.queryByText('约 900 kcal · 蛋白质 36g')).toBeNull();
     expect(view.getByText('高蛋白')).toBeTruthy();
     expect(view.getByText('含纤维')).toBeTruthy();
     expect(view.getByText('下一餐补一份绿叶菜')).toBeTruthy();
@@ -163,7 +169,6 @@ describe('DietShareCard Xiaohongshu poster', () => {
       '不含体重 / 用户 ID / 私密健康数据',
       '能量结构',
     ].forEach(text => expect(queryByText(text)).toBeNull());
-    expect(queryByText('900')).toBeNull();
   });
 
   it('limits poster tags to three and the action to one', () => {
@@ -181,7 +186,7 @@ describe('DietShareCard Xiaohongshu poster', () => {
     expect(view.getAllByTestId('diet-share-next-action')).toHaveLength(1);
   });
 
-  it('caps long public copy to a deterministic 45% layout budget', () => {
+  it('gives long public copy a readable deterministic layout budget', () => {
     const view = renderCard({
       record: {
         ...record,
@@ -194,22 +199,19 @@ describe('DietShareCard Xiaohongshu poster', () => {
       },
     });
 
-    expect(view.getByTestId('diet-share-headline').props.numberOfLines).toBe(1);
+    expect(view.getByTestId('diet-share-headline').props.numberOfLines).toBe(2);
     expect(view.getByTestId('diet-share-food-line').props.numberOfLines).toBe(2);
     expect(view.getAllByTestId(/^diet-share-tag-/)).toHaveLength(3);
-    expect(view.getByTestId('diet-share-next-action').findByType(Text).props.numberOfLines).toBe(1);
+    expect(view.getByTestId('diet-share-next-action').findAllByType(Text)[1].props.numberOfLines).toBe(2);
     const copyStyle = StyleSheet.flatten(view.getByTestId('diet-share-poster-copy').props.style);
     expect(copyStyle).toEqual(expect.objectContaining({
-      height: '45%',
+      height: '48%',
       position: 'absolute',
       bottom: 0,
-      paddingTop: 10,
-      paddingBottom: 10,
-      gap: 4,
+      paddingTop: 14,
+      paddingBottom: 12,
     }));
-    // At the 330x440 in-sheet preview: 178pt inner height versus a 165pt
-    // worst-case line budget (rule, headline, food, macros, tags and footer).
-    expect(165).toBeLessThanOrEqual(440 * 0.45 - copyStyle.paddingTop - copyStyle.paddingBottom);
+    expect(183).toBeLessThanOrEqual(440 * 0.48 - copyStyle.paddingTop - copyStyle.paddingBottom);
   });
 
   it('renders partial nutrition without placeholder dashes', () => {
@@ -217,7 +219,9 @@ describe('DietShareCard Xiaohongshu poster', () => {
       record: { ...record, calories: 520, protein: null, carbs: null, fat: null },
     });
 
-    expect(view.getByText('约 520 kcal')).toBeTruthy();
+    expect(view.getByTestId('diet-share-metric-calories')).toBeTruthy();
+    expect(view.getByText('520')).toBeTruthy();
+    expect(view.queryByTestId('diet-share-metric-protein')).toBeNull();
     expect(view.queryByText(/--/)).toBeNull();
   });
 

@@ -50,10 +50,7 @@ import { containsMarkdownTable, preprocessMarkdownTables } from '../../utils/mar
 import { prepareSafeMarkdown, safeMarkdownIt } from '../../utils/safeMarkdown';
 import { normalizeAssistantContent } from '../../utils/assistantContentNormalizer';
 import { DietShareComposer } from '../diet/DietShareComposer';
-import {
-  buildChatDietShareInput,
-  buildDietSharePresentation,
-} from '../diet/dietSharePresentation';
+import { buildChatDietShareInput } from '../diet/dietSharePresentation';
 import type { MedicationSafetyAlert } from '../../services/medications';
 import InterventionDraftSheet from '../actions/InterventionDraftSheet';
 import { createInterventionDraft } from '../../services/actionCards';
@@ -835,7 +832,7 @@ function ChatBubbleInner({
             <DietShareComposer
               visible
               record={chatDietShareInput.record}
-              dateLabel={`今日 · ${buildDietSharePresentation(chatDietShareInput.record).mealLabel}`}
+              dateLabel="今日"
               photoSource={chatDietPhotoSource}
               onClose={() => setDietShareComposerOpen(false)}
               onShareText={handleCardShare}
