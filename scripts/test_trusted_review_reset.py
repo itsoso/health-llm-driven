@@ -50,6 +50,24 @@ class ReviewResetTests(unittest.TestCase):
             self.reset.reset_review(SHA, OP)
         self.assertFalse(self.operation.exists())
 
+    def assert_slow_proof_blocks_without_intent(self, elapsed):
+        now = [100]
+        self.patch(self.reset.time, "time", lambda: now[0])
+        self.policy["expires_at"] = 7301
+        put(self.config / "authorized-release.json", self.policy)
+        def slow_proof(*args):
+            now[0] += elapsed
+        with patch.object(self.reset, "_validate_production", slow_proof), self.assertRaises(self.server.LaunchError):
+            self.reset.reset_review(SHA, OP)
+        self.assertFalse(self.operation.exists())
+        self.assertNotIn("execute", self.events)
+
+    def test_slow_production_proof_rechecks_window_before_operation_intent(self):
+        self.assert_slow_proof_blocks_without_intent(300)
+
+    def test_production_proof_cannot_consume_an_expired_authorization(self):
+        self.assert_slow_proof_blocks_without_intent(7300)
+
     def setUp(self):
         self.reset = load("trusted_review_reset")
         self.bootstrap = load("bootstrap_trusted_release")

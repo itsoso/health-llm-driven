@@ -334,6 +334,8 @@ def _validate_workspace(sha, source, bootstrap, server):
         raise ResetError("deployment environment differs from fixed candidate")
     env = server.clean_environment(workspace)
     env.update(DEPLOY_SOURCE_SHA=sha, DEPLOY_ENV_FILE=str(candidate))
+    # Expensive proofs must not consume the execution and recovery reserve.
+    server._assert_deployment_window(policy)
     return env
 
 
