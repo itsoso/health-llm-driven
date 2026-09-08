@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | Build 264 已由 Apple 处理完成并通过 TestFlight 安装到物理 iPhone；同包基础导航验收通过，完整业务验收与最终送审闸仍未完成，继续冻结 production OTA |
+| 当前阶段 | 后端已部署 `329967684`；手机仍为 1.3.3 (265)，新包因发布凭据未通过而未创建。模拟器连接新后端六项基础测试通过；真机锁屏、审核数据恢复、GitHub/ASC 身份确认与完整送审闸待完成，继续冻结 production OTA |
 | 状态 | implementation |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -575,3 +575,27 @@
 - 补五条红测复现领取前漏检；最小修复让空白拒绝和锁定 CLI 只读 whoami 在 claim 前执行，
   身份探针失败只输出固定错误，不消耗一次性标记。当前定向回归 51 PASS；固定提交复审
   和完整集成待完成。旧 backend 未终结前不得更换远端 main 或撤销恢复权限。
+- `b77d8574e` 独立 G4 GO，workflow/parallel 51 PASS；独立 shell 探针另覆盖 gate 失败、
+  身份探针失败及输出抑制、成功后的 token 清除。固定 CI-mode 集成 492 PASS（195.52 秒），
+  preflight/type drift/secret/map PASS，精确云端 CI `34203319745` SUCCESS。
+- 旧 release `34202264592` 已终结：backend SUCCESS、ios-build FAILURE、TestFlight
+  SKIPPED，整体 FAILURE。后端备份/恢复演练/站外真实性、schema/迁移、服务稳定及终态
+  闸均完成；新鲜生产 HEAD 为 `329967684a361b7540e85176fba959fc503bd6d1`，API、DB、
+  Redis、Celery healthy，独立 capability status 为 SUCCEEDED。EAS 按该 SHA 查询零构建。
+- 终态后通过原受审 bootstrap revoke 撤销 `329967684` 身份，移除该轮 loopback 私钥及
+  本机专用 SSH 私钥；GitHub 三项临时 secrets 与 Expo 专用 token 均已移除，不动其他
+  身份。空 robot `reva-release-20260908-r2` 的删除要求 Expo 邮件二次认证，已取消该删除
+  请求；该 robot 当前没有 access token，不将其记成已删除。所有消费记录及旧归档继续
+  保留，下一轮必须新 SHA/新身份，不能重跑旧 claim。
+- 普通入口模拟器连接新后端的六项基础回归 6 PASS / 0 skip，证据
+  `/tmp/reva-r2-backend329-simulator.xcresult`，已查看冷启动截图。仅为本机模拟器基础
+  交互，不是新 EAS 签名包，不含健康写入、语音、相机及完整分享验收。
+- 物理 iPhone 在用户解锁后已再次自动锁屏；本次新后端基础回归持续等待设备就绪，
+  未开始任何测试，随后对本次 Xcode PID 发 SIGINT，exit 73 / TEST INTERRUPTED。
+  `/tmp/reva-r2-backend329-build265-physical.xcresult` 不计通过；此前 TestFlight 条目
+  1 PASS 仅证明可见安装版本仍为 265，不能替代本轮真机回归。
+- 新鲜审核账号 live gate 在登录/身份/Today action 检查后 BLOCK 于固定演示会话不是默认
+  最新会话。没有删除现有会话、写健康记录或绕过 guarded review-fixture reset。GitHub
+  安全表单需 Passkey/验证器二次认证，未完成保存；已取消旧 token 的待确认操作。ASC
+  仍无有效登录。本轮无新包、无 OTA、无 App Review 提交；下一步为完成交互认证、受控
+  恢复审核 fixture、从绿色精确 revision 创建新包，再做同包真机全项验收与最终送审闸。
