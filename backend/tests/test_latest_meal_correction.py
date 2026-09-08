@@ -144,6 +144,7 @@ async def test_stream_corrects_previous_meal_before_asking_model_to_choose_a_too
     assert len(calls) == 1 and calls[0][1]["operation"] == "update"
     assert calls[0][1]["record_id"] == 101 and calls[0][1]["data"]["calories"] == 300
     assert events[-1]["data"].get("write_receipts")
+    assert events[-1]["data"]["completion_status"] == "complete"
 
 
 @pytest.mark.asyncio
