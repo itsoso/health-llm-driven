@@ -313,6 +313,10 @@ jobs:
           scripts/test_trusted_release_receipt.py
           scripts/test_trusted_release_server.py
           scripts/test_bootstrap_trusted_release.py
+          scripts/test_release_parallel.py
+          scripts/test_trusted_eas_build.py
+          scripts/test_release_acceptance.py
+          scripts/test_ci_timing_refresh.py
 
   agent-runtime-postgres:
     name: agent-runtime-postgres

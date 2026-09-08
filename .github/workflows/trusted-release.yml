@@ -7,7 +7,7 @@ on:
         required: true
         type: string
       target:
-        description: Validate first; release deploys backend then creates a TestFlight build
+        description: Validate first; release builds alongside backend, then uploads after success
         required: true
         default: validate
         type: choice
@@ -49,9 +49,63 @@ jobs:
       - name: Record non-release result
         run: echo 'Exact source and CI preflight passed. This is not a deployment receipt.' >> "$GITHUB_STEP_SUMMARY"
 
-  backend:
+  build-permission:
     if: inputs.target == 'release'
     needs: preflight
+    environment: release-production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Independently materialize and recheck before read-only server readiness checks
+        env:
+          TARGET_SHA: ${{ inputs.sha }}
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_REPOSITORY" = itsoso/health-llm-driven
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$TARGET_SHA" = "$GITHUB_SHA"
+          /usr/bin/sudo /usr/bin/install -d -m 0755 /opt/reva-release
+          /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_NO_REPLACE_OBJECTS=1 /bin/bash --noprofile --norc -eu -c '
+            /usr/bin/git -c init.templateDir= init -b main /opt/reva-release/source
+            cd /opt/reva-release/source
+            /usr/bin/git remote add origin https://github.com/itsoso/health-llm-driven.git
+            /usr/bin/git -c core.hooksPath=/dev/null fetch --depth=1 origin "$1"
+            test "$(/usr/bin/git rev-parse FETCH_HEAD)" = "$1"
+            /usr/bin/git -c core.hooksPath=/dev/null checkout -B main "$1"
+            test -z "$(/usr/bin/git status --porcelain --untracked-files=all)"
+            /usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1"
+          ' reva-bootstrap "$TARGET_SHA"
+      - name: Check actual server readiness without consuming authorization
+        env:
+          TARGET_SHA: ${{ inputs.sha }}
+          RELEASE_KEY: ${{ secrets.REVA_RELEASE_SSH_KEY }}
+          RELEASE_HOST_KEYS: ${{ secrets.REVA_RELEASE_KNOWN_HOSTS }}
+        run: |
+          test -n "$RELEASE_KEY"
+          test -n "$RELEASE_HOST_KEYS"
+          /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
+            /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py \
+              --sha "$TARGET_SHA" --workflow-sha "$GITHUB_SHA"
+          umask 077
+          private_dir="$(mktemp -d)"
+          trap 'rm -f -- "$private_dir/key" "$private_dir/known_hosts"; rmdir -- "$private_dir"' EXIT
+          printf '%s\n' "$RELEASE_KEY" > "$private_dir/key"
+          printf '%s\n' "$RELEASE_HOST_KEYS" > "$private_dir/known_hosts"
+          unset RELEASE_KEY RELEASE_HOST_KEYS
+          /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp /usr/bin/ssh \
+            -F /dev/null -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o IdentityAgent=none -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$private_dir/known_hosts" \
+            -o GlobalKnownHostsFile=/dev/null -o ClearAllForwardings=yes \
+            -o ConnectTimeout=15 -i "$private_dir/key" root@39.98.206.178 \
+              "check $TARGET_SHA" | \
+            /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
+            /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_receipt.py \
+              --sha "$TARGET_SHA" --state CHECKED
+
+  backend:
+    if: inputs.target == 'release'
+    needs: build-permission
     environment: release-production
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -102,9 +156,99 @@ jobs:
             /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_receipt.py \
               --sha "$TARGET_SHA" --state SUCCEEDED
 
+  ios-build:
+    if: inputs.target == 'release'
+    needs: build-permission
+    environment: release-production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    outputs:
+      build-id: ${{ steps.build.outputs.build-id }}
+    steps:
+      - name: Independently materialize and recheck before parallel native build
+        env:
+          TARGET_SHA: ${{ inputs.sha }}
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_REPOSITORY" = itsoso/health-llm-driven
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$TARGET_SHA" = "$GITHUB_SHA"
+          /usr/bin/sudo /usr/bin/install -d -m 0755 /opt/reva-release
+          /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_NO_REPLACE_OBJECTS=1 /bin/bash --noprofile --norc -eu -c '
+            /usr/bin/git -c init.templateDir= init -b main /opt/reva-release/source
+            cd /opt/reva-release/source
+            /usr/bin/git remote add origin https://github.com/itsoso/health-llm-driven.git
+            /usr/bin/git -c core.hooksPath=/dev/null fetch --depth=1 origin "$1"
+            test "$(/usr/bin/git rev-parse FETCH_HEAD)" = "$1"
+            /usr/bin/git -c core.hooksPath=/dev/null checkout -B main "$1"
+            test -z "$(/usr/bin/git status --porcelain --untracked-files=all)"
+            /usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1"
+          ' reva-bootstrap "$TARGET_SHA"
+      - name: Fixed Node toolchain
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22.13.0
+          package-manager-cache: false
+      - name: Install locked CLI and app dependencies without lifecycle scripts or shared cache
+        run: |
+          node_bin="$(dirname "$(command -v node)")"
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
+            npm ci --prefix /opt/reva-release/source/scripts/release-tools --ignore-scripts --no-audit --no-fund
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
+            npm ci --prefix /opt/reva-release/source/mobile --ignore-scripts --no-audit --no-fund
+      - name: Claim one build in this job before every vendor create attempt
+        env:
+          TARGET_SHA: ${{ inputs.sha }}
+          RELEASE_KEY: ${{ secrets.REVA_RELEASE_SSH_KEY }}
+          RELEASE_HOST_KEYS: ${{ secrets.REVA_RELEASE_KNOWN_HOSTS }}
+        run: |
+          test -n "$RELEASE_KEY"
+          test -n "$RELEASE_HOST_KEYS"
+          /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
+            /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py \
+              --sha "$TARGET_SHA" --workflow-sha "$GITHUB_SHA"
+          umask 077
+          private_dir="$(mktemp -d)"
+          trap 'rm -f -- "$private_dir/key" "$private_dir/known_hosts"; rmdir -- "$private_dir"' EXIT
+          printf '%s\n' "$RELEASE_KEY" > "$private_dir/key"
+          printf '%s\n' "$RELEASE_HOST_KEYS" > "$private_dir/known_hosts"
+          unset RELEASE_KEY RELEASE_HOST_KEYS
+          /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp /usr/bin/ssh \
+            -F /dev/null -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o IdentityAgent=none -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$private_dir/known_hosts" \
+            -o GlobalKnownHostsFile=/dev/null -o ClearAllForwardings=yes \
+            -o ConnectTimeout=15 -i "$private_dir/key" root@39.98.206.178 \
+              "claim-build $TARGET_SHA" | \
+            /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
+            /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_receipt.py \
+              --sha "$TARGET_SHA" --state CLAIMED
+          # If the following vendor call has an unknown outcome, this claim is
+          # deliberately NOT reset. Query EAS for the accepted build; never retry create.
+
+      - name: Build once without uploading to Apple
+        id: build
+        env:
+          TARGET_SHA: ${{ inputs.sha }}
+          EXPO_TOKEN: ${{ secrets.REVA_RELEASE_EXPO_TOKEN }}
+        run: |
+          test -n "$EXPO_TOKEN"
+          /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
+            /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py \
+              --sha "$TARGET_SHA" --workflow-sha "$GITHUB_SHA"
+          node_bin="$(dirname "$(command -v node)")"
+          cd /opt/reva-release/source/mobile
+          # Fixed reviewed config; no OTA and no formal App Review submission.
+          build_id="$(/usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
+            EXPO_TOKEN="$EXPO_TOKEN" CI=1 SENTRY_DISABLE_AUTO_UPLOAD=true \
+            "$node_bin/node" /opt/reva-release/source/scripts/release-tools/node_modules/eas-cli/bin/run \
+              build -p ios --profile production --non-interactive --wait --json | \
+            /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_eas_build.py --sha "$TARGET_SHA")"
+          printf 'build-id=%s\n' "$build_id" >> "$GITHUB_OUTPUT"
+
   testflight:
     if: inputs.target == 'release'
-    needs: backend
+    needs: [backend, ios-build]
     environment: release-production
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -140,7 +284,7 @@ jobs:
             npm ci --prefix /opt/reva-release/source/scripts/release-tools --ignore-scripts --no-audit --no-fund
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             npm ci --prefix /opt/reva-release/source/mobile --ignore-scripts --no-audit --no-fund
-      - name: Claim one-time TestFlight creation permission before exposing vendor credentials
+      - name: Claim one-time TestFlight upload permission before exposing vendor credentials
         env:
           TARGET_SHA: ${{ inputs.sha }}
           RELEASE_KEY: ${{ secrets.REVA_RELEASE_SSH_KEY }}
@@ -169,19 +313,27 @@ jobs:
               --sha "$TARGET_SHA" --state CLAIMED
           # If the following vendor call has an unknown outcome, this claim is
           # deliberately NOT reset. Query EAS for the accepted build; never retry create.
-      - name: Recheck exact source and create production TestFlight build
+      - name: Revalidate and upload the exact finished build
         env:
           TARGET_SHA: ${{ inputs.sha }}
+          BUILD_ID: ${{ needs.ios-build.outputs.build-id }}
           EXPO_TOKEN: ${{ secrets.REVA_RELEASE_EXPO_TOKEN }}
         run: |
           test -n "$EXPO_TOKEN"
+          [[ "$BUILD_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]
           /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
             /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py \
               --sha "$TARGET_SHA" --workflow-sha "$GITHUB_SHA"
           node_bin="$(dirname "$(command -v node)")"
           cd /opt/reva-release/source/mobile
-          # Fixed reviewed config; no OTA and no formal App Review submission.
+          # Read vendor metadata again; never select an implicit latest build.
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
-            EXPO_TOKEN="$EXPO_TOKEN" CI=1 SENTRY_DISABLE_AUTO_UPLOAD=true \
+            EXPO_TOKEN="$EXPO_TOKEN" CI=1 \
             "$node_bin/node" /opt/reva-release/source/scripts/release-tools/node_modules/eas-cli/bin/run \
-              build -p ios --profile production --non-interactive --auto-submit
+              build:view "$BUILD_ID" --json | \
+            /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_eas_build.py \
+              --sha "$TARGET_SHA" --id "$BUILD_ID"
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
+            EXPO_TOKEN="$EXPO_TOKEN" CI=1 \
+            "$node_bin/node" /opt/reva-release/source/scripts/release-tools/node_modules/eas-cli/bin/run \
+              submit -p ios --id "$BUILD_ID" --profile production --non-interactive --wait

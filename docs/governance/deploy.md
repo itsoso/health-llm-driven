@@ -26,7 +26,7 @@
 #### 受审隔离发布入口
 
 手动触发 `.github/workflows/trusted-release.yml`，先以 `target=validate` 验证当前 main
-的精确 SHA 和真实 CI，再以同一 SHA 执行 `target=release`。三个 job 均使用新的
+的精确 SHA 和真实 CI，再以同一 SHA 执行 `target=release`。各 job 均使用新的
 GitHub 托管 VM，不上传本机工作区、不复用测试 runner 或缓存；生产权限只在只读闸后使用。
 GitHub 控制面、受审代码、固定工具链和服务器 root 是信任前提，不声称抵御 runner root 失陷。
 
@@ -37,18 +37,30 @@ GitHub 控制面、受审代码、固定工具链和服务器 root 是信任前�
 安装器只接受八小时内到期的专用 ed25519 公钥，拒绝覆盖现有安装。
 
 云端身份由服务器 forced-command 限定为绑定同一 SHA 的 `run`、`status`、
-`claim-testflight`，不提供 shell/SFTP；服务器内部的短期 loopback 身份不离开服务器。
+`check`、`claim-build`、`claim-testflight`，不提供 shell/SFTP；服务器内部的短期 loopback 身份不离开服务器。
 后端业务部署仍由受审 fresh source 中的 **`deploy.sh -b`** 执行全部事务闸。
 `DEPLOY_SOURCE_SHA` 仅选择精确来源的 verify-only 模式，不是授权或绕过检查的开关。
 候选环境从当前生产 `root:health-app 0640` 配置派生，不改变其凭据和权限合同。
 
+`check` 在消费前只读验证真实 Git HTTP/1.1 主干可达性、loopback 认证、固定 Python 与
+授权窗口；其成功不是部署证明。随后 backend 与 ios-build 并行，构建不自动上传。
+`claim-build` 必须位于 ios-build job 内每次 vendor create 前，独立短锁不与正在运行的
+backend launcher 锁互斥；单独重跑失败 job 也不能复用旧 claim 再创建构建。
 启动和原生构建 claim 在调用前持久化；未知结果不得重新 dispatch 规避一次性标记。
+上传 job 必须同时等待 backend 和 ios-build 成功，仍以 `claim-testflight` 验证后端
+SUCCEEDED 并消费一次性上传权限。仅提交本轮 job 返回且经 EAS 再次验证的精确 build ID，
+要求 source SHA、FINISHED、IOS、STORE、production 全匹配；禁止隐式 latest。
+后端失败时可能浪费本次构建费用，但不得上传；不因并行删除备份、恢复或回滚闸。
 后端 STARTED/NEEDS_OPERATOR 时保留权限和 lease 供调查，不按“锁空闲”推断已终结。
 EAS 调用响应丢失时按 source SHA 查询已有构建，记录其 build/submission ID，禁止重复 create。
 完成后撤销本次专用授权、环境 secrets 与新建 Expo robot token；只移除精确匹配项，
 保留其他密钥及审计记录。权限到期不证明已启动的进程终止。
 
 该入口不替代下面的备份、恢复、迁移、运行态、健康和回滚规则，也不提交正式 App Review。
+
+离线订单 SSE 验收辅助：`python scripts/release_acceptance.py analyze < sanitized-events.sse`。
+仅输入合成或已脱敏事件，输出不含原文。pending_confirmation 是需要用户确认的草稿；
+recorded_receipt 仍要求独立数据库回查，不能凭该脚本通过声称完整 App 或 Apple 验收通过。
 
 **配置文件: `.env`**
 

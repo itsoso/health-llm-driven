@@ -22,7 +22,7 @@ def test_untrusted_or_wrong_identity_receipt_is_rejected(body):
     assert result.stdout == ""
 
 
-@pytest.mark.parametrize("state", ["SUCCEEDED", "CLAIMED"])
+@pytest.mark.parametrize("state", ["SUCCEEDED", "CLAIMED", "CHECKED"])
 def test_exact_server_identity_receipt_is_accepted(state):
     result = subprocess.run([sys.executable, "-I", str(SCRIPT), "--sha", SHA, "--state", state],
                             input=json.dumps({"sha": SHA, "state": state}), text=True, capture_output=True, check=False)

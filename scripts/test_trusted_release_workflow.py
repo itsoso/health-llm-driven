@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = yaml.safe_load((ROOT / ".github/workflows/trusted-release.yml").read_text())
 
 
-@pytest.mark.parametrize("job", ["preflight", "backend", "testflight"])
+@pytest.mark.parametrize("job", ["preflight", "build-permission", "backend", "ios-build", "testflight"])
 @pytest.mark.parametrize("changes", [
     {"TARGET_SHA": "main"},
     {"TARGET_SHA": "a" * 40},
@@ -50,8 +50,10 @@ def test_dispatch_cannot_auto_publish_or_reuse_test_runner():
         if name != "preflight":
             assert job["environment"] == "release-production"
             assert job["if"] == "inputs.target == 'release'"
-    assert WORKFLOW["jobs"]["backend"]["needs"] == "preflight"
-    assert WORKFLOW["jobs"]["testflight"]["needs"] == "backend"
+    assert WORKFLOW["jobs"]["build-permission"]["needs"] == "preflight"
+    assert WORKFLOW["jobs"]["backend"]["needs"] == "build-permission"
+    assert WORKFLOW["jobs"]["ios-build"]["needs"] == "build-permission"
+    assert set(WORKFLOW["jobs"]["testflight"]["needs"]) == {"backend", "ios-build"}
 
 
 def test_actions_are_immutable_and_preflight_has_no_production_secret():
@@ -84,3 +86,12 @@ def test_missing_expo_credential_fails_before_ci_or_vendor_call():
     )
     assert result.returncode == 1
     assert "not found" not in result.stderr
+
+
+def test_every_run_script_is_valid_bash():
+    for job in WORKFLOW["jobs"].values():
+        for step in job["steps"]:
+            if "run" in step:
+                result = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-n"],
+                                        input=step["run"], text=True, capture_output=True, check=False)
+                assert result.returncode == 0, (step["name"], result.stderr)

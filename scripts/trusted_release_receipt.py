@@ -18,7 +18,7 @@ def unique(pairs):
 def main():
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument("--sha", required=True)
-    parser.add_argument("--state", required=True, choices=("SUCCEEDED", "CLAIMED"))
+    parser.add_argument("--state", required=True, choices=("SUCCEEDED", "CLAIMED", "CHECKED"))
     args = parser.parse_args()
     try:
         if not sys.flags.isolated or re.fullmatch(r"[0-9a-f]{40}", args.sha) is None:

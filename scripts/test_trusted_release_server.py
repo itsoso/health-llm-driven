@@ -45,7 +45,7 @@ def test_actions_bind_an_exact_expected_sha():
     assert server.parse_command("claim-testflight " + SHA) == ("claim-testflight", SHA)
 
 
-@pytest.mark.parametrize("action", ["run", "status", "claim-testflight"])
+@pytest.mark.parametrize("action", ["run", "status", "check", "claim-build", "claim-testflight"])
 def test_rpc_sha_only_compares_with_policy_and_cannot_select_a_release(action):
     server = load_server()
     with pytest.raises(server.LaunchError):
@@ -312,7 +312,7 @@ def test_concurrent_native_claim_is_blocked_before_marker(monkeypatch, tmp_path)
     assert not (tmp_path / "native-started.json").exists()
 
 
-@pytest.mark.parametrize("action", ["run", "status", "claim-testflight"])
+@pytest.mark.parametrize("action", ["run", "status", "check", "claim-build", "claim-testflight"])
 def test_main_rejects_sha_mismatch_before_any_state_or_source_mutation(monkeypatch, tmp_path, action):
     server = load_server()
     monkeypatch.setattr(server, "sys", SimpleNamespace(flags=SimpleNamespace(isolated=1), argv=["fixed"], stderr=io.StringIO()))

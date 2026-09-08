@@ -31,7 +31,7 @@ class LaunchError(Exception):
 
 
 def parse_command(command):
-    match = re.fullmatch(r"(run|status|claim-testflight) ([0-9a-f]{40})", command)
+    match = re.fullmatch(r"(run|status|check|claim-build|claim-testflight) ([0-9a-f]{40})", command)
     if match is None:
         raise LaunchError("only fixed release commands with an exact SHA are allowed")
     return match.group(1), match.group(2)
@@ -215,8 +215,63 @@ def release_status(sha, workspace):
     }
 
 
+def check_readiness(policy):
+    """Read-only target probes before consuming any build/deployment claim."""
+    _assert_deployment_window(policy)
+    validate_loopback(policy)
+    secure_path(Path(PYTHON))
+    env = clean_environment(STATE)
+    # No configured HOME or helper binaries are consulted by these fixed tools.
+    env.update(PATH="/usr/bin:/bin", HOME="/nonexistent")
+    git = ["/usr/bin/git", "-c", "core.hooksPath=/dev/null",
+           "-c", "http.followRedirects=false", "-c", "http.version=HTTP/1.1",
+           "-c", "http.lowSpeedLimit=1024", "-c", "http.lowSpeedTime=30",
+           "ls-remote", ORIGIN, "refs/heads/main"]
+    result = subprocess.run(git, env=env, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                            text=True, check=True, timeout=90)
+    if result.stdout.strip() != f"{policy['sha']}\trefs/heads/main":
+        raise LaunchError("remote main differs from authorized release")
+    subprocess.run(["/usr/bin/ssh", "-F", str(CONFIG / "loopback.conf"),
+                    "health", "/usr/bin/true"], env=env, stdin=subprocess.DEVNULL,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                   check=True, timeout=30)
+    _assert_deployment_window(policy)
+
+
+def claim_build(policy, workspace):
+    """Reserve build only; upload keeps its own backend-success gate.
+
+    A separate short lock permits claiming while deployment owns launcher.lock.
+    This RPC runs in the build job itself, including every single-job rerun.
+    A lost response is consumed and cannot authorize a second vendor build.
+    """
+    workspace = Path(workspace)
+    secure_path(workspace, directory=True)
+    lock = workspace / "build.lock"
+    fd = os.open(lock, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        secure_path(lock, private=True)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise LaunchError("another release invocation is active") from None
+        if read_status(policy["sha"], workspace)["state"] == "NEEDS_OPERATOR":
+            raise LaunchError("failed backend requires operator review before build")
+        marker = workspace / "build-started.json"
+        if os.path.lexists(marker):
+            raise LaunchError("build authorization already consumed; operator review required")
+        check_readiness(policy)
+        _assert_deployment_window(policy)
+        _write_private(marker, json.dumps({"sha": policy["sha"], "state": "STARTED"}).encode())
+        _sync_directory(workspace.parent)
+        return {"sha": policy["sha"], "state": "CLAIMED"}
+    finally:
+        os.close(fd)
+
+
 def claim_testflight(policy, workspace):
-    """Consume native creation permission before EAS can increment or submit.
+    """Consume upload permission only after confirmed backend success.
 
     A lost response is still a consumed claim. Only an operator may investigate
     the existing EAS build; this interface cannot clear or retry the claim.
@@ -391,8 +446,14 @@ def main():
         workspace = STATE / policy["sha"]
         if command == "status":
             result = release_status(policy["sha"], workspace)
+        elif command == "check":
+            check_readiness(policy)
+            result = {"sha": policy["sha"], "state": "CHECKED"}
         elif command == "claim-testflight":
             result = claim_testflight(policy, workspace)
+        elif command == "claim-build":
+            workspace.mkdir(mode=0o700, exist_ok=True)
+            result = claim_build(policy, workspace)
         else:
             workspace.mkdir(mode=0o700, exist_ok=True)
             result = run_once(policy, workspace, lambda: prepare_source(policy, workspace), lambda: deploy(policy, workspace))

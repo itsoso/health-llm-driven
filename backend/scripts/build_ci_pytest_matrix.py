@@ -5,19 +5,73 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import re
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
-
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CATALOG = ROOT / ".github" / "ci" / "backend-pytest-shards.json"
 
 
+def scheduling_seconds(shard: dict[str, Any]) -> float:
+    """Measured process time affects placement, never the worker's deadline."""
+    value = shard.get("scheduling_seconds", shard.get("estimated_seconds", 1.0))
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value <= 0
+    ):
+        raise ValueError("scheduling seconds must be a positive finite number")
+    return float(value)
+
+
+def _validate_shards(shards: Sequence[dict[str, Any]]) -> None:
+    if not shards or any(not isinstance(shard, dict) for shard in shards):
+        raise ValueError("pytest shard catalog requires shard objects")
+    labels = [shard.get("label") for shard in shards]
+    if any(not isinstance(label, str) or not label.strip() for label in labels):
+        raise ValueError("every shard requires a non-empty string label")
+    if len(labels) != len(set(labels)):
+        raise ValueError("duplicate shard label")
+    for shard in shards:
+        scheduling_seconds(shard)
+
+
 def load_catalog(path: Path = DEFAULT_CATALOG) -> list[dict[str, Any]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("pytest shard catalog must be an object")
     shards = payload.get("shards")
     if not isinstance(shards, list) or not shards:
         raise ValueError("pytest shard catalog must contain a non-empty shards list")
+    _validate_shards(shards)
+    if "timing_source" in payload or any("scheduling_seconds" in shard for shard in shards):
+        source = payload.get("timing_source")
+        if not isinstance(source, dict):
+            raise ValueError("measured scheduling requires timing_source provenance")
+        if (
+            any("scheduling_seconds" not in shard for shard in shards)
+            or type(source.get("sample_count")) is not int
+            or source["sample_count"] != len(shards)
+        ):
+            raise ValueError("timing source must cover every shard exactly once")
+        if type(source.get("run_id")) is not int or source["run_id"] <= 0:
+            raise ValueError("timing source requires a positive run_id")
+        if not re.fullmatch(r"[0-9a-f]{40}", str(source.get("head_sha", ""))):
+            raise ValueError("timing source requires a full head_sha")
+        if source.get("measurement") != "successful_attempt_process_wall_seconds":
+            raise ValueError("timing source must measure successful attempt process wall time")
+        excluded = source.get("excluded_timeout_seconds")
+        if (
+            isinstance(excluded, bool)
+            or not isinstance(excluded, (int, float))
+            or not math.isfinite(excluded)
+            or excluded < 0
+        ):
+            raise ValueError("excluded timeout seconds must be non-negative and finite")
     return shards
 
 
@@ -28,11 +82,7 @@ def balance_shards(
     if worker_count < 1:
         raise ValueError("worker_count must be at least 1")
 
-    labels = [str(shard.get("label") or "") for shard in shards]
-    if len(labels) != len(set(labels)):
-        raise ValueError("duplicate shard label")
-    if not all(labels):
-        raise ValueError("every shard requires a label")
+    _validate_shards(shards)
 
     worker_count = min(worker_count, len(shards))
     bins: list[dict[str, Any]] = [
@@ -41,7 +91,7 @@ def balance_shards(
     ordered = sorted(
         shards,
         key=lambda shard: (
-            -float(shard.get("estimated_seconds", 1.0)),
+            -scheduling_seconds(shard),
             str(shard["label"]),
         ),
     )
@@ -51,7 +101,7 @@ def balance_shards(
             key=lambda item: (item[1]["seconds"], item[0]),
         )[1]
         target["labels"].append(str(shard["label"]))
-        target["seconds"] += float(shard.get("estimated_seconds", 1.0))
+        target["seconds"] += scheduling_seconds(shard)
 
     return [
         {
