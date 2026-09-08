@@ -15,6 +15,7 @@ from app.services.agent_executor import (
     _write_operation_fingerprint,
 )
 from app.services.agent_kernel.types import GoalSpec
+from app.services.agent_kernel.capability_policy import normalize_supplement_dosage
 
 
 def _tool_call(
@@ -31,6 +32,24 @@ def _tool_call(
             "arguments": json.dumps(arguments, ensure_ascii=False),
         },
     }
+
+
+@pytest.mark.parametrize("unit", ("滴", "颗", "喷", "粒", "未知单位"))
+def test_supplement_dosage_comparison_preserves_decimal_amount(unit):
+    assert normalize_supplement_dosage(f"1.5{unit}") != normalize_supplement_dosage(f"15{unit}")
+    model = [_tool_call("model", {
+        "record_type": "supplement", "data": {"supplement_name": "红景天", "dosage": f"1.5{unit}"},
+    })]
+    grounded = [_tool_call("grounded", {
+        "record_type": "supplement", "data": {"supplement_name": "红景天", "dosage": f"15{unit}"},
+    })]
+    assert _should_replace_with_deterministic_supplement_calls(model, grounded) is True
+
+
+@pytest.mark.parametrize("left,right", (("两粒", "2.0粒"), ("1.50滴", "1.5滴"),
+                                        ("2 毫升", "2ml"), ("半颗", "0.5颗")))
+def test_supplement_dosage_comparison_accepts_equivalent_supported_amounts(left, right):
+    assert normalize_supplement_dosage(left) == normalize_supplement_dosage(right)
 
 
 def test_water_goal_replaces_model_amount_and_record_type_with_goal_payload():

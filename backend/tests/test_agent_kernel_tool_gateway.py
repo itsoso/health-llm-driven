@@ -1438,6 +1438,31 @@ async def test_calendar_window_health_read_is_hard_blocked_until_representable(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize("message", (
+    "昨天我爸晚餐吃得怎么样？",
+    "昨天张三晚餐吃得怎么样？",
+    "昨天和前天吃得怎么样？",
+    "昨天的午餐和晚餐吃得怎么样？",
+))
+async def test_diet_history_nonself_or_partial_scope_never_dispatches(policy_mode, message):
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request)
+        return "unexpected"
+
+    result = await gateway.execute(ToolExecutionRequest(
+        tool_name="health_manage",
+        arguments={"record_type": "diet", "operation": "list", "date": "2026-07-16"},
+    ), dispatch)
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
 async def test_exact_yesterday_diet_list_is_projected_from_turn_scope(policy_mode):
     gateway = ToolGateway(
         _snapshot(

@@ -9,6 +9,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from app.services.agent_kernel.goal_spec import (
@@ -56,6 +57,7 @@ from app.services.agent_kernel.write_safety import (
 )
 from app.services.clinician_provenance_guard import classify_clinician_turn
 from app.services.health_query_dimensions import normalize_health_query_args
+from app.services.utterance_intent_classifier import MEAL_TYPES
 
 READ_ONLY_TOOLS = frozenset(
     spec.name
@@ -1904,7 +1906,22 @@ def _manage_list_turn_record_type(text: str) -> str | None:
 
 
 _FULL_DAY_DIET_QUERY_RE = re.compile(
-    r"(?:一整天|整天|全天|一天(?:的)?(?:整体|全部)|全天(?:的)?整体)"
+    r"(?:一整天|整天|全天|一日三餐|三餐|一天(?:的)?(?:整体|全部)|全天(?:的)?整体)"
+)
+_DIET_HISTORY_DAY_OFFSETS = {
+    "前天": -2, "昨天": -1, "昨日": -1, "昨晚": -1, "昨夜": -1,
+    "今天": 0, "今日": 0,
+}
+_DIET_HISTORY_DAY_RE = re.compile("|".join(_DIET_HISTORY_DAY_OFFSETS))
+_DIET_HISTORY_QUERY_RE = re.compile(
+    r"(?:前天|昨天|昨日|昨晚|昨夜|今天|今日|"
+    r"早上|中午|晚上|早餐|早饭|午餐|午饭|中饭|晚餐|晚饭|加餐|零食|夜宵|下午茶|"
+    r"一整天|一日三餐|整天|全天|一天|三餐|整体|全部|"
+    r"我自己|本人|自己|我|的|得|了|是|和|与|及|并|分别|再|也|"
+    r"请|帮|一下|查询|查|看看|看|列出|列|出|分析|评价|评估|总结|复盘|"
+    r"饮食|餐食|食物|记录|情况|营养|热量|结构|摄入|吃|喝|"
+    r"怎么样|怎么|怎样|如何|什么|哪些|多少|好不好|健康吗|合理吗|均衡吗|呢|吗|"
+    r"[\s，,。.!！?？；;：:、])+"
 )
 
 
@@ -1925,12 +1942,32 @@ def project_diet_manage_list_to_turn(
         or intent.operation not in {"read", "analyze"}
     ):
         return None
+    text = normalize_health_authorization_text(snapshot.envelope.text)
+    # The one-date intent frame cannot authorize omitted people, dates or meals.
+    # Unknown prose goes back to clarification, not a partial personal lookup.
+    if _DIET_HISTORY_QUERY_RE.fullmatch(text) is None:
+        return None
+    requested_dates = {
+        snapshot.context.current_time.date() + timedelta(days=_DIET_HISTORY_DAY_OFFSETS[label])
+        for label in _DIET_HISTORY_DAY_RE.findall(text)
+    }
+    if len(requested_dates) != 1:
+        return None
     target_date = str(intent.scope.get("date") or "").strip()
     try:
         parsed_date = date.fromisoformat(target_date)
     except ValueError:
         return None
-    if parsed_date > snapshot.context.current_time.date():
+    if parsed_date not in requested_dates or parsed_date > snapshot.context.current_time.date():
+        return None
+
+    full_day = bool(_FULL_DAY_DIET_QUERY_RE.search(text))
+    requested_meals = {
+        meal for meal, labels in MEAL_TYPES.items() if any(label in text for label in labels)
+    }
+    if re.search(r"昨晚|昨夜", text):
+        requested_meals.add("dinner")
+    if len(requested_meals) > 1 and not full_day:
         return None
 
     projected: dict[str, Any] = {
@@ -1938,11 +1975,8 @@ def project_diet_manage_list_to_turn(
         "operation": "list",
         "date": parsed_date.isoformat(),
     }
-    meal_type = str(intent.scope.get("meal_type") or "").strip().lower()
-    if not meal_type and re.search(r"(?:昨晚|昨夜)", snapshot.envelope.text):
-        meal_type = "dinner"
-    if meal_type and not _FULL_DAY_DIET_QUERY_RE.search(snapshot.envelope.text):
-        projected["meal_type"] = meal_type
+    if requested_meals and not full_day:
+        projected["meal_type"] = next(iter(requested_meals))
     return projected
 
 
@@ -5904,6 +5938,24 @@ def _normalize_medication_dosage(value: Any) -> str:
     if match is None:
         return _normalize_entity_name(text)
     return _canonical_medication_dosage(match)
+
+
+def normalize_supplement_dosage(value: Any) -> str:
+    """Compare intake amounts without deleting decimal or unknown-unit syntax."""
+    text = unicodedata.normalize("NFKC", str(value or "")).strip().casefold()
+    match = _SUPPLEMENT_DOSE_RE.fullmatch(text)
+    if match is None:
+        return re.sub(r"\s+", "", text)
+    value_text = _CHINESE_DOSE_NUMBERS.get(match.group("value"), match.group("value"))
+    if value_text == "半":
+        value_text = "0.5"
+    try:
+        amount = Decimal(value_text).normalize()
+    except InvalidOperation:
+        return re.sub(r"\s+", "", text)
+    canonical = _canonical_medication_dosage(match)
+    unit = canonical.removeprefix(_CHINESE_DOSE_NUMBERS.get(match.group("value"), match.group("value")))
+    return f"{amount}{unit}"
 
 
 def _parse_small_chinese_number(value: Any) -> int | None:

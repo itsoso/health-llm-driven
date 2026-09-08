@@ -140,6 +140,7 @@ from app.services.agent_kernel.capability_policy import (
     canonical_health_manage_record_id,
     canonical_health_manage_record_type,
     decide_tool_capability,
+    normalize_supplement_dosage,
     project_diet_manage_list_to_turn,
 )
 
@@ -8790,13 +8791,9 @@ def _should_replace_with_deterministic_supplement_calls(
 
     expected_dosage = expected_data.get("dosage")
     if expected_dosage not in (None, "", []):
-        from app.services.agent_kernel.capability_policy import (
-            _normalize_medication_dosage,
-        )
-
-        return _normalize_medication_dosage(
+        return normalize_supplement_dosage(
             model_data.get("dosage")
-        ) != _normalize_medication_dosage(expected_dosage)
+        ) != normalize_supplement_dosage(expected_dosage)
     return False
 
 
@@ -25296,17 +25293,13 @@ class AgentExecutor:
                 if matched:
                     requested_dosage = str(data.get("dosage") or "").strip()
                     if requested_dosage:
-                        from app.services.agent_kernel.capability_policy import (
-                            _normalize_medication_dosage,
-                        )
-
                         configured_dosage = str(
                             matched.get("dosage") or ""
                         ).strip()
                         if (
                             not configured_dosage
-                            or _normalize_medication_dosage(configured_dosage)
-                            != _normalize_medication_dosage(requested_dosage)
+                            or normalize_supplement_dosage(configured_dosage)
+                            != normalize_supplement_dosage(requested_dosage)
                         ):
                             return local_write_rejection(
                                 "supplement_dosage_not_persistable",

@@ -94,6 +94,33 @@ def test_preplanned_diet_history_query_does_not_read_future_meal_advice():
     assert _build_preplanned_diet_history_tool_call(snapshot) is None
 
 
+@pytest.mark.parametrize("message", (
+    "昨天我爸晚餐吃得怎么样？",
+    "昨天妈妈的饮食怎么样？",
+    "昨天张三晚餐吃得怎么样？",
+    "昨天和前天吃得怎么样？",
+    "昨天的午餐和晚餐吃得怎么样？",
+    "昨天早上和晚上吃得怎么样？",
+))
+def test_preplanned_diet_history_rejects_nonself_or_incomplete_scope(message):
+    snapshot = _history_snapshot(message, now=datetime(2026, 9, 8, 8, 21, tzinfo=BJ))
+    assert _build_preplanned_diet_history_tool_call(snapshot) is None
+
+
+@pytest.mark.parametrize("message", (
+    "昨天我吃的怎么样？列出我的饮食并分析，一日三餐。",
+    "请帮我分析昨天一整天的饮食。",
+    "昨天午餐、晚餐和全天的饮食怎么样？",
+))
+def test_preplanned_diet_history_keeps_complete_self_queries(message):
+    snapshot = _history_snapshot(message, now=datetime(2026, 9, 8, 8, 21, tzinfo=BJ))
+    call = _build_preplanned_diet_history_tool_call(snapshot)
+    assert call is not None
+    assert json.loads(call["function"]["arguments"]) == {
+        "record_type": "diet", "operation": "list", "date": "2026-09-07",
+    }
+
+
 def _diet_recalculate_goal() -> GoalSpec:
     return GoalSpec(
         kind="diet_recalculate_update",

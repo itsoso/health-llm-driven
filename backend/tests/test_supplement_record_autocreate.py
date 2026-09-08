@@ -476,13 +476,18 @@ async def test_registered_supplement_taps_without_creating(db):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("configured_dosage", (None, "1粒"))
+@pytest.mark.parametrize(
+    "configured_dosage,requested_dosage",
+    ((None, "2粒"), ("1粒", "2粒"), ("1.5滴", "15滴"),
+     ("1.5颗", "15颗")),
+)
 async def test_registered_supplement_rejects_unpersistable_dosage(
     db,
     configured_dosage,
+    requested_dosage,
 ):
     ex = _executor(db)
-    ex._current_turn_user_message = "吃了两粒红景天"
+    ex._current_turn_user_message = f"吃了{requested_dosage}红景天"
     tap = AsyncMock()
 
     with patch.object(
@@ -507,7 +512,7 @@ async def test_registered_supplement_rejects_unpersistable_dosage(
             {},
             {
                 "record_type": "supplement",
-                "data": {"supplement_name": "红景天", "dosage": "2粒"},
+                "data": {"supplement_name": "红景天", "dosage": requested_dosage},
             },
         )
 
