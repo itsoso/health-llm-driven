@@ -7,11 +7,11 @@ on:
         required: true
         type: string
       target:
-        description: Validate first; release builds alongside backend, then uploads after success
+        description: Validate first; backend deploys only, release also builds and uploads iOS
         required: true
         default: validate
         type: choice
-        options: [validate, release]
+        options: [validate, backend, release]
 permissions:
   contents: read
   actions: read
@@ -50,7 +50,7 @@ jobs:
         run: echo 'Exact source and CI preflight passed. This is not a deployment receipt.' >> "$GITHUB_STEP_SUMMARY"
 
   build-permission:
-    if: inputs.target == 'release'
+    if: inputs.target == 'release' || inputs.target == 'backend'
     needs: preflight
     environment: release-production
     runs-on: ubuntu-24.04
@@ -104,7 +104,7 @@ jobs:
               --sha "$TARGET_SHA" --state CHECKED
 
   backend:
-    if: inputs.target == 'release'
+    if: inputs.target == 'release' || inputs.target == 'backend'
     needs: build-permission
     environment: release-production
     runs-on: ubuntu-24.04

@@ -29,6 +29,8 @@
 的精确 SHA 和真实 CI，再以同一 SHA 执行 `target=release`。各 job 均使用新的
 GitHub 托管 VM，不上传本机工作区、不复用测试 runner 或缓存；生产权限只在只读闸后使用。
 GitHub 控制面、受审代码、固定工具链和服务器 root 是信任前提，不声称抵御 runner root 失陷。
+仅后端变更使用同一入口的 `target=backend`，仍先经过 preflight 与服务器 readiness，
+再执行相同 backend job；不读取 Expo 凭据、不领取构建/上传权限、不运行 iOS jobs。
 
 首次安装仅属于经授权的发布基础设施配置：管理员以固定系统 Git 从 canonical GitHub
 检出已通过独立 G4 和 CI 的 SHA 到 `/var/lib/reva-release/bootstrap/<sha>/source`，

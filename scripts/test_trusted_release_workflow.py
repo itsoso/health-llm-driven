@@ -41,7 +41,7 @@ def test_dispatch_cannot_auto_publish_or_reuse_test_runner():
     assert set(triggers) == {"workflow_dispatch"}
     target = triggers["workflow_dispatch"]["inputs"]["target"]
     assert target["default"] == "validate"
-    assert set(target["options"]) == {"validate", "release"}
+    assert set(target["options"]) == {"validate", "backend", "release"}
     assert WORKFLOW["permissions"] == {"contents": "read", "actions": "read"}
     assert WORKFLOW["concurrency"]["cancel-in-progress"] is False
     for name, job in WORKFLOW["jobs"].items():
@@ -49,11 +49,22 @@ def test_dispatch_cannot_auto_publish_or_reuse_test_runner():
         assert 1 <= job["timeout-minutes"] <= 90
         if name != "preflight":
             assert job["environment"] == "release-production"
-            assert job["if"] == "inputs.target == 'release'"
+            expected = "inputs.target == 'release' || inputs.target == 'backend'" if name in {"build-permission", "backend"} else "inputs.target == 'release'"
+            assert job["if"] == expected
     assert WORKFLOW["jobs"]["build-permission"]["needs"] == "preflight"
     assert WORKFLOW["jobs"]["backend"]["needs"] == "build-permission"
     assert WORKFLOW["jobs"]["ios-build"]["needs"] == "build-permission"
     assert set(WORKFLOW["jobs"]["testflight"]["needs"]) == {"backend", "ios-build"}
+
+
+def test_backend_only_has_no_vendor_credentials_or_build_claims():
+    for name in ("preflight", "build-permission", "backend"):
+        body = str(WORKFLOW["jobs"][name])
+        assert "EXPO_TOKEN" not in body
+        assert "claim-build" not in body
+        assert "claim-testflight" not in body
+    for name in ("ios-build", "testflight"):
+        assert WORKFLOW["jobs"][name]["if"] == "inputs.target == 'release'"
 
 
 def test_actions_are_immutable_and_preflight_has_no_production_secret():
