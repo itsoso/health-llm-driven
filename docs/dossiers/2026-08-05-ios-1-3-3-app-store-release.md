@@ -516,3 +516,23 @@
   删除这些一次性状态规避授权，下一轮发布需要受审的授权交接。
 - final-submit 新鲜检查失败：同包完整真机证据与商店截图未齐，ASC 登录及保存后的
   隐私/设备声明/年龄评级不可核实，资料仍保持 Draft。不能通过仅设置确认变量放行。
+- 安全修复固定为 `496a985f2` 后，扩展后端 3488 PASS、CI-mode 集成 561 PASS、真实
+  PostgreSQL 用户隔离/补剂剂量闸 8 PASS，真实模型与合成订单/标签再次 PASS。两个扩大
+  的旧候选组合测试均中止而非通过；最终不以其未完成结果替代针对性证据。
+- 第二位独立 reviewer 对 `496a985f2` 判 NO-GO：原 P1 已关闭，但三个合法全天饮食
+  问题会被通用 subject/read heuristic 误拒。六个 gateway 红测先复现，`fdd35cde8`
+  仅让已通过闭合本人/单日/完整范围验证的投影满足读取授权并避开 illness 主体误判，
+  未放松取消、否认与未解析引用的独立守门。最终 gateway 全文件 2698 PASS、CI-mode
+  集成 561 PASS，System Map 与未定义名称 lint PASS；第三位独立 reviewer 对固定
+  `fdd35cde8` 及 combined diff `6a210dca4..fdd35cde8` 判产品代码 G4 GO。最终真实模型
+  invariants 12、core 50、orchestrator 5、trajectory 12、goldens 9 与合成订单/标签
+  再跑全部 PASS（exit 0）；该代码 GO 不替代发布链和最终 App Review Gate。
+- 普通入口 Simulator Release 的 smoke 与五项扩展导航累计 6 PASS，证据
+  `/tmp/reva-review-candidate-simulator-{smoke,navigation}-20260908.xcresult`。
+  物理手机六项 PASS 证据为
+  `/tmp/reva-review-265-physical-{basic-retry,navigation}-20260908.xcresult`。
+  二者只证明所测基础交互；不证明最新后端已部署，不证明新签名包完整业务验收。
+- 当前代码候选已有三个本地修复提交，尚未 push/deploy/build/submit。旧生产与 Build 265
+  的 SHA 边界保持不变。ASC 仍停留登录页面；请用户在 Apple 页面完成认证，不传递密码。
+  需要先补发布授权生命周期，再从绿色精确 revision 构建、做同包完整验收、冻结 OTA、
+  完成商店资料并运行 final-submit Gate。G5/G6 保持 BLOCK，正式审核尚未提交。
