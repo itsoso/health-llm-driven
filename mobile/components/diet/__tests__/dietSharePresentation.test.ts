@@ -73,8 +73,8 @@ describe('buildDietSharePresentation', () => {
     }));
 
     expect(view.macroLines).toEqual([
-      '约 900 kcal · 蛋白质 36g',
-      '碳水 103g · 脂肪 42g',
+      '约 900 kcal · 蛋白质约 36g',
+      '碳水约 103g · 脂肪约 42g',
     ]);
     expect(view.nutritionItems).toEqual([
       { key: 'calories', label: '热量', value: '900', unit: 'kcal', qualifier: '约' },
@@ -131,7 +131,8 @@ describe('buildDietSharePresentation', () => {
       ai_confidence: 0.42,
     }));
 
-    expect(view.macroLines).toContain('约 900 kcal · 蛋白质 36g');
+    expect(view.macroLines).toContain('900 kcal · 蛋白质36g');
+    expect(view.macroLines.join(' ')).not.toContain('约');
     expect(view.nutritionItems[0]).toEqual(expect.objectContaining({ value: '900', qualifier: null }));
     expect(view.disclosure).toBe('营养数据已由用户确认');
   });

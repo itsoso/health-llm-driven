@@ -50,7 +50,12 @@ import { containsMarkdownTable, preprocessMarkdownTables } from '../../utils/mar
 import { prepareSafeMarkdown, safeMarkdownIt } from '../../utils/safeMarkdown';
 import { normalizeAssistantContent } from '../../utils/assistantContentNormalizer';
 import { DietShareComposer } from '../diet/DietShareComposer';
-import { buildChatDietShareInput, buildDietShareDateLabel } from '../diet/dietSharePresentation';
+import {
+  buildChatDietShareInput,
+  buildDietShareDateLabel,
+  buildDietSharePresentation,
+  type DietShareRecord,
+} from '../diet/dietSharePresentation';
 import type { MedicationSafetyAlert } from '../../services/medications';
 import InterventionDraftSheet from '../actions/InterventionDraftSheet';
 import { createInterventionDraft } from '../../services/actionCards';
@@ -1467,37 +1472,39 @@ function buildCardSharePayload(
 function buildDietDraftSharePayload(data: Record<string, unknown>): { title: string; message: string } {
   const meal = cardMealLabel(data.meal_type);
   const food = cardText(data.food_items);
-  const calories = cardNumber(data.calories);
-  const protein = cardNumber(data.protein);
-  const carbs = cardNumber(data.carbs);
-  const fat = cardNumber(data.fat);
-  const suggestions = Array.isArray(data.suggestions)
-    ? data.suggestions.map(cardText).filter((item): item is string => Boolean(item))
-    : [];
-  const source = cardText(data.source);
-  const rawConfidence = cardNumber(data.ai_confidence ?? data.confidence);
-  const confidence = rawConfidence != null && rawConfidence > 1 ? rawConfidence / 100 : rawConfidence;
-  const lowConfidence = source !== 'manual'
-    && source !== 'user_corrected'
-    && confidence != null
-    && confidence >= 0
-    && confidence < 0.7;
-
-  const lines = ['今日饮食打卡', '今天这餐被小巴认真记下来了', ''];
-  lines.push(food ? `${meal} · ${food}` : meal);
-
-  if (lowConfidence) {
-    lines.push('', '营养待核对');
-  } else {
-    const macroParts = [
-      calories != null ? `${Math.round(calories)} kcal` : null,
-      protein != null ? `蛋白 ${Math.round(protein)}g` : null,
-      carbs != null ? `碳水 ${Math.round(carbs)}g` : null,
-      fat != null ? `脂肪 ${Math.round(fat)}g` : null,
-    ].filter(Boolean);
-    if (macroParts.length > 0) lines.push('', '营养概览', macroParts.join(' · '));
-    if (suggestions[0]) lines.push('', '今日策略', `下一步：${suggestions[0]}`);
-  }
+  const rawMealType = cardText(data.meal_type);
+  const mealType: DietShareRecord['meal_type'] = rawMealType === 'breakfast' || rawMealType === '早餐'
+    ? 'breakfast'
+    : rawMealType === 'lunch' || rawMealType === '午餐'
+      ? 'lunch'
+      : rawMealType === 'dinner' || rawMealType === '晚餐'
+        ? 'dinner'
+        : 'snack';
+  const record: DietShareRecord = {
+    id: cardNumber(data.record_id) ?? 0,
+    record_date: cardText(data.record_date),
+    meal_type: mealType,
+    food_items: food ?? '餐食内容已记录',
+    source: cardText(data.source),
+    calories: cardNumber(data.calories) ?? null,
+    protein: cardNumber(data.protein) ?? null,
+    carbs: cardNumber(data.carbs) ?? null,
+    fat: cardNumber(data.fat) ?? null,
+    fiber: cardNumber(data.fiber) ?? null,
+    image_url: null,
+    image_urls: [],
+    ai_confidence: cardNumber(data.ai_confidence ?? data.confidence),
+  };
+  const presentation = buildDietSharePresentation(record);
+  const lines = [
+    '饮食记录',
+    `${buildDietShareDateLabel(data.record_date)} · ${meal}`,
+    presentation.foodLine,
+    '',
+    ...presentation.macroLines,
+    presentation.publicNote,
+  ];
+  if (!presentation.macroLines.includes(presentation.disclosure)) lines.push(presentation.disclosure);
   lines.push('', '#小红书饮食日记 #朋友圈打卡 #小巴', '', '— 小巴');
 
   return {

@@ -39,12 +39,6 @@ import {
   type DietShareRecord,
 } from './dietSharePresentation';
 
-const MEAL_LABEL: Record<string, string> = {
-  breakfast: '早餐',
-  lunch: '午餐',
-  dinner: '晚餐',
-  snack: '加餐',
-};
 export const DIET_SHARE_IMAGE_TIMEOUT_MS = 5_000;
 const DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD = 70;
 type ShareTarget = 'generic' | 'wechat' | 'xiaohongshu';
@@ -101,29 +95,12 @@ export function dietShareCaptureDimensions(
   return { width: 1080 / pointScale, height: 1440 / pointScale };
 }
 
-function metric(value: number | null | undefined, precision = 0): string {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return '--';
-  const factor = 10 ** precision;
-  return `${Math.round(value * factor) / factor}`;
-}
-
 function hasMetric(value: number | null | undefined): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
 function isNutritionComplete(record: DietRecord): boolean {
   return [record.calories, record.protein, record.carbs, record.fat].every(hasMetric);
-}
-
-function hasAnyNutritionMetric(record: DietRecord): boolean {
-  return [record.calories, record.protein, record.carbs, record.fat].some(hasMetric);
-}
-
-function nutritionSourceLabel(source?: string | null): string {
-  if (!source || source === 'ai_estimate' || source === 'photo') return '智能估算';
-  if (source === 'manual' || source === 'user_corrected') return '手动确认';
-  if (source === 'mixed') return '多来源校准';
-  return '营养表校准';
 }
 
 function isManuallyConfirmedNutritionSource(source?: string | null): boolean {
@@ -174,11 +151,6 @@ export function buildDietShareBalance(record: DietRecord): { score: number | nul
   return { score: normalized, label: '已记录，可复盘' };
 }
 
-function buildDietShareCaptionStatusLine(highlights: string[]): string {
-  if (highlights.length === 0) return '今日状态: 认真记录';
-  return `今日状态: ${highlights.join(' / ')}`;
-}
-
 function buildDietShareHashtags(highlights: string[]): string {
   const tags: string[] = [];
   highlights.forEach((highlight) => {
@@ -190,34 +162,11 @@ function buildDietShareHashtags(highlights: string[]): string {
   return [...tags, '#饮食打卡', '#健康生活', '#小巴记录'].join(' ');
 }
 
-function buildDietShareDataDisclosure(record: DietRecord): string {
-  const sourceLabel = nutritionSourceLabel(record.source);
-  if (isManuallyConfirmedNutritionSource(record.source)) return '营养数据: 手动核对，可继续复盘';
-  const confidencePercent = normalizedAiConfidence(record.ai_confidence);
-  if (confidencePercent != null && confidencePercent < DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD) {
-    return `营养数据: ${sourceLabel}，待核对后再发布`;
-  }
-  if (!hasAnyNutritionMetric(record)) return '营养数据: 估算中，稍后可继续复盘';
-  if (!isNutritionComplete(record)) return '营养数据: 部分估算中，可继续复盘';
-  if (sourceLabel === '智能估算') return '营养数据: 智能估算，可继续复盘';
-  if (sourceLabel === '手动确认') return '营养数据: 手动核对，可继续复盘';
-  return `营养数据: ${sourceLabel}，已确认，可继续复盘`;
-}
-
 function normalizedAiConfidence(value: number | null | undefined): number | null {
   if (!hasMetric(value)) return null;
   const percent = value <= 1 ? value * 100 : value;
   if (percent < 0 || percent > 100) return null;
   return Math.round(percent);
-}
-
-function buildDietShareConfidenceDisclosure(record: DietRecord): string | null {
-  if (isManuallyConfirmedNutritionSource(record.source)) return null;
-  const percent = normalizedAiConfidence(record.ai_confidence);
-  if (percent == null) return null;
-  if (percent < DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD) return `识别置信度: ${percent}%，发布前建议核对食物和份量`;
-  if (percent < 80) return `识别置信度: ${percent}%，建议复盘时留意份量`;
-  return `识别置信度: ${percent}%`;
 }
 
 function isAiEstimatedNutritionSource(source?: string | null): boolean {
@@ -227,32 +176,7 @@ function isAiEstimatedNutritionSource(source?: string | null): boolean {
 function isLowConfidenceDietShare(record: DietRecord): boolean {
   if (isManuallyConfirmedNutritionSource(record.source)) return false;
   const percent = normalizedAiConfidence(record.ai_confidence);
-  return percent != null && percent < DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD;
-}
-
-function buildDietShareMacroLine(record: DietRecord, style: 'compact' | 'sentence'): string {
-  if (isLowConfidenceDietShare(record)) {
-    return style === 'sentence'
-      ? '这一餐营养估算待核对，确认后再生成热量和三大营养。'
-      : '营养估算待核对，确认后再生成热量和三大营养';
-  }
-  const parts = [
-    hasMetric(record.calories) ? `热量 ${metric(record.calories)} kcal` : null,
-    hasMetric(record.protein) ? `蛋白质 ${metric(record.protein)}g` : null,
-    hasMetric(record.carbs) ? `碳水 ${metric(record.carbs)}g` : null,
-    hasMetric(record.fat) ? `脂肪 ${metric(record.fat, 1)}g` : null,
-  ].filter((part): part is string => Boolean(part));
-  if (parts.length === 0) return '营养估算中，稍后可继续复盘';
-  const pendingParts = [
-    hasMetric(record.calories) ? null : '热量估算中',
-    hasMetric(record.protein) ? null : '蛋白质估算中',
-    hasMetric(record.carbs) ? null : '碳水估算中',
-    hasMetric(record.fat) ? null : '脂肪估算中',
-  ].filter((part): part is string => Boolean(part));
-  const allParts = parts.concat(pendingParts);
-  return style === 'sentence'
-    ? `这一餐约 ${allParts.join('，')}。`
-    : allParts.join(' · ');
+  return percent == null || percent < DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD;
 }
 
 const SHARE_MACRO_DEFS: {
@@ -319,17 +243,6 @@ export function buildDietShareMacroSegments(record: DietRecord): DietShareMacroS
   }));
 }
 
-function buildDietShareMacroStructureLine(record: DietRecord): string | null {
-  if (isLowConfidenceDietShare(record)) return null;
-  const segments = buildDietShareMacroSegments(record);
-  if (segments.length === 0) return null;
-  return `能量结构: ${segments.map((segment) => `${segment.label} ${segment.percent}%`).join(' / ')}`;
-}
-
-function shouldRenderHighlightCopy(highlights: string[]): boolean {
-  return highlights.length > 0 && !highlights.includes('待核对');
-}
-
 export function compactDietShareFoodItems(foodItems: string, maxChars = 35): string {
   const normalized = foodItems.replace(/\s+/g, ' ').trim();
   if (normalized.length <= maxChars) return normalized;
@@ -350,50 +263,31 @@ export function compactDietShareFoodItems(foodItems: string, maxChars = 35): str
 }
 
 export function buildDietShareCaption(record: DietRecord, dateLabel: string): string {
-  const mealLabel = MEAL_LABEL[record.meal_type] ?? '餐食';
-  const headline = buildDietShareHeadline(record);
-  const highlights = buildDietShareHighlights(record);
-  const foodItems = compactDietShareFoodItems(record.food_items);
+  const presentation = buildDietSharePresentation(record);
   const lines = [
-    `小巴饮食卡｜${headline}`,
-    `今天这餐打卡: ${dateLabel}`,
-    `${mealLabel}: ${foodItems}`,
-    buildDietShareCaptionStatusLine(highlights),
-    buildDietShareMacroLine(record, 'compact'),
+    '小巴饮食记录',
+    `${dateLabel} · ${presentation.mealLabel}`,
+    compactDietShareFoodItems(presentation.foodLine),
+    '',
+    ...presentation.macroLines,
+    presentation.publicNote,
   ];
-  const macroStructureLine = buildDietShareMacroStructureLine(record);
-  if (macroStructureLine) lines.push(macroStructureLine);
-  if (shouldRenderHighlightCopy(highlights)) lines.push(`亮点: ${highlights.join(' / ')}`);
-  if (record.fiber != null && !isLowConfidenceDietShare(record)) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g`);
-  lines.push(buildDietShareDataDisclosure(record));
-  const confidenceDisclosure = buildDietShareConfidenceDisclosure(record);
-  if (confidenceDisclosure) lines.push(confidenceDisclosure);
-  lines.push('不是节食，是把身体照顾得更有章法。');
-  lines.push('晒得出，也复盘得清楚。');
-  lines.push('适合截图留档，也适合发给认真生活的朋友。');
-  lines.push(buildDietShareHashtags(highlights));
+  if (!presentation.macroLines.includes(presentation.disclosure)) lines.push(presentation.disclosure);
+  lines.push('', buildDietShareHashtags(presentation.tags));
   return lines.join('\n');
 }
 
 export function buildDietShareMomentsCaption(record: DietRecord, dateLabel: string): string {
-  const mealLabel = MEAL_LABEL[record.meal_type] ?? '餐食';
-  const headline = buildDietShareHeadline(record);
-  const highlights = buildDietShareHighlights(record);
-  const foodItems = compactDietShareFoodItems(record.food_items);
+  const presentation = buildDietSharePresentation(record);
   const lines = [
-    `${dateLabel}，${headline}。`,
-    `${mealLabel}: ${foodItems}`,
-    buildDietShareCaptionStatusLine(highlights),
-    buildDietShareMacroLine(record, 'sentence'),
+    `${dateLabel} · ${presentation.mealLabel}`,
+    compactDietShareFoodItems(presentation.foodLine),
+    '',
+    ...presentation.macroLines,
+    presentation.publicNote,
   ];
-  const macroStructureLine = buildDietShareMacroStructureLine(record);
-  if (macroStructureLine) lines.push(macroStructureLine);
-  if (shouldRenderHighlightCopy(highlights)) lines.push(`亮点: ${highlights.join(' / ')}`);
-  if (record.fiber != null && !isLowConfidenceDietShare(record)) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g。`);
-  lines.push(buildDietShareDataDisclosure(record));
-  const confidenceDisclosure = buildDietShareConfidenceDisclosure(record);
-  if (confidenceDisclosure) lines.push(confidenceDisclosure);
-  lines.push('小巴帮我把吃过的东西留成一张可复盘的记录。');
+  if (!presentation.macroLines.includes(presentation.disclosure)) lines.push(presentation.disclosure);
+  lines.push('', '小巴 · 饮食记录');
   return lines.join('\n');
 }
 
@@ -565,11 +459,17 @@ export default function DietShareCard({
               style={[styles.posterMetric, index > 0 ? styles.posterMetricSeparated : null]}
             >
               <Text style={styles.posterMetricLabel}>{item.label}</Text>
-              <View style={styles.posterMetricValueRow}>
-                {item.qualifier ? <Text style={styles.posterMetricQualifier}>{item.qualifier}</Text> : null}
+              <Text
+                testID={`diet-share-metric-value-${item.key}`}
+                style={styles.posterMetricValueRow}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.72}
+              >
+                {item.qualifier ? <Text style={styles.posterMetricQualifier}>{item.qualifier} </Text> : null}
                 <Text style={styles.posterMetricValue}>{item.value}</Text>
-                <Text style={styles.posterMetricUnit}>{item.unit}</Text>
-              </View>
+                <Text style={styles.posterMetricUnit}> {item.unit}</Text>
+              </Text>
             </View>
           )) : (
             <Text style={styles.posterNutritionStatus}>{nutritionStatus}</Text>
@@ -1252,9 +1152,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     height: '48%',
     paddingHorizontal: 20,
-    paddingTop: 14,
-    paddingBottom: 12,
-    gap: 5,
+    paddingTop: 11,
+    paddingBottom: 10,
+    gap: 4,
     backgroundColor: C.surface2,
   },
   posterRuleRow: {
@@ -1302,6 +1202,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     paddingHorizontal: 7,
+    overflow: 'hidden',
   },
   posterMetricSeparated: {
     borderLeftWidth: StyleSheet.hairlineWidth,
@@ -1314,10 +1215,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   posterMetricValueRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 3,
     marginTop: 1,
+    lineHeight: 19,
   },
   posterMetricValue: {
     fontFamily: revaFonts.mono,

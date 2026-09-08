@@ -738,6 +738,8 @@ ${sectionTitle}
         protein: 30,
         carbs: 70,
         fat: 17,
+        source: 'photo',
+        confidence: 0.88,
         suggestions: ['晚餐优先补 40g 蛋白'],
         photo_url: '/api/v1/upload/files/diet/1/lunch.jpg',
       },
@@ -776,16 +778,65 @@ ${sectionTitle}
     await waitFor(() => {
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
         title: '小巴 · 饮食记录',
-        message: expect.stringContaining('今天这餐被小巴认真记下来了'),
+        message: expect.stringContaining('餐食记录 · 午餐'),
       }));
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
-        message: expect.stringContaining('今日饮食打卡'),
+        message: expect.stringContaining('约 770 kcal · 蛋白质约 30g'),
       }));
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
-        message: expect.stringContaining('今日策略'),
+        message: expect.not.stringContaining('晚餐优先补 40g 蛋白'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.not.stringMatching(/今天|今日|识别置信度/),
       }));
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
         message: expect.stringContaining('#小红书饮食日记 #朋友圈打卡 #小巴'),
+      }));
+    });
+  });
+
+  it('fails closed when a photo diet card has no usable confidence', async () => {
+    sharePlainText.mockResolvedValueOnce(undefined);
+    renderCard.mockReturnValue(__mockCard);
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-card-diet-share-missing-confidence',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      cardType: 'diet_draft',
+      cardData: {
+        recorded: true,
+        record_id: 771,
+        record_date: '2026-08-01',
+        meal_type: 'lunch',
+        food_items: '煎牛肉能量碗',
+        calories: 770,
+        protein: 30,
+        carbs: 70,
+        fat: 17,
+        source: 'photo',
+        suggestions: ['胃溃疡恢复期停用某药'],
+      },
+    };
+
+    const { getByLabelText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.press(getByLabelText('分享饮食文字'));
+
+    await waitFor(() => {
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('2026.08.01 · 午餐'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('营养待核对'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.not.stringMatching(/770\s*kcal|蛋白质.*30g|胃溃疡|某药|今天|今日/i),
       }));
     });
   });

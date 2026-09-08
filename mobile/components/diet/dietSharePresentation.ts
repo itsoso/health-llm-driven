@@ -124,17 +124,18 @@ function metric(value: number | null): string | null {
 function buildMacroLines(record: DietShareRecord): string[] {
   if (isLowConfidence(record)) return ['营养待核对'];
 
+  const qualifier = record.source && MANUALLY_CONFIRMED_SOURCES.has(record.source) ? '' : '约 ';
   const calories = metric(record.calories);
   const protein = metric(record.protein);
   const carbs = metric(record.carbs);
   const fat = metric(record.fat);
   const firstLine = [
-    calories != null ? `约 ${calories} kcal` : null,
-    protein != null ? `蛋白质 ${protein}g` : null,
+    calories != null ? `${qualifier}${calories} kcal` : null,
+    protein != null ? `蛋白质${qualifier}${protein}g` : null,
   ].filter((part): part is string => Boolean(part)).join(' · ');
   const secondLine = [
-    carbs != null ? `碳水 ${carbs}g` : null,
-    fat != null ? `脂肪 ${fat}g` : null,
+    carbs != null ? `碳水${qualifier}${carbs}g` : null,
+    fat != null ? `脂肪${qualifier}${fat}g` : null,
   ].filter((part): part is string => Boolean(part)).join(' · ');
   const lines = [firstLine, secondLine].filter(Boolean);
   return lines.length > 0 ? lines : ['营养估算中'];

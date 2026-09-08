@@ -211,10 +211,16 @@ describe('DietShareCard Xiaohongshu poster', () => {
       height: '48%',
       position: 'absolute',
       bottom: 0,
-      paddingTop: 14,
-      paddingBottom: 12,
+      paddingTop: 11,
+      paddingBottom: 10,
     }));
     expect(183).toBeLessThanOrEqual(440 * 0.48 - copyStyle.paddingTop - copyStyle.paddingBottom);
+    const calorieValue = view.getByTestId('diet-share-metric-value-calories');
+    expect(calorieValue.props).toEqual(expect.objectContaining({
+      numberOfLines: 1,
+      adjustsFontSizeToFit: true,
+      minimumFontScale: 0.72,
+    }));
   });
 
   it('renders partial nutrition without placeholder dashes', () => {
@@ -514,6 +520,23 @@ describe('DietShareSheet image and text behavior', () => {
     expect(view.queryByText('下一餐补蛋白质 30g，少吃 300 kcal')).toBeNull();
   });
 
+  it.each([undefined, Number.NaN, -1, 101])(
+    'fails closed in captions when photo confidence is missing or invalid: %p',
+    (aiConfidence) => {
+      const unsafeFallback = {
+        ...record,
+        record_date: '2026-07-11',
+        ai_confidence: aiConfidence,
+        health_tips: '胃溃疡恢复期，下一餐补蛋白质 30g',
+      };
+      const caption = buildDietShareCaption(unsafeFallback, '2026.07.11');
+
+      expect(caption).toContain('营养待核对');
+      expect(caption).not.toMatch(/900\s*kcal|蛋白质.*36g|胃溃疡|30g/i);
+      expect(caption).not.toMatch(/今天|今日|识别置信度/);
+    },
+  );
+
   it('treats user-corrected nutrition as confirmed across poster, sheet and caption', async () => {
     const confirmed = { ...record, source: 'user_corrected', ai_confidence: 0.42 };
     const view = renderSheet({ record: confirmed });
@@ -521,8 +544,9 @@ describe('DietShareSheet image and text behavior', () => {
     expect(view.getByText('高清 3:4 图片 · 微信与小红书')).toBeTruthy();
     expect(view.getByText('营养数据已由用户确认')).toBeTruthy();
     const caption = buildDietShareCaption(confirmed, '7月11日');
-    expect(caption).toContain('热量 900 kcal');
-    expect(caption).toContain('营养数据: 手动核对');
+    expect(caption).toContain('900 kcal · 蛋白质36g');
+    expect(caption).toContain('营养数据已由用户确认');
+    expect(caption).not.toContain('约');
 
     fireEvent.press(view.getByRole('button', { name: '复制小红书文案' }));
     await waitFor(() => expect(view.onShareFeedback).toHaveBeenCalledWith(expect.objectContaining({
