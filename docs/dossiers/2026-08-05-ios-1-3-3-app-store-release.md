@@ -669,3 +669,15 @@
   边界，不宣称 wheel-lock 字节一致；生产若存在不兼容缓存或 hook，继续 BLOCK，绝不
   在校验器中清理/修权限后放行。部署脚本新增实际负例证明校验失败不读取 env、不执行
   seeder；当前完整 deploy 回归 153 PASS。最终补修固定 G4 与集成结果另行记录。
+- `768868413` 完整 CI-mode 集成 594 PASS / 52 subtests PASS；独立复核确认 production
+  chain P1 闭合，另发现耗时预检消耗授权恢复窗口的 P2。`535ce2881` 在全部预检后、
+  operation/intent 创建前重新检查原 policy 的执行与恢复时间；两个独立用例先红后绿，
+  分别覆盖剩余窗口不足与授权过期，均无 operation、无业务执行。
+- 独立 G4 对固定范围 `17ed6f621..535ce288172dd7ebe42b6cbb749f90fc8c936b87` 给出
+  **代码范围 GO**：390 PASS / 52 subtests PASS / 71.83 秒，diff/map 通过。此裁决不等于
+  生产恢复或审核放行；历史 NEEDS_OPERATOR、真实 runtime 信任、审核 fixture、新包
+  同包模拟器/真机完整验收及 ASC 送审条件仍未解除。本轮仅本地提交，未 push 或部署。
+- `535ce2881` 最终新鲜 CI-mode 集成 **596 PASS / 52 subtests PASS / 201.92 秒 / exit 0**；
+  System Map、秘密扫描、Shell 语法及变更 Python 静态检查通过。Dossier 纯工具测试以
+  无应用 conftest 模式 18 PASS；首次常规入口因本机 PostgreSQL 未运行而在收集阶段失败，
+  不计为数据库或后端应用测试通过。本轮未改变数据库语义，也未执行生产重置。
