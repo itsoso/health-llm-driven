@@ -2914,6 +2914,143 @@ def test_cli_has_secret_free_app_store_review_reset_mode():
     assert "--rotate-password" not in body
 
 
+@pytest.mark.parametrize(
+    ("ssh_rc", "receipt", "remote_stderr", "signal", "succeeds"),
+    [
+        pytest.param(255, "", "", "", False, id="ssh-disconnect"),
+        pytest.param(1, "", "", "", False, id="remote-failure"),
+        pytest.param(73, "", "", "", False, id="lease-failure"),
+        pytest.param(
+            255, "APP_STORE_REVIEW_RESET_OK\n", "", "", False,
+            id="receipt-with-ssh-failure",
+        ),
+        pytest.param(0, "", "", "", False, id="missing-receipt"),
+        pytest.param(
+            0, "", "APP_STORE_REVIEW_RESET_OK\n", "", False,
+            id="stderr-is-not-a-receipt",
+        ),
+        pytest.param(0, "APP_STORE_REVIEW_RESET_", "", "", False, id="partial-receipt"),
+        pytest.param(
+            0, "APP_STORE_REVIEW_RESET_OK\nextra\n", "", "", False,
+            id="extra-output",
+        ),
+        pytest.param(
+            0, "APP_STORE_REVIEW_RESET_OK\nAPP_STORE_REVIEW_RESET_OK\n", "", "", False,
+            id="duplicate-receipt",
+        ),
+        pytest.param(
+            0, " APP_STORE_REVIEW_RESET_OK\n", "", "", False,
+            id="padded-receipt",
+        ),
+        pytest.param(
+            1, "synthetic-private-health-payload", "synthetic-private-credential", "", False,
+            id="redacted-remote-error",
+        ),
+        pytest.param(
+            0, "synthetic-private-health-payload", "synthetic-private-credential", "", False,
+            id="redacted-malformed-receipt",
+        ),
+        pytest.param(255, "", "", "TERM", False, id="signal-during-dispatch"),
+        pytest.param(0, "APP_STORE_REVIEW_RESET_OK\n", "", "", True, id="exact-success"),
+        pytest.param(
+            0, "APP_STORE_REVIEW_RESET_OK\n", "synthetic-private-credential", "", True,
+            id="exact-success-redacts-stderr",
+        ),
+    ],
+)
+def test_app_store_review_reset_preserves_lease_until_exact_terminal_receipt(
+    tmp_path: Path,
+    ssh_rc: int,
+    receipt: str,
+    remote_stderr: str,
+    signal: str,
+    succeeds: bool,
+):
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\nDEPLOY_PATH=/tmp/fake-health-app\n",
+        encoding="utf-8",
+    )
+    event_log = tmp_path / "events"
+    remote_lock = tmp_path / "remote-release.lock"
+    local_lock = tmp_path / "local-release.lock"
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    evidence = stage / "evidence"
+    evidence.write_text("preserve-until-terminal\n", encoding="utf-8")
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+REMOTE_BACKUP_PREFLIGHT_DIR="$RESET_TEST_STAGE"
+REMOTE_ACTIVATION_STATE_DIR="$RESET_TEST_STAGE.activation-state"
+REMOTE_DEPLOY_BUNDLE="$RESET_TEST_STAGE.bundle"
+verify_deployed_revision() {{ :; }}
+ssh() {{
+    shift
+    if [[ "$1" = bash && "${{4:-}}" = "$REMOTE_PATH" ]]; then
+        printf 'dispatch:delegated=%s\\n' "$_REMOTE_RELEASE_LOCK_DELEGATED" \
+            >> "$RESET_EVENT_LOG"
+        cat >/dev/null
+        if [[ -n "$RESET_SIGNAL" ]]; then
+            kill -"$RESET_SIGNAL" "$$"
+        fi
+        printf '%s' "$RESET_RECEIPT"
+        printf '%s' "$RESET_STDERR" >&2
+        return "$RESET_SSH_RC"
+    fi
+    if [[ "$#" -eq 1 ]]; then
+        bash -c "$1"
+    else
+        "$@"
+    fi
+}}
+acquire_release_lock deploy:app-store-review-reset
+acquire_remote_release_lock deploy:app-store-review-reset
+install_release_cleanup_traps
+reset_app_store_review_demo
+printf 'terminal:delegated=%s:abandoned=%s\\n' \
+    "$_REMOTE_RELEASE_LOCK_DELEGATED" "$_REMOTE_RELEASE_LOCK_ABANDONED" \
+    >> "$RESET_EVENT_LOG"
+arm_remote_release_cleanup_after_terminal_mode_success app-store-review-reset
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=10,
+        env={
+            **os.environ,
+            "DEPLOY_ENV_FILE": str(env_file),
+            "REMOTE_RELEASE_LOCK_DIR": str(remote_lock),
+            "REVA_RELEASE_LOCK_DIR": str(local_lock),
+            "REVA_RELEASE_LOCK_TOKEN": "reset-test-owner",
+            "REVA_RELEASE_LOCK_ADOPT": "0",
+            "RESET_TEST_STAGE": str(stage),
+            "RESET_EVENT_LOG": str(event_log),
+            "RESET_SSH_RC": str(ssh_rc),
+            "RESET_RECEIPT": receipt,
+            "RESET_STDERR": remote_stderr,
+            "RESET_SIGNAL": signal,
+        },
+    )
+
+    assert result.returncode == (0 if succeeds else 143 if signal else 1), (
+        result.stdout, result.stderr,
+    )
+    assert remote_lock.exists() is not succeeds
+    assert stage.exists() is not succeeds
+    assert not local_lock.exists()
+    if not succeeds:
+        assert (remote_lock / "token").read_text(encoding="utf-8") == "reset-test-owner\n"
+        assert evidence.read_text(encoding="utf-8") == "preserve-until-terminal\n"
+    expected_events = ["dispatch:delegated=1"]
+    if succeeds:
+        expected_events.append("terminal:delegated=0:abandoned=0")
+    assert event_log.read_text(encoding="utf-8").splitlines() == expected_events
+    for sensitive in ("synthetic-private-health-payload", "synthetic-private-credential"):
+        assert sensitive not in result.stdout + result.stderr
+
+
 def test_health_evidence_flag_parser_only_accepts_one_canonical_assignment(
     tmp_path,
 ):

@@ -4,7 +4,6 @@ from pathlib import Path
 
 import yaml
 
-
 ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 PYTEST_SHARD_CATALOG = ROOT / ".github" / "ci" / "backend-pytest-shards.json"
@@ -22,6 +21,7 @@ RELEASE_TESTS = (
     "scripts/test_release_ci_contract.py",
     "scripts/test_release_input_digest.py",
     "scripts/test_verify_locked_requirements.py",
+    "scripts/test_trusted_review_reset.py",
 )
 
 

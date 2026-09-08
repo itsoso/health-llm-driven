@@ -1,6 +1,7 @@
 """Bootstrap tests run only in temporary local fixtures, never production."""
 
 import base64
+import fcntl
 import hashlib
 import importlib.util
 import json
@@ -268,6 +269,125 @@ LEGACY_SHA = "c" * 40
 LEGACY_PUBLIC = "ssh-ed25519 " + base64.b64encode(b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20" + bytes(range(128, 160))).decode()
 
 
+def preparation_failure_fixture(monkeypatch, tmp_path):
+    bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path, succeeded=False)
+    workspace = bootstrap.STATE / SHA
+    workspace.mkdir(mode=0o700)
+    digest = hashlib.sha256(bootstrap.INSTALLED.read_bytes()).hexdigest()
+    for name, payload in {
+        "started.json": {"sha": SHA, "state": "STARTED"},
+        "preparation-started.json": {"sha": SHA, "state": "PREPARING", "executor_sha256": digest},
+        "completed.json": {"sha": SHA, "state": "PREPARATION_FAILED"},
+    }.items():
+        path = workspace / name
+        path.write_text(json.dumps(payload))
+        path.chmod(0o600)
+    return bootstrap, workspace
+
+
+def test_preparation_failure_can_be_retired_without_rewriting_consumption(monkeypatch, tmp_path):
+    bootstrap, workspace = preparation_failure_fixture(monkeypatch, tmp_path)
+    before = {p.name: (p.read_bytes(), p.stat().st_ino) for p in workspace.iterdir()}
+    assert bootstrap._workspace_evidence(SHA)["state"] == "PREPARATION_FAILED"
+    assert bootstrap.rotate(SHA, NEW_SHA, 200, HOST)["state"] == "INSTALLED"
+    assert {p.name: (p.read_bytes(), p.stat().st_ino) for p in workspace.iterdir()} == before
+
+
+@pytest.mark.parametrize("extra", ["deployment-started.json", "prepared.json", "bin", "deployment.env", "build-started.json", "native-started.json"])
+def test_preparation_retirement_rejects_any_later_phase_or_vendor_intent(monkeypatch, tmp_path, extra):
+    bootstrap, workspace = preparation_failure_fixture(monkeypatch, tmp_path)
+    (workspace / extra).write_text("{}")
+    with pytest.raises(bootstrap.BootstrapError):
+        bootstrap._workspace_evidence(SHA)
+
+
+@pytest.mark.parametrize("change", ["missing", "hash", "legacy", "extra_field"])
+def test_preparation_retirement_requires_bound_durable_phase_proof(monkeypatch, tmp_path, change):
+    bootstrap, workspace = preparation_failure_fixture(monkeypatch, tmp_path)
+    marker = workspace / "preparation-started.json"
+    if change == "missing":
+        marker.unlink()
+    elif change == "hash":
+        marker.write_text(json.dumps({"sha": SHA, "state": "PREPARING", "executor_sha256": "0" * 64}))
+    elif change == "legacy":
+        (workspace / "completed.json").write_text(json.dumps({"sha": SHA, "state": "NEEDS_OPERATOR"}))
+    else:
+        payload = json.loads(marker.read_text())
+        payload["extra"] = True
+        marker.write_text(json.dumps(payload))
+    with pytest.raises(bootstrap.BootstrapError):
+        bootstrap._workspace_evidence(SHA)
+
+
+@pytest.mark.parametrize("action", ["revoke", "rotate"])
+def test_preparation_lifecycle_holds_existing_build_lock(monkeypatch, tmp_path, action):
+    bootstrap, workspace = preparation_failure_fixture(monkeypatch, tmp_path)
+    lock = workspace / "build.lock"
+    lock.touch(mode=0o600)
+    with lock.open("r+") as held:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises(BlockingIOError):
+            if action == "rotate":
+                bootstrap.rotate(SHA, NEW_SHA, 200, HOST)
+            else:
+                bootstrap.revoke(SHA)
+
+
+def test_preparation_revoke_rejects_changed_installed_executor(monkeypatch, tmp_path):
+    bootstrap, workspace = preparation_failure_fixture(monkeypatch, tmp_path)
+    bootstrap.INSTALLED.write_bytes(b"unexpected executor")
+    with pytest.raises(bootstrap.BootstrapError):
+        bootstrap.revoke(SHA)
+    assert json.loads((workspace / "completed.json").read_text())["state"] == "PREPARATION_FAILED"
+
+
+def test_preparation_evidence_binds_nested_content_and_log(monkeypatch, tmp_path):
+    bootstrap, workspace = preparation_failure_fixture(monkeypatch, tmp_path)
+    source = workspace / "source"
+    source.mkdir(mode=0o700)
+    nested = source / "partial"
+    nested.write_text("original")
+    log = workspace / "preparation.log"
+    log.write_text("clone failed")
+    before = bootstrap._workspace_evidence(SHA)
+    nested.write_text("modified")
+    after = bootstrap._workspace_evidence(SHA)
+    assert after != before
+    log.write_text("modified log")
+    assert bootstrap._workspace_evidence(SHA) != after
+
+
+def test_preparation_directory_cannot_be_a_regular_file(monkeypatch, tmp_path):
+    bootstrap, workspace = preparation_failure_fixture(monkeypatch, tmp_path)
+    (workspace / "home").write_text("not a directory")
+    with pytest.raises(bootstrap.BootstrapError):
+        bootstrap._workspace_evidence(SHA)
+
+
+@pytest.mark.parametrize("state", [None, "NEEDS_OPERATOR", "SUCCEEDED"])
+def test_review_reset_evidence_gates_retirement_and_revocation(monkeypatch, tmp_path, state):
+    bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path)
+    workspace = bootstrap.STATE / SHA
+    operation_id = "c" * 32
+    root = workspace / "review-resets"
+    root.mkdir(mode=0o700)
+    operation = root / operation_id
+    operation.mkdir(mode=0o700)
+    (operation / "started.json").write_text(json.dumps({"sha": SHA, "operation_id": operation_id, "state": "STARTED"}))
+    (operation / "started.json").chmod(0o600)
+    if state:
+        (operation / "completed.json").write_text(json.dumps({"sha": SHA, "operation_id": operation_id, "state": state}))
+        (operation / "completed.json").chmod(0o600)
+    if state == "SUCCEEDED":
+        evidence = bootstrap._workspace_evidence(SHA)
+        assert "review-resets" in evidence["receipts"]
+        assert bootstrap.rotate(SHA, NEW_SHA, 200, HOST)["state"] == "INSTALLED"
+    else:
+        for action in (lambda: bootstrap._workspace_evidence(SHA), lambda: bootstrap.revoke(SHA)):
+            with pytest.raises(bootstrap.BootstrapError):
+                action()
+
+
 def rotation_fixture(monkeypatch, tmp_path, *, succeeded=True):
     bootstrap, calls = fixture(monkeypatch, tmp_path)
     bootstrap.install(SHA, 200, PUBLIC)
@@ -321,7 +441,7 @@ def test_rotation_preserves_old_install_and_once_evidence(monkeypatch, tmp_path,
 
 
 def legacy_fixture(monkeypatch, tmp_path):
-    bootstrap, calls = rotation_fixture(monkeypatch, tmp_path)
+    bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path)
     entry = bootstrap.STATE / "retired" / LEGACY_SHA
     entry.mkdir(parents=True, mode=0o700)
     shutil.copytree(bootstrap.CONFIG, entry / "config")

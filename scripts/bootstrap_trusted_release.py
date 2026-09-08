@@ -14,6 +14,7 @@ import datetime
 import fcntl
 import hashlib
 import importlib.util
+import itertools
 import json
 import os
 import re
@@ -104,6 +105,7 @@ def reviewed_source(sha):
     if Path(__file__).absolute() != source / "scripts/bootstrap_trusted_release.py":
         raise BootstrapError("bootstrap must run from fixed fresh canonical root staging")
     source = canonical_source(sha)
+    sys.dont_write_bytecode = True
     spec = importlib.util.spec_from_file_location("reviewed_release_server", source / "scripts/trusted_release_server.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -260,20 +262,139 @@ def _workspace_evidence(sha):
     names = {p.name for p in workspace.iterdir()}
     if not names:
         return {"state": "NEVER_STARTED", "inventory": []}
+    if "completed.json" in names and _read_json(workspace / "completed.json") == {"sha": sha, "state": "PREPARATION_FAILED"}:
+        return _preparation_failure_evidence(sha, workspace, names)
     allowed = {"started.json", "completed.json", "build-started.json", "native-started.json",
-               "build.lock", "source", "home", "bin", "deployment.env", "preparation.log", "deployment.log"}
+               "build.lock", "source", "home", "bin", "deployment.env", "preparation.log", "deployment.log",
+               "preparation-started.json", "prepared.json", "deployment-started.json", "clone-attempts", "review-resets"}
     if not names <= allowed or not {"started.json", "completed.json"} <= names:
         raise BootstrapError("backend termination unproven; retirement forbidden")
+    phases = {"preparation-started.json", "prepared.json", "deployment-started.json"}
+    if names & phases and not phases <= names:
+        raise BootstrapError("incomplete successful release phase evidence")
     receipts = {}
     for name in sorted(names):
         path = workspace / name
-        secure(path, private=name not in {"source", "home", "bin"})
+        secure(path, private=name not in {"source", "home", "bin", "clone-attempts", "review-resets"})
         if name.endswith(".json"):
-            expected = {"sha": sha, "state": "SUCCEEDED" if name == "completed.json" else "STARTED"}
+            states = {"completed.json": "SUCCEEDED", "preparation-started.json": "PREPARING",
+                      "prepared.json": "PREPARED", "deployment-started.json": "DEPLOYING"}
+            expected = {"sha": sha, "state": states.get(name, "STARTED")}
+            if name == "preparation-started.json":
+                expected["executor_sha256"] = hashlib.sha256((canonical_source(sha) / "scripts/trusted_release_server.py").read_bytes()).hexdigest()
             if _read_json(path) != expected:
                 raise BootstrapError("backend termination unproven; retirement forbidden")
             receipts[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    if "review-resets" in names:
+        receipts["review-resets"] = _review_reset_evidence(sha)
     return {"state": "SUCCEEDED", "inventory": sorted(names), "receipts": receipts}
+
+
+def _review_reset_evidence(sha):
+    root = STATE / sha / "review-resets"
+    if not os.path.lexists(root):
+        return None
+    secure(root)
+    if not root.is_dir() or stat.S_IMODE(root.lstat().st_mode) != 0o700:
+        raise BootstrapError("review reset evidence must be a private directory")
+    operations = list(itertools.islice(root.iterdir(), 1001))
+    if len(operations) > 1000:
+        raise BootstrapError("review reset inspection bound exceeded")
+    result = {}
+    for operation in sorted(operations):
+        if re.fullmatch(r"[0-9a-f]{32}", operation.name) is None:
+            raise BootstrapError("unknown review reset operation")
+        inventory = _inventory(operation, {"started.json", "completed.json"})
+        for name, state in (("started.json", "STARTED"), ("completed.json", "SUCCEEDED")):
+            if _read_json(operation / name) != {"sha": sha, "operation_id": operation.name, "state": state}:
+                raise BootstrapError("review reset termination unproven")
+        result[operation.name] = inventory
+    return result
+
+
+def _preparation_failure_evidence(sha, workspace, names):
+    """Read-only proof for the phase-aware protocol, never legacy inference."""
+    required = {"started.json", "preparation-started.json", "completed.json"}
+    allowed = required | {"build.lock", "home", "source", "preparation.log", "clone-attempts"}
+    if not required <= names <= allowed:
+        raise BootstrapError("preparation-only termination unproven")
+    digest = hashlib.sha256((canonical_source(sha) / "scripts/trusted_release_server.py").read_bytes()).hexdigest()
+    expected = {
+        "started.json": {"sha": sha, "state": "STARTED"},
+        "preparation-started.json": {"sha": sha, "state": "PREPARING", "executor_sha256": digest},
+        "completed.json": {"sha": sha, "state": "PREPARATION_FAILED"},
+    }
+    receipts = {}
+    for name in sorted(names):
+        path = workspace / name
+        secure(path, private=name not in {"home", "source", "clone-attempts"})
+        if name in {"home", "source", "clone-attempts"} and (
+                not path.is_dir() or stat.S_IMODE(path.lstat().st_mode) != 0o700):
+            raise BootstrapError("preparation directories must be private directories")
+        if name in expected:
+            if _read_json(path) != expected[name]:
+                raise BootstrapError("preparation phase proof differs from canonical executor")
+            receipts[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return {"state": "PREPARATION_FAILED", "inventory": sorted(names), "receipts": receipts,
+            "manifest": _preparation_manifest(workspace)}
+
+
+def _preparation_manifest(workspace):
+    # Bound the entire retained tree without following links or emitting log data.
+    pending, count, size, digest = [workspace], 0, 0, hashlib.sha256()
+    while pending:
+        path = pending.pop()
+        count += 1
+        relative = path.relative_to(workspace)
+        if count > 25000 or len(relative.parts) > 64:
+            raise BootstrapError("preparation evidence exceeds inspection bound")
+        secure(path)
+        info = path.lstat()
+        content = None
+        if stat.S_ISDIR(info.st_mode):
+            entries = list(itertools.islice(path.iterdir(), 25001))
+            if len(entries) > 25000:
+                raise BootstrapError("preparation directory exceeds inspection bound")
+            pending.extend(sorted(entries, reverse=True))
+        elif stat.S_ISREG(info.st_mode):
+            size += info.st_size
+            if size > 1024 * 1024 * 1024:
+                raise BootstrapError("preparation bytes exceed inspection bound")
+            file_hash = hashlib.sha256()
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+            with os.fdopen(fd, "rb") as stream:
+                remaining = info.st_size
+                while remaining:
+                    data = stream.read(min(remaining, 65536))
+                    if not data:
+                        raise BootstrapError("preparation file changed during inspection")
+                    file_hash.update(data)
+                    remaining -= len(data)
+                after = os.fstat(stream.fileno())
+            if (after.st_ino, after.st_dev, after.st_size, after.st_mtime_ns) != (
+                    info.st_ino, info.st_dev, info.st_size, info.st_mtime_ns):
+                raise BootstrapError("preparation file changed during inspection")
+            content = file_hash.hexdigest()
+        else:
+            raise BootstrapError("unsupported preparation evidence type")
+        digest.update(json.dumps([str(relative), info.st_uid, info.st_gid, info.st_mode,
+                                 info.st_ino, info.st_dev, info.st_size, info.st_mtime_ns,
+                                 content], separators=(",", ":")).encode() + b"\n")
+    return {"sha256": digest.hexdigest(), "entries": count, "bytes": size}
+
+
+def _acquire_existing_build_lock(sha):
+    path = STATE / sha / "build.lock"
+    if not os.path.lexists(path):
+        return None
+    secure(path, private=True)
+    fd = os.open(path, os.O_RDWR | os.O_NOFOLLOW)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
 
 
 def _archives(sha):
@@ -380,7 +501,7 @@ def _assert_idle():
         if pid == os.getpid():
             continue
         if any(token in command for token in (
-                "reva-release", "trusted_release_server.py", "bootstrap_trusted_release.py", "deploy.sh",
+                "reva-release", "trusted_release_server.py", "bootstrap_trusted_release.py", "trusted_review_reset.py", "deploy.sh",
                 "health-app-backup-preflight", "rollback_release", "runtime_state_release_transaction")):
             raise BootstrapError("release process still present; retirement forbidden")
     if os.getpid() not in seen or os.path.lexists(BUSINESS_LEASE):
@@ -397,8 +518,10 @@ def rotate(old_sha, sha, expiry, public):
     # Rotation may not recreate the global lock inode of an existing install.
     secure(STATE / "launcher.lock", private=True)
     fd = os.open(STATE / "launcher.lock", os.O_RDWR | os.O_NOFOLLOW)
+    build_fd = None
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        build_fd = _acquire_existing_build_lock(old_sha)
         history = _retired_history()
         _assert_fresh_sha(sha, history)
         _assert_known_activity(history, old_sha)
@@ -440,6 +563,8 @@ def rotate(old_sha, sha, expiry, public):
         result["retired_sha"] = old_sha
         return result
     finally:
+        if build_fd is not None:
+            os.close(build_fd)
         os.close(fd)
 
 
@@ -451,11 +576,15 @@ def revoke(sha):
     reviewed_source(sha)
     secure(STATE)
     fd = os.open(STATE / "launcher.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    build_fd = None
     try:
         secure(STATE / "launcher.lock", private=True)
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        build_fd = _acquire_existing_build_lock(sha)
         return _revoke_locked(sha)
     finally:
+        if build_fd is not None:
+            os.close(build_fd)
         os.close(fd)
 
 
@@ -485,6 +614,7 @@ def _assert_backend_terminated_or_unstarted(sha):
     # An idle launcher flock does not prove that a timed-out deployment process
     # group or remote release lease ended. Never remove its recovery identity.
     workspace = STATE / sha
+    _review_reset_evidence(sha)
     if not os.path.lexists(workspace):
         return
     secure(workspace)
@@ -498,9 +628,19 @@ def _assert_backend_terminated_or_unstarted(sha):
         raise BootstrapError("backend termination unproven; retain recovery authorization")
     for path in (started, completed):
         secure(path, private=True)
+    if _read_json(completed) == {"sha": sha, "state": "PREPARATION_FAILED"}:
+        # Explicit revocation is still an operator action, never an RPC retry.
+        secure(INSTALLED, private=True)
+        policy = _read_json(CONFIG / "authorized-release.json")
+        digest = hashlib.sha256((canonical_source(sha) / "scripts/trusted_release_server.py").read_bytes()).hexdigest()
+        if policy.get("executor_sha256") != digest or hashlib.sha256(INSTALLED.read_bytes()).hexdigest() != digest:
+            raise BootstrapError("preparation executor binding differs from installation")
+        _workspace_evidence(sha)
+        _assert_idle()
+        return
     if (
-        json.loads(started.read_bytes()) != {"sha": sha, "state": "STARTED"}
-        or json.loads(completed.read_bytes()) != {"sha": sha, "state": "SUCCEEDED"}
+        _read_json(started) != {"sha": sha, "state": "STARTED"}
+        or _read_json(completed) != {"sha": sha, "state": "SUCCEEDED"}
     ):
         raise BootstrapError("backend termination unproven; retain recovery authorization")
 

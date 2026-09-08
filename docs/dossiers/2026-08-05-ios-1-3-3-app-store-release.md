@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | 后端已部署 `329967684`；手机仍为 1.3.3 (265)，新包因发布凭据未通过而未创建。模拟器连接新后端六项基础测试通过；真机锁屏、审核数据恢复、GitHub/ASC 身份确认与完整送审闸待完成，继续冻结 production OTA |
+| 当前阶段 | 后端仍为 `329967684`，手机仍为 1.3.3 (265)；`17ed6f621` 发布在生产机 Git 源码准备阶段失败，状态 NEEDS_OPERATOR，无新包。GitHub/Expo 身份闸已通过；受控失败恢复、审核数据 reset 安全缺陷、ASC 登录与同包完整验收仍阻塞，继续冻结 production OTA |
 | 状态 | implementation |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -599,3 +599,63 @@
   安全表单需 Passkey/验证器二次认证，未完成保存；已取消旧 token 的待确认操作。ASC
   仍无有效登录。本轮无新包、无 OTA、无 App Review 提交；下一步为完成交互认证、受控
   恢复审核 fixture、从绿色精确 revision 创建新包，再做同包真机全项验收与最终送审闸。
+
+### 2026-09-08 · GitHub 认证完成后的受控发布重试
+
+- 用户继续授权执行。GitHub sudo 身份验证已完成，专用 Expo token 直接从浏览器内存
+  写入 `release-production` 安全表单，保存时间可核实；未使用本机剪贴板或输出 token。
+- 候选 `17ed6f621cc3a7c8480641e70bf5fb92eefd8712` 相对独立 G4 GO 的 `b77d8574e`
+  仅 Dossier 变化，独立 reviewer 再核实非文档字节一致。精确 CI `34204727487` 与
+  trusted validate `34210501751` 均 SUCCESS；新鲜 CI-mode 集成 492 PASS / 187.18 秒，
+  基础 App Store release-pack 与 iOS submission preflight PASS，不代表 final-submit GO。
+- 生产机 canonical clone 两次因网络超时失败，第三次成功；核验精确干净源码。首次
+  rotate 因公钥文件末尾空格被参数闸拒绝，发生在任何状态 mutation 前；规范化公钥
+  参数后 explicit rotate 成功，旧 SHA 归档及消费记录原样保留，新身份只授权七小时。
+  实际 forced-command `check` 返回 CHECKED，未更改 DNS、主机校验或使用源码镜像。
+- trusted release `34211228878` 已终态 FAILURE：preflight/build-permission SUCCESS，
+  backend/ios-build FAILURE，testflight SKIPPED。Expo whoami 已通过；ios-build 在后续
+  server claim 校验失败，未进入 vendor create。按精确 source SHA 查询 EAS 无构建。
+- backend 在 fresh source clone 阶段发生 curl 28 / early EOF，未进入 `deploy.sh -b`。
+  工作目录留有 started/completed/preparation 证据，completed 为 NEEDS_OPERATOR；没有
+  source、deployment.log、deployment.env 或执行包装目录，未发现业务 lease 或发布进程。
+  这些观察不是允许清空状态或重复 dispatch 的授权。保留服务器恢复身份及全部审计现场，
+  不执行 revoke/rotate/reset，不把失败状态改成成功或从未启动。
+- 新鲜生产 HEAD 仍为 `329967684a361b7540e85176fba959fc503bd6d1`，API、DB、Redis、
+  Celery healthy。本轮未部署业务、未创建新包、未 OTA、未上传 TestFlight 或提交审核。
+- 独立 reviewer 另判现有 review-fixture reset 执行路径 NO-GO：当前受控 RPC 不含 reset，
+  管理员 canonical staging 例外不能扩大为任意生产数据维护；现有 `deploy.sh -R` 在 SSH
+  返回 255、远端结果未知时仍会释放业务 lease，纯离线桩已复现。该 reset 会重建审核账号
+  部分合成数据，不只是置顶会话。未执行该入口或直接改库；需补固定授权、持久化 intent、
+  终态证明及未知结果保留锁，再独立复审。
+- 物理设备 lockState 再核实 passcodeRequired=true，未启动新一轮 Xcode 测试。ASC 仍为
+  登录页，已交用户完成认证。不得把此前 Build 265 基础测试当作新包全项验收。当前阻塞
+  先是受控发布的准备失败恢复，再是审核 fixture 与同包验收；不催用户反复解锁旧包。
+- 独立 reviewer 确认停线，bootstrap/server 152 PASS；后续应区分 prepare/业务执行阶段，
+  以受审的只读判定器和单独恢复动作处理，不补写旧阶段、不添加特定 SHA 白名单。
+  经单独裁决仅撤销本轮 Expo token 并删除对应 GitHub Secret，UI 核实 robot 无 token；
+  服务器与本机 SSH 身份、GitHub SSH/known_hosts 仍保留，没有延长授权。清理时一次 UI
+  快照的脱敏表达式未覆盖 code 行，该临时令牌随后已撤销且未写入仓库文件。
+  本节暂存于本机 Dossier，未以推进 main 或新 dispatch 绕过 NEEDS_OPERATOR。
+
+### 2026-09-08 · 用户授权修复发布阻塞
+
+- 承接用户“修复”，Router 选择 implementation / health-harness-orchestrator + safety-gate；
+  复用本 Dossier 与本机 ledger `f7011786c974`。准入是发布可靠性及审核账号维护，不新增
+  健康建议、个人账户入口或数据库语义；发布规格新增恢复边界，生产动作仍需独立 Gate。
+- 红测复现阶段缺失、意图写入失败未守门及 reset SSH 255 释放锁。发布器新增持久化
+  PREPARING/PREPARED/DEPLOYING，固定 Git 准备阶段不再执行仓库 Python。进程组与
+  超时不确定性保留 NEEDS_OPERATOR；已知 clone 失败最多三次，部分源码不覆盖、不删除。
+  新 PREPARATION_FAILED 只支持后续显式退役，不支持重跑原 SHA。
+- 初步独立复核发现构建锁缺失、撤权 executor 绑定缺失和准备目录内部漂移漏检，五个
+  新负例先红后绿。撤权/轮换现在同时持有原 launcher/build 锁，核对 canonical/installed/
+  policy/receipt 摘要；准备证据增加受限、拒绝链接跟随的内容及元数据 manifest。
+  历史 NEEDS_OPERATOR 缺新阶段证据，仍不放行，也没有新增特定 SHA 白名单。
+- reset 在 SSH 派发前设置保护，仅成功 exit 与精确 stdout 回执同时满足才清除保护；
+  失败、断连、信号、stderr 冒充回执、重复/截断/附加回执均保留 lease，原始错误不外泄。
+  delegate 完整 deploy 测试 149 PASS；第一轮 CI-mode 发布集成 525 PASS / 183.54 秒。
+- 新增 operator-only `trusted_review_reset.py`，固定 canonical 源、当前 CI、安装身份、
+  后端成功、生产 SHA、环境与包装器，使用一次性操作 ID 和持久化意图/终态。原 seeder
+  与数据库写逻辑未改变；未完成 reset 同时阻止后续 reset 及发布身份退役。新增测试纳入
+  CI release-invariants；集成聚焦 211 PASS / 27 subtests PASS，最终固定复审尚待完成。
+- 本轮尚未操作生产、撤销/延长历史身份、恢复审核数据、构建或提交审核；完整集成和
+  固定提交 G4 将在实现收敛后追加。已实现代码不等于历史事故已解除或 App Review GO。

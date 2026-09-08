@@ -136,7 +136,46 @@ def test_preparation_failure_is_not_retryable(monkeypatch, tmp_path):
     with pytest.raises(server.LaunchError):
         server.run_once(policy(), tmp_path, fail, lambda: calls.append("deploy"))
     assert calls == []
+    assert server.read_status(SHA, tmp_path)["state"] == "PREPARATION_FAILED"
+    assert not (tmp_path / "deployment-started.json").exists()
+    with pytest.raises(server.LaunchError):
+        server.run_once(policy(), tmp_path, lambda: None, lambda: calls.append("deploy"))
+    assert calls == []
+
+
+def test_release_phase_receipts_precede_callbacks(monkeypatch, tmp_path):
+    server = setup_state(monkeypatch, tmp_path)
+    def prepare():
+        receipt = json.loads((tmp_path / "preparation-started.json").read_text())
+        assert receipt == {"sha": SHA, "state": "PREPARING", "executor_sha256": HASH}
+        assert not (tmp_path / "deployment-started.json").exists()
+    def deploy():
+        assert json.loads((tmp_path / "prepared.json").read_text()) == {"sha": SHA, "state": "PREPARED"}
+        assert json.loads((tmp_path / "deployment-started.json").read_text()) == {"sha": SHA, "state": "DEPLOYING"}
+    server.run_once(policy(), tmp_path, prepare, deploy)
+
+
+def test_deployment_intent_write_failure_cannot_be_classed_as_prepare_failure(monkeypatch, tmp_path):
+    server = setup_state(monkeypatch, tmp_path)
+    write = server._write_private
+    def fail_intent(path, data):
+        if path.name == "deployment-started.json":
+            raise OSError("fsync uncertain")
+        write(path, data)
+    monkeypatch.setattr(server, "_write_private", fail_intent)
+    with pytest.raises(server.LaunchError):
+        server.run_once(policy(), tmp_path, lambda: None, lambda: pytest.fail("must not deploy"))
     assert server.read_status(SHA, tmp_path)["state"] == "NEEDS_OPERATOR"
+
+
+@pytest.mark.parametrize("state", ["PREPARATION_FAILED", "NEEDS_OPERATOR"])
+def test_failed_backend_never_claims_build(monkeypatch, tmp_path, state):
+    server = setup_state(monkeypatch, tmp_path)
+    (tmp_path / "completed.json").write_text(json.dumps({"sha": SHA, "state": state}))
+    monkeypatch.setattr(server, "check_readiness", lambda _: pytest.fail("must not probe"))
+    with pytest.raises(server.LaunchError):
+        server.claim_build(policy(), tmp_path)
+    assert not (tmp_path / "build-started.json").exists()
 
 
 def test_clean_environment_does_not_forward_caller_injection(monkeypatch, tmp_path):
@@ -188,7 +227,7 @@ def test_source_preparation_uses_fixed_public_origin_and_exact_sha(monkeypatch, 
             (source / "scripts/trusted_release_server.py").write_bytes(b"audited")
             (source / "scripts/trusted_release_gate.py").write_text("pass")
         return ""
-    monkeypatch.setattr(server, "execute", execute)
+    monkeypatch.setattr(server, "execute_preparation", execute)
     server.prepare_source(policy(executor_sha256=hashlib.sha256(b"audited").hexdigest()), tmp_path)
     clone = next(args for args in calls if "clone" in args)
     git_config = dict(clone[index + 1].split("=", 1) for index, arg in enumerate(clone) if arg == "-c")
@@ -198,7 +237,7 @@ def test_source_preparation_uses_fixed_public_origin_and_exact_sha(monkeypatch, 
     assert git_config.get("http.followRedirects") == "false"
     assert any("https://github.com/itsoso/health-llm-driven.git" in args for args in calls)
     assert any(args[-3:] == ["-B", "main", SHA] for args in calls)
-    assert any("-I" in args and args[-4:] == ["--sha", SHA, "--workflow-sha", SHA] for args in calls)
+    assert all(args[0] == "/usr/bin/git" for args in calls)
 
 
 def test_source_executor_hash_mismatch_prevents_running_repo_gate(monkeypatch, tmp_path):
@@ -211,10 +250,86 @@ def test_source_executor_hash_mismatch_prevents_running_repo_gate(monkeypatch, t
             source.mkdir(parents=True)
             (source / "trusted_release_server.py").write_bytes(b"wrong")
         return ""
-    monkeypatch.setattr(server, "execute", execute)
+    monkeypatch.setattr(server, "execute_preparation", execute)
     with pytest.raises(server.LaunchError):
         server.prepare_source(policy(), tmp_path)
     assert not any("-I" in args for args in calls)
+
+
+def test_uncertain_preparation_process_cannot_authorize_retirement(monkeypatch, tmp_path):
+    server = setup_state(monkeypatch, tmp_path)
+    def fail():
+        raise server.PreparationUncertain("process group not proven stopped")
+    with pytest.raises(server.LaunchError):
+        server.run_once(policy(), tmp_path, fail, lambda: pytest.fail("must not deploy"))
+    assert server.read_status(SHA, tmp_path)["state"] == "NEEDS_OPERATOR"
+
+
+def test_preparation_clone_retries_are_bounded_and_keep_failed_checkout(monkeypatch, tmp_path):
+    server = setup_state(monkeypatch, tmp_path)
+    calls = []
+    def fail(args, cwd, env, log):
+        calls.append(args)
+        (tmp_path / "source").mkdir()
+        (tmp_path / "source" / "evidence").write_text("partial clone")
+        raise subprocess.CalledProcessError(128, args)
+    monkeypatch.setattr(server, "execute_preparation", fail)
+    monkeypatch.setattr(server.time, "sleep", lambda _: None)
+    with pytest.raises(subprocess.CalledProcessError):
+        server.prepare_source(policy(), tmp_path)
+    assert len(calls) == 3
+    assert (tmp_path / "clone-attempts/1/evidence").read_text() == "partial clone"
+    assert (tmp_path / "clone-attempts/2/evidence").read_text() == "partial clone"
+    assert (tmp_path / "source/evidence").read_text() == "partial clone"
+
+
+def test_preparation_command_timeout_is_uncertain(monkeypatch, tmp_path):
+    import sys
+    server = load_server()
+    monkeypatch.setattr(server, "PREPARATION_TIMEOUT_SECONDS", 0.02)
+    with pytest.raises(server.PreparationUncertain):
+        server.execute_preparation([sys.executable, "-c", "import time; time.sleep(10)"],
+                                   tmp_path, dict(os.environ), tmp_path / "preparation.log")
+
+
+def test_clone_retry_must_not_replace_existing_attempt_evidence(monkeypatch, tmp_path):
+    server = setup_state(monkeypatch, tmp_path)
+    archive = tmp_path / "clone-attempts/1"
+    archive.mkdir(parents=True)
+    inode = archive.stat().st_ino
+    def fail(args, *unused):
+        (tmp_path / "source").mkdir()
+        raise subprocess.CalledProcessError(128, args)
+    monkeypatch.setattr(server, "execute_preparation", fail)
+    monkeypatch.setattr(server.time, "sleep", lambda _: None)
+    with pytest.raises(server.LaunchError, match="evidence"):
+        server.prepare_source(policy(), tmp_path)
+    assert archive.stat().st_ino == inode
+
+
+def test_failed_preparation_group_inspection_is_never_known_safe(monkeypatch, tmp_path):
+    import sys
+    server = load_server()
+    def unavailable(*args):
+        raise PermissionError("cannot inspect process group")
+    monkeypatch.setattr(server.os, "killpg", unavailable)
+    with pytest.raises(server.PreparationUncertain):
+        server.execute_preparation([sys.executable, "-c", "pass"], tmp_path,
+                                   dict(os.environ), tmp_path / "preparation.log")
+
+
+def test_surviving_preparation_child_is_stopped_and_classified_uncertain(tmp_path):
+    import sys
+    import time
+    server = load_server()
+    output = tmp_path / "unexpected-child-output"
+    child = f"import time; time.sleep(0.4); open({str(output)!r}, 'w').write('late')"
+    parent = f"import subprocess, sys; subprocess.Popen([sys.executable, '-c', {child!r}])"
+    with pytest.raises(server.PreparationUncertain):
+        server.execute_preparation([sys.executable, "-c", parent], tmp_path,
+                                   dict(os.environ), tmp_path / "preparation.log")
+    time.sleep(0.6)
+    assert not output.exists()
 
 
 @pytest.mark.parametrize("uid,gid,mode", [(501, 100, 0o640), (0, 99, 0o640), (0, 100, 0o644), (0, 100, 0o660), (0, 100, 0o600)])

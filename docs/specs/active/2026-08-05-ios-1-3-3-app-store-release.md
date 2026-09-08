@@ -196,7 +196,25 @@ git diff --check
 
 ## 14. Open Questions
 
-无阻塞性未决问题。具体构建号由 EAS remote auto-increment 决定，但必须不低于 241。
+具体构建号由 EAS remote auto-increment 决定，但必须不低于 241。
+历史 NEEDS_OPERATOR 的处置、审核 fixture 恢复与同包真机验收仍是送审阻塞，
+裁决与证据以父 release Dossier 的最新记录为准。
+
+### 2026-09-08 Release Recovery Amendment
+
+- Requirement admission: user-authorized release reliability repair; no new health advice,
+  client surface, medical claim, database schema, or personal-account data access.
+- Smallest slice: distinguish fixed Git preparation from business execution; durable phase
+  receipts precede callbacks; only bounded, completed clone failures may retry.
+- Recovery boundary: preserve old receipts and identities; new preparation-only failure
+  evidence may support explicit retirement, never automatic rerun. Legacy unknown failures
+  cannot gain phase evidence retroactively.
+- Review reset: operator-only canonical source, exact deployed revision and fresh CI,
+  one-time operation identity, fixed configured review account, no password rotation.
+  Persist intent before dispatch and retain operation/lease on uncertain outcome.
+- Acceptance: executable negative tests for interruption, duplicate dispatch, malformed
+  receipts, source/identity mismatch and lock contention; independent G4 and final-submit
+  gates remain mandatory. Local green tests do not authorize historical-state mutation.
 
 ## 15. Changelog
 

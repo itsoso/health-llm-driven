@@ -4188,11 +4188,14 @@ reset_app_store_review_demo() {
     verify_deployed_revision
     print_step "重置 App Store 审核演示数据..."
 
+    # The destructive remote reset can outlive SSH; preserve its lease until
+    # both the command and its exact terminal receipt prove success.
+    _REMOTE_RELEASE_LOCK_DELEGATED=1
     if ! reset_output=$(ssh "$SERVER" bash -s -- \
         "$REMOTE_PATH" \
         "$DEPLOY_EXPECTED_SHA" \
         "$REMOTE_RELEASE_LOCK_DIR" \
-        "$REMOTE_RELEASE_LOCK_TOKEN" <<'REMOTE_APP_STORE_REVIEW_RESET'
+        "$REMOTE_RELEASE_LOCK_TOKEN" 2>/dev/null <<'REMOTE_APP_STORE_REVIEW_RESET'
 set -euo pipefail
 repo_path="$1"
 expected_sha="$2"
@@ -4243,13 +4246,17 @@ print("APP_STORE_REVIEW_RESET_OK")
 PY
 REMOTE_APP_STORE_REVIEW_RESET
     ); then
-        print_error "App Store 审核演示数据重置失败"
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        print_error "App Store 审核演示数据重置失败或结果未知；发布锁与现场保留"
         return 1
     fi
     if [[ "$reset_output" != "APP_STORE_REVIEW_RESET_OK" ]]; then
-        print_error "App Store 审核演示数据重置缺少精确成功证明"
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        print_error "App Store 审核演示数据重置缺少精确成功证明；发布锁与现场保留"
         return 1
     fi
+    _REMOTE_RELEASE_LOCK_DELEGATED=0
+    _REMOTE_RELEASE_LOCK_ABANDONED=0
     print_success "App Store 审核演示数据已重置并通过非敏感验证"
 }
 

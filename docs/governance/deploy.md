@@ -61,6 +61,16 @@ backend launcher 锁互斥；单独重跑失败 job 也不能复用旧 claim 再
 领取前先拒绝空白 Expo token，并用锁定 CLI 在隔离环境中执行只读身份验证；失败不消费
 构建标记，输出固定错误码/文案而不输出身份或凭据。Secret 创建成功不证明其值有效。
 启动和原生构建 claim 在调用前持久化；未知结果不得重新 dispatch 规避一次性标记。
+源码准备先落盘绑定 executor 摘要的 PREPARING 回执，仅运行固定系统 Git，不执行仓库
+脚本。Git clone 在同一次授权内最多三次；只有已退出且进程组不再存在的 exit 128
+可以重试，部分 checkout 原样留在 clone-attempts。每条 Git 命令有独立超时；超时、
+中断或残存子进程均进入 NEEDS_OPERATOR，不因尝试终止进程就宣称已安全结束。
+源码准备的已知失败记为 PREPARATION_FAILED，仍不可重跑原 SHA。准备成功写 PREPARED，
+首次运行仓库脚本和业务部署之前先持久化 DEPLOYING 意图；意图写入失败不得执行。
+显式撤权/轮换只接受完整的准备失败阶段证明、canonical executor 摘要、受限库存及
+无业务/构建/上传意图；仍须满足原有 idle、不可变归档、新 SHA/新身份约束。
+旧 NEEDS_OPERATOR 没有这些阶段证明，禁止补写回执、仅凭文件缺失放行或新增特定 SHA
+白名单；源码修复不能自动解除历史现场的恢复阻塞。
 上传 job 必须同时等待 backend 和 ios-build 成功，仍以 `claim-testflight` 验证后端
 SUCCEEDED 并消费一次性上传权限。仅提交本轮 job 返回且经 EAS 再次验证的精确 build ID，
 要求 source SHA、FINISHED、IOS、STORE、production 全匹配；禁止隐式 latest。
@@ -71,6 +81,20 @@ EAS 调用响应丢失时按 source SHA 查询已有构建，记录其 build/sub
 保留其他密钥及审计记录。权限到期不证明已启动的进程终止。
 
 该入口不替代下面的备份、恢复、迁移、运行态、健康和回滚规则，也不提交正式 App Review。
+
+#### 审核账号维护入口
+
+只有用户明确授权的审核 fixture 恢复，才可由管理员从同样的受审 canonical staging
+以系统 Python `-I` 执行 `scripts/trusted_review_reset.py --sha <sha> --operation-id <32hex>`。
+它不是 cloud SSH RPC，不接受账号、密码、命令或路径参数，不用于业务部署。
+必须是干净精确源码、真实 CI 绿色、安装执行器/策略同源、授权未过期、后端已成功且
+实际生产 revision 一致；固定 loopback、包装命令及派生环境逐字节校验，漂移直接阻断。
+复用原 launcher.lock 和 `deploy.sh -R` 的业务 lease，仅访问服务端配置的审核账号。
+在 `review-resets/<operation-id>` 持久化绑定 SHA/操作 ID 的意图后才执行，不改密码。
+任何中断、未知结果、非法回执或历史未完成操作均保留锁和证据，禁止重复操作 ID，
+也不能换 ID 绕过未完成操作。只有精确成功才记为 SUCCEEDED；未结束的审核重置同样
+阻止发布身份撤销和轮换。不得直接调用 seeder、修改会话排序或套用管理员 shell 例外。
+准备失败或旧 NEEDS_OPERATOR 不满足这个入口的后端成功前置条件。
 
 离线订单 SSE 验收辅助：`python scripts/release_acceptance.py analyze < sanitized-events.sse`。
 仅输入合成或已脱敏事件，输出不含原文。pending_confirmation 是需要用户确认的草稿；

@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import signal
 import stat
 import subprocess
 import sys
@@ -24,10 +25,15 @@ ORIGIN = "https://github.com/itsoso/health-llm-driven.git"
 PYTHON = "/usr/bin/python3.12"
 DEPLOY_TIMEOUT_SECONDS = 3600
 RECOVERY_MARGIN_SECONDS = 3600
+PREPARATION_TIMEOUT_SECONDS = 90
 
 
 class LaunchError(Exception):
     """A sanitized rejection; callers must never receive deployment logs."""
+
+
+class PreparationUncertain(LaunchError):
+    """Preparation process termination cannot be used as retirement evidence."""
 
 
 def parse_command(command):
@@ -151,7 +157,7 @@ def read_status(sha, workspace):
     if complete.exists():
         secure_path(complete, private=True)
         data = _json(complete.read_bytes())
-        if data not in ({"sha": sha, "state": "SUCCEEDED"}, {"sha": sha, "state": "NEEDS_OPERATOR"}):
+        if data not in tuple({"sha": sha, "state": state} for state in ("SUCCEEDED", "NEEDS_OPERATOR", "PREPARATION_FAILED")):
             raise LaunchError("invalid terminal release state")
         return data
     if started.exists():
@@ -182,12 +188,22 @@ def run_once(policy, workspace, prepare, deploy):
         # that links this newly created directory into STATE. Persist both
         # before any source preparation or external release operation begins.
         _sync_directory(workspace.parent)
+        preparing = False
         try:
+            _write_private(workspace / "preparation-started.json", json.dumps({
+                "sha": policy["sha"], "state": "PREPARING", "executor_sha256": policy["executor_sha256"],
+            }).encode())
+            preparing = True
             prepare()
+            preparing = False
+            _write_private(workspace / "prepared.json", json.dumps({"sha": policy["sha"], "state": "PREPARED"}).encode())
             _assert_deployment_window(policy)
+            # This durable intent is a prerequisite to every business side effect.
+            _write_private(workspace / "deployment-started.json", json.dumps({"sha": policy["sha"], "state": "DEPLOYING"}).encode())
             deploy()
-        except Exception:  # noqa: BLE001 -- Persist every failure before sanitizing it at this boundary.
-            _write_private(workspace / "completed.json", json.dumps({"sha": policy["sha"], "state": "NEEDS_OPERATOR"}).encode())
+        except Exception as error:  # noqa: BLE001 -- Persist failures before sanitizing at the boundary.
+            state = "PREPARATION_FAILED" if preparing and not isinstance(error, PreparationUncertain) else "NEEDS_OPERATOR"
+            _write_private(workspace / "completed.json", json.dumps({"sha": policy["sha"], "state": state}).encode())
             raise LaunchError("release failed; evidence retained, retry forbidden") from None
         # BaseException / process death intentionally leaves STARTED, never READY.
         result = {"sha": policy["sha"], "state": "SUCCEEDED"}
@@ -256,7 +272,7 @@ def claim_build(policy, workspace):
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise LaunchError("another release invocation is active") from None
-        if read_status(policy["sha"], workspace)["state"] == "NEEDS_OPERATOR":
+        if read_status(policy["sha"], workspace)["state"] in {"NEEDS_OPERATOR", "PREPARATION_FAILED"}:
             raise LaunchError("failed backend requires operator review before build")
         marker = workspace / "build-started.json"
         if os.path.lexists(marker):
@@ -321,6 +337,38 @@ def execute(args, cwd, env, log):
                        timeout=DEPLOY_TIMEOUT_SECONDS, start_new_session=True)
 
 
+def execute_preparation(args, cwd, env, log):
+    """Bound fixed Git commands; uncertain process groups never permit retirement."""
+    with open(log, "ab", buffering=0) as output:
+        os.chmod(log, 0o600)
+        process = subprocess.Popen(args, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                                   stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+        try:
+            code = process.wait(timeout=PREPARATION_TIMEOUT_SECONDS)
+        except BaseException:  # noqa: BLE001 -- Cancel the owned group even on interpreter interruption.
+            try:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    # The group exited between timeout delivery and cancellation.
+                    process.poll()
+                process.wait(timeout=5)
+            finally:
+                raise PreparationUncertain("preparation interrupted; operator review required") from None
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
+            if code:
+                raise subprocess.CalledProcessError(code, args) from None
+            return
+        except OSError:
+            raise PreparationUncertain("preparation group inspection failed") from None
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        finally:
+            raise PreparationUncertain("preparation descendants remained; operator review required") from None
+
+
 def prepare_source(policy, workspace):
     workspace = Path(workspace)
     env = clean_environment(workspace)
@@ -333,15 +381,35 @@ def prepare_source(policy, workspace):
         "-c", "http.followRedirects=false", "-c", "http.version=HTTP/1.1",
         "-c", "http.lowSpeedLimit=1024", "-c", "http.lowSpeedTime=30",
     ]
-    execute(git + ["clone", "--no-checkout", "--no-local", "--depth=1", "--branch=main", "--single-branch", ORIGIN, str(source)], workspace, env, log)
-    execute(git + ["-C", str(source), "checkout", "-B", "main", policy["sha"]], workspace, env, log)
+    for attempt in range(3):
+        _assert_deployment_window(policy)
+        try:
+            execute_preparation(git + ["clone", "--no-checkout", "--no-local", "--depth=1", "--branch=main", "--single-branch", ORIGIN, str(source)], workspace, env, log)
+            break
+        except subprocess.CalledProcessError as error:
+            if error.returncode != 128 or attempt == 2:
+                raise
+            # Only a completed Git clone may retry; preserve partial evidence.
+            if os.path.lexists(source):
+                secure_path(source, directory=True)
+                archive = workspace / "clone-attempts"
+                archive.mkdir(mode=0o700, exist_ok=True)
+                secure_path(archive, directory=True)
+                destination = archive / str(attempt + 1)
+                if os.path.lexists(destination):
+                    raise LaunchError("existing clone attempt evidence must not be replaced") from None
+                source.rename(destination)
+                _sync_directory(archive)
+                _sync_directory(workspace)
+            time.sleep(2 ** attempt)
+    execute_preparation(git + ["-C", str(source), "checkout", "-B", "main", policy["sha"]], workspace, env, log)
     executor = source / "scripts/trusted_release_server.py"
     secure_path(executor)
     if hashlib.sha256(executor.read_bytes()).hexdigest() != policy["executor_sha256"]:
         raise LaunchError("source executor differs from reviewed authorization")
     gate = source / "scripts/trusted_release_gate.py"
     secure_path(gate)
-    execute([PYTHON, "-I", str(gate), "--sha", policy["sha"], "--workflow-sha", policy["sha"]], source, env, log)
+    # Repository Python first executes inside deploy(), after durable business intent.
 
 
 def loopback_config():
