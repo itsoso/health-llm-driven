@@ -30,6 +30,20 @@ record count and rejection of a foreign owner update. Final fixed verification
 and independent G4 will be appended after code stabilization. No production data
 was accessed or changed; the preceding controlled-release incident remains separate.
 
+Fixed commits `257b2bbe1` and `a6e0df33a` passed fresh verification: 1,235
+adjacent/feature tests passed with one explicitly PostgreSQL-only skip; the
+PostgreSQL feature suite passed all 24 tests without skips, including the final
+SSE `completion_status=complete` assertion. CI contract: 12 PASS; Dossier
+consistency, System Map, secret scan and blocking undefined-name/syntax lint
+passed. Existing non-blocking executor lint debt was not broadly reformatted.
+The temporary PostgreSQL instance was stopped after verification.
+
+Independent safety review gave **code-only GO** for `5880dc9e8..a6e0df33a`:
+163 PASS / one PG-only skip, 12 CI contract tests and 57 additional invalid
+model-write probes blocked. The reviewer inspected but did not independently
+repeat the parent's PostgreSQL evidence. No push or deployment was performed;
+the earlier controlled-release NEEDS_OPERATOR block is unchanged.
+
 A production Mobile follow-up was presented as a network send failure while the
 Backend was actually serializing it behind an earlier active turn. The same
 follow-up requested a `1/2` diet-record correction that the deterministic
