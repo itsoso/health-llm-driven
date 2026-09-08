@@ -2985,6 +2985,7 @@ def decide_tool_capability(
             if guarding_user_read and not (
                 _has_explicit_read_request(turn_text)
                 or primary == "read"
+                or projected_diet_read is not None
                 or _HISTORY_QUERY_QUESTION_RE.search(_query_scope_text(turn_text))
                 or re.search(r"[?？]\s*$", turn_text)
             ):
@@ -3008,8 +3009,10 @@ def decide_tool_capability(
                     tool_name,
                     args,
                 )
-            if guarding_user_read and illness_read_has_unowned_subject(
-                _query_scope_text(turn_text)
+            if (
+                guarding_user_read
+                and projected_diet_read is None
+                and illness_read_has_unowned_subject(_query_scope_text(turn_text))
             ):
                 return _decision(
                     "block",

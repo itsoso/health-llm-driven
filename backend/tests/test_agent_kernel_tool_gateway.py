@@ -1463,10 +1463,16 @@ async def test_diet_history_nonself_or_partial_scope_never_dispatches(policy_mod
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
-async def test_exact_yesterday_diet_list_is_projected_from_turn_scope(policy_mode):
+@pytest.mark.parametrize("message", (
+    "昨天晚上我吃的怎么样？昨天一整天我吃的怎么样？",
+    "昨天午餐、晚餐和全天的饮食怎么样？",
+    "昨天一整天的饮食怎么样？",
+    "请帮我分析昨天一整天的饮食。",
+))
+async def test_exact_yesterday_diet_list_is_projected_from_turn_scope(policy_mode, message):
     gateway = ToolGateway(
         _snapshot(
-            "昨天晚上我吃的怎么样？昨天一整天我吃的怎么样？",
+            message,
             policy_mode=policy_mode,
         )
     )
