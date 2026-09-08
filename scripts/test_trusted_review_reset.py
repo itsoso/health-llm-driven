@@ -41,6 +41,13 @@ class ReviewResetTests(unittest.TestCase):
             self.reset.reset_review(SHA, OP)
         self.assertFalse(self.operation.exists())
 
+    def test_failing_ci_gate_never_reads_production_credentials(self):
+        self.gate_error = subprocess.TimeoutExpired("offline-gate", 1)
+        self.patch(self.server, "read_production_env", lambda: self.fail("credential read before CI"))
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self.reset.reset_review(SHA, OP)
+        self.assertFalse(self.operation.exists())
+
     def setUp(self):
         self.reset = load("trusted_review_reset")
         self.bootstrap = load("bootstrap_trusted_release")

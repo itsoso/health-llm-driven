@@ -191,13 +191,15 @@ def reset_review(sha, operation_id):
         operation = root / operation_id
         if os.path.lexists(operation):
             raise ResetError("operation ID already consumed; retry forbidden")
-        env = _validate_workspace(sha, source, bootstrap, server)
+        server.secure_path(Path(server.PYTHON))
+        env = server.clean_environment(workspace)
+        env.update(PATH="/usr/bin:/bin", HOME="/nonexistent")
         subprocess.run([server.PYTHON, "-I", str(source / "scripts/trusted_release_gate.py"),
             "--sha", sha, "--workflow-sha", sha], cwd=source, env=env,
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             check=True, timeout=90)
-        # CI latency must not turn an expired policy or changed target into an
-        # authorization. Recheck under the same original lock before intent.
+        # Production credentials are read only after the credential-free CI gate.
+        # Validate the current target and authorization under the original lock.
         env = _validate_workspace(sha, source, bootstrap, server)
         _assert_lock(server, lock, fd)
         if not os.path.lexists(root):
