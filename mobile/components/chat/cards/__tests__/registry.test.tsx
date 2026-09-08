@@ -271,6 +271,50 @@ describe('renderCard 安全降级', () => {
     expect(shouldDismissDietPhotoGallery({ dx: 5, dy: 42, vy: 0.3 })).toBe(false);
   });
 
+  it('closes a meal photo with one tap and allows reopening', () => {
+    const screen = render(renderCard({
+      type: 'diet_draft',
+      data: {
+        meal_type: 'lunch', recorded: true,
+        photo_urls: ['/api/v1/upload/files/diet/1/first.jpg?signature=one'],
+      },
+    })!);
+    fireEvent.press(screen.getByTestId('diet-photo-cover'));
+    fireEvent.press(screen.getByRole('button', { name: '餐食照片 1，轻触关闭' }));
+    expect(screen.queryByTestId('diet-photo-gallery')).toBeNull();
+    fireEvent.press(screen.getByTestId('diet-photo-cover'));
+    expect(screen.getByTestId('diet-photo-gallery')).toBeTruthy();
+  });
+
+  it('does not treat a horizontal or short vertical drag as a photo tap', () => {
+    const screen = render(renderCard({
+      type: 'diet_draft',
+      data: {
+        meal_type: 'lunch', recorded: true,
+        photo_urls: [
+          '/api/v1/upload/files/diet/1/first.jpg?signature=one',
+          '/api/v1/upload/files/diet/1/second.jpg?signature=two',
+        ],
+      },
+    })!);
+    fireEvent.press(screen.getByTestId('diet-photo-cover'));
+    const gallery = screen.getByTestId('diet-photo-gallery');
+    const photo = screen.getByRole('button', { name: '餐食照片 1，轻触关闭' });
+    for (const [dx, dy] of [[130, 22], [4, 38], [15, 15]]) {
+      gallery.props.onStartShouldSetResponderCapture(panStartEvent());
+      const claimed = gallery.props.onMoveShouldSetResponderCapture(panMoveEvent(dx, dy));
+      if (claimed) {
+        act(() => gallery.props.onResponderRelease({}));
+      }
+      fireEvent.press(photo);
+      expect(screen.getByTestId('diet-photo-gallery')).toBeTruthy();
+    }
+    // The next distinct touch is a tap, not the end of the previous drag.
+    gallery.props.onStartShouldSetResponderCapture(panStartEvent());
+    fireEvent.press(photo);
+    expect(screen.queryByTestId('diet-photo-gallery')).toBeNull();
+  });
+
   it('dismisses the gallery by swiping up or down without stealing horizontal paging', () => {
     const screen = render(renderCard({
       type: 'diet_draft',
@@ -359,7 +403,7 @@ describe('renderCard 安全降级', () => {
 
     fireEvent.press(screen.getByTestId('diet-photo-cover'));
     const close = screen.getByRole('button', { name: '关闭餐食照片' });
-    expect(close).toHaveProp('accessibilityHint', '也可以上下滑动关闭');
+    expect(close).toHaveProp('accessibilityHint', '也可以轻触图片或上下滑动关闭');
     fireEvent.press(close);
     expect(screen.queryByTestId('diet-photo-gallery')).toBeNull();
 

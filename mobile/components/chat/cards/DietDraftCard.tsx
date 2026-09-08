@@ -1063,6 +1063,7 @@ function MealPhotoGallery({
   const { width, height } = useWindowDimensions();
   const translateY = React.useRef(new Animated.Value(0)).current;
   const directionLock = React.useRef<DietPhotoGestureDirection | null>(null);
+  const movedDuringTouch = React.useRef(false);
   const springBack = React.useCallback(() => {
     Animated.spring(translateY, {
       toValue: 0,
@@ -1072,6 +1073,10 @@ function MealPhotoGallery({
     }).start();
   }, [translateY]);
   const shouldClaimVerticalGesture = React.useCallback((gesture: DietPhotoGesture) => {
+    if (Math.max(Math.abs(gesture.dx), Math.abs(gesture.dy)) >= PHOTO_DISMISS_ACTIVATION_DISTANCE) {
+      // A drag (including an undecided diagonal) must never become a tap on release.
+      movedDuringTouch.current = true;
+    }
     if (directionLock.current == null) {
       directionLock.current = dietPhotoGestureDirection(gesture);
     }
@@ -1081,6 +1086,7 @@ function MealPhotoGallery({
     onStartShouldSetPanResponder: () => false,
     onStartShouldSetPanResponderCapture: () => {
       directionLock.current = null;
+      movedDuringTouch.current = false;
       return false;
     },
     onMoveShouldSetPanResponder: (_event, gesture) => shouldClaimVerticalGesture(gesture),
@@ -1132,7 +1138,7 @@ function MealPhotoGallery({
             onPress={onClose}
             accessibilityRole="button"
             accessibilityLabel="关闭餐食照片"
-            accessibilityHint="也可以上下滑动关闭"
+            accessibilityHint="也可以轻触图片或上下滑动关闭"
             style={styles.galleryClose}
           >
             <Ionicons name="close" size={23} color="#fff" />
@@ -1145,9 +1151,15 @@ function MealPhotoGallery({
           contentContainerStyle={styles.galleryPages}
         >
           {uris.map((uri, index) => (
-            <View
+            <Pressable
               key={uri}
               style={[styles.galleryPage, { width, minHeight: Math.max(300, height - 150) }]}
+              onPress={() => {
+                if (!movedDuringTouch.current) onClose();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`餐食照片 ${index + 1}，轻触关闭`}
+              accessibilityHint="上下滑动也可关闭，左右滑动查看其他照片"
             >
               {failedUris.has(uri) ? (
                 <View style={styles.galleryFailure}>
@@ -1161,10 +1173,11 @@ function MealPhotoGallery({
                   contentFit="contain"
                   onError={() => onError(uri)}
                   accessibilityLabel={`餐食照片 ${index + 1}`}
+                  accessible={false}
                 />
               )}
               <Text style={styles.galleryIndex}>{index + 1} / {total}</Text>
-            </View>
+            </Pressable>
           ))}
           {unavailableCount > 0 ? (
             <View style={[styles.galleryPage, { width, minHeight: Math.max(300, height - 150) }]}>

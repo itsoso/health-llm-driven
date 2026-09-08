@@ -1,5 +1,25 @@
 # Dossier: 饮食修正重算与餐食大图滑动关闭
 
+## 2026-09-09 · 图片轻触关闭补充（仅本机实现）
+
+- 用户截图对应 MealPhotoGallery：已有纵向滑动关闭，但照片没有轻触入口。
+- 图片页改为可轻触关闭，图片周围页内留白也可点；保留上下拖动关闭、横向翻页、
+  短拖动回弹、右上角关闭及 Android 返回。拖动标记维持到下一次触摸，防止松手误判轻触。
+- 不改变图片权限、存储、上传、健康记录或分享写路径；此块不改变原 G6 真机待确认状态。
+- TDD：新增轻触/拖动误触回归和提示更新，首轮 3 failed；实现后卡片注册/交互 93 passed，
+  TypeScript 检查通过。手势证据为组件事件回归，不宣称手机实体手势已验证。
+- 实现阶段未 commit、push、OTA 或发包；随后用户要求发布并确认改走 TestFlight 新包。
+
+### 本次 TestFlight 发布准备
+
+- 用户已确认发布图片关闭修复；production OTA 继续冻结，不包含正式 App Review 提交。
+- 新鲜 CI-mode Mobile 全量回归：304 suites、2819 passed、1 个既有 skipped，71.662 秒；
+  TypeScript 检查通过。基础 App Store release-pack / iOS 配置检查通过。
+- 本机 ASC 私钥检查未通过；本轮采用既有 EAS 托管签名及 Submit API Key 路径，
+  不把本机凭据缺失或历史上传成功当作本次上传证明。最终送审材料闸不在本轮范围。
+- 发布执行器与已独立 G4 GO 的 `30af34486` 字节一致；本轮不修改发布授权协议。
+  仍须完成新鲜发布集成闸、精确 main CI、临时发布授权、构建/上传及厂商终态核验。
+
 | 字段 | 值 |
 |---|---|
 | slug | `diet-correction-recalculation-photo-dismiss` |
