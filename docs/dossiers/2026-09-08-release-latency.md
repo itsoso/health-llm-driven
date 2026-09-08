@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 |---|---|
-| 当前阶段 | S5 实现与本机验证 |
-| 状态 | building |
+| 当前阶段 | S8 本轮工具代码交付完成；生产启用未执行 |
+| 状态 | complete |
 
 ## G1 · 准入
 
@@ -13,7 +13,7 @@
 ## 范围与状态
 
 - 用户要求：执行发布复盘中的优化。
-- 当前阶段：S5 实现与本机验证；未部署、未发布新包。
+- 当前阶段：本轮工具代码实现、回归与安全复核完成；未 push、未部署、未发布新包。
 - Controller：health-harness-orchestrator；overlay：safety-gate。
 - 前序证据：`2026-09-07-trusted-release-executor.md`。
 - 不触碰正在进行的健康业务改动，不合并 PR #252；不更换生产备份目标、
@@ -48,8 +48,44 @@ testflight job 610 秒，后二者串行。依赖安装 24 秒，不优先引入
 - T4 56 个原始分片的选择、隔离和 timeout 字段保持逐字段一致；新增 scheduling_seconds
   只参与 LPT 排程。同批成功 attempt 离线重放最长 277.604 → 202.953 秒；不等同线上收益。
   a-agenda 180.064 秒超时重试及 runner 排队另列，未伪装成已修复。
+- 旧 shard runner 新鲜回归 18 PASS；本轮真实 Build 265 的离线 vendor metadata 通过新
+  精确 SHA/ID/project/bundle 校验，没有创建构建或访问生产。
+- 首次完整集成在测试采集后追加了制品身份修复，旧 fixture 被新版 helper 拒绝：
+  604 PASS / 1 FAIL / 430.45 秒。属于父任务验证排程失误，保留原失败；冻结代码后重新
+  从当前 CI workflow 读取完整清单，设置 CI=1 重跑，不把混合版本结果作为最终通过证据。
+
+## G4 · 独立安全复核
+
+固定 `789253705` 的首轮阻断为制品未绑定 App/project。新增错误 project/bundle 反例
+2 RED 后，以 `4e3e5de1b` 修复到受审 `mobile/app.json` 配置真源；15 项相关测试 PASS。
+独立 reviewer 对两提交整体复审：**裁决：PASS（代码安全门）**，七组 208 PASS / 6.24 秒。
+未授权生产安装、push 或上线。非阻断建议为 status 增加 build 消费状态；当前 marker
+仍保留，可由操作员调查，不重置或复用。
+
+## 后续诊断（不算已修复）
+
+a-agenda 首轮日志停在 test_agenda_snooze.py，缺少具体 nodeid/阶段/线程栈；重试的
+83 项在 37.004 秒通过。业务链没有 LLM/HTTP；共享 fixture 存在 Redis I/O 与
+TestClient 生命周期等待，但不能据此断言根因。下一次有界 Linux 复现可针对该分片加
+`-vv --setup-show -o faulthandler_timeout=30`，保留原 120 秒单例和 180 秒进程上限。
 - 外部推荐 TDD/karpathy 等本机无 SKILL.md；按 AGENTS 的 RED/GREEN、最小修改、
   新鲜证据要求执行。System Map 未索引 workflow/server 路径，回到源代码与测试。
+
+## G3 · 最终冻结版本验证
+
+**裁决：PASS（本轮本机工具代码范围）**。
+
+- 固定生产代码 `4e3e5de1b` 后，直接从 `.github/workflows/ci.yml` release-invariants
+  读取完整命令，以 CI=1 执行：**673 PASS / 399.74 秒**，退出码 0。
+  日志 `/tmp/xiaoba-release-latency-final-integration.log`，包含最慢测试分段。
+- 对应本机 Python 3.12.13；新旧 worker 18 PASS，独立安全回归 208 PASS。
+- bash 语法、阻断级 Ruff（F821/F822/E9）、秘密扫描、System Map、Skill 治理、
+  Dossier 一致性与 diff whitespace 均通过。
+- 外部推荐 verification-before-completion 无本机 Skill 文件，完成声明仍以本轮
+  新鲜命令与实际退出码为准，没有用单元测试替代真实发布结果。
+- 本机仍存在另一任务的健康业务未提交修改，均未纳入本轮提交。因此本机结果不是
+  干净目标 revision 的发布授权；未来 push/启用前仍须相应精确 main 的真实 CI 与授权闸。
+- G5/G6 生产部署/线上验证本轮未执行；20–25 分钟目标及并行节约时间仍需真实发布测量。
 
 ## 尚未声称完成的范围
 
