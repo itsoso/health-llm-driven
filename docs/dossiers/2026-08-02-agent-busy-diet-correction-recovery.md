@@ -9,6 +9,27 @@
 
 ## Problem
 
+### 2026-09-08 Follow-Up: Relative Meal Correction
+
+The user reports `修正上一餐吃了1/3` being answered with an unsuccessful lookup
+and a request to repeat meal details. Quick-fix Router + safety-gate selected.
+The concrete code gap is that the existing correction parser requires a named
+meal; the relative phrase bypasses its deterministic lookup and update path.
+This repairs the existing owner-scoped diet correction loop, not a new object,
+medical recommendation or automatic write surface. The amendment in the linked
+feature contract bounds selection to the most recent recorded meal and defines
+fail-closed ambiguity, date and idempotent portion semantics.
+
+Initial regression: 13 failed / 9 passed. The implementation reuses the existing
+signed portion-update API and scales the original record, never an extra create.
+A separate adversarial photo-parser test failed after the first implementation;
+an explicit grammar mode now keeps relative corrections out of new-photo writes.
+Initial adjacent regressions: 1,212 PASS. Initial PostgreSQL run: 23 PASS,
+including owner-only lookup, real update, repeated absolute fraction, unchanged
+record count and rejection of a foreign owner update. Final fixed verification
+and independent G4 will be appended after code stabilization. No production data
+was accessed or changed; the preceding controlled-release incident remains separate.
+
 A production Mobile follow-up was presented as a network send failure while the
 Backend was actually serializing it behind an earlier active turn. The same
 follow-up requested a `1/2` diet-record correction that the deterministic

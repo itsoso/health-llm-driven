@@ -412,6 +412,7 @@ jobs:
           tests/test_agent_runtime_concurrency.py
           tests/test_agent_runtime_tool_operations.py
           tests/test_agent_runtime_reconciliation.py
+          tests/test_latest_meal_correction.py
           tests/test_medication_intake_batch.py
           tests/test_write_intent_medication_batch_schema.py
           tests/test_medication_intake_batch_postgres.py

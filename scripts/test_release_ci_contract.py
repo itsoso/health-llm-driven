@@ -361,6 +361,7 @@ def test_postgres_gate_runs_invitation_migration_and_merge_concurrency_without_s
     env = postgres_step["env"]
 
     assert env["TEST_DATABASE_URL"].startswith("postgresql://")
+    assert "tests/test_latest_meal_correction.py" in run
     assert env["REGISTRATION_INVITATION_ROLLOUT_ENABLED"] == "true"
     assert env["REGISTRATION_INVITATION_ENFORCEMENT_ENABLED"] == "true"
     assert (

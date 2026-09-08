@@ -3221,6 +3221,11 @@ def _diet_correction_unresolved_message(reason: str) -> str:
             "我找到多条符合日期和餐次的饮食记录，暂时没有修改。"
             "请选择具体哪一条后再提交修正。"
         )
+    if reason == "latest_target_unverified":
+        return (
+            "已找到饮食记录，但暂时无法确定哪条是上一餐，因此没有修改。"
+            "请选择要修正的那条餐食记录。"
+        )
     if reason == "target_not_found":
         return (
             "我没有找到符合日期和餐次的饮食记录，因此没有修改。"
@@ -6076,6 +6081,15 @@ _DIET_FACTUAL_WRITE_SUFFIX_PATTERN = (
     r"(?:按实际(?:摄入|食用量)\s*)?"
     r"(?:修改|更正|修正|更新|调整|改)(?:一下)?(?:饮食)?(?:记录)?"
 )
+_DIET_LATEST_MEAL_RE = re.compile(r"上一[餐顿]|刚[才刚]那(?:一)?[餐顿]|最近一餐")
+_DIET_FACTUAL_LATEST_CORRECTION_SHAPE_RE = re.compile(
+    r"^(?:(?:请|麻烦)\s*)?(?:帮我\s*)?"
+    r"(?:(?:修改|更正|修正|更新|调整)(?:一下)?\s*)?"
+    rf"(?:{_DIET_LATEST_MEAL_RE.pattern})\s*[,，]?\s*"
+    r"(?:实际(?:上)?\s*)?(?:只)?吃了\s*"
+    rf"{_DIET_FACTUAL_PORTION_PLACEHOLDER}"
+    rf"(?:{_DIET_FACTUAL_WRITE_SUFFIX_PATTERN})?\s*[。！!]*$",
+)
 _DIET_FACTUAL_CORRECTION_SHAPE_RE = re.compile(
     rf"^(?:{_DIET_FACTUAL_DATE_PATTERN}\s*)?(?:我\s*)?"
     rf"(?:{_DIET_FACTUAL_SHORTFALL_PATTERN}\s*[,，]\s*)?"
@@ -6178,6 +6192,8 @@ def _parse_meal_fraction_token(token: str) -> Optional[tuple[float, str]]:
 def _meal_fraction_utterance_has_factual_shape(
     normalized: str,
     fraction_span: tuple[int, int],
+    *,
+    allow_latest: bool = False,
 ) -> bool:
     """Accept only narrow, fully consumed factual portion utterances."""
     start, end = fraction_span
@@ -6186,6 +6202,8 @@ def _meal_fraction_utterance_has_factual_shape(
         + _DIET_FACTUAL_PORTION_PLACEHOLDER
         + normalized[end:]
     )
+    if allow_latest:
+        return bool(_DIET_FACTUAL_LATEST_CORRECTION_SHAPE_RE.fullmatch(marked))
     return any(pattern.fullmatch(marked) for pattern in (
         _DIET_FACTUAL_CORRECTION_SHAPE_RE,
         _DIET_FACTUAL_PHOTO_SHAPE_RE,
@@ -6197,6 +6215,7 @@ def _meal_fraction_utterance_is_unsafe(
     text: str,
     *,
     fraction_must_start_at_or_after: Optional[int] = None,
+    allow_latest: bool = False,
 ) -> bool:
     """Fail closed unless the whole utterance has one exact factual ratio."""
     normalized = _normalize_meal_fraction_symbols(
@@ -6246,6 +6265,7 @@ def _meal_fraction_utterance_is_unsafe(
         or not _meal_fraction_utterance_has_factual_shape(
             normalized,
             supported_matches[0].span(),
+            allow_latest=allow_latest,
         )
     ):
         return True
@@ -6306,14 +6326,15 @@ def _unsafe_diet_correction_requested(message: str) -> bool:
     text = _normalize_meal_fraction_symbols(
         " ".join((message or "").strip().split())
     )
-    if (
-        not _DIET_CORRECTION_MEAL_RE.search(text)
-    ):
+    latest = _DIET_LATEST_MEAL_RE.search(text)
+    if not _DIET_CORRECTION_MEAL_RE.search(text) and not latest:
         return False
     if _diet_write_is_explicitly_cancelled(text):
         return True
     if not _utterance_contains_fraction_like_portion(text):
         return False
+    if latest:
+        return not _has_explicit_update_intent(text) or _meal_fraction_utterance_is_unsafe(text, allow_latest=True)
     # Any fraction-like value in a named-meal correction must be consumed by
     # the narrow factual portion grammar. It must never fall through to the
     # generic food-replacement path when the sentence is hypothetical,
@@ -6401,6 +6422,20 @@ def _parse_explicit_diet_correction(
     text = _normalize_meal_fraction_symbols(
         " ".join((message or "").strip().split())
     )
+    if _DIET_LATEST_MEAL_RE.search(text):
+        if not _has_explicit_update_intent(text) or _meal_fraction_utterance_is_unsafe(text, allow_latest=True):
+            return None
+        match = _DIET_FRACTION_TOKEN_RE.search(text)
+        portion = _parse_meal_fraction_token(match.group()) if match else None
+        if portion is None:
+            return None
+        return {
+            "target": "latest",
+            "date": _normalize_relative_date("today", reference_now=reference_now),
+            "meal_type": None,
+            "consumed_fraction": portion[0],
+            "consumed_fraction_label": portion[1],
+        }
     meal_match = _DIET_CORRECTION_MEAL_RE.search(text)
     if not meal_match:
         return None
@@ -6476,7 +6511,11 @@ def _diet_correction_update_data(
     correction: Mapping[str, Any],
     existing_record: Mapping[str, Any],
 ) -> Optional[Dict[str, Any]]:
-    meal_type = correction.get("meal_type")
+    meal_type = (
+        existing_record.get("meal_type")
+        if correction.get("target") == "latest"
+        else correction.get("meal_type")
+    )
     replacement = correction.get("food_items")
     if replacement:
         return {
@@ -6556,6 +6595,10 @@ def _build_deterministic_diet_correction_tool_call(
         "meal_type": correction["meal_type"],
         "limit": 20,
     }
+    if correction.get("target") == "latest":
+        arguments.pop("meal_type")
+        arguments.pop("date")
+        arguments["limit"] = 2
     return {
         "id": f"diet-correction-{_sha12(str(message or ''))}",
         "type": "function",
@@ -6564,6 +6607,38 @@ def _build_deterministic_diet_correction_tool_call(
             "arguments": json.dumps(arguments, ensure_ascii=False),
         },
     }
+
+
+def _latest_diet_correction_candidate(
+    rows: Any, *, target_date: str, reference_now: Optional[datetime],
+) -> Optional[dict[str, Any]]:
+    """Use the authenticated API's ordering; ties or incomplete evidence stop."""
+    if not isinstance(rows, list) or not 1 <= len(rows) <= 2:
+        return None
+    now = reference_now or datetime.now(BEIJING_TZ)
+    if now.tzinfo is None:
+        return None
+    today = datetime.fromisoformat(target_date).date()
+    earliest = today - timedelta(days=1)
+    keys = []
+    ids = []
+    for row in rows:
+        if not isinstance(row, dict) or type(row.get("id")) is not int or row["id"] <= 0:
+            return None
+        if row.get("meal_type") not in {"breakfast", "lunch", "dinner", "snack"}:
+            return None
+        try:
+            day = datetime.strptime(row["record_date"], "%Y-%m-%d").date()
+            created = datetime.fromisoformat(row["created_at"].replace("Z", "+00:00"))
+        except (KeyError, TypeError, ValueError, AttributeError):
+            return None
+        if created.tzinfo is None or not earliest <= day <= today or created > now:
+            return None
+        keys.append((day, created))
+        ids.append(row["id"])
+    if len(set(ids)) != len(ids) or (len(keys) == 2 and keys[0] <= keys[1]):
+        return None
+    return rows[0]
 
 
 def _build_deterministic_goal_lookup_tool_call(
@@ -15703,8 +15778,18 @@ class AgentExecutor:
                 preplanned_simple_water_call = None
                 preplanned_symptom_call = None
                 preplanned_diet_history_call = None
+                preplanned_diet_correction_call = None
                 preplanned_query_call = None
                 if round_idx == 0 and not images and not file_base64:
+                    correction = _parse_explicit_diet_correction(
+                        message, reference_now=self._agent_kernel_reference_now(),
+                    )
+                    if correction and correction.get("target") == "latest":
+                        preplanned_diet_correction_call = _build_deterministic_diet_correction_tool_call(
+                            message, write_receipts=write_receipts,
+                            reference_now=self._agent_kernel_reference_now(),
+                        )
+                        deterministic_diet_correction_fallback_attempted = True
                     preplanned_diet_history_call = (
                         _build_preplanned_diet_history_tool_call(
                             self._agent_kernel_snapshot
@@ -15927,7 +16012,9 @@ class AgentExecutor:
                 ):
                     decision_route = "deterministic_simple_diet_fallback_llm"
                 preplanned_tool_calls = (
-                    [preplanned_symptom_call]
+                    [preplanned_diet_correction_call]
+                    if preplanned_diet_correction_call is not None
+                    else [preplanned_symptom_call]
                     if preplanned_symptom_call is not None
                     else [preplanned_simple_water_call]
                     if preplanned_simple_water_call is not None
@@ -22987,6 +23074,13 @@ class AgentExecutor:
             "end_date": correction["date"],
             "meal_type": correction["meal_type"],
         }
+        latest_target = correction.get("target") == "latest"
+        if latest_target:
+            query.pop("meal_type")
+            query["limit"] = 2
+            query["start_date"] = (
+                datetime.fromisoformat(correction["date"]).date() - timedelta(days=1)
+            ).isoformat()
         records: Any = None
         lookup_error: Optional[str] = None
         lookup_done = False
@@ -23035,6 +23129,12 @@ class AgentExecutor:
                 if isinstance(row, dict)
                 and (row.get("id") or row.get("record_id")) not in (None, "", False)
             ]
+            if latest_target:
+                candidate = _latest_diet_correction_candidate(
+                    candidates, target_date=correction["date"],
+                    reference_now=self._agent_kernel_reference_now(),
+                ) if not error else None
+                candidate_rows = [candidate] if candidate is not None else []
             update_data = (
                 _diet_correction_update_data(correction, candidate_rows[0])
                 if not error and len(candidate_rows) == 1
@@ -23061,6 +23161,8 @@ class AgentExecutor:
             else:
                 if error:
                     unresolved_reason = "lookup_failed"
+                elif latest_target and candidates:
+                    unresolved_reason = "latest_target_unverified"
                 elif not candidate_rows:
                     unresolved_reason = "target_not_found"
                 elif len(candidate_rows) > 1:

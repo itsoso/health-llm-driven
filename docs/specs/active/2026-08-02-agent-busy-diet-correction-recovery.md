@@ -189,6 +189,25 @@ rollout state.
 
 ## 15. Changelog
 
+### 2026-09-08 Relative Meal Correction Amendment
+
+An explicit text command such as `修正上一餐吃了1/3` must enter a deterministic
+lookup before model synthesis. `上一餐`, `上一顿`, and `刚才那餐` refer to the most
+recent recorded meal returned by the authenticated diet API, bounded to the
+current local date and previous date so a midnight follow-up can still resolve.
+The normalizer checks the two newest candidates, complete timestamps, recent
+dates and a strict ordering; ties or unverifiable evidence produce one truthful
+no-write clarification. It never trusts a model-selected record ID or creates a
+replacement meal. The original record's meal type and existing fraction marker
+are retained, so repeated absolute `1/3` corrections do not compound to `1/9`.
+
+Negations, questions, uncertain/multiple/invalid fractions and item-level
+quantities remain outside the grammar. This grammar must not widen the separate
+new-photo consumption parser. No API/schema change or new Mobile surface is
+required. PostgreSQL owner-isolation, record-count and repeated-update evidence
+and independent health-write review are required before completion. This scope
+does not override the existing controlled-release incident or authorize deployment.
+
 | Date | Change | Reason |
 |---|---|---|
 | 2026-08-02 | Approved complete recovery option A | Fix the production busy-turn misclassification and finish numeric-fraction diet correction. |
