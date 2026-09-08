@@ -2,6 +2,7 @@
 
 import argparse
 import json
+from pathlib import Path
 import re
 import sys
 
@@ -35,12 +36,18 @@ def main():
                     "distribution": "STORE", "buildProfile": "production"}
         if not isinstance(build, dict) or any(build.get(key) != value for key, value in expected.items()):
             raise ValueError("wrong artifact")
+        config = json.loads((Path(__file__).resolve().parents[1] / "mobile/app.json").read_text())["expo"]
+        project = build.get("app")
+        if (not isinstance(project, dict)
+                or project.get("id") != config["extra"]["eas"]["projectId"]
+                or build.get("appIdentifier") != config["ios"]["bundleIdentifier"]):
+            raise ValueError("wrong project")
         build_id = build.get("id")
         if not isinstance(build_id, str) or re.fullmatch(UUID, build_id) is None:
             raise ValueError("invalid identity")
         if args.id is not None and args.id != build_id:
             raise ValueError("wrong identity")
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, KeyError, OSError, RecursionError):
         print("Untrusted EAS build metadata; upload blocked", file=sys.stderr)
         return 1
     print(build_id)

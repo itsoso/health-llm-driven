@@ -19,7 +19,9 @@ def invoke(payload, *extra):
 
 def build(**changes):
     return {"id": BUILD_ID, "gitCommitHash": SHA, "status": "FINISHED",
-            "platform": "IOS", "distribution": "STORE", "buildProfile": "production", **changes}
+            "platform": "IOS", "distribution": "STORE", "buildProfile": "production",
+            "appIdentifier": "life.executor.health",
+            "app": {"id": "911ea84f-bc7e-4a12-90cf-33966b6f7398"}, **changes}
 
 
 @pytest.mark.parametrize("wrapped", [False, True])
@@ -33,6 +35,7 @@ def test_accept_exact_finished_build(wrapped):
     {"id": "$(secret)"}, {"gitCommitHash": "b" * 40}, {"status": "IN_PROGRESS"},
     {"status": "ERRORED"}, {"platform": "ANDROID"}, {"distribution": "INTERNAL"},
     {"buildProfile": "preview"}, {"gitCommitHash": None},
+    {"appIdentifier": "life.executor.other"}, {"app": {"id": "other-project"}},
 ])
 def test_reject_wrong_artifact_without_payload_leak(changes):
     result = invoke(build(**changes, secret="DO_NOT_PRINT"))
