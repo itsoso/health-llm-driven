@@ -681,3 +681,18 @@
   System Map、秘密扫描、Shell 语法及变更 Python 静态检查通过。Dossier 纯工具测试以
   无应用 conftest 模式 18 PASS；首次常规入口因本机 PostgreSQL 未运行而在收集阶段失败，
   不计为数据库或后端应用测试通过。本轮未改变数据库语义，也未执行生产重置。
+
+### 2026-09-08 · 显式解决历史首次 clone 发布阻塞
+
+- 用户再次明确要求解决阻塞。implementation controller + safety overlay，复用 ledger
+  `docs/_generated/harness-runs/f7011786c974.jsonl`。生产只读核实仍为 `329967684`，
+  API/DB/Redis/Celery healthy；旧 workspace 仍是 NEEDS_OPERATOR，没有执行恢复或部署。
+- 完整旧 executor implementation 摘要独立核实；它同步执行首次 clone，失败立即返回，
+  不可能从该分支进入 checkout、仓库 gate 或业务部署。现场完整四行日志、精确库存与
+  空 HOME 相符。独立设计评审允许按这条有界控制流补独立恢复入口，不允许缺失文件推断。
+- 新入口先只读输出证据摘要；显式传入同一摘要才持原双锁，重验进程、production revision、
+  安装绑定和证据，落盘独立 intent 后精确撤权。旧回执不重写，未知结果不重试，普通轮换
+  仍需完整恢复凭证。日志不是抗 root 篡改的历史执行证明，保留既有可信 OS/管理员边界。
+- 初始回归 17 FAIL / 1 PASS 复现入口缺失；首次实现连同 bootstrap 回归 117 PASS，
+  加入 CI contract 后 129 PASS。继续补锁替换、进程重归属、各持久化失败点、恢复审计漂移
+  与后续真实轮换的负/正例；完整集成、固定提交 G4 和生产执行证据尚待补齐。

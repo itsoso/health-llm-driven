@@ -209,6 +209,14 @@ git diff --check
 - Recovery boundary: preserve old receipts and identities; new preparation-only failure
   evidence may support explicit retirement, never automatic rerun. Legacy unknown failures
   cannot gain phase evidence retroactively.
+- Historical first-clone recovery: a separately authorized operator inspects the exact
+  audited executor implementation, whole failure transcript, unchanged private inventory,
+  both original locks, Linux process quiescence, and independently expected production
+  revision. A digest-bound, fsynced recovery audit permits only old-identity revocation
+  and private-key retirement; original NEEDS_OPERATOR and consumption remain unchanged.
+  Unknown results block retries. Ordinary rotation must validate the audit and original
+  evidence before admitting a fresh SHA and identity. No business/data/Apple actions are
+  part of this slice. Root-managed OS and evidence provenance remain explicit assumptions.
 - Review reset: operator-only canonical source, exact deployed revision and fresh CI,
   one-time operation identity, fixed configured review account, no password rotation.
   Persist intent before dispatch and retain operation/lease on uncertain outcome.

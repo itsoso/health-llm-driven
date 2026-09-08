@@ -71,6 +71,21 @@ backend launcher 锁互斥；单独重跑失败 job 也不能复用旧 claim 再
 无业务/构建/上传意图；仍须满足原有 idle、不可变归档、新 SHA/新身份约束。
 旧 NEEDS_OPERATOR 没有这些阶段证明，禁止补写回执、仅凭文件缺失放行或新增特定 SHA
 白名单；源码修复不能自动解除历史现场的恢复阻塞。
+
+历史首次 clone 失败仅允许独立的 operator `recover-preparation` 处置：从新受审、真实
+CI 绿色的 canonical staging 执行 bootstrap，先不传 `--evidence-sha256` 只读取证，
+复核摘要后再显式传入同一摘要。此入口按完整旧 executor 实现摘要识别控制流，而非
+按 release SHA 放行；要求 canonical/installed/policy 一致、完整四行初始 clone 失败
+日志、精确库存及空 HOME。持有原 launcher/build 锁，核验锁 inode、全进程 argv/env/
+cwd/exe 与进程身份、无业务 lease，并复用隔离 Git revision proof 核验独立指定的
+实际生产 SHA。系统工具仅信任既有 root 受管 OS，不宣称日志是抗 root 篡改的执行证明。
+独立 `recoveries/<old-sha>` 中的 intent 必须先 fsync，随后仅精确撤销旧双身份、删除
+旧 loopback 私钥；原始 workspace、NEEDS_OPERATOR 回执与消费记录完全不改。后置证明
+通过后才写终态，任何未知/不完整操作均阻断，禁止改 ID 或再次调用来续跑。普通 rotate
+只接受完整恢复审计、未变原始证据、已撤权且无私钥的安装；仍须新 SHA/新身份、真实 CI
+及原有全部发布闸。此处置不部署、不恢复审核数据、不构建/上传，也不证明线上修复已生效。
+为获得新恢复工具的精确 CI，可在固定代码独立 G4 GO 且远端主干 CI 绿色后推送受审代码；
+这只发布源码，不解除历史事故、不 dispatch 发布或改变旧授权。实际生产处置仍须上述闸。
 上传 job 必须同时等待 backend 和 ios-build 成功，仍以 `claim-testflight` 验证后端
 SUCCEEDED 并消费一次性上传权限。仅提交本轮 job 返回且经 EAS 再次验证的精确 build ID，
 要求 source SHA、FINISHED、IOS、STORE、production 全匹配；禁止隐式 latest。
