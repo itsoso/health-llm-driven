@@ -553,3 +553,15 @@
 - 轮换实现已完成，producer 定向 227 PASS，bootstrap 覆盖率 83.54%。额外修正激活顺序：
   RETIRED 审计必须先持久化，然后才允许新 key 写入授权；审计失败时不得残留可调用的新
   身份。首次安装入口保留，新旧 SHA、历史 key 和归档身份均防复用。固定提交独立复审待定。
+- `0f14b2d7` 独立 G4 GO，固定 CI-mode 集成 475 PASS，精确 GitHub CI `34199370936`
+  SUCCESS；受控 validate `34200540161` SUCCESS。解锁后 TestFlight 真机条目验证
+  1 PASS，截图确认仍为 1.3.3 (265)，不代表新包已安装。
+- 首次显式 rotate 在任何 retirement mutation 前 BLOCK：已有旧格式归档
+  `fcbf01329dfeabbd22ef83aea56394e93abb9b00` 仅含 config/executor，新 reader 不兼容。
+  只读检查证明 canonical source、当前 installation、已完成 workspace、idle 均 PASS；
+  无业务 lease，新 SHA workspace 不存在，旧归档未改写。未触发 EAS 或业务 deploy。
+- 新增回归先复现该拒绝，随后补只读、固定 SHA/inventory 摘要的 legacy 兼容。摘要绑定
+  原字节、uid/gid/mode/device/inode 与从未启动状态，不含密钥明文或健康资料；旧归档
+  缺失/漂移/重新授权/保留私钥均 BLOCK，旧 SHA/key 不能复用。补丁固定安全复审待完成。
+- 本轮专用 Expo robot/token 与 release-production 三项 secrets 已创建，尚未被执行器
+  消费；后续只用于绿色精确候选，终态后撤销。原服务与 Build 265 保持不变。

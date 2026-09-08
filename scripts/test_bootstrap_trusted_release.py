@@ -1,9 +1,11 @@
 """Bootstrap tests run only in temporary local fixtures, never production."""
 
 import base64
+import hashlib
 import importlib.util
 import json
 import os
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -84,6 +86,7 @@ def test_ambiguous_system_local_expiry_cannot_change_absolute_deadline(monkeypat
 
 def fixture(monkeypatch, tmp_path):
     bootstrap = load_bootstrap()
+    monkeypatch.setattr(bootstrap, "LEGACY_RETIREMENTS", {})
     config = tmp_path / "config"
     state = tmp_path / "state"
     state.mkdir()
@@ -261,6 +264,8 @@ def test_malformed_success_receipt_cannot_authorize_key_removal(monkeypatch, tmp
 
 NEW_SHA = "b" * 40
 NEW_LOOPBACK = "ssh-ed25519 " + base64.b64encode(b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20" + bytes(range(96, 128))).decode()
+LEGACY_SHA = "c" * 40
+LEGACY_PUBLIC = "ssh-ed25519 " + base64.b64encode(b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20" + bytes(range(128, 160))).decode()
 
 
 def rotation_fixture(monkeypatch, tmp_path, *, succeeded=True):
@@ -313,6 +318,67 @@ def test_rotation_preserves_old_install_and_once_evidence(monkeypatch, tmp_path,
         bootstrap.rotate(NEW_SHA, NEW_SHA, 200, PUBLIC)
     with pytest.raises(bootstrap.BootstrapError):
         bootstrap.install(NEW_SHA, 200, PUBLIC)
+
+
+def legacy_fixture(monkeypatch, tmp_path):
+    bootstrap, calls = rotation_fixture(monkeypatch, tmp_path)
+    entry = bootstrap.STATE / "retired" / LEGACY_SHA
+    entry.mkdir(parents=True, mode=0o700)
+    shutil.copytree(bootstrap.CONFIG, entry / "config")
+    shutil.copytree(bootstrap.INSTALLED.parent, entry / "executor")
+    policy_path = entry / "config/authorized-release.json"
+    policy = json.loads(policy_path.read_bytes())
+    policy["sha"] = LEGACY_SHA
+    policy_path.write_text(json.dumps(policy))
+    (entry / "config/cloud.pub").write_text(LEGACY_PUBLIC)
+    evidence = {"installation": bootstrap._installation_evidence(LEGACY_SHA, entry / "config", entry / "executor"),
+                "workspace": bootstrap._workspace_evidence(LEGACY_SHA)}
+    digest = hashlib.sha256(json.dumps(evidence, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    monkeypatch.setattr(bootstrap, "LEGACY_RETIREMENTS", {LEGACY_SHA: digest}, raising=False)
+    return bootstrap, entry
+
+
+def test_rotation_accepts_only_pinned_legacy_archive_without_rewriting_it(monkeypatch, tmp_path):
+    bootstrap, entry = legacy_fixture(monkeypatch, tmp_path)
+    before = {str(p.relative_to(entry)): (p.read_bytes(), p.stat().st_ino)
+              for p in entry.rglob("*") if p.is_file()}
+    assert bootstrap.rotate(SHA, NEW_SHA, 200, HOST)["state"] == "INSTALLED"
+    assert {str(p.relative_to(entry)): (p.read_bytes(), p.stat().st_ino)
+            for p in entry.rglob("*") if p.is_file()} == before
+    assert set(bootstrap._retired_history()) == {SHA, LEGACY_SHA}
+
+
+@pytest.mark.parametrize("fault", ["unknown-sha", "digest", "changed-config", "private-key", "extra",
+                                 "workspace", "authorized-key", "reuse-sha", "reuse-key", "missing", "missing-root"])
+def test_legacy_archive_faults_block_before_authorization_or_retirement(monkeypatch, tmp_path, fault):
+    bootstrap, entry = legacy_fixture(monkeypatch, tmp_path)
+    new_sha, public = NEW_SHA, HOST
+    if fault == "unknown-sha":
+        monkeypatch.setattr(bootstrap, "LEGACY_RETIREMENTS", {})
+    elif fault == "digest":
+        monkeypatch.setattr(bootstrap, "LEGACY_RETIREMENTS", {LEGACY_SHA: "0" * 64})
+    elif fault == "changed-config":
+        (entry / "config/loopback.conf").write_text("changed")
+    elif fault == "private-key":
+        (entry / "config/loopback.key").write_text("unexpected")
+    elif fault == "extra":
+        (entry / "intent.json").write_text("{}")
+    elif fault == "workspace":
+        (bootstrap.STATE / LEGACY_SHA).mkdir()
+    elif fault == "authorized-key":
+        bootstrap.AUTHORIZED.write_text(LEGACY_PUBLIC + "\n")
+    elif fault == "reuse-sha":
+        new_sha = LEGACY_SHA
+    elif fault in {"missing", "missing-root"}:
+        shutil.rmtree(entry if fault == "missing" else entry.parent)
+    else:
+        public = LEGACY_PUBLIC
+    before = bootstrap.AUTHORIZED.read_bytes()
+    with pytest.raises(bootstrap.BootstrapError):
+        bootstrap.rotate(SHA, new_sha, 200, public)
+    assert bootstrap.AUTHORIZED.read_bytes() == before
+    assert not (bootstrap.STATE / "retired" / SHA).exists()
+    assert bootstrap.CONFIG.exists()
 
 
 @pytest.mark.parametrize("fault", ["wrong-old", "same-sha", "authorized", "private-key", "code-hash",

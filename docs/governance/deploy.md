@@ -43,6 +43,11 @@ GitHub 控制面、受审代码、固定工具链和服务器 root 是信任前�
 再安装新的短期身份；旧 SHA、消费标记和锁 inode 不得删除或复用。任何未知现场或
 中途失败均保留 intent/安装证据并阻断，不支持通过再次执行重置授权或自动恢复。
 
+该生产站点已有一份旧格式 `retired/<sha>/{config,executor}` 归档。兼容读取只接受源码
+中固定 SHA 和受审 inventory 摘要，逐次校验 canonical executor、撤权、无私钥、从未
+启动及原始 bytes/owner/mode/inode；缺失或漂移均 BLOCK。不得移动、重写旧归档，不能
+按目录形状接受任意 legacy 状态。其 SHA 与两类公钥继续参与全历史防复用。
+
 云端身份由服务器 forced-command 限定为绑定同一 SHA 的 `run`、`status`、
 `check`、`claim-build`、`claim-testflight`，不提供 shell/SFTP；服务器内部的短期 loopback 身份不离开服务器。
 后端业务部署仍由受审 fresh source 中的 **`deploy.sh -b`** 执行全部事务闸。

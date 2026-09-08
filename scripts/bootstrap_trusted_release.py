@@ -31,6 +31,11 @@ HOST_PUBLIC = Path("/etc/ssh/ssh_host_ed25519_key.pub")
 BUSINESS_LEASE = Path("/var/lock/health-app-release")
 ORIGIN = "https://github.com/itsoso/health-llm-driven.git"
 ENV = {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "LANG": "C.UTF-8", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_TERMINAL_PROMPT": "0"}
+# Read-only compatibility for the audited, never-started pre-rotation archive.
+# The digest binds bytes, ownership, modes, device/inodes and absent consumption.
+LEGACY_RETIREMENTS = {
+    "fcbf01329dfeabbd22ef83aea56394e93abb9b00": "f2385e5dbc299aeab44f271c9de79b04da01b4f3db8f4e824ab85b24ff93b4ac",
+}
 
 
 class BootstrapError(Exception):
@@ -303,12 +308,29 @@ def _installation_evidence(sha, config, library):
 def _retired_history():
     root = STATE / "retired"
     if not os.path.lexists(root):
+        if LEGACY_RETIREMENTS:
+            raise BootstrapError("pinned legacy retirement is missing")
         return {}
     secure(root)
+    if not set(LEGACY_RETIREMENTS) <= {p.name for p in root.iterdir()}:
+        raise BootstrapError("pinned legacy retirement is missing")
     history = {}
     for entry in root.iterdir():
         if re.fullmatch(r"[0-9a-f]{40}", entry.name) is None:
             raise BootstrapError("unknown retirement audit")
+        if entry.name in LEGACY_RETIREMENTS:
+            secure(entry)
+            if (not entry.is_dir() or stat.S_IMODE(entry.lstat().st_mode) != 0o700
+                    or {p.name for p in entry.iterdir()} != {"config", "executor"}):
+                raise BootstrapError("unexpected legacy retirement inventory")
+            evidence = {"installation": _installation_evidence(entry.name, entry / "config", entry / "executor"),
+                        "workspace": _workspace_evidence(entry.name)}
+            digest = hashlib.sha256(json.dumps(evidence, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            if (evidence["workspace"] != {"state": "NEVER_STARTED", "inventory": None}
+                    or digest != LEGACY_RETIREMENTS[entry.name]):
+                raise BootstrapError("legacy retirement evidence changed")
+            history[entry.name] = {"format": "pinned-legacy", **evidence}
+            continue
         _inventory(entry, {"intent.json", "completed.json"})
         intent = _read_json(entry / "intent.json")
         if (not isinstance(intent, dict) or set(intent) != {"old_sha", "new_sha", "installation", "workspace"}
@@ -324,9 +346,16 @@ def _retired_history():
     return history
 
 
+def _retired_config(sha, evidence):
+    if evidence.get("format") == "pinned-legacy":
+        return STATE / "retired" / sha / "config"
+    return _archives(sha)[0]
+
+
 def _assert_fresh_sha(sha, history):
     if (os.path.lexists(STATE / sha) or sha in history
-            or any(item["new_sha"] == sha for item in history.values())
+            or sha in LEGACY_RETIREMENTS
+            or any(item.get("new_sha") == sha for item in history.values())
             or any(os.path.lexists(path) for path in _archives(sha))):
         raise BootstrapError("release SHA already used; retry forbidden")
 
@@ -379,7 +408,7 @@ def rotate(old_sha, sha, expiry, public):
         installation = _installation_evidence(old_sha, CONFIG, INSTALLED.parent)
         workspace = _workspace_evidence(old_sha)
         retired_keys = {(config / name).read_text().strip()
-                        for config in [CONFIG, *(_archives(old)[0] for old in history)]
+                        for config in [CONFIG, *(_retired_config(old, item) for old, item in history.items())]
                         for name in ("cloud.pub", "loopback.pub")}
         if public in retired_keys:
             raise BootstrapError("rotation requires a new identity")
