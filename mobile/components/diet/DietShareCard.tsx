@@ -554,7 +554,7 @@ export default function DietShareCard({
           <View style={styles.posterRuleLong} />
           <View style={styles.posterRuleShort} />
         </View>
-        <Text testID="diet-share-headline" style={styles.posterHeadline} numberOfLines={2}>{presentation.headline}</Text>
+        <Text testID="diet-share-headline" style={styles.posterHeadline} numberOfLines={1}>{presentation.headline}</Text>
         <Text testID="diet-share-food-line" style={styles.posterFoodLine} numberOfLines={2}>{presentation.foodLine}</Text>
 
         <View testID="diet-share-nutrition-grid" style={styles.posterNutrition}>
@@ -566,6 +566,7 @@ export default function DietShareCard({
             >
               <Text style={styles.posterMetricLabel}>{item.label}</Text>
               <View style={styles.posterMetricValueRow}>
+                {item.qualifier ? <Text style={styles.posterMetricQualifier}>{item.qualifier}</Text> : null}
                 <Text style={styles.posterMetricValue}>{item.value}</Text>
                 <Text style={styles.posterMetricUnit}>{item.unit}</Text>
               </View>
@@ -585,12 +586,10 @@ export default function DietShareCard({
           </View>
         ) : null}
 
-        {presentation.nextAction ? (
-          <View testID="diet-share-next-action" style={styles.posterNextAction}>
-            <Text style={styles.posterNextActionLabel}>饮食提示</Text>
-            <Text style={styles.posterNextActionText} numberOfLines={2}>{presentation.nextAction}</Text>
-          </View>
-        ) : null}
+        <View testID="diet-share-public-note" style={styles.posterPublicNote}>
+          <Text style={styles.posterPublicNoteLabel}>记录说明</Text>
+          <Text style={styles.posterPublicNoteText} numberOfLines={2}>{presentation.publicNote}</Text>
+        </View>
 
         <View style={styles.posterFooter}>
           {showDisclosure ? (
@@ -1327,6 +1326,12 @@ const styles = StyleSheet.create({
     color: C.ink1,
     fontWeight: '500',
   },
+  posterMetricQualifier: {
+    fontSize: 7.5,
+    lineHeight: 11,
+    color: C.ink3,
+    fontWeight: '600',
+  },
   posterMetricUnit: {
     fontFamily: revaFonts.mono,
     fontSize: 7.5,
@@ -1360,6 +1365,25 @@ const styles = StyleSheet.create({
     color: C.green700,
     fontWeight: '700',
   },
+  posterPublicNote: {
+    borderLeftWidth: 2,
+    borderLeftColor: C.green600,
+    paddingLeft: 8,
+    paddingVertical: 1,
+  },
+  posterPublicNoteLabel: {
+    fontSize: 8.5,
+    lineHeight: 11,
+    color: C.green700,
+    fontWeight: '700',
+  },
+  posterPublicNoteText: {
+    fontSize: 9.5,
+    lineHeight: 13,
+    color: C.ink2,
+    fontWeight: '500',
+    marginTop: 1,
+  },
   posterFooter: {
     marginTop: 'auto',
     minHeight: 18,
@@ -1367,25 +1391,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 9,
-  },
-  posterNextAction: {
-    borderLeftWidth: 2,
-    borderLeftColor: revaSemantic.caution.fg,
-    paddingLeft: 8,
-    paddingVertical: 1,
-  },
-  posterNextActionLabel: {
-    fontSize: 8.5,
-    lineHeight: 11,
-    color: revaSemantic.caution.fg,
-    fontWeight: '700',
-  },
-  posterNextActionText: {
-    fontSize: 10,
-    lineHeight: 14,
-    color: C.ink2,
-    fontWeight: '600',
-    marginTop: 1,
   },
   posterDisclosure: {
     fontSize: 8.5,

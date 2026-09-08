@@ -763,7 +763,7 @@ ${sectionTitle}
     expect(mockCaptureRefCalls).toHaveLength(0);
     expect(getByTestId('mock-diet-share-composer')).toBeTruthy();
     expect(mockDietShareComposer).toHaveBeenLastCalledWith(expect.objectContaining({
-      dateLabel: '今日',
+      dateLabel: '餐食记录',
       record: expect.objectContaining({ id: 770, meal_type: 'lunch' }),
       photoSource: {
         uri: 'https://health.executor.life/api/v1/upload/files/diet/1/lunch.jpg',

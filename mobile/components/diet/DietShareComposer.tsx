@@ -125,7 +125,6 @@ function shareTextForRecord(record: DietShareRecord): string {
     presentation.headline,
     presentation.foodLine,
     ...presentation.macroLines,
-    presentation.nextAction,
     presentation.disclosure,
   ].filter((line): line is string => Boolean(line)).join('\n');
 }

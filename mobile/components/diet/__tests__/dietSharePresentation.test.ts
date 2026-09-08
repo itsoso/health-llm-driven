@@ -1,9 +1,21 @@
 import type { DietRecord } from '../../../services/diet';
 import {
   buildChatDietShareInput,
+  buildDietShareDateLabel,
   buildDietSharePresentation,
   normalizePrivateDietPhotoUri,
 } from '../dietSharePresentation';
+
+describe('buildDietShareDateLabel', () => {
+  it('formats a persisted record date without claiming it is today', () => {
+    expect(buildDietShareDateLabel('2026-08-01')).toBe('2026.08.01');
+  });
+
+  it.each([undefined, null, '', 'today', '2026-99-99'])(
+    'uses a neutral label for missing or invalid dates: %p',
+    (value) => expect(buildDietShareDateLabel(value)).toBe('餐食记录'),
+  );
+});
 
 function photoRecord(overrides: Partial<DietRecord> = {}): DietRecord {
   return {
@@ -65,12 +77,13 @@ describe('buildDietSharePresentation', () => {
       '碳水 103g · 脂肪 42g',
     ]);
     expect(view.nutritionItems).toEqual([
-      { key: 'calories', label: '热量', value: '900', unit: 'kcal' },
-      { key: 'protein', label: '蛋白质', value: '36', unit: 'g' },
-      { key: 'carbs', label: '碳水', value: '103', unit: 'g' },
-      { key: 'fat', label: '脂肪', value: '42', unit: 'g' },
+      { key: 'calories', label: '热量', value: '900', unit: 'kcal', qualifier: '约' },
+      { key: 'protein', label: '蛋白质', value: '36', unit: 'g', qualifier: '约' },
+      { key: 'carbs', label: '碳水', value: '103', unit: 'g', qualifier: '约' },
+      { key: 'fat', label: '脂肪', value: '42', unit: 'g', qualifier: '约' },
     ]);
     expect(JSON.stringify(view)).not.toContain('88%');
+    expect(view.publicNote).toBe('食物与份量来自本次记录，营养数值为估算。');
   });
 
   it('hides exact nutrition for a low-confidence photo record', () => {
@@ -87,9 +100,30 @@ describe('buildDietSharePresentation', () => {
       health_tips: '下一餐补蛋白质 30g，少吃 300 kcal',
     }));
 
-    expect(view.nextAction).toBeUndefined();
+    expect(view).not.toHaveProperty('nextAction');
     expect(JSON.stringify(view)).not.toMatch(/30g|300\s*kcal/i);
   });
+
+  it('never exports private health tips into the public presentation', () => {
+    const view = buildDietSharePresentation(photoRecord({
+      health_tips: '胃溃疡恢复期，今晚停用某药并把体重降到 60kg',
+    }));
+
+    expect(view).not.toHaveProperty('nextAction');
+    expect(JSON.stringify(view)).not.toMatch(/胃溃疡|某药|60kg/i);
+  });
+
+  it.each([null, undefined, Number.NaN, -1, 101])(
+    'fails closed when photo confidence is missing or invalid: %p',
+    (aiConfidence) => {
+      const view = buildDietSharePresentation(photoRecord({ ai_confidence: aiConfidence }));
+
+      expect(view.nutritionItems).toEqual([]);
+      expect(view.tags).toEqual(['待核对']);
+      expect(view.disclosure).toBe('营养待核对');
+      expect(JSON.stringify(view)).not.toContain('900');
+    },
+  );
 
   it('keeps user-corrected nutrition public even when stale AI confidence is low', () => {
     const view = buildDietSharePresentation(photoRecord({
@@ -98,7 +132,18 @@ describe('buildDietSharePresentation', () => {
     }));
 
     expect(view.macroLines).toContain('约 900 kcal · 蛋白质 36g');
+    expect(view.nutritionItems[0]).toEqual(expect.objectContaining({ value: '900', qualifier: null }));
     expect(view.disclosure).toBe('营养数据已由用户确认');
+  });
+
+  it('marks incomplete photo nutrition as a partial estimate', () => {
+    const view = buildDietSharePresentation(photoRecord({ protein: null, carbs: null, fat: null }));
+
+    expect(view.nutritionItems).toEqual([
+      { key: 'calories', label: '热量', value: '900', unit: 'kcal', qualifier: '约' },
+    ]);
+    expect(view.disclosure).toBe('营养为部分估算');
+    expect(view.publicNote).toContain('部分营养估算');
   });
 });
 
@@ -129,6 +174,14 @@ describe('buildChatDietShareInput', () => {
       available: true,
       record: { id: 705, meal_type: 'breakfast' },
     });
+  });
+
+  it('carries only a valid persisted date into the public record projection', () => {
+    const dated = buildChatDietShareInput({ ...cardData, record_date: '2026-08-01' }, verifiedReceipt);
+    const invalid = buildChatDietShareInput({ ...cardData, record_date: '2026-99-99' }, verifiedReceipt);
+
+    expect(dated).toMatchObject({ available: true, record: { record_date: '2026-08-01' } });
+    if (invalid.available) expect(invalid.record).not.toHaveProperty('record_date');
   });
 
   it('rejects a dismissed receipt instead of treating it as live proof', () => {

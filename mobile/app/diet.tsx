@@ -18,6 +18,7 @@ import DietFAB from '../components/diet/DietFAB';
 import FrequentFoodsRow from '../components/diet/FrequentFoodsRow';
 import { buildDietShareCaption } from '../components/diet/DietShareCard';
 import { DietShareComposer } from '../components/diet/DietShareComposer';
+import { buildDietShareDateLabel } from '../components/diet/dietSharePresentation';
 import { useToast } from '../hooks/useToast';
 import { useAuth } from '../hooks/useAuth';
 import {
@@ -50,10 +51,6 @@ import type { PreparedUploadImage } from '../utils/imageUpload';
 const MEAL_LABEL: Record<string, string> = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' };
 const VALID_MEAL_TYPES = new Set(['breakfast', 'lunch', 'dinner', 'snack']);
 const EMPTY_MEALS: DietRecord[] = [];
-
-function dietShareDateLabel(record: DietRecord): string {
-  return record.record_date.replace(/-/g, '.');
-}
 
 type DietRouteParams = {
   capture?: string | string[];
@@ -1203,7 +1200,7 @@ export default function DietScreen() {
     try {
       await Share.share({
         title: '分享饮食记录',
-        message: buildDietShareCaption(shareRecord, dietShareDateLabel(shareRecord)),
+        message: buildDietShareCaption(shareRecord, buildDietShareDateLabel(shareRecord.record_date)),
       });
     } catch {
       toast.show('正文分享失败，请稍后重试', 'error');
@@ -1441,7 +1438,7 @@ export default function DietScreen() {
         <DietShareComposer
           visible
           record={shareRecord}
-          dateLabel={dietShareDateLabel(shareRecord)}
+            dateLabel={buildDietShareDateLabel(shareRecord.record_date)}
           photoSource={shareImageSource}
           onClose={() => {
             setShareRecord(null);
@@ -1450,7 +1447,7 @@ export default function DietScreen() {
           onShareText={async () => {
             await Share.share({
               title: '分享饮食记录',
-              message: buildDietShareCaption(shareRecord, dietShareDateLabel(shareRecord)),
+              message: buildDietShareCaption(shareRecord, buildDietShareDateLabel(shareRecord.record_date)),
             });
           }}
           onAskReva={() => handleAskRevaFromShare(shareRecord)}

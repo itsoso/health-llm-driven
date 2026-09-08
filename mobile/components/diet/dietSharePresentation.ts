@@ -19,7 +19,7 @@ export type DietSharePresentation = {
   macroLines: string[];
   nutritionItems: DietShareNutritionItem[];
   tags: string[];
-  nextAction?: string;
+  publicNote: string;
   disclosure: string;
 };
 
@@ -28,6 +28,7 @@ export type DietShareNutritionItem = {
   label: string;
   value: string;
   unit: 'kcal' | 'g';
+  qualifier: '约' | null;
 };
 
 /**
@@ -49,9 +50,8 @@ export type DietShareRecord = Pick<
   | 'fiber'
   | 'image_url'
   | 'image_urls'
-  | 'health_tips'
   | 'ai_confidence'
->;
+> & { record_date?: string | null };
 
 export type ChatDietShareInput =
   | { available: true; record: DietShareRecord; photoUri: string }
@@ -112,7 +112,7 @@ function normalizedConfidence(record: DietShareRecord): number | null {
 function isLowConfidence(record: DietShareRecord): boolean {
   if (record.source && MANUALLY_CONFIRMED_SOURCES.has(record.source)) return false;
   const confidence = normalizedConfidence(record);
-  return confidence != null && confidence < LOW_CONFIDENCE_THRESHOLD;
+  return confidence == null || confidence < LOW_CONFIDENCE_THRESHOLD;
 }
 
 function metric(value: number | null): string | null {
@@ -143,18 +143,19 @@ function buildMacroLines(record: DietShareRecord): string[] {
 function buildNutritionItems(record: DietShareRecord): DietShareNutritionItem[] {
   if (isLowConfidence(record)) return [];
 
+  const qualifier = record.source && MANUALLY_CONFIRMED_SOURCES.has(record.source) ? null : '约';
   const candidates: (DietShareNutritionItem | null)[] = [
     metric(record.calories) != null
-      ? { key: 'calories', label: '热量', value: metric(record.calories)!, unit: 'kcal' }
+      ? { key: 'calories', label: '热量', value: metric(record.calories)!, unit: 'kcal', qualifier }
       : null,
     metric(record.protein) != null
-      ? { key: 'protein', label: '蛋白质', value: metric(record.protein)!, unit: 'g' }
+      ? { key: 'protein', label: '蛋白质', value: metric(record.protein)!, unit: 'g', qualifier }
       : null,
     metric(record.carbs) != null
-      ? { key: 'carbs', label: '碳水', value: metric(record.carbs)!, unit: 'g' }
+      ? { key: 'carbs', label: '碳水', value: metric(record.carbs)!, unit: 'g', qualifier }
       : null,
     metric(record.fat) != null
-      ? { key: 'fat', label: '脂肪', value: metric(record.fat)!, unit: 'g' }
+      ? { key: 'fat', label: '脂肪', value: metric(record.fat)!, unit: 'g', qualifier }
       : null,
   ];
   return candidates.filter((item): item is DietShareNutritionItem => item != null);
@@ -173,26 +174,59 @@ function buildTags(record: DietShareRecord): string[] {
 function buildHeadline(record: DietShareRecord, mealLabel: string): string {
   if (isLowConfidence(record)) return '待核对的一餐';
   if (typeof record.calories === 'number' && record.calories >= 700) {
-    return `今天的${mealLabel}，能量很足`;
+    return `${mealLabel}，能量很足`;
   }
   if (typeof record.protein === 'number' && record.protein >= 30) {
-    return `今天的${mealLabel}，蛋白质很在线`;
+    return `${mealLabel}，蛋白质很在线`;
   }
-  return `今天的${mealLabel}，认真吃好`;
+  return `${mealLabel}，认真吃好`;
 }
 
 function buildDisclosure(record: DietShareRecord): string {
   if (isLowConfidence(record)) return '营养待核对';
   if (record.source && MANUALLY_CONFIRMED_SOURCES.has(record.source)) return '营养数据已由用户确认';
-  if (record.source?.includes('photo') || record.source?.includes('image')) return '营养由图片估算';
+  if (record.source?.includes('photo') || record.source?.includes('image')) {
+    return buildNutritionItems(record).length < 4 ? '营养为部分估算' : '营养由图片估算';
+  }
   return '营养数据为估算值';
+}
+
+function buildPublicNote(record: DietShareRecord): string {
+  if (isLowConfidence(record)) return '食物与份量来自本次记录，营养数值待核对。';
+  if (record.source && MANUALLY_CONFIRMED_SOURCES.has(record.source)) {
+    return '食物、份量与营养数据已由用户确认。';
+  }
+  if (buildNutritionItems(record).length < 4) {
+    return '已展示可用的部分营养估算，食物与份量请以记录为准。';
+  }
+  return '食物与份量来自本次记录，营养数值为估算。';
+}
+
+function normalizedDietRecordDate(value: unknown): string | undefined {
+  const raw = text(value);
+  const match = raw?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return undefined;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year
+    || parsed.getUTCMonth() !== month - 1
+    || parsed.getUTCDate() !== day
+  ) {
+    return undefined;
+  }
+  return raw;
+}
+
+export function buildDietShareDateLabel(value: unknown): string {
+  const recordDate = normalizedDietRecordDate(value);
+  return recordDate ? recordDate.replace(/-/g, '.') : '餐食记录';
 }
 
 export function buildDietSharePresentation(record: DietShareRecord): DietSharePresentation {
   const mealLabel = MEAL_LABELS[record.meal_type] ?? '餐食';
-  // Low-confidence AI copy may contain exact macro/calorie targets even when the
-  // structured nutrition fields are hidden. Omit it until the meal is reviewed.
-  const nextAction = isLowConfidence(record) ? undefined : text(record.health_tips);
   return {
     mealLabel,
     headline: buildHeadline(record, mealLabel),
@@ -200,7 +234,7 @@ export function buildDietSharePresentation(record: DietShareRecord): DietSharePr
     macroLines: buildMacroLines(record),
     nutritionItems: buildNutritionItems(record),
     tags: buildTags(record),
-    ...(nextAction ? { nextAction } : {}),
+    publicNote: buildPublicNote(record),
     disclosure: buildDisclosure(record),
   };
 }
@@ -246,11 +280,6 @@ export function privateDietPhotoUris(data: DietPhotoCardData): string[] {
   return uris;
 }
 
-function firstSuggestion(value: unknown): string | undefined {
-  if (!Array.isArray(value)) return undefined;
-  return value.map(text).find((item): item is string => Boolean(item));
-}
-
 function persistedRecordId(value: unknown): number | null {
   const parsed = numberValue(value);
   return parsed != null && Number.isInteger(parsed) && parsed > 0 ? parsed : null;
@@ -292,9 +321,11 @@ export function buildChatDietShareInput(
   const photoUris = privateDietPhotoUris(cardData);
   const photoUri = photoUris[0];
   if (!photoUri) return { available: false, reason: 'photo_missing' };
+  const recordDate = normalizedDietRecordDate(cardData.record_date);
 
   const record: DietShareRecord = {
     id: recordId,
+    ...(recordDate ? { record_date: recordDate } : {}),
     meal_type: mealType,
     food_items: foodItems,
     source: text(cardData.source) ?? null,
@@ -305,7 +336,6 @@ export function buildChatDietShareInput(
     fiber: nullableNumber(cardData.fiber),
     image_url: photoUri,
     image_urls: photoUris,
-    health_tips: text(cardData.health_tips) ?? firstSuggestion(cardData.suggestions) ?? null,
     ai_confidence: nullableNumber(cardData.ai_confidence ?? cardData.confidence),
   };
   return { available: true, record, photoUri };
