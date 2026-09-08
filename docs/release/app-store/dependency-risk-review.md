@@ -1,26 +1,34 @@
 # App Store Production Dependency Risk Review
 
-Review date: 2026-09-06
+Review date: 2026-09-09
 
 ## Decision
 
-The 2026-09-06 Mobile production and package-lock-only npm audits report 20
-findings: 15 moderate and five high transitive package paths. The high paths
+The 2026-09-09 Mobile full-tree and production-only npm audits report 15
+findings: one low, nine moderate and five high transitive package paths. The high paths
 resolve to the two `image-size` denial-of-service advisories documented in
 `mobile/npm-audit-policy.json`. The policy gate passes with exceptions expiring
 on 2026-09-15; the local malicious-input regression passes 2/2. This is a
 conditional dependency-policy pass, not a zero-vulnerability result. Moderate
-findings remain for XML parsing, URI decoding and `qs` and must be assessed
+findings remain for URI decoding and `qs` and must be assessed
 during the next dependency remediation pass.
 
-The full-tree audit and backend hashed production lock audit were not rerun in
-this 2026-09-06 review. The backend zero-vulnerability result described below is
+The backend hashed production lock audit was not rerun in
+this 2026-09-09 Mobile review. The backend zero-vulnerability result described below is
 historical 2026-08-28 evidence and must be refreshed before release.
 
 The newly disclosed `brace-expansion` advisories are remediated across every locked
 major line used by Mobile (`1.1.18`, `2.1.4`, and `5.0.9`). PostCSS is pinned to the
-patched `8.5.23`. The 2026-08-06 `js-yaml` omap advisory is remediated on both
-locked major lines (`3.15.1` and `4.3.1`). Backend remediation pins
+patched `8.5.26`. The newly indexed XML serialization / parser resource-exhaustion
+advisories are remediated within the existing 0.8 line using
+[`@xmldom/xmldom 0.8.15`](https://github.com/xmldom/xmldom/releases/tag/0.8.15),
+including the legacy `xmldom` alias. The empty-merge-source budget bypass is
+remediated on both YAML lines with
+[`3.15.2`](https://github.com/nodeca/js-yaml/releases/tag/3.15.2) and
+[`4.3.2`](https://github.com/nodeca/js-yaml/releases/tag/4.3.2).
+No Expo/native SDK or dependency major version is changed. Real Node dependency
+tests cover both YAML consumers, XML doctype-name rejection and normal iOS plist
+roundtrips. Backend remediation pins
 `aiohttp==3.14.3`, `cryptography==50.0.0`, and `h2==4.4.1` for the duplicate Host
 header request-smuggling advisory.
 
@@ -49,10 +57,9 @@ fresh dependency check, and App Review still requires exact-build acceptance.
 - Production overrides pin patched XML, PostCSS, UUID, `brace-expansion`, and
   both locked `js-yaml` major lines.
 - Both full-tree `npm audit` and `npm audit --omit=dev` are part of the release evidence.
-- Mobile CI runs `scripts/npm-audit-gate.mjs` against the bounded-exception
-  `mobile/npm-audit-policy.json`. The gate resolves every high/critical transitive
-  path to its advisory leaf and fails closed on malformed, unresolved, or new
-  advisories.
+- Mobile CI runs `scripts/osv-npm-audit-gate.mjs` against the bounded-exception
+  `mobile/npm-audit-policy.json`. The gate checks the production lock inventory
+  and fails closed on new high/critical/unknown advisories or missing details.
 - Backend CI audits the hashed `backend/requirements.lock`; the lock is generated
   for the CI Python 3.12 Linux x86_64 target and must install with `--require-hashes`.
 - Backend deployment removes forbidden stale packages before writing its
@@ -68,7 +75,7 @@ appear. Markdown and build-tool inputs therefore retain the defense-in-depth
 controls above. Before each App Store candidate:
 
 1. Re-run full and production-only npm audits plus
-   `node ../scripts/npm-audit-gate.mjs --policy npm-audit-policy.json` from `mobile/`.
+   `node ../scripts/osv-npm-audit-gate.mjs --policy npm-audit-policy.json` from `mobile/`.
 2. Re-run `python -m pip_audit -r requirements.lock --require-hashes --progress-spinner=off`
    from `backend/`.
 3. Re-check the React Native/Expo build chain and shared Markdown parser for a new

@@ -94,17 +94,17 @@
     "typescript": "5.9.2"
   },
   "overrides": {
-    "@xmldom/xmldom": "0.8.13",
+    "@xmldom/xmldom": "0.8.15",
     "nanoid": "3.3.18",
     "postcss": "8.5.26",
     "uuid": "11.1.1",
     "xml2js": "0.6.2",
-    "xmldom": "npm:@xmldom/xmldom@0.8.13",
+    "xmldom": "npm:@xmldom/xmldom@0.8.15",
     "brace-expansion@<2.0.0": "1.1.18",
     "brace-expansion@>=2.0.0 <3.0.0": "2.1.4",
     "brace-expansion@>=5.0.0": "5.0.9",
-    "js-yaml@>=3.0.0 <4.0.0": "3.15.1",
-    "js-yaml@>=4.0.0 <5.0.0": "4.3.1",
+    "js-yaml@>=3.0.0 <4.0.0": "3.15.2",
+    "js-yaml@>=4.0.0 <5.0.0": "4.3.2",
     "body-parser": "2.3.0",
     "browserslist": "4.28.8",
     "markdown-it": "npm:@rexovolt/markdown-it@14.2.1"

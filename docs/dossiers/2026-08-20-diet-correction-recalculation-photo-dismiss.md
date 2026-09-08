@@ -1,5 +1,14 @@
 # Dossier: 饮食修正重算与餐食大图滑动关闭
 
+| 字段 | 值 |
+|---|---|
+| slug | `diet-correction-recalculation-photo-dismiss` |
+| 创建日期 | 2026-08-20 |
+| 当前阶段 | G5 已通过；G6 真机用户路径待确认 |
+| 状态 | deployed_device_smoke_pending |
+| 负责 | Codex + 用户 |
+| 反馈环 | Backend focused tests + Mobile Jest/TypeScript + production OTA after Gates |
+
 ## 2026-09-09 · 图片轻触关闭补充（仅本机实现）
 
 - 用户截图对应 MealPhotoGallery：已有纵向滑动关闭，但照片没有轻触入口。
@@ -20,14 +29,21 @@
 - 发布执行器与已独立 G4 GO 的 `30af34486` 字节一致；本轮不修改发布授权协议。
   仍须完成新鲜发布集成闸、精确 main CI、临时发布授权、构建/上传及厂商终态核验。
 
-| 字段 | 值 |
-|---|---|
-| slug | `diet-correction-recalculation-photo-dismiss` |
-| 创建日期 | 2026-08-20 |
-| 当前阶段 | G5 已通过；G6 真机用户路径待确认 |
-| 状态 | deployed_device_smoke_pending |
-| 负责 | Codex + 用户 |
-| 反馈环 | Backend focused tests + Mobile Jest/TypeScript + production OTA after Gates |
+### 发布前依赖阻断及兼容补丁
+
+- 图片交互修复固定于 `f23fc9d2d`，尚未 push。新鲜 OSV 闸检出 XML 八项高危公告与
+  YAML 两条受影响版本路径，发布暂停；按 safety-gate 补充独立复审，不新增例外。
+- 仅升级既有 override：xmldom 0.8.13 → 0.8.15（含旧 alias）、js-yaml
+  3.15.1 → 3.15.2 / 4.3.1 → 4.3.2；不升级 Expo 或原生 SDK。
+- 恶意 XML 序列化与两条 YAML merge 限额用例首先 3 RED，升级后 5/5 PASS
+  （含两种正常 plist roundtrip）。首轮兼容性断言忽略了 Expo 的 null-prototype
+  字典，修正为比较数据后正常用例在旧依赖上通过，未以补丁掩盖测试问题。
+- 补丁后 CI-mode Mobile 全量 305 suites / 2824 passed / 1 既有 skipped / 64.944 秒；
+  TypeScript、针对新测试的 lint、Expo 配置及既有图片解析补丁 2/2 全通过。
+- 新鲜发布集成闸 865 passed / 52 subtests / 344.38 秒 / exit 0；执行器与发布测试源码
+  未改变。OSV 闸通过，保留原有两项限期 image-size 例外；npm 全树与 production 审计
+  各 15 项（1 low、9 moderate、5 high 传递路径），high 均归于上述既有例外，不宣称零漏洞。
+- 待固定依赖提交独立 G4 GO、精确 main CI 和本次临时 Expo 发布令牌授权；尚未构建或上传。
 
 ## S0 · 用户需求（逐字）
 
