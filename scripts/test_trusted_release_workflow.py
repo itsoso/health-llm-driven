@@ -88,6 +88,29 @@ def test_missing_expo_credential_fails_before_ci_or_vendor_call():
     assert "not found" not in result.stderr
 
 
+@pytest.mark.parametrize("token", ["", " ", "\n", "fake-token\n"])
+def test_bad_expo_credential_fails_before_build_permission_is_consumed(token):
+    claim = next(step for step in WORKFLOW["jobs"]["ios-build"]["steps"]
+                 if '"claim-build $TARGET_SHA"' in step.get("run", ""))
+    prefix = claim["run"].split("/usr/bin/sudo", 1)[0]
+    result = subprocess.run(
+        ["/bin/bash", "--noprofile", "--norc", "-eu", "-c", prefix + "\necho CLAIM_REACHED\n"],
+        env={"PATH": "/nonexistent", "EXPO_TOKEN": token, "RELEASE_KEY": "fixture", "RELEASE_HOST_KEYS": "fixture"},
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode != 0
+    assert "CLAIM_REACHED" not in result.stdout
+
+
+def test_expo_authentication_probe_precedes_once_build_claim():
+    claim = next(step for step in WORKFLOW["jobs"]["ios-build"]["steps"]
+                 if '"claim-build $TARGET_SHA"' in step.get("run", ""))
+    assert claim["env"]["EXPO_TOKEN"] == "${{ secrets.REVA_RELEASE_EXPO_TOKEN }}"
+    body = claim["run"]
+    assert body.index("trusted_release_gate.py") < body.index("whoami") < body.index('"claim-build $TARGET_SHA"')
+    assert "Expo authentication preflight failed; build permission not consumed" in body
+
+
 def test_every_run_script_is_valid_bash():
     for job in WORKFLOW["jobs"].values():
         for step in job["steps"]:

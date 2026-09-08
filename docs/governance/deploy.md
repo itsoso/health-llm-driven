@@ -58,6 +58,8 @@ GitHub 控制面、受审代码、固定工具链和服务器 root 是信任前�
 授权窗口；其成功不是部署证明。随后 backend 与 ios-build 并行，构建不自动上传。
 `claim-build` 必须位于 ios-build job 内每次 vendor create 前，独立短锁不与正在运行的
 backend launcher 锁互斥；单独重跑失败 job 也不能复用旧 claim 再创建构建。
+领取前先拒绝空白 Expo token，并用锁定 CLI 在隔离环境中执行只读身份验证；失败不消费
+构建标记，输出固定错误码/文案而不输出身份或凭据。Secret 创建成功不证明其值有效。
 启动和原生构建 claim 在调用前持久化；未知结果不得重新 dispatch 规避一次性标记。
 上传 job 必须同时等待 backend 和 ios-build 成功，仍以 `claim-testflight` 验证后端
 SUCCEEDED 并消费一次性上传权限。仅提交本轮 job 返回且经 EAS 再次验证的精确 build ID，

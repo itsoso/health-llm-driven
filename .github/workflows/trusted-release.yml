@@ -201,12 +201,24 @@ jobs:
           TARGET_SHA: ${{ inputs.sha }}
           RELEASE_KEY: ${{ secrets.REVA_RELEASE_SSH_KEY }}
           RELEASE_HOST_KEYS: ${{ secrets.REVA_RELEASE_KNOWN_HOSTS }}
+          EXPO_TOKEN: ${{ secrets.REVA_RELEASE_EXPO_TOKEN }}
         run: |
           test -n "$RELEASE_KEY"
           test -n "$RELEASE_HOST_KEYS"
+          test -n "$EXPO_TOKEN"
+          case "$EXPO_TOKEN" in *[[:space:]]*) exit 1 ;; esac
           /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
             /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py \
               --sha "$TARGET_SHA" --workflow-sha "$GITHUB_SHA"
+          node_bin="$(dirname "$(command -v node)")"
+          if ! /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
+            EXPO_TOKEN="$EXPO_TOKEN" CI=1 \
+            "$node_bin/node" /opt/reva-release/source/scripts/release-tools/node_modules/eas-cli/bin/run \
+              whoami > /dev/null 2>&1; then
+            echo "Expo authentication preflight failed; build permission not consumed" >&2
+            exit 1
+          fi
+          unset EXPO_TOKEN
           umask 077
           private_dir="$(mktemp -d)"
           trap 'rm -f -- "$private_dir/key" "$private_dir/known_hosts"; rmdir -- "$private_dir"' EXIT

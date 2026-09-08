@@ -565,3 +565,13 @@
   缺失/漂移/重新授权/保留私钥均 BLOCK，旧 SHA/key 不能复用。补丁固定安全复审待完成。
 - 本轮专用 Expo robot/token 与 release-production 三项 secrets 已创建，尚未被执行器
   消费；后续只用于绿色精确候选，终态后撤销。原服务与 Build 265 保持不变。
+- `329967684` 固定兼容补丁独立 G4 GO；bootstrap/server 152 PASS，CI-mode 集成
+  487 PASS，完整 CI `34201320581` SUCCESS，受控 validate `34202132478` SUCCESS。
+  显式 rotate 成功，原归档和消费记录保留；状态 READY/CHECKED，shell/错 SHA 均拒绝。
+- 受控 release `34202264592` 中 backend 正在运行，ios-build 已失败于空 EXPO_TOKEN
+  检查，vendor build 尚未调用，build claim 已消费且禁止重置。根因是浏览器虚拟剪贴板
+  没有传入本机 pbpaste，而 Secret API 接受了空值，不能把“Secret 已创建”当作有效性证据。
+  已改用浏览器内存到 GitHub 安全表单的非空传递；保存仍需用户完成 GitHub Confirm access。
+- 补五条红测复现领取前漏检；最小修复让空白拒绝和锁定 CLI 只读 whoami 在 claim 前执行，
+  身份探针失败只输出固定错误，不消耗一次性标记。当前定向回归 51 PASS；固定提交复审
+  和完整集成待完成。旧 backend 未终结前不得更换远端 main 或撤销恢复权限。
