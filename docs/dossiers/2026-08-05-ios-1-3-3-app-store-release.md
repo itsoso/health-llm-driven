@@ -4,7 +4,7 @@
 |---|---|
 | slug | `ios-1-3-3-app-store-release` |
 | 创建日期 | 2026-08-05 |
-| 当前阶段 | 后端仍为 `329967684`，手机仍为 1.3.3 (265)；`17ed6f621` 发布在生产机 Git 源码准备阶段失败，状态 NEEDS_OPERATOR，无新包。GitHub/Expo 身份闸已通过；受控失败恢复、审核数据 reset 安全缺陷、ASC 登录与同包完整验收仍阻塞，继续冻结 production OTA |
+| 当前阶段 | 后端已受控部署 `30af34486`；`17ed6f621` 的历史准备失败经独立恢复审计退役，原 NEEDS_OPERATOR 回执保留。手机仍为 1.3.3 (265)，本轮无新包；审核 fixture 恢复、ASC 登录与同包完整验收仍待完成，继续冻结 production OTA |
 | 状态 | implementation |
 | 负责 | product / mobile release / Codex |
 | 反馈环 | EAS Store Build → TestFlight → App Store manual release |
@@ -707,3 +707,26 @@
   返回回执；首次轮换须经保护 stdin 提供回执，提前失败/响应丢失不可补发或重试。
   进程检查按 kernel flag 区分内核线程，空 argv 用户进程仍查 cwd/exe；枚举期间退出、
   新增或身份变化均 BLOCK。此补修尚需固定提交复审，未推进远端 main 或生产授权。
+- 最终 `30af344869fcaca70ba0e8ad6a1e005fed4ade33` 独立固定 G4 GO：复审方
+  242 PASS / 52 subtests 与 29 项对抗检查；父流程完整 CI-mode 集成
+  **641 PASS / 52 subtests / 211.64 秒 / exit 0**。System Map、Dossier、秘密与
+  静态检查通过。真实模型回归确认精确绑定该 SHA 后推送；GitHub CI
+  [34241671274](https://github.com/itsoso/health-llm-driven/actions/runs/34241671274)
+  与 trusted validate
+  [34242681191](https://github.com/itsoso/health-llm-driven/actions/runs/34242681191)
+  全部 SUCCESS。
+- 服务器以固定系统 Git 从 canonical GitHub 检出该绿色 SHA；只读恢复判定通过，
+  显式摘要绑定恢复成功，随后经受保护 stdin 回执完成 fresh rotate。原旧 workspace、
+  NEEDS_OPERATOR 回执和消费状态未重写；独立 recovery 与 retirement 审计原样保留。
+  本轮没有生产健康数据或审核 fixture 维护。
+- 后端独立发布
+  [34243588766](https://github.com/itsoso/health-llm-driven/actions/runs/34243588766)
+  为 SUCCESS：preflight/readiness/backend 通过，ios-build/testflight 明确 SKIPPED。
+  数据库备份、完整恢复演练、站外归档完成；健康度三次均为 **60/60**，生产 HEAD 精确
+  为 `30af34486`，server completed=SUCCEEDED，业务 lease 已释放。外网及本机 health
+  均 healthy；实际 `health-backend`、`celery-worker`、`celery-beat` 全部 active/running，
+  NRestarts=0。最新“上一餐吃了 1/3”后端修复已包含在该部署中。
+- 完成后通过受审 bootstrap 撤销本次双 SSH 授权，验证撤权及无 lease 后删除精确
+  loopback 私钥；本机新旧专用 cloud 私钥已清理，GitHub release-production 中
+  REVA_RELEASE_* Secrets 为空，其他密钥不变。受保护确认回执仅留本机与服务器私有审计，
+  不写入文档、命令行或 Git。没有创建新包、OTA、审核账号重置、真机全项验收或 App Review。

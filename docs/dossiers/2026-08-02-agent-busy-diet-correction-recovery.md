@@ -44,6 +44,15 @@ model-write probes blocked. The reviewer inspected but did not independently
 repeat the parent's PostgreSQL evidence. No push or deployment was performed;
 the earlier controlled-release NEEDS_OPERATOR block is unchanged.
 
+Deployment follow-up: the historical release block was separately recovered with
+an immutable operator audit and fresh authorization. Exact candidate
+`30af344869fcaca70ba0e8ad6a1e005fed4ade33` passed GitHub CI `34241671274` and
+backend-only trusted release `34243588766`. The latest-meal PostgreSQL suite was
+rerun: 24 PASS. Production HEAD matches that candidate; API/DB/Redis/Celery are
+healthy, deployment health scored 60/60, and the business lease is absent. The
+relative correction fix is now deployed. No personal record was changed for
+verification, and no new mobile build, OTA or physical-device acceptance is claimed.
+
 A production Mobile follow-up was presented as a network send failure while the
 Backend was actually serializing it behind an earlier active turn. The same
 follow-up requested a `1/2` diet-record correction that the deterministic
