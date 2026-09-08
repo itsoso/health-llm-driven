@@ -659,3 +659,13 @@
   CI release-invariants；集成聚焦 211 PASS / 27 subtests PASS，最终固定复审尚待完成。
 - 本轮尚未操作生产、撤销/延长历史身份、恢复审核数据、构建或提交审核；完整集成和
   固定提交 G4 将在实现收敛后追加。已实现代码不等于历史事故已解除或 App Review GO。
+- 固定提交 `467b2c390` + `6b85625e2` 的新鲜 CI-mode 集成为 581 PASS / 27 subtests
+  PASS，System Map、秘密扫描通过。固定 G4 仍判 NO-GO：审核重置只有 HEAD 证明，
+  未证明生产 seeder 与 Python 导入链。独立离线负例复现同 HEAD、seeder 0666 仍派发。
+- 后续补修在原业务 lease 内、读取重置凭据前，从 canonical 源复用 activation 的隔离
+  revision proof，重建 index 而不采用生产 Git 配置；再检查实际应用导入文件、祖先目录、
+  root 受管 venv、固定解释器链接及配置，拒绝未知 hook、外部导入路径与旧应用字节码。
+  校验前后绑定原 lease；seeder 与结果解析使用隔离 Python。依赖仅证明受管安装的权限
+  边界，不宣称 wheel-lock 字节一致；生产若存在不兼容缓存或 hook，继续 BLOCK，绝不
+  在校验器中清理/修权限后放行。部署脚本新增实际负例证明校验失败不读取 env、不执行
+  seeder；当前完整 deploy 回归 153 PASS。最终补修固定 G4 与集成结果另行记录。

@@ -7,8 +7,10 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -100,6 +102,11 @@ class ReviewResetTests(unittest.TestCase):
         self.patch(self.server, "CONFIG", self.config)
         self.patch(self.server, "POLICY", self.config / "authorized-release.json")
         self.patch(self.reset, "load_reviewed", lambda sha: (self.source, self.bootstrap, self.server))
+        def production_proof(sha, *args):
+            self.events.append("head")
+            if self.head != sha:
+                raise self.reset.ResetError("production proof failed")
+        self.patch(self.reset, "_validate_production", production_proof)
         self.patch(self.bootstrap, "canonical_source", lambda sha: self.source)
         self.patch(self.bootstrap, "secure", self.secure)
         self.patch(self.server, "secure_path", self.secure)
@@ -560,6 +567,261 @@ class ReviewResetTests(unittest.TestCase):
             secure.assert_called_once_with(Path("/usr/bin/python3.12"))
             umask.assert_called_once_with(0o077)
             self.assertTrue(self.reset.sys.dont_write_bytecode)
+
+
+class ProductionExecutionTests(unittest.TestCase):
+    """Real isolated Git/content proofs; only root metadata is virtualized."""
+
+    def setUp(self):
+        self.reset = load("trusted_review_reset")
+        self.bootstrap = load("bootstrap_trusted_release")
+        self.server = load("trusted_release_server")
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name).resolve()
+        self.source = self.root / "source"
+        self.repo = self.root / "production"
+        self.source.mkdir()
+        self.git(self.source, "init", "-b", "main")
+        self.git(self.source, "config", "user.name", "Offline Fixture")
+        self.git(self.source, "config", "user.email", "fixture@example.invalid")
+        for name, content in {
+            ".gitignore": "venv/\n*.pyc\n__pycache__/\nignored/\n",
+            ".gitattributes": "backend/app/model.py filter=evil\n",
+            "backend/scripts/seed_demo_account.py": "from app import model\n",
+            "backend/app/__init__.py": "",
+            "backend/app/model.py": "value = 1\n",
+            "backend/requirements.lock": "fixture==1.0\n",
+        }.items():
+            path = self.source / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            put(path, content.encode(), 0o644)
+        runner = self.source / "backend/scripts/activate_health_evidence_runtime.sh"
+        put(runner, (SCRIPTS.parent / "backend/scripts/activate_health_evidence_runtime.sh").read_bytes(), 0o644)
+        self.git(self.source, "add", ".")
+        self.git(self.source, "commit", "-qm", "offline fixture")
+        self.sha = self.git(self.source, "rev-parse", "HEAD").stdout.strip()
+        shutil.copytree(self.source, self.repo)
+        self.venv = self.repo / "backend/venv"
+        self.site = self.venv / "lib/python3.12/site-packages"
+        self.site.mkdir(parents=True)
+        (self.venv / "bin").mkdir()
+        self.python = self.root / "system/python3.12"
+        self.python.parent.mkdir()
+        put(self.python, b"never executed", 0o755)
+        (self.venv / "bin/python").symlink_to("python3")
+        (self.venv / "bin/python3").symlink_to(self.python)
+        put(self.venv / "pyvenv.cfg", f"home = {self.python.parent}\ninclude-system-site-packages = false\nversion = 3.12.1\n".encode())
+        put(self.site / "fixture.py", b"value = 1\n", 0o644)
+        self.lease = self.root / "lease"
+        self.lease.mkdir(mode=0o700)
+        self.token = "fixture-lease-token"
+        put(self.lease / "token", (self.token + "\n").encode())
+        self.patch(self.reset, "PRODUCTION", self.repo)
+        self.patch(self.reset, "SYSTEM_PYTHON", self.python)
+        self.patch(self.bootstrap, "BUSINESS_LEASE", self.lease)
+        self.patch(self.reset, "operator_context", lambda: None)
+        self.patch(self.reset, "load_reviewed", lambda sha: (self.source, self.bootstrap, self.server))
+        self.patch(self.server, "secure_path", self.secure)
+        self.patch(self.bootstrap, "secure", self.secure)
+        real_lstat = Path.lstat
+        def metadata(path, *args, **kwargs):
+            info = list(real_lstat(path, *args, **kwargs))
+            info[4], info[5] = 0, 0
+            return os.stat_result(info)
+        self.patch(Path, "lstat", metadata)
+        self.real_run = subprocess.run
+        self.patch(self.reset.subprocess, "run", self.proof_run)
+
+    def patch(self, obj, name, value):
+        item = patch.object(obj, name, value)
+        item.start()
+        self.addCleanup(item.stop)
+
+    def git(self, repo, *args):
+        run = getattr(self, "real_run", subprocess.run)
+        return run(["/usr/bin/git", "-C", str(repo), *args], text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+            env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"})
+
+    def secure(self, path, *, private=False, directory=False):
+        path = Path(path)
+        for entry in (path, *path.parents):
+            if entry == self.root.parent:
+                break
+            info = entry.lstat()
+            if info.st_mode & 0o022 or stat.S_ISLNK(info.st_mode) or (
+                    stat.S_ISREG(info.st_mode) and info.st_nlink != 1):
+                raise self.reset.ResetError("unsafe fixture metadata")
+        if directory and not path.is_dir():
+            raise self.reset.ResetError("expected directory")
+        if not directory and not stat.S_ISREG(path.lstat().st_mode):
+            raise self.reset.ResetError("expected regular file")
+        if private and stat.S_IMODE(path.stat().st_mode) != 0o600:
+            raise self.reset.ResetError("expected private file")
+
+    def proof_run(self, args, **kwargs):
+        self.assertEqual(args[:4], ["/bin/bash", "-e", "-u", "-c"])
+        self.assertNotIn("activate\n", args[4])
+        self.assertEqual(kwargs["env"]["REPO_PATH"], str(self.repo))
+        self.assertEqual(kwargs["env"]["EXPECTED_SHA"], self.sha)
+        # The production proof uses GNU stat. This adapter supplies only its
+        # metadata ABI on macOS, preserving actual mode/link/content checks.
+        stat_args = "-f '%Lp'" if sys.platform == "darwin" else "-c '%a'"
+        adapter = '''
+id() { printf '0\\n'; }
+stat() {
+    printf 'root:root:'
+    /usr/bin/stat ''' + stat_args + ''' "${@: -1}"
+}
+'''
+        return self.real_run([*args[:4], adapter + args[4]], **kwargs)
+
+    def invoke(self):
+        return self.reset.validate_production_execution(self.sha, self.lease, self.token)
+
+    def test_clean_production_with_normal_python_symlink_passes_without_execution(self):
+        self.assertIsNone(self.invoke())
+
+    def test_system_python3_alias_resolves_only_to_fixed_system_binary(self):
+        alias = self.python.with_name("python3")
+        alias.symlink_to("python3.12")
+        (self.venv / "bin/python3").unlink()
+        (self.venv / "bin/python3").symlink_to(alias)
+        self.assertIsNone(self.invoke())
+        alias.unlink()
+        alias.symlink_to(self.root / "unreviewed-python")
+        with self.assertRaises(self.reset.ResetError):
+            self.invoke()
+
+    def test_same_head_seeder_bytes_permissions_links_and_app_import_tamper_fail(self):
+        target = self.repo / "backend/scripts/seed_demo_account.py"
+        original = target.read_bytes()
+        for fault in ("bytes", "mode", "symlink", "hardlink", "app", "ignored"):
+            with self.subTest(fault=fault):
+                if fault == "bytes":
+                    put(target, b"print('tampered')\n", 0o644)
+                elif fault == "mode":
+                    target.chmod(0o666)
+                elif fault in {"symlink", "hardlink"}:
+                    put(self.root / "linked-seeder", original, 0o644)
+                    target.unlink()
+                    if fault == "symlink":
+                        target.symlink_to(self.root / "linked-seeder")
+                    else:
+                        os.link(self.root / "linked-seeder", target)
+                elif fault == "app":
+                    put(self.repo / "backend/app/model.py", b"value = 2\n", 0o644)
+                else:
+                    extra = self.repo / "backend/ignored/shadow.py"
+                    extra.parent.mkdir()
+                    put(extra, b"pass\n", 0o644)
+                with self.assertRaises(self.reset.ResetError):
+                    self.invoke()
+                target.unlink()
+                put(target, original, 0o644)
+                put(self.repo / "backend/app/model.py", b"value = 1\n", 0o644)
+                if fault == "ignored":
+                    shutil.rmtree(self.repo / "backend/ignored")
+                self.assertIsNone(self.invoke())
+
+    def test_venv_content_import_path_mode_and_interpreter_fail_closed(self):
+        baseline = self.root / "venv-baseline"
+        shutil.copytree(self.venv, baseline, symlinks=True)
+        for fault in ("mode", "pth", "system-site", "python", "hardlink", "sitecustomize", "editable", "outside-link", "cfg-home"):
+            with self.subTest(fault=fault):
+                if fault == "mode":
+                    (self.site / "fixture.py").chmod(0o666)
+                elif fault == "pth":
+                    put(self.site / "shadow.pth", b"/tmp/unreviewed\n", 0o644)
+                elif fault == "system-site":
+                    put(self.venv / "pyvenv.cfg", b"include-system-site-packages = true\n")
+                elif fault == "python":
+                    (self.venv / "bin/python3").unlink()
+                    (self.venv / "bin/python3").symlink_to(self.root / "other-python")
+                elif fault == "hardlink":
+                    os.link(self.site / "fixture.py", self.site / "linked.py")
+                elif fault == "sitecustomize":
+                    put(self.site / "sitecustomize.py", b"pass\n", 0o644)
+                elif fault == "editable":
+                    put(self.site / "editable.egg-link", b"/tmp/source\n", 0o644)
+                elif fault == "outside-link":
+                    (self.site / "outside").symlink_to(self.root)
+                else:
+                    put(self.venv / "pyvenv.cfg", b"home = /tmp/untrusted\ninclude-system-site-packages = false\nversion = 3.12.1\n")
+                with self.assertRaises(self.reset.ResetError):
+                    self.invoke()
+                shutil.rmtree(self.venv)
+                shutil.copytree(baseline, self.venv, symlinks=True)
+                self.assertIsNone(self.invoke())
+
+    def test_wrong_or_replaced_lease_fails_before_or_after_proof(self):
+        with self.assertRaises(self.reset.ResetError):
+            self.reset.validate_production_execution(self.sha, self.lease, "wrong")
+        with self.assertRaises(self.reset.ResetError):
+            self.reset.validate_production_execution(self.sha, self.root, self.token)
+        proof = self.proof_run
+        def replaced(args, **kwargs):
+            result = proof(args, **kwargs)
+            put(self.lease / "token", b"changed\n")
+            return result
+        with patch.object(self.reset.subprocess, "run", replaced), self.assertRaises(self.reset.ResetError):
+            self.invoke()
+
+    def test_empty_writable_directory_fifo_and_old_bytecode_are_independent_rejections(self):
+        base = self.repo / "backend/ignored"
+        for fault in ("empty-writable", "fifo", "pyc", "ancestor", "module-link"):
+            with self.subTest(fault=fault):
+                base.mkdir()
+                if fault == "empty-writable":
+                    base.chmod(0o777)
+                elif fault == "fifo":
+                    os.mkfifo(base / "blocked.py")
+                elif fault == "pyc":
+                    put(base / "shadow.pyc", b"cached code", 0o644)
+                elif fault == "ancestor":
+                    (self.repo / "backend/app").chmod(0o777)
+                else:
+                    (base / "module").symlink_to(self.root)
+                with self.assertRaises(self.reset.ResetError):
+                    self.invoke()
+                (self.repo / "backend/app").chmod(0o755)
+                shutil.rmtree(base)
+                self.assertIsNone(self.invoke())
+
+    def test_isolated_proof_ignores_hooks_filters_worktree_and_index_flags(self):
+        marker = self.root / "hook-executed"
+        target = self.repo / "backend/app/model.py"
+        for fault in ("fsmonitor", "filter", "worktree", "assume-unchanged", "skip-worktree"):
+            with self.subTest(fault=fault):
+                config = self.repo / ".git/config"
+                original = config.read_bytes()
+                if fault == "fsmonitor":
+                    self.git(self.repo, "config", "core.fsmonitor", f"touch {marker}")
+                elif fault == "filter":
+                    self.git(self.repo, "config", "filter.evil.clean", f"touch {marker}; cat")
+                elif fault == "worktree":
+                    self.git(self.repo, "config", "core.worktree", str(self.source))
+                else:
+                    self.git(self.repo, "update-index", "--" + fault, "backend/app/model.py")
+                put(target, b"value = 2\n", 0o644)
+                self.assertEqual(self.git(self.repo, "rev-parse", "HEAD").stdout.strip(), self.sha)
+                with self.assertRaises(self.reset.ResetError):
+                    self.invoke()
+                self.assertFalse(marker.exists())
+                put(config, original, 0o644)
+                self.git(self.repo, "update-index", "--no-assume-unchanged", "backend/app/model.py")
+                self.git(self.repo, "update-index", "--no-skip-worktree", "backend/app/model.py")
+                put(target, b"value = 1\n", 0o644)
+                self.assertIsNone(self.invoke())
+
+    def test_runtime_entry_budget_is_total_and_fail_closed(self):
+        with patch.object(self.reset, "MAX_RUNTIME_ENTRIES", 2), self.assertRaises(self.reset.ResetError):
+            self.invoke()
+
+    def test_failure_is_sanitized_and_reads_no_env_or_venv_code(self):
+        with patch.object(self.reset, "_revision_proof", side_effect=RuntimeError("private-token-and-env")), self.assertRaisesRegex(self.reset.ResetError, "^production execution proof failed$"):
+            self.invoke()
 
 
 if __name__ == "__main__":

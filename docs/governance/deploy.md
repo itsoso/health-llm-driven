@@ -96,6 +96,11 @@ EAS 调用响应丢失时按 source SHA 查询已有构建，记录其 build/sub
 阻止发布身份撤销和轮换。不得直接调用 seeder、修改会话排序或套用管理员 shell 例外。
 准备失败或旧 NEEDS_OPERATOR 不满足这个入口的后端成功前置条件。
 
+审核重置不能用 HEAD 相同代替执行内容证明。持有业务 lease 后、读取重置凭据和启动
+seeder 前，须从 canonical 源运行隔离生产 revision proof，并检查实际应用导入目录及
+受管 Python 运行链的权限、链接和搜索路径。失败保留现场，不通过现场修权限或删缓存
+自动重试。依赖信任限于既有 root 受管安装，不宣称已逐字节证明 wheel 与 lock 一致。
+
 离线订单 SSE 验收辅助：`python scripts/release_acceptance.py analyze < sanitized-events.sse`。
 仅输入合成或已脱敏事件，输出不含原文。pending_confirmation 是需要用户确认的草稿；
 recorded_receipt 仍要求独立数据库回查，不能凭该脚本通过声称完整 App 或 Apple 验收通过。

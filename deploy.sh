@@ -4204,7 +4204,31 @@ release_lock_token="$4"
 
 test -r "$release_lock_dir/token"
 test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
-test "$(git -C "$repo_path" rev-parse HEAD)" = "$expected_sha"
+/usr/bin/env -i PATH=/usr/bin:/bin HOME=/nonexistent /usr/bin/python3 -I - \
+    "$expected_sha" "$release_lock_dir" "$release_lock_token" <<'PROVE_REVIEW_EXECUTION'
+import os
+import pathlib
+import re
+import runpy
+import stat
+import sys
+
+sha, lease, token = sys.argv[1:]
+if os.geteuid() != 0 or re.fullmatch(r"[0-9a-f]{40}", sha) is None:
+    raise SystemExit("invalid reviewed execution context")
+entry = pathlib.Path("/var/lib/reva-release/bootstrap") / sha / "source/scripts/trusted_review_reset.py"
+for item in [*reversed(entry.parents), entry]:
+    info = item.lstat()
+    kind = stat.S_ISREG if item == entry else stat.S_ISDIR
+    if info.st_uid != 0 or info.st_mode & 0o022 or not kind(info.st_mode):
+        raise SystemExit("unsafe reviewed execution context")
+    if item == entry and info.st_nlink != 1:
+        raise SystemExit("unsafe reviewed execution entry")
+sys.dont_write_bytecode = True
+runpy.run_path(str(entry))["validate_production_execution"](sha, lease, token)
+PROVE_REVIEW_EXECUTION
+test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
+test "$repo_path" = /opt/health-app
 cd "$repo_path/backend"
 test -x venv/bin/python
 test -r .env
@@ -4219,8 +4243,8 @@ set +a
 summary_path="$(mktemp /tmp/reva-app-store-review-reset.XXXXXX)"
 chmod 600 "$summary_path"
 trap 'rm -f -- "$summary_path"' EXIT
-PYTHONPATH=. venv/bin/python scripts/seed_demo_account.py --secret-free >"$summary_path"
-venv/bin/python - "$summary_path" <<'PY'
+venv/bin/python -I scripts/seed_demo_account.py --secret-free >"$summary_path"
+venv/bin/python -I - "$summary_path" <<'PY'
 import json
 import sys
 

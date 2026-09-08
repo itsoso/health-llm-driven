@@ -3,10 +3,10 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parents[1]
 DEPLOY_SCRIPT = ROOT / "deploy.sh"
@@ -2912,6 +2912,72 @@ def test_cli_has_secret_free_app_store_review_reset_mode():
     assert "--secret-free" in body
     assert "APP_STORE_REVIEW_RESET_OK" in body
     assert "--rotate-password" not in body
+
+
+def test_review_reset_checks_execution_chain_under_lease_before_credentials():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    start = script.index("\nset -euo pipefail\n", script.index("reset_app_store_review_demo() {"))
+    end = script.index("\nREMOTE_APP_STORE_REVIEW_RESET", start)
+    remote = script[start:end]
+    proof = remote.index("validate_production_execution")
+    assert remote.index('test "$(cat "$release_lock_dir/token")"') < proof
+    assert remote.rindex('test "$(cat "$release_lock_dir/token")"') > proof
+    assert proof < remote.index("source .env") < remote.index("scripts/seed_demo_account.py")
+    assert '/usr/bin/env -i PATH=/usr/bin:/bin HOME=/nonexistent /usr/bin/python3 -I' in remote
+    assert '/var/lib/reva-release/bootstrap' in remote
+    assert 'venv/bin/python -I scripts/seed_demo_account.py --secret-free' in remote
+    assert 'venv/bin/python -I - "$summary_path"' in remote
+
+
+@pytest.mark.parametrize("proof_rc", [0, 1, 73])
+def test_review_reset_remote_proof_gates_env_and_seeder(tmp_path: Path, proof_rc: int):
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    start = script.index("\nset -euo pipefail\n", script.index("reset_app_store_review_demo() {"))
+    end = script.index("\nREMOTE_APP_STORE_REVIEW_RESET", start)
+    remote = script[start:end]
+    # Only the system-proof boundary and fixed production path are virtualized.
+    # The lease check, ordering, shell failure and receipt parser execute for real.
+    remote = remote.replace(
+        "/usr/bin/env -i PATH=/usr/bin:/bin HOME=/nonexistent /usr/bin/python3 -I",
+        "offline_proof",
+    ).replace('test "$repo_path" = /opt/health-app', 'test "$repo_path" = "$OFFLINE_REPO"')
+    backend = tmp_path / "repo/backend"
+    (backend / "venv/bin").mkdir(parents=True)
+    (backend / ".env").write_text(
+        'printf "env\\n" >> "$OFFLINE_EVENTS"\n'
+        'APP_STORE_REVIEW_DEMO_ACCOUNT=fixture@example.invalid\n'
+        'APP_STORE_REVIEW_DEMO_PASSWORD=synthetic-not-a-real-secret\n',
+        encoding="utf-8",
+    )
+    python = backend / "venv/bin/python"
+    python.write_text(
+        '#!/bin/bash\nset -eu\n'
+        'test "$1" = -I\n'
+        'if [[ "$2" = scripts/seed_demo_account.py ]]; then\n'
+        '  printf "seeder\\n" >> "$OFFLINE_EVENTS"\n'
+        '  printf \'{"verification":"PASS","daily_plan_actions":1,"timeline_events":1,"demo_conversation_messages":2}\\n\'\n'
+        'else\n'
+        f'  exec "{sys.executable}" "$@"\n'
+        'fi\n', encoding="utf-8",
+    )
+    python.chmod(0o700)
+    lease = tmp_path / "lease"
+    lease.mkdir()
+    (lease / "token").write_text("offline-owner\n", encoding="utf-8")
+    events = tmp_path / "events"
+    harness = (
+        'offline_proof() { cat >/dev/null; printf "proof\\n" >> "$OFFLINE_EVENTS"; '
+        f'return {proof_rc}; }}\n' + remote
+    )
+    result = subprocess.run(
+        ["/bin/bash", "-c", harness, "offline", str(backend.parent), "a" * 40,
+         str(lease), "offline-owner"], capture_output=True, text=True, timeout=10,
+        env={**os.environ, "OFFLINE_REPO": str(backend.parent), "OFFLINE_EVENTS": str(events)},
+        check=False,
+    )
+    assert (result.returncode == 0) == (proof_rc == 0), result.stderr
+    assert events.read_text().splitlines() == (["proof", "env", "seeder"] if proof_rc == 0 else ["proof"])
+    assert result.stdout == ("APP_STORE_REVIEW_RESET_OK\n" if proof_rc == 0 else "")
 
 
 @pytest.mark.parametrize(

@@ -7,6 +7,7 @@ No provisioning, credentials, account selection, retry or recovery is exposed.
 """
 
 import argparse
+import configparser
 import fcntl
 import hashlib
 import importlib.util
@@ -21,6 +22,8 @@ from pathlib import Path
 
 STATE = Path("/var/lib/reva-release")
 PRODUCTION = Path("/opt/health-app")
+SYSTEM_PYTHON = Path("/usr/bin/python3.12")
+MAX_RUNTIME_ENTRIES = 100000
 
 
 class ResetError(Exception):
@@ -118,6 +121,174 @@ def _assert_lock(server, lock, fd):
         raise ResetError("original launcher lock changed")
 
 
+def _revision_proof(sha, source, bootstrap):
+    path = source / "backend/scripts/activate_health_evidence_runtime.sh"
+    bootstrap.secure(path)
+    code = path.read_text()
+    start, end = "verify_root_owned_nonwritable() {\n", "\nverify_services_active() {\n"
+    if code.count(start) != 1 or code.count(end) != 1:
+        raise ResetError("reviewed revision proof boundaries changed")
+    proof = code[code.index(start):code.index(end)]
+    if any(proof.count(name + "() {\n") != 1 for name in (
+            "verify_root_owned_nonwritable", "verify_git_metadata_trust",
+            "trusted_git", "verify_tracked_worktree_trust", "verify_repo_revision")):
+        raise ResetError("reviewed revision proof contract changed")
+    # Only this fixed pure function block is evaluated, never activation's
+    # argument parser, environment setup, service operations or main routine.
+    subprocess.run(["/bin/bash", "-e", "-u", "-c", "set -o pipefail\n" + proof + "\nverify_repo_revision\n"],
+        env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "LC_ALL": "C",
+             "REPO_PATH": str(PRODUCTION), "EXPECTED_SHA": sha},
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        check=True, timeout=300)
+
+
+def _runtime_entries(root, *, exclude=()):
+    # Do not follow symlinks, suppress walk errors or allow unbounded trees.
+    pending, count = [root], 0
+    while pending:
+        path = pending.pop()
+        count += 1
+        if count > MAX_RUNTIME_ENTRIES:
+            raise ResetError("runtime inventory exceeds proof bound")
+        info = path.lstat()
+        yield path, info
+        if stat.S_ISDIR(info.st_mode):
+            with os.scandir(path) as entries:
+                for entry in entries:
+                    if Path(entry.path) in exclude:
+                        continue
+                    if count + len(pending) >= MAX_RUNTIME_ENTRIES:
+                        raise ResetError("runtime inventory exceeds proof bound")
+                    pending.append(Path(entry.path))
+
+
+def _validate_application_imports(source, server):
+    backend = PRODUCTION / "backend"
+    server.secure_path(backend, directory=True)
+    for path, info in _runtime_entries(backend, exclude={backend / "venv"}):
+        # Check even empty directories and non-code objects before any read:
+        # namespace imports can acquire new code, and FIFOs must never block.
+        server.secure_path(path, directory=stat.S_ISDIR(info.st_mode))
+        if path.name == "__pycache__" or path.suffix in {".pyc", ".pyo"}:
+            raise ResetError("application cached code forbidden")
+        if path.suffix not in {".py", ".so", ".pth", ".zip"} or stat.S_ISDIR(info.st_mode):
+            continue
+        reviewed = source / path.relative_to(PRODUCTION)
+        server.secure_path(reviewed)
+        if path.read_bytes() != reviewed.read_bytes():
+            raise ResetError("application import differs from canonical source")
+    for relative in ("backend/app", "backend/scripts"):
+        server.secure_path(PRODUCTION / relative, directory=True)
+    server.secure_path(PRODUCTION / "backend/scripts/seed_demo_account.py")
+
+
+def _validate_python_link(path, venv, server):
+    aliases = {venv / "bin" / name for name in ("python", "python3", "python3.12")}
+    aliases.add(SYSTEM_PYTHON.with_name("python3"))
+    seen = set()
+    while path != SYSTEM_PYTHON:
+        if path not in aliases or path in seen:
+            raise ResetError("venv interpreter has an unknown source")
+        seen.add(path)
+        server.secure_path(path.parent, directory=True)
+        info = path.lstat()
+        if not stat.S_ISLNK(info.st_mode):
+            server.secure_path(path)
+            server.secure_path(SYSTEM_PYTHON)
+            if path.read_bytes() != SYSTEM_PYTHON.read_bytes():
+                raise ResetError("venv interpreter differs from system Python")
+            return
+        if info.st_uid != 0 or info.st_gid != 0 or info.st_nlink != 1:
+            raise ResetError("unsafe interpreter symlink ownership")
+        target = Path(os.readlink(path))
+        path = Path(os.path.abspath(path.parent / target))
+    server.secure_path(SYSTEM_PYTHON)
+
+
+def _validate_venv(server):
+    venv = PRODUCTION / "backend/venv"
+    server.secure_path(venv, directory=True)
+    config = venv / "pyvenv.cfg"
+    server.secure_path(config)
+    if config.stat().st_size > 16384:
+        raise ResetError("venv configuration exceeds bound")
+    parser = configparser.ConfigParser(interpolation=None, strict=True)
+    parser.read_string("[venv]\n" + config.read_text())
+    if parser.sections() != ["venv"] or parser.defaults():
+        raise ResetError("unexpected venv configuration")
+    values = dict(parser["venv"])
+    if (set(values) - {"home", "include-system-site-packages", "version", "executable", "command"}
+            or values.get("home") != str(SYSTEM_PYTHON.parent)
+            or values.get("include-system-site-packages") != "false"
+            or re.fullmatch(r"3\.12\.[0-9]+", values.get("version", "")) is None
+            or values.get("executable", str(SYSTEM_PYTHON)) != str(SYSTEM_PYTHON)):
+        raise ResetError("venv configuration differs from fixed system source")
+    site = venv / "lib/python3.12/site-packages"
+    server.secure_path(site, directory=True)
+    _validate_python_link(venv / "bin/python", venv, server)
+    for path, info in _runtime_entries(venv):
+        if stat.S_ISLNK(info.st_mode):
+            if path.parent == venv / "bin" and path.name in {"python", "python3", "python3.12"}:
+                _validate_python_link(path, venv, server)
+            elif (path == venv / "lib64" and os.readlink(path) == "lib"
+                    and info.st_uid == 0 and info.st_gid == 0 and info.st_nlink == 1):
+                server.secure_path(venv / "lib", directory=True)
+            else:
+                raise ResetError("unknown venv symlink")
+            continue
+        server.secure_path(path, directory=stat.S_ISDIR(info.st_mode))
+        if (path.suffix in {".pth", ".egg-link"} or "__editable__" in path.name
+                or path.name.split(".")[0] in {"sitecustomize", "usercustomize"}
+                or (path.name == "site-packages" and path != site)):
+            raise ResetError("unknown Python startup or import hook")
+        if path.name == "direct_url.json":
+            if path.stat().st_size > 16384:
+                raise ResetError("dependency source metadata exceeds bound")
+            data = json.loads(path.read_bytes())
+            if not isinstance(data, dict) or data.get("dir_info", {}).get("editable"):
+                raise ResetError("editable dependency source forbidden")
+
+
+def _validate_production(sha, source, bootstrap, server):
+    server.secure_path(PRODUCTION, directory=True)
+    _revision_proof(sha, source, bootstrap)
+    _validate_application_imports(source, server)
+    _validate_venv(server)
+
+
+def _lease_identity(lease_dir, lease_token, bootstrap, server):
+    path = Path(lease_dir)
+    if (path != bootstrap.BUSINESS_LEASE or not isinstance(lease_token, str)
+            or re.fullmatch(r"[A-Za-z0-9._:-]{1,256}", lease_token) is None):
+        raise ResetError("fixed business lease required")
+    _private_directory(server, path)
+    token = path / "token"
+    server.secure_path(token, private=True)
+    if token.stat().st_size > 257 or token.read_bytes() not in (
+            lease_token.encode(), (lease_token + "\n").encode()):
+        raise ResetError("business lease identity differs")
+    return tuple((entry.stat().st_dev, entry.stat().st_ino) for entry in (path, token))
+
+
+def validate_production_execution(sha, lease_dir, lease_token):
+    """Read-only canonical runpy interface, called inside deploy -R's lease.
+
+    No launcher lock is acquired: the operator parent already holds it. The
+    caller must recheck its lease after return and before .env/seeder execution.
+    Venv proof covers root-managed non-replaceability, not wheel provenance.
+    """
+    try:
+        operator_context()
+        validate_arguments(sha, "0" * 32)
+        source, bootstrap, server = load_reviewed(sha)
+        original = _lease_identity(lease_dir, lease_token, bootstrap, server)
+        _validate_production(sha, source, bootstrap, server)
+        if _lease_identity(lease_dir, lease_token, bootstrap, server) != original:
+            raise ResetError("business lease inode changed")
+    except Exception:  # noqa: BLE001 -- Preserve a secret-free remote exception boundary.
+        raise ResetError("production execution proof failed") from None
+
+
 def _validate_workspace(sha, source, bootstrap, server):
     if bootstrap.canonical_source(sha) != source:
         raise ResetError("canonical source mismatch")
@@ -137,6 +308,7 @@ def _validate_workspace(sha, source, bootstrap, server):
             raise ResetError("confirmed backend success required")
     if os.path.lexists(bootstrap.BUSINESS_LEASE):
         raise ResetError("business lease exists; operator review required")
+    _validate_production(sha, source, bootstrap, server)
     server.validate_loopback(policy)
     server.secure_path(Path(server.PYTHON))
     bindir = workspace / "bin"
@@ -160,14 +332,6 @@ def _validate_workspace(sha, source, bootstrap, server):
     expected = ("\n".join(lines) + "\nDEPLOY_SERVER=health\nDEPLOY_PATH=/opt/health-app\n").encode()
     if server._read_private(candidate) != expected:
         raise ResetError("deployment environment differs from fixed candidate")
-    server.secure_path(PRODUCTION, directory=True)
-    server.secure_path(PRODUCTION / ".git/config")
-    result = subprocess.run(["/usr/bin/git", "-c", "core.hooksPath=/dev/null",
-        "-c", "core.fsmonitor=false", "-C", str(PRODUCTION), "rev-parse", "HEAD"],
-        env=bootstrap.ENV, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL, text=True, check=True, timeout=90)
-    if result.stdout.strip() != sha:
-        raise ResetError("production revision differs from reviewed SHA")
     env = server.clean_environment(workspace)
     env.update(DEPLOY_SOURCE_SHA=sha, DEPLOY_ENV_FILE=str(candidate))
     return env
