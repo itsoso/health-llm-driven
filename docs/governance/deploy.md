@@ -84,7 +84,11 @@ cwd/exe 与进程身份、无业务 lease，并复用隔离 Git revision proof �
 独立 `recoveries/<old-sha>` 中的 intent 必须先 fsync，随后仅精确撤销旧双身份、删除
 旧 loopback 私钥；原始 workspace、NEEDS_OPERATOR 回执与消费记录完全不改。后置证明
 通过后才写终态，任何未知/不完整操作均阻断，禁止改 ID 或再次调用来续跑。普通 rotate
-只接受完整恢复审计、未变原始证据、已撤权且无私钥的安装；仍须新 SHA/新身份、真实 CI
+还要求恢复成功后才返回的随机 256-bit 回执。intent 仅保存其摘要，所有终态 fsync 成功后
+才允许将明文交付操作者；回执经受保护 stdin 传入 `rotate --recovery-receipt-stdin`，
+不放命令行、日志或用户消息。首次轮换在 mutation 前把已验证回执写入 root-only retirement
+审计供后续历史核验。回执丢失或写盘结果未知均不补发、不以可见 completed 文件替代成功。
+普通 rotate 只接受完整恢复审计、未变原始证据、已撤权且无私钥的安装；仍须新 SHA/新身份、真实 CI
 及原有全部发布闸。此处置不部署、不恢复审核数据、不构建/上传，也不证明线上修复已生效。
 为获得新恢复工具的精确 CI，可在固定代码独立 G4 GO 且远端主干 CI 绿色后推送受审代码；
 这只发布源码，不解除历史事故、不 dispatch 发布或改变旧授权。实际生产处置仍须上述闸。

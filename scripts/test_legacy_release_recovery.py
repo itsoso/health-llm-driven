@@ -61,7 +61,14 @@ def test_inspect_is_read_only_and_recovery_preserves_original_evidence(monkeypat
     assert b._read_json(w / "completed.json")["state"] == "NEEDS_OPERATOR"
     assert b.AUTHORIZED.read_text() == "ssh-ed25519 AAAAExisting unrelated\n"
     assert not (b.CONFIG / "loopback.key").exists()
-    assert b._workspace_evidence(SHA)["state"] == "RECOVERED_PREPARATION_FAILURE"
+    with pytest.raises(b.BootstrapError):
+        b._workspace_evidence(SHA)
+    assert b._workspace_evidence(SHA, recovery_receipt=result["receipt"])["state"] == "RECOVERED_PREPARATION_FAILURE"
+    intent_bytes = (b.STATE / "recoveries" / SHA / "intent.json").read_bytes()
+    assert result["receipt"].encode() not in intent_bytes
+    assert b._read_json(b.STATE / "recoveries" / SHA / "intent.json")["evidence_sha256"] == plan["evidence_sha256"]
+    with pytest.raises(b.BootstrapError):
+        b._workspace_evidence(SHA, recovery_receipt="0" * 64)
     assert not any("deploy.sh" in str(arg) for arg in calls)
     with pytest.raises(b.BootstrapError):
         recover(b, plan["evidence_sha256"])
@@ -208,9 +215,33 @@ def test_every_mutation_boundary_preserves_unknown_operation(monkeypatch, tmp_pa
         inspect(b)
 
 
+@pytest.mark.parametrize("boundary", ["file_fsync", "directory_fsync"])
+def test_visible_but_not_durable_terminal_is_not_accepted(monkeypatch, tmp_path, boundary):
+    b, _w, _ = recovery_fixture(monkeypatch, tmp_path)
+    plan = inspect(b)
+    record = b.STATE / "recoveries" / SHA
+    complete = record / "completed.json"
+    fsync = b.os.fsync
+    injected = False
+    def fail_after_write(fd):
+        nonlocal injected
+        if complete.exists() and not injected:
+            target = complete if boundary == "file_fsync" else record
+            if os.fstat(fd).st_ino == target.stat().st_ino:
+                injected = True
+                raise OSError("terminal durability unknown")
+        return fsync(fd)
+    monkeypatch.setattr(b.os, "fsync", fail_after_write)
+    with pytest.raises(OSError):
+        recover(b, plan["evidence_sha256"])
+    assert injected
+    with pytest.raises(b.BootstrapError):
+        b._workspace_evidence(SHA)
+
+
 def test_valid_recovery_allows_fresh_rotation_and_retains_audit(monkeypatch, tmp_path):
     b, w, _ = recovery_fixture(monkeypatch, tmp_path)
-    recover(b, inspect(b)["evidence_sha256"])
+    result = recover(b, inspect(b)["evidence_sha256"])
     manifest = b._preparation_manifest(w)
     run = b._run
     def new_key(args, **kwargs):
@@ -219,7 +250,9 @@ def test_valid_recovery_allows_fresh_rotation_and_retains_audit(monkeypatch, tmp
             (b.CONFIG / "loopback.key.pub").write_text(NEW_LOOPBACK + "\n")
         return result
     monkeypatch.setattr(b, "_run", new_key)
-    assert b.rotate(SHA, NEW_SHA, 200, HOST)["state"] == "INSTALLED"
+    with pytest.raises(b.BootstrapError):
+        b.rotate(SHA, NEW_SHA, 200, HOST)
+    assert b.rotate(SHA, NEW_SHA, 200, HOST, recovery_receipt=result["receipt"])["state"] == "INSTALLED"
     assert b._preparation_manifest(w) == manifest
     assert b._retired_history()[SHA]["workspace"]["state"] == "RECOVERED_PREPARATION_FAILURE"
 
@@ -229,7 +262,7 @@ def test_recovered_audit_cannot_mask_drift(monkeypatch, tmp_path, fault):
     import shutil
     b, w, _ = recovery_fixture(monkeypatch, tmp_path)
     old_keys = b.AUTHORIZED.read_bytes()
-    recover(b, inspect(b)["evidence_sha256"])
+    result = recover(b, inspect(b)["evidence_sha256"])
     record = b.STATE / "recoveries" / SHA
     if fault == "delete_workspace":
         shutil.rmtree(w)
@@ -245,10 +278,10 @@ def test_recovered_audit_cannot_mask_drift(monkeypatch, tmp_path, fault):
         (b.STATE / "launcher.lock").rename(b.STATE / "old-lock")
         b._write(b.STATE / "launcher.lock", b"")
     with pytest.raises((b.BootstrapError, FileNotFoundError)):
-        b._workspace_evidence(SHA)
+        b._workspace_evidence(SHA, recovery_receipt=result["receipt"])
 
 
-@pytest.mark.parametrize("indicator", ["cwd", "exe", "environ", "cmdline", "none", "unreadable"])
+@pytest.mark.parametrize("indicator", ["cwd", "exe", "environ", "cmdline", "none", "unreadable", "empty_argv"])
 def test_proc_proof_catches_reparented_helper(monkeypatch, tmp_path, indicator):
     from test_bootstrap_trusted_release import load_bootstrap
     b = load_bootstrap()
@@ -271,8 +304,35 @@ def test_proc_proof_catches_reparented_helper(monkeypatch, tmp_path, indicator):
         (p / indicator).write_bytes(b"HOME=/var/lib/reva-release/old/home\0")
     elif indicator == "unreadable":
         (p / "environ").unlink()
+    elif indicator == "empty_argv":
+        (p / "cmdline").write_bytes(b"")
+        (p / "cwd").unlink()
+        (p / "cwd").symlink_to("/var/lib/reva-release/old")
     if indicator == "none":
         b._recovery_process_proof()
     else:
         with pytest.raises(b.BootstrapError):
             b._recovery_process_proof()
+
+
+def test_parent_exit_during_enumeration_is_unknown_not_quiescent(monkeypatch, tmp_path):
+    from pathlib import Path
+
+    from test_bootstrap_trusted_release import load_bootstrap
+    b = load_bootstrap()
+    proc = tmp_path / "proc"
+    proc.mkdir()
+    monkeypatch.setattr(b, "PROC", proc)
+    (proc / str(os.getpid())).mkdir()
+    parent = proc / "999999"
+    parent.mkdir()
+    original = Path.read_bytes
+    def spawn_and_exit(path):
+        if path == parent / "stat":
+            (proc / "999998").mkdir()
+            parent.rmdir()
+            raise FileNotFoundError("parent exited leaving child")
+        return original(path)
+    monkeypatch.setattr(Path, "read_bytes", spawn_and_exit)
+    with pytest.raises(b.BootstrapError):
+        b._recovery_process_proof()

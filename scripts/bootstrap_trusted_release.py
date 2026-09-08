@@ -18,6 +18,7 @@ import itertools
 import json
 import os
 import re
+import secrets
 import stat
 import subprocess
 import sys
@@ -262,10 +263,10 @@ def _inventory(directory, names):
     return result
 
 
-def _workspace_evidence(sha):
+def _workspace_evidence(sha, *, recovery_receipt=None):
     workspace = STATE / sha
     if os.path.lexists(STATE / "recoveries" / sha):
-        return _recovered_preparation_evidence(sha)
+        return _recovered_preparation_evidence(sha, recovery_receipt=recovery_receipt)
     if not os.path.lexists(workspace):
         return {"state": "NEVER_STARTED", "inventory": None}
     secure(workspace)
@@ -464,14 +465,16 @@ def _retired_history():
             continue
         _inventory(entry, {"intent.json", "completed.json"})
         intent = _read_json(entry / "intent.json")
-        if (not isinstance(intent, dict) or set(intent) != {"old_sha", "new_sha", "installation", "workspace"}
+        if (not isinstance(intent, dict) or set(intent) not in (
+                {"old_sha", "new_sha", "installation", "workspace"},
+                {"old_sha", "new_sha", "installation", "workspace", "recovery_receipt"})
                 or intent["old_sha"] != entry.name or not isinstance(intent["new_sha"], str)
                 or re.fullmatch(r"[0-9a-f]{40}", intent["new_sha"]) is None
                 or intent["new_sha"] == entry.name
                 or _read_json(entry / "completed.json") != {"new_sha": intent["new_sha"], "state": "RETIRED", "old_sha": entry.name}):
             raise BootstrapError("incomplete or invalid retirement audit")
         if (_installation_evidence(entry.name, *_archives(entry.name)) != intent["installation"]
-                or _workspace_evidence(entry.name) != intent["workspace"]):
+                or _workspace_evidence(entry.name, recovery_receipt=intent.get("recovery_receipt")) != intent["workspace"]):
             raise BootstrapError("retired installation or consumption evidence changed")
         history[entry.name] = intent
     return history
@@ -518,7 +521,7 @@ def _assert_idle():
         raise BootstrapError("release process/lease termination is uncertain")
 
 
-def rotate(old_sha, sha, expiry, public):
+def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None):
     validate_install(sha, expiry, public, now=int(time.time()))
     if not isinstance(old_sha, str) or re.fullmatch(r"[0-9a-f]{40}", old_sha) is None or old_sha == sha:
         raise BootstrapError("distinct exact old and new reviewed SHAs required")
@@ -539,7 +542,9 @@ def rotate(old_sha, sha, expiry, public):
         if old_sha in history or any(os.path.lexists(path) for path in (archive_config, archive_library)):
             raise BootstrapError("old retirement already attempted")
         installation = _installation_evidence(old_sha, CONFIG, INSTALLED.parent)
-        workspace = _workspace_evidence(old_sha)
+        workspace = _workspace_evidence(old_sha, recovery_receipt=recovery_receipt)
+        if recovery_receipt is not None and workspace["state"] != "RECOVERED_PREPARATION_FAILURE":
+            raise BootstrapError("recovery receipt only applies to historical recovery")
         retired_keys = {(config / name).read_text().strip()
                         for config in [CONFIG, *(_retired_config(old, item) for old, item in history.items())]
                         for name in ("cloud.pub", "loopback.pub")}
@@ -556,14 +561,16 @@ def rotate(old_sha, sha, expiry, public):
         record = root / old_sha
         record.mkdir(mode=0o700)
         _sync_parent(record)
-        _write(record / "intent.json", json.dumps({"old_sha": old_sha, "new_sha": sha,
-               "installation": installation, "workspace": workspace}, sort_keys=True).encode())
+        intent = {"old_sha": old_sha, "new_sha": sha, "installation": installation, "workspace": workspace}
+        if recovery_receipt is not None:
+            intent["recovery_receipt"] = recovery_receipt
+        _write(record / "intent.json", json.dumps(intent, sort_keys=True).encode())
         _assert_idle()
         for current, archive in ((CONFIG, archive_config), (INSTALLED.parent, archive_library)):
             os.rename(current, archive)
             _sync_parent(archive)
         if (_installation_evidence(old_sha, archive_config, archive_library) != installation
-                or _workspace_evidence(old_sha) != workspace):
+                or _workspace_evidence(old_sha, recovery_receipt=recovery_receipt) != workspace):
             raise BootstrapError("retirement evidence changed during rotation")
         # This certifies retirement, not installation success. Reserve the new
         # SHA permanently, and finish audit writes before publishing any key.
@@ -709,6 +716,9 @@ def _recovery_process_proof():
             continue
         try:
             identity = (process / "stat").read_bytes()
+            before_fields = identity.rsplit(b")", 1)[-1].split()
+            if len(before_fields) < 20 or not before_fields[6].isdigit():
+                raise BootstrapError("process identity is malformed")
             chunks = []
             for name in ("cmdline", "environ"):
                 with (process / name).open("rb") as stream:
@@ -716,13 +726,16 @@ def _recovery_process_proof():
                 if len(chunk) > 1048576:
                     raise BootstrapError("process inspection bound exceeded")
                 chunks.append(chunk)
-            if chunks[0]:  # Kernel threads have no cwd or user environment.
+            # Empty argv does not imply a kernel thread. Linux PF_KTHREAD is
+            # kernel-owned metadata; every user process still needs cwd/exe.
+            kernel_thread = bool(int(before_fields[6]) & 0x00200000)
+            if not kernel_thread:
                 chunks.append(os.fsencode(os.readlink(process / "cwd")))
                 chunks.append(os.fsencode(os.readlink(process / "exe")))
             after = (process / "stat").read_bytes()
             # comm can contain spaces/parentheses. Fields after its final ')'
             # bind PID reuse via starttime and preserve parent/group/session.
-            before_fields, after_fields = identity.rsplit(b")", 1)[-1].split(), after.rsplit(b")", 1)[-1].split()
+            after_fields = after.rsplit(b")", 1)[-1].split()
             if (len(before_fields) < 20 or len(after_fields) < 20
                     or before_fields[1:4] != after_fields[1:4]
                     or before_fields[19] != after_fields[19]):
@@ -730,8 +743,13 @@ def _recovery_process_proof():
             if any(needle in chunk for chunk in chunks for needle in needles):
                 raise BootstrapError("release descendant still present")
         except FileNotFoundError:
-            if process.exists():
-                raise BootstrapError("live process cannot be inspected") from None
+            # A disappearing parent can leave a newly forked/reparented child
+            # outside this enumeration. Do not infer quiescence from its exit.
+            raise BootstrapError("process inventory changed during inspection") from None
+    after_entries = list(itertools.islice(PROC.iterdir(), 100001))
+    if (len(after_entries) > 100000
+            or {p.name for p in after_entries if p.name.isdigit()} != {p.name for p in entries if p.name.isdigit()}):
+        raise BootstrapError("process inventory changed during inspection")
 
 
 def _recovery_toolchain_proof():
@@ -852,7 +870,12 @@ def recover_preparation(old_sha, sha, production_sha, *, evidence_sha256=None):
         secure(record.parent)
         record.mkdir(mode=0o700)
         _sync_parent(record)
-        _write(record / "intent.json", json.dumps(evidence, sort_keys=True).encode())
+        # The preimage is memory-only until every terminal fsync has succeeded.
+        # A visible but unflushed completed.json cannot authorize rotation.
+        receipt = secrets.token_hex(32)
+        intent = {**evidence, "evidence_sha256": digest,
+                  "receipt_sha256": hashlib.sha256(receipt.encode()).hexdigest()}
+        _write(record / "intent.json", json.dumps(intent, sort_keys=True).encode())
         if _recovery_snapshot(old_sha, sha, production_sha, source) != evidence:
             raise BootstrapError("recovery evidence drift after intent; retain operation")
         _assert_original_lock(lock, fd)
@@ -881,29 +904,35 @@ def recover_preparation(old_sha, sha, production_sha, *, evidence_sha256=None):
         if os.path.lexists(BUSINESS_LEASE):
             raise BootstrapError("business lease appeared during recovery")
         _write(record / "completed.json", json.dumps({"old_sha": old_sha,
-               "state": "RECOVERED_PREPARATION_FAILURE", "intent_sha256": digest,
+               "state": "RECOVERED_PREPARATION_FAILURE", "intent_sha256": _digest_json(intent),
                "installation": installation}, sort_keys=True).encode())
-        return {"sha": old_sha, "state": "RECOVERED_PREPARATION_FAILURE"}
+        return {"sha": old_sha, "state": "RECOVERED_PREPARATION_FAILURE", "receipt": receipt}
     finally:
         if build_fd is not None:
             os.close(build_fd)
         os.close(fd)
 
 
-def _recovered_preparation_evidence(sha):
+def _recovered_preparation_evidence(sha, *, recovery_receipt=None):
     record = STATE / "recoveries" / sha
     _inventory(record, {"intent.json", "completed.json"})
     intent = _read_json(record / "intent.json")
     completed = _read_json(record / "completed.json")
     expected_keys = {"old_sha", "recovery_sha", "production_sha", "workspace", "config",
-                     "library", "authorized", "locks", "toolchain"}
+                     "library", "authorized", "locks", "toolchain", "receipt_sha256", "evidence_sha256"}
     if (not isinstance(intent, dict) or set(intent) != expected_keys or intent["old_sha"] != sha
             or not isinstance(completed, dict) or set(completed) != {
                 "old_sha", "state", "intent_sha256", "installation"}
             or completed["old_sha"] != sha or completed["state"] != "RECOVERED_PREPARATION_FAILURE"
             or completed["intent_sha256"] != _digest_json(intent)
+            or intent["evidence_sha256"] != _digest_json({k: v for k, v in intent.items()
+                                                        if k not in {"receipt_sha256", "evidence_sha256"}})
             or intent["workspace"] != _legacy_clone_evidence(sha)):
         raise BootstrapError("historical recovery audit differs")
+    if (not isinstance(recovery_receipt, str) or re.fullmatch(r"[0-9a-f]{64}", recovery_receipt) is None
+            or not isinstance(intent["receipt_sha256"], str)
+            or not secrets.compare_digest(hashlib.sha256(recovery_receipt.encode()).hexdigest(), intent["receipt_sha256"])):
+        raise BootstrapError("successful operator recovery receipt required")
     if (any(not isinstance(intent[k], str) or re.fullmatch(r"[0-9a-f]{40}", intent[k]) is None
             for k in ("recovery_sha", "production_sha"))
             or len({sha, intent["recovery_sha"], intent["production_sha"]}) != 3
@@ -941,6 +970,7 @@ def main():
         rotation.add_argument("--sha", required=True)
         rotation.add_argument("--expires-at", required=True, type=int)
         rotation.add_argument("--cloud-public-key", required=True)
+        rotation.add_argument("--recovery-receipt-stdin", action="store_true")
         remove = commands.add_parser("revoke", allow_abbrev=False)
         remove.add_argument("--sha", required=True)
         recovery = commands.add_parser("recover-preparation", allow_abbrev=False)
@@ -953,7 +983,14 @@ def main():
             result = recover_preparation(args.retire_sha, args.sha, args.production_sha,
                                          evidence_sha256=args.evidence_sha256)
         elif args.action == "rotate":
-            result = rotate(args.retire_sha, args.sha, args.expires_at, args.cloud_public_key)
+            receipt = None
+            if args.recovery_receipt_stdin:
+                raw = sys.stdin.buffer.read(66)
+                if re.fullmatch(rb"[0-9a-f]{64}\n?", raw) is None:
+                    raise BootstrapError("exact protected recovery receipt required")
+                receipt = raw.rstrip(b"\n").decode("ascii")
+            result = rotate(args.retire_sha, args.sha, args.expires_at, args.cloud_public_key,
+                            recovery_receipt=receipt)
         elif args.action == "install":
             result = install(args.sha, args.expires_at, args.cloud_public_key)
         else:

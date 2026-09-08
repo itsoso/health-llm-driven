@@ -696,3 +696,14 @@
 - 初始回归 17 FAIL / 1 PASS 复现入口缺失；首次实现连同 bootstrap 回归 117 PASS，
   加入 CI contract 后 129 PASS。继续补锁替换、进程重归属、各持久化失败点、恢复审计漂移
   与后续真实轮换的负/正例；完整集成、固定提交 G4 和生产执行证据尚待补齐。
+- `da490694a` 完整 CI-mode 集成 636 PASS / 52 subtests；增加仅后端受控发布 target 后
+  `c624e7a24` 为 637 PASS / 52 subtests。真实 PostgreSQL 上一餐修正 24 PASS；真实模型
+  gate 5/5、invariants 12/12、health-agent 50/50、轨迹契约 12/12、goldens 9/9 全通过。
+  首次本机无模型配置/身份的尝试按预期失败，随后只在本机合成 PostgreSQL 用户上经真实
+  consent 接口授权；SSH 仅将 provider 配置送入本机进程内存，没有导出生产用户或健康数据。
+- 第一轮固定 G4 NO-GO：终态文件/目录 fsync 失败后可见 completed 被普通轮换误认；
+  空 argv 用户进程跳过 cwd/exe、父进程扫描期间退出留下新子进程也可漏判。四个对应
+  负例先红后修。恢复 intent 现在只保存随机确认回执的哈希，所有终态 fsync 成功后才
+  返回回执；首次轮换须经保护 stdin 提供回执，提前失败/响应丢失不可补发或重试。
+  进程检查按 kernel flag 区分内核线程，空 argv 用户进程仍查 cwd/exe；枚举期间退出、
+  新增或身份变化均 BLOCK。此补修尚需固定提交复审，未推进远端 main 或生产授权。
