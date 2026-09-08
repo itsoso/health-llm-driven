@@ -362,6 +362,7 @@ from app.services.notification.push_privacy import (  # noqa: E402
     "化疗期间注意白细胞",               # 同上(肿瘤域)
     "Ozempic 注射日到了",              # 高知名度品牌名(对抗复审补进 lexicon)
     "Keep taking your statins daily",   # 英文复数(ASCII 尾词可选 s,评审残余补修)
+    "今天记得服用红景天",                # 常见补剂完整名
 ])
 def test_llm_backstop_drug_name_genericized(leaky):
     title, content, redacted = llm_push_backstop(

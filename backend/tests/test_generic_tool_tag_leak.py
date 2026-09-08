@@ -53,6 +53,20 @@ def test_strip_wellformed_tool_tag_blob():
     assert _strip_xml_tool_markers('<function_call>{"name":"health_query"}') == ""
 
 
+def test_strip_duplicate_json_tool_calls_orphan_response_and_false_wait():
+    """A failed tool round must not become a visible promise of future results."""
+    block = (
+        '<tool_call> {"name":"health_query","arguments":'
+        '{"query":"查询昨天饮食"}} </tool_call>'
+    )
+    text = (
+        f"{block}\n{block} </tool_response>\n\n"
+        "我已经帮你查询，稍等结果出来后再告诉你。"
+    )
+
+    assert _strip_xml_tool_markers(text) == ""
+
+
 def test_strip_signature_only_tag():
     assert _strip_xml_tool_markers("<tool>health_manage(record_type='diet')</tool>") == ""
 

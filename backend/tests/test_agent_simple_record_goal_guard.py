@@ -9,6 +9,7 @@ from app.services.agent_executor import (
     _enrich_simple_diet_goal_tool_calls,
     _estimate_simple_diet_nutrition,
     _normalize_goal_guarded_tool_calls,
+    _should_replace_with_deterministic_supplement_calls,
     _simple_diet_nutrition_estimator_model_name,
     _simple_diet_nutrition_is_complete,
     _write_operation_fingerprint,
@@ -546,6 +547,110 @@ def test_explicit_multiple_supplements_build_deterministic_calls():
         for call in calls
     ] == ["甘氨酸镁", "褪黑素"]
     assert all(call["function"]["name"] == "health_record" for call in calls)
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "吃了两粒红景天",
+        "记录 吃了两粒红景天",
+    ),
+)
+def test_named_rhodiola_intake_builds_deterministic_supplement_call(message):
+    calls = _build_deterministic_supplement_record_tool_calls(
+        message,
+        write_receipts=[],
+    )
+
+    assert len(calls) == 1
+    assert json.loads(calls[0]["function"]["arguments"]) == {
+        "record_type": "supplement",
+        "data": {
+            "supplement_name": "红景天",
+            "dosage": "2粒",
+        },
+    }
+
+
+def test_named_supplement_plan_replaces_model_diet_write_only():
+    deterministic = _build_deterministic_supplement_record_tool_calls(
+        "吃了两粒红景天",
+        write_receipts=[],
+    )
+    model_diet = [
+        _tool_call(
+            "wrong-diet",
+            {
+                "record_type": "diet",
+                "data": {"food_items": "吃了两粒红景天"},
+            },
+        )
+    ]
+    model_query = [
+        _tool_call(
+            "keep-query",
+            {"dimension": "supplements"},
+            name="health_query",
+        )
+    ]
+    matching_supplement = [
+        _tool_call(
+            "matching-supplement",
+            {
+                "record_type": "supplement",
+                "data": {
+                    "supplement_name": "红景天",
+                    "dosage": "2粒",
+                },
+            },
+        )
+    ]
+    missing_dosage_supplement = [
+        _tool_call(
+            "missing-dosage-supplement",
+            {
+                "record_type": "supplement",
+                "data": {"supplement_name": "红景天"},
+            },
+        )
+    ]
+    wrong_dosage_supplement = [
+        _tool_call(
+            "wrong-dosage-supplement",
+            {
+                "record_type": "supplement",
+                "data": {
+                    "supplement_name": "红景天",
+                    "dosage": "1粒",
+                },
+            },
+        )
+    ]
+
+    assert _should_replace_with_deterministic_supplement_calls(
+        model_diet,
+        deterministic,
+    ) is True
+    assert _should_replace_with_deterministic_supplement_calls(
+        model_query,
+        deterministic,
+    ) is False
+    assert _should_replace_with_deterministic_supplement_calls(
+        matching_supplement,
+        deterministic,
+    ) is False
+    assert _should_replace_with_deterministic_supplement_calls(
+        missing_dosage_supplement,
+        deterministic,
+    ) is True
+    assert _should_replace_with_deterministic_supplement_calls(
+        wrong_dosage_supplement,
+        deterministic,
+    ) is True
+    assert _should_replace_with_deterministic_supplement_calls(
+        [*model_diet, *model_query],
+        deterministic,
+    ) is False
 
 
 def test_supplement_label_colon_builds_clean_deterministic_calls():

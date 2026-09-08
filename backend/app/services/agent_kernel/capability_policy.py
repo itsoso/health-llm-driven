@@ -97,7 +97,7 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v49"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v50"
 _HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v35"
 _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v24"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
@@ -1903,6 +1903,49 @@ def _manage_list_turn_record_type(text: str) -> str | None:
     return None
 
 
+_FULL_DAY_DIET_QUERY_RE = re.compile(
+    r"(?:一整天|整天|全天|一天(?:的)?(?:整体|全部)|全天(?:的)?整体)"
+)
+
+
+def project_diet_manage_list_to_turn(
+    snapshot: TurnSnapshot,
+) -> dict[str, Any] | None:
+    """Project one retrospective diet read from the typed turn scope.
+
+    The date and optional meal are derived from the server-side intent frame,
+    never from model arguments. A compound request that asks about both dinner
+    and the whole day reads the whole day once so synthesis can answer both.
+    """
+    intent = snapshot.intent
+    if (
+        intent.domain != "diet"
+        or intent.is_write
+        or intent.primary not in {"read", "advice"}
+        or intent.operation not in {"read", "analyze"}
+    ):
+        return None
+    target_date = str(intent.scope.get("date") or "").strip()
+    try:
+        parsed_date = date.fromisoformat(target_date)
+    except ValueError:
+        return None
+    if parsed_date > snapshot.context.current_time.date():
+        return None
+
+    projected: dict[str, Any] = {
+        "record_type": "diet",
+        "operation": "list",
+        "date": parsed_date.isoformat(),
+    }
+    meal_type = str(intent.scope.get("meal_type") or "").strip().lower()
+    if not meal_type and re.search(r"(?:昨晚|昨夜)", snapshot.envelope.text):
+        meal_type = "dinner"
+    if meal_type and not _FULL_DAY_DIET_QUERY_RE.search(snapshot.envelope.text):
+        projected["meal_type"] = meal_type
+    return projected
+
+
 def _is_completed_health_mutation_observation(text: str) -> bool:
     """Keep completed-state narration from authorizing an internal lookup."""
     normalized = _normalize_query_text(text).strip("，,。.!！?？;； ")
@@ -2876,6 +2919,7 @@ def decide_tool_capability(
         operation = str(args.get("operation") or "").strip().lower()
         if operation == "list":
             turn_text = snapshot.envelope.text
+            projected_diet_read = project_diet_manage_list_to_turn(snapshot)
             if _health_read_cancelled_by_user(turn_text):
                 return _decision(
                     "block",
@@ -2922,6 +2966,7 @@ def decide_tool_capability(
                     _query_scope_text(turn_text)
                 )
                 and _project_medical_exam_query_to_turn(turn_text) is None
+                and projected_diet_read is None
             ):
                 return _decision(
                     "block",
@@ -2946,7 +2991,13 @@ def decide_tool_capability(
                     args,
                 )
             if guarding_user_read:
-                expected_record_type = _manage_list_turn_record_type(turn_text)
+                if projected_diet_read is not None:
+                    args = projected_diet_read
+                expected_record_type = (
+                    "diet"
+                    if projected_diet_read is not None
+                    else _manage_list_turn_record_type(turn_text)
+                )
                 requested_record_type = canonical_health_manage_record_type(
                     args.get("record_type")
                 )

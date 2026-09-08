@@ -371,6 +371,97 @@ async def test_multiple_supplements_without_model_tool_calls_write_every_item_on
     assert done["data"]["record_intent_no_tool"] is False
 
 
+@pytest.mark.parametrize(
+    "model_args",
+    (
+        {
+            "record_type": "diet",
+            "data": {"food_items": "吃了两粒红景天"},
+        },
+        {
+            "record_type": "supplement",
+            "data": {"supplement_name": "红景天"},
+        },
+        {
+            "record_type": "supplement",
+            "data": {"supplement_name": "红景天", "dosage": "1粒"},
+        },
+    ),
+)
+async def test_rhodiola_intake_replaces_conflicting_model_write_with_supplement(
+    db,
+    auth_user_and_headers,
+    model_args,
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+
+    async def fake_call_llm_stream(messages, tools):  # noqa: ARG001
+        yield {
+            "type": "tool_calls",
+            "tool_calls": [
+                {
+                    "id": "wrong-diet",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps(model_args, ensure_ascii=False),
+                    },
+                }
+            ],
+        }
+        yield {"type": "finish", "finish_reason": "tool_calls"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):  # noqa: ARG001
+        args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+        calls.append((tool_name, args))
+        return json.dumps(
+            {
+                "id": 977,
+                "record_id": 977,
+                "resource_type": "supplement_log",
+                "status": "verified",
+                "success": True,
+                "message": "补剂记录已保存。",
+            },
+            ensure_ascii=False,
+        )
+
+    executor._call_llm_stream = fake_call_llm_stream
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="吃了两粒红景天",
+            user_auth_token="test-token",
+        )
+    ]
+    rendered = _tokens(events)
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert calls == [
+        (
+            "health_record",
+            {
+                "record_type": "supplement",
+                "data": {
+                    "supplement_name": "红景天",
+                    "dosage": "2粒",
+                    "confirmed": True,
+                },
+                "confirmed": True,
+            },
+        )
+    ]
+    assert done["data"]["completion_status"] == "complete"
+    assert len(done["data"]["write_receipts"]) == 1
+    for internal_term in ("calories", "protein", "health_record"):
+        assert internal_term not in rendered
+
+
 async def test_all_taken_context_writes_each_active_owner_supplement_once(
     db,
     auth_user_and_headers,

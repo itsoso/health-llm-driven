@@ -307,6 +307,14 @@ def _looks_like_medication(raw: str, normalized: str) -> bool:
 def _looks_like_supplement(raw: str, normalized: str) -> bool:
     if re.search(r"维\s*c\s*(?:茶|饮|饮料|果汁|柠檬|柠)", raw, re.I):
         return False
+    if re.search(
+        r"(?:红景天|rhodiola)\s*(?:"
+        r"茶|饮(?:品|料)?|果汁|鸡?汤|粥|糕|饼|面包|软糖|果冻|炖|煮|烤"
+        r")",
+        raw,
+        re.I,
+    ):
+        return False
     if contains_supplement_name(raw):
         return True
     for marker in SUPPLEMENT_MARKERS:
@@ -353,7 +361,11 @@ def _looks_like_diet(raw: str, normalized: str) -> bool:
     has_food_action = bool(re.search(r"吃了|刚吃|吃的是|点了|喝了|刚喝", raw))
     has_meal = any(marker in raw for markers in _MEAL_LABELS.values() for marker in markers)
     has_nutrition = bool(re.search(r"\d+(?:\.\d+)?\s*(?:kcal|千卡|大卡|卡路里|g|克)", raw, re.I))
-    has_food_word = bool(re.search(r"餐食|食物|牛肉面|能量碗|米饭|面|粥|蛋|肉|菜|茶|咖啡|奶|水果", raw))
+    has_food_word = bool(re.search(
+        r"餐食|食物|牛肉面|能量碗|米饭|面|粥|汤|糕|饼|软糖|果冻|"
+        r"蛋|肉|菜|茶|咖啡|奶|水果",
+        raw,
+    ))
     return (has_food_action and (has_meal or has_nutrition or has_food_word)) or (has_meal and has_food_word)
 
 

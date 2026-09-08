@@ -11,6 +11,7 @@ import pytest
 
 from app.services.agent_executor import (
     AgentExecutor,
+    _build_preplanned_diet_history_tool_call,
     _build_deterministic_diet_correction_tool_call,
     _build_deterministic_goal_lookup_tool_call,
     _build_deterministic_goal_delete_tool_calls,
@@ -25,13 +26,72 @@ from app.services.agent_executor import (
     _normalize_goal_guarded_tool_calls,
     _tool_call_is_read_only,
 )
-from app.services.agent_kernel.types import GoalSpec
+from app.services.agent_kernel.intent_frame import build_intent_frame
+from app.services.agent_kernel.types import (
+    AgentEnvelope,
+    ExecutionContext,
+    GoalSpec,
+    TurnSnapshot,
+)
 from app.services.internal_diet_correction import (
     INTERNAL_DIET_PORTION_SIGNATURE_HEADER,
     verify_internal_diet_portion_signature,
 )
 
 BJ = timezone(timedelta(hours=8))
+
+
+def _history_snapshot(message: str, *, now: datetime):
+    context = ExecutionContext(
+        current_time=now,
+        timezone="Asia/Shanghai",
+        user_id=1,
+        channel="chat",
+    )
+    envelope = AgentEnvelope(user_id=1, channel="chat", text=message)
+    return TurnSnapshot(
+        envelope=envelope,
+        context=context,
+        intent=build_intent_frame(envelope, context),
+    )
+
+
+def test_preplanned_full_day_diet_history_query_uses_exact_date_without_meal_filter():
+    snapshot = _history_snapshot(
+        "昨天晚上我吃的怎么样？昨天一整天我吃的怎么样？",
+        now=datetime(2026, 9, 8, 8, 21, tzinfo=BJ),
+    )
+
+    call = _build_preplanned_diet_history_tool_call(snapshot)
+
+    assert call is not None
+    assert call["function"]["name"] == "health_manage"
+    assert json.loads(call["function"]["arguments"]) == {
+        "record_type": "diet",
+        "operation": "list",
+        "date": "2026-09-07",
+    }
+
+
+def test_preplanned_last_night_diet_history_query_keeps_dinner_filter():
+    snapshot = _history_snapshot(
+        "昨晚吃得怎么样？",
+        now=datetime(2026, 9, 8, 8, 21, tzinfo=BJ),
+    )
+
+    call = _build_preplanned_diet_history_tool_call(snapshot)
+
+    assert call is not None
+    assert json.loads(call["function"]["arguments"])["meal_type"] == "dinner"
+
+
+def test_preplanned_diet_history_query_does_not_read_future_meal_advice():
+    snapshot = _history_snapshot(
+        "明天晚餐怎么吃更健康？",
+        now=datetime(2026, 9, 8, 8, 21, tzinfo=BJ),
+    )
+
+    assert _build_preplanned_diet_history_tool_call(snapshot) is None
 
 
 def _diet_recalculate_goal() -> GoalSpec:

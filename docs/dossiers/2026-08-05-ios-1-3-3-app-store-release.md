@@ -479,3 +479,21 @@
 - 本轮仅完成后端、内部 TestFlight 和本机验证；正式 App Review **仍未提交**。同源 Simulator
   不等于签名 IPA 真机验收；完整饮食页面到真实 Agent 的 UI 链、弱网恢复、相机、语音、系统分享等
   留待用户白天用 Build 265 复测，不能把旧 Build 264 证据搬作新包通过，也不承诺 Apple 必过。
+
+### 2026-09-08 · 全量发布对账与送审复核（进行中）
+
+- 用户授权核对最近改动、执行模拟器与物理手机测试，并在全部 Gate 通过后提交 App Review。
+  本轮 controller 为 mobile-testflight-release，启用 safety-gate；复用本 Dossier。
+- 只读生产 SSH 核验 live SHA 仍为 `34e32edc463d87a3331d38d552599d3c164c3db3`。
+  物理 iPhone 已连接，实际安装 `1.3.3 (265)`；不能据此认为后续修改已进入签名安装包。
+- 分享图相关 main 提交已发布 production OTA，group
+  `53afedf5-1afe-4128-b013-5dd8f798daf8`，来源 `6a210dca465f072201ca176054a2ea47184d4bc9`。
+  这打破了上一节记录的冻结窗口，正式审核候选必须重新建立冻结与精确 bundle 证据。
+- 工作树还含补剂误路由、剂量保真、历史饮食精确日期查询和工具协议文本清理，尚未部署。
+  本轮将这些已实现修复纳入候选，不把其他开放 PR 当作已合并功能。
+- 新鲜 Mobile 全量回归：304 suites、2817 PASS、1 existing SKIP，TypeScript PASS。
+  no-secret App Store release-pack/preflight PASS；后端、真实模型与设备验收正在执行。
+- 上次分享图专用模拟器 QA 包不等于正常入口 App，不能用该包的冷启动截图证明 production
+  OTA 已应用。此次要求重新核验普通 App 候选，不沿用这一结论。
+- ASC 浏览器登录已失效，本地配置对应私钥不可用，已请用户仅在 Apple 页面重新登录。
+  当前尚未生成新签名包、修改 ASC 候选、提交审核或宣称 G6 通过。

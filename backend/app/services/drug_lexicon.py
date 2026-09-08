@@ -118,6 +118,12 @@ SUPPLEMENT_CLASS_ALIASES: Dict[str, List[str]] = {
     "probiotic": ["probiotic", "益生菌", "lactobif", "akk", "akkermansia", "lactobacillus"],
 }
 
+# 常见补剂完整名，但当前没有专属 DSI 规则。与 COMMON_DRUG_ALIASES 一样，
+# 只供实体识别、摄入路由和隐私文案识别，不改变现有 DSI 规则映射。
+COMMON_SUPPLEMENT_ALIASES: Dict[str, List[str]] = {
+    "rhodiola": ["rhodiola", "红景天", "红景天提取物"],
+}
+
 # ─────────── 常见药(无专属 safety 规则;仅 gate 消费,把 gate 拓成常见药名探测器)───────────
 # 注意:**没有任何 safety 规则 lookup 这些 key** —— 纯 additive,对 SafetyGuardian 零影响。
 # 只列**完整**药名(不列 `-地平`/`-列净` 之类裸后缀:自由文本里裸后缀撞「地平线」这类常用词,
@@ -301,11 +307,12 @@ def contains_drug_name(text: str | None) -> bool:
 
 @lru_cache(maxsize=1)
 def supplement_name_free_text_terms() -> FrozenSet[str]:
-    """完整补剂名探测词；排除会把普通食物误判为补剂的草药/食物类。"""
+    """完整补剂名探测词；排除会把普通食物误判为补剂的类别。"""
     terms = set(_flatten_aliases(
         SUPPLEMENT_CLASS_ALIASES,
         exclude_classes=_FREE_TEXT_EXCLUDED_SUPPLEMENT_CLASSES,
     ))
+    terms |= _flatten_aliases(COMMON_SUPPLEMENT_ALIASES)
     terms -= _FREE_TEXT_AMBIGUOUS_TERMS
     collapsed = {t.replace(" ", "") for t in terms if " " in t and _has_cjk(t)}
     return frozenset(t for t in (terms | collapsed) if t)
@@ -315,6 +322,7 @@ def supplement_name_free_text_terms() -> FrozenSet[str]:
 def supplement_name_entity_terms() -> FrozenSet[str]:
     """All exact supplement aliases for explicit entity validation."""
     terms = set(_flatten_aliases(SUPPLEMENT_CLASS_ALIASES))
+    terms |= _flatten_aliases(COMMON_SUPPLEMENT_ALIASES)
     collapsed = {t.replace(" ", "") for t in terms if " " in t and _has_cjk(t)}
     return frozenset(t for t in (terms | collapsed) if t)
 
@@ -421,8 +429,10 @@ def sensitive_name_free_text_terms() -> FrozenSet[str]:
     """
     terms = set(drug_name_free_text_terms())
     terms |= _flatten_aliases(
-        SUPPLEMENT_CLASS_ALIASES, exclude_classes=_FREE_TEXT_EXCLUDED_SUPPLEMENT_CLASSES
+        SUPPLEMENT_CLASS_ALIASES,
+        exclude_classes=_FREE_TEXT_EXCLUDED_SUPPLEMENT_CLASSES,
     )
+    terms |= _flatten_aliases(COMMON_SUPPLEMENT_ALIASES)
     terms -= _FREE_TEXT_AMBIGUOUS_TERMS
     collapsed = {t.replace(" ", "") for t in terms if " " in t and _has_cjk(t)}
     return frozenset(t for t in (terms | collapsed) if t)

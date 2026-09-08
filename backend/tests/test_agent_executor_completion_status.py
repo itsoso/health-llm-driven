@@ -1,7 +1,7 @@
 import asyncio
 import json
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -3578,6 +3578,76 @@ async def test_agent_stream_clear_text_diet_uses_verified_progressive_fast_path(
 
 
 @pytest.mark.asyncio
+async def test_agent_stream_yesterday_diet_advice_queries_exact_day_before_synthesis(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    dispatched = []
+    llm_calls = 0
+    expected_date = (
+        datetime.now(timezone(timedelta(hours=8))).date() - timedelta(days=1)
+    ).isoformat()
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        assert tools == []
+        assert any(message.get("role") == "tool" for message in messages)
+        return {
+            "content": "昨晚和全天的饮食分析已基于查询结果完成。",
+            "finish_reason": "stop",
+        }
+
+    async def fake_dispatch(request, user_token):
+        dispatched.append((request.tool_name, request.arguments, user_token))
+        return json.dumps(
+            [{
+                "id": 901,
+                "record_date": expected_date,
+                "meal_type": "dinner",
+                "food_items": "测试晚餐",
+                "calories": 520,
+            }],
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_dispatch_tool_request", fake_dispatch)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="昨天晚上我吃的怎么样？昨天一整天我吃的怎么样？",
+            user_auth_token="test-token",
+        )
+    ]
+
+    assert llm_calls == 1
+    assert dispatched == [(
+        "health_manage",
+        {
+            "record_type": "diet",
+            "operation": "list",
+            "date": expected_date,
+        },
+        "test-token",
+    )]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    assert rendered == "昨晚和全天的饮食分析已基于查询结果完成。"
+    assert "<tool_call>" not in rendered
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["completion_status"] == "complete"
+    assert done["data"]["perf"]["decision_route"] == "deterministic_diet_history"
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_times_out_slow_fast_path_estimate_and_uses_model_repair(
     db, auth_user_and_headers, monkeypatch
 ):
@@ -3725,7 +3795,8 @@ async def test_agent_stream_reports_nutrition_rejection_instead_of_model_success
     done = next(event for event in events if event.get("event") == "done")
 
     assert "完整营养" in rendered
-    assert "calories" in rendered
+    assert "具体食物和大致份量" in rendered
+    assert "calories" not in rendered
     assert "早餐已经记录好了" not in rendered
     assert "补充记录类型和值" not in rendered
     assert done["data"]["completion_status"] == "error"
@@ -3786,7 +3857,8 @@ async def test_agent_stream_reports_last_nutrition_error_when_all_rounds_reject(
     done = next(event for event in events if event.get("event") == "done")
 
     assert "完整营养" in rendered
-    assert "calories" in rendered
+    assert "具体食物和大致份量" in rendered
+    assert "calories" not in rendered
     assert "模型仍尝试继续调用工具" not in rendered
     assert not any(
         event.get("event") == "tool_result"

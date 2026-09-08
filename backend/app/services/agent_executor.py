@@ -140,6 +140,7 @@ from app.services.agent_kernel.capability_policy import (
     canonical_health_manage_record_id,
     canonical_health_manage_record_type,
     decide_tool_capability,
+    project_diet_manage_list_to_turn,
 )
 
 logger = logging.getLogger(__name__)
@@ -1766,6 +1767,13 @@ _TOOL_TAG_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 
+_ORPHAN_TOOL_RESPONSE_TAG_RE = re.compile(
+    r"<\s*/?\s*tool_response\s*>", re.IGNORECASE
+)
+_NONTERMINAL_TOOL_PROMISE_RE = re.compile(
+    r"(?:稍等|稍候|结果出来后|稍后(?:再)?(?:告诉|回复)|正在(?:查询|检索))"
+)
+
 
 def _extract_tool_tag_call(raw: str, allowed: set) -> Optional[Dict[str, Any]]:
     """恢复 `<tool>funcname {args_json}</tool>`(函数名在标签体 + 紧跟独立参数 JSON)。
@@ -1815,6 +1823,11 @@ def _strip_xml_tool_markers(text: str) -> str:
         and not _FUNCTION_PARAMETER_TRUNCATED_PREFIX_RE.search(text)
     ):
         return text
+    had_raw_tool_protocol = bool(
+        _maybe_generic_tool_tag(text)
+        or _FUNCTION_PARAMETER_LEAK_RE.search(text)
+        or _FUNCTION_PARAMETER_TRUNCATED_PREFIX_RE.search(text)
+    )
     stripped = text
     if "<tool_code" in low:
         stripped = _apply_outside_code_spans(
@@ -1840,7 +1853,14 @@ def _strip_xml_tool_markers(text: str) -> str:
         stripped = _apply_outside_code_spans(
             lambda seg: _GENERIC_TOOL_TAG_LEAK_RE.sub("", seg), stripped
         )
-    return stripped.strip()
+    if had_raw_tool_protocol:
+        stripped = _apply_outside_code_spans(
+            lambda seg: _ORPHAN_TOOL_RESPONSE_TAG_RE.sub("", seg), stripped
+        )
+    stripped = stripped.strip()
+    if had_raw_tool_protocol and _NONTERMINAL_TOOL_PROMISE_RE.search(stripped):
+        return ""
+    return stripped
 
 
 # GenUI metric_table (rank1): 这些只读数据查询工具的结果可确定性打成表格卡片。
@@ -3225,6 +3245,7 @@ def _write_result_is_pre_dispatch_validation_error(result: Any) -> bool:
         and outcome.error_code
         in {
             "diet_nutrition_incomplete",
+            "non_diet_intake",
             "tool_arguments_invalid",
             "tool_validation_failed",
         }
@@ -3270,11 +3291,15 @@ def _pre_dispatch_validation_user_message(result: Any) -> str:
     message = str(payload.get("message") or "").strip()
     guidance = str(payload.get("recovery_guidance") or "").strip()
     error_code = str(payload.get("error_code") or "").strip()
-    if not message and error_code == "diet_nutrition_incomplete":
-        message = (
-            "饮食记录缺少完整营养估算，需要提供 calories (>0)、"
-            "protein、carbs、fat、fiber。"
+    if error_code == "diet_nutrition_incomplete":
+        message = "我还不能根据这条描述完成餐食的完整营养估算。"
+        guidance = (
+            "请补充具体食物和大致份量；如果记录的是药物或补剂，"
+            "请说明名称和数量。"
         )
+    elif error_code == "non_diet_intake":
+        message = "这条内容看起来是药物或补剂摄入，不能作为餐食记录。"
+        guidance = "请确认名称和数量后重新记录。"
     if not message and isinstance(result, str):
         message = result.strip().removeprefix("Error:").strip()
     if not message:
@@ -8606,6 +8631,31 @@ def _build_preplanned_simple_water_tool_call(
     )
 
 
+def _build_preplanned_diet_history_tool_call(
+    snapshot: Optional[TurnSnapshot],
+) -> Optional[Dict[str, Any]]:
+    """Compile an exact historical diet read without a model tool round."""
+    if snapshot is None:
+        return None
+    arguments = project_diet_manage_list_to_turn(snapshot)
+    if arguments is None:
+        return None
+    try:
+        target_date = date.fromisoformat(str(arguments["date"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+    if target_date >= snapshot.context.current_time.date():
+        return None
+    return {
+        "id": f"deterministic-diet-history-{_sha12(repr(arguments))}",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps(arguments, ensure_ascii=False),
+        },
+    }
+
+
 async def _stream_llm_or_preplanned_tool_calls(
     call_llm_stream: Any,
     messages: Sequence[Dict[str, Any]],
@@ -8701,6 +8751,53 @@ def _build_deterministic_supplement_record_tool_calls(
         }
         for name in names
     ]
+
+
+def _should_replace_with_deterministic_supplement_calls(
+    model_tool_calls: Sequence[Dict[str, Any]],
+    deterministic_calls: Sequence[Dict[str, Any]],
+) -> bool:
+    """Replace one conflicting model health write with grounded intake details."""
+    if len(model_tool_calls) != 1 or len(deterministic_calls) != 1:
+        return False
+    model_function = model_tool_calls[0].get("function") or {}
+    if str(model_function.get("name") or "") != "health_record":
+        return False
+
+    model_args = _parse_tool_arguments_for_telemetry(
+        model_function.get("arguments")
+    )
+    deterministic_function = deterministic_calls[0].get("function") or {}
+    deterministic_args = _parse_tool_arguments_for_telemetry(
+        deterministic_function.get("arguments")
+    )
+    expected_data = deterministic_args.get("data")
+    if (
+        deterministic_args.get("record_type") != "supplement"
+        or not isinstance(expected_data, dict)
+    ):
+        return False
+    model_data = model_args.get("data")
+    if model_args.get("record_type") != "supplement" or not isinstance(
+        model_data,
+        dict,
+    ):
+        return True
+    if _normalized_supplement_reference(
+        model_data.get("supplement_name")
+    ) != _normalized_supplement_reference(expected_data.get("supplement_name")):
+        return True
+
+    expected_dosage = expected_data.get("dosage")
+    if expected_dosage not in (None, "", []):
+        from app.services.agent_kernel.capability_policy import (
+            _normalize_medication_dosage,
+        )
+
+        return _normalize_medication_dosage(
+            model_data.get("dosage")
+        ) != _normalize_medication_dosage(expected_dosage)
+    return False
 
 
 def _simple_record_goal_arguments(
@@ -12983,6 +13080,10 @@ class AgentExecutor:
                         len(deterministic_supplement_calls) > 1
                         or self._turn_contextual_supplement_names
                         or not tool_calls
+                        or _should_replace_with_deterministic_supplement_calls(
+                            tool_calls,
+                            deterministic_supplement_calls,
+                        )
                     ):
                         deterministic_supplement_fallback_attempted = True
                         tool_calls = deterministic_supplement_calls
@@ -13140,7 +13241,7 @@ class AgentExecutor:
                     elif last_recoverable_write_rejection:
                         rejection_is_terminal = bool(
                             last_recoverable_write_rejection_code
-                            == "diet_nutrition_incomplete"
+                            in {"diet_nutrition_incomplete", "non_diet_intake"}
                             or _claims_unverified_write_success(content)
                             or not content.strip()
                         )
@@ -13476,7 +13577,7 @@ class AgentExecutor:
             if last_recoverable_write_rejection:
                 rejection_is_terminal = bool(
                     last_recoverable_write_rejection_code
-                    == "diet_nutrition_incomplete"
+                    in {"diet_nutrition_incomplete", "non_diet_intake"}
                     or _claims_unverified_write_success(lead_text)
                     or not lead_text.strip()
                 )
@@ -15604,7 +15705,22 @@ class AgentExecutor:
                 preplanned_simple_diet_call = None
                 preplanned_simple_water_call = None
                 preplanned_symptom_call = None
+                preplanned_diet_history_call = None
                 preplanned_query_call = None
+                if round_idx == 0 and not images and not file_base64:
+                    preplanned_diet_history_call = (
+                        _build_preplanned_diet_history_tool_call(
+                            self._agent_kernel_snapshot
+                        )
+                    )
+                    if preplanned_diet_history_call is not None:
+                        decision_route = "deterministic_diet_history"
+                        logger.info(
+                            "[agent_executor] deterministic diet history decision "
+                            "user=%s message_chars=%s",
+                            user_id,
+                            len(message or ""),
+                        )
                 if (
                     round_idx == 0
                     and deterministic_query_mode == "on"
@@ -15820,6 +15936,8 @@ class AgentExecutor:
                     if preplanned_simple_water_call is not None
                     else [preplanned_simple_diet_call]
                     if preplanned_simple_diet_call is not None
+                    else [preplanned_diet_history_call]
+                    if preplanned_diet_history_call is not None
                     else [preplanned_query_call]
                     if preplanned_query_call is not None
                     else None
@@ -16225,6 +16343,10 @@ class AgentExecutor:
                         len(deterministic_supplement_calls) > 1
                         or self._turn_contextual_supplement_names
                         or not response.get("tool_calls")
+                        or _should_replace_with_deterministic_supplement_calls(
+                            response.get("tool_calls") or [],
+                            deterministic_supplement_calls,
+                        )
                     ):
                         deterministic_supplement_fallback_attempted = True
                         response = {
@@ -16605,7 +16727,7 @@ class AgentExecutor:
                     # 工具子集守卫(token 优化 #2 fast + R5 analysis):模型想调的工具不在
                     # 已发子集(意图误判/幻觉工具名/分析轮要写)→ 升级回全集重跑本轮。fail-open:
                     # 绝不因裁剪静默丢调用或喂"未知工具"错误。
-                    if tool_subset_active:
+                    if tool_subset_active and not preplanned_tool_decision:
                         # 双发防护:fast 轮正文被 _tool_round_fast_routed 抑制(未 live 下发)→ 重跑安全;
                         # analysis 轮正文 live 流式,本轮已发可见正文再重跑会双发 → fallthrough 不重跑。
                         _withheld, _action = _tool_subset_withheld_upgrade(
@@ -17948,7 +18070,7 @@ class AgentExecutor:
                         last_recoverable_write_rejection
                         and (
                             last_recoverable_write_rejection_code
-                            == "diet_nutrition_incomplete"
+                            in {"diet_nutrition_incomplete", "non_diet_intake"}
                             or _claims_unverified_write_success(final_text)
                         )
                     ):
@@ -25172,6 +25294,30 @@ class AgentExecutor:
                     )
                 matched = exact_matches[0] if exact_matches else None
                 if matched:
+                    requested_dosage = str(data.get("dosage") or "").strip()
+                    if requested_dosage:
+                        from app.services.agent_kernel.capability_policy import (
+                            _normalize_medication_dosage,
+                        )
+
+                        configured_dosage = str(
+                            matched.get("dosage") or ""
+                        ).strip()
+                        if (
+                            not configured_dosage
+                            or _normalize_medication_dosage(configured_dosage)
+                            != _normalize_medication_dosage(requested_dosage)
+                        ):
+                            return local_write_rejection(
+                                "supplement_dosage_not_persistable",
+                                message=(
+                                    "本次剂量与补剂库中的日常剂量不一致，"
+                                    "为避免记错，本次没有打卡。"
+                                ),
+                                recovery_guidance=(
+                                    "请先在补剂管理页确认或更新日常剂量后再记录。"
+                                ),
+                            )
                     tap_result = await self._api_post(
                         f"{base}/nfc/tap", headers,
                         {"action": "supplement", "supplement_id": matched["id"]}

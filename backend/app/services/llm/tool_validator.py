@@ -584,6 +584,7 @@ def validate_health_record(
             "data": data,
             "warnings": warnings,
             "error": error,
+            "error_code": "non_diet_intake",
         }
 
     # 7. 必填检查 (返回 error)

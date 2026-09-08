@@ -476,6 +476,84 @@ async def test_registered_supplement_taps_without_creating(db):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("configured_dosage", (None, "1粒"))
+async def test_registered_supplement_rejects_unpersistable_dosage(
+    db,
+    configured_dosage,
+):
+    ex = _executor(db)
+    ex._current_turn_user_message = "吃了两粒红景天"
+    tap = AsyncMock()
+
+    with patch.object(
+        ex,
+        "_api_get_json",
+        new=AsyncMock(
+            return_value=(
+                [
+                    {
+                        "id": 7,
+                        "name": "红景天",
+                        "dosage": configured_dosage,
+                        "is_active": True,
+                    }
+                ],
+                None,
+            )
+        ),
+    ), patch.object(ex, "_api_post", new=tap):
+        result = await ex._exec_health_record(
+            "http://x",
+            {},
+            {
+                "record_type": "supplement",
+                "data": {"supplement_name": "红景天", "dosage": "2粒"},
+            },
+        )
+
+    parsed = json.loads(result)
+    assert parsed["error_code"] == "supplement_dosage_not_persistable"
+    assert "剂量" in parsed["message"]
+    tap.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_registered_supplement_accepts_matching_dosage(db):
+    ex = _executor(db)
+    ex._current_turn_user_message = "吃了两粒红景天"
+    tap = AsyncMock(return_value='{"status":"ok","record_id":1073}')
+
+    with patch.object(
+        ex,
+        "_api_get_json",
+        new=AsyncMock(
+            return_value=(
+                [
+                    {
+                        "id": 7,
+                        "name": "红景天",
+                        "dosage": "2粒",
+                        "is_active": True,
+                    }
+                ],
+                None,
+            )
+        ),
+    ), patch.object(ex, "_api_post", new=tap):
+        result = await ex._exec_health_record(
+            "http://x",
+            {},
+            {
+                "record_type": "supplement",
+                "data": {"supplement_name": "红景天", "dosage": "2粒"},
+            },
+        )
+
+    assert json.loads(result)["record_id"] == 1073
+    tap.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_duplicate_exact_supplement_definitions_require_clarification(db):
     ex = _executor(db)
     ex._current_turn_user_message = "记录「营养素甲」"

@@ -259,7 +259,7 @@ async def test_recipe_replay_does_not_inherit_agent_text_nutrition_guard(
     assert request.arguments["data"]["source"] == "procedure_recipe"
 
 
-def test_only_diet_nutrition_rejection_is_hidden_while_model_recovers():
+def test_only_recoverable_write_validation_is_hidden_while_model_recovers():
     from app.services.agent_executor import (
         _write_result_is_pre_dispatch_validation_error,
     )
@@ -268,12 +268,71 @@ def test_only_diet_nutrition_rejection_is_hidden_while_model_recovers():
     assert _write_result_is_pre_dispatch_validation_error(
         local_write_rejection("diet_nutrition_incomplete")
     )
+    assert _write_result_is_pre_dispatch_validation_error(
+        local_write_rejection("non_diet_intake")
+    )
     assert not _write_result_is_pre_dispatch_validation_error(
         local_write_rejection("policy_check_failed")
     )
     assert not _write_result_is_pre_dispatch_validation_error(
         local_write_rejection("record_date_invalid")
     )
+
+
+def test_diet_nutrition_rejection_user_message_hides_internal_tool_contract():
+    from app.services.agent_executor import _pre_dispatch_validation_user_message
+    from app.services.agent_write_outcome import local_write_rejection
+
+    result = local_write_rejection(
+        "diet_nutrition_incomplete",
+        message=(
+            "饮食记录必须提供 calories (>0)、protein、carbs、fat、fiber，"
+            "请重新调用 health_record。"
+        ),
+        recovery_guidance="请修正参数后重新提交。",
+    )
+
+    rendered = _pre_dispatch_validation_user_message(result)
+
+    assert "这次没有写入" in rendered
+    assert "具体食物" in rendered
+    assert "大致份量" in rendered
+    for internal_term in (
+        "calories",
+        "protein",
+        "carbs",
+        "fat",
+        "fiber",
+        "health_record",
+        "参数",
+    ):
+        assert internal_term not in rendered
+
+
+def test_non_diet_intake_rejection_user_message_hides_internal_tool_contract():
+    from app.services.agent_executor import _pre_dispatch_validation_user_message
+    from app.services.agent_write_outcome import local_write_rejection
+
+    result = local_write_rejection(
+        "non_diet_intake",
+        message=(
+            "diet.food_items 疑似补剂摄入，请改用 "
+            "health_record(record_type='supplement')。"
+        ),
+        recovery_guidance="请修正参数后重新提交。",
+    )
+
+    rendered = _pre_dispatch_validation_user_message(result)
+
+    assert "这次没有写入" in rendered
+    assert "药物或补剂" in rendered
+    for internal_term in (
+        "diet.food_items",
+        "health_record",
+        "record_type",
+        "参数",
+    ):
+        assert internal_term not in rendered
 
 
 @pytest.mark.asyncio

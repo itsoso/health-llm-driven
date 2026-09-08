@@ -46,6 +46,20 @@ class TestDateGuard:
         assert any("非合法" in w for w in v["warnings"])
 
 
+def test_named_rhodiola_intake_is_rejected_as_diet_before_nutrition_prompt():
+    v = validate_health_record(
+        "diet",
+        {
+            "food_items": "吃了两粒红景天",
+            "source": "agent_text",
+        },
+    )
+
+    assert v["error"] is not None
+    assert "药物/补剂摄入" in v["error"]
+    assert v.get("error_code") == "non_diet_intake"
+
+
 # ───────────── 数值范围 ─────────────
 
 

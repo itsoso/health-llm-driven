@@ -9,6 +9,31 @@
 | 负责 | Codex |
 | 反馈环 | Backend deploy + Mobile OTA + true-path verification |
 
+## Correction Block 3 · 2026-09-08 单项草本补剂摄入误路由
+
+- 状态: S5 本地修复完成；本切片 G3 本地闸与 G4 独立安全复核通过；尚未获得本轮
+  commit / deploy 授权。原 dossier 的 Mobile OTA 阻断状态不变。
+- 生产现象: 一条带明确数量的常见草本补剂摄入被错误投影成餐食记录，营养校验失败后
+  将字段名和工具名展示给用户。本文仅保留合成回归描述，不保存用户健康原文。
+- 根因: 通用“吃”字触发了饮食域，而共享补剂词典没有覆盖该草本名称；模型产生错误
+  `health_record(diet)` 后，终态恢复只清洗部分营养错误，也没有用确定性补剂计划纠正
+  冲突调用。
+- 修复: 共享词典补齐名称别名，摄入分类器区分补剂与茶、汤、糕点、软糖等食物语境；
+  单目标确定性计划在执行前纠正错误类型、错误名称、缺失剂量和冲突剂量。已有补剂定义
+  无法无损保存明确剂量时失败关闭，不产生打卡；预派发错误统一转换为用户可理解文案，
+  多工具恢复也不再回显内部字段。推送隐私 choke point 同步覆盖该名称。
+- TDD / G3: 第一轮功能 RED 复现 4 个失败；安全复核补例 RED 复现 7 个失败；最终新增
+  剂量保护先复现 1 个失败。最终相关分类、校验、流式执行、补剂持久化、回执和推送隐私
+  回归 `885 passed, 6 warnings, 0 failed`；Ruff F-only、`py_compile`、
+  `git diff --check` 均通过。无成本 LLM gate 通过 invariants `12/12`、core `50/50`、
+  trajectory contract `12/12`、goldens `9/9`。
+- G4: 首轮独立复核以 NO-GO 阻断食物语境误记、明确剂量丢失和多工具错误泄露；修复后
+  复核继续发现“名称正确但模型漏写/改写剂量”的 P1，并补充函数级与三种真实流式回归。
+  最终独立复核无 P0/P1，裁决 **GO**。
+- 发布边界: live orchestrator 因当前环境缺少默认 provider 配置，备用 OpenAI 返回
+  `ai_consent_required`，因此没有伪造 live 通过结论。提交、部署或发布时需先恢复该 Gate，
+  再运行目标主干 CI-mode 集成闸。
+
 ## Correction Block 2 · 2026-09-07 冒号列表写入恢复
 
 - 状态: S5 本地实现完成；G3 通过；最终固定 commit 的独立 G4 safety/privacy
@@ -235,3 +260,12 @@
 - 第十九轮补充修复: 同轮复核还发现 `【核心长名称合成补剂02甲乙】` 等方头括号名称会先丢失引用边界，再把名称内“补”误判成服用动作。解析改为保留方头括号直到整体引用识别完成；待定前缀也前移到所有名称路径，使 `预备/留待` 等不再只依赖 gateway 防御。新增方头括号正例及两类直接负例，四种引用格式继续保持对称。
 - 最终 G4 复审: 独立 reviewer 对精确源码提交 `37c316bda61ac3fbf54a2bed4b9e778cf0a0a4bc` 使用全新 `git archive` 完成只读审计，裁决 **GO**（P0 0 / P1 0 / P2 5）。回放 268 条语料（前轮 60 + 核心 128 + 时态 40 + 全新边界 40），全部负例零 planner write；existing-definition / auto-create 的伪造匹配调用均零出站、零回执。四类引用长名称含方头括号正例均可写并保留原始单项剂量；193 项补剂对抗回归通过。真实 UTF-8 PostgreSQL + JWT 证明跨用户无法读取或打卡他人定义，所有者可正常写入，动态日志未出现合成补剂名称或剂量。五个未引用任意短合成名称继续保守拒写，引用后可达，作为 P2 取舍接受。
 - 当前 Gate: G3 PASS；G4 GO。仅剩精确 main CI、部署健康和线上 revision 核验，完成前不得宣称发布。
+
+## 2026-09-08 · 历史饮食查询工具协议泄漏修复
+
+- 生产现象: 用户询问“昨天晚上”和“昨天一整天”的饮食评价时，模型重复输出 JSON `tool_call` 文本和悬空 `tool_response` 标签，并以“稍等结果”结束；没有形成真实查询结果。事故取证只记录协议形态、策略原因和耗时，不沉淀用户健康原文或身份。
+- 根因: `health_query` 只能表达“截至今天的最近 N 天”，策略正确拒绝把“昨天”降级成 `days=1`；但执行器没有把已解析出的精确日期转成 `health_manage(list)`，模型因而重复重试。后端清洗未覆盖悬空 `tool_response`，Mobile 也只识别 function-parameter XML 方言。
+- 修复: 权限层从不可变 `IntentFrame.scope` 投影当前用户的精确饮食日期和餐次，并覆盖模型参数；“晚餐 + 全天”的复合问题只查询全天一次。执行器首轮直接执行 server-compiled `health_manage(list)` 后再合成，跳过模型工具选择。后端剥离重复 JSON 协议、悬空响应标签和虚假异步等待；Mobile 对历史消息中的 JSON 工具协议整条失败关闭。策略契约递增至 `agent-capability-policy-v50`。
+- 安全边界: 仅允许非写入、本人、饮食域、今天或过去日期；未来日期不读取。实际日期只来自服务端意图帧，不信任模型参数；其他未可表达的日历窗口仍保持 `health_query_calendar_window_unsupported`。
+- 验证: 截图形协议清洗、昨晚/昨夜日期分类、全天与晚餐投影、未来日期拒绝、Gateway enforce/shadow 参数重写和完整 SSE 查询后合成均有回归。扩大后端六文件最终 `6111 passed, 7 warnings, 0 failed`。Mobile Jest `19 passed`，定向 ESLint、TypeScript、阻断级 Ruff、Python 编译、密钥扫描、`git diff --check` 和 System Map 检查通过。
+- 当前 Gate: 实现与本地验证 PASS；尚未 commit、push、deploy 或 OTA。

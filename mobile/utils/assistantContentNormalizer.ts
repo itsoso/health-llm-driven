@@ -9,6 +9,7 @@ const PLACEHOLDER_FLOOD_THRESHOLD = 6;
 const PLACEHOLDER_LINE_RE = /^(?:([.。·…,:;!?！？—_~*#-])\1{0,7})$/u;
 const RAW_TOOL_PROTOCOL_PREFIX_RE = /^\s*(?:<tool_call\s*>\s*)?<function\s*=/i;
 const RAW_TOOL_PROTOCOL_BLOCK_RE = /^\s*(?:<tool_call\s*>\s*)?<function\s*=\s*["']?[A-Za-z_]\w*["']?\s*>[\s\S]*?(?:<\/function\s*>\s*(?:<\/tool_call\s*>)?|$)\s*/i;
+const RAW_JSON_TOOL_PROTOCOL_PREFIX_RE = /^\s*<tool_call\s*>\s*\{/i;
 
 export type AssistantContentQualityFlag =
   | 'empty_content'
@@ -42,7 +43,12 @@ export function normalizeAssistantContent(
     qualityFlags.push('html_break_normalized');
   }
 
-  if (RAW_TOOL_PROTOCOL_PREFIX_RE.test(text)) {
+  if (RAW_JSON_TOOL_PROTOCOL_PREFIX_RE.test(text)) {
+    // JSON tool-call text is never user-facing content. Trailing prose may be
+    // an untrue promise that a failed tool result will arrive asynchronously.
+    text = RAW_TOOL_PROTOCOL_FALLBACK;
+    qualityFlags.push('raw_tool_protocol_removed');
+  } else if (RAW_TOOL_PROTOCOL_PREFIX_RE.test(text)) {
     while (RAW_TOOL_PROTOCOL_PREFIX_RE.test(text)) {
       const remaining = text.replace(RAW_TOOL_PROTOCOL_BLOCK_RE, '').trim();
       if (remaining === text) {

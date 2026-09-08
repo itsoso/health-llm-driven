@@ -139,6 +139,20 @@ def test_read_only_diet_record_noun_is_not_a_write_intent():
     assert intent.is_write is False
 
 
+@pytest.mark.parametrize("relative_label", ("昨晚", "昨夜"))
+def test_last_night_diet_advice_has_yesterday_date_scope(relative_label):
+    now = datetime(2026, 9, 8, 8, 21, tzinfo=BJ)
+
+    intent = classify_agent_utterance(
+        f"{relative_label}吃得怎么样？",
+        reference_now=now,
+    )
+
+    assert intent.primary == "advice"
+    assert intent.domain == "diet"
+    assert intent.scope["date"] == "2026-09-07"
+
+
 @pytest.mark.parametrize(
     "message",
     (

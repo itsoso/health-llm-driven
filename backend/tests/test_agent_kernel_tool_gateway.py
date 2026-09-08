@@ -1438,6 +1438,43 @@ async def test_calendar_window_health_read_is_hard_blocked_until_representable(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+async def test_exact_yesterday_diet_list_is_projected_from_turn_scope(policy_mode):
+    gateway = ToolGateway(
+        _snapshot(
+            "昨天晚上我吃的怎么样？昨天一整天我吃的怎么样？",
+            policy_mode=policy_mode,
+        )
+    )
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_manage",
+            arguments={
+                "record_type": "diet",
+                "operation": "list",
+                "date": "2020-01-01",
+                "meal_type": "breakfast",
+            },
+        ),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [{
+        "record_type": "diet",
+        "operation": "list",
+        "date": "2026-07-16",
+    }]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
 async def test_last_night_sleep_read_is_normalized_to_two_day_window(policy_mode):
     gateway = ToolGateway(_snapshot("昨晚睡得怎样，是否适合锻炼", policy_mode=policy_mode))
     calls = []

@@ -106,6 +106,32 @@ describe('normalizeAssistantContent', () => {
     expect(result.text).not.toMatch(/tool_call|health_record|parameter/i);
   });
 
+  it('fails closed for duplicate JSON tool calls with an orphan tool response tag', () => {
+    const block = '<tool_call> {"name":"health_query","arguments":{"query":"查询昨天饮食"}} </tool_call>';
+    const result = normalizeAssistantContent([
+      block,
+      block,
+      '</tool_response>',
+      '我已经帮你查询，稍等结果出来后再告诉你。',
+    ].join('\n'));
+
+    expect(result.text).toBe('这条回复未能正常完成，请重新发送。');
+    expect(result.text).not.toMatch(/tool_call|tool_response|health_query|稍等/i);
+    expect(result.cards).toEqual([]);
+    expect(result.qualityFlags).toContain('raw_tool_protocol_removed');
+  });
+
+  it('preserves a JSON tool protocol shown inside a fenced code example', () => {
+    const markdown = [
+      '示例：',
+      '```xml',
+      '<tool_call>{"name":"health_query","arguments":{}}</tool_call>',
+      '```',
+    ].join('\n');
+
+    expect(normalizeAssistantContent(markdown).text).toBe(markdown);
+  });
+
   it.each([
     '<function=',
     '<tool_call><function=',

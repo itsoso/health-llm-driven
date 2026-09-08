@@ -6,6 +6,7 @@
 3. 派生 gate term set 对自由文本**去了歧义 + 去食物类** → 保持 over-refuse 偏向但不误伤良性 claim。
 """
 from app.services.drug_lexicon import (
+    COMMON_SUPPLEMENT_ALIASES,
     COMMON_DRUG_ALIASES,
     DRUG_CLASS_ALIASES,
     SUPPLEMENT_CLASS_ALIASES,
@@ -16,6 +17,7 @@ from app.services.drug_lexicon import (
     drug_name_spans,
     drug_name_free_text_terms,
     prescriptive_free_text_terms,
+    sensitive_name_free_text_terms,
     supplement_name_entity_terms,
 )
 
@@ -56,7 +58,7 @@ def test_food_and_herb_classes_excluded_from_gate():
     """食物/草药类的独特别名不进 gate —— 命名它们的良性饮食 claim 不被硬拒。"""
     terms = prescriptive_free_text_terms()
     for probe in ("葡萄柚", "西柚", "grapefruit", "大蒜", "garlic", "银杏", "ginkgo",
-                  "姜黄素", "turmeric", "益生菌", "akkermansia"):
+                  "姜黄素", "turmeric", "益生菌", "akkermansia", "红景天", "rhodiola"):
         assert probe not in terms, f"{probe!r} 不应进 gate(食物/草药类,会误伤良性 claim)"
 
 
@@ -106,10 +108,22 @@ def test_supplement_name_detector_uses_complete_names_without_food_or_substring_
     assert contains_supplement_name("vitaminDfishoil") is True
     assert contains_supplement_name("vitamindandfishoil") is True
     assert contains_supplement_name("d3-fish-oil") is True
+    assert contains_supplement_name("吃了两粒红景天") is True
+    assert contains_supplement_name("Rhodiola 2 capsules") is True
     assert contains_supplement_name("environment monitoring") is False
     assert contains_supplement_name("garlic bread") is False
     assert contains_supplement_name("coq10environment") is False
     assert contains_supplement_name("d32factor") is False
+
+
+def test_common_supplement_names_route_and_remain_private_without_changing_dsi():
+    assert COMMON_SUPPLEMENT_ALIASES["rhodiola"] == [
+        "rhodiola",
+        "红景天",
+        "红景天提取物",
+    ]
+    assert "rhodiola" not in SUPPLEMENT_CLASS_ALIASES
+    assert "红景天" in sensitive_name_free_text_terms()
 
 
 def test_explicit_supplement_entity_lexicon_keeps_exact_food_and_herb_names():

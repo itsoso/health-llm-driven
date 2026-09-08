@@ -2825,6 +2825,8 @@ def _relative_date(
     candidates: list[tuple[int, str]] = []
     for label, value in (
         ("前天", (today - timedelta(days=2)).isoformat()),
+        ("昨晚", (today - timedelta(days=1)).isoformat()),
+        ("昨夜", (today - timedelta(days=1)).isoformat()),
         ("昨天", (today - timedelta(days=1)).isoformat()),
         ("昨日", (today - timedelta(days=1)).isoformat()),
         ("今天", today.isoformat()),
