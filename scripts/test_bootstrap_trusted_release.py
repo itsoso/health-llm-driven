@@ -257,3 +257,280 @@ def test_malformed_success_receipt_cannot_authorize_key_removal(monkeypatch, tmp
     with pytest.raises(bootstrap.BootstrapError):
         bootstrap.revoke(SHA)
     assert bootstrap.AUTHORIZED.read_bytes() == before
+
+
+NEW_SHA = "b" * 40
+NEW_LOOPBACK = "ssh-ed25519 " + base64.b64encode(b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20" + bytes(range(96, 128))).decode()
+
+
+def rotation_fixture(monkeypatch, tmp_path, *, succeeded=True):
+    bootstrap, calls = fixture(monkeypatch, tmp_path)
+    bootstrap.install(SHA, 200, PUBLIC)
+    if succeeded:
+        workspace = bootstrap.STATE / SHA
+        workspace.mkdir(mode=0o700)
+        for name, state in (("started", "STARTED"), ("completed", "SUCCEEDED"),
+                            ("build-started", "STARTED"), ("native-started", "STARTED")):
+            path = workspace / f"{name}.json"
+            path.write_text(json.dumps({"sha": SHA, "state": state}))
+            path.chmod(0o600)
+    bootstrap.revoke(SHA)
+    (bootstrap.CONFIG / "loopback.key").unlink()
+    source, _server = bootstrap.reviewed_source(NEW_SHA)
+    monkeypatch.setattr(bootstrap, "canonical_source", lambda sha: source, raising=False)
+    monkeypatch.setattr(bootstrap, "BUSINESS_LEASE", tmp_path / "business-lease", raising=False)
+    real_run = bootstrap._run
+    def run(args, **kwargs):
+        if args[0] == "/usr/bin/ps":
+            return SimpleNamespace(stdout=f"{os.getpid()} python bootstrap_trusted_release.py\n1 /sbin/init\n")
+        result = real_run(args, **kwargs)
+        if args[0] == "/usr/bin/ssh-keygen" and "-q" in args:
+            (bootstrap.CONFIG / "loopback.key.pub").write_text(NEW_LOOPBACK + "\n")
+        return result
+    monkeypatch.setattr(bootstrap, "_run", run)
+    calls.clear()
+    return bootstrap, calls
+
+
+@pytest.mark.parametrize("succeeded", [True, False])
+def test_rotation_preserves_old_install_and_once_evidence(monkeypatch, tmp_path, succeeded):
+    bootstrap, calls = rotation_fixture(monkeypatch, tmp_path, succeeded=succeeded)
+    old_config = {p.name: (p.read_bytes(), p.stat().st_ino) for p in bootstrap.CONFIG.iterdir()}
+    old_code = bootstrap.INSTALLED.stat().st_ino
+    old_markers = {p.name: p.read_bytes() for p in (bootstrap.STATE / SHA).iterdir()} if succeeded else {}
+    lock_inode = (bootstrap.STATE / "launcher.lock").stat().st_ino
+    assert bootstrap.rotate(SHA, NEW_SHA, 200, HOST) == {"sha": NEW_SHA, "state": "INSTALLED", "retired_sha": SHA}
+    config_archive = bootstrap.CONFIG.with_name(bootstrap.CONFIG.name + ".retired-" + SHA)
+    code_archive = bootstrap.INSTALLED.parent.with_name(bootstrap.INSTALLED.parent.name + ".retired-" + SHA)
+    assert {p.name: (p.read_bytes(), p.stat().st_ino) for p in config_archive.iterdir()} == old_config
+    assert (code_archive / bootstrap.INSTALLED.name).stat().st_ino == old_code
+    assert (bootstrap.STATE / "launcher.lock").stat().st_ino == lock_inode
+    if succeeded:
+        assert {p.name: p.read_bytes() for p in (bootstrap.STATE / SHA).iterdir()} == old_markers
+    assert json.loads((bootstrap.CONFIG / "authorized-release.json").read_bytes())["sha"] == NEW_SHA
+    assert "trusted_release_gate.py" in " ".join(calls[0])
+    with pytest.raises(bootstrap.BootstrapError):
+        bootstrap.rotate(NEW_SHA, NEW_SHA, 200, PUBLIC)
+    with pytest.raises(bootstrap.BootstrapError):
+        bootstrap.install(NEW_SHA, 200, PUBLIC)
+
+
+@pytest.mark.parametrize("fault", ["wrong-old", "same-sha", "authorized", "private-key", "code-hash",
+    "extra-config", "extra-code", "symlink", "started", "failed", "duplicate-json", "lease",
+    "foreign-started", "new-workspace", "archive-exists", "process", "unknown-process"])
+def test_rotation_fails_closed_before_retirement(monkeypatch, tmp_path, fault):
+    bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path)
+    old, new = SHA, NEW_SHA
+    if fault == "wrong-old":
+        old = "c" * 40
+    elif fault == "same-sha":
+        new = SHA
+    elif fault == "authorized":
+        bootstrap.AUTHORIZED.write_text(PUBLIC + "\n")
+    elif fault == "private-key":
+        (bootstrap.CONFIG / "loopback.key").write_text("retained")
+    elif fault == "code-hash":
+        bootstrap.INSTALLED.write_text("modified")
+    elif fault in {"extra-config", "extra-code"}:
+        parent = bootstrap.CONFIG if fault == "extra-config" else bootstrap.INSTALLED.parent
+        (parent / "unknown").write_text("unreviewed")
+    elif fault == "symlink":
+        path = bootstrap.CONFIG / "cloud.pub"
+        path.unlink()
+        path.symlink_to(tmp_path / "missing")
+    elif fault == "started":
+        (bootstrap.STATE / SHA / "completed.json").unlink()
+    elif fault == "failed":
+        (bootstrap.STATE / SHA / "completed.json").write_text(json.dumps({"sha": SHA, "state": "NEEDS_OPERATOR"}))
+    elif fault == "duplicate-json":
+        (bootstrap.STATE / SHA / "completed.json").write_text('{"sha":"' + SHA + '","state":"FAILED","state":"SUCCEEDED"}')
+    elif fault == "lease":
+        bootstrap.BUSINESS_LEASE.symlink_to(tmp_path / "missing")
+    elif fault == "foreign-started":
+        other = bootstrap.STATE / ("c" * 40)
+        other.mkdir()
+        (other / "started.json").write_text("unknown")
+    elif fault == "new-workspace":
+        (bootstrap.STATE / NEW_SHA).mkdir()
+    elif fault == "archive-exists":
+        bootstrap.CONFIG.with_name(bootstrap.CONFIG.name + ".retired-" + SHA).mkdir()
+    elif fault in {"process", "unknown-process"}:
+        real_run = bootstrap._run
+        def run(args, **kwargs):
+            if args[0] == "/usr/bin/ps":
+                return SimpleNamespace(stdout="777 bash /tmp/health-app-backup-preflight-1-2/rollback_release.sh\n" if fault == "process" else "")
+            return real_run(args, **kwargs)
+        monkeypatch.setattr(bootstrap, "_run", run)
+    before = bootstrap.AUTHORIZED.read_bytes()
+    with pytest.raises((bootstrap.BootstrapError, OSError)):
+        bootstrap.rotate(old, new, 200, HOST)
+    assert bootstrap.CONFIG.exists()
+    assert bootstrap.INSTALLED.exists()
+    assert bootstrap.AUTHORIZED.read_bytes() == before
+    assert not (bootstrap.STATE / "retired").exists()
+
+
+def test_rotation_requires_nonblocking_global_lock(monkeypatch, tmp_path):
+    import fcntl
+    bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path)
+    with (bootstrap.STATE / "launcher.lock").open("r+") as held:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises((bootstrap.BootstrapError, BlockingIOError)):
+            bootstrap.rotate(SHA, NEW_SHA, 200, HOST)
+    assert bootstrap.CONFIG.exists()
+    assert not (bootstrap.STATE / "retired").exists()
+
+
+@pytest.mark.parametrize("point", ["first-move", "second-move", "new-install", "completion"])
+def test_interrupted_rotation_is_not_resumable_and_keeps_audit(monkeypatch, tmp_path, point):
+    bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path)
+    rename, write = bootstrap.os.rename, bootstrap._write
+    def move(source, target):
+        if (point == "first-move" and source == bootstrap.CONFIG) or (point == "second-move" and source == bootstrap.INSTALLED.parent):
+            raise OSError("injected interruption")
+        return rename(source, target)
+    def fail_write(path, data):
+        if (point == "new-install" and path == bootstrap.INSTALLED) or (point == "completion" and path == bootstrap.STATE / "retired" / SHA / "completed.json"):
+            raise OSError("injected interruption")
+        return write(path, data)
+    monkeypatch.setattr(bootstrap.os, "rename", move)
+    monkeypatch.setattr(bootstrap, "_write", fail_write)
+    with pytest.raises(OSError):
+        bootstrap.rotate(SHA, NEW_SHA, 200, HOST)
+    assert (bootstrap.STATE / "retired" / SHA / "intent.json").exists()
+    assert (bootstrap.STATE / SHA / "started.json").exists()
+    monkeypatch.setattr(bootstrap.os, "rename", rename)
+    monkeypatch.setattr(bootstrap, "_write", write)
+    with pytest.raises(bootstrap.BootstrapError):
+        bootstrap.rotate(SHA, NEW_SHA, 200, HOST)
+    with pytest.raises(bootstrap.BootstrapError):
+        bootstrap.install(NEW_SHA, 200, HOST)
+    assert bootstrap.AUTHORIZED.read_text() == "ssh-ed25519 AAAAExisting unrelated\n"
+
+
+@pytest.mark.parametrize("fault", ["hash", "inventory", "receipt", "missing-completion"])
+def test_retired_history_is_revalidated_not_a_blanket_started_exemption(monkeypatch, tmp_path, fault):
+    bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path)
+    bootstrap.rotate(SHA, NEW_SHA, 200, HOST)
+    bootstrap.revoke(NEW_SHA)
+    (bootstrap.CONFIG / "loopback.key").unlink()
+    archived_config, archived_library = bootstrap._archives(SHA)
+    if fault == "hash":
+        (archived_library / bootstrap.INSTALLED.name).write_text("changed")
+    elif fault == "inventory":
+        (archived_config / "unknown").write_text("changed")
+    elif fault == "receipt":
+        (bootstrap.STATE / SHA / "started.json").unlink()
+    else:
+        (bootstrap.STATE / "retired" / SHA / "completed.json").unlink()
+    with pytest.raises(bootstrap.BootstrapError):
+        bootstrap.rotate(NEW_SHA, "c" * 40, 200, PUBLIC)
+    assert bootstrap.CONFIG.exists()
+
+
+def test_rotation_verifies_new_source_and_gate_before_mutation(monkeypatch, tmp_path):
+    bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path)
+    seen = []
+    reviewed = bootstrap.reviewed_source
+    def source(sha):
+        seen.append(sha)
+        return reviewed(sha)
+    monkeypatch.setattr(bootstrap, "reviewed_source", source)
+    def fail(*args, **kwargs):
+        raise RuntimeError("CI unavailable")
+    monkeypatch.setattr(bootstrap, "_run", fail)
+    with pytest.raises(RuntimeError):
+        bootstrap.rotate(SHA, NEW_SHA, 200, HOST)
+    assert seen == [NEW_SHA]
+    assert bootstrap.CONFIG.exists()
+    assert not (bootstrap.STATE / "retired").exists()
+
+
+def test_both_modified_policy_and_executor_cannot_replace_canonical_hash(monkeypatch, tmp_path):
+    import hashlib
+    bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path)
+    bootstrap.INSTALLED.write_bytes(b"unreviewed")
+    policy_file = bootstrap.CONFIG / "authorized-release.json"
+    policy = json.loads(policy_file.read_text())
+    policy["executor_sha256"] = hashlib.sha256(b"unreviewed").hexdigest()
+    policy_file.write_text(json.dumps(policy))
+    with pytest.raises(bootstrap.BootstrapError):
+        bootstrap.rotate(SHA, NEW_SHA, 200, HOST)
+    assert bootstrap.CONFIG.exists()
+
+
+def test_rotation_will_not_reauthorize_old_loopback_identity(monkeypatch, tmp_path):
+    bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path)
+    run = bootstrap._run
+    def reused(args, **kwargs):
+        result = run(args, **kwargs)
+        if args[0] == "/usr/bin/ssh-keygen" and "-q" in args:
+            (bootstrap.CONFIG / "loopback.key.pub").write_text(LOOPBACK + "\n")
+        return result
+    monkeypatch.setattr(bootstrap, "_run", reused)
+    with pytest.raises(bootstrap.BootstrapError):
+        bootstrap.rotate(SHA, NEW_SHA, 200, HOST)
+    assert bootstrap.AUTHORIZED.read_text() == "ssh-ed25519 AAAAExisting unrelated\n"
+
+
+def test_consecutive_rotation_preserves_prior_audit_and_rejects_all_used_shas(monkeypatch, tmp_path):
+    bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path)
+    bootstrap.rotate(SHA, NEW_SHA, 200, HOST)
+    bootstrap.revoke(NEW_SHA)
+    (bootstrap.CONFIG / "loopback.key").unlink()
+    before = (bootstrap.STATE / "retired" / SHA / "intent.json").read_bytes()
+    for reused in (SHA, NEW_SHA):
+        with pytest.raises(bootstrap.BootstrapError):
+            bootstrap.rotate(NEW_SHA, reused, 200, PUBLIC)
+    fresh = "ssh-ed25519 " + base64.b64encode(b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20" + bytes(range(128, 160))).decode()
+    fresh_loopback = "ssh-ed25519 " + base64.b64encode(b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20" + bytes(range(160, 192))).decode()
+    run = bootstrap._run
+    def next_keys(args, **kwargs):
+        result = run(args, **kwargs)
+        if args[0] == "/usr/bin/ssh-keygen" and "-q" in args:
+            (bootstrap.CONFIG / "loopback.key.pub").write_text(fresh_loopback + "\n")
+        return result
+    monkeypatch.setattr(bootstrap, "_run", next_keys)
+    with pytest.raises(bootstrap.BootstrapError):
+        bootstrap.rotate(NEW_SHA, "c" * 40, 200, PUBLIC)
+    assert bootstrap.rotate(NEW_SHA, "c" * 40, 200, fresh)["state"] == "INSTALLED"
+    assert (bootstrap.STATE / "retired" / SHA / "intent.json").read_bytes() == before
+    assert set(bootstrap._retired_history()) == {SHA, NEW_SHA}
+
+
+@pytest.mark.parametrize("parent_shell", [False, True])
+def test_idle_probe_accepts_ssh_exec_but_not_a_lingering_release_shell(monkeypatch, tmp_path, parent_shell):
+    bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path)
+    command = (f"/usr/bin/python3 -I /var/lib/reva-release/bootstrap/{NEW_SHA}/source/"
+               f"scripts/bootstrap_trusted_release.py rotate --retire-sha {SHA} --sha {NEW_SHA}")
+    processes = f"1 /sbin/init\n400 sshd: root@notty\n{os.getpid()} {command}\n402 /usr/bin/ps -e -ww -o pid= -o args=\n"
+    if parent_shell:
+        processes += f"403 /bin/sh -c {command}\n"
+    monkeypatch.setattr(bootstrap, "_run", lambda *args, **kwargs: SimpleNamespace(stdout=processes))
+    if parent_shell:
+        with pytest.raises(bootstrap.BootstrapError, match="process"):
+            bootstrap._assert_idle()
+    else:
+        bootstrap._assert_idle()
+
+
+@pytest.mark.parametrize("bad", ["owner", "permissions", "symlink", "hardlink"])
+def test_retirement_inventory_checks_real_root_metadata(monkeypatch, bad):
+    import stat
+    bootstrap = load_bootstrap()
+    target = Path("/root/retirement-test/config")
+    def metadata(path):
+        mode, uid, links = stat.S_IFDIR | 0o700, 0, 1
+        if path == target:
+            if bad == "owner":
+                uid = 1234
+            elif bad == "permissions":
+                mode = stat.S_IFDIR | 0o777
+            elif bad == "symlink":
+                mode = stat.S_IFLNK | 0o777
+            else:
+                mode, links = stat.S_IFREG | 0o600, 2
+        return os.stat_result((mode, 1, 1, links, uid, 0, 0, 0, 0, 0))
+    monkeypatch.setattr(Path, "lstat", metadata)
+    with pytest.raises(bootstrap.BootstrapError):
+        bootstrap._inventory(target, set())

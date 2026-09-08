@@ -36,6 +36,13 @@ GitHub 控制面、受审代码、固定工具链和服务器 root 是信任前�
 `scripts/bootstrap_trusted_release.py`。禁止上传本机脚本充当 bootstrap。
 安装器只接受八小时内到期的专用 ed25519 公钥，拒绝覆盖现有安装。
 
+后续授权使用同一 bootstrap 的显式 `rotate --retire-sha <old> --sha <new>`，仅从
+新 SHA 的上述受审 canonical staging 执行。必须先撤销旧 cloud/loopback 授权并删除
+旧 loopback 私钥，证明旧后端成功终止或从未启动、业务 lease 不存在、无发布进程。
+轮换持有原 launcher.lock，核验旧源码哈希、私有目录库存和消费记录，原样归档旧安装，
+再安装新的短期身份；旧 SHA、消费标记和锁 inode 不得删除或复用。任何未知现场或
+中途失败均保留 intent/安装证据并阻断，不支持通过再次执行重置授权或自动恢复。
+
 云端身份由服务器 forced-command 限定为绑定同一 SHA 的 `run`、`status`、
 `check`、`claim-build`、`claim-testflight`，不提供 shell/SFTP；服务器内部的短期 loopback 身份不离开服务器。
 后端业务部署仍由受审 fresh source 中的 **`deploy.sh -b`** 执行全部事务闸。
