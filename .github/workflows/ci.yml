@@ -327,6 +327,7 @@ jobs:
           scripts/test_trusted_review_reset.py
           scripts/test_recover_contained_services.py
           scripts/test_contained_recovery_proof.py
+          scripts/test_contained_release_retirement.py
           scripts/test_legacy_release_recovery.py
           scripts/test_release_parallel.py
           scripts/test_trusted_eas_build.py

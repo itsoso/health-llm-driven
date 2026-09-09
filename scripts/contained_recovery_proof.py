@@ -353,6 +353,12 @@ class RecoveryProof:
 
     def running_snapshot(self):
         self._assert_original_lease()
+        result = self.running_services_snapshot()
+        self._assert_original_lease()
+        return result
+
+    def running_services_snapshot(self):
+        """Read-only readiness; callers separately prove their lease authority."""
         self._no_jobs()
         result = {}
         for unit in UNITS:
@@ -389,5 +395,4 @@ class RecoveryProof:
                 fields["processes"] = identities
             result[unit] = fields
         self._no_jobs()
-        self._assert_original_lease()
         return result

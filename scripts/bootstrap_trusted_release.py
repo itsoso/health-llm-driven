@@ -265,6 +265,15 @@ def _inventory(directory, names):
 
 def _workspace_evidence(sha, *, recovery_receipt=None):
     workspace = STATE / sha
+    if os.path.lexists(STATE / "contained-release-closures" / sha):
+        path = Path(__file__).absolute().with_name("contained_release_retirement.py")
+        secure(path)
+        if os.path.lexists(path.parent / "__pycache__"):
+            raise BootstrapError("cached closure proof forbidden")
+        spec = importlib.util.spec_from_file_location("reviewed_closed_containment", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.closed_evidence(sys.modules[__name__], sha, recovery_receipt)
     if os.path.lexists(STATE / "recoveries" / sha):
         return _recovered_preparation_evidence(sha, recovery_receipt=recovery_receipt)
     if not os.path.lexists(workspace):
@@ -543,7 +552,7 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None):
             raise BootstrapError("old retirement already attempted")
         installation = _installation_evidence(old_sha, CONFIG, INSTALLED.parent)
         workspace = _workspace_evidence(old_sha, recovery_receipt=recovery_receipt)
-        if recovery_receipt is not None and workspace["state"] != "RECOVERED_PREPARATION_FAILURE":
+        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_RESTORED_RELEASE"}:
             raise BootstrapError("recovery receipt only applies to historical recovery")
         retired_keys = {(config / name).read_text().strip()
                         for config in [CONFIG, *(_retired_config(old, item) for old, item in history.items())]

@@ -128,6 +128,35 @@ schema/KB 与原静态证据再验证。成功仅记 `RESTORED_PREVIOUS_SERVICES
 恢复目录已存在时禁止重跑，也不得换操作 ID。成功仍保留原 lease/keys，后续退休
 授权须另行评审，不能据恢复成功重跑原部署、上传或审核维护。
 
+#### 已恢复事故的发布生命周期收尾
+
+用户明确授权后，可从新受审且精确主干 CI 绿色的 canonical staging，以同一隔离
+operator 的 `--retire-restored` 模式执行独立收尾；仍须提供 closing/failed/production
+三个精确 SHA 和 stdin 原 lease token。默认只读取证，只有二次提供一致的
+`--evidence-sha256` 才进入 mutation。此模式不启动服务、不部署、不写审核账号、不
+触发厂商构建，也不改变原始 NEEDS_OPERATOR。普通恢复模式仍然不可重跑。
+
+收尾持有原 launcher/build 锁，核验完整恢复 intent/completed、原 lease/stage/终态、
+实际旧 revision、恢复后的同一组稳定服务进程、schema/KB、health/auth、准确的双身份
+授权与无发布残留进程；任何漂移阻断。先在
+`contained-release-closures/<failed-sha>` fsync 独立 intent，再把原 lease 和 sealed
+stage 原字节/模式复制到 root-only 持久目录并复证。仅撤销准确匹配的旧 cloud/loopback
+授权、删除旧 loopback 私钥；长期复用的 Expo Token 不在收尾范围内。
+
+旧 lease 仅以同文件系统、禁止覆盖的移动归档到固定
+`/run/lock/health-app-release.retired-<failed-sha>`，保留其 inode 和全部文件；不删除
+原 stage、原消费记录或 launcher/build 锁。`/run` 归档可能随重启消失，因此后续历史
+核验以 mutation 前已 fsync 的持久私有副本及完成摘要为准，不依赖临时目录存活。
+持久副本含敏感配置，禁止导出、打印或提交到仓库。
+
+撤权/归档后再次证明安装字节、原失败/恢复记录、锁、健康状态及相同稳定服务，
+完成仅记 CLOSED_RESTORED_RELEASE。只有全部完成 fsync 后才返回随机 256-bit 回执，
+intent 仅存其摘要。普通 rotate 经 protected stdin 验证该回执、完整收尾审计和未变化
+的持久归档，之后才可按既有规则安装新 SHA/新短期发布身份。轮换把回执放入私有审计
+供未来历史核验；不得把它放在 argv、日志或用户消息。新发布仍须全部原有闸。
+任意中断、未知结果或不完整收尾都保留现场并 BLOCK；不得重跑收尾、换 ID、补发回执
+或将可见 completed 文件当作成功授权。收尾失败不擅自停掉已恢复的健康服务。
+
 #### 审核账号维护入口
 
 只有用户明确授权的审核 fixture 恢复，才可由管理员从同样的受审 canonical staging

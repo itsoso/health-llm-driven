@@ -9,6 +9,35 @@
 | 负责 | Codex + 用户 |
 | 反馈环 | Backend focused tests + Mobile Jest/TypeScript + production OTA after Gates |
 
+## 2026-09-09 · 已授权独立发布收尾（实现与复审中）
+
+- 用户明确授权修复及执行旧发布基础设施收尾，并要求连续推进；长期 Expo Token 保留。
+- 新增独立 `--retire-restored` 取证/收尾模式及 bootstrap 历史核验：先验证原恢复证明与
+  当前相同稳定服务，持久化私有 lease/stage 副本后，精确撤销旧双身份、移除旧 loopback
+  私钥并保留原 lease inode 的同文件系统归档。原 NEEDS_OPERATOR、stage、消费记录不改。
+- 回执仅在全部后验及 fsync 成功后交付，普通 rotate 仍需该受保护回执和全部既有闸。
+  未完成审计、证据漂移、故障和重放均阻断；本机测试不操作生产。
+- 初始九项失败测试证明实现缺失；正在补充真实临时文件归档、撤权及历史反篡改回归。
+  等待固定提交的独立安全复审、完整 CI-mode 发布集成与精确 main CI。
+- 当前尚未执行生产收尾、轮换、发新包或正式 App Review；G5/G6 原裁决保持不变。
+
+## 2026-09-09 17:16 · 手机重连后的非写入复验
+
+- 设备重新连接并由用户解锁；安装信息确认小巴健康 `1.3.3 (266)`。使用当前
+  `1e82ab0f994529a6033600409534c2bc05011b3d` 的仓库 XCTest harness 新建独立测试工程，
+  未重装主 App、未构建或上传新的发布包。完整 Xcode 仅通过命令级 `DEVELOPER_DIR` 指定。
+- 第一组 4/4 PASS，0 failure、0 skipped、xcodebuild exit 0：启动入口、两次冷启动登录保持、
+  历史页按钮/下滑关闭、隐私政策页面及删除账号入口可达。没有执行删除操作。
+- 第二组 2/2 PASS，0 failure、0 skipped、xcodebuild exit 0：未发送草稿后台恢复、
+  附件菜单/体检报告导入取消及下滑关闭。未选择或上传文件，未发送消息，测试结束恢复原草稿。
+- 新鲜结果包分别为 `/tmp/xiaoba-usb-recheck.mVF7n8/ReadOnly-Build266.xcresult` 与
+  `/tmp/xiaoba-usb-recheck.mVF7n8/DraftAttachment-Build266.xcresult`；已核对结果包摘要及
+  隐私政策/附件菜单截图。原始截图和日志仅保留本机，不提交仓库。测试后重新打开主 App。
+- 初始锁屏阻止测试启动，用户解锁后原测试进程继续；未将准备阶段等待计作测试通过。
+- 本轮仅确认现有登录会话保持，未重新核验账号身份；未重置审核 fixture，也未验证新包、
+  饮食识别写入/修正/分享复盘闭环或送审资料。六项通过不改变原发布 G5 BLOCK / G6 未完成，
+  不代表 Apple 审核通过。失败发布的租约及授权收尾仍须独立处理，未绕过发布冻结。
+
 ## 2026-09-09 · 图片轻触关闭补充（仅本机实现）
 
 - 用户截图对应 MealPhotoGallery：已有纵向滑动关闭，但照片没有轻触入口。
