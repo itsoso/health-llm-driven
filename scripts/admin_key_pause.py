@@ -241,7 +241,10 @@ def resume_identity(identity, target):
         current = session(identity["pid"])
         if current["start"] != identity["start"]:
             return  # Original process is gone; the replacement must not be touched.
-        if current != identity or authenticated_key(current) != fingerprint(target):
+        # A channel arriving just before STOP can change sshd's process title.
+        # Termination still rejects that race, but its own freeze must be undone.
+        stable = lambda row: {k: v for k, v in row.items() if k != "argv"}
+        if stable(current) != stable(identity) or authenticated_key(current) != fingerprint(target):
             raise PauseError("frozen session identity drifted")
         if process_state(identity["pid"]) == b"T":
             signal.pidfd_send_signal(fd, signal.SIGCONT)

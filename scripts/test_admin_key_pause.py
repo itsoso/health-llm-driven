@@ -428,7 +428,7 @@ def test_freeze_failure_always_attempts_recorded_resume(tmp_path, monkeypatch, p
     assert json.loads((a.record / "freeze-123-456.json").read_bytes()) == {"identity": identity, "key_digest": a.target}
 
 
-@pytest.mark.parametrize("state", ["stopped", "running", "reused", "gone", "wrong_key"])
+@pytest.mark.parametrize("state", ["stopped", "running", "reused", "gone", "wrong_key", "argv_drift"])
 def test_resume_identity_never_signals_reused_pid_or_other_key(monkeypatch, state):
     m = load()
     identity = {"pid": 123, "start": 456}
@@ -436,17 +436,17 @@ def test_resume_identity_never_signals_reused_pid_or_other_key(monkeypatch, stat
     monkeypatch.setattr(m.os, "pidfd_open", lambda _: 42, raising=False)
     monkeypatch.setattr(m.os, "close", lambda _: None)
     monkeypatch.setattr(m, "exited", lambda _: state == "gone")
-    monkeypatch.setattr(m, "session", lambda _: {"pid": 123, "start": 999} if state == "reused" else identity)
+    monkeypatch.setattr(m, "session", lambda _: {"pid": 123, "start": 999} if state == "reused" else {**identity, "argv": "sshd: root@notty"} if state == "argv_drift" else identity)
     monkeypatch.setattr(m, "authenticated_key", lambda _: "other" if state == "wrong_key" else m.fingerprint(target))
     signals = []
     monkeypatch.setattr(m.signal, "pidfd_send_signal", lambda fd, sig: signals.append((fd, sig)), raising=False)
-    monkeypatch.setattr(m, "process_state", lambda _: b"T" if state == "stopped" and not signals else b"S")
+    monkeypatch.setattr(m, "process_state", lambda _: b"T" if state in {"stopped", "argv_drift"} and not signals else b"S")
     if state == "wrong_key":
         with pytest.raises(m.PauseError):
             m.resume_identity(identity, target)
     else:
         m.resume_identity(identity, target)
-    assert signals == ([(42, m.signal.SIGCONT)] if state == "stopped" else [])
+    assert signals == ([(42, m.signal.SIGCONT)] if state in {"stopped", "argv_drift"} else [])
 
 
 def test_restore_recovers_freeze_before_ssh_policy(tmp_path, monkeypatch):
