@@ -295,8 +295,12 @@ def test_diet_nutrition_rejection_user_message_hides_internal_tool_contract():
     rendered = _pre_dispatch_validation_user_message(result)
 
     assert "这次没有写入" in rendered
-    assert "具体食物" in rendered
-    assert "大致份量" in rendered
+    assert "完整营养估算未完成" in rendered
+    assert "你可以重试" in rendered
+    assert "如果食物或份量有变化，也可以补充修正" in rendered
+    # Missing estimator output does not prove the user omitted food or portion.
+    assert "请补充具体食物" not in rendered
+    assert "请补充大致份量" not in rendered
     for internal_term in (
         "calories",
         "protein",

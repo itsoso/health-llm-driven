@@ -219,6 +219,10 @@
 - 固定 `a25df99372b09a2511ecc110ea3e076bfea39a3c` 的归档 SHA256 `365ed1549053d449a35e350ef0466cdf35d0749b07e2145d26598839fe4a5593` 前后内容核验一致；真实 gate exit 0：invariants 12/12、health_agent_core 50/50、orchestrator 5/5（平均质量 0.94）、trajectory/goldens 均通过。实际 10 次调用均为 TokenPlan / MiniMax-M2.5 且成功；既有同意、接收方、额度校验均保留。此证据不替代后续提交的精确 SHA live 绑定。
 - 新鲜 CI-mode 全增量合跑 4186 项中 4185 通过，唯一失败是旧测试要求“明确记录医生反馈但没有工具/回执”仍为正常完成。独立红测复现后，仅修正该测试契约：明确写入也必须未记录、无成功 outcome/正文、无工具和回执；普通临床上下文与歧义操作原有保护断言不变。38 项定向回归通过（exit 0）；等待更新候选的全增量重跑和独立复核，不把前次失败批次记为绿。
 - 同仓库“解决ui问题 分享饮食”任务已确认两处 DietShareCard 移动端改动归属其任务且未提交；本轮完整保留，不暂存、不混入后端发布候选。
+- 固定 `20153b4767fc9e16a84c2657de27fa09703e5f09` 的临床回执测试整改独立 GO（38/38）；新鲜 CI-mode 全增量 4186/4186、exit 0。新 SHA 再次真实 live gate exit 0：5/5 orchestrator、平均质量 0.94，10 次 TokenPlan 调用成功，其他 gate 均通过；归档摘要 `1ee843f19e74946bb5163107ba0e6f93e6a5336ec449ba3a0b18fbf31bfda61c` 前后匹配。放行变量精确绑定后，从干净发布副本 push main，未包含 Mobile 改动。
+- 精确 CI [34314638986](https://github.com/itsoso/health-llm-driven/actions/runs/34314638986) 终态 failure：唯一实际失败 job 为 balanced-12，backend-tests 为依赖聚合失败，其余适用 job 成功。根因是 `test_agent_write_adapter_rejections.py` 仍要求营养估算失败时提示补充“具体食物/大致份量”。本地红测复现后仅更新测试：必须说明完整营养估算未完成、可重试/有变化时修正；不再断言用户缺少输入，内部工具字段不可泄漏的原断言完整保留，生产源码未改。
+- 按原 CI worker 重跑 balanced-12 的四个分片，724 passed / 1 PostgreSQL-only skip，进程 exit 0；随后在隔离 PostgreSQL 单独运行该并发用例和修正文案用例，2/2 passed、exit 0。中间过宽的 180 项 PostgreSQL 补充批次主动中断（exit 2），不计为全批次通过；其日志保留。外部日志 `/tmp/meal-ci-balanced12-fixed.log`、`/tmp/meal-ci-copy-and-photo-focused-postgres.log`。
+- 主干转红后按 AGENTS §7 暂停外部写入和部署，已向用户请求“允许推送此次 CI 修复、待新 SHA CI 绿后继续部署”的明确确认；未收到确认前仅保留本地修复。生产仍为 `32766656f`，没有授权轮换、重启、业务写入验收或正式送审。只读核验上次两把公钥授权均不存在且发布回执 SUCCEEDED，但旧 loopback 私钥文件仍存在；不复用旧 Dossier 的“私钥已删除”叙述，后续须按受审撤权/轮换流程清理精确旧私钥，长期 Expo Token 不变。
 
 > 点击调整记录，修改食物的内容。比如把1碗改成两碗，那么在保存的时候要重新计算热量。当前只是修改了内容，但是没有修改和重新计算真实的营养物质和热量，要做这个优化。点击图片，展开午餐图，用手滑一下，图片应该自动消失，而不是再点击那个叉号再消失。要优化这个交互。
 
