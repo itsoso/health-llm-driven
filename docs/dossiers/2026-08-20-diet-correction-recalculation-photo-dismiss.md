@@ -90,6 +90,17 @@
   回归。并发来源已确认；当前候选尚未推送、构建或提交审核。
 - 本发布任务新鲜验证：依赖约束 25/25 PASS、秘密扫描 PASS、diff whitespace PASS。
   先固定本地候选并按 safety-gate 独立复审，再核对完整集成与精确 CI。
+- 固定 `8c326a9a63fe2e8fa3bca0ff9d748a473c12fd31` 独立复审为 NO-GO：
+  query-string 的 CommonJS 消费者不能直接调用新版 decoder 的 ESM default；EAS 新项目
+  配置生成仍调用 ts-deepmerge default，而安全新版只提供 named merge。此前常规全量测试
+  （Mobile 2824、Web 385、发布集成 866 + 52 subtests）通过未覆盖这两条真实消费路径。
+- TDD 追加真实 query-string / React Navigation 路由（2 RED）、EAS generateAppConfigAsync
+  （1 RED）；修复保留 decode-uri-component 0.5.0 / ts-deepmerge 8.0.0 安全实现，
+  仅做消费者导出适配。Mobile 复用 patch-package；EAS 适配固定版本与完整源 SHA256，
+  未知 vendor 字节拒绝执行，补丁可幂等重用且事后回读验证。
+- EAS 在可信 build/submit 的依赖安装后、任何 vendor 凭据/权限消费前显式应用并验证；
+  同样接入 CI 的 Node 22.13.0 检查。新增恶意 URI 限时、合并原型键过滤、源漂移拒绝及
+  接线回归；不增加安全例外、不回退到已知漏洞版本，也不扩大发布身份权限。
 
 > 点击调整记录，修改食物的内容。比如把1碗改成两碗，那么在保存的时候要重新计算热量。当前只是修改了内容，但是没有修改和重新计算真实的营养物质和热量，要做这个优化。点击图片，展开午餐图，用手滑一下，图片应该自动消失，而不是再点击那个叉号再消失。要优化这个交互。
 

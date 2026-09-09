@@ -15,6 +15,32 @@ function runParserCheck(source) {
 }
 
 describe('build parser security regressions', () => {
+  it('decodes navigation parameters through the real query-string consumer', () => {
+    runParserCheck(`
+      const assert = require('node:assert/strict');
+      const query = require('query-string');
+      assert.equal(query.parse('message=%E4%BD%A0%E5%A5%BD').message, '你好');
+      assert.equal(query.parse('message=%E0%A4').message, '%E0%A4');
+      const hostile = '%E0%A4'.repeat(20000);
+      assert.equal(query.parse('message=' + hostile).message, hostile);
+      assert.equal(query.parse('message=a+b').message, 'a b');
+    `);
+  });
+
+  it('opens a React Navigation route with decoded query parameters', () => {
+    runParserCheck(`
+      const assert = require('node:assert/strict');
+      const path = require('node:path');
+      const { pathToFileURL } = require('node:url');
+      const root = path.dirname(require.resolve('@react-navigation/core/package.json'));
+      import(pathToFileURL(path.join(root, 'lib/module/getStateFromPath.js')).href).then(({ getStateFromPath }) => {
+        const state = getStateFromPath('/chat?message=%E4%BD%A0%E5%A5%BD', { screens: { Chat: 'chat' } });
+        assert.equal(state.routes[0].name, 'Chat');
+        assert.equal(state.routes[0].params.message, '你好');
+      }).catch(error => { console.error(error); process.exitCode = 1; });
+    `);
+  });
+
   it.each(['@istanbuljs/load-nyc-config', '@eslint/eslintrc'])(
     '%s YAML parser counts empty merge sources toward its limit', (consumer) => {
       runParserCheck(`

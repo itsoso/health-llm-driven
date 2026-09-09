@@ -196,6 +196,10 @@ jobs:
             npm ci --prefix /opt/reva-release/source/scripts/release-tools --ignore-scripts --no-audit --no-fund
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             npm ci --prefix /opt/reva-release/source/mobile --ignore-scripts --no-audit --no-fund
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
+            "$node_bin/node" /opt/reva-release/source/scripts/release-tools/apply-compat-patches.cjs
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
+            "$node_bin/node" --test /opt/reva-release/source/scripts/release-tools/compat.test.cjs
       - name: Claim one build in this job before every vendor create attempt
         env:
           TARGET_SHA: ${{ inputs.sha }}
@@ -296,6 +300,10 @@ jobs:
             npm ci --prefix /opt/reva-release/source/scripts/release-tools --ignore-scripts --no-audit --no-fund
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             npm ci --prefix /opt/reva-release/source/mobile --ignore-scripts --no-audit --no-fund
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
+            "$node_bin/node" /opt/reva-release/source/scripts/release-tools/apply-compat-patches.cjs
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
+            "$node_bin/node" --test /opt/reva-release/source/scripts/release-tools/compat.test.cjs
       - name: Claim one-time TestFlight upload permission before exposing vendor credentials
         env:
           TARGET_SHA: ${{ inputs.sha }}

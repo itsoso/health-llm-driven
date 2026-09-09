@@ -277,6 +277,17 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22.13.0
+          package-manager-cache: false
+
+      - name: Verify installed release-tool consumers before publishing
+        run: |
+          npm ci --prefix scripts/release-tools --ignore-scripts --no-audit --no-fund
+          node scripts/release-tools/apply-compat-patches.cjs
+          node --test scripts/release-tools/compat.test.cjs
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"

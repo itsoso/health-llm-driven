@@ -11,6 +11,31 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = yaml.safe_load((ROOT / ".github/workflows/trusted-release.yml").read_text())
 
 
+@pytest.mark.parametrize("job", ["ios-build", "testflight"])
+def test_vendor_compatibility_is_checked_before_claiming_release_permission(job):
+    steps = WORKFLOW["jobs"][job]["steps"]
+    install_index = next(i for i, step in enumerate(steps) if "Install locked CLI" in step.get("name", ""))
+    claim_index = next(i for i, step in enumerate(steps) if step.get("name", "").startswith("Claim one"))
+    assert install_index < claim_index
+    body = steps[install_index]["run"]
+    assert "--ignore-scripts" in body
+    patch = '"$node_bin/node" /opt/reva-release/source/scripts/release-tools/apply-compat-patches.cjs'
+    verify = '"$node_bin/node" --test /opt/reva-release/source/scripts/release-tools/compat.test.cjs'
+    assert body.index("npm ci") < body.index(patch) < body.index(verify)
+    assert "secrets." not in str(steps[install_index])
+    assert "EXPO_TOKEN" not in str(steps[install_index])
+
+
+def test_ci_checks_real_release_tool_consumers_with_the_production_node_version():
+    ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    steps = ci["jobs"]["release-invariants"]["steps"]
+    node_setup = next(step for step in steps if step.get("uses", "").startswith("actions/setup-node@"))
+    assert str(node_setup["with"]["node-version"]) == "22.13.0"
+    body = next(step["run"] for step in steps if "Verify installed release-tool consumers" in step.get("name", ""))
+    assert "npm ci --prefix scripts/release-tools --ignore-scripts" in body
+    assert body.index("apply-compat-patches.cjs") < body.index("--test scripts/release-tools/compat.test.cjs")
+
+
 @pytest.mark.parametrize("job", ["preflight", "build-permission", "backend", "ios-build", "testflight"])
 @pytest.mark.parametrize("changes", [
     {"TARGET_SHA": "main"},
