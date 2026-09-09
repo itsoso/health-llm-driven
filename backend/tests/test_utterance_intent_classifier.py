@@ -36,6 +36,9 @@ def test_direct_meal_write_keeps_authority_after_estimation_request(message):
     "直接记录午餐：白米饭100克。先别记。",
     "请估算小明午餐的营养并直接保存：白米饭100克。",
     "直接记录小明午餐：白米饭100克。",
+    "直接记录午餐：白米饭100克。仅举例。",
+    "直接记录午餐：白米饭100克。仅仅举例。",
+    "直接记录午餐：白米饭100克。举个例子。",
 ))
 def test_direct_meal_wording_does_not_override_authorization_guards(message):
     assert classify_agent_utterance(message).is_write is False

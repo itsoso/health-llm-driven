@@ -39,7 +39,9 @@ from app.services.agent_kernel.write_safety import is_explicit_write_cancellatio
 from app.services.write_intent_scope import (
     explicit_whole_record_delete_targets,
     has_explicit_authorizing_update_request,
+    has_explicit_authorizing_write_request,
     has_mixed_write_polarity,
+    split_write_clauses,
 )
 
 
@@ -873,6 +875,13 @@ def _simple_diet_target(
         meal_type = infer_meal_type(raw, local_hour)
     notes_match = DIET_NOTE_SUFFIX_RE.search(foods)
     notes = notes_match.group("notes").strip() if notes_match else None
+    if notes and any(
+        has_explicit_authorizing_write_request(clause)
+        for clause in split_write_clauses(notes)
+    ):
+        # A second write after the first note is a compound request, not note
+        # text for a single meal. Keep all targets out of the single-write lane.
+        return None
     if notes_match:
         foods = foods[:notes_match.start()]
     foods = DIET_ESTIMATE_SAVE_PREFIX_RE.sub("", foods, count=1)

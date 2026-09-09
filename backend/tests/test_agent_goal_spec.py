@@ -691,12 +691,17 @@ def test_simple_diet_goal_accepts_common_text_record_variants(
     }
 
 
-def test_simple_diet_goal_does_not_collapse_multiple_meals():
+@pytest.mark.parametrize("message", (
+    "记录早餐鸡蛋和午餐牛肉面",
+    "记录午餐：白米饭100克。备注：A。记录午餐：鸡蛋1个。备注：B。",
+    "记录午餐：白米饭100克。备注：A。记录午餐：鸡蛋1个。",
+))
+def test_simple_diet_goal_does_not_collapse_multiple_meals(message):
     context = ExecutionContext.for_test(user_id=1, channel="mobile")
     envelope = AgentEnvelope(
         user_id=1,
         channel="mobile",
-        text="记录早餐鸡蛋和午餐牛肉面",
+        text=message,
     )
     intent = build_intent_frame(envelope, context)
 

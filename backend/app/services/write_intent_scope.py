@@ -1740,7 +1740,10 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
 def _is_post_attributed_to_non_current_owner(clause: str) -> bool:
     normalized = clause.strip("，,。.!！；;：: ")
     # Postposed quotation/hypothesis qualifiers revoke apparent imperatives.
-    if re.fullmatch(r"(?:只是|仅是|仅仅是)?(?:举例|示例|例子|假设)", normalized):
+    if re.fullmatch(
+        r"(?:(?:只|仅|仅仅)(?:是|供)?)?(?:举(?:个|一个)?例(?:子)?|示例|例子|假设)",
+        normalized,
+    ):
         return True
     # A synthetic-data label names the kind of record, not another person.
     # Do not accept arbitrary "X 的测试记录": named/third-party owners still
