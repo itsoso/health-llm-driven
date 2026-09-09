@@ -214,6 +214,7 @@
 - `harness_llm_regression_gate.py --include-live-llm` 实际执行 FAIL：离线 invariants 12/12、health-agent-core 50/50、trajectory contract 12/12、goldens 9/9；live orchestrator 0/5，本机模型凭据未配置且 fallback 缺少 AI 同意上下文。不设置精确 SHA 放行变量、不 push 或部署，不把生产旧源码的只读营养探针当成当前提交 live gate。
 - System Map / mobile navigation / 文档漂移和秘密扫描通过。下一步仍为新固定 SHA 独立复审及修复 live 验证环境，之后才能走精确 revision CI、受控发布和候选真机验收。
 - 第二轮独立 G4 对 `0dfb4579f` 判 NO-GO：`仅举例/举个例子` 仍可授权；连续同类两餐会被 notes 吞并。补红测后扩大完整尾句限定形式；备注包含后续明确写入请求时，整个 simple-meal goal 退出，不截短后继续写首餐。重新合并运行 Goal/capability、授权解析、simple-record guard 与真实 PG 持久化测试，3657 项通过（exit 0）；等待该修复的独立复审，不复用前两次失败裁决。
+- 闭环独立复审对固定源码 `2dccbb4f8ae9ec5e897cf0e10f3ee3fe0c388d8b` 的上述两项整改裁定 GO；独立重跑 Goal/utterance 两个完整测试文件 1105 项通过（exit 0），System Map 通过。主流程最终 3657 项退出码 0，秘密扫描与 diff check 通过。该窄范围源码 GO 不代表发布 GO：live LLM gate 退出码 1，当前源码未 push、未部署、未送审；后续须恢复真实模型凭据和合法 AI 同意上下文，再取得精确 revision CI、受控发布及真机 G6 证据。
 
 > 点击调整记录，修改食物的内容。比如把1碗改成两碗，那么在保存的时候要重新计算热量。当前只是修改了内容，但是没有修改和重新计算真实的营养物质和热量，要做这个优化。点击图片，展开午餐图，用手滑一下，图片应该自动消失，而不是再点击那个叉号再消失。要优化这个交互。
 
