@@ -162,6 +162,27 @@ def test_public_offer_requires_exact_protocol_outcome(accepted):
             m.offer_result(broken.encode(), fp)
 
 
+def test_public_offer_survives_ssh_closing_inherited_descriptors(monkeypatch):
+    from types import SimpleNamespace
+    m = load()
+    descriptors = iter([41, 42])
+    monkeypatch.setattr(m.os, "memfd_create", lambda *args: next(descriptors), raising=False)
+    monkeypatch.setattr(m.os, "MFD_ALLOW_SEALING", 2, raising=False)
+    monkeypatch.setattr(m.os, "write", lambda fd, raw: len(raw))
+    monkeypatch.setattr(m.os, "close", lambda _: None)
+    for name in ("F_ADD_SEALS", "F_SEAL_WRITE", "F_SEAL_GROW", "F_SEAL_SHRINK", "F_SEAL_SEAL"):
+        monkeypatch.setattr(m.fcntl, name, 1, raising=False)
+    monkeypatch.setattr(m.fcntl, "fcntl", lambda *args: None)
+    calls = []
+    monkeypatch.setattr(m, "run", lambda argv, **kw: calls.append((argv, kw)) or SimpleNamespace(stdout=b"", stderr=b"synthetic"))
+    monkeypatch.setattr(m, "offer_result", lambda *args: True)
+    assert m.public_offer(public(), b"pinned") is True
+    argv, kwargs = calls[0]
+    assert argv[argv.index("-i") + 1] == f"/proc/{os.getpid()}/fd/41"
+    assert f"UserKnownHostsFile=/proc/{os.getpid()}/fd/42" in argv
+    assert "pass_fds" not in kwargs
+
+
 def test_effective_configuration_only_allows_target_revocation_change():
     m = load()
     before = "port 22\nauthorizedkeyscommand /usr/bin/vendor --uid %U\nrevokedkeys none\n"
@@ -485,13 +506,22 @@ def test_restore_recovers_freeze_before_ssh_policy(tmp_path, monkeypatch):
 
 
 @pytest.mark.skipif(os.environ.get("REVA_TEST_NATIVE_SSH") != "1", reason="isolated root Linux OpenSSH CI gate")
-def test_native_openssh_dynamic_key_pause_restore_and_missing_file(tmp_path):
+def test_native_openssh_dynamic_key_pause_restore_and_missing_file(tmp_path, monkeypatch):
     """Real new TCP offers through static AND dynamic authorization sources."""
     import signal
     import socket
     import subprocess
     import time
     m = load()
+    original_run, diagnostics = m.run, []
+    def capture_test_client(argv, **kwargs):
+        result = original_run(argv, **kwargs)
+        if argv[0] == "/usr/bin/ssh":
+            # This isolated test uses only throwaway public keys, never accounts
+            # or credentials from production. Keep the last bounded client log.
+            diagnostics[:] = [result.stderr.decode(errors="replace")[-12000:]]
+        return result
+    monkeypatch.setattr(m, "run", capture_test_client)
     assert os.geteuid() == 0 and hasattr(os, "memfd_create")
     for name in ("host", "operator", "target"):
         subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(tmp_path / name)], check=True)
@@ -518,9 +548,9 @@ def test_native_openssh_dynamic_key_pause_restore_and_missing_file(tmp_path):
                         return
                     last = observed
                 except (m.PauseError, subprocess.TimeoutExpired) as error:
-                    last = type(error).__name__
+                    last = str(error) if isinstance(error, m.PauseError) else type(error).__name__
                 time.sleep(0.1)
-            pytest.fail(f"new TCP offer outcomes unproven: {last}")
+            pytest.fail(f"new TCP offer outcomes unproven: {last}; isolated client: {diagnostics}")
         offers(True, True)
         m.publish(pub, keys["target"] + b"\n")
         m.publish(drop, f"RevokedKeys {pub}\n".encode())

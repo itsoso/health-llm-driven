@@ -623,3 +623,10 @@
 - 保留工作区内来源独立的 DietShareCard 及其测试改动，不把它们纳入本次恢复工具提交。
 - 独立 G4 对 e3ff4a84a 首轮 NO-GO：其他 key 的未完成恢复审计必须全局阻断；检查子进程至 TERM 有竞态；原生 StrictModes 测试不能把授权文件放 /tmp。两项新增回归先 RED，随后加入全局未恢复审计检查、持久化 pidfd STOP → 内核停态 → 无子进程 → 精确 KILL、失败精确 CONT/后续恢复，以及 /root 私有 CI basetemp。相关回归 70 passed、1 个 Linux 专用 skip；待固定重审。
 - 首轮完整集成未通过：787 passed + 84 subtests 后，专用 PostgreSQL 端口 55493 未监听导致 1 error；已确认是测试实例启动漏传端口，未访问生产库。修正实例启动参数后将从最终固定源码完整重跑，不以部分通过放行。
+- 最终固定 `b4e379409d6b7ae7077a9c6d321685e9427ca4ce` 获累计独立 G4 GO。恢复额外绑定 kernel boot ID、跨启动零 PID 访问，原有 T/t 不认领；argv 竞态仅在恢复路径按其余稳定身份与认证指纹解绑，不放宽终止路径。
+- 精确 b4e 干净源码完整 CI-mode：1098 passed、84 subtests passed、1 个 Linux 原生专用 skip、exit 0、506.55 秒；实际 PostgreSQL 专项已运行，未以 SQLite 替代。日志 `/tmp/xiaoba-key-pause-b4e3-integration.log`。密钥扫描通过；原生 skip 仍须远端必跑闸验证。
+- 同产品源码模拟器核心回归 6/6 PASS、0 failure、127.33 秒、exit 0：登录两次冷启动保持、未发送草稿恢复、启动、隐私/删除入口、附件与导入取消、历史关闭；结果 `/tmp/xiaoba-candidate-676e.uj2Ht1/RestoreReadinessB4e.xcresult`。不使用手机、不重置 fixture，也不声称完整写入或商店同包真机 G6。
+- ASC 新鲜只读确认：TestFlight 最新仍 1.3.3 (267)；正式版本 1.3.3 为准备提交、关联旧 Build 261。未触发“更新审核”，新包构建与正式送审都尚未完成。
+- b4e 已在确认原 main 精确 CI 绿色后推送。CI `34372375422` 的 deployment/rollback 集成通过，但隔离 Linux OpenSSH 实测在初始 allowed-key 基线失败，发布继续 BLOCK，生产暂停/撤权/收尾均未执行。
+- 原因定位：OpenSSH 客户端启动时 closefrom(3)，使 `/proc/self/fd` 指向的继承描述符失效；官方 ssh.c 实现与首个 native 基线失败一致。新增调用契约反例先 RED，改为引用仍在等待的父 operator 的 sealed memfd，不传继承描述符，仍使用固定 host key、无私钥/agent、全量正反探针。CI 测试只保留合成临时公钥的有界客户端诊断，不扩大生产日志。
+- 主干非绿期间已停止外部写入，向用户请求仅推送受审探针修复、完整 CI 全绿后再恢复发布的窄化授权；不把问题提问已送达当作用户已批准。

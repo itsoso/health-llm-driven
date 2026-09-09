@@ -309,14 +309,16 @@ def public_offer(public, known_hosts, *, port=22):
             if os.write(fd, raw) != len(raw):
                 raise PauseError("short public probe input write")
             fcntl.fcntl(fd, fcntl.F_ADD_SEALS, fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL)
+        # ssh deliberately closefrom(3) at startup. Refer to the waiting
+        # operator's sealed descriptors, not the SSH child's descriptor table.
+        public_fd, host_fd = (f"/proc/{os.getpid()}/fd/{fd}" for fd in descriptors)
         result = run(["/usr/bin/ssh", "-vv", "-F", "/dev/null", "-o", "BatchMode=yes",
             "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none", "-o", "CertificateFile=none",
             "-o", "PreferredAuthentications=publickey", "-o", "PasswordAuthentication=no",
             "-o", "StrictHostKeyChecking=yes", "-o", "GlobalKnownHostsFile=/dev/null",
-            "-o", f"UserKnownHostsFile=/proc/self/fd/{descriptors[1]}", "-o", "ControlPath=none",
+            "-o", f"UserKnownHostsFile={host_fd}", "-o", "ControlPath=none",
             "-o", "ClearAllForwardings=yes", "-o", "ConnectTimeout=5", "-o", "ConnectionAttempts=1",
-            "-p", str(port), "-i", f"/proc/self/fd/{descriptors[0]}", "root@127.0.0.1", "true"],
-            accepted=(255,), pass_fds=tuple(descriptors))
+            "-p", str(port), "-i", public_fd, "root@127.0.0.1", "true"], accepted=(255,))
         if result.stdout:
             raise PauseError("unexpected public offer output")
         return offer_result(result.stderr, target)
