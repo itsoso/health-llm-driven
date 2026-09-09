@@ -624,11 +624,11 @@ def main():
             raise ClosureError("explicit exact unknown maintenance acceptance required")
         if args.evidence_sha256 is not None and re.fullmatch(r"[0-9a-f]{64}", args.evidence_sha256) is None:
             raise ClosureError("invalid evidence digest")
+        source, b, server = context(args.sha)
         raw_token = sys.stdin.read(258)
         token = raw_token.removesuffix("\n")
         if len(raw_token) > 257 or re.fullmatch(r"[A-Za-z0-9._:-]{1,256}", token) is None:
             raise ClosureError("original lease token required via protected stdin")
-        source, b, server = context(args.sha)
         lock = b.STATE / "launcher.lock"
         b.secure(lock, private=True)
         fd = os.open(lock, os.O_RDWR | os.O_NOFOLLOW)

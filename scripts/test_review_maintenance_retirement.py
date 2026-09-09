@@ -20,6 +20,33 @@ def load():
     return module
 
 
+@pytest.mark.parametrize("context_passes", [False, True])
+def test_main_validates_context_before_consuming_lease_token(monkeypatch, context_passes):
+    m = load()
+    events = []
+    monkeypatch.setattr(sys, "argv", ["review_maintenance_retirement.py", "--sha", "b" * 40,
+        "--release-sha", "a" * 40, "--operation-id", "c" * 32, "--accept-unknown-review-writes"])
+
+    def context(sha):
+        events.append("context")
+        assert sha == "b" * 40
+        if not context_passes:
+            raise m.ClosureError("canonical or CI gate rejected")
+        return None, None, None
+
+    class ProtectedInput:
+        def read(self, size):
+            events.append("stdin")
+            assert size == 258
+            # Stop at this boundary: no lease, locks or production operations.
+            raise m.ClosureError("protected input sentinel")
+
+    monkeypatch.setattr(m, "context", context)
+    monkeypatch.setattr(sys, "stdin", ProtectedInput())
+    assert m.main() == 1
+    assert events == (["context", "stdin"] if context_passes else ["context"])
+
+
 class Adapter:
     def __init__(self, root):
         self.record = root / "closure"
