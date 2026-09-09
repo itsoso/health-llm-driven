@@ -246,6 +246,8 @@
 - 初轮回归暴露 live tracked hardlink 检查随旧扫描移除而丢失，已补回逐 tracked 文件 metadata 校验，无需遍历媒体。定向集成回归 72/72、57 subtests、exit 0；新增真实子进程隔离/摘要/凭据前阻断等 5/5、exit 0。完整新鲜回归和固定 SHA G4 尚未结束；没有生产维护、部署或正式送审。
 - 第一轮固定 `8c366c405` 独立 G4 NO-GO：大小写数据库键/`POSTGRES_*` 可让实际目标不同于入口校验值，未解析审核邮箱引用可被当成新账号。已补失败复现：严格 dotenv binding 检查、拒绝重复/解析错误/目标引用、字面邮箱校验，并在 seeder/DB 导入前对 canonical `app.config` 的实际目标作完全一致性证明；密码保留字面数据语义。配置/隔离定向 8/8、19 subtests、exit 0，等待新 SHA 复审。
 - 原候选完整同 CI 发布不变量 877/877、57 subtests、exit 0；审核 seeder PostgreSQL 六项通过。额外真实 staging CLI 首次因测试 schema 未注册全部懒加载模型而失败，保留日志；另建完整模型 schema 的独立测试库后，真实 canonical seeder 的 main、read-path 和摘要校验全程通过（exit 0）。该本机证据不等于生产审核恢复成功，也不覆盖后续源码的最终复审。
+- 固定 `ab8c3ea67` 独立 G4 GO，最终本机同 CI 发布不变量 881/881、70 subtests、exit 0；真实 staging seeder PostgreSQL 再次通过。[精确 CI 34322559384](https://github.com/itsoso/health-llm-driven/actions/runs/34322559384) 与[托管 validate 34323646318](https://github.com/itsoso/health-llm-driven/actions/runs/34323646318) success。正常轮换退役旧 4b 发布授权，新七小时身份安装成功；[backend-only 34323872316](https://github.com/itsoso/health-llm-driven/actions/runs/34323872316) 已启动，终态待核验，Expo 长期 token 未变。
+- 新 canonical 源的生产只读预检确认完整源码树 PASS，但依赖检查误把 `opentelemetry/instrumentation/auto_instrumentation` 内部的 `sitecustomize` 源文件/缓存当成顶层启动入口。没有运行审核维护、创建维护意图或修改现场文件。补红测后仅按固定 sys.path 的实际顶层位置识别 customize；嵌套模块仍受所有权/链接/可写性约束，顶层及其缓存仍拒绝。定向 8/8、24 subtests、exit 0；等待该收窄规则固定提交复审，不能用前次 GO 或直接修改服务器绕过。
 
 > 点击调整记录，修改食物的内容。比如把1碗改成两碗，那么在保存的时候要重新计算热量。当前只是修改了内容，但是没有修改和重新计算真实的营养物质和热量，要做这个优化。点击图片，展开午餐图，用手滑一下，图片应该自动消失，而不是再点击那个叉号再消失。要优化这个交互。
 

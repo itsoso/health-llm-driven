@@ -124,8 +124,10 @@ seeder 前，须从 canonical 源运行隔离生产 revision proof，并按 Git 
 不把 live backend 或调用方 cwd 加入导入路径，不修改媒体目录权限。
 operator、lease 内执行和摘要校验均使用固定系统 Python `-I -S -B`，仅在 OS 标准库
 路径后显式加入一个经过 root/non-writable/link 校验的依赖目录；不处理 `.pth`。
-受管 `.pth` 仅作为不执行的文件保留，editable、customize、外部链接及额外 site
-目录仍 BLOCK。生产配置通过元数据校验后按 dotenv 数据读取，不执行 shell；缺失
+受管 `.pth` 仅作为不执行的文件保留，editable、导入根及其缓存中的 customize、
+外部链接及额外 site 目录仍 BLOCK。依赖包内部同名模块不属于顶层启动入口，仍须
+通过完整依赖 metadata 校验，且该包内部目录不得添加到 sys.path。
+生产配置通过元数据校验后按 dotenv 数据读取，不执行 shell；缺失
 PostgreSQL URL 或固定审核凭据必须失败，不退到默认数据库/账号。应用导入前加载
 配置；拒绝 dotenv 解析错误、重复/大小写冲突的键及未解析的目标引用。审核邮箱必须
 为字面有效格式，密码仅按 dotenv 数据解析不做变量展开。只从 canonical backend

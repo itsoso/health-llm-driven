@@ -278,7 +278,8 @@ def _validate_venv(server):
         # .pth remains metadata-checked, but is never processed: the execution
         # entry requires -S and appends only this exact directory, not addsitedir.
         if (path.suffix == ".egg-link" or "__editable__" in path.name
-                or path.name.split(".")[0] in {"sitecustomize", "usercustomize"}
+                or (path.name.split(".")[0] in {"sitecustomize", "usercustomize"}
+                    and path.parent in {site, site / "__pycache__"})
                 or (path.name == "site-packages" and path != site)):
             raise ResetError("unknown Python startup or import hook")
         if path.name == "direct_url.json":

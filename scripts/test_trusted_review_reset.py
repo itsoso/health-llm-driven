@@ -725,6 +725,22 @@ stat() {
         with self.assertRaises(self.reset.ResetError):
             self.invoke()
 
+    def test_nested_dependency_customization_module_is_not_a_startup_hook(self):
+        package = self.site / "dependency/instrumentation"
+        (package / "__pycache__").mkdir(parents=True)
+        put(package / "sitecustomize.py", b"raise RuntimeError('not a startup source')\n", 0o644)
+        put(package / "__pycache__/sitecustomize.cpython-312.pyc", b"root-managed dependency bytecode", 0o644)
+        self.assertIsNone(self.invoke())
+        for path in (self.site / "sitecustomize.py", self.site / "__pycache__/sitecustomize.cpython-312.pyc"):
+            path.parent.mkdir(exist_ok=True)
+            put(path, b"startup source", 0o644)
+            with self.assertRaises(self.reset.ResetError):
+                self.invoke()
+            path.unlink()
+        (package / "sitecustomize.py").chmod(0o666)
+        with self.assertRaises(self.reset.ResetError):
+            self.invoke()
+
     def test_ignored_code_in_canonical_import_tree_is_rejected(self):
         extra = self.source / "backend/ignored/shadow.py"
         extra.parent.mkdir()
