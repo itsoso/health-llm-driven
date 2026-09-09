@@ -224,6 +224,20 @@
 - 按原 CI worker 重跑 balanced-12 的四个分片，724 passed / 1 PostgreSQL-only skip，进程 exit 0；随后在隔离 PostgreSQL 单独运行该并发用例和修正文案用例，2/2 passed、exit 0。中间过宽的 180 项 PostgreSQL 补充批次主动中断（exit 2），不计为全批次通过；其日志保留。外部日志 `/tmp/meal-ci-balanced12-fixed.log`、`/tmp/meal-ci-copy-and-photo-focused-postgres.log`。
 - 主干转红后按 AGENTS §7 暂停外部写入和部署，已向用户请求“允许推送此次 CI 修复、待新 SHA CI 绿后继续部署”的明确确认；未收到确认前仅保留本地修复。生产仍为 `32766656f`，没有授权轮换、重启、业务写入验收或正式送审。只读核验上次两把公钥授权均不存在且发布回执 SUCCEEDED，但旧 loopback 私钥文件仍存在；不复用旧 Dossier 的“私钥已删除”叙述，后续须按受审撤权/轮换流程清理精确旧私钥，长期 Expo Token 不变。
 
+#### 同日受控部署及生产记餐回归 · backend PASS / App Review 仍 BLOCK
+
+- 用户明确授权后续自主判断、推送修复及受控部署。最终候选 `4b2300012e2df7bc67e64452687761491261ffd8` 再次完成真实 live gate：exit 0、78.54 秒，invariants 12/12、core 50/50、orchestrator 5/5（平均质量 0.94）、trajectory/goldens 通过；10 次 TokenPlan 调用成功。隔离归档摘要 `2476858f5a92bc704877ed938bf3881d56b4eff2ea8da33a8248c86c15fc7148` 前后核验一致，无生产服务或业务健康数据改动。
+- 从干净发布副本推送。精确 [CI 34316609333](https://github.com/itsoso/health-llm-driven/actions/runs/34316609333) 整体 success，后端分片、PostgreSQL runtime、质量/发布检查通过；[托管 validate 34317007544](https://github.com/itsoso/health-llm-driven/actions/runs/34317007544) success。独立安全复核对正常授权轮换及精确旧私钥清理 GO；系统 Git 从 canonical GitHub 取得新源码，bootstrap/executor 字节与受审版本一致。
+- 旧 canonical revoke 成功；持有原 launcher/build 锁，完整核验旧成功阶段回执、实际生产 revision、无 lease/活动进程、已撤销身份及私钥公钥匹配后，仅删除旧 loopback 私钥，保留锁、业务数据与全部历史证据。首次 rotate 因公钥尾空格在参数校验阶段拒绝；本地精确复现并只读确认无 retirement intent、无新 workspace/安装、旧 policy 未变后，规范化参数，正常 rotate 成功。没有清除或重置消费记录。
+- [后端发布 34317262332](https://github.com/itsoso/health-llm-driven/actions/runs/34317262332) 首次在只读 readiness 因服务器到 GitHub 低速超时失败，backend job 未启动；普通 loopback 认证通过，发布授权尚未消费。Git 读取恢复且精确主干匹配后，仅重跑该 run 的失败 job；attempt 2 终态 success，服务器精确 `SUCCEEDED` 回执、生产 SHA `4b2300012`、业务 lease 释放，backend/worker/beat active 且 NRestarts=0。
+- 本次备份 dump 23 秒、恢复演练 21 秒、站外归档 332 秒（上传 149 秒、下载哈希校验 172 秒、manifest 校验 3 秒），全部通过；健康度三次 60/60。记录真实分段，不以跳过恢复或完整性校验优化发布时间。
+- 普通 HTTPS 审核账号登录并核对身份，合成 API 验收 5 项通过：A/B 真实写入及独立回查（15.17 秒、7.48 秒）、同 client turn 重放 0.13 秒且同一记录无新增、食物份量修改后重新计算营养且回查一致、仅删除两条本次 API 测试餐食并回查无残留。没有管理员直接插入餐食或伪造回执。
+- Build266 真机仍连接时，先用设置页邮箱的不可逆摘要核对审核身份。最初测试误把“用户名/邮箱两处均显示同一审核邮箱”当成身份异常，在发送前停止，无写入；修正为所有候选标签必须匹配同一审核身份，不接受其他账号。后续两项实际记餐用例通过；服务端独立回查 C/D 各只有一条本人记录、五项营养完整、持久化 verified receipt 与记录 ID 一致，耗时 9651ms / 9838ms，`llm_rounds=0`。测试餐食有唯一合成标记，保留供后续修正验收。
+- 真机组合结果 `PostDeploy4b230-USBMealsVerified.xcresult` 2 passed / 1 failed、exit 65：失败项是额外的只读菜单定位，不是记餐；没有把该组合记为全绿。按实际菜单状态与存在性等待修正测试后，只读账号/页面复核 `PostDeploy4b230-ReadOnlyFinal.xcresult` 2/2 passed、exit 0。后续手机内份量修正用例尚未开始，设备已 unavailable，xcodebuild exit 70；因此不宣称完整真机闭环通过。原失败结果和日志均保留在外部 QA 目录。
+- 受控审核 fixture 维护使用唯一 operation ID `b93b511cbe614d2fa0d4d210a5a09265`，在 mutation 前安全检查失败（exit 1）：无 operation 目录、无 business lease、未启动 seeder。只读拆分定位：应用代码目录本身没有不安全 metadata；维护脚本遍历整个 backend 时在应用账号拥有的 `private_media`（0700）处阻断，venv 检查另拒绝现有 `.pth` 启动 hook。没有改媒体权限、删除缓存/依赖文件或绕过检查重置账号；需要另行受审的受控维护环境治理，不能因此声称默认审核简报已恢复。
+- 本轮不含其他任务的两处 Mobile 分享卡改动，不发 OTA、不重新构建原生包、不提交正式 App Review。后端故障修复和生产记餐验证通过，但审核 fixture 维护、剩余真机修正/复盘/权限路径仍待闭环，整体送审继续 BLOCK。
+- 收尾：确认维护未进入 mutation 且部署已成功终结后，canonical revoke 返回 REVOKED；持有原锁并重复验证生产 revision、完整成功回执、撤权和私钥公钥匹配，仅清理本次 loopback 私钥。GitHub 两项短期 SSH secrets 及本机本次私钥已删除；历史安装/回执、公钥证据、工作树和业务数据保留，长期 Expo Token 的更新时间未变。没有遗留本次可用 SSH 发布身份。
+
 > 点击调整记录，修改食物的内容。比如把1碗改成两碗，那么在保存的时候要重新计算热量。当前只是修改了内容，但是没有修改和重新计算真实的营养物质和热量，要做这个优化。点击图片，展开午餐图，用手滑一下，图片应该自动消失，而不是再点击那个叉号再消失。要优化这个交互。
 
 - 用户：在小巴聊天中查看、修正已记录餐食的 Mobile 用户。
