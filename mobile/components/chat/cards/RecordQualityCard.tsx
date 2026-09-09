@@ -261,13 +261,19 @@ export function RecordQualityCardView(props: RecordQualityViewProps) {
       ) : null}
 
       {metrics.length > 0 ? (
-        <View style={styles.metricRow}>
+        <View testID="record-quality-metrics" style={styles.metricRow}>
           {metrics.map((item) => (
-            <View key={`${item.label}-${item.value}`} style={styles.metricPill}>
+            <View key={`${item.label}-${item.value}`} testID={`record-quality-metric-${item.label}`} style={styles.metricPill}>
               <Text maxFontSizeMultiplier={1.1} style={styles.metricLabel}>
                 {item.label}
               </Text>
-              <Text maxFontSizeMultiplier={1.1} style={styles.metricValue}>
+              <Text
+                maxFontSizeMultiplier={1.1}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+                style={styles.metricValue}
+              >
                 {item.value}
               </Text>
             </View>
@@ -883,12 +889,13 @@ const styles = StyleSheet.create({
   metricRow: {
     marginTop: 10,
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 6,
   },
   metricPill: {
     flex: 1,
-    flexBasis: 0,
-    minWidth: 0,
+    flexBasis: 80,
+    minWidth: 80,
     flexDirection: 'column',
     alignItems: 'center',
     gap: 3,

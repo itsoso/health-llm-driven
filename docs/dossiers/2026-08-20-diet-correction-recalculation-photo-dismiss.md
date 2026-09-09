@@ -4,10 +4,46 @@
 |---|---|
 | slug | `diet-correction-recalculation-photo-dismiss` |
 | 创建日期 | 2026-08-20 |
-| 当前阶段 | 旧生产服务已恢复；原发布 G5 仍 BLOCK，G6 未完成 |
-| 状态 | previous_services_restored_release_blocked |
+| 当前阶段 | 676e76b 后端与 Build 267 已发布；模拟器回归中，审核维护异常保留现场，G6 未完成 |
+| 状态 | build_267_published_review_maintenance_blocked |
 | 负责 | Codex + 用户 |
 | 反馈环 | Backend focused tests + Mobile Jest/TypeScript + production OTA after Gates |
+
+## 2026-09-09 19:00 · Build 267 发布与模拟器回归
+
+- 固定 `676e76b565cb7fabbd5f667b25951c42ca76e4fe`：本机 CI-mode 发布集成
+  969 passed + 70 subtests、exit 0；独立 G4 GO；精确主干 CI `34338163801`
+  及 validate `34338950183` SUCCESS。
+- 旧 f567 事故经 canonical 独立收尾成功，原失败、恢复证明及 lease/stage 私有归档保留；
+  新身份轮换完成，长期 Expo Token 未改动。旧已撤销短期本地 SSH 私钥已移除，未动长期凭据。
+- 发布 run `34340584868` attempt 1 在只读 build-permission 预检失败，无构建/上传消费；
+  同一次 run 仅 rerun failed 后 attempt 2 全部 SUCCESS。后端实际 revision 为 676e76b，
+  API/DB/Redis/Celery 健康、四项服务 active。
+- EAS build `ba2635d1-f414-4096-b7eb-b4d67f878645`：1.3.3 (267)。ASC build
+  `cbdff7d7-f976-4559-8c30-439e5faf16ee` 上传完成，已关联内部测试与 Team (Expo)。
+  没有正式提交 App Review；正式版本原关联旧 Build 261，不能把内部测试上传当作送审。
+- 用户需要使用手机，已停止真机操作。从干净 HEAD 的临时 worktree 构建 Release 模拟器 App，
+  没有包含主工作区其他人的 DietShareCard 改动。模拟器构建号为本地默认 1，来源为同一 SHA；
+  不冒充 TestFlight 267 二进制或同包真机证据。
+- 模拟器六项 XCTest 6/6 PASS、0 failure、exit 0：启动、两次冷启动会话保持、历史关闭、
+  附件/报告导入取消、未发送草稿恢复、隐私及删除入口。结果位于本机
+  `/tmp/xiaoba-candidate-676e.uj2Ht1/SimulatorReadOnly676.xcresult`。
+  另只读设置身份检查通过，并与服务端审核账号配置相符；原始截图/账号数据不提交仓库。
+- 后续饮食记录入口往返、BMI 引用及官方 NHC Safari 链路 2/2 PASS，结果包
+  `SimulatorDietCitation676.xcresult`；这不是完整 fixture 套件或真机 G6。
+  BMI 测试仅在已核对的审核账号发送一条正常查询，没有删除账号或触碰个人健康记录。
+- 同源组件专项 4 suites / 216 tests PASS。首次 Jest 默认 crawl 扫描生成的原生依赖过慢，
+  已中止该无结果进程，按相同四个测试文件、components roots 重跑，25.862 秒通过；不减少断言。
+- 审核 fixture 恢复操作 `718d34a9c2e541e8a1e8ca4660a37211` 失败并保留 STARTED /
+  NEEDS_OPERATOR 与原业务 lease，未重试、未换 ID、未清锁或改回执。只读复现确认固定
+  `/var/lock` → `/run/lock` symlink 及 1777 sticky 父目录被通用 secure_path 拒绝。
+  线上仍健康；审核维护与下一次发布收尾保持 BLOCK，不能宣称 fixture 已重置或 G6 通过。
+- 本地补丁为固定 lease/token 增加窄化元数据证明，拒绝其他 alias、非 root、非 sticky、
+  可写祖先和 token 链接。Linux 布局正例先红，专用与既有维护测试在 backend venv 63 项通过。
+  最初用缺 dotenv/pydantic-settings 的根 venv 跑全套失败，未作为通过证据。
+- 模拟器发现 RecordQualityCard 热量 `200kcal` 拆行；新增失败断言后改为营养格按可用宽度
+  换行、每个数值单行且限制缩放。上述两处补丁仍需独立复审、完整 Gate 与原维护失败的
+  合规处置，尚未发布，不包含在已上传的 267 中。
 
 ## 2026-09-09 · 仅后端事故收尾的锁前提纠偏
 

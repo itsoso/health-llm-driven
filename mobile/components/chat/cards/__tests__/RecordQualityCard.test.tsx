@@ -1,4 +1,5 @@
 import React from 'react';
+import { StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import { RecordQualityCardView } from '../RecordQualityCard';
@@ -71,6 +72,26 @@ describe('RecordQualityCard inline diet adjuster', () => {
     } else {
       delete (globalThis as { crypto?: unknown }).crypto;
     }
+  });
+
+  it('keeps each nutrition reading intact and lets crowded metric tiles wrap', () => {
+    const { getByText, getByTestId } = render(<RecordQualityCardView {...(baseAdjustCard({
+      expanded_sections: [],
+      metrics: [
+        { label: '热量', value: '200kcal' },
+        { label: '蛋白', value: '9g' },
+        { label: '碳水', value: '29g' },
+        { label: '脂肪', value: '5g' },
+        { label: '纤维', value: '0g' },
+      ],
+    }) as any)} />);
+    const reading = getByText('200kcal');
+    expect(reading.props.numberOfLines).toBe(1);
+    expect(reading.props.adjustsFontSizeToFit).toBe(true);
+    expect(reading.props.minimumFontScale).toBeGreaterThanOrEqual(0.85);
+    const tile = getByTestId('record-quality-metric-热量');
+    expect(StyleSheet.flatten(tile.props.style).minWidth).toBeGreaterThanOrEqual(80);
+    expect(StyleSheet.flatten(getByTestId('record-quality-metrics').props.style).flexWrap).toBe('wrap');
   });
 
   it('renders a screenshot-ready diet share strip when progress data is available', () => {

@@ -35,6 +35,94 @@ def put(path, data, mode=0o600):
     path.chmod(mode)
 
 
+class FixedLeasePathTests(unittest.TestCase):
+    """Use the real Linux path layout, not a private temporary parent."""
+
+    def setUp(self):
+        self.reset = load("trusted_review_reset")
+        self.server = load("trusted_release_server")
+        self.lease = Path("/var/lock/health-app-release")
+        self.modes = {
+            Path("/"): stat.S_IFDIR | 0o755,
+            Path("/var"): stat.S_IFDIR | 0o755,
+            Path("/var/lock"): stat.S_IFLNK | 0o777,
+            Path("/run"): stat.S_IFDIR | 0o755,
+            Path("/run/lock"): stat.S_IFDIR | 0o1777,
+            self.lease: stat.S_IFDIR | 0o700,
+            self.lease / "token": stat.S_IFREG | 0o600,
+        }
+        self.uid, self.gid, self.links = {}, {}, {}
+        self.alias = "/run/lock"
+        self.errors = (self.reset.ResetError, self.server.LaunchError)
+
+    def check(self, path=None, *, identity=False):
+        path = path or self.lease / "token"
+        def metadata(item):
+            return os.stat_result((self.modes[item], 101, 1,
+                self.links.get(item, 1), self.uid.get(item, 0), self.gid.get(item, 0),
+                10, 0, 0, 0))
+        with patch.object(Path, "lstat", metadata), patch.object(Path, "stat", metadata), patch.object(
+            Path, "read_bytes", lambda _: b"offline-token\n"
+        ), patch.object(
+            self.reset.os, "readlink", lambda _: self.alias
+        ):
+            if identity:
+                return self.reset._lease_identity(str(self.lease), "offline-token",
+                    SimpleNamespace(BUSINESS_LEASE=self.lease), self.server)
+            self.reset._secure_lease_path(self.server, path,
+                directory=path == self.lease, private=path != self.lease)
+
+    def test_fixed_linux_alias_and_sticky_parent_accept_private_lease_and_token(self):
+        self.check(self.lease)
+        self.check()
+
+    def test_actual_maintenance_identity_path_accepts_linux_lease_layout(self):
+        self.assertEqual(self.check(identity=True), ((1, 101), (1, 101)))
+
+    def test_alias_cannot_target_another_directory_or_be_replaced(self):
+        for target in ("/tmp", "../run/lock", "/run/lock/"):
+            self.alias = target
+            with self.subTest(target=target), self.assertRaises(self.errors):
+                self.check()
+        self.alias = "/run/lock"
+        self.modes[Path("/var/lock")] = stat.S_IFDIR | 0o755
+        with self.assertRaises(self.errors):
+            self.check()
+
+    def test_shared_parent_requires_root_owned_exact_sticky_directory(self):
+        parent = Path("/run/lock")
+        for mode in (stat.S_IFDIR | 0o777, stat.S_IFDIR | 0o775, stat.S_IFLNK | 0o777):
+            self.modes[parent] = mode
+            with self.subTest(mode=mode), self.assertRaises(self.errors):
+                self.check()
+
+    def test_owner_group_and_alias_link_count_are_checked(self):
+        for path in (Path("/var/lock"), Path("/run/lock")):
+            for values in (self.uid, self.gid):
+                values[path] = 1000
+                with self.subTest(path=path, values=values), self.assertRaises(self.errors):
+                    self.check()
+                values.clear()
+        self.links[Path("/var/lock")] = 2
+        with self.assertRaises(self.errors):
+            self.check()
+
+    def test_token_links_and_writable_ancestors_remain_forbidden(self):
+        token = self.lease / "token"
+        for path, mode in ((token, stat.S_IFLNK | 0o777),
+                           (token, stat.S_IFREG | 0o644),
+                           (self.lease, stat.S_IFDIR | 0o777),
+                           (Path("/run"), stat.S_IFDIR | 0o777)):
+            original = self.modes[path]
+            self.modes[path] = mode
+            with self.subTest(path=path, mode=mode), self.assertRaises(self.errors):
+                self.check()
+            self.modes[path] = original
+        self.links[token] = 2
+        with self.assertRaises(self.errors):
+            self.check()
+
+
 class ReviewResetTests(unittest.TestCase):
     def test_reset_requires_time_for_completion_and_recovery(self):
         self.policy["expires_at"] = 100 + self.server.DEPLOY_TIMEOUT_SECONDS

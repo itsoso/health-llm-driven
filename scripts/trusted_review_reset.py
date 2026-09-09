@@ -297,14 +297,42 @@ def _validate_production(sha, source, bootstrap, server):
     _validate_venv(server)
 
 
+def _secure_lease_path(server, path, *, private=False, directory=False):
+    # Ubuntu's fixed /var/lock alias crosses the root-owned sticky /run/lock.
+    # This exception is ONLY for the fixed private lease and its token, never
+    # canonical code, credentials, arbitrary links or other shared directories.
+    lease = Path("/var/lock/health-app-release")
+    if path not in (lease, lease / "token"):
+        server.secure_path(path, private=private, directory=directory)
+        return
+    for parent in (Path("/"), Path("/var"), Path("/run")):
+        server.validate_metadata(parent.lstat(), directory=True)
+    alias = Path("/var/lock")
+    info = alias.lstat()
+    if (not stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or info.st_gid != 0
+            or info.st_nlink != 1 or os.readlink(alias) != "/run/lock"):
+        raise ResetError("fixed lease alias differs")
+    shared = Path("/run/lock").lstat()
+    if (not stat.S_ISDIR(shared.st_mode) or shared.st_uid != 0 or shared.st_gid != 0
+            or stat.S_IMODE(shared.st_mode) != 0o1777):
+        raise ResetError("fixed lease shared parent differs")
+    info = lease.lstat()
+    server.validate_metadata(info, directory=True)
+    if info.st_gid != 0 or stat.S_IMODE(info.st_mode) != 0o700:
+        raise ResetError("private root-owned lease required")
+    server.validate_metadata(path.lstat(), private=private, directory=directory)
+
+
 def _lease_identity(lease_dir, lease_token, bootstrap, server):
     path = Path(lease_dir)
     if (path != bootstrap.BUSINESS_LEASE or not isinstance(lease_token, str)
             or re.fullmatch(r"[A-Za-z0-9._:-]{1,256}", lease_token) is None):
         raise ResetError("fixed business lease required")
-    _private_directory(server, path)
+    _secure_lease_path(server, path, directory=True)
+    if stat.S_IMODE(path.lstat().st_mode) != 0o700:
+        raise ResetError("private operation directory required")
     token = path / "token"
-    server.secure_path(token, private=True)
+    _secure_lease_path(server, token, private=True)
     if token.stat().st_size > 257 or token.read_bytes() not in (
             lease_token.encode(), (lease_token + "\n").encode()):
         raise ResetError("business lease identity differs")
