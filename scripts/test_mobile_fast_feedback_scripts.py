@@ -36,18 +36,36 @@ def test_mobile_dependency_overrides_preserve_brace_expansion_major_compatibilit
     assert overrides["brace-expansion@<2.0.0"] == "1.1.18"
     assert overrides["brace-expansion@>=2.0.0 <3.0.0"] == "2.1.4"
     assert overrides["brace-expansion@>=5.0.0"] == "5.0.9"
-    assert overrides["js-yaml@>=3.0.0 <4.0.0"] == "3.15.1"
-    assert overrides["js-yaml@>=4.0.0 <5.0.0"] == "4.3.1"
+    assert overrides["js-yaml@>=3.0.0 <4.0.0"] == "3.15.2"
+    assert overrides["js-yaml@>=4.0.0 <5.0.0"] == "4.3.2"
+    assert overrides["@xmldom/xmldom"] == "0.8.15"
+    assert overrides["xmldom"] == "npm:@xmldom/xmldom@0.8.15"
+    assert overrides["decode-uri-component"] == "0.5.0"
+    assert overrides["joi"] == "17.13.6"
     assert overrides["nanoid"] == "3.3.18"
     assert overrides["postcss"] == "8.5.26"
+    assert overrides["qs"] == "6.16.0"
 
 
 def test_frontend_dependency_overrides_close_nanoid_and_postcss_advisories() -> None:
     package_json = json.loads((ROOT / "frontend" / "package.json").read_text())
 
+    assert package_json["dependencies"]["next"] == "16.3.4"
+    assert package_json["devDependencies"]["eslint-config-next"] == "16.3.4"
     assert package_json["devDependencies"]["postcss"] == "8.5.26"
     assert package_json["overrides"]["postcss"] == "8.5.26"
+    assert package_json["overrides"]["postcss-selector-parser"] == "6.1.3"
     assert package_json["overrides"]["nanoid"] == "3.3.18"
+    assert package_json["overrides"]["sharp"] == "0.35.4"
+
+
+def test_release_tool_dependency_overrides_close_known_advisories() -> None:
+    package_json = json.loads((ROOT / "scripts" / "release-tools" / "package.json").read_text())
+
+    assert package_json["overrides"]["diff"] == "8.0.3"
+    assert package_json["overrides"]["joi@17"] == "17.13.6"
+    assert package_json["overrides"]["ts-deepmerge"] == "8.0.0"
+    assert package_json["overrides"]["uuid"] == "11.1.1"
 
 
 def test_committed_npm_lockfiles_only_use_the_public_registry() -> None:

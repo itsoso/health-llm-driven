@@ -74,7 +74,8 @@ from app.api._client_caps import parse_client_caps as _parse_client_caps  # noqa
 def _orch_cache_key(user_id: int, query: str, specialists: list | None, caps: list[str]) -> str:
     # caps 进 key: genui-v1 客户端与旧端对同一 query 得到不同响应 (block vs 现状), 不能串味。
     payload = f"{user_id}:{query}:{sorted(specialists or [])}:{sorted(caps)}"
-    return f"orch:v1:{hashlib.sha1(payload.encode()).hexdigest()[:16]}"
+    digest = hashlib.sha1(payload.encode(), usedforsecurity=False).hexdigest()[:16]
+    return f"orch:v1:{digest}"
 
 
 def _get_orch_cache(key: str):

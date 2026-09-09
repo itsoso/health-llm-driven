@@ -346,7 +346,9 @@ def _cache_key(user_id: int, rule_id: str, data_citation: Optional[Dict[str, Any
         sort_keys=True,
         default=str,
     )
-    return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:20]
+    return hashlib.sha1(
+        payload.encode("utf-8"), usedforsecurity=False
+    ).hexdigest()[:20]
 
 
 @router.post("/explain", response_model=ExplainResponse)

@@ -162,7 +162,8 @@ def build_index(force: bool = False) -> Dict[str, int]:
 
         for chunk in chunks:
             chunk_id = hashlib.sha1(
-                f"{rel_path}:{chunk['title']}:{chunk['text'][:100]}".encode()
+                f"{rel_path}:{chunk['title']}:{chunk['text'][:100]}".encode(),
+                usedforsecurity=False,
             ).hexdigest()[:16]
 
             if chunk_id in existing_ids and not force:

@@ -107,7 +107,10 @@
     "js-yaml@>=4.0.0 <5.0.0": "4.3.2",
     "body-parser": "2.3.0",
     "browserslist": "4.28.8",
-    "markdown-it": "npm:@rexovolt/markdown-it@14.2.1"
+    "decode-uri-component": "0.5.0",
+    "joi": "17.13.6",
+    "markdown-it": "npm:@rexovolt/markdown-it@14.2.1",
+    "qs": "6.16.0"
   },
   "private": true
 }
