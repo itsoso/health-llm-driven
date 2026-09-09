@@ -1168,7 +1168,7 @@ CLINICIAN_FALLBACK_NONWRITE_MESSAGES = (
         *CLINICIAN_FALLBACK_NONWRITE_MESSAGES,
     ),
 )
-async def test_clinician_turns_never_select_fast_record_or_needs_detail_reply(
+async def test_clinician_turns_preserve_routing_and_require_explicit_write_receipts(
     db,
     auth_user_and_headers,
     monkeypatch,
@@ -1194,10 +1194,23 @@ async def test_clinician_turns_never_select_fast_record_or_needs_detail_reply(
     )
 
     assert executor._prefer_fast_record_model is False
-    assert done["record_intent_no_tool"] is False
     from app.services.clinician_provenance_guard import classify_clinician_turn
 
     decision = classify_clinician_turn(message)
+    if decision.kind == "explicit_doctor_feedback_write":
+        # Clinical provenance does not exempt an explicit write from the receipt
+        # contract: this fake provider returns OK without executing any tool.
+        assert done["record_intent_no_tool"] is True
+        assert done["tools_used"] == []
+        assert done["write_receipts"] == []
+        assert done["turn_outcome"]["category"] != "success"
+        assert "还没记下来" in emitted_text
+        assert "这轮没有完成记录动作" in emitted_text
+        assert "已记录" not in emitted_text
+        assert "OK" not in emitted_text
+        return
+
+    assert done["record_intent_no_tool"] is False
     if decision.kind == "ambiguous_clinician_action":
         assert emitted_text == (
             "这一轮没有执行任何操作，也没有保存。"
