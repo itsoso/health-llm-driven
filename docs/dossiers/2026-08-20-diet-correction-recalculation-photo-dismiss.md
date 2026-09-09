@@ -4,8 +4,8 @@
 |---|---|
 | slug | `diet-correction-recalculation-photo-dismiss` |
 | 创建日期 | 2026-08-20 |
-| 当前阶段 | G5 已通过；G6 真机用户路径待确认 |
-| 状态 | deployed_device_smoke_pending |
+| 当前阶段 | 本轮 G5 BLOCK：部署去激活失败，生产服务隔离；G6 未完成 |
+| 状态 | production_contained_recovery_required |
 | 负责 | Codex + 用户 |
 | 反馈环 | Backend focused tests + Mobile Jest/TypeScript + production OTA after Gates |
 
@@ -248,6 +248,25 @@
 - 原候选完整同 CI 发布不变量 877/877、57 subtests、exit 0；审核 seeder PostgreSQL 六项通过。额外真实 staging CLI 首次因测试 schema 未注册全部懒加载模型而失败，保留日志；另建完整模型 schema 的独立测试库后，真实 canonical seeder 的 main、read-path 和摘要校验全程通过（exit 0）。该本机证据不等于生产审核恢复成功，也不覆盖后续源码的最终复审。
 - 固定 `ab8c3ea67` 独立 G4 GO，最终本机同 CI 发布不变量 881/881、70 subtests、exit 0；真实 staging seeder PostgreSQL 再次通过。[精确 CI 34322559384](https://github.com/itsoso/health-llm-driven/actions/runs/34322559384) 与[托管 validate 34323646318](https://github.com/itsoso/health-llm-driven/actions/runs/34323646318) success。正常轮换退役旧 4b 发布授权，新七小时身份安装成功；[backend-only 34323872316](https://github.com/itsoso/health-llm-driven/actions/runs/34323872316) 已启动，终态待核验，Expo 长期 token 未变。
 - 新 canonical 源的生产只读预检确认完整源码树 PASS，但依赖检查误把 `opentelemetry/instrumentation/auto_instrumentation` 内部的 `sitecustomize` 源文件/缓存当成顶层启动入口。没有运行审核维护、创建维护意图或修改现场文件。补红测后仅按固定 sys.path 的实际顶层位置识别 customize；嵌套模块仍受所有权/链接/可写性约束，顶层及其缓存仍拒绝。定向 8/8、24 subtests、exit 0；等待该收窄规则固定提交复审，不能用前次 GO 或直接修改服务器绕过。
+- 上述 ab8c 后端发布最终 SUCCESS，生产精确 SHA 与三个 active/running 服务、零重启独立复证；随后撤权并精确删除本轮服务器/本机私钥及两项 GitHub SSH secrets。长期 Expo token 未变，历史证据保留。
+- 固定 `f567200ec` 独立 G4 GO；完整同 CI 发布不变量 882 passed、70 subtests、410.99 秒、exit 0。[精确 CI 34325000685](https://github.com/itsoso/health-llm-driven/actions/runs/34325000685) 与[托管 validate 34325876017](https://github.com/itsoso/health-llm-driven/actions/runs/34325876017) SUCCESS。正常拉取的 canonical staging 完整导入树、受管依赖与实际配置目标只读检查均 PASS（固定系统 Python 3.12，不导入数据库、不写数据）。通用 Python 路径预检及带注释公钥参数分别在 mutation 前被拒绝；检查原始证据后修正调用参数，正常轮换成功。
+
+#### 2026-09-09 16:01 CST · 生产隔离事故，停止后续发布与送审
+
+- [backend-only 34326264236](https://github.com/itsoso/health-llm-driven/actions/runs/34326264236) FAILED；`f567200ec` 工作区持久回执为 `NEEDS_OPERATOR`，原业务 lease 与 sealed stage 保留。禁止重复 dispatch、改 SHA 绕过消费、撤权/轮换、删锁或直接强启服务。
+- 备份闸完整通过：导出 11 秒、恢复演练 19 秒、站外归档 306 秒（上传 122 秒、远端哈希 172 秒），总计 337 秒。失败在 `health-evidence` 去激活事务，退出码 1；保护逻辑已停止 backend/socket/Celery worker/beat，公网 health 独立探针 HTTP 502。当前生产不可用，不能将旧 G5 PASS 作为当前服务健康证明。
+- 只读核对生产代码仍是 `ab8c3ea67ab413dbe349916490b9f060642c1bb6`，live env 同时与 sealed candidate/rollback 完全一致，未输出配置值。systemd 事件显示三个服务启动后约 0.4 秒即进入保护停服；这支持启动稳定性检查竞争的排查方向，但尚未证明具体失败条件。
+- 新事务尚未 prepare，仅保留上一轮 `COMMITTED` terminal marker；新 preflight 为 `current`。现有 `rollback_release.sh` 的 restore 要求 prepared journal，不能直接套用。`docs/governance/deploy.md` §8.4.9 要求独立评审、测试并落库的恢复流程，禁止现场 rebind runner 或以手工步骤替代。
+- 审核 fixture 未重置，未创建本轮审核维护意图；没有新 iOS 包、OTA 或正式 App Review。手机仍 unavailable。优先任务转为恢复生产服务；本轮发布与送审保持 BLOCK。
+- 当前 f567 的专用发布身份、私钥及 SSH secrets 保留用于事故调查，不在未知现场清理；长期 Expo token 保持原值。独立复审预算只剩 200，不能继续派生评审绕过预算或把未评审恢复方案当作可执行方案。
+
+#### 用户确认后的独立生产恢复阶段（未执行恢复）
+
+- 用户在明确获知 HTTP 502、服务隔离与恢复流程缺口后回复“继续”，确认先恢复生产。前一发布 run 保持 BLOCK；primary controller 为本次独立 incident 的 Health Harness，沿用同一 Dossier，新 ledger `docs/_generated/harness-runs/ed85ecf6e9fd.jsonl`，不重用旧发布 GO。
+- 只读复证代码仍 ab8c、四个 unit inactive、health 502。独立设计审查对“checkout 前、配置未变、只启动旧服务”的窄恢复入口有条件 GO；现有 clone recovery/runtime rollback 不适用，禁止补造历史 journal。
+- 恢复入口先写失败测试，覆盖证据漂移、intent 写入失败、部分启动、稳定性/HTTP/应用检查及 completion 失败；实现后首批 11 项通过。原始锁/lease/stage 与 failed release 保留，成功只声明旧服务恢复，不声明新部署成功。
+- 另一路先红后绿修正去激活启动检查：有界轮询真实 service/cgroup flag 就绪，显式传播 Bash 条件调用失败；deactivation 32 项与新增启动专项 6 项通过。这覆盖启动竞争行为，但不把该假设冒充已唯一确认的生产根因。
+- 当前仍在实现和固定 SHA 安全复核前，未强启服务、未清理锁、未执行审核数据恢复。
 
 > 点击调整记录，修改食物的内容。比如把1碗改成两碗，那么在保存的时候要重新计算热量。当前只是修改了内容，但是没有修改和重新计算真实的营养物质和热量，要做这个优化。点击图片，展开午餐图，用手滑一下，图片应该自动消失，而不是再点击那个叉号再消失。要优化这个交互。
 

@@ -2180,7 +2180,7 @@ verify_services_inactive() {
     for unit in "${all_units[@]}"; do
         test "$(
             systemctl show "$unit" --property=ActiveState --value 2>/dev/null
-        )" = "inactive"
+        )" = "inactive" || return 1
     done
 }
 
@@ -2286,20 +2286,20 @@ verify_process_environment_false() {
     for unit in "${process_units[@]}"; do
         main_pid="$(
             systemctl show "$unit" --property=MainPID --value 2>/dev/null
-        )"
-        [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] && [ "$main_pid" -gt 1 ]
+        )" || return 1
+        [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] && [ "$main_pid" -gt 1 ] || return 1
         control_group="$(
             systemctl show "$unit" --property=ControlGroup --value \
                 2>/dev/null
-        )"
-        [[ "$control_group" =~ ^/[A-Za-z0-9_.@:/\\-]+$ ]]
-        [[ "$control_group" != *"/../"* ]]
+        )" || return 1
+        [[ "$control_group" =~ ^/[A-Za-z0-9_.@:/\\-]+$ ]] || return 1
+        [[ "$control_group" != *"/../"* ]] || return 1
         procs_file="${cgroup_root}${control_group}/cgroup.procs"
-        test -r "$procs_file"
+        test -r "$procs_file" || return 1
         process_count=0
         main_pid_seen=0
         while IFS= read -r pid; do
-            [[ "$pid" =~ ^[1-9][0-9]*$ ]] && [ "$pid" -gt 1 ]
+            [[ "$pid" =~ ^[1-9][0-9]*$ ]] && [ "$pid" -gt 1 ] || return 1
             process_count=$((process_count + 1))
             if [ "$pid" = "$main_pid" ]; then
                 main_pid_seen=1
@@ -2317,10 +2317,61 @@ verify_process_environment_false() {
                             exit 1
                         }
                     }
-                '
+                ' || return 1
         done <"$procs_file"
-        [ "$process_count" -gt 0 ] && [ "$main_pid_seen" -eq 1 ]
+        [ "$process_count" -gt 0 ] && [ "$main_pid_seen" -eq 1 ] || return 1
     done
+}
+
+startup_service_snapshot() {
+    local unit active sub result pid restarts entered group
+    for unit in "${all_units[@]}"; do
+        active="$(systemctl show "$unit" --property=ActiveState --value)" || return 1
+        sub="$(systemctl show "$unit" --property=SubState --value)" || return 1
+        result="$(systemctl show "$unit" --property=Result --value)" || return 1
+        [ "$active" = active ] && [ "$result" = success ] || return 1
+        if [ "$unit" = health-backend.socket ]; then
+            case "$sub" in listening|running) ;; *) return 1 ;; esac
+            printf '%s:%s\n' "$unit" "$sub"
+            continue
+        fi
+        [ "$sub" = running ] || return 1
+        pid="$(systemctl show "$unit" --property=MainPID --value)" || return 1
+        restarts="$(systemctl show "$unit" --property=NRestarts --value)" || return 1
+        entered="$(systemctl show "$unit" --property=ActiveEnterTimestampMonotonic --value)" || return 1
+        group="$(systemctl show "$unit" --property=ControlGroup --value)" || return 1
+        [[ "$pid" =~ ^[1-9][0-9]*$ ]] && [ "$pid" -gt 1 ] || return 1
+        [[ "$restarts" =~ ^[0-9]+$ ]] || return 1
+        [[ "$entered" =~ ^[1-9][0-9]*$ ]] || return 1
+        printf '%s:%s:%s:%s:%s\n' "$unit" "$pid" "$restarts" "$entered" "$group"
+    done
+}
+
+await_false_startup() {
+    local attempt before after previous=""
+    # Type=simple becoming active is not proof that exec/EnvironmentFile
+    # handoff has completed. Require two unchanged, fully verified snapshots
+    # across a polling interval; the outer proof still checks its 7s window.
+    # Every predicate returns explicitly: errexit is disabled inside `if`.
+    for ((attempt=0; attempt<30; attempt++)); do
+        assert_release_lease || return 1
+        verify_flag_file_false "$target_env" || return 1
+        verify_runtime_authorization_absent || return 1
+        if before="$(startup_service_snapshot)" &&
+            verify_process_environment_false &&
+            after="$(startup_service_snapshot)" && [ "$before" = "$after" ]; then
+            assert_release_lease || return 1
+            if [ -n "$previous" ] && [ "$previous" = "$after" ]; then
+                return 0
+            fi
+            previous="$after"
+        else
+            previous=""
+        fi
+        if [ "$attempt" -lt 29 ]; then sleep 1 || return 1; fi
+    done
+    echo "DEACTIVATION_STARTUP_NOT_READY services=unverified" >&2
+    return 1
 }
 
 install_candidate_env() {
@@ -2463,12 +2514,7 @@ for unit in "${all_units[@]}"; do
     assert_release_lease
     systemctl start "$unit"
 done
-for unit in "${all_units[@]}"; do
-    test "$(
-        systemctl show "$unit" --property=ActiveState --value 2>/dev/null
-    )" = "active"
-done
-verify_process_environment_false
+await_false_startup
 assert_release_lease
 verify_flag_file_false "$target_env"
 test ! -e "$durable_enabled"

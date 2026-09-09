@@ -103,6 +103,28 @@ EAS 调用响应丢失时按 source SHA 查询已有构建，记录其 build/sub
 
 该入口不替代下面的备份、恢复、迁移、运行态、健康和回滚规则，也不提交正式 App Review。
 
+#### checkout 前停服事故的旧服务恢复
+
+`scripts/recover_contained_services.py` 是独立的 operator 恢复入口，不是部署、
+回滚或再授权。仅在用户明确授权事故恢复后，从新受审且精确 CI 绿色的 canonical
+staging，以固定 `/usr/bin/python3.12 -I -S -B` 执行。必须显式提供恢复代码 SHA、
+失败 SHA、旧生产 SHA，原 business lease token 通过受保护 stdin 提供，禁止输出。
+首次不传 `--evidence-sha256` 只读取证；独立核验后传入相同摘要才允许恢复。
+
+准入限于 checkout 前 containment：原发布有完整准备与 NEEDS_OPERATOR 证据，
+生产代码仍为旧 SHA，live env 同时逐字节等于原 sealed rollback/candidate 且
+flag 唯一 false；原 stage/token/锁 inode、旧 runtime terminal、有效 unit、依赖
+和所有权全部验证，无新 prepared/arming/reap、无运行中发布后代或激活授权。
+入口持有原 launcher/build flock；不修改原 lease、stage pointer 或任何原始回执。
+
+独立恢复目录先持久化 intent，再复证并验证旧 schema/KB serving contract，之后
+只启动固定的 socket/backend/worker/beat。要求有界就绪、跨 RestartSec 的稳定
+PID/restart/timestamp/socket 状态、全部 cgroup 进程 flag=false，以及 health/auth、
+schema/KB 与原静态证据再验证。成功仅记 `RESTORED_PREVIOUS_SERVICES`，不得把
+原发布改为 SUCCEEDED。任何启动或后验失败均停服并验证隔离，保留 intent 和现场；
+恢复目录已存在时禁止重跑，也不得换操作 ID。成功仍保留原 lease/keys，后续退休
+授权须另行评审，不能据恢复成功重跑原部署、上传或审核维护。
+
 #### 审核账号维护入口
 
 只有用户明确授权的审核 fixture 恢复，才可由管理员从同样的受审 canonical staging

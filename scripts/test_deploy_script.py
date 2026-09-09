@@ -2447,7 +2447,9 @@ def test_backend_revokes_durable_runtime_before_checkout_or_kb_mutation():
     bootstrap_branch = execution[branch_start:branch_else]
     standard_branch = execution[branch_else:branch_end]
     start = execution.index('systemctl start "$unit"')
-    process_false = execution.index("verify_process_environment_false")
+    process_false = execution.index("await_false_startup")
+    readiness = deactivation[deactivation.index("await_false_startup() {"):]
+    assert "verify_process_environment_false &&" in readiness
     assert stop < branch_start < branch_end < start < process_false
     assert bootstrap_branch.index(
         "install_candidate_env"
@@ -4187,6 +4189,7 @@ def _run_deactivation_transaction_fixture(
     dirty_process_flag: str = "true",
     dirty_process_child_unit: str | None = None,
     drop_lease_after_candidate_sync: bool = False,
+    startup_mode: str = "ready",
 ) -> tuple[subprocess.CompletedProcess[str], dict[str, Path]]:
     repo = tmp_path / "release"
     backend = repo / "backend"
@@ -4360,8 +4363,37 @@ case "$1" in
     ;;
   show)
     unit="$2"
+    tick="$(cat "$FAKE_STATE_DIR/tick" 2>/dev/null || printf 0)"
+    if [ "$unit" = "health-backend.service" ] &&
+       [ "$FAKE_STARTUP_MODE" = "delayed" ] && [ "$tick" -lt 2 ] &&
+       [ "$(cat "$(state_file "$unit")")" = active ]; then
+      case "$*" in
+        *--property=ActiveState*) printf 'activating\n'; exit 0 ;;
+      esac
+    fi
+    if [ "$unit" = "health-backend.service" ] &&
+       [ "$FAKE_STARTUP_MODE" = "poison" ]; then
+      printf 'HEALTH_EVIDENCE_RUNTIME_ENABLED=true\\0' > "$FAKE_PROC_ROOT/3101/environ"
+    fi
+    if [ "$unit" = "health-backend.service" ] &&
+       [ "$FAKE_STARTUP_MODE" = "delayed-env" ]; then
+      if [ "$tick" -lt 2 ]; then
+        printf 'PATH=/usr/bin\\0' > "$FAKE_PROC_ROOT/3101/environ"
+      else
+        printf 'HEALTH_EVIDENCE_RUNTIME_ENABLED=false\\0' > "$FAKE_PROC_ROOT/3101/environ"
+      fi
+    fi
+    if [ "$unit" = "health-backend.service" ] &&
+       [ "$FAKE_STARTUP_MODE" = "missing-env" ]; then
+      printf 'PATH=/usr/bin\\0' > "$FAKE_PROC_ROOT/3101/environ"
+    fi
     case "$*" in
       *--property=ActiveState*) cat "$(state_file "$unit")" ;;
+      *--property=SubState*) printf 'running\n' ;;
+      *--property=Result*) printf 'success\n' ;;
+      *--property=NRestarts*)
+        if [ "$FAKE_STARTUP_MODE" = "restart" ]; then printf '%s\n' "$tick"; else printf '0\n'; fi ;;
+      *--property=ActiveEnterTimestampMonotonic*) printf '12345\n' ;;
       *--property=MainPID*) pid_for "$unit"; printf '\n' ;;
       *--property=ControlGroup*)
         printf '/system.slice/%s.service\n' "$(normalize "$unit")"
@@ -4376,6 +4408,15 @@ case "$1" in
   daemon-reload) exit 0 ;;
   *) exit 92 ;;
 esac
+""",
+    )
+    _write_executable(
+        bin_dir / "sleep",
+        """#!/bin/bash
+set -euo pipefail
+tick="$(cat "$FAKE_STATE_DIR/tick" 2>/dev/null || printf 0)"
+printf '%s\n' "$((tick + 1))" > "$FAKE_STATE_DIR/tick"
+if [ "$FAKE_STARTUP_MODE" = "lease-loss" ]; then rm -f "$FAKE_RELEASE_TOKEN_FILE"; fi
 """,
     )
     _write_executable(
@@ -4468,6 +4509,7 @@ run_health_evidence_deactivation_transaction
                 "1" if drop_lease_after_candidate_sync else "0"
             ),
             "FAKE_RELEASE_TOKEN_FILE": str(release_lock / "token"),
+            "FAKE_STARTUP_MODE": startup_mode,
         },
     )
     return result, {
@@ -4506,6 +4548,26 @@ def test_deactivation_transaction_atomically_installs_then_proves_false(
         assert b"HEALTH_EVIDENCE_RUNTIME_ENABLED=false\0" in (
             paths["proc_root"] / str(pid) / "environ"
         ).read_bytes()
+
+
+@pytest.mark.parametrize("startup_mode", ["delayed", "delayed-env"])
+def test_deactivation_waits_for_startup_readiness(tmp_path: Path, startup_mode: str):
+    result, paths = _run_deactivation_transaction_fixture(
+        tmp_path, fail_candidate_sync=False, startup_mode=startup_mode,
+    )
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert int((paths["service_state"] / "tick").read_text()) >= 3
+
+
+@pytest.mark.parametrize("startup_mode", ["poison", "missing-env", "restart", "lease-loss"])
+def test_deactivation_unready_startup_is_contained(tmp_path: Path, startup_mode: str):
+    result, paths = _run_deactivation_transaction_fixture(
+        tmp_path, fail_candidate_sync=False, startup_mode=startup_mode,
+    )
+    assert result.returncode != 0
+    assert "HEALTH_EVIDENCE_DEACTIVATED flag=false" not in result.stdout
+    for state in paths["service_state"].glob("*.state"):
+        assert state.read_text().strip() == "inactive"
 
 
 def test_deactivation_sync_failure_keeps_old_env_and_contains_services(
