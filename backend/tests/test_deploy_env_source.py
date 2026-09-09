@@ -125,8 +125,13 @@ def test_env_only_deactivation_refreshes_and_proves_all_backend_processes_false(
         mutation.index("stop_and_prove_services_inactive")
         < mutation.index("remove_runtime_authorization")
         < mutation.index('systemctl start "$unit"')
-        < mutation.index("verify_process_environment_false")
+        < mutation.index("await_false_startup")
     )
+    readiness_start = transaction.index("await_false_startup() {")
+    readiness_end = transaction.index("install_candidate_env() {", readiness_start)
+    readiness = transaction[readiness_start:readiness_end]
+    assert "verify_process_environment_false &&" in readiness
+    assert '[ "$previous" = "$after" ]' in readiness
 
 
 def test_secret_management_docs_cover_remote_env_backup_and_long_term_plan():
