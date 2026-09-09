@@ -228,6 +228,27 @@ Python `-I -S -B` 执行，显式传入旧发布 SHA、操作 ID、`--accept-unk
 历史证明不依赖未来服务 PID、当前生产版本或易失 `/run` 归档。只有已完成退休证明中明确
 绑定的那个 UNKNOWN 操作可视为行政已处置。新部署、发包及最终审核仍分别通过全部既有闸。
 
+#### 行政收尾期间临时暂停一个已授权管理密钥
+
+`scripts/admin_key_pause.py` 仅用于用户明确授权的单个管理密钥临时暂停与恢复；不是
+部署入口，也不能解除原 closure 的 SSH/proc 闸。只从新受审、精确 CI 绿色的 canonical
+staging 以系统 Python `-I -S -B` 执行。首次 `pause` 默认只读取证；匹配摘要后才执行。
+目标必须是唯一的普通 ed25519 静态管理公钥，禁止选择当前操作者或任一历史发布身份。
+
+不修改 authorized_keys 或动态授权命令。完整 fsync 的单 key 公钥文件先就绪，再以
+no-clobber 原子方式发布固定 RevokedKeys drop-in；绑定实际 sshd PID、启动参数、二进制、
+版本、完整支持的 Include 库存和有效配置，除该单项外不允许任何配置变化。仅 reload，
+绝不 restart。新 TCP、固定 host key、无私钥/agent 的公钥 offer 要证明目标由允许变为
+拒绝、操作者仍允许；超时、关闭或协议错误为 UNKNOWN，不作为拒绝证据，也不宣称登录成功。
+随后仅对重新确认指纹、进程身份及无子进程的目标连接通过 pidfd 发送一次 TERM。
+
+暂停前持久化独立 root-only intent；失败保留 RESTORE_PENDING 语义。restore 只能撤销
+本次精确 drop-in，重新核验磁盘配置、reload 与新 TCP 正反基线；磁盘文件消失不等于
+已恢复。原单 key 公钥文件保留，避免仍持有旧配置的 preauth 进程因文件缺失拒绝所有 key。
+恢复使用原审计中的 host key，不依赖后续发布配置目录；不恢复 authorized_keys 备份、
+不复活已撤销发布身份、不重跑维护、不补发回执。先完成原 closure，再恢复管理 key，
+最后进行新的发布身份轮换。当前 Linux 实测闸在隔离 sshd 上覆盖静态与动态授权来源。
+
 **配置文件: `.env`**
 
 - 位置: 项目根目录

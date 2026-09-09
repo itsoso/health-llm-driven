@@ -1,0 +1,408 @@
+"""Temporary single-key denial must never weaken other SSH authorization."""
+import base64
+import importlib.util
+import json
+import os
+from pathlib import Path
+
+import pytest
+
+
+def load():
+    spec = importlib.util.spec_from_file_location("admin_pause_test", Path(__file__).with_name("admin_key_pause.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def public(seed=1):
+    raw = b"\0\0\0\x0bssh-ed25519\0\0\0\x20" + bytes([seed]) * 32
+    return b"ssh-ed25519 " + base64.b64encode(raw)
+
+
+class Adapter:
+    def __init__(self, root):
+        self.record = root / "record"
+        self.events = []
+        self.evidence = {"sha": "a" * 40, "key_digest": "b" * 64, "approved": "single-key"}
+
+    def inspect(self):
+        self.events.append("inspect")
+        return self.evidence.copy()
+
+    def install(self, evidence):
+        assert (self.record / "intent.json").exists()
+        self.events.append("install")
+
+    def verify_paused(self, evidence):
+        self.events.append("verify_paused")
+
+    def terminate(self, evidence):
+        assert self.events[-1] == "verify_paused"
+        self.events.append("terminate")
+
+    def restore(self, evidence):
+        self.events.append("restore")
+
+
+def test_pause_requires_specific_consent_and_defaults_to_read_only(tmp_path):
+    m, a = load(), Adapter(tmp_path)
+    with pytest.raises(m.PauseError):
+        m.pause(a)
+    assert a.events == []
+    result = m.pause(a, consent=True)
+    assert result["state"] == "INSPECTED"
+    assert a.events == ["inspect"] and not a.record.exists()
+
+
+def test_pause_uses_durable_intent_and_denies_before_termination(tmp_path):
+    m, a = load(), Adapter(tmp_path)
+    fingerprint = m.pause(a, consent=True)["evidence_sha256"]
+    result = m.pause(a, consent=True, evidence_sha256=fingerprint)
+    assert result["state"] == "PAUSED_RESTORE_REQUIRED"
+    assert a.events[-5:] == ["inspect", "inspect", "install", "verify_paused", "terminate"]
+    assert json.loads((a.record / "intent.json").read_text())["consent"] == "TEMPORARY_SINGLE_KEY_DENIAL"
+    with pytest.raises(m.PauseError):
+        m.pause(a, consent=True, evidence_sha256=fingerprint)
+
+
+@pytest.mark.parametrize("point", ["install", "verify_paused", "terminate"])
+def test_partial_pause_keeps_auditable_restore_pending(tmp_path, monkeypatch, point):
+    m, a = load(), Adapter(tmp_path)
+    fingerprint = m.pause(a, consent=True)["evidence_sha256"]
+    def fail(*args):
+        raise OSError("injected")
+    monkeypatch.setattr(a, point, fail)
+    with pytest.raises(OSError):
+        m.pause(a, consent=True, evidence_sha256=fingerprint)
+    assert (a.record / "intent.json").exists()
+    assert not (a.record / "paused.json").exists()
+    assert not (a.record / "restored.json").exists()
+
+
+def test_restore_works_for_partial_pause_without_replaying_it(tmp_path, monkeypatch):
+    m, a = load(), Adapter(tmp_path)
+    fingerprint = m.pause(a, consent=True)["evidence_sha256"]
+    monkeypatch.setattr(a, "install", lambda *_: (_ for _ in ()).throw(OSError("injected")))
+    with pytest.raises(OSError):
+        m.pause(a, consent=True, evidence_sha256=fingerprint)
+    assert m.restore(a, consent=True)["state"] == "RESTORED"
+    assert a.events[-1] == "restore"
+    assert (a.record / "restored.json").exists()
+
+
+def test_restore_failure_never_claims_restored(tmp_path, monkeypatch):
+    m, a = load(), Adapter(tmp_path)
+    fingerprint = m.pause(a, consent=True)["evidence_sha256"]
+    m.pause(a, consent=True, evidence_sha256=fingerprint)
+    monkeypatch.setattr(a, "restore", lambda *_: (_ for _ in ()).throw(OSError("injected")))
+    with pytest.raises(OSError):
+        m.restore(a, consent=True)
+    assert (a.record / "restore-intent.json").exists()
+    assert not (a.record / "restored.json").exists()
+
+
+def test_public_key_selection_never_accepts_duplicate_or_options():
+    m = load()
+    key = public()
+    target = m.key_digest(key)
+    assert m.select_key(key + b" comment\n" + public(2) + b"\n", target) == key
+    for raw in (key + b"\n" + key + b"\n", b'command="false" ' + key + b"\n", public(2) + b"\n"):
+        with pytest.raises(m.PauseError):
+            m.select_key(raw, target)
+
+
+@pytest.mark.parametrize("wire", [b"bad", b"ssh-rsa AAAA", b"ssh-ed25519 AAAA", public() + b" extra", public() + b"\n"])
+def test_invalid_public_wire_is_rejected(wire):
+    m = load()
+    with pytest.raises(m.PauseError):
+        m.key_digest(wire)
+
+
+def test_publication_is_atomic_and_does_not_clobber(tmp_path, monkeypatch):
+    m = load()
+    path = tmp_path / "pause.conf"
+    real_link = m.os.link
+    calls = []
+    def link(source, dest, **kwargs):
+        assert not path.exists()
+        assert source.read_bytes() == b"complete\n"
+        calls.append("published")
+        return real_link(source, dest, **kwargs)
+    monkeypatch.setattr(m.os, "link", link)
+    m.publish(path, b"complete\n")
+    assert path.read_bytes() == b"complete\n" and calls == ["published"]
+    monkeypatch.setattr(m.os, "link", real_link)
+    with pytest.raises(FileExistsError):
+        m.publish(path, b"replacement")
+    assert path.read_bytes() == b"complete\n"
+
+
+@pytest.mark.parametrize("point", ["fsync", "link"])
+def test_failed_publication_never_exposes_partial_config(tmp_path, monkeypatch, point):
+    m = load()
+    path = tmp_path / "pause.conf"
+    def fail(*args, **kwargs):
+        raise OSError("injected")
+    monkeypatch.setattr(m.os, point, fail)
+    with pytest.raises(OSError):
+        m.publish(path, b"complete\n")
+    assert not path.exists()
+
+
+@pytest.mark.parametrize("accepted", [True, False])
+def test_public_offer_requires_exact_protocol_outcome(accepted):
+    m = load()
+    fp = m.fingerprint(m.key_digest(public()))
+    outcome = f"debug1: Server accepts key: /public ED25519 {fp} explicit" if accepted else "debug1: Authentications that can continue: publickey"
+    log = f"debug1: Offering public key: /public ED25519 {fp} explicit\n{outcome}\ndebug1: No more authentication methods to try.\nroot@127.0.0.1: Permission denied (publickey).\n"
+    assert m.offer_result(log.encode(), fp) is accepted
+    for broken in (log.replace(fp, "SHA256:other"), log.replace(outcome, "Connection closed"), log.replace("Permission denied (", "Connection reset (")):
+        with pytest.raises(m.PauseError):
+            m.offer_result(broken.encode(), fp)
+
+
+def test_effective_configuration_only_allows_target_revocation_change():
+    m = load()
+    before = "port 22\nauthorizedkeyscommand /usr/bin/vendor --uid %U\nrevokedkeys none\n"
+    after = before.replace("revokedkeys none", "revokedkeys /etc/ssh/target.pub")
+    m.assert_effective_change(before, after, "/etc/ssh/target.pub")
+    for changed in (after.replace("port 22", "port 23"), after.replace("/usr/bin/vendor", "none"), after + "revokedkeys none\n"):
+        with pytest.raises(m.PauseError):
+            m.assert_effective_change(before, changed, "/etc/ssh/target.pub")
+
+
+def test_restore_must_not_rewrite_authorized_keys():
+    m = load()
+    import inspect
+    body = inspect.getsource(m.Operator.restore)
+    assert "_replace_authorized" not in body
+    assert "self.conf.unlink" in body
+    assert "self.pub.unlink" not in body
+
+
+def operator(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    m = load()
+    config = tmp_path / "sshd_config"
+    config.write_text(f"Include {tmp_path}/*.conf\n")
+    # Isolate filesystem/sshd adapters; exercise real transition methods.
+    b = SimpleNamespace(secure=lambda *args, **kwargs: None, AUTHORIZED=tmp_path / "authorized_keys")
+    b.AUTHORIZED.write_bytes(public() + b"\n" + public(2) + b"\n")
+    a = m.Operator(b, "a" * 40, m.key_digest(public()))
+    a.record = tmp_path / "record"
+    a.record.mkdir()
+    a.pub, a.conf = tmp_path / "target.pub", tmp_path / "pause.conf"
+    monkeypatch.setattr(a, "configuration", lambda: {"fixed": "config"})
+    monkeypatch.setattr(a, "daemon", lambda: {"pid": 1})
+    before = "port 22\nrevokedkeys none\n"
+    monkeypatch.setattr(a, "effective", lambda: before.replace("none", str(a.pub)) if a.conf.exists() else before)
+    calls = []
+    monkeypatch.setattr(m, "run", lambda args, **kwargs: calls.append(args))
+    def offer(key):
+        calls.append(["offer", key])
+        return not (a.conf.exists() and key == public())
+    monkeypatch.setattr(a, "offer", offer)
+    e = {"sha": a.sha, "key_digest": a.target, "public": public().decode(), "operator": public(2).decode(),
+         "configuration": a.configuration(), "daemon": a.daemon(), "effective": before, "sessions": [],
+         "authorized": a.file(b.AUTHORIZED), "known_hosts": "pinned"}
+    return m, a, e, calls
+
+
+def test_operator_real_install_and_restore_preserves_authorization_drift(tmp_path, monkeypatch):
+    m, a, e, calls = operator(tmp_path, monkeypatch)
+    a.install(e)
+    a.verify_paused(e)
+    # Closure removes managed keys; restoring the admin must never undo that.
+    a.b.AUTHORIZED.write_bytes(public(2) + b"\n")
+    a.restore(e)
+    assert a.pub.exists() and not a.conf.exists()
+    assert a.b.AUTHORIZED.read_bytes() == public(2) + b"\n"
+    assert calls.count(["/usr/bin/systemctl", "reload", "ssh.service"]) == 2
+
+
+@pytest.mark.parametrize("point", ["pub", "conf", "marker", "reload", "probe"])
+def test_operator_partial_install_can_restore_without_replaying_pause(tmp_path, monkeypatch, point):
+    m, a, e, calls = operator(tmp_path, monkeypatch)
+    real_publish, real_write, real_run, real_offer = m.publish, m.write_json, m.run, a.offer
+    def fail(*args, **kwargs):
+        raise OSError("injected")
+    def publish(path, *args):
+        if path == (a.pub if point == "pub" else a.conf):
+            fail()
+        return real_publish(path, *args)
+    if point in {"pub", "conf"}:
+        monkeypatch.setattr(m, "publish", publish)
+    elif point == "marker":
+        monkeypatch.setattr(m, "write_json", fail)
+    elif point == "reload":
+        monkeypatch.setattr(m, "run", fail)
+    elif point == "probe":
+        monkeypatch.setattr(a, "offer", fail)
+    with pytest.raises(OSError):
+        a.install(e)
+        a.verify_paused(e)
+    monkeypatch.setattr(m, "publish", real_publish)
+    monkeypatch.setattr(m, "write_json", real_write)
+    monkeypatch.setattr(m, "run", real_run)
+    monkeypatch.setattr(a, "offer", real_offer)
+    a.restore(e)
+    assert not a.conf.exists()
+
+
+@pytest.mark.parametrize("point", ["configuration", "daemon", "public", "operator", "key_digest", "extra"])
+def test_bound_evidence_rejects_mixed_identity_and_drift(tmp_path, monkeypatch, point):
+    m, a, e, _ = operator(tmp_path, monkeypatch)
+    e[point] = public().decode() if point == "operator" else "drift"
+    with pytest.raises((m.PauseError, ValueError)):
+        a.bound(e)
+
+
+@pytest.mark.parametrize("point", ["missing_pub", "unreadable_pub", "changed_conf", "replaced_conf"])
+def test_paused_policy_drift_blocks(tmp_path, monkeypatch, point):
+    m, a, e, _ = operator(tmp_path, monkeypatch)
+    a.install(e)
+    if point == "missing_pub":
+        a.pub.unlink()
+    elif point == "unreadable_pub":
+        a.pub.chmod(0o600)
+    elif point == "changed_conf":
+        a.conf.write_text("RevokedKeys none\n")
+    elif point == "replaced_conf":
+        raw = a.conf.read_bytes()
+        replacement = tmp_path / "replacement"
+        replacement.write_bytes(raw)
+        replacement.replace(a.conf)
+    with pytest.raises((m.PauseError, OSError)):
+        a.verify_paused(e)
+
+
+def test_restore_reload_unknown_remains_retryable_without_false_completion(tmp_path, monkeypatch):
+    m, a, e, calls = operator(tmp_path, monkeypatch)
+    m.write_json(a.record / "intent.json", {"consent": "TEMPORARY_SINGLE_KEY_DENIAL", "evidence": e})
+    a.install(e)
+    original = m.run
+    monkeypatch.setattr(m, "run", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("unknown reload")))
+    with pytest.raises(OSError):
+        m.restore(a, consent=True)
+    assert not a.conf.exists() and not (a.record / "restored.json").exists()
+    monkeypatch.setattr(m, "run", original)
+    assert m.restore(a, consent=True)["state"] == "RESTORED"
+
+
+@pytest.mark.parametrize("protected", ["operator", "managed"])
+def test_inspection_rejects_operator_and_managed_key(tmp_path, monkeypatch, protected):
+    m, a, e, _ = operator(tmp_path, monkeypatch)
+    proc = tmp_path / "proc" / "123"
+    proc.mkdir(parents=True)
+    (proc / "comm").write_text("sshd\n")
+    actual_path = Path
+    monkeypatch.setattr(m, "Path", lambda path: tmp_path / "proc" if path == "/proc" else actual_path(path))
+    monkeypatch.setattr(m, "ancestry", lambda: [123])
+    monkeypatch.setattr(m, "session", lambda pid: {"pid": pid})
+    monkeypatch.setattr(m, "authenticated_key", lambda _: m.fingerprint(m.key_digest(public(1 if protected == "operator" else 2))))
+    a.b.CONFIG = tmp_path / "managed"
+    a.b.CONFIG.mkdir()
+    (a.b.CONFIG / "cloud.pub").write_bytes(public())
+    a.b._retired_history = lambda: {}
+    with pytest.raises(m.PauseError, match="cannot pause"):
+        a.inspect()
+
+
+@pytest.mark.parametrize("failure", ["pid_changed", "auth_changed", "children", "timeout", "reconnected", "pidfd"])
+def test_terminate_preserves_exact_identity_and_unknown_blocks(tmp_path, monkeypatch, failure):
+    from types import SimpleNamespace
+    m, a, e, _ = operator(tmp_path, monkeypatch)
+    identity = {"pid": 123, "start": 456}
+    monkeypatch.setattr(a, "verify_paused", lambda _: None)
+    iterations = iter([[identity], [identity] if failure == "reconnected" else []])
+    monkeypatch.setattr(a, "target_sessions", lambda: next(iterations))
+    monkeypatch.setattr(m, "session", lambda _: {} if failure == "pid_changed" else identity)
+    monkeypatch.setattr(m, "authenticated_key", lambda _: "wrong" if failure == "auth_changed" else m.fingerprint(a.target))
+    def children(_):
+        if failure == "children":
+            raise m.PauseError("children")
+    monkeypatch.setattr(a, "no_children", children)
+    def open_pid(_):
+        if failure == "pidfd":
+            raise OSError("pidfd failed")
+        return 42
+    monkeypatch.setattr(m.os, "pidfd_open", open_pid, raising=False)
+    monkeypatch.setattr(m.os, "close", lambda _: None)
+    signals = []
+    monkeypatch.setattr(m.signal, "pidfd_send_signal", lambda fd, sig: signals.append((fd, sig)), raising=False)
+    monkeypatch.setattr(m.select, "poll", lambda: SimpleNamespace(register=lambda *args: None, poll=lambda _: [] if failure == "timeout" else [(42, 1)]))
+    with pytest.raises((m.PauseError, OSError)):
+        a.terminate(e)
+    assert len(signals) == (1 if failure in {"timeout", "reconnected"} else 0)
+
+
+def test_restore_unlink_failure_retains_restriction_and_pending_audit(tmp_path, monkeypatch):
+    m, a, e, _ = operator(tmp_path, monkeypatch)
+    m.write_json(a.record / "intent.json", {"consent": "TEMPORARY_SINGLE_KEY_DENIAL", "evidence": e})
+    a.install(e)
+    original = Path.unlink
+    def unlink(path, *args, **kwargs):
+        if path == a.conf:
+            raise OSError("injected unlink failure")
+        return original(path, *args, **kwargs)
+    monkeypatch.setattr(Path, "unlink", unlink)
+    with pytest.raises(OSError):
+        m.restore(a, consent=True)
+    assert a.conf.exists() and (a.record / "restore-intent.json").exists()
+    assert not (a.record / "restored.json").exists()
+
+
+@pytest.mark.skipif(os.environ.get("REVA_TEST_NATIVE_SSH") != "1", reason="isolated root Linux OpenSSH CI gate")
+def test_native_openssh_dynamic_key_pause_restore_and_missing_file(tmp_path):
+    """Real new TCP offers through static AND dynamic authorization sources."""
+    import signal
+    import socket
+    import subprocess
+    import time
+    m = load()
+    assert os.geteuid() == 0 and hasattr(os, "memfd_create")
+    for name in ("host", "operator", "target"):
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(tmp_path / name)], check=True)
+    keys = {name: b" ".join((tmp_path / (name + ".pub")).read_bytes().split()[:2]) for name in ("host", "operator", "target")}
+    with socket.socket() as reserved:
+        reserved.bind(("127.0.0.1", 0))
+        port = reserved.getsockname()[1]
+    known = f"[127.0.0.1]:{port} ".encode() + keys["host"] + b"\n"
+    conf, drop, pub = tmp_path / "sshd_config", tmp_path / "pause.conf", tmp_path / "revoked.pub"
+    conf.write_text(f"Port {port}\nListenAddress 127.0.0.1\nHostKey {tmp_path / 'host'}\nPidFile {tmp_path / 'pid'}\n"
+        f"Include {tmp_path}/*.conf\nAuthorizedKeysFile {tmp_path / 'operator.pub'}\n"
+        f"AuthorizedKeysCommand /usr/bin/echo {keys['target'].decode()}\nAuthorizedKeysCommandUser root\n"
+        "PermitRootLogin yes\nAllowUsers root\nUsePAM yes\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nStrictModes yes\nLogLevel ERROR\n")
+    daemon = subprocess.Popen(["/usr/sbin/sshd", "-D", "-e", "-f", str(conf)], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    try:
+        def offers(expected_target, expected_operator):
+            deadline = time.monotonic() + 10
+            last = None
+            while time.monotonic() < deadline:
+                assert daemon.poll() is None, "isolated sshd exited"
+                try:
+                    observed = tuple(m.public_offer(keys[name], known, port=port) for name in ("target", "operator"))
+                    if observed == (expected_target, expected_operator):
+                        return
+                    last = observed
+                except (m.PauseError, subprocess.TimeoutExpired) as error:
+                    last = type(error).__name__
+                time.sleep(0.1)
+            pytest.fail(f"new TCP offer outcomes unproven: {last}")
+        offers(True, True)
+        m.publish(pub, keys["target"] + b"\n")
+        m.publish(drop, f"RevokedKeys {pub}\n".encode())
+        daemon.send_signal(signal.SIGHUP)
+        offers(False, True)
+        pub.rename(tmp_path / "retained.pub")
+        offers(False, False)  # Missing file is fail-closed for ALL public keys.
+        (tmp_path / "retained.pub").rename(pub)
+        offers(False, True)
+        drop.unlink()
+        daemon.send_signal(signal.SIGHUP)
+        offers(True, True)
+        assert pub.exists()
+    finally:
+        daemon.terminate()
+        daemon.communicate(timeout=10)

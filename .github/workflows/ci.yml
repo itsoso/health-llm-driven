@@ -326,6 +326,7 @@ jobs:
           scripts/test_bootstrap_trusted_release.py
           scripts/test_trusted_review_reset.py
           scripts/test_review_maintenance_retirement.py
+          scripts/test_admin_key_pause.py
           scripts/test_recover_contained_services.py
           scripts/test_contained_recovery_proof.py
           scripts/test_contained_release_retirement.py
@@ -334,6 +335,14 @@ jobs:
           scripts/test_trusted_eas_build.py
           scripts/test_release_acceptance.py
           scripts/test_ci_timing_refresh.py
+
+      - name: Verify isolated OpenSSH single-key pause and restore
+        env:
+          REVA_TEST_NATIVE_SSH: "1"
+        run: |
+          test -x /usr/sbin/sshd || (sudo apt-get update -qq && sudo apt-get install -y openssh-server)
+          sudo mkdir -p /run/sshd
+          sudo --preserve-env=REVA_TEST_NATIVE_SSH "$(command -v python)" -m pytest --noconftest --no-cov -q scripts/test_admin_key_pause.py -k native_openssh
 
   agent-runtime-postgres:
     name: agent-runtime-postgres

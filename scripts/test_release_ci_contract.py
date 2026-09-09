@@ -23,6 +23,7 @@ RELEASE_TESTS = (
     "scripts/test_verify_locked_requirements.py",
     "scripts/test_trusted_review_reset.py",
     "scripts/test_review_maintenance_retirement.py",
+    "scripts/test_admin_key_pause.py",
     "scripts/test_legacy_release_recovery.py",
 )
 

@@ -13,6 +13,42 @@
 
 ### 后续明确风险授权：专用行政收尾实现中
 
+- 用户随后明确授权仅断开已定位的空闲管理员 SSH 连接。重新核验固定 PID/starttime、
+  root/sshd 身份、无子进程及同一认证证据后，通过 pidfd 发送一次 SIGTERM，确认该进程
+  已终止，避免 PID 复用误伤。没有停止应用服务、修改密钥或触碰其他连接。
+- 但客户端随后以同一认证密钥建立了新的空闲连接，专用只读取证仍在 SSH 会话闸被拒绝。
+  无凭据诊断再次确认 context/全进程证明 PASS、收尾目录不存在；未执行收尾写入。
+  新连接并非本机 SSH 客户端，认证密钥也不同于当前维护连接。没有擅自扩大为持续杀进程
+  或修改该管理员密钥；需要客户端停止自动重连，或用户另行授权临时暂停这一把密钥。
+
+- 2026-09-09 22:34 续行：服务器 GitHub HTTPS 恢复；canonical staging 已从 origin 获取并
+  干净检出同一 `06b9615e47f8d6d289d012f9bb93fec883da0a0b`，系统隔离 Python 精确 CI
+  闸再次 PASS（run `34361227318` attempt 1）。没有上传本机源码或改用镜像。
+- 专用 operator 的默认只读取证 exit 1。后续无凭据只读诊断确认 context 与全进程证明
+  PASS，失败在其他已认证 SSH 会话检查；收尾目录仍不存在，没有 intent、撤权或 DB 核对。
+  该连接已存在数小时且没有子进程，认证日志证明不属于原 cloud/loopback 发布身份，本机
+  也没有对应 SSH 客户端。未擅自终止这个来源未归属的管理员连接；需连接自行结束或用户
+  针对该连接授权断开后再继续。原生产四项服务均 active，未操作手机、未发新包或送审。
+
+- 2026-09-09 22:24：专用收尾实现固定为 `06b9615e47f8d6d289d012f9bb93fec883da0a0b`，
+  已推送 main。独立 G4 首轮指出凭据读取早于 canonical/CI 闸；真实 `main()` 顺序用例先
+  2 RED，修正后专项 61 PASS（含隔离 PostgreSQL），独立复审 GO。
+- 同一最终 revision 的干净源码 CI-mode 完整发布集成：1036 passed、84 subtests passed、
+  exit 0、387.47 秒；秘密扫描、System Map、Dossier 一致性通过。精确主干 CI
+  `34361227318` SUCCESS，trusted validate `34362683211` SUCCESS。
+- 线上仍未收尾：canonical 新 staging 的 GitHub HTTPS fetch 三次下载尝试分别遇到 TLS
+  中断、低速超时与 90 秒超时；最后确认 Git/下载进程均结束，保留部分 staging。服务器
+  GitHub API 可达，但 `github.com` 连接超时；没有上传本机脚本或替换来源来绕过校验。
+- 原生产仍为 `676e76b565cb7fabbd5f667b25951c42ca76e4fe`，四个运行 unit 均 active；
+  原后端 SUCCEEDED、审核维护 NEEDS_OPERATOR、原 lease 和旧 loopback 私钥保持不变，
+  `review-maintenance-closures/<old-sha>` 尚不存在。未读取原 lease token、未撤权、未运行
+  DB 核对、未旋转身份、未发新包或送审。下一步须网络恢复后完成 canonical 来源校验，
+  再执行只读取证及已授权的专用收尾；不得重跑原审核维护。
+- 最终验证日志：本机 `/tmp/xiaoba-review-closure-06b-integration.log`、
+  `/tmp/xiaoba-review-closure-entry-red.log`、`/tmp/xiaoba-review-closure-entry-green.log`。
+  独立 PostgreSQL 测试实例已停止，数据/日志保留；未操作手机。此次主要等待为全量 CI
+  尾部分片及服务器 GitHub 下载网络，不能把跳过 Gate 当作发布提速。
+
 - `ee5c4a9a804f87ad8f301ed0d41fd4f914bbfb7d` 的精确 CI `34345029938` 已 SUCCESS。
 - 追加只读检查确认旧固定 alias/源码 metadata 早于事故、SHA256 匹配；但独立复核指出这些
   不能绑定原进程的历史命名空间/挂载视图。既有系统日志没有维护阶段记录，不据此伪证无写入。
@@ -576,3 +612,12 @@
 
 - 经用户授权，本轮饮食修正入口、分享编辑体验与关联回归已随本地提交 `b9063c441` 固定。
 - 2026-09-05 独立 G4 与真实 TokenPlan live gate 已通过；push、目标 SHA CI、OTA 与精确商店候选仍按各自 Gate 独立执行。
+
+## 2026-09-09 · 发布恢复：精确管理密钥临时暂停
+
+- 用户重新授权恢复并发布新包；沿用既有明确的 UNKNOWN 审核维护处置和单管理密钥暂停/恢复授权，不使用物理手机。
+- 新鲜只读检查：生产 API、数据库、Redis、Celery 健康，四个服务 active；原维护 lease 保留。主干 `06b9615e47f8d6d289d012f9bb93fec883da0a0b` 与 origin 一致，精确 CI `34361227318` SUCCESS。
+- 单次 TERM 后目标空闲 SSH 自动重连；静态删行无法覆盖云平台 AuthorizedKeysCommand，未执行静态授权修改。新增 `admin_key_pause.py`：仅对批准的单 key 使用临时 RevokedKeys，原子发布、新 TCP 无签名 offer 正反验证、精确 pidfd TERM、独立恢复审计；不修改 authorized_keys、不停止业务、不重跑原 reset。
+- RED/GREEN：缺少原子发布的回归先出现 3 failed / 17 passed；实现后相关本地测试 58 passed，Linux 原生 OpenSSH 测试在本机明确 skipped，已接入 CI 独立 sshd 闸，不将 mock 测试冒充 Linux 实测。
+- System Map、导航图、文档漂移检查通过。此条为实现中断点，尚未执行生产暂停/恢复/新包构建，独立 G4、完整集成、精确新 SHA CI 和 Linux 原生闸仍待验证。
+- 保留工作区内来源独立的 DietShareCard 及其测试改动，不把它们纳入本次恢复工具提交。
