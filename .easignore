@@ -107,9 +107,9 @@ artifacts/
 /apps/mac
 /apps/rokid-pushup-glasses
 
-# Continuous Native Generation recreates these directories in EAS. Local
-# patches and the server-hosted Rokid APK are not inputs to the iOS build.
+# Continuous Native Generation recreates these directories in EAS. Exclude only
+# the Mac login-shell workaround; security/compatibility patches must ship.
 /mobile/ios
 /mobile/android
-/mobile/patches
+/mobile/patches/expo-modules-autolinking+55.0.24.patch
 /mobile/assets/rokid

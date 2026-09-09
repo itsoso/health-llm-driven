@@ -2,9 +2,47 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { createRequire } = require('node:module');
 const path = require('node:path');
+const fsPromises = require('node:fs/promises');
+const os = require('node:os');
 
 const easRoot = path.dirname(require.resolve('eas-cli/package.json'));
 const easRequire = createRequire(path.join(easRoot, 'package.json'));
+
+test('real EAS archive copy includes security patches and excludes local/private artifacts', async () => {
+  const repoRoot = path.resolve(__dirname, '../..');
+  const { makeShallowCopyAsync } = require(path.join(easRoot, 'build/vcs/local.js'));
+  const temp = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'reva-eas-archive-test-'));
+  const patches = ['query-string+7.1.3.patch', 'image-size+1.2.1.patch'];
+  try {
+    for (const mobileOnly of [false, true]) {
+      const source = path.join(temp, mobileOnly ? 'mobile-source' : 'repo-source');
+      const destination = path.join(temp, mobileOnly ? 'mobile-output' : 'repo-output');
+      const prefix = mobileOnly ? '' : 'mobile/';
+      await fsPromises.mkdir(path.join(source, prefix, 'patches'), { recursive: true });
+      await fsPromises.copyFile(path.join(repoRoot, mobileOnly ? 'mobile/.easignore' : '.easignore'), path.join(source, '.easignore'));
+      for (const name of [...patches, 'expo-modules-autolinking+55.0.24.patch']) {
+        await fsPromises.copyFile(path.join(repoRoot, 'mobile/patches', name), path.join(source, prefix, 'patches', name));
+      }
+      for (const name of ['ios/local-build', 'assets/rokid/local.apk', 'node_modules/local/index.js']) {
+        const file = path.join(source, prefix, name);
+        await fsPromises.mkdir(path.dirname(file), { recursive: true });
+        await fsPromises.writeFile(file, 'synthetic local-only artifact');
+      }
+      if (!mobileOnly) await fsPromises.writeFile(path.join(source, '.env'), 'SYNTHETIC_FIXTURE=not-a-secret');
+      await makeShallowCopyAsync(source, destination);
+      for (const name of patches) {
+        assert.deepEqual(await fsPromises.readFile(path.join(destination, prefix, 'patches', name)),
+          await fsPromises.readFile(path.join(repoRoot, 'mobile/patches', name)));
+      }
+      for (const name of ['patches/expo-modules-autolinking+55.0.24.patch', 'ios/local-build', 'assets/rokid/local.apk', 'node_modules/local/index.js']) {
+        await assert.rejects(fsPromises.access(path.join(destination, prefix, name)), { code: 'ENOENT' });
+      }
+      if (!mobileOnly) await assert.rejects(fsPromises.access(path.join(destination, '.env')), { code: 'ENOENT' });
+    }
+  } finally {
+    await fsPromises.rm(temp, { recursive: true, force: true });
+  }
+});
 
 test('patch is idempotent and rejects unknown or partially changed vendor bytes', () => {
   const { adaptSource } = require('./apply-compat-patches.cjs');
