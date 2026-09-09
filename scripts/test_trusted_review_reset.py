@@ -187,7 +187,7 @@ class ReviewResetTests(unittest.TestCase):
             self.events.append("head")
             return SimpleNamespace(stdout=self.head + "\n", returncode=0)
         if args[0] == "/usr/bin/python3.12":
-            self.assertEqual(args, [self.server.PYTHON, "-I",
+            self.assertEqual(args, [self.server.PYTHON, "-I", "-S", "-B",
                 str(self.source / "scripts/trusted_release_gate.py"), "--sha", SHA, "--workflow-sha", SHA])
             self.events.append("gate")
             if self.gate_error:
@@ -494,7 +494,7 @@ class ReviewResetTests(unittest.TestCase):
                 (True, 0, "/tmp/python3", False), (True, 0, "/usr/bin/python3", True)):
             with (
                 self.subTest(isolated=isolated, uid=uid, executable=executable, rpc=rpc),
-                patch.object(reset.sys, "flags", SimpleNamespace(isolated=isolated)),
+                patch.object(reset.sys, "flags", SimpleNamespace(isolated=isolated, no_site=True, dont_write_bytecode=True)),
                 patch.object(reset.os, "geteuid", return_value=uid),
                 patch.object(reset.sys, "executable", executable),
                 patch.dict(os.environ, {"SSH_ORIGINAL_COMMAND": "run " + SHA} if rpc else {}, clear=True),
@@ -580,7 +580,7 @@ class ReviewResetTests(unittest.TestCase):
         self.assertEqual(json.loads(output.getvalue()), self.marker(OP, "SUCCEEDED"))
 
     def test_operator_success_sets_private_umask_without_accepting_environment(self):
-        with patch.object(self.reset.sys, "flags", SimpleNamespace(isolated=True)), patch.object(self.reset.os, "geteuid", return_value=0), patch.object(self.reset.sys, "executable", "/usr/bin/python3.12"), patch.object(Path, "resolve", return_value=Path("/usr/bin/python3.12")), patch.object(self.reset, "_secure_import") as secure, patch.object(os, "umask") as umask, patch.dict(os.environ, {}, clear=True):
+        with patch.object(self.reset.sys, "flags", SimpleNamespace(isolated=True, no_site=True, dont_write_bytecode=True)), patch.object(self.reset.os, "geteuid", return_value=0), patch.object(self.reset.sys, "executable", "/usr/bin/python3.12"), patch.object(Path, "resolve", return_value=Path("/usr/bin/python3.12")), patch.object(self.reset, "_secure_import") as secure, patch.object(os, "umask") as umask, patch.dict(os.environ, {}, clear=True):
             self.reset.operator_context()
             secure.assert_called_once_with(Path("/usr/bin/python3.12"))
             umask.assert_called_once_with(0o077)
@@ -679,6 +679,9 @@ class ProductionExecutionTests(unittest.TestCase):
             raise self.reset.ResetError("expected private file")
 
     def proof_run(self, args, **kwargs):
+        if args[0] == "/usr/bin/git":
+            self.assertEqual(args, ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", str(self.source), "ls-tree", "-rz", "--full-tree", "HEAD", "--", "backend"])
+            return self.real_run(args, **kwargs)
         self.assertEqual(args[:4], ["/bin/bash", "-e", "-u", "-c"])
         self.assertNotIn("activate\n", args[4])
         self.assertEqual(kwargs["env"]["REPO_PATH"], str(self.repo))
@@ -700,6 +703,34 @@ stat() {
 
     def test_clean_production_with_normal_python_symlink_passes_without_execution(self):
         self.assertIsNone(self.invoke())
+
+    def test_private_media_is_not_an_application_import_source(self):
+        media = self.repo / "backend/ignored/private_media"
+        media.mkdir(parents=True)
+        media.chmod(0o700)
+        put(media / "not_executed.py", b"raise RuntimeError('private media')\n")
+        # This runtime tree is outside the canonical import root; not read,
+        # recursively normalized or deleted by maintenance.
+        original = media.lstat().st_ino
+        with patch.object(self.server, "secure_path", wraps=self.secure) as checked:
+            self.assertIsNone(self.invoke())
+        self.assertFalse(any(Path(call.args[0]).is_relative_to(media) for call in checked.call_args_list))
+        self.assertEqual(media.lstat().st_ino, original)
+
+    def test_root_managed_pth_is_inert_but_writable_pth_is_rejected(self):
+        hook = self.site / "dependency.pth"
+        put(hook, b"import definitely_untrusted_startup_hook\n/tmp/untrusted\n", 0o644)
+        self.assertIsNone(self.invoke())
+        hook.chmod(0o666)
+        with self.assertRaises(self.reset.ResetError):
+            self.invoke()
+
+    def test_ignored_code_in_canonical_import_tree_is_rejected(self):
+        extra = self.source / "backend/ignored/shadow.py"
+        extra.parent.mkdir()
+        put(extra, b"pass\n", 0o644)
+        with self.assertRaises(self.reset.ResetError):
+            self.invoke()
 
     def test_system_python3_alias_resolves_only_to_fixed_system_binary(self):
         alias = self.python.with_name("python3")
@@ -731,7 +762,7 @@ stat() {
                 elif fault == "app":
                     put(self.repo / "backend/app/model.py", b"value = 2\n", 0o644)
                 else:
-                    extra = self.repo / "backend/ignored/shadow.py"
+                    extra = self.source / "backend/ignored/shadow.py"
                     extra.parent.mkdir()
                     put(extra, b"pass\n", 0o644)
                 with self.assertRaises(self.reset.ResetError):
@@ -740,18 +771,16 @@ stat() {
                 put(target, original, 0o644)
                 put(self.repo / "backend/app/model.py", b"value = 1\n", 0o644)
                 if fault == "ignored":
-                    shutil.rmtree(self.repo / "backend/ignored")
+                    shutil.rmtree(self.source / "backend/ignored")
                 self.assertIsNone(self.invoke())
 
     def test_venv_content_import_path_mode_and_interpreter_fail_closed(self):
         baseline = self.root / "venv-baseline"
         shutil.copytree(self.venv, baseline, symlinks=True)
-        for fault in ("mode", "pth", "system-site", "python", "hardlink", "sitecustomize", "editable", "outside-link", "cfg-home"):
+        for fault in ("mode", "system-site", "python", "hardlink", "sitecustomize", "editable", "outside-link", "cfg-home"):
             with self.subTest(fault=fault):
                 if fault == "mode":
                     (self.site / "fixture.py").chmod(0o666)
-                elif fault == "pth":
-                    put(self.site / "shadow.pth", b"/tmp/unreviewed\n", 0o644)
                 elif fault == "system-site":
                     put(self.venv / "pyvenv.cfg", b"include-system-site-packages = true\n")
                 elif fault == "python":
@@ -787,7 +816,7 @@ stat() {
             self.invoke()
 
     def test_empty_writable_directory_fifo_and_old_bytecode_are_independent_rejections(self):
-        base = self.repo / "backend/ignored"
+        base = self.source / "backend/ignored"
         for fault in ("empty-writable", "fifo", "pyc", "ancestor", "module-link"):
             with self.subTest(fault=fault):
                 base.mkdir()
@@ -840,6 +869,134 @@ stat() {
     def test_failure_is_sanitized_and_reads_no_env_or_venv_code(self):
         with patch.object(self.reset, "_revision_proof", side_effect=RuntimeError("private-token-and-env")), self.assertRaisesRegex(self.reset.ResetError, "^production execution proof failed$"):
             self.invoke()
+
+    def test_execution_proof_failure_never_reads_credentials_or_imports_seeder(self):
+        with patch.object(self.reset, "_assert_isolated_search_path"), patch.object(self.reset, "_validate_production", side_effect=RuntimeError("private diagnostic")), patch.object(self.server, "read_production_env") as credentials, patch.object(self.reset, "_run_canonical_seeder") as execute:
+            with self.assertRaisesRegex(self.reset.ResetError, "^review maintenance failed; preserve evidence and lease$"):
+                self.reset.execute_review_maintenance(self.sha, self.lease, self.token)
+            credentials.assert_not_called()
+            execute.assert_not_called()
+
+    def test_configuration_is_fixed_and_missing_database_or_credentials_never_executes(self):
+        values = {"DATABASE_URL": "postgresql://localhost/review_fixture_test",
+                  "APP_STORE_REVIEW_DEMO_ACCOUNT": "fixture@example.invalid",
+                  "APP_STORE_REVIEW_DEMO_PASSWORD": "synthetic-fixture-only"}
+        for absent in values:
+            environment = "\n".join(f"{key}={value}" for key, value in values.items() if key != absent)
+            with self.subTest(absent=absent), patch.object(self.reset, "_assert_isolated_search_path"), patch.object(self.reset, "_validate_production"), patch.object(self.server, "read_production_env", return_value=environment), patch.object(self.reset, "_run_canonical_seeder") as execute:
+                with self.assertRaises(self.reset.ResetError):
+                    self.reset.execute_review_maintenance(self.sha, self.lease, self.token)
+                execute.assert_not_called()
+        output = io.StringIO()
+        environment = "\n".join(f"{key}={value}" for key, value in values.items())
+        def seeder(source, site, supplied, before_write):
+            self.assertEqual(source, self.source)
+            self.assertEqual(site, self.site)
+            self.assertEqual(supplied, {**values, "PATH": "/usr/bin:/bin", "HOME": "/nonexistent"})
+            before_write()
+        with patch.object(self.reset, "_assert_isolated_search_path"), patch.object(self.reset, "_validate_production"), patch.object(self.server, "read_production_env", return_value=environment), patch.object(self.reset, "_run_canonical_seeder", seeder), patch.dict(os.environ, {"APP_STORE_REVIEW_DEMO_ACCOUNT": "caller@example.invalid"}), contextlib.redirect_stdout(output):
+            self.reset.execute_review_maintenance(self.sha, self.lease, self.token)
+        self.assertEqual(output.getvalue(), "APP_STORE_REVIEW_RESET_OK\n")
+
+    def test_lease_replaced_with_identical_bytes_before_write_is_rejected(self):
+        environment = "DATABASE_URL=postgresql://localhost/review_fixture_test\nAPP_STORE_REVIEW_DEMO_ACCOUNT=fixture@example.invalid\nAPP_STORE_REVIEW_DEMO_PASSWORD=synthetic-fixture-only\n"
+        wrote = []
+        def seeder(source, site, supplied, before_write):
+            (self.lease / "token").rename(self.lease / "original-token")
+            put(self.lease / "token", (self.token + "\n").encode())
+            before_write()
+            wrote.append(True)
+        with patch.object(self.reset, "_assert_isolated_search_path"), patch.object(self.reset, "_validate_production"), patch.object(self.server, "read_production_env", return_value=environment), patch.object(self.reset, "_run_canonical_seeder", seeder), self.assertRaises(self.reset.ResetError):
+            self.reset.execute_review_maintenance(self.sha, self.lease, self.token)
+        self.assertEqual(wrote, [])
+
+
+class IsolatedSeederTests(unittest.TestCase):
+    def test_real_process_does_not_execute_pth_or_import_live_or_environment_modules(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            source, site, live, hostile = (root / name for name in ("canonical", "site", "live", "hostile"))
+            for path in (source / "backend/scripts", source / "backend/app", source / "backend/fixtures", site, live, hostile):
+                path.mkdir(parents=True)
+            marker = root / "hook-executed"
+            tripwire = f"from pathlib import Path; Path({str(marker)!r}).touch()\n"
+            put(site / "dependency.pth", ("import pathlib; pathlib.Path(" + repr(str(marker)) + ").touch()\n" + str(hostile) + "\n").encode())
+            for parent in (site, hostile, live):
+                put(parent / "sitecustomize.py", tripwire.encode())
+                put(parent / "usercustomize.py", tripwire.encode())
+            put(live / "live_only.py", tripwire.encode())
+            put(hostile / "outside_only.py", tripwire.encode())
+            put(source / "backend/app/__init__.py", b"ORIGIN = 'canonical'\n")
+            put(source / "backend/fixtures/synthetic.json", b'{"synthetic": true}')
+            put(site / "verified_dependency.py", b"VALUE = 1\n")
+            seeder = '''import importlib.util, json, os, sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import app, verified_dependency
+assert app.ORIGIN == 'canonical' and verified_dependency.VALUE == 1
+assert Path.cwd() == Path(__file__).parent.parent
+assert json.loads((Path(__file__).parent.parent / 'fixtures/synthetic.json').read_text())['synthetic']
+assert os.environ.get('CALLER_ACCOUNT') is None
+assert os.environ['APP_STORE_REVIEW_DEMO_ACCOUNT'] == 'fixture@example.invalid'
+assert importlib.util.find_spec('live_only') is None
+assert importlib.util.find_spec('outside_only') is None
+assert sys.flags.isolated and sys.flags.no_site and sys.flags.dont_write_bytecode
+def main():
+    assert sys.argv[1:] == ['--secret-free']
+    print(json.dumps(dict(verification='PASS', daily_plan_actions=1, timeline_events=1, demo_conversation_messages=2)))
+    return 0
+'''
+            put(source / "backend/scripts/seed_demo_account.py", seeder.encode())
+            # Only OS location/uid differ in this portable fixture. The child is
+            # a real -I -S -B interpreter, never a mocked import or startup flow.
+            code = '''import importlib.util, sys
+from pathlib import Path
+spec = importlib.util.spec_from_file_location('review_reset', sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+def context():
+    assert sys.flags.isolated and sys.flags.no_site and sys.flags.dont_write_bytecode
+module.operator_context = context
+module.SYSTEM_SEARCH_PATHS = frozenset(sys.path)
+module._run_canonical_seeder(Path(sys.argv[2]), Path(sys.argv[3]),
+    {'APP_STORE_REVIEW_DEMO_ACCOUNT': 'fixture@example.invalid'}, lambda: None)
+print('ISOLATED_FIXTURE_OK')
+'''
+            result = subprocess.run([sys.executable, "-I", "-S", "-B", "-c", code,
+                str(SCRIPTS / "trusted_review_reset.py"), str(source), str(site)],
+                cwd=live, env={**os.environ, "PYTHONPATH": str(hostile), "HOME": str(hostile),
+                               "CALLER_ACCOUNT": "not-the-review-account"},
+                capture_output=True, text=True, timeout=20, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, "ISOLATED_FIXTURE_OK\n")
+            self.assertFalse(marker.exists())
+            self.assertEqual(list(source.rglob("*.pyc")), [])
+
+    def test_summary_rejects_duplicates_extra_fields_boolean_counts_and_oversized_output(self):
+        reset = load("trusted_review_reset")
+        good = dict(verification="PASS", daily_plan_actions=1, timeline_events=1, demo_conversation_messages=2)
+        reset._validate_summary(json.dumps(good))
+        for value in ({**good, "extra": 1}, {**good, "daily_plan_actions": True},
+                      {**good, "timeline_events": 0}, {**good, "demo_conversation_messages": 3},
+                      {**good, "verification": "FAIL"}, []):
+            with self.subTest(value=value), self.assertRaises(reset.ResetError):
+                reset._validate_summary(json.dumps(value))
+        with self.assertRaises(reset.ResetError):
+            reset._validate_summary(json.dumps(good)[:-1] + ', "verification": "PASS"}')
+        with self.assertRaises(reset.ResetError):
+            reset._BoundedSummary().write("x" * 16385)
+
+    def test_no_site_and_no_bytecode_are_mandatory(self):
+        reset = load("trusted_review_reset")
+        for no_site, no_bytecode in ((False, True), (True, False)):
+            with patch.object(reset.sys, "flags", SimpleNamespace(isolated=True, no_site=no_site, dont_write_bytecode=no_bytecode)), self.assertRaises(reset.ResetError):
+                reset.operator_context()
+
+    def test_search_path_rejects_cwd_live_and_arbitrary_archives(self):
+        reset = load("trusted_review_reset")
+        for path in ("", ".", "/opt/health-app/backend", "/tmp/shadow.zip", "/tmp/source"):
+            with patch.object(sys, "path", ["/usr/lib/python3.12", path]), self.assertRaises(reset.ResetError):
+                reset._assert_isolated_search_path()
 
 
 if __name__ == "__main__":

@@ -106,7 +106,7 @@ EAS 调用响应丢失时按 source SHA 查询已有构建，记录其 build/sub
 #### 审核账号维护入口
 
 只有用户明确授权的审核 fixture 恢复，才可由管理员从同样的受审 canonical staging
-以系统 Python `-I` 执行 `scripts/trusted_review_reset.py --sha <sha> --operation-id <32hex>`。
+以系统 Python `-I -S -B` 执行 `scripts/trusted_review_reset.py --sha <sha> --operation-id <32hex>`。
 它不是 cloud SSH RPC，不接受账号、密码、命令或路径参数，不用于业务部署。
 必须是干净精确源码、真实 CI 绿色、安装执行器/策略同源、授权未过期、后端已成功且
 实际生产 revision 一致；固定 loopback、包装命令及派生环境逐字节校验，漂移直接阻断。
@@ -118,9 +118,18 @@ EAS 调用响应丢失时按 source SHA 查询已有构建，记录其 build/sub
 准备失败或旧 NEEDS_OPERATOR 不满足这个入口的后端成功前置条件。
 
 审核重置不能用 HEAD 相同代替执行内容证明。持有业务 lease 后、读取重置凭据和启动
-seeder 前，须从 canonical 源运行隔离生产 revision proof，并检查实际应用导入目录及
-受管 Python 运行链的权限、链接和搜索路径。失败保留现场，不通过现场修权限或删缓存
-自动重试。依赖信任限于既有 root 受管安装，不宣称已逐字节证明 wheel 与 lock 一致。
+seeder 前，须从 canonical 源运行隔离生产 revision proof，并按 Git blob inventory
+验证 canonical backend 的完整导入与资源树（含 fixture）；ignored 额外文件/目录、
+缓存、链接或字节漂移均 BLOCK。实际 seeder 只从该树执行，不遍历 live 私有媒体，
+不把 live backend 或调用方 cwd 加入导入路径，不修改媒体目录权限。
+operator、lease 内执行和摘要校验均使用固定系统 Python `-I -S -B`，仅在 OS 标准库
+路径后显式加入一个经过 root/non-writable/link 校验的依赖目录；不处理 `.pth`。
+受管 `.pth` 仅作为不执行的文件保留，editable、customize、外部链接及额外 site
+目录仍 BLOCK。生产配置通过元数据校验后按 dotenv 数据读取，不执行 shell；缺失
+PostgreSQL URL 或固定审核凭据必须失败，不退到默认数据库/账号。应用导入前加载
+配置，首次写入前及完成后再次核对 lease token 与原 inode。摘要有大小上限，拒绝
+重复/额外字段和布尔计数。失败保留现场，不通过现场修权限或删缓存自动重试。
+依赖信任限于既有 root 受管安装，不宣称已逐字节证明 wheel 与 lock 一致。
 
 离线订单 SSE 验收辅助：`python scripts/release_acceptance.py analyze < sanitized-events.sse`。
 仅输入合成或已脱敏事件，输出不含原文。pending_confirmation 是需要用户确认的草稿；

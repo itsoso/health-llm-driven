@@ -2919,14 +2919,14 @@ def test_review_reset_checks_execution_chain_under_lease_before_credentials():
     start = script.index("\nset -euo pipefail\n", script.index("reset_app_store_review_demo() {"))
     end = script.index("\nREMOTE_APP_STORE_REVIEW_RESET", start)
     remote = script[start:end]
-    proof = remote.index("validate_production_execution")
+    proof = remote.index("execute_review_maintenance")
     assert remote.index('test "$(cat "$release_lock_dir/token")"') < proof
     assert remote.rindex('test "$(cat "$release_lock_dir/token")"') > proof
-    assert proof < remote.index("source .env") < remote.index("scripts/seed_demo_account.py")
-    assert '/usr/bin/env -i PATH=/usr/bin:/bin HOME=/nonexistent /usr/bin/python3 -I' in remote
+    assert "source .env" not in remote
+    assert "venv/bin/python" not in remote
+    assert '/usr/bin/env -i PATH=/usr/bin:/bin HOME=/nonexistent /usr/bin/python3.12 -I -S -B' in remote
     assert '/var/lib/reva-release/bootstrap' in remote
-    assert 'venv/bin/python -I scripts/seed_demo_account.py --secret-free' in remote
-    assert 'venv/bin/python -I - "$summary_path"' in remote
+    assert "summary_path" not in remote
 
 
 @pytest.mark.parametrize("proof_rc", [0, 1, 73])
@@ -2938,7 +2938,7 @@ def test_review_reset_remote_proof_gates_env_and_seeder(tmp_path: Path, proof_rc
     # Only the system-proof boundary and fixed production path are virtualized.
     # The lease check, ordering, shell failure and receipt parser execute for real.
     remote = remote.replace(
-        "/usr/bin/env -i PATH=/usr/bin:/bin HOME=/nonexistent /usr/bin/python3 -I",
+        "/usr/bin/env -i PATH=/usr/bin:/bin HOME=/nonexistent /usr/bin/python3.12 -I -S -B",
         "offline_proof",
     ).replace('test "$repo_path" = /opt/health-app', 'test "$repo_path" = "$OFFLINE_REPO"')
     backend = tmp_path / "repo/backend"
@@ -2967,7 +2967,8 @@ def test_review_reset_remote_proof_gates_env_and_seeder(tmp_path: Path, proof_rc
     events = tmp_path / "events"
     harness = (
         'offline_proof() { cat >/dev/null; printf "proof\\n" >> "$OFFLINE_EVENTS"; '
-        f'return {proof_rc}; }}\n' + remote
+        + ('printf "APP_STORE_REVIEW_RESET_OK\\n"; ' if proof_rc == 0 else '')
+        + f'return {proof_rc}; }}\n' + remote
     )
     result = subprocess.run(
         ["/bin/bash", "-c", harness, "offline", str(backend.parent), "a" * 40,
@@ -2976,7 +2977,8 @@ def test_review_reset_remote_proof_gates_env_and_seeder(tmp_path: Path, proof_rc
         check=False,
     )
     assert (result.returncode == 0) == (proof_rc == 0), result.stderr
-    assert events.read_text().splitlines() == (["proof", "env", "seeder"] if proof_rc == 0 else ["proof"])
+    # Live .env and venv are tripwires: neither may be evaluated, even on success.
+    assert events.read_text().splitlines() == ["proof"]
     assert result.stdout == ("APP_STORE_REVIEW_RESET_OK\n" if proof_rc == 0 else "")
 
 

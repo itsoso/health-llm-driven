@@ -4204,7 +4204,12 @@ release_lock_token="$4"
 
 test -r "$release_lock_dir/token"
 test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
-/usr/bin/env -i PATH=/usr/bin:/bin HOME=/nonexistent /usr/bin/python3 -I - \
+test "$repo_path" = /opt/health-app
+# This one canonical process proves the lease/source before loading credentials,
+# runs the fixed --secret-free seeder and validates its exact bounded summary.
+# It reads APP_STORE_REVIEW_DEMO_ACCOUNT / APP_STORE_REVIEW_DEMO_PASSWORD only
+# from the metadata-checked production config; no shell source or venv startup.
+/usr/bin/env -i PATH=/usr/bin:/bin HOME=/nonexistent /usr/bin/python3.12 -I -S -B - \
     "$expected_sha" "$release_lock_dir" "$release_lock_token" <<'PROVE_REVIEW_EXECUTION'
 import os
 import pathlib
@@ -4225,49 +4230,9 @@ for item in [*reversed(entry.parents), entry]:
     if item == entry and info.st_nlink != 1:
         raise SystemExit("unsafe reviewed execution entry")
 sys.dont_write_bytecode = True
-runpy.run_path(str(entry))["validate_production_execution"](sha, lease, token)
+runpy.run_path(str(entry))["execute_review_maintenance"](sha, lease, token)
 PROVE_REVIEW_EXECUTION
 test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
-test "$repo_path" = /opt/health-app
-cd "$repo_path/backend"
-test -x venv/bin/python
-test -r .env
-set -a
-set +u
-source .env
-set -u
-set +a
-: "${APP_STORE_REVIEW_DEMO_ACCOUNT:?missing review account in backend env}"
-: "${APP_STORE_REVIEW_DEMO_PASSWORD:?missing review password in backend env}"
-
-summary_path="$(mktemp /tmp/reva-app-store-review-reset.XXXXXX)"
-chmod 600 "$summary_path"
-trap 'rm -f -- "$summary_path"' EXIT
-venv/bin/python -I scripts/seed_demo_account.py --secret-free >"$summary_path"
-venv/bin/python -I - "$summary_path" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as handle:
-    summary = json.load(handle)
-expected_keys = {
-    "verification",
-    "daily_plan_actions",
-    "timeline_events",
-    "demo_conversation_messages",
-}
-if set(summary) != expected_keys:
-    raise SystemExit("unexpected secret-free summary schema")
-if summary["verification"] != "PASS":
-    raise SystemExit("demo verification did not pass")
-if not isinstance(summary["daily_plan_actions"], int) or summary["daily_plan_actions"] < 1:
-    raise SystemExit("daily plan is empty")
-if not isinstance(summary["timeline_events"], int) or summary["timeline_events"] < 1:
-    raise SystemExit("timeline is empty")
-if summary["demo_conversation_messages"] != 2:
-    raise SystemExit("fixed conversation is not pristine")
-print("APP_STORE_REVIEW_RESET_OK")
-PY
 REMOTE_APP_STORE_REVIEW_RESET
     ); then
         _REMOTE_RELEASE_LOCK_ABANDONED=1

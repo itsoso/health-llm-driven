@@ -1,6 +1,6 @@
 """Operator-only maintenance, never an SSH RPC or business-deployment bypass.
 
-Run reviewed bytes ONLY with system Python -I as root at
+Run reviewed bytes ONLY with system Python -I -S -B as root at
 /var/lib/reva-release/bootstrap/<sha>/source/scripts/trusted_review_reset.py.
 Parent governance and fixed-diff G4 approval are prerequisites to execution.
 No provisioning, credentials, account selection, retry or recovery is exposed.
@@ -8,12 +8,15 @@ No provisioning, credentials, account selection, retry or recovery is exposed.
 
 import argparse
 import configparser
+import contextlib
 import fcntl
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import re
+import runpy
 import stat
 import subprocess
 import sys
@@ -24,6 +27,9 @@ STATE = Path("/var/lib/reva-release")
 PRODUCTION = Path("/opt/health-app")
 SYSTEM_PYTHON = Path("/usr/bin/python3.12")
 MAX_RUNTIME_ENTRIES = 100000
+SYSTEM_SEARCH_PATHS = frozenset({
+    "/usr/lib/python312.zip", "/usr/lib/python3.12", "/usr/lib/python3.12/lib-dynload",
+})
 
 
 class ResetError(Exception):
@@ -48,7 +54,8 @@ def _secure_import(path):
 
 
 def operator_context():
-    if (not sys.flags.isolated or os.geteuid() != 0
+    if (not sys.flags.isolated or not sys.flags.no_site or not sys.flags.dont_write_bytecode
+            or os.geteuid() != 0
             or sys.executable not in ("/usr/bin/python3", "/usr/bin/python3.12")
             or "SSH_ORIGINAL_COMMAND" in os.environ):
         raise ResetError("isolated system Python operator execution required")
@@ -163,23 +170,54 @@ def _runtime_entries(root, *, exclude=()):
 
 
 def _validate_application_imports(source, server):
-    backend = PRODUCTION / "backend"
+    # Maintenance NEVER imports the live checkout. Verify the complete staged
+    # import/resource tree, including files hidden by Git ignore rules.
+    backend = source / "backend"
     server.secure_path(backend, directory=True)
-    for path, info in _runtime_entries(backend, exclude={backend / "venv"}):
-        # Check even empty directories and non-code objects before any read:
-        # namespace imports can acquire new code, and FIFOs must never block.
+    result = subprocess.run(
+        ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+         "-C", str(source), "ls-tree", "-rz", "--full-tree", "HEAD", "--", "backend"],
+        env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "LC_ALL": "C",
+             "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"},
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        check=True, timeout=30)
+    files, directories = {}, {backend}
+    for record in result.stdout.split(b"\0"):
+        if not record:
+            continue
+        metadata, name = record.split(b"\t", 1)
+        mode, kind, digest = metadata.decode("ascii").split(" ")
+        relative = Path(name.decode("utf-8"))
+        if (mode not in {"100644", "100755"} or kind != "blob"
+                or re.fullmatch(r"[0-9a-f]{40}", digest) is None
+                or relative.is_absolute() or ".." in relative.parts
+                or relative.parts[0] != "backend"):
+            raise ResetError("unsupported canonical import inventory")
+        path = source / relative
+        files[path] = digest
+        # Retain tracked live-file metadata proof (including hard links) without
+        # traversing ignored runtime data. Live bytes are covered by revision proof.
+        server.secure_path(PRODUCTION / relative)
+        directories.update(parent for parent in path.parents if parent.is_relative_to(backend))
+    if backend / "scripts/seed_demo_account.py" not in files:
+        raise ResetError("canonical seeder missing")
+    seen = set()
+    for path, info in _runtime_entries(backend):
         server.secure_path(path, directory=stat.S_ISDIR(info.st_mode))
         if path.name == "__pycache__" or path.suffix in {".pyc", ".pyo"}:
             raise ResetError("application cached code forbidden")
-        if path.suffix not in {".py", ".so", ".pth", ".zip"} or stat.S_ISDIR(info.st_mode):
+        if stat.S_ISDIR(info.st_mode):
+            if path not in directories:
+                raise ResetError("unreviewed canonical import directory")
             continue
-        reviewed = source / path.relative_to(PRODUCTION)
-        server.secure_path(reviewed)
-        if path.read_bytes() != reviewed.read_bytes():
-            raise ResetError("application import differs from canonical source")
-    for relative in ("backend/app", "backend/scripts"):
-        server.secure_path(PRODUCTION / relative, directory=True)
-    server.secure_path(PRODUCTION / "backend/scripts/seed_demo_account.py")
+        if path not in files:
+            raise ResetError("unreviewed canonical import file")
+        data = path.read_bytes()
+        if hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest() != files[path]:
+            raise ResetError("canonical import content differs")
+        seen.add(path)
+    if seen != files.keys():
+        raise ResetError("incomplete canonical import tree")
 
 
 def _validate_python_link(path, venv, server):
@@ -237,7 +275,9 @@ def _validate_venv(server):
                 raise ResetError("unknown venv symlink")
             continue
         server.secure_path(path, directory=stat.S_ISDIR(info.st_mode))
-        if (path.suffix in {".pth", ".egg-link"} or "__editable__" in path.name
+        # .pth remains metadata-checked, but is never processed: the execution
+        # entry requires -S and appends only this exact directory, not addsitedir.
+        if (path.suffix == ".egg-link" or "__editable__" in path.name
                 or path.name.split(".")[0] in {"sitecustomize", "usercustomize"}
                 or (path.name == "site-packages" and path != site)):
             raise ResetError("unknown Python startup or import hook")
@@ -287,6 +327,94 @@ def validate_production_execution(sha, lease_dir, lease_token):
             raise ResetError("business lease inode changed")
     except Exception:  # noqa: BLE001 -- Preserve a secret-free remote exception boundary.
         raise ResetError("production execution proof failed") from None
+
+
+class _BoundedSummary(io.StringIO):
+    def write(self, value):
+        if self.tell() + len(value) > 16384:
+            raise ResetError("maintenance output exceeds bound")
+        return super().write(value)
+
+
+def _validate_summary(output):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ResetError("duplicate maintenance summary field")
+            result[key] = value
+        return result
+    summary = json.loads(output, object_pairs_hook=unique)
+    counts = {"daily_plan_actions", "timeline_events", "demo_conversation_messages"}
+    if (not isinstance(summary, dict) or set(summary) != counts | {"verification"}
+            or summary["verification"] != "PASS"
+            or any(type(summary[key]) is not int or summary[key] < 1 for key in counts)
+            or summary["demo_conversation_messages"] != 2):
+        raise ResetError("maintenance summary verification failed")
+
+
+def _assert_isolated_search_path():
+    if not sys.path or any(path not in SYSTEM_SEARCH_PATHS for path in sys.path):
+        raise ResetError("unexpected maintenance search path")
+
+
+def _run_canonical_seeder(source, site, environment, before_write):
+    # Called only by the proof-bearing entry below. -I -S supplies OS stdlib
+    # paths; no cwd/PYTHONPATH/user site/venv .pth is ever consulted.
+    operator_context()
+    _assert_isolated_search_path()
+    os.chdir(source / "backend")
+    sys.path.extend([str(site), str(source / "backend")])
+    os.environ.clear()
+    os.environ.update(environment)
+    entry = source / "backend/scripts/seed_demo_account.py"
+    sys.argv = [str(entry), "--secret-free"]
+    output = _BoundedSummary()
+    with contextlib.redirect_stdout(output), contextlib.redirect_stderr(_BoundedSummary()):
+        module = runpy.run_path(str(entry), run_name="reviewed_maintenance_seeder")
+        before_write()
+        if module["main"]() != 0:
+            raise ResetError("maintenance seeder failed")
+    _validate_summary(output.getvalue())
+
+
+def execute_review_maintenance(sha, lease_dir, lease_token):
+    """Fixed lease-internal entry; no account/path/command override or retry."""
+    try:
+        operator_context()
+        _assert_isolated_search_path()
+        validate_arguments(sha, "0" * 32)
+        source, bootstrap, server = load_reviewed(sha)
+        original = _lease_identity(lease_dir, lease_token, bootstrap, server)
+        _validate_production(sha, source, bootstrap, server)
+
+        def same_lease():
+            if _lease_identity(lease_dir, lease_token, bootstrap, server) != original:
+                raise ResetError("business lease changed")
+
+        same_lease()
+        # Load credentials only after proofs, without evaluating a shell file.
+        # dotenv itself is a root-managed dependency, imported with -S still on.
+        site = PRODUCTION / "backend/venv/lib/python3.12/site-packages"
+        sys.path.append(str(site))
+        try:
+            from dotenv import dotenv_values
+            values = dotenv_values(stream=io.StringIO(server.read_production_env()), interpolate=False)
+        finally:
+            sys.path.remove(str(site))
+        for key in ("DATABASE_URL", "APP_STORE_REVIEW_DEMO_ACCOUNT", "APP_STORE_REVIEW_DEMO_PASSWORD"):
+            if not isinstance(values.get(key), str) or not values[key].strip():
+                raise ResetError("required production maintenance configuration missing")
+        if not values["DATABASE_URL"].startswith(("postgresql://", "postgresql+psycopg2://")):
+            raise ResetError("PostgreSQL maintenance target required")
+        environment = {key: value for key, value in values.items() if value is not None}
+        environment.update(PATH="/usr/bin:/bin", HOME="/nonexistent")
+        same_lease()
+        _run_canonical_seeder(source, site, environment, same_lease)
+        same_lease()
+        print("APP_STORE_REVIEW_RESET_OK")
+    except Exception:
+        raise ResetError("review maintenance failed; preserve evidence and lease") from None
 
 
 def _validate_workspace(sha, source, bootstrap, server):
@@ -360,7 +488,7 @@ def reset_review(sha, operation_id):
         server.secure_path(Path(server.PYTHON))
         env = server.clean_environment(workspace)
         env.update(PATH="/usr/bin:/bin", HOME="/nonexistent")
-        subprocess.run([server.PYTHON, "-I", str(source / "scripts/trusted_release_gate.py"),
+        subprocess.run([server.PYTHON, "-I", "-S", "-B", str(source / "scripts/trusted_release_gate.py"),
             "--sha", sha, "--workflow-sha", sha], cwd=source, env=env,
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             check=True, timeout=90)

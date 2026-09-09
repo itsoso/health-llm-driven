@@ -238,6 +238,13 @@
 - 本轮不含其他任务的两处 Mobile 分享卡改动，不发 OTA、不重新构建原生包、不提交正式 App Review。后端故障修复和生产记餐验证通过，但审核 fixture 维护、剩余真机修正/复盘/权限路径仍待闭环，整体送审继续 BLOCK。
 - 收尾：确认维护未进入 mutation 且部署已成功终结后，canonical revoke 返回 REVOKED；持有原锁并重复验证生产 revision、完整成功回执、撤权和私钥公钥匹配，仅清理本次 loopback 私钥。GitHub 两项短期 SSH secrets 及本机本次私钥已删除；历史安装/回执、公钥证据、工作树和业务数据保留，长期 Expo Token 的更新时间未变。没有遗留本次可用 SSH 发布身份。
 
+#### 同日审核维护隔离修复 · implementation / 尚未发布
+
+- 用户“继续”授权下启动独立的维护阻断整改阶段，仍沿用本 Dossier；primary controller 为 Health Harness，safety overlay。ledger：`docs/_generated/harness-runs/ec063f171827.jsonl`。
+- 独立方案审查 GO（不等同固定代码 G4）：执行源收束到 canonical backend，完整验证 Git 文件/资源清单；保留生产 revision、tracked metadata、依赖所有权和锁/意图证明。禁止修改 `private_media` 权限、删除缓存或给未知 hook 加白名单。
+- 三项先红回归复现媒体目录误入导入树、受管 `.pth` 被一律拒绝和 canonical ignored 模块漏检。实现改为系统 Python `-I -S -B`，显式只添加受管依赖目录，不执行 `.pth`，不导入 live backend；配置作为数据读取，不再 shell source；固定审核凭据及 PostgreSQL URL 缺失即失败。
+- 初轮回归暴露 live tracked hardlink 检查随旧扫描移除而丢失，已补回逐 tracked 文件 metadata 校验，无需遍历媒体。定向集成回归 72/72、57 subtests、exit 0；新增真实子进程隔离/摘要/凭据前阻断等 5/5、exit 0。完整新鲜回归和固定 SHA G4 尚未结束；没有生产维护、部署或正式送审。
+
 > 点击调整记录，修改食物的内容。比如把1碗改成两碗，那么在保存的时候要重新计算热量。当前只是修改了内容，但是没有修改和重新计算真实的营养物质和热量，要做这个优化。点击图片，展开午餐图，用手滑一下，图片应该自动消失，而不是再点击那个叉号再消失。要优化这个交互。
 
 - 用户：在小巴聊天中查看、修正已记录餐食的 Mobile 用户。
