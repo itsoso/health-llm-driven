@@ -136,9 +136,11 @@ operator 的 `--retire-restored` 模式执行独立收尾；仍须提供 closing
 `--evidence-sha256` 才进入 mutation。此模式不启动服务、不部署、不写审核账号、不
 触发厂商构建，也不改变原始 NEEDS_OPERATOR。普通恢复模式仍然不可重跑。
 
-收尾持有原 launcher/build 锁，核验完整恢复 intent/completed、原 lease/stage/终态、
+收尾持有原 launcher 锁及已存在的原 build 锁，核验完整恢复 intent/completed、原 lease/stage/终态、
 实际旧 revision、恢复后的同一组稳定服务进程、schema/KB、health/auth、准确的双身份
-授权与无发布残留进程；任何漂移阻断。先在
+授权与无发布残留进程；任何漂移阻断。仅后端发布可能从未创建 build 锁：必须与原恢复
+证明中的 workspace inventory 一致，持有 launcher 锁期间持续复证其缺失，并在收尾及
+历史审计中绑定 `build: null`；不得补造锁。原本存在的锁仍须原 inode，出现或消失均阻断。先在
 `contained-release-closures/<failed-sha>` fsync 独立 intent，再把原 lease 和 sealed
 stage 原字节/模式复制到 root-only 持久目录并复证。仅撤销准确匹配的旧 cloud/loopback
 授权、删除旧 loopback 私钥；长期复用的 Expo Token 不在收尾范围内。

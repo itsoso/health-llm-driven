@@ -122,7 +122,7 @@ def test_readiness_split_retains_original_lease_checks(monkeypatch):
     assert events == ["lease", "services", "lease"]
 
 
-def proof_fixture(tmp_path, monkeypatch):
+def proof_fixture(tmp_path, monkeypatch, *, build_lock=True):
     """Real files and receipts; OS-root ownership is normalized only in fixture."""
     m = load()
     old, closing, production, restored_sha = (c * 40 for c in "abcd")
@@ -176,7 +176,7 @@ def proof_fixture(tmp_path, monkeypatch):
     write(installed, b"canonical executor")
     authorized = tmp_path / "authorized"
     write(authorized, b"unrelated\ncloud exact\nloopback exact\n")
-    for path in (state / "launcher.lock", workspace / "build.lock"):
+    for path in (state / "launcher.lock", *([workspace / "build.lock"] if build_lock else [])):
         write(path, b"")
     services = {"stable": "running"}
     snapshot = {"workspace": {"inventory": sorted(p.name for p in workspace.iterdir())},
@@ -237,6 +237,43 @@ def test_real_archival_revokes_only_managed_keys_preserves_failure_and_allows_hi
     (a.record / "lease/token").write_bytes(b"drift")
     with pytest.raises(m.ClosureError):
         m.closed_evidence(b, a.proof.failed_sha, result["receipt"])
+
+
+def test_backend_only_closure_preserves_proven_absence_of_native_build_lock(tmp_path, monkeypatch):
+    m, a, b, r, audit = proof_fixture(tmp_path, monkeypatch, build_lock=False)
+    lock = b.STATE / a.proof.failed_sha / "build.lock"
+    inspected = m.close_transaction(a)
+    result = m.close_transaction(a, inspected["evidence_sha256"])
+    assert not os.path.lexists(lock)
+    intent = json.loads((a.record / "intent.json").read_text())
+    assert intent["locks"]["build"] is None
+    assert m.closed_evidence(b, a.proof.failed_sha, result["receipt"])["state"] == "CLOSED_RESTORED_RELEASE"
+    lock.write_bytes(b"")
+    with pytest.raises(m.ClosureError):
+        m.closed_evidence(b, a.proof.failed_sha, result["receipt"])
+
+
+@pytest.mark.parametrize("original", [False, True])
+def test_build_lock_presence_must_match_original_restoration_inventory(tmp_path, monkeypatch, original):
+    m, a, b, r, audit = proof_fixture(tmp_path, monkeypatch, build_lock=original)
+    lock = b.STATE / a.proof.failed_sha / "build.lock"
+    if original:
+        lock.unlink()
+    else:
+        lock.write_bytes(b"")
+    with pytest.raises(m.ClosureError):
+        m.close_transaction(a)
+    assert not a.record.exists()
+    assert (b.CONFIG / "loopback.key").exists()
+
+
+def test_build_lock_appearing_after_inspection_blocks_before_consumption(tmp_path, monkeypatch):
+    m, a, b, r, audit = proof_fixture(tmp_path, monkeypatch, build_lock=False)
+    digest = m.close_transaction(a)["evidence_sha256"]
+    (b.STATE / a.proof.failed_sha / "build.lock").write_bytes(b"")
+    with pytest.raises(m.ClosureError):
+        m.close_transaction(a, digest)
+    assert not a.record.exists()
 
 
 @pytest.mark.parametrize("fault", ["recovery_missing", "recovery_false", "recovery_drift", "runtime", "auth", "process", "snapshot", "archive_exists", "application", "locks"])

@@ -9,6 +9,17 @@
 | 负责 | Codex + 用户 |
 | 反馈环 | Backend focused tests + Mobile Jest/TypeScript + production OTA after Gates |
 
+## 2026-09-09 · 仅后端事故收尾的锁前提纠偏
+
+- 固定 `8b60a4d69` 的精确主干 CI `34336523027` 与托管 validate `34337698386` 全绿；
+  本机完整发布不变量 963 passed + 70 subtests、exit 0，独立 G4 GO。
+- canonical 只读取证在任何 intent/mutation 前拒绝：旧事故属于 backend-only 发布，原生
+  build 锁从未创建。已复证收尾 audit 不存在、原 lease/私钥存在、四项服务 active。
+- 修正为绑定原恢复 workspace inventory 的锁存在性：已存在则持有原 inode，未存在则
+  在原 launcher 锁内持续证明缺失，历史证据记录 null，不创建锁、不改旧回执。
+- 六项新增回归先失败，覆盖仅后端收尾、历史核验、锁出现/消失及断链 symlink；修复须
+  重新通过独立 G4、完整发布闸和精确主干 CI 后方可执行。尚未发布新包或正式送审。
+
 ## 2026-09-09 · 已授权独立发布收尾（实现与复审中）
 
 - 用户明确授权修复及执行旧发布基础设施收尾，并要求连续推进；长期 Expo Token 保留。

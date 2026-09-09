@@ -14,6 +14,29 @@ def load():
     return module
 
 
+def test_absent_original_build_lock_is_verified_without_creating_one(tmp_path):
+    from types import SimpleNamespace
+    m = load()
+    old = "a" * 40
+    (tmp_path / old).mkdir()
+    b = SimpleNamespace(STATE=tmp_path)
+    m._check_original_build_lock(b, old, None)
+    path = tmp_path / old / "build.lock"
+    assert not path.exists()
+    path.symlink_to(tmp_path / "absent-target")
+    with pytest.raises(m.RecoveryError):
+        m._check_original_build_lock(b, old, None)
+
+
+def test_existing_original_build_lock_keeps_inode_validation(tmp_path):
+    from types import SimpleNamespace
+    m = load()
+    calls = []
+    b = SimpleNamespace(STATE=tmp_path, _assert_original_lock=lambda *args: calls.append(args))
+    m._check_original_build_lock(b, "a" * 40, 19)
+    assert calls == [(tmp_path / ("a" * 40) / "build.lock", 19)]
+
+
 class Proof:
     failed_sha = "a" * 40
     production_sha = "b" * 40

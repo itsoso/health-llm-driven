@@ -245,6 +245,15 @@ def recover_services(proof, audit, recovery_sha, expected_hash=None):
         raise RecoveryError("recovery incomplete; preserve intent and original lease") from None
 
 
+def _check_original_build_lock(bootstrap, failed_sha, fd):
+    path = bootstrap.STATE / failed_sha / "build.lock"
+    if fd is None:
+        if os.path.lexists(path):
+            raise RecoveryError("previously absent build lock appeared")
+    else:
+        bootstrap._assert_original_lock(path, fd)
+
+
 def main():
     try:
         parser = _Parser(description=__doc__, allow_abbrev=False)
@@ -285,8 +294,7 @@ def main():
 
                 def check(self):
                     bootstrap._assert_original_lock(lock, fd)
-                    if build_fd is not None:
-                        bootstrap._assert_original_lock(STATE / args.failed_sha / "build.lock", build_fd)
+                    _check_original_build_lock(bootstrap, args.failed_sha, build_fd)
 
                 def invoke(self, name):
                     self.check()
@@ -305,8 +313,6 @@ def main():
 
             proof = LockedProof()
             if args.retire_restored:
-                if build_fd is None:
-                    raise RecoveryError("original build lock required for closure")
                 module_path = source / "scripts/contained_release_retirement.py"
                 bootstrap.secure(module_path)
                 closure = _load(module_path, "contained_closure")

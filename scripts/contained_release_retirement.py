@@ -157,6 +157,17 @@ def _workspace_unchanged(bootstrap, sha, expected):
             raise ClosureError("original failed receipt or log changed")
 
 
+def _locks(bootstrap, sha, snapshot):
+    # Backend-only releases never claim a native build. Preserve that proven
+    # absence under the original launcher lock; never manufacture a build lock.
+    build = bootstrap.STATE / sha / "build.lock"
+    expected = "build.lock" in snapshot["workspace"]["inventory"]
+    if os.path.lexists(build) != expected:
+        raise ClosureError("build lock differs from original restoration inventory")
+    return {"launcher": bootstrap._recovery_file_identity(bootstrap.STATE / "launcher.lock"),
+            "build": bootstrap._recovery_file_identity(build) if expected else None}
+
+
 def _restoration(bootstrap, sha):
     root = bootstrap.STATE / "contained-service-recoveries" / sha
     inventory = bootstrap._inventory(root, {"intent.json", "completed.json"})
@@ -232,11 +243,7 @@ class ClosureAdapter:
         return {"old_sha": p.failed_sha, "closing_sha": self.sha, "production_sha": p.production_sha,
                 "restoration": audit, "snapshot": snapshot, "config": config, "library": library,
                 "authorized": b._recovery_file_identity(b.AUTHORIZED), "services": stable,
-                "locks": self._locks()}
-
-    def _locks(self):
-        return {"launcher": self.b._recovery_file_identity(self.b.STATE / "launcher.lock"),
-                "build": self.b._recovery_file_identity(self.b.STATE / self.proof.failed_sha / "build.lock")}
+                "locks": _locks(b, p.failed_sha, snapshot)}
 
     def archive_and_revoke(self, evidence):
         b, p = self.b, self.proof
@@ -254,7 +261,7 @@ class ClosureAdapter:
                 _bytes(target / filename, raw, identity["mode"])
         _archives(b, self.record, evidence["snapshot"])
         self.check()
-        if p.snapshot() != evidence["snapshot"] or self._locks() != evidence["locks"]:
+        if p.snapshot() != evidence["snapshot"] or _locks(b, p.failed_sha, evidence["snapshot"]) != evidence["locks"]:
             raise ClosureError("original evidence changed before revocation")
         if b._recovery_file_identity(b.AUTHORIZED) != evidence["authorized"]:
             raise ClosureError("authorization changed before revocation")
@@ -317,7 +324,7 @@ class ClosureAdapter:
         b._recovery_process_proof()
         _workspace_unchanged(b, p.failed_sha, evidence["snapshot"]["workspace"])
         _, _, restoration = _restoration(b, p.failed_sha)
-        if restoration != evidence["restoration"] or self._locks() != evidence["locks"]:
+        if restoration != evidence["restoration"] or _locks(b, p.failed_sha, evidence["snapshot"]) != evidence["locks"]:
             raise ClosureError("original restoration or lock evidence changed")
         self.r._application_probes(p.production_sha, self.sha)
         self.r._http_probes()
@@ -364,9 +371,7 @@ def closed_evidence(bootstrap, sha, receipt):
     _workspace_unchanged(bootstrap, sha, intent["snapshot"]["workspace"])
     if completed["archives"] != _archives(bootstrap, root, intent["snapshot"]):
         raise ClosureError("durable lease or stage archive changed")
-    if intent["locks"] != {
-            "launcher": bootstrap._recovery_file_identity(bootstrap.STATE / "launcher.lock"),
-            "build": bootstrap._recovery_file_identity(bootstrap.STATE / sha / "build.lock")}:
+    if intent["locks"] != _locks(bootstrap, sha, intent["snapshot"]):
         raise ClosureError("original launcher or build lock changed")
     config, library = bootstrap._archives(sha)
     if not os.path.lexists(config) and not os.path.lexists(library):
