@@ -208,7 +208,9 @@ def stage(tmp_path, monkeypatch):
     live = instance.production / "backend/.env"
     live.write_bytes(env)
     live.chmod(0o640)
-    for name, content in (("token", instance.token + "\n"), ("stage", str(staged) + "\n"), ("label", "backend\n"), ("started_at", "2026-09-09T00:00:00Z\n")):
+    deploy_source = (Path(__file__).parents[1] / "deploy.sh").read_text()
+    assert 'acquire_remote_release_lock "deploy:${DEPLOY_MODE}"' in deploy_source
+    for name, content in (("token", instance.token + "\n"), ("stage", str(staged) + "\n"), ("label", "deploy:backend\n"), ("started_at", "2026-09-09T00:00:00Z\n")):
         path = instance.lease / name
         path.write_text(content)
         path.chmod(0o600)
@@ -220,11 +222,13 @@ def test_stage_proves_exact_original_artifacts_and_unchanged_env(stage):
     assert instance._stage(source) == instance._stage(source)
 
 
-@pytest.mark.parametrize("fault", ["token", "extra", "hash", "canonical", "env", "manifest_duplicate", "env_mode"])
+@pytest.mark.parametrize("fault", ["token", "label", "extra", "hash", "canonical", "env", "manifest_duplicate", "env_mode"])
 def test_stage_rejects_original_binding_drift(stage, fault):
     instance, source, actual = stage
     if fault == "token":
         (instance.lease / "token").write_text("different\n")
+    elif fault == "label":
+        (instance.lease / "label").write_text("backend\n")
     elif fault == "extra":
         (actual / "sitecustomize.py").write_text("bad")
     elif fault == "hash":

@@ -174,7 +174,7 @@ class RecoveryProof:
         contents = {}
         for name in ("token", "label", "stage", "started_at"):
             contents[name], result[name] = self._file(self.lease / name, 0o600)
-        if contents["token"] != (self.token + "\n").encode() or contents["label"] != b"backend\n" or re.fullmatch(rb"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\n", contents["started_at"]) is None:
+        if contents["token"] != (self.token + "\n").encode() or contents["label"] != b"deploy:backend\n" or re.fullmatch(rb"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\n", contents["started_at"]) is None:
             raise ProofError("original lease ownership differs")
         return result
 
