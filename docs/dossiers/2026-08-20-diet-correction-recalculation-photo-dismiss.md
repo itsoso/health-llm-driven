@@ -4,10 +4,35 @@
 |---|---|
 | slug | `diet-correction-recalculation-photo-dismiss` |
 | 创建日期 | 2026-08-20 |
-| 当前阶段 | 676e76b 后端与 Build 267 已发布；模拟器回归中，审核维护异常保留现场，G6 未完成 |
+| 当前阶段 | Build 267 已发布；ec3195 模拟器回归通过，审核维护异常保留现场，G6 未完成 |
 | 状态 | build_267_published_review_maintenance_blocked |
 | 负责 | Codex + 用户 |
 | 反馈环 | Backend focused tests + Mobile Jest/TypeScript + production OTA after Gates |
+
+## 2026-09-09 19:20 · 模拟器回归完成，发布维护继续阻断
+
+- 固定实现 `ec3195f6a4240ee68bb05db0ee307b122e2c0d35` 获独立 G4 GO；复审独立执行
+  维护 63 项、卡片 27 项回归通过。裁决仅覆盖代码，不授权重试旧维护操作或清除 lease。
+- 本机 CI-mode 完整发布集成 975 passed、84 subtests passed、exit 0，耗时 478.88 秒。
+  首轮因子进程 PATH 缺 python3.12 失败；修正工具路径后从干净固定源码完整重跑。
+- Mobile 所有已跟踪测试根目录分两组执行：280 + 25 suites，合计 2827 passed、1 个既有
+  skipped，两组 exit 0。TypeScript、秘密扫描、Dossier 一致性及 System Map 检查通过。
+  roots 划分只避开原生生成依赖目录 crawl，未减少项目测试或断言。
+- 同一临时 worktree 快进至 ec3195，重新构建并安装本地 Release 模拟器制品。8/8 原生
+  XCTest PASS、0 failure、152.5 秒、exit 0：六项基础回归以及营养数值单行、实际餐食照片
+  分享后问小巴复盘回主 Agent。截图确认营养格 3+2 布局，200kcal 未拆行；分享弹层自动
+  消失，主聊天页历史按钮可再操作。只证明导航闭环，不声称复盘模型回答或写入闭环已验收。
+- 补强医疗引用证据：原 BMI 用例仅证明官方链接路由，不能证明正文加载。实际 NHC 文件为
+  4 页扫描 PDF，首次按可搜索正文断言失败；改为校验已加载文档、4 页滚动容器和官方域名，
+  关闭 Safari 首次引导遮罩后 1/1 PASS，人工查看截图确认《成人体重判定》完整封面及次页。
+  此补强为本机测试，不声称仓库标准 harness 已增加正文断言。
+- 新鲜证据保留于本机 `/tmp/xiaoba-candidate-676e.uj2Ht1/`：
+  `SimulatorFixedRegressionEc319.xcresult`、`OfficialDocumentBodyVerified.xcresult`、
+  `ec319-release-integration-path.log`、`mobile-full-ec319.log`、`mobile-remaining-ec319.log`。
+  原始健康截图、账号信息和日志不提交仓库。全程未操作用户手机。
+- 已上传的 Build 267 不包含 ec3195 新修复。审核 fixture 维护仍为 NEEDS_OPERATOR，原始
+  lease、STARTED/失败证据保持不变；未重试、未清锁、未换操作 ID。未运行要求新鲜 fixture
+  的完整写入套件，也未将本地模拟器当作 TestFlight 同包真机证据。G6 未完成，正式送审未执行。
 
 ## 2026-09-09 19:00 · Build 267 发布与模拟器回归
 
