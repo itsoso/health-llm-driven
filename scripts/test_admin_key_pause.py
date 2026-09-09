@@ -438,7 +438,8 @@ def test_resume_identity_never_signals_reused_pid_or_other_key(monkeypatch, stat
     identity = {"pid": 123, "start": 456, "boot_id": "test-boot"}
     monkeypatch.setattr(m, "boot_id", lambda: "other-boot" if state == "other_boot" else "test-boot")
     target = m.key_digest(public())
-    monkeypatch.setattr(m.os, "pidfd_open", lambda _: 42, raising=False)
+    opened = []
+    monkeypatch.setattr(m.os, "pidfd_open", lambda pid: opened.append(pid) or 42, raising=False)
     monkeypatch.setattr(m.os, "close", lambda _: None)
     monkeypatch.setattr(m, "exited", lambda _: state == "gone")
     monkeypatch.setattr(m, "session", lambda _: {"pid": 123, "start": 999} if state == "reused" else {**identity, "argv": "sshd: root@notty"} if state == "argv_drift" else identity)
@@ -452,6 +453,7 @@ def test_resume_identity_never_signals_reused_pid_or_other_key(monkeypatch, stat
     else:
         m.resume_identity(identity, target)
     assert signals == ([(42, m.signal.SIGCONT)] if state in {"stopped", "argv_drift"} else [])
+    assert opened == ([] if state == "other_boot" else [123])
 
 
 @pytest.mark.parametrize("state", [b"T", b"t"])
