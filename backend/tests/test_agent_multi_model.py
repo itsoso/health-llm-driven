@@ -347,8 +347,9 @@ async def test_multi_model_simple_record_stops_after_verified_receipt(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("repeat_rejection", (False, True))
 async def test_multi_model_nutrition_rejection_stops_before_panel_synthesis(
-    db, auth_user_and_headers, monkeypatch
+    db, auth_user_and_headers, monkeypatch, repeat_rejection
 ):
     from app.services.agent_write_outcome import local_write_rejection
 
@@ -361,7 +362,7 @@ async def test_multi_model_nutrition_rejection_stops_before_panel_synthesis(
     async def fake_call_llm(messages, tools):
         nonlocal lead_calls
         lead_calls += 1
-        if lead_calls == 1:
+        if lead_calls == 1 or repeat_rejection:
             return {
                 "content": "",
                 "finish_reason": "tool_calls",
@@ -422,7 +423,7 @@ async def test_multi_model_nutrition_rejection_stops_before_panel_synthesis(
     )
     done = events[-1]["data"]
 
-    assert lead_calls >= 2
+    assert lead_calls == 2
     assert "完整营养" in rendered
     assert "早餐已经记录好了" not in rendered
     assert done["completion_status"] == "error"

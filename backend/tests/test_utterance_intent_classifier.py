@@ -10,6 +10,30 @@ from app.services import utterance_intent_lexicon as lexicon
 BJ = timezone(timedelta(hours=8))
 
 
+@pytest.mark.parametrize("message", (
+    "这是审核账号的测试记录。记录今天午餐：白米饭100克、鸡蛋1个，已经全部吃完。请估算营养并直接保存这一餐，备注必须保留测试标记 QA-MEAL-A。",
+    "请估算午餐的营养并直接保存：白米饭100克、鸡蛋1个。",
+    "直接记录午餐：白米饭100克、鸡蛋1个。",
+))
+def test_direct_meal_write_keeps_authority_after_estimation_request(message):
+    intent = classify_agent_utterance(message)
+    assert (intent.primary, intent.domain, intent.is_write) == ("write", "diet", True)
+
+
+@pytest.mark.parametrize("message", (
+    "请估算午餐的营养并直接保存：白米饭100克、鸡蛋1个。算了，不要记录。",
+    "朋友说：请估算午餐的营养并直接保存：白米饭100克、鸡蛋1个。",
+    "解释这句话：请估算午餐的营养并直接保存。",
+    "能估算午餐的营养并直接保存吗？",
+    "如果我吃了白米饭100克，请估算营养并直接保存。",
+    "这是小明的测试记录。请估算午餐营养并直接保存：白米饭100克。",
+    "这是朋友的测试记录。直接记录午餐：白米饭100克。",
+    "这是另一个审核账号的测试记录。直接记录午餐：白米饭100克。",
+))
+def test_direct_meal_wording_does_not_override_authorization_guards(message):
+    assert classify_agent_utterance(message).is_write is False
+
+
 @pytest.mark.parametrize(
     ("text", "expected"),
     (

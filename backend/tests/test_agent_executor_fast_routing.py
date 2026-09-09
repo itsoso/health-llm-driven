@@ -42,6 +42,9 @@ def test_record_intent_needs_detail_message_is_honest_and_actionable():
     msg = _record_intent_needs_detail_message("午餐吃了牛肉面")
     assert "还没记下来" in msg  # 如实:未记录
     assert "牛肉面" in msg  # 回显用户意图
+    assert "你可以重试" in msg
+    assert "我得能对上" not in msg
+    assert "点确认记录" not in msg  # No confirmation control was issued in this path.
     # 绝不谎报成功,也不谎称发生了 DB 写入失败(什么都没写过)
     for forbidden in ("已记录", "已经完成", "写入成功", "没有成功写入数据库", "写库失败"):
         assert forbidden not in msg

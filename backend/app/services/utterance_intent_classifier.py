@@ -608,6 +608,19 @@ def classify_agent_utterance(
         return _intent(raw, normalized, "chat", domain, "none", 0.78, "negated_write", scope)
 
     if (
+        domain == "diet"
+        and _has_any(normalized, WRITE_COMMAND_ACTIONS)
+        and not has_write_command
+        and has_non_authorizing_write_context(normalized)
+    ):
+        # A hypothetical/reported meal must not regain write permission through
+        # the declarative "吃了" fallback after the shared authorizer denied it.
+        return _intent(
+            raw, normalized, "chat", domain, "none", 0.9,
+            "diet_write_reference_without_authority", scope,
+        )
+
+    if (
         has_write_command
         or _has_any(normalized, DECLARATIVE_OBSERVATION_ACTIONS)
         or _has_explicit_observation_write(normalized, domain)

@@ -323,7 +323,7 @@ _SUBJECT_ACTION_SCOPE_BOUNDARY_RE = re.compile(
 )
 _COMPOUND_DIRECT_REQUEST_PREFIX_RE = re.compile(
     r"^(?:请|帮我)?(?:计算|分析|识别|估算|整理|总结).{0,48}"
-    r"(?:并|然后|再|同时)$"
+    r"(?:并|然后|再|同时)(?:直接)?$"
 )
 _POST_ATTRIBUTION_RE = re.compile(
     r"(?:这是|这只是|上面是|前面是).{0,12}(?:说的|写的|提到的)?"
@@ -823,6 +823,7 @@ _DIRECT_REQUEST_MODIFIERS = (
     "顺便",
     "现在",
     "立即",
+    "直接",
     "马上",
     "主动",
     "务必",
@@ -1736,6 +1737,17 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
 
 def _is_post_attributed_to_non_current_owner(clause: str) -> bool:
     normalized = clause.strip("，,。.!！；;：: ")
+    # A synthetic-data label names the kind of record, not another person.
+    # Do not accept arbitrary "X 的测试记录": named/third-party owners still
+    # pass through the ownership guards below. This never selects an account;
+    # authenticated user scoping remains the only write destination.
+    if normalized in {
+        "这是测试记录",
+        "这是本账号的测试记录",
+        "这是当前账号的测试记录",
+        "这是审核账号的测试记录",
+    }:
+        return False
     # ``给点意见`` / ``给些处理方法`` are direct requests for advice, not
     # postposed ownership statements.  The generic ``给 + owner`` grammar
     # otherwise captures ``点意见`` as an owner and makes an otherwise direct

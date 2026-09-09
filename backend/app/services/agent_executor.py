@@ -3298,11 +3298,8 @@ def _pre_dispatch_validation_user_message(result: Any) -> str:
     guidance = str(payload.get("recovery_guidance") or "").strip()
     error_code = str(payload.get("error_code") or "").strip()
     if error_code == "diet_nutrition_incomplete":
-        message = "我还不能根据这条描述完成餐食的完整营养估算。"
-        guidance = (
-            "请补充具体食物和大致份量；如果记录的是药物或补剂，"
-            "请说明名称和数量。"
-        )
+        message = "这份餐食的完整营养估算未完成。"
+        guidance = "你可以重试；如果食物或份量有变化，也可以补充修正。"
     elif error_code == "non_diet_intake":
         message = "这条内容看起来是药物或补剂摄入，不能作为餐食记录。"
         guidance = "请确认名称和数量后重新记录。"
@@ -5758,12 +5755,11 @@ def _medical_report_analysis_requested(text: str, *, persisted: bool) -> bool:
 
 
 def _record_intent_needs_detail_message(record_text: str) -> str:
-    """fast-record 被路由但 0 工具执行 = **没有发生任何写入尝试**(模型没吐出有效记录调用,
-    通常因为内容太笼统,如"记录饮食"没说吃了什么)。
+    """No verified record: acknowledge incompletion without inventing a cause.
 
-    诚实双约束:① 绝不谎报成功(honesty 硬闸,与旧行为一致);② 也不该谎称"没有成功写入
-    数据库"—— 什么都没写过、根本没到端点,说"写库失败"会误导用户以为发生了 DB 错误
-    (founder 2026-07-14 实测:'记录饮食' 被误报写库失败)。如实说"还没记下来"+ 请补具体。"""
+    Missing tool output does not prove missing user details or a database error.
+    Nor does it prove a confirmation control exists on the client.
+    """
     text = (record_text or "").strip()
     # 例子跨多领域(饮食/饮水/体测/档案属性/血压), 不再只给饮食/运动 —— 否则记鞋码却被要求
     # 补早餐(founder 2026-07-17 实测)。档案属性/个人事实(鞋码/衣码/喜好)现在走 remember,
@@ -5771,8 +5767,8 @@ def _record_intent_needs_detail_message(record_text: str) -> str:
     hint = "(比如「午饭鳕鱼50g」「喝水300ml」「体重71.4kg」「鞋码42.5」「血压120/80」)"
     if text:
         return (
-            f"我看你想记录「{text}」,但还没记下来 —— 我得能对上一个记录项才能存下。"
-            f"你想记的是哪类、值是多少?{hint}补一句,或点确认记录。"
+            f"「{text}」还没记下来，这轮没有完成记录动作。"
+            "你可以重试；如果内容需要补充或修正，也可以修改后再发。"
         )
     return f"我看你想记一条,但还没记下来 —— 你想记什么、值是多少?{hint}"
 
@@ -9232,7 +9228,11 @@ _SIMPLE_DIET_NUTRITION_LIMITS = {
     "fat": 500.0,
     "fiber": 200.0,
 }
-_SIMPLE_DIET_NUTRITION_FAST_PATH_TIMEOUT_SECONDS = 3.0
+# The deployed vision estimator needs about 7s for a two-food text meal. A 3s
+# cutoff cancelled valid estimates and sent users into eight tool-repair rounds.
+# Keep one bounded estimate (provider gets 90% of this budget) before allowing
+# one model-assisted repair; do not relax the complete-nutrition write gate.
+_SIMPLE_DIET_NUTRITION_FAST_PATH_TIMEOUT_SECONDS = 12.0
 
 
 def _simple_diet_nutrition_estimator_model_name() -> Optional[str]:
@@ -13094,6 +13094,7 @@ class AgentExecutor:
             deterministic_supplement_fallback_attempted = False
             deterministic_simple_record_fallback_attempted = False
             simple_diet_nutrition_estimation_attempted = False
+            simple_diet_nutrition_rejection_rounds: set[int] = set()
             deterministic_goal_lookup_attempted = False
             deterministic_goal_delete_attempted = False
             goal_verification_attempted = False
@@ -13631,6 +13632,14 @@ class AgentExecutor:
                         ) = _summarize_recoverable_write_rejections(
                             pending_recoverable_write_rejections
                         )
+                        if (
+                            last_recoverable_write_rejection_code == "diet_nutrition_incomplete"
+                            and self._agent_kernel_snapshot is not None
+                            and self._agent_kernel_snapshot.goal is not None
+                            and self._agent_kernel_snapshot.goal.kind == "simple_health_record"
+                            and self._agent_kernel_snapshot.goal.target_record_type == "diet"
+                        ):
+                            simple_diet_nutrition_rejection_rounds.add(_round)
                         if not transient_local_rejection:
                             yield {"event": "tool_result", "data": tool_event_data}
                         if (
@@ -13638,6 +13647,15 @@ class AgentExecutor:
                             and checkpoint_status == "uncertain"
                         ):
                             raise _UnverifiedWriteResult()
+                    if (
+                        len(simple_diet_nutrition_rejection_rounds) >= 2
+                        and last_recoverable_write_rejection
+                    ):
+                        # One repair opportunity is enough for a single bounded
+                        # meal; never spend the remaining rounds repeating a
+                        # known invalid write. The terminal rejection below
+                        # preserves the no-write outcome and retry action.
+                        break
                     continue
                 # 兜底:内联标记(括号 / XML `<invoke>`)未恢复成 tool_call(name 不在白名单等)时,
                 # 绝不能把裸工具语法当 lead 分析落进 final_text / 喂给下游多方分析。cheap-precheck no-op。
@@ -14587,6 +14605,12 @@ class AgentExecutor:
         # deterministic boundary sanitizer has run.  Conflating the two causes
         # ordinary medication/supplement queries and writes to lose their tools.
         health_advice_buffered = health_evidence_turn is not None
+        completion_intent = classify_agent_utterance(message)
+        record_write_requested = (
+            completion_intent.primary == "write"
+            and completion_intent.is_write
+            and completion_intent.domain != "aigc_media"
+        )
         response_output_buffered = (
             health_advice_buffered or medical_boundary_buffered
         )
@@ -15630,6 +15654,7 @@ class AgentExecutor:
         deterministic_supplement_fallback_attempted = False
         deterministic_simple_record_fallback_attempted = False
         simple_diet_nutrition_estimation_attempted = False
+        simple_diet_nutrition_rejection_rounds: set[int] = set()
         simple_diet_nutrition_estimate_ms: Optional[int] = None
         simple_diet_nutrition_estimate_calls = 0
         simple_diet_nutrition_estimate_timed_out = False
@@ -16166,17 +16191,17 @@ class AgentExecutor:
                         ):
                             inline_suppressed = True
                             streamed_to_client = False
-                        # 记录意图整轮快路由 + 尚无工具执行: content 绝不 live 下发。
+                        # 健康记录意图 + 尚无写入回执: content 绝不 live 下发。
                         # 生产实锤(2026-07-17, user=3 ×2/24h): 弱模型对「麦当劳店记录打了一个
                         # 喷嚏。」直接吐出「✅ **症状已记录**:打喷嚏(上午 09:21)」却**一个工具都没调**
                         # (它调的是只读 health_query) → 用户看到绿对勾, 不会重记, 那条症状永久丢失。
                         # :7228 的诚实覆盖(final_text=_record_intent_needs_detail_message +
                         # streamed_to_client=False)本身是对的, 但它跑在 token 已经 yield 出去之后 ——
                         # 只改了落库消息, **救不回已经流到屏幕上的字**。故必须在下发前就抑制:
-                        # 工具真跑过(tool_executed_count>0)之后的轮照常 live 流(那时"已记录"才是真的)。
+                        # 只有写入回执才能证明完成；模型路由和只读工具都不能替代回执。
                         # 与上面 _tool_round_fast_routed 同一范式(先抑制、后按真实结果补发)。
                         _record_claim_unverified = bool(
-                            self._prefer_fast_record_model and not write_receipts
+                            record_write_requested and not write_receipts
                         )
                         _diet_correction_claim_unverified = (
                             partial_diet_correction_requested
@@ -17543,6 +17568,14 @@ class AgentExecutor:
                         ) = _summarize_recoverable_write_rejections(
                             pending_recoverable_write_rejections
                         )
+                        if (
+                            last_recoverable_write_rejection_code == "diet_nutrition_incomplete"
+                            and self._agent_kernel_snapshot is not None
+                            and self._agent_kernel_snapshot.goal is not None
+                            and self._agent_kernel_snapshot.goal.kind == "simple_health_record"
+                            and self._agent_kernel_snapshot.goal.target_record_type == "diet"
+                        ):
+                            simple_diet_nutrition_rejection_rounds.add(round_idx)
                         suppress_contextual_diet_replay_card = (
                             func_name == "health_record"
                             and bool(self._turn_contextual_diet_cards)
@@ -17964,7 +17997,10 @@ class AgentExecutor:
                         self._force_no_tools_synthesis = True
 
                     if (
-                        round_idx == MAX_TOOL_ROUNDS - 1
+                        (
+                            round_idx == MAX_TOOL_ROUNDS - 1
+                            or len(simple_diet_nutrition_rejection_rounds) >= 2
+                        )
                         and last_recoverable_write_rejection
                     ):
                         final_finish_reason = "error"
@@ -18182,7 +18218,7 @@ class AgentExecutor:
                                 )
                             final_text = pending_text
                             streamed_to_client = False
-                    elif self._prefer_fast_record_model and not write_receipts:
+                    elif record_write_requested and not write_receipts:
                         final_text = _record_intent_needs_detail_message(message)
                         streamed_to_client = False
                     elif (
@@ -18390,7 +18426,7 @@ class AgentExecutor:
             final_finish_reason = "stop"
         record_intent_no_tool = bool(
             health_evidence_turn is None
-            and self._prefer_fast_record_model
+            and record_write_requested
             and not write_receipts
             and not self._agent_kernel_pending_confirmation_tools
             and not last_recoverable_write_rejection
@@ -18411,7 +18447,7 @@ class AgentExecutor:
             if full_reply.strip() != fail_closed_reply:
                 full_reply = fail_closed_reply
             logger.warning(
-                "[agent_executor] RECORD INTENT but 0 tools executed — possible silent "
+                "[agent_executor] RECORD INTENT but no verified write receipt — possible silent "
                 "data loss (model may have claimed success without writing). "
                 "user=%s message_chars=%s",
                 user_id,

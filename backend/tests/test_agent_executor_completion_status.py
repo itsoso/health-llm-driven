@@ -3070,7 +3070,8 @@ async def test_agent_stream_strips_leading_inline_tool_json_then_prose(db, auth_
 
 
 @pytest.mark.asyncio
-async def test_record_intent_with_no_tool_executed_is_flagged(db, auth_user_and_headers):
+@pytest.mark.parametrize("fast_route", (True, False))
+async def test_record_intent_with_no_tool_executed_is_flagged(db, auth_user_and_headers, fast_route):
     """#3 guard: a record-intent turn where the model only SAYS '已记录' but calls no
     tool must be flagged (record_intent_no_tool=True) so silent data loss is observable
     instead of looking like success."""
@@ -3080,6 +3081,7 @@ async def test_record_intent_with_no_tool_executed_is_flagged(db, auth_user_and_
 
     async def fake_call_llm(messages, tools):
         # No tool_calls, no inline JSON — the model hallucinates a successful record.
+        executor._prefer_fast_record_model = fast_route
         return {"content": "已记录晚餐：牛肉饭。", "finish_reason": "stop"}
 
     async def fake_execute_tool(tool_name, args_raw, user_token):
@@ -3100,6 +3102,9 @@ async def test_record_intent_with_no_tool_executed_is_flagged(db, auth_user_and_
     done = [e for e in events if e.get("event") == "done"]
     assert done, "should yield a done event"
     assert done[0]["data"]["record_intent_no_tool"] is True
+    assert done[0]["data"]["turn_outcome"]["category"] != "success"
+    rendered = "".join(e["data"].get("content", "") for e in events if e.get("event") == "token")
+    assert "已记录晚餐" not in rendered
     assert executed == []  # confirms no tool ran — the flag caught real silent loss
 
 
@@ -3461,8 +3466,9 @@ async def test_agent_stream_enriches_anchor_peach_before_single_dispatch(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("estimate_delay", (0, 3.05))
 async def test_agent_stream_clear_text_diet_uses_verified_progressive_fast_path(
-    db, auth_user_and_headers, monkeypatch
+    db, auth_user_and_headers, monkeypatch, estimate_delay
 ):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
@@ -3479,6 +3485,7 @@ async def test_agent_stream_clear_text_diet_uses_verified_progressive_fast_path(
     async def fake_estimate(food_items):
         assert food_items == "一个桃子"
         estimate_calls.append(food_items)
+        await asyncio.sleep(estimate_delay)
         return {
             "calories": 58,
             "protein": 1.4,
@@ -3795,7 +3802,9 @@ async def test_agent_stream_reports_nutrition_rejection_instead_of_model_success
     done = next(event for event in events if event.get("event") == "done")
 
     assert "完整营养" in rendered
-    assert "具体食物和大致份量" in rendered
+    assert "你可以重试" in rendered
+    assert "请补充具体食物" not in rendered
+    assert "药物或补剂" not in rendered
     assert "calories" not in rendered
     assert "早餐已经记录好了" not in rendered
     assert "补充记录类型和值" not in rendered
@@ -3857,7 +3866,9 @@ async def test_agent_stream_reports_last_nutrition_error_when_all_rounds_reject(
     done = next(event for event in events if event.get("event") == "done")
 
     assert "完整营养" in rendered
-    assert "具体食物和大致份量" in rendered
+    assert "你可以重试" in rendered
+    assert "请补充具体食物" not in rendered
+    assert "药物或补剂" not in rendered
     assert "calories" not in rendered
     assert "模型仍尝试继续调用工具" not in rendered
     assert not any(
@@ -3867,6 +3878,9 @@ async def test_agent_stream_reports_last_nutrition_error_when_all_rounds_reject(
     )
     assert done["data"]["completion_status"] == "error"
     assert done["data"]["write_receipts"] == []
+    # One failed proposal may be repaired, but repeated incomplete nutrition
+    # must not consume the entire eight-round agent budget.
+    assert llm_calls <= 2
 
 
 @pytest.mark.parametrize("rejected_first", (False, True))
