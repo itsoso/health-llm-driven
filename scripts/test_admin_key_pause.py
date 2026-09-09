@@ -184,6 +184,7 @@ def test_restore_must_not_rewrite_authorized_keys():
 def operator(tmp_path, monkeypatch):
     from types import SimpleNamespace
     m = load()
+    monkeypatch.setattr(m, "boot_id", lambda: "test-boot")
     config = tmp_path / "sshd_config"
     config.write_text(f"Include {tmp_path}/*.conf\n")
     # Isolate filesystem/sshd adapters; exercise real transition methods.
@@ -314,6 +315,7 @@ def test_terminate_preserves_exact_identity_and_unknown_blocks(tmp_path, monkeyp
     from types import SimpleNamespace
     m, a, e, _ = operator(tmp_path, monkeypatch)
     identity = {"pid": 123, "start": 456}
+    monkeypatch.setattr(m, "process_state", lambda _: b"S")
     monkeypatch.setattr(a, "verify_paused", lambda _: None)
     iterations = iter([[identity], [identity] if failure == "reconnected" else []])
     monkeypatch.setattr(a, "target_sessions", lambda: next(iterations))
@@ -375,6 +377,7 @@ def test_freeze_prevents_fork_between_child_check_and_termination(tmp_path, monk
     from types import SimpleNamespace
     m, a, e, _ = operator(tmp_path, monkeypatch)
     identity = {"pid": 123, "start": 456}
+    monkeypatch.setattr(m, "process_state", lambda _: b"S")
     monkeypatch.setattr(a, "verify_paused", lambda _: None)
     iterations = iter([[identity], []])
     monkeypatch.setattr(a, "target_sessions", lambda: next(iterations))
@@ -406,6 +409,7 @@ def test_freeze_prevents_fork_between_child_check_and_termination(tmp_path, monk
 def test_freeze_failure_always_attempts_recorded_resume(tmp_path, monkeypatch, point):
     m, a, e, _ = operator(tmp_path, monkeypatch)
     identity = {"pid": 123, "start": 456}
+    monkeypatch.setattr(m, "process_state", lambda _: b"S")
     monkeypatch.setattr(a, "verify_paused", lambda _: None)
     monkeypatch.setattr(a, "target_sessions", lambda: [identity])
     monkeypatch.setattr(m, "session", lambda _: identity)
@@ -428,10 +432,11 @@ def test_freeze_failure_always_attempts_recorded_resume(tmp_path, monkeypatch, p
     assert json.loads((a.record / "freeze-123-456.json").read_bytes()) == {"identity": identity, "key_digest": a.target}
 
 
-@pytest.mark.parametrize("state", ["stopped", "running", "reused", "gone", "wrong_key", "argv_drift"])
+@pytest.mark.parametrize("state", ["stopped", "running", "reused", "gone", "wrong_key", "argv_drift", "other_boot"])
 def test_resume_identity_never_signals_reused_pid_or_other_key(monkeypatch, state):
     m = load()
-    identity = {"pid": 123, "start": 456}
+    identity = {"pid": 123, "start": 456, "boot_id": "test-boot"}
+    monkeypatch.setattr(m, "boot_id", lambda: "other-boot" if state == "other_boot" else "test-boot")
     target = m.key_digest(public())
     monkeypatch.setattr(m.os, "pidfd_open", lambda _: 42, raising=False)
     monkeypatch.setattr(m.os, "close", lambda _: None)
@@ -447,6 +452,25 @@ def test_resume_identity_never_signals_reused_pid_or_other_key(monkeypatch, stat
     else:
         m.resume_identity(identity, target)
     assert signals == ([(42, m.signal.SIGCONT)] if state in {"stopped", "argv_drift"} else [])
+
+
+@pytest.mark.parametrize("state", [b"T", b"t"])
+def test_already_stopped_session_is_not_owned_or_resumed(tmp_path, monkeypatch, state):
+    m, a, e, _ = operator(tmp_path, monkeypatch)
+    identity = {"pid": 123, "start": 456}
+    monkeypatch.setattr(a, "verify_paused", lambda _: None)
+    monkeypatch.setattr(a, "target_sessions", lambda: [identity])
+    monkeypatch.setattr(m, "session", lambda _: identity)
+    monkeypatch.setattr(m, "authenticated_key", lambda _: m.fingerprint(a.target))
+    monkeypatch.setattr(m, "process_state", lambda _: state)
+    monkeypatch.setattr(m.os, "pidfd_open", lambda _: 42, raising=False)
+    monkeypatch.setattr(m.os, "close", lambda _: None)
+    signals = []
+    monkeypatch.setattr(m.signal, "pidfd_send_signal", lambda *args: signals.append(args), raising=False)
+    monkeypatch.setattr(m, "resume_identity", lambda *args: signals.append(args))
+    with pytest.raises(m.PauseError, match="already stopped"):
+        a.terminate(e)
+    assert not signals and not list(a.record.glob("freeze-*.json"))
 
 
 def test_restore_recovers_freeze_before_ssh_policy(tmp_path, monkeypatch):

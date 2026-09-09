@@ -191,10 +191,17 @@ def context(sha, *, recovery=False):
     return bootstrap
 
 
+def boot_id():
+    value = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+    if re.fullmatch(r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}", value) is None:
+        raise PauseError("kernel boot identity unavailable")
+    return value
+
+
 def session(pid):
     p = Path("/proc") / str(pid)
     info = (p / "stat").read_bytes().rsplit(b")", 1)[-1].split()
-    return {"pid": pid, "ppid": int(info[1]), "start": int(info[19]), "uid": p.stat().st_uid,
+    return {"boot_id": boot_id(), "pid": pid, "ppid": int(info[1]), "start": int(info[19]), "uid": p.stat().st_uid,
             "exe": os.readlink(p / "exe"), "argv": (p / "cmdline").read_bytes().rstrip(b"\0").decode()}
 
 
@@ -231,6 +238,8 @@ def exited(fd, timeout=0):
 
 def resume_identity(identity, target):
     """Undo only our recorded freeze, never signal a reused PID or other key."""
+    if identity["boot_id"] != boot_id():
+        return  # The original process cannot survive a different kernel boot.
     try:
         fd = os.pidfd_open(identity["pid"])
     except ProcessLookupError:
@@ -258,7 +267,7 @@ def resume_identity(identity, target):
 
 
 def authenticated_key(identity):
-    boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip().replace("-", "")
+    boot = boot_id().replace("-", "")
     raw = run(["/usr/bin/journalctl", "--no-pager", "-o", "json", f"_PID={identity['pid']}", f"_BOOT_ID={boot}"]).stdout
     found = set()
     for line in raw.splitlines():
@@ -513,6 +522,8 @@ class Operator:
             try:
                 if session(identity["pid"]) != identity or authenticated_key(identity) != fingerprint(self.target):
                     raise PauseError("SSH identity changed before termination")
+                if process_state(identity["pid"]) in (b"T", b"t"):
+                    raise PauseError("target session already stopped; freeze not owned")
                 write_json(self.record / f"freeze-{identity['pid']}-{identity['start']}.json",
                            {"identity": identity, "key_digest": self.target})
                 freeze_attempted = True
