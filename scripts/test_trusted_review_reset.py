@@ -912,6 +912,64 @@ stat() {
 
 
 class IsolatedSeederTests(unittest.TestCase):
+    def test_real_settings_target_override_is_blocked_before_seeder_import(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp).resolve()
+            for path in (source / "backend/app", source / "backend/scripts"):
+                path.mkdir(parents=True)
+            put(source / "backend/app/__init__.py", b"")
+            put(source / "backend/app/config.py", (SCRIPTS.parent / "backend/app/config.py").read_bytes())
+            marker = source / "seeder-imported"
+            put(source / "backend/scripts/seed_demo_account.py", (
+                "from pathlib import Path\nimport json\n"
+                f"Path({str(marker)!r}).touch()\n"
+                "def main():\n"
+                "    print(json.dumps(dict(verification='PASS', daily_plan_actions=1, timeline_events=1, demo_conversation_messages=2)))\n"
+                "    return 0\n").encode())
+            site = Path(sys.executable).parent.parent / "lib/python3.12/site-packages"
+            environment = {"DATABASE_URL": "postgresql://localhost/review_fixture_test",
+                           "SECRET_KEY": "test-secret-key-32-chars-minimum!!"}
+            code = '''import importlib.util, json, sys
+from pathlib import Path
+spec = importlib.util.spec_from_file_location('review_reset', sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+def context():
+    assert sys.flags.isolated and sys.flags.no_site and sys.flags.dont_write_bytecode
+module.operator_context = context
+module.SYSTEM_SEARCH_PATHS = frozenset(sys.path)
+try:
+    module._run_canonical_seeder(Path(sys.argv[2]), Path(sys.argv[3]), json.loads(sys.argv[4]), lambda: None)
+except module.ResetError:
+    assert 'app.database' not in sys.modules
+    print('BLOCKED_BEFORE_DATABASE')
+else:
+    print('MATCHING_TARGET_PASS')
+'''
+            for override in ({"database_url": "sqlite:////tmp/synthetic-wrong-target.db"},
+                             {"POSTGRES_HOST": "other.invalid", "POSTGRES_PASSWORD": "synthetic"}, {}):
+                with self.subTest(override=override):
+                    result = subprocess.run([sys.executable, "-I", "-S", "-B", "-c", code,
+                        str(SCRIPTS / "trusted_review_reset.py"), str(source), str(site), json.dumps({**environment, **override})],
+                        capture_output=True, text=True, timeout=20, check=False)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout, "BLOCKED_BEFORE_DATABASE\n" if override else "MATCHING_TARGET_PASS\n")
+                    self.assertEqual(marker.exists(), not override)
+
+    def test_environment_parser_rejects_ambiguous_keys_and_unresolved_targets(self):
+        reset = load("trusted_review_reset")
+        good = "DATABASE_URL=postgresql://localhost/review_fixture_test\nAPP_STORE_REVIEW_DEMO_ACCOUNT=fixture@example.invalid\nAPP_STORE_REVIEW_DEMO_PASSWORD='literal-${not_expanded}'\n"
+        for bad in (good + "database_url=sqlite:////tmp/wrong.db\n",
+                    good + "DATABASE_URL=postgresql://other/wrong\n",
+                    good + "BROKEN='unterminated\n",
+                    good.replace("fixture@example.invalid", "${REVIEW_EMAIL}"),
+                    good.replace("fixture@example.invalid", "$REVIEW_EMAIL"),
+                    good.replace("fixture@example.invalid", "not-an-email"),
+                    good.replace("localhost", "${DB_HOST}")):
+            with self.subTest(bad=bad), self.assertRaises(reset.ResetError):
+                reset._parse_maintenance_environment(bad)
+        self.assertEqual(reset._parse_maintenance_environment(good)["APP_STORE_REVIEW_DEMO_PASSWORD"], "literal-${not_expanded}")
+
     def test_real_process_does_not_execute_pth_or_import_live_or_environment_modules(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
@@ -927,6 +985,7 @@ class IsolatedSeederTests(unittest.TestCase):
             put(live / "live_only.py", tripwire.encode())
             put(hostile / "outside_only.py", tripwire.encode())
             put(source / "backend/app/__init__.py", b"ORIGIN = 'canonical'\n")
+            put(source / "backend/app/config.py", b"class Config:\n    effective_database_url = 'postgresql://localhost/review_fixture_test'\nsettings = Config()\n")
             put(source / "backend/fixtures/synthetic.json", b'{"synthetic": true}')
             put(site / "verified_dependency.py", b"VALUE = 1\n")
             seeder = '''import importlib.util, json, os, sys
@@ -959,7 +1018,7 @@ def context():
 module.operator_context = context
 module.SYSTEM_SEARCH_PATHS = frozenset(sys.path)
 module._run_canonical_seeder(Path(sys.argv[2]), Path(sys.argv[3]),
-    {'APP_STORE_REVIEW_DEMO_ACCOUNT': 'fixture@example.invalid'}, lambda: None)
+    {'APP_STORE_REVIEW_DEMO_ACCOUNT': 'fixture@example.invalid', 'DATABASE_URL': 'postgresql://localhost/review_fixture_test'}, lambda: None)
 print('ISOLATED_FIXTURE_OK')
 '''
             result = subprocess.run([sys.executable, "-I", "-S", "-B", "-c", code,

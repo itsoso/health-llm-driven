@@ -127,7 +127,11 @@ operator、lease 内执行和摘要校验均使用固定系统 Python `-I -S -B`
 受管 `.pth` 仅作为不执行的文件保留，editable、customize、外部链接及额外 site
 目录仍 BLOCK。生产配置通过元数据校验后按 dotenv 数据读取，不执行 shell；缺失
 PostgreSQL URL 或固定审核凭据必须失败，不退到默认数据库/账号。应用导入前加载
-配置，首次写入前及完成后再次核对 lease token 与原 inode。摘要有大小上限，拒绝
+配置；拒绝 dotenv 解析错误、重复/大小写冲突的键及未解析的目标引用。审核邮箱必须
+为字面有效格式，密码仅按 dotenv 数据解析不做变量展开。只从 canonical backend
+首次导入纯 `app.config`，在任何 seeder/DB 导入前证明实际 effective_database_url
+与已校验 PostgreSQL URL 完全一致，拒绝 `POSTGRES_*` 隐式改目标或预加载 app 模块。
+首次写入前及完成后再次核对 lease token 与原 inode。摘要有大小上限，拒绝
 重复/额外字段和布尔计数。失败保留现场，不通过现场修权限或删缓存自动重试。
 依赖信任限于既有 root 受管安装，不宣称已逐字节证明 wheel 与 lock 一致。
 

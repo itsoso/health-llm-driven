@@ -244,6 +244,8 @@
 - 独立方案审查 GO（不等同固定代码 G4）：执行源收束到 canonical backend，完整验证 Git 文件/资源清单；保留生产 revision、tracked metadata、依赖所有权和锁/意图证明。禁止修改 `private_media` 权限、删除缓存或给未知 hook 加白名单。
 - 三项先红回归复现媒体目录误入导入树、受管 `.pth` 被一律拒绝和 canonical ignored 模块漏检。实现改为系统 Python `-I -S -B`，显式只添加受管依赖目录，不执行 `.pth`，不导入 live backend；配置作为数据读取，不再 shell source；固定审核凭据及 PostgreSQL URL 缺失即失败。
 - 初轮回归暴露 live tracked hardlink 检查随旧扫描移除而丢失，已补回逐 tracked 文件 metadata 校验，无需遍历媒体。定向集成回归 72/72、57 subtests、exit 0；新增真实子进程隔离/摘要/凭据前阻断等 5/5、exit 0。完整新鲜回归和固定 SHA G4 尚未结束；没有生产维护、部署或正式送审。
+- 第一轮固定 `8c366c405` 独立 G4 NO-GO：大小写数据库键/`POSTGRES_*` 可让实际目标不同于入口校验值，未解析审核邮箱引用可被当成新账号。已补失败复现：严格 dotenv binding 检查、拒绝重复/解析错误/目标引用、字面邮箱校验，并在 seeder/DB 导入前对 canonical `app.config` 的实际目标作完全一致性证明；密码保留字面数据语义。配置/隔离定向 8/8、19 subtests、exit 0，等待新 SHA 复审。
+- 原候选完整同 CI 发布不变量 877/877、57 subtests、exit 0；审核 seeder PostgreSQL 六项通过。额外真实 staging CLI 首次因测试 schema 未注册全部懒加载模型而失败，保留日志；另建完整模型 schema 的独立测试库后，真实 canonical seeder 的 main、read-path 和摘要校验全程通过（exit 0）。该本机证据不等于生产审核恢复成功，也不覆盖后续源码的最终复审。
 
 > 点击调整记录，修改食物的内容。比如把1碗改成两碗，那么在保存的时候要重新计算热量。当前只是修改了内容，但是没有修改和重新计算真实的营养物质和热量，要做这个优化。点击图片，展开午餐图，用手滑一下，图片应该自动消失，而不是再点击那个叉号再消失。要优化这个交互。
 

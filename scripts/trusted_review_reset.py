@@ -358,19 +358,64 @@ def _assert_isolated_search_path():
         raise ResetError("unexpected maintenance search path")
 
 
+def _parse_maintenance_environment(raw):
+    # parse_stream retains duplicate/invalid bindings that dotenv_values would
+    # silently collapse. Passwords are literal dotenv data, never shell-expanded.
+    from dotenv.parser import parse_stream
+    values, folded = {}, set()
+    for binding in parse_stream(io.StringIO(raw)):
+        if binding.error:
+            raise ResetError("malformed maintenance configuration")
+        if binding.key is None:
+            continue
+        key = binding.key
+        if (re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) is None
+                or key.casefold() in folded):
+            raise ResetError("ambiguous maintenance configuration")
+        folded.add(key.casefold())
+        if binding.value is not None:
+            values[key] = binding.value
+    for key in ("DATABASE_URL", "APP_STORE_REVIEW_DEMO_ACCOUNT", "APP_STORE_REVIEW_DEMO_PASSWORD"):
+        if not isinstance(values.get(key), str) or not values[key].strip():
+            raise ResetError("required production maintenance configuration missing")
+    account = values["APP_STORE_REVIEW_DEMO_ACCOUNT"]
+    if re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+", account) is None:
+        raise ResetError("literal review account email required")
+    target = values["DATABASE_URL"]
+    if (not target.startswith(("postgresql://", "postgresql+psycopg2://"))
+            or re.search(r"\$(?:\{|[A-Za-z_])", target)):
+        raise ResetError("literal PostgreSQL maintenance target required")
+    values.update(PATH="/usr/bin:/bin", HOME="/nonexistent")
+    return values
+
+
+def _validate_effective_target(source, environment):
+    # app.config is pure configuration (no DB import). Never reuse app modules
+    # from a caller/dependency; canonical backend is first on the search path.
+    if any(name == "app" or name.startswith("app.") for name in sys.modules):
+        raise ResetError("preloaded application modules forbidden")
+    config = importlib.import_module("app.config")
+    if (Path(config.__file__) != source / "backend/app/config.py"
+            or "app.database" in sys.modules
+            or config.settings.effective_database_url != environment["DATABASE_URL"]):
+        raise ResetError("effective database target differs from validated configuration")
+
+
 def _run_canonical_seeder(source, site, environment, before_write):
     # Called only by the proof-bearing entry below. -I -S supplies OS stdlib
     # paths; no cwd/PYTHONPATH/user site/venv .pth is ever consulted.
     operator_context()
     _assert_isolated_search_path()
     os.chdir(source / "backend")
-    sys.path.extend([str(site), str(source / "backend")])
+    sys.path.insert(0, str(source / "backend"))
+    sys.path.append(str(site))
     os.environ.clear()
     os.environ.update(environment)
     entry = source / "backend/scripts/seed_demo_account.py"
     sys.argv = [str(entry), "--secret-free"]
     output = _BoundedSummary()
     with contextlib.redirect_stdout(output), contextlib.redirect_stderr(_BoundedSummary()):
+        _validate_effective_target(source, environment)
         module = runpy.run_path(str(entry), run_name="reviewed_maintenance_seeder")
         before_write()
         if module["main"]() != 0:
@@ -398,17 +443,9 @@ def execute_review_maintenance(sha, lease_dir, lease_token):
         site = PRODUCTION / "backend/venv/lib/python3.12/site-packages"
         sys.path.append(str(site))
         try:
-            from dotenv import dotenv_values
-            values = dotenv_values(stream=io.StringIO(server.read_production_env()), interpolate=False)
+            environment = _parse_maintenance_environment(server.read_production_env())
         finally:
             sys.path.remove(str(site))
-        for key in ("DATABASE_URL", "APP_STORE_REVIEW_DEMO_ACCOUNT", "APP_STORE_REVIEW_DEMO_PASSWORD"):
-            if not isinstance(values.get(key), str) or not values[key].strip():
-                raise ResetError("required production maintenance configuration missing")
-        if not values["DATABASE_URL"].startswith(("postgresql://", "postgresql+psycopg2://")):
-            raise ResetError("PostgreSQL maintenance target required")
-        environment = {key: value for key, value in values.items() if value is not None}
-        environment.update(PATH="/usr/bin:/bin", HOME="/nonexistent")
         same_lease()
         _run_canonical_seeder(source, site, environment, same_lease)
         same_lease()
