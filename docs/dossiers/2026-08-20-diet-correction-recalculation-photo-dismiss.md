@@ -621,3 +621,5 @@
 - RED/GREEN：缺少原子发布的回归先出现 3 failed / 17 passed；实现后相关本地测试 58 passed，Linux 原生 OpenSSH 测试在本机明确 skipped，已接入 CI 独立 sshd 闸，不将 mock 测试冒充 Linux 实测。
 - System Map、导航图、文档漂移检查通过。此条为实现中断点，尚未执行生产暂停/恢复/新包构建，独立 G4、完整集成、精确新 SHA CI 和 Linux 原生闸仍待验证。
 - 保留工作区内来源独立的 DietShareCard 及其测试改动，不把它们纳入本次恢复工具提交。
+- 独立 G4 对 e3ff4a84a 首轮 NO-GO：其他 key 的未完成恢复审计必须全局阻断；检查子进程至 TERM 有竞态；原生 StrictModes 测试不能把授权文件放 /tmp。两项新增回归先 RED，随后加入全局未恢复审计检查、持久化 pidfd STOP → 内核停态 → 无子进程 → 精确 KILL、失败精确 CONT/后续恢复，以及 /root 私有 CI basetemp。相关回归 70 passed、1 个 Linux 专用 skip；待固定重审。
+- 首轮完整集成未通过：787 passed + 84 subtests 后，专用 PostgreSQL 端口 55493 未监听导致 1 error；已确认是测试实例启动漏传端口，未访问生产库。修正实例启动参数后将从最终固定源码完整重跑，不以部分通过放行。

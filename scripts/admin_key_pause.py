@@ -17,6 +17,7 @@ import signal
 import stat
 import subprocess
 import sys
+import time
 
 ENV = {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "LC_ALL": "C"}
 ROOT = Path("/var/lib/reva-admin-key-pauses")
@@ -207,6 +208,52 @@ def ancestry():
     return values
 
 
+def process_state(pid):
+    return (Path("/proc") / str(pid) / "stat").read_bytes().rsplit(b")", 1)[-1].split()[0]
+
+
+def wait_stopped(identity):
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        if session(identity["pid"]) != identity:
+            raise PauseError("session changed while freezing")
+        if process_state(identity["pid"]) == b"T":
+            return
+        time.sleep(0.01)
+    raise PauseError("session freeze unproven")
+
+
+def exited(fd, timeout=0):
+    poller = select.poll()
+    poller.register(fd, select.POLLIN)
+    return bool(poller.poll(timeout))
+
+
+def resume_identity(identity, target):
+    """Undo only our recorded freeze, never signal a reused PID or other key."""
+    try:
+        fd = os.pidfd_open(identity["pid"])
+    except ProcessLookupError:
+        return
+    try:
+        if exited(fd):
+            return
+        current = session(identity["pid"])
+        if current["start"] != identity["start"]:
+            return  # Original process is gone; the replacement must not be touched.
+        if current != identity or authenticated_key(current) != fingerprint(target):
+            raise PauseError("frozen session identity drifted")
+        if process_state(identity["pid"]) == b"T":
+            signal.pidfd_send_signal(fd, signal.SIGCONT)
+            deadline = time.monotonic() + 2
+            while not exited(fd) and process_state(identity["pid"]) == b"T":
+                if time.monotonic() >= deadline:
+                    raise PauseError("session resume unproven")
+                time.sleep(0.01)
+    finally:
+        os.close(fd)
+
+
 def authenticated_key(identity):
     boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip().replace("-", "")
     raw = run(["/usr/bin/journalctl", "--no-pager", "-o", "json", f"_PID={identity['pid']}", f"_BOOT_ID={boot}"]).stdout
@@ -353,7 +400,35 @@ class Operator:
             if p.name.isdigit() and int((p / "stat").read_bytes().rsplit(b")", 1)[-1].split()[1]) == pid:
                 raise PauseError("target SSH connection has child processes")
 
+    def no_pending_pauses(self):
+        if not ROOT.exists():
+            return
+        self.b.secure(ROOT)
+        records = list(ROOT.iterdir())
+        if len(records) > 1000:
+            raise PauseError("pause audit inventory exceeds bound")
+        for record in records:
+            if record == self.record:
+                continue  # Same transaction reinspection after durable intent.
+            self.b.secure(record)
+            if not record.is_dir() or re.fullmatch(r"[a-f0-9]{40}-[a-f0-9]{64}", record.name) is None:
+                raise PauseError("unknown pause audit")
+            required = [record / name for name in ("intent.json", "restore-intent.json", "restored.json")]
+            if not all(path.exists() for path in required):
+                raise PauseError("another unfinished pause requires restoration")
+            for path in record.iterdir():
+                self.b.secure(path, private=True)
+                if path.stat().st_size > 1_000_000:
+                    raise PauseError("pause audit exceeds bound")
+            intent, pending, restored = [json.loads(path.read_bytes()) for path in required]
+            if (set(intent) != {"consent", "evidence"} or intent["consent"] != "TEMPORARY_SINGLE_KEY_DENIAL"
+                    or record.name != intent["evidence"]["sha"] + "-" + intent["evidence"]["key_digest"]
+                    or pending != {"state": "RESTORE_PENDING", "evidence_sha256": digest(intent["evidence"])}
+                    or restored != {"state": "RESTORED", "evidence_sha256": digest(intent["evidence"])}):
+                raise PauseError("another unfinished or invalid pause audit")
+
     def inspect(self):
+        self.no_pending_pauses()
         if os.path.lexists(self.conf) or os.path.lexists(self.pub):
             raise PauseError("existing temporary pause must be restored")
         config, daemon = self.configuration(), self.daemon()
@@ -402,6 +477,7 @@ class Operator:
         self.known_hosts = evidence["known_hosts"].encode()
 
     def install(self, evidence):
+        self.no_pending_pauses()
         self.bound(evidence)
         if self.file(self.b.AUTHORIZED) != evidence["authorized"]:
             raise PauseError("authorization changed before pause")
@@ -430,21 +506,42 @@ class Operator:
         self.verify_paused(evidence)
         for identity in self.target_sessions():
             fd = os.pidfd_open(identity["pid"])
+            freeze_attempted, terminated = False, False
             try:
                 if session(identity["pid"]) != identity or authenticated_key(identity) != fingerprint(self.target):
                     raise PauseError("SSH identity changed before termination")
+                write_json(self.record / f"freeze-{identity['pid']}-{identity['start']}.json",
+                           {"identity": identity, "key_digest": self.target})
+                freeze_attempted = True
+                signal.pidfd_send_signal(fd, signal.SIGSTOP)
+                wait_stopped(identity)
+                # STOP is kernel-confirmed: this exact process cannot fork
+                # between the final child inventory and SIGKILL.
                 self.no_children(identity["pid"])
-                signal.pidfd_send_signal(fd, signal.SIGTERM)
-                poller = select.poll()
-                poller.register(fd, select.POLLIN)
-                if not poller.poll(5000):
+                signal.pidfd_send_signal(fd, signal.SIGKILL)
+                if not exited(fd, 5000):
                     raise PauseError("target connection termination unproven")
+                terminated = True
             finally:
-                os.close(fd)
+                try:
+                    if freeze_attempted and not terminated:
+                        resume_identity(identity, self.target)
+                finally:
+                    os.close(fd)
         if self.target_sessions():
             raise PauseError("new target connection raced with pause")
 
     def restore(self, evidence):
+        if evidence.get("sha") != self.sha or evidence.get("key_digest") != self.target:
+            raise PauseError("restore scope mismatch")
+        for path in sorted(self.record.glob("freeze-*.json")):
+            self.b.secure(path, private=True)
+            frozen = json.loads(path.read_bytes())
+            identity = frozen["identity"]
+            if (set(frozen) != {"identity", "key_digest"} or frozen["key_digest"] != self.target
+                    or path.name != f"freeze-{identity['pid']}-{identity['start']}.json"):
+                raise PauseError("frozen session audit differs")
+            resume_identity(identity, self.target)
         self.bound(evidence)
         if self.pub.exists():
             self.check_pub(evidence)

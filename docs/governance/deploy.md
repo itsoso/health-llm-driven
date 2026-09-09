@@ -240,7 +240,10 @@ no-clobber 原子方式发布固定 RevokedKeys drop-in；绑定实际 sshd PID�
 版本、完整支持的 Include 库存和有效配置，除该单项外不允许任何配置变化。仅 reload，
 绝不 restart。新 TCP、固定 host key、无私钥/agent 的公钥 offer 要证明目标由允许变为
 拒绝、操作者仍允许；超时、关闭或协议错误为 UNKNOWN，不作为拒绝证据，也不宣称登录成功。
-随后仅对重新确认指纹、进程身份及无子进程的目标连接通过 pidfd 发送一次 TERM。
+固定全局槽位拒绝所有其他未完整 RESTORED 的暂停审计，不能凭 drop-in 消失接受新操作。
+对目标连接先持久化冻结意图，通过 pidfd STOP 并核验内核 stopped 状态，再次确认无子进程，
+才对该精确父进程 KILL；它在最终检查与终止间不能 fork，不扩大至其他进程或进程组。
+冻结异常立即尝试精确 CONT；硬中断后的 restore 从原冻结审计恢复，拒绝向复用 PID 发信号。
 
 暂停前持久化独立 root-only intent；失败保留 RESTORE_PENDING 语义。restore 只能撤销
 本次精确 drop-in，重新核验磁盘配置、reload 与新 TCP 正反基线；磁盘文件消失不等于

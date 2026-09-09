@@ -331,10 +331,14 @@ def test_terminate_preserves_exact_identity_and_unknown_blocks(tmp_path, monkeyp
     monkeypatch.setattr(m.os, "close", lambda _: None)
     signals = []
     monkeypatch.setattr(m.signal, "pidfd_send_signal", lambda fd, sig: signals.append((fd, sig)), raising=False)
+    monkeypatch.setattr(m, "wait_stopped", lambda _: None)
+    resumes = []
+    monkeypatch.setattr(m, "resume_identity", lambda identity, target: resumes.append(identity))
     monkeypatch.setattr(m.select, "poll", lambda: SimpleNamespace(register=lambda *args: None, poll=lambda _: [] if failure == "timeout" else [(42, 1)]))
     with pytest.raises((m.PauseError, OSError)):
         a.terminate(e)
-    assert len(signals) == (1 if failure in {"timeout", "reconnected"} else 0)
+    assert len(signals) == (2 if failure in {"timeout", "reconnected"} else 1 if failure == "children" else 0)
+    assert bool(resumes) == (failure in {"children", "timeout"})
 
 
 def test_restore_unlink_failure_retains_restriction_and_pending_audit(tmp_path, monkeypatch):
@@ -351,6 +355,107 @@ def test_restore_unlink_failure_retains_restriction_and_pending_audit(tmp_path, 
         m.restore(a, consent=True)
     assert a.conf.exists() and (a.record / "restore-intent.json").exists()
     assert not (a.record / "restored.json").exists()
+
+
+def test_other_pending_pause_blocks_even_when_drop_in_is_absent(tmp_path, monkeypatch):
+    m, a, e, _ = operator(tmp_path, monkeypatch)
+    monkeypatch.setattr(m, "ROOT", tmp_path / "audits")
+    m.ROOT.mkdir(mode=0o700)
+    old = m.ROOT / (e["sha"] + "-" + e["key_digest"])
+    old.mkdir(mode=0o700)
+    m.write_json(old / "intent.json", {"consent": "TEMPORARY_SINGLE_KEY_DENIAL", "evidence": e})
+    m.write_json(old / "restore-intent.json", {"state": "RESTORE_PENDING", "evidence_sha256": m.digest(e)})
+    with pytest.raises(m.PauseError, match="unfinished"):
+        a.no_pending_pauses()
+    m.write_json(old / "restored.json", {"state": "RESTORED", "evidence_sha256": m.digest(e)})
+    a.no_pending_pauses()
+
+
+def test_freeze_prevents_fork_between_child_check_and_termination(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    m, a, e, _ = operator(tmp_path, monkeypatch)
+    identity = {"pid": 123, "start": 456}
+    monkeypatch.setattr(a, "verify_paused", lambda _: None)
+    iterations = iter([[identity], []])
+    monkeypatch.setattr(a, "target_sessions", lambda: next(iterations))
+    monkeypatch.setattr(m, "session", lambda _: identity)
+    monkeypatch.setattr(m, "authenticated_key", lambda _: m.fingerprint(a.target))
+    monkeypatch.setattr(m.os, "pidfd_open", lambda _: 42, raising=False)
+    monkeypatch.setattr(m.os, "close", lambda _: None)
+    state = {"frozen": False, "dead": False}
+    def send(fd, sig):
+        assert (a.record / "freeze-123-456.json").exists()
+        if sig == m.signal.SIGSTOP:
+            state["frozen"] = True
+        elif sig == m.signal.SIGKILL:
+            assert state["frozen"]
+            state["dead"] = True
+        elif sig == m.signal.SIGCONT:
+            state["frozen"] = False
+        else:
+            pytest.fail("unexpected signal")
+    monkeypatch.setattr(m.signal, "pidfd_send_signal", send, raising=False)
+    monkeypatch.setattr(m, "wait_stopped", lambda _: state["frozen"] or pytest.fail("not frozen"))
+    monkeypatch.setattr(a, "no_children", lambda _: state["frozen"] or pytest.fail("fork window"))
+    monkeypatch.setattr(m.select, "poll", lambda: SimpleNamespace(register=lambda *args: None, poll=lambda _: [(42, 1)] if state["dead"] else []))
+    a.terminate(e)
+    assert state["dead"]
+
+
+@pytest.mark.parametrize("point", ["stop", "wait_stopped", "no_children", "kill"])
+def test_freeze_failure_always_attempts_recorded_resume(tmp_path, monkeypatch, point):
+    m, a, e, _ = operator(tmp_path, monkeypatch)
+    identity = {"pid": 123, "start": 456}
+    monkeypatch.setattr(a, "verify_paused", lambda _: None)
+    monkeypatch.setattr(a, "target_sessions", lambda: [identity])
+    monkeypatch.setattr(m, "session", lambda _: identity)
+    monkeypatch.setattr(m, "authenticated_key", lambda _: m.fingerprint(a.target))
+    monkeypatch.setattr(m.os, "pidfd_open", lambda _: 42, raising=False)
+    monkeypatch.setattr(m.os, "close", lambda _: None)
+    def failure():
+        raise KeyboardInterrupt()
+    def send(fd, sig):
+        if (sig == m.signal.SIGSTOP and point == "stop") or (sig == m.signal.SIGKILL and point == "kill"):
+            failure()
+    monkeypatch.setattr(m.signal, "pidfd_send_signal", send, raising=False)
+    monkeypatch.setattr(m, "wait_stopped", lambda _: failure() if point == "wait_stopped" else None)
+    monkeypatch.setattr(a, "no_children", lambda _: failure() if point == "no_children" else None)
+    resumes = []
+    monkeypatch.setattr(m, "resume_identity", lambda identity, target: resumes.append((identity, target)))
+    with pytest.raises(KeyboardInterrupt):
+        a.terminate(e)
+    assert resumes == [(identity, a.target)]
+    assert json.loads((a.record / "freeze-123-456.json").read_bytes()) == {"identity": identity, "key_digest": a.target}
+
+
+@pytest.mark.parametrize("state", ["stopped", "running", "reused", "gone", "wrong_key"])
+def test_resume_identity_never_signals_reused_pid_or_other_key(monkeypatch, state):
+    m = load()
+    identity = {"pid": 123, "start": 456}
+    target = m.key_digest(public())
+    monkeypatch.setattr(m.os, "pidfd_open", lambda _: 42, raising=False)
+    monkeypatch.setattr(m.os, "close", lambda _: None)
+    monkeypatch.setattr(m, "exited", lambda _: state == "gone")
+    monkeypatch.setattr(m, "session", lambda _: {"pid": 123, "start": 999} if state == "reused" else identity)
+    monkeypatch.setattr(m, "authenticated_key", lambda _: "other" if state == "wrong_key" else m.fingerprint(target))
+    signals = []
+    monkeypatch.setattr(m.signal, "pidfd_send_signal", lambda fd, sig: signals.append((fd, sig)), raising=False)
+    monkeypatch.setattr(m, "process_state", lambda _: b"T" if state == "stopped" and not signals else b"S")
+    if state == "wrong_key":
+        with pytest.raises(m.PauseError):
+            m.resume_identity(identity, target)
+    else:
+        m.resume_identity(identity, target)
+    assert signals == ([(42, m.signal.SIGCONT)] if state == "stopped" else [])
+
+
+def test_restore_recovers_freeze_before_ssh_policy(tmp_path, monkeypatch):
+    m, a, e, calls = operator(tmp_path, monkeypatch)
+    identity = {"pid": 123, "start": 456}
+    m.write_json(a.record / "freeze-123-456.json", {"identity": identity, "key_digest": a.target})
+    monkeypatch.setattr(m, "resume_identity", lambda identity, target: calls.append(["resume", identity]))
+    a.restore(e)
+    assert calls[0] == ["resume", identity]
 
 
 @pytest.mark.skipif(os.environ.get("REVA_TEST_NATIVE_SSH") != "1", reason="isolated root Linux OpenSSH CI gate")

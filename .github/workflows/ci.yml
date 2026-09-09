@@ -342,7 +342,8 @@ jobs:
         run: |
           test -x /usr/sbin/sshd || (sudo apt-get update -qq && sudo apt-get install -y openssh-server)
           sudo mkdir -p /run/sshd
-          sudo --preserve-env=REVA_TEST_NATIVE_SSH "$(command -v python)" -m pytest --noconftest --no-cov -q scripts/test_admin_key_pause.py -k native_openssh
+          native_dir="$(sudo mktemp -d /root/reva-sshd-test.XXXXXX)"
+          sudo --preserve-env=REVA_TEST_NATIVE_SSH "$(command -v python)" -m pytest --basetemp="$native_dir/pytest" --noconftest --no-cov -q scripts/test_admin_key_pause.py -k native_openssh
 
   agent-runtime-postgres:
     name: agent-runtime-postgres
