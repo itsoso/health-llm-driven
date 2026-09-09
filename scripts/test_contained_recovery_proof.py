@@ -3,6 +3,7 @@ import importlib.util
 import hashlib
 import json
 import os
+import stat
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -11,6 +12,40 @@ import pytest
 SPEC = importlib.util.spec_from_file_location("contained_proof", Path(__file__).with_name("contained_recovery_proof.py"))
 proof = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(proof)
+
+
+@pytest.mark.parametrize("kind", ["stage", "lease"])
+def test_fixed_shared_parent_layout_is_validated_without_blanket_trust(monkeypatch, kind):
+    instance = proof.RecoveryProof.__new__(proof.RecoveryProof)
+    instance.stage = Path("/tmp/health-app-backup-preflight-123-456")
+    instance.lease = Path("/var/lock/health-app-release")
+    paths = {
+        Path("/"): stat.S_IFDIR | 0o755, Path("/tmp"): stat.S_IFDIR | 0o1777,
+        Path("/var"): stat.S_IFDIR | 0o755, Path("/var/lock"): stat.S_IFLNK | 0o777,
+        Path("/run"): stat.S_IFDIR | 0o755, Path("/run/lock"): stat.S_IFDIR | 0o1777,
+        instance.stage: stat.S_IFDIR | 0o700, instance.lease: stat.S_IFDIR | 0o700,
+    }
+    target = (instance.stage if kind == "stage" else instance.lease) / "token"
+    paths[target] = stat.S_IFREG | 0o600
+    monkeypatch.setattr(Path, "lstat", lambda path: SimpleNamespace(st_mode=paths[path], st_uid=0, st_gid=0, st_nlink=1))
+    monkeypatch.setattr(proof.os, "readlink", lambda path: "/run/lock")
+    instance._secure_evidence(target)
+    shared = Path("/tmp" if kind == "stage" else "/run/lock")
+    paths[shared] = stat.S_IFDIR | 0o777
+    with pytest.raises(proof.ProofError):
+        instance._secure_evidence(target)
+    paths[shared] = stat.S_IFDIR | 0o1777
+    paths[target] = stat.S_IFLNK | 0o777
+    with pytest.raises(proof.ProofError):
+        instance._secure_evidence(target)
+    paths[target] = stat.S_IFREG | 0o660
+    with pytest.raises(proof.ProofError):
+        instance._secure_evidence(target)
+    if kind == "lease":
+        paths[target] = stat.S_IFREG | 0o600
+        monkeypatch.setattr(proof.os, "readlink", lambda path: "/tmp")
+        with pytest.raises(proof.ProofError):
+            instance._secure_evidence(target)
 
 
 def test_base_normalization_ignores_only_reset_service_fields():

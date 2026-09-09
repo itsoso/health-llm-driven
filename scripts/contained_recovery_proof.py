@@ -102,8 +102,42 @@ class RecoveryProof:
         spec.loader.exec_module(module)
         return module
 
+    def _secure_evidence(self, path):
+        # Only the original lease and its exact sealed stage may cross these
+        # two OS-owned shared parents. Never relax canonical code path trust.
+        stage = getattr(self, "stage", None)
+        lease = getattr(self, "lease", None)
+        is_stage = (stage is not None and re.fullmatch(r"/tmp/health-app-backup-preflight-[A-Za-z0-9._-]+", str(stage))
+                    and (path == stage or path.parent == stage))
+        is_lease = lease == Path("/var/lock/health-app-release") and (path == lease or path.parent == lease)
+        if not (is_stage or is_lease):
+            self.bootstrap.secure(path)
+            return
+        entries = [*reversed(path.parents), path]
+        if is_lease:
+            entries += [Path("/run"), Path("/run/lock")]
+        for item in entries:
+            info = item.lstat()
+            if item == Path("/var/lock") and is_lease:
+                if (not stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or info.st_gid != 0
+                        or info.st_nlink != 1 or os.readlink(item) != "/run/lock"):
+                    raise ProofError("fixed lock alias differs")
+                continue
+            shared = item == Path("/tmp") and is_stage or item == Path("/run/lock") and is_lease
+            if shared:
+                if (not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_gid != 0
+                        or stat.S_IMODE(info.st_mode) != 0o1777):
+                    raise ProofError("shared parent ownership or sticky mode differs")
+                continue
+            is_file = stat.S_ISREG(info.st_mode)
+            if (info.st_uid != 0 or info.st_mode & 0o022
+                    or not (is_file or stat.S_ISDIR(info.st_mode))
+                    or (item != path and not stat.S_ISDIR(info.st_mode))
+                    or (is_file and info.st_nlink != 1)):
+                raise ProofError("unsafe recovery evidence path")
+
     def _file(self, path, mode=None):
-        self.bootstrap.secure(path)
+        self._secure_evidence(path)
         info = path.lstat()
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > 16_000_000 or (mode is not None and stat.S_IMODE(info.st_mode) != mode):
             raise ProofError("file evidence metadata invalid")
@@ -119,7 +153,7 @@ class RecoveryProof:
         return raw, identity
 
     def _directory(self, path, mode=0o700):
-        self.bootstrap.secure(path)
+        self._secure_evidence(path)
         info = path.lstat()
         if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode) != mode or info.st_gid != 0:
             raise ProofError("directory evidence metadata invalid")

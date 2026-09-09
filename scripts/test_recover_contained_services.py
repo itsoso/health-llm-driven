@@ -46,6 +46,26 @@ def test_inspection_never_creates_audit_or_starts(monkeypatch, tmp_path):
     assert result["state"] == "INSPECTED"
     assert not audit.exists()
     assert "start" not in p.events
+    assert "probes" in p.events
+
+
+def test_inspection_probe_failure_does_not_consume_recovery(monkeypatch, tmp_path):
+    m, p, audit = setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(m, "_application_probes", lambda *a: (_ for _ in ()).throw(RuntimeError("offline")))
+    with pytest.raises(m.RecoveryError):
+        m.recover_services(p, audit, "c" * 40)
+    assert not audit.exists()
+    assert "start" not in p.events
+
+
+def test_execution_preflight_failure_does_not_consume_recovery(monkeypatch, tmp_path):
+    m, p, audit = setup(monkeypatch, tmp_path)
+    digest = m.recover_services(p, audit, "c" * 40)["evidence_sha256"]
+    monkeypatch.setattr(m, "_application_probes", lambda *a: (_ for _ in ()).throw(RuntimeError("offline")))
+    with pytest.raises(m.RecoveryError):
+        m.recover_services(p, audit, "c" * 40, digest)
+    assert not audit.exists()
+    assert "start" not in p.events
 
 
 def test_mismatched_evidence_blocks_before_intent(monkeypatch, tmp_path):
@@ -90,13 +110,20 @@ def test_failure_preserves_intent_contains_and_never_returns_success(monkeypatch
                 raise OSError("offline fsync failure")
             return original(path, data)
         monkeypatch.setattr(m, "_write", write)
+    elif failure == "probes":
+        calls = []
+        def probes(*a):
+            calls.append(True)
+            if len(calls) > 1:
+                raise RuntimeError("offline post-start probe failure")
+        monkeypatch.setattr(m, "_application_probes", probes)
     else:
         name = {"stable": "_wait_ready", "probes": "_application_probes", "http": "_http_probes"}[failure]
         monkeypatch.setattr(m, name, lambda *a: (_ for _ in ()).throw(RuntimeError("offline failure")))
     with pytest.raises(m.RecoveryError):
         m.recover_services(p, audit, "c" * 40, digest)
     assert (audit / "intent.json").exists()
-    assert p.events.count("stop") == (0 if failure == "probes" else 4)
+    assert p.events.count("stop") == 4
     assert p.events[-1] == "stopped"
 
 

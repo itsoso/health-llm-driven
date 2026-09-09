@@ -117,7 +117,10 @@ flag 唯一 false；原 stage/token/锁 inode、旧 runtime terminal、有效 un
 和所有权全部验证，无新 prepared/arming/reap、无运行中发布后代或激活授权。
 入口持有原 launcher/build flock；不修改原 lease、stage pointer 或任何原始回执。
 
-独立恢复目录先持久化 intent，再复证并验证旧 schema/KB serving contract，之后
+取证及执行两次准入都先完成旧 schema/KB 与依赖只读预检，再持久化独立恢复 intent。
+仅原 sealed stage 允许跨 root:root 1777 `/tmp`；原 lease 仅允许固定 root-owned
+`/var/lock -> /run/lock` 和 root:root 1777 `/run/lock`，其余路径仍禁止链接或组/全局写入。
+持久化 intent 后复证静态证据与隔离状态，之后
 只启动固定的 socket/backend/worker/beat。要求有界就绪、跨 RestartSec 的稳定
 PID/restart/timestamp/socket 状态、全部 cgroup 进程 flag=false，以及 health/auth、
 schema/KB 与原静态证据再验证。成功仅记 `RESTORED_PREVIOUS_SERVICES`，不得把

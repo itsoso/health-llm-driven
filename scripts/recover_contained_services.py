@@ -194,10 +194,17 @@ def recover_services(proof, audit, recovery_sha, expected_hash=None):
     evidence = {"recovery_sha": recovery_sha, "failed_sha": proof.failed_sha,
                 "production_sha": proof.production_sha, "snapshot": before}
     digest = _digest(evidence)
+    if expected_hash is not None and expected_hash != digest:
+        raise RecoveryError("recovery evidence changed")
+    try:
+        _application_probes(proof.production_sha, recovery_sha)
+        if proof.snapshot() != before:
+            raise RecoveryError("application preflight changed evidence")
+        proof.stopped()
+    except Exception:
+        raise RecoveryError("application preflight failed; no recovery consumed") from None
     if expected_hash is None:
         return {"state": "INSPECTED", "evidence_sha256": digest}
-    if expected_hash != digest:
-        raise RecoveryError("recovery evidence changed")
     audit.mkdir(mode=0o700)
     _sync(audit.parent)
     _write(audit / "intent.json", {**evidence, "evidence_sha256": digest})
@@ -205,10 +212,6 @@ def recover_services(proof, audit, recovery_sha, expected_hash=None):
     try:
         if proof.snapshot() != before:
             raise RecoveryError("pre-start evidence changed")
-        proof.stopped()
-        _application_probes(proof.production_sha, recovery_sha)
-        if proof.snapshot() != before:
-            raise RecoveryError("pre-start application proof changed evidence")
         proof.stopped()
         started = True
         for unit in UNITS:
