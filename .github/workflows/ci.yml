@@ -325,6 +325,7 @@ jobs:
           scripts/test_trusted_release_server.py
           scripts/test_bootstrap_trusted_release.py
           scripts/test_trusted_review_reset.py
+          scripts/test_review_maintenance_retirement.py
           scripts/test_recover_contained_services.py
           scripts/test_contained_recovery_proof.py
           scripts/test_contained_release_retirement.py
@@ -370,6 +371,11 @@ jobs:
         run: |
           pip install --require-hashes -r requirements.lock
           pip install -r requirements-dev.txt
+
+      - name: Verify isolated review closure PostgreSQL boundary
+        env:
+          REVA_REVIEW_CLOSURE_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/health_runtime_test
+        run: python -m pytest -q --noconftest --no-cov scripts/test_review_maintenance_retirement.py -k postgres
 
       - name: Verify Runtime migration upgrade and idempotency
         working-directory: backend

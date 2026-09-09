@@ -265,6 +265,15 @@ def _inventory(directory, names):
 
 def _workspace_evidence(sha, *, recovery_receipt=None):
     workspace = STATE / sha
+    if os.path.lexists(STATE / "review-maintenance-closures" / sha):
+        path = Path(__file__).absolute().with_name("review_maintenance_retirement.py")
+        secure(path)
+        if os.path.lexists(path.parent / "__pycache__"):
+            raise BootstrapError("cached review closure proof forbidden")
+        spec = importlib.util.spec_from_file_location("reviewed_unknown_maintenance_closure", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.closed_evidence(sys.modules[__name__], sha, recovery_receipt)
     if os.path.lexists(STATE / "contained-release-closures" / sha):
         path = Path(__file__).absolute().with_name("contained_release_retirement.py")
         secure(path)
@@ -552,7 +561,7 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None):
             raise BootstrapError("old retirement already attempted")
         installation = _installation_evidence(old_sha, CONFIG, INSTALLED.parent)
         workspace = _workspace_evidence(old_sha, recovery_receipt=recovery_receipt)
-        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_RESTORED_RELEASE"}:
+        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE"}:
             raise BootstrapError("recovery receipt only applies to historical recovery")
         retired_keys = {(config / name).read_text().strip()
                         for config in [CONFIG, *(_retired_config(old, item) for old, item in history.items())]
@@ -718,7 +727,8 @@ def _recovery_process_proof():
     entries = list(itertools.islice(PROC.iterdir(), 100001))
     if len(entries) > 100000 or not (PROC / str(os.getpid())).is_dir():
         raise BootstrapError("process inventory unavailable")
-    needles = (b"reva-release", b"deploy.sh", b"health-app-backup-preflight",
+    needles = (b"reva-release", b"deploy.sh", b"health-app-backup-preflight", b"trusted_review_reset.py", b"seed_demo_account.py",
+               b"/var/lock/health-app-release", b"/run/lock/health-app-release",
                b"rollback_release", b"runtime_state_release_transaction")
     for process in entries:
         if not process.name.isdigit() or int(process.name) == os.getpid():

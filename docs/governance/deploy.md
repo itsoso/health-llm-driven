@@ -197,6 +197,37 @@ PostgreSQL URL 或固定审核凭据必须失败，不退到默认数据库/账�
 仅输入合成或已脱敏事件，输出不含原文。pending_confirmation 是需要用户确认的草稿；
 recorded_receipt 仍要求独立数据库回查，不能凭该脚本通过声称完整 App 或 Apple 验收通过。
 
+#### 明确接受未知审核写入的独立行政收尾
+
+只有用户针对具体失败维护明确接受“审核账号可能已部分写入”的风险，并授权专用收尾时，
+才可使用 `scripts/review_maintenance_retirement.py`。泛化的发布授权不等价于此风险接受。
+该窄化例外仅适用于后端发布已 SUCCEEDED、实际生产仍是该 SHA、一个明确指定的审核维护
+NEEDS_OPERATOR；其他未完成操作仍阻断。不处理失败部署、不恢复数据，不触碰其他用户，
+不把旧 UNKNOWN 转换为 SUCCEEDED，也不授权新操作 ID 重新执行原 fixture reset。
+
+实现须经固定提交独立 G4 与精确主干 CI，管理员仅从 canonical 新 SHA staging 使用系统
+Python `-I -S -B` 执行，显式传入旧发布 SHA、操作 ID、`--accept-unknown-review-writes`。
+原 lease token 只由受保护 stdin 输入；默认只读取证，提供同一 `--evidence-sha256` 后才执行。
+持有原 launcher/build 锁，核验完整原回执、源码/安装字节、lease 元数据和当前稳定服务。
+`review-maintenance-closures/<old-sha>` 独立 intent 先 fsync，绑定明确风险接受和 UNKNOWN；
+原 lease 与操作回执先复制至 root-only 持久归档并 fsync，再精确撤销旧 cloud/loopback 授权、
+移除旧 loopback 私钥。长期 Expo Token 不在范围内。
+
+撤权前后均检查完整进程及 SSH 会话；原执行、可继续派生的旧会话或不确定身份均 BLOCK，
+不得广泛杀 SSH 或业务进程。随后使用 PostgreSQL REPEATABLE READ READ ONLY，验证实际
+只读状态及数据库目标，按服务端配置唯一绑定非管理员审核账号。固定表与子表关联范围内
+只读取现状，不调用 seeder、登录或会产生写入的业务读函数；摘要仅包含计数及由 root-only
+随机 key 生成的行 HMAC，不暴露账号、健康原文或低熵裸 hash。前后快照漂移阻断；快照相等
+也不证明历史无写入或 fixture 正确。
+
+数据核对后把原 lease 同文件系统 no-clobber 移动归档，保留 inode；原操作/发布记录永久
+不改。健康、稳定服务身份、旧授权、原始证据及持久归档复证后才写
+`CLOSED_UNKNOWN_REVIEW_MAINTENANCE`，最终 fsync 完成才交付随机回执。任何中断或后验
+失败保留所有证据，不重跑、不补发回执、不修改原失败状态、不停掉健康服务。
+普通 rotate 仍须 protected stdin 回执及完整收尾审计、持久归档、原锁/原源码和精确撤权证明；
+历史证明不依赖未来服务 PID、当前生产版本或易失 `/run` 归档。只有已完成退休证明中明确
+绑定的那个 UNKNOWN 操作可视为行政已处置。新部署、发包及最终审核仍分别通过全部既有闸。
+
 **配置文件: `.env`**
 
 - 位置: 项目根目录

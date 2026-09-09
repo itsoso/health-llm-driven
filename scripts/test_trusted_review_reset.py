@@ -627,6 +627,7 @@ class ReviewResetTests(unittest.TestCase):
         self.assertEqual(source, self.source)
         self.assertEqual(bootstrap.STATE, self.state)
         self.assertEqual(server.PYTHON, "/usr/bin/python3.12")
+        self.assertIs(sys.modules.get("reviewed_reset_bootstrap"), bootstrap)
         self.assertEqual(imported, [("reviewed_reset_bootstrap", path),
             ("reviewed_release_server", self.source / "scripts/trusted_release_server.py")])
 

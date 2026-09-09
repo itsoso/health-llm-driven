@@ -77,6 +77,7 @@ def load_reviewed(sha):
     sys.dont_write_bytecode = True
     spec = importlib.util.spec_from_file_location("reviewed_reset_bootstrap", bootstrap_path)
     bootstrap = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = bootstrap
     spec.loader.exec_module(bootstrap)
     for path in source.rglob("*"):
         bootstrap.secure(path)
@@ -116,6 +117,18 @@ def _assert_previous_resets(bootstrap, server):
                 raise ResetError("previous review reset termination unproven")
             for name, state in (("started.json", "STARTED"), ("completed.json", "SUCCEEDED")):
                 if bootstrap._read_json(operation / name) != _marker(workspace.name, operation.name, state):
+                    # Only a separately accepted UNKNOWN with completed key
+                    # retirement may be administratively closed. It is never
+                    # relabelled SUCCEEDED, nor does this authorize a retry.
+                    if name == "completed.json" and bootstrap._read_json(operation / name) == _marker(workspace.name, operation.name, "NEEDS_OPERATOR"):
+                        try:
+                            retired = bootstrap._retired_history().get(workspace.name, {}).get("workspace", {})
+                        except Exception:
+                            raise ResetError("previous review reset retirement unproven") from None
+                        if (retired.get("state") == "CLOSED_UNKNOWN_REVIEW_MAINTENANCE"
+                                and retired.get("operation_id") == operation.name
+                                and retired.get("original_outcome") == "UNKNOWN"):
+                            continue
                     raise ResetError("previous review reset termination unproven")
 
 
