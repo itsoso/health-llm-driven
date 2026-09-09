@@ -1629,6 +1629,12 @@ async def test_agent_stream_marks_missing_write_receipt_non_retryable(
     assert done["turn_outcome"]["retryable"] is False
     assert "recovery_action" not in done
 
+    saved = db.query(AgentMessage).filter_by(id=done["message_id"]).one()
+    rendered = "".join(e["data"].get("content", "") for e in events if e.get("event") == "token")
+    for reply in (saved.content, rendered):
+        assert "你可以重试" not in reply
+        assert "尚未拿到回执" in reply
+
 
 @pytest.mark.asyncio
 async def test_agent_stream_runtime_control_block_is_one_attempt_terminal(

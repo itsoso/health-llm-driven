@@ -8943,6 +8943,7 @@ def _simple_record_goal_arguments(
                 "meal_type": meal_type,
                 "food_items": food_items[:1000],
                 "source": "agent_text",
+                **({"notes": values["notes"]} if values.get("notes") else {}),
             },
         }
     if goal.target_record_type == "illness":
@@ -18218,7 +18219,11 @@ class AgentExecutor:
                                 )
                             final_text = pending_text
                             streamed_to_client = False
-                    elif record_write_requested and not write_receipts:
+                    elif (
+                        record_write_requested
+                        and not write_receipts
+                        and not last_recoverable_write_rejection
+                    ):
                         final_text = _record_intent_needs_detail_message(message)
                         streamed_to_client = False
                     elif (
@@ -18428,6 +18433,7 @@ class AgentExecutor:
             health_evidence_turn is None
             and record_write_requested
             and not write_receipts
+            and not unverified_write_operations
             and not self._agent_kernel_pending_confirmation_tools
             and not last_recoverable_write_rejection
             and not runtime_control_terminal

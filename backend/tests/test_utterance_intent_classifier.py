@@ -14,6 +14,7 @@ BJ = timezone(timedelta(hours=8))
     "这是审核账号的测试记录。记录今天午餐：白米饭100克、鸡蛋1个，已经全部吃完。请估算营养并直接保存这一餐，备注必须保留测试标记 QA-MEAL-A。",
     "请估算午餐的营养并直接保存：白米饭100克、鸡蛋1个。",
     "直接记录午餐：白米饭100克、鸡蛋1个。",
+    "请估算我今天午餐的营养并直接保存：白米饭100克。",
 ))
 def test_direct_meal_write_keeps_authority_after_estimation_request(message):
     intent = classify_agent_utterance(message)
@@ -29,6 +30,12 @@ def test_direct_meal_write_keeps_authority_after_estimation_request(message):
     "这是小明的测试记录。请估算午餐营养并直接保存：白米饭100克。",
     "这是朋友的测试记录。直接记录午餐：白米饭100克。",
     "这是另一个审核账号的测试记录。直接记录午餐：白米饭100克。",
+    "请估算朋友午餐的营养并直接保存：白米饭100克。",
+    "请估算我女儿午餐的营养并直接保存：白米饭100克。",
+    "请估算午餐的营养并直接保存：白米饭100克。只是举例。",
+    "直接记录午餐：白米饭100克。先别记。",
+    "请估算小明午餐的营养并直接保存：白米饭100克。",
+    "直接记录小明午餐：白米饭100克。",
 ))
 def test_direct_meal_wording_does_not_override_authorization_guards(message):
     assert classify_agent_utterance(message).is_write is False

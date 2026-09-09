@@ -151,6 +151,7 @@ _POST_ACTION_DENIAL_RE = re.compile(
     r"是不允许的?|是不可以的?|不允许|我不同意|不行)"
 )
 _TRAILING_REVOCATION_ATOM = (
+    r"(?:先)?(?:别|不要|不用|无需)(?:再)?(?:记|记录|保存|录入|写入|新增|打卡)(?:了)?|"
     r"(?:还是)?(?:算了(?:吧)?|取消(?:吧|了|这件事|刚才的请求)?|"
     r"撤销(?:吧|了)?|撤回|暂缓|搁置|缓一缓|先缓缓|推迟|"
     r"等一下再说|稍后再说|先放一放|(?:这件事)?作罢|"
@@ -244,7 +245,8 @@ _THIRD_PARTY_ROLE_SUFFIX = (
 )
 _THIRD_PARTY_HEALTH_FACT = (
     r"(?:感冒|流感|发烧|生病|口腔溃疡|湿疹|血压|体重|腰围|"
-    r"头痛|头疼|胸痛|腹痛|咳嗽|症状|用药|服药)"
+    r"头痛|头疼|胸痛|腹痛|咳嗽|症状|用药|服药|"
+    r"早餐|早饭|午餐|午饭|晚餐|晚饭|加餐|餐食|饮食)"
 )
 _WRITE_ACTION_PATTERN = r"(?:记|记录|保存|录入|登记|写入|新增|打卡)"
 _THIRD_PARTY_WRITE_SUBJECT_RE = re.compile(
@@ -1737,6 +1739,9 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
 
 def _is_post_attributed_to_non_current_owner(clause: str) -> bool:
     normalized = clause.strip("，,。.!！；;：: ")
+    # Postposed quotation/hypothesis qualifiers revoke apparent imperatives.
+    if re.fullmatch(r"(?:只是|仅是|仅仅是)?(?:举例|示例|例子|假设)", normalized):
+        return True
     # A synthetic-data label names the kind of record, not another person.
     # Do not accept arbitrary "X 的测试记录": named/third-party owners still
     # pass through the ownership guards below. This never selects an account;
@@ -2160,6 +2165,30 @@ def _helper_owner_is_current_user(before_action: str) -> bool:
     return False
 
 
+def _direct_meal_has_unresolved_subject(value: str) -> bool:
+    """Keep newly supported direct-meal commands closed to known self subjects.
+
+    An arbitrary name before 午餐 cannot inherit authority from 并直接保存.
+    Unknown adjuncts use clarification, not a guessed current-user owner.
+    """
+    for clause in split_write_clauses(value):
+        if "直接" not in clause:
+            continue
+        direct = _strip_direct_request_prefix(clause)
+        match = re.match(
+            r"(?:记录|记下|保存|录入|写入|计算|分析|识别|估算|整理|总结)"
+            r"(?P<subject>.*?)"
+            r"(?:早餐|早饭|午餐|午饭|中饭|晚餐|晚饭|加餐)",
+            direct,
+        )
+        if match is None:
+            continue
+        subject = _CURRENT_USER_SUBJECT_NOISE_RE.sub("", match.group("subject"))
+        if subject not in {"", "我", "我的", "的", "这顿", "这份", "这一顿", "这一份"}:
+            return True
+    return False
+
+
 def has_non_authorizing_write_context(value: str) -> bool:
     """Reject context that cannot grant a current health-record write.
 
@@ -2183,6 +2212,7 @@ def has_non_authorizing_write_context(value: str) -> bool:
     )
     return bool(
         _DEFERRED_CONDITION_PREFIX_RE.search(normalized)
+        or _direct_meal_has_unresolved_subject(normalized)
         or future_or_deferred_prefix
         or _THIRD_PARTY_WRITE_SUBJECT_RE.search(normalized)
         or _has_untrusted_colon_command(normalized)
@@ -2221,6 +2251,7 @@ def has_explicit_authorizing_write_request(value: str) -> bool:
     governing_segment = contrast_segments[-1] if contrast_segments else context[0]
     if (
         _DEFERRED_CONDITION_PREFIX_RE.search(normalized)
+        or _direct_meal_has_unresolved_subject(normalized)
         or _THIRD_PARTY_WRITE_SUBJECT_RE.search(normalized)
         or _has_untrusted_colon_command(normalized)
         or _segment_has_non_current_subject(governing_segment)

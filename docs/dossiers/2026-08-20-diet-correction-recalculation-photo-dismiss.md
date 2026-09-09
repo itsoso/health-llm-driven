@@ -208,6 +208,11 @@
 - B 真实分段：营养估算 3001ms 超时、仅调用 1 次；后续模型修复 8 轮，模型累计约 128.6 秒，工具每轮仅数毫秒。正常授权下同一合成食物只读估算对比：3 秒预算超时，12 秒预算约 7.4 秒成功且五项营养完整。不是数据库写入耗时。
 - 修复方向：保留现有 provider/同意校验/营养完整性与用户隔离，单次营养估算采用有界预算，重复不完整工具调用只允许一次修复机会；失败文案不再归咎已经提供的食物份量。
 - 已启动仅 loopback 的隔离 PostgreSQL 测试实例，不使用生产库做回归。完整安全复核、目标 revision CI、受控部署、审核 fixture 与候选真机 G6 尚未完成，继续 BLOCK 送审。
+- 第一轮独立 G4 对本地 `590c7ec55` 判 NO-GO：新直接表达的第三方/举例/短撤销反例、uncertain 持久化正文被重试文案覆盖，以及 A 虽通过分类仍被 Goal/目标校验拒绝。均补先红测试；新增餐食主体闭合校验、尾部撤销、保留 uncertain 正文及食物/备注分离，不用关闭目标校验来通过。
+- 新鲜验证：授权解析全量 1161 项通过；Goal/capability/simple-record guard 2489 项通过；营养 20 项 PostgreSQL 通过；状态/澄清/uncertain 5 项 PostgreSQL 通过；邻近 API/adapter/multi-model/simple-record 140 项 PostgreSQL 通过。扩大回归暴露的 4 个旧 fixture 外键问题已按生产父子创建顺序和真实测试用户修正，没有放宽外键。此前大批次失败日志保留，不伪称原批次全绿。
+- A/B 新增持久化贯通验证：仅估算器输出使用合成数据，正常 Agent → capability → 实际鉴权 Diet API → PostgreSQL → 回执；食物、营养、备注回读一致；重复同一 client turn 仅一条记录、一次 POST。两项通过。该本机证明不替代已安装 Build266 的生产真机 G6。
+- `harness_llm_regression_gate.py --include-live-llm` 实际执行 FAIL：离线 invariants 12/12、health-agent-core 50/50、trajectory contract 12/12、goldens 9/9；live orchestrator 0/5，本机模型凭据未配置且 fallback 缺少 AI 同意上下文。不设置精确 SHA 放行变量、不 push 或部署，不把生产旧源码的只读营养探针当成当前提交 live gate。
+- System Map / mobile navigation / 文档漂移和秘密扫描通过。下一步仍为新固定 SHA 独立复审及修复 live 验证环境，之后才能走精确 revision CI、受控发布和候选真机验收。
 
 > 点击调整记录，修改食物的内容。比如把1碗改成两碗，那么在保存的时候要重新计算热量。当前只是修改了内容，但是没有修改和重新计算真实的营养物质和热量，要做这个优化。点击图片，展开午餐图，用手滑一下，图片应该自动消失，而不是再点击那个叉号再消失。要优化这个交互。
 

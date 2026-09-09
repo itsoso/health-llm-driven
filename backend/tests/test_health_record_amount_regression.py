@@ -230,13 +230,14 @@ async def test_meal_photo_auto_save_success_replays_before_nutrition_validation(
 
 
 @pytest.mark.asyncio
-async def test_water_record_persists_exact_amount_with_verified_receipt(db):
+async def test_water_record_persists_exact_amount_with_verified_receipt(db, auth_user_and_headers):
     """The domain write must persist the exact amount and return its durable id."""
     from app.services.agent_executor import AgentExecutor
     from app.models.daily_health import WaterIntake
 
     executor = AgentExecutor(db)
-    executor._current_user_id = 1
+    user, _headers = auth_user_and_headers
+    executor._current_user_id = user.id
 
     result = await executor._execute_tool(
         tool_name="health_record",
@@ -252,12 +253,12 @@ async def test_water_record_persists_exact_amount_with_verified_receipt(db):
     record = db.query(WaterIntake).filter(WaterIntake.id == receipt["record_id"]).one()
     assert receipt["status"] == "verified"
     assert receipt["resource_type"] == "water_record"
-    assert record.user_id == 1
+    assert record.user_id == user.id
     assert record.amount_ml == 1000
 
 
 @pytest.mark.asyncio
-async def test_water_record_persists_historical_date_with_verified_receipt(db):
+async def test_water_record_persists_historical_date_with_verified_receipt(db, auth_user_and_headers):
     from app.services.agent_executor import (
         AgentExecutor,
         _write_receipt_from_tool_result,
@@ -265,7 +266,8 @@ async def test_water_record_persists_historical_date_with_verified_receipt(db):
     from app.models.daily_health import WaterIntake
 
     executor = AgentExecutor(db)
-    executor._current_user_id = 1
+    user, _headers = auth_user_and_headers
+    executor._current_user_id = user.id
     executor._agent_kernel_reference_now = lambda: datetime(
         2026,
         7,
@@ -914,7 +916,7 @@ def test_illness_schema_preserves_unknown_severity_as_null():
 
 
 @pytest.mark.asyncio
-async def test_run_stream_with_extra_context_does_not_crash_before_first_event(db):
+async def test_run_stream_with_extra_context_does_not_crash_before_first_event(db, auth_user_and_headers):
     """Regression: sources_used must be initialized before data-source inspection.
 
     The bug surfaced only on the streaming path before the first SSE event, so this
@@ -923,6 +925,7 @@ async def test_run_stream_with_extra_context_does_not_crash_before_first_event(d
     from app.services.agent_executor import AgentExecutor
 
     executor = AgentExecutor(db)
+    user, _headers = auth_user_and_headers
 
     class FakeAgentConversationService:
         def __init__(self, db):
@@ -962,7 +965,7 @@ async def test_run_stream_with_extra_context_does_not_crash_before_first_event(d
          patch.object(executor, "_build_system_prompt", return_value="system"), \
          patch("app.services.agent_executor._inspect_user_data_sources", return_value=["twin"]):
         stream = executor.run_stream(
-            user_id=1,
+            user_id=user.id,
             message="今天怎么安排",
             extra_context='{"from":"today"}',
         )

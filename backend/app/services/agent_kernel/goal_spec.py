@@ -124,6 +124,23 @@ DIET_TRAILING_ANALYSIS_RE = re.compile(
     r"碳水(?:化合物)?|脂肪|膳食纤维))*"
     r"(?:[\s，,。.!！；;：:]*)$"
 )
+DIET_NOTE_SUFFIX_RE = re.compile(
+    r"[，,。；;]\s*备注\s*(?:必须\s*)?(?:保留\s*)?(?:为|是|[:：])?\s*"
+    r"(?P<notes>[^\r\n]+?)\s*[。.!！；;]*$"
+)
+DIET_ESTIMATE_SAVE_PREFIX_RE = re.compile(
+    r"^\s*(?:的)?(?:营养(?:成分)?|热量)(?:并|然后|再)(?:直接)?"
+    r"(?:保存|记录)\s*[:：，,]?\s*"
+)
+DIET_ESTIMATE_SAVE_SUFFIX_RE = re.compile(
+    r"[，,。；;]\s*(?:请)?(?:估算|计算)(?:营养(?:成分)?|热量)"
+    r"(?:并|然后|再)(?:直接)?(?:保存|记录)(?:这一餐|这餐|这顿|本餐)?"
+    r"[\s，,。.!！；;]*$"
+)
+DIET_CONSUMED_SUFFIX_RE = re.compile(
+    r"[，,。；;]\s*(?:我)?(?:已经|已)?(?:全部|全都|都)?吃完(?:了)?"
+    r"[\s，,。.!！；;]*$"
+)
 OTHER_RECORD_SIGNALS = {
     "diet": tuple(signal for signals in MEAL_SIGNALS.values() for signal in signals),
     "weight": ("体重", "称重"),
@@ -854,6 +871,13 @@ def _simple_diet_target(
         from app.services.diet_voice_parser import infer_meal_type
 
         meal_type = infer_meal_type(raw, local_hour)
+    notes_match = DIET_NOTE_SUFFIX_RE.search(foods)
+    notes = notes_match.group("notes").strip() if notes_match else None
+    if notes_match:
+        foods = foods[:notes_match.start()]
+    foods = DIET_ESTIMATE_SAVE_PREFIX_RE.sub("", foods, count=1)
+    foods = DIET_ESTIMATE_SAVE_SUFFIX_RE.sub("", foods)
+    foods = DIET_CONSUMED_SUFFIX_RE.sub("", foods)
     foods = re.sub(
         r"^[\s，,。.!！；;：:]*(?:我)?"
         r"(?:(?:刚才|刚刚|已经)?(?:吃了|吃的是|吃|有)|是)?"
@@ -870,10 +894,13 @@ def _simple_diet_target(
         or not re.search(r"[0-9A-Za-z\u4e00-\u9fff]", foods)
     ):
         return None
-    return {
+    result = {
         "meal_type": meal_type,
         "food_items": foods[:1000],
     }
+    if notes:
+        result["notes"] = notes[:1000]
+    return result
 
 
 def _simple_record_write_is_negated(text: str) -> bool:

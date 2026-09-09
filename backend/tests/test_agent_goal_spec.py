@@ -51,6 +51,15 @@ def _compile(case: dict):
     )
 
 
+def test_simple_diet_note_does_not_drop_foods_after_commas_or_food_preferences():
+    goal = _compile({
+        "user": "记录今天午餐：白米饭100克，鸡蛋1个，青菜100克，不要辣。备注测试标记 QA-MEAL-C。",
+    })
+    values = dict(goal.target_values)
+    assert values["food_items"] == "白米饭100克,鸡蛋1个,青菜100克,不要辣"
+    assert values["notes"] == "测试标记 QA-MEAL-C"
+
+
 @pytest.mark.parametrize(
     "message",
     (

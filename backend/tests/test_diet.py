@@ -321,7 +321,11 @@ class TestDietAPI:
             recognition_snapshot={"food_count": 1},
             lifecycle="pending",
         )
-        db.add_all([draft, asset])
+        # Match the production capture order: the FK references an existing
+        # draft. Without an ORM relationship, add_all does not order inserts.
+        db.add(draft)
+        db.flush()
+        db.add(asset)
         db.commit()
         capture_locks = []
 

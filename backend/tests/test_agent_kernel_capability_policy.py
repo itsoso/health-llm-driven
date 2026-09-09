@@ -146,6 +146,46 @@ def _request(
     return ToolExecutionRequest(tool_name=name, arguments=args, source=source)
 
 
+@pytest.mark.parametrize("message, expected_notes", (
+    (
+        "这是审核账号的测试记录。记录今天午餐：白米饭100克、鸡蛋1个，已经全部吃完。"
+        "请估算营养并直接保存这一餐，备注必须保留测试标记 QA-MEAL-A。",
+        "测试标记 QA-MEAL-A",
+    ),
+    ("请估算午餐的营养并直接保存：白米饭100克、鸡蛋1个。", None),
+    ("记录今天午餐：白米饭100克、鸡蛋1个。备注 QA-MEAL-B。", "QA-MEAL-B"),
+    ("记录今天午餐：白米饭100克、鸡蛋1个。备注USB2660909B。", "USB2660909B"),
+))
+def test_meal_command_metadata_is_not_food_and_normal_capability_preserves_notes(
+    message, expected_notes,
+):
+    snapshot = _snapshot(message)
+    goal = compile_goal_spec(
+        envelope=snapshot.envelope, context=snapshot.context, intent=snapshot.intent,
+    )
+    snapshot = replace(snapshot, goal=goal)
+    values = dict(goal.target_values)
+    assert values["food_items"] == "白米饭100克、鸡蛋1个"
+    assert values.get("notes") == expected_notes
+    canonical = agent_executor_module._simple_record_goal_arguments(goal)
+    assert canonical["data"].get("notes") == expected_notes
+    decision = decide_tool_capability(snapshot, _request("health_record", {
+        "record_type": "diet", "data": {
+            "meal_type": "lunch", "food_items": "白米饭100克、鸡蛋1个",
+            "notes": "MODEL-MUST-NOT-REPLACE-USER-NOTES",
+        },
+    }))
+    assert decision.action == "allow", decision.reason
+    assert decision.normalized_args["data"].get("notes") == expected_notes
+    for wrong_food in ("白米饭200克、鸡蛋1个", "牛肉100克、鸡蛋1个"):
+        denied = decide_tool_capability(snapshot, _request("health_record", {
+            "record_type": "diet", "data": {
+                "meal_type": "lunch", "food_items": wrong_food,
+            },
+        }))
+        assert denied.action == "block"
+
+
 def test_read_turn_blocks_health_record_even_if_model_requests_it():
     decision = decide_tool_capability(
         _snapshot("今天我的饮食的记录，帮我列个表格出来。"),

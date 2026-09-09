@@ -3937,6 +3937,23 @@ def _health_record_target_status(
         if requested_type == "diet" and expected_values.get("food_items"):
             deterministic_values.pop("meal_food_targets", None)
         expected_values.update(deterministic_values)
+        if (
+            requested_type == "diet"
+            and snapshot.goal is not None
+            and snapshot.goal.kind == "simple_health_record"
+            and snapshot.goal.target_record_type == "diet"
+        ):
+            # A following note belongs to the single, server-compiled meal,
+            # never to an unrelated clause or a model-authored replacement.
+            full_meal = dict(snapshot.goal.target_values)
+            if (
+                full_meal.get("notes")
+                and full_meal.get("meal_type") in expected_values.get("meal_types", ())
+                and _food_targets_match(
+                    expected_values.get("food_items"), full_meal.get("food_items")
+                )
+            ):
+                expected_values["notes"] = full_meal["notes"]
         if requested_type == "supplement":
             for field in conflicting_supplement_metadata:
                 expected_values.pop(field, None)
@@ -5713,6 +5730,8 @@ def _project_authorized_dispatch_payload(
             args, data, data_keys=("food_items",), arg_keys=("food_items",)
         )
         projected = {"meal_type": requested_meal, "food_items": requested_food}
+        if expected.get("notes"):
+            projected["notes"] = expected["notes"]
         if server_authorized.get("source") in {
             "agent_text",
             "agent_attachment",
