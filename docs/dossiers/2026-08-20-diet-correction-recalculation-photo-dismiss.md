@@ -4,8 +4,8 @@
 |---|---|
 | slug | `diet-correction-recalculation-photo-dismiss` |
 | 创建日期 | 2026-08-20 |
-| 当前阶段 | 本轮 G5 BLOCK：部署去激活失败，生产服务隔离；G6 未完成 |
-| 状态 | production_contained_recovery_required |
+| 当前阶段 | 旧生产服务已恢复；原发布 G5 仍 BLOCK，G6 未完成 |
+| 状态 | previous_services_restored_release_blocked |
 | 负责 | Codex + 用户 |
 | 反馈环 | Backend focused tests + Mobile Jest/TypeScript + production OTA after Gates |
 
@@ -269,6 +269,16 @@
 - 固定 `4df025943` 独立 G4 NO-GO：通用 canonical 路径校验不接受真实 `/tmp` 1777 与 `/var/lock -> /run/lock`，会在任何恢复 intent 前阻断。新增精确路径元数据正反测试及只读应用预检，先 4 RED 再通过；执行前应用失败不消耗 intent 的用例先 1 RED 再通过，最终聚焦 43 PASS。不放宽源码路径信任。
 - 只读生产验证旧 revision、旧 canonical 导入树和 root venv 信任均 PASS；恢复、重启和审核 fixture 写入仍未执行。修订待新固定 SHA 复审与完整集成/CI。
 - `e71e0644c` 复审后只读核验发现原 lease 标签是发布器写入的 `deploy:backend`，而 proof 错写 `backend`，执行 GO 撤回。按真实调用契约补 1 RED，精确更正并增加错误标签拒绝回归，44 项聚焦 PASS。旧全量运行期间源发生变更，其结果不作为最终候选证据；最终源码冻结后重跑完整闸。
+
+#### 2026-09-09 · 旧服务恢复完成，原发布仍未完成
+
+- `e71e0644c` CI 的发布专项通过，后端分片 `balanced-11` 因旧静态断言仍寻找直接 `verify_process_environment_false` 调用失败。用户明确允许仅推修复、等 CI 绿后恢复；未带红执行恢复。同步到 `await_false_startup` 并保留内部 flag/稳定快照约束，先 1 RED / 7 PASS，后 8 PASS。
+- 最终固定 `a17a5805dbbbccd715fa41e1ee7e49f2e19546d0` 独立 G4 GO；真实主干 CI `34330612612` 全绿。本机冻结集成 932 PASS + 70 subtests / exit 0 / 516.20 秒；该集成源码与最终提交仅差独立通过的 8 项静态测试文件，无产品或发布实现差异。
+- 从 GitHub 新取上述 canonical SHA，先只读检查获得 `INSPECTED`，再使用同一证据摘要执行一次恢复。旧 canonical 应用导入/venv、实际 PostgreSQL schema 与 KB serving contract、配置封存、进程环境 false 和稳定性检查通过。最终回执 `RESTORED_PREVIOUS_SERVICES`，退出码 0。
+- 独立线上复验 PASS：公网 health HTTP 200，API/database/Redis/Celery 全正常；匿名 `/api/v1/auth/me` 返回 401；socket/backend/worker/beat 均 active，跨 7 秒 PID/激活时间不变、服务 NRestarts=0。实际生产仍是 `ab8c3ea67ab413dbe349916490b9f060642c1bb6`，不是新候选。
+- 原 `f567200ec` 回执仍为 `NEEDS_OPERATOR`，原 business lease、sealed stage、密钥与证据保留。独立恢复证据在服务器 `contained-service-recoveries/f567200ec555bb01be7e66708c97ca4064564e5d/`。没有改写历史发布结果、重放原发布、清锁、更新审核 fixture、OTA、发原生包或正式送审。
+- 后续边界：需另行完成原失败发布的安全退休处理，才能取得新的发布授权；G6 同包用户路径仍未闭环。本轮只确认可用性恢复，不宣称所有产品问题或 Apple 审核已完成。
+- 过程改进证据：真实 OS 目录/标签与被 mock 的 fixture 不一致造成返工，另有跨目录静态断言漏检；测试期间修改源码使早期全量结果失去候选绑定。已补精确路径/真实调用契约回归、把只读应用探针前移到 intent 前、冻结最终测试输入。本机全量与云端 CI 并行，不降低任一准入闸。
 
 > 点击调整记录，修改食物的内容。比如把1碗改成两碗，那么在保存的时候要重新计算热量。当前只是修改了内容，但是没有修改和重新计算真实的营养物质和热量，要做这个优化。点击图片，展开午餐图，用手滑一下，图片应该自动消失，而不是再点击那个叉号再消失。要优化这个交互。
 
