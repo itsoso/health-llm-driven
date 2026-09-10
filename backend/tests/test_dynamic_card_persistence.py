@@ -8,6 +8,107 @@ from app.services.dynamic_card_persistence import (
 from tests.conftest import create_authenticated_user
 
 
+def _record_quality_meta(record_id):
+    seed = {"record_id": record_id, "food_items": "米饭100克", "updated_at": None}
+    return {"cards": [{
+        "type": "record_quality",
+        "data": {"domain": "diet", "record_id": record_id, "adjust_record": seed,
+                 "summary": "米饭100克", "progress": {"calories_total": 200},
+                 "primary_judgement": "旧判断", "next_action": "旧建议"},
+        "actions": [{"id": "adjust-record", "action": "ui.inline.expand",
+                     "label": "修正本餐", "payload": {"target": "adjust_record", "patch": {
+                         "expanded_sections": ["adjust_record"], "adjust_record": seed,
+                     }}}, {"id": "show-next-meal", "action": "ui.inline.expand",
+                           "payload": {"target": "next_meal", "patch": {"next_meal_detail": "旧建议"}}}],
+    }]}
+
+
+def test_quality_history_reload_uses_saved_record_not_old_action_seed(client, db, auth_user_and_headers):
+    from app.models.agent_conversation import AgentConversation, AgentMessage
+
+    user, headers = auth_user_and_headers
+    record = DietRecord(user_id=user.id, record_date=date.today(), meal_type="lunch",
+                        food_items="米饭150克", calories=195.1234, protein=3.5,
+                        updated_at=datetime(2026, 9, 10, 8, tzinfo=timezone.utc))
+    db.add(record)
+    db.flush()
+    original = _record_quality_meta(record.id)
+    conv = AgentConversation(user_id=user.id, title="测试修正回读")
+    db.add(conv)
+    db.flush()
+    message = AgentMessage(conversation_id=conv.id, role="assistant", content="已记录", meta=original)
+    db.add(message)
+    db.commit()
+
+    response = client.get(f"/api/v1/agent/conversations/{conv.id}", headers=headers)
+    assert response.status_code == 200
+    card = response.json()["messages"][0]["meta"]["cards"][0]
+    assert card["data"]["adjust_record"]["food_items"] == "米饭150克"
+    assert card["data"]["adjust_record"]["calories"] == 195.1234  # never round edit data
+    assert card["data"]["adjust_record"]["updated_at"] is not None
+    assert card["actions"][0]["payload"]["patch"]["adjust_record"] == card["data"]["adjust_record"]
+    assert card["data"]["summary"] == "米饭150克"
+    assert card["data"]["metrics"][0]["value"] == "195.12kcal"
+    assert "progress" not in card["data"] and "next_action" not in card["data"]
+    assert not any(a.get("id") == "show-next-meal" for a in card["actions"])
+    db.refresh(message)
+    assert message.meta == original  # delivery must not rewrite conversation history
+
+
+def test_quality_history_does_not_restore_foreign_or_deleted_record(db):
+    owner, _ = create_authenticated_user(db)
+    viewer, _ = create_authenticated_user(db)
+    record = DietRecord(user_id=owner.id, record_date=date.today(), meal_type="lunch",
+                        food_items="私有食物", calories=500)
+    db.add(record)
+    db.commit()
+    meta = _record_quality_meta(record.id)
+    foreign = message_metas_for_delivery(db, [meta], viewer.id)[0]["cards"][0]
+    assert foreign["data"]["title"] == "记录不可用"
+    assert "adjust_record" not in foreign["data"]
+    assert foreign["actions"] == []
+    assert "私有食物" not in str(foreign)
+    db.delete(record)
+    db.commit()
+    deleted = message_metas_for_delivery(db, [meta], owner.id)[0]["cards"][0]
+    assert deleted == foreign
+
+
+def test_quality_history_batches_reads_and_does_not_mutate_input(db):
+    from copy import deepcopy
+    from sqlalchemy import event
+
+    owner, _ = create_authenticated_user(db)
+    records = [DietRecord(user_id=owner.id, record_date=date.today(), meal_type="dinner",
+                          food_items=f"测试食物{index}", calories=100) for index in range(3)]
+    db.add_all(records)
+    db.commit()
+    metas = [_record_quality_meta(record.id) for record in records]
+    original = deepcopy(metas)
+    owner_id = owner.id
+    statements = []
+    def capture(_conn, _cursor, statement, _params, _context, _many):
+        statements.append(statement)
+    event.listen(db.get_bind(), "before_cursor_execute", capture)
+    try:
+        delivered = message_metas_for_delivery(db, metas, owner_id)
+    finally:
+        event.remove(db.get_bind(), "before_cursor_execute", capture)
+    assert len(statements) == 1 and statements[0].lstrip().upper().startswith("SELECT")
+    assert metas == original
+    assert all(meta["cards"][0]["data"]["title"] == "晚餐已记录" for meta in delivered)
+
+
+def test_quality_history_database_failure_is_not_hidden(monkeypatch):
+    import pytest
+    from unittest.mock import Mock
+
+    db = Mock()
+    db.query.side_effect = RuntimeError("unavailable")
+    with pytest.raises(RuntimeError, match="unavailable"):
+        message_metas_for_delivery(db, [_record_quality_meta(1)], 1)
+
+
 def test_diet_draft_persistence_removes_ephemeral_signed_photo_url():
     cards = [{
         "type": "diet_draft",
@@ -91,7 +192,9 @@ def test_draft_card_recovers_current_record_parent_after_confirmation(db):
         recognition_snapshot={},
         lifecycle="pending",
     )
-    db.add_all([draft, asset])
+    db.add(draft)
+    db.flush()  # PostgreSQL enforces the parent FK before the asset insert.
+    db.add(asset)
     db.commit()
     record = DietRecord(
         user_id=user.id,

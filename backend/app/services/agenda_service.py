@@ -156,6 +156,7 @@ def _project_course_reviews(db: Session, user_id: int, items: List[Dict[str, Any
             it for it in items
             if it.get("type") == "checkup"
             and (it.get("source") or {}).get("object_type") == "health_problem"
+            and it.get("review_kind") != "goal"
         ]
         for rs in rows:
             if _review_covered_by_problem(rs, existing, today):

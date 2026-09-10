@@ -71,6 +71,26 @@ def test_review_deduped_by_healthproblem(db):
     assert (gastric[0].get("source") or {}).get("object_type") == "health_problem"
 
 
+def test_goal_review_does_not_hide_clinical_schedule(db):
+    from app.services.today_timeline_service import _map_agenda_item
+
+    user, _ = create_authenticated_user(db)
+    goal = _add_problem(db, user.id, "血糖与代谢目标", 8)
+    goal.status = "monitoring"
+    goal.risk_level = "P2"
+    goal.diagnosis = {"source": "onboarding_primary_goal"}
+    db.commit()
+    review = _add_review(db, user.id, "血糖复查", 10, department="内分泌科", priority="high")
+    items = _checkups(agenda_service.today(db, user.id))
+    assert len(items) == 2
+    clinical = next(item for item in items if item["source"]["object_type"] == "review_schedule")
+    monitoring = next(item for item in items if item["source"]["object_type"] == "health_problem")
+    assert clinical["source"]["object_id"] == review.id
+    assert clinical["priority"] == 90
+    assert _map_agenda_item(clinical)["deep_link"] == "/medical-exams"
+    assert _map_agenda_item(monitoring)["deep_link"] == "/agenda"
+
+
 def test_review_not_deduped_different_organ(db):
     user, _ = create_authenticated_user(db)
     _add_problem(db, user.id, "胃溃疡(Hp 阴性)", 8, what="复查胃镜")

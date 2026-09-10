@@ -45,6 +45,7 @@ def message_metas_for_delivery(
     signed URLs without turning message metadata into capability storage.
     """
     delivered = deepcopy(metas)
+    _refresh_record_quality_edits(db, delivered, owner_id)
     diet_card_data: list[
         tuple[dict[str, Any], dict[str, Any], list[str], int | None, bool]
     ] = []
@@ -249,6 +250,86 @@ def message_metas_for_delivery(
             data["photo_unavailable_count"] = unavailable_basis
             data["media_stage"] = "unavailable"
     return delivered
+
+
+def _refresh_record_quality_edits(db: Session, metas: list, owner_id: int) -> None:
+    """Refresh editable meal snapshots in a delivery copy, never persisted history.
+
+    One owner-scoped batch per 200 distinct records; no model calls or writes.
+    A stale conversation/action patch must not become the next edit's baseline.
+    """
+    from app.models.daily_health import DietRecord
+    from app.utils.number_format import format_display_number
+
+    cards_by_id: dict[int, list[dict]] = {}
+    for meta in metas:
+        if not isinstance(meta, dict) or not isinstance(meta.get("cards"), list):
+            continue
+        for card in meta["cards"]:
+            if not isinstance(card, dict) or card.get("type") != "record_quality":
+                continue
+            data = card.get("data")
+            if not isinstance(data, dict) or data.get("domain") != "diet":
+                continue
+            seed = data.get("adjust_record")
+            raw_id = data.get("record_id", seed.get("record_id") if isinstance(seed, dict) else None)
+            if isinstance(raw_id, bool) or not str(raw_id).isdigit() or int(raw_id) <= 0:
+                continue
+            cards_by_id.setdefault(int(raw_id), []).append(card)
+
+    ids = list(cards_by_id)
+    fields = ("meal_type", "food_items", "calories", "protein", "carbs", "fat", "fiber")
+    nutrition = (("calories", "热量", "kcal"), ("protein", "蛋白", "g"),
+                 ("carbs", "碳水", "g"), ("fat", "脂肪", "g"), ("fiber", "纤维", "g"))
+    for start in range(0, len(ids), 200):
+        batch = ids[start:start + 200]
+        records = {record.id: record for record in db.query(DietRecord).filter(
+            DietRecord.user_id == owner_id, DietRecord.id.in_(batch),
+        ).all()}
+        for record_id in batch:
+            record = records.get(record_id)
+            for card in cards_by_id[record_id]:
+                data = card["data"]
+                if record is None:
+                    card["data"] = {"domain": "diet", "title": "记录不可用",
+                                    "summary": "该记录已删除或当前账号无法访问，请到饮食页核对。"}
+                    card["actions"] = []
+                    continue
+                seed = {field: getattr(record, field) for field in fields}
+                seed.update(record_id=record.id, updated_at=(
+                    record.updated_at.isoformat() if record.updated_at is not None else None
+                ))
+                old_seed = data.get("adjust_record")
+                changed = not isinstance(old_seed, dict) or any(
+                    old_seed.get(field) != seed[field] for field in fields
+                )
+                data.update(seed)
+                data["adjust_record"] = seed
+                meal = {"breakfast": "早餐", "lunch": "午餐", "dinner": "晚餐", "snack": "加餐"}.get(record.meal_type, "饮食")
+                data["title"] = f"{meal}已记录"
+                data["summary"] = record.food_items or "已保存的饮食记录"
+                data["metrics"] = [
+                    {"label": label, "value": f"{format_display_number(getattr(record, field))}{unit}"}
+                    for field, label, unit in nutrition if getattr(record, field) is not None
+                ]
+                if changed:
+                    # Old totals/advice are not recomputed by this read-only projection.
+                    for key in ("progress", "goal_progress", "primary_judgement", "personal_cautions",
+                                "next_action", "next_meal_detail", "expanded_sections"):
+                        data.pop(key, None)
+                actions = card.get("actions")
+                if not isinstance(actions, list):
+                    continue
+                refreshed = []
+                for action in actions:
+                    payload = action.get("payload") if isinstance(action, dict) else None
+                    if isinstance(payload, dict) and action.get("action") == "ui.inline.expand":
+                        if changed and payload.get("target") in ("next_meal", "goal_progress"):
+                            continue
+                        if payload.get("target") == "adjust_record":
+                            payload["patch"] = {"expanded_sections": ["adjust_record"], "adjust_record": deepcopy(seed)}
+                    refreshed.append(action)
+                card["actions"] = refreshed
 
 
 def _capture_origin_message_id(value: Any) -> int | None:
