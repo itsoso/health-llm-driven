@@ -1,8 +1,8 @@
-# App Store Review Notes Draft
+# App Store Review Notes
 
 > Demo account credentials stay outside git. At final submit, provide them through `APP_STORE_REVIEW_DEMO_ACCOUNT` and `APP_STORE_REVIEW_DEMO_PASSWORD`.
 >
-> App Store Connect contains the demo account, password, reviewer contact and these review notes. This checked-in draft intentionally retains placeholders so secrets are not committed; change the heading to final only after the exact version 1.3.3 EAS candidate passes the physical-iPhone G6 checklist.
+> App Store Connect contains the demo account, password, reviewer contact and these review notes. Placeholders remain intentionally so secrets are not committed. Candidate 1.3.3 (271) uses the owner-authorized simulator-risk policy in `docs/governance/simulator-review-acceptance.md`; unverified physical checks remain explicitly recorded outside Git, not represented as passes.
 >
 > Paste only `## What To Test` through the end into ASC Notes (maximum 4,000 UTF-8 bytes). Enter credentials and contact details in their separate fields; do not paste this preface.
 

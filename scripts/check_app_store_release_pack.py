@@ -922,6 +922,9 @@ def main() -> int:
         "--real-device-evidence",
         help="JSON evidence from the physical-iPhone acceptance run. Overrides APP_STORE_REAL_DEVICE_EVIDENCE.",
     )
+    parser.add_argument("--simulator-evidence", help="Candidate-bound simulator results and explicit risk acceptance JSON.")
+    parser.add_argument("--accept-simulator-risk", action="store_true",
+                        help="Release owner explicitly accepts the enumerated unverified checks; does not waive failures.")
     parser.add_argument(
         "--build-id",
         help="App Store build number expected in real-device evidence. Overrides APP_STORE_BUILD_ID.",
@@ -1117,6 +1120,8 @@ def main() -> int:
         ]
         if args.final_submit and build_id:
             screenshot_args.extend(["--build-id", build_id])
+            if args.simulator_evidence and args.accept_simulator_risk:
+                screenshot_args.extend(["--allow-simulator-source", "--source-sha", git_commit_hash])
         result = subprocess.run(
             screenshot_args,
             cwd=ROOT,
@@ -1143,7 +1148,21 @@ def main() -> int:
                 "final submit requires --git-commit-hash or APP_STORE_GIT_COMMIT_HASH"
             )
         evidence_path = args.real_device_evidence or os.environ.get(REAL_DEVICE_EVIDENCE_ENV, "").strip()
-        if not evidence_path:
+        if args.simulator_evidence:
+            # The separate validator preserves real-device evidence semantics and
+            # never turns missing hardware results into successful checks.
+            from check_simulator_review_acceptance import validate_simulator_acceptance
+            if evidence_path:
+                failures.append("choose either real-device or simulator evidence, not both")
+            failures.extend(validate_simulator_acceptance(
+                Path(args.simulator_evidence), required_checks=REAL_DEVICE_CHECKS,
+                expected_build_id=build_id, expected_app_version=str(app.get("version") or ""),
+                expected_eas_build_id=eas_build_id, expected_git_commit_hash=git_commit_hash,
+                accept_risk=args.accept_simulator_risk,
+            ))
+        elif args.accept_simulator_risk:
+            failures.append("--accept-simulator-risk requires --simulator-evidence")
+        elif not evidence_path:
             failures.append(
                 "final submit requires real-device acceptance evidence via "
                 "--real-device-evidence or APP_STORE_REAL_DEVICE_EVIDENCE"

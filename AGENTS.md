@@ -83,6 +83,9 @@
 
 ## 8. Mobile / 桌面发布
 
+- 用户选择模拟器作为默认验收环境：截图、UI 操作、模拟审核与常规回归都走 iOS 模拟器；除非用户另行要求真机，不主动操作、轮询等待手机或反复要求连接/解锁。
+- 用户已接受模拟器送审的未覆盖项风险；可按 `docs/governance/simulator-review-acceptance.md` 使用候选绑定的替代验收路径。必须逐项保留未验证原因及明确风险接受，失败项和其他最终送审检查不得豁免，不得宣称 Apple 豁免了真机测试。
+- 模拟器不支持的相机实拍、硬件/系统集成与第三方 App 交接等项目明确记为“未验证”，继续完成其余可执行项；不得用 mock、截图或旧包结果冒充真机通过。该默认环境选择不等于正式送审 gate 已通过，最终阻断单独汇报，不阻塞可并行的构建、截图准备与已满足条件的上传。
 - Mobile 纯 JS/TS/UI 且满足 OTA 边界时，使用 `scripts/mobile-ota.sh production "<message>"`。
 - 需要可扫码安装的 iOS 包时，使用 `scripts/mobile-local-qr.sh`；除非用户明确指定，不走 TestFlight/EAS submit。
 - 原生依赖、签名、权限或商店元数据变化不能冒充 OTA；必须走对应 release skill 与审核 Gate。

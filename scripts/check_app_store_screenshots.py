@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import struct
 import sys
 from pathlib import Path
@@ -63,6 +64,8 @@ def validate(
     *,
     app_store_ready: bool,
     expected_build_id: str | None = None,
+    expected_source_sha: str | None = None,
+    allow_simulator_source: bool = False,
 ) -> list[str]:
     failures: list[str] = []
 
@@ -88,7 +91,16 @@ def validate(
         expected = str(expected_build_id).strip()
         actual_value = manifest.get("build_id")
         actual = str(actual_value).strip() if actual_value is not None else ""
-        if actual != expected:
+        simulator_match = (
+            allow_simulator_source
+            and bool(re.fullmatch(r"[0-9a-f]{40}", expected_source_sha or ""))
+            and manifest.get("source_sha") == expected_source_sha
+            and manifest.get("candidate_store_build_id") == expected
+            and manifest.get("capture_environment") == "simulator"
+            and manifest.get("configuration") == "Release"
+            and bool(actual)
+        )
+        if (allow_simulator_source and not simulator_match) or (not allow_simulator_source and actual != expected):
             rendered_actual = repr(actual) if actual else "missing"
             failures.append(
                 "manifest build_id must match expected build: "
@@ -151,12 +163,16 @@ def main() -> int:
         "--build-id",
         help="Require manifest build_id to match this App Store/TestFlight build number.",
     )
+    parser.add_argument("--source-sha", help="Exact candidate source SHA for simulator capture provenance.")
+    parser.add_argument("--allow-simulator-source", action="store_true")
     args = parser.parse_args()
 
     failures = validate(
         args.screenshot_dir,
         app_store_ready=args.app_store_ready,
         expected_build_id=args.build_id,
+        expected_source_sha=args.source_sha,
+        allow_simulator_source=args.allow_simulator_source,
     )
     if failures:
         print("App Store screenshot check failed:", file=sys.stderr)

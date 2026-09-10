@@ -514,6 +514,28 @@ def test_real_device_evidence_requires_current_build_and_all_core_flows(tmp_path
     assert "xiaohongshu_share_handoff" in "\n".join(failures)
 
 
+def test_simulator_screenshots_require_explicit_exact_source_provenance(tmp_path: Path):
+    from scripts.check_app_store_screenshots import validate
+    _write_manifest(tmp_path, privacy_status="demo", build_id="1")
+    path = tmp_path / "manifest.json"
+    manifest = json.loads(path.read_text())
+    manifest.update(candidate_store_build_id="271", capture_environment="simulator",
+                    source_sha="a" * 40, configuration="Release")
+    path.write_text(json.dumps(manifest))
+    kwargs = dict(app_store_ready=False, expected_build_id="271",
+                  expected_source_sha="a" * 40, allow_simulator_source=True)
+    assert validate(tmp_path, **kwargs) == []
+    assert validate(tmp_path, app_store_ready=False, expected_build_id="271")
+    for field, bad in [("source_sha", "b" * 40), ("candidate_store_build_id", "270"),
+                       ("configuration", "Debug"), ("capture_environment", "physical")]:
+        changed = dict(manifest, **{field: bad})
+        path.write_text(json.dumps(changed))
+        assert validate(tmp_path, **kwargs)
+        changed['build_id'] = '271'
+        path.write_text(json.dumps(changed))
+        assert validate(tmp_path, **kwargs)
+
+
 def test_real_device_evidence_accepts_complete_matching_build(tmp_path: Path):
     evidence = tmp_path / "real-device.json"
     evidence.write_text(

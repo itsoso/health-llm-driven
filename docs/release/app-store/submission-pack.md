@@ -1,6 +1,11 @@
 # 小巴健康(中和知微)App Store Submission Pack · 睿为健康
 
-Status: draft for the next App Store submission.
+Status: ready for App Store submission.
+
+Current candidate: 1.3.3 (271), source `5ddd9402d22c8124bc84b578662ea87c1f6e432c`.
+Readiness uses the release owner's explicitly accepted simulator-risk path, not
+a claim of completed physical acceptance. External candidate-bound results and
+the final-submit check remain required before the actual submission action.
 
 ## App Record
 
@@ -89,6 +94,13 @@ acceptance. Do not run a separate auto-submit command around its one-shot claims
 QR install is the default for local mobile distribution, not App Store submission.
 
 ## Final Submit Gate
+
+The release owner has also authorized the explicit simulator-risk alternative in
+`docs/governance/simulator-review-acceptance.md`. References below to mandatory
+same-build physical acceptance describe the original strict path; this alternative
+may replace that evidence requirement (and use source-bound simulator screenshots)
+only with `--simulator-evidence` plus `--accept-simulator-risk`. All other gates
+remain required. Never mark unverified physical checks true.
 
 The default release-pack check validates repo materials that do not require human secrets or fresh screenshots:
 

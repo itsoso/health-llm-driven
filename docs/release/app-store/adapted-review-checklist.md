@@ -31,7 +31,7 @@ Before upload or submit for review, the release owner must check:
 - The standard binary is iPhone portrait only and does not contain Watch, Rokid, Siri intents or background location capabilities.
 - App Privacy responses match the checked-in nutrition-label declaration and have been published, not merely saved as a draft.
 - App Information declares the regulated medical device status. This release must be `No`; a `Yes` assessment requires regulatory evidence and blocks submission.
-- A physical iPhone has passed both voice paths, photo persistence, database write verification, and WeChat/Xiaohongshu share handoff.
+- Either the physical-iPhone acceptance path has passed, or the release owner's explicit simulator-risk alternative in `docs/governance/simulator-review-acceptance.md` has passed. In the latter case preserve the unverified voice, camera and external-share risks instead of claiming physical success.
 
 ## Borrowed Practices
 

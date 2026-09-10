@@ -72,6 +72,11 @@ python3 scripts/prepare_app_store_screenshots.py \
 
 ## Machine Gate
 
+The owner-authorized simulator acceptance path may instead bind screenshots by
+exact candidate source and explicit Store target while retaining the simulator's
+actual native build number. See `docs/governance/simulator-review-acceptance.md`;
+this does not waive privacy, visual review or screenshot-size checks.
+
 Every capture writes `manifest.json` next to the PNGs. Validate local QA evidence:
 
 ```bash

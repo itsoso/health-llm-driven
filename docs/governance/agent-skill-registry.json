@@ -287,7 +287,7 @@
       "id": "ios-app-review-gate",
       "lifecycle": "recommended",
       "owner": "reva-mobile-release",
-      "version": "0.9.0",
+      "version": "0.10.0",
       "layer": "workflow",
       "kind": "overlay",
       "platforms": [
@@ -296,7 +296,7 @@
       "trigger_family": [
         "ios-app-review"
       ],
-      "last_reviewed": "2026-08-20",
+      "last_reviewed": "2026-09-10",
       "evidence": [
         "The App Review pack runs privacy, account access, screenshot and medical red-line checks; product identity still needs one generated source before standardization."
       ],

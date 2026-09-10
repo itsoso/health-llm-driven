@@ -7,6 +7,20 @@ description: "Use when preparing, auditing, or debugging 阿衡 iOS App Store re
 
 Use this skill as the final App Store review gate for `mobile/`. It converts App Review risk into explicit checks before a build is submitted.
 
+## Default acceptance environment
+
+Follow the user's simulator-first preference in `AGENTS.md` §8. Use an iOS
+Release simulator build for screenshots, UI traversal and supported regression
+checks. Record its actual source revision, configuration and build number;
+do not relabel it as the TestFlight binary. Do not start or wait for physical
+device testing unless the user separately requests it. Report unsupported
+hardware/integration checks as unverified and continue the executable work.
+The owner-authorized alternative in `docs/governance/simulator-review-acceptance.md`
+allows explicit candidate-bound risk acceptance, not fabricated physical passes.
+Read it when using `--simulator-evidence` with `--accept-simulator-risk`.
+All other final gates remain mandatory. Report remaining blockers once, without repeatedly
+asking the user to connect or unlock a phone.
+
 ## Workflow
 
 1. Read `docs/system-map/INDEX.md`, `docs/release/app-store/submission-pack.md`, and `docs/release/app-store/adapted-review-checklist.md`.
@@ -33,7 +47,7 @@ Use this skill as the final App Store review gate for `mobile/`. It converts App
 
 Read `references/app-review-redlines.md` when changing visible copy, dynamic cards, action routing, auth, payments, HealthKit, permissions, screenshots, or Review Notes.
 
-High-confidence automated redlines live in `scripts/check_app_store_release_pack.py`. Do not weaken a rule just to pass a release; either remove the review risk from the product surface or narrow the scanner only when it is catching non-user-visible implementation code.
+High-confidence automated redlines live in `scripts/check_app_store_release_pack.py`. Do not weaken a rule just to pass a release; the explicit owner-authorized simulator policy changes the internal evidence route only, not these product redlines.
 
 ## Dynamic UI Inventory
 
