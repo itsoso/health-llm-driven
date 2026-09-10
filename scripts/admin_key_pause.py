@@ -541,6 +541,12 @@ class Operator:
         write_json(self.record / "installed.json", {"pub": self.file(self.pub), "conf": self.file(self.conf)})
         assert_effective_change(evidence["effective"], self.effective(), str(self.pub))
         run(["/usr/bin/systemctl", "reload", "ssh.service"])
+        # SIGHUP re-execs sshd: even its listener process title can be transient
+        # before readiness. Keep the pre-reload binding, await only fresh TCP
+        # evidence, then rebind the same daemon/configuration before proceeding.
+        wait_public_offers(self.offer, (evidence["public"].encode(), evidence["operator"].encode()), (False, True))
+        self.bound(evidence)
+        assert_effective_change(evidence["effective"], self.effective(), str(self.pub))
 
     def check_pub(self, evidence):
         info = self.file(self.pub)
@@ -673,8 +679,16 @@ def main():
         finally:
             os.close(fd)
         return 0
-    except (Exception, KeyboardInterrupt):
-        print("admin key pause: rejected or incomplete; inspect durable audit; restore may be pending", file=sys.stderr)
+    except (Exception, KeyboardInterrupt) as error:
+        # Only a code location and exception class, never messages, locals,
+        # paths from exceptions, key material, or command output.
+        site, frame = "boundary", error.__traceback__
+        while frame is not None:
+            if frame.tb_frame.f_code.co_filename == __file__:
+                site = f"{frame.tb_frame.f_code.co_name}:{frame.tb_lineno}"
+            frame = frame.tb_next
+        print("admin key pause: rejected or incomplete; inspect durable audit; restore may be pending; "
+              f"failure_site={site}; error_type={type(error).__name__}", file=sys.stderr)
         return 1
 
 

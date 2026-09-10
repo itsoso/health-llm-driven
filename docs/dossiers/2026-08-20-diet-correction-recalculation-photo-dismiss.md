@@ -34,6 +34,23 @@
   仅重试有界只读探测，不重复 SSH reload/暂停/终止；Linux 原生测试改用生产同一 helper。
   新修复仍需固定提交独立 G4、完整本机集成及精确主干 CI 后才能用于恢复。
 
+### 后续：原暂停已恢复，继续补齐 reload 后 daemon 绑定时序
+
+- c59e01bce 独立 G4 GO；完整本机 1112 passed、1 skipped、84 subtests passed、exit 0。
+  精确 CI `34422768929` 及 validate `34423370577` SUCCESS，Linux native 1 PASS。
+- 服务器三次 GitHub 直连下载失败后，确认相关进程全部结束。经独立操作评审收紧后，使用
+  单连接临时反向 SOCKS，客户端 PermitRemoteOpen 仅 github.com:443，实测 loopback-only
+  监听及非 GitHub 目标拒绝；TLS/canonical origin/精确 SHA 不变，未上传本机源码。
+  获取成功后确认转发端口关闭，再通过服务器 canonical 与真实 CI 闸。
+- 新代码恢复原 2715 审计成功（RESTORED）。随后 c59e 的单 key 暂停仍在 installed 后、
+  freeze/paused 前被拒绝；稍后只读 verify_paused 与 target_sessions 均通过。该次暂停也经
+  canonical restore 完整成功，两个审计均已 RESTORED，原配置恢复；旧 review closure 未创建。
+- 剩余代码窗口：install 在 reload 后立即进入 verify_paused 的 daemon 绑定，可能先于
+  sshd listener 就绪。合成真实调用顺序测试先 RED，再把有界就绪等待移到 install 的
+  reload 与重新绑定之间；不以此推断已确定 c59e 现场失败原因。新增仅代码位置/异常类的
+  失败诊断，禁止异常原文、局部变量或命令输出。两项新增测试先 RED，待新固定修复验证。
+- ASC 当前登录已过期，已向用户发出非阻塞重新登录提示；未选旧包或提交正式审核。
+
 ## 2026-09-09 19:20 · 模拟器回归完成，发布维护继续阻断
 
 ### 后续明确风险授权：专用行政收尾实现中

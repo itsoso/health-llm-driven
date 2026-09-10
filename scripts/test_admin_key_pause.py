@@ -255,6 +255,7 @@ def test_old_audit_canonical_failure_propagates():
 def test_restore_cli_uses_new_code_but_original_audit(tmp_path, monkeypatch):
     from types import SimpleNamespace
     m, calls = load(), []
+    monkeypatch.setattr(m.os, "umask", lambda _: None)
     (tmp_path / "launcher.lock").write_bytes(b"")
     b = SimpleNamespace(STATE=tmp_path, secure=lambda *a, **kw: None,
         canonical_source=lambda sha: calls.append(("canonical", sha)),
@@ -282,6 +283,44 @@ def test_operator_restore_waits_after_reload_without_replaying_reload(tmp_path, 
     a.restore(e)
     assert len(attempts) == 3
     assert calls.count(["/usr/bin/systemctl", "reload", "ssh.service"]) == 1
+
+
+def test_pause_waits_for_reload_before_rebinding_live_daemon(tmp_path, monkeypatch):
+    m, a, e, calls = operator(tmp_path, monkeypatch)
+    ready, reloaded = [True], []
+    original_offer, original_run, original_daemon = a.offer, m.run, a.daemon
+    def run(argv, **kwargs):
+        if argv == ["/usr/bin/systemctl", "reload", "ssh.service"]:
+            ready[0] = False
+            reloaded.append(True)
+        return original_run(argv, **kwargs)
+    def daemon():
+        if not ready[0]:
+            raise m.PauseError("listener process title not yet published")
+        return original_daemon()
+    def offer(key, **kwargs):
+        ready[0] = True
+        return original_offer(key, **kwargs)
+    monkeypatch.setattr(m, "run", run)
+    monkeypatch.setattr(a, "daemon", daemon)
+    monkeypatch.setattr(a, "offer", offer)
+    a.install(e)
+    a.verify_paused(e)
+    assert reloaded == [True]
+
+
+def test_operator_failure_location_never_prints_exception_payload(monkeypatch, capsys):
+    m = load()
+    monkeypatch.setattr(m.os, "umask", lambda _: None)
+    def reject(*args, **kwargs):
+        raise RuntimeError("SYNTHETIC_PRIVATE_PAYLOAD")
+    monkeypatch.setattr(m, "context", reject)
+    monkeypatch.setattr(m.sys, "argv", ["operator", "restore", "--sha", "a" * 40,
+        "--key-digest", "c" * 64, "--consent-temporary-key-pause"])
+    assert m.main() == 1
+    error = capsys.readouterr().err
+    assert "SYNTHETIC_PRIVATE_PAYLOAD" not in error
+    assert "RuntimeError" in error and "failure_site=main:" in error
 
 
 def test_effective_configuration_only_allows_target_revocation_change():
