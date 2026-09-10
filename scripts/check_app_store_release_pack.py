@@ -657,6 +657,10 @@ def _reviewed_media_identity(value, user_id: int):
         if not isinstance(urls, list) or any(not isinstance(url, str) or url.startswith('[') for url in urls):
             raise ValueError("invalid reviewed media list")
         return json.dumps([_reviewed_media_identity(url, user_id) for url in urls], ensure_ascii=False)
+    # urlsplit strips leading spaces and embedded control bytes; such values are
+    # not canonical capabilities and must retain their exact snapshot identity.
+    if not value.startswith('/api/v1/upload/files/') or any(ord(char) < 33 or ord(char) == 127 for char in value):
+        return value
     url = urllib.parse.urlsplit(value)
     if (url.scheme or url.netloc or url.fragment or not re.fullmatch(
             rf'/api/v1/upload/files/(?:chat|diet)/{user_id}/[A-Za-z0-9_-]+\.(?:jpg|jpeg|png|gif|webp)', url.path)):

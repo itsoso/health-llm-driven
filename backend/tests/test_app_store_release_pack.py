@@ -1125,7 +1125,8 @@ def test_reviewed_snapshot_binds_media_identity_not_rotating_capability():
     assert digest(updated) == digest(array_original)
     assert digest(updated) != expected  # single URL vs list remains distinct
     for changed in (first.replace('/17/', '/18/'), first.replace('test_photo', 'other_photo'),
-                    'https://other.example.test' + first, first + '&variant=2'):
+                    'https://other.example.test' + first, first + '&variant=2',
+                    ' ' + first, first.replace('test_photo', 'test_\nphoto'), first.replace('/chat/', '/ch\tat/')):
         altered = copy.deepcopy(messages)
         altered[0]['image_url'] = changed
         assert digest(altered) != expected
