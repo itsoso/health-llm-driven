@@ -264,12 +264,14 @@ jobs:
 
   testflight:
     if: inputs.target == 'release'
-    needs: [backend, ios-build]
+    # Apple processing can overlap backend deployment. Final delivery still
+    # joins both outcomes below; uploading is not App Review submission.
+    needs: ios-build
     environment: release-production
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
-      - name: Independently materialize and recheck after backend completion
+      - name: Independently materialize and recheck as soon as the build finishes
         env:
           TARGET_SHA: ${{ inputs.sha }}
         run: |
@@ -357,3 +359,20 @@ jobs:
             EXPO_TOKEN="$EXPO_TOKEN" CI=1 \
             "$node_bin/node" /opt/reva-release/source/scripts/release-tools/node_modules/eas-cli/bin/run \
               submit -p ios --id "$BUILD_ID" --profile production --non-interactive --wait
+
+  release-result:
+    if: always() && inputs.target == 'release'
+    needs: [backend, testflight]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Join backend deployment and TestFlight upload outcomes
+        env:
+          BACKEND_RESULT: ${{ needs.backend.result }}
+          TESTFLIGHT_RESULT: ${{ needs.testflight.result }}
+        run: |
+          if [[ "$BACKEND_RESULT" != success || "$TESTFLIGHT_RESULT" != success ]]; then
+            printf '%s\n' 'Release incomplete: retain existing build/submission IDs and investigate; do not recreate or submit App Review.'
+            exit 1
+          fi
+          printf '%s\n' 'Backend deployment and TestFlight upload succeeded. ASC processing and same-build acceptance are still required before App Review.'

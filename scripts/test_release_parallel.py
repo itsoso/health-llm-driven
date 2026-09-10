@@ -1,4 +1,4 @@
-"""Parallel build must not grant an early upload or a second build."""
+"""Upload may overlap deployment, without replay or a false release success."""
 
 import json
 import subprocess
@@ -8,15 +8,20 @@ import pytest
 from test_trusted_release_server import SHA, policy, setup_state
 
 
-def test_build_claim_does_not_consume_backend_or_grant_upload(monkeypatch, tmp_path):
+def setup_parallel_state(monkeypatch, tmp_path):
     server = setup_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(server, "validate_loopback", lambda _policy: None)
+    return server
+
+
+def test_upload_can_precede_backend_without_consuming_its_claim(monkeypatch, tmp_path):
+    server = setup_parallel_state(monkeypatch, tmp_path)
     monkeypatch.setattr(server, "check_readiness", lambda _policy: None)
     assert server.claim_build(policy(), tmp_path) == {"sha": SHA, "state": "CLAIMED"}
     assert server.read_status(SHA, tmp_path)["state"] == "READY"
-    with pytest.raises(server.LaunchError):
-        server.claim_testflight(policy(), tmp_path)
-    assert server.run_once(policy(), tmp_path, lambda: None, lambda: None)["state"] == "SUCCEEDED"
     assert server.claim_testflight(policy(), tmp_path)["state"] == "CLAIMED"
+    assert server.read_status(SHA, tmp_path)["state"] == "READY"
+    assert server.run_once(policy(), tmp_path, lambda: None, lambda: None)["state"] == "SUCCEEDED"
     with pytest.raises(server.LaunchError):
         server.claim_build(policy(), tmp_path)
 
@@ -90,13 +95,13 @@ def test_build_claim_is_blocked_by_failed_backend(monkeypatch, tmp_path):
     assert not (tmp_path / "build-started.json").exists()
 
 
-def test_build_claim_can_run_while_backend_holds_its_lock(monkeypatch, tmp_path):
-    server = setup_state(monkeypatch, tmp_path)
+def test_build_and_upload_can_run_while_backend_holds_its_lock(monkeypatch, tmp_path):
+    server = setup_parallel_state(monkeypatch, tmp_path)
     monkeypatch.setattr(server, "check_readiness", lambda _policy: None)
     def during_deploy():
         assert server.claim_build(policy(), tmp_path)["state"] == "CLAIMED"
-        with pytest.raises(server.LaunchError):
-            server.claim_testflight(policy(), tmp_path)
+        assert server.claim_testflight(policy(), tmp_path)["state"] == "CLAIMED"
+        assert server.read_status(SHA, tmp_path)["state"] == "STARTED"
     assert server.run_once(policy(), tmp_path, lambda: None, during_deploy)["state"] == "SUCCEEDED"
 
 
@@ -109,3 +114,61 @@ def test_parallel_build_claim_cannot_race_another_build(monkeypatch, tmp_path):
         with pytest.raises(server.LaunchError):
             server.claim_build(policy(), tmp_path)
     assert not (tmp_path / "build-started.json").exists()
+
+
+@pytest.mark.parametrize("marker", [None, {}, {"sha": "b" * 40, "state": "STARTED"},
+                                  {"sha": SHA, "state": "FINISHED"}])
+def test_upload_requires_exact_build_claim(monkeypatch, tmp_path, marker):
+    server = setup_state(monkeypatch, tmp_path)
+    server.run_once(policy(), tmp_path, lambda: None, lambda: None)
+    if marker is not None:
+        (tmp_path / "build-started.json").write_text(json.dumps(marker))
+        (tmp_path / "build-started.json").chmod(0o600)
+    with pytest.raises(server.LaunchError, match="exact build claim"):
+        server.claim_testflight(policy(), tmp_path)
+    assert not (tmp_path / "native-started.json").exists()
+
+
+def test_expired_upload_cannot_consume_native_marker(monkeypatch, tmp_path):
+    server = setup_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(server, "check_readiness", lambda _policy: None)
+    server.claim_build(policy(), tmp_path)
+    server.run_once(policy(), tmp_path, lambda: None, lambda: None)
+    monkeypatch.setattr(server.time, "time", lambda: 7400)
+    with pytest.raises(server.LaunchError):
+        server.claim_testflight(policy(), tmp_path)
+    assert not (tmp_path / "native-started.json").exists()
+
+
+@pytest.mark.parametrize("preparing", [True, False])
+def test_backend_failure_after_upload_preserves_failure_and_both_claims(monkeypatch, tmp_path, preparing):
+    server = setup_parallel_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(server, "check_readiness", lambda _policy: None)
+    server.claim_build(policy(), tmp_path)
+    server.claim_testflight(policy(), tmp_path)
+    before = {name: (tmp_path / name).read_bytes() for name in ("build-started.json", "native-started.json")}
+    def fail():
+        raise RuntimeError("backend failed after upload")
+    with pytest.raises(server.LaunchError):
+        server.run_once(policy(), tmp_path, fail if preparing else lambda: None,
+                        (lambda: None) if preparing else fail)
+    assert server.release_status(SHA, tmp_path) == {
+        "sha": SHA, "backend": "PREPARATION_FAILED" if preparing else "NEEDS_OPERATOR", "testflight": "STARTED",
+    }
+    for claim in (server.claim_build, server.claim_testflight):
+        with pytest.raises(server.LaunchError):
+            claim(policy(), tmp_path)
+    assert before == {name: (tmp_path / name).read_bytes() for name in before}
+
+
+def test_revoked_identity_blocks_an_already_authenticated_upload_session(monkeypatch, tmp_path):
+    server = setup_parallel_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(server, "check_readiness", lambda _policy: None)
+    server.claim_build(policy(), tmp_path)
+    server.run_once(policy(), tmp_path, lambda: None, lambda: None)
+    def revoked(_policy):
+        raise server.LaunchError("authorization revoked")
+    monkeypatch.setattr(server, "validate_loopback", revoked)
+    with pytest.raises(server.LaunchError, match="revoked"):
+        server.claim_testflight(policy(), tmp_path)
+    assert not (tmp_path / "native-started.json").exists()

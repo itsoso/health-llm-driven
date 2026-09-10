@@ -256,7 +256,7 @@ def check_readiness(policy):
 
 
 def claim_build(policy, workspace):
-    """Reserve build only; upload keeps its own backend-success gate.
+    """Reserve build only; upload retains its own one-shot claim.
 
     A separate short lock permits claiming while deployment owns launcher.lock.
     This RPC runs in the build job itself, including every single-job rerun.
@@ -287,14 +287,18 @@ def claim_build(policy, workspace):
 
 
 def claim_testflight(policy, workspace):
-    """Consume upload permission only after confirmed backend success.
+    """Consume upload permission independently of a running backend deployment.
 
     A lost response is still a consumed claim. Only an operator may investigate
     the existing EAS build; this interface cannot clear or retry the claim.
+    The workflow validates the exact finished build and joins both outcomes;
+    claiming/uploading never proves backend health or App Review readiness.
     """
     workspace = Path(workspace)
     secure_path(workspace, directory=True)
-    lock = workspace.parent / "launcher.lock"
+    # Share the short vendor lock with build and credential retirement, not the
+    # long-held deployment lock. No new lock inventory or lock-order inversion.
+    lock = workspace / "build.lock"
     fd = os.open(lock, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:
         secure_path(lock, private=True)
@@ -302,11 +306,19 @@ def claim_testflight(policy, workspace):
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise LaunchError("another release invocation is active") from None
-        if read_status(policy["sha"], workspace)["state"] != "SUCCEEDED":
-            raise LaunchError("confirmed backend success required before native claim")
+        _assert_deployment_window(policy)
+        if read_status(policy["sha"], workspace)["state"] in {"NEEDS_OPERATOR", "PREPARATION_FAILED"}:
+            raise LaunchError("failed backend requires operator review before upload")
+        marker = workspace / "build-started.json"
+        if not os.path.lexists(marker) or _json(_read_private(marker)) != {"sha": policy["sha"], "state": "STARTED"}:
+            raise LaunchError("exact build claim required before upload")
         if _native_started(policy["sha"], workspace):
             raise LaunchError("native authorization already consumed; operator review required")
+        # A session can authenticate before revoke obtains this same lock.
+        # Recheck current local authorization under lock, without network I/O.
+        validate_loopback(policy)
         _write_private(workspace / "native-started.json", json.dumps({"sha": policy["sha"], "state": "STARTED"}).encode())
+        _sync_directory(workspace.parent)
         return {"sha": policy["sha"], "state": "CLAIMED"}
     finally:
         os.close(fd)

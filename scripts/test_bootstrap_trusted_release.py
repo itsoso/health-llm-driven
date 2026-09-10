@@ -217,7 +217,8 @@ def test_modified_managed_key_options_are_not_silently_ignored(monkeypatch, tmp_
 
 
 @pytest.mark.parametrize("state", ["STARTED", "NEEDS_OPERATOR"])
-def test_revoke_preserves_all_keys_when_backend_termination_is_unproven(monkeypatch, tmp_path, state):
+@pytest.mark.parametrize("native_claimed", [False, True])
+def test_revoke_preserves_all_keys_when_backend_termination_is_unproven(monkeypatch, tmp_path, state, native_claimed):
     bootstrap, _calls = fixture(monkeypatch, tmp_path)
     bootstrap.install(SHA, 200, PUBLIC)
     release = bootstrap.STATE / SHA
@@ -225,6 +226,10 @@ def test_revoke_preserves_all_keys_when_backend_termination_is_unproven(monkeypa
     (release / "started.json").write_text(json.dumps({"sha": SHA, "state": "STARTED"}))
     if state == "NEEDS_OPERATOR":
         (release / "completed.json").write_text(json.dumps({"sha": SHA, "state": state}))
+    if native_claimed:
+        for name in ("build-started.json", "native-started.json"):
+            (release / name).write_text(json.dumps({"sha": SHA, "state": "STARTED"}))
+    markers = {path.name: path.read_bytes() for path in release.iterdir()}
     before = bootstrap.AUTHORIZED.read_bytes()
     metadata = bootstrap.AUTHORIZED.stat()
     with pytest.raises(bootstrap.BootstrapError, match="termination"):
@@ -233,6 +238,7 @@ def test_revoke_preserves_all_keys_when_backend_termination_is_unproven(monkeypa
     after = bootstrap.AUTHORIZED.stat()
     assert (after.st_uid, after.st_gid, after.st_mode) == (metadata.st_uid, metadata.st_gid, metadata.st_mode)
     assert (release / "started.json").exists()
+    assert {path.name: path.read_bytes() for path in release.iterdir()} == markers
 
 
 def test_revoke_after_backend_success_preserves_unrelated_keys_and_native_evidence(monkeypatch, tmp_path):
@@ -269,6 +275,17 @@ LEGACY_SHA = "c" * 40
 LEGACY_PUBLIC = "ssh-ed25519 " + base64.b64encode(b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20" + bytes(range(128, 160))).decode()
 
 
+def lifecycle_snapshot(bootstrap):
+    """Prove a rejected lifecycle operation leaves credentials and claims intact."""
+    result = {}
+    for root in (bootstrap.STATE, bootstrap.CONFIG, bootstrap.INSTALLED.parent, bootstrap.AUTHORIZED):
+        paths = [root, *root.rglob("*")] if root.is_dir() else [root]
+        for path in paths:
+            info = path.lstat()
+            result[str(path)] = (info.st_ino, info.st_mode, path.read_bytes() if path.is_file() else None)
+    return result
+
+
 def preparation_failure_fixture(monkeypatch, tmp_path):
     bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path, succeeded=False)
     workspace = bootstrap.STATE / SHA
@@ -294,11 +311,19 @@ def test_preparation_failure_can_be_retired_without_rewriting_consumption(monkey
 
 
 @pytest.mark.parametrize("extra", ["deployment-started.json", "prepared.json", "bin", "deployment.env", "build-started.json", "native-started.json"])
-def test_preparation_retirement_rejects_any_later_phase_or_vendor_intent(monkeypatch, tmp_path, extra):
+@pytest.mark.parametrize("action", ["evidence", "revoke", "rotate"])
+def test_preparation_retirement_rejects_any_later_phase_or_vendor_intent(monkeypatch, tmp_path, extra, action):
     bootstrap, workspace = preparation_failure_fixture(monkeypatch, tmp_path)
-    (workspace / extra).write_text("{}")
+    (workspace / extra).write_text(json.dumps({"sha": SHA, "state": "STARTED"}))
+    before = lifecycle_snapshot(bootstrap)
     with pytest.raises(bootstrap.BootstrapError):
-        bootstrap._workspace_evidence(SHA)
+        if action == "rotate":
+            bootstrap.rotate(SHA, NEW_SHA, 200, HOST)
+        elif action == "revoke":
+            bootstrap.revoke(SHA)
+        else:
+            bootstrap._workspace_evidence(SHA)
+    assert lifecycle_snapshot(bootstrap) == before
 
 
 @pytest.mark.parametrize("change", ["missing", "hash", "legacy", "extra_field"])
@@ -320,10 +345,19 @@ def test_preparation_retirement_requires_bound_durable_phase_proof(monkeypatch, 
 
 
 @pytest.mark.parametrize("action", ["revoke", "rotate"])
-def test_preparation_lifecycle_holds_existing_build_lock(monkeypatch, tmp_path, action):
-    bootstrap, workspace = preparation_failure_fixture(monkeypatch, tmp_path)
+@pytest.mark.parametrize("state", ["READY", "SUCCEEDED", "PREPARATION_FAILED"])
+def test_lifecycle_holds_existing_build_lock_without_mutation(monkeypatch, tmp_path, action, state):
+    if state == "PREPARATION_FAILED":
+        bootstrap, workspace = preparation_failure_fixture(monkeypatch, tmp_path)
+    else:
+        bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path, succeeded=state == "SUCCEEDED")
+        workspace = bootstrap.STATE / SHA
+        workspace.mkdir(mode=0o700, exist_ok=True)
+    for name in ("build-started.json", "native-started.json"):
+        (workspace / name).write_text(json.dumps({"sha": SHA, "state": "STARTED"}))
     lock = workspace / "build.lock"
     lock.touch(mode=0o600)
+    before = lifecycle_snapshot(bootstrap)
     with lock.open("r+") as held:
         fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
         with pytest.raises(BlockingIOError):
@@ -331,6 +365,7 @@ def test_preparation_lifecycle_holds_existing_build_lock(monkeypatch, tmp_path, 
                 bootstrap.rotate(SHA, NEW_SHA, 200, HOST)
             else:
                 bootstrap.revoke(SHA)
+    assert lifecycle_snapshot(bootstrap) == before
 
 
 def test_preparation_revoke_rejects_changed_installed_executor(monkeypatch, tmp_path):
@@ -502,7 +537,7 @@ def test_legacy_archive_faults_block_before_authorization_or_retirement(monkeypa
 
 
 @pytest.mark.parametrize("fault", ["wrong-old", "same-sha", "authorized", "private-key", "code-hash",
-    "extra-config", "extra-code", "symlink", "started", "failed", "duplicate-json", "lease",
+    "extra-config", "extra-code", "symlink", "ready-vendor-claimed", "started", "failed", "duplicate-json", "lease",
     "foreign-started", "new-workspace", "archive-exists", "process", "unknown-process"])
 def test_rotation_fails_closed_before_retirement(monkeypatch, tmp_path, fault):
     bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path)
@@ -524,6 +559,11 @@ def test_rotation_fails_closed_before_retirement(monkeypatch, tmp_path, fault):
         path = bootstrap.CONFIG / "cloud.pub"
         path.unlink()
         path.symlink_to(tmp_path / "missing")
+    elif fault == "ready-vendor-claimed":
+        # Upload may finish before backend even starts; vendor consumption is
+        # never equivalent to a safely unused authorization for rotation.
+        (bootstrap.STATE / SHA / "started.json").unlink()
+        (bootstrap.STATE / SHA / "completed.json").unlink()
     elif fault == "started":
         (bootstrap.STATE / SHA / "completed.json").unlink()
     elif fault == "failed":
@@ -548,12 +588,14 @@ def test_rotation_fails_closed_before_retirement(monkeypatch, tmp_path, fault):
             return real_run(args, **kwargs)
         monkeypatch.setattr(bootstrap, "_run", run)
     before = bootstrap.AUTHORIZED.read_bytes()
+    markers = {p.name: (p.read_bytes(), p.stat().st_ino) for p in (bootstrap.STATE / SHA).iterdir()}
     with pytest.raises((bootstrap.BootstrapError, OSError)):
         bootstrap.rotate(old, new, 200, HOST)
     assert bootstrap.CONFIG.exists()
     assert bootstrap.INSTALLED.exists()
     assert bootstrap.AUTHORIZED.read_bytes() == before
     assert not (bootstrap.STATE / "retired").exists()
+    assert {p.name: (p.read_bytes(), p.stat().st_ino) for p in (bootstrap.STATE / SHA).iterdir()} == markers
 
 
 def test_rotation_requires_nonblocking_global_lock(monkeypatch, tmp_path):

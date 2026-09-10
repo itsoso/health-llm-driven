@@ -72,14 +72,32 @@ def test_dispatch_cannot_auto_publish_or_reuse_test_runner():
     for name, job in WORKFLOW["jobs"].items():
         assert job["runs-on"] == "ubuntu-24.04"
         assert 1 <= job["timeout-minutes"] <= 90
-        if name != "preflight":
+        if name not in {"preflight", "release-result"}:
             assert job["environment"] == "release-production"
             expected = "inputs.target == 'release' || inputs.target == 'backend'" if name in {"build-permission", "backend"} else "inputs.target == 'release'"
             assert job["if"] == expected
     assert WORKFLOW["jobs"]["build-permission"]["needs"] == "preflight"
     assert WORKFLOW["jobs"]["backend"]["needs"] == "build-permission"
     assert WORKFLOW["jobs"]["ios-build"]["needs"] == "build-permission"
-    assert set(WORKFLOW["jobs"]["testflight"]["needs"]) == {"backend", "ios-build"}
+    assert WORKFLOW["jobs"]["testflight"]["needs"] == "ios-build"
+
+
+@pytest.mark.parametrize("backend,testflight", [
+    ("success", "success"), ("failure", "success"), ("success", "failure"),
+    ("cancelled", "success"), ("success", "skipped"), ("skipped", "skipped"),
+])
+def test_delivery_join_requires_both_jobs_even_when_upload_finishes_first(backend, testflight):
+    job = WORKFLOW["jobs"]["release-result"]
+    assert set(job["needs"]) == {"backend", "testflight"}
+    assert job["if"] == "always() && inputs.target == 'release'"
+    assert "secrets." not in str(job)
+    step = job["steps"][0]
+    assert step["env"] == {"BACKEND_RESULT": "${{ needs.backend.result }}",
+                           "TESTFLIGHT_RESULT": "${{ needs.testflight.result }}"}
+    result = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-eu", "-c", step["run"]],
+                            env={"PATH": "/nonexistent", "BACKEND_RESULT": backend,
+                                 "TESTFLIGHT_RESULT": testflight}, capture_output=True, text=True)
+    assert (result.returncode == 0) == (backend == testflight == "success")
 
 
 def test_backend_only_has_no_vendor_credentials_or_build_claims():

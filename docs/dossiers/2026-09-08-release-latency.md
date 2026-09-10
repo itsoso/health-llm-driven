@@ -2,8 +2,47 @@
 
 | 字段 | 值 |
 |---|---|
-| 当前阶段 | S8 本轮工具代码交付完成；生产启用未执行 |
-| 状态 | complete |
+| 当前阶段 | 2026-09-10 追加优化：TestFlight 上传与后端部署并行；验证中 |
+| 状态 | in_progress |
+
+## 2026-09-10 · 上传不再等待后端
+
+用户明确要求构建完成即上传 TestFlight，与服务器部署并行，并写入发布 Skill。
+本节是追加迭代；下文 2026-09-08 的串行上传规则和完成记录仅为历史基线，不代表当前设计。
+Controller：health-harness-orchestrator；capability：skill-creator；overlay：safety-gate。
+本地 ledger：`docs/_generated/harness-runs/7f1b36879119.jsonl`。
+writing-skills 未安装，按可用 skill-creator 与 AGENTS 的 RED/GREEN、新鲜验证要求执行。
+
+### 基线、范围与停止条件
+
+同一次真实 release run `34441137527`（Build 270，SHA `23062626caf33701d936fe1c0ba1500b94ad578b`）：
+
+| 阶段 | UTC 开始 → 完成 | 耗时 |
+|---|---|---|
+| backend | 05:27:59 → 05:38:46 | 647 秒 |
+| ios-build | 05:27:59 → 05:36:13 | 494 秒 |
+| 等 backend 后才具备上传调度条件 | 05:36:13 → 05:38:46 | 153 秒 |
+| testflight | 05:38:50 → 05:41:54 | 184 秒 |
+
+run 已成功；本次仅可证明存在 153 秒依赖等待，另有 4 秒 job 调度间隔。
+目标是后续发布消除这段强制等待，让 Apple 处理/IPA 下载可与后端重叠；
+实际节约时间须由新流程真实 run 验证，不以调度模型冒充测量或 P95 改善。
+不重新构建 Build 270，不改写运行中授权，不修改业务 API 或健康数据；保留工作树其他任务改动。
+
+新包须兼容部署前生产 API；不兼容先修兼容/能力开关，不能因 TestFlight 可能自动分发而忽略风险。
+测试质量、制品身份、秘密隔离、备份/恢复与正式送审门不降低。重复 create、身份不符、已知失败或
+证据缺失即停止外部写入；未知 vendor 结果只读调查，不重置 claim，不以新 ID 重放。
+
+### 实现与验收（进行中）
+
+- testflight 只 needs ios-build；独立 release-result 汇合 backend/testflight，失败/取消/跳过均失败。
+- 上传 claim 复用 build.lock，不等待 backend launcher.lock；核验既有 build marker、时间窗及锁内未撤销授权。
+  READY/STARTED 可上传，已知失败拒绝新 claim；上传后后端失败仍保留失败与全部消费标记。
+- 更新发布 Skill、注册表与 deploy 治理；默认长期 Expo token 复用，下载/静态 QA 前移，旧手工 auto-submit 不再作为生产首选。
+- 主回归先 18 RED / 131 PASS；撤权反例另行 RED。实现后聚焦 150 PASS / 1.87 秒。
+  首轮 GREEN 尝试 7 FAIL 源于测试 UID 与真实 root-only 文件校验不一致；仅在测试 fixture 归一 UID，
+  保留模式/硬链接校验和独立 root 身份测试，生产校验不改弱。
+- G3 完整 CI-mode 集成、G4 独立复核与提交/启用证据待补；不把本机局部测试视为发布授权。
 
 ## G1 · 准入
 

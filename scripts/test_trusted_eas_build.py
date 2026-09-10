@@ -56,13 +56,14 @@ def test_reject_duplicate_json_keys_and_oversized_input():
         assert result.returncode != 0
 
 
-def test_workflow_build_is_parallel_but_upload_joins_successful_branches():
+def test_workflow_upload_overlaps_backend_and_delivery_joins_both_branches():
     import yaml
     workflow = yaml.safe_load((SCRIPT.parent.parent / ".github/workflows/trusted-release.yml").read_text())
     jobs = workflow["jobs"]
     assert jobs["backend"]["needs"] == "build-permission"
     assert jobs["ios-build"]["needs"] == "build-permission"
-    assert set(jobs["testflight"]["needs"]) == {"backend", "ios-build"}
+    assert jobs["testflight"]["needs"] == "ios-build"
+    assert set(jobs["release-result"]["needs"]) == {"backend", "testflight"}
     build_steps = str(jobs["ios-build"]["steps"])
     assert "--auto-submit" not in build_steps
     assert "submit -p ios" not in build_steps

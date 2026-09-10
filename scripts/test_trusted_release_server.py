@@ -78,6 +78,9 @@ def setup_state(monkeypatch, tmp_path):
     # Test mutable filesystem/state with this process's UID. Production entry
     # separately enforces root ownership all the way to / and fixed roots.
     monkeypatch.setattr(server, "secure_path", lambda *args, **kwargs: None)
+    validate_metadata = server.validate_metadata
+    monkeypatch.setattr(server, "validate_metadata", lambda info, **kwargs: validate_metadata(
+        SimpleNamespace(st_uid=0, st_mode=info.st_mode, st_nlink=info.st_nlink), **kwargs))
     monkeypatch.setattr(server.time, "time", lambda: 100)
     return server
 
@@ -392,6 +395,9 @@ def test_expired_policy_blocks_deploy_even_after_slow_preparation(monkeypatch, t
 
 def test_native_claim_is_durable_and_cannot_be_reused(monkeypatch, tmp_path):
     server = setup_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(server, "validate_loopback", lambda _policy: None)
+    monkeypatch.setattr(server, "check_readiness", lambda _policy: None)
+    server.claim_build(policy(), tmp_path)
     server.run_once(policy(), tmp_path, lambda: None, lambda: None)
     assert server.release_status(SHA, tmp_path) == {"sha": SHA, "backend": "SUCCEEDED", "testflight": "UNCLAIMED"}
     assert server.claim_testflight(policy(), tmp_path) == {"sha": SHA, "state": "CLAIMED"}
@@ -401,17 +407,17 @@ def test_native_claim_is_durable_and_cannot_be_reused(monkeypatch, tmp_path):
         server.claim_testflight(policy(), tmp_path)
 
 
-@pytest.mark.parametrize("state", ["READY", "STARTED", "NEEDS_OPERATOR"])
-def test_native_claim_requires_confirmed_backend_success(monkeypatch, tmp_path, state):
+@pytest.mark.parametrize("state", ["NEEDS_OPERATOR", "PREPARATION_FAILED"])
+def test_native_claim_rejects_known_backend_failure(monkeypatch, tmp_path, state):
     server = setup_state(monkeypatch, tmp_path)
-    if state != "READY":
-        def fail():
-            if state == "STARTED":
-                raise KeyboardInterrupt()
-            raise RuntimeError("failure")
-        with pytest.raises((server.LaunchError, KeyboardInterrupt)):
-            server.run_once(policy(), tmp_path, lambda: None, fail)
+    monkeypatch.setattr(server, "check_readiness", lambda _policy: None)
+    server.claim_build(policy(), tmp_path)
+    def fail():
+        raise RuntimeError("failure")
     with pytest.raises(server.LaunchError):
+        server.run_once(policy(), tmp_path, fail if state == "PREPARATION_FAILED" else lambda: None,
+                        fail if state == "NEEDS_OPERATOR" else lambda: None)
+    with pytest.raises(server.LaunchError, match="failed backend"):
         server.claim_testflight(policy(), tmp_path)
     assert not (tmp_path / "native-started.json").exists()
 
@@ -419,7 +425,7 @@ def test_native_claim_requires_confirmed_backend_success(monkeypatch, tmp_path, 
 def test_concurrent_native_claim_is_blocked_before_marker(monkeypatch, tmp_path):
     server = setup_state(monkeypatch, tmp_path)
     import fcntl
-    lock = tmp_path.parent / "launcher.lock"
+    lock = tmp_path / "build.lock"
     with lock.open("a") as held:
         fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
         with pytest.raises(server.LaunchError, match="active"):
@@ -477,7 +483,9 @@ def test_loopback_ambiguous_wall_time_cannot_extend_absolute_deadline(monkeypatc
 
 def test_lost_native_claim_response_never_grants_a_second_build(monkeypatch, tmp_path):
     server = setup_state(monkeypatch, tmp_path)
-    server.run_once(policy(), tmp_path, lambda: None, lambda: None)
+    monkeypatch.setattr(server, "validate_loopback", lambda _policy: None)
+    monkeypatch.setattr(server, "check_readiness", lambda _policy: None)
+    server.claim_build(policy(), tmp_path)
     write = server._write_private
     def interrupted(path, data):
         write(path, data)

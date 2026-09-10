@@ -350,7 +350,7 @@
       "id": "mobile-testflight-release",
       "lifecycle": "recommended",
       "owner": "reva-mobile-release",
-      "version": "0.9.0",
+      "version": "0.10.0",
       "layer": "workflow",
       "kind": "terminal",
       "platforms": [
@@ -359,9 +359,9 @@
       "trigger_family": [
         "ios-native-release"
       ],
-      "last_reviewed": "2026-08-20",
+      "last_reviewed": "2026-09-10",
       "evidence": [
-        "Native archive, signing and TestFlight readiness checks form an explicit release path; mutable build and toolchain notes still need extraction before standardization."
+        "Trusted workflow overlaps exact-build upload with backend deployment, preserves one-shot claims and final acceptance gates; scripts/test_release_parallel.py and scripts/test_trusted_release_workflow.py enforce the executable contract."
       ],
       "sources": [
         ".claude/skills/mobile-testflight-release/SKILL.md"

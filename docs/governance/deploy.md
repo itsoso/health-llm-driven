@@ -92,14 +92,26 @@ cwd/exe 与进程身份、无业务 lease，并复用隔离 Git revision proof �
 及原有全部发布闸。此处置不部署、不恢复审核数据、不构建/上传，也不证明线上修复已生效。
 为获得新恢复工具的精确 CI，可在固定代码独立 G4 GO 且远端主干 CI 绿色后推送受审代码；
 这只发布源码，不解除历史事故、不 dispatch 发布或改变旧授权。实际生产处置仍须上述闸。
-上传 job 必须同时等待 backend 和 ios-build 成功，仍以 `claim-testflight` 验证后端
-SUCCEEDED 并消费一次性上传权限。仅提交本轮 job 返回且经 EAS 再次验证的精确 build ID，
+上传 job 只依赖 ios-build 成功，默认与 backend 部署并行；`claim-testflight` 使用
+独立于 launcher 的短 build.lock，锁内核验时间窗、同 SHA 的 build claim 与未撤销的
+loopback 授权，再持久化一次性上传权限。后端 READY/STARTED 不要求等待，已知
+NEEDS_OPERATOR/PREPARATION_FAILED 则拒绝新的上传 claim。仅提交本轮 job 返回且经 EAS 再次验证的精确 build ID，
 要求 source SHA、FINISHED、IOS、STORE、production 全匹配；禁止隐式 latest。
-后端失败时可能浪费本次构建费用，但不得上传；不因并行删除备份、恢复或回滚闸。
+新包必须兼容部署前生产 API，依赖新服务端的能力先做兼容或关闭开关并验证；不能假设
+上传后不会被现有 TestFlight 测试组自动获取。不兼容未解决则阻断发布。
+若后端在上传开始后失败，保留已有 build/submission ID，发布仍未完成；不得以上传成功
+替代后端恢复。无凭据的 release-result job 汇合两端，失败/取消/跳过均返回失败。
+Apple 处理和不依赖新后端的同包静态检查可并行；完整验收结论与正式送审必须在两端
+最终汇合后给出，不因并行删除备份、恢复或回滚闸。
+后端失败后的修复使用新受审 SHA/授权的 backend-only 流程，旧 build ID 作为既有制品保留，
+旧 release-result 仍为失败。不得把旧包自动视为新 SHA 的产物或跨 revision 续跑原上传 job；
+跨版本组合的送审需另行受审的制品关联与兼容性验收，未具备该证据时保持阻断。
 后端 STARTED/NEEDS_OPERATOR 时保留权限和 lease 供调查，不按“锁空闲”推断已终结。
 EAS 调用响应丢失时按 source SHA 查询已有构建，记录其 build/submission ID，禁止重复 create。
-完成后撤销本次专用授权、环境 secrets 与新建 Expo robot token；只移除精确匹配项，
-保留其他密钥及审计记录。权限到期不证明已启动的进程终止。
+整条 workflow 和 vendor 任务确认终结后才自动清理本次专用授权、临时环境 secrets 与私钥；
+复用并保留既有长期 Expo token，不每轮创建/删除。只移除精确匹配项，保留其他密钥及审计记录。
+权限到期/SSH 撤权不证明已启动的 EAS 任务或部署进程终止；准备失败伴随 build/native 意图
+仍禁止按 preparation-only 退役，不拓宽既有恢复/轮换边界。
 
 该入口不替代下面的备份、恢复、迁移、运行态、健康和回滚规则，也不提交正式 App Review。
 
