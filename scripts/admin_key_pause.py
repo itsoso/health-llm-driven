@@ -367,12 +367,21 @@ def audit_sha(action, sha, pause_sha, bootstrap):
     return pause_sha
 
 
+def audit_name(sha, target, operation_id=None):
+    if (re.fullmatch(r"[a-f0-9]{40}", sha) is None or re.fullmatch(r"[a-f0-9]{64}", target) is None
+            or (operation_id is not None and re.fullmatch(r"[a-f0-9]{32}", operation_id) is None)):
+        raise PauseError("exact immutable pause operation scope required")
+    return sha + "-" + target + ("-op-" + operation_id if operation_id is not None else "")
+
+
 class Operator:
-    def __init__(self, bootstrap, sha, target):
+    def __init__(self, bootstrap, sha, target, operation_id=None):
         self.b, self.sha, self.target = bootstrap, sha, target
-        self.record = ROOT / (sha + "-" + target)
+        self.operation_id = operation_id
+        name = audit_name(sha, target, operation_id)
+        self.record = ROOT / name
         self.conf = CONF
-        self.pub = INCLUDES / ("reva-admin-" + sha + "-" + target + ".pub")
+        self.pub = INCLUDES / ("reva-admin-" + name + ".pub")
 
     def file(self, path):
         info = path.lstat()
@@ -465,7 +474,7 @@ class Operator:
             if record == self.record:
                 continue  # Same transaction reinspection after durable intent.
             self.b.secure(record)
-            if not record.is_dir() or re.fullmatch(r"[a-f0-9]{40}-[a-f0-9]{64}", record.name) is None:
+            if not record.is_dir() or re.fullmatch(r"[a-f0-9]{40}-[a-f0-9]{64}(?:-op-[a-f0-9]{32})?", record.name) is None:
                 raise PauseError("unknown pause audit")
             required = [record / name for name in ("intent.json", "restore-intent.json", "restored.json")]
             if not all(path.exists() for path in required):
@@ -476,7 +485,7 @@ class Operator:
                     raise PauseError("pause audit exceeds bound")
             intent, pending, restored = [json.loads(path.read_bytes()) for path in required]
             if (set(intent) != {"consent", "evidence"} or intent["consent"] != "TEMPORARY_SINGLE_KEY_DENIAL"
-                    or record.name != intent["evidence"]["sha"] + "-" + intent["evidence"]["key_digest"]
+                    or record.name != audit_name(intent["evidence"]["sha"], intent["evidence"]["key_digest"], intent["evidence"].get("operation_id"))
                     or pending != {"state": "RESTORE_PENDING", "evidence_sha256": digest(intent["evidence"])}
                     or restored != {"state": "RESTORED", "evidence_sha256": digest(intent["evidence"])}):
                 raise PauseError("another unfinished or invalid pause audit")
@@ -519,10 +528,14 @@ class Operator:
             raise PauseError("SSH baseline changed")
         return {"sha": self.sha, "key_digest": self.target, "public": public.decode(), "operator": operator.decode(),
                 "configuration": config, "daemon": daemon, "effective": before, "sessions": sessions,
-                "authorized": self.file(self.b.AUTHORIZED), "known_hosts": self.known_hosts.decode()}
+                "authorized": self.file(self.b.AUTHORIZED), "known_hosts": self.known_hosts.decode(),
+                **({"operation_id": self.operation_id} if self.operation_id is not None else {})}
 
     def bound(self, evidence):
-        if (set(evidence) != {"sha", "key_digest", "public", "operator", "configuration", "daemon", "effective", "sessions", "authorized", "known_hosts"}
+        expected_fields = {"sha", "key_digest", "public", "operator", "configuration", "daemon", "effective", "sessions", "authorized", "known_hosts"}
+        if self.operation_id is not None:
+            expected_fields.add("operation_id")
+        if (set(evidence) != expected_fields or evidence.get("operation_id") != self.operation_id
                 or evidence.get("sha") != self.sha or evidence.get("key_digest") != self.target
                 or key_digest(evidence["public"].encode()) != self.target
                 or key_digest(evidence["operator"].encode()) == self.target
@@ -596,7 +609,8 @@ class Operator:
             raise PauseError("new target connection raced with pause")
 
     def restore(self, evidence):
-        if evidence.get("sha") != self.sha or evidence.get("key_digest") != self.target:
+        if (evidence.get("sha") != self.sha or evidence.get("key_digest") != self.target
+                or evidence.get("operation_id") != self.operation_id):
             raise PauseError("restore scope mismatch")
         for path in sorted(self.record.glob("freeze-*.json")):
             self.b.secure(path, private=True)
@@ -637,10 +651,12 @@ def main():
         parser.add_argument("--sha", required=True)
         parser.add_argument("--key-digest", required=True)
         parser.add_argument("--pause-sha", help="Restore only: exact original audit SHA, from newer reviewed recovery code")
+        parser.add_argument("--operation-id", help="Exact 32-hex pause audit identifier; a new operation requires all prior restores complete")
         parser.add_argument("--consent-temporary-key-pause", action="store_true")
         parser.add_argument("--evidence-sha256")
         args = parser.parse_args()
         if (not args.consent_temporary_key_pause or re.fullmatch(r"[a-f0-9]{64}", args.key_digest) is None
+                or (args.operation_id is not None and re.fullmatch(r"[a-f0-9]{32}", args.operation_id) is None)
                 or (args.evidence_sha256 is not None and re.fullmatch(r"[a-f0-9]{64}", args.evidence_sha256) is None)
                 or (args.action == "restore" and args.evidence_sha256 is not None)):
             raise PauseError("explicit exact single-key scope required")
@@ -665,7 +681,7 @@ def main():
                 b.secure(ROOT)
                 if stat.S_IMODE(ROOT.stat().st_mode) != 0o700:
                     raise PauseError("pause audit root must be private")
-            adapter = Operator(b, original_sha, args.key_digest)
+            adapter = Operator(b, original_sha, args.key_digest, operation_id=args.operation_id)
             if adapter.record.exists():
                 b.secure(adapter.record)
                 if stat.S_IMODE(adapter.record.stat().st_mode) != 0o700:

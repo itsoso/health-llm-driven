@@ -262,7 +262,7 @@ def test_restore_cli_uses_new_code_but_original_audit(tmp_path, monkeypatch):
         _assert_original_lock=lambda *a: None, _recovery_process_proof=lambda: None)
     monkeypatch.setattr(m, "ROOT", tmp_path)
     monkeypatch.setattr(m, "context", lambda sha, **kw: calls.append(("code", sha, kw)) or b)
-    monkeypatch.setattr(m, "Operator", lambda bootstrap, sha, key: calls.append(("audit", sha, key)) or SimpleNamespace(record=tmp_path / "missing"))
+    monkeypatch.setattr(m, "Operator", lambda bootstrap, sha, key, **kwargs: calls.append(("audit", sha, key)) or SimpleNamespace(record=tmp_path / "missing"))
     monkeypatch.setattr(m, "restore", lambda adapter, **kw: {"state": "RESTORED"})
     monkeypatch.setattr(m.sys, "argv", ["operator", "restore", "--sha", "a" * 40,
         "--pause-sha", "b" * 40, "--key-digest", "c" * 64, "--consent-temporary-key-pause"])
@@ -532,6 +532,65 @@ def test_other_pending_pause_blocks_even_when_drop_in_is_absent(tmp_path, monkey
         a.no_pending_pauses()
     m.write_json(old / "restored.json", {"state": "RESTORED", "evidence_sha256": m.digest(e)})
     a.no_pending_pauses()
+
+
+def test_distinct_pause_operations_require_completed_prior_restore(tmp_path, monkeypatch):
+    m, a, e, _ = operator(tmp_path, monkeypatch)
+    monkeypatch.setattr(m, "ROOT", tmp_path / "audits")
+    m.ROOT.mkdir(mode=0o700)
+    first = m.Operator(a.b, a.sha, a.target, operation_id="1" * 32)
+    second = m.Operator(a.b, a.sha, a.target, operation_id="2" * 32)
+    assert first.record != second.record and first.pub != second.pub
+    first.record.mkdir(mode=0o700)
+    evidence = {**e, "operation_id": "1" * 32}
+    m.write_json(first.record / "intent.json", {"consent": "TEMPORARY_SINGLE_KEY_DENIAL", "evidence": evidence})
+    m.write_json(first.record / "restore-intent.json", {"state": "RESTORE_PENDING", "evidence_sha256": m.digest(evidence)})
+    with pytest.raises(m.PauseError, match="unfinished"):
+        second.no_pending_pauses()
+    m.write_json(first.record / "restored.json", {"state": "RESTORED", "evidence_sha256": m.digest(evidence)})
+    preserved = {p.name: p.read_bytes() for p in first.record.iterdir()}
+    second.no_pending_pauses()
+    with pytest.raises(m.PauseError, match="already attempted"):
+        m.pause(first, consent=True)
+    assert {p.name: p.read_bytes() for p in first.record.iterdir()} == preserved
+
+
+@pytest.mark.parametrize("operation", ["../x", "A" * 32, "a" * 31, "a" * 33])
+def test_pause_operation_id_is_exact_and_path_safe(tmp_path, monkeypatch, operation):
+    m, a, _, _ = operator(tmp_path, monkeypatch)
+    with pytest.raises(m.PauseError):
+        m.Operator(a.b, a.sha, a.target, operation_id=operation)
+
+
+def test_operation_scope_is_bound_before_any_freeze_resume(tmp_path, monkeypatch):
+    m, a, e, _ = operator(tmp_path, monkeypatch)
+    a.operation_id = "1" * 32
+    wrong = {**e, "operation_id": "2" * 32}
+    resumed = []
+    m.write_json(a.record / "freeze-123-456.json", {"identity": {"pid": 123, "start": 456}, "key_digest": a.target})
+    monkeypatch.setattr(m, "resume_identity", lambda *args: resumed.append(args))
+    with pytest.raises(m.PauseError):
+        a.bound(wrong)
+    with pytest.raises(m.PauseError):
+        a.restore(wrong)
+    assert not resumed
+
+
+def test_operation_audit_name_cannot_be_spliced(tmp_path, monkeypatch):
+    m, a, e, _ = operator(tmp_path, monkeypatch)
+    monkeypatch.setattr(m, "ROOT", tmp_path / "audits")
+    m.ROOT.mkdir(mode=0o700)
+    old = m.Operator(a.b, a.sha, a.target, operation_id="1" * 32)
+    old.record.mkdir(mode=0o700)
+    evidence = {**e, "operation_id": "2" * 32}
+    for name, value in {
+        "intent.json": {"consent": "TEMPORARY_SINGLE_KEY_DENIAL", "evidence": evidence},
+        "restore-intent.json": {"state": "RESTORE_PENDING", "evidence_sha256": m.digest(evidence)},
+        "restored.json": {"state": "RESTORED", "evidence_sha256": m.digest(evidence)},
+    }.items():
+        m.write_json(old.record / name, value)
+    with pytest.raises(m.PauseError):
+        a.no_pending_pauses()
 
 
 def test_freeze_prevents_fork_between_child_check_and_termination(tmp_path, monkeypatch):
