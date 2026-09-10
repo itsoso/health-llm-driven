@@ -39,6 +39,11 @@ from app.models.agent_conversation import AgentConversation, AgentMessage
 from app.models.supplement import SupplementDefinition
 
 
+@pytest.fixture(autouse=True)
+def _isolate_twin_cache(isolated_agent_protocol_transport):
+    """Override live Redis cleanup; this suite mocks LLM/tool protocol boundaries."""
+
+
 def _tokens(events) -> str:
     return "".join(
         e["data"]["content"] for e in events if e.get("event") == "token"

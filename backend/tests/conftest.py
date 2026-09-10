@@ -202,6 +202,29 @@ def mock_ai_consent_for_provider_protocol(monkeypatch):
     )
 
 
+@pytest.fixture
+def isolated_agent_protocol_transport(monkeypatch):
+    """Explicit opt-in for mocked Agent protocol tests, never integration tests.
+
+    Redis availability is not part of these assertions. Do not probe/flush a
+    developer's Redis or let an unavailable host service consume CI deadlines.
+    Unexpected network attempts fail even when application code catches errors.
+    """
+    import socket
+    from app.utils import redis_cache
+
+    attempts = []
+    def reject_connection(*args, **kwargs):
+        attempts.append(True)
+        raise AssertionError('Agent protocol unit test attempted a real connection')
+
+    monkeypatch.setattr(redis_cache, 'get_redis_client', lambda: None)
+    monkeypatch.setattr(socket.socket, 'connect', reject_connection)
+    monkeypatch.setattr(socket.socket, 'connect_ex', reject_connection)
+    yield
+    assert not attempts, 'Agent protocol unit test attempted a real connection'
+
+
 def grant_healthkit_consent(db, user, scopes=None):
     """Create the server-side Apple Health connection + self consent used by imports."""
     from app.services.data_connections import create_consent_grant, upsert_data_connection

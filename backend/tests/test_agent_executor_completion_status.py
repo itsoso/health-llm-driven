@@ -107,6 +107,26 @@ def _isolate_simple_diet_nutrition_estimator(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def _isolate_twin_cache(isolated_agent_protocol_transport):
+    """Override the live-cache cleanup fixture only in this protocol suite."""
+
+
+def test_agent_protocol_suite_never_probes_a_live_redis():
+    from app.utils.redis_cache import get_redis_client
+    import socket
+
+    calls = []
+    original = socket.socket.connect
+    def record_connect(self, address):
+        calls.append(True)
+        return original(self, address)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(socket.socket, 'connect', record_connect)
+        get_redis_client()
+    assert not calls, 'Protocol tests must not probe host Redis connectivity'
+
+
 def test_completion_status_marks_length_finish_reason_as_interrupted():
     assert _completion_status_from_finish_reason("length") == "interrupted"
 
