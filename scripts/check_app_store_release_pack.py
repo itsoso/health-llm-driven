@@ -642,9 +642,55 @@ def _load_demo_conversation_fixture() -> tuple[str, str, str]:
     return title_prefix, user_message, assistant_message
 
 
+def _reviewed_media_identity(value, user_id: int):
+    """Ignore only refreshed capabilities on canonical owner-scoped chat/diet media.
+
+    This is snapshot identity, not signature verification or a media-access grant.
+    Unknown URLs remain byte-exact; malformed canonical capabilities fail closed.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("invalid reviewed media value")
+    if value.startswith('['):
+        urls = json.loads(value)
+        if not isinstance(urls, list) or any(not isinstance(url, str) or url.startswith('[') for url in urls):
+            raise ValueError("invalid reviewed media list")
+        return json.dumps([_reviewed_media_identity(url, user_id) for url in urls], ensure_ascii=False)
+    url = urllib.parse.urlsplit(value)
+    if (url.scheme or url.netloc or url.fragment or not re.fullmatch(
+            rf'/api/v1/upload/files/(?:chat|diet)/{user_id}/[A-Za-z0-9_-]+\.(?:jpg|jpeg|png|gif|webp)', url.path)):
+        return value
+    pairs = urllib.parse.parse_qsl(url.query, keep_blank_values=True, strict_parsing=True)
+    if set(key for key, _ in pairs) - {'expires', 'signature'}:
+        return value
+    query = dict(pairs)
+    if (len(pairs) != 2 or set(query) != {'expires', 'signature'}
+            or not re.fullmatch(r'[1-9][0-9]*', query['expires'])
+            or not re.fullmatch(r'[0-9a-f]{64}', query['signature'])):
+        raise ValueError("invalid reviewed media capability")
+    return {'reviewed_private_media_path': url.path}
+
+
 def reviewed_conversation_digest(api_base: str, user_id: int, conversation_id: int, messages: list) -> str:
-    """Bind an external review to the complete owner-scoped delivered message set."""
-    snapshot = dict(api_base=api_base, user_id=user_id, conversation_id=conversation_id, messages=messages)
+    """Bind all delivered content, retaining media identity across URL re-signing."""
+    delivered = json.loads(json.dumps(messages))
+    for message in delivered:
+        if 'image_url' in message:
+            message['image_url'] = _reviewed_media_identity(message['image_url'], user_id)
+        meta = message.get('meta')
+        cards = meta.get('cards') if isinstance(meta, dict) else None
+        for card in cards if isinstance(cards, list) else []:
+            data = card.get('data') if isinstance(card, dict) else None
+            if not isinstance(data, dict):
+                continue
+            if 'photo_url' in data:
+                data['photo_url'] = _reviewed_media_identity(data['photo_url'], user_id)
+            if 'photo_urls' in data:
+                if not isinstance(data['photo_urls'], list):
+                    raise ValueError("invalid reviewed card media list")
+                data['photo_urls'] = [_reviewed_media_identity(url, user_id) for url in data['photo_urls']]
+    snapshot = dict(api_base=api_base, user_id=user_id, conversation_id=conversation_id, messages=delivered)
     return hashlib.sha256(json.dumps(snapshot, sort_keys=True, ensure_ascii=False,
                                     separators=(",", ":")).encode()).hexdigest()
 

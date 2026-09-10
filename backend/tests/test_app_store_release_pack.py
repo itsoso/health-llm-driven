@@ -1097,6 +1097,59 @@ def test_reviewed_followups_require_exact_complete_reviewed_snapshot(monkeypatch
     assert 'safe seeded message pair' in '\n'.join(check())
 
 
+def test_reviewed_snapshot_binds_media_identity_not_rotating_capability():
+    import copy
+    import pytest
+    from scripts.check_app_store_release_pack import reviewed_conversation_digest
+
+    base = 'https://health.example.test/api/v1'
+    first = '/api/v1/upload/files/chat/17/test_photo.jpg?expires=2000000000&signature=' + 'a' * 64
+    rotated = first.replace('2000000000', '2000000001').replace('a' * 64, 'b' * 64)
+    messages = [{'id': 1, 'role': 'user', 'content': 'Record this meal', 'image_url': first},
+                {'id': 2, 'role': 'assistant', 'content': 'Please confirm the draft',
+                 'meta': {'cards': [{'data': {'photo_url': first, 'photo_urls': [first], 'calories': 500}}]}}]
+
+    def digest(value, owner=17):
+        return reviewed_conversation_digest(base, owner, 91, value)
+
+    original = copy.deepcopy(messages)
+    expected = digest(messages)
+    updated = copy.deepcopy(messages)
+    updated[0]['image_url'] = rotated
+    updated[1]['meta']['cards'][0]['data'].update(photo_url=rotated, photo_urls=[rotated])
+    assert digest(updated) == expected
+    assert messages == original
+    updated[0]['image_url'] = json.dumps([rotated])
+    array_original = copy.deepcopy(messages)
+    array_original[0]['image_url'] = json.dumps([first])
+    assert digest(updated) == digest(array_original)
+    assert digest(updated) != expected  # single URL vs list remains distinct
+    for changed in (first.replace('/17/', '/18/'), first.replace('test_photo', 'other_photo'),
+                    'https://other.example.test' + first, first + '&variant=2'):
+        altered = copy.deepcopy(messages)
+        altered[0]['image_url'] = changed
+        assert digest(altered) != expected
+    for malformed in (first.split('?')[0], first + '&expires=2000000002',
+                      first.replace('signature=', 'signature=bad'), first.replace('expires=2000000000', 'expires=bad')):
+        altered = copy.deepcopy(messages)
+        altered[0]['image_url'] = malformed
+        with pytest.raises(ValueError):
+            digest(altered)
+    altered = copy.deepcopy(messages)
+    altered[1]['meta']['cards'][0]['data']['calories'] = 600
+    assert digest(altered) != expected
+    altered = copy.deepcopy(messages)
+    altered[1]['content'] += ' changed'
+    assert digest(altered) != expected
+    assert digest(messages, owner=18) != expected
+    # Source/citation URLs in prose are never normalized.
+    altered = copy.deepcopy(messages)
+    altered[1]['content'] = first
+    before = digest(altered)
+    altered[1]['content'] = rotated
+    assert digest(altered) != before
+
+
 def test_live_demo_account_gate_fails_closed_on_non_fixture_messages(monkeypatch):
     def fake_request(url, *, method="GET", token=None, payload=None, timeout=10):
         if url.endswith("/auth/login/json"):

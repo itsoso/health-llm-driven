@@ -174,11 +174,16 @@ Never use this evidence for an unfinished or failed answer.
 The private JSON records `source_sha` (the frozen app source), `reviewed_by`,
 timezone-aware `reviewed_at`, an actual UI `evidence` reference and `snapshot_sha256`.
 Use `reviewed_conversation_digest(api_base, user_id, conversation_id, messages)`
-from the gate to bind the complete delivered message set, including metadata, to
-the authenticated account and API origin. Evidence expires after eight hours;
+to bind the full delivered snapshot. Only refreshed `expires`/`signature` values
+on canonical relative, same-owner chat/diet media URLs in attachment/card photo
+fields are normalized; image paths, ownership, prose, citations and all other
+metadata remain bound. Malformed canonical capabilities fail closed. This is
+media identity matching, not signature verification or a media-access grant.
+Any newly appended turn still requires actual UI review and new evidence.
+The snapshot also binds the authenticated account and API origin. Evidence expires after eight hours;
 any additional message, content/metadata change, different account/conversation,
 source mismatch or incomplete response requires a new review. The digest only binds
-observed bytes: it does not independently prove the reviewer's assertion.
+observed content and media identity: it does not independently prove the reviewer's assertion.
 Keep the file outside Git and never output credentials or message bodies in logs.
 Without this explicit file, the original exactly-two-message check is unchanged.
 
