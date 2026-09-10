@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 |---|---|
-| 当前阶段 | 2026-09-10 追加优化：TestFlight 上传与后端部署并行；验证中 |
-| 状态 | in_progress |
+| 当前阶段 | 2026-09-10 追加优化：工具代码与 Skill 已交付；本机和远端 CI 通过，生产协议待下一轮授权启用 |
+| 状态 | complete |
 
 ## 2026-09-10 · 上传不再等待后端
 
@@ -33,7 +33,7 @@ run 已成功；本次仅可证明存在 153 秒依赖等待，另有 4 秒 job 
 测试质量、制品身份、秘密隔离、备份/恢复与正式送审门不降低。重复 create、身份不符、已知失败或
 证据缺失即停止外部写入；未知 vendor 结果只读调查，不重置 claim，不以新 ID 重放。
 
-### 实现与验收（进行中）
+### 实现与验收
 
 - testflight 只 needs ios-build；独立 release-result 汇合 backend/testflight，失败/取消/跳过均失败。
 - 上传 claim 复用 build.lock，不等待 backend launcher.lock；核验既有 build marker、时间窗及锁内未撤销授权。
@@ -42,7 +42,26 @@ run 已成功；本次仅可证明存在 153 秒依赖等待，另有 4 秒 job 
 - 主回归先 18 RED / 131 PASS；撤权反例另行 RED。实现后聚焦 150 PASS / 1.87 秒。
   首轮 GREEN 尝试 7 FAIL 源于测试 UID 与真实 root-only 文件校验不一致；仅在测试 fixture 归一 UID，
   保留模式/硬链接校验和独立 root 身份测试，生产校验不改弱。
-- G3 完整 CI-mode 集成、G4 独立复核与提交/启用证据待补；不把本机局部测试视为发布授权。
+- G3 完整 CI-mode 集成、G4 独立复核与提交/启用边界见下；不把本机局部测试视为发布授权。
+
+### 冻结版本验证
+
+- 实现提交：`5c92e4c8a57510f649e5404e324f2cbd327cc44e`，已推送 main；仅含本任务 11 个文件。
+- G3：干净检出上述 commit，从当前 CI workflow 读取完整 release-invariants 命令，
+  `CI=1` 新鲜执行 **1147 PASS / 7 SKIP / 84 subtests PASS，433.95 秒，退出码 0**。
+  日志 `/tmp/xiaoba-upload-parallel.nwlSq1/integration.log`。执行前后 tracked/untracked 工作树干净。
+- 聚焦工具与生命周期回归 **283 PASS / 4.55 秒**；根身份权限验证仍保留，未替换生产检查。
+- G4：独立 reviewer 对固定 commit 的 workflow/server、Skill、治理与主代理测试 **GO**，
+  独立四文件 **165 PASS / 4.59 秒**；reviewer 贡献的 bootstrap 测试由主代理复核，不冒充自评独立。
+- Skill 前向演练覆盖构建先完成、上传未知、长期 token、上传成功但后端失败、审核冻结五种场景。
+  修正文档中静态检查串行歧义，明确冻结期暂停和跨 revision 组合不可自动放行。
+- Skill quick_validate、注册表治理、Dossier 一致性、System Map、秘密扫描、阻断级 Ruff 和 diff whitespace 均 PASS。
+- 精确 revision 的远端 CI run `34443241424` **全部 SUCCESS**；原主干 `23062626c` 的真实 CI
+  `34439897645` 绿色且固定代码 G4 GO 后才推送。本机完整回归与远端 CI 并行，未触发发布。
+- G5/G6：本次为发布工具源码更新，不覆盖生产 executor，不为流程修改重复构建 App。
+  新上传协议需下次发布从新受审 SHA 完成正常身份轮换后启用；旧一次性安装/审计不变。
+  Build 270 所属旧流程已成功，ASC 显示 VALID，生产 SHA 仍为 `23062626c` 且健康端点 HTTP 200；
+  新流程实际端到端节约时间尚未测量，不声称已正式送审。
 
 ## G1 · 准入
 
