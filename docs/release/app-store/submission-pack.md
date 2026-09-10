@@ -82,7 +82,11 @@ Immediately before upload/submit, require local App Store Connect API credential
 python3 scripts/check_ios_app_store_submission.py --require-asc-credentials
 ```
 
-The production binary path remains EAS production build with App Store Connect auto-submit. QR install is the default for local mobile distribution, but App Store submission requires the production EAS/App Store Connect path.
+The production binary path is the governed `trusted-release.yml` workflow with
+EAS production build and an exact-build TestFlight upload. Upload may overlap
+backend deployment; final App Review still waits for backend health and same-build
+acceptance. Do not run a separate auto-submit command around its one-shot claims.
+QR install is the default for local mobile distribution, not App Store submission.
 
 ## Final Submit Gate
 

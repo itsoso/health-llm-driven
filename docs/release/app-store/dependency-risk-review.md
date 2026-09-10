@@ -1,21 +1,29 @@
 # App Store Production Dependency Risk Review
 
-Review date: 2026-09-09
+Review date: 2026-09-10
 
 ## Decision
 
-The 2026-09-09 Mobile full-tree and production-only npm audits report 15
-findings: one low, nine moderate and five high transitive package paths. The high paths
+The 2026-09-10 Mobile full-tree and production-only package-lock npm audits for
+Build 270 source `23062626caf33701d936fe1c0ba1500b94ad578b` each report five
+high transitive package paths and no other severities. Both npm commands exit 1,
+as expected for findings; they are not zero-finding audit passes. The high paths
 resolve to the two `image-size` denial-of-service advisories documented in
-`mobile/npm-audit-policy.json`. The policy gate passes with exceptions expiring
-on 2026-09-15; the local malicious-input regression passes 2/2. This is a
-conditional dependency-policy pass, not a zero-vulnerability result. Moderate
-findings remain for URI decoding and `qs` and must be assessed
-during the next dependency remediation pass.
+`mobile/npm-audit-policy.json`. The OSV policy gate passes with two exceptions expiring
+on 2026-09-15; the malicious-input regression passes 2/2. This is a
+conditional dependency-policy pass, not a zero-vulnerability result. The earlier
+2026-09-09 report contained low/moderate findings; the latest npm responses do not.
+That change alone is not proof of new remediation or a stronger runtime guarantee.
 
-The backend hashed production lock audit was not rerun in
-this 2026-09-09 Mobile review. The backend zero-vulnerability result described below is
-historical 2026-08-28 evidence and must be refreshed before release.
+Fresh CI run `34443241424`, source `5c92e4c8a57510f649e5404e324f2cbd327cc44e`,
+ran `python -m pip_audit -r requirements.lock --require-hashes --progress-spinner=off`
+on Linux/Python 3.12 and reported `No known vulnerabilities found` (step SUCCESS).
+The same run's mobile OSV policy check and two image-parser tests passed. Verified
+that the backend lock, Mobile lock, audit policy and OSV gate are byte-identical to
+Build 270's source; no dependency evidence is borrowed across changed inputs.
+The retained private reports are under `/tmp/xiaoba-release230.3mafsI/`:
+`npm-audit-full.json`, `npm-audit-production.json`, `backend-quality-ci.log`, and
+`mobile-quality-ci.log`. This refresh does not complete physical-iPhone acceptance.
 
 The newly disclosed `brace-expansion` advisories are remediated across every locked
 major line used by Mobile (`1.1.18`, `2.1.4`, and `5.0.9`). PostCSS is pinned to the
