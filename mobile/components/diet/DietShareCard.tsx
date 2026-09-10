@@ -403,6 +403,13 @@ export type DietShareCardProps = {
   onImageError?: () => void;
 };
 
+// This subtree is a fixed-size image canvas, not screen UI. Dynamic Type would
+// enlarge glyphs without enlarging its export bounds; controls outside it retain
+// the user's font scale. Keep each mixed-size metric in its own native Text box.
+function PosterText(props: React.ComponentProps<typeof Text>) {
+  return <Text {...props} allowFontScaling={false} />;
+}
+
 export default function DietShareCard({
   record,
   dateLabel,
@@ -437,9 +444,9 @@ export default function DietShareCard({
         </View>
         <View style={styles.posterPhotoMeta} pointerEvents="none">
           <View style={styles.posterMealBadge}>
-            <Text style={styles.posterMealBadgeText}>{presentation.mealLabel}</Text>
+            <PosterText style={styles.posterMealBadgeText}>{presentation.mealLabel}</PosterText>
           </View>
-          <Text style={styles.posterDate}>{dateLabel}</Text>
+          <PosterText style={styles.posterDate}>{dateLabel}</PosterText>
         </View>
       </View>
 
@@ -448,8 +455,8 @@ export default function DietShareCard({
           <View style={styles.posterRuleLong} />
           <View style={styles.posterRuleShort} />
         </View>
-        <Text testID="diet-share-headline" style={styles.posterHeadline} numberOfLines={1}>{presentation.headline}</Text>
-        <Text testID="diet-share-food-line" style={styles.posterFoodLine} numberOfLines={2}>{presentation.foodLine}</Text>
+        <PosterText testID="diet-share-headline" style={styles.posterHeadline} numberOfLines={1}>{presentation.headline}</PosterText>
+        <PosterText testID="diet-share-food-line" style={styles.posterFoodLine} numberOfLines={2}>{presentation.foodLine}</PosterText>
 
         <View testID="diet-share-nutrition-grid" style={styles.posterNutrition}>
           {nutritionItems.length > 0 ? nutritionItems.map((item, index) => (
@@ -458,21 +465,38 @@ export default function DietShareCard({
               testID={`diet-share-metric-${item.key}`}
               style={[styles.posterMetric, index > 0 ? styles.posterMetricSeparated : null]}
             >
-              <Text style={styles.posterMetricLabel}>{item.label}</Text>
-              <Text
+              <PosterText style={styles.posterMetricLabel}>{item.label}</PosterText>
+              <View
                 testID={`diet-share-metric-value-${item.key}`}
                 style={styles.posterMetricValueRow}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.72}
               >
-                {item.qualifier ? <Text style={styles.posterMetricQualifier}>{item.qualifier} </Text> : null}
-                <Text style={styles.posterMetricValue}>{item.value}</Text>
-                <Text style={styles.posterMetricUnit}> {item.unit}</Text>
-              </Text>
+                {item.qualifier ? (
+                  <PosterText
+                    testID={`diet-share-metric-qualifier-${item.key}`}
+                    style={styles.posterMetricQualifier}
+                  >
+                    {item.qualifier}
+                  </PosterText>
+                ) : null}
+                <PosterText
+                  testID={`diet-share-metric-number-${item.key}`}
+                  style={styles.posterMetricValue}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.72}
+                >
+                  {item.value}
+                </PosterText>
+                <PosterText
+                  testID={`diet-share-metric-unit-${item.key}`}
+                  style={styles.posterMetricUnit}
+                >
+                  {item.unit}
+                </PosterText>
+              </View>
             </View>
           )) : (
-            <Text style={styles.posterNutritionStatus}>{nutritionStatus}</Text>
+            <PosterText style={styles.posterNutritionStatus}>{nutritionStatus}</PosterText>
           )}
         </View>
 
@@ -480,27 +504,27 @@ export default function DietShareCard({
           <View style={styles.posterTagRow}>
             {tags.map((tag, index) => (
               <View key={`${tag}:${index}`} testID={`diet-share-tag-${index}`} style={styles.posterTag}>
-                <Text style={styles.posterTagText}>{tag}</Text>
+                <PosterText style={styles.posterTagText}>{tag}</PosterText>
               </View>
             ))}
           </View>
         ) : null}
 
         <View testID="diet-share-public-note" style={styles.posterPublicNote}>
-          <Text style={styles.posterPublicNoteLabel}>记录说明</Text>
-          <Text style={styles.posterPublicNoteText} numberOfLines={2}>{presentation.publicNote}</Text>
+          <PosterText style={styles.posterPublicNoteLabel}>记录说明</PosterText>
+          <PosterText style={styles.posterPublicNoteText} numberOfLines={2}>{presentation.publicNote}</PosterText>
         </View>
 
         <View style={styles.posterFooter}>
           {showDisclosure ? (
-            <Text style={styles.posterDisclosure}>{presentation.disclosure}</Text>
+            <PosterText style={styles.posterDisclosure}>{presentation.disclosure}</PosterText>
           ) : null}
           <View style={styles.posterBrand}>
             <View style={styles.posterFooterMark}>
               <View style={styles.posterFooterMarkDot} />
               <View style={styles.posterFooterMarkLine} />
             </View>
-            <Text style={styles.posterBrandText}>小巴</Text>
+            <PosterText style={styles.posterBrandText}>小巴</PosterText>
           </View>
         </View>
       </View>
@@ -1216,25 +1240,26 @@ const styles = StyleSheet.create({
   },
   posterMetricValueRow: {
     marginTop: 1,
-    lineHeight: 19,
+    minHeight: 20,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 2,
   },
   posterMetricValue: {
-    fontFamily: revaFonts.mono,
     fontSize: 15.5,
-    lineHeight: 19,
     color: C.ink1,
     fontWeight: '500',
+    fontVariant: ['tabular-nums'],
+    flexShrink: 1,
+    minWidth: 0,
   },
   posterMetricQualifier: {
     fontSize: 7.5,
-    lineHeight: 11,
     color: C.ink3,
     fontWeight: '600',
   },
   posterMetricUnit: {
-    fontFamily: revaFonts.mono,
     fontSize: 7.5,
-    lineHeight: 11,
     color: C.ink3,
   },
   posterNutritionStatus: {

@@ -215,12 +215,76 @@ describe('DietShareCard Xiaohongshu poster', () => {
       paddingBottom: 10,
     }));
     expect(183).toBeLessThanOrEqual(440 * 0.48 - copyStyle.paddingTop - copyStyle.paddingBottom);
-    const calorieValue = view.getByTestId('diet-share-metric-value-calories');
+    const calorieValue = view.getByTestId('diet-share-metric-number-calories');
     expect(calorieValue.props).toEqual(expect.objectContaining({
       numberOfLines: 1,
       adjustsFontSizeToFit: true,
       minimumFontScale: 0.72,
     }));
+  });
+
+  it('keeps mixed-size nutrition text in separate line boxes for iOS poster capture', () => {
+    const view = renderCard({ record: { ...record, calories: 1470 } });
+    const valueRow = view.getByTestId('diet-share-metric-value-calories');
+    const value = view.getByTestId('diet-share-metric-number-calories');
+    const qualifier = view.getByTestId('diet-share-metric-qualifier-calories');
+    const unit = view.getByTestId('diet-share-metric-unit-calories');
+
+    expect(StyleSheet.flatten(valueRow.props.style)).toEqual(expect.objectContaining({
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      minHeight: 20,
+    }));
+    expect(value.props).toEqual(expect.objectContaining({
+      numberOfLines: 1,
+      adjustsFontSizeToFit: true,
+      minimumFontScale: 0.72,
+    }));
+    expect(StyleSheet.flatten(value.props.style).lineHeight).toBeUndefined();
+    expect(StyleSheet.flatten(qualifier.props.style).lineHeight).toBeUndefined();
+    expect(StyleSheet.flatten(unit.props.style).lineHeight).toBeUndefined();
+  });
+
+  it.each([1, 1.35, 2, 3.571])('keeps fixed-canvas poster text independent of device font scale %s', (scale) => {
+    const fontScale = jest.spyOn(PixelRatio, 'getFontScale').mockReturnValue(scale);
+    try {
+      const view = renderCard({
+        record: { ...record, calories: 1470, protein: 123.45, carbs: 176.5, fat: 55 },
+      });
+      const texts = view.getByTestId('diet-share-poster').findAllByType(Text);
+      expect(texts.length).toBeGreaterThan(15);
+      texts.forEach((text: { props: React.ComponentProps<typeof Text> }) => {
+        expect(text.props.allowFontScaling).toBe(false);
+      });
+      expect(view.getByTestId('diet-share-metric-number-calories').props.children).toBe('1470');
+      expect(view.getByTestId('diet-share-metric-number-protein').props.children).toBe('123.45');
+    } finally {
+      fontScale.mockRestore();
+    }
+  });
+
+  it('does not disable Dynamic Type for share-sheet controls outside the exported canvas', () => {
+    const view = renderSheet();
+    const button = view.getByRole('button', { name: '保存饮食图片到相册' });
+    const texts = button.findAllByType(Text);
+    expect(texts.length).toBeGreaterThan(0);
+    texts.forEach((text: { props: React.ComponentProps<typeof Text> }) => {
+      expect(text.props.allowFontScaling).not.toBe(false);
+    });
+  });
+
+  it('uses native glyph proportions for captured nutrition values and units', () => {
+    const view = renderCard();
+    const valueStyle = StyleSheet.flatten(
+      view.getByTestId('diet-share-metric-number-calories').props.style,
+    );
+    const unitStyle = StyleSheet.flatten(
+      view.getByTestId('diet-share-metric-unit-calories').props.style,
+    );
+
+    expect(valueStyle.fontFamily).toBeUndefined();
+    expect(valueStyle.fontVariant).toEqual(['tabular-nums']);
+    expect(unitStyle.fontFamily).toBeUndefined();
   });
 
   it('renders partial nutrition without placeholder dashes', () => {
