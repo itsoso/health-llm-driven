@@ -1,6 +1,7 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, TextStyle, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { uuid } from 'expo-modules-core';
 import { CardShell } from './CardShell';
 import type { CardRenderOptions, CardSpec } from './types';
 import {
@@ -158,8 +159,18 @@ function createDietRecalculationOperationKey(): string {
       const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
       return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
     } catch {
-      // The write must fail closed when secure randomness is unavailable.
+      // Hermes may expose no usable Web Crypto; try the existing native bridge.
     }
+  }
+  try {
+    // expo-modules-core is already in the production binary. On iOS this calls
+    // Foundation UUID(), not Math.random or a timestamp-based substitute.
+    const key = uuid.v4();
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(key)) {
+      return key.toLowerCase();
+    }
+  } catch {
+    // Preserve the explicit error/no-write boundary if native randomness fails.
   }
   throw new Error(DIET_RECALCULATION_SECURE_RANDOM_UNAVAILABLE);
 }

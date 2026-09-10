@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { uuid } from 'expo-modules-core';
 
 import { RecordQualityCardView } from '../RecordQualityCard';
 import { renderCard } from '../registry';
@@ -59,12 +60,15 @@ describe('RecordQualityCard inline diet adjuster', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     uuidCounter = 0;
+    jest.spyOn(uuid, 'v4').mockImplementation(() => { throw new Error('native UUID unavailable'); });
     installTestCrypto({
       randomUUID: jest.fn(() => (
         `00000000-0000-4000-8000-${String(++uuidCounter).padStart(12, '0')}`
       )),
     });
   });
+
+  afterEach(() => jest.restoreAllMocks());
 
   afterAll(() => {
     if (originalCryptoDescriptor) {
@@ -611,6 +615,57 @@ describe('RecordQualityCard inline diet adjuster', () => {
     expect(mockRecalculate).not.toHaveBeenCalled();
     expect(mockUpdate).not.toHaveBeenCalled();
   });
+
+  it('uses native Expo UUID without Web Crypto and preserves the key across retry', async () => {
+    installTestCrypto(undefined);
+    const nativeKey = 'a542b3c1-c809-43ae-b01e-d6c8234665ad';
+    jest.mocked(uuid.v4).mockReturnValue(nativeKey);
+    mockRecalculate.mockRejectedValue(new Error('temporary transport failure'));
+    const { getByLabelText, getByText } = render(
+      <RecordQualityCardView {...(baseAdjustCard() as any)} onCardDataChange={jest.fn()} />,
+    );
+    fireEvent.changeText(getByLabelText('食物描述'), '白米饭150克、鸡蛋1个');
+    await act(async () => { fireEvent.press(getByText('保存修正')); });
+    await waitFor(() => expect(mockRecalculate).toHaveBeenCalledTimes(1));
+    expect(mockRecalculate.mock.calls[0][2]).toBe(nativeKey);
+    await act(async () => { fireEvent.press(getByText('保存修正')); });
+    await waitFor(() => expect(mockRecalculate).toHaveBeenCalledTimes(2));
+    expect(mockRecalculate.mock.calls[1][2]).toBe(nativeKey);
+    expect(uuid.v4).toHaveBeenCalledTimes(1);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('uses native UUID when exposed Web Crypto methods throw', async () => {
+    installTestCrypto({
+      randomUUID: () => { throw new Error('unsupported'); },
+      getRandomValues: () => { throw new Error('unsupported'); },
+    });
+    const nativeKey = 'f35f8ace-22b1-4b8c-8c75-abc9c1c97481';
+    jest.mocked(uuid.v4).mockReturnValue(nativeKey);
+    mockRecalculate.mockRejectedValue(new Error('temporary transport failure'));
+    const { getByLabelText, getByText } = render(
+      <RecordQualityCardView {...(baseAdjustCard() as any)} onCardDataChange={jest.fn()} />,
+    );
+    fireEvent.changeText(getByLabelText('食物描述'), '白米饭150克、鸡蛋1个');
+    await act(async () => { fireEvent.press(getByText('保存修正')); });
+    await waitFor(() => expect(mockRecalculate).toHaveBeenCalledTimes(1));
+    expect(mockRecalculate.mock.calls[0][2]).toBe(nativeKey);
+  });
+
+  it.each(['', 'not-a-uuid', '00000000-0000-0000-0000-000000000000'])(
+    'fails closed for invalid native UUID %j', async (key) => {
+      installTestCrypto(undefined);
+      jest.mocked(uuid.v4).mockReturnValue(key);
+      const { getByLabelText, getByText } = render(
+        <RecordQualityCardView {...(baseAdjustCard() as any)} onCardDataChange={jest.fn()} />,
+      );
+      fireEvent.changeText(getByLabelText('食物描述'), '白米饭150克、鸡蛋1个');
+      await act(async () => { fireEvent.press(getByText('保存修正')); });
+      expect(getByText('无法安全生成保存标识，请取消并重新打开后再试')).toBeTruthy();
+      expect(mockRecalculate).not.toHaveBeenCalled();
+      expect(mockUpdate).not.toHaveBeenCalled();
+    },
+  );
 
   it('fails loudly without transport when secure randomness is unavailable', async () => {
     installTestCrypto(undefined);
