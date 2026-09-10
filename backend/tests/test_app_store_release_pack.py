@@ -1029,6 +1029,74 @@ def test_live_demo_account_gate_rejects_mutated_fixed_conversation(monkeypatch):
     assert "exactly the two seeded messages" in "\n".join(failures)
 
 
+def test_reviewed_followups_require_exact_complete_reviewed_snapshot(monkeypatch, tmp_path):
+    import hashlib
+    from datetime import datetime, timezone
+    from scripts.check_app_store_release_pack import _load_demo_conversation_fixture
+
+    _, user, assistant = _load_demo_conversation_fixture()
+    messages = [
+        {'id': 1, 'role': 'user', 'content': user},
+        {'id': 2, 'role': 'assistant', 'content': assistant},
+        {'id': 3, 'role': 'user', 'content': 'Test question'},
+        {'id': 4, 'role': 'assistant', 'content': 'Reviewed answer with sources'},
+    ]
+    detail = {'id': 91, 'messages': messages, 'has_more': False, 'total_messages': 4}
+    base = 'https://health.example.test/api/v1'
+    sha = 'a' * 40
+    snapshot = {'api_base': base, 'user_id': 17, 'conversation_id': 91, 'messages': messages}
+    digest = hashlib.sha256(json.dumps(snapshot, sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
+    evidence = {'source_sha': sha, 'snapshot_sha256': digest, 'reviewed_at': datetime.now(timezone.utc).isoformat(),
+                'reviewed_by': 'test reviewer', 'result': 'passed', 'evidence': 'Synthetic UI verification reference'}
+    path = tmp_path / 'reviewed.json'
+
+    def request(url, **kwargs):
+        if url.endswith('/auth/login/json'):
+            return {'access_token': 'token', 'user': {'id': 17}}
+        if url.endswith('/auth/me'):
+            return {'id': 17}
+        if url.endswith('/daily-plan/me'):
+            return {'actions': [{'title': 'Action'}]}
+        if url.endswith('/daily-artifact/me'):
+            return {'top_action': {'title': 'Action'}}
+        if '/agent/conversations?' in url:
+            return {'items': [{'id': 91, 'title': '每日健康简报 · test'}]}
+        return detail
+
+    monkeypatch.setattr('scripts.check_app_store_release_pack._request_json', request)
+
+    def check():
+        path.write_text(json.dumps(evidence))
+        return validate_demo_account_live('reviewer@example.com', 'test', api_base=base,
+            reviewed_conversation_path=path, expected_source_sha=sha)
+
+    assert check() == []
+    messages[3]['content'] = 'Changed since review'
+    assert check()
+    messages[3]['content'] = 'Reviewed answer with sources'
+    for field, bad in [('source_sha', 'b' * 40), ('result', 'unverified'), ('reviewed_by', ''),
+                       ('evidence', ''), ('reviewed_at', '2020-01-01T00:00:00+00:00'),
+                       ('reviewed_at', '2999-01-01T00:00:00+00:00')]:
+        previous = evidence[field]
+        evidence[field] = bad
+        assert check(), field
+        evidence[field] = previous
+    for field, bad in [('has_more', True), ('total_messages', 6), ('id', 92)]:
+        previous = detail[field]
+        detail[field] = bad
+        assert check(), field
+        detail[field] = previous
+    for field, bad in [('role', 'tool'), ('content', ''), ('id', True), ('id', 2)]:
+        previous = messages[3][field]
+        messages[3][field] = bad
+        evidence['snapshot_sha256'] = hashlib.sha256(json.dumps(snapshot, sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
+        assert check(), field
+        messages[3][field] = previous
+    evidence['snapshot_sha256'] = digest
+    messages[0]['content'] = 'Not the fixture'
+    assert 'safe seeded message pair' in '\n'.join(check())
+
+
 def test_live_demo_account_gate_fails_closed_on_non_fixture_messages(monkeypatch):
     def fake_request(url, *, method="GET", token=None, payload=None, timeout=10):
         if url.endswith("/auth/login/json"):

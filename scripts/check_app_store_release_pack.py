@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -12,6 +13,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from datetime import datetime, timezone
 from typing import Mapping
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -640,11 +642,63 @@ def _load_demo_conversation_fixture() -> tuple[str, str, str]:
     return title_prefix, user_message, assistant_message
 
 
+def reviewed_conversation_digest(api_base: str, user_id: int, conversation_id: int, messages: list) -> str:
+    """Bind an external review to the complete owner-scoped delivered message set."""
+    snapshot = dict(api_base=api_base, user_id=user_id, conversation_id=conversation_id, messages=messages)
+    return hashlib.sha256(json.dumps(snapshot, sort_keys=True, ensure_ascii=False,
+                                    separators=(",", ":")).encode()).hexdigest()
+
+
+def _validate_reviewed_conversation(path: Path, *, source_sha: str | None,
+                                    api_base: str, user_id: int, conversation_id: int,
+                                    detail: dict) -> list[str]:
+    """No automatic approval: retain external UI review evidence, reject drift."""
+    failure = ["live demo account appended conversation requires fresh exact reviewed evidence"]
+    try:
+        if path.stat().st_size > 16384:
+            return failure
+        evidence = json.loads(path.read_text())
+        if (not isinstance(evidence, dict)
+                or not re.fullmatch(r"[0-9a-f]{40}", source_sha or "")
+                or evidence.get("source_sha") != source_sha
+                or evidence.get("result") != "passed"
+                or any(not isinstance(evidence.get(key), str) or not evidence[key].strip()
+                       for key in ("reviewed_by", "evidence"))):
+            return failure
+        reviewed_at = datetime.fromisoformat(evidence["reviewed_at"])
+        if reviewed_at.tzinfo is None or not 0 <= (datetime.now(timezone.utc) - reviewed_at).total_seconds() <= 8 * 3600:
+            return failure
+        messages = detail.get("messages")
+        if (type(detail.get("id")) is not int or detail["id"] != conversation_id
+                or detail.get("has_more") is not False
+                or not isinstance(messages, list) or not 2 <= len(messages) < 200
+                or len(messages) % 2
+                or type(detail.get("total_messages")) is not int
+                or detail["total_messages"] != len(messages)):
+            return failure
+        previous_id = 0
+        for index, message in enumerate(messages):
+            if (not isinstance(message, dict) or type(message.get("id")) is not int
+                    or message["id"] <= previous_id
+                    or message.get("role") != ("assistant" if index % 2 else "user")
+                    or not isinstance(message.get("content"), str) or not message["content"].strip()):
+                return failure
+            previous_id = message["id"]
+        expected = reviewed_conversation_digest(api_base, user_id, conversation_id, messages)
+        if evidence.get("snapshot_sha256") != expected:
+            return failure
+    except (OSError, ValueError, TypeError, KeyError):
+        return failure
+    return []
+
+
 def validate_demo_account_live(
     account: str,
     password: str,
     *,
     api_base: str = DEFAULT_DEMO_API_BASE,
+    reviewed_conversation_path: Path | None = None,
+    expected_source_sha: str | None = None,
 ) -> list[str]:
     """Prove the exact reviewer credential against production read paths."""
     base = api_base.strip().rstrip("/")
@@ -714,11 +768,11 @@ def validate_demo_account_live(
             if isinstance(message, dict)
             and str(message.get("content") or "").strip()
         ] if isinstance(messages, list) else []
-        if len(nonempty) != 2:
+        if len(nonempty) < 2 or (len(nonempty) != 2 and reviewed_conversation_path is None):
             return [
                 "live demo account fixed briefing must contain exactly the two seeded messages"
             ]
-        user_message, assistant_message = nonempty
+        user_message, assistant_message = nonempty[:2]
         if not (
             user_message.get("role") == "user"
             and str(user_message.get("content") or "").strip() == expected_user
@@ -728,6 +782,11 @@ def validate_demo_account_live(
             return [
                 "live demo account fixed daily briefing is missing the safe seeded message pair"
             ]
+        if reviewed_conversation_path is not None:
+            return _validate_reviewed_conversation(
+                reviewed_conversation_path, source_sha=expected_source_sha, api_base=base,
+                user_id=login_user_id, conversation_id=latest['id'], detail=detail,
+            )
     except Exception as exc:
         return [f"live demo account check failed: {exc}"]
     return []
@@ -925,6 +984,8 @@ def main() -> int:
     parser.add_argument("--simulator-evidence", help="Candidate-bound simulator results and explicit risk acceptance JSON.")
     parser.add_argument("--accept-simulator-risk", action="store_true",
                         help="Release owner explicitly accepts the enumerated unverified checks; does not waive failures.")
+    parser.add_argument("--reviewed-conversation-evidence", type=Path,
+                        help="External fresh UI review bound to exact complete appended demo conversation; never a reset.")
     parser.add_argument(
         "--build-id",
         help="App Store build number expected in real-device evidence. Overrides APP_STORE_BUILD_ID.",
@@ -1082,6 +1143,8 @@ def main() -> int:
                     credentials[0],
                     credentials[1],
                     api_base=os.environ.get(DEMO_API_BASE_ENV, DEFAULT_DEMO_API_BASE),
+                    reviewed_conversation_path=args.reviewed_conversation_evidence,
+                    expected_source_sha=args.git_commit_hash or os.environ.get('APP_STORE_GIT_COMMIT_HASH'),
                 )
             )
 

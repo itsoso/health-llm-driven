@@ -155,12 +155,32 @@ scripts/run_ios_real_device_acceptance.sh \
 
 Before running it, sign in to the review account manually on the iPhone and confirm the Agent screen is visible. Never export or pass the review account/password to this XCUITest harness: Xcode result bundles and console output can retain typed text. The harness fails closed when those credential variables are present, when the app is signed out, or when the deterministic Today fixture is missing. Required authenticated checks are never converted to skips. It covers the pre-authenticated session: launch, cold-start persistence, Agent access, latest fixed briefing, Today interaction, foreground draft recovery, privacy/account-deletion entries, and the BMI path through the visible NHC citation into the official Safari domain. Record the manual signed-out login check separately in the external evidence file. It does not replace the dedicated physical checks for voice, camera, sharing, health writes, correction/deletion idempotency, or completed account deletion.
 
-Immediately before every full device-acceptance invocation, restore the deterministic review data through the guarded deployment entry point, then run the live release-pack check. The reset is revision-locked, uses the server-side secret store, prints only non-identifying pass evidence, preserves the existing password, and makes the fixed briefing the default latest conversation. Repeating the reset is required because the BMI acceptance test intentionally sends a review-account message and therefore changes the latest conversation:
+If deterministic review fixtures need restoration, use only the guarded deployment entry point while its release authorization is valid. The reset is revision-locked, uses the server-side secret store, prints only non-identifying pass evidence, preserves the existing password, and makes the fixed briefing the default latest conversation. Never restore retired authorization or mutate database rows to satisfy a gate:
 
 ```bash
 ./deploy.sh --reset-app-store-review
 python3 scripts/check_app_store_release_pack.py
 ```
+
+The owner-authorized non-destructive alternative for completed acceptance chat is
+`--reviewed-conversation-evidence /secure/path/reviewed-conversation.json`.
+The fixed briefing must remain the latest conversation and its first two messages
+must still exactly match the safe fixture. All delivered messages must form complete
+user/assistant pairs, have ordered unique IDs, and be present without pagination.
+Review every appended answer in the candidate UI for correctness, citations and
+absence of raw protocol/error/unsafe medical content before recording `result: passed`.
+Never use this evidence for an unfinished or failed answer.
+
+The private JSON records `source_sha` (the frozen app source), `reviewed_by`,
+timezone-aware `reviewed_at`, an actual UI `evidence` reference and `snapshot_sha256`.
+Use `reviewed_conversation_digest(api_base, user_id, conversation_id, messages)`
+from the gate to bind the complete delivered message set, including metadata, to
+the authenticated account and API origin. Evidence expires after eight hours;
+any additional message, content/metadata change, different account/conversation,
+source mismatch or incomplete response requires a new review. The digest only binds
+observed bytes: it does not independently prove the reviewer's assertion.
+Keep the file outside Git and never output credentials or message bodies in logs.
+Without this explicit file, the original exactly-two-message check is unchanged.
 
 ## Privacy Nutrition Label
 
