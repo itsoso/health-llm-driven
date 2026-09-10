@@ -25,6 +25,7 @@ export interface AgendaItem {
   detail?: string;
   responsible?: string;
   next_due?: string;
+  review_kind?: 'goal' | 'clinical';
   snoozed_until?: string | null;
   // 训练决策灯(type === 'training', status === 'info')专属字段
   light?: 'green' | 'yellow' | 'red';

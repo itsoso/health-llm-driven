@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -372,7 +372,8 @@ export default function MedicalExamImportFlow({
       presentationStyle="fullScreen"
       onRequestClose={close}
     >
-      {body}
+      {/* A full-screen native modal has its own window/insets, outside the navigator. */}
+      <SafeAreaProvider>{body}</SafeAreaProvider>
     </Modal>
   );
 }

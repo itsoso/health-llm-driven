@@ -1,4 +1,6 @@
 import React from 'react';
+import { Modal } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 jest.mock('expo-document-picker', () => ({
@@ -41,6 +43,23 @@ const preview = {
 
 describe('MedicalExamImportFlow', () => {
   beforeEach(() => jest.clearAllMocks());
+
+  it('measures safe area inside the full-screen native modal', () => {
+    const screen = render(
+      <MedicalExamImportFlow visible onClose={jest.fn()} onImported={jest.fn()} />,
+    );
+    const modal = screen.UNSAFE_getByType(Modal);
+    const provider = modal.findByType(SafeAreaProvider);
+    expect(provider.findByType(SafeAreaView).props.edges).toEqual(['top', 'bottom']);
+  });
+
+  it('keeps screen presentation under its existing navigator safe area provider', () => {
+    const screen = render(
+      <MedicalExamImportFlow visible presentation="screen" onClose={jest.fn()} onImported={jest.fn()} />,
+    );
+    expect(screen.UNSAFE_queryByType(Modal)).toBeNull();
+    expect(screen.UNSAFE_queryByType(SafeAreaProvider)).toBeNull();
+  });
 
   it('previews before it persists and confirms only after user action', async () => {
     (DocumentPicker.getDocumentAsync as jest.Mock).mockResolvedValue({

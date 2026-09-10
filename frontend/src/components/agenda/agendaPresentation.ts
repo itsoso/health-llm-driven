@@ -13,6 +13,7 @@ export interface AgendaItem {
   detail?: string;
   responsible?: string;
   next_due?: string;
+  review_kind?: 'goal' | 'clinical';
   light?: 'green' | 'yellow' | 'red';
   zone?: string;
   readiness_score?: number | null;

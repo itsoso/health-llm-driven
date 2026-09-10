@@ -152,7 +152,10 @@ def _map_agenda_item(item: Dict[str, Any]) -> Dict[str, Any]:
         "action_kind": itype,
         # 复查项必须进入可处理复查记录的页面。旧版统一填 None，聊天顶部
         # 虽然展示了逾期复查，却只能退回 Today，无法完成闭环。
-        "deep_link": "/medical-exams" if kind == "checkup" else None,
+        "deep_link": (
+            "/agenda" if object_type == "health_problem" and item.get("review_kind") == "goal"
+            else "/medical-exams"
+        ) if kind == "checkup" else None,
         "severity": None,
         "proof": None,
     }

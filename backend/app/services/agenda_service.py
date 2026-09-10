@@ -500,9 +500,11 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
 
     # 5) 到期复查(HealthProblem follow_up)→ 复查日历项
     for f in prob_svc.due_followups(db, user_id, within_days=followup_within_days):
+        is_goal_review = f.get("review_kind") == "goal"
         items.append(_agenda_item(
             type="checkup",
-            title=f"复查:{f['name']}",
+            title=f"{'复盘' if is_goal_review else '复查'}:{f['name']}",
+            review_kind="goal" if is_goal_review else "clinical",
             status="overdue" if f["overdue"] else "due",
             time_window="anytime",
             priority=95 if (f.get("risk_level") in ("P0", "P1")) else 75,

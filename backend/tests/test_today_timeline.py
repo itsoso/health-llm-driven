@@ -48,6 +48,15 @@ def test_checkup_agenda_item_links_to_medical_exam_handling_page():
     assert item["deep_link"] == "/medical-exams"
 
 
+def test_goal_review_routing_requires_health_problem_source_and_checkup_kind():
+    for source, kind in (("medication", "checkup"), ("health_problem", "hydration")):
+        item = _map_agenda_item({
+            "type": kind, "title": "复盘:初始健康运行目标", "review_kind": "goal",
+            "status": "overdue", "source": {"object_type": source, "object_id": 42},
+        })
+        assert item["deep_link"] != "/agenda"
+
+
 def test_empty_user_valid_shape(db, auth_user_and_headers, monkeypatch):
     import app.services.today_timeline_service as svc
 

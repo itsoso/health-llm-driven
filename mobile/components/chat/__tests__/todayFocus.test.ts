@@ -215,6 +215,16 @@ describe('todayFocus resolver', () => {
     expect(model.contextStrip?.deepLink).toBe('/medical-exams');
   });
 
+  it('preserves the goal review route instead of forcing every checkup into medical exams', () => {
+    const goalTimeline = timeline('复盘:初始健康运行目标');
+    goalTimeline.items[0] = {
+      ...goalTimeline.items[0],
+      kind: 'checkup', action_kind: 'checkup', status: 'overdue', deep_link: '/agenda',
+    };
+    const model = buildTodayFocusModel({ timeline: goalTimeline, now: atLocalTime(12, 30) });
+    expect(model.contextStrip?.deepLink).toBe('/agenda');
+  });
+
   it('prioritizes a high-severity state over a due action', () => {
     const safetyTimeline = timeline('记录体重和腰围');
     safetyTimeline.date = '2026-07-16';

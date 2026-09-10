@@ -87,6 +87,12 @@ def due_followups(db: Session, user_id: int, within_days: int = 45) -> List[Dict
                 "next_due": str(due), "overdue": due < today,
                 "what_to_check": fu.get("what_to_check"),
                 "responsible": p.responsible,
+                # Bootstrap monitoring goals are reviews, not requests for a medical exam.
+                # Once moved into active clinical management, retain the clinical route.
+                "review_kind": "goal" if (
+                    (p.diagnosis or {}).get("source") == "onboarding_primary_goal"
+                    and p.status == "monitoring"
+                ) else "clinical",
             })
     return sorted(out, key=lambda x: x["next_due"])
 

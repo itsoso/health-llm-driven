@@ -42,6 +42,40 @@ def test_due_checkup_in_agenda_and_priority(client, auth_user_and_headers):
     assert items[0]["type"] == "checkup"
 
 
+def test_onboarding_goal_review_routes_to_agenda_without_changing_clinical_followups(
+    client, auth_user_and_headers, db,
+):
+    from app.services.today_timeline_service import _map_agenda_item
+    from tests.conftest import create_authenticated_user
+
+    _, headers = auth_user_and_headers
+    for source, status, name in (
+        ("onboarding_primary_goal", "monitoring", "初始健康运行目标"),
+        ("clinical_report", "active", "临床复查"),
+        ("onboarding_primary_goal", "active", "已转为临床管理的目标"),
+    ):
+        response = client.post("/api/v1/problems", headers=headers, json={
+            "name": name, "status": status, "risk_level": "P2",
+            "diagnosis": {"source": source},
+            "follow_up": {"next_due": "2020-01-01", "what_to_check": "核对记录"},
+        })
+        assert response.status_code == 200
+    items = client.get("/api/v1/agenda/today", headers=headers).json()["items"]
+    reviews = [item for item in items if item["type"] == "checkup"]
+    goal = next(item for item in reviews if "初始健康运行目标" in item["title"])
+    assert goal["title"] == "复盘:初始健康运行目标"
+    assert goal["priority"] == 75 and goal["status"] == "overdue"
+    assert _map_agenda_item(goal)["deep_link"] == "/agenda"
+    for item in reviews:
+        if item is not goal:
+            assert item["title"].startswith("复查:")
+            assert _map_agenda_item(item)["deep_link"] == "/medical-exams"
+    _, token = create_authenticated_user(db)
+    other = {"Authorization": f"Bearer {token}"}
+    assert client.get("/api/v1/agenda/today", headers=other).json()["items"] == []
+    assert client.get("/api/v1/problems/due", headers=other).json() == []
+
+
 def test_training_light_skipped_when_no_signal(monkeypatch):
     """无任何恢复/负荷信号(zone=unknown 且无 acwr)→ 不投训练灯(不假装黄灯)。"""
     from app.services import agenda_service
