@@ -9,6 +9,31 @@
 | 负责 | Codex + 用户 |
 | 反馈环 | Backend focused tests + Mobile Jest/TypeScript + production OTA after Gates |
 
+## 2026-09-10 · CI 修复获专项授权并推送
+
+- 用户明确授权“允许仅推送 CI 修复”。仅将已独立复审 GO 的
+  `271525aea1bb319eb1eb7b1b6b4a351bf0020d03` 推送 main，未包含两处未提交的饮食卡片改动。
+- 该固定 revision 的干净源码 CI-mode 集成 exit 0：1099 passed、1 skipped、
+  84 subtests passed，442.34 秒；本机跳过的 Linux native SSH 验证不视为通过。
+- 精确 CI `34421124937` 中 release-invariants 已成功：1093 passed、7 skipped、
+  84 subtests passed；独立 Linux OpenSSH 实测 1 passed（63 deselected）。完整 CI 尚在运行。
+- 模拟器只读核心回归 6/6、0 failure、exit 0；不代表 TestFlight 同包真机或完整写入验收。
+- 线上四项服务 active，API/数据库/Redis/Celery 健康；尚未创建单密钥暂停或旧审核维护收尾。
+  新包及正式 App Review 尚未提交；须完整 CI 全绿后继续原恢复、发布与验收流程。
+
+### 后续：CI 全绿，暂停后 reload 就绪竞态阻断
+
+- `34421124937` 完整 CI SUCCESS；trusted validate `34422104467` SUCCESS。
+  服务器从 canonical GitHub 获取并校验同一 271525aea，未上传本机脚本。
+- 单密钥默认取证通过；显式执行产生 intent/installed 后，新 TCP offer 检查失败，尚无
+  freeze/paused 记录，未执行旧审核维护收尾。恢复已移除本次 drop-in，并核验原有效配置；
+  但紧接 reload 的 offer_result 抛 PauseError，未产生 restored.json，仍是 RESTORE_PENDING。
+- 只读诊断确认 canonical context、全进程证明、daemon/configuration 绑定通过；稍后新 TCP
+  目标与操作者 offers 均 True。不能将稍后只读诊断替代完整恢复终态。保留所有原始审计。
+- 新增就绪窗口、跨受审 revision 恢复原审计及 CLI 绑定测试；先 12 RED，再实现。
+  仅重试有界只读探测，不重复 SSH reload/暂停/终止；Linux 原生测试改用生产同一 helper。
+  新修复仍需固定提交独立 G4、完整本机集成及精确主干 CI 后才能用于恢复。
+
 ## 2026-09-09 19:20 · 模拟器回归完成，发布维护继续阻断
 
 ### 后续明确风险授权：专用行政收尾实现中

@@ -298,7 +298,7 @@ def offer_result(stderr, target):
     raise PauseError("public-key denial unproven")
 
 
-def public_offer(public, known_hosts, *, port=22):
+def public_offer(public, known_hosts, *, port=22, timeout=20):
     """Fresh TCP unsigned offer, not authentication or command execution proof."""
     target = fingerprint(key_digest(public))
     descriptors = []
@@ -318,13 +318,53 @@ def public_offer(public, known_hosts, *, port=22):
             "-o", "StrictHostKeyChecking=yes", "-o", "GlobalKnownHostsFile=/dev/null",
             "-o", f"UserKnownHostsFile={host_fd}", "-o", "ControlPath=none",
             "-o", "ClearAllForwardings=yes", "-o", "ConnectTimeout=5", "-o", "ConnectionAttempts=1",
-            "-p", str(port), "-i", public_fd, "root@127.0.0.1", "true"], accepted=(255,))
+            "-p", str(port), "-i", public_fd, "root@127.0.0.1", "true"], accepted=(255,), timeout=timeout)
         if result.stdout:
             raise PauseError("unexpected public offer output")
         return offer_result(result.stderr, target)
     finally:
         for fd in descriptors:
             os.close(fd)
+
+
+def wait_public_offers(probe, keys, expected, *, timeout=10):
+    """Bounded read-only readiness after reload; unknown is never denial.
+
+    Every attempt uses fresh TCP offers. The remaining total budget is passed
+    to each SSH subprocess; no reload, publication, or termination is retried.
+    """
+    deadline, announced = time.monotonic() + timeout, False
+    while time.monotonic() < deadline:
+        observed = []
+        try:
+            for key in keys:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                observed.append(probe(key, timeout=remaining))
+            if tuple(observed) == expected and time.monotonic() < deadline:
+                return
+        except (PauseError, subprocess.TimeoutExpired):
+            # The final gate still fails unless a complete later pair proves
+            # both outcomes within this same finite readiness window.
+            observed = []
+        if not announced:
+            print("admin key pause: waiting for SSH reload readiness", file=sys.stderr)
+            announced = True
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            time.sleep(min(0.1, remaining))
+    raise PauseError("new-connection readiness unproven")
+
+
+def audit_sha(action, sha, pause_sha, bootstrap):
+    """New reviewed recovery code may restore, never replay, an old audit."""
+    if pause_sha is None:
+        return sha
+    if action != "restore" or re.fullmatch(r"[a-f0-9]{40}", pause_sha) is None or pause_sha == sha:
+        raise PauseError("distinct canonical old audit is restoration-only")
+    bootstrap.canonical_source(pause_sha)
+    return pause_sha
 
 
 class Operator:
@@ -389,8 +429,8 @@ class Operator:
         run(["/usr/sbin/sshd", "-t"])
         return run(["/usr/sbin/sshd", "-T"]).stdout.decode()
 
-    def offer(self, public):
-        return public_offer(public, self.known_hosts)
+    def offer(self, public, *, timeout=20):
+        return public_offer(public, self.known_hosts, timeout=timeout)
 
     def target_sessions(self):
         mine = ancestry()
@@ -513,8 +553,10 @@ class Operator:
         if json.loads((self.record / "installed.json").read_bytes()) != {"pub": self.file(self.pub), "conf": self.file(self.conf)}:
             raise PauseError("installed pause identity drifted")
         assert_effective_change(evidence["effective"], self.effective(), str(self.pub))
-        if self.offer(evidence["public"].encode()) or not self.offer(evidence["operator"].encode()):
-            raise PauseError("new-connection single-key offer denial unproven")
+        wait_public_offers(self.offer, (evidence["public"].encode(), evidence["operator"].encode()), (False, True))
+        self.bound(evidence)
+        self.check_pub(evidence)
+        assert_effective_change(evidence["effective"], self.effective(), str(self.pub))
 
     def terminate(self, evidence):
         self.verify_paused(evidence)
@@ -576,9 +618,10 @@ class Operator:
         if self.effective() != evidence["effective"]:
             raise PauseError("original SSH policy not restored")
         run(["/usr/bin/systemctl", "reload", "ssh.service"])
-        if not self.offer(evidence["public"].encode()) or not self.offer(evidence["operator"].encode()):
-            raise PauseError("restored public-key offer baseline unproven")
+        wait_public_offers(self.offer, (evidence["public"].encode(), evidence["operator"].encode()), (True, True))
         self.bound(evidence)
+        if self.effective() != evidence["effective"]:
+            raise PauseError("original SSH policy drifted after readiness")
 
 
 def main():
@@ -587,6 +630,7 @@ def main():
         parser.add_argument("action", choices=("pause", "restore"))
         parser.add_argument("--sha", required=True)
         parser.add_argument("--key-digest", required=True)
+        parser.add_argument("--pause-sha", help="Restore only: exact original audit SHA, from newer reviewed recovery code")
         parser.add_argument("--consent-temporary-key-pause", action="store_true")
         parser.add_argument("--evidence-sha256")
         args = parser.parse_args()
@@ -596,6 +640,7 @@ def main():
             raise PauseError("explicit exact single-key scope required")
         os.umask(0o077)
         b = context(args.sha, recovery=args.action == "restore")
+        original_sha = audit_sha(args.action, args.sha, args.pause_sha, b)
         lock = b.STATE / "launcher.lock"
         b.secure(lock, private=True)
         fd = os.open(lock, os.O_RDWR | os.O_NOFOLLOW)
@@ -614,7 +659,7 @@ def main():
                 b.secure(ROOT)
                 if stat.S_IMODE(ROOT.stat().st_mode) != 0o700:
                     raise PauseError("pause audit root must be private")
-            adapter = Operator(b, args.sha, args.key_digest)
+            adapter = Operator(b, original_sha, args.key_digest)
             if adapter.record.exists():
                 b.secure(adapter.record)
                 if stat.S_IMODE(adapter.record.stat().st_mode) != 0o700:

@@ -183,6 +183,107 @@ def test_public_offer_survives_ssh_closing_inherited_descriptors(monkeypatch):
     assert "pass_fds" not in kwargs
 
 
+@pytest.mark.parametrize("first", ["unknown", "old_policy"])
+def test_offer_readiness_retries_only_reads_until_both_keys_proven(monkeypatch, first):
+    m = load()
+    now, calls = [0.0], []
+    monkeypatch.setattr(m.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(m.time, "sleep", lambda seconds: now.__setitem__(0, now[0] + seconds))
+    def probe(key, *, timeout):
+        calls.append((key, timeout))
+        if len(calls) == 1 and first == "unknown":
+            raise m.PauseError("public-key offer outcome unknown")
+        return key == public(2) or len(calls) == 1
+    m.wait_public_offers(probe, (public(), public(2)), (False, True))
+    assert len(calls) >= 3 and now[0] > 0
+    assert all(0 < limit <= 10 for _, limit in calls)
+
+
+@pytest.mark.parametrize("failure", ["unknown", "wrong", "timeout"])
+def test_offer_readiness_deadline_never_accepts_unknown_or_wrong_policy(monkeypatch, failure):
+    m = load()
+    now, calls = [0.0], []
+    monkeypatch.setattr(m.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(m.time, "sleep", lambda seconds: now.__setitem__(0, now[0] + seconds))
+    def probe(key, *, timeout):
+        calls.append(timeout)
+        if failure == "unknown":
+            raise m.PauseError("unknown")
+        if failure == "timeout":
+            now[0] += timeout
+            raise m.subprocess.TimeoutExpired("synthetic", timeout)
+        return False
+    with pytest.raises(m.PauseError, match="readiness unproven"):
+        m.wait_public_offers(probe, (public(), public(2)), (True, True), timeout=1)
+    assert now[0] <= 1.01 and 1 <= len(calls) <= 22
+
+
+def test_offer_readiness_does_not_swallow_unrelated_errors(monkeypatch):
+    m = load()
+    def probe(*args, **kwargs):
+        raise OSError("unexpected filesystem failure")
+    with pytest.raises(OSError):
+        m.wait_public_offers(probe, (public(), public(2)), (True, True))
+
+
+@pytest.mark.parametrize("action,previous,valid", [
+    ("restore", "b" * 40, True), ("pause", "b" * 40, False),
+    ("restore", "../other", False), ("restore", "a" * 40, False),
+])
+def test_old_audit_can_only_be_restored_from_canonical_scope(action, previous, valid):
+    from types import SimpleNamespace
+    m, seen = load(), []
+    b = SimpleNamespace(canonical_source=lambda sha: seen.append(sha))
+    if valid:
+        assert m.audit_sha(action, "a" * 40, previous, b) == previous
+        assert seen == [previous]
+    else:
+        with pytest.raises(m.PauseError):
+            m.audit_sha(action, "a" * 40, previous, b)
+        assert not seen
+
+
+def test_old_audit_canonical_failure_propagates():
+    from types import SimpleNamespace
+    m = load()
+    def reject(sha):
+        raise RuntimeError("canonical source drift")
+    with pytest.raises(RuntimeError):
+        m.audit_sha("restore", "a" * 40, "b" * 40, SimpleNamespace(canonical_source=reject))
+
+
+def test_restore_cli_uses_new_code_but_original_audit(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    m, calls = load(), []
+    (tmp_path / "launcher.lock").write_bytes(b"")
+    b = SimpleNamespace(STATE=tmp_path, secure=lambda *a, **kw: None,
+        canonical_source=lambda sha: calls.append(("canonical", sha)),
+        _assert_original_lock=lambda *a: None, _recovery_process_proof=lambda: None)
+    monkeypatch.setattr(m, "ROOT", tmp_path)
+    monkeypatch.setattr(m, "context", lambda sha, **kw: calls.append(("code", sha, kw)) or b)
+    monkeypatch.setattr(m, "Operator", lambda bootstrap, sha, key: calls.append(("audit", sha, key)) or SimpleNamespace(record=tmp_path / "missing"))
+    monkeypatch.setattr(m, "restore", lambda adapter, **kw: {"state": "RESTORED"})
+    monkeypatch.setattr(m.sys, "argv", ["operator", "restore", "--sha", "a" * 40,
+        "--pause-sha", "b" * 40, "--key-digest", "c" * 64, "--consent-temporary-key-pause"])
+    assert m.main() == 0
+    assert calls == [("code", "a" * 40, {"recovery": True}), ("canonical", "b" * 40), ("audit", "b" * 40, "c" * 64)]
+
+
+def test_operator_restore_waits_after_reload_without_replaying_reload(tmp_path, monkeypatch):
+    m, a, e, calls = operator(tmp_path, monkeypatch)
+    real_offer, attempts = a.offer, []
+    monkeypatch.setattr(m.time, "sleep", lambda _: None)
+    def transient(key, *, timeout=20):
+        attempts.append(key)
+        if len(attempts) == 1:
+            raise m.PauseError("reload still starting")
+        return real_offer(key)
+    monkeypatch.setattr(a, "offer", transient)
+    a.restore(e)
+    assert len(attempts) == 3
+    assert calls.count(["/usr/bin/systemctl", "reload", "ssh.service"]) == 1
+
+
 def test_effective_configuration_only_allows_target_revocation_change():
     m = load()
     before = "port 22\nauthorizedkeyscommand /usr/bin/vendor --uid %U\nrevokedkeys none\n"
@@ -221,7 +322,7 @@ def operator(tmp_path, monkeypatch):
     monkeypatch.setattr(a, "effective", lambda: before.replace("none", str(a.pub)) if a.conf.exists() else before)
     calls = []
     monkeypatch.setattr(m, "run", lambda args, **kwargs: calls.append(args))
-    def offer(key):
+    def offer(key, **kwargs):
         calls.append(["offer", key])
         return not (a.conf.exists() and key == public())
     monkeypatch.setattr(a, "offer", offer)
@@ -511,7 +612,6 @@ def test_native_openssh_dynamic_key_pause_restore_and_missing_file(tmp_path, mon
     import signal
     import socket
     import subprocess
-    import time
     m = load()
     original_run, diagnostics = m.run, []
     def capture_test_client(argv, **kwargs):
@@ -538,19 +638,15 @@ def test_native_openssh_dynamic_key_pause_restore_and_missing_file(tmp_path, mon
     daemon = subprocess.Popen(["/usr/sbin/sshd", "-D", "-e", "-f", str(conf)], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     try:
         def offers(expected_target, expected_operator):
-            deadline = time.monotonic() + 10
-            last = None
-            while time.monotonic() < deadline:
+            def probe(key, *, timeout):
                 assert daemon.poll() is None, "isolated sshd exited"
-                try:
-                    observed = tuple(m.public_offer(keys[name], known, port=port) for name in ("target", "operator"))
-                    if observed == (expected_target, expected_operator):
-                        return
-                    last = observed
-                except (m.PauseError, subprocess.TimeoutExpired) as error:
-                    last = str(error) if isinstance(error, m.PauseError) else type(error).__name__
-                time.sleep(0.1)
-            pytest.fail(f"new TCP offer outcomes unproven: {last}; isolated client: {diagnostics}")
+                return m.public_offer(key, known, port=port, timeout=timeout)
+            try:
+                # Same readiness implementation as the production operator,
+                # not a test-only retry loop masking reload races.
+                m.wait_public_offers(probe, (keys["target"], keys["operator"]), (expected_target, expected_operator))
+            except m.PauseError:
+                pytest.fail(f"new TCP offer outcomes unproven; isolated client: {diagnostics}")
         offers(True, True)
         m.publish(pub, keys["target"] + b"\n")
         m.publish(drop, f"RevokedKeys {pub}\n".encode())
