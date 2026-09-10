@@ -747,8 +747,62 @@ describe('RecordQualityCard inline diet adjuster', () => {
 
     expect(mockRecalculate).not.toHaveBeenCalled();
     expect(mockUpdate).not.toHaveBeenCalled();
-    expect(onCardDataChange).not.toHaveBeenCalled();
+    expect(onCardDataChange).toHaveBeenCalledWith({ ...baseAdjustCard(), expanded_sections: [] });
     expect(queryByText('就地修正这条记录，保存后直接更新')).toBeNull();
+  });
+
+  it.each([
+    ['cancel', '2026-08-20T12:05:00Z'],
+    ['save', '2026-08-20T12:05:00Z'],
+    ['save', null],
+    ['save', undefined],
+  ] as const)('can reopen after %s with revision %s without restoring stale action data', async (finish, savedRevision) => {
+    const seed = baseAdjustCard().adjust_record;
+    const onAction = jest.fn();
+    const screen = render(renderCard({
+      type: 'record_quality',
+      data: baseAdjustCard({ expanded_sections: [], adjust_record: undefined }),
+      actions: [{
+        id: 'adjust-record', label: '修正本餐', action: 'ui.inline.expand',
+        payload: { target: 'adjust_record', patch: {
+          expanded_sections: ['adjust_record'], adjust_record: seed,
+        } },
+      }],
+    } as any, { onAction })!);
+    fireEvent.press(screen.getByLabelText('修正本餐'));
+    fireEvent.changeText(screen.getByLabelText('食物描述'), '200克葡萄');
+    if (finish === 'save') {
+      mockRecalculate.mockResolvedValue({
+        id: 123, meal_type: 'snack', food_items: '200克葡萄',
+        calories: 123.45, protein: 2, carbs: 30, fat: 1, fiber: 3,
+        ...(savedRevision !== undefined ? { updated_at: savedRevision } : {}),
+      } as any);
+      await act(async () => fireEvent.press(screen.getByLabelText('保存修正')));
+    } else {
+      fireEvent.press(screen.getByLabelText('取消修正'));
+      expect(mockRecalculate).not.toHaveBeenCalled();
+      expect(mockUpdate).not.toHaveBeenCalled();
+    }
+    expect(screen.queryByLabelText('食物描述')).toBeNull();
+    expect(screen.getByLabelText('修正本餐')).toHaveAccessibilityState({ disabled: false });
+    fireEvent.press(screen.getByLabelText('修正本餐'));
+    expect(screen.getByLabelText('食物描述').props.value).toBe(finish === 'save' ? '200克葡萄' : seed.food_items);
+    if (finish === 'save') {
+      fireEvent.changeText(screen.getByLabelText('食物描述'), '300克葡萄');
+      if (savedRevision === undefined) {
+        expect(screen.getByLabelText('保存修正')).toHaveAccessibilityState({ disabled: true });
+        fireEvent.press(screen.getByLabelText('保存修正'));
+        expect(mockRecalculate).toHaveBeenCalledTimes(1);
+        expect(onAction).not.toHaveBeenCalled();
+        return;
+      }
+      await act(async () => fireEvent.press(screen.getByLabelText('保存修正')));
+      expect(mockRecalculate).toHaveBeenLastCalledWith(123, expect.objectContaining({
+        food_items: '300克葡萄', expected_updated_at: savedRevision,
+      }), expect.any(String));
+      expect(mockRecalculate.mock.calls[0][2]).not.toBe(mockRecalculate.mock.calls[1][2]);
+    }
+    expect(onAction).not.toHaveBeenCalled();
   });
 
   it('expands the inline editor through the ui.inline.expand registry channel', () => {

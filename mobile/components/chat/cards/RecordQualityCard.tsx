@@ -410,6 +410,11 @@ export function RecordQualityCardView(props: RecordQualityViewProps) {
               ? { updated_at: data.updated_at }
               : {}),
           }}
+          onCancel={() => onCardDataChange?.({
+            ...data,
+            expanded_sections: (Array.isArray(data.expanded_sections) ? data.expanded_sections : [])
+              .filter((item) => item !== 'adjust_record'),
+          })}
           onSaved={(applied) => {
             if (!onCardDataChange) return;
             const currentData = clearRecordQualityDietDerivations(data);
@@ -580,10 +585,12 @@ export function DietRecordAdjustEditor({
   recordId,
   seed,
   onSaved,
+  onCancel,
 }: {
   recordId: number;
   seed: Record<string, unknown>;
   onSaved: (applied: DietAdjustApplied) => void;
+  onCancel?: () => void;
 }) {
   const [mealType, setMealType] = React.useState<MealType>(() => mealTypeValue(seed.meal_type));
   const [food, setFood] = React.useState(() => text(seed.food_items) || '');
@@ -775,7 +782,10 @@ export function DietRecordAdjustEditor({
           accessibilityRole="button"
           accessibilityLabel="取消修正"
           disabled={saving}
-          onPress={() => setCollapsed(true)}
+          onPress={() => {
+            setCollapsed(true);
+            onCancel?.();
+          }}
           style={({ pressed }) => [styles.cancelButton, saving && styles.buttonDisabled, pressed && !saving && { opacity: 0.86 }]}
         >
           <Text style={styles.cancelButtonText}>取消</Text>

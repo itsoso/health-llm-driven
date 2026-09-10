@@ -218,6 +218,11 @@ function StatefulCardRenderer({
   React.useEffect(() => {
     setLocalDoneActionKeys({});
   }, [runtimeIdentity]);
+  const isLocallyDone = (action: ChatCardActionDescriptor) => (
+    isRepeatableDietCorrection(action, descriptor.type)
+      ? Array.isArray(data?.expanded_sections) && data.expanded_sections.includes('adjust_record')
+      : localDoneActionKeys[getCardActionRuntimeKey(action, descriptor)] === true
+  );
   try {
     const actions = normalizeCardActions(descriptor.actions, descriptor.type)
       .map((action) => rewriteActionForCurrentCardData(action, descriptor.type, data));
@@ -239,13 +244,13 @@ function StatefulCardRenderer({
       }
       const actionKey = getCardActionRuntimeKey(action, descriptor);
       const actionState = options.actionStateByKey?.[actionKey];
-      const localDone = localDoneActionKeys[actionKey] === true;
+      const localDone = isLocallyDone(action);
       const groupKey = getCardActionRuntimeGroupKey(action, descriptor);
       const groupDone = actions.some((sibling) => (
         getCardActionRuntimeGroupKey(sibling, descriptor) === groupKey
         && (
           options.actionStateByKey?.[getCardActionRuntimeKey(sibling, descriptor)] === 'done'
-          || localDoneActionKeys[getCardActionRuntimeKey(sibling, descriptor)] === true
+          || isLocallyDone(sibling)
         )
       ));
       const isDone = actionState === 'done' || localDone || groupDone;
@@ -266,7 +271,7 @@ function StatefulCardRenderer({
           {visibleActions.map((action) => {
             const actionKey = getCardActionRuntimeKey(action, descriptor);
             const actionState = options.actionStateByKey?.[actionKey];
-            const localDone = localDoneActionKeys[actionKey] === true;
+            const localDone = isLocallyDone(action);
             const groupKey = getCardActionRuntimeGroupKey(action, descriptor);
             const groupStates = actions
               .filter((sibling) => getCardActionRuntimeGroupKey(sibling, descriptor) === groupKey)
@@ -297,7 +302,17 @@ function StatefulCardRenderer({
                     if (action.action === 'ui.inline.expand') {
                       const patch = readInlineExpandPatch(action);
                       if (patch) {
-                        setData((current: any) => mergeCardDataPatch(current, patch));
+                        setData((current: any) => {
+                          // Reopening is navigation, not replaying the original seed.
+                          // Keep server-returned values and revision (including missing revision).
+                          const latest = current?.adjust_record;
+                          const original = patch.adjust_record as Record<string, unknown> | undefined;
+                          const keepLatest = isRepeatableDietCorrection(action, descriptor.type)
+                            && latest && original && latest.record_id === original.record_id;
+                          return mergeCardDataPatch(current, keepLatest
+                            ? { ...patch, adjust_record: latest }
+                            : patch);
+                        });
                         setLocalDoneActionKeys((prev) => ({ ...prev, [actionKey]: true }));
                       }
                       return;
@@ -471,6 +486,15 @@ function readInlineExpandPatch(action: ChatCardActionDescriptor): Record<string,
   if (!target || !rawPatch || typeof rawPatch !== 'object' || Array.isArray(rawPatch)) return null;
   const patch = sanitizeInlinePatch(rawPatch as Record<string, unknown>);
   return Object.keys(patch).length > 0 ? patch : null;
+}
+
+function isRepeatableDietCorrection(action: ChatCardActionDescriptor, cardType: string): boolean {
+  const patch = readInlineExpandPatch(action);
+  return cardType === 'record_quality'
+    && action.payload?.target === 'adjust_record'
+    && Boolean(patch?.adjust_record)
+    && Array.isArray(patch?.expanded_sections)
+    && patch.expanded_sections.includes('adjust_record');
 }
 
 function isEmbeddedRecordedDietAdjustAction(
